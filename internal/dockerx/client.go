@@ -338,7 +338,8 @@ func (c *Client) Lifecycle(ctx context.Context, id, action, expectedVersion stri
 	if !containerIDPattern.MatchString(id) {
 		return ActionResult{}, errors.New("invalid container id")
 	}
-	if action != "start" && action != "stop" && action != "restart" && action != "remove" {
+	if action != "start" && action != "stop" && action != "restart" &&
+		action != "pause" && action != "unpause" && action != "remove" {
 		return ActionResult{}, errors.New("unsupported lifecycle action")
 	}
 	if expectedVersion == "" {
@@ -561,8 +562,10 @@ func (c *Client) summaryFromInspect(raw containerInspect) contract.ContainerSumm
 	allowed := []string{"logs"}
 	switch raw.State.Status {
 	case "running":
-		allowed = append(allowed, "restart", "stop", "remove", "stats", "exec", "access")
-	case "paused", "restarting":
+		allowed = append(allowed, "restart", "pause", "stop", "remove", "stats", "exec", "access")
+	case "paused":
+		allowed = append(allowed, "unpause", "restart", "stop", "remove", "stats", "access")
+	case "restarting":
 		allowed = append(allowed, "restart", "stop", "remove", "stats", "access")
 	case "created", "exited", "dead":
 		allowed = append(allowed, "start", "remove")

@@ -235,6 +235,63 @@ func TestLifecycleSerializesAndRejectsStaleRestart(t *testing.T) {
 	}
 }
 
+func TestLifecyclePauseAndUnpauseUseFixedDockerEndpoints(t *testing.T) {
+	id := strings.Repeat("c", 64)
+	state := "running"
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/containers/" + id + "/json":
+			raw := managedInspect(id, "2026-07-25T00:00:00Z", 0)
+			raw.State.Status = state
+			raw.State.Running = state == "running"
+			_ = json.NewEncoder(w).Encode(raw)
+		case "/containers/" + id + "/pause":
+			requests = append(requests, r.Method+" "+r.URL.Path)
+			state = "paused"
+			w.WriteHeader(http.StatusNoContent)
+		case "/containers/" + id + "/unpause":
+			requests = append(requests, r.Method+" "+r.URL.Path)
+			state = "running"
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := testHTTPClient(server)
+	running := managedInspect(id, "2026-07-25T00:00:00Z", 0)
+	pauseResult, err := client.Lifecycle(
+		context.Background(),
+		id,
+		"pause",
+		client.summaryFromInspect(running).ResourceVersion,
+	)
+	if err != nil {
+		t.Fatalf("pause failed: %v", err)
+	}
+
+	paused := running
+	paused.State.Status = "paused"
+	paused.State.Running = false
+	if pauseResult.ResourceVersion != client.summaryFromInspect(paused).ResourceVersion {
+		t.Fatalf("pause resource version was not refreshed")
+	}
+	if _, err := client.Lifecycle(
+		context.Background(),
+		id,
+		"unpause",
+		pauseResult.ResourceVersion,
+	); err != nil {
+		t.Fatalf("unpause failed: %v", err)
+	}
+	if got := strings.Join(requests, ","); got !=
+		"POST /containers/"+id+"/pause,POST /containers/"+id+"/unpause" {
+		t.Fatalf("lifecycle requests = %q", got)
+	}
+}
+
 func testHTTPClient(server *httptest.Server) *Client {
 	root := filepath.ToSlash(server.URL)
 	return &Client{

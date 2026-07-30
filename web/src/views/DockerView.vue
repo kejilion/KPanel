@@ -9,11 +9,14 @@ import {
   BrushCleaning,
   CircleStop,
   Container,
+  Copy,
   Download,
+  EllipsisVertical,
   FileText,
   HardDrive,
   LoaderCircle,
   Network,
+  Pause,
   Play,
   Plus,
   RefreshCw,
@@ -55,7 +58,12 @@ import type {
 } from '@/types/api'
 
 type DockerTab = 'environment' | 'containers' | 'images' | 'networks' | 'volumes'
-type ContainerAction = 'start' | 'stop' | 'restart' | 'remove'
+type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove'
+type DockerContextMenu =
+  | { kind: 'container'; item: DockerContainer; x: number; y: number }
+  | { kind: 'image'; item: DockerInventory['images'][number]; x: number; y: number }
+  | { kind: 'network'; item: DockerInventory['networks'][number]; x: number; y: number }
+  | { kind: 'volume'; item: DockerInventory['volumes'][number]; x: number; y: number }
 
 interface CreatePortRow {
   publicPort: string
@@ -96,6 +104,7 @@ const pendingMaintenance = ref<{
 const selectedContainer = ref<DockerContainer>()
 const pendingAction = ref<ContainerAction>()
 const actionRunning = ref(false)
+const contextMenu = ref<DockerContextMenu>()
 
 const backups = ref<DockerBackup[]>([])
 const environment = ref<DockerEnvironment>()
@@ -165,6 +174,18 @@ const tabs = computed(() => [
 ])
 const dockerJobActive = computed(() =>
   activeJob.value?.status === 'queued' || activeJob.value?.status === 'running',
+)
+const contextContainer = computed(() =>
+  contextMenu.value?.kind === 'container' ? contextMenu.value.item : undefined,
+)
+const contextImage = computed(() =>
+  contextMenu.value?.kind === 'image' ? contextMenu.value.item : undefined,
+)
+const contextNetwork = computed(() =>
+  contextMenu.value?.kind === 'network' ? contextMenu.value.item : undefined,
+)
+const contextVolume = computed(() =>
+  contextMenu.value?.kind === 'volume' ? contextMenu.value.item : undefined,
 )
 
 const runningCount = computed(() => data.value?.containers.filter((item) => item.state === 'running').length || 0)
@@ -238,6 +259,87 @@ function permits(container: DockerContainer, action: string): boolean {
       (allowed) => allowed === action || allowed.endsWith(`.${action}`) || allowed.endsWith(`/${action}`),
     ),
   )
+}
+
+function contextPosition(event: MouseEvent): { x: number; y: number } {
+  const target = event.currentTarget as HTMLElement | null
+  const bounds = target?.getBoundingClientRect()
+  const x = event.clientX || bounds?.right || 16
+  const y = event.clientY || bounds?.bottom || 16
+  return {
+    x: Math.max(8, Math.min(x, window.innerWidth - 226)),
+    y: Math.max(8, Math.min(y, window.innerHeight - 430)),
+  }
+}
+
+function showContainerContext(event: MouseEvent, item: DockerContainer): void {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = { kind: 'container', item, ...contextPosition(event) }
+}
+
+function showImageContext(event: MouseEvent, item: DockerInventory['images'][number]): void {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = { kind: 'image', item, ...contextPosition(event) }
+}
+
+function showNetworkContext(event: MouseEvent, item: DockerInventory['networks'][number]): void {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = { kind: 'network', item, ...contextPosition(event) }
+}
+
+function showVolumeContext(event: MouseEvent, item: DockerInventory['volumes'][number]): void {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = { kind: 'volume', item, ...contextPosition(event) }
+}
+
+async function copyResourceValue(value: string, label: string): Promise<void> {
+  contextMenu.value = undefined
+  let copied = false
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      copied = true
+    } catch {
+      // HTTP IP and embedded browsers may deny the modern clipboard API.
+    }
+  }
+  if (!copied && typeof document.execCommand === 'function') {
+    const input = document.createElement('textarea')
+    input.value = value
+    input.readOnly = true
+    input.style.position = 'fixed'
+    input.style.left = '-9999px'
+    document.body.appendChild(input)
+    try {
+      input.select()
+      copied = document.execCommand('copy')
+    } finally {
+      input.remove()
+    }
+  }
+  if (copied) toast.success(`${label}已复制`)
+  else toast.danger('复制失败', `请手动复制：${value}`)
+}
+
+function manageNetworkMembership(network: DockerInventory['networks'][number]): void {
+  membershipNetworkID.value = network.id
+  contextMenu.value = undefined
+  toast.success('已选择网络', '请在上方选择容器后执行加入或退出。')
+}
+
+function closeContextMenuOnOutsideClick(event: MouseEvent): void {
+  const target = event.target as HTMLElement
+  if (!target.closest('.docker-context-menu') && !target.closest('.docker-context-trigger')) {
+    contextMenu.value = undefined
+  }
+}
+
+function closeContextMenu(): void {
+  contextMenu.value = undefined
 }
 
 async function load(silent = false): Promise<void> {
@@ -404,12 +506,14 @@ function pullImage(): void {
 }
 
 function updateImage(image: DockerInventory['images'][number]): void {
+  contextMenu.value = undefined
   const tag = image.tags.find((item) => item && item !== '<none>:<none>')
   if (!tag) return
   askTask('确认拉取镜像最新版本', tag, { action: 'image_pull', image: tag })
 }
 
 function askImageRemoval(image: DockerInventory['images'][number]): void {
+  contextMenu.value = undefined
   if (!image.resourceVersion) return
   askTask('确认删除镜像', image.tags.join(', ') || shortId(image.id), {
     action: 'image_remove',
@@ -427,6 +531,7 @@ function createDockerNetwork(): void {
 }
 
 function askNetworkRemoval(network: DockerInventory['networks'][number]): void {
+  contextMenu.value = undefined
   if (!network.resourceVersion) return
   askTask('确认删除网络', network.name, {
     action: 'network_remove',
@@ -461,6 +566,7 @@ function createDockerVolume(): void {
 }
 
 function askVolumeRemoval(volume: DockerInventory['volumes'][number]): void {
+  contextMenu.value = undefined
   if (!volume.resourceVersion) return
   askTask('确认删除存储卷', volume.name, {
     action: 'volume_remove',
@@ -553,6 +659,7 @@ function submitContainerCreate(): void {
 }
 
 function askAction(container: DockerContainer, action: ContainerAction): void {
+  contextMenu.value = undefined
   selectedContainer.value = container
   pendingAction.value = action
 }
@@ -580,6 +687,7 @@ async function runAction(): Promise<void> {
 }
 
 async function showLogs(container: DockerContainer): Promise<void> {
+  contextMenu.value = undefined
   selectedContainer.value = container
   logsOpen.value = true
   logsLoading.value = true
@@ -621,6 +729,7 @@ async function refreshStats(): Promise<void> {
 }
 
 function showStats(container: DockerContainer): void {
+  contextMenu.value = undefined
   selectedContainer.value = container
   stats.value = undefined
   statsOpen.value = true
@@ -639,6 +748,7 @@ function closeStats(): void {
 }
 
 function openConsole(container: DockerContainer): void {
+  contextMenu.value = undefined
   selectedContainer.value = container
   consoleCommand.value = ''
   consoleOutput.value = ''
@@ -672,6 +782,7 @@ function closeConsole(): void {
 }
 
 function openAccess(container: DockerContainer): void {
+  contextMenu.value = undefined
   selectedContainer.value = container
   accessAllowedIP.value = publicIPv4.value
   accessOpen.value = true
@@ -728,6 +839,9 @@ function askMigration(): void {
 }
 
 onMounted(() => {
+  window.addEventListener('click', closeContextMenuOnOutsideClick)
+  window.addEventListener('resize', closeContextMenu)
+  window.addEventListener('scroll', closeContextMenu, true)
   void load()
   void loadBackups()
   void loadEnvironment()
@@ -736,6 +850,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('click', closeContextMenuOnOutsideClick)
+  window.removeEventListener('resize', closeContextMenu)
+  window.removeEventListener('scroll', closeContextMenu, true)
   controller?.abort()
   logController?.abort()
   statsController?.abort()
@@ -935,7 +1052,7 @@ onBeforeUnmount(() => {
           <header class="resource-section__header">
             <div>
               <span class="workspace-card__icon"><Container :size="20" /></span>
-              <div><strong>容器日常管理</strong><small>创建、生命周期、日志、性能、控制台和外部访问</small></div>
+              <div><strong>容器日常管理</strong><small>创建、生命周期、日志、性能、控制台和外部访问；右键可打开完整操作菜单</small></div>
             </div>
             <div class="card-actions">
               <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
@@ -959,7 +1076,12 @@ onBeforeUnmount(() => {
               </colgroup>
               <thead><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
               <tbody>
-                <tr v-for="container in filteredContainers" :key="container.id" :class="`docker-row docker-row--${container.state}`">
+                <tr
+                  v-for="container in filteredContainers"
+                  :key="container.id"
+                  :class="`docker-row docker-row--${container.state}`"
+                  @contextmenu="showContainerContext($event, container)"
+                >
                   <td>
                     <div class="resource-name">
                       <span class="resource-name__icon resource-name__icon--docker"><Container :size="18" /></span>
@@ -973,17 +1095,20 @@ onBeforeUnmount(() => {
                   <td>
                     <div class="docker-row-actions">
                       <div class="docker-row-actions__group" aria-label="查看与管理">
-                        <button class="icon-button" type="button" title="性能占用" aria-label="性能占用" @click="showStats(container)"><Waypoints :size="16" /></button>
+                        <button v-if="permits(container, 'stats')" class="icon-button" type="button" title="性能占用" aria-label="性能占用" @click="showStats(container)"><Waypoints :size="16" /></button>
                         <button v-if="permits(container, 'logs')" class="icon-button" type="button" title="查看日志" aria-label="查看日志" @click="showLogs(container)"><FileText :size="16" /></button>
                         <button v-if="permits(container, 'exec')" class="icon-button" type="button" title="进入控制台" aria-label="进入控制台" @click="openConsole(container)"><Wrench :size="16" /></button>
                         <button v-if="permits(container, 'access')" class="icon-button" type="button" title="外部访问" aria-label="外部访问" @click="openAccess(container)"><ShieldCheck :size="16" /></button>
                       </div>
                       <div class="docker-row-actions__group" aria-label="生命周期">
                         <button v-if="permits(container, 'start')" class="icon-button icon-button--success" type="button" title="启动" aria-label="启动" @click="askAction(container, 'start')"><Play :size="16" /></button>
+                        <button v-if="permits(container, 'unpause')" class="icon-button icon-button--success" type="button" title="继续运行" aria-label="继续运行" @click="askAction(container, 'unpause')"><Play :size="16" /></button>
                         <button v-if="permits(container, 'restart')" class="icon-button" type="button" title="重启" aria-label="重启" @click="askAction(container, 'restart')"><RotateCw :size="16" /></button>
+                        <button v-if="permits(container, 'pause')" class="icon-button" type="button" title="暂停" aria-label="暂停" @click="askAction(container, 'pause')"><Pause :size="16" /></button>
                         <button v-if="permits(container, 'stop')" class="icon-button icon-button--danger" type="button" title="停止" aria-label="停止" @click="askAction(container, 'stop')"><CircleStop :size="16" /></button>
                         <button v-if="permits(container, 'remove')" class="icon-button icon-button--danger" type="button" title="删除" aria-label="删除" @click="askAction(container, 'remove')"><Trash2 :size="16" /></button>
                       </div>
+                      <button class="icon-button docker-context-trigger" type="button" title="更多操作" aria-label="更多操作" @click="showContainerContext($event, container)"><EllipsisVertical :size="16" /></button>
                       <span v-if="!container.allowedActions?.length" class="action-unavailable-label">状态暂不可操作</span>
                     </div>
                   </td>
@@ -997,7 +1122,7 @@ onBeforeUnmount(() => {
       <template v-else-if="activeTab === 'images'">
         <section class="workspace-card workspace-card--wide resource-section">
           <header class="resource-section__header">
-            <div><span class="workspace-card__icon"><Box :size="20" /></span><div><strong>镜像日常管理</strong><small>拉取即更新；删除前重新核验占用和资源版本</small></div></div>
+            <div><span class="workspace-card__icon"><Box :size="20" /></span><div><strong>镜像日常管理</strong><small>拉取即更新；右键可复制引用、更新或删除</small></div></div>
             <div class="card-actions">
               <input v-model="imageReference" class="text-input compact-input" type="text" placeholder="nginx:alpine" @keyup.enter="pullImage" />
               <button class="button button--primary button--small" type="button" :disabled="!imageReference.trim()" @click="pullImage"><Download :size="15" /> 拉取镜像</button>
@@ -1007,7 +1132,7 @@ onBeforeUnmount(() => {
           <EmptyState v-if="!filteredImages.length" title="没有本地镜像" description="可输入完整镜像引用拉取，任务会在后台继续。" />
           <div v-else class="table-scroll">
             <table class="data-table"><thead><tr><th>镜像</th><th>摘要</th><th>大小</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody><tr v-for="image in filteredImages" :key="image.id">
+              <tbody><tr v-for="image in filteredImages" :key="image.id" @contextmenu="showImageContext($event, image)">
                 <td><strong>{{ image.tags.join(', ') || '未标记镜像' }}</strong></td>
                 <td><code>{{ shortId(image.id) }}</code></td>
                 <td>{{ formatBytes(image.sizeBytes) }}</td>
@@ -1016,6 +1141,7 @@ onBeforeUnmount(() => {
                 <td><div class="row-actions">
                   <button v-if="image.tags.length" class="button button--ghost button--small" type="button" @click="updateImage(image)"><RefreshCw :size="14" /> 更新</button>
                   <button class="icon-button icon-button--danger" type="button" title="删除镜像" :disabled="!image.resourceVersion" @click="askImageRemoval(image)"><Trash2 :size="16" /></button>
+                  <button class="icon-button docker-context-trigger" type="button" title="更多操作" aria-label="更多操作" @click="showImageContext($event, image)"><EllipsisVertical :size="16" /></button>
                 </div></td>
               </tr></tbody>
             </table>
@@ -1027,7 +1153,7 @@ onBeforeUnmount(() => {
         <div class="workspace-grid">
           <section class="workspace-card workspace-card--wide resource-section">
             <header class="resource-section__header">
-              <div><span class="workspace-card__icon"><Network :size="20" /></span><div><strong>网络日常管理</strong><small>网络创建、删除和容器成员关系均直接写入 Docker Engine</small></div></div>
+              <div><span class="workspace-card__icon"><Network :size="20" /></span><div><strong>网络日常管理</strong><small>网络创建、删除和成员关系均直接写入 Docker Engine；支持右键管理</small></div></div>
               <div class="card-actions">
                 <input v-model="networkName" class="text-input compact-input" type="text" placeholder="新网络名称" @keyup.enter="createDockerNetwork" />
                 <input v-model="networkDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 bridge" @keyup.enter="createDockerNetwork" />
@@ -1044,10 +1170,13 @@ onBeforeUnmount(() => {
             <EmptyState v-if="!filteredNetworks.length" title="没有 Docker 网络" description="Docker Engine 未返回网络资源。" />
             <div v-else class="table-scroll">
               <table class="data-table"><thead><tr><th>网络</th><th>驱动</th><th>范围</th><th>容器数</th><th>操作</th></tr></thead>
-                <tbody><tr v-for="network in filteredNetworks" :key="network.id">
+                <tbody><tr v-for="network in filteredNetworks" :key="network.id" @contextmenu="showNetworkContext($event, network)">
                   <td><strong>{{ network.name }}</strong><small class="table-sub">{{ shortId(network.id) }}</small></td>
                   <td>{{ network.driver }}</td><td>{{ network.scope || 'local' }}</td><td>{{ network.containers || 0 }}</td>
-                  <td><button class="icon-button icon-button--danger" type="button" title="删除网络" :disabled="!network.resourceVersion" @click="askNetworkRemoval(network)"><Trash2 :size="16" /></button></td>
+                  <td><div class="row-actions">
+                    <button class="icon-button icon-button--danger" type="button" title="删除网络" :disabled="!network.resourceVersion" @click="askNetworkRemoval(network)"><Trash2 :size="16" /></button>
+                    <button class="icon-button docker-context-trigger" type="button" title="更多操作" aria-label="更多操作" @click="showNetworkContext($event, network)"><EllipsisVertical :size="16" /></button>
+                  </div></td>
                 </tr></tbody>
               </table>
             </div>
@@ -1058,7 +1187,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <section class="workspace-card workspace-card--wide resource-section">
           <header class="resource-section__header">
-            <div><span class="workspace-card__icon"><HardDrive :size="20" /></span><div><strong>存储卷日常管理</strong><small>所有 Docker 卷均可直接管理，执行结果由 Docker Engine 返回</small></div></div>
+            <div><span class="workspace-card__icon"><HardDrive :size="20" /></span><div><strong>存储卷日常管理</strong><small>所有 Docker 卷均可直接管理；右键可复制名称、挂载点或删除</small></div></div>
             <div class="card-actions">
               <input v-model="volumeName" class="text-input compact-input" type="text" placeholder="新存储卷名称" @keyup.enter="createDockerVolume" />
               <input v-model="volumeDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 local" @keyup.enter="createDockerVolume" />
@@ -1069,17 +1198,119 @@ onBeforeUnmount(() => {
           <EmptyState v-if="!filteredVolumes.length" title="没有 Docker 存储卷" description="可创建 local 卷，并在新建容器时选择挂载。" />
           <div v-else class="table-scroll">
             <table class="data-table"><thead><tr><th>存储卷</th><th>驱动</th><th>挂载点</th><th>状态</th><th>操作</th></tr></thead>
-              <tbody><tr v-for="volume in filteredVolumes" :key="volume.name">
+              <tbody><tr v-for="volume in filteredVolumes" :key="volume.name" @contextmenu="showVolumeContext($event, volume)">
                 <td><strong>{{ volume.name }}</strong></td><td>{{ volume.driver }}</td>
                 <td><span class="table-code" :title="volume.mountpoint">{{ volume.mountpoint || '—' }}</span></td>
                 <td><StatusBadge :status="volume.inUse ? 'running' : 'stopped'" :label="volume.inUse ? '使用中' : '未使用'" subtle /></td>
-                <td><button class="icon-button icon-button--danger" type="button" title="删除存储卷" :disabled="!volume.resourceVersion" @click="askVolumeRemoval(volume)"><Trash2 :size="16" /></button></td>
+                <td><div class="row-actions">
+                  <button class="icon-button icon-button--danger" type="button" title="删除存储卷" :disabled="!volume.resourceVersion" @click="askVolumeRemoval(volume)"><Trash2 :size="16" /></button>
+                  <button class="icon-button docker-context-trigger" type="button" title="更多操作" aria-label="更多操作" @click="showVolumeContext($event, volume)"><EllipsisVertical :size="16" /></button>
+                </div></td>
               </tr></tbody>
             </table>
           </div>
         </section>
       </template>
     </template>
+
+    <div
+      v-if="contextMenu"
+      class="docker-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      role="menu"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <template v-if="contextContainer">
+        <strong class="docker-context-menu__title">{{ contextContainer.name }}</strong>
+        <button v-if="permits(contextContainer, 'logs')" type="button" @click="showLogs(contextContainer)">
+          <FileText :size="15" />查看日志
+        </button>
+        <button v-if="permits(contextContainer, 'stats')" type="button" @click="showStats(contextContainer)">
+          <Waypoints :size="15" />性能占用
+        </button>
+        <button v-if="permits(contextContainer, 'exec')" type="button" @click="openConsole(contextContainer)">
+          <Wrench :size="15" />容器控制台
+        </button>
+        <button v-if="permits(contextContainer, 'access')" type="button" @click="openAccess(contextContainer)">
+          <ShieldCheck :size="15" />外部访问
+        </button>
+        <hr />
+        <button v-if="permits(contextContainer, 'start')" type="button" @click="askAction(contextContainer, 'start')">
+          <Play :size="15" />启动
+        </button>
+        <button v-if="permits(contextContainer, 'unpause')" type="button" @click="askAction(contextContainer, 'unpause')">
+          <Play :size="15" />继续运行
+        </button>
+        <button v-if="permits(contextContainer, 'restart')" type="button" @click="askAction(contextContainer, 'restart')">
+          <RotateCw :size="15" />重启
+        </button>
+        <button v-if="permits(contextContainer, 'pause')" type="button" @click="askAction(contextContainer, 'pause')">
+          <Pause :size="15" />暂停
+        </button>
+        <button v-if="permits(contextContainer, 'stop')" type="button" @click="askAction(contextContainer, 'stop')">
+          <CircleStop :size="15" />停止
+        </button>
+        <hr />
+        <button type="button" @click="copyResourceValue(contextContainer.id, '容器 ID')">
+          <Copy :size="15" />复制容器 ID
+        </button>
+        <button type="button" @click="copyResourceValue(contextContainer.image, '镜像名称')">
+          <Copy :size="15" />复制镜像名称
+        </button>
+        <button v-if="permits(contextContainer, 'remove')" class="danger-link" type="button" @click="askAction(contextContainer, 'remove')">
+          <Trash2 :size="15" />删除容器
+        </button>
+      </template>
+
+      <template v-else-if="contextImage">
+        <strong class="docker-context-menu__title">{{ contextImage.tags[0] || shortId(contextImage.id) }}</strong>
+        <button v-if="contextImage.tags.length" type="button" @click="updateImage(contextImage)">
+          <RefreshCw :size="15" />拉取最新版本
+        </button>
+        <button type="button" @click="copyResourceValue(contextImage.tags[0] || contextImage.id, '镜像引用')">
+          <Copy :size="15" />复制镜像引用
+        </button>
+        <button type="button" @click="copyResourceValue(contextImage.id, '镜像 ID')">
+          <Copy :size="15" />复制镜像 ID
+        </button>
+        <hr />
+        <button class="danger-link" type="button" :disabled="!contextImage.resourceVersion" @click="askImageRemoval(contextImage)">
+          <Trash2 :size="15" />删除镜像
+        </button>
+      </template>
+
+      <template v-else-if="contextNetwork">
+        <strong class="docker-context-menu__title">{{ contextNetwork.name }}</strong>
+        <button type="button" @click="manageNetworkMembership(contextNetwork)">
+          <Network :size="15" />管理容器成员
+        </button>
+        <button type="button" @click="copyResourceValue(contextNetwork.name, '网络名称')">
+          <Copy :size="15" />复制网络名称
+        </button>
+        <button type="button" @click="copyResourceValue(contextNetwork.id, '网络 ID')">
+          <Copy :size="15" />复制网络 ID
+        </button>
+        <hr />
+        <button class="danger-link" type="button" :disabled="!contextNetwork.resourceVersion" @click="askNetworkRemoval(contextNetwork)">
+          <Trash2 :size="15" />删除网络
+        </button>
+      </template>
+
+      <template v-else-if="contextVolume">
+        <strong class="docker-context-menu__title">{{ contextVolume.name }}</strong>
+        <button type="button" @click="copyResourceValue(contextVolume.name, '存储卷名称')">
+          <Copy :size="15" />复制存储卷名称
+        </button>
+        <button v-if="contextVolume.mountpoint" type="button" @click="copyResourceValue(contextVolume.mountpoint, '挂载点')">
+          <Copy :size="15" />复制挂载点
+        </button>
+        <hr />
+        <button class="danger-link" type="button" :disabled="!contextVolume.resourceVersion" @click="askVolumeRemoval(contextVolume)">
+          <Trash2 :size="15" />删除存储卷
+        </button>
+      </template>
+    </div>
 
     <ModalDialog :open="createOpen" title="新建 Docker 容器" description="使用结构化参数创建，不接受任意 docker run 命令；镜像必须已拉取到本机。" size="large" @close="createOpen = false">
       <div class="form-grid form-grid--two">
@@ -1180,8 +1411,8 @@ onBeforeUnmount(() => {
       <template #footer><button class="button button--secondary" type="button" @click="pendingMaintenance = undefined">取消</button><button class="button" :class="pendingMaintenance?.danger ? 'button--danger' : 'button--primary'" type="button" :disabled="taskRunning || !pendingMaintenance" @click="pendingMaintenance && submitTask(pendingMaintenance.input)"><LoaderCircle v-if="taskRunning" class="spin" :size="16" />{{ taskRunning ? '正在提交…' : '确认执行' }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="Boolean(pendingAction)" :title="pendingAction === 'stop' ? '确认停止容器' : pendingAction === 'restart' ? '确认重启容器' : pendingAction === 'remove' ? '确认删除容器' : '确认启动容器'" :description="selectedContainer ? `${selectedContainer.name} · ${selectedContainer.image}` : ''" size="small" @close="pendingAction = undefined; selectedContainer = undefined">
-      <div class="confirm-content"><span class="confirm-content__icon" :class="{ 'is-danger': pendingAction === 'stop' || pendingAction === 'remove' }"><Trash2 v-if="pendingAction === 'remove'" :size="23" /><CircleStop v-else-if="pendingAction === 'stop'" :size="23" /><RotateCw v-else-if="pendingAction === 'restart'" :size="23" /><Play v-else :size="23" /></span><p>{{ pendingAction === 'remove' ? '将强制删除所选容器；镜像和存储卷保留。' : 'Agent 会再次验证容器资源版本和实时状态。' }}</p></div>
+    <ModalDialog :open="Boolean(pendingAction)" :title="pendingAction === 'stop' ? '确认停止容器' : pendingAction === 'restart' ? '确认重启容器' : pendingAction === 'pause' ? '确认暂停容器' : pendingAction === 'unpause' ? '确认继续运行容器' : pendingAction === 'remove' ? '确认删除容器' : '确认启动容器'" :description="selectedContainer ? `${selectedContainer.name} · ${selectedContainer.image}` : ''" size="small" @close="pendingAction = undefined; selectedContainer = undefined">
+      <div class="confirm-content"><span class="confirm-content__icon" :class="{ 'is-danger': pendingAction === 'stop' || pendingAction === 'remove' }"><Trash2 v-if="pendingAction === 'remove'" :size="23" /><CircleStop v-else-if="pendingAction === 'stop'" :size="23" /><Pause v-else-if="pendingAction === 'pause'" :size="23" /><RotateCw v-else-if="pendingAction === 'restart'" :size="23" /><Play v-else :size="23" /></span><p>{{ pendingAction === 'remove' ? '将强制删除所选容器；镜像和存储卷保留。' : pendingAction === 'pause' ? '暂停后保留容器当前进程状态，可随时继续运行。' : 'Agent 会再次验证容器资源版本和实时状态。' }}</p></div>
       <template #footer><button class="button button--secondary" type="button" @click="pendingAction = undefined; selectedContainer = undefined">取消</button><button class="button" :class="pendingAction === 'stop' || pendingAction === 'remove' ? 'button--danger' : 'button--primary'" type="button" :disabled="actionRunning" @click="runAction"><LoaderCircle v-if="actionRunning" class="spin" :size="16" />{{ actionRunning ? '正在提交…' : '确认执行' }}</button></template>
     </ModalDialog>
 
@@ -1272,6 +1503,49 @@ onBeforeUnmount(() => {
 .docker-row:hover { background: color-mix(in srgb, var(--brand) 4%, var(--surface)); }
 .docker-row--running > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand) 75%, transparent); }
 .docker-row--restarting > td:first-child, .docker-row--paused > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber) 75%, transparent); }
+.docker-context-menu {
+  position: fixed;
+  z-index: 110;
+  display: grid;
+  width: 218px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.docker-context-menu__title {
+  overflow: hidden;
+  padding: 8px 10px 7px;
+  color: var(--text-muted);
+  font-size: .78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docker-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.docker-context-menu button:hover { background: var(--surface-subtle); }
+.docker-context-menu button:disabled { opacity: .42; cursor: not-allowed; }
+.docker-context-menu button.danger-link { color: var(--danger); }
+.docker-context-menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
 .network-membership { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto auto; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
 .compact-input { width: min(240px, 34vw); }
 .compact-input--driver { width: min(170px, 24vw); }

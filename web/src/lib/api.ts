@@ -1550,7 +1550,11 @@ export const api = {
       ])
       return inventory
     },
-    action: (id: string, action: 'start' | 'stop' | 'restart' | 'remove', resourceVersion: string) =>
+    action: (
+      id: string,
+      action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove',
+      resourceVersion: string,
+    ) =>
       request<DockerActionResult>(`/docker/containers/${encodeURIComponent(id)}/${action}`, {
         method: 'POST',
         body: { resourceVersion },

@@ -767,9 +767,21 @@ func TestDockerActionFailsClosedWhenIntentAuditCannotPersist(t *testing.T) {
 func TestAllowedDockerActionPath(t *testing.T) {
 	t.Parallel()
 	id := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	path, gotID, action, ok := allowedDockerActionPath("/api/v1/docker/containers/" + id + "/restart")
-	if !ok || gotID != id || action != "restart" || path != "/v1/docker/containers/"+id+"/restart" {
-		t.Fatalf("unexpected action mapping: path=%q id=%q action=%q ok=%v", path, gotID, action, ok)
+	for _, action := range []string{"start", "stop", "restart", "pause", "unpause", "remove"} {
+		path, gotID, gotAction, ok := allowedDockerActionPath(
+			"/api/v1/docker/containers/" + id + "/" + action,
+		)
+		if !ok || gotID != id || gotAction != action ||
+			path != "/v1/docker/containers/"+id+"/"+action {
+			t.Fatalf(
+				"unexpected %s mapping: path=%q id=%q action=%q ok=%v",
+				action,
+				path,
+				gotID,
+				gotAction,
+				ok,
+			)
+		}
 	}
 	for _, invalid := range []string{
 		"/api/v1/docker/containers/not-an-id/restart",
