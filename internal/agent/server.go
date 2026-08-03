@@ -474,6 +474,8 @@ func (s *Server) systemSummary(w http.ResponseWriter, r *http.Request) {
 	summary.Management.SSH.Defense = s.systemManager.SSHDefenseStatus(r.Context())
 	summary.Management.BBRv3 = s.systemManager.BBRv3Status(r.Context())
 	summary.Management.Maintenance = s.systemManager.MaintenanceStatus()
+	summary.Management.NetworkInterfaces = s.systemManager.NetworkInterfaces(r.Context())
+	summary.Management.Firewall = s.systemManager.FirewallSummary(r.Context())
 	writeJSON(w, http.StatusOK, summary)
 }
 

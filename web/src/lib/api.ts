@@ -148,6 +148,10 @@ interface RawSystemSummary {
       }
     }
     dns?: { servers?: string[]; manager?: string }
+    hosts?: string[]
+    cron?: string[]
+    networkInterfaces?: Array<{ name: string; state: string; mac?: string; addresses?: string[] }>
+    firewall?: { available?: boolean; inputPolicy?: string; rules?: string[]; pingAllowed?: boolean; ddosDefense?: boolean }
     timezone?: string
     swap?: {
       activeDevices?: number
@@ -1002,6 +1006,19 @@ export const api = {
           dns: {
             servers: system.management?.dns?.servers || [],
             manager: system.management?.dns?.manager || 'unknown',
+          },
+          hosts: system.management?.hosts || [],
+          cron: system.management?.cron || [],
+          networkInterfaces: (system.management?.networkInterfaces || []).map((item) => ({
+            ...item,
+            addresses: item.addresses || [],
+          })),
+          firewall: {
+            available: Boolean(system.management?.firewall?.available),
+            inputPolicy: system.management?.firewall?.inputPolicy,
+            rules: system.management?.firewall?.rules || [],
+            pingAllowed: Boolean(system.management?.firewall?.pingAllowed),
+            ddosDefense: Boolean(system.management?.firewall?.ddosDefense),
           },
           timezone: system.management?.timezone,
           swap: {

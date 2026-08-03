@@ -22,6 +22,7 @@ type Collector struct {
 	ProcRoot                   string
 	SysRoot                    string
 	EtcRoot                    string
+	VarRoot                    string
 	SwapPath                   string
 	LegacySwapPath             string
 	Now                        func() time.Time
@@ -40,7 +41,7 @@ type Collector struct {
 
 func NewCollector() *Collector {
 	return &Collector{
-		ProcRoot: "/proc", SysRoot: "/sys", EtcRoot: "/etc",
+		ProcRoot: "/proc", SysRoot: "/sys", EtcRoot: "/etc", VarRoot: "/var",
 		SwapPath: "/swapfile", LegacySwapPath: "/var/lib/kejilion-panel/system/swapfile",
 		Now:                        time.Now,
 		CPUSampleInterval:          150 * time.Millisecond,
@@ -60,6 +61,13 @@ func (c *Collector) prepareDefaults() {
 		}
 		if c.SysRoot == "" {
 			c.SysRoot = "/sys"
+		}
+		if c.VarRoot == "" {
+			if filepath.Clean(c.EtcRoot) == "/etc" {
+				c.VarRoot = "/var"
+			} else {
+				c.VarRoot = filepath.Join(filepath.Dir(c.EtcRoot), "var")
+			}
 		}
 		if c.SwapPath == "" {
 			c.SwapPath = "/swapfile"

@@ -193,8 +193,8 @@ jobs:
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' kejilion-panel:release-check)" = "$REVISION"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' kejilion-panel:release-check)" = "https://github.com/kejilion/KPanel"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' kejilion-panel:release-check)" = "AGPL-3.0-only"
-          test "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.script.revision"}}' kejilion-panel:release-check)" = "3f91034c50158d701132c4adce2fea35802b50e9"
-          test "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.script.sha256"}}' kejilion-panel:release-check)" = "8e9f2f1e367a71bc0e97be0c901727522d853eb82b105442d8424cbba2d24fbc"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.script.revision"}}' kejilion-panel:release-check)" = "193a29710d18421242b2d5e2358ff36543e360cf"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.script.sha256"}}' kejilion-panel:release-check)" = "7eb40d270323e91d12ce989ff13baa5b16f0feb53ef2906741d87eefcc3bb6d6"
           release_container="$(docker create kejilion-panel:release-check)"
           docker cp "$release_container:/release/kejilion.sh" release/kejilion.sh
           docker cp "$release_container:/licenses/LICENSE" release/IMAGE_LICENSE
@@ -202,7 +202,7 @@ jobs:
           docker cp "$release_container:/licenses/THIRD_PARTY_NOTICES.md" release/IMAGE_THIRD_PARTY_NOTICES.md
           docker cp "$release_container:/licenses/third-party/Apache-2.0.txt" release/IMAGE_APACHE_LICENSE
           docker rm "$release_container" >/dev/null
-          test "$(sha256sum release/kejilion.sh | awk '{print $1}')" = "8e9f2f1e367a71bc0e97be0c901727522d853eb82b105442d8424cbba2d24fbc"
+          test "$(sha256sum release/kejilion.sh | awk '{print $1}')" = "7eb40d270323e91d12ce989ff13baa5b16f0feb53ef2906741d87eefcc3bb6d6"
           cmp LICENSE release/IMAGE_LICENSE
           cmp NOTICE release/IMAGE_NOTICE
           cmp THIRD_PARTY_NOTICES.md release/IMAGE_THIRD_PARTY_NOTICES.md

@@ -132,6 +132,18 @@ const actionForm = reactive({
   port: 2222,
   dns: '',
   dnsPreset: customPreset,
+  hostsOperation: 'add' as 'add' | 'delete',
+  hostsEntry: '',
+  cronOperation: 'add' as 'add' | 'delete',
+  cronSchedule: '0 0 * * *',
+  cronCommand: '',
+  cronEntry: '',
+  networkOperation: 'up' as 'up' | 'down',
+  interfaceName: '',
+  firewallOperation: 'port-open' as NonNullable<SystemActionInput['firewallOperation']>,
+  firewallPort: 80,
+  firewallAddress: '',
+  countryCodes: '',
   timezone: 'Asia/Shanghai',
   timezonePreset: 'Asia/Shanghai',
   swapPreset: '1024' as '0' | '1024' | '2048' | '4096' | 'custom',
@@ -269,6 +281,26 @@ const basicSettings = computed<ManagementTool[]>(() => {
       safety: '仅接受 IANA 时区数据库中的有效名称，变更后立即回读验证。',
       icon: Timer,
       tone: 'amber',
+    },
+    {
+      id: 'hosts', title: '本地 Hosts', description: '管理 /etc/hosts 解析记录。',
+      value: `${management.hosts.length} 条记录`, detail: '由 kejilion.sh 精确添加或删除',
+      capability: 'system.hosts.write', safety: '仅接受 IP 与主机名结构化记录；修改前备份并原子写入。', icon: Network,
+    },
+    {
+      id: 'cron', title: '定时任务', description: '管理 root crontab 定时任务。',
+      value: `${management.cron.length} 条任务`, detail: '按完整任务精确添加或删除',
+      capability: 'system.cron.write', safety: '仅接受单行五段式 Cron；由 kejilion.sh 安装并在失败时恢复。', icon: Timer, tone: 'violet',
+    },
+    {
+      id: 'network-interface', title: '网卡管理', description: '查看并启用或禁用指定网络接口。',
+      value: `${management.networkInterfaces.length} 个接口`, detail: management.networkInterfaces.map((item) => `${item.name} ${item.state}`).join(' · ') || '未识别网卡',
+      capability: 'system.network-interface.write', safety: '禁用承载面板连接的网卡会立即中断页面与 SSH；操作后回读状态。', icon: Network, tone: 'blue',
+    },
+    {
+      id: 'firewall', title: '防火墙', description: '管理端口、IP、PING、DDoS 与国家规则。',
+      value: management.firewall.available ? `INPUT ${management.firewall.inputPolicy || '未知'}` : 'iptables 不可用', detail: `${management.firewall.rules.length} 条规则`,
+      capability: 'system.firewall.write', safety: '动作映射到 kejilion.sh 固定协议；全关端口仍保留当前 SSH 端口。', icon: ShieldCheck, tone: 'amber',
     },
   ]
 })
@@ -512,6 +544,18 @@ function openTool(tool: ManagementTool): void {
   actionForm.port = nextSSHPort(management?.ssh.ports || [])
   actionForm.dns = (management?.dns.servers || []).filter((server) => server !== '127.0.0.53').join('\n')
   actionForm.dnsPreset = detectDNSPreset(actionForm.dns)
+  actionForm.hostsOperation = 'add'
+  actionForm.hostsEntry = ''
+  actionForm.cronOperation = 'add'
+  actionForm.cronSchedule = '0 0 * * *'
+  actionForm.cronCommand = ''
+  actionForm.cronEntry = ''
+  actionForm.networkOperation = 'up'
+  actionForm.interfaceName = management?.networkInterfaces.find((item) => item.name !== 'lo')?.name || management?.networkInterfaces[0]?.name || ''
+  actionForm.firewallOperation = 'port-open'
+  actionForm.firewallPort = 80
+  actionForm.firewallAddress = ''
+  actionForm.countryCodes = ''
   if (tool.id === 'dns' && actionForm.dnsPreset !== customPreset && hasPublicIPv6.value) applyDNSPreset()
   actionForm.timezone = management?.timezone || 'Asia/Shanghai'
   actionForm.timezonePreset = timezonePresets.some((preset) => preset.value === actionForm.timezone)
@@ -595,6 +639,14 @@ const actionInput = computed<SystemActionInput | undefined>(() => {
         action: 'dns',
         servers: parseDNSServers(actionForm.dns),
       }
+    case 'hosts':
+      return { action: 'hosts', hostsOperation: actionForm.hostsOperation, hostsEntry: actionForm.hostsEntry.trim() }
+    case 'cron':
+      return { action: 'cron', cronOperation: actionForm.cronOperation, cronEntry: actionForm.cronOperation === 'add' ? `${actionForm.cronSchedule.trim()} ${actionForm.cronCommand.trim()}` : actionForm.cronEntry }
+    case 'network-interface':
+      return { action: 'network-interface', networkOperation: actionForm.networkOperation, interfaceName: actionForm.interfaceName }
+    case 'firewall':
+      return { action: 'firewall', firewallOperation: actionForm.firewallOperation, firewallPort: actionForm.firewallPort, firewallAddress: actionForm.firewallAddress.trim(), countryCodes: actionForm.countryCodes.split(/[\s,]+/).filter(Boolean) }
     case 'timezone':
       return { action: 'timezone', timezone: actionForm.timezone.trim() }
     case 'swap':
@@ -644,6 +696,18 @@ const actionValid = computed(() => {
         input.servers.filter((server) => server.includes(':')).length <= 2 &&
         input.servers.filter((server) => !server.includes(':')).length <= 2,
       )
+    case 'hosts':
+      return Boolean(input.hostsEntry && input.hostsEntry.trim().split(/\s+/).length >= 2)
+    case 'cron':
+      return Boolean(input.cronEntry && !/[\r\n]/.test(input.cronEntry) && (input.cronOperation === 'delete' || input.cronEntry.trim().split(/\s+/).length >= 6))
+    case 'network-interface':
+      return Boolean(input.interfaceName)
+    case 'firewall':
+      if (!input.firewallOperation) return false
+      if (input.firewallOperation.startsWith('port-')) return Boolean(input.firewallPort && input.firewallPort >= 1 && input.firewallPort <= 65535)
+      if (input.firewallOperation.startsWith('ip-')) return Boolean(input.firewallAddress)
+      if (input.firewallOperation.startsWith('country-')) return Boolean(input.countryCodes?.length && input.countryCodes.length <= 20)
+      return true
     case 'timezone':
       return Boolean(input.timezone && !input.timezone.includes('..'))
     case 'swap':
@@ -1263,6 +1327,27 @@ onBeforeUnmount(() => {
               <textarea v-model.trim="actionForm.dns" rows="4" placeholder="1.1.1.1&#10;8.8.8.8"></textarea>
               <small>每行一个地址，最多 2 个 IPv4 和 2 个 IPv6；由 kejilion.sh 按宿主机 DNS 后端应用。</small>
             </label>
+          </div>
+          <div v-else-if="selectedTool.id === 'hosts'" class="form-stack compact">
+            <label class="field"><span>操作方式</span><select v-model="actionForm.hostsOperation" @change="actionForm.hostsEntry = ''"><option value="add">添加解析记录</option><option value="delete">删除解析记录</option></select></label>
+            <label v-if="actionForm.hostsOperation === 'add'" class="field"><span>解析记录</span><input v-model.trim="actionForm.hostsEntry" maxlength="4096" autocomplete="off" placeholder="192.0.2.10 example.com" /><small>IP 地址后跟 1–15 个主机名，使用空格分隔。</small></label>
+            <label v-else class="field"><span>选择要删除的记录</span><select v-model="actionForm.hostsEntry"><option value="" disabled>请选择现有记录</option><option v-for="entry in data?.management.hosts || []" :key="entry" :value="entry">{{ entry }}</option></select></label>
+          </div>
+          <div v-else-if="selectedTool.id === 'cron'" class="form-stack compact">
+            <label class="field"><span>操作方式</span><select v-model="actionForm.cronOperation" @change="actionForm.cronEntry = ''"><option value="add">添加定时任务</option><option value="delete">删除定时任务</option></select></label>
+            <template v-if="actionForm.cronOperation === 'add'"><label class="field"><span>五段式 Cron</span><input v-model.trim="actionForm.cronSchedule" maxlength="128" placeholder="0 0 * * *" /></label><label class="field"><span>执行命令</span><textarea v-model.trim="actionForm.cronCommand" rows="3" maxlength="3960" placeholder="k update"></textarea><small>命令由 root crontab 执行，禁止换行。</small></label></template>
+            <label v-else class="field"><span>选择要删除的任务</span><select v-model="actionForm.cronEntry"><option value="" disabled>请选择现有任务</option><option v-for="entry in data?.management.cron || []" :key="entry" :value="entry">{{ entry }}</option></select></label>
+          </div>
+          <div v-else-if="selectedTool.id === 'network-interface'" class="form-stack compact">
+            <label class="field"><span>网络接口</span><select v-model="actionForm.interfaceName"><option v-for="item in data?.management.networkInterfaces || []" :key="item.name" :value="item.name">{{ item.name }} · {{ item.state }} · {{ item.addresses.join('、') || item.mac || '无地址' }}</option></select></label>
+            <label class="field"><span>目标状态</span><select v-model="actionForm.networkOperation"><option value="up">启用网卡</option><option value="down">禁用网卡</option></select><small>禁用当前访问 KPanel 所使用的网卡会立即中断页面和 SSH。</small></label>
+          </div>
+          <div v-else-if="selectedTool.id === 'firewall'" class="form-stack compact">
+            <label class="field"><span>防火墙操作</span><select v-model="actionForm.firewallOperation"><option value="port-open">开放指定端口</option><option value="port-close">关闭指定端口</option><option value="all-open">开放所有端口</option><option value="all-close">关闭所有端口（保留 SSH）</option><option value="ip-allow">IP 白名单</option><option value="ip-block">IP 黑名单</option><option value="ip-remove">清除指定 IP 规则</option><option value="ping-allow">允许 PING</option><option value="ping-block">禁止 PING</option><option value="ddos-enable">启动 DDoS 防御</option><option value="ddos-disable">关闭 DDoS 防御</option><option value="country-block">阻止指定国家</option><option value="country-allow">仅允许指定国家</option><option value="country-unblock">解除国家限制</option></select></label>
+            <label v-if="actionForm.firewallOperation.startsWith('port-')" class="field"><span>端口号</span><input v-model.number="actionForm.firewallPort" type="number" min="1" max="65535" /></label>
+            <label v-else-if="actionForm.firewallOperation.startsWith('ip-')" class="field"><span>IP 地址或 CIDR</span><input v-model.trim="actionForm.firewallAddress" maxlength="64" placeholder="203.0.113.0/24" /></label>
+            <label v-else-if="actionForm.firewallOperation.startsWith('country-')" class="field"><span>国家代码</span><input v-model.trim="actionForm.countryCodes" maxlength="80" placeholder="CN US JP" /></label>
+            <div v-if="['all-close', 'country-allow'].includes(actionForm.firewallOperation)" class="inline-alert inline-alert--danger"><CircleAlert :size="17" /><span>该操作可能阻断面板及业务流量，请确认具备带外恢复通道。</span></div>
           </div>
           <div v-else-if="selectedTool.id === 'timezone'" class="form-stack compact">
             <label class="field">

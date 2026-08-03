@@ -32,6 +32,7 @@ var (
 	ErrRolledBack     = errors.New("system action failed and was rolled back")
 	ErrNeedsAttention = errors.New("system action needs manual attention")
 	dnsScriptLicense  = regexp.MustCompile(`(?m)^permission_granted="true"\r?$`)
+	cronFieldPattern  = regexp.MustCompile(`^[0-9*/?,\-]+$`)
 )
 
 const (
@@ -229,6 +230,28 @@ func (m *Manager) Capabilities() []contract.Capability {
 	_, bashErr := m.runner.LookPath("bash")
 	_, chattrErr := m.runner.LookPath("chattr")
 	_, dnsScriptErr := m.dnsScript()
+	hostsScriptErr, cronScriptErr := dnsScriptErr, dnsScriptErr
+	networkScriptErr, firewallScriptErr := dnsScriptErr, dnsScriptErr
+	if dnsScriptErr == nil {
+		script, _ := m.dnsScript()
+		content, err := os.ReadFile(script)
+		if err != nil || !trustedKejilionHostsContent(content) {
+			hostsScriptErr = errors.New("trusted kejilion.sh hosts protocol was not found")
+		}
+		if err != nil || !trustedKejilionCronContent(content) {
+			cronScriptErr = errors.New("trusted kejilion.sh cron protocol was not found")
+		}
+		if err != nil || !trustedKejilionNetworkContent(content) {
+			networkScriptErr = errors.New("trusted kejilion.sh network protocol was not found")
+		}
+		if err != nil || !trustedKejilionFirewallContent(content) {
+			firewallScriptErr = errors.New("trusted kejilion.sh firewall protocol was not found")
+		}
+	}
+	_, crontabErr := m.runner.LookPath("crontab")
+	_, ipErr := m.runner.LookPath("ip")
+	_, iptablesErr := m.runner.LookPath("iptables")
+	_, iptablesSaveErr := m.runner.LookPath("iptables-save")
 	_, f2bScriptErr := m.f2bScript()
 	_, bbrv3ScriptErr := m.bbrv3Script()
 
@@ -291,6 +314,10 @@ func (m *Manager) Capabilities() []contract.Capability {
 			"请更新本机 kejilion.sh 以启用 SSH 防御固定协议",
 		),
 		capability("system.dns.write", dnsSupported, dnsReason),
+		capability("system.hosts.write", envErr == nil && bashErr == nil && hostsScriptErr == nil, "请更新本机 kejilion.sh 以启用 KPanel hosts 非交互协议"),
+		capability("system.cron.write", envErr == nil && bashErr == nil && crontabErr == nil && cronScriptErr == nil, "请安装 crontab 并更新本机 kejilion.sh 以启用 KPanel cron 非交互协议"),
+		capability("system.network-interface.write", envErr == nil && bashErr == nil && ipErr == nil && networkScriptErr == nil, "请安装 iproute2 并更新本机 kejilion.sh 以启用 KPanel 网卡协议"),
+		capability("system.firewall.write", envErr == nil && bashErr == nil && iptablesErr == nil && iptablesSaveErr == nil && firewallScriptErr == nil, "请安装 iptables 并更新本机 kejilion.sh 以启用 KPanel 防火墙协议"),
 		capability("system.timezone.write", timedatectlErr == nil, "timedatectl 不可用"),
 		capability("system.swap.write", mkswapErr == nil && swaponErr == nil && swapoffErr == nil && fallocateErr == nil && systemdRunErr == nil && helperErr == nil, "Swap 工具、Agent 后台执行程序或 systemd 事务执行器不完整"),
 		capability("system.mirror.write", aptMirrorSupported, mirrorReason),
@@ -343,6 +370,14 @@ func (m *Manager) Execute(ctx context.Context, input contract.SystemActionReques
 		}
 	case "dns":
 		result.Changed, result.BackupPath, result.Message, err = m.setDNS(ctx, input.Servers)
+	case "hosts":
+		result.Changed, result.BackupPath, result.Message, err = m.setHosts(ctx, input.HostsOperation, input.HostsEntry)
+	case "cron":
+		result.Changed, result.Message, err = m.setCron(ctx, input.CronOperation, input.CronEntry)
+	case "network-interface":
+		result.Changed, result.Message, err = m.setNetworkInterface(ctx, input.NetworkOperation, input.InterfaceName)
+	case "firewall":
+		result.Changed, result.Message, err = m.setFirewall(ctx, input)
 	case "timezone":
 		result.Changed, result.Message, err = m.setTimezone(ctx, input.Timezone)
 	case "swap":
@@ -640,6 +675,236 @@ func (m *Manager) setDNS(ctx context.Context, servers []string) (bool, string, s
 		"%w: kejilion.sh DNS transaction did not return a result marker",
 		ErrNeedsAttention,
 	)
+}
+
+func (m *Manager) setHosts(ctx context.Context, operation, entry string) (bool, string, string, error) {
+	if operation != "add" && operation != "delete" {
+		return false, "", "", fmt.Errorf("%w: hosts operation must be add or delete", ErrInvalidInput)
+	}
+	fields := strings.Fields(entry)
+	if len(fields) < 2 || len(fields) > 16 || net.ParseIP(fields[0]) == nil {
+		return false, "", "", fmt.Errorf("%w: invalid hosts entry", ErrInvalidInput)
+	}
+	for _, hostname := range fields[1:] {
+		if len(hostname) > 253 || !validHostname(strings.ToLower(hostname)) {
+			return false, "", "", fmt.Errorf("%w: invalid hosts hostname", ErrInvalidInput)
+		}
+	}
+	entry = strings.Join(fields, " ")
+	script, err := m.dnsScript()
+	if err != nil {
+		return false, "", "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel hosts protocol", ErrUnsupported)
+	}
+	content, err := os.ReadFile(script)
+	if err != nil || !trustedKejilionHostsContent(content) {
+		return false, "", "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel hosts protocol", ErrUnsupported)
+	}
+	for _, command := range []string{"env", "bash"} {
+		if _, err := m.runner.LookPath(command); err != nil {
+			return false, "", "", fmt.Errorf("%w: %s is unavailable", ErrUnsupported, command)
+		}
+	}
+	backup, err := m.createBackup("hosts", filepath.Join(m.etcRoot, "hosts"))
+	if err != nil {
+		return false, "", "", err
+	}
+	output, err := m.runner.Run(ctx, "env", "KJ_HOSTS_NONINTERACTIVE=1", "LC_ALL=C.UTF-8", "LANG=C.UTF-8", "bash", script, "hosts", operation, entry)
+	if err != nil {
+		return false, backup, "", fmt.Errorf("%w: kejilion.sh hosts transaction: %v", ErrRolledBack, err)
+	}
+	if strings.Contains(string(output), "KPANEL_HOSTS_RESULT unchanged") {
+		return false, backup, "本地 hosts 记录没有变化", nil
+	}
+	if strings.Contains(string(output), "KPANEL_HOSTS_RESULT applied") {
+		return true, backup, "本地 hosts 已由 kejilion.sh 更新并回读验证", nil
+	}
+	return false, backup, "", fmt.Errorf("%w: kejilion.sh hosts transaction did not return a result marker", ErrNeedsAttention)
+}
+
+func (m *Manager) setCron(ctx context.Context, operation, entry string) (bool, string, error) {
+	if operation != "add" && operation != "delete" {
+		return false, "", fmt.Errorf("%w: cron operation must be add or delete", ErrInvalidInput)
+	}
+	entry = strings.TrimSpace(entry)
+	if entry == "" || len(entry) > 4096 || strings.ContainsAny(entry, "\x00\r\n") {
+		return false, "", fmt.Errorf("%w: invalid cron entry", ErrInvalidInput)
+	}
+	if operation == "add" {
+		fields := strings.Fields(entry)
+		if len(fields) < 6 {
+			return false, "", fmt.Errorf("%w: cron entry requires five schedule fields and a command", ErrInvalidInput)
+		}
+		for _, field := range fields[:5] {
+			if !cronFieldPattern.MatchString(field) {
+				return false, "", fmt.Errorf("%w: invalid cron schedule field", ErrInvalidInput)
+			}
+		}
+	}
+	script, err := m.dnsScript()
+	if err != nil {
+		return false, "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel cron protocol", ErrUnsupported)
+	}
+	content, err := os.ReadFile(script)
+	if err != nil || !trustedKejilionCronContent(content) {
+		return false, "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel cron protocol", ErrUnsupported)
+	}
+	for _, command := range []string{"env", "bash", "crontab"} {
+		if _, err := m.runner.LookPath(command); err != nil {
+			return false, "", fmt.Errorf("%w: %s is unavailable", ErrUnsupported, command)
+		}
+	}
+	output, err := m.runner.Run(ctx, "env", "KJ_CRON_NONINTERACTIVE=1", "LC_ALL=C.UTF-8", "LANG=C.UTF-8", "bash", script, "cron", operation, entry)
+	if err != nil {
+		return false, "", fmt.Errorf("%w: kejilion.sh cron transaction: %v", ErrRolledBack, err)
+	}
+	if strings.Contains(string(output), "KPANEL_CRON_RESULT unchanged") {
+		return false, "定时任务没有变化", nil
+	}
+	if strings.Contains(string(output), "KPANEL_CRON_RESULT applied") {
+		return true, "定时任务已由 kejilion.sh 更新并验证", nil
+	}
+	return false, "", fmt.Errorf("%w: kejilion.sh cron transaction did not return a result marker", ErrNeedsAttention)
+}
+
+func (m *Manager) NetworkInterfaces(ctx context.Context) []contract.NetworkInterfaceSummary {
+	directory := filepath.Join(m.sysRoot, "class", "net")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil
+	}
+	items := make([]contract.NetworkInterfaceSummary, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		item := contract.NetworkInterfaceSummary{Name: name, State: strings.TrimSpace(readLimited(filepath.Join(directory, name, "operstate"))), MAC: strings.TrimSpace(readLimited(filepath.Join(directory, name, "address"))), Addresses: []string{}}
+		if output, runErr := m.runner.Run(ctx, "ip", "-o", "addr", "show", "dev", name); runErr == nil {
+			for _, line := range strings.Split(string(output), "\n") {
+				fields := strings.Fields(line)
+				for index, field := range fields {
+					if (field == "inet" || field == "inet6") && index+1 < len(fields) {
+						item.Addresses = append(item.Addresses, fields[index+1])
+						break
+					}
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	slices.SortFunc(items, func(a, b contract.NetworkInterfaceSummary) int { return strings.Compare(a.Name, b.Name) })
+	return items
+}
+
+func (m *Manager) FirewallSummary(ctx context.Context) contract.FirewallSummary {
+	output, err := m.runner.Run(ctx, "iptables", "-S", "INPUT")
+	if err != nil {
+		return contract.FirewallSummary{Rules: []string{}}
+	}
+	summary := contract.FirewallSummary{Available: true, Rules: []string{}}
+	var pingBlocked, ddosTCPDrop, ddosUDPDrop bool
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "-P INPUT ") {
+			summary.InputPolicy = strings.TrimSpace(strings.TrimPrefix(line, "-P INPUT "))
+			continue
+		}
+		if strings.Contains(line, "--icmp-type echo-request") && strings.HasSuffix(line, "-j ACCEPT") {
+			summary.PingAllowed = true
+		}
+		if strings.Contains(line, "--icmp-type echo-request") && strings.HasSuffix(line, "-j DROP") {
+			pingBlocked = true
+		}
+		if strings.Contains(line, "-p tcp") && strings.Contains(line, "--tcp-flags") && strings.HasSuffix(line, "-j DROP") {
+			ddosTCPDrop = true
+		}
+		if strings.Contains(line, "-p udp") && strings.HasSuffix(line, "-j DROP") {
+			ddosUDPDrop = true
+		}
+		if strings.Contains(line, "connlimit") || strings.Contains(line, "hashlimit") {
+			summary.DDOSDefense = true
+		}
+		summary.Rules = append(summary.Rules, line)
+		if len(summary.Rules) == 100 {
+			break
+		}
+	}
+	if !summary.PingAllowed && !pingBlocked && summary.InputPolicy == "ACCEPT" {
+		summary.PingAllowed = true
+	}
+	summary.DDOSDefense = summary.DDOSDefense || (ddosTCPDrop && ddosUDPDrop)
+	return summary
+}
+
+func (m *Manager) setNetworkInterface(ctx context.Context, operation, name string) (bool, string, error) {
+	if (operation != "up" && operation != "down") || !regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`).MatchString(name) {
+		return false, "", fmt.Errorf("%w: invalid network interface action", ErrInvalidInput)
+	}
+	if _, err := os.Stat(filepath.Join(m.sysRoot, "class", "net", name)); err != nil {
+		return false, "", fmt.Errorf("%w: network interface does not exist", ErrInvalidInput)
+	}
+	return m.runTrustedNetworkScript(ctx, "network", operation, name, "KPANEL_NETWORK_RESULT", "网卡状态")
+}
+
+func (m *Manager) setFirewall(ctx context.Context, input contract.SystemActionRequest) (bool, string, error) {
+	allowed := map[string]bool{"port-open": true, "port-close": true, "all-open": true, "all-close": true, "ip-allow": true, "ip-block": true, "ip-remove": true, "ping-allow": true, "ping-block": true, "ddos-enable": true, "ddos-disable": true, "country-block": true, "country-allow": true, "country-unblock": true}
+	if !allowed[input.FirewallOperation] {
+		return false, "", fmt.Errorf("%w: invalid firewall operation", ErrInvalidInput)
+	}
+	arguments := []string{"firewall", input.FirewallOperation}
+	if strings.HasPrefix(input.FirewallOperation, "port-") {
+		if input.FirewallPort == 0 {
+			return false, "", fmt.Errorf("%w: firewall port is required", ErrInvalidInput)
+		}
+		arguments = append(arguments, strconv.Itoa(int(input.FirewallPort)))
+	} else if strings.HasPrefix(input.FirewallOperation, "ip-") {
+		if _, _, err := net.ParseCIDR(input.FirewallAddress); err != nil && net.ParseIP(input.FirewallAddress) == nil {
+			return false, "", fmt.Errorf("%w: firewall address is invalid", ErrInvalidInput)
+		}
+		arguments = append(arguments, input.FirewallAddress)
+	} else if strings.HasPrefix(input.FirewallOperation, "country-") {
+		if len(input.CountryCodes) < 1 || len(input.CountryCodes) > 20 {
+			return false, "", fmt.Errorf("%w: one to twenty country codes are required", ErrInvalidInput)
+		}
+		for _, code := range input.CountryCodes {
+			code = strings.ToUpper(strings.TrimSpace(code))
+			if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+				return false, "", fmt.Errorf("%w: invalid country code", ErrInvalidInput)
+			}
+			arguments = append(arguments, code)
+		}
+	}
+	return m.runTrustedNetworkScript(ctx, arguments[0], arguments[1], strings.Join(arguments[2:], " "), "KPANEL_FIREWALL_RESULT", "防火墙")
+}
+
+func (m *Manager) runTrustedNetworkScript(ctx context.Context, command, operation, value, marker, label string) (bool, string, error) {
+	script, err := m.dnsScript()
+	if err != nil {
+		return false, "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel protocol", ErrUnsupported)
+	}
+	content, err := os.ReadFile(script)
+	if err != nil || (command == "network" && !trustedKejilionNetworkContent(content)) || (command == "firewall" && !trustedKejilionFirewallContent(content)) {
+		return false, "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel protocol", ErrUnsupported)
+	}
+	environment := "KJ_NETWORK_NONINTERACTIVE=1"
+	if command == "firewall" {
+		environment = "KJ_FIREWALL_NONINTERACTIVE=1"
+	}
+	arguments := []string{environment, "LC_ALL=C.UTF-8", "LANG=C.UTF-8", "bash", script, command, operation}
+	if value != "" {
+		arguments = append(arguments, strings.Fields(value)...)
+	}
+	output, err := m.runner.Run(ctx, "env", arguments...)
+	if err != nil {
+		return false, "", fmt.Errorf("%w: kejilion.sh %s transaction: %v", ErrRolledBack, command, err)
+	}
+	if strings.Contains(string(output), marker+" unchanged") {
+		return false, label + "没有变化", nil
+	}
+	if strings.Contains(string(output), marker+" applied") {
+		return true, label + "已由 kejilion.sh 更新并验证", nil
+	}
+	return false, "", fmt.Errorf("%w: kejilion.sh transaction did not return a result marker", ErrNeedsAttention)
 }
 
 func (m *Manager) setTimezone(ctx context.Context, zone string) (bool, string, error) {
@@ -997,6 +1262,23 @@ func trustedKejilionDNSContent(content []byte) bool {
 		strings.Contains(value, "KJ_DNS_NONINTERACTIVE") &&
 		strings.Contains(value, "kpanel_protocol_active") &&
 		strings.Contains(value, "kpanel_set_dns_noninteractive")
+}
+
+func trustedKejilionHostsContent(content []byte) bool {
+	value := string(content)
+	return dnsScriptLicense.Match(content) && strings.Contains(value, "KJ_HOSTS_NONINTERACTIVE") && strings.Contains(value, "kpanel_hosts_noninteractive")
+}
+func trustedKejilionCronContent(content []byte) bool {
+	value := string(content)
+	return dnsScriptLicense.Match(content) && strings.Contains(value, "KJ_CRON_NONINTERACTIVE") && strings.Contains(value, "kpanel_cron_noninteractive")
+}
+func trustedKejilionNetworkContent(content []byte) bool {
+	value := string(content)
+	return dnsScriptLicense.Match(content) && strings.Contains(value, "KJ_NETWORK_NONINTERACTIVE") && strings.Contains(value, "kpanel_network_noninteractive")
+}
+func trustedKejilionFirewallContent(content []byte) bool {
+	value := string(content)
+	return dnsScriptLicense.Match(content) && strings.Contains(value, "KJ_FIREWALL_NONINTERACTIVE") && strings.Contains(value, "kpanel_firewall_noninteractive")
 }
 
 func (m *Manager) aptSourceFiles() []string {

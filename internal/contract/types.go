@@ -71,6 +71,10 @@ type SystemSummary struct {
 type SystemManagementSummary struct {
 	SSH                SSHConfiguration          `json:"ssh"`
 	DNS                DNSConfiguration          `json:"dns"`
+	Hosts              []string                  `json:"hosts"`
+	Cron               []string                  `json:"cron"`
+	NetworkInterfaces  []NetworkInterfaceSummary `json:"networkInterfaces"`
+	Firewall           FirewallSummary           `json:"firewall"`
 	Timezone           string                    `json:"timezone,omitempty"`
 	Swap               SwapConfiguration         `json:"swap"`
 	PackageManager     string                    `json:"packageManager,omitempty"`
@@ -80,6 +84,21 @@ type SystemManagementSummary struct {
 	KernelOptimization KernelOptimizationSummary `json:"kernelOptimization"`
 	BBR                BBRSummary                `json:"bbr"`
 	BBRv3              BBRv3Summary              `json:"bbrv3"`
+}
+
+type NetworkInterfaceSummary struct {
+	Name      string   `json:"name"`
+	State     string   `json:"state"`
+	MAC       string   `json:"mac,omitempty"`
+	Addresses []string `json:"addresses"`
+}
+
+type FirewallSummary struct {
+	Available   bool     `json:"available"`
+	InputPolicy string   `json:"inputPolicy,omitempty"`
+	Rules       []string `json:"rules"`
+	PingAllowed bool     `json:"pingAllowed"`
+	DDOSDefense bool     `json:"ddosDefense"`
 }
 
 type SystemMaintenanceSummary struct {
@@ -170,6 +189,16 @@ type SystemActionRequest struct {
 	Hostname          string   `json:"hostname,omitempty"`
 	Port              uint16   `json:"port,omitempty"`
 	Servers           []string `json:"servers,omitempty"`
+	HostsOperation    string   `json:"hostsOperation,omitempty"`
+	HostsEntry        string   `json:"hostsEntry,omitempty"`
+	CronOperation     string   `json:"cronOperation,omitempty"`
+	CronEntry         string   `json:"cronEntry,omitempty"`
+	NetworkOperation  string   `json:"networkOperation,omitempty"`
+	InterfaceName     string   `json:"interfaceName,omitempty"`
+	FirewallOperation string   `json:"firewallOperation,omitempty"`
+	FirewallPort      uint16   `json:"firewallPort,omitempty"`
+	FirewallAddress   string   `json:"firewallAddress,omitempty"`
+	CountryCodes      []string `json:"countryCodes,omitempty"`
 	Timezone          string   `json:"timezone,omitempty"`
 	SwapSizeMiB       int      `json:"swapSizeMiB,omitempty"`
 	MirrorPreset      string   `json:"mirrorPreset,omitempty"`

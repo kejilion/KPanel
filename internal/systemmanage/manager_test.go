@@ -216,6 +216,48 @@ func TestSetDNSUsesTrustedKejilionProtocolAndCreatesBackup(t *testing.T) {
 	}
 }
 
+func TestNetworkAndFirewallUseTrustedKejilionProtocols(t *testing.T) {
+	runner := &fakeRunner{run: func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		command := strings.Join(append([]string{name}, arguments...), " ")
+		if strings.Contains(command, " network ") {
+			return []byte("KPANEL_NETWORK_RESULT applied\n"), nil
+		}
+		return []byte("KPANEL_FIREWALL_RESULT applied\n"), nil
+	}}
+	manager, _, _, _ := testManager(t, runner)
+	script := filepath.Join(t.TempDir(), "kejilion.sh")
+	mustWrite(t, script, "permission_granted=\"true\"\nKJ_NETWORK_NONINTERACTIVE=1\nKJ_FIREWALL_NONINTERACTIVE=1\nkpanel_network_noninteractive() { :; }\nkpanel_firewall_noninteractive() { :; }\n")
+	manager.dnsScript = func() (string, error) { return script, nil }
+	interfacePath := filepath.Join(manager.sysRoot, "class", "net", "eth0")
+	if err := os.MkdirAll(interfacePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _, err := manager.setNetworkInterface(context.Background(), "up", "eth0"); err != nil || !changed {
+		t.Fatalf("network action: changed=%v err=%v", changed, err)
+	}
+	input := contract.SystemActionRequest{FirewallOperation: "port-open", FirewallPort: 443}
+	if changed, _, err := manager.setFirewall(context.Background(), input); err != nil || !changed {
+		t.Fatalf("firewall action: changed=%v err=%v", changed, err)
+	}
+	commands := strings.Join(runner.commands, "\n")
+	for _, expected := range []string{"KJ_NETWORK_NONINTERACTIVE=1", " network up eth0", "KJ_FIREWALL_NONINTERACTIVE=1", " firewall port-open 443"} {
+		if !strings.Contains(commands, expected) {
+			t.Fatalf("command missing %q:\n%s", expected, commands)
+		}
+	}
+}
+
+func TestFirewallSummaryParsesActiveRules(t *testing.T) {
+	runner := &fakeRunner{run: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("-P INPUT DROP\n-A INPUT -p icmp --icmp-type echo-request -j ACCEPT\n-A INPUT -p tcp -m connlimit --connlimit-above 100 -j DROP\n"), nil
+	}}
+	manager, _, _, _ := testManager(t, runner)
+	summary := manager.FirewallSummary(context.Background())
+	if !summary.Available || summary.InputPolicy != "DROP" || !summary.PingAllowed || !summary.DDOSDefense || len(summary.Rules) != 2 {
+		t.Fatalf("unexpected firewall summary: %#v", summary)
+	}
+}
+
 func TestSetDNSReportsUnchangedScriptResult(t *testing.T) {
 	runner := &fakeRunner{
 		run: func(context.Context, string, ...string) ([]byte, error) {

@@ -128,6 +128,31 @@ func TestCollectRuntimeSkipsNetworkIdentityAndManagementProbes(t *testing.T) {
 	}
 }
 
+func TestReadHostsAndCronConfiguration(t *testing.T) {
+	root := t.TempDir()
+	etcRoot := filepath.Join(root, "etc")
+	varRoot := filepath.Join(root, "var")
+	if err := os.MkdirAll(filepath.Join(varRoot, "spool", "cron", "crontabs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(etcRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(etcRoot, "hosts"), []byte("127.0.0.1 localhost\ninvalid ignored\n192.0.2.10 example.com # note\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(varRoot, "spool", "cron", "crontabs", "root"), []byte("# managed\n0 2 * * * k update\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	collector := &Collector{EtcRoot: etcRoot, VarRoot: varRoot}
+	if got := collector.readHostsConfiguration(); len(got) != 2 || got[1] != "192.0.2.10 example.com" {
+		t.Fatalf("unexpected hosts: %#v", got)
+	}
+	if got := collector.readCronConfiguration(); len(got) != 1 || got[0] != "0 2 * * * k update" {
+		t.Fatalf("unexpected cron: %#v", got)
+	}
+}
+
 func TestReadSwapConfigurationSeparatesKejilionLegacyAndExternalSwap(t *testing.T) {
 	root := t.TempDir()
 	procRoot := filepath.Join(root, "proc")

@@ -275,6 +275,10 @@ export interface SystemManagement {
     servers: string[]
     manager: string
   }
+  hosts: string[]
+  cron: string[]
+  networkInterfaces: Array<{ name: string; state: string; mac?: string; addresses: string[] }>
+  firewall: { available: boolean; inputPolicy?: string; rules: string[]; pingAllowed: boolean; ddosDefense: boolean }
   timezone?: string
   swap: {
     totalBytes: number
@@ -387,6 +391,10 @@ export interface SystemActionInput {
     | 'ssh-port'
     | 'ssh-defense'
     | 'dns'
+    | 'hosts'
+    | 'cron'
+    | 'network-interface'
+    | 'firewall'
     | 'timezone'
     | 'swap'
     | 'mirror'
@@ -400,6 +408,20 @@ export interface SystemActionInput {
   hostname?: string
   port?: number
   servers?: string[]
+  hostsOperation?: 'add' | 'delete'
+  hostsEntry?: string
+  cronOperation?: 'add' | 'delete'
+  cronEntry?: string
+  networkOperation?: 'up' | 'down'
+  interfaceName?: string
+  firewallOperation?:
+    | 'port-open' | 'port-close' | 'all-open' | 'all-close'
+    | 'ip-allow' | 'ip-block' | 'ip-remove'
+    | 'ping-allow' | 'ping-block' | 'ddos-enable' | 'ddos-disable'
+    | 'country-block' | 'country-allow' | 'country-unblock'
+  firewallPort?: number
+  firewallAddress?: string
+  countryCodes?: string[]
   timezone?: string
   swapSizeMiB?: number
   mirrorPreset?: 'cn-default' | 'cn-edu' | 'abroad' | 'smart'

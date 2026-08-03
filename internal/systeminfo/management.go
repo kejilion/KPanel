@@ -3,6 +3,7 @@ package systeminfo
 import (
 	"bufio"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,12 +19,52 @@ const maxConfigurationFileBytes = 1 << 20
 func (c *Collector) readManagement(out *contract.SystemManagementSummary) {
 	out.SSH = c.readSSHConfiguration()
 	out.DNS = c.readDNSConfiguration()
+	out.Hosts = c.readHostsConfiguration()
+	out.Cron = c.readCronConfiguration()
 	out.Timezone = c.readTimezone()
 	out.Swap = c.readSwapConfiguration()
 	out.PackageManager, out.PackageSources = c.readPackageSources()
 	out.IPPreference = c.readIPPreference()
 	out.KernelOptimization = c.readKernelOptimization()
 	out.BBR = c.readBBR()
+}
+
+func (c *Collector) readCronConfiguration() []string {
+	paths := []string{filepath.Join(c.VarRoot, "spool", "cron", "crontabs", "root"), filepath.Join(c.VarRoot, "spool", "cron", "root")}
+	for _, path := range paths {
+		data := readFileLimited(path)
+		if data == "" {
+			continue
+		}
+		var entries []string
+		for _, line := range strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.Contains(line, "\x00") {
+				continue
+			}
+			entries = append(entries, line)
+			if len(entries) == 100 {
+				break
+			}
+		}
+		return entries
+	}
+	return nil
+}
+
+func (c *Collector) readHostsConfiguration() []string {
+	var entries []string
+	for _, line := range configurationLines(readFileLimited(filepath.Join(c.EtcRoot, "hosts"))) {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || net.ParseIP(fields[0]) == nil {
+			continue
+		}
+		entries = append(entries, strings.Join(fields, " "))
+		if len(entries) == 100 {
+			break
+		}
+	}
+	return entries
 }
 
 func (c *Collector) readSSHConfiguration() contract.SSHConfiguration {
