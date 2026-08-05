@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from '@/i18n'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog(() => import('@/i18n/pages/DiagnosticsView/en-US').then((module) => module.default))
@@ -11,6 +12,8 @@ import {
   Globe2,
   History,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
   Network,
   Play,
   RefreshCw,
@@ -40,7 +43,9 @@ const loading = ref(true)
 const refreshing = ref(false)
 const starting = ref(false)
 const error = ref('')
+const fullscreen = ref(false)
 const toast = useToast()
+const { t } = useI18n()
 let controller: AbortController | undefined
 let pollController: AbortController | undefined
 let pollTimer: number | undefined
@@ -205,10 +210,24 @@ function selectCheck(check: DiagnosticCheck): void {
   else if (!hasActiveJob.value) activeJob.value = undefined
 }
 
-onMounted(() => void load())
+function setFullscreen(enabled: boolean): void {
+  fullscreen.value = enabled
+  document.body.classList.toggle('diagnostic-fullscreen-open', enabled)
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && fullscreen.value) setFullscreen(false)
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+  void load()
+})
 onBeforeUnmount(() => {
   controller?.abort()
   stopPolling()
+  window.removeEventListener('keydown', handleKeydown)
+  document.body.classList.remove('diagnostic-fullscreen-open')
 })
 </script>
 
@@ -230,7 +249,7 @@ onBeforeUnmount(() => {
     <ErrorState v-else-if="error" title="体检功能暂不可用" :message="error" @retry="load()" />
 
     <template v-else-if="catalog">
-      <section class="diagnostic-workbench">
+      <section class="diagnostic-workbench" :class="{ 'is-fullscreen': fullscreen }">
         <aside class="diagnostic-command-panel">
           <header class="diagnostic-command-panel__header">
             <span><ShieldCheck :size="18" /></span>
@@ -279,15 +298,27 @@ onBeforeUnmount(() => {
               <h2>{{ selectedCheck.name }}</h2>
               <p>{{ selectedCheck.description }}</p>
             </div>
-            <button
-              v-if="selectedCheck"
-              class="button button--primary"
-              type="button"
-              :disabled="hasActiveJob || starting"
-              @click="pendingCheck = selectedCheck"
-            >
-              <Play :size="16" /> {{ hasActiveJob ? '任务运行中' : '开始体检' }}
-            </button>
+            <div class="diagnostic-result__actions">
+              <button
+                v-if="selectedCheck"
+                class="button button--primary"
+                type="button"
+                :disabled="hasActiveJob || starting"
+                @click="pendingCheck = selectedCheck"
+              >
+                <Play :size="16" /> {{ hasActiveJob ? '任务运行中' : '开始体检' }}
+              </button>
+              <button
+                class="diagnostic-fullscreen-toggle"
+                type="button"
+                :title="fullscreen ? t('common.exitFullscreen') : t('common.enterFullscreen')"
+                :aria-label="fullscreen ? t('common.exitFullscreen') : t('common.enterFullscreen')"
+                @click="setFullscreen(!fullscreen)"
+              >
+                <Minimize2 v-if="fullscreen" :size="17" />
+                <Maximize2 v-else :size="17" />
+              </button>
+            </div>
           </header>
           <div v-if="hasActiveJob" class="diagnostic-progress" aria-label="任务进度">
             <span :style="{ width: `${activeJob?.progress || 0}%` }" />
@@ -466,6 +497,32 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-sm);
 }
 
+.diagnostic-workbench.is-fullscreen {
+  position: fixed;
+  z-index: 5000;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+}
+
+.diagnostic-workbench.is-fullscreen .diagnostic-command-panel {
+  display: none;
+}
+
+.diagnostic-workbench.is-fullscreen .diagnostic-log,
+.diagnostic-workbench.is-fullscreen .diagnostic-interactive-terminal :deep(.interactive-terminal__screen) {
+  min-height: 0;
+}
+
+:global(body.diagnostic-fullscreen-open) {
+  overflow: hidden;
+}
+
 .diagnostic-command-panel {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -590,9 +647,30 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
 }
 
-.diagnostic-result__header > .button {
+.diagnostic-result__actions {
+  display: flex;
   flex: 0 0 auto;
   align-self: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.diagnostic-fullscreen-toggle {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--terminal-shell-border, #29383a);
+  border-radius: 8px;
+  color: var(--terminal-shell-muted, #8a9695);
+  background: var(--terminal-shell-panel, #111a1d);
+  cursor: pointer;
+}
+
+.diagnostic-fullscreen-toggle:hover {
+  color: var(--terminal-shell-text, #d8dddc);
+  border-color: var(--brand);
 }
 
 .diagnostic-progress {
@@ -779,8 +857,13 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .diagnostic-result__header > .button {
+  .diagnostic-result__actions,
+  .diagnostic-result__actions > .button {
     width: 100%;
+  }
+
+  .diagnostic-result__actions {
+    align-self: stretch;
   }
 }
 </style>
