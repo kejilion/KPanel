@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => {
   return {
     MockApiError,
     login: vi.fn(),
+    refresh: vi.fn(),
     replace: vi.fn(),
     prefetch: vi.fn(),
     route: { query: {} as Record<string, unknown> },
     sessionState: {
       loading: false,
+      setupRequired: false,
       authenticated: false,
       error: '',
     },
@@ -40,7 +42,7 @@ vi.mock('@/stores/session', () => ({
   useSession: () => ({
     state: mocks.sessionState,
     login: mocks.login,
-    refresh: vi.fn(),
+    refresh: mocks.refresh,
   }),
 }))
 
@@ -52,6 +54,7 @@ interface LoginBindings {
   busy: ComputedRef<boolean>
   submitLabel: ComputedRef<string>
   submit: () => Promise<void>
+  retryConnection: () => Promise<void>
 }
 
 function setupView(): LoginBindings {
@@ -72,8 +75,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.route.query = {}
   mocks.sessionState.loading = false
+  mocks.sessionState.setupRequired = false
   mocks.sessionState.authenticated = false
   mocks.sessionState.error = ''
+  mocks.refresh.mockResolvedValue(undefined)
   mocks.login.mockImplementation(async () => {
     mocks.sessionState.authenticated = true
   })
@@ -135,5 +140,17 @@ describe('LoginView console transition', () => {
       password: 'StrongPassword123',
       totpCode: 'ABCDE-FGHIJ-KLMNO',
     })
+  })
+
+  it('navigates to setup when a connection retry finds an uninitialized panel', async () => {
+    mocks.refresh.mockImplementation(async () => {
+      mocks.sessionState.setupRequired = true
+    })
+    const view = setupView()
+
+    await view.retryConnection()
+
+    expect(mocks.refresh).toHaveBeenCalledWith(true)
+    expect(mocks.replace).toHaveBeenCalledWith('/setup')
   })
 })

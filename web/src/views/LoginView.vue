@@ -77,6 +77,16 @@ async function submit(): Promise<void> {
   }
 }
 
+async function retryConnection(): Promise<void> {
+  await session.refresh(true)
+  if (session.state.error) return
+  if (session.state.setupRequired) {
+    await router.replace('/setup')
+    return
+  }
+  if (session.state.authenticated) await router.replace(destination.value)
+}
+
 onMounted(() => {
   // Warm only the destination view. This overlaps the small chunk download
   // with credential entry without loading protected data or the full console.
@@ -97,7 +107,7 @@ onMounted(() => {
 
     <div v-if="session.state.error" class="inline-alert inline-alert--danger" role="alert">
       {{ localizeError(session.state.error, 'error.authenticationRequired') }}
-      <button type="button" @click="session.refresh(true)">{{ i18n.t('common.retryConnection') }}</button>
+      <button type="button" @click="retryConnection">{{ i18n.t('common.retryConnection') }}</button>
     </div>
     <div v-if="error" class="inline-alert inline-alert--danger" role="alert">{{ error }}</div>
 
