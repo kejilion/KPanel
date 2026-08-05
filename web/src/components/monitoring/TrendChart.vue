@@ -267,7 +267,10 @@ onBeforeUnmount(() => observer?.disconnect())
       <div
         v-if="hoveredPoints.length"
         class="trend-chart__tooltip"
-        :class="{ 'is-left': tooltipOnLeft }"
+        :class="{
+          'is-left': tooltipOnLeft,
+          'is-dense': hoveredPoints.length > 6,
+        }"
         :style="tooltipStyle"
       >
         <time>{{ timeLabel(tooltipTime, true) }}</time>
@@ -312,9 +315,18 @@ onBeforeUnmount(() => observer?.disconnect())
   pointer-events: none; transform: translateX(10px);
 }
 .trend-chart__tooltip.is-left { transform: translateX(calc(-100% - 10px)); }
+.trend-chart__tooltip.is-dense {
+  width: min(360px, calc(100% - 20px)); grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.trend-chart__tooltip.is-dense time { grid-column: 1 / -1; }
+.trend-chart__tooltip.is-dense span { min-width: 0; white-space: nowrap; }
 .trend-chart__tooltip time { color: var(--muted); font-size: .72rem; }
 .trend-chart__tooltip span { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; font-size: .76rem; }
 .trend-chart__tooltip strong { color: var(--text); }
 .trend-chart__axis { display: flex; justify-content: space-between; padding-left: 64px; color: var(--muted); font-size: .72rem; }
 .trend-chart__empty { min-height: 212px; display: grid; place-items: center; color: var(--muted); font-size: .86rem; }
+@media (max-width: 560px) {
+  .trend-chart__tooltip.is-dense:not(.is-left) { left: 10px !important; transform: none; }
+  .trend-chart__tooltip.is-dense.is-left { right: 10px; left: auto !important; transform: none; }
+}
 </style>
