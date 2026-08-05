@@ -30,6 +30,7 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { containWheelScroll } from '@/lib/scroll'
 import { useToast } from '@/stores/toast'
 import type { DiagnosticCatalog, DiagnosticCheck, DiagnosticJob } from '@/types/api'
 
@@ -210,6 +211,10 @@ function selectCheck(check: DiagnosticCheck): void {
   else if (!hasActiveJob.value) activeJob.value = undefined
 }
 
+function containLogWheel(event: WheelEvent): void {
+  containWheelScroll(event, event.currentTarget as HTMLElement)
+}
+
 function setFullscreen(enabled: boolean): void {
   fullscreen.value = enabled
   document.body.classList.toggle('diagnostic-fullscreen-open', enabled)
@@ -334,8 +339,8 @@ onBeforeUnmount(() => {
             :input-open="activeJob.inputOpen"
             kind="diagnostic"
           />
-          <p v-else-if="!activeJob" class="diagnostic-log diagnostic-log-empty">选择左侧体检命令，点击“开始体检”后在这里查看实时输出。</p>
-          <pre v-else class="diagnostic-log" aria-live="polite" data-i18n-ignore>{{ activeLog }}</pre>
+          <p v-else-if="!activeJob" class="diagnostic-log diagnostic-log-empty" @wheel="containLogWheel">选择左侧体检命令，点击“开始体检”后在这里查看实时输出。</p>
+          <pre v-else class="diagnostic-log" aria-live="polite" data-i18n-ignore @wheel="containLogWheel">{{ activeLog }}</pre>
           <footer v-if="activeJob">
             <span><Activity :size="14" /> {{ activeJob.message }}</span>
             <span><Timer :size="14" /> {{ formatDateTime(activeJob.startedAt || activeJob.createdAt) }}</span>
@@ -722,6 +727,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   max-height: none;
   overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 18px 20px;
   background: var(--terminal-shell-background, #0b1214);

@@ -21,6 +21,13 @@ describe('multi-host terminal workspace layout', () => {
     )
   })
 
+  it('contains wheel scrolling inside the host terminal viewport', () => {
+    expect(hostTerminalSource).toContain('@wheel="containTerminalWheel"')
+    expect(hostTerminalSource).toMatch(
+      /\.host-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*overflow-y:scroll !important;[^}]*overscroll-behavior:contain;/,
+    )
+  })
+
   it('merges connection status into the session tabs without a duplicate terminal header', () => {
     expect(terminalSource).toContain('class="terminal-tab__status"')
     expect(terminalSource).toContain('@state-change="item.state = $event"')

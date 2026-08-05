@@ -20,4 +20,11 @@ describe('diagnostics workspace layout', () => {
       /\.diagnostic-workbench\.is-fullscreen \.diagnostic-log,[\s\S]*?min-height: 0;/,
     )
   })
+
+  it('contains scroll chaining inside the diagnostic log', () => {
+    expect(diagnosticsSource).toContain('@wheel="containLogWheel"')
+    expect(diagnosticsSource).toMatch(
+      /\.diagnostic-log\s*\{[^}]*overflow: auto;[^}]*overscroll-behavior: contain;/,
+    )
+  })
 })

@@ -8,6 +8,7 @@ import { ArrowDownToLine } from '@lucide/vue'
 import { api } from '@/lib/api'
 import { useI18n } from '@/i18n'
 import { openTerminalURL } from '@/lib/terminalLinks'
+import { containWheelScroll } from '@/lib/scroll'
 import {
   takeTerminalInputChunk,
   terminalInputShouldFlushImmediately,
@@ -71,6 +72,10 @@ function writeTerminalOutput(data: string | Uint8Array): void {
 function scrollToBottom(): void {
   terminal?.scrollToBottom()
   terminal?.focus()
+}
+
+function containTerminalWheel(event: WheelEvent): void {
+  containWheelScroll(event, host.value?.querySelector<HTMLElement>('.xterm-viewport'))
 }
 
 async function flushInput(): Promise<void> {
@@ -303,7 +308,7 @@ onBeforeUnmount(() => {
         <button type="button" :title="t('terminal.scrollToBottom')" :aria-label="t('terminal.scrollToBottom')" @click="scrollToBottom"><ArrowDownToLine :size="17" /></button>
       </div>
     </header>
-    <div ref="host" class="interactive-terminal__screen" @click="terminal?.focus()" />
+    <div ref="host" class="interactive-terminal__screen" @click="terminal?.focus()" @wheel="containTerminalWheel" />
     <form
       v-if="terminalInputOpen"
       class="interactive-terminal__composer"
@@ -406,6 +411,7 @@ onBeforeUnmount(() => {
   height: min(54vh, 520px);
   min-height: 320px;
   overflow: hidden;
+  overscroll-behavior: contain;
   padding: 10px;
 }
 
@@ -415,6 +421,7 @@ onBeforeUnmount(() => {
 
 .interactive-terminal__screen :deep(.xterm-viewport) {
   overflow-y: scroll !important;
+  overscroll-behavior: contain;
 }
 
 .interactive-terminal__actions button {

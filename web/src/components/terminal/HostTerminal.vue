@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css'
 import { ArrowDownToLine } from '@lucide/vue'
 import { api, ApiError } from '@/lib/api'
 import { openTerminalURL } from '@/lib/terminalLinks'
+import { containWheelScroll } from '@/lib/scroll'
 import { takeTerminalInputChunk, terminalInputShouldFlushImmediately, terminalLineSubmission } from '@/lib/terminalInput'
 import { useI18n } from '@/i18n'
 
@@ -78,6 +79,10 @@ function writeTerminalOutput(data: string | Uint8Array): void {
 function scrollToBottom(): void {
   terminal?.scrollToBottom()
   terminal?.focus()
+}
+
+function containTerminalWheel(event: WheelEvent): void {
+  containWheelScroll(event, host.value?.querySelector<HTMLElement>('.xterm-viewport'))
 }
 
 async function flushInput(): Promise<void> {
@@ -207,7 +212,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="host-terminal">
-    <div ref="host" class="host-terminal__screen terminal-screen" @click="terminal?.focus()">
+    <div ref="host" class="host-terminal__screen terminal-screen" @click="terminal?.focus()" @wheel="containTerminalWheel">
       <button class="host-terminal__scroll-bottom" type="button" :title="t('terminal.scrollToBottom')" :aria-label="t('terminal.scrollToBottom')" @click.stop="scrollToBottom"><ArrowDownToLine :size="17" /></button>
     </div>
     <form class="host-terminal__composer" @submit.prevent="submitPendingLine">
@@ -219,11 +224,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .host-terminal { display:grid; height:100%; grid-template-rows:minmax(0,1fr) auto; min-height:0; overflow:hidden; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--terminal-shell-radius,12px); background:var(--terminal-shell-background,#0b1214); box-shadow:var(--terminal-shell-shadow); }
-.host-terminal__screen { position:relative; min-width:0; min-height:0; overflow:hidden; padding:10px 7px; }
+.host-terminal__screen { position:relative; min-width:0; min-height:0; overflow:hidden; overscroll-behavior:contain; padding:10px 7px; }
 .host-terminal__scroll-bottom { position:absolute; z-index:3; top:9px; right:10px; display:grid; width:32px; height:32px; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:color-mix(in srgb,var(--terminal-shell-panel,#111a1d) 92%,transparent); opacity:.72; backdrop-filter:blur(6px); }
 .host-terminal__scroll-bottom:hover,.host-terminal__scroll-bottom:focus-visible { color:var(--terminal-shell-text,#d8dddc); border-color:var(--brand); opacity:1; }
 .host-terminal__screen :deep(.xterm) { height:100%; }
-.host-terminal__screen :deep(.xterm-viewport) { overflow-y:scroll !important; }
+.host-terminal__screen :deep(.xterm-viewport) { overflow-y:scroll !important; overscroll-behavior:contain; }
 .host-terminal__composer { position:relative; z-index:2; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:9px 10px; border-top:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
 .host-terminal__composer input { min-width:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:9px 11px; color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-background,#0b1214); font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 .host-terminal__composer button { border:0; border-radius:8px; padding:0 16px; color:#05251c; background:var(--brand,#35cba6); font-weight:800; }

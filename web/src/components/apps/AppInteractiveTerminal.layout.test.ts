@@ -22,4 +22,11 @@ describe('interactive task terminal layout', () => {
       /\.diagnostic-interactive-terminal\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/,
     )
   })
+
+  it('contains wheel scrolling inside the xterm viewport', () => {
+    expect(terminalSource).toContain('@wheel="containTerminalWheel"')
+    expect(terminalSource).toMatch(
+      /\.interactive-terminal__screen :deep\(\.xterm-viewport\)\s*\{[^}]*overflow-y: scroll !important;[^}]*overscroll-behavior: contain;/,
+    )
+  })
 })
