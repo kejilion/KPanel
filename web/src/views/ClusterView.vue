@@ -31,6 +31,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
+import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import {
   clampPercent,
   formatBytes,
@@ -113,6 +114,9 @@ const accessCredentialText = computed(() =>
     ? formatClusterAccessCredential(panelOrigin.value, pairingCode.value.code)
     : '',
 )
+
+const hostOperatingSystemIdentity = (host: ClusterHost) =>
+  detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
 
 const orderedHosts = computed(() => {
   const items = inventory.value?.items || []
@@ -865,8 +869,8 @@ onBeforeUnmount(() => {
             <GripVertical :size="15" />
           </button>
           <OperatingSystemIcon
-            :distro="host.lastSnapshot?.telemetry.osId || 'linux'"
-            :label="host.lastSnapshot?.telemetry.os || 'Linux'"
+            :distro="hostOperatingSystemIdentity(host).key"
+            :label="hostOperatingSystemIdentity(host).label"
           />
           <div>
             <span>

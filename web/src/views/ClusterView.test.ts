@@ -98,6 +98,7 @@ interface ClusterBindings {
   moveHost: (hostID: string, offset: number) => void
   transportSecurityLabel: (host: ClusterHost) => string
   shortFingerprint: (value?: string) => string
+  hostOperatingSystemIdentity: (host: ClusterHost) => { key: string; label: string }
 }
 
 function setupView(): ClusterBindings {
@@ -220,6 +221,27 @@ afterEach(() => {
 })
 
 describe('ClusterView inventory and navigation', () => {
+  it('uses the overview operating-system identity mapping for host icons', () => {
+    const view = setupView()
+    const known = host('known', false, 'https://known.example.com')
+    known.lastSnapshot!.telemetry.os = 'AlmaLinux 9.6 (Sage Margay)'
+    known.lastSnapshot!.telemetry.osId = 'almalinux'
+    known.lastSnapshot!.telemetry.osLike = ['rhel', 'centos', 'fedora']
+    expect(view.hostOperatingSystemIdentity(known)).toEqual({
+      key: 'alma',
+      label: 'AlmaLinux',
+    })
+
+    const unknown = host('unknown', false, 'https://unknown.example.com')
+    unknown.lastSnapshot!.telemetry.os = 'Vendor Linux 1'
+    unknown.lastSnapshot!.telemetry.osId = 'vendorlinux'
+    unknown.lastSnapshot!.telemetry.osLike = ['ubuntu', 'debian']
+    expect(view.hostOperatingSystemIdentity(unknown)).toEqual({
+      key: 'linux',
+      label: 'Vendor Linux 1',
+    })
+  })
+
   it('uses one cached host-list request and does not fan out into per-host requests', async () => {
     let resolveHosts: ((value: ClusterHostList) => void) | undefined
     mocks.hosts.mockReturnValueOnce(
