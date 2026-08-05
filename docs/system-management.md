@@ -40,7 +40,7 @@ IPinfo IPv4/IPv6 HTTPS 端点，成功结果缓存 30 分钟；外部查询超�
 | 业务 | 脚本产物识别 | Web 技术前置条件 |
 | --- | --- | --- |
 | 主机名 | kernel hostname | hostname 规则校验、原子更新、回读 |
-| SSH 端口 | `sshd_config` 与片段 | 按脚本语义切换为单一端口；`sshd -t`、防火墙放行、reload、监听探测和失败恢复 |
+| SSH 端口 | `sshd_config` 与片段 | 调用本机可信 `kejilion.sh ssh-port` 非交互适配入口；脚本复用原有 `new_ssh_port` 主业务，Agent 负责结构化校验、执行前备份和结果回读 |
 | SSH 防御 | `k f2b status|enable|disable` | 读取真实 Fail2Ban SSH jail；开启由后台任务安装并验证，关闭仅停用服务与自启、保留配置 |
 | DNS | `resolv.conf`、systemd-resolved 与脚本 DNS 协议 | 调用本机可信 `kejilion.sh` 固定非交互入口；systemd-resolved 使用原生配置，其他管理器沿用脚本的 `resolv.conf` 写入与锁定语义 |
 | 时区 | `/etc/timezone` 或 `localtime` | 有效 IANA 时区名称、回读 |
@@ -61,7 +61,7 @@ Agent 根据宿主机命令、配置管理器和 root/sandbox 条件动态返回
 满足技术条件时，登录管理员可在页面填写结构化字段并普通确认；不满足条件时展示
 真实状态和缺少的命令、服务或适配器。
 
-已开放：主机名、SSH 单端口切换、`kejilion.sh` 同源 SSH 防御、DNS、时区、脚本兼容
+已开放：主机名、`kejilion.sh` 同源 SSH 单端口切换、同源 SSH 防御、DNS、时区、脚本兼容
 `/swapfile`、Debian/Ubuntu APT 四种区域镜像预设、地址优先级、KPanel 内核调优预设和
 BBR、BBRv3，以及普通确认的服务器重启。重装系统、其他发行版换源和通用
 sysctl 编辑目前缺少适配器；这不是永久产品限制。

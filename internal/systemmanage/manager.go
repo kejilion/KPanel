@@ -213,8 +213,6 @@ func (m *Manager) Capabilities() []contract.Capability {
 		return contract.Capability{ID: id, Enabled: true, Methods: []string{"POST"}}
 	}
 	_, hostnamectlErr := m.runner.LookPath("hostnamectl")
-	_, sshdErr := m.runner.LookPath("sshd")
-	_, ssErr := m.runner.LookPath("ss")
 	_, timedatectlErr := m.runner.LookPath("timedatectl")
 	_, systemctlErr := m.runner.LookPath("systemctl")
 	_, mkswapErr := m.runner.LookPath("mkswap")
@@ -229,6 +227,14 @@ func (m *Manager) Capabilities() []contract.Capability {
 	_, bashErr := m.runner.LookPath("bash")
 	_, chattrErr := m.runner.LookPath("chattr")
 	_, dnsScriptErr := m.dnsScript()
+	sshScriptErr := dnsScriptErr
+	if sshScriptErr == nil {
+		script, _ := m.dnsScript()
+		content, err := os.ReadFile(script)
+		if err != nil || !trustedKejilionSSHPortContent(content) {
+			sshScriptErr = errors.New("trusted kejilion.sh SSH port protocol was not found")
+		}
+	}
 	_, f2bScriptErr := m.f2bScript()
 	_, bbrv3ScriptErr := m.bbrv3Script()
 
@@ -284,7 +290,7 @@ func (m *Manager) Capabilities() []contract.Capability {
 	}
 	return []contract.Capability{
 		capability("system.hostname.write", hostnamectlErr == nil, "hostnamectl 不可用"),
-		capability("system.ssh-port.write", sshdErr == nil && ssErr == nil && systemctlErr == nil && sshConfig, "OpenSSH 服务或配置不可用"),
+		capability("system.ssh-port.write", envErr == nil && bashErr == nil && sshScriptErr == nil && sshConfig, "请更新本机 kejilion.sh 以启用 KPanel SSH 端口协议"),
 		capability(
 			"system.ssh-defense.write",
 			systemdRunErr == nil && helperErr == nil && envErr == nil && bashErr == nil && f2bScriptErr == nil,
@@ -447,6 +453,20 @@ func (m *Manager) addSSHPort(ctx context.Context, port uint16) (bool, string, st
 	if len(current) == 1 && current[0] == port {
 		return false, "", "SSH 已使用该端口", nil
 	}
+	script, err := m.dnsScript()
+	if err != nil {
+		return false, "", "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel SSH port protocol", ErrUnsupported)
+	}
+	content, err := os.ReadFile(script)
+	if err != nil || !trustedKejilionSSHPortContent(content) {
+		return false, "", "", fmt.Errorf("%w: update kejilion.sh to enable the KPanel SSH port protocol", ErrUnsupported)
+	}
+	for _, command := range []string{"env", "bash"} {
+		if _, err := m.runner.LookPath(command); err != nil {
+			return false, "", "", fmt.Errorf("%w: %s is unavailable", ErrUnsupported, command)
+		}
+	}
+
 	configPath := filepath.Join(m.etcRoot, "ssh", "sshd_config")
 	fragments, err := filepath.Glob(filepath.Join(m.etcRoot, "ssh", "sshd_config.d", "*.conf"))
 	if err != nil {
@@ -458,103 +478,30 @@ func (m *Manager) addSSHPort(ctx context.Context, port uint16) (bool, string, st
 	if err != nil {
 		return false, "", "", err
 	}
-	type sshConfigSnapshot struct {
-		path    string
-		data    []byte
-		existed bool
-		mode    os.FileMode
-	}
-	snapshots := make([]sshConfigSnapshot, 0, len(paths))
-	for _, path := range paths {
-		data, existed, mode, snapshotErr := snapshotFile(path)
-		if snapshotErr != nil {
-			return false, backup, "", snapshotErr
-		}
-		snapshots = append(snapshots, sshConfigSnapshot{
-			path: path, data: data, existed: existed, mode: mode,
-		})
-	}
-	rollback := func() error {
-		var rollbackErrors []error
-		for index := len(snapshots) - 1; index >= 0; index-- {
-			snapshot := snapshots[index]
-			if restoreErr := restoreFile(
-				snapshot.path,
-				snapshot.data,
-				snapshot.existed,
-				snapshot.mode,
-			); restoreErr != nil {
-				rollbackErrors = append(rollbackErrors, restoreErr)
-			}
-		}
-		if len(rollbackErrors) > 0 {
-			return errors.Join(rollbackErrors...)
-		}
-		_, reloadErr := m.reloadSSH(ctx)
-		return reloadErr
-	}
-
-	for index, snapshot := range snapshots {
-		updated := removeSSHPortDirectives(snapshot.data)
-		if index == 0 {
-			updated = append(
-				[]byte(fmt.Sprintf("Port %d\n", port)),
-				updated...,
-			)
-		}
-		if err := writeAtomic(snapshot.path, updated, fileModeOr(snapshot.mode, 0o640)); err != nil {
-			_ = rollback()
-			return false, backup, "", fmt.Errorf("%w: update SSH port configuration: %v", ErrRolledBack, err)
-		}
-	}
-	if _, err := m.runner.Run(ctx, "sshd", "-t", "-f", filepath.Join(m.etcRoot, "ssh", "sshd_config")); err != nil {
-		_ = rollback()
-		return false, backup, "", fmt.Errorf("%w: sshd configuration test: %v", ErrRolledBack, err)
-	}
-	firewallRollback, err := m.openFirewallPort(ctx, port)
+	output, err := m.runner.Run(ctx, "env",
+		"KJ_SSH_PORT_NONINTERACTIVE=1", "LC_ALL=C.UTF-8", "LANG=C.UTF-8",
+		"bash", script, "ssh-port", strconv.Itoa(int(port)),
+	)
 	if err != nil {
-		_ = rollback()
-		return false, backup, "", fmt.Errorf("%w: firewall: %v", ErrRolledBack, err)
+		return false, backup, "", fmt.Errorf("%w: kejilion.sh SSH port transaction: %v", ErrNeedsAttention, err)
 	}
-	if _, err := m.reloadSSH(ctx); err != nil {
-		_ = firewallRollback()
-		_ = rollback()
-		return false, backup, "", fmt.Errorf("%w: reload SSH: %v", ErrRolledBack, err)
+	if strings.Contains(string(output), "KPANEL_SSH_RESULT unchanged") {
+		return false, backup, "SSH 已使用该端口", nil
 	}
-	listening := false
-	for attempt := 0; attempt < 10; attempt++ {
-		if listening, _ = m.portListening(ctx, port); listening {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
+	if !strings.Contains(string(output), "KPANEL_SSH_RESULT applied") {
+		return false, backup, "", fmt.Errorf(
+			"%w: kejilion.sh SSH port transaction did not return a result marker",
+			ErrNeedsAttention,
+		)
 	}
-	if !listening {
-		_ = firewallRollback()
-		if err := rollback(); err != nil {
-			return false, backup, "", fmt.Errorf("%w: new SSH port did not listen and rollback failed: %v", ErrNeedsAttention, err)
-		}
-		return false, backup, "", fmt.Errorf("%w: new SSH port did not listen", ErrRolledBack)
+	current = m.configuredSSHPorts()
+	if len(current) != 1 || current[0] != port {
+		return false, backup, "", fmt.Errorf(
+			"%w: kejilion.sh SSH port result did not match the host configuration",
+			ErrNeedsAttention,
+		)
 	}
-	return true, backup, fmt.Sprintf("SSH 端口已修改为 %d，与 kejilion.sh 的单端口配置语义一致", port), nil
-}
-
-func removeSSHPortDirectives(data []byte) []byte {
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	kept := make([]string, 0, len(lines))
-	for _, line := range lines {
-		candidate := strings.TrimSpace(line)
-		candidate = strings.TrimSpace(strings.TrimPrefix(candidate, "#"))
-		fields := strings.Fields(candidate)
-		if len(fields) >= 1 && strings.EqualFold(fields[0], "Port") {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	result := strings.TrimLeft(strings.TrimRight(strings.Join(kept, "\n"), "\n"), "\n")
-	if result == "" {
-		return nil
-	}
-	return []byte(result + "\n")
+	return true, backup, fmt.Sprintf("SSH 端口已由 kejilion.sh 修改为 %d 并回读验证", port), nil
 }
 
 func (m *Manager) setDNS(ctx context.Context, servers []string) (bool, string, string, error) {
@@ -828,99 +775,6 @@ func (m *Manager) configuredSSHPorts() []uint16 {
 	return slices.Compact(ports)
 }
 
-func (m *Manager) reloadSSH(ctx context.Context) ([]byte, error) {
-	if output, err := m.runner.Run(ctx, "systemctl", "reload", "ssh.service"); err == nil {
-		return output, nil
-	}
-	return m.runner.Run(ctx, "systemctl", "reload", "sshd.service")
-}
-
-func (m *Manager) portListening(ctx context.Context, port uint16) (bool, error) {
-	output, err := m.runner.Run(ctx, "ss", "-H", "-ltn")
-	if err != nil {
-		return false, err
-	}
-	suffix := ":" + strconv.Itoa(int(port))
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 4 && strings.HasSuffix(fields[3], suffix) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (m *Manager) openFirewallPort(ctx context.Context, port uint16) (func() error, error) {
-	rule := strconv.Itoa(int(port)) + "/tcp"
-	if _, err := m.runner.LookPath("ufw"); err == nil {
-		output, statusErr := m.runner.Run(ctx, "ufw", "status")
-		if statusErr == nil && strings.Contains(strings.ToLower(string(output)), "status: active") {
-			if _, err := m.runner.Run(ctx, "ufw", "allow", rule); err != nil {
-				return func() error { return nil }, err
-			}
-			return func() error {
-				_, err := m.runner.Run(ctx, "ufw", "--force", "delete", "allow", rule)
-				return err
-			}, nil
-		}
-	}
-	if _, err := m.runner.LookPath("firewall-cmd"); err == nil {
-		if _, stateErr := m.runner.Run(ctx, "firewall-cmd", "--state"); stateErr == nil {
-			if _, err := m.runner.Run(ctx, "firewall-cmd", "--add-port="+rule); err != nil {
-				return func() error { return nil }, err
-			}
-			if _, err := m.runner.Run(ctx, "firewall-cmd", "--permanent", "--add-port="+rule); err != nil {
-				_, _ = m.runner.Run(ctx, "firewall-cmd", "--remove-port="+rule)
-				return func() error { return nil }, err
-			}
-			return func() error {
-				_, first := m.runner.Run(ctx, "firewall-cmd", "--remove-port="+rule)
-				_, second := m.runner.Run(ctx, "firewall-cmd", "--permanent", "--remove-port="+rule)
-				return errors.Join(first, second)
-			}, nil
-		}
-	}
-	if _, err := m.runner.LookPath("iptables"); err == nil {
-		output, statusErr := m.runner.Run(ctx, "iptables", "-S", "INPUT")
-		if statusErr == nil && strings.Contains(string(output), "-P INPUT DROP") {
-			if _, allowedErr := m.runner.Run(
-				ctx, "iptables", "-C", "INPUT", "-p", "tcp",
-				"--dport", strconv.Itoa(int(port)), "-j", "ACCEPT",
-			); allowedErr == nil {
-				return func() error { return nil }, nil
-			}
-			arguments := []string{
-				"-I", "INPUT", "-p", "tcp",
-				"--dport", strconv.Itoa(int(port)), "-j", "ACCEPT",
-			}
-			if _, insertErr := m.runner.Run(ctx, "iptables", arguments...); insertErr != nil {
-				return func() error { return nil }, insertErr
-			}
-			if _, saveErr := m.runner.LookPath("netfilter-persistent"); saveErr == nil {
-				if _, saveErr = m.runner.Run(ctx, "netfilter-persistent", "save"); saveErr != nil {
-					_, _ = m.runner.Run(
-						ctx, "iptables", "-D", "INPUT", "-p", "tcp",
-						"--dport", strconv.Itoa(int(port)), "-j", "ACCEPT",
-					)
-					return func() error { return nil }, saveErr
-				}
-			}
-			return func() error {
-				_, err := m.runner.Run(
-					ctx, "iptables", "-D", "INPUT", "-p", "tcp",
-					"--dport", strconv.Itoa(int(port)), "-j", "ACCEPT",
-				)
-				if _, saveErr := m.runner.LookPath("netfilter-persistent"); saveErr == nil {
-					_, persistErr := m.runner.Run(ctx, "netfilter-persistent", "save")
-					return errors.Join(err, persistErr)
-				}
-				return err
-			}, nil
-		}
-	}
-	return func() error { return nil }, nil
-}
-
 func (m *Manager) dnsBackupPath() (string, error) {
 	path := filepath.Join(m.etcRoot, "resolv.conf")
 	if m.usesSystemdResolved() {
@@ -997,6 +851,16 @@ func trustedKejilionDNSContent(content []byte) bool {
 		strings.Contains(value, "KJ_DNS_NONINTERACTIVE") &&
 		strings.Contains(value, "kpanel_protocol_active") &&
 		strings.Contains(value, "kpanel_set_dns_noninteractive")
+}
+
+func trustedKejilionSSHPortContent(content []byte) bool {
+	value := string(content)
+	return dnsScriptLicense.Match(content) &&
+		strings.Contains(value, "KJ_SSH_PORT_NONINTERACTIVE") &&
+		strings.Contains(value, "kpanel_protocol_active") &&
+		strings.Contains(value, "kpanel_ssh_port_noninteractive") &&
+		strings.Contains(value, "new_ssh_port \"$new_port\"") &&
+		strings.Contains(value, "KPANEL_SSH_RESULT applied")
 }
 
 func (m *Manager) aptSourceFiles() []string {

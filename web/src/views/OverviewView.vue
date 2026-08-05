@@ -219,11 +219,11 @@ const basicSettings = computed<ManagementTool[]>(() => {
     {
       id: 'ssh-port',
       title: 'SSH 端口',
-      description: '对应 kejilion.sh 的“修改 SSH 端口”。',
+      description: '调用 kejilion.sh 的“修改 SSH 端口”非交互适配入口。',
       value: management.ssh.ports.length ? management.ssh.ports.join('、') : '待 Agent 升级',
       detail: management.ssh.source === 'default' ? 'OpenSSH 默认端口' : '来自 sshd 配置',
       capability: 'system.ssh-port.write',
-      safety: '先开放并验证新端口，再按 kejilion.sh 语义把 SSH 配置切换为单一端口；失败自动恢复。',
+      safety: '由本机可信 kejilion.sh 执行原有 SSH 修改主业务；KPanel 负责结构化校验、执行前备份和结果回读。云安全组仍需单独放行新端口。',
       icon: KeyRound,
       tone: 'blue',
     },

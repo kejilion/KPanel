@@ -100,54 +100,71 @@ func TestSetHostnameUpdatesHostsAndCreatesBackup(t *testing.T) {
 }
 
 func TestSSHPortChangeUsesKejilionSinglePortSemantics(t *testing.T) {
-	reloaded := false
 	runner := &fakeRunner{}
-	runner.run = func(_ context.Context, name string, arguments ...string) ([]byte, error) {
-		switch name {
-		case "ss":
-			if reloaded {
-				return []byte("LISTEN 0 128 0.0.0.0:2222 0.0.0.0:*\n"), nil
-			}
-			return []byte("LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n"), nil
-		case "systemctl":
-			reloaded = true
-		case "ufw":
-			if len(arguments) == 1 && arguments[0] == "status" {
-				return []byte("Status: inactive\n"), nil
-			}
-		}
-		return nil, nil
-	}
 	manager, etcRoot, _, _ := testManager(t, runner)
 	mainPath := filepath.Join(etcRoot, "ssh", "sshd_config")
 	fragmentPath := filepath.Join(etcRoot, "ssh", "sshd_config.d", "provider.conf")
+	scriptPath := filepath.Join(t.TempDir(), "kejilion.sh")
+	mustWrite(t, scriptPath, "permission_granted=\"true\"\nKJ_SSH_PORT_NONINTERACTIVE=1\nkpanel_protocol_active() { :; }\nkpanel_ssh_port_noninteractive() { new_ssh_port \"$new_port\"; echo KPANEL_SSH_RESULT applied; }\n")
+	manager.dnsScript = func() (string, error) { return scriptPath, nil }
 	mustWrite(
 		t,
 		mainPath,
 		"#Port 22\nInclude /etc/ssh/sshd_config.d/*.conf\nPort 22\nPasswordAuthentication no\n",
 	)
 	mustWrite(t, fragmentPath, "Port 2200\nPermitRootLogin prohibit-password\n")
+	runner.run = func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		if name != "env" {
+			t.Fatalf("SSH command = %s %#v", name, arguments)
+		}
+		mustWrite(t, mainPath, "Port 2222\nPasswordAuthentication no\n")
+		if err := os.Remove(fragmentPath); err != nil {
+			t.Fatal(err)
+		}
+		return []byte("KPANEL_SSH_PORT 2222\nKPANEL_SSH_RESULT applied\n"), nil
+	}
 
 	changed, backup, message, err := manager.addSSHPort(context.Background(), 2222)
 	if err != nil || !changed || backup == "" {
 		t.Fatalf("SSH port change: changed=%v backup=%q message=%q err=%v", changed, backup, message, err)
 	}
-	combined := readLimited(mainPath) + readLimited(fragmentPath)
-	if strings.Count(combined, "Port 2222") != 1 ||
-		strings.Contains(combined, "Port 22\n") ||
-		strings.Contains(combined, "Port 2200") {
-		t.Fatalf("old SSH ports were retained:\n%s", combined)
-	}
-	for _, expected := range []string{
-		"PasswordAuthentication no",
-		"PermitRootLogin prohibit-password",
-	} {
-		if !strings.Contains(combined, expected) {
-			t.Fatalf("non-port SSH directive %q was lost:\n%s", expected, combined)
-		}
+	if got := readLimited(mainPath); !strings.Contains(got, "Port 2222") {
+		t.Fatalf("script result was not re-read: %q", got)
 	}
 	if !strings.Contains(message, "kejilion.sh") || !regularFile(filepath.Join(backup, "manifest.tsv")) {
 		t.Fatalf("SSH result did not report parity/backup: message=%q backup=%q", message, backup)
+	}
+	command := strings.Join(runner.commands, "\n")
+	for _, expected := range []string{
+		"KJ_SSH_PORT_NONINTERACTIVE=1",
+		"bash " + scriptPath + " ssh-port 2222",
+	} {
+		if !strings.Contains(command, expected) {
+			t.Fatalf("SSH command missing %q:\n%s", expected, command)
+		}
+	}
+}
+
+func TestSSHPortCapabilityRequiresTrustedKejilionProtocol(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("capability policy is intentionally Linux-only")
+	}
+	runner := &fakeRunner{}
+	manager, etcRoot, _, _ := testManager(t, runner)
+	mustWrite(t, filepath.Join(etcRoot, "ssh", "sshd_config"), "Port 22\n")
+	scriptPath := filepath.Join(t.TempDir(), "kejilion.sh")
+	manager.dnsScript = func() (string, error) { return scriptPath, nil }
+
+	mustWrite(t, scriptPath, "permission_granted=\"true\"\nKJ_DNS_NONINTERACTIVE=1\nkpanel_protocol_active() { :; }\nkpanel_set_dns_noninteractive() { :; }\n")
+	capability := findCapability(manager.Capabilities(), "system.ssh-port.write")
+	if capability.Enabled || !strings.Contains(capability.Reason, "更新") {
+		t.Fatalf("legacy script unexpectedly enabled SSH port writes: %#v", capability)
+	}
+
+	mustWrite(t, scriptPath, "permission_granted=\"true\"\nKJ_SSH_PORT_NONINTERACTIVE=1\nkpanel_protocol_active() { :; }\nkpanel_ssh_port_noninteractive() { new_ssh_port \"$new_port\"; echo KPANEL_SSH_RESULT applied; }\n")
+	capability = findCapability(manager.Capabilities(), "system.ssh-port.write")
+	if !capability.Enabled {
+		t.Fatalf("trusted SSH port protocol unexpectedly disabled: %#v", capability)
 	}
 }
 
