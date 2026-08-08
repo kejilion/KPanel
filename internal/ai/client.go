@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
@@ -63,13 +65,18 @@ type ModelClient interface {
 	Models(context.Context, Provider, string) ([]Model, error)
 }
 
+type hostResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
 type HTTPModelClient struct {
-	resolver *net.Resolver
-	timeout  time.Duration
+	resolver       hostResolver
+	fallbackLookup func(context.Context, string) ([]net.IPAddr, error)
+	timeout        time.Duration
 }
 
 func NewHTTPModelClient() *HTTPModelClient {
-	return &HTTPModelClient{resolver: net.DefaultResolver, timeout: 180 * time.Second}
+	return &HTTPModelClient{resolver: net.DefaultResolver, fallbackLookup: lookupViaPublicDNS, timeout: 180 * time.Second}
 }
 
 func chatMessageText(message ChatMessage) string {
@@ -400,11 +407,8 @@ func (c *HTTPModelClient) client(provider Provider) *http.Client {
 		if err != nil {
 			return nil, err
 		}
-		addresses, err := c.resolver.LookupIPAddr(ctx, host)
+		addresses, err := c.resolveProviderHost(ctx, provider, host)
 		if err != nil {
-			return nil, err
-		}
-		if err := ValidateResolvedAddresses(provider.EndpointScope, addresses); err != nil {
 			return nil, err
 		}
 		return dialer.DialContext(ctx, network, net.JoinHostPort(addresses[0].IP.String(), port))
@@ -425,6 +429,108 @@ func (c *HTTPModelClient) client(provider Provider) *http.Client {
 		}
 		return nil
 	}}
+}
+
+// resolveProviderHost 解析 Provider 域名并返回经过端点范围校验的地址列表。
+// 系统 DNS 处于 fake-ip 代理环境时（解析结果包含非公网或 fake-ip 保留段），
+// 回退到公共 DNS 重新解析以获取真实 IP，回退结果仍须通过端点范围校验。
+func (c *HTTPModelClient) resolveProviderHost(ctx context.Context, provider Provider, host string) ([]net.IPAddr, error) {
+	addresses, err := c.resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if provider.EndpointScope == EndpointPublic && anyResolvedAreFakeIP(addresses) && c.fallbackLookup != nil {
+		fallback, fallbackErr := c.fallbackLookup(ctx, host)
+		if fallbackErr == nil && len(fallback) > 0 {
+			addresses = fallback
+		} else if fallbackErr != nil {
+			slog.Debug("AI provider fallback DNS resolution failed", "host", host, "error", fallbackErr)
+		}
+	}
+	if err := ValidateResolvedAddresses(provider.EndpointScope, addresses); err != nil {
+		return nil, err
+	}
+	return addresses, nil
+}
+
+// fake-ip 保留段：RFC 2544 benchmark 段（Clash 等默认 fake-ip-range）、
+// CGNAT 段和 240/4 保留段。这些段在 Go 中判定为公网单播地址，
+// 但仅经代理 TUN 拦截才有意义，直连必然失败。
+var (
+	benchmarkPrefix = netip.MustParsePrefix("198.18.0.0/15")
+	cgNATPrefix     = netip.MustParsePrefix("100.64.0.0/10")
+	reservedPrefix  = netip.MustParsePrefix("240.0.0.0/4")
+)
+
+func isFakeIPAddress(ip net.IP) bool {
+	if isBlockedIP(ip) {
+		return true
+	}
+	address, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	address = address.Unmap()
+	return benchmarkPrefix.Contains(address) || cgNATPrefix.Contains(address) || reservedPrefix.Contains(address)
+}
+
+func anyResolvedAreFakeIP(addresses []net.IPAddr) bool {
+	for _, address := range addresses {
+		if isFakeIPAddress(address.IP) {
+			return true
+		}
+	}
+	return false
+}
+
+// publicDNSServers 是 fake-ip 环境下的回退解析服务器列表。
+var publicDNSServers = []string{"223.5.5.5", "119.29.29.29", "114.114.114.114", "1.1.1.1", "8.8.8.8"}
+
+func lookupViaPublicDNS(ctx context.Context, host string) ([]net.IPAddr, error) {
+	return lookupViaServers(ctx, host, publicDNSServers)
+}
+
+// lookupViaServers 依次用指定 DNS 服务器解析主机名，返回第一个成功的地址集，
+// 结果优先排序 IPv4，避免主机有 IPv6 时拨号首选不可达的 IPv6 地址。
+func lookupViaServers(ctx context.Context, host string, servers []string) ([]net.IPAddr, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var lastErr error
+	for _, server := range servers {
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				d := net.Dialer{Timeout: 5 * time.Second}
+				return d.DialContext(ctx, network, serverWithDefaultPort(server))
+			},
+		}
+		addresses, err := resolver.LookupIPAddr(ctx, host)
+		if err == nil && len(addresses) > 0 {
+			return preferIPv4(addresses), nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("public DNS resolution returned no addresses")
+	}
+	return nil, lastErr
+}
+
+// serverWithDefaultPort 为不带端口的 DNS 服务器地址补上默认 53 端口，
+// 已带端口（如测试中的本地随机端口 stub）则原样返回。
+func serverWithDefaultPort(server string) string {
+	if _, _, err := net.SplitHostPort(server); err == nil {
+		return server
+	}
+	return net.JoinHostPort(server, "53")
+}
+
+func preferIPv4(addresses []net.IPAddr) []net.IPAddr {
+	sorted := append([]net.IPAddr(nil), addresses...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].IP.To4() != nil && sorted[j].IP.To4() == nil
+	})
+	return sorted
 }
 
 func (c *HTTPModelClient) do(ctx context.Context, provider Provider, apiKey, method, endpoint string, payload any, headers map[string]string) (*http.Response, error) {
