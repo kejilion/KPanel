@@ -203,6 +203,69 @@ func (c *RemoteClient) TerminalCloseV2(ctx context.Context, origin, controllerID
 	return nil
 }
 
+func (c *RemoteClient) BrowseFetchOpenV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseFetchRequest) (BrowseFetchOpenResponse, error) {
+	var response BrowseFetchOpenResponse
+	err := c.exchangeV2(ctx, origin, v2BrowseFetchOpenPath, controllerID, targetID, "", key, target, nil, now, input, &response)
+	return response, err
+}
+
+func (c *RemoteClient) BrowseFetchOutputV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseFetchOutputRequest) (BrowseFetchOutputResponse, error) {
+	var response BrowseFetchOutputResponse
+	err := c.exchangeV2(ctx, origin, v2BrowseFetchOutputPath, controllerID, targetID, "", key, target, nil, now, input, &response)
+	return response, err
+}
+
+func (c *RemoteClient) BrowseFetchCloseV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseFetchCloseRequest) error {
+	var response struct {
+		Closed bool `json:"closed"`
+	}
+	if err := c.exchangeV2(ctx, origin, v2BrowseFetchClosePath, controllerID, targetID, "", key, target, nil, now, input, &response); err != nil {
+		return err
+	}
+	if !response.Closed {
+		return ErrAuthentication
+	}
+	return nil
+}
+
+func (c *RemoteClient) BrowseWSOpenV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseWSOpenRequest) (BrowseWSOpenResponse, error) {
+	var response BrowseWSOpenResponse
+	err := c.exchangeV2(ctx, origin, v2BrowseWSOpenPath, controllerID, targetID, "", key, target, nil, now, input, &response)
+	return response, err
+}
+
+func (c *RemoteClient) BrowseWSOutputV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseWSOutputRequest) (BrowseWSOutputResponse, error) {
+	var response BrowseWSOutputResponse
+	err := c.exchangeV2(ctx, origin, v2BrowseWSOutputPath, controllerID, targetID, "", key, target, nil, now, input, &response)
+	return response, err
+}
+
+func (c *RemoteClient) BrowseWSInputV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseWSInputRequest) error {
+	var response struct {
+		Accepted bool `json:"accepted"`
+	}
+	if err := c.exchangeV2(ctx, origin, v2BrowseWSInputPath, controllerID, targetID, "", key, target, nil, now, input, &response); err != nil {
+		return err
+	}
+	if !response.Accepted {
+		return ErrAuthentication
+	}
+	return nil
+}
+
+func (c *RemoteClient) BrowseWSCloseV2(ctx context.Context, origin, controllerID, targetID string, key noise.DHKey, target []byte, now time.Time, input BrowseWSCloseRequest) error {
+	var response struct {
+		Closed bool `json:"closed"`
+	}
+	if err := c.exchangeV2(ctx, origin, v2BrowseWSClosePath, controllerID, targetID, "", key, target, nil, now, input, &response); err != nil {
+		return err
+	}
+	if !response.Closed {
+		return ErrAuthentication
+	}
+	return nil
+}
+
 func (c *RemoteClient) exchangeV2(
 	ctx context.Context,
 	origin string,

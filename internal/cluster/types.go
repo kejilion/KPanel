@@ -2,23 +2,84 @@ package cluster
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+)
+
+// v2 federation scope tokens. A scope string is always ScopeTokenSummary
+// optionally followed by ScopeTokenTerminal, optionally followed by
+// ScopeTokenBrowse, optionally followed by ScopeTokenBrowseWS,
+// space-separated, in that exact order — see BuildV2Scope and ValidV2Scope.
+// This is a closed, enumerable set by design: federation grants exactly
+// these four capabilities today, nothing free-form.
+//
+// Browse fetch and browse WS are deliberately separate, independently
+// grantable tokens rather than one "browse" token: a WS relay is a
+// sustained, real-time bidirectional connection, a materially different
+// (and arguably higher-stakes, harder-to-audit) grant than a bounded
+// one-shot fetch, so a pairing's creator should be able to opt into one
+// without the other — same reasoning that already separated browse from
+// terminal.
+const (
+	ScopeTokenSummary  = "cluster.summary.read"
+	ScopeTokenTerminal = "cluster.terminal.open"
+	ScopeTokenBrowse   = "cluster.browse.fetch"
+	ScopeTokenBrowseWS = "cluster.browse.ws"
 )
 
 const (
 	FederationProtocol   = "v1"
 	FederationProtocolV2 = "v2"
 	LightNodeProtocol    = "light-v1"
-	SummaryScope         = "cluster.summary.read"
-	SummaryTerminalScope = "cluster.summary.read cluster.terminal.open"
+	SummaryScope         = ScopeTokenSummary
+	SummaryTerminalScope = ScopeTokenSummary + " " + ScopeTokenTerminal
 	LocalHostID          = "local"
 	MaxHosts             = 100
 	MaxSummaryBytes      = 64 << 10
 	MaxPairBytes         = 16 << 10
 	MaxFederationV2Bytes = 96 << 10
 )
+
+// BuildV2Scope composes a canonically-ordered v2 scope string from the
+// capabilities to grant. summary read access is implicit and always
+// present — every v2 pairing has always carried it.
+func BuildV2Scope(terminal, browseFetch, browseWS bool) string {
+	scope := ScopeTokenSummary
+	if terminal {
+		scope += " " + ScopeTokenTerminal
+	}
+	if browseFetch {
+		scope += " " + ScopeTokenBrowse
+	}
+	if browseWS {
+		scope += " " + ScopeTokenBrowseWS
+	}
+	return scope
+}
+
+// ValidV2Scope reports whether scope is exactly ScopeTokenSummary optionally
+// followed by ScopeTokenTerminal, ScopeTokenBrowse and ScopeTokenBrowseWS in
+// that order, no duplicates and no unrecognized tokens — i.e. it is a value
+// BuildV2Scope could have produced.
+func ValidV2Scope(scope string) bool {
+	fields := strings.Fields(scope)
+	if len(fields) == 0 || fields[0] != ScopeTokenSummary {
+		return false
+	}
+	fields = fields[1:]
+	if len(fields) > 0 && fields[0] == ScopeTokenTerminal {
+		fields = fields[1:]
+	}
+	if len(fields) > 0 && fields[0] == ScopeTokenBrowse {
+		fields = fields[1:]
+	}
+	if len(fields) > 0 && fields[0] == ScopeTokenBrowseWS {
+		fields = fields[1:]
+	}
+	return len(fields) == 0
+}
 
 type HostKind string
 
@@ -86,6 +147,8 @@ type Host struct {
 	FederationProtocol  string            `json:"federationProtocol"`
 	Scope               string            `json:"scope"`
 	TerminalAvailable   bool              `json:"terminalAvailable"`
+	BrowseAvailable     bool              `json:"browseAvailable"`
+	BrowseWSAvailable   bool              `json:"browseWSAvailable"`
 	PanelVersion        string            `json:"panelVersion,omitempty"`
 	State               HostState         `json:"state"`
 	LastSnapshot        *HostSnapshot     `json:"lastSnapshot,omitempty"`
@@ -101,8 +164,25 @@ type Host struct {
 	UpdatedAt           time.Time         `json:"updatedAt"`
 }
 
+func scopeHasToken(scope, token string) bool {
+	for _, field := range strings.Fields(scope) {
+		if field == token {
+			return true
+		}
+	}
+	return false
+}
+
 func ScopeAllowsTerminal(scope string) bool {
-	return scope == SummaryTerminalScope
+	return scopeHasToken(scope, ScopeTokenTerminal)
+}
+
+func ScopeAllowsBrowse(scope string) bool {
+	return scopeHasToken(scope, ScopeTokenBrowse)
+}
+
+func ScopeAllowsBrowseWS(scope string) bool {
+	return scopeHasToken(scope, ScopeTokenBrowseWS)
 }
 
 type LightEnrollment struct {

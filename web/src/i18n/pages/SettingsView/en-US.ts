@@ -112,4 +112,15 @@ export default [
   ['现在', 'Now'],
   ['查看源码', 'View source'],
   ['查看许可协议', 'View license'],
+  ['访问域名已保存', 'Allowed hostnames saved'],
+  ['访问域名保存失败', 'Failed to save allowed hostnames'],
+  ['面板访问域名', 'Panel hostnames'],
+  [
+    '除配置文件里的公开地址外，额外允许通过这些域名访问面板',
+    'Additional hostnames the panel answers on, beyond the public URL set in the config file',
+  ],
+  ['域名列表（每行一个，可带端口）', 'Hostnames (one per line, port optional)'],
+  ['正在读取访问域名…', 'Loading allowed hostnames...'],
+  ['保存中…', 'Saving...'],
+  ['撤销更改', 'Discard changes'],
 ] as const satisfies PhraseCatalog

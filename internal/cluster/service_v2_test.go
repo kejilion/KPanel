@@ -224,9 +224,9 @@ func TestServiceV2PairsPollsAndRevokesOverEncryptedHTTP(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	host, err := center.AddHost(context.Background(), AddHostInput{
 		Name: "public-ip-node", Origin: "http://8.8.8.8:1801",
@@ -324,9 +324,9 @@ func TestServiceV2TerminalLifecycleUsesAuthenticatedEncryptedChannel(t *testing.
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	host, err := center.AddHost(context.Background(), AddHostInput{Name: "terminal-target", Origin: "http://8.8.8.8:1801", PairingCode: code.Code})
 	if err != nil {
@@ -382,6 +382,81 @@ func TestServiceV2TerminalLifecycleUsesAuthenticatedEncryptedChannel(t *testing.
 	}
 }
 
+// TestServiceV2PairingGrantsExactlyTheRequestedScope pairs against two
+// independent targets using differently-scoped pairing codes and asserts the
+// resulting Host.BrowseAvailable/TerminalAvailable reflect exactly what each
+// pairing code's creator chose — not a hardcoded default, and not silently
+// "granted because terminal was granted" or vice versa. Two independent
+// target/center pairs are used (rather than pairing the same target twice)
+// because AddHost rejects re-adding the same remote node under one center.
+func TestServiceV2PairingGrantsExactlyTheRequestedScope(t *testing.T) {
+	now := time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	pairWithScope := func(t *testing.T, name string, scope string) Host {
+		t.Helper()
+		targetRemote, _ := newServiceV2Remote(t)
+		target, err := NewService(ServiceConfig{
+			DataDir: filepath.Join(t.TempDir(), "target"), PanelVersion: "v0.72.0", Hostname: name + "-target",
+			Telemetry: serviceTestTelemetry{now: clock.Now, hostname: name + "-target"},
+			Remote:    targetRemote, Now: clock.Now, Jitter: func(value time.Duration) time.Duration { return value },
+		})
+		if err != nil {
+			t.Fatalf("target NewService() error = %v", err)
+		}
+		t.Cleanup(func() { _ = target.Close() })
+
+		centerRemote, centerRoute := newServiceV2Remote(t)
+		centerRoute.target = target
+		center, err := NewService(ServiceConfig{
+			DataDir: filepath.Join(t.TempDir(), "center"), PanelVersion: "v0.72.0", Hostname: name + "-center",
+			Telemetry: serviceTestTelemetry{now: clock.Now, hostname: name + "-center"},
+			Remote:    centerRemote, Now: clock.Now, Jitter: func(value time.Duration) time.Duration { return value },
+		})
+		if err != nil {
+			t.Fatalf("center NewService() error = %v", err)
+		}
+		t.Cleanup(func() { _ = center.Close() })
+
+		code, err := target.CreatePairingCodeV2(scope)
+		if err != nil {
+			t.Fatalf("CreatePairingCodeV2(%q) error = %v", scope, err)
+		}
+		host, err := center.AddHost(context.Background(), AddHostInput{
+			Name: name, Origin: "http://8.8.8.8:1801", PairingCode: code.Code,
+		})
+		if err != nil {
+			t.Fatalf("AddHost(%s) error = %v", name, err)
+		}
+		return host
+	}
+
+	terminalOnly := pairWithScope(t, "terminal-only", BuildV2Scope(true, false, false))
+	if !terminalOnly.TerminalAvailable || terminalOnly.BrowseAvailable || terminalOnly.BrowseWSAvailable {
+		t.Fatalf("terminal-only pairing granted unexpected capabilities: %#v", terminalOnly)
+	}
+
+	terminalAndBrowse := pairWithScope(t, "terminal-and-browse", BuildV2Scope(true, true, false))
+	if !terminalAndBrowse.TerminalAvailable || !terminalAndBrowse.BrowseAvailable || terminalAndBrowse.BrowseWSAvailable {
+		t.Fatalf("terminal+browse pairing has unexpected capabilities: %#v", terminalAndBrowse)
+	}
+	if terminalAndBrowse.Scope != "cluster.summary.read cluster.terminal.open cluster.browse.fetch" {
+		t.Fatalf("unexpected stored scope: %q", terminalAndBrowse.Scope)
+	}
+
+	browseOnly := pairWithScope(t, "browse-only", BuildV2Scope(false, true, false))
+	if browseOnly.TerminalAvailable || !browseOnly.BrowseAvailable || browseOnly.BrowseWSAvailable {
+		t.Fatalf("browse-only pairing granted unexpected capabilities: %#v", browseOnly)
+	}
+
+	browseWSOnly := pairWithScope(t, "browse-ws-only", BuildV2Scope(false, false, true))
+	if browseWSOnly.TerminalAvailable || browseWSOnly.BrowseAvailable || !browseWSOnly.BrowseWSAvailable {
+		t.Fatalf("browse-ws-only pairing granted unexpected capabilities: %#v", browseWSOnly)
+	}
+	if browseWSOnly.Scope != "cluster.summary.read cluster.browse.ws" {
+		t.Fatalf("unexpected stored scope: %q", browseWSOnly.Scope)
+	}
+}
+
 func TestServiceV2DeleteConvergesLocallyWhenRemoteRevokeFails(t *testing.T) {
 	now := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
 	clock := &serviceTestClock{now: now}
@@ -416,9 +491,9 @@ func TestServiceV2DeleteConvergesLocallyWhenRemoteRevokeFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	host, err := center.AddHost(context.Background(), AddHostInput{
 		Name: "retry-revoke", Origin: "http://8.8.8.8:1801",
@@ -492,9 +567,9 @@ func TestServiceV2ResumesPendingCommitAfterCenterRestart(t *testing.T) {
 		t.Fatalf("center NewService() error = %v", err)
 	}
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	route.setFailurePath(v2CommitPath)
 	pending, err := center.AddHost(context.Background(), AddHostInput{
@@ -568,7 +643,7 @@ func TestServiceV2PairCodeCreationIsAtomicWithCheckpointCleanup(t *testing.T) {
 		go func() {
 			defer wait.Done()
 			<-start
-			code, err := service.CreatePairingCodeV2()
+			code, err := service.CreatePairingCodeV2(SummaryTerminalScope)
 			resultMu.Lock()
 			defer resultMu.Unlock()
 			concurrentErr = errors.Join(concurrentErr, err)
@@ -642,9 +717,9 @@ func TestServiceV2SlowSummaryDoesNotBlockPairingCodeCreation(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("target CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("target CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	host, err := center.AddHost(context.Background(), AddHostInput{
 		Name: "slow-summary", Origin: "http://8.8.8.8:1801",
@@ -671,14 +746,14 @@ func TestServiceV2SlowSummaryDoesNotBlockPairingCodeCreation(t *testing.T) {
 
 	created := make(chan error, 1)
 	go func() {
-		_, err := center.CreatePairingCodeV2()
+		_, err := center.CreatePairingCodeV2(SummaryTerminalScope)
 		created <- err
 	}()
 	select {
 	case err := <-created:
 		if err != nil {
 			close(release)
-			t.Fatalf("CreatePairingCodeV2() during slow summary: %v", err)
+			t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) during slow summary: %v", err)
 		}
 	case <-time.After(time.Second):
 		close(release)
@@ -726,9 +801,9 @@ func TestServiceV2CredentialTransitionIsAtomicWithCleanup(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2() error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
 	}
 	route.setFailurePath(v2PairPath)
 	host, err := center.AddHost(context.Background(), AddHostInput{

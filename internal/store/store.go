@@ -76,6 +76,21 @@ type SecurityEntrance struct {
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
 
+// AllowedHosts is the operator-managed allowlist of extra Host header values
+// the panel answers on, beyond the single origin fixed by config publicUrl.
+// It exists because publicUrl can only name one origin, while a panel is
+// commonly reached through several (a domain via a reverse proxy or CDN, a
+// LAN address, a tunnel hostname) and editing the config file is not always
+// available to the operator.
+//
+// This is a security boundary, not a convenience list: Host validation is
+// what stops DNS-rebinding and Host-header spoofing, so entries are exact
+// hostname matches only — never wildcards or suffix matches.
+type AllowedHosts struct {
+	Hosts     []string  `json:"hosts,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+}
+
 type PasswordRecovery struct {
 	UserID          string
 	ExpectedHash    string
@@ -93,6 +108,7 @@ type diskState struct {
 	Audit            []AuditEvent     `json:"audit"`
 	LoginAttempts    []LoginAttempt   `json:"loginAttempts"`
 	SecurityEntrance SecurityEntrance `json:"securityEntrance,omitempty"`
+	AllowedHosts     AllowedHosts     `json:"allowedHosts,omitempty"`
 }
 
 // Store is a small, single-node persistence layer. It deliberately stores only
@@ -651,6 +667,39 @@ func (s *Store) ReplaceSecurityEntrance(expectedResourceVersion string, value Se
 	return nil
 }
 
+func (s *Store) AllowedHosts() (AllowedHosts, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value := s.data.AllowedHosts
+	value.Hosts = append([]string(nil), value.Hosts...)
+	return value, AllowedHostsResourceVersion(s.data.AllowedHosts)
+}
+
+func (s *Store) ReplaceAllowedHosts(expectedResourceVersion string, value AllowedHosts) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedResourceVersion != AllowedHostsResourceVersion(s.data.AllowedHosts) {
+		return ErrConflict
+	}
+	previous := cloneDiskState(s.data)
+	value.Hosts = append([]string(nil), value.Hosts...)
+	s.data.AllowedHosts = value
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
+func AllowedHostsResourceVersion(value AllowedHosts) string {
+	payload := fmt.Sprintf("%s\x00%s",
+		strings.Join(value.Hosts, "\x01"),
+		value.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	)
+	digest := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("sha256:%x", digest[:])
+}
+
 func SecurityEntranceResourceVersion(value SecurityEntrance) string {
 	payload := fmt.Sprintf("%t\x00%s\x00%s", value.Enabled, value.Path, value.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	digest := sha256.Sum256([]byte(payload))
@@ -731,6 +780,10 @@ func cloneDiskState(source diskState) diskState {
 		Audit:            append([]AuditEvent(nil), source.Audit...),
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
+		AllowedHosts: AllowedHosts{
+			Hosts:     append([]string(nil), source.AllowedHosts.Hosts...),
+			UpdatedAt: source.AllowedHosts.UpdatedAt,
+		},
 	}
 }
 

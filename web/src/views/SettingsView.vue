@@ -10,6 +10,7 @@ import {
   Clock3,
   Copy,
   ExternalLink,
+  Globe,
   KeyRound,
   Languages,
   LoaderCircle,
@@ -31,7 +32,7 @@ import { useSession } from '@/stores/session'
 import { useTheme, type ThemePreference } from '@/stores/theme'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
-import type { TOTPEnrollment, TOTPStatus } from '@/types/api'
+import type { AllowedHostsSettings, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const router = useRouter()
 const session = useSession()
@@ -57,6 +58,10 @@ const usernamePasswordUnlocked = ref(false)
 const capabilities = ref<Array<{ id: string; enabled: boolean; reason?: string }>>([])
 const securityEntry = ref<{ enabled: boolean; path?: string; resourceVersion: string }>()
 const securityEntryPath = ref('')
+const allowedHosts = ref<AllowedHostsSettings>()
+const allowedHostsDraft = ref('')
+const savingAllowedHosts = ref(false)
+const allowedHostsError = ref('')
 const savingSecurityEntry = ref(false)
 const totpStatus = ref<TOTPStatus>()
 const totpStatusError = ref('')
@@ -195,6 +200,51 @@ async function saveSecurityEntry(enabled: boolean, regenerate = false): Promise<
     toast.danger('安全入口更新失败', reason instanceof ApiError ? reason.message : '请刷新后重试。')
   } finally {
     savingSecurityEntry.value = false
+  }
+}
+
+// The allowlist is edited as free text (one host per line) rather than a
+// tag widget: operators typically paste a domain straight from a browser
+// address bar, and the server normalizes/validates anyway.
+function parseAllowedHostsDraft(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const allowedHostsDirty = computed(
+  () =>
+    Boolean(allowedHosts.value) &&
+    parseAllowedHostsDraft(allowedHostsDraft.value).join('\n') !== (allowedHosts.value?.hosts ?? []).join('\n'),
+)
+
+function applyAllowedHosts(value: AllowedHostsSettings): void {
+  allowedHosts.value = value
+  allowedHostsDraft.value = value.hosts.join('\n')
+}
+
+function resetAllowedHostsDraft(): void {
+  if (allowedHosts.value) applyAllowedHosts(allowedHosts.value)
+  allowedHostsError.value = ''
+}
+
+async function saveAllowedHosts(): Promise<void> {
+  if (!allowedHosts.value || savingAllowedHosts.value) return
+  savingAllowedHosts.value = true
+  allowedHostsError.value = ''
+  try {
+    const updated = await api.settings.allowedHosts.update({
+      hosts: parseAllowedHostsDraft(allowedHostsDraft.value),
+      expectedResourceVersion: allowedHosts.value.resourceVersion,
+    })
+    applyAllowedHosts(updated)
+    toast.success('访问域名已保存')
+  } catch (reason) {
+    allowedHostsError.value = reason instanceof ApiError ? reason.message : '请刷新后重试。'
+    toast.danger('访问域名保存失败', allowedHostsError.value)
+  } finally {
+    savingAllowedHosts.value = false
   }
 }
 
@@ -344,15 +394,19 @@ async function endAuthenticatedSession(): Promise<void> {
 }
 
 onMounted(async () => {
-  const [capabilityResult, entranceResult, totpResult] = await Promise.allSettled([
+  const [capabilityResult, entranceResult, totpResult, allowedHostsResult] = await Promise.allSettled([
     api.agent.capabilities(),
     api.settings.securityEntrance.get(),
     api.settings.totp.status(),
+    api.settings.allowedHosts.get(),
   ])
   capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : []
   if (entranceResult.status === 'fulfilled') {
     securityEntry.value = entranceResult.value
     securityEntryPath.value = entranceResult.value.path || ''
+  }
+  if (allowedHostsResult.status === 'fulfilled') {
+    applyAllowedHosts(allowedHostsResult.value)
   }
   if (totpResult.status === 'fulfilled') {
     totpStatus.value = totpResult.value
@@ -536,6 +590,58 @@ onMounted(async () => {
       </div>
       <p v-else class="settings-note">正在读取安全入口状态…</p>
       <p class="settings-note">安全入口是登录验证前的额外门槛，不替代强密码、会话保护和登录限速；请妥善保存入口地址。</p>
+    </section>
+
+    <section class="settings-section panel-card">
+      <header class="settings-section__header">
+        <span><Globe :size="19" /></span>
+        <div><h2>面板访问域名</h2><p>除配置文件里的公开地址外，额外允许通过这些域名访问面板</p></div>
+        <StatusBadge
+          :status="allowedHosts && allowedHosts.hosts.length > 0 ? 'connected' : 'idle'"
+          :label="allowedHosts ? `${allowedHosts.hosts.length} 条` : '读取中'"
+        />
+      </header>
+      <div v-if="allowedHosts" class="allowed-hosts-form">
+        <label class="field allowed-hosts-field">
+          <span>域名列表（每行一个，可带端口）</span>
+          <textarea
+            v-model="allowedHostsDraft"
+            rows="4"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            placeholder="panel.example.com&#10;panel.example.com:8443"
+          ></textarea>
+        </label>
+        <div v-if="allowedHostsError" class="inline-alert inline-alert--danger">
+          <span>{{ allowedHostsError }}</span>
+        </div>
+        <div class="allowed-hosts-actions">
+          <button
+            class="button button--primary"
+            type="button"
+            :disabled="savingAllowedHosts || !allowedHostsDirty"
+            @click="saveAllowedHosts"
+          >
+            {{ savingAllowedHosts ? '保存中…' : '保存' }}
+          </button>
+          <button
+            v-if="allowedHostsDirty"
+            class="button button--ghost"
+            type="button"
+            :disabled="savingAllowedHosts"
+            @click="resetAllowedHostsDraft"
+          >
+            撤销更改
+          </button>
+        </div>
+      </div>
+      <p v-else class="settings-note">正在读取访问域名…</p>
+      <p class="settings-note">
+        只做精确匹配，不支持 <code>*.example.com</code> 这类通配写法：域名校验正是阻挡 DNS
+        重绑定和 Host 头伪造的防线，通配会让它失效。留空表示只允许配置文件里的公开地址（以及本机 IP，若已开启）。
+      </p>
     </section>
 
     <section class="settings-section panel-card">
@@ -791,6 +897,33 @@ onMounted(async () => {
   color: var(--brand);
 }
 
+.allowed-hosts-form {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  padding: 18px;
+}
+
+/* Hostnames are read character by character when auditing an allowlist, so the
+   editor uses the same monospace treatment as the rest of the panel's literals. */
+.allowed-hosts-field textarea {
+  min-height: 108px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.7;
+}
+
+.allowed-hosts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.allowed-hosts-actions .button--primary {
+  min-width: 132px;
+}
+
 @media (max-width: 640px) {
   .password-form {
     max-width: none;
@@ -815,6 +948,15 @@ onMounted(async () => {
   }
 
   .security-entry-actions .button {
+    flex: 1 1 140px;
+  }
+
+  .allowed-hosts-form {
+    max-width: none;
+    padding: 14px;
+  }
+
+  .allowed-hosts-actions .button {
     flex: 1 1 140px;
   }
 }

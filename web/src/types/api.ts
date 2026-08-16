@@ -1547,6 +1547,12 @@ export interface SecurityEntranceSettings {
   resourceVersion: string
 }
 
+/** Operator-managed extra Host values the panel answers on (exact matches). */
+export interface AllowedHostsSettings {
+  hosts: string[]
+  resourceVersion: string
+}
+
 export type FileKind = 'file' | 'directory' | 'symlink' | 'special'
 
 export interface FileEntry {

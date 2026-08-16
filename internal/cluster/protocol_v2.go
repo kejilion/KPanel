@@ -27,8 +27,18 @@ const (
 	v2TerminalInputPath  = "/api/v2/federation/terminal/input"
 	v2TerminalResizePath = "/api/v2/federation/terminal/resize"
 	v2TerminalClosePath  = "/api/v2/federation/terminal/close"
-	maxV2PairingCode     = 1024
-	maxV2EnvelopeBytes   = MaxFederationV2Bytes
+
+	v2BrowseFetchOpenPath   = "/api/v2/federation/browse/fetch/open"
+	v2BrowseFetchOutputPath = "/api/v2/federation/browse/fetch/output"
+	v2BrowseFetchClosePath  = "/api/v2/federation/browse/fetch/close"
+
+	v2BrowseWSOpenPath   = "/api/v2/federation/browse/ws/open"
+	v2BrowseWSOutputPath = "/api/v2/federation/browse/ws/output"
+	v2BrowseWSInputPath  = "/api/v2/federation/browse/ws/input"
+	v2BrowseWSClosePath  = "/api/v2/federation/browse/ws/close"
+
+	maxV2PairingCode   = 1024
+	maxV2EnvelopeBytes = MaxFederationV2Bytes
 )
 
 var v2NoiseSuite = noise.NewCipherSuite(
@@ -113,6 +123,93 @@ type TerminalResizeRequest struct {
 }
 
 type TerminalCloseRequest struct {
+	SessionID string `json:"sessionId"`
+}
+
+// BrowseFetchRequest is both the local Agent-backed fetch request and the
+// v2 federation Open payload — one shape either way, only the transport
+// differs. Body/Headers are omitted when nil/empty rather than sent as
+// empty containers, keeping small requests small.
+type BrowseFetchRequest struct {
+	URL     string              `json:"url"`
+	Method  string              `json:"method,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	Body    string              `json:"body,omitempty"` // base64
+}
+
+// BrowseFetchResult is a fully-buffered fetch outcome — never sent over the
+// wire as-is (every v2 round trip is capped at MaxSummaryBytes, far smaller
+// than a page asset can be), only held in memory long enough for
+// handleBrowseFetchOpenV2 to seed a session that BrowseFetchOutputRequest
+// then drains in chunks.
+type BrowseFetchResult struct {
+	StatusCode int
+	Headers    map[string][]string
+	Body       []byte
+}
+
+type BrowseFetchOpenResponse struct {
+	SessionID  string              `json:"sessionId"`
+	StatusCode int                 `json:"statusCode"`
+	Headers    map[string][]string `json:"headers"`
+	TotalBytes int                 `json:"totalBytes"`
+}
+
+type BrowseFetchOutputRequest struct {
+	SessionID string `json:"sessionId"`
+	Offset    int    `json:"offset"`
+}
+
+type BrowseFetchOutputResponse struct {
+	Data       string `json:"data"` // base64 chunk
+	NextOffset int    `json:"nextOffset"`
+	Done       bool   `json:"done"`
+}
+
+type BrowseFetchCloseRequest struct {
+	SessionID string `json:"sessionId"`
+}
+
+// BrowseWSOpenRequest is the v2 federation Open payload for a WS relay.
+// Unlike browse fetch, WS is genuinely a live session on the target
+// (being-controlled) side — the controlled node's own internal/agent
+// browseWSManager owns the connection and buffering, cluster.Service here
+// just forwards Open/Output/Input/Close through (see BrowseWSBackend), no
+// separate federation-layer session buffer like browse fetch needed.
+type BrowseWSOpenRequest struct {
+	URL     string              `json:"url"`
+	Headers map[string][]string `json:"headers,omitempty"`
+}
+
+type BrowseWSOpenResponse struct {
+	SessionID string `json:"sessionId"`
+}
+
+type BrowseWSMessage struct {
+	Type string `json:"type"` // "text" or "binary"
+	Data string `json:"data"` // base64
+}
+
+type BrowseWSOutputRequest struct {
+	SessionID string `json:"sessionId"`
+	Offset    int    `json:"offset"`
+	Wait      int    `json:"waitMilliseconds"`
+}
+
+type BrowseWSOutputResponse struct {
+	Messages    []BrowseWSMessage `json:"messages"`
+	NextOffset  int               `json:"nextOffset"`
+	Closed      bool              `json:"closed"`
+	CloseReason string            `json:"closeReason,omitempty"`
+}
+
+type BrowseWSInputRequest struct {
+	SessionID string `json:"sessionId"`
+	Type      string `json:"type"` // "text" or "binary"
+	Data      string `json:"data"` // base64
+}
+
+type BrowseWSCloseRequest struct {
 	SessionID string `json:"sessionId"`
 }
 
@@ -469,7 +566,9 @@ func v2PathAllowed(method, path string) bool {
 	switch path {
 	case v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
 		v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
-		v2TerminalResizePath, v2TerminalClosePath:
+		v2TerminalResizePath, v2TerminalClosePath,
+		v2BrowseFetchOpenPath, v2BrowseFetchOutputPath, v2BrowseFetchClosePath,
+		v2BrowseWSOpenPath, v2BrowseWSOutputPath, v2BrowseWSInputPath, v2BrowseWSClosePath:
 		return true
 	default:
 		return false
@@ -480,6 +579,30 @@ func v2TerminalPath(path string) bool {
 	switch path {
 	case v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
 		v2TerminalResizePath, v2TerminalClosePath:
+		return true
+	default:
+		return false
+	}
+}
+
+// v2BrowseFetchPath shares the terminal request budget (see
+// HandleFederationV2/openControllerV2): both are legitimately chatty polling
+// loops from an already-authenticated controller, unlike the low-frequency
+// pair/commit/summary/revoke calls the default limiter is sized for.
+func v2BrowseFetchPath(path string) bool {
+	switch path {
+	case v2BrowseFetchOpenPath, v2BrowseFetchOutputPath, v2BrowseFetchClosePath:
+		return true
+	default:
+		return false
+	}
+}
+
+// v2BrowseWSPath gets the same request-budget treatment as
+// v2BrowseFetchPath, for the same reason.
+func v2BrowseWSPath(path string) bool {
+	switch path {
+	case v2BrowseWSOpenPath, v2BrowseWSOutputPath, v2BrowseWSInputPath, v2BrowseWSClosePath:
 		return true
 	default:
 		return false

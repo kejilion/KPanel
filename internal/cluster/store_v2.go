@@ -92,16 +92,20 @@ type controllerRecordV2 struct {
 }
 
 type pairingCodeRecordV2 struct {
-	ID                  string         `json:"id"`
-	State               pairingStateV2 `json:"state"`
-	CredentialFile      string         `json:"credentialFile"`
-	ControllerID        string         `json:"controllerId,omitempty"`
-	ControllerName      string         `json:"controllerName,omitempty"`
-	ControllerPublicKey string         `json:"controllerPublicKey,omitempty"`
-	TransactionID       string         `json:"transactionId,omitempty"`
-	ExpiresAt           time.Time      `json:"expiresAt"`
-	BoundAt             *time.Time     `json:"boundAt,omitempty"`
-	Attempts            int            `json:"attempts"`
+	ID             string         `json:"id"`
+	State          pairingStateV2 `json:"state"`
+	CredentialFile string         `json:"credentialFile"`
+	// Scope is the capability set this code grants once bound. Empty means
+	// "not yet set" and defaults to SummaryTerminalScope at grant time,
+	// preserving the behavior of codes created before this field existed.
+	Scope               string     `json:"scope,omitempty"`
+	ControllerID        string     `json:"controllerId,omitempty"`
+	ControllerName      string     `json:"controllerName,omitempty"`
+	ControllerPublicKey string     `json:"controllerPublicKey,omitempty"`
+	TransactionID       string     `json:"transactionId,omitempty"`
+	ExpiresAt           time.Time  `json:"expiresAt"`
+	BoundAt             *time.Time `json:"boundAt,omitempty"`
+	Attempts            int        `json:"attempts"`
 }
 
 type persistedStateV2 struct {
@@ -866,7 +870,7 @@ func validateHostRecordV2(record hostRecordV2) error {
 		err != nil || normalizedOrigin != record.Origin ||
 		record.TransportSecurity != v2TransportSecurity(record.Origin) ||
 		record.FederationProtocol != FederationProtocolV2 ||
-		(record.Scope != "" && record.Scope != SummaryScope && record.Scope != SummaryTerminalScope) ||
+		(record.Scope != "" && !ValidV2Scope(record.Scope)) ||
 		keyErr != nil || len(targetPublicKey) != 32 ||
 		record.PeerFingerprint != fingerprintV2(targetPublicKey) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
@@ -904,7 +908,7 @@ func validateControllerRecordV2(record controllerRecordV2) error {
 	if !validID(record.ID) || !validID(record.TransactionID) ||
 		err != nil || len(publicKey) != 32 ||
 		record.Fingerprint != fingerprintV2(publicKey) ||
-		(record.Scope != SummaryScope && record.Scope != SummaryTerminalScope) ||
+		!ValidV2Scope(record.Scope) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
 		len(record.Name) > 80 {
 		return errors.New("cluster v2 store contains an invalid controller record")
@@ -928,6 +932,7 @@ func validatePairingCodeRecordV2(record pairingCodeRecordV2) error {
 	if len(record.ID) != 16 || !validHex(record.ID) ||
 		!validPairingCredentialNameV2(record.CredentialFile) ||
 		record.CredentialFile != "pair-"+record.ID+".v2key" ||
+		(record.Scope != "" && !ValidV2Scope(record.Scope)) ||
 		record.ExpiresAt.IsZero() || record.Attempts < 0 || record.Attempts >= 5 {
 		return errors.New("cluster v2 store contains an invalid pairing code record")
 	}
@@ -966,9 +971,20 @@ func hostResourceVersionV2(record hostRecordV2) string {
 		record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	// Preserve resource versions for existing summary-only v2 pairings. The
-	// additional terminal grant becomes part of the version only when present.
+	// additional terminal grant becomes part of the version only when present
+	// — using the exact historical field value so hosts that had terminal
+	// before the browse grant existed keep their resource version unchanged.
 	if ScopeAllowsTerminal(record.Scope) {
 		fields = append(fields, "scope:"+SummaryTerminalScope)
+	}
+	// Same idea, applied to the browse grant added afterwards: only hosts
+	// that actually have it see their resource version move.
+	if ScopeAllowsBrowse(record.Scope) {
+		fields = append(fields, "scope:"+ScopeTokenBrowse)
+	}
+	// And again for the browse-WS grant added after that.
+	if ScopeAllowsBrowseWS(record.Scope) {
+		fields = append(fields, "scope:"+ScopeTokenBrowseWS)
 	}
 	sum := sha256.Sum256([]byte(strings.Join(fields, "\n")))
 	return "sha256:" + hex.EncodeToString(sum[:])

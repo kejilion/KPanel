@@ -112,6 +112,12 @@ export const router = createRouter({
           meta: { titleKey: 'route.terminal' },
         },
         {
+          path: 'browser',
+          name: 'browser',
+          component: () => loadNavigationRoute('/browser'),
+          meta: { titleKey: 'route.browser' },
+        },
+        {
           path: 'diagnostics',
           name: 'diagnostics',
           component: () => loadNavigationRoute('/diagnostics'),

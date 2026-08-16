@@ -200,7 +200,7 @@ func publicLightHost(record lightHostRecord, now time.Time) Host {
 		ID: record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
 		FederationProtocol: LightNodeProtocol, PanelVersion: record.NodeVersion,
-		Scope: SummaryScope, TerminalAvailable: false,
+		Scope: SummaryScope, TerminalAvailable: false, BrowseAvailable: false, BrowseWSAvailable: false,
 		State: state, LastSnapshot: cloneSnapshot(record.LastSnapshot),
 		LastAttemptAt: cloneTime(record.LastAttemptAt), LastSuccessAt: cloneTime(record.LastSuccessAt),
 		ConsecutiveFailures: record.ConsecutiveFailures, LastErrorCode: record.LastErrorCode,

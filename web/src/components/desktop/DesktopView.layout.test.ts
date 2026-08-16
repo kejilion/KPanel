@@ -316,7 +316,7 @@ describe('DesktopView icon layout interaction', () => {
     const extraSlot = wrapper.find('[data-icon-key="app:extra"]')
     const scrollSpace = wrapper.find('.desktop__icons-scroll-space')
 
-    expect(extraSlot.attributes('style')).toContain('top: 400px')
+    expect(extraSlot.attributes('style')).toContain('top: 500px')
     expect(Number.parseFloat((scrollSpace.attributes('style') || '').match(/height:\s*([\d.]+)px/)?.[1] || '0'))
       .toBeGreaterThan(480)
     expect(updateWorkspace).not.toHaveBeenCalled()
@@ -343,7 +343,7 @@ describe('DesktopView icon layout interaction', () => {
 
     expect(overflow.attributes('style')).not.toBe(supported.attributes('style'))
     expect(overflow.attributes('style')).not.toContain('display: none')
-    expect(wrapper.find('.desktop__icons-overflow-note').text()).toContain('另有 1 个图标')
+    expect(wrapper.find('.desktop__icons-overflow-note').text()).toContain('另有 2 个图标')
 
     await wrapper.trigger('contextmenu', { clientX: 220, clientY: 160 })
     await flushPromises()

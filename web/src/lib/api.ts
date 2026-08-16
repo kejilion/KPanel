@@ -53,6 +53,7 @@ import type {
   PanelSettings,
   ProcessQuery,
   ProcessSnapshot,
+  AllowedHostsSettings,
   SecurityEntranceSettings,
   SetupRequest,
   Site,
@@ -1853,6 +1854,11 @@ export const api = {
 			regenerate?: boolean
 			expectedResourceVersion: string
 		}) => request<SecurityEntranceSettings>('/settings/security-entry', { method: 'PUT', body: input }),
+	},
+	allowedHosts: {
+		get: () => request<AllowedHostsSettings>('/settings/allowed-hosts'),
+		update: (input: { hosts: string[]; expectedResourceVersion: string }) =>
+			request<AllowedHostsSettings>('/settings/allowed-hosts', { method: 'PUT', body: input }),
 	},
 	totp: {
 		status: () => request<TOTPStatus>('/settings/totp'),

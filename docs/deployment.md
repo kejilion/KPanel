@@ -154,6 +154,83 @@ Panel 容器不发布宿主端口。需要在宿主机或 host-network Nginx 中
 Panel 仍只信任 loopback 与内部 `/28` 的代理头，egress 网络不加入可信代理范围。
 如果预检发现冲突，通过 `--network-subnet` 选择另一个对齐的私网 `/28`；安装器会
 同时写入内部网络、网关、Panel 私网地址和可信代理 CIDR，不能在安装后手工改其中一项。
+
+### 面板访问域名白名单
+
+`publicUrl` 只能写一个来源，但面板常常同时通过多个名字访问（反代域名、CDN 域名、内网地址、
+隧道主机名）。设置页的「面板访问域名」（`GET`/`PUT /api/v1/settings/allowed-hosts`）用于登记
+额外允许的 Host，持久化在面板存储里，改动会写审计。
+
+该白名单**同时作用于 Host 校验和 Origin 校验**。只放开 Host 会得到一个半残状态：页面能打开，
+但所有写操作都会因为 Origin 不匹配而 403——因为 `expected` 只能是 `publicUrl` 那一个来源。
+
+两条刻意的设计约束：
+
+- **只做精确匹配**，不支持 `*.example.com` 这类通配或后缀写法。Host/Origin 校验正是阻挡 DNS
+  重绑定与 Host 头伪造的防线，通配等于把它拆掉。
+- **Origin 匹配忽略协议（http/https）**，只比对主机部分。在 CDN/反代后面，除非代理位于
+  `trustedProxyCidrs`，服务端无法可信地得知浏览器侧的协议（来自不可信来源的
+  `X-Forwarded-Proto` 会被正确忽略），强制要求 https 会让白名单在它最该生效的场景里失效。
+  这是可接受的取舍：Origin 校验的职责是拒绝**其他站点**，而能以 `http://<你自己的域名>` 提供
+  服务的攻击者已经控制了该域名的 DNS，那时失守的并不是 Origin 校验这一环。
+
+### 桌面浏览器功能与 HTTPS
+
+桌面"浏览器"应用（`/api/v1/browse/*`）的页面改写完全依赖 Service Worker，而浏览器只在
+secure context（HTTPS，或 `localhost` 等 loopback 来源）下允许注册 Service Worker。因此该功能
+在非 secure context 下物理上无法工作。
+
+**这条限制由浏览器执行，服务端不做对应校验。** 服务端看不到可靠的浏览器侧协议——放在 CDN 或
+反向代理后面时它收到的是明文 HTTP，而来自不可信对端的 `X-Forwarded-Proto` 会被正确忽略——
+任何服务端猜测都会误判，把本来能用的部署挡在门外。前端用 `window.isSecureContext`
+（唯一权威判据）自检，并区分"浏览器不支持 Service Worker"与"当前来源不是 secure context"
+两种情况给出准确提示，见 `web/public/browser-app/app.js`。
+
+放在 Cloudflare 等 CDN 后面时，浏览器地址栏是 `https://`，浏览器自身的判定就会通过，功能可用；
+面板不需要为此做任何配置。
+
+#### 何时仍应把 CDN 加入 `trustedProxyCidrs`
+
+与浏览器功能无关，但影响两件正确性问题：CDN 回源通常是明文 HTTP，若 CDN 段不在
+`trustedProxyCidrs` 里，Cookie 不会带 `Secure`，且登录限速与审计记录的是 **CDN 边缘 IP** 而不是
+真实客户端 IP——不同攻击者互相触发对方的锁定，同一攻击者换边缘节点又能重置计数。
+
+诊断（在源站执行，确认 CDN 实际以什么地址、什么端口回源）：
+
+```sh
+ss -tn state established "( sport = :8080 )"
+```
+
+修复需要**同时**做两件事，缺一不可：
+
+1. 把 CDN 的官方回源段写入 `trustedProxyCidrs`（Cloudflare：`https://www.cloudflare.com/ips-v4`
+   与 `ips-v6`，共 22 段；保留原有的 `127.0.0.0/8`、`::1/128`）。可信对端的客户端 IP 依次取
+   `CF-Connecting-IP`、`X-Real-IP`、`X-Forwarded-For` 中最右侧的非可信地址。
+2. 把源站端口的入站限制为只接受这些 CDN 段。
+
+第 2 步不是可选的加固。信任一个共享 CDN 的整个地址段，等于信任**任何人**经该 CDN 转发到你源站的
+请求——攻击者可以把自己的 CDN 域名回源指向你的源站 IP，其请求就从一个"可信代理"地址到达。届时
+`CF-Connecting-IP` / `X-Forwarded-For` 可被任意伪造，登录失败锁定和审计里的客户端 IP 全部失效
+（开启 `allowIpHosts` 时 Host 校验也拦不住，因为字面 IP 本身就是允许的 Host）。源站端口对公网
+开放的前提下，第 1 步是净损失。
+
+同理，**"Host 命中白名单"不能替代对端 CIDR 判断**：Host 头由客户端提供，域名也不是秘密（知道
+域名的人可以直接连源站 IP 并带上该 Host），因此它不能证明请求经由 CDN 到达。可信代理的判定只
+能基于对端地址——那是请求里唯一无法伪造的部分。
+
+Cloudflare 回源默认走 80/443；如果源站监听在 8080 之类的端口，那是 CDN 侧的 Origin Rules 或
+DNS 记录端口决定的，以 `ss` 实测为准，不要照抄本文档的端口号。
+
+若只是在没有证书的机器上做验证，可用 SSH 端口转发把
+面板映射到本地 loopback，从而获得真正的 secure context：
+
+```sh
+ssh -N -L 8080:127.0.0.1:8080 root@<host>
+# 然后浏览器访问 http://localhost:8080
+```
+
+此时 `publicUrl` 需要设为 `http://localhost:8080`；如仍需保留直接用 IP 访问面板其余功能的
+能力，同时打开 `allowIpHosts`（浏览器功能在 IP 来源下会被浏览器自己拒绝）。
 Nginx 必须与 Panel 同处一台宿主机或能安全路由到该内部网段；不要把 Panel 私网地址
 暴露到公网路由。
 

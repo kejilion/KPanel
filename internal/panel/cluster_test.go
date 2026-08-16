@@ -192,6 +192,9 @@ func TestClusterPairingCodeSecretIsNotAudited(t *testing.T) {
 	if !strings.HasPrefix(code.Code, "kp2.") {
 		t.Fatalf("pairing code does not use the encrypted v2 protocol: %q", code.Code)
 	}
+	if code.Scope != cluster.SummaryTerminalScope {
+		t.Fatalf("omitted grants must default to today's behavior (terminal, no browse); got scope %q", code.Scope)
+	}
 
 	events, _ := server.store.ListAudit(200, "")
 	serialized, err := json.Marshal(events)
@@ -214,6 +217,50 @@ func TestClusterPairingCodeSecretIsNotAudited(t *testing.T) {
 	}
 	if !intent || !success {
 		t.Fatalf("pairing code audit intent/success missing: %#v", events)
+	}
+}
+
+func TestClusterPairingCodeV2AcceptsExplicitGrants(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+
+	post := func(t *testing.T, body string) cluster.PairingCode {
+		t.Helper()
+		response := authenticatedRequest(
+			server, http.MethodPost, "/api/v1/cluster/pairing-codes/v2", []byte(body),
+			sessionCookie, csrfCookie, map[string]string{
+				"Content-Type": "application/json",
+				"Origin":       "http://panel.test",
+				"X-CSRF-Token": csrfCookie.Value,
+			},
+		)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("pairing code status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+		}
+		var code cluster.PairingCode
+		if err := json.Unmarshal(response.Body.Bytes(), &code); err != nil {
+			t.Fatalf("decode pairing code: %v", err)
+		}
+		return code
+	}
+
+	if code := post(t, `{"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.browse.fetch" {
+		t.Fatalf(`{"browseFetch":true} scope = %q`, code.Scope)
+	}
+	if code := post(t, `{"terminal":false}`); code.Scope != cluster.SummaryScope {
+		t.Fatalf(`{"terminal":false} scope = %q`, code.Scope)
+	}
+	if code := post(t, `{"terminal":false,"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch" {
+		t.Fatalf(`{"terminal":false,"browseFetch":true} scope = %q`, code.Scope)
+	}
+	if code := post(t, `{"browseWs":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.browse.ws" {
+		t.Fatalf(`{"browseWs":true} scope = %q`, code.Scope)
+	}
+	if code := post(t, `{"terminal":false,"browseFetch":true,"browseWs":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch cluster.browse.ws" {
+		t.Fatalf(`{"terminal":false,"browseFetch":true,"browseWs":true} scope = %q`, code.Scope)
+	}
+	if code := post(t, `{}`); code.Scope != cluster.SummaryTerminalScope {
+		t.Fatalf(`{} scope = %q, want default terminal-only`, code.Scope)
 	}
 }
 

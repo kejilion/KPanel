@@ -29,6 +29,7 @@ export const zhCNMessages = {
   'route.apps': '应用市场',
   'route.files': '文件',
   'route.terminal': '终端',
+  'route.browser': '浏览器',
   'route.diagnostics': '体检',
   'route.docker': 'Docker',
   'route.activity': '活动记录',

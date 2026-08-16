@@ -60,6 +60,10 @@ type Server struct {
 	terminalSessions    map[string]panelTerminalSession
 	terminalOpening     int
 	terminalOpeningUser map[string]int
+	browseWSMu          sync.Mutex
+	browseWSSessions    map[string]panelBrowseWSSession
+	browseWSOpening     int
+	browseWSOpeningUser map[string]int
 	downloadTicketMu    sync.Mutex
 	downloadTickets     map[[32]byte]fileDownloadTicket
 	ai                  *ai.Service
@@ -101,6 +105,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		PrivateCIDRs: config.ClusterPrivateCIDRs,
 		Telemetry:    clusterTelemetrySource{agent: agent},
 		Terminal:     clusterTerminalSource{agent: agent},
+		Browse:       clusterBrowseSource{agent: agent},
+		BrowseWS:     clusterBrowseWSSource{agent: agent},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize cluster service: %w", err)
@@ -114,6 +120,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		cluster:             clusterService,
 		terminalSessions:    make(map[string]panelTerminalSession),
 		terminalOpeningUser: make(map[string]int),
+		browseWSSessions:    make(map[string]panelBrowseWSSession),
+		browseWSOpeningUser: make(map[string]int),
 		trustedProxies:      trustedProxies,
 		lastAuthAudit:       make(map[string]time.Time),
 		desktopWorkspace:    desktopWorkspace,
@@ -193,6 +201,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleTOTPRecoveryCodes(w, r)
 	case (r.Method == http.MethodGet || r.Method == http.MethodPut) && r.URL.Path == "/api/v1/settings/security-entry":
 		s.handleSecurityEntranceSettings(w, r)
+	case (r.Method == http.MethodGet || r.Method == http.MethodPut) && r.URL.Path == "/api/v1/settings/allowed-hosts":
+		s.handleAllowedHostsSettings(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/audit":
 		s.handleAudit(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/"):
@@ -204,6 +214,13 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleJobs(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browse/fetch":
+		s.handleBrowseFetch(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browse/sessions":
+		s.handleBrowseSessionStart(w, r)
+	case r.URL.Path == "/api/v1/browse/ws-sessions" ||
+		strings.HasPrefix(r.URL.Path, "/api/v1/browse/ws-sessions/"):
+		s.handleBrowseWSSession(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"):
 		s.handleDesktopShortcutIcon(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
@@ -1121,11 +1138,59 @@ func (s *Server) checkOrigin(w http.ResponseWriter, r *http.Request) bool {
 		}
 		expected = scheme + "://" + r.Host
 	}
-	if !secureStringEqual(strings.ToLower(origin), strings.ToLower(expected)) {
+	if !secureStringEqual(strings.ToLower(origin), strings.ToLower(expected)) &&
+		!s.originHostIsAllowlisted(origin) {
 		s.writeProblem(w, r, http.StatusForbidden, "origin_validation_failed", "Origin validation failed", "")
 		return false
 	}
 	return true
+}
+
+// originHostIsAllowlisted extends the operator-managed Host allowlist to
+// Origin validation. Without this the allowlist would only half-work: the
+// page loads (Host accepted) but every mutating request fails CSRF/Origin,
+// because `expected` can only ever be the single origin from publicUrl.
+//
+// Matching is on the Origin's host component and is deliberately
+// scheme-agnostic. Behind a CDN or reverse proxy the server cannot know the
+// browser-facing scheme unless the proxy is in trustedProxyCidrs
+// (X-Forwarded-Proto from an untrusted peer is ignored, correctly), so
+// requiring an https:// match would make the allowlist useless in exactly
+// the deployment it exists for. That is an acceptable trade: the Origin
+// check's job is to reject *other* sites, and an attacker who can serve
+// http://<your-own-domain> already controls DNS for that name — at which
+// point Origin validation is not the control that failed. Host matching
+// stays exact; no wildcards, no suffix matches.
+func (s *Server) originHostIsAllowlisted(origin string) bool {
+	if origin == "" || s.store == nil {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	return s.hostAllowlisted(parsed.Host)
+}
+
+// hostAllowlisted reports whether host exactly matches an operator-listed
+// entry (see store.AllowedHosts). Shared by Host and Origin validation so the
+// two can never drift apart.
+func (s *Server) hostAllowlisted(host string) bool {
+	if s.store == nil {
+		return false
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	allowed, _ := s.store.AllowedHosts()
+	for _, candidate := range allowed.Hosts {
+		if secureStringEqual(host, strings.ToLower(candidate)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
@@ -1138,11 +1203,139 @@ func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
 	_, trustedProxyOrigin := s.trustedProxyHTTPSOrigin(r)
 	_, allowedIPHost := directIPOrigin(r)
 	if !hostMatchesPublicURL && !trustedProxyOrigin &&
-		!(s.config.AllowIPHosts && allowedIPHost) {
+		!(s.config.AllowIPHosts && allowedIPHost) && !s.hostIsAllowlisted(r) {
 		s.writeProblem(w, r, http.StatusMisdirectedRequest, "host_validation_failed", "Host validation failed", "")
 		return false
 	}
 	return true
+}
+
+// hostIsAllowlisted reports whether the request's Host is one the operator
+// explicitly added (Settings → 面板访问域名). publicUrl can only name a single
+// origin, so this covers panels legitimately reached through more than one
+// name. Matching is exact and case-insensitive — never wildcard or suffix —
+// because Host validation is what stops DNS-rebinding and Host-header
+// spoofing.
+func (s *Server) hostIsAllowlisted(r *http.Request) bool {
+	return s.hostAllowlisted(r.Host)
+}
+
+// maxAllowedHosts bounds the allowlist so it stays an operator-curated set
+// rather than an unbounded store the Host check must scan on every request.
+const maxAllowedHosts = 32
+
+// allowedHostPattern accepts a hostname with an optional port: DNS labels, or
+// a bracketed IPv6 literal. Deliberately no "*" — see AllowedHosts in
+// internal/store.
+var allowedHostPattern = regexp.MustCompile(
+	`^(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\[[0-9a-f:]{2,45}\])(?::[0-9]{1,5})?$`,
+)
+
+// normalizeAllowedHosts lowercases, trims, rejects malformed entries and
+// removes duplicates while preserving the operator's ordering.
+func normalizeAllowedHosts(input []string) ([]string, error) {
+	if len(input) > maxAllowedHosts {
+		return nil, fmt.Errorf("最多只能添加 %d 个访问域名", maxAllowedHosts)
+	}
+	seen := make(map[string]struct{}, len(input))
+	hosts := make([]string, 0, len(input))
+	for _, raw := range input {
+		host := strings.ToLower(strings.TrimSpace(raw))
+		if host == "" {
+			continue
+		}
+		// A pasted URL is the most likely operator mistake; accept it by
+		// taking its host rather than rejecting the whole submission.
+		if strings.Contains(host, "://") {
+			parsed, err := url.Parse(host)
+			if err != nil || parsed.Host == "" {
+				return nil, fmt.Errorf("%q 不是有效的域名", raw)
+			}
+			host = parsed.Host
+		}
+		host = strings.Trim(host, "/")
+		if len(host) > 253 || !allowedHostPattern.MatchString(host) {
+			return nil, fmt.Errorf("%q 不是有效的域名", raw)
+		}
+		if _, duplicate := seen[host]; duplicate {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	return hosts, nil
+}
+
+type allowedHostsResponse struct {
+	Hosts           []string `json:"hosts"`
+	ResourceVersion string   `json:"resourceVersion"`
+}
+
+// handleAllowedHostsSettings exposes the Host allowlist described on
+// store.AllowedHosts. Mirrors the security-entry setting: session + CSRF +
+// Origin guarded, optimistic concurrency by resourceVersion, and audited
+// (intent before the write, outcome after) because it widens a security
+// boundary.
+func (s *Server) handleAllowedHostsSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut && !s.checkOrigin(w, r) {
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if r.Method == http.MethodPut && !s.checkCSRF(w, r, session) {
+		return
+	}
+	current, version := s.store.AllowedHosts()
+	if r.Method == http.MethodGet {
+		s.writeJSON(w, http.StatusOK, allowedHostsResponse{
+			Hosts: append([]string{}, current.Hosts...), ResourceVersion: version,
+		})
+		return
+	}
+	if r.Method != http.MethodPut {
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+		return
+	}
+
+	var input struct {
+		Hosts                   []string `json:"hosts"`
+		ExpectedResourceVersion string   `json:"expectedResourceVersion"`
+	}
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	if !resourceVersionPattern.MatchString(input.ExpectedResourceVersion) {
+		s.writeValidationProblem(w, r, "expectedResourceVersion", "a valid resourceVersion is required")
+		return
+	}
+	hosts, err := normalizeAllowedHosts(input.Hosts)
+	if err != nil {
+		s.writeValidationProblem(w, r, "hosts", err.Error())
+		return
+	}
+
+	change := map[string]any{"count": len(hosts), "hosts": hosts}
+	if err := s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	updated := store.AllowedHosts{Hosts: hosts, UpdatedAt: time.Now().UTC()}
+	if err := s.store.ReplaceAllowedHosts(input.ExpectedResourceVersion, updated); err != nil {
+		_ = s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "failure", change)
+		if errors.Is(err, store.ErrConflict) {
+			s.writeProblem(w, r, http.StatusConflict, "resource_version_changed", "访问域名已被其他会话修改，请刷新后重试", "")
+			return
+		}
+		s.writeProblem(w, r, http.StatusInternalServerError, "allowed_hosts_update_failed", "访问域名更新失败", "")
+		return
+	}
+	_ = s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "success", change)
+	value, newVersion := s.store.AllowedHosts()
+	s.writeJSON(w, http.StatusOK, allowedHostsResponse{
+		Hosts: append([]string{}, value.Hosts...), ResourceVersion: newVersion,
+	})
 }
 
 // directIPOrigin returns an origin only for a literal IPv4 or IPv6 Host. It
@@ -1357,11 +1550,53 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+// browserAppPathPrefixes are the static-asset paths that make up the
+// desktop "browser" feature's legacy Scramjet-based shell (see
+// web/public/browser-app, /scramjet, /controller, /scram, and the
+// service-worker entry point) — the one part of the site that needs a
+// relaxed security policy (see browserAppSecurityRelaxation) rather than
+// the site-wide default. Everything the shell fetches from KPanel's own
+// API still goes through the normal auth/CSRF/CSP-restricted paths; this
+// relaxation only covers the shell's own static files.
+var browserAppPathPrefixes = []string{"/browser-app/", "/scramjet/", "/controller/", "/scram/"}
+
+func isBrowserAppPath(path string) bool {
+	if path == "/scramjet-sw.js" {
+		return true
+	}
+	for _, prefix := range browserAppPathPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// browserAppSecurityRelaxation loosens exactly two site-wide defaults, both
+// required for the vendored Scramjet rewriting engine to function and for
+// KPanel's own BrowserView.vue to embed it in an iframe:
+//   - script-src gains 'wasm-unsafe-eval' — scramjet.wasm is a WebAssembly
+//     rewriting engine; instantiating it is blocked by strict script-src
+//     without this token in Chromium/Firefox.
+//   - frame-ancestors/X-Frame-Options move from "nobody may frame this" to
+//     "only this same origin may frame this" — the browser window embeds
+//     /browser-app/index.html in a same-origin iframe by design.
+//
+// Nothing here weakens connect-src/img-src/object-src or grants any new
+// origin: nothing outside 'self' is ever added.
+func (s *Server) browserAppSecurityRelaxation(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'self'; frame-src 'self' blob:; form-action 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+}
+
 func (s *Server) setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; frame-src 'self' blob:; form-action 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
+	if isBrowserAppPath(r.URL.Path) {
+		s.browserAppSecurityRelaxation(w)
+	}
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
@@ -1414,11 +1649,31 @@ func (s *Server) serveStaticFile(
 	candidate string,
 	requestPath string,
 ) {
-	if filepath.Base(candidate) == "index.html" {
+	// Every .html file is an entry-point shell, not just the SPA's own
+	// index.html — web/public/browser-app/app.html is the same kind of file
+	// for the embedded browse app, and a real iteration bug surfaced exactly
+	// this: with only "index.html" exempted, app.html got the same
+	// long-lived Cache-Control as a hashed static asset, so a browser could
+	// keep serving a stale, already-fixed-server-side copy for up to an
+	// hour. HTML shells reference their own hashed/versioned sub-resources
+	// (which do get the long-cache "assets/" branch below); they should
+	// never be cached themselves.
+	// browser-app/ holds the embedded browse shell's own hand-maintained
+	// scripts (app.js, error-handler.js). Unlike assets/ they carry no
+	// content hash in the filename, so a long max-age pins whatever copy a
+	// browser fetched first — and because they load inside an iframe, a
+	// parent-page hard reload does not revalidate them. Vendored bundles
+	// (/scramjet, /controller) are deliberately left on the default policy:
+	// they are large, change only on a dependency bump, and are not edited
+	// in place.
+	slashPath := filepath.ToSlash(requestPath)
+	switch {
+	case strings.EqualFold(filepath.Ext(candidate), ".html"),
+		strings.HasPrefix(slashPath, "browser-app/"):
 		w.Header().Set("Cache-Control", "no-cache")
-	} else if strings.HasPrefix(filepath.ToSlash(requestPath), "assets/") {
+	case strings.HasPrefix(slashPath, "assets/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else {
+	default:
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
 	if r.Header.Get("Range") == "" && acceptsGzip(r.Header.Get("Accept-Encoding")) {
@@ -1541,9 +1796,22 @@ func parseTrustedProxyCIDRs(values []string) ([]*net.IPNet, error) {
 	return result, nil
 }
 
+// remoteIP resolves the client address used for login rate limiting and
+// audit. Forwarded headers are consulted only when the immediate peer is in
+// trustedProxyCidrs, and that condition is not negotiable: the peer address is
+// the one part of a request a client cannot forge. Anything derived from the
+// request itself — a matching Host, a plausible-looking header — can be
+// replayed by anyone who can reach the port, which would let an attacker
+// rotate a fake client IP per attempt and defeat the login lockout entirely.
 func (s *Server) remoteIP(r *http.Request) string {
 	peer, host := requestPeerIP(r)
 	if peer != nil && ipInNetworks(peer, s.trustedProxies) {
+		// CF-Connecting-IP is the single client address Cloudflare sets and
+		// overwrites; it is preferred over X-Forwarded-For, which arrives as a
+		// list the client contributed the first element to.
+		if forwarded := net.ParseIP(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); forwarded != nil {
+			return forwarded.String()
+		}
 		if forwarded := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); forwarded != nil {
 			return forwarded.String()
 		}

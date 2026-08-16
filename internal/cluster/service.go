@@ -46,6 +46,8 @@ type ServiceConfig struct {
 	PrivateCIDRs    []string
 	Telemetry       TelemetrySource
 	Terminal        TerminalBackend
+	Browse          BrowseBackend
+	BrowseWS        BrowseWSBackend
 	Remote          remoteAPI
 	Now             func() time.Time
 	Hostname        string
@@ -62,6 +64,38 @@ type TerminalBackend interface {
 	Input(context.Context, string, string, []byte) error
 	Resize(context.Context, string, string, uint16, uint16) error
 	Close(context.Context, string, string) error
+}
+
+// BrowseBackend performs one fully-buffered fetch — unlike TerminalBackend
+// there is no long-lived session to manage here: a PTY is a live process you
+// keep polling, but a fetch is one request/response. The chunked-polling
+// shape browse gets over v2 federation (see handleBrowseFetchOpenV2 in
+// browse_v2.go) exists only because of the federation envelope's size cap,
+// and that chunking is handled once, generically, inside Service itself.
+type BrowseBackend interface {
+	Fetch(context.Context, BrowseFetchRequest) (BrowseFetchResult, error)
+}
+
+// BrowseWSBackend is the WS counterpart of TerminalBackend, not BrowseBackend
+// — a WS relay is a live session exactly like a PTY (see
+// internal/agent/browse_ws.go's browseWSManager), so cluster.Service forwards
+// Open/Output/Input/Close straight through rather than buffering anything
+// itself. owner threads through to the Agent unchanged (see
+// clusterBrowseWSSource in internal/panel), same isolation reasoning as
+// terminal's owner scoping.
+type BrowseWSBackend interface {
+	Open(ctx context.Context, owner, targetURL string, headers map[string][]string) (string, error)
+	Output(ctx context.Context, owner, id string, offset int, wait time.Duration) ([]BrowseWSFrame, int, bool, string, error)
+	Input(ctx context.Context, owner, id string, binary bool, data []byte) error
+	Close(ctx context.Context, owner, id string) error
+}
+
+// BrowseWSFrame is the Go-native counterpart of the wire type BrowseWSMessage
+// (protocol_v2.go) — unencoded bytes, used between BrowseWSBackend and the
+// v2 handlers that base64-encode it for the wire only at the boundary.
+type BrowseWSFrame struct {
+	Binary bool
+	Data   []byte
 }
 
 type runtimeState struct {
@@ -85,6 +119,8 @@ type Service struct {
 	remoteV2        remoteV2API
 	telemetry       TelemetrySource
 	terminal        TerminalBackend
+	browse          BrowseBackend
+	browseWS        BrowseWSBackend
 	nodeIdentityV2  nodeIdentityV2
 	panelVersion    string
 	publicURL       string
@@ -123,6 +159,14 @@ type Service struct {
 	localExpires  time.Time
 	localInFlight chan struct{}
 	localError    error
+
+	// browseFetchSessions buffers in-flight federated fetch results in this
+	// process's memory (paneld's container has a 256MB limit — see
+	// deploy/compose/compose.yml — so both the session count and each
+	// backend fetch's own size are capped; see maxBrowseFetchSessionsV2 and
+	// the Agent-side maxBrowseFetchResponseBytes it is fed from).
+	browseFetchMu       sync.Mutex
+	browseFetchSessions map[string]browseFetchSessionV2
 }
 
 func NewService(config ServiceConfig) (*Service, error) {
@@ -233,6 +277,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		store: store, secrets: secrets,
 		storeV2: storeV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
+		browse: config.Browse, browseWS: config.BrowseWS,
 		light: light, publicURL: strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
 		nodeIdentityV2: cloneNodeIdentityV2(nodeIdentity),
 		panelVersion:   cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
@@ -249,6 +294,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		lightEnrolls:     newFixedWindowLimiter(10, time.Minute, 2048),
 		lightSources:     newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:     newFixedWindowLimiter(180, time.Minute, MaxHosts),
+
+		browseFetchSessions: make(map[string]browseFetchSessionV2),
 	}
 	for _, record := range store.Hosts() {
 		service.runtime[record.ID] = runtimeState{
@@ -622,10 +669,10 @@ func (s *Service) CreatePairingCode() (PairingCode, error) {
 	return s.store.CreatePairingCode(s.now().UTC())
 }
 
-func (s *Service) CreatePairingCodeV2() (PairingCode, error) {
+func (s *Service) CreatePairingCodeV2(scope string) (PairingCode, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	return s.createPairingCodeV2()
+	return s.createPairingCodeV2(scope)
 }
 
 func (s *Service) Controllers() []Controller {
@@ -1063,7 +1110,7 @@ func localPublicHost(
 		Kind:              HostKindPanel,
 		TransportSecurity: TransportSecurityTLS,
 		RemoteNodeID:      nodeID, FederationProtocol: FederationProtocol,
-		Scope: SummaryTerminalScope, TerminalAvailable: true,
+		Scope: SummaryTerminalScope, TerminalAvailable: true, BrowseAvailable: true, BrowseWSAvailable: true,
 		PanelVersion: panelVersion, State: hostState(current, now),
 		LastSnapshot:        cloneSnapshot(current.snapshot),
 		LastAttemptAt:       cloneTime(current.lastAttemptAt),
@@ -1090,7 +1137,7 @@ func publicHost(record hostRecord, current runtimeState, now time.Time) Host {
 		TransportSecurity: TransportSecurityTLS,
 		PeerFingerprint:   "",
 		RemoteNodeID:      record.RemoteNodeID, FederationProtocol: record.FederationProtocol,
-		Scope: SummaryScope, TerminalAvailable: false,
+		Scope: SummaryScope, TerminalAvailable: false, BrowseAvailable: false, BrowseWSAvailable: false,
 		PanelVersion: panelVersion, State: hostState(current, now),
 		LastSnapshot:        cloneSnapshot(current.snapshot),
 		LastAttemptAt:       cloneTime(current.lastAttemptAt),
