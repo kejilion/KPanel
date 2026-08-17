@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.5"
+version: "2.6"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-08-17T15:04:32+08:00"
+updated: "2026-08-17T09:25:23Z"
 ---
 
 # Release KPanel
@@ -304,7 +304,9 @@ node scripts/check-environment-policy.mjs \
 若生产部署安全核对失败并执行回滚，恢复生产实例后必须继续完成公共分发审计：核对 GitHub Latest、
 `${{image}}:latest` 和 `kpanel.conf` 标准更新入口实际指向。历史 tag、Release 和不可变版本镜像不得
 删除或改写，但失败版本不得无提示继续作为公共默认更新；应恢复上一稳定默认版本，或在 Release 与
-验收记录中明确已知问题、影响范围、负责人和修复期限后短期保留。该事件按变更失败计入交付节奏数据。
+验收记录中明确已知问题、影响范围、负责人和修复期限后短期保留。生产写操作后若造成服务退化、回滚、
+紧急热修复或重复发布，该事件按变更失败计入；若同时由发布基础设施、执行器、验证通道或无效证据触发，
+还必须同时计入流程异常。首次生产写操作前被门禁拦截的流程异常只计流程指标，不计变更失败。
 
 **Expected output:** 已授权时 154（或用户新指定并登记的非 108 目标）运行版本与正式 digest/commit 一致、
 备份和回滚可执行；未授权时没有生产状态变化；108 没有连接或操作记录；发生回滚时，生产实例和公共
@@ -318,7 +320,8 @@ node scripts/check-environment-policy.mjs \
 已验证。108 固定记录为“禁用全部 KPanel 操作，本次未连接、未部署、未核对”，不得把它写成测试覆盖、
 部署目标或发布门禁缺失。
 
-记录候选冻结和生产完成时间、提交到生产用时、是否发生回滚/紧急热修复/重复发布及原因；另行记录
+分别记录稳定标签形成的正式发布频率和有生产完成证据的部署频率；记录候选冻结和生产完成时间、
+提交到生产用时、是否发生回滚/紧急热修复/重复发布及原因；另行记录
 使必需步骤无效、失败或需要重试的发布基础设施、执行器、验证通道和无效证据次数，以及其中发生在
 首次生产写操作之后的次数。流程异常不得歪曲为产品变更失败，缺失事实不得推断为零，供滚动
 14 天和最近 20 个版本的发布节奏复核。验收记录在获得相应提交/推送授权后形成独立聚焦提交；

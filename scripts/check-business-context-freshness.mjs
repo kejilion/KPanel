@@ -10,13 +10,35 @@ const DEFAULT_MAX_RELEASES = 8;
 const DEFAULT_MIN_COMMITS_WITH_RELEASES = 20;
 const STABLE_RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 
-function gitEnvironment(repo) {
-  const env = { ...process.env };
-  const explicitWorkTree = env.GIT_WORK_TREE ? resolve(env.GIT_WORK_TREE) : null;
-  if (explicitWorkTree !== resolve(repo)) {
-    delete env.GIT_DIR;
-    delete env.GIT_WORK_TREE;
-    delete env.GIT_INDEX_FILE;
+function platformGitPath(path) {
+  const normalized = String(path).replaceAll('\\', '/');
+  const windows = normalized.match(/^([A-Za-z]):\/(.*)$/);
+  if (process.platform !== 'win32' && windows) {
+    return '/mnt/' + windows[1].toLowerCase() + '/' + windows[2];
+  }
+  return normalized;
+}
+
+export function gitEnvironment(repo, environment = process.env) {
+  const env = { ...environment };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_COMMON_DIR;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  const dotGit = resolve(repo, '.git');
+  try {
+    const match = readFileSync(dotGit, 'utf8').trim().match(/^gitdir:\s*(.+)$/i);
+    if (match) {
+      const configured = match[1].trim();
+      env.GIT_DIR = platformGitPath(/^(?:[A-Za-z]:[\\/]|\/)/.test(configured)
+        ? configured
+        : resolve(repo, configured));
+      env.GIT_WORK_TREE = resolve(repo);
+    }
+  } catch {
+    // A normal clone has a .git directory and needs no repository overrides.
   }
   return env;
 }

@@ -1,12 +1,12 @@
 ---
 name: evolve-kpanel
 description: "用可验证证据驱动 KPanel 规范、门禁和开发流程的受控自我改进，不自动提交、发布或放宽质量要求"
-version: "1.3"
+version: "1.4"
 author: "Codex"
 tags: [quality, governance, continuous-improvement, multi-agent, metrics]
 params: [project_dir, baseline_ref, observation_window, release_count, proposal_slug]
 created: "2026-08-11T00:00:00+08:00"
-updated: "2026-08-15T09:20:00+08:00"
+updated: "2026-08-17T17:09:26+08:00"
 ---
 
 # KPanel Controlled Evolution
@@ -22,6 +22,8 @@ updated: "2026-08-15T09:20:00+08:00"
 - `${{project_dir}}` 是独立 KPanel worktree，`${{baseline_ref}}` 是精确且已批准的基线提交或标签。
 - 已有至少一种可复核触发证据：重复缺陷、滚动指标退化、验收记录缺口、CI/生产事件或高成本人工步骤。
 - 已明确允许修改范围、非目标、验证等级和回滚点；没有用户授权时不提交、不推送、不发布、不操作生产。
+- 涉及永久规范、工作流、策略或治理门禁时，已按 `PROJECT_RULES.md` 5.3 冻结规范验收合同；普通业务
+  改进不额外创建规范审计。
 
 ## Steps
 
@@ -41,11 +43,16 @@ node scripts/report-release-metrics.mjs \
 
 **Expected output:** 工作树、精确基线、观察窗口、可用样本和缺失数据清楚；标签时间不冒充生产完成时间。
 
+若本轮修改规范，在读取实现或构造反例前同时冻结：允许范围、非目标、六项固定矩阵、正常授权路径、
+回归集和停止条件。开始后只有合同内反例、支持环境/正常路径反例或阻断风险可以进入本轮结论；其余
+进入后续事项。
+
 ### 2. 创建结构化改进提案
 
 复制 `docs/quality-improvement-proposal-template.md` 为
 `docs/quality-improvement-<YYYY-MM-DD>-${{proposal_slug}}.md`，填写原始证据、原因假设、替代解释、
 基线、目标、防回归指标、范围、非目标、权限和回滚。没有足够数据时提案状态保持“草案/建立基线”。
+规范变更同时填写模板中的“规范验收合同”，不得在修复完成后追加新的通过条件。
 
 **Expected output:** 提案中的每项结论能追溯到版本、环境、命令、日志、验收记录或事件，不使用“AI 认为”作为证据。
 
@@ -59,6 +66,8 @@ node scripts/report-release-metrics.mjs \
 ### 4. 独立复核假设与准入
 
 由未编写方案的复核者独立读取原始证据，检查样本代表性、替代解释、可证伪目标、规则自我弱化和指标投机风险。
+规范复核按正确性、一致性、完整性、可执行性、效率与比例性、可演进性六项固定矩阵执行；严重度同时
+考虑影响、正常路径可达性和发生可能性，不把非标准理论反例自动升级为阻断。
 按 `docs/project-management.md` 完成 Definition of Ready；复核不通过时停止实施并保留拒绝理由。
 
 **Expected output:** 复核结论、异议和修订均写入提案，不能只记录“同意”。
@@ -81,15 +90,20 @@ make verify-change
 按风险补 `make verify-l2`、`make verify-release`、隔离真机、公开产物或生产部署安全核对。长时间浏览器
 验收使用 `background-browser-validation` 后台执行；所有远程验证目标先通过 `environment-policy.json`。
 使用与基线相同环境、样本和参数比较主指标及防回归指标；记录无法验证的层级。
+规范修复只重验受影响项和预先冻结的回归集；基线或风险边界未改变时禁止重新开启无界全量探索。
 
 **Expected output:** 改进目标和所有受影响质量维度有证据；工具退出码不被解释为未执行业务场景成功。
 
 ### 7. 做出采纳、继续试行、拒绝或回滚决定
 
-将精确差异、命令结果、指标比较、未验证风险和权限状态写入提案。只有目标达成且防回归指标未恶化时才建议采纳；
+将精确差异、命令结果、指标比较、未验证风险和权限状态写入提案。规范变更只使用 `PASS`、
+`PASS WITH FOLLOW-UP`、`FAIL` 三种结论，并写明停止依据。只有目标达成且防回归指标未恶化时才建议采纳；
 采纳永久规范仍需独立复核和正常集成授权。结果不达标时拒绝、缩小假设或按预定步骤回滚。
 
 **Expected output:** 决策可由下一会话从 Git、CI、验收记录和提案独立重建，不依赖会话记忆。
+
+固定矩阵完成、阻断为零且其余事项已分级并绑定影响边界/后续条件时，本轮复核必须结束；范围外改进
+进入待办，不重新推翻已通过结论。
 
 ### 8. 在观察窗口结束后复盘
 

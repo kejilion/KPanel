@@ -1,12 +1,12 @@
 ---
 name: kpanel-site-icon-cache-validation
 description: "用隔离 Agent/Panel、真实回环网站入口和真实 Chrome 验证 KPanel 网站图标缓存、性能边界与系统发行版图标"
-version: "1.5"
+version: "1.6"
 author: "Codex"
 tags: [kpanel, site, favicon, cache, security, performance, chrome, regression]
 params: [project_dir, project_linux_dir, go_module_cache_linux_dir, candidate_commit, candidate_image, candidate_container, candidate_agent_unit, candidate_port, local_tunnel_port, ssh_host, validation_run_id, site_id, site_domain, evidence_dir]
 created: "2026-07-29T13:28:40Z"
-updated: "2026-08-15T09:20:00+08:00"
+updated: "2026-08-17T09:25:23Z"
 ---
 
 # KPanel 网站图标缓存与系统图标验收
@@ -127,12 +127,12 @@ wsl.exe -u root -- bash -lc "cd '${{project_linux_dir}}' && bash deploy/tests/in
 wsl.exe -u root -- docker run --rm --network none `
   -v "${{project_linux_dir}}:/src:ro" `
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" `
-  -w /src golang:1.26.5-bookworm go test ./... -count=1
+  -w /src golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 go test ./... -count=1
 
 wsl.exe -u root -- docker run --rm --network none `
   -v "${{project_linux_dir}}:/src:ro" `
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" `
-  -w /src golang:1.26.5-bookworm `
+  -w /src golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 `
   go test -race ./internal/sites ./internal/agent ./internal/panel -count=1
 ```
 
@@ -144,7 +144,7 @@ docker run --rm --network none \
   -v "${{project_linux_dir}}:/src:ro" \
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" \
   -w /src \
-  golang:1.26.5-bookworm \
+  golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 \
   go test ./internal/sites \
     -run TestIconCacheDefaultTransportUsesRealLoopbackHTTP \
     -count=1 -v

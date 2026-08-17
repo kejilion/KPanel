@@ -319,7 +319,8 @@ git push origin HEAD:refs/heads/<task-branch>
 | 修改任务范围内文件 | 用户要求开发/修复时允许 |
 | 创建聚焦本地提交 | 仅用户已授权提交或任务明确要求形成提交时允许 |
 | 推送功能/候选分支 | 需要明确授权 |
-| 快进 `main`、打标签、GitHub Release、镜像发布、生产部署 | 仅发布任务且需要明确上线授权 |
+| 快进 `main` | 仅唯一集成/发布任务且需要明确主线集成授权 |
+| 打标签、GitHub Release、镜像发布、生产部署 | 仅唯一发布任务且需要明确上线授权 |
 | 强制推送、重写共享历史、删除未知改动 | 禁止；除非用户对精确目标另行授权 |
 
 ## 13. 最小管理节奏
@@ -348,9 +349,14 @@ KPanel 允许智能体持续优化规范、自动门禁和协作流程，但“�
 
 状态真源仍是 Git 提案、精确提交、CI 和验收记录；会话记忆、模型信心和内部评分不构成采纳证据。
 该循环不能自动降低安全/质量门禁，不能自动提交、推送、发布或操作生产。可复用执行步骤见
-`.codex-workflows/evolve-kpanel.workflow.yaml`，滚动指标统一由 `make release-metrics` 生成。
-验收指标只读取 `kpanel-release-metrics:start/end` 唯一 marker 之间的六行固定字段；区块外 Markdown
-只服务人工说明，不能提供、覆盖或隐藏机器指标证据。
+`.codex-workflows/evolve-kpanel.workflow.yaml`，滚动指标统一由 `make release-metrics` 生成。永久规范、
+工作流、策略和治理门禁的采纳结论统一使用 `PROJECT_RULES.md` 5.3 的规范验收契约；不得由不同会话
+临时改变严重度、扩大反例范围或延后停止条件。
+验收指标只读取 `kpanel-release-metrics:start/end` 唯一 marker 之间的六行交付字段，以及
+`kpanel-release-process-metrics:start/end` 唯一 marker 之间的两行流程指标；区块外 Markdown
+只服务人工说明，不能提供、覆盖或隐藏机器指标证据。稳定标签形成的正式发布频率与有生产完成证据的
+部署频率必须分开报告。首次生产写操作前被拦截的流程异常只计流程指标；生产写操作后若造成服务退化、
+回滚、紧急热修复或重复发布，则同时计变更失败与流程异常；产品载荷单独失败只计变更失败。
 
 ### 14.1 依赖与底层技术栈维护循环
 

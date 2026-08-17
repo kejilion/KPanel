@@ -90,6 +90,14 @@ test('policy validation keeps automation, cadence, and workflow triggers enforce
   assert.ok(failures.some((failure) => failure.includes('governed maximum') && failure.includes('eolReviewMaximumDays')));
 });
 
+test('Go toolchain policy covers immutable Codex workflow images', () => {
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  const goToolchain = policy.groups.find((group) => group.id === 'go-toolchain');
+  goToolchain.manifests = goToolchain.manifests.filter((manifest) => manifest !== '.codex-workflows');
+  const failures = validatePolicy(policy, process.cwd());
+  assert.ok(failures.some((failure) => failure.includes('go-toolchain must cover .codex-workflows')));
+});
+
 test('maintenance status exposes due exceptions and EOL review deadlines', () => {
   const policy = {
     cadence: { eolReviewMaximumDays: 92, exceptionReviewMaximumDays: 31 },

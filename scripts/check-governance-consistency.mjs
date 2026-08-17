@@ -40,6 +40,9 @@ const requiredFiles = [
   '.codex-workflows/quality-audit-kpanel.workflow.yaml',
   '.codex-workflows/evolve-kpanel.workflow.yaml',
   '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
+  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
+  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
+  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
 ];
 
 function read(relativePath) {
@@ -141,11 +144,23 @@ requireText('PROJECT_RULES.md', [
   '后台浏览器',
   'prod-108',
   '有界容器内控制台',
+  '规范验收契约 v1.0',
+  '正确性',
+  '一致性',
+  '完整性',
+  '可执行性',
+  '效率与比例性',
+  '可演进性',
+  'PASS WITH FOLLOW-UP',
+  '停止条件',
+  '首次生产写操作前被拦截的流程异常不计变更失败',
 ]);
 requireText('docs/development-quality-standard.md', [
   '宿主机系统动作',
   '`kejilion.sh` 原生交互',
   '目标容器内控制台',
+  '有生产完成证据的部署频率',
+  '两类同时计入',
 ]);
 requireText('docs/product-quality-review-current.md', [
   'KPanel 当前业务事实与规范适配基线',
@@ -165,6 +180,8 @@ requireText('docs/project-management.md', [
   '每日安全审计',
   'background-browser-validation.workflow.yaml',
   '生产已部署',
+  '仅唯一集成/发布任务且需要明确主线集成授权',
+  'kpanel-release-process-metrics:start/end',
 ]);
 requireText('.codex-workflows/README.md', [
   'evolve-kpanel.workflow.yaml',
@@ -174,6 +191,8 @@ requireText('.codex-workflows/README.md', [
   'background-browser-validation.workflow.yaml',
   'environment-policy.json',
   'docs/product-quality-review-current.md',
+  '规范复核执行 `PROJECT_RULES.md` 5.3',
+  'kpanel-site-icon-cache-validation.workflow.yaml',
 ]);
 requireText('Makefile', [
   'governance-check:',
@@ -198,10 +217,19 @@ requireText('.codex-workflows/release-kpanel.workflow.yaml', [
   'timeout_seconds=<风险窗口加清理余量>',
   'command_spec=<无秘密、已哈希的仓库测试命令规格>',
   '--validate-acceptance',
+  '首次生产写操作前被门禁拦截的流程异常只计流程指标',
+  '有生产完成证据的部署频率',
 ]);
 requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', [
   'docs/product-quality-review-current.md',
   'node scripts/check-business-context-freshness.mjs',
+]);
+requireText('.codex-workflows/evolve-kpanel.workflow.yaml', [
+  'PROJECT_RULES.md` 5.3',
+  '六项固定矩阵',
+  'PASS WITH FOLLOW-UP',
+  '停止条件',
+  '禁止重新开启无界全量探索',
 ]);
 
 requireText('docs/release-acceptance-template.md', [
@@ -224,6 +252,7 @@ requireText('docs/release-acceptance-template.md', [
   '<!-- kpanel-release-process-metrics:start -->',
   '<!-- kpanel-release-process-metrics:end -->',
   '已记录发布流程异常或无效证据拦截次数',
+  '两类同时计入',
   '## 遗留风险与后续准入',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [
@@ -234,6 +263,9 @@ requireText('docs/quality-improvement-proposal-template.md', [
   '## 独立复核',
   '## 回滚',
   '## 采纳决策与结果',
+  '### 规范验收合同',
+  '规范验收结论',
+  '规范验收停止依据',
 ]);
 
 const workflows = [
@@ -243,6 +275,9 @@ const workflows = [
   '.codex-workflows/quality-audit-kpanel.workflow.yaml',
   '.codex-workflows/evolve-kpanel.workflow.yaml',
   '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
+  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
+  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
+  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
 ];
 for (const workflow of workflows) {
   const content = read(workflow);
@@ -253,6 +288,15 @@ for (const workflow of workflows) {
     if (!content.includes(heading)) failures.push(workflow + ': missing section "' + heading + '"');
   }
 }
+
+requireText('.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml', [
+  '--purpose candidate-validation',
+  '--purpose failure-injection',
+  'golang:1.26.6-alpine@sha256:',
+]);
+requireText('.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml', [
+  'golang:1.26.6-bookworm@sha256:',
+]);
 
 for (const adapter of ['AGENTS.md', 'CLAUDE.md']) {
   const content = read(adapter);

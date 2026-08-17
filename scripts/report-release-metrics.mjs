@@ -205,9 +205,17 @@ function acceptanceFields(markdown) {
   return { fields, duplicates, structureErrors, defaultIgnorables };
 }
 
-function acceptanceVersion(markdown) {
-  const match = markdown.match(/^#\s+KPanel\s+v(\d+)\.(\d+)\.(\d+)\b/m);
-  return match ? match.slice(1).map(Number) : null;
+function acceptanceVersions(markdown, label) {
+  const title = markdown.match(/^#\s+KPanel\s+v(\d+)\.(\d+)\.(\d+)\b/m);
+  const filename = String(label ?? '').replaceAll('\\', '/').match(/release-v(\d+)\.(\d+)\.(\d+)-acceptance\.md(?:$|:)/i);
+  return {
+    title: title ? title.slice(1).map(Number) : null,
+    filename: filename ? filename.slice(1).map(Number) : null,
+  };
+}
+
+function sameVersion(left, right) {
+  return left !== null && right !== null && left.every((value, index) => value === right[index]);
 }
 
 function versionAtLeast(version, minimum) {
@@ -346,8 +354,13 @@ export function validateAcceptanceMetrics(markdown, label = 'acceptance record')
     if (!fields.has(normalizedField)) errors.push(label + ': missing structured field "' + field + '"');
     if (duplicates.has(normalizedField)) errors.push(label + ': duplicate structured field "' + field + '"');
   }
+  const versions = acceptanceVersions(markdown, label);
+  if (versions.title !== null && versions.filename !== null && !sameVersion(versions.title, versions.filename)) {
+    errors.push(label + ': release version in title must match the acceptance filename');
+  }
+  const acceptanceVersion = versions.filename ?? versions.title;
   const process = processFields(markdown);
-  if (versionAtLeast(acceptanceVersion(markdown), PROCESS_METRICS_REQUIRED_FROM) && !process.present) {
+  if (versionAtLeast(acceptanceVersion, PROCESS_METRICS_REQUIRED_FROM) && !process.present) {
     errors.push(label + ': release v0.81.2 and later requires release-process-metrics evidence');
   }
   for (const error of process.structureErrors) errors.push(label + ': ' + error);
@@ -475,9 +488,22 @@ export function summarizeReleaseMetrics(releases, options) {
     const day = release.createdAt.toISOString().slice(0, 10);
     releasesPerDay.set(day, (releasesPerDay.get(day) ?? 0) + 1);
   }
+  const productionDeployments = releases.filter((release) => {
+    const completedAt = release.acceptance.metrics.productionCompletedAt;
+    if (!validDate(completedAt)) return false;
+    const timestamp = new Date(completedAt);
+    return timestamp >= cutoff && timestamp <= options.now;
+  });
+  const productionDeploymentDays = new Map();
+  for (const release of productionDeployments) {
+    const day = new Date(release.acceptance.metrics.productionCompletedAt).toISOString().slice(0, 10);
+    productionDeploymentDays.set(day, (productionDeploymentDays.get(day) ?? 0) + 1);
+  }
 
   const selected = releases.slice(0, options.releases);
   const acceptanceCount = selected.filter((release) => release.acceptance.exists).length;
+  const productionCompletionReported = selected.filter((release) =>
+    validDate(release.acceptance.metrics.productionCompletedAt)).length;
   const failureStates = selected.map((release) => classifyChangeFailure(release.acceptance.metrics.changeFailure));
   const reportedFailureCount = failureStates.filter((state) => state !== 'unreported').length;
   const failedReleaseCount = failureStates.filter((state) => state === 'yes').length;
@@ -510,12 +536,18 @@ export function summarizeReleaseMetrics(releases, options) {
       releaseCount: windowReleases.length,
       releaseDays: releasesPerDay.size,
       maxReleasesPerDay: Math.max(0, ...releasesPerDay.values()),
+      productionDeploymentCount: productionDeployments.length,
+      productionDeploymentDays: productionDeploymentDays.size,
+      maxProductionDeploymentsPerDay: Math.max(0, ...productionDeploymentDays.values()),
     },
     recent: {
       requested: options.releases,
       available: selected.length,
       acceptanceCount,
       acceptanceCoverage: selected.length === 0 ? null : Number((acceptanceCount / selected.length).toFixed(4)),
+      productionCompletionReported,
+      productionCompletionCoverage: selected.length === 0 ? null :
+        Number((productionCompletionReported / selected.length).toFixed(4)),
       productionLeadTimeReported: leadTimes.length,
       productionLeadTimeHoursMedian: median(leadTimes),
       freezeToProductionReported: freezeTimes.length,
@@ -598,10 +630,14 @@ export function renderMarkdown(report) {
     '',
     '| 指标 | 结果 |',
     '| --- | --- |',
-    '| 窗口内正式版本数 | ' + report.window.releaseCount + ' |',
-    '| 有发布的自然日 | ' + report.window.releaseDays + ' |',
-    '| 单日最大发布数 | ' + report.window.maxReleasesPerDay + ' |',
+    '| 窗口内正式版本标签数 | ' + report.window.releaseCount + ' |',
+    '| 有正式版本标签的自然日 | ' + report.window.releaseDays + ' |',
+    '| 单日最大正式版本标签数 | ' + report.window.maxReleasesPerDay + ' |',
+    '| 有生产完成证据的部署数 | ' + report.window.productionDeploymentCount + ' |',
+    '| 有生产部署的自然日 | ' + report.window.productionDeploymentDays + ' |',
+    '| 单日最大生产部署数 | ' + report.window.maxProductionDeploymentsPerDay + ' |',
     '| 验收记录覆盖率 | ' + report.recent.acceptanceCount + '/' + report.recent.available + '（' + percentage(report.recent.acceptanceCoverage) + '） |',
+    '| 生产完成时间覆盖率 | ' + report.recent.productionCompletionReported + '/' + report.recent.available + '（' + percentage(report.recent.productionCompletionCoverage) + '） |',
     '',
     '## 生产交付指标',
     '',
@@ -629,7 +665,7 @@ export function renderMarkdown(report) {
       metric(release.acceptance.metrics.processIncidentCount) + ' |');
   }
 
-  lines.push('', '> 标签时间不等于生产完成时间；变更失败率只以明确填报“是/否”的验收记录为分母。发布流程异常独立统计，不把基础设施或无效证据问题歪曲为产品失败，也不把缺失数据推断为成功。');
+  lines.push('', '> 正式发布频率按稳定标签时间统计，生产部署频率只按验收记录中的生产完成时间统计；标签时间不等于生产完成时间。变更失败率只以明确填报“是/否”的验收记录为分母。发布流程异常独立统计，不把基础设施或无效证据问题歪曲为产品失败，也不把缺失数据推断为成功。');
   return lines.join('\n');
 }
 
@@ -662,7 +698,7 @@ export function main(argv) {
   runGit(options.repo, ['rev-parse', '--is-inside-work-tree']);
   options.evidenceRef = options.ref ?? (tryGit(options.repo, ['rev-parse', '--verify', 'origin/main^{commit}']) ? 'origin/main' : 'HEAD');
   options.evidenceCommit = runGit(options.repo, ['rev-parse', '--verify', options.evidenceRef + '^{commit}']);
-  const report = summarizeReleaseMetrics(collectReleases(options.repo, options.evidenceCommit, options.releases), options);
+  const report = summarizeReleaseMetrics(collectReleases(options.repo, options.evidenceCommit, Number.MAX_SAFE_INTEGER), options);
   process.stdout.write((options.format === 'json' ? JSON.stringify(report, null, 2) : renderMarkdown(report)) + '\n');
 }
 

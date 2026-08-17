@@ -132,7 +132,12 @@ test('summarizeReleaseMetrics never treats missing failure data as success', () 
   });
 
   assert.equal(report.window.releaseCount, 2);
+  assert.equal(report.window.productionDeploymentCount, 1);
+  assert.equal(report.window.productionDeploymentDays, 1);
+  assert.equal(report.window.maxProductionDeploymentsPerDay, 1);
   assert.equal(report.recent.acceptanceCount, 2);
+  assert.equal(report.recent.productionCompletionReported, 1);
+  assert.equal(report.recent.productionCompletionCoverage, 0.3333);
   assert.equal(report.recent.changeFailureReported, 2);
   assert.equal(report.recent.failedReleaseCount, 1);
   assert.equal(report.recent.changeFailureRate, 0.5);
@@ -159,6 +164,9 @@ test('markdown output discloses evidence completeness', () => {
   assert.match(output, /变更失败率 \| 未报告/);
   assert.match(output, /已报告流程指标版本中的异常占比 \| 未报告/);
   assert.match(output, /已记录发布流程异常\/无效证据拦截总数 \| 未报告/);
+  assert.match(output, /有生产完成证据的部署数 \| 0/);
+  assert.match(output, /生产完成时间覆盖率 \| 0\/1/);
+  assert.match(output, /正式发布频率按稳定标签时间统计/);
   assert.match(output, /不把缺失数据推断为成功/);
 });
 
@@ -188,6 +196,17 @@ test('process metrics are separate, explicit, and required from v0.81.2', () => 
   assert.deepEqual(validateAcceptanceMetricsRaw(oldRecord), []);
   const missing = validateAcceptanceMetricsRaw(['# KPanel v0.81.2 发布验收记录', ...acceptanceRows].join('\n'));
   assert.match(missing.join('\n'), /requires release-process-metrics evidence/);
+
+  const nonCanonicalTitle = validateAcceptanceMetricsRaw(
+    ['# KPanel 0.81.2 发布验收记录', ...acceptanceRows].join('\n'),
+    'docs/release-v0.81.2-acceptance.md',
+  );
+  assert.match(nonCanonicalTitle.join('\n'), /requires release-process-metrics evidence/);
+  const mismatchedTitle = validateAcceptanceMetricsRaw(
+    ['# KPanel v0.81.3 发布验收记录', ...acceptanceRows, ...processRows].join('\n'),
+    'docs/release-v0.81.2-acceptance.md',
+  );
+  assert.match(mismatchedTitle.join('\n'), /title must match the acceptance filename/);
 
   const unreported = validateAcceptanceMetricsRaw(valid
     .replace('次数：1', '次数：未记录')

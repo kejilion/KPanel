@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import {
   evaluateFreshness,
   extractBusinessContextMetadata,
+  gitEnvironment,
   nearestStableVersion,
   releaseCountAfter,
 } from '../check-business-context-freshness.mjs';
@@ -43,6 +44,30 @@ test('freshness remains cheap until a meaningful change-volume threshold is reac
   assert.equal(evaluateFreshness({ commitCount: 50, releaseCount: 0 }).stale, true);
   assert.equal(evaluateFreshness({ commitCount: 0, releaseCount: 8 }).stale, false);
   assert.equal(evaluateFreshness({ commitCount: 20, releaseCount: 8 }).stale, true);
+});
+
+test('business context Git reads ignore all caller repository overrides', () => {
+  const foreign = {
+    GIT_DIR: 'foreign/.git',
+    GIT_WORK_TREE: process.cwd(),
+    GIT_INDEX_FILE: 'foreign/.git/index',
+    GIT_COMMON_DIR: 'foreign/.git',
+    GIT_OBJECT_DIRECTORY: 'foreign/.git/objects',
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: 'foreign/alternate',
+    PATH: process.env.PATH,
+  };
+  const isolated = gitEnvironment(process.cwd(), foreign);
+  assert.notEqual(isolated.GIT_DIR, foreign.GIT_DIR);
+  if (isolated.GIT_DIR) {
+    assert.equal(isolated.GIT_WORK_TREE?.replaceAll('\\', '/'), process.cwd().replaceAll('\\', '/'));
+  } else {
+    assert.equal(isolated.GIT_WORK_TREE, undefined);
+  }
+  assert.equal(isolated.GIT_INDEX_FILE, undefined);
+  assert.equal(isolated.GIT_COMMON_DIR, undefined);
+  assert.equal(isolated.GIT_OBJECT_DIRECTORY, undefined);
+  assert.equal(isolated.GIT_ALTERNATE_OBJECT_DIRECTORIES, undefined);
+  assert.equal(isolated.PATH, process.env.PATH);
 });
 
 test('release counting and baseline version ignore prerelease and non-version tags', () => {

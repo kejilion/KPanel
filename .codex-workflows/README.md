@@ -12,7 +12,8 @@
 - `quality-audit-kpanel.workflow.yaml`：快速迭代后的业务正确性、体验、性能、稳定、安全、交付节奏和
   发布门禁健康审计。
 - `evolve-kpanel.workflow.yaml`：从可复核证据形成改进假设，经独立复核、最小试行、指标对比和观察窗口
-  决定采纳、拒绝或回滚；不自动放宽门禁或扩大提交、发布权限。
+  决定采纳、拒绝或回滚；规范复核执行 `PROJECT_RULES.md` 5.3 的固定矩阵、严重度与停止条件，不自动
+  放宽门禁、无限扩展反例或扩大提交、发布权限。
 - `maintain-kpanel-dependencies.workflow.yaml`：读取全技术栈新鲜度报告，按安全、兼容、维护和资源风险
   决定采用、暂缓或拒绝，在独立 worktree 完成升级与分级验收；检测不自动等于合入或发布。
 - 当前产品性质、业务规模和流程效率入口见
@@ -20,6 +21,8 @@
   基线继续见 `docs/quality-audit-2026-08-02.md`，后续审计按用途引用，不把旧产品形态当作当前事实。
 - `kpanel-real-machine-app-lifecycle.workflow.yaml`：用隔离候选实例和真实 Chrome 验证应用
   在运行、停止、重启、暂停状态下均可打开详情，并恢复真机现场。
+- `kpanel-site-icon-cache-validation.workflow.yaml`：用隔离 Agent/Panel、真实回环入口和真实 Chrome
+  验证网站图标缓存、安全边界、性能预算及系统发行版图标映射。
 - `normalize-kpanel-app-icons.workflow.yaml`：以现有应用图标为身份参考，生成统一风格候选，完成透明背景、
   视觉居中、真实桌面尺寸复核和单问题定向返工；默认只输出预览，上游采用与 KPanel 同步分开授权。
 - 新版本发布后使用 `docs/release-acceptance-template.md` 记录多维质量状态、证据层级、生产部署安全核对、
