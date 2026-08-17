@@ -916,7 +916,7 @@ onBeforeUnmount(() => {
   <div class="page cluster-page">
     <PageHeader
       title="集群监控"
-      description="集中查看本机与已接入主机概况；“管理”维护接入关系，“打开面板”进入对应 KPanel。"
+      description="在一个视图中查看本机与已接入节点；管理接入关系，或打开对应 KPanel 继续操作。"
     />
 
     <section class="cluster-hero" aria-label="集群概况与操作">

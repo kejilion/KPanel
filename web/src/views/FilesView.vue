@@ -1405,7 +1405,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section ref="filesPage" class="files-page" tabindex="-1" @pointerdown="focusFilesPage">
-    <PageHeader title="文件管理" description="轻量管理宿主机文件；KPanel 凭据与状态目录已隔离保护。" />
+    <PageHeader title="文件管理" description="浏览、编辑和传输服务器文件；KPanel 凭据与状态目录保持隔离。" />
 
     <div class="file-command-bar">
       <nav class="file-shortcuts" aria-label="常用目录">

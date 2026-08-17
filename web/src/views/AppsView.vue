@@ -528,7 +528,7 @@ async function refreshJob(id: string, generation = jobPollGeneration): Promise<v
     window.localStorage.removeItem(activeJobStorageKey)
     if (previousStatus === 'queued' || previousStatus === 'running') {
       if (job.status === 'succeeded') {
-        toast.success(`后台${jobActionLabel(job.action)}完成`, `${job.appName} 已完成状态对账。`)
+        toast.success(`后台${jobActionLabel(job.action)}完成`, `${job.appName} 已完成状态核对。`)
         if (job.action === 'uninstall' && selectedID.value === job.appId) selectedID.value = ''
         if (refreshAfterSelfUpdate(job)) return
         await load(true)
@@ -987,7 +987,7 @@ watch(windowActive, syncJobPollingForWindow)
   <div class="page app-market">
     <PageHeader
       title="应用市场"
-      description="已安装应用优先呈现；脚本内置与第三方应用使用 kejilion.sh 原生交互流程在后台安装。"
+      description="发现、安装和管理服务器应用；安装与更新继续通过 kejilion.sh 原生流程在后台运行。"
     />
 
     <section v-if="inventory" class="market-hero" aria-label="应用概况与操作">

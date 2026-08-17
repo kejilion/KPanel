@@ -70,7 +70,7 @@ function actionLabel(action: string): string {
 }
 
 function sourceLabel(source?: Job['source']): string {
-  return { web: 'Web', cli: 'CLI', reconcile: '自动对账', system: '系统' }[source || 'system']
+  return { web: 'Web', cli: 'CLI', reconcile: '自动核对', system: '系统' }[source || 'system']
 }
 
 async function load(options: { silent?: boolean } = {}): Promise<void> {
@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page">
-    <PageHeader title="变更记录" description="集中查看网站与容器管理操作的执行结果；未完成的审计意图会标记为进行中。" />
+    <PageHeader title="变更记录" description="集中查看网站与容器变更的执行进度和结果。" />
 
     <section class="toolbar-card toolbar-card--search-tabs">
       <div class="search-field">
@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
     <EmptyState
       v-else-if="!filteredJobs.length"
       :title="jobs.length ? '没有符合条件的记录' : '暂无变更记录'"
-      description="当网站或容器发生受控变更时，执行结果会显示在这里。"
+      description="通过 KPanel 执行网站或容器变更后，进度与结果会显示在这里。"
     />
 
     <section v-else class="job-list">

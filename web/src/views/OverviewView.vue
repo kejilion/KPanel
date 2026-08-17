@@ -335,7 +335,7 @@ const basicSettings = computed<ManagementTool[]>(() => {
     },
     {
       id: 'system-tuning',
-      title: '一条龙系统调优',
+      title: '系统综合调优',
       description: '沿用 kejilion.sh 原有 12 项调优流程，可按需勾选后一次执行。',
       value:
         management.maintenance.state === 'running' && management.maintenance.action === 'system-tuning'
@@ -659,7 +659,7 @@ const overviewSystemToolTitles: Record<(typeof overviewSystemToolIDs)[number], s
   dns: 'DNS 优化',
   'ip-preference': 'V4 / V6 优先',
   bbr: 'BBR 管理',
-  'system-tuning': '一条龙优化',
+  'system-tuning': '综合调优',
 }
 
 const overviewSystemTools = computed<ManagementTool[]>(() => {
@@ -719,7 +719,7 @@ const systemCenterSections = computed<SystemCenterSection[]>(() => {
     {
       id: 'performance',
       title: '性能优化',
-      description: '一键调优、内核与网络加速',
+      description: '系统、内核与网络综合调优',
       icon: Gauge,
       iconTone: 'violet',
       tools: select(['system-tuning', 'bbr', 'kernel', 'bbrv3']),
@@ -748,7 +748,7 @@ const resourceCapabilityUnavailableReasons: Record<ResourceDialogID, string> = {
 		'traffic-shutdown': '当前 Agent 的限流关机适配器未就绪。',
 		accounts: '当前 Agent 的账户管理适配器未就绪。',
 		'ssh-defense': '当前 Agent 的 SSH 防御适配器未就绪。',
-		'system-tuning': '当前 Agent 的一条龙系统调优适配器未就绪。',
+		'system-tuning': '当前 Agent 的系统综合调优能力尚未就绪。',
 }
 
 function isResourceDialogID(id: string): id is ResourceDialogID {
@@ -1026,10 +1026,10 @@ onBeforeUnmount(() => {
 <template>
   <div ref="pageElement" class="page">
     <PageHeader
-      :title="props.systemCenterOnly ? '系统中心' : '系统监控与管理'"
+      :title="props.systemCenterOnly ? '系统中心' : '服务器概览'"
       :description="props.systemCenterOnly
         ? '集中管理系统维护、基础设置、网络工具与系统重装。'
-        : '实时资源状态与 kejilion.sh 系统工具统一入口；所有配置均以宿主机实际状态为准。'"
+        : '实时查看服务器资源与服务状态，并快速进入常用系统管理工具。'"
     />
 
     <LoadingState v-if="loading" :rows="4" cards />

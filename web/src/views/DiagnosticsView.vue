@@ -247,7 +247,7 @@ async function confirmStart(): Promise<void> {
   } catch (reason) {
     toast.danger(
       '体检任务启动失败',
-      reason instanceof ApiError ? reason.message : '请检查 Agent、systemd 与 kejilion.sh 体检协议。',
+      reason instanceof ApiError ? reason.message : '请检查 Agent、systemd 和 kejilion.sh 是否正常并保持版本一致。',
     )
   } finally {
     starting.value = false
@@ -320,10 +320,10 @@ onBeforeUnmount(() => {
   <div class="diagnostics-page">
     <PageHeader
       title="体检"
-      description="直接调用 kejilion.sh 的第三方测试合集，实时查看线路、IP 质量与性能跑分结果。"
+      description="调用 kejilion.sh 的第三方测试工具，查看网络线路、IP 质量和服务器性能。"
     />
 
-    <LoadingState v-if="loading" title="正在读取体检项目" description="正在校验本机脚本协议与第三方来源。" />
+    <LoadingState v-if="loading" title="正在读取体检项目" description="正在检查本机脚本能力与第三方测试来源。" />
     <ErrorState v-else-if="error" title="体检功能暂不可用" :message="error" @retry="load()" />
 
     <template v-else-if="catalog">
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
         <TriangleAlert :size="24" />
         <div>
           <p>
-            此操作将以 root 权限运行 kejilion.sh 中登记的第三方命令，可能安装检测依赖并产生较高资源占用。
+            此操作将以 root 权限运行 kejilion.sh 中登记的第三方命令，可能安装测试工具并占用较多网络、CPU 或磁盘资源。
           </p>
           <a :href="pendingCheck.sourceUrl" target="_blank" rel="noopener noreferrer">
             {{ pendingCheck.sourceUrl }} <ExternalLink :size="13" />

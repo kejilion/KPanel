@@ -76,7 +76,7 @@ async function load(silent = false): Promise<void> {
     if (running.value) timer = window.setTimeout(() => void load(true), 1800)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
-    error.value = reason instanceof ApiError ? reason.message : '无法读取一条龙系统调优状态。'
+    error.value = reason instanceof ApiError ? reason.message : '无法读取系统综合调优状态。'
   } finally {
     loading.value = false
     refreshing.value = false
@@ -98,10 +98,10 @@ async function apply(): Promise<void> {
   submitting.value = true
   try {
     const result = await api.system.systemTuningAction({ action: 'apply', items: selected.value, expectedResourceVersion: snapshot.value.resourceVersion })
-    toast.success('一条龙系统调优已开始', result.message)
+    toast.success('系统综合调优已开始', result.message)
     await load(true)
   } catch (reason) {
-    toast.danger('一条龙系统调优启动失败', reason instanceof ApiError ? reason.message : 'Agent 未能启动后台任务。')
+    toast.danger('系统综合调优启动失败', reason instanceof ApiError ? reason.message : 'Agent 未能启动后台任务。')
     await load(true)
   } finally {
     submitting.value = false
@@ -122,9 +122,9 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 </script>
 
 <template>
-  <ModalDialog :open="open" title="一条龙系统调优" description="沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。" size="wide" @close="emit('close')">
+  <ModalDialog :open="open" title="系统综合调优" description="沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。" size="wide" @close="emit('close')">
     <div class="tuning-dialog">
-      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ unavailableReason || '当前 Agent 的一条龙系统调优适配器未就绪。' }}</div>
+      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ unavailableReason || '当前 Agent 的系统综合调优能力尚未就绪。' }}</div>
       <LoadingState v-else-if="loading && !snapshot" :rows="6" />
       <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
       <template v-else-if="snapshot">

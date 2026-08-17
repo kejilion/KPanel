@@ -199,7 +199,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page terminal-page">
-    <PageHeader title="多主机终端" description="本机与已配对 KPanel 使用同一登录态进入；远程流量沿集群加密通道传输，不开放新的 SSH 或公网端口。" />
+    <PageHeader title="多主机终端" description="通过集群加密通道连接本机与已授权 KPanel 节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
 

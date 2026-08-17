@@ -384,7 +384,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page environment-page">
-    <PageHeader title="LDNMP 环境管理" description="直接读取并调用 kejilion.sh，共用 /home/web、Docker 与原脚本业务产物。" />
+    <PageHeader title="LDNMP 环境管理" description="与 kejilion.sh 共用 /home/web、Docker 和现有网站环境，直接管理服务器真实状态。" />
 
     <div class="page-command-bar">
       <SitesSectionTabs />

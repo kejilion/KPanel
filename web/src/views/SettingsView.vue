@@ -372,7 +372,7 @@ onMounted(async () => {
 
 <template>
   <div class="page page--narrow">
-    <PageHeader title="设置" description="账户与设备偏好。宿主机安全策略由 Agent 配置控制，不能在浏览器中放宽。" />
+    <PageHeader title="设置" description="管理账户、安全验证和当前设备偏好；宿主机策略仍由 Agent 统一执行。" />
 
     <section class="settings-section panel-card">
       <header class="settings-section__header">

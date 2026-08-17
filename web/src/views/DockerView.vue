@@ -1103,7 +1103,7 @@ onBeforeUnmount(() => {
   <div class="page docker-page">
     <PageHeader
       title="Docker 管理"
-      description="与 kejilion.sh 共用真实 Docker、Compose、/home/docker 和 DOCKER-USER 规则，不维护影子资源。"
+      description="直接管理服务器上的容器、镜像、网络与存储；与 kejilion.sh 共用同一 Docker 实际状态。"
     />
 
     <div
@@ -1678,9 +1678,9 @@ onBeforeUnmount(() => {
       <template #footer><button class="button button--secondary" type="button" @click="systemUpdatePending = false">取消</button><button class="button button--primary" type="button" :disabled="systemUpdating" @click="submitSystemUpdate"><LoaderCircle v-if="systemUpdating" class="spin" :size="16" />提交后台更新</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="uninstallNoticeOpen" title="Docker 卸载适配状态" description="此能力尚缺少由宿主机 Agent 离线完成、持久化结果并在 KPanel 消失后可查询的任务协议。" size="small" @close="uninstallNoticeOpen = false">
-      <div class="inline-alert inline-alert--warning">当前版本可临时通过 SSH 运行 `k docker` 完成卸载。该缺口属于未实现的离线任务适配器，不是 KPanel 的安全策略限制。</div>
-      <p class="modal-copy">按照项目永久规范，完成适配后 Web 端必须直接提供与 kejilion.sh 相同的卸载能力，即使操作会终止 KPanel 自身。</p>
+    <ModalDialog :open="uninstallNoticeOpen" title="Docker 卸载尚未支持" description="卸载 Docker 会同时终止 KPanel。当前版本还不能在面板离线后继续执行并回传结果。" size="small" @close="uninstallNoticeOpen = false">
+      <div class="inline-alert inline-alert--warning">如需卸载，请通过 SSH 运行 `k docker`。这是尚未完成的离线任务能力，不是权限限制。</div>
+      <p class="modal-copy">后续版本将直接复用 kejilion.sh 的卸载流程，并在 KPanel 停止后继续记录执行结果。</p>
       <template #footer><button class="button button--secondary" type="button" @click="uninstallNoticeOpen = false">我知道了</button></template>
     </ModalDialog>
   </div>

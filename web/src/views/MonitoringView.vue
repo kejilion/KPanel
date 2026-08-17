@@ -608,7 +608,7 @@ onBeforeUnmount(() => controller?.abort())
 
 <template>
   <section class="monitoring-page" :class="{ 'is-updating': updating }">
-    <PageHeader title="历史监控" description="轻量沉淀主机与容器资源趋势，数据仅保存在当前服务器。" />
+    <PageHeader title="历史监控" description="查看主机与容器的资源趋势；历史数据只保存在当前服务器。" />
 
     <div class="monitoring-toolbar" aria-label="监控时间范围">
       <button

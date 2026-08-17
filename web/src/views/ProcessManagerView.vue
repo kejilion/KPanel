@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
   <div class="page process-page">
     <PageHeader
       :title="labels.title"
-      description="直接读取宿主机 /proc，轻量查看实时占用并管理进程。"
+      description="实时查看服务器进程的 CPU 与内存占用，并按实际状态管理进程。"
     />
 
     <LoadingState v-if="loading && !snapshot" :rows="5" cards />

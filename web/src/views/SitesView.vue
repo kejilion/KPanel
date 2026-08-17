@@ -151,15 +151,15 @@ const installStageLabels: Record<string, string> = {
   installing: '执行脚本',
   publish: '发布站点',
   activate: '激活服务',
-  reconciling: '产物对账',
-  reconcile: '产物对账',
+  reconciling: '状态核对',
+  reconcile: '状态核对',
   completed: '搭建完成',
   interrupted: '任务中断',
   reconnecting: 'Agent 重连中',
   script_unavailable: '脚本不可用',
   runner_unavailable: '后台执行器不可用',
   start_failed: '任务启动失败',
-  reconcile_failed: '产物对账失败',
+  reconcile_failed: '状态核对失败',
   failed: '搭建失败',
 }
 
@@ -642,7 +642,7 @@ function monitorInstallation(id?: string): void {
       }
       submitting.value = false
       if (progress.status === 'succeeded') {
-        toast.success('后台建站已完成', `${progress.domain || '网站'} 已完成脚本执行与产物对账。`)
+        toast.success('后台建站已完成', `${progress.domain || '网站'} 已完成脚本执行与状态核对。`)
         await load(true)
         if (disposed || generation !== installationPollGeneration) return
         if (!editorOpen.value) await revealCreatedSite(progress.domain || form.primaryDomain)
@@ -768,7 +768,7 @@ async function submitSite(): Promise<void> {
           ? '一键建站已完成'
           : '网站已创建',
       form.type === 'wordpress' || form.type === 'proxy' || form.type === 'recipe' || scriptedTemplateCreate.value
-        ? `${savedSite.primaryDomain} 的原生建站产物已与 kejilion.sh 完成对账。`
+        ? `${savedSite.primaryDomain} 的网站状态已与 kejilion.sh 完成核对。`
         : `${savedSite.primaryDomain} 已通过 nginx -t 校验并完成同步应用。`,
     )
     await load(true)
@@ -776,7 +776,7 @@ async function submitSite(): Promise<void> {
       installProgress.value = {
         ...(installProgress.value || {
           progress: 100,
-          message: '网站已完成脚本执行与产物对账。',
+          message: '网站已完成脚本执行与状态核对。',
         }),
         domain: savedSite.primaryDomain,
         status: 'succeeded',
@@ -897,7 +897,7 @@ onBeforeUnmount(() => {
   <div class="page">
     <PageHeader
       title="网站管理"
-      description="从实际产物发现并管理网站；新建站点沿用 kejilion.sh 的 /home/web 架构，并通过原子事务提交。"
+      description="发现并管理服务器上的现有网站；新建站点继续使用 kejilion.sh 的 /home/web 结构。"
     />
 
     <div class="page-command-bar">
@@ -1140,7 +1140,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="Boolean(selectedSite)"
       :title="selectedSite?.primaryDomain || '网站详情'"
-      description="以下信息来自最近一次实际产物对账。"
+      description="以下信息来自最近一次服务器状态核对。"
       size="large"
       @close="selectedSite = undefined"
     >
@@ -1165,7 +1165,7 @@ onBeforeUnmount(() => {
             <dd><code>{{ shortId(selectedSite.resourceVersion, 20) }}</code></dd>
           </div>
           <div>
-            <dt>最后对账</dt>
+            <dt>最后核对</dt>
             <dd>{{ formatDateTime(selectedSite.observedAt) }}</dd>
           </div>
           <div class="detail-list__wide">
@@ -1190,7 +1190,7 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="selectedSite.artifacts?.length" class="detail-section">
-          <h3><FileCode2 :size="17" /> 实际产物</h3>
+          <h3><FileCode2 :size="17" /> 实际配置与文件</h3>
           <ul class="artifact-list">
             <li v-for="artifact in selectedSite.artifacts" :key="`${artifact.kind}-${artifact.path}`">
               <Braces :size="15" />
