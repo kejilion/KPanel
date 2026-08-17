@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
@@ -12,7 +14,50 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
-const systemTuningOutputLimit = 1 << 20
+const (
+	systemTuningOutputLimit = 1 << 20
+	systemTuningLogLimit    = 1 << 20
+)
+
+type systemTuningCommandRunner interface {
+	RunSystemTuning(context.Context, int, int, string, ...string) ([]byte, []byte, error)
+}
+
+func (runner commandRunner) RunSystemTuning(
+	ctx context.Context,
+	outputLimit int,
+	logLimit int,
+	name string,
+	arguments ...string,
+) ([]byte, []byte, error) {
+	command := exec.CommandContext(ctx, name, arguments...)
+	command.Env = append(
+		os.Environ(),
+		"LC_ALL=C",
+		"LANG=C",
+		"DEBIAN_FRONTEND=noninteractive",
+		"NEEDRESTART_MODE=a",
+		"APT_LISTCHANGES_FRONTEND=none",
+	)
+	stdout := &boundedResourceBuffer{limit: outputLimit}
+	stderr := &boundedResourceBuffer{limit: logLimit}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	if stdout.overflow {
+		return stdout.buffer.Bytes(), stderr.buffer.Bytes(), errResourceOutputTooLarge
+	}
+	if err != nil {
+		detail := strings.TrimSpace(stderr.buffer.String())
+		if len(detail) > 4096 {
+			detail = detail[len(detail)-4096:]
+		}
+		if detail != "" {
+			return stdout.buffer.Bytes(), stderr.buffer.Bytes(), fmt.Errorf("%s: %w", detail, err)
+		}
+	}
+	return stdout.buffer.Bytes(), stderr.buffer.Bytes(), err
+}
 
 var systemTuningProtocolV1Pattern = regexp.MustCompile(`(?m)^KPANEL_SYSTEM_TUNING_PROTOCOL_VERSION="1"\r?$`)
 
@@ -89,6 +134,12 @@ func (m *Manager) runSystemTuning(ctx context.Context, arguments ...string) ([]b
 		"kpanel", "system-tuning",
 	}
 	commandArguments = append(commandArguments, arguments...)
+	if runner, ok := m.runner.(systemTuningCommandRunner); ok {
+		output, _, runErr := runner.RunSystemTuning(
+			ctx, systemTuningOutputLimit, systemTuningLogLimit, "env", commandArguments...,
+		)
+		return output, runErr
+	}
 	output, _, runErr := m.runResourceCommandInput(ctx, systemTuningOutputLimit, nil, "env", commandArguments...)
 	return output, runErr
 }

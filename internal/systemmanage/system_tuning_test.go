@@ -50,6 +50,29 @@ func systemTuningReceipt(status, selected, version string) []byte {
 	return []byte(output.String())
 }
 
+func TestCommandRunnerKeepsLargeSuccessfulTuningLogsOutOfReceipt(t *testing.T) {
+	if os.Getenv("KPANEL_TUNING_RUNNER_HELPER") == "1" {
+		_, _ = os.Stderr.WriteString(strings.Repeat("business-log\n", 1024))
+		_, _ = os.Stdout.WriteString("KPANEL_SYSTEM_TUNING_PROTOCOL 1\nKPANEL_SYSTEM_TUNING_STATUS=applied\n")
+		os.Exit(0)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KPANEL_TUNING_RUNNER_HELPER", "1")
+	stdout, stderr, err := (commandRunner{}).RunSystemTuning(
+		context.Background(), systemTuningOutputLimit, systemTuningLogLimit,
+		executable, "-test.run=^TestCommandRunnerKeepsLargeSuccessfulTuningLogsOutOfReceipt$",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(stdout), "KPANEL_SYSTEM_TUNING_PROTOCOL 1\n") || len(stderr) <= 4096 {
+		t.Fatalf("stdout=%q stderr-bytes=%d", stdout, len(stderr))
+	}
+}
+
 func TestParseSystemTuningOutput(t *testing.T) {
 	var output strings.Builder
 	output.WriteString("KPANEL_SYSTEM_TUNING_PROTOCOL 1\nKPANEL_SYSTEM_TUNING_STATUS=ok\n")
