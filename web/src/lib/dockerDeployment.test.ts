@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeDockerDeployment } from './dockerDeployment'
+import { analyzeDockerDeployment, composeEnvironmentVariables } from './dockerDeployment'
 
 describe('docker deployment input', () => {
   it('turns a multiline docker run command into structured input', () => {
@@ -99,5 +99,28 @@ describe('docker deployment input', () => {
     if (result.kind !== 'invalid') return
     expect(result.diagnostics[0]).toMatchObject({ code: 'yaml_syntax_error' })
     expect(result.diagnostics[0]?.line).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('compose environment variables', () => {
+  it('collects required variables and defaults without treating escaped dollars as interpolation', () => {
+    expect(composeEnvironmentVariables(`services:
+  app:
+    image: "demo:\${TAG:-latest}"
+    environment:
+      TOKEN: "\${TOKEN:?TOKEN is required}"
+      EMPTY: "\${OPTIONAL}"
+      LITERAL: "$$NOT_A_VARIABLE"
+`)).toEqual([
+      { name: 'TAG', defaultValue: 'latest', required: false },
+      { name: 'TOKEN', defaultValue: undefined, required: true },
+      { name: 'OPTIONAL', defaultValue: undefined, required: true },
+    ])
+  })
+
+  it('deduplicates variables and keeps the strictest occurrence', () => {
+    expect(composeEnvironmentVariables('image: "demo:$TAG-\${TAG:-latest}-\${TAG}"')).toEqual([
+      { name: 'TAG', defaultValue: undefined, required: true },
+    ])
   })
 })

@@ -16,6 +16,7 @@ import (
 )
 
 const maxComposeSourceBytes = 24 << 10
+const maxComposeEnvironmentBytes = 24 << 10
 const maxComposeProjectFiles = 8
 
 var composeProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
@@ -31,6 +32,7 @@ type ComposeProject struct {
 	Name             string               `json:"name"`
 	WorkingDirectory string               `json:"workingDirectory"`
 	ConfigFiles      []ComposeProjectFile `json:"configFiles"`
+	EnvironmentFile  *ComposeProjectFile  `json:"environmentFile,omitempty"`
 	Services         []string             `json:"services"`
 	ResourceVersion  string               `json:"resourceVersion"`
 }
@@ -128,6 +130,29 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 			}{path, info.Mode().Perm(), data}),
 		})
 	}
+	var environmentFile *ComposeProjectFile
+	environmentPath := filepath.Join(resolvedDirectory, ".env")
+	environmentInfo, environmentErr := os.Lstat(environmentPath)
+	if environmentErr == nil {
+		if !environmentInfo.Mode().IsRegular() || environmentInfo.Mode()&os.ModeSymlink != 0 ||
+			environmentInfo.Size() > maxComposeEnvironmentBytes {
+			return composeProjectState{}, ErrActionUnsupported
+		}
+		environmentData, readErr := os.ReadFile(environmentPath)
+		if readErr != nil || !utf8.Valid(environmentData) || bytes.IndexByte(environmentData, 0) >= 0 {
+			return composeProjectState{}, ErrActionUnsupported
+		}
+		environmentFile = &ComposeProjectFile{
+			Path: environmentPath, Name: ".env", Source: string(environmentData),
+			ResourceVersion: resourceHash(struct {
+				Path string
+				Mode os.FileMode
+				Data []byte
+			}{environmentPath, environmentInfo.Mode().Perm(), environmentData}),
+		}
+	} else if !errors.Is(environmentErr, os.ErrNotExist) {
+		return composeProjectState{}, ErrActionUnsupported
+	}
 	serviceNames := make([]string, 0, len(services))
 	for service := range services {
 		serviceNames = append(serviceNames, service)
@@ -135,14 +160,16 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 	sort.Strings(serviceNames)
 	sort.Strings(containerVersions)
 	project := ComposeProject{
-		Name: name, WorkingDirectory: resolvedDirectory, ConfigFiles: files, Services: serviceNames,
+		Name: name, WorkingDirectory: resolvedDirectory, ConfigFiles: files,
+		EnvironmentFile: environmentFile, Services: serviceNames,
 	}
 	project.ResourceVersion = resourceHash(struct {
 		Name, WorkingDirectory string
 		Files                  []ComposeProjectFile
+		EnvironmentFile        *ComposeProjectFile
 		Services               []string
 		Containers             []string
-	}{name, resolvedDirectory, files, serviceNames, containerVersions})
+	}{name, resolvedDirectory, files, environmentFile, serviceNames, containerVersions})
 	return composeProjectState{ComposeProject: project}, nil
 }
 
@@ -204,7 +231,7 @@ func (c *Client) validateComposeDeploymentInput(ctx context.Context, input Maint
 	source := strings.TrimSpace(input.Compose)
 	if project != input.Name || !composeProjectPattern.MatchString(project) || source == "" ||
 		len(input.Compose) > maxComposeSourceBytes || !utf8.ValidString(input.Compose) ||
-		strings.ContainsRune(input.Compose, 0) {
+		strings.ContainsRune(input.Compose, 0) || !validComposeEnvironment(input.ComposeEnvironment) {
 		return ErrInvalidDockerJob
 	}
 	root, err := c.resolvedDockerAppRoot()
@@ -252,19 +279,16 @@ func (c *Client) deployComposeProject(ctx context.Context, input MaintenanceInpu
 	if !strings.HasSuffix(source, "\n") {
 		source += "\n"
 	}
-	file, err := os.OpenFile(composePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
-	if err != nil {
+	if err := writeNewComposeProjectFile(composePath, []byte(source), 0o640); err != nil {
 		_ = cleanupComposeProjectDirectory(root, projectDir)
 		return err
 	}
-	if _, err = file.WriteString(source); err == nil {
-		err = file.Sync()
+	environmentPath := filepath.Join(projectDir, ".env")
+	environmentSource := composeEnvironmentValue(input.ComposeEnvironment)
+	if environmentSource != "" && !strings.HasSuffix(environmentSource, "\n") {
+		environmentSource += "\n"
 	}
-	closeErr := file.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	if err := writeNewComposeProjectFile(environmentPath, []byte(environmentSource), 0o600); err != nil {
 		_ = cleanupComposeProjectDirectory(root, projectDir)
 		return err
 	}
@@ -274,7 +298,7 @@ func (c *Client) deployComposeProject(ctx context.Context, input MaintenanceInpu
 	}
 
 	base := []string{
-		"compose", "--project-directory", projectDir,
+		"compose", "--env-file", environmentPath, "--project-directory", projectDir,
 		"--file", composePath, "--project-name", input.Name,
 	}
 	services, err := c.runCompose(ctx, append(base, "config", "--services")...)
@@ -325,7 +349,8 @@ func (c *Client) validateExistingComposeProjectInput(ctx context.Context, input 
 		return nil
 	}
 	if strings.TrimSpace(input.Compose) == "" || len(input.Compose) > maxComposeSourceBytes ||
-		!utf8.ValidString(input.Compose) || strings.ContainsRune(input.Compose, 0) {
+		!utf8.ValidString(input.Compose) || strings.ContainsRune(input.Compose, 0) ||
+		!validComposeEnvironment(input.ComposeEnvironment) {
 		return ErrInvalidDockerJob
 	}
 	for _, file := range state.ConfigFiles {
@@ -372,7 +397,8 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 		}
 	}
 	if !found || strings.TrimSpace(input.Compose) == "" || len(input.Compose) > maxComposeSourceBytes ||
-		!utf8.ValidString(input.Compose) || strings.ContainsRune(input.Compose, 0) {
+		!utf8.ValidString(input.Compose) || strings.ContainsRune(input.Compose, 0) ||
+		!validComposeEnvironment(input.ComposeEnvironment) {
 		return ErrInvalidDockerJob
 	}
 	info, err := os.Lstat(selected.Path)
@@ -391,6 +417,30 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 	if currentVersion != selected.ResourceVersion {
 		return ErrResourceConflict
 	}
+	environmentPath := filepath.Join(state.WorkingDirectory, ".env")
+	environmentExisted := state.EnvironmentFile != nil
+	var environmentInfo os.FileInfo
+	var environmentOriginal []byte
+	if environmentExisted {
+		environmentInfo, err = os.Lstat(environmentPath)
+		if err != nil || !environmentInfo.Mode().IsRegular() || environmentInfo.Mode()&os.ModeSymlink != 0 {
+			return ErrResourceConflict
+		}
+		environmentOriginal, err = os.ReadFile(environmentPath)
+		if err != nil {
+			return err
+		}
+		environmentVersion := resourceHash(struct {
+			Path string
+			Mode os.FileMode
+			Data []byte
+		}{environmentPath, environmentInfo.Mode().Perm(), environmentOriginal})
+		if environmentVersion != state.EnvironmentFile.ResourceVersion {
+			return ErrResourceConflict
+		}
+	} else if _, statErr := os.Lstat(environmentPath); !errors.Is(statErr, os.ErrNotExist) {
+		return ErrResourceConflict
+	}
 	updated := []byte(input.Compose)
 	if !bytes.HasSuffix(updated, []byte("\n")) {
 		updated = append(updated, '\n')
@@ -400,6 +450,19 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 		return err
 	}
 	defer os.Remove(stagedPath)
+	environmentSource := string(environmentOriginal)
+	if input.ComposeEnvironment != nil {
+		environmentSource = *input.ComposeEnvironment
+	}
+	updatedEnvironment := []byte(environmentSource)
+	if len(updatedEnvironment) > 0 && !bytes.HasSuffix(updatedEnvironment, []byte("\n")) {
+		updatedEnvironment = append(updatedEnvironment, '\n')
+	}
+	stagedEnvironmentPath, err := stageComposeEnvironmentFile(environmentPath, updatedEnvironment, environmentInfo)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(stagedEnvironmentPath)
 	stagedProject := state.ComposeProject
 	stagedProject.ConfigFiles = append([]ComposeProjectFile(nil), state.ConfigFiles...)
 	for index := range stagedProject.ConfigFiles {
@@ -407,6 +470,7 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 			stagedProject.ConfigFiles[index].Path = stagedPath
 		}
 	}
+	stagedProject.EnvironmentFile = &ComposeProjectFile{Path: stagedEnvironmentPath}
 	services, err := c.runCompose(ctx, append(composeProjectBase(stagedProject), "config", "--services")...)
 	if err != nil {
 		return fmt.Errorf("Compose configuration is invalid: %w", err)
@@ -417,16 +481,28 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 	if err := replaceComposeProjectFile(stagedPath, selected.Path); err != nil {
 		return err
 	}
-	base := composeProjectBase(state.ComposeProject)
+	if err := replaceComposeProjectFile(stagedEnvironmentPath, environmentPath); err != nil {
+		_ = atomicWriteComposeProjectFile(selected.Path, original, info)
+		return err
+	}
+	deployedProject := state.ComposeProject
+	deployedProject.EnvironmentFile = &ComposeProjectFile{Path: environmentPath}
+	base := composeProjectBase(deployedProject)
 	if _, err := c.runCompose(ctx, append(base, "up", "--detach", "--remove-orphans")...); err != nil {
-		return c.rollbackComposeRedeploy(state.ComposeProject, selected.Path, original, info, err)
+		return c.rollbackComposeRedeploy(
+			state.ComposeProject, selected.Path, original, info,
+			environmentPath, environmentOriginal, environmentInfo, environmentExisted, err,
+		)
 	}
 	containerIDs, err := c.runCompose(ctx, append(base, "ps", "--all", "--quiet")...)
 	if err != nil || !composeOutputHasContainer(containerIDs) {
 		if err == nil {
 			err = errors.New("Docker Compose did not return a created container")
 		}
-		return c.rollbackComposeRedeploy(state.ComposeProject, selected.Path, original, info, err)
+		return c.rollbackComposeRedeploy(
+			state.ComposeProject, selected.Path, original, info,
+			environmentPath, environmentOriginal, environmentInfo, environmentExisted, err,
+		)
 	}
 	return nil
 }
@@ -436,10 +512,19 @@ func (c *Client) rollbackComposeRedeploy(
 	path string,
 	original []byte,
 	info os.FileInfo,
+	environmentPath string,
+	environmentOriginal []byte,
+	environmentInfo os.FileInfo,
+	environmentExisted bool,
 	cause error,
 ) error {
 	if err := atomicWriteComposeProjectFile(path, original, info); err != nil {
 		return fmt.Errorf("Compose redeploy failed and configuration rollback needs attention: %w", cause)
+	}
+	if err := restoreComposeEnvironmentFile(
+		environmentPath, environmentOriginal, environmentInfo, environmentExisted,
+	); err != nil {
+		return fmt.Errorf("Compose redeploy failed and environment rollback needs attention: %w", cause)
 	}
 	rollbackContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -453,7 +538,11 @@ func (c *Client) rollbackComposeRedeploy(
 }
 
 func composeProjectBase(project ComposeProject) []string {
-	base := []string{"compose", "--project-directory", project.WorkingDirectory}
+	base := []string{"compose"}
+	if project.EnvironmentFile != nil {
+		base = append(base, "--env-file", project.EnvironmentFile.Path)
+	}
+	base = append(base, "--project-directory", project.WorkingDirectory)
 	for _, file := range project.ConfigFiles {
 		base = append(base, "--file", file.Path)
 	}
@@ -467,6 +556,83 @@ func composeOutputHasContainer(output []byte) bool {
 		}
 	}
 	return false
+}
+
+func validComposeEnvironment(source *string) bool {
+	return source == nil || len(*source) <= maxComposeEnvironmentBytes && utf8.ValidString(*source) &&
+		!strings.ContainsRune(*source, 0)
+}
+
+func composeEnvironmentValue(source *string) string {
+	if source == nil {
+		return ""
+	}
+	return *source
+}
+
+func writeNewComposeProjectFile(path string, data []byte, mode os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func stageComposeEnvironmentFile(path string, data []byte, info os.FileInfo) (string, error) {
+	if info != nil {
+		stagedPath, err := stageComposeProjectFile(path, data, info)
+		if err != nil {
+			return "", err
+		}
+		if err := os.Chmod(stagedPath, 0o600); err != nil {
+			_ = os.Remove(stagedPath)
+			return "", err
+		}
+		return stagedPath, nil
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".kpanel-env-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	failed := true
+	defer func() {
+		if failed {
+			_ = temp.Close()
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if err := temp.Chmod(0o600); err != nil {
+		return "", err
+	}
+	if _, err := temp.Write(data); err != nil {
+		return "", err
+	}
+	if err := temp.Sync(); err != nil {
+		return "", err
+	}
+	if err := temp.Close(); err != nil {
+		return "", err
+	}
+	failed = false
+	return tempPath, nil
+}
+
+func restoreComposeEnvironmentFile(path string, data []byte, info os.FileInfo, existed bool) error {
+	if existed {
+		return atomicWriteComposeProjectFile(path, data, info)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return syncDirectoryPath(filepath.Dir(path))
 }
 
 func stageComposeProjectFile(path string, data []byte, info os.FileInfo) (string, error) {

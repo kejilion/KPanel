@@ -20,6 +20,12 @@ export interface DockerDeploymentDiagnostic {
   endColumn: number
 }
 
+export interface DockerComposeVariable {
+  name: string
+  defaultValue?: string
+  required: boolean
+}
+
 export type DockerDeploymentAnalysis =
   | { kind: 'empty' }
   | { kind: 'invalid'; message: string; diagnostics: DockerDeploymentDiagnostic[] }
@@ -75,6 +81,27 @@ export function analyzeDockerDeployment(source: string): DockerDeploymentAnalysi
   }
   return invalid(source, 'deployment_kind_unknown', '请粘贴一条 docker run 命令，或完整的 Compose YAML。',
     firstContentOffset(source), lineEndOffset(source, firstContentOffset(source)), '内容应以 docker run 开始，或包含顶层 services:。')
+}
+
+export function composeEnvironmentVariables(source: string): DockerComposeVariable[] {
+  const variables = new Map<string, DockerComposeVariable>()
+  const interpolation = /\$\$|\$(?:\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-+?])([^}]*))?\}|([A-Za-z_][A-Za-z0-9_]*))/g
+  for (const match of source.matchAll(interpolation)) {
+    if (match[0] === '$$') continue
+    const name = match[1] || match[4]
+    if (!name) continue
+    const operator = match[2] || ''
+    const defaultValue = operator === '-' || operator === ':-' ? match[3] || '' : undefined
+    const required = defaultValue === undefined && operator !== '+' && operator !== ':+'
+    const previous = variables.get(name)
+    const nextRequired = Boolean(previous?.required || required)
+    variables.set(name, {
+      name,
+      defaultValue: nextRequired ? undefined : previous?.defaultValue ?? defaultValue,
+      required: nextRequired,
+    })
+  }
+  return [...variables.values()]
 }
 
 function looksLikeDockerRun(value: string): boolean {

@@ -1422,6 +1422,7 @@ export interface DockerComposeProject {
   name: string
   workingDirectory: string
   configFiles: DockerComposeProjectFile[]
+  environmentFile?: DockerComposeProjectFile
   services: string[]
   resourceVersion: string
 }
@@ -1491,6 +1492,7 @@ export interface DockerMaintenanceInput {
   network?: string
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure'
   compose?: string
+  composeEnvironment?: string
   composeFile?: string
   allowedIp?: string
   backupId?: string

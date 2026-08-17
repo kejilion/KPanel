@@ -39,7 +39,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import { analyzeDockerDeployment } from '@/lib/dockerDeployment'
+import { analyzeDockerDeployment, composeEnvironmentVariables } from '@/lib/dockerDeployment'
 import { dockerComposeGroupAccent, groupDockerContainers, type DockerContainerGroup } from '@/lib/dockerComposeGroups'
 import {
   sortDockerContainers,
@@ -90,6 +90,12 @@ interface CreateMountRow {
 interface CreateEnvironmentRow {
   name: string
   value: string
+}
+
+interface CreateComposeEnvironmentRow extends CreateEnvironmentRow {
+  defaultValue?: string
+  detected: boolean
+  required: boolean
 }
 
 const panel = usePanelState()
@@ -150,6 +156,9 @@ const createPorts = ref<CreatePortRow[]>([
 ])
 const createMounts = ref<CreateMountRow[]>([])
 const createEnvironment = ref<CreateEnvironmentRow[]>([])
+const createComposeEnvironment = ref<CreateComposeEnvironmentRow[]>([])
+const createComposeEnvironmentOpen = ref(false)
+const createComposeEnvironmentRevealed = ref(false)
 
 const composeOpen = ref(false)
 const composeLoading = ref(false)
@@ -157,6 +166,9 @@ const composeError = ref('')
 const composeProject = ref<DockerComposeProject>()
 const composeFilePath = ref('')
 const composeSource = ref('')
+const composeEnvironmentSource = ref('')
+const composeEnvironmentOpen = ref(false)
+const composeEnvironmentRevealed = ref(false)
 
 const logsOpen = ref(false)
 const logsLoading = ref(false)
@@ -234,7 +246,20 @@ const availableImageTags = computed(() =>
 )
 const createNetworks = computed(() => data.value?.networks || [])
 const createAnalysis = computed(() => analyzeDockerDeployment(createSource.value))
+const detectedComposeEnvironment = computed(() => createAnalysis.value.kind === 'compose'
+  ? composeEnvironmentVariables(createAnalysis.value.compose)
+  : [])
 const createDiagnostics = computed(() => createAnalysis.value.kind === 'invalid' ? createAnalysis.value.diagnostics : [])
+const createComposeEnvironmentMissing = computed(() => createComposeEnvironment.value.filter((item) => item.required && !item.value).length)
+const createComposeEnvironmentValid = computed(() => {
+  const names = new Set<string>()
+  return createComposeEnvironmentMissing.value === 0 && createComposeEnvironment.value.every((item) => {
+    const valid = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(item.name) && !names.has(item.name) &&
+      item.value.length <= 2048 && !/[\r\n\u0000]/.test(item.value)
+    names.add(item.name)
+    return valid
+  })
+})
 const createModeLabel = computed(() => {
   if (createManualMode.value) return '手动配置'
   if (createAnalysis.value.kind === 'docker-run') return 'Docker Run'
@@ -256,7 +281,8 @@ const createCanSubmit = computed(() => {
   if (createAnalysis.value.kind === 'docker-run') {
     return createAdvanced.value ? Boolean(createImage.value.trim()) : true
   }
-  return createAnalysis.value.kind === 'compose' && Boolean(createComposeProject.value.trim())
+  return createAnalysis.value.kind === 'compose' && Boolean(createComposeProject.value.trim()) &&
+    createComposeEnvironmentValid.value
 })
 
 const sortedContainers = computed(() =>
@@ -319,7 +345,12 @@ function visibleContainerGroupRows(group: DockerContainerGroup): DockerContainer
 const composeAnalysis = computed(() => analyzeDockerDeployment(composeSource.value))
 const composeDiagnostics = computed(() => composeAnalysis.value.kind === 'invalid' ? composeAnalysis.value.diagnostics : [])
 const selectedComposeFile = computed(() => composeProject.value?.configFiles.find((file) => file.path === composeFilePath.value))
-const composeCanRedeploy = computed(() => composeAnalysis.value.kind === 'compose' && Boolean(selectedComposeFile.value))
+const composeEnvironmentCount = computed(() => composeEnvironmentSource.value.split(/\r?\n/)
+  .filter((line) => line.trim() && !line.trim().startsWith('#')).length)
+const composeEnvironmentValid = computed(() => new TextEncoder().encode(composeEnvironmentSource.value).length <= 24 * 1024 &&
+  !composeEnvironmentSource.value.includes('\u0000'))
+const composeCanRedeploy = computed(() => composeAnalysis.value.kind === 'compose' && Boolean(selectedComposeFile.value) &&
+  composeEnvironmentValid.value)
 const filteredImages = computed(() => {
   const query = search.value.trim().toLowerCase()
   return query
@@ -749,11 +780,51 @@ function resetStructuredCreateForm(): void {
   createEnvironment.value = []
 }
 
+function syncCreateComposeEnvironment(): void {
+  if (createAnalysis.value.kind !== 'compose') {
+    createComposeEnvironment.value = []
+    createComposeEnvironmentOpen.value = false
+    return
+  }
+  const existing = new Map(createComposeEnvironment.value.map((item) => [item.name, item]))
+  const detectedNames = new Set(detectedComposeEnvironment.value.map((item) => item.name))
+  const detected = detectedComposeEnvironment.value.map((item) => ({
+    name: item.name,
+    value: existing.get(item.name)?.value || '',
+    defaultValue: item.defaultValue,
+    detected: true,
+    required: item.required,
+  }))
+  const manual = createComposeEnvironment.value.filter((item) => !item.detected && !detectedNames.has(item.name))
+  createComposeEnvironment.value = [...detected, ...manual]
+  if (createComposeEnvironmentMissing.value > 0) createComposeEnvironmentOpen.value = true
+}
+
+function addCreateComposeEnvironment(): void {
+  createComposeEnvironment.value.push({ name: '', value: '', detected: false, required: false })
+  createComposeEnvironmentOpen.value = true
+}
+
+function encodeComposeEnvironmentValue(value: string): string {
+  if (!value) return ''
+  return `'${value.replace(/'/g, "\\'")}'`
+}
+
+function createComposeEnvironmentSource(): string {
+  return createComposeEnvironment.value
+    .filter((item) => item.name && (item.value || item.required))
+    .map((item) => `${item.name}=${encodeComposeEnvironmentValue(item.value)}`)
+    .join('\n')
+}
+
 function resetCreateForm(): void {
   createSource.value = ''
   createAdvanced.value = false
   createManualMode.value = false
   createComposeProject.value = ''
+  createComposeEnvironment.value = []
+  createComposeEnvironmentOpen.value = false
+  createComposeEnvironmentRevealed.value = false
   resetStructuredCreateForm()
 }
 
@@ -864,6 +935,7 @@ function submitContainerCreate(): void {
     }
     askTask('确认部署 Compose 项目', `${projectName} · ${analysis.services.length} 个服务`, {
       action: 'compose_deploy', name: projectName, compose: analysis.compose,
+      composeEnvironment: createComposeEnvironmentSource(),
     })
     return
   }
@@ -879,6 +951,7 @@ watch(createSource, () => {
   } else if (analysis.kind === 'compose') {
     createComposeProject.value = analysis.projectName
   }
+  syncCreateComposeEnvironment()
 })
 
 async function openComposeProject(group: DockerContainerGroup): Promise<void> {
@@ -894,6 +967,9 @@ async function openComposeProject(group: DockerContainerGroup): Promise<void> {
   try {
     const project = await api.docker.composeProject(group.name, composeController.signal)
     composeProject.value = project
+    composeEnvironmentSource.value = project.environmentFile?.source || ''
+    composeEnvironmentOpen.value = false
+    composeEnvironmentRevealed.value = false
     const firstFile = project.configFiles[0]
     if (firstFile) {
       composeFilePath.value = firstFile.path
@@ -920,6 +996,9 @@ function closeComposeProject(): void {
   composeError.value = ''
   composeFilePath.value = ''
   composeSource.value = ''
+  composeEnvironmentSource.value = ''
+  composeEnvironmentOpen.value = false
+  composeEnvironmentRevealed.value = false
 }
 
 function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose_restart'): void {
@@ -945,12 +1024,18 @@ function submitComposeRedeploy(): void {
     if (analysis.kind === 'invalid') toast.danger('Compose 配置存在语法问题', analysis.message)
     return
   }
+  if (!composeEnvironmentValid.value) {
+    toast.danger('项目变量文件过大', '.env 不能超过 24 KiB，且不能包含 NUL 字符。')
+    return
+  }
+  const environmentSource = composeEnvironmentSource.value
   closeComposeProject()
   askTask('确认更新并重新部署 Compose 项目', `${project.name} · ${file.name} · ${analysis.services.length} 个服务`, {
     action: 'compose_redeploy',
     name: project.name,
     composeFile: file.path,
     compose: analysis.compose,
+    composeEnvironment: environmentSource,
     expectedResourceVersion: project.resourceVersion,
   })
 }
@@ -1729,6 +1814,31 @@ onBeforeUnmount(() => {
         <label class="field"><span>Compose 项目名称</span><input v-model="createComposeProject" class="text-input" type="text" maxlength="63" autocomplete="off" /><small>已自动从服务名生成；项目文件会保存到 /home/docker 下。</small><code data-i18n-ignore>/home/docker/{{ createComposeProject || 'project' }}/docker-compose.yml</code></label>
       </section>
 
+      <section v-if="createAnalysis.kind === 'compose' && (createComposeEnvironment.length || createAdvanced)" class="deployment-advanced compose-environment-card">
+        <header class="compose-environment-card__header">
+          <div>
+            <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
+            <small v-if="createComposeEnvironmentMissing" class="compose-environment-card__missing">{{ createComposeEnvironmentMissing }} 项待填写</small>
+            <small v-else>{{ createComposeEnvironment.length }} 个变量 · 部署时自动加载</small>
+          </div>
+          <div class="compose-environment-card__actions">
+            <button v-if="createComposeEnvironmentOpen" class="button button--ghost button--small" type="button" @click="createComposeEnvironmentRevealed = !createComposeEnvironmentRevealed">{{ createComposeEnvironmentRevealed ? '隐藏值' : '显示值' }}</button>
+            <button class="button button--ghost button--small" type="button" @click="createComposeEnvironmentOpen = !createComposeEnvironmentOpen">{{ createComposeEnvironmentOpen ? '收起' : '填写变量' }}</button>
+          </div>
+        </header>
+        <div v-if="createComposeEnvironmentOpen" class="compose-environment-card__body">
+          <div v-for="(variable, index) in createComposeEnvironment" :key="`${variable.name}:${index}`" class="repeat-row repeat-row--compose-environment">
+            <input v-model="variable.name" class="text-input" type="text" maxlength="128" placeholder="变量名" :readonly="variable.detected" autocomplete="off" />
+            <input v-model="variable.value" class="text-input" :type="createComposeEnvironmentRevealed ? 'text' : 'password'" maxlength="2048" :placeholder="variable.defaultValue !== undefined ? `默认：${variable.defaultValue || '空值'}` : variable.required ? '必填' : '变量值'" autocomplete="new-password" />
+            <span v-if="variable.required" class="compose-environment-card__required">必填</span>
+            <span v-else-if="variable.defaultValue !== undefined" class="compose-environment-card__default">有默认值</span>
+            <button v-if="!variable.detected" class="icon-button icon-button--danger" type="button" title="移除" @click="createComposeEnvironment.splice(index, 1)"><Trash2 :size="15" /></button>
+          </div>
+          <button class="button button--ghost button--small compose-environment-card__add" type="button" @click="addCreateComposeEnvironment"><Plus :size="14" /> 添加变量</button>
+          <small>用于 Compose 中的 <code data-i18n-ignore>${VAR}</code> 插值；变量值不会保留在已完成的任务记录中。</small>
+        </div>
+      </section>
+
       <section v-if="createAdvanced && (createManualMode || createAnalysis.kind === 'docker-run')" class="deployment-advanced">
         <div class="form-grid form-grid--two">
           <label class="field"><span>容器名称（可选）</span><input v-model="createName" class="text-input" type="text" placeholder="留空由 Docker 自动命名" /></label>
@@ -1789,6 +1899,26 @@ onBeforeUnmount(() => {
             :aria-label="`${composeProject.name} Compose 配置`"
           />
         </label>
+        <section class="compose-environment-card compose-environment-card--manager">
+          <header class="compose-environment-card__header">
+            <div>
+              <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
+              <small>{{ composeEnvironmentCount ? `${composeEnvironmentCount} 个变量` : '当前为空' }} · 与配置一起校验和回滚</small>
+            </div>
+            <button class="button button--ghost button--small" type="button" @click="composeEnvironmentOpen = !composeEnvironmentOpen">{{ composeEnvironmentOpen ? '收起' : '管理变量' }}</button>
+          </header>
+          <div v-if="composeEnvironmentOpen" class="compose-environment-card__body">
+            <div v-if="!composeEnvironmentRevealed" class="compose-environment-card__concealed">
+              <span>变量值默认隐藏，显示后才能编辑。</span>
+              <button class="button button--secondary button--small" type="button" @click="composeEnvironmentRevealed = true">显示并编辑</button>
+            </div>
+            <label v-else class="field">
+              <span>每行一个 <code data-i18n-ignore>KEY=VALUE</code></span>
+              <textarea v-model="composeEnvironmentSource" class="text-area compose-environment-card__editor" rows="6" spellcheck="false" autocomplete="off" placeholder="DB_PASSWORD=change-me" />
+              <small>保存后写入项目目录中的 <code data-i18n-ignore>.env</code>，权限为 0600；敏感值不会保留在已完成的任务记录中。</small>
+            </label>
+          </div>
+        </section>
         <div v-if="composeAnalysis.kind !== 'invalid' || !composeDiagnostics.length" class="deployment-detection" :class="{ 'is-invalid': composeAnalysis.kind === 'invalid', 'is-ready': composeAnalysis.kind === 'compose' }">
           <span v-if="composeAnalysis.kind === 'compose'" class="deployment-kind"><ShieldCheck :size="16" />语法检查通过</span>
           <span v-else class="deployment-kind"><CircleStop :size="16" />配置暂不可部署</span>
@@ -2056,6 +2186,21 @@ onBeforeUnmount(() => {
 .deployment-options { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .deployment-advanced { margin-top: 14px; padding: 15px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
 .deployment-advanced > .form-section:first-child { margin-top: 0; }
+.compose-environment-card { display: grid; gap: 12px; }
+.compose-environment-card--manager { padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-subtle); }
+.compose-environment-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.compose-environment-card__header > div:first-child { display: grid; min-width: 0; gap: 3px; }
+.compose-environment-card__header small { color: var(--muted); }
+.compose-environment-card__header code { color: inherit; }
+.compose-environment-card__actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.compose-environment-card__body { display: grid; gap: 9px; padding-top: 11px; border-top: 1px solid var(--border); }
+.compose-environment-card__body > small { color: var(--muted); }
+.compose-environment-card__missing, .compose-environment-card__required { color: var(--danger) !important; }
+.compose-environment-card__required, .compose-environment-card__default { align-self: center; font-size: .72rem; white-space: nowrap; }
+.compose-environment-card__default { color: var(--muted); }
+.compose-environment-card__add { justify-self: start; }
+.compose-environment-card__concealed { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .8rem; }
+.compose-environment-card__editor { min-height: 128px; font-family: var(--font-mono); font-size: .78rem; line-height: 1.55; }
 .compose-manager { display: grid; gap: 15px; }
 .compose-manager__meta { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; }
 .compose-manager__meta > span { display: grid; min-width: 0; gap: 5px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-subtle); }
@@ -2066,6 +2211,7 @@ onBeforeUnmount(() => {
 .repeat-row--ports { grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr) 100px 110px auto; }
 .repeat-row--mounts { grid-template-columns: 120px minmax(180px, 1fr) minmax(150px, 1fr) auto auto; }
 .repeat-row--environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto; }
+.repeat-row--compose-environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto auto; }
 .inline-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .log-viewer { margin: 0; min-height: 280px; max-height: 58vh; overflow: auto; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--terminal-shell-radius, 12px); background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); padding: 15px; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -2111,7 +2257,9 @@ onBeforeUnmount(() => {
   .docker-group__summary { grid-template-columns: minmax(0, 1fr); }
   .docker-group__summary .button { grid-column: 1 / -1; width: 100%; }
   .compose-manager__meta { grid-template-columns: 1fr; }
-  .repeat-row--ports, .repeat-row--mounts, .repeat-row--environment { grid-template-columns: 1fr; }
+  .repeat-row--ports, .repeat-row--mounts, .repeat-row--environment, .repeat-row--compose-environment { grid-template-columns: 1fr; }
+  .compose-environment-card__header, .compose-environment-card__concealed { align-items: stretch; flex-direction: column; }
+  .compose-environment-card__actions { flex-wrap: wrap; }
   .repeat-row--ports > span { display: none; }
   .deployment-input-card, .deployment-advanced { padding: 12px; }
   .deployment-detection { align-items: flex-start; flex-direction: column; gap: 4px; }

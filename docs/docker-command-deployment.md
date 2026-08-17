@@ -18,7 +18,8 @@ KPanel 的“新建容器”使用一个粘贴入口覆盖两类常见部署资�
 
 - 容器、镜像、网络和卷的真实状态仍来自 Docker Engine。
 - `docker run` 被解析为现有结构化 Docker Engine API 请求，不执行用户粘贴的 Shell 文本。
-- Compose 项目保存为 `/home/docker/<project>/docker-compose.yml`，再使用宿主机固定的
+- Compose 项目保存为 `/home/docker/<project>/docker-compose.yml`，项目变量保存为同目录权限 `0600`
+  的标准 `.env`；再使用宿主机固定的
   `docker compose` 入口启动。该目录和文件名与 `kejilion.sh` 的 Compose 发现、备份和恢复方式兼容。
 - Compose 容器由标准 `com.docker.compose.*` 标签识别；Docker Run 容器继续写入
   `io.kejilion.panel.managed=true`。两类资源都可被 Docker CLI、Compose、`kejilion.sh` 和 KPanel
@@ -64,12 +65,17 @@ Compose YAML 可以使用 Docker Compose 支持的管理员能力，包括 host 
 宿主机挂载；KPanel 不以风险为由削减底层能力。真实缺失的相对文件、环境文件、构建上下文或 Compose
 插件会由固定 Compose 校验返回可纠正错误。
 
+浏览器会从 Compose 中识别 `$VAR`、`${VAR}`、`${VAR:?message}` 与 `${VAR:-default}`。没有默认值的
+变量按需展示在“项目变量”中，用户无需手工创建或引用私有环境文件；Agent 将变量写入项目目录标准
+`.env`，并在 `config`、`up`、启停和重新部署时显式加载。该文件用于 Compose 插值；变量只有在服务的
+`environment` 或 `env_file` 中声明后才会进入容器。任意其他相对 `env_file` 仍需用户自行提供。
+
 ## 执行、成功与回滚
 
 Compose 部署按以下顺序执行：
 
 1. 复核项目目录和 Docker Engine 中不存在同名 Compose 项目；
-2. 以 `0750` 创建项目目录，以 `0640` 原子创建 `docker-compose.yml`；
+2. 以 `0750` 创建项目目录，以 `0640` 原子创建 `docker-compose.yml`，以 `0600` 创建标准 `.env`；
 3. 执行 `docker compose config --services`，确认至少存在一个活动服务；
 4. 执行 `docker compose up --detach`；
 5. 执行 `docker compose ps --all --quiet`，至少读取到一个真实容器 ID 后才判定成功。
@@ -78,10 +84,11 @@ Compose 部署按以下顺序执行：
 `docker compose down --remove-orphans`；回滚成功后删除本次项目目录。回滚失败时保留
 `docker-compose.yml` 并明确标记“需要人工处理”，避免丢失恢复依据。默认 `down` 不删除命名卷。
 
-已有项目修改配置时，Agent 在执行前重新发现项目并核对项目 `resourceVersion`，然后在原配置目录中
-创建同权限、同数值属主的暂存文件。完整配置集合先使用暂存文件执行 `docker compose config --services`；
-通过后原子替换目标文件，再执行 `docker compose up --detach --remove-orphans` 并复核真实容器 ID。
-若启动或复核失败，恢复原配置并再次 `up`；配置恢复或运行态恢复失败时保留明确的“需要人工处理”状态。
+已有项目修改配置时，Agent 在执行前重新发现项目并核对 Compose 与 `.env` 共同计算的
+`resourceVersion`，然后在原配置目录中创建同属主的暂存文件。完整配置集合先使用暂存 Compose 和
+暂存 `.env` 执行 `docker compose config --services`；通过后依次原子替换目标文件，再执行
+`docker compose up --detach --remove-orphans` 并复核真实容器 ID。若启动或复核失败，同时恢复原
+Compose 与 `.env` 并再次 `up`；配置恢复或运行态恢复失败时保留明确的“需要人工处理”状态。
 项目任务始终使用独立参数调用固定 Docker 可执行文件，不拼接 Shell。
 
 ## 验收范围

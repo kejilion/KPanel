@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,8 @@ func TestComposeDeploymentPersistsProjectAndVerifiesContainer(t *testing.T) {
 	}
 	input := MaintenanceInput{
 		Action: "compose_deploy", Name: "demo",
-		Compose: "services:\n  app:\n    image: nginx:alpine\n",
+		Compose:            "services:\n  app:\n    image: nginx:${IMAGE_TAG}\n",
+		ComposeEnvironment: composeEnvironmentPointer("IMAGE_TAG=alpine"),
 	}
 	if err := client.deployComposeProject(context.Background(), input); err != nil {
 		t.Fatal(err)
@@ -48,8 +50,16 @@ func TestComposeDeploymentPersistsProjectAndVerifiesContainer(t *testing.T) {
 	if err != nil || string(data) != input.Compose {
 		t.Fatalf("persisted Compose source = %q, %v", data, err)
 	}
+	environmentPath := filepath.Join(client.appRoot, "demo", ".env")
+	environmentData, environmentErr := os.ReadFile(environmentPath)
+	environmentInfo, _ := os.Stat(environmentPath)
+	if environmentErr != nil || string(environmentData) != "IMAGE_TAG=alpine\n" || environmentInfo == nil ||
+		(runtime.GOOS != "windows" && environmentInfo.Mode().Perm() != 0o600) {
+		t.Fatalf("persisted Compose environment = %q, %#v, %v", environmentData, environmentInfo, environmentErr)
+	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "--project-name demo config --services") ||
+	if !strings.Contains(joined, "--env-file ") || !strings.Contains(joined, string(filepath.Separator)+".env") ||
+		!strings.Contains(joined, "--project-name demo config --services") ||
 		!strings.Contains(joined, "--project-name demo up --detach") ||
 		!strings.Contains(joined, "--project-name demo ps --all --quiet") {
 		t.Fatalf("Compose calls = %q", joined)
@@ -152,6 +162,10 @@ func TestComposeDeploymentRejectsExistingProjectBeforeWrite(t *testing.T) {
 
 func TestComposeProjectReadsDockerLabelSourceOfTruth(t *testing.T) {
 	client, composePath := composeProjectTestClient(t, "services:\n  web:\n    image: nginx:alpine\n")
+	environmentPath := filepath.Join(filepath.Dir(composePath), ".env")
+	if err := os.WriteFile(environmentPath, []byte("APP_MODE=production\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	project, err := client.ComposeProject(context.Background(), "demo")
 	if err != nil {
 		t.Fatal(err)
@@ -161,15 +175,31 @@ func TestComposeProjectReadsDockerLabelSourceOfTruth(t *testing.T) {
 	}
 	wantInfo, _ := os.Stat(composePath)
 	gotInfo, _ := os.Stat(project.ConfigFiles[0].Path)
+	wantEnvironmentInfo, _ := os.Stat(environmentPath)
+	var gotEnvironmentInfo os.FileInfo
+	if project.EnvironmentFile != nil {
+		gotEnvironmentInfo, _ = os.Stat(project.EnvironmentFile.Path)
+	}
 	if project.Name != "demo" || wantInfo == nil || gotInfo == nil || !os.SameFile(wantInfo, gotInfo) ||
 		project.ConfigFiles[0].Source != "services:\n  web:\n    image: nginx:alpine\n" ||
+		project.EnvironmentFile == nil || wantEnvironmentInfo == nil || gotEnvironmentInfo == nil ||
+		!os.SameFile(wantEnvironmentInfo, gotEnvironmentInfo) ||
+		project.EnvironmentFile.Source != "APP_MODE=production\n" ||
 		len(project.Services) != 1 || project.Services[0] != "web" || project.ResourceVersion == "" {
 		t.Fatalf("ComposeProject() = %#v", project)
 	}
 }
 
+func composeEnvironmentPointer(source string) *string {
+	return &source
+}
+
 func TestComposeRedeployValidatesStagesAndReplacesConfiguration(t *testing.T) {
 	client, composePath := composeProjectTestClient(t, "services:\n  web:\n    image: nginx:alpine\n")
+	environmentPath := filepath.Join(filepath.Dir(composePath), ".env")
+	if err := os.WriteFile(environmentPath, []byte("APP_TAG=old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	project, err := client.ComposeProject(context.Background(), "demo")
 	if err != nil {
 		t.Fatal(err)
@@ -180,13 +210,15 @@ func TestComposeRedeployValidatesStagesAndReplacesConfiguration(t *testing.T) {
 		calls = append(calls, strings.Join(arguments, " "))
 		switch {
 		case containsArgumentSequence(arguments, "config", "--services"):
-			if !strings.Contains(strings.Join(arguments, " "), ".kpanel-compose-") {
-				t.Fatal("Compose validation did not use the staged configuration")
+			joined := strings.Join(arguments, " ")
+			if strings.Count(joined, ".kpanel-compose-") < 2 {
+				t.Fatal("Compose validation did not use staged configuration and environment")
 			}
 			return []byte("web\n"), nil
 		case containsArgumentSequence(arguments, "up", "--detach", "--remove-orphans"):
-			if strings.Contains(strings.Join(arguments, " "), ".kpanel-compose-") {
-				t.Fatal("Compose redeploy used the staged path after validation")
+			joined := strings.Join(arguments, " ")
+			if strings.Contains(joined, ".kpanel-compose-") || strings.Contains(joined, ".kpanel-env-") {
+				t.Fatal("Compose redeploy used staged paths after validation")
 			}
 			return []byte("updated\n"), nil
 		case containsArgumentSequence(arguments, "ps", "--all", "--quiet"):
@@ -197,7 +229,9 @@ func TestComposeRedeployValidatesStagesAndReplacesConfiguration(t *testing.T) {
 	}
 	err = client.redeployComposeProject(context.Background(), MaintenanceInput{
 		Action: "compose_redeploy", Name: "demo", ComposeFile: composePath,
-		Compose: "services:\n  web:\n    image: nginx:stable\n", ExpectedResourceVersion: project.ResourceVersion,
+		Compose:                 "services:\n  web:\n    image: nginx:stable\n",
+		ComposeEnvironment:      composeEnvironmentPointer("APP_TAG=new"),
+		ExpectedResourceVersion: project.ResourceVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +239,10 @@ func TestComposeRedeployValidatesStagesAndReplacesConfiguration(t *testing.T) {
 	updated, readErr := os.ReadFile(composePath)
 	if readErr != nil || string(updated) != "services:\n  web:\n    image: nginx:stable\n" {
 		t.Fatalf("updated Compose source = %q, %v", updated, readErr)
+	}
+	updatedEnvironment, environmentErr := os.ReadFile(environmentPath)
+	if environmentErr != nil || string(updatedEnvironment) != "APP_TAG=new\n" {
+		t.Fatalf("updated Compose environment = %q, %v", updatedEnvironment, environmentErr)
 	}
 	if len(calls) != 3 {
 		t.Fatalf("Compose calls = %q", calls)
@@ -214,6 +252,10 @@ func TestComposeRedeployValidatesStagesAndReplacesConfiguration(t *testing.T) {
 func TestComposeRedeployRestoresPreviousConfigurationAfterStartFailure(t *testing.T) {
 	original := "services:\n  web:\n    image: nginx:alpine\n"
 	client, composePath := composeProjectTestClient(t, original)
+	environmentPath := filepath.Join(filepath.Dir(composePath), ".env")
+	if err := os.WriteFile(environmentPath, []byte("APP_TAG=original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	project, err := client.ComposeProject(context.Background(), "demo")
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +278,9 @@ func TestComposeRedeployRestoresPreviousConfigurationAfterStartFailure(t *testin
 	}
 	err = client.redeployComposeProject(context.Background(), MaintenanceInput{
 		Action: "compose_redeploy", Name: "demo", ComposeFile: composePath,
-		Compose: "services:\n  web:\n    image: nginx:stable\n", ExpectedResourceVersion: project.ResourceVersion,
+		Compose:                 "services:\n  web:\n    image: nginx:stable\n",
+		ComposeEnvironment:      composeEnvironmentPointer("APP_TAG=failed"),
+		ExpectedResourceVersion: project.ResourceVersion,
 	})
 	if err == nil || !strings.Contains(err.Error(), "previous configuration restored") || upCalls != 2 {
 		t.Fatalf("rollback result: err=%v upCalls=%d", err, upCalls)
@@ -244,6 +288,10 @@ func TestComposeRedeployRestoresPreviousConfigurationAfterStartFailure(t *testin
 	restored, readErr := os.ReadFile(composePath)
 	if readErr != nil || string(restored) != original {
 		t.Fatalf("restored Compose source = %q, %v", restored, readErr)
+	}
+	restoredEnvironment, environmentErr := os.ReadFile(environmentPath)
+	if environmentErr != nil || string(restoredEnvironment) != "APP_TAG=original\n" {
+		t.Fatalf("restored Compose environment = %q, %v", restoredEnvironment, environmentErr)
 	}
 }
 

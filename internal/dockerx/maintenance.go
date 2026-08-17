@@ -79,6 +79,7 @@ type MaintenanceInput struct {
 	Network                  string                       `json:"network,omitempty"`
 	RestartPolicy            string                       `json:"restartPolicy,omitempty"`
 	Compose                  string                       `json:"compose,omitempty"`
+	ComposeEnvironment       *string                      `json:"composeEnvironment,omitempty"`
 	ComposeFile              string                       `json:"composeFile,omitempty"`
 	AllowedIP                string                       `json:"allowedIp,omitempty"`
 	BackupID                 string                       `json:"backupId,omitempty"`
