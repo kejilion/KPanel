@@ -249,6 +249,8 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
 - 页面固定展示原脚本的 12 个项目并默认全选；管理员可以取消任意项目，但不能提交路径、命令、软件包名或其他 Shell 参数。
 - Agent 将所选项目拆成持久化 systemd 后台步骤，逐项调用 `KJ_SYSTEM_TUNING_NONINTERACTIVE=1 k kpanel system-tuning apply-item <id>`。页面关闭或浏览器断开不会取消任务，重新打开会继续显示真实阶段和进度。
 - 每个项目由脚本共享锁串行执行并输出结构化回执；项目失败时任务立即停止，后续项目不会被标记为成功。系统更新、清理、换源和安装软件包属于不可整体回滚操作，界面不宣称整套事务可以自动撤销。
+- 后台执行分别采集原生操作日志与结构化 stdout 回执，软件包管理器、操作返回码和完成态回读任一失败都会停止；交互菜单 66 使用同一失败停止与回读规则，不再在失败后继续打印 `[OK]`。
+- 1 GiB Swap 按 `/swapfile` 的 1 GiB 文件大小、`/proc/swaps` 激活项和 `fstab` 启动项共同判断，不再使用会因 `mkswap` 元数据取整或其他 Swap 而误判的总量；自动 DNS 直接复用 KPanel 已有的固定 DNS 协议，不修改单项 DNS 功能。
 - 原脚本第 6 项此前只显示“开放所有端口”而未执行动作；现在交互菜单与 KPanel 都调用同一个事务化 firewall `open-all` 真源实现，并在持久化或回读失败时恢复快照。
 - LinuxMirrors 固定到 `649e948763042e485e411be540d21c32cface1c1`，网络参数脚本固定到 `e9c3078eb516b05f9df6d2a9294cf3b226ca02bd`；两者下载后都先校验已登记 SHA-256，再交给 Bash 执行。
 - 2026-08-11 已在 154 的隔离 Ubuntu 24.04 systemd 容器完成固定 12 项状态、Panel typed 选择、Agent 后台运行态与恢复、时区安全项成功、首项失败即停止、后续项不执行、资源版本冲突和审计闭环；生产 KPanel、Agent、Swap、SSH 和防火墙均未改动。

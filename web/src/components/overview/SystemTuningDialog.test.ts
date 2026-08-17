@@ -56,4 +56,20 @@ describe('SystemTuningDialog', () => {
     expect(wrapper.text()).toContain('正在执行 · 52%')
     expect(wrapper.find('.tuning-item.is-running').text()).toContain('开启 BBR 加速')
   })
+
+  it('marks the exact failed item without presenting later selected items as completed', async () => {
+    mocks.status.mockResolvedValueOnce({
+      ...snapshot,
+      maintenance: {
+        state: 'failed', action: 'system-tuning', policy: `${'c'.repeat(64)}.system-update,system-cleanup,swap-1g,dns-auto`,
+        stage: 'system_tuning_swap-1g', progress: 100, message: '任务失败：swap activation failed', rebootRequired: false,
+      },
+    })
+    const wrapper = mount(SystemTuningDialog, { props: { open: true, readable: true, writable: true }, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    expect(wrapper.find('.tuning-item.is-failed').text()).toContain('设置 1 GB 虚拟内存')
+    expect(wrapper.findAll('.tuning-item.is-complete')).toHaveLength(2)
+    expect(wrapper.findAll('.tuning-item')[3]!.classes()).not.toContain('is-complete')
+    expect(wrapper.text()).toContain('任务失败：swap activation failed')
+  })
 })
