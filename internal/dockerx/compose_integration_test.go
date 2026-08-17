@@ -88,9 +88,36 @@ func TestComposeLifecycleAgainstDocker(t *testing.T) {
 
 	project = requireComposeProject(t, client, projectName)
 	composePath := project.ConfigFiles[0].Path
+	containerIDs, err := client.runCompose(ctx, append(composeProjectBase(project), "ps", "--all", "--quiet", "worker")...)
+	if err != nil || strings.TrimSpace(string(containerIDs)) == "" {
+		t.Fatalf("container before deletion = %q, %v", containerIDs, err)
+	}
+	previousContainerID := strings.TrimSpace(string(containerIDs))
+	if _, err := client.runCompose(ctx, append(composeProjectBase(project), "rm", "--force", "--stop", "worker")...); err != nil {
+		t.Fatalf("delete Compose service container: %v", err)
+	}
+	missingProject := requireComposeProject(t, client, projectName)
+	if missingProject.ResourceVersion != project.ResourceVersion {
+		t.Fatalf("container deletion changed configuration version: before=%q after=%q", project.ResourceVersion, missingProject.ResourceVersion)
+	}
+	if err := client.redeployComposeProject(ctx, MaintenanceInput{
+		Action: "compose_redeploy", Name: projectName, ComposeFile: composePath,
+		Compose: original, ComposeEnvironment: composeEnvironmentPointer("KPANEL_ENV_REVISION=original"),
+		ExpectedResourceVersion: project.ResourceVersion,
+	}); err != nil {
+		t.Fatalf("recreate deleted Compose service: %v", err)
+	}
+	project = requireComposeProject(t, client, projectName)
+	containerIDs, err = client.runCompose(ctx, append(composeProjectBase(project), "ps", "--all", "--quiet", "worker")...)
+	if err != nil || strings.TrimSpace(string(containerIDs)) == "" || strings.TrimSpace(string(containerIDs)) == previousContainerID {
+		t.Fatalf("container after recreation = %q, %v; previous %q", containerIDs, err, previousContainerID)
+	}
+	assertComposeEnvironment("original")
+
+	project = requireComposeProject(t, client, projectName)
 	failing := integrationComposeSource("kpanel.invalid/missing:never", "must-rollback")
 	failing = strings.Replace(failing, "    image: kpanel.invalid/missing:never\n", "    image: kpanel.invalid/missing:never\n    pull_policy: never\n", 1)
-	err := client.redeployComposeProject(ctx, MaintenanceInput{
+	err = client.redeployComposeProject(ctx, MaintenanceInput{
 		Action: "compose_redeploy", Name: projectName, ComposeFile: composePath,
 		Compose: failing, ComposeEnvironment: composeEnvironmentPointer("KPANEL_ENV_REVISION=must-rollback"),
 		ExpectedResourceVersion: project.ResourceVersion,

@@ -190,6 +190,60 @@ func TestComposeProjectReadsDockerLabelSourceOfTruth(t *testing.T) {
 	}
 }
 
+func TestComposeRedeploySurvivesDeletedProjectContainers(t *testing.T) {
+	source := "services:\n  web:\n    image: nginx:alpine\n"
+	liveClient, composePath := composeProjectTestClient(t, source)
+	before, err := liveClient.ComposeProject(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/containers/json" {
+			_, _ = response.Write([]byte(`[]`))
+			return
+		}
+		http.NotFound(response, request)
+	}))
+	defer server.Close()
+	client := testHTTPClient(server)
+	client.appRoot = liveClient.appRoot
+	client.webRoot = liveClient.webRoot
+	after, err := client.ComposeProject(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("resolve project after all containers were deleted: %v", err)
+	}
+	wantInfo, _ := os.Stat(composePath)
+	var gotInfo os.FileInfo
+	if len(after.ConfigFiles) == 1 {
+		gotInfo, _ = os.Stat(after.ConfigFiles[0].Path)
+	}
+	if after.ResourceVersion != before.ResourceVersion || len(after.Services) != 0 ||
+		len(after.ConfigFiles) != 1 || wantInfo == nil || gotInfo == nil || !os.SameFile(wantInfo, gotInfo) {
+		t.Fatalf("project after container deletion = %#v; before = %#v", after, before)
+	}
+	composePath = after.ConfigFiles[0].Path
+
+	client.composeCommand = func(_ context.Context, arguments ...string) ([]byte, error) {
+		switch {
+		case containsArgumentSequence(arguments, "config", "--services"):
+			return []byte("web\n"), nil
+		case containsArgumentSequence(arguments, "up", "--detach", "--remove-orphans"):
+			return []byte("recreated\n"), nil
+		case containsArgumentSequence(arguments, "ps", "--all", "--quiet"):
+			return []byte(strings.Repeat("b", 64) + "\n"), nil
+		default:
+			return nil, errors.New("unexpected Compose command")
+		}
+	}
+	if err := client.redeployComposeProject(context.Background(), MaintenanceInput{
+		Action: "compose_redeploy", Name: "demo", ComposeFile: composePath,
+		Compose: source, ExpectedResourceVersion: before.ResourceVersion,
+	}); err != nil {
+		t.Fatalf("redeploy project after all containers were deleted: %v", err)
+	}
+}
+
 func composeEnvironmentPointer(source string) *string {
 	return &source
 }

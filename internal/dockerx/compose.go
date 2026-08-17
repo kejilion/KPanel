@@ -60,7 +60,6 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 	workingDirectory := ""
 	configLabel := ""
 	services := make(map[string]struct{})
-	var containerVersions []string
 	for _, container := range containers {
 		if container.ComposeProject != name {
 			continue
@@ -81,10 +80,13 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 		if container.ComposeService != "" {
 			services[container.ComposeService] = struct{}{}
 		}
-		containerVersions = append(containerVersions, container.ResourceVersion)
 	}
-	if len(containerVersions) == 0 {
-		return composeProjectState{}, ErrDockerJobNotFound
+	if workingDirectory == "" {
+		workingDirectory, err = c.discoverManagedComposeProjectDirectory(name)
+		if err != nil {
+			return composeProjectState{}, err
+		}
+		configLabel = ""
 	}
 	workingDirectory = filepath.Clean(filepath.FromSlash(workingDirectory))
 	if !filepath.IsAbs(workingDirectory) || !c.composePathAllowed(workingDirectory) {
@@ -110,6 +112,14 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 	for _, path := range paths {
 		path = filepath.Clean(path)
 		if !filepath.IsAbs(path) || !c.composePathAllowed(path) {
+			return composeProjectState{}, ErrActionUnsupported
+		}
+		pathInfo, statErr := os.Lstat(path)
+		if statErr != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 {
+			return composeProjectState{}, ErrActionUnsupported
+		}
+		path, statErr = filepath.EvalSymlinks(path)
+		if statErr != nil || !filepath.IsAbs(path) || !c.composePathAllowed(path) {
 			return composeProjectState{}, ErrActionUnsupported
 		}
 		info, statErr := os.Lstat(path)
@@ -158,7 +168,6 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 		serviceNames = append(serviceNames, service)
 	}
 	sort.Strings(serviceNames)
-	sort.Strings(containerVersions)
 	project := ComposeProject{
 		Name: name, WorkingDirectory: resolvedDirectory, ConfigFiles: files,
 		EnvironmentFile: environmentFile, Services: serviceNames,
@@ -167,10 +176,39 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 		Name, WorkingDirectory string
 		Files                  []ComposeProjectFile
 		EnvironmentFile        *ComposeProjectFile
-		Services               []string
-		Containers             []string
-	}{name, resolvedDirectory, files, environmentFile, serviceNames, containerVersions})
+	}{name, resolvedDirectory, files, environmentFile})
 	return composeProjectState{ComposeProject: project}, nil
+}
+
+func (c *Client) discoverManagedComposeProjectDirectory(name string) (string, error) {
+	var candidates []string
+	for _, root := range []string{c.appRoot, c.webRoot} {
+		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
+		if err != nil || !filepath.IsAbs(resolvedRoot) {
+			continue
+		}
+		candidate := filepath.Join(resolvedRoot, name)
+		if !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot {
+			continue
+		}
+		resolvedCandidate, err := filepath.EvalSymlinks(candidate)
+		if err != nil || !pathWithin(resolvedCandidate, resolvedRoot) || resolvedCandidate == resolvedRoot {
+			continue
+		}
+		info, err := os.Lstat(resolvedCandidate)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+			len(discoverDefaultComposeFiles(resolvedCandidate)) == 0 {
+			continue
+		}
+		candidates = append(candidates, resolvedCandidate)
+	}
+	if len(candidates) == 0 {
+		return "", ErrDockerJobNotFound
+	}
+	if len(candidates) > 1 {
+		return "", ErrResourceConflict
+	}
+	return candidates[0], nil
 }
 
 func (c *Client) composePathAllowed(path string) bool {
@@ -673,7 +711,7 @@ func stageComposeProjectFile(path string, data []byte, info os.FileInfo) (string
 
 func replaceComposeProjectFile(stagedPath, target string) error {
 	if runtime.GOOS == "windows" {
-		if err := os.Remove(target); err != nil {
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

@@ -89,13 +89,16 @@ Compose 部署按以下顺序执行：
 暂存 `.env` 执行 `docker compose config --services`；通过后依次原子替换目标文件，再执行
 `docker compose up --detach --remove-orphans` 并复核真实容器 ID。若启动或复核失败，同时恢复原
 Compose 与 `.env` 并再次 `up`；配置恢复或运行态恢复失败时保留明确的“需要人工处理”状态。
-项目任务始终使用独立参数调用固定 Docker 可执行文件，不拼接 Shell。
+容器数量、运行状态和随时间变化的状态文本不参与配置版本计算，因此手工删除某个服务容器不会制造
+配置冲突；重新部署会由 `compose up` 重建缺失容器。受管项目即使已无现存容器，也会按项目名从
+`/home/docker/<project>` 或 `/home/web/<project>` 的标准 Compose 文件安全恢复发现。项目任务始终
+使用独立参数调用固定 Docker 可执行文件，不拼接 Shell，也不扫描受管根目录以外的路径。
 
 ## 验收范围
 
 - 自动测试：Docker Run 引号/换行/端口/挂载/环境变量解析、行列诊断、Shell 链拒绝、Compose YAML
   语法定位与编组；Compose 新建成功、启动失败回滚、回滚失败保留恢复文件、同名冲突；已有项目读取、
-  暂存校验、原子替换、重新部署失败恢复；缺失镜像自动拉取。
+  暂存校验、原子替换、删除全部服务容器后重新发现与重建、重新部署失败恢复；缺失镜像自动拉取。
 - Linux 构建：`paneld`、`kejilion-agent`、`kejilion-node`、`kpctl` 的 Linux/amd64 与 Linux/arm64
   无 CGO 二进制可编译。
 - 隔离真机待验证：真实 Docker Compose 插件、镜像拉取、端口冲突回滚、`kejilion.sh` 发现/备份/恢复。

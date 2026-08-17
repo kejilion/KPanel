@@ -37,6 +37,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
+import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { analyzeDockerDeployment, composeEnvironmentVariables } from '@/lib/dockerDeployment'
@@ -644,7 +645,7 @@ async function submitTask(input: DockerMaintenanceInput): Promise<void> {
     startJobPolling(job)
     toast.success('已转入后台执行', '可以离开 Docker 页面，任务会继续运行。')
   } catch (reason) {
-    toast.danger('Docker 任务提交失败', reason instanceof ApiError ? reason.message : 'Agent 拒绝了本次操作。')
+    toast.danger('Docker 任务提交失败', localizeError(reason))
   } finally {
     taskRunning.value = false
   }
