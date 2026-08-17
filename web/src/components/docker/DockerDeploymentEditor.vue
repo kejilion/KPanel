@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { CircleAlert, Crosshair, ScanLine } from '@lucide/vue'
 import type { DockerDeploymentDiagnostic } from '@/lib/dockerDeployment'
 
@@ -25,12 +25,20 @@ const scrollTop = ref(0)
 const highlightedLine = ref(0)
 const pulseSequence = ref(0)
 const lineCount = computed(() => Math.max(1, props.modelValue.split(/\r?\n/).length))
+const diagnosticLines = computed(() => [...new Set(
+  props.diagnostics.map((item) => item.line).filter((line) => line > 0),
+)])
 const editorLineHeight = 18.975
 const editorVerticalPadding = 12
 let highlightTimer: number | undefined
-const linePulseStyle = computed(() => ({
-  top: `${editorVerticalPadding + (highlightedLine.value - 1) * editorLineHeight - scrollTop.value}px`,
-}))
+
+function diagnosticToken(item: DockerDeploymentDiagnostic): string {
+  return `${item.code}:${item.line}:${item.column}:${item.from}:${item.to}`
+}
+
+function linePositionStyle(line: number): { top: string } {
+  return { top: `${editorVerticalPadding + (line - 1) * editorLineHeight - scrollTop.value}px` }
+}
 
 function update(event: Event): void {
   emit('update:modelValue', (event.target as HTMLTextAreaElement).value)
@@ -38,6 +46,16 @@ function update(event: Event): void {
 
 function syncScroll(event: Event): void {
   scrollTop.value = (event.target as HTMLTextAreaElement).scrollTop
+}
+
+function pulseLine(line: number): void {
+  if (highlightTimer) window.clearTimeout(highlightTimer)
+  highlightedLine.value = line
+  pulseSequence.value += 1
+  highlightTimer = window.setTimeout(() => {
+    highlightedLine.value = 0
+    highlightTimer = undefined
+  }, 1_600)
 }
 
 function focusDiagnostic(item: DockerDeploymentDiagnostic): void {
@@ -51,14 +69,27 @@ function focusDiagnostic(item: DockerDeploymentDiagnostic): void {
     editor.scrollTop = Math.max(0, lineTop - Math.max(editorLineHeight * 2, (viewportHeight - editorLineHeight) / 2))
     scrollTop.value = editor.scrollTop
   }
-  if (highlightTimer) window.clearTimeout(highlightTimer)
-  highlightedLine.value = item.line
-  pulseSequence.value += 1
-  highlightTimer = window.setTimeout(() => {
-    highlightedLine.value = 0
-    highlightTimer = undefined
-  }, 1_600)
+  pulseLine(item.line)
 }
+
+watch(
+  () => props.diagnostics.map(diagnosticToken).join('|'),
+  (signature, previousSignature) => {
+    if (!signature) {
+      if (highlightTimer) window.clearTimeout(highlightTimer)
+      highlightTimer = undefined
+      highlightedLine.value = 0
+      return
+    }
+    if (signature === previousSignature) return
+
+    const previousTokens = new Set(previousSignature?.split('|').filter(Boolean) ?? [])
+    const newestDiagnostic = props.diagnostics.find((item) => !previousTokens.has(diagnosticToken(item)))
+    const target = newestDiagnostic ?? props.diagnostics[0]
+    if (target) pulseLine(target.line)
+  },
+  { immediate: true },
+)
 
 defineExpose({ focusDiagnostic, focus: () => input.value?.focus() })
 
@@ -75,15 +106,19 @@ onBeforeUnmount(() => {
           <span
             v-for="line in lineCount"
             :key="`${line}-${line === highlightedLine ? pulseSequence : 0}`"
-            :class="{ 'is-diagnostic-line': line === highlightedLine }"
+            :class="{
+              'has-diagnostic': diagnosticLines.includes(line),
+              'is-diagnostic-line': line === highlightedLine,
+            }"
           >{{ line }}</span>
         </div>
       </div>
       <span
-        v-if="highlightedLine"
-        :key="pulseSequence"
-        class="deployment-editor__line-pulse"
-        :style="linePulseStyle"
+        v-for="line in diagnosticLines"
+        :key="`${line}-${line === highlightedLine ? pulseSequence : 0}`"
+        class="deployment-editor__error-line"
+        :class="{ 'is-pulsing': line === highlightedLine }"
+        :style="linePositionStyle(line)"
         aria-hidden="true"
       />
       <textarea
@@ -152,23 +187,30 @@ onBeforeUnmount(() => {
 }
 .deployment-editor__gutter > div { padding: 12px 10px 12px 4px; }
 .deployment-editor__gutter span { display: block; height: 18.975px; }
-.deployment-editor__gutter span.is-diagnostic-line {
+.deployment-editor__gutter span.has-diagnostic {
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--danger) 78%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--danger) 58%, transparent);
   font-weight: 800;
-  animation: diagnostic-gutter-pulse 1.55s ease-out both;
 }
-.deployment-editor__line-pulse {
+.deployment-editor__gutter span.is-diagnostic-line {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--danger) 88%, transparent);
+  animation: diagnostic-gutter-pulse 1.55s ease-out;
+}
+.deployment-editor__error-line {
   position: absolute;
   z-index: 0;
   right: 0;
   left: 46px;
   height: 18.975px;
-  border-left: 3px solid color-mix(in srgb, var(--danger) 78%, transparent);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 18%, transparent), color-mix(in srgb, var(--danger) 4%, transparent) 74%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--danger) 58%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 11%, transparent), color-mix(in srgb, var(--danger) 3%, transparent) 74%, transparent);
   pointer-events: none;
-  animation: diagnostic-line-pulse 1.55s ease-out both;
+}
+.deployment-editor__error-line.is-pulsing {
+  border-left-width: 3px;
+  animation: diagnostic-line-pulse 1.55s ease-out;
 }
 .deployment-editor__input {
   position: relative;
@@ -238,12 +280,12 @@ onBeforeUnmount(() => {
 @media (max-width: 720px) {
   .deployment-editor__surface, .deployment-editor__input { min-height: 220px; }
   .deployment-editor__surface { grid-template-columns: 40px minmax(0, 1fr); }
-  .deployment-editor__line-pulse { left: 40px; }
+  .deployment-editor__error-line { left: 40px; }
   .deployment-editor__gutter > div { padding-right: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .deployment-editor__surface:focus-within .deployment-editor__scanner { animation: none; }
-  .deployment-editor__line-pulse,
+  .deployment-editor__error-line.is-pulsing,
   .deployment-editor__gutter span.is-diagnostic-line { animation: none; }
 }
 </style>
