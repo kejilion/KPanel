@@ -21,6 +21,8 @@ describe('DockerDeploymentEditor', () => {
     expect(document.activeElement).toBe(textarea)
     expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([12, 15])
     expect(wrapper.text()).toContain('第 2 行 · 第 3 列')
+    expect(wrapper.get('.deployment-editor__line-pulse').attributes('style')).toContain('top: 30.975px')
+    expect(wrapper.findAll('.deployment-editor__gutter span')[1]?.classes()).toContain('is-diagnostic-line')
     wrapper.unmount()
   })
 
