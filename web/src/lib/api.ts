@@ -1794,15 +1794,18 @@ export const api = {
       signal?: AbortSignal,
       onUpdate?: (inventory: DockerInventory) => void,
     ): Promise<DockerInventory> => {
-      const [summary, containersResult] = await Promise.all([
+      const [summary, containersResult, composeProjectsResult] = await Promise.all([
         request<RawDockerSummary>('/docker/summary', { signal }),
         request<ApiList<RawContainer> | RawContainer[]>('/docker/containers', { signal }),
+        request<ApiList<{ name: string }> | { name: string }[]>('/docker/compose-projects', { signal })
+          .catch(() => ({ items: [], total: 0 })),
       ])
       const inventory: DockerInventory = {
         available: summary.available,
         version: summary.serverVersion,
         observedAt: summary.collectedAt,
         containers: normalizeList(containersResult).items.map(normalizeContainer),
+        composeProjects: normalizeList(composeProjectsResult).items.map((item) => item.name),
         images: [],
         networks: [],
         volumes: [],

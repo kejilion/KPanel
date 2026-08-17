@@ -26,6 +26,12 @@ describe('Docker Compose container groups', () => {
     expect(groupDockerContainers([container('web', 'demo', 'web')])).toHaveLength(1)
   })
 
+  it('keeps managed Compose projects visible after every container is deleted', () => {
+    expect(groupDockerContainers([], ['demo', 'demo'])).toEqual([{
+      key: 'compose:demo', kind: 'compose', name: 'demo', containers: [], services: [], running: 0,
+    }])
+  })
+
   it('assigns stable, varied accents from the Compose project name', () => {
     expect(dockerComposeGroupAccent('wordpress')).toBe(dockerComposeGroupAccent('wordpress'))
     expect(dockerComposeGroupAccent('monitoring')).not.toBe(dockerComposeGroupAccent('shop'))

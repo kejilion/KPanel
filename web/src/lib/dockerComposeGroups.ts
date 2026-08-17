@@ -19,7 +19,7 @@ export function dockerComposeGroupAccent(projectName: string): string {
   return composeGroupAccents[hash % composeGroupAccents.length] ?? composeGroupAccents[0]
 }
 
-export function groupDockerContainers(containers: DockerContainer[]): DockerContainerGroup[] {
+export function groupDockerContainers(containers: DockerContainer[], managedProjects: string[] = []): DockerContainerGroup[] {
   const compose = new Map<string, DockerContainer[]>()
   const standalone: DockerContainer[] = []
   for (const container of containers) {
@@ -30,6 +30,9 @@ export function groupDockerContainers(containers: DockerContainer[]): DockerCont
     const group = compose.get(container.project) || []
     group.push(container)
     compose.set(container.project, group)
+  }
+  for (const project of managedProjects) {
+    if (project && !compose.has(project)) compose.set(project, [])
   }
   const groups: DockerContainerGroup[] = [...compose.entries()].map(([name, items]) => ({
     key: `compose:${name}`,

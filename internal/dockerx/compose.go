@@ -37,6 +37,10 @@ type ComposeProject struct {
 	ResourceVersion  string               `json:"resourceVersion"`
 }
 
+type ComposeProjectSummary struct {
+	Name string `json:"name"`
+}
+
 type composeProjectState struct {
 	ComposeProject
 }
@@ -47,6 +51,38 @@ func (c *Client) ComposeProject(ctx context.Context, name string) (ComposeProjec
 		return ComposeProject{}, err
 	}
 	return state.ComposeProject, nil
+}
+
+func (c *Client) ComposeProjects() []ComposeProjectSummary {
+	names := make(map[string]struct{})
+	for _, root := range []string{c.appRoot, c.webRoot} {
+		resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(root))
+		if err != nil || !filepath.IsAbs(resolvedRoot) {
+			continue
+		}
+		entries, err := os.ReadDir(resolvedRoot)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !composeProjectPattern.MatchString(name) {
+				continue
+			}
+			candidate, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, name))
+			if err != nil || !pathWithin(candidate, resolvedRoot) || candidate == resolvedRoot ||
+				len(discoverDefaultComposeFiles(candidate)) == 0 {
+				continue
+			}
+			names[name] = struct{}{}
+		}
+	}
+	result := make([]ComposeProjectSummary, 0, len(names))
+	for name := range names {
+		result = append(result, ComposeProjectSummary{Name: name})
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].Name < result[right].Name })
+	return result
 }
 
 func (c *Client) resolveComposeProject(ctx context.Context, name string) (composeProjectState, error) {

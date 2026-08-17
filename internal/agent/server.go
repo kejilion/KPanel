@@ -343,6 +343,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.dockerEnvironment)
 	case r.URL.Path == "/v1/docker/containers":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.containerList)
+	case r.URL.Path == "/v1/docker/compose-projects":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.composeProjectList)
 	case strings.HasPrefix(r.URL.Path, "/v1/docker/compose-projects/"):
 		s.requireMethod(w, r, requestID, http.MethodGet, s.composeProject)
 	case r.URL.Path == "/v1/docker/container-stats":
@@ -1553,6 +1555,10 @@ func (s *Server) containerList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.PageResult[contract.ContainerSummary]{Items: items})
+}
+
+func (s *Server) composeProjectList(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, contract.PageResult[dockerx.ComposeProjectSummary]{Items: s.docker.ComposeProjects()})
 }
 
 func (s *Server) composeProject(w http.ResponseWriter, r *http.Request) {

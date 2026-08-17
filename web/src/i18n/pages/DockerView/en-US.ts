@@ -282,6 +282,7 @@ export default [
   ['确认更新并重新部署 Compose 项目', 'Confirm updating and redeploying the Compose project'],
   ['{0} · {1} · {2} 个服务', '{0} · {1} · {2} services'],
   ['Compose 项目 · {0}/{1} 运行中 · {2} 个服务', 'Compose project · {0}/{1} running · {2} services'],
+  ['Compose 项目 · 当前无容器 · 可重新部署恢复', 'Compose project · No containers · Redeploy to restore'],
   ['{0}/{1} 运行中 · 不属于 Compose 项目', '{0}/{1} running · not part of a Compose project'],
   ['Compose 项目 ·', 'Compose project ·'],
   ['运行中 ·', 'running ·'],

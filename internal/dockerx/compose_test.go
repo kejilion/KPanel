@@ -209,6 +209,10 @@ func TestComposeRedeploySurvivesDeletedProjectContainers(t *testing.T) {
 	client := testHTTPClient(server)
 	client.appRoot = liveClient.appRoot
 	client.webRoot = liveClient.webRoot
+	projects := client.ComposeProjects()
+	if len(projects) != 1 || projects[0].Name != "demo" {
+		t.Fatalf("managed Compose projects after container deletion = %#v", projects)
+	}
 	after, err := client.ComposeProject(context.Background(), "demo")
 	if err != nil {
 		t.Fatalf("resolve project after all containers were deleted: %v", err)

@@ -158,6 +158,9 @@ describe('Docker resource toolbar layout', () => {
 
   it('groups Compose containers and exposes project configuration management', () => {
     expect(dockerSource).toContain('v-for="group in containerGroups"')
+    expect(dockerSource).toContain('groupDockerContainers(filteredContainers.value, visibleManagedComposeProjects.value)')
+    expect(dockerSource).toContain('Compose 项目 · 当前无容器 · 可重新部署恢复')
+    expect(dockerSource).toContain('v-if="!containerGroups.length"')
     expect(dockerSource).toContain(':aria-expanded="!isContainerGroupCollapsed(group.key)"')
     expect(dockerSource).toContain('@click="toggleContainerGroup(group.key)"')
     expect(dockerSource).toContain('<TransitionGroup name="docker-group-row">')

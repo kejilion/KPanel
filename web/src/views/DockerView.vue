@@ -321,7 +321,13 @@ const filteredContainers = computed(() => {
     ? containerCatalog.value.filter(({ searchText }) => searchText.includes(query)).map(({ item }) => item)
     : sortedContainers.value
 })
-const containerGroups = computed(() => groupDockerContainers(filteredContainers.value))
+const visibleManagedComposeProjects = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  return (data.value?.composeProjects || []).filter((name) => !query || name.toLowerCase().includes(query))
+})
+const containerGroups = computed(() =>
+  groupDockerContainers(filteredContainers.value, visibleManagedComposeProjects.value),
+)
 
 function isContainerGroupCollapsed(key: string): boolean {
   return collapsedContainerGroups.value.has(key)
@@ -1500,7 +1506,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <EmptyState v-if="!filteredContainers.length" title="没有符合条件的容器" description="Docker Engine 未返回容器，或搜索条件没有匹配项。" />
+          <EmptyState v-if="!containerGroups.length" title="没有符合条件的容器" description="Docker Engine 未返回容器，或搜索条件没有匹配项。" />
           <div v-else class="table-scroll">
             <table class="data-table docker-table">
               <colgroup>
@@ -1527,7 +1533,8 @@ onBeforeUnmount(() => {
                         <span class="docker-group__icon"><Boxes v-if="group.kind === 'compose'" :size="17" /><Container v-else :size="17" /></span>
                         <span class="docker-group__copy">
                           <strong>{{ group.name }}</strong>
-                          <small v-if="group.kind === 'compose'">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
+                          <small v-if="group.kind === 'compose' && group.containers.length">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
+                          <small v-else-if="group.kind === 'compose'">Compose 项目 · 当前无容器 · 可重新部署恢复</small>
                           <small v-else>{{ group.running }}/{{ group.containers.length }} 运行中 · 不属于 Compose 项目</small>
                         </span>
                       </button>

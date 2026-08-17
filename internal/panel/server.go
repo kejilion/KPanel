@@ -994,6 +994,7 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		"/api/v1/docker/summary":            "/v1/docker/summary",
 		"/api/v1/docker/environment":        "/v1/docker/environment",
 		"/api/v1/docker/containers":         "/v1/docker/containers",
+		"/api/v1/docker/compose-projects":   "/v1/docker/compose-projects",
 		"/api/v1/docker/images":             "/v1/docker/images",
 		"/api/v1/docker/networks":           "/v1/docker/networks",
 		"/api/v1/docker/volumes":            "/v1/docker/volumes",

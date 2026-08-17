@@ -96,6 +96,10 @@ func TestComposeLifecycleAgainstDocker(t *testing.T) {
 	if _, err := client.runCompose(ctx, append(composeProjectBase(project), "rm", "--force", "--stop", "worker")...); err != nil {
 		t.Fatalf("delete Compose service container: %v", err)
 	}
+	managedProjects := client.ComposeProjects()
+	if len(managedProjects) != 1 || managedProjects[0].Name != projectName {
+		t.Fatalf("managed Compose projects after deletion = %#v", managedProjects)
+	}
 	missingProject := requireComposeProject(t, client, projectName)
 	if missingProject.ResourceVersion != project.ResourceVersion {
 		t.Fatalf("container deletion changed configuration version: before=%q after=%q", project.ResourceVersion, missingProject.ResourceVersion)

@@ -1240,7 +1240,8 @@ export interface DockerInventory {
   version?: string
   observedAt: string
   containers: DockerContainer[]
-  images: DockerImage[]
+  composeProjects?: string[]
+	images: DockerImage[]
   networks: DockerNetwork[]
   volumes: DockerVolume[]
   loading?: Partial<Record<'images' | 'networks' | 'volumes', boolean>>
