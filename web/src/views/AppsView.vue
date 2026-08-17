@@ -143,6 +143,7 @@ const sortedApps = computed(() =>
   [...(inventory.value?.items || [])].sort((left, right) => {
     if (left.id === recentInstalledID.value) return -1
     if (right.id === recentInstalledID.value) return 1
+    if (left.runtime.installed !== right.runtime.installed) return left.runtime.installed ? -1 : 1
     const leftAddedDay = newAppAddedDays.value.get(left.id)
     const rightAddedDay = newAppAddedDays.value.get(right.id)
     if (leftAddedDay !== undefined && rightAddedDay === undefined) return -1
@@ -150,7 +151,6 @@ const sortedApps = computed(() =>
     if (leftAddedDay !== undefined && rightAddedDay !== undefined && leftAddedDay !== rightAddedDay) {
       return rightAddedDay - leftAddedDay
     }
-    if (left.runtime.installed !== right.runtime.installed) return left.runtime.installed ? -1 : 1
     return (left.num || 9999) - (right.num || 9999)
   }),
 )

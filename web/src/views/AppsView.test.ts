@@ -192,7 +192,7 @@ describe('AppsView catalog filtering performance', () => {
     expect(view.appSearchCatalog.value).toBe(catalog)
   })
 
-  it('prioritizes valid additions for exactly 60 UTC calendar days', () => {
+  it('keeps installed apps first, then prioritizes valid additions for 60 UTC calendar days', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-16T12:00:00Z'))
     try {
@@ -257,9 +257,9 @@ describe('AppsView catalog filtering performance', () => {
       view.status.value = 'all'
 
       expect(view.filteredApps.value.map((item) => item.id)).toEqual([
+        'builtin-13',
         'builtin-99',
         'builtin-98',
-        'builtin-13',
         'builtin-1',
         'builtin-2',
         'builtin-3',

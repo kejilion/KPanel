@@ -2201,7 +2201,7 @@
       "url": "https://github.com/kejilion/game-collection",
       "icon": "/app-icons/arena-brawl.webp",
       "slug": "arena-brawl",
-      "iconSha256": "68f42ad52effcb4712f9522163bca13eee59b7657f75bb387a2f621220ff378b",
+      "iconSha256": "ccba8f5cc98b4574c1f3a9b2fa50aee46fe283e986e625376129ec501c696c0d",
       "name_zh_tw": "大亂鬥 Arena Brawl",
       "desc_zh_tw": "即時多人網頁大亂鬥遊戲，支援排行榜與聊天。",
       "addedAt": "2026-08-16"
@@ -2219,7 +2219,7 @@
       "url": "https://github.com/kejilion/game-collection",
       "icon": "/app-icons/bomb-party.webp",
       "slug": "bomb-party",
-      "iconSha256": "68f42ad52effcb4712f9522163bca13eee59b7657f75bb387a2f621220ff378b",
+      "iconSha256": "248767ad8540b21069e57171776af0f7d67fdb7ef30c3137818362b5c44892fc",
       "name_zh_tw": "炸彈派對 Bomb Party",
       "desc_zh_tw": "Q 版多人線上炸彈人對戰遊戲，支援即時連線與排行榜。",
       "addedAt": "2026-08-16"
@@ -2509,7 +2509,7 @@
       "url": "https://github.com/kejilion/game-collection",
       "icon": "/app-icons/ice-climber-arena.webp",
       "slug": "ice-climber-arena",
-      "iconSha256": "68f42ad52effcb4712f9522163bca13eee59b7657f75bb387a2f621220ff378b",
+      "iconSha256": "aac98d7d2a3c5634e7f3bc7a237e24a0e6d32b4407e667063763a9aedb2a113f",
       "name_zh_tw": "敲冰塊大逃脫",
       "desc_zh_tw": "多人線上敲冰塊爬塔逃殺遊戲，支援即時連線與排行榜。",
       "addedAt": "2026-08-16"
@@ -2612,7 +2612,7 @@
       "url": "https://github.com/kejilion/game-collection",
       "icon": "/app-icons/neon-arena-fps.webp",
       "slug": "neon-arena-fps",
-      "iconSha256": "68f42ad52effcb4712f9522163bca13eee59b7657f75bb387a2f621220ff378b",
+      "iconSha256": "31350f895a990ec25f4a39e7d37590592bafb98c172fbe29f06362d539f9c6c6",
       "name_zh_tw": "霓虹競技場",
       "desc_zh_tw": "3D 第一人稱多人線上射擊遊戲，採用霓虹風格競技場。",
       "addedAt": "2026-08-16"

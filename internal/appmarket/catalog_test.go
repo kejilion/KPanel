@@ -2,9 +2,12 @@ package appmarket
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -117,6 +120,32 @@ func TestEmbeddedCatalogMatchesAuditedApplicationMarket(t *testing.T) {
 		if app.NameZHTW == "" || app.DescriptionZHTW == "" {
 			t.Fatalf("Traditional Chinese app metadata is missing for %s", app.ID)
 		}
+	}
+}
+
+func TestCuratedGameIconsMatchCatalogDigests(t *testing.T) {
+	catalog, _, _, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gameTokens := []string{"arena-brawl", "bomb-party", "ice-climber-arena", "neon-arena-fps"}
+	digests := make(map[string]string, len(gameTokens))
+	for _, token := range gameTokens {
+		app := embeddedAppByToken(t, catalog, token)
+		iconPath := filepath.Join("..", "..", "web", "public", "app-icons", path.Base(app.Icon))
+		content, err := os.ReadFile(iconPath)
+		if err != nil {
+			t.Fatalf("read curated icon for %s: %v", token, err)
+		}
+		hash := sha256.Sum256(content)
+		actual := hex.EncodeToString(hash[:])
+		if actual != app.IconSHA256 {
+			t.Fatalf("curated icon digest for %s = %s, want %s", token, actual, app.IconSHA256)
+		}
+		if previous, duplicated := digests[actual]; duplicated {
+			t.Fatalf("curated game icons %s and %s share digest %s", previous, token, actual)
+		}
+		digests[actual] = token
 	}
 }
 
