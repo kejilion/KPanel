@@ -10,6 +10,10 @@ KPanel 的“新建容器”使用一个粘贴入口覆盖两类常见部署资�
 默认流程不要求用户先选择部署类型、容器名、网络或重启策略。只有需要修改解析结果或没有现成部署
 内容时，才展开结构化高级设置。
 
+粘贴入口使用浏览器内已有的轻量 YAML 语法树和有位置的 Docker Run 词法分析，不调用远端服务，
+也不执行粘贴文本。错误统一返回源码偏移、行、列、错误原因和修复提示；用户点击诊断可聚焦并选中
+对应位置。浏览器诊断用于即时反馈，Agent 提交前的结构化校验和 `docker compose config` 仍是最终门禁。
+
 ## 业务真源与互通
 
 - 容器、镜像、网络和卷的真实状态仍来自 Docker Engine。
@@ -19,9 +23,26 @@ KPanel 的“新建容器”使用一个粘贴入口覆盖两类常见部署资�
 - Compose 容器由标准 `com.docker.compose.*` 标签识别；Docker Run 容器继续写入
   `io.kejilion.panel.managed=true`。两类资源都可被 Docker CLI、Compose、`kejilion.sh` 和 KPanel
   继续管理。
+- 容器页按 `com.docker.compose.project` 就地编组，独立容器保留在同一列表的“独立容器”组；不创建
+  Compose 项目数据库或导入状态。
+- Compose 管理按需读取标准 `working_dir`、`config_files` 和 `service` labels，再读取 `/home/docker`
+  或 `/home/web` 中的实际配置。支持多配置文件切换、项目启动/停止/重启、修改配置并重新部署。
 
 用户粘贴的 Compose 属于用户配置，不是 KPanel 维护的外联模板，因此不在
 `docs/external-config-sources.md` 中建立第二份模板来源。
+
+## 竞品复核（2026-08-17）
+
+- [1Panel v2 编排文档](https://1panel.cn/docs/v2/user_manual/containers/compose/)覆盖编辑、选择现有路径、
+  模板和编排内的容器详情，但其文档说明编辑和启停仅适用于 1Panel 创建的 Compose。KPanel 保留容器
+  列表内就地编组，并以 Docker 标准 labels 与实际配置文件为准，支持继续管理 `kejilion.sh`、SSH 或
+  KPanel 创建的项目，不引入来源护栏。
+- [1Panel v2 版本记录](https://1panel.cn/docs/v2/changelog/)显示其已增加容器与 Compose 备份恢复。
+  KPanel 本次沿用既有 Docker 备份链路，不扩展新的 Compose 影子状态；按项目备份/恢复属于后续独立
+  需求，不与本次编组、配置编辑和重新部署混做。
+- [宝塔 Docker 编排文档](https://docs.bt.cn/category/%E5%AE%B9%E5%99%A8%E7%BC%96%E6%8E%92)
+  当前公开目录重点覆盖编排备份、还原和跨服务器迁移。该复核没有发现需要改变本次核心交互的证据；
+  KPanel 仍以低层 Compose 校验、原子写入和可恢复任务作为差异化基础。
 
 ## 输入与资源边界
 
@@ -57,10 +78,19 @@ Compose 部署按以下顺序执行：
 `docker compose down --remove-orphans`；回滚成功后删除本次项目目录。回滚失败时保留
 `docker-compose.yml` 并明确标记“需要人工处理”，避免丢失恢复依据。默认 `down` 不删除命名卷。
 
+已有项目修改配置时，Agent 在执行前重新发现项目并核对项目 `resourceVersion`，然后在原配置目录中
+创建同权限、同数值属主的暂存文件。完整配置集合先使用暂存文件执行 `docker compose config --services`；
+通过后原子替换目标文件，再执行 `docker compose up --detach --remove-orphans` 并复核真实容器 ID。
+若启动或复核失败，恢复原配置并再次 `up`；配置恢复或运行态恢复失败时保留明确的“需要人工处理”状态。
+项目任务始终使用独立参数调用固定 Docker 可执行文件，不拼接 Shell。
+
 ## 验收范围
 
-- 自动测试：Docker Run 引号/换行/端口/挂载/环境变量解析、Shell 链拒绝、Compose 识别；Compose
-  成功、启动失败回滚、回滚失败保留恢复文件、同名冲突；缺失镜像自动拉取。
-- Linux 构建：`internal/dockerx` 的 Linux/amd64 测试二进制可编译。
+- 自动测试：Docker Run 引号/换行/端口/挂载/环境变量解析、行列诊断、Shell 链拒绝、Compose YAML
+  语法定位与编组；Compose 新建成功、启动失败回滚、回滚失败保留恢复文件、同名冲突；已有项目读取、
+  暂存校验、原子替换、重新部署失败恢复；缺失镜像自动拉取。
+- Linux 构建：`paneld`、`kejilion-agent`、`kejilion-node`、`kpctl` 的 Linux/amd64 与 Linux/arm64
+  无 CGO 二进制可编译。
 - 隔离真机待验证：真实 Docker Compose 插件、镜像拉取、端口冲突回滚、`kejilion.sh` 发现/备份/恢复。
-- 浏览器：桌面与窄视口、粘贴识别、高级设置、手动配置、错误反馈、键盘焦点和中英文布局。
+- 浏览器（2026-08-17 本地模拟 API 已验证）：桌面与 390px 窄视口无页面横向溢出；Compose 编组与
+  管理弹窗可读；点击错误诊断会聚焦输入框并选中准确源码范围。真实 Agent 交互仍归入隔离真机验收。

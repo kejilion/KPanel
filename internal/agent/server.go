@@ -343,6 +343,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.dockerEnvironment)
 	case r.URL.Path == "/v1/docker/containers":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.containerList)
+	case strings.HasPrefix(r.URL.Path, "/v1/docker/compose-projects/"):
+		s.requireMethod(w, r, requestID, http.MethodGet, s.composeProject)
 	case r.URL.Path == "/v1/docker/container-stats":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.containerStats)
 	case r.URL.Path == "/v1/nginx/test":
@@ -1551,6 +1553,29 @@ func (s *Server) containerList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.PageResult[contract.ContainerSummary]{Items: items})
+}
+
+func (s *Server) composeProject(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+		writeProblem(w, requestIDFrom(w), http.StatusBadRequest, "invalid_query", "Compose project query is invalid", "")
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/v1/docker/compose-projects/")
+	project, err := s.docker.ComposeProject(r.Context(), name)
+	if err != nil {
+		status, code, title := http.StatusUnprocessableEntity, "compose_project_unavailable", "Compose 项目配置不可管理"
+		switch {
+		case errors.Is(err, dockerx.ErrDockerJobNotFound):
+			status, code, title = http.StatusNotFound, "compose_project_not_found", "Compose 项目不存在"
+		case errors.Is(err, dockerx.ErrResourceConflict):
+			status, code, title = http.StatusConflict, "resource_conflict", "Compose 项目状态不一致"
+		case errors.Is(err, dockerx.ErrInvalidDockerJob):
+			status, code, title = http.StatusBadRequest, "compose_project_invalid", "Compose 项目名称无效"
+		}
+		writeProblem(w, requestIDFrom(w), status, code, title, safeDetail(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
 }
 
 func (s *Server) containerStats(w http.ResponseWriter, r *http.Request) {

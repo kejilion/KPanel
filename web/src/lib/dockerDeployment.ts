@@ -4,33 +4,63 @@ import type {
   DockerContainerCreatePort,
   DockerMaintenanceInput,
 } from '@/types/api'
+import { yamlLanguage } from '@codemirror/lang-yaml'
 
 export const maxComposeSourceBytes = 24 * 1024
 
+export interface DockerDeploymentDiagnostic {
+  code: string
+  message: string
+  hint?: string
+  from: number
+  to: number
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+}
+
 export type DockerDeploymentAnalysis =
   | { kind: 'empty' }
-  | { kind: 'invalid'; message: string }
+  | { kind: 'invalid'; message: string; diagnostics: DockerDeploymentDiagnostic[] }
   | { kind: 'docker-run'; input: DockerMaintenanceInput }
   | { kind: 'compose'; compose: string; projectName: string; services: string[] }
 
+interface ShellToken {
+  value: string
+  from: number
+  to: number
+}
+
 interface TokenizeResult {
-  tokens: string[]
-  error?: string
+  tokens: ShellToken[]
+  diagnostic?: DockerDeploymentDiagnostic
 }
 
 export function analyzeDockerDeployment(source: string): DockerDeploymentAnalysis {
   const value = source.trim()
   if (!value) return { kind: 'empty' }
   if (new TextEncoder().encode(source).length > maxComposeSourceBytes) {
-    return { kind: 'invalid', message: '部署内容不能超过 24 KiB。' }
+    return invalid(source, 'source_too_large', '部署内容不能超过 24 KiB。', 0, source.length,
+      '请删除不需要的注释或拆分为更小的 Compose 项目。')
   }
-  if (looksLikeDockerRun(value)) return parseDockerRun(value)
+  if (looksLikeDockerRun(value)) return parseDockerRun(source)
   if (/^\s*(?:name\s*:|version\s*:|services\s*:)/m.test(value)) {
-    const services = composeServices(value)
+    const composeSyntax = analyzeComposeSyntax(source)
+    if (composeSyntax.diagnostics.length) return invalidDiagnostics(composeSyntax.diagnostics)
+    const services = composeSyntax.services
     if (!services.length) {
-      return { kind: 'invalid', message: '没有识别到 Compose services，请粘贴完整的 Compose YAML。' }
+      const servicesOffset = Math.max(0, source.search(/^\s*services\s*:/m))
+      return invalid(source, 'compose_services_missing', '没有识别到 Compose services，请粘贴完整的 Compose YAML。',
+        servicesOffset, lineEndOffset(source, servicesOffset), '请在 services: 下至少定义一个服务，例如 web:。')
     }
-    const explicitName = value.match(/^name\s*:\s*["']?([a-z0-9][a-z0-9_-]{0,62})["']?\s*$/m)?.[1]
+    const nameMatch = value.match(/^name\s*:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$/m)
+    if (nameMatch && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(nameMatch[1] || '')) {
+      const from = Math.max(0, source.indexOf(nameMatch[1] || ''))
+      return invalid(source, 'compose_project_name_invalid', 'Compose 项目名称格式无效。', from,
+        from + (nameMatch[1]?.length || 1), 'name 仅支持小写字母、数字、连字符和下划线，最长 63 个字符。')
+    }
+    const explicitName = nameMatch?.[1]
     return {
       kind: 'compose',
       compose: source,
@@ -39,9 +69,12 @@ export function analyzeDockerDeployment(source: string): DockerDeploymentAnalysi
     }
   }
   if (/\bdocker\s+compose\b/.test(value)) {
-    return { kind: 'invalid', message: '请粘贴 Compose YAML，而不是只有 docker compose up 命令。' }
+    const from = Math.max(0, source.search(/docker\s+compose/))
+    return invalid(source, 'compose_command_only', '请粘贴 Compose YAML，而不是只有 docker compose up 命令。',
+      from, lineEndOffset(source, from), '请复制 compose.yaml 或 docker-compose.yml 的完整内容。')
   }
-  return { kind: 'invalid', message: '请粘贴一条 docker run 命令，或完整的 Compose YAML。' }
+  return invalid(source, 'deployment_kind_unknown', '请粘贴一条 docker run 命令，或完整的 Compose YAML。',
+    firstContentOffset(source), lineEndOffset(source, firstContentOffset(source)), '内容应以 docker run 开始，或包含顶层 services:。')
 }
 
 function looksLikeDockerRun(value: string): boolean {
@@ -49,12 +82,13 @@ function looksLikeDockerRun(value: string): boolean {
 }
 
 function parseDockerRun(source: string): DockerDeploymentAnalysis {
-  const tokenized = tokenizeShell(source.replace(/\\\r?\n/g, ' '))
-  if (tokenized.error) return { kind: 'invalid', message: tokenized.error }
+  const tokenized = tokenizeShell(source)
+  if (tokenized.diagnostic) return invalidDiagnostics([tokenized.diagnostic])
   const tokens = tokenized.tokens
-  if (tokens[0] === 'sudo') tokens.shift()
-  if (tokens.shift() !== 'docker' || tokens.shift() !== 'run') {
-    return { kind: 'invalid', message: '只支持单条 docker run 命令。' }
+  if (tokens[0]?.value === 'sudo') tokens.shift()
+  if (tokens.shift()?.value !== 'docker' || tokens.shift()?.value !== 'run') {
+    return invalid(source, 'docker_run_expected', '只支持单条 docker run 命令。', 0,
+      Math.max(1, lineEndOffset(source, 0)), '命令应以 docker run 开始。')
   }
 
   let name = ''
@@ -68,17 +102,22 @@ function parseDockerRun(source: string): DockerDeploymentAnalysis {
   let image = ''
   const command: string[] = []
 
-  const nextValue = (index: number, inline: string | undefined, option: string): [string, number] | string => {
+  const nextValue = (index: number, inline: string | undefined, option: ShellToken): [string, number] | DockerDeploymentAnalysis => {
     if (inline !== undefined) return [inline, index]
     const value = tokens[index + 1]
-    if (!value || isShellOperator(value)) return `${option} 缺少参数。`
-    return [value, index + 1]
+    if (!value || isShellOperator(value.value)) {
+      return invalid(source, 'docker_option_value_missing', `${option.value} 缺少参数。`, option.from, option.to,
+        `请在 ${option.value} 后填写参数值。`)
+    }
+    return [value.value, index + 1]
   }
 
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!
+    const shellToken = tokens[index]!
+    const token = shellToken.value
     if (isShellOperator(token)) {
-      return { kind: 'invalid', message: '一次只能部署一条 docker run 命令，不能包含管道、重定向或后续 Shell 命令。' }
+      return invalid(source, 'shell_operator_unsupported', '一次只能部署一条 docker run 命令，不能包含管道、重定向或后续 Shell 命令。',
+        shellToken.from, shellToken.to, '请只保留 docker run 命令；安装脚本和后续命令不能在此执行。')
     }
     if (image) {
       command.push(token)
@@ -91,84 +130,109 @@ function parseDockerRun(source: string): DockerDeploymentAnalysis {
     if (token === '-d' || token === '--detach') continue
     if (/^-[dit]+$/.test(token) && token.includes('d') && !token.includes('i') && !token.includes('t')) continue
     if (token === '-i' || token === '-t' || token === '-it' || token === '-ti' || token === '--interactive' || token === '--tty') {
-      return { kind: 'invalid', message: '交互式 -it 容器不适合后台部署，请移除该参数或改用 Compose。' }
+      return invalid(source, 'interactive_container_unsupported', '交互式 -it 容器不适合后台部署，请移除该参数或改用 Compose。',
+        shellToken.from, shellToken.to, '删除 -i/-t，或使用 Compose 配置长期运行该服务。')
     }
 
     const [option, inline] = token.startsWith('--') && token.includes('=')
       ? [token.slice(0, token.indexOf('=')), token.slice(token.indexOf('=') + 1)]
       : [token, undefined]
     if (option === '--name') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       ;[name, index] = result
       continue
     }
     if (option === '--network' || option === '--net') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       ;[network, index] = result
       continue
     }
     if (option === '--restart') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       const [value, nextIndex] = result
       if (!['no', 'always', 'unless-stopped', 'on-failure'].includes(value)) {
-        return { kind: 'invalid', message: `不支持的重启策略：${value}` }
+        const valueToken = tokens[nextIndex] || shellToken
+        return invalid(source, 'restart_policy_invalid', `不支持的重启策略：${value}`, valueToken.from, valueToken.to,
+          '可选值：no、always、unless-stopped、on-failure。')
       }
       restartPolicy = value as DockerMaintenanceInput['restartPolicy']
       index = nextIndex
       continue
     }
     if (option === '-p' || option === '--publish') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       const parsed = parsePort(result[0])
-      if (typeof parsed === 'string') return { kind: 'invalid', message: parsed }
+      if (typeof parsed === 'string') {
+        const valueToken = tokens[result[1]] || shellToken
+        return invalid(source, 'port_mapping_invalid', parsed, valueToken.from, valueToken.to,
+          '示例：-p 8080:80 或 -p 127.0.0.1:8080:80/tcp。')
+      }
       ports.push(parsed)
       index = result[1]
       continue
     }
     if (option === '-v' || option === '--volume') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       const parsed = parseVolume(result[0])
-      if (typeof parsed === 'string') return { kind: 'invalid', message: parsed }
+      if (typeof parsed === 'string') {
+        const valueToken = tokens[result[1]] || shellToken
+        return invalid(source, 'volume_mapping_invalid', parsed, valueToken.from, valueToken.to,
+          '示例：-v /home/docker/app:/data:rw。')
+      }
       mounts.push(parsed)
       index = result[1]
       continue
     }
     if (option === '--mount') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       const parsed = parseMount(result[0])
-      if (typeof parsed === 'string') return { kind: 'invalid', message: parsed }
+      if (typeof parsed === 'string') {
+        const valueToken = tokens[result[1]] || shellToken
+        return invalid(source, 'mount_invalid', parsed, valueToken.from, valueToken.to,
+          '示例：--mount type=bind,source=/home/app,target=/data。')
+      }
       mounts.push(parsed)
       index = result[1]
       continue
     }
     if (option === '-e' || option === '--env') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       const separator = result[0].indexOf('=')
-      if (separator <= 0) return { kind: 'invalid', message: `${option} 必须使用 NAME=VALUE。` }
+      if (separator <= 0) {
+        const valueToken = tokens[result[1]] || shellToken
+        return invalid(source, 'environment_invalid', `${option} 必须使用 NAME=VALUE。`, valueToken.from, valueToken.to,
+          '示例：-e TZ=Asia/Shanghai。')
+      }
       environment.push({ name: result[0].slice(0, separator), value: result[0].slice(separator + 1) })
       index = result[1]
       continue
     }
     if (option === '--pull') {
-      const result = nextValue(index, inline, option)
-      if (typeof result === 'string') return { kind: 'invalid', message: result }
+      const result = nextValue(index, inline, shellToken)
+      if (!Array.isArray(result)) return result
       if (result[0] !== 'missing') {
-        return { kind: 'invalid', message: '当前仅支持 Docker 默认的 --pull=missing；如需更新镜像请先在镜像页拉取。' }
+        const valueToken = tokens[result[1]] || shellToken
+        return invalid(source, 'pull_policy_unsupported', '当前仅支持 Docker 默认的 --pull=missing；如需更新镜像请先在镜像页拉取。',
+          valueToken.from, valueToken.to, '改为 --pull=missing，或先从镜像页更新镜像。')
       }
       index = result[1]
       continue
     }
-    return { kind: 'invalid', message: `暂不支持 ${option}；复杂参数建议改用 Compose YAML。` }
+    return invalid(source, 'docker_option_unsupported', `暂不支持 ${option}；复杂参数建议改用 Compose YAML。`,
+      shellToken.from, shellToken.to, '将此命令转换为 Compose YAML，可保留更多 Docker 参数。')
   }
 
-  if (!image) return { kind: 'invalid', message: 'docker run 命令缺少镜像。' }
+  if (!image) {
+    return invalid(source, 'docker_image_missing', 'docker run 命令缺少镜像。', Math.max(0, source.length - 1), source.length,
+      '请在所有 docker run 选项后填写镜像，例如 nginx:alpine。')
+  }
   return {
     kind: 'docker-run',
     input: {
@@ -186,23 +250,39 @@ function parseDockerRun(source: string): DockerDeploymentAnalysis {
 }
 
 function tokenizeShell(source: string): TokenizeResult {
-  const tokens: string[] = []
+  const tokens: ShellToken[] = []
   let current = ''
+  let currentFrom = -1
   let quote: "'" | '"' | '' = ''
+  let quoteFrom = -1
   let escaped = false
-  const flush = () => {
-    if (current) tokens.push(current)
+  let escapeFrom = -1
+  const flush = (to: number) => {
+    if (current) tokens.push({ value: current, from: Math.max(0, currentFrom), to })
     current = ''
+    currentFrom = -1
   }
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index]!
     if (escaped) {
+      if (char === '\n') {
+        escaped = false
+        continue
+      }
+      if (char === '\r' && source[index + 1] === '\n') {
+        escaped = false
+        index += 1
+        continue
+      }
+      if (currentFrom < 0) currentFrom = escapeFrom
       current += char
       escaped = false
       continue
     }
     if (char === '\\' && quote !== "'") {
+      if (currentFrom < 0) currentFrom = index
       escaped = true
+      escapeFrom = index
       continue
     }
     if (quote) {
@@ -211,28 +291,131 @@ function tokenizeShell(source: string): TokenizeResult {
       continue
     }
     if (char === "'" || char === '"') {
+      if (currentFrom < 0) currentFrom = index
       quote = char
+      quoteFrom = index
       continue
     }
     if (/\s/.test(char)) {
-      flush()
+      flush(index)
       continue
     }
     if (';|<>&'.includes(char)) {
-      flush()
+      flush(index)
       const pair = source.slice(index, index + 2)
       if (pair === '&&' || pair === '||' || pair === '>>' || pair === '<<') {
-        tokens.push(pair)
+        tokens.push({ value: pair, from: index, to: index + 2 })
         index += 1
-      } else tokens.push(char)
+      } else tokens.push({ value: char, from: index, to: index + 1 })
       continue
     }
+    if (currentFrom < 0) currentFrom = index
     current += char
   }
-  if (escaped) return { tokens, error: '命令末尾存在未完成的转义符。' }
-  if (quote) return { tokens, error: '命令中存在未闭合的引号。' }
-  flush()
+  if (escaped) {
+    return { tokens, diagnostic: diagnostic(source, 'shell_escape_unclosed', '命令末尾存在未完成的转义符。',
+      escapeFrom, escapeFrom + 1, '删除末尾反斜杠，或在下一行继续填写命令。') }
+  }
+  if (quote) {
+    return { tokens, diagnostic: diagnostic(source, 'shell_quote_unclosed', '命令中存在未闭合的引号。',
+      quoteFrom, Math.max(quoteFrom + 1, source.length), `请补上对应的 ${quote} 引号。`) }
+  }
+  flush(source.length)
   return { tokens }
+}
+
+function analyzeComposeSyntax(source: string): {
+  diagnostics: DockerDeploymentDiagnostic[]
+  services: string[]
+} {
+  const tabOffset = source.search(/^\s*\t\s*\S/m)
+  if (tabOffset >= 0) {
+    const actualTab = source.indexOf('\t', tabOffset)
+    return {
+      diagnostics: [diagnostic(source, 'yaml_tab_indent', 'YAML 缩进不能使用 Tab。', actualTab, actualTab + 1,
+        '请将 Tab 替换为空格；建议每层使用 2 个空格。')],
+      services: [],
+    }
+  }
+  const tree = yamlLanguage.parser.parse(source)
+  const cursor = tree.cursor()
+  const diagnostics: DockerDeploymentDiagnostic[] = []
+  do {
+    if (cursor.type.isError) {
+      const from = Math.min(cursor.from, Math.max(0, source.length - 1))
+      const to = Math.max(from + 1, cursor.to)
+      diagnostics.push(diagnostic(source, 'yaml_syntax_error', 'YAML 语法不完整或缩进有误。', from, to,
+        '检查这一行附近的冒号、引号、列表短横线和缩进层级。'))
+      if (diagnostics.length >= 8) break
+    }
+  } while (cursor.next())
+  return {
+    diagnostics: deduplicateDiagnostics(diagnostics),
+    services: diagnostics.length ? [] : composeServices(source, tree.topNode),
+  }
+}
+
+function invalid(
+  source: string,
+  code: string,
+  message: string,
+  from: number,
+  to: number,
+  hint?: string,
+): DockerDeploymentAnalysis {
+  return invalidDiagnostics([diagnostic(source, code, message, from, to, hint)])
+}
+
+function invalidDiagnostics(diagnostics: DockerDeploymentDiagnostic[]): DockerDeploymentAnalysis {
+  const normalized = diagnostics.length ? diagnostics : [{
+    code: 'deployment_invalid', message: '部署内容无效。', from: 0, to: 1,
+    line: 1, column: 1, endLine: 1, endColumn: 2,
+  }]
+  return { kind: 'invalid', message: normalized[0]!.message, diagnostics: normalized }
+}
+
+function diagnostic(
+  source: string,
+  code: string,
+  message: string,
+  from: number,
+  to: number,
+  hint?: string,
+): DockerDeploymentDiagnostic {
+  const safeFrom = Math.max(0, Math.min(from, source.length))
+  const safeTo = Math.max(safeFrom, Math.min(Math.max(to, safeFrom + 1), source.length))
+  const start = offsetPosition(source, safeFrom)
+  const end = offsetPosition(source, safeTo)
+  return {
+    code, message, hint, from: safeFrom, to: safeTo,
+    line: start.line, column: start.column, endLine: end.line, endColumn: end.column,
+  }
+}
+
+function offsetPosition(source: string, offset: number): { line: number; column: number } {
+  const before = source.slice(0, offset)
+  const lines = before.split(/\r?\n/)
+  return { line: lines.length, column: (lines.at(-1)?.length || 0) + 1 }
+}
+
+function firstContentOffset(source: string): number {
+  const match = source.match(/\S/)
+  return match?.index || 0
+}
+
+function lineEndOffset(source: string, offset: number): number {
+  const end = source.indexOf('\n', Math.max(0, offset))
+  return end < 0 ? source.length : end
+}
+
+function deduplicateDiagnostics(items: DockerDeploymentDiagnostic[]): DockerDeploymentDiagnostic[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.code}:${item.from}:${item.to}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function isShellOperator(value: string): boolean {
@@ -305,24 +488,41 @@ function parseMount(value: string): DockerContainerCreateMount | string {
   return { type, source, target, readOnly }
 }
 
-function composeServices(source: string): string[] {
-  const lines = source.split(/\r?\n/)
-  const servicesIndex = lines.findIndex((line) => /^\s*services\s*:\s*(?:#.*)?$/.test(line))
-  if (servicesIndex < 0) return []
-  const baseIndent = lines[servicesIndex]!.match(/^\s*/)?.[0].length || 0
-  const result: string[] = []
-  let serviceIndent = 0
-  for (const line of lines.slice(servicesIndex + 1)) {
-    if (!line.trim() || line.trimStart().startsWith('#')) continue
-    const indent = line.match(/^\s*/)?.[0].length || 0
-    if (indent <= baseIndent) break
-    const match = line.match(/^\s+([A-Za-z0-9][A-Za-z0-9_.-]*)\s*:\s*(?:#.*)?$/)
-    if (match && indent > baseIndent) {
-      if (!serviceIndent) serviceIndent = indent
-      if (indent === serviceIndent) result.push(match[1]!)
+function composeServices(source: string, topNode: ReturnType<typeof yamlLanguage.parser.parse>['topNode']): string[] {
+  const document = topNode.getChild('Document')
+  const root = document?.getChild('BlockMapping')
+  if (!root) return []
+  for (const pair of root.getChildren('Pair')) {
+    const key = pair.getChild('Key')
+    if (!key || yamlKey(source.slice(key.from, key.to)) !== 'services') continue
+    const mapping = pair.getChild('BlockMapping') || pair.getChild('FlowMapping')
+    if (!mapping) return []
+    const services: string[] = []
+    for (const service of mapping.getChildren('Pair')) {
+      const serviceKey = service.getChild('Key')
+      if (!serviceKey) continue
+      const name = yamlKey(source.slice(serviceKey.from, serviceKey.to))
+      if (/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) services.push(name)
+    }
+    return [...new Set(services)]
+  }
+  return []
+}
+
+function yamlKey(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const decoded = JSON.parse(trimmed)
+      return typeof decoded === 'string' ? decoded : trimmed
+    } catch {
+      return trimmed
     }
   }
-  return [...new Set(result)]
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replace(/''/g, "'")
+  }
+  return trimmed
 }
 
 function normalizeProjectName(value: string): string {

@@ -28,6 +28,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const dockerSource = readFileSync(new URL('./DockerView.vue', import.meta.url), 'utf8')
+const deploymentEditorSource = readFileSync(new URL('../components/docker/DockerDeploymentEditor.vue', import.meta.url), 'utf8')
 
 interface DockerBindings {
   stats: Ref<DockerContainerStats | undefined>
@@ -120,8 +121,9 @@ describe('Docker resource toolbar layout', () => {
   })
 
   it('uses a light deployment editor by default and preserves the dark terminal treatment', () => {
-    expect(dockerSource).toMatch(/\.deployment-source\s*\{[^}]*background:\s*var\(--surface-subtle\);[^}]*color:\s*var\(--text\);/)
-    expect(dockerSource).toMatch(/:global\(:root\[data-theme='dark'\]\) \.deployment-source\s*\{[^}]*background:\s*var\(--terminal-shell-background, #0b1214\);[^}]*color:\s*var\(--terminal-shell-text, #d8dddc\);/)
+    expect(deploymentEditorSource).toMatch(/\.deployment-editor__surface\s*\{[\s\S]*?background:\s*var\(--surface-subtle\);/)
+    expect(deploymentEditorSource).toMatch(/:global\(:root\[data-theme='dark'\]\) \.deployment-editor__surface\s*\{[^}]*background:\s*var\(--terminal-shell-background, #0b1214\);/)
+    expect(deploymentEditorSource).toContain('setSelectionRange(item.from, Math.max(item.from + 1, item.to))')
   })
 
   it('keeps resource actions aligned to the right on desktop', () => {
@@ -147,6 +149,13 @@ describe('Docker resource toolbar layout', () => {
     expect(dockerSource).toContain('@contextmenu="showVolumeContext($event, volume)"')
     expect(dockerSource).toContain('class="docker-context-menu"')
     expect(dockerSource).toContain('role="menu"')
+  })
+
+  it('groups Compose containers and exposes project configuration management', () => {
+    expect(dockerSource).toContain('v-for="group in containerGroups"')
+    expect(dockerSource).toContain('管理 Compose')
+    expect(dockerSource).toContain('保存并重新部署')
+    expect(dockerSource).toMatch(/\.docker-table\s*\{\s*min-width:\s*1240px;/)
   })
 })
 

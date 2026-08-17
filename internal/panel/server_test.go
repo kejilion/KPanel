@@ -811,6 +811,7 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 	for publicPath, expected := range map[string]string{
 		"/api/v1/docker/environment":                 "/v1/docker/environment",
 		"/api/v1/docker/backups":                     "/v1/docker/backups",
+		"/api/v1/docker/compose-projects/demo-stack": "/v1/docker/compose-projects/demo-stack",
 		"/api/v1/docker/containers/" + id + "/logs":  "/v1/docker/containers/" + id + "/logs",
 		"/api/v1/docker/containers/" + id + "/stats": "/v1/docker/containers/" + id + "/stats",
 	} {
@@ -822,6 +823,8 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 	for _, invalid := range []string{
 		"/api/v1/docker/environment/extra",
 		"/api/v1/docker/backups/extra",
+		"/api/v1/docker/compose-projects/../shadow",
+		"/api/v1/docker/compose-projects/Demo",
 		"/api/v1/docker/containers/not-an-id/stats",
 		"/api/v1/docker/containers/" + id + "/stats/extra",
 	} {

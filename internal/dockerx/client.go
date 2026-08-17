@@ -514,6 +514,7 @@ func (c *Client) summaryFromList(raw containerListItem) contract.ContainerSummar
 		ID: raw.ID, Name: name, Image: raw.Image, State: raw.State, Status: raw.Status,
 		Ports: ports, Mounts: mounts, Networks: networks,
 		ComposeProject: raw.Labels["com.docker.compose.project"],
+		ComposeService: raw.Labels["com.docker.compose.service"],
 		Ownership:      ownership, OwnershipEvidence: evidence, ResourceVersion: version,
 		AllowedActions: []string{}, Labels: raw.Labels,
 	}
@@ -578,6 +579,7 @@ func (c *Client) summaryFromInspect(raw containerInspect) contract.ContainerSumm
 		State: raw.State.Status, Status: raw.State.Status, Health: health,
 		Ports: ports, Mounts: mounts, Networks: sortedKeys(raw.NetworkSettings.Networks),
 		ComposeProject: raw.Config.Labels["com.docker.compose.project"],
+		ComposeService: raw.Config.Labels["com.docker.compose.service"],
 		Ownership:      ownership, OwnershipEvidence: evidence, ResourceVersion: version,
 		AllowedActions: allowed, Labels: raw.Config.Labels,
 	}

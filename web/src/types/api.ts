@@ -1188,6 +1188,7 @@ export interface DockerContainer {
   access: ResourceAccess
   consistency: ConsistencyState
   project?: string
+  service?: string
   ports: DockerPort[]
   networks: string[]
   mounts: Array<{
@@ -1410,6 +1411,21 @@ export interface DockerEnvironment {
   observedAt: string
 }
 
+export interface DockerComposeProjectFile {
+  path: string
+  name: string
+  source: string
+  resourceVersion: string
+}
+
+export interface DockerComposeProject {
+  name: string
+  workingDirectory: string
+  configFiles: DockerComposeProjectFile[]
+  services: string[]
+  resourceVersion: string
+}
+
 export interface DockerContainerCreatePort {
   privatePort: number
   publicPort: number
@@ -1432,6 +1448,10 @@ export interface DockerContainerCreateEnvironment {
 export type DockerMaintenanceAction =
   | 'container_create'
   | 'compose_deploy'
+  | 'compose_redeploy'
+  | 'compose_start'
+  | 'compose_stop'
+  | 'compose_restart'
   | 'container_access'
   | 'image_pull'
   | 'image_remove'
@@ -1471,6 +1491,7 @@ export interface DockerMaintenanceInput {
   network?: string
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure'
   compose?: string
+  composeFile?: string
   allowedIp?: string
   backupId?: string
   migrationHost?: string

@@ -40,6 +40,7 @@ const requestIDKey contextKey = "request-id"
 
 var (
 	containerIDPattern       = regexp.MustCompile(`^[a-fA-F0-9]{12,64}$`)
+	composeProjectPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	resourceVersionPattern   = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	environmentBackupPattern = regexp.MustCompile(`^web_[0-9]{14}\.tar\.gz$`)
 	securityEntrancePattern  = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$`)
@@ -1078,6 +1079,13 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		id := strings.TrimPrefix(publicPath, dockerJobPrefix)
 		if siteIDPattern.MatchString(id) {
 			return "/v1/docker/jobs/" + id, true
+		}
+	}
+	const composeProjectPrefix = "/api/v1/docker/compose-projects/"
+	if strings.HasPrefix(publicPath, composeProjectPrefix) {
+		name := strings.TrimPrefix(publicPath, composeProjectPrefix)
+		if composeProjectPattern.MatchString(name) {
+			return "/v1/docker/compose-projects/" + url.PathEscape(name), true
 		}
 	}
 	const installationPrefix = "/api/v1/site-installations/"

@@ -38,7 +38,8 @@ var (
 )
 
 var maintenanceActions = []string{
-	"container_create", "compose_deploy", "container_access", "image_pull", "image_remove",
+	"container_create", "compose_deploy", "compose_redeploy", "compose_start", "compose_stop", "compose_restart",
+	"container_access", "image_pull", "image_remove",
 	"network_create", "network_remove", "network_connect", "network_disconnect",
 	"volume_create", "volume_remove", "prune", "container_prune", "image_prune",
 	"network_prune", "volume_prune", "backup_create", "backup_restore", "backup_migrate",
@@ -78,6 +79,7 @@ type MaintenanceInput struct {
 	Network                  string                       `json:"network,omitempty"`
 	RestartPolicy            string                       `json:"restartPolicy,omitempty"`
 	Compose                  string                       `json:"compose,omitempty"`
+	ComposeFile              string                       `json:"composeFile,omitempty"`
 	AllowedIP                string                       `json:"allowedIp,omitempty"`
 	BackupID                 string                       `json:"backupId,omitempty"`
 	MigrationHost            string                       `json:"migrationHost,omitempty"`
@@ -189,7 +191,7 @@ func (c *Client) StartMaintenance(ctx context.Context, input MaintenanceInput) (
 		if target == "" {
 			target = input.Image
 		}
-	} else if input.Action == "compose_deploy" {
+	} else if strings.HasPrefix(input.Action, "compose_") {
 		target = input.Name
 	} else if input.Image != "" {
 		target = input.Image
@@ -245,6 +247,10 @@ func (c *Client) validateMaintenanceInput(ctx context.Context, input Maintenance
 		}
 	case "compose_deploy":
 		if err := c.validateComposeDeploymentInput(ctx, input); err != nil {
+			return err
+		}
+	case "compose_redeploy", "compose_start", "compose_stop", "compose_restart":
+		if err := c.validateExistingComposeProjectInput(ctx, input); err != nil {
 			return err
 		}
 	case "container_access":
@@ -357,6 +363,14 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		err = c.createManagedContainer(ctx, record.Input)
 	case "compose_deploy":
 		err = c.deployComposeProject(ctx, record.Input)
+	case "compose_redeploy":
+		err = c.redeployComposeProject(ctx, record.Input)
+	case "compose_start":
+		err = c.runComposeProjectLifecycle(ctx, record.Input, "start")
+	case "compose_stop":
+		err = c.runComposeProjectLifecycle(ctx, record.Input, "stop")
+	case "compose_restart":
+		err = c.runComposeProjectLifecycle(ctx, record.Input, "restart")
 	case "container_access":
 		err = c.updateContainerAccess(
 			ctx,
@@ -989,6 +1003,14 @@ func dockerActionProgress(action string) string {
 		return "正在创建并启动 Docker 容器"
 	case "compose_deploy":
 		return "正在校验并启动 Docker Compose 项目"
+	case "compose_redeploy":
+		return "正在校验配置并重新部署 Docker Compose 项目"
+	case "compose_start":
+		return "正在启动 Docker Compose 项目"
+	case "compose_stop":
+		return "正在停止 Docker Compose 项目"
+	case "compose_restart":
+		return "正在重启 Docker Compose 项目"
 	case "container_access":
 		return "正在更新容器外部访问规则"
 	case "image_pull":
@@ -1030,6 +1052,14 @@ func dockerActionCompleted(action string) string {
 		return "Docker 容器已创建并启动"
 	case "compose_deploy":
 		return "Docker Compose 项目已部署"
+	case "compose_redeploy":
+		return "Docker Compose 配置已更新并重新部署"
+	case "compose_start":
+		return "Docker Compose 项目已启动"
+	case "compose_stop":
+		return "Docker Compose 项目已停止"
+	case "compose_restart":
+		return "Docker Compose 项目已重启"
 	case "container_access":
 		return "容器外部访问规则已更新"
 	case "image_pull":

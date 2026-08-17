@@ -457,4 +457,8 @@ export default [
 	['已符合', 'Already set'],
 	['系统综合调优', 'System tuning'],
 	['沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。', 'Uses the original 12-step kejilion.sh flow. All items are selected by default, and you can run only what you need.'],
+  ['Docker 部署内容', 'Docker deployment content'],
+  ['行 · 第', 'line · column'],
+  ['列', 'column'],
+  ['语法问题', 'Syntax issues'],
 ] as const satisfies PhraseCatalog

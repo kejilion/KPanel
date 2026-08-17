@@ -35,9 +35,11 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
+import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { analyzeDockerDeployment } from '@/lib/dockerDeployment'
+import { groupDockerContainers, type DockerContainerGroup } from '@/lib/dockerComposeGroups'
 import {
   sortDockerContainers,
   sortDockerImages,
@@ -51,6 +53,7 @@ import { useToast } from '@/stores/toast'
 import type {
   DockerBackup,
   DockerContainer,
+  DockerComposeProject,
   DockerContainerCreateEnvironment,
   DockerContainerCreateMount,
   DockerContainerCreatePort,
@@ -146,6 +149,13 @@ const createPorts = ref<CreatePortRow[]>([
 const createMounts = ref<CreateMountRow[]>([])
 const createEnvironment = ref<CreateEnvironmentRow[]>([])
 
+const composeOpen = ref(false)
+const composeLoading = ref(false)
+const composeError = ref('')
+const composeProject = ref<DockerComposeProject>()
+const composeFilePath = ref('')
+const composeSource = ref('')
+
 const logsOpen = ref(false)
 const logsLoading = ref(false)
 const logLines = ref<string[]>([])
@@ -168,6 +178,7 @@ const migrationUser = ref('root')
 const migrationPort = ref('22')
 
 let controller: AbortController | undefined
+let composeController: AbortController | undefined
 let logController: AbortController | undefined
 let statsController: AbortController | undefined
 let statsTimer: number | undefined
@@ -221,6 +232,7 @@ const availableImageTags = computed(() =>
 )
 const createNetworks = computed(() => data.value?.networks || [])
 const createAnalysis = computed(() => analyzeDockerDeployment(createSource.value))
+const createDiagnostics = computed(() => createAnalysis.value.kind === 'invalid' ? createAnalysis.value.diagnostics : [])
 const createModeLabel = computed(() => {
   if (createManualMode.value) return '手动配置'
   if (createAnalysis.value.kind === 'docker-run') return 'Docker Run'
@@ -280,6 +292,11 @@ const filteredContainers = computed(() => {
     ? containerCatalog.value.filter(({ searchText }) => searchText.includes(query)).map(({ item }) => item)
     : sortedContainers.value
 })
+const containerGroups = computed(() => groupDockerContainers(filteredContainers.value))
+const composeAnalysis = computed(() => analyzeDockerDeployment(composeSource.value))
+const composeDiagnostics = computed(() => composeAnalysis.value.kind === 'invalid' ? composeAnalysis.value.diagnostics : [])
+const selectedComposeFile = computed(() => composeProject.value?.configFiles.find((file) => file.path === composeFilePath.value))
+const composeCanRedeploy = computed(() => composeAnalysis.value.kind === 'compose' && Boolean(selectedComposeFile.value))
 const filteredImages = computed(() => {
   const query = search.value.trim().toLowerCase()
   return query
@@ -406,6 +423,7 @@ function closeContextMenu(): void {
 
 async function load(silent = false): Promise<void> {
   controller?.abort()
+  composeController?.abort()
   controller = new AbortController()
   if (silent) refreshing.value = true
   else loading.value = true
@@ -839,6 +857,80 @@ watch(createSource, () => {
     createComposeProject.value = analysis.projectName
   }
 })
+
+async function openComposeProject(group: DockerContainerGroup): Promise<void> {
+  if (group.kind !== 'compose') return
+  composeController?.abort()
+  composeController = new AbortController()
+  composeOpen.value = true
+  composeLoading.value = true
+  composeError.value = ''
+  composeProject.value = undefined
+  composeFilePath.value = ''
+  composeSource.value = ''
+  try {
+    const project = await api.docker.composeProject(group.name, composeController.signal)
+    composeProject.value = project
+    const firstFile = project.configFiles[0]
+    if (firstFile) {
+      composeFilePath.value = firstFile.path
+      composeSource.value = firstFile.source
+    }
+  } catch (reason) {
+    if ((reason as Error).name === 'AbortError') return
+    composeError.value = reason instanceof ApiError ? reason.message : '无法读取 Compose 项目配置。'
+  } finally {
+    composeLoading.value = false
+  }
+}
+
+function selectComposeFile(): void {
+  const file = selectedComposeFile.value
+  composeSource.value = file?.source || ''
+}
+
+function closeComposeProject(): void {
+  composeController?.abort()
+  composeController = undefined
+  composeOpen.value = false
+  composeProject.value = undefined
+  composeError.value = ''
+  composeFilePath.value = ''
+  composeSource.value = ''
+}
+
+function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose_restart'): void {
+  const project = composeProject.value
+  if (!project) return
+  const labels = {
+    compose_start: ['确认启动 Compose 项目', '启动项目中已有的全部服务'],
+    compose_stop: ['确认停止 Compose 项目', '停止项目服务，容器和配置继续保留'],
+    compose_restart: ['确认重启 Compose 项目', '按当前配置重启项目中的全部服务'],
+  } as const
+  closeComposeProject()
+  askTask(labels[action][0], `${project.name} · ${labels[action][1]}`, {
+    action, name: project.name, expectedResourceVersion: project.resourceVersion,
+  }, action === 'compose_stop')
+}
+
+function submitComposeRedeploy(): void {
+  const project = composeProject.value
+  const file = selectedComposeFile.value
+  if (!project || !file) return
+  const analysis = composeAnalysis.value
+  if (analysis.kind !== 'compose') {
+    if (analysis.kind === 'invalid') toast.danger('Compose 配置存在语法问题', analysis.message)
+    return
+  }
+  closeComposeProject()
+  askTask('确认更新并重新部署 Compose 项目', `${project.name} · ${file.name} · ${analysis.services.length} 个服务`, {
+    action: 'compose_redeploy',
+    name: project.name,
+    composeFile: file.path,
+    compose: analysis.compose,
+    expectedResourceVersion: project.resourceVersion,
+  })
+}
 
 function askAction(container: DockerContainer, action: ContainerAction): void {
   contextMenu.value = undefined
@@ -1311,9 +1403,28 @@ onBeforeUnmount(() => {
                 <col class="docker-table__actions" />
               </colgroup>
               <thead><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
-              <tbody>
+              <tbody v-for="group in containerGroups" :key="group.key" class="docker-group">
+                <tr class="docker-group__row">
+                  <td colspan="6">
+                    <div class="docker-group__summary">
+                      <span class="docker-group__icon"><Boxes v-if="group.kind === 'compose'" :size="17" /><Container v-else :size="17" /></span>
+                      <span>
+                        <strong>{{ group.name }}</strong>
+                        <small v-if="group.kind === 'compose'">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
+                        <small v-else>{{ group.running }}/{{ group.containers.length }} 运行中 · 不属于 Compose 项目</small>
+                      </span>
+                      <button
+                        v-if="group.kind === 'compose'"
+                        class="button button--secondary button--small"
+                        type="button"
+                        :disabled="panel.isReadOnly.value || dockerJobActive"
+                        @click="openComposeProject(group)"
+                      ><Wrench :size="14" /> 管理 Compose</button>
+                    </div>
+                  </td>
+                </tr>
                 <tr
-                  v-for="container in filteredContainers"
+                  v-for="container in group.containers"
                   :key="container.id"
                   :class="`docker-row docker-row--${container.state}`"
                   @contextmenu="showContainerContext($event, container)"
@@ -1552,7 +1663,11 @@ onBeforeUnmount(() => {
       <section v-if="!createManualMode" class="deployment-input-card">
         <label class="field">
           <span>粘贴部署内容</span>
-          <textarea v-model="createSource" class="text-area deployment-source" rows="9" maxlength="24576" spellcheck="false" autocomplete="off" placeholder="docker run -d --name my-app -p 8080:80 nginx:alpine&#10;&#10;也可以直接粘贴 compose.yaml 内容" />
+          <DockerDeploymentEditor
+            v-model="createSource"
+            :diagnostics="createDiagnostics"
+            placeholder="docker run -d --name my-app -p 8080:80 nginx:alpine&#10;&#10;也可以直接粘贴 compose.yaml 内容"
+          />
         </label>
         <div class="deployment-detection" :class="{ 'is-invalid': createAnalysis.kind === 'invalid', 'is-ready': createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose' }">
           <template v-if="createAnalysis.kind === 'empty'">
@@ -1610,6 +1725,49 @@ onBeforeUnmount(() => {
       </section>
       <div class="inline-alert inline-alert--info">Docker Run 会转换为结构化 Docker API；Compose 会先校验配置，再保存到 `/home/docker` 并后台启动。启动失败会自动尝试回滚，并保留明确的处理状态。</div>
       <template #footer><span class="modal-footer-note">{{ createModeLabel || '自动识别部署方式' }}</span><button class="button button--secondary" type="button" @click="createOpen = false">取消</button><button class="button button--primary" type="button" :disabled="!createCanSubmit" @click="submitContainerCreate">部署</button></template>
+    </ModalDialog>
+
+    <ModalDialog
+      :open="composeOpen"
+      :title="composeProject ? `管理 Compose · ${composeProject.name}` : '管理 Compose 项目'"
+      description="配置来自 Docker Compose 的实际工作目录；修改前校验版本，失败时自动恢复原配置。"
+      size="large"
+      @close="closeComposeProject"
+    >
+      <LoadingState v-if="composeLoading" :rows="4" />
+      <ErrorState v-else-if="composeError" :message="composeError" />
+      <div v-else-if="composeProject" class="compose-manager">
+        <div class="compose-manager__meta">
+          <span><small>项目目录</small><code data-i18n-ignore>{{ composeProject.workingDirectory }}</code></span>
+          <span><small>服务</small><strong>{{ composeProject.services.join(' · ') || '由 Compose 实际配置决定' }}</strong></span>
+        </div>
+        <label v-if="composeProject.configFiles.length > 1" class="field">
+          <span>配置文件</span>
+          <select v-model="composeFilePath" class="select-input" @change="selectComposeFile">
+            <option v-for="file in composeProject.configFiles" :key="file.path" :value="file.path">{{ file.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>{{ selectedComposeFile?.name || 'Compose 配置' }}</span>
+          <DockerDeploymentEditor
+            v-model="composeSource"
+            :diagnostics="composeDiagnostics"
+            :aria-label="`${composeProject.name} Compose 配置`"
+          />
+        </label>
+        <div class="deployment-detection" :class="{ 'is-invalid': composeAnalysis.kind === 'invalid', 'is-ready': composeAnalysis.kind === 'compose' }">
+          <span v-if="composeAnalysis.kind === 'compose'" class="deployment-kind"><ShieldCheck :size="16" />语法检查通过</span>
+          <span v-else class="deployment-kind"><CircleStop :size="16" />配置暂不可部署</span>
+          <small v-if="composeAnalysis.kind === 'compose'">识别到 {{ composeAnalysis.services.length }} 个服务；Agent 提交前还会执行 docker compose config。</small>
+          <small v-else-if="composeAnalysis.kind === 'invalid'">{{ composeAnalysis.message }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> 启动项目</button>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> 重启项目</button>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> 停止项目</button>
+        <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> 保存并重新部署</button>
+      </template>
     </ModalDialog>
 
     <ModalDialog :open="logsOpen" :title="`${selectedContainer?.name || '容器'} 日志`" description="显示最近 300 行，输出经过敏感字段脱敏和大小限制。" size="large" @close="closeLogs">
@@ -1747,7 +1905,7 @@ onBeforeUnmount(() => {
 .resource-section__header > div:first-child > div { display: grid; min-width: 0; gap: 3px; }
 .resource-section__header > .card-actions { margin-left: auto; justify-content: flex-end; }
 .resource-section .table-scroll, .resource-section > .empty-state { margin: 0; }
-.docker-table { min-width: 1320px; }
+.docker-table { min-width: 1240px; }
 .docker-table__name { width: 20%; }
 .docker-table__status { width: 11%; }
 .docker-table__ports { width: 23%; }
@@ -1762,6 +1920,12 @@ onBeforeUnmount(() => {
 .docker-row:hover { background: color-mix(in srgb, var(--brand) 4%, var(--surface)); }
 .docker-row--running > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand) 75%, transparent); }
 .docker-row--restarting > td:first-child, .docker-row--paused > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber) 75%, transparent); }
+.docker-group + .docker-group .docker-group__row td { border-top: 8px solid var(--surface-subtle); }
+.docker-group__row td { padding: 0; background: color-mix(in srgb, var(--surface-raised) 72%, transparent); }
+.docker-group__summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 8px 12px; }
+.docker-group__summary > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.docker-group__summary small { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.docker-group__icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, transparent); }
 .docker-context-menu {
   position: fixed;
   z-index: 110;
@@ -1833,9 +1997,6 @@ onBeforeUnmount(() => {
 .text-area { width: 100%; resize: vertical; min-height: 84px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); padding: 10px 12px; font: inherit; }
 .text-area:focus { outline: 2px solid color-mix(in srgb, var(--brand) 25%, transparent); border-color: var(--brand); }
 .deployment-input-card { display: grid; gap: 11px; padding: 15px; border: 1px solid var(--border-strong); border-radius: 15px; background: color-mix(in srgb, var(--surface-raised) 78%, transparent); }
-.deployment-source { min-height: 190px; resize: vertical; background: var(--surface-subtle); color: var(--text); border-color: var(--border-strong); box-shadow: inset 0 1px 2px rgb(20 48 42 / 4%); caret-color: var(--brand); font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.deployment-source::placeholder { color: var(--muted); }
-:global(:root[data-theme='dark']) .deployment-source { background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); border-color: var(--terminal-shell-border, #29383a); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); caret-color: var(--brand); }
 .deployment-detection { display: flex; min-width: 0; align-items: center; gap: 10px; color: var(--muted); }
 .deployment-detection small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployment-detection.is-ready { color: var(--text); }
@@ -1844,6 +2005,11 @@ onBeforeUnmount(() => {
 .deployment-options { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .deployment-advanced { margin-top: 14px; padding: 15px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
 .deployment-advanced > .form-section:first-child { margin-top: 0; }
+.compose-manager { display: grid; gap: 15px; }
+.compose-manager__meta { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; }
+.compose-manager__meta > span { display: grid; min-width: 0; gap: 5px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-subtle); }
+.compose-manager__meta small { color: var(--muted); }
+.compose-manager__meta code, .compose-manager__meta strong { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
 .form-section { display: grid; gap: 10px; margin-top: 18px; }
 .repeat-row { display: grid; gap: 8px; align-items: center; }
 .repeat-row--ports { grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr) 100px 110px auto; }
@@ -1891,10 +2057,12 @@ onBeforeUnmount(() => {
   .backup-list article { gap: 9px; padding: 11px; }
   .compact-input { width: 100%; }
   .network-membership { grid-template-columns: 1fr; }
+  .docker-group__summary { grid-template-columns: auto minmax(0, 1fr); }
+  .docker-group__summary .button { grid-column: 1 / -1; width: 100%; }
+  .compose-manager__meta { grid-template-columns: 1fr; }
   .repeat-row--ports, .repeat-row--mounts, .repeat-row--environment { grid-template-columns: 1fr; }
   .repeat-row--ports > span { display: none; }
   .deployment-input-card, .deployment-advanced { padding: 12px; }
-  .deployment-source { min-height: 220px; }
   .deployment-detection { align-items: flex-start; flex-direction: column; gap: 4px; }
   .deployment-detection small { white-space: normal; }
   .deployment-options { justify-content: stretch; flex-direction: column; }

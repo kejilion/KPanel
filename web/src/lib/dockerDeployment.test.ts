@@ -37,14 +37,67 @@ describe('docker deployment input', () => {
     expect(result).toMatchObject({ kind: 'compose', projectName: 'web', services: ['web', 'redis'] })
   })
 
+  it('recognizes flow-style and quoted Compose service keys from the YAML tree', () => {
+    expect(analyzeDockerDeployment(`services: { web: { image: nginx:alpine }, 'db-worker': { image: postgres:17 } }`))
+      .toMatchObject({ kind: 'compose', projectName: 'web', services: ['web', 'db-worker'] })
+  })
+
   it('rejects chained shell commands instead of executing text', () => {
     const result = analyzeDockerDeployment('docker run -d nginx:alpine && curl https://example.com/install.sh | sh')
     expect(result).toMatchObject({ kind: 'invalid' })
   })
 
   it('explains that a Compose command without YAML is incomplete', () => {
-    expect(analyzeDockerDeployment('docker compose up -d')).toEqual({
+    expect(analyzeDockerDeployment('docker compose up -d')).toMatchObject({
       kind: 'invalid', message: '请粘贴 Compose YAML，而不是只有 docker compose up 命令。',
+      diagnostics: [{ code: 'compose_command_only', line: 1, column: 1 }],
     })
+  })
+
+  it('locates an unclosed quote in a multiline docker run command', () => {
+    const result = analyzeDockerDeployment(`docker run -d \\
+  --name "demo \\
+  nginx:alpine`)
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      diagnostics: [{ code: 'shell_quote_unclosed', line: 2, column: 10 }],
+    })
+  })
+
+  it('locates unsupported shell chaining instead of only returning a message', () => {
+    const result = analyzeDockerDeployment(`docker run -d nginx:alpine \\
+  && curl https://example.com/install.sh`)
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      diagnostics: [{ code: 'shell_operator_unsupported', line: 2, column: 3 }],
+    })
+  })
+
+  it('keeps diagnostic positions aligned when pasted commands have leading blank lines', () => {
+    const result = analyzeDockerDeployment(`\n\n docker run -d nginx:alpine && curl example.com`)
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      diagnostics: [{ code: 'shell_operator_unsupported', line: 3, column: 29 }],
+    })
+  })
+
+  it('reports YAML indentation errors with a line and column', () => {
+    const result = analyzeDockerDeployment(`services:
+  web:
+\t image: nginx:alpine`)
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      diagnostics: [{ code: 'yaml_tab_indent', line: 3, column: 1 }],
+    })
+  })
+
+  it('reports malformed YAML from the lightweight syntax tree', () => {
+    const result = analyzeDockerDeployment(`services:
+  web
+    image: nginx:alpine`)
+    expect(result.kind).toBe('invalid')
+    if (result.kind !== 'invalid') return
+    expect(result.diagnostics[0]).toMatchObject({ code: 'yaml_syntax_error' })
+    expect(result.diagnostics[0]?.line).toBeGreaterThanOrEqual(2)
   })
 })

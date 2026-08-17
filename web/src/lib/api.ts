@@ -25,6 +25,7 @@ import type {
   DockerInventory,
   DockerActionResult,
   DockerBackup,
+  DockerComposeProject,
   DockerContainerStats,
   DockerExecResult,
   DockerEnvironment,
@@ -307,6 +308,7 @@ interface RawContainer {
     protocol?: string
   }>
   composeProject?: string
+  composeService?: string
   ownership?: string
   resourceVersion?: string
   allowedActions?: string[]
@@ -900,6 +902,7 @@ function normalizeContainer(raw: RawContainer): DockerInventory['containers'][nu
     access: actions.length > 0 ? 'managed' : raw.ownership === 'external' ? 'unmanaged' : 'read-only',
     consistency: raw.ownership === 'ambiguous' ? 'ambiguous' : 'synced',
     project: raw.composeProject,
+    service: raw.composeService,
     ports: (raw.ports || []).map((port) => ({
       privatePort: port.privatePort,
       publicPort: port.publicPort,
@@ -1897,6 +1900,8 @@ export const api = {
       }),
     backups: async (signal?: AbortSignal): Promise<ApiList<DockerBackup>> =>
       normalizeList(await request<ApiList<DockerBackup> | DockerBackup[]>('/docker/backups', { signal })),
+    composeProject: (name: string, signal?: AbortSignal): Promise<DockerComposeProject> =>
+      request<DockerComposeProject>(`/docker/compose-projects/${encodeURIComponent(name)}`, { signal }),
     task: (body: DockerMaintenanceInput): Promise<DockerMaintenanceJob> =>
       request<DockerMaintenanceJob>('/docker/tasks', { method: 'POST', body }),
     job: (id: string, signal?: AbortSignal): Promise<DockerMaintenanceJob> =>

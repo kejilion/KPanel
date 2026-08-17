@@ -368,6 +368,7 @@ type ContainerSummary struct {
 	Mounts            []Mount           `json:"mounts"`
 	Networks          []string          `json:"networks"`
 	ComposeProject    string            `json:"composeProject,omitempty"`
+	ComposeService    string            `json:"composeService,omitempty"`
 	Ownership         string            `json:"ownership"`
 	OwnershipEvidence []string          `json:"ownershipEvidence,omitempty"`
 	ResourceVersion   string            `json:"resourceVersion"`
