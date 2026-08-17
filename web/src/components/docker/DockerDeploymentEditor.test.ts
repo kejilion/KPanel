@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
 import DockerDeploymentEditor from './DockerDeploymentEditor.vue'
 
 describe('DockerDeploymentEditor', () => {
   it('marks and pulses a detected error before the diagnostic is clicked', async () => {
+    vi.useFakeTimers()
     const wrapper = mount(DockerDeploymentEditor, {
       attachTo: document.body,
       props: {
@@ -24,12 +26,18 @@ describe('DockerDeploymentEditor', () => {
       'has-diagnostic', 'is-diagnostic-line',
     ]))
 
+    vi.advanceTimersByTime(1_600)
+    await nextTick()
+    expect(wrapper.get('.deployment-editor__error-line').classes()).not.toContain('is-pulsing')
+
     await wrapper.get('.deployment-diagnostics button').trigger('click')
     expect(document.activeElement).toBe(textarea)
     expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([12, 15])
     expect(wrapper.text()).toContain('第 2 行 · 第 3 列')
-    expect(wrapper.get('.deployment-editor__error-line').classes()).toContain('is-pulsing')
+    expect(wrapper.get('.deployment-editor__error-line').classes()).not.toContain('is-pulsing')
+    expect(wrapper.findAll('.deployment-editor__gutter span')[1]?.classes()).toContain('has-diagnostic')
     wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('keeps every diagnostic line visibly marked', () => {

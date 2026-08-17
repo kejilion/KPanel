@@ -69,7 +69,6 @@ function focusDiagnostic(item: DockerDeploymentDiagnostic): void {
     editor.scrollTop = Math.max(0, lineTop - Math.max(editorLineHeight * 2, (viewportHeight - editorLineHeight) / 2))
     scrollTop.value = editor.scrollTop
   }
-  pulseLine(item.line)
 }
 
 watch(
