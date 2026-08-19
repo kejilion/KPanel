@@ -15,7 +15,9 @@ withDefaults(
 <template>
   <div class="empty-state">
     <div class="empty-state__icon" aria-hidden="true">
-      <Inbox :size="24" :stroke-width="1.8" />
+      <!-- Callers with a subject-specific icon override this; the inbox is the
+           generic "nothing here yet" default. -->
+      <slot name="icon"><Inbox :size="24" :stroke-width="1.8" /></slot>
     </div>
     <h3>{{ title }}</h3>
     <p v-if="description">{{ description }}</p>

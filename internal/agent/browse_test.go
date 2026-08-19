@@ -261,3 +261,99 @@ func TestBrowseFetchHandlerRelaysRequestAndResponse(t *testing.T) {
 		t.Fatalf("Host was not derived from the target URL, got %q", gotHost)
 	}
 }
+
+func TestIsBlockedIPAllowingPrivate(t *testing.T) {
+	// The relaxed guard is what store.AllowedHosts.BrowseAllowPrivateNetworks
+	// switches on. It must unblock the LAN and nothing else — link-local in
+	// particular stays blocked, because 169.254.169.254 is the cloud metadata
+	// service, not a machine on the operator's network.
+	cases := []struct {
+		name    string
+		ip      string
+		blocked bool
+	}{
+		{"IPv4 loopback", "127.0.0.1", false},
+		{"IPv4 loopback range", "127.5.6.7", false},
+		{"IPv4 RFC1918 10/8", "10.1.2.3", false},
+		{"IPv4 RFC1918 172.16/12", "172.16.5.6", false},
+		{"IPv4 RFC1918 192.168/16", "192.168.1.1", false},
+		{"IPv4 public", "8.8.8.8", false},
+		{"IPv6 loopback", "::1", false},
+		{"IPv6 unique-local", "fc00::1", false},
+		{"IPv6 public", "2001:4860:4860::8888", false},
+		{"IPv4 link-local", "169.254.1.1", true},
+		{"IPv4 cloud metadata", "169.254.169.254", true},
+		{"IPv6 link-local", "fe80::1", true},
+		{"IPv4 unspecified", "0.0.0.0", true},
+		{"IPv6 unspecified", "::", true},
+		{"IPv4 multicast", "224.0.0.1", true},
+		{"IPv4 broadcast", "255.255.255.255", true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			ip := net.ParseIP(testCase.ip)
+			if ip == nil {
+				t.Fatalf("invalid test IP %q", testCase.ip)
+			}
+			if got := isBlockedIPAllowingPrivate(ip); got != testCase.blocked {
+				t.Errorf("isBlockedIPAllowingPrivate(%s) = %v, want %v", testCase.ip, got, testCase.blocked)
+			}
+		})
+	}
+}
+
+// TestBrowseFetchHonoursThePrivateNetworkOptIn uses the production clients
+// built by NewServer — no injected dialer — so it proves the opt-in actually
+// reaches a real loopback address and that omitting it still does not.
+func TestBrowseFetchHonoursThePrivateNetworkOptIn(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("lan-service"))
+	}))
+	defer upstream.Close()
+	target := upstream.URL + "/"
+
+	fetch := func(t *testing.T, allowPrivate bool) *httptest.ResponseRecorder {
+		t.Helper()
+		server := testServer(t)
+		body, _ := json.Marshal(browseFetchInput{URL: target, Method: "GET", AllowPrivateNetwork: allowPrivate})
+		request := httptest.NewRequest(http.MethodPost, "/v1/browse/fetch", bytes.NewReader(body))
+		request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		return response
+	}
+
+	t.Run("blocked by default", func(t *testing.T) {
+		response := fetch(t, false)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status = %d body=%s, want 403", response.Code, response.Body.String())
+		}
+		var problem struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+			t.Fatal(err)
+		}
+		if problem.Code != "browse_target_blocked" {
+			t.Fatalf("code = %q, want browse_target_blocked", problem.Code)
+		}
+	})
+
+	t.Run("allowed when opted in", func(t *testing.T) {
+		response := fetch(t, true)
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s, want 200", response.Code, response.Body.String())
+		}
+		var output browseFetchOutput
+		if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
+			t.Fatal(err)
+		}
+		payload, err := base64.StdEncoding.DecodeString(output.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(payload) != "lan-service" {
+			t.Fatalf("body = %q, want %q", payload, "lan-service")
+		}
+	})
+}

@@ -13,13 +13,12 @@ try {
   console.error('Scramjet controller bundle failed to initialize:', err);
 }
 
+// This shell runs on the browse origin, which has its own credential — the
+// panel's cookies are host-only and never reach here. See
+// internal/panel/browse_origin.go for why the two must stay separate.
 function readCsrfCookie() {
-  const names = ['__Host-kejilion_csrf', 'kejilion_csrf'];
-  for (const name of names) {
-    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-    if (match) return decodeURIComponent(match[1]);
-  }
-  return '';
+  const match = document.cookie.match(/(?:^|; )kejilion_browse_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 // ---------------- Connect flow ----------------
@@ -103,15 +102,23 @@ async function loadHosts() {
   }
   hostListEl.innerHTML = '<div id="host-list-empty">正在加载可用节点…</div>';
   try {
-    const res = await fetch('/api/v1/cluster/hosts', { credentials: 'same-origin' });
+    // Not /api/v1/cluster/hosts: that lives on the panel origin, which this
+    // shell has no session for. This is the browse origin's own projection of
+    // the same list — see handleBrowseHosts in internal/panel/browse_origin.go.
+    const res = await fetch('/api/v1/browse/hosts', { credentials: 'same-origin' });
     if (!res.ok) throw new Error('获取节点列表失败: HTTP ' + res.status);
-    // The endpoint returns a paged envelope ({items, total, ...}), not a bare
-    // array — see internal/panel/cluster.go's ClusterHostList.
+    // The endpoint returns a paged envelope ({items, total}), not a bare array.
     const payload = await res.json();
     const items = Array.isArray(payload) ? payload : (payload && payload.items) || [];
     const hosts = items.filter((h) => h.browseAvailable);
     if (hosts.length === 0) {
-      hostListEl.innerHTML = '<div id="host-list-empty">没有可用的浏览出口节点。请先在“集群”里为某个节点授予浏览权限。</div>';
+      // Two distinct reasons a paired host can be absent, and the operator
+      // needs to be told which one applies: a light node has no Agent at all
+      // (nothing to grant), while a Panel node needs cluster.browse.fetch
+      // granted at pairing time.
+      hostListEl.innerHTML =
+        '<div id="host-list-empty">没有可用的浏览出口节点。轻量节点没有 Agent，不能作为出口；' +
+        '完整节点需要在配对时勾选浏览权限，请到“集群”里重新配对并授予。</div>';
       return;
     }
     hostListEl.innerHTML = '';

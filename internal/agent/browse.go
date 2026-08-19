@@ -46,6 +46,12 @@ type browseFetchInput struct {
 	Method  string              `json:"method"`
 	Headers map[string][]string `json:"headers,omitempty"`
 	Body    string              `json:"body,omitempty"` // base64, raw request body
+	// AllowPrivateNetwork relaxes the private-address guard for this one
+	// request. Only the Panel on this same host can set it, and it only ever
+	// sets it from this host's own store.AllowedHosts.BrowseAllowPrivateNetworks
+	// — never from anything a federation controller sent. See the comment on
+	// that field for why the default has to be off.
+	AllowPrivateNetwork bool `json:"allowPrivateNetwork,omitempty"`
 }
 
 type browseFetchOutput struct {
@@ -91,7 +97,7 @@ func (s *Server) browseFetch(w http.ResponseWriter, r *http.Request) {
 	outReq.Header = outHeader
 	outReq.Host = target.Host // authoritative Host, derived only from the parsed target URL
 
-	resp, err := s.browseClient.Do(outReq)
+	resp, err := s.browseHTTPClient(input.AllowPrivateNetwork).Do(outReq)
 	if err != nil {
 		status, code := browseFetchErrorStatus(err)
 		writeProblem(w, requestID, status, code, "浏览目标不可达", safeDetail(err))
@@ -117,6 +123,18 @@ func (s *Server) browseFetch(w http.ResponseWriter, r *http.Request) {
 		Headers:    map[string][]string(respHeader),
 		Body:       base64.StdEncoding.EncodeToString(payload),
 	})
+}
+
+// browseHTTPClient picks between the two long-lived clients built at startup.
+// They differ only in their dialer's blocked-IP predicate, and are kept as
+// two clients rather than one client rebuilt per request so connection reuse
+// still works — and so a relaxed connection can never be reused to serve a
+// request that did not ask for the relaxation.
+func (s *Server) browseHTTPClient(allowPrivate bool) *http.Client {
+	if allowPrivate && s.browseLANClient != nil {
+		return s.browseLANClient
+	}
+	return s.browseClient
 }
 
 func validateBrowseFetchInput(input browseFetchInput) (*url.URL, string, string, error) {
@@ -217,10 +235,14 @@ type browseDialer struct {
 	dial    net.Dialer
 }
 
-func newBrowseDialer() *browseDialer {
+func newBrowseDialer(allowPrivate bool) *browseDialer {
+	blocked := isBlockedIP
+	if allowPrivate {
+		blocked = isBlockedIPAllowingPrivate
+	}
 	return &browseDialer{
 		resolve: lookupBrowseIPs,
-		blocked: isBlockedIP,
+		blocked: blocked,
 		dial:    net.Dialer{Timeout: browseDialTimeout, KeepAlive: 15 * time.Second},
 	}
 }
@@ -260,8 +282,22 @@ func isBlockedIP(ip net.IP) bool {
 		ip.IsUnspecified() || ip.IsMulticast() || !ip.IsGlobalUnicast()
 }
 
-func newBrowseHTTPClient() *http.Client {
-	dialer := newBrowseDialer()
+// isBlockedIPAllowingPrivate is the relaxed guard used when the operator has
+// opted this host into LAN browsing (store.AllowedHosts.BrowseAllowPrivateNetworks).
+// It unblocks exactly what "LAN" means — loopback and RFC1918/ULA — and keeps
+// blocking everything else isBlockedIP does. Link-local stays blocked on
+// purpose: 169.254.0.0/16 is not a LAN, and the address most likely to answer
+// in it is the cloud metadata service at 169.254.169.254, which hands out IAM
+// credentials to whatever asks. Note this cannot be written as
+// !ip.IsGlobalUnicast() minus a case: IsGlobalUnicast is already false for
+// loopback, so the remaining rejects have to be spelled out.
+func isBlockedIPAllowingPrivate(ip net.IP) bool {
+	return ip == nil || ip.IsUnspecified() || ip.IsMulticast() ||
+		ip.IsLinkLocalUnicast() || ip.Equal(net.IPv4bcast)
+}
+
+func newBrowseHTTPClient(allowPrivate bool) *http.Client {
+	dialer := newBrowseDialer(allowPrivate)
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext:           dialer.DialContext,

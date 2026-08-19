@@ -66,9 +66,15 @@ type Server struct {
 	browseWSOpeningUser map[string]int
 	downloadTicketMu    sync.Mutex
 	downloadTickets     map[[32]byte]fileDownloadTicket
-	ai                  *ai.Service
-	aiError             string
-	desktopWorkspace    *desktopworkspace.Store
+	// browseOriginMu guards both browse-origin tables (see browse_origin.go).
+	// They are one lock because a handoff ticket becomes a session in a single
+	// logical step and revocation has to clear both together.
+	browseOriginMu       sync.Mutex
+	browseHandoffTickets map[[32]byte]browseHandoffTicket
+	browseOriginSessions map[[32]byte]browseOriginSession
+	ai                   *ai.Service
+	aiError              string
+	desktopWorkspace     *desktopworkspace.Store
 }
 
 type agentAPI interface {
@@ -105,8 +111,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		PrivateCIDRs: config.ClusterPrivateCIDRs,
 		Telemetry:    clusterTelemetrySource{agent: agent},
 		Terminal:     clusterTerminalSource{agent: agent},
-		Browse:       clusterBrowseSource{agent: agent},
-		BrowseWS:     clusterBrowseWSSource{agent: agent},
+		Browse:       clusterBrowseSource{agent: agent, store: storage},
+		BrowseWS:     clusterBrowseWSSource{agent: agent, store: storage},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize cluster service: %w", err)
@@ -117,14 +123,16 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	server := &Server{
 		config: config, auth: authService, store: storage, agent: agent,
-		cluster:             clusterService,
-		terminalSessions:    make(map[string]panelTerminalSession),
-		terminalOpeningUser: make(map[string]int),
-		browseWSSessions:    make(map[string]panelBrowseWSSession),
-		browseWSOpeningUser: make(map[string]int),
-		trustedProxies:      trustedProxies,
-		lastAuthAudit:       make(map[string]time.Time),
-		desktopWorkspace:    desktopWorkspace,
+		cluster:              clusterService,
+		terminalSessions:     make(map[string]panelTerminalSession),
+		terminalOpeningUser:  make(map[string]int),
+		browseWSSessions:     make(map[string]panelBrowseWSSession),
+		browseWSOpeningUser:  make(map[string]int),
+		browseHandoffTickets: make(map[[32]byte]browseHandoffTicket),
+		browseOriginSessions: make(map[[32]byte]browseOriginSession),
+		trustedProxies:       trustedProxies,
+		lastAuthAudit:        make(map[string]time.Time),
+		desktopWorkspace:     desktopWorkspace,
 	}
 	server.hostOps = newHostOperationService(server)
 	return server, nil
@@ -144,6 +152,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/api/v1/health" &&
 		!isFederationV2Request(r) &&
 		!s.checkHost(w, r) {
+		return
+	}
+	// The browse origin is split off before anything else. It is a different
+	// site with a deliberately tiny surface (see browse_origin.go), and none of
+	// what follows applies to it: not the security entrance, which exists to
+	// hide the panel's login from scanners and has no login to hide here, and
+	// not serveAPI, whose whole route table is exactly what must stay
+	// unreachable from browsed content.
+	if s.isBrowseOriginRequest(r) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		s.serveBrowseOrigin(w, r)
+		return
+	}
+	// ...and conversely the shell is never served from the panel origin. If it
+	// were, the operator could reach a working browser at the panel's own
+	// hostname and get no isolation at all — the failure would be silent,
+	// which is the worst possible shape for this particular bug.
+	if isBrowseOriginStaticPath(r.URL.Path) {
+		http.NotFound(w, r)
 		return
 	}
 	if s.handleSecurityEntrance(w, r) {
@@ -214,13 +243,11 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleJobs(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browse/fetch":
-		s.handleBrowseFetch(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browse/sessions":
-		s.handleBrowseSessionStart(w, r)
-	case r.URL.Path == "/api/v1/browse/ws-sessions" ||
-		strings.HasPrefix(r.URL.Path, "/api/v1/browse/ws-sessions/"):
-		s.handleBrowseWSSession(w, r)
+	// Only the handoff lives on the panel origin. The browse endpoints
+	// themselves are routed exclusively by serveBrowseOrigin, which is what
+	// keeps them off the origin that holds an admin session.
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/browse/handoff":
+		s.handleBrowseHandoff(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"):
 		s.handleDesktopShortcutIcon(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
@@ -754,6 +781,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.clearAuthCookies(w, r)
+	// The browse origin's credential is independent by design — it has to be,
+	// or it would not be isolated — so logging out of the panel would
+	// otherwise leave a working egress session behind on the other origin.
+	s.revokeBrowseOriginSessionsForUser(session.User.ID)
 	_ = s.audit(r, session.User.ID, "auth.logout", "session", "", "success", nil)
 	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -1202,8 +1233,16 @@ func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
 		secureStringEqual(strings.ToLower(strings.TrimSpace(r.Host)), strings.ToLower(publicURL.Host))
 	_, trustedProxyOrigin := s.trustedProxyHTTPSOrigin(r)
 	_, allowedIPHost := directIPOrigin(r)
+	// The browse origin is accepted here but is *not* folded into
+	// hostIsAllowlisted: this admits the Host so ServeHTTP can route it to the
+	// restricted browse surface, whereas the allowlist additionally makes an
+	// Origin acceptable on panel endpoints (see originHostIsAllowlisted). The
+	// browse origin must never gain that, or content rewritten by the browse
+	// feature could call the panel API cross-origin and the split would buy
+	// nothing.
 	if !hostMatchesPublicURL && !trustedProxyOrigin &&
-		!(s.config.AllowIPHosts && allowedIPHost) && !s.hostIsAllowlisted(r) {
+		!(s.config.AllowIPHosts && allowedIPHost) && !s.hostIsAllowlisted(r) &&
+		!s.isBrowseOriginRequest(r) {
 		s.writeProblem(w, r, http.StatusMisdirectedRequest, "host_validation_failed", "Host validation failed", "")
 		return false
 	}
@@ -1267,8 +1306,54 @@ func normalizeAllowedHosts(input []string) ([]string, error) {
 }
 
 type allowedHostsResponse struct {
-	Hosts           []string `json:"hosts"`
-	ResourceVersion string   `json:"resourceVersion"`
+	Hosts                      []string `json:"hosts"`
+	BrowseOrigin               string   `json:"browseOrigin"`
+	BrowseAllowPrivateNetworks bool     `json:"browseAllowPrivateNetworks"`
+	ResourceVersion            string   `json:"resourceVersion"`
+}
+
+// normalizeBrowseOrigin validates the desktop browser's dedicated hostname.
+// The rules are not cosmetic — each one exists because breaking it silently
+// removes the isolation the second origin was added for (see
+// store.AllowedHosts.BrowseOrigin):
+//
+//   - It must differ from publicUrl's host and from every allowlist entry.
+//     Sharing a name with the panel puts browsed content back on the panel's
+//     origin, and listing it in the allowlist as well would make Origin
+//     validation accept it on panel endpoints.
+//   - publicUrl must be configured, because the browse origin's
+//     frame-ancestors has to name the panel origin for the iframe to load,
+//     and there is no other way to learn it.
+func normalizeBrowseOrigin(raw string, hosts []string, publicURL string) (string, error) {
+	origin := strings.ToLower(strings.TrimSpace(raw))
+	if origin == "" {
+		return "", nil
+	}
+	if strings.Contains(origin, "://") {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" {
+			return "", fmt.Errorf("%q 不是有效的域名", raw)
+		}
+		origin = parsed.Host
+	}
+	origin = strings.Trim(origin, "/")
+	if len(origin) > 253 || !allowedHostPattern.MatchString(origin) {
+		return "", fmt.Errorf("%q 不是有效的域名", raw)
+	}
+	if strings.TrimSpace(publicURL) == "" {
+		return "", errors.New("请先配置 publicUrl 后再设置浏览器专用域名")
+	}
+	parsedPublic, err := url.Parse(strings.TrimSpace(publicURL))
+	if err == nil && parsedPublic.Host != "" &&
+		strings.EqualFold(origin, parsedPublic.Host) {
+		return "", errors.New("浏览器专用域名必须和面板地址不同，否则隔离不成立")
+	}
+	for _, host := range hosts {
+		if strings.EqualFold(origin, strings.TrimSpace(host)) {
+			return "", errors.New("浏览器专用域名不能同时出现在面板访问域名列表里")
+		}
+	}
+	return origin, nil
 }
 
 // handleAllowedHostsSettings exposes the Host allowlist described on
@@ -1290,7 +1375,10 @@ func (s *Server) handleAllowedHostsSettings(w http.ResponseWriter, r *http.Reque
 	current, version := s.store.AllowedHosts()
 	if r.Method == http.MethodGet {
 		s.writeJSON(w, http.StatusOK, allowedHostsResponse{
-			Hosts: append([]string{}, current.Hosts...), ResourceVersion: version,
+			Hosts:                      append([]string{}, current.Hosts...),
+			BrowseOrigin:               current.BrowseOrigin,
+			BrowseAllowPrivateNetworks: current.BrowseAllowPrivateNetworks,
+			ResourceVersion:            version,
 		})
 		return
 	}
@@ -1300,8 +1388,10 @@ func (s *Server) handleAllowedHostsSettings(w http.ResponseWriter, r *http.Reque
 	}
 
 	var input struct {
-		Hosts                   []string `json:"hosts"`
-		ExpectedResourceVersion string   `json:"expectedResourceVersion"`
+		Hosts                      []string `json:"hosts"`
+		BrowseOrigin               string   `json:"browseOrigin"`
+		BrowseAllowPrivateNetworks bool     `json:"browseAllowPrivateNetworks"`
+		ExpectedResourceVersion    string   `json:"expectedResourceVersion"`
 	}
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return
@@ -1315,13 +1405,28 @@ func (s *Server) handleAllowedHostsSettings(w http.ResponseWriter, r *http.Reque
 		s.writeValidationProblem(w, r, "hosts", err.Error())
 		return
 	}
+	browseOrigin, err := normalizeBrowseOrigin(input.BrowseOrigin, hosts, s.config.PublicURL)
+	if err != nil {
+		s.writeValidationProblem(w, r, "browseOrigin", err.Error())
+		return
+	}
 
-	change := map[string]any{"count": len(hosts), "hosts": hosts}
+	// browseAllowPrivateNetworks is recorded because turning it on widens the
+	// browse egress to the server's own LAN; see
+	// store.AllowedHosts.BrowseAllowPrivateNetworks.
+	change := map[string]any{
+		"count": len(hosts), "hosts": hosts, "browseOrigin": browseOrigin,
+		"browseAllowPrivateNetworks": input.BrowseAllowPrivateNetworks,
+	}
 	if err := s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "intent", change); err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 		return
 	}
-	updated := store.AllowedHosts{Hosts: hosts, UpdatedAt: time.Now().UTC()}
+	updated := store.AllowedHosts{
+		Hosts: hosts, BrowseOrigin: browseOrigin,
+		BrowseAllowPrivateNetworks: input.BrowseAllowPrivateNetworks,
+		UpdatedAt:                  time.Now().UTC(),
+	}
 	if err := s.store.ReplaceAllowedHosts(input.ExpectedResourceVersion, updated); err != nil {
 		_ = s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "failure", change)
 		if errors.Is(err, store.ErrConflict) {
@@ -1334,7 +1439,10 @@ func (s *Server) handleAllowedHostsSettings(w http.ResponseWriter, r *http.Reque
 	_ = s.audit(r, session.User.ID, "settings.allowed_hosts.update", "panel", "allowed-hosts", "success", change)
 	value, newVersion := s.store.AllowedHosts()
 	s.writeJSON(w, http.StatusOK, allowedHostsResponse{
-		Hosts: append([]string{}, value.Hosts...), ResourceVersion: newVersion,
+		Hosts:                      append([]string{}, value.Hosts...),
+		BrowseOrigin:               value.BrowseOrigin,
+		BrowseAllowPrivateNetworks: value.BrowseAllowPrivateNetworks,
+		ResourceVersion:            newVersion,
 	})
 }
 
@@ -1550,18 +1658,17 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-// browserAppPathPrefixes are the static-asset paths that make up the
-// desktop "browser" feature's legacy Scramjet-based shell (see
-// web/public/browser-app, /scramjet, /controller, /scram, and the
-// service-worker entry point) — the one part of the site that needs a
-// relaxed security policy (see browserAppSecurityRelaxation) rather than
-// the site-wide default. Everything the shell fetches from KPanel's own
-// API still goes through the normal auth/CSRF/CSP-restricted paths; this
-// relaxation only covers the shell's own static files.
+// browserAppPathPrefixes are the static-asset paths that make up the desktop
+// "browser" feature's Scramjet-based shell (web/public/browser-app, /scramjet,
+// /controller, /scram, plus the service-worker entry point).
+//
+// These are served on the browse origin and 404 on the panel origin — see
+// browse_origin.go for why that split is the security control, and
+// isBrowseOriginStaticPath, which is the single definition both rules read.
 var browserAppPathPrefixes = []string{"/browser-app/", "/scramjet/", "/controller/", "/scram/"}
 
 func isBrowserAppPath(path string) bool {
-	if path == "/scramjet-sw.js" {
+	if path == browseServiceWorkerPath {
 		return true
 	}
 	for _, prefix := range browserAppPathPrefixes {
@@ -1572,30 +1679,32 @@ func isBrowserAppPath(path string) bool {
 	return false
 }
 
-// browserAppSecurityRelaxation loosens exactly two site-wide defaults, both
-// required for the vendored Scramjet rewriting engine to function and for
-// KPanel's own BrowserView.vue to embed it in an iframe:
-//   - script-src gains 'wasm-unsafe-eval' — scramjet.wasm is a WebAssembly
-//     rewriting engine; instantiating it is blocked by strict script-src
-//     without this token in Chromium/Firefox.
-//   - frame-ancestors/X-Frame-Options move from "nobody may frame this" to
-//     "only this same origin may frame this" — the browser window embeds
-//     /browser-app/index.html in a same-origin iframe by design.
-//
-// Nothing here weakens connect-src/img-src/object-src or grants any new
-// origin: nothing outside 'self' is ever added.
-func (s *Server) browserAppSecurityRelaxation(w http.ResponseWriter) {
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'self'; frame-src 'self' blob:; form-action 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
-	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+// panelContentSecurityPolicy builds the panel origin's policy. frame-src has
+// to name the browse origin whenever one is configured, because CSP needs
+// permission from both ends of an iframe: frame-ancestors on the browse origin
+// (browseOriginSecurityHeaders) says who may frame it, and frame-src here says
+// who this page may frame. Setting only the first half leaves the desktop
+// browser window blocked by the panel's own policy, which is exactly what
+// happens with a bare "frame-src 'self'" once the shell moved to its own
+// origin. connect-src stays 'self': the panel page never calls the browse
+// origin, the iframe does, on its own origin.
+func (s *Server) panelContentSecurityPolicy() string {
+	frameSrc := "'self' blob:"
+	if origin := s.browseOriginHost(); origin != "" {
+		frameSrc += " " + s.browseOriginScheme() + "://" + origin
+	}
+	return "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; frame-src " + frameSrc +
+		"; form-action 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'" +
+		"; img-src 'self' data:; connect-src 'self'"
 }
 
 func (s *Server) setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; frame-src 'self' blob:; form-action 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+	w.Header().Set("Content-Security-Policy", s.panelContentSecurityPolicy())
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
-	if isBrowserAppPath(r.URL.Path) {
-		s.browserAppSecurityRelaxation(w)
+	if s.isBrowseOriginRequest(r) {
+		s.browseOriginSecurityHeaders(w)
 	}
 	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")

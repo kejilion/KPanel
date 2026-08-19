@@ -34,6 +34,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace: mocks.replace }),
+  // The view reads route.query.focus so the browser window can send the
+  // operator straight to the browse-hostname field; no test drives that query,
+  // so an empty one is enough.
+  useRoute: () => ({ query: {} }),
 }))
 
 vi.mock('@/lib/api', () => ({

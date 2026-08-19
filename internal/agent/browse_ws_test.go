@@ -100,7 +100,7 @@ func TestBrowseWSManagerRelaysMessagesInOrderAndAcceptsInput(t *testing.T) {
 	})
 	manager := newTestBrowseWSManager(t, server)
 
-	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil)
+	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil, false)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestBrowseWSManagerCloseEndsSessionAndFailsFurtherCalls(t *testing.T) {
 	})
 	manager := newTestBrowseWSManager(t, server)
 
-	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil)
+	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil, false)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestBrowseWSManagerRejectsCrossOwnerAccess(t *testing.T) {
 	})
 	manager := newTestBrowseWSManager(t, server)
 
-	id, err := manager.Open(context.Background(), "owner-a", wsURLFor(t, server), nil)
+	id, err := manager.Open(context.Background(), "owner-a", wsURLFor(t, server), nil, false)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -206,7 +206,7 @@ func TestBrowseWSManagerReportsServerInitiatedClose(t *testing.T) {
 	})
 	manager := newTestBrowseWSManager(t, server)
 
-	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil)
+	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil, false)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -236,11 +236,11 @@ func TestBrowseWSManagerEnforcesSessionLimit(t *testing.T) {
 	target := wsURLFor(t, server)
 
 	for i := 0; i < maxBrowseWSSessions; i++ {
-		if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil); err != nil {
+		if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil, false); err != nil {
 			t.Fatalf("Open() call %d error = %v", i, err)
 		}
 	}
-	if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil); !errors.Is(err, errBrowseWSLimit) {
+	if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil, false); !errors.Is(err, errBrowseWSLimit) {
 		t.Fatalf("Open() beyond the limit error = %v, want errBrowseWSLimit", err)
 	}
 }
@@ -248,7 +248,7 @@ func TestBrowseWSManagerEnforcesSessionLimit(t *testing.T) {
 func TestBrowseWSManagerBlocksLoopbackTarget(t *testing.T) {
 	manager := newBrowseWSManager() // production dialer: real isBlockedIP, no test override
 	defer manager.CloseAll()
-	if _, err := manager.Open(context.Background(), testBrowseWSOwner, "ws://127.0.0.1:1/", nil); err == nil {
+	if _, err := manager.Open(context.Background(), testBrowseWSOwner, "ws://127.0.0.1:1/", nil, false); err == nil {
 		t.Fatal("expected a loopback target to be blocked")
 	}
 }
@@ -268,7 +268,7 @@ func TestBrowseWSManagerSlidingWindowEvictsOldestOnOverflow(t *testing.T) {
 		}
 	})
 	manager := newTestBrowseWSManager(t, server)
-	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil)
+	id, err := manager.Open(context.Background(), testBrowseWSOwner, wsURLFor(t, server), nil, false)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -441,5 +441,39 @@ func TestBrowseWSHandlersFullLifecycle(t *testing.T) {
 	server.ServeHTTP(closeResponse, closeRequest)
 	if closeResponse.Code != http.StatusOK {
 		t.Fatalf("close status = %d body=%s", closeResponse.Code, closeResponse.Body.String())
+	}
+}
+
+// TestBrowseWSManagerPrivateNetworkOptIn pairs with
+// TestBrowseWSManagerBlocksLoopbackTarget above: same production manager, no
+// injected dialer, only the opt-in flag differs.
+func TestBrowseWSManagerPrivateNetworkOptIn(t *testing.T) {
+	server := newBrowseWSTestServer(t, func(conn *websocket.Conn) {
+		ctx := context.Background()
+		for {
+			if _, _, err := conn.Read(ctx); err != nil {
+				return
+			}
+		}
+	})
+	manager := newBrowseWSManager() // production dialer on both clients
+	defer manager.CloseAll()
+
+	target := "ws://" + strings.TrimPrefix(server.URL, "http://") + "/"
+	if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil, true); err != nil {
+		t.Fatalf("Open() with the private-network opt-in error = %v, want success", err)
+	}
+	if _, err := manager.Open(context.Background(), testBrowseWSOwner, target, nil, false); err == nil {
+		t.Fatal("expected the same loopback target to stay blocked without the opt-in")
+	}
+}
+
+// TestBrowseWSManagerStillBlocksLinkLocalWhenPrivateNetworksAreAllowed locks
+// the one address range the opt-in deliberately does not unblock.
+func TestBrowseWSManagerStillBlocksLinkLocalWhenPrivateNetworksAreAllowed(t *testing.T) {
+	manager := newBrowseWSManager()
+	defer manager.CloseAll()
+	if _, err := manager.Open(context.Background(), testBrowseWSOwner, "ws://169.254.169.254:80/", nil, true); err == nil {
+		t.Fatal("expected the cloud metadata address to stay blocked even with the opt-in")
 	}
 }

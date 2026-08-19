@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog(() => import('@/i18n/pages/SettingsView/en-US').then((module) => module.default))
@@ -35,6 +35,7 @@ import { useI18n } from '@/i18n'
 import type { AllowedHostsSettings, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const router = useRouter()
+const route = useRoute()
 const session = useSession()
 const panel = usePanelState()
 const theme = useTheme()
@@ -60,6 +61,13 @@ const securityEntry = ref<{ enabled: boolean; path?: string; resourceVersion: st
 const securityEntryPath = ref('')
 const allowedHosts = ref<AllowedHostsSettings>()
 const allowedHostsDraft = ref('')
+const browseOriginDraft = ref('')
+const browseAllowPrivateNetworksDraft = ref(false)
+// The browser window links here with ?focus=browse-origin when the operator
+// has not set a browse hostname yet. Scrolling and briefly highlighting the
+// field is the difference between "go to settings" and "go to this box".
+const browseOriginInput = ref<HTMLInputElement>()
+const browseOriginHighlighted = ref(false)
 const savingAllowedHosts = ref(false)
 const allowedHostsError = ref('')
 const savingSecurityEntry = ref(false)
@@ -216,12 +224,16 @@ function parseAllowedHostsDraft(value: string): string[] {
 const allowedHostsDirty = computed(
   () =>
     Boolean(allowedHosts.value) &&
-    parseAllowedHostsDraft(allowedHostsDraft.value).join('\n') !== (allowedHosts.value?.hosts ?? []).join('\n'),
+    (parseAllowedHostsDraft(allowedHostsDraft.value).join('\n') !== (allowedHosts.value?.hosts ?? []).join('\n') ||
+      browseOriginDraft.value.trim() !== (allowedHosts.value?.browseOrigin ?? '') ||
+      browseAllowPrivateNetworksDraft.value !== (allowedHosts.value?.browseAllowPrivateNetworks ?? false)),
 )
 
 function applyAllowedHosts(value: AllowedHostsSettings): void {
   allowedHosts.value = value
   allowedHostsDraft.value = value.hosts.join('\n')
+  browseOriginDraft.value = value.browseOrigin
+  browseAllowPrivateNetworksDraft.value = value.browseAllowPrivateNetworks
 }
 
 function resetAllowedHostsDraft(): void {
@@ -236,6 +248,8 @@ async function saveAllowedHosts(): Promise<void> {
   try {
     const updated = await api.settings.allowedHosts.update({
       hosts: parseAllowedHostsDraft(allowedHostsDraft.value),
+      browseOrigin: browseOriginDraft.value.trim(),
+      browseAllowPrivateNetworks: browseAllowPrivateNetworksDraft.value,
       expectedResourceVersion: allowedHosts.value.resourceVersion,
     })
     applyAllowedHosts(updated)
@@ -413,7 +427,24 @@ onMounted(async () => {
   } else {
     totpStatusError.value = totpResult.reason instanceof ApiError ? totpResult.reason.message : '无法读取两步验证状态。'
   }
+  if (route.query.focus === 'browse-origin') await revealBrowseOriginField()
 })
+
+// revealBrowseOriginField waits a tick so the card has rendered (the whole
+// form is behind v-if="allowedHosts"), scrolls the field into the middle of
+// the viewport and pulses it. The highlight class is removed again so a later
+// visit does not arrive pre-highlighted.
+async function revealBrowseOriginField(): Promise<void> {
+  await nextTick()
+  const input = browseOriginInput.value
+  if (!input) return
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  browseOriginHighlighted.value = true
+  input.focus({ preventScroll: true })
+  window.setTimeout(() => {
+    browseOriginHighlighted.value = false
+  }, 2400)
+}
 </script>
 
 <template>
@@ -602,17 +633,47 @@ onMounted(async () => {
         />
       </header>
       <div v-if="allowedHosts" class="allowed-hosts-form">
-        <label class="field allowed-hosts-field">
-          <span>域名列表（每行一个，可带端口）</span>
-          <textarea
-            v-model="allowedHostsDraft"
-            rows="4"
-            spellcheck="false"
-            autocomplete="off"
-            autocapitalize="off"
-            autocorrect="off"
-            placeholder="panel.example.com&#10;panel.example.com:8443"
-          ></textarea>
+        <div class="allowed-hosts-columns">
+          <label class="field allowed-hosts-field">
+            <span>面板域名（每行一个，可带端口）</span>
+            <textarea
+              v-model="allowedHostsDraft"
+              rows="4"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              placeholder="panel.example.com&#10;panel.example.com:8443"
+            ></textarea>
+            <small>访问面板本身用的域名。</small>
+          </label>
+          <label
+            class="field allowed-hosts-field"
+            :class="{ 'allowed-hosts-field--highlight': browseOriginHighlighted }"
+          >
+            <span>浏览器专用域名</span>
+            <input
+              ref="browseOriginInput"
+              v-model="browseOriginDraft"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              placeholder="browse.example.com"
+            />
+            <small>只给桌面浏览器用，必须和左边不同。留空则关闭浏览器功能。</small>
+          </label>
+        </div>
+        <label class="allowed-hosts-toggle">
+          <input v-model="browseAllowPrivateNetworksDraft" type="checkbox" />
+          <span>
+            <strong>允许浏览器访问本机与局域网</strong>
+            <small>
+              开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器
+              探测内网，因此默认关闭。云 metadata 地址 169.254.169.254 始终拦截。
+            </small>
+          </span>
         </label>
         <div v-if="allowedHostsError" class="inline-alert inline-alert--danger">
           <span>{{ allowedHostsError }}</span>
@@ -639,8 +700,12 @@ onMounted(async () => {
       </div>
       <p v-else class="settings-note">正在读取访问域名…</p>
       <p class="settings-note">
-        只做精确匹配，不支持 <code>*.example.com</code> 这类通配写法：域名校验正是阻挡 DNS
+        只做精确匹配，不支持 *.example.com 这类通配写法：域名校验正是阻挡 DNS
         重绑定和 Host 头伪造的防线，通配会让它失效。留空表示只允许配置文件里的公开地址（以及本机 IP，若已开启）。
+      </p>
+      <p class="settings-note">
+        浏览器专用域名必须单独一个，不能写进左边的列表：被浏览的网页会在它所在的域名下执行，
+        和面板同域时它就能读到面板的登录状态并调用面板接口。两个域名可以指向同一台服务器、同一个端口。
       </p>
     </section>
 
@@ -904,14 +969,90 @@ onMounted(async () => {
   padding: 18px;
 }
 
+/* Two independent settings that must never be merged: the left column widens
+   what reaches the panel, the right names an origin that must reach only the
+   browser. Keeping them side by side makes the "these are different things"
+   point visually, and align-items: start lets the single-line field on the
+   right sit level with the top of the list on the left. */
+.allowed-hosts-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+  gap: 12px 18px;
+}
+
 /* Hostnames are read character by character when auditing an allowlist, so the
-   editor uses the same monospace treatment as the rest of the panel's literals. */
-.allowed-hosts-field textarea {
-  min-height: 108px;
+   editors use the same monospace treatment as the rest of the panel's literals. */
+.allowed-hosts-field textarea,
+.allowed-hosts-field input {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   font-weight: 450;
   line-height: 1.7;
+}
+
+.allowed-hosts-field textarea {
+  min-height: 108px;
+}
+
+.allowed-hosts-field small {
+  color: var(--color-text-muted, #5f6368);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* The LAN opt-in sits below the two hostname columns rather than beside them:
+   it is a security relaxation, not a third address field, and reads as one. */
+/* Pulses the browse-hostname field when the browser window sends the operator
+   here to fill it in. Uses outline rather than border so the box does not
+   shift as it animates. */
+.allowed-hosts-field--highlight input {
+  animation: allowed-hosts-pulse 800ms ease-out 3;
+  border-radius: 8px;
+}
+
+@keyframes allowed-hosts-pulse {
+  0% {
+    outline: 2px solid rgba(52, 168, 83, 0);
+    outline-offset: 2px;
+  }
+  40% {
+    outline: 2px solid rgba(52, 168, 83, 0.85);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 2px solid rgba(52, 168, 83, 0);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .allowed-hosts-field--highlight input {
+    animation: none;
+    outline: 2px solid rgba(52, 168, 83, 0.85);
+    outline-offset: 3px;
+  }
+}
+
+.allowed-hosts-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+}
+
+.allowed-hosts-toggle input {
+  margin-top: 3px;
+}
+
+.allowed-hosts-toggle span {
+  display: grid;
+  gap: 4px;
+}
+
+.allowed-hosts-toggle small {
+  color: var(--color-text-muted, #5f6368);
+  line-height: 1.6;
 }
 
 .allowed-hosts-actions {

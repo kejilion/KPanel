@@ -8,26 +8,52 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
-// The browse tests run against a loopback public origin. Nothing in the
-// handlers requires it — the server does no secure-context check (see the
-// note in browse.go) — it simply mirrors the origin a developer actually
-// reaches these endpoints from.
-const browseTestOrigin = "http://localhost"
-const browseTestHost = "localhost"
+// The browse tests exercise two origins, because the feature is defined by the
+// split between them (see internal/panel/browse_origin.go): the panel answers
+// on browseTestPanelHost, and the browse shell plus every browse endpoint
+// answers only on browseTestHost. Both are loopback names, which is also the
+// pair a developer actually reaches these endpoints from.
+const (
+	browseTestPanelOrigin = "http://localhost"
+	browseTestPanelHost   = "localhost"
+	browseTestOrigin      = "http://browse.localhost"
+	browseTestHost        = "browse.localhost"
+)
 
 func newBrowseTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	return newTestServerWithPublicURL(t, browseTestOrigin)
+	server, tokenPath := newTestServerWithPublicURL(t, browseTestPanelOrigin)
+	_, version := server.store.AllowedHosts()
+	if err := server.store.ReplaceAllowedHosts(version, store.AllowedHosts{
+		BrowseOrigin: browseTestHost, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("configure browse origin: %v", err)
+	}
+	return server, tokenPath
 }
 
+// bootstrapBrowseCookies returns the *browse origin's* credentials, not the
+// panel's. It walks the real crossing — bootstrap an admin on the panel
+// origin, mint a handoff ticket there, redeem it on the browse origin — so
+// every test that calls it proves that path still works, and none of them can
+// accidentally authenticate a browse endpoint with a panel session.
 func bootstrapBrowseCookies(t *testing.T, server *Server, tokenPath string) (*http.Cookie, *http.Cookie) {
+	t.Helper()
+	sessionCookie, csrfCookie := bootstrapPanelCookies(t, server, tokenPath)
+	return browseHandoffCookies(t, server, sessionCookie, csrfCookie)
+}
+
+func bootstrapPanelCookies(t *testing.T, server *Server, tokenPath string) (*http.Cookie, *http.Cookie) {
 	t.Helper()
 	token, err := os.ReadFile(tokenPath)
 	if err != nil {
@@ -40,12 +66,54 @@ func bootstrapBrowseCookies(t *testing.T, server *Server, tokenPath string) (*ht
 		t.Fatal(err)
 	}
 	response := browsePerformRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
-		"Content-Type": "application/json", "Origin": browseTestOrigin,
+		"Content-Type": "application/json", "Origin": browseTestPanelOrigin, "Host": browseTestPanelHost,
 	})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("bootstrap failed: %d %s", response.Code, response.Body.String())
 	}
 	return authCookies(t, response)
+}
+
+func browseHandoffCookies(
+	t *testing.T,
+	server *Server,
+	sessionCookie, csrfCookie *http.Cookie,
+) (*http.Cookie, *http.Cookie) {
+	t.Helper()
+	minted := browseRequest(server, http.MethodPost, "/api/v1/browse/handoff", nil,
+		sessionCookie, csrfCookie, map[string]string{
+			"Host": browseTestPanelHost, "Origin": browseTestPanelOrigin,
+			"X-CSRF-Token": csrfCookie.Value,
+		})
+	if minted.Code != http.StatusCreated {
+		t.Fatalf("handoff failed: %d %s", minted.Code, minted.Body.String())
+	}
+	var handoff browseHandoffResponse
+	if err := json.Unmarshal(minted.Body.Bytes(), &handoff); err != nil {
+		t.Fatalf("decode handoff: %v", err)
+	}
+	target, err := url.Parse(handoff.URL)
+	if err != nil {
+		t.Fatalf("parse handoff url: %v", err)
+	}
+	entered := browsePerformRequest(server, http.MethodGet,
+		browseEnterPath+"?"+target.RawQuery, nil, nil)
+	if entered.Code != http.StatusSeeOther {
+		t.Fatalf("enter failed: %d %s", entered.Code, entered.Body.String())
+	}
+	var browseSession, browseCSRF *http.Cookie
+	for _, cookie := range entered.Result().Cookies() {
+		switch cookie.Name {
+		case browseSessionCookieName:
+			browseSession = cookie
+		case browseCSRFCookieName:
+			browseCSRF = cookie
+		}
+	}
+	if browseSession == nil || browseCSRF == nil {
+		t.Fatal("enter did not set both browse cookies")
+	}
+	return browseSession, browseCSRF
 }
 
 func browsePerformRequest(handler http.Handler, method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
@@ -93,7 +161,7 @@ func TestHandleBrowseFetchRejectsUnauthenticated(t *testing.T) {
 	server, _ := newBrowseTestServer(t)
 	body, _ := json.Marshal(browseFetchRequest{URL: "https://example.com/"})
 	response := browsePerformRequest(server, http.MethodPost, "/api/v1/browse/fetch", body, map[string]string{
-		"Content-Type": "application/json", "Origin": "http://localhost",
+		"Content-Type": "application/json", "Origin": browseTestOrigin,
 	})
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -106,7 +174,7 @@ func TestHandleBrowseFetchRejectsMissingCSRF(t *testing.T) {
 	body, _ := json.Marshal(browseFetchRequest{URL: "https://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost",
+			"Content-Type": "application/json", "Origin": browseTestOrigin,
 			// X-CSRF-Token intentionally omitted.
 		})
 	if response.Code != http.StatusForbidden {
@@ -128,7 +196,7 @@ func TestHandleBrowseFetchUnknownHostRejected(t *testing.T) {
 	body, _ := json.Marshal(browseFetchRequest{HostID: "does-not-exist", URL: "https://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -164,7 +232,7 @@ func TestHandleBrowseFetchDefaultsToLocalHostAndRelaysThroughAgent(t *testing.T)
 	})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -208,7 +276,7 @@ func TestHandleBrowseFetchExplicitLocalHostID(t *testing.T) {
 	body, _ := json.Marshal(browseFetchRequest{HostID: "local", URL: "https://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -219,7 +287,7 @@ func TestHandleBrowseSessionStartRejectsUnauthenticated(t *testing.T) {
 	server, _ := newBrowseTestServer(t)
 	body, _ := json.Marshal(browseSessionStartRequest{})
 	response := browsePerformRequest(server, http.MethodPost, "/api/v1/browse/sessions", body, map[string]string{
-		"Content-Type": "application/json", "Origin": "http://localhost",
+		"Content-Type": "application/json", "Origin": browseTestOrigin,
 	})
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -232,7 +300,7 @@ func TestHandleBrowseSessionStartUnknownHostRejected(t *testing.T) {
 	body, _ := json.Marshal(browseSessionStartRequest{HostID: "does-not-exist"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/sessions", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -248,7 +316,7 @@ func TestHandleBrowseSessionStartRecordsOneAuditEntryPerSessionNotPerFetch(t *te
 	startBody, _ := json.Marshal(browseSessionStartRequest{HostID: "local"})
 	start := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/sessions", startBody,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if start.Code != http.StatusCreated {
 		t.Fatalf("session start status = %d body=%s", start.Code, start.Body.String())
@@ -263,7 +331,7 @@ func TestHandleBrowseSessionStartRecordsOneAuditEntryPerSessionNotPerFetch(t *te
 		fetchBody, _ := json.Marshal(browseFetchRequest{HostID: "local", URL: "https://example.com/asset"})
 		fetch := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", fetchBody,
 			sessionCookie, csrfCookie, map[string]string{
-				"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+				"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 			})
 		if fetch.Code != http.StatusOK {
 			t.Fatalf("fetch %d status = %d body=%s", i, fetch.Code, fetch.Body.String())
@@ -297,7 +365,7 @@ func TestHandleBrowseFetchAgentFailureSurfacesAsServiceUnavailable(t *testing.T)
 	body, _ := json.Marshal(browseFetchRequest{URL: "https://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -392,5 +460,121 @@ func TestDrainFederatedBrowseFetchStopsAtIterationSafetyValve(t *testing.T) {
 	}
 	if !closeCalled {
 		t.Fatal("Close must be called when the safety valve trips")
+	}
+}
+
+// enableBrowsePrivateNetworks flips this host's LAN-egress opt-in the same way
+// the settings endpoint does, preserving the rest of the AllowedHosts record.
+func enableBrowsePrivateNetworks(t *testing.T, server *Server) {
+	t.Helper()
+	current, version := server.store.AllowedHosts()
+	current.BrowseAllowPrivateNetworks = true
+	current.UpdatedAt = time.Now().UTC()
+	if err := server.store.ReplaceAllowedHosts(version, current); err != nil {
+		t.Fatalf("enable browse private networks: %v", err)
+	}
+}
+
+func forwardedBrowseFetchPayload(t *testing.T, agent *stubAgent) map[string]any {
+	t.Helper()
+	for _, call := range agent.snapshotCalls() {
+		if call.path != "/v1/browse/fetch" {
+			continue
+		}
+		var forwarded map[string]any
+		if err := json.Unmarshal(call.body, &forwarded); err != nil {
+			t.Fatal(err)
+		}
+		return forwarded
+	}
+	t.Fatal("handler never called the agent's browse fetch endpoint")
+	return nil
+}
+
+// TestBrowseFetchForwardsThePrivateNetworkOptIn covers the local-hostID path:
+// the flag must come from this host's own store, never from the request, so a
+// browsed page cannot ask for the relaxation itself.
+func TestBrowseFetchForwardsThePrivateNetworkOptIn(t *testing.T) {
+	fetch := func(t *testing.T, optIn bool) map[string]any {
+		t.Helper()
+		server, tokenPath := newBrowseTestServer(t)
+		sessionCookie, csrfCookie := bootstrapBrowseCookies(t, server, tokenPath)
+		if optIn {
+			enableBrowsePrivateNetworks(t, server)
+		}
+		agentOutput, _ := json.Marshal(map[string]any{
+			"statusCode": 200, "headers": map[string][]string{}, "body": "",
+		})
+		agent := &stubAgent{response: AgentResponse{
+			StatusCode: http.StatusOK, ContentType: "application/json", Body: agentOutput,
+		}}
+		server.agent = agent
+
+		body := []byte(`{"url":"https://example.com/","method":"GET"}`)
+		response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
+			sessionCookie, csrfCookie, map[string]string{
+				"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
+			})
+		if response.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+		}
+		return forwardedBrowseFetchPayload(t, agent)
+	}
+
+	t.Run("off by default and not settable by the caller", func(t *testing.T) {
+		forwarded := fetch(t, false)
+		if value, present := forwarded["allowPrivateNetwork"]; present && value != false {
+			t.Fatalf("allowPrivateNetwork = %v, want absent or false", value)
+		}
+	})
+
+	t.Run("on when the egress host opted in", func(t *testing.T) {
+		forwarded := fetch(t, true)
+		if forwarded["allowPrivateNetwork"] != true {
+			t.Fatalf("allowPrivateNetwork = %v, want true", forwarded["allowPrivateNetwork"])
+		}
+	})
+
+	// browseFetchRequest has no allowPrivateNetwork field and decodeJSON
+	// rejects unknown ones, so a browsed page cannot ask for the relaxation
+	// even by hand-rolling the request body.
+	t.Run("rejected when the caller tries to set it", func(t *testing.T) {
+		server, tokenPath := newBrowseTestServer(t)
+		sessionCookie, csrfCookie := bootstrapBrowseCookies(t, server, tokenPath)
+		server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK}}
+		body := []byte(`{"url":"https://example.com/","method":"GET","allowPrivateNetwork":true}`)
+		response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/fetch", body,
+			sessionCookie, csrfCookie, map[string]string{
+				"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
+			})
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d body=%s, want 400", response.Code, response.Body.String())
+		}
+	})
+}
+
+// TestFederatedBrowseFetchUsesTheEgressHostOwnOptIn is the point of keeping the
+// flag off cluster.BrowseFetchRequest: a controlling panel sends a request with
+// no such field, and the node performing the egress answers with its own
+// setting.
+func TestFederatedBrowseFetchUsesTheEgressHostOwnOptIn(t *testing.T) {
+	server, _ := newBrowseTestServer(t)
+	enableBrowsePrivateNetworks(t, server)
+
+	agentOutput, _ := json.Marshal(map[string]any{
+		"statusCode": 200, "headers": map[string][]string{}, "body": "",
+	})
+	agent := &stubAgent{response: AgentResponse{
+		StatusCode: http.StatusOK, ContentType: "application/json", Body: agentOutput,
+	}}
+
+	source := clusterBrowseSource{agent: agent, store: server.store}
+	if _, err := source.Fetch(context.Background(), cluster.BrowseFetchRequest{
+		URL: "https://example.com/", Method: http.MethodGet,
+	}); err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if forwarded := forwardedBrowseFetchPayload(t, agent); forwarded["allowPrivateNetwork"] != true {
+		t.Fatalf("allowPrivateNetwork = %v, want true", forwarded["allowPrivateNetwork"])
 	}
 }

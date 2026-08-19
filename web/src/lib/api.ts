@@ -1844,6 +1844,14 @@ export const api = {
       }
     },
   },
+	browse: {
+		/**
+		 * Trades the panel session for a single-use ticket and returns the URL
+		 * on the browse origin that redeems it. This is the only crossing
+		 * between the two origins; see internal/panel/browse_origin.go.
+		 */
+		handoff: () => request<{ url: string }>('/browse/handoff', { method: 'POST' }),
+	},
 	settings: {
     get: (signal?: AbortSignal) => request<PanelSettings>('/settings', { signal }),
 	securityEntrance: {
@@ -1857,7 +1865,12 @@ export const api = {
 	},
 	allowedHosts: {
 		get: () => request<AllowedHostsSettings>('/settings/allowed-hosts'),
-		update: (input: { hosts: string[]; expectedResourceVersion: string }) =>
+		update: (input: {
+			hosts: string[]
+			browseOrigin: string
+			browseAllowPrivateNetworks: boolean
+			expectedResourceVersion: string
+		}) =>
 			request<AllowedHostsSettings>('/settings/allowed-hosts', { method: 'PUT', body: input }),
 	},
 	totp: {

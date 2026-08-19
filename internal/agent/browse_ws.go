@@ -37,6 +37,10 @@ type browseWSManager struct {
 	stop       chan struct{}
 	stopOnce   sync.Once
 	httpClient *http.Client
+	// lanHTTPClient is httpClient's counterpart with the private-address
+	// guard relaxed; see browseHTTPClient in browse.go for why both are
+	// built once instead of one being rebuilt per dial.
+	lanHTTPClient *http.Client
 }
 
 type browseWSMessage struct {
@@ -87,7 +91,8 @@ var browseWSHopByHopHeaders = []string{
 func newBrowseWSManager() *browseWSManager {
 	m := &browseWSManager{
 		sessions: make(map[string]*browseWSSession), stop: make(chan struct{}),
-		httpClient: newBrowseHTTPClient(),
+		httpClient:    newBrowseHTTPClient(false),
+		lanHTTPClient: newBrowseHTTPClient(true),
 	}
 	go m.reapLoop()
 	return m
@@ -149,7 +154,7 @@ func browseWSDialHeader(input map[string][]string) (http.Header, error) {
 // inbound messages into the session's sliding buffer. The dial itself is
 // bounded by ctx, but the connection's lifetime is not tied to the request
 // that opened it — background context, released only by Close or reaping.
-func (m *browseWSManager) Open(ctx context.Context, owner, targetURL string, headers map[string][]string) (string, error) {
+func (m *browseWSManager) Open(ctx context.Context, owner, targetURL string, headers map[string][]string, allowPrivate bool) (string, error) {
 	owner = strings.TrimSpace(owner)
 	target, err := validateBrowseWSURL(targetURL)
 	if err != nil {
@@ -169,8 +174,12 @@ func (m *browseWSManager) Open(ctx context.Context, owner, targetURL string, hea
 
 	dialCtx, dialCancel := context.WithTimeout(ctx, browseWSDialTimeout)
 	defer dialCancel()
+	client := m.httpClient
+	if allowPrivate && m.lanHTTPClient != nil {
+		client = m.lanHTTPClient
+	}
 	conn, _, err := websocket.Dial(dialCtx, target.String(), &websocket.DialOptions{
-		HTTPClient: m.httpClient,
+		HTTPClient: client,
 		HTTPHeader: header,
 	})
 	if err != nil {
@@ -411,6 +420,9 @@ type browseWSOpenInput struct {
 	Owner   string              `json:"owner"`
 	URL     string              `json:"url"`
 	Headers map[string][]string `json:"headers,omitempty"`
+	// AllowPrivateNetwork mirrors browseFetchInput's field of the same name,
+	// including where it is allowed to come from.
+	AllowPrivateNetwork bool `json:"allowPrivateNetwork,omitempty"`
 }
 
 type browseWSOpenOutput struct {
@@ -449,7 +461,7 @@ func (s *Server) browseWSOpen(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &input); err != nil {
 		return
 	}
-	id, err := s.browseWS.Open(r.Context(), input.Owner, input.URL, input.Headers)
+	id, err := s.browseWS.Open(r.Context(), input.Owner, input.URL, input.Headers, input.AllowPrivateNetwork)
 	if err != nil {
 		status, code := browseWSErrorStatus(err)
 		writeProblem(w, requestID, status, code, "浏览 WebSocket 打开失败", safeDetail(err))
