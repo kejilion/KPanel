@@ -124,6 +124,27 @@ func TestDockerSocketContainerRemainsManageable(t *testing.T) {
 	}
 }
 
+func TestContainerSummaryExposesCreatedAt(t *testing.T) {
+	client := &Client{}
+	raw := managedInspect(strings.Repeat("9", 64), "2026-01-01T00:00:00Z", 0)
+	raw.Created = "2026-08-18T10:00:00.123456789Z"
+
+	summary := client.summaryFromInspect(raw)
+	if summary.CreatedAt == nil || !summary.CreatedAt.Equal(time.Date(2026, 8, 18, 10, 0, 0, 123456789, time.UTC)) {
+		t.Fatalf("createdAt = %v, want Docker inspect creation time", summary.CreatedAt)
+	}
+}
+
+func TestContainerListSummaryFallsBackToCreatedAt(t *testing.T) {
+	client := &Client{}
+	raw := containerListItem{ID: strings.Repeat("a", 64), Names: []string{"/fallback"}, Created: 1_755_520_800}
+
+	summary := client.summaryFromList(raw)
+	if summary.CreatedAt == nil || !summary.CreatedAt.Equal(time.Unix(raw.Created, 0).UTC()) {
+		t.Fatalf("createdAt = %v, want list timestamp", summary.CreatedAt)
+	}
+}
+
 func TestDemuxAndRedactLogs(t *testing.T) {
 	payload := []byte("token=super-secret\nhttps://user:pass@example.test/path\n")
 	var stream bytes.Buffer

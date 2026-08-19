@@ -15,6 +15,7 @@ declare module 'vue-router' {
     titleKey?: MessageKey
     public?: boolean
     guestOnly?: boolean
+    skipSessionCheck?: boolean
   }
 }
 
@@ -33,6 +34,12 @@ export const router = createRouter({
       name: 'login',
       component: () => loadNavigationRoute('/login'),
       meta: { titleKey: 'route.login', public: true, guestOnly: true },
+    },
+    {
+      path: '/share/:token',
+      name: 'cluster-share',
+      component: () => import('@/views/ClusterShareView.vue'),
+      meta: { titleKey: 'route.clusterShare', public: true, skipSessionCheck: true },
     },
     {
       path: '/',
@@ -157,6 +164,7 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   beginRouteNavigation(to.path)
+  if (to.meta.skipSessionCheck) return true
   const session = useSession()
   if (!session.state.checked) await session.refresh()
 

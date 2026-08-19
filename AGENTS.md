@@ -9,7 +9,7 @@
 4. `.codex-workflows/`：Codex 可发现的参数化执行适配，不是第二套规范。
 
 不机械地在每个小任务完整重读三份长文。先读本入口和
-`docs/product-quality-review-2026-08-13.md` 定位业务域，再按风险加载：L0 只读受影响文档与相关规则；
+`docs/product-quality-review-current.md` 定位业务域，再按风险加载：L0 只读受影响文档与相关规则；
 L1 读取 `PROJECT_RULES.md` 的工程契约、产品质量和核验分级及领域文档；L2 完整读取
 `PROJECT_RULES.md` 与项目管理的任务/验证/集成章节；L3 或规范架构变更完整读取前三项和相关工作流。
 已有精确证据足够时禁止重复全仓扫描。

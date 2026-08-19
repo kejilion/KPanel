@@ -124,6 +124,7 @@ func (r *serviceRouteRemote) Summary(
 	if err := SignRequest(request, controllerID, targetID, privateKey, now, nonce); err != nil {
 		return FederationSummary{}, err
 	}
+	request.Header.Set(FederationCapabilitiesHeader, SecurityEntrancePathCapability)
 	return target.SignedSummary(ctx, request)
 }
 
@@ -192,6 +193,7 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	remote := &serviceRouteRemote{routes: make(map[string]*Service)}
 	controller := newServiceForFederationTest(t, remote, clock.Now, "controller")
 	target := newServiceForFederationTest(t, remote, clock.Now, "target")
+	target.securityEntrancePath = func() string { return "panel-secure1" }
 	remote.Add("https://target.example", target)
 
 	code, err := target.CreatePairingCode()
@@ -214,6 +216,9 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	}
 	if host.LastSnapshot.Telemetry.Hostname != "target" {
 		t.Fatalf("unexpected remote telemetry: %#v", host.LastSnapshot.Telemetry)
+	}
+	if host.SecurityEntrancePath != "panel-secure1" {
+		t.Fatalf("security entrance path was not synchronized: %#v", host)
 	}
 	inventory := controller.Hosts(context.Background())
 	if inventory.Total != 2 || inventory.RemoteTotal != 1 ||
@@ -269,8 +274,12 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	if _, err := target.SignedSummary(context.Background(), chunked); !errors.Is(err, ErrAuthentication) {
 		t.Fatalf("chunked SignedSummary() error = %v, want ErrAuthentication", err)
 	}
-	if _, err := target.SignedSummary(context.Background(), request); err != nil {
+	legacySummary, err := target.SignedSummary(context.Background(), request)
+	if err != nil {
 		t.Fatalf("SignedSummary() error = %v", err)
+	}
+	if legacySummary.SecurityEntrancePath != "" {
+		t.Fatalf("legacy controller received an incompatible optional field: %#v", legacySummary)
 	}
 	if _, err := target.SignedSummary(context.Background(), request); !errors.Is(err, ErrReplay) {
 		t.Fatalf("replayed SignedSummary() error = %v, want ErrReplay", err)
@@ -290,6 +299,54 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	}
 	if controller.Hosts(context.Background()).RemoteTotal != 0 {
 		t.Fatal("deleted host remains in controller inventory")
+	}
+}
+
+func TestFederationSummarySecurityEntrancePathValidation(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	base := FederationSummary{
+		NodeID:             "abcdefabcdefabcdefabcdefabcdefab",
+		PanelVersion:       "v0.80.0",
+		FederationProtocol: FederationProtocol,
+		Telemetry:          serviceTelemetry(now, "target"),
+	}
+	for _, test := range []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "valid", path: "panel-secure1"},
+		{name: "leading slash", path: "/panel-secure1", wantErr: true},
+		{name: "uppercase", path: "Panel-secure1", wantErr: true},
+		{name: "too long", path: strings.Repeat("a", 49), wantErr: true},
+		{name: "absolute URL", path: "https://attacker.example", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			summary := base
+			summary.SecurityEntrancePath = test.path
+			err := validateFederationSummary(summary, base.NodeID, now)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateFederationSummary() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestSecurityEntrancePathResponseRequiresDeclaredCapability(t *testing.T) {
+	service := &Service{securityEntrancePath: func() string { return "panel-secure1" }}
+	if got := service.responseSecurityEntrancePath(""); got != "" {
+		t.Fatalf("path without capability = %q, want empty", got)
+	}
+	if got := service.responseSecurityEntrancePath("future-v1, " + SecurityEntrancePathCapability); got != "panel-secure1" {
+		t.Fatalf("path with capability = %q", got)
+	}
+	service.securityEntrancePath = func() string { return "//attacker.example" }
+	if got := service.responseSecurityEntrancePath(SecurityEntrancePathCapability); got != "" {
+		t.Fatalf("invalid configured path = %q, want empty", got)
+	}
+	if hasFederationCapability(strings.Repeat("x", 257), SecurityEntrancePathCapability) {
+		t.Fatal("oversized capability header was accepted")
 	}
 }
 

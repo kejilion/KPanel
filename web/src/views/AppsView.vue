@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/AppsView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/AppsView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/AppsView/zh-TW').then((module) => module.default))
 import {
   ArrowUpRight,
   Activity,
@@ -92,6 +94,8 @@ let recentInstalledTimer: number | undefined
 const activeJobStorageKey = 'kpanel:active-app-job'
 const activeJobPollDelay = 2_000
 const backgroundJobPollDelay = 15_000
+const millisecondsPerDay = 86_400_000
+const newAppWindowDays = 60
 
 const selected = computed(() => inventory.value?.items.find((item) => item.id === selectedID.value))
 const selectedPort = computed(() =>
@@ -110,11 +114,43 @@ const activeJobCancellable = computed(
     activeJob.value?.stage !== 'cancelling',
 )
 
+function catalogEpochDay(value?: string): number | undefined {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
+  const timestamp = Date.parse(`${value}T00:00:00Z`)
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) {
+    return undefined
+  }
+  return Math.floor(timestamp / millisecondsPerDay)
+}
+
+const newAppAddedDays = computed(() => {
+  const today = Math.floor(Date.now() / millisecondsPerDay)
+  const addedDays = new Map<string, number>()
+  for (const item of inventory.value?.items || []) {
+    const addedDay = catalogEpochDay(item.addedAt)
+    if (addedDay !== undefined && addedDay <= today && today - addedDay < newAppWindowDays) {
+      addedDays.set(item.id, addedDay)
+    }
+  }
+  return addedDays
+})
+
+function isNewApp(item: AppMarketItem): boolean {
+  return newAppAddedDays.value.has(item.id)
+}
+
 const sortedApps = computed(() =>
   [...(inventory.value?.items || [])].sort((left, right) => {
     if (left.id === recentInstalledID.value) return -1
     if (right.id === recentInstalledID.value) return 1
     if (left.runtime.installed !== right.runtime.installed) return left.runtime.installed ? -1 : 1
+    const leftAddedDay = newAppAddedDays.value.get(left.id)
+    const rightAddedDay = newAppAddedDays.value.get(right.id)
+    if (leftAddedDay !== undefined && rightAddedDay === undefined) return -1
+    if (leftAddedDay === undefined && rightAddedDay !== undefined) return 1
+    if (leftAddedDay !== undefined && rightAddedDay !== undefined && leftAddedDay !== rightAddedDay) {
+      return rightAddedDay - leftAddedDay
+    }
     return (left.num || 9999) - (right.num || 9999)
   }),
 )
@@ -157,21 +193,35 @@ const categoryCounts = computed(() => {
   return counts
 })
 
+const traditionalCategoryLabels: Record<string, string> = {
+  ops: '面板運維',
+  ai: 'AI 大模型',
+  storage: '儲存 / 檔案',
+  media: '影音媒體',
+  netsec: '網路 / 安全',
+  devprod: '開發 / 效率',
+  commtools: '通訊 / 工具',
+}
+
 function capability(item: AppMarketItem, action: string): boolean {
   return item.capabilities[action]?.enabled === true
 }
 
 function categoryName(key: string): string {
   const item = inventory.value?.categories.find((candidate) => candidate.key === key)
-  return (i18n.locale.value === 'en-US' ? item?.en : item?.zh) || key
+  return (i18n.locale.value === 'en-US'
+    ? item?.en
+    : i18n.locale.value === 'zh-TW'
+      ? item?.zh_tw || traditionalCategoryLabels[key] || item?.zh
+      : item?.zh) || key
 }
 
 function appName(item: AppMarketItem): string {
-  return (i18n.locale.value === 'en-US' ? item.name_en : item.name_zh) || item.name_zh || item.name_en
+  return (i18n.locale.value === 'en-US' ? item.name_en : i18n.locale.value === 'zh-TW' ? item.name_zh_tw || item.name_zh : item.name_zh) || item.name_zh || item.name_en
 }
 
 function appDescription(item: AppMarketItem): string {
-  return (i18n.locale.value === 'en-US' ? item.desc_en : item.desc_zh) || item.desc_zh || item.desc_en
+  return (i18n.locale.value === 'en-US' ? item.desc_en : i18n.locale.value === 'zh-TW' ? item.desc_zh_tw || item.desc_zh : item.desc_zh) || item.desc_zh || item.desc_en
 }
 
 function appIconAlt(item: AppMarketItem): string {
@@ -478,7 +528,7 @@ async function refreshJob(id: string, generation = jobPollGeneration): Promise<v
     window.localStorage.removeItem(activeJobStorageKey)
     if (previousStatus === 'queued' || previousStatus === 'running') {
       if (job.status === 'succeeded') {
-        toast.success(`后台${jobActionLabel(job.action)}完成`, `${job.appName} 已完成状态对账。`)
+        toast.success(`后台${jobActionLabel(job.action)}完成`, `${job.appName} 已完成状态核对。`)
         if (job.action === 'uninstall' && selectedID.value === job.appId) selectedID.value = ''
         if (refreshAfterSelfUpdate(job)) return
         await load(true)
@@ -937,7 +987,7 @@ watch(windowActive, syncJobPollingForWindow)
   <div class="page app-market">
     <PageHeader
       title="应用市场"
-      description="已安装应用优先呈现；脚本内置与第三方应用使用 kejilion.sh 原生交互流程在后台安装。"
+      description="发现、安装和管理服务器应用；安装与更新继续通过 kejilion.sh 原生流程在后台运行。"
     />
 
     <section v-if="inventory" class="market-hero" aria-label="应用概况与操作">
@@ -1103,6 +1153,7 @@ watch(windowActive, syncJobPollingForWindow)
               />
             </span>
             <span class="app-card__meta">
+              <em v-if="isNewApp(item)" class="is-new">新品</em>
               <em>{{ categoryName(item.cat) }}</em>
               <em>{{ sourceMeta(item) }}</em>
               <em v-if="capability(item, 'install') || capability(item, 'update')" class="is-adapted">
@@ -1607,6 +1658,7 @@ watch(windowActive, syncJobPollingForWindow)
 .app-market {
   --market-accent: #6d5dfc;
   --market-accent-soft: color-mix(in srgb, var(--market-accent) 12%, transparent);
+  --success: var(--brand);
 }
 
 .market-hero {
@@ -1804,7 +1856,7 @@ watch(windowActive, syncJobPollingForWindow)
 }
 
 .app-card.is-installed {
-  border-color: color-mix(in srgb, var(--success) 26%, var(--border));
+  border-color: color-mix(in srgb, var(--success) 72%, var(--border));
 }
 
 .app-card.is-recently-installed {
@@ -1877,6 +1929,7 @@ watch(windowActive, syncJobPollingForWindow)
 
 .app-card__body {
   display: grid;
+  flex: 1 1 0;
   gap: 7px;
 }
 
@@ -1888,10 +1941,16 @@ watch(windowActive, syncJobPollingForWindow)
 }
 
 .app-card__title strong {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.app-card__title .status-badge {
+  flex: 0 0 auto;
 }
 
 .app-card__meta {
@@ -1916,6 +1975,12 @@ watch(windowActive, syncJobPollingForWindow)
 .app-card__meta em.is-adapted {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.app-card__meta em.is-new {
+  color: var(--brand);
+  background: var(--brand-soft);
+  font-weight: 800;
 }
 
 .app-card__description {

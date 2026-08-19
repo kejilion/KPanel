@@ -8,7 +8,9 @@ import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
-usePhraseCatalog(() => import('@/i18n/pages/AppScriptView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/AppScriptView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/AppScriptView/zh-TW').then((module) => module.default))
 
 const route = useRoute()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))

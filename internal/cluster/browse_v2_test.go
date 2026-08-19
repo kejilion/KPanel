@@ -67,7 +67,7 @@ func TestServiceV2BrowseFetchDrainsChunkedResponseOverAuthenticatedEncryptedChan
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2(BuildV2Scope(false, true, false))
+	code, err := target.CreatePairingCodeV2(BuildV2Scope(false, false, true, false))
 	if err != nil {
 		t.Fatalf("CreatePairingCodeV2(browse only) error = %v", err)
 	}
@@ -189,7 +189,7 @@ func TestServiceV2BrowseFetchRequiresBrowseScope(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2(BuildV2Scope(true, false, false))
+	code, err := target.CreatePairingCodeV2(BuildV2Scope(true, false, false, false))
 	if err != nil {
 		t.Fatalf("CreatePairingCodeV2(terminal only) error = %v", err)
 	}

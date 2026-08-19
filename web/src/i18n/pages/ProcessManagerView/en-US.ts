@@ -19,7 +19,7 @@ export default [
   ["信号已发送", "Signal sent"],
   ["结束进程失败", "Failed to end process"],
   ["进程管理器", "Process manager"],
-  ["直接读取宿主机 /proc，轻量查看实时占用并管理进程。", "Read the host /proc directly to monitor resource use and manage processes with minimal overhead."],
+  ["实时查看服务器进程的 CPU 与内存占用，并按实际状态管理进程。", "See CPU and memory use for server processes in real time and manage them based on their current state."],
   ["已暂停", "Paused"],
   ["继续", "Resume"],
   ["暂停", "Pause"],

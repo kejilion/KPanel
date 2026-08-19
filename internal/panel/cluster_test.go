@@ -89,6 +89,28 @@ func TestClusterMutationsRequireOriginAndCSRF(t *testing.T) {
 	}
 }
 
+func TestClusterMutualFilesRejectsChunkedRequestBody(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"http://panel.test/api/v1/cluster/hosts/missing/mutual-files",
+		strings.NewReader(`{}`),
+	)
+	request.ContentLength = -1
+	request.TransferEncoding = []string{"chunked"}
+	request.Header.Set("Origin", "http://panel.test")
+	request.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	request.AddCookie(sessionCookie)
+	request.AddCookie(csrfCookie)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest ||
+		!strings.Contains(response.Body.String(), "request_body_not_allowed") {
+		t.Fatalf("chunked mutual-files body returned %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestClusterLocalHostCanBeRenamed(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
@@ -192,8 +214,8 @@ func TestClusterPairingCodeSecretIsNotAudited(t *testing.T) {
 	if !strings.HasPrefix(code.Code, "kp2.") {
 		t.Fatalf("pairing code does not use the encrypted v2 protocol: %q", code.Code)
 	}
-	if code.Scope != cluster.SummaryTerminalScope {
-		t.Fatalf("omitted grants must default to today's behavior (terminal, no browse); got scope %q", code.Scope)
+	if code.Scope != cluster.SummaryTerminalFilesScope {
+		t.Fatalf("omitted grants must default to today's behavior (terminal + files, no browse); got scope %q", code.Scope)
 	}
 
 	events, _ := server.store.ListAudit(200, "")
@@ -244,23 +266,28 @@ func TestClusterPairingCodeV2AcceptsExplicitGrants(t *testing.T) {
 		return code
 	}
 
-	if code := post(t, `{"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.browse.fetch" {
+	if code := post(t, `{"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.files.read cluster.browse.fetch" {
 		t.Fatalf(`{"browseFetch":true} scope = %q`, code.Scope)
 	}
-	if code := post(t, `{"terminal":false}`); code.Scope != cluster.SummaryScope {
-		t.Fatalf(`{"terminal":false} scope = %q`, code.Scope)
+	if code := post(t, `{"terminal":false,"files":false}`); code.Scope != cluster.SummaryScope {
+		t.Fatalf(`{"terminal":false,"files":false} scope = %q`, code.Scope)
 	}
-	if code := post(t, `{"terminal":false,"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch" {
-		t.Fatalf(`{"terminal":false,"browseFetch":true} scope = %q`, code.Scope)
+	if code := post(t, `{"terminal":false,"files":false,"browseFetch":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch" {
+		t.Fatalf(`{"terminal":false,"files":false,"browseFetch":true} scope = %q`, code.Scope)
 	}
-	if code := post(t, `{"browseWs":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.browse.ws" {
+	if code := post(t, `{"browseWs":true}`); code.Scope != "cluster.summary.read cluster.terminal.open cluster.files.read cluster.browse.ws" {
 		t.Fatalf(`{"browseWs":true} scope = %q`, code.Scope)
 	}
-	if code := post(t, `{"terminal":false,"browseFetch":true,"browseWs":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch cluster.browse.ws" {
-		t.Fatalf(`{"terminal":false,"browseFetch":true,"browseWs":true} scope = %q`, code.Scope)
+	if code := post(t, `{"terminal":false,"files":false,"browseFetch":true,"browseWs":true}`); code.Scope != "cluster.summary.read cluster.browse.fetch cluster.browse.ws" {
+		t.Fatalf(`{"terminal":false,"files":false,"browseFetch":true,"browseWs":true} scope = %q`, code.Scope)
 	}
-	if code := post(t, `{}`); code.Scope != cluster.SummaryTerminalScope {
-		t.Fatalf(`{} scope = %q, want default terminal-only`, code.Scope)
+	if code := post(t, `{"files":false}`); code.Scope != cluster.SummaryTerminalScope {
+		t.Fatalf(`{"files":false} scope = %q, want terminal without files`, code.Scope)
+	}
+	// Omitting the body must keep granting exactly what every v2 pairing has
+	// always granted — terminal and files — and nothing more.
+	if code := post(t, `{}`); code.Scope != cluster.SummaryTerminalFilesScope {
+		t.Fatalf(`{} scope = %q, want the historical terminal+files default`, code.Scope)
 	}
 }
 
@@ -488,6 +515,53 @@ func TestFederationV2BypassesPublicHostCheckButStillAuthenticates(t *testing.T) 
 	}
 	if strings.Contains(response.Body.String(), "host_header_rejected") {
 		t.Fatalf("v2 federation request was rejected by the browser Host policy: %s", response.Body.String())
+	}
+}
+
+func TestFederationV2MutualFileEndpointsBypassBrowserHostPolicy(t *testing.T) {
+	server, _ := newTestServer(t)
+	for _, endpoint := range []string{
+		"/api/v2/federation/files/link",
+		"/api/v2/federation/files/open-linked",
+	} {
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"http://8.8.8.8:1801"+endpoint,
+			strings.NewReader(`{}`),
+		)
+		request.Host = "8.8.8.8:1801"
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d, want %d; body=%s", endpoint, response.Code, http.StatusUnauthorized, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), "host_header_rejected") {
+			t.Fatalf("%s was rejected by browser Host policy: %s", endpoint, response.Body.String())
+		}
+	}
+}
+
+func TestClusterFileCallbackOriginUsesOnlyValidatedReachableRequestShape(t *testing.T) {
+	server, _ := newTestServerWithPublicURL(t, "")
+	for _, test := range []struct {
+		name   string
+		target string
+		host   string
+		want   string
+	}{
+		{name: "direct https domain", target: "https://panel.example/api/v1/cluster/hosts", host: "panel.example", want: "https://panel.example"},
+		{name: "direct http literal ip", target: "http://203.0.113.10:1801/api/v1/cluster/hosts", host: "203.0.113.10:1801", want: "http://203.0.113.10:1801"},
+		{name: "http domain is not a callback", target: "http://panel.example/api/v1/cluster/hosts", host: "panel.example", want: ""},
+		{name: "default http port is not a callback", target: "http://203.0.113.10/api/v1/cluster/hosts", host: "203.0.113.10", want: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.target, strings.NewReader(`{}`))
+			request.Host = test.host
+			if got := server.clusterFileCallbackOrigin(request); got != test.want {
+				t.Fatalf("clusterFileCallbackOrigin() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

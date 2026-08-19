@@ -1,10 +1,8 @@
-<p align="center">
+<h1 align="center">
   <a href="https://kpanel.kejilion.sh/">
-    <img src=".github/assets/readme/kpanel-mark.webp" alt="KPanel" width="88">
+    <img src=".github/assets/kpanel-logo.png" alt="KPanel" width="520">
   </a>
-</p>
-
-<h1 align="center">KPanel</h1>
+</h1>
 
 <p align="center">
   <strong>把服务器，变成你的运维工作台。</strong>

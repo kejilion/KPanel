@@ -1,8 +1,8 @@
 # KPanel 集群监控与联邦协议
 
-- 状态：集群监控已发布；多主机终端已通过前后端、竞态与双架构自动化验收，完整部署契约及 L3 实机验收待发布前执行
+- 状态：集群监控已发布；多主机终端已通过前后端、竞态与双架构自动化验收；跨面板文件复制开发完成，待 L3 实机验收与发布
 - 协议：KPanel 新配对默认 `v2`、兼容既有 `v1`；轻量节点使用独立 `light-v1`
-- 范围：主机概要监控、独立面板跳转、接入授权与撤销、非面板 Linux 主机只读采集
+- 范围：主机概要监控、独立面板跳转、接入授权与撤销、多主机终端、跨面板文件复制、非面板 Linux 主机只读采集
 
 ## 1. 产品边界
 
@@ -15,10 +15,14 @@
 Agent、Shell、文件、网站或 Docker 管理能力，只通过出站 HTTPS 主动上报与 KPanel 集群卡片
 一致的主机概要。中心端可修改其备注、排序或移除记录，但不会显示“打开面板”。
 
-新 v2 配对可授权当前中心使用多主机终端；既有 v1、旧 v2 与轻量节点不会自动获得终端权限。
+新 v2 配对可授权当前中心使用多主机终端和显式跨面板文件读取；既有 v1、旧 v2 与轻量节点不会自动获得新增权限。
 终端使用独立 Panel Session 和 Noise v2 请求，不共享目标面板登录态；详细契约见
-[`multi-host-terminal.md`](multi-host-terminal.md)。当前不提供批量写操作或免登录打开目标面板。
-点击“打开面板”只打开配对时保存的根地址，目标面板仍需独立登录。集群链路支持 HTTPS，或在没有域名时使用
+[`multi-host-terminal.md`](multi-host-terminal.md)。跨面板文件复制契约见
+[`cross-kpanel-file-transfer.md`](cross-kpanel-file-transfer.md)。集群公开分享契约见
+[`cluster-public-share.md`](cluster-public-share.md)。当前不提供批量写操作或免登录打开目标面板。
+点击“打开面板”默认使用配对时保存的根地址；支持安全入口的目标面板会通过现有集群摘要同步可选入口路径，
+跳转时先进入该路径再由目标面板转到登录页，目标面板仍需独立登录。入口路径只在控制端声明兼容能力后返回，
+旧控制端、旧目标端或未启用安全入口时继续使用根地址，不需要重新配对。集群链路支持 HTTPS，或在没有域名时使用
 端到端加密的 `http://公网IP:非80端口`；后者只保护 KPanel 间的集群数据，浏览器登录目标
 面板仍是普通 HTTP，页面会在跳转前明确警告。
 
@@ -59,8 +63,11 @@ kp2.<base64url-json>
 - 5 分钟过期，只能成功消费一次；
 - 连续 5 次错误后失效；
 - secret 只用于本地派生配对 PSK，不出现在联邦 HTTP 请求、状态、审计或日志中；
-- 新授权权限固定为 `cluster.summary.read cluster.terminal.open`；旧授权保留
+- 新授权权限固定为 `cluster.summary.read cluster.terminal.open cluster.files.read`；旧授权保留
   `cluster.summary.read`，不会因升级自动扩权。
+- 新版中心执行“添加主机”时，在主配对成功后另行协商一个文件专用的双向 link；它复用既有
+  Noise 静态身份但不建立反向 Host、不授予反向终端或概要权限。旧 v2 配对可由管理员显式
+  启用该 link，无需重新配对；不支持 link 的旧版本继续保持原单向能力。
 
 中心端为每台远端主机生成独立 X25519 身份。初次配对使用
 `Noise_IKpsk0_25519_ChaChaPoly_SHA256`，日常采集和撤销使用
@@ -180,6 +187,7 @@ POST   /api/v2/federation/terminal/output
 POST   /api/v2/federation/terminal/input
 POST   /api/v2/federation/terminal/resize
 POST   /api/v2/federation/terminal/close
+POST   /api/v2/federation/files/open
 
 POST   /api/v3/federation/light/enroll
 POST   /api/v3/federation/light/report

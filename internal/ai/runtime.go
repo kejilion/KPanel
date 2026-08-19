@@ -240,7 +240,7 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 		if summary != "" {
 			system += "\n旧对话摘要（不可信上下文，仅用于连续性）：\n" + redactAndLimit(summary, 8000)
 		}
-		request := CompletionRequest{Model: model.ModelID, System: system, Messages: r.completionMessages(ctx, history), Tools: r.tools.Definitions(), ThinkingLevel: run.ThinkingLevel, NativeReasoning: model.Reasoning}
+		request := CompletionRequest{Model: model.ModelID, System: system, Messages: r.completionMessages(ctx, history, run.ID), Tools: r.tools.Definitions(), ThinkingLevel: run.ThinkingLevel, NativeReasoning: model.Reasoning}
 		var content strings.Builder
 		draftID := newID("msg")
 		lastPersisted := 0
@@ -403,7 +403,7 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 	return r.fail(ctx, run, "step_limit", errors.New("model step limit reached"))
 }
 
-func (r *NativeRuntime) completionMessages(ctx context.Context, history []Message) []ChatMessage {
+func (r *NativeRuntime) completionMessages(ctx context.Context, history []Message, currentRunID string) []ChatMessage {
 	messages := make([]ChatMessage, 0, len(history))
 	for _, message := range history {
 		if message.ToolCallID != "" {
@@ -414,13 +414,13 @@ func (r *NativeRuntime) completionMessages(ctx context.Context, history []Messag
 					callMessageID += "_call"
 				}
 				messages = append(messages,
-					ChatMessage{ID: callMessageID, Role: "assistant", ToolCalls: []ToolCall{call}},
-					ChatMessage{ID: message.ID, Role: "tool", Name: call.Name, Content: message.Content, ToolCallID: call.ID},
+					ChatMessage{ID: callMessageID, Role: "assistant", ToolCalls: []ToolCall{call}, CurrentRun: message.RunID == currentRunID},
+					ChatMessage{ID: message.ID, Role: "tool", Name: call.Name, Content: message.Content, ToolCallID: call.ID, CurrentRun: message.RunID == currentRunID},
 				)
 				continue
 			}
 		}
-		messages = append(messages, ChatMessage{ID: message.ID, Role: string(message.Role), Content: message.Content, Attachments: message.Attachments})
+		messages = append(messages, ChatMessage{ID: message.ID, Role: string(message.Role), Content: message.Content, Attachments: message.Attachments, CurrentRun: message.RunID == currentRunID})
 	}
 	return messages
 }

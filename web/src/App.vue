@@ -10,7 +10,9 @@ const route = useRoute()
 const i18n = useI18n()
 let stopPhraseLocalization: WatchStopHandle | null = null
 
-usePhraseCatalog(() => import('@/i18n/pages/shared/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/shared/en-US').then((module) => module.default)
+  : import('@/i18n/pages/shared/zh-TW').then((module) => module.default))
 
 onMounted(() => {
   const root = document.querySelector<HTMLElement>('#app')

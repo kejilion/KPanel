@@ -1,7 +1,7 @@
 # KPanel Claude 适配入口
 
 本文件只说明 Claude/Claude Code 如何进入共享规范，不维护 Claude 专属的产品规则、质量标准或门禁。
-先阅读本入口和 `docs/product-quality-review-2026-08-13.md` 定位业务域，再按风险加载共享规范：
+先阅读本入口和 `docs/product-quality-review-current.md` 定位业务域，再按风险加载共享规范：
 
 1. L0：受影响文档与相关规则；
 2. L1：`PROJECT_RULES.md` 的工程契约、产品质量和核验分级，以及领域文档、实现和测试；

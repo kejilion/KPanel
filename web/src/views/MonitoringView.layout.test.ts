@@ -10,6 +10,13 @@ describe('monitoring container comparison layout', () => {
     expect(monitoringSource).not.toContain('window.history')
   })
 
+  it('hides the idle zoom instruction strip to keep the history view compact', () => {
+    expect(monitoringSource).toContain(
+      '<div v-if="activeWindow || updating" class="monitoring-zoom-strip"',
+    )
+    expect(monitoringSource).not.toContain('在任意趋势图上横向拖动，即可同步框选放大全部图表。')
+  })
+
   it('links selected container rows to chart highlighting for pointer and keyboard users', () => {
     expect(monitoringSource).toContain(
       '@mouseenter="containerSelected(container.containerId) && (highlightedContainerId = container.containerId)"',

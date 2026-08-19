@@ -9,7 +9,7 @@ function version(character: string): string {
 
 function workspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     resourceVersion: version('1'),
     available: true,
     hiddenEntryKeys: [],

@@ -13,26 +13,26 @@ test('environment policy is structurally valid', () => {
   assert.deepEqual(validatePolicy(policy), []);
 });
 
-test('arena-154 accepts browser and candidate validation', () => {
-  assert.equal(checkEnvironment(policy, 'arena-154', 'browser-validation').role, 'validation');
+test('arena-154 accepts validation and production deployment', () => {
+  assert.equal(checkEnvironment(policy, 'arena-154', 'browser-validation').role, 'hybrid');
   assert.equal(checkEnvironment(policy, '154', 'candidate-validation').name, 'arena-154');
+  assert.equal(checkEnvironment(policy, 'arena-154', 'production-deploy').name, 'arena-154');
+  assert.equal(checkEnvironment(policy, '154', 'production-safety-check').role, 'hybrid');
 });
 
-test('prod-108 rejects every validation purpose', () => {
+test('prod-108 rejects every KPanel purpose', () => {
   for (const purpose of [
     'candidate-validation',
     'browser-validation',
     'performance-validation',
     'failure-injection',
     'staging-deploy',
+    'production-deploy',
+    'production-safety-check',
   ]) {
-    assert.throws(() => checkEnvironment(policy, 'prod-108', purpose), /does not allow/);
+    assert.throws(() => checkEnvironment(policy, 'prod-108', purpose), /disabled for all KPanel operations/);
+    assert.throws(() => checkEnvironment(policy, '108', purpose), /disabled for all KPanel operations/);
   }
-});
-
-test('prod-108 only accepts deployment and deployment safety checks', () => {
-  assert.equal(checkEnvironment(policy, '108', 'production-deploy').name, 'prod-108');
-  assert.equal(checkEnvironment(policy, 'prod-108', 'production-safety-check').role, 'production');
 });
 
 test('unregistered hosts fail closed', () => {
@@ -42,8 +42,8 @@ test('unregistered hosts fail closed', () => {
   );
 });
 
-test('production role cannot be configured to allow validation', () => {
+test('disabled environments cannot be configured with an allowed purpose', () => {
   const invalid = structuredClone(policy);
   invalid.environments['prod-108'].allowedPurposes.push('browser-validation');
-  assert.ok(validatePolicy(invalid).some((failure) => failure.includes('production environments must not allow')));
+  assert.ok(validatePolicy(invalid).some((failure) => failure.includes('disabled environments must not allow')));
 });

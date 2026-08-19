@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enUSMessages } from './messages/en-US'
 import { zhCNMessages } from './messages/zh-CN'
+import { zhTWMessages } from './messages/zh-TW'
 import {
   resetLocaleForTest,
   initializeI18n,
@@ -18,11 +19,15 @@ afterEach(() => {
 describe('locale selection', () => {
   it('uses a persisted user choice before the browser language', () => {
     expect(resolveInitialLocale('zh-CN', ['en-US'])).toBe('zh-CN')
+    expect(resolveInitialLocale('zh-TW', ['en-US'])).toBe('zh-TW')
     expect(resolveInitialLocale('en-US', ['zh-Hans-CN'])).toBe('en-US')
   })
 
-  it('uses Chinese for zh browsers and English for every other browser', () => {
-    expect(resolveInitialLocale(undefined, ['zh-HK', 'en-US'])).toBe('zh-CN')
+  it('distinguishes Traditional Chinese browser languages from Simplified Chinese', () => {
+    expect(resolveInitialLocale(undefined, ['zh-TW', 'en-US'])).toBe('zh-TW')
+    expect(resolveInitialLocale(undefined, ['zh-HK', 'en-US'])).toBe('zh-TW')
+    expect(resolveInitialLocale(undefined, ['zh-Hant-TW', 'en-US'])).toBe('zh-TW')
+    expect(resolveInitialLocale(undefined, ['zh-CN', 'en-US'])).toBe('zh-CN')
     expect(resolveInitialLocale(undefined, ['ja-JP'])).toBe('en-US')
     expect(resolveInitialLocale(undefined, [])).toBe('en-US')
   })
@@ -45,8 +50,9 @@ describe('locale selection', () => {
     expect(addEventListener).toHaveBeenCalledWith('storage', expect.any(Function))
   })
 
-  it('keeps locale resources structurally identical', () => {
+  it('keeps all locale resources structurally identical', () => {
     expect(Object.keys(enUSMessages).sort()).toEqual(Object.keys(zhCNMessages).sort())
+    expect(Object.keys(enUSMessages).sort()).toEqual(Object.keys(zhTWMessages).sort())
   })
 })
 
@@ -62,6 +68,20 @@ describe('translations', () => {
     expect(t('route.overview')).toBe('Overview')
     expect(documentElement).toMatchObject({ lang: 'en-US', dir: 'ltr' })
     expect(setItem).toHaveBeenCalledWith('kejilion-panel-locale', 'en-US')
+  })
+
+  it('loads Traditional Chinese and persists the selected locale', async () => {
+    const documentElement = { lang: '', dir: '' }
+    const setItem = vi.fn()
+    vi.stubGlobal('document', { documentElement })
+    vi.stubGlobal('window', { localStorage: { setItem } })
+
+    await expect(setLocale('zh-TW')).resolves.toBe(true)
+
+    expect(t('route.overview')).toBe('概覽')
+    expect(t('common.language')).toBe('介面語言')
+    expect(documentElement).toMatchObject({ lang: 'zh-TW', dir: 'ltr' })
+    expect(setItem).toHaveBeenCalledWith('kejilion-panel-locale', 'zh-TW')
   })
 
   it('keeps the most recent choice during rapid language switching', async () => {

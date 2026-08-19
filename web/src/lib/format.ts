@@ -1,3 +1,5 @@
+import { getLocale } from '@/i18n'
+
 const numberFormatter = new Intl.NumberFormat('zh-CN', {
   maximumFractionDigits: 1,
 })
@@ -38,15 +40,25 @@ export function formatRate(value?: number): string {
 export function formatDuration(totalSeconds?: number): string {
   if (totalSeconds === undefined || !Number.isFinite(totalSeconds) || totalSeconds < 0) return '—'
 
+  const locale = getLocale()
   const seconds = Math.floor(totalSeconds)
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
 
-  if (days > 0) return `${days} 天 ${hours} 小时`
-  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`
-  if (minutes > 0) return `${minutes} 分钟`
-  return `${seconds} 秒`
+  if (locale === 'en-US') {
+    if (days > 0) return `${days}d ${hours}h`
+    if (hours > 0) return `${hours}h ${minutes}m`
+    if (minutes > 0) return `${minutes}m`
+    return `${seconds}s`
+  }
+  const units = locale === 'zh-TW'
+    ? { day: '天', hour: '小時', minute: '分鐘', second: '秒' }
+    : { day: '天', hour: '小时', minute: '分钟', second: '秒' }
+  if (days > 0) return `${days} ${units.day} ${hours} ${units.hour}`
+  if (hours > 0) return `${hours} ${units.hour} ${minutes} ${units.minute}`
+  if (minutes > 0) return `${minutes} ${units.minute}`
+  return `${seconds} ${units.second}`
 }
 
 export function formatDateTime(value?: string): string {
@@ -60,7 +72,7 @@ export function formatHostDateTime(value?: string, timezone?: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
+    return new Intl.DateTimeFormat(getLocale(), {
       timeZone: timezone || 'UTC',
       year: 'numeric',
       month: '2-digit',
@@ -77,13 +89,14 @@ export function formatHostDateTime(value?: string, timezone?: string): string {
 }
 
 export function relativeTime(value?: string, now = Date.now()): string {
-  if (!value) return '从未'
+  const locale = getLocale()
+  if (!value) return locale === 'en-US' ? 'Never' : locale === 'zh-TW' ? '從未' : '从未'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '未知'
+  if (Number.isNaN(date.getTime())) return locale === 'en-US' ? 'Unknown' : '未知'
 
   const deltaSeconds = Math.round((date.getTime() - now) / 1000)
   const absolute = Math.abs(deltaSeconds)
-  const formatter = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
 
   if (absolute < 60) return formatter.format(deltaSeconds, 'second')
   if (absolute < 3600) return formatter.format(Math.round(deltaSeconds / 60), 'minute')

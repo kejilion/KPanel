@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
 import AiChoiceMenu, { type AiChoiceOption } from './AiChoiceMenu.vue'
 
 const options:AiChoiceOption[]=[
@@ -38,5 +39,15 @@ describe('AiChoiceMenu',()=>{
     expect(wrapper.findAll('.ai-choice__option')).toHaveLength(1)
     expect(wrapper.text()).toContain('Secondary')
     expect(wrapper.text()).toContain('Claude Opus')
+  })
+
+  it('anchors the mobile menu above the trigger for viewport centering',async()=>{
+    const originalWidth=window.innerWidth;const originalHeight=window.innerHeight
+    Object.defineProperty(window,'innerWidth',{configurable:true,value:390});Object.defineProperty(window,'innerHeight',{configurable:true,value:844})
+    const wrapper=mount(AiChoiceMenu,{attachTo:document.body,props:{modelValue:'manual',options,label:'思考强度',variant:'thinking'}})
+    vi.spyOn(wrapper.get('.ai-choice__trigger').element,'getBoundingClientRect').mockReturnValue({top:700} as DOMRect)
+    await wrapper.get('.ai-choice__trigger').trigger('click');await nextTick()
+    expect(wrapper.get('.ai-choice__menu').attributes('style')).toContain('--ai-choice-menu-bottom: 152px')
+    wrapper.unmount();Object.defineProperty(window,'innerWidth',{configurable:true,value:originalWidth});Object.defineProperty(window,'innerHeight',{configurable:true,value:originalHeight})
   })
 })

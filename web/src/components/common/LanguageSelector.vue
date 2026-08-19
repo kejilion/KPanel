@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Check, Globe2 } from '@lucide/vue'
 import { useI18n, type SupportedLocale } from '@/i18n'
+import type { MessageKey } from '@/i18n/messages/zh-CN'
 
 withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 
@@ -9,6 +10,12 @@ const i18n = useI18n()
 const root = ref<HTMLElement>()
 const open = ref(false)
 const busy = ref(false)
+
+function localeLabelKey(locale: SupportedLocale): MessageKey {
+  if (locale === 'zh-CN') return 'common.locale.zhCN'
+  if (locale === 'zh-TW') return 'common.locale.zhTW'
+  return 'common.locale.enUS'
+}
 
 function closeOnOutsideClick(event: PointerEvent): void {
   if (open.value && event.target instanceof Node && !root.value?.contains(event.target)) {
@@ -66,7 +73,7 @@ async function selectLocale(locale: SupportedLocale): Promise<void> {
         :disabled="busy"
         @click="selectLocale(option.id)"
       >
-        <span>{{ option.label }}</span>
+        <span>{{ i18n.t(localeLabelKey(option.id)) }}</span>
         <Check v-if="option.id === i18n.locale.value" :size="16" aria-hidden="true" />
       </button>
     </div>

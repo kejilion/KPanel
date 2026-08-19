@@ -1,7 +1,8 @@
 import { computed, readonly, ref, shallowRef } from 'vue'
 import { zhCNMessages, type LocaleMessages, type MessageKey } from './messages/zh-CN'
+import { zhTWMessages } from './messages/zh-TW'
 
-export type SupportedLocale = 'zh-CN' | 'en-US'
+export type SupportedLocale = 'zh-CN' | 'zh-TW' | 'en-US'
 export type TranslationParams = Record<string, string | number>
 
 export interface LocaleOption {
@@ -19,12 +20,21 @@ let initialized = false
 
 export const localeOptions: readonly LocaleOption[] = [
   { id: 'zh-CN', label: '简体中文', shortLabel: '中' },
+  { id: 'zh-TW', label: '繁體中文', shortLabel: '繁' },
   { id: 'en-US', label: 'English', shortLabel: 'EN' },
 ]
 const defaultLocaleOption = localeOptions[0]!
 
 function isSupportedLocale(value: unknown): value is SupportedLocale {
-  return value === 'zh-CN' || value === 'en-US'
+  return value === 'zh-CN' || value === 'zh-TW' || value === 'en-US'
+}
+
+function resolveChineseLocale(language: string): Exclude<SupportedLocale, 'en-US'> {
+  const normalized = language.trim().toLowerCase().replaceAll('_', '-')
+  if (/^zh(?:-[a-z]{2,4})*-(?:tw|hk|mo)(?:-|$)/.test(normalized) || /(?:^|-)(?:hant|hks|hant-)/.test(normalized)) {
+    return 'zh-TW'
+  }
+  return 'zh-CN'
 }
 
 export function resolveInitialLocale(
@@ -33,7 +43,7 @@ export function resolveInitialLocale(
 ): SupportedLocale {
   if (isSupportedLocale(stored)) return stored
   const primaryLanguage = browserLanguages.find((value) => value.trim().length > 0) || ''
-  return primaryLanguage.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US'
+  return primaryLanguage.toLowerCase().startsWith('zh') ? resolveChineseLocale(primaryLanguage) : 'en-US'
 }
 
 function readStoredLocale(): SupportedLocale {
@@ -60,6 +70,7 @@ function applyDocumentLocale(locale: SupportedLocale): void {
 
 async function loadMessages(locale: SupportedLocale): Promise<LocaleMessages> {
   if (locale === 'zh-CN') return zhCNMessages
+  if (locale === 'zh-TW') return zhTWMessages
   return (await import('./messages/en-US')).enUSMessages
 }
 
@@ -100,6 +111,10 @@ export function t(key: MessageKey, params?: TranslationParams): string {
     const value = params[name]
     return value === undefined ? token : String(value)
   })
+}
+
+export function getLocale(): SupportedLocale {
+  return activeLocale.value
 }
 
 export function useI18n() {

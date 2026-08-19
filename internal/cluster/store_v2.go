@@ -970,12 +970,23 @@ func hostResourceVersionV2(record hostRecordV2) string {
 		record.TargetPublicKey,
 		record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
-	// Preserve resource versions for existing summary-only v2 pairings. The
-	// additional terminal grant becomes part of the version only when present
-	// — using the exact historical field value so hosts that had terminal
-	// before the browse grant existed keep their resource version unchanged.
-	if ScopeAllowsTerminal(record.Scope) {
+	// Preserve resource versions across every grant that has ever shipped: a
+	// capability joins the version only once the host actually has it, so a
+	// host that never gained one keeps the version it has always had.
+	//
+	// Terminal+files share one combined field because that is the exact value
+	// already written for file-capable pairings; splitting them into two
+	// fields now would move every such host's resource version for no reason,
+	// making concurrent editors collide once, pointlessly.
+	switch {
+	case ScopeAllowsTerminal(record.Scope) && ScopeAllowsFiles(record.Scope):
+		fields = append(fields, "scope:"+SummaryTerminalFilesScope)
+	case ScopeAllowsTerminal(record.Scope):
 		fields = append(fields, "scope:"+SummaryTerminalScope)
+	case ScopeAllowsFiles(record.Scope):
+		// Files without terminal was not expressible before the token model,
+		// so there is no historical value to preserve here.
+		fields = append(fields, "scope:"+ScopeTokenFiles)
 	}
 	// Same idea, applied to the browse grant added afterwards: only hosts
 	// that actually have it see their resource version move.

@@ -5,7 +5,9 @@ import AuditView from '@/views/AuditView.vue'
 import JobsView from '@/views/JobsView.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/ActivityView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/ActivityView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/ActivityView/zh-TW').then((module) => module.default))
 
 type ActivityTab = 'jobs' | 'audit'
 

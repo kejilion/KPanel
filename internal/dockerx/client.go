@@ -491,6 +491,11 @@ type dockerMount struct {
 func (c *Client) summaryFromList(raw containerListItem) contract.ContainerSummary {
 	name := strings.TrimPrefix(first(raw.Names), "/")
 	ownership, evidence := c.ownership(raw.Labels, name)
+	var createdAt *time.Time
+	if raw.Created > 0 {
+		created := time.Unix(raw.Created, 0).UTC()
+		createdAt = &created
+	}
 	ports := make([]contract.PortBinding, 0, len(raw.Ports))
 	for _, port := range raw.Ports {
 		ports = append(ports, contract.PortBinding{
@@ -512,8 +517,10 @@ func (c *Client) summaryFromList(raw containerListItem) contract.ContainerSummar
 	}{raw.ID, raw.ImageID, raw.State, raw.Status, raw.Labels, raw.Mounts})
 	return contract.ContainerSummary{
 		ID: raw.ID, Name: name, Image: raw.Image, State: raw.State, Status: raw.Status,
-		Ports: ports, Mounts: mounts, Networks: networks,
+		CreatedAt: createdAt,
+		Ports:     ports, Mounts: mounts, Networks: networks,
 		ComposeProject: raw.Labels["com.docker.compose.project"],
+		ComposeService: raw.Labels["com.docker.compose.service"],
 		Ownership:      ownership, OwnershipEvidence: evidence, ResourceVersion: version,
 		AllowedActions: []string{}, Labels: raw.Labels,
 	}
@@ -576,11 +583,25 @@ func (c *Client) summaryFromInspect(raw containerInspect) contract.ContainerSumm
 	return contract.ContainerSummary{
 		ID: raw.ID, Name: name, Image: raw.Config.Image,
 		State: raw.State.Status, Status: raw.State.Status, Health: health,
-		Ports: ports, Mounts: mounts, Networks: sortedKeys(raw.NetworkSettings.Networks),
+		CreatedAt: parseDockerTimestamp(raw.Created),
+		Ports:     ports, Mounts: mounts, Networks: sortedKeys(raw.NetworkSettings.Networks),
 		ComposeProject: raw.Config.Labels["com.docker.compose.project"],
+		ComposeService: raw.Config.Labels["com.docker.compose.service"],
 		Ownership:      ownership, OwnershipEvidence: evidence, ResourceVersion: version,
 		AllowedActions: allowed, Labels: raw.Config.Labels,
 	}
+}
+
+func parseDockerTimestamp(value string) *time.Time {
+	if value == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil || parsed.IsZero() {
+		return nil
+	}
+	parsed = parsed.UTC()
+	return &parsed
 }
 
 func (c *Client) ownership(labels map[string]string, containerName string) (string, []string) {

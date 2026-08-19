@@ -185,8 +185,16 @@ func TestSecurityEntranceGatesLoginWithoutBreakingSessions(t *testing.T) {
 	}
 
 	entry := performRequest(server, http.MethodGet, "/panel-secure1", nil, nil)
-	if entry.Code != http.StatusSeeOther || entry.Header().Get("Location") != "/login" {
+	if entry.Code != http.StatusOK || entry.Header().Get("Location") != "" {
 		t.Fatalf("unexpected entrance response: %d %s", entry.Code, entry.Header().Get("Location"))
+	}
+	if entry.Header().Get("Cache-Control") != "no-store" ||
+		entry.Header().Get("Referrer-Policy") != "no-referrer" ||
+		entry.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		!strings.Contains(entry.Header().Get("Content-Security-Policy"), "default-src 'none'") ||
+		!strings.Contains(entry.Body.String(), `http-equiv="refresh" content="0;url=/login"`) ||
+		!strings.Contains(entry.Body.String(), `href="/login"`) {
+		t.Fatalf("security entrance transition page is incomplete: headers=%v body=%s", entry.Header(), entry.Body.String())
 	}
 	var entryCookie *http.Cookie
 	for _, cookie := range entry.Result().Cookies() {
@@ -807,6 +815,8 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 	for publicPath, expected := range map[string]string{
 		"/api/v1/docker/environment":                 "/v1/docker/environment",
 		"/api/v1/docker/backups":                     "/v1/docker/backups",
+		"/api/v1/docker/compose-projects":            "/v1/docker/compose-projects",
+		"/api/v1/docker/compose-projects/demo-stack": "/v1/docker/compose-projects/demo-stack",
 		"/api/v1/docker/containers/" + id + "/logs":  "/v1/docker/containers/" + id + "/logs",
 		"/api/v1/docker/containers/" + id + "/stats": "/v1/docker/containers/" + id + "/stats",
 	} {
@@ -818,6 +828,8 @@ func TestAllowedDockerReadPaths(t *testing.T) {
 	for _, invalid := range []string{
 		"/api/v1/docker/environment/extra",
 		"/api/v1/docker/backups/extra",
+		"/api/v1/docker/compose-projects/../shadow",
+		"/api/v1/docker/compose-projects/Demo",
 		"/api/v1/docker/containers/not-an-id/stats",
 		"/api/v1/docker/containers/" + id + "/stats/extra",
 	} {

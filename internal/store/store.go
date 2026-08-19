@@ -76,6 +76,17 @@ type SecurityEntrance struct {
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
 
+// ClusterShare stores the opt-in public cluster page configuration. Token is
+// deliberately kept out of audit events and can be rotated to invalidate an
+// existing link without changing the cluster inventory.
+type ClusterShare struct {
+	Enabled     bool      `json:"enabled"`
+	Token       string    `json:"token,omitempty"`
+	Title       string    `json:"title,omitempty"`
+	Description string    `json:"description,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
+}
+
 // AllowedHosts is the operator-managed allowlist of extra Host header values
 // the panel answers on, beyond the single origin fixed by config publicUrl.
 // It exists because publicUrl can only name one origin, while a panel is
@@ -108,6 +119,7 @@ type diskState struct {
 	Audit            []AuditEvent     `json:"audit"`
 	LoginAttempts    []LoginAttempt   `json:"loginAttempts"`
 	SecurityEntrance SecurityEntrance `json:"securityEntrance,omitempty"`
+	ClusterShare     ClusterShare     `json:"clusterShare,omitempty"`
 	AllowedHosts     AllowedHosts     `json:"allowedHosts,omitempty"`
 }
 
@@ -706,6 +718,41 @@ func SecurityEntranceResourceVersion(value SecurityEntrance) string {
 	return fmt.Sprintf("sha256:%x", digest[:])
 }
 
+func (s *Store) ClusterShare() (ClusterShare, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value := s.data.ClusterShare
+	return value, ClusterShareResourceVersion(value)
+}
+
+func (s *Store) ReplaceClusterShare(expectedResourceVersion string, value ClusterShare) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedResourceVersion != ClusterShareResourceVersion(s.data.ClusterShare) {
+		return ErrConflict
+	}
+	previous := cloneDiskState(s.data)
+	s.data.ClusterShare = value
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
+func ClusterShareResourceVersion(value ClusterShare) string {
+	payload := fmt.Sprintf(
+		"%t\x00%s\x00%s\x00%s\x00%s",
+		value.Enabled,
+		value.Token,
+		value.Title,
+		value.Description,
+		value.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	)
+	digest := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("sha256:%x", digest[:])
+}
+
 func (s *Store) persistLocked() error {
 	content, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
@@ -780,6 +827,7 @@ func cloneDiskState(source diskState) diskState {
 		Audit:            append([]AuditEvent(nil), source.Audit...),
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
+		ClusterShare:     source.ClusterShare,
 		AllowedHosts: AllowedHosts{
 			Hosts:     append([]string(nil), source.AllowedHosts.Hosts...),
 			UpdatedAt: source.AllowedHosts.UpdatedAt,

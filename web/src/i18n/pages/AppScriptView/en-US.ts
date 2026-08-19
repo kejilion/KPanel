@@ -6,7 +6,7 @@ export default [
   ['Agent 未返回可交互的脚本任务。', 'The Agent did not return an interactive script task.'],
   ['应用标识无效。', 'The app identifier is invalid.'],
   ['应用目录中没有找到对应应用。', 'The matching app was not found in the catalog.'],
-  ['此应用没有可用的脚本管理入口。', 'This app does not have an available script management entry.'],
+  ['此应用没有可用的脚本管理入口。', 'Script management is not available for this app.'],
   ['无法打开应用脚本终端。', 'Unable to open the app script terminal.'],
   ['正在启动脚本终端…', 'Starting the script terminal…'],
   ['正在校验安装状态、管理能力和资源版本。', 'Checking installation state, management capability, and resource version.'],

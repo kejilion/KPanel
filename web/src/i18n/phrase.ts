@@ -1,8 +1,9 @@
-import { onUnmounted, watch, type WatchStopHandle } from 'vue'
-import { useI18n } from '@/i18n'
+import { onUnmounted, ref, watch, type WatchStopHandle } from 'vue'
+import { useI18n, type SupportedLocale } from '@/i18n'
 
 export type PhraseEntry = readonly [source: string, translation: string]
 export type PhraseCatalog = readonly PhraseEntry[]
+export type PhraseCatalogLoader = (locale: SupportedLocale) => Promise<PhraseCatalog>
 
 interface RegisteredCatalog {
   id: symbol
@@ -37,6 +38,7 @@ let enabled = false
 let refreshQueued = false
 let exactTranslations = new Map<string, string>()
 let patternTranslations: PatternTranslation[] = []
+export const phraseCatalogVersion = ref(0)
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -70,6 +72,7 @@ function rebuildIndex(): void {
   }
   exactTranslations = exact
   patternTranslations = patterns.sort((left, right) => right.expression.source.length - left.expression.source.length)
+  phraseCatalogVersion.value += 1
 }
 
 function interpolatePattern(template: string, captures: readonly string[]): string {
@@ -215,7 +218,7 @@ export function installPhraseLocalization(root: HTMLElement): WatchStopHandle {
   return watch(
     locale,
     (nextLocale) => {
-      enabled = nextLocale === 'en-US'
+      enabled = nextLocale !== 'zh-CN'
       if (enabled) {
         startObserver()
         scheduleRefresh()
@@ -241,10 +244,10 @@ export function registerPhraseCatalog(entries: PhraseCatalog): () => void {
   }
 }
 
-export function usePhraseCatalog(loader: () => Promise<PhraseCatalog>): void {
+export function usePhraseCatalog(loader: PhraseCatalogLoader): void {
   const { locale } = useI18n()
   let active = true
-  let loadedEntries: PhraseCatalog | null = null
+  const loadedEntries = new Map<SupportedLocale, PhraseCatalog>()
   let sequence = 0
   let disposeCatalog: (() => void) | null = null
 
@@ -258,16 +261,20 @@ export function usePhraseCatalog(loader: () => Promise<PhraseCatalog>): void {
     async (nextLocale) => {
       const request = ++sequence
       if (nextLocale !== 'en-US') {
-        unregister()
+        if (nextLocale !== 'zh-TW') {
+          unregister()
+          return
+        }
+      }
+      unregister()
+      const cachedEntries = loadedEntries.get(nextLocale)
+      if (cachedEntries) {
+        disposeCatalog = registerPhraseCatalog(cachedEntries)
         return
       }
-      if (loadedEntries) {
-        if (!disposeCatalog) disposeCatalog = registerPhraseCatalog(loadedEntries)
-        return
-      }
-      const entries = await loader()
-      if (!active || request !== sequence || nextLocale !== 'en-US') return
-      loadedEntries = entries
+      const entries = await loader(nextLocale)
+      if (!active || request !== sequence) return
+      loadedEntries.set(nextLocale, entries)
       disposeCatalog = registerPhraseCatalog(entries)
     },
     { immediate: true },
@@ -288,4 +295,5 @@ export function resetPhraseLocalizationForTest(): void {
   rootElement = null
   enabled = false
   refreshQueued = false
+  phraseCatalogVersion.value += 1
 }

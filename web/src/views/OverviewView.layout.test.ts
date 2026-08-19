@@ -29,6 +29,19 @@ describe('OverviewView service status layout', () => {
     expect(source).toContain('<FirewallManagerDialog')
   })
 
+  it('gives the longer application summary its own full-width detail row', () => {
+    expect(source).toContain('class="resource-summary__item resource-summary__item--stacked"')
+    expect(styles).toMatch(
+      /\.resource-summary__item--stacked\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\);/,
+    )
+    expect(styles).toMatch(
+      /\.resource-summary__item--stacked > \.resource-summary__icon\s*\{[^}]*grid-row:\s*1 \/ span 2;/,
+    )
+    expect(styles).toMatch(
+      /\.resource-summary__item--stacked > em\s*\{[^}]*grid-column:\s*2;[^}]*word-break:\s*keep-all;/,
+    )
+  })
+
   it('replaces overview management with six common tools while preserving the full system center', () => {
     expect(source).toContain("const overviewSystemToolIDs = ['swap', 'ssh-port', 'dns', 'ip-preference', 'bbr', 'system-tuning']")
     expect(source).toContain('<template v-if="props.systemCenterOnly">')

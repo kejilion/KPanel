@@ -203,7 +203,7 @@ func TestCompletionMessagesPreserveStableIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	messages := (&NativeRuntime{store: store}).completionMessages(ctx, []Message{userMessage, toolMessage})
+	messages := (&NativeRuntime{store: store}).completionMessages(ctx, []Message{userMessage, toolMessage}, toolMessage.RunID)
 	if len(messages) != 3 {
 		t.Fatalf("messages=%#v", messages)
 	}
@@ -215,6 +215,9 @@ func TestCompletionMessagesPreserveStableIDs(t *testing.T) {
 	}
 	if messages[2].ID != toolMessage.ID || messages[2].ToolCallID != call.ID {
 		t.Fatalf("tool result identity was not preserved: %#v", messages[2])
+	}
+	if messages[0].CurrentRun || !messages[1].CurrentRun || !messages[2].CurrentRun {
+		t.Fatalf("current run markers were not preserved: %#v", messages)
 	}
 }
 

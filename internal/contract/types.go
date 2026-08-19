@@ -364,10 +364,12 @@ type ContainerSummary struct {
 	State             string            `json:"state"`
 	Status            string            `json:"status"`
 	Health            string            `json:"health,omitempty"`
+	CreatedAt         *time.Time        `json:"createdAt,omitempty"`
 	Ports             []PortBinding     `json:"ports"`
 	Mounts            []Mount           `json:"mounts"`
 	Networks          []string          `json:"networks"`
 	ComposeProject    string            `json:"composeProject,omitempty"`
+	ComposeService    string            `json:"composeService,omitempty"`
 	Ownership         string            `json:"ownership"`
 	OwnershipEvidence []string          `json:"ownershipEvidence,omitempty"`
 	ResourceVersion   string            `json:"resourceVersion"`

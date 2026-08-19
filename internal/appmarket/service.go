@@ -108,6 +108,8 @@ type Service struct {
 	scriptAppRoot                 string
 	now                           func() time.Time
 	fetchCatalog                  catalogFetcher
+	iconCache                     *officialIconCache
+	dynamicIconSources            map[string]string
 	catalogMu                     sync.Mutex
 	liveCatalog                   *Catalog
 	catalogExpiry                 time.Time
@@ -148,6 +150,7 @@ func newService(docker Docker, appRoot string, fetcher catalogFetcher) (*Service
 		catalog: catalog, legacy: legacy, scriptSHA256: scriptSHA256,
 		docker: docker, appRoot: filepath.Clean(appRoot), now: time.Now,
 		scriptAppRoot: "/root/apps", fetchCatalog: fetcher,
+		dynamicIconSources:            make(map[string]string),
 		scriptInteractiveFinder:       findKejilionInteractiveScript,
 		scriptInteractiveManageFinder: findKejilionInteractiveManageScript,
 		scriptManageFinder:            findKejilionManageScript,
@@ -347,11 +350,11 @@ func appContainerMatchScore(
 	return 0, ""
 }
 
-func installerKind(app App, legacy LegacyApp, scriptInstallAvailable bool) string {
+func installerKind(app App, _ LegacyApp, scriptInstallAvailable bool) string {
 	if _, ok := declarativeSpecs[app.Token]; ok {
 		return "declarative"
 	}
-	if scriptInstallAvailable && (app.Source == "thirdparty" || legacy.Num > 0) {
+	if scriptInstallAvailable && (app.Source == "builtin" || app.Source == "thirdparty") {
 		return "kejilion"
 	}
 	return "guided"
@@ -397,15 +400,37 @@ func (s *Service) currentCatalog(_ context.Context) catalogSnapshot {
 
 func (s *Service) refreshCatalog() {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
 	remote, err := s.fetchCatalog(ctx)
+	cancel()
 	now := s.now().UTC()
+	var merged Catalog
+	var dynamicSources map[string]string
+	if err == nil {
+		s.catalogMu.Lock()
+		iconCache := s.iconCache
+		var previous Catalog
+		if s.liveCatalog != nil {
+			previous = *s.liveCatalog
+		}
+		s.catalogMu.Unlock()
+		dynamicSources = dynamicRemoteIconSources(s.catalog, remote)
+		merged = mergeRemoteCatalogWithDynamicIcons(s.catalog, remote, iconCache != nil)
+		preserveExistingAddedDates(previous, &merged)
+		if iconCache != nil && len(dynamicSources) > 0 {
+			iconContext, iconCancel := context.WithTimeout(context.Background(), 8*time.Second)
+			iconCache.Prefetch(iconContext, dynamicSources)
+			iconCancel()
+		}
+		if iconCache != nil {
+			iconCache.Prune(dynamicSources)
+		}
+	}
 	s.catalogMu.Lock()
 	defer s.catalogMu.Unlock()
 	s.catalogLoading = false
 	if err == nil {
-		merged := mergeRemoteThirdParty(s.catalog, remote)
 		s.liveCatalog = &merged
+		s.dynamicIconSources = dynamicSources
 		s.catalogExpiry = now.Add(remoteCatalogTTL)
 		s.catalogRefreshedAt = now
 		s.catalogWarning = ""
@@ -441,7 +466,7 @@ func runtimeFromContainer(container contract.ContainerSummary) Runtime {
 
 func defaultCapabilities(
 	app App,
-	legacy LegacyApp,
+	_ LegacyApp,
 	scriptInstallAvailable bool,
 ) map[string]Capability {
 	reason := "该应用需要专属配置向导，暂不能无人值守安装"
@@ -449,9 +474,9 @@ func defaultCapabilities(
 	if _, ok := declarativeSpecs[app.Token]; ok {
 		install = Capability{Enabled: true}
 	} else if scriptInstallAvailable &&
-		(app.Source == "thirdparty" || legacy.Num > 0) {
+		(app.Source == "builtin" || app.Source == "thirdparty") {
 		install = Capability{Enabled: true}
-	} else if app.Source == "thirdparty" || legacy.Num > 0 {
+	} else if app.Source == "builtin" || app.Source == "thirdparty" {
 		install = Capability{Reason: "请先更新 kejilion.sh，并在终端运行一次 k 接受许可协议"}
 	}
 	return map[string]Capability{

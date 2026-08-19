@@ -1,12 +1,12 @@
 ---
 name: background-browser-validation
 description: "在登记的隔离环境后台执行 KPanel 真实浏览器验收，持久化状态、证据、资源保护和清理结果"
-version: "1.0"
+version: "1.1"
 author: "Codex"
 tags: [kpanel, browser, e2e, background, validation, stability]
 params: [project_dir, candidate_ref, test_environment, evidence_dir, timeout_seconds, command_spec]
 created: "2026-08-13T00:00:00+08:00"
-updated: "2026-08-13T00:00:00+08:00"
+updated: "2026-08-15T09:20:00+08:00"
 ---
 
 # KPanel Background Browser Validation
@@ -20,7 +20,7 @@ updated: "2026-08-13T00:00:00+08:00"
 
 - `${{project_dir}}` 是独立、干净工作树，`${{candidate_ref}}` 是不可变提交或镜像摘要。
 - `${{test_environment}}` 已登记在 `environment-policy.json` 且允许 `browser-validation`；`prod-108` 和
-  别名 `108` 会被机器门禁拒绝。
+  别名 `108` 已禁用全部 KPanel 操作并会被机器门禁拒绝。
 - `${{command_spec}}` 是本轮证据目录外的只读 JSON，包含 `command`、字符串 `args`、可选 `cwd/env`；
   命令必须来自仓库测试入口或精确固定工具，不通过 shell 拼接用户输入。
 - 测试自身负责候选容器/cgroup、宿主内存与磁盘 watchdog、真实断言、trace/截图/video 和精确清理；
@@ -44,7 +44,7 @@ node scripts/check-environment-policy.mjs \
 提升到 30 分钟或足以覆盖风险的明确循环数。不得把固定 10/30 分钟机械套给所有修改，也不得因后台化
 缩短原本由风险画像要求的覆盖。
 
-**Expected output:** 精确候选、登记的隔离环境、受影响旅程、完成条件、超时和资源预算清楚；108 被排除。
+**Expected output:** 精确候选、登记的隔离环境、受影响旅程、完成条件、超时和资源预算清楚；108 未连接。
 
 ### 2. 创建只增不改的证据目录和命令规格
 
@@ -116,5 +116,5 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   KPanel 内置浏览器模块。
 - CI 中短小且已有超时的浏览器测试可直接前台执行；后台入口用于本地/远程长测试和会话可恢复性。
 - 后台作业不能自动获得 SSH、生产、提交、推送或发布权限。
-- `prod-108` 只允许稳定版本部署和部署安全核对，不能因“只读浏览器”或“发布后观察”获得测试例外。
+- `prod-108`/`108` 已禁用全部 KPanel 操作；后台浏览器、发布、部署或安全核对都不得连接。
 - 证据目录是作业状态真源；会话消息、PID 存在或日志仍增长都不能替代终态与完整断言。

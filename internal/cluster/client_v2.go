@@ -317,6 +317,9 @@ func (c *RemoteClient) exchangeV2(
 	if err != nil {
 		return err
 	}
+	if path == v2SummaryPath {
+		request.Header.Set(FederationCapabilitiesHeader, SecurityEntrancePathCapability)
+	}
 	var response v2Envelope
 	if err := c.doJSON(request, maxV2EnvelopeBytes, &response); err != nil {
 		return err

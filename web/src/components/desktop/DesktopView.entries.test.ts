@@ -7,6 +7,7 @@ import DesktopShortcutDialog from '@/components/desktop/DesktopShortcutDialog.vu
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
 import type { DesktopEntries } from '@/lib/desktopEntries'
+import { beginDesktopFileDrag, clearDesktopFileDrag } from '@/lib/desktopFileShortcuts'
 import { api } from '@/lib/api'
 import type { DesktopWorkspace, DesktopWorkspaceUpdate } from '@/types/api'
 
@@ -35,6 +36,18 @@ vi.mock('@/lib/api', async (importOriginal) => {
         uploadShortcutIcon: vi.fn(),
         removeShortcutIcon: vi.fn(),
       },
+      files: {
+        ...actual.api.files,
+        entry: vi.fn(),
+        entries: vi.fn(),
+        action: vi.fn(),
+        upload: vi.fn(),
+        transferFromPanel: vi.fn(),
+      },
+      cluster: {
+        ...actual.api.cluster,
+        hosts: vi.fn(),
+      },
     },
   }
 })
@@ -44,10 +57,16 @@ const mockedAppearance = vi.mocked(api.sites.appearance)
 const mockedWorkspace = vi.mocked(api.desktop.workspace)
 const mockedWorkspaceUpdate = vi.mocked(api.desktop.updateWorkspace)
 const mockedUploadShortcutIcon = vi.mocked(api.desktop.uploadShortcutIcon)
+const mockedFileEntry = vi.mocked(api.files.entry)
+const mockedFileEntries = vi.mocked(api.files.entries)
+const mockedFileAction = vi.mocked(api.files.action)
+const mockedFileUpload = vi.mocked(api.files.upload)
+const mockedPanelTransfer = vi.mocked(api.files.transferFromPanel)
+const mockedClusterHosts = vi.mocked(api.cluster.hosts)
 
 function makeWorkspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     resourceVersion: `sha256:${'1'.repeat(64)}`,
     available: true,
     hiddenEntryKeys: [],
@@ -71,10 +90,21 @@ function makeEntries(): DesktopEntries {
   }
 }
 
+function internalFileDragEvent(type: string, dataTransfer: Record<string, unknown>, x = 120, y = 140): DragEvent {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    dataTransfer: { value: dataTransfer },
+    clientX: { value: x },
+    clientY: { value: y },
+  })
+  return event as DragEvent
+}
+
 describe('DesktopView dynamic entries', () => {
   beforeEach(() => {
     resetDesktopModeForTest()
     resetDesktopIconsForTest()
+    clearDesktopFileDrag()
     window.localStorage.clear()
     window.scrollTo = vi.fn()
     window.open = vi.fn()
@@ -99,6 +129,33 @@ describe('DesktopView dynamic entries', () => {
     mockedUploadShortcutIcon.mockResolvedValue({
       iconVersion: 'c'.repeat(64),
       iconURL: '/api/v1/desktop/shortcuts/icon',
+    })
+    mockedPanelTransfer.mockReset()
+    mockedFileEntry.mockReset()
+    mockedFileEntry.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    mockedFileEntries.mockReset()
+    mockedFileEntries.mockResolvedValue({ entries: [], unavailable: [] })
+    mockedClusterHosts.mockReset()
+    mockedClusterHosts.mockResolvedValue({ nodeId: 'f'.repeat(32) } as Awaited<ReturnType<typeof api.cluster.hosts>>)
+    mockedFileAction.mockReset()
+    mockedFileAction.mockImplementation(async (input) => ({
+      action: input.action,
+      succeeded: [{ path: `${input.target}/${input.name}` }],
+      failed: [],
+    }))
+    mockedFileUpload.mockReset()
+    mockedFileUpload.mockImplementation(async (path, file, _overwrite, onProgress) => {
+      onProgress?.(45)
+      onProgress?.(100)
+      return {
+        name: file.name,
+        path: `${path}/${file.name}`,
+        kind: 'file',
+        sizeBytes: file.size,
+        mode: '0644', owner: 'root', group: 'root',
+        modifiedAt: '2026-08-14T00:00:00Z', resourceVersion: 'sha256:file',
+        editable: true, previewable: true,
+      }
     })
   })
 
@@ -419,6 +476,7 @@ describe('DesktopView dynamic entries', () => {
         id: 'a'.repeat(32),
         name: '内部文档',
         description: '团队手册',
+        targetType: 'url',
         url: 'https://docs.example.com/',
         iconVersion: 'b'.repeat(64),
         iconURL: `/api/v1/desktop/shortcuts/${'a'.repeat(32)}/icon?v=${'b'.repeat(64)}`,
@@ -450,6 +508,491 @@ describe('DesktopView dynamic entries', () => {
     await flushPromises()
     expect(mockedWorkspaceUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ shortcuts: [] }))
     expect(wrapper.find('button[title="内部文档"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('removes selected apps, sites, and shortcuts with one workspace update', async () => {
+    const shortcutID = '9'.repeat(32)
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      positions: {
+        'app:nginx': { x: 0.2, y: 0.1 },
+        'site:blog': { x: 0.3, y: 0.2 },
+        [`shortcut:${shortcutID}`]: { x: 0.4, y: 0.3 },
+      },
+      shortcuts: [{
+        id: shortcutID,
+        name: '内部文档',
+        description: '',
+        targetType: 'url',
+        url: 'https://docs.example.com/',
+        createdAt: '2026-08-14T00:00:00Z',
+        updatedAt: '2026-08-14T00:00:00Z',
+      }],
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+
+    await wrapper.get('button[title="Nginx"]').trigger('click')
+    await wrapper.get('button[title="blog.example.com"]').trigger('click', { ctrlKey: true })
+    await wrapper.get('button[title="内部文档"]').trigger('click', { ctrlKey: true })
+    const actions = wrapper.get('.desktop__selection-actions')
+    expect(actions.text()).toContain('已选 3 项')
+    await actions.findAll('button')[0]!.trigger('click')
+    await nextTick()
+    expect(document.body.textContent).toContain('文件和目录不会被删除')
+
+    const dialog = Array.from(document.body.querySelectorAll<HTMLElement>('.modal-panel'))
+      .find((panel) => panel.textContent?.includes('确认从桌面移除 3 项'))
+    dialog?.querySelector<HTMLButtonElement>('.button--primary')?.click()
+    await flushPromises()
+
+    expect(mockedWorkspaceUpdate).toHaveBeenCalledTimes(1)
+    expect(mockedWorkspaceUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      hiddenEntryKeys: expect.arrayContaining(['app:nginx', 'site:blog']),
+      shortcuts: [],
+      positions: expect.objectContaining({
+        'app:nginx': { x: 0.2, y: 0.1 },
+        'site:blog': { x: 0.3, y: 0.2 },
+      }),
+    }))
+    expect(mockedWorkspaceUpdate.mock.calls[0]![0].positions).not.toHaveProperty(`shortcut:${shortcutID}`)
+    expect(wrapper.find('.desktop__selection-actions').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('reuses an existing window for the same directory and keeps different directories independent', async () => {
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      shortcuts: [
+        {
+          id: 'c'.repeat(32), name: 'nginx.conf', description: '', targetType: 'file', path: '/etc/nginx/nginx.conf',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+        {
+          id: 'd'.repeat(32), name: '网站目录', description: '', targetType: 'directory', path: '/home/web',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+        {
+          id: 'e'.repeat(32), name: 'mime.types', description: '', targetType: 'file', path: '/etc/nginx/mime.types',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+        {
+          id: 'f'.repeat(32), name: 'Nginx 目录', description: '', targetType: 'directory', path: '/etc/nginx',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+      ],
+    }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const desktop = useDesktopMode()
+
+    expect(wrapper.get(`[data-icon-key="shortcut:${'d'.repeat(32)}"] svg`).classes()).toContain('lucide-folder-open')
+
+    await wrapper.get(`[data-icon-key="shortcut:${'c'.repeat(32)}"] button`).trigger('dblclick')
+    await wrapper.get(`[data-icon-key="shortcut:${'d'.repeat(32)}"] button`).trigger('dblclick')
+    expect(desktop.windows.value.map((windowState) => windowState.path)).toEqual([
+      '/files?path=%2Fetc%2Fnginx&file=%2Fetc%2Fnginx%2Fnginx.conf',
+      '/files?path=%2Fhome%2Fweb',
+    ])
+    const firstWindowID = desktop.windows.value[0]!.id
+    await wrapper.get(`[data-icon-key="shortcut:${'f'.repeat(32)}"] button`).trigger('dblclick')
+    expect(desktop.windows.value).toHaveLength(2)
+    expect(desktop.focusedId.value).toBe(firstWindowID)
+
+    await wrapper.get(`[data-icon-key="shortcut:${'e'.repeat(32)}"] button`).trigger('dblclick')
+    expect(desktop.windows.value).toHaveLength(2)
+    expect(desktop.focusedId.value).toBe(firstWindowID)
+    expect(desktop.windows.value[0]?.path).toBe(
+      '/files?path=%2Fetc%2Fnginx&file=%2Fetc%2Fnginx%2Fmime.types',
+    )
+
+    await wrapper.get('button[title="文件"]').trigger('dblclick')
+    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.windows.value[2]?.path).toBe('/files')
+    const rootWindowID = desktop.windows.value[2]!.id
+
+    await wrapper.get('button[title="文件"]').trigger('dblclick')
+    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.focusedId.value).toBe(rootWindowID)
+    wrapper.unmount()
+  })
+
+  it('creates a file shortcut at the desktop drop area without moving the source', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const values = new Map<string, string>()
+    const types: string[] = []
+    const dataTransfer = {
+      types,
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) {
+        return values.get(type) || ''
+      },
+    }
+    const start = internalFileDragEvent('dragstart', dataTransfer)
+    expect(beginDesktopFileDrag(start, [{ name: 'nginx.conf', path: '/etc/nginx.conf', kind: 'file' }])).toBe(true)
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.desktop__file-drop').exists()).toBe(true)
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer))
+    await flushPromises()
+
+    const update = mockedWorkspaceUpdate.mock.calls.at(-1)?.[0]
+    expect(update?.shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'nginx.conf', targetType: 'file', path: '/etc/nginx.conf' }),
+    ]))
+    const shortcut = update?.shortcuts.find((item) => item.path === '/etc/nginx.conf')
+    expect(shortcut && update?.positions[`shortcut:${shortcut.id}`]).toBeTruthy()
+    expect(wrapper.find('.desktop__file-drop').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('natively drags selected desktop file shortcuts across panels and moves them locally as a group', async () => {
+    const firstID = '1'.repeat(32)
+    const secondID = '2'.repeat(32)
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      shortcuts: [
+        {
+          id: firstID, name: 'one.txt', description: '', targetType: 'file', path: '/home/one.txt',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+        {
+          id: secondID, name: 'app', description: '', targetType: 'directory', path: '/home/app',
+          createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+        },
+      ],
+    }))
+    mockedFileEntries.mockResolvedValue({
+      entries: [
+        {
+          name: 'one.txt', path: '/home/one.txt', kind: 'file', resourceVersion: 'sha256:one',
+          sizeBytes: 3, mode: '0644', owner: 'root', group: 'root', modifiedAt: '2026-08-15T00:00:00Z',
+          editable: true, previewable: true,
+        },
+        {
+          name: 'app', path: '/home/app', kind: 'directory', resourceVersion: 'sha256:app',
+          sizeBytes: 0, mode: '0755', owner: 'root', group: 'root', modifiedAt: '2026-08-15T00:00:00Z',
+          editable: false, previewable: false,
+        },
+      ],
+      unavailable: [],
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const first = wrapper.get(`[data-icon-key="shortcut:${firstID}"]`)
+    const second = wrapper.get(`[data-icon-key="shortcut:${secondID}"]`)
+    expect(first.attributes('draggable')).toBe('true')
+    expect(second.classes()).toContain('desktop__icon-slot--transfer-ready')
+    expect(wrapper.get('[data-icon-key="app:nginx"]').attributes('draggable')).toBeUndefined()
+
+    await first.get('button').trigger('click')
+    await second.get('button').trigger('click', { ctrlKey: true })
+    const values = new Map<string, string>()
+    const types: string[] = []
+    const dataTransfer = {
+      types, effectAllowed: 'none', dropEffect: 'none',
+      setDragImage: vi.fn(),
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) { return values.get(type) || '' },
+    }
+    first.element.dispatchEvent(internalFileDragEvent('dragstart', dataTransfer, 40, 40))
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(first.element, 40, 40)
+    const payload = JSON.parse(values.get('application/x-kpanel-cross-panel-files-v2') || '{}')
+    expect(payload).toMatchObject({
+      version: 2,
+      sourceNodeId: 'f'.repeat(32),
+      entries: [
+        { path: '/home/one.txt', resourceVersion: 'sha256:one' },
+        { path: '/home/app', resourceVersion: 'sha256:app' },
+      ],
+    })
+    expect(values.get('DownloadURL')).toMatch(/^application\/zip:KPanel Desktop\.zip:https?:\/\//)
+    expect(values.get('DownloadURL')).toContain('/api/v1/files/archive?selection=')
+    expect(values.get('DownloadURL')).toContain('name=KPanel+Desktop.zip')
+
+    const protectedHoverDataTransfer = {
+      ...dataTransfer,
+      getData: () => '',
+    }
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', protectedHoverDataTransfer, 360, 260))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.desktop__file-drop').exists()).toBe(false)
+    expect(protectedHoverDataTransfer.dropEffect).toBe('move')
+    expect(first.attributes('style')).toContain('left: 320px')
+    expect(first.attributes('style')).toContain('top: 220px')
+    expect(second.classes()).toContain('desktop__icon-slot--dragging')
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 360, 260))
+    await wrapper.vm.$nextTick()
+    expect(first.classes()).not.toContain('desktop__icon-slot--dragging')
+    expect(second.classes()).not.toContain('desktop__icon-slot--dragging')
+    first.element.dispatchEvent(internalFileDragEvent('dragend', dataTransfer, 360, 260))
+    await flushPromises()
+
+    const positions = mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].positions
+    expect(positions?.[`shortcut:${firstID}`]).toBeDefined()
+    expect(positions?.[`shortcut:${secondID}`]).toBeDefined()
+    expect(mockedPanelTransfer).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('commits a fast local desktop shortcut release when the native drop event is skipped', async () => {
+    const shortcutID = '3'.repeat(32)
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      shortcuts: [{
+        id: shortcutID, name: 'fast.txt', description: '', targetType: 'file', path: '/home/fast.txt',
+        createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+      }],
+    }))
+    mockedFileEntries.mockResolvedValue({
+      entries: [{
+        name: 'fast.txt', path: '/home/fast.txt', kind: 'file', mime: 'text/plain', resourceVersion: 'sha256:fast',
+        sizeBytes: 3, mode: '0644', owner: 'root', group: 'root', modifiedAt: '2026-08-15T00:00:00Z',
+        editable: true, previewable: true,
+      }],
+      unavailable: [],
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const shortcut = wrapper.get(`[data-icon-key="shortcut:${shortcutID}"]`)
+    const values = new Map<string, string>()
+    const types: string[] = []
+    const dataTransfer = {
+      types, effectAllowed: 'none', dropEffect: 'none', setDragImage: vi.fn(),
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) { return values.get(type) || '' },
+    }
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragstart', dataTransfer, 40, 40))
+    expect(values.get('DownloadURL')).toMatch(
+      /^text\/plain:fast\.txt:https?:\/\/[^/]+\/api\/v1\/files\/content\?path=%2Fhome%2Ffast\.txt&disposition=attachment$/,
+    )
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => wrapper.element),
+    })
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragend', dataTransfer, 360, 260))
+    await flushPromises()
+
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].positions[`shortcut:${shortcutID}`]).toBeDefined()
+    expect(mockedPanelTransfer).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not turn cross-panel shortcut drags into local moves on dragend', async () => {
+    const shortcutID = '4'.repeat(32)
+    mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
+      shortcuts: [{
+        id: shortcutID, name: 'remote.txt', description: '', targetType: 'file', path: '/home/remote.txt',
+        createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z',
+      }],
+    }))
+    mockedFileEntries.mockResolvedValue({
+      entries: [{
+        name: 'remote.txt', path: '/home/remote.txt', kind: 'file', resourceVersion: 'sha256:remote',
+        sizeBytes: 3, mode: '0644', owner: 'root', group: 'root', modifiedAt: '2026-08-15T00:00:00Z',
+        editable: true, previewable: true,
+      }],
+      unavailable: [],
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const shortcut = wrapper.get(`[data-icon-key="shortcut:${shortcutID}"]`)
+    const values = new Map<string, string>()
+    const types: string[] = []
+    const dataTransfer = {
+      types, effectAllowed: 'none', dropEffect: 'none', setDragImage: vi.fn(),
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) { return values.get(type) || '' },
+    }
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragstart', dataTransfer, 40, 40))
+    dataTransfer.dropEffect = 'copy'
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => wrapper.element),
+    })
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragend', dataTransfer, 360, 260))
+    await flushPromises()
+
+    expect(mockedWorkspaceUpdate).not.toHaveBeenCalled()
+
+    dataTransfer.dropEffect = 'none'
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragstart', dataTransfer, 40, 40))
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragleave', dataTransfer, 360, 260))
+    await nextTick()
+    expect(shortcut.classes()).toContain('desktop__icon-slot--native-drag-hidden')
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer, 360, 260))
+    await nextTick()
+    expect(shortcut.classes()).not.toContain('desktop__icon-slot--native-drag-hidden')
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragleave', dataTransfer, 360, 260))
+    dataTransfer.dropEffect = 'none'
+    shortcut.element.dispatchEvent(internalFileDragEvent('dragend', dataTransfer, 360, 260))
+    await flushPromises()
+
+    expect(mockedWorkspaceUpdate).not.toHaveBeenCalled()
+    expect(shortcut.classes()).not.toContain('desktop__icon-slot--native-drag-hidden')
+    wrapper.unmount()
+  })
+
+  it('uploads an external operating-system file and creates a real server-file desktop entry', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const file = new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    const dataTransfer = {
+      types: ['Files'],
+      items: [],
+      files: [file],
+      dropEffect: 'none',
+    }
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer))
+    await nextTick()
+    expect(wrapper.get('.desktop__file-drop').text()).toContain('上传到 KPanel 桌面')
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
+    await flushPromises()
+
+    expect(mockedFileAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mkdir', target: '/home', name: 'KPanel Desktop' }),
+      expect.any(AbortSignal),
+    )
+    expect(mockedFileUpload).toHaveBeenCalledWith(
+      '/home/KPanel Desktop', file, false, expect.any(Function), expect.any(AbortSignal),
+    )
+    const update = mockedWorkspaceUpdate.mock.calls.at(-1)?.[0]
+    expect(update?.shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'notes.txt', targetType: 'file', path: '/home/KPanel Desktop/notes.txt',
+      }),
+    ]))
+    expect(wrapper.get('.desktop-transfer').text()).toContain('已传到桌面')
+    wrapper.unmount()
+  })
+
+  it('copies a cross-panel directory and creates its desktop entry after commit', async () => {
+    const copied = {
+      name: 'app', path: '/home/KPanel Desktop/app', kind: 'directory' as const,
+      sizeBytes: 0, mode: '0755', owner: 'root', group: 'root',
+      modifiedAt: '2026-08-15T00:00:00Z', resourceVersion: 'sha256:target',
+      editable: false, previewable: false,
+    }
+    mockedPanelTransfer.mockImplementation(async (_input, onEvent) => {
+      onEvent({ state: 'connecting' })
+      onEvent({ state: 'transferring', loadedBytes: 1024, totalBytes: 2048 })
+      onEvent({ state: 'committing', loadedBytes: 2048, totalBytes: 2048 })
+      onEvent({ state: 'complete', loadedBytes: 2048, totalBytes: 2048, entry: copied })
+      return copied
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const payload = JSON.stringify({
+      version: 1, sourceNodeId: 'a'.repeat(32), name: 'app', path: '/app',
+      kind: 'directory', resourceVersion: 'sha256:source',
+    })
+    const dataTransfer = {
+      types: ['application/x-kpanel-cross-panel-file-v1'], dropEffect: 'none',
+      getData: (type: string) => type === 'application/x-kpanel-cross-panel-file-v1' ? payload : '',
+    }
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer))
+    await nextTick()
+    expect(wrapper.get('.desktop__file-drop').text()).toContain('从另一个 KPanel 复制')
+    expect(wrapper.get('.desktop__file-drop').text()).toContain('/home/KPanel Desktop')
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
+    await flushPromises()
+    expect(mockedPanelTransfer).toHaveBeenCalledWith({
+      sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:source',
+      targetDirectory: '/home/KPanel Desktop',
+    }, expect.any(Function), expect.any(AbortSignal))
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'app', targetType: 'directory', path: '/home/KPanel Desktop/app' }),
+    ]))
+    expect(wrapper.get('.desktop-transfer').text()).toContain('跨面板复制完成')
+    wrapper.unmount()
+  })
+
+  it('copies a cross-panel multi-selection and creates all committed desktop entries together', async () => {
+    mockedPanelTransfer.mockImplementation(async (input, onEvent) => {
+      onEvent({ state: 'connecting' })
+      onEvent({ state: 'complete' })
+      const name = input.path.slice(input.path.lastIndexOf('/') + 1)
+      return {
+        name, path: `/home/KPanel Desktop/${name}`, kind: 'file' as const,
+        sizeBytes: 4, mode: '0644', owner: 'root', group: 'root',
+        modifiedAt: '2026-08-15T00:00:00Z', resourceVersion: `sha256:target-${name}`,
+        editable: true, previewable: true,
+      }
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const payload = JSON.stringify({
+      version: 2,
+      sourceNodeId: 'b'.repeat(32),
+      entries: [
+        { name: 'one.txt', path: '/one.txt', kind: 'file', resourceVersion: 'sha256:one' },
+        { name: 'two.txt', path: '/two.txt', kind: 'file', resourceVersion: 'sha256:two' },
+      ],
+    })
+    const dataTransfer = {
+      types: ['application/x-kpanel-cross-panel-files-v2'], dropEffect: 'none',
+      getData: (type: string) => type === 'application/x-kpanel-cross-panel-files-v2' ? payload : '',
+    }
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
+    await flushPromises()
+
+    expect(mockedPanelTransfer).toHaveBeenCalledTimes(2)
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'one.txt', path: '/home/KPanel Desktop/one.txt' }),
+      expect.objectContaining({ name: 'two.txt', path: '/home/KPanel Desktop/two.txt' }),
+    ]))
+    expect(wrapper.get('.desktop-transfer').text()).toContain('跨面板复制完成')
+    expect(wrapper.get('.desktop-transfer').text()).toContain('2 个项目')
+    wrapper.unmount()
+  })
+
+  it('uses a remembered existing host directory for later desktop uploads', async () => {
+    window.localStorage.setItem('kpanel:desktop-upload-location:v1', '/srv/uploads')
+    mockedFileEntry.mockImplementation(async (path) => {
+      if (path === '/srv/uploads') {
+        return {
+          name: 'uploads', path, kind: 'directory', sizeBytes: 0, mode: '0755',
+          owner: 'root', group: 'root', modifiedAt: '2026-08-14T00:00:00Z',
+          resourceVersion: 'sha256:directory', editable: false, previewable: false,
+        }
+      }
+      throw Object.assign(new Error('not found'), { status: 404 })
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const file = new File(['content'], 'custom.txt', { type: 'text/plain' })
+    const dataTransfer = { types: ['Files'], items: [], files: [file], dropEffect: 'none' }
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
+    await flushPromises()
+
+    expect(mockedFileUpload).toHaveBeenCalledWith(
+      '/srv/uploads', file, false, expect.any(Function), expect.any(AbortSignal),
+    )
+    expect(mockedFileAction).not.toHaveBeenCalled()
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '/srv/uploads/custom.txt', targetType: 'file' }),
+    ]))
     wrapper.unmount()
   })
 

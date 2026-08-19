@@ -49,7 +49,7 @@ function pointer(
 
 function workspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     resourceVersion: `sha256:${'1'.repeat(64)}`,
     available: true,
     hiddenEntryKeys: [],
@@ -58,6 +58,20 @@ function workspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace 
     shortcuts: [],
     ...overrides,
   }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
 describe('DesktopView icon layout interaction', () => {
@@ -113,6 +127,84 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
+  it('keeps the newest optimistic position while an earlier position write settles', async () => {
+    const firstWrite = deferred<DesktopWorkspace>()
+    const secondWrite = deferred<DesktopWorkspace>()
+    updateWorkspace
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise)
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const slot = wrapper.get('[data-icon-key="nav:/overview"]')
+
+    slot.element.dispatchEvent(pointer('pointerdown', 30, 30))
+    window.dispatchEvent(pointer('pointermove', 145, 30))
+    window.dispatchEvent(pointer('pointerup', 145, 30))
+    await flushPromises()
+    const firstPosition = updateWorkspace.mock.calls[0]![0].positions['nav:/overview']!
+
+    slot.element.dispatchEvent(pointer('pointerdown', 145, 30))
+    window.dispatchEvent(pointer('pointermove', 250, 30))
+    window.dispatchEvent(pointer('pointerup', 250, 30))
+    await flushPromises()
+    const optimisticStyle = slot.attributes('style')
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+
+    firstWrite.resolve(workspace({
+      resourceVersion: `sha256:${'2'.repeat(64)}`,
+      positions: { 'nav:/overview': firstPosition },
+    }))
+    await flushPromises()
+
+    expect(updateWorkspace).toHaveBeenCalledTimes(2)
+    expect(slot.attributes('style')).toBe(optimisticStyle)
+    const finalBody = updateWorkspace.mock.calls[1]![0]
+    secondWrite.resolve(workspace({
+      resourceVersion: `sha256:${'3'.repeat(64)}`,
+      positions: finalBody.positions,
+    }))
+    await flushPromises()
+
+    expect(slot.attributes('style')).toBe(optimisticStyle)
+    wrapper.unmount()
+  })
+
+  it('does not roll back a newer optimistic position when an earlier write fails', async () => {
+    const firstWrite = deferred<DesktopWorkspace>()
+    const secondWrite = deferred<DesktopWorkspace>()
+    updateWorkspace
+      .mockImplementationOnce(() => firstWrite.promise)
+      .mockImplementationOnce(() => secondWrite.promise)
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const slot = wrapper.get('[data-icon-key="nav:/overview"]')
+
+    slot.element.dispatchEvent(pointer('pointerdown', 30, 30))
+    window.dispatchEvent(pointer('pointermove', 145, 30))
+    window.dispatchEvent(pointer('pointerup', 145, 30))
+    await flushPromises()
+    slot.element.dispatchEvent(pointer('pointerdown', 145, 30))
+    window.dispatchEvent(pointer('pointermove', 250, 30))
+    window.dispatchEvent(pointer('pointerup', 250, 30))
+    await flushPromises()
+    const optimisticStyle = slot.attributes('style')
+
+    firstWrite.reject(new Error('earlier write failed'))
+    await flushPromises()
+
+    expect(updateWorkspace).toHaveBeenCalledTimes(2)
+    expect(slot.attributes('style')).toBe(optimisticStyle)
+    const finalBody = updateWorkspace.mock.calls[1]![0]
+    secondWrite.resolve(workspace({
+      resourceVersion: `sha256:${'3'.repeat(64)}`,
+      positions: finalBody.positions,
+    }))
+    await flushPromises()
+
+    expect(slot.attributes('style')).toBe(optimisticStyle)
+    wrapper.unmount()
+  })
+
   it('captures the active pointer and safely releases it after a drop', async () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
@@ -156,6 +248,92 @@ describe('DesktopView icon layout interaction', () => {
 
     await icon.trigger('dblclick')
     expect(desktop.windows.value).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('selects intersecting icons with a desktop frame and exposes batch actions', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const root = wrapper.get<HTMLElement>('.desktop')
+    const slots = wrapper.findAll<HTMLElement>('.desktop__icon-slot')
+    vi.spyOn(slots[0]!.element, 'getBoundingClientRect').mockReturnValue({
+      x: 20, y: 20, top: 20, right: 110, bottom: 116, left: 20,
+      width: 90, height: 96, toJSON: () => ({}),
+    })
+    vi.spyOn(slots[1]!.element, 'getBoundingClientRect').mockReturnValue({
+      x: 20, y: 120, top: 120, right: 110, bottom: 216, left: 20,
+      width: 90, height: 96, toJSON: () => ({}),
+    })
+
+    root.element.dispatchEvent(pointer('pointerdown', 10, 10))
+    window.dispatchEvent(pointer('pointermove', 125, 225))
+    await flushPromises()
+    expect(wrapper.find('.desktop__selection-box').exists()).toBe(true)
+    window.dispatchEvent(pointer('pointerup', 125, 225))
+    await flushPromises()
+
+    expect(slots[0]!.find('button').classes()).toContain('desktop__icon--selected')
+    expect(slots[1]!.find('button').classes()).toContain('desktop__icon--selected')
+    expect(wrapper.find('.desktop__selection-box').exists()).toBe(false)
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 2 项')
+    wrapper.unmount()
+  })
+
+  it('adds icons with Control and moves the selected group in one workspace write', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const overview = wrapper.get('[data-icon-key="nav:/overview"]')
+    const terminal = wrapper.get('[data-icon-key="nav:/terminal"]')
+
+    await overview.get('button').trigger('click')
+    await terminal.get('button').trigger('click', { ctrlKey: true })
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 2 项')
+
+    overview.element.dispatchEvent(pointer('pointerdown', 30, 30))
+    window.dispatchEvent(pointer('pointermove', 250, 30))
+    window.dispatchEvent(pointer('pointerup', 250, 30))
+    await flushPromises()
+
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+    const positions = updateWorkspace.mock.calls[0]![0].positions
+    expect(positions['nav:/overview']?.x).toBeGreaterThan(0)
+    expect(positions['nav:/terminal']?.x).toBe(positions['nav:/overview']?.x)
+    expect(positions['nav:/terminal']?.y).toBeGreaterThan(positions['nav:/overview']?.y || 0)
+    wrapper.unmount()
+  })
+
+  it('cancels a selection frame without replacing the previous selection', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const overview = wrapper.get('[data-icon-key="nav:/overview"] button')
+    await overview.trigger('click')
+
+    wrapper.get('.desktop').element.dispatchEvent(pointer('pointerdown', 400, 300))
+    window.dispatchEvent(pointer('pointermove', 520, 420))
+    window.dispatchEvent(pointer('pointercancel', 520, 420))
+    await flushPromises()
+
+    expect(overview.classes()).toContain('desktop__icon--selected')
+    expect(wrapper.find('.desktop__selection-box').exists()).toBe(false)
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('selects all icons from the keyboard and never removes fixed system entries', async () => {
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const desktop = wrapper.get<HTMLElement>('.desktop')
+    desktop.element.focus()
+
+    await desktop.trigger('keydown', { key: 'a', ctrlKey: true })
+    // 13, not 12: the desktop gained the browser entry (lib/desktopApps.ts).
+    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(13)
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 13 项')
+
+    await desktop.trigger('keydown', { key: 'Delete' })
+    await flushPromises()
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('固定系统入口不能从桌面移除')
     wrapper.unmount()
   })
 

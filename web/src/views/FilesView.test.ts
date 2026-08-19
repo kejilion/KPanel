@@ -2,16 +2,27 @@ import { readFileSync } from 'node:fs'
 import { createSSRApp, nextTick, reactive, ssrContextKey } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from './FilesView.vue'
+import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
+import { resetFileWindowTransferForTest } from '@/lib/fileWindowTransfer'
+import { beginDesktopFileDrag, clearDesktopFileDrag } from '@/lib/desktopFileShortcuts'
+import type { DesktopWorkspaceUpdate } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  entry: vi.fn(),
   action: vi.fn(),
+  transferFromPanel: vi.fn(),
   trash: vi.fn(),
   write: vi.fn(),
+  contentUrl: vi.fn(),
+  archiveUrl: vi.fn(),
   createDownloadTicket: vi.fn(),
   thumbnailUrl: vi.fn(),
+  desktopWorkspace: vi.fn(),
+  desktopUpdate: vi.fn(),
   success: vi.fn(),
   danger: vi.fn(),
+  show: vi.fn(),
   route: { query: {} as Record<string, unknown> },
   push: vi.fn(),
 }))
@@ -26,15 +37,22 @@ vi.mock('@/lib/api', () => ({
   ApiError: class MockApiError extends Error {},
   api: {
     files: {
+      entry: mocks.entry,
       list: mocks.list,
       action: mocks.action,
+      transferFromPanel: mocks.transferFromPanel,
       trash: mocks.trash,
-      contentUrl: vi.fn(),
+      contentUrl: mocks.contentUrl,
+      archiveUrl: mocks.archiveUrl,
       createDownloadTicket: mocks.createDownloadTicket,
       thumbnailUrl: mocks.thumbnailUrl,
       text: vi.fn(),
       write: mocks.write,
       upload: vi.fn(),
+    },
+    desktop: {
+      workspace: mocks.desktopWorkspace,
+      updateWorkspace: mocks.desktopUpdate,
     },
   },
 }))
@@ -43,6 +61,7 @@ vi.mock('@/stores/toast', () => ({
   useToast: () => ({
     success: mocks.success,
     danger: mocks.danger,
+    show: mocks.show,
   }),
 }))
 
@@ -68,6 +87,7 @@ function testDirectory(path: string): FileDirectoryResult {
 
 interface FileBindings {
   requestedFilePath: (value: unknown) => string | undefined
+  openRequestedFile: (value: unknown) => Promise<void>
   loadDirectory: (path?: string, append?: boolean) => Promise<string | undefined>
   navigateDirectory: (path: string) => Promise<void>
   savePreview: (content?: string) => Promise<void>
@@ -79,6 +99,11 @@ interface FileBindings {
   toggleAllTrash: () => void
   runTrashAction: (action: 'trash_restore' | 'trash_delete' | 'trash_empty') => Promise<void>
   pasteClipboard: (target?: string) => Promise<void>
+  transferInternalFileDrop: (event: DragEvent, target: string) => Promise<void>
+  transferCrossPanelFileDrop: (event: DragEvent, target: string) => Promise<void>
+  cancelFileTransfer: () => void
+  addEntriesToDesktop: (entry?: TestFileEntry, currentDirectory?: boolean) => Promise<void>
+  startEntryDrag: (event: DragEvent, entry: TestFileEntry) => void
   setClipboard: (mode: 'copy' | 'move', entry?: TestFileEntry) => void
   showContext: (event: MouseEvent, entry: TestFileEntry) => void
   showDirectoryContext: (event: MouseEvent) => void
@@ -114,6 +139,14 @@ interface FileBindings {
       entries: TestFileEntry[]
     }
   }
+  fileTransferState: {
+    value?: {
+      mode: 'copy' | 'move'
+      target: string
+      count: number
+      phase: 'running' | 'success' | 'partial' | 'cancelled' | 'error'
+    }
+  }
   contextMenu: { value?: { entry?: TestFileEntry; x: number; y: number } }
   dialogEntries: { value: TestFileEntry[] }
   dialogAction: { value?: 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash' }
@@ -138,7 +171,7 @@ interface FileBindings {
 interface TestFileEntry {
   name: string
   path: string
-  kind: 'file'
+  kind: 'file' | 'directory'
   mime: string
   sizeBytes: number
   mode: string
@@ -167,6 +200,36 @@ function testEntry(name: string): TestFileEntry {
   }
 }
 
+function internalDrag(entries: TestFileEntry[], modifiers: { ctrlKey?: boolean; altKey?: boolean } = {}): DragEvent {
+  const values = new Map<string, string>()
+  const types: string[] = []
+  const event = {
+    ctrlKey: Boolean(modifiers.ctrlKey),
+    altKey: Boolean(modifiers.altKey),
+    dataTransfer: {
+      types,
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) {
+        return values.get(type) || ''
+      },
+    },
+  } as unknown as DragEvent
+  beginDesktopFileDrag(event, entries)
+  return event
+}
+
+function crossPanelDrag(entries: TestFileEntry[]): DragEvent {
+  const event = internalDrag(entries)
+  beginDesktopFileDrag(event, entries, 'a'.repeat(32))
+  clearDesktopFileDrag()
+  return event
+}
+
 function setupView(): FileBindings {
   const component = FilesView as unknown as {
     setup: (props: Record<string, never>, context: { expose: () => void }) => FileBindings
@@ -183,6 +246,9 @@ function setupView(): FileBindings {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetDesktopIconsForTest()
+  resetFileWindowTransferForTest()
+  clearDesktopFileDrag()
   mocks.route = reactive({ query: {} as Record<string, unknown> })
   mocks.push.mockImplementation(async (location: { query?: Record<string, unknown> }) => {
     mocks.route.query = location.query || {}
@@ -198,9 +264,15 @@ beforeEach(() => {
       setItem: vi.fn(),
     },
   })
+  vi.stubGlobal('location', { href: 'https://panel.example/files' })
   vi.stubGlobal('document', { activeElement: null })
   mocks.list.mockResolvedValue(testDirectory('/web'))
   mocks.action.mockResolvedValue({ action: 'trash', succeeded: [], failed: [] })
+  mocks.transferFromPanel.mockImplementation(async (input: { path: string; targetDirectory: string }, onEvent: (event: unknown) => void) => {
+    onEvent({ state: 'complete' })
+    const source = input.path.slice(input.path.lastIndexOf('/') + 1)
+    return { ...testEntry(source), path: `${input.targetDirectory}/${source}` }
+  })
   mocks.trash.mockResolvedValue({ entries: [], total: 0, readAt: '2026-07-30T00:00:00Z' })
   mocks.write.mockImplementation(async (_path: string, _content: string, _version: string) => ({
     entry: testEntry('saved.txt'),
@@ -209,7 +281,97 @@ beforeEach(() => {
     downloadUrl: '/api/v1/files/download/test-ticket',
     expiresAt: '2026-07-30T00:05:00Z',
   })
+  mocks.contentUrl.mockImplementation((path: string, disposition: string) => (
+    `/api/v1/files/content?path=${encodeURIComponent(path)}&disposition=${disposition}`
+  ))
+  mocks.archiveUrl.mockImplementation((_entries: TestFileEntry[], name: string) => (
+    `/api/v1/files/archive?selection=test&name=${encodeURIComponent(name)}`
+  ))
   mocks.thumbnailUrl.mockImplementation((path: string, version: string) => `/thumb?path=${path}&version=${version}`)
+  const desktopWorkspace = {
+    schemaVersion: 2 as const,
+    resourceVersion: `sha256:${'1'.repeat(64)}`,
+    available: true,
+    hiddenEntryKeys: [],
+    positions: {},
+    labels: {},
+    shortcuts: [],
+  }
+  mocks.desktopWorkspace.mockResolvedValue(desktopWorkspace)
+  mocks.desktopUpdate.mockImplementation(async (input: DesktopWorkspaceUpdate) => ({
+    ...desktopWorkspace,
+    resourceVersion: `sha256:${'2'.repeat(64)}`,
+    shortcuts: input.shortcuts.map((shortcut: Record<string, unknown>) => ({
+      ...shortcut,
+      createdAt: '2026-08-14T00:00:00Z',
+      updatedAt: '2026-08-14T00:00:00Z',
+    })),
+  }))
+})
+
+describe('FilesView desktop shortcuts', () => {
+  it('drags one file directly and folders or selections as one ZIP download', () => {
+    const view = setupView()
+    const first = testEntry('one.txt')
+    const second = testEntry('two.txt')
+    view.directory.value = { path: '/', entries: [first, second] }
+    const single = internalDrag([])
+
+    view.startEntryDrag(single, first)
+
+    expect(mocks.contentUrl).toHaveBeenCalledWith('/one.txt', 'attachment')
+    expect(single.dataTransfer?.getData('DownloadURL')).toContain(
+      '/api/v1/files/content?path=%2Fone.txt&disposition=attachment',
+    )
+
+    view.selected.value = new Set([first.path, second.path])
+    const selection = internalDrag([])
+    view.startEntryDrag(selection, first)
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([first, second], 'home.zip')
+    expect(selection.dataTransfer?.getData('DownloadURL')).toContain(
+      'application/zip:home.zip:https://panel.example/api/v1/files/archive',
+    )
+
+    const folder = { ...testEntry('photos'), kind: 'directory' as const }
+    const directory = internalDrag([])
+    view.startEntryDrag(directory, folder)
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([folder], 'photos.zip')
+    expect(directory.dataTransfer?.getData('DownloadURL')).toContain('application/zip:photos.zip:')
+  })
+
+  it('adds the current multi-selection in one desktop workspace update', async () => {
+    const view = setupView()
+    const first = testEntry('nginx.conf')
+    const second = testEntry('site.log')
+    view.directory.value = { path: '/etc', entries: [first, second] }
+    view.selected.value = new Set([first.path, second.path])
+
+    await view.addEntriesToDesktop(first)
+
+    expect(mocks.desktopUpdate).toHaveBeenCalledTimes(1)
+    const input = mocks.desktopUpdate.mock.calls[0]![0]
+    expect(input.shortcuts.map((shortcut: Record<string, unknown>) => ({
+      name: shortcut.name,
+      targetType: shortcut.targetType,
+      path: shortcut.path,
+    }))).toEqual([
+      { name: 'nginx.conf', targetType: 'file', path: '/nginx.conf' },
+      { name: 'site.log', targetType: 'file', path: '/site.log' },
+    ])
+    expect(mocks.success).toHaveBeenCalledWith('已添加 2 项到桌面', '图标已按桌面空位自动排列。')
+  })
+
+  it('resolves a desktop file target and opens it in the file preview', async () => {
+    const view = setupView()
+    const entry = { ...testEntry('nginx.conf'), path: '/etc/nginx/nginx.conf', editable: false }
+    mocks.entry.mockResolvedValueOnce(entry)
+
+    await view.openRequestedFile(entry.path)
+
+    expect(mocks.entry).toHaveBeenCalledWith(entry.path)
+    expect(view.selected.value).toEqual(new Set([entry.path]))
+    expect(view.previewEntry.value).toEqual(entry)
+  })
 })
 
 describe('FilesView downloads', () => {
@@ -318,6 +480,45 @@ describe('FilesView route path', () => {
 })
 
 describe('FilesView large icon layout', () => {
+  it('uses metadata-first streaming and a stable responsive video stage', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+
+    expect(source).toMatch(/<video[\s\S]*preload="metadata"[\s\S]*playsinline[\s\S]*@loadedmetadata="handleMediaReady"/)
+    expect(source).toContain('<source :src="previewURL" :type="previewEntry.mime || undefined" />')
+    expect(source).toContain('视频流响应超时，请检查网络或服务器。')
+    expect(source).toMatch(/\.media-player\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/)
+    expect(source).toMatch(/\.media-player video\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;/)
+    expect(source).toContain('支持边缓冲边播放')
+  })
+
+  it('keeps the desktop shortcut action behind permissions without wrapping batch labels', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+    const batchToolbar = source.match(/aria-label="批量文件操作"[\s\S]*?<\/Transition>/)?.[0] || ''
+    const contextMenu = source.match(/class="file-context-menu"[\s\S]*?<ModalDialog/)?.[0] || ''
+
+    expect(batchToolbar.indexOf("openDialog('chmod')")).toBeGreaterThan(-1)
+    expect(batchToolbar.indexOf('addEntriesToDesktop()')).toBeGreaterThan(batchToolbar.indexOf("openDialog('chmod')"))
+    expect(batchToolbar.indexOf('invertSelection')).toBeGreaterThan(batchToolbar.indexOf('addEntriesToDesktop()'))
+    expect(contextMenu.indexOf("openDialog('chmod', contextMenu.entry)")).toBeGreaterThan(-1)
+    expect(contextMenu.indexOf('addEntriesToDesktop(contextMenu.entry)')).toBeGreaterThan(
+      contextMenu.indexOf("openDialog('chmod', contextMenu.entry)"),
+    )
+    expect(contextMenu.indexOf("openDialog('trash', contextMenu.entry)")).toBeGreaterThan(
+      contextMenu.indexOf('addEntriesToDesktop(contextMenu.entry)'),
+    )
+    expect(source).toMatch(/\.batch-bar button\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/)
+    expect(source).toMatch(/:global\(\.desktop-window \.batch-bar\)\s*\{[^}]*width:\s*min\(760px, calc\(100% - 28px\)\);/)
+    expect(source).not.toMatch(/:global\(\.desktop-window\)\s+\.batch-bar/)
+  })
+
+  it('lets the code editor consume the remaining fullscreen height', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+
+    expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.code-viewer\)\s*\{[^}]*display:\s*flex;[^}]*height:\s*100%;[^}]*flex-direction:\s*column;/)
+    expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.code-editor\)\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto;/)
+    expect(source).not.toMatch(/:global\(\.modal-panel--fullscreen\)\s+\.code-/)
+  })
+
   it('skips layout and paint work for offscreen directory entries', () => {
     const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
 
@@ -1001,7 +1202,8 @@ describe('FilesView directory loading', () => {
     const view = setupView()
     const entry = testEntry('source.txt')
     view.currentPath.value = '/target'
-    view.clipboard.value = { mode: 'copy', entries: [entry] }
+    view.directory.value = { path: '/', entries: [entry] }
+    view.setClipboard('copy', entry)
     mocks.action.mockResolvedValueOnce({
       action: 'copy',
       succeeded: [{ path: entry.path, destination: '/target/source.txt' }],
@@ -1014,6 +1216,7 @@ describe('FilesView directory loading', () => {
       action: 'copy',
       sources: [entry.path],
       target: '/target',
+      expectedResourceVersions: { [entry.path]: entry.resourceVersion },
     })
     expect(view.clipboard.value?.entries).toEqual([entry])
     expect(mocks.list).toHaveBeenCalled()
@@ -1023,7 +1226,9 @@ describe('FilesView directory loading', () => {
     const view = setupView()
     const moved = testEntry('moved.txt')
     const failed = testEntry('failed.txt')
-    view.clipboard.value = { mode: 'move', entries: [moved, failed] }
+    view.directory.value = { path: '/', entries: [moved, failed] }
+    view.selected.value = new Set([moved.path, failed.path])
+    view.setClipboard('move', moved)
     mocks.action.mockResolvedValueOnce({
       action: 'move',
       succeeded: [{ path: moved.path, destination: `/target/${moved.name}` }],
@@ -1038,5 +1243,75 @@ describe('FilesView directory loading', () => {
       '部分文件未粘贴',
       '1 项成功，1 项失败：目标已存在',
     )
+  })
+
+  it('moves a native file-window drag with version protection and completion feedback', async () => {
+    const view = setupView()
+    const entry = { ...testEntry('project.txt'), path: '/source/project.txt' }
+    const event = internalDrag([entry])
+    view.currentPath.value = '/target'
+    mocks.action.mockResolvedValueOnce({
+      action: 'move',
+      succeeded: [{ path: entry.path, destination: '/target/project.txt' }],
+      failed: [],
+    })
+
+    await view.transferInternalFileDrop(event, '/target')
+
+    expect(mocks.action).toHaveBeenCalledWith({
+      action: 'move',
+      sources: [entry.path],
+      target: '/target',
+      expectedResourceVersions: { [entry.path]: entry.resourceVersion },
+    }, undefined)
+    expect(view.fileTransferState.value).toMatchObject({
+      mode: 'move', target: '/target', count: 1, phase: 'success',
+    })
+    expect(mocks.success).toHaveBeenCalledWith('移动完成', '1 项已传输到 /target')
+  })
+
+  it('allows a copy to be cancelled without claiming that completed copies were removed', async () => {
+    const view = setupView()
+    const entry = { ...testEntry('project.txt'), path: '/source/project.txt' }
+    const event = internalDrag([entry], { ctrlKey: true })
+    mocks.action.mockImplementationOnce((_input: unknown, signal?: AbortSignal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    }))
+
+    const transfer = view.transferInternalFileDrop(event, '/target')
+    expect(view.fileTransferState.value?.phase).toBe('running')
+    view.cancelFileTransfer()
+    await transfer
+
+    expect(view.fileTransferState.value).toMatchObject({ mode: 'copy', phase: 'cancelled' })
+    expect(mocks.show).toHaveBeenCalledWith('复制已取消', {
+      message: '已经复制完成的项目会保留在目标目录。',
+    })
+  })
+
+  it('copies a multi-selection from another KPanel into the dropped directory', async () => {
+    const view = setupView()
+    const first = { ...testEntry('one.txt'), path: '/source/one.txt' }
+    const second = { ...testEntry('two.txt'), path: '/source/two.txt' }
+    const event = crossPanelDrag([first, second])
+    mocks.transferFromPanel
+      .mockResolvedValueOnce({ ...first, path: '/target/one.txt' })
+      .mockRejectedValueOnce(new Error('source changed'))
+
+    await view.transferCrossPanelFileDrop(event, '/target')
+
+    expect(mocks.transferFromPanel).toHaveBeenCalledTimes(2)
+    expect(mocks.transferFromPanel.mock.calls[0]?.[0]).toEqual({
+      sourceNodeId: 'a'.repeat(32), path: '/source/one.txt',
+      resourceVersion: first.resourceVersion, targetDirectory: '/target',
+    })
+    expect(view.fileTransferState.value).toMatchObject({
+      mode: 'copy', target: '/target', count: 2, completed: 2, phase: 'partial', remote: true,
+    })
+    expect(mocks.danger).toHaveBeenCalledWith(
+      '跨面板复制部分完成',
+      '1 项成功，1 项失败：source changed',
+    )
+    expect(mocks.list).toHaveBeenCalled()
   })
 })

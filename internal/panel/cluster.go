@@ -3,11 +3,13 @@ package panel
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/kejilion/kejilion-panel/internal/auth"
@@ -107,6 +109,7 @@ func (s *Server) handleClusterHostAdd(w http.ResponseWriter, r *http.Request) {
 	if err := s.decodeJSON(w, r, &input); err != nil {
 		return
 	}
+	input.ControllerOrigin = s.clusterFileCallbackOrigin(r)
 	change := map[string]any{
 		"name": strings.TrimSpace(input.Name), "origin": strings.TrimSpace(input.Origin),
 	}
@@ -140,6 +143,15 @@ func (s *Server) handleClusterHost(w http.ResponseWriter, r *http.Request) {
 		s.handleClusterHostRefresh(w, r, id)
 		return
 	}
+	if strings.HasSuffix(rest, "/mutual-files") {
+		id := strings.TrimSuffix(rest, "/mutual-files")
+		if strings.Contains(id, "/") || r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
+			return
+		}
+		s.handleClusterHostMutualFiles(w, r, id)
+		return
+	}
 	if strings.Contains(rest, "/") {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 		return
@@ -162,6 +174,29 @@ func (s *Server) handleClusterHost(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 	}
+}
+
+func (s *Server) handleClusterHostMutualFiles(w http.ResponseWriter, r *http.Request, id string) {
+	session, ok := s.requireClusterMutation(w, r)
+	if !ok {
+		return
+	}
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		s.writeProblem(w, r, http.StatusBadRequest, "request_body_not_allowed", "Request body not allowed", "")
+		return
+	}
+	if err := s.audit(r, session.User.ID, "cluster.host.mutual-files.enable", "cluster-host", id, "intent", nil); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	host, err := s.cluster.EnableMutualFileTransfer(r.Context(), id, s.clusterFileCallbackOrigin(r))
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "cluster.host.mutual-files.enable", "cluster-host", id, "failure", nil)
+		s.writeClusterError(w, r, err)
+		return
+	}
+	_ = s.audit(r, session.User.ID, "cluster.host.mutual-files.enable", "cluster-host", id, "success", nil)
+	s.writeJSON(w, http.StatusOK, host)
 }
 
 func (s *Server) handleClusterHostRename(w http.ResponseWriter, r *http.Request, id string) {
@@ -290,14 +325,16 @@ func (s *Server) handleClusterPairingCodeProtocol(
 	if !ok {
 		return
 	}
-	// Terminal defaults to true when omitted so existing callers that don't
-	// yet know about this field keep getting today's behavior (summary +
-	// terminal); the two browse grants are brand new and only ever granted
-	// when explicitly requested, since no caller has ever asked for either
-	// before. They stay independently gated (see ScopeTokenBrowseWS's doc
-	// comment) rather than one bundled "browse" flag.
+	// Terminal and files default to true when omitted so existing callers that
+	// don't yet know about these fields keep getting today's behavior — every
+	// v2 pairing has carried summary + terminal + files. The two browse grants
+	// are brand new and only ever granted when explicitly requested, since no
+	// caller has ever asked for either before. They stay independently gated
+	// (see ScopeTokenBrowseWS's doc comment) rather than one bundled "browse"
+	// flag.
 	var grants struct {
 		Terminal    *bool `json:"terminal,omitempty"`
+		Files       *bool `json:"files,omitempty"`
 		BrowseFetch bool  `json:"browseFetch,omitempty"`
 		BrowseWS    bool  `json:"browseWs,omitempty"`
 	}
@@ -324,7 +361,10 @@ func (s *Server) handleClusterPairingCodeProtocol(
 	var err error
 	if v2 {
 		terminal := grants.Terminal == nil || *grants.Terminal
-		code, err = s.cluster.CreatePairingCodeV2(cluster.BuildV2Scope(terminal, grants.BrowseFetch, grants.BrowseWS))
+		files := grants.Files == nil || *grants.Files
+		code, err = s.cluster.CreatePairingCodeV2(
+			cluster.BuildV2Scope(terminal, files, grants.BrowseFetch, grants.BrowseWS),
+		)
 	} else {
 		code, err = s.cluster.CreatePairingCode()
 	}
@@ -420,10 +460,16 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 	); err != nil {
 		return
 	}
+	if r.URL.Path == "/api/v2/federation/files/open" ||
+		r.URL.Path == "/api/v2/federation/files/open-linked" {
+		s.handleFederationFileOpenV2(w, r, envelope)
+		return
+	}
 	response, err := s.cluster.HandleFederationV2(
 		r.Context(),
 		s.remoteIP(r),
 		r.URL.Path,
+		r.Header.Get(cluster.FederationCapabilitiesHeader),
 		envelope,
 	)
 	if err != nil {
@@ -441,6 +487,8 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 		action = "cluster.federation.v2.commit"
 	case "/api/v2/federation/revoke":
 		action = "cluster.federation.v2.revoke"
+	case "/api/v2/federation/files/link":
+		action = "cluster.federation.v2.files.link"
 	case "/api/v2/federation/terminal/open":
 		action = "cluster.federation.v2.terminal.open"
 	case "/api/v2/federation/terminal/close":
@@ -458,6 +506,103 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	s.writeJSON(w, status, response)
+}
+
+func (s *Server) handleFederationFileOpenV2(
+	w http.ResponseWriter,
+	r *http.Request,
+	envelope cluster.FederationEnvelopeV2,
+) {
+	linked := r.URL.Path == "/api/v2/federation/files/open-linked"
+	var input cluster.FederationFileOpenRequest
+	var authorization *cluster.FederationFileAuthorization
+	var err error
+	if linked {
+		input, authorization, err = s.cluster.AuthorizeLinkedFederationFileV2(s.remoteIP(r), envelope)
+	} else {
+		input, authorization, err = s.cluster.AuthorizeFederationFileV2(s.remoteIP(r), envelope)
+	}
+	if err != nil {
+		action := "cluster.federation.v2.files.open"
+		if linked {
+			action = "cluster.federation.v2.files.open-linked"
+		}
+		s.auditAuthFailure(r, action)
+		s.writeClusterError(w, r, err)
+		return
+	}
+	defer authorization.Close()
+	streamer, ok := s.agent.(agentStreamAPI)
+	if !ok {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_stream_unavailable", "Agent 文件流不可用", "")
+		return
+	}
+	query := url.Values{
+		"path":            []string{input.Path},
+		"resourceVersion": []string{input.ResourceVersion},
+	}
+	response, err := streamer.OpenStream(
+		r.Context(), http.MethodGet, "/v1/files/transfer/export", query.Encode(),
+		requestID(r), http.NoBody, nil, 0,
+	)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		s.writeAgentResponse(w, r, AgentResponse{
+			StatusCode:  response.StatusCode,
+			ContentType: response.Header.Get("Content-Type"),
+			Body:        mustReadLimited(response.Body, 1<<20),
+		})
+		return
+	}
+	rawMetadata, err := base64.RawURLEncoding.DecodeString(response.Header.Get("X-KPanel-File-Metadata"))
+	if err != nil || len(rawMetadata) == 0 || len(rawMetadata) > cluster.MaxSummaryBytes {
+		s.writeProblem(w, r, http.StatusBadGateway, "agent_response_invalid", "Agent 文件元数据无效", "")
+		return
+	}
+	var metadata contract.FileTransferMetadata
+	decoder := json.NewDecoder(bytes.NewReader(rawMetadata))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&metadata); err != nil {
+		s.writeProblem(w, r, http.StatusBadGateway, "agent_response_invalid", "Agent 文件元数据无效", "")
+		return
+	}
+	sealed, cipher, err := authorization.SealMetadata(metadata)
+	if err != nil {
+		s.writeClusterError(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-kpanel-noise-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if err := cluster.WriteFederationFileHeader(w, sealed); err != nil {
+		return
+	}
+	writer := cluster.NewFederationFileWriter(w, cipher)
+	_, copyErr := io.CopyBuffer(writer, response.Body, make([]byte, 60<<10))
+	if copyErr == nil && response.Trailer.Get("X-KPanel-Transfer-Result") != "ok" {
+		copyErr = errors.New("Agent transfer failed")
+	}
+	_ = writer.Finish(copyErr)
+	result := "success"
+	if copyErr != nil {
+		result = "failure"
+	}
+	action := "cluster.federation.v2.files.open"
+	if linked {
+		action = "cluster.federation.v2.files.open-linked"
+	}
+	_ = s.audit(r, "", action, "cluster-controller", envelope.ControllerID, result, map[string]any{
+		"kind": metadata.Kind, "bytes": metadata.SizeBytes,
+	})
+}
+
+func mustReadLimited(input io.Reader, limit int64) []byte {
+	content, _ := io.ReadAll(io.LimitReader(input, limit))
+	return content
 }
 
 func isLightNodeRequest(r *http.Request) bool {
@@ -565,6 +710,29 @@ func (s *Server) requireClusterMutation(w http.ResponseWriter, r *http.Request) 
 	return session, true
 }
 
+// clusterFileCallbackOrigin is called only after requireClusterMutation has
+// authenticated the session, Origin and CSRF token. It never trusts a
+// browser-supplied callback value from JSON.
+func (s *Server) clusterFileCallbackOrigin(r *http.Request) string {
+	candidates := make([]string, 0, 3)
+	if origin, ok := s.requestHTTPSOrigin(r); ok {
+		candidates = append(candidates, origin)
+	}
+	if origin, ok := directIPOrigin(r); ok {
+		candidates = append(candidates, origin)
+	}
+	if configured := strings.TrimRight(strings.TrimSpace(s.config.PublicURL), "/"); configured != "" {
+		candidates = append(candidates, configured)
+	}
+	for _, candidate := range candidates {
+		normalized, err := cluster.NormalizeV2Origin(candidate)
+		if err == nil && normalized == candidate {
+			return normalized
+		}
+	}
+	return ""
+}
+
 func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	code := "cluster_operation_failed"
@@ -594,6 +762,8 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusConflict, "federation_replay_rejected", "Federation request rejected"
 	case errors.Is(err, cluster.ErrRateLimited):
 		status, code, title = http.StatusTooManyRequests, "federation_rate_limited", "Federation request rate limited"
+	case errors.Is(err, cluster.ErrMutualFilesUnsupported):
+		status, code, title = http.StatusUpgradeRequired, "cluster_mutual_files_unsupported", "Mutual file transfer unsupported"
 	case errors.Is(err, cluster.ErrProtocolMismatch):
 		status, code, title = http.StatusUpgradeRequired, "federation_incompatible", "Federation protocol incompatible"
 	case errors.Is(err, cluster.ErrIdentityMismatch):

@@ -61,6 +61,13 @@ describe('responsive application shell comfort', () => {
     expect(appShellSource).toContain('<RouterView v-if="!desktopActive" />')
     expect(appShellSource).toContain('@click="enterDesktopSafely"')
     expect(appShellSource).toContain('desktopCloseGuardCoordinator.checkAll()')
+    expect(appShellSource).not.toContain('documentFullscreen')
+  })
+
+  it('keeps section navigation active on nested workspace routes', () => {
+    expect(appShellSource).toContain(
+      "'router-link-active': route.path === item.to || route.path.startsWith(`${item.to}/`)",
+    )
   })
 
   it('falls back to the classic shell when the lazy desktop chunk cannot load', () => {

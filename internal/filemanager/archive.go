@@ -31,12 +31,75 @@ type archiveDirectoryTime struct {
 	modified time.Time
 }
 
+type archiveSourceEntry struct {
+	virtual string
+	info    os.FileInfo
+}
+
 type archiveEntryWriter func(
 	ctx context.Context,
 	archiveName string,
 	sourceVirtual string,
 	info os.FileInfo,
 ) error
+
+func (m *Manager) prepareArchiveSources(
+	sources []string,
+	expectedVersions map[string]string,
+	outputVirtual string,
+) ([]archiveSourceEntry, error) {
+	if len(sources) == 0 {
+		return nil, ErrAction
+	}
+	if len(sources) > MaxBatchItems {
+		return nil, ErrBatchTooLarge
+	}
+	prepared := make([]archiveSourceEntry, 0, len(sources))
+	seenNames := make(map[string]struct{}, len(sources))
+	for _, source := range sources {
+		_, normalizedSource, err := m.resolveExisting(source)
+		if err != nil {
+			return nil, err
+		}
+		if normalizedSource == "/" {
+			return nil, ErrRootOperation
+		}
+		if err := m.checkExpectedVersion(normalizedSource, expectedVersions[source]); err != nil {
+			return nil, err
+		}
+		info, err := m.rootFS.Lstat(rootName(normalizedSource))
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, ErrSymlink
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return nil, ErrNotRegular
+		}
+		if outputVirtual != "" && info.IsDir() && isWithin(outputVirtual, normalizedSource) {
+			return nil, ErrInvalidPath
+		}
+		base := path.Base(normalizedSource)
+		if _, exists := seenNames[base]; exists {
+			return nil, ErrAlreadyExists
+		}
+		seenNames[base] = struct{}{}
+		prepared = append(prepared, archiveSourceEntry{virtual: normalizedSource, info: info})
+	}
+	return prepared, nil
+}
+
+func (m *Manager) verifyArchiveSources(prepared []archiveSourceEntry) error {
+	for _, source := range prepared {
+		current, err := m.rootFS.Lstat(rootName(source.virtual))
+		if err != nil || !os.SameFile(source.info, current) ||
+			resourceVersion(source.virtual, current) != resourceVersion(source.virtual, source.info) {
+			return ErrConflict
+		}
+	}
+	return nil
+}
 
 func (m *Manager) compressArchive(
 	ctx context.Context,
@@ -70,42 +133,9 @@ func (m *Manager) compressArchive(
 		return contract.FileEntry{}, err
 	}
 
-	type sourceEntry struct {
-		virtual string
-		info    os.FileInfo
-	}
-	prepared := make([]sourceEntry, 0, len(sources))
-	seenNames := make(map[string]struct{}, len(sources))
-	for _, source := range sources {
-		_, normalizedSource, resolveErr := m.resolveExisting(source)
-		if resolveErr != nil {
-			return contract.FileEntry{}, resolveErr
-		}
-		if normalizedSource == "/" {
-			return contract.FileEntry{}, ErrRootOperation
-		}
-		if err := m.checkExpectedVersion(normalizedSource, expectedVersions[source]); err != nil {
-			return contract.FileEntry{}, err
-		}
-		info, statErr := m.rootFS.Lstat(rootName(normalizedSource))
-		if statErr != nil {
-			return contract.FileEntry{}, statErr
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return contract.FileEntry{}, ErrSymlink
-		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return contract.FileEntry{}, ErrNotRegular
-		}
-		if info.IsDir() && isWithin(outputVirtual, normalizedSource) {
-			return contract.FileEntry{}, ErrInvalidPath
-		}
-		base := path.Base(normalizedSource)
-		if _, exists := seenNames[base]; exists {
-			return contract.FileEntry{}, ErrAlreadyExists
-		}
-		seenNames[base] = struct{}{}
-		prepared = append(prepared, sourceEntry{virtual: normalizedSource, info: info})
+	prepared, err := m.prepareArchiveSources(sources, expectedVersions, outputVirtual)
+	if err != nil {
+		return contract.FileEntry{}, err
 	}
 
 	temp, tempVirtual, err := m.createTemp(normalizedTarget, ".kpanel-archive-")
@@ -162,12 +192,8 @@ func (m *Manager) compressArchive(
 			return contract.FileEntry{}, err
 		}
 	}
-	for _, source := range prepared {
-		current, statErr := m.rootFS.Lstat(rootName(source.virtual))
-		if statErr != nil || !os.SameFile(source.info, current) ||
-			resourceVersion(source.virtual, current) != resourceVersion(source.virtual, source.info) {
-			return contract.FileEntry{}, ErrConflict
-		}
+	if err := m.verifyArchiveSources(prepared); err != nil {
+		return contract.FileEntry{}, err
 	}
 	encoderClosed = true
 	if err := closeEncoder(); err != nil {

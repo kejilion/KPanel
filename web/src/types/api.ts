@@ -190,7 +190,10 @@ export interface ClusterHost {
   federationProtocol: string
   scope: string
   terminalAvailable: boolean
+  fileTransferAvailable?: boolean
+  mutualFileTransferAvailable: boolean
   panelVersion?: string
+  securityEntrancePath?: string
   state: ClusterHostState
   lastSnapshot?: ClusterHostSnapshot
   lastAttemptAt?: string
@@ -214,9 +217,55 @@ export interface ClusterHostList {
   nodeId: string
 }
 
+export interface ClusterShareSettings {
+	enabled: boolean
+	title: string
+	description: string
+	sharePath?: string
+	resourceVersion: string
+	updatedAt?: string
+}
+
+export type PublicClusterShareHostState = 'online' | 'degraded' | 'offline' | 'pending'
+
+export interface PublicClusterShareHost {
+	id: string
+	name: string
+	state: PublicClusterShareHostState
+	os?: string
+	architecture?: string
+	uptimeSeconds?: number
+	load: { one: number; five: number; fifteen: number }
+	cpu: { cores: number; usagePercent: number }
+	memory: { totalBytes: number; usedBytes: number; usagePercent: number }
+	disk: { totalBytes: number; usedBytes: number; usagePercent: number }
+	network: { receiveBytesPerSecond: number; transmitBytesPerSecond: number }
+	location: {
+		isp?: string
+		country?: string
+		countryCode?: string
+		region?: string
+		city?: string
+	}
+	collectedAt?: string
+}
+
+export interface PublicClusterShareSnapshot {
+	title: string
+	description?: string
+	generatedAt: string
+	total: number
+	online: number
+	attention: number
+	items: PublicClusterShareHost[]
+}
+
 export interface ClusterPairingCode {
   code: string
-  scope: 'cluster.summary.read' | 'cluster.summary.read cluster.terminal.open'
+  scope:
+    | 'cluster.summary.read'
+    | 'cluster.summary.read cluster.terminal.open'
+    | 'cluster.summary.read cluster.terminal.open cluster.files.read'
   expiresAt: string
 }
 
@@ -782,6 +831,7 @@ export interface SSHDefenseActionResult {
 export interface AppMarketCategory {
   key: string
   zh: string
+  zh_tw?: string
   en: string
 }
 
@@ -816,14 +866,17 @@ export interface AppMarketItem {
   source: 'builtin' | 'thirdparty'
   token: string
   name_zh: string
+  name_zh_tw?: string
   name_en: string
   desc_zh: string
+  desc_zh_tw?: string
   desc_en: string
   cat: string
   url?: string
   icon: string
   iconSha256: string
   slug: string
+  addedAt?: string
   defaultPort?: number
   installPortConfigurable?: boolean
   installer: 'declarative' | 'kejilion' | 'guided'
@@ -1135,6 +1188,7 @@ export interface DockerContainer {
   access: ResourceAccess
   consistency: ConsistencyState
   project?: string
+  service?: string
   ports: DockerPort[]
   networks: string[]
   mounts: Array<{
@@ -1186,7 +1240,8 @@ export interface DockerInventory {
   version?: string
   observedAt: string
   containers: DockerContainer[]
-  images: DockerImage[]
+  composeProjects?: string[]
+	images: DockerImage[]
   networks: DockerNetwork[]
   volumes: DockerVolume[]
   loading?: Partial<Record<'images' | 'networks' | 'volumes', boolean>>
@@ -1357,6 +1412,22 @@ export interface DockerEnvironment {
   observedAt: string
 }
 
+export interface DockerComposeProjectFile {
+  path: string
+  name: string
+  source: string
+  resourceVersion: string
+}
+
+export interface DockerComposeProject {
+  name: string
+  workingDirectory: string
+  configFiles: DockerComposeProjectFile[]
+  environmentFile?: DockerComposeProjectFile
+  services: string[]
+  resourceVersion: string
+}
+
 export interface DockerContainerCreatePort {
   privatePort: number
   publicPort: number
@@ -1379,6 +1450,10 @@ export interface DockerContainerCreateEnvironment {
 export type DockerMaintenanceAction =
   | 'container_create'
   | 'compose_deploy'
+  | 'compose_redeploy'
+  | 'compose_start'
+  | 'compose_stop'
+  | 'compose_restart'
   | 'container_access'
   | 'image_pull'
   | 'image_remove'
@@ -1418,6 +1493,8 @@ export interface DockerMaintenanceInput {
   network?: string
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure'
   compose?: string
+  composeEnvironment?: string
+  composeFile?: string
   allowedIp?: string
   backupId?: string
   migrationHost?: string
@@ -1509,7 +1586,9 @@ export interface DesktopShortcut {
   id: string
   name: string
   description: string
-  url: string
+  targetType: 'url' | 'file' | 'directory'
+  url?: string
+  path?: string
   iconVersion?: string
   iconURL?: string
   createdAt: string
@@ -1517,7 +1596,7 @@ export interface DesktopShortcut {
 }
 
 export interface DesktopWorkspace {
-  schemaVersion: 1
+  schemaVersion: 2
   resourceVersion: string
   /** False means corrupt/unsupported persisted data was isolated read-only. */
   available: boolean
@@ -1533,7 +1612,7 @@ export interface DesktopWorkspaceUpdate {
   hiddenEntryKeys: string[]
   positions: Record<string, DesktopIconPosition>
   labels: Record<string, string>
-  shortcuts: Array<Pick<DesktopShortcut, 'id' | 'name' | 'description' | 'url'>>
+  shortcuts: Array<Pick<DesktopShortcut, 'id' | 'name' | 'description' | 'targetType' | 'url' | 'path'>>
 }
 
 export interface DesktopShortcutIconResult {
@@ -1570,6 +1649,11 @@ export interface FileEntry {
   previewable: boolean
 }
 
+export interface FileEntryBatchResult {
+  entries: FileEntry[]
+  unavailable: string[]
+}
+
 export interface FileDirectory {
   path: string
   entries: FileEntry[]
@@ -1585,6 +1669,28 @@ export interface FileDirectory {
 export interface FileDownloadTicket {
   downloadUrl: string
   expiresAt: string
+}
+
+export interface CrossPanelFileTransferInput {
+  sourceNodeId: string
+  path: string
+  resourceVersion: string
+  targetDirectory: string
+}
+
+export type CrossPanelFileTransferState =
+  | 'connecting'
+  | 'transferring'
+  | 'committing'
+  | 'complete'
+  | 'error'
+
+export interface CrossPanelFileTransferEvent {
+  state: CrossPanelFileTransferState
+  loadedBytes?: number
+  totalBytes?: number
+  entry?: FileEntry
+  detail?: string
 }
 
 export type FileAction =

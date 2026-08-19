@@ -27,6 +27,7 @@ type ChatMessage struct {
 	ToolCallID  string       `json:"toolCallId,omitempty"`
 	ToolCalls   []ToolCall   `json:"toolCalls,omitempty"`
 	Attachments []Attachment `json:"attachments,omitempty"`
+	CurrentRun  bool         `json:"-"`
 }
 
 type ToolDefinition struct {
@@ -70,6 +71,8 @@ type HTTPModelClient struct {
 	resolver            *net.Resolver
 	timeout             time.Duration
 	responsesMessageIDs sync.Map
+	openAIChatTextOnly  sync.Map
+	openAIChatReasoning sync.Map
 }
 
 func NewHTTPModelClient() *HTTPModelClient {
@@ -97,12 +100,28 @@ func chatMessageText(message ChatMessage) string {
 }
 
 func openAIContent(message ChatMessage, responses bool) any {
+	return openAIContentWithImages(message, responses, true)
+}
+
+func openAIContentWithImages(message ChatMessage, responses, includeImages bool) any {
 	text := chatMessageText(message)
 	hasImage := false
 	for _, attachment := range message.Attachments {
-		hasImage = hasImage || attachment.Kind == "image"
+		hasImage = hasImage || (includeImages && attachment.Kind == "image")
 	}
 	if !hasImage {
+		if !includeImages {
+			for _, attachment := range message.Attachments {
+				if attachment.Kind != "image" {
+					continue
+				}
+				if text != "" {
+					text += "\n\n"
+				}
+				encodedName, _ := json.Marshal(attachment.Name)
+				text += "<unavailable_image_attachment name=" + string(encodedName) + ">图片正文未发送：当前模型接口只接受文本历史。</unavailable_image_attachment>"
+			}
+		}
 		return text
 	}
 	blocks := make([]map[string]any, 0, len(message.Attachments)+1)
@@ -125,6 +144,15 @@ func openAIContent(message ChatMessage, responses bool) any {
 		}
 	}
 	return blocks
+}
+
+func chatMessageHasImage(message ChatMessage) bool {
+	for _, attachment := range message.Attachments {
+		if attachment.Kind == "image" {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *HTTPModelClient) Stream(ctx context.Context, provider Provider, apiKey string, request CompletionRequest, emit func(CompletionEvent) error) error {
@@ -533,9 +561,49 @@ func (c *HTTPModelClient) do(ctx context.Context, provider Provider, apiKey, met
 }
 
 func (c *HTTPModelClient) streamOpenAI(ctx context.Context, provider Provider, apiKey string, request CompletionRequest, emit func(CompletionEvent) error) error {
+	capabilityKey := provider.ID + "\x00" + strings.TrimRight(provider.BaseURL, "/") + "\x00" + request.Model
+	_, textOnly := c.openAIChatTextOnly.Load(capabilityKey)
+	reasoningField, _ := c.openAIChatReasoning.Load(capabilityKey)
+	requiredReasoningField, _ := reasoningField.(string)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if textOnly && requestHasCurrentRunImage(request) {
+			return imageInputUnsupportedError()
+		}
+		emitted := false
+		trackedEmit := func(event CompletionEvent) error {
+			if event.Delta != "" || len(event.ToolCalls) > 0 || event.Done {
+				emitted = true
+			}
+			return emit(event)
+		}
+		lastErr = c.streamOpenAIAttempt(ctx, provider, apiKey, request, !textOnly, requiredReasoningField, trackedEmit)
+		if lastErr == nil || emitted {
+			return lastErr
+		}
+		if !textOnly && openAIChatRejectsImages(lastErr) {
+			c.openAIChatTextOnly.Store(capabilityKey, struct{}{})
+			textOnly = true
+			if requestHasCurrentRunImage(request) {
+				return imageInputUnsupportedError()
+			}
+			continue
+		}
+		if field := openAIChatRequiredReasoningField(lastErr); field != "" && field != requiredReasoningField {
+			c.openAIChatReasoning.Store(capabilityKey, field)
+			requiredReasoningField = field
+			continue
+		}
+		return lastErr
+	}
+	return lastErr
+}
+
+func (c *HTTPModelClient) streamOpenAIAttempt(ctx context.Context, provider Provider, apiKey string, request CompletionRequest, includeImages bool, requiredReasoningField string, emit func(CompletionEvent) error) error {
 	messages := []map[string]any{{"role": "system", "content": request.System}}
+	batchReasoning := ""
 	for _, message := range request.Messages {
-		item := map[string]any{"role": message.Role, "content": openAIContent(message, false)}
+		item := map[string]any{"role": message.Role, "content": openAIContentWithImages(message, false, includeImages)}
 		if message.ToolCallID != "" {
 			item["tool_call_id"] = message.ToolCallID
 		}
@@ -545,6 +613,9 @@ func (c *HTTPModelClient) streamOpenAI(ctx context.Context, provider Provider, a
 				calls = append(calls, map[string]any{"id": call.ID, "type": "function", "function": map[string]any{"name": call.Name, "arguments": string(call.Arguments)}})
 			}
 			item["tool_calls"] = calls
+			batchReasoning = applyOpenAIChatReasoning(item, provider.ID, message.ToolCalls, requiredReasoningField, batchReasoning)
+		} else if message.Role != "tool" {
+			batchReasoning = ""
 		}
 		messages = append(messages, item)
 	}
@@ -567,17 +638,27 @@ func (c *HTTPModelClient) streamOpenAI(ctx context.Context, provider Provider, a
 	}
 	defer response.Body.Close()
 	toolParts := map[int]*ToolCall{}
+	var reasoning strings.Builder
+	reasoningField := ""
+	reasoningSeen := false
 	completed := false
 	err = scanSSE(response.Body, func(event, data string) error {
 		if data == "[DONE]" {
 			completed = true
-			return emit(CompletionEvent{Done: true, ToolCalls: sortedToolCalls(toolParts)})
+			calls := sortedToolCalls(toolParts)
+			if reasoningSeen && len(calls) > 0 {
+				attachOpenAIChatReasoning(provider.ID, calls, reasoningField, reasoning.String())
+			}
+			return emit(CompletionEvent{Done: true, ToolCalls: calls})
 		}
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string  `json:"content"`
+					ReasoningContent *string `json:"reasoning_content"`
+					ReasoningText    *string `json:"reasoning_text"`
+					Reasoning        *string `json:"reasoning"`
+					ToolCalls        []struct {
 						Index    int                              `json:"index"`
 						ID       string                           `json:"id"`
 						Function struct{ Name, Arguments string } `json:"function"`
@@ -592,8 +673,18 @@ func (c *HTTPModelClient) streamOpenAI(ctx context.Context, provider Provider, a
 		result := CompletionEvent{Usage: Usage{InputTokens: chunk.Usage.PromptTokens, OutputTokens: chunk.Usage.CompletionTokens}}
 		result.Usage.TotalTokens = result.Usage.InputTokens + result.Usage.OutputTokens
 		if len(chunk.Choices) > 0 {
-			result.Delta = chunk.Choices[0].Delta.Content
-			for _, part := range chunk.Choices[0].Delta.ToolCalls {
+			delta := chunk.Choices[0].Delta
+			result.Delta = delta.Content
+			field, part := openAIChatReasoningDelta(delta.ReasoningContent, delta.ReasoningText, delta.Reasoning)
+			if part != nil && (reasoningField == "" || reasoningField == field) {
+				if reasoning.Len()+len(*part) > MaxAssistantBytes {
+					return errors.New("provider reasoning context exceeds 1 MiB")
+				}
+				reasoningSeen = true
+				reasoningField = field
+				reasoning.WriteString(*part)
+			}
+			for _, part := range delta.ToolCalls {
 				call := toolParts[part.Index]
 				if call == nil {
 					call = &ToolCall{ID: part.ID}
@@ -612,6 +703,94 @@ func (c *HTTPModelClient) streamOpenAI(ctx context.Context, provider Provider, a
 		return io.ErrUnexpectedEOF
 	}
 	return err
+}
+
+type openAIChatNativeContext struct {
+	Type       string `json:"type"`
+	ProviderID string `json:"providerId"`
+	Field      string `json:"field"`
+	Text       string `json:"text"`
+}
+
+func attachOpenAIChatReasoning(providerID string, calls []ToolCall, field, reasoning string) {
+	if !validOpenAIChatReasoningField(field) || len(calls) == 0 {
+		return
+	}
+	raw, err := json.Marshal(openAIChatNativeContext{Type: "openai_chat_reasoning", ProviderID: providerID, Field: field, Text: reasoning})
+	if err == nil {
+		calls[0].ProviderData = raw
+	}
+}
+
+func applyOpenAIChatReasoning(item map[string]any, providerID string, calls []ToolCall, requiredField, fallbackText string) string {
+	text := fallbackText
+	for _, call := range calls {
+		var native openAIChatNativeContext
+		if json.Unmarshal(call.ProviderData, &native) == nil && native.Type == "openai_chat_reasoning" && native.ProviderID == providerID && validOpenAIChatReasoningField(native.Field) {
+			text = native.Text
+			break
+		}
+	}
+	if validOpenAIChatReasoningField(requiredField) {
+		item[requiredField] = text
+	}
+	return text
+}
+
+func openAIChatReasoningDelta(content, text, reasoning *string) (string, *string) {
+	if content != nil {
+		return "reasoning_content", content
+	}
+	if text != nil {
+		return "reasoning_text", text
+	}
+	if reasoning != nil {
+		return "reasoning", reasoning
+	}
+	return "", nil
+}
+
+func validOpenAIChatReasoningField(field string) bool {
+	return field == "reasoning_content" || field == "reasoning_text" || field == "reasoning"
+}
+
+func openAIChatRequiredReasoningField(err error) string {
+	var providerErr *ProviderError
+	if !errors.As(err, &providerErr) || providerErr.Status != http.StatusBadRequest {
+		return ""
+	}
+	message := strings.ToLower(providerErr.Message)
+	if !strings.Contains(message, "thinking mode") || !strings.Contains(message, "passed back") {
+		return ""
+	}
+	for _, field := range []string{"reasoning_content", "reasoning_text", "reasoning"} {
+		if strings.Contains(message, field) {
+			return field
+		}
+	}
+	return ""
+}
+
+func openAIChatRejectsImages(err error) bool {
+	var providerErr *ProviderError
+	if !errors.As(err, &providerErr) || providerErr.Status != http.StatusBadRequest {
+		return false
+	}
+	message := strings.ToLower(providerErr.Message)
+	return strings.Contains(message, "unknown variant") && strings.Contains(message, "image_url") && strings.Contains(message, "expected") && strings.Contains(message, "text")
+}
+
+func requestHasCurrentRunImage(request CompletionRequest) bool {
+	for _, message := range request.Messages {
+		if message.CurrentRun && chatMessageHasImage(message) {
+			return true
+		}
+	}
+	return false
+}
+
+func imageInputUnsupportedError() error {
+	return &ProviderError{Status: http.StatusBadRequest, Code: "image_input_unsupported", Message: "当前模型接口只接受文本，图片未发送；请切换支持图像输入的模型或兼容中转后重试"}
 }
 
 func (c *HTTPModelClient) streamAnthropic(ctx context.Context, provider Provider, apiKey string, request CompletionRequest, emit func(CompletionEvent) error) error {

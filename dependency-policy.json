@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "policyVersion": "2026-08-12",
+  "policyVersion": "2026-08-17",
   "purpose": "Continuously detect version-channel-stable dependency candidates without turning freshness into automatic adoption.",
   "stableRelease": {
     "excludePrerelease": true,
@@ -58,7 +58,7 @@
     {
       "id": "go-toolchain",
       "scope": "compiler-and-build-runtime",
-      "manifests": ["go.mod", "Dockerfile", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
+      "manifests": ["go.mod", "Dockerfile", ".github/workflows/ci.yml", ".github/workflows/release.yml", ".codex-workflows"],
       "detector": "go-stable-releases"
     },
     {

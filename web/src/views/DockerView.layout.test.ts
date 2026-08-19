@@ -28,6 +28,7 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const dockerSource = readFileSync(new URL('./DockerView.vue', import.meta.url), 'utf8')
+const deploymentEditorSource = readFileSync(new URL('../components/docker/DockerDeploymentEditor.vue', import.meta.url), 'utf8')
 
 interface DockerBindings {
   stats: Ref<DockerContainerStats | undefined>
@@ -120,24 +121,47 @@ describe('Docker resource toolbar layout', () => {
   })
 
   it('uses a light deployment editor by default and preserves the dark terminal treatment', () => {
-    expect(dockerSource).toMatch(/\.deployment-source\s*\{[^}]*background:\s*var\(--surface-subtle\);[^}]*color:\s*var\(--text\);/)
-    expect(dockerSource).toMatch(/:global\(:root\[data-theme='dark'\]\) \.deployment-source\s*\{[^}]*background:\s*var\(--terminal-shell-background, #0b1214\);[^}]*color:\s*var\(--terminal-shell-text, #d8dddc\);/)
+    expect(deploymentEditorSource).toMatch(/\.deployment-editor__surface\s*\{[\s\S]*?background:\s*var\(--surface-subtle\);/)
+    expect(deploymentEditorSource).toMatch(/:global\(:root\[data-theme='dark'\]\) \.deployment-editor__surface\s*\{[^}]*background:\s*var\(--terminal-shell-background, #0b1214\);/)
+    expect(deploymentEditorSource).toContain('setSelectionRange(item.from, Math.max(item.from + 1, item.to))')
+  })
+
+  it('does not repeat generic invalid-state copy when precise diagnostics are visible', () => {
+    expect(dockerSource).toContain(`v-if="createAnalysis.kind !== 'invalid' || !createDiagnostics.length"`)
+    expect(dockerSource).toContain(`v-if="composeAnalysis.kind !== 'invalid' || !composeDiagnostics.length"`)
   })
 
   it('keeps resource actions aligned to the right on desktop', () => {
     expect(dockerSource).toContain('.workspace-card > header:not(.resource-section__header)')
     expect(dockerSource).toMatch(/\.resource-section__header\s*\{[^}]*align-items:\s*center;/)
-    expect(dockerSource).toMatch(/\.resource-section__header > \.card-actions\s*\{[^}]*margin-left:\s*auto;[^}]*justify-content:\s*flex-end;/)
+    expect(dockerSource).toMatch(/\.resource-section__controls\s*\{[^}]*justify-content:\s*flex-end;/)
+    expect(dockerSource).toMatch(/\.resource-section__controls > \.card-actions\s*\{[^}]*justify-content:\s*flex-end;/)
   })
 
   it('lets resource actions wrap below the title on narrower screens', () => {
-    expect(dockerSource).toMatch(/@media \(max-width: 1000px\)[\s\S]*?\.resource-section__header > \.card-actions\s*\{[^}]*width:\s*100%;[^}]*margin-left:\s*0;[^}]*flex-wrap:\s*wrap;/)
+    expect(dockerSource).toMatch(/@media \(max-width: 1000px\)[\s\S]*?\.resource-section__controls > \.docker-toolbar,[\s\S]*?\.resource-section__controls > \.card-actions\s*\{[^}]*width:\s*100%;/)
+    expect(dockerSource).toMatch(/@media \(max-width: 1000px\)[\s\S]*?\.resource-section__controls > \.card-actions\s*\{[^}]*margin-left:\s*0;[^}]*flex-wrap:\s*wrap;/)
   })
 
   it('keeps resource titles and descriptions stacked instead of running together', () => {
     expect(dockerSource).toMatch(
-      /\.resource-section__header > div:first-child > div\s*\{[^}]*display:\s*grid;[^}]*gap:\s*3px;/,
+      /\.resource-section__heading > div\s*\{[^}]*display:\s*grid;[^}]*gap:\s*2px;/,
     )
+  })
+
+  it('keeps the Docker command center compact and removes duplicate resource summaries', () => {
+    expect(dockerSource).not.toContain('class="docker-summary"')
+    expect(dockerSource).toContain('class="docker-command-center__stats"')
+    expect(dockerSource).toContain('class="docker-workspace-bar"')
+    expect(dockerSource).toMatch(/\.docker-command-center__header\s*\{[^}]*padding:\s*10px 14px;/)
+    expect(dockerSource).toMatch(/\.docker-nav\s*\{[^}]*display:\s*flex;/)
+    expect(dockerSource).toMatch(/<header class="resource-section__header">[\s\S]*?class="resource-section__controls"/)
+  })
+
+  it('exposes both container creation-time sort directions', () => {
+    expect(dockerSource).toContain('v-model="containerSort"')
+    expect(dockerSource).toContain('<option value="created-desc">创建时间（新→旧）</option>')
+    expect(dockerSource).toContain('<option value="created-asc">创建时间（旧→新）</option>')
   })
 
   it('exposes right-click menus for every daily Docker resource', () => {
@@ -147,6 +171,36 @@ describe('Docker resource toolbar layout', () => {
     expect(dockerSource).toContain('@contextmenu="showVolumeContext($event, volume)"')
     expect(dockerSource).toContain('class="docker-context-menu"')
     expect(dockerSource).toContain('role="menu"')
+  })
+
+  it('groups Compose containers and exposes project configuration management', () => {
+    expect(dockerSource).toContain('v-for="group in containerGroups"')
+    expect(dockerSource).toContain('groupDockerContainers(filteredContainers.value, containerSort.value, visibleManagedComposeProjects.value)')
+    expect(dockerSource).toContain('Compose 项目 · 当前无容器 · 可重新部署恢复')
+    expect(dockerSource).toContain('v-if="!containerGroups.length"')
+    expect(dockerSource).toContain(':aria-expanded="!isContainerGroupCollapsed(group.key)"')
+    expect(dockerSource).toContain('@click="toggleContainerGroup(group.key)"')
+    expect(dockerSource).toContain('<TransitionGroup name="docker-group-row">')
+    expect(dockerSource).toContain('v-for="container in visibleContainerGroupRows(group)"')
+    expect(dockerSource).toContain(':style="containerGroupStyle(group)"')
+    expect(dockerSource).toContain('var(--docker-group-accent, var(--brand))')
+    expect(dockerSource).toMatch(/\.docker-group-row-enter-active,[\s\S]*?transition:\s*opacity \.12s linear, transform \.12s cubic-bezier\(\.2, \.8, \.2, 1\);/)
+    expect(dockerSource).toContain('transform: translate3d(0, -3px, 0)')
+    expect(dockerSource).not.toContain('scaleY(.97)')
+    expect(dockerSource).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.docker-group-row-enter-active,[\s\S]*?transition:\s*none;/)
+    expect(dockerSource).toContain('管理 Compose')
+    expect(dockerSource).toContain('保存并重新部署')
+    expect(dockerSource).toContain('composeEnvironmentVariables')
+    expect(dockerSource).toContain('composeEnvironment: createComposeEnvironmentSource()')
+    expect(dockerSource).toContain('composeEnvironment: environmentSource')
+    expect(dockerSource).toContain('项目变量 <code data-i18n-ignore>.env</code>')
+    expect(dockerSource).toContain("createComposeEnvironmentRevealed ? 'text' : 'password'")
+    expect(dockerSource).not.toContain('1panel.env')
+    expect(dockerSource).toMatch(/\.docker-table\s*\{\s*min-width:\s*1240px;/)
+    expect(dockerSource).toMatch(/\.docker-table \.docker-row > td:last-child\s*\{[^}]*min-width:\s*372px;[^}]*max-width:\s*372px;/)
+    expect(dockerSource).toMatch(/\.docker-group__summary > \.button\s*\{[^}]*position:\s*sticky;[^}]*right:\s*12px;/)
+    expect(dockerSource).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.docker-group__summary\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/)
+    expect(dockerSource).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.docker-group__summary \.button\s*\{[^}]*grid-column:\s*auto;[^}]*width:\s*auto;/)
   })
 })
 

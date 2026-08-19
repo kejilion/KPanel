@@ -58,6 +58,201 @@ func TestOpenAICompatibleStream(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatPreservesProviderReasoningAcrossToolCalls(t *testing.T) {
+	for _, field := range []string{"reasoning_content", "reasoning_text", "reasoning"} {
+		t.Run(field, func(t *testing.T) {
+			requestNumber := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestNumber++
+				var payload struct {
+					Messages []map[string]any `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if requestNumber == 1 {
+					w.Header().Set("Content-Type", "text/event-stream")
+					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{%q:\"plan \"}}]}\n\n", field)
+					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{%q:\"next\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"docker_containers\",\"arguments\":\"{}\"}},{\"index\":1,\"id\":\"call_2\",\"function\":{\"name\":\"apps_list\",\"arguments\":\"{}\"}}]}}]}\n\n", field)
+					fmt.Fprint(w, "data: [DONE]\n\n")
+					return
+				}
+				var assistants []map[string]any
+				for _, message := range payload.Messages {
+					if message["role"] == "assistant" && message["tool_calls"] != nil {
+						assistants = append(assistants, message)
+					}
+				}
+				if len(assistants) != 2 {
+					t.Fatalf("tool batch was not reconstructed: %#v", payload.Messages)
+				}
+				if requestNumber == 2 {
+					for _, assistant := range assistants {
+						if _, exists := assistant[field]; exists {
+							t.Fatalf("standard continuation guessed a provider field: %#v", assistant)
+						}
+					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					fmt.Fprintf(w, `{"error":{"type":"invalid_request_error","message":"The %s in the thinking mode must be passed back to the API."}}`, field)
+					return
+				}
+				for _, assistant := range assistants {
+					if assistant[field] != "plan next" {
+						t.Fatalf("reasoning was not replayed across the tool batch: %#v", payload.Messages)
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+
+			client := NewHTTPModelClient()
+			provider := Provider{ID: "provider-" + field, Protocol: ProtocolOpenAICompatible, BaseURL: server.URL, EndpointScope: EndpointPrivate}
+			var calls []ToolCall
+			err := client.Stream(context.Background(), provider, "key", CompletionRequest{Model: "model", Messages: []ChatMessage{{Role: "user", Content: "inspect"}}}, func(event CompletionEvent) error {
+				if event.Done {
+					calls = event.ToolCalls
+				}
+				return nil
+			})
+			if err != nil || len(calls) != 2 || len(calls[0].ProviderData) == 0 || len(calls[1].ProviderData) != 0 {
+				t.Fatalf("calls=%#v err=%v", calls, err)
+			}
+			publicCall, _ := json.Marshal(calls[0])
+			if strings.Contains(string(publicCall), "plan next") || strings.Contains(string(publicCall), "providerData") {
+				t.Fatalf("hidden reasoning leaked through public tool JSON: %s", publicCall)
+			}
+			err = client.Stream(context.Background(), provider, "key", CompletionRequest{Model: "model", Messages: []ChatMessage{
+				{Role: "assistant", ToolCalls: calls[:1]},
+				{Role: "tool", ToolCallID: calls[0].ID, Content: `{"ok":true}`},
+				{Role: "assistant", ToolCalls: calls[1:]},
+				{Role: "tool", ToolCallID: calls[1].ID, Content: `{"ok":true}`},
+			}}, func(CompletionEvent) error { return nil })
+			if err != nil || requestNumber != 3 {
+				t.Fatalf("reasoning continuation requests=%d err=%v", requestNumber, err)
+			}
+		})
+	}
+}
+
+func TestOpenAIChatAdaptsLegacyToolHistoryToRequiredReasoningField(t *testing.T) {
+	requestNumber := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		var payload struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var assistant map[string]any
+		for _, message := range payload.Messages {
+			if message["role"] == "assistant" && message["tool_calls"] != nil {
+				assistant = message
+				break
+			}
+		}
+		if requestNumber == 1 {
+			if _, exists := assistant["reasoning_text"]; exists {
+				t.Fatalf("standard payload guessed a provider field: %#v", assistant)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"The reasoning_text in the thinking mode must be passed back to the API."}}`)
+			return
+		}
+		if value, exists := assistant["reasoning_text"]; !exists || value != "" {
+			t.Fatalf("compatibility retry did not pad legacy reasoning field: %#v", assistant)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewHTTPModelClient()
+	provider := Provider{ID: "legacy-reasoning", Protocol: ProtocolOpenAICompatible, BaseURL: server.URL, EndpointScope: EndpointPrivate}
+	request := CompletionRequest{Model: "model", Messages: []ChatMessage{
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call_1", Name: "host_read", Arguments: json.RawMessage(`{}`)}}},
+		{Role: "tool", ToolCallID: "call_1", Content: `{"ok":true}`},
+	}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := client.Stream(context.Background(), provider, "key", request, func(CompletionEvent) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if requestNumber != 3 {
+		t.Fatalf("reasoning dialect was not cached, requests=%d", requestNumber)
+	}
+}
+
+func TestOpenAIChatRetriesTextOnlyWhenOnlyHistoryContainsImages(t *testing.T) {
+	requestNumber := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestNumber++
+		body, _ := io.ReadAll(r.Body)
+		payload := string(body)
+		if requestNumber == 1 {
+			if !strings.Contains(payload, `"type":"image_url"`) {
+				t.Fatalf("first request did not preserve standard multimodal input: %s", payload)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"Failed to deserialize the JSON body into the target type: messages[12]: unknown variant image_url, expected text"}}`)
+			return
+		}
+		if strings.Contains(payload, `"type":"image_url"`) || strings.Contains(payload, "AQID") || !strings.Contains(payload, "unavailable_image_attachment") || !strings.Contains(payload, "continue") {
+			t.Fatalf("text-only history fallback was unsafe or incomplete: %s", payload)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	image := Attachment{Name: "old.png", MimeType: "image/png", Kind: "image", Size: 3, Data: []byte{1, 2, 3}}
+	client := NewHTTPModelClient()
+	provider := Provider{ID: "text-only-history", Protocol: ProtocolOpenAICompatible, BaseURL: server.URL, EndpointScope: EndpointPrivate}
+	request := CompletionRequest{Model: "model", Messages: []ChatMessage{
+		{Role: "user", Content: "old image", Attachments: []Attachment{image}},
+		{Role: "assistant", Content: "seen"},
+		{Role: "user", Content: "continue", CurrentRun: true},
+	}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := client.Stream(context.Background(), provider, "key", request, func(CompletionEvent) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if requestNumber != 3 {
+		t.Fatalf("text-only capability was not cached, requests=%d", requestNumber)
+	}
+}
+
+func TestOpenAIChatNeverSilentlyDropsCurrentRunImage(t *testing.T) {
+	requestNumber := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestNumber++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":"unknown variant image_url, expected text"}}`)
+	}))
+	defer server.Close()
+
+	image := Attachment{Name: "current.png", MimeType: "image/png", Kind: "image", Size: 3, Data: []byte{1, 2, 3}}
+	client := NewHTTPModelClient()
+	provider := Provider{ID: "text-only-current", Protocol: ProtocolOpenAICompatible, BaseURL: server.URL, EndpointScope: EndpointPrivate}
+	request := CompletionRequest{Model: "model", Messages: []ChatMessage{{Role: "user", Content: "analyze", Attachments: []Attachment{image}, CurrentRun: true}}}
+	for attempt := 0; attempt < 2; attempt++ {
+		err := client.Stream(context.Background(), provider, "key", request, func(CompletionEvent) error { return nil })
+		var providerErr *ProviderError
+		if !errors.As(err, &providerErr) || providerErr.Code != "image_input_unsupported" || !strings.Contains(providerErr.Message, "图片未发送") {
+			t.Fatalf("current image error=%#v", err)
+		}
+	}
+	if requestNumber != 1 {
+		t.Fatalf("current image must not be retried without its body, requests=%d", requestNumber)
+	}
+}
+
 func TestOpenAIResponsesStreamAndToolRoundTrip(t *testing.T) {
 	requestNumber := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -329,7 +329,10 @@ watch(
           :key="item.to"
           :to="item.to"
           class="sidebar__link"
-          :class="{ 'sidebar__link--pending': navigationItemPending(item.to) }"
+          :class="{
+            'sidebar__link--pending': navigationItemPending(item.to),
+            'router-link-active': route.path === item.to || route.path.startsWith(`${item.to}/`),
+          }"
           :aria-label="i18n.t(item.labelKey)"
           :title="sidebarCollapsed ? i18n.t(item.labelKey) : undefined"
           @pointerenter="prefetchNavigation(item.to)"

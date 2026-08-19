@@ -13,19 +13,24 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 )
 
 const (
-	panelFileTransferIdleTimeout = 45 * time.Second
-	panelFileTransferMaxDuration = 2 * time.Hour
-	fileDownloadTicketTTL        = 5 * time.Minute
-	maxFileDownloadTickets       = 128
+	panelFileTransferIdleTimeout  = 45 * time.Second
+	panelFileTransferMaxDuration  = 2 * time.Hour
+	fileDownloadTicketTTL         = 5 * time.Minute
+	maxFileDownloadTickets        = 128
+	panelFileArchiveQueryMaxBytes = 256 << 10
+	desktopFileTransferDirectory  = "/home/KPanel Desktop"
 )
 
 type fileDownloadTicket struct {
@@ -76,6 +81,74 @@ func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
 	s.writeAgentResponse(w, r, response)
 }
 
+func (s *Server) handleFileEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "path") || r.URL.Query().Get("path") == "" {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "文件查询参数无效", "")
+		return
+	}
+	if _, _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	response, err := s.agent.Get(r.Context(), "/v1/files/entry", r.URL.RawQuery, requestID(r))
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	s.writeAgentResponse(w, r, response)
+}
+
+func (s *Server) handleFileEntries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "文件查询参数无效", "")
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok || !s.checkCSRF(w, r, session) {
+		return
+	}
+	var input contract.FileEntryBatchRequest
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	if len(input.Paths) == 0 || len(input.Paths) > contract.MaxFileEntryBatch {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")
+		return
+	}
+	seen := make(map[string]struct{}, len(input.Paths))
+	for _, filePath := range input.Paths {
+		if !validFileDownloadPath(filePath) {
+			s.writeValidationProblem(w, r, "paths", "all file paths must be canonical absolute paths")
+			return
+		}
+		if _, exists := seen[filePath]; exists {
+			s.writeValidationProblem(w, r, "paths", "duplicate file paths are not allowed")
+			return
+		}
+		seen[filePath] = struct{}{}
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
+		return
+	}
+	response, err := s.agent.Do(r.Context(), http.MethodPost, "/v1/files/entries", "", requestID(r), body)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	s.writeAgentResponse(w, r, response)
+}
+
 func (s *Server) handleFileTrashList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -119,6 +192,26 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.streamFileDownload(w, r, r.URL.RawQuery)
+}
+
+func (s *Server) handleFileArchiveDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "selection", "name") {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "压缩下载参数无效", "")
+		return
+	}
+	if selection, name := r.URL.Query().Get("selection"), r.URL.Query().Get("name"); selection == "" || len(selection) > panelFileArchiveQueryMaxBytes || name == "" || len(name) > 1024 {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "压缩下载参数无效", "")
+		return
+	}
+	if _, _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	s.streamFileArchiveDownload(w, r)
 }
 
 func (s *Server) handleFileDownloadTicketCreate(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +302,12 @@ func (s *Server) streamFileDownload(w http.ResponseWriter, r *http.Request, rawQ
 	}
 	defer response.Body.Close()
 	copyFileHeaders(w.Header(), response.Header)
+	// net/http stores a received Content-Length on Response.ContentLength and
+	// removes it from Response.Header. Preserve it before writing the response;
+	// ranged media requests need the exact segment length to start playback.
+	if response.Header.Get("Content-Length") == "" && response.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
+	}
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Pragma", "no-cache")
 	writer := httpstream.NewIdleResponseWriter(
@@ -218,6 +317,31 @@ func (s *Server) streamFileDownload(w http.ResponseWriter, r *http.Request, rawQ
 	if r.Method == http.MethodHead {
 		return
 	}
+	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+}
+
+func (s *Server) streamFileArchiveDownload(w http.ResponseWriter, r *http.Request) {
+	streamer, ok := s.agent.(agentStreamAPI)
+	if !ok {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_stream_unavailable", "Agent 文件流不可用", "")
+		return
+	}
+	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
+	defer cancel()
+	response, err := streamer.OpenStream(
+		transferContext, http.MethodGet, "/v1/files/archive", r.URL.RawQuery,
+		requestID(r), http.NoBody, nil, 0,
+	)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	defer response.Body.Close()
+	copyFileHeaders(w.Header(), response.Header)
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Pragma", "no-cache")
+	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
+	writer.WriteHeader(response.StatusCode)
 	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
 }
 
@@ -413,6 +537,216 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.CopyBuffer(w, io.LimitReader(response.Body, 1<<20), make([]byte, 32<<10))
 }
 
+func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "传输参数无效", "")
+		return
+	}
+	if !s.checkOrigin(w, r) {
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok || !s.checkCSRF(w, r, session) {
+		return
+	}
+	var input contract.FileTransferRequest
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	if input.SourceNodeID == "" || !validFileDownloadPath(input.Path) || input.Path == "/" ||
+		input.ResourceVersion == "" || !validFileDownloadPath(input.TargetDirectory) {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_transfer_invalid", "跨面板传输参数无效", "")
+		return
+	}
+	change := map[string]any{
+		"sourceNodeId":    input.SourceNodeID,
+		"targetDirectory": input.TargetDirectory,
+	}
+	if err := s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	flusher, _ := w.(http.Flusher)
+	writeEvent := func(event contract.FileTransferEvent) {
+		_ = encoder.Encode(event)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	writeEvent(contract.FileTransferEvent{State: "connecting"})
+
+	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
+	defer cancel()
+	if err := s.ensureFileTransferDirectory(transferContext, input.TargetDirectory, requestID(r)); err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "目标目录不存在或不可写。"})
+		return
+	}
+	content, metadata, err := s.cluster.OpenRemoteFileV2(
+		transferContext, input.SourceNodeID,
+		cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
+	)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源 KPanel，或配对未授权文件复制。"})
+		return
+	}
+	defer content.Close()
+	if metadata.Name != path.Base(input.Path) || metadata.ResourceVersion != input.ResourceVersion {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "来源文件在拖拽后已发生变化。"})
+		return
+	}
+	name, err := s.uniqueFileTransferName(transferContext, input.TargetDirectory, metadata.Name, requestID(r))
+	if err != nil {
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法确定目标文件名。"})
+		return
+	}
+	change["kind"] = metadata.Kind
+	change["bytes"] = metadata.SizeBytes
+	change["targetName"] = name
+	writeEvent(contract.FileTransferEvent{State: "transferring", TotalBytes: metadata.SizeBytes})
+
+	loaded := int64(0)
+	lastReported := time.Now()
+	tracked := &fileTransferProgressReader{source: content, report: func(count int64) {
+		loaded += count
+		if time.Since(lastReported) >= 180*time.Millisecond {
+			writeEvent(contract.FileTransferEvent{
+				State: "transferring", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes,
+			})
+			lastReported = time.Now()
+		}
+	}}
+	query := url.Values{
+		"path": []string{input.TargetDirectory}, "name": []string{name},
+		"kind": []string{metadata.Kind}, "size": []string{strconv.FormatInt(metadata.SizeBytes, 10)},
+	}
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/octet-stream")
+	streamer, ok := s.agent.(agentStreamAPI)
+	if !ok {
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
+		return
+	}
+	response, err := streamer.OpenStream(
+		transferContext, http.MethodPost, "/v1/files/transfer/import", query.Encode(),
+		// Keep the local request chunked even for regular files. The Agent's
+		// exact-length reader must consume the Noise end record before Upload
+		// can atomically publish the destination.
+		requestID(r), tracked, headers, -1,
+	)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断。"})
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，未保留半成品。"})
+		return
+	}
+	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes})
+	var entry contract.FileEntry
+	responseDecoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	responseDecoder.DisallowUnknownFields()
+	if err := responseDecoder.Decode(&entry); err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果。"})
+		return
+	}
+	_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
+	writeEvent(contract.FileTransferEvent{
+		State: "complete", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Entry: &entry,
+	})
+}
+
+type fileTransferProgressReader struct {
+	source io.Reader
+	report func(int64)
+}
+
+func (r *fileTransferProgressReader) Read(content []byte) (int, error) {
+	count, err := r.source.Read(content)
+	if count > 0 && r.report != nil {
+		r.report(int64(count))
+	}
+	return count, err
+}
+
+func (s *Server) ensureFileTransferDirectory(ctx context.Context, directory, requestID string) error {
+	query := url.Values{"path": []string{directory}}
+	response, err := s.agent.Get(ctx, "/v1/files/entry", query.Encode(), requestID)
+	if err == nil && response.StatusCode == http.StatusOK {
+		var entry contract.FileEntry
+		if json.Unmarshal(response.Body, &entry) == nil && entry.Kind == "directory" {
+			return nil
+		}
+		return errors.New("target is not a directory")
+	}
+	if directory != desktopFileTransferDirectory || err != nil || response.StatusCode != http.StatusNotFound {
+		return errors.New("target directory unavailable")
+	}
+	body, _ := json.Marshal(contract.FileActionRequest{Action: "mkdir", Target: "/home", Name: "KPanel Desktop"})
+	created, err := s.agent.Do(ctx, http.MethodPost, "/v1/files/actions", "", requestID, body)
+	if err != nil || (created.StatusCode < 200 || created.StatusCode >= 300) {
+		response, checkErr := s.agent.Get(ctx, "/v1/files/entry", query.Encode(), requestID)
+		if checkErr != nil || response.StatusCode != http.StatusOK {
+			return errors.New("create target directory failed")
+		}
+	}
+	return nil
+}
+
+func (s *Server) uniqueFileTransferName(ctx context.Context, directory, original, requestID string) (string, error) {
+	for attempt := 0; attempt <= 999; attempt++ {
+		candidate := suffixedFileTransferName(original, attempt)
+		query := url.Values{"path": []string{path.Join(directory, candidate)}}
+		response, err := s.agent.Get(ctx, "/v1/files/entry", query.Encode(), requestID)
+		if err != nil {
+			return "", err
+		}
+		if response.StatusCode == http.StatusNotFound {
+			return candidate, nil
+		}
+		if response.StatusCode != http.StatusOK {
+			return "", errors.New("target lookup failed")
+		}
+	}
+	return "", errors.New("too many duplicate names")
+}
+
+func suffixedFileTransferName(name string, attempt int) string {
+	if attempt == 0 {
+		return name
+	}
+	extension := ""
+	stem := name
+	if dot := strings.LastIndex(name, "."); dot > 0 && dot < len(name)-1 {
+		extension = name[dot:]
+		stem = name[:dot]
+	}
+	suffix := " (" + strconv.Itoa(attempt) + ")"
+	limit := 255 - len(extension) - len(suffix)
+	for len(stem) > limit {
+		_, size := utf8.DecodeLastRuneInString(stem)
+		stem = stem[:len(stem)-size]
+	}
+	return stem + suffix + extension
+}
+
 func (s *Server) handleFileAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -547,12 +881,14 @@ func allowedFileAction(action string) bool {
 func copyFileHeaders(target, source http.Header) {
 	for _, key := range []string{
 		"Accept-Ranges", "Content-Disposition", "Content-Length", "Content-Range",
-		"Content-Type", "ETag", "Last-Modified",
+		"Content-Security-Policy", "Content-Type", "ETag", "Last-Modified",
 	} {
 		if value := source.Get(key); value != "" {
 			target.Set(key, value)
 		}
 	}
 	target.Set("X-Content-Type-Options", "nosniff")
-	target.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if target.Get("Content-Security-Policy") == "" {
+		target.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	}
 }

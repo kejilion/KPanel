@@ -22,6 +22,25 @@ const (
 	headerSignature    = "X-KPanel-Signature"
 )
 
+const (
+	FederationCapabilitiesHeader   = "X-KPanel-Response-Capabilities"
+	SecurityEntrancePathCapability = "security-entrance-path-v1"
+)
+
+// Response capabilities are transport hints, not authorization inputs. V1 is
+// HTTPS-only; V2 still encrypts the optional response field inside Noise.
+func hasFederationCapability(value string, capability string) bool {
+	if len(value) > 256 || capability == "" {
+		return false
+	}
+	for _, item := range strings.Split(value, ",") {
+		if strings.TrimSpace(item) == capability {
+			return true
+		}
+	}
+	return false
+}
+
 func SignRequest(request *http.Request, controllerID, targetID string, privateKey ed25519.PrivateKey, now time.Time, nonce string) error {
 	if request == nil || len(privateKey) != ed25519.PrivateKeySize ||
 		!validID(controllerID) || !validID(targetID) || !validNonce(nonce) {

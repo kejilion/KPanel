@@ -4,8 +4,14 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const mockPort = Number.parseInt(process.env.KPANEL_MOCK_API_PORT || '8080', 10)
+if (!Number.isInteger(mockPort) || mockPort < 1024 || mockPort > 65535) {
+  throw new Error('KPANEL_MOCK_API_PORT must be an integer between 1024 and 65535')
+}
 const catalog = JSON.parse(await readFile(join(root, 'internal', 'appmarket', 'catalog.json'), 'utf8'))
 const legacy = JSON.parse(await readFile(join(root, 'internal', 'appmarket', 'legacy-apps.json'), 'utf8'))
+const mockNewApp = catalog.apps.find((app) => app.token === 'speedtest')
+if (mockNewApp) mockNewApp.addedAt = new Date().toISOString().slice(0, 10)
 const legacyByNumber = new Map(legacy.apps.map((item) => [item.num, item]))
 const installed = new Map([
   ['speedtest', { state: 'running', direct: true }],
@@ -714,6 +720,6 @@ createServer(async (request, response) => {
     return
   }
   send(response, 404, { title: 'Not found', status: 404, code: 'not_found' })
-}).listen(8080, '127.0.0.1', () => {
-  process.stdout.write('KPanel visual mock API: http://127.0.0.1:8080\n')
+}).listen(mockPort, '127.0.0.1', () => {
+  process.stdout.write(`KPanel visual mock API: http://127.0.0.1:${mockPort}\n`)
 })

@@ -9,6 +9,10 @@ npm install
 npm run dev
 ```
 
+跨会话功能预览不要直接约定固定端口，统一执行项目根目录的
+`scripts/local-feature-preview.mjs` 和 `.codex-workflows/local-feature-preview.workflow.yaml`；完整分层、
+预览卡和停止规则见 `docs/local-feature-preview-standard.md`。`npm run dev` 保留用于单会话手动调试。
+
 开发服务器默认将 `/api` 代理到 `http://127.0.0.1:8080`。如需覆盖：
 
 ```bash

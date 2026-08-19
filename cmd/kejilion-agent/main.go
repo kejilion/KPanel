@@ -125,6 +125,9 @@ func run(arguments []string) error {
 	if err != nil {
 		return fmt.Errorf("initialize application market: %w", err)
 	}
+	if err := appMarket.ConfigureIconCache(filepath.Join(*stateDir, "app-icons")); err != nil {
+		slog.Warn("application icon cache is unavailable; dynamic icons will use the fallback", "error", err)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve Agent executable: %w", err)

@@ -180,6 +180,60 @@ func TestReplaceValidatesWorkspaceContract(t *testing.T) {
 			field: "shortcuts.url",
 		},
 		{
+			name: "unknown target type",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.Shortcuts[0].TargetType = "command"
+				return input
+			},
+			field: "shortcuts.targetType",
+		},
+		{
+			name: "relative file path",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.Shortcuts[0] = ShortcutInput{
+					ID: testShortcutID, Name: "Config", TargetType: ShortcutTargetFile, Path: "etc/nginx.conf",
+				}
+				return input
+			},
+			field: "shortcuts.path",
+		},
+		{
+			name: "noncanonical directory path",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.Shortcuts[0] = ShortcutInput{
+					ID: testShortcutID, Name: "Config", TargetType: ShortcutTargetDirectory, Path: "/etc//nginx",
+				}
+				return input
+			},
+			field: "shortcuts.path",
+		},
+		{
+			name: "file root path",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.Shortcuts[0] = ShortcutInput{
+					ID: testShortcutID, Name: "Root", TargetType: ShortcutTargetFile, Path: "/",
+				}
+				return input
+			},
+			field: "shortcuts.path",
+		},
+		{
+			name: "file target with URL",
+			input: func() ReplaceInput {
+				input := validReplaceInput(base.ResourceVersion)
+				input.Shortcuts[0] = ShortcutInput{
+					ID: testShortcutID, Name: "Config", TargetType: ShortcutTargetFile,
+					Path: "/etc/nginx.conf", URL: "https://example.com/",
+				}
+				return input
+			},
+			field: "shortcuts.url",
+		},
+		{
 			name: "duplicate shortcut",
 			input: func() ReplaceInput {
 				input := validReplaceInput(base.ResourceVersion)
@@ -199,6 +253,69 @@ func TestReplaceValidatesWorkspaceContract(t *testing.T) {
 				t.Fatalf("validation error = %q, want detail %q", err, test.detail)
 			}
 		})
+	}
+}
+
+func TestFileAndDirectoryShortcutTargetsPersist(t *testing.T) {
+	store := openTestStore(t)
+	version := store.Workspace().ResourceVersion
+	input := ReplaceInput{
+		ExpectedResourceVersion: version,
+		Shortcuts: []ShortcutInput{
+			{ID: testShortcutID, Name: "nginx.conf", TargetType: ShortcutTargetFile, Path: "/etc/nginx/nginx.conf"},
+			{ID: "ffffffffffffffffffffffffffffffff", Name: "Web", TargetType: ShortcutTargetDirectory, Path: "/home/web"},
+		},
+	}
+	saved, err := store.Replace(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Shortcuts) != 2 || saved.Shortcuts[0].TargetType != ShortcutTargetFile ||
+		saved.Shortcuts[0].Path != "/etc/nginx/nginx.conf" || saved.Shortcuts[0].URL != "" ||
+		saved.Shortcuts[1].TargetType != ShortcutTargetDirectory {
+		t.Fatalf("unexpected file shortcuts: %#v", saved.Shortcuts)
+	}
+	reopened, err := Open(store.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored := reopened.Workspace(); restored.ResourceVersion != saved.ResourceVersion || restored.Shortcuts[1].Path != "/home/web" {
+		t.Fatalf("file shortcut targets did not survive restart: %#v", restored)
+	}
+}
+
+func TestOpenMigratesVersionOneURLShortcuts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "desktop-workspace")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	created := "2026-08-14T08:00:00Z"
+	legacy := fmt.Sprintf(`{"schemaVersion":1,"hiddenEntryKeys":[],"positions":{},"labels":{},"shortcuts":[{"id":%q,"name":"Docs","description":"","url":"https://example.com/","createdAt":%q,"updatedAt":%q}]}`, testShortcutID, created, created)
+	workspacePath := filepath.Join(root, "workspace.json")
+	if err := os.WriteFile(workspacePath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated := store.Workspace()
+	if !migrated.Available || migrated.SchemaVersion != SchemaVersion || len(migrated.Shortcuts) != 1 ||
+		migrated.Shortcuts[0].TargetType != ShortcutTargetURL {
+		t.Fatalf("legacy workspace was not migrated in memory: %#v", migrated)
+	}
+	input := ReplaceInput{
+		ExpectedResourceVersion: migrated.ResourceVersion,
+		Shortcuts: []ShortcutInput{{
+			ID: testShortcutID, Name: "Docs", TargetType: ShortcutTargetURL, URL: "https://example.com/",
+		}},
+	}
+	if _, err := store.Replace(input); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(workspacePath)
+	if err != nil || !bytes.Contains(data, []byte(`"schemaVersion": 2`)) || !bytes.Contains(data, []byte(`"targetType": "url"`)) {
+		t.Fatalf("migrated workspace was not persisted as v2: %s, %v", data, err)
 	}
 }
 
@@ -271,7 +388,7 @@ func TestCorruptWorkspaceDegradesReadsAndRejectsWritesWithoutOverwrite(t *testin
 		data []byte
 	}{
 		{name: "malformed", data: []byte("{not-json")},
-		{name: "unknown schema", data: []byte(`{"schemaVersion":2,"hiddenEntryKeys":[],"positions":{},"labels":{},"shortcuts":[]}`)},
+		{name: "unknown schema", data: []byte(`{"schemaVersion":99,"hiddenEntryKeys":[],"positions":{},"labels":{},"shortcuts":[]}`)},
 		{name: "oversized", data: bytes.Repeat([]byte("x"), MaxWorkspaceBytes+1)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -467,7 +584,8 @@ func validReplaceInput(version string) ReplaceInput {
 		},
 		Labels: map[string]string{"site:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "示例网站"},
 		Shortcuts: []ShortcutInput{{
-			ID: testShortcutID, Name: "控制台", Description: "本地管理入口", URL: "https://example.com/admin",
+			ID: testShortcutID, Name: "控制台", Description: "本地管理入口",
+			TargetType: ShortcutTargetURL, URL: "https://example.com/admin",
 		}},
 	}
 }

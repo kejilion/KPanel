@@ -3,7 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Filter, LoaderCircle, RefreshCw, Search, ShieldCheck } from '@lucide/vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/AuditView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/AuditView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/AuditView/zh-TW').then((module) => module.default))
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -44,7 +46,7 @@ function sourceLabel(value: AuditEvent['source']): string {
   return {
     web: 'Web',
     cli: 'CLI',
-    reconcile: '自动对账',
+    reconcile: '自动核对',
     system: '系统',
     external: '外部变更',
   }[value]
@@ -83,7 +85,7 @@ onBeforeUnmount(() => controller?.abort())
 
 <template>
   <div class="page">
-    <PageHeader title="审计记录" description="记录 Web、CLI、对账与外部变更；敏感字段在写入前完成脱敏。" />
+    <PageHeader title="审计记录" description="记录登录、Web、CLI 与外部变更，敏感信息在保存前完成脱敏。" />
 
     <div class="audit-assurance">
       <span><ShieldCheck :size="20" /></span>
@@ -104,7 +106,7 @@ onBeforeUnmount(() => controller?.abort())
           <option value="">全部来源</option>
           <option value="web">Web</option>
           <option value="cli">CLI</option>
-          <option value="reconcile">自动对账</option>
+          <option value="reconcile">自动核对</option>
           <option value="external">外部变更</option>
           <option value="system">系统</option>
         </select>
@@ -128,7 +130,7 @@ onBeforeUnmount(() => controller?.abort())
     <EmptyState
       v-else-if="!filteredEvents.length"
       :title="events.length ? '没有符合条件的记录' : '暂无审计记录'"
-      description="执行登录、对账或管理操作后，审计事件会显示在这里。"
+      description="完成登录、自动核对或管理操作后，审计事件会显示在这里。"
     />
 
     <section v-else class="table-card">

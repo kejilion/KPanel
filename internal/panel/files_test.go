@@ -56,9 +56,10 @@ func (agent *fileStubAgent) OpenStream(
 		responseHeaders = make(http.Header)
 	}
 	return &http.Response{
-		StatusCode: status,
-		Header:     responseHeaders,
-		Body:       io.NopCloser(bytes.NewReader(agent.streamResponse)),
+		StatusCode:    status,
+		Header:        responseHeaders,
+		ContentLength: int64(len(agent.streamResponse)),
+		Body:          io.NopCloser(bytes.NewReader(agent.streamResponse)),
 	}, nil
 }
 
@@ -66,6 +67,19 @@ func (agent *fileStubAgent) snapshotStreamCalls() []streamAgentCall {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
 	return append([]streamAgentCall(nil), agent.streamCalls...)
+}
+
+func TestSuffixedFileTransferNamePreservesExtensionAndByteLimit(t *testing.T) {
+	if got := suffixedFileTransferName("app", 1); got != "app (1)" {
+		t.Fatalf("directory suffix=%q", got)
+	}
+	if got := suffixedFileTransferName("archive.tar.gz", 2); got != "archive.tar (2).gz" {
+		t.Fatalf("file suffix=%q", got)
+	}
+	got := suffixedFileTransferName(strings.Repeat("界", 100)+".txt", 999)
+	if len(got) > 255 || !strings.HasSuffix(got, " (999).txt") {
+		t.Fatalf("bounded unicode suffix bytes=%d value=%q", len(got), got)
+	}
 }
 
 func TestFileListRequiresSessionAndForwardsStrictQuery(t *testing.T) {
@@ -105,6 +119,80 @@ func TestFileListRequiresSessionAndForwardsStrictQuery(t *testing.T) {
 	)
 	if invalid.Code != http.StatusBadRequest || len(agent.snapshotCalls()) != 1 {
 		t.Fatalf("invalid query = %d calls=%#v", invalid.Code, agent.snapshotCalls())
+	}
+}
+
+func TestFileEntryRequiresSessionAndForwardsExactPath(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	agent := &fileStubAgent{stubAgent: &stubAgent{response: AgentResponse{
+		StatusCode: http.StatusOK, ContentType: "application/json",
+		Body: []byte(`{"name":"nginx.conf","path":"/etc/nginx/nginx.conf","kind":"file","sizeBytes":9,"mode":"-rw-r--r--","owner":"root","group":"root","modifiedAt":"2026-08-14T00:00:00Z","resourceVersion":"sha256:test","editable":true,"previewable":true}`),
+	}}}
+	server.agent = agent
+
+	unauthenticated := performRequest(server, http.MethodGet, "/api/v1/files/entry?path=%2Fetc%2Fnginx%2Fnginx.conf", nil, nil)
+	if unauthenticated.Code != http.StatusUnauthorized || len(agent.snapshotCalls()) != 0 {
+		t.Fatalf("unauthenticated status=%d calls=%#v", unauthenticated.Code, agent.snapshotCalls())
+	}
+	response := authenticatedRequest(
+		server, http.MethodGet, "/api/v1/files/entry?path=%2Fetc%2Fnginx%2Fnginx.conf", nil,
+		sessionCookie, csrfCookie, nil,
+	)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"path":"/etc/nginx/nginx.conf"`) {
+		t.Fatalf("entry response=%d %s", response.Code, response.Body.String())
+	}
+	calls := agent.snapshotCalls()
+	if len(calls) != 1 || calls[0].path != "/v1/files/entry" || calls[0].rawQuery != "path=%2Fetc%2Fnginx%2Fnginx.conf" {
+		t.Fatalf("unexpected Agent calls: %#v", calls)
+	}
+	invalid := authenticatedRequest(
+		server, http.MethodGet, "/api/v1/files/entry?path=%2Fetc&extra=1", nil,
+		sessionCookie, csrfCookie, nil,
+	)
+	if invalid.Code != http.StatusBadRequest || len(agent.snapshotCalls()) != 1 {
+		t.Fatalf("invalid query=%d calls=%#v", invalid.Code, agent.snapshotCalls())
+	}
+}
+
+func TestFileEntriesRequiresCSRFAndForwardsCanonicalBatch(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	agent := &fileStubAgent{stubAgent: &stubAgent{response: AgentResponse{
+		StatusCode: http.StatusOK, ContentType: "application/json",
+		Body: []byte(`{"entries":[{"name":"app","path":"/home/app","kind":"directory","resourceVersion":"sha256:app"}],"unavailable":["/missing"]}`),
+	}}}
+	server.agent = agent
+	body := []byte(`{"paths":["/home/app","/missing"]}`)
+
+	unauthenticated := performRequest(server, http.MethodPost, "/api/v1/files/entries", body, nil)
+	if unauthenticated.Code != http.StatusUnauthorized || len(agent.snapshotCalls()) != 0 {
+		t.Fatalf("unauthenticated status=%d calls=%#v", unauthenticated.Code, agent.snapshotCalls())
+	}
+	withoutCSRF := authenticatedRequest(
+		server, http.MethodPost, "/api/v1/files/entries", body, sessionCookie, csrfCookie,
+		map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test"},
+	)
+	if withoutCSRF.Code != http.StatusForbidden || len(agent.snapshotCalls()) != 0 {
+		t.Fatalf("without CSRF status=%d calls=%#v", withoutCSRF.Code, agent.snapshotCalls())
+	}
+	response := authenticatedRequest(
+		server, http.MethodPost, "/api/v1/files/entries", body, sessionCookie, csrfCookie,
+		map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value},
+	)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"path":"/home/app"`) {
+		t.Fatalf("entries response=%d %s", response.Code, response.Body.String())
+	}
+	calls := agent.snapshotCalls()
+	if len(calls) != 1 || calls[0].path != "/v1/files/entries" || calls[0].rawQuery != "" || string(calls[0].body) != string(body) {
+		t.Fatalf("unexpected Agent calls: %#v", calls)
+	}
+	invalid := authenticatedRequest(
+		server, http.MethodPost, "/api/v1/files/entries", []byte(`{"paths":["/home//app"]}`), sessionCookie, csrfCookie,
+		map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value},
+	)
+	if invalid.Code != http.StatusUnprocessableEntity || len(agent.snapshotCalls()) != 1 {
+		t.Fatalf("invalid status=%d calls=%#v", invalid.Code, agent.snapshotCalls())
 	}
 }
 
@@ -155,6 +243,9 @@ func TestFileContentStreamsRangeAndUploadRequiresCSRF(t *testing.T) {
 	if download.Code != http.StatusPartialContent || download.Body.String() != "hello" {
 		t.Fatalf("download = %d %q", download.Code, download.Body.String())
 	}
+	if download.Header().Get("Content-Length") != "5" {
+		t.Fatalf("download content length = %q", download.Header().Get("Content-Length"))
+	}
 	if download.Header().Get("Content-Security-Policy") == "" ||
 		download.Header().Get("X-Content-Type-Options") != "nosniff" ||
 		download.Header().Get("Cache-Control") != "private, no-store" {
@@ -192,6 +283,52 @@ func TestFileContentStreamsRangeAndUploadRequiresCSRF(t *testing.T) {
 	if len(streamCalls) != 2 || streamCalls[1].method != http.MethodPost ||
 		string(streamCalls[1].body) != "payload" {
 		t.Fatalf("upload stream calls = %#v", streamCalls)
+	}
+}
+
+func TestFileArchiveDownloadRequiresSessionAndStreamsAgentZIP(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	agent := &fileStubAgent{
+		stubAgent:      &stubAgent{},
+		streamStatus:   http.StatusOK,
+		streamResponse: []byte("PK\x03\x04archive"),
+		streamHeaders: http.Header{
+			"Content-Type":        []string{"application/zip"},
+			"Content-Disposition": []string{`attachment; filename="bundle.zip"`},
+		},
+	}
+	server.agent = agent
+	query := "selection=%7B%22sources%22%3A%5B%22%2Fapp%22%5D%7D&name=bundle.zip"
+	unauthenticated := performRequest(
+		server, http.MethodGet, "/api/v1/files/archive?"+query, nil, nil,
+	)
+	if unauthenticated.Code != http.StatusUnauthorized || len(agent.snapshotStreamCalls()) != 0 {
+		t.Fatalf("unauthenticated archive=%d calls=%#v", unauthenticated.Code, agent.snapshotStreamCalls())
+	}
+
+	response := authenticatedRequest(
+		server, http.MethodGet, "/api/v1/files/archive?"+query, nil,
+		sessionCookie, csrfCookie, nil,
+	)
+	if response.Code != http.StatusOK || response.Body.String() != "PK\x03\x04archive" ||
+		response.Header().Get("Content-Type") != "application/zip" ||
+		!strings.Contains(response.Header().Get("Content-Disposition"), "bundle.zip") ||
+		response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("archive response=%d headers=%#v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+	calls := agent.snapshotStreamCalls()
+	if len(calls) != 1 || calls[0].method != http.MethodGet || calls[0].path != "/v1/files/archive" ||
+		calls[0].rawQuery != query {
+		t.Fatalf("archive Agent calls=%#v", calls)
+	}
+
+	invalid := authenticatedRequest(
+		server, http.MethodGet, "/api/v1/files/archive?"+query+"&extra=1", nil,
+		sessionCookie, csrfCookie, nil,
+	)
+	if invalid.Code != http.StatusBadRequest || len(agent.snapshotStreamCalls()) != 1 {
+		t.Fatalf("invalid archive=%d calls=%#v", invalid.Code, agent.snapshotStreamCalls())
 	}
 }
 

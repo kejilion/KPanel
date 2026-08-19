@@ -51,7 +51,10 @@ func TestDesktopWorkspaceAPIAuthenticationValidationAndConflict(t *testing.T) {
 		},
 		Shortcuts: []desktopworkspace.ShortcutInput{{
 			ID: panelTestShortcutID, Name: "Control", Description: "audit-secret-description",
-			URL: "https://example.com/audit-secret-url",
+			TargetType: desktopworkspace.ShortcutTargetURL, URL: "https://example.com/audit-secret-url",
+		}, {
+			ID: "ffffffffffffffffffffffffffffffff", Name: "Config",
+			TargetType: desktopworkspace.ShortcutTargetFile, Path: "/etc/audit-secret-path.conf",
 		}},
 	}
 	body, err := json.Marshal(input)
@@ -81,7 +84,9 @@ func TestDesktopWorkspaceAPIAuthenticationValidationAndConflict(t *testing.T) {
 	if err := json.Unmarshal(savedResponse.Body.Bytes(), &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.ResourceVersion == initial.ResourceVersion || len(saved.Shortcuts) != 1 ||
+	if saved.ResourceVersion == initial.ResourceVersion || len(saved.Shortcuts) != 2 ||
+		saved.Shortcuts[1].TargetType != desktopworkspace.ShortcutTargetFile ||
+		saved.Shortcuts[1].Path != "/etc/audit-secret-path.conf" ||
 		saved.Positions["nav:/overview"] != (desktopworkspace.Position{X: 0.1, Y: 2.2}) {
 		t.Fatalf("workspace did not update: %#v", saved)
 	}
@@ -96,7 +101,8 @@ func TestDesktopWorkspaceAPIAuthenticationValidationAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(auditJSON, []byte("audit-secret-url")) || bytes.Contains(auditJSON, []byte("audit-secret-description")) {
+	if bytes.Contains(auditJSON, []byte("audit-secret-url")) || bytes.Contains(auditJSON, []byte("audit-secret-description")) ||
+		bytes.Contains(auditJSON, []byte("audit-secret-path")) {
 		t.Fatalf("workspace audit leaked URL or description: %s", auditJSON)
 	}
 	if !bytes.Contains(auditJSON, []byte("changedCounts")) {

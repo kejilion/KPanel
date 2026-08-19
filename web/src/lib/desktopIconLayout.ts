@@ -317,6 +317,98 @@ export function dropDesktopIcon(
 }
 
 /**
+ * Move a selected group as one shape. The anchor snaps to the requested slot;
+ * if that translation overlaps an unselected icon, the nearest free
+ * translation is used. Unselected placements never move.
+ */
+export function moveDesktopIconGroup(
+  placements: readonly DesktopIconPlacement[],
+  movingKeys: readonly string[],
+  anchorKey: string,
+  destination: DesktopIconPosition,
+  bounds: DesktopIconBounds,
+  metrics: DesktopIconMetrics = DEFAULT_DESKTOP_ICON_METRICS,
+): DesktopIconPlacement[] {
+  const safe = sanitizePlacements(placements)
+  const movingSet = new Set(uniqueKeys(movingKeys))
+  const moving = safe.filter((placement) => movingSet.has(placement.key))
+  const anchor = moving.find((placement) => placement.key === anchorKey)
+  if (!anchor || moving.length < 2) return safe
+
+  const grid = desktopIconGrid(bounds, metrics)
+  const slots = new Map(moving.map((placement) => [
+    placement.key,
+    desktopIconGridSlotForPosition(placement.position, grid.bounds, grid.metrics),
+  ]))
+  const anchorSlot = slots.get(anchorKey)
+  if (!anchorSlot) return safe
+
+  const movingSlots = [...slots.values()]
+  const columns = movingSlots.map((slot) => slot.column)
+  const rows = movingSlots.map((slot) => slot.row)
+  const minimumDeltaX = -Math.min(...columns)
+  const maximumDeltaX = grid.columns - 1 - Math.max(...columns)
+  const minimumDeltaY = -Math.min(...rows)
+  const maximumDeltaY = grid.maxRow - Math.max(...rows)
+  if (minimumDeltaX > maximumDeltaX || minimumDeltaY > maximumDeltaY) return safe
+
+  const destinationSlot = desktopIconGridSlotForPosition(destination, grid.bounds, grid.metrics)
+  const desiredDeltaX = clamp(destinationSlot.column - anchorSlot.column, minimumDeltaX, maximumDeltaX)
+  const desiredDeltaY = clamp(destinationSlot.row - anchorSlot.row, minimumDeltaY, maximumDeltaY)
+  const occupied = new Set(
+    safe
+      .filter((placement) => !movingSet.has(placement.key))
+      .map((placement) => {
+        const slot = desktopIconGridSlotForPosition(placement.position, grid.bounds, grid.metrics)
+        return `${slot.column}:${slot.row}`
+      }),
+  )
+
+  const translationFits = (deltaX: number, deltaY: number): boolean => (
+    movingSlots.every((slot) => !occupied.has(`${slot.column + deltaX}:${slot.row + deltaY}`))
+  )
+  const desiredTranslation = translationFits(desiredDeltaX, desiredDeltaY)
+    ? { deltaX: desiredDeltaX, deltaY: desiredDeltaY }
+    : undefined
+
+  const candidates: Array<{ deltaX: number; deltaY: number; distance: number }> = []
+  if (!desiredTranslation) {
+    for (let deltaY = minimumDeltaY; deltaY <= maximumDeltaY; deltaY += 1) {
+      for (let deltaX = minimumDeltaX; deltaX <= maximumDeltaX; deltaX += 1) {
+        candidates.push({
+          deltaX,
+          deltaY,
+          distance: Math.abs(deltaX - desiredDeltaX) + Math.abs(deltaY - desiredDeltaY),
+        })
+      }
+    }
+    candidates.sort((left, right) => (
+      left.distance - right.distance
+      || Math.abs(left.deltaY - desiredDeltaY) - Math.abs(right.deltaY - desiredDeltaY)
+      || Math.abs(left.deltaX - desiredDeltaX) - Math.abs(right.deltaX - desiredDeltaX)
+      || left.deltaY - right.deltaY
+      || left.deltaX - right.deltaX
+    ))
+  }
+
+  const translation = desiredTranslation
+    || candidates.find(({ deltaX, deltaY }) => translationFits(deltaX, deltaY))
+  if (!translation) return safe
+
+  return safe.map((placement) => {
+    const slot = slots.get(placement.key)
+    if (!slot) return placement
+    return {
+      ...placement,
+      position: desktopIconPositionForGridSlot({
+        column: slot.column + translation.deltaX,
+        row: slot.row + translation.deltaY,
+      }, grid.bounds, grid.metrics),
+    }
+  })
+}
+
+/**
  * Arrange keys in KPanel's existing column-major order (top-to-bottom first).
  * Each full visible grid becomes the next vertical page. The workspace API
  * persists at most 512 positions; additional keys are reported explicitly.

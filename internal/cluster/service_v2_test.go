@@ -119,7 +119,8 @@ func (t *serviceV2RoundTripper) RoundTrip(
 		), nil
 	}
 	response, err := t.target.HandleFederationV2(
-		request.Context(), "198.51.100.10", request.URL.Path, envelope,
+		request.Context(), "198.51.100.10", request.URL.Path,
+		request.Header.Get(FederationCapabilitiesHeader), envelope,
 	)
 	if err != nil {
 		status := http.StatusUnauthorized
@@ -193,10 +194,12 @@ func newServiceV2Remote(t *testing.T) (*RemoteClient, *serviceV2RoundTripper) {
 func TestServiceV2PairsPollsAndRevokesOverEncryptedHTTP(t *testing.T) {
 	now := time.Date(2026, 7, 29, 9, 0, 0, 0, time.UTC)
 	clock := &serviceTestClock{now: now}
+	securityEntrancePath := "panel-secure2"
 	targetRemote, _ := newServiceV2Remote(t)
 	target, err := NewService(ServiceConfig{
 		DataDir:      filepath.Join(t.TempDir(), "target"),
 		PanelVersion: "v0.27.0", Hostname: "target-v2",
+		SecurityEntrancePath: func() string { return securityEntrancePath },
 		Telemetry: serviceTestTelemetry{
 			now: clock.Now, hostname: "target-v2",
 		},
@@ -243,6 +246,27 @@ func TestServiceV2PairsPollsAndRevokesOverEncryptedHTTP(t *testing.T) {
 		!strings.HasPrefix(host.PeerFingerprint, "sha256:") {
 		t.Fatalf("unexpected paired host: %#v", host)
 	}
+	if host.SecurityEntrancePath != "panel-secure2" {
+		t.Fatalf("security entrance path was not synchronized over Noise: %#v", host)
+	}
+	securityEntrancePath = "panel-regenerated2"
+	center.pollV2Locked(context.Background(), host.ID)
+	refreshed, err := center.Host(context.Background(), host.ID)
+	if err != nil {
+		t.Fatalf("Host() after security entrance change error = %v", err)
+	}
+	if refreshed.SecurityEntrancePath != "panel-regenerated2" {
+		t.Fatalf("regenerated security entrance path was not synchronized: %#v", refreshed)
+	}
+	securityEntrancePath = ""
+	center.pollV2Locked(context.Background(), host.ID)
+	refreshed, err = center.Host(context.Background(), host.ID)
+	if err != nil {
+		t.Fatalf("Host() after disabling security entrance error = %v", err)
+	}
+	if refreshed.SecurityEntrancePath != "" {
+		t.Fatalf("disabled security entrance path was retained: %#v", refreshed)
+	}
 	controllers := target.Controllers()
 	if len(controllers) != 1 ||
 		controllers[0].ID == "" ||
@@ -271,6 +295,7 @@ func TestServiceV2PairsPollsAndRevokesOverEncryptedHTTP(t *testing.T) {
 		context.Background(),
 		"198.51.100.10",
 		v2SummaryPath,
+		SecurityEntrancePathCapability,
 		replayedSummary,
 	); !errors.Is(err, ErrReplay) {
 		t.Fatalf("replayed encrypted summary error = %v, want ErrReplay", err)
@@ -324,15 +349,18 @@ func TestServiceV2TerminalLifecycleUsesAuthenticatedEncryptedChannel(t *testing.
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2(SummaryTerminalScope)
+	// The scope is explicit here rather than defaulted: this pairs with what
+	// the panel's own default grant produces (terminal + files), so the
+	// capability assertion below still describes the ordinary case.
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
-		t.Fatalf("CreatePairingCodeV2(SummaryTerminalScope) error = %v", err)
+		t.Fatalf("CreatePairingCodeV2(SummaryTerminalFilesScope) error = %v", err)
 	}
 	host, err := center.AddHost(context.Background(), AddHostInput{Name: "terminal-target", Origin: "http://8.8.8.8:1801", PairingCode: code.Code})
 	if err != nil {
 		t.Fatalf("AddHost() error = %v", err)
 	}
-	if !host.TerminalAvailable || host.Scope != SummaryTerminalScope {
+	if !host.TerminalAvailable || !host.FileTransferAvailable || host.Scope != SummaryTerminalFilesScope {
 		t.Fatalf("terminal capability missing after v2 pairing: %#v", host)
 	}
 
@@ -430,12 +458,12 @@ func TestServiceV2PairingGrantsExactlyTheRequestedScope(t *testing.T) {
 		return host
 	}
 
-	terminalOnly := pairWithScope(t, "terminal-only", BuildV2Scope(true, false, false))
+	terminalOnly := pairWithScope(t, "terminal-only", BuildV2Scope(true, false, false, false))
 	if !terminalOnly.TerminalAvailable || terminalOnly.BrowseAvailable || terminalOnly.BrowseWSAvailable {
 		t.Fatalf("terminal-only pairing granted unexpected capabilities: %#v", terminalOnly)
 	}
 
-	terminalAndBrowse := pairWithScope(t, "terminal-and-browse", BuildV2Scope(true, true, false))
+	terminalAndBrowse := pairWithScope(t, "terminal-and-browse", BuildV2Scope(true, false, true, false))
 	if !terminalAndBrowse.TerminalAvailable || !terminalAndBrowse.BrowseAvailable || terminalAndBrowse.BrowseWSAvailable {
 		t.Fatalf("terminal+browse pairing has unexpected capabilities: %#v", terminalAndBrowse)
 	}
@@ -443,12 +471,12 @@ func TestServiceV2PairingGrantsExactlyTheRequestedScope(t *testing.T) {
 		t.Fatalf("unexpected stored scope: %q", terminalAndBrowse.Scope)
 	}
 
-	browseOnly := pairWithScope(t, "browse-only", BuildV2Scope(false, true, false))
+	browseOnly := pairWithScope(t, "browse-only", BuildV2Scope(false, false, true, false))
 	if browseOnly.TerminalAvailable || !browseOnly.BrowseAvailable || browseOnly.BrowseWSAvailable {
 		t.Fatalf("browse-only pairing granted unexpected capabilities: %#v", browseOnly)
 	}
 
-	browseWSOnly := pairWithScope(t, "browse-ws-only", BuildV2Scope(false, false, true))
+	browseWSOnly := pairWithScope(t, "browse-ws-only", BuildV2Scope(false, false, false, true))
 	if browseWSOnly.TerminalAvailable || browseWSOnly.BrowseAvailable || !browseWSOnly.BrowseWSAvailable {
 		t.Fatalf("browse-ws-only pairing granted unexpected capabilities: %#v", browseWSOnly)
 	}

@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"image"
@@ -14,6 +15,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -25,14 +27,20 @@ import (
 )
 
 const (
-	fileTransferIdleTimeout = 45 * time.Second
-	fileTransferMaxDuration = 2 * time.Hour
-	fileThumbnailTimeout    = 20 * time.Second
-	fileThumbnailMaxBytes   = 12 << 20
-	fileThumbnailMaxPixels  = 8_000_000
-	fileThumbnailMaxWidth   = 320
-	fileThumbnailMaxHeight  = 210
-	fileToolTextMaxBytes    = 64 << 10
+	fileTransferMetadataHeader = "X-KPanel-File-Metadata"
+	fileTransferResultTrailer  = "X-KPanel-Transfer-Result"
+)
+
+const (
+	fileTransferIdleTimeout  = 45 * time.Second
+	fileTransferMaxDuration  = 2 * time.Hour
+	fileThumbnailTimeout     = 20 * time.Second
+	fileThumbnailMaxBytes    = 12 << 20
+	fileThumbnailMaxPixels   = 8_000_000
+	fileThumbnailMaxWidth    = 320
+	fileThumbnailMaxHeight   = 210
+	fileToolTextMaxBytes     = 64 << 10
+	fileArchiveQueryMaxBytes = 256 << 10
 )
 
 type fileTextResult struct {
@@ -96,6 +104,59 @@ func (s *Server) fileList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) fileEntry(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path") || r.URL.Query().Get("path") == "" {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "文件查询参数无效", "")
+		return
+	}
+	entry, err := s.files.Stat(r.URL.Query().Get("path"))
+	if err != nil {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func (s *Server) fileEntries(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "文件查询参数无效", "")
+		return
+	}
+	var input contract.FileEntryBatchRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	if len(input.Paths) == 0 || len(input.Paths) > contract.MaxFileEntryBatch {
+		writeProblem(w, requestID, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")
+		return
+	}
+	seen := make(map[string]struct{}, len(input.Paths))
+	result := contract.FileEntryBatchResult{
+		Entries:     make([]contract.FileEntry, 0, len(input.Paths)),
+		Unavailable: make([]string, 0),
+	}
+	for _, filePath := range input.Paths {
+		if filePath == "" {
+			writeProblem(w, requestID, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")
+			return
+		}
+		if _, exists := seen[filePath]; exists {
+			writeProblem(w, requestID, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")
+			return
+		}
+		seen[filePath] = struct{}{}
+		entry, err := s.files.Stat(filePath)
+		if err != nil {
+			result.Unavailable = append(result.Unavailable, filePath)
+			continue
+		}
+		result.Entries = append(result.Entries, entry)
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) fileTrashList(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
@@ -120,6 +181,84 @@ func (s *Server) fileContent(w http.ResponseWriter, r *http.Request, requestID s
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead+", "+http.MethodPut)
 		writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
 	}
+}
+
+func (s *Server) fileArchive(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "selection", "name") {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "压缩下载参数无效", "")
+		return
+	}
+	selection := r.URL.Query().Get("selection")
+	name := r.URL.Query().Get("name")
+	if len(selection) == 0 || len(selection) > fileArchiveQueryMaxBytes || !validArchiveDownloadName(name) {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_archive_download", "压缩下载参数无效", "")
+		return
+	}
+	var input contract.FileArchiveDownloadRequest
+	if err := json.Unmarshal([]byte(selection), &input); err != nil {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_archive_download", "压缩下载参数无效", "")
+		return
+	}
+	if !validArchiveDownloadSelection(input) {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_archive_download", "压缩下载参数无效", "")
+		return
+	}
+
+	transferContext, cancel := context.WithTimeout(r.Context(), fileTransferMaxDuration)
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	go func() {
+		err := s.files.ExportZIP(
+			transferContext, input.Sources, input.ExpectedResourceVersions, writer,
+		)
+		_ = writer.CloseWithError(err)
+	}()
+
+	buffer := make([]byte, 64<<10)
+	read, err := reader.Read(buffer)
+	if err != nil && read == 0 {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	if formatted := mime.FormatMediaType("attachment", map[string]string{"filename": name}); formatted != "" {
+		w.Header().Set("Content-Disposition", formatted)
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	output := httpstream.NewIdleResponseWriter(transferContext, w, fileTransferIdleTimeout)
+	output.WriteHeader(http.StatusOK)
+	if read > 0 {
+		if _, writeErr := output.Write(buffer[:read]); writeErr != nil {
+			_ = reader.CloseWithError(writeErr)
+			return
+		}
+	}
+	if err == nil {
+		_, _ = io.CopyBuffer(output, reader, buffer)
+	}
+}
+
+func validArchiveDownloadName(name string) bool {
+	return name != "" && len(name) <= 1024 && path.Base(name) == name &&
+		!strings.ContainsAny(name, "\\\x00\r\n") && strings.HasSuffix(strings.ToLower(name), ".zip")
+}
+
+func validArchiveDownloadSelection(input contract.FileArchiveDownloadRequest) bool {
+	if len(input.Sources) == 0 || len(input.Sources) > filemanager.MaxBatchItems ||
+		len(input.ExpectedResourceVersions) != len(input.Sources) {
+		return false
+	}
+	for _, source := range input.Sources {
+		version, ok := input.ExpectedResourceVersions[source]
+		if !ok || version == "" || len(version) > 256 || source == "" || len(source) > 4096 ||
+			!strings.HasPrefix(source, "/") || strings.ContainsAny(source, "\\\x00") || path.Clean(source) != source {
+			return false
+		}
+	}
+	return true
 }
 
 // fileText returns a bounded JSON representation for structured consumers.
@@ -325,7 +464,7 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("ETag", `"`+entry.ResourceVersion+`"`)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("Content-Security-Policy", fileContentSecurityPolicy(contentType))
 	http.ServeContent(
 		httpstream.NewIdleResponseWriter(transferContext, w, fileTransferIdleTimeout),
 		r, entry.Name, entry.ModifiedAt, file,
@@ -506,6 +645,147 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, entry)
 }
 
+func (s *Server) fileTransferExport(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "resourceVersion") {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "传输参数无效", "")
+		return
+	}
+	entry, err := s.files.Stat(r.URL.Query().Get("path"))
+	if err != nil {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	if entry.Kind != "file" && entry.Kind != "directory" {
+		writeFileProblem(w, requestID, filemanager.ErrNotRegular)
+		return
+	}
+	if expected := r.URL.Query().Get("resourceVersion"); expected == "" || expected != entry.ResourceVersion {
+		writeFileProblem(w, requestID, filemanager.ErrConflict)
+		return
+	}
+	metadata, err := json.Marshal(contract.FileTransferMetadata{
+		Name: entry.Name, Kind: entry.Kind, SizeBytes: entry.SizeBytes,
+		ResourceVersion: entry.ResourceVersion,
+	})
+	if err != nil {
+		writeProblem(w, requestID, http.StatusInternalServerError, "transfer_metadata_failed", "无法准备文件传输", "")
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set(fileTransferMetadataHeader, base64.RawURLEncoding.EncodeToString(metadata))
+	w.Header().Set("Trailer", fileTransferResultTrailer)
+	transferContext, cancel := context.WithTimeout(r.Context(), fileTransferMaxDuration)
+	defer cancel()
+	output := httpstream.NewIdleResponseWriter(transferContext, w, fileTransferIdleTimeout)
+	w.WriteHeader(http.StatusOK)
+	var transferErr error
+	if entry.Kind == "file" {
+		var file io.ReadSeekCloser
+		file, entry, transferErr = s.files.Open(transferContext, entry.Path)
+		if transferErr == nil && entry.ResourceVersion != r.URL.Query().Get("resourceVersion") {
+			transferErr = filemanager.ErrConflict
+		}
+		if file != nil {
+			defer file.Close()
+		}
+		if transferErr == nil {
+			_, transferErr = io.CopyBuffer(output, file, make([]byte, 64<<10))
+		}
+		if transferErr == nil {
+			current, statErr := s.files.Stat(entry.Path)
+			if statErr != nil || current.ResourceVersion != entry.ResourceVersion {
+				transferErr = filemanager.ErrConflict
+			}
+		}
+	} else {
+		_, transferErr = s.files.ExportDirectory(
+			transferContext, entry.Path, entry.ResourceVersion, output,
+		)
+	}
+	if transferErr == nil {
+		w.Header().Set(fileTransferResultTrailer, "ok")
+	} else {
+		w.Header().Set(fileTransferResultTrailer, "error")
+	}
+}
+
+func (s *Server) fileTransferImport(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" || !strictQuery(r.URL.Query(), "path", "name", "kind", "size") {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "传输参数无效", "")
+		return
+	}
+	if strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]) != "application/octet-stream" {
+		writeProblem(w, requestID, http.StatusUnsupportedMediaType, "binary_required", "传输必须使用二进制内容", "")
+		return
+	}
+	size, err := strconv.ParseInt(r.URL.Query().Get("size"), 10, 64)
+	if err != nil || size < 0 {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_size", "传输大小无效", "")
+		return
+	}
+	transferContext, cancel := context.WithTimeout(r.Context(), fileTransferMaxDuration)
+	defer cancel()
+	content := httpstream.NewIdleReader(transferContext, w, r.Body, fileTransferIdleTimeout)
+	var entry contract.FileEntry
+	switch r.URL.Query().Get("kind") {
+	case "file":
+		if size > filemanager.MaxUploadBytes {
+			writeFileProblem(w, requestID, filemanager.ErrTooLarge)
+			return
+		}
+		entry, err = s.files.Upload(
+			transferContext, r.URL.Query().Get("path"), r.URL.Query().Get("name"),
+			&exactTransferReader{source: content, remaining: size}, size, false,
+		)
+	case "directory":
+		entry, err = s.files.ImportDirectory(
+			transferContext, r.URL.Query().Get("path"), r.URL.Query().Get("name"), content,
+		)
+	default:
+		err = filemanager.ErrNotRegular
+	}
+	if err != nil {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, entry)
+}
+
+type exactTransferReader struct {
+	source    io.Reader
+	remaining int64
+	checked   bool
+}
+
+func (r *exactTransferReader) Read(output []byte) (int, error) {
+	if r.remaining > 0 {
+		if int64(len(output)) > r.remaining {
+			output = output[:r.remaining]
+		}
+		count, err := r.source.Read(output)
+		r.remaining -= int64(count)
+		if err == io.EOF && r.remaining > 0 {
+			return count, io.ErrUnexpectedEOF
+		}
+		return count, err
+	}
+	if r.checked {
+		return 0, io.EOF
+	}
+	r.checked = true
+	var probe [1]byte
+	count, err := r.source.Read(probe[:])
+	if count > 0 {
+		return 0, filemanager.ErrTooLarge
+	}
+	if err == nil {
+		return 0, io.ErrNoProgress
+	}
+	return 0, err
+}
+
 func (s *Server) fileAction(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
@@ -550,6 +830,17 @@ func activeContent(name, contentType string) bool {
 		contentType == "text/html" ||
 		contentType == "image/svg+xml" ||
 		contentType == "application/xhtml+xml"
+}
+
+func fileContentSecurityPolicy(contentType string) string {
+	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	if strings.HasPrefix(mediaType, "audio/") || strings.HasPrefix(mediaType, "video/") {
+		// Media has no document subresources and does not need a CSP sandbox.
+		// Keeping the sandbox flag here can make native media loading behave
+		// differently across browsers while providing no additional protection.
+		return "default-src 'none'"
+	}
+	return "default-src 'none'; sandbox"
 }
 
 func writeFileProblem(w http.ResponseWriter, requestID string, err error) {

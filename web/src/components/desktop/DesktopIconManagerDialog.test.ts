@@ -75,4 +75,36 @@ describe('DesktopIconManagerDialog', () => {
     expect(wrapper.emitted('autoArrange')).toBeUndefined()
     wrapper.unmount()
   })
+
+  it('shows a file target as a removable desktop reference without an edit action', async () => {
+    const shortcut = {
+      id: 'a'.repeat(32),
+      name: 'nginx.conf',
+      description: '',
+      targetType: 'file' as const,
+      path: '/etc/nginx/nginx.conf',
+      createdAt: '2026-08-14T00:00:00Z',
+      updatedAt: '2026-08-14T00:00:00Z',
+    }
+    const wrapper = mount(DesktopIconManagerDialog, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        hiddenEntries: [],
+        shortcuts: [shortcut],
+        canAutoArrange: true,
+      },
+    })
+    await nextTick()
+
+    expect(document.body.textContent).toContain('/etc/nginx/nginx.conf')
+    expect(document.body.querySelector('[aria-label="编辑快捷方式"]')).toBeNull()
+    const remove = document.body.querySelector<HTMLButtonElement>('[aria-label="从桌面移除"]')
+    expect(remove).not.toBeNull()
+    remove?.click()
+    await nextTick()
+
+    expect(wrapper.emitted('remove')?.[0]).toEqual([shortcut])
+    wrapper.unmount()
+  })
 })

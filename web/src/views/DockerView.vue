@@ -2,11 +2,14 @@
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/DockerView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/DockerView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/DockerView/zh-TW').then((module) => module.default))
 import {
   Box,
   Boxes,
   BrushCleaning,
+  ChevronRight,
   CircleStop,
   Container,
   Copy,
@@ -33,10 +36,14 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
+import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
+import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import { analyzeDockerDeployment } from '@/lib/dockerDeployment'
+import { analyzeDockerDeployment, composeEnvironmentVariables } from '@/lib/dockerDeployment'
+import { dockerComposeGroupAccent, groupDockerContainers, type DockerContainerGroup } from '@/lib/dockerComposeGroups'
 import {
+  type ContainerSort,
   sortDockerContainers,
   sortDockerImages,
   sortDockerNetworks,
@@ -49,6 +56,7 @@ import { useToast } from '@/stores/toast'
 import type {
   DockerBackup,
   DockerContainer,
+  DockerComposeProject,
   DockerContainerCreateEnvironment,
   DockerContainerCreateMount,
   DockerContainerCreatePort,
@@ -86,6 +94,12 @@ interface CreateEnvironmentRow {
   value: string
 }
 
+interface CreateComposeEnvironmentRow extends CreateEnvironmentRow {
+  defaultValue?: string
+  detected: boolean
+  required: boolean
+}
+
 const panel = usePanelState()
 const toast = useToast()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
@@ -96,6 +110,7 @@ const error = ref('')
 const search = ref('')
 const activeTab = ref<DockerTab>('containers')
 const resourceSort = ref<ResourceSort>('smart')
+const containerSort = ref<ContainerSort>('smart')
 const taskRunning = ref(false)
 const activeJob = ref<DockerMaintenanceJob>()
 const pendingMaintenance = ref<{
@@ -108,6 +123,7 @@ const selectedContainer = ref<DockerContainer>()
 const pendingAction = ref<ContainerAction>()
 const actionRunning = ref(false)
 const contextMenu = ref<DockerContextMenu>()
+const collapsedContainerGroups = ref(new Set<string>())
 
 const backups = ref<DockerBackup[]>([])
 const environment = ref<DockerEnvironment>()
@@ -143,6 +159,19 @@ const createPorts = ref<CreatePortRow[]>([
 ])
 const createMounts = ref<CreateMountRow[]>([])
 const createEnvironment = ref<CreateEnvironmentRow[]>([])
+const createComposeEnvironment = ref<CreateComposeEnvironmentRow[]>([])
+const createComposeEnvironmentOpen = ref(false)
+const createComposeEnvironmentRevealed = ref(false)
+
+const composeOpen = ref(false)
+const composeLoading = ref(false)
+const composeError = ref('')
+const composeProject = ref<DockerComposeProject>()
+const composeFilePath = ref('')
+const composeSource = ref('')
+const composeEnvironmentSource = ref('')
+const composeEnvironmentOpen = ref(false)
+const composeEnvironmentRevealed = ref(false)
 
 const logsOpen = ref(false)
 const logsLoading = ref(false)
@@ -166,6 +195,7 @@ const migrationUser = ref('root')
 const migrationPort = ref('22')
 
 let controller: AbortController | undefined
+let composeController: AbortController | undefined
 let logController: AbortController | undefined
 let statsController: AbortController | undefined
 let statsTimer: number | undefined
@@ -184,7 +214,7 @@ const tabs = computed(() => [
   { id: 'images' as const, label: '镜像', icon: Box, count: String(data.value?.images.length || 0) },
   { id: 'networks' as const, label: '网络', icon: Network, count: String(data.value?.networks.length || 0) },
   { id: 'volumes' as const, label: '存储卷', icon: HardDrive, count: String(data.value?.volumes.length || 0) },
-  { id: 'environment' as const, label: '环境设置', icon: Wrench, count: data.value?.available ? '正常' : '异常' },
+  { id: 'environment' as const, label: '环境', icon: Wrench, count: '' },
 ])
 const dockerJobActive = computed(() =>
   activeJob.value?.status === 'queued' || activeJob.value?.status === 'running',
@@ -219,6 +249,20 @@ const availableImageTags = computed(() =>
 )
 const createNetworks = computed(() => data.value?.networks || [])
 const createAnalysis = computed(() => analyzeDockerDeployment(createSource.value))
+const detectedComposeEnvironment = computed(() => createAnalysis.value.kind === 'compose'
+  ? composeEnvironmentVariables(createAnalysis.value.compose)
+  : [])
+const createDiagnostics = computed(() => createAnalysis.value.kind === 'invalid' ? createAnalysis.value.diagnostics : [])
+const createComposeEnvironmentMissing = computed(() => createComposeEnvironment.value.filter((item) => item.required && !item.value).length)
+const createComposeEnvironmentValid = computed(() => {
+  const names = new Set<string>()
+  return createComposeEnvironmentMissing.value === 0 && createComposeEnvironment.value.every((item) => {
+    const valid = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(item.name) && !names.has(item.name) &&
+      item.value.length <= 2048 && !/[\r\n\u0000]/.test(item.value)
+    names.add(item.name)
+    return valid
+  })
+})
 const createModeLabel = computed(() => {
   if (createManualMode.value) return '手动配置'
   if (createAnalysis.value.kind === 'docker-run') return 'Docker Run'
@@ -240,11 +284,12 @@ const createCanSubmit = computed(() => {
   if (createAnalysis.value.kind === 'docker-run') {
     return createAdvanced.value ? Boolean(createImage.value.trim()) : true
   }
-  return createAnalysis.value.kind === 'compose' && Boolean(createComposeProject.value.trim())
+  return createAnalysis.value.kind === 'compose' && Boolean(createComposeProject.value.trim()) &&
+    createComposeEnvironmentValid.value
 })
 
 const sortedContainers = computed(() =>
-  sortDockerContainers(data.value?.containers || [], resourceSort.value),
+  sortDockerContainers(data.value?.containers || [], containerSort.value),
 )
 const containerCatalog = computed(() => sortedContainers.value.map((item) => ({
   item,
@@ -278,6 +323,43 @@ const filteredContainers = computed(() => {
     ? containerCatalog.value.filter(({ searchText }) => searchText.includes(query)).map(({ item }) => item)
     : sortedContainers.value
 })
+const visibleManagedComposeProjects = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  return (data.value?.composeProjects || []).filter((name) => !query || name.toLowerCase().includes(query))
+})
+const containerGroups = computed(() =>
+  groupDockerContainers(filteredContainers.value, containerSort.value, visibleManagedComposeProjects.value),
+)
+
+function isContainerGroupCollapsed(key: string): boolean {
+  return collapsedContainerGroups.value.has(key)
+}
+
+function toggleContainerGroup(key: string): void {
+  const next = new Set(collapsedContainerGroups.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedContainerGroups.value = next
+}
+
+function containerGroupStyle(group: DockerContainerGroup): Record<string, string> {
+  return {
+    '--docker-group-accent': group.kind === 'compose' ? dockerComposeGroupAccent(group.name) : 'var(--muted)',
+  }
+}
+
+function visibleContainerGroupRows(group: DockerContainerGroup): DockerContainer[] {
+  return isContainerGroupCollapsed(group.key) ? [] : group.containers
+}
+const composeAnalysis = computed(() => analyzeDockerDeployment(composeSource.value))
+const composeDiagnostics = computed(() => composeAnalysis.value.kind === 'invalid' ? composeAnalysis.value.diagnostics : [])
+const selectedComposeFile = computed(() => composeProject.value?.configFiles.find((file) => file.path === composeFilePath.value))
+const composeEnvironmentCount = computed(() => composeEnvironmentSource.value.split(/\r?\n/)
+  .filter((line) => line.trim() && !line.trim().startsWith('#')).length)
+const composeEnvironmentValid = computed(() => new TextEncoder().encode(composeEnvironmentSource.value).length <= 24 * 1024 &&
+  !composeEnvironmentSource.value.includes('\u0000'))
+const composeCanRedeploy = computed(() => composeAnalysis.value.kind === 'compose' && Boolean(selectedComposeFile.value) &&
+  composeEnvironmentValid.value)
 const filteredImages = computed(() => {
   const query = search.value.trim().toLowerCase()
   return query
@@ -404,6 +486,7 @@ function closeContextMenu(): void {
 
 async function load(silent = false): Promise<void> {
   controller?.abort()
+  composeController?.abort()
   controller = new AbortController()
   if (silent) refreshing.value = true
   else loading.value = true
@@ -570,7 +653,7 @@ async function submitTask(input: DockerMaintenanceInput): Promise<void> {
     startJobPolling(job)
     toast.success('已转入后台执行', '可以离开 Docker 页面，任务会继续运行。')
   } catch (reason) {
-    toast.danger('Docker 任务提交失败', reason instanceof ApiError ? reason.message : 'Agent 拒绝了本次操作。')
+    toast.danger('Docker 任务提交失败', localizeError(reason))
   } finally {
     taskRunning.value = false
   }
@@ -706,11 +789,51 @@ function resetStructuredCreateForm(): void {
   createEnvironment.value = []
 }
 
+function syncCreateComposeEnvironment(): void {
+  if (createAnalysis.value.kind !== 'compose') {
+    createComposeEnvironment.value = []
+    createComposeEnvironmentOpen.value = false
+    return
+  }
+  const existing = new Map(createComposeEnvironment.value.map((item) => [item.name, item]))
+  const detectedNames = new Set(detectedComposeEnvironment.value.map((item) => item.name))
+  const detected = detectedComposeEnvironment.value.map((item) => ({
+    name: item.name,
+    value: existing.get(item.name)?.value || '',
+    defaultValue: item.defaultValue,
+    detected: true,
+    required: item.required,
+  }))
+  const manual = createComposeEnvironment.value.filter((item) => !item.detected && !detectedNames.has(item.name))
+  createComposeEnvironment.value = [...detected, ...manual]
+  if (createComposeEnvironmentMissing.value > 0) createComposeEnvironmentOpen.value = true
+}
+
+function addCreateComposeEnvironment(): void {
+  createComposeEnvironment.value.push({ name: '', value: '', detected: false, required: false })
+  createComposeEnvironmentOpen.value = true
+}
+
+function encodeComposeEnvironmentValue(value: string): string {
+  if (!value) return ''
+  return `'${value.replace(/'/g, "\\'")}'`
+}
+
+function createComposeEnvironmentSource(): string {
+  return createComposeEnvironment.value
+    .filter((item) => item.name && (item.value || item.required))
+    .map((item) => `${item.name}=${encodeComposeEnvironmentValue(item.value)}`)
+    .join('\n')
+}
+
 function resetCreateForm(): void {
   createSource.value = ''
   createAdvanced.value = false
   createManualMode.value = false
   createComposeProject.value = ''
+  createComposeEnvironment.value = []
+  createComposeEnvironmentOpen.value = false
+  createComposeEnvironmentRevealed.value = false
   resetStructuredCreateForm()
 }
 
@@ -821,6 +944,7 @@ function submitContainerCreate(): void {
     }
     askTask('确认部署 Compose 项目', `${projectName} · ${analysis.services.length} 个服务`, {
       action: 'compose_deploy', name: projectName, compose: analysis.compose,
+      composeEnvironment: createComposeEnvironmentSource(),
     })
     return
   }
@@ -836,7 +960,94 @@ watch(createSource, () => {
   } else if (analysis.kind === 'compose') {
     createComposeProject.value = analysis.projectName
   }
+  syncCreateComposeEnvironment()
 })
+
+async function openComposeProject(group: DockerContainerGroup): Promise<void> {
+  if (group.kind !== 'compose') return
+  composeController?.abort()
+  composeController = new AbortController()
+  composeOpen.value = true
+  composeLoading.value = true
+  composeError.value = ''
+  composeProject.value = undefined
+  composeFilePath.value = ''
+  composeSource.value = ''
+  try {
+    const project = await api.docker.composeProject(group.name, composeController.signal)
+    composeProject.value = project
+    composeEnvironmentSource.value = project.environmentFile?.source || ''
+    composeEnvironmentOpen.value = false
+    composeEnvironmentRevealed.value = false
+    const firstFile = project.configFiles[0]
+    if (firstFile) {
+      composeFilePath.value = firstFile.path
+      composeSource.value = firstFile.source
+    }
+  } catch (reason) {
+    if ((reason as Error).name === 'AbortError') return
+    composeError.value = reason instanceof ApiError ? reason.message : '无法读取 Compose 项目配置。'
+  } finally {
+    composeLoading.value = false
+  }
+}
+
+function selectComposeFile(): void {
+  const file = selectedComposeFile.value
+  composeSource.value = file?.source || ''
+}
+
+function closeComposeProject(): void {
+  composeController?.abort()
+  composeController = undefined
+  composeOpen.value = false
+  composeProject.value = undefined
+  composeError.value = ''
+  composeFilePath.value = ''
+  composeSource.value = ''
+  composeEnvironmentSource.value = ''
+  composeEnvironmentOpen.value = false
+  composeEnvironmentRevealed.value = false
+}
+
+function askComposeLifecycle(action: 'compose_start' | 'compose_stop' | 'compose_restart'): void {
+  const project = composeProject.value
+  if (!project) return
+  const labels = {
+    compose_start: ['确认启动 Compose 项目', '启动项目中已有的全部服务'],
+    compose_stop: ['确认停止 Compose 项目', '停止项目服务，容器和配置继续保留'],
+    compose_restart: ['确认重启 Compose 项目', '按当前配置重启项目中的全部服务'],
+  } as const
+  closeComposeProject()
+  askTask(labels[action][0], `${project.name} · ${labels[action][1]}`, {
+    action, name: project.name, expectedResourceVersion: project.resourceVersion,
+  }, action === 'compose_stop')
+}
+
+function submitComposeRedeploy(): void {
+  const project = composeProject.value
+  const file = selectedComposeFile.value
+  if (!project || !file) return
+  const analysis = composeAnalysis.value
+  if (analysis.kind !== 'compose') {
+    if (analysis.kind === 'invalid') toast.danger('Compose 配置存在语法问题', analysis.message)
+    return
+  }
+  if (!composeEnvironmentValid.value) {
+    toast.danger('项目变量文件过大', '.env 不能超过 24 KiB，且不能包含 NUL 字符。')
+    return
+  }
+  const environmentSource = composeEnvironmentSource.value
+  closeComposeProject()
+  askTask('确认更新并重新部署 Compose 项目', `${project.name} · ${file.name} · ${analysis.services.length} 个服务`, {
+    action: 'compose_redeploy',
+    name: project.name,
+    composeFile: file.path,
+    compose: analysis.compose,
+    composeEnvironment: environmentSource,
+    expectedResourceVersion: project.resourceVersion,
+  })
+}
 
 function askAction(container: DockerContainer, action: ContainerAction): void {
   contextMenu.value = undefined
@@ -1101,7 +1312,7 @@ onBeforeUnmount(() => {
   <div class="page docker-page">
     <PageHeader
       title="Docker 管理"
-      description="与 kejilion.sh 共用真实 Docker、Compose、/home/docker 和 DOCKER-USER 规则，不维护影子资源。"
+      description="直接管理服务器上的容器、镜像、网络与存储；与 kejilion.sh 共用同一 Docker 实际状态。"
     />
 
     <div
@@ -1127,9 +1338,13 @@ onBeforeUnmount(() => {
 
       <section class="docker-command-center">
         <header class="docker-command-center__header">
-          <div>
+          <div class="docker-command-center__identity">
             <span class="workspace-card__icon"><Boxes :size="20" /></span>
             <span><strong>Docker Engine</strong><small>{{ data.version || '版本待检测' }} · 观测于 {{ formatDateTime(data.observedAt) }}</small></span>
+          </div>
+          <div class="docker-command-center__stats" aria-label="Docker 运行统计">
+            <span class="docker-command-center__stat docker-command-center__stat--running"><strong>{{ runningCount }}</strong><small>运行中</small></span>
+            <span class="docker-command-center__stat"><strong>{{ manageableCount }}</strong><small>可管理</small></span>
           </div>
           <div class="docker-command-center__actions">
             <StatusBadge :status="data.available ? 'running' : 'critical'" :label="data.available ? '运行正常' : '连接异常'" />
@@ -1139,39 +1354,21 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <section class="docker-summary" aria-label="Docker 摘要">
-          <div><span class="summary-strip__icon"><Container :size="19" /></span><span><strong>{{ data.containers.length }}</strong><small>全部容器</small></span></div>
-          <div><span class="summary-strip__icon summary-strip__icon--success"><Play :size="19" /></span><span><strong>{{ runningCount }}</strong><small>运行中</small></span></div>
-          <div><span class="summary-strip__icon summary-strip__icon--blue"><ShieldCheck :size="19" /></span><span><strong>{{ manageableCount }}</strong><small>可管理</small></span></div>
-          <div><span class="summary-strip__icon summary-strip__icon--violet"><Boxes :size="19" /></span><span><strong>{{ data.images.length }}</strong><small>本地镜像</small></span></div>
-        </section>
-
-        <nav class="docker-nav" aria-label="Docker 功能分区">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            type="button"
-            :class="{ 'is-active': activeTab === tab.id }"
-            :aria-current="activeTab === tab.id ? 'page' : undefined"
-            @click="activeTab = tab.id; search = ''; resourceSort = 'smart'"
-          >
-            <component :is="tab.icon" :size="17" />
-            <strong>{{ tab.label }}</strong>
-            <small>{{ tab.count }}</small>
-          </button>
-        </nav>
-
-        <div v-if="activeTab !== 'environment'" class="docker-toolbar">
-          <span class="docker-toolbar__count">显示 {{ visibleResourceCount }} 项</span>
-          <div class="search-field search-field--small">
-            <Search :size="16" />
-            <input v-model="search" type="search" placeholder="搜索当前资源" aria-label="搜索 Docker 资源" />
-          </div>
-          <select v-model="resourceSort" class="select-input docker-sort" aria-label="Docker 资源排序">
-            <option value="smart">智能排序</option>
-            <option value="name-asc">名称 A–Z</option>
-            <option value="name-desc">名称 Z–A</option>
-          </select>
+        <div class="docker-workspace-bar">
+          <nav class="docker-nav" aria-label="Docker 功能分区">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              type="button"
+              :class="{ 'is-active': activeTab === tab.id }"
+              :aria-current="activeTab === tab.id ? 'page' : undefined"
+              @click="activeTab = tab.id; search = ''; resourceSort = 'smart'; containerSort = 'smart'"
+            >
+              <component :is="tab.icon" :size="16" />
+              <strong>{{ tab.label }}</strong>
+              <small v-if="tab.count">{{ tab.count }}</small>
+            </button>
+          </nav>
         </div>
       </section>
 
@@ -1284,20 +1481,35 @@ onBeforeUnmount(() => {
       <template v-else-if="activeTab === 'containers'">
         <section class="workspace-card workspace-card--wide resource-section">
           <header class="resource-section__header">
-            <div>
+            <div class="resource-section__heading">
               <span class="workspace-card__icon"><Container :size="20" /></span>
-              <div><strong>容器日常管理</strong><small>创建、生命周期、日志、性能、控制台和外部访问；右键可打开完整操作菜单</small></div>
+              <div><strong>容器日常管理</strong><small>{{ visibleResourceCount }} 项 · 生命周期、日志、性能与终端</small></div>
             </div>
-            <div class="card-actions">
-              <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
-                <BrushCleaning :size="15" /> 清理停止容器
-              </button>
-              <button class="button button--primary button--small" type="button" :disabled="panel.isReadOnly.value" @click="resetCreateForm(); createOpen = true">
-                <Plus :size="15" /> 新建容器
-              </button>
+            <div class="resource-section__controls">
+              <div class="docker-toolbar">
+                <div class="search-field search-field--small">
+                  <Search :size="15" />
+                  <input v-model="search" type="search" placeholder="搜索当前资源" aria-label="搜索 Docker 资源" />
+                </div>
+                <select v-model="containerSort" class="select-input docker-sort" aria-label="Docker 容器排序">
+                  <option value="smart">智能排序</option>
+                  <option value="created-desc">创建时间（新→旧）</option>
+                  <option value="created-asc">创建时间（旧→新）</option>
+                  <option value="name-asc">名称 A–Z</option>
+                  <option value="name-desc">名称 Z–A</option>
+                </select>
+              </div>
+              <div class="card-actions">
+                <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
+                  <BrushCleaning :size="15" /> 清理停止容器
+                </button>
+                <button class="button button--primary button--small" type="button" :disabled="panel.isReadOnly.value" @click="resetCreateForm(); createOpen = true">
+                  <Plus :size="15" /> 新建容器
+                </button>
+              </div>
             </div>
           </header>
-          <EmptyState v-if="!filteredContainers.length" title="没有符合条件的容器" description="Docker Engine 未返回容器，或搜索条件没有匹配项。" />
+          <EmptyState v-if="!containerGroups.length" title="没有符合条件的容器" description="Docker Engine 未返回容器，或搜索条件没有匹配项。" />
           <div v-else class="table-scroll">
             <table class="data-table docker-table">
               <colgroup>
@@ -1309,13 +1521,43 @@ onBeforeUnmount(() => {
                 <col class="docker-table__actions" />
               </colgroup>
               <thead><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
-              <tbody>
-                <tr
-                  v-for="container in filteredContainers"
-                  :key="container.id"
-                  :class="`docker-row docker-row--${container.state}`"
-                  @contextmenu="showContainerContext($event, container)"
-                >
+              <tbody v-for="group in containerGroups" :key="group.key" class="docker-group" :style="containerGroupStyle(group)">
+                <tr class="docker-group__row">
+                  <td colspan="6">
+                    <div class="docker-group__summary">
+                      <button
+                        class="docker-group__toggle"
+                        type="button"
+                        :aria-expanded="!isContainerGroupCollapsed(group.key)"
+                        :aria-label="`${isContainerGroupCollapsed(group.key) ? '展开' : '收起'} ${group.name}`"
+                        @click="toggleContainerGroup(group.key)"
+                      >
+                        <ChevronRight :size="15" :class="{ 'is-expanded': !isContainerGroupCollapsed(group.key) }" />
+                        <span class="docker-group__icon"><Boxes v-if="group.kind === 'compose'" :size="17" /><Container v-else :size="17" /></span>
+                        <span class="docker-group__copy">
+                          <strong>{{ group.name }}</strong>
+                          <small v-if="group.kind === 'compose' && group.containers.length">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
+                          <small v-else-if="group.kind === 'compose'">Compose 项目 · 当前无容器 · 可重新部署恢复</small>
+                          <small v-else>{{ group.running }}/{{ group.containers.length }} 运行中 · 不属于 Compose 项目</small>
+                        </span>
+                      </button>
+                      <button
+                        v-if="group.kind === 'compose'"
+                        class="button button--secondary button--small"
+                        type="button"
+                        :disabled="panel.isReadOnly.value || dockerJobActive"
+                        @click="openComposeProject(group)"
+                      ><Wrench :size="14" /> 管理 Compose</button>
+                    </div>
+                  </td>
+                </tr>
+                <TransitionGroup name="docker-group-row">
+                  <tr
+                    v-for="container in visibleContainerGroupRows(group)"
+                    :key="container.id"
+                    :class="`docker-row docker-row--${container.state}`"
+                    @contextmenu="showContainerContext($event, container)"
+                  >
                   <td>
                     <div class="resource-name">
                       <span class="resource-name__icon resource-name__icon--docker"><Container :size="18" /></span>
@@ -1346,7 +1588,8 @@ onBeforeUnmount(() => {
                       <span v-if="!container.allowedActions?.length" class="action-unavailable-label">状态暂不可操作</span>
                     </div>
                   </td>
-                </tr>
+                  </tr>
+                </TransitionGroup>
               </tbody>
             </table>
           </div>
@@ -1356,11 +1599,24 @@ onBeforeUnmount(() => {
       <template v-else-if="activeTab === 'images'">
         <section class="workspace-card workspace-card--wide resource-section">
           <header class="resource-section__header">
-            <div><span class="workspace-card__icon"><Box :size="20" /></span><div><strong>镜像日常管理</strong><small>拉取即更新；右键可复制引用、更新或删除</small></div></div>
-            <div class="card-actions">
-              <input v-model="imageReference" class="text-input compact-input" type="text" placeholder="nginx:alpine" @keyup.enter="pullImage" />
-              <button class="button button--primary button--small" type="button" :disabled="!imageReference.trim()" @click="pullImage"><Download :size="15" /> 拉取镜像</button>
-              <button class="button button--secondary button--small" type="button" @click="askPrune('image_prune', '清理未使用镜像')"><BrushCleaning :size="15" /> 清理</button>
+            <div class="resource-section__heading"><span class="workspace-card__icon"><Box :size="20" /></span><div><strong>镜像日常管理</strong><small>{{ visibleResourceCount }} 项 · 拉取、更新与清理</small></div></div>
+            <div class="resource-section__controls">
+              <div class="docker-toolbar">
+                <div class="search-field search-field--small">
+                  <Search :size="15" />
+                  <input v-model="search" type="search" placeholder="搜索当前资源" aria-label="搜索 Docker 资源" />
+                </div>
+                <select v-model="resourceSort" class="select-input docker-sort" aria-label="Docker 资源排序">
+                  <option value="smart">智能排序</option>
+                  <option value="name-asc">名称 A–Z</option>
+                  <option value="name-desc">名称 Z–A</option>
+                </select>
+              </div>
+              <div class="card-actions">
+                <input v-model="imageReference" class="text-input compact-input" type="text" placeholder="nginx:alpine" @keyup.enter="pullImage" />
+                <button class="button button--primary button--small" type="button" :disabled="!imageReference.trim()" @click="pullImage"><Download :size="15" /> 拉取镜像</button>
+                <button class="button button--secondary button--small" type="button" @click="askPrune('image_prune', '清理未使用镜像')"><BrushCleaning :size="15" /> 清理</button>
+              </div>
             </div>
           </header>
           <EmptyState v-if="!filteredImages.length" title="没有本地镜像" description="可输入完整镜像引用拉取，任务会在后台继续。" />
@@ -1387,12 +1643,25 @@ onBeforeUnmount(() => {
         <div class="workspace-grid">
           <section class="workspace-card workspace-card--wide resource-section">
             <header class="resource-section__header">
-              <div><span class="workspace-card__icon"><Network :size="20" /></span><div><strong>网络日常管理</strong><small>网络创建、删除和成员关系均直接写入 Docker Engine；支持右键管理</small></div></div>
-              <div class="card-actions">
-                <input v-model="networkName" class="text-input compact-input" type="text" placeholder="新网络名称" @keyup.enter="createDockerNetwork" />
-                <input v-model="networkDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 bridge" @keyup.enter="createDockerNetwork" />
-                <button class="button button--primary button--small" type="button" :disabled="!networkName.trim() || !networkDriver.trim()" @click="createDockerNetwork"><Plus :size="15" /> 创建网络</button>
-                <button class="button button--secondary button--small" type="button" @click="askPrune('network_prune', '清理未使用网络')"><BrushCleaning :size="15" /> 清理</button>
+              <div class="resource-section__heading"><span class="workspace-card__icon"><Network :size="20" /></span><div><strong>网络日常管理</strong><small>{{ visibleResourceCount }} 项 · 创建、成员关系与清理</small></div></div>
+              <div class="resource-section__controls">
+                <div class="docker-toolbar">
+                  <div class="search-field search-field--small">
+                    <Search :size="15" />
+                    <input v-model="search" type="search" placeholder="搜索当前资源" aria-label="搜索 Docker 资源" />
+                  </div>
+                  <select v-model="resourceSort" class="select-input docker-sort" aria-label="Docker 资源排序">
+                    <option value="smart">智能排序</option>
+                    <option value="name-asc">名称 A–Z</option>
+                    <option value="name-desc">名称 Z–A</option>
+                  </select>
+                </div>
+                <div class="card-actions">
+                  <input v-model="networkName" class="text-input compact-input" type="text" placeholder="新网络名称" @keyup.enter="createDockerNetwork" />
+                  <input v-model="networkDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 bridge" @keyup.enter="createDockerNetwork" />
+                  <button class="button button--primary button--small" type="button" :disabled="!networkName.trim() || !networkDriver.trim()" @click="createDockerNetwork"><Plus :size="15" /> 创建网络</button>
+                  <button class="button button--secondary button--small" type="button" @click="askPrune('network_prune', '清理未使用网络')"><BrushCleaning :size="15" /> 清理</button>
+                </div>
               </div>
             </header>
             <div class="network-membership">
@@ -1421,12 +1690,25 @@ onBeforeUnmount(() => {
       <template v-else>
         <section class="workspace-card workspace-card--wide resource-section">
           <header class="resource-section__header">
-            <div><span class="workspace-card__icon"><HardDrive :size="20" /></span><div><strong>存储卷日常管理</strong><small>所有 Docker 卷均可直接管理；右键可复制名称、挂载点或删除</small></div></div>
-            <div class="card-actions">
-              <input v-model="volumeName" class="text-input compact-input" type="text" placeholder="新存储卷名称" @keyup.enter="createDockerVolume" />
-              <input v-model="volumeDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 local" @keyup.enter="createDockerVolume" />
-              <button class="button button--primary button--small" type="button" :disabled="!volumeName.trim() || !volumeDriver.trim()" @click="createDockerVolume"><Plus :size="15" /> 创建卷</button>
-              <button class="button button--secondary button--small" type="button" @click="askPrune('volume_prune', '清理未使用存储卷')"><BrushCleaning :size="15" /> 清理</button>
+            <div class="resource-section__heading"><span class="workspace-card__icon"><HardDrive :size="20" /></span><div><strong>存储卷日常管理</strong><small>{{ visibleResourceCount }} 项 · 创建、挂载点与清理</small></div></div>
+            <div class="resource-section__controls">
+              <div class="docker-toolbar">
+                <div class="search-field search-field--small">
+                  <Search :size="15" />
+                  <input v-model="search" type="search" placeholder="搜索当前资源" aria-label="搜索 Docker 资源" />
+                </div>
+                <select v-model="resourceSort" class="select-input docker-sort" aria-label="Docker 资源排序">
+                  <option value="smart">智能排序</option>
+                  <option value="name-asc">名称 A–Z</option>
+                  <option value="name-desc">名称 Z–A</option>
+                </select>
+              </div>
+              <div class="card-actions">
+                <input v-model="volumeName" class="text-input compact-input" type="text" placeholder="新存储卷名称" @keyup.enter="createDockerVolume" />
+                <input v-model="volumeDriver" class="text-input compact-input compact-input--driver" type="text" placeholder="驱动，例如 local" @keyup.enter="createDockerVolume" />
+                <button class="button button--primary button--small" type="button" :disabled="!volumeName.trim() || !volumeDriver.trim()" @click="createDockerVolume"><Plus :size="15" /> 创建卷</button>
+                <button class="button button--secondary button--small" type="button" @click="askPrune('volume_prune', '清理未使用存储卷')"><BrushCleaning :size="15" /> 清理</button>
+              </div>
             </div>
           </header>
           <EmptyState v-if="!filteredVolumes.length" title="没有 Docker 存储卷" description="可创建 local 卷，并在新建容器时选择挂载。" />
@@ -1550,9 +1832,13 @@ onBeforeUnmount(() => {
       <section v-if="!createManualMode" class="deployment-input-card">
         <label class="field">
           <span>粘贴部署内容</span>
-          <textarea v-model="createSource" class="text-area deployment-source" rows="9" maxlength="24576" spellcheck="false" autocomplete="off" placeholder="docker run -d --name my-app -p 8080:80 nginx:alpine&#10;&#10;也可以直接粘贴 compose.yaml 内容" />
+          <DockerDeploymentEditor
+            v-model="createSource"
+            :diagnostics="createDiagnostics"
+            placeholder="docker run -d --name my-app -p 8080:80 nginx:alpine&#10;&#10;也可以直接粘贴 compose.yaml 内容"
+          />
         </label>
-        <div class="deployment-detection" :class="{ 'is-invalid': createAnalysis.kind === 'invalid', 'is-ready': createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose' }">
+        <div v-if="createAnalysis.kind !== 'invalid' || !createDiagnostics.length" class="deployment-detection" :class="{ 'is-invalid': createAnalysis.kind === 'invalid', 'is-ready': createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose' }">
           <template v-if="createAnalysis.kind === 'empty'">
             <span class="deployment-kind"><FileText :size="16" />等待粘贴</span>
             <small>支持常见 docker run 参数和完整 Compose YAML，无需先选择部署类型。</small>
@@ -1576,6 +1862,31 @@ onBeforeUnmount(() => {
 
       <section v-if="createAdvanced && createAnalysis.kind === 'compose' && !createManualMode" class="deployment-advanced">
         <label class="field"><span>Compose 项目名称</span><input v-model="createComposeProject" class="text-input" type="text" maxlength="63" autocomplete="off" /><small>已自动从服务名生成；项目文件会保存到 /home/docker 下。</small><code data-i18n-ignore>/home/docker/{{ createComposeProject || 'project' }}/docker-compose.yml</code></label>
+      </section>
+
+      <section v-if="createAnalysis.kind === 'compose' && (createComposeEnvironment.length || createAdvanced)" class="deployment-advanced compose-environment-card">
+        <header class="compose-environment-card__header">
+          <div>
+            <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
+            <small v-if="createComposeEnvironmentMissing" class="compose-environment-card__missing">{{ createComposeEnvironmentMissing }} 项待填写</small>
+            <small v-else>{{ createComposeEnvironment.length }} 个变量 · 部署时自动加载</small>
+          </div>
+          <div class="compose-environment-card__actions">
+            <button v-if="createComposeEnvironmentOpen" class="button button--ghost button--small" type="button" @click="createComposeEnvironmentRevealed = !createComposeEnvironmentRevealed">{{ createComposeEnvironmentRevealed ? '隐藏值' : '显示值' }}</button>
+            <button class="button button--ghost button--small" type="button" @click="createComposeEnvironmentOpen = !createComposeEnvironmentOpen">{{ createComposeEnvironmentOpen ? '收起' : '填写变量' }}</button>
+          </div>
+        </header>
+        <div v-if="createComposeEnvironmentOpen" class="compose-environment-card__body">
+          <div v-for="(variable, index) in createComposeEnvironment" :key="`${variable.name}:${index}`" class="repeat-row repeat-row--compose-environment">
+            <input v-model="variable.name" class="text-input" type="text" maxlength="128" placeholder="变量名" :readonly="variable.detected" autocomplete="off" />
+            <input v-model="variable.value" class="text-input" :type="createComposeEnvironmentRevealed ? 'text' : 'password'" maxlength="2048" :placeholder="variable.defaultValue !== undefined ? `默认：${variable.defaultValue || '空值'}` : variable.required ? '必填' : '变量值'" autocomplete="new-password" />
+            <span v-if="variable.required" class="compose-environment-card__required">必填</span>
+            <span v-else-if="variable.defaultValue !== undefined" class="compose-environment-card__default">有默认值</span>
+            <button v-if="!variable.detected" class="icon-button icon-button--danger" type="button" title="移除" @click="createComposeEnvironment.splice(index, 1)"><Trash2 :size="15" /></button>
+          </div>
+          <button class="button button--ghost button--small compose-environment-card__add" type="button" @click="addCreateComposeEnvironment"><Plus :size="14" /> 添加变量</button>
+          <small>用于 Compose 中的 <code data-i18n-ignore>${VAR}</code> 插值；变量值不会保留在已完成的任务记录中。</small>
+        </div>
       </section>
 
       <section v-if="createAdvanced && (createManualMode || createAnalysis.kind === 'docker-run')" class="deployment-advanced">
@@ -1608,6 +1919,69 @@ onBeforeUnmount(() => {
       </section>
       <div class="inline-alert inline-alert--info">Docker Run 会转换为结构化 Docker API；Compose 会先校验配置，再保存到 `/home/docker` 并后台启动。启动失败会自动尝试回滚，并保留明确的处理状态。</div>
       <template #footer><span class="modal-footer-note">{{ createModeLabel || '自动识别部署方式' }}</span><button class="button button--secondary" type="button" @click="createOpen = false">取消</button><button class="button button--primary" type="button" :disabled="!createCanSubmit" @click="submitContainerCreate">部署</button></template>
+    </ModalDialog>
+
+    <ModalDialog
+      :open="composeOpen"
+      :title="composeProject ? `管理 Compose · ${composeProject.name}` : '管理 Compose 项目'"
+      description="配置来自 Docker Compose 的实际工作目录；修改前校验版本，失败时自动恢复原配置。"
+      size="large"
+      @close="closeComposeProject"
+    >
+      <LoadingState v-if="composeLoading" :rows="4" />
+      <ErrorState v-else-if="composeError" :message="composeError" />
+      <div v-else-if="composeProject" class="compose-manager">
+        <div class="compose-manager__meta">
+          <span><small>项目目录</small><code data-i18n-ignore>{{ composeProject.workingDirectory }}</code></span>
+          <span><small>服务</small><strong>{{ composeProject.services.join(' · ') || '由 Compose 实际配置决定' }}</strong></span>
+        </div>
+        <label v-if="composeProject.configFiles.length > 1" class="field">
+          <span>配置文件</span>
+          <select v-model="composeFilePath" class="select-input" @change="selectComposeFile">
+            <option v-for="file in composeProject.configFiles" :key="file.path" :value="file.path">{{ file.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>{{ selectedComposeFile?.name || 'Compose 配置' }}</span>
+          <DockerDeploymentEditor
+            v-model="composeSource"
+            :diagnostics="composeDiagnostics"
+            :aria-label="`${composeProject.name} Compose 配置`"
+          />
+        </label>
+        <section class="compose-environment-card compose-environment-card--manager">
+          <header class="compose-environment-card__header">
+            <div>
+              <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
+              <small>{{ composeEnvironmentCount ? `${composeEnvironmentCount} 个变量` : '当前为空' }} · 与配置一起校验和回滚</small>
+            </div>
+            <button class="button button--ghost button--small" type="button" @click="composeEnvironmentOpen = !composeEnvironmentOpen">{{ composeEnvironmentOpen ? '收起' : '管理变量' }}</button>
+          </header>
+          <div v-if="composeEnvironmentOpen" class="compose-environment-card__body">
+            <div v-if="!composeEnvironmentRevealed" class="compose-environment-card__concealed">
+              <span>变量值默认隐藏，显示后才能编辑。</span>
+              <button class="button button--secondary button--small" type="button" @click="composeEnvironmentRevealed = true">显示并编辑</button>
+            </div>
+            <label v-else class="field">
+              <span>每行一个 <code data-i18n-ignore>KEY=VALUE</code></span>
+              <textarea v-model="composeEnvironmentSource" class="text-area compose-environment-card__editor" rows="6" spellcheck="false" autocomplete="off" placeholder="DB_PASSWORD=change-me" />
+              <small>保存后写入项目目录中的 <code data-i18n-ignore>.env</code>，权限为 0600；敏感值不会保留在已完成的任务记录中。</small>
+            </label>
+          </div>
+        </section>
+        <div v-if="composeAnalysis.kind !== 'invalid' || !composeDiagnostics.length" class="deployment-detection" :class="{ 'is-invalid': composeAnalysis.kind === 'invalid', 'is-ready': composeAnalysis.kind === 'compose' }">
+          <span v-if="composeAnalysis.kind === 'compose'" class="deployment-kind"><ShieldCheck :size="16" />语法检查通过</span>
+          <span v-else class="deployment-kind"><CircleStop :size="16" />配置暂不可部署</span>
+          <small v-if="composeAnalysis.kind === 'compose'">识别到 {{ composeAnalysis.services.length }} 个服务；Agent 提交前还会执行 docker compose config。</small>
+          <small v-else-if="composeAnalysis.kind === 'invalid'">{{ composeAnalysis.message }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> 启动项目</button>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> 重启项目</button>
+        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> 停止项目</button>
+        <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> 保存并重新部署</button>
+      </template>
     </ModalDialog>
 
     <ModalDialog :open="logsOpen" :title="`${selectedContainer?.name || '容器'} 日志`" description="显示最近 300 行，输出经过敏感字段脱敏和大小限制。" size="large" @close="closeLogs">
@@ -1676,48 +2050,54 @@ onBeforeUnmount(() => {
       <template #footer><button class="button button--secondary" type="button" @click="systemUpdatePending = false">取消</button><button class="button button--primary" type="button" :disabled="systemUpdating" @click="submitSystemUpdate"><LoaderCircle v-if="systemUpdating" class="spin" :size="16" />提交后台更新</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="uninstallNoticeOpen" title="Docker 卸载适配状态" description="此能力尚缺少由宿主机 Agent 离线完成、持久化结果并在 KPanel 消失后可查询的任务协议。" size="small" @close="uninstallNoticeOpen = false">
-      <div class="inline-alert inline-alert--warning">当前版本可临时通过 SSH 运行 `k docker` 完成卸载。该缺口属于未实现的离线任务适配器，不是 KPanel 的安全策略限制。</div>
-      <p class="modal-copy">按照项目永久规范，完成适配后 Web 端必须直接提供与 kejilion.sh 相同的卸载能力，即使操作会终止 KPanel 自身。</p>
+    <ModalDialog :open="uninstallNoticeOpen" title="Docker 卸载尚未支持" description="卸载 Docker 会同时终止 KPanel。当前版本还不能在面板离线后继续执行并回传结果。" size="small" @close="uninstallNoticeOpen = false">
+      <div class="inline-alert inline-alert--warning">如需卸载，请通过 SSH 运行 `k docker`。这是尚未完成的离线任务能力，不是权限限制。</div>
+      <p class="modal-copy">后续版本将直接复用 kejilion.sh 的卸载流程，并在 KPanel 停止后继续记录执行结果。</p>
       <template #footer><button class="button button--secondary" type="button" @click="uninstallNoticeOpen = false">我知道了</button></template>
     </ModalDialog>
   </div>
 </template>
 
 <style scoped>
-.docker-page { gap: 18px; }
+.docker-page { gap: 14px; }
 .docker-job { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(160px, 28%); align-items: center; gap: 12px; }
 .docker-job span { display: grid; gap: 3px; }
 .docker-job small { color: var(--muted); }
 .docker-job progress { width: 100%; }
-.docker-command-center { overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
-.docker-command-center__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.docker-command-center__header > div { display: flex; align-items: center; gap: 11px; }
-.docker-command-center__header > div > span:last-child { display: grid; gap: 3px; }
+.docker-command-center { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+.docker-command-center__header { display: flex; min-width: 0; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.docker-command-center__identity { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 10px; }
+.docker-command-center__identity > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.docker-command-center__identity strong { font-size: .92rem; }
+.docker-command-center__identity small { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
 .docker-command-center__header small { color: var(--muted); }
+.docker-command-center__stats { display: flex; flex: 0 0 auto; align-items: center; }
+.docker-command-center__stat { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 12px; border-left: 1px solid var(--border); }
+.docker-command-center__stat strong { font-size: 1rem; line-height: 1; }
+.docker-command-center__stat small { font-size: .7rem; }
+.docker-command-center__stat--running strong { color: var(--brand-strong, var(--brand)); }
 .docker-command-center__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.docker-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--border); }
-.docker-summary > div { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 13px 16px; border-right: 1px solid var(--border); }
-.docker-summary > div:last-child { border-right: 0; }
-.docker-summary > div > span:last-child { display: grid; gap: 2px; }
-.docker-summary strong { font-size: 1.12rem; }
-.docker-summary small { color: var(--muted); font-size: .73rem; }
-.docker-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 8px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
-.docker-nav button { min-width: 0; min-height: 40px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--text); padding: 7px 11px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; text-align: left; cursor: pointer; transition: background-color .16s ease, border-color .16s ease; }
+.docker-command-center__identity .workspace-card__icon { width: 34px; height: 34px; border-radius: 10px; }
+.docker-workspace-bar { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 6px 8px; background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
+.docker-nav { display: flex; min-width: 0; flex: 1 1 auto; gap: 3px; overflow-x: auto; scrollbar-width: none; }
+.docker-nav::-webkit-scrollbar { display: none; }
+.docker-nav button { display: flex; min-width: 0; min-height: 34px; flex: 1 1 0; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid transparent; border-radius: 8px; color: var(--text); background: transparent; text-align: left; cursor: pointer; transition: background-color .16s ease, border-color .16s ease; }
 .docker-nav button:hover { border-color: color-mix(in srgb, var(--brand) 38%, var(--border)); background: var(--surface); }
 .docker-nav button.is-active { border-color: color-mix(in srgb, var(--brand) 34%, var(--border)); color: var(--brand); background: var(--surface); box-shadow: var(--shadow-sm); }
 .docker-nav button > svg { color: var(--brand); }
+.docker-nav button strong { overflow: hidden; font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .docker-nav small { color: var(--muted); }
-.docker-toolbar { display: grid; grid-template-columns: 1fr minmax(220px, 320px) 130px; gap: 10px; align-items: center; padding: 10px 12px; }
-.docker-toolbar__count { padding-left: 4px; color: var(--muted); font-size: .78rem; }
-.docker-sort { width: 100%; height: 39px; min-height: 39px; border-radius: 10px; }
+.docker-nav button small { margin-left: auto; font-size: .7rem; }
+.docker-toolbar { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 7px; padding: 0; }
+.docker-toolbar .search-field { width: min(220px, 24vw); min-width: 170px; }
+.docker-sort { width: 122px; height: 36px; min-height: 36px; border-radius: 9px; }
 .workspace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .workspace-grid--environment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .workspace-card { min-width: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 18px; display: grid; align-content: start; gap: 16px; }
 .workspace-card--wide { grid-column: 1 / -1; }
 .workspace-card--danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .workspace-card > header, .resource-section__header, .form-section > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
-.workspace-card > header > div, .resource-section__header > div:first-child, .form-section > header > div { display: grid; gap: 3px; }
+.workspace-card > header > div:not(.resource-section__heading):not(.resource-section__controls), .form-section > header > div { display: grid; gap: 3px; }
 .workspace-card > header:not(.resource-section__header) { grid-template-columns: auto 1fr; justify-content: start; }
 .workspace-card > header small, .resource-section__header small, .form-section small, .card-note { color: var(--muted); }
 .workspace-card__icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, transparent); flex: 0 0 auto; }
@@ -1727,7 +2107,7 @@ onBeforeUnmount(() => {
 .action-card small { color: var(--muted); line-height: 1.45; }
 .card-actions, .row-actions { display: flex; align-items: center; gap: 8px; }
 .workspace-card > header > .card-actions,
-.resource-section__header > .card-actions { display: flex; flex: 0 0 auto; flex-wrap: nowrap; }
+.resource-section__controls > .card-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
 .card-actions .button { flex: 0 0 auto; white-space: nowrap; }
 .row-actions--wrap { flex-wrap: wrap; }
 .backup-list { display: grid; gap: 8px; }
@@ -1740,26 +2120,52 @@ onBeforeUnmount(() => {
 .check-row { display: flex; gap: 10px; align-items: flex-start; }
 .check-row span { display: grid; gap: 3px; }
 .resource-section { padding: 0; overflow: hidden; }
-.resource-section__header { min-height: 76px; padding: 18px; border-bottom: 1px solid var(--border); align-items: center; }
-.resource-section__header > div:first-child { grid-template-columns: auto minmax(0, 1fr); align-items: center; flex: 1 1 auto; min-width: 0; }
-.resource-section__header > div:first-child > div { display: grid; min-width: 0; gap: 3px; }
-.resource-section__header > .card-actions { margin-left: auto; justify-content: flex-end; }
+.resource-section__header { min-height: 0; padding: 11px 14px; border-bottom: 1px solid var(--border); align-items: center; }
+.resource-section__heading { display: flex !important; min-width: 180px; flex: 1 1 190px; align-items: center; gap: 10px; }
+.resource-section__heading > div { display: grid; min-width: 0; gap: 2px; }
+.resource-section__heading strong { font-size: .88rem; }
+.resource-section__heading small { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.resource-section__controls { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .resource-section .table-scroll, .resource-section > .empty-state { margin: 0; }
-.docker-table { min-width: 1320px; }
+.docker-table { min-width: 1240px; }
 .docker-table__name { width: 20%; }
 .docker-table__status { width: 11%; }
 .docker-table__ports { width: 23%; }
 .docker-table__network { width: 13%; }
 .docker-table__owner { width: 11%; }
-.docker-table__actions { width: 330px; }
+.docker-table__actions { width: 372px; }
+.docker-table > thead th:last-child,
+.docker-table .docker-row > td:last-child {
+  width: 372px;
+  min-width: 372px;
+  max-width: 372px;
+  padding-right: 8px;
+  padding-left: 8px;
+}
 .docker-row-actions { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .docker-row-actions__group { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
 .docker-row-actions__group .icon-button { width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; }
 .docker-row-actions__group .icon-button:hover { background: var(--surface); }
 .docker-row { transition: background-color .14s ease; }
 .docker-row:hover { background: color-mix(in srgb, var(--brand) 4%, var(--surface)); }
-.docker-row--running > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand) 75%, transparent); }
+.docker-row--running > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--docker-group-accent, var(--brand)) 75%, transparent); }
 .docker-row--restarting > td:first-child, .docker-row--paused > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--amber) 75%, transparent); }
+.docker-group + .docker-group .docker-group__row td { border-top: 8px solid var(--surface-subtle); }
+.docker-group__row td { padding: 0; background: color-mix(in srgb, var(--docker-group-accent, var(--brand)) 6%, var(--surface-raised)); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--docker-group-accent, var(--brand)) 72%, transparent); }
+.docker-group__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 8px 12px; }
+.docker-group__toggle { display: grid; min-width: 0; align-items: center; grid-template-columns: auto auto minmax(0, 1fr); gap: 9px; padding: 0; border: 0; outline: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.docker-group__toggle > svg { color: color-mix(in srgb, var(--docker-group-accent, var(--brand)) 72%, var(--muted)); transition: transform .12s ease-out, color .12s ease-out; }
+.docker-group__toggle > svg.is-expanded { transform: rotate(90deg); }
+.docker-group__toggle:hover > svg { color: var(--docker-group-accent, var(--brand)); }
+.docker-group__toggle:focus-visible { border-radius: 10px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent); }
+.docker-group__copy { display: grid; min-width: 0; gap: 2px; }
+.docker-group__summary small { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.docker-group__summary > .button { position: sticky; right: 12px; z-index: 2; justify-self: end; white-space: nowrap; }
+.docker-group__icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: var(--docker-group-accent, var(--brand)); background: color-mix(in srgb, var(--docker-group-accent, var(--brand)) 12%, transparent); }
+.docker-group-row-enter-active,
+.docker-group-row-leave-active { will-change: opacity, transform; transition: opacity .12s linear, transform .12s cubic-bezier(.2, .8, .2, 1); }
+.docker-group-row-enter-from,
+.docker-group-row-leave-to { opacity: 0; transform: translate3d(0, -3px, 0); }
 .docker-context-menu {
   position: fixed;
   z-index: 110;
@@ -1819,8 +2225,8 @@ onBeforeUnmount(() => {
 .text-input[list]:hover::-webkit-calendar-picker-indicator { opacity: .68; }
 .inline-check input[type='checkbox'],
 .check-row input[type='checkbox'] { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; border: 1px solid var(--border-strong); border-radius: 5px; accent-color: var(--brand); }
-.compact-input { width: min(240px, 34vw); }
-.compact-input--driver { width: min(170px, 24vw); }
+.compact-input { width: min(180px, 24vw); }
+.compact-input--driver { width: min(130px, 17vw); }
 .table-sub { display: block; color: var(--muted); margin-top: 3px; }
 .action-unavailable-label { font-size: .78rem; color: var(--muted); }
 .form-grid { display: grid; gap: 14px; }
@@ -1831,9 +2237,6 @@ onBeforeUnmount(() => {
 .text-area { width: 100%; resize: vertical; min-height: 84px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); padding: 10px 12px; font: inherit; }
 .text-area:focus { outline: 2px solid color-mix(in srgb, var(--brand) 25%, transparent); border-color: var(--brand); }
 .deployment-input-card { display: grid; gap: 11px; padding: 15px; border: 1px solid var(--border-strong); border-radius: 15px; background: color-mix(in srgb, var(--surface-raised) 78%, transparent); }
-.deployment-source { min-height: 190px; resize: vertical; background: var(--surface-subtle); color: var(--text); border-color: var(--border-strong); box-shadow: inset 0 1px 2px rgb(20 48 42 / 4%); caret-color: var(--brand); font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.deployment-source::placeholder { color: var(--muted); }
-:global(:root[data-theme='dark']) .deployment-source { background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); border-color: var(--terminal-shell-border, #29383a); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); caret-color: var(--brand); }
 .deployment-detection { display: flex; min-width: 0; align-items: center; gap: 10px; color: var(--muted); }
 .deployment-detection small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployment-detection.is-ready { color: var(--text); }
@@ -1842,11 +2245,32 @@ onBeforeUnmount(() => {
 .deployment-options { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .deployment-advanced { margin-top: 14px; padding: 15px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
 .deployment-advanced > .form-section:first-child { margin-top: 0; }
+.compose-environment-card { display: grid; gap: 12px; }
+.compose-environment-card--manager { padding: 13px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-subtle); }
+.compose-environment-card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.compose-environment-card__header > div:first-child { display: grid; min-width: 0; gap: 3px; }
+.compose-environment-card__header small { color: var(--muted); }
+.compose-environment-card__header code { color: inherit; }
+.compose-environment-card__actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.compose-environment-card__body { display: grid; gap: 9px; padding-top: 11px; border-top: 1px solid var(--border); }
+.compose-environment-card__body > small { color: var(--muted); }
+.compose-environment-card__missing, .compose-environment-card__required { color: var(--danger) !important; }
+.compose-environment-card__required, .compose-environment-card__default { align-self: center; font-size: .72rem; white-space: nowrap; }
+.compose-environment-card__default { color: var(--muted); }
+.compose-environment-card__add { justify-self: start; }
+.compose-environment-card__concealed { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .8rem; }
+.compose-environment-card__editor { min-height: 128px; font-family: var(--font-mono); font-size: .78rem; line-height: 1.55; }
+.compose-manager { display: grid; gap: 15px; }
+.compose-manager__meta { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; }
+.compose-manager__meta > span { display: grid; min-width: 0; gap: 5px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-subtle); }
+.compose-manager__meta small { color: var(--muted); }
+.compose-manager__meta code, .compose-manager__meta strong { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
 .form-section { display: grid; gap: 10px; margin-top: 18px; }
 .repeat-row { display: grid; gap: 8px; align-items: center; }
 .repeat-row--ports { grid-template-columns: minmax(100px, 1fr) auto minmax(100px, 1fr) 100px 110px auto; }
 .repeat-row--mounts { grid-template-columns: 120px minmax(180px, 1fr) minmax(150px, 1fr) auto auto; }
 .repeat-row--environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto; }
+.repeat-row--compose-environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto auto; }
 .inline-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .log-viewer { margin: 0; min-height: 280px; max-height: 58vh; overflow: auto; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--terminal-shell-radius, 12px); background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); padding: 15px; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -1859,43 +2283,59 @@ onBeforeUnmount(() => {
 .console-output { min-height: 240px; margin-top: 14px; }
 .modal-copy { color: var(--muted); line-height: 1.65; }
 @media (max-width: 1000px) {
-  .docker-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .docker-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .docker-summary > div:nth-child(2) { border-right: 0; }
-  .docker-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
   .action-grid { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .resource-section__header { align-items: stretch; flex-direction: column; }
-  .resource-section__header > .card-actions { width: 100%; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .resource-section__heading,
+  .resource-section__controls { width: 100%; }
+  .resource-section__heading { flex: 0 0 auto; }
+  .resource-section__controls { justify-content: flex-start; }
+  .resource-section__controls > .docker-toolbar,
+  .resource-section__controls > .card-actions { width: 100%; }
+  .resource-section__controls > .card-actions { margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
 }
 @media (max-width: 720px) {
   .docker-job { grid-template-columns: auto 1fr; }
   .docker-job progress { grid-column: 1 / -1; }
-  .docker-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .docker-nav button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .docker-command-center__header { align-items: stretch; flex-direction: column; padding: 12px; }
-  .docker-command-center__actions { width: 100%; justify-content: space-between; }
-  .docker-summary > div { gap: 8px; padding: 10px; }
-  .docker-toolbar { grid-template-columns: 1fr; }
-  .docker-toolbar__count { display: none; }
+  .docker-command-center__header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px; }
+  .docker-command-center__identity { flex: 1 1 180px; }
+  .docker-command-center__actions { width: auto; justify-content: flex-end; }
+  .docker-command-center__stats { order: 3; width: 100%; flex: 1 1 100%; padding-top: 8px; border-top: 1px solid var(--border); }
+  .docker-workspace-bar { align-items: stretch; flex-direction: column; padding: 6px; }
+  .docker-nav { width: 100%; flex: 0 0 auto; }
+  .docker-nav button { min-width: 104px; flex: 0 0 auto; }
+  .docker-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 122px; width: 100%; flex: 1 1 100%; }
+  .docker-toolbar .search-field { width: auto; min-width: 0; }
   .workspace-grid, .workspace-grid--environment, .form-grid--two { grid-template-columns: 1fr; }
-  .docker-toolbar, .resource-section__header, .backup-list article { align-items: stretch; flex-direction: column; }
+  .resource-section__controls { align-items: stretch; flex-direction: column; flex-wrap: nowrap; }
   .workspace-card > header > .card-actions,
-  .resource-section__header > .card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .resource-section__controls > .card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .workspace-card { gap: 13px; padding: 14px; border-radius: 14px; }
+  .resource-section { padding: 0; }
   .workspace-card > header:not(.resource-section__header) { display: grid; align-items: stretch; grid-template-columns: 1fr; }
   .workspace-card > header:not(.resource-section__header) > .card-actions { grid-column: 1; }
-  .resource-section__header { min-height: 0; padding: 14px; }
+  .resource-section__header { min-height: 0; padding: 12px; }
+  .resource-section__heading small { overflow: visible; white-space: normal; }
+  .resource-section__controls > .card-actions > * { min-width: 0; }
   .backup-list article { gap: 9px; padding: 11px; }
   .compact-input { width: 100%; }
   .network-membership { grid-template-columns: 1fr; }
-  .repeat-row--ports, .repeat-row--mounts, .repeat-row--environment { grid-template-columns: 1fr; }
+  .docker-group__summary { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .docker-group__summary .button { grid-column: auto; width: auto; }
+  .compose-manager__meta { grid-template-columns: 1fr; }
+  .repeat-row--ports, .repeat-row--mounts, .repeat-row--environment, .repeat-row--compose-environment { grid-template-columns: 1fr; }
+  .compose-environment-card__header, .compose-environment-card__concealed { align-items: stretch; flex-direction: column; }
+  .compose-environment-card__actions { flex-wrap: wrap; }
   .repeat-row--ports > span { display: none; }
   .deployment-input-card, .deployment-advanced { padding: 12px; }
-  .deployment-source { min-height: 220px; }
   .deployment-detection { align-items: flex-start; flex-direction: column; gap: 4px; }
   .deployment-detection small { white-space: normal; }
   .deployment-options { justify-content: stretch; flex-direction: column; }
   .deployment-options .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .docker-group__toggle > svg,
+  .docker-group-row-enter-active,
+  .docker-group-row-leave-active { transition: none; }
 }
 </style>

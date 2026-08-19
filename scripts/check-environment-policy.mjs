@@ -30,12 +30,19 @@ export function validatePolicy(policy) {
 
   const identifiers = new Map();
   for (const [name, environment] of Object.entries(policy.environments)) {
-    if (!['validation', 'production'].includes(environment?.role)) {
-      failures.push(`${name}: role must be validation or production`);
+    if (!['validation', 'production', 'hybrid'].includes(environment?.role)) {
+      failures.push(`${name}: role must be validation, production, or hybrid`);
     }
     if (!Array.isArray(environment?.aliases)) failures.push(`${name}: aliases must be an array`);
-    if (!Array.isArray(environment?.allowedPurposes) || environment.allowedPurposes.length === 0) {
-      failures.push(`${name}: allowedPurposes must be a non-empty array`);
+    if (environment?.disabled !== undefined && typeof environment.disabled !== 'boolean') {
+      failures.push(`${name}: disabled must be a boolean`);
+    }
+    if (!Array.isArray(environment?.allowedPurposes)) {
+      failures.push(`${name}: allowedPurposes must be an array`);
+    } else if (environment.disabled && environment.allowedPurposes.length > 0) {
+      failures.push(`${name}: disabled environments must not allow any purpose`);
+    } else if (!environment.disabled && environment.allowedPurposes.length === 0) {
+      failures.push(`${name}: enabled environments must allow at least one purpose`);
     }
     for (const purpose of environment?.allowedPurposes ?? []) {
       if (!supportedPurposes.has(purpose)) failures.push(`${name}: unsupported purpose ${purpose}`);
@@ -60,16 +67,8 @@ export function validatePolicy(policy) {
 
   const prod108 = policy.environments['prod-108'];
   if (!prod108 || prod108.role !== 'production') failures.push('prod-108 must be registered as production');
-  const forbidden108Purposes = [
-    'candidate-validation',
-    'browser-validation',
-    'performance-validation',
-    'failure-injection',
-    'staging-deploy',
-  ];
-  for (const purpose of forbidden108Purposes) {
-    if (prod108?.allowedPurposes?.includes(purpose)) failures.push(`prod-108 must not allow ${purpose}`);
-  }
+  if (prod108?.disabled !== true) failures.push('prod-108 must remain disabled');
+  if (prod108?.allowedPurposes?.length !== 0) failures.push('prod-108 must not allow any purpose');
   return failures;
 }
 
@@ -89,6 +88,9 @@ export function checkEnvironment(policy, identifier, purpose) {
   const environment = resolveEnvironment(policy, identifier);
   if (!environment) {
     throw new Error(`environment is not registered: ${identifier}; register dedicated test hosts before use`);
+  }
+  if (environment.disabled) {
+    throw new Error(`${environment.name} is disabled for all KPanel operations`);
   }
   if (!environment.allowedPurposes.includes(purpose)) {
     throw new Error(`${environment.name} (${environment.role}) does not allow ${purpose}`);

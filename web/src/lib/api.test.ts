@@ -15,6 +15,36 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('streams cross-panel file progress and returns the committed entry', async () => {
+    const entry = {
+      name: 'app', path: '/home/KPanel Desktop/app', kind: 'directory' as const,
+      sizeBytes: 0, mode: 'drwxr-xr-x', owner: 'root', group: 'root',
+      modifiedAt: '2026-08-15T00:00:00Z', resourceVersion: `sha256:${'a'.repeat(64)}`,
+      editable: false, previewable: false,
+    }
+    const stream = [
+      { state: 'connecting' },
+      { state: 'transferring', loadedBytes: 1024, totalBytes: 2048 },
+      { state: 'complete', loadedBytes: 2048, totalBytes: 2048, entry },
+    ].map((event) => JSON.stringify(event)).join('\n') + '\n'
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'application/x-ndjson' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const events: string[] = []
+
+    await expect(api.files.transferFromPanel({
+      sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:source',
+      targetDirectory: '/home/KPanel Desktop',
+    }, (event) => events.push(event.state))).resolves.toEqual(entry)
+    expect(events).toEqual(['connecting', 'transferring', 'complete'])
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/files/transfers')
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+    }))
+  })
+
   it('builds a same-origin, path-safe site icon URL', () => {
     expect(api.sites.iconURL('a'.repeat(32))).toBe(
       `/api/v1/sites/${'a'.repeat(32)}/icon`,
@@ -1007,6 +1037,74 @@ describe('API client', () => {
     expect(requestURL).toContain('offset=100')
   })
 
+  it('encodes the exact file path for desktop shortcut target lookup', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      name: 'app config.json',
+      path: '/home/app config.json',
+      kind: 'file',
+      sizeBytes: 12,
+      mode: '-rw-------',
+      owner: 'root',
+      group: 'root',
+      modifiedAt: '2026-08-14T00:00:00Z',
+      resourceVersion: 'v1',
+      editable: true,
+      previewable: true,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.files.entry('/home/app config.json')
+
+    const requestURL = String(fetchMock.mock.calls[0]?.[0])
+    expect(requestURL).toContain('/api/v1/files/entry?')
+    expect(requestURL).toContain('path=%2Fhome%2Fapp+config.json')
+  })
+
+  it('loads bounded desktop shortcut metadata in one POST request', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      entries: [{ name: 'app', path: '/home/app', kind: 'directory', resourceVersion: 'sha256:app' }],
+      unavailable: ['/missing'],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.files.entries(['/home/app', '/missing'])
+
+    const [requestURL, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(requestURL).toContain('/api/v1/files/entries')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ paths: ['/home/app', '/missing'] })
+  })
+
+  it('aborts an in-flight binary file upload through the caller signal', async () => {
+    class UploadXHR {
+      static latest?: UploadXHR
+      upload: { onprogress?: (event: ProgressEvent) => void } = {}
+      withCredentials = false
+      responseType: XMLHttpRequestResponseType = ''
+      response: unknown
+      status = 0
+      onerror?: () => void
+      onabort?: () => void
+      onload?: () => void
+      abort = vi.fn(() => this.onabort?.())
+      open = vi.fn()
+      setRequestHeader = vi.fn()
+      send = vi.fn()
+
+      constructor() {
+        UploadXHR.latest = this
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', UploadXHR)
+    const controller = new AbortController()
+    const operation = api.files.upload('/home', new File(['hello'], 'notes.txt'), false, undefined, controller.signal)
+
+    controller.abort()
+
+    await expect(operation).rejects.toMatchObject({ name: 'AbortError' })
+    expect(UploadXHR.latest?.abort).toHaveBeenCalledTimes(1)
+  })
+
   it('normalizes kejilion.sh and legacy swap artifacts separately', async () => {
     const collectedAt = '2026-07-26T05:00:00Z'
     const system = {
@@ -1300,6 +1398,7 @@ describe('API client', () => {
     })
     await api.cluster.remove(hostID, 'host-version-2')
     await api.cluster.refresh(hostID)
+    await api.cluster.enableMutualFiles(hostID)
     await api.cluster.createPairingCode()
     await api.cluster.createLightEnrollment()
     await api.cluster.controllers()
@@ -1313,6 +1412,7 @@ describe('API client', () => {
       `/api/v1/cluster/hosts/${encodedHostID}`,
       `/api/v1/cluster/hosts/${encodedHostID}`,
       `/api/v1/cluster/hosts/${encodedHostID}/refresh`,
+      `/api/v1/cluster/hosts/${encodedHostID}/mutual-files`,
       '/api/v1/cluster/pairing-codes/v2',
       '/api/v1/cluster/light-enrollments',
       '/api/v1/cluster/controllers',
@@ -1325,6 +1425,7 @@ describe('API client', () => {
       'POST',
       'PATCH',
       'DELETE',
+      'POST',
       'POST',
       'POST',
       'POST',
@@ -1346,6 +1447,7 @@ describe('API client', () => {
     expect((clusterCalls[5]?.[1] as RequestInit).body).toBeUndefined()
     expect((clusterCalls[6]?.[1] as RequestInit).body).toBeUndefined()
     expect((clusterCalls[7]?.[1] as RequestInit).body).toBeUndefined()
+    expect((clusterCalls[8]?.[1] as RequestInit).body).toBeUndefined()
 
     const mutationCalls = clusterCalls.filter(
       ([, init]) => (init as RequestInit).method !== 'GET',
@@ -1355,6 +1457,61 @@ describe('API client', () => {
         'cluster-csrf-secret',
       )
     })
+  })
+
+  it('separates authenticated share settings from the anonymous public snapshot', async () => {
+    const token = 'a'.repeat(64)
+    const settings = {
+      enabled: true,
+      title: 'My fleet',
+      description: 'Public status',
+      sharePath: `/share/${token}`,
+      resourceVersion: 'share-v1',
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/bootstrap') return jsonResponse({ required: false })
+      if (url === '/api/v1/auth/session') {
+        return jsonResponse({
+          user: { id: 'user-1', username: 'admin', role: 'administrator' },
+          csrfToken: 'share-csrf-secret',
+          expiresAt: '2026-08-15T13:00:00Z',
+        })
+      }
+      if (url.startsWith('/api/v1/public/cluster-share/')) {
+        return jsonResponse({
+          title: settings.title, generatedAt: '2026-08-15T12:00:00Z',
+          total: 0, online: 0, attention: 0, items: [],
+        })
+      }
+      return jsonResponse(settings)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.auth.status()
+    await api.cluster.shareSettings()
+    await api.cluster.updateShare({
+      enabled: true,
+      title: settings.title,
+      description: settings.description,
+      expectedResourceVersion: settings.resourceVersion,
+    })
+    await api.cluster.resetShareToken(settings.resourceVersion)
+    await api.cluster.publicShare(token)
+
+    const calls = fetchMock.mock.calls.slice(2)
+    expect(calls.map(([url]) => url)).toEqual([
+      '/api/v1/cluster/share',
+      '/api/v1/cluster/share',
+      '/api/v1/cluster/share/token',
+      `/api/v1/public/cluster-share/${token}`,
+    ])
+    expect(calls.map(([, init]) => (init as RequestInit).method)).toEqual([
+      'GET', 'PUT', 'POST', 'GET',
+    ])
+    expect(new Headers((calls[1]?.[1] as RequestInit).headers).get('x-csrf-token')).toBe('share-csrf-secret')
+    expect(new Headers((calls[2]?.[1] as RequestInit).headers).get('x-csrf-token')).toBe('share-csrf-secret')
+    expect(new Headers((calls[3]?.[1] as RequestInit).headers).get('x-csrf-token')).toBeNull()
   })
 
   it('keeps terminal output objects intact instead of treating their data field as an envelope', async () => {

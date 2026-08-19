@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.2"
+version: "4.4"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-08-13T00:00:00+08:00"
+updated: "2026-08-17T20:30:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -74,9 +74,13 @@ Reuse successful evidence only when commit, environment, tools and parameters ar
 repository-native check for `${{verification_level}}` when evidence is incomplete or invalidated; complement it with
 affected business, browser, real-machine, performance, or production evidence rather than repeating identical commands.
 
+Visible feature work must invoke `local-feature-preview` and return its standard preview card. Use `draft` for a dirty
+working tree and `acceptance` only for a clean checkpoint; mock, local integration, and isolated real-host evidence remain
+distinct. On handoff, pass the manifest path and stop responsibility instead of leaving an undocumented dev server.
+
 Long-running browser E2E or soak uses `background-browser-validation`: record its job ID and evidence directory, release
 the foreground task, and let a monitor/read-only task consume the terminal state. Validate remote purposes through
-`environment-policy.json`; never select `prod-108` for validation.
+`environment-policy.json`; never connect to `prod-108` for any KPanel operation.
 
 Expected: the diff matches the requested scope, quality dimensions and user journeys are classified, and the reported
 tests and evidence are reproducible.
@@ -102,6 +106,7 @@ version recommendation, rollback point, and whether anything was committed, push
 - The delivery package contains exact Git state and reproducible verification evidence.
 - Definition of Ready and Definition of Done were applied from `docs/project-management.md`, not redefined locally.
 - Existing evidence was reused only for an unchanged commit/environment/parameter tuple.
+- Visible feature work returned a reproducible local preview or stated why it was not applicable; no preview process was orphaned.
 - No push, tag, release, or deployment occurred without explicit authority.
 
 ## Notes

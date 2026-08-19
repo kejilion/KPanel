@@ -637,9 +637,15 @@ func (m *Manager) Action(
 		)
 		switch input.Action {
 		case "copy":
+			if err = m.checkExpectedVersion(source, input.ExpectedResourceVersions[source]); err != nil {
+				break
+			}
 			entry, err = m.copyOne(ctx, source, input.Target, budget)
 			destination = entry.Path
 		case "move":
+			if err = m.checkExpectedVersion(source, input.ExpectedResourceVersions[source]); err != nil {
+				break
+			}
 			entry, err = m.moveOne(ctx, source, input.Target, budget)
 			destination = entry.Path
 		case "trash":

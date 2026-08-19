@@ -1,12 +1,12 @@
 ---
 name: quality-audit-kpanel
 description: "审计快速迭代后的 KPanel 业务正确性、体验、性能、稳定、安全、交付节奏和发布门禁"
-version: "1.4"
+version: "1.7"
 author: "Codex"
 tags: [quality, security, performance, stability, ux, delivery, review, regression]
 params: [project_dir, baseline_ref, candidate_image, test_host]
 created: "2026-08-02T13:02:08Z"
-updated: "2026-08-13T00:00:00+08:00"
+updated: "2026-08-17T15:04:32+08:00"
 ---
 
 # KPanel Quality Audit
@@ -20,10 +20,10 @@ updated: "2026-08-13T00:00:00+08:00"
 ## Prerequisites
 
 - 已阅读 `AGENTS.md`、`PROJECT_RULES.md`、`docs/development-quality-standard.md` 和当前事实入口
-  `docs/product-quality-review-2026-08-13.md`；历史审计只用于对应时点比较。
+  `docs/product-quality-review-current.md`；历史审计只用于对应时点比较。
 - `${{project_dir}}` 是独立或无并发写入的 KPanel worktree。
 - 未经用户明确授权，不提交、推送、发布或修改正式服务器状态。
-- `${{test_host}}` 必须登记在 `environment-policy.json` 且允许候选/性能/浏览器验证；`prod-108` 不适用。
+- `${{test_host}}` 必须登记在 `environment-policy.json` 且允许候选/性能/浏览器验证；`prod-108` 禁用全部 KPanel 操作。
 
 ## Steps
 
@@ -35,9 +35,11 @@ git status --short
 git branch --show-current
 git rev-parse HEAD
 git diff --stat "${{baseline_ref}}..HEAD"
+node scripts/check-business-context-freshness.mjs
 ```
 
-**Expected output:** 工作树、基线、改动规模和允许修改范围明确，用户已有修改已保留。
+**Expected output:** 工作树、基线、改动规模和允许修改范围明确，当前业务事实入口未超过机器门槛，
+用户已有修改已保留。
 
 ### 2. 审计规范与架构不变量
 
@@ -117,14 +119,16 @@ Unix Socket 鉴权和最终容器限制。记录 Docker、containerd、runc、�
 ### 7. 复核发布节奏与证据质量
 
 从标签、验收记录和发布结果统计滚动 14 天及最近 20 个正式版本的部署频率、提交到生产用时、
-变更失败/回滚/紧急热修复、恢复时间和重复发布原因。检查验收记录是否区分自动测试、隔离真机、
+变更失败/回滚/紧急热修复、恢复时间和重复发布原因，并独立统计使必需步骤无效或需要重试的发布流程
+异常/无效证据及其中发生在生产写操作后的数量。检查验收记录是否区分自动测试、隔离真机、
 公开产物和生产部署安全核对，是否把未验证项、部署健康或历史版本结果误写为当前质量通过。
 
 ```bash
 make release-metrics
 ```
 
-**Expected output:** 同时报告交付速度和稳定性；数据不足时先形成基线，不以高频或低频单独定性。
+**Expected output:** 同时报告交付速度、产品稳定性和流程可靠性；两类失败不混算，数据不足时先形成基线，
+不以高频或低频单独定性。
 
 ### 8. 只修复可复现缺陷或自动门禁
 
@@ -142,7 +146,7 @@ make release-metrics
 - `${{project_dir}}`：待审计 KPanel worktree 绝对路径。
 - `${{baseline_ref}}`：最近稳定 tag 或审计开始时的 `origin/main`。
 - `${{candidate_image}}`：候选或公开版本镜像完整引用。
-- `${{test_host}}`：登记的隔离性能与运行时验收主机；为空时明确列出未验证项，不得回退到 108。
+- `${{test_host}}`：登记的隔离性能与运行时验收主机；为空时明确列出未验证项，不得连接 108。
 
 ## Verification
 

@@ -2,9 +2,12 @@ package appmarket
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -83,8 +86,8 @@ func TestEmbeddedCatalogMatchesAuditedApplicationMarket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog.Apps) != 147 || len(legacy) != 115 {
-		t.Fatalf("catalog counts = %d/%d, want 147/115", len(catalog.Apps), len(legacy))
+	if len(catalog.Apps) != 153 || len(legacy) != 115 {
+		t.Fatalf("catalog counts = %d/%d, want 153/115", len(catalog.Apps), len(legacy))
 	}
 	if !strings.HasPrefix(catalog.Source, "https://app.kejilion.sh") ||
 		len(scriptSHA256) != 64 {
@@ -108,6 +111,59 @@ func TestEmbeddedCatalogMatchesAuditedApplicationMarket(t *testing.T) {
 	if !foundKPanel {
 		t.Fatal("KPanel local application icon is missing or has an unexpected digest")
 	}
+	for _, category := range catalog.Categories {
+		if category.ZHTW == "" {
+			t.Fatalf("Traditional Chinese category label is missing for %s", category.Key)
+		}
+	}
+	for _, app := range catalog.Apps {
+		if app.NameZHTW == "" || app.DescriptionZHTW == "" {
+			t.Fatalf("Traditional Chinese app metadata is missing for %s", app.ID)
+		}
+	}
+}
+
+func TestCuratedGameIconsMatchCatalogDigests(t *testing.T) {
+	catalog, _, _, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gameTokens := []string{"arena-brawl", "bomb-party", "ice-climber-arena", "neon-arena-fps"}
+	digests := make(map[string]string, len(gameTokens))
+	for _, token := range gameTokens {
+		app := embeddedAppByToken(t, catalog, token)
+		iconPath := filepath.Join("..", "..", "web", "public", "app-icons", path.Base(app.Icon))
+		content, err := os.ReadFile(iconPath)
+		if err != nil {
+			t.Fatalf("read curated icon for %s: %v", token, err)
+		}
+		hash := sha256.Sum256(content)
+		actual := hex.EncodeToString(hash[:])
+		if actual != app.IconSHA256 {
+			t.Fatalf("curated icon digest for %s = %s, want %s", token, actual, app.IconSHA256)
+		}
+		if previous, duplicated := digests[actual]; duplicated {
+			t.Fatalf("curated game icons %s and %s share digest %s", previous, token, actual)
+		}
+		digests[actual] = token
+	}
+}
+
+func TestCatalogDateValidation(t *testing.T) {
+	tests := map[string]bool{
+		"":           true,
+		"2026-08-16": true,
+		"2026-02-29": false,
+		"2024-02-29": true,
+		"2026-8-16":  false,
+		"2026-08-32": false,
+		"not-a-date": false,
+	}
+	for value, expected := range tests {
+		if actual := validCatalogDate(value); actual != expected {
+			t.Errorf("validCatalogDate(%q) = %v, want %v", value, actual, expected)
+		}
+	}
 }
 
 func TestInventoryCombinesDockerTruthAndScriptMarker(t *testing.T) {
@@ -130,7 +186,7 @@ func TestInventoryCombinesDockerTruthAndScriptMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory.Items) != 147 || inventory.Installed != 2 || inventory.Running != 1 {
+	if len(inventory.Items) != 153 || inventory.Installed != 2 || inventory.Running != 1 {
 		t.Fatalf("inventory counts are wrong: %#v", inventory)
 	}
 	var speedtest, itTools Summary
@@ -215,29 +271,52 @@ func TestRuntimeFromStoppedContainerSerializesPortsAsArray(t *testing.T) {
 	}
 }
 
-func TestRemoteCatalogDynamicallyReplacesThirdPartyEntries(t *testing.T) {
+func TestRemoteCatalogDynamicallyReplacesBuiltinAndThirdPartyEntries(t *testing.T) {
 	embedded, _, _, err := LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
+	for index := range embedded.Apps {
+		if embedded.Apps[index].Source == "builtin" {
+			embedded.Apps[index].AddedAt = "2026-06-01"
+			break
+		}
+	}
 	payload := remotePayloadFromCatalog(embedded)
-	removed := ""
+	removedThirdParty := ""
+	updatedBuiltin := ""
+	historicalBuiltin := ""
 	apps := make([]App, 0, len(payload.Apps))
 	for _, app := range payload.Apps {
-		if app.Source == "thirdparty" && removed == "" {
-			removed = app.Token
+		if app.Source == "thirdparty" && removedThirdParty == "" {
+			removedThirdParty = app.Token
 			continue
+		}
+		if app.Source == "builtin" && updatedBuiltin == "" {
+			updatedBuiltin = app.Token
+			app.NameZH = "动态更新的内置应用"
+			app.AddedAt = "2026-08-16"
+		} else if app.Source == "builtin" && historicalBuiltin == "" {
+			historicalBuiltin = app.Token
+			app.AddedAt = "2026-08-16"
 		}
 		apps = append(apps, app)
 	}
+	apps = append(apps, App{
+		ID: "builtin-117", Num: 117, Source: "builtin", Token: "new-builtin-app",
+		NameZH: "新内置应用", NameEN: "New Builtin App", Description: "动态内置目录测试",
+		DescriptionEN: "Dynamic builtin catalog test", Category: "ai",
+		Icon: "icons/new-builtin-app.webp", Slug: "new-builtin-app", AddedAt: "2026-08-15",
+	})
 	apps = append(apps, App{
 		ID: "thirdparty-new-safe-app", Source: "thirdparty", Token: "new-safe-app",
 		NameZH: "新入驻应用", NameEN: "New Safe App", Description: "动态目录测试",
 		DescriptionEN: "Dynamic catalog test", Category: "commtools",
 		Website: "https://example.com", Icon: "icons/new-safe-app.webp", Slug: "new-safe-app",
+		AddedAt: "2026-08-16",
 	})
 	payload.Apps = apps
-	payload.Meta.ThirdParty = len(apps) - payload.Meta.Builtin
+	payload.Meta.Builtin++
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
@@ -248,22 +327,173 @@ func TestRemoteCatalogDynamicallyReplacesThirdPartyEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	merged := mergeRemoteThirdParty(embedded, remote)
-	foundNew := false
-	foundRemoved := false
-	for _, app := range merged.Apps {
-		if app.Token == "new-safe-app" {
-			foundNew = app.Icon == genericThirdPartyIcon && app.IconSHA256 == ""
-		}
-		if app.Token == removed {
-			foundRemoved = true
+	merged := mergeRemoteCatalogWithDynamicIcons(embedded, remote, true)
+	dynamicSources := dynamicRemoteIconSources(embedded, remote)
+	fallback := mergeRemoteCatalog(embedded, remote)
+	for _, slug := range []string{"new-builtin-app", "new-safe-app"} {
+		app := appBySlug(t, fallback, slug)
+		if app.Icon != genericThirdPartyIcon || app.IconSHA256 != "" {
+			t.Fatalf("dynamic app %q did not retain the local fallback: %#v", slug, app)
 		}
 	}
-	if !foundNew || foundRemoved || len(merged.Apps) != len(embedded.Apps) {
+	foundNewThirdParty := false
+	foundNewBuiltin := false
+	foundUpdatedBuiltin := false
+	foundHistoricalBuiltin := false
+	foundRemovedThirdParty := false
+	for _, app := range merged.Apps {
+		if app.Token == "new-safe-app" {
+			foundNewThirdParty = app.Icon == dynamicAppIconPrefix+"new-safe-app.webp" &&
+				app.IconSHA256 == "" && app.AddedAt == "2026-08-16" &&
+				dynamicSources[app.Slug] == "icons/new-safe-app.webp"
+		}
+		if app.Token == "new-builtin-app" {
+			foundNewBuiltin = app.Num == 117 &&
+				app.Icon == dynamicAppIconPrefix+"new-builtin-app.webp" &&
+				app.IconSHA256 == "" && app.AddedAt == "2026-08-15" &&
+				dynamicSources[app.Slug] == "icons/new-builtin-app.webp"
+		}
+		if app.Token == updatedBuiltin {
+			local := embeddedAppByToken(t, embedded, updatedBuiltin)
+			foundUpdatedBuiltin = app.NameZH == "动态更新的内置应用" &&
+				app.Icon == local.Icon && app.IconSHA256 == local.IconSHA256 &&
+				app.AddedAt == "2026-06-01"
+		}
+		if app.Token == historicalBuiltin {
+			foundHistoricalBuiltin = app.AddedAt == ""
+		}
+		if app.Token == removedThirdParty {
+			foundRemovedThirdParty = true
+		}
+	}
+	if !foundNewThirdParty || !foundNewBuiltin || !foundUpdatedBuiltin || !foundHistoricalBuiltin ||
+		foundRemovedThirdParty || len(merged.Apps) != len(embedded.Apps)+1 {
 		t.Fatalf(
-			"dynamic merge failed: new=%v removedStillPresent=%v count=%d",
-			foundNew, foundRemoved, len(merged.Apps),
+			"dynamic merge failed: thirdParty=%v builtin=%v updated=%v historical=%v removedStillPresent=%v count=%d",
+			foundNewThirdParty, foundNewBuiltin, foundUpdatedBuiltin, foundHistoricalBuiltin,
+			foundRemovedThirdParty, len(merged.Apps),
 		)
+	}
+
+	refreshed := merged
+	refreshed.Apps = append([]App(nil), merged.Apps...)
+	for index := range refreshed.Apps {
+		if refreshed.Apps[index].Token == "new-safe-app" {
+			refreshed.Apps[index].AddedAt = "2026-08-17"
+		}
+	}
+	preserveExistingAddedDates(merged, &refreshed)
+	if app := embeddedAppByToken(t, refreshed, "new-safe-app"); app.AddedAt != "2026-08-16" {
+		t.Fatalf("existing application addedAt was refreshed: %q", app.AddedAt)
+	}
+}
+
+func TestRemoteCatalogRejectsUntrustedDynamicBuiltinMetadata(t *testing.T) {
+	embedded, _, _, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(*remoteCatalogPayload)
+	}{
+		{
+			name: "source",
+			mutate: func(payload *remoteCatalogPayload) {
+				payload.Meta.Source = "https://example.com/untrusted"
+			},
+		},
+		{
+			name: "number",
+			mutate: func(payload *remoteCatalogPayload) {
+				for index := range payload.Apps {
+					if payload.Apps[index].Source == "builtin" {
+						payload.Apps[index].Num = 499
+						return
+					}
+				}
+			},
+		},
+		{
+			name: "count",
+			mutate: func(payload *remoteCatalogPayload) {
+				payload.Meta.Builtin++
+			},
+		},
+		{
+			name: "icon identity",
+			mutate: func(payload *remoteCatalogPayload) {
+				payload.Apps[0].Icon = "icons/another-app.webp"
+			},
+		},
+		{
+			name: "invalid added date",
+			mutate: func(payload *remoteCatalogPayload) {
+				payload.Apps[0].AddedAt = "2026-02-29"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload := remotePayloadFromCatalog(embedded)
+			test.mutate(&payload)
+			encoded, marshalErr := json.Marshal(payload)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			if _, decodeErr := decodeRemoteCatalog(
+				[]byte("<script>window.__APPS__ = " + string(encoded) + ";</script>"),
+			); decodeErr == nil {
+				t.Fatal("unsafe remote catalog was accepted")
+			}
+		})
+	}
+}
+
+func TestDynamicBuiltinUsesTheExistingKejilionSelectorPipeline(t *testing.T) {
+	app := App{ID: "builtin-116", Num: 116, Source: "builtin", Token: "new-builtin-app"}
+	service := &Service{}
+	selector, scriptBacked := service.scriptSelectorFor(Summary{App: app})
+	capabilities := defaultCapabilities(app, LegacyApp{}, true)
+	if !scriptBacked || selector != "116" || !capabilities["install"].Enabled ||
+		installerKind(app, LegacyApp{}, true) != "kejilion" {
+		t.Fatalf(
+			"dynamic builtin did not reuse the kejilion selector pipeline: selector=%q backed=%v capabilities=%#v",
+			selector, scriptBacked, capabilities,
+		)
+	}
+}
+
+func TestManagedScriptRemainsDefaultAndHostScriptIsFallback(t *testing.T) {
+	candidates := preferredKejilionScriptCandidates()
+	if len(candidates) < 4 {
+		t.Fatalf("script candidate list is incomplete: %#v", candidates)
+	}
+	if candidates[0] != "/home/docker/kpanel/bin/kejilion.sh" ||
+		candidates[1] != "/usr/local/bin/k" {
+		t.Fatalf("managed script must remain the default with the host script as fallback: %#v", candidates)
+	}
+}
+
+func TestBuiltinSelectorRequiresExplicitScriptSupport(t *testing.T) {
+	base := []byte("permission_granted=\"true\"\nKJ_APP_NONINTERACTIVE\nkpanel_run_docker_app_install\n")
+	compatible := appScriptCompatible(isKPanelCompatibleScript, "builtin-116", "116")
+	if compatible(append(base, []byte("\t115|old-app)\n")...)) {
+		t.Fatal("a compatible but stale managed script accepted an unknown builtin selector")
+	}
+	if compatible(append(base, []byte("\t116|documented-but-not-a-case-branch\n")...)) {
+		t.Fatal("a non-case script line was accepted as builtin selector support")
+	}
+	if !compatible(append(base, []byte("\t116|new-app|new-app-alias)\n")...)) {
+		t.Fatal("an updated compatible host script rejected its builtin selector")
+	}
+	if appScriptCompatible(isKPanelCompatibleScript, "builtin-116", "115")(
+		append(base, []byte("\t115|old-app)\n")...),
+	) {
+		t.Fatal("a builtin app identity accepted a different selector")
+	}
+	if !appScriptCompatible(isKPanelCompatibleScript, "thirdparty-example", "example")(base) {
+		t.Fatal("third-party apps must keep the existing dynamic configuration mechanism")
 	}
 }
 
@@ -403,7 +633,7 @@ func waitForCatalogState(t *testing.T, service *Service, mode, warning string) c
 
 func remotePayloadFromCatalog(catalog Catalog) remoteCatalogPayload {
 	payload := remoteCatalogPayload{
-		Meta:       remoteCatalogMeta{Builtin: 115, Source: catalog.Upstream},
+		Meta:       remoteCatalogMeta{Source: officialCatalogSource},
 		Categories: append([]Category(nil), catalog.Categories...),
 		Apps:       append([]App(nil), catalog.Apps...),
 	}
@@ -411,9 +641,22 @@ func remotePayloadFromCatalog(catalog Catalog) remoteCatalogPayload {
 		app := &payload.Apps[index]
 		app.Icon = "icons/" + app.Slug + ".webp"
 		app.IconSHA256 = ""
-		if app.Source == "thirdparty" {
+		if app.Source == "builtin" {
+			payload.Meta.Builtin++
+		} else {
 			payload.Meta.ThirdParty++
 		}
 	}
 	return payload
+}
+
+func embeddedAppByToken(t *testing.T, catalog Catalog, token string) App {
+	t.Helper()
+	for _, app := range catalog.Apps {
+		if app.Token == token {
+			return app
+		}
+	}
+	t.Fatalf("embedded application %q was not found", token)
+	return App{}
 }

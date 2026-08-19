@@ -56,6 +56,8 @@ type ServiceConfig struct {
 	CheckpointEvery time.Duration
 	MaxConcurrency  int
 	Jitter          func(time.Duration) time.Duration
+
+	SecurityEntrancePath func() string
 }
 
 type TerminalBackend interface {
@@ -108,12 +110,16 @@ type runtimeState struct {
 	panelVersion        string
 	nextPollAt          time.Time
 	inFlight            bool
+	nextFilePeerSyncAt  time.Time
+
+	securityEntrancePath string
 }
 
 type Service struct {
 	store           *Store
 	secrets         *secretStore
 	storeV2         *storeV2
+	filePeersV2     *filePeerStoreV2
 	secretsV2       *secretStoreV2
 	remote          remoteAPI
 	remoteV2        remoteV2API
@@ -133,6 +139,8 @@ type Service struct {
 	jitter          func(time.Duration) time.Duration
 	sem             chan struct{}
 
+	securityEntrancePath func() string
+
 	mutationMu      sync.Mutex
 	v2SecretStateMu sync.Mutex
 	mu              sync.RWMutex
@@ -148,6 +156,9 @@ type Service struct {
 	pairLimiter      *fixedWindowLimiter
 	v2SourceLimiter  *fixedWindowLimiter
 	requestLimiter   *fixedWindowLimiter
+	fileSources      *fixedWindowLimiter
+	fileRequests     *fixedWindowLimiter
+	fileStreams      *fileStreamLimiter
 	terminalSources  *fixedWindowLimiter
 	terminalRequests *fixedWindowLimiter
 	lightEnrolls     *fixedWindowLimiter
@@ -232,6 +243,13 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	filePeersV2, err := openFilePeerStoreV2(filepath.Join(config.DataDir, filePeerStateV2FileName))
+	if err != nil {
+		return nil, err
+	}
+	if err := filePeersV2.Reconcile(storeV2.Controllers(), storeV2.Hosts(), config.Now().UTC()); err != nil {
+		return nil, err
+	}
 	light, err := openLightStore(filepath.Join(config.DataDir, lightStateFileName))
 	if err != nil {
 		return nil, err
@@ -275,7 +293,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 	now := config.Now().UTC()
 	service := &Service{
 		store: store, secrets: secrets,
-		storeV2: storeV2, secretsV2: secretsV2,
+		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		browse: config.Browse, browseWS: config.BrowseWS,
 		light: light, publicURL: strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
@@ -289,13 +307,17 @@ func NewService(config ServiceConfig) (*Service, error) {
 		pairLimiter:      newFixedWindowLimiter(20, time.Minute, 1024),
 		v2SourceLimiter:  newFixedWindowLimiter(120, time.Minute, 2048),
 		requestLimiter:   newFixedWindowLimiter(30, time.Minute, 512),
+		fileSources:      newFixedWindowLimiter(1200, time.Minute, 2048),
+		fileRequests:     newFixedWindowLimiter(256, time.Minute, 512),
+		fileStreams:      newFileStreamLimiter(8, 2),
 		terminalSources:  newFixedWindowLimiter(1200, time.Minute, 2048),
 		terminalRequests: newFixedWindowLimiter(600, time.Minute, 512),
 		lightEnrolls:     newFixedWindowLimiter(10, time.Minute, 2048),
 		lightSources:     newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:     newFixedWindowLimiter(180, time.Minute, MaxHosts),
 
-		browseFetchSessions: make(map[string]browseFetchSessionV2),
+		securityEntrancePath: config.SecurityEntrancePath,
+		browseFetchSessions:  make(map[string]browseFetchSessionV2),
 	}
 	for _, record := range store.Hosts() {
 		service.runtime[record.ID] = runtimeState{
@@ -310,6 +332,11 @@ func NewService(config ServiceConfig) (*Service, error) {
 		}
 	}
 	for _, record := range storeV2.Hosts() {
+		nextFilePeerSyncAt := time.Time{}
+		if grant, peerErr := filePeersV2.GrantByHost(record.ID); peerErr == nil &&
+			grant.State == filePeerGrantActive {
+			nextFilePeerSyncAt = now.Add(config.Jitter(filePeerSyncInterval / 10))
+		}
 		service.runtime[record.ID] = runtimeState{
 			snapshot:            cloneSnapshot(record.LastSnapshot),
 			lastAttemptAt:       cloneTime(record.LastAttemptAt),
@@ -319,6 +346,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 			lastError:           record.LastError,
 			panelVersion:        record.PanelVersion,
 			nextPollAt:          now.Add(config.Jitter(config.PollInterval / 10)),
+			nextFilePeerSyncAt:  nextFilePeerSyncAt,
 		}
 	}
 	return service, nil
@@ -370,7 +398,9 @@ func (s *Service) Hosts(ctx context.Context) HostList {
 		items = append(items, publicHost(record, s.runtime[record.ID], now))
 	}
 	for _, record := range recordsV2 {
-		items = append(items, publicHostV2(record, s.runtime[record.ID], now))
+		host := publicHostV2(record, s.runtime[record.ID], now)
+		host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(record.ID, now)
+		items = append(items, host)
 	}
 	for _, record := range lightRecords {
 		items = append(items, publicLightHost(record, now))
@@ -400,7 +430,10 @@ func (s *Service) Host(ctx context.Context, id string) (Host, error) {
 		s.mu.RLock()
 		current := s.runtime[id]
 		s.mu.RUnlock()
-		return publicHostV2(recordV2, current, s.now().UTC()), nil
+		now := s.now().UTC()
+		host := publicHostV2(recordV2, current, now)
+		host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(recordV2.ID, now)
+		return host, nil
 	}
 	lightRecord, lightErr := s.light.Host(id)
 	if lightErr != nil {
@@ -583,7 +616,10 @@ func (s *Service) RenameHost(id string, input UpdateHostInput) (Host, error) {
 	s.mu.RLock()
 	current := s.runtime[id]
 	s.mu.RUnlock()
-	return publicHostV2(recordV2, current, s.now().UTC()), nil
+	now := s.now().UTC()
+	host := publicHostV2(recordV2, current, now)
+	host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(recordV2.ID, now)
+	return host, nil
 }
 
 func (s *Service) DeleteHost(
@@ -718,7 +754,13 @@ func (s *Service) DeleteController(id string) error {
 		now,
 		now.Add(v2RevocationRetain),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := s.filePeersV2.DeleteController(id); err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) AcceptPair(source string, input PairRequest) (PairResponse, error) {
@@ -771,8 +813,24 @@ func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (Fed
 	s.store.TouchController(controllerID, s.now().UTC())
 	return FederationSummary{
 		NodeID: s.store.NodeID(), PanelVersion: s.panelVersion,
-		FederationProtocol: FederationProtocol, Telemetry: telemetry,
+		FederationProtocol: FederationProtocol,
+		SecurityEntrancePath: s.responseSecurityEntrancePath(
+			request.Header.Get(FederationCapabilitiesHeader),
+		),
+		Telemetry: telemetry,
 	}, nil
+}
+
+func (s *Service) responseSecurityEntrancePath(capabilities string) string {
+	if !hasFederationCapability(capabilities, SecurityEntrancePathCapability) ||
+		s.securityEntrancePath == nil {
+		return ""
+	}
+	path := s.securityEntrancePath()
+	if !validSecurityEntrancePath(path) {
+		return ""
+	}
+	return path
 }
 
 func (s *Service) SignedRevoke(request *http.Request) error {
@@ -938,6 +996,7 @@ func (s *Service) poll(ctx context.Context, id string) {
 	current.lastErrorCode = ""
 	current.lastError = ""
 	current.panelVersion = summary.PanelVersion
+	current.securityEntrancePath = summary.SecurityEntrancePath
 	current.nextPollAt = finishedAt.Add(s.jitter(s.pollInterval))
 	s.runtime[id] = current
 	s.mu.Unlock()
@@ -1139,6 +1198,9 @@ func publicHost(record hostRecord, current runtimeState, now time.Time) Host {
 		RemoteNodeID:      record.RemoteNodeID, FederationProtocol: record.FederationProtocol,
 		Scope: SummaryScope, TerminalAvailable: false, BrowseAvailable: false, BrowseWSAvailable: false,
 		PanelVersion: panelVersion, State: hostState(current, now),
+
+		SecurityEntrancePath: current.securityEntrancePath,
+
 		LastSnapshot:        cloneSnapshot(current.snapshot),
 		LastAttemptAt:       cloneTime(current.lastAttemptAt),
 		LastSuccessAt:       cloneTime(current.lastSuccessAt),
@@ -1201,7 +1263,24 @@ func validateFederationSummary(summary FederationSummary, expectedNodeID string,
 	if cleanDisplayText(summary.PanelVersion, 64) != summary.PanelVersion {
 		return &RemoteError{Code: "invalid_response"}
 	}
+	if summary.SecurityEntrancePath != "" &&
+		!validSecurityEntrancePath(summary.SecurityEntrancePath) {
+		return &RemoteError{Code: "invalid_response"}
+	}
 	return validateTelemetry(summary.Telemetry, now)
+}
+
+func validSecurityEntrancePath(value string) bool {
+	if len(value) < 6 || len(value) > 48 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') && character != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateTelemetry(value contract.HostTelemetry, now time.Time) error {

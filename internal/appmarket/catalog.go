@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"time"
 )
 
 //go:embed catalog.json
@@ -21,25 +22,29 @@ var (
 )
 
 type Category struct {
-	Key string `json:"key"`
-	ZH  string `json:"zh"`
-	EN  string `json:"en"`
+	Key  string `json:"key"`
+	ZH   string `json:"zh"`
+	ZHTW string `json:"zh_tw,omitempty"`
+	EN   string `json:"en"`
 }
 
 type App struct {
-	ID            string `json:"id"`
-	Num           int    `json:"num,omitempty"`
-	Source        string `json:"source"`
-	Token         string `json:"token"`
-	NameZH        string `json:"name_zh"`
-	NameEN        string `json:"name_en"`
-	Description   string `json:"desc_zh"`
-	DescriptionEN string `json:"desc_en"`
-	Category      string `json:"cat"`
-	Website       string `json:"url,omitempty"`
-	Icon          string `json:"icon"`
-	IconSHA256    string `json:"iconSha256"`
-	Slug          string `json:"slug"`
+	ID              string `json:"id"`
+	Num             int    `json:"num,omitempty"`
+	Source          string `json:"source"`
+	Token           string `json:"token"`
+	NameZH          string `json:"name_zh"`
+	NameZHTW        string `json:"name_zh_tw,omitempty"`
+	NameEN          string `json:"name_en"`
+	Description     string `json:"desc_zh"`
+	DescriptionZHTW string `json:"desc_zh_tw,omitempty"`
+	DescriptionEN   string `json:"desc_en"`
+	Category        string `json:"cat"`
+	Website         string `json:"url,omitempty"`
+	Icon            string `json:"icon"`
+	IconSHA256      string `json:"iconSha256"`
+	Slug            string `json:"slug"`
+	AddedAt         string `json:"addedAt,omitempty"`
 }
 
 type Catalog struct {
@@ -93,7 +98,7 @@ func LoadCatalog() (Catalog, map[int]LegacyApp, string, error) {
 	for _, app := range catalog.Apps {
 		if !catalogIDPattern.MatchString(app.ID) || !tokenPattern.MatchString(app.Token) ||
 			app.NameZH == "" || app.Icon == "" || !categories[app.Category] ||
-			ids[app.ID] || tokens[app.Token] {
+			!validCatalogDate(app.AddedAt) || ids[app.ID] || tokens[app.Token] {
 			return Catalog{}, nil, "", fmt.Errorf("embedded application %q is invalid or duplicated", app.ID)
 		}
 		ids[app.ID] = true
@@ -118,4 +123,12 @@ func LoadCatalog() (Catalog, map[int]LegacyApp, string, error) {
 		return catalog.Apps[i].Num < catalog.Apps[j].Num
 	})
 	return catalog, legacyByNumber, legacy.ScriptSHA256, nil
+}
+
+func validCatalogDate(value string) bool {
+	if value == "" {
+		return true
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
 }

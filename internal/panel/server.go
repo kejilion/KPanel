@@ -40,6 +40,7 @@ const requestIDKey contextKey = "request-id"
 
 var (
 	containerIDPattern       = regexp.MustCompile(`^[a-fA-F0-9]{12,64}$`)
+	composeProjectPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 	resourceVersionPattern   = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	environmentBackupPattern = regexp.MustCompile(`^web_[0-9]{14}\.tar\.gz$`)
 	securityEntrancePattern  = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$`)
@@ -56,6 +57,10 @@ type Server struct {
 	lastAuthAudit       map[string]time.Time
 	lastGlobalAuthAudit time.Time
 	cluster             *cluster.Service
+	clusterShareMu      sync.Mutex
+	clusterShareCache   clusterShareCacheEntry
+	clusterShareRateMu  sync.Mutex
+	clusterShareRates   map[string]clusterShareRateEntry
 	terminalMu          sync.Mutex
 	terminalSessions    map[string]panelTerminalSession
 	terminalOpening     int
@@ -107,6 +112,13 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		Terminal:     clusterTerminalSource{agent: agent},
 		Browse:       clusterBrowseSource{agent: agent},
 		BrowseWS:     clusterBrowseWSSource{agent: agent},
+		SecurityEntrancePath: func() string {
+			entrance, _ := storage.SecurityEntrance()
+			if !authService.IsInitialized() || !entrance.Enabled {
+				return ""
+			}
+			return entrance.Path
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize cluster service: %w", err)
@@ -203,6 +215,12 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSecurityEntranceSettings(w, r)
 	case (r.Method == http.MethodGet || r.Method == http.MethodPut) && r.URL.Path == "/api/v1/settings/allowed-hosts":
 		s.handleAllowedHostsSettings(w, r)
+	case r.URL.Path == "/api/v1/cluster/share":
+		s.handleClusterShareSettings(w, r)
+	case r.URL.Path == "/api/v1/cluster/share/token":
+		s.handleClusterShareTokenReset(w, r)
+	case strings.HasPrefix(r.URL.Path, clusterShareAPIPrefix):
+		s.handlePublicClusterShare(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/audit":
 		s.handleAudit(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/"):
@@ -226,6 +244,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
 		strings.HasSuffix(r.URL.Path, "/icon"):
 		s.handleSiteIcon(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/apps/icons/"):
+		s.handleAppIcon(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/sites":
 		s.handleSiteCreate(w, r)
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/sites/"):
@@ -257,16 +277,24 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleDiagnosticInput(w, r)
 	case r.URL.Path == "/api/v1/files":
 		s.handleFileList(w, r)
+	case r.URL.Path == "/api/v1/files/entry":
+		s.handleFileEntry(w, r)
+	case r.URL.Path == "/api/v1/files/entries":
+		s.handleFileEntries(w, r)
 	case r.URL.Path == "/api/v1/files/trash":
 		s.handleFileTrashList(w, r)
 	case r.URL.Path == "/api/v1/files/content":
 		s.handleFileContent(w, r)
+	case r.URL.Path == "/api/v1/files/archive":
+		s.handleFileArchiveDownload(w, r)
 	case r.URL.Path == "/api/v1/files/download-tickets":
 		s.handleFileDownloadTicketCreate(w, r)
 	case isFileDownloadTicketPath(r.URL.Path):
 		s.handleFileDownloadTicket(w, r)
 	case r.URL.Path == "/api/v1/files/upload":
 		s.handleFileUpload(w, r)
+	case r.URL.Path == "/api/v1/files/transfers":
+		s.handleFileTransfer(w, r)
 	case r.URL.Path == "/api/v1/files/actions":
 		s.handleFileAction(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/docker/containers/") &&
@@ -308,7 +336,10 @@ func isFederationV2Request(r *http.Request) bool {
 		"/api/v2/federation/terminal/output",
 		"/api/v2/federation/terminal/input",
 		"/api/v2/federation/terminal/resize",
-		"/api/v2/federation/terminal/close":
+		"/api/v2/federation/terminal/close",
+		"/api/v2/federation/files/open",
+		"/api/v2/federation/files/link",
+		"/api/v2/federation/files/open-linked":
 		return true
 	default:
 		return false
@@ -641,7 +672,18 @@ func (s *Server) handleSecurityEntrance(w http.ResponseWriter, r *http.Request) 
 			MaxAge: max(int(s.config.SessionTTL.Seconds()), 1), Expires: expires, HttpOnly: true,
 			Secure: s.requestUsesHTTPS(r), SameSite: http.SameSiteStrictMode,
 		})
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		// A redirect in the original cross-site navigation chain does not carry a
+		// freshly issued SameSite=Strict cookie in current browsers. Complete one
+		// target-origin document load first, then let a static meta refresh enter
+		// the login route without weakening the cookie policy.
+		const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/login"><meta name="referrer" content="no-referrer"><title>KPanel</title></head><body><p><a href="/login">Continue to KPanel</a></p></body></html>`
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
 		return true
 	}
 	if securityEntrancePublicPath(r.URL.Path) || s.hasSecurityEntranceCookie(r, value) || s.hasValidSession(r) {
@@ -652,7 +694,7 @@ func (s *Server) handleSecurityEntrance(w http.ResponseWriter, r *http.Request) 
 }
 
 func securityEntrancePublicPath(requestPath string) bool {
-	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
+	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
 }
 
 func isStaticAssetPath(requestPath string) bool {
@@ -971,6 +1013,7 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		"/api/v1/docker/summary":            "/v1/docker/summary",
 		"/api/v1/docker/environment":        "/v1/docker/environment",
 		"/api/v1/docker/containers":         "/v1/docker/containers",
+		"/api/v1/docker/compose-projects":   "/v1/docker/compose-projects",
 		"/api/v1/docker/images":             "/v1/docker/images",
 		"/api/v1/docker/networks":           "/v1/docker/networks",
 		"/api/v1/docker/volumes":            "/v1/docker/volumes",
@@ -1056,6 +1099,13 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		id := strings.TrimPrefix(publicPath, dockerJobPrefix)
 		if siteIDPattern.MatchString(id) {
 			return "/v1/docker/jobs/" + id, true
+		}
+	}
+	const composeProjectPrefix = "/api/v1/docker/compose-projects/"
+	if strings.HasPrefix(publicPath, composeProjectPrefix) {
+		name := strings.TrimPrefix(publicPath, composeProjectPrefix)
+		if composeProjectPattern.MatchString(name) {
+			return "/v1/docker/compose-projects/" + url.PathEscape(name), true
 		}
 	}
 	const installationPrefix = "/api/v1/site-installations/"

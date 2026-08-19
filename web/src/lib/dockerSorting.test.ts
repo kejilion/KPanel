@@ -27,6 +27,18 @@ describe('Docker resource sorting', () => {
     expect(items.map((item) => item.name)).toEqual(['worker', 'api-10', 'api-2'])
   })
 
+  it('sorts containers by creation time in either direction and keeps missing dates last', () => {
+    const items = [
+      { ...container('missing', 'running'), createdAt: undefined },
+      { ...container('new', 'running'), createdAt: '2026-08-18T10:00:00Z' },
+      { ...container('old', 'running'), createdAt: '2026-08-17T10:00:00Z' },
+    ]
+
+    expect(sortDockerContainers(items, 'created-desc').map((item) => item.name)).toEqual(['new', 'old', 'missing'])
+    expect(sortDockerContainers(items, 'created-asc').map((item) => item.name)).toEqual(['old', 'new', 'missing'])
+    expect(items.map((item) => item.name)).toEqual(['missing', 'new', 'old'])
+  })
+
   it('puts images and volumes currently in use first', () => {
     const images = [
       { id: 'i1', tags: ['unused:latest'], sizeBytes: 1, inUse: false },

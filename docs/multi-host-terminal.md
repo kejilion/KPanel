@@ -43,8 +43,9 @@
   `ReadOnlyPaths` 独立保护。主机终端仍由 Agent 通过固定参数创建独立 transient systemd PTY，
   以独立生命周期和审计边界提供 `apt`、`dnf` 等系统维护能力；其他 Agent API 仍只能调用各自的
   固定适配器；
-- 远端终端只允许已激活且 scope 为
-  `cluster.summary.read cluster.terminal.open` 的 v2 控制端；
+- 远端终端只允许已激活且 scope 包含 `cluster.terminal.open` 的 v2 控制端；当前合法 scope 为
+  `cluster.summary.read cluster.terminal.open` 或新增文件读取权限后的
+  `cluster.summary.read cluster.terminal.open cluster.files.read`；
 - 现有 v1 和旧 v2 授权不自动扩权，管理员必须撤销后重新配对；
 - 轻量节点以无登录低权限账户运行，首版只做监控，不能通过升级静默获得 root Shell。
 

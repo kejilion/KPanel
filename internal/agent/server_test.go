@@ -37,6 +37,25 @@ func TestBearerRequired(t *testing.T) {
 	}
 }
 
+func TestAppIconRouteRequiresKnownDynamicSlug(t *testing.T) {
+	server := testServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/v1/apps/icons/unknown-app.webp", nil)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "app_icon_not_found") {
+		t.Fatalf("unknown app icon response = %d %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/apps/icons/unknown-app.webp?refresh=true", nil)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("queried app icon response = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestDockerContainerStatsRouteReturnsBoundedBatch(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Unix Socket integration test")

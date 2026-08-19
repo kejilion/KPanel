@@ -1,0 +1,158 @@
+---
+name: local-feature-preview
+description: "为 KPanel 功能会话建立可复现、可并行、可停止且证据分层明确的本地交互预览"
+version: "1.0"
+author: "Codex"
+tags: [kpanel, preview, frontend, browser, multi-agent, quality]
+params: [project_dir, scope, preview_mode, preview_grade, api_target, evidence_dir, affected_journeys]
+created: "2026-08-17T12:25:44Z"
+updated: "2026-08-17T20:30:00+08:00"
+---
+
+# KPanel Local Feature Preview
+
+## Purpose
+
+让每个功能会话用同一入口交付可操作的本地预览，统一候选身份、预览等级、动态端口、证据目录、
+用户旅程和停止方式。预览用于用户在合入前体验功能，不把 mock、开发服务器或截图冒充真实业务验收、
+隔离真机、公开产物或生产结果。
+
+## Prerequisites
+
+- 已阅读 `docs/local-feature-preview-standard.md`、`PROJECT_RULES.md` 和本任务相关业务文档。
+- `${{project_dir}}` 是当前任务独占的 KPanel worktree；主线管理工作树不得承载功能预览。
+- `${{scope}}` 是稳定的小写连字符标识，`${{affected_journeys}}` 已列出本轮可操作路径。
+- `web/node_modules` 来自当前 `web/package-lock.json`；缺失时先在该 worktree 执行 `npm ci`。
+- 未经授权不连接远程环境；本地集成 API 只能是回环地址。真实主机验收另走登记环境和既有工作流。
+
+## Steps
+
+### 1. 固定预览身份和等级
+
+```powershell
+cd "${{project_dir}}"
+git status --short --branch
+git rev-parse HEAD
+git diff --check
+```
+
+选择且只选择一种模式：
+
+- `mock`：验证界面、交互、加载/空/失败态；交付时必须声明“模拟数据”。
+- `integration`：前端连接本机回环 Panel/API，验证真实接口契约和本地状态。
+- 需要宿主机、Docker、脚本或跨重启闭环时，不提升本地预览结论，改用登记的隔离真机工作流。
+
+`${{preview_grade}}=draft` 允许 dirty worktree，只用于阶段体验；`acceptance` 必须是 clean checkpoint，
+可作为当前精确提交的浏览器证据。
+
+**Expected output:** 模式、等级、精确提交、dirty 状态和受影响旅程明确；证据能力没有被夸大。
+
+### 2. 启动唯一预览实例
+
+Mock 模式：
+
+```powershell
+node scripts/local-feature-preview.mjs start `
+  --project-dir "${{project_dir}}" `
+  --scope "${{scope}}" `
+  --mode mock `
+  --grade "${{preview_grade}}" `
+  --evidence-dir "${{evidence_dir}}"
+```
+
+本地集成模式：
+
+```powershell
+node scripts/local-feature-preview.mjs start `
+  --project-dir "${{project_dir}}" `
+  --scope "${{scope}}" `
+  --mode integration `
+  --grade "${{preview_grade}}" `
+  --api-target "${{api_target}}" `
+  --evidence-dir "${{evidence_dir}}"
+```
+
+端口默认自动选择，所有监听只绑定 `127.0.0.1`。不得为了并行预览关闭别的会话进程或改用公网监听。
+
+**Expected output:** JSON 返回 `ready`、预览 URL、source identity、manifest 路径和精确停止命令。
+
+### 3. 交付统一预览卡
+
+向用户交付以下固定字段，不只给截图或一句“已启动”：
+
+```text
+预览状态：ready / failed / stopped
+预览等级：draft / acceptance
+数据模式：mock / local-integration / isolated-real-host
+功能范围与入口：<scope、菜单路径、起始 URL>
+候选身份：<branch、commit、clean/dirty、workingTreeFingerprint>
+访问地址：<loopback URL>
+建议体验步骤：<3-7 个可操作步骤和预期结果>
+已验证：<桌面/移动、浅/深色、键盘/焦点、加载/空/失败态中的受影响项>
+未验证：<真实 API、宿主机、Docker、脚本、重启、性能等边界>
+证据目录：<manifest 与日志目录>
+停止方式：<精确 stop 命令>
+```
+
+Mock 预览首句必须写“模拟数据预览”；dirty 预览首句必须写“草稿预览，变更尚未冻结”。不得在消息中
+写入账号、密码、Token、Cookie 或恢复码。
+
+**Expected output:** 用户无需追问端口、入口、数据真假、操作步骤或候选版本即可开始验收。
+
+### 4. 完成受影响旅程验收
+
+普通确定性交互由当前功能会话使用真实浏览器完成，至少覆盖受影响的桌面与窄视口、关键成功路径、
+一个真实失败/空状态、焦点和控制台错误。没有影响的维度写明不适用依据。
+
+预计跨会话、涉及生命周期、重连、并发、流式或资源趋势的浏览器验收：
+
+> Invoke workflow: `background-browser-validation` with params: project_dir=${{project_dir}}, candidate_ref=<clean checkpoint>, test_environment=<approved environment>, evidence_dir=<unique persistent directory>, timeout_seconds=<risk-based timeout>, command_spec=<secret-free hashed command spec>
+
+**Expected output:** 预览体验与正式验收层级分开；长测后台化且不重复启动相同 job。
+
+### 5. 核对状态并结束预览
+
+```powershell
+node scripts/local-feature-preview.mjs status --evidence-dir "${{evidence_dir}}"
+node scripts/local-feature-preview.mjs stop --evidence-dir "${{evidence_dir}}"
+```
+
+结束后再次执行 `status`，并确认预览 URL 已不可访问。日志和 manifest 留在 `.codex-tmp` 或任务指定的
+非跟踪证据目录；不得提交运行态文件。
+
+**Expected output:** 只停止 manifest 记录且带 ownership marker 的进程，没有端口、进程或临时配置残留。
+
+## Parameters
+
+- `${{project_dir}}`：当前功能任务独占 worktree 的绝对路径。
+- `${{scope}}`：小写连字符功能标识。
+- `${{preview_mode}}`：`mock` 或 `integration`。
+- `${{preview_grade}}`：`draft` 或 `acceptance`。
+- `${{api_target}}`：integration 模式的本机回环 API origin；mock 模式不使用。
+- `${{evidence_dir}}`：唯一、非 Git 跟踪的预览证据目录。
+- `${{affected_journeys}}`：本轮让用户实际操作的旅程和预期结果。
+
+## Verification
+
+```powershell
+node --test scripts/tests/local-feature-preview.test.mjs
+node scripts/check-governance-consistency.mjs
+$workflowCli = if ($env:CODEX_WORKFLOWS_CLI) {
+  $env:CODEX_WORKFLOWS_CLI
+} else {
+  Join-Path $HOME '.codex\skills\codex-workflows\scripts\workflow.py'
+}
+py -3 $workflowCli validate local-feature-preview --project-dir "${{project_dir}}"
+git diff --check
+```
+
+最终交付包含：预览卡、受影响旅程结果、浏览器证据、未验证边界、停止结果、Git 状态，以及提交、推送、
+主线、发布和生产状态。
+
+## Notes
+
+- 本地预览是用户验收入口，不是新的质量等级；L0-L3 和发布门禁保持不变。
+- Mock 只证明 UI，integration 只证明所连接的本地候选 API；截图不能代替可操作预览或断言。
+- 多会话通过动态端口与唯一证据目录并行，不共用 PID 文件、固定端口或共享工作树。
+- 远程隧道、真实主机和生产均不属于本启动器；108 禁用全部 KPanel 操作。
+- 预览进程由启动会话负责停止；会话交接时必须同时交接 manifest 路径和停止命令。

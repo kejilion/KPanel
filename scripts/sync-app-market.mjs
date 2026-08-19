@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -12,7 +12,14 @@ const allowedCategories = new Set(['ops', 'ai', 'storage', 'media', 'netsec', 'd
 const safeToken = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 const safeID = /^(?:builtin|thirdparty)-[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 const safeIcon = /^icons\/[a-z0-9][a-z0-9_-]{0,63}[.]webp$/
+const safeCatalogDate = /^\d{4}-\d{2}-\d{2}$/
 const maxIconBytes = 512 * 1024
+
+function isCatalogDate(value) {
+  if (typeof value !== 'string' || !safeCatalogDate.test(value)) return false
+  const timestamp = Date.parse(`${value}T00:00:00Z`)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value
+}
 
 async function fetchChecked(url, accept) {
   const response = await fetch(url, {
@@ -42,7 +49,7 @@ function validateCatalog(raw) {
   if (!raw || !Array.isArray(raw.categories) || !Array.isArray(raw.apps)) {
     throw new Error('catalog payload has an invalid shape')
   }
-  if (raw.meta?.builtin !== 115 || raw.apps.length < 115 || raw.apps.length > 500) {
+  if (raw.meta?.builtin !== 116 || raw.apps.length < 116 || raw.apps.length > 500) {
     throw new Error('catalog application count is outside the audited boundary')
   }
   if (raw.categories.length !== allowedCategories.size) {
@@ -70,7 +77,8 @@ function validateCatalog(raw) {
       !['builtin', 'thirdparty'].includes(app.source) ||
       typeof app.name_zh !== 'string' ||
       !app.name_zh.trim() ||
-      typeof app.desc_zh !== 'string'
+      typeof app.desc_zh !== 'string' ||
+      (app.addedAt !== undefined && !isCatalogDate(app.addedAt))
     ) {
       throw new Error(`invalid or duplicate application record ${JSON.stringify(app)}`)
     }
@@ -111,20 +119,58 @@ async function syncIcon(app) {
   }
 }
 
+async function readTraditionalMetadata() {
+  try {
+    const snapshot = JSON.parse(await readFile(catalogPath, 'utf8'))
+    const categories = new Map((snapshot.categories || []).map((category) => [category.key, category]))
+    const apps = new Map()
+    for (const app of snapshot.apps || []) {
+      if (app.id) apps.set(app.id, app)
+      if (app.token) apps.set(app.token, app)
+    }
+    return { categories, apps }
+  } catch {
+    return { categories: new Map(), apps: new Map() }
+  }
+}
+
 const html = await (await fetchChecked(sourceURL, 'text/html')).text()
 const raw = extractCatalog(html)
 validateCatalog(raw)
+const existingTraditional = await readTraditionalMetadata()
 
 await mkdir(dirname(catalogPath), { recursive: true })
 await mkdir(iconRoot, { recursive: true })
 const apps = []
-for (const app of raw.apps) apps.push(await syncIcon(app))
+for (const app of raw.apps) {
+  const existing = existingTraditional.apps.get(app.id) || existingTraditional.apps.get(app.token)
+  // Existing KPanel metadata and icon assets may contain audited product-specific refinements.
+  // Remote catalog refreshes only add missing icons; they must not overwrite those local assets.
+  const synced = existing?.icon && existing?.iconSha256
+    ? { ...app, icon: existing.icon, iconSha256: existing.iconSha256 }
+    : await syncIcon(app)
+  apps.push({
+    ...synced,
+    ...(app.name_zh_tw || existing?.name_zh_tw ? { name_zh_tw: app.name_zh_tw || existing.name_zh_tw } : {}),
+    ...(app.desc_zh_tw || existing?.desc_zh_tw ? { desc_zh_tw: app.desc_zh_tw || existing.desc_zh_tw } : {}),
+    ...(existing
+      ? existing.addedAt
+        ? { addedAt: existing.addedAt }
+        : {}
+      : app.addedAt
+        ? { addedAt: app.addedAt }
+        : {}),
+  })
+}
 
 const snapshot = {
   schemaVersion: 1,
   source: sourceURL,
   upstream: raw.meta?.source || 'https://github.com/kejilion/sh',
-  categories: raw.categories,
+  categories: raw.categories.map((category) => {
+    const existing = existingTraditional.categories.get(category.key)
+    return existing?.zh_tw && !category.zh_tw ? { ...category, zh_tw: existing.zh_tw } : category
+  }),
   apps,
 }
 await writeFile(catalogPath, `${JSON.stringify(snapshot, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 })

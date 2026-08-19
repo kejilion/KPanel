@@ -305,6 +305,7 @@ func TestKejilionGuidedAppsUseFixedInteractiveSelector(t *testing.T) {
 		"builtin-104",
 		"builtin-114",
 		"builtin-115",
+		"builtin-116",
 	} {
 		item, findErr := service.Find(context.Background(), appID)
 		if findErr != nil {
@@ -397,8 +398,8 @@ func TestAllAuditedBuiltinAppsOfferSafeInstallPath(t *testing.T) {
 			t.Fatalf("builtin application %s escaped trusted installers: %#v", item.ID, item)
 		}
 	}
-	if builtinCount != 115 {
-		t.Fatalf("audited builtin application count = %d, want 115", builtinCount)
+	if builtinCount != 116 {
+		t.Fatalf("audited builtin application count = %d, want 116", builtinCount)
 	}
 }
 

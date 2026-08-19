@@ -24,7 +24,7 @@ describe('phone portrait layout contract', () => {
   it('stacks or scrolls dense market and cluster controls instead of squeezing them', () => {
     expect(view('AppsView')).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.market-hero__actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
     expect(view('AppsView')).toMatch(/\.market-segment,[\s\S]*?\.market-categories\s*\{[^}]*overflow-x:\s*auto;/)
-    expect(view('ClusterView')).toMatch(/\.cluster-hero__actions\s*\{[^}]*grid-template-columns:\s*42px repeat\(2, minmax\(0, 1fr\)\);/)
+    expect(view('ClusterView')).toMatch(/\.cluster-hero__actions\s*\{[^}]*grid-template-columns:\s*42px repeat\(3, minmax\(0, 1fr\)\);/)
     expect(view('ClusterView')).toMatch(/\.cluster-stats\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
   })
 

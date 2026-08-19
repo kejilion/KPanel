@@ -39,9 +39,12 @@ const definitions: Array<{ id: SystemTuningItemID; title: string; detail: string
 ]
 
 const running = computed(() => snapshot.value?.maintenance.state === 'running' && snapshot.value.maintenance.action === 'system-tuning')
-const currentItem = computed(() => running.value ? (snapshot.value?.maintenance.stage || '').replace(/^system_tuning_/, '') : '')
+const failed = computed(() => snapshot.value?.maintenance.state === 'failed' && snapshot.value.maintenance.action === 'system-tuning')
+const succeeded = computed(() => snapshot.value?.maintenance.state === 'succeeded' && snapshot.value.maintenance.action === 'system-tuning')
+const currentItem = computed(() => running.value || failed.value ? (snapshot.value?.maintenance.stage || '').replace(/^system_tuning_/, '') : '')
 const selectedSet = computed(() => new Set(selected.value))
 const completedItems = computed(() => {
+  if (succeeded.value) return new Set(selected.value)
   const currentIndex = selected.value.indexOf(currentItem.value as SystemTuningItemID)
   return new Set(currentIndex > 0 ? selected.value.slice(0, currentIndex) : [])
 })
@@ -66,7 +69,7 @@ async function load(silent = false): Promise<void> {
   error.value = ''
   try {
     snapshot.value = await api.system.systemTuning(controller.signal)
-    if (snapshot.value.maintenance.state === 'running' && snapshot.value.maintenance.action === 'system-tuning' && snapshot.value.maintenance.policy) {
+    if (snapshot.value.maintenance.action === 'system-tuning' && snapshot.value.maintenance.policy) {
       const activeItems = selectedFromPolicy(snapshot.value.maintenance.policy)
       if (activeItems.length) selected.value = activeItems
     } else if (!selected.value.length) {
@@ -76,7 +79,7 @@ async function load(silent = false): Promise<void> {
     if (running.value) timer = window.setTimeout(() => void load(true), 1800)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
-    error.value = reason instanceof ApiError ? reason.message : '无法读取一条龙系统调优状态。'
+    error.value = reason instanceof ApiError ? reason.message : '无法读取系统综合调优状态。'
   } finally {
     loading.value = false
     refreshing.value = false
@@ -98,10 +101,10 @@ async function apply(): Promise<void> {
   submitting.value = true
   try {
     const result = await api.system.systemTuningAction({ action: 'apply', items: selected.value, expectedResourceVersion: snapshot.value.resourceVersion })
-    toast.success('一条龙系统调优已开始', result.message)
+    toast.success('系统综合调优已开始', result.message)
     await load(true)
   } catch (reason) {
-    toast.danger('一条龙系统调优启动失败', reason instanceof ApiError ? reason.message : 'Agent 未能启动后台任务。')
+    toast.danger('系统综合调优启动失败', reason instanceof ApiError ? reason.message : 'Agent 未能启动后台任务。')
     await load(true)
   } finally {
     submitting.value = false
@@ -122,9 +125,9 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 </script>
 
 <template>
-  <ModalDialog :open="open" title="一条龙系统调优" description="沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。" size="wide" @close="emit('close')">
+  <ModalDialog :open="open" title="系统综合调优" description="沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。" size="wide" @close="emit('close')">
     <div class="tuning-dialog">
-      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ unavailableReason || '当前 Agent 的一条龙系统调优适配器未就绪。' }}</div>
+      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ unavailableReason || '当前 Agent 的系统综合调优能力尚未就绪。' }}</div>
       <LoadingState v-else-if="loading && !snapshot" :rows="6" />
       <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
       <template v-else-if="snapshot">
@@ -148,13 +151,14 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
             :key="item.id"
             type="button"
             class="tuning-item"
-            :class="{ 'is-selected': selectedSet.has(item.id), 'is-running': currentItem === item.id, 'is-complete': running && completedItems.has(item.id) }"
+            :class="{ 'is-selected': selectedSet.has(item.id), 'is-running': running && currentItem === item.id, 'is-failed': failed && currentItem === item.id, 'is-complete': completedItems.has(item.id) }"
             :disabled="running || submitting"
             @click="toggle(item.id)"
           >
             <span class="tuning-item__check">
-              <LoaderCircle v-if="currentItem === item.id" :size="18" class="spin" />
-              <Check v-else-if="selectedSet.has(item.id)" :size="18" />
+              <LoaderCircle v-if="running && currentItem === item.id" :size="18" class="spin" />
+              <TriangleAlert v-else-if="failed && currentItem === item.id" :size="18" />
+              <Check v-else-if="completedItems.has(item.id) || selectedSet.has(item.id)" :size="18" />
               <Circle v-else :size="18" />
             </span>
             <span class="tuning-item__number">{{ index + 1 }}</span>
@@ -189,6 +193,8 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 .tuning-item.is-selected { border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); background: color-mix(in srgb, var(--brand) 7%, transparent); }
 .tuning-item.is-running { border-color: var(--brand); animation: tuning-pulse 1.7s ease-in-out infinite; }
 .tuning-item.is-complete { opacity: .72; }
+.tuning-item.is-failed { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.tuning-item.is-failed .tuning-item__check { color: var(--danger); }
 .tuning-item__check { display: grid; place-items: center; color: var(--brand); }
 .tuning-item__number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--surface-subtle); font-size: 11px; font-weight: 800; }
 .tuning-item__body { display: grid; gap: 4px; min-width: 0; }

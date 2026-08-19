@@ -55,6 +55,9 @@ interface SitesBindings {
   recentCreatedDomain: Ref<string>
   webTerminalOpen: Ref<boolean>
   webTerminalSession: Ref<{ sessionId: string } | undefined>
+  capabilitiesLoaded: Ref<boolean>
+  loading: Ref<boolean>
+  showSiteWriteUnavailable: ComputedRef<boolean>
   featuredServiceOptions: ComputedRef<Array<{ type: string }>>
   standardServiceOptions: ComputedRef<Array<{ type: string }>>
   recipeOptions: Array<{ recipe: string }>
@@ -114,6 +117,17 @@ afterEach(() => {
 })
 
 describe('SitesView creation experience', () => {
+  it('does not show Agent unavailable before capability loading finishes', () => {
+    const view = setupView()
+
+    view.loading.value = false
+    expect(view.capabilitiesLoaded.value).toBe(false)
+    expect(view.showSiteWriteUnavailable.value).toBe(false)
+
+    view.capabilitiesLoaded.value = true
+    expect(view.showSiteWriteUnavailable.value).toBe(true)
+  })
+
   it('opens the local interactive terminal with the fixed k web command', async () => {
     vi.mocked(api.terminals.open).mockResolvedValue({
       sessionId: 'web-terminal-1',

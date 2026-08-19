@@ -3,7 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/SettingsView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/SettingsView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/SettingsView/zh-TW').then((module) => module.default))
 import QRCode from 'qrcode'
 import {
   Check,
@@ -31,7 +33,7 @@ import { usePanelState } from '@/stores/panel'
 import { useSession } from '@/stores/session'
 import { useTheme, type ThemePreference } from '@/stores/theme'
 import { useToast } from '@/stores/toast'
-import { useI18n } from '@/i18n'
+import { useI18n, type SupportedLocale } from '@/i18n'
 import type { AllowedHostsSettings, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const router = useRouter()
@@ -40,6 +42,12 @@ const panel = usePanelState()
 const theme = useTheme()
 const toast = useToast()
 const i18n = useI18n()
+
+function localeLabel(locale: SupportedLocale): string {
+  if (locale === 'zh-CN') return i18n.t('common.locale.zhCN')
+  if (locale === 'zh-TW') return i18n.t('common.locale.zhTW')
+  return i18n.t('common.locale.enUS')
+}
 const refreshing = ref(false)
 const changingPassword = ref(false)
 const passwordSubmitted = ref(false)
@@ -418,7 +426,7 @@ onMounted(async () => {
 
 <template>
   <div class="page page--narrow">
-    <PageHeader title="设置" description="账户与设备偏好。宿主机安全策略由 Agent 配置控制，不能在浏览器中放宽。" />
+    <PageHeader title="设置" description="管理账户、安全验证和当前设备偏好；宿主机策略仍由 Agent 统一执行。" />
 
     <section class="settings-section panel-card">
       <header class="settings-section__header">
@@ -763,7 +771,7 @@ onMounted(async () => {
           @click="i18n.setLocale(option.id)"
         >
           <span><Languages :size="19" /></span>
-          <strong>{{ option.label }}</strong>
+          <strong>{{ localeLabel(option.id) }}</strong>
           <small>{{ option.id }}</small>
           <Check v-if="i18n.locale.value === option.id" class="theme-options__check" :size="17" />
         </button>

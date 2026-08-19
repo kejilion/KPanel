@@ -8,6 +8,7 @@ import type {
   ClusterHostList,
   ClusterLightEnrollment,
   ClusterPairingCode,
+  ClusterShareSettings,
 } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
@@ -17,10 +18,14 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   remove: vi.fn(),
   refresh: vi.fn(),
+  enableMutualFiles: vi.fn(),
   createPairingCode: vi.fn(),
   createLightEnrollment: vi.fn(),
   controllers: vi.fn(),
   revokeController: vi.fn(),
+  shareSettings: vi.fn(),
+  updateShare: vi.fn(),
+  resetShareToken: vi.fn(),
   open: vi.fn(),
   confirm: vi.fn(),
   toastSuccess: vi.fn(),
@@ -50,10 +55,14 @@ vi.mock('@/lib/api', () => ({
       rename: mocks.rename,
       remove: mocks.remove,
       refresh: mocks.refresh,
+      enableMutualFiles: mocks.enableMutualFiles,
       createPairingCode: mocks.createPairingCode,
       createLightEnrollment: mocks.createLightEnrollment,
       controllers: mocks.controllers,
       revokeController: mocks.revokeController,
+      shareSettings: mocks.shareSettings,
+      updateShare: mocks.updateShare,
+      resetShareToken: mocks.resetShareToken,
     },
   },
 }))
@@ -77,6 +86,11 @@ interface ClusterBindings {
   hostOrder: Ref<string[]>
   accessOpen: Ref<boolean>
   manageOpen: Ref<boolean>
+  shareOpen: Ref<boolean>
+  shareSettings: Ref<ClusterShareSettings | undefined>
+  shareURL: ComputedRef<string>
+  shareForm: { enabled: boolean; title: string; description: string }
+  enablingMutualFiles: Ref<boolean>
   selected: Ref<ClusterHost | undefined>
   pairingCode: Ref<ClusterPairingCode | undefined>
   lightEnrollment: Ref<ClusterLightEnrollment | undefined>
@@ -87,10 +101,17 @@ interface ClusterBindings {
   openManage: (host: ClusterHost) => void
   saveName: () => Promise<void>
   removeHost: () => Promise<void>
+  mutualFilesHostEligible: (host: ClusterHost) => boolean
+  enableMutualFiles: () => Promise<void>
   openPanel: (host: ClusterHost) => void
+  panelURL: (host: ClusterHost) => string
   copyAccessCredential: () => Promise<void>
   createLightEnrollment: () => Promise<void>
   copyLightEnrollment: () => Promise<void>
+  openShare: () => Promise<void>
+  saveShare: () => Promise<void>
+  resetShareLink: () => Promise<void>
+  copyShareLink: () => Promise<void>
   formatClusterAccessCredential: (origin: string, pairingCode: string) => string
   parseClusterAccessCredential: (
     raw: string,
@@ -129,6 +150,8 @@ function host(id: string, isLocal: boolean, origin: string): ClusterHost {
     federationProtocol: 'v1',
 		scope: isLocal ? 'cluster.summary.read cluster.terminal.open' : 'cluster.summary.read',
 		terminalAvailable: isLocal,
+    fileTransferAvailable: false,
+    mutualFileTransferAvailable: false,
     panelVersion: '0.27.0',
     state: 'online',
     lastSnapshot: {
@@ -297,6 +320,45 @@ describe('ClusterView inventory and navigation', () => {
       'noopener,noreferrer',
     )
     expect(mocks.confirm).not.toHaveBeenCalled()
+  })
+
+  it('uses a synchronized security entrance only for the remote panel jump', () => {
+    const view = setupView()
+    const remote = host('remote', false, 'https://hk.example.com:8443')
+    remote.securityEntrancePath = 'panel-secure1'
+    const current = host('local', true, 'https://stored-local.invalid')
+    current.securityEntrancePath = 'panel-ignored1'
+
+    view.openPanel(remote)
+    view.openPanel(current)
+
+    expect(mocks.open).toHaveBeenNthCalledWith(
+      1,
+      'https://hk.example.com:8443/panel-secure1',
+      '_blank',
+      'noopener,noreferrer',
+    )
+    expect(mocks.open).toHaveBeenNthCalledWith(
+      2,
+      'https://center.example.com',
+      '_blank',
+      'noopener,noreferrer',
+    )
+  })
+
+  it('falls back to the root origin for an invalid entrance path', () => {
+    const view = setupView()
+    const remote = host('remote', false, 'https://hk.example.com')
+    remote.securityEntrancePath = '//attacker.example'
+
+    expect(view.panelURL(remote)).toBe('https://hk.example.com')
+    view.openPanel(remote)
+
+    expect(mocks.open).toHaveBeenCalledWith(
+      'https://hk.example.com',
+      '_blank',
+      'noopener,noreferrer',
+    )
   })
 
   it('never exposes a management-page jump for a telemetry-only light node', () => {
@@ -533,8 +595,200 @@ describe('ClusterView inventory and navigation', () => {
     )
     expect(mocks.toastSuccess).not.toHaveBeenCalledWith(
       '主机已加入集群',
-      expect.stringContaining('已完成只读配对'),
+      expect.stringContaining('双向文件互传已自动启用'),
     )
+  })
+
+  it('reports whether a completed pairing enabled two-way files automatically', async () => {
+    const enabledView = setupView()
+    const enabled = host('paired-mutual', false, 'https://files.example.com')
+    enabled.federationProtocol = 'v2'
+    enabled.fileTransferAvailable = true
+    enabled.mutualFileTransferAvailable = true
+    mocks.add.mockResolvedValueOnce(enabled)
+    mocks.hosts.mockResolvedValueOnce(inventory())
+    enabledView.addForm.accessCredential = enabledView.formatClusterAccessCredential(
+      enabled.origin,
+      `kp2.${'b'.repeat(180)}`,
+    )
+
+    await enabledView.addHost()
+
+    expect(mocks.toastSuccess).toHaveBeenLastCalledWith(
+      '主机已加入集群',
+      '香港节点 已完成配对，双向文件互传已自动启用。',
+    )
+
+    mocks.toastSuccess.mockClear()
+    const oneWayView = setupView()
+    const oneWay = host('paired-one-way', false, 'https://old-files.example.com')
+    oneWay.federationProtocol = 'v2'
+    oneWay.fileTransferAvailable = true
+    mocks.add.mockResolvedValueOnce(oneWay)
+    mocks.hosts.mockResolvedValueOnce(inventory())
+    oneWayView.addForm.accessCredential = oneWayView.formatClusterAccessCredential(
+      oneWay.origin,
+      `kp2.${'c'.repeat(180)}`,
+    )
+
+    await oneWayView.addHost()
+
+    expect(mocks.toastSuccess).toHaveBeenLastCalledWith(
+      '主机已加入集群',
+      '香港节点 已完成配对，当前保持单向文件读取；可在主机管理中启用，旧版 KPanel 需先升级。',
+    )
+  })
+
+  it('enables mutual file transfer only for an active remote v2 host with file scope', async () => {
+    const view = setupView()
+    const list = inventory()
+    const remote = host('mutual-files', false, 'https://files.example.com')
+    remote.federationProtocol = 'v2'
+    remote.scope = 'cluster.summary.read cluster.files.read'
+    remote.fileTransferAvailable = true
+    list.items = [remote]
+    list.total = 1
+    view.inventory.value = list
+    view.openManage(remote)
+
+    expect(view.mutualFilesHostEligible(remote)).toBe(true)
+    expect(view.mutualFilesHostEligible({ ...remote, isLocal: true })).toBe(false)
+    expect(view.mutualFilesHostEligible({ ...remote, federationProtocol: 'v1' })).toBe(false)
+    expect(view.mutualFilesHostEligible({ ...remote, state: 'pairing' })).toBe(false)
+    expect(view.mutualFilesHostEligible({
+      ...remote,
+      scope: 'cluster.summary.read',
+      fileTransferAvailable: false,
+    })).toBe(false)
+    expect(view.mutualFilesHostEligible({ ...remote, kind: 'light_node' })).toBe(false)
+
+    const enabled = {
+      ...remote,
+      mutualFileTransferAvailable: true,
+      resourceVersion: 'mutual-files-enabled-version',
+    }
+    mocks.enableMutualFiles.mockResolvedValueOnce(enabled)
+
+    await view.enableMutualFiles()
+
+    expect(mocks.enableMutualFiles).toHaveBeenCalledOnce()
+    expect(mocks.enableMutualFiles).toHaveBeenCalledWith(remote.id)
+    expect(view.enablingMutualFiles.value).toBe(false)
+    expect(view.selected.value).toEqual(enabled)
+    expect(view.inventory.value?.items[0]).toEqual(enabled)
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '双向文件互传已启用',
+      '香港节点 现在可以与当前 KPanel 互相复制文件。',
+    )
+
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    expect(source).toContain('v-if="mutualFilesHostEligible(selected)"')
+    expect(source).toContain('v-if="selected.mutualFileTransferAvailable"')
+    expect(source).toContain("enablingMutualFiles ? '正在启用…' : '启用双向文件互传'")
+    expect(source).toContain("enablingMutualFiles ? '正在刷新…' : '刷新连接'")
+  })
+
+  it('keeps the old pairing unchanged when mutual file transfer cannot be enabled', async () => {
+    const view = setupView()
+    const remote = host('mutual-files-failure', false, 'https://files.example.com')
+    remote.federationProtocol = 'v2'
+    remote.scope = 'cluster.summary.read cluster.files.read'
+    remote.fileTransferAvailable = true
+    view.inventory.value = { ...inventory(), items: [remote], total: 1 }
+    view.openManage(remote)
+    mocks.enableMutualFiles.mockRejectedValueOnce(
+      new ApiError('protocol incompatible', 426, 'cluster_mutual_files_unsupported'),
+    )
+
+    await view.enableMutualFiles()
+
+    expect(view.enablingMutualFiles.value).toBe(false)
+    expect(view.selected.value?.mutualFileTransferAvailable).toBe(false)
+    expect(mocks.toastDanger).toHaveBeenCalledWith(
+      '启用双向文件互传失败',
+      '目标 KPanel 版本不支持双向文件互传，请先升级目标面板后重试。',
+    )
+  })
+
+  it('refreshes an active mutual file connection and preserves its state on failure', async () => {
+    const view = setupView()
+    const active = host('mutual-files-active', false, 'https://files.example.com')
+    active.federationProtocol = 'v2'
+    active.scope = 'cluster.summary.read cluster.files.read'
+    active.fileTransferAvailable = true
+    active.mutualFileTransferAvailable = true
+    view.inventory.value = { ...inventory(), items: [active], total: 1 }
+    view.openManage(active)
+    const refreshed = { ...active, resourceVersion: 'mutual-files-refreshed-version' }
+    mocks.enableMutualFiles.mockResolvedValueOnce(refreshed)
+
+    await view.enableMutualFiles()
+
+    expect(mocks.enableMutualFiles).toHaveBeenCalledOnce()
+    expect(mocks.enableMutualFiles).toHaveBeenCalledWith(active.id)
+    expect(view.selected.value).toEqual(refreshed)
+    expect(view.inventory.value?.items[0]).toEqual(refreshed)
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '双向文件互传连接已刷新',
+      '香港节点 已使用当前 KPanel 地址刷新互传连接。',
+    )
+
+    mocks.enableMutualFiles.mockRejectedValueOnce(
+      new ApiError('remote unavailable', 503, 'cluster_remote_unreachable'),
+    )
+    await view.enableMutualFiles()
+
+    expect(mocks.enableMutualFiles).toHaveBeenCalledTimes(2)
+    expect(view.enablingMutualFiles.value).toBe(false)
+    expect(view.selected.value?.mutualFileTransferAvailable).toBe(true)
+    expect(view.inventory.value?.items[0]?.mutualFileTransferAvailable).toBe(true)
+    expect(mocks.toastDanger).toHaveBeenCalledWith(
+      '刷新双向文件互传连接失败',
+      '暂时无法连接目标 KPanel，请检查域名、证书和网络。',
+    )
+  })
+
+  it('enables, copies, and rotates the anonymous public share link', async () => {
+    const view = setupView()
+    const initial: ClusterShareSettings = {
+      enabled: false,
+      title: 'My fleet',
+      description: 'Public status',
+      resourceVersion: 'share-v1',
+    }
+    const enabled: ClusterShareSettings = {
+      ...initial,
+      enabled: true,
+      sharePath: `/share/${'a'.repeat(64)}`,
+      resourceVersion: 'share-v2',
+    }
+    const rotated: ClusterShareSettings = {
+      ...enabled,
+      sharePath: `/share/${'b'.repeat(64)}`,
+      resourceVersion: 'share-v3',
+    }
+    mocks.shareSettings.mockResolvedValueOnce(initial)
+    mocks.updateShare.mockResolvedValueOnce(enabled)
+    mocks.resetShareToken.mockResolvedValueOnce(rotated)
+
+    await view.openShare()
+    expect(view.shareOpen.value).toBe(true)
+    view.shareForm.enabled = true
+    await view.saveShare()
+
+    expect(mocks.updateShare).toHaveBeenCalledWith({
+      enabled: true,
+      title: 'My fleet',
+      description: 'Public status',
+      expectedResourceVersion: 'share-v1',
+    })
+    expect(view.shareURL.value).toBe(`https://center.example.com/share/${'a'.repeat(64)}`)
+    await view.copyShareLink()
+    expect(mocks.clipboardWriteText).toHaveBeenCalledWith(view.shareURL.value)
+
+    await view.resetShareLink()
+    expect(mocks.resetShareToken).toHaveBeenCalledWith('share-v2')
+    expect(view.shareURL.value).toBe(`https://center.example.com/share/${'b'.repeat(64)}`)
   })
 
   it('lets the local node update its display name while keeping removal unavailable', async () => {

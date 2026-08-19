@@ -639,11 +639,10 @@ func (s *Service) scriptSelectorFor(item Summary) (string, bool) {
 	if item.Source == "thirdparty" {
 		return item.Token, true
 	}
-	legacy, ok := s.legacy[item.Num]
-	if !ok || legacy.Num < 1 || legacy.Num > 115 {
-		return "", false
+	if item.Source == "builtin" && item.Num > 0 && item.Num <= maxRemoteCatalogApps {
+		return strconv.Itoa(item.Num), true
 	}
-	return strconv.Itoa(item.Num), true
+	return "", false
 }
 
 func (s *Service) scriptInstallAvailable() bool {
@@ -702,12 +701,7 @@ func findKejilionInteractiveManageScript() (string, error) {
 }
 
 func findKejilionScriptMatching(compatible func([]byte) bool) (string, error) {
-	candidates := []string{
-		"/home/docker/kpanel/bin/kejilion.sh",
-		"/usr/local/bin/k",
-		"/usr/bin/k",
-		"/root/kejilion.sh",
-	}
+	candidates := preferredKejilionScriptCandidates()
 	if path, err := exec.LookPath("k"); err == nil {
 		candidates = append(candidates, path)
 	}
@@ -737,6 +731,47 @@ func findKejilionScriptMatching(compatible func([]byte) bool) (string, error) {
 		return resolved, nil
 	}
 	return "", errors.New("a KPanel-compatible kejilion.sh was not found")
+}
+
+func preferredKejilionScriptCandidates() []string {
+	return []string{
+		"/home/docker/kpanel/bin/kejilion.sh",
+		"/usr/local/bin/k",
+		"/usr/bin/k",
+		"/root/kejilion.sh",
+	}
+}
+
+func appScriptCompatible(
+	compatible func([]byte) bool,
+	appID, selector string,
+) func([]byte) bool {
+	return func(content []byte) bool {
+		if !compatible(content) {
+			return false
+		}
+		if !strings.HasPrefix(appID, "builtin-") {
+			return true
+		}
+		if appID != "builtin-"+selector {
+			return false
+		}
+		return scriptSupportsBuiltinSelector(content, selector)
+	}
+}
+
+func scriptSupportsBuiltinSelector(content []byte, selector string) bool {
+	if selector == "" {
+		return false
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == selector+")" ||
+			(strings.HasPrefix(line, selector+"|") && strings.HasSuffix(line, ")")) {
+			return true
+		}
+	}
+	return false
 }
 
 func isKPanelCompatibleScript(content []byte) bool {
@@ -795,11 +830,13 @@ func RunAppJob(ctx context.Context, stateDir, id string) error {
 		record.AccessMode != "direct" && record.AccessMode != "domain_only" {
 		return errors.New("application job contains an invalid access policy")
 	}
-	scriptFinder := findKejilionScript
+	scriptCompatible := isKPanelCompatibleScript
 	if record.Action != "install" {
-		scriptFinder = findKejilionManageScript
+		scriptCompatible = isKPanelManageCompatibleScript
 	}
-	script, err := scriptFinder()
+	script, err := findKejilionScriptMatching(
+		appScriptCompatible(scriptCompatible, record.AppID, record.Selector),
+	)
 	if err != nil {
 		return registry.fail(record, "script_unavailable", err)
 	}

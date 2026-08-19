@@ -460,7 +460,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 	defer input.Close()
 	defer hostpty.RemoveInput(service.inputPath(id))
 	writer := &limitedWriter{target: logFile, remaining: maxLogBytes}
-	_, _ = fmt.Fprintf(writer, "KPanel 体检：%s\n来源：%s\n\n", item.CheckName, item.SourceURL)
+	writeTerminalHeader(writer, item.CheckName, item.SourceURL)
 
 	started := service.now().UTC()
 	item.Status = "running"
@@ -536,6 +536,10 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 		return putErr
 	}
 	return runErr
+}
+
+func writeTerminalHeader(writer io.Writer, checkName, sourceURL string) {
+	_, _ = fmt.Fprintf(writer, "KPanel 体检：%s\r\n来源：%s\r\n\r\n", checkName, sourceURL)
 }
 
 type limitedWriter struct {

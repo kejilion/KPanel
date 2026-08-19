@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -147,6 +148,57 @@ func TestSecurityEntrancePersistsAndRejectsStaleWrites(t *testing.T) {
 	got, version := reopened.SecurityEntrance()
 	if got != value || version == initialVersion {
 		t.Fatalf("unexpected persisted entrance: %#v version=%q", got, version)
+	}
+}
+
+func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	storage, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial, version := storage.ClusterShare()
+	if initial.Enabled || initial.Token != "" {
+		t.Fatalf("unexpected initial cluster share %#v", initial)
+	}
+	want := ClusterShare{
+		Enabled: true, Token: strings.Repeat("a", 64), Title: "My fleet",
+		Description: "Public status", UpdatedAt: time.Now().UTC().Truncate(time.Second),
+	}
+	if err := storage.ReplaceClusterShare(version, want); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.ReplaceClusterShare(version, want); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale cluster share update error = %v, want ErrConflict", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	storage, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	restored, restoredVersion := storage.ClusterShare()
+	if restored != want {
+		t.Fatalf("restored cluster share = %#v, want %#v", restored, want)
+	}
+
+	originalPath := storage.path
+	storage.path = filepath.Join(t.TempDir(), "missing", "state.json")
+	changed := want
+	changed.Enabled = false
+	changed.UpdatedAt = changed.UpdatedAt.Add(time.Second)
+	err = storage.ReplaceClusterShare(restoredVersion, changed)
+	storage.path = originalPath
+	if err == nil {
+		t.Fatal("cluster share update unexpectedly survived an atomic write failure")
+	}
+	afterFailure, _ := storage.ClusterShare()
+	if afterFailure != want {
+		t.Fatalf("failed write changed in-memory cluster share: %#v", afterFailure)
 	}
 }
 

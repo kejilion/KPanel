@@ -3,25 +3,18 @@ import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref
 import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/FilesView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/FilesView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/FilesView/zh-TW').then((module) => module.default))
 import {
   Archive,
   ChevronRight,
   ClipboardPaste,
   Code2,
   Copy,
-  Database,
   Download,
   Eye,
   File,
-  FileArchive,
-  FileAudio,
-  FileCode,
-  FileImage,
-  FileKey,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
   Folder,
   FolderOpen,
   HardDrive,
@@ -29,10 +22,9 @@ import {
   List,
   ListRestart,
   MoreHorizontal,
-  Package,
   Pencil,
+  Pin,
   Plus,
-  Presentation,
   RefreshCw,
   RotateCcw,
   Save,
@@ -53,8 +45,35 @@ import {
   desktopWindowCloseGuardKey,
 } from '@/lib/desktopRouteKeys'
 import type { CodeLanguage } from '@/lib/code-editor-language'
+import { transferCrossPanelFileBatch } from '@/lib/crossPanelFileTransfer'
+import { fileEntryIcon as entryIcon, fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
+import {
+  addFileEntriesToDesktop,
+  beginDesktopFileDrag,
+  clearDesktopFileDrag,
+  crossPanelFileDragEntries,
+  desktopFileDragOrigin,
+  desktopFileDragEntries,
+  DesktopShortcutLimitError,
+  hasCrossPanelFileDrag,
+  hasDesktopFileDrag,
+  nativeArchiveDownloadName,
+  peekDesktopFileDragEntries,
+} from '@/lib/desktopFileShortcuts'
+import {
+  changedFileDirectories,
+  fileTransferOperation,
+  fileTransferTargetError,
+  notifyFileDirectoriesChanged,
+  remapMovedFilePath,
+  subscribeFileDirectoryChanges,
+  successfulFileMoves,
+  syncMovedDesktopShortcuts,
+  useFileClipboard,
+  type FileTransferOperation,
+} from '@/lib/fileWindowTransfer'
 import { useToast } from '@/stores/toast'
-import type { FileActionInput, FileDirectory, FileEntry, FileTrashEntry } from '@/types/api'
+import type { FileActionInput, FileActionResult, FileDirectory, FileEntry, FileTrashEntry } from '@/types/api'
 
 const CodeEditor = defineAsyncComponent(() => import('@/components/files/CodeEditor.vue'))
 const route = useRoute()
@@ -62,6 +81,7 @@ const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const filesPage = ref<HTMLElement>()
+const localClusterNodeId = ref('')
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
@@ -83,15 +103,8 @@ function requestedFilePath(value: unknown): string | undefined {
   return candidate
 }
 type PreviewMode = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
-type ClipboardMode = 'copy' | 'move'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
-type FileIconKind = 'folder' | 'image' | 'media' | 'archive' | 'spreadsheet' | 'database' | 'presentation' | 'package' | 'secret' | 'code' | 'document' | 'generic'
-
-interface FileClipboard {
-  mode: ClipboardMode
-  entries: FileEntry[]
-}
 
 interface CodeEditorHandle {
   getValue: () => string
@@ -125,13 +138,33 @@ const dialogFormat = ref<ArchiveFormat>('tar.gz')
 const dialogBusy = ref(false)
 const dialogEntries = ref<FileEntry[]>([])
 const contextMenu = ref<{ entry?: FileEntry; x: number; y: number }>()
-const clipboard = ref<FileClipboard>()
+const fileClipboard = useFileClipboard()
+const clipboard = fileClipboard.clipboard
 const pasteBusy = ref(false)
+const internalDropTarget = ref('')
+const internalDropMode = ref<FileTransferOperation>('move')
+const internalDropCount = ref(0)
+const crossPanelDropActive = ref(false)
+const fileTransferState = ref<{
+  mode: FileTransferOperation
+  target: string
+  count: number
+  phase: 'running' | 'success' | 'partial' | 'cancelled' | 'error'
+  remote?: boolean
+  completed?: number
+  currentName?: string
+}>()
+const desktopAdding = ref(false)
 const previewEntry = ref<FileEntry>()
 const previewContent = ref('')
 const previewLoading = ref(false)
 const previewSaving = ref(false)
 const previewDirty = ref(false)
+const mediaLoading = ref(false)
+const mediaReady = ref(false)
+const mediaError = ref(false)
+const mediaErrorMessage = ref('')
+const mediaReloadKey = ref(0)
 const editorInfo = ref<Pick<CodeLanguage, 'label' | 'highlighted' | 'reason'> & { loadMs: number }>()
 const codeEditorRef = ref<CodeEditorHandle>()
 const editorStatus = ref<CodeEditorStatus>()
@@ -146,11 +179,48 @@ const selectedTrash = ref(new Set<string>())
 const thumbnailFailures = ref(new Set<string>())
 let directoryController: AbortController | undefined
 let archiveController: AbortController | undefined
+let fileTransferController: AbortController | undefined
+let fileTransferClearTimer: number | undefined
+let unsubscribeFileDirectoryChanges: (() => void) | undefined
 let searchTimer: number | undefined
+let mediaLoadTimer: number | undefined
 let unmounted = false
+let openedRouteFile = ''
+const fileWindowChangeOrigin = Symbol('file-window')
 
 const fileViewStorageKey = 'kpanel:files:view:v1'
 const thumbnailSourceMaxBytes = 12 * 1024 * 1024
+const mediaLoadTimeoutMs = 20_000
+
+const fileTransferTitle = computed(() => {
+  const state = fileTransferState.value
+  if (!state) return ''
+  if (state.remote) {
+    if (state.phase === 'running') return `正在从另一台 KPanel 复制 ${state.completed || 0}/${state.count} 项`
+    if (state.phase === 'success') return `跨面板复制完成（${state.count} 项）`
+    if (state.phase === 'cancelled') return '跨面板复制已取消'
+    if (state.phase === 'error') return '跨面板复制失败'
+    return `跨面板复制部分完成（${state.count} 项）`
+  }
+  if (state.mode === 'copy') {
+    if (state.phase === 'running') return `正在复制 ${state.count} 项`
+    if (state.phase === 'success') return `已复制 ${state.count} 项`
+    if (state.phase === 'cancelled') return '复制已取消'
+    if (state.phase === 'error') return '复制失败'
+    return '部分项目未复制'
+  }
+  if (state.phase === 'running') return `正在移动 ${state.count} 项`
+  if (state.phase === 'success') return `已移动 ${state.count} 项`
+  if (state.phase === 'cancelled') return '移动已取消'
+  if (state.phase === 'error') return '移动失败'
+  return '部分项目未移动'
+})
+
+const internalDropTitle = computed(() => crossPanelDropActive.value
+  ? `从另一台 KPanel 复制到 ${internalDropTarget.value}`
+  : internalDropMode.value === 'copy'
+  ? `复制 ${internalDropCount.value} 项到 ${internalDropTarget.value}`
+  : `移动 ${internalDropCount.value} 项到 ${internalDropTarget.value}`)
 
 const sortedEntries = computed(() => {
   const values = [...(directory.value?.entries || [])]
@@ -212,6 +282,15 @@ const previewMode = computed<PreviewMode>(() => {
   if (entry.mime?.startsWith('video/')) return 'video'
   if (entry.mime === 'application/pdf') return 'pdf'
   return 'metadata'
+})
+const mediaStatusLabel = computed(() => {
+  if (mediaError.value) return mediaErrorMessage.value || '无法读取媒体文件'
+  if (mediaLoading.value && previewMode.value === 'video') return '正在缓冲视频…'
+  if (previewMode.value === 'video') return '按需加载 · 支持边缓冲边播放'
+  if (previewMode.value === 'audio') return '音频流'
+  if (previewMode.value === 'image') return '图片预览'
+  if (previewMode.value === 'pdf') return 'PDF 文档'
+  return ''
 })
 const previewURL = computed(() =>
   previewEntry.value ? api.files.contentUrl(previewEntry.value.path, 'inline') : '',
@@ -310,6 +389,29 @@ async function navigateDirectory(path: string): Promise<void> {
   await router.push({ name: 'files', query: { path: resolvedPath } })
 }
 
+async function openRequestedFile(value: unknown): Promise<void> {
+  const filePath = requestedFilePath(value)
+  if (!filePath || filePath === '/' || filePath === openedRouteFile) return
+  openedRouteFile = filePath
+  try {
+    const entry = await api.files.entry(filePath)
+    if (entry.kind !== 'file') {
+      toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
+      return
+    }
+    selected.value = new Set([entry.path])
+    selectionAnchor.value = entry.path
+    await openPreview(entry)
+  } catch (error) {
+    toast.danger('桌面目标无法打开', errorMessage(error))
+  }
+}
+
+async function loadRequestedRoute(): Promise<void> {
+  await loadDirectory(requestedFilePath(route.query.path) || '/')
+  await openRequestedFile(route.query.file)
+}
+
 function setViewMode(mode: FileViewMode): void {
   viewMode.value = mode
   try {
@@ -337,10 +439,37 @@ function openEntry(entry: FileEntry): void {
   if (entry.kind === 'file') void openPreview(entry)
 }
 
+function clearMediaLoadTimer(): void {
+  if (mediaLoadTimer !== undefined) {
+    window.clearTimeout(mediaLoadTimer)
+    mediaLoadTimer = undefined
+  }
+}
+
+function resetMediaState(entry?: FileEntry): void {
+  clearMediaLoadTimer()
+  const isVideo = Boolean(entry?.mime?.startsWith('video/'))
+  mediaLoading.value = isVideo
+  mediaReady.value = false
+  mediaError.value = false
+  mediaErrorMessage.value = ''
+  if (!isVideo) return
+  mediaLoadTimer = window.setTimeout(() => {
+    if (!mediaReady.value && !mediaError.value && previewEntry.value?.path === entry?.path) {
+      mediaLoading.value = false
+      mediaError.value = true
+      mediaErrorMessage.value = '视频流响应超时，请检查网络或服务器。'
+    }
+    mediaLoadTimer = undefined
+  }, mediaLoadTimeoutMs)
+}
+
 async function openPreview(entry: FileEntry): Promise<void> {
   previewEntry.value = entry
   previewContent.value = ''
   previewDirty.value = false
+  mediaReloadKey.value += 1
+  resetMediaState(entry)
   editorInfo.value = undefined
   editorStatus.value = undefined
   editorLineWrap.value = false
@@ -356,11 +485,56 @@ async function openPreview(entry: FileEntry): Promise<void> {
   }
 }
 
+function handleMediaLoadStart(): void {
+  mediaLoading.value = true
+  mediaReady.value = false
+  mediaError.value = false
+  mediaErrorMessage.value = ''
+}
+
+function handleMediaReady(): void {
+  mediaReady.value = true
+  mediaLoading.value = false
+  mediaError.value = false
+  clearMediaLoadTimer()
+}
+
+function handleMediaCanPlay(): void {
+  handleMediaReady()
+}
+
+function handleMediaWaiting(): void {
+  mediaLoading.value = true
+}
+
+function handleMediaError(event: Event): void {
+  const video = event.currentTarget as HTMLVideoElement | null
+  mediaLoading.value = false
+  mediaReady.value = false
+  mediaError.value = true
+  mediaErrorMessage.value = video?.error?.code === 4
+    ? '浏览器不支持该视频编码或格式。'
+    : ''
+  clearMediaLoadTimer()
+}
+
+function retryMedia(): void {
+  const entry = previewEntry.value
+  if (!entry || !entry.mime?.startsWith('video/')) return
+  mediaReloadKey.value += 1
+  resetMediaState(entry)
+}
+
 function closePreview(): void {
   if (previewDirty.value && !window.confirm('文件尚未保存，确认关闭吗？')) return
   previewEntry.value = undefined
   previewContent.value = ''
   previewDirty.value = false
+  clearMediaLoadTimer()
+  mediaLoading.value = false
+  mediaReady.value = false
+  mediaError.value = false
+  mediaErrorMessage.value = ''
   editorInfo.value = undefined
   editorStatus.value = undefined
   editorLineWrap.value = false
@@ -487,6 +661,292 @@ function entriesForBatch(entry?: FileEntry): FileEntry[] {
   return [...selectedEntries.value]
 }
 
+function canAddToDesktop(entry: FileEntry): boolean {
+  return entry.kind === 'file' || entry.kind === 'directory'
+}
+
+function currentDirectoryEntry() {
+  const name = currentPath.value === '/'
+    ? '根目录'
+    : currentPath.value.slice(currentPath.value.lastIndexOf('/') + 1)
+  return { name, path: currentPath.value, kind: 'directory' as const }
+}
+
+async function addEntriesToDesktop(entry?: FileEntry, currentDirectory = false): Promise<void> {
+  if (desktopAdding.value) return
+  contextMenu.value = undefined
+  const targets = currentDirectory
+    ? [currentDirectoryEntry()]
+    : entry
+      ? entriesForBatch(entry).filter(canAddToDesktop)
+      : selectedEntries.value.filter(canAddToDesktop)
+  if (!targets.length) {
+    toast.show('无法添加到桌面', { message: '请选择普通文件或文件夹。' })
+    return
+  }
+  desktopAdding.value = true
+  try {
+    const result = await addFileEntriesToDesktop(targets)
+    if (result.added.length) {
+      toast.success(
+        result.added.length === 1 ? '已添加到桌面' : `已添加 ${result.added.length} 项到桌面`,
+        result.added.length === 1 ? result.added[0]!.name : '图标已按桌面空位自动排列。',
+      )
+    } else if (result.duplicates.length) {
+      toast.show('已经在桌面', { message: result.duplicates[0]!.name })
+    }
+  } catch (error) {
+    if (error instanceof DesktopShortcutLimitError) {
+      toast.danger('桌面快捷方式已满', `还可添加 ${error.available} 项，本次选择了 ${error.requested} 项。`)
+    } else {
+      toast.danger('添加到桌面失败', errorMessage(error))
+    }
+  } finally {
+    desktopAdding.value = false
+  }
+}
+
+function startEntryDrag(event: DragEvent, entry: FileEntry): void {
+  const targets = (selected.value.has(entry.path) ? entriesForBatch(entry) : [entry]).filter(canAddToDesktop)
+  const directFile = targets.length === 1 && targets[0]!.kind === 'file'
+  const nativeArchiveName = directFile
+    ? undefined
+    : nativeArchiveDownloadName(targets, currentDirectoryEntry().name)
+  const nativeDownloadURL = directFile
+    ? api.files.contentUrl(targets[0]!.path, 'attachment')
+    : nativeArchiveName
+      ? api.files.archiveUrl(targets, nativeArchiveName)
+      : undefined
+  if (!beginDesktopFileDrag(
+    event,
+    targets,
+    localClusterNodeId.value,
+    'file-manager',
+    nativeDownloadURL,
+    nativeArchiveName,
+  )) event.preventDefault()
+}
+
+function finishEntryDrag(): void {
+  clearDesktopFileDrag()
+}
+
+function clearInternalDropTarget(): void {
+  internalDropTarget.value = ''
+  internalDropCount.value = 0
+  crossPanelDropActive.value = false
+}
+
+function updateInternalDropTarget(event: DragEvent, target: string): boolean {
+  if (fileTransferState.value?.phase === 'running') return false
+  if (!hasDesktopFileDrag(event) && hasCrossPanelFileDrag(event)) {
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+    internalDropMode.value = 'copy'
+    internalDropCount.value = 0
+    internalDropTarget.value = target
+    crossPanelDropActive.value = true
+    return true
+  }
+  if (!hasDesktopFileDrag(event)) return false
+  if (desktopFileDragOrigin(event) === 'desktop-shortcut') {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    clearInternalDropTarget()
+    return false
+  }
+  const entries = peekDesktopFileDragEntries(event)
+  const operation = fileTransferOperation(event)
+  const invalid = fileTransferTargetError(entries, target)
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = invalid ? 'none' : operation
+  internalDropMode.value = operation
+  internalDropCount.value = entries.length
+  internalDropTarget.value = invalid ? '' : target
+  crossPanelDropActive.value = false
+  return !invalid
+}
+
+function onFileBrowserDragOver(event: DragEvent): void {
+  if (hasDesktopFileDrag(event) || hasCrossPanelFileDrag(event)) {
+    updateInternalDropTarget(event, currentPath.value)
+    return
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+}
+
+function onFileBrowserDragLeave(event: DragEvent): void {
+  const related = event.relatedTarget as Node | null
+  if (related && (event.currentTarget as HTMLElement).contains(related)) return
+  dragging.value = false
+  clearInternalDropTarget()
+}
+
+function onEntryDragOver(event: DragEvent, entry: FileEntry): void {
+  if (entry.kind !== 'directory' || (!hasDesktopFileDrag(event) && !hasCrossPanelFileDrag(event))) return
+  event.stopPropagation()
+  updateInternalDropTarget(event, entry.path)
+}
+
+function onEntryDragLeave(event: DragEvent, entry: FileEntry): void {
+  if (internalDropTarget.value !== entry.path) return
+  const related = event.relatedTarget as Node | null
+  if (related && (event.currentTarget as HTMLElement).contains(related)) return
+  clearInternalDropTarget()
+}
+
+function scheduleFileTransferClear(): void {
+  if (fileTransferClearTimer !== undefined) window.clearTimeout(fileTransferClearTimer)
+  fileTransferClearTimer = window.setTimeout(() => {
+    fileTransferState.value = undefined
+    fileTransferClearTimer = undefined
+  }, 2200)
+}
+
+function cancelFileTransfer(): void {
+  fileTransferController?.abort()
+}
+
+async function transferInternalFileDrop(event: DragEvent, target: string): Promise<void> {
+  const entries = desktopFileDragEntries(event)
+  const operation = fileTransferOperation(event)
+  clearInternalDropTarget()
+  clearDesktopFileDrag()
+  if (!entries.length || fileTransferTargetError(entries, target)) return
+  if (fileTransferState.value?.phase === 'running') {
+    toast.show('已有文件操作正在进行')
+    return
+  }
+
+  if (fileTransferClearTimer !== undefined) window.clearTimeout(fileTransferClearTimer)
+  // Copies may be cancelled safely because they never change desktop shortcut
+  // targets. A move must run to a server result so successful path mappings can
+  // be applied to desktop shortcuts without leaving stale references behind.
+  const controller = operation === 'copy' ? new AbortController() : undefined
+  fileTransferController = controller
+  fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'running' }
+  try {
+    const result = await api.files.action({
+      action: operation,
+      sources: entries.map((entry) => entry.path),
+      target,
+      expectedResourceVersions: Object.fromEntries(
+        entries.flatMap((entry) => entry.resourceVersion ? [[entry.path, entry.resourceVersion]] : []),
+      ),
+    }, controller?.signal)
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target)
+    const partial = Boolean(result.failed.length || shortcutSyncFailed)
+    fileTransferState.value = {
+      mode: operation,
+      target,
+      count: result.succeeded.length,
+      phase: partial ? 'partial' : 'success',
+    }
+    if (partial) {
+      toast.danger(
+        operation === 'copy' ? '部分文件未复制' : '部分文件未移动',
+        shortcutSyncFailed
+          ? '真实文件已移动，但桌面快捷方式路径同步失败，请刷新后重试。'
+          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
+      )
+    } else {
+      toast.success(operation === 'copy' ? '复制完成' : '移动完成', `${result.succeeded.length} 项已传输到 ${target}`)
+    }
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'cancelled' }
+      toast.show('复制已取消', { message: '已经复制完成的项目会保留在目标目录。' })
+    } else {
+      fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'error' }
+      toast.danger(operation === 'copy' ? '复制失败' : '移动失败', errorMessage(error))
+    }
+    if (!unmounted) await loadDirectory()
+  } finally {
+    if (fileTransferController === controller) fileTransferController = undefined
+    if (!unmounted) scheduleFileTransferClear()
+  }
+}
+
+async function transferCrossPanelFileDrop(event: DragEvent, target: string): Promise<void> {
+  const payload = crossPanelFileDragEntries(event)
+  clearInternalDropTarget()
+  if (!payload) {
+    toast.danger('跨面板复制失败', '拖拽数据无效或超过 64 项，请从来源 KPanel 重新拖动。')
+    return
+  }
+  if (payload.sourceNodeId === localClusterNodeId.value) {
+    toast.show('来源和目标是同一个 KPanel', { message: '请在文件管理器中使用复制或移动。' })
+    return
+  }
+  if (fileTransferState.value?.phase === 'running') {
+    toast.show('已有文件操作正在进行')
+    return
+  }
+  if (fileTransferClearTimer !== undefined) window.clearTimeout(fileTransferClearTimer)
+  const controller = new AbortController()
+  fileTransferController = controller
+  const total = payload.entries.length
+  fileTransferState.value = {
+    mode: 'copy', target, count: total, phase: 'running', remote: true,
+    completed: 0, currentName: payload.entries[0]?.name,
+  }
+  try {
+    const result = await transferCrossPanelFileBatch(
+      payload,
+      target,
+      api.files.transferFromPanel,
+      ({ source, completed }) => {
+        if (fileTransferController !== controller || controller.signal.aborted) return
+        fileTransferState.value = {
+          mode: 'copy', target, count: total, phase: 'running', remote: true,
+          completed, currentName: source.name,
+        }
+      },
+      controller.signal,
+    )
+    const completed = result.succeeded.length + result.failed.length
+    const phase = result.cancelled
+      ? result.succeeded.length ? 'partial' : 'cancelled'
+      : result.succeeded.length === 0 ? 'error'
+        : result.failed.length ? 'partial' : 'success'
+    fileTransferState.value = {
+      mode: 'copy', target, count: total, phase, remote: true,
+      completed, currentName: result.succeeded.at(-1)?.entry.name,
+    }
+    if (result.succeeded.length) {
+      if (!unmounted) await loadDirectory()
+      notifyFileDirectoriesChanged([target, currentPath.value], fileWindowChangeOrigin)
+    }
+    if (result.cancelled) {
+      toast.show('跨面板复制已取消', {
+        message: `已完成的 ${result.succeeded.length} 项会保留在目标目录。`,
+      })
+    } else if (phase === 'success') {
+      toast.success('跨面板复制完成', `${result.succeeded.length} 项已复制到 ${target}`)
+    } else {
+      toast.danger(
+        phase === 'error' ? '跨面板复制失败' : '跨面板复制部分完成',
+        `${result.succeeded.length} 项成功，${result.failed.length} 项失败${result.failed[0]?.detail ? `：${result.failed[0].detail}` : ''}`,
+      )
+    }
+  } finally {
+    if (fileTransferController === controller) fileTransferController = undefined
+    if (!unmounted) scheduleFileTransferClear()
+  }
+}
+
+function onEntryDrop(event: DragEvent, entry: FileEntry): void {
+  if (entry.kind !== 'directory' || (!hasDesktopFileDrag(event) && !hasCrossPanelFileDrag(event))) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (hasDesktopFileDrag(event) && desktopFileDragOrigin(event) === 'desktop-shortcut') {
+    clearInternalDropTarget()
+    return
+  }
+  if (hasDesktopFileDrag(event)) void transferInternalFileDrop(event, entry.path)
+  else void transferCrossPanelFileDrop(event, entry.path)
+}
+
 function showContext(event: MouseEvent, entry: FileEntry): void {
   event.preventDefault()
   selectForContext(entry)
@@ -551,11 +1011,11 @@ function cancelArchive(): void {
   archiveController?.abort()
 }
 
-function setClipboard(mode: ClipboardMode, entry?: FileEntry): void {
+function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
-  clipboard.value = { mode, entries: entriesToStore }
+  fileClipboard.set(mode, entriesToStore)
   clearSelection()
   toast.success(
     mode === 'copy' ? '已复制到文件剪贴板' : '已剪切到文件剪贴板',
@@ -564,7 +1024,25 @@ function setClipboard(mode: ClipboardMode, entry?: FileEntry): void {
 }
 
 function clearClipboard(): void {
-  clipboard.value = undefined
+  fileClipboard.clear()
+}
+
+async function applySuccessfulFileChanges(
+  result: FileActionResult,
+  target?: string,
+): Promise<boolean> {
+  let shortcutSyncFailed = false
+  if (result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
+    try {
+      await syncMovedDesktopShortcuts(result)
+    } catch {
+      shortcutSyncFailed = true
+    }
+  }
+  const changedDirectories = changedFileDirectories(result, target)
+  if (!unmounted) await loadDirectory()
+  notifyFileDirectoriesChanged(changedDirectories, fileWindowChangeOrigin, successfulFileMoves(result))
+  return shortcutSyncFailed
 }
 
 async function pasteClipboard(target = currentPath.value): Promise<void> {
@@ -577,16 +1055,23 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
       action: stored.mode,
       sources: stored.entries.map((entry) => entry.path),
       target,
+      expectedResourceVersions: Object.fromEntries(
+        stored.entries.map((entry) => [entry.path, entry.resourceVersion]),
+      ),
     })
     if (stored.mode === 'move') {
       const failed = new Set(result.failed.map((item) => item.path))
       const remaining = stored.entries.filter((entry) => failed.has(entry.path))
-      clipboard.value = remaining.length ? { mode: 'move', entries: remaining } : undefined
+      if (remaining.length) fileClipboard.set('move', remaining)
+      else fileClipboard.clear()
     }
-    if (result.failed.length) {
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target)
+    if (result.failed.length || shortcutSyncFailed) {
       toast.danger(
         result.succeeded.length ? '部分文件未粘贴' : '粘贴未完成',
-        `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
+        shortcutSyncFailed
+          ? '文件已移动，但桌面快捷方式路径同步失败，请刷新后重试。'
+          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
       )
     } else {
       toast.success(
@@ -594,7 +1079,6 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
         `${result.succeeded.length} 项已粘贴到 ${target}`,
       )
     }
-    if (!unmounted) await loadDirectory()
   } catch (error) {
     toast.danger('粘贴失败', errorMessage(error))
     await loadDirectory()
@@ -671,10 +1155,13 @@ async function submitDialog(): Promise<void> {
     const result = controller
       ? await api.files.action(input, controller.signal)
       : await api.files.action(input)
-    if (result.failed.length) {
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result)
+    if (result.failed.length || shortcutSyncFailed) {
       toast.danger(
-        result.succeeded.length ? '部分文件未处理' : '文件操作未完成',
-        `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
+        shortcutSyncFailed ? '文件已处理，快捷方式未同步' : result.succeeded.length ? '部分文件未处理' : '文件操作未完成',
+        shortcutSyncFailed
+          ? '真实文件操作已完成，请刷新桌面后重试路径同步。'
+          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败：${result.failed[0]?.detail || '请刷新后重试'}`,
       )
     } else {
       toast.success(
@@ -691,7 +1178,6 @@ async function submitDialog(): Promise<void> {
     dialogAction.value = undefined
     dialogValue.value = ''
     dialogEntries.value = []
-    if (!unmounted) await loadDirectory()
   } catch (error) {
     if (controller?.signal.aborted) {
       if (!unmounted) toast.success('操作已停止', '未完成的临时文件已清理。')
@@ -851,62 +1337,26 @@ async function uploadFiles(files: FileList | File[]): Promise<void> {
 
 function onDrop(event: DragEvent): void {
   dragging.value = false
+  if (hasDesktopFileDrag(event)) {
+    if (desktopFileDragOrigin(event) === 'desktop-shortcut') {
+      clearInternalDropTarget()
+      return
+    }
+    void transferInternalFileDrop(event, currentPath.value)
+    return
+  }
+  if (hasCrossPanelFileDrag(event)) {
+    void transferCrossPanelFileDrop(event, currentPath.value)
+    return
+  }
+  clearInternalDropTarget()
   if (event.dataTransfer?.files?.length) void uploadFiles(event.dataTransfer.files)
 }
 
-function fileExtension(name: string): string {
-  const normalized = name.toLocaleLowerCase()
-  if (normalized.endsWith('.tar.gz')) return 'tar.gz'
-  const separator = normalized.lastIndexOf('.')
-  return separator >= 0 ? normalized.slice(separator + 1) : ''
-}
-
-function entryIconKind(entry: FileEntry): FileIconKind {
-  if (entry.kind === 'directory') return 'folder'
-  const mime = (entry.mime || '').toLocaleLowerCase()
-  const extension = fileExtension(entry.name)
-  const normalizedName = entry.name.toLocaleLowerCase()
-  if (mime.startsWith('image/')) return 'image'
-  if (mime.startsWith('audio/') || mime.startsWith('video/')) return 'media'
-  if (
-    archiveFormat(entry) ||
-    ['application/gzip', 'application/x-7z-compressed', 'application/x-rar-compressed'].includes(mime) ||
-    ['7z', 'rar', 'gz', 'bz2', 'xz'].includes(extension)
-  ) return 'archive'
-  if (['csv', 'tsv', 'xls', 'xlsx', 'ods'].includes(extension)) return 'spreadsheet'
-  if (['db', 'sqlite', 'sqlite3', 'mdb', 'sql'].includes(extension)) return 'database'
-  if (['ppt', 'pptx', 'odp'].includes(extension)) return 'presentation'
-  if (['deb', 'rpm', 'apk', 'pkg', 'msi'].includes(extension)) return 'package'
-  if (
-    ['env', 'pem', 'key', 'pfx', 'p12', 'crt', 'cer'].includes(extension) ||
-    /^(?:id_(?:rsa|ed25519|ecdsa)|authorized_keys|known_hosts)$/.test(normalizedName)
-  ) return 'secret'
-  if (
-    entry.editable ||
-    ['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'ps1', 'js', 'ts', 'vue', 'css', 'scss', 'html', 'go', 'py', 'php', 'java', 'c', 'h', 'cpp', 'rs'].includes(extension)
-  ) return 'code'
-  if (
-    entry.previewable ||
-    mime === 'application/pdf' ||
-    ['txt', 'md', 'log', 'pdf', 'doc', 'docx', 'odt', 'rtf'].includes(extension)
-  ) return 'document'
-  return 'generic'
-}
-
-function entryIcon(entry: FileEntry) {
-  switch (entryIconKind(entry)) {
-    case 'folder': return Folder
-    case 'image': return FileImage
-    case 'media': return entry.mime?.startsWith('audio/') ? FileAudio : FileVideo
-    case 'archive': return FileArchive
-    case 'spreadsheet': return FileSpreadsheet
-    case 'database': return Database
-    case 'presentation': return Presentation
-    case 'package': return Package
-    case 'secret': return FileKey
-    case 'code': return FileCode
-    case 'document': return FileText
-    default: return File
+function onUploadDragEnter(event: DragEvent): void {
+  if (hasDesktopFileDrag(event) || hasCrossPanelFileDrag(event)) return
+  if (event.dataTransfer?.files?.length || Array.from(event.dataTransfer?.types || []).includes('Files')) {
+    dragging.value = true
   }
 }
 
@@ -1004,16 +1454,35 @@ onMounted(() => {
     : desktopCloseGuardCoordinator.register('classic-files', guard)
   window.addEventListener('click', handleWindowClick)
   window.addEventListener('keydown', handleFileShortcut)
+  unsubscribeFileDirectoryChanges = subscribeFileDirectoryChanges((directories, origin, moves = []) => {
+    if (origin === fileWindowChangeOrigin) return
+    const relocatedPath = remapMovedFilePath(currentPath.value, moves)
+    if (relocatedPath !== currentPath.value) {
+      void navigateDirectory(relocatedPath)
+      return
+    }
+    if (!directories.has(currentPath.value)) return
+    void loadDirectory()
+  })
   restoreViewMode()
-  void loadDirectory(requestedFilePath(route.query.path) || '/')
+  void api.cluster.hosts()
+    .then((hosts) => { localClusterNodeId.value = hosts.nodeId })
+    .catch(() => { localClusterNodeId.value = '' })
+  void loadRequestedRoute()
 })
 
 watch(
-  () => route.query.path,
-  (value, previous) => {
-    if (value === previous) return
-    const path = requestedFilePath(value) || '/'
-    if (path !== currentPath.value) void loadDirectory(path)
+  () => [route.query.path, route.query.file] as const,
+  ([pathValue, fileValue], previous) => {
+    if (pathValue === previous?.[0] && fileValue === previous?.[1]) return
+    const directoryPath = requestedFilePath(pathValue) || '/'
+    void (async () => {
+      if (directoryPath !== currentPath.value) await loadDirectory(directoryPath)
+      if (fileValue !== previous?.[1]) {
+        openedRouteFile = ''
+        await openRequestedFile(fileValue)
+      }
+    })()
   },
 )
 
@@ -1026,10 +1495,15 @@ watch(search, () => {
 
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
+  unsubscribeFileDirectoryChanges?.()
+  clearDesktopFileDrag()
   unmounted = true
   directoryController?.abort()
   archiveController?.abort()
+  fileTransferController?.abort()
+  if (fileTransferClearTimer !== undefined) window.clearTimeout(fileTransferClearTimer)
   if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+  clearMediaLoadTimer()
   window.removeEventListener('click', handleWindowClick)
   window.removeEventListener('keydown', handleFileShortcut)
 })
@@ -1037,7 +1511,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section ref="filesPage" class="files-page" tabindex="-1" @pointerdown="focusFilesPage">
-    <PageHeader title="文件管理" description="轻量管理宿主机文件；KPanel 凭据与状态目录已隔离保护。" />
+    <PageHeader title="文件管理" description="浏览、编辑和传输服务器文件；KPanel 凭据与状态目录保持隔离。" />
 
     <div class="file-command-bar">
       <nav class="file-shortcuts" aria-label="常用目录">
@@ -1071,10 +1545,13 @@ onBeforeUnmount(() => {
 
     <section
       class="file-browser"
-      :class="{ 'file-browser--dragging': dragging }"
-      @dragenter.prevent="dragging = true"
-      @dragover.prevent
-      @dragleave.self="dragging = false"
+      :class="{
+        'file-browser--dragging': dragging,
+        'file-browser--internal-drop': internalDropTarget === currentPath,
+      }"
+      @dragenter.prevent="onUploadDragEnter"
+      @dragover="onFileBrowserDragOver"
+      @dragleave="onFileBrowserDragLeave"
       @drop.prevent="onDrop"
       @contextmenu="showDirectoryContext"
     >
@@ -1154,6 +1631,33 @@ onBeforeUnmount(() => {
         </div>
       </Transition>
 
+      <Transition name="slide">
+        <div
+          v-if="fileTransferState"
+          class="file-transfer-status"
+          :class="`file-transfer-status--${fileTransferState.phase}`"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="file-transfer-status__icon">
+            <RefreshCw v-if="fileTransferState.phase === 'running'" :size="17" class="spinning" />
+            <Copy v-else-if="fileTransferState.mode === 'copy'" :size="17" />
+            <Scissors v-else :size="17" />
+          </span>
+          <span>
+            <strong>{{ fileTransferTitle }}</strong>
+            <small>{{ fileTransferState.currentName
+              ? `${fileTransferState.currentName} → ${fileTransferState.target}`
+              : fileTransferState.target }}</small>
+          </span>
+          <button
+            v-if="fileTransferState.phase === 'running' && fileTransferState.mode === 'copy'"
+            type="button"
+            @click="cancelFileTransfer"
+          >取消</button>
+        </div>
+      </Transition>
+
       <div v-if="Object.keys(uploadProgress).length" class="upload-strip">
         <div v-for="(progress, name) in uploadProgress" :key="name">
           <span>{{ name }}</span>
@@ -1185,13 +1689,22 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-row file-row--entry"
-          :class="{ 'file-row--selected': selected.has(entry.path) }"
+          :class="{
+            'file-row--selected': selected.has(entry.path),
+            'file-row--drop-target': internalDropTarget === entry.path,
+          }"
           role="row"
           tabindex="0"
+          :draggable="canAddToDesktop(entry)"
           @click="handleEntryClick($event, entry)"
           @dblclick="openEntry(entry)"
           @keydown.enter="openEntry(entry)"
           @contextmenu.stop="showContext($event, entry)"
+          @dragstart="startEntryDrag($event, entry)"
+          @dragend="finishEntryDrag"
+          @dragover="onEntryDragOver($event, entry)"
+          @dragleave="onEntryDragLeave($event, entry)"
+          @drop="onEntryDrop($event, entry)"
         >
           <span @click.stop="toggleEntry(entry.path)">
             <input
@@ -1242,13 +1755,22 @@ onBeforeUnmount(() => {
           v-for="entry in entries"
           :key="entry.path"
           class="file-grid-card"
-          :class="{ 'file-grid-card--selected': selected.has(entry.path) }"
+          :class="{
+            'file-grid-card--selected': selected.has(entry.path),
+            'file-grid-card--drop-target': internalDropTarget === entry.path,
+          }"
           role="listitem"
           tabindex="0"
+          :draggable="canAddToDesktop(entry)"
           @click="handleEntryClick($event, entry)"
           @dblclick="openEntry(entry)"
           @keydown.enter="openEntry(entry)"
           @contextmenu.stop="showContext($event, entry)"
+          @dragstart="startEntryDrag($event, entry)"
+          @dragend="finishEntryDrag"
+          @dragover="onEntryDragOver($event, entry)"
+          @dragleave="onEntryDragLeave($event, entry)"
+          @drop="onEntryDrop($event, entry)"
         >
           <input
             class="file-grid-card__check"
@@ -1316,6 +1838,14 @@ onBeforeUnmount(() => {
         <Upload :size="34" />
         <strong>松开以上传到 {{ currentPath }}</strong>
       </div>
+      <div v-if="internalDropTarget" class="file-internal-drop-hint" aria-hidden="true">
+        <Copy v-if="internalDropMode === 'copy'" :size="17" />
+        <Scissors v-else :size="17" />
+        <span>
+          <strong>{{ internalDropTitle }}</strong>
+          <small>{{ crossPanelDropActive || internalDropMode === 'copy' ? '松开以复制' : '按住 Ctrl/Option 可复制' }}</small>
+        </span>
+      </div>
     </section>
 
     <Transition name="batch-dock">
@@ -1335,11 +1865,19 @@ onBeforeUnmount(() => {
         <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
         <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
         <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
+        <button
+          v-if="selectedEntries.some(canAddToDesktop)"
+          type="button"
+          :disabled="desktopAdding"
+          @click="addEntriesToDesktop()"
+        ><Pin :size="15" />{{ desktopAdding ? '添加中…' : '添加到桌面' }}</button>
         <button type="button" @click="invertSelection"><ListRestart :size="15" />反选</button>
         <button class="danger-link" type="button" @click="openDialog('trash')">
           <Trash2 :size="15" />回收站
         </button>
-        <button type="button" @click="clearSelection">取消选择</button>
+        <button type="button" aria-label="取消选择" title="取消选择" @click="clearSelection">
+          <X :size="15" />取消
+        </button>
       </div>
     </Transition>
 
@@ -1351,6 +1889,9 @@ onBeforeUnmount(() => {
     >
       <button v-if="contextMenu.entry" type="button" @click="openEntry(contextMenu.entry)">
         <Eye :size="15" />{{ contextMenu.entry.kind === 'directory' ? '打开' : '查看' }}
+      </button>
+      <button v-if="!contextMenu.entry" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
+        <Pin :size="15" />将当前文件夹添加到桌面
       </button>
       <button
         v-if="contextMenu.entry && contextBatchEntries.some((entry) => entry.kind === 'file')"
@@ -1390,7 +1931,15 @@ onBeforeUnmount(() => {
       <button v-if="contextMenu.entry" type="button" @click="openDialog('chmod', contextMenu.entry)">
         <ShieldCheck :size="15" />修改权限
       </button>
-      <button v-else type="button" @click="openDialog('mkdir')">
+      <button
+        v-if="contextMenu.entry && contextBatchEntries.some(canAddToDesktop)"
+        type="button"
+        :disabled="desktopAdding"
+        @click="addEntriesToDesktop(contextMenu.entry)"
+      >
+        <Pin :size="15" />{{ contextHasMultipleEntries ? `添加 ${contextBatchEntries.filter(canAddToDesktop).length} 项到桌面` : '添加到桌面' }}
+      </button>
+      <button v-if="!contextMenu.entry" type="button" @click="openDialog('mkdir')">
         <Plus :size="15" />新建文件夹
       </button>
       <hr v-if="contextMenu.entry" />
@@ -1625,11 +2174,36 @@ onBeforeUnmount(() => {
           </span>
         </footer>
       </div>
-      <div v-else-if="previewEntry" class="media-viewer">
-        <img v-if="previewMode === 'image'" :src="previewURL" :alt="previewEntry.name" />
-        <audio v-else-if="previewMode === 'audio'" :src="previewURL" controls />
-        <video v-else-if="previewMode === 'video'" :src="previewURL" controls />
-        <iframe v-else-if="previewMode === 'pdf'" :src="previewURL" :title="previewEntry.name" />
+      <div v-else-if="previewEntry" class="media-viewer" :class="`media-viewer--${previewMode}`">
+        <div v-if="previewMode === 'video'" class="media-player">
+          <video
+            :key="mediaReloadKey"
+            :aria-label="previewEntry.name"
+            controls
+            preload="metadata"
+            playsinline
+            @loadstart="handleMediaLoadStart"
+            @loadedmetadata="handleMediaReady"
+            @canplay="handleMediaCanPlay"
+            @playing="handleMediaCanPlay"
+            @waiting="handleMediaWaiting"
+            @error="handleMediaError"
+          >
+            <source :src="previewURL" :type="previewEntry.mime || undefined" />
+          </video>
+          <div v-if="mediaLoading && !mediaError" class="media-player__loading" role="status" aria-live="polite">
+            <RefreshCw :size="20" class="spinning" />
+            <span>正在连接视频流…</span>
+          </div>
+          <div v-else-if="mediaError" class="media-player__error" role="alert">
+            <strong>{{ mediaErrorMessage || '视频暂时无法播放' }}</strong>
+            <span>请检查文件编码或服务器是否支持该格式。</span>
+            <button class="button button--secondary button--small" type="button" @click.stop="retryMedia">重试播放</button>
+          </div>
+        </div>
+        <img v-else-if="previewMode === 'image'" :src="previewURL" :alt="previewEntry.name" decoding="async" />
+        <audio v-else-if="previewMode === 'audio'" :src="previewURL" controls preload="metadata" />
+        <iframe v-else-if="previewMode === 'pdf'" :src="previewURL" :title="previewEntry.name" loading="lazy" />
         <div v-else class="metadata-viewer">
           <component :is="entryIcon(previewEntry)" :size="44" />
           <strong>此格式暂不在浏览器内解析</strong>
@@ -1638,6 +2212,14 @@ onBeforeUnmount(() => {
             <Download :size="16" />下载文件
           </button>
         </div>
+        <footer v-if="previewMode !== 'metadata'" class="media-viewer__footer">
+          <span class="media-viewer__status" :class="{ 'is-loading': mediaLoading, 'is-error': mediaError }">
+            <i aria-hidden="true" />{{ mediaStatusLabel }}
+          </span>
+          <button class="button button--secondary button--small" type="button" @click="download(previewEntry)">
+            <Download :size="15" />下载原文件
+          </button>
+        </footer>
       </div>
     </ModalDialog>
   </section>
@@ -1697,6 +2279,13 @@ onBeforeUnmount(() => {
 
 .file-browser--dragging {
   border-color: var(--brand);
+}
+
+.file-browser--internal-drop {
+  border-color: color-mix(in srgb, var(--brand) 76%, var(--border));
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--brand) 32%, transparent),
+    var(--shadow-sm);
 }
 
 .file-toolbar {
@@ -1851,11 +2440,14 @@ onBeforeUnmount(() => {
 }
 
 .batch-bar strong {
+  flex: 0 0 auto;
   margin-right: 8px;
+  white-space: nowrap;
 }
 
 .batch-bar button {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   padding: 6px 9px;
@@ -1864,11 +2456,33 @@ onBeforeUnmount(() => {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .batch-bar button:hover {
   color: var(--text);
   background: var(--surface);
+}
+
+:global(.desktop-window .batch-bar) {
+  left: 50%;
+  width: min(760px, calc(100% - 28px));
+  gap: 4px;
+  padding: 8px 10px;
+  scrollbar-width: none;
+}
+
+:global(.desktop-window .batch-bar::-webkit-scrollbar) {
+  display: none;
+}
+
+:global(.desktop-window .batch-bar strong) {
+  margin-right: 4px;
+}
+
+:global(.desktop-window .batch-bar button) {
+  gap: 4px;
+  padding-inline: 7px;
 }
 
 .clipboard-bar {
@@ -1936,6 +2550,74 @@ onBeforeUnmount(() => {
 .clipboard-bar button:disabled {
   opacity: .6;
   cursor: wait;
+}
+
+.file-transfer-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 8px 15px;
+  border-bottom: 1px solid color-mix(in srgb, var(--brand) 24%, var(--border));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.file-transfer-status--partial,
+.file-transfer-status--error,
+.file-transfer-status--cancelled {
+  border-bottom-color: color-mix(in srgb, var(--amber) 30%, var(--border));
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
+}
+
+.file-transfer-status__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, var(--surface));
+}
+
+.file-transfer-status--partial .file-transfer-status__icon,
+.file-transfer-status--error .file-transfer-status__icon,
+.file-transfer-status--cancelled .file-transfer-status__icon {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 13%, var(--surface));
+}
+
+.file-transfer-status > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.file-transfer-status strong,
+.file-transfer-status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-transfer-status strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.file-transfer-status small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.file-transfer-status button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
 }
 
 .danger-link {
@@ -2013,6 +2695,15 @@ onBeforeUnmount(() => {
   border-color: color-mix(in srgb, var(--brand) 48%, var(--border));
   background: color-mix(in srgb, var(--brand) 8%, var(--surface));
   box-shadow: 0 7px 20px color-mix(in srgb, var(--brand) 8%, transparent);
+}
+
+.file-grid-card--drop-target {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 13%, var(--surface));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--brand) 62%, transparent),
+    0 10px 24px color-mix(in srgb, var(--brand) 14%, transparent);
+  transform: translateY(-2px);
 }
 
 .file-grid-card__check,
@@ -2146,6 +2837,11 @@ onBeforeUnmount(() => {
 .file-row--entry:hover,
 .file-row--selected {
   background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+}
+
+.file-row--drop-target {
+  background: color-mix(in srgb, var(--brand) 13%, var(--surface));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 68%, transparent);
 }
 
 .file-row > span {
@@ -2298,6 +2994,48 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   backdrop-filter: blur(5px);
   pointer-events: none;
+}
+
+.file-internal-drop-hint {
+  position: absolute;
+  z-index: 5;
+  bottom: 14px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - 28px);
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--border));
+  border-radius: 12px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--surface) 91%, transparent);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 20%);
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px) saturate(135%);
+  pointer-events: none;
+}
+
+.file-internal-drop-hint span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.file-internal-drop-hint strong,
+.file-internal-drop-hint small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-internal-drop-hint strong {
+  font-size: 11px;
+}
+
+.file-internal-drop-hint small {
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .file-context-menu {
@@ -2560,34 +3298,186 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.media-viewer {
-  display: grid;
-  min-height: 480px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background:
-    linear-gradient(45deg, var(--surface-subtle) 25%, transparent 25%) 0 0 / 20px 20px,
-    linear-gradient(-45deg, var(--surface-subtle) 25%, transparent 25%) 0 0 / 20px 20px,
-    var(--surface);
+:global(.modal-panel--fullscreen .code-viewer) {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
 }
 
-.media-viewer img,
-.media-viewer video {
+:global(.modal-panel--fullscreen .code-editor) {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.media-viewer {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid var(--terminal-shell-border, #29383a);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% -12%, rgb(53 203 166 / 15%), transparent 42%),
+    linear-gradient(180deg, #111c1d 0%, var(--terminal-shell-background, #0b1214) 100%);
+  box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%));
+}
+
+.media-viewer--video,
+.media-viewer--image,
+.media-viewer--metadata {
+  min-height: min(58vh, 600px);
+}
+
+.media-player {
+  position: relative;
+  display: grid;
+  width: min(100%, 1120px);
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 14px;
+  background: #000;
+  box-shadow: 0 18px 46px rgb(0 0 0 / 30%);
+}
+
+.media-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  background: #000;
+}
+
+.media-player__loading,
+.media-player__error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 20px;
+  color: #eef8f5;
+  background: linear-gradient(180deg, rgb(2 10 9 / 8%), rgb(2 10 9 / 66%));
+  text-align: center;
+}
+
+.media-player__loading {
+  pointer-events: none;
+}
+
+.media-player__error {
+  flex-direction: column;
+  gap: 6px;
+  color: #ffe7e7;
+  pointer-events: auto;
+}
+
+.media-player__error span {
+  color: rgb(255 231 231 / 72%);
+  font-size: 12px;
+}
+
+.media-player__error .button {
+  margin-top: 4px;
+}
+
+.media-viewer img {
+  display: block;
+  width: auto;
   max-width: 100%;
-  max-height: 68vh;
+  max-height: min(68vh, 640px);
+  border-radius: 10px;
+  object-fit: contain;
+  box-shadow: 0 18px 46px rgb(0 0 0 / 24%);
 }
 
 .media-viewer audio {
-  width: min(620px, 84%);
+  width: min(720px, 100%);
 }
 
 .media-viewer iframe {
   width: 100%;
-  height: 68vh;
+  min-height: min(68vh, 680px);
   border: 0;
+  border-radius: 10px;
   background: #fff;
+}
+
+.media-viewer--pdf {
+  align-items: stretch;
+  padding: 0;
+}
+
+.media-viewer--pdf iframe {
+  min-height: min(68vh, 680px);
+  border-radius: 14px;
+}
+
+.media-viewer__footer {
+  display: flex;
+  width: min(100%, 1120px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--terminal-shell-muted, #8a9695);
+  font-size: 12px;
+}
+
+.media-viewer__status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.media-viewer__status i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--brand, #35cba6);
+  box-shadow: 0 0 0 4px rgb(53 203 166 / 13%);
+}
+
+.media-viewer__status.is-loading i {
+  background: var(--amber, #d5ae62);
+  box-shadow: 0 0 0 4px rgb(213 174 98 / 13%);
+}
+
+.media-viewer__status.is-error i {
+  background: var(--danger, #d86f74);
+  box-shadow: 0 0 0 4px rgb(216 111 116 / 13%);
+}
+
+:global(.modal-panel--wide:has(.media-viewer)) {
+  width: min(1080px, calc(100vw - 32px));
+}
+
+:global(.modal-panel--wide:has(.media-viewer) .modal-panel__body) {
+  padding: 10px;
+  background: var(--surface-subtle);
+}
+
+:global(.modal-panel--fullscreen .media-viewer) {
+  height: 100%;
+  min-height: 0;
+}
+
+:global(.modal-panel--fullscreen .media-player) {
+  max-height: calc(100% - 42px);
 }
 
 .metadata-viewer {
@@ -2856,6 +3746,53 @@ onBeforeUnmount(() => {
 
   .code-editor-actions {
     margin-left: auto;
+  }
+
+  :global(.modal-panel--wide:has(.media-viewer)) {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__header) {
+    padding: 12px;
+  }
+
+  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__header p) {
+    max-width: calc(100vw - 128px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__body) {
+    padding: 8px;
+  }
+
+  .media-viewer {
+    gap: 9px;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .media-viewer--video,
+  .media-viewer--image,
+  .media-viewer--metadata {
+    min-height: 0;
+  }
+
+  .media-player,
+  .media-player video {
+    border-radius: 10px;
+  }
+
+  .media-viewer__footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .media-viewer iframe,
+  .media-viewer--pdf iframe {
+    min-height: 60dvh;
   }
 
   .code-viewer__header-right > span:first-child {

@@ -9,6 +9,7 @@ export interface DesktopShortcutDraft {
   id: string
   name: string
   description: string
+  targetType: 'url'
   url: string
 }
 
@@ -60,7 +61,7 @@ function reset(): void {
   clearPreview()
   name.value = props.shortcut?.name || ''
   description.value = props.shortcut?.description || ''
-  url.value = props.shortcut?.url || ''
+  url.value = props.shortcut?.targetType === 'url' ? props.shortcut.url || '' : ''
   icon.value = undefined
   removeIcon.value = false
   validationMessage.value = ''
@@ -159,6 +160,7 @@ function submit(): void {
     id: props.shortcut?.id || '',
     name: trimmedName,
     description: trimmedDescription,
+    targetType: 'url',
     url: normalized,
   }, icon.value, removeIcon.value)
 }

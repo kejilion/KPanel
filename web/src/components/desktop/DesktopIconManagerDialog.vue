@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Grid2X2, Link2, Pencil, Plus, RotateCcw, Trash2 } from '@lucide/vue'
+import { File, Folder, Grid2X2, Link2, Pencil, Plus, RotateCcw, Trash2 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
 import type { DesktopEntry } from '@/lib/desktopEntries'
@@ -52,14 +52,17 @@ const i18n = useI18n()
           <article v-for="shortcut in shortcuts" :key="shortcut.id">
             <span class="desktop-icon-manager__glyph" aria-hidden="true">
               <img v-if="shortcut.iconURL" :src="shortcut.iconURL" alt="" />
+              <Folder v-else-if="shortcut.targetType === 'directory'" :size="20" />
+              <File v-else-if="shortcut.targetType === 'file'" :size="20" />
               <Link2 v-else :size="20" />
             </span>
             <div>
               <strong>{{ shortcut.name }}</strong>
-              <small>{{ shortcut.description || shortcut.url }}</small>
+              <small>{{ shortcut.description || shortcut.path || shortcut.url }}</small>
             </div>
             <span class="desktop-icon-manager__actions">
               <button
+                v-if="shortcut.targetType === 'url'"
                 class="button button--ghost button--icon"
                 type="button"
                 :title="i18n.t('desktop.shortcutEdit')"
@@ -72,8 +75,8 @@ const i18n = useI18n()
               <button
                 class="button button--ghost button--icon"
                 type="button"
-                :title="i18n.t('desktop.shortcutDelete')"
-                :aria-label="i18n.t('desktop.shortcutDelete')"
+                :title="i18n.t(shortcut.targetType === 'url' ? 'desktop.shortcutDelete' : 'desktop.removeFromDesktop')"
+                :aria-label="i18n.t(shortcut.targetType === 'url' ? 'desktop.shortcutDelete' : 'desktop.removeFromDesktop')"
                 :disabled="busy"
                 @click="emit('remove', shortcut)"
               >

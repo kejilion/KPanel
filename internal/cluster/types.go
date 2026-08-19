@@ -9,11 +9,17 @@ import (
 )
 
 // v2 federation scope tokens. A scope string is always ScopeTokenSummary
-// optionally followed by ScopeTokenTerminal, optionally followed by
-// ScopeTokenBrowse, optionally followed by ScopeTokenBrowseWS,
-// space-separated, in that exact order — see BuildV2Scope and ValidV2Scope.
-// This is a closed, enumerable set by design: federation grants exactly
-// these four capabilities today, nothing free-form.
+// optionally followed by ScopeTokenTerminal, ScopeTokenFiles,
+// ScopeTokenBrowse and ScopeTokenBrowseWS, space-separated, in that exact
+// order — see BuildV2Scope and ValidV2Scope. This is a closed, enumerable set
+// by design: federation grants exactly these five capabilities today, nothing
+// free-form.
+//
+// The order is not arbitrary. Files sits directly after terminal so that the
+// long-standing literal "cluster.summary.read cluster.terminal.open
+// cluster.files.read" (SummaryTerminalFilesScope, written into every pairing
+// made before the token model existed) is still a canonical value — the token
+// model has to accept what is already on disk, not require a re-pair.
 //
 // Browse fetch and browse WS are deliberately separate, independently
 // grantable tokens rather than one "browse" token: a WS relay is a
@@ -25,6 +31,7 @@ import (
 const (
 	ScopeTokenSummary  = "cluster.summary.read"
 	ScopeTokenTerminal = "cluster.terminal.open"
+	ScopeTokenFiles    = "cluster.files.read"
 	ScopeTokenBrowse   = "cluster.browse.fetch"
 	ScopeTokenBrowseWS = "cluster.browse.ws"
 )
@@ -35,20 +42,29 @@ const (
 	LightNodeProtocol    = "light-v1"
 	SummaryScope         = ScopeTokenSummary
 	SummaryTerminalScope = ScopeTokenSummary + " " + ScopeTokenTerminal
-	LocalHostID          = "local"
-	MaxHosts             = 100
-	MaxSummaryBytes      = 64 << 10
-	MaxPairBytes         = 16 << 10
-	MaxFederationV2Bytes = 96 << 10
+	// SummaryTerminalFilesScope is spelled out of the same tokens rather than
+	// as its own literal so it stays byte-identical to the string already
+	// persisted in existing pairings while still being a value BuildV2Scope
+	// can produce — which is what lets the files grant join the token model
+	// without reissuing anyone's credential.
+	SummaryTerminalFilesScope = SummaryTerminalScope + " " + ScopeTokenFiles
+	LocalHostID               = "local"
+	MaxHosts                  = 100
+	MaxSummaryBytes           = 64 << 10
+	MaxPairBytes              = 16 << 10
+	MaxFederationV2Bytes      = 96 << 10
 )
 
 // BuildV2Scope composes a canonically-ordered v2 scope string from the
 // capabilities to grant. summary read access is implicit and always
 // present — every v2 pairing has always carried it.
-func BuildV2Scope(terminal, browseFetch, browseWS bool) string {
+func BuildV2Scope(terminal, files, browseFetch, browseWS bool) string {
 	scope := ScopeTokenSummary
 	if terminal {
 		scope += " " + ScopeTokenTerminal
+	}
+	if files {
+		scope += " " + ScopeTokenFiles
 	}
 	if browseFetch {
 		scope += " " + ScopeTokenBrowse
@@ -60,9 +76,9 @@ func BuildV2Scope(terminal, browseFetch, browseWS bool) string {
 }
 
 // ValidV2Scope reports whether scope is exactly ScopeTokenSummary optionally
-// followed by ScopeTokenTerminal, ScopeTokenBrowse and ScopeTokenBrowseWS in
-// that order, no duplicates and no unrecognized tokens — i.e. it is a value
-// BuildV2Scope could have produced.
+// followed by ScopeTokenTerminal, ScopeTokenFiles, ScopeTokenBrowse and
+// ScopeTokenBrowseWS in that order, no duplicates and no unrecognized tokens
+// — i.e. it is a value BuildV2Scope could have produced.
 func ValidV2Scope(scope string) bool {
 	fields := strings.Fields(scope)
 	if len(fields) == 0 || fields[0] != ScopeTokenSummary {
@@ -70,6 +86,9 @@ func ValidV2Scope(scope string) bool {
 	}
 	fields = fields[1:]
 	if len(fields) > 0 && fields[0] == ScopeTokenTerminal {
+		fields = fields[1:]
+	}
+	if len(fields) > 0 && fields[0] == ScopeTokenFiles {
 		fields = fields[1:]
 	}
 	if len(fields) > 0 && fields[0] == ScopeTokenBrowse {
@@ -96,20 +115,21 @@ const (
 )
 
 var (
-	ErrNotFound         = errors.New("cluster record not found")
-	ErrConflict         = errors.New("cluster record changed")
-	ErrDuplicate        = errors.New("cluster host already exists")
-	ErrHostLimit        = errors.New("cluster host limit reached")
-	ErrInvalidOrigin    = errors.New("invalid cluster origin")
-	ErrLightHTTPSOrigin = errors.New("light node requires an HTTPS origin")
-	ErrPrivateOrigin    = errors.New("cluster origin is outside the configured private network allowlist")
-	ErrPairingCode      = errors.New("pairing code is invalid or expired")
-	ErrAuthentication   = errors.New("federation authentication failed")
-	ErrReplay           = errors.New("federation request replayed")
-	ErrRateLimited      = errors.New("federation request rate limited")
-	ErrProtocolMismatch = errors.New("federation protocol is incompatible")
-	ErrIdentityMismatch = errors.New("federation target identity changed")
-	ErrLocalHost        = errors.New("local cluster host cannot be modified")
+	ErrNotFound               = errors.New("cluster record not found")
+	ErrConflict               = errors.New("cluster record changed")
+	ErrDuplicate              = errors.New("cluster host already exists")
+	ErrHostLimit              = errors.New("cluster host limit reached")
+	ErrInvalidOrigin          = errors.New("invalid cluster origin")
+	ErrLightHTTPSOrigin       = errors.New("light node requires an HTTPS origin")
+	ErrPrivateOrigin          = errors.New("cluster origin is outside the configured private network allowlist")
+	ErrPairingCode            = errors.New("pairing code is invalid or expired")
+	ErrAuthentication         = errors.New("federation authentication failed")
+	ErrReplay                 = errors.New("federation request replayed")
+	ErrRateLimited            = errors.New("federation request rate limited")
+	ErrProtocolMismatch       = errors.New("federation protocol is incompatible")
+	ErrMutualFilesUnsupported = errors.New("mutual file transfer is unsupported")
+	ErrIdentityMismatch       = errors.New("federation target identity changed")
+	ErrLocalHost              = errors.New("local cluster host cannot be modified")
 )
 
 type HostState string
@@ -136,32 +156,35 @@ type HostSnapshot struct {
 }
 
 type Host struct {
-	ID                  string            `json:"id"`
-	IsLocal             bool              `json:"isLocal"`
-	Name                string            `json:"name"`
-	Kind                HostKind          `json:"kind"`
-	Origin              string            `json:"origin"`
-	TransportSecurity   TransportSecurity `json:"transportSecurity"`
-	PeerFingerprint     string            `json:"peerFingerprint,omitempty"`
-	RemoteNodeID        string            `json:"remoteNodeId"`
-	FederationProtocol  string            `json:"federationProtocol"`
-	Scope               string            `json:"scope"`
-	TerminalAvailable   bool              `json:"terminalAvailable"`
-	BrowseAvailable     bool              `json:"browseAvailable"`
-	BrowseWSAvailable   bool              `json:"browseWSAvailable"`
-	PanelVersion        string            `json:"panelVersion,omitempty"`
-	State               HostState         `json:"state"`
-	LastSnapshot        *HostSnapshot     `json:"lastSnapshot,omitempty"`
-	LastAttemptAt       *time.Time        `json:"lastAttemptAt,omitempty"`
-	LastSuccessAt       *time.Time        `json:"lastSuccessAt,omitempty"`
-	ConsecutiveFailures int               `json:"consecutiveFailures"`
-	LastErrorCode       string            `json:"lastErrorCode,omitempty"`
-	LastError           string            `json:"lastError,omitempty"`
-	Polling             bool              `json:"polling"`
-	NextPollAt          *time.Time        `json:"nextPollAt,omitempty"`
-	ResourceVersion     string            `json:"resourceVersion"`
-	CreatedAt           time.Time         `json:"createdAt"`
-	UpdatedAt           time.Time         `json:"updatedAt"`
+	ID                          string            `json:"id"`
+	IsLocal                     bool              `json:"isLocal"`
+	Name                        string            `json:"name"`
+	Kind                        HostKind          `json:"kind"`
+	Origin                      string            `json:"origin"`
+	TransportSecurity           TransportSecurity `json:"transportSecurity"`
+	PeerFingerprint             string            `json:"peerFingerprint,omitempty"`
+	RemoteNodeID                string            `json:"remoteNodeId"`
+	FederationProtocol          string            `json:"federationProtocol"`
+	Scope                       string            `json:"scope"`
+	TerminalAvailable           bool              `json:"terminalAvailable"`
+	BrowseAvailable             bool              `json:"browseAvailable"`
+	BrowseWSAvailable           bool              `json:"browseWSAvailable"`
+	FileTransferAvailable       bool              `json:"fileTransferAvailable"`
+	MutualFileTransferAvailable bool              `json:"mutualFileTransferAvailable"`
+	PanelVersion                string            `json:"panelVersion,omitempty"`
+	SecurityEntrancePath        string            `json:"securityEntrancePath,omitempty"`
+	State                       HostState         `json:"state"`
+	LastSnapshot                *HostSnapshot     `json:"lastSnapshot,omitempty"`
+	LastAttemptAt               *time.Time        `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt               *time.Time        `json:"lastSuccessAt,omitempty"`
+	ConsecutiveFailures         int               `json:"consecutiveFailures"`
+	LastErrorCode               string            `json:"lastErrorCode,omitempty"`
+	LastError                   string            `json:"lastError,omitempty"`
+	Polling                     bool              `json:"polling"`
+	NextPollAt                  *time.Time        `json:"nextPollAt,omitempty"`
+	ResourceVersion             string            `json:"resourceVersion"`
+	CreatedAt                   time.Time         `json:"createdAt"`
+	UpdatedAt                   time.Time         `json:"updatedAt"`
 }
 
 func scopeHasToken(scope, token string) bool {
@@ -175,6 +198,14 @@ func scopeHasToken(scope, token string) bool {
 
 func ScopeAllowsTerminal(scope string) bool {
 	return scopeHasToken(scope, ScopeTokenTerminal)
+}
+
+// ScopeAllowsFiles is token-based like its siblings, so it also answers true
+// for a hypothetical files-without-terminal grant. Before the token model
+// files was only expressible as SummaryTerminalFilesScope, so this is a
+// superset of the old behaviour and never a narrowing of it.
+func ScopeAllowsFiles(scope string) bool {
+	return scopeHasToken(scope, ScopeTokenFiles)
 }
 
 func ScopeAllowsBrowse(scope string) bool {
@@ -212,9 +243,10 @@ type LightReportResponse struct {
 }
 
 type AddHostInput struct {
-	Name        string `json:"name,omitempty"`
-	Origin      string `json:"origin"`
-	PairingCode string `json:"pairingCode"`
+	Name             string `json:"name,omitempty"`
+	Origin           string `json:"origin"`
+	PairingCode      string `json:"pairingCode"`
+	ControllerOrigin string `json:"-"`
 }
 
 type UpdateHostInput struct {
@@ -272,8 +304,9 @@ type PairResponse struct {
 }
 
 type FederationSummary struct {
-	NodeID             string                 `json:"nodeId"`
-	PanelVersion       string                 `json:"panelVersion"`
-	FederationProtocol string                 `json:"federationProtocol"`
-	Telemetry          contract.HostTelemetry `json:"telemetry"`
+	NodeID               string                 `json:"nodeId"`
+	PanelVersion         string                 `json:"panelVersion"`
+	FederationProtocol   string                 `json:"federationProtocol"`
+	SecurityEntrancePath string                 `json:"securityEntrancePath,omitempty"`
+	Telemetry            contract.HostTelemetry `json:"telemetry"`
 }

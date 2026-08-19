@@ -21,6 +21,7 @@ Vue 三栏工作台 ── REST/SSE ── paneld AgentRuntime
 - `openai_compatible` 必须明确选择 `apiMode`：`responses` 使用 `POST /v1/responses` 语义事件，`chat_completions` 使用 `POST /v1/chat/completions` 数据分片。历史 Provider 自动迁移为 `chat_completions`，避免升级后改变行为；OpenAI 官方预设默认使用 `responses`，其他兼容预设默认保守使用 `chat_completions`。
 - Responses 模式使用 KPanel 持久化的完整会话上下文，并设置 `store=false`。工具调用使用 `function_call` / `function_call_output`；推理模型返回的加密 reasoning item 只保存在内部工具上下文、仅向同一 Provider 回放，不通过 REST、SSE、日志或审计暴露。
 - Responses 首次请求保持标准 OpenAI 载荷；若兼容 Provider 在尚未输出任何内容时明确返回 `messages[n]: missing field id`，Runtime 只重试一次带稳定消息 ID 的兼容载荷，并在当前进程内记住该端点能力。已产生文字或工具调用后禁止回放，其他 4xx 不触发方言猜测。
+- Chat Completions 会捕获 Provider 实际返回的 `reasoning_content`、`reasoning_text` 或 `reasoning`，仅随对应工具调用保存在内部上下文；同一模型响应产生的多个工具调用共享这份上下文。标准后续请求不主动猜测方言；只有端点在未输出内容时明确要求补充某一 reasoning 字段，Runtime 才以已保存的原文和指定字段重试并记住当前端点/模型方言。隐藏推理不进入 REST、SSE、日志或审计。
 - Responses 的 HTTP SSE 与 Realtime WebSocket 是不同接口；v1 不接入 `/v1/realtime`、音频或语音会话。
 - 公网 Provider 必须使用 HTTPS；拒绝 URL userinfo、query、fragment，以及每次 DNS 解析得到的回环、私网、链路本地、组播、未指定和保留地址。
 - 内网/本地 Provider 必须显式选择 `private`；只有此模式允许 HTTP。
@@ -39,6 +40,7 @@ Vue 三栏工作台 ── REST/SSE ── paneld AgentRuntime
 - 对话在首个模型分片到达前显示规划/重连状态；助手可见说明与紧凑工具行按真实发生时间穿插在同一个助手回合中，工具参数和结果按需展开。最终回答底部依次展示复制、模型和输出时间，代码块提供独立复制按钮。
 - 流式文字使用浏览器帧内轻量缓冲，避免大分片突跳；只有用户停留在底部附近时自动跟随。用户上滚后停止抢夺滚动位置，并显示“回到最新”。
 - 输入框随内容自动增高，运行中仍可追加要求。支持最多 4 个附件：PNG/JPEG/WebP/GIF 图片使用模型原生多模态输入，UTF-8 文本、日志、代码和配置文件按“不可信附件”进入上下文。单图 4 MiB、单文本 512 KiB、总计 8 MiB；拒绝 SVG、可执行文件和其他二进制格式。
+- OpenAI-compatible Chat 端点若在尚未输出内容时明确拒绝 `image_url` 且只接受文本，Runtime 只把旧回合图片降为带文件名的不可用占位后重试并记住当前端点/模型能力；当前 Run 上传的图片绝不静默丢弃，而是明确要求切换支持图像输入的模型或兼容中转。接受多模态的中转和模型仍使用原生图片载荷。
 
 ## 密钥与数据
 

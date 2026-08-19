@@ -241,7 +241,27 @@ func (s *Service) addHostV2Locked(
 		Scope:                 SummaryScope,
 		CreatedAt:             now, UpdatedAt: now,
 	}
+	// Persist the administrator's mutual-file intent before the Host record. If
+	// the process stops between these two writes, startup reconciliation removes
+	// the harmless orphaned pending grant; the opposite ordering could leave a
+	// successfully resumed pairing permanently one-way.
+	filePeerOrigin := input.ControllerOrigin
+	if filePeerOrigin == "" {
+		filePeerOrigin = s.publicURL
+	}
+	filePeerPrepared := false
+	if filePeerOrigin != "" {
+		if normalized, normalizeErr := NormalizeV2Origin(filePeerOrigin); normalizeErr == nil {
+			record.ResourceVersion = hostResourceVersionV2(record)
+			if _, prepareErr := s.filePeersV2.PrepareGrant(record, normalized, now); prepareErr == nil {
+				filePeerPrepared = true
+			}
+		}
+	}
 	if err := s.storeV2.AddHost(record); err != nil {
+		if filePeerPrepared {
+			_ = s.deleteFilePeerGrant(record.ID)
+		}
 		_ = s.secretsV2.Delete(pairingCredentialFile)
 		s.v2SecretStateMu.Unlock()
 		return Host{}, err
@@ -253,6 +273,9 @@ func (s *Service) addHostV2Locked(
 	}
 	s.mu.Unlock()
 	s.pollV2Locked(ctx, hostID)
+	if !filePeerPrepared && (input.ControllerOrigin != "" || s.publicURL != "") {
+		_ = s.enableFilePeerV2Locked(ctx, hostID, input.ControllerOrigin)
+	}
 	return s.Host(ctx, hostID)
 }
 
@@ -419,6 +442,12 @@ func (s *Service) deleteHostV2Locked(
 			return DeleteHostResult{}, err
 		}
 	}
+	// The parent Host is no longer active before sidecar cleanup. Linked file
+	// authorization therefore fails closed even if deleting the grant hits a
+	// storage error.
+	if err := s.deleteFilePeerGrant(record.ID); err != nil {
+		return DeleteHostResult{}, err
+	}
 	result, err := s.revokeAndFinalizeV2(ctx, record)
 	if err != nil {
 		return s.finalizeLocalHostV2(record, false)
@@ -454,6 +483,9 @@ func (s *Service) finalizeLocalHostV2(
 	record hostRecordV2,
 	remoteRevoked bool,
 ) (DeleteHostResult, error) {
+	if err := s.deleteFilePeerGrant(record.ID); err != nil {
+		return DeleteHostResult{}, err
+	}
 	if _, err := s.storeV2.DeleteHost(record.ID, record.ResourceVersion); err != nil &&
 		!errors.Is(err, ErrNotFound) {
 		return DeleteHostResult{}, err
@@ -526,6 +558,27 @@ func (s *Service) pollV2Locked(ctx context.Context, id string) {
 	} else {
 		record, err = s.advanceV2Host(ctx, record)
 	}
+	filePeerSyncAttempted := false
+	if err == nil && record.State == hostStateV2Active {
+		if !ScopeAllowsFiles(normalizedV2Scope(record.Scope)) {
+			_ = s.deleteFilePeerGrant(record.ID)
+		} else {
+			s.mu.RLock()
+			nextFilePeerSyncAt := s.runtime[id].nextFilePeerSyncAt
+			s.mu.RUnlock()
+			if nextFilePeerSyncAt.IsZero() || !nextFilePeerSyncAt.After(s.now().UTC()) {
+				if grant, grantErr := s.filePeersV2.GrantByHost(record.ID); grantErr == nil {
+					filePeerSyncAttempted = true
+					if grant, grantErr = s.prepareFilePeerGrantForSync(record, grant); grantErr == nil {
+						_ = s.syncFilePeerV2(ctx, record, grant)
+					}
+				}
+			}
+		}
+	}
+	// File-peer lease maintenance is intentionally independent from telemetry.
+	// A summary collection failure must not expire an otherwise healthy file
+	// route after 30 minutes.
 	var summary FederationSummary
 	if err == nil && record.State == hostStateV2Active {
 		credential, readErr := s.secretsV2.ReadCredential(record.CredentialFile)
@@ -553,6 +606,9 @@ func (s *Service) pollV2Locked(ctx context.Context, id string) {
 	}
 	current.inFlight = false
 	current.lastAttemptAt = timePointer(finishedAt)
+	if filePeerSyncAttempted {
+		current.nextFilePeerSyncAt = finishedAt.Add(filePeerSyncInterval)
+	}
 	if err != nil {
 		current.consecutiveFailures++
 		current.lastErrorCode = remoteErrorCode(err)
@@ -592,6 +648,7 @@ func (s *Service) pollV2Locked(ctx context.Context, id string) {
 	current.lastErrorCode = ""
 	current.lastError = ""
 	current.panelVersion = summary.PanelVersion
+	current.securityEntrancePath = summary.SecurityEntrancePath
 	current.nextPollAt = finishedAt.Add(s.jitter(s.pollInterval))
 	s.runtime[id] = current
 	s.mu.Unlock()
@@ -626,16 +683,20 @@ func publicHostV2(
 	}
 	return Host{
 		ID: record.ID, Name: name, Origin: record.Origin,
-		Kind:               HostKindPanel,
-		TransportSecurity:  record.TransportSecurity,
-		PeerFingerprint:    record.PeerFingerprint,
-		RemoteNodeID:       record.RemoteNodeID,
-		FederationProtocol: FederationProtocolV2,
-		Scope:              normalizedV2Scope(record.Scope),
-		TerminalAvailable:  ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
-		BrowseAvailable:    ScopeAllowsBrowse(normalizedV2Scope(record.Scope)),
-		BrowseWSAvailable:  ScopeAllowsBrowseWS(normalizedV2Scope(record.Scope)),
-		PanelVersion:       panelVersion, State: state,
+		Kind:                  HostKindPanel,
+		TransportSecurity:     record.TransportSecurity,
+		PeerFingerprint:       record.PeerFingerprint,
+		RemoteNodeID:          record.RemoteNodeID,
+		FederationProtocol:    FederationProtocolV2,
+		Scope:                 normalizedV2Scope(record.Scope),
+		TerminalAvailable:     ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
+		BrowseAvailable:       ScopeAllowsBrowse(normalizedV2Scope(record.Scope)),
+		BrowseWSAvailable:     ScopeAllowsBrowseWS(normalizedV2Scope(record.Scope)),
+		FileTransferAvailable: ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
+		PanelVersion:          panelVersion, State: state,
+
+		SecurityEntrancePath: current.securityEntrancePath,
+
 		LastSnapshot:        cloneSnapshot(current.snapshot),
 		LastAttemptAt:       cloneTime(current.lastAttemptAt),
 		LastSuccessAt:       cloneTime(current.lastSuccessAt),
@@ -651,6 +712,7 @@ func (s *Service) HandleFederationV2(
 	ctx context.Context,
 	source string,
 	path string,
+	capabilities string,
 	envelope FederationEnvelopeV2,
 ) (FederationEnvelopeV2, error) {
 	now := s.now().UTC()
@@ -670,9 +732,11 @@ func (s *Service) HandleFederationV2(
 	case v2CommitPath:
 		return s.handleCommitV2(envelope, now)
 	case v2SummaryPath:
-		return s.handleSummaryV2(ctx, envelope, now)
+		return s.handleSummaryV2(ctx, capabilities, envelope, now)
 	case v2RevokePath:
 		return s.handleRevokeV2(envelope, now)
+	case v2FileLinkPath:
+		return s.handleFilePeerLinkV2(ctx, envelope, now)
 	case v2TerminalOpenPath:
 		return s.handleTerminalOpenV2(ctx, envelope, now)
 	case v2TerminalOutputPath:
@@ -816,6 +880,7 @@ func (s *Service) handleCommitV2(
 
 func (s *Service) handleSummaryV2(
 	ctx context.Context,
+	capabilities string,
 	envelope v2Envelope,
 	now time.Time,
 ) (FederationEnvelopeV2, error) {
@@ -836,8 +901,9 @@ func (s *Service) handleSummaryV2(
 	_ = s.storeV2.TouchController(controller.ID, now)
 	return sealV2JSONResponse(envelope, handshake, FederationSummary{
 		NodeID: s.store.NodeID(), PanelVersion: s.panelVersion,
-		FederationProtocol: FederationProtocolV2,
-		Telemetry:          telemetry,
+		FederationProtocol:   FederationProtocolV2,
+		SecurityEntrancePath: s.responseSecurityEntrancePath(capabilities),
+		Telemetry:            telemetry,
 	})
 }
 
@@ -865,6 +931,10 @@ func (s *Service) handleRevokeV2(
 		); err != nil {
 			return FederationEnvelopeV2{}, err
 		}
+	}
+	if err := s.filePeersV2.DeleteController(controller.ID); err != nil &&
+		!errors.Is(err, ErrNotFound) {
+		return FederationEnvelopeV2{}, err
 	}
 	return sealV2JSONResponse(
 		envelope, handshake, v2RevokeResult{Revoked: true},
@@ -895,6 +965,8 @@ func (s *Service) openControllerV2(
 	requestLimiter := s.requestLimiter
 	if v2TerminalPath(path) || v2BrowseFetchPath(path) || v2BrowseWSPath(path) {
 		requestLimiter = s.terminalRequests
+	} else if path == v2FileOpenPath {
+		requestLimiter = s.fileRequests
 	}
 	if !requestLimiter.Allow(controller.ID, now) {
 		return controllerRecordV2{}, nil, nil, ErrRateLimited
@@ -980,6 +1052,10 @@ func validateFederationSummaryV2(
 		return ErrProtocolMismatch
 	}
 	if cleanDisplayText(summary.PanelVersion, 64) != summary.PanelVersion {
+		return &RemoteError{Code: "invalid_response"}
+	}
+	if summary.SecurityEntrancePath != "" &&
+		!validSecurityEntrancePath(summary.SecurityEntrancePath) {
 		return &RemoteError{Code: "invalid_response"}
 	}
 	return validateTelemetry(summary.Telemetry, now)

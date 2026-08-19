@@ -2,7 +2,9 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/ClusterView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/ClusterView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/ClusterView/zh-TW').then((module) => module.default))
 import {
   ArrowUpRight,
   Check,
@@ -17,7 +19,9 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Server,
+  Share2,
   ShieldCheck,
   Trash2,
 } from '@lucide/vue'
@@ -48,6 +52,7 @@ import type {
   ClusterHostList,
   ClusterLightEnrollment,
   ClusterPairingCode,
+  ClusterShareSettings,
 } from '@/types/api'
 
 const toast = useToast()
@@ -61,18 +66,25 @@ const search = ref('')
 const addOpen = ref(false)
 const accessOpen = ref(false)
 const manageOpen = ref(false)
+const shareOpen = ref(false)
 const adding = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const enablingMutualFiles = ref(false)
 const generatingCode = ref(false)
 const generatingLightEnrollment = ref(false)
 const controllersLoading = ref(false)
+const shareLoading = ref(false)
+const shareSaving = ref(false)
+const shareResetting = ref(false)
 const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
 const controllers = ref<ClusterController[]>([])
+const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
 const addAccessInput = ref<HTMLTextAreaElement>()
 const addForm = reactive({ name: '', accessCredential: '' })
+const shareForm = reactive({ enabled: false, title: '', description: '' })
 const editName = ref('')
 const originError = ref('')
 type HostViewMode = 'list' | 'card'
@@ -113,6 +125,11 @@ const panelOrigin = computed(() =>
 const accessCredentialText = computed(() =>
   pairingCode.value && panelOrigin.value
     ? formatClusterAccessCredential(panelOrigin.value, pairingCode.value.code)
+    : '',
+)
+const shareURL = computed(() =>
+  shareSettings.value?.sharePath && typeof window !== 'undefined'
+    ? `${window.location.origin}${shareSettings.value.sharePath}`
     : '',
 )
 
@@ -177,10 +194,12 @@ function friendlyError(reason: unknown, fallback: string): string {
     cluster_host_limit: '已达到 100 台主机上限。',
     cluster_remote_tls_error: '目标 KPanel 的 HTTPS 证书校验失败。',
     cluster_remote_authentication_failed: '加密响应校验失败，连接已拒绝。',
-    federation_incompatible: '目标 KPanel 不支持当前加密直连协议，请更新目标面板或改用 HTTPS。',
+    cluster_mutual_files_unsupported: '目标 KPanel 版本不支持双向文件互传，请先升级目标面板后重试。',
+    federation_incompatible: '目标 KPanel 不支持当前加密直连协议，请更新目标面板后重试。',
     federation_identity_changed: '目标主机加密身份发生变化，已停止连接；确认服务器未被替换后请重新配对。',
     cluster_remote_unreachable: '暂时无法连接目标 KPanel，请检查域名、证书和网络。',
     cluster_resource_changed: '主机信息已变化，请刷新后重试。',
+    cluster_share_changed: '分享设置已在其他页面变化，请重新打开后再保存。',
   }
   return messages[reason.code] || reason.message || fallback
 }
@@ -357,7 +376,9 @@ async function addHost(): Promise<void> {
       '主机已加入集群',
       host.state === 'pairing'
         ? `${host.name} 的安全配对正在后台继续。`
-        : `${host.name} 已完成只读配对。`,
+        : host.mutualFileTransferAvailable
+          ? `${host.name} 已完成配对，双向文件互传已自动启用。`
+          : `${host.name} 已完成配对，当前保持单向文件读取；可在主机管理中启用，旧版 KPanel 需先升级。`,
     )
     await load(true)
   } catch (reason) {
@@ -438,6 +459,75 @@ async function copyAccessCredential(): Promise<void> {
     '接入凭据已复制',
     '请手动选择完整接入凭据复制。',
   )
+}
+
+async function openShare(): Promise<void> {
+  shareOpen.value = true
+  shareLoading.value = true
+  try {
+    const settings = await api.cluster.shareSettings()
+    applyShareSettings(settings)
+  } catch (reason) {
+    toast.danger('分享设置读取失败', friendlyError(reason, '请稍后重试。'))
+    shareOpen.value = false
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+function closeShare(): void {
+  if (shareSaving.value || shareResetting.value) return
+  shareOpen.value = false
+}
+
+function applyShareSettings(settings: ClusterShareSettings): void {
+  shareSettings.value = settings
+  shareForm.enabled = settings.enabled
+  shareForm.title = settings.title
+  shareForm.description = settings.description
+}
+
+async function saveShare(): Promise<void> {
+  if (!shareSettings.value || shareSaving.value) return
+  shareSaving.value = true
+  try {
+    const settings = await api.cluster.updateShare({
+      enabled: shareForm.enabled,
+      title: shareForm.title,
+      description: shareForm.description,
+      expectedResourceVersion: shareSettings.value.resourceVersion,
+    })
+    applyShareSettings(settings)
+    toast.success(settings.enabled ? '公开分享已开启' : '公开分享已关闭')
+  } catch (reason) {
+    toast.danger('分享设置保存失败', friendlyError(reason, '请稍后重试。'))
+  } finally {
+    shareSaving.value = false
+  }
+}
+
+async function resetShareLink(): Promise<void> {
+  if (!shareSettings.value || shareResetting.value) return
+  if (!window.confirm('重置公开链接？旧链接会立即失效。')) return
+  shareResetting.value = true
+  try {
+    const settings = await api.cluster.resetShareToken(shareSettings.value.resourceVersion)
+    applyShareSettings(settings)
+    toast.success('公开链接已重置', '旧链接已经失效。')
+  } catch (reason) {
+    toast.danger('公开链接重置失败', friendlyError(reason, '请稍后重试。'))
+  } finally {
+    shareResetting.value = false
+  }
+}
+
+async function copyShareLink(): Promise<void> {
+  if (!shareURL.value) return
+  await copyToClipboard(shareURL.value, '公开链接已复制', '请手动选择完整链接复制。')
+}
+
+function previewShare(): void {
+  if (shareURL.value) window.open(shareURL.value, '_blank', 'noopener,noreferrer')
 }
 
 async function copyToClipboard(value: string, success: string, fallback: string): Promise<void> {
@@ -590,7 +680,7 @@ function finishHostDrag(): void {
 }
 
 async function revokeController(controller: ClusterController): Promise<void> {
-  if (!window.confirm(`撤销 ${controller.name || controller.fingerprint} 的只读访问授权？`)) return
+  if (!window.confirm(`撤销 ${controller.name || controller.fingerprint} 的访问授权？`)) return
   try {
     await api.cluster.revokeController(controller.id)
     controllers.value = controllers.value.filter((item) => item.id !== controller.id)
@@ -607,14 +697,52 @@ function openManage(host: ClusterHost): void {
 }
 
 function closeManage(): void {
-  if (saving.value || deleting.value) return
+  if (saving.value || deleting.value || enablingMutualFiles.value) return
   manageOpen.value = false
   selected.value = undefined
 }
 
+function mutualFilesHostEligible(host: ClusterHost): boolean {
+  return !host.isLocal
+    && host.kind !== 'light_node'
+    && host.federationProtocol === 'v2'
+    && !['pairing', 'revoking'].includes(host.state)
+    && host.fileTransferAvailable === true
+    && host.scope.split(/\s+/).includes('cluster.files.read')
+}
+
+async function enableMutualFiles(): Promise<void> {
+  const host = selected.value
+  if (
+    !host
+    || enablingMutualFiles.value
+    || !mutualFilesHostEligible(host)
+  ) return
+  const refreshing = host.mutualFileTransferAvailable
+  enablingMutualFiles.value = true
+  try {
+    const updated = await api.cluster.enableMutualFiles(host.id)
+    upsertHost(updated)
+    if (selected.value?.id === host.id) selected.value = updated
+    toast.success(
+      refreshing ? '双向文件互传连接已刷新' : '双向文件互传已启用',
+      refreshing
+        ? `${updated.name} 已使用当前 KPanel 地址刷新互传连接。`
+        : `${updated.name} 现在可以与当前 KPanel 互相复制文件。`,
+    )
+  } catch (reason) {
+    toast.danger(
+      refreshing ? '刷新双向文件互传连接失败' : '启用双向文件互传失败',
+      friendlyError(reason, '请确认双方 KPanel 在线后重试。'),
+    )
+  } finally {
+    enablingMutualFiles.value = false
+  }
+}
+
 async function saveName(): Promise<void> {
   const host = selected.value
-  if (!host || saving.value || !editName.value.trim()) return
+  if (!host || saving.value || enablingMutualFiles.value || !editName.value.trim()) return
   saving.value = true
   try {
     const updated = await api.cluster.rename(host.id, {
@@ -633,7 +761,7 @@ async function saveName(): Promise<void> {
 
 async function removeHost(): Promise<void> {
   const host = selected.value
-  if (!host || host.isLocal || deleting.value) return
+  if (!host || host.isLocal || deleting.value || enablingMutualFiles.value) return
   if (!window.confirm(`从当前 KPanel 移除 ${host.name}？目标主机业务不会受到影响。`)) return
   deleting.value = true
   try {
@@ -702,12 +830,27 @@ function openPanel(host: ClusterHost): void {
   ) {
     return
   }
-  window.open(displayOrigin(host), '_blank', 'noopener,noreferrer')
+  window.open(panelURL(host), '_blank', 'noopener,noreferrer')
 }
 
 function displayOrigin(host: ClusterHost): string {
   if (host.kind === 'light_node') return ''
   return host.isLocal ? window.location.origin : host.origin
+}
+
+const securityEntrancePathPattern = /^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$/
+
+function panelURL(host: ClusterHost): string {
+  const origin = displayOrigin(host)
+  if (
+    !origin ||
+    host.isLocal ||
+    !host.securityEntrancePath ||
+    !securityEntrancePathPattern.test(host.securityEntrancePath)
+  ) {
+    return origin
+  }
+  return `${origin}/${host.securityEntrancePath}`
 }
 
 function transportSecurityLabel(host: ClusterHost): string {
@@ -773,7 +916,7 @@ onBeforeUnmount(() => {
   <div class="page cluster-page">
     <PageHeader
       title="集群监控"
-      description="集中查看本机与已接入主机概况；“管理”维护接入关系，“打开面板”进入对应 KPanel。"
+      description="在一个视图中查看本机与已接入节点；管理接入关系，或打开对应 KPanel 继续操作。"
     />
 
     <section class="cluster-hero" aria-label="集群概况与操作">
@@ -793,6 +936,9 @@ onBeforeUnmount(() => {
           @click="load(true)"
         >
           <RefreshCw :size="15" :class="{ spin: refreshing }" />
+        </button>
+        <button class="button button--secondary button--small" type="button" @click="openShare">
+          <Share2 :size="15" /> 公开分享
         </button>
         <button class="button button--secondary button--small" type="button" @click="openAccess">
           <KeyRound :size="15" /> 接入授权
@@ -911,7 +1057,7 @@ onBeforeUnmount(() => {
             <a
               v-if="host.kind !== 'light_node' && (host.isLocal || host.transportSecurity === 'tls')"
               class="cluster-card__origin"
-              :href="displayOrigin(host)"
+              :href="panelURL(host)"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -1073,6 +1219,85 @@ onBeforeUnmount(() => {
     </section>
 
     <ModalDialog
+      :open="shareOpen"
+      title="公开分享"
+      description="生成匿名只读页面，向其他人展示当前集群的机器状态。"
+      size="medium"
+      @close="closeShare"
+    >
+      <LoadingState v-if="shareLoading" title="正在读取分享设置…" />
+      <form v-else id="cluster-share-form" class="cluster-share" @submit.prevent="saveShare">
+        <label class="cluster-share__switch">
+          <span>
+            <strong>启用公开分享</strong>
+            <small>默认关闭；关闭后现有链接立即返回 404。</small>
+          </span>
+          <input v-model="shareForm.enabled" type="checkbox" role="switch" />
+        </label>
+
+        <label class="field">
+          展示标题
+          <input v-model="shareForm.title" maxlength="80" placeholder="我的 KPanel 集群" />
+        </label>
+        <label class="field">
+          一句话介绍（可选）
+          <input
+            v-model="shareForm.description"
+            maxlength="240"
+            placeholder="例如：这些是我正在运行的服务器。"
+          />
+        </label>
+
+        <section class="cluster-share__privacy">
+          <ShieldCheck :size="19" />
+          <span>
+            <strong>公开字段经过白名单过滤</strong>
+            <small>仅展示名称、状态、地区、系统和资源使用情况；不公开 IP、面板地址、节点 ID、身份指纹、错误详情、版本或管理入口。</small>
+          </span>
+        </section>
+
+        <section v-if="shareURL" class="cluster-share__link">
+          <span>
+            <strong>{{ shareSettings?.enabled ? '当前公开链接' : '已暂停的公开链接' }}</strong>
+            <small>{{ shareSettings?.enabled ? '任何获得链接的人都可以查看。' : '保存并开启后，此链接恢复访问。' }}</small>
+          </span>
+          <pre>{{ shareURL }}</pre>
+          <div>
+            <button class="button button--secondary button--small" type="button" @click="copyShareLink">
+              <Copy :size="14" /> 复制链接
+            </button>
+            <button class="button button--secondary button--small" type="button" @click="previewShare">
+              <ArrowUpRight :size="14" /> 预览
+            </button>
+            <button
+              class="button button--ghost button--small"
+              type="button"
+              :disabled="shareResetting"
+              @click="resetShareLink"
+            >
+              <LoaderCircle v-if="shareResetting" class="spin" :size="14" />
+              <RotateCcw v-else :size="14" /> 重置链接
+            </button>
+          </div>
+        </section>
+        <p v-else class="cluster-share__hint">首次开启并保存后生成随机公开链接。</p>
+      </form>
+      <template #footer>
+        <button class="button button--secondary" type="button" :disabled="shareSaving" @click="closeShare">取消</button>
+        <button
+          class="button button--primary"
+          type="submit"
+          form="cluster-share-form"
+          :disabled="shareLoading || shareSaving"
+        >
+          <LoaderCircle v-if="shareSaving" class="spin" :size="16" />
+          <Share2 v-else :size="16" />
+          {{ shareSaving ? '正在保存…' : '保存分享设置' }}
+        </button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog
       :open="addOpen"
       title="添加 KPanel 主机"
       description="在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。"
@@ -1195,7 +1420,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="accessOpen"
       title="本机接入授权"
-      description="本机可以同时被其他 KPanel 只读监控；授权可随时撤销。"
+      description="其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。"
       size="medium"
       @close="closeAccess"
     >
@@ -1205,7 +1430,7 @@ onBeforeUnmount(() => {
             <KeyRound :size="20" />
             <span>
               <strong>本机接入凭据</strong>
-              <small>同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限固定为只读主机摘要。</small>
+              <small>同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。</small>
             </span>
           </div>
           <button
@@ -1302,6 +1527,38 @@ onBeforeUnmount(() => {
           <span>{{ selected.kind === 'light_node' ? '节点程序' : 'Panel / Agent' }}</span>
           <code v-if="selected.kind === 'light_node'">{{ selected.panelVersion || selected.lastSnapshot?.telemetry.agentVersion || '未知' }}</code>
           <code v-else>{{ selected.panelVersion || '未知' }} / {{ selected.lastSnapshot?.telemetry.agentVersion || '未知' }}</code>
+          <template v-if="mutualFilesHostEligible(selected)">
+            <span>文件互传</span>
+            <div
+              v-if="selected.mutualFileTransferAvailable"
+              class="cluster-manage__mutual-controls"
+            >
+              <strong class="cluster-manage__mutual-state">
+                <Check :size="14" /> 双向文件互传已启用
+              </strong>
+              <button
+                class="button button--ghost button--small cluster-manage__mutual-button"
+                type="button"
+                :disabled="enablingMutualFiles || saving || deleting"
+                @click="enableMutualFiles"
+              >
+                <LoaderCircle v-if="enablingMutualFiles" class="spin" :size="14" />
+                <RefreshCw v-else :size="14" />
+                {{ enablingMutualFiles ? '正在刷新…' : '刷新连接' }}
+              </button>
+            </div>
+            <button
+              v-else
+              class="button button--secondary button--small cluster-manage__mutual-button"
+              type="button"
+              :disabled="enablingMutualFiles || saving || deleting"
+              @click="enableMutualFiles"
+            >
+              <LoaderCircle v-if="enablingMutualFiles" class="spin" :size="14" />
+              <ShieldCheck v-else :size="14" />
+              {{ enablingMutualFiles ? '正在启用…' : '启用双向文件互传' }}
+            </button>
+          </template>
         </div>
       </div>
       <template #footer>
@@ -1309,17 +1566,17 @@ onBeforeUnmount(() => {
           v-if="selected && !selected.isLocal"
           class="button button--danger"
           type="button"
-          :disabled="saving || deleting"
+          :disabled="saving || deleting || enablingMutualFiles"
           @click="removeHost"
         >
           <LoaderCircle v-if="deleting" class="spin" :size="16" />
           <Trash2 v-else :size="16" /> 移除主机
         </button>
-        <button class="button button--secondary" type="button" :disabled="saving || deleting" @click="closeManage">关闭</button>
+        <button class="button button--secondary" type="button" :disabled="saving || deleting || enablingMutualFiles" @click="closeManage">关闭</button>
         <button
           class="button button--primary"
           type="button"
-          :disabled="saving || deleting || !editName.trim()"
+          :disabled="saving || deleting || enablingMutualFiles || !editName.trim()"
           @click="saveName"
         >
           <LoaderCircle v-if="saving" class="spin" :size="16" />
@@ -2011,6 +2268,116 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.cluster-share {
+  display: grid;
+  gap: 15px;
+}
+
+.cluster-share__switch,
+.cluster-share__privacy,
+.cluster-share__link > span {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.cluster-share__switch {
+  align-items: center;
+  padding: 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cluster-share__switch > span,
+.cluster-share__privacy > span,
+.cluster-share__link > span {
+  display: grid;
+  gap: 4px;
+}
+
+.cluster-share__switch small,
+.cluster-share__privacy small,
+.cluster-share__link small,
+.cluster-share__hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cluster-share__switch input {
+  width: 38px;
+  height: 21px;
+  flex: 0 0 auto;
+  accent-color: var(--brand);
+}
+
+.cluster-share__privacy {
+  justify-content: flex-start;
+  padding: 13px;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--success) 18%, var(--border));
+  border-radius: var(--radius-sm);
+}
+
+.cluster-share__privacy small {
+  color: var(--text-soft);
+}
+
+.cluster-share__link {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.cluster-share__link pre {
+  padding: 10px;
+  margin: 0;
+  overflow: auto;
+  color: var(--brand);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.cluster-share__link > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cluster-share__hint {
+  margin: 0;
+  text-align: center;
+}
+
+.cluster-manage__mutual-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand);
+  font-size: 12px;
+}
+
+.cluster-manage__mutual-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cluster-manage__mutual-button {
+  width: fit-content;
+}
+
 @media (max-width: 1240px) {
   .cluster-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2065,7 +2432,7 @@ onBeforeUnmount(() => {
 
   .cluster-hero__actions {
     display: grid;
-    grid-template-columns: 42px repeat(2, minmax(0, 1fr));
+    grid-template-columns: 42px repeat(3, minmax(0, 1fr));
     width: 100%;
     gap: 6px;
   }

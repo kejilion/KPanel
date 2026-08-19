@@ -314,6 +314,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.webEnvironmentJob(w, r, requestID)
 	case r.URL.Path == "/v1/apps":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.appList)
+	case strings.HasPrefix(r.URL.Path, "/v1/apps/icons/"):
+		s.requireMethod(w, r, requestID, http.MethodGet, s.appIcon)
 	case r.URL.Path == "/v1/app-jobs":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.appJobList)
 	case strings.HasPrefix(r.URL.Path, "/v1/app-jobs/"):
@@ -328,16 +330,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.diagnosticJob(w, r)
 	case r.URL.Path == "/v1/files":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileList)
+	case r.URL.Path == "/v1/files/entry":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileEntry)
+	case r.URL.Path == "/v1/files/entries":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.fileEntries)
 	case r.URL.Path == "/v1/files/trash":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTrashList)
 	case r.URL.Path == "/v1/files/content":
 		s.fileContent(w, r, requestID)
+	case r.URL.Path == "/v1/files/archive":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileArchive)
 	case r.URL.Path == "/v1/files/text":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileText)
 	case r.URL.Path == "/v1/files/tail":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTail)
 	case r.URL.Path == "/v1/files/upload":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.fileUpload)
+	case r.URL.Path == "/v1/files/transfer/export":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTransferExport)
+	case r.URL.Path == "/v1/files/transfer/import":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.fileTransferImport)
 	case r.URL.Path == "/v1/files/actions":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.fileAction)
 	case r.URL.Path == "/v1/docker/summary":
@@ -346,6 +358,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.dockerEnvironment)
 	case r.URL.Path == "/v1/docker/containers":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.containerList)
+	case r.URL.Path == "/v1/docker/compose-projects":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.composeProjectList)
+	case strings.HasPrefix(r.URL.Path, "/v1/docker/compose-projects/"):
+		s.requireMethod(w, r, requestID, http.MethodGet, s.composeProject)
 	case r.URL.Path == "/v1/docker/container-stats":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.containerStats)
 	case r.URL.Path == "/v1/nginx/test":
@@ -1089,6 +1105,43 @@ func (s *Server) appList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, inventory)
 }
 
+func (s *Server) appIcon(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	const prefix = "/v1/apps/icons/"
+	const suffix = ".webp"
+	rest := strings.TrimPrefix(r.URL.Path, prefix)
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" || !strings.HasSuffix(rest, suffix) {
+		writeProblem(w, requestID, http.StatusNotFound, "app_icon_not_found", "应用图标不存在", "")
+		return
+	}
+	slug := strings.TrimSuffix(rest, suffix)
+	if slug == "" || strings.Contains(slug, "/") {
+		writeProblem(w, requestID, http.StatusNotFound, "app_icon_not_found", "应用图标不存在", "")
+		return
+	}
+	icon, err := s.appMarket.Icon(r.Context(), slug)
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	if err != nil {
+		if errors.Is(err, appmarket.ErrAppIconNotFound) {
+			writeProblem(w, requestID, http.StatusNotFound, "app_icon_not_found", "应用图标不存在", "")
+			return
+		}
+		writeProblem(w, requestID, http.StatusServiceUnavailable, "app_icon_unavailable", "应用图标暂不可用", "")
+		return
+	}
+	if icon.ContentType != "image/webp" || len(icon.Data) == 0 ||
+		len(icon.Data) > 128<<10 {
+		writeProblem(w, requestID, http.StatusBadGateway, "invalid_app_icon", "应用图标响应无效", "")
+		return
+	}
+	w.Header().Set("Content-Type", icon.ContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(icon.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(icon.Data)
+}
+
 func (s *Server) appJobList(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
 		writeProblem(w, requestIDFrom(w), http.StatusBadRequest, "invalid_app_job_request", "应用任务 URL 无效", "")
@@ -1519,6 +1572,33 @@ func (s *Server) containerList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.PageResult[contract.ContainerSummary]{Items: items})
+}
+
+func (s *Server) composeProjectList(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, contract.PageResult[dockerx.ComposeProjectSummary]{Items: s.docker.ComposeProjects()})
+}
+
+func (s *Server) composeProject(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+		writeProblem(w, requestIDFrom(w), http.StatusBadRequest, "invalid_query", "Compose project query is invalid", "")
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/v1/docker/compose-projects/")
+	project, err := s.docker.ComposeProject(r.Context(), name)
+	if err != nil {
+		status, code, title := http.StatusUnprocessableEntity, "compose_project_unavailable", "Compose 项目配置不可管理"
+		switch {
+		case errors.Is(err, dockerx.ErrDockerJobNotFound):
+			status, code, title = http.StatusNotFound, "compose_project_not_found", "Compose 项目不存在"
+		case errors.Is(err, dockerx.ErrResourceConflict):
+			status, code, title = http.StatusConflict, "resource_conflict", "Compose 项目状态不一致"
+		case errors.Is(err, dockerx.ErrInvalidDockerJob):
+			status, code, title = http.StatusBadRequest, "compose_project_invalid", "Compose 项目名称无效"
+		}
+		writeProblem(w, requestIDFrom(w), status, code, title, safeDetail(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, project)
 }
 
 func (s *Server) containerStats(w http.ResponseWriter, r *http.Request) {

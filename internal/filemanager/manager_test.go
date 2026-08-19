@@ -229,6 +229,36 @@ func TestUploadCopyMoveChmodAndTrash(t *testing.T) {
 	}
 }
 
+func TestCopyAndMoveHonorExpectedResourceVersions(t *testing.T) {
+	manager, root := newTestManager(t)
+	mustMkdirAll(t, filepath.Join(root, "source"))
+	mustMkdirAll(t, filepath.Join(root, "target"))
+	for _, name := range []string{"copy.txt", "move.txt"} {
+		mustWrite(t, filepath.Join(root, "source", name), "current")
+	}
+
+	for _, action := range []string{"copy", "move"} {
+		source := "/source/" + action + ".txt"
+		result, err := manager.Action(context.Background(), contract.FileActionRequest{
+			Action: action, Sources: []string{source}, Target: "/target",
+			ExpectedResourceVersions: map[string]string{source: "sha256:stale"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Succeeded) != 0 || len(result.Failed) != 1 ||
+			!strings.Contains(result.Failed[0].Detail, ErrConflict.Error()) {
+			t.Fatalf("%s stale result: %#v", action, result)
+		}
+		if _, statErr := os.Stat(filepath.Join(root, "source", action+".txt")); statErr != nil {
+			t.Fatalf("%s changed stale source: %v", action, statErr)
+		}
+		if _, statErr := os.Stat(filepath.Join(root, "target", action+".txt")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("%s created stale destination: %v", action, statErr)
+		}
+	}
+}
+
 func TestTrashActionProcessesEverySource(t *testing.T) {
 	manager, root := newTestManager(t)
 	sources := []string{"/first.txt", "/second.txt"}

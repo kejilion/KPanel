@@ -323,7 +323,8 @@ func changedShortcutCount(left []desktopworkspace.Shortcut, right []desktopworks
 	changed := 0
 	for id, leftValue := range leftByID {
 		rightValue, ok := rightByID[id]
-		if !ok || leftValue.Name != rightValue.Name || leftValue.Description != rightValue.Description || leftValue.URL != rightValue.URL {
+		if !ok || leftValue.Name != rightValue.Name || leftValue.Description != rightValue.Description ||
+			leftValue.TargetType != rightValue.TargetType || leftValue.URL != rightValue.URL || leftValue.Path != rightValue.Path {
 			changed++
 		}
 	}

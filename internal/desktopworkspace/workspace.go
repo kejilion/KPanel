@@ -15,6 +15,7 @@ import (
 	"mime"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -30,7 +31,7 @@ import (
 )
 
 const (
-	SchemaVersion        = 1
+	SchemaVersion        = 2
 	MaxWorkspaceBytes    = 256 << 10
 	MaxIconBytes         = 256 << 10
 	MaxIconTotalBytes    = 16 << 20
@@ -40,8 +41,17 @@ const (
 	MaxShortcutNameRunes = 48
 	MaxDescriptionRunes  = 160
 	MaxURLBytes          = 2048
+	MaxPathBytes         = 4096
 	MaxIconDimension     = 1024
 	MaxIconPixels        = 1_000_000
+)
+
+type ShortcutTargetType string
+
+const (
+	ShortcutTargetURL       ShortcutTargetType = "url"
+	ShortcutTargetFile      ShortcutTargetType = "file"
+	ShortcutTargetDirectory ShortcutTargetType = "directory"
 )
 
 const unavailableWarning = "desktop_workspace_unavailable"
@@ -66,21 +76,25 @@ type Position struct {
 }
 
 type ShortcutInput struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	URL         string `json:"url"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	TargetType  ShortcutTargetType `json:"targetType,omitempty"`
+	URL         string             `json:"url,omitempty"`
+	Path        string             `json:"path,omitempty"`
 }
 
 type Shortcut struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	URL         string    `json:"url"`
-	IconVersion string    `json:"iconVersion,omitempty"`
-	IconURL     string    `json:"iconURL,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	TargetType  ShortcutTargetType `json:"targetType"`
+	URL         string             `json:"url,omitempty"`
+	Path        string             `json:"path,omitempty"`
+	IconVersion string             `json:"iconVersion,omitempty"`
+	IconURL     string             `json:"iconURL,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
 type Workspace struct {
@@ -118,12 +132,14 @@ func (e *ValidationError) Error() string {
 }
 
 type shortcutRecord struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	URL         string    `json:"url"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	TargetType  ShortcutTargetType `json:"targetType,omitempty"`
+	URL         string             `json:"url,omitempty"`
+	Path        string             `json:"path,omitempty"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
 type persistedWorkspace struct {
@@ -312,7 +328,8 @@ func (s *Store) workspaceLocked() Workspace {
 	shortcuts := make([]Shortcut, 0, len(state.Shortcuts))
 	for _, item := range state.Shortcuts {
 		shortcuts = append(shortcuts, Shortcut{
-			ID: item.ID, Name: item.Name, Description: item.Description, URL: item.URL,
+			ID: item.ID, Name: item.Name, Description: item.Description,
+			TargetType: item.TargetType, URL: item.URL, Path: item.Path,
 			IconVersion: s.iconVersions[item.ID], CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 		})
 	}
@@ -471,7 +488,18 @@ func readPersistedWorkspace(path string) (persistedWorkspace, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return persistedWorkspace{}, errInvalidOnDisk
 	}
-	if state.SchemaVersion != SchemaVersion {
+	switch state.SchemaVersion {
+	case 1:
+		for index := range state.Shortcuts {
+			item := &state.Shortcuts[index]
+			if item.TargetType != "" || item.Path != "" {
+				return persistedWorkspace{}, errInvalidOnDisk
+			}
+			item.TargetType = ShortcutTargetURL
+		}
+		state.SchemaVersion = SchemaVersion
+	case SchemaVersion:
+	default:
 		return persistedWorkspace{}, errInvalidOnDisk
 	}
 	if err := validatePersistedWorkspace(state); err != nil {
@@ -497,13 +525,19 @@ func buildPersistedWorkspace(input ReplaceInput, current persistedWorkspace, now
 		currentByID[item.ID] = item
 	}
 	for _, item := range input.Shortcuts {
+		targetType, targetURL, targetPath, err := normalizedShortcutTarget(item.TargetType, item.URL, item.Path)
+		if err != nil {
+			return persistedWorkspace{}, err
+		}
 		record := shortcutRecord{
-			ID: item.ID, Name: item.Name, Description: item.Description, URL: item.URL,
+			ID: item.ID, Name: item.Name, Description: item.Description,
+			TargetType: targetType, URL: targetURL, Path: targetPath,
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if previous, ok := currentByID[item.ID]; ok {
 			record.CreatedAt = previous.CreatedAt
-			if previous.Name == item.Name && previous.Description == item.Description && previous.URL == item.URL {
+			if previous.Name == item.Name && previous.Description == item.Description &&
+				previous.TargetType == targetType && previous.URL == targetURL && previous.Path == targetPath {
 				record.UpdatedAt = previous.UpdatedAt
 			}
 		}
@@ -550,7 +584,7 @@ func validatePersistedWorkspace(state persistedWorkspace) error {
 		if !utf8.ValidString(item.Description) || utf8.RuneCountInString(item.Description) > MaxDescriptionRunes || hasControl(item.Description) {
 			return &ValidationError{Field: "shortcuts.description", Detail: "shortcut description must contain at most 160 characters without controls"}
 		}
-		if err := validateShortcutURL(item.URL); err != nil {
+		if _, _, _, err := normalizedShortcutTarget(item.TargetType, item.URL, item.Path); err != nil {
 			return err
 		}
 		if item.CreatedAt.IsZero() || item.UpdatedAt.IsZero() || item.UpdatedAt.Before(item.CreatedAt) {
@@ -603,6 +637,47 @@ func validateShortcutURL(value string) error {
 		number, err := strconv.Atoi(port)
 		if err != nil || number < 1 || number > 65535 {
 			return &ValidationError{Field: "shortcuts.url", Detail: "shortcut URL port is invalid"}
+		}
+	}
+	return nil
+}
+
+func normalizedShortcutTarget(targetType ShortcutTargetType, targetURL, targetPath string) (ShortcutTargetType, string, string, error) {
+	// Treat the omitted type as URL for compatibility with a cached v1 client.
+	if targetType == "" && targetURL != "" && targetPath == "" {
+		targetType = ShortcutTargetURL
+	}
+	switch targetType {
+	case ShortcutTargetURL:
+		if targetPath != "" {
+			return "", "", "", &ValidationError{Field: "shortcuts.path", Detail: "URL shortcuts cannot include a file path"}
+		}
+		if err := validateShortcutURL(targetURL); err != nil {
+			return "", "", "", err
+		}
+		return targetType, targetURL, "", nil
+	case ShortcutTargetFile, ShortcutTargetDirectory:
+		if targetURL != "" {
+			return "", "", "", &ValidationError{Field: "shortcuts.url", Detail: "file shortcuts cannot include a URL"}
+		}
+		if err := validateShortcutPath(targetPath, targetType == ShortcutTargetDirectory); err != nil {
+			return "", "", "", err
+		}
+		return targetType, "", targetPath, nil
+	default:
+		return "", "", "", &ValidationError{Field: "shortcuts.targetType", Detail: "shortcut targetType must be url, file, or directory"}
+	}
+}
+
+func validateShortcutPath(value string, directory bool) error {
+	if value == "" || len(value) > MaxPathBytes || !utf8.ValidString(value) ||
+		!strings.HasPrefix(value, "/") || strings.Contains(value, `\`) || hasControl(value) ||
+		path.Clean(value) != value || (!directory && value == "/") {
+		return &ValidationError{Field: "shortcuts.path", Detail: "shortcut path must be a canonical absolute POSIX path up to 4096 bytes"}
+	}
+	for _, component := range strings.Split(strings.TrimPrefix(value, "/"), "/") {
+		if component == "" && value != "/" || component == "." || component == ".." {
+			return &ValidationError{Field: "shortcuts.path", Detail: "shortcut path cannot contain empty, dot, or parent components"}
 		}
 	}
 	return nil

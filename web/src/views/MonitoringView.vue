@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
-usePhraseCatalog(() => import('@/i18n/pages/MonitoringView/en-US').then((module) => module.default))
+usePhraseCatalog((locale) => locale === 'en-US'
+  ? import('@/i18n/pages/MonitoringView/en-US').then((module) => module.default)
+  : import('@/i18n/pages/MonitoringView/zh-TW').then((module) => module.default))
 import { ArrowLeft, Box, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
@@ -606,7 +608,7 @@ onBeforeUnmount(() => controller?.abort())
 
 <template>
   <section class="monitoring-page" :class="{ 'is-updating': updating }">
-    <PageHeader title="历史监控" description="轻量沉淀主机与容器资源趋势，数据仅保存在当前服务器。" />
+    <PageHeader title="历史监控" description="查看主机与容器的资源趋势；历史数据只保存在当前服务器。" />
 
     <div class="monitoring-toolbar" aria-label="监控时间范围">
       <button
@@ -627,9 +629,8 @@ onBeforeUnmount(() => controller?.abort())
       </button>
     </div>
 
-    <div class="monitoring-zoom-strip" :class="{ 'is-loading': updating }">
+    <div v-if="activeWindow || updating" class="monitoring-zoom-strip" :class="{ 'is-loading': updating }">
       <span v-if="activeWindow"><strong>已放大</strong> {{ zoomWindowLabel }}</span>
-      <span v-else>在任意趋势图上横向拖动，即可同步框选放大全部图表。</span>
       <span v-if="updating" class="monitoring-zoom-strip__loading" title="正在读取更精细的数据">
         <RefreshCw :size="14" class="is-spinning" /> 正在读取更精细的数据
       </span>

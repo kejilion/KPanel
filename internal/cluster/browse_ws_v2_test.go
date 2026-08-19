@@ -136,7 +136,7 @@ func TestServiceV2BrowseWSRelaysMessagesInputAndCloseOverEncryptedChannel(t *tes
 		closeAfterAllDelivered: true,
 		closeReason:            "target closed",
 	}
-	_, center, host, route := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, false, true), stub)
+	_, center, host, route := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, false, false, true), stub)
 	if !host.BrowseWSAvailable || host.BrowseAvailable || host.TerminalAvailable {
 		t.Fatalf("unexpected paired capabilities: %#v", host)
 	}
@@ -231,7 +231,7 @@ func TestServiceV2BrowseWSRequiresBrowseWSScope(t *testing.T) {
 	now := time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
 	clock := &serviceTestClock{now: now}
 	stub := &serviceV2BrowseWSStub{}
-	_, center, host, route := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, true, false), stub)
+	_, center, host, route := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, false, true, false), stub)
 	if host.BrowseWSAvailable {
 		t.Fatalf("browse-fetch-only pairing must not grant BrowseWSAvailable: %#v", host)
 	}
@@ -270,7 +270,7 @@ func TestServiceV2BrowseWSOutputSuppressesClosedUntilFullyDrained(t *testing.T) 
 		closeAfterAllDelivered: true,
 		closeReason:            "done",
 	}
-	_, center, host, _ := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, false, true), stub)
+	_, center, host, _ := newBrowseWSFederationPair(t, clock, BuildV2Scope(false, false, false, true), stub)
 
 	opened, err := center.BrowseWSOpen(context.Background(), host.ID, BrowseWSOpenRequest{URL: "wss://example.com/"})
 	if err != nil {

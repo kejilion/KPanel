@@ -28,6 +28,7 @@ const REQUIRED_FRESHNESS_TRIGGERS = [
   'scripts/report-dependency-freshness.mjs',
   'scripts/security-scan.sh',
   'THIRD_PARTY_NOTICES.md',
+  '.codex-workflows/**',
   '.github/workflows/**',
 ];
 
@@ -128,6 +129,27 @@ export function validatePolicy(policy, repo) {
     }
     for (const manifest of group.manifests) {
       if (!existsSync(resolve(repo, manifest))) failures.push(group.id + ' manifest is missing: ' + manifest);
+    }
+  }
+  const goToolchain = policy.groups?.find((group) => group.id === 'go-toolchain');
+  if (!goToolchain?.manifests?.includes('.codex-workflows')) {
+    failures.push('go-toolchain must cover .codex-workflows');
+  }
+  const goVersion = readFileSync(resolve(repo, 'go.mod'), 'utf8').match(/^go\s+(\d+\.\d+\.\d+)$/m)?.[1];
+  if (!goVersion) {
+    failures.push('go.mod must declare a three-part Go toolchain version');
+  } else {
+    const workflowDirectory = resolve(repo, '.codex-workflows');
+    for (const filename of readdirSync(workflowDirectory).filter((name) => name.endsWith('.workflow.yaml'))) {
+      const text = readFileSync(resolve(workflowDirectory, filename), 'utf8');
+      for (const match of text.matchAll(/golang:(\d+\.\d+\.\d+)-(?:alpine|bookworm)(?:@(sha256:[0-9a-f]{64}))?/g)) {
+        if (match[1] !== goVersion) {
+          failures.push('.codex-workflows/' + filename + ': Go image must match go.mod ' + goVersion);
+        }
+        if (!match[2]) {
+          failures.push('.codex-workflows/' + filename + ': Go image must use an immutable digest');
+        }
+      }
     }
   }
   const automation = policy.automationBoundary ?? {};

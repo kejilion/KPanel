@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import { appAccessURL, matchingAppProxySites } from '@/lib/appAccess'
 import { kpanelAppID, kpanelAppToken } from '@/lib/kpanelUpdate'
+import type { Component } from 'vue'
 import type { AppMarketItem, DesktopShortcut, PublicNetworkSummary, Site } from '@/types/api'
 
 /**
@@ -11,7 +12,7 @@ import type { AppMarketItem, DesktopShortcut, PublicNetworkSummary, Site } from 
  */
 
 export type DesktopEntryKind = 'app' | 'site' | 'shortcut'
-export type DesktopEntryLaunch = 'external' | 'script'
+export type DesktopEntryLaunch = 'external' | 'script' | 'file' | 'directory'
 
 export interface DesktopEntry {
   /** Stable key: `${kind}:${id}` so Vue can key icons reliably. */
@@ -22,10 +23,14 @@ export interface DesktopEntry {
   launch: DesktopEntryLaunch
   /** External entry URL opened when the icon is activated. */
   url?: string
+  /** Internal Agent file-manager path for file and directory shortcuts. */
+  path?: string
   /** Optional user-authored description for a custom shortcut. */
   description?: string
   /** App market icon URL (apps) or site favicon endpoint (sites). */
   iconURL?: string
+  /** Built-in presentation icon used by file and directory shortcuts. */
+  icon?: Component
   /** Source item for the detail dialog. */
   app?: AppMarketItem
   site?: Site

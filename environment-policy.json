@@ -2,23 +2,23 @@
   "schemaVersion": 1,
   "environments": {
     "arena-154": {
-      "role": "validation",
+      "role": "hybrid",
       "aliases": ["154"],
       "allowedPurposes": [
         "candidate-validation",
         "browser-validation",
         "performance-validation",
         "failure-injection",
-        "staging-deploy"
+        "staging-deploy",
+        "production-deploy",
+        "production-safety-check"
       ]
     },
     "prod-108": {
       "role": "production",
       "aliases": ["108"],
-      "allowedPurposes": [
-        "production-deploy",
-        "production-safety-check"
-      ]
+      "disabled": true,
+      "allowedPurposes": []
     }
   }
 }

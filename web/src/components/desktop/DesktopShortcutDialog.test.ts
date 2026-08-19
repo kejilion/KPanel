@@ -58,6 +58,7 @@ describe('DesktopShortcutDialog', () => {
         id: '',
         name: '文档中心',
         description: '团队 手册 快速 入口',
+        targetType: 'url',
         url: 'https://docs.example.com/',
       },
       undefined,

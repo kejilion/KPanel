@@ -18,6 +18,15 @@ import test from 'node:test';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 
+test('change routing includes deletions and every GitHub workflow', () => {
+  const script = readFileSync(join(repoRoot, 'scripts', 'verify-change.sh'), 'utf8');
+  const filters = [...script.matchAll(/--diff-filter=([A-Z]+)/g)].map((match) => match[1]);
+  assert.ok(filters.length >= 3);
+  assert.ok(filters.every((filter) => filter.includes('D')));
+  assert.match(script, /Release acceptance records are immutable; deletion detected/);
+  assert.match(script, /\.github\/workflows\/\*\.yml\|\.github\/workflows\/\*\.yaml/);
+});
+
 function executable(path, body) {
   writeFileSync(path, `#!/usr/bin/env bash\nset -eu\n${body}\n`, 'utf8');
   chmodSync(path, 0o755);

@@ -157,7 +157,7 @@ describe('OverviewView refresh stability', () => {
       'DNS 优化',
       'V4 / V6 优先',
       'BBR 管理',
-      '一条龙优化',
+      '综合调优',
     ])
     expect(
       view.systemCenterSections.value.map((section) => ({

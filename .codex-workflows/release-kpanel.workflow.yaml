@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.1"
+version: "2.6"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
-params: [project_dir, version, previous_version, image, apps_repo, validation_environment, production_environment]
+params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-08-13T00:00:00+08:00"
+updated: "2026-08-17T17:33:27+08:00"
 ---
 
 # Release KPanel
@@ -37,7 +37,7 @@ updated: "2026-08-13T00:00:00+08:00"
   拉取和推送清单的权限。
 - 保留所有无关未提交改动；只提交本次发布范围内的文件。
 - `${{validation_environment}}` 和 `${{production_environment}}` 必须登记在 `environment-policy.json`；
-  默认分别为 `arena-154` 与 `prod-108`，用途检查失败时不得连接目标。
+  两者默认均为 `arena-154`。`prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
 
 ## Steps
 
@@ -102,17 +102,33 @@ bash scripts/check-version-consistency.sh
 进入本步骤即冻结候选。此后新增功能默认进入下一版本；若候选文件、分支或 `HEAD` 发生任何变化，
 本轮 L3 结果作废，必须先按 `docs/project-management.md` 的冲突恢复流程重建候选，再重新核验。
 
-在 Linux、WSL 或 CI 等支持 Bash、Go、Node 和 Docker 的环境执行：
+远程 L3 必须从包含完整 Git 元数据和稳定 Tag 的候选重建，禁止用 `git archive` 代替 Git 仓库。
+生成 bundle 时同时携带候选历史和 Tag；克隆后先固定 detached SHA 并确认回滚 Tag 存在：
 
 ```bash
-npm ci --prefix web
-make verify-release
-docker run --rm \
-  -e KPANEL_APP_CONF_TEST_ROOTFS=1 \
-  -v "$PWD:/src:ro" \
-  bash:5.2.37-alpine3.22@sha256:3bee76a96d86d5d2d5efc7c1c570e5a7c95db22348a26944e0e546fa174e3324 \
-  bash /src/packaging/tests/app-conf-lifecycle.sh /src
+git bundle create "../kpanel-v${{version}}.bundle" HEAD --tags
+git bundle verify "../kpanel-v${{version}}.bundle"
+git clone "../kpanel-v${{version}}.bundle" "../kpanel-v${{version}}-l3"
+git -C "../kpanel-v${{version}}-l3" checkout --detach <冻结的完整提交>
+git -C "../kpanel-v${{version}}-l3" show-ref --verify "refs/tags/v${{previous_version}}"
 ```
+
+在 Linux 验证主机调用仓库标准 Runner。它会一次完成精确 SHA、干净工作树、稳定基线 Tag、Docker
+socket、Runner 镜像 ID、固定 `--entrypoint sh`、宿主与 Runner 相同绝对路径挂载、完整
+`make verify-release` 和嵌套应用生命周期门禁：
+
+```bash
+cd "../kpanel-v${{version}}-l3"
+bash scripts/run-release-gate.sh \
+  <冻结的完整提交> \
+  "v${{previous_version}}" \
+  "${{runner_image}}" \
+  2>&1 | tee "<仓库外受限证据目录>/l3-verify-release.log"
+```
+
+不得为同一发布临时重写多份 L2/L3 wrapper；Runner 预检失败视为“验收基础设施失败”，候选代码未执行时
+不得记为产品失败，但仍必须 fail-closed。修复 Runner 后从同一冻结 SHA 完整重跑，旧日志保留并在验收
+记录中注明发现、修复和未触碰生产。Runner 镜像 tag 必须在日志中解析为不可变 image ID。
 
 `make verify-release` 必须实际覆盖核心特权包 race、固定摘要 Trivy 源码/最终镜像扫描，以及
 最终镜像构建；Release 工作流还必须在 `256 MiB`、`1 CPU`、`128 PID`、非 root、只读根、
@@ -129,6 +145,14 @@ docker run --rm \
 按发布画像补充自动门禁不能代替的证据：受影响性能基准、桌面/窄视口、浅/深色、键盘/焦点、
 多语言、失败状态、`kejilion.sh` 双向互通，以及 L2/L3 写路径的失败注入、重启恢复和回滚。
 危险或破坏性写操作优先使用隔离真机，不为了生产形式完整主动改变无关业务数据。
+
+隔离容器网络默认让 Docker 自动分配，并读取实际 subnet/IP 生成受信边界；只有完成现有网络清单冲突
+检查后才允许固定子网。不得因硬编码测试网段与并发任务冲突而把候选误判为失败。
+
+真实 API/浏览器证据必须先校验响应 schema，再选择业务字段；页面优先提供稳定 `data-testid` 或结构化
+状态。只能使用文案时必须精确匹配并断言唯一。业务成功以服务端状态、目标文件/数据库记录等
+**持久业务结果**为主证据，Toast/瞬时浮层只作辅助；浏览器差异导致提示提前消失时，不得覆盖已经验证的
+持久结果，但至少一个浏览器和自动回归仍须覆盖成功反馈，且各浏览器控制台错误必须为 0。
 
 若发布画像需要本地或远程长时间浏览器 E2E、跨视口回归或稳定性验收，使用登记的
 `${{validation_environment}}` 后台执行，前台发布任务只记录 job ID 并由监控任务读取终态：
@@ -229,6 +253,11 @@ git commit -m "chore: update KPanel to ${{version}}"
 git push origin HEAD:main
 ```
 
+生产 apps 工作树显示 dirty 时先比较目标文件的 Git blob、工作文件 blob 与最新远端真源。未知内容或
+blob 不一致必须停止；若仅因旧基线/换行表现导致状态差异且三方业务 blob 完全一致，则先按原权限备份
+该文件，只恢复明确文件的旧索引状态，使用 `git pull --ff-only` 更新，并再次确认 blob、权限和工作树
+干净。不得重置整个仓库、覆盖其他文件或把同内容状态差异提交为空变更。
+
 **Expected output:** 应用市场配置与发布契约一致；无变化时工作树干净且无提交，有变化时
 `kejilion/apps` 的 `main` 已更新且工作树干净。
 
@@ -264,14 +293,10 @@ node scripts/check-environment-policy.mjs \
 部署前记录当前版本、Panel/Agent 健康、镜像摘要、数据/配置位置和可恢复备份；使用 KPanel 标准
 应用市场更新入口，不直接改正式数据或绕过安装事务。
 
-固定环境边界：`prod-108`（含别名 `108`）只用于正常生产运行，不得作为线上测试、候选/功能验收、
-浏览器 E2E、灰度、canary、兼容性矩阵、失败注入、性能/压力、测试账号/数据或持续观察目标，也不存在
-“只读测试”例外。发布测试使用 `${{validation_environment}}`。
-
-108 部署后只执行防止盲目交付所必需的安全核对：版本与不可变 digest、Panel/Agent 单次健康状态、
-数据/配置可解析、备份与回滚入口就绪。不得在 108 登录测试账号、运行功能旅程、浏览器用例、连续采样、
-soak、压力或失败注入；这些结论必须在部署前由隔离环境提供。部署安全核对失败立即回滚，但不能将
-核对成功回填为候选、功能或生产质量验证证据。未经该次部署授权，不连接、不修改 108。
+固定环境边界：`prod-108`（含别名 `108`）已禁用全部 KPanel 操作。不得连接该主机执行测试、只读检查、
+备份、部署、升级、回滚演练、健康采样、日志读取或清理，也不存在临时授权或稳定版本部署例外。
+发布验证和唯一正式部署默认都使用 `${{production_environment}}=arena-154`；需要迁移到其他主机时，
+必须先由用户明确指定并登记新的环境，不能回退到 108。
 
 若用户只授权发布正式产物而未授权生产部署，停止在此步骤并明确记录“正式产物已发布，生产未部署”，
 不得复用上一版本现场结果或把公开镜像 E2E 写成生产成功。
@@ -279,10 +304,12 @@ soak、压力或失败注入；这些结论必须在部署前由隔离环境提�
 若生产部署安全核对失败并执行回滚，恢复生产实例后必须继续完成公共分发审计：核对 GitHub Latest、
 `${{image}}:latest` 和 `kpanel.conf` 标准更新入口实际指向。历史 tag、Release 和不可变版本镜像不得
 删除或改写，但失败版本不得无提示继续作为公共默认更新；应恢复上一稳定默认版本，或在 Release 与
-验收记录中明确已知问题、影响范围、负责人和修复期限后短期保留。该事件按变更失败计入交付节奏数据。
+验收记录中明确已知问题、影响范围、负责人和修复期限后短期保留。生产写操作后若造成服务退化、回滚、
+紧急热修复或重复发布，该事件按变更失败计入；若同时由发布基础设施、执行器、验证通道或无效证据触发，
+还必须同时计入流程异常。首次生产写操作前被门禁拦截的流程异常只计流程指标，不计变更失败。
 
-**Expected output:** 已授权时生产运行版本与正式 digest/commit 一致、备份和回滚可执行；未授权时没有
-生产状态变化；108 只产生部署安全核对记录且未被用于任何验证/持续观察；发生回滚时，生产实例和公共
+**Expected output:** 已授权时 154（或用户新指定并登记的非 108 目标）运行版本与正式 digest/commit 一致、
+备份和回滚可执行；未授权时没有生产状态变化；108 没有连接或操作记录；发生回滚时，生产实例和公共
 默认更新通道均有明确、可复核状态。
 
 ### 10. 形成统一验收记录并交付
@@ -290,12 +317,26 @@ soak、压力或失败注入；这些结论必须在部署前由隔离环境提�
 从 `docs/release-acceptance-template.md` 创建 `docs/release-v${{version}}-acceptance.md`，记录精确提交、
 发布画像、多维质量状态、候选/主线/Release、公开产物、隔离真机、生产部署安全核对、回滚和遗留风险。
 自动测试、隔离真机、公开产物和生产部署安全核对必须分层填写；生产未执行的管理员写操作不得写成
-已验证。108 固定排除在验证、灰度和持续观察之外，应记录为“不参与验证；仅完成/未执行部署安全核对”，
-不得把它写成测试覆盖，也不得误报为发布门禁缺失。
+已验证。108 固定记录为“禁用全部 KPanel 操作，本次未连接、未部署、未核对”，不得把它写成测试覆盖、
+部署目标或发布门禁缺失。
 
-记录候选冻结和生产完成时间、提交到生产用时、是否发生回滚/紧急热修复/重复发布及原因，供滚动
+分别记录稳定标签形成的正式发布频率和有生产完成证据的部署频率；记录候选冻结和生产完成时间、
+提交到生产用时、是否发生回滚/紧急热修复/重复发布及原因；另行记录
+使必需步骤无效、失败或需要重试的发布基础设施、执行器、验证通道和无效证据次数，以及其中发生在
+首次生产写操作之后的次数。流程异常不得歪曲为产品变更失败，缺失事实不得推断为零，供滚动
 14 天和最近 20 个版本的发布节奏复核。验收记录在获得相应提交/推送授权后形成独立聚焦提交；
 未获授权时保留工作树差异并回传，不得擅自更新 `main`。
+
+提交验收记录前执行机器校验；同一命令既校验六个交付字段和两个流程指标，也核对时间顺序、十进制用时、计数和失败恢复
+语义，禁止使用语义相近的自由文本代替字段。发生失败时必须按模板分别填写“发现时间”“恢复时间”
+和具体“逃逸门禁”，后者必须明确选择“已逃逸”或“未逃逸”并给出依据，不得使用“待确认”“无”
+“TBD”等占位值；机器校验不能替代发布复核者对原始失败证据和根因完整性的独立核对。
+没有生产授权时按模板明确写“未验证”，不得虚构时间或成功：
+
+```bash
+node scripts/report-release-metrics.mjs \
+  --validate-acceptance "docs/release-v${{version}}-acceptance.md"
+```
 
 最终回传必须包含：
 
@@ -307,12 +348,12 @@ soak、压力或失败注入；这些结论必须在部署前由隔离环境提�
 - 公开镜像 E2E 结果；
 - 多维质量状态、受影响用户旅程和证据层级；
 - 生产部署安全核对动作与仅在隔离真机验证的动作；
-- 发布节奏数据和重复发布原因（如有）；
+- 发布节奏、产品变更失败和独立流程异常数据，以及重复发布原因（如有）；
 - 保留的无关本地改动；
 - `${{previous_version}}` 回滚点及任何未验证风险。
 
-**Expected output:** 验收文档结构完整，用户无需查看其他会话即可区分已验证、不适用和未验证风险，
-并获得完整、可追溯的发布结论。
+**Expected output:** 验收文档结构完整且机器校验通过，用户无需查看其他会话即可区分已验证、不适用和
+未验证风险；后续 `make release-metrics` 能读取实际记录，而不是把已有生产事实显示为“未报告”。
 
 ## Parameters
 
@@ -320,9 +361,10 @@ soak、压力或失败注入；这些结论必须在部署前由隔离环境提�
 - `${{version}}`：不含 `v` 的目标语义版本，例如 `0.20.2`。
 - `${{previous_version}}`：发布前稳定源码或镜像版本，用于回滚说明。
 - `${{image}}`：完整镜像仓库，默认 `docker.io/kjlion/kejilion-panel`。
+- `${{runner_image}}`：Linux L3 工具链 Runner；版本随依赖策略更新，执行时记录解析后的不可变 image ID。
 - `${{apps_repo}}`：`kejilion/apps` 本地路径，默认 `C:\GitHub\kejilion\apps`。
 - `${{validation_environment}}`：登记的隔离验收环境，默认 `arena-154`。
-- `${{production_environment}}`：登记的稳定生产部署环境，默认 `prod-108`。
+- `${{production_environment}}`：登记的稳定生产部署环境，默认 `arena-154`；禁止填写 `prod-108`/`108`。
 - 浏览器验收的证据目录、硬超时和命令规格仅在发布画像要求真实浏览器时固定，并完整传给
   `background-browser-validation`；无浏览器影响时标记不适用，不创建空作业。
 
@@ -337,9 +379,10 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   --param version=0.0.0-test \
   --param previous_version=0.0.0 \
   --param image=docker.io/example/kpanel \
+  --param runner_image=kpanel-release-gate:go1.26.6-node24 \
   --param apps_repo=C:/tmp/apps \
   --param validation_environment=arena-154 \
-  --param production_environment=prod-108
+  --param production_environment=arena-154
 ```
 
 确认渲染结果中不存在未替换参数，并执行 `git diff --check`。
@@ -357,3 +400,4 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   专用候选 worktree 并重新执行受影响门禁。
 - 浏览器后台作业可以跨会话继续，但候选 `HEAD`、命令规格、环境或资源参数变化时证据作废；禁止用
   旧 job 的通过结果覆盖新候选。
+- `prod-108`/`108` 是 KPanel 永久 no-touch 目标；发布、部署、安全核对和故障恢复都不得连接。

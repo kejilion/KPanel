@@ -15,7 +15,8 @@ const requiredFiles = [
   'docs/project-management.md',
   'docs/multi-agent-collaboration.md',
   'docs/development-quality-standard.md',
-  'docs/product-quality-review-2026-08-13.md',
+  'docs/local-feature-preview-standard.md',
+  'docs/product-quality-review-current.md',
   'docs/release-acceptance-template.md',
   'docs/quality-improvement-proposal-template.md',
   'dependency-policy.json',
@@ -25,17 +26,28 @@ const requiredFiles = [
   'scripts/tests/check-environment-policy.test.mjs',
   'scripts/background-browser-test.mjs',
   'scripts/tests/background-browser-test.test.mjs',
+  'scripts/local-feature-preview.mjs',
+  'scripts/mock-app-market-api.mjs',
+  'scripts/tests/local-feature-preview.test.mjs',
+  'scripts/run-release-gate.sh',
+  'scripts/tests/release-gate-runner.test.mjs',
   'scripts/report-release-metrics.mjs',
   'scripts/tests/report-release-metrics.test.mjs',
+  'scripts/check-business-context-freshness.mjs',
+  'scripts/tests/business-context-freshness.test.mjs',
   'scripts/report-dependency-freshness.mjs',
   'scripts/tests/report-dependency-freshness.test.mjs',
   '.codex-workflows/README.md',
   '.codex-workflows/session-collaboration.workflow.yaml',
   '.codex-workflows/background-browser-validation.workflow.yaml',
+  '.codex-workflows/local-feature-preview.workflow.yaml',
   '.codex-workflows/release-kpanel.workflow.yaml',
   '.codex-workflows/quality-audit-kpanel.workflow.yaml',
   '.codex-workflows/evolve-kpanel.workflow.yaml',
   '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
+  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
+  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
+  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
 ];
 
 function read(relativePath) {
@@ -120,7 +132,7 @@ const adapterTokens = [
   'Definition of Done',
   'make verify-change',
   'make verify-release',
-  'docs/product-quality-review-2026-08-13.md',
+  'docs/product-quality-review-current.md',
 ];
 requireText('AGENTS.md', adapterTokens);
 requireText('CLAUDE.md', adapterTokens);
@@ -135,18 +147,32 @@ requireText('PROJECT_RULES.md', [
   '最新稳定版',
   'environment-policy.json',
   '后台浏览器',
+  '本地功能预览',
   'prod-108',
   '有界容器内控制台',
+  '规范验收契约 v1.0',
+  '正确性',
+  '一致性',
+  '完整性',
+  '可执行性',
+  '效率与比例性',
+  '可演进性',
+  'PASS WITH FOLLOW-UP',
+  '停止条件',
+  '首次生产写操作前被拦截的流程异常不计变更失败',
 ]);
 requireText('docs/development-quality-standard.md', [
   '宿主机系统动作',
   '`kejilion.sh` 原生交互',
   '目标容器内控制台',
+  '有生产完成证据的部署频率',
+  '两类同时计入',
 ]);
-requireText('docs/product-quality-review-2026-08-13.md', [
-  'KPanel 业务默契度与流程效率复核',
-  'scripts/verify-governance.sh',
-  '三种信任边界',
+requireText('docs/product-quality-review-current.md', [
+  'KPanel 当前业务事实与规范适配基线',
+  '基线提交',
+  'scripts/check-business-context-freshness.mjs',
+  '目标容器内有界控制台',
 ]);
 requireText('docs/project-management.md', [
   'Definition of Ready',
@@ -159,7 +185,11 @@ requireText('docs/project-management.md', [
   'make dependency-report',
   '每日安全审计',
   'background-browser-validation.workflow.yaml',
+  'local-feature-preview-standard.md',
+  '本地功能预览',
   '生产已部署',
+  '仅唯一集成/发布任务且需要明确主线集成授权',
+  'kpanel-release-process-metrics:start/end',
 ]);
 requireText('.codex-workflows/README.md', [
   'evolve-kpanel.workflow.yaml',
@@ -167,8 +197,26 @@ requireText('.codex-workflows/README.md', [
   'make dependency-policy-check',
   'make dependency-report',
   'background-browser-validation.workflow.yaml',
+  'local-feature-preview.workflow.yaml',
   'environment-policy.json',
-  'docs/product-quality-review-2026-08-13.md',
+  'docs/product-quality-review-current.md',
+  '规范复核执行 `PROJECT_RULES.md` 5.3',
+  'kpanel-site-icon-cache-validation.workflow.yaml',
+]);
+requireText('docs/local-feature-preview-standard.md', [
+  'UI Mock',
+  'Local Integration',
+  'Isolated Real Host',
+  '`draft`',
+  '`acceptance`',
+  'scripts/local-feature-preview.mjs',
+  '停止方式',
+]);
+requireText('scripts/local-feature-preview.mjs', [
+  'local preview only accepts loopback API targets',
+  'acceptance preview requires a clean checkpoint',
+  'ownership marker is missing',
+  'workingTreeFingerprint',
 ]);
 requireText('Makefile', [
   'governance-check:',
@@ -178,11 +226,36 @@ requireText('scripts/verify-change.sh', [
   'needs_governance=false',
   'bash scripts/verify-governance.sh',
   'node scripts/check-governance-consistency.mjs',
+  'node scripts/check-business-context-freshness.mjs',
+  'scripts/local-feature-preview.mjs',
+  'scripts/tests/local-feature-preview.test.mjs',
+  '--validate-acceptance',
+  '--diff-filter=ACMRTD',
+  '.github/workflows/*.yml|.github/workflows/*.yaml',
 ]);
 requireText('.codex-workflows/release-kpanel.workflow.yaml', [
+  'scripts/run-release-gate.sh',
+  'git bundle create',
+  '--entrypoint sh',
+  'Docker 自动分配',
+  '持久业务结果',
   'evidence_dir=<本次唯一持久化证据目录>',
   'timeout_seconds=<风险窗口加清理余量>',
   'command_spec=<无秘密、已哈希的仓库测试命令规格>',
+  '--validate-acceptance',
+  '首次生产写操作前被门禁拦截的流程异常只计流程指标',
+  '有生产完成证据的部署频率',
+]);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', [
+  'docs/product-quality-review-current.md',
+  'node scripts/check-business-context-freshness.mjs',
+]);
+requireText('.codex-workflows/evolve-kpanel.workflow.yaml', [
+  'PROJECT_RULES.md` 5.3',
+  '六项固定矩阵',
+  'PASS WITH FOLLOW-UP',
+  '停止条件',
+  '禁止重新开启无界全量探索',
 ]);
 
 requireText('docs/release-acceptance-template.md', [
@@ -194,11 +267,18 @@ requireText('docs/release-acceptance-template.md', [
   '## 隔离真机与浏览器验收',
   '后台作业 ID、终态、退出码、超时、证据目录、命令规格路径及 SHA-256',
   '## 生产部署安全核对',
-  '不参与候选或功能验证',
+  '禁用全部 KPanel 操作',
   '## 回滚',
   '## 交付节奏数据',
+  '<!-- kpanel-release-metrics:start -->',
+  '<!-- kpanel-release-metrics:end -->',
+  '两者之间只能按模板顺序保留六行固定纯文本字段',
   '首个纳入提交时间',
   '公共默认更新通道决策',
+  '<!-- kpanel-release-process-metrics:start -->',
+  '<!-- kpanel-release-process-metrics:end -->',
+  '已记录发布流程异常或无效证据拦截次数',
+  '两类同时计入',
   '## 遗留风险与后续准入',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [
@@ -209,15 +289,22 @@ requireText('docs/quality-improvement-proposal-template.md', [
   '## 独立复核',
   '## 回滚',
   '## 采纳决策与结果',
+  '### 规范验收合同',
+  '规范验收结论',
+  '规范验收停止依据',
 ]);
 
 const workflows = [
   '.codex-workflows/session-collaboration.workflow.yaml',
   '.codex-workflows/background-browser-validation.workflow.yaml',
+  '.codex-workflows/local-feature-preview.workflow.yaml',
   '.codex-workflows/release-kpanel.workflow.yaml',
   '.codex-workflows/quality-audit-kpanel.workflow.yaml',
   '.codex-workflows/evolve-kpanel.workflow.yaml',
   '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
+  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
+  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
+  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
 ];
 for (const workflow of workflows) {
   const content = read(workflow);
@@ -228,6 +315,22 @@ for (const workflow of workflows) {
     if (!content.includes(heading)) failures.push(workflow + ': missing section "' + heading + '"');
   }
 }
+
+requireText('.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml', [
+  '--purpose candidate-validation',
+  '--purpose failure-injection',
+  'golang:1.26.6-alpine@sha256:',
+]);
+requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
+  'docs/local-feature-preview-standard.md',
+  'scripts/local-feature-preview.mjs start',
+  '模拟数据预览',
+  '草稿预览，变更尚未冻结',
+  'background-browser-validation',
+]);
+requireText('.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml', [
+  'golang:1.26.6-bookworm@sha256:',
+]);
 
 for (const adapter of ['AGENTS.md', 'CLAUDE.md']) {
   const content = read(adapter);

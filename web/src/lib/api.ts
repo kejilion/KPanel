@@ -19,9 +19,13 @@ import type {
   ClusterHostList,
   ClusterLightEnrollment,
   ClusterPairingCode,
+  ClusterShareSettings,
+  CrossPanelFileTransferEvent,
+  CrossPanelFileTransferInput,
   DockerInventory,
   DockerActionResult,
   DockerBackup,
+  DockerComposeProject,
   DockerContainerStats,
   DockerExecResult,
   DockerEnvironment,
@@ -36,6 +40,7 @@ import type {
   FileDirectory,
   FileDownloadTicket,
   FileEntry,
+  FileEntryBatchResult,
   FileWriteResult,
   FirewallSnapshot,
   HostsSnapshot,
@@ -53,6 +58,7 @@ import type {
   PanelSettings,
   ProcessQuery,
   ProcessSnapshot,
+  PublicClusterShareSnapshot,
   AllowedHostsSettings,
   SecurityEntranceSettings,
   SetupRequest,
@@ -295,6 +301,7 @@ interface RawContainer {
   state: string
   status?: string
   health?: string
+  createdAt?: string
   ports?: Array<{
     privatePort: number
     publicPort?: number
@@ -303,6 +310,7 @@ interface RawContainer {
     protocol?: string
   }>
   composeProject?: string
+  composeService?: string
   ownership?: string
   resourceVersion?: string
   allowedActions?: string[]
@@ -896,6 +904,8 @@ function normalizeContainer(raw: RawContainer): DockerInventory['containers'][nu
     access: actions.length > 0 ? 'managed' : raw.ownership === 'external' ? 'unmanaged' : 'read-only',
     consistency: raw.ownership === 'ambiguous' ? 'ambiguous' : 'synced',
     project: raw.composeProject,
+    service: raw.composeService,
+    createdAt: raw.createdAt,
     ports: (raw.ports || []).map((port) => ({
       privatePort: port.privatePort,
       publicPort: port.publicPort,
@@ -1302,6 +1312,22 @@ export const api = {
   cluster: {
     hosts: (signal?: AbortSignal): Promise<ClusterHostList> =>
       request<ClusterHostList>('/cluster/hosts', { signal }),
+    shareSettings: (signal?: AbortSignal): Promise<ClusterShareSettings> =>
+      request<ClusterShareSettings>('/cluster/share', { signal }),
+    updateShare: (body: {
+      enabled: boolean
+      title: string
+      description: string
+      expectedResourceVersion: string
+    }): Promise<ClusterShareSettings> =>
+      request<ClusterShareSettings>('/cluster/share', { method: 'PUT', body }),
+    resetShareToken: (expectedResourceVersion: string): Promise<ClusterShareSettings> =>
+      request<ClusterShareSettings>('/cluster/share/token', {
+        method: 'POST',
+        body: { expectedResourceVersion },
+      }),
+    publicShare: (token: string, signal?: AbortSignal): Promise<PublicClusterShareSnapshot> =>
+      request<PublicClusterShareSnapshot>(`/public/cluster-share/${encodeURIComponent(token)}`, { signal }),
     host: (id: string, signal?: AbortSignal): Promise<ClusterHost> =>
       request<ClusterHost>(`/cluster/hosts/${encodeURIComponent(id)}`, { signal }),
     add: (body: { name?: string; origin: string; pairingCode: string }): Promise<ClusterHost> =>
@@ -1324,6 +1350,10 @@ export const api = {
       ),
     refresh: (id: string): Promise<ClusterHost> =>
       request<ClusterHost>(`/cluster/hosts/${encodeURIComponent(id)}/refresh`, {
+        method: 'POST',
+      }),
+    enableMutualFiles: (id: string): Promise<ClusterHost> =>
+      request<ClusterHost>(`/cluster/hosts/${encodeURIComponent(id)}/mutual-files`, {
         method: 'POST',
       }),
     createPairingCode: (): Promise<ClusterPairingCode> =>
@@ -1608,6 +1638,14 @@ export const api = {
       }),
   },
   files: {
+    entry: (path: string, signal?: AbortSignal): Promise<FileEntry> =>
+      request<FileEntry>('/files/entry', { query: { path }, signal }),
+    entries: (paths: readonly string[], signal?: AbortSignal): Promise<FileEntryBatchResult> =>
+      request<FileEntryBatchResult>('/files/entries', {
+        method: 'POST',
+        body: { paths },
+        signal,
+      }),
     list: (
       path = '/',
       options?: { offset?: number; search?: string },
@@ -1619,11 +1657,82 @@ export const api = {
       }),
     contentUrl: (path: string, disposition: 'inline' | 'attachment' = 'inline'): string =>
       buildUrl('/files/content', { path, disposition }),
+    archiveUrl: (
+      entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[],
+      name: string,
+    ): string => buildUrl('/files/archive', {
+      selection: JSON.stringify({
+        sources: entries.map((entry) => entry.path),
+        expectedResourceVersions: Object.fromEntries(
+          entries.map((entry) => [entry.path, entry.resourceVersion]),
+        ),
+      }),
+      name,
+    }),
     createDownloadTicket: (path: string): Promise<FileDownloadTicket> =>
       request<FileDownloadTicket>('/files/download-tickets', {
         method: 'POST',
         body: { path },
       }),
+    transferFromPanel: async (
+      input: CrossPanelFileTransferInput,
+      onEvent: (event: CrossPanelFileTransferEvent) => void,
+      signal?: AbortSignal,
+    ): Promise<FileEntry> => {
+      const headers = new Headers({ Accept: 'application/x-ndjson', 'Content-Type': 'application/json' })
+      if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
+      let response: Response
+      try {
+        response = await fetch(buildUrl('/files/transfers'), {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store', headers,
+          body: JSON.stringify(input), signal,
+        })
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        throw new ApiError('无法连接到面板服务，请检查服务状态后重试。', 0, 'network_error', error)
+      }
+      if (!response.ok) {
+        const payload = await parsePayload(response)
+        const problem = payload && typeof payload === 'object' ? payload as ProblemPayload : undefined
+        throw new ApiError(
+          problem?.detail || problem?.title || '跨面板复制失败。',
+          response.status, problem?.code || 'file_transfer_failed', payload, problem?.requestId,
+        )
+      }
+      if (!response.body) throw new ApiError('浏览器不支持流式传输状态。', 0, 'stream_unavailable')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffered = ''
+      let completed: FileEntry | undefined
+      const consume = (line: string): void => {
+        if (!line.trim()) return
+        let event: CrossPanelFileTransferEvent
+        try {
+          event = JSON.parse(line) as CrossPanelFileTransferEvent
+        } catch {
+          throw new ApiError('面板返回了无效的传输状态。', 0, 'file_transfer_response_invalid')
+        }
+        onEvent(event)
+        if (event.state === 'error') throw new ApiError(event.detail || '跨面板复制失败。', 0, 'file_transfer_failed')
+        if (event.state === 'complete' && event.entry) completed = event.entry
+      }
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
+          buffered += decoder.decode(value, { stream: !done })
+          const lines = buffered.split('\n')
+          buffered = lines.pop() || ''
+          for (const line of lines) consume(line)
+          if (done) break
+        }
+        consume(buffered)
+      } catch (error) {
+        await reader.cancel().catch(() => undefined)
+        throw error
+      }
+      if (!completed) throw new ApiError('跨面板复制未正常结束。', 0, 'file_transfer_incomplete')
+      return completed
+    },
     thumbnailUrl: (path: string, version: string): string =>
       buildUrl('/files/content', { path, disposition: 'inline', mode: 'thumbnail', version }),
     text: async (path: string): Promise<string> =>
@@ -1643,9 +1752,18 @@ export const api = {
       file: File,
       overwrite = false,
       onProgress?: (percent: number) => void,
+      signal?: AbortSignal,
     ): Promise<FileEntry> =>
       new Promise<FileEntry>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
+        let settled = false
+        const finish = (callback: () => void): void => {
+          if (settled) return
+          settled = true
+          signal?.removeEventListener('abort', abort)
+          callback()
+        }
+        const abort = (): void => xhr.abort()
         xhr.open('POST', buildUrl('/files/upload', { path, name: file.name, overwrite }))
         xhr.withCredentials = true
         xhr.responseType = 'json'
@@ -1654,15 +1772,16 @@ export const api = {
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100))
         }
-        xhr.onerror = () => reject(new ApiError('文件上传连接中断。', 0, 'network_error'))
+        xhr.onerror = () => finish(() => reject(new ApiError('文件上传连接中断。', 0, 'network_error')))
+        xhr.onabort = () => finish(() => reject(new DOMException('文件上传已取消。', 'AbortError')))
         xhr.onload = () => {
           const payload = xhr.response
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(payload as FileEntry)
+            finish(() => resolve(payload as FileEntry))
             return
           }
           const problem = payload && typeof payload === 'object' ? (payload as ProblemPayload) : undefined
-          reject(
+          finish(() => reject(
             new ApiError(
               problem?.detail || problem?.title || '文件上传失败。',
               xhr.status,
@@ -1670,8 +1789,13 @@ export const api = {
               payload,
               problem?.requestId,
             ),
-          )
+          ))
         }
+        if (signal?.aborted) {
+          finish(() => reject(new DOMException('文件上传已取消。', 'AbortError')))
+          return
+        }
+        signal?.addEventListener('abort', abort, { once: true })
         xhr.send(file)
       }),
     action: (input: FileActionInput, signal?: AbortSignal): Promise<FileActionResult> =>
@@ -1685,15 +1809,18 @@ export const api = {
       signal?: AbortSignal,
       onUpdate?: (inventory: DockerInventory) => void,
     ): Promise<DockerInventory> => {
-      const [summary, containersResult] = await Promise.all([
+      const [summary, containersResult, composeProjectsResult] = await Promise.all([
         request<RawDockerSummary>('/docker/summary', { signal }),
         request<ApiList<RawContainer> | RawContainer[]>('/docker/containers', { signal }),
+        request<ApiList<{ name: string }> | { name: string }[]>('/docker/compose-projects', { signal })
+          .catch(() => ({ items: [], total: 0 })),
       ])
       const inventory: DockerInventory = {
         available: summary.available,
         version: summary.serverVersion,
         observedAt: summary.collectedAt,
         containers: normalizeList(containersResult).items.map(normalizeContainer),
+        composeProjects: normalizeList(composeProjectsResult).items.map((item) => item.name),
         images: [],
         networks: [],
         volumes: [],
@@ -1791,6 +1918,8 @@ export const api = {
       }),
     backups: async (signal?: AbortSignal): Promise<ApiList<DockerBackup>> =>
       normalizeList(await request<ApiList<DockerBackup> | DockerBackup[]>('/docker/backups', { signal })),
+    composeProject: (name: string, signal?: AbortSignal): Promise<DockerComposeProject> =>
+      request<DockerComposeProject>(`/docker/compose-projects/${encodeURIComponent(name)}`, { signal }),
     task: (body: DockerMaintenanceInput): Promise<DockerMaintenanceJob> =>
       request<DockerMaintenanceJob>('/docker/tasks', { method: 'POST', body }),
     job: (id: string, signal?: AbortSignal): Promise<DockerMaintenanceJob> =>

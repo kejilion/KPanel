@@ -1,6 +1,7 @@
 import type { DockerContainer, DockerImage, DockerNetwork, DockerVolume } from '@/types/api'
 
 export type ResourceSort = 'smart' | 'name-asc' | 'name-desc'
+export type ContainerSort = ResourceSort | 'created-asc' | 'created-desc'
 
 const nameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
 const containerStateRank: Record<DockerContainer['state'], number> = {
@@ -19,8 +20,22 @@ function compareName(left: string, right: string, sort: ResourceSort): number {
     : nameCollator.compare(left, right)
 }
 
-export function sortDockerContainers(items: DockerContainer[], sort: ResourceSort): DockerContainer[] {
+function compareCreatedAt(left?: string, right?: string, descending = false): number {
+  const leftTime = left ? Date.parse(left) : Number.NaN
+  const rightTime = right ? Date.parse(right) : Number.NaN
+  const leftValid = Number.isFinite(leftTime)
+  const rightValid = Number.isFinite(rightTime)
+  if (!leftValid && !rightValid) return 0
+  if (!leftValid) return 1
+  if (!rightValid) return -1
+  return descending ? rightTime - leftTime : leftTime - rightTime
+}
+
+export function sortDockerContainers(items: DockerContainer[], sort: ContainerSort): DockerContainer[] {
   return [...items].sort((left, right) => {
+    if (sort === 'created-asc' || sort === 'created-desc') {
+      return compareCreatedAt(left.createdAt, right.createdAt, sort === 'created-desc') || compareName(left.name, right.name, 'name-asc')
+    }
     if (sort !== 'smart') return compareName(left.name, right.name, sort)
     return containerStateRank[left.state] - containerStateRank[right.state] || compareName(left.name, right.name, sort)
   })

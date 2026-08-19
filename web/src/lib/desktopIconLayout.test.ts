@@ -8,6 +8,7 @@ import {
   desktopIconPixelsToPosition,
   desktopIconPositionToPixels,
   dropDesktopIcon,
+  moveDesktopIconGroup,
   moveDesktopIconByKeyboard,
   nudgeDesktopIconPosition,
   snapDesktopIconPosition,
@@ -54,6 +55,45 @@ describe('desktop icon layout', () => {
       .toEqual({ column: 0, row: 0 })
     expect(next.find((item) => item.key === 'gamma')).toEqual(current[2])
     expect(current[0]!.position).toEqual({ x: 0, y: 0 })
+  })
+
+  it('moves a selected group together without moving unselected icons', () => {
+    const current = [
+      placement('alpha', 0, 0),
+      placement('beta', 0, 0.5),
+      placement('fixed', 190 / 290, 0),
+    ]
+    const next = moveDesktopIconGroup(current, ['alpha', 'beta'], 'alpha', { x: 0.34, y: 0 }, bounds)
+
+    expect(next.map((item) => ({
+      key: item.key,
+      slot: desktopIconGridSlotForPosition(item.position, bounds),
+    }))).toEqual([
+      { key: 'alpha', slot: { column: 1, row: 0 } },
+      { key: 'beta', slot: { column: 1, row: 1 } },
+      { key: 'fixed', slot: { column: 2, row: 0 } },
+    ])
+    expect(current[0]!.position).toEqual({ x: 0, y: 0 })
+  })
+
+  it('places a selected group at the nearest free translation when the target is occupied', () => {
+    const current = [
+      placement('alpha', 0, 0),
+      placement('beta', 0, 0.5),
+      placement('fixed', 95 / 290, 0),
+    ]
+    const next = moveDesktopIconGroup(current, ['alpha', 'beta'], 'alpha', { x: 0.34, y: 0 }, bounds)
+    const slots = Object.fromEntries(next.map((item) => [
+      item.key,
+      desktopIconGridSlotForPosition(item.position, bounds),
+    ]))
+
+    expect(slots.fixed).toEqual({ column: 1, row: 0 })
+    expect(slots.alpha).toBeDefined()
+    expect(slots.beta).toBeDefined()
+    expect(slots.alpha).not.toEqual(slots.fixed)
+    expect(slots.beta!.column).toBe(slots.alpha!.column)
+    expect(slots.beta!.row - slots.alpha!.row).toBe(1)
   })
 
   it('auto-arranges top-to-bottom before moving to the next column', () => {

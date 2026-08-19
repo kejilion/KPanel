@@ -7,13 +7,14 @@ import type {
 } from '@/types/api'
 
 export type DesktopWorkspaceDraft = Omit<DesktopWorkspaceUpdate, 'expectedResourceVersion'>
-export type DesktopWorkspaceMutation = (draft: DesktopWorkspaceDraft) => void
+/** Return false to explicitly skip the network write after inspecting the latest draft. */
+export type DesktopWorkspaceMutation = (draft: DesktopWorkspaceDraft) => unknown
 
 const EMPTY_RESOURCE_VERSION = 'sha256:' + '0'.repeat(64)
 
 function emptyWorkspace(): DesktopWorkspace {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     resourceVersion: EMPTY_RESOURCE_VERSION,
     available: true,
     hiddenEntryKeys: [],
@@ -24,7 +25,14 @@ function emptyWorkspace(): DesktopWorkspace {
 }
 
 function cloneShortcuts(shortcuts: DesktopShortcut[]): DesktopWorkspaceDraft['shortcuts'] {
-  return shortcuts.map(({ id, name, description, url }) => ({ id, name, description, url }))
+  return shortcuts.map(({ id, name, description, targetType, url, path }) => ({
+    id,
+    name,
+    description,
+    targetType,
+    ...(url ? { url } : {}),
+    ...(path ? { path } : {}),
+  }))
 }
 
 function draftFrom(value: DesktopWorkspace): DesktopWorkspaceDraft {
@@ -70,7 +78,7 @@ function mutate(change: DesktopWorkspaceMutation): Promise<DesktopWorkspace> {
     if (!workspace.value.available) throw new Error('desktop_workspace_unavailable')
     const base = workspace.value
     const draft = draftFrom(base)
-    change(draft)
+    if (change(draft) === false) return base
     saving.value = true
     try {
       const saved = await api.desktop.updateWorkspace({

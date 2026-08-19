@@ -25,7 +25,7 @@ const props=withDefaults(defineProps<{
 }>(),{title:'',placeholder:'选择',searchable:false,variant:'model'})
 const emit=defineEmits<{change:[value:string]}>()
 
-const root=ref<HTMLElement>();const trigger=ref<HTMLButtonElement>();const searchInput=ref<HTMLInputElement>();const open=ref(false);const query=ref('');const menuId=`ai-choice-${useId()}`
+const root=ref<HTMLElement>();const trigger=ref<HTMLButtonElement>();const searchInput=ref<HTMLInputElement>();const open=ref(false);const query=ref('');const menuStyle=ref<Record<string,string>>({});const mobileViewport=ref(false);const menuId=`ai-choice-${useId()}`
 const selected=computed(()=>props.options.find(item=>item.value===props.modelValue))
 const filtered=computed(()=>{const keyword=query.value.trim().toLowerCase();if(!keyword)return props.options;return props.options.filter(item=>[item.label,item.description,item.group,item.value].some(value=>value?.toLowerCase().includes(keyword)))})
 const groups=computed(()=>{const result:{label:string;options:AiChoiceOption[]}[]=[];for(const option of filtered.value){const label=option.group||'';let group=result.find(item=>item.label===label);if(!group){group={label,options:[]};result.push(group)}group.options.push(option)}return result})
@@ -33,7 +33,9 @@ const showSearch=computed(()=>props.searchable&&props.options.length>8)
 
 function availableOptions(){return Array.from(root.value?.querySelectorAll<HTMLButtonElement>('.ai-choice__option:not(:disabled)')||[])}
 function focusOption(preferSelected=true){const options=availableOptions();if(!options.length)return;const target=preferSelected?options.find(item=>item.dataset.value===props.modelValue):options[0];(target||options[0])?.focus()}
-function show(){if(open.value)return;open.value=true;query.value='';void nextTick(()=>showSearch.value?searchInput.value?.focus():focusOption())}
+function updateMenuPosition(){if(!open.value||!mobileViewport.value||!trigger.value)return;const rect=trigger.value.getBoundingClientRect();menuStyle.value={'--ai-choice-menu-bottom':`${Math.max(12,window.innerHeight-rect.top+8)}px`}}
+function updateViewportMode(){mobileViewport.value=window.innerWidth<=680;if(!mobileViewport.value)menuStyle.value={};else updateMenuPosition()}
+function show(){if(open.value)return;open.value=true;query.value='';void nextTick(()=>{updateViewportMode();showSearch.value?searchInput.value?.focus():focusOption()})}
 function close(restoreFocus=false){if(!open.value)return;open.value=false;query.value='';if(restoreFocus)void nextTick(()=>trigger.value?.focus())}
 function toggle(){open.value?close():show()}
 function choose(option:AiChoiceOption){if(option.disabled)return;emit('change',option.value);close(true)}
@@ -43,8 +45,8 @@ function onMenuKeydown(event:KeyboardEvent){if(event.key==='ArrowDown'){event.pr
 function onDocumentPointer(event:PointerEvent){if(open.value&&!root.value?.contains(event.target as Node))close()}
 
 watch(filtered,()=>{if(open.value&&!showSearch.value)void nextTick(()=>focusOption(false))})
-onMounted(()=>document.addEventListener('pointerdown',onDocumentPointer))
-onBeforeUnmount(()=>document.removeEventListener('pointerdown',onDocumentPointer))
+onMounted(()=>{updateViewportMode();document.addEventListener('pointerdown',onDocumentPointer);window.addEventListener('resize',updateViewportMode);window.addEventListener('scroll',updateMenuPosition,true)})
+onBeforeUnmount(()=>{document.removeEventListener('pointerdown',onDocumentPointer);window.removeEventListener('resize',updateViewportMode);window.removeEventListener('scroll',updateMenuPosition,true)})
 </script>
 
 <template>
@@ -66,7 +68,7 @@ onBeforeUnmount(()=>document.removeEventListener('pointerdown',onDocumentPointer
       <span class="ai-choice__short-label">{{selected?.shortLabel||selected?.label||placeholder}}</span>
       <ChevronDown :size="14"/>
     </button>
-    <div v-if="open" class="ai-choice__menu" @keydown="onMenuKeydown">
+    <div v-if="open" class="ai-choice__menu" :style="menuStyle" @keydown="onMenuKeydown">
       <label v-if="showSearch" class="ai-choice__search"><Search :size="14"/><input ref="searchInput" v-model="query" type="search" placeholder="搜索模型" aria-label="搜索模型"/></label>
       <div :id="menuId" class="ai-choice__options" role="listbox" :aria-label="label">
         <template v-for="group in groups" :key="group.label||'default'">

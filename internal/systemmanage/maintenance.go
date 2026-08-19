@@ -292,21 +292,28 @@ func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 				bbrv3RebootRequired, runErr = verifyBBRv3ActionOutput(output, policy)
 			}
 		} else if step.operation == maintenanceOperationSystemTuning {
-			var output []byte
-			output, runErr = m.runner.Run(ctx, step.command, step.arguments...)
-			if runErr == nil {
-				_, _, ok := parseSystemTuningMaintenancePolicy(policy)
-				if !ok {
-					runErr = errors.New("system tuning policy became invalid")
-				} else {
-					var receiptStatus, selected string
-					_, receiptStatus, selected, runErr = parseSystemTuningOutput(output)
-					if runErr == nil && receiptStatus != "applied" && receiptStatus != "unchanged" {
-						runErr = fmt.Errorf("kejilion.sh returned system tuning status %q", receiptStatus)
+			_, _, ok := parseSystemTuningMaintenancePolicy(policy)
+			if !ok {
+				runErr = errors.New("system tuning policy became invalid")
+			} else {
+				expected := strings.TrimPrefix(step.stage, "system_tuning_")
+				var output []byte
+				output, runErr = m.runSystemTuning(ctx, "apply-item", expected)
+				var receiptStatus, selected string
+				_, receiptStatus, selected, parseErr := parseSystemTuningOutput(output)
+				if parseErr != nil {
+					if runErr != nil {
+						runErr = fmt.Errorf("%v; invalid system tuning receipt: %w", runErr, parseErr)
+					} else {
+						runErr = parseErr
 					}
-					expected := strings.TrimPrefix(step.stage, "system_tuning_")
-					if runErr == nil && selected != expected {
-						runErr = errors.New("system tuning completion receipt did not match the selected item")
+				} else if selected != expected {
+					runErr = errors.New("system tuning completion receipt did not match the selected item")
+				} else if receiptStatus != "applied" && receiptStatus != "unchanged" {
+					if runErr != nil {
+						runErr = fmt.Errorf("kejilion.sh returned system tuning status %q: %w", receiptStatus, runErr)
+					} else {
+						runErr = fmt.Errorf("kejilion.sh returned system tuning status %q", receiptStatus)
 					}
 				}
 			}

@@ -6,37 +6,44 @@
     {
       "key": "ops",
       "zh": "面板运维",
-      "en": "Panels & Ops"
+      "en": "Panels & Ops",
+      "zh_tw": "面板運維"
     },
     {
       "key": "ai",
       "zh": "AI 大模型",
-      "en": "AI & LLM"
+      "en": "AI & LLM",
+      "zh_tw": "AI 大模型"
     },
     {
       "key": "storage",
       "zh": "存储 / 文件",
-      "en": "Storage & Files"
+      "en": "Storage & Files",
+      "zh_tw": "儲存 / 檔案"
     },
     {
       "key": "media",
       "zh": "影音媒体",
-      "en": "Media"
+      "en": "Media",
+      "zh_tw": "影音媒體"
     },
     {
       "key": "netsec",
       "zh": "网络 / 安全",
-      "en": "Network & Security"
+      "en": "Network & Security",
+      "zh_tw": "網路 / 安全"
     },
     {
       "key": "devprod",
       "zh": "开发 / 效率",
-      "en": "Dev & Productivity"
+      "en": "Dev & Productivity",
+      "zh_tw": "開發 / 效率"
     },
     {
       "key": "commtools",
       "zh": "通讯 / 工具",
-      "en": "Comms & Tools"
+      "en": "Comms & Tools",
+      "zh_tw": "通訊 / 工具"
     }
   ],
   "apps": [
@@ -54,7 +61,9 @@
       "url": "",
       "icon": "/app-icons/bt.webp",
       "slug": "bt",
-      "iconSha256": "e933a18f65ea6db289f586c8c7ccbd512421d61a64b1615b807470a00dbf9faa"
+      "iconSha256": "e933a18f65ea6db289f586c8c7ccbd512421d61a64b1615b807470a00dbf9faa",
+      "name_zh_tw": "寶塔面板",
+      "desc_zh_tw": "老牌視覺化伺服器運維面板，圖形化管理網站、資料庫與防火牆。"
     },
     {
       "id": "builtin-2",
@@ -70,7 +79,9 @@
       "url": "",
       "icon": "/app-icons/aapanel.webp",
       "slug": "aapanel",
-      "iconSha256": "213c8d411d5e87c75bc984d1f0acb11343ec57e43803fe694d9eefff87f110ef"
+      "iconSha256": "213c8d411d5e87c75bc984d1f0acb11343ec57e43803fe694d9eefff87f110ef",
+      "name_zh_tw": "aaPanel",
+      "desc_zh_tw": "寶塔面板的國際英文版，免費的伺服器運維管理面板。"
     },
     {
       "id": "builtin-3",
@@ -86,7 +97,9 @@
       "url": "",
       "icon": "/app-icons/1panel.webp",
       "slug": "1panel",
-      "iconSha256": "5124724d930e9d3bb47ebffbe7088cc4cc822205d96fb5bb5733395a2eb2d082"
+      "iconSha256": "5124724d930e9d3bb47ebffbe7088cc4cc822205d96fb5bb5733395a2eb2d082",
+      "name_zh_tw": "1Panel",
+      "desc_zh_tw": "新一代現代化、開源的 Linux 伺服器運維管理面板。"
     },
     {
       "id": "builtin-4",
@@ -102,7 +115,9 @@
       "url": "https://nginxproxymanager.com/",
       "icon": "/app-icons/npm.webp",
       "slug": "npm",
-      "iconSha256": "3a9e489884e216ab5bca577aa45f769e1c2922253f6690af6fc203f152646521"
+      "iconSha256": "3a9e489884e216ab5bca577aa45f769e1c2922253f6690af6fc203f152646521",
+      "name_zh_tw": "Nginx Proxy Manager",
+      "desc_zh_tw": "視覺化的 Nginx 反向代理面板，一鍵簽發與管理 SSL 證書。"
     },
     {
       "id": "builtin-5",
@@ -118,7 +133,9 @@
       "url": "https://github.com/OpenListTeam/OpenList",
       "icon": "/app-icons/openlist.webp",
       "slug": "openlist",
-      "iconSha256": "a680b313970bf4f86c5bd2bb83106790db41911f3caea958131aaf481ea237ec"
+      "iconSha256": "a680b313970bf4f86c5bd2bb83106790db41911f3caea958131aaf481ea237ec",
+      "name_zh_tw": "OpenList",
+      "desc_zh_tw": "支援多種雲端儲存、網頁瀏覽與 WebDAV 的檔案列表程式（AList 續作）。"
     },
     {
       "id": "builtin-6",
@@ -134,7 +151,9 @@
       "url": "https://docs.linuxserver.io/images/docker-webtop/",
       "icon": "/app-icons/webtop-ubuntu.webp",
       "slug": "webtop-ubuntu",
-      "iconSha256": "fed3af87d29d9dc0b95b632a1ac8e741d3ef7ce85265482f9fb334a4b1840911"
+      "iconSha256": "fed3af87d29d9dc0b95b632a1ac8e741d3ef7ce85265482f9fb334a4b1840911",
+      "name_zh_tw": "Webtop (Ubuntu)",
+      "desc_zh_tw": "在瀏覽器中執行的 Ubuntu KDE 遠端桌面環境。"
     },
     {
       "id": "builtin-7",
@@ -150,7 +169,9 @@
       "url": "",
       "icon": "/app-icons/nezha.webp",
       "slug": "nezha",
-      "iconSha256": "ebebf5c37f12e34e55dc55a1e7d57864b4c5f5721944b6abbff4253b5bf1cc8b"
+      "iconSha256": "ebebf5c37f12e34e55dc55a1e7d57864b4c5f5721944b6abbff4253b5bf1cc8b",
+      "name_zh_tw": "哪吒監控",
+      "desc_zh_tw": "開源、輕量的伺服器探針與 VPS 監控面板。"
     },
     {
       "id": "builtin-8",
@@ -166,7 +187,9 @@
       "url": "https://hub.docker.com/r/linuxserver/qbittorrent",
       "icon": "/app-icons/qb.webp",
       "slug": "qb",
-      "iconSha256": "ad3b84c34ebae36c66409b3afbd1f9d427ce626e179a2574f6fab1f5dbd4a936"
+      "iconSha256": "ad3b84c34ebae36c66409b3afbd1f9d427ce626e179a2574f6fab1f5dbd4a936",
+      "name_zh_tw": "qBittorrent",
+      "desc_zh_tw": "網頁版 qBittorrent，離線 BT 與磁力連結下載工具。"
     },
     {
       "id": "builtin-9",
@@ -182,7 +205,9 @@
       "url": "",
       "icon": "/app-icons/mail.webp",
       "slug": "mail",
-      "iconSha256": "77f11e2e348f04363947d93323d30fb7de8f2d71f6af3c67298c7384cb8ce311"
+      "iconSha256": "77f11e2e348f04363947d93323d30fb7de8f2d71f6af3c67298c7384cb8ce311",
+      "name_zh_tw": "Poste.io",
+      "desc_zh_tw": "一體化自建郵件伺服器，含 SMTP / IMAP 與網頁客戶端。"
     },
     {
       "id": "builtin-10",
@@ -198,7 +223,9 @@
       "url": "",
       "icon": "/app-icons/rocketchat.webp",
       "slug": "rocketchat",
-      "iconSha256": "b9ba85fffc0539ea18e53b366cbd23500d3e57ce0c223ce9d903d40f50869e1e"
+      "iconSha256": "b9ba85fffc0539ea18e53b366cbd23500d3e57ce0c223ce9d903d40f50869e1e",
+      "name_zh_tw": "Rocket.Chat",
+      "desc_zh_tw": "開源的團隊即時通訊與協作平臺，可替代 Slack。"
     },
     {
       "id": "builtin-11",
@@ -214,7 +241,9 @@
       "url": "https://www.zentao.net/",
       "icon": "/app-icons/zentao.webp",
       "slug": "zentao",
-      "iconSha256": "71b5a4c5c228dd86e6e0f0f4d768651f1d42102240fba48a22972e303c0db818"
+      "iconSha256": "71b5a4c5c228dd86e6e0f0f4d768651f1d42102240fba48a22972e303c0db818",
+      "name_zh_tw": "禪道",
+      "desc_zh_tw": "開源的專案管理軟體，覆蓋需求、任務、缺陷與迭代。"
     },
     {
       "id": "builtin-12",
@@ -230,7 +259,9 @@
       "url": "https://github.com/whyour/qinglong",
       "icon": "/app-icons/qinglong.webp",
       "slug": "qinglong",
-      "iconSha256": "5929f8db8a7261f1fdfb8971c4eef3846843b69c02075c78e629f654f104d373"
+      "iconSha256": "5929f8db8a7261f1fdfb8971c4eef3846843b69c02075c78e629f654f104d373",
+      "name_zh_tw": "青龍面板",
+      "desc_zh_tw": "支援 Python/JS/Shell 的定時任務管理平臺。"
     },
     {
       "id": "builtin-13",
@@ -246,7 +277,9 @@
       "url": "",
       "icon": "/app-icons/cloudreve.webp",
       "slug": "cloudreve",
-      "iconSha256": "fdb16282a192c0807d0f82f6970296c2e27926ccc0f410ea8125786a24c37426"
+      "iconSha256": "fdb16282a192c0807d0f82f6970296c2e27926ccc0f410ea8125786a24c37426",
+      "name_zh_tw": "Cloudreve",
+      "desc_zh_tw": "支援多家雲端儲存的自建網盤，可線上預覽與分享。"
     },
     {
       "id": "builtin-14",
@@ -262,7 +295,9 @@
       "url": "https://github.com/icret/EasyImages2.0",
       "icon": "/app-icons/easyimage.webp",
       "slug": "easyimage",
-      "iconSha256": "c7bae522340f2c7e101b1342f847ec3a4ba4ab9b48cfecbf4f4cf0bb2c0d0761"
+      "iconSha256": "c7bae522340f2c7e101b1342f847ec3a4ba4ab9b48cfecbf4f4cf0bb2c0d0761",
+      "name_zh_tw": "簡單圖床",
+      "desc_zh_tw": "簡單好用的自建圖床，支援上傳管理與外鏈生成。"
     },
     {
       "id": "builtin-15",
@@ -278,7 +313,9 @@
       "url": "https://emby.media/",
       "icon": "/app-icons/emby.webp",
       "slug": "emby",
-      "iconSha256": "89fd0d95fbb46e095f4ab8c8a47d21f1694df0f818f3b11fa495e79ebba89ffb"
+      "iconSha256": "89fd0d95fbb46e095f4ab8c8a47d21f1694df0f818f3b11fa495e79ebba89ffb",
+      "name_zh_tw": "Emby",
+      "desc_zh_tw": "強大的個人多媒體伺服器，整理並串流影視與音樂。"
     },
     {
       "id": "builtin-16",
@@ -294,7 +331,9 @@
       "url": "https://github.com/wikihost-opensource/als",
       "icon": "/app-icons/b-16-16.webp",
       "slug": "b-16-16",
-      "iconSha256": "4c71b8e0ac41f56aa9dde600696b5bcf330330b1ea7d52d2e21ad80461d6660e"
+      "iconSha256": "4c71b8e0ac41f56aa9dde600696b5bcf330330b1ea7d52d2e21ad80461d6660e",
+      "name_zh_tw": "Looking Glass",
+      "desc_zh_tw": "VPS 網路測速節點，提供即時回程與測速頁面。"
     },
     {
       "id": "builtin-17",
@@ -310,7 +349,9 @@
       "url": "https://hub.docker.com/r/adguard/adguardhome",
       "icon": "/app-icons/adguardhome.webp",
       "slug": "adguardhome",
-      "iconSha256": "262b16fa57bec4198ebb6df00968fd09153b92c282672301a4d64af8e36fbe5e"
+      "iconSha256": "262b16fa57bec4198ebb6df00968fd09153b92c282672301a4d64af8e36fbe5e",
+      "name_zh_tw": "AdGuard Home",
+      "desc_zh_tw": "全網路範圍的 DNS 去廣告與上網保護工具。"
     },
     {
       "id": "builtin-18",
@@ -326,7 +367,9 @@
       "url": "https://www.onlyoffice.com/",
       "icon": "/app-icons/onlyoffice.webp",
       "slug": "onlyoffice",
-      "iconSha256": "a62421c727e51e0e39d4534971ecf7a9a6030d00e50d47f818d5597fd27811f2"
+      "iconSha256": "a62421c727e51e0e39d4534971ecf7a9a6030d00e50d47f818d5597fd27811f2",
+      "name_zh_tw": "ONLYOFFICE",
+      "desc_zh_tw": "自建線上辦公套件，相容 Word / Excel / PPT 協同編輯。"
     },
     {
       "id": "builtin-19",
@@ -342,7 +385,9 @@
       "url": "",
       "icon": "/app-icons/safeline.webp",
       "slug": "safeline",
-      "iconSha256": "504a939fb22f563cb6ea77cc89901442b954b45ef60dbe45c0424dc1348ebf84"
+      "iconSha256": "504a939fb22f563cb6ea77cc89901442b954b45ef60dbe45c0424dc1348ebf84",
+      "name_zh_tw": "雷池 WAF",
+      "desc_zh_tw": "長亭出品的智慧 Web 應用防火牆，社群版免費。"
     },
     {
       "id": "builtin-20",
@@ -358,7 +403,9 @@
       "url": "https://www.portainer.io/",
       "icon": "/app-icons/portainer.webp",
       "slug": "portainer",
-      "iconSha256": "1d72634df9a429d9d60dd866bd03816ef306bfdf8b202be69d27ba5079f91f4c"
+      "iconSha256": "1d72634df9a429d9d60dd866bd03816ef306bfdf8b202be69d27ba5079f91f4c",
+      "name_zh_tw": "Portainer",
+      "desc_zh_tw": "經典的 Docker / 容器視覺化管理面板。"
     },
     {
       "id": "builtin-21",
@@ -374,7 +421,9 @@
       "url": "https://github.com/coder/code-server",
       "icon": "/app-icons/vscode.webp",
       "slug": "vscode",
-      "iconSha256": "18269383e375f4ca122f1c2b675ced3f89337b6154880212249d2404ab3dc367"
+      "iconSha256": "18269383e375f4ca122f1c2b675ced3f89337b6154880212249d2404ab3dc367",
+      "name_zh_tw": "code-server",
+      "desc_zh_tw": "在瀏覽器中執行的 VS Code，隨處編寫程式碼。"
     },
     {
       "id": "builtin-22",
@@ -390,7 +439,9 @@
       "url": "https://github.com/louislam/uptime-kuma",
       "icon": "/app-icons/uptime-kuma.webp",
       "slug": "uptime-kuma",
-      "iconSha256": "f6d71bb2bf088c8d06c0b528e8cc06a7e233c3b4949d29e12e08b222031819c6"
+      "iconSha256": "f6d71bb2bf088c8d06c0b528e8cc06a7e233c3b4949d29e12e08b222031819c6",
+      "name_zh_tw": "Uptime Kuma",
+      "desc_zh_tw": "顏值線上的自託管服務可用性監控與告警工具。"
     },
     {
       "id": "builtin-23",
@@ -406,7 +457,9 @@
       "url": "https://github.com/usememos/memos",
       "icon": "/app-icons/memos.webp",
       "slug": "memos",
-      "iconSha256": "13f03688fc4c22ed8416f0220f0be0c175276c278ff79616b61d5f8fcb70418e"
+      "iconSha256": "13f03688fc4c22ed8416f0220f0be0c175276c278ff79616b61d5f8fcb70418e",
+      "name_zh_tw": "Memos",
+      "desc_zh_tw": "輕量、隱私優先的自託管備忘錄與筆記中心。"
     },
     {
       "id": "builtin-24",
@@ -422,7 +475,9 @@
       "url": "https://docs.linuxserver.io/images/docker-webtop/",
       "icon": "/app-icons/webtop.webp",
       "slug": "webtop",
-      "iconSha256": "fed3af87d29d9dc0b95b632a1ac8e741d3ef7ce85265482f9fb334a4b1840911"
+      "iconSha256": "fed3af87d29d9dc0b95b632a1ac8e741d3ef7ce85265482f9fb334a4b1840911",
+      "name_zh_tw": "Webtop (Alpine)",
+      "desc_zh_tw": "在瀏覽器中執行的 Alpine 遠端桌面環境。"
     },
     {
       "id": "builtin-25",
@@ -438,7 +493,9 @@
       "url": "https://nextcloud.com/",
       "icon": "/app-icons/nextcloud.webp",
       "slug": "nextcloud",
-      "iconSha256": "8374ee7a614e8f21dad73de2510a07feceb093aeb33b38f6e3a9c47983b457fb"
+      "iconSha256": "8374ee7a614e8f21dad73de2510a07feceb093aeb33b38f6e3a9c47983b457fb",
+      "name_zh_tw": "Nextcloud",
+      "desc_zh_tw": "廣受歡迎的私有云協作平臺，網盤、日曆與辦公一體。"
     },
     {
       "id": "builtin-26",
@@ -454,7 +511,9 @@
       "url": "https://qd-today.github.io/qd/zh_CN/",
       "icon": "/app-icons/qd.webp",
       "slug": "qd",
-      "iconSha256": "099e115450efca5296264973ca65670841bd7bef4b4752d34c02c96d907243d2"
+      "iconSha256": "099e115450efca5296264973ca65670841bd7bef4b4752d34c02c96d907243d2",
+      "name_zh_tw": "QD-Today",
+      "desc_zh_tw": "基於 HTTP 的定時任務 / 自動簽到管理框架。"
     },
     {
       "id": "builtin-27",
@@ -470,7 +529,9 @@
       "url": "https://github.com/louislam/dockge",
       "icon": "/app-icons/dockge.webp",
       "slug": "dockge",
-      "iconSha256": "760f89cc959f69744e5de7fa9478ac2f252ebb041e8aabc98cada5c382f1dc98"
+      "iconSha256": "760f89cc959f69744e5de7fa9478ac2f252ebb041e8aabc98cada5c382f1dc98",
+      "name_zh_tw": "Dockge",
+      "desc_zh_tw": "面向 docker-compose 的現代化容器堆疊管理面板。"
     },
     {
       "id": "builtin-28",
@@ -486,7 +547,9 @@
       "url": "https://github.com/librespeed/speedtest",
       "icon": "/app-icons/speedtest.webp",
       "slug": "speedtest",
-      "iconSha256": "66e21f19a7f2df3378c9290b05f8d05aaa9c9970c8d3787173d2570dd66423d0"
+      "iconSha256": "66e21f19a7f2df3378c9290b05f8d05aaa9c9970c8d3787173d2570dd66423d0",
+      "name_zh_tw": "LibreSpeed",
+      "desc_zh_tw": "無需 Flash 的自建網路測速工具，單檔案部署。"
     },
     {
       "id": "builtin-29",
@@ -502,7 +565,9 @@
       "url": "https://hub.docker.com/r/alandoyle/searxng",
       "icon": "/app-icons/searxng.webp",
       "slug": "searxng",
-      "iconSha256": "6bb034f78ad2b67ea4f9fb0b933005acb606f00cfbdc94508c1b2df6d6ba17e9"
+      "iconSha256": "6bb034f78ad2b67ea4f9fb0b933005acb606f00cfbdc94508c1b2df6d6ba17e9",
+      "name_zh_tw": "SearXNG",
+      "desc_zh_tw": "保護隱私的聚合元搜尋引擎，不追蹤使用者。"
     },
     {
       "id": "builtin-30",
@@ -518,7 +583,9 @@
       "url": "https://www.photoprism.app/",
       "icon": "/app-icons/photoprism.webp",
       "slug": "photoprism",
-      "iconSha256": "e0b8fb66019d5fc47ec2d7cf7e495a1b75acc4c709a48492b27a969b3ffa8c1a"
+      "iconSha256": "e0b8fb66019d5fc47ec2d7cf7e495a1b75acc4c709a48492b27a969b3ffa8c1a",
+      "name_zh_tw": "PhotoPrism",
+      "desc_zh_tw": "AI 加持的私有照片管理系統，自動標記與人臉識別。"
     },
     {
       "id": "builtin-31",
@@ -534,7 +601,9 @@
       "url": "https://github.com/Stirling-Tools/Stirling-PDF",
       "icon": "/app-icons/s-pdf.webp",
       "slug": "s-pdf",
-      "iconSha256": "f428b6c6966d470adfeb57c9103955cfc14f64ef423aeb6862deada17bc9ff85"
+      "iconSha256": "f428b6c6966d470adfeb57c9103955cfc14f64ef423aeb6862deada17bc9ff85",
+      "name_zh_tw": "Stirling-PDF",
+      "desc_zh_tw": "本地化的 PDF 工具大全，合併、拆分、轉換、壓縮一應俱全。"
     },
     {
       "id": "builtin-32",
@@ -550,7 +619,9 @@
       "url": "https://www.drawio.com/",
       "icon": "/app-icons/drawio.webp",
       "slug": "drawio",
-      "iconSha256": "4c4589b08282584f5ad7834f5e58b8236b7b32782fed2c342be1b5014a13d30d"
+      "iconSha256": "4c4589b08282584f5ad7834f5e58b8236b7b32782fed2c342be1b5014a13d30d",
+      "name_zh_tw": "draw.io",
+      "desc_zh_tw": "免費強大的線上圖表工具，繪製流程圖與思維導圖。"
     },
     {
       "id": "builtin-33",
@@ -566,7 +637,9 @@
       "url": "https://doc.sun-panel.top/zh_cn/",
       "icon": "/app-icons/sun-panel.webp",
       "slug": "sun-panel",
-      "iconSha256": "374d660275f80293f23e7b1edf1b159a002a6b3e21bc39eead790821ec4a1c34"
+      "iconSha256": "374d660275f80293f23e7b1edf1b159a002a6b3e21bc39eead790821ec4a1c34",
+      "name_zh_tw": "Sun-Panel",
+      "desc_zh_tw": "簡潔美觀的伺服器 / NAS 導航首頁與應用面板。"
     },
     {
       "id": "builtin-34",
@@ -582,7 +655,9 @@
       "url": "https://github.com/stonith404/pingvin-share",
       "icon": "/app-icons/pingvin-share.webp",
       "slug": "pingvin-share",
-      "iconSha256": "06ad3eccf8e970d0290f7afdc78364e0732dd3b0cc3d74cf1d5e06f17ed56e95"
+      "iconSha256": "06ad3eccf8e970d0290f7afdc78364e0732dd3b0cc3d74cf1d5e06f17ed56e95",
+      "name_zh_tw": "Pingvin Share",
+      "desc_zh_tw": "自託管的檔案分享平臺，可替代 WeTransfer。"
     },
     {
       "id": "builtin-35",
@@ -598,7 +673,9 @@
       "url": "https://github.com/kingwrcy/moments?tab=readme-ov-file",
       "icon": "/app-icons/moments.webp",
       "slug": "moments",
-      "iconSha256": "dcfb43a0adaebf5c1630f72042a9399f4b1b5598ab1f4b4dfbc7422f7551aea3"
+      "iconSha256": "dcfb43a0adaebf5c1630f72042a9399f4b1b5598ab1f4b4dfbc7422f7551aea3",
+      "name_zh_tw": "極簡朋友圈",
+      "desc_zh_tw": "類似微信朋友圈的輕量個人動態記錄工具。"
     },
     {
       "id": "builtin-36",
@@ -614,7 +691,9 @@
       "url": "https://github.com/lobehub/lobe-chat",
       "icon": "/app-icons/lobe-chat.webp",
       "slug": "lobe-chat",
-      "iconSha256": "6e00e4bab8056ecfa3ada39b1510063dd028ae8f3cd0022733d2c96866ff9534"
+      "iconSha256": "6e00e4bab8056ecfa3ada39b1510063dd028ae8f3cd0022733d2c96866ff9534",
+      "name_zh_tw": "LobeChat",
+      "desc_zh_tw": "現代化 AI 聊天聚合介面，支援多家大模型與外掛。"
     },
     {
       "id": "builtin-37",
@@ -630,7 +709,9 @@
       "url": "https://github.com/jason5ng32/MyIP/blob/main/README_ZH.md",
       "icon": "/app-icons/myip.webp",
       "slug": "myip",
-      "iconSha256": "e5e5fead3a4f8496c9f93233d082c2d500074f3d32462cd105b373967c5a5965"
+      "iconSha256": "e5e5fead3a4f8496c9f93233d082c2d500074f3d32462cd105b373967c5a5965",
+      "name_zh_tw": "MyIP",
+      "desc_zh_tw": "多功能 IP 工具箱，查詢 IP 資訊、連通性與網速。"
     },
     {
       "id": "builtin-38",
@@ -646,7 +727,9 @@
       "url": "",
       "icon": "/app-icons/xiaoya.webp",
       "slug": "xiaoya",
-      "iconSha256": "ae100a2bbd90510bb6e776eafbc930807da3c52d06860280ccea5156eec9e139"
+      "iconSha256": "ae100a2bbd90510bb6e776eafbc930807da3c52d06860280ccea5156eec9e139",
+      "name_zh_tw": "小雅 AList",
+      "desc_zh_tw": "小雅全家桶，預設定的 AList 影視資源網盤。"
     },
     {
       "id": "builtin-39",
@@ -662,7 +745,9 @@
       "url": "https://github.com/hr3lxphr6j/bililive-go",
       "icon": "/app-icons/bililive.webp",
       "slug": "bililive",
-      "iconSha256": "150a24cafe128c2a3b491f90229560fb18a1359de813c5a93bec94418ea59033"
+      "iconSha256": "150a24cafe128c2a3b491f90229560fb18a1359de813c5a93bec94418ea59033",
+      "name_zh_tw": "Bililive-go",
+      "desc_zh_tw": "支援多平臺的直播自動錄製工具。"
     },
     {
       "id": "builtin-40",
@@ -678,7 +763,9 @@
       "url": "https://github.com/Jrohy/webssh",
       "icon": "/app-icons/webssh.webp",
       "slug": "webssh",
-      "iconSha256": "8dd8507c483adb903ebccad7f2ccc05aac12a6a5a48700f594b125fa6d86b294"
+      "iconSha256": "8dd8507c483adb903ebccad7f2ccc05aac12a6a5a48700f594b125fa6d86b294",
+      "name_zh_tw": "WebSSH",
+      "desc_zh_tw": "網頁版 SSH 連線與 SFTP 工具，瀏覽器直連伺服器。"
     },
     {
       "id": "builtin-41",
@@ -694,7 +781,9 @@
       "url": "",
       "icon": "/app-icons/haozi.webp",
       "slug": "haozi",
-      "iconSha256": "51f42c81764502cd746766558a1e211f5ae6b0b780c99d22c1780fa8d3c68bc2"
+      "iconSha256": "51f42c81764502cd746766558a1e211f5ae6b0b780c99d22c1780fa8d3c68bc2",
+      "name_zh_tw": "耗子面板",
+      "desc_zh_tw": "輕量現代的伺服器運維管理面板（耗子面板）。"
     },
     {
       "id": "builtin-42",
@@ -710,7 +799,9 @@
       "url": "https://github.com/gnmyt/Nexterm",
       "icon": "/app-icons/nexterm.webp",
       "slug": "nexterm",
-      "iconSha256": "5d1e956ac3201d34dd9a70a36f87599eee55ae6acd477e44f9e42ca4c4ba4be0"
+      "iconSha256": "5d1e956ac3201d34dd9a70a36f87599eee55ae6acd477e44f9e42ca4c4ba4be0",
+      "name_zh_tw": "Nexterm",
+      "desc_zh_tw": "開源的 SSH / VNC / RDP 網頁版伺服器連線工具。"
     },
     {
       "id": "builtin-43",
@@ -726,7 +817,9 @@
       "url": "https://rustdesk.com/zh-cn/",
       "icon": "/app-icons/hbbs.webp",
       "slug": "hbbs",
-      "iconSha256": "8b3187cc1f5d3eed08db8c9c22c0fe6d0cf11b6ea50cf98a5bfbe8b98e8dcd28"
+      "iconSha256": "8b3187cc1f5d3eed08db8c9c22c0fe6d0cf11b6ea50cf98a5bfbe8b98e8dcd28",
+      "name_zh_tw": "RustDesk 服務端",
+      "desc_zh_tw": "開源遠端桌面 RustDesk 的自建服務端（ID 伺服器）。"
     },
     {
       "id": "builtin-44",
@@ -742,7 +835,9 @@
       "url": "https://rustdesk.com/zh-cn/",
       "icon": "/app-icons/hbbr.webp",
       "slug": "hbbr",
-      "iconSha256": "8b3187cc1f5d3eed08db8c9c22c0fe6d0cf11b6ea50cf98a5bfbe8b98e8dcd28"
+      "iconSha256": "8b3187cc1f5d3eed08db8c9c22c0fe6d0cf11b6ea50cf98a5bfbe8b98e8dcd28",
+      "name_zh_tw": "RustDesk 中繼端",
+      "desc_zh_tw": "RustDesk 遠端桌面的自建中繼伺服器。"
     },
     {
       "id": "builtin-45",
@@ -758,7 +853,9 @@
       "url": "https://hub.docker.com/_/registry",
       "icon": "/app-icons/registry.webp",
       "slug": "registry",
-      "iconSha256": "b7f34b010dd88261264734e597dc715cbe49a1741db7edf60974e6f4e7bb50ee"
+      "iconSha256": "b7f34b010dd88261264734e597dc715cbe49a1741db7edf60974e6f4e7bb50ee",
+      "name_zh_tw": "Docker Registry",
+      "desc_zh_tw": "私有 Docker 映象倉庫，儲存與分發容器映象。"
     },
     {
       "id": "builtin-46",
@@ -774,7 +871,9 @@
       "url": "https://github.com/WJQSERVER-STUDIO/ghproxy",
       "icon": "/app-icons/ghproxy.webp",
       "slug": "ghproxy",
-      "iconSha256": "98cab94585360d97ee94edf2bb2f80718af5a6ba5ca6bb03956777226375f65e"
+      "iconSha256": "98cab94585360d97ee94edf2bb2f80718af5a6ba5ca6bb03956777226375f65e",
+      "name_zh_tw": "GHProxy",
+      "desc_zh_tw": "自建 GitHub 加速代理，加速倉庫與檔案下載。"
     },
     {
       "id": "builtin-47",
@@ -790,7 +889,9 @@
       "url": "",
       "icon": "/app-icons/prometheus.webp",
       "slug": "prometheus",
-      "iconSha256": "f32df2014b6a1ace6ae624f086e8ad3407e88b8bc009084d01d15a4bd6f705e7"
+      "iconSha256": "f32df2014b6a1ace6ae624f086e8ad3407e88b8bc009084d01d15a4bd6f705e7",
+      "name_zh_tw": "Prometheus + Grafana",
+      "desc_zh_tw": "Prometheus 採集 + Grafana 視覺化的監控套件。"
     },
     {
       "id": "builtin-48",
@@ -806,7 +907,9 @@
       "url": "https://github.com/prometheus/node_exporter",
       "icon": "/app-icons/node-exporter.webp",
       "slug": "node-exporter",
-      "iconSha256": "7244647040f7f8ac986a62fb43e68b47619748bd861717181cae5407d19697d6"
+      "iconSha256": "7244647040f7f8ac986a62fb43e68b47619748bd861717181cae5407d19697d6",
+      "name_zh_tw": "Node Exporter",
+      "desc_zh_tw": "Prometheus 主機指標採集器，監控 CPU、記憶體與磁碟。"
     },
     {
       "id": "builtin-49",
@@ -822,7 +925,9 @@
       "url": "https://github.com/google/cadvisor",
       "icon": "/app-icons/cadvisor.webp",
       "slug": "cadvisor",
-      "iconSha256": "d41b186aededf31820742e8b14c75bdd8f019a43cdf9500871337530d23268bf"
+      "iconSha256": "d41b186aededf31820742e8b14c75bdd8f019a43cdf9500871337530d23268bf",
+      "name_zh_tw": "cAdvisor",
+      "desc_zh_tw": "Google 出品的容器資源使用與效能監控採集器。"
     },
     {
       "id": "builtin-50",
@@ -838,7 +943,9 @@
       "url": "https://github.com/dgtlmoon/changedetection.io",
       "icon": "/app-icons/changedetection.webp",
       "slug": "changedetection",
-      "iconSha256": "67bffbecb959efccf2b8bbf2f97ef25d77c0f92fde13742682c2734686528883"
+      "iconSha256": "67bffbecb959efccf2b8bbf2f97ef25d77c0f92fde13742682c2734686528883",
+      "name_zh_tw": "ChangeDetection",
+      "desc_zh_tw": "網頁內容變化監測與通知工具，可用於補貨監控。"
     },
     {
       "id": "builtin-51",
@@ -854,7 +961,9 @@
       "url": "",
       "icon": "/app-icons/pve.webp",
       "slug": "pve",
-      "iconSha256": "c0be3f37a0ab1643ae0fcda1f85fbc97de5c1ec9747c47ebba893f5fb523a5fb"
+      "iconSha256": "c0be3f37a0ab1643ae0fcda1f85fbc97de5c1ec9747c47ebba893f5fb523a5fb",
+      "name_zh_tw": "Proxmox VE",
+      "desc_zh_tw": "開源虛擬化平臺，開 KVM 小雞與 LXC 容器。"
     },
     {
       "id": "builtin-52",
@@ -870,7 +979,9 @@
       "url": "https://github.com/donknap/dpanel",
       "icon": "/app-icons/dpanel.webp",
       "slug": "dpanel",
-      "iconSha256": "f758e7bc142c0f5664f2d24e02cb43fee05a5ecccb02fbba16844576851bbc7f"
+      "iconSha256": "f758e7bc142c0f5664f2d24e02cb43fee05a5ecccb02fbba16844576851bbc7f",
+      "name_zh_tw": "DPanel",
+      "desc_zh_tw": "簡潔的 Docker 視覺化管理面板。"
     },
     {
       "id": "builtin-53",
@@ -886,7 +997,9 @@
       "url": "https://github.com/open-webui/open-webui",
       "icon": "/app-icons/llama3.webp",
       "slug": "llama3",
-      "iconSha256": "c345988cb76fbc9be4e6ae51a3b4e1d81269cd72135e38b876ae0b56093416f1"
+      "iconSha256": "c345988cb76fbc9be4e6ae51a3b4e1d81269cd72135e38b876ae0b56093416f1",
+      "name_zh_tw": "Llama 3 (Open WebUI)",
+      "desc_zh_tw": "基於 Ollama + Open WebUI 的本地 Llama 3 聊天大模型。"
     },
     {
       "id": "builtin-54",
@@ -902,7 +1015,9 @@
       "url": "",
       "icon": "/app-icons/amh.webp",
       "slug": "amh",
-      "iconSha256": "4aef6e6cdce9182fa8272739eaba11fb2d5fc4ca1fba75d8b93127df397ccb13"
+      "iconSha256": "4aef6e6cdce9182fa8272739eaba11fb2d5fc4ca1fba75d8b93127df397ccb13",
+      "name_zh_tw": "AMH 面板",
+      "desc_zh_tw": "老牌的主機建站與伺服器管理面板。"
     },
     {
       "id": "builtin-55",
@@ -918,7 +1033,9 @@
       "url": "",
       "icon": "/app-icons/frps.webp",
       "slug": "frps",
-      "iconSha256": "426a97235f46391b289dcfb69d8845fdf083881b7d6323622dd25880be931822"
+      "iconSha256": "426a97235f46391b289dcfb69d8845fdf083881b7d6323622dd25880be931822",
+      "name_zh_tw": "FRP 服務端",
+      "desc_zh_tw": "內網穿透工具 FRP 的服務端，把內網服務暴露到公網。"
     },
     {
       "id": "builtin-56",
@@ -934,7 +1051,9 @@
       "url": "",
       "icon": "/app-icons/frpc.webp",
       "slug": "frpc",
-      "iconSha256": "426a97235f46391b289dcfb69d8845fdf083881b7d6323622dd25880be931822"
+      "iconSha256": "426a97235f46391b289dcfb69d8845fdf083881b7d6323622dd25880be931822",
+      "name_zh_tw": "FRP 客戶端",
+      "desc_zh_tw": "內網穿透工具 FRP 的客戶端。"
     },
     {
       "id": "builtin-57",
@@ -950,7 +1069,9 @@
       "url": "https://github.com/open-webui/open-webui",
       "icon": "/app-icons/deepseek.webp",
       "slug": "deepseek",
-      "iconSha256": "e66f99b1620f41ca278fa632018463ce9f44bcef3052d51e5df0f8f453e10ea4"
+      "iconSha256": "e66f99b1620f41ca278fa632018463ce9f44bcef3052d51e5df0f8f453e10ea4",
+      "name_zh_tw": "DeepSeek (Open WebUI)",
+      "desc_zh_tw": "基於 Ollama + Open WebUI 的本地 DeepSeek R1 大模型。"
     },
     {
       "id": "builtin-58",
@@ -966,7 +1087,9 @@
       "url": "",
       "icon": "/app-icons/dify.webp",
       "slug": "dify",
-      "iconSha256": "cd477d5d517311b204e32f57fd09568d595139b38927a43f692dba18802ac478"
+      "iconSha256": "cd477d5d517311b204e32f57fd09568d595139b38927a43f692dba18802ac478",
+      "name_zh_tw": "Dify",
+      "desc_zh_tw": "開源的 LLM 應用開發平臺與大模型知識庫。"
     },
     {
       "id": "builtin-59",
@@ -982,7 +1105,9 @@
       "url": "",
       "icon": "/app-icons/new-api.webp",
       "slug": "new-api",
-      "iconSha256": "9af459b917322526c4a68644653b749beee1832e9073f1860241ca6286ee26ca"
+      "iconSha256": "9af459b917322526c4a68644653b749beee1832e9073f1860241ca6286ee26ca",
+      "name_zh_tw": "New API",
+      "desc_zh_tw": "大模型 API 資產管理與分發閘道器。"
     },
     {
       "id": "builtin-60",
@@ -998,7 +1123,9 @@
       "url": "",
       "icon": "/app-icons/jms.webp",
       "slug": "jms",
-      "iconSha256": "825046f6e3583fd68b6ef7b5739321ab4497ab23974a8d63f1942af7f2a37f26"
+      "iconSha256": "825046f6e3583fd68b6ef7b5739321ab4497ab23974a8d63f1942af7f2a37f26",
+      "name_zh_tw": "JumpServer",
+      "desc_zh_tw": "開源堡壘機，統一管理伺服器的安全運維審計。"
     },
     {
       "id": "builtin-61",
@@ -1014,7 +1141,9 @@
       "url": "https://github.com/LibreTranslate/LibreTranslate",
       "icon": "/app-icons/libretranslate.webp",
       "slug": "libretranslate",
-      "iconSha256": "ee5be433d0e7149140f0efc58727d0f59144f338ef7b0423662ea12f14029ee9"
+      "iconSha256": "ee5be433d0e7149140f0efc58727d0f59144f338ef7b0423662ea12f14029ee9",
+      "name_zh_tw": "LibreTranslate",
+      "desc_zh_tw": "完全自託管的開源機器翻譯 API。"
     },
     {
       "id": "builtin-62",
@@ -1030,7 +1159,9 @@
       "url": "",
       "icon": "/app-icons/ragflow.webp",
       "slug": "ragflow",
-      "iconSha256": "1feaea5366a3af14bb74dc62503c32ced43895997de9bb5189f47fc66c18be43"
+      "iconSha256": "1feaea5366a3af14bb74dc62503c32ced43895997de9bb5189f47fc66c18be43",
+      "name_zh_tw": "RAGFlow",
+      "desc_zh_tw": "基於深度文件理解的開源 RAG 大模型知識庫引擎。"
     },
     {
       "id": "builtin-63",
@@ -1046,7 +1177,9 @@
       "url": "https://github.com/open-webui/open-webui",
       "icon": "/app-icons/open-webui.webp",
       "slug": "open-webui",
-      "iconSha256": "8658ce8c4909fe0cedebeb39d0ff5da4be6401b331e34dd2e2261d119e5ede35"
+      "iconSha256": "8658ce8c4909fe0cedebeb39d0ff5da4be6401b331e34dd2e2261d119e5ede35",
+      "name_zh_tw": "Open WebUI",
+      "desc_zh_tw": "自託管的 AI 平臺，支援 Ollama 與各家模型 API。"
     },
     {
       "id": "builtin-64",
@@ -1062,7 +1195,9 @@
       "url": "https://github.com/CorentinTh/it-tools",
       "icon": "/app-icons/it-tools.webp",
       "slug": "it-tools",
-      "iconSha256": "8ac13d5cbe820ad53246658c103ffadf0d5d440a2551f6960fe45c48e8ec1c85"
+      "iconSha256": "8ac13d5cbe820ad53246658c103ffadf0d5d440a2551f6960fe45c48e8ec1c85",
+      "name_zh_tw": "IT-Tools",
+      "desc_zh_tw": "面向開發者的實用線上工具箱合集。"
     },
     {
       "id": "builtin-65",
@@ -1078,7 +1213,9 @@
       "url": "https://github.com/n8n-io/n8n",
       "icon": "/app-icons/n8n.webp",
       "slug": "n8n",
-      "iconSha256": "43af3f0e89af871c2fc8cf80213e5ce87f9bb30edaf44ae49ce35b80dac5f419"
+      "iconSha256": "43af3f0e89af871c2fc8cf80213e5ce87f9bb30edaf44ae49ce35b80dac5f419",
+      "name_zh_tw": "n8n",
+      "desc_zh_tw": "強大的視覺化自動化工作流平臺，連線各類應用。"
     },
     {
       "id": "builtin-66",
@@ -1094,7 +1231,9 @@
       "url": "",
       "icon": "/app-icons/yt.webp",
       "slug": "yt",
-      "iconSha256": "c66e6c4087ee78f816567862f480000e07b3cfea9c079eb7eaf75cfa8d2ddb1a"
+      "iconSha256": "c66e6c4087ee78f816567862f480000e07b3cfea9c079eb7eaf75cfa8d2ddb1a",
+      "name_zh_tw": "yt-dlp",
+      "desc_zh_tw": "功能豐富的命令列影片下載工具，支援上千網站。"
     },
     {
       "id": "builtin-67",
@@ -1110,7 +1249,9 @@
       "url": "https://github.com/jeessy2/ddns-go",
       "icon": "/app-icons/ddns.webp",
       "slug": "ddns",
-      "iconSha256": "29ae47be3fd5f9777a20d2a8bdd6046aa338116940c97594cee11f6238518cc6"
+      "iconSha256": "29ae47be3fd5f9777a20d2a8bdd6046aa338116940c97594cee11f6238518cc6",
+      "name_zh_tw": "DDNS-Go",
+      "desc_zh_tw": "自動獲取公網 IP 並更新到 DNS 的動態域名工具。"
     },
     {
       "id": "builtin-68",
@@ -1126,7 +1267,9 @@
       "url": "https://allinssl.com",
       "icon": "/app-icons/allinssl.webp",
       "slug": "allinssl",
-      "iconSha256": "79f7cfb53950747830e472f25c8d8e69ebe77d63033783b2153ef59a5b639045"
+      "iconSha256": "79f7cfb53950747830e472f25c8d8e69ebe77d63033783b2153ef59a5b639045",
+      "name_zh_tw": "ALLinSSL",
+      "desc_zh_tw": "開源免費的 SSL 證書自動化申請與管理平臺。"
     },
     {
       "id": "builtin-69",
@@ -1142,7 +1285,9 @@
       "url": "https://sftpgo.com/",
       "icon": "/app-icons/sftpgo.webp",
       "slug": "sftpgo",
-      "iconSha256": "1f0776d78ba1efad2f0b546d54c54597692ca81037635ae3ff574a6416bb2770"
+      "iconSha256": "1f0776d78ba1efad2f0b546d54c54597692ca81037635ae3ff574a6416bb2770",
+      "name_zh_tw": "SFTPGo",
+      "desc_zh_tw": "支援 SFTP / FTP / WebDAV 的開原始檔傳輸服務。"
     },
     {
       "id": "builtin-70",
@@ -1158,7 +1303,9 @@
       "url": "https://astrbot.app/",
       "icon": "/app-icons/astrbot.webp",
       "slug": "astrbot",
-      "iconSha256": "1caa838eb47824db8dc2ad9603ad932400b5714b36e04181b1b35e86ce5ede13"
+      "iconSha256": "1caa838eb47824db8dc2ad9603ad932400b5714b36e04181b1b35e86ce5ede13",
+      "name_zh_tw": "AstrBot",
+      "desc_zh_tw": "支援微信 / QQ / TG 接入大模型的開源聊天機器人框架。"
     },
     {
       "id": "builtin-71",
@@ -1174,7 +1321,9 @@
       "url": "https://www.navidrome.org/",
       "icon": "/app-icons/navidrome.webp",
       "slug": "navidrome",
-      "iconSha256": "09d8a038409070143725050e6e585d00c8c6097e251f213f3b4f45ba99527349"
+      "iconSha256": "09d8a038409070143725050e6e585d00c8c6097e251f213f3b4f45ba99527349",
+      "name_zh_tw": "Navidrome",
+      "desc_zh_tw": "現代化的私有音樂流媒體伺服器，相容 Subsonic。"
     },
     {
       "id": "builtin-72",
@@ -1190,7 +1339,9 @@
       "url": "https://bitwarden.com/",
       "icon": "/app-icons/bitwarden.webp",
       "slug": "bitwarden",
-      "iconSha256": "de9fc336e351569de47874f1a777e384609a727d51dc02fb4c2de320c030495e"
+      "iconSha256": "de9fc336e351569de47874f1a777e384609a727d51dc02fb4c2de320c030495e",
+      "name_zh_tw": "Vaultwarden",
+      "desc_zh_tw": "輕量自建的 Bitwarden 相容密碼管理服務。"
     },
     {
       "id": "builtin-73",
@@ -1206,7 +1357,9 @@
       "url": "https://github.com/LibreSpark/LibreTV",
       "icon": "/app-icons/libretv.webp",
       "slug": "libretv",
-      "iconSha256": "e267c46fee44ff69a19c34c0bcafcd7d9d11fdd6702b494fdc114bb16ea8eb94"
+      "iconSha256": "e267c46fee44ff69a19c34c0bcafcd7d9d11fdd6702b494fdc114bb16ea8eb94",
+      "name_zh_tw": "LibreTV",
+      "desc_zh_tw": "簡潔的自建線上影視聚合觀看平臺。"
     },
     {
       "id": "builtin-74",
@@ -1222,7 +1375,9 @@
       "url": "",
       "icon": "/app-icons/moontv.webp",
       "slug": "moontv",
-      "iconSha256": "7d8abfdb55ca16b0dd164ffb1212bd0293213879ac2d0d059f3f118691613551"
+      "iconSha256": "7d8abfdb55ca16b0dd164ffb1212bd0293213879ac2d0d059f3f118691613551",
+      "name_zh_tw": "MoonTV",
+      "desc_zh_tw": "美觀的自建影視聚合線上播放平臺。"
     },
     {
       "id": "builtin-75",
@@ -1238,7 +1393,9 @@
       "url": "https://github.com/foamzou/melody",
       "icon": "/app-icons/melody.webp",
       "slug": "melody",
-      "iconSha256": "4e18580640e6d4e49ddb308fa989ac01fb17a0549227160a03c7bee9f404d4f0"
+      "iconSha256": "4e18580640e6d4e49ddb308fa989ac01fb17a0549227160a03c7bee9f404d4f0",
+      "name_zh_tw": "Melody",
+      "desc_zh_tw": "個人音樂精靈，幫助你更好地管理音樂。"
     },
     {
       "id": "builtin-76",
@@ -1254,7 +1411,9 @@
       "url": "https://github.com/rwv/chinese-dos-games",
       "icon": "/app-icons/dosgame.webp",
       "slug": "dosgame",
-      "iconSha256": "1ddd04492b41d4d7b3f11f0a5b8ad47f17b91f46185af5b0e4255b25420f431f"
+      "iconSha256": "1ddd04492b41d4d7b3f11f0a5b8ad47f17b91f46185af5b0e4255b25420f431f",
+      "name_zh_tw": "DOS 遊戲",
+      "desc_zh_tw": "在網頁中重溫的中文 DOS 老遊戲合集。"
     },
     {
       "id": "builtin-77",
@@ -1270,7 +1429,9 @@
       "url": "https://github.com/cnk3x/xunlei",
       "icon": "/app-icons/xunlei.webp",
       "slug": "xunlei",
-      "iconSha256": "c342af44968ece9f452222d1f6a5a48edfaac54e653614870e7a0ae3434111b6"
+      "iconSha256": "c342af44968ece9f452222d1f6a5a48edfaac54e653614870e7a0ae3434111b6",
+      "name_zh_tw": "迅雷",
+      "desc_zh_tw": "迅雷遠端離線下載工具，支援 BT 與磁力。"
     },
     {
       "id": "builtin-78",
@@ -1286,7 +1447,9 @@
       "url": "",
       "icon": "/app-icons/pandawiki.webp",
       "slug": "pandawiki",
-      "iconSha256": "e0e8b202a1f799dbbe301f9f8932156346ebdadbc836b2bd84a786752fd598d5"
+      "iconSha256": "e0e8b202a1f799dbbe301f9f8932156346ebdadbc836b2bd84a786752fd598d5",
+      "name_zh_tw": "PandaWiki",
+      "desc_zh_tw": "長亭出品的 AI 智慧知識庫與文件管理系統。"
     },
     {
       "id": "builtin-79",
@@ -1302,7 +1465,9 @@
       "url": "https://beszel.dev/zh/",
       "icon": "/app-icons/beszel.webp",
       "slug": "beszel",
-      "iconSha256": "80e204173af8f575e56f1c3a9b2a491bbb5fa926f2eaf60fb8f608036bc880bb"
+      "iconSha256": "80e204173af8f575e56f1c3a9b2a491bbb5fa926f2eaf60fb8f608036bc880bb",
+      "name_zh_tw": "Beszel",
+      "desc_zh_tw": "輕量好用的伺服器資源監控與告警工具。"
     },
     {
       "id": "builtin-80",
@@ -1318,7 +1483,9 @@
       "url": "",
       "icon": "/app-icons/linkwarden.webp",
       "slug": "linkwarden",
-      "iconSha256": "3debc40fcbdfd960d93e64910ae79ad396a8488b7eed00d265fbb0099d11d427"
+      "iconSha256": "3debc40fcbdfd960d93e64910ae79ad396a8488b7eed00d265fbb0099d11d427",
+      "name_zh_tw": "Linkwarden",
+      "desc_zh_tw": "自託管的書籤收藏與網頁歸檔協作工具。"
     },
     {
       "id": "builtin-81",
@@ -1334,7 +1501,9 @@
       "url": "",
       "icon": "/app-icons/jitsi.webp",
       "slug": "jitsi",
-      "iconSha256": "6cf61311a3e30f98b3b44b6d13b35f9122d2ee8dc2ce4befb1ad12abe6dd51fa"
+      "iconSha256": "6cf61311a3e30f98b3b44b6d13b35f9122d2ee8dc2ce4befb1ad12abe6dd51fa",
+      "name_zh_tw": "Jitsi Meet",
+      "desc_zh_tw": "開源安全的多人視訊會議平臺，無需註冊。"
     },
     {
       "id": "builtin-82",
@@ -1350,7 +1519,9 @@
       "url": "https://www.gpt-load.com/",
       "icon": "/app-icons/gpt-load.webp",
       "slug": "gpt-load",
-      "iconSha256": "5545900b2c4a34dd856e188c940d3c4fd83e1772c288c429fca09356eea82fd4"
+      "iconSha256": "5545900b2c4a34dd856e188c940d3c4fd83e1772c288c429fca09356eea82fd4",
+      "name_zh_tw": "GPT-Load",
+      "desc_zh_tw": "高效能的多渠道 AI 介面透明代理與負載均衡。"
     },
     {
       "id": "builtin-83",
@@ -1366,7 +1537,9 @@
       "url": "https://github.com/komari-monitor/komari/tree/main",
       "icon": "/app-icons/komari.webp",
       "slug": "komari",
-      "iconSha256": "285723d11e1361974785c2ade7b3326b9f6d72b9a15134b2bcc134b1f76d7ec6"
+      "iconSha256": "285723d11e1361974785c2ade7b3326b9f6d72b9a15134b2bcc134b1f76d7ec6",
+      "name_zh_tw": "Komari",
+      "desc_zh_tw": "簡潔現代的自託管伺服器監控工具。"
     },
     {
       "id": "builtin-84",
@@ -1382,7 +1555,9 @@
       "url": "https://github.com/ellite/Wallos",
       "icon": "/app-icons/wallos.webp",
       "slug": "wallos",
-      "iconSha256": "20387fb072bc70a853bd1c993edc6046a079954e6361ddd09f78b346c21e9855"
+      "iconSha256": "20387fb072bc70a853bd1c993edc6046a079954e6361ddd09f78b346c21e9855",
+      "name_zh_tw": "Wallos",
+      "desc_zh_tw": "開源的個人訂閱與財務追蹤管理工具。"
     },
     {
       "id": "builtin-85",
@@ -1398,7 +1573,9 @@
       "url": "",
       "icon": "/app-icons/immich.webp",
       "slug": "immich",
-      "iconSha256": "70e007d7bfdf0e7eae42227d182292d6ded262cea0fbfe77700ac02eeb97c200"
+      "iconSha256": "70e007d7bfdf0e7eae42227d182292d6ded262cea0fbfe77700ac02eeb97c200",
+      "name_zh_tw": "Immich",
+      "desc_zh_tw": "高效能的自託管照片與影片備份管理方案。"
     },
     {
       "id": "builtin-86",
@@ -1414,7 +1591,9 @@
       "url": "https://jellyfin.org/",
       "icon": "/app-icons/jellyfin.webp",
       "slug": "jellyfin",
-      "iconSha256": "c682ef89dce3a289e7d21632be2c2cd8288c40fca352c31791a35a8da3d6bd6e"
+      "iconSha256": "c682ef89dce3a289e7d21632be2c2cd8288c40fca352c31791a35a8da3d6bd6e",
+      "name_zh_tw": "Jellyfin",
+      "desc_zh_tw": "完全免費開源的個人媒體伺服器與串流系統。"
     },
     {
       "id": "builtin-87",
@@ -1430,7 +1609,9 @@
       "url": "https://github.com/synctv-org/synctv",
       "icon": "/app-icons/synctv.webp",
       "slug": "synctv",
-      "iconSha256": "24133685e219487621d197c208800dd11d7c67c4077dc6871dbe6c6b59683f97"
+      "iconSha256": "24133685e219487621d197c208800dd11d7c67c4077dc6871dbe6c6b59683f97",
+      "name_zh_tw": "SyncTV",
+      "desc_zh_tw": "支援多人同步觀影與直播的一起看平臺。"
     },
     {
       "id": "builtin-88",
@@ -1446,7 +1627,9 @@
       "url": "https://owncast.online",
       "icon": "/app-icons/owncast.webp",
       "slug": "owncast",
-      "iconSha256": "af554e48a592bf64de60f573ce9e0b10ecfda5c9d1cdfd8fe8f0adc846e9f68a"
+      "iconSha256": "af554e48a592bf64de60f573ce9e0b10ecfda5c9d1cdfd8fe8f0adc846e9f68a",
+      "name_zh_tw": "Owncast",
+      "desc_zh_tw": "開源自託管的直播與聊天平臺，可替代 Twitch。"
     },
     {
       "id": "builtin-89",
@@ -1462,7 +1645,9 @@
       "url": "https://github.com/vastsa/FileCodeBox",
       "icon": "/app-icons/file-code-box.webp",
       "slug": "file-code-box",
-      "iconSha256": "d1aa3d12d5ab3466c6d24fab6fdfde6232461ad12ba90919d0547a8fd8cb2f09"
+      "iconSha256": "d1aa3d12d5ab3466c6d24fab6fdfde6232461ad12ba90919d0547a8fd8cb2f09",
+      "name_zh_tw": "FileCodeBox",
+      "desc_zh_tw": "匿名的檔案 / 文本快遞櫃，用取件碼分享。"
     },
     {
       "id": "builtin-90",
@@ -1478,7 +1663,9 @@
       "url": "https://matrix.org/",
       "icon": "/app-icons/matrix.webp",
       "slug": "matrix",
-      "iconSha256": "f29f4e47fedf571eb0215f9dbe74d3126f2eef5cd02d1f3289d2d6163e2d5ec4"
+      "iconSha256": "f29f4e47fedf571eb0215f9dbe74d3126f2eef5cd02d1f3289d2d6163e2d5ec4",
+      "name_zh_tw": "Matrix Synapse",
+      "desc_zh_tw": "去中心化、安全的開放即時通訊協議服務端。"
     },
     {
       "id": "builtin-91",
@@ -1494,7 +1681,9 @@
       "url": "",
       "icon": "/app-icons/gitea.webp",
       "slug": "gitea",
-      "iconSha256": "943ae5c1bf1e9e4ce3deab6ebe4f3bd202f66fe6007e239fb55aa7b3d42fe43c"
+      "iconSha256": "943ae5c1bf1e9e4ce3deab6ebe4f3bd202f66fe6007e239fb55aa7b3d42fe43c",
+      "name_zh_tw": "Gitea",
+      "desc_zh_tw": "輕量級自建 Git 程式碼託管服務，類似 GitHub。"
     },
     {
       "id": "builtin-92",
@@ -1510,7 +1699,9 @@
       "url": "https://filebrowser.org/",
       "icon": "/app-icons/filebrowser.webp",
       "slug": "filebrowser",
-      "iconSha256": "976f0ad8419e8ad8a3b6ba16cabf0732a493697c7743f36de1f5a7bb973564c4"
+      "iconSha256": "976f0ad8419e8ad8a3b6ba16cabf0732a493697c7743f36de1f5a7bb973564c4",
+      "name_zh_tw": "File Browser",
+      "desc_zh_tw": "簡潔的網頁檔案管理器，線上管理伺服器檔案。"
     },
     {
       "id": "builtin-93",
@@ -1526,7 +1717,9 @@
       "url": "https://github.com/sigoden/dufs",
       "icon": "/app-icons/dufs.webp",
       "slug": "dufs",
-      "iconSha256": "26494b3685d061a314eb0a521d2a0e3f15b158e043c10270dc7f3e8f1d88253a"
+      "iconSha256": "26494b3685d061a314eb0a521d2a0e3f15b158e043c10270dc7f3e8f1d88253a",
+      "name_zh_tw": "Dufs",
+      "desc_zh_tw": "極簡的靜態檔案伺服器，支援上傳與 WebDAV。"
     },
     {
       "id": "builtin-94",
@@ -1542,7 +1735,9 @@
       "url": "https://github.com/GopeedLab/gopeed",
       "icon": "/app-icons/gopeed.webp",
       "slug": "gopeed",
-      "iconSha256": "1c650d1cf430e81dfdc778e82a2d1d08ad9944a4ea30797ec26205ca66b12176"
+      "iconSha256": "1c650d1cf430e81dfdc778e82a2d1d08ad9944a4ea30797ec26205ca66b12176",
+      "name_zh_tw": "Gopeed",
+      "desc_zh_tw": "現代化的高速下載器，支援多協議與多平臺。"
     },
     {
       "id": "builtin-95",
@@ -1558,7 +1753,9 @@
       "url": "",
       "icon": "/app-icons/paperless.webp",
       "slug": "paperless",
-      "iconSha256": "f40fa22d7c320109abe1ab0e598d2487eb592d60747f35e7bc264a55585aa510"
+      "iconSha256": "f40fa22d7c320109abe1ab0e598d2487eb592d60747f35e7bc264a55585aa510",
+      "name_zh_tw": "Paperless-ngx",
+      "desc_zh_tw": "掃描文件管理平臺，自動 OCR 與全文檢索。"
     },
     {
       "id": "builtin-96",
@@ -1574,7 +1771,9 @@
       "url": "",
       "icon": "/app-icons/2fauth.webp",
       "slug": "2fauth",
-      "iconSha256": "d98e83cbf90a6287efa062c1c16e4035a2b76234e188ef3b572e25266d3de143"
+      "iconSha256": "d98e83cbf90a6287efa062c1c16e4035a2b76234e188ef3b572e25266d3de143",
+      "name_zh_tw": "2FAuth",
+      "desc_zh_tw": "自託管的兩步驗證（2FA）TOTP 令牌管理器。"
     },
     {
       "id": "builtin-97",
@@ -1590,7 +1789,9 @@
       "url": "https://www.wireguard.com/",
       "icon": "/app-icons/wgs.webp",
       "slug": "wgs",
-      "iconSha256": "6e5faa96e120f68b32b992083237183107c2e46241c79ac5bdc282c491106842"
+      "iconSha256": "6e5faa96e120f68b32b992083237183107c2e46241c79ac5bdc282c491106842",
+      "name_zh_tw": "WireGuard 服務端",
+      "desc_zh_tw": "現代、快速、安全的 WireGuard VPN 組網服務端。"
     },
     {
       "id": "builtin-98",
@@ -1606,7 +1807,9 @@
       "url": "https://www.wireguard.com/",
       "icon": "/app-icons/wgc.webp",
       "slug": "wgc",
-      "iconSha256": "6e5faa96e120f68b32b992083237183107c2e46241c79ac5bdc282c491106842"
+      "iconSha256": "6e5faa96e120f68b32b992083237183107c2e46241c79ac5bdc282c491106842",
+      "name_zh_tw": "WireGuard 客戶端",
+      "desc_zh_tw": "WireGuard VPN 組網客戶端。"
     },
     {
       "id": "builtin-99",
@@ -1622,7 +1825,9 @@
       "url": "",
       "icon": "/app-icons/dsm.webp",
       "slug": "dsm",
-      "iconSha256": "cd360ec3771901a24c56ee48e92bd6843da0f213dbbda96e0f8aa63f9dd77eb4"
+      "iconSha256": "cd360ec3771901a24c56ee48e92bd6843da0f213dbbda96e0f8aa63f9dd77eb4",
+      "name_zh_tw": "黑群暉 DSM",
+      "desc_zh_tw": "在虛擬機器中執行的群暉 DSM 系統（黑群暉）。"
     },
     {
       "id": "builtin-100",
@@ -1638,7 +1843,9 @@
       "url": "https://github.com/syncthing/syncthing",
       "icon": "/app-icons/syncthing.webp",
       "slug": "syncthing",
-      "iconSha256": "de5c01d660d575413f1e2bebec6e3c57b164f90b9104beeda8d215ef1a45cfd4"
+      "iconSha256": "de5c01d660d575413f1e2bebec6e3c57b164f90b9104beeda8d215ef1a45cfd4",
+      "name_zh_tw": "Syncthing",
+      "desc_zh_tw": "開源的點對點檔案同步工具，去中心化、端到端加密。"
     },
     {
       "id": "builtin-101",
@@ -1654,7 +1861,9 @@
       "url": "",
       "icon": "/app-icons/moneyprinterturbo.webp",
       "slug": "moneyprinterturbo",
-      "iconSha256": "d95b28d32a990ecd52a8c8683b2c51969e35104de9bb0c72dbbed26d1504cc0e"
+      "iconSha256": "d95b28d32a990ecd52a8c8683b2c51969e35104de9bb0c72dbbed26d1504cc0e",
+      "name_zh_tw": "MoneyPrinterTurbo",
+      "desc_zh_tw": "用大模型一鍵生成高畫質短影片的 AI 工具。"
     },
     {
       "id": "builtin-102",
@@ -1670,7 +1879,9 @@
       "url": "https://github.com/Privoce/vocechat-web",
       "icon": "/app-icons/vocechat.webp",
       "slug": "vocechat",
-      "iconSha256": "97a39755c3691d43b58bf8d18a1a8dcc477803f0c7d671cc24b3b0a37ecc9ab6"
+      "iconSha256": "97a39755c3691d43b58bf8d18a1a8dcc477803f0c7d671cc24b3b0a37ecc9ab6",
+      "name_zh_tw": "VoceChat",
+      "desc_zh_tw": "支援私有部署的輕量級社交聊天伺服器。"
     },
     {
       "id": "builtin-103",
@@ -1686,7 +1897,9 @@
       "url": "",
       "icon": "/app-icons/umami.webp",
       "slug": "umami",
-      "iconSha256": "cf65f3b1268203a04ed6b2eb864d152700459d648b6a9936efeb4e1ed3f80291"
+      "iconSha256": "cf65f3b1268203a04ed6b2eb864d152700459d648b6a9936efeb4e1ed3f80291",
+      "name_zh_tw": "Umami",
+      "desc_zh_tw": "注重隱私、開源的網站存取統計分析工具。"
     },
     {
       "id": "builtin-104",
@@ -1702,7 +1915,9 @@
       "url": "",
       "icon": "/app-icons/nginx-stream.webp",
       "slug": "nginx-stream",
-      "iconSha256": "26c9384b9a09181cdfe06f14c576bd5ba6245b4c744e6717159f0afcbc163414"
+      "iconSha256": "26c9384b9a09181cdfe06f14c576bd5ba6245b4c744e6717159f0afcbc163414",
+      "name_zh_tw": "Nginx Stream",
+      "desc_zh_tw": "基於 Nginx Stream 的四層 TCP/UDP 代理轉發工具。"
     },
     {
       "id": "builtin-105",
@@ -1718,7 +1933,9 @@
       "url": "https://github.com/siyuan-note/siyuan",
       "icon": "/app-icons/siyuan.webp",
       "slug": "siyuan",
-      "iconSha256": "4064f072980b4c8a965a047e69f81dd9fefd1c4287c0da6d5848a9d7308d50ce"
+      "iconSha256": "4064f072980b4c8a965a047e69f81dd9fefd1c4287c0da6d5848a9d7308d50ce",
+      "name_zh_tw": "思源筆記",
+      "desc_zh_tw": "隱私優先的個人知識管理與塊級筆記系統。"
     },
     {
       "id": "builtin-106",
@@ -1734,7 +1951,9 @@
       "url": "https://github.com/plait-board/drawnix",
       "icon": "/app-icons/drawnix.webp",
       "slug": "drawnix",
-      "iconSha256": "dcb215b0cbdc2d455fbd0f1eaa15f547a40392e76bb3f30435e965ad078c89a1"
+      "iconSha256": "dcb215b0cbdc2d455fbd0f1eaa15f547a40392e76bb3f30435e965ad078c89a1",
+      "name_zh_tw": "Drawnix",
+      "desc_zh_tw": "開源的白板工具，支援思維導圖與流程圖。"
     },
     {
       "id": "builtin-107",
@@ -1750,7 +1969,9 @@
       "url": "https://github.com/fish2018/pansou",
       "icon": "/app-icons/pansou.webp",
       "slug": "pansou",
-      "iconSha256": "0d4ca0c430848e19282718ee2337458aa1c1808bc36fe389fe6cf870cd20bcc6"
+      "iconSha256": "0d4ca0c430848e19282718ee2337458aa1c1808bc36fe389fe6cf870cd20bcc6",
+      "name_zh_tw": "PanSou",
+      "desc_zh_tw": "高效能的網盤資源搜尋引擎與 API。"
     },
     {
       "id": "builtin-108",
@@ -1766,7 +1987,9 @@
       "url": "",
       "icon": "/app-icons/langbot.webp",
       "slug": "langbot",
-      "iconSha256": "c168defe19aa987406d836148708d434c6d13b22f4ad0b9e42b216d0fed5669a"
+      "iconSha256": "c168defe19aa987406d836148708d434c6d13b22f4ad0b9e42b216d0fed5669a",
+      "name_zh_tw": "LangBot",
+      "desc_zh_tw": "支援多平臺、多模型的開源 LLM 聊天機器人。"
     },
     {
       "id": "builtin-109",
@@ -1782,7 +2005,9 @@
       "url": "https://github.com/zfile-dev/zfile",
       "icon": "/app-icons/zfile.webp",
       "slug": "zfile",
-      "iconSha256": "e444b97bf2c1dd0435451ecb7b491a6ab0c30a944cf82891e631ac6376ce5dde"
+      "iconSha256": "e444b97bf2c1dd0435451ecb7b491a6ab0c30a944cf82891e631ac6376ce5dde",
+      "name_zh_tw": "ZFile",
+      "desc_zh_tw": "適合個人與小團隊的線上網盤 / 目錄列表程式。"
     },
     {
       "id": "builtin-110",
@@ -1798,7 +2023,9 @@
       "url": "",
       "icon": "/app-icons/karakeep.webp",
       "slug": "karakeep",
-      "iconSha256": "a53fb9fabcb7baf4ec7b3e6bf78e0bfe2fcb0b7e4c21bb9bdbe376b4beedeb2d"
+      "iconSha256": "a53fb9fabcb7baf4ec7b3e6bf78e0bfe2fcb0b7e4c21bb9bdbe376b4beedeb2d",
+      "name_zh_tw": "Karakeep",
+      "desc_zh_tw": "AI 加持的自託管書籤 / 稍後讀收藏工具（原 Hoarder）。"
     },
     {
       "id": "builtin-111",
@@ -1814,7 +2041,9 @@
       "url": "https://github.com/c4illin/ConvertX",
       "icon": "/app-icons/convertx.webp",
       "slug": "convertx",
-      "iconSha256": "0e8b317f5959dbde7d09659bc336aa774a735c1213d9f3ff0d8e1d04437dfe2f"
+      "iconSha256": "0e8b317f5959dbde7d09659bc336aa774a735c1213d9f3ff0d8e1d04437dfe2f",
+      "name_zh_tw": "ConvertX",
+      "desc_zh_tw": "自託管的多格式檔案轉換工具，支援文件、圖片與音影片。"
     },
     {
       "id": "builtin-112",
@@ -1830,7 +2059,9 @@
       "url": "https://github.com/gdy666/lucky",
       "icon": "/app-icons/lucky.webp",
       "slug": "lucky",
-      "iconSha256": "48f93915b9bb5be220ceb260ec06ca647cb6b1deefc2c8dbc7ef560576911dd9"
+      "iconSha256": "48f93915b9bb5be220ceb260ec06ca647cb6b1deefc2c8dbc7ef560576911dd9",
+      "name_zh_tw": "Lucky",
+      "desc_zh_tw": "全能的內網穿透 / 埠轉發工具，支援 DDNS 與反代。"
     },
     {
       "id": "builtin-113",
@@ -1846,7 +2077,9 @@
       "url": "https://github.com/jlesage/docker-firefox",
       "icon": "/app-icons/firefox.webp",
       "slug": "firefox",
-      "iconSha256": "fba6f58e35dc9676f915827229cff9827c704222783475826c0c87dd3b52e3bf"
+      "iconSha256": "fba6f58e35dc9676f915827229cff9827c704222783475826c0c87dd3b52e3bf",
+      "name_zh_tw": "Firefox",
+      "desc_zh_tw": "執行在 Docker 中、可網頁存取的 Firefox 瀏覽器。"
     },
     {
       "id": "builtin-114",
@@ -1862,7 +2095,9 @@
       "url": "",
       "icon": "/app-icons/openclaw.webp",
       "slug": "openclaw",
-      "iconSha256": "1b22eaa3885f521f2fd7ccbd21044d14fd1c360312f82706085c9b2be3d97d40"
+      "iconSha256": "1b22eaa3885f521f2fd7ccbd21044d14fd1c360312f82706085c9b2be3d97d40",
+      "name_zh_tw": "OpenClaw",
+      "desc_zh_tw": "OpenClaw 機器人管理工具。"
     },
     {
       "id": "builtin-115",
@@ -1878,7 +2113,28 @@
       "url": "",
       "icon": "/app-icons/hermes.webp",
       "slug": "hermes",
-      "iconSha256": "d3c7ef9459705165ead47abfa2003a9ef0ae480ed608928af6ca451e88901177"
+      "iconSha256": "d3c7ef9459705165ead47abfa2003a9ef0ae480ed608928af6ca451e88901177",
+      "name_zh_tw": "Hermes",
+      "desc_zh_tw": "Hermes 機器人管理工具。"
+    },
+    {
+      "id": "builtin-116",
+      "num": 116,
+      "source": "builtin",
+      "cmd": "k app deepseek-harness",
+      "token": "deepseek-harness",
+      "name_zh": "DeepSeek Harness",
+      "name_en": "DeepSeek Harness",
+      "desc_zh": "DeepSeek 官方开源的智能体运行与管理框架，提供 Web UI、模型/API 配置及 Headless 模式。",
+      "desc_en": "Open-source agent harness by DeepSeek AI with a Web UI, model/API configuration, and headless mode.",
+      "cat": "ai",
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "icon": "/app-icons/deepseek-harness.webp",
+      "slug": "deepseek-harness",
+      "iconSha256": "c5850a93215e405982760a4816507070d342913c1c7dbb6a3097e9fcc9ecd241",
+      "name_zh_tw": "DeepSeek Harness",
+      "desc_zh_tw": "DeepSeek 官方開源的智慧代理執行與管理框架，提供 Web UI、模型/API 設定及 Headless 模式。",
+      "addedAt": "2026-08-16"
     },
     {
       "id": "thirdparty-AIClient-2-API",
@@ -1893,7 +2149,27 @@
       "url": "https://github.com/justlovemaki/AIClient-2-API",
       "icon": "/app-icons/aiclient-2-api.webp",
       "slug": "aiclient-2-api",
-      "iconSha256": "41b18dd3be600501f434250441e4681e7fb4e9ed50adca321c1b386861123c1a"
+      "iconSha256": "41b18dd3be600501f434250441e4681e7fb4e9ed50adca321c1b386861123c1a",
+      "name_zh_tw": "AIClient-2-API",
+      "desc_zh_tw": "將多家 AI 客戶端協議統一轉換為 OpenAI 格式的代理。"
+    },
+    {
+      "id": "thirdparty-airadio",
+      "source": "thirdparty",
+      "cmd": "k app airadio",
+      "token": "airadio",
+      "name_zh": "AIradio",
+      "name_en": "AIradio",
+      "desc_zh": "AI 驱动的在线电台，可生成节目、配音并管理音乐播放。",
+      "desc_en": "AI-powered online radio for generating shows, voiceovers and music playback.",
+      "cat": "media",
+      "url": "https://github.com/moli-xia/AIradio",
+      "icon": "/app-icons/airadio.webp",
+      "slug": "airadio",
+      "iconSha256": "7fc661fa6f3112cea360e7a12fdc2424db066b417bd22d8f92d66eeeca376708",
+      "name_zh_tw": "AIradio",
+      "desc_zh_tw": "AI 驅動的線上電臺，可產生節目、配音並管理音樂播放。",
+      "addedAt": "2026-08-16"
     },
     {
       "id": "thirdparty-antigravity",
@@ -1908,7 +2184,45 @@
       "url": "https://github.com/lbjlaq/Antigravity-Manager",
       "icon": "/app-icons/antigravity.webp",
       "slug": "antigravity",
-      "iconSha256": "4b06afa7e9b75c7c4b082a60c16c4cb82085629e12d6ad5a40b7a53dd15a60a5"
+      "iconSha256": "4b06afa7e9b75c7c4b082a60c16c4cb82085629e12d6ad5a40b7a53dd15a60a5",
+      "name_zh_tw": "Antigravity 管理器",
+      "desc_zh_tw": "Google Antigravity 帳號與設定管理工具。"
+    },
+    {
+      "id": "thirdparty-arena-brawl",
+      "source": "thirdparty",
+      "cmd": "k app arena-brawl",
+      "token": "arena-brawl",
+      "name_zh": "大乱斗 Arena Brawl",
+      "name_en": "Arena Brawl",
+      "desc_zh": "实时多人网页大乱斗游戏，支持排行榜与聊天。",
+      "desc_en": "Real-time multiplayer browser brawler with leaderboards and chat.",
+      "cat": "media",
+      "url": "https://github.com/kejilion/game-collection",
+      "icon": "/app-icons/arena-brawl.webp",
+      "slug": "arena-brawl",
+      "iconSha256": "ccba8f5cc98b4574c1f3a9b2fa50aee46fe283e986e625376129ec501c696c0d",
+      "name_zh_tw": "大亂鬥 Arena Brawl",
+      "desc_zh_tw": "即時多人網頁大亂鬥遊戲，支援排行榜與聊天。",
+      "addedAt": "2026-08-16"
+    },
+    {
+      "id": "thirdparty-bomb-party",
+      "source": "thirdparty",
+      "cmd": "k app bomb-party",
+      "token": "bomb-party",
+      "name_zh": "炸弹派对 Bomb Party",
+      "name_en": "Bomb Party",
+      "desc_zh": "Q 版多人在线炸弹人对战游戏，支持实时联机与排行榜。",
+      "desc_en": "Cartoon multiplayer Bomberman-style game with live matches and leaderboards.",
+      "cat": "media",
+      "url": "https://github.com/kejilion/game-collection",
+      "icon": "/app-icons/bomb-party.webp",
+      "slug": "bomb-party",
+      "iconSha256": "248767ad8540b21069e57171776af0f7d67fdb7ef30c3137818362b5c44892fc",
+      "name_zh_tw": "炸彈派對 Bomb Party",
+      "desc_zh_tw": "Q 版多人線上炸彈人對戰遊戲，支援即時連線與排行榜。",
+      "addedAt": "2026-08-16"
     },
     {
       "id": "thirdparty-CLIProxyAPI",
@@ -1923,7 +2237,9 @@
       "url": "https://github.com/router-for-me/CLIProxyAPI",
       "icon": "/app-icons/cliproxyapi.webp",
       "slug": "cliproxyapi",
-      "iconSha256": "d2314f5f751f8472b8a85bb69690c1c169d069f24f8722a3757e59704ecebfa1"
+      "iconSha256": "d2314f5f751f8472b8a85bb69690c1c169d069f24f8722a3757e59704ecebfa1",
+      "name_zh_tw": "CLIProxyAPI",
+      "desc_zh_tw": "將 CLI 工具的能力封裝為 API 的代理服務。"
     },
     {
       "id": "thirdparty-clouddrive2",
@@ -1938,7 +2254,9 @@
       "url": "https://www.clouddrive2.com",
       "icon": "/app-icons/clouddrive2.webp",
       "slug": "clouddrive2",
-      "iconSha256": "9ba84cbbbfe9ffc675988fb5f8b3c91a87155b680a7c31f55576d414897ff15e"
+      "iconSha256": "9ba84cbbbfe9ffc675988fb5f8b3c91a87155b680a7c31f55576d414897ff15e",
+      "name_zh_tw": "CloudDrive2",
+      "desc_zh_tw": "把多家網盤掛載為本地磁碟的工具。"
     },
     {
       "id": "thirdparty-copaw",
@@ -1953,7 +2271,9 @@
       "url": "https://github.com/agentscope-ai/CoPaw",
       "icon": "/app-icons/copaw.webp",
       "slug": "copaw",
-      "iconSha256": "3c308b19743c67a8e685980a9359ef28a8e739d9f7112978cd52bcf7c954fdf9"
+      "iconSha256": "3c308b19743c67a8e685980a9359ef28a8e739d9f7112978cd52bcf7c954fdf9",
+      "name_zh_tw": "CoPaw",
+      "desc_zh_tw": "AgentScope 出品的多智慧體協作平臺。"
     },
     {
       "id": "thirdparty-discourse",
@@ -1968,7 +2288,9 @@
       "url": "https://github.com/discourse/discourse",
       "icon": "/app-icons/discourse.webp",
       "slug": "discourse",
-      "iconSha256": "46943782a166cf0a8cf0489e2439be8fa5c6dcad915c4020ce728db892501f59"
+      "iconSha256": "46943782a166cf0a8cf0489e2439be8fa5c6dcad915c4020ce728db892501f59",
+      "name_zh_tw": "Discourse",
+      "desc_zh_tw": "現代化的開源社群論壇平臺。"
     },
     {
       "id": "thirdparty-dnsmgr",
@@ -1983,7 +2305,9 @@
       "url": "https://github.com/netcccyun/dnsmgr",
       "icon": "/app-icons/dnsmgr.webp",
       "slug": "dnsmgr",
-      "iconSha256": "43174e678326b288cdd2b5297d9a2f8c279bbabb6287ee3674e363d5e8dd4021"
+      "iconSha256": "43174e678326b288cdd2b5297d9a2f8c279bbabb6287ee3674e363d5e8dd4021",
+      "name_zh_tw": "彩虹聚合 DNS",
+      "desc_zh_tw": "聚合管理阿里雲、騰訊雲、Cloudflare 等 DNS 解析。"
     },
     {
       "id": "thirdparty-dstatus",
@@ -1998,7 +2322,9 @@
       "url": "https://github.com/fev125/dstatus",
       "icon": "/app-icons/dstatus.webp",
       "slug": "dstatus",
-      "iconSha256": "5ca3c1426364fa9b583d3252fac7b887ae35bb26d36d76e0acb9d3d73b9f4644"
+      "iconSha256": "5ca3c1426364fa9b583d3252fac7b887ae35bb26d36d76e0acb9d3d73b9f4644",
+      "name_zh_tw": "DStatus",
+      "desc_zh_tw": "簡潔美觀的分散式伺服器狀態監控探針。"
     },
     {
       "id": "thirdparty-easyimg",
@@ -2013,7 +2339,9 @@
       "url": "https://github.com/chaos-zhu/easyimg",
       "icon": "/app-icons/easyimg.webp",
       "slug": "easyimg",
-      "iconSha256": "b1ae46fb0d7718b7f8e862e70b413b415735987a151b619bb65c047033ad3dd1"
+      "iconSha256": "b1ae46fb0d7718b7f8e862e70b413b415735987a151b619bb65c047033ad3dd1",
+      "name_zh_tw": "EasyImage 圖床",
+      "desc_zh_tw": "簡單易用的自建圖床程式。"
     },
     {
       "id": "thirdparty-excalidraw",
@@ -2028,7 +2356,9 @@
       "url": "https://excalidraw.com",
       "icon": "/app-icons/excalidraw.webp",
       "slug": "excalidraw",
-      "iconSha256": "a3d7b2d4148e8767de40a04628dde75c38624ff490bbbcb19374a33fbe26edb7"
+      "iconSha256": "a3d7b2d4148e8767de40a04628dde75c38624ff490bbbcb19374a33fbe26edb7",
+      "name_zh_tw": "Excalidraw",
+      "desc_zh_tw": "手繪風格的開源線上白板與畫圖工具。"
     },
     {
       "id": "thirdparty-fast-note-sync-service",
@@ -2043,7 +2373,9 @@
       "url": "https://github.com/haierkeys/fast-note-sync-service",
       "icon": "/app-icons/fast-note-sync-service.webp",
       "slug": "fast-note-sync-service",
-      "iconSha256": "c5425ca5b096c742772445b6818f67517948eeb015292e3bb023e4413300ff7a"
+      "iconSha256": "c5425ca5b096c742772445b6818f67517948eeb015292e3bb023e4413300ff7a",
+      "name_zh_tw": "快速筆記同步",
+      "desc_zh_tw": "為 Obsidian 等筆記提供的快速圖片 / 附件同步服務。"
     },
     {
       "id": "thirdparty-gemini-business2api",
@@ -2058,7 +2390,9 @@
       "url": "https://github.com/Dreamy-rain/gemini-business2api",
       "icon": "/app-icons/gemini-business2api.webp",
       "slug": "gemini-business2api",
-      "iconSha256": "183332246e7b46ec69645aa77308268e0308a3547235662675f6c285a7da3689"
+      "iconSha256": "183332246e7b46ec69645aa77308268e0308a3547235662675f6c285a7da3689",
+      "name_zh_tw": "Gemini Business2API",
+      "desc_zh_tw": "將 Gemini Business 轉換為 OpenAI 相容 API 的代理。"
     },
     {
       "id": "thirdparty-global-radio",
@@ -2073,7 +2407,9 @@
       "url": "https://github.com/moli-xia/global-radio",
       "icon": "/app-icons/global-radio.webp",
       "slug": "global-radio",
-      "iconSha256": "7fc661fa6f3112cea360e7a12fdc2424db066b417bd22d8f92d66eeeca376708"
+      "iconSha256": "7fc661fa6f3112cea360e7a12fdc2424db066b417bd22d8f92d66eeeca376708",
+      "name_zh_tw": "全球收音機",
+      "desc_zh_tw": "線上收聽全球電臺的網頁應用。"
     },
     {
       "id": "thirdparty-gmssh",
@@ -2088,7 +2424,9 @@
       "url": "https://www.gmssh.com",
       "icon": "/app-icons/gmssh.webp",
       "slug": "gmssh",
-      "iconSha256": "642a0b75795c23b6860ca17ab3c1c153092cb80f5c1a05761bd4fe50ccea4a57"
+      "iconSha256": "642a0b75795c23b6860ca17ab3c1c153092cb80f5c1a05761bd4fe50ccea4a57",
+      "name_zh_tw": "GMSSH",
+      "desc_zh_tw": "簡潔的伺服器運維管理面板。"
     },
     {
       "id": "thirdparty-grok2api",
@@ -2103,7 +2441,9 @@
       "url": "https://github.com/chenyme/grok2api",
       "icon": "/app-icons/grok2api.webp",
       "slug": "grok2api",
-      "iconSha256": "8b7c8824dca76f685d8062c5415ded0be9473c9b26b371ecc917833163d7f8b9"
+      "iconSha256": "8b7c8824dca76f685d8062c5415ded0be9473c9b26b371ecc917833163d7f8b9",
+      "name_zh_tw": "Grok2API",
+      "desc_zh_tw": "將 Grok 轉換為 OpenAI 相容 API 的代理服務。"
     },
     {
       "id": "thirdparty-headscale",
@@ -2118,7 +2458,9 @@
       "url": "https://github.com/juanfont/headscale",
       "icon": "/app-icons/headscale.webp",
       "slug": "headscale",
-      "iconSha256": "2b556e54da05a1cecf247e8f8a3e9aabe7e820d04030b40c80079568a247e99f"
+      "iconSha256": "2b556e54da05a1cecf247e8f8a3e9aabe7e820d04030b40c80079568a247e99f",
+      "name_zh_tw": "Headscale",
+      "desc_zh_tw": "開源自建的 Tailscale 控制伺服器實現。"
     },
     {
       "id": "thirdparty-hubproxy",
@@ -2133,7 +2475,9 @@
       "url": "https://github.com/sky22333/hubproxy",
       "icon": "/app-icons/hubproxy.webp",
       "slug": "hubproxy",
-      "iconSha256": "6e2fb9ceb423426d78ebda536dec89fd179e8a54e2a3688b13e4cb42c1c44a54"
+      "iconSha256": "6e2fb9ceb423426d78ebda536dec89fd179e8a54e2a3688b13e4cb42c1c44a54",
+      "name_zh_tw": "HubProxy",
+      "desc_zh_tw": "自建的 Docker Hub 與 GitHub 加速代理。"
     },
     {
       "id": "thirdparty-iyuuplus",
@@ -2148,7 +2492,27 @@
       "url": "https://github.com/ledccn/iyuuplus-dev",
       "icon": "/app-icons/iyuuplus.webp",
       "slug": "iyuuplus",
-      "iconSha256": "bf62c1ad991c80fd6fb74b3f953df360ff1fb4bb53c496d9e2204c31a7b98435"
+      "iconSha256": "bf62c1ad991c80fd6fb74b3f953df360ff1fb4bb53c496d9e2204c31a7b98435",
+      "name_zh_tw": "IYUU Plus",
+      "desc_zh_tw": "PT 站點自動輔種與資源管理工具。"
+    },
+    {
+      "id": "thirdparty-ice-climber-arena",
+      "source": "thirdparty",
+      "cmd": "k app ice-climber-arena",
+      "token": "ice-climber-arena",
+      "name_zh": "敲冰块大逃脱",
+      "name_en": "Ice Climber Arena",
+      "desc_zh": "多人在线敲冰块爬塔逃杀游戏，支持实时联机与排行榜。",
+      "desc_en": "Real-time multiplayer Ice-Climber-style survival climber with leaderboards.",
+      "cat": "media",
+      "url": "https://github.com/kejilion/game-collection",
+      "icon": "/app-icons/ice-climber-arena.webp",
+      "slug": "ice-climber-arena",
+      "iconSha256": "aac98d7d2a3c5634e7f3bc7a237e24a0e6d32b4407e667063763a9aedb2a113f",
+      "name_zh_tw": "敲冰塊大逃脫",
+      "desc_zh_tw": "多人線上敲冰塊爬塔逃殺遊戲，支援即時連線與排行榜。",
+      "addedAt": "2026-08-16"
     },
     {
       "id": "thirdparty-kpanel",
@@ -2163,7 +2527,9 @@
       "url": "https://hub.docker.com/r/kjlion/kejilion-panel",
       "icon": "/app-icons/kpanel.webp",
       "slug": "kpanel",
-      "iconSha256": "19ca9151548dcb4b82bbc48d4dc4bec62e8ef9d4bdaa90c27040281803253088"
+      "iconSha256": "19ca9151548dcb4b82bbc48d4dc4bec62e8ef9d4bdaa90c27040281803253088",
+      "name_zh_tw": "KPanel",
+      "desc_zh_tw": "貼合 kejilion.sh 的現代化 Linux Web 管理面板。"
     },
     {
       "id": "thirdparty-lsky-pro",
@@ -2178,7 +2544,9 @@
       "url": "https://www.lsky.pro/",
       "icon": "/app-icons/lsky-pro.webp",
       "slug": "lsky-pro",
-      "iconSha256": "5bf3df27bdebc98418fca6ad9f6fa70a3f9dee60a0b547ba349fa2db1cb6ae73"
+      "iconSha256": "5bf3df27bdebc98418fca6ad9f6fa70a3f9dee60a0b547ba349fa2db1cb6ae73",
+      "name_zh_tw": "蘭空圖床",
+      "desc_zh_tw": "優秀的開源自建圖床程式，支援多種儲存。"
     },
     {
       "id": "thirdparty-mlflow",
@@ -2193,7 +2561,9 @@
       "url": "https://github.com/mlflow/mlflow",
       "icon": "/app-icons/mlflow.webp",
       "slug": "mlflow",
-      "iconSha256": "e1d487ca3e3126c246bef0ff22570715c40cf8f3a94f3197699d8d7755387787"
+      "iconSha256": "e1d487ca3e3126c246bef0ff22570715c40cf8f3a94f3197699d8d7755387787",
+      "name_zh_tw": "MLflow",
+      "desc_zh_tw": "開源的機器學習全生命週期管理平臺。"
     },
     {
       "id": "thirdparty-molilotto",
@@ -2208,7 +2578,9 @@
       "url": "https://github.com/moli-xia/lottery",
       "icon": "/app-icons/molilotto.webp",
       "slug": "molilotto",
-      "iconSha256": "7fc661fa6f3112cea360e7a12fdc2424db066b417bd22d8f92d66eeeca376708"
+      "iconSha256": "7fc661fa6f3112cea360e7a12fdc2424db066b417bd22d8f92d66eeeca376708",
+      "name_zh_tw": "茉莉彩票",
+      "desc_zh_tw": "趣味的網頁抽獎 / 彩票模擬工具。"
     },
     {
       "id": "thirdparty-mytube",
@@ -2223,7 +2595,27 @@
       "url": "https://github.com/franklioxygen/MyTube",
       "icon": "/app-icons/mytube.webp",
       "slug": "mytube",
-      "iconSha256": "c029b24a14667424774dc399ad9010bed46f167fa6cb1c8559b4de0875e3ac5d"
+      "iconSha256": "c029b24a14667424774dc399ad9010bed46f167fa6cb1c8559b4de0875e3ac5d",
+      "name_zh_tw": "MyTube",
+      "desc_zh_tw": "自託管的個人影片收藏與播放平臺。"
+    },
+    {
+      "id": "thirdparty-neon-arena-fps",
+      "source": "thirdparty",
+      "cmd": "k app neon-arena-fps",
+      "token": "neon-arena-fps",
+      "name_zh": "霓虹竞技场",
+      "name_en": "NEON ARENA",
+      "desc_zh": "3D 第一人称多人在线射击游戏，霓虹风格竞技场。",
+      "desc_en": "3D first-person multiplayer shooter in a neon arena.",
+      "cat": "media",
+      "url": "https://github.com/kejilion/game-collection",
+      "icon": "/app-icons/neon-arena-fps.webp",
+      "slug": "neon-arena-fps",
+      "iconSha256": "31350f895a990ec25f4a39e7d37590592bafb98c172fbe29f06362d539f9c6c6",
+      "name_zh_tw": "霓虹競技場",
+      "desc_zh_tw": "3D 第一人稱多人線上射擊遊戲，採用霓虹風格競技場。",
+      "addedAt": "2026-08-16"
     },
     {
       "id": "thirdparty-next-terminal",
@@ -2238,7 +2630,9 @@
       "url": "https://github.com/dushixiang/next-terminal",
       "icon": "/app-icons/next-terminal.webp",
       "slug": "next-terminal",
-      "iconSha256": "dce6e5018bea5e26b40565fa2900d9edf53281009a0ca0f4b240ef501535535a"
+      "iconSha256": "dce6e5018bea5e26b40565fa2900d9edf53281009a0ca0f4b240ef501535535a",
+      "name_zh_tw": "Next Terminal",
+      "desc_zh_tw": "開源的遠端桌面閘道器，支援 RDP/SSH/VNC/Telnet。"
     },
     {
       "id": "thirdparty-nodeget",
@@ -2253,7 +2647,9 @@
       "url": "https://nodeget.com",
       "icon": "/app-icons/nodeget.webp",
       "slug": "nodeget",
-      "iconSha256": "7e3236120ca065be9ddc35472ef6eb53d806aa6c675d7b0808d5940df6572351"
+      "iconSha256": "7e3236120ca065be9ddc35472ef6eb53d806aa6c675d7b0808d5940df6572351",
+      "name_zh_tw": "NodeGet",
+      "desc_zh_tw": "伺服器與節點的運維管理平臺。"
     },
     {
       "id": "thirdparty-npc",
@@ -2268,7 +2664,9 @@
       "url": "https://github.com/yisier/nps",
       "icon": "/app-icons/npc.webp",
       "slug": "npc",
-      "iconSha256": "1513db5e991298d33ea7b7a6d537ed19f58e91cc51f9e69f6659eac7d3bc609f"
+      "iconSha256": "1513db5e991298d33ea7b7a6d537ed19f58e91cc51f9e69f6659eac7d3bc609f",
+      "name_zh_tw": "NPC (nps 客戶端)",
+      "desc_zh_tw": "內網穿透工具 nps 的客戶端。"
     },
     {
       "id": "thirdparty-nps",
@@ -2283,7 +2681,9 @@
       "url": "https://github.com/yisier/nps",
       "icon": "/app-icons/nps.webp",
       "slug": "nps",
-      "iconSha256": "1513db5e991298d33ea7b7a6d537ed19f58e91cc51f9e69f6659eac7d3bc609f"
+      "iconSha256": "1513db5e991298d33ea7b7a6d537ed19f58e91cc51f9e69f6659eac7d3bc609f",
+      "name_zh_tw": "nps",
+      "desc_zh_tw": "輕量高效的內網穿透代理伺服器，帶 Web 管理。"
     },
     {
       "id": "thirdparty-octopus",
@@ -2298,7 +2698,9 @@
       "url": "https://github.com/bestruirui/octopus",
       "icon": "/app-icons/octopus.webp",
       "slug": "octopus",
-      "iconSha256": "b2298c3b33b3453811e9e0efc4d84194391e5a031395a0dee342f5adf4f34815"
+      "iconSha256": "b2298c3b33b3453811e9e0efc4d84194391e5a031395a0dee342f5adf4f34815",
+      "name_zh_tw": "Octopus",
+      "desc_zh_tw": "自託管的多功能監控與管理工具。"
     },
     {
       "id": "thirdparty-pika",
@@ -2313,7 +2715,9 @@
       "url": "https://github.com/dushixiang/pika",
       "icon": "/app-icons/pika.webp",
       "slug": "pika",
-      "iconSha256": "dce6e5018bea5e26b40565fa2900d9edf53281009a0ca0f4b240ef501535535a"
+      "iconSha256": "dce6e5018bea5e26b40565fa2900d9edf53281009a0ca0f4b240ef501535535a",
+      "name_zh_tw": "Pika",
+      "desc_zh_tw": "簡潔的自託管小工具集合。"
     },
     {
       "id": "thirdparty-sub2api",
@@ -2328,7 +2732,9 @@
       "url": "https://github.com/Wei-Shaw/sub2api",
       "icon": "/app-icons/sub2api.webp",
       "slug": "sub2api",
-      "iconSha256": "935a78c4cd6db930245b2ea0d5b5a0660dbe4e15957e86d9d1f15cf1c3e67352"
+      "iconSha256": "935a78c4cd6db930245b2ea0d5b5a0660dbe4e15957e86d9d1f15cf1c3e67352",
+      "name_zh_tw": "Sub2API",
+      "desc_zh_tw": "將訂閱源轉換為 API 的中轉服務。"
     },
     {
       "id": "thirdparty-wxchat",
@@ -2343,7 +2749,9 @@
       "url": "https://github.com/DDSRem-Dev/wxchat-Docker",
       "icon": "/app-icons/wxchat.webp",
       "slug": "wxchat",
-      "iconSha256": "2868481688bf025317c27b4bcd84664a1999ad50b77703f6e0c84939cfe001a8"
+      "iconSha256": "2868481688bf025317c27b4bcd84664a1999ad50b77703f6e0c84939cfe001a8",
+      "name_zh_tw": "微信檔案傳輸助手",
+      "desc_zh_tw": "類似微信檔案傳輸助手的自建跨裝置傳輸工具。"
     },
     {
       "id": "thirdparty-zeroclaw",
@@ -2358,7 +2766,9 @@
       "url": "https://github.com/openagen/zeroclaw",
       "icon": "/app-icons/zeroclaw.webp",
       "slug": "zeroclaw",
-      "iconSha256": "498cbed03d2ea464390ad04faf0f0071a4d68833f07d2ebe02420865b6f1209a"
+      "iconSha256": "498cbed03d2ea464390ad04faf0f0071a4d68833f07d2ebe02420865b6f1209a",
+      "name_zh_tw": "ZeroClaw",
+      "desc_zh_tw": "開源的 AI 智慧體管理工具。"
     }
   ]
 }

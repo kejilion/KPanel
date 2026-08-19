@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopView from '@/components/desktop/DesktopView.vue'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
+import { useTheme } from '@/stores/theme'
 
 function setupViewport(width: number, height: number): void {
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
@@ -37,6 +38,15 @@ describe('DesktopView', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    Object.defineProperties(document, {
+      fullscreenEnabled: { configurable: true, value: false },
+      fullscreenElement: { configurable: true, value: null },
+      exitFullscreen: { configurable: true, value: undefined },
+    })
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      value: undefined,
+    })
   })
 
   it('renders the icon grid for all desktop apps', () => {
@@ -244,13 +254,123 @@ describe('DesktopView', () => {
   })
 
   it('switches back to classic mode from the taskbar system area', async () => {
+    let fullscreenElement: Element | null = document.documentElement
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Object.defineProperties(document, {
+      fullscreenElement: { configurable: true, get: () => fullscreenElement },
+      exitFullscreen: { configurable: true, value: exitFullscreen },
+    })
     const desktop = useDesktopMode()
     desktop.enterDesktop()
     const wrapper = mount(DesktopView)
     await wrapper.find('.desktop__classic-button').trigger('click')
-    await nextTick()
+    await flushPromises()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    expect(fullscreenElement).toBe(document.documentElement)
     expect(desktop.mode.value).toBe('classic')
     wrapper.unmount()
+  })
+
+  it('places the wallpaper action below theme and fullscreen below wallpaper', async () => {
+    let fullscreenElement: Element | null = null
+    const requestFullscreen = vi.fn(async () => {
+      fullscreenElement = document.documentElement
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Object.defineProperties(document, {
+      fullscreenEnabled: { configurable: true, value: true },
+      fullscreenElement: { configurable: true, get: () => fullscreenElement },
+      exitFullscreen: { configurable: true, value: exitFullscreen },
+    })
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    })
+    const wrapper = mount(DesktopView)
+
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    const actions = wrapper.findAll('[role="menuitem"]')
+    const themeIndex = actions.findIndex((action) => action.attributes('data-context-action') === 'theme')
+    const wallpaperIndex = actions.findIndex((action) => action.attributes('data-context-action') === 'wallpaper')
+    const fullscreenIndex = actions.findIndex((action) => action.attributes('data-context-action') === 'fullscreen')
+    expect(wallpaperIndex).toBe(themeIndex + 1)
+    expect(fullscreenIndex).toBe(wallpaperIndex + 1)
+    expect(actions[fullscreenIndex]?.text()).toContain('进入全屏')
+
+    await actions[fullscreenIndex]!.trigger('click')
+    await flushPromises()
+    expect(requestFullscreen).toHaveBeenCalledOnce()
+    expect(fullscreenElement).toBe(document.documentElement)
+
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    const exitAction = wrapper.find('[data-context-action="fullscreen"]')
+    expect(exitAction.text()).toContain('退出全屏')
+    await exitAction.trigger('click')
+    await flushPromises()
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    expect(fullscreenElement).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('waits for the context menu leave transition before changing theme', async () => {
+    const theme = useTheme()
+    theme.setTheme('light')
+    const wrapper = mount(DesktopView, {
+      global: { stubs: { transition: false } },
+    })
+
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    expect(wrapper.find('.desktop__context-menu').exists()).toBe(true)
+
+    await wrapper.find('[data-context-action="theme"]').trigger('click')
+    await nextTick()
+    expect(theme.resolved.value).toBe('light')
+
+    await new Promise((resolve) => window.setTimeout(resolve, 180))
+    await nextTick()
+    expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+    expect(theme.resolved.value).toBe('dark')
+
+    wrapper.unmount()
+    theme.setTheme('system')
+  })
+
+  it('changes the wallpaper from the desktop menu and restores the saved choice', async () => {
+    const wrapper = mount(DesktopView)
+
+    expect(wrapper.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('classic')
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+
+    const dialog = document.body.querySelector<HTMLElement>('.desktop-wallpaper-picker')
+    const orbit = dialog?.querySelector<HTMLButtonElement>('[data-wallpaper-option="orbit"]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.querySelectorAll('[data-wallpaper-option]')).toHaveLength(5)
+    expect(orbit?.getAttribute('aria-checked')).toBe('false')
+
+    orbit?.click()
+    await nextTick()
+    expect(wrapper.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('orbit')
+    expect(wrapper.find('.desktop__wallpaper-image').attributes('style')).toContain('kpanel-desktop-orbit.webp')
+    expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('orbit')
+    expect(document.body.querySelector('.desktop-wallpaper-picker')).toBeNull()
+    wrapper.unmount()
+
+    const restored = mount(DesktopView)
+    expect(restored.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('orbit')
+    restored.unmount()
   })
 
   it('opens and closes a context menu on right-click', async () => {

@@ -96,9 +96,9 @@ function extractFile(relativeFile) {
   return phrases
 }
 
-function readCatalog(group) {
-  const fileName = path.join(catalogRoot, group, 'en-US.ts')
-  if (!fs.existsSync(fileName)) throw new Error(`Missing catalog: ${path.relative(webRoot, fileName)}`)
+function readCatalog(group, locale) {
+  const fileName = path.join(catalogRoot, group, `${locale}.ts`)
+  if (!fs.existsSync(fileName)) throw new Error(`Missing ${locale} catalog: ${path.relative(webRoot, fileName)}`)
   const source = fs.readFileSync(fileName, 'utf8')
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   let entries
@@ -109,11 +109,11 @@ function readCatalog(group) {
       if (ts.isArrayLiteralExpression(expression)) {
         entries = expression.elements.map((element) => {
           if (!ts.isArrayLiteralExpression(element) || element.elements.length !== 2) {
-            throw new Error(`Invalid catalog entry in ${group}`)
+            throw new Error(`Invalid ${locale} catalog entry in ${group}`)
           }
           const [sourceNode, translationNode] = element.elements
           if (!ts.isStringLiteralLike(sourceNode) || !ts.isStringLiteralLike(translationNode)) {
-            throw new Error(`Catalog entries must be string pairs in ${group}`)
+            throw new Error(`${locale} catalog entries must be string pairs in ${group}`)
           }
           return [sourceNode.text, translationNode.text]
         })
@@ -122,7 +122,7 @@ function readCatalog(group) {
     ts.forEachChild(node, visit)
   }
   visit(file)
-  if (!entries) throw new Error(`Unable to parse catalog: ${group}`)
+  if (!entries) throw new Error(`Unable to parse ${locale} catalog: ${group}`)
   return entries
 }
 
@@ -163,27 +163,38 @@ for (const file of viewFiles) groups.set(path.basename(file, '.vue'), extractFil
 const errors = []
 let phraseCount = 0
 for (const [group, expected] of groups) {
-  const entries = readCatalog(group)
-  const actual = new Map(entries)
-  phraseCount += expected.size
-  for (const phrase of expected) {
-    if (!actual.has(phrase)) errors.push(`${group}: missing source phrase ${JSON.stringify(phrase)}`)
+  const catalogs = new Map()
+  for (const locale of ['en-US', 'zh-TW']) {
+    const entries = readCatalog(group, locale)
+    catalogs.set(locale, entries)
+    const actual = new Map(entries)
+    phraseCount += locale === 'en-US' ? expected.size : 0
+    for (const phrase of expected) {
+      if (!actual.has(phrase)) errors.push(`${locale} ${group}: missing source phrase ${JSON.stringify(phrase)}`)
+    }
+    for (const [source, translation] of entries) {
+      if (!expected.has(source) && !phraseExistsInSource(group, source)) {
+        errors.push(`${locale} ${group}: stale source phrase ${JSON.stringify(source)}`)
+      }
+      if (!translation.trim()) errors.push(`${locale} ${group}: empty translation for ${JSON.stringify(source)}`)
+      const preservedCommand = /^k\s/.test(source) && translation === source
+      if (locale === 'en-US' && chinesePattern.test(translation) && !preservedCommand) {
+        errors.push(`${locale} ${group}: untranslated Chinese text for ${JSON.stringify(source)}`)
+      }
+      if (placeholders(source) !== placeholders(translation)) {
+        errors.push(`${locale} ${group}: placeholder mismatch for ${JSON.stringify(source)}`)
+      }
+      if (locale === 'en-US') {
+        for (const pattern of forbiddenTranslationPatterns) {
+          if (pattern.test(translation)) errors.push(`${locale} ${group}: suspicious translation ${JSON.stringify(translation)}`)
+        }
+      }
+    }
   }
-  for (const [source, translation] of entries) {
-    if (!expected.has(source) && !phraseExistsInSource(group, source)) {
-      errors.push(`${group}: stale source phrase ${JSON.stringify(source)}`)
-    }
-    if (!translation.trim()) errors.push(`${group}: empty translation for ${JSON.stringify(source)}`)
-    const preservedCommand = /^k\s/.test(source) && translation === source
-    if (chinesePattern.test(translation) && !preservedCommand) {
-      errors.push(`${group}: untranslated Chinese text for ${JSON.stringify(source)}`)
-    }
-    if (placeholders(source) !== placeholders(translation)) {
-      errors.push(`${group}: placeholder mismatch for ${JSON.stringify(source)}`)
-    }
-    for (const pattern of forbiddenTranslationPatterns) {
-      if (pattern.test(translation)) errors.push(`${group}: suspicious translation ${JSON.stringify(translation)}`)
-    }
+  const expectedSources = [...catalogs.get('en-US')].map(([source]) => source).sort()
+  const traditionalSources = [...catalogs.get('zh-TW')].map(([source]) => source).sort()
+  if (JSON.stringify(expectedSources) !== JSON.stringify(traditionalSources)) {
+    errors.push(`${group}: en-US and zh-TW source key sets differ`)
   }
 }
 
