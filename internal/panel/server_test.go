@@ -992,39 +992,51 @@ func authenticatedRequest(
 	return response
 }
 
-// TestBrowserAppPathsGetRelaxedSecurityHeaders confirms the CSP/X-Frame-Options
-// relaxation in browserAppSecurityRelaxation applies only to the browse
-// feature's own static-asset paths (the vendored Scramjet shell KPanel embeds
-// in an iframe), never to the rest of the site — a scoping bug here would
-// either leave the Scramjet WASM engine unable to load (relaxation missing)
-// or silently loosen the site-wide CSP/framing policy (relaxation too broad).
+// TestBrowserAppPathsGetRelaxedSecurityHeaders confirms the relaxed CSP is
+// scoped to the browse origin and that the shell is unreachable on the panel
+// origin at all. Both halves matter: without the relaxation the Scramjet WASM
+// engine cannot load, and if the shell were still served beside the panel the
+// whole point of the second origin (browse_origin.go) would be lost — silently,
+// because everything would appear to work.
 func TestBrowserAppPathsGetRelaxedSecurityHeaders(t *testing.T) {
-	server, _ := newTestServer(t)
+	server, _ := newBrowseTestServer(t)
 
-	relaxedPaths := []string{
-		"/browser-app/index.html",
+	shellPaths := []string{
+		"/browser-app/app.html",
 		"/scramjet/scramjet.js",
 		"/controller/controller.api.js",
 		"/scram/browse-transport.js",
 		"/scramjet-sw.js",
 	}
-	for _, path := range relaxedPaths {
-		response := performRequest(server, http.MethodGet, path, nil, nil)
+	for _, path := range shellPaths {
+		response := browsePerformRequest(server, http.MethodGet, path, nil, nil)
 		policy := response.Header().Get("Content-Security-Policy")
 		if !strings.Contains(policy, "script-src 'self' 'wasm-unsafe-eval'") {
 			t.Fatalf("%s: script-src missing wasm-unsafe-eval: %q", path, policy)
 		}
-		if !strings.Contains(policy, "frame-ancestors 'self'") {
-			t.Fatalf("%s: frame-ancestors should relax to 'self': %q", path, policy)
+		// The panel embeds this origin, so it — not 'self' — must be the
+		// permitted framing ancestor.
+		if !strings.Contains(policy, "frame-ancestors 'self' "+browseTestPanelOrigin) {
+			t.Fatalf("%s: frame-ancestors must name the panel origin: %q", path, policy)
 		}
-		if response.Header().Get("X-Frame-Options") != "SAMEORIGIN" {
-			t.Fatalf("%s: X-Frame-Options = %q, want SAMEORIGIN", path, response.Header().Get("X-Frame-Options"))
+		if got := response.Header().Get("X-Frame-Options"); got != "" {
+			t.Fatalf("%s: X-Frame-Options = %q, want it removed so frame-ancestors governs", path, got)
+		}
+	}
+
+	// The same paths on the panel origin must not exist.
+	for _, path := range shellPaths {
+		response := browsePerformRequest(server, http.MethodGet, path, nil,
+			map[string]string{"Host": browseTestPanelHost})
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s on the panel origin: status = %d, want 404", path, response.Code)
 		}
 	}
 
 	strictPaths := []string{"/", "/api/v1/health", "/overview", "/scramjetx/not-really-vendored"}
 	for _, path := range strictPaths {
-		response := performRequest(server, http.MethodGet, path, nil, nil)
+		response := browsePerformRequest(server, http.MethodGet, path, nil,
+			map[string]string{"Host": browseTestPanelHost})
 		policy := response.Header().Get("Content-Security-Policy")
 		if !strings.Contains(policy, "frame-ancestors 'none'") {
 			t.Fatalf("%s: frame-ancestors leaked relaxation: %q", path, policy)
@@ -1111,7 +1123,7 @@ func TestNonIndexHTMLShellIsNeverLongCached(t *testing.T) {
 // not revalidate), so a long max-age would pin whichever copy a browser
 // fetched first. Hashed assets/ must keep their immutable long cache.
 func TestBrowserAppScriptsAreNeverLongCached(t *testing.T) {
-	server, _ := newTestServer(t)
+	server, _ := newBrowseTestServer(t)
 	browserApp := filepath.Join(server.config.WebRoot, "browser-app")
 	assets := filepath.Join(server.config.WebRoot, "assets")
 	for _, directory := range []string{browserApp, assets} {
@@ -1126,7 +1138,8 @@ func TestBrowserAppScriptsAreNeverLongCached(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	appScript := performRequest(server, http.MethodGet, "/browser-app/app.js", nil, nil)
+	// The shell lives on the browse origin; the panel's hashed bundles do not.
+	appScript := browsePerformRequest(server, http.MethodGet, "/browser-app/app.js", nil, nil)
 	if appScript.Code != http.StatusOK {
 		t.Fatalf("GET /browser-app/app.js status = %d", appScript.Code)
 	}
@@ -1134,7 +1147,8 @@ func TestBrowserAppScriptsAreNeverLongCached(t *testing.T) {
 		t.Fatalf("browser-app script Cache-Control = %q, want no-cache", got)
 	}
 
-	hashed := performRequest(server, http.MethodGet, "/assets/hashed-abc123.js", nil, nil)
+	hashed := browsePerformRequest(server, http.MethodGet, "/assets/hashed-abc123.js", nil,
+		map[string]string{"Host": browseTestPanelHost})
 	if hashed.Code != http.StatusOK {
 		t.Fatalf("GET /assets/hashed-abc123.js status = %d", hashed.Code)
 	}
@@ -1148,7 +1162,7 @@ func TestBrowserAppScriptsAreNeverLongCached(t *testing.T) {
 // the request path, so "?v=<release>" reaches the same file rather than
 // 404ing or falling through to the SPA shell.
 func TestVersionQueryStringServesTheSameStaticFile(t *testing.T) {
-	server, _ := newTestServer(t)
+	server, _ := newBrowseTestServer(t)
 	browserApp := filepath.Join(server.config.WebRoot, "browser-app")
 	if err := os.MkdirAll(browserApp, 0o700); err != nil {
 		t.Fatal(err)
@@ -1157,7 +1171,7 @@ func TestVersionQueryStringServesTheSameStaticFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	response := performRequest(server, http.MethodGet, "/browser-app/app.html?v=0.71.0", nil, nil)
+	response := browsePerformRequest(server, http.MethodGet, "/browser-app/app.html?v=0.71.0", nil, nil)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "browse-shell") {
 		t.Fatalf("versioned URL = %d %q, want the browse shell itself", response.Code, response.Body.String())
 	}

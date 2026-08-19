@@ -70,7 +70,7 @@ func TestHandleBrowseWSSessionRejectsUnauthenticated(t *testing.T) {
 	server, _ := newBrowseTestServer(t)
 	body, _ := json.Marshal(browseWSOpenRequest{URL: "wss://example.com/"})
 	response := browsePerformRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions", body, map[string]string{
-		"Content-Type": "application/json", "Origin": "http://localhost",
+		"Content-Type": "application/json", "Origin": browseTestOrigin,
 	})
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -83,7 +83,7 @@ func TestHandleBrowseWSSessionRejectsMissingCSRF(t *testing.T) {
 	body, _ := json.Marshal(browseWSOpenRequest{URL: "wss://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost",
+			"Content-Type": "application/json", "Origin": browseTestOrigin,
 			// X-CSRF-Token intentionally omitted.
 		})
 	if response.Code != http.StatusForbidden {
@@ -97,7 +97,7 @@ func TestHandleBrowseWSSessionUnknownHostRejected(t *testing.T) {
 	body, _ := json.Marshal(browseWSOpenRequest{HostID: "does-not-exist", URL: "wss://example.com/"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -110,7 +110,7 @@ func TestHandleBrowseWSSessionRejectsEmptyURL(t *testing.T) {
 	body, _ := json.Marshal(browseWSOpenRequest{HostID: "local"})
 	response := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions", body,
 		sessionCookie, csrfCookie, map[string]string{
-			"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+			"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 		})
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
@@ -130,7 +130,7 @@ func TestLocalBrowseWSSessionLifecycle(t *testing.T) {
 	server.agent = stub
 	sessionCookie, csrfCookie := bootstrapBrowseCookies(t, server, tokenPath)
 	headers := map[string]string{
-		"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+		"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 	}
 
 	opened := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions",
@@ -208,7 +208,7 @@ func TestBrowseWSSessionOutputClosedRemovesPanelSession(t *testing.T) {
 	server.agent = stub
 	sessionCookie, csrfCookie := bootstrapBrowseCookies(t, server, tokenPath)
 	headers := map[string]string{
-		"Content-Type": "application/json", "Origin": "http://localhost", "X-CSRF-Token": csrfCookie.Value,
+		"Content-Type": "application/json", "Origin": browseTestOrigin, "X-CSRF-Token": csrfCookie.Value,
 	}
 	opened := browseAuthenticatedRequest(server, http.MethodPost, "/api/v1/browse/ws-sessions",
 		[]byte(`{"hostId":"local","url":"wss://example.com/socket"}`), sessionCookie, csrfCookie, headers)

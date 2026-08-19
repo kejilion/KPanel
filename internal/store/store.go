@@ -97,9 +97,40 @@ type ClusterShare struct {
 // This is a security boundary, not a convenience list: Host validation is
 // what stops DNS-rebinding and Host-header spoofing, so entries are exact
 // hostname matches only — never wildcards or suffix matches.
+// BrowseOrigin is the separate hostname the desktop browser feature is
+// served on, and it is deliberately *not* an entry in Hosts. The two fields
+// mean opposite things: Hosts widens the set of names that reach the full
+// panel, while BrowseOrigin names an origin that must reach only the browse
+// shell and its egress endpoints. The whole point of the second name is that
+// the browser refuses to share cookies or DOM access across origins, so
+// third-party content rewritten by the browse feature cannot ride an admin
+// session into /api/v1/files or /api/v1/docker. Listing it in Hosts as well
+// would hand that back — Origin validation would start accepting it for
+// panel endpoints — so the panel rejects an entry that appears in both.
+//
+// Empty means the browser feature is off: it fails closed rather than
+// falling back to serving the shell same-origin with the panel.
+//
+// BrowseAllowPrivateNetworks opts this host's browse egress out of the
+// private-address guard in internal/agent/browse.go, so the desktop browser
+// can reach services on the server's own LAN (a NAS, another container, a
+// service bound to 127.0.0.1). It defaults to off because the requests that
+// endpoint makes are driven by whatever page the admin has open, not by the
+// admin: Scramjet rewrites every sub-resource URL through the same egress, so
+// an image tag pointing at http://192.168.1.1/ on a hostile page becomes a
+// request from inside the server's network with no click required.
+// Link-local (169.254.0.0/16, fe80::/10) stays blocked even when this is on:
+// it is not a LAN, and its most reachable occupant is the cloud metadata
+// service that hands out IAM credentials to whoever asks.
+//
+// It is read from the *egress* host's own store and never travels on the
+// federation wire, so a controlling panel cannot switch off a paired node's
+// guard remotely (see clusterBrowseSource in internal/panel/browse.go).
 type AllowedHosts struct {
-	Hosts     []string  `json:"hosts,omitempty"`
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+	Hosts                      []string  `json:"hosts,omitempty"`
+	BrowseOrigin               string    `json:"browseOrigin,omitempty"`
+	BrowseAllowPrivateNetworks bool      `json:"browseAllowPrivateNetworks,omitempty"`
+	UpdatedAt                  time.Time `json:"updatedAt,omitempty"`
 }
 
 type PasswordRecovery struct {
@@ -687,6 +718,25 @@ func (s *Store) AllowedHosts() (AllowedHosts, string) {
 	return value, AllowedHostsResourceVersion(s.data.AllowedHosts)
 }
 
+// BrowseOrigin reads just the browse hostname. It exists separately from
+// AllowedHosts because every single request consults it (origin routing, Host
+// validation and the security headers all ask), and AllowedHosts copies the
+// hostname slice on each call.
+func (s *Store) BrowseOrigin() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data.AllowedHosts.BrowseOrigin
+}
+
+// BrowseAllowPrivateNetworks reads just the LAN-egress opt-in, for the same
+// reason BrowseOrigin is read separately: the browse fetch and WS-open paths
+// consult it per request and do not need the hostname slice copied.
+func (s *Store) BrowseAllowPrivateNetworks() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data.AllowedHosts.BrowseAllowPrivateNetworks
+}
+
 func (s *Store) ReplaceAllowedHosts(expectedResourceVersion string, value AllowedHosts) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -704,8 +754,10 @@ func (s *Store) ReplaceAllowedHosts(expectedResourceVersion string, value Allowe
 }
 
 func AllowedHostsResourceVersion(value AllowedHosts) string {
-	payload := fmt.Sprintf("%s\x00%s",
+	payload := fmt.Sprintf("%s\x00%s\x00%t\x00%s",
 		strings.Join(value.Hosts, "\x01"),
+		value.BrowseOrigin,
+		value.BrowseAllowPrivateNetworks,
 		value.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	)
 	digest := sha256.Sum256([]byte(payload))
@@ -829,8 +881,10 @@ func cloneDiskState(source diskState) diskState {
 		SecurityEntrance: source.SecurityEntrance,
 		ClusterShare:     source.ClusterShare,
 		AllowedHosts: AllowedHosts{
-			Hosts:     append([]string(nil), source.AllowedHosts.Hosts...),
-			UpdatedAt: source.AllowedHosts.UpdatedAt,
+			Hosts:                      append([]string(nil), source.AllowedHosts.Hosts...),
+			BrowseOrigin:               source.AllowedHosts.BrowseOrigin,
+			BrowseAllowPrivateNetworks: source.AllowedHosts.BrowseAllowPrivateNetworks,
+			UpdatedAt:                  source.AllowedHosts.UpdatedAt,
 		},
 	}
 }

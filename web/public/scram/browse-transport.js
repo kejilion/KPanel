@@ -18,13 +18,11 @@
 //    DOES support it, via /api/v1/browse/ws-sessions' Open/Output/Input/Close
 //    long-poll relay (see internal/agent/browse_ws.go and
 //    internal/panel/browse_ws.go).
+// The browse origin has its own credential; the panel's cookies are host-only
+// and never reach this origin. See internal/panel/browse_origin.go.
 function readCsrfCookie() {
-  const names = ['__Host-kejilion_csrf', 'kejilion_csrf']
-  for (const name of names) {
-    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
-    if (match) return decodeURIComponent(match[1])
-  }
-  return ''
+  const match = document.cookie.match(/(?:^|; )kejilion_browse_csrf=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : ''
 }
 
 function headersToRecord(headers) {

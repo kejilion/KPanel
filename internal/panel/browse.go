@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
 // There is deliberately no server-side "is this a secure context?" check on
@@ -29,7 +30,26 @@ import (
 // federation request" role: when another Panel asks this node to perform a
 // fetch on its behalf. Mirrors clusterTerminalSource's role split in
 // terminal.go exactly.
-type clusterBrowseSource struct{ agent agentAPI }
+type clusterBrowseSource struct {
+	agent agentAPI
+	// store is this host's own store, not the controller's. The LAN-egress
+	// opt-in is a property of the machine that makes the outbound request, so
+	// the egress side reads it locally and it is deliberately absent from
+	// cluster.BrowseFetchRequest — a controlling panel must not be able to
+	// switch off a paired node's private-address guard from a distance. See
+	// store.AllowedHosts.BrowseAllowPrivateNetworks.
+	store *store.Store
+}
+
+// browseAllowsPrivateNetworks reads the egress host's own LAN opt-in,
+// tolerating a nil store so tests that build a bare Server keep the safe
+// default.
+func browseAllowsPrivateNetworks(storage *store.Store) bool {
+	if storage == nil {
+		return false
+	}
+	return storage.BrowseAllowPrivateNetworks()
+}
 
 // browseAgentFetchOutput mirrors internal/agent's browseFetchOutput wire
 // shape, the counterpart to browseAgentFetchInput above.
@@ -42,6 +62,7 @@ type browseAgentFetchOutput struct {
 func (s clusterBrowseSource) Fetch(ctx context.Context, input cluster.BrowseFetchRequest) (cluster.BrowseFetchResult, error) {
 	body, err := json.Marshal(browseAgentFetchInput{
 		URL: input.URL, Method: input.Method, Headers: input.Headers, Body: input.Body,
+		AllowPrivateNetwork: browseAllowsPrivateNetworks(s.store),
 	})
 	if err != nil {
 		return cluster.BrowseFetchResult{}, err
@@ -140,10 +161,11 @@ type browseFetchRequest struct {
 // struct, same as every other s.agent.Do call in this package) — only the
 // JSON field names have to match.
 type browseAgentFetchInput struct {
-	URL     string              `json:"url"`
-	Method  string              `json:"method,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty"`
-	Body    string              `json:"body,omitempty"`
+	URL                 string              `json:"url"`
+	Method              string              `json:"method,omitempty"`
+	Headers             map[string][]string `json:"headers,omitempty"`
+	Body                string              `json:"body,omitempty"`
+	AllowPrivateNetwork bool                `json:"allowPrivateNetwork,omitempty"`
 }
 
 func (s *Server) handleBrowseFetch(w http.ResponseWriter, r *http.Request) {
@@ -151,11 +173,11 @@ func (s *Server) handleBrowseFetch(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_browse_request", "Invalid browse request", "")
 		return
 	}
-	if !s.checkOrigin(w, r) {
+	if !s.checkBrowseOrigin(w, r) {
 		return
 	}
-	_, session, ok := s.requireSession(w, r)
-	if !ok || !s.checkCSRF(w, r, session) {
+	session, ok := s.requireBrowseSession(w, r)
+	if !ok || !s.checkBrowseCSRF(w, r, session) {
 		return
 	}
 
@@ -186,6 +208,7 @@ func (s *Server) handleBrowseFetch(w http.ResponseWriter, r *http.Request) {
 
 	agentBody, err := json.Marshal(browseAgentFetchInput{
 		URL: input.URL, Method: input.Method, Headers: input.Headers, Body: input.Body,
+		AllowPrivateNetwork: browseAllowsPrivateNetworks(s.store),
 	})
 	if err != nil {
 		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
@@ -268,11 +291,11 @@ func (s *Server) handleBrowseSessionStart(w http.ResponseWriter, r *http.Request
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_browse_request", "Invalid browse request", "")
 		return
 	}
-	if !s.checkOrigin(w, r) {
+	if !s.checkBrowseOrigin(w, r) {
 		return
 	}
-	_, session, ok := s.requireSession(w, r)
-	if !ok || !s.checkCSRF(w, r, session) {
+	session, ok := s.requireBrowseSession(w, r)
+	if !ok || !s.checkBrowseCSRF(w, r, session) {
 		return
 	}
 
@@ -287,7 +310,7 @@ func (s *Server) handleBrowseSessionStart(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := s.audit(r, session.User.ID, "browse.session.start", "browse-session", hostID, "success", map[string]any{
+	if err := s.audit(r, session.UserID, "browse.session.start", "browse-session", hostID, "success", map[string]any{
 		"hostId": hostID,
 	}); err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")

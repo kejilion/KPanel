@@ -18,6 +18,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
 const (
@@ -44,12 +45,25 @@ var (
 // controlled by a remote federation request" backend, and called directly
 // (bypassing cluster.Service) for this Panel's own local-hostID path in
 // openBrowseWSSession/outputBrowseWSBackend/etc below.
-type clusterBrowseWSSource struct{ agent agentAPI }
+type clusterBrowseWSSource struct {
+	agent agentAPI
+	// store carries the egress host's own LAN opt-in, for the same reason
+	// clusterBrowseSource holds one.
+	store *store.Store
+}
+
+// localBrowseWS builds the backend used for this Panel's own local-hostID
+// path. It exists so the egress host's LAN opt-in is picked up at every call
+// site instead of being easy to forget in one of them.
+func (s *Server) localBrowseWS() clusterBrowseWSSource {
+	return clusterBrowseWSSource{agent: s.agent, store: s.store}
+}
 
 type browseWSAgentOpenInput struct {
-	Owner   string              `json:"owner"`
-	URL     string              `json:"url"`
-	Headers map[string][]string `json:"headers,omitempty"`
+	Owner               string              `json:"owner"`
+	URL                 string              `json:"url"`
+	Headers             map[string][]string `json:"headers,omitempty"`
+	AllowPrivateNetwork bool                `json:"allowPrivateNetwork,omitempty"`
 }
 
 type browseWSAgentOpenOutput struct {
@@ -79,7 +93,10 @@ type browseWSAgentCloseInput struct {
 }
 
 func (s clusterBrowseWSSource) Open(ctx context.Context, owner, targetURL string, headers map[string][]string) (string, error) {
-	body, err := json.Marshal(browseWSAgentOpenInput{Owner: owner, URL: targetURL, Headers: headers})
+	body, err := json.Marshal(browseWSAgentOpenInput{
+		Owner: owner, URL: targetURL, Headers: headers,
+		AllowPrivateNetwork: browseAllowsPrivateNetworks(s.store),
+	})
 	if err != nil {
 		return "", err
 	}
@@ -231,11 +248,11 @@ func (s *Server) handleBrowseWSSession(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_browse_request", "Invalid browse request", "")
 		return
 	}
-	_, session, ok := s.requireSession(w, r)
+	session, ok := s.requireBrowseSession(w, r)
 	if !ok {
 		return
 	}
-	if r.Method != http.MethodGet && (!s.checkOrigin(w, r) || !s.checkCSRF(w, r, session)) {
+	if r.Method != http.MethodGet && (!s.checkBrowseOrigin(w, r) || !s.checkBrowseCSRF(w, r, session)) {
 		return
 	}
 	if r.URL.Path == "/api/v1/browse/ws-sessions" {
@@ -243,7 +260,7 @@ func (s *Server) handleBrowseWSSession(w http.ResponseWriter, r *http.Request) {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
 			return
 		}
-		s.openBrowseWSSession(w, r, session.User.ID)
+		s.openBrowseWSSession(w, r, session.UserID)
 		return
 	}
 	const prefix = "/api/v1/browse/ws-sessions/"
@@ -253,7 +270,7 @@ func (s *Server) handleBrowseWSSession(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 		return
 	}
-	s.handleBrowseWSOperation(w, r, session.User.ID, parts[0], parts[1])
+	s.handleBrowseWSOperation(w, r, session.UserID, parts[0], parts[1])
 }
 
 func (s *Server) openBrowseWSSession(w http.ResponseWriter, r *http.Request, userID string) {
@@ -288,7 +305,7 @@ func (s *Server) openBrowseWSSession(w http.ResponseWriter, r *http.Request, use
 	owner := "panel:" + userID
 	var backendSessionID string
 	if hostID == cluster.LocalHostID {
-		backendSessionID, err = clusterBrowseWSSource{agent: s.agent}.Open(r.Context(), owner, input.URL, input.Headers)
+		backendSessionID, err = s.localBrowseWS().Open(r.Context(), owner, input.URL, input.Headers)
 	} else {
 		var opened cluster.BrowseWSOpenResponse
 		opened, err = s.cluster.BrowseWSOpen(r.Context(), hostID, cluster.BrowseWSOpenRequest{URL: input.URL, Headers: input.Headers})
@@ -444,7 +461,7 @@ func browseWSOutputQuery(r *http.Request) (int, time.Duration, bool) {
 
 func (s *Server) outputBrowseWSBackend(ctx context.Context, item panelBrowseWSSession, offset int, wait time.Duration) (browseWSOutputResponse, error) {
 	if item.HostID == cluster.LocalHostID {
-		frames, next, closed, reason, err := clusterBrowseWSSource{agent: s.agent}.Output(ctx, item.Owner, item.BackendSessionID, offset, wait)
+		frames, next, closed, reason, err := s.localBrowseWS().Output(ctx, item.Owner, item.BackendSessionID, offset, wait)
 		if err != nil {
 			return browseWSOutputResponse{}, err
 		}
@@ -473,7 +490,7 @@ func (s *Server) outputBrowseWSBackend(ctx context.Context, item panelBrowseWSSe
 
 func (s *Server) inputBrowseWSBackend(ctx context.Context, item panelBrowseWSSession, binary bool, data []byte) error {
 	if item.HostID == cluster.LocalHostID {
-		return clusterBrowseWSSource{agent: s.agent}.Input(ctx, item.Owner, item.BackendSessionID, binary, data)
+		return s.localBrowseWS().Input(ctx, item.Owner, item.BackendSessionID, binary, data)
 	}
 	typ := "text"
 	if binary {
@@ -486,7 +503,7 @@ func (s *Server) inputBrowseWSBackend(ctx context.Context, item panelBrowseWSSes
 
 func (s *Server) closeBrowseWSBackend(ctx context.Context, item panelBrowseWSSession) error {
 	if item.HostID == cluster.LocalHostID {
-		return clusterBrowseWSSource{agent: s.agent}.Close(ctx, item.Owner, item.BackendSessionID)
+		return s.localBrowseWS().Close(ctx, item.Owner, item.BackendSessionID)
 	}
 	return s.cluster.BrowseWSClose(ctx, item.HostID, cluster.BrowseWSCloseRequest{SessionID: item.BackendSessionID})
 }

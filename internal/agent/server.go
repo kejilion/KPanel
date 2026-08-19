@@ -84,6 +84,7 @@ type Server struct {
 	monitoring       monitoringHistoryProvider
 	terminals        *terminal.Manager
 	browseClient     *http.Client
+	browseLANClient  *http.Client
 	browseWS         *browseWSManager
 	thumbnailGate    chan struct{}
 	storageUsageGate chan struct{}
@@ -190,7 +191,8 @@ func NewServer(config Config) (*Server, error) {
 		siteIcons:        config.SiteIcons,
 		monitoring:       config.Monitoring,
 		terminals:        config.Terminals,
-		browseClient:     newBrowseHTTPClient(),
+		browseClient:     newBrowseHTTPClient(false),
+		browseLANClient:  newBrowseHTTPClient(true),
 		browseWS:         newBrowseWSManager(),
 		thumbnailGate:    make(chan struct{}, 2),
 		storageUsageGate: make(chan struct{}, 1),

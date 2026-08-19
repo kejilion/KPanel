@@ -1629,6 +1629,20 @@ export interface SecurityEntranceSettings {
 /** Operator-managed extra Host values the panel answers on (exact matches). */
 export interface AllowedHostsSettings {
   hosts: string[]
+  /**
+   * Dedicated hostname the desktop browser is served on. Empty disables the
+   * feature: the shell is never served from the panel's own origin, because
+   * same-origin is exactly what lets a browsed page reach the panel API.
+   */
+  browseOrigin: string
+  /**
+   * Lets the desktop browser reach the server's own LAN (loopback, RFC1918).
+   * Off by default: the requests that egress makes are driven by whatever page
+   * is open, not by the operator, so a hostile page would otherwise get to
+   * probe the internal network. Link-local, including the cloud metadata
+   * address, stays blocked either way.
+   */
+  browseAllowPrivateNetworks: boolean
   resourceVersion: string
 }
 
