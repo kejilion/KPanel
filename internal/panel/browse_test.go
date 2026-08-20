@@ -376,7 +376,9 @@ func TestDrainFederatedBrowseFetchAssemblesMultipleChunks(t *testing.T) {
 	chunks := []string{"first-", "second-", "third"}
 	var outputCalls int
 	open := func(context.Context, string, cluster.BrowseFetchRequest) (cluster.BrowseFetchOpenResponse, error) {
-		return cluster.BrowseFetchOpenResponse{SessionID: "sess-1", StatusCode: 201, Headers: map[string][]string{"X-Test": {"1"}}, TotalBytes: 16}, nil
+		// 18 = len("first-second-third"): TotalBytes is now checked against
+		// what actually arrives, so it has to be the real length.
+		return cluster.BrowseFetchOpenResponse{SessionID: "sess-1", StatusCode: 201, Headers: map[string][]string{"X-Test": {"1"}}, TotalBytes: 18}, nil
 	}
 	output := func(_ context.Context, hostID string, input cluster.BrowseFetchOutputRequest) (cluster.BrowseFetchOutputResponse, error) {
 		if hostID != "remote-1" || input.SessionID != "sess-1" {
@@ -576,5 +578,118 @@ func TestFederatedBrowseFetchUsesTheEgressHostOwnOptIn(t *testing.T) {
 	}
 	if forwarded := forwardedBrowseFetchPayload(t, agent); forwarded["allowPrivateNetwork"] != true {
 		t.Fatalf("allowPrivateNetwork = %v, want true", forwarded["allowPrivateNetwork"])
+	}
+}
+
+// TestDrainFederatedBrowseFetchRejectsMalformedRemoteResponses covers the four
+// ways a compromised paired peer can lie about the shape of its response. The
+// peer is past the Noise handshake and holds browse scope, so nothing earlier
+// in the stack is going to catch this; the negative-length case in particular
+// is not a failed request but a panic inside make(), which takes down paneld
+// rather than the one call.
+func TestDrainFederatedBrowseFetchRejectsMalformedRemoteResponses(t *testing.T) {
+	const body = "payload"
+
+	testCases := []struct {
+		name       string
+		totalBytes int
+		chunks     []cluster.BrowseFetchOutputResponse
+		wantErr    string
+	}{
+		{
+			name:       "negative total bytes",
+			totalBytes: -1,
+			wantErr:    "out-of-range length",
+		},
+		{
+			name:       "total bytes above the 8MiB ceiling",
+			totalBytes: maxFederatedBrowseFetchBytes + 1,
+			wantErr:    "out-of-range length",
+		},
+		{
+			name:       "chunk offset is not contiguous",
+			totalBytes: len(body),
+			chunks: []cluster.BrowseFetchOutputResponse{
+				{Data: base64.StdEncoding.EncodeToString([]byte(body)), NextOffset: 99, Done: true},
+			},
+			wantErr: "not contiguous",
+		},
+		{
+			name:       "done with fewer bytes than declared",
+			totalBytes: len(body) + 10,
+			chunks: []cluster.BrowseFetchOutputResponse{
+				{Data: base64.StdEncoding.EncodeToString([]byte(body)), NextOffset: len(body), Done: true},
+			},
+			wantErr: "declared",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			closeCalls := 0
+			open := func(context.Context, string, cluster.BrowseFetchRequest) (cluster.BrowseFetchOpenResponse, error) {
+				return cluster.BrowseFetchOpenResponse{SessionID: "sess-1", StatusCode: 200, TotalBytes: testCase.totalBytes}, nil
+			}
+			index := 0
+			output := func(context.Context, string, cluster.BrowseFetchOutputRequest) (cluster.BrowseFetchOutputResponse, error) {
+				if index >= len(testCase.chunks) {
+					t.Fatal("drain asked for more chunks than the peer offered")
+				}
+				chunk := testCase.chunks[index]
+				index++
+				return chunk, nil
+			}
+			closeFn := func(context.Context, string, cluster.BrowseFetchCloseRequest) error {
+				closeCalls++
+				return nil
+			}
+
+			_, err := drainFederatedBrowseFetch(context.Background(), "remote-1",
+				cluster.BrowseFetchRequest{URL: "https://example.com/"}, open, output, closeFn)
+			if err == nil {
+				t.Fatal("drainFederatedBrowseFetch() error = nil, want a rejection")
+			}
+			if !strings.Contains(err.Error(), testCase.wantErr) {
+				t.Fatalf("error = %v, want it to mention %q", err, testCase.wantErr)
+			}
+			// Every rejection has to release the remote session, or a peer can
+			// pin buffers on the far side by opening sessions that never drain.
+			if closeCalls != 1 {
+				t.Fatalf("Close called %d times, want exactly 1", closeCalls)
+			}
+		})
+	}
+}
+
+// TestDrainFederatedBrowseFetchRejectsOversizedStream is the under-reporting
+// variant: TotalBytes is inside the ceiling, but the peer keeps streaming.
+// The declared length is a promise, so the real bound has to be enforced
+// against the bytes that actually arrive.
+func TestDrainFederatedBrowseFetchRejectsOversizedStream(t *testing.T) {
+	chunk := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("x"), 64<<10))
+	open := func(context.Context, string, cluster.BrowseFetchRequest) (cluster.BrowseFetchOpenResponse, error) {
+		return cluster.BrowseFetchOpenResponse{SessionID: "sess-1", StatusCode: 200, TotalBytes: 1}, nil
+	}
+	received := 0
+	output := func(_ context.Context, _ string, input cluster.BrowseFetchOutputRequest) (cluster.BrowseFetchOutputResponse, error) {
+		received += 64 << 10
+		return cluster.BrowseFetchOutputResponse{Data: chunk, NextOffset: received, Done: false}, nil
+	}
+	closeCalls := 0
+	closeFn := func(context.Context, string, cluster.BrowseFetchCloseRequest) error {
+		closeCalls++
+		return nil
+	}
+
+	_, err := drainFederatedBrowseFetch(context.Background(), "remote-1",
+		cluster.BrowseFetchRequest{URL: "https://example.com/"}, open, output, closeFn)
+	if err == nil || !strings.Contains(err.Error(), "maximum response size") {
+		t.Fatalf("error = %v, want the maximum response size rejection", err)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("Close called %d times, want exactly 1", closeCalls)
+	}
+	if received > maxFederatedBrowseFetchBytes+(64<<10) {
+		t.Fatalf("drain kept reading past the ceiling: %d bytes", received)
 	}
 }

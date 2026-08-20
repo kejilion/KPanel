@@ -135,8 +135,8 @@ export default [
     'Let the browser reach this machine and the local network',
   ],
   [
-    '开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器 探测内网，因此默认关闭。云 metadata 地址 169.254.169.254 始终拦截。',
-    'When on, the desktop browser can reach 127.0.0.1 and private addresses — but so can any hostile site you open, through your server. Off by default. The cloud metadata address 169.254.169.254 stays blocked either way.',
+    '开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器 探测内网，因此默认关闭。云 metadata 地址无论开关如何都始终拦截。',
+    'When on, the desktop browser can reach 127.0.0.1 and private addresses — but so can any hostile site you open, through your server. Off by default. Cloud metadata addresses stay blocked either way.',
   ],
   [
     '只做精确匹配，不支持 *.example.com 这类通配写法：域名校验正是阻挡 DNS 重绑定和 Host 头伪造的防线，通配会让它失效。留空表示只允许配置文件里的公开地址（以及本机 IP，若已开启）。',

@@ -354,3 +354,159 @@ func TestPanelFrameSrcNamesTheBrowseOrigin(t *testing.T) {
 		t.Fatalf("panel CSP without a browse origin = %q", policy)
 	}
 }
+
+// TestCredentialChangesRevokeBrowseSessions is the same argument as
+// TestLogoutRevokesBrowseSessions applied to the other two endpoints that
+// clear the auth cookies. Changing a password or a username is a statement
+// that the old credential is no longer trusted — usually because it may have
+// leaked — and the browse cookie lives on a different origin in a different
+// table, so it survives unless each of these paths says otherwise.
+func TestCredentialChangesRevokeBrowseSessions(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+		body map[string]string
+	}{
+		{
+			name: "password change",
+			path: "/api/v1/settings/password",
+			body: map[string]string{"currentPassword": "a-strong-password", "newPassword": "an-even-stronger-password"},
+		},
+		{
+			name: "username change",
+			path: "/api/v1/settings/username",
+			body: map[string]string{"currentPassword": "a-strong-password", "newUsername": "operator"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server, tokenPath := newBrowseTestServer(t)
+			panelSession, panelCSRF := bootstrapPanelCookies(t, server, tokenPath)
+			browseSession, browseCSRF := browseHandoffCookies(t, server, panelSession, panelCSRF)
+
+			before := browseAuthenticatedRequest(server, http.MethodGet, "/api/v1/browse/hosts", nil,
+				browseSession, browseCSRF, nil)
+			if before.Code != http.StatusOK {
+				t.Fatalf("browse session unusable beforehand: %d %s", before.Code, before.Body.String())
+			}
+
+			body, err := json.Marshal(testCase.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			changed := browseRequest(server, http.MethodPut, testCase.path, body,
+				panelSession, panelCSRF, map[string]string{
+					"Host": browseTestPanelHost, "Origin": browseTestPanelOrigin,
+					"X-CSRF-Token": panelCSRF.Value, "Content-Type": "application/json",
+				})
+			if changed.Code != http.StatusOK {
+				t.Fatalf("%s = %d %s", testCase.path, changed.Code, changed.Body.String())
+			}
+
+			after := browseAuthenticatedRequest(server, http.MethodGet, "/api/v1/browse/hosts", nil,
+				browseSession, browseCSRF, nil)
+			if after.Code != http.StatusUnauthorized {
+				t.Fatalf("browse session survived the %s: %d %s", testCase.name, after.Code, after.Body.String())
+			}
+		})
+	}
+}
+
+// TestBrowseOriginSessionNeverOutlivesItsPanelSession pins the TTL clamp. The
+// browse credential is not an auth.Session, so nothing expires it on the
+// panel's behalf; without the clamp, one minted in the final minute of a
+// panel session would get a full fresh SessionTTL and outlive the login that
+// authorised it by nearly the whole TTL.
+func TestBrowseOriginSessionNeverOutlivesItsPanelSession(t *testing.T) {
+	server, _ := newBrowseTestServer(t)
+	now := time.Now().UTC()
+
+	// Parent expiring sooner than SessionTTL: the parent wins.
+	parentExpiry := now.Add(90 * time.Second)
+	token, _, err := server.issueBrowseOriginSession("user-1", parentExpiry)
+	if err != nil {
+		t.Fatalf("issueBrowseOriginSession() error = %v", err)
+	}
+	session, ok := server.lookupBrowseOriginSession(token)
+	if !ok {
+		t.Fatal("browse session was not stored")
+	}
+	if session.ExpiresAt.After(parentExpiry) {
+		t.Fatalf("browse session expires at %s, past its panel session at %s", session.ExpiresAt, parentExpiry)
+	}
+
+	// Parent outliving SessionTTL: SessionTTL still caps it.
+	farFuture := now.Add(1000 * time.Hour)
+	token, _, err = server.issueBrowseOriginSession("user-2", farFuture)
+	if err != nil {
+		t.Fatalf("issueBrowseOriginSession() error = %v", err)
+	}
+	session, ok = server.lookupBrowseOriginSession(token)
+	if !ok {
+		t.Fatal("browse session was not stored")
+	}
+	if session.ExpiresAt.After(now.Add(server.config.SessionTTL).Add(time.Minute)) {
+		t.Fatalf("browse session ignored SessionTTL: expires at %s", session.ExpiresAt)
+	}
+
+	// An already-expired parent must not mint a credential at all.
+	if _, _, err := server.issueBrowseOriginSession("user-3", now.Add(-time.Second)); err == nil {
+		t.Fatal("a session was minted from an already-expired panel session")
+	}
+}
+
+// TestNormalizeBrowseOriginComparesHostnamesNotHostPorts covers the port
+// blind spot: cookies are not scoped by port (RFC 6265 section 8.5), so
+// browse.example.com:8443 and browse.example.com are one cookie jar. Letting
+// the browse origin differ from the panel only by port would satisfy the
+// config check while leaving the two sharing everything the split exists to
+// separate.
+func TestNormalizeBrowseOriginComparesHostnamesNotHostPorts(t *testing.T) {
+	const publicURL = "https://panel.example.com:8443"
+
+	rejected := []struct {
+		name   string
+		origin string
+		hosts  []string
+	}{
+		{"same hostname, no port", "panel.example.com", nil},
+		{"same hostname, different port", "panel.example.com:9443", nil},
+		{"same hostname and port", "panel.example.com:8443", nil},
+		{"allowlist entry differing only by port", "extra.example.com:9000", []string{"extra.example.com"}},
+		{"allowlist entry with a port the origin lacks", "extra.example.com", []string{"extra.example.com:8443"}},
+	}
+	for _, testCase := range rejected {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := normalizeBrowseOrigin(testCase.origin, testCase.hosts, publicURL); err == nil {
+				t.Fatalf("normalizeBrowseOrigin(%q, %v) was accepted", testCase.origin, testCase.hosts)
+			}
+		})
+	}
+
+	// A genuinely different hostname still passes, port or no port, and keeps
+	// its port in the stored value — isBrowseOriginRequest matches r.Host
+	// exactly, and r.Host carries whatever port the client connected to.
+	origin, err := normalizeBrowseOrigin("browse.example.com:8443", []string{"panel.example.com:8443"}, publicURL)
+	if err != nil {
+		t.Fatalf("distinct hostname rejected: %v", err)
+	}
+	if origin != "browse.example.com:8443" {
+		t.Fatalf("origin = %q, want the port preserved", origin)
+	}
+}
+
+// TestNormalizeBrowseOriginHandlesIPv6Literals guards the canonicalisation
+// corner: "[::1]:8443" and "[::1]" are the same host, and the brackets are
+// URL syntax rather than part of the name.
+func TestNormalizeBrowseOriginHandlesIPv6Literals(t *testing.T) {
+	if _, err := normalizeBrowseOrigin("[::1]:9443", nil, "https://[::1]:8443"); err == nil {
+		t.Fatal("an IPv6 browse origin differing from the panel only by port was accepted")
+	}
+	if _, err := normalizeBrowseOrigin("[::1]", []string{"[::1]:8443"}, "https://panel.example.com"); err == nil {
+		t.Fatal("an IPv6 allowlist entry differing only by port was accepted")
+	}
+	if _, err := normalizeBrowseOrigin("[fd00::1]:8443", nil, "https://[::1]:8443"); err != nil {
+		t.Fatalf("a distinct IPv6 literal was rejected: %v", err)
+	}
+}

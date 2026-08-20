@@ -193,6 +193,9 @@ Origin 就是面板的而自然通过——`/api/v1/files`、`/api/v1/docker` �
 - 两个域名可以指向**同一台服务器、同一个端口**，服务端按 `Host` 分流，不需要第二个监听端口。
 - 浏览器专用域名**不能**同时写进左栏的面板域名列表：左栏会同时放宽 Origin 校验，把浏览域名加进去
   等于把刚关上的门重新打开。面板会直接拒绝这种配置。
+- 这条比较按**主机名**进行，端口不参与：Cookie 不按端口隔离（RFC 6265 §8.5），
+  `panel.example.com:8443` 和 `panel.example.com` 共用同一个 Cookie jar，只靠端口区分不构成隔离。
+  所以 `panel.example.com:9443` 这类"只换端口"的填法同样会被拒绝。
 - 必须先配置好 `publicUrl`：浏览域名的 `frame-ancestors` 要指名面板 origin，否则 iframe 加载不出来。
 - 留空表示关闭浏览器功能。留空时浏览壳在面板域名下一律 404，不会退化成同源提供。
 
@@ -201,11 +204,25 @@ CDN 场景下（例如 Cloudflare），加一条子域记录指向同一个源�
 实现见 `internal/panel/browse_origin.go`；`serveBrowseOrigin` 是一份白名单，浏览域名上只有浏览壳、
 `/api/v1/browse/*` 和入口交换端点，面板的任何路由都不在其中。
 
+**浏览会话的生命周期**：浏览域名上的凭证是独立的，不是 `auth.Session`，面板的会话机制不会去动它，
+所以生命周期由签发时刻钉死并由每个终止路径显式撤销：
+
+- 有效期取 `min(sessionTtl, 签发它的面板会话剩余时间)`。面板会话只剩一分钟时打开浏览器，拿到的
+  浏览凭证也只剩一分钟，不会另起一个完整 TTL 而活得比登录本身更久。
+- 登出、改密码、改用户名三条路径都会撤销该用户的全部浏览会话和未兑换的入口票据。改密码通常正是
+  因为怀疑旧凭证泄露，此时留下一个仍然可用的浏览会话，等于这次改密没有生效。
+
 ### 桌面浏览器出口默认不进内网
 
-浏览出口（`internal/agent/browse.go`）默认拒绝所有解析到 loopback、RFC1918/ULA、link-local、
-multicast 和未指定地址的目标，返回 `403 browse_target_blocked`；主机名由出口自己解析、逐个 IP 校验，
-所以 DNS rebinding 也挡得住。
+浏览出口（`internal/agent/browse.go`）默认拒绝所有解析到**非全球可达**地址的目标，返回
+`403 browse_target_blocked`；主机名由出口自己解析、逐个 IP 校验，所以 DNS rebinding 也挡得住。
+
+判定表在 `internal/netguard`，依据是 IANA special-purpose address registry 里
+Globally Reachable = False 的前缀，AI provider 出口（`internal/ai`）用的是同一份。这比
+"RFC1918 + 非全球单播"的组合宽：`100.64.0.0/10`（运营商 NAT，也是 Tailscale 的地址段）、
+`198.18.0.0/15`、各 TEST-NET 段都不属于 RFC1918，却同样不该从公网目标里访问到。
+`::ffff:0:0/96`（IPv4-mapped）和 `64:ff9b::/96`（NAT64）会先取出内嵌的 IPv4 再按 v4 表复检，
+否则 `64:ff9b::a00:1` 就是一条绕开整张表的通路。
 
 这道护栏挡的不是管理员，是**管理员正在看的那个页面**。终端里的每个字节都是人敲的，而
 `/api/v1/browse/fetch` 的每个请求是页面内容发起的：Scramjet 会把页面里所有子资源 URL 都改写成走
@@ -218,9 +235,13 @@ multicast 和未指定地址的目标，返回 `403 browse_target_blocked`；主
 - 该开关是**出口主机自己的设置**，从该主机自己的 store 读取，不随联邦请求传递。控制端面板无法远程
   关掉一个已配对节点的护栏——这一点尤其重要，因为 `cluster.browse.fetch` 和 `cluster.terminal.open`
   是互相独立的 scope，一个只授予了浏览、没授予终端的节点不应该因此获得内网访问能力。
-- 打开后放行的是 loopback 和 RFC1918/ULA。**link-local（`169.254.0.0/16`、`fe80::/10`）任何情况下都
-  继续拦截**：那不是局域网，该段里最可能应答的是云 metadata 服务 `169.254.169.254`，它会把 IAM
-  临时凭证交给任何询问者。
+- 打开后放行的是 loopback、RFC1918/ULA，以及 `100.64.0.0/10`——服务器加入 tailnet 时，tailnet 里的
+  节点正是管理员所说的"我的内网"。
+- **link-local（`169.254.0.0/16`、`fe80::/10`）任何情况下都继续拦截**：那不是局域网，该段里最可能
+  应答的是云 metadata 服务 `169.254.169.254`，它会把 IAM 临时凭证交给任何询问者。
+- **云 metadata 地址两种模式下都拦**，包括勾选开关之后：`169.254.169.254`、
+  `100.100.100.200`（阿里云）、`fd00:ec2::254`（AWS IPv6）。管理员能同意的是"访问我自己的机器"，
+  不可能是"把本机的云实例角色交给我正在浏览的页面"，所以这三个地址不在开关的授权范围内。
 - 浏览请求本身无法要求放宽：`/api/v1/browse/fetch` 的请求体里没有这个字段，多余字段会被直接拒绝。
 - 开关变更写审计（`settings.allowed_hosts.update` 的 `browseAllowPrivateNetworks`）。
 

@@ -95,6 +95,23 @@ func (s clusterBrowseSource) Fetch(ctx context.Context, input cluster.BrowseFetc
 // never reports Done — not a limit real traffic should approach.
 const maxFederatedBrowseFetchIterations = 1024
 
+// maxFederatedBrowseFetchBytes mirrors internal/agent's
+// maxBrowseFetchResponseBytes (8MiB): a remote host's browse egress cannot
+// buffer more than that, so a federated response claiming more is not a large
+// response, it is a remote that is not behaving like our Agent.
+//
+// Threat model, so the checks below are not mistaken for input validation
+// against the internet: reaching this code requires a host that is already
+// v2-paired, already authenticated through the Noise handshake, and already
+// granted browse scope. The attacker is a *compromised peer* — a node the
+// operator once paired that has since been taken over — not an arbitrary
+// caller. That peer controls every field of the Open/Output responses, and
+// paneld runs under a 256MB container limit, so a negative TotalBytes
+// (make() panics and takes down the whole panel process, not just this
+// request) or an inflated one (an allocation the panel funds on the peer's
+// say-so) are both reachable from there.
+const maxFederatedBrowseFetchBytes = 8 << 20
+
 var (
 	errBrowseHostNotFound    = errors.New("browse host not found")
 	errBrowseHostUnsupported = errors.New("browse host does not support browse egress")
@@ -248,8 +265,15 @@ func drainFederatedBrowseFetch(
 	if err != nil {
 		return cluster.BrowseFetchResult{}, err
 	}
-	body := make([]byte, 0, opened.TotalBytes)
 	sessionID := opened.SessionID
+	// Validated before make(): a negative capacity panics, and the panic is
+	// not contained to this request.
+	if opened.TotalBytes < 0 || opened.TotalBytes > maxFederatedBrowseFetchBytes {
+		_ = closeFn(ctx, hostID, cluster.BrowseFetchCloseRequest{SessionID: sessionID})
+		return cluster.BrowseFetchResult{}, fmt.Errorf(
+			"federated browse fetch declared an out-of-range length (%d bytes)", opened.TotalBytes)
+	}
+	body := make([]byte, 0, opened.TotalBytes)
 	offset := 0
 	for iteration := 0; iteration < maxFederatedBrowseFetchIterations; iteration++ {
 		chunk, err := output(ctx, hostID, cluster.BrowseFetchOutputRequest{SessionID: sessionID, Offset: offset})
@@ -262,9 +286,30 @@ func drainFederatedBrowseFetch(
 			_ = closeFn(ctx, hostID, cluster.BrowseFetchCloseRequest{SessionID: sessionID})
 			return cluster.BrowseFetchResult{}, errors.New("federated browse fetch chunk is invalid")
 		}
+		// The declared length is a promise, not a bound: enforce the real one
+		// against what actually arrived, or a peer that under-reports
+		// TotalBytes and then streams forever defeats the check above.
+		if len(body)+len(decoded) > maxFederatedBrowseFetchBytes {
+			_ = closeFn(ctx, hostID, cluster.BrowseFetchCloseRequest{SessionID: sessionID})
+			return cluster.BrowseFetchResult{}, errors.New("federated browse fetch exceeded the maximum response size")
+		}
 		body = append(body, decoded...)
+		// NextOffset has to advance to exactly what we have received. A
+		// rewinding or skipping offset means the two sides disagree about
+		// which bytes these are, and the assembled buffer would be neither
+		// side's idea of the response.
+		if chunk.NextOffset != len(body) {
+			_ = closeFn(ctx, hostID, cluster.BrowseFetchCloseRequest{SessionID: sessionID})
+			return cluster.BrowseFetchResult{}, fmt.Errorf(
+				"federated browse fetch chunk offset is not contiguous (got %d, want %d)", chunk.NextOffset, len(body))
+		}
 		offset = chunk.NextOffset
 		if chunk.Done {
+			if len(body) != opened.TotalBytes {
+				_ = closeFn(ctx, hostID, cluster.BrowseFetchCloseRequest{SessionID: sessionID})
+				return cluster.BrowseFetchResult{}, fmt.Errorf(
+					"federated browse fetch delivered %d bytes but declared %d", len(body), opened.TotalBytes)
+			}
 			return cluster.BrowseFetchResult{StatusCode: opened.StatusCode, Headers: opened.Headers, Body: body}, nil
 		}
 	}

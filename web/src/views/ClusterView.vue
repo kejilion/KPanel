@@ -78,6 +78,14 @@ const shareLoading = ref(false)
 const shareSaving = ref(false)
 const shareResetting = ref(false)
 const pairingCode = ref<ClusterPairingCode>()
+// What the generated credential will grant. Terminal and files stay ticked
+// because that is what v2 pairing has always carried and untickng them is the
+// deliberate act; the two browse grants start unticked because a new
+// capability is never granted by a UI the operator did not change.
+const grantTerminal = ref(true)
+const grantFiles = ref(true)
+const grantBrowseFetch = ref(false)
+const grantBrowseWs = ref(false)
 const lightEnrollment = ref<ClusterLightEnrollment>()
 const controllers = ref<ClusterController[]>([])
 const shareSettings = ref<ClusterShareSettings>()
@@ -404,6 +412,17 @@ async function openAccess(): Promise<void> {
 function closeAccess(): void {
   accessOpen.value = false
   pairingCode.value = undefined
+  grantTerminal.value = true
+  grantFiles.value = true
+  grantBrowseFetch.value = false
+  grantBrowseWs.value = false
+}
+
+// A generated code has its scope baked in, so changing a tick afterwards has
+// to discard it. Otherwise the boxes and the credential in the operator's
+// clipboard disagree, and the one that counts is the invisible one.
+function discardCodeOnGrantChange(): void {
+  pairingCode.value = undefined
 }
 
 async function loadControllers(): Promise<void> {
@@ -420,7 +439,12 @@ async function loadControllers(): Promise<void> {
 async function createPairingCode(): Promise<void> {
   generatingCode.value = true
   try {
-    pairingCode.value = await api.cluster.createPairingCode()
+    pairingCode.value = await api.cluster.createPairingCode({
+      terminal: grantTerminal.value,
+      files: grantFiles.value,
+      browseFetch: grantBrowseFetch.value,
+      browseWs: grantBrowseWs.value,
+    })
   } catch (reason) {
     toast.danger('授权码生成失败', friendlyError(reason, '请稍后重试。'))
   } finally {
@@ -1420,7 +1444,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="accessOpen"
       title="本机接入授权"
-      description="其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。"
+      description="其他 KPanel 可按授权范围读取摘要、打开终端、浏览文件或借用本机的网络出口；授权可随时撤销。"
       size="medium"
       @close="closeAccess"
     >
@@ -1430,8 +1454,54 @@ onBeforeUnmount(() => {
             <KeyRound :size="20" />
             <span>
               <strong>本机接入凭据</strong>
-              <small>同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。</small>
+              <small>同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限范围由下面的勾选决定。摘要读取始终包含。</small>
             </span>
+          </div>
+          <div class="cluster-access__grants">
+            <label>
+              <input
+                v-model="grantTerminal"
+                type="checkbox"
+                @change="discardCodeOnGrantChange"
+              />
+              <span>
+                <strong>终端</strong>
+                <small>允许对方在本机打开终端会话。</small>
+              </span>
+            </label>
+            <label>
+              <input
+                v-model="grantFiles"
+                type="checkbox"
+                @change="discardCodeOnGrantChange"
+              />
+              <span>
+                <strong>文件只读</strong>
+                <small>允许对方读取本机文件。</small>
+              </span>
+            </label>
+            <label>
+              <input
+                v-model="grantBrowseFetch"
+                type="checkbox"
+                @change="discardCodeOnGrantChange"
+              />
+              <span>
+                <strong>浏览器出口（HTTP）</strong>
+                <small>允许对方把桌面浏览器的网页请求从本机发出，对外表现为本机的 IP。</small>
+              </span>
+            </label>
+            <label>
+              <input
+                v-model="grantBrowseWs"
+                type="checkbox"
+                @change="discardCodeOnGrantChange"
+              />
+              <span>
+                <strong>浏览器出口（WebSocket）</strong>
+                <small>同上，但用于 WebSocket 连接；与 HTTP 出口是各自独立的授权。</small>
+              </span>
+            </label>
           </div>
           <button
             v-if="!pairingCode"
@@ -2157,6 +2227,28 @@ onBeforeUnmount(() => {
 .cluster-access {
   display: grid;
   gap: 16px;
+}
+
+.cluster-access__grants {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.cluster-access__grants label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.cluster-access__grants label span {
+  display: grid;
+  gap: 2px;
+}
+
+.cluster-access__grants label small {
+  color: var(--text-muted);
 }
 
 .cluster-access__code,

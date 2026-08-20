@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/netguard"
 )
 
 // Browse relays a single buffered HTTP request to a URL the admin is
@@ -272,28 +274,27 @@ func (d *browseDialer) DialContext(ctx context.Context, network, addr string) (n
 	return nil, errBrowseTargetBlocked
 }
 
-// isBlockedIP mirrors internal/ai/providers.go's isBlockedIP (the AI
-// provider egress guard). Kept as an independent copy rather than a shared
-// export: the two features evolved from different subsystems and this is
-// the browse feature's own trust boundary, but a future unification is
-// reasonable if the two ever drift.
+// isBlockedIP and isBlockedIPAllowingPrivate are this package's two names for
+// the shared egress guard in internal/netguard, which decides by the IANA
+// special-purpose registry rather than by net.IP's IsPrivate/IsGlobalUnicast
+// combination these two used to spell out independently. They stay as
+// separate function values because newBrowseDialer injects one of them into
+// browseDialer.blocked, which is what makes the dial path testable without a
+// network.
 func isBlockedIP(ip net.IP) bool {
-	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || !ip.IsGlobalUnicast()
+	return netguard.Blocked(ip, false)
 }
 
 // isBlockedIPAllowingPrivate is the relaxed guard used when the operator has
 // opted this host into LAN browsing (store.AllowedHosts.BrowseAllowPrivateNetworks).
-// It unblocks exactly what "LAN" means — loopback and RFC1918/ULA — and keeps
-// blocking everything else isBlockedIP does. Link-local stays blocked on
-// purpose: 169.254.0.0/16 is not a LAN, and the address most likely to answer
-// in it is the cloud metadata service at 169.254.169.254, which hands out IAM
-// credentials to whatever asks. Note this cannot be written as
-// !ip.IsGlobalUnicast() minus a case: IsGlobalUnicast is already false for
-// loopback, so the remaining rejects have to be spelled out.
+// It unblocks exactly what "LAN" means — loopback, RFC1918/ULA, and the CGNAT
+// range a tailnet peer lives in. Link-local stays blocked on purpose:
+// 169.254.0.0/16 is not a LAN, and the address most likely to answer in it is
+// the cloud metadata service at 169.254.169.254, which hands out IAM
+// credentials to whatever asks. The other metadata endpoints stay blocked in
+// this mode too; see netguard.metadataAddresses.
 func isBlockedIPAllowingPrivate(ip net.IP) bool {
-	return ip == nil || ip.IsUnspecified() || ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() || ip.Equal(net.IPv4bcast)
+	return netguard.Blocked(ip, true)
 }
 
 func newBrowseHTTPClient(allowPrivate bool) *http.Client {

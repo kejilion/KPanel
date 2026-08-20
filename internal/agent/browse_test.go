@@ -28,8 +28,23 @@ func TestIsBlockedIP(t *testing.T) {
 		{"IPv4 cloud metadata", "169.254.169.254", true},
 		{"IPv4 unspecified", "0.0.0.0", true},
 		{"IPv4 multicast", "224.0.0.1", true},
+		// Registry prefixes the previous IsPrivate()/IsGlobalUnicast()
+		// predicate let through. 100.100.100.200 is Alibaba Cloud's metadata
+		// service and was reachable; 100.64/10 is also the Tailscale range,
+		// so on a host in a tailnet the whole tailnet was reachable.
+		{"IPv4 Alibaba metadata", "100.100.100.200", true},
+		{"IPv4 CGNAT/Tailscale", "100.64.0.1", true},
+		{"IPv4 benchmarking", "198.18.0.1", true},
+		{"IPv4 protocol assignments", "192.0.0.1", true},
+		{"IPv4 TEST-NET-3", "203.0.113.1", true},
+		{"IPv4 reserved", "240.0.0.1", true},
+		{"IPv4-mapped loopback", "::ffff:127.0.0.1", true},
+		{"NAT64-wrapped RFC1918", "64:ff9b::a00:1", true},
+		{"IPv6 documentation", "2001:db8::1", true},
+		{"IPv6 AWS metadata", "fd00:ec2::254", true},
 		{"IPv4 public", "8.8.8.8", false},
 		{"IPv4 public 2", "1.1.1.1", false},
+		{"IPv4 just outside RFC1918", "172.32.0.1", false},
 		{"IPv6 loopback", "::1", true},
 		{"IPv6 unique-local", "fc00::1", true},
 		{"IPv6 link-local", "fe80::1", true},
@@ -191,6 +206,42 @@ func TestBrowseFetchHandlerBlocksLoopbackTarget(t *testing.T) {
 	}
 }
 
+// TestBrowseFetchHandlerBlocksCloudMetadataTargets is the regression test for
+// the finding that motivated internal/netguard: in strict mode these
+// addresses satisfied every clause of the old predicate and were dialed, so
+// a page in the desktop browser could read the host's instance credentials.
+// The targets are IP literals, so nothing here touches the network — the
+// dialer refuses before connecting.
+func TestBrowseFetchHandlerBlocksCloudMetadataTargets(t *testing.T) {
+	for _, target := range []string{
+		"http://100.100.100.200/latest/meta-data/", // Alibaba Cloud
+		"http://169.254.169.254/latest/meta-data/", // AWS/GCP/Azure
+		"http://[fd00:ec2::254]/latest/meta-data/", // AWS over IPv6
+		"http://100.64.0.1/",                       // CGNAT / tailnet peer
+	} {
+		t.Run(target, func(t *testing.T) {
+			server := testServer(t)
+			body, _ := json.Marshal(browseFetchInput{URL: target})
+			request := httptest.NewRequest(http.MethodPost, "/v1/browse/fetch", bytes.NewReader(body))
+			request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+			}
+			var problem struct {
+				Code string `json:"code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+				t.Fatal(err)
+			}
+			if problem.Code != "browse_target_blocked" {
+				t.Fatalf("code = %q, want browse_target_blocked", problem.Code)
+			}
+		})
+	}
+}
+
 // TestBrowseFetchHandlerRelaysRequestAndResponse swaps the server's client
 // for one whose dialer resolves a fake hostname to the local httptest
 // upstream, so the handler's request/response plumbing (method, headers,
@@ -288,6 +339,16 @@ func TestIsBlockedIPAllowingPrivate(t *testing.T) {
 		{"IPv6 unspecified", "::", true},
 		{"IPv4 multicast", "224.0.0.1", true},
 		{"IPv4 broadcast", "255.255.255.255", true},
+		// A tailnet peer is what an operator means by "my network", so the
+		// CGNAT range opens here. The metadata services never do: an operator
+		// can consent to reaching their own machines, but not to handing this
+		// host's cloud IAM role to a page they browse.
+		{"IPv4 CGNAT/Tailscale peer", "100.64.0.1", false},
+		{"IPv6 Tailscale ULA", "fd7a:115c:a1e0::1", false},
+		{"IPv4 Alibaba metadata", "100.100.100.200", true},
+		{"IPv6 AWS metadata", "fd00:ec2::254", true},
+		{"IPv4 benchmarking", "198.18.0.1", true},
+		{"IPv4 TEST-NET-3", "203.0.113.1", true},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

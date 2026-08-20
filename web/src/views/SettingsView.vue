@@ -679,7 +679,7 @@ async function revealBrowseOriginField(): Promise<void> {
             <strong>允许浏览器访问本机与局域网</strong>
             <small>
               开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器
-              探测内网，因此默认关闭。云 metadata 地址 169.254.169.254 始终拦截。
+              探测内网，因此默认关闭。云 metadata 地址无论开关如何都始终拦截。
             </small>
           </span>
         </label>

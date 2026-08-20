@@ -262,11 +262,30 @@ export interface PublicClusterShareSnapshot {
 
 export interface ClusterPairingCode {
   code: string
-  scope:
-    | 'cluster.summary.read'
-    | 'cluster.summary.read cluster.terminal.open'
-    | 'cluster.summary.read cluster.terminal.open cluster.files.read'
+  /**
+   * Space-separated scope tokens as issued by cluster.BuildV2Scope. This was
+   * a union of the three combinations that existed before the browse grants
+   * were added; it is a plain string because the set of combinations is the
+   * server's to decide, and a union here goes stale silently — it type-checks
+   * against a value the server never sends again.
+   */
+  scope: string
   expiresAt: string
+}
+
+/**
+ * ClusterPairingGrants is the request body of createPairingCode. Terminal and
+ * files default to granted (what v2 pairing has always carried, so omitting
+ * them preserves the old behaviour); both browse grants default to denied and
+ * are only ever included because someone ticked them. They stay independent
+ * rather than one "browse" flag because HTTP relay and WebSocket relay are
+ * separate scopes on the server (cluster.browse.fetch / cluster.browse.ws).
+ */
+export interface ClusterPairingGrants {
+  terminal?: boolean
+  files?: boolean
+  browseFetch?: boolean
+  browseWs?: boolean
 }
 
 export interface TerminalSession {

@@ -871,6 +871,11 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.clearAuthCookies(w, r)
+	// The browse origin holds its own cookie that clearAuthCookies cannot
+	// reach (different origin, different table). Changing the password is a
+	// statement that the old credential is no longer trusted, so the browse
+	// session it authorised has to go with it — same reasoning as logout.
+	s.revokeBrowseOriginSessionsForUser(session.User.ID)
 	_ = s.audit(r, session.User.ID, action, "user", session.User.ID, "success", nil)
 	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -917,6 +922,7 @@ func (s *Server) handleUsernameChange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.clearAuthCookies(w, r)
+	s.revokeBrowseOriginSessionsForUser(session.User.ID)
 	_ = s.audit(r, session.User.ID, action, "user", session.User.ID, "success", nil)
 	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
@@ -1367,10 +1373,14 @@ type allowedHostsResponse struct {
 // removes the isolation the second origin was added for (see
 // store.AllowedHosts.BrowseOrigin):
 //
-//   - It must differ from publicUrl's host and from every allowlist entry.
-//     Sharing a name with the panel puts browsed content back on the panel's
-//     origin, and listing it in the allowlist as well would make Origin
-//     validation accept it on panel endpoints.
+//   - It must differ from publicUrl's host and from every allowlist entry,
+//     compared by *hostname* with the port stripped. Sharing a name with the
+//     panel puts browsed content back on the panel's origin, and listing it in
+//     the allowlist as well would make Origin validation accept it on panel
+//     endpoints. The port cannot be part of that comparison: cookies are not
+//     scoped by port (RFC 6265 §8.5), so panel.example.com:8443 and
+//     panel.example.com are one cookie jar and one origin as far as the thing
+//     being isolated is concerned, however much they differ as URLs.
 //   - publicUrl must be configured, because the browse origin's
 //     frame-ancestors has to name the panel origin for the iframe to load,
 //     and there is no other way to learn it.
@@ -1393,17 +1403,38 @@ func normalizeBrowseOrigin(raw string, hosts []string, publicURL string) (string
 	if strings.TrimSpace(publicURL) == "" {
 		return "", errors.New("请先配置 publicUrl 后再设置浏览器专用域名")
 	}
+	originHostname := browseOriginHostname(origin)
 	parsedPublic, err := url.Parse(strings.TrimSpace(publicURL))
 	if err == nil && parsedPublic.Host != "" &&
-		strings.EqualFold(origin, parsedPublic.Host) {
+		strings.EqualFold(originHostname, parsedPublic.Hostname()) {
 		return "", errors.New("浏览器专用域名必须和面板地址不同，否则隔离不成立")
 	}
 	for _, host := range hosts {
-		if strings.EqualFold(origin, strings.TrimSpace(host)) {
+		if strings.EqualFold(originHostname, browseOriginHostname(host)) {
 			return "", errors.New("浏览器专用域名不能同时出现在面板访问域名列表里")
 		}
 	}
 	return origin, nil
+}
+
+// browseOriginHostname reduces an allowlist entry or a configured browse
+// origin to the name a cookie is scoped by: lowercase, no port, no brackets
+// around an IPv6 literal. Only normalizeBrowseOrigin's *comparisons* use it —
+// the stored value keeps its port, because isBrowseOriginRequest matches
+// r.Host exactly and r.Host carries the port the client actually connected
+// to. Widening the config-time check does not require widening the runtime
+// one: once two names cannot collide, an exact runtime match is enough.
+func browseOriginHostname(value string) string {
+	trimmed := strings.Trim(strings.ToLower(strings.TrimSpace(value)), "/")
+	if trimmed == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(trimmed); err == nil {
+		trimmed = host
+	}
+	// A bare "[::1]" has no port for SplitHostPort to find, so the brackets
+	// come off here rather than there.
+	return strings.Trim(trimmed, "[]")
 }
 
 // handleAllowedHostsSettings exposes the Host allowlist described on

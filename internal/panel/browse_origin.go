@@ -75,6 +75,13 @@ const (
 type browseHandoffTicket struct {
 	UserID    string
 	ExpiresAt time.Time
+
+	// ParentExpiresAt is the expiry of the panel session that minted this
+	// ticket. It rides along so the browse credential can be capped by it:
+	// without that cap a browse session issued in the last minute of a panel
+	// session would get a fresh full SessionTTL of its own and outlive the
+	// login that authorised it by nearly a whole TTL.
+	ParentExpiresAt time.Time
 }
 
 // browseOriginSession is the browse origin's own credential. It is not an
@@ -270,7 +277,7 @@ func (s *Server) handleBrowseHandoff(w http.ResponseWriter, r *http.Request) {
 			"浏览器功能尚未配置独立域名", "请在“设置 → 面板访问域名”里填写浏览器专用域名后再打开。")
 		return
 	}
-	ticket, err := s.issueBrowseHandoffTicket(session.User.ID)
+	ticket, err := s.issueBrowseHandoffTicket(session.User.ID, session.ExpiresAt)
 	if err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "browse_handoff_unavailable",
 			"浏览会话暂时无法建立，请稍后重试", "")
@@ -307,12 +314,12 @@ func (s *Server) browseOriginScheme() string {
 // linger in the address bar.
 func (s *Server) handleBrowseEnter(w http.ResponseWriter, r *http.Request) {
 	ticket := strings.TrimSpace(r.URL.Query().Get("t"))
-	userID, ok := s.redeemBrowseHandoffTicket(ticket)
+	redeemed, ok := s.redeemBrowseHandoffTicket(ticket)
 	if !ok {
 		s.writeBrowseEnterError(w)
 		return
 	}
-	token, csrfToken, err := s.issueBrowseOriginSession(userID)
+	token, csrfToken, err := s.issueBrowseOriginSession(redeemed.UserID, redeemed.ParentExpiresAt)
 	if err != nil {
 		s.writeBrowseEnterError(w)
 		return
@@ -429,7 +436,7 @@ func (s *Server) checkBrowseOrigin(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
-func (s *Server) issueBrowseHandoffTicket(userID string) (string, error) {
+func (s *Server) issueBrowseHandoffTicket(userID string, parentExpiresAt time.Time) (string, error) {
 	now := time.Now().UTC()
 	s.browseOriginMu.Lock()
 	defer s.browseOriginMu.Unlock()
@@ -448,17 +455,19 @@ func (s *Server) issueBrowseHandoffTicket(userID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.browseHandoffTickets[key] = browseHandoffTicket{UserID: userID, ExpiresAt: now.Add(browseHandoffTicketTTL)}
+	s.browseHandoffTickets[key] = browseHandoffTicket{
+		UserID: userID, ExpiresAt: now.Add(browseHandoffTicketTTL), ParentExpiresAt: parentExpiresAt,
+	}
 	return token, nil
 }
 
 // redeemBrowseHandoffTicket consumes the ticket whether or not it was still
 // valid: a ticket is single-use, so even a replay of an expired one must not
 // leave anything behind to retry against.
-func (s *Server) redeemBrowseHandoffTicket(token string) (string, bool) {
+func (s *Server) redeemBrowseHandoffTicket(token string) (browseHandoffTicket, bool) {
 	key, ok := browseTokenKey(token)
 	if !ok {
-		return "", false
+		return browseHandoffTicket{}, false
 	}
 	now := time.Now().UTC()
 	s.browseOriginMu.Lock()
@@ -466,13 +475,25 @@ func (s *Server) redeemBrowseHandoffTicket(token string) (string, bool) {
 	ticket, exists := s.browseHandoffTickets[key]
 	delete(s.browseHandoffTickets, key)
 	if !exists || !ticket.ExpiresAt.After(now) {
-		return "", false
+		return browseHandoffTicket{}, false
 	}
-	return ticket.UserID, true
+	return ticket, true
 }
 
-func (s *Server) issueBrowseOriginSession(userID string) (string, string, error) {
+// issueBrowseOriginSession mints the browse origin's own credential. Its
+// lifetime is min(SessionTTL, the minting panel session's remaining life):
+// the browse cookie is deliberately not an auth.Session, which means none of
+// the panel's session machinery expires it, so the cap has to be baked into
+// the expiry at issue time.
+func (s *Server) issueBrowseOriginSession(userID string, parentExpiresAt time.Time) (string, string, error) {
 	now := time.Now().UTC()
+	expiresAt := now.Add(s.config.SessionTTL)
+	if !parentExpiresAt.IsZero() && parentExpiresAt.Before(expiresAt) {
+		expiresAt = parentExpiresAt
+	}
+	if !expiresAt.After(now) {
+		return "", "", errors.New("browse session would expire immediately")
+	}
 	s.browseOriginMu.Lock()
 	defer s.browseOriginMu.Unlock()
 	if s.browseOriginSessions == nil {
@@ -495,7 +516,7 @@ func (s *Server) issueBrowseOriginSession(userID string) (string, string, error)
 		return "", "", err
 	}
 	s.browseOriginSessions[key] = browseOriginSession{
-		UserID: userID, CSRFToken: csrfToken, ExpiresAt: now.Add(s.config.SessionTTL),
+		UserID: userID, CSRFToken: csrfToken, ExpiresAt: expiresAt,
 	}
 	return token, csrfToken, nil
 }
@@ -516,9 +537,13 @@ func (s *Server) lookupBrowseOriginSession(token string) (browseOriginSession, b
 	return session, true
 }
 
-// revokeBrowseOriginSessionsForUser is called when a panel session ends. The
-// browse credential is independent by design, which would otherwise let it
-// outlive the logout that was supposed to end the admin's access.
+// revokeBrowseOriginSessionsForUser is called from every path that ends this
+// user's panel access: logout, and the password and username changes that
+// clear the auth cookies for the same reason. The browse credential is
+// independent by design — nothing in the panel's session machinery touches
+// it — which is exactly why each of those paths has to say so explicitly, or
+// a credential change leaves a live browse session behind for whoever
+// prompted the change.
 func (s *Server) revokeBrowseOriginSessionsForUser(userID string) {
 	if userID == "" {
 		return

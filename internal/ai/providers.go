@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/kejilion/kejilion-panel/internal/netguard"
 )
 
 type ProviderInput struct {
@@ -155,9 +157,14 @@ func isLiteralBlocked(host string) bool {
 	return ip != nil && isBlockedIP(ip)
 }
 
+// isBlockedIP refuses every address the IANA special-purpose registry marks
+// "Globally Reachable = False", via the guard shared with the desktop
+// browser's egress (internal/netguard). A provider baseUrl is operator-typed
+// and then dialed by paneld, so this is the SSRF boundary for the AI
+// subsystem; EndpointPrivate providers bypass it by explicit opt-in, which is
+// what ValidateResolvedAddresses checks before it gets here.
 func isBlockedIP(ip net.IP) bool {
-	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || !ip.IsGlobalUnicast()
+	return netguard.Blocked(ip, false)
 }
 
 func keyHint(value string) string {
