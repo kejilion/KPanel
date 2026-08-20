@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.6"
+version: "2.7"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-08-17T17:33:27+08:00"
+updated: "2026-08-20T19:30:00+08:00"
 ---
 
 # Release KPanel
@@ -53,6 +53,11 @@ git status --short
 git rev-parse HEAD
 git rev-parse origin/main
 git tag --list "v${{version}}"
+node scripts/check-collaboration-state.mjs \
+  --repo "${{project_dir}}" \
+  --role writer \
+  --base-ref origin/main \
+  --require-clean
 node scripts/check-environment-policy.mjs \
   --environment "${{validation_environment}}" \
   --purpose candidate-validation
@@ -71,6 +76,11 @@ node scripts/check-environment-policy.mjs \
 
 **Expected output:** 发布单写者成立，候选提交清单和基线明确，目标版本未占用，记录
 `${{previous_version}}` 对应源码和镜像回滚点；发布画像能够解释必测项和不适用维度。
+
+同时建立本次冻结执行方案：列出生产写前后实际调用的唯一仓库脚本、Runner/镜像、SSH 身份、必需
+运行时、跨 Shell 参数承载方式和证据解析入口。所有必需项先在非生产环境预检；优先使用参数文件、
+JSON 或仓库脚本传值，不在生产命令中嵌套临时 PowerShell/SSH/Shell 转义。未被固定入口声明和预检的
+可选本机工具不得成为生产验收依赖。
 
 ### 2. 准备一致的版本变更
 
@@ -101,6 +111,9 @@ bash scripts/check-version-consistency.sh
 
 进入本步骤即冻结候选。此后新增功能默认进入下一版本；若候选文件、分支或 `HEAD` 发生任何变化，
 本轮 L3 结果作废，必须先按 `docs/project-management.md` 的冲突恢复流程重建候选，再重新核验。
+冻结同时覆盖步骤 1 的执行方案；生产写操作开始后不得现场发明新 wrapper、首次引入本机 CLI 或改变
+跨 Shell 参数格式。入口失效时先停止并保持/恢复服务健康，在非生产环境修复唯一入口和回归测试后，
+从受影响层重跑；一次现场绕行不构成可复用流程。
 
 远程 L3 必须从包含完整 Git 元数据和稳定 Tag 的候选重建，禁止用 `git archive` 代替 Git 仓库。
 生成 bundle 时同时携带候选历史和 Tag；克隆后先固定 detached SHA 并确认回滚 Tag 存在：
@@ -327,6 +340,11 @@ node scripts/check-environment-policy.mjs \
 14 天和最近 20 个版本的发布节奏复核。验收记录在获得相应提交/推送授权后形成独立聚焦提交；
 未获授权时保留工作树差异并回传，不得擅自更新 `main`。
 
+异常计数大于零时按模板补“流程异常明细”：每个事件或同根因批次使用“阶段/权威入口/根因类别”
+稳定指纹，记录生产写前后位置、实际影响、恢复证据、历史复发和永久处置。同一指纹在滚动 5 个正式
+版本内出现 2 次，或生产写后发生可由预检发现的本地流程异常，下一次 L3 生产写前必须修复唯一脚本、
+Runner、夹具或预检并补回归；不可控上游瞬时故障只能使用有负责人、复核日期和退出条件的期限例外。
+
 提交验收记录前执行机器校验；同一命令既校验六个交付字段和两个流程指标，也核对时间顺序、十进制用时、计数和失败恢复
 语义，禁止使用语义相近的自由文本代替字段。发生失败时必须按模板分别填写“发现时间”“恢复时间”
 和具体“逃逸门禁”，后者必须明确选择“已逃逸”或“未逃逸”并给出依据，不得使用“待确认”“无”
@@ -349,6 +367,7 @@ node scripts/report-release-metrics.mjs \
 - 多维质量状态、受影响用户旅程和证据层级；
 - 生产部署安全核对动作与仅在隔离真机验证的动作；
 - 发布节奏、产品变更失败和独立流程异常数据，以及重复发布原因（如有）；
+- 流程异常指纹、复发判断和永久处置（计数大于零时）；
 - 保留的无关本地改动；
 - `${{previous_version}}` 回滚点及任何未验证风险。
 

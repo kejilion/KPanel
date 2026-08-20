@@ -25,6 +25,8 @@ const requiredFiles = [
   'scripts/check-environment-policy.mjs',
   'scripts/verify-governance.sh',
   'scripts/tests/check-environment-policy.test.mjs',
+  'scripts/check-collaboration-state.mjs',
+  'scripts/tests/collaboration-state.test.mjs',
   'scripts/background-browser-test.mjs',
   'scripts/tests/background-browser-test.test.mjs',
   'scripts/local-feature-preview.mjs',
@@ -135,6 +137,7 @@ const adapterTokens = [
   'make verify-release',
   'docs/ui-visual-language.md',
   'docs/product-quality-review-current.md',
+  'scripts/check-collaboration-state.mjs',
 ];
 requireText('AGENTS.md', adapterTokens);
 requireText('CLAUDE.md', adapterTokens);
@@ -163,6 +166,8 @@ requireText('PROJECT_RULES.md', [
   'PASS WITH FOLLOW-UP',
   '停止条件',
   '首次生产写操作前被拦截的流程异常不计变更失败',
+  '流程异常指纹',
+  'scripts/check-collaboration-state.mjs',
 ]);
 requireText('docs/development-quality-standard.md', [
   'ui-visual-language.md',
@@ -195,6 +200,12 @@ requireText('docs/project-management.md', [
   '生产已部署',
   '仅唯一集成/发布任务且需要明确主线集成授权',
   'kpanel-release-process-metrics:start/end',
+  'scripts/check-collaboration-state.mjs',
+  '流程异常指纹',
+]);
+requireText('docs/multi-agent-collaboration.md', [
+  'scripts/check-collaboration-state.mjs',
+  '只隔离',
 ]);
 requireText('.codex-workflows/README.md', [
   'ui-visual-language.md',
@@ -236,11 +247,14 @@ requireText('scripts/verify-change.sh', [
   'node scripts/check-business-context-freshness.mjs',
   'scripts/local-feature-preview.mjs',
   'scripts/tests/local-feature-preview.test.mjs',
+  'scripts/check-collaboration-state.mjs',
+  'scripts/tests/collaboration-state.test.mjs',
   '--validate-acceptance',
   '--diff-filter=ACMRTD',
   '.github/workflows/*.yml|.github/workflows/*.yaml',
 ]);
 requireText('.codex-workflows/release-kpanel.workflow.yaml', [
+  'scripts/check-collaboration-state.mjs',
   'scripts/run-release-gate.sh',
   'git bundle create',
   '--entrypoint sh',
@@ -252,12 +266,19 @@ requireText('.codex-workflows/release-kpanel.workflow.yaml', [
   '--validate-acceptance',
   '首次生产写操作前被门禁拦截的流程异常只计流程指标',
   '有生产完成证据的部署频率',
+  '流程异常指纹',
+  '冻结执行方案',
 ]);
 requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', [
   'docs/product-quality-review-current.md',
   'docs/ui-visual-language.md',
   '100%/125%/200%',
   'node scripts/check-business-context-freshness.mjs',
+  '流程异常指纹',
+]);
+requireText('.codex-workflows/session-collaboration.workflow.yaml', [
+  'scripts/check-collaboration-state.mjs',
+  'quarantine only that worktree',
 ]);
 requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
   'docs/local-feature-preview-standard.md',
@@ -293,6 +314,8 @@ requireText('docs/release-acceptance-template.md', [
   '<!-- kpanel-release-process-metrics:end -->',
   '已记录发布流程异常或无效证据拦截次数',
   '两类同时计入',
+  '### 流程异常明细',
+  '<阶段>/<权威入口>/<根因类别>',
   '## 遗留风险与后续准入',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [

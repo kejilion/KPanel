@@ -35,9 +35,12 @@ CI 和发布入口。规范分层、Definition of Ready/Done、任务契约和�
 
 ## 标准协作流程
 
-1. 协调中心执行 `git fetch origin --prune`，盘点远端任务分支、worktree 和活跃任务。
+1. 协调中心执行 `git fetch origin --prune`，盘点远端任务分支、worktree 和活跃任务，并运行
+   `node scripts/check-collaboration-state.mjs --role management --base-ref origin/main`。检查失败时只隔离
+   管理树并保留现场，仍从精确 `origin/main` 创建专用 worktree，不在管理树修复或清理未知内容。
 2. 按项目管理规范填写统一任务契约；达到 Definition of Ready 后才分配写任务。
-3. 协调中心从最新批准基线创建专用 branch/worktree，并把绝对路径交给唯一写入者。
+3. 协调中心从最新批准基线创建专用 branch/worktree，并把绝对路径交给唯一写入者；写入前以精确
+   基线运行 `scripts/check-collaboration-state.mjs --role writer --require-clean`。
 4. Codex 或 Claude 只在自己的 worktree 写入，阶段结果以聚焦提交保存。
 5. 智能体达到 Definition of Done；获得提交/推送授权后形成聚焦提交并通过 SSH 推送同名任务分支，
    再回传标准交付包。未获提交授权时只能保留在专用 worktree，不进入跨工具交接或集成。
@@ -117,3 +120,5 @@ CI 和发布入口。规范分层、Definition of Ready/Done、任务契约和�
 - 智能体声称完成但无提交或证据：状态保持开发中，不进入集成。
 - 未获提交授权但本地差异已完成：保持“待提交授权”，保留专用 worktree，不通过复制文件交接。
 - 发布期间出现新功能：进入下一版本任务分支，不修改冻结候选。
+- 管理工作树检查失败：保留 `status`、分支和 ahead/behind 证据，只隔离该树；不 reset、stash、clean
+  或覆盖文件，后续写任务从精确远端基线建立新 worktree。

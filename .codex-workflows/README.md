@@ -4,13 +4,13 @@
 规则与状态真源位于 `PROJECT_RULES.md`、`docs/project-management.md`、
 `docs/multi-agent-collaboration.md`、SSH 远端分支/提交和 CI；本目录不得形成第二套规范。
 
-- `session-collaboration.workflow.yaml`：复用或创建任务、等待、复核并统一交付。
+- `session-collaboration.workflow.yaml`：复用或创建任务、检查管理/写入工作树角色、等待、复核并统一交付。
 - `background-browser-validation.workflow.yaml`：在登记的隔离环境后台执行真实浏览器 E2E/稳定性验收，
   以持久化 job 状态和证据跨会话恢复；测试强度由风险画像决定，不机械套固定时长。
 - `local-feature-preview.workflow.yaml`：为可见功能交付统一的 mock/本地集成预览，自动分配回环端口，
   固定候选身份、体验步骤、证据目录和停止责任；不替代真机、L0-L3 或发布验收。
-- `release-kpanel.workflow.yaml`：版本准备、标准 Linux Runner、CI、Release、Docker Hub、应用市场、
-  隔离验收和生产部署安全核对。
+- `release-kpanel.workflow.yaml`：版本准备、冻结执行方案、标准 Linux Runner、CI、Release、Docker Hub、
+  应用市场、隔离验收、生产部署安全核对和重复流程异常收敛。
 - `quality-audit-kpanel.workflow.yaml`：快速迭代后的业务正确性、体验、性能、稳定、安全、交付节奏和
   发布门禁健康审计。
 - 界面与视觉变更统一参考 [`docs/ui-visual-language.md`](../docs/ui-visual-language.md)；本目录只提供执行适配，

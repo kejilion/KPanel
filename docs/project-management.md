@@ -1,7 +1,7 @@
 # KPanel 多智能体项目管理规范
 
 - 状态：长期强制规范
-- 版本：2026-08-13
+- 版本：2026-08-20
 - 适用范围：KPanel 主仓、关联的 `kejilion/sh` 与 `kejilion/apps` 变更、Codex/Claude 等多智能体协作和版本发布
 - 权威关系：工程与产品规则以 `PROJECT_RULES.md` 为准；本文件负责工作分解、并发隔离、集成和发布治理
 
@@ -79,6 +79,19 @@ PR、REST/GraphQL API 和 `gh` 登录均为可选辅助能力，不是任务登�
 
 Codex 应将 `C:\GitHub\kejilion-panel` 注册为独立 Git 项目；Claude 等工具也应把仓库根目录作为项目
 根。无论工具是否自动创建隔离环境，协调中心都必须把专用 worktree 的绝对路径和任务分支写入任务契约。
+
+工作树角色使用唯一机器入口核对：
+
+```powershell
+node scripts/check-collaboration-state.mjs --repo C:\GitHub\kejilion-panel --role management --base-ref origin/main
+node scripts/check-collaboration-state.mjs --repo <task-worktree> --role writer --base-ref <exact-base> --require-clean
+```
+
+管理角色要求主工作树、`main`、clean 且本地提交不得领先批准基线；落后远端只报告，因为写任务必须从
+精确 `origin/main` 或指定提交创建。管理检查失败时该工作树进入隔离状态：协调中心可以继续 fetch、
+只读盘点和从精确基线创建新 worktree，但不得在其中开发、集成、暂存或提交，也不得 reset、stash、
+clean 或覆盖未知改动。写角色必须是链接 task worktree 和非 `main` 分支；开发中允许 dirty，启动、
+交接和验收 checkpoint 才使用 `--require-clean`。
 
 ### 4.2 命名
 
@@ -172,6 +185,9 @@ git rev-parse --show-toplevel
 git rev-parse --short HEAD
 git worktree list
 ```
+
+随后按当前角色运行 `scripts/check-collaboration-state.mjs`。任务契约中的 `base` 必须使用精确提交；
+不能在任务执行中把已前移的浮动 `origin/main` 当作原基线。
 
 `git remote get-url origin` 必须返回 SSH 地址；不得为绕过认证故障临时改成带 Token 的 HTTPS URL。
 
@@ -292,6 +308,9 @@ git push origin HEAD:refs/heads/<task-branch>
 - 候选发现缺陷时，先在独立修复分支形成提交，再由发布任务纳入并从受影响层级重新验证；
 - 推送候选前、快进 `main` 前、打标签前各执行一次远端基线和提交差集核对；
 - `origin/main` 前移或候选 `HEAD` 改变时立即停止，重新构造候选并重验；
+- 候选冻结时同步冻结发布执行方案；生产写前在非生产环境完成 SSH 身份、运行时、固定脚本、跨 Shell
+  参数和证据解析预检。生产写开始后不临时发明新的多层命令，入口失效时先保持/恢复健康，再回到
+  非生产环境修复唯一入口并重验；
 - 候选 CI、主线 CI、Release 和公开镜像依次通过后可标记“产物已发布”；只有生产部署已明确授权且
   备份、标准部署和部署安全核对完成，才标记“生产已部署”。
 - GitHub Release 公开后，Release workflow 仅在候选分支提交已包含于发布标签时自动删除该候选分支；
@@ -363,6 +382,10 @@ KPanel 允许智能体持续优化规范、自动门禁和协作流程，但“�
 只服务人工说明，不能提供、覆盖或隐藏机器指标证据。稳定标签形成的正式发布频率与有生产完成证据的
 部署频率必须分开报告。首次生产写操作前被拦截的流程异常只计流程指标；生产写操作后若造成服务退化、
 回滚、紧急热修复或重复发布，则同时计变更失败与流程异常；产品载荷单独失败只计变更失败。
+异常计数大于零时，验收记录还必须给出“阶段/权威入口/根因类别”流程异常指纹、生产写前后位置、
+影响、恢复和永久处置。同一指纹在滚动 5 个正式版本内出现 2 次，或生产写后发生本可由预检发现的
+本地流程异常，必须在下一次 L3 生产写前修复唯一入口并补回归；不可控上游瞬时故障使用有期限例外，
+不得为降低指标漏记或放宽门禁。
 
 ### 14.1 依赖与底层技术栈维护循环
 

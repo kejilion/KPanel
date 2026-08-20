@@ -30,11 +30,15 @@ git worktree list
 
 3. `origin` 必须为 `git@github.com:kejilion/KPanel.git`。GitHub App、Issue、PR、API、插件或 `gh`
    登录不是本地开发前置条件。
-4. 只有任务涉及发布、整体质量审计、受控自我改进或专项真机验收时，才读取
+4. 协调中心在管理工作树运行
+   `node scripts/check-collaboration-state.mjs --repo . --role management --base-ref origin/main`；写任务在专用
+   worktree 开始写入前对精确基线运行 `--role writer --require-clean`。管理检查失败只隔离该工作树并保留
+   现场，不阻止从 `origin/main` 创建新的专用 worktree，也不授权清理未知改动。
+5. 只有任务涉及发布、整体质量审计、受控自我改进或专项真机验收时，才读取
    `.codex-workflows/README.md` 并列出相关工作流；普通 L0/L1 不为发现流程加载全部工作流。
-5. 按 `docs/project-management.md` 填写标准任务契约。写任务达到 Definition of Ready 后，才能在
+6. 按 `docs/project-management.md` 填写标准任务契约。写任务达到 Definition of Ready 后，才能在
    最新批准基线创建专用 branch/worktree；管理工作树只用于同步、盘点和只读比较。
-6. 涉及界面布局、交互、字体、主题、图标、动效或视觉资产时，加载
+7. 涉及界面布局、交互、字体、主题、图标、动效或视觉资产时，加载
    `docs/ui-visual-language.md`；它是共享产品视觉入口，不在本文件复制视觉规则。
 
 ## Codex 专属协调

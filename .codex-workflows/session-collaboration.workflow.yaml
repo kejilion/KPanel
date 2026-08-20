@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.4"
+version: "4.5"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-08-17T20:30:00+08:00"
+updated: "2026-08-20T19:30:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -36,9 +36,13 @@ git status --short --branch
 git worktree list
 git branch -vv
 git remote get-url origin
+$managementWorktree = (git worktree list --porcelain | Select-String '^worktree ' | Select-Object -First 1).Line.Substring(9)
+node scripts/check-collaboration-state.mjs --repo $managementWorktree --role management --base-ref origin/main
 ```
 
 Expected: active tasks, owned worktrees, remote branches, dirty state, current release lane, and the SSH remote are known.
+If the management check fails, quarantine only that worktree, preserve its exact state, and continue coordination from
+the precise remote baseline; do not reset, stash, clean, commit, or repair unknown content in place.
 
 ### 2. Route or create the task
 
@@ -46,6 +50,12 @@ Expected: active tasks, owned worktrees, remote branches, dirty state, current r
 - For Codex create `KPanel · Codex · ${{role}} · ${{scope}}`; for another provider use its own orchestrator. The remote branch and focused commits are the session-neutral state.
 - Read-only analysis may share the project directory.
 - Before any write, create a dedicated worktree and pass its absolute path to the task.
+
+Before the writer starts, run from the new worktree with the exact approved base commit, not a floating ref:
+
+```powershell
+node scripts/check-collaboration-state.mjs --repo . --role writer --base-ref <exact-approved-base> --require-clean
+```
 
 Expected: one task owns one worktree and one branch; no writer uses the management worktree.
 
@@ -103,6 +113,8 @@ version recommendation, rollback point, and whether anything was committed, push
 
 - No two write tasks own the same worktree or branch.
 - The management worktree was not used for feature or release writes.
+- The management/writer role was checked by `scripts/check-collaboration-state.mjs`; a quarantined management tree was
+  preserved rather than cleaned, and did not become a project-wide blocker.
 - The delivery package contains exact Git state and reproducible verification evidence.
 - Definition of Ready and Definition of Done were applied from `docs/project-management.md`, not redefined locally.
 - Existing evidence was reused only for an unchanged commit/environment/parameter tuple.

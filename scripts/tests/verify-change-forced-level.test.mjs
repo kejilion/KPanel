@@ -25,6 +25,8 @@ test('change routing includes deletions and every GitHub workflow', () => {
   assert.ok(filters.every((filter) => filter.includes('D')));
   assert.match(script, /Release acceptance records are immutable; deletion detected/);
   assert.match(script, /\.github\/workflows\/\*\.yml\|\.github\/workflows\/\*\.yaml/);
+  assert.match(script, /scripts\/check-collaboration-state\.mjs/);
+  assert.match(script, /scripts\/tests\/collaboration-state\.test\.mjs/);
 });
 
 function executable(path, body) {

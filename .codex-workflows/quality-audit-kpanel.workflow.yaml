@@ -1,12 +1,12 @@
 ---
 name: quality-audit-kpanel
 description: "审计快速迭代后的 KPanel 业务正确性、体验、性能、稳定、安全、交付节奏和发布门禁"
-version: "1.8"
+version: "1.9"
 author: "Codex"
 tags: [quality, security, performance, stability, ux, delivery, review, regression]
 params: [project_dir, baseline_ref, candidate_image, test_host]
 created: "2026-08-02T13:02:08Z"
-updated: "2026-08-18T10:00:00+08:00"
+updated: "2026-08-20T19:30:00+08:00"
 ---
 
 # KPanel Quality Audit
@@ -123,13 +123,16 @@ Unix Socket 鉴权和最终容器限制。记录 Docker、containerd、runc、�
 变更失败/回滚/紧急热修复、恢复时间和重复发布原因，并独立统计使必需步骤无效或需要重试的发布流程
 异常/无效证据及其中发生在生产写操作后的数量。检查验收记录是否区分自动测试、隔离真机、
 公开产物和生产部署安全核对，是否把未验证项、部署健康或历史版本结果误写为当前质量通过。
+对计数大于零的记录按“阶段/权威入口/根因类别”比较流程异常指纹：同一指纹在滚动 5 个正式版本内
+出现 2 次，或生产写后发生可由预检发现的本地异常，必须形成唯一入口的修复/回归或有期限的上游例外；
+不得以减少计数为目标合并事件、漏记异常或放宽 fail-closed。
 
 ```bash
 make release-metrics
 ```
 
 **Expected output:** 同时报告交付速度、产品稳定性和流程可靠性；两类失败不混算，数据不足时先形成基线，
-不以高频或低频单独定性。
+不以高频或低频单独定性；重复指纹、处置状态和观察窗口可追溯。
 
 ### 8. 只修复可复现缺陷或自动门禁
 

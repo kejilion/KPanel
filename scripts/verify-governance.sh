@@ -9,6 +9,7 @@ node scripts/check-business-context-freshness.mjs
 node scripts/check-environment-policy.mjs --validate-only
 node --test \
   scripts/tests/check-environment-policy.test.mjs \
+  scripts/tests/collaboration-state.test.mjs \
   scripts/tests/background-browser-test.test.mjs \
   scripts/tests/local-feature-preview.test.mjs \
   scripts/tests/release-gate-runner.test.mjs \
