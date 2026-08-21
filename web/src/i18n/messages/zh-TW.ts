@@ -32,6 +32,7 @@ export const zhTWMessages = {
   "route.apps": "應用市場",
   "route.files": "檔案",
   "route.terminal": "終端",
+  "route.browser": "瀏覽器",
   "route.diagnostics": "體檢",
   "route.docker": "Docker",
   "route.activity": "活動記錄",

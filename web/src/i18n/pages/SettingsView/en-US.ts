@@ -112,4 +112,37 @@ export default [
   ['现在', 'Now'],
   ['查看源码', 'View source'],
   ['查看许可协议', 'View license'],
+  ['访问域名已保存', 'Allowed hostnames saved'],
+  ['访问域名保存失败', 'Failed to save allowed hostnames'],
+  ['面板访问域名', 'Panel hostnames'],
+  [
+    '除配置文件里的公开地址外，额外允许通过这些域名访问面板',
+    'Additional hostnames the panel answers on, beyond the public URL set in the config file',
+  ],
+  ['面板域名（每行一个，可带端口）', 'Panel hostnames (one per line, port optional)'],
+  ['访问面板本身用的域名。', 'Hostnames used to reach the panel itself.'],
+  ['浏览器专用域名', 'Browser-only hostname'],
+  [
+    '只给桌面浏览器用，必须和左边不同。留空则关闭浏览器功能。',
+    'Used only by the desktop browser and must differ from the ones on the left. Leave empty to disable the browser.',
+  ],
+  [
+    '浏览器专用域名必须单独一个，不能写进左边的列表：被浏览的网页会在它所在的域名下执行， 和面板同域时它就能读到面板的登录状态并调用面板接口。两个域名可以指向同一台服务器、同一个端口。',
+    'The browser hostname must stand alone and must not be added to the list on the left: a browsed page runs under whatever hostname serves it, so sharing one with the panel lets that page read your session and call the panel API. Both hostnames may point at the same server and the same port.',
+  ],
+  [
+    '允许浏览器访问本机与局域网',
+    'Let the browser reach this machine and the local network',
+  ],
+  [
+    '开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器 探测内网，因此默认关闭。云 metadata 地址无论开关如何都始终拦截。',
+    'When on, the desktop browser can reach 127.0.0.1 and private addresses — but so can any hostile site you open, through your server. Off by default. Cloud metadata addresses stay blocked either way.',
+  ],
+  [
+    '只做精确匹配，不支持 *.example.com 这类通配写法：域名校验正是阻挡 DNS 重绑定和 Host 头伪造的防线，通配会让它失效。留空表示只允许配置文件里的公开地址（以及本机 IP，若已开启）。',
+    'Exact matches only — wildcards like *.example.com are not accepted, because hostname validation is what blocks DNS rebinding and Host header spoofing, and a wildcard would defeat it. Leaving this empty allows only the public URL from the config file (plus this machine’s own IP addresses, if that is enabled).',
+  ],
+  ['正在读取访问域名…', 'Loading allowed hostnames...'],
+  ['保存中…', 'Saving...'],
+  ['撤销更改', 'Discard changes'],
 ] as const satisfies PhraseCatalog

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Container,
   Folder,
+  Globe,
   HeartPulse,
   LayoutDashboard,
   Network,
@@ -79,6 +80,13 @@ export const desktopApps: DesktopApp[] = [
     icon: SquareTerminal,
     allowMultiple: false,
     gradient: ['#94a3b8', '#1e293b'],
+  },
+  {
+    path: '/browser',
+    labelKey: 'route.browser',
+    icon: Globe,
+    allowMultiple: true,
+    gradient: ['#38bdf8', '#0369a1'],
   },
   {
     path: '/diagnostics',

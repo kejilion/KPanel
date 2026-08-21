@@ -92,16 +92,20 @@ type controllerRecordV2 struct {
 }
 
 type pairingCodeRecordV2 struct {
-	ID                  string         `json:"id"`
-	State               pairingStateV2 `json:"state"`
-	CredentialFile      string         `json:"credentialFile"`
-	ControllerID        string         `json:"controllerId,omitempty"`
-	ControllerName      string         `json:"controllerName,omitempty"`
-	ControllerPublicKey string         `json:"controllerPublicKey,omitempty"`
-	TransactionID       string         `json:"transactionId,omitempty"`
-	ExpiresAt           time.Time      `json:"expiresAt"`
-	BoundAt             *time.Time     `json:"boundAt,omitempty"`
-	Attempts            int            `json:"attempts"`
+	ID             string         `json:"id"`
+	State          pairingStateV2 `json:"state"`
+	CredentialFile string         `json:"credentialFile"`
+	// Scope is the capability set this code grants once bound. Empty means
+	// "not yet set" and defaults to SummaryTerminalScope at grant time,
+	// preserving the behavior of codes created before this field existed.
+	Scope               string     `json:"scope,omitempty"`
+	ControllerID        string     `json:"controllerId,omitempty"`
+	ControllerName      string     `json:"controllerName,omitempty"`
+	ControllerPublicKey string     `json:"controllerPublicKey,omitempty"`
+	TransactionID       string     `json:"transactionId,omitempty"`
+	ExpiresAt           time.Time  `json:"expiresAt"`
+	BoundAt             *time.Time `json:"boundAt,omitempty"`
+	Attempts            int        `json:"attempts"`
 }
 
 type persistedStateV2 struct {
@@ -866,7 +870,7 @@ func validateHostRecordV2(record hostRecordV2) error {
 		err != nil || normalizedOrigin != record.Origin ||
 		record.TransportSecurity != v2TransportSecurity(record.Origin) ||
 		record.FederationProtocol != FederationProtocolV2 ||
-		(record.Scope != "" && record.Scope != SummaryScope && record.Scope != SummaryTerminalScope && record.Scope != SummaryTerminalFilesScope) ||
+		(record.Scope != "" && !ValidV2Scope(record.Scope)) ||
 		keyErr != nil || len(targetPublicKey) != 32 ||
 		record.PeerFingerprint != fingerprintV2(targetPublicKey) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
@@ -904,7 +908,7 @@ func validateControllerRecordV2(record controllerRecordV2) error {
 	if !validID(record.ID) || !validID(record.TransactionID) ||
 		err != nil || len(publicKey) != 32 ||
 		record.Fingerprint != fingerprintV2(publicKey) ||
-		(record.Scope != SummaryScope && record.Scope != SummaryTerminalScope && record.Scope != SummaryTerminalFilesScope) ||
+		!ValidV2Scope(record.Scope) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
 		len(record.Name) > 80 {
 		return errors.New("cluster v2 store contains an invalid controller record")
@@ -928,6 +932,7 @@ func validatePairingCodeRecordV2(record pairingCodeRecordV2) error {
 	if len(record.ID) != 16 || !validHex(record.ID) ||
 		!validPairingCredentialNameV2(record.CredentialFile) ||
 		record.CredentialFile != "pair-"+record.ID+".v2key" ||
+		(record.Scope != "" && !ValidV2Scope(record.Scope)) ||
 		record.ExpiresAt.IsZero() || record.Attempts < 0 || record.Attempts >= 5 {
 		return errors.New("cluster v2 store contains an invalid pairing code record")
 	}
@@ -965,13 +970,32 @@ func hostResourceVersionV2(record hostRecordV2) string {
 		record.TargetPublicKey,
 		record.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
-	// Preserve resource versions for existing summary-only and terminal v2
-	// pairings. A new files grant is versioned separately and never upgrades an
-	// old credential implicitly.
-	if record.Scope == SummaryTerminalScope {
-		fields = append(fields, "scope:"+SummaryTerminalScope)
-	} else if record.Scope == SummaryTerminalFilesScope {
+	// Preserve resource versions across every grant that has ever shipped: a
+	// capability joins the version only once the host actually has it, so a
+	// host that never gained one keeps the version it has always had.
+	//
+	// Terminal+files share one combined field because that is the exact value
+	// already written for file-capable pairings; splitting them into two
+	// fields now would move every such host's resource version for no reason,
+	// making concurrent editors collide once, pointlessly.
+	switch {
+	case ScopeAllowsTerminal(record.Scope) && ScopeAllowsFiles(record.Scope):
 		fields = append(fields, "scope:"+SummaryTerminalFilesScope)
+	case ScopeAllowsTerminal(record.Scope):
+		fields = append(fields, "scope:"+SummaryTerminalScope)
+	case ScopeAllowsFiles(record.Scope):
+		// Files without terminal was not expressible before the token model,
+		// so there is no historical value to preserve here.
+		fields = append(fields, "scope:"+ScopeTokenFiles)
+	}
+	// Same idea, applied to the browse grant added afterwards: only hosts
+	// that actually have it see their resource version move.
+	if ScopeAllowsBrowse(record.Scope) {
+		fields = append(fields, "scope:"+ScopeTokenBrowse)
+	}
+	// And again for the browse-WS grant added after that.
+	if ScopeAllowsBrowseWS(record.Scope) {
+		fields = append(fields, "scope:"+ScopeTokenBrowseWS)
 	}
 	sum := sha256.Sum256([]byte(strings.Join(fields, "\n")))
 	return "sha256:" + hex.EncodeToString(sum[:])

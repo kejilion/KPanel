@@ -2,6 +2,11 @@ import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
+// The browse shell's cache-busting version stamp used to be injected here.
+// It now comes from the server, which appends it when redirecting into the
+// shell (handleBrowseEnter in internal/panel/browse_origin.go) — the shell
+// lives on its own origin and BrowserView.vue no longer builds that URL.
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {

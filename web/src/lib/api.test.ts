@@ -1473,7 +1473,16 @@ describe('API client', () => {
     })
     expect((clusterCalls[5]?.[1] as RequestInit).body).toBeUndefined()
     expect((clusterCalls[6]?.[1] as RequestInit).body).toBeUndefined()
-    expect((clusterCalls[7]?.[1] as RequestInit).body).toBeUndefined()
+    // createPairingCode always spells the scope out, including the grants it
+    // is withholding: leaving browseFetch/browseWs off the wire would make
+    // the credential's scope depend on a server-side default instead of on
+    // what the operator ticked.
+    expect(JSON.parse(String((clusterCalls[7]?.[1] as RequestInit).body))).toEqual({
+      terminal: true,
+      files: true,
+      browseFetch: false,
+      browseWs: false,
+    })
     expect((clusterCalls[8]?.[1] as RequestInit).body).toBeUndefined()
 
     const mutationCalls = clusterCalls.filter(

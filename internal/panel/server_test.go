@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,6 +90,9 @@ func TestAuthenticationHTTPFlow(t *testing.T) {
 	}
 	if policy := status.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "frame-src 'self' blob:") || strings.Contains(policy, " http:") || strings.Contains(policy, " https:") {
 		t.Fatalf("restricted frame policy missing: %q", policy)
+	}
+	if !strings.Contains(status.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("default frame-ancestors should stay 'none': %q", status.Header().Get("Content-Security-Policy"))
 	}
 	token, err := os.ReadFile(tokenPath)
 	if err != nil {
@@ -986,6 +990,407 @@ func authenticatedRequest(
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+// TestBrowserAppPathsGetRelaxedSecurityHeaders confirms the relaxed CSP is
+// scoped to the browse origin and that the shell is unreachable on the panel
+// origin at all. Both halves matter: without the relaxation the Scramjet WASM
+// engine cannot load, and if the shell were still served beside the panel the
+// whole point of the second origin (browse_origin.go) would be lost — silently,
+// because everything would appear to work.
+func TestBrowserAppPathsGetRelaxedSecurityHeaders(t *testing.T) {
+	server, _ := newBrowseTestServer(t)
+
+	shellPaths := []string{
+		"/browser-app/app.html",
+		"/scramjet/scramjet.js",
+		"/controller/controller.api.js",
+		"/scram/browse-transport.js",
+		"/scramjet-sw.js",
+	}
+	for _, path := range shellPaths {
+		response := browsePerformRequest(server, http.MethodGet, path, nil, nil)
+		policy := response.Header().Get("Content-Security-Policy")
+		if !strings.Contains(policy, "script-src 'self' 'wasm-unsafe-eval'") {
+			t.Fatalf("%s: script-src missing wasm-unsafe-eval: %q", path, policy)
+		}
+		// The panel embeds this origin, so it — not 'self' — must be the
+		// permitted framing ancestor.
+		if !strings.Contains(policy, "frame-ancestors 'self' "+browseTestPanelOrigin) {
+			t.Fatalf("%s: frame-ancestors must name the panel origin: %q", path, policy)
+		}
+		if got := response.Header().Get("X-Frame-Options"); got != "" {
+			t.Fatalf("%s: X-Frame-Options = %q, want it removed so frame-ancestors governs", path, got)
+		}
+	}
+
+	// The same paths on the panel origin must not exist.
+	for _, path := range shellPaths {
+		response := browsePerformRequest(server, http.MethodGet, path, nil,
+			map[string]string{"Host": browseTestPanelHost})
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s on the panel origin: status = %d, want 404", path, response.Code)
+		}
+	}
+
+	strictPaths := []string{"/", "/api/v1/health", "/overview", "/scramjetx/not-really-vendored"}
+	for _, path := range strictPaths {
+		response := browsePerformRequest(server, http.MethodGet, path, nil,
+			map[string]string{"Host": browseTestPanelHost})
+		policy := response.Header().Get("Content-Security-Policy")
+		if !strings.Contains(policy, "frame-ancestors 'none'") {
+			t.Fatalf("%s: frame-ancestors leaked relaxation: %q", path, policy)
+		}
+		if strings.Contains(policy, "wasm-unsafe-eval") {
+			t.Fatalf("%s: script-src leaked wasm-unsafe-eval: %q", path, policy)
+		}
+		if response.Header().Get("X-Frame-Options") != "DENY" {
+			t.Fatalf("%s: X-Frame-Options = %q, want DENY", path, response.Header().Get("X-Frame-Options"))
+		}
+	}
+}
+
+// TestNestedIndexHTMLRedirectsToTopLevelSPAFallback documents a real gotcha
+// caught during a live deployment smoke test: net/http.ServeFile has a
+// built-in special case that 301-redirects any path ending in "/index.html"
+// to the bare containing directory. serveSPA has no matching special case to
+// then serve *that directory's* index.html — a directory request always
+// falls through to the top-level WebRoot/index.html SPA shell. A static
+// asset subtree that names its own entry point "index.html" (as
+// web/public/browser-app originally did) therefore never actually serves —
+// it silently 301s into the main KPanel app instead. The fix (see
+// BrowserView.vue and web/public/browser-app/app.html) is simply: never name
+// a nested static entry point "index.html". This test locks in both halves
+// of that behavior so the gotcha cannot silently return.
+func TestNestedIndexHTMLRedirectsToTopLevelSPAFallback(t *testing.T) {
+	server, _ := newTestServer(t)
+	sub := filepath.Join(server.config.WebRoot, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "index.html"), []byte("<!doctype html><title>nested</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "app.html"), []byte("<!doctype html><title>nested-app</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	redirect := performRequest(server, http.MethodGet, "/sub/index.html", nil, nil)
+	if redirect.Code != http.StatusMovedPermanently {
+		t.Fatalf("GET /sub/index.html status = %d, want 301 (net/http.ServeFile's index.html special case)", redirect.Code)
+	}
+
+	fallback := performRequest(server, http.MethodGet, "/sub/", nil, nil)
+	if fallback.Code != http.StatusOK || !strings.Contains(fallback.Body.String(), "<title>panel</title>") {
+		t.Fatalf("GET /sub/ = %d %q, want the top-level SPA shell (not the nested index.html)", fallback.Code, fallback.Body.String())
+	}
+
+	direct := performRequest(server, http.MethodGet, "/sub/app.html", nil, nil)
+	if direct.Code != http.StatusOK || !strings.Contains(direct.Body.String(), "<title>nested-app</title>") {
+		t.Fatalf("GET /sub/app.html = %d %q, want the nested file served directly with no redirect", direct.Code, direct.Body.String())
+	}
+}
+
+// TestNonIndexHTMLShellIsNeverLongCached guards against a real deployment
+// bug: web/public/browser-app/app.html is an entry-point HTML shell exactly
+// like the SPA's own index.html, but serveStaticFile only exempted the
+// literal filename "index.html" from long-lived caching — app.html fell
+// into the generic "public, max-age=3600" branch, so a browser could keep
+// serving an already-fixed-server-side copy stale for up to an hour with no
+// way to tell short of a hard reload. Any .html file must be no-cache.
+func TestNonIndexHTMLShellIsNeverLongCached(t *testing.T) {
+	server, _ := newTestServer(t)
+	sub := filepath.Join(server.config.WebRoot, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "app.html"), []byte("<!doctype html><title>nested-app</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performRequest(server, http.MethodGet, "/sub/app.html", nil, nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET /sub/app.html status = %d", response.Code)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want no-cache", got)
+	}
+}
+
+// TestBrowserAppScriptsAreNeverLongCached covers the other half of the same
+// staleness trap: browser-app/'s scripts carry no content hash in their
+// filenames and load inside an iframe (which a parent-page hard reload does
+// not revalidate), so a long max-age would pin whichever copy a browser
+// fetched first. Hashed assets/ must keep their immutable long cache.
+func TestBrowserAppScriptsAreNeverLongCached(t *testing.T) {
+	server, _ := newBrowseTestServer(t)
+	browserApp := filepath.Join(server.config.WebRoot, "browser-app")
+	assets := filepath.Join(server.config.WebRoot, "assets")
+	for _, directory := range []string{browserApp, assets} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(browserApp, "app.js"), []byte("export const a = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assets, "hashed-abc123.js"), []byte("export const b = 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The shell lives on the browse origin; the panel's hashed bundles do not.
+	appScript := browsePerformRequest(server, http.MethodGet, "/browser-app/app.js", nil, nil)
+	if appScript.Code != http.StatusOK {
+		t.Fatalf("GET /browser-app/app.js status = %d", appScript.Code)
+	}
+	if got := appScript.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("browser-app script Cache-Control = %q, want no-cache", got)
+	}
+
+	hashed := browsePerformRequest(server, http.MethodGet, "/assets/hashed-abc123.js", nil,
+		map[string]string{"Host": browseTestPanelHost})
+	if hashed.Code != http.StatusOK {
+		t.Fatalf("GET /assets/hashed-abc123.js status = %d", hashed.Code)
+	}
+	if got := hashed.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("hashed asset Cache-Control = %q, want the immutable long cache", got)
+	}
+}
+
+// TestVersionQueryStringServesTheSameStaticFile locks in the assumption
+// BrowserView.vue's cache-busting URL depends on: serveSPA routes purely on
+// the request path, so "?v=<release>" reaches the same file rather than
+// 404ing or falling through to the SPA shell.
+func TestVersionQueryStringServesTheSameStaticFile(t *testing.T) {
+	server, _ := newBrowseTestServer(t)
+	browserApp := filepath.Join(server.config.WebRoot, "browser-app")
+	if err := os.MkdirAll(browserApp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(browserApp, "app.html"), []byte("<!doctype html><title>browse-shell</title>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := browsePerformRequest(server, http.MethodGet, "/browser-app/app.html?v=0.71.0", nil, nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "browse-shell") {
+		t.Fatalf("versioned URL = %d %q, want the browse shell itself", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want no-cache", got)
+	}
+}
+
+// TestAllowedHostsSettingWidensHostValidation covers the operator-managed
+// Host allowlist end to end: a host that is not publicUrl is rejected, adding
+// it through the API makes it work, and removing it closes the door again.
+func TestAllowedHostsSettingWidensHostValidation(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+
+	probe := func() int {
+		return performRequest(server, http.MethodGet, "/api/v1/auth/session", nil, map[string]string{
+			"Host": "kjp.example.org",
+		}).Code
+	}
+	if got := probe(); got != http.StatusMisdirectedRequest {
+		t.Fatalf("unlisted host = %d, want 421", got)
+	}
+
+	read := performRequest(server, http.MethodGet, "/api/v1/settings/allowed-hosts", nil, nil)
+	if read.Code != http.StatusUnauthorized {
+		// Reading the allowlist still requires a session.
+		t.Fatalf("unauthenticated read = %d, want 401", read.Code)
+	}
+	read = authenticatedRequest(server, http.MethodGet, "/api/v1/settings/allowed-hosts", nil, sessionCookie, csrfCookie, nil)
+	if read.Code != http.StatusOK {
+		t.Fatalf("read = %d %s", read.Code, read.Body.String())
+	}
+	var current allowedHostsResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	if len(current.Hosts) != 0 {
+		t.Fatalf("default allowlist should be empty, got %#v", current.Hosts)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"hosts":                   []string{"KJP.Example.org", "https://panel2.example.org/", "kjp.example.org"},
+		"expectedResourceVersion": current.ResourceVersion,
+	})
+	update := authenticatedRequest(server, http.MethodPut, "/api/v1/settings/allowed-hosts", body,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		})
+	if update.Code != http.StatusOK {
+		t.Fatalf("update = %d %s", update.Code, update.Body.String())
+	}
+	var saved allowedHostsResponse
+	if err := json.Unmarshal(update.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	// Lowercased, URL unwrapped, duplicate dropped, order preserved.
+	if len(saved.Hosts) != 2 || saved.Hosts[0] != "kjp.example.org" || saved.Hosts[1] != "panel2.example.org" {
+		t.Fatalf("normalized hosts = %#v", saved.Hosts)
+	}
+	// The probe carries no session cookie, so a host that passes validation
+	// reaches the normal auth check and answers 401 — anything but 421 proves
+	// the Host itself was accepted.
+	if got := probe(); got != http.StatusUnauthorized {
+		t.Fatalf("allowlisted host = %d, want 401 (host accepted, session missing)", got)
+	}
+
+	// A stale resourceVersion must be refused rather than silently overwrite.
+	stale, _ := json.Marshal(map[string]any{"hosts": []string{}, "expectedResourceVersion": current.ResourceVersion})
+	conflict := authenticatedRequest(server, http.MethodPut, "/api/v1/settings/allowed-hosts", stale,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		})
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("stale update = %d, want 409", conflict.Code)
+	}
+
+	clear, _ := json.Marshal(map[string]any{"hosts": []string{}, "expectedResourceVersion": saved.ResourceVersion})
+	cleared := authenticatedRequest(server, http.MethodPut, "/api/v1/settings/allowed-hosts", clear,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		})
+	if cleared.Code != http.StatusOK {
+		t.Fatalf("clear = %d %s", cleared.Code, cleared.Body.String())
+	}
+	if got := probe(); got != http.StatusMisdirectedRequest {
+		t.Fatalf("host after removal = %d, want 421", got)
+	}
+}
+
+// TestRemoteIPTrustsForwardedHeadersOnlyFromATrustedPeer locks the trust
+// condition for client-IP resolution to the peer address. An allowlisted Host
+// must not qualify: the hostname is attacker-supplied and public, so trusting
+// it would let anyone who can reach the port forge a fresh client IP per
+// request and bypass the login lockout.
+func TestRemoteIPTrustsForwardedHeadersOnlyFromATrustedPeer(t *testing.T) {
+	server, _ := newTestServer(t)
+	current, version := server.store.AllowedHosts()
+	_ = current
+	if err := server.store.ReplaceAllowedHosts(version, store.AllowedHosts{
+		Hosts: []string{"kjp.example.org"}, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	build := func(peer string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+		r.Host = "kjp.example.org"
+		r.RemoteAddr = peer
+		r.Header.Set("CF-Connecting-IP", "198.51.100.9")
+		r.Header.Set("X-Real-IP", "198.51.100.8")
+		r.Header.Set("X-Forwarded-For", "198.51.100.7")
+		return r
+	}
+
+	// Untrusted peer: every forwarded header is ignored, allowlisted Host or not.
+	if got := server.remoteIP(build("203.0.113.7:44444")); got != "203.0.113.7" {
+		t.Fatalf("untrusted peer remoteIP = %q, want 203.0.113.7", got)
+	}
+	// Trusted peer: CF-Connecting-IP wins over the other two.
+	if got := server.remoteIP(build("127.0.0.1:44444")); got != "198.51.100.9" {
+		t.Fatalf("trusted peer remoteIP = %q, want 198.51.100.9", got)
+	}
+
+	// Without CF-Connecting-IP the existing X-Real-IP precedence is unchanged.
+	fallback := build("127.0.0.1:44444")
+	fallback.Header.Del("CF-Connecting-IP")
+	if got := server.remoteIP(fallback); got != "198.51.100.8" {
+		t.Fatalf("X-Real-IP fallback = %q, want 198.51.100.8", got)
+	}
+}
+
+// TestAllowedHostsAlsoSatisfyOriginValidation covers the other half of the
+// allowlist: without it the page would load (Host accepted) but every
+// mutating request would fail Origin/CSRF, because the expected origin can
+// only ever be the single publicUrl. Non-listed origins must still be
+// refused.
+func TestAllowedHostsAlsoSatisfyOriginValidation(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+
+	current, _ := server.store.AllowedHosts()
+	version := store.AllowedHostsResourceVersion(current)
+	if err := server.store.ReplaceAllowedHosts(version, store.AllowedHosts{
+		Hosts: []string{"kjp.example.org"}, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A PUT from the allowlisted origin must pass Origin validation. Reaching
+	// a validation error (422) instead of 403 proves Origin was accepted.
+	body, _ := json.Marshal(map[string]any{"hosts": []string{}, "expectedResourceVersion": "not-a-version"})
+	accepted := authenticatedRequest(server, http.MethodPut, "/api/v1/settings/allowed-hosts", body,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json",
+			"Origin":       "https://kjp.example.org",
+			"X-CSRF-Token": csrfCookie.Value,
+		})
+	if accepted.Code == http.StatusForbidden {
+		t.Fatalf("allowlisted origin was rejected: %s", accepted.Body.String())
+	}
+	if accepted.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("allowlisted origin = %d %s, want 422 (origin ok, body invalid)", accepted.Code, accepted.Body.String())
+	}
+
+	for _, origin := range []string{"https://evil.example.org", "https://evil-kjp.example.org", "null", "https://kjp.example.org.evil.com"} {
+		rejected := authenticatedRequest(server, http.MethodPut, "/api/v1/settings/allowed-hosts", body,
+			sessionCookie, csrfCookie, map[string]string{
+				"Content-Type": "application/json",
+				"Origin":       origin,
+				"X-CSRF-Token": csrfCookie.Value,
+			})
+		if rejected.Code != http.StatusForbidden {
+			t.Fatalf("origin %q = %d, want 403", origin, rejected.Code)
+		}
+	}
+}
+
+// TestAllowedHostsRejectWildcardsAndMalformedEntries keeps the allowlist an
+// exact-match security boundary: a wildcard or suffix entry would reopen the
+// DNS-rebinding / Host-spoofing hole that Host validation exists to close.
+func TestAllowedHostsRejectWildcardsAndMalformedEntries(t *testing.T) {
+	for _, entry := range []string{
+		"*.example.org",
+		"*",
+		".example.org",
+		"exa mple.org",
+		"example.org/path",
+		"host_name.example.org",
+		strings.Repeat("a", 254) + ".example.org",
+	} {
+		if _, err := normalizeAllowedHosts([]string{entry}); err == nil {
+			t.Fatalf("entry %q was accepted; wildcards/malformed hosts must be refused", entry)
+		}
+	}
+
+	tooMany := make([]string, maxAllowedHosts+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("h%d.example.org", i)
+	}
+	if _, err := normalizeAllowedHosts(tooMany); err == nil {
+		t.Fatal("allowlist size cap was not enforced")
+	}
+
+	valid, err := normalizeAllowedHosts([]string{"panel.example.org:8443", "[2001:db8::1]:8080", "localhost"})
+	if err != nil {
+		t.Fatalf("valid entries rejected: %v", err)
+	}
+	if len(valid) != 3 {
+		t.Fatalf("valid entries = %#v", valid)
+	}
+
+	// An allowlisted host must never match a different one by prefix/suffix.
+	server, _ := newTestServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	request.Host = "evil-kjp.example.org"
+	if server.hostIsAllowlisted(request) {
+		t.Fatal("empty allowlist must not match anything")
+	}
 }
 
 func performRequest(handler http.Handler, method, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {

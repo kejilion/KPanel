@@ -194,7 +194,7 @@ describe('DesktopView dynamic entries', () => {
     expect(labels).toContain('blog.example.com')
     // Static nav icons still present.
     expect(labels).toContain('概览')
-    expect(labels).not.toContain('浏览器')
+    expect(labels).not.toContain('不存在的应用')
     wrapper.unmount()
   })
 

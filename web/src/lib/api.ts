@@ -19,6 +19,7 @@ import type {
   ClusterHostList,
   ClusterLightEnrollment,
   ClusterPairingCode,
+  ClusterPairingGrants,
   ClusterShareSettings,
   CrossPanelFileTransferEvent,
   CrossPanelFileTransferInput,
@@ -59,6 +60,7 @@ import type {
   ProcessQuery,
   ProcessSnapshot,
   PublicClusterShareSnapshot,
+  AllowedHostsSettings,
   SecurityEntranceSettings,
   SetupRequest,
   Site,
@@ -1355,8 +1357,16 @@ export const api = {
       request<ClusterHost>(`/cluster/hosts/${encodeURIComponent(id)}/mutual-files`, {
         method: 'POST',
       }),
-    createPairingCode: (): Promise<ClusterPairingCode> =>
-      request<ClusterPairingCode>('/cluster/pairing-codes/v2', { method: 'POST' }),
+    createPairingCode: (grants?: ClusterPairingGrants): Promise<ClusterPairingCode> =>
+      request<ClusterPairingCode>('/cluster/pairing-codes/v2', {
+        method: 'POST',
+        body: {
+          terminal: grants?.terminal ?? true,
+          files: grants?.files ?? true,
+          browseFetch: grants?.browseFetch ?? false,
+          browseWs: grants?.browseWs ?? false,
+        },
+      }),
     createLightEnrollment: (): Promise<ClusterLightEnrollment> =>
       request<ClusterLightEnrollment>('/cluster/light-enrollments', { method: 'POST' }),
     controllers: async (signal?: AbortSignal): Promise<ApiList<ClusterController>> =>
@@ -1977,6 +1987,14 @@ export const api = {
       }
     },
   },
+	browse: {
+		/**
+		 * Trades the panel session for a single-use ticket and returns the URL
+		 * on the browse origin that redeems it. This is the only crossing
+		 * between the two origins; see internal/panel/browse_origin.go.
+		 */
+		handoff: () => request<{ url: string }>('/browse/handoff', { method: 'POST' }),
+	},
 	settings: {
     get: (signal?: AbortSignal) => request<PanelSettings>('/settings', { signal }),
 	securityEntrance: {
@@ -1987,6 +2005,16 @@ export const api = {
 			regenerate?: boolean
 			expectedResourceVersion: string
 		}) => request<SecurityEntranceSettings>('/settings/security-entry', { method: 'PUT', body: input }),
+	},
+	allowedHosts: {
+		get: () => request<AllowedHostsSettings>('/settings/allowed-hosts'),
+		update: (input: {
+			hosts: string[]
+			browseOrigin: string
+			browseAllowPrivateNetworks: boolean
+			expectedResourceVersion: string
+		}) =>
+			request<AllowedHostsSettings>('/settings/allowed-hosts', { method: 'PUT', body: input }),
 	},
 	totp: {
 		status: () => request<TOTPStatus>('/settings/totp'),

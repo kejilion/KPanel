@@ -3,6 +3,7 @@ module github.com/kejilion/kejilion-panel
 go 1.26.6
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/flynn/noise v1.1.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/image v0.45.0

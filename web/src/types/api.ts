@@ -262,11 +262,30 @@ export interface PublicClusterShareSnapshot {
 
 export interface ClusterPairingCode {
   code: string
-  scope:
-    | 'cluster.summary.read'
-    | 'cluster.summary.read cluster.terminal.open'
-    | 'cluster.summary.read cluster.terminal.open cluster.files.read'
+  /**
+   * Space-separated scope tokens as issued by cluster.BuildV2Scope. This was
+   * a union of the three combinations that existed before the browse grants
+   * were added; it is a plain string because the set of combinations is the
+   * server's to decide, and a union here goes stale silently — it type-checks
+   * against a value the server never sends again.
+   */
+  scope: string
   expiresAt: string
+}
+
+/**
+ * ClusterPairingGrants is the request body of createPairingCode. Terminal and
+ * files default to granted (what v2 pairing has always carried, so omitting
+ * them preserves the old behaviour); both browse grants default to denied and
+ * are only ever included because someone ticked them. They stay independent
+ * rather than one "browse" flag because HTTP relay and WebSocket relay are
+ * separate scopes on the server (cluster.browse.fetch / cluster.browse.ws).
+ */
+export interface ClusterPairingGrants {
+  terminal?: boolean
+  files?: boolean
+  browseFetch?: boolean
+  browseWs?: boolean
 }
 
 export interface TerminalSession {
@@ -1646,6 +1665,26 @@ export interface DesktopShortcutIconResult {
 export interface SecurityEntranceSettings {
   enabled: boolean
   path?: string
+  resourceVersion: string
+}
+
+/** Operator-managed extra Host values the panel answers on (exact matches). */
+export interface AllowedHostsSettings {
+  hosts: string[]
+  /**
+   * Dedicated hostname the desktop browser is served on. Empty disables the
+   * feature: the shell is never served from the panel's own origin, because
+   * same-origin is exactly what lets a browsed page reach the panel API.
+   */
+  browseOrigin: string
+  /**
+   * Lets the desktop browser reach the server's own LAN (loopback, RFC1918).
+   * Off by default: the requests that egress makes are driven by whatever page
+   * is open, not by the operator, so a hostile page would otherwise get to
+   * probe the internal network. Link-local, including the cloud metadata
+   * address, stays blocked either way.
+   */
+  browseAllowPrivateNetworks: boolean
   resourceVersion: string
 }
 

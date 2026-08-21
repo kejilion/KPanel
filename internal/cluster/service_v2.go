@@ -72,6 +72,19 @@ type remoteV2TerminalAPI interface {
 	TerminalCloseV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, TerminalCloseRequest) error
 }
 
+type remoteV2BrowseAPI interface {
+	BrowseFetchOpenV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseFetchRequest) (BrowseFetchOpenResponse, error)
+	BrowseFetchOutputV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseFetchOutputRequest) (BrowseFetchOutputResponse, error)
+	BrowseFetchCloseV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseFetchCloseRequest) error
+}
+
+type remoteV2BrowseWSAPI interface {
+	BrowseWSOpenV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseWSOpenRequest) (BrowseWSOpenResponse, error)
+	BrowseWSOutputV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseWSOutputRequest) (BrowseWSOutputResponse, error)
+	BrowseWSInputV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseWSInputRequest) error
+	BrowseWSCloseV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, BrowseWSCloseRequest) error
+}
+
 type v2OriginValidator interface {
 	ValidateV2Origin(context.Context, string) (string, error)
 }
@@ -93,7 +106,10 @@ func (s *Service) cleanupV2Locked(now time.Time) error {
 	return errors.Join(pairingErr, controllerErr, cleanupErr, orphanErr)
 }
 
-func (s *Service) createPairingCodeV2() (PairingCode, error) {
+func (s *Service) createPairingCodeV2(scope string) (PairingCode, error) {
+	if !ValidV2Scope(scope) {
+		return PairingCode{}, errors.New("cluster v2 scope is invalid")
+	}
 	s.v2SecretStateMu.Lock()
 	defer s.v2SecretStateMu.Unlock()
 
@@ -122,6 +138,7 @@ func (s *Service) createPairingCodeV2() (PairingCode, error) {
 	if err := s.storeV2.AddPairingCode(pairingCodeRecordV2{
 		ID:             codeID,
 		CredentialFile: credentialFile,
+		Scope:          scope,
 		ExpiresAt:      expiresAt,
 	}, now); err != nil {
 		_ = s.secretsV2.Delete(credentialFile)
@@ -129,7 +146,7 @@ func (s *Service) createPairingCodeV2() (PairingCode, error) {
 	}
 	_ = s.secretsV2.RemoveOrphans(s.storeV2.CredentialReferences())
 	return PairingCode{
-		Code: code, Scope: SummaryTerminalFilesScope, ExpiresAt: expiresAt,
+		Code: code, Scope: scope, ExpiresAt: expiresAt,
 	}, nil
 }
 
@@ -673,6 +690,8 @@ func publicHostV2(
 		FederationProtocol:    FederationProtocolV2,
 		Scope:                 normalizedV2Scope(record.Scope),
 		TerminalAvailable:     ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
+		BrowseAvailable:       ScopeAllowsBrowse(normalizedV2Scope(record.Scope)),
+		BrowseWSAvailable:     ScopeAllowsBrowseWS(normalizedV2Scope(record.Scope)),
 		FileTransferAvailable: ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
 		PanelVersion:          panelVersion, State: state,
 
@@ -698,7 +717,7 @@ func (s *Service) HandleFederationV2(
 ) (FederationEnvelopeV2, error) {
 	now := s.now().UTC()
 	sourceLimiter := s.v2SourceLimiter
-	if v2TerminalPath(path) {
+	if v2TerminalPath(path) || v2BrowseFetchPath(path) || v2BrowseWSPath(path) {
 		sourceLimiter = s.terminalSources
 	}
 	if !sourceLimiter.Allow(cleanRateSubject(source), now) {
@@ -728,6 +747,20 @@ func (s *Service) HandleFederationV2(
 		return s.handleTerminalResizeV2(ctx, envelope, now)
 	case v2TerminalClosePath:
 		return s.handleTerminalCloseV2(ctx, envelope, now)
+	case v2BrowseFetchOpenPath:
+		return s.handleBrowseFetchOpenV2(ctx, envelope, now)
+	case v2BrowseFetchOutputPath:
+		return s.handleBrowseFetchOutputV2(ctx, envelope, now)
+	case v2BrowseFetchClosePath:
+		return s.handleBrowseFetchCloseV2(ctx, envelope, now)
+	case v2BrowseWSOpenPath:
+		return s.handleBrowseWSOpenV2(ctx, envelope, now)
+	case v2BrowseWSOutputPath:
+		return s.handleBrowseWSOutputV2(ctx, envelope, now)
+	case v2BrowseWSInputPath:
+		return s.handleBrowseWSInputV2(ctx, envelope, now)
+	case v2BrowseWSClosePath:
+		return s.handleBrowseWSCloseV2(ctx, envelope, now)
 	default:
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
@@ -777,10 +810,17 @@ func (s *Service) handlePairV2(
 		s.recordPairingFailureV2(envelope.CodeID, now)
 		return FederationEnvelopeV2{}, ErrPairingCode
 	}
+	// The pairing code's own creator chose what to grant (see
+	// createPairingCodeV2); codes issued before that field existed carry an
+	// empty Scope and fall back to the historical default of summary+terminal.
+	grantedScope := record.Scope
+	if grantedScope == "" {
+		grantedScope = SummaryTerminalScope
+	}
 	controller := controllerRecordV2{
 		ID: envelope.ControllerID, Name: name,
 		PublicKey:   base64.RawURLEncoding.EncodeToString(peerStatic),
-		Fingerprint: fingerprintV2(peerStatic), Scope: SummaryTerminalFilesScope,
+		Fingerprint: fingerprintV2(peerStatic), Scope: grantedScope,
 		State:         controllerStateV2Provisional,
 		TransactionID: input.TransactionID,
 		CreatedAt:     now, UpdatedAt: now,
@@ -795,7 +835,7 @@ func (s *Service) handlePairV2(
 		NodeID:        s.store.NodeID(), Hostname: s.hostname,
 		PanelVersion:       s.panelVersion,
 		FederationProtocol: FederationProtocolV2,
-		Scope:              SummaryTerminalFilesScope,
+		Scope:              grantedScope,
 	})
 }
 
@@ -923,7 +963,7 @@ func (s *Service) openControllerV2(
 		return controllerRecordV2{}, nil, nil, ErrAuthentication
 	}
 	requestLimiter := s.requestLimiter
-	if v2TerminalPath(path) {
+	if v2TerminalPath(path) || v2BrowseFetchPath(path) || v2BrowseWSPath(path) {
 		requestLimiter = s.terminalRequests
 	} else if path == v2FileOpenPath {
 		requestLimiter = s.fileRequests
@@ -983,7 +1023,7 @@ func validateV2PairResult(
 		response.TransactionID != expectedTransactionID {
 		return ErrProtocolMismatch
 	}
-	if response.Scope != "" && response.Scope != SummaryScope && response.Scope != SummaryTerminalScope && response.Scope != SummaryTerminalFilesScope {
+	if response.Scope != "" && !ValidV2Scope(response.Scope) {
 		return ErrProtocolMismatch
 	}
 	if cleanDisplayText(response.Hostname, 253) != response.Hostname ||
@@ -994,7 +1034,7 @@ func validateV2PairResult(
 }
 
 func normalizedV2Scope(scope string) string {
-	if scope == SummaryTerminalScope || scope == SummaryTerminalFilesScope {
+	if ValidV2Scope(scope) {
 		return scope
 	}
 	return SummaryScope

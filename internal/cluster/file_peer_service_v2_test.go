@@ -130,7 +130,7 @@ func TestServiceV2SinglePairEnablesFilesInBothDirections(t *testing.T) {
 		target: center, metadata: metadata, content: content,
 	}}
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatalf("CreatePairingCodeV2() error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestServiceV2ExistingPairCanEnableMutualFilesWithoutRepairing(t *testing.T)
 	}
 	t.Cleanup(func() { _ = center.Close() })
 
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestServiceV2TemporaryMutualLinkFailureRetriesWithoutBreakingPairing(t *tes
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = center.Close() })
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestServiceV2UnsupportedMutualEndpointStopsRetryingWithoutBreakingPairing(t
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = center.Close() })
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestServiceV2PendingPairRestartPreservesMutualFileIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestServiceV2RefreshesMutualFileOriginAfterPublicURLChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +476,7 @@ func TestServiceV2RenewsMutualFilesWhileSummaryFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = center.Close() })
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestServiceV2RestartsAndRenewsAnExpiredMutualFileLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, err := target.CreatePairingCodeV2()
+	code, err := target.CreatePairingCodeV2(SummaryTerminalFilesScope)
 	if err != nil {
 		t.Fatal(err)
 	}

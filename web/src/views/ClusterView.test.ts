@@ -93,6 +93,13 @@ interface ClusterBindings {
   enablingMutualFiles: Ref<boolean>
   selected: Ref<ClusterHost | undefined>
   pairingCode: Ref<ClusterPairingCode | undefined>
+  grantTerminal: Ref<boolean>
+  grantFiles: Ref<boolean>
+  grantBrowseFetch: Ref<boolean>
+  grantBrowseWs: Ref<boolean>
+  createPairingCode: () => Promise<void>
+  discardCodeOnGrantChange: () => void
+  closeAccess: () => void
   lightEnrollment: Ref<ClusterLightEnrollment | undefined>
   editName: Ref<string>
   addForm: { name: string; accessCredential: string }
@@ -817,5 +824,90 @@ describe('ClusterView inventory and navigation', () => {
     })
     expect(mocks.remove).not.toHaveBeenCalled()
     expect(view.inventory.value?.items.some((item) => item.isLocal)).toBe(true)
+  })
+})
+
+describe('ClusterView pairing grants', () => {
+  it('defaults to terminal and files and never grants browse egress unasked', async () => {
+    const view = setupView()
+    mocks.createPairingCode.mockResolvedValueOnce({
+      code: 'pair-code',
+      scope: 'cluster.summary.read cluster.terminal.open cluster.files.read',
+      expiresAt: '2026-08-20T00:05:00Z',
+    })
+
+    expect(view.grantTerminal.value).toBe(true)
+    expect(view.grantFiles.value).toBe(true)
+    expect(view.grantBrowseFetch.value).toBe(false)
+    expect(view.grantBrowseWs.value).toBe(false)
+
+    await view.createPairingCode()
+
+    // The browse grants are new capabilities, so they have to travel as an
+    // explicit false rather than being left out and defaulted by the server.
+    expect(mocks.createPairingCode).toHaveBeenCalledWith({
+      terminal: true,
+      files: true,
+      browseFetch: false,
+      browseWs: false,
+    })
+  })
+
+  it('sends exactly what is ticked, including a browse-only grant', async () => {
+    const view = setupView()
+    mocks.createPairingCode.mockResolvedValueOnce({
+      code: 'pair-code',
+      scope: 'cluster.summary.read cluster.browse.fetch cluster.browse.ws',
+      expiresAt: '2026-08-20T00:05:00Z',
+    })
+
+    view.grantTerminal.value = false
+    view.grantFiles.value = false
+    view.grantBrowseFetch.value = true
+    view.grantBrowseWs.value = true
+    await view.createPairingCode()
+
+    expect(mocks.createPairingCode).toHaveBeenCalledWith({
+      terminal: false,
+      files: false,
+      browseFetch: true,
+      browseWs: true,
+    })
+    expect(view.pairingCode.value?.scope).toBe(
+      'cluster.summary.read cluster.browse.fetch cluster.browse.ws',
+    )
+  })
+
+  it('discards an already-generated code when a grant is reticked', async () => {
+    const view = setupView()
+    mocks.createPairingCode.mockResolvedValueOnce({
+      code: 'pair-code',
+      scope: 'cluster.summary.read cluster.terminal.open cluster.files.read',
+      expiresAt: '2026-08-20T00:05:00Z',
+    })
+
+    await view.createPairingCode()
+    expect(view.pairingCode.value).toBeDefined()
+
+    // The scope is baked into the issued code, so a later tick has to
+    // invalidate it — otherwise the boxes and the copied credential disagree.
+    view.grantBrowseFetch.value = true
+    view.discardCodeOnGrantChange()
+    expect(view.pairingCode.value).toBeUndefined()
+  })
+
+  it('resets the grants back to the safe default when the dialog closes', async () => {
+    const view = setupView()
+    view.grantTerminal.value = false
+    view.grantBrowseFetch.value = true
+    view.grantBrowseWs.value = true
+
+    view.closeAccess()
+
+    expect(view.grantTerminal.value).toBe(true)
+    expect(view.grantFiles.value).toBe(true)
+    expect(view.grantBrowseFetch.value).toBe(false)
+    expect(view.grantBrowseWs.value).toBe(false)
+    expect(view.pairingCode.value).toBeUndefined()
   })
 })

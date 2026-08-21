@@ -33,6 +33,7 @@ export const enUSMessages = {
   'route.apps': 'App marketplace',
   'route.files': 'Files',
   'route.terminal': 'Terminal',
+  'route.browser': 'Browser',
   'route.diagnostics': 'Diagnostics',
   'route.docker': 'Docker',
   'route.activity': 'Activity',

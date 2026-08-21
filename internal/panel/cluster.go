@@ -53,6 +53,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 
 func (s *Server) Close() error {
 	s.closeTerminalSessions()
+	s.closeBrowseWSSessions()
 	var aiErr error
 	if s.ai != nil {
 		aiErr = s.ai.Close()
@@ -324,10 +325,29 @@ func (s *Server) handleClusterPairingCodeProtocol(
 	if !ok {
 		return
 	}
+	// Terminal and files default to true when omitted so existing callers that
+	// don't yet know about these fields keep getting today's behavior — every
+	// v2 pairing has carried summary + terminal + files. The two browse grants
+	// are brand new and only ever granted when explicitly requested, since no
+	// caller has ever asked for either before. They stay independently gated
+	// (see ScopeTokenBrowseWS's doc comment) rather than one bundled "browse"
+	// flag.
+	var grants struct {
+		Terminal    *bool `json:"terminal,omitempty"`
+		Files       *bool `json:"files,omitempty"`
+		BrowseFetch bool  `json:"browseFetch,omitempty"`
+		BrowseWS    bool  `json:"browseWs,omitempty"`
+	}
 	if r.ContentLength > 0 {
-		var input struct{}
-		if err := s.decodeJSON(w, r, &input); err != nil {
-			return
+		if v2 {
+			if err := s.decodeJSON(w, r, &grants); err != nil {
+				return
+			}
+		} else {
+			var input struct{}
+			if err := s.decodeJSON(w, r, &input); err != nil {
+				return
+			}
 		}
 	}
 	if err := s.audit(
@@ -340,7 +360,11 @@ func (s *Server) handleClusterPairingCodeProtocol(
 	var code cluster.PairingCode
 	var err error
 	if v2 {
-		code, err = s.cluster.CreatePairingCodeV2()
+		terminal := grants.Terminal == nil || *grants.Terminal
+		files := grants.Files == nil || *grants.Files
+		code, err = s.cluster.CreatePairingCodeV2(
+			cluster.BuildV2Scope(terminal, files, grants.BrowseFetch, grants.BrowseWS),
+		)
 	} else {
 		code, err = s.cluster.CreatePairingCode()
 	}

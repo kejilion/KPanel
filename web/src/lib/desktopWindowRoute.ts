@@ -207,6 +207,11 @@ export function windowRouteRecords(): RouteRecordRaw[] {
       component: WINDOW_ROUTE_PLACEHOLDER,
     },
     {
+      path: '/browser',
+      name: 'browser',
+      component: WINDOW_ROUTE_PLACEHOLDER,
+    },
+    {
       path: '/diagnostics',
       name: 'diagnostics',
       component: WINDOW_ROUTE_PLACEHOLDER,

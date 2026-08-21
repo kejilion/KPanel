@@ -83,6 +83,9 @@ type Server struct {
 	siteIcons        siteIconProvider
 	monitoring       monitoringHistoryProvider
 	terminals        *terminal.Manager
+	browseClient     *http.Client
+	browseLANClient  *http.Client
+	browseWS         *browseWSManager
 	thumbnailGate    chan struct{}
 	storageUsageGate chan struct{}
 	processesGate    chan struct{}
@@ -92,6 +95,9 @@ type Server struct {
 func (s *Server) Close() {
 	if s.terminals != nil {
 		s.terminals.CloseAll()
+	}
+	if s.browseWS != nil {
+		s.browseWS.CloseAll()
 	}
 }
 
@@ -185,6 +191,9 @@ func NewServer(config Config) (*Server, error) {
 		siteIcons:        config.SiteIcons,
 		monitoring:       config.Monitoring,
 		terminals:        config.Terminals,
+		browseClient:     newBrowseHTTPClient(false),
+		browseLANClient:  newBrowseHTTPClient(true),
+		browseWS:         newBrowseWSManager(),
 		thumbnailGate:    make(chan struct{}, 2),
 		storageUsageGate: make(chan struct{}, 1),
 		processesGate:    make(chan struct{}, 1),
@@ -255,6 +264,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemPortUsage)
 	case r.URL.Path == "/v1/system/traffic-shutdown":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemTrafficShutdown)
+	case r.URL.Path == "/v1/browse/fetch":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.browseFetch)
+	case r.URL.Path == "/v1/browse/ws":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.browseWSOpen)
+	case strings.HasPrefix(r.URL.Path, "/v1/browse/ws/"):
+		s.browseWSOperation(w, r, requestID)
 	case r.URL.Path == "/v1/system/accounts":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemAccounts)
 	case r.URL.Path == "/v1/system/ssh-defense":
@@ -524,6 +539,8 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "web.environment.backup", Enabled: environmentErr == nil, Reason: reasonIf(environmentErr, "LDNMP 备份协议不可用"), Methods: []string{"GET", "POST"}},
 		{ID: "web.environment.restore", Enabled: environmentErr == nil, Reason: reasonIf(environmentErr, "LDNMP 还原协议不可用"), Methods: []string{"POST"}},
 		{ID: "web.environment.uninstall", Enabled: environmentErr == nil, Reason: reasonIf(environmentErr, "LDNMP 卸载协议不可用"), Methods: []string{"POST"}},
+		{ID: "browse.fetch", Enabled: true, Methods: []string{"POST"}},
+		{ID: "browse.ws", Enabled: true, Methods: []string{"POST", "GET"}},
 	}
 	items = append(items, s.systemManager.Capabilities()...)
 	writeJSON(w, http.StatusOK, contract.PageResult[contract.Capability]{Items: items})

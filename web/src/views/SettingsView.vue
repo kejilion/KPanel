@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -12,6 +12,7 @@ import {
   Clock3,
   Copy,
   ExternalLink,
+  Globe,
   KeyRound,
   Languages,
   LoaderCircle,
@@ -33,9 +34,10 @@ import { useSession } from '@/stores/session'
 import { useTheme, type ThemePreference } from '@/stores/theme'
 import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
-import type { TOTPEnrollment, TOTPStatus } from '@/types/api'
+import type { AllowedHostsSettings, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const router = useRouter()
+const route = useRoute()
 const session = useSession()
 const panel = usePanelState()
 const theme = useTheme()
@@ -65,6 +67,17 @@ const usernamePasswordUnlocked = ref(false)
 const capabilities = ref<Array<{ id: string; enabled: boolean; reason?: string }>>([])
 const securityEntry = ref<{ enabled: boolean; path?: string; resourceVersion: string }>()
 const securityEntryPath = ref('')
+const allowedHosts = ref<AllowedHostsSettings>()
+const allowedHostsDraft = ref('')
+const browseOriginDraft = ref('')
+const browseAllowPrivateNetworksDraft = ref(false)
+// The browser window links here with ?focus=browse-origin when the operator
+// has not set a browse hostname yet. Scrolling and briefly highlighting the
+// field is the difference between "go to settings" and "go to this box".
+const browseOriginInput = ref<HTMLInputElement>()
+const browseOriginHighlighted = ref(false)
+const savingAllowedHosts = ref(false)
+const allowedHostsError = ref('')
 const savingSecurityEntry = ref(false)
 const totpStatus = ref<TOTPStatus>()
 const totpStatusError = ref('')
@@ -203,6 +216,57 @@ async function saveSecurityEntry(enabled: boolean, regenerate = false): Promise<
     toast.danger('安全入口更新失败', reason instanceof ApiError ? reason.message : '请刷新后重试。')
   } finally {
     savingSecurityEntry.value = false
+  }
+}
+
+// The allowlist is edited as free text (one host per line) rather than a
+// tag widget: operators typically paste a domain straight from a browser
+// address bar, and the server normalizes/validates anyway.
+function parseAllowedHostsDraft(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const allowedHostsDirty = computed(
+  () =>
+    Boolean(allowedHosts.value) &&
+    (parseAllowedHostsDraft(allowedHostsDraft.value).join('\n') !== (allowedHosts.value?.hosts ?? []).join('\n') ||
+      browseOriginDraft.value.trim() !== (allowedHosts.value?.browseOrigin ?? '') ||
+      browseAllowPrivateNetworksDraft.value !== (allowedHosts.value?.browseAllowPrivateNetworks ?? false)),
+)
+
+function applyAllowedHosts(value: AllowedHostsSettings): void {
+  allowedHosts.value = value
+  allowedHostsDraft.value = value.hosts.join('\n')
+  browseOriginDraft.value = value.browseOrigin
+  browseAllowPrivateNetworksDraft.value = value.browseAllowPrivateNetworks
+}
+
+function resetAllowedHostsDraft(): void {
+  if (allowedHosts.value) applyAllowedHosts(allowedHosts.value)
+  allowedHostsError.value = ''
+}
+
+async function saveAllowedHosts(): Promise<void> {
+  if (!allowedHosts.value || savingAllowedHosts.value) return
+  savingAllowedHosts.value = true
+  allowedHostsError.value = ''
+  try {
+    const updated = await api.settings.allowedHosts.update({
+      hosts: parseAllowedHostsDraft(allowedHostsDraft.value),
+      browseOrigin: browseOriginDraft.value.trim(),
+      browseAllowPrivateNetworks: browseAllowPrivateNetworksDraft.value,
+      expectedResourceVersion: allowedHosts.value.resourceVersion,
+    })
+    applyAllowedHosts(updated)
+    toast.success('访问域名已保存')
+  } catch (reason) {
+    allowedHostsError.value = reason instanceof ApiError ? reason.message : '请刷新后重试。'
+    toast.danger('访问域名保存失败', allowedHostsError.value)
+  } finally {
+    savingAllowedHosts.value = false
   }
 }
 
@@ -352,22 +416,43 @@ async function endAuthenticatedSession(): Promise<void> {
 }
 
 onMounted(async () => {
-  const [capabilityResult, entranceResult, totpResult] = await Promise.allSettled([
+  const [capabilityResult, entranceResult, totpResult, allowedHostsResult] = await Promise.allSettled([
     api.agent.capabilities(),
     api.settings.securityEntrance.get(),
     api.settings.totp.status(),
+    api.settings.allowedHosts.get(),
   ])
   capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : []
   if (entranceResult.status === 'fulfilled') {
     securityEntry.value = entranceResult.value
     securityEntryPath.value = entranceResult.value.path || ''
   }
+  if (allowedHostsResult.status === 'fulfilled') {
+    applyAllowedHosts(allowedHostsResult.value)
+  }
   if (totpResult.status === 'fulfilled') {
     totpStatus.value = totpResult.value
   } else {
     totpStatusError.value = totpResult.reason instanceof ApiError ? totpResult.reason.message : '无法读取两步验证状态。'
   }
+  if (route.query.focus === 'browse-origin') await revealBrowseOriginField()
 })
+
+// revealBrowseOriginField waits a tick so the card has rendered (the whole
+// form is behind v-if="allowedHosts"), scrolls the field into the middle of
+// the viewport and pulses it. The highlight class is removed again so a later
+// visit does not arrive pre-highlighted.
+async function revealBrowseOriginField(): Promise<void> {
+  await nextTick()
+  const input = browseOriginInput.value
+  if (!input) return
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  browseOriginHighlighted.value = true
+  input.focus({ preventScroll: true })
+  window.setTimeout(() => {
+    browseOriginHighlighted.value = false
+  }, 2400)
+}
 </script>
 
 <template>
@@ -544,6 +629,92 @@ onMounted(async () => {
       </div>
       <p v-else class="settings-note">正在读取安全入口状态…</p>
       <p class="settings-note">安全入口是登录验证前的额外门槛，不替代强密码、会话保护和登录限速；请妥善保存入口地址。</p>
+    </section>
+
+    <section class="settings-section panel-card">
+      <header class="settings-section__header">
+        <span><Globe :size="19" /></span>
+        <div><h2>面板访问域名</h2><p>除配置文件里的公开地址外，额外允许通过这些域名访问面板</p></div>
+        <StatusBadge
+          :status="allowedHosts && allowedHosts.hosts.length > 0 ? 'connected' : 'idle'"
+          :label="allowedHosts ? `${allowedHosts.hosts.length} 条` : '读取中'"
+        />
+      </header>
+      <div v-if="allowedHosts" class="allowed-hosts-form">
+        <div class="allowed-hosts-columns">
+          <label class="field allowed-hosts-field">
+            <span>面板域名（每行一个，可带端口）</span>
+            <textarea
+              v-model="allowedHostsDraft"
+              rows="4"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              placeholder="panel.example.com&#10;panel.example.com:8443"
+            ></textarea>
+            <small>访问面板本身用的域名。</small>
+          </label>
+          <label
+            class="field allowed-hosts-field"
+            :class="{ 'allowed-hosts-field--highlight': browseOriginHighlighted }"
+          >
+            <span>浏览器专用域名</span>
+            <input
+              ref="browseOriginInput"
+              v-model="browseOriginDraft"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              placeholder="browse.example.com"
+            />
+            <small>只给桌面浏览器用，必须和左边不同。留空则关闭浏览器功能。</small>
+          </label>
+        </div>
+        <label class="allowed-hosts-toggle">
+          <input v-model="browseAllowPrivateNetworksDraft" type="checkbox" />
+          <span>
+            <strong>允许浏览器访问本机与局域网</strong>
+            <small>
+              开启后桌面浏览器可以访问 127.0.0.1 和内网地址，但你打开的恶意网站同样能借你的服务器
+              探测内网，因此默认关闭。云 metadata 地址无论开关如何都始终拦截。
+            </small>
+          </span>
+        </label>
+        <div v-if="allowedHostsError" class="inline-alert inline-alert--danger">
+          <span>{{ allowedHostsError }}</span>
+        </div>
+        <div class="allowed-hosts-actions">
+          <button
+            class="button button--primary"
+            type="button"
+            :disabled="savingAllowedHosts || !allowedHostsDirty"
+            @click="saveAllowedHosts"
+          >
+            {{ savingAllowedHosts ? '保存中…' : '保存' }}
+          </button>
+          <button
+            v-if="allowedHostsDirty"
+            class="button button--ghost"
+            type="button"
+            :disabled="savingAllowedHosts"
+            @click="resetAllowedHostsDraft"
+          >
+            撤销更改
+          </button>
+        </div>
+      </div>
+      <p v-else class="settings-note">正在读取访问域名…</p>
+      <p class="settings-note">
+        只做精确匹配，不支持 *.example.com 这类通配写法：域名校验正是阻挡 DNS
+        重绑定和 Host 头伪造的防线，通配会让它失效。留空表示只允许配置文件里的公开地址（以及本机 IP，若已开启）。
+      </p>
+      <p class="settings-note">
+        浏览器专用域名必须单独一个，不能写进左边的列表：被浏览的网页会在它所在的域名下执行，
+        和面板同域时它就能读到面板的登录状态并调用面板接口。两个域名可以指向同一台服务器、同一个端口。
+      </p>
     </section>
 
     <section class="settings-section panel-card">
@@ -799,6 +970,109 @@ onMounted(async () => {
   color: var(--brand);
 }
 
+.allowed-hosts-form {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  padding: 18px;
+}
+
+/* Two independent settings that must never be merged: the left column widens
+   what reaches the panel, the right names an origin that must reach only the
+   browser. Keeping them side by side makes the "these are different things"
+   point visually, and align-items: start lets the single-line field on the
+   right sit level with the top of the list on the left. */
+.allowed-hosts-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+  gap: 12px 18px;
+}
+
+/* Hostnames are read character by character when auditing an allowlist, so the
+   editors use the same monospace treatment as the rest of the panel's literals. */
+.allowed-hosts-field textarea,
+.allowed-hosts-field input {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.7;
+}
+
+.allowed-hosts-field textarea {
+  min-height: 108px;
+}
+
+.allowed-hosts-field small {
+  color: var(--color-text-muted, #5f6368);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* The LAN opt-in sits below the two hostname columns rather than beside them:
+   it is a security relaxation, not a third address field, and reads as one. */
+/* Pulses the browse-hostname field when the browser window sends the operator
+   here to fill it in. Uses outline rather than border so the box does not
+   shift as it animates. */
+.allowed-hosts-field--highlight input {
+  animation: allowed-hosts-pulse 800ms ease-out 3;
+  border-radius: 8px;
+}
+
+@keyframes allowed-hosts-pulse {
+  0% {
+    outline: 2px solid rgba(52, 168, 83, 0);
+    outline-offset: 2px;
+  }
+  40% {
+    outline: 2px solid rgba(52, 168, 83, 0.85);
+    outline-offset: 3px;
+  }
+  100% {
+    outline: 2px solid rgba(52, 168, 83, 0);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .allowed-hosts-field--highlight input {
+    animation: none;
+    outline: 2px solid rgba(52, 168, 83, 0.85);
+    outline-offset: 3px;
+  }
+}
+
+.allowed-hosts-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+}
+
+.allowed-hosts-toggle input {
+  margin-top: 3px;
+}
+
+.allowed-hosts-toggle span {
+  display: grid;
+  gap: 4px;
+}
+
+.allowed-hosts-toggle small {
+  color: var(--color-text-muted, #5f6368);
+  line-height: 1.6;
+}
+
+.allowed-hosts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.allowed-hosts-actions .button--primary {
+  min-width: 132px;
+}
+
 @media (max-width: 640px) {
   .password-form {
     max-width: none;
@@ -823,6 +1097,15 @@ onMounted(async () => {
   }
 
   .security-entry-actions .button {
+    flex: 1 1 140px;
+  }
+
+  .allowed-hosts-form {
+    max-width: none;
+    padding: 14px;
+  }
+
+  .allowed-hosts-actions .button {
     flex: 1 1 140px;
   }
 }

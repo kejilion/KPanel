@@ -24,3 +24,12 @@ Makefile text eol=lf
 *.md text eol=lf
 internal/**/testdata/** text eol=lf
 deploy/tests/fake-bin/* text eol=lf
+
+# Vendored upstream build output. These are generated bundles copied in
+# verbatim, so git's whitespace checks have nothing to say about them and
+# hand-editing them only loses the edit at the next sync. -whitespace is
+# git's own attribute: git diff --check and git apply both honour it, so
+# scripts/verify-change.sh needs no exception of its own and every other
+# path keeps the check.
+web/public/scramjet/** -whitespace
+web/public/controller/** -whitespace

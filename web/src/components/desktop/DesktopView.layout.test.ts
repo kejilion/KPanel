@@ -351,8 +351,9 @@ describe('DesktopView icon layout interaction', () => {
     desktop.element.focus()
 
     await desktop.trigger('keydown', { key: 'a', ctrlKey: true })
-    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(12)
-    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 12 项')
+    // 13, not 12: the desktop gained the browser entry (lib/desktopApps.ts).
+    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(13)
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 13 项')
 
     await desktop.trigger('keydown', { key: 'Delete' })
     await flushPromises()
@@ -573,7 +574,7 @@ describe('DesktopView icon layout interaction', () => {
     const extraSlot = wrapper.find('[data-icon-key="app:extra"]')
     const scrollSpace = wrapper.find('.desktop__icons-scroll-space')
 
-    expect(extraSlot.attributes('style')).toContain('top: 400px')
+    expect(extraSlot.attributes('style')).toContain('top: 500px')
     expect(Number.parseFloat((scrollSpace.attributes('style') || '').match(/height:\s*([\d.]+)px/)?.[1] || '0'))
       .toBeGreaterThan(480)
     expect(updateWorkspace).not.toHaveBeenCalled()
@@ -600,7 +601,7 @@ describe('DesktopView icon layout interaction', () => {
 
     expect(overflow.attributes('style')).not.toBe(supported.attributes('style'))
     expect(overflow.attributes('style')).not.toContain('display: none')
-    expect(wrapper.find('.desktop__icons-overflow-note').text()).toContain('另有 1 个图标')
+    expect(wrapper.find('.desktop__icons-overflow-note').text()).toContain('另有 2 个图标')
 
     await wrapper.trigger('contextmenu', { clientX: 220, clientY: 160 })
     await flushPromises()

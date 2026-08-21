@@ -19,6 +19,7 @@ const routeViewLoaders = {
   '/apps': () => import('@/views/AppsView.vue'),
   '/files': () => import('@/views/FilesView.vue'),
   '/terminal': () => import('@/views/TerminalView.vue'),
+  '/browser': () => import('@/views/BrowserView.vue'),
   '/diagnostics': () => import('@/views/DiagnosticsView.vue'),
   '/docker': () => import('@/views/DockerView.vue'),
   '/activity': () => import('@/views/ActivityView.vue'),
