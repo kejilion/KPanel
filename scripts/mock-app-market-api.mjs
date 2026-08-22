@@ -742,6 +742,12 @@ createServer(async (request, response) => {
       send(response, 409, { title: '文件已发生变化，请刷新后重试', status: 409, code: 'file_share_changed' })
       return
     }
+    const currentShare = mockFileShares.find((item) => item.path === input.path)
+    if ((currentShare && input.expectedShareID !== currentShare.id)
+      || (!currentShare && input.expectedShareID)) {
+      send(response, 409, { title: '分享状态已发生变化，请刷新后重试', status: 409, code: 'file_share_changed' })
+      return
+    }
     mockFileShareCounter += 1
     const id = mockFileShareCounter.toString(36).padStart(22, 's').slice(-22)
     const token = mockFileShareCounter.toString(36).padStart(43, 'v').slice(-43)

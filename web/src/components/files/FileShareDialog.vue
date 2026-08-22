@@ -44,6 +44,10 @@ function phrase(value: string): string {
 const linksAvailable = computed(() => Boolean(
   share.value?.linksAvailable && share.value.sharePath && share.value.directPath,
 ))
+const safeImageMimes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'])
+const canOpenDirect = computed(() => Boolean(
+  props.entry.mime && safeImageMimes.has(props.entry.mime.toLowerCase()),
+))
 const sharePageURL = computed(() => linksAvailable.value ? absoluteURL(share.value?.sharePath || '') : '')
 const directURL = computed(() => linksAvailable.value ? absoluteURL(share.value?.directPath || '') : '')
 const expiryDescription = computed(() => share.value?.expiresAt
@@ -71,7 +75,7 @@ function friendlyError(reason: unknown, action: 'load' | 'create' | 'delete'): s
     return '文件分享数量已达上限，请在分享管理中停止不再使用的分享后重试。'
   }
   if (reason instanceof ApiError && (reason.code === 'file_share_changed' || reason.status === 409)) {
-    return '分享状态或文件已发生变化，请关闭窗口后重新打开分享。'
+    return '分享状态或文件已发生变化，请刷新目录后重新打开分享。'
   }
   if (reason instanceof ApiError && reason.status === 429) {
     return '文件分享操作较频繁，请稍后重试。'
@@ -290,11 +294,12 @@ onBeforeUnmount(() => {
               <Copy v-else :size="15" />
               {{ phrase(copiedLink === 'direct' ? '已复制' : '复制') }}
             </button>
-            <a class="button button--secondary" :href="directURL" target="_blank" rel="noopener noreferrer">
+            <a v-if="canOpenDirect" class="button button--secondary" :href="directURL" target="_blank" rel="noopener noreferrer">
               <ExternalLink :size="15" />{{ phrase('打开') }}
             </a>
           </div>
-          <small class="file-share-dialog__hint">{{ phrase('图片直链可直接用于网站、Markdown 或其他支持外部图片的地方。') }}</small>
+          <small v-if="canOpenDirect" class="file-share-dialog__hint">{{ phrase('图片直链可直接用于网站、Markdown 或其他支持外部图片的地方。') }}</small>
+          <small v-else class="file-share-dialog__hint">{{ phrase('非图片文件的直链会直接下载文件。') }}</small>
         </section>
 
         <p v-if="statusMessage" class="file-share-dialog__message" role="status" aria-live="polite">

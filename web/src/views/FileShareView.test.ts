@@ -30,6 +30,7 @@ interface ShareBindings {
   errorMessage: Ref<string>
   previewFailed: Ref<boolean>
   tokenIsValid: ComputedRef<boolean>
+  canOpenDirect: ComputedRef<boolean>
   canPreviewImage: ComputedRef<boolean>
   load: () => Promise<void>
 }
@@ -77,6 +78,7 @@ describe('FileShareView anonymous file page', () => {
     expect(mocks.publicShare).toHaveBeenCalledWith(mocks.token, expect.any(AbortSignal))
     expect(view.snapshot.value).toEqual(expected)
     expect(view.errorMessage.value).toBe('')
+    expect(view.canOpenDirect.value).toBe(true)
     expect(view.canPreviewImage.value).toBe(true)
   })
 
@@ -97,6 +99,20 @@ describe('FileShareView anonymous file page', () => {
 
     await view.load()
 
+    expect(view.canOpenDirect.value).toBe(false)
+    expect(view.canPreviewImage.value).toBe(false)
+  })
+
+  it('does not automatically fetch an oversized raster image', async () => {
+    mocks.publicShare.mockResolvedValueOnce({
+      ...publicFile('image/png'),
+      sizeBytes: 12 * 1024 * 1024 + 1,
+    })
+    const view = setupView()
+
+    await view.load()
+
+    expect(view.canOpenDirect.value).toBe(true)
     expect(view.canPreviewImage.value).toBe(false)
   })
 
@@ -108,6 +124,7 @@ describe('FileShareView anonymous file page', () => {
     expect(source).toContain("new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'])")
     expect(source).toContain(':href="snapshot.downloadPath"')
     expect(source).toContain(':src="snapshot.directPath"')
+    expect(source).toContain('v-if="canOpenDirect" class="file-share-open"')
 
     const routerSource = readFileSync(new URL('../router.ts', import.meta.url), 'utf8')
     expect(routerSource).toContain("path: '/share/file/:token'")

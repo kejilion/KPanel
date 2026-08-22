@@ -36,8 +36,15 @@ let loadSequence = 0
 const token = computed(() => String(route.params.token || ''))
 const tokenIsValid = computed(() => /^[A-Za-z0-9_-]{43}$/.test(token.value))
 const safeImageMimes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'])
+const maxInlinePreviewBytes = 12 * 1024 * 1024
+const canOpenDirect = computed(() => Boolean(
+  snapshot.value?.mime && safeImageMimes.has(snapshot.value.mime.toLowerCase()),
+))
 const canPreviewImage = computed(() => Boolean(
-  snapshot.value?.mime && safeImageMimes.has(snapshot.value.mime.toLowerCase()) && !previewFailed.value,
+  canOpenDirect.value
+  && snapshot.value
+  && snapshot.value.sizeBytes <= maxInlinePreviewBytes
+  && !previewFailed.value,
 ))
 const expiryDescription = computed(() => snapshot.value?.expiresAt
   ? `有效期至 ${formatDateTime(snapshot.value.expiresAt)}`
@@ -157,7 +164,7 @@ onBeforeUnmount(() => {
           <a class="file-share-download" :href="snapshot.downloadPath">
             <Download :size="18" />下载文件
           </a>
-          <a class="file-share-open" :href="snapshot.directPath" target="_blank" rel="noopener noreferrer">
+          <a v-if="canOpenDirect" class="file-share-open" :href="snapshot.directPath" target="_blank" rel="noopener noreferrer">
             <ExternalLink :size="17" />在浏览器中打开
           </a>
         </div>

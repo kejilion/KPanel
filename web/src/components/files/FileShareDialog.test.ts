@@ -37,7 +37,7 @@ vi.mock('@/lib/api', () => ({
 
 const wrappers: VueWrapper[] = []
 
-function entry(): FileEntry {
+function entry(overrides: Partial<FileEntry> = {}): FileEntry {
   return {
     name: 'site logo.png',
     path: '/home/site logo.png',
@@ -51,6 +51,7 @@ function entry(): FileEntry {
     resourceVersion: 'sha256:file',
     editable: false,
     previewable: true,
+    ...overrides,
   }
 }
 
@@ -66,10 +67,10 @@ function activeShare(linksAvailable = false): FileShareAdminView {
   }
 }
 
-function mountDialog(): VueWrapper {
+function mountDialog(fileEntry = entry()): VueWrapper {
   const wrapper = mount(FileShareDialog, {
     attachTo: document.body,
-    props: { entry: entry() },
+    props: { entry: fileEntry },
   })
   wrappers.push(wrapper)
   return wrapper
@@ -124,6 +125,7 @@ describe('FileShareDialog hash-only sharing', () => {
       .toContain(created.sharePath)
     expect((document.querySelector('#file-share-direct-link') as HTMLInputElement).value)
       .toContain(created.directPath)
+    expect(document.querySelector('#file-share-direct-link')?.parentElement?.querySelector('a')).not.toBeNull()
     expect(document.body.textContent).toContain('链接仅在本次显示')
 
     button('复制').click()
@@ -155,6 +157,20 @@ describe('FileShareDialog hash-only sharing', () => {
       expectedShareID: existing.id,
       expiresIn: 'never',
     })
+  })
+
+  it('does not offer inline opening for a non-image direct link', async () => {
+    const created = activeShare(true)
+    mocks.createShare.mockResolvedValueOnce(created)
+    mountDialog(entry({ name: 'notes.txt', path: '/home/notes.txt', mime: 'text/plain' }))
+    await flushPromises()
+
+    button('创建分享').click()
+    await flushPromises()
+
+    const directRow = document.querySelector('#file-share-direct-link')?.parentElement
+    expect(directRow?.querySelector('a')).toBeNull()
+    expect(document.body.textContent).toContain('非图片文件的直链会直接下载文件。')
   })
 
   it('stops the active share only after confirmation', async () => {

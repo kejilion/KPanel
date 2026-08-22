@@ -118,7 +118,10 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 	}
 	if direct.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" ||
 		direct.Header().Get("Access-Control-Allow-Origin") != "" ||
-		direct.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
+		direct.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" ||
+		direct.Header().Get("Content-Type") != "image/png" ||
+		!strings.HasPrefix(direct.Header().Get("Content-Disposition"), "inline") ||
+		direct.Header().Get("Content-Security-Policy") != fileShareContentSecurityPolicy {
 		t.Fatalf("direct sharing headers = %#v", direct.Header())
 	}
 	streamCalls := agent.snapshotStreamCalls()
@@ -135,6 +138,9 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 	streamCalls = agent.snapshotStreamCalls()
 	if !strings.Contains(streamCalls[len(streamCalls)-1].rawQuery, "disposition=attachment") {
 		t.Fatalf("download disposition was not forwarded: %#v", streamCalls[len(streamCalls)-1])
+	}
+	if !strings.HasPrefix(head.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("download response was not forced to attachment: %#v", head.Header())
 	}
 	agent.streamStatus = http.StatusNotModified
 	notModified := performRequest(server, http.MethodGet, createdResponse.DirectPath, nil, map[string]string{
@@ -189,6 +195,56 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 	list = authenticatedRequest(server, http.MethodGet, fileSharesAdminPath, nil, sessionCookie, csrfCookie, nil)
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"shares":[]`) {
 		t.Fatalf("list after delete = %d %s", list.Code, list.Body.String())
+	}
+}
+
+func TestFileShareUnsafeContentIsDownloadOnly(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	attackBody := `<script src="/f/` + strings.Repeat("j", 43) + `"></script>`
+	agent := &fileStubAgent{
+		stubAgent:    &stubAgent{response: fileShareEntryResponse("/srv/public/payload.html", "payload.html", "text/html", 64)},
+		streamStatus: http.StatusOK,
+		streamHeaders: http.Header{
+			"Content-Type":            []string{"text/html; charset=utf-8"},
+			"Content-Disposition":     []string{`inline; filename="payload.html"`},
+			"Content-Security-Policy": []string{"script-src 'self'"},
+		},
+		streamResponse: []byte(attackBody),
+	}
+	server.agent = agent
+
+	body, _ := json.Marshal(fileShareCreateInput{
+		Path: "/srv/public/payload.html", ExpectedResourceVersion: testFileShareVersion, ExpiresIn: "7d",
+	})
+	created := createPanelFileShare(t, server, sessionCookie, csrfCookie, body)
+	direct := performRequest(server, http.MethodGet, created.DirectPath, nil, nil)
+	if direct.Code != http.StatusOK || direct.Body.String() != attackBody {
+		t.Fatalf("unsafe direct response = %d %q", direct.Code, direct.Body.String())
+	}
+	if direct.Header().Get("Content-Type") != "application/octet-stream" ||
+		!strings.HasPrefix(direct.Header().Get("Content-Disposition"), "attachment") ||
+		!strings.Contains(direct.Header().Get("Content-Disposition"), "payload.html") ||
+		direct.Header().Get("Content-Security-Policy") != fileShareContentSecurityPolicy ||
+		direct.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("unsafe direct headers = %#v", direct.Header())
+	}
+	if calls := agent.snapshotStreamCalls(); len(calls) != 1 ||
+		!strings.Contains(calls[0].rawQuery, "disposition=inline") {
+		t.Fatalf("Panel defense did not cover an inline Agent response: %#v", calls)
+	}
+}
+
+func TestFileShareSafeInlineContentType(t *testing.T) {
+	for contentType, want := range map[string]bool{
+		"image/jpeg": true, "image/png; charset=binary": true, "image/gif": true,
+		"image/webp": true, "image/avif": true, "image/svg+xml": false,
+		"text/html": false, "application/xhtml+xml": false, "application/javascript": false,
+		"text/css": false, "application/pdf": false, "application/octet-stream": false, "": false,
+	} {
+		if got := safeFileShareInlineContentType(contentType); got != want {
+			t.Errorf("safeFileShareInlineContentType(%q) = %t, want %t", contentType, got, want)
+		}
 	}
 }
 

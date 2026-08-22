@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,6 +36,8 @@ const (
 )
 
 var fileShareMetadataTimeout = 8 * time.Second
+
+const fileShareContentSecurityPolicy = "default-src 'none'; sandbox; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 type fileShareCreateInput struct {
 	Path                    string `json:"path"`
@@ -401,6 +404,10 @@ func (s *Server) handlePublicFileShareContent(w http.ResponseWriter, r *http.Req
 		return
 	}
 	copyFileHeaders(w.Header(), response.Header)
+	w.Header().Set("Content-Security-Policy", fileShareContentSecurityPolicy)
+	if disposition == "attachment" || !safeFileShareInlineContentType(w.Header().Get("Content-Type")) {
+		forceFileShareAttachment(w.Header())
+	}
 	if response.Header.Get("Content-Length") == "" && response.ContentLength >= 0 &&
 		(response.StatusCode == http.StatusOK || response.StatusCode == http.StatusPartialContent) {
 		w.Header().Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
@@ -413,6 +420,38 @@ func (s *Server) handlePublicFileShareContent(w http.ResponseWriter, r *http.Req
 		return
 	}
 	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+}
+
+func safeFileShareInlineContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(mediaType) {
+	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif":
+		return true
+	default:
+		return false
+	}
+}
+
+func forceFileShareAttachment(header http.Header) {
+	_, parameters, err := mime.ParseMediaType(header.Get("Content-Disposition"))
+	filename := ""
+	if err == nil {
+		filename = parameters["filename"]
+	}
+	header.Set("Content-Type", "application/octet-stream")
+	if filename == "" {
+		header.Set("Content-Disposition", "attachment")
+		return
+	}
+	formatted := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	if formatted == "" {
+		header.Set("Content-Disposition", "attachment")
+		return
+	}
+	header.Set("Content-Disposition", formatted)
 }
 
 func (s *Server) loadFileShareEntry(ctx context.Context, filePath string) (contract.FileShareEntry, int, error) {

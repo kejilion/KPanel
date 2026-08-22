@@ -71,30 +71,31 @@ Panel 通过内部 `GET /v1/files/share-entry` 取得分享专用版本，并仅
 - 停止或重新生成分享会取消已注册的在途流；过期时间同时是流 context 的最晚截止时间。
 - 原始直链返回 `Cache-Control: public, max-age=0, must-revalidate` 和现有 ETag，允许缓存复用但每次使用前必须验证撤销、过期和文件版本。
 - `/f/{token}` 将全局 `Cross-Origin-Resource-Policy` 覆盖为 `cross-origin`，因此外站可以嵌入图片；不返回 CORS 授权，任意来源 JavaScript / Canvas 读取不属于首版契约。
-- HTML、SVG 等主动内容继续由 Agent 降级为 `text/plain`；响应保留 `nosniff` 和文件内容 CSP。
+- 只有 JPEG、PNG、GIF、WebP、AVIF 五类安全位图可以 `inline`；HTML、SVG、XML、JavaScript、CSS、PDF、`text/*` 及其他类型统一改为 `application/octet-stream` 并强制 `attachment`。
+- Panel 不信任 Agent 的内容 CSP，会在所有原始分享响应上覆盖 `default-src 'none'; sandbox; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`，并保留 `nosniff`，防止主动内容借 KPanel 同源执行。
 
 ## 交互与视觉约束
 
 - 单文件分享入口仅位于文件的右键 / `···` 菜单；文件管理工具区另有一个克制的“分享管理”入口用于统一撤销。不增加侧栏、桌面应用、图片托管标签或批量分享按钮。
 - 对话框复用 `ModalDialog size="small"`，包含加载、未分享、已分享、创建中、复制结果、确认停止和错误恢复状态。
-- 公开页只包含 KPanel 品牌、主题切换、文件信息、安全位图预览和一个清晰下载按钮；SVG 和主动内容不内嵌。
+- 公开页只包含 KPanel 品牌、主题切换、文件信息、安全位图预览和一个清晰下载按钮；SVG 和主动内容不内嵌。超过 12 MiB 的位图不自动拉取预览，避免页面打开即占用公开流。
 - 正文和控件不小于 14px，辅助文字不小于 13px，仅紧凑标签与页脚可使用 12px；覆盖浅色、深色、390 / 768 / 1280px、100% / 125% / 200% 缩放、长文件名和长 URL。
 - 新文案纳入 `zh-CN`、`en-US`、`zh-TW`；对话框关闭后恢复触发元素焦点，复制结果通过可见文本和 live region 提示。
 
 ## 兼容、回滚与恢复
 
 - 新字段使用 `omitempty`，旧状态文件可直接加载；不改变既有文件管理、下载票据或集群分享。新 Panel 若连接未升级、缺少分享内部端点的 Agent，分享管理操作和公开访问会安全返回不可用或 404，且绝不重试普通文件内容端点，因此不会退回弱校验或公开文件。
-- 回滚到不含本功能的旧二进制后，公开路由不存在，链接立即不可访问；旧版本会忽略 `fileShares` 字段。
-- 若未来再次升级且要求旧链接永久不可恢复，回滚前应先停止分享，或在停止 Panel 后备份并从 `panel-state.json` 删除 `fileShares` 字段。不得在线直接编辑状态文件。
+- 回滚到不含本功能的旧二进制后，公开路由不存在，链接立即不可访问。旧版本只会在未发生状态写入时暂时保留未知的 `fileShares` 字段；一旦账户、Session、审计或其他 Panel 状态被持久化，旧 Store 会重写 JSON 并永久丢弃该字段。
+- 回滚前应先停止全部分享并备份 `panel-state.json`；如果要求旧链接永久不可恢复，可在 Panel 停止后从备份副本确认状态，再离线删除 `fileShares` 字段。不得在线直接编辑状态文件。
 - 泄露处理：对相应文件执行“重新生成链接”或“停止分享”；无需移动或复制源文件。
 
 ## 验收状态
 
 2026-08-22 在 Windows 开发工作区完成以下验收：
 
-- 分享目标测试：`go test ./internal/store ./internal/filemanager ./internal/agent ./internal/panel -run 'TestFileShare|TestShareVersion|TestFileEndpointsListWrite' -count=1` 通过；覆盖 Store 恢复与 CAS、Linux 强身份算法、Agent 专用端点、Panel 创建/轮换/停止、真实公开流限流与释放、删除/轮换/过期/服务关闭取消、打开前二次撤销检查、Range/HEAD/缓存和安全入口。
+- 分享目标测试：`go test ./internal/store ./internal/filemanager ./internal/agent ./internal/panel -run 'TestFileShare|TestShareVersion|TestFileEndpointsListWrite' -count=1` 通过；覆盖 Store 恢复与 CAS、Agent 专用端点、Panel 创建/轮换/停止、真实公开流限流与释放、删除/轮换/过期/服务关闭取消、打开前二次撤销检查、Range/HEAD/缓存和安全入口。Linux 专属强身份测试仅完成交叉编译，须由 L3 真机执行。
 - 受影响包回归：Store、Filemanager、Agent 全量测试通过；`go vet ./...` 通过。Panel 的分享目标测试通过。
-- 前端：i18n 检查通过（2,442 条三语短语）、typecheck 通过、110 个 Vitest 文件共 860 项通过、生产构建通过；新增 Teleport 对话框的英文回归，避免运行时切换语言后仍显示中文。
+- 前端：i18n 检查通过（2,442 条三语短语）、typecheck 通过、110 个 Vitest 文件共 862 项通过、生产构建通过；新增 Teleport 对话框英文、非图片禁止内联打开和超大图片不自动预览回归。
 - 预览脚本：模拟 API 语法检查和本地预览脚本 6 项测试通过；两个 draft/mock 预览均按 manifest 停止，无残留进程。
 - 浏览器人工复核：经典模式和桌面模式 1280px、移动端 390×844、浅色/深色、简中/英文/繁中均通过；菜单键盘方向键、Escape 与焦点恢复通过；目录和批量栏没有分享入口；创建、一次性链接、重开不泄露旧 token、分享管理和无效链接恢复态符合设计，页面无横向溢出。
 - 图片引用：公开页的 `<img src="/f/{token}">` 实际加载 2,560×1,440 WebP；移动端图片宽度自适应且最小辅助文字 13px。直链 `HEAD` 返回 `image/webp`、`Content-Disposition: inline`、`Cross-Origin-Resource-Policy: cross-origin` 和 revalidate 缓存策略；`?download=1` 改为 `attachment`。
