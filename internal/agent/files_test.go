@@ -484,6 +484,128 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != "3" {
 		t.Fatalf("file HEAD status=%d length=%q body=%q", head.Code, head.Header().Get("Content-Length"), head.Body.String())
 	}
+	current, err := manager.Stat("/hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{"If-Match": `"` + current.ResourceVersion + `"`},
+	)
+	if matched.Code != http.StatusOK || matched.Body.String() != "new" {
+		t.Fatalf("matching If-Match status=%d body=%q", matched.Code, matched.Body.String())
+	}
+	shareEntryResponse := fileRequest(server, http.MethodGet, "/v1/files/share-entry?path=%2Fhello.txt", "")
+	if shareEntryResponse.Code != http.StatusOK {
+		t.Fatalf("share entry status=%d body=%q", shareEntryResponse.Code, shareEntryResponse.Body.String())
+	}
+	var shareEntry contract.FileShareEntry
+	if err := json.Unmarshal(shareEntryResponse.Body.Bytes(), &shareEntry); err != nil {
+		t.Fatal(err)
+	}
+	if shareEntry.ShareVersion == "" || !strings.Contains(shareEntryResponse.Body.String(), `"shareVersion"`) {
+		t.Fatalf("share entry omitted strong version: %s", shareEntryResponse.Body.String())
+	}
+	for _, target := range []string{
+		"/v1/files/share-entry",
+		"/v1/files/share-entry?path=%2Fhello.txt&path=%2Fhello.txt",
+		"/v1/files/share-entry?path=%2Fhello.txt&extra=1",
+		"/v1/files/share-entry?path=%2Fhello.txt&extra=%ZZ",
+	} {
+		invalidShareEntry := fileRequest(server, http.MethodGet, target, "")
+		if invalidShareEntry.Code != http.StatusBadRequest {
+			t.Fatalf("invalid share entry %q status=%d body=%q", target, invalidShareEntry.Code, invalidShareEntry.Body.String())
+		}
+	}
+	wrongShareEntryMethod := fileRequest(server, http.MethodPost, "/v1/files/share-entry?path=%2Fhello.txt", "")
+	if wrongShareEntryMethod.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("share entry wrong method status=%d", wrongShareEntryMethod.Code)
+	}
+	shareMatched := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+	)
+	if shareMatched.Code != http.StatusOK || shareMatched.Body.String() != "new" {
+		t.Fatalf("matching share version status=%d body=%q", shareMatched.Code, shareMatched.Body.String())
+	}
+	for _, target := range []string{
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline&extra=%ZZ",
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline;extra=1",
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline&mode=",
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline&version=",
+	} {
+		invalidShareContent := fileRequestWithHeaders(
+			server, http.MethodGet, target, "",
+			map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+		)
+		if invalidShareContent.Code != http.StatusBadRequest {
+			t.Fatalf("invalid share content %q status=%d body=%q", target, invalidShareContent.Code, invalidShareContent.Body.String())
+		}
+	}
+	shareStale := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{contract.FileShareVersionHeader: "sha256:" + strings.Repeat("0", 64)},
+	)
+	if shareStale.Code != http.StatusPreconditionFailed || shareStale.Body.Len() != 0 {
+		t.Fatalf("stale share version status=%d body=%q", shareStale.Code, shareStale.Body.String())
+	}
+	for name, fixture := range map[string]struct {
+		target string
+		value  string
+	}{
+		"malformed": {"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "sha256:stale"},
+		"text mode": {"/v1/files/share-content?path=%2Fhello.txt&disposition=inline&mode=text", shareEntry.ShareVersion},
+	} {
+		invalidShareHeader := fileRequestWithHeaders(
+			server, http.MethodGet, fixture.target, "",
+			map[string]string{contract.FileShareVersionHeader: fixture.value},
+		)
+		if invalidShareHeader.Code != http.StatusBadRequest {
+			t.Fatalf("%s share header status=%d body=%q", name, invalidShareHeader.Code, invalidShareHeader.Body.String())
+		}
+	}
+	multipleHeaderRequest := httptest.NewRequest(
+		http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", nil,
+	)
+	multipleHeaderRequest.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	multipleHeaderRequest.Header.Add(contract.FileShareVersionHeader, shareEntry.ShareVersion)
+	multipleHeaderRequest.Header.Add(contract.FileShareVersionHeader, shareEntry.ShareVersion)
+	multipleHeaderResponse := httptest.NewRecorder()
+	server.ServeHTTP(multipleHeaderResponse, multipleHeaderRequest)
+	if multipleHeaderResponse.Code != http.StatusBadRequest {
+		t.Fatalf("multiple share headers status=%d body=%q", multipleHeaderResponse.Code, multipleHeaderResponse.Body.String())
+	}
+	missingShareHeader := fileRequest(
+		server, http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+	)
+	if missingShareHeader.Code != http.StatusBadRequest {
+		t.Fatalf("share content without strong version status=%d body=%q", missingShareHeader.Code, missingShareHeader.Body.String())
+	}
+	ordinaryWithShareHeader := fileRequestWithHeaders(
+		server, http.MethodGet, "/v1/files/content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+	)
+	if ordinaryWithShareHeader.Code != http.StatusBadRequest {
+		t.Fatalf("ordinary content accepted share header: %d %q", ordinaryWithShareHeader.Code, ordinaryWithShareHeader.Body.String())
+	}
+	wrongShareContentMethod := fileRequestWithHeaders(
+		server, http.MethodPost, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+	)
+	if wrongShareContentMethod.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("share content wrong method status=%d", wrongShareContentMethod.Code)
+	}
+	stale := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{"If-Match": `"sha256:stale"`},
+	)
+	if stale.Code != http.StatusPreconditionFailed || stale.Body.Len() != 0 {
+		t.Fatalf("stale If-Match status=%d body=%q", stale.Code, stale.Body.String())
+	}
 	if err := os.WriteFile(filepath.Join(root, "clip.mp4"), []byte("0123456789"), 0644); err != nil {
 		t.Fatal(err)
 	}

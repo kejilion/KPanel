@@ -1102,6 +1102,64 @@ describe('API client', () => {
     })
   })
 
+  it('uses the hash-only file share contract for lookup, rotation, removal, and public metadata', async () => {
+    const token = 'a'.repeat(43)
+    const id = 'b'.repeat(22)
+    const created = {
+      id,
+      createdAt: '2026-08-22T00:00:00Z',
+      expiresAt: '2026-08-29T00:00:00Z',
+      linksAvailable: true,
+      sharePath: `/share/file/${token}`,
+      directPath: `/f/${token}`,
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ share: null }))
+      .mockResolvedValueOnce(jsonResponse(created, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ shares: [{ ...created, path: '/home/photo.png' }] }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({
+        name: 'photo.png',
+        mime: 'image/png',
+        sizeBytes: 1024,
+        expiresAt: created.expiresAt,
+        directPath: created.directPath,
+        downloadPath: `${created.directPath}?download=1`,
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.files.share('/home/photo.png', 'sha256:file')
+    await expect(api.files.createShare({
+      path: '/home/photo.png',
+      expectedResourceVersion: 'sha256:file',
+      expectedShareID: '',
+      expiresIn: '7d',
+    })).resolves.toEqual(created)
+    await expect(api.files.shares()).resolves.toEqual({
+      shares: [{ ...created, path: '/home/photo.png' }],
+    })
+    await api.files.deleteShare(id)
+    await api.files.publicShare(token)
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      '/api/v1/files/shares?path=%2Fhome%2Fphoto.png&resourceVersion=sha256%3Afile',
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/files/shares')
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ method: 'POST' }))
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
+      path: '/home/photo.png',
+      expectedResourceVersion: 'sha256:file',
+      expectedShareID: '',
+      expiresIn: '7d',
+    })
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/v1/files/shares')
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBe('GET')
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/v1/files/shares/${id}`)
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).method).toBe('DELETE')
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(`/api/v1/public/file-shares/${token}`)
+    expect((fetchMock.mock.calls[4]?.[1] as RequestInit).method).toBe('GET')
+  })
+
   it('aborts an in-flight binary file upload through the caller signal', async () => {
     class UploadXHR {
       static latest?: UploadXHR

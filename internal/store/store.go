@@ -3,10 +3,13 @@ package store
 import (
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -15,13 +18,18 @@ import (
 	"time"
 )
 
-const maxStoreBytes int64 = 32 << 20
+const (
+	maxStoreBytes int64 = 32 << 20
+	MaxFileShares       = 256
+)
 
 var (
 	ErrAlreadyInitialized = errors.New("store already initialized")
 	ErrConflict           = errors.New("record changed")
 	ErrAlreadyExists      = errors.New("record already exists")
 	ErrNotFound           = errors.New("record not found")
+	ErrLimitReached       = errors.New("record limit reached")
+	ErrInvalidRecord      = errors.New("invalid record")
 	ErrStoreLocked        = errors.New("store is already open by another process")
 )
 
@@ -87,6 +95,21 @@ type ClusterShare struct {
 	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
 }
 
+// FileShare is a bounded, revocable authorization for one exact filesystem
+// resource. Path remains an Agent-owned fact. ResourceVersion preserves normal
+// filemanager concurrency semantics while ShareVersion adds the Agent's strong
+// Linux object identity for anonymous access. Only the bearer token digest is
+// persisted; the token itself must never enter state or audit records.
+type FileShare struct {
+	ID              string     `json:"id"`
+	TokenHash       string     `json:"tokenHash"`
+	Path            string     `json:"path"`
+	ResourceVersion string     `json:"resourceVersion"`
+	ShareVersion    string     `json:"shareVersion"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
+}
+
 type PasswordRecovery struct {
 	UserID          string
 	ExpectedHash    string
@@ -105,6 +128,7 @@ type diskState struct {
 	LoginAttempts    []LoginAttempt   `json:"loginAttempts"`
 	SecurityEntrance SecurityEntrance `json:"securityEntrance,omitempty"`
 	ClusterShare     ClusterShare     `json:"clusterShare,omitempty"`
+	FileShares       []FileShare      `json:"fileShares,omitempty"`
 }
 
 // Store is a small, single-node persistence layer. It deliberately stores only
@@ -156,6 +180,9 @@ func Open(path string) (*Store, error) {
 		}
 		if s.data.SchemaVersion != 1 {
 			return nil, fmt.Errorf("unsupported store schema version %d", s.data.SchemaVersion)
+		}
+		if err := validateFileShares(s.data.FileShares); err != nil {
+			return nil, fmt.Errorf("validate file shares: %w", err)
 		}
 	case errors.Is(err, os.ErrNotExist):
 		if err := s.persistLocked(); err != nil {
@@ -704,6 +731,200 @@ func ClusterShareResourceVersion(value ClusterShare) string {
 	return fmt.Sprintf("sha256:%x", digest[:])
 }
 
+func (s *Store) FileShareByPath(filePath, resourceVersion string, now time.Time) (FileShare, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, value := range s.data.FileShares {
+		if value.Path == filePath && (resourceVersion == "" || value.ResourceVersion == resourceVersion) &&
+			fileShareActive(value, now) {
+			return cloneFileShare(value), nil
+		}
+	}
+	return FileShare{}, ErrNotFound
+}
+
+func (s *Store) FileShareByToken(token string, now time.Time) (FileShare, error) {
+	digest := sha256.Sum256([]byte(token))
+	tokenHash := fmt.Sprintf("%x", digest[:])
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, value := range s.data.FileShares {
+		if subtle.ConstantTimeCompare([]byte(value.TokenHash), []byte(tokenHash)) == 1 && fileShareActive(value, now) {
+			return cloneFileShare(value), nil
+		}
+	}
+	return FileShare{}, ErrNotFound
+}
+
+func (s *Store) ListFileShares(now time.Time) []FileShare {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]FileShare, 0, len(s.data.FileShares))
+	for _, value := range s.data.FileShares {
+		if fileShareActive(value, now) {
+			items = append(items, cloneFileShare(value))
+		}
+	}
+	sort.SliceStable(items, func(left, right int) bool {
+		if items[left].CreatedAt.Equal(items[right].CreatedAt) {
+			return items[left].ID < items[right].ID
+		}
+		return items[left].CreatedAt.After(items[right].CreatedAt)
+	})
+	return items
+}
+
+// CreateFileShare atomically replaces any existing share for the same path.
+// This lets the administrator regenerate a bearer URL without retaining the
+// original token in persistent state.
+func (s *Store) CreateFileShare(value FileShare, expectedID string, now time.Time) (FileShare, FileShare, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := validateFileShare(value); err != nil || (value.ExpiresAt != nil && !value.ExpiresAt.After(now)) {
+		return FileShare{}, FileShare{}, ErrInvalidRecord
+	}
+
+	var currentForPath FileShare
+	for _, current := range s.data.FileShares {
+		if current.Path == value.Path && fileShareActive(current, now) {
+			currentForPath = current
+			break
+		}
+	}
+	if (expectedID == "" && currentForPath.ID != "" && currentForPath.ShareVersion == value.ShareVersion) ||
+		(expectedID != "" && currentForPath.ID != expectedID) {
+		return FileShare{}, FileShare{}, ErrConflict
+	}
+
+	for _, current := range s.data.FileShares {
+		if current.ID == value.ID || subtle.ConstantTimeCompare([]byte(current.TokenHash), []byte(value.TokenHash)) == 1 {
+			return FileShare{}, FileShare{}, ErrAlreadyExists
+		}
+	}
+
+	active := make([]FileShare, 0, len(s.data.FileShares)+1)
+	var replaced FileShare
+	for _, current := range s.data.FileShares {
+		if !fileShareActive(current, now) {
+			continue
+		}
+		if current.Path == value.Path {
+			replaced = cloneFileShare(current)
+			continue
+		}
+		active = append(active, cloneFileShare(current))
+	}
+	if len(active) >= MaxFileShares {
+		return FileShare{}, FileShare{}, ErrLimitReached
+	}
+
+	previous := cloneDiskState(s.data)
+	active = append(active, cloneFileShare(value))
+	s.data.FileShares = active
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return FileShare{}, FileShare{}, err
+	}
+	return cloneFileShare(value), replaced, nil
+}
+
+func (s *Store) DeleteFileShare(id string) (FileShare, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, value := range s.data.FileShares {
+		if value.ID != id {
+			continue
+		}
+		previous := cloneDiskState(s.data)
+		s.data.FileShares = append(
+			append([]FileShare(nil), s.data.FileShares[:index]...),
+			s.data.FileShares[index+1:]...,
+		)
+		if err := s.persistLocked(); err != nil {
+			s.data = previous
+			return FileShare{}, err
+		}
+		return cloneFileShare(value), nil
+	}
+	return FileShare{}, ErrNotFound
+}
+
+func fileShareActive(value FileShare, now time.Time) bool {
+	return value.ExpiresAt == nil || value.ExpiresAt.After(now)
+}
+
+func cloneFileShare(value FileShare) FileShare {
+	if value.ExpiresAt != nil {
+		expiresAt := *value.ExpiresAt
+		value.ExpiresAt = &expiresAt
+	}
+	return value
+}
+
+func validateFileShares(values []FileShare) error {
+	if len(values) > MaxFileShares {
+		return fmt.Errorf("%w: file share limit exceeded", ErrInvalidRecord)
+	}
+	ids := make(map[string]struct{}, len(values))
+	tokenHashes := make(map[string]struct{}, len(values))
+	paths := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		if err := validateFileShare(value); err != nil {
+			return fmt.Errorf("%w: file share %d is invalid", ErrInvalidRecord, index)
+		}
+		if _, exists := ids[value.ID]; exists {
+			return fmt.Errorf("%w: duplicate file share id", ErrInvalidRecord)
+		}
+		if _, exists := tokenHashes[value.TokenHash]; exists {
+			return fmt.Errorf("%w: duplicate file share token hash", ErrInvalidRecord)
+		}
+		if _, exists := paths[value.Path]; exists {
+			return fmt.Errorf("%w: duplicate file share path", ErrInvalidRecord)
+		}
+		ids[value.ID] = struct{}{}
+		tokenHashes[value.TokenHash] = struct{}{}
+		paths[value.Path] = struct{}{}
+	}
+	return nil
+}
+
+func validateFileShare(value FileShare) error {
+	id, err := base64.RawURLEncoding.DecodeString(value.ID)
+	if err != nil || len(value.ID) != 22 || len(id) != 16 ||
+		base64.RawURLEncoding.EncodeToString(id) != value.ID {
+		return ErrInvalidRecord
+	}
+	if len(value.TokenHash) != 64 || value.TokenHash != strings.ToLower(value.TokenHash) {
+		return ErrInvalidRecord
+	}
+	tokenHash, err := hex.DecodeString(value.TokenHash)
+	if err != nil || len(tokenHash) != sha256.Size {
+		return ErrInvalidRecord
+	}
+	if value.Path == "" || len(value.Path) > 4096 || !strings.HasPrefix(value.Path, "/") ||
+		strings.ContainsAny(value.Path, "\\\x00") || path.Clean(value.Path) != value.Path {
+		return ErrInvalidRecord
+	}
+	if len(value.ResourceVersion) != 71 || !strings.HasPrefix(value.ResourceVersion, "sha256:") {
+		return ErrInvalidRecord
+	}
+	resourceDigest, err := hex.DecodeString(strings.TrimPrefix(value.ResourceVersion, "sha256:"))
+	if err != nil || len(resourceDigest) != sha256.Size || value.ResourceVersion != strings.ToLower(value.ResourceVersion) {
+		return ErrInvalidRecord
+	}
+	if len(value.ShareVersion) != 71 || !strings.HasPrefix(value.ShareVersion, "sha256:") {
+		return ErrInvalidRecord
+	}
+	shareDigest, err := hex.DecodeString(strings.TrimPrefix(value.ShareVersion, "sha256:"))
+	if err != nil || len(shareDigest) != sha256.Size || value.ShareVersion != strings.ToLower(value.ShareVersion) {
+		return ErrInvalidRecord
+	}
+	if value.CreatedAt.IsZero() || (value.ExpiresAt != nil && !value.ExpiresAt.After(value.CreatedAt)) {
+		return ErrInvalidRecord
+	}
+	return nil
+}
+
 func (s *Store) persistLocked() error {
 	content, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
@@ -779,7 +1000,16 @@ func cloneDiskState(source diskState) diskState {
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
 		ClusterShare:     source.ClusterShare,
+		FileShares:       cloneFileShares(source.FileShares),
 	}
+}
+
+func cloneFileShares(source []FileShare) []FileShare {
+	result := make([]FileShare, len(source))
+	for index, value := range source {
+		result[index] = cloneFileShare(value)
+	}
+	return result
 }
 
 func syncDirectory(path string) error {

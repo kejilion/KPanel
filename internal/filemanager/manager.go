@@ -1343,7 +1343,7 @@ func (m *Manager) entry(virtual string, info os.FileInfo) contract.FileEntry {
 		Name: filepath.Base(virtual), Path: virtual, Kind: kind, MIME: mimeType,
 		SizeBytes: info.Size(), Mode: info.Mode().String(), Owner: owner, Group: group,
 		ModifiedAt: info.ModTime().UTC(), ResourceVersion: resourceVersion(virtual, info),
-		Editable: editable, Previewable: previewable,
+		Editable: editable, Previewable: previewable, ShareVersion: shareVersion(virtual, info),
 	}
 }
 
@@ -1489,6 +1489,11 @@ func resourceVersion(virtual string, info os.FileInfo) string {
 		"%s\x00%d\x00%d\x00%d\x00%s\x00%s",
 		virtual, info.Size(), info.ModTime().UnixNano(), info.Mode(), owner, group,
 	)))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func shareVersion(virtual string, info os.FileInfo) string {
+	sum := sha256.Sum256([]byte(resourceVersion(virtual, info) + "\x00" + shareFileIdentity(info)))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 

@@ -28,6 +28,7 @@ export const enUSMessages = {
   'route.processes': 'Process manager',
   'route.cluster': 'Cluster',
   'route.clusterShare': 'Cluster status',
+  'route.fileShare': 'Shared file',
   'route.sites': 'Sites',
   'route.environment': 'Sites · Environment',
   'route.apps': 'App marketplace',

@@ -26,6 +26,7 @@ export const zhCNMessages = {
   'route.processes': '进程管理器',
   'route.cluster': '集群',
   'route.clusterShare': '集群状态',
+  'route.fileShare': '文件分享',
   'route.sites': '网站',
   'route.environment': '网站 · 环境管理',
   'route.apps': '应用市场',

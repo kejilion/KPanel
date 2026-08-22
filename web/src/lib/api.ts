@@ -41,6 +41,10 @@ import type {
   FileDownloadTicket,
   FileEntry,
   FileEntryBatchResult,
+  FileShareAdminView,
+  FileShareCreateInput,
+  FileShareList,
+  FileShareLookup,
   FileWriteResult,
   FirewallSnapshot,
   HostsSnapshot,
@@ -59,6 +63,7 @@ import type {
   ProcessQuery,
   ProcessSnapshot,
   PublicClusterShareSnapshot,
+  PublicFileShareView,
   SecurityEntranceSettings,
   SetupRequest,
   Site,
@@ -1678,6 +1683,28 @@ export const api = {
           name,
         },
       }),
+    share: (
+      path: string,
+      resourceVersion: string,
+      signal?: AbortSignal,
+    ): Promise<FileShareLookup> =>
+      request<FileShareLookup>('/files/shares', {
+        query: { path, resourceVersion },
+        signal,
+      }),
+    shares: (signal?: AbortSignal): Promise<FileShareList> =>
+      request<FileShareList>('/files/shares', { signal }),
+    createShare: (body: FileShareCreateInput): Promise<FileShareAdminView> =>
+      request<FileShareAdminView>('/files/shares', {
+        method: 'POST',
+        body,
+      }),
+    deleteShare: (id: string): Promise<void> =>
+      request<void>(`/files/shares/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+    publicShare: (token: string, signal?: AbortSignal): Promise<PublicFileShareView> =>
+      request<PublicFileShareView>(`/public/file-shares/${encodeURIComponent(token)}`, { signal }),
     transferFromPanel: async (
       input: CrossPanelFileTransferInput,
       onEvent: (event: CrossPanelFileTransferEvent) => void,

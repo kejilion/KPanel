@@ -114,6 +114,10 @@ interface FileBindings {
   setClipboard: (mode: 'copy' | 'move', entry?: TestFileEntry) => void
   showContext: (event: MouseEvent, entry: TestFileEntry) => void
   showDirectoryContext: (event: MouseEvent) => void
+  openFileShare: (entry?: TestFileEntry) => void
+  closeFileShare: () => void
+  openShareManager: () => void
+  closeShareManager: () => void
   handleEntryClick: (event: MouseEvent, entry: TestFileEntry) => void
   selectEntry: (event: MouseEvent, path: string) => void
   invertSelection: () => void
@@ -155,6 +159,8 @@ interface FileBindings {
     }
   }
   contextMenu: { value?: { entry?: TestFileEntry; x: number; y: number } }
+  shareEntry: { value?: TestFileEntry }
+  shareManagerOpen: { value: boolean }
   dialogEntries: { value: TestFileEntry[] }
   dialogAction: { value?: 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash' }
   dialogValue: { value: string }
@@ -529,6 +535,22 @@ describe('FilesView large icon layout', () => {
     expect(contextMenu.indexOf("openDialog('chmod', contextMenu.entry)")).toBeGreaterThan(-1)
     expect(contextMenu).toContain('contextBatchDownloadable')
     expect(contextMenu).toContain('@click="downloadSelected(contextMenu.entry)"')
+    expect(contextMenu).toContain('v-if="contextShareEntry"')
+    expect(contextMenu.indexOf('openFileShare(contextMenu.entry)')).toBeGreaterThan(
+      contextMenu.indexOf('downloadSelected(contextMenu.entry)'),
+    )
+    expect(contextMenu.indexOf('openFileShare(contextMenu.entry)')).toBeLessThan(
+      contextMenu.indexOf("openDialog('compress', contextMenu.entry)"),
+    )
+    expect(contextMenu).toContain('role="menuitem"')
+    expect(contextMenu).toContain('@keydown.stop="handleContextMenuKeydown"')
+    expect(source).toContain('aria-haspopup="menu"')
+    expect(source).toContain(':aria-expanded="contextMenu?.entry?.path === entry.path"')
+    expect(source).toContain("menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus")
+    expect(batchToolbar).not.toContain('openFileShare')
+    expect(source).toContain('<FileShareDialog v-if="shareEntry" :entry="shareEntry" @close="closeFileShare" />')
+    expect(source).toContain('<FileShareManagerDialog v-if="shareManagerOpen" @close="closeShareManager" />')
+    expect(source).toContain('<Share2 :size="15" /> 分享管理')
     expect(contextMenu.indexOf('addEntriesToDesktop(contextMenu.entry)')).toBeGreaterThan(
       contextMenu.indexOf("openDialog('chmod', contextMenu.entry)"),
     )
@@ -953,6 +975,39 @@ describe('FilesView directory loading', () => {
 
     expect([...view.selected.value]).toEqual([first.path, second.path])
     expect(view.contextMenu.value?.entry?.path).toBe(second.path)
+  })
+
+  it('opens sharing for exactly one regular file and rejects directories or a multi-selection', () => {
+    const view = setupView()
+    const first = testEntry('first.txt')
+    const second = testEntry('second.txt')
+    const directory = { ...testEntry('folder'), kind: 'directory' as const }
+    view.directory.value = { path: '/', entries: [first, second, directory] }
+
+    view.selected.value = new Set([first.path])
+    view.openFileShare(first)
+    expect(view.shareEntry.value).toEqual(first)
+    expect(view.contextMenu.value).toBeUndefined()
+
+    view.closeFileShare()
+    view.selected.value = new Set([first.path, second.path])
+    view.openFileShare(second)
+    expect(view.shareEntry.value).toBeUndefined()
+
+    view.selected.value = new Set([directory.path])
+    view.openFileShare(directory)
+    expect(view.shareEntry.value).toBeUndefined()
+  })
+
+  it('opens the lightweight share manager independently from file selection', () => {
+    const view = setupView()
+    view.selected.value = new Set(['/missing/old-image.png'])
+
+    view.openShareManager()
+    expect(view.shareManagerOpen.value).toBe(true)
+
+    view.closeShareManager()
+    expect(view.shareManagerOpen.value).toBe(false)
   })
 
   it('keeps the full selection for every batch-capable context action', () => {

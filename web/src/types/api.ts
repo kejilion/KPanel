@@ -1688,6 +1688,45 @@ export interface FileDownloadTicket {
   expiresAt: string
 }
 
+export type FileShareExpiry = '7d' | '30d' | 'never'
+
+export interface FileShareAdminView {
+  id: string
+  createdAt: string
+  expiresAt?: string
+  linksAvailable: boolean
+  sharePath?: string
+  directPath?: string
+}
+
+export interface FileShareLookup {
+  share: FileShareAdminView | null
+}
+
+export interface FileShareListItem extends FileShareAdminView {
+  path: string
+}
+
+export interface FileShareList {
+  shares: FileShareListItem[]
+}
+
+export interface FileShareCreateInput {
+  path: string
+  expectedResourceVersion: string
+  expectedShareID: string
+  expiresIn: FileShareExpiry
+}
+
+export interface PublicFileShareView {
+  name: string
+  mime?: string
+  sizeBytes: number
+  expiresAt?: string
+  directPath: string
+  downloadPath: string
+}
+
 export interface CrossPanelFileTransferInput {
   sourceNodeId: string
   path: string

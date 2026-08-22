@@ -181,4 +181,6 @@ export default [
   ['下载原文件', 'Download original file'],
   ['下载 ZIP', 'Download ZIP'],
   ['只能下载普通文件或文件夹', 'Only regular files and folders can be downloaded.'],
+  ['分享', 'Share'],
+  ['分享管理', 'Share management'],
 ] as const satisfies PhraseCatalog

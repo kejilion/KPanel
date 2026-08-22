@@ -3,7 +3,9 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"image"
@@ -14,6 +16,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -118,6 +121,23 @@ func (s *Server) fileEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entry)
 }
 
+func (s *Server) fileShareEntry(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || r.URL.RawPath != "" || !strictQuery(query, "path") || query.Get("path") == "" {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "文件查询参数无效", "")
+		return
+	}
+	entry, err := s.files.Stat(query.Get("path"))
+	if err != nil {
+		writeFileProblem(w, requestID, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FileShareEntry{
+		FileEntry: entry, ShareVersion: entry.ShareVersion,
+	})
+}
+
 func (s *Server) fileEntries(w http.ResponseWriter, r *http.Request) {
 	requestID := requestIDFrom(w)
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
@@ -174,11 +194,21 @@ func (s *Server) fileTrashList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fileContent(w http.ResponseWriter, r *http.Request, requestID string) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-		s.fileRead(w, r, requestID)
+		s.fileRead(w, r, requestID, false)
 	case http.MethodPut:
 		s.fileWrite(w, r, requestID)
 	default:
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead+", "+http.MethodPut)
+		writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
+	}
+}
+
+func (s *Server) fileShareContent(w http.ResponseWriter, r *http.Request, requestID string) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		s.fileRead(w, r, requestID, true)
+	default:
+		w.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不允许", "")
 	}
 }
@@ -386,13 +416,17 @@ func (s *Server) fileTail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID string) {
+func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID string, shareContent bool) {
+	values, queryErr := url.ParseQuery(r.URL.RawQuery)
+	allowedQuery := []string{"path", "disposition", "mode", "version"}
+	if shareContent {
+		allowedQuery = []string{"path", "disposition"}
+	}
 	if r.URL.RawPath != "" {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_path", "文件路径无效", "")
 		return
 	}
-	values := r.URL.Query()
-	if !strictQuery(values, "path", "disposition", "mode", "version") {
+	if queryErr != nil || !strictQuery(values, allowedQuery...) {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "文件查询参数无效", "")
 		return
 	}
@@ -407,6 +441,13 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 	readMode := values.Get("mode")
 	if readMode != "" && readMode != "text" && readMode != "thumbnail" {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_mode", "文件读取模式无效", "")
+		return
+	}
+	shareVersionHeaders := r.Header.Values(contract.FileShareVersionHeader)
+	if (!shareContent && len(shareVersionHeaders) != 0) ||
+		(shareContent && (len(shareVersionHeaders) != 1 ||
+			!validFileShareVersion(shareVersionHeaders[0]) || readMode != "")) {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_share_version", "文件分享版本无效", "")
 		return
 	}
 	if readMode != "thumbnail" && values.Get("version") != "" {
@@ -438,6 +479,10 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 		return
 	}
 	defer file.Close()
+	if len(shareVersionHeaders) == 1 && shareVersionHeaders[0] != entry.ShareVersion {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
 	if readMode == "thumbnail" {
 		if values.Get("version") != entry.ResourceVersion {
 			writeProblem(w, requestID, http.StatusConflict, "file_conflict", "文件状态已变化", "")
@@ -857,6 +902,14 @@ func strictQuery(values map[string][]string, allowed ...string) bool {
 		}
 	}
 	return true
+}
+
+func validFileShareVersion(value string) bool {
+	if len(value) != 71 || !strings.HasPrefix(value, "sha256:") || value != strings.ToLower(value) {
+		return false
+	}
+	digest, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
+	return err == nil && len(digest) == sha256.Size
 }
 
 func activeContent(name, contentType string) bool {

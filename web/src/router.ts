@@ -36,6 +36,12 @@ export const router = createRouter({
       meta: { titleKey: 'route.login', public: true, guestOnly: true },
     },
     {
+      path: '/share/file/:token',
+      name: 'file-share',
+      component: () => import('@/views/FileShareView.vue'),
+      meta: { titleKey: 'route.fileShare', public: true, skipSessionCheck: true },
+    },
+    {
       path: '/share/:token',
       name: 'cluster-share',
       component: () => import('@/views/ClusterShareView.vue'),

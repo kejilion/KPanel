@@ -18,6 +18,10 @@ export default defineConfig({
         target: process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:8080',
         changeOrigin: process.env.VITE_DEV_API_CHANGE_ORIGIN === 'true',
       },
+      '^/f/': {
+        target: process.env.VITE_DEV_API_TARGET || 'http://127.0.0.1:8080',
+        changeOrigin: process.env.VITE_DEV_API_CHANGE_ORIGIN === 'true',
+      },
     },
   },
   build: {

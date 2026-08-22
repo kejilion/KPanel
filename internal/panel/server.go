@@ -47,29 +47,36 @@ var (
 )
 
 type Server struct {
-	config              Config
-	auth                *auth.Service
-	store               *store.Store
-	agent               agentAPI
-	hostOps             *HostOperationService
-	trustedProxies      []*net.IPNet
-	auditMu             sync.Mutex
-	lastAuthAudit       map[string]time.Time
-	lastGlobalAuthAudit time.Time
-	cluster             *cluster.Service
-	clusterShareMu      sync.Mutex
-	clusterShareCache   clusterShareCacheEntry
-	clusterShareRateMu  sync.Mutex
-	clusterShareRates   map[string]clusterShareRateEntry
-	terminalMu          sync.Mutex
-	terminalSessions    map[string]panelTerminalSession
-	terminalOpening     int
-	terminalOpeningUser map[string]int
-	downloadTicketMu    sync.Mutex
-	downloadTickets     map[[32]byte]fileDownloadTicket
-	ai                  *ai.Service
-	aiError             string
-	desktopWorkspace    *desktopworkspace.Store
+	config                Config
+	auth                  *auth.Service
+	store                 *store.Store
+	agent                 agentAPI
+	hostOps               *HostOperationService
+	trustedProxies        []*net.IPNet
+	auditMu               sync.Mutex
+	lastAuthAudit         map[string]time.Time
+	lastGlobalAuthAudit   time.Time
+	cluster               *cluster.Service
+	clusterShareMu        sync.Mutex
+	clusterShareCache     clusterShareCacheEntry
+	clusterShareRateMu    sync.Mutex
+	clusterShareRates     map[string]clusterShareRateEntry
+	fileShareRateMu       sync.Mutex
+	fileShareRates        map[string]fileShareRateEntry
+	fileShareStreamMu     sync.Mutex
+	fileShareStreams      map[string]map[uint64]context.CancelFunc
+	fileShareStreamNext   uint64
+	fileShareStreamGate   chan struct{}
+	fileShareMetadataGate chan struct{}
+	terminalMu            sync.Mutex
+	terminalSessions      map[string]panelTerminalSession
+	terminalOpening       int
+	terminalOpeningUser   map[string]int
+	downloadTicketMu      sync.Mutex
+	downloadTickets       map[[32]byte]fileDownloadTicket
+	ai                    *ai.Service
+	aiError               string
+	desktopWorkspace      *desktopworkspace.Store
 }
 
 type agentAPI interface {
@@ -123,12 +130,14 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	server := &Server{
 		config: config, auth: authService, store: storage, agent: agent,
-		cluster:             clusterService,
-		terminalSessions:    make(map[string]panelTerminalSession),
-		terminalOpeningUser: make(map[string]int),
-		trustedProxies:      trustedProxies,
-		lastAuthAudit:       make(map[string]time.Time),
-		desktopWorkspace:    desktopWorkspace,
+		cluster:               clusterService,
+		terminalSessions:      make(map[string]panelTerminalSession),
+		terminalOpeningUser:   make(map[string]int),
+		trustedProxies:        trustedProxies,
+		lastAuthAudit:         make(map[string]time.Time),
+		desktopWorkspace:      desktopWorkspace,
+		fileShareStreamGate:   make(chan struct{}, maxPublicFileShareStreams),
+		fileShareMetadataGate: make(chan struct{}, maxFileShareMetadataReads),
 	}
 	server.hostOps = newHostOperationService(server)
 	return server, nil
@@ -151,6 +160,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.handleSecurityEntrance(w, r) {
+		return
+	}
+	if r.URL.Path == strings.TrimSuffix(fileSharePagePrefix, "/") || strings.HasPrefix(r.URL.Path, fileSharePagePrefix) {
+		if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.URL.RawPath != "" ||
+			r.URL.RawQuery != "" || !isFileSharePagePath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+	}
+	if r.URL.Path == "/f" || strings.HasPrefix(r.URL.Path, fileShareRawPrefix) {
+		s.handlePublicFileShareContent(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
@@ -211,6 +231,10 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleClusterShareTokenReset(w, r)
 	case strings.HasPrefix(r.URL.Path, clusterShareAPIPrefix):
 		s.handlePublicClusterShare(w, r)
+	case r.URL.Path == fileSharesAdminPath || strings.HasPrefix(r.URL.Path, fileSharesAdminPath+"/"):
+		s.handleFileShares(w, r)
+	case strings.HasPrefix(r.URL.Path, fileShareAPIPrefix):
+		s.handlePublicFileShare(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/audit":
 		s.handleAudit(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/"):
@@ -679,7 +703,7 @@ func (s *Server) handleSecurityEntrance(w http.ResponseWriter, r *http.Request) 
 }
 
 func securityEntrancePublicPath(requestPath string) bool {
-	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
+	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
 }
 
 func isStaticAssetPath(requestPath string) bool {

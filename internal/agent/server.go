@@ -319,12 +319,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileList)
 	case r.URL.Path == "/v1/files/entry":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileEntry)
+	case r.URL.Path == "/v1/files/share-entry":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.fileShareEntry)
 	case r.URL.Path == "/v1/files/entries":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.fileEntries)
 	case r.URL.Path == "/v1/files/trash":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileTrashList)
 	case r.URL.Path == "/v1/files/content":
 		s.fileContent(w, r, requestID)
+	case r.URL.Path == "/v1/files/share-content":
+		s.fileShareContent(w, r, requestID)
 	case r.URL.Path == "/v1/files/archive":
 		s.fileArchive(w, r)
 	case r.URL.Path == "/v1/files/text":

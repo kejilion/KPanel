@@ -17,7 +17,17 @@ type FileEntry struct {
 	ResourceVersion string    `json:"resourceVersion"`
 	Editable        bool      `json:"editable"`
 	Previewable     bool      `json:"previewable"`
+	// ShareVersion is an Agent-local identity proof used by public file shares.
+	// It is deliberately excluded from ordinary file API responses.
+	ShareVersion string `json:"-"`
 }
+
+type FileShareEntry struct {
+	FileEntry
+	ShareVersion string `json:"shareVersion"`
+}
+
+const FileShareVersionHeader = "X-KPanel-File-Share-Version"
 
 type FileDirectory struct {
 	Path          string      `json:"path"`

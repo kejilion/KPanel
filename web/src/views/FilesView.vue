@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
@@ -30,6 +30,7 @@ import {
   Save,
   Scissors,
   Search,
+  Share2,
   ShieldCheck,
   Trash2,
   Upload,
@@ -38,6 +39,8 @@ import {
 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
+import FileShareDialog from '@/components/files/FileShareDialog.vue'
+import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import {
   desktopCloseGuardCoordinator,
@@ -139,6 +142,9 @@ const dialogFormat = ref<ArchiveFormat>('tar.gz')
 const dialogBusy = ref(false)
 const dialogEntries = ref<FileEntry[]>([])
 const contextMenu = ref<{ entry?: FileEntry; x: number; y: number }>()
+const contextMenuElement = ref<HTMLElement>()
+const shareEntry = ref<FileEntry>()
+const shareManagerOpen = ref(false)
 const fileClipboard = useFileClipboard()
 const clipboard = fileClipboard.clipboard
 const pasteBusy = ref(false)
@@ -187,6 +193,7 @@ let searchTimer: number | undefined
 let mediaLoadTimer: number | undefined
 let unmounted = false
 let openedRouteFile = ''
+let contextMenuOpener: HTMLElement | null = null
 const fileWindowChangeOrigin = Symbol('file-window')
 
 const fileViewStorageKey = 'kpanel:files:view:v1'
@@ -268,6 +275,10 @@ const contextBatchEntries = computed(() =>
   contextMenu.value?.entry ? entriesForBatch(contextMenu.value.entry) : [],
 )
 const contextHasMultipleEntries = computed(() => contextBatchEntries.value.length > 1)
+const contextShareEntry = computed(() => {
+  const targets = contextBatchEntries.value
+  return targets.length === 1 && targets[0]?.kind === 'file' ? targets[0] : undefined
+})
 const selectedEntriesDownloadable = computed(() =>
   selectedEntries.value.length > 0 && selectedEntries.value.every(canAddToDesktop),
 )
@@ -954,14 +965,42 @@ function onEntryDrop(event: DragEvent, entry: FileEntry): void {
   else void transferCrossPanelFileDrop(event, entry.path)
 }
 
+async function settleContextMenu(): Promise<void> {
+  await nextTick()
+  const menu = contextMenuElement.value
+  const current = contextMenu.value
+  if (!menu || !current) return
+  const bounds = menu.getBoundingClientRect()
+  contextMenu.value = {
+    ...current,
+    x: Math.max(8, Math.min(current.x, window.innerWidth - bounds.width - 8)),
+    y: Math.max(8, Math.min(current.y, window.innerHeight - bounds.height - 8)),
+  }
+  await nextTick()
+  menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+}
+
+function contextMenuPoint(event: MouseEvent): { x: number; y: number } {
+  if (event.clientX || event.clientY) return { x: event.clientX, y: event.clientY }
+  const target = event.currentTarget
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return { x: 8, y: 8 }
+  const bounds = target.getBoundingClientRect()
+  return { x: bounds.right, y: bounds.bottom }
+}
+
 function showContext(event: MouseEvent, entry: FileEntry): void {
   event.preventDefault()
   selectForContext(entry)
+  contextMenuOpener = typeof HTMLElement !== 'undefined' && event.currentTarget instanceof HTMLElement
+    ? event.currentTarget
+    : null
+  const point = contextMenuPoint(event)
   contextMenu.value = {
     entry,
-    x: Math.max(8, Math.min(event.clientX, window.innerWidth - 210)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - 430)),
+    x: point.x,
+    y: point.y,
   }
+  void settleContextMenu()
 }
 
 function showDirectoryContext(event: MouseEvent): void {
@@ -974,10 +1013,38 @@ function showDirectoryContext(event: MouseEvent): void {
     return
   }
   event.preventDefault()
+  contextMenuOpener = typeof HTMLElement !== 'undefined' && event.currentTarget instanceof HTMLElement
+    ? event.currentTarget
+    : null
+  const point = contextMenuPoint(event)
   contextMenu.value = {
-    x: Math.max(8, Math.min(event.clientX, window.innerWidth - 230)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - 220)),
+    x: point.x,
+    y: point.y,
   }
+  void settleContextMenu()
+}
+
+function handleContextMenuKeydown(event: KeyboardEvent): void {
+  const menu = contextMenuElement.value
+  if (!menu) return
+  const items = [...menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+  if (!items.length) return
+  const current = document.activeElement instanceof HTMLButtonElement
+    ? items.indexOf(document.activeElement)
+    : -1
+  let target: HTMLButtonElement | undefined
+  if (event.key === 'ArrowDown') target = items[(current + 1 + items.length) % items.length]
+  else if (event.key === 'ArrowUp') target = items[(current - 1 + items.length) % items.length]
+  else if (event.key === 'Home') target = items[0]
+  else if (event.key === 'End') target = items[items.length - 1]
+  else if (event.key === 'Escape') {
+    event.preventDefault()
+    contextMenu.value = undefined
+    contextMenuOpener?.focus({ preventScroll: true })
+    return
+  } else return
+  event.preventDefault()
+  target?.focus({ preventScroll: true })
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
@@ -1005,6 +1072,26 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
     dialogFormat.value = format
     dialogValue.value = withoutArchiveSuffix(source.name)
   }
+}
+
+function openFileShare(entry?: FileEntry): void {
+  const targets = entry ? entriesForBatch(entry) : []
+  if (targets.length !== 1 || targets[0]?.kind !== 'file') return
+  contextMenu.value = undefined
+  shareEntry.value = targets[0]
+}
+
+function closeFileShare(): void {
+  shareEntry.value = undefined
+  void nextTick(() => contextMenuOpener?.focus({ preventScroll: true }))
+}
+
+function openShareManager(): void {
+  shareManagerOpen.value = true
+}
+
+function closeShareManager(): void {
+  shareManagerOpen.value = false
 }
 
 function closeDialog(): void {
@@ -1536,6 +1623,9 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
           <Trash2 :size="15" /> 回收站
         </button>
+        <button class="button button--secondary button--small" type="button" title="分享管理" aria-label="分享管理" @click="openShareManager">
+          <Share2 :size="15" /> 分享管理
+        </button>
         <button class="button button--secondary button--small" type="button" title="新建文件夹" aria-label="新建文件夹" @click="openDialog('mkdir')">
           <Plus :size="15" /> 新建文件夹
         </button>
@@ -1746,6 +1836,9 @@ onBeforeUnmount(() => {
               class="row-menu"
               type="button"
               :aria-label="`${entry.name} 操作`"
+              aria-haspopup="menu"
+              aria-controls="file-context-menu"
+              :aria-expanded="contextMenu?.entry?.path === entry.path"
               @click.stop="showContext($event, entry)"
             >
               <MoreHorizontal :size="18" />
@@ -1794,6 +1887,9 @@ onBeforeUnmount(() => {
             class="row-menu file-grid-card__menu"
             type="button"
             :aria-label="`${entry.name} 操作`"
+            aria-haspopup="menu"
+            aria-controls="file-context-menu"
+            :aria-expanded="contextMenu?.entry?.path === entry.path"
             @click.stop="showContext($event, entry)"
           ><MoreHorizontal :size="18" /></button>
           <div class="file-grid-card__visual">
@@ -1893,70 +1989,85 @@ onBeforeUnmount(() => {
 
     <div
       v-if="contextMenu"
+      id="file-context-menu"
+      ref="contextMenuElement"
       class="file-context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       role="menu"
+      aria-label="文件操作"
+      @keydown.stop="handleContextMenuKeydown"
     >
-      <button v-if="contextMenu.entry" type="button" @click="openEntry(contextMenu.entry)">
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openEntry(contextMenu.entry)">
         <Eye :size="15" />{{ contextMenu.entry.kind === 'directory' ? '打开' : '查看' }}
       </button>
-      <button v-if="!contextMenu.entry" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
+      <button v-if="!contextMenu.entry" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
         <Pin :size="15" />将当前文件夹添加到桌面
       </button>
       <button
         v-if="contextMenu.entry && contextBatchDownloadable"
+        role="menuitem"
         type="button"
         @click="downloadSelected(contextMenu.entry)"
       >
         <Download :size="15" />{{ contextBatchEntries.length === 1 && contextBatchEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}
       </button>
+      <button v-if="contextShareEntry" role="menuitem" type="button" @click="openFileShare(contextMenu.entry)">
+        <Share2 :size="15" />分享
+      </button>
       <button
         v-if="contextMenu.entry && !contextHasMultipleEntries && archiveFormat(contextMenu.entry)"
+        role="menuitem"
         type="button"
         @click="openDialog('extract', contextMenu.entry)"
       >
         <FolderOpen :size="15" />解压到文件夹
       </button>
-      <button v-if="contextMenu.entry" type="button" @click="openDialog('compress', contextMenu.entry)">
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('compress', contextMenu.entry)">
         <Archive :size="15" />压缩
       </button>
-      <hr v-if="contextMenu.entry" />
-      <button v-if="contextMenu.entry && !contextHasMultipleEntries" type="button" @click="openDialog('rename', contextMenu.entry)">
+      <hr v-if="contextMenu.entry" role="separator" />
+      <button v-if="contextMenu.entry && !contextHasMultipleEntries" role="menuitem" type="button" @click="openDialog('rename', contextMenu.entry)">
         <Pencil :size="15" />重命名
       </button>
-      <button v-if="contextMenu.entry" type="button" @click="setClipboard('copy', contextMenu.entry)"><Copy :size="15" />复制</button>
-      <button v-if="contextMenu.entry" type="button" @click="setClipboard('move', contextMenu.entry)"><Scissors :size="15" />剪切</button>
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('copy', contextMenu.entry)"><Copy :size="15" />复制</button>
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('move', contextMenu.entry)"><Scissors :size="15" />剪切</button>
       <button
         v-if="clipboard?.entries.length && contextMenu.entry?.kind === 'directory'"
+        role="menuitem"
         type="button"
         :disabled="pasteBusy"
         @click="pasteClipboard(contextMenu.entry.path)"
       ><ClipboardPaste :size="15" />粘贴到此文件夹</button>
       <button
         v-if="clipboard?.entries.length"
+        role="menuitem"
         type="button"
         :disabled="pasteBusy"
         @click="pasteClipboard()"
       ><ClipboardPaste :size="15" />粘贴到当前目录</button>
-      <button v-if="contextMenu.entry" type="button" @click="openDialog('chmod', contextMenu.entry)">
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('chmod', contextMenu.entry)">
         <ShieldCheck :size="15" />修改权限
       </button>
       <button
         v-if="contextMenu.entry && contextBatchEntries.some(canAddToDesktop)"
+        role="menuitem"
         type="button"
         :disabled="desktopAdding"
         @click="addEntriesToDesktop(contextMenu.entry)"
       >
         <Pin :size="15" />{{ contextHasMultipleEntries ? `添加 ${contextBatchEntries.filter(canAddToDesktop).length} 项到桌面` : '添加到桌面' }}
       </button>
-      <button v-if="!contextMenu.entry" type="button" @click="openDialog('mkdir')">
+      <button v-if="!contextMenu.entry" role="menuitem" type="button" @click="openDialog('mkdir')">
         <Plus :size="15" />新建文件夹
       </button>
-      <hr v-if="contextMenu.entry" />
-      <button v-if="contextMenu.entry" class="danger-link" type="button" @click="openDialog('trash', contextMenu.entry)">
+      <hr v-if="contextMenu.entry" role="separator" />
+      <button v-if="contextMenu.entry" class="danger-link" role="menuitem" type="button" @click="openDialog('trash', contextMenu.entry)">
         <Trash2 :size="15" />移入回收站
       </button>
     </div>
+
+    <FileShareDialog v-if="shareEntry" :entry="shareEntry" @close="closeFileShare" />
+    <FileShareManagerDialog v-if="shareManagerOpen" @close="closeShareManager" />
 
     <ModalDialog
       :open="Boolean(dialogAction)"
@@ -3053,6 +3164,9 @@ onBeforeUnmount(() => {
   z-index: 90;
   display: grid;
   width: 196px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 11px;
@@ -3071,10 +3185,18 @@ onBeforeUnmount(() => {
   text-align: left;
   background: transparent;
   cursor: pointer;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
-.file-context-menu button:hover {
+.file-context-menu button:hover,
+.file-context-menu button:focus-visible {
   background: var(--surface-subtle);
+}
+
+.file-context-menu button:focus-visible {
+  outline: 2px solid var(--brand-muted);
+  outline-offset: -2px;
 }
 
 .file-context-menu hr {

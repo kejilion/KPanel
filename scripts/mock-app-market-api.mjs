@@ -23,6 +23,35 @@ const adapted = new Set(['speedtest', 'it-tools', 'dosgame'])
 const appJobs = new Map()
 const diagnosticJobs = new Map()
 let domainSiteDeleted = false
+const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
+const mockFileVersion = `sha256:${'a'.repeat(64)}`
+const mockFiles = [
+  {
+    name: 'kpanel-desktop.webp', path: '/kpanel-desktop.webp', kind: 'file', mime: 'image/webp',
+    sizeBytes: mockSharedImage.length, mode: '-rw-r--r--', owner: 'root', group: 'root',
+    modifiedAt: '2026-08-20T08:30:00Z', resourceVersion: mockFileVersion,
+    editable: false, previewable: true,
+  },
+  {
+    name: 'release-notes.md', path: '/release-notes.md', kind: 'file', mime: 'text/markdown',
+    sizeBytes: 2846, mode: '-rw-r--r--', owner: 'deploy', group: 'deploy',
+    modifiedAt: '2026-08-21T12:10:00Z', resourceVersion: `sha256:${'b'.repeat(64)}`,
+    editable: true, previewable: true,
+  },
+  {
+    name: 'backups', path: '/backups', kind: 'directory', sizeBytes: 4096,
+    mode: 'drwxr-xr-x', owner: 'root', group: 'root', modifiedAt: '2026-08-19T03:20:00Z',
+    resourceVersion: `sha256:${'c'.repeat(64)}`, editable: false, previewable: false,
+  },
+]
+let mockFileShareCounter = 0
+let mockFileShares = [
+  {
+    id: 'o'.repeat(22), path: '/archive/retired-release.iso', createdAt: '2026-08-01T09:00:00Z',
+    linksAvailable: false,
+  },
+]
+const mockShareTokens = new Map()
 const diagnosticCatalog = {
   categories: [
     { id: 'core', name: 'KPanel 核心体检' },
@@ -600,6 +629,29 @@ function send(response, status, body) {
   response.end(data)
 }
 
+function sendBinary(response, status, body, contentType, disposition = 'inline') {
+  response.writeHead(status, {
+    'Content-Type': contentType,
+    'Content-Length': body.length,
+    'Content-Disposition': disposition,
+    'Cache-Control': 'public, max-age=0, must-revalidate',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.end(body)
+}
+
+function fileShareAdminView(record, token = '') {
+  return {
+    id: record.id,
+    ...(record.path ? { path: record.path } : {}),
+    createdAt: record.createdAt,
+    ...(record.expiresAt ? { expiresAt: record.expiresAt } : {}),
+    linksAvailable: Boolean(token),
+    ...(token ? { sharePath: `/share/file/${token}`, directPath: `/f/${token}` } : {}),
+  }
+}
+
 async function readJSON(request) {
   const chunks = []
   let size = 0
@@ -646,6 +698,120 @@ createServer(async (request, response) => {
       readOnly: false,
       checkedAt: new Date().toISOString(),
     })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/files') {
+    const requestedPath = url.searchParams.get('path') || '/'
+    const search = (url.searchParams.get('search') || '').trim().toLowerCase()
+    const entries = requestedPath === '/'
+      ? mockFiles.filter((entry) => !search || entry.name.toLowerCase().includes(search))
+      : []
+    send(response, 200, {
+      path: requestedPath, entries, offset: 0, total: entries.length, totalKnown: true,
+      truncated: false, scanTruncated: false, readAt: new Date().toISOString(),
+    })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/files/entry') {
+    const entry = mockFiles.find((item) => item.path === url.searchParams.get('path'))
+    send(response, entry ? 200 : 404, entry || { title: '文件不存在', status: 404, code: 'not_found' })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/files/content') {
+    if (url.searchParams.get('path') === '/kpanel-desktop.webp') {
+      sendBinary(response, 200, mockSharedImage, 'image/webp', 'inline; filename="kpanel-desktop.webp"')
+    } else {
+      send(response, 404, { title: '文件不存在', status: 404, code: 'not_found' })
+    }
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/files/shares') {
+    const filePath = url.searchParams.get('path')
+    if (filePath) {
+      const record = mockFileShares.find((item) => item.path === filePath)
+      send(response, 200, { share: record ? fileShareAdminView(record) : null })
+    } else {
+      send(response, 200, { shares: mockFileShares.map((record) => fileShareAdminView(record)) })
+    }
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/files/shares') {
+    const input = await readJSON(request)
+    const entry = mockFiles.find((item) => item.path === input.path && item.kind === 'file')
+    if (!entry || entry.resourceVersion !== input.expectedResourceVersion) {
+      send(response, 409, { title: '文件已发生变化，请刷新后重试', status: 409, code: 'file_share_changed' })
+      return
+    }
+    mockFileShareCounter += 1
+    const id = mockFileShareCounter.toString(36).padStart(22, 's').slice(-22)
+    const token = mockFileShareCounter.toString(36).padStart(43, 'v').slice(-43)
+    const createdAt = new Date().toISOString()
+    const expiresAt = input.expiresIn === 'never'
+      ? undefined
+      : new Date(Date.now() + (input.expiresIn === '30d' ? 30 : 7) * 86_400_000).toISOString()
+    for (const [existingToken, record] of mockShareTokens) {
+      if (record.path === input.path) mockShareTokens.delete(existingToken)
+    }
+    const record = { id, path: input.path, createdAt, expiresAt, linksAvailable: false }
+    mockFileShares = [...mockFileShares.filter((item) => item.path !== input.path), record]
+    mockShareTokens.set(token, record)
+    send(response, 201, fileShareAdminView(record, token))
+    return
+  }
+  const fileShareDeleteMatch = url.pathname.match(/^\/api\/v1\/files\/shares\/([A-Za-z0-9_-]{22})$/)
+  if (request.method === 'DELETE' && fileShareDeleteMatch) {
+    const index = mockFileShares.findIndex((item) => item.id === fileShareDeleteMatch[1])
+    if (index < 0) {
+      send(response, 404, { title: '分享不存在', status: 404, code: 'not_found' })
+      return
+    }
+    const [deleted] = mockFileShares.splice(index, 1)
+    for (const [token, record] of mockShareTokens) {
+      if (record.id === deleted.id) mockShareTokens.delete(token)
+    }
+    response.writeHead(204, { 'Cache-Control': 'no-store' })
+    response.end()
+    return
+  }
+  const publicFileShareMatch = url.pathname.match(/^\/api\/v1\/public\/file-shares\/([A-Za-z0-9_-]{43})$/)
+  if (request.method === 'GET' && publicFileShareMatch) {
+    const record = mockShareTokens.get(publicFileShareMatch[1])
+    if (!record) {
+      send(response, 404, { title: 'Not found', status: 404, code: 'not_found' })
+      return
+    }
+    send(response, 200, {
+      name: 'kpanel-desktop.webp', mime: 'image/webp', sizeBytes: mockSharedImage.length,
+      ...(record.expiresAt ? { expiresAt: record.expiresAt } : {}),
+      directPath: `/f/${publicFileShareMatch[1]}`,
+      downloadPath: `/f/${publicFileShareMatch[1]}?download=1`,
+    })
+    return
+  }
+  const publicFileContentMatch = url.pathname.match(/^\/f\/([A-Za-z0-9_-]{43})$/)
+  if ((request.method === 'GET' || request.method === 'HEAD') && publicFileContentMatch) {
+    if (!mockShareTokens.has(publicFileContentMatch[1])) {
+      send(response, 404, { title: 'Not found', status: 404, code: 'not_found' })
+      return
+    }
+    if (request.method === 'HEAD') {
+      response.writeHead(200, {
+        'Content-Type': 'image/webp', 'Content-Length': mockSharedImage.length,
+        'Content-Disposition': url.searchParams.get('download') === '1'
+          ? 'attachment; filename="kpanel-desktop.webp"'
+          : 'inline; filename="kpanel-desktop.webp"',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      })
+      response.end()
+      return
+    }
+    sendBinary(
+      response, 200, mockSharedImage, 'image/webp',
+      url.searchParams.get('download') === '1'
+        ? 'attachment; filename="kpanel-desktop.webp"'
+        : 'inline; filename="kpanel-desktop.webp"',
+    )
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/apps') {

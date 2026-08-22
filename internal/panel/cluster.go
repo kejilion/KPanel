@@ -53,6 +53,7 @@ func (s *Server) StartBackground(ctx context.Context) {
 
 func (s *Server) Close() error {
 	s.closeTerminalSessions()
+	s.closeFileShareStreams()
 	var aiErr error
 	if s.ai != nil {
 		aiErr = s.ai.Close()

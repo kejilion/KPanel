@@ -27,6 +27,7 @@ export const zhTWMessages = {
   "route.processes": "程序管理器",
   "route.cluster": "叢集",
   "route.clusterShare": "叢集狀態",
+  "route.fileShare": "檔案分享",
   "route.sites": "網站",
   "route.environment": "網站 · 環境管理",
   "route.apps": "應用市場",
