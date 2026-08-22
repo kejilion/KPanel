@@ -525,10 +525,84 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	shareMatched := fileRequestWithHeaders(
 		server, http.MethodGet,
 		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
-		map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+		map[string]string{
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
 	)
 	if shareMatched.Code != http.StatusOK || shareMatched.Body.String() != "new" {
 		t.Fatalf("matching share version status=%d body=%q", shareMatched.Code, shareMatched.Body.String())
+	}
+	shareHEAD := fileRequestWithHeaders(
+		server, http.MethodHead,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	)
+	if shareHEAD.Code != http.StatusOK || shareHEAD.Body.Len() != 0 || shareHEAD.Header().Get("Content-Length") != "3" {
+		t.Fatalf("strong share HEAD status=%d length=%q body=%q", shareHEAD.Code, shareHEAD.Header().Get("Content-Length"), shareHEAD.Body.String())
+	}
+	shareRange := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{
+			"If-Match": `"` + shareEntry.ResourceVersion + `"`, "Range": "bytes=1-2",
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	)
+	if shareRange.Code != http.StatusPartialContent || shareRange.Body.String() != "ew" {
+		t.Fatalf("strong share Range status=%d body=%q", shareRange.Code, shareRange.Body.String())
+	}
+	shareNotModified := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{
+			"If-Match": `"` + shareEntry.ResourceVersion + `"`, "If-None-Match": `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	)
+	if shareNotModified.Code != http.StatusNotModified || shareNotModified.Body.Len() != 0 {
+		t.Fatalf("strong share 304 status=%d body=%q", shareNotModified.Code, shareNotModified.Body.String())
+	}
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("bad"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(root, "hello.txt"), current.ModifiedAt, current.ModifiedAt); err != nil {
+		t.Fatal(err)
+	}
+	rewrittenShare := fileRequestWithHeaders(
+		server, http.MethodGet,
+		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	)
+	if rewrittenShare.Code != http.StatusPreconditionFailed || rewrittenShare.Body.Len() != 0 {
+		t.Fatalf("same-metadata rewritten share status=%d body=%q", rewrittenShare.Code, rewrittenShare.Body.String())
+	}
+	for name, headers := range map[string]map[string]string{
+		"HEAD": {
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+		"Range": {
+			"If-Match": `"` + shareEntry.ResourceVersion + `"`, "Range": "bytes=0-0",
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	} {
+		method := http.MethodGet
+		if name == "HEAD" {
+			method = http.MethodHead
+		}
+		response := fileRequestWithHeaders(
+			server, method, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "", headers,
+		)
+		if response.Code != http.StatusPreconditionFailed || response.Body.Len() != 0 {
+			t.Fatalf("rewritten strong share %s status=%d body=%q", name, response.Code, response.Body.String())
+		}
 	}
 	for _, target := range []string{
 		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline&extra=%ZZ",
@@ -538,7 +612,10 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	} {
 		invalidShareContent := fileRequestWithHeaders(
 			server, http.MethodGet, target, "",
-			map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+			map[string]string{
+				"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+				contract.FileShareVersionHeader: shareEntry.ShareVersion,
+			},
 		)
 		if invalidShareContent.Code != http.StatusBadRequest {
 			t.Fatalf("invalid share content %q status=%d body=%q", target, invalidShareContent.Code, invalidShareContent.Body.String())
@@ -547,7 +624,10 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	shareStale := fileRequestWithHeaders(
 		server, http.MethodGet,
 		"/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
-		map[string]string{contract.FileShareVersionHeader: "sha256:" + strings.Repeat("0", 64)},
+		map[string]string{
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: "sha256:" + strings.Repeat("0", 64),
+		},
 	)
 	if shareStale.Code != http.StatusPreconditionFailed || shareStale.Body.Len() != 0 {
 		t.Fatalf("stale share version status=%d body=%q", shareStale.Code, shareStale.Body.String())
@@ -561,7 +641,10 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	} {
 		invalidShareHeader := fileRequestWithHeaders(
 			server, http.MethodGet, fixture.target, "",
-			map[string]string{contract.FileShareVersionHeader: fixture.value},
+			map[string]string{
+				"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+				contract.FileShareVersionHeader: fixture.value,
+			},
 		)
 		if invalidShareHeader.Code != http.StatusBadRequest {
 			t.Fatalf("%s share header status=%d body=%q", name, invalidShareHeader.Code, invalidShareHeader.Body.String())
@@ -571,6 +654,7 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 		http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", nil,
 	)
 	multipleHeaderRequest.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	multipleHeaderRequest.Header.Set("If-Match", `"`+shareEntry.ResourceVersion+`"`)
 	multipleHeaderRequest.Header.Add(contract.FileShareVersionHeader, shareEntry.ShareVersion)
 	multipleHeaderRequest.Header.Add(contract.FileShareVersionHeader, shareEntry.ShareVersion)
 	multipleHeaderResponse := httptest.NewRecorder()
@@ -578,11 +662,40 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	if multipleHeaderResponse.Code != http.StatusBadRequest {
 		t.Fatalf("multiple share headers status=%d body=%q", multipleHeaderResponse.Code, multipleHeaderResponse.Body.String())
 	}
-	missingShareHeader := fileRequest(
+	missingShareHeader := fileRequestWithHeaders(
 		server, http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
+		map[string]string{"If-Match": `"` + shareEntry.ResourceVersion + `"`},
 	)
 	if missingShareHeader.Code != http.StatusBadRequest {
 		t.Fatalf("share content without strong version status=%d body=%q", missingShareHeader.Code, missingShareHeader.Body.String())
+	}
+	for name, headers := range map[string]map[string]string{
+		"missing If-Match": {
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+		"malformed If-Match": {
+			"If-Match":                      shareEntry.ResourceVersion,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
+	} {
+		response := fileRequestWithHeaders(
+			server, http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "", headers,
+		)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s status=%d body=%q", name, response.Code, response.Body.String())
+		}
+	}
+	multipleIfMatchRequest := httptest.NewRequest(
+		http.MethodGet, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", nil,
+	)
+	multipleIfMatchRequest.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	multipleIfMatchRequest.Header.Add("If-Match", `"`+shareEntry.ResourceVersion+`"`)
+	multipleIfMatchRequest.Header.Add("If-Match", `"`+shareEntry.ResourceVersion+`"`)
+	multipleIfMatchRequest.Header.Set(contract.FileShareVersionHeader, shareEntry.ShareVersion)
+	multipleIfMatchResponse := httptest.NewRecorder()
+	server.ServeHTTP(multipleIfMatchResponse, multipleIfMatchRequest)
+	if multipleIfMatchResponse.Code != http.StatusBadRequest {
+		t.Fatalf("multiple If-Match headers status=%d body=%q", multipleIfMatchResponse.Code, multipleIfMatchResponse.Body.String())
 	}
 	ordinaryWithShareHeader := fileRequestWithHeaders(
 		server, http.MethodGet, "/v1/files/content?path=%2Fhello.txt&disposition=inline", "",
@@ -593,7 +706,10 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	}
 	wrongShareContentMethod := fileRequestWithHeaders(
 		server, http.MethodPost, "/v1/files/share-content?path=%2Fhello.txt&disposition=inline", "",
-		map[string]string{contract.FileShareVersionHeader: shareEntry.ShareVersion},
+		map[string]string{
+			"If-Match":                      `"` + shareEntry.ResourceVersion + `"`,
+			contract.FileShareVersionHeader: shareEntry.ShareVersion,
+		},
 	)
 	if wrongShareContentMethod.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("share content wrong method status=%d", wrongShareContentMethod.Code)

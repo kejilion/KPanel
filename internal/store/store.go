@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
@@ -98,14 +100,15 @@ type ClusterShare struct {
 // FileShare is a bounded, revocable authorization for one exact filesystem
 // resource. Path remains an Agent-owned fact. ResourceVersion preserves normal
 // filemanager concurrency semantics while ShareVersion adds the Agent's strong
-// Linux object identity for anonymous access. Only the bearer token digest is
-// persisted; the token itself must never enter state or audit records.
+// content and Linux object identity for anonymous access. Only the bearer token
+// digest is persisted; the token itself must never enter state or audit records.
 type FileShare struct {
 	ID              string     `json:"id"`
 	TokenHash       string     `json:"tokenHash"`
 	Path            string     `json:"path"`
 	ResourceVersion string     `json:"resourceVersion"`
 	ShareVersion    string     `json:"shareVersion"`
+	SizeBytes       int64      `json:"sizeBytes"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
 }
@@ -917,6 +920,9 @@ func validateFileShare(value FileShare) error {
 	}
 	shareDigest, err := hex.DecodeString(strings.TrimPrefix(value.ShareVersion, "sha256:"))
 	if err != nil || len(shareDigest) != sha256.Size || value.ShareVersion != strings.ToLower(value.ShareVersion) {
+		return ErrInvalidRecord
+	}
+	if value.SizeBytes < 0 || value.SizeBytes > contract.MaxFileShareBytes {
 		return ErrInvalidRecord
 	}
 	if value.CreatedAt.IsZero() || (value.ExpiresAt != nil && !value.ExpiresAt.After(value.CreatedAt)) {

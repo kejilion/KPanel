@@ -3,6 +3,7 @@
 package filemanager
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +13,7 @@ func TestShareVersionDetectsSameMetadataRewriteAndReplacement(t *testing.T) {
 	manager, root := newTestManager(t)
 	filePath := filepath.Join(root, "shared.txt")
 	mustWrite(t, filePath, "before")
-	before, err := manager.Stat("/shared.txt")
+	before, err := manager.ShareEntry(context.Background(), "/shared.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +24,7 @@ func TestShareVersionDetectsSameMetadataRewriteAndReplacement(t *testing.T) {
 	if err := os.Chtimes(filePath, before.ModifiedAt, before.ModifiedAt); err != nil {
 		t.Fatal(err)
 	}
-	afterRewrite, err := manager.Stat("/shared.txt")
+	afterRewrite, err := manager.ShareEntry(context.Background(), "/shared.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +36,7 @@ func TestShareVersionDetectsSameMetadataRewriteAndReplacement(t *testing.T) {
 	}
 
 	replacementPath := filepath.Join(root, "replacement.txt")
-	if err := os.WriteFile(replacementPath, []byte("second"), 0o644); err != nil {
+	if err := os.WriteFile(replacementPath, []byte("before"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(replacementPath, before.ModifiedAt, before.ModifiedAt); err != nil {
@@ -44,7 +45,7 @@ func TestShareVersionDetectsSameMetadataRewriteAndReplacement(t *testing.T) {
 	if err := os.Rename(replacementPath, filePath); err != nil {
 		t.Fatal(err)
 	}
-	afterReplacement, err := manager.Stat("/shared.txt")
+	afterReplacement, err := manager.ShareEntry(context.Background(), "/shared.txt")
 	if err != nil {
 		t.Fatal(err)
 	}

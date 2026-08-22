@@ -4,6 +4,10 @@ import "time"
 
 const MaxFileEntryBatch = 64
 
+// MaxFileShareBytes bounds the O(file size) content proof required before an
+// anonymous file response. It matches the existing managed upload ceiling.
+const MaxFileShareBytes int64 = 512 << 20
+
 type FileEntry struct {
 	Name            string    `json:"name"`
 	Path            string    `json:"path"`
@@ -17,7 +21,7 @@ type FileEntry struct {
 	ResourceVersion string    `json:"resourceVersion"`
 	Editable        bool      `json:"editable"`
 	Previewable     bool      `json:"previewable"`
-	// ShareVersion is an Agent-local identity proof used by public file shares.
+	// ShareVersion is an Agent-local, content-bound proof used by public file shares.
 	// It is deliberately excluded from ordinary file API responses.
 	ShareVersion string `json:"-"`
 }

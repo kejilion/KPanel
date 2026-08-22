@@ -103,6 +103,8 @@ afterEach(() => {
 })
 
 describe('FileShareDialog hash-only sharing', () => {
+  const maxFileShareBytes = 512 * 1024 * 1024
+
   it('defaults to seven days and shows newly created links exactly once', async () => {
     const created = activeShare(true)
     mocks.createShare.mockResolvedValueOnce(created)
@@ -228,6 +230,141 @@ describe('FileShareDialog hash-only sharing', () => {
 
     expect(document.body.textContent).toContain('请在分享管理中停止不再使用的分享后重试')
     expect(document.body.textContent).not.toContain('分享状态或文件已发生变化')
+  })
+
+  it('rechecks share state after an ambiguous create failure', async () => {
+    const recovered = activeShare(false)
+    mocks.share
+      .mockResolvedValueOnce({ share: null })
+      .mockResolvedValueOnce({ share: recovered })
+    mocks.createShare.mockRejectedValueOnce(new Error('response interrupted'))
+    mountDialog()
+    await flushPromises()
+
+    button('创建分享').click()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('暂时无法生成分享链接，请稍后重试。')
+    expect(button('重试').disabled).toBe(false)
+
+    button('重试').click()
+    await flushPromises()
+
+    expect(mocks.share).toHaveBeenCalledTimes(2)
+    expect(button('重新生成链接').disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('暂时无法生成分享链接')
+  })
+
+  it('rechecks the CAS id after an ambiguous share rotation', async () => {
+    const existing = activeShare(false)
+    const recovered = { ...activeShare(false), id: 'c'.repeat(22) }
+    const rotated = { ...activeShare(true), id: 'd'.repeat(22) }
+    mocks.share
+      .mockResolvedValueOnce({ share: existing })
+      .mockResolvedValueOnce({ share: recovered })
+    mocks.createShare
+      .mockRejectedValueOnce(new Error('response interrupted'))
+      .mockResolvedValueOnce(rotated)
+    mountDialog()
+    await flushPromises()
+
+    button('重新生成链接').click()
+    await flushPromises()
+
+    expect(button('重试').disabled).toBe(false)
+    expect(button('重新生成链接').disabled).toBe(true)
+
+    button('重试').click()
+    await flushPromises()
+    expect(button('重新生成链接').disabled).toBe(false)
+
+    button('重新生成链接').click()
+    await flushPromises()
+
+    expect(mocks.createShare).toHaveBeenLastCalledWith(expect.objectContaining({
+      expectedShareID: recovered.id,
+    }))
+  })
+
+  it('explains and blocks an oversized file while still loading its share state', async () => {
+    mountDialog(entry({ sizeBytes: maxFileShareBytes + 1 }))
+    await flushPromises()
+
+    expect(mocks.share).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('文件分享仅支持不超过 512 MiB 的文件。')
+    expect(document.body.textContent).toContain('请压缩或拆分文件后重试。')
+    expect(document.querySelector('.file-share-dialog__expiry')).toBeNull()
+    expect(button('创建分享').disabled).toBe(true)
+    button('创建分享').click()
+    expect(mocks.createShare).not.toHaveBeenCalled()
+  })
+
+  it('allows a file exactly at the sharing size limit', async () => {
+    mountDialog(entry({ sizeBytes: maxFileShareBytes }))
+    await flushPromises()
+
+    expect(button('创建分享').disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('文件分享仅支持不超过 512 MiB 的文件。')
+  })
+
+  it('handles an authoritative too-large response without offering a state retry', async () => {
+    mocks.createShare.mockRejectedValueOnce(new ApiError(
+      'too large',
+      413,
+      'file_share_too_large',
+    ))
+    mountDialog()
+    await flushPromises()
+
+    button('创建分享').click()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('文件分享仅支持不超过 512 MiB 的文件。')
+    expect(document.body.textContent).not.toContain('暂时无法生成分享链接')
+    expect([...document.querySelectorAll('button')].some((candidate) => candidate.textContent?.includes('重试')))
+      .toBe(false)
+    expect(button('创建分享').disabled).toBe(true)
+    button('创建分享').click()
+    expect(mocks.createShare).toHaveBeenCalledOnce()
+  })
+
+  it('keeps stop sharing available for an oversized historical share', async () => {
+    mocks.share.mockResolvedValueOnce({ share: activeShare(false) })
+    mountDialog(entry({ sizeBytes: maxFileShareBytes + 1 }))
+    await flushPromises()
+
+    expect(button('停止分享').disabled).toBe(false)
+    expect(button('重新生成链接').disabled).toBe(true)
+    expect(document.body.textContent).toContain('当前链接已无法访问')
+    expect(document.body.textContent).not.toContain('文件正在分享')
+  })
+
+  it('allows an oversized share-state lookup to be retried before stopping a historical share', async () => {
+    mocks.share
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce({ share: activeShare(false) })
+    mountDialog(entry({ sizeBytes: maxFileShareBytes + 1 }))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('暂时无法读取分享状态，请稍后重试。')
+    expect(button('重试').disabled).toBe(false)
+
+    button('重试').click()
+    await flushPromises()
+
+    expect(mocks.share).toHaveBeenCalledTimes(2)
+    expect(button('停止分享').disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('暂时无法读取分享状态')
+  })
+
+  it('fully localizes the oversized-file state', async () => {
+    registerPhraseCatalog(englishSharedCatalog)
+    mountDialog(entry({ sizeBytes: maxFileShareBytes + 1 }))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('File sharing supports files up to 512 MiB.')
+    expect(document.body.textContent).toContain('Compress or split the file and try again.')
+    expect(document.body.textContent).not.toContain('文件分享仅支持')
   })
 
   it('localizes content rendered through the teleported modal', async () => {

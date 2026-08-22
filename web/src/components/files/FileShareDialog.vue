@@ -31,16 +31,23 @@ const mutation = ref<'create' | 'delete'>()
 const share = ref<FileShareAdminView | null>(null)
 const expiresIn = ref<FileShareExpiry>('7d')
 const errorMessage = ref('')
+const errorAction = ref<'load' | 'create' | 'delete' | 'copy'>()
 const statusMessage = ref('')
 const copiedLink = ref<'page' | 'direct'>()
+const serverRejectedTooLarge = ref(false)
 let controller: AbortController | undefined
 let loadSequence = 0
+
+const MAX_FILE_SHARE_BYTES = 512 * 1024 * 1024
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
   return translatePhrase(value)
 }
 
+const fileTooLarge = computed(() => (
+  props.entry.sizeBytes > MAX_FILE_SHARE_BYTES || serverRejectedTooLarge.value
+))
 const linksAvailable = computed(() => Boolean(
   share.value?.linksAvailable && share.value.sharePath && share.value.directPath,
 ))
@@ -71,6 +78,9 @@ function inferredExpiry(expiresAt?: string): FileShareExpiry {
 }
 
 function friendlyError(reason: unknown, action: 'load' | 'create' | 'delete'): string {
+  if (reason instanceof ApiError && (reason.code === 'file_share_too_large' || reason.status === 413)) {
+    return '文件分享仅支持不超过 512 MiB 的文件。'
+  }
   if (reason instanceof ApiError && reason.code === 'file_share_limit_reached') {
     return '文件分享数量已达上限，请在分享管理中停止不再使用的分享后重试。'
   }
@@ -91,6 +101,7 @@ async function loadShare(): Promise<void> {
   const sequence = ++loadSequence
   loading.value = true
   errorMessage.value = ''
+  errorAction.value = undefined
   statusMessage.value = ''
   copiedLink.value = undefined
   try {
@@ -106,6 +117,7 @@ async function loadShare(): Promise<void> {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     if (sequence !== loadSequence) return
     share.value = null
+    errorAction.value = 'load'
     errorMessage.value = friendlyError(reason, 'load')
   } finally {
     if (sequence === loadSequence) loading.value = false
@@ -113,12 +125,15 @@ async function loadShare(): Promise<void> {
 }
 
 async function createShare(): Promise<void> {
+  if (fileTooLarge.value) return
+
   if (share.value && typeof window !== 'undefined' && !window.confirm(phrase(
     '重新生成会立即停用旧链接。确认继续吗？',
   ))) return
 
   mutation.value = 'create'
   errorMessage.value = ''
+  errorAction.value = undefined
   statusMessage.value = ''
   copiedLink.value = undefined
   try {
@@ -129,6 +144,10 @@ async function createShare(): Promise<void> {
       expiresIn: expiresIn.value,
     })
   } catch (reason) {
+    if (reason instanceof ApiError && (reason.code === 'file_share_too_large' || reason.status === 413)) {
+      serverRejectedTooLarge.value = true
+    }
+    errorAction.value = 'create'
     errorMessage.value = friendlyError(reason, 'create')
   } finally {
     mutation.value = undefined
@@ -144,6 +163,7 @@ async function deleteShare(): Promise<void> {
 
   mutation.value = 'delete'
   errorMessage.value = ''
+  errorAction.value = undefined
   statusMessage.value = ''
   try {
     await api.files.deleteShare(current.id)
@@ -152,6 +172,7 @@ async function deleteShare(): Promise<void> {
     copiedLink.value = undefined
     statusMessage.value = '分享已停止。'
   } catch (reason) {
+    errorAction.value = 'delete'
     errorMessage.value = friendlyError(reason, 'delete')
   } finally {
     mutation.value = undefined
@@ -161,6 +182,7 @@ async function deleteShare(): Promise<void> {
 async function copyLink(kind: 'page' | 'direct', value: string): Promise<void> {
   if (!value) return
   errorMessage.value = ''
+  errorAction.value = undefined
   try {
     if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable')
     await navigator.clipboard.writeText(value)
@@ -180,6 +202,7 @@ async function copyLink(kind: 'page' | 'direct', value: string): Promise<void> {
         // Keep the visible link selected for manual copying.
       }
     }
+    errorAction.value = 'copy'
     errorMessage.value = '浏览器未允许自动复制，链接已选中，请手动复制。'
   }
 }
@@ -189,8 +212,11 @@ function requestClose(): void {
 }
 
 watch(
-  () => [props.entry.path, props.entry.resourceVersion] as const,
-  () => void loadShare(),
+  () => [props.entry.path, props.entry.resourceVersion, props.entry.sizeBytes] as const,
+  () => {
+    serverRejectedTooLarge.value = false
+    void loadShare()
+  },
   { immediate: true },
 )
 
@@ -217,7 +243,7 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else>
-        <section v-if="share && !linksAvailable" class="file-share-dialog__active" role="status">
+        <section v-if="share && !linksAvailable && !fileTooLarge" class="file-share-dialog__active" role="status">
           <CheckCircle2 :size="19" />
           <span>
             <strong>{{ phrase('文件正在分享') }}</strong>
@@ -225,7 +251,19 @@ onBeforeUnmount(() => {
           </span>
         </section>
 
-        <div v-if="share && !linksAvailable" class="file-share-dialog__notice">
+        <div
+          v-if="fileTooLarge"
+          class="file-share-dialog__notice"
+          :role="serverRejectedTooLarge ? 'alert' : 'status'"
+        >
+          <TriangleAlert :size="18" />
+          <p>
+            <strong>{{ phrase('文件分享仅支持不超过 512 MiB 的文件。') }}</strong>
+            {{ phrase(share ? '当前链接已无法访问；可停止分享，或压缩文件后重新生成。' : '请压缩或拆分文件后重试。') }}
+          </p>
+        </div>
+
+        <div v-else-if="share && !linksAvailable" class="file-share-dialog__notice">
           <Link2 :size="18" />
           <p>
             <strong>{{ phrase('出于安全考虑，旧链接不会保存在 KPanel 中。') }}</strong>
@@ -241,7 +279,11 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <fieldset v-if="!share || !linksAvailable" class="file-share-dialog__expiry" :disabled="Boolean(mutation)">
+        <fieldset
+          v-if="(!share || !linksAvailable) && !fileTooLarge"
+          class="file-share-dialog__expiry"
+          :disabled="Boolean(mutation)"
+        >
           <legend>{{ phrase(share ? '新链接有效期' : '有效期') }}</legend>
           <label :class="{ 'is-selected': expiresIn === '7d' }">
             <input v-model="expiresIn" type="radio" value="7d" />
@@ -305,11 +347,15 @@ onBeforeUnmount(() => {
         <p v-if="statusMessage" class="file-share-dialog__message" role="status" aria-live="polite">
           {{ phrase(statusMessage) }}
         </p>
-        <p v-if="errorMessage" class="file-share-dialog__error" role="alert">
+        <p
+          v-if="errorMessage && !(serverRejectedTooLarge && errorAction === 'create')"
+          class="file-share-dialog__error"
+          role="alert"
+        >
           {{ phrase(errorMessage) }}
         </p>
         <button
-          v-if="errorMessage && !share"
+          v-if="errorMessage && !serverRejectedTooLarge && ((errorAction === 'load' && !share) || errorAction === 'create')"
           class="file-share-dialog__retry"
           type="button"
           :disabled="loading"
@@ -341,7 +387,7 @@ onBeforeUnmount(() => {
           v-if="!loading && (!share || !linksAvailable)"
           class="button button--primary"
           type="button"
-          :disabled="Boolean(mutation) || Boolean(errorMessage && !share)"
+          :disabled="Boolean(mutation) || fileTooLarge || Boolean(errorMessage && (errorAction === 'create' || !share))"
           @click="createShare"
         >
           <LoaderCircle v-if="mutation === 'create'" class="spin" :size="16" />

@@ -63,6 +63,9 @@ type Server struct {
 	clusterShareRates     map[string]clusterShareRateEntry
 	fileShareRateMu       sync.Mutex
 	fileShareRates        map[string]fileShareRateEntry
+	fileShareValidationMu sync.Mutex
+	fileShareValidations  map[string]fileShareValidationEntry
+	fileShareGlobalCost   fileShareValidationEntry
 	fileShareStreamMu     sync.Mutex
 	fileShareStreams      map[string]map[uint64]context.CancelFunc
 	fileShareStreamNext   uint64

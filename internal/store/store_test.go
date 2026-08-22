@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 func TestStorePersistsIdentitySessionAndAudit(t *testing.T) {
@@ -587,6 +589,8 @@ func TestFileShareRecoveryRejectsInvalidStateAndAcceptsLegacyState(t *testing.T)
 	duplicateHash.TokenHash = validOne.TokenHash
 	malformedShareVersion := validTwo
 	malformedShareVersion.ShareVersion = "sha256:" + strings.Repeat("g", 64)
+	oversizedShare := validTwo
+	oversizedShare.SizeBytes = contract.MaxFileShareBytes + 1
 	overLimit := make([]FileShare, 0, MaxFileShares+1)
 	for index := range MaxFileShares + 1 {
 		overLimit = append(overLimit, testFileShare(
@@ -600,6 +604,7 @@ func TestFileShareRecoveryRejectsInvalidStateAndAcceptsLegacyState(t *testing.T)
 		"duplicate id":            {validOne, duplicateID},
 		"duplicate hash":          {validOne, duplicateHash},
 		"malformed share version": {malformedShareVersion},
+		"oversized share":         {oversizedShare},
 		"over limit":              overLimit,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -674,6 +679,7 @@ func testFileShare(
 		ID: base64.RawURLEncoding.EncodeToString(idDigest[:16]), TokenHash: fmt.Sprintf("%x", digest[:]), Path: filePath,
 		ResourceVersion: "sha256:" + fmt.Sprintf("%x", resourceDigest[:]),
 		ShareVersion:    "sha256:" + fmt.Sprintf("%x", sha256.Sum256([]byte("share:"+resourceVersion))),
+		SizeBytes:       64,
 		CreatedAt:       createdAt, ExpiresAt: expiresAt,
 	}
 }

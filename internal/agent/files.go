@@ -128,14 +128,12 @@ func (s *Server) fileShareEntry(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_query", "文件查询参数无效", "")
 		return
 	}
-	entry, err := s.files.Stat(query.Get("path"))
+	entry, err := s.files.ShareEntry(r.Context(), query.Get("path"))
 	if err != nil {
 		writeFileProblem(w, requestID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.FileShareEntry{
-		FileEntry: entry, ShareVersion: entry.ShareVersion,
-	})
+	writeJSON(w, http.StatusOK, entry)
 }
 
 func (s *Server) fileEntries(w http.ResponseWriter, r *http.Request) {
@@ -450,6 +448,18 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_share_version", "文件分享版本无效", "")
 		return
 	}
+	shareResourceVersion := ""
+	if shareContent {
+		ifMatchHeaders := r.Header.Values("If-Match")
+		var ok bool
+		if len(ifMatchHeaders) == 1 {
+			shareResourceVersion, ok = parseFileShareResourceVersion(ifMatchHeaders[0])
+		}
+		if !ok {
+			writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_share_resource_version", "文件分享资源版本无效", "")
+			return
+		}
+	}
 	if readMode != "thumbnail" && values.Get("version") != "" {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_file_version", "文件版本参数无效", "")
 		return
@@ -473,7 +483,14 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 			return
 		}
 	}
-	file, entry, err := s.files.Open(transferContext, values.Get("path"))
+	var file io.ReadSeekCloser
+	var entry contract.FileEntry
+	var err error
+	if shareContent {
+		file, entry, err = s.files.OpenShare(transferContext, values.Get("path"), shareResourceVersion)
+	} else {
+		file, entry, err = s.files.Open(transferContext, values.Get("path"))
+	}
 	if err != nil {
 		writeFileProblem(w, requestID, err)
 		return
@@ -910,6 +927,14 @@ func validFileShareVersion(value string) bool {
 	}
 	digest, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
 	return err == nil && len(digest) == sha256.Size
+}
+
+func parseFileShareResourceVersion(value string) (string, bool) {
+	if len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		return "", false
+	}
+	version := value[1 : len(value)-1]
+	return version, validFileShareVersion(version)
 }
 
 func activeContent(name, contentType string) bool {

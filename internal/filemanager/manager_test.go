@@ -547,6 +547,101 @@ func TestDownloadGateRejectsExcessConcurrentReads(t *testing.T) {
 	}
 }
 
+func TestShareGateIsBoundedAndOrdinaryMetadataStaysLightweight(t *testing.T) {
+	manager, root := newTestManager(t)
+	mustWrite(t, filepath.Join(root, "shared.bin"), strings.Repeat("content", 1024))
+	ordinary, err := manager.Stat("/shared.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.ShareVersion != "" {
+		t.Fatal("ordinary Stat unexpectedly calculated a share content fingerprint")
+	}
+	if _, _, err := manager.OpenShare(
+		context.Background(), "/shared.bin", "sha256:"+strings.Repeat("0", 64),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale expected resource version error = %v, want ErrConflict", err)
+	}
+
+	opened := make([]io.ReadSeekCloser, 0, 2)
+	shareVersion := ""
+	for range 2 {
+		file, entry, openErr := manager.OpenShare(context.Background(), "/shared.bin", ordinary.ResourceVersion)
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		if entry.ShareVersion == "" {
+			t.Fatal("share open omitted the content-bound version")
+		}
+		if shareVersion == "" {
+			shareVersion = entry.ShareVersion
+		} else if entry.ShareVersion != shareVersion {
+			t.Fatalf("unchanged file produced unstable share versions: first=%q current=%q", shareVersion, entry.ShareVersion)
+		}
+		content, readErr := io.ReadAll(file)
+		if readErr != nil || string(content) != strings.Repeat("content", 1024) {
+			t.Fatalf("share open was not rewound after fingerprinting: bytes=%d err=%v", len(content), readErr)
+		}
+		if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+			t.Fatal(seekErr)
+		}
+		opened = append(opened, file)
+	}
+	if _, _, err := manager.OpenShare(context.Background(), "/shared.bin", ordinary.ResourceVersion); !errors.Is(err, ErrBusy) {
+		t.Fatalf("expected busy share gate, got %v", err)
+	}
+	for _, file := range opened {
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if entry, err := manager.ShareEntry(context.Background(), "/shared.bin"); err != nil {
+		t.Fatalf("share gate did not recover: %v", err)
+	} else if entry.ShareVersion != shareVersion {
+		t.Fatalf("recovered share entry version = %q, want %q", entry.ShareVersion, shareVersion)
+	}
+	restarted, err := New(Config{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	if entry, err := restarted.ShareEntry(context.Background(), "/shared.bin"); err != nil {
+		t.Fatalf("restarted manager could not fingerprint unchanged file: %v", err)
+	} else if entry.ShareVersion != shareVersion {
+		t.Fatalf("restarted manager share version = %q, want %q", entry.ShareVersion, shareVersion)
+	}
+}
+
+func TestShareEntryRejectsFilesAboveTheFingerprintBudget(t *testing.T) {
+	manager, root := newTestManager(t)
+	file, err := os.Create(filepath.Join(root, "oversized.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(contract.MaxFileShareBytes + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ShareEntry(context.Background(), "/oversized.bin"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("oversized share entry error = %v, want ErrTooLarge", err)
+	}
+	if entry, err := manager.Stat("/oversized.bin"); err != nil || entry.SizeBytes != contract.MaxFileShareBytes+1 {
+		t.Fatalf("ordinary metadata rejected oversized file: entry=%#v err=%v", entry, err)
+	}
+	if opened, _, err := manager.Open(context.Background(), "/oversized.bin"); err != nil {
+		t.Fatalf("ordinary download rejected oversized file: %v", err)
+	} else if err := opened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "shared-after-limit.txt"), "ok")
+	if entry, err := manager.ShareEntry(context.Background(), "/shared-after-limit.txt"); err != nil || entry.ShareVersion == "" {
+		t.Fatalf("share gates did not recover after size rejection: entry=%#v err=%v", entry, err)
+	}
+}
+
 func TestBatchCopyUsesOneCumulativeBudget(t *testing.T) {
 	root := t.TempDir()
 	manager, err := New(Config{Root: root, MaxCopyBytes: 12})

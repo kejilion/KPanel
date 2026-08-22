@@ -10,9 +10,11 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
@@ -108,6 +110,25 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 			t.Fatalf("public metadata contains private field %q: %s", forbidden, metadata.Body.String())
 		}
 	}
+	agent.stubAgent.mu.Lock()
+	originalEntryBody := append([]byte(nil), agent.stubAgent.response.Body...)
+	agent.stubAgent.response.Body = []byte(strings.ReplaceAll(
+		string(agent.stubAgent.response.Body), testFileShareStrongVersion, testFileShareStrongVersion2,
+	))
+	agent.stubAgent.mu.Unlock()
+	metadataAfterStrongOnlyChange := performRequest(server, http.MethodGet, fileShareAPIPrefix+token, nil, nil)
+	if metadataAfterStrongOnlyChange.Code != http.StatusOK {
+		t.Fatalf("cheap public metadata rejected same-metadata rewrite: %d %s", metadataAfterStrongOnlyChange.Code, metadataAfterStrongOnlyChange.Body.String())
+	}
+	agent.stubAgent.mu.Lock()
+	agent.stubAgent.response.Body = originalEntryBody
+	agent.stubAgent.mu.Unlock()
+	server.fileShareValidationMu.Lock()
+	metadataCost := server.fileShareGlobalCost.units
+	server.fileShareValidationMu.Unlock()
+	if metadataCost != 0 {
+		t.Fatalf("public metadata consumed strong-validation budget: %d", metadataCost)
+	}
 
 	direct := performRequest(server, http.MethodGet, createdResponse.DirectPath, nil, map[string]string{
 		"Range": "bytes=0-4", "If-Match": `"attacker-controlled"`,
@@ -150,10 +171,21 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 		notModified.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
 		t.Fatalf("direct 304 = %d headers=%#v body=%q", notModified.Code, notModified.Header(), notModified.Body.String())
 	}
+	server.fileShareValidationMu.Lock()
+	contentCost := server.fileShareValidations["/srv/public/photo.png"].units
+	server.fileShareValidationMu.Unlock()
+	if contentCost != 3 {
+		t.Fatalf("Range, HEAD, and 304 validation cost = %d, want 3", contentCost)
+	}
 	agent.streamStatus = http.StatusPreconditionFailed
 	preconditionFailed := performRequest(server, http.MethodGet, createdResponse.DirectPath, nil, nil)
 	if preconditionFailed.Code != http.StatusNotFound || strings.Contains(preconditionFailed.Body.String(), "/srv/public/photo.png") {
 		t.Fatalf("upstream precondition leaked state = %d %s", preconditionFailed.Code, preconditionFailed.Body.String())
+	}
+	agent.streamStatus = http.StatusRequestEntityTooLarge
+	tooLargeUpstream := performRequest(server, http.MethodGet, createdResponse.DirectPath, nil, nil)
+	if tooLargeUpstream.Code != http.StatusNotFound || strings.Contains(tooLargeUpstream.Body.String(), "/srv/public/photo.png") {
+		t.Fatalf("upstream size limit leaked state = %d %s", tooLargeUpstream.Code, tooLargeUpstream.Body.String())
 	}
 	agent.streamStatus = http.StatusOK
 
@@ -195,6 +227,69 @@ func TestFileShareLifecycleUsesOneGenericPublicLink(t *testing.T) {
 	list = authenticatedRequest(server, http.MethodGet, fileSharesAdminPath, nil, sessionCookie, csrfCookie, nil)
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"shares":[]`) {
 		t.Fatalf("list after delete = %d %s", list.Code, list.Body.String())
+	}
+}
+
+func TestFileShareCreateRejectsOversizedFiles(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	server.agent = &fileStubAgent{stubAgent: &stubAgent{response: fileShareEntryResponse(
+		"/srv/oversized.iso", "oversized.iso", "application/octet-stream", contract.MaxFileShareBytes+1,
+	)}}
+	body, _ := json.Marshal(fileShareCreateInput{
+		Path: "/srv/oversized.iso", ExpectedResourceVersion: testFileShareVersion, ExpiresIn: "7d",
+	})
+	response := authenticatedRequest(
+		server, http.MethodPost, fileSharesAdminPath, body, sessionCookie, csrfCookie,
+		map[string]string{
+			"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		},
+	)
+	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(response.Body.String(), "file_share_too_large") {
+		t.Fatalf("oversized create = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestFileShareCreateMapsFingerprintConflictAndTimeout(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		agent      *stubAgent
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name: "file changed while fingerprinting",
+			agent: &stubAgent{response: AgentResponse{
+				StatusCode: http.StatusConflict, ContentType: "application/problem+json",
+				Body: []byte(`{"code":"file_conflict"}`),
+			}},
+			wantStatus: http.StatusConflict,
+			wantCode:   "file_share_changed",
+		},
+		{
+			name:       "fingerprint timeout",
+			agent:      &stubAgent{err: context.DeadlineExceeded},
+			wantStatus: http.StatusGatewayTimeout,
+			wantCode:   "file_share_fingerprint_timeout",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, tokenPath := newTestServer(t)
+			sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+			server.agent = test.agent
+			body, _ := json.Marshal(fileShareCreateInput{
+				Path: "/srv/release.tar.gz", ExpectedResourceVersion: testFileShareVersion, ExpiresIn: "7d",
+			})
+			response := authenticatedRequest(
+				server, http.MethodPost, fileSharesAdminPath, body, sessionCookie, csrfCookie,
+				map[string]string{
+					"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value,
+				},
+			)
+			if response.Code != test.wantStatus || !strings.Contains(response.Body.String(), test.wantCode) {
+				t.Fatalf("create = %d %s, want status %d code %q", response.Code, response.Body.String(), test.wantStatus, test.wantCode)
+			}
+		})
 	}
 }
 
@@ -413,6 +508,68 @@ func TestFileShareRateLimiterIsBoundedAndResets(t *testing.T) {
 	}
 }
 
+func TestFileShareValidationBudgetIsSizeWeightedAndResets(t *testing.T) {
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name       string
+		sizeBytes  int64
+		admissions int
+	}{
+		{name: "2 MiB", sizeBytes: 2 << 20, admissions: 512},
+		{name: "2 MiB plus one", sizeBytes: (2 << 20) + 1, admissions: 256},
+		{name: "8 MiB", sizeBytes: 8 << 20, admissions: 128},
+		{name: "12 MiB", sizeBytes: 12 << 20, admissions: 85},
+		{name: "64 MiB", sizeBytes: 64 << 20, admissions: 16},
+		{name: "512 MiB", sizeBytes: contract.MaxFileShareBytes, admissions: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := &Server{}
+			for index := range test.admissions {
+				if !server.allowFileShareValidation("/shared.bin", test.sizeBytes, now) {
+					t.Fatalf("validation %d was limited before the expected boundary", index+1)
+				}
+			}
+			if server.allowFileShareValidation("/shared.bin", test.sizeBytes, now) {
+				t.Fatal("validation above the size-weighted boundary was allowed")
+			}
+		})
+	}
+
+	global := &Server{}
+	if !global.allowFileShareValidation("/large-a.bin", contract.MaxFileShareBytes, now) ||
+		!global.allowFileShareValidation("/large-b.bin", contract.MaxFileShareBytes, now) {
+		t.Fatal("global budget rejected one of two 512 MiB validations")
+	}
+	if global.allowFileShareValidation("/large-c.bin", contract.MaxFileShareBytes, now) {
+		t.Fatal("global budget allowed more than 1 GiB of validation per minute")
+	}
+	if !global.allowFileShareValidation(
+		"/large-c.bin", contract.MaxFileShareBytes, now.Add(fileShareValidationWindow),
+	) {
+		t.Fatal("validation budget did not reset")
+	}
+}
+
+func TestFileShareValidationBudgetIsAtomicUnderConcurrency(t *testing.T) {
+	server := &Server{}
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	var admitted atomic.Int64
+	var workers sync.WaitGroup
+	for range 1000 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if server.allowFileShareValidation("/icon.png", 1024, now) {
+				admitted.Add(1)
+			}
+		}()
+	}
+	workers.Wait()
+	if got := admitted.Load(); got != fileShareValidationGlobal {
+		t.Fatalf("concurrent admissions = %d, want %d", got, fileShareValidationGlobal)
+	}
+}
+
 type blockingFileShareAgent struct {
 	response AgentResponse
 	started  chan struct{}
@@ -621,6 +778,12 @@ func TestFileSharePublicStreamGateIsBoundedAndReleased(t *testing.T) {
 	if busy.Code != http.StatusTooManyRequests || busy.Header().Get("Retry-After") != "1" {
 		t.Fatalf("full public stream gate = %d headers=%#v body=%q", busy.Code, busy.Header(), busy.Body.String())
 	}
+	fixture.server.fileShareValidationMu.Lock()
+	chargedUnits := fixture.server.fileShareValidations[fixture.filePath].units
+	fixture.server.fileShareValidationMu.Unlock()
+	if chargedUnits != int64(maxPublicFileShareStreams) {
+		t.Fatalf("busy stream consumed validation budget: units=%d", chargedUnits)
+	}
 	close(release)
 	for _, result := range results {
 		if status := waitFileShareStreamStatus(t, result); status != http.StatusOK {
@@ -636,6 +799,26 @@ func TestFileSharePublicStreamGateIsBoundedAndReleased(t *testing.T) {
 	}
 	if calls := fixture.agent.snapshotStreamCalls(); len(calls) != maxPublicFileShareStreams+1 {
 		t.Fatalf("Agent stream calls = %d, want %d", len(calls), maxPublicFileShareStreams+1)
+	}
+}
+
+func TestFileShareValidationLimitRejectsBeforeAgentOpen(t *testing.T) {
+	release := make(chan struct{})
+	close(release)
+	fixture := newFileShareStreamFixture(t, release)
+	now := time.Now().UTC()
+	for range fileShareValidationGlobal {
+		if !fixture.server.allowFileShareValidation("/other-icon.png", 1024, now) {
+			t.Fatal("failed to fill validation budget")
+		}
+	}
+
+	response := performRequest(fixture.server, http.MethodGet, fixture.created.DirectPath, nil, nil)
+	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "60" {
+		t.Fatalf("validation-limited stream = %d headers=%#v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+	if calls := fixture.agent.snapshotStreamCalls(); len(calls) != 0 {
+		t.Fatalf("validation-limited request reached Agent: %#v", calls)
 	}
 }
 
@@ -691,6 +874,7 @@ func TestFileSharePublicStreamExpiresAndReleasesCapacity(t *testing.T) {
 	if _, _, err := fixture.server.store.CreateFileShare(store.FileShare{
 		ID: fixture.created.ID, TokenHash: hex.EncodeToString(digest[:]), Path: fixture.filePath,
 		ResourceVersion: testFileShareVersion, ShareVersion: testFileShareStrongVersion,
+		SizeBytes: 4096,
 		CreatedAt: now, ExpiresAt: &expiresAt,
 	}, "", now); err != nil {
 		t.Fatal(err)
@@ -751,6 +935,12 @@ func TestFileSharePublicStreamRechecksRevocationBeforeAgentOpen(t *testing.T) {
 	}
 	if calls := fixture.agent.snapshotStreamCalls(); len(calls) != 0 {
 		t.Fatalf("revoked share reached Agent OpenStream: %#v", calls)
+	}
+	fixture.server.fileShareValidationMu.Lock()
+	revokedCost := fixture.server.fileShareGlobalCost.units
+	fixture.server.fileShareValidationMu.Unlock()
+	if revokedCost != 0 {
+		t.Fatalf("revoked-before-open request consumed validation budget: %d", revokedCost)
 	}
 	if len(fixture.server.fileShareStreamGate) != 0 {
 		t.Fatalf("public stream gate leaked after pre-open revocation: %d", len(fixture.server.fileShareStreamGate))

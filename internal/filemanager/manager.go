@@ -27,7 +27,7 @@ const (
 	MaxDirectoryEntries = 500
 	MaxBatchItems       = 100
 	MaxTextBytes        = 2 << 20
-	MaxUploadBytes      = 512 << 20
+	MaxUploadBytes      = contract.MaxFileShareBytes
 	MaxDirectoryScan    = 20_000
 	MaxSearchBytes      = 128
 	MaxTrashEntries     = 10_000
@@ -35,6 +35,7 @@ const (
 	maxPathBytes        = 4096
 	maxCopyEntries      = 10_000
 	maxCopyBytes        = 10 << 30
+	maxShareReads       = 2
 )
 
 var (
@@ -66,6 +67,7 @@ type Manager struct {
 	now            func() time.Time
 	uploadGate     chan struct{}
 	downloadGate   chan struct{}
+	shareGate      chan struct{}
 	maxCopyEntries int
 	maxCopyBytes   int64
 	writeMu        sync.Mutex
@@ -118,6 +120,7 @@ func New(config Config) (*Manager, error) {
 		now:            config.Now,
 		uploadGate:     make(chan struct{}, 2),
 		downloadGate:   make(chan struct{}, 4),
+		shareGate:      make(chan struct{}, maxShareReads),
 		maxCopyEntries: config.MaxCopyEntries,
 		maxCopyBytes:   config.MaxCopyBytes,
 	}
@@ -331,6 +334,64 @@ func (m *Manager) Open(ctx context.Context, virtual string) (io.ReadSeekCloser, 
 	}
 	releaseDownload = false
 	return &gatedFile{File: file, gate: m.downloadGate}, m.entry(normalized, opened), nil
+}
+
+// ShareEntry returns the content-bound identity used by public file shares.
+// Unlike Stat, it deliberately reads the file through the same safely opened
+// descriptor that share downloads use. This keeps ordinary directory listing
+// and file metadata operations O(1).
+func (m *Manager) ShareEntry(ctx context.Context, virtual string) (contract.FileShareEntry, error) {
+	file, entry, err := m.OpenShare(ctx, virtual, "")
+	if err != nil {
+		return contract.FileShareEntry{}, err
+	}
+	if err := file.Close(); err != nil {
+		return contract.FileShareEntry{}, err
+	}
+	return contract.FileShareEntry{FileEntry: entry, ShareVersion: entry.ShareVersion}, nil
+}
+
+// OpenShare opens and fingerprints a regular file before it can be served by a
+// public share. Metadata timestamps are not change counters: multiple writes
+// can receive the same ctime on Linux mounts with a coarse filesystem clock.
+// Binding the version to the complete content closes that gap while the
+// dedicated gate bounds anonymous hashing independently of ordinary downloads.
+func (m *Manager) OpenShare(
+	ctx context.Context,
+	virtual string,
+	expectedResourceVersion string,
+) (io.ReadSeekCloser, contract.FileEntry, error) {
+	if err := acquireNow(ctx, m.shareGate); err != nil {
+		return nil, contract.FileEntry{}, err
+	}
+	releaseShare := true
+	defer func() {
+		if releaseShare {
+			release(m.shareGate)
+		}
+	}()
+
+	file, entry, err := m.Open(ctx, virtual)
+	if err != nil {
+		return nil, contract.FileEntry{}, err
+	}
+	if expectedResourceVersion != "" && entry.ResourceVersion != expectedResourceVersion {
+		_ = file.Close()
+		return nil, contract.FileEntry{}, ErrConflict
+	}
+	versionFile, ok := file.(shareVersionFile)
+	if !ok {
+		_ = file.Close()
+		return nil, contract.FileEntry{}, ErrConflict
+	}
+	version, err := contentShareVersion(ctx, entry.Path, entry.ResourceVersion, versionFile)
+	if err != nil {
+		_ = file.Close()
+		return nil, contract.FileEntry{}, err
+	}
+	entry.ShareVersion = version
+	releaseShare = false
+	return &gatedShareFile{ReadSeekCloser: file, gate: m.shareGate}, entry, nil
 }
 
 func (m *Manager) WriteText(
@@ -1343,7 +1404,7 @@ func (m *Manager) entry(virtual string, info os.FileInfo) contract.FileEntry {
 		Name: filepath.Base(virtual), Path: virtual, Kind: kind, MIME: mimeType,
 		SizeBytes: info.Size(), Mode: info.Mode().String(), Owner: owner, Group: group,
 		ModifiedAt: info.ModTime().UTC(), ResourceVersion: resourceVersion(virtual, info),
-		Editable: editable, Previewable: previewable, ShareVersion: shareVersion(virtual, info),
+		Editable: editable, Previewable: previewable,
 	}
 }
 
@@ -1492,9 +1553,73 @@ func resourceVersion(virtual string, info os.FileInfo) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func shareVersion(virtual string, info os.FileInfo) string {
-	sum := sha256.Sum256([]byte(resourceVersion(virtual, info) + "\x00" + shareFileIdentity(info)))
-	return "sha256:" + hex.EncodeToString(sum[:])
+type shareVersionFile interface {
+	io.ReadSeeker
+	Stat() (os.FileInfo, error)
+}
+
+func contentShareVersion(
+	ctx context.Context,
+	virtual string,
+	expectedResourceVersion string,
+	file shareVersionFile,
+) (string, error) {
+	initial, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !initial.Mode().IsRegular() {
+		return "", ErrNotRegular
+	}
+	if initial.Size() < 0 || initial.Size() > contract.MaxFileShareBytes {
+		return "", ErrTooLarge
+	}
+	initialResourceVersion := resourceVersion(virtual, initial)
+	if initialResourceVersion != expectedResourceVersion {
+		return "", ErrConflict
+	}
+	initialIdentity, ok := shareFileIdentity(initial)
+	if !ok {
+		return "", ErrConflict
+	}
+
+	contentDigest := sha256.New()
+	readBytes, err := io.CopyBuffer(
+		contentDigest,
+		&contextReader{ctx: ctx, reader: io.LimitReader(file, contract.MaxFileShareBytes+1)},
+		make([]byte, 64<<10),
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if readBytes != initial.Size() {
+		return "", ErrConflict
+	}
+	current, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	currentIdentity, ok := shareFileIdentity(current)
+	if !ok || !os.SameFile(initial, current) ||
+		resourceVersion(virtual, current) != initialResourceVersion ||
+		currentIdentity != initialIdentity {
+		return "", ErrConflict
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+
+	versionDigest := sha256.New()
+	_, _ = io.WriteString(versionDigest, "kpanel:file-share:v2\x00")
+	_, _ = io.WriteString(versionDigest, initialResourceVersion)
+	_, _ = versionDigest.Write([]byte{0})
+	_, _ = io.WriteString(versionDigest, initialIdentity)
+	_, _ = versionDigest.Write([]byte{0})
+	_, _ = versionDigest.Write(contentDigest.Sum(nil))
+	return "sha256:" + hex.EncodeToString(versionDigest.Sum(nil)), nil
 }
 
 func viewerSupport(name, mimeType string, size int64, kind string) (bool, bool) {
@@ -1552,6 +1677,18 @@ type gatedFile struct {
 	*os.File
 	gate chan struct{}
 	once sync.Once
+}
+
+type gatedShareFile struct {
+	io.ReadSeekCloser
+	gate chan struct{}
+	once sync.Once
+}
+
+func (file *gatedShareFile) Close() error {
+	err := file.ReadSeekCloser.Close()
+	file.once.Do(func() { release(file.gate) })
+	return err
 }
 
 func (file *gatedFile) Close() error {

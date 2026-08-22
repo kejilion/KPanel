@@ -29,13 +29,21 @@ const (
 	fileShareRateWindow       = time.Minute
 	fileShareRateLimit        = 300
 	fileShareRateKeys         = 2048
+	fileShareValidationWindow = time.Minute
+	fileShareValidationUnit   = int64(2 << 20)
+	fileShareValidationShare  = int64(512)
+	fileShareValidationGlobal = int64(512)
+	fileShareValidationKeys   = store.MaxFileShares
 	maxFileShareMetadataReads = 16
 	maxPublicFileShareStreams = 2
 	fileShareIDBytes          = 16
 	fileShareTokenBytes       = 32
 )
 
-var fileShareMetadataTimeout = 8 * time.Second
+var (
+	fileShareMetadataTimeout    = 8 * time.Second
+	fileShareFingerprintTimeout = 30 * time.Second
+)
 
 const fileShareContentSecurityPolicy = "default-src 'none'; sandbox; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
@@ -76,6 +84,11 @@ type publicFileShareView struct {
 type fileShareRateEntry struct {
 	startedAt time.Time
 	count     int
+}
+
+type fileShareValidationEntry struct {
+	startedAt time.Time
+	units     int64
 }
 
 func (s *Server) handleFileShares(w http.ResponseWriter, r *http.Request) {
@@ -137,8 +150,14 @@ func (s *Server) handleFileShareLookup(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "file_share_storage_unavailable", "文件分享存储不可用", "")
 		return
 	}
-	entry, status, entryErr := s.loadFileShareEntry(r.Context(), value.Path)
+	fingerprintContext, cancelFingerprint := context.WithTimeout(r.Context(), fileShareFingerprintTimeout)
+	defer cancelFingerprint()
+	entry, status, entryErr := s.loadFileShareEntry(fingerprintContext, value.Path)
 	if entryErr != nil {
+		if errors.Is(entryErr, context.DeadlineExceeded) {
+			s.writeProblem(w, r, http.StatusGatewayTimeout, "file_share_fingerprint_timeout", "文件指纹计算超时，请稍后重试", "")
+			return
+		}
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
@@ -173,8 +192,14 @@ func (s *Server) handleFileShareCreate(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusUnprocessableEntity, "file_share_request_invalid", "文件分享参数无效", "")
 		return
 	}
-	entry, status, err := s.loadFileShareEntry(r.Context(), input.Path)
+	fingerprintContext, cancelFingerprint := context.WithTimeout(r.Context(), fileShareFingerprintTimeout)
+	defer cancelFingerprint()
+	entry, status, err := s.loadFileShareEntry(fingerprintContext, input.Path)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			s.writeProblem(w, r, http.StatusGatewayTimeout, "file_share_fingerprint_timeout", "文件指纹计算超时，请稍后重试", "")
+			return
+		}
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
@@ -183,11 +208,23 @@ func (s *Server) handleFileShareCreate(w http.ResponseWriter, r *http.Request) {
 			s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 			return
 		}
+		if status == http.StatusRequestEntityTooLarge {
+			s.writeProblem(w, r, status, "file_share_too_large", "文件超过 512 MiB，无法创建轻量分享", "")
+			return
+		}
+		if status == http.StatusConflict {
+			s.writeProblem(w, r, status, "file_share_changed", "文件已发生变化，请刷新后重试", "")
+			return
+		}
 		s.writeProblem(w, r, status, "file_share_target_unavailable", "无法分享此文件", "")
 		return
 	}
 	if entry.Path != input.Path || entry.Kind != "file" {
 		s.writeProblem(w, r, http.StatusUnprocessableEntity, "file_share_regular_file_required", "只能分享普通文件", "")
+		return
+	}
+	if entry.SizeBytes < 0 || entry.SizeBytes > contract.MaxFileShareBytes {
+		s.writeProblem(w, r, http.StatusRequestEntityTooLarge, "file_share_too_large", "文件超过 512 MiB，无法创建轻量分享", "")
 		return
 	}
 	if entry.ResourceVersion != input.ExpectedResourceVersion {
@@ -216,6 +253,7 @@ func (s *Server) handleFileShareCreate(w http.ResponseWriter, r *http.Request) {
 	value := store.FileShare{
 		ID: id, TokenHash: hex.EncodeToString(digest[:]), Path: input.Path,
 		ResourceVersion: input.ExpectedResourceVersion, ShareVersion: entry.ShareVersion,
+		SizeBytes: entry.SizeBytes,
 		CreatedAt: now, ExpiresAt: expiresAt,
 	}
 	created, replaced, err := s.store.CreateFileShare(value, input.ExpectedShareID, now)
@@ -354,6 +392,11 @@ func (s *Server) handlePublicFileShareContent(w http.ResponseWriter, r *http.Req
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "file_share_stream_unavailable", "文件分享下载暂时不可用", "")
 		return
 	}
+	if !s.allowFileShareValidation(value.Path, value.SizeBytes, time.Now().UTC()) {
+		w.Header().Set("Retry-After", "60")
+		s.writeProblem(w, r, http.StatusTooManyRequests, "file_share_validation_limited", "文件分享校验过于频繁", "")
+		return
+	}
 	disposition := "inline"
 	if r.URL.Query().Get("download") == "1" {
 		disposition = "attachment"
@@ -396,7 +439,8 @@ func (s *Server) handlePublicFileShareContent(w http.ResponseWriter, r *http.Req
 		w.Header().Set("Retry-After", "1")
 		s.writeProblem(w, r, http.StatusTooManyRequests, "file_share_stream_limit", "文件分享下载繁忙", "")
 		return
-	case http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusPreconditionFailed, http.StatusUnprocessableEntity:
+	case http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusPreconditionFailed,
+		http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
 		http.NotFound(w, r)
 		return
 	default:
@@ -470,37 +514,58 @@ func (s *Server) loadFileShareEntry(ctx context.Context, filePath string) (contr
 	return entry, http.StatusOK, nil
 }
 
-func (s *Server) resolvePublicFileShare(ctx context.Context, token string) (store.FileShare, contract.FileShareEntry, int) {
+func (s *Server) loadFileEntry(ctx context.Context, filePath string) (contract.FileEntry, int, error) {
+	query := url.Values{"path": []string{filePath}}
+	response, err := s.agent.Get(ctx, "/v1/files/entry", query.Encode(), newRequestID())
+	if err != nil {
+		return contract.FileEntry{}, 0, err
+	}
+	if response.StatusCode != http.StatusOK {
+		return contract.FileEntry{}, response.StatusCode, nil
+	}
+	var entry contract.FileEntry
+	if err := json.Unmarshal(response.Body, &entry); err != nil {
+		return contract.FileEntry{}, http.StatusServiceUnavailable, err
+	}
+	return entry, http.StatusOK, nil
+}
+
+func (s *Server) resolvePublicFileShare(ctx context.Context, token string) (store.FileShare, contract.FileEntry, int) {
 	value, err := s.store.FileShareByToken(token, time.Now().UTC())
 	if err != nil {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusNotFound
+		return store.FileShare{}, contract.FileEntry{}, http.StatusNotFound
 	}
 	if !s.acquireFileShareMetadata() {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusTooManyRequests
+		return store.FileShare{}, contract.FileEntry{}, http.StatusTooManyRequests
 	}
 	defer s.releaseFileShareMetadata()
 	metadataContext, cancel := context.WithTimeout(ctx, fileShareMetadataTimeout)
 	defer cancel()
-	entry, status, err := s.loadFileShareEntry(metadataContext, value.Path)
+	entry, status, err := s.loadFileEntry(metadataContext, value.Path)
 	if err != nil {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusServiceUnavailable
+		return store.FileShare{}, contract.FileEntry{}, http.StatusServiceUnavailable
 	}
 	if fileShareAgentUnavailableStatus(status) {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusServiceUnavailable
+		return store.FileShare{}, contract.FileEntry{}, http.StatusServiceUnavailable
 	}
-	if status != http.StatusOK || !fileShareMatchesEntry(value, entry) {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusNotFound
+	if status != http.StatusOK || !fileShareMetadataMatchesEntry(value, entry) {
+		return store.FileShare{}, contract.FileEntry{}, http.StatusNotFound
 	}
 	current, lookupErr := s.store.FileShareByToken(token, time.Now().UTC())
 	if lookupErr != nil || current.ID != value.ID {
-		return store.FileShare{}, contract.FileShareEntry{}, http.StatusNotFound
+		return store.FileShare{}, contract.FileEntry{}, http.StatusNotFound
 	}
 	return value, entry, http.StatusOK
 }
 
 func fileShareMatchesEntry(value store.FileShare, entry contract.FileShareEntry) bool {
 	return entry.Kind == "file" && entry.Path == value.Path && entry.ResourceVersion == value.ResourceVersion &&
-		entry.ShareVersion == value.ShareVersion
+		entry.ShareVersion == value.ShareVersion && entry.SizeBytes == value.SizeBytes
+}
+
+func fileShareMetadataMatchesEntry(value store.FileShare, entry contract.FileEntry) bool {
+	return entry.Kind == "file" && entry.Path == value.Path && entry.ResourceVersion == value.ResourceVersion &&
+		entry.SizeBytes == value.SizeBytes
 }
 
 func fileShareAgentUnavailableStatus(status int) bool {
@@ -632,6 +697,53 @@ func (s *Server) allowFileShareRequest(key string, now time.Time) bool {
 	}
 	entry.count++
 	s.fileShareRates[key] = entry
+	return true
+}
+
+func (s *Server) allowFileShareValidation(key string, sizeBytes int64, now time.Time) bool {
+	if key == "" || sizeBytes < 0 || sizeBytes > contract.MaxFileShareBytes {
+		return false
+	}
+	units := (sizeBytes + fileShareValidationUnit - 1) / fileShareValidationUnit
+	if units < 1 {
+		units = 1
+	}
+
+	s.fileShareValidationMu.Lock()
+	defer s.fileShareValidationMu.Unlock()
+	if s.fileShareValidations == nil {
+		s.fileShareValidations = make(map[string]fileShareValidationEntry)
+	}
+	global := s.fileShareGlobalCost
+	if global.startedAt.IsZero() || now.Sub(global.startedAt) >= fileShareValidationWindow {
+		global = fileShareValidationEntry{startedAt: now}
+	}
+	entry, exists := s.fileShareValidations[key]
+	if exists && now.Sub(entry.startedAt) >= fileShareValidationWindow {
+		delete(s.fileShareValidations, key)
+		entry = fileShareValidationEntry{}
+		exists = false
+	}
+	if !exists && len(s.fileShareValidations) >= fileShareValidationKeys {
+		for existingKey, existing := range s.fileShareValidations {
+			if now.Sub(existing.startedAt) >= fileShareValidationWindow {
+				delete(s.fileShareValidations, existingKey)
+			}
+		}
+		if len(s.fileShareValidations) >= fileShareValidationKeys {
+			return false
+		}
+	}
+	if !exists {
+		entry = fileShareValidationEntry{startedAt: now}
+	}
+	if entry.units+units > fileShareValidationShare || global.units+units > fileShareValidationGlobal {
+		return false
+	}
+	entry.units += units
+	global.units += units
+	s.fileShareValidations[key] = entry
+	s.fileShareGlobalCost = global
 	return true
 }
 
