@@ -173,7 +173,6 @@ export default [
   ['出口 IP', 'Egress IP'],
   ['出口运营商 / ASN', 'Egress carrier / ASN'],
   ['出口地区', 'Egress region'],
-  ['出口线路', 'Egress route'],
   ['未发现风险标签', 'No risk tags returned'],
   ['代理', 'Proxy'],
   ['非代理', 'Not a proxy'],
