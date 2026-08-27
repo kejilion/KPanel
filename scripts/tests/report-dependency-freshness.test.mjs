@@ -7,9 +7,11 @@ import {
   classifyUpdate,
   compareVersions,
   goExecutable,
+  githubActionVersionCandidate,
   immutableDigestCandidate,
   isStableVersion,
   maintenanceStatus,
+  managedScriptRevisionCandidate,
   npmCandidatesFromOutdated,
   npmInvocation,
   parseConcatenatedJson,
@@ -84,6 +86,24 @@ test('immutable digest drift is visible even when the image tag is unchanged', (
   assert.equal(drift.updateClass, 'major-toolchain-base');
   assert.match(drift.current, /^sha256:a/);
   assert.match(drift.candidate, /^sha256:b/);
+});
+
+test('GitHub action upgrades report the candidate tag SHA instead of the current pin', () => {
+  const update = githubActionVersionCandidate(
+    'actions/checkout',
+    { version: 'v6.0.2', sha: 'a'.repeat(40) },
+    'v7.0.1',
+    'b'.repeat(40),
+  );
+  assert.equal(update.pinnedSha, 'b'.repeat(40));
+});
+
+test('managed script revisions ignore unrelated repository commits but expose content drift', () => {
+  assert.equal(managedScriptRevisionCandidate('a'.repeat(40), 'b'.repeat(40), 'same', 'same'), null);
+  const update = managedScriptRevisionCandidate('a'.repeat(40), 'b'.repeat(40), 'before', 'after');
+  assert.equal(update.component, 'managed kejilion.sh');
+  assert.notEqual(update.currentSha256, update.candidateSha256);
+  assert.match(update.source, /managed file content/);
 });
 
 test('concatenated Go JSON parser keeps nested values and escaped braces intact', () => {

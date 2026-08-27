@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve, win32 as win32Path } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -377,6 +378,12 @@ async function fetchJson(url) {
   return response.json();
 }
 
+async function fetchText(url) {
+  const response = await fetch(url, { headers: requestHeaders(url), signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(url + ' returned HTTP ' + response.status);
+  return response.text();
+}
+
 async function dockerHubTag(repository, tag) {
   return fetchJson('https://hub.docker.com/v2/repositories/' + repository + '/tags/' + encodeURIComponent(tag));
 }
@@ -529,9 +536,10 @@ async function resolveGitHubTag(repository, tag) {
 async function collectActions(repo) {
   const pins = workflowActionPins(repo);
   const results = await Promise.all([...pins].map(async ([repository, pin]) => {
-    const [latest, expectedSha] = await Promise.all([
-      latestGitHubRelease(repository),
+    const latest = await latestGitHubRelease(repository);
+    const [expectedSha, candidateSha] = await Promise.all([
       resolveGitHubTag(repository, pin.version),
+      resolveGitHubTag(repository, latest),
     ]);
     const updates = [];
     if (pin.sha !== expectedSha) {
@@ -545,11 +553,15 @@ async function collectActions(repo) {
         source: 'GitHub tag object',
       });
     }
-    const versionUpdate = candidate(repository, pin.version, latest, 'action', 'GitHub releases/latest', { pinnedSha: pin.sha });
+    const versionUpdate = githubActionVersionCandidate(repository, pin, latest, candidateSha);
     if (versionUpdate) updates.push(versionUpdate);
     return updates;
   }));
   return results.flat();
+}
+
+export function githubActionVersionCandidate(repository, pin, latest, candidateSha) {
+  return candidate(repository, pin.version, latest, 'action', 'GitHub releases/latest', { pinnedSha: candidateSha });
 }
 
 async function collectSecurityTools(repo, policy) {
@@ -596,15 +608,29 @@ async function collectManagedScript(repo, policy) {
   if (!current) throw new Error('managed kejilion.sh revision could not be parsed');
   const commit = await fetchJson('https://api.github.com/repos/' + group.repository + '/commits/' + group.branch);
   if (commit.sha === current) return [];
-  return [{
+  const [currentContent, candidateContent] = await Promise.all([
+    fetchText('https://raw.githubusercontent.com/' + group.repository + '/' + current + '/kejilion.sh'),
+    fetchText('https://raw.githubusercontent.com/' + group.repository + '/' + commit.sha + '/kejilion.sh'),
+  ]);
+  const update = managedScriptRevisionCandidate(current, commit.sha, currentContent, candidateContent);
+  return update ? [update] : [];
+}
+
+export function managedScriptRevisionCandidate(current, latest, currentContent, candidateContent) {
+  const currentSha256 = createHash('sha256').update(currentContent).digest('hex');
+  const candidateSha256 = createHash('sha256').update(candidateContent).digest('hex');
+  if (current === latest || currentSha256 === candidateSha256) return null;
+  return {
     component: 'managed kejilion.sh',
     current: current.slice(0, 12),
-    candidate: commit.sha.slice(0, 12),
+    candidate: latest.slice(0, 12),
     updateClass: 'major-toolchain-base',
     componentKind: 'managed-script-revision',
     verificationFloor: 'L2-or-L3',
-    source: 'GitHub branch head',
-  }];
+    currentSha256,
+    candidateSha256,
+    source: 'GitHub branch head and managed file content',
+  };
 }
 
 async function collectSource(id, collector) {
