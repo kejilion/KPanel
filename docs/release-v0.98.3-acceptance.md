@@ -106,8 +106,8 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：10
-- 其中生产写操作开始后异常次数：2
+- 已记录发布流程异常或无效证据拦截次数：11
+- 其中生产写操作开始后异常次数：3
 <!-- kpanel-release-process-metrics:end -->
 
 ### 流程异常明细
@@ -121,6 +121,15 @@
     "impact": "第一次版本一致性检查从 C:\\GitHub 执行，仓库包装入口找不到相对脚本；未改变代码、远端或生产状态。",
     "recoveryEvidence": "随后从候选根目录重跑，输出 Version metadata is consistent: 0.98.3，工作树干净。",
     "permanentAction": "所有仓库门禁调用在执行前固定校验候选根目录；下一次发布前退出条件为工作目录和脚本路径预检通过。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "release-operator/acceptance/wrong-working-directory",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "最后收口时从 C:\\GitHub 而非候选根目录调用验收指标校验，脚本未执行；未改变代码、远端或生产状态。",
+    "recoveryEvidence": "随后从候选根目录重跑验收校验，未生成产品或远端变更。",
+    "permanentAction": "收口命令与发布命令统一显式绑定候选根目录，并在执行前检查脚本存在；下一次发布前纳入命令工作目录预检。",
     "historicalReleases": []
   },
   {
@@ -207,7 +216,7 @@
 ]
 <!-- kpanel-release-process-incidents:end -->
 
-上述 10 项均未逃逸为产品变更失败、生产退化、回滚、紧急热修复或重复发布；生产写入后的两项只是补充验证通道被环境/数据源拦截，生产 postdeploy 仍为首次通过。
+上述 11 项均未逃逸为产品变更失败、生产退化、回滚、紧急热修复或重复发布；生产写入后的三项只是补充验证通道被工作目录、环境或数据源拦截，生产 postdeploy 仍为首次通过。
 
 ## 遗留风险与后续准入
 
