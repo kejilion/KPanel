@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.98.3] - 2026-08-28
+
+### Changed
+
+- 更新 Vue、Vitest、vue-tsc、DOMPurify、CodeMirror 等前端依赖，并完成 TypeScript 6、Vue Router 5、Node 24 类型和 GitHub Actions v7 的兼容升级，提升面板构建与运行时兼容性；依赖治理报告同时更准确地区分直接行动项与传递依赖归属。
+
+### Upgrade Notes
+
+- 本版为依赖、工具链与治理规则维护更新，不修改 API、数据库、端口、Compose、Agent 权限、受管 `kejilion.sh` 或应用市场安装契约，无需迁移；现有配置和数据保持兼容。
+- 回滚到 `v0.98.2` 须成套恢复旧 OCI、Compose、`.env`、数据和 Agent 文件；TypeScript 7、Node 26 等未纳入本版。
+
 ## [0.98.2] - 2026-08-27
 
 ### Fixed
