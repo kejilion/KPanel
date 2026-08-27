@@ -96,8 +96,8 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：3
-- 其中生产写操作开始后异常次数：0
+- 已记录发布流程异常或无效证据拦截次数：4
+- 其中生产写操作开始后异常次数：1
 <!-- kpanel-release-process-metrics:end -->
 
 ### 流程异常明细
@@ -129,6 +129,15 @@
     "impact": "Windows change-aware 入口因缺少 go/gofmt fail-closed；没有生成部分通过结论或写入远端。",
     "recoveryEvidence": "固定 Linux Runner 的 L3 从同一 SHA 完整通过，候选/main CI 与 Release workflow 均成功。",
     "permanentAction": "Windows 仅作前端/版本预检；Go 全量、竞态、镜像和部署门禁固定由 Linux Runner 权威执行。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "release-operator/production-verification/ssh-template-quoting",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "一次补充只读 docker inspect 因 PowerShell/SSH 模板转义失败返回错误；未修改生产状态。",
+    "recoveryEvidence": "随后使用简化模板成功核对容器 running/healthy、restart=0、OOM=false 与官方镜像 digest。",
+    "permanentAction": "生产取证优先使用固定脚本导出的 JSON/状态文件，补充 SSH 查询避免复杂嵌套模板。",
     "historicalReleases": []
   }
 ]
