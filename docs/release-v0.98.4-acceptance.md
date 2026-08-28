@@ -106,8 +106,8 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：2
-- 其中生产写操作开始后异常次数：0
+- 已记录发布流程异常或无效证据拦截次数：3
+- 其中生产写操作开始后异常次数：1
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -129,6 +129,15 @@
     "recoveryEvidence": "公开 pull 已返回目标 OCI digest；改用 Docker 实际返回的 kjlion/仓库名后，固定 packaging/tests/image-e2e.sh 输出 image_e2e=pass，临时资源已清理。",
     "permanentAction": "公开产物校验接受 Docker Engine 的 canonical RepoDigests 表示，校验命令先独立验证解析结果再调用固定 E2E。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "main-ci/governance/stale-business-context",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "验收文档推送 main 后，主线 CI 的 change-aware verification 被既有 business context freshness 门禁拒绝；产品 Release 和生产状态未改变，但文档提交暂时失败。",
+    "recoveryEvidence": "CI run 33138659007 与本地同基线复现均报告 commits=45>=20 且 releases=8>=8；更新唯一 canonical review 到 v0.98.4 后，freshness 检查通过并重新走候选 CI/main CI。",
+    "permanentAction": "按唯一业务事实真源刷新基线，不修改新鲜度阈值；治理文档改动先在 docs/ candidate 分支通过同 SHA CI，再进入 main。",
+    "historicalReleases": ["v0.94.0"]
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
