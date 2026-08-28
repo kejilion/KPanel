@@ -110,7 +110,7 @@ async function openHost(host: ClusterHost): Promise<void> {
   } catch (reason) {
     errorMessage.value = reason instanceof ApiError && reason.code === 'terminal_limit'
       ? '已达到终端会话上限，请先关闭不用的连接。'
-      : '终端连接失败，请确认目标 KPanel 在线且双方均已更新。'
+      : '终端连接失败，请确认目标节点在线且中心与节点均已更新。'
   } finally {
     openingHostId.value = ''
   }
@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page terminal-page">
-    <PageHeader title="多主机终端" description="通过集群加密通道连接本机与已授权 KPanel 节点，无需开放额外 SSH 或公网端口。" />
+    <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
 

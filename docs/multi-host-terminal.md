@@ -1,9 +1,11 @@
 # KPanel 多主机终端设计与安全契约
 
-- 状态：已实现并通过前后端、竞态与双架构自动化验收；完整部署契约及 L3 实机验收待发布前执行
+- 状态：已按既有 v2 Noise 与终端请求模型实现；前后端、竞态与双架构自动化验证进行中；完整部署契约及 L3 实机验收待发布前执行
 - 页面：`/terminal`
-- 支持范围：本机 KPanel、使用新 v2 权限重新配对的远端 KPanel
-- 暂不支持：轻量监控节点、旧 v1 配对和未授予终端权限的旧 v2 配对
+- 支持范围：本机 KPanel、使用新 v2 权限重新配对的远端 KPanel、使用新接入命令注册终端公钥的轻量节点
+- 暂不支持：旧 v1 配对、未授予终端权限的旧 v2 配对，以及尚未运行 `terminal-broker` 的旧轻量节点
+- 已安装的旧轻量节点只会继续遥测；如需终端，先在节点执行 `k kpanel node uninstall`，在中心删除旧记录，
+  再生成新的轻量节点接入命令重新加入。单纯升级二进制不会自动扩展 root 权限。
 
 ## 1. 产品交互
 
@@ -11,7 +13,7 @@
 
 - 本机显示“本机终端”；
 - 已授予终端权限的远端 KPanel 显示“加密直连”；
-- 轻量节点显示“轻量监控节点”，旧配对显示“需要重新配对”，两者不可开启终端；
+- 尚未建立反向终端轮询的轻量节点显示“轻量监控节点”；完成轮询握手后与其他远端节点一样显示“加密直连”并可开启终端；旧配对显示“需要重新配对”；
 - 每台主机只打开一个页签，可以在多个主机页签间切换；关闭页签会同时终止对应 PTY；
 - 主机终端始终在底部显示预输入框；应用、建站、体检和环境任务在脚本等待输入时显示同一套
   预输入框。浏览器本地完成编辑，按 Enter 后整行发送；xterm.js 原生键盘输入仍可用于方向键、
@@ -35,10 +37,15 @@
 远端：浏览器 Session + CSRF/Origin → 中心 paneld
       → Noise v2 已认证加密通道 → 目标 paneld
       → 目标 Agent Unix Socket → 固定登录 Shell PTY
+
+轻量：浏览器 Session + CSRF/Origin → 中心 paneld
+       → 轻量节点主动发起的 HTTPS 长轮询（v2 Noise 加密） → root `terminal-broker`
+       → 固定登录 Shell PTY
 ```
 
-- 不开放新的 TCP、SSH、WebSocket 或 Agent 公网监听端口；
+- 不开放新的 TCP、SSH、WebSocket 或 Agent 公网监听端口；轻量节点也不接受中心入站连接，终端命令只通过其主动 HTTPS 连接返回；
 - Panel 继续无特权运行，宿主机 PTY 仅由 root Agent 创建；
+- 轻量节点的遥测进程继续使用无登录低权限账户；独立的 root `terminal-broker` 只读取 root-only 的终端 Noise 私钥，复用固定 PTY Manager。遥测 `reporting key` 不进入终端服务，两者之间没有可被低权限进程调用的 root Socket；
 - Agent 主服务因文件管理根目录为 `/` 而保持宿主机文件系统可写，Panel 状态目录继续通过
   `ReadOnlyPaths` 独立保护。主机终端仍由 Agent 通过固定参数创建独立 transient systemd PTY，
   以独立生命周期和审计边界提供 `apt`、`dnf` 等系统维护能力；其他 Agent API 仍只能调用各自的
@@ -47,7 +54,7 @@
   `cluster.summary.read cluster.terminal.open` 或新增文件读取权限后的
   `cluster.summary.read cluster.terminal.open cluster.files.read`；
 - 现有 v1 和旧 v2 授权不自动扩权，管理员必须撤销后重新配对；
-- 轻量节点以无登录低权限账户运行，首版只做监控，不能通过升级静默获得 root Shell。
+- 轻量节点终端由独立版本的 root `terminal-broker` 显式提供；服务启动后才通过已认证的 v2 Noise 轮询公布能力，不会因旧节点升级二进制而自动开放入站 Shell。
 
 ## 3. 固定 API
 
@@ -70,6 +77,21 @@ POST /api/v2/federation/terminal/input
 POST /api/v2/federation/terminal/resize
 POST /api/v2/federation/terminal/close
 ```
+
+轻量节点反向终端使用既有 v2 Federation HTTP 入口的专用反向传输动作：
+
+```text
+POST /api/v2/federation/terminal/relay
+```
+
+轮询请求和响应均使用既有 v2 `Noise_IK_25519_ChaChaPoly_SHA256` 信封，终端私钥在接入时
+单独生成并只保存为 root-only 配置；中心节点公钥和目标节点 ID 由 HTTPS 接入响应固定下来。
+反向传输的命令 payload 直接复用既有 `TerminalOpenRequest`、`TerminalInputRequest`、
+`TerminalResizeRequest`、`TerminalCloseRequest`，不再叠加第二套终端协议或命令 HMAC。
+轮询请求携带当前中心会话 ID 列表和有界事件确认；节点重启或丢失会话后，中心会回收不再出现在
+列表中的会话，避免留下不可操作的终端索引。relay 响应还带有中心进程启动 epoch；中心重启
+后 epoch 变化，broker 会主动关闭本地旧 PTY，再重新建立会话。旧中心对 v2 relay 返回
+404/405/426 时，节点继续保留遥测并延迟重试。
 
 Agent 接口仅位于权限受限的 Unix Socket：
 
@@ -98,6 +120,7 @@ POST /v1/terminals/{id}/close
 | 最长会话 | 8 小时 |
 | 浏览器长轮询 | 最长 1 秒 |
 | Panel 失联会话索引 | 35 分钟后回收 |
+| 轻量节点无活动终端轮询 | 25 秒长轮询；有活动会话时 750 ms 轮询 |
 
 Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID，不向浏览器暴露 Agent 或远端
 真实会话 ID。本机会话在 Agent 或 Panel 退出时关闭；远端关闭请求因网络不可达而无法送达时，
@@ -112,6 +135,8 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
 - 维度、偏移、等待时间、请求体、输入、输出、并发和内存全部有界；
 - 终端能力本质上等价于 root SSH。它不是任意 Shell API 的替代品，其他页面仍只能调用固定
   结构化动作，不能复用终端接口拼接后台业务命令；
+- 轻量节点终端不等于开放 `sshd`：中心必须先通过接入时绑定的终端 Noise 静态公钥完成 v2
+  身份认证；root `terminal-broker` 只在本机 systemd 服务中运行，节点不暴露 TCP/SSH/HTTP 监听；
 - 网络断开只改变前端连接状态，不把“暂时没读到输出”误判为进程失败；PTY 真实退出才显示结束；
 - 远端撤销授权后不能新建终端；既有会话由目标 Agent 的会话上限、闲置时间和进程生命周期回收。
 
@@ -121,6 +146,8 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
 
 - 本机 open/output/input/resize/close；用户隔离、CSRF/Origin 和会话上限；
 - v2 远端完整生命周期、权限不足拒绝、重放拒绝以及命令明文不出现在传输中；
+- 轻量节点完整 `open/output/input/resize/close` 生命周期、Noise 密文/身份绑定/重放、旧中心 404 兼容、
+  节点重启会话回收、root broker systemd 启停和 `amd64`/`arm64` PTY 验收；
 - UTF-8 输入、整行预输入、控制键、24 ms 合并、窗口缩放、5000 行滚动、智能跟随、手动回到底部、
   输出截断、断线重连和 URL 安全跳转；
 - 以超过单屏高度的主机和体检命令列表复核独立滚动，确认终端输出和预输入框始终可见；

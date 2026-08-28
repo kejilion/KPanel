@@ -27,6 +27,7 @@ const (
 	v2TerminalInputPath  = "/api/v2/federation/terminal/input"
 	v2TerminalResizePath = "/api/v2/federation/terminal/resize"
 	v2TerminalClosePath  = "/api/v2/federation/terminal/close"
+	v2TerminalRelayPath  = "/api/v2/federation/terminal/relay"
 	v2FileOpenPath       = "/api/v2/federation/files/open"
 	v2FileLinkPath       = "/api/v2/federation/files/link"
 	v2FileLinkedOpenPath = "/api/v2/federation/files/open-linked"
@@ -34,11 +35,26 @@ const (
 	maxV2EnvelopeBytes   = MaxFederationV2Bytes
 )
 
+// V2 terminal paths are shared with the lightweight node broker so the
+// broker cannot silently drift from the mature federation terminal routes.
+const (
+	V2TerminalOpenPath   = v2TerminalOpenPath
+	V2TerminalInputPath  = v2TerminalInputPath
+	V2TerminalResizePath = v2TerminalResizePath
+	V2TerminalClosePath  = v2TerminalClosePath
+)
+
 var v2NoiseSuite = noise.NewCipherSuite(
 	noise.DH25519,
 	noise.CipherChaChaPoly,
 	noise.HashSHA256,
 )
+
+// GenerateFederationV2Keypair keeps all v2 Noise key generation on the same
+// cipher suite used by the mature federation client and target.
+func GenerateFederationV2Keypair() (noise.DHKey, error) {
+	return v2NoiseSuite.GenerateKeypair(rand.Reader)
+}
 
 type v2PairingDescriptor struct {
 	NodeID          string
@@ -117,6 +133,42 @@ type TerminalResizeRequest struct {
 
 type TerminalCloseRequest struct {
 	SessionID string `json:"sessionId"`
+}
+
+// TerminalRelayPollRequest is the reverse-transport message used by a
+// lightweight node. The outer v2 envelope provides identity, replay
+// protection and Noise encryption; this message deliberately contains no
+// second HMAC protocol.
+type TerminalRelayPollRequest struct {
+	SessionIDs []string             `json:"sessionIds,omitempty"`
+	Events     []TerminalRelayEvent `json:"events,omitempty"`
+}
+
+type TerminalRelayEvent struct {
+	CommandID  string     `json:"commandId,omitempty"`
+	Kind       string     `json:"kind"`
+	SessionID  string     `json:"sessionId"`
+	Offset     int64      `json:"offset,omitempty"`
+	NextOffset int64      `json:"nextOffset,omitempty"`
+	Data       []byte     `json:"data,omitempty"`
+	Truncated  bool       `json:"truncated,omitempty"`
+	ExitedAt   *time.Time `json:"exitedAt,omitempty"`
+	ExitError  string     `json:"exitError,omitempty"`
+	Closed     bool       `json:"closed,omitempty"`
+	Error      string     `json:"error,omitempty"`
+}
+
+type TerminalRelayCommand struct {
+	ID        string          `json:"id"`
+	Path      string          `json:"path"`
+	SessionID string          `json:"sessionId"`
+	Payload   json.RawMessage `json:"payload"`
+	ExpiresAt int64           `json:"expiresAt"`
+}
+
+type TerminalRelayPollResponse struct {
+	Epoch   string                `json:"epoch,omitempty"`
+	Command *TerminalRelayCommand `json:"command,omitempty"`
 }
 
 type v2CommitPayload struct {
@@ -484,7 +536,8 @@ func v2PathAllowed(method, path string) bool {
 	switch path {
 	case v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
 		v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
-		v2TerminalResizePath, v2TerminalClosePath, v2FileOpenPath,
+		v2TerminalResizePath, v2TerminalClosePath, v2TerminalRelayPath,
+		v2FileOpenPath,
 		v2FileLinkPath, v2FileLinkedOpenPath:
 		return true
 	default:

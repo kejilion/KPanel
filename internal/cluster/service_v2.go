@@ -698,7 +698,7 @@ func (s *Service) HandleFederationV2(
 ) (FederationEnvelopeV2, error) {
 	now := s.now().UTC()
 	sourceLimiter := s.v2SourceLimiter
-	if v2TerminalPath(path) {
+	if v2TerminalPath(path) || path == v2TerminalRelayPath {
 		sourceLimiter = s.terminalSources
 	}
 	if !sourceLimiter.Allow(cleanRateSubject(source), now) {
@@ -728,9 +728,48 @@ func (s *Service) HandleFederationV2(
 		return s.handleTerminalResizeV2(ctx, envelope, now)
 	case v2TerminalClosePath:
 		return s.handleTerminalCloseV2(ctx, envelope, now)
+	case v2TerminalRelayPath:
+		return s.handleTerminalRelayV2(ctx, envelope, now)
 	default:
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
+}
+
+func (s *Service) handleTerminalRelayV2(
+	ctx context.Context,
+	envelope v2Envelope,
+	now time.Time,
+) (FederationEnvelopeV2, error) {
+	record, err := s.light.Host(envelope.ControllerID)
+	if err != nil || s.lightTerminal == nil {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	terminalPublicKey, err := s.light.ReadTerminalPublicKey(record)
+	if err != nil || len(terminalPublicKey) != 32 {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	payload, peerStatic, handshake, err := openV2Request(
+		http.MethodPost, v2TerminalRelayPath, envelope,
+		nodeNoiseKeyV2(s.nodeIdentityV2), nil,
+	)
+	if err != nil || !bytes.Equal(peerStatic, terminalPublicKey) {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	if !s.lightTerminalRequests.Allow(envelope.ControllerID, now) {
+		return FederationEnvelopeV2{}, ErrRateLimited
+	}
+	if err := s.replays.Accept("light:"+envelope.ControllerID, envelope.RequestID, now); err != nil {
+		return FederationEnvelopeV2{}, err
+	}
+	var input TerminalRelayPollRequest
+	if err := decodeV2Payload(payload, &input); err != nil || validateTerminalRelayPoll(input) != nil {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	response, err := s.lightTerminal.poll(ctx, envelope.ControllerID, input.SessionIDs, input.Events)
+	if err != nil {
+		return FederationEnvelopeV2{}, err
+	}
+	return sealV2JSONResponse(envelope, handshake, response)
 }
 
 func (s *Service) handlePairV2(

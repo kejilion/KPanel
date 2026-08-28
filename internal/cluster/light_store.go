@@ -18,11 +18,13 @@ import (
 )
 
 const (
-	lightStateFileName       = "cluster-light-state.json"
-	lightSecretsDirectory    = "cluster-light-secrets"
-	maxLightStateBytes       = int64(4 << 20)
-	maxLightEnrollments      = 16
-	lightCredentialExtension = ".lightkey"
+	lightStateFileName         = "cluster-light-state.json"
+	lightSecretsDirectory      = "cluster-light-secrets"
+	lightTerminalKeysDirectory = "cluster-light-terminal-keys"
+	maxLightStateBytes         = int64(4 << 20)
+	maxLightEnrollments        = 16
+	lightCredentialExtension   = ".lightkey"
+	lightTerminalKeyExtension  = ".noisepub"
 )
 
 type lightEnrollmentRecord struct {
@@ -54,12 +56,13 @@ type lightPersistedState struct {
 }
 
 type lightStore struct {
-	mu        sync.RWMutex
-	path      string
-	secretDir string
-	state     lightPersistedState
-	dirty     bool
-	ops       atomicFileOpsV2
+	mu          sync.RWMutex
+	path        string
+	secretDir   string
+	terminalDir string
+	state       lightPersistedState
+	dirty       bool
+	ops         atomicFileOpsV2
 }
 
 func openLightStore(path string) (*lightStore, error) {
@@ -68,8 +71,12 @@ func openLightStore(path string) (*lightStore, error) {
 	}
 	directory := filepath.Dir(path)
 	secretDir := filepath.Join(directory, lightSecretsDirectory)
+	terminalDir := filepath.Join(directory, lightTerminalKeysDirectory)
 	if err := os.MkdirAll(secretDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create light node secret directory: %w", err)
+	}
+	if err := os.MkdirAll(terminalDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create light terminal key directory: %w", err)
 	}
 	if err := protectDirectoryV2(directory); err != nil {
 		return nil, err
@@ -77,8 +84,11 @@ func openLightStore(path string) (*lightStore, error) {
 	if err := protectDirectoryV2(secretDir); err != nil {
 		return nil, err
 	}
+	if err := protectDirectoryV2(terminalDir); err != nil {
+		return nil, err
+	}
 	store := &lightStore{
-		path: path, secretDir: secretDir, ops: defaultAtomicFileOpsV2(),
+		path: path, secretDir: secretDir, terminalDir: terminalDir, ops: defaultAtomicFileOpsV2(),
 		state: lightPersistedState{SchemaVersion: 1, Enrollments: []lightEnrollmentRecord{}, Hosts: []lightHostRecord{}},
 	}
 	content, err := readRegularFileV2(path, maxLightStateBytes, false)
@@ -219,6 +229,7 @@ func (s *lightStore) EnrollHost(
 	secretHash string,
 	record lightHostRecord,
 	reportingKey []byte,
+	terminalPublicKey []byte,
 	now time.Time,
 ) error {
 	s.mu.Lock()
@@ -241,6 +252,7 @@ func (s *lightStore) EnrollHost(
 	}
 	validatedName, nameErr := validateRequiredName(record.Name)
 	if !validID(record.ID) || nameErr != nil || validatedName != record.Name || len(reportingKey) != 32 ||
+		(len(terminalPublicKey) != 0 && len(terminalPublicKey) != 32) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return errors.New("light node host is invalid")
 	}
@@ -254,6 +266,21 @@ func (s *lightStore) EnrollHost(
 	if err := atomicWriteFileV2(credentialPath, []byte(base64.RawURLEncoding.EncodeToString(reportingKey)), 0o600, false, s.ops); err != nil {
 		return fmt.Errorf("write light node credential: %w", err)
 	}
+	terminalPath := terminalKeyPath(s.terminalDir, record.ID)
+	terminalWritten := false
+	if len(terminalPublicKey) > 0 {
+		if err := atomicWriteFileV2(
+			terminalPath,
+			[]byte(base64.RawURLEncoding.EncodeToString(terminalPublicKey)),
+			0o600,
+			false,
+			s.ops,
+		); err != nil {
+			_ = os.Remove(credentialPath)
+			return fmt.Errorf("write light node terminal key: %w", err)
+		}
+		terminalWritten = true
+	}
 	record.CredentialFile = credentialFile
 	record.ResourceVersion = lightResourceVersion(record)
 	s.state.Enrollments = append(
@@ -265,6 +292,9 @@ func (s *lightStore) EnrollHost(
 		s.state.Enrollments = previousEnrollments
 		s.state.Hosts = previousHosts
 		_ = os.Remove(credentialPath)
+		if terminalWritten {
+			_ = os.Remove(terminalPath)
+		}
 		return err
 	}
 	return nil
@@ -277,7 +307,8 @@ func (s *lightStore) AddHost(record lightHostRecord, secret []byte) error {
 		return ErrHostLimit
 	}
 	validatedName, nameErr := validateRequiredName(record.Name)
-	if !validID(record.ID) || nameErr != nil || validatedName != record.Name || len(secret) != 32 || record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
+	if !validID(record.ID) || nameErr != nil || validatedName != record.Name || len(secret) != 32 ||
+		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return errors.New("light node host is invalid")
 	}
 	for _, existing := range s.state.Hosts {
@@ -313,6 +344,24 @@ func (s *lightStore) ReadSecret(record lightHostRecord) ([]byte, error) {
 		return nil, ErrAuthentication
 	}
 	return secret, nil
+}
+
+func (s *lightStore) ReadTerminalPublicKey(record lightHostRecord) ([]byte, error) {
+	if !validID(record.ID) {
+		return nil, ErrAuthentication
+	}
+	content, err := readRegularFileV2(terminalKeyPath(s.terminalDir, record.ID), 128, true)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, ErrAuthentication
+	}
+	key, err := decodeTerminalRelayPublicKey(strings.TrimSpace(string(content)))
+	if err != nil || len(key) != 32 {
+		return nil, ErrAuthentication
+	}
+	return key, nil
 }
 
 func (s *lightStore) UpdateReport(id string, snapshot HostSnapshot, nodeVersion string, now time.Time) (lightHostRecord, error) {
@@ -395,6 +444,9 @@ func (s *lightStore) DeleteHost(id, expected string) (lightHostRecord, bool, err
 		if err := os.Remove(filepath.Join(s.secretDir, record.CredentialFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			credentialRemoved = false
 		}
+		if err := os.Remove(terminalKeyPath(s.terminalDir, record.ID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			credentialRemoved = false
+		}
 		return record, credentialRemoved, nil
 	}
 	return lightHostRecord{}, false, ErrNotFound
@@ -402,8 +454,10 @@ func (s *lightStore) DeleteHost(id, expected string) (lightHostRecord, bool, err
 
 func (s *lightStore) cleanupOrphanCredentials() error {
 	referenced := make(map[string]struct{}, len(s.state.Hosts))
+	referencedTerminalKeys := make(map[string]struct{}, len(s.state.Hosts))
 	for _, record := range s.state.Hosts {
 		referenced[record.CredentialFile] = struct{}{}
+		referencedTerminalKeys[terminalKeyName(record.ID)] = struct{}{}
 	}
 	entries, err := os.ReadDir(s.secretDir)
 	if err != nil {
@@ -417,6 +471,21 @@ func (s *lightStore) cleanupOrphanCredentials() error {
 			}
 			if err := os.Remove(filepath.Join(s.secretDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("remove orphan light node credential: %w", err)
+			}
+		}
+	}
+	terminalEntries, err := os.ReadDir(s.terminalDir)
+	if err != nil {
+		return fmt.Errorf("read light terminal key directory: %w", err)
+	}
+	for _, entry := range terminalEntries {
+		name := entry.Name()
+		if entry.Type().IsRegular() && validLightTerminalKeyName(name) {
+			if _, ok := referencedTerminalKeys[name]; ok {
+				continue
+			}
+			if err := os.Remove(filepath.Join(s.terminalDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove orphan light terminal key: %w", err)
 			}
 		}
 	}
@@ -458,6 +527,18 @@ func (s *lightStore) persistLocked() error {
 
 func validLightCredentialName(name string) bool {
 	return strings.HasPrefix(name, "host-") && strings.HasSuffix(name, lightCredentialExtension) && !strings.ContainsAny(name, `/\\`) && len(name) == len("host-")+32+len(lightCredentialExtension)
+}
+
+func validLightTerminalKeyName(name string) bool {
+	return strings.HasPrefix(name, "host-") && strings.HasSuffix(name, lightTerminalKeyExtension) && !strings.ContainsAny(name, `/\\`) && len(name) == len("host-")+32+len(lightTerminalKeyExtension)
+}
+
+func terminalKeyName(id string) string {
+	return "host-" + id + lightTerminalKeyExtension
+}
+
+func terminalKeyPath(directory, id string) string {
+	return filepath.Join(directory, terminalKeyName(id))
 }
 
 func lightResourceVersion(record lightHostRecord) string {

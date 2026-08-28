@@ -120,15 +120,18 @@ type LightEnrollment struct {
 }
 
 type LightEnrollRequest struct {
-	Token       string `json:"token"`
-	Name        string `json:"name,omitempty"`
-	NodeVersion string `json:"nodeVersion"`
+	Token             string `json:"token"`
+	Name              string `json:"name,omitempty"`
+	NodeVersion       string `json:"nodeVersion"`
+	TerminalPublicKey string `json:"terminalPublicKey,omitempty"`
 }
 
 type LightEnrollResponse struct {
-	NodeID         string `json:"nodeId"`
-	ReportingKey   string `json:"reportingKey"`
-	ReportInterval int    `json:"reportIntervalSeconds"`
+	NodeID                string `json:"nodeId"`
+	ReportingKey          string `json:"reportingKey"`
+	ReportInterval        int    `json:"reportIntervalSeconds"`
+	TerminalPeerPublicKey string `json:"terminalPeerPublicKey,omitempty"`
+	TargetNodeID          string `json:"targetNodeId,omitempty"`
 }
 
 type LightReportRequest struct {

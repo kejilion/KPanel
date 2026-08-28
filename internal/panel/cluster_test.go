@@ -1,6 +1,7 @@
 package panel
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -375,6 +376,35 @@ func TestLightNodeEnrollmentRejectsUntrustedForwardedHTTPS(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity ||
 		!strings.Contains(response.Body.String(), "cluster_light_https_required") {
 		t.Fatalf("untrusted forwarded HTTPS returned %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestLightNodeStandaloneTerminalEndpointIsNotAccepted(t *testing.T) {
+	server, _ := newTestServerWithPublicURL(t, "https://panel.test")
+	enrollment, err := server.cluster.CreateLightEnrollmentForOrigin("https://panel.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(enrollment.Command)
+	token := strings.Trim(fields[len(fields)-1], "'")
+	enrolled, err := server.cluster.EnrollLightNodeAtOrigin("198.51.100.10", "https://panel.test", cluster.LightEnrollRequest{
+		Token: token, Name: "edge-terminal", NodeVersion: "0.40.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{}`)
+	request := httptest.NewRequest(http.MethodPost, "https://panel.test/api/v3/federation/light/terminal/poll", strings.NewReader(string(body)))
+	request.Host = "panel.test"
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		t.Fatalf("standalone light terminal endpoint was accepted: %s", response.Body.String())
+	}
+	host, err := server.cluster.Host(context.Background(), enrolled.NodeID)
+	if err != nil || host.TerminalAvailable {
+		t.Fatalf("rejected standalone endpoint changed terminal capability: %#v, %v", host, err)
 	}
 }
 

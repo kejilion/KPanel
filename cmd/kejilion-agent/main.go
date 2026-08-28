@@ -158,7 +158,7 @@ func run(arguments []string) error {
 	if historyErr != nil {
 		slog.Warn("history monitoring is unavailable", "error", historyErr)
 	}
-	terminalManager := terminal.New(terminal.Config{})
+	terminalManager := terminal.New(terminal.Config{ParentUnit: "kejilion-agent.service"})
 	handler, err := agent.NewServer(agent.Config{
 		Token: token, Version: version.Version, ProtocolVersion: version.ProtocolVersion,
 		WebRoot: *webRoot, StateDir: *stateDir, System: systemCollector,

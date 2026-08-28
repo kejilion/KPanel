@@ -91,6 +91,7 @@ type Service struct {
 	remoteV2        remoteV2API
 	telemetry       TelemetrySource
 	terminal        TerminalBackend
+	lightTerminal   *lightTerminalRelay
 	nodeIdentityV2  nodeIdentityV2
 	panelVersion    string
 	publicURL       string
@@ -116,18 +117,19 @@ type Service struct {
 	kick            chan struct{}
 	wg              sync.WaitGroup
 
-	replays          *replayGuard
-	pairLimiter      *fixedWindowLimiter
-	v2SourceLimiter  *fixedWindowLimiter
-	requestLimiter   *fixedWindowLimiter
-	fileSources      *fixedWindowLimiter
-	fileRequests     *fixedWindowLimiter
-	fileStreams      *fileStreamLimiter
-	terminalSources  *fixedWindowLimiter
-	terminalRequests *fixedWindowLimiter
-	lightEnrolls     *fixedWindowLimiter
-	lightSources     *fixedWindowLimiter
-	lightReports     *fixedWindowLimiter
+	replays               *replayGuard
+	pairLimiter           *fixedWindowLimiter
+	v2SourceLimiter       *fixedWindowLimiter
+	requestLimiter        *fixedWindowLimiter
+	fileSources           *fixedWindowLimiter
+	fileRequests          *fixedWindowLimiter
+	fileStreams           *fileStreamLimiter
+	terminalSources       *fixedWindowLimiter
+	terminalRequests      *fixedWindowLimiter
+	lightEnrolls          *fixedWindowLimiter
+	lightSources          *fixedWindowLimiter
+	lightReports          *fixedWindowLimiter
+	lightTerminalRequests *fixedWindowLimiter
 
 	localMu       sync.Mutex
 	localValue    contract.HostTelemetry
@@ -251,25 +253,27 @@ func NewService(config ServiceConfig) (*Service, error) {
 		store: store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
-		light: light, publicURL: strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
+		light: light, lightTerminal: newLightTerminalRelay(config.Now),
+		publicURL:      strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
 		nodeIdentityV2: cloneNodeIdentityV2(nodeIdentity),
 		panelVersion:   cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
 		now: config.Now, pollInterval: config.PollInterval,
 		schedulerTick: config.SchedulerTick, checkpointEvery: config.CheckpointEvery,
 		jitter: config.Jitter, sem: make(chan struct{}, config.MaxConcurrency),
 		runtime: make(map[string]runtimeState), kick: make(chan struct{}, 1),
-		replays:          newReplayGuard(8192, 5*time.Minute),
-		pairLimiter:      newFixedWindowLimiter(20, time.Minute, 1024),
-		v2SourceLimiter:  newFixedWindowLimiter(120, time.Minute, 2048),
-		requestLimiter:   newFixedWindowLimiter(30, time.Minute, 512),
-		fileSources:      newFixedWindowLimiter(1200, time.Minute, 2048),
-		fileRequests:     newFixedWindowLimiter(256, time.Minute, 512),
-		fileStreams:      newFileStreamLimiter(8, 2),
-		terminalSources:  newFixedWindowLimiter(1200, time.Minute, 2048),
-		terminalRequests: newFixedWindowLimiter(600, time.Minute, 512),
-		lightEnrolls:     newFixedWindowLimiter(10, time.Minute, 2048),
-		lightSources:     newFixedWindowLimiter(240, time.Minute, 2048),
-		lightReports:     newFixedWindowLimiter(180, time.Minute, MaxHosts),
+		replays:               newReplayGuard(8192, 5*time.Minute),
+		pairLimiter:           newFixedWindowLimiter(20, time.Minute, 1024),
+		v2SourceLimiter:       newFixedWindowLimiter(120, time.Minute, 2048),
+		requestLimiter:        newFixedWindowLimiter(30, time.Minute, 512),
+		fileSources:           newFixedWindowLimiter(1200, time.Minute, 2048),
+		fileRequests:          newFixedWindowLimiter(256, time.Minute, 512),
+		fileStreams:           newFileStreamLimiter(8, 2),
+		terminalSources:       newFixedWindowLimiter(1200, time.Minute, 2048),
+		terminalRequests:      newFixedWindowLimiter(600, time.Minute, 512),
+		lightEnrolls:          newFixedWindowLimiter(10, time.Minute, 2048),
+		lightSources:          newFixedWindowLimiter(240, time.Minute, 2048),
+		lightReports:          newFixedWindowLimiter(180, time.Minute, MaxHosts),
+		lightTerminalRequests: newFixedWindowLimiter(300, time.Minute, MaxHosts),
 
 		securityEntrancePath: config.SecurityEntrancePath,
 	}
@@ -333,6 +337,9 @@ func (s *Service) Close() error {
 		cancel()
 		s.wg.Wait()
 	}
+	if s.lightTerminal != nil {
+		s.lightTerminal.closeAll()
+	}
 	return s.checkpoint()
 }
 
@@ -357,7 +364,7 @@ func (s *Service) Hosts(ctx context.Context) HostList {
 		items = append(items, host)
 	}
 	for _, record := range lightRecords {
-		items = append(items, publicLightHost(record, now))
+		items = append(items, s.publicLightHost(record, now))
 	}
 	s.mu.RUnlock()
 	return HostList{
@@ -399,7 +406,7 @@ func (s *Service) Host(ctx context.Context, id string) (Host, error) {
 		}
 		return Host{}, lightErr
 	}
-	return publicLightHost(lightRecord, s.now().UTC()), nil
+	return s.publicLightHost(lightRecord, s.now().UTC()), nil
 }
 
 func (s *Service) AddHost(ctx context.Context, input AddHostInput) (Host, error) {
@@ -557,7 +564,7 @@ func (s *Service) RenameHost(id string, input UpdateHostInput) (Host, error) {
 			}
 			return Host{}, lightErr
 		}
-		return publicLightHost(lightRecord, s.now().UTC()), nil
+		return s.publicLightHost(lightRecord, s.now().UTC()), nil
 	}
 	recordV2.Name = name
 	recordV2.UpdatedAt = s.now().UTC()
@@ -638,7 +645,7 @@ func (s *Service) Refresh(ctx context.Context, id string) (Host, error) {
 		}
 		if _, v2Err := s.storeV2.Host(id); v2Err != nil {
 			if record, lightErr := s.light.Host(id); lightErr == nil {
-				return publicLightHost(record, s.now().UTC()), nil
+				return s.publicLightHost(record, s.now().UTC()), nil
 			}
 			return Host{}, v2Err
 		}

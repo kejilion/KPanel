@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
@@ -26,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
 	"github.com/kejilion/kejilion-panel/internal/version"
@@ -45,6 +44,7 @@ type nodeConfig struct {
 	SchemaVersion  int    `json:"schemaVersion"`
 	Origin         string `json:"origin"`
 	NodeID         string `json:"nodeId"`
+	TargetNodeID   string `json:"targetNodeId,omitempty"`
 	ReportingKey   string `json:"reportingKey"`
 	ReportInterval int    `json:"reportIntervalSeconds"`
 }
@@ -58,15 +58,18 @@ type tokenWire struct {
 }
 
 type enrollRequest struct {
-	Token       string `json:"token"`
-	Name        string `json:"name,omitempty"`
-	NodeVersion string `json:"nodeVersion"`
+	Token             string `json:"token"`
+	Name              string `json:"name,omitempty"`
+	NodeVersion       string `json:"nodeVersion"`
+	TerminalPublicKey string `json:"terminalPublicKey,omitempty"`
 }
 
 type enrollResponse struct {
-	NodeID         string `json:"nodeId"`
-	ReportingKey   string `json:"reportingKey"`
-	ReportInterval int    `json:"reportIntervalSeconds"`
+	NodeID                string `json:"nodeId"`
+	ReportingKey          string `json:"reportingKey"`
+	ReportInterval        int    `json:"reportIntervalSeconds"`
+	TerminalPeerPublicKey string `json:"terminalPeerPublicKey,omitempty"`
+	TargetNodeID          string `json:"targetNodeId,omitempty"`
 }
 
 type reportRequest struct {
@@ -92,13 +95,15 @@ func run(arguments []string) error {
 		return nil
 	}
 	if len(arguments) == 0 {
-		return errors.New("expected enroll, run, or version")
+		return errors.New("expected enroll, run, terminal-broker, or version")
 	}
 	switch arguments[0] {
 	case "enroll":
 		return runEnroll(arguments[1:])
 	case "run":
 		return runNode(arguments[1:])
+	case "terminal-broker":
+		return runTerminalBroker(arguments[1:])
 	default:
 		return errors.New("unsupported kejilion-node command")
 	}
@@ -109,6 +114,7 @@ func runEnroll(arguments []string) error {
 	token := flags.String("token", "", "one-time enrollment token")
 	name := flags.String("name", "", "optional display name")
 	configPath := flags.String("config", defaultConfigPath, "configuration path")
+	terminalConfigPath := flags.String("terminal-config", defaultTerminalConfigPath, "root-only terminal configuration path")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -119,9 +125,25 @@ func runEnroll(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	request := enrollRequest{Token: strings.TrimSpace(*token), Name: strings.TrimSpace(*name), NodeVersion: version.Version}
+	terminalKey, err := cluster.GenerateFederationV2Keypair()
+	if err != nil {
+		return fmt.Errorf("generate terminal identity: %w", err)
+	}
+	request := enrollRequest{
+		Token: strings.TrimSpace(*token), Name: strings.TrimSpace(*name), NodeVersion: version.Version,
+		TerminalPublicKey: base64.RawURLEncoding.EncodeToString(terminalKey.Public),
+	}
 	var response enrollResponse
-	if err := postJSON(context.Background(), origin+lightEnrollPath, request, nil, &response); err != nil {
+	status, err := postJSONWithStatus(context.Background(), origin+lightEnrollPath, request, nil, &response)
+	if err != nil && status == http.StatusBadRequest {
+		// A pre-v2 center rejects the optional key field because its decoder is
+		// strict. Retry the same one-time token without terminal capability so
+		// the node remains telemetry-compatible and never guesses a protocol.
+		request.TerminalPublicKey = ""
+		response = enrollResponse{}
+		_, err = postJSONWithStatus(context.Background(), origin+lightEnrollPath, request, nil, &response)
+	}
+	if err != nil {
 		return fmt.Errorf("enroll lightweight node: %w", err)
 	}
 	if !validHexID(response.NodeID) || response.ReportInterval < 20 || response.ReportInterval > 600 {
@@ -131,11 +153,43 @@ func runEnroll(arguments []string) error {
 	if err != nil || len(key) != 32 {
 		return errors.New("enrollment credential is invalid")
 	}
+	var peerPublicKey []byte
+	terminalEnabled := false
+	if request.TerminalPublicKey != "" {
+		if response.TerminalPeerPublicKey == "" && response.TargetNodeID == "" {
+			// A compatible old center may ignore the optional capability field
+			// instead of rejecting it. Keep telemetry working, but do not leave a
+			// local root broker with an unpaired identity.
+			request.TerminalPublicKey = ""
+		} else {
+			peerPublicKey, err = decodeTerminalKey(response.TerminalPeerPublicKey)
+			if err != nil || !validHexID(response.TargetNodeID) {
+				return errors.New("enrollment terminal capability is invalid")
+			}
+			terminalEnabled = true
+		}
+	}
 	config := nodeConfig{
 		SchemaVersion: 1, Origin: origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
 	}
+	if terminalEnabled {
+		config.TargetNodeID = response.TargetNodeID
+	}
 	if err := writeConfigAtomic(*configPath, config); err != nil {
+		return err
+	}
+	if terminalEnabled {
+		terminalConfig := terminalConfig{
+			SchemaVersion: 1,
+			PrivateKey:    base64.RawURLEncoding.EncodeToString(terminalKey.Private),
+			PublicKey:     base64.RawURLEncoding.EncodeToString(terminalKey.Public),
+			PeerPublicKey: base64.RawURLEncoding.EncodeToString(peerPublicKey),
+		}
+		if err := writeTerminalConfigAtomic(*terminalConfigPath, terminalConfig); err != nil {
+			return err
+		}
+	} else if err := removeTerminalConfig(*terminalConfigPath); err != nil {
 		return err
 	}
 	fmt.Printf("KPanel lightweight node enrolled: %s\n", response.NodeID)
@@ -211,23 +265,26 @@ func collectAndReport(parent context.Context, collector *systeminfo.Collector, c
 	if err != nil {
 		return err
 	}
-	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
-	requestID, err := randomHex(16)
+	headers, err := signedLightNodeHeaders(config, lightReportPath, body, secret)
 	if err != nil {
 		return err
 	}
-	bodyHash := sha256.Sum256(body)
-	material := strings.Join([]string{"POST", lightReportPath, config.NodeID, timestamp, requestID, hex.EncodeToString(bodyHash[:])}, "\n")
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(material))
-	headers := map[string]string{
+	var response reportResponse
+	return postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response)
+}
+
+func signedLightNodeHeaders(config nodeConfig, path string, body, secret []byte) (map[string]string, error) {
+	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	requestID, err := randomHex(16)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
 		"X-KPanel-Light-Node-ID": config.NodeID,
 		"X-KPanel-Timestamp":     timestamp,
 		"X-KPanel-Request-ID":    requestID,
-		"X-KPanel-Signature":     base64.RawURLEncoding.EncodeToString(mac.Sum(nil)),
-	}
-	var response reportResponse
-	return postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response)
+		"X-KPanel-Signature":     cluster.LightRequestSignature(secret, http.MethodPost, path, config.NodeID, timestamp, requestID, body),
+	}, nil
 }
 
 func originFromToken(token string) (string, error) {
@@ -295,7 +352,8 @@ func readConfig(path string) (nodeConfig, []byte, error) {
 	origin, err := validateHTTPSOrigin(config.Origin)
 	key, keyErr := base64.RawURLEncoding.DecodeString(config.ReportingKey)
 	if err != nil || keyErr != nil || origin != config.Origin || config.SchemaVersion != 1 ||
-		!validHexID(config.NodeID) || len(key) != 32 || config.ReportInterval < 20 || config.ReportInterval > 600 {
+		!validHexID(config.NodeID) || (config.TargetNodeID != "" && !validHexID(config.TargetNodeID)) ||
+		len(key) != 32 || config.ReportInterval < 20 || config.ReportInterval > 600 {
 		return nodeConfig{}, nil, errors.New("configuration file is invalid")
 	}
 	return config, key, nil
@@ -355,17 +413,27 @@ func writeConfigAtomic(path string, config nodeConfig) error {
 }
 
 func postJSON(ctx context.Context, endpoint string, input any, headers map[string]string, output any) error {
+	_, err := postJSONWithStatus(ctx, endpoint, input, headers, output)
+	return err
+}
+
+func postJSONWithStatus(ctx context.Context, endpoint string, input any, headers map[string]string, output any) (int, error) {
 	body, err := json.Marshal(input)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return postRawJSON(ctx, endpoint, body, headers, output)
+	return postRawJSONWithStatus(ctx, endpoint, body, headers, output)
 }
 
 func postRawJSON(ctx context.Context, endpoint string, body []byte, headers map[string]string, output any) error {
+	_, err := postRawJSONWithStatus(ctx, endpoint, body, headers, output)
+	return err
+}
+
+func postRawJSONWithStatus(ctx context.Context, endpoint string, body []byte, headers map[string]string, output any) (int, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "KPanel-Light-Node/"+version.Version)
@@ -374,26 +442,26 @@ func postRawJSON(ctx context.Context, endpoint string, body []byte, headers map[
 	}
 	response, err := nodeHTTPClient.Do(request)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil || int64(len(content)) > maxResponseBytes {
-		return errors.New("server response is invalid")
+		return response.StatusCode, errors.New("server response is invalid")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("server returned HTTP %d", response.StatusCode)
+		return response.StatusCode, fmt.Errorf("server returned HTTP %d", response.StatusCode)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(output); err != nil {
-		return errors.New("server response is invalid")
+		return response.StatusCode, errors.New("server response is invalid")
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("server response is invalid")
+		return response.StatusCode, errors.New("server response is invalid")
 	}
-	return nil
+	return response.StatusCode, nil
 }
 
 func newHTTPClient() *http.Client {
@@ -402,7 +470,7 @@ func newHTTPClient() *http.Client {
 	transport.MaxIdleConns = 4
 	transport.MaxIdleConnsPerHost = 2
 	return &http.Client{
-		Transport: transport, Timeout: 20 * time.Second,
+		Transport: transport, Timeout: 40 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }

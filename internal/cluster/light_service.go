@@ -40,6 +40,19 @@ type LightReportAuth struct {
 	Signature string
 }
 
+// LightRequestSignature remains only for the low-privilege telemetry
+// endpoint. Terminal control is authenticated by the v2 Noise identity and
+// never reuses this reporting HMAC.
+func LightRequestSignature(secret []byte, method, path, nodeID, timestamp, requestID string, body []byte) string {
+	bodyHash := sha256.Sum256(body)
+	material := strings.Join([]string{
+		method, path, nodeID, timestamp, requestID, hex.EncodeToString(bodyHash[:]),
+	}, "\n")
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(material))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 func (s *Service) CreateLightEnrollment() (LightEnrollment, error) {
 	return s.CreateLightEnrollmentForOrigin(s.publicURL)
 }
@@ -103,6 +116,10 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if err != nil {
 		return LightEnrollResponse{}, err
 	}
+	terminalPublicKey, err := decodeTerminalRelayPublicKey(input.TerminalPublicKey)
+	if err != nil {
+		return LightEnrollResponse{}, ErrPairingCode
+	}
 	if len(s.store.Hosts())+len(s.storeV2.Hosts())+len(s.light.Hosts()) >= MaxHosts {
 		return LightEnrollResponse{}, ErrHostLimit
 	}
@@ -121,13 +138,18 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if err := s.light.EnrollHost(wire.ID, hex.EncodeToString(hash[:]), lightHostRecord{
 		ID: nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
 		CreatedAt: now, UpdatedAt: now,
-	}, reportingKey, now); err != nil {
+	}, reportingKey, terminalPublicKey, now); err != nil {
 		return LightEnrollResponse{}, err
 	}
-	return LightEnrollResponse{
+	response := LightEnrollResponse{
 		NodeID: nodeID, ReportingKey: base64.RawURLEncoding.EncodeToString(reportingKey),
 		ReportInterval: lightReportInterval,
-	}, nil
+	}
+	if len(terminalPublicKey) > 0 {
+		response.TerminalPeerPublicKey = base64.RawURLEncoding.EncodeToString(s.nodeIdentityV2.PublicKey)
+		response.TargetNodeID = s.store.NodeID()
+	}
+	return response, nil
 }
 
 func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input LightReportRequest) (LightReportResponse, error) {
@@ -135,29 +157,9 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if !s.lightSources.Allow(cleanRateSubject(auth.Source), now) {
 		return LightReportResponse{}, ErrRateLimited
 	}
-	if !validID(auth.NodeID) || !validNonce(auth.RequestID) || len(rawBody) == 0 || len(rawBody) > MaxSummaryBytes {
-		return LightReportResponse{}, ErrAuthentication
-	}
-	record, err := s.light.Host(auth.NodeID)
+	_, _, err := s.authenticateLightRequest(auth, lightReportPath, rawBody, MaxSummaryBytes, now)
 	if err != nil {
-		return LightReportResponse{}, ErrAuthentication
-	}
-	timestamp, err := strconv.ParseInt(auth.Timestamp, 10, 64)
-	if err != nil || absDuration(now.Sub(time.Unix(timestamp, 0).UTC())) > 2*time.Minute {
-		return LightReportResponse{}, ErrAuthentication
-	}
-	secret, err := s.light.ReadSecret(record)
-	if err != nil {
-		return LightReportResponse{}, ErrAuthentication
-	}
-	bodyHash := sha256.Sum256(rawBody)
-	material := strings.Join([]string{"POST", lightReportPath, auth.NodeID, auth.Timestamp, auth.RequestID, hex.EncodeToString(bodyHash[:])}, "\n")
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write([]byte(material))
-	expected := mac.Sum(nil)
-	provided, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(auth.Signature))
-	if err != nil || len(provided) != len(expected) || subtle.ConstantTimeCompare(provided, expected) != 1 {
-		return LightReportResponse{}, ErrAuthentication
+		return LightReportResponse{}, err
 	}
 	if !s.lightReports.Allow(auth.NodeID, now) {
 		return LightReportResponse{}, ErrRateLimited
@@ -175,16 +177,63 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	return LightReportResponse{AcceptedAt: now, NextReport: lightReportInterval}, nil
 }
 
+func (s *Service) authenticateLightRequest(
+	auth LightReportAuth,
+	path string,
+	rawBody []byte,
+	maxBody int64,
+	now time.Time,
+) (lightHostRecord, []byte, error) {
+	if !validID(auth.NodeID) || !validNonce(auth.RequestID) || len(rawBody) == 0 || int64(len(rawBody)) > maxBody {
+		return lightHostRecord{}, nil, ErrAuthentication
+	}
+	record, err := s.light.Host(auth.NodeID)
+	if err != nil {
+		return lightHostRecord{}, nil, ErrAuthentication
+	}
+	timestamp, err := strconv.ParseInt(auth.Timestamp, 10, 64)
+	if err != nil || absDuration(now.Sub(time.Unix(timestamp, 0).UTC())) > 2*time.Minute {
+		return lightHostRecord{}, nil, ErrAuthentication
+	}
+	secret, err := s.light.ReadSecret(record)
+	if err != nil {
+		return lightHostRecord{}, nil, ErrAuthentication
+	}
+	expected := LightRequestSignature(secret, "POST", path, auth.NodeID, auth.Timestamp, auth.RequestID, rawBody)
+	provided, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(auth.Signature))
+	expectedBytes, expectedErr := base64.RawURLEncoding.DecodeString(expected)
+	if err != nil || expectedErr != nil || len(provided) != len(expectedBytes) || subtle.ConstantTimeCompare(provided, expectedBytes) != 1 {
+		return lightHostRecord{}, nil, ErrAuthentication
+	}
+	return record, secret, nil
+}
+
 func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (DeleteHostResult, error) {
 	_, credentialRemoved, err := s.light.DeleteHost(id, input.ExpectedResourceVersion)
 	if err != nil {
 		return DeleteHostResult{}, err
 	}
+	if s.lightTerminal != nil {
+		s.lightTerminal.deleteNode(id)
+	}
 	return DeleteHostResult{Deleted: true, CredentialRemoved: credentialRemoved}, nil
 }
 
-func publicLightHost(record lightHostRecord, now time.Time) Host {
+func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
+	terminalAvailable := false
+	if s.lightTerminal != nil && s.lightTerminal.available(record.ID) {
+		key, err := s.light.ReadTerminalPublicKey(record)
+		terminalAvailable = err == nil && len(key) == 32
+	}
+	return publicLightHost(record, now, terminalAvailable)
+}
+
+func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bool) Host {
 	state := HostUnknown
+	scope := SummaryScope
+	if terminalAvailable {
+		scope = SummaryTerminalScope
+	}
 	if record.LastSnapshot != nil && record.LastSuccessAt != nil {
 		since := now.Sub(record.LastSuccessAt.UTC())
 		switch {
@@ -200,7 +249,7 @@ func publicLightHost(record lightHostRecord, now time.Time) Host {
 		ID: record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
 		FederationProtocol: LightNodeProtocol, PanelVersion: record.NodeVersion,
-		Scope: SummaryScope, TerminalAvailable: false,
+		Scope: scope, TerminalAvailable: terminalAvailable,
 		State: state, LastSnapshot: cloneSnapshot(record.LastSnapshot),
 		LastAttemptAt: cloneTime(record.LastAttemptAt), LastSuccessAt: cloneTime(record.LastSuccessAt),
 		ConsecutiveFailures: record.ConsecutiveFailures, LastErrorCode: record.LastErrorCode,

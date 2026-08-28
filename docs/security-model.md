@@ -31,7 +31,7 @@
 | 数据 | Token、密码、私钥和环境变量脱敏；初始应用信息只在管理员任务日志展示 | 凭据泄露 |
 | 资源 | 响应、日志、任务时长、并发数和备份体积上限 | 内存、磁盘和连接耗尽 |
 | 出站下载 | 无特权 Panel 固定 GET、公开地址策略、DNS 固定直拨、逐跳重定向复核、URL 脱敏 | SSRF、云元数据读取、签名 URL 泄漏 |
-| 终端 | 独立 Session、CSRF/Origin、Agent Unix Socket、Noise v2 scope、会话/输入/输出上限、无回放 | 未授权 root Shell、重放、明文泄漏和资源耗尽 |
+| 终端 | 独立 Session、CSRF/Origin、Agent Unix Socket、Noise v2 scope、轻量终端专属 Noise 出站 relay、遥测 reporting key 隔离、独立 root broker、固定 PTY 动作、会话/输入/输出上限、无回放 | 未授权 root Shell、入站 SSH 暴露、重放、明文泄漏和资源耗尽 |
 | 供应链 | 固定来源、内容/结构校验、本地回退目录 | 远程目录获得执行权限 |
 
 这些控制约束请求和执行过程，不按资源归属缩减管理员业务功能。
@@ -81,8 +81,8 @@ TOTP 的注册、密钥保护、恢复和防绕过要求见
 - 尚未包含 `system-resource` 固定协议的旧版 `kejilion.sh`；此时 Hosts、定时任务、网卡和防火墙
   保持真实状态只读并明确显示脚本适配器缺失；
 - 非 Debian/Ubuntu 的系统更新源切换适配器；
-- 交互式容器 TTY、Compose 与 `daemon.json` 通用结构化编辑器；宿主机多主机终端已按
-  [`multi-host-terminal.md`](multi-host-terminal.md) 实现；
+- 交互式容器 TTY、Compose 与 `daemon.json` 通用结构化编辑器；宿主机多主机终端和更新后
+  light-v1 节点终端已按 [`multi-host-terminal.md`](multi-host-terminal.md) 实现；
 - 部分应用的专属交互安装参数，以及没有主容器时的应用级生命周期动作；
 - 无法解析的复杂 Nginx 结构化更新适配器。
 

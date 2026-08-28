@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +84,49 @@ func TestNodeConfigRoundTripIsStrictAndRejectsNonRegularTargets(t *testing.T) {
 	}
 	if err := writeConfigAtomic(directoryTarget, config); err == nil {
 		t.Fatal("writeConfigAtomic() accepted a directory target")
+	}
+}
+
+func TestTerminalConfigRoundTripIsStrictAndRootOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "terminal.json")
+	config := terminalConfig{
+		SchemaVersion: 1,
+		PrivateKey:    base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)),
+		PublicKey:     base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)),
+		PeerPublicKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)),
+	}
+	if err := writeTerminalConfigAtomic(path, config); err != nil {
+		t.Fatalf("writeTerminalConfigAtomic() error = %v", err)
+	}
+	loaded, identity, err := readTerminalConfig(path)
+	if err != nil || loaded != config || !bytes.Equal(identity.Key.Private, bytes.Repeat([]byte{1}, 32)) ||
+		!bytes.Equal(identity.Key.Public, bytes.Repeat([]byte{2}, 32)) || !bytes.Equal(identity.Peer, bytes.Repeat([]byte{3}, 32)) {
+		t.Fatalf("readTerminalConfig() = %#v, %#v, %v", loaded, identity, err)
+	}
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("terminal configuration is not a regular file: %#v, %v", info, err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(path, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := readTerminalConfig(path); err == nil {
+			t.Fatal("readTerminalConfig() accepted group-readable private identity")
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content[:len(content)-2], []byte(`,"unexpected":true}`+"\n")...)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readTerminalConfig(path); err == nil {
+		t.Fatal("readTerminalConfig() accepted an unknown field")
 	}
 }
 

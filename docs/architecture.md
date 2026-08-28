@@ -48,14 +48,19 @@ Agent，由文件管理器在目标目录内暂存、`fsync` 并原子发布。A
 每台 KPanel 都可以同时作为中心端和被控端。中心端通过 HTTPS，或在无域名时通过 Noise
 端到端加密的公网 `IP + 端口`，与远端 `paneld` 的固定联邦接口通信；远端 `paneld`
 再通过本机 Unix Socket 读取 Agent 的窄化主机摘要，或在独立终端 scope 下创建有界 PTY。
-Agent Token 和管理员 Session 不会跨主机传递；终端能力只通过独立授权、认证加密通道开放。
+无 KPanel 的轻量节点则由低权限 telemetry 进程和独立 root `terminal-broker` 组成：broker
+只通过授权中心的出站 HTTPS v2 Noise 长轮询接收固定终端 payload，并在本机创建同样的固定登录 Shell PTY。
+它不监听入站 TCP、SSH、HTTP、WebSocket 或低权限 Unix Socket。Agent Token 和管理员 Session
+不会跨主机传递；终端能力只通过独立授权、认证加密通道开放。
 
 当前面板自动作为“本机”节点显示，直接读取本地 Agent；远端节点使用一次性授权码和每主机
 独立 X25519 身份配对。v2 状态和密钥与既有 Ed25519 v1 文件分离，因此旧节点可继续运行和
 回滚。监控页只读取当前中心端缓存；终端页也只请求中心端，不直接请求远端或共享远端登录态。HTTP 加密直连只
 保护联邦数据，不保护浏览器登录目标面板。协议、SSRF/TLS 控制、资源上限和状态语义见
 [集群监控与联邦协议](cluster-monitoring.md)。新 v2 配对还可按独立 scope 使用
-[多主机终端](multi-host-terminal.md)；旧授权和轻量节点不会自动扩权。
+[多主机终端](multi-host-terminal.md)；更新后的轻量节点以 `light-v1` 上报遥测、以 v2 Noise relay
+从终端页使用同一套会话体验，
+但旧授权、旧节点和未执行节点更新的轻量安装不会自动扩权。
 
 ## 与 kejilion.sh 的关系
 

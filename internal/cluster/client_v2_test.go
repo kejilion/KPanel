@@ -238,3 +238,88 @@ func TestRemoteClientV2EncryptsPairCommitSummaryAndRevoke(t *testing.T) {
 		t.Fatalf("RevokeV2() error = %v", err)
 	}
 }
+
+func TestTerminalRelayClientV2UsesSharedNoiseAndTerminalPayloads(t *testing.T) {
+	now := time.Date(2026, 8, 29, 8, 0, 0, 0, time.UTC)
+	targetKey, err := GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatalf("target GenerateFederationV2Keypair() error = %v", err)
+	}
+	controllerKey, err := GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatalf("controller GenerateFederationV2Keypair() error = %v", err)
+	}
+	controllerID := strings.Repeat("a", 32)
+	targetID := strings.Repeat("b", 32)
+	sessionID := strings.Repeat("c", 32)
+	commandID := strings.Repeat("d", 32)
+	client := &TerminalRelayClient{}
+	client.client = &http.Client{Transport: v2RoundTripper(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPost || request.URL.Path != v2TerminalRelayPath {
+			return nil, errors.New("unexpected terminal relay request shape")
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		var envelope v2Envelope
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, err
+		}
+		plaintext, peerStatic, handshake, err := openV2Request(
+			http.MethodPost, request.URL.Path, envelope, targetKey, nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(peerStatic, controllerKey.Public) {
+			return nil, errors.New("terminal relay request did not authenticate controller")
+		}
+		var poll TerminalRelayPollRequest
+		if err := decodeV2Payload(plaintext, &poll); err != nil ||
+			len(poll.SessionIDs) != 1 || poll.SessionIDs[0] != sessionID {
+			return nil, errors.New("terminal relay poll payload was not decoded")
+		}
+		payload, err := json.Marshal(TerminalRelayPollResponse{
+			Epoch: strings.Repeat("e", 32),
+			Command: &TerminalRelayCommand{
+				ID: commandID, Path: v2TerminalOpenPath, SessionID: sessionID,
+				Payload: func() json.RawMessage {
+					value, _ := json.Marshal(TerminalOpenRequest{Rows: 24, Columns: 80})
+					return value
+				}(), ExpiresAt: now.Add(time.Minute).Unix(),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		sealed, err := sealV2Response(envelope, handshake, payload)
+		if err != nil {
+			return nil, err
+		}
+		content, err := json.Marshal(sealed)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(content)),
+		}, nil
+	})}
+	relay, err := NewTerminalRelayClient(client.client)
+	if err != nil {
+		t.Fatalf("NewTerminalRelayClient() error = %v", err)
+	}
+	got, err := relay.PollV2(
+		context.Background(), "https://panel.example.com:443", controllerID, targetID,
+		controllerKey, targetKey.Public, now,
+		TerminalRelayPollRequest{SessionIDs: []string{sessionID}},
+	)
+	if err != nil {
+		t.Fatalf("PollV2() error = %v", err)
+	}
+	if got.Epoch != strings.Repeat("e", 32) || got.Command == nil || got.Command.ID != commandID || got.Command.Path != v2TerminalOpenPath {
+		t.Fatalf("PollV2() = %#v, want a validated open command", got)
+	}
+}

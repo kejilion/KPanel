@@ -150,6 +150,15 @@ func (s *Service) terminalHostCredential(id string) (hostRecordV2, v2Credential,
 }
 
 func (s *Service) TerminalOpen(ctx context.Context, hostID string, input TerminalOpenRequest) (TerminalOpenResponse, error) {
+	if _, err := s.light.Host(hostID); err == nil {
+		if s.lightTerminal == nil {
+			return TerminalOpenResponse{}, ErrTerminalUnavailable
+		}
+		if input.Rows == 0 || input.Columns == 0 || input.Rows > 500 || input.Columns > 1000 {
+			return TerminalOpenResponse{}, errors.New("invalid terminal dimensions")
+		}
+		return s.lightTerminal.open(ctx, hostID, input.Rows, input.Columns)
+	}
 	record, credential, remote, err := s.terminalHostCredential(hostID)
 	if err != nil {
 		return TerminalOpenResponse{}, err
@@ -158,6 +167,12 @@ func (s *Service) TerminalOpen(ctx context.Context, hostID string, input Termina
 }
 
 func (s *Service) TerminalOutput(ctx context.Context, hostID string, input TerminalOutputRequest) (terminal.Output, error) {
+	if _, err := s.light.Host(hostID); err == nil {
+		if s.lightTerminal == nil {
+			return terminal.Output{}, ErrTerminalUnavailable
+		}
+		return s.lightTerminal.output(ctx, hostID, input)
+	}
 	record, credential, remote, err := s.terminalHostCredential(hostID)
 	if err != nil {
 		return terminal.Output{}, err
@@ -166,6 +181,12 @@ func (s *Service) TerminalOutput(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalInput(ctx context.Context, hostID string, input TerminalInputRequest) error {
+	if _, err := s.light.Host(hostID); err == nil {
+		if s.lightTerminal == nil {
+			return ErrTerminalUnavailable
+		}
+		return s.lightTerminal.input(ctx, hostID, input)
+	}
 	record, credential, remote, err := s.terminalHostCredential(hostID)
 	if err != nil {
 		return err
@@ -174,6 +195,12 @@ func (s *Service) TerminalInput(ctx context.Context, hostID string, input Termin
 }
 
 func (s *Service) TerminalResize(ctx context.Context, hostID string, input TerminalResizeRequest) error {
+	if _, err := s.light.Host(hostID); err == nil {
+		if s.lightTerminal == nil {
+			return ErrTerminalUnavailable
+		}
+		return s.lightTerminal.resize(ctx, hostID, input)
+	}
 	record, credential, remote, err := s.terminalHostCredential(hostID)
 	if err != nil {
 		return err
@@ -182,6 +209,12 @@ func (s *Service) TerminalResize(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalClose(ctx context.Context, hostID string, input TerminalCloseRequest) error {
+	if _, err := s.light.Host(hostID); err == nil {
+		if s.lightTerminal == nil {
+			return ErrTerminalUnavailable
+		}
+		return s.lightTerminal.close(ctx, hostID, input)
+	}
 	record, credential, remote, err := s.terminalHostCredential(hostID)
 	if err != nil {
 		return err

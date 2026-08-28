@@ -43,6 +43,7 @@ type Starter func(rows, columns uint16) (Process, error)
 
 type Config struct {
 	Starter          Starter
+	ParentUnit       string
 	BufferBytes      int
 	MaxSessions      int
 	MaxOwnerSessions int
@@ -98,7 +99,10 @@ type Output struct {
 
 func New(config Config) *Manager {
 	if config.Starter == nil {
-		config.Starter = defaultStarter
+		parentUnit := config.ParentUnit
+		config.Starter = func(rows, columns uint16) (Process, error) {
+			return starterWithParent(rows, columns, parentUnit)
+		}
 	}
 	if config.BufferBytes <= 0 {
 		config.BufferBytes = DefaultBufferBytes
@@ -124,6 +128,10 @@ func New(config Config) *Manager {
 }
 
 func defaultStarter(rows, columns uint16) (Process, error) {
+	return starterWithParent(rows, columns, "kejilion-agent.service")
+}
+
+func starterWithParent(rows, columns uint16, parentUnit string) (Process, error) {
 	shell := "/bin/bash"
 	if _, err := os.Stat(shell); err != nil {
 		shell = "/bin/sh"
@@ -145,7 +153,7 @@ func defaultStarter(rows, columns uint16) (Process, error) {
 				return nil, err
 			}
 			unit := "kpanel-terminal-" + identity
-			command := transientTerminalCommand(systemdRun, shell, directory, unit, environment)
+			command := transientTerminalCommandWithParent(systemdRun, shell, directory, unit, environment, parentUnit)
 			process, err := hostpty.Start(command, rows, columns)
 			if err != nil {
 				return nil, err
@@ -173,6 +181,10 @@ func terminalEnvironment(shell string) []string {
 }
 
 func transientTerminalCommand(systemdRun, shell, directory, unit string, environment []string) *exec.Cmd {
+	return transientTerminalCommandWithParent(systemdRun, shell, directory, unit, environment, "kejilion-agent.service")
+}
+
+func transientTerminalCommandWithParent(systemdRun, shell, directory, unit string, environment []string, parentUnit string) *exec.Cmd {
 	arguments := []string{
 		"--quiet",
 		"--wait",
@@ -190,8 +202,12 @@ func transientTerminalCommand(systemdRun, shell, directory, unit string, environ
 		"--property=KillMode=mixed",
 		"--property=SendSIGHUP=yes",
 		"--property=RuntimeMaxSec=8h",
-		"--property=PartOf=kejilion-agent.service",
-		"--property=After=kejilion-agent.service",
+	}
+	if strings.TrimSpace(parentUnit) != "" {
+		arguments = append(arguments,
+			"--property=PartOf="+strings.TrimSpace(parentUnit),
+			"--property=After="+strings.TrimSpace(parentUnit),
+		)
 	}
 	for _, value := range environment {
 		arguments = append(arguments, "--setenv="+value)

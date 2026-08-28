@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-08-29
+
+### Added
+
+- 轻量节点在保持仅出站连接、不开放 SSH 或额外监听端口的前提下，新增与 KPanel 多主机终端一致的安全远程终端能力；root PTY broker 通过 v2 Noise relay 接收固定的 `open`、`output`、`input`、`resize`、`close` 控制，遥测进程仍以低权限账户运行。
+- 轻量节点接入、更新、重启、删除和卸载链路新增终端身份、独立 systemd unit、会话回收、断线重投递、重放保护、资源边界和旧中心兼容处理。
+
+### Changed
+
+- 终端能力复用既有 v2 Noise、Session、scope 和终端 payload 契约；终端私钥仅保存为 `0600 root:root`，不复用遥测 reporting key。
+- 轻量节点既有安装通过 `k kpanel node update` 补齐终端 broker；中心删除仅撤销中心记录和凭据，不远程执行目标机卸载。
+
+### Upgrade Notes
+
+- 本版新增轻量节点终端协议和目标机 root PTY 服务，不修改现有 KPanel 数据库 schema；已有轻量节点如需终端能力，升级后须在目标机执行 `k kpanel node update` 并重新接入/完成终端配对。
+- 遥测兼容旧中心；旧中心不支持终端 relay 时节点保持遥测工作并退避，不自动扩权。回滚到 `v0.98.4` 须成套恢复旧 OCI、Compose、`.env`、数据和 Agent 文件；目标机如需完全移除终端 unit，应执行对应节点卸载流程。
+
 ## [0.98.4] - 2026-08-28
 
 ### Fixed
