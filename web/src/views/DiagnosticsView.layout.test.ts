@@ -59,7 +59,7 @@ describe('diagnostics workspace layout', () => {
       /@media \(max-width: 680px\)[\s\S]*?\.diagnostic-result\.is-overview\s*\{[^}]*overflow: visible;[^}]*overscroll-behavior: auto;[^}]*touch-action: pan-y;/,
     )
     expect(diagnosticsSource).toMatch(
-      /:global\(\.desktop-window__body\) \.diagnostic-result\.is-overview\s*\{[^}]*overflow: auto;[^}]*overscroll-behavior: contain;/,
+      /:global\(\.desktop-window__body \.diagnostic-result\.is-overview\)\s*\{[^}]*overflow: auto;[^}]*overscroll-behavior: contain;[^}]*scrollbar-gutter: stable;/,
     )
   })
 

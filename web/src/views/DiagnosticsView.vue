@@ -2717,7 +2717,7 @@ onBeforeUnmount(() => {
     touch-action: pan-y;
   }
 
-  :global(.desktop-window__body) .diagnostic-result.is-overview {
+  :global(.desktop-window__body .diagnostic-result.is-overview) {
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
