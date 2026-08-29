@@ -1223,6 +1223,17 @@ describe('FilesView large icon layout', () => {
     expect(source).toContain('支持边缓冲边播放')
   })
 
+  it('uses one theme-derived palette across text, media, and metadata previews', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+
+    expect(source).toMatch(/\.code-viewer\s*\{[^}]*border:\s*1px solid var\(--file-preview-border\);[^}]*background:\s*var\(--file-preview-background\);/)
+    expect(source).toMatch(/\.media-viewer\s*\{[\s\S]*?var\(--file-preview-glow\)[\s\S]*?var\(--file-preview-panel\)[\s\S]*?var\(--file-preview-background\)/)
+    expect(source).toContain('color: var(--file-preview-muted);')
+    expect(source).toContain('color: var(--file-preview-text);')
+    expect(source).not.toContain('rgb(53 203 166 / 15%)')
+    expect(source).not.toContain('linear-gradient(180deg, #111c1d')
+  })
+
   it('requires decoded video dimensions instead of treating container metadata as visual readiness', () => {
     const view = setupView()
 

@@ -4557,10 +4557,10 @@ onBeforeUnmount(() => {
 
 .code-viewer {
   overflow: hidden;
-  border: 1px solid var(--terminal-shell-border, #29383a);
-  border-radius: var(--terminal-shell-radius, 12px);
-  background: var(--terminal-shell-background, #0b1214);
-  box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%));
+  border: 1px solid var(--file-preview-border);
+  border-radius: var(--radius, 12px);
+  background: var(--file-preview-background);
+  box-shadow: var(--file-preview-shadow);
 }
 
 .code-viewer > header,
@@ -4571,16 +4571,16 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 14px;
   padding: 7px 12px;
-  color: var(--terminal-shell-muted, #8a9695);
+  color: var(--file-preview-muted);
   font-size: 12px;
-  background: var(--terminal-shell-panel, #111a1d);
+  background: var(--file-preview-panel);
 }
 
 .code-viewer > header > span:first-child {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--terminal-shell-text, #d8dddc);
+  color: var(--file-preview-text);
 }
 
 .code-viewer__header-right,
@@ -4602,19 +4602,19 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 0;
   border-radius: 6px;
-  color: var(--terminal-shell-muted, #8a9695);
+  color: var(--file-preview-muted);
   background: transparent;
   cursor: pointer;
 }
 
 .code-editor-tool:hover,
 .code-editor-tool.is-active {
-  color: var(--terminal-shell-text, #d8dddc);
-  background: var(--terminal-shell-panel-raised, #182326);
+  color: var(--file-preview-text);
+  background: var(--file-preview-panel-raised);
 }
 
 .code-editor-tool.is-active {
-  color: var(--brand, #35cba6);
+  color: var(--file-preview-accent);
 }
 
 .code-viewer > footer {
@@ -4667,12 +4667,12 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 14px;
   overflow: hidden;
-  border: 1px solid var(--terminal-shell-border, #29383a);
+  border: 1px solid var(--file-preview-border);
   border-radius: 16px;
   background:
-    radial-gradient(circle at 50% -12%, rgb(53 203 166 / 15%), transparent 42%),
-    linear-gradient(180deg, #111c1d 0%, var(--terminal-shell-background, #0b1214) 100%);
-  box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%));
+    radial-gradient(circle at 50% -12%, var(--file-preview-glow), transparent 42%),
+    linear-gradient(180deg, var(--file-preview-panel) 0%, var(--file-preview-background) 100%);
+  box-shadow: var(--file-preview-shadow);
 }
 
 .media-viewer--video,
@@ -4689,7 +4689,7 @@ onBeforeUnmount(() => {
   aspect-ratio: 16 / 9;
   place-items: center;
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid color-mix(in srgb, var(--file-preview-text) 10%, transparent);
   border-radius: 14px;
   background: #000;
   box-shadow: 0 18px 46px rgb(0 0 0 / 30%);
@@ -4714,8 +4714,12 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 9px;
   padding: 20px;
-  color: #eef8f5;
-  background: linear-gradient(180deg, rgb(2 10 9 / 8%), rgb(2 10 9 / 66%));
+  color: var(--file-preview-text);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--file-preview-background) 8%, transparent),
+    color-mix(in srgb, var(--file-preview-background) 66%, transparent)
+  );
   text-align: center;
 }
 
@@ -4726,12 +4730,12 @@ onBeforeUnmount(() => {
 .media-player__error {
   flex-direction: column;
   gap: 6px;
-  color: #ffe7e7;
+  color: var(--danger);
   pointer-events: auto;
 }
 
 .media-player__error span {
-  color: rgb(255 231 231 / 72%);
+  color: color-mix(in srgb, var(--danger) 72%, var(--file-preview-text));
   font-size: 13px;
 }
 
@@ -4758,7 +4762,7 @@ onBeforeUnmount(() => {
   min-height: min(68vh, 680px);
   border: 0;
   border-radius: 10px;
-  background: #fff;
+  background: var(--file-preview-panel);
 }
 
 .media-viewer--pdf {
@@ -4777,7 +4781,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: var(--terminal-shell-muted, #8a9695);
+  color: var(--file-preview-muted);
   font-size: 13px;
 }
 
@@ -4794,18 +4798,18 @@ onBeforeUnmount(() => {
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--brand, #35cba6);
-  box-shadow: 0 0 0 4px rgb(53 203 166 / 13%);
+  background: var(--file-preview-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--file-preview-accent) 13%, transparent);
 }
 
 .media-viewer__status.is-loading i {
-  background: var(--amber, #d5ae62);
-  box-shadow: 0 0 0 4px rgb(213 174 98 / 13%);
+  background: var(--amber);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 13%, transparent);
 }
 
 .media-viewer__status.is-error i {
-  background: var(--danger, #d86f74);
-  box-shadow: 0 0 0 4px rgb(216 111 116 / 13%);
+  background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
 :global(.modal-panel--wide:has(.media-viewer)) {
@@ -4831,12 +4835,12 @@ onBeforeUnmount(() => {
   place-items: center;
   gap: 11px;
   padding: 40px;
-  color: var(--muted);
+  color: var(--file-preview-muted);
   text-align: center;
 }
 
 .metadata-viewer strong {
-  color: var(--text);
+  color: var(--file-preview-text);
 }
 
 .spinning {

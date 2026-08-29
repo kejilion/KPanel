@@ -11,8 +11,9 @@
   --sidebar-collapsed-width: 78px;
   --topbar-height: 70px;
   --scrollbar-size: 10px;
-  /* Shared dark workspace: terminals, editors and log/console viewers stay
-     visually consistent in both application themes. */
+  /* Shared dark workspace: terminals and log/console viewers stay visually
+     consistent in both application themes. File previews use their own
+     derived workbench palette. */
   --terminal-shell-background: #0b1214;
   --terminal-shell-panel: #111a1d;
   --terminal-shell-panel-raised: #182326;

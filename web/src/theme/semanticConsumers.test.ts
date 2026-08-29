@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const sources = {
   main: readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8'),
+  themes: readFileSync(new URL('../styles/themes.css', import.meta.url), 'utf8'),
   desktop: readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8'),
   fileShare: readFileSync(new URL('../views/FileShareView.vue', import.meta.url), 'utf8'),
   clusterShare: readFileSync(new URL('../views/ClusterShareView.vue', import.meta.url), 'utf8'),
@@ -52,6 +53,27 @@ describe('semantic action consumers', () => {
     expectRule(sources.main, '.data-table tbody tr:hover', { background: /^var\(--interaction-hover\)$/ })
     expectRule(sources.desktop, '.desktop-window__action:hover', { background: /^var\(--interaction-hover\)$/ })
     expect(sources.files).toMatch(/\.file-grid-card:hover,\s*\.file-grid-card:focus-visible\s*\{[^}]*background:\s*var\(--interaction-hover\);/)
+  })
+
+  it('keeps every file preview branch on one theme-derived workbench palette', () => {
+    for (const token of [
+      '--file-preview-background',
+      '--file-preview-panel',
+      '--file-preview-panel-raised',
+      '--file-preview-text',
+      '--file-preview-muted',
+      '--file-preview-border',
+      '--file-preview-accent',
+      '--file-preview-selection',
+      '--file-preview-glow',
+    ]) {
+      expect(sources.themes).toContain(`${token}:`)
+    }
+    for (const consumer of ['var(--file-preview-background)', 'var(--file-preview-panel)', 'var(--file-preview-text)', 'var(--file-preview-muted)', 'var(--file-preview-accent)']) {
+      expect(sources.files).toContain(consumer)
+    }
+    expect(sources.files).not.toContain('rgb(53 203 166 / 15%)')
+    expect(sources.files).not.toContain('linear-gradient(180deg, #111c1d')
   })
 
   it('keeps the authentication shell on the runtime theme contract', () => {

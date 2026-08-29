@@ -36,6 +36,22 @@
   --interaction-hover-surface: color-mix(in srgb, var(--brand) 7%, var(--surface));
   --interaction-hover-subtle: color-mix(in srgb, var(--brand) 7%, var(--surface-subtle));
   --interaction-pressed: color-mix(in srgb, var(--brand) 13%, transparent);
+  /* File previews use a focused workbench layer derived from the active
+     neutral and brand tokens, without changing terminal or log surfaces. */
+  --file-preview-background: color-mix(in srgb, var(--sidebar) 92%, var(--brand) 8%);
+  --file-preview-panel: color-mix(in srgb, var(--sidebar) 84%, var(--surface) 16%);
+  --file-preview-panel-raised: color-mix(in srgb, var(--sidebar-hover) 88%, var(--brand) 12%);
+  --file-preview-text: var(--sidebar-text);
+  --file-preview-muted: var(--sidebar-muted);
+  --file-preview-border: color-mix(in srgb, var(--sidebar-border) 72%, var(--brand) 28%);
+  --file-preview-accent: var(--brand);
+  --file-preview-accent-strong: var(--brand-strong);
+  --file-preview-active-line: color-mix(in srgb, var(--brand) 10%, transparent);
+  --file-preview-selection: color-mix(in srgb, var(--brand) 27%, transparent);
+  --file-preview-glow: color-mix(in srgb, var(--brand) 15%, transparent);
+  --file-preview-shadow: inset 0 1px 0 color-mix(in srgb, var(--sidebar-text) 5%, transparent);
+  --file-preview-scrollbar: color-mix(in srgb, var(--sidebar-text) 22%, var(--sidebar));
+  --file-preview-scrollbar-hover: color-mix(in srgb, var(--brand) 48%, var(--sidebar));
   /* Restrained depth layers. These remain composed from runtime semantic
      colors so custom palettes inherit the same hierarchy without presets. */
   --page-ambient-background:

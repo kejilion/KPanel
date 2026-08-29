@@ -508,29 +508,29 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .code-editor-shell {
-  --code-background: var(--terminal-shell-background, #0b1214);
-  --code-gutter: color-mix(in srgb, var(--terminal-shell-panel, #111a1d) 72%, #070b0c);
-  --code-panel: var(--terminal-shell-panel, #111a1d);
-  --code-text: var(--terminal-shell-text, #d8dddc);
-  --code-caret: var(--brand, #35cba6);
-  --code-line-number: var(--terminal-shell-muted, #8a9695);
-  --code-active-line: rgb(53 203 166 / 8%);
-  --code-selection: rgb(53 203 166 / 27%);
-  --code-border: var(--terminal-shell-border, #29383a);
-  --code-comment: #748a84;
-  --code-keyword: #c9a7ff;
-  --code-string: #8ed6a5;
-  --code-number: #efb35d;
-  --code-function: #7eb8f2;
-  --code-type: #f0d27a;
-  --code-tag: #f28f98;
-  --code-property: #5adaba;
-  --code-search-match: rgb(239 179 93 / 22%);
-  --code-search-match-border: rgb(239 179 93 / 62%);
-  --scrollbar-track: var(--terminal-shell-background, #0b1214);
-  --scrollbar-thumb: var(--terminal-shell-scrollbar, #35474a);
-  --scrollbar-thumb-hover: var(--terminal-shell-scrollbar-hover, #506367);
-  --scrollbar-thumb-active: var(--brand, #35cba6);
+  --code-background: var(--file-preview-background, var(--terminal-shell-background, #0b1214));
+  --code-gutter: color-mix(in srgb, var(--file-preview-panel, var(--terminal-shell-panel, #111a1d)) 72%, var(--code-background) 28%);
+  --code-panel: var(--file-preview-panel, var(--terminal-shell-panel, #111a1d));
+  --code-text: var(--file-preview-text, var(--terminal-shell-text, #d8dddc));
+  --code-caret: var(--file-preview-accent, var(--brand, #35cba6));
+  --code-line-number: var(--file-preview-muted, var(--terminal-shell-muted, #8a9695));
+  --code-active-line: var(--file-preview-active-line, rgb(53 203 166 / 8%));
+  --code-selection: var(--file-preview-selection, rgb(53 203 166 / 27%));
+  --code-border: var(--file-preview-border, var(--terminal-shell-border, #29383a));
+  --code-comment: color-mix(in srgb, var(--code-line-number) 78%, var(--code-caret) 22%);
+  --code-keyword: var(--violet);
+  --code-string: var(--success);
+  --code-number: var(--amber);
+  --code-function: var(--blue);
+  --code-type: color-mix(in srgb, var(--amber) 68%, var(--code-caret) 32%);
+  --code-tag: var(--danger);
+  --code-property: var(--code-caret);
+  --code-search-match: color-mix(in srgb, var(--amber) 22%, transparent);
+  --code-search-match-border: color-mix(in srgb, var(--amber) 62%, transparent);
+  --scrollbar-track: var(--code-background);
+  --scrollbar-thumb: var(--file-preview-scrollbar, var(--terminal-shell-scrollbar, #35474a));
+  --scrollbar-thumb-hover: var(--file-preview-scrollbar-hover, var(--terminal-shell-scrollbar-hover, #506367));
+  --scrollbar-thumb-active: var(--code-caret);
   position: relative;
   height: 100%;
   overflow: hidden;
@@ -581,8 +581,8 @@ onBeforeUnmount(() => {
 }
 
 .code-search__field:focus-within {
-  border-color: var(--brand, #35cba6);
-  box-shadow: 0 0 0 1px var(--brand, #35cba6);
+  border-color: var(--code-caret);
+  box-shadow: 0 0 0 1px var(--code-caret);
 }
 
 .code-search__field input {
@@ -617,7 +617,7 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 0;
   border-radius: 4px;
-  color: #a9bdb7;
+  color: var(--code-line-number);
   background: transparent;
   cursor: pointer;
 }
@@ -629,12 +629,12 @@ onBeforeUnmount(() => {
 .code-search__icon:hover:not(:disabled),
 .code-search__option:hover,
 .code-search__option.is-active {
-  color: #f2faf7;
-  background: color-mix(in srgb, var(--brand, #35cba6) 14%, var(--code-panel));
+  color: var(--code-text);
+  background: color-mix(in srgb, var(--code-caret) 14%, var(--code-panel));
 }
 
 .code-search__option.is-active {
-  color: var(--brand-strong, #5adaba);
+  color: var(--file-preview-accent-strong, var(--brand-strong, #5adaba));
 }
 
 .code-search__icon:disabled {

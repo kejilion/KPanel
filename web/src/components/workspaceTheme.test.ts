@@ -41,6 +41,10 @@ const terminalThemeSource = readFileSync(
   new URL('../lib/terminalTheme.ts', import.meta.url),
   'utf8',
 )
+const semanticThemeSource = readFileSync(
+  new URL('../styles/themes.css', import.meta.url),
+  'utf8',
+)
 
 describe('terminal and editor workspace theme', () => {
   it('themes interactive terminal surfaces while keeping the ANSI palette independent', () => {
@@ -82,16 +86,30 @@ describe('terminal and editor workspace theme', () => {
     expect(diagnosticsSource).toContain('border-radius: var(--terminal-workspace-radius)')
   })
 
-  it('keeps the editor dark while using KPanel brand and semantic tokens for controls', () => {
-    expect(editorSource).toContain('--code-background: var(--terminal-shell-background, #0b1214)')
-    expect(editorSource).toContain('--code-caret: var(--brand, #35cba6)')
+  it('keeps the file editor on the preview workbench while using KPanel semantic tokens', () => {
+    expect(editorSource).toContain('--code-background: var(--file-preview-background, var(--terminal-shell-background, #0b1214))')
+    expect(editorSource).toContain('--code-caret: var(--file-preview-accent, var(--brand, #35cba6))')
+    expect(editorSource).toContain('--code-active-line: var(--file-preview-active-line, rgb(53 203 166 / 8%))')
+    expect(editorSource).toContain('--code-keyword: var(--violet)')
     expect(editorSource).toContain('color: var(--danger, #ef7a7a)')
     expect(editorSource).not.toContain('#409be8')
     expect(editorSource).not.toContain('#31415b')
   })
 
-  it('uses the shared workspace palette for editor chrome and non-interactive logs', () => {
-    for (const source of [filesSource, dockerSource, appsSource]) {
+  it('gives file previews a derived palette while terminal and log workspaces keep theirs', () => {
+    for (const token of [
+      '--file-preview-background',
+      '--file-preview-panel',
+      '--file-preview-text',
+      '--file-preview-border',
+      '--file-preview-accent',
+    ]) {
+      expect(semanticThemeSource).toContain(`${token}:`)
+    }
+    expect(filesSource).toContain('background: var(--file-preview-background);')
+    expect(filesSource).toContain('color: var(--file-preview-text);')
+    expect(filesSource).not.toContain('var(--terminal-shell-background')
+    for (const source of [dockerSource, appsSource]) {
       expect(source).toContain('var(--terminal-shell-background, #0b1214)')
       expect(source).toContain('var(--terminal-shell-text, #d8dddc)')
       expect(source).not.toContain('terminal-theme-scope')
@@ -104,10 +122,12 @@ describe('terminal and editor workspace theme', () => {
   })
 
   it('uses one border radius and edge treatment across dark workspaces', () => {
-    for (const source of [terminalSource, filesSource, dockerSource, appsSource]) {
+    for (const source of [terminalSource, dockerSource, appsSource]) {
       expect(source).toContain('var(--terminal-shell-radius, 12px)')
       expect(source).toContain('var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%))')
     }
+    expect(filesSource).toContain('border-radius: var(--radius, 12px);')
+    expect(filesSource).toContain('box-shadow: var(--file-preview-shadow);')
     expect(globalThemeSource).toContain('border-radius: var(--terminal-shell-radius)')
     expect(globalThemeSource).toContain('box-shadow: var(--terminal-shell-shadow)')
   })
