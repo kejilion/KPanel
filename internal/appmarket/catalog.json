@@ -2527,7 +2527,7 @@
       "url": "https://hub.docker.com/r/kjlion/kejilion-panel",
       "icon": "/app-icons/kpanel.webp",
       "slug": "kpanel",
-      "iconSha256": "19ca9151548dcb4b82bbc48d4dc4bec62e8ef9d4bdaa90c27040281803253088",
+      "iconSha256": "bd067c950ecf02e78f97c8bfa3f62f57b79d72e37a67213b6bb4fabd5710e062",
       "name_zh_tw": "KPanel",
       "desc_zh_tw": "貼合 kejilion.sh 的現代化 Linux Web 管理面板。"
     },

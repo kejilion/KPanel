@@ -26,8 +26,8 @@ describe('KPanel brand assets', () => {
   it('publishes stable favicon, Apple and manifest references', () => {
     const html = readFileSync(indexPath, 'utf8')
 
-    expect(html).toContain('href="/icons/kpanel.svg"')
-    expect(html).toContain('href="/icons/favicon-96.png"')
+    expect(html).toContain('href="/icons/kpanel.svg?v=20260829"')
+    expect(html).toContain('href="/icons/favicon-96.png?v=20260829"')
     expect(html).toContain('href="/icons/apple-touch-icon.png"')
     expect(html).toContain('href="/manifest.webmanifest"')
   })

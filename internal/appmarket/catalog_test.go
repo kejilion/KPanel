@@ -105,7 +105,7 @@ func TestEmbeddedCatalogMatchesAuditedApplicationMarket(t *testing.T) {
 		icons[app.Icon] = true
 		if app.Token == "kpanel" {
 			foundKPanel = app.Icon == "/app-icons/kpanel.webp" &&
-				app.IconSHA256 == "19ca9151548dcb4b82bbc48d4dc4bec62e8ef9d4bdaa90c27040281803253088"
+				app.IconSHA256 == "bd067c950ecf02e78f97c8bfa3f62f57b79d72e37a67213b6bb4fabd5710e062"
 		}
 	}
 	if !foundKPanel {
