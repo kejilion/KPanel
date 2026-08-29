@@ -875,7 +875,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page sites-page">
     <PageHeader
       title="网站管理"
       description="发现并管理服务器上的现有网站；新建站点继续使用 kejilion.sh 的 /home/web 结构。"

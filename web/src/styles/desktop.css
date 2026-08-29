@@ -2388,6 +2388,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   align-content: start;
 }
 
+/* Website management is content-sized inside a bounded desktop window. */
+.desktop-window__body > .sites-page {
+  align-content: start;
+}
+
 .desktop-window__body > .page > .page {
   min-height: 0;
   padding: 0;
