@@ -106,8 +106,8 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：1
-- 其中生产写操作开始后异常次数：0
+- 已记录发布流程异常或无效证据拦截次数：2
+- 其中生产写操作开始后异常次数：1
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -119,6 +119,15 @@
     "impact": "候选基线 cherry-pick 源修复时，web/src/components/workspaceTheme.test.ts 出现集成冲突；按上线规范停止并报告，未推送 main、未创建 tag、未执行生产写入。",
     "recoveryEvidence": "保留 main 既有 terminalThemeSource 与修复引入的 semanticThemeSource，完成冲突后的定向测试、Web 全量测试、typecheck、build、候选 CI、固定 L3、main CI 和 Release workflow；最终候选 SHA 为 fb3a0a1ad4f0b680ad3cb3a06c17c047bf68b837。",
     "permanentAction": "候选冻结前继续执行源修复与当前 main 的逐文件冲突审查，并将冲突解决后的测试与完整候选门禁作为唯一放行条件；退出条件为下一次同类 cherry-pick 不再绕过冲突停止点，或保留可审计的人工合并证据。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "release-documentation/git-push/wrong-local-sha",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "生产 postdeploy 通过后，推送验收记录到 main 的首次命令误用了错误的本地完整 SHA，被 Git 以 needs force 拒绝；没有 force、没有远端变更、没有生产影响。",
+    "recoveryEvidence": "拒绝后重新读取本地 HEAD=`0c3614f4c8e5f36df8579c607780d502fec62337`，并确认远端 main 仍为产品 SHA、v0.99.1 tag 未变化；随后使用真实提交号执行 fast-forward 推送。",
+    "permanentAction": "验收记录推送固定先用 git rev-parse HEAD 获取实际对象，再用 ls-remote 核对远端基线；推送只允许 fast-forward，任何 needs force 均停止，不使用 force。",
     "historicalReleases": []
   }
 ]
