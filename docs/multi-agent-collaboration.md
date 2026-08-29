@@ -44,6 +44,8 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
 3. 协调中心从最新批准基线创建专用 branch/worktree，并把绝对路径交给唯一写入者；写入前以精确
    基线运行 `scripts/check-collaboration-state.mjs --role writer --require-clean`。
 4. Codex 或 Claude 只在自己的 worktree 写入，阶段结果以聚焦提交保存。
+   本地 `verify-change` 会用 `--role auto` 再次核对当前工作树，防止遗漏启动检查后把主工作树当作 writer；
+   传入精确任务基线时同时复核祖先关系，未传基线时只做结构检查。
 5. 智能体达到 Definition of Done；获得提交/推送授权后形成聚焦提交并通过 SSH 推送同名任务分支，
    再回传标准交付包。未获提交授权时只能保留在专用 worktree，不进入跨工具交接或集成。
 6. 另一智能体或独立验证任务从远端提交重建环境并复核，不接管原会话的未提交状态。

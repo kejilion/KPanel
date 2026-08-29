@@ -359,6 +359,10 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
   必须位于主工作树、保持 `main`、clean 且不得包含未进入批准基线的本地提交；失败时只隔离该管理树，
   保留现场并从精确 `origin/main` 创建专用 worktree，不得 reset、stash、清理或覆盖未知改动。写任务
   必须位于链接 task worktree 和非 `main` 分支；启动或验收检查点按需要求 clean。
+- 本地 `verify-change` 必须在非 CI 环境自动以 `--role auto` 复核当前工作树：共享多 worktree 仓库的
+  主工作树按管理角色 fail-closed，链接 worktree 按写角色核对结构，独立验证 clone 不得误判为管理树；
+  调用方传入精确基线时同时核对祖先关系。自动复核不能替代写入前对任务契约精确基线执行的显式检查，
+  也不得用浮动 `origin/main` 误阻断正常长期分支。
 - 所有行为变化补充测试；所有兼容结论注明证据。
 - `scripts/check-ecosystem-policy.sh` 必须在日常核验和 CI 中执行，防止已删除的来源门槛、
   固定确认词、自保护策略和 KPanel 自编外联模板重新进入生产代码。

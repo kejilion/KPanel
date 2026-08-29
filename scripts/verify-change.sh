@@ -10,6 +10,14 @@ forced_verification=false
 governance_ci_token="${GOVERNANCE_CI_TOKEN:-${GITHUB_TOKEN:-}}"
 unset GOVERNANCE_CI_TOKEN GITHUB_TOKEN
 
+if [[ "${CI:-}" != "true" ]]; then
+  collaboration_args=(--repo "$repo_root" --role auto)
+  if [[ -n "$base_ref" ]]; then
+    collaboration_args+=(--base-ref "$base_ref")
+  fi
+  node scripts/check-collaboration-state.mjs "${collaboration_args[@]}"
+fi
+
 case "$requested_level" in
   2|l2|3|l3|release)
     forced_verification=true

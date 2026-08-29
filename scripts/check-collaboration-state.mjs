@@ -8,7 +8,7 @@ function usage() {
   return [
     'Usage: node scripts/check-collaboration-state.mjs [options]',
     '  --repo <path>       Repository worktree (default: current directory)',
-    '  --role <role>       management or writer',
+    '  --role <role>       management, writer, or auto',
     '  --base-ref <ref>    Approved baseline (default: origin/main)',
     '  --require-clean     Require a clean writer checkpoint',
   ].join('\n');
@@ -19,6 +19,7 @@ function parseArgs(argv) {
     repo: process.cwd(),
     role: '',
     baseRef: 'origin/main',
+    baseRefExplicit: false,
     requireClean: false,
   };
   const seen = new Set();
@@ -42,11 +43,14 @@ function parseArgs(argv) {
     index += 1;
     if (argument === '--repo') options.repo = value;
     if (argument === '--role') options.role = value;
-    if (argument === '--base-ref') options.baseRef = value;
+    if (argument === '--base-ref') {
+      options.baseRef = value;
+      options.baseRefExplicit = true;
+    }
   }
 
-  if (!['management', 'writer'].includes(options.role)) {
-    throw new Error('--role must be management or writer');
+  if (!['management', 'writer', 'auto'].includes(options.role)) {
+    throw new Error('--role must be management, writer, or auto');
   }
   if (options.role === 'management' && options.requireClean) {
     throw new Error('--require-clean is implicit for the management role');
@@ -104,6 +108,12 @@ function check(options) {
     .filter(Boolean);
   const worktrees = parseWorktrees(git(root, ['worktree', 'list', '--porcelain']));
   const primaryWorktree = worktrees[0]?.worktree;
+  const isPrimaryWorktree = Boolean(
+    primaryWorktree && normalizedPath(root) === normalizedPath(primaryWorktree),
+  );
+  const effectiveRole = options.role === 'auto'
+    ? (isPrimaryWorktree ? (worktrees.length > 1 ? 'management' : 'standalone') : 'writer')
+    : options.role;
 
   let ahead = 0;
   let behind = 0;
@@ -112,8 +122,8 @@ function check(options) {
     .map(Number);
   [ahead, behind] = divergence;
 
-  if (options.role === 'management') {
-    if (!primaryWorktree || normalizedPath(root) !== normalizedPath(primaryWorktree)) {
+  if (effectiveRole === 'management') {
+    if (!isPrimaryWorktree) {
       failures.push('management role must run from the primary worktree');
     }
     if (branch !== 'main') failures.push('management worktree must stay on main; found ' + branch);
@@ -123,8 +133,8 @@ function check(options) {
     if (ahead > 0) {
       failures.push('management main contains ' + ahead + ' local commit(s) absent from ' + options.baseRef);
     }
-  } else {
-    if (primaryWorktree && normalizedPath(root) === normalizedPath(primaryWorktree)) {
+  } else if (effectiveRole === 'writer') {
+    if (isPrimaryWorktree) {
       failures.push('writer role must use a linked task worktree, not the primary management worktree');
     }
     if (branch === '(detached)') failures.push('writer role must use an attached task branch, not detached HEAD');
@@ -132,15 +142,29 @@ function check(options) {
     if (options.requireClean && dirtyPaths.length > 0) {
       failures.push('writer checkpoint must be clean; found ' + dirtyPaths.length + ' changed path(s)');
     }
-    try {
-      git(root, ['merge-base', '--is-ancestor', baseCommit, headCommit]);
-    } catch {
-      failures.push(options.baseRef + ' is not an ancestor of the writer HEAD');
+    if (options.role !== 'auto' || options.baseRefExplicit) {
+      try {
+        git(root, ['merge-base', '--is-ancestor', baseCommit, headCommit]);
+      } catch {
+        failures.push(options.baseRef + ' is not an ancestor of the writer HEAD');
+      }
+    }
+  } else {
+    if (options.requireClean && dirtyPaths.length > 0) {
+      failures.push('standalone checkpoint must be clean; found ' + dirtyPaths.length + ' changed path(s)');
+    }
+    if (options.baseRefExplicit) {
+      try {
+        git(root, ['merge-base', '--is-ancestor', baseCommit, headCommit]);
+      } catch {
+        failures.push(options.baseRef + ' is not an ancestor of the standalone HEAD');
+      }
     }
   }
 
   const summary = [
-    'role=' + options.role,
+    'role=' + effectiveRole,
+    ...(options.role === 'auto' ? ['requested_role=auto'] : []),
     'branch=' + branch,
     'clean=' + String(dirtyPaths.length === 0),
     'ahead=' + ahead,

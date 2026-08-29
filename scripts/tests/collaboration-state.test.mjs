@@ -104,6 +104,54 @@ test('management main may be behind because task worktrees use the exact remote 
   }
 });
 
+test('auto role protects the primary worktree and keeps linked writer checks proportional', () => {
+  const state = fixture();
+  try {
+    let result = run(state.management, '--role', 'auto');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /role=management requested_role=auto/);
+
+    git(state.management, 'checkout', '-b', 'feature/primary-misuse');
+    result = run(state.management, '--role', 'auto');
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /management worktree must stay on main/);
+    git(state.management, 'checkout', 'main');
+
+    const publisher = join(state.root, 'publisher-auto');
+    execFileSync('git', ['clone', state.remote, publisher]);
+    git(publisher, 'config', 'user.name', 'KPanel Test');
+    git(publisher, 'config', 'user.email', 'kpanel@example.invalid');
+    writeFileSync(join(publisher, 'README.md'), 'remote update\n');
+    git(publisher, 'add', 'README.md');
+    git(publisher, 'commit', '-m', 'test: remote update');
+    git(publisher, 'push', 'origin', 'main');
+    git(state.writer, 'fetch', 'origin');
+
+    result = run(state.writer, '--role', 'auto');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /role=writer requested_role=auto/);
+
+    result = run(state.writer, '--role', 'auto', '--base-ref', 'origin/main');
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /origin\/main is not an ancestor of the writer HEAD/);
+  } finally {
+    state.cleanup();
+  }
+});
+
+test('auto role does not misclassify an isolated verification clone as management', () => {
+  const state = fixture();
+  try {
+    git(state.management, 'worktree', 'remove', state.writer);
+    git(state.management, 'checkout', '-b', 'feature/standalone-review');
+    const result = run(state.management, '--role', 'auto');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /role=standalone requested_role=auto/);
+  } finally {
+    state.cleanup();
+  }
+});
+
 test('writer must use a linked non-main worktree and may require a clean checkpoint', () => {
   const state = fixture();
   try {
@@ -161,7 +209,7 @@ test('caller Git repository overrides cannot redirect the evidence source', () =
 test('invalid or duplicate arguments fail closed', () => {
   let result = spawnSync(process.execPath, [script, '--role', 'reviewer'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /--role must be management or writer/);
+  assert.match(result.stderr, /--role must be management, writer, or auto/);
 
   result = spawnSync(process.execPath, [script, '--role', 'writer', '--role', 'writer'], { encoding: 'utf8' });
   assert.equal(result.status, 1);

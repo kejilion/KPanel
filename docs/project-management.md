@@ -93,6 +93,12 @@ node scripts/check-collaboration-state.mjs --repo <task-worktree> --role writer 
 clean 或覆盖未知改动。写角色必须是链接 task worktree 和非 `main` 分支；开发中允许 dirty，启动、
 交接和验收 checkpoint 才使用 `--require-clean`。
 
+为避免会话跳过启动检查，本地 `make verify-change` 在非 CI 环境自动调用
+`check-collaboration-state.mjs --role auto`：共享多 worktree 仓库的主工作树应用管理规则，链接 worktree
+应用写角色结构规则，只有一个工作树的独立验证 clone 保持可用；调用 `verify-change` 时提供精确基线，
+才同时核对祖先关系。未提供基线时不以已前移的浮动 `origin/main` 误阻断长期任务，但这不替代写入前
+对任务契约精确基线运行的显式 `--role writer` 检查。
+
 ### 4.2 命名
 
 | 对象 | 格式 | 示例 |
@@ -200,7 +206,7 @@ git worktree list
 执行时只走以下最短决策链：
 
 1. 日常任务只运行 `make verify-change`；它根据差异选择 Web、Go、部署或治理检查，不再由会话逐条
-   拼接固定命令。
+   拼接固定命令；本地执行还会自动拒绝主工作树承担功能写入。
 2. 触及跨端契约、Agent 权限或宿主机写入时显式使用 L2；形成版本、镜像或安装更新时使用 L3。
 3. 只对受影响用户旅程补实机、浏览器、性能和失败恢复证据；未触及的维度写明“不适用”依据。
 4. 只有修改永久规范、工作流、环境/依赖策略或治理入口时才完整运行

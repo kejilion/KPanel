@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.5"
+version: "4.6"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-08-20T19:30:00+08:00"
+updated: "2026-08-29T16:43:01+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -83,6 +83,9 @@ git diff --stat ${{base_ref}}...HEAD
 Reuse successful evidence only when commit, environment, tools and parameters are unchanged. Run the required
 repository-native check for `${{verification_level}}` when evidence is incomplete or invalidated; complement it with
 affected business, browser, real-machine, performance, or production evidence rather than repeating identical commands.
+Local `verify-change` invokes `check-collaboration-state.mjs --role auto`: in a shared multi-worktree repository it
+rejects feature writes in the primary management worktree, checks linked-writer structure, and leaves standalone
+verification clones usable; passing the exact approved base also checks ancestry.
 
 Visible feature work must invoke `local-feature-preview` and return its standard preview card. Use `draft` for a dirty
 working tree and `acceptance` only for a clean checkpoint; mock, local integration, and isolated real-host evidence remain

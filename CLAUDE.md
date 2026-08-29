@@ -29,7 +29,8 @@
 
 - 先使用 `rg` 定位直接相关代码、测试和文档，已有精确证据足够时不重复全仓扫描。
 - 使用 `PROJECT_RULES.md` 的 L0-L3 和 `make verify-change`、`make verify-l2`、`make verify-release`
-  权威入口，不创建 Claude 专属平行命令。
+  权威入口，不创建 Claude 专属平行命令。本地 `verify-change` 会自动复核工作树角色并拒绝主工作树
+  承担功能写入，但不替代写入前对精确基线执行的显式 writer 检查。
 - Windows 没有 Make 时通过 `node scripts/run-repo-bash.mjs scripts/verify-change.sh` 调用同一门禁；
   L2/Release 使用 `--env VERIFY_LEVEL=<level> --`，不得让裸 `bash` 落到 WSL linked-worktree 语义。
 - 定向测试用于反馈，不能替代对应等级门禁；门禁不能替代受影响业务互通、实机、浏览器、性能或回滚证据。
