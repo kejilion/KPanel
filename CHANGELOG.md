@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.99.2] - 2026-08-29
+
+### Changed
+
+- 全面替换 KPanel 品牌 Logo 资源，覆盖面板 Logo、favicon、Apple 图标、Manifest 图标、Safari 蒙版、应用市场图标及公开页面/截图中的品牌图像；保留原有路径、尺寸、格式和呈现方式，并为 favicon 更新缓存版本参数。
+
+### Upgrade Notes
+
+- 本补丁仅更新品牌展示资源和对应引用/回归校验，不修改 API、数据库、Agent、端口、Compose、受管 `kejilion.sh` 或应用市场安装契约，无需迁移；系统中心不在本版范围内。
+- 回滚到 `v0.99.1` 须成套恢复旧 OCI、Compose、`.env`、数据和 Agent 文件。
+
 ## [0.99.1] - 2026-08-29
 
 ### Fixed
