@@ -207,6 +207,17 @@ for (const file of viewFiles) {
 const appSource = fs.readFileSync(path.join(sourceRoot, 'App.vue'), 'utf8')
 if (!appSource.includes("@/i18n/pages/shared/en-US")) errors.push('shared: App.vue does not register the lazy shared catalog')
 
+// Native dialogs bypass the DOM phrase observer. Keep the AI third-level flows
+// on the core message path so changing the page language also changes prompts.
+for (const relativeFile of ['views/AiView.vue', 'components/ai/AiSettings.vue']) {
+  const source = fs.readFileSync(path.join(sourceRoot, relativeFile), 'utf8')
+  source.split(/\r?\n/).forEach((line, index) => {
+    if (/\b(?:window\.)?(?:confirm|prompt|alert)\s*\(/.test(line) && !line.includes('i18n.t(')) {
+      errors.push(`${relativeFile}:${index + 1}: native dialogs must use i18n.t()`)
+    }
+  })
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exitCode = 1

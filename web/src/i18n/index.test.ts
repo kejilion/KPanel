@@ -84,6 +84,24 @@ describe('translations', () => {
     expect(setItem).toHaveBeenCalledWith('kejilion-panel-locale', 'zh-TW')
   })
 
+  it('localizes runtime prompts and third-level fallback messages', async () => {
+    const documentElement = { lang: '', dir: '' }
+    vi.stubGlobal('document', { documentElement })
+    vi.stubGlobal('window', { localStorage: { setItem: vi.fn() } })
+
+    await setLocale('en-US', false)
+    expect(t('ai.sessionName')).toBe('Session name')
+    expect(t('ai.sessionDeleteConfirm', { title: 'Running' }))
+      .toBe('Delete session “Running”? This cannot be undone.')
+    expect(t('appScript.activeJob', { name: 'OpenClaw' }))
+      .toBe('An app task is already running: OpenClaw')
+
+    await setLocale('zh-TW', false)
+    expect(t('ai.sessionName')).toBe('工作階段名稱')
+    expect(t('ai.sessionDeleteConfirm', { title: '執行中' }))
+      .toBe('刪除工作階段「執行中」？此操作無法復原。')
+  })
+
   it('keeps the most recent choice during rapid language switching', async () => {
     const documentElement = { lang: '', dir: '' }
     vi.stubGlobal('document', { documentElement })

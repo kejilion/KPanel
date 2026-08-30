@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetLocaleForTest, setLocale } from '@/i18n'
 import AiView from './AiView.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -70,6 +71,11 @@ beforeEach(() => {
     approvalMode: body.approvalMode || 'manual', thinkingLevel:body.thinkingLevel||'medium', modelAvailable: true, pinned: false, archived: false, running: true, activeRunId: 'run-active',
     createdAt: '2026-08-04T00:00:00Z', updatedAt: '2026-08-04T00:00:00Z', lastMessageAt: '2026-08-04T00:00:00Z',
   }))
+})
+
+afterEach(() => {
+  resetLocaleForTest()
+  vi.unstubAllGlobals()
 })
 
 function makeRouter(path='/ai/s/s1') {
@@ -346,6 +352,24 @@ describe('AI workspace reconnect', () => {
     expect(wrapper.text()).toContain('screen.png')
     await wrapper.get('.ai-composer-submit').trigger('click');await flushPromises()
     expect(mocks.send).toHaveBeenCalledWith('s1','',expect.arrayContaining([expect.objectContaining({name:'screen.png',kind:'image'})]))
+    wrapper.unmount()
+  })
+
+  it('uses the active locale for native session dialogs', async () => {
+    await setLocale('en-US', false)
+    const promptMock = vi.fn().mockReturnValue(null)
+    const confirmMock = vi.fn().mockReturnValue(false)
+    vi.stubGlobal('prompt', promptMock)
+    vi.stubGlobal('confirm', confirmMock)
+    const router = await makeRouter()
+    const wrapper = mount(AiView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.get('.ai-chat-title').trigger('click')
+    await wrapper.get('.ai-session-actions button:last-child').trigger('click')
+
+    expect(promptMock).toHaveBeenCalledWith('Session name', 'Running')
+    expect(confirmMock).toHaveBeenCalledWith('Delete session “Running”? This cannot be undone.')
     wrapper.unmount()
   })
 })

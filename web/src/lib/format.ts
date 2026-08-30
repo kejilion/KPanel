@@ -1,20 +1,37 @@
-import { getLocale } from '@/i18n'
+import { getLocale, type SupportedLocale } from '@/i18n'
 
-const numberFormatter = new Intl.NumberFormat('zh-CN', {
-  maximumFractionDigits: 1,
-})
+const numberFormatters = new Map<SupportedLocale, Intl.NumberFormat>()
+const dateFormatters = new Map<SupportedLocale, Intl.DateTimeFormat>()
 
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
+function numberFormatter(): Intl.NumberFormat {
+  const locale = getLocale()
+  let formatter = numberFormatters.get(locale)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 })
+    numberFormatters.set(locale, formatter)
+  }
+  return formatter
+}
+
+function dateFormatter(): Intl.DateTimeFormat {
+  const locale = getLocale()
+  let formatter = dateFormatters.get(locale)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    dateFormatters.set(locale, formatter)
+  }
+  return formatter
+}
 
 export function formatPercent(value?: number): string {
   if (value === undefined || !Number.isFinite(value)) return '—'
-  return `${numberFormatter.format(Math.max(0, value))}%`
+  return `${numberFormatter().format(Math.max(0, value))}%`
 }
 
 export function formatBytes(value?: number, decimals = 1): string {
@@ -64,7 +81,7 @@ export function formatDuration(totalSeconds?: number): string {
 export function formatDateTime(value?: string): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : dateFormatter.format(date)
+  return Number.isNaN(date.getTime()) ? '—' : dateFormatter().format(date)
 }
 
 export function formatHostDateTime(value?: string, timezone?: string): string {
@@ -84,7 +101,7 @@ export function formatHostDateTime(value?: string, timezone?: string): string {
       timeZoneName: 'short',
     }).format(date)
   } catch {
-    return `${dateFormatter.format(date)} ${timezone || 'UTC'}`
+    return `${dateFormatter().format(date)} ${timezone || 'UTC'}`
   }
 }
 

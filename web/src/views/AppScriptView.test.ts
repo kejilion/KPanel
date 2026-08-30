@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetLocaleForTest, setLocale } from '@/i18n'
 import AppScriptView from './AppScriptView.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -79,6 +80,10 @@ describe('dedicated desktop app script terminal', () => {
     mocks.action.mockResolvedValue(job)
   })
 
+  afterEach(() => {
+    resetLocaleForTest()
+  })
+
   it('starts the structured manage action without mounting the app marketplace', async () => {
     const wrapper = await mountView()
 
@@ -98,6 +103,15 @@ describe('dedicated desktop app script terminal', () => {
 
     expect(mocks.action).not.toHaveBeenCalled()
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
+    wrapper.unmount()
+  })
+
+  it('localizes an active task conflict while preserving the app name', async () => {
+    await setLocale('en-US', false)
+    mocks.jobs.mockResolvedValue({ items: [{ ...job, appId: 'other-app', appName: 'Other app' }] })
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('An app task is already running: Other app')
     wrapper.unmount()
   })
 })

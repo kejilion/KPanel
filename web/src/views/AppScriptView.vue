@@ -3,6 +3,8 @@ import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { LoaderCircle, RefreshCw, SquareTerminal, TriangleAlert } from '@lucide/vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
+import { useI18n } from '@/i18n'
+import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
@@ -13,6 +15,7 @@ usePhraseCatalog((locale) => locale === 'en-US'
   : import('@/i18n/pages/AppScriptView/zh-TW').then((module) => module.default))
 
 const route = useRoute()
+const i18n = useI18n()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
 const loading = ref(true)
 const error = ref('')
@@ -49,16 +52,16 @@ async function existingInteractiveJob(appId: string, signal: AbortSignal): Promi
   const active = jobs.items.find(isActiveJob)
   if (!active) return undefined
   if (active.appId === appId && active.action === 'manage' && active.interactive) return active
-  throw new Error(`已有应用任务正在运行：${active.appName}`)
+  throw new Error(i18n.t('appScript.activeJob', { name: active.appName }))
 }
 
 async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
   const start = async (candidate: AppMarketItem): Promise<AppInstallJob> => {
     const resourceVersion = candidate.runtime.resourceVersion
-    if (!resourceVersion) throw new Error('应用状态缺少安全版本标识。')
+    if (!resourceVersion) throw new Error(i18n.t('appScript.resourceVersionMissing'))
     const result = await api.apps.action(candidate.id, 'manage', { resourceVersion })
     if (!isInteractiveJob(result) || !result.interactive) {
-      throw new Error('Agent 未返回可交互的脚本任务。')
+      throw new Error(i18n.t('appScript.interactiveTaskMissing'))
     }
     return result
   }
@@ -82,18 +85,18 @@ async function load(): Promise<void> {
   error.value = ''
   job.value = undefined
   try {
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(appID.value)) throw new Error('应用标识无效。')
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(appID.value)) throw new Error(i18n.t('appScript.invalidAppId'))
     const inventory = await api.apps.inventory(requestController.signal)
     if (controller !== requestController) return
     const target = inventory.items.find((candidate) => candidate.id === appID.value)
-    if (!target) throw new Error('应用目录中没有找到对应应用。')
+    if (!target) throw new Error(i18n.t('appScript.appNotFound'))
     item.value = target
     if (
       !target.runtime.installed ||
       !target.runtime.resourceVersion ||
       !target.capabilities.manage?.enabled
     ) {
-      throw new Error(target.capabilities.manage?.reason || '此应用没有可用的脚本管理入口。')
+      throw new Error(target.capabilities.manage?.reason || i18n.t('appScript.manageUnavailable'))
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
     if (controller !== requestController) return
@@ -101,7 +104,7 @@ async function load(): Promise<void> {
     rememberJob(job.value.id)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
-    error.value = reason instanceof Error ? reason.message : '无法打开应用脚本终端。'
+    error.value = localizeError(reason, 'appScript.openFailed')
   } finally {
     if (controller === requestController) loading.value = false
   }
