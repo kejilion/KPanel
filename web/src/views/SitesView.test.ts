@@ -17,7 +17,7 @@ vi.mock('@/lib/api', () => ({
       update: vi.fn(),
       remove: vi.fn(),
     },
-    system: { publicNetwork: vi.fn() },
+    system: { publicNetwork: vi.fn(), portUsage: vi.fn() },
     terminals: {
       open: vi.fn(),
       input: vi.fn(),

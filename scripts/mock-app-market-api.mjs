@@ -730,6 +730,29 @@ const systemCapabilities = [
   { id: 'system.logs.write', enabled: true, methods: ['POST'] },
 ]
 
+const portUsageEntries = [
+  {
+    protocol: 'tcp', state: 'LISTEN', localAddress: '127.0.0.1', localPort: '3000',
+    peerAddress: '0.0.0.0', peerPort: '*', process: 'node', pid: 2038,
+    raw: 'tcp LISTEN 0 511 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=2038,fd=21))',
+  },
+  {
+    protocol: 'tcp', state: 'LISTEN', localAddress: '0.0.0.0', localPort: '8088',
+    peerAddress: '0.0.0.0', peerPort: '*', process: 'nginx', pid: 1271,
+    raw: 'tcp LISTEN 0 511 0.0.0.0:8088 0.0.0.0:* users:(("nginx",pid=1271,fd=8))',
+  },
+  {
+    protocol: 'tcp6', state: 'LISTEN', localAddress: '::1', localPort: '5173',
+    peerAddress: '::', peerPort: '*', process: 'vite', pid: 2240,
+    raw: 'tcp6 LISTEN 0 511 [::1]:5173 [::]:* users:(("vite",pid=2240,fd=18))',
+  },
+  {
+    protocol: 'udp', state: 'UNCONN', localAddress: '127.0.0.1', localPort: '5353',
+    peerAddress: '0.0.0.0', peerPort: '*', process: 'mdnsd', pid: 611,
+    raw: 'udp UNCONN 0 0 127.0.0.1:5353 0.0.0.0:* users:(("mdnsd",pid=611,fd=7))',
+  },
+]
+
 const environmentResourceVersion = `sha256:${'f'.repeat(64)}`
 const environmentSummary = {
   protocolVersion: '1',
@@ -1019,6 +1042,16 @@ createServer(async (request, response) => {
       protocolVersion: 'v1',
       readOnly: false,
       checkedAt: new Date().toISOString(),
+    })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/system/port-usage') {
+    send(response, 200, {
+      resourceVersion: `sha256:${'e'.repeat(64)}`,
+      entries: portUsageEntries,
+      total: portUsageEntries.length,
+      truncated: false,
+      observedAt: new Date().toISOString(),
     })
     return
   }
@@ -1489,7 +1522,13 @@ createServer(async (request, response) => {
     send(response, 200, {
       items: [
         { id: 'apps.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.write', enabled: true, methods: ['POST', 'PATCH'] },
+        { id: 'sites.wordpress.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.proxy.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.recipes.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.templates.install', enabled: true, methods: ['POST'] },
         { id: 'sites.delete', enabled: true, methods: ['DELETE'] },
+        { id: 'system.port-usage.read', enabled: true, methods: ['GET'] },
         { id: 'diagnostics.run', enabled: true, methods: ['GET', 'POST'] },
         { id: 'web.environment.read', enabled: true, methods: ['GET'] },
         { id: 'web.environment.install', enabled: true, methods: ['POST'] },

@@ -111,6 +111,8 @@ export default [
   ["网站已完成脚本执行与状态核对。", "The website finished running the script and checking the resulting state."],
   ["未从 Agent 获取网站写入能力状态，请检查 Agent 连接与版本。", "The Agent did not report site write capability. Check its connection and version."],
   ["未从 Agent 获取网站删除能力状态，请检查 Agent 连接与版本。", "The Agent did not report site deletion capability. Check its connection and version."],
+  ["Agent 当前无法读取本机端口占用状态。", "The Agent cannot read local port usage."],
+  ["未从 Agent 获取端口占用能力状态，请检查 Agent 连接与版本。", "The Agent did not report port-usage capability. Check its connection and version."],
   ["未发现可用证书到期信息", "No certificate expiry information found"],
   ["未知来源", "Unknown source"],
   ["未知类型", "Unknown type"],

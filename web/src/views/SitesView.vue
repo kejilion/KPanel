@@ -41,6 +41,7 @@ import SitesSectionTabs from '@/components/sites/SitesSectionTabs.vue'
 import SiteFavicon from '@/components/sites/SiteFavicon.vue'
 import SiteAppearanceName from '@/components/sites/SiteAppearanceName.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
+import LocalWebServicePicker from '@/components/sites/LocalWebServicePicker.vue'
 import { ApiError, api, isTransientAgentError } from '@/lib/api'
 import { formatDateTime, relativeTime, shortId } from '@/lib/format'
 import { usePanelState } from '@/stores/panel'
@@ -327,6 +328,9 @@ const recipeCapability = computed(() =>
 const templateCapability = computed(() =>
   capabilities.value.find((capability) => capability.id === 'sites.templates.install'),
 )
+const localWebServiceCapability = computed(() =>
+  capabilities.value.find((capability) => capability.id === 'system.port-usage.read'),
+)
 const deleteCapability = computed(() =>
   capabilities.value.find((capability) => capability.id === 'sites.delete'),
 )
@@ -336,6 +340,9 @@ const canInstallWordPress = computed(() => wordPressCapability.value?.enabled ==
 const canInstallProxy = computed(() => proxyCapability.value?.enabled === true)
 const canInstallRecipes = computed(() => recipeCapability.value?.enabled === true)
 const canInstallTemplates = computed(() => templateCapability.value?.enabled === true)
+const canReadLocalWebServices = computed(
+  () => !capabilitiesLoaded.value || localWebServiceCapability.value?.enabled === true,
+)
 const canCreateAny = computed(
   () =>
     canInstallWordPress.value ||
@@ -362,6 +369,13 @@ const siteDeleteReason = computed(
     (deleteCapability.value
       ? 'Agent 当前无法调用 kejilion.sh 网站删除协议。'
       : '未从 Agent 获取网站删除能力状态，请检查 Agent 连接与版本。'),
+)
+const localWebServiceReason = computed(
+  () =>
+    localWebServiceCapability.value?.reason?.trim() ||
+    (localWebServiceCapability.value
+      ? 'Agent 当前无法读取本机端口占用状态。'
+      : '未从 Agent 获取端口占用能力状态，请检查 Agent 连接与版本。'),
 )
 
 const filteredSites = computed(() => {
@@ -1454,6 +1468,13 @@ onBeforeUnmount(() => {
           <small v-if="form.type === 'proxy'">支持本机、内网、公网 IP、域名或 Docker 服务名，直接执行 k fd 域名 目标 端口。</small>
           <small v-else>填写完整域名源站，HTTPS 会自动启用上游 SNI；不接受路径、账号或查询参数。</small>
         </label>
+
+        <LocalWebServicePicker
+          v-if="form.type === 'proxy' && !scriptedTemplateCreate"
+          :readable="canReadLocalWebServices"
+          :unavailable-reason="localWebServiceReason"
+          @select="form.upstream = $event"
+        />
 
         <label v-if="form.type === 'load_balance' && !scriptedTemplateCreate" class="field">
           <span>后端节点</span>
