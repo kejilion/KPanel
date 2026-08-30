@@ -326,7 +326,7 @@
 .ai-composer-wrap > * { width: min(790px, 100%); margin-right: auto; margin-left: auto; }
 .ai-composer { display: grid; gap: 7px; padding: 14px 12px 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); transition: border-color .16s ease,box-shadow .16s ease; }
 .ai-composer:focus-within { border-color: var(--brand); box-shadow: var(--shadow-md); }
-.ai-composer:has(textarea:focus-visible) { outline: 3px solid var(--brand); outline-offset: 2px; }
+.ai-composer:has(textarea:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
 .ai-composer textarea { width: 100%; min-height: 40px; max-height: 160px; resize: none; padding: 2px 4px 6px; overflow-y: auto; color: var(--text); background: transparent; border: 0; outline: 0; box-shadow: none; font-size: 14px; line-height: 1.55; }
 .ai-composer textarea:focus-visible { outline: 0; }
 .ai-composer-toolbar,.ai-composer-actions,.ai-composer-left { display: flex; align-items: center; }
@@ -1254,7 +1254,8 @@ textarea:focus-visible,
 .search-field:focus-within,
 .select-field:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent);
 }
 
 .field small {
@@ -4124,6 +4125,11 @@ textarea:focus-visible,
   border-radius: 0;
   box-shadow: none;
   font-size: 12px;
+}
+
+.search-field input:focus,
+.select-field select:focus {
+  outline: none;
 }
 
 .search-field--small {

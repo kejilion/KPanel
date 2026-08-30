@@ -1461,7 +1461,8 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__upload-location-form input:focus {
   background: var(--surface-strong);
   border-color: color-mix(in srgb, var(--accent) 64%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .desktop__upload-location-form input[aria-invalid='true'] {
@@ -3019,7 +3020,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--brand);
   background: var(--surface-raised);
   border-color: color-mix(in srgb, var(--brand) 78%, var(--border));
-  outline: 3px solid var(--brand);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
 }

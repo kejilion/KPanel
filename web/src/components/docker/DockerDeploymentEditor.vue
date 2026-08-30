@@ -164,7 +164,7 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 2px rgb(20 48 42 / 4%);
   transition: border-color .16s ease, box-shadow .16s ease;
 }
-.deployment-editor__surface:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent); }
+.deployment-editor__surface:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent); }
 .has-errors .deployment-editor__surface { border-color: color-mix(in srgb, var(--danger) 64%, var(--border)); }
 .deployment-editor__gutter {
   position: relative;

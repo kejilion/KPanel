@@ -1691,7 +1691,7 @@ onBeforeUnmount(() => {
 
 .cluster-search:focus-within {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent);
 }
 
 .cluster-search input {

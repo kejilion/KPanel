@@ -1091,7 +1091,7 @@ onBeforeUnmount(() => {
 .system-log-control select:focus,
 .system-log-control input:focus {
   border-color: var(--brand);
-  outline: 3px solid color-mix(in srgb, var(--brand) 14%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--brand) 18%, transparent);
   outline-offset: 1px;
 }
 

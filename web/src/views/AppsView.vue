@@ -1771,7 +1771,7 @@ watch(windowActive, syncJobPollingForWindow)
 
 .market-search:focus-within {
   border-color: color-mix(in srgb, var(--market-accent) 58%, var(--border));
-  box-shadow: 0 0 0 3px var(--market-accent-soft);
+  box-shadow: 0 0 0 2px var(--market-accent-soft);
 }
 
 .market-search input {

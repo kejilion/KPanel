@@ -2307,7 +2307,7 @@ onBeforeUnmount(() => {
 .text-input:hover:not(:disabled),
 .select-input:hover:not(:disabled) { border-color: color-mix(in srgb, var(--brand) 38%, var(--border-strong)); background-color: var(--surface); }
 .text-input:focus,
-.select-input:focus { outline: none; border-color: var(--brand); background-color: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 13%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 78%, transparent); }
+.select-input:focus { outline: none; border-color: var(--brand); background-color: var(--surface); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface) 78%, transparent); }
 .text-input:disabled,
 .select-input:disabled { opacity: .55; cursor: not-allowed; }
 .select-input { appearance: none; padding-right: 38px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23677c76' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; cursor: pointer; }

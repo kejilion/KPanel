@@ -4408,7 +4408,7 @@ onBeforeUnmount(() => {
 .operation-form input:focus,
 .operation-form select:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 13%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent);
 }
 
 .remote-download-form label > span small {

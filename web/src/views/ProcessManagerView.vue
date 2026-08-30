@@ -419,7 +419,7 @@ onBeforeUnmount(() => {
 .process-workspace { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-soft); }
 .process-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
 .process-search { display: flex; width: min(420px, 100%); align-items: center; gap: 9px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: var(--surface-muted); transition: border-color 160ms ease, box-shadow 160ms ease; }
-.process-search:focus-within { border-color: color-mix(in srgb, var(--brand) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent); }
+.process-search:focus-within { border-color: color-mix(in srgb, var(--brand) 55%, var(--line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 14%, transparent); }
 .process-search input { width: 100%; height: 38px; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; font-size: 13px; }
 .process-toolbar__status { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .process-toolbar__controls { display: flex; min-width: 0; align-items: center; gap: 7px; }
