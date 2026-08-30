@@ -16,7 +16,7 @@ import { desktopCloseGuardCoordinator, desktopWindowCloseGuardKey } from '@/lib/
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/TerminalView/en-US').then((module) => module.default)
   : import('@/i18n/pages/TerminalView/zh-TW').then((module) => module.default))
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 let unregisterWindowCloseGuard: (() => void) | undefined
 
@@ -85,7 +85,7 @@ async function loadHosts(): Promise<void> {
       if (localHost) await openHost(localHost)
     }
   } catch {
-    errorMessage.value = '连接列表加载失败，请检查 Agent 与集群状态。'
+    errorMessage.value = t('terminal.connectionsLoadFailed')
   } finally {
     loading.value = false
   }
@@ -109,8 +109,8 @@ async function openHost(host: ClusterHost): Promise<void> {
     activeSessionId.value = item.id
   } catch (reason) {
     errorMessage.value = reason instanceof ApiError && reason.code === 'terminal_limit'
-      ? '已达到终端会话上限，请先关闭不用的连接。'
-      : '终端连接失败，请确认目标节点在线且中心与节点均已更新。'
+      ? t('terminal.sessionLimitReached')
+      : t('terminal.connectionFailed')
   } finally {
     openingHostId.value = ''
   }
@@ -175,12 +175,18 @@ function toggleConnections(): void {
 }
 
 function hostStateLabel(host: ClusterHost): string {
-  if (!host.terminalAvailable) return host.kind === 'light_node' ? '轻量监控节点' : '需要重新配对'
-  if (host.isLocal) return '本机终端'
-  return '加密直连'
+  locale.value
+  if (!host.terminalAvailable) {
+    return host.kind === 'light_node'
+      ? t('terminal.hostState.lightNode')
+      : t('terminal.hostState.repairPairing')
+  }
+  if (host.isLocal) return t('terminal.hostState.local')
+  return t('terminal.hostState.encrypted')
 }
 
 function sessionStateLabel(state: OpenTerminal['state']): string {
+  locale.value
   if (state === 'connected') return t('terminal.connected')
   if (state === 'finished') return t('terminal.finished')
   if (state === 'reconnecting') return t('terminal.reconnecting')
@@ -195,7 +201,7 @@ onMounted(() => {
   }
   const guard = () => {
     const activeCount = sessions.value.filter((session) => session.state !== 'finished').length
-    return !activeCount || window.confirm(`关闭窗口将断开 ${activeCount} 个终端会话，是否继续？`)
+    return !activeCount || window.confirm(t('terminal.closeSessionsConfirm', { count: activeCount }))
   }
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
@@ -209,7 +215,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page terminal-page">
+  <div class="page terminal-page" :data-locale="locale">
     <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
@@ -230,7 +236,7 @@ onBeforeUnmount(() => {
       />
       <aside id="terminal-connections-drawer" class="terminal-connections">
         <header>
-          <div class="terminal-connections__heading"><strong>连接列表</strong><small>{{ hosts.length }} 台主机</small></div>
+          <div class="terminal-connections__heading"><strong>连接列表</strong><small>{{ t('terminal.hostCount', { count: hosts.length }) }}</small></div>
           <div class="terminal-connections__actions">
             <button
               class="terminal-connections__toggle terminal-connections__refresh"
@@ -315,8 +321,8 @@ onBeforeUnmount(() => {
           @click="mobileConnectionsOpen = true"
         >
           <Menu :size="18" />
-          <span>{{ activeSession?.hostName || '选择主机' }}</span>
-          <small>{{ sessions.length ? `${sessions.length} 个终端会话` : `${hosts.length} 台主机` }}</small>
+          <span>{{ activeSession?.hostName || t('terminal.selectHost') }}</span>
+          <small>{{ sessions.length ? t('terminal.sessionCount', { count: sessions.length }) : t('terminal.hostCount', { count: hosts.length }) }}</small>
         </button>
         <div v-if="sessions.length" class="terminal-tabs-bar">
           <button
@@ -344,7 +350,7 @@ onBeforeUnmount(() => {
             @toggle-fullscreen="toggleWorkspaceFullscreen"
           />
         </div>
-        <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>选择主机，打开终端</h2><p>从连接列表选择一台可用主机，开始加密终端会话。</p></div>
+        <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
         <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="item.state = $event" />
       </main>
     </section>

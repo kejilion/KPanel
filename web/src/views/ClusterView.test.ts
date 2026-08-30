@@ -256,6 +256,12 @@ describe('ClusterView compact summary layout', () => {
     expect(source).toContain('aria-label="刷新集群状态"')
     expect(source.indexOf('aria-label="刷新集群状态"')).toBeLessThan(source.indexOf('@click="openAccess"'))
   })
+
+  it('routes native confirmations through core i18n', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    expect(source.match(/window\.confirm\(t\('cluster\.confirm\./g)).toHaveLength(4)
+    expect(source).not.toContain('重置公开链接？旧链接会立即失效。')
+  })
 })
 
 describe('ClusterView inventory and navigation', () => {

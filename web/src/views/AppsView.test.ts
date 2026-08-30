@@ -164,6 +164,12 @@ describe('AppsView catalog filtering performance', () => {
     expect(source).toContain('v-if="activeJob.interactive && windowActive"')
   })
 
+  it('uses the active locale for the app name in the detail modal', () => {
+    const source = readFileSync(new URL('./AppsView.vue', import.meta.url), 'utf8')
+    expect(source).toContain('<strong>{{ appName(selected) }}</strong>')
+    expect(source).not.toContain('<strong>{{ selected.name_en }}</strong>')
+  })
+
   it('reuses the sorted search catalog while filters and queries change', () => {
     const view = setupView()
     const current = inventory('catalog-version')

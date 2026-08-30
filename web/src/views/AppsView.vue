@@ -3,6 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { usePhraseCatalog } from '@/i18n/phrase'
+import type { MessageKey } from '@/i18n/messages/zh-CN'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/AppsView/en-US').then((module) => module.default)
@@ -227,54 +228,72 @@ function appDescription(item: AppMarketItem): string {
 }
 
 function appIconAlt(item: AppMarketItem): string {
-  return i18n.locale.value === 'en-US' ? `${appName(item)} icon` : `${appName(item)} 图标`
+  return i18n.t('apps.iconAlt', { name: appName(item) })
 }
 
 function sourceMeta(item: AppMarketItem): string {
-  if (i18n.locale.value === 'en-US') return item.source === 'builtin' ? `Built-in #${item.num}` : 'Third-party'
-  return item.source === 'builtin' ? `内置 #${item.num}` : '第三方'
+  i18n.locale.value
+  return item.source === 'builtin'
+    ? i18n.t('apps.source.builtin', { num: item.num ?? '' })
+    : i18n.t('apps.source.thirdParty')
 }
 
 function marketResultLabel(): string {
   if (!inventory.value) return ''
-  return i18n.locale.value === 'en-US'
-    ? `Showing ${filteredApps.value.length} of ${inventory.value.items.length} apps`
-    : `已显示 ${filteredApps.value.length} / ${inventory.value.items.length} 个应用`
+  i18n.locale.value
+  return i18n.t('apps.marketResult', {
+    shown: filteredApps.value.length,
+    total: inventory.value.items.length,
+  })
 }
 
 function catalogModeLabel(): string {
   if (!inventory.value) return ''
-  const labels = i18n.locale.value === 'en-US'
-    ? { live: 'Live sync', cached: 'Safe cache', embedded: 'Built-in snapshot' }
-    : { live: '动态同步', cached: '安全缓存', embedded: '内置快照' }
-  return labels[inventory.value.catalogMode] || inventory.value.catalogMode
+  i18n.locale.value
+  const labels: Record<AppMarketInventory['catalogMode'], MessageKey> = {
+    live: 'apps.catalog.live',
+    cached: 'apps.catalog.cached',
+    embedded: 'apps.catalog.embedded',
+  }
+  return i18n.t(labels[inventory.value.catalogMode])
 }
 
 function stateLabel(item: AppMarketItem): string {
-  if (!item.runtime.installed) return '未安装'
-  const labels: Record<string, string> = {
-    running: '运行中',
-    paused: '已暂停',
-    exited: '已停止',
-    created: '待启动',
-    restarting: '重启中',
-    dead: '异常',
-    unknown: '待核对',
+  i18n.locale.value
+  if (!item.runtime.installed) return i18n.t('apps.state.notInstalled')
+  const labels: Record<string, MessageKey> = {
+    running: 'apps.state.running',
+    paused: 'apps.state.paused',
+    exited: 'apps.state.exited',
+    created: 'apps.state.created',
+    restarting: 'apps.state.restarting',
+    dead: 'apps.state.dead',
+    unknown: 'apps.state.unknown',
   }
-  return labels[item.runtime.state] || item.runtime.state
+  const key = labels[item.runtime.state]
+  return key ? i18n.t(key) : item.runtime.state
 }
 
 function updateLabel(item: AppMarketItem): string {
-  if (checkedUpdates.value[item.id] === 'available') return '发现更新'
-  if (checkedUpdates.value[item.id] === 'current') return '已是最新'
-  const labels: Record<string, string> = {
-    available: '发现更新',
-    current: '已是最新',
-    check_required: '可检查更新',
-    unknown: '更新状态未知',
-    not_installed: '未安装',
+  i18n.locale.value
+  if (checkedUpdates.value[item.id] === 'available') return i18n.t('apps.update.available')
+  if (checkedUpdates.value[item.id] === 'current') return i18n.t('apps.update.current')
+  const labels: Record<string, MessageKey> = {
+    available: 'apps.update.available',
+    current: 'apps.update.current',
+    check_required: 'apps.update.checkRequired',
+    unknown: 'apps.update.unknown',
+    not_installed: 'apps.update.notInstalled',
   }
-  return labels[item.runtime.updateStatus] || '更新状态未知'
+  const key = labels[item.runtime.updateStatus]
+  return key ? i18n.t(key) : i18n.t('apps.update.unknown')
+}
+
+function accessModeLabel(item: AppMarketItem): string {
+  i18n.locale.value
+  if (item.runtime.accessMode === 'domain_only') return i18n.t('apps.access.domainOnly')
+  if (item.runtime.accessMode === 'direct') return i18n.t('apps.access.direct')
+  return i18n.t('apps.access.unknown')
 }
 
 async function checkUpdate(): Promise<void> {
@@ -415,14 +434,27 @@ function isBackgroundJob(result: unknown): result is AppInstallJob {
 }
 
 function jobActionLabel(action?: AppInstallJob['action']): string {
-  const labels: Record<AppInstallJob['action'], string> = {
-    install: '安装',
-    update: '更新',
-    uninstall: '卸载',
-    direct_access: '访问策略变更',
-    manage: '脚本管理',
+  i18n.locale.value
+  const labels: Record<AppInstallJob['action'], MessageKey> = {
+    install: 'apps.action.install',
+    update: 'apps.action.update',
+    uninstall: 'apps.action.uninstall',
+    direct_access: 'apps.action.directAccess',
+    manage: 'apps.action.manage',
   }
-  return action ? labels[action] : '操作'
+  return action ? i18n.t(labels[action]) : i18n.t('apps.action.operation')
+}
+
+function mutationConfirmationDescription(): string {
+  i18n.locale.value
+  if (confirmAction.value === 'uninstall') {
+    return selected.value?.installer === 'kejilion'
+      ? i18n.t('apps.uninstallScriptDescription')
+      : i18n.t('apps.uninstallContainerDescription')
+  }
+  return selected.value?.installer === 'kejilion'
+    ? i18n.t('apps.updateScriptDescription')
+    : i18n.t('apps.updateContainerDescription')
 }
 
 function routeQueryValue(value: unknown): string {
@@ -1200,9 +1232,9 @@ watch(windowActive, syncJobPollingForWindow)
     <footer v-if="inventory && filteredApps.length" class="market-result">
       {{ marketResultLabel() }}
       <span>
-        {{ i18n.locale.value === 'en-US' ? 'Directory source: app.kejilion.sh' : '目录来源 app.kejilion.sh' }} ·
+        {{ i18n.t('apps.directorySource') }} ·
         {{ catalogModeLabel() }} ·
-        {{ i18n.locale.value === 'en-US' ? 'State source: host' : '状态来源宿主机' }}
+        {{ i18n.t('apps.stateSource') }}
       </span>
     </footer>
 
@@ -1227,7 +1259,7 @@ watch(windowActive, syncJobPollingForWindow)
               <span class="source-pill">{{ sourceMeta(selected) }}</span>
               <span class="source-pill">{{ categoryName(selected.cat) }}</span>
             </span>
-            <strong>{{ selected.name_en }}</strong>
+            <strong>{{ appName(selected) }}</strong>
             <small><code>k app {{ selected.token }}</code></small>
           </div>
           <a
@@ -1251,17 +1283,17 @@ watch(windowActive, syncJobPollingForWindow)
             <div>
               <span>运行状态</span>
               <strong>{{ stateLabel(selected) }}</strong>
-              <small>{{ selected.runtime.status || selected.runtime.image || '已由脚本标记安装' }}</small>
+              <small>{{ selected.runtime.status || selected.runtime.image || i18n.t('apps.runtime.scriptMarkedInstalled') }}</small>
             </div>
             <div>
               <span>更新状态</span>
               <strong>{{ updateLabel(selected) }}</strong>
-              <small>{{ capability(selected, 'update') ? '可安全拉取并回滚' : '保留原管理方式' }}</small>
+              <small>{{ capability(selected, 'update') ? i18n.t('apps.update.safe') : i18n.t('apps.update.originalManagement') }}</small>
             </div>
             <div>
               <span>访问策略</span>
-              <strong>{{ selected.runtime.accessMode === 'domain_only' ? '仅域名访问' : selected.runtime.accessMode === 'direct' ? 'IP + 端口' : '未识别' }}</strong>
-              <small>{{ selectedPort ? `${selectedPort.ip || '0.0.0.0'}:${selectedPort.publicPort}` : '没有可用 HTTP 端口' }}</small>
+              <strong>{{ accessModeLabel(selected) }}</strong>
+              <small>{{ selectedPort ? `${selectedPort.ip || '0.0.0.0'}:${selectedPort.publicPort}` : i18n.t('apps.access.noHTTPPort') }}</small>
             </div>
           </div>
           <div class="app-control-panel__actions">
@@ -1460,7 +1492,7 @@ watch(windowActive, syncJobPollingForWindow)
 
     <ModalDialog
       :open="installOpen && Boolean(selected)"
-      :title="`${i18n.locale.value === 'en-US' ? 'Install' : '安装'} ${selected ? appName(selected) : ''}`"
+      :title="i18n.t('apps.installTitle', { name: selected ? appName(selected) : '' })"
       description="任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。"
       size="small"
       @close="installOpen = false"
@@ -1474,7 +1506,7 @@ watch(windowActive, syncJobPollingForWindow)
             min="1"
             max="65535"
             required
-            :placeholder="selected?.defaultPort ? String(selected.defaultPort) : '留空使用脚本默认端口'"
+            :placeholder="selected?.defaultPort ? String(selected.defaultPort) : i18n.t('apps.defaultPortPlaceholder')"
             @blur="checkInstallPort()"
           />
           <small>端口由面板传给 kejilion.sh；提交前会再次检查宿主机监听与 Docker 映射，避免安装到一半才发现冲突。</small>
@@ -1530,14 +1562,14 @@ watch(windowActive, syncJobPollingForWindow)
           "
         >
           <LoaderCircle v-if="operation === 'install'" class="spin" :size="16" />
-          <Download v-else :size="16" /> {{ operation === 'install' ? '正在提交…' : '后台安装' }}
+          <Download v-else :size="16" /> {{ operation === 'install' ? i18n.t('apps.submitting') : i18n.t('apps.backgroundInstall') }}
         </button>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="jobDetailsOpen && Boolean(activeJob)"
-      :title="`${activeJob?.appName || ''} ${jobActionLabel(activeJob?.action)}进度`"
+      :title="i18n.t('apps.jobProgressTitle', { name: activeJob?.appName || '', action: jobActionLabel(activeJob?.action) })"
       description="任务由宿主机后台执行，离开本页面不会中断。"
       size="large"
       @close="jobDetailsOpen = false"
@@ -1550,8 +1582,8 @@ watch(windowActive, syncJobPollingForWindow)
             <Activity v-else :size="21" />
           </span>
           <div>
-            <strong>{{ activeJob.message || `正在执行${jobActionLabel(activeJob.action)}任务` }}</strong>
-            <small>阶段：{{ activeJob.stage }} · 任务 {{ activeJob.id }}</small>
+            <strong>{{ activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) }) }}</strong>
+            <small>{{ i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id }) }}</small>
           </div>
           <StatusBadge :status="activeJob.status" />
         </div>
@@ -1568,7 +1600,7 @@ watch(windowActive, syncJobPollingForWindow)
         <section v-else class="job-log">
           <header>
             <strong>实时日志</strong>
-            <small>显示最近 {{ activeJob.logs.length }} 行</small>
+            <small>{{ i18n.t('apps.recentLogs', { count: activeJob.logs.length }) }}</small>
           </header>
           <pre v-if="activeJob.logs.length">{{ activeJob.logs.join('\n') }}</pre>
           <p v-else>任务已进入队列，正在等待首批输出…</p>
@@ -1631,16 +1663,8 @@ watch(windowActive, syncJobPollingForWindow)
 
     <ModalDialog
       :open="Boolean(confirmAction)"
-      :title="confirmAction === 'uninstall' ? '确认卸载应用？' : '确认更新应用？'"
-      :description="
-        confirmAction === 'uninstall'
-          ? selected?.installer === 'kejilion'
-            ? '后台调用 kejilion.sh 原生卸载函数；仅在主容器 ID 与安装标记同时匹配时执行。'
-            : '容器会停止并删除；共享镜像缓存不会删除。'
-          : selected?.installer === 'kejilion'
-            ? '后台调用 kejilion.sh 原生更新函数，并在更新后恢复原访问策略。'
-            : 'KPanel 会先拉取新镜像，失败时恢复原容器。'
-      "
+      :title="i18n.t(confirmAction === 'uninstall' ? 'apps.confirmUninstallTitle' : 'apps.confirmUpdateTitle')"
+      :description="mutationConfirmationDescription()"
       size="small"
       @close="confirmAction = undefined"
     >
@@ -1658,7 +1682,7 @@ watch(windowActive, syncJobPollingForWindow)
           @click="confirmMutation"
         >
           <LoaderCircle v-if="operation" class="spin" :size="16" />
-          {{ confirmAction === 'uninstall' ? '确认卸载' : '开始更新' }}
+          {{ i18n.t(confirmAction === 'uninstall' ? 'apps.confirmUninstall' : 'apps.startUpdate') }}
         </button>
       </template>
     </ModalDialog>

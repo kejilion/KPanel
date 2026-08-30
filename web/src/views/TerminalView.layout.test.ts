@@ -43,6 +43,13 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toMatch(/\.terminal-host em\s*\{[^}]*font-size:12px;/)
   })
 
+  it('uses core messages for runtime host states and session prompts', () => {
+    expect(terminalSource).toContain("t('terminal.hostState.local')")
+    expect(terminalSource).toContain("t('terminal.hostCount'")
+    expect(terminalSource).toContain("t('terminal.closeSessionsConfirm'")
+    expect(terminalSource).not.toContain('关闭窗口将断开')
+  })
+
   it('collapses the host selector into a persistent narrow rail', () => {
     expect(terminalSource).toContain("'is-connections-collapsed': connectionsCollapsed")
     expect(terminalSource).toContain('aria-controls="terminal-connection-selector"')

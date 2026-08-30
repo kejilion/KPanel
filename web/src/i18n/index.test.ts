@@ -95,11 +95,21 @@ describe('translations', () => {
       .toBe('Delete session “Running”? This cannot be undone.')
     expect(t('appScript.activeJob', { name: 'OpenClaw' }))
       .toBe('An app task is already running: OpenClaw')
+    expect(t('apps.installTitle', { name: 'Cloudreve' })).toBe('Install Cloudreve')
+    expect(t('terminal.task.title', { kind: 'App' })).toBe('App terminal')
+    expect(t('terminal.closeSessionsConfirm', { count: 2 }))
+      .toBe('Closing this window will disconnect 2 terminal session(s). Continue?')
+    expect(t('cluster.confirm.revokeController', { name: 'node-1' }))
+      .toBe('Revoke access for node-1?')
 
     await setLocale('zh-TW', false)
     expect(t('ai.sessionName')).toBe('工作階段名稱')
     expect(t('ai.sessionDeleteConfirm', { title: '執行中' }))
       .toBe('刪除工作階段「執行中」？此操作無法復原。')
+    expect(t('apps.installTitle', { name: 'Cloudreve' })).toBe('安裝 Cloudreve')
+    expect(t('terminal.task.title', { kind: '應用程式' })).toBe('應用程式終端')
+    expect(t('cluster.confirm.revokeController', { name: 'node-1' }))
+      .toBe('撤銷 node-1 的存取授權？')
   })
 
   it('keeps the most recent choice during rapid language switching', async () => {

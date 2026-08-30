@@ -83,6 +83,15 @@ describe('interactive task terminal layout', () => {
     expect(terminalSource).toContain('class="interactive-terminal__input-area"')
   })
 
+  it('localizes the shell chrome while leaving command output in xterm', () => {
+    expect(terminalSource).toContain("t('terminal.task.title'")
+    expect(terminalSource).toContain("t('terminal.task.inputLabel')")
+    expect(terminalSource).toContain("t('terminal.task.inputPlaceholder')")
+    expect(terminalSource).toContain("t('terminal.send')")
+    expect(terminalSource).not.toContain("'域名和固定参数已由面板传入")
+    expect(terminalSource).not.toContain("'保留第三方脚本原生颜色")
+  })
+
   it('shares the terminal clipboard behavior with host terminals', () => {
     expect(terminalSource).toContain('@contextmenu="clipboardMenu?.open($event)"')
     expect(terminalSource).toContain('@paste.capture="clipboardMenu?.handlePaste($event)"')

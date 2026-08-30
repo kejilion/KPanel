@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
@@ -31,7 +31,7 @@ const props = defineProps<{
   compact?: boolean
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const { colors: themeColors, resolved: resolvedTheme } = useTheme()
 
 const host = ref<HTMLElement>()
@@ -53,6 +53,32 @@ let polling = false
 const outputNormalizer = new TerminalOutputNormalizer()
 
 const { fullscreen, toggleFullscreen } = useTerminalFullscreen(fitTerminal)
+
+const taskKindLabel = computed(() => {
+  locale.value
+  if (props.kind === 'site') return t('terminal.task.kind.site')
+  if (props.kind === 'diagnostic') return t('terminal.task.kind.diagnostic')
+  if (props.kind === 'environment') return t('terminal.task.kind.environment')
+  return t('terminal.task.kind.app')
+})
+
+const taskDescription = computed(() => {
+  locale.value
+  if (props.kind === 'site') return t('terminal.task.description.site')
+  if (props.kind === 'diagnostic') return t('terminal.task.description.diagnostic')
+  if (props.kind === 'environment') return t('terminal.task.description.environment')
+  return t('terminal.task.description.app')
+})
+
+const connectionStatusLabel = computed(() => {
+  locale.value
+  if (connectionState.value === 'connected') {
+    return terminalInputOpen.value ? t('terminal.task.inputReady') : t('terminal.task.running')
+  }
+  if (connectionState.value === 'finished') return t('terminal.task.finished')
+  if (connectionState.value === 'error') return t('terminal.reconnecting')
+  return t('terminal.connecting')
+})
 
 function decodeBase64(value: string): Uint8Array {
   const decoded = window.atob(value)
@@ -308,41 +334,13 @@ onBeforeUnmount(() => {
       <div>
         <strong>
           kejilion.sh
-          {{
-            props.kind === 'site'
-              ? '建站'
-              : props.kind === 'diagnostic'
-                ? '体检'
-                : props.kind === 'environment'
-                  ? '环境管理'
-                  : '应用'
-          }}终端
+          {{ t('terminal.task.title', { kind: taskKindLabel }) }}
         </strong>
-        <small>
-          {{
-            props.kind === 'site'
-              ? '域名和固定参数已由面板传入；需要时按脚本提示继续输入。'
-              : props.kind === 'diagnostic'
-                ? '保留第三方脚本原生颜色；需要安装依赖或选择测试项时可直接输入。'
-                : props.kind === 'environment'
-                  ? '保留脚本原生颜色；关闭窗口不会中断后台环境任务。'
-              : '直接按脚本提示输入；窗口关闭后任务仍在后台继续。'
-          }}
-        </small>
+        <small>{{ taskDescription }}</small>
       </div>
       <div class="interactive-terminal__actions">
         <span :class="`is-${connectionState}`">
-          {{
-            connectionState === 'connected'
-              ? terminalInputOpen
-                ? '可输入'
-                : '运行中'
-              : connectionState === 'finished'
-                ? '已结束'
-                : connectionState === 'error'
-                  ? '正在重连'
-                  : '正在连接'
-          }}
+          {{ connectionStatusLabel }}
         </span>
         <TerminalToolbar
           :fullscreen="fullscreen"
@@ -371,15 +369,15 @@ onBeforeUnmount(() => {
         <input
           v-model="pendingLine"
           type="text"
-          aria-label="预输入终端内容"
+          :aria-label="t('terminal.task.inputLabel')"
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
           maxlength="8192"
-          placeholder="在此预输入，按 Enter 整行发送"
+          :placeholder="t('terminal.task.inputPlaceholder')"
           @keydown.enter="handlePendingLineEnter"
         />
-        <button type="submit">发送</button>
+        <button type="submit">{{ t('terminal.send') }}</button>
       </form>
     </div>
     <TerminalContextMenu

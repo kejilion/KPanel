@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from '@/i18n'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -56,6 +57,7 @@ import type {
 } from '@/types/api'
 
 const toast = useToast()
+const { t } = useI18n()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
 const inventory = ref<ClusterHostList>()
 const loading = ref(true)
@@ -508,7 +510,7 @@ async function saveShare(): Promise<void> {
 
 async function resetShareLink(): Promise<void> {
   if (!shareSettings.value || shareResetting.value) return
-  if (!window.confirm('重置公开链接？旧链接会立即失效。')) return
+  if (!window.confirm(t('cluster.confirm.resetShare'))) return
   shareResetting.value = true
   try {
     const settings = await api.cluster.resetShareToken(shareSettings.value.resourceVersion)
@@ -680,7 +682,7 @@ function finishHostDrag(): void {
 }
 
 async function revokeController(controller: ClusterController): Promise<void> {
-  if (!window.confirm(`撤销 ${controller.name || controller.fingerprint} 的访问授权？`)) return
+  if (!window.confirm(t('cluster.confirm.revokeController', { name: controller.name || controller.fingerprint }))) return
   try {
     await api.cluster.revokeController(controller.id)
     controllers.value = controllers.value.filter((item) => item.id !== controller.id)
@@ -762,7 +764,7 @@ async function saveName(): Promise<void> {
 async function removeHost(): Promise<void> {
   const host = selected.value
   if (!host || host.isLocal || deleting.value || enablingMutualFiles.value) return
-  if (!window.confirm(`从当前 KPanel 移除 ${host.name}？目标主机业务不会受到影响。`)) return
+  if (!window.confirm(t('cluster.confirm.removeHost', { name: host.name }))) return
   deleting.value = true
   try {
     const result = await api.cluster.remove(host.id, host.resourceVersion)
@@ -824,9 +826,7 @@ function openPanel(host: ClusterHost): void {
   if (
     !host.isLocal &&
     host.transportSecurity === 'e2e_http' &&
-    !window.confirm(
-      '集群监控数据已端到端加密，但这个管理页面仍通过普通 HTTP 打开，登录密码和 Session 不受加密直连保护。建议先为目标面板配置 HTTPS。仍然打开？',
-    )
+    !window.confirm(t('cluster.confirm.openHttpPanel'))
   ) {
     return
   }
