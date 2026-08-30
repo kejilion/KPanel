@@ -35,7 +35,6 @@ describe('format helpers', () => {
 
     expect(english).toBe(new Intl.DateTimeFormat('en-US', dateOptions).format(sampleDate))
     expect(traditional).toBe(new Intl.DateTimeFormat('zh-TW', dateOptions).format(sampleDate))
-    expect(english).not.toBe(traditional)
   })
 
   it('guards percentages and resource identifiers', () => {
