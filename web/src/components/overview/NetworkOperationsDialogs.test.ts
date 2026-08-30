@@ -36,7 +36,7 @@ beforeEach(() => {
     resourceVersion: 'b'.repeat(64), total: 3, truncated: false, observedAt: '2026-08-10T08:00:00Z',
     entries: [
       { protocol: 'tcp', state: 'LISTEN', localAddress: '127.0.0.1', localPort: '8080', peerAddress: '0.0.0.0', peerPort: '*', process: 'users:(("nginx",pid=798910,fd=16),("nginx",pid=798909,fd=16)) ino:2669375 cgroup:/system.slice/docker-example.scope', pid: 798910, raw: 'tcp LISTEN fixture one' },
-      { protocol: 'tcp', state: 'LISTEN', localAddress: '127.0.0.1', localPort: '8080', peerAddress: '0.0.0.0', peerPort: '*', process: 'nginx', pid: 798911, raw: 'tcp LISTEN fixture duplicate' },
+      { protocol: 'tcp', state: 'LISTEN', localAddress: '127.0.0.1', localPort: '8080', peerAddress: '0.0.0.0', peerPort: '*', process: 'nginx', pid: 798911, raw: 'tcp LISTEN fixture duplicate', container: { id: 'a'.repeat(64), name: 'web-nginx', image: 'nginx:alpine', containerPort: 80, composeProject: 'kpanel', composeService: 'web' } },
       { protocol: 'tcp', state: 'LISTEN', localAddress: '0.0.0.0', localPort: '8443', peerAddress: '0.0.0.0', peerPort: '*', process: 'nginx', pid: 798910, raw: 'tcp LISTEN fixture two' },
     ],
   })
@@ -66,6 +66,11 @@ describe('network operations dialogs', () => {
     expect(wrapper.findAll('.port-usage-item')).toHaveLength(2)
     expect(wrapper.text()).toContain('仅本机')
     expect(wrapper.text()).toContain('TCP 监听')
+    expect(wrapper.text()).toContain('Docker 容器')
+    expect(wrapper.text()).toContain('web-nginx')
+    expect(wrapper.text()).toContain('容器端口 80')
+    expect(wrapper.text()).toContain('kpanel / web')
+    expect(wrapper.findAll('.port-usage-item__docker')).toHaveLength(1)
     expect(wrapper.findAll('details').every((details) => details.attributes('open') === undefined)).toBe(true)
   })
 

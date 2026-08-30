@@ -29,7 +29,10 @@ beforeEach(() => {
       },
       {
         protocol: 'tcp6', state: 'LISTEN', localAddress: '::1', localPort: '8080',
-        peerAddress: '::', peerPort: '*', process: 'vite', pid: 8080, raw: 'tcp6 LISTEN vite',
+        peerAddress: '::', peerPort: '*', process: 'docker-proxy', pid: 8080, raw: 'tcp6 LISTEN docker-proxy',
+        container: {
+          id: 'container-1', name: 'kpanel-demo', image: 'demo-web:latest', containerPort: 8080,
+        },
       },
       {
         protocol: 'udp', state: 'UNCONN', localAddress: '0.0.0.0', localPort: '53',
@@ -51,6 +54,8 @@ describe('LocalWebServicePicker', () => {
     expect(wrapper.findAll('.local-web-service-picker__candidate')).toHaveLength(2)
     expect(wrapper.text()).toContain('3000')
     expect(wrapper.text()).toContain('node · PID 3010')
+    expect(wrapper.findAll('.local-web-service-picker__container')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Docker 容器：kpanel-demo · 容器端口 8080')
 
     await wrapper.findAll('.local-web-service-picker__candidate')[0]!.trigger('click')
 

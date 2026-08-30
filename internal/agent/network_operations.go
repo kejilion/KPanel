@@ -19,6 +19,7 @@ func (s *Server) systemPortUsage(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, requestIDFrom(w), http.StatusServiceUnavailable, "system_port_usage_unavailable", "端口占用状态不可用", safeDetail(err))
 		return
 	}
+	snapshot = s.enrichPortUsageWithDocker(ctx, snapshot)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 

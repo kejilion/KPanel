@@ -84,6 +84,14 @@ function processSummary(candidate: LocalWebServiceCandidate): string {
   return candidate.pids.length ? `${process} · PID ${candidate.pids.join('、')}` : process
 }
 
+function containerSummary(candidate: LocalWebServiceCandidate): string {
+  return candidate.containers.map((container) => {
+    const name = container.name.trim() || container.id.slice(0, 12)
+    const port = container.containerPort ? ` · 容器端口 ${container.containerPort}` : ''
+    return `${name || '未命名容器'}${port}`
+  }).join('、')
+}
+
 watch(() => props.readable, (readable) => {
   if (!readable) controller?.abort()
 })
@@ -174,6 +182,9 @@ onBeforeUnmount(() => controller?.abort())
             </span>
             <span class="local-web-service-picker__detail">{{ `监听：${addressSummary(candidate)}` }}</span>
             <span class="local-web-service-picker__detail">{{ `服务：${processSummary(candidate)}` }}</span>
+            <span v-if="candidate.containers.length" class="local-web-service-picker__detail local-web-service-picker__container">
+              {{ `Docker 容器：${containerSummary(candidate)}` }}
+            </span>
           </button>
         </div>
         <div v-else class="local-web-service-picker__empty" role="status">
@@ -433,6 +444,11 @@ onBeforeUnmount(() => controller?.abort())
   line-height: 1.45;
   overflow-wrap: anywhere;
   text-overflow: ellipsis;
+}
+
+.local-web-service-picker__container {
+  color: var(--brand-strong);
+  font-weight: 600;
 }
 
 .local-web-service-picker__empty {
