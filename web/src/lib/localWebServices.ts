@@ -67,7 +67,7 @@ function compareAddresses(left: string, right: string): number {
 }
 
 /**
- * Turns the system-center socket snapshot into bounded, selectable TCP candidates.
+ * Turns the port-usage socket snapshot into bounded, selectable TCP candidates.
  * It intentionally does not claim that a port is HTTP-ready: no network probe is
  * performed, so users can still correct the generated origin manually.
  */
