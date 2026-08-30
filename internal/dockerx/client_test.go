@@ -135,17 +135,6 @@ func TestContainerSummaryExposesCreatedAt(t *testing.T) {
 	}
 }
 
-func TestContainerSummaryExposesNetworkMode(t *testing.T) {
-	client := &Client{}
-	raw := managedInspect(strings.Repeat("8", 64), "2026-01-01T00:00:00Z", 0)
-	raw.HostConfig.NetworkMode = "host"
-
-	summary := client.summaryFromInspect(raw)
-	if summary.NetworkMode != "host" {
-		t.Fatalf("networkMode = %q, want host", summary.NetworkMode)
-	}
-}
-
 func TestContainerListSummaryFallsBackToCreatedAt(t *testing.T) {
 	client := &Client{}
 	raw := containerListItem{ID: strings.Repeat("a", 64), Names: []string{"/fallback"}, Created: 1_755_520_800}

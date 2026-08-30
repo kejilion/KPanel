@@ -313,7 +313,6 @@ interface RawContainer {
   name: string
   image: string
   state: string
-  networkMode?: string
   status?: string
   health?: string
   createdAt?: string
@@ -1033,7 +1032,6 @@ function normalizeContainer(raw: RawContainer): DockerInventory['containers'][nu
     name: raw.name,
     image: raw.image,
     state: state as DockerInventory['containers'][number]['state'],
-    networkMode: raw.networkMode,
     health: (['healthy', 'warning', 'critical'].includes(raw.health || '') ? raw.health : 'unknown') as
       | 'healthy'
       | 'warning'

@@ -1,4 +1,4 @@
-import type { PortUsageContainer, PortUsageEntry } from '@/types/api'
+import type { PortUsageEntry } from '@/types/api'
 
 export const LOCAL_WEB_SERVICE_MAX_CANDIDATES = 128
 
@@ -7,7 +7,6 @@ export interface LocalWebServiceCandidate {
   addresses: string[]
   processes: string[]
   pids: number[]
-  containers: PortUsageContainer[]
 }
 
 interface CandidateAccumulator {
@@ -15,7 +14,6 @@ interface CandidateAccumulator {
   addresses: Set<string>
   processes: Set<string>
   pids: Set<number>
-  containers: Map<string, PortUsageContainer>
 }
 
 const IPV4_WILDCARDS = new Set(['0.0.0.0', '*'])
@@ -57,10 +55,6 @@ function processName(value?: string): string {
   return name.slice(0, 128)
 }
 
-function containerKey(container: PortUsageContainer): string {
-  return container.id.trim() || `name:${container.name.trim()}`
-}
-
 function addressRank(address: string): number {
   if (LOOPBACK_ADDRESSES.has(address)) return 0
   if (!IPV4_WILDCARDS.has(address) && !IPV6_WILDCARDS.has(address)) return 1
@@ -95,7 +89,6 @@ export function discoverLocalWebServiceCandidates(
       addresses: new Set<string>(),
       processes: new Set<string>(),
       pids: new Set<number>(),
-      containers: new Map<string, PortUsageContainer>(),
     }
     const address = normalizeAddress(entry.localAddress)
     if (address) group.addresses.add(address)
@@ -103,9 +96,6 @@ export function discoverLocalWebServiceCandidates(
     if (name) group.processes.add(name)
     const pid = Number(entry.pid)
     if (Number.isInteger(pid) && pid > 0) group.pids.add(pid)
-    if (entry.container?.name?.trim()) {
-      group.containers.set(containerKey(entry.container), entry.container)
-    }
     groups.set(port, group)
   }
 
@@ -117,9 +107,6 @@ export function discoverLocalWebServiceCandidates(
       addresses: [...group.addresses].sort(compareAddresses),
       processes: [...group.processes].sort((left, right) => left.localeCompare(right)),
       pids: [...group.pids].sort((left, right) => left - right),
-      containers: [...group.containers.values()].sort((left, right) =>
-        left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
-      ),
     }))
 }
 

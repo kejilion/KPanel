@@ -583,9 +583,8 @@ func (c *Client) summaryFromInspect(raw containerInspect) contract.ContainerSumm
 	return contract.ContainerSummary{
 		ID: raw.ID, Name: name, Image: raw.Config.Image,
 		State: raw.State.Status, Status: raw.State.Status, Health: health,
-		NetworkMode: strings.TrimSpace(raw.HostConfig.NetworkMode),
-		CreatedAt:   parseDockerTimestamp(raw.Created),
-		Ports:       ports, Mounts: mounts, Networks: sortedKeys(raw.NetworkSettings.Networks),
+		CreatedAt: parseDockerTimestamp(raw.Created),
+		Ports:     ports, Mounts: mounts, Networks: sortedKeys(raw.NetworkSettings.Networks),
 		ComposeProject: raw.Config.Labels["com.docker.compose.project"],
 		ComposeService: raw.Config.Labels["com.docker.compose.service"],
 		Ownership:      ownership, OwnershipEvidence: evidence, ResourceVersion: version,

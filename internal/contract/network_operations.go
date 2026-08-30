@@ -13,32 +13,17 @@ const (
 
 var networkOperationVersionPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-// PortUsageContainer describes a Docker-published port owner when the Agent can
-// unambiguously associate the host listener with a running container.
-//
-// It is intentionally optional: the host ss record remains the source of truth
-// and entries that are not Docker-published keep the original response shape.
-type PortUsageContainer struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Image          string `json:"image,omitempty"`
-	ContainerPort  uint16 `json:"containerPort,omitempty"`
-	ComposeProject string `json:"composeProject,omitempty"`
-	ComposeService string `json:"composeService,omitempty"`
-}
-
 // PortUsageEntry is one bounded ss record returned by the kejilion.sh truth source.
 type PortUsageEntry struct {
-	Protocol     string              `json:"protocol"`
-	State        string              `json:"state"`
-	LocalAddress string              `json:"localAddress"`
-	LocalPort    string              `json:"localPort"`
-	PeerAddress  string              `json:"peerAddress"`
-	PeerPort     string              `json:"peerPort"`
-	Process      string              `json:"process,omitempty"`
-	PID          int                 `json:"pid,omitempty"`
-	Raw          string              `json:"raw"`
-	Container    *PortUsageContainer `json:"container,omitempty"`
+	Protocol     string `json:"protocol"`
+	State        string `json:"state"`
+	LocalAddress string `json:"localAddress"`
+	LocalPort    string `json:"localPort"`
+	PeerAddress  string `json:"peerAddress"`
+	PeerPort     string `json:"peerPort"`
+	Process      string `json:"process,omitempty"`
+	PID          int    `json:"pid,omitempty"`
+	Raw          string `json:"raw"`
 }
 
 type PortUsageSnapshot struct {

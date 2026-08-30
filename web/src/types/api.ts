@@ -695,15 +695,6 @@ export interface SystemResourceActionResult {
   appliedAt: string
 }
 
-export interface PortUsageContainer {
-  id: string
-  name: string
-  image?: string
-  containerPort?: number
-  composeProject?: string
-  composeService?: string
-}
-
 export interface PortUsageEntry {
   protocol: string
   state: string
@@ -714,7 +705,6 @@ export interface PortUsageEntry {
   process?: string
   pid?: number
   raw: string
-  container?: PortUsageContainer
 }
 
 export interface PortUsageSnapshot {
@@ -1351,7 +1341,6 @@ export interface DockerContainer {
   name: string
   image: string
   state: 'running' | 'paused' | 'restarting' | 'exited' | 'dead' | 'created' | 'unknown'
-  networkMode?: string
   health?: HealthLevel
   access: ResourceAccess
   consistency: ConsistencyState
