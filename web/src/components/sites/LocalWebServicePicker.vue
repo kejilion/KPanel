@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowRight, ChevronDown, ChevronUp, LoaderCircle, RefreshCw, Server } from '@lucide/vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import { ApiError, api } from '@/lib/api'
 import {
   discoverLocalWebServiceCandidates,
+  collectLocalWebServiceReverseProxyPorts,
   LOCAL_WEB_SERVICE_MAX_CANDIDATES,
   localWebServiceAddressLabel,
   localWebServiceOrigin,
+  type LocalWebServiceProxySite,
   type LocalWebServiceCandidate,
 } from '@/lib/localWebServices'
 import type { PortUsageSnapshot } from '@/types/api'
@@ -17,6 +19,7 @@ const props = withDefaults(
   defineProps<{
     readable?: boolean
     unavailableReason?: string
+    existingSites?: ReadonlyArray<LocalWebServiceProxySite>
   }>(),
   {
     readable: true,
@@ -31,6 +34,7 @@ const loading = ref(false)
 const error = ref('')
 const snapshot = ref<PortUsageSnapshot>()
 const candidates = ref<LocalWebServiceCandidate[]>([])
+const reverseProxyPorts = computed(() => collectLocalWebServiceReverseProxyPorts(props.existingSites || []))
 let controller: AbortController | undefined
 
 function isAbortError(reason: unknown): boolean {
@@ -92,6 +96,10 @@ function containerSummary(candidate: LocalWebServiceCandidate): string {
   }).join('、')
 }
 
+function isReverseProxied(candidate: LocalWebServiceCandidate): boolean {
+  return reverseProxyPorts.value.has(candidate.port)
+}
+
 watch(() => props.readable, (readable) => {
   if (!readable) controller?.abort()
 })
@@ -143,7 +151,7 @@ onBeforeUnmount(() => controller?.abort())
       <header class="local-web-service-picker__results-header">
         <div>
           <strong>可选择的 TCP 监听端口</strong>
-          <small>仅按监听状态整理，不主动访问服务；默认填入 HTTP，可继续手动修改。</small>
+          <small>仅按监听状态整理，不主动访问服务；已有反代的端口会标记，默认填入 HTTP。</small>
         </div>
         <span v-if="loading" class="local-web-service-picker__updating" role="status">
           <LoaderCircle class="spin" :size="14" /> 更新中
@@ -169,7 +177,7 @@ onBeforeUnmount(() => controller?.abort())
             :key="candidate.port"
             class="local-web-service-picker__candidate"
             type="button"
-            :aria-label="`使用本机 TCP 端口 ${candidate.port}`"
+            :aria-label="`使用本机 TCP 端口 ${candidate.port}${isReverseProxied(candidate) ? '，已反代' : ''}`"
             @click="selectCandidate(candidate)"
           >
             <span class="local-web-service-picker__candidate-top">
@@ -177,6 +185,9 @@ onBeforeUnmount(() => controller?.abort())
                 <Server :size="16" aria-hidden="true" />
                 <strong>{{ candidate.port }}</strong>
                 <span>TCP</span>
+              </span>
+              <span v-if="isReverseProxied(candidate)" class="local-web-service-picker__proxy-status" title="已有 k fd 反代配置">
+                已反代
               </span>
               <span class="local-web-service-picker__use">填入 <ArrowRight :size="15" /></span>
             </span>
@@ -435,6 +446,18 @@ onBeforeUnmount(() => controller?.abort())
   gap: 3px;
   color: var(--brand-strong);
   font-size: 13px;
+}
+
+.local-web-service-picker__proxy-status {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, var(--border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 680;
+  white-space: nowrap;
 }
 
 .local-web-service-picker__detail {

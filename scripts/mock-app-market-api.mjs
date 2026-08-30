@@ -1394,7 +1394,7 @@ createServer(async (request, response) => {
           health: 'healthy',
           consistency: 'in_sync',
           origin: 'web',
-          target: 'http://127.0.0.1:8064',
+          target: 'http://127.0.0.1:9000',
           resourceVersion: `sha256:${'d'.repeat(64)}`,
           allowedActions: ['update', 'delete'],
         },

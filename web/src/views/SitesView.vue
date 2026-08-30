@@ -202,8 +202,8 @@ const serviceOptions = [
   {
     type: 'wordpress',
     title: 'WordPress',
-    summary: '博客、企业官网与内容站一键成型',
-    detail: '完整执行 kejilion.sh 同款建站流程',
+    summary: '博客与企业网站',
+    detail: '一键搭建 WordPress',
     icon: Globe2,
     featured: true,
     badges: ['热门', '一键成品'],
@@ -1473,6 +1473,7 @@ onBeforeUnmount(() => {
           v-if="form.type === 'proxy' && !scriptedTemplateCreate"
           :readable="canReadLocalWebServices"
           :unavailable-reason="localWebServiceReason"
+          :existing-sites="sites"
           @select="form.upstream = $event"
         />
 

@@ -1,4 +1,4 @@
-import type { PortUsageContainer, PortUsageEntry } from '@/types/api'
+import type { PortUsageContainer, PortUsageEntry, Site } from '@/types/api'
 
 export const LOCAL_WEB_SERVICE_MAX_CANDIDATES = 128
 
@@ -21,12 +21,41 @@ interface CandidateAccumulator {
 const IPV4_WILDCARDS = new Set(['0.0.0.0', '*'])
 const IPV6_WILDCARDS = new Set(['::', '[::]'])
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1'])
+const LOCAL_UPSTREAM_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '0.0.0.0', '::1', '::'])
+
+export type LocalWebServiceProxySite = Pick<Site, 'type' | 'upstream'>
 
 function parsePort(value: string): number | undefined {
   const normalized = value.trim()
   if (!/^\d+$/.test(normalized)) return undefined
   const port = Number(normalized)
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : undefined
+}
+
+function localProxyPort(upstream?: string): number | undefined {
+  if (!upstream?.trim()) return undefined
+
+  try {
+    const target = new URL(upstream.trim())
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return undefined
+    const hostname = target.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase()
+    if (!LOCAL_UPSTREAM_HOSTNAMES.has(hostname)) return undefined
+    return parsePort(target.port || (target.protocol === 'https:' ? '443' : '80'))
+  } catch {
+    return undefined
+  }
+}
+
+export function collectLocalWebServiceReverseProxyPorts(
+  sites: readonly LocalWebServiceProxySite[],
+): Set<number> {
+  const ports = new Set<number>()
+  for (const site of sites) {
+    if (site.type !== 'proxy') continue
+    const port = localProxyPort(site.upstream)
+    if (port !== undefined) ports.add(port)
+  }
+  return ports
 }
 
 function isIPv4Address(value: string): boolean {

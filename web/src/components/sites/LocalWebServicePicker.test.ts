@@ -44,7 +44,11 @@ beforeEach(() => {
 
 describe('LocalWebServicePicker', () => {
   it('scans on demand and emits a generated local origin', async () => {
-    const wrapper = mount(LocalWebServicePicker)
+    const wrapper = mount(LocalWebServicePicker, {
+      props: {
+        existingSites: [{ type: 'proxy', upstream: 'http://127.0.0.1:8080' }],
+      },
+    })
 
     expect(mocks.portUsage).not.toHaveBeenCalled()
     await wrapper.find('.local-web-service-picker__scan').trigger('click')
@@ -56,6 +60,8 @@ describe('LocalWebServicePicker', () => {
     expect(wrapper.text()).toContain('node · PID 3010')
     expect(wrapper.findAll('.local-web-service-picker__container')).toHaveLength(1)
     expect(wrapper.text()).toContain('Docker 容器：kpanel-demo · 容器端口 8080')
+    expect(wrapper.findAll('.local-web-service-picker__proxy-status')).toHaveLength(1)
+    expect(wrapper.text()).toContain('已反代')
     expect(wrapper.findAll('.local-web-service-picker__candidate')[0]!.text()).toContain('8080')
 
     const nodeCandidate = wrapper

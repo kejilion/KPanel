@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PortUsageEntry } from '@/types/api'
 import {
+  collectLocalWebServiceReverseProxyPorts,
   discoverLocalWebServiceCandidates,
   localWebServiceAddressLabel,
   localWebServiceOrigin,
@@ -92,5 +93,18 @@ describe('local web service candidates', () => {
     ])
 
     expect(candidates.map(({ port }) => port)).toEqual([9000, 80, 5201, 5522])
+  })
+
+  it('matches only local IP and port reverse proxies', () => {
+    const ports = collectLocalWebServiceReverseProxyPorts([
+      { type: 'proxy', upstream: 'http://127.0.0.1:3000' },
+      { type: 'proxy', upstream: 'https://localhost' },
+      { type: 'proxy', upstream: 'http://[::1]:8080' },
+      { type: 'proxy', upstream: 'http://10.0.0.2:3000' },
+      { type: 'proxy_domain', upstream: 'http://127.0.0.1:9000' },
+      { type: 'static', upstream: 'http://127.0.0.1:7000' },
+    ])
+
+    expect([...ports].sort((left, right) => left - right)).toEqual([443, 3000, 8080])
   })
 })
