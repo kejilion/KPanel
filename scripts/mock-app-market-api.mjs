@@ -742,6 +742,12 @@ const portUsageEntries = [
     raw: 'tcp LISTEN 0 511 0.0.0.0:8088 0.0.0.0:* users:(("nginx",pid=1271,fd=8))',
   },
   {
+    protocol: 'tcp', state: 'LISTEN', localAddress: '0.0.0.0', localPort: '9000',
+    peerAddress: '0.0.0.0', peerPort: '*', process: 'docker-proxy', pid: 1320,
+    raw: 'tcp LISTEN 0 511 0.0.0.0:9000 0.0.0.0:* users:(("docker-proxy",pid=1320,fd=8))',
+    container: { id: 'b'.repeat(64), name: 'kpanel-demo', image: 'demo-web:latest', containerPort: 8080, composeProject: 'kpanel', composeService: 'demo' },
+  },
+  {
     protocol: 'tcp6', state: 'LISTEN', localAddress: '::1', localPort: '5173',
     peerAddress: '::', peerPort: '*', process: 'vite', pid: 2240,
     raw: 'tcp6 LISTEN 0 511 [::1]:5173 [::]:* users:(("vite",pid=2240,fd=18))',
