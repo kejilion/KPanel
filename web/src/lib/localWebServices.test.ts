@@ -72,4 +72,25 @@ describe('local web service candidates', () => {
       containerPort: 8080,
     }])
   })
+
+  it('prioritizes published Docker ports and naturally sorts the remaining listeners', () => {
+    const candidates = discoverLocalWebServiceCandidates([
+      entry({ localPort: '5522', process: 'sshd', pid: 1 }),
+      entry({
+        localPort: '9000',
+        process: 'docker-proxy',
+        pid: 2,
+        container: {
+          id: 'container-1',
+          name: 'kpanel-demo',
+          image: 'demo-web:latest',
+          containerPort: 8080,
+        },
+      }),
+      entry({ localPort: '80', process: 'nginx', pid: 3 }),
+      entry({ localPort: '5201', process: 'iperf3', pid: 4 }),
+    ])
+
+    expect(candidates.map(({ port }) => port)).toEqual([9000, 80, 5201, 5522])
+  })
 })

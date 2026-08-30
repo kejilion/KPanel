@@ -56,8 +56,12 @@ describe('LocalWebServicePicker', () => {
     expect(wrapper.text()).toContain('node · PID 3010')
     expect(wrapper.findAll('.local-web-service-picker__container')).toHaveLength(1)
     expect(wrapper.text()).toContain('Docker 容器：kpanel-demo · 容器端口 8080')
+    expect(wrapper.findAll('.local-web-service-picker__candidate')[0]!.text()).toContain('8080')
 
-    await wrapper.findAll('.local-web-service-picker__candidate')[0]!.trigger('click')
+    const nodeCandidate = wrapper
+      .findAll('.local-web-service-picker__candidate')
+      .find((candidate) => candidate.text().includes('3000'))
+    await nodeCandidate!.trigger('click')
 
     expect(wrapper.emitted('select')).toEqual([['http://127.0.0.1:3000']])
     expect(wrapper.find('.local-web-service-picker__results').exists()).toBe(false)

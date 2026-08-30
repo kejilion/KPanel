@@ -110,8 +110,6 @@ export function discoverLocalWebServiceCandidates(
   }
 
   return [...groups.values()]
-    .sort((left, right) => left.port - right.port)
-    .slice(0, LOCAL_WEB_SERVICE_MAX_CANDIDATES)
     .map((group) => ({
       port: group.port,
       addresses: [...group.addresses].sort(compareAddresses),
@@ -121,6 +119,10 @@ export function discoverLocalWebServiceCandidates(
         left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
       ),
     }))
+    .sort((left, right) =>
+      Number(right.containers.length > 0) - Number(left.containers.length > 0) || left.port - right.port,
+    )
+    .slice(0, LOCAL_WEB_SERVICE_MAX_CANDIDATES)
 }
 
 function preferredHost(addresses: readonly string[]): string {
