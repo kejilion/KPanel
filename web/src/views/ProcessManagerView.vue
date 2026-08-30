@@ -74,6 +74,8 @@ let requestSequence = 0
 const canPoll = computed(() => !paused.value && documentVisible.value && desktopWindowActive.value)
 const items = computed(() => snapshot.value?.items || [])
 const selectedProcess = computed(() => items.value.find((item) => processKey(item) === selectedKey.value))
+const cpuPeak = computed(() => items.value.reduce((peak, item) => Math.max(peak, item.cpuPercent), 0))
+const memoryPeak = computed(() => items.value.reduce((peak, item) => Math.max(peak, item.memoryBytes), 0))
 const memoryPercent = computed(() => {
   const summary = snapshot.value?.summary
   if (!summary?.memoryTotalBytes) return 0
@@ -189,6 +191,14 @@ function stateTone(state: string): string {
 
 function percentWidth(value: number): string {
   return `${Math.max(0, Math.min(100, value))}%`
+}
+
+function metricHeatmapStrength(value: number, peak: number): string {
+  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0
+  const safePeak = Number.isFinite(peak) ? Math.max(0, peak) : 0
+  if (!safeValue || !safePeak) return '0%'
+  const ratio = Math.min(safeValue / safePeak, 1)
+  return `${Math.round(6 + ratio * 30)}%`
 }
 
 function selectProcess(process: ProcessMetric): void {
@@ -342,8 +352,8 @@ onBeforeUnmount(() => {
                   <td><strong>{{ process.name }}</strong><small>PPID {{ process.parentPid }}</small></td>
                   <td class="process-table__mono">{{ process.pid }}</td>
                   <td>{{ process.user || process.userId }}</td>
-                  <td class="process-table__metric"><strong>{{ formatPercent(process.cpuPercent) }}</strong><i><span :style="{ width: percentWidth(process.cpuPercent) }" /></i></td>
-                  <td class="process-table__metric"><strong>{{ formatBytes(process.memoryBytes) }}</strong><i><span :style="{ width: percentWidth(snapshot.summary.memoryTotalBytes ? process.memoryBytes / snapshot.summary.memoryTotalBytes * 100 : 0) }" /></i></td>
+                  <td class="process-table__metric" :style="{ '--process-metric-strength': metricHeatmapStrength(process.cpuPercent, cpuPeak) }"><strong>{{ formatPercent(process.cpuPercent) }}</strong></td>
+                  <td class="process-table__metric" :style="{ '--process-metric-strength': metricHeatmapStrength(process.memoryBytes, memoryPeak) }"><strong>{{ formatBytes(process.memoryBytes) }}</strong></td>
                   <td>{{ process.threads }}</td>
                   <td><span class="process-state" :class="`process-state--${stateTone(process.state)}`"><i />{{ stateLabel(process.state) }}</span></td>
                   <td><button class="icon-button icon-button--danger" type="button" title="结束进程" aria-label="结束进程" @click.stop="askSignal(process, 'term')"><CircleStop :size="16" /></button></td>
@@ -441,10 +451,11 @@ onBeforeUnmount(() => {
 .process-table td:first-child strong { color: var(--text); font-size: 12px; }
 .process-table td:first-child small { margin-top: 3px; font-size: 10px; }
 .process-table__mono { color: var(--text) !important; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.process-table__metric { min-width: 92px; font-variant-numeric: tabular-nums; }
+.process-table__metric { --process-metric-strength: 0%; min-width: 92px; background-color: color-mix(in srgb, var(--brand) var(--process-metric-strength), var(--surface)); font-variant-numeric: tabular-nums; transition: background-color 160ms ease; }
 .process-table__metric strong { color: var(--text); font-size: 11px; }
-.process-table__metric > i { display: block; width: 68px; height: 2px; overflow: hidden; margin-top: 5px; border-radius: 99px; background: var(--line-soft); }
-.process-table__metric > i span { display: block; height: 100%; background: var(--brand); }
+.process-table tbody tr:hover .process-table__metric,
+.process-table tbody tr:focus-visible .process-table__metric,
+.process-table tbody tr.is-selected .process-table__metric { background-color: color-mix(in srgb, var(--brand) 6%, color-mix(in srgb, var(--brand) var(--process-metric-strength), var(--surface))); }
 .process-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
 .process-state--running { color: var(--success); }
 .process-state--danger { color: var(--danger); }
@@ -478,7 +489,6 @@ onBeforeUnmount(() => {
   .process-table td:first-child { min-width: 116px; }
   .process-table td:first-child strong, .process-table td:first-child small { max-width: 128px; }
   .process-table__metric { min-width: 70px; }
-  .process-table__metric > i { width: 48px; }
 }
 @media (max-width: 480px) {
   .process-page { gap: 12px; }
@@ -495,5 +505,5 @@ onBeforeUnmount(() => {
   .process-layout { min-height: 360px; }
   .process-table th button, .process-table th > span { min-height: 40px; }
 }
-@media (prefers-reduced-motion: reduce) { .process-meter i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .process-meter i, .process-table__metric { transition: none; } }
 </style>

@@ -22,4 +22,13 @@ describe('ProcessManagerView performance contract', () => {
     expect(source).toContain('startTimeTicks: process.startTimeTicks')
     expect(source).toContain("signal: pendingSignal.value")
   })
+
+  it('renders relative CPU and memory heatmap cells with the theme color', () => {
+    expect(source).toContain('const cpuPeak = computed(() => items.value.reduce')
+    expect(source).toContain('const memoryPeak = computed(() => items.value.reduce')
+    expect(source).toContain("'--process-metric-strength': metricHeatmapStrength(process.cpuPercent, cpuPeak)")
+    expect(source).toContain("'--process-metric-strength': metricHeatmapStrength(process.memoryBytes, memoryPeak)")
+    expect(source).toContain('background-color: color-mix(in srgb, var(--brand) var(--process-metric-strength), var(--surface))')
+    expect(source).not.toContain('percentWidth(process.cpuPercent) } /></i>')
+  })
 })
