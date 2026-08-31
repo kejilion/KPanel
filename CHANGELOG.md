@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 构建基座更新到 Go `1.26.7` 与 Node.js `24.20.0` LTS，同步固定 CI、依赖检测、Release、真机工作流和 Docker 多架构镜像摘要；不改变最终 scratch 运行镜像、产品 API 或数据契约。
+
 ## [0.99.5] - 2026-08-31
 
 ### Added

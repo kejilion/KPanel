@@ -458,7 +458,7 @@ for (const workflow of workflows) {
 requireText('.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml', [
   '--purpose candidate-validation',
   '--purpose failure-injection',
-  'golang:1.26.6-alpine@sha256:',
+  'golang:1.26.7-alpine@sha256:',
 ]);
 requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
   'docs/local-feature-preview-standard.md',
@@ -469,7 +469,7 @@ requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
   'background-browser-validation',
 ]);
 requireText('.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml', [
-  'golang:1.26.6-bookworm@sha256:',
+  'golang:1.26.7-bookworm@sha256:',
 ]);
 
 for (const adapter of ['AGENTS.md', 'CLAUDE.md']) {

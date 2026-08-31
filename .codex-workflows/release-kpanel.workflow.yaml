@@ -430,7 +430,7 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   --param version=0.0.0-test \
   --param previous_version=0.0.0 \
   --param image=docker.io/example/kpanel \
-  --param runner_image=kpanel-release-gate:go1.26.6-node24 \
+  --param runner_image=kpanel-release-gate:go1.26.7-node24 \
   --param apps_repo=C:/tmp/apps \
   --param validation_environment=arena-154 \
   --param production_environment=arena-154

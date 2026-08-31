@@ -1,6 +1,6 @@
 module github.com/kejilion/kejilion-panel
 
-go 1.26.6
+go 1.26.7
 
 require (
 	github.com/flynn/noise v1.1.0

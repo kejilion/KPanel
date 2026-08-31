@@ -127,12 +127,12 @@ wsl.exe -u root -- bash -lc "cd '${{project_linux_dir}}' && bash deploy/tests/in
 wsl.exe -u root -- docker run --rm --network none `
   -v "${{project_linux_dir}}:/src:ro" `
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" `
-  -w /src golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 go test ./... -count=1
+  -w /src golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 go test ./... -count=1
 
 wsl.exe -u root -- docker run --rm --network none `
   -v "${{project_linux_dir}}:/src:ro" `
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" `
-  -w /src golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 `
+  -w /src golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 `
   go test -race ./internal/sites ./internal/agent ./internal/panel -count=1
 ```
 
@@ -144,7 +144,7 @@ docker run --rm --network none \
   -v "${{project_linux_dir}}:/src:ro" \
   -v "${{go_module_cache_linux_dir}}:/go/pkg/mod:ro" \
   -w /src \
-  golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 \
+  golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 \
   go test ./internal/sites \
     -run TestIconCacheDefaultTransportUsesRealLoopbackHTTP \
     -count=1 -v
