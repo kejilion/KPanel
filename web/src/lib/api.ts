@@ -18,6 +18,7 @@ import type {
   ClusterHost,
   ClusterHostList,
   ClusterLightEnrollment,
+  ClusterNotificationSnapshot,
   ClusterPairingCode,
   ClusterShareSettings,
   CrossPanelFileTransferEvent,
@@ -1452,6 +1453,23 @@ export const api = {
       request<ClusterHostList>('/cluster/hosts', { signal }),
     shareSettings: (signal?: AbortSignal): Promise<ClusterShareSettings> =>
       request<ClusterShareSettings>('/cluster/share', { signal }),
+    notifications: (signal?: AbortSignal): Promise<ClusterNotificationSnapshot> =>
+      request<ClusterNotificationSnapshot>('/cluster/notifications', { signal }),
+    updateNotifications: (body: {
+      enabled: boolean
+      rules: ClusterNotificationSnapshot['rules']
+      telegramBotToken?: string
+      expectedResourceVersion: string
+    }): Promise<ClusterNotificationSnapshot> =>
+      request<ClusterNotificationSnapshot>('/cluster/notifications', { method: 'PUT', body }),
+    discoverNotifications: (expectedResourceVersion: string): Promise<ClusterNotificationSnapshot> =>
+      request<ClusterNotificationSnapshot>('/cluster/notifications/discover', {
+        method: 'POST', body: { expectedResourceVersion },
+      }),
+    testNotifications: (): Promise<ClusterNotificationSnapshot> =>
+      request<ClusterNotificationSnapshot>('/cluster/notifications/test', {
+        method: 'POST', body: {},
+      }),
     updateShare: (body: {
       enabled: boolean
       title: string

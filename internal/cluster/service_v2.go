@@ -897,6 +897,7 @@ func (s *Service) handleSummaryV2(
 	if err != nil {
 		return FederationEnvelopeV2{}, err
 	}
+	telemetry = telemetryForFederation(telemetry, capabilities)
 	_ = s.storeV2.TouchController(controller.ID, now)
 	return sealV2JSONResponse(envelope, handshake, FederationSummary{
 		NodeID: s.store.NodeID(), PanelVersion: s.panelVersion,

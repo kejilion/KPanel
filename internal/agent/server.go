@@ -33,7 +33,10 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/webenv"
 )
 
-const maxAgentRequestBytes = 64 << 10
+const (
+	maxAgentRequestBytes        = 64 << 10
+	sshLoginTelemetryCapability = "ssh-login-v1"
+)
 
 type Config struct {
 	Token           []byte
@@ -586,14 +589,29 @@ func (s *Server) systemTelemetry(w http.ResponseWriter, r *http.Request) {
 			UsagePercent: selected.UsagePercent,
 		}
 	}
+	var sshLogin *contract.SSHLoginEvent
+	if hasTelemetryCapability(r, sshLoginTelemetryCapability) && s.systemManager != nil {
+		sshLogin, _ = s.systemManager.LatestSSHLogin(r.Context())
+	}
 	writeJSON(w, http.StatusOK, contract.HostTelemetry{
 		AgentVersion: s.version, AgentProtocolVersion: s.protocolVersion,
 		Hostname: summary.Hostname, OS: summary.OS, OSID: summary.OSID,
 		OSLike: summary.OSLike, Kernel: summary.Kernel, Architecture: summary.Architecture,
 		UptimeSeconds: summary.UptimeSeconds, Load: summary.Load, CPU: summary.CPU,
 		Memory: summary.Memory, Disk: disk, Network: summary.Network,
-		PublicNetwork: summary.PublicNetwork, CollectedAt: summary.CollectedAt,
+		PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	})
+}
+
+func hasTelemetryCapability(r *http.Request, capability string) bool {
+	if r == nil || capability == "" || r.URL.RawPath != "" || len(r.URL.RawQuery) > 256 {
+		return false
+	}
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(values) != 1 || len(values["capabilities"]) != 1 {
+		return false
+	}
+	return values.Get("capabilities") == capability
 }
 
 func (s *Server) publicNetwork(w http.ResponseWriter, r *http.Request) {

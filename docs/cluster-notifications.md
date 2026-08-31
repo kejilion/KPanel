@@ -1,0 +1,79 @@
+# KPanel 集群通知设计与实现边界
+
+- 状态：Telegram 首个通道已实现；真实 Bot API 联通、隔离真机和正式发布仍按本节验收边界执行
+- 入口：`集群 → 通知`
+- 目标：在不引入常驻队列、数据库或额外 Agent 权限的前提下，让一个 KPanel 统一通知本机和全部已接入主机
+
+## 1. 设计取舍
+
+通知是 KPanel 控制端的派生能力，不建立第二份主机资源事实：
+
+- CPU、内存、磁盘、收发流量直接消费既有 `cluster.HostList` / `HostSnapshot`；
+- 掉线沿用集群现有 `online`、`degraded`、`stale`、`offline`、`auth_failed`、`tls_error`、`incompatible` 状态机；
+- SSH 登录只新增窄字段 `HostTelemetry.SSHLogin`，不传递原始认证日志、SSH 配置或凭据；
+- 配置使用有界 JSON，Bot API key 与状态分文件保存；不引入 Redis、SQLite、消息队列或新的 Agent 常驻服务。
+
+Telegram 接入只要求用户输入 BotFather 生成的 API key。KPanel 通过 Telegram Bot API `getMe` 校验机器人，
+再读取有限的 `getUpdates`，自动寻找用户私聊机器人后发送通知；用户不需要输入 `chat_id`。第一次接入时，
+用户需要先私聊机器人发送 `/start`。如果机器人正在使用 webhook，界面会明确提示，不会静默覆盖 webhook。
+
+## 2. 交互
+
+集群页 Hero 区只增加一个“通知”入口，打开一张轻量弹窗：
+
+1. Telegram 通道卡片显示未配置、等待私聊、已连接或需要检查；不显示 token 和 `chat_id`。
+2. API key 输入框留空表示保留原值；输入新 key 后“保存并连接”会一次完成校验、发现私聊和落盘。
+3. “重新发现私聊”用于用户补发 `/start` 后重新绑定会话；“发送测试消息”验证真实发送链路。
+4. 总开关保留全部阈值与事件开关；关闭只暂停发送，不删除配置。
+5. 资源规则使用启用复选框加单一阈值；事件规则只使用开关，不增加分散的高级配置。
+
+所有集群主机（包含本机）复用同一组规则。界面说明连续 3 次采样才触发，恢复只发送一条恢复消息；未知、
+无效或零值指标不产生资源告警。弹窗支持已有 `ModalDialog` 的 Escape、焦点回收、键盘 Tab、桌面/移动视口和
+浅色/深色 semantic token。
+
+## 3. 告警语义
+
+| 类别 | 条件 | 去重与恢复 |
+| --- | --- | --- |
+| CPU / 内存 / 磁盘 | 有效百分比达到阈值，默认 90% | 连续 3 次后告警；低于阈值发送恢复；持续告警最多每 6 小时重复 |
+| 流量 | 收发总速率达到阈值，单位 MiB/s，默认关闭 | 首次使用集群已有速率，之后使用计数器差分；计数器回退或速率无效时跳过 |
+| 掉线 / 失联 | 集群状态进入 stale、offline、auth_failed、tls_error 或 incompatible | 状态恢复到 online/degraded 后发送恢复；单次评估最多发送 8 条，失败 5 分钟后重试 |
+| SSH 登录 | 出现新的、通过校验的 `SSHLoginEvent.ID` | 首次观测只建立基线；之后每台主机按事件 ID 去重，只发送用户、来源、方式、发生时间 |
+
+Telegram 发送有 6 秒超时，后台评估默认 30 秒一次；所有网络调用均使用固定 HTTPS API 根地址、TLS 1.2、
+有界响应体和最大并发/发送数。Telegram 失败只影响通知通道状态，不改变集群主机状态，也不阻塞浏览器读取。
+
+## 4. 存储与恢复
+
+数据目录下新增 `notifications/`：
+
+- `notification-state.json`：开关、规则、通道状态、资源版本和最多 1024 个有界告警状态；权限 `0600`；
+- `telegram-bot-token`：仅保存 API key，权限 `0600`，目录权限 `0700`；日志、审计和 API 响应均不包含 token/chat ID；
+- 两个文件都采用同步、原子替换和 Windows 可恢复替换路径；启动时严格 JSON 解码并校验大小、字段和权限。
+
+PUT、重新发现和测试均经过现有 Session、Origin/CSRF、审计和 `ExpectedResourceVersion` 冲突控制。新 token
+先完成 API 校验和私聊发现，再写 secret；状态写入失败会恢复旧 token。服务重启后从告警状态恢复去重，
+不会因为重启重复发送同一个 SSH 登录事件。
+
+## 5. 兼容与协议边界
+
+新的 `SSHLogin` 是可选字段，并通过能力头协商：新 v1/v2 控制端声明 `ssh-login-v1` 后，被控端才返回；
+旧控制端仍收到旧形状摘要。轻量节点在重新 enrollment 时读取中心返回的
+`X-KPanel-Light-Response-Capabilities: ssh-login-v1`，只有新中心和新节点都支持时才主动上报该字段。
+本机 Panel 到 Agent 也只在带有 `capabilities=ssh-login-v1` 的遥测请求时读取该可选字段，避免旧 Agent/新 Panel
+升级窗口产生严格 JSON 解码冲突。
+旧轻节点、旧中心和已有未重新 enrollment 的轻节点仍保持资源/掉线通知能力，SSH 登录通知需要重新 enrollment；
+第一次看到已有登录记录时只建立基线，不会把历史记录当作新告警。
+
+本阶段只实现 Telegram；邮件、企业微信、飞书等通道不预留平行配置入口，待有真实需求时沿用独立的
+通知通道边界逐个增加，避免每种通道引入独立后台系统。
+
+## 6. 验收边界
+
+- L0/L1：类型、能力协商、严格解码、token 脱敏、原子文件、状态机和前端类型/编译测试；
+- L2：完整 `go test ./...`、前端构建/检查、`make verify-change` / `make verify-l2` 对应门禁；
+- L3：仅在 `arena-154` 验证服务启动、配置目录权限、重启恢复、集群主机状态变化和真实 Agent/轻节点遥测路径；
+- Telegram 真实发送必须使用用户临时提供的 Bot API key，验证后立即撤销或轮换，不保存到仓库、终端记录或交付物。
+
+没有真实 token 时，Telegram Bot API 的 HTTP 交互使用本地假服务覆盖；这不能替代真实 Telegram、真实网络和
+真实私聊发现验收，最终报告会分别标出两类证据。

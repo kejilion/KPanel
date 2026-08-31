@@ -771,6 +771,10 @@ func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (Fed
 	if err != nil {
 		return FederationSummary{}, err
 	}
+	telemetry = telemetryForFederation(
+		telemetry,
+		request.Header.Get(FederationCapabilitiesHeader),
+	)
 	s.store.TouchController(controllerID, s.now().UTC())
 	return FederationSummary{
 		NodeID: s.store.NodeID(), PanelVersion: s.panelVersion,
@@ -780,6 +784,13 @@ func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (Fed
 		),
 		Telemetry: telemetry,
 	}, nil
+}
+
+func telemetryForFederation(value contract.HostTelemetry, capabilities string) contract.HostTelemetry {
+	if !hasFederationCapability(capabilities, SSHLoginCapability) {
+		value.SSHLogin = nil
+	}
+	return value
 }
 
 func (s *Service) responseSecurityEntrancePath(capabilities string) string {
@@ -1284,6 +1295,10 @@ func validateTelemetry(value contract.HostTelemetry, now time.Time) error {
 			return &RemoteError{Code: "invalid_response"}
 		}
 	}
+	if value.SSHLogin != nil && (!contract.ValidSSHLoginEvent(*value.SSHLogin) ||
+		value.SSHLogin.OccurredAt.After(now.Add(5*time.Minute))) {
+		return &RemoteError{Code: "invalid_response"}
+	}
 	publicFields := []struct {
 		value string
 		limit int
@@ -1411,6 +1426,10 @@ func cleanRateSubject(value string) string {
 
 func cloneTelemetry(value contract.HostTelemetry) contract.HostTelemetry {
 	value.OSLike = append([]string(nil), value.OSLike...)
+	if value.SSHLogin != nil {
+		copy := *value.SSHLogin
+		value.SSHLogin = &copy
+	}
 	return value
 }
 

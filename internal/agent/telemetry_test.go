@@ -49,7 +49,7 @@ func TestSystemTelemetryReturnsOnlyFederationSafeFields(t *testing.T) {
 		"hostname": true, "os": true, "osId": true, "osLike": true,
 		"kernel": true, "architecture": true, "uptimeSeconds": true,
 		"load": true, "cpu": true, "memory": true, "disk": true,
-		"network": true, "publicNetwork": true, "collectedAt": true,
+		"network": true, "publicNetwork": true, "sshLogin": true, "collectedAt": true,
 	}
 	for field := range payload {
 		if !allowed[field] {
@@ -71,6 +71,24 @@ func TestSystemTelemetryReturnsOnlyFederationSafeFields(t *testing.T) {
 	} {
 		if _, ok := payload[forbidden]; ok {
 			t.Fatalf("telemetry exposed forbidden field %q", forbidden)
+		}
+	}
+}
+
+func TestTelemetryCapabilityRequiresTheSingleKnownQuery(t *testing.T) {
+	valid := httptest.NewRequest(http.MethodGet, "/v1/system/telemetry?capabilities=ssh-login-v1", nil)
+	if !hasTelemetryCapability(valid, "ssh-login-v1") {
+		t.Fatal("known telemetry capability was not accepted")
+	}
+	for _, target := range []string{
+		"/v1/system/telemetry",
+		"/v1/system/telemetry?capabilities=ssh-login-v1&extra=x",
+		"/v1/system/telemetry?capabilities=other",
+		"/v1/system/telemetry?capabilities=ssh-login-v1;extra=x",
+	} {
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		if hasTelemetryCapability(request, "ssh-login-v1") {
+			t.Fatalf("unexpected telemetry capability acceptance for %q", target)
 		}
 	}
 }

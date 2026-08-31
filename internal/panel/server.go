@@ -30,6 +30,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
+	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/version"
@@ -58,6 +59,7 @@ type Server struct {
 	lastAuthAudit         map[string]time.Time
 	lastGlobalAuthAudit   time.Time
 	cluster               *cluster.Service
+	notifications         *notification.Service
 	clusterShareMu        sync.Mutex
 	clusterShareCache     clusterShareCacheEntry
 	clusterShareRateMu    sync.Mutex
@@ -144,9 +146,16 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize remote download jobs: %w", err)
 	}
+	notifications, err := notification.NewService(notification.Config{
+		DataDir: config.DataDir, Hosts: clusterService,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize notifications: %w", err)
+	}
 	server := &Server{
 		config: config, auth: authService, store: storage, agent: agent,
 		cluster:               clusterService,
+		notifications:         notifications,
 		terminalSessions:      make(map[string]panelTerminalSession),
 		terminalOpeningUser:   make(map[string]int),
 		trustedProxies:        trustedProxies,
