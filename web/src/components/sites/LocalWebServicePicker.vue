@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowRight, ChevronDown, ChevronUp, LoaderCircle, RefreshCw, Server } from '@lucide/vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import {
   discoverLocalWebServiceCandidates,
@@ -14,6 +15,11 @@ import {
   type LocalWebServiceCandidate,
 } from '@/lib/localWebServices'
 import type { PortUsageSnapshot } from '@/types/api'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 const props = withDefaults(
   defineProps<{
@@ -80,19 +86,19 @@ function selectCandidate(candidate: LocalWebServiceCandidate): void {
 function addressSummary(candidate: LocalWebServiceCandidate): string {
   return candidate.addresses.length
     ? candidate.addresses.map(localWebServiceAddressLabel).join('、')
-    : '仅本机'
+    : phrase('仅本机')
 }
 
 function processSummary(candidate: LocalWebServiceCandidate): string {
-  const process = candidate.processes.length ? candidate.processes.join('、') : '系统未返回占用程序'
+  const process = candidate.processes.length ? candidate.processes.join('、') : phrase('系统未返回占用程序')
   return candidate.pids.length ? `${process} · PID ${candidate.pids.join('、')}` : process
 }
 
 function containerSummary(candidate: LocalWebServiceCandidate): string {
   return candidate.containers.map((container) => {
     const name = container.name.trim() || container.id.slice(0, 12)
-    const port = container.containerPort ? ` · 容器端口 ${container.containerPort}` : ''
-    return `${name || '未命名容器'}${port}`
+    const port = container.containerPort ? phrase(` · 容器端口 ${container.containerPort}`) : ''
+    return `${name || phrase('未命名容器')}${port}`
   }).join('、')
 }
 
@@ -108,13 +114,13 @@ onBeforeUnmount(() => controller?.abort())
 </script>
 
 <template>
-  <section class="local-web-service-picker" aria-label="本机 Web 服务选择">
+  <section class="local-web-service-picker" :aria-label="phrase('本机 Web 服务选择')">
     <div class="local-web-service-picker__toolbar">
       <div class="local-web-service-picker__intro">
         <span class="local-web-service-picker__icon" aria-hidden="true"><Server :size="18" /></span>
         <span>
-          <strong>本机 Web 服务</strong>
-          <small>读取 TCP 监听端口，选择后自动填入上游地址。</small>
+          <strong>{{ phrase('本机 Web 服务') }}</strong>
+          <small>{{ phrase('读取 TCP 监听端口，选择后自动填入上游地址。') }}</small>
         </span>
       </div>
       <div class="local-web-service-picker__actions">
@@ -127,47 +133,47 @@ onBeforeUnmount(() => controller?.abort())
         >
           <ChevronUp v-if="open" :size="15" />
           <ChevronDown v-else :size="15" />
-          {{ open ? '收起候选' : '查看候选' }}
+          {{ phrase(open ? '收起候选' : '查看候选') }}
         </button>
         <button
           class="local-web-service-picker__scan"
           type="button"
           :disabled="!readable || loading"
-          :aria-label="snapshot ? '重新扫描本机服务' : '扫描本机服务'"
+          :aria-label="phrase(snapshot ? '重新扫描本机服务' : '扫描本机服务')"
           @click="scan"
         >
           <LoaderCircle v-if="loading" class="spin" :size="15" />
           <RefreshCw v-else :size="15" />
-          {{ snapshot ? '重新扫描' : '扫描本机服务' }}
+          {{ phrase(snapshot ? '重新扫描' : '扫描本机服务') }}
         </button>
       </div>
     </div>
 
     <div v-if="!readable" class="local-web-service-picker__alert local-web-service-picker__alert--warning" role="status">
-      {{ unavailableReason || '当前 Agent 的端口占用适配器未就绪。' }}仍可手动填写上游地址。
+      {{ phrase(unavailableReason || '当前 Agent 的端口占用适配器未就绪。') }}{{ phrase('仍可手动填写上游地址。') }}
     </div>
 
     <div v-else-if="open" class="local-web-service-picker__results">
       <header class="local-web-service-picker__results-header">
         <div>
-          <strong>可选择的 TCP 监听端口</strong>
-          <small>仅按监听状态整理，不主动访问服务；已有反代的端口会标记，默认填入 HTTP。</small>
+          <strong>{{ phrase('可选择的 TCP 监听端口') }}</strong>
+          <small>{{ phrase('仅按监听状态整理，不主动访问服务；已有反代的端口会标记，默认填入 HTTP。') }}</small>
         </div>
         <span v-if="loading" class="local-web-service-picker__updating" role="status">
-          <LoaderCircle class="spin" :size="14" /> 更新中
+          <LoaderCircle class="spin" :size="14" /> {{ phrase('更新中') }}
         </span>
       </header>
 
       <div v-if="error && snapshot" class="local-web-service-picker__alert local-web-service-picker__alert--danger" role="alert">
-        {{ error }} <button type="button" @click="scan">重试</button>
+        {{ phrase(error) }} <button type="button" @click="scan">{{ phrase('重试') }}</button>
       </div>
       <ErrorState v-if="error && !snapshot" :message="error" @retry="scan" />
-      <LoadingState v-else-if="loading && !snapshot" :rows="2" label="正在扫描本机服务" />
+      <LoadingState v-else-if="loading && !snapshot" :rows="2" :label="phrase('正在扫描本机服务')" />
       <template v-else>
         <div class="local-web-service-picker__meta" role="status">
-          <span>{{ `发现 ${candidates.length} 个端口候选` }}</span>
+          <span>{{ phrase(`发现 ${candidates.length} 个端口候选`) }}</span>
           <span v-if="snapshot?.truncated || candidates.length >= LOCAL_WEB_SERVICE_MAX_CANDIDATES">
-            {{ `端口较多，仅显示前 ${LOCAL_WEB_SERVICE_MAX_CANDIDATES} 个` }}
+            {{ phrase(`端口较多，仅显示前 ${LOCAL_WEB_SERVICE_MAX_CANDIDATES} 个`) }}
           </span>
         </div>
 
@@ -177,7 +183,7 @@ onBeforeUnmount(() => controller?.abort())
             :key="candidate.port"
             class="local-web-service-picker__candidate"
             type="button"
-            :aria-label="`使用本机 TCP 端口 ${candidate.port}${isReverseProxied(candidate) ? '，已反代' : ''}`"
+            :aria-label="phrase(`使用本机 TCP 端口 ${candidate.port}${isReverseProxied(candidate) ? '，已反代' : ''}`)"
             @click="selectCandidate(candidate)"
           >
             <span class="local-web-service-picker__candidate-top">
@@ -186,21 +192,21 @@ onBeforeUnmount(() => controller?.abort())
                 <strong>{{ candidate.port }}</strong>
                 <span>TCP</span>
               </span>
-              <span v-if="isReverseProxied(candidate)" class="local-web-service-picker__proxy-status" title="已有 k fd 反代配置">
-                已反代
+              <span v-if="isReverseProxied(candidate)" class="local-web-service-picker__proxy-status" :title="phrase('已有 k fd 反代配置')">
+                {{ phrase('已反代') }}
               </span>
-              <span class="local-web-service-picker__use">填入 <ArrowRight :size="15" /></span>
+              <span class="local-web-service-picker__use">{{ phrase('填入') }} <ArrowRight :size="15" /></span>
             </span>
-            <span class="local-web-service-picker__detail">{{ `监听：${addressSummary(candidate)}` }}</span>
-            <span class="local-web-service-picker__detail">{{ `服务：${processSummary(candidate)}` }}</span>
+            <span class="local-web-service-picker__detail">{{ phrase(`监听：${addressSummary(candidate)}`) }}</span>
+            <span class="local-web-service-picker__detail">{{ phrase(`服务：${processSummary(candidate)}`) }}</span>
             <span v-if="candidate.containers.length" class="local-web-service-picker__detail local-web-service-picker__container">
-              {{ `Docker 容器：${containerSummary(candidate)}` }}
+              {{ phrase(`Docker 容器：${containerSummary(candidate)}`) }}
             </span>
           </button>
         </div>
         <div v-else class="local-web-service-picker__empty" role="status">
-          <strong>未发现 TCP 监听端口</strong>
-          <span>请确认本机 Web 服务已启动，或直接手动填写上游地址。</span>
+          <strong>{{ phrase('未发现 TCP 监听端口') }}</strong>
+          <span>{{ phrase('请确认本机 Web 服务已启动，或直接手动填写上游地址。') }}</span>
         </div>
       </template>
     </div>

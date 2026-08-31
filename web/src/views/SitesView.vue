@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/SitesView/en-US').then((module) => module.default)
@@ -165,7 +170,7 @@ const installStageLabels: Record<string, string> = {
 }
 
 function installStageName(stage?: string): string {
-  return installStageLabels[stage || ''] || '正在执行'
+  return phrase(installStageLabels[stage || ''] || '正在执行')
 }
 
 const installStageLabel = computed(() => installStageName(installProgress.value?.stage))
@@ -1245,13 +1250,13 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="editorOpen"
-      :title="editorTitle"
-      :description="editorDescription"
+      :title="phrase(editorTitle)"
+      :description="phrase(editorDescription)"
       size="large"
       @close="closeEditor"
     >
       <form id="site-form" class="form-stack" @submit.prevent="submitSite">
-        <div v-if="formError" class="inline-alert inline-alert--danger" role="alert">{{ formError }}</div>
+        <div v-if="formError" class="inline-alert inline-alert--danger" role="alert">{{ phrase(formError) }}</div>
         <div
           v-if="installProgress && installationTaskView"
           ref="installationPanel"
@@ -1277,7 +1282,7 @@ onBeforeUnmount(() => {
           >
             <span :style="{ width: `${installProgress.progress}%` }"></span>
           </div>
-          <p>{{ installProgress.message }}</p>
+          <p>{{ phrase(installProgress.message) }}</p>
           <ol v-if="installProgress.events?.length" class="site-install-progress__events">
             <li
               v-for="(event, index) in installProgress.events"
@@ -1287,12 +1292,12 @@ onBeforeUnmount(() => {
               <span>{{ event.progress }}%</span>
               <div>
                 <strong>{{ installStageName(event.stage) }}</strong>
-                <small>{{ event.message }}</small>
+                <small>{{ phrase(event.message) }}</small>
               </div>
             </li>
           </ol>
           <small class="site-install-progress__privacy">
-            上方时间线仅展示安全进度事件；原生脚本输出和后续交互请查看下方受登录保护的终端。
+            {{ phrase('上方时间线仅展示安全进度事件；原生脚本输出和后续交互请查看下方受登录保护的终端。') }}
           </small>
           <AppInteractiveTerminal
             v-if="installProgress.interactive && installProgress.id"
@@ -1304,7 +1309,7 @@ onBeforeUnmount(() => {
         </div>
         <template v-if="!installationTaskView">
         <label class="field">
-          <span>主域名</span>
+          <span>{{ phrase('主域名') }}</span>
           <input
             v-model.trim="form.primaryDomain"
             placeholder="example.com"
@@ -1312,7 +1317,7 @@ onBeforeUnmount(() => {
             required
             :disabled="Boolean(editingSite)"
           />
-          <small>{{ editingSite ? '首版更新不重命名主域名或移动网站目录。' : '不要包含协议、路径或端口。' }}</small>
+          <small>{{ phrase(editingSite ? '首版更新不重命名主域名或移动网站目录。' : '不要包含协议、路径或端口。') }}</small>
         </label>
 
         <DnsResolutionGuide
@@ -1323,7 +1328,7 @@ onBeforeUnmount(() => {
         />
 
         <fieldset v-if="!editingSite" class="site-service-field site-service-field--featured">
-          <legend><Flame :size="16" /> 热门搭建</legend>
+          <legend><Flame :size="16" /> {{ phrase('热门搭建') }}</legend>
           <div class="site-service-grid">
             <button
               v-for="option in featuredServiceOptions"
@@ -1351,18 +1356,18 @@ onBeforeUnmount(() => {
               <span class="site-service-card__icon"><component :is="option.icon" :size="20" /></span>
               <span class="site-service-card__content">
                 <span class="site-service-card__heading">
-                  <strong>{{ option.title }}</strong>
+                  <strong>{{ phrase(option.title) }}</strong>
                   <span
                     v-for="badge in option.badges"
                     :key="badge"
                     class="site-service-card__badge"
                     :class="{ 'is-hot': badge === '热门' }"
                   >
-                    {{ badge }}
+                    {{ phrase(badge) }}
                   </span>
                 </span>
-                <small>{{ option.summary }}</small>
-                <em>{{ option.detail }}</em>
+                <small>{{ phrase(option.summary) }}</small>
+                <em>{{ phrase(option.detail) }}</em>
               </span>
             </button>
           </div>
@@ -1376,14 +1381,14 @@ onBeforeUnmount(() => {
           @click="showMoreTemplates = !showMoreTemplates"
         >
           <span>
-            <strong>更多模板与建站方式</strong>
-            <small>{{ recipeOptions.length + standardServiceOptions.length }} 个选项按需展开</small>
+            <strong>{{ phrase('更多模板与建站方式') }}</strong>
+            <small>{{ phrase(`${recipeOptions.length + standardServiceOptions.length} 个选项按需展开`) }}</small>
           </span>
           <ChevronDown :size="18" :class="{ 'is-open': showMoreTemplates }" />
         </button>
 
         <fieldset v-if="!editingSite && showMoreTemplates" class="site-service-field">
-          <legend><Globe2 :size="16" /> 热门成品站</legend>
+          <legend><Globe2 :size="16" /> {{ phrase('热门成品站') }}</legend>
           <div class="site-service-grid">
             <button
               v-for="option in recipeOptions"
@@ -1399,18 +1404,18 @@ onBeforeUnmount(() => {
               <span class="site-service-card__icon"><component :is="option.icon" :size="20" /></span>
               <span class="site-service-card__content">
                 <span class="site-service-card__heading">
-                  <strong>{{ option.title }}</strong>
-                  <span class="site-service-card__badge">一键成品</span>
+                  <strong>{{ phrase(option.title) }}</strong>
+                  <span class="site-service-card__badge">{{ phrase('一键成品') }}</span>
                 </span>
-                <small>{{ option.summary }}</small>
-                <em>{{ option.detail }}</em>
+                <small>{{ phrase(option.summary) }}</small>
+                <em>{{ phrase(option.detail) }}</em>
               </span>
             </button>
           </div>
         </fieldset>
 
         <fieldset v-if="editingSite || showMoreTemplates" class="site-service-field">
-          <legend>{{ editingSite ? '站点服务' : '其他建站方式' }}</legend>
+          <legend>{{ phrase(editingSite ? '站点服务' : '其他建站方式') }}</legend>
           <div class="site-service-grid">
             <button
               v-for="option in editingSite ? serviceOptions : standardServiceOptions"
@@ -1425,17 +1430,17 @@ onBeforeUnmount(() => {
             >
               <span class="site-service-card__icon"><component :is="option.icon" :size="20" /></span>
               <span class="site-service-card__content">
-                <strong>{{ option.title }}</strong>
-                <small>{{ option.summary }}</small>
-                <em>{{ option.detail }}</em>
+                <strong>{{ phrase(option.title) }}</strong>
+                <small>{{ phrase(option.summary) }}</small>
+                <em>{{ phrase(option.detail) }}</em>
               </span>
             </button>
           </div>
-          <small v-if="editingSite">服务类型保持不变，避免遗留目录或意外改变现有流量路径。</small>
+          <small v-if="editingSite">{{ phrase('服务类型保持不变，避免遗留目录或意外改变现有流量路径。') }}</small>
         </fieldset>
 
         <fieldset v-if="form.type === 'php' && !scriptedTemplateCreate" class="field site-inline-options">
-          <legend>PHP 运行环境</legend>
+          <legend>{{ phrase('PHP 运行环境') }}</legend>
           <div class="choice-pills">
             <button
               type="button"
@@ -1443,7 +1448,7 @@ onBeforeUnmount(() => {
               :aria-pressed="form.phpVersion === 'latest'"
               @click="form.phpVersion = 'latest'"
             >
-              PHP 最新版
+              {{ phrase('PHP 最新版') }}
             </button>
             <button
               type="button"
@@ -1451,22 +1456,22 @@ onBeforeUnmount(() => {
               :aria-pressed="form.phpVersion === '7.4'"
               @click="form.phpVersion = '7.4'"
             >
-              PHP 7.4
+              {{ phrase('PHP 7.4') }}
             </button>
           </div>
-          <small>分别对应脚本架构中的 php 与 php74 PHP-FPM 服务。</small>
+          <small>{{ phrase('分别对应脚本架构中的 php 与 php74 PHP-FPM 服务。') }}</small>
         </fieldset>
 
         <label v-if="(form.type === 'proxy' || form.type === 'proxy_domain') && !scriptedTemplateCreate" class="field">
-          <span>上游地址</span>
+          <span>{{ phrase('上游地址') }}</span>
           <input
             v-model.trim="form.upstream"
             type="url"
             :placeholder="form.type === 'proxy_domain' ? 'https://origin.example.com' : 'http://127.0.0.1:3000'"
             required
           />
-          <small v-if="form.type === 'proxy'">支持本机、内网、公网 IP、域名或 Docker 服务名，直接执行 k fd 域名 目标 端口。</small>
-          <small v-else>填写完整域名源站，HTTPS 会自动启用上游 SNI；不接受路径、账号或查询参数。</small>
+          <small v-if="form.type === 'proxy'">{{ phrase('支持本机、内网、公网 IP、域名或 Docker 服务名，直接执行 k fd 域名 目标 端口。') }}</small>
+          <small v-else>{{ phrase('填写完整域名源站，HTTPS 会自动启用上游 SNI；不接受路径、账号或查询参数。') }}</small>
         </label>
 
         <LocalWebServicePicker
@@ -1478,24 +1483,24 @@ onBeforeUnmount(() => {
         />
 
         <label v-if="form.type === 'load_balance' && !scriptedTemplateCreate" class="field">
-          <span>后端节点</span>
+          <span>{{ phrase('后端节点') }}</span>
           <textarea
             v-model="form.upstreams"
             rows="4"
             placeholder="http://10.0.0.11:8080&#10;http://10.0.0.12:8080"
             required
           />
-          <small>每行一个 HTTP 源站，2–8 个；与 kejilion.sh 的 HTTP upstream 架构一致。</small>
+          <small>{{ phrase('每行一个 HTTP 源站，2–8 个；与 kejilion.sh 的 HTTP upstream 架构一致。') }}</small>
         </label>
 
         <template v-if="form.type === 'redirect' && !scriptedTemplateCreate">
           <label class="field">
-            <span>跳转目标</span>
+            <span>{{ phrase('跳转目标') }}</span>
             <input v-model.trim="form.redirectTarget" type="url" placeholder="https://www.example.com" required />
-            <small>访问路径与查询参数会原样追加到目标域名。</small>
+            <small>{{ phrase('访问路径与查询参数会原样追加到目标域名。') }}</small>
           </label>
           <fieldset class="field site-inline-options">
-            <legend>跳转方式</legend>
+            <legend>{{ phrase('跳转方式') }}</legend>
             <div class="choice-pills choice-pills--four">
               <button
                 v-for="code in ([301, 302, 307, 308] as RedirectCode[])"
@@ -1505,20 +1510,20 @@ onBeforeUnmount(() => {
                 :aria-pressed="form.redirectCode === code"
                 @click="form.redirectCode = code"
               >
-                {{ code }}<small>{{ code === 301 || code === 308 ? '永久' : '临时' }}</small>
+                {{ code }}<small>{{ phrase(code === 301 || code === 308 ? '永久' : '临时') }}</small>
               </button>
             </div>
           </fieldset>
         </template>
 
         <label v-if="form.type !== 'wordpress' && form.type !== 'proxy' && form.type !== 'recipe' && !scriptedTemplateCreate" class="field">
-          <span>附加域名（可选）</span>
+          <span>{{ phrase('附加域名（可选）') }}</span>
           <textarea v-model="form.aliases" rows="3" placeholder="www.example.com&#10;api.example.com" />
-          <small>每行一个域名，最多 20 个；主域名不要重复填写。</small>
+          <small>{{ phrase('每行一个域名，最多 20 个；主域名不要重复填写。') }}</small>
         </label>
         <small v-if="!editingSite" class="site-create-footnote">
           <ShieldCheck :size="14" />
-          建站任务在后台执行，关闭窗口不会中断。
+          {{ phrase('建站任务在后台执行，关闭窗口不会中断。') }}
         </small>
         </template>
       </form>
@@ -1530,32 +1535,32 @@ onBeforeUnmount(() => {
           type="button"
           @click="closeEditor"
         >
-          {{ installationTaskFinished ? '关闭窗口' : '转入后台' }}
+          {{ phrase(installationTaskFinished ? '关闭窗口' : '转入后台') }}
         </button>
         <template v-else>
           <button class="button button--secondary" type="button" @click="closeEditor">
-            取消
+            {{ phrase('取消') }}
           </button>
           <button class="button button--primary" type="submit" form="site-form" :disabled="submitting || !canSubmit">
           <LoaderCircle v-if="submitting" class="spin" :size="16" />
           {{
             submitting
               ? form.type === 'wordpress'
-                ? '正在搭建 WordPress…'
+                ? phrase('正在搭建 WordPress…')
                 : form.type === 'proxy' || form.type === 'recipe' || scriptedTemplateCreate
-                  ? 'kejilion.sh 正在后台搭建…'
-                : '正在提交…'
+                  ? phrase('kejilion.sh 正在后台搭建…')
+                : phrase('正在提交…')
               : editingSite
-                ? '更新设置'
+                ? phrase('更新设置')
                 : form.type === 'wordpress'
-                  ? '一键搭建 WordPress'
+                  ? phrase('一键搭建 WordPress')
                   : form.type === 'proxy'
-                    ? '一键创建反向代理'
+                    ? phrase('一键创建反向代理')
                   : form.type === 'recipe'
-                    ? `一键搭建 ${selectedRecipe?.title || '成品站'}`
+                    ? phrase(`一键搭建 ${phrase(selectedRecipe?.title || '成品站')}`)
                   : scriptedTemplateCreate
-                    ? `使用脚本搭建 ${selectedService?.title || '网站'}`
-                    : '创建网站'
+                    ? phrase(`使用脚本搭建 ${phrase(selectedService?.title || '网站')}`)
+                    : phrase('创建网站')
           }}
           </button>
         </template>

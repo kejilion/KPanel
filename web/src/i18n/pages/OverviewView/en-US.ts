@@ -356,4 +356,13 @@ export default [
 	['识别物理盘、虚拟盘、分区、LVM、RAID 与设备映射关系', 'Recognizes physical disks, virtual disks, partitions, LVM, RAID, and device mappings'],
 	['主 Agent 保持设备隔离；固定参数 worker 按真实设备身份执行，所有写入带资源版本并在完成后回读。', 'The main Agent keeps device isolation. A fixed-argument worker acts on verified device identities, and every write uses a resource version and readback.'],
 	['当前 Agent 的磁盘管理 worker 尚未就绪。', 'The current Agent disk-management worker is unavailable.'],
+	['系统工具', 'System tool'],
+	['当前系统或脚本来源不满足 BBRv3 受控执行条件，请查看上方状态说明。', 'The current system or script source does not meet the requirements for controlled BBRv3 actions. Review the status above.'],
+	['已有系统维护任务正在后台执行，请等待完成后再提交新任务。', 'A system maintenance task is already running in the background. Wait for it to finish before submitting another task.'],
+	['任务由独立 systemd 单元执行；关闭浏览器不会中断，页面将持续读取进度。', 'The task runs in an independent systemd unit. Closing the browser will not interrupt it, and this page will keep reading its progress.'],
+	['请求成功后，Agent 会创建固定的延时重启单元；约 15 秒后面板离线属于正常现象。', 'After the request succeeds, the Agent creates a fixed delayed-reboot unit. The panel going offline after about 15 seconds is expected.'],
+	['该操作使用固定参数执行器，并在完成后回读宿主机真实状态。', "This action uses a fixed-parameter executor and reads back the host's actual state when it completes."],
+	['正在安排重启…', 'Scheduling restart…'],
+	['正在执行并验证…', 'Running and verifying…'],
+	['当前不可执行', 'Action unavailable'],
 ] as const satisfies PhraseCatalog
