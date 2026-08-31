@@ -2,7 +2,12 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Component } from 'vue'
 import { RouterLink } from 'vue-router'
 import { rememberOverviewViewport, restoreOverviewViewport } from '@/lib/overviewViewport'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/OverviewView/en-US').then((module) => module.default)
@@ -1559,22 +1564,22 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(selectedTool)"
-      :title="selectedTool?.title || '系统工具'"
-      :description="selectedTool?.description"
+      :title="selectedTool ? phrase(selectedTool.title) : phrase('系统工具')"
+      :description="selectedTool ? phrase(selectedTool.description) : ''"
       @close="closeTool"
     >
       <div v-if="selectedTool" class="management-dialog">
         <div class="management-dialog__current" :class="{ 'is-danger': selectedTool.tone === 'danger' }">
-          <span>当前状态</span>
-          <strong>{{ selectedTool.value }}</strong>
-          <small>{{ selectedTool.detail }}</small>
+          <span>{{ phrase('当前状态') }}</span>
+          <strong>{{ phrase(selectedTool.value) }}</strong>
+          <small>{{ phrase(selectedTool.detail) }}</small>
         </div>
 
         <div class="management-dialog__section">
           <span class="management-dialog__section-icon"><ShieldCheck :size="17" /></span>
           <div>
-            <strong>执行与回滚规则</strong>
-            <p>{{ selectedTool.safety }}</p>
+            <strong>{{ phrase('执行与回滚规则') }}</strong>
+            <p>{{ phrase(selectedTool.safety) }}</p>
           </div>
         </div>
 
@@ -1729,11 +1734,11 @@ onBeforeUnmount(() => {
             </small>
           </label>
           <label v-else-if="selectedTool.id === 'system-update'" class="field">
-            <span>更新方式</span>
+            <span>{{ phrase('更新方式') }}</span>
             <select v-model="actionForm.maintenancePolicy">
-              <option value="full">完整更新：刷新索引并升级全部软件包</option>
+              <option value="full">{{ phrase('完整更新：刷新索引并升级全部软件包') }}</option>
             </select>
-            <small>可能更新内核并重启部分系统服务，但不会自动重启服务器。</small>
+            <small>{{ phrase('可能更新内核并重启部分系统服务，但不会自动重启服务器。') }}</small>
           </label>
           <label v-else-if="selectedTool.id === 'system-cleanup'" class="field">
             <span>清理范围</span>
@@ -1759,7 +1764,7 @@ onBeforeUnmount(() => {
         >
           <CircleAlert :size="17" />
           <span>
-            {{
+            {{ phrase(
               selectedTool.id === 'bbrv3' &&
               !data?.management.bbrv3.supported &&
               !(actionForm.bbrv3Policy === 'uninstall' && data?.management.bbrv3.installed)
@@ -1777,13 +1782,13 @@ onBeforeUnmount(() => {
                     : selectedTool.id === 'system-reboot'
                       ? '请求成功后，Agent 会创建固定的延时重启单元；约 15 秒后面板离线属于正常现象。'
                     : '该操作使用固定参数执行器，并在完成后回读宿主机真实状态。'
-                : capabilityState(selectedTool.capability).reason
-            }}
+                : capabilityState(selectedTool.capability).reason,
+            ) }}
           </span>
         </div>
       </div>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="actionRunning" @click="closeTool">关闭</button>
+        <button class="button button--secondary" type="button" :disabled="actionRunning" @click="closeTool">{{ phrase('关闭') }}</button>
         <button
           class="button button--primary"
           type="button"
@@ -1791,7 +1796,7 @@ onBeforeUnmount(() => {
           @click="executeAction"
         >
           <ShieldCheck :size="16" />
-          {{
+          {{ phrase(
             actionRunning
               ? selectedTool?.id === 'system-reboot'
                 ? '正在安排重启…'
@@ -1800,8 +1805,8 @@ onBeforeUnmount(() => {
                 ? selectedTool?.id === 'bbrv3' && !actionValid
                   ? '当前不可执行'
                   : '确认执行'
-                : '当前不可执行'
-          }}
+                : '当前不可执行',
+          ) }}
         </button>
       </template>
     </ModalDialog>
