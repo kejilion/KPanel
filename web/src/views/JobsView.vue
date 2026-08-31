@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, RotateCw, Search, TimerReset } from '@lucide/vue'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/JobsView/en-US').then((module) => module.default)
   : import('@/i18n/pages/JobsView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -183,37 +188,37 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(selectedJob)"
-      :title="selectedJob ? actionLabel(selectedJob.action) : '任务详情'"
-      :description="selectedJob ? `任务 ${selectedJob.id}` : ''"
+      :title="selectedJob ? phrase(actionLabel(selectedJob.action)) : phrase('任务详情')"
+      :description="selectedJob ? phrase(`任务 ${selectedJob.id}`) : ''"
       size="large"
       @close="selectedJob = undefined"
     >
       <template v-if="selectedJob">
         <div class="modal-status-row">
           <StatusBadge :status="selectedJob.status" />
-          <span>{{ sourceLabel(selectedJob.source) }}</span>
-          <span v-if="selectedJob.progress !== undefined">进度 {{ selectedJob.progress }}%</span>
+          <span>{{ phrase(sourceLabel(selectedJob.source)) }}</span>
+          <span v-if="selectedJob.progress !== undefined">{{ phrase(`进度 ${selectedJob.progress}%`) }}</span>
         </div>
         <dl class="detail-list detail-list--grid">
           <div>
-            <dt>目标类型</dt>
-            <dd>{{ selectedJob.resourceType || '系统' }}</dd>
+            <dt>{{ phrase('目标类型') }}</dt>
+            <dd>{{ selectedJob.resourceType || phrase('系统') }}</dd>
           </div>
           <div>
-            <dt>目标资源</dt>
+            <dt>{{ phrase('目标资源') }}</dt>
             <dd>{{ selectedJob.resourceName || '—' }}</dd>
           </div>
           <div>
-            <dt>创建时间</dt>
+            <dt>{{ phrase('创建时间') }}</dt>
             <dd>{{ formatDateTime(selectedJob.createdAt) }}</dd>
           </div>
           <div>
-            <dt>完成时间</dt>
+            <dt>{{ phrase('完成时间') }}</dt>
             <dd>{{ formatDateTime(selectedJob.finishedAt) }}</dd>
           </div>
         </dl>
         <section v-if="selectedJob.stages?.length" class="detail-section">
-          <h3><RotateCw :size="17" /> 执行阶段</h3>
+          <h3><RotateCw :size="17" /> {{ phrase('执行阶段') }}</h3>
           <ol class="stage-list">
             <li v-for="stage in selectedJob.stages" :key="stage.name">
               <span class="stage-list__marker" />
@@ -226,11 +231,11 @@ onBeforeUnmount(() => {
           </ol>
         </section>
         <div v-if="selectedJob.errorMessage" class="inline-alert inline-alert--danger">
-          <span><strong>{{ selectedJob.errorCode || '任务失败' }}</strong><br />{{ selectedJob.errorMessage }}</span>
+          <span><strong>{{ selectedJob.errorCode || phrase('任务失败') }}</strong><br />{{ selectedJob.errorMessage }}</span>
         </div>
       </template>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="selectedJob = undefined">关闭</button>
+        <button class="button button--secondary" type="button" @click="selectedJob = undefined">{{ phrase('关闭') }}</button>
       </template>
     </ModalDialog>
   </div>

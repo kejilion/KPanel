@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/DockerView/en-US').then((module) => module.default)
   : import('@/i18n/pages/DockerView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import {
   Box,
   Boxes,
@@ -1828,99 +1833,99 @@ onBeforeUnmount(() => {
       <template v-if="contextContainer">
         <strong class="docker-context-menu__title">{{ contextContainer.name }}</strong>
         <button v-if="permits(contextContainer, 'logs')" type="button" role="menuitem" @click="showLogs(contextContainer)">
-          <FileText :size="15" />查看日志
+          <FileText :size="15" />{{ phrase('查看日志') }}
         </button>
         <button v-if="permits(contextContainer, 'stats')" type="button" role="menuitem" @click="showStats(contextContainer)">
-          <Waypoints :size="15" />性能占用
+          <Waypoints :size="15" />{{ phrase('性能占用') }}
         </button>
         <button v-if="permits(contextContainer, 'exec')" type="button" role="menuitem" @click="openConsole(contextContainer)">
-          <Wrench :size="15" />容器控制台
+          <Wrench :size="15" />{{ phrase('容器控制台') }}
         </button>
         <button v-if="permits(contextContainer, 'access')" type="button" role="menuitem" @click="openAccess(contextContainer)">
-          <ShieldCheck :size="15" />外部访问
+          <ShieldCheck :size="15" />{{ phrase('外部访问') }}
         </button>
         <hr />
         <button v-if="permits(contextContainer, 'start')" type="button" role="menuitem" @click="askAction(contextContainer, 'start')">
-          <Play :size="15" />启动
+          <Play :size="15" />{{ phrase('启动') }}
         </button>
         <button v-if="permits(contextContainer, 'unpause')" type="button" role="menuitem" @click="askAction(contextContainer, 'unpause')">
-          <Play :size="15" />继续运行
+          <Play :size="15" />{{ phrase('继续运行') }}
         </button>
         <button v-if="permits(contextContainer, 'restart')" type="button" role="menuitem" @click="askAction(contextContainer, 'restart')">
-          <RotateCw :size="15" />重启
+          <RotateCw :size="15" />{{ phrase('重启') }}
         </button>
         <button v-if="permits(contextContainer, 'pause')" type="button" role="menuitem" @click="askAction(contextContainer, 'pause')">
-          <Pause :size="15" />暂停
+          <Pause :size="15" />{{ phrase('暂停') }}
         </button>
         <button v-if="permits(contextContainer, 'stop')" type="button" role="menuitem" @click="askAction(contextContainer, 'stop')">
-          <CircleStop :size="15" />停止
+          <CircleStop :size="15" />{{ phrase('停止') }}
         </button>
         <hr />
-        <button type="button" role="menuitem" @click="copyResourceValue(contextContainer.id, '容器 ID')">
-          <Copy :size="15" />复制容器 ID
+        <button type="button" role="menuitem" @click="copyResourceValue(contextContainer.id, phrase('容器 ID'))">
+          <Copy :size="15" />{{ phrase('复制容器 ID') }}
         </button>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextContainer.image, '镜像名称')">
-          <Copy :size="15" />复制镜像名称
+        <button type="button" role="menuitem" @click="copyResourceValue(contextContainer.image, phrase('镜像名称'))">
+          <Copy :size="15" />{{ phrase('复制镜像名称') }}
         </button>
         <button v-if="permits(contextContainer, 'remove')" class="danger-link k-context-menu__item--danger" type="button" role="menuitem" @click="askAction(contextContainer, 'remove')">
-          <Trash2 :size="15" />删除容器
+          <Trash2 :size="15" />{{ phrase('删除容器') }}
         </button>
       </template>
 
       <template v-else-if="contextImage">
         <strong class="docker-context-menu__title">{{ contextImage.tags[0] || shortId(contextImage.id) }}</strong>
         <button v-if="contextImage.tags.length" type="button" role="menuitem" @click="updateImage(contextImage)">
-          <RefreshCw :size="15" />拉取最新版本
+          <RefreshCw :size="15" />{{ phrase('拉取最新版本') }}
         </button>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextImage.tags[0] || contextImage.id, '镜像引用')">
-          <Copy :size="15" />复制镜像引用
+        <button type="button" role="menuitem" @click="copyResourceValue(contextImage.tags[0] || contextImage.id, phrase('镜像引用'))">
+          <Copy :size="15" />{{ phrase('复制镜像引用') }}
         </button>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextImage.id, '镜像 ID')">
-          <Copy :size="15" />复制镜像 ID
+        <button type="button" role="menuitem" @click="copyResourceValue(contextImage.id, phrase('镜像 ID'))">
+          <Copy :size="15" />{{ phrase('复制镜像 ID') }}
         </button>
         <hr />
         <button class="danger-link k-context-menu__item--danger" type="button" role="menuitem" :disabled="!contextImage.resourceVersion" @click="askImageRemoval(contextImage)">
-          <Trash2 :size="15" />删除镜像
+          <Trash2 :size="15" />{{ phrase('删除镜像') }}
         </button>
       </template>
 
       <template v-else-if="contextNetwork">
         <strong class="docker-context-menu__title">{{ contextNetwork.name }}</strong>
         <button type="button" role="menuitem" @click="manageNetworkMembership(contextNetwork)">
-          <Network :size="15" />管理容器成员
+          <Network :size="15" />{{ phrase('管理容器成员') }}
         </button>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextNetwork.name, '网络名称')">
-          <Copy :size="15" />复制网络名称
+        <button type="button" role="menuitem" @click="copyResourceValue(contextNetwork.name, phrase('网络名称'))">
+          <Copy :size="15" />{{ phrase('复制网络名称') }}
         </button>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextNetwork.id, '网络 ID')">
-          <Copy :size="15" />复制网络 ID
+        <button type="button" role="menuitem" @click="copyResourceValue(contextNetwork.id, phrase('网络 ID'))">
+          <Copy :size="15" />{{ phrase('复制网络 ID') }}
         </button>
         <hr />
         <button class="danger-link k-context-menu__item--danger" type="button" role="menuitem" :disabled="!contextNetwork.resourceVersion" @click="askNetworkRemoval(contextNetwork)">
-          <Trash2 :size="15" />删除网络
+          <Trash2 :size="15" />{{ phrase('删除网络') }}
         </button>
       </template>
 
       <template v-else-if="contextVolume">
         <strong class="docker-context-menu__title">{{ contextVolume.name }}</strong>
-        <button type="button" role="menuitem" @click="copyResourceValue(contextVolume.name, '存储卷名称')">
-          <Copy :size="15" />复制存储卷名称
+        <button type="button" role="menuitem" @click="copyResourceValue(contextVolume.name, phrase('存储卷名称'))">
+          <Copy :size="15" />{{ phrase('复制存储卷名称') }}
         </button>
-        <button v-if="contextVolume.mountpoint" type="button" role="menuitem" @click="copyResourceValue(contextVolume.mountpoint, '挂载点')">
-          <Copy :size="15" />复制挂载点
+        <button v-if="contextVolume.mountpoint" type="button" role="menuitem" @click="copyResourceValue(contextVolume.mountpoint, phrase('挂载点'))">
+          <Copy :size="15" />{{ phrase('复制挂载点') }}
         </button>
         <hr />
         <button class="danger-link k-context-menu__item--danger" type="button" role="menuitem" :disabled="!contextVolume.resourceVersion" @click="askVolumeRemoval(contextVolume)">
-          <Trash2 :size="15" />删除存储卷
+          <Trash2 :size="15" />{{ phrase('删除存储卷') }}
         </button>
       </template>
       </div>
     </Teleport>
 
-    <ModalDialog :open="createOpen" title="部署 Docker 应用" description="粘贴现成内容即可，KPanel 会自动识别 Docker Run 或 Docker Compose。" size="large" @close="createOpen = false">
+    <ModalDialog :open="createOpen" :title="phrase('部署 Docker 应用')" :description="phrase('粘贴现成内容即可，KPanel 会自动识别 Docker Run 或 Docker Compose。')" size="large" @close="createOpen = false">
       <section v-if="!createManualMode" class="deployment-input-card">
         <label class="field">
-          <span>粘贴部署内容</span>
+          <span>{{ phrase('粘贴部署内容') }}</span>
           <DockerDeploymentEditor
             v-model="createSource"
             :diagnostics="createDiagnostics"
@@ -1929,220 +1934,220 @@ onBeforeUnmount(() => {
         </label>
         <div v-if="createAnalysis.kind !== 'invalid' || !createDiagnostics.length" class="deployment-detection" :class="{ 'is-invalid': createAnalysis.kind === 'invalid', 'is-ready': createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose' }">
           <template v-if="createAnalysis.kind === 'empty'">
-            <span class="deployment-kind"><FileText :size="16" />等待粘贴</span>
-            <small>支持常见 docker run 参数和完整 Compose YAML，无需先选择部署类型。</small>
+            <span class="deployment-kind"><FileText :size="16" />{{ phrase('等待粘贴') }}</span>
+            <small>{{ phrase('支持常见 docker run 参数和完整 Compose YAML，无需先选择部署类型。') }}</small>
           </template>
           <template v-else-if="createAnalysis.kind === 'invalid'">
-            <span class="deployment-kind"><CircleStop :size="16" />暂时无法识别</span>
-            <small>{{ createAnalysis.message }}</small>
+            <span class="deployment-kind"><CircleStop :size="16" />{{ phrase('暂时无法识别') }}</span>
+            <small>{{ phrase(createAnalysis.message) }}</small>
           </template>
           <template v-else>
-            <span class="deployment-kind"><ShieldCheck :size="16" />{{ createModeLabel }}</span>
-            <small>{{ createSummary }}</small>
+            <span class="deployment-kind"><ShieldCheck :size="16" />{{ phrase(createModeLabel) }}</span>
+            <small>{{ phrase(createSummary) }}</small>
           </template>
         </div>
       </section>
 
       <div class="deployment-options">
-        <button v-if="createManualMode" class="button button--ghost button--small" type="button" @click="resetCreateForm"><FileText :size="14" /> 返回粘贴部署内容</button>
-        <button v-else class="button button--ghost button--small" type="button" @click="startManualCreate"><Wrench :size="14" /> 没有现成内容？手动配置</button>
-        <button v-if="!createManualMode && (createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose')" class="button button--ghost button--small" type="button" @click="showCreateAdvanced"><Wrench :size="14" /> {{ createAdvanced ? '收起高级设置' : '高级设置' }}</button>
+        <button v-if="createManualMode" class="button button--ghost button--small" type="button" @click="resetCreateForm"><FileText :size="14" /> {{ phrase('返回粘贴部署内容') }}</button>
+        <button v-else class="button button--ghost button--small" type="button" @click="startManualCreate"><Wrench :size="14" /> {{ phrase('没有现成内容？手动配置') }}</button>
+        <button v-if="!createManualMode && (createAnalysis.kind === 'docker-run' || createAnalysis.kind === 'compose')" class="button button--ghost button--small" type="button" @click="showCreateAdvanced"><Wrench :size="14" /> {{ phrase(createAdvanced ? '收起高级设置' : '高级设置') }}</button>
       </div>
 
       <section v-if="createAdvanced && createAnalysis.kind === 'compose' && !createManualMode" class="deployment-advanced">
-        <label class="field"><span>Compose 项目名称</span><input v-model="createComposeProject" class="text-input" type="text" maxlength="63" autocomplete="off" /><small>已自动从服务名生成；项目文件会保存到 /home/docker 下。</small><code data-i18n-ignore>/home/docker/{{ createComposeProject || 'project' }}/docker-compose.yml</code></label>
+         <label class="field"><span>{{ phrase('Compose 项目名称') }}</span><input v-model="createComposeProject" class="text-input" type="text" maxlength="63" autocomplete="off" /><small>{{ phrase('已自动从服务名生成；项目文件会保存到 /home/docker 下。') }}</small><code data-i18n-ignore>/home/docker/{{ createComposeProject || 'project' }}/docker-compose.yml</code></label>
       </section>
 
       <section v-if="createAnalysis.kind === 'compose' && (createComposeEnvironment.length || createAdvanced)" class="deployment-advanced compose-environment-card">
         <header class="compose-environment-card__header">
           <div>
-            <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
-            <small v-if="createComposeEnvironmentMissing" class="compose-environment-card__missing">{{ createComposeEnvironmentMissing }} 项待填写</small>
-            <small v-else>{{ createComposeEnvironment.length }} 个变量 · 部署时自动加载</small>
+             <strong>{{ phrase('项目变量') }} <code data-i18n-ignore>.env</code></strong>
+             <small v-if="createComposeEnvironmentMissing" class="compose-environment-card__missing">{{ phrase(`${createComposeEnvironmentMissing} 项待填写`) }}</small>
+             <small v-else>{{ phrase(`${createComposeEnvironment.length} 个变量 · 部署时自动加载`) }}</small>
           </div>
           <div class="compose-environment-card__actions">
-            <button v-if="createComposeEnvironmentOpen" class="button button--ghost button--small" type="button" @click="createComposeEnvironmentRevealed = !createComposeEnvironmentRevealed">{{ createComposeEnvironmentRevealed ? '隐藏值' : '显示值' }}</button>
-            <button class="button button--ghost button--small" type="button" @click="createComposeEnvironmentOpen = !createComposeEnvironmentOpen">{{ createComposeEnvironmentOpen ? '收起' : '填写变量' }}</button>
+             <button v-if="createComposeEnvironmentOpen" class="button button--ghost button--small" type="button" @click="createComposeEnvironmentRevealed = !createComposeEnvironmentRevealed">{{ phrase(createComposeEnvironmentRevealed ? '隐藏值' : '显示值') }}</button>
+             <button class="button button--ghost button--small" type="button" @click="createComposeEnvironmentOpen = !createComposeEnvironmentOpen">{{ phrase(createComposeEnvironmentOpen ? '收起' : '填写变量') }}</button>
           </div>
         </header>
         <div v-if="createComposeEnvironmentOpen" class="compose-environment-card__body">
           <div v-for="(variable, index) in createComposeEnvironment" :key="`${variable.name}:${index}`" class="repeat-row repeat-row--compose-environment">
-            <input v-model="variable.name" class="text-input" type="text" maxlength="128" placeholder="变量名" :readonly="variable.detected" autocomplete="off" />
-            <input v-model="variable.value" class="text-input" :type="createComposeEnvironmentRevealed ? 'text' : 'password'" maxlength="2048" :placeholder="variable.defaultValue !== undefined ? `默认：${variable.defaultValue || '空值'}` : variable.required ? '必填' : '变量值'" autocomplete="new-password" />
-            <span v-if="variable.required" class="compose-environment-card__required">必填</span>
-            <span v-else-if="variable.defaultValue !== undefined" class="compose-environment-card__default">有默认值</span>
-            <button v-if="!variable.detected" class="icon-button icon-button--danger" type="button" title="移除" @click="createComposeEnvironment.splice(index, 1)"><Trash2 :size="15" /></button>
+             <input v-model="variable.name" class="text-input" type="text" maxlength="128" :placeholder="phrase('变量名')" :readonly="variable.detected" autocomplete="off" />
+             <input v-model="variable.value" class="text-input" :type="createComposeEnvironmentRevealed ? 'text' : 'password'" maxlength="2048" :placeholder="variable.defaultValue !== undefined ? phrase(`默认：${variable.defaultValue || '空值'}`) : variable.required ? phrase('必填') : phrase('变量值')" autocomplete="new-password" />
+             <span v-if="variable.required" class="compose-environment-card__required">{{ phrase('必填') }}</span>
+             <span v-else-if="variable.defaultValue !== undefined" class="compose-environment-card__default">{{ phrase('有默认值') }}</span>
+             <button v-if="!variable.detected" class="icon-button icon-button--danger" type="button" :title="phrase('移除')" @click="createComposeEnvironment.splice(index, 1)"><Trash2 :size="15" /></button>
           </div>
-          <button class="button button--ghost button--small compose-environment-card__add" type="button" @click="addCreateComposeEnvironment"><Plus :size="14" /> 添加变量</button>
-          <small>用于 Compose 中的 <code data-i18n-ignore>${VAR}</code> 插值；变量值不会保留在已完成的任务记录中。</small>
+           <button class="button button--ghost button--small compose-environment-card__add" type="button" @click="addCreateComposeEnvironment"><Plus :size="14" /> {{ phrase('添加变量') }}</button>
+           <small>{{ phrase('用于 Compose 中的') }} <code data-i18n-ignore>${VAR}</code> {{ phrase('插值；变量值不会保留在已完成的任务记录中。') }}</small>
         </div>
       </section>
 
       <section v-if="createAdvanced && (createManualMode || createAnalysis.kind === 'docker-run')" class="deployment-advanced">
         <div class="form-grid form-grid--two">
-          <label class="field"><span>容器名称（可选）</span><input v-model="createName" class="text-input" type="text" placeholder="留空由 Docker 自动命名" /></label>
-          <label class="field"><span>镜像</span><input v-model="createImage" class="text-input" type="text" list="docker-image-tags" placeholder="nginx:alpine" /><small>本机没有时自动拉取。</small><datalist id="docker-image-tags"><option v-for="tag in availableImageTags" :key="tag" :value="tag" /></datalist></label>
-          <label class="field"><span>网络</span><select v-model="createNetwork" class="select-input"><option v-for="item in createNetworks" :key="item.id" :value="item.name">{{ item.name }}</option></select></label>
-          <label class="field"><span>重启策略</span><select v-model="createRestartPolicy" class="select-input"><option value="unless-stopped">unless-stopped</option><option value="always">always</option><option value="on-failure">on-failure</option><option value="no">no</option></select></label>
+           <label class="field"><span>{{ phrase('容器名称（可选）') }}</span><input v-model="createName" class="text-input" type="text" :placeholder="phrase('留空由 Docker 自动命名')" /></label>
+           <label class="field"><span>{{ phrase('镜像') }}</span><input v-model="createImage" class="text-input" type="text" list="docker-image-tags" placeholder="nginx:alpine" /><small>{{ phrase('本机没有时自动拉取。') }}</small><datalist id="docker-image-tags"><option v-for="tag in availableImageTags" :key="tag" :value="tag" /></datalist></label>
+           <label class="field"><span>{{ phrase('网络') }}</span><select v-model="createNetwork" class="select-input"><option v-for="item in createNetworks" :key="item.id" :value="item.name">{{ item.name }}</option></select></label>
+           <label class="field"><span>{{ phrase('重启策略') }}</span><select v-model="createRestartPolicy" class="select-input"><option value="unless-stopped">unless-stopped</option><option value="always">always</option><option value="on-failure">on-failure</option><option value="no">no</option></select></label>
         </div>
         <div class="form-section">
-          <header><div><strong>端口映射</strong><small>0.0.0.0 为公开，127.0.0.1 仅供本机反代</small></div><button class="button button--ghost button--small" type="button" @click="addCreatePort"><Plus :size="14" /> 添加</button></header>
+           <header><div><strong>{{ phrase('端口映射') }}</strong><small>{{ phrase('0.0.0.0 为公开，127.0.0.1 仅供本机反代') }}</small></div><button class="button button--ghost button--small" type="button" @click="addCreatePort"><Plus :size="14" /> {{ phrase('添加') }}</button></header>
           <div v-for="(port, index) in createPorts" :key="index" class="repeat-row repeat-row--ports">
-            <input v-model="port.publicPort" class="text-input" inputmode="numeric" placeholder="主机端口" /><span>→</span><input v-model="port.privatePort" class="text-input" inputmode="numeric" placeholder="容器端口" />
-            <select v-model="port.protocol" class="select-input"><option value="tcp">TCP</option><option value="udp">UDP</option></select><input v-model="port.hostIp" class="text-input" type="text" list="docker-host-ip-presets" placeholder="0.0.0.0" /><button class="icon-button icon-button--danger" type="button" title="移除" @click="createPorts.splice(index, 1)"><Trash2 :size="15" /></button>
+             <input v-model="port.publicPort" class="text-input" inputmode="numeric" :placeholder="phrase('主机端口')" /><span>→</span><input v-model="port.privatePort" class="text-input" inputmode="numeric" :placeholder="phrase('容器端口')" />
+             <select v-model="port.protocol" class="select-input"><option value="tcp">TCP</option><option value="udp">UDP</option></select><input v-model="port.hostIp" class="text-input" type="text" list="docker-host-ip-presets" placeholder="0.0.0.0" /><button class="icon-button icon-button--danger" type="button" :title="phrase('移除')" @click="createPorts.splice(index, 1)"><Trash2 :size="15" /></button>
           </div>
         </div>
         <div class="form-section">
-          <header><div><strong>存储挂载</strong><small>支持命名卷与宿主机绝对目录</small></div><button class="button button--ghost button--small" type="button" @click="addCreateMount"><Plus :size="14" /> 添加</button></header>
+           <header><div><strong>{{ phrase('存储挂载') }}</strong><small>{{ phrase('支持命名卷与宿主机绝对目录') }}</small></div><button class="button button--ghost button--small" type="button" @click="addCreateMount"><Plus :size="14" /> {{ phrase('添加') }}</button></header>
           <div v-for="(mount, index) in createMounts" :key="index" class="repeat-row repeat-row--mounts">
-            <select v-model="mount.type" class="select-input"><option value="volume">命名卷</option><option value="bind">宿主机目录</option></select><input v-model="mount.source" class="text-input" type="text" :list="mount.type === 'volume' ? 'docker-volume-presets' : undefined" :placeholder="mount.type === 'volume' ? '卷名' : '/home/docker/my-app'" /><input v-model="mount.target" class="text-input" type="text" placeholder="/data" /><label class="inline-check"><input v-model="mount.readOnly" type="checkbox" /> 只读</label><button class="icon-button icon-button--danger" type="button" title="移除" @click="createMounts.splice(index, 1)"><Trash2 :size="15" /></button>
+             <select v-model="mount.type" class="select-input"><option value="volume">{{ phrase('命名卷') }}</option><option value="bind">{{ phrase('宿主机目录') }}</option></select><input v-model="mount.source" class="text-input" type="text" :list="mount.type === 'volume' ? 'docker-volume-presets' : undefined" :placeholder="mount.type === 'volume' ? phrase('卷名') : '/home/docker/my-app'" /><input v-model="mount.target" class="text-input" type="text" placeholder="/data" /><label class="inline-check"><input v-model="mount.readOnly" type="checkbox" /> {{ phrase('只读') }}</label><button class="icon-button icon-button--danger" type="button" :title="phrase('移除')" @click="createMounts.splice(index, 1)"><Trash2 :size="15" /></button>
           </div>
         </div>
         <datalist id="docker-host-ip-presets"><option value="0.0.0.0" /><option value="127.0.0.1" /><option value="::" /><option value="::1" /></datalist>
         <datalist id="docker-volume-presets"><option v-for="volume in data?.volumes || []" :key="volume.name" :value="volume.name" /></datalist>
         <div class="form-section">
-          <header><div><strong>环境变量</strong><small>任务完成后不保留在 KPanel 任务记录中</small></div><button class="button button--ghost button--small" type="button" @click="addCreateEnvironment"><Plus :size="14" /> 添加</button></header>
-          <div v-for="(variable, index) in createEnvironment" :key="index" class="repeat-row repeat-row--environment"><input v-model="variable.name" class="text-input" type="text" maxlength="128" placeholder="变量名，例如 TZ" autocomplete="off" /><input v-model="variable.value" class="text-input" type="text" maxlength="2048" placeholder="变量值" autocomplete="off" /><button class="icon-button icon-button--danger" type="button" title="移除" @click="createEnvironment.splice(index, 1)"><Trash2 :size="15" /></button></div>
+           <header><div><strong>{{ phrase('环境变量') }}</strong><small>{{ phrase('任务完成后不保留在 KPanel 任务记录中') }}</small></div><button class="button button--ghost button--small" type="button" @click="addCreateEnvironment"><Plus :size="14" /> {{ phrase('添加') }}</button></header>
+           <div v-for="(variable, index) in createEnvironment" :key="index" class="repeat-row repeat-row--environment"><input v-model="variable.name" class="text-input" type="text" maxlength="128" :placeholder="phrase('变量名，例如 TZ')" autocomplete="off" /><input v-model="variable.value" class="text-input" type="text" maxlength="2048" :placeholder="phrase('变量值')" autocomplete="off" /><button class="icon-button icon-button--danger" type="button" :title="phrase('移除')" @click="createEnvironment.splice(index, 1)"><Trash2 :size="15" /></button></div>
         </div>
-        <label class="field"><span>启动参数（可选，每行一个参数）</span><textarea v-model="createCommand" class="text-area" rows="3" placeholder="--config&#10;/data/config.yml" /></label>
+         <label class="field"><span>{{ phrase('启动参数（可选，每行一个参数）') }}</span><textarea v-model="createCommand" class="text-area" rows="3" placeholder="--config&#10;/data/config.yml" /></label>
       </section>
-      <div class="inline-alert inline-alert--info">Docker Run 会转换为结构化 Docker API；Compose 会先校验配置，再保存到 `/home/docker` 并后台启动。启动失败会自动尝试回滚，并保留明确的处理状态。</div>
-      <template #footer><span class="modal-footer-note">{{ createModeLabel || '自动识别部署方式' }}</span><button class="button button--secondary" type="button" @click="createOpen = false">取消</button><button class="button button--primary" type="button" :disabled="!createCanSubmit" @click="submitContainerCreate">部署</button></template>
+       <div class="inline-alert inline-alert--info">{{ phrase('Docker Run 会转换为结构化 Docker API；Compose 会先校验配置，再保存到 `/home/docker` 并后台启动。启动失败会自动尝试回滚，并保留明确的处理状态。') }}</div>
+       <template #footer><span class="modal-footer-note">{{ phrase(createModeLabel || '自动识别部署方式') }}</span><button class="button button--secondary" type="button" @click="createOpen = false">{{ phrase('取消') }}</button><button class="button button--primary" type="button" :disabled="!createCanSubmit" @click="submitContainerCreate">{{ phrase('部署') }}</button></template>
     </ModalDialog>
 
     <ModalDialog
       :open="composeOpen"
-      :title="composeProject ? `管理 Compose · ${composeProject.name}` : '管理 Compose 项目'"
-      description="配置来自 Docker Compose 的实际工作目录；修改前校验版本，失败时自动恢复原配置。"
+      :title="phrase(composeProject ? `管理 Compose · ${composeProject.name}` : '管理 Compose 项目')"
+      :description="phrase('配置来自 Docker Compose 的实际工作目录；修改前校验版本，失败时自动恢复原配置。')"
       size="large"
       @close="closeComposeProject"
     >
       <LoadingState v-if="composeLoading" :rows="4" />
-      <ErrorState v-else-if="composeError" :message="composeError" />
+      <ErrorState v-else-if="composeError" :message="phrase(composeError)" />
       <div v-else-if="composeProject" class="compose-manager">
         <div class="compose-manager__meta">
-          <span><small>项目目录</small><code data-i18n-ignore>{{ composeProject.workingDirectory }}</code></span>
-          <span><small>服务</small><strong>{{ composeProject.services.join(' · ') || '由 Compose 实际配置决定' }}</strong></span>
+           <span><small>{{ phrase('项目目录') }}</small><code data-i18n-ignore>{{ composeProject.workingDirectory }}</code></span>
+           <span><small>{{ phrase('服务') }}</small><strong>{{ composeProject.services.join(' · ') || phrase('由 Compose 实际配置决定') }}</strong></span>
         </div>
         <label v-if="composeProject.configFiles.length > 1" class="field">
-          <span>配置文件</span>
+           <span>{{ phrase('配置文件') }}</span>
           <select v-model="composeFilePath" class="select-input" @change="selectComposeFile">
             <option v-for="file in composeProject.configFiles" :key="file.path" :value="file.path">{{ file.name }}</option>
           </select>
         </label>
         <label class="field">
-          <span>{{ selectedComposeFile?.name || 'Compose 配置' }}</span>
+           <span>{{ selectedComposeFile?.name || phrase('Compose 配置') }}</span>
           <DockerDeploymentEditor
             v-model="composeSource"
             :diagnostics="composeDiagnostics"
-            :aria-label="`${composeProject.name} Compose 配置`"
+             :aria-label="phrase(`${composeProject.name} Compose 配置`)"
           />
         </label>
         <section class="compose-environment-card compose-environment-card--manager">
           <header class="compose-environment-card__header">
             <div>
-              <strong>项目变量 <code data-i18n-ignore>.env</code></strong>
-              <small>{{ composeEnvironmentCount ? `${composeEnvironmentCount} 个变量` : '当前为空' }} · 与配置一起校验和回滚</small>
+               <strong>{{ phrase('项目变量') }} <code data-i18n-ignore>.env</code></strong>
+               <small>{{ phrase(composeEnvironmentCount ? `${composeEnvironmentCount} 个变量` : '当前为空') }} · {{ phrase('与配置一起校验和回滚') }}</small>
             </div>
-            <button class="button button--ghost button--small" type="button" @click="composeEnvironmentOpen = !composeEnvironmentOpen">{{ composeEnvironmentOpen ? '收起' : '管理变量' }}</button>
+             <button class="button button--ghost button--small" type="button" @click="composeEnvironmentOpen = !composeEnvironmentOpen">{{ phrase(composeEnvironmentOpen ? '收起' : '管理变量') }}</button>
           </header>
           <div v-if="composeEnvironmentOpen" class="compose-environment-card__body">
             <div v-if="!composeEnvironmentRevealed" class="compose-environment-card__concealed">
-              <span>变量值默认隐藏，显示后才能编辑。</span>
-              <button class="button button--secondary button--small" type="button" @click="composeEnvironmentRevealed = true">显示并编辑</button>
+               <span>{{ phrase('变量值默认隐藏，显示后才能编辑。') }}</span>
+               <button class="button button--secondary button--small" type="button" @click="composeEnvironmentRevealed = true">{{ phrase('显示并编辑') }}</button>
             </div>
             <label v-else class="field">
-              <span>每行一个 <code data-i18n-ignore>KEY=VALUE</code></span>
+               <span>{{ phrase('每行一个') }} <code data-i18n-ignore>KEY=VALUE</code></span>
               <textarea v-model="composeEnvironmentSource" class="text-area compose-environment-card__editor" rows="6" spellcheck="false" autocomplete="off" placeholder="DB_PASSWORD=change-me" />
-              <small>保存后写入项目目录中的 <code data-i18n-ignore>.env</code>，权限为 0600；敏感值不会保留在已完成的任务记录中。</small>
+               <small>{{ phrase('保存后写入项目目录中的') }} <code data-i18n-ignore>.env</code>{{ phrase('，权限为 0600；敏感值不会保留在已完成的任务记录中。') }}</small>
             </label>
           </div>
         </section>
         <div v-if="composeAnalysis.kind !== 'invalid' || !composeDiagnostics.length" class="deployment-detection" :class="{ 'is-invalid': composeAnalysis.kind === 'invalid', 'is-ready': composeAnalysis.kind === 'compose' }">
-          <span v-if="composeAnalysis.kind === 'compose'" class="deployment-kind"><ShieldCheck :size="16" />语法检查通过</span>
-          <span v-else class="deployment-kind"><CircleStop :size="16" />配置暂不可部署</span>
-          <small v-if="composeAnalysis.kind === 'compose'">识别到 {{ composeAnalysis.services.length }} 个服务；Agent 提交前还会执行 docker compose config。</small>
-          <small v-else-if="composeAnalysis.kind === 'invalid'">{{ composeAnalysis.message }}</small>
+           <span v-if="composeAnalysis.kind === 'compose'" class="deployment-kind"><ShieldCheck :size="16" />{{ phrase('语法检查通过') }}</span>
+           <span v-else class="deployment-kind"><CircleStop :size="16" />{{ phrase('配置暂不可部署') }}</span>
+           <small v-if="composeAnalysis.kind === 'compose'">{{ phrase(`识别到 ${composeAnalysis.services.length} 个服务；Agent 提交前还会执行 docker compose config。`) }}</small>
+           <small v-else-if="composeAnalysis.kind === 'invalid'">{{ phrase(composeAnalysis.message) }}</small>
         </div>
       </div>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> 启动项目</button>
-        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> 重启项目</button>
-        <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> 停止项目</button>
-        <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> 保存并重新部署</button>
+         <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_start')"><Play :size="15" /> {{ phrase('启动项目') }}</button>
+         <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_restart')"><RotateCw :size="15" /> {{ phrase('重启项目') }}</button>
+         <button class="button button--secondary" type="button" :disabled="!composeProject" @click="askComposeLifecycle('compose_stop')"><CircleStop :size="15" /> {{ phrase('停止项目') }}</button>
+         <button class="button button--primary" type="button" :disabled="!composeCanRedeploy" @click="submitComposeRedeploy"><RefreshCw :size="15" /> {{ phrase('保存并重新部署') }}</button>
       </template>
     </ModalDialog>
 
-    <ModalDialog :open="logsOpen" :title="`${selectedContainer?.name || '容器'} 日志`" description="显示最近 300 行，输出经过敏感字段脱敏和大小限制。" size="large" @close="closeLogs">
+    <ModalDialog :open="logsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 日志`)" :description="phrase('显示最近 300 行，输出经过敏感字段脱敏和大小限制。')" size="large" @close="closeLogs">
       <LoadingState v-if="logsLoading" :rows="3" />
-      <ErrorState v-else-if="logError" :message="logError" retry-label="重新读取" @retry="selectedContainer && showLogs(selectedContainer)" />
-      <p v-else-if="!logLines.length" class="log-viewer log-viewer-empty">当前没有日志输出。</p>
+      <ErrorState v-else-if="logError" :message="phrase(logError)" :retry-label="phrase('重新读取')" @retry="selectedContainer && showLogs(selectedContainer)" />
+      <p v-else-if="!logLines.length" class="log-viewer log-viewer-empty">{{ phrase('当前没有日志输出。') }}</p>
       <pre v-else class="log-viewer" data-i18n-ignore>{{ logLines.join('\n') }}</pre>
-      <template #footer><span class="modal-footer-note">{{ logLines.length }} 行</span><button class="button button--secondary" type="button" @click="closeLogs">关闭</button></template>
+      <template #footer><span class="modal-footer-note">{{ phrase(`${logLines.length} 行`) }}</span><button class="button button--secondary" type="button" @click="closeLogs">{{ phrase('关闭') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="statsOpen" :title="`${selectedContainer?.name || '容器'} 性能占用`" description="Docker 单次采样，每 3 秒刷新；关闭弹窗即停止采样。" size="large" @close="closeStats">
+    <ModalDialog :open="statsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 性能占用`)" :description="phrase('Docker 单次采样，每 3 秒刷新；关闭弹窗即停止采样。')" size="large" @close="closeStats">
       <LoadingState v-if="statsLoading && !stats" :rows="3" cards />
-      <ErrorState v-else-if="statsError && !stats" :message="statsError" retry-label="重新读取" @retry="refreshStats" />
+      <ErrorState v-else-if="statsError && !stats" :message="phrase(statsError)" :retry-label="phrase('重新读取')" @retry="refreshStats" />
       <div v-else-if="stats" class="stats-grid">
         <article><small>CPU</small><strong>{{ stats.cpuPercent.toFixed(2) }}%</strong></article>
-        <article><small>内存</small><strong>{{ stats.memoryPercent.toFixed(2) }}%</strong><span>{{ formatBytes(stats.memoryBytes) }} / {{ formatBytes(stats.memoryLimitBytes) }}</span></article>
-        <article><small>网络接收</small><strong>{{ formatBytes(stats.networkRxBytes) }}</strong></article>
-        <article><small>网络发送</small><strong>{{ formatBytes(stats.networkTxBytes) }}</strong></article>
-        <article><small>磁盘读取</small><strong>{{ formatBytes(stats.blockReadBytes) }}</strong></article>
-        <article><small>磁盘写入</small><strong>{{ formatBytes(stats.blockWriteBytes) }}</strong></article>
-        <article><small>进程数</small><strong>{{ stats.pids }}</strong></article>
-        <article><small>采样时间</small><strong class="stats-time">{{ formatDateTime(stats.collectedAt) }}</strong></article>
+        <article><small>{{ phrase('内存') }}</small><strong>{{ stats.memoryPercent.toFixed(2) }}%</strong><span>{{ formatBytes(stats.memoryBytes) }} / {{ formatBytes(stats.memoryLimitBytes) }}</span></article>
+        <article><small>{{ phrase('网络接收') }}</small><strong>{{ formatBytes(stats.networkRxBytes) }}</strong></article>
+        <article><small>{{ phrase('网络发送') }}</small><strong>{{ formatBytes(stats.networkTxBytes) }}</strong></article>
+        <article><small>{{ phrase('磁盘读取') }}</small><strong>{{ formatBytes(stats.blockReadBytes) }}</strong></article>
+        <article><small>{{ phrase('磁盘写入') }}</small><strong>{{ formatBytes(stats.blockWriteBytes) }}</strong></article>
+        <article><small>{{ phrase('进程数') }}</small><strong>{{ stats.pids }}</strong></article>
+        <article><small>{{ phrase('采样时间') }}</small><strong class="stats-time">{{ formatDateTime(stats.collectedAt) }}</strong></article>
       </div>
-      <template #footer><button class="button button--secondary" type="button" @click="refreshStats()"><RefreshCw :size="15" /> 刷新</button><button class="button button--secondary" type="button" @click="closeStats">关闭</button></template>
+      <template #footer><button class="button button--secondary" type="button" @click="refreshStats()"><RefreshCw :size="15" /> {{ phrase('刷新') }}</button><button class="button button--secondary" type="button" @click="closeStats">{{ phrase('关闭') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="consoleOpen" :title="`${selectedContainer?.name || '容器'} 控制台`" description="单次命令通过容器内 /bin/sh 执行，最长 20 秒；命令本身不写入审计或任务日志。" size="large" @close="closeConsole">
-      <label class="field"><span>命令</span><div class="console-command"><span>$</span><input v-model="consoleCommand" class="text-input" type="text" maxlength="2048" placeholder="ls -la /app" @keyup.enter="runConsoleCommand" /><button class="button button--primary" type="button" :disabled="!consoleCommand.trim() || consoleRunning" @click="runConsoleCommand"><LoaderCircle v-if="consoleRunning" class="spin" :size="15" /><Play v-else :size="15" /> 执行</button></div></label>
-      <p v-if="!consoleOutput" class="log-viewer log-viewer-empty">输入命令后查看输出。</p>
+    <ModalDialog :open="consoleOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 控制台`)" :description="phrase('单次命令通过容器内 /bin/sh 执行，最长 20 秒；命令本身不写入审计或任务日志。')" size="large" @close="closeConsole">
+      <label class="field"><span>{{ phrase('命令') }}</span><div class="console-command"><span>$</span><input v-model="consoleCommand" class="text-input" type="text" maxlength="2048" placeholder="ls -la /app" @keyup.enter="runConsoleCommand" /><button class="button button--primary" type="button" :disabled="!consoleCommand.trim() || consoleRunning" @click="runConsoleCommand"><LoaderCircle v-if="consoleRunning" class="spin" :size="15" /><Play v-else :size="15" /> {{ phrase('执行') }}</button></div></label>
+      <p v-if="!consoleOutput" class="log-viewer log-viewer-empty">{{ phrase('输入命令后查看输出。') }}</p>
       <pre v-else class="log-viewer console-output" data-i18n-ignore>{{ consoleOutput }}</pre>
-      <div v-if="consoleExitCode !== undefined" class="inline-alert" :class="consoleExitCode === 0 ? 'inline-alert--success' : 'inline-alert--warning'">退出码：{{ consoleExitCode }}{{ consoleExitCode === 0 ? '，执行成功' : '，请检查输出' }}</div>
-      <template #footer><button class="button button--secondary" type="button" @click="closeConsole">关闭</button></template>
+      <div v-if="consoleExitCode !== undefined" class="inline-alert" :class="consoleExitCode === 0 ? 'inline-alert--success' : 'inline-alert--warning'">{{ phrase('退出码：') }}{{ consoleExitCode }}{{ phrase(consoleExitCode === 0 ? '，执行成功' : '，请检查输出') }}</div>
+      <template #footer><button class="button button--secondary" type="button" @click="closeConsole">{{ phrase('关闭') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="accessOpen" :title="`${selectedContainer?.name || '容器'} 外部访问`" description="规则与 kejilion.sh 的 DOCKER-USER 方案互通，按容器 Docker IPv4 生效。" size="small" @close="accessOpen = false; selectedContainer = undefined">
-      <label class="field"><span>阻止外部访问时额外允许的来源 IPv4</span><input v-model="accessAllowedIP" class="text-input" type="text" placeholder="留空则仅保留本机和已建立连接" /><small>默认使用当前服务器公网 IPv4，便于和脚本端清除规则保持一致。</small></label>
-      <div class="inline-alert inline-alert--info">多网络容器会对每个 Docker IPv4 同步应用规则，与脚本端 DOCKER-USER 产物互通。</div>
-      <template #footer><button class="button button--secondary" type="button" @click="askAccess(true)">允许外部访问</button><button class="button button--danger" type="button" @click="askAccess(false)">阻止外部访问</button></template>
+    <ModalDialog :open="accessOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 外部访问`)" :description="phrase('规则与 kejilion.sh 的 DOCKER-USER 方案互通，按容器 Docker IPv4 生效。')" size="small" @close="accessOpen = false; selectedContainer = undefined">
+      <label class="field"><span>{{ phrase('阻止外部访问时额外允许的来源 IPv4') }}</span><input v-model="accessAllowedIP" class="text-input" type="text" :placeholder="phrase('留空则仅保留本机和已建立连接')" /><small>{{ phrase('默认使用当前服务器公网 IPv4，便于和脚本端清除规则保持一致。') }}</small></label>
+      <div class="inline-alert inline-alert--info">{{ phrase('多网络容器会对每个 Docker IPv4 同步应用规则，与脚本端 DOCKER-USER 产物互通。') }}</div>
+      <template #footer><button class="button button--secondary" type="button" @click="askAccess(true)">{{ phrase('允许外部访问') }}</button><button class="button button--danger" type="button" @click="askAccess(false)">{{ phrase('阻止外部访问') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="migrationOpen" title="迁移 Docker 备份" :description="migrationBackup?.id" size="small" @close="migrationOpen = false">
+    <ModalDialog :open="migrationOpen" :title="phrase('迁移 Docker 备份')" :description="migrationBackup?.id" size="small" @close="migrationOpen = false">
       <div class="form-grid">
-        <label class="field"><span>目标服务器</span><input v-model="migrationHost" class="text-input" type="text" placeholder="server.example.com 或 IP" /></label>
-        <label class="field"><span>SSH 用户</span><input v-model="migrationUser" class="text-input" type="text" placeholder="root" /></label>
-        <label class="field"><span>SSH 端口</span><input v-model="migrationPort" class="text-input" inputmode="numeric" placeholder="22" /></label>
+        <label class="field"><span>{{ phrase('目标服务器') }}</span><input v-model="migrationHost" class="text-input" type="text" :placeholder="phrase('server.example.com 或 IP')" /></label>
+        <label class="field"><span>{{ phrase('SSH 用户') }}</span><input v-model="migrationUser" class="text-input" type="text" placeholder="root" /></label>
+        <label class="field"><span>{{ phrase('SSH 端口') }}</span><input v-model="migrationPort" class="text-input" inputmode="numeric" placeholder="22" /></label>
       </div>
-      <div class="inline-alert inline-alert--info">只使用宿主机已配置的 SSH 密钥与 known_hosts，不接收或保存密码；备份传到目标服务器 `/tmp`。</div>
-      <template #footer><button class="button button--secondary" type="button" @click="migrationOpen = false">取消</button><button class="button button--primary" type="button" :disabled="!migrationHost.trim()" @click="askMigration">检查并迁移</button></template>
+      <div class="inline-alert inline-alert--info">{{ phrase('只使用宿主机已配置的 SSH 密钥与 known_hosts，不接收或保存密码；备份传到目标服务器 `/tmp`。') }}</div>
+      <template #footer><button class="button button--secondary" type="button" @click="migrationOpen = false">{{ phrase('取消') }}</button><button class="button button--primary" type="button" :disabled="!migrationHost.trim()" @click="askMigration">{{ phrase('检查并迁移') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="Boolean(pendingMaintenance)" :title="pendingMaintenance?.title || '确认 Docker 操作'" :description="pendingMaintenance?.description" size="small" @close="pendingMaintenance = undefined">
+    <ModalDialog :open="Boolean(pendingMaintenance)" :title="phrase(pendingMaintenance?.title || '确认 Docker 操作')" :description="phrase(pendingMaintenance?.description || '')" size="small" @close="pendingMaintenance = undefined">
       <div class="confirm-content">
         <span class="confirm-content__icon" :class="{ 'is-danger': pendingMaintenance?.danger }"><Trash2 v-if="pendingMaintenance?.danger" :size="23" /><ShieldCheck v-else :size="23" /></span>
-        <p>Agent 会在执行前重新校验输入和 Docker 实际状态；任务进入后台后可以离开当前页面。</p>
+        <p>{{ phrase('Agent 会在执行前重新校验输入和 Docker 实际状态；任务进入后台后可以离开当前页面。') }}</p>
       </div>
-      <template #footer><button class="button button--secondary" type="button" @click="pendingMaintenance = undefined">取消</button><button class="button" :class="pendingMaintenance?.danger ? 'button--danger' : 'button--primary'" type="button" :disabled="taskRunning || !pendingMaintenance" @click="pendingMaintenance && submitTask(pendingMaintenance.input)"><LoaderCircle v-if="taskRunning" class="spin" :size="16" />{{ taskRunning ? '正在提交…' : '确认执行' }}</button></template>
+      <template #footer><button class="button button--secondary" type="button" @click="pendingMaintenance = undefined">{{ phrase('取消') }}</button><button class="button" :class="pendingMaintenance?.danger ? 'button--danger' : 'button--primary'" type="button" :disabled="taskRunning || !pendingMaintenance" @click="pendingMaintenance && submitTask(pendingMaintenance.input)"><LoaderCircle v-if="taskRunning" class="spin" :size="16" />{{ phrase(taskRunning ? '正在提交…' : '确认执行') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="Boolean(pendingAction)" :title="pendingAction === 'stop' ? '确认停止容器' : pendingAction === 'restart' ? '确认重启容器' : pendingAction === 'pause' ? '确认暂停容器' : pendingAction === 'unpause' ? '确认继续运行容器' : pendingAction === 'remove' ? '确认删除容器' : '确认启动容器'" :description="selectedContainer ? `${selectedContainer.name} · ${selectedContainer.image}` : ''" size="small" @close="pendingAction = undefined; selectedContainer = undefined">
-      <div class="confirm-content"><span class="confirm-content__icon" :class="{ 'is-danger': pendingAction === 'stop' || pendingAction === 'remove' }"><Trash2 v-if="pendingAction === 'remove'" :size="23" /><CircleStop v-else-if="pendingAction === 'stop'" :size="23" /><Pause v-else-if="pendingAction === 'pause'" :size="23" /><RotateCw v-else-if="pendingAction === 'restart'" :size="23" /><Play v-else :size="23" /></span><p>{{ pendingAction === 'remove' ? '将强制删除所选容器；镜像和存储卷保留。' : pendingAction === 'pause' ? '暂停后保留容器当前进程状态，可随时继续运行。' : 'Agent 会再次验证容器资源版本和实时状态。' }}</p></div>
-      <template #footer><button class="button button--secondary" type="button" @click="pendingAction = undefined; selectedContainer = undefined">取消</button><button class="button" :class="pendingAction === 'stop' || pendingAction === 'remove' ? 'button--danger' : 'button--primary'" type="button" :disabled="actionRunning" @click="runAction"><LoaderCircle v-if="actionRunning" class="spin" :size="16" />{{ actionRunning ? '正在提交…' : '确认执行' }}</button></template>
+    <ModalDialog :open="Boolean(pendingAction)" :title="phrase(pendingAction === 'stop' ? '确认停止容器' : pendingAction === 'restart' ? '确认重启容器' : pendingAction === 'pause' ? '确认暂停容器' : pendingAction === 'unpause' ? '确认继续运行容器' : pendingAction === 'remove' ? '确认删除容器' : '确认启动容器')" :description="selectedContainer ? `${selectedContainer.name} · ${selectedContainer.image}` : ''" size="small" @close="pendingAction = undefined; selectedContainer = undefined">
+      <div class="confirm-content"><span class="confirm-content__icon" :class="{ 'is-danger': pendingAction === 'stop' || pendingAction === 'remove' }"><Trash2 v-if="pendingAction === 'remove'" :size="23" /><CircleStop v-else-if="pendingAction === 'stop'" :size="23" /><Pause v-else-if="pendingAction === 'pause'" :size="23" /><RotateCw v-else-if="pendingAction === 'restart'" :size="23" /><Play v-else :size="23" /></span><p>{{ phrase(pendingAction === 'remove' ? '将强制删除所选容器；镜像和存储卷保留。' : pendingAction === 'pause' ? '暂停后保留容器当前进程状态，可随时继续运行。' : 'Agent 会再次验证容器资源版本和实时状态。') }}</p></div>
+      <template #footer><button class="button button--secondary" type="button" @click="pendingAction = undefined; selectedContainer = undefined">{{ phrase('取消') }}</button><button class="button" :class="pendingAction === 'stop' || pendingAction === 'remove' ? 'button--danger' : 'button--primary'" type="button" :disabled="actionRunning" @click="runAction"><LoaderCircle v-if="actionRunning" class="spin" :size="16" />{{ phrase(actionRunning ? '正在提交…' : '确认执行') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="systemUpdatePending" title="确认更新 Docker 环境" description="将调用系统管理的发行版原生后台更新任务，Docker 软件包随系统软件包一起更新。" size="small" @close="systemUpdatePending = false">
-      <div class="inline-alert inline-alert--warning">Docker Engine 可能短暂重启，KPanel 页面会暂时断开并在容器恢复后重新可用。</div>
-      <template #footer><button class="button button--secondary" type="button" @click="systemUpdatePending = false">取消</button><button class="button button--primary" type="button" :disabled="systemUpdating" @click="submitSystemUpdate"><LoaderCircle v-if="systemUpdating" class="spin" :size="16" />提交后台更新</button></template>
+    <ModalDialog :open="systemUpdatePending" :title="phrase('确认更新 Docker 环境')" :description="phrase('将调用系统管理的发行版原生后台更新任务，Docker 软件包随系统软件包一起更新。')" size="small" @close="systemUpdatePending = false">
+      <div class="inline-alert inline-alert--warning">{{ phrase('Docker Engine 可能短暂重启，KPanel 页面会暂时断开并在容器恢复后重新可用。') }}</div>
+      <template #footer><button class="button button--secondary" type="button" @click="systemUpdatePending = false">{{ phrase('取消') }}</button><button class="button button--primary" type="button" :disabled="systemUpdating" @click="submitSystemUpdate"><LoaderCircle v-if="systemUpdating" class="spin" :size="16" />{{ phrase('提交后台更新') }}</button></template>
     </ModalDialog>
 
-    <ModalDialog :open="uninstallNoticeOpen" title="Docker 卸载尚未支持" description="卸载 Docker 会同时终止 KPanel。当前版本还不能在面板离线后继续执行并回传结果。" size="small" @close="uninstallNoticeOpen = false">
-      <div class="inline-alert inline-alert--warning">如需卸载，请通过 SSH 运行 `k docker`。这是尚未完成的离线任务能力，不是权限限制。</div>
-      <p class="modal-copy">后续版本将直接复用 kejilion.sh 的卸载流程，并在 KPanel 停止后继续记录执行结果。</p>
-      <template #footer><button class="button button--secondary" type="button" @click="uninstallNoticeOpen = false">我知道了</button></template>
+    <ModalDialog :open="uninstallNoticeOpen" :title="phrase('Docker 卸载尚未支持')" :description="phrase('卸载 Docker 会同时终止 KPanel。当前版本还不能在面板离线后继续执行并回传结果。')" size="small" @close="uninstallNoticeOpen = false">
+      <div class="inline-alert inline-alert--warning">{{ phrase('如需卸载，请通过 SSH 运行 `k docker`。这是尚未完成的离线任务能力，不是权限限制。') }}</div>
+      <p class="modal-copy">{{ phrase('后续版本将直接复用 kejilion.sh 的卸载流程，并在 KPanel 停止后继续记录执行结果。') }}</p>
+      <template #footer><button class="button button--secondary" type="button" @click="uninstallNoticeOpen = false">{{ phrase('我知道了') }}</button></template>
     </ModalDialog>
   </div>
 </template>

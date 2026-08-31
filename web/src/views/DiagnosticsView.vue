@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/DiagnosticsView/en-US').then((module) => module.default)
   : import('@/i18n/pages/DiagnosticsView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import {
   Activity,
   Cpu,
@@ -1235,8 +1240,8 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(pendingCheck || pendingScore)"
-      :title="pendingScore ? '确认开始一键跑分？' : (pendingCheck?.provider === 'native' ? '确认运行 KPanel 原生检测？' : '确认运行第三方体检？')"
-      :description="pendingScore ? `${scoreCheck ? checkNameLabel(scoreCheck.name) : '综合评测'} · 预计 ${scoreCheck?.estimatedMinutes || '—'} 分钟` : (pendingCheck ? `${checkNameLabel(pendingCheck.name)} · 预计 ${pendingCheck.estimatedMinutes} 分钟` : '')"
+      :title="phrase(pendingScore ? '确认开始一键跑分？' : (pendingCheck?.provider === 'native' ? '确认运行 KPanel 原生检测？' : '确认运行第三方体检？'))"
+      :description="phrase(pendingScore ? `${scoreCheck ? checkNameLabel(scoreCheck.name) : '综合评测'} · 预计 ${scoreCheck?.estimatedMinutes || '—'} 分钟` : (pendingCheck ? `${checkNameLabel(pendingCheck.name)} · 预计 ${pendingCheck.estimatedMinutes} 分钟` : ''))"
       size="small"
       @close="pendingCheck = undefined; pendingScore = false"
     >
@@ -1244,10 +1249,10 @@ onBeforeUnmount(() => {
         <Gauge :size="24" />
         <div>
           <p>
-            {{ scoreCheck?.provider === 'native' ? '将使用 KPanel 原生探针在服务器本机完成 CPU、内存、硬盘测试，并由服务器出口执行路由、延迟、带宽和 IP 基础质量检测。浏览器仅展示结果；测试期间会产生受控的 CPU、磁盘和网络开销。' : '将调用脚本目录中的综合评测入口，以真实终端输出完成一次多维度体检。测试期间可能消耗较多网络、CPU 或磁盘资源。' }}
+            {{ phrase(scoreCheck?.provider === 'native' ? '将使用 KPanel 原生探针在服务器本机完成 CPU、内存、硬盘测试，并由服务器出口执行路由、延迟、带宽和 IP 基础质量检测。浏览器仅展示结果；测试期间会产生受控的 CPU、磁盘和网络开销。' : '将调用脚本目录中的综合评测入口，以真实终端输出完成一次多维度体检。测试期间可能消耗较多网络、CPU 或磁盘资源。') }}
           </p>
           <div class="diagnostic-score-confirm__list">
-            <span v-for="dimension in scoreDimensions" :key="dimension.id"><i /> {{ dimension.label }}</span>
+            <span v-for="dimension in scoreDimensions" :key="dimension.id"><i /> {{ phrase(dimension.label) }}</span>
           </div>
         </div>
       </div>
@@ -1255,22 +1260,22 @@ onBeforeUnmount(() => {
         <TriangleAlert :size="24" />
         <div>
           <p>
-            {{ pendingCheck.provider === 'native' ? '此操作将运行 KPanel 原生探针，不安装第三方测试工具；硬盘和带宽项目会产生受控的 I/O 或网络流量。' : '此操作将以 root 权限运行 kejilion.sh 中登记的第三方命令，可能安装测试工具并占用较多网络、CPU 或磁盘资源。' }}
+            {{ phrase(pendingCheck.provider === 'native' ? '此操作将运行 KPanel 原生探针，不安装第三方测试工具；硬盘和带宽项目会产生受控的 I/O 或网络流量。' : '此操作将以 root 权限运行 kejilion.sh 中登记的第三方命令，可能安装测试工具并占用较多网络、CPU 或磁盘资源。') }}
           </p>
           <a v-if="pendingCheck.sourceUrl" :href="pendingCheck.sourceUrl" target="_blank" rel="noopener noreferrer">
             {{ pendingCheck.sourceUrl }} <ExternalLink :size="13" />
           </a>
-          <span v-else class="diagnostic-source">KPanel 原生探针 · 不依赖第三方脚本</span>
+          <span v-else class="diagnostic-source">{{ phrase('KPanel 原生探针 · 不依赖第三方脚本') }}</span>
         </div>
       </div>
       <template #footer>
         <button class="button button--secondary" type="button" :disabled="starting" @click="pendingCheck = undefined; pendingScore = false">
-          取消
+          {{ phrase('取消') }}
         </button>
         <button class="button button--primary" type="button" :disabled="starting" @click="confirmStart">
           <LoaderCircle v-if="starting" :size="16" class="is-spinning" />
           <Play v-else :size="16" />
-          {{ starting ? '正在启动' : (pendingScore ? '确认开始跑分' : '确认开始') }}
+          {{ phrase(starting ? '正在启动' : (pendingScore ? '确认开始跑分' : '确认开始')) }}
         </button>
       </template>
     </ModalDialog>

@@ -4,7 +4,7 @@ import { Check, Circle, LoaderCircle, RefreshCw, Rocket, TriangleAlert } from '@
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
 import type { SystemTuningItemID, SystemTuningSnapshot } from '@/types/api'
@@ -22,6 +22,11 @@ const submitting = ref(false)
 const error = ref('')
 let controller: AbortController | undefined
 let timer: number | undefined
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 const definitions: Array<{ id: SystemTuningItemID; title: string; detail: string; risk?: boolean }> = [
   { id: 'system-update', title: '优化更新源并更新系统', detail: '按地区选择固定校验的镜像脚本，然后更新全部系统软件包。' },
@@ -125,25 +130,25 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 </script>
 
 <template>
-  <ModalDialog :open="open" title="系统综合调优" description="沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。" size="wide" @close="emit('close')">
+  <ModalDialog :open="open" :title="phrase('系统综合调优')" :description="phrase('沿用 kejilion.sh 原有 12 项流程；默认全部勾选，也可以只执行需要的项目。')" size="wide" @close="emit('close')">
     <div class="tuning-dialog">
-      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ unavailableReason || '当前 Agent 的系统综合调优能力尚未就绪。' }}</div>
+      <div v-if="!readable" class="inline-alert inline-alert--warning">{{ phrase(unavailableReason || '当前 Agent 的系统综合调优能力尚未就绪。') }}</div>
       <LoadingState v-else-if="loading && !snapshot" :rows="6" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="tuning-summary">
-          <span v-if="running"><LoaderCircle :size="16" class="spin" /> 正在执行 · {{ snapshot.maintenance.progress }}%</span>
-          <span v-else-if="snapshot.maintenance.action === 'system-tuning' && snapshot.maintenance.state === 'succeeded'"><Check :size="16" /> 上次任务已完成</span>
-          <span v-else><Rocket :size="16" /> 已选择 {{ selected.length }}/12 项</span>
-          <button class="icon-button" type="button" :disabled="refreshing || submitting" title="刷新调优状态" @click="load(true)"><RefreshCw :size="16" :class="{ spin: refreshing }" /></button>
+          <span v-if="running"><LoaderCircle :size="16" class="spin" /> {{ phrase(`正在执行 · ${snapshot.maintenance.progress}%`) }}</span>
+          <span v-else-if="snapshot.maintenance.action === 'system-tuning' && snapshot.maintenance.state === 'succeeded'"><Check :size="16" /> {{ phrase('上次任务已完成') }}</span>
+          <span v-else><Rocket :size="16" /> {{ phrase(`已选择 ${selected.length}/12 项`) }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing || submitting" :title="phrase('刷新调优状态')" @click="load(true)"><RefreshCw :size="16" :class="{ spin: refreshing }" /></button>
         </header>
         <div v-if="snapshot.maintenance.action === 'system-tuning' && snapshot.maintenance.state === 'failed'" class="inline-alert inline-alert--danger">
-          <TriangleAlert :size="16" /> {{ snapshot.maintenance.message || '任务在当前项目停止，请检查后重试。' }}
+          <TriangleAlert :size="16" /> {{ phrase(snapshot.maintenance.message || '任务在当前项目停止，请检查后重试。') }}
         </div>
         <div class="tuning-toolbar">
-          <button type="button" :disabled="running || submitting" @click="selected = definitions.map((item) => item.id)">全部选择</button>
-          <button type="button" :disabled="running || submitting" @click="selected = []">清空选择</button>
-          <small>每项完成后都会回读验证；失败即停止，不会把后续项目显示为成功。</small>
+          <button type="button" :disabled="running || submitting" @click="selected = definitions.map((item) => item.id)">{{ phrase('全部选择') }}</button>
+          <button type="button" :disabled="running || submitting" @click="selected = []">{{ phrase('清空选择') }}</button>
+          <small>{{ phrase('每项完成后都会回读验证；失败即停止，不会把后续项目显示为成功。') }}</small>
         </div>
         <div class="tuning-list">
           <button
@@ -162,16 +167,16 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
               <Circle v-else :size="18" />
             </span>
             <span class="tuning-item__number">{{ index + 1 }}</span>
-            <span class="tuning-item__body"><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></span>
-            <span v-if="item.risk" class="tuning-item__risk">有影响</span>
-            <span v-else-if="snapshot.items.find((state) => state.id === item.id)?.state === 'ready'" class="tuning-item__ready">已符合</span>
+            <span class="tuning-item__body"><strong>{{ phrase(item.title) }}</strong><small>{{ phrase(item.detail) }}</small></span>
+            <span v-if="item.risk" class="tuning-item__risk">{{ phrase('有影响') }}</span>
+            <span v-else-if="snapshot.items.find((state) => state.id === item.id)?.state === 'ready'" class="tuning-item__ready">{{ phrase('已符合') }}</span>
           </button>
         </div>
         <footer class="tuning-footer">
-          <span>{{ running ? snapshot.maintenance.message : '任务提交后可关闭窗口，重新打开仍会显示真实进度。' }}</span>
+          <span>{{ phrase(running ? snapshot.maintenance.message || '' : '任务提交后可关闭窗口，重新打开仍会显示真实进度。') }}</span>
           <button class="button button--primary" type="button" :disabled="!writable || !selected.length || running || submitting" @click="apply">
             <LoaderCircle v-if="submitting" :size="16" class="spin" /><Rocket v-else :size="16" />
-            {{ running ? `正在调优 ${snapshot.maintenance.progress}%` : `一键调优（${selected.length} 项）` }}
+            {{ phrase(running ? `正在调优 ${snapshot.maintenance.progress}%` : `一键调优（${selected.length} 项）`) }}
           </button>
         </footer>
       </template>
