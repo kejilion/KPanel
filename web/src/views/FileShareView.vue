@@ -10,10 +10,10 @@ import {
   LoaderCircle,
   Moon,
   RefreshCw,
-  Server,
   Sun,
   TriangleAlert,
 } from '@lucide/vue'
+import LogoMark from '@/components/common/LogoMark.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatBytes, formatDateTime } from '@/lib/format'
@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
     <div class="file-share-shell">
       <header class="file-share-header">
         <a class="file-share-brand" href="https://github.com/kejilion/KPanel" target="_blank" rel="noopener noreferrer">
-          <span><Server :size="18" /></span>
+          <LogoMark compact class="file-share-brand__logo" />
           <strong>KPanel</strong>
         </a>
         <button
@@ -222,13 +222,14 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
-.file-share-brand > span {
-  display: grid;
+.file-share-brand__logo {
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+.file-share-brand__logo :deep(.brand__mark) {
   width: 36px;
   height: 36px;
-  place-items: center;
-  color: var(--on-brand);
-  background: var(--brand-action);
   border-radius: 10px;
   box-shadow: var(--shadow-button);
 }

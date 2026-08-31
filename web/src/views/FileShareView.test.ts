@@ -118,6 +118,9 @@ describe('FileShareView anonymous file page', () => {
 
   it('keeps private file metadata out of the public template and bypasses session checks', () => {
     const source = readFileSync(new URL('./FileShareView.vue', import.meta.url), 'utf8')
+    expect(source).toContain("import LogoMark from '@/components/common/LogoMark.vue'")
+    expect(source).toContain('<LogoMark compact class="file-share-brand__logo" />')
+    expect(source).not.toContain('<Server :size="18" />')
     for (const privateField of ['path', 'mode', 'owner', 'group', 'resourceVersion']) {
       expect(source).not.toContain(`snapshot.${privateField}`)
     }

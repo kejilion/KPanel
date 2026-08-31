@@ -18,6 +18,7 @@ import {
   Server,
   Sun,
 } from '@lucide/vue'
+import LogoMark from '@/components/common/LogoMark.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
@@ -138,7 +139,7 @@ onBeforeUnmount(() => {
     <div class="share-shell">
       <header class="share-header">
         <a class="share-brand" href="https://github.com/kejilion/KPanel" target="_blank" rel="noopener noreferrer">
-          <span><Server :size="18" /></span>
+          <LogoMark compact class="share-brand__logo" />
           <strong>KPanel</strong>
         </a>
         <div class="share-header__actions">
@@ -356,13 +357,14 @@ onBeforeUnmount(() => {
 .share-header { justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .share-header__actions { justify-content: flex-end; gap: 9px; }
 .share-brand { gap: 10px; color: inherit; text-decoration: none; letter-spacing: 0.02em; }
-.share-brand > span {
-  display: grid;
+.share-brand__logo {
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+.share-brand__logo :deep(.brand__mark) {
   width: 34px;
   height: 34px;
-  place-items: center;
-  color: var(--on-brand);
-  background: var(--brand-action);
   border-radius: 10px;
   box-shadow: var(--shadow-button);
 }

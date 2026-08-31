@@ -115,6 +115,8 @@ describe('ClusterShareView anonymous snapshot', () => {
 
   it('keeps management and identity fields out of the public page template', () => {
     const source = readFileSync(new URL('./ClusterShareView.vue', import.meta.url), 'utf8')
+    expect(source).toContain("import LogoMark from '@/components/common/LogoMark.vue'")
+    expect(source).toContain('<LogoMark compact class="share-brand__logo" />')
     expect(source).toContain('公开页不包含 IP、管理入口或访问凭据')
     for (const privateField of ['origin', 'peerFingerprint', 'remoteNodeId', 'resourceVersion']) {
       expect(source).not.toContain(`host.${privateField}`)

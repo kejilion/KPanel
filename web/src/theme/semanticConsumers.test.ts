@@ -37,10 +37,8 @@ describe('semantic action consumers', () => {
     expectRule(sources.shareManager, '.file-share-manager__stop:hover:not(:disabled)', { color: /^var\(--on-danger\)$/, background: /^var\(--danger-action\)$/ })
   })
 
-  it('keeps public share and terminal actions on the same brand pair', () => {
-    expectRule(sources.fileShare, '.file-share-brand > span', { color: /^var\(--on-brand\)$/, background: /^var\(--brand-action\)$/ })
+  it('keeps public share downloads and terminal actions on readable brand pairs', () => {
     expectRule(sources.fileShare, '.file-share-download', { color: /^var\(--on-brand\)$/, background: /^var\(--brand-action\)$/ })
-    expectRule(sources.clusterShare, '.share-brand > span', { color: /^var\(--on-brand\)$/, background: /^var\(--brand-action\)$/ })
     expectRule(sources.hostTerminal, '.host-terminal__composer button', { color: /^var\(--on-brand,\s*#05251c\)$/, background: /^var\(--brand-action,\s*#35cba6\)$/ })
     expectRule(sources.interactiveTerminal, '.interactive-terminal__composer button', { color: /^var\(--on-brand,\s*#05251c\)$/, background: /^var\(--terminal-accent\)$/ })
   })
