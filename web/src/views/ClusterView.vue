@@ -13,6 +13,7 @@ function phrase(value: string): string {
 }
 import {
   ArrowUpRight,
+  Bell,
   Check,
   Copy,
   Gauge,
@@ -33,6 +34,7 @@ import {
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
+import ClusterNotificationsDialog from '@/components/cluster/ClusterNotificationsDialog.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -74,6 +76,7 @@ const addOpen = ref(false)
 const accessOpen = ref(false)
 const manageOpen = ref(false)
 const shareOpen = ref(false)
+const notificationsOpen = ref(false)
 const adding = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
@@ -948,6 +951,9 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small" type="button" @click="openAccess">
           <KeyRound :size="15" /> 接入授权
         </button>
+        <button class="button button--secondary button--small" type="button" @click="notificationsOpen = true">
+          <Bell :size="15" /> 通知
+        </button>
         <button class="button button--primary button--small" type="button" @click="openAdd">
           <Plus :size="15" /> 添加主机
         </button>
@@ -1588,6 +1594,8 @@ onBeforeUnmount(() => {
         </button>
       </template>
     </ModalDialog>
+
+    <ClusterNotificationsDialog :open="notificationsOpen" @close="notificationsOpen = false" />
   </div>
 </template>
 

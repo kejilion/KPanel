@@ -167,6 +167,13 @@ export interface ClusterTelemetry {
     udpConnections: number
   }
   publicNetwork: PublicNetworkSummary
+  sshLogin?: {
+    id: string
+    occurredAt: string
+    username: string
+    remoteAddress: string
+    method: string
+  }
   collectedAt: string
 }
 
@@ -224,6 +231,39 @@ export interface ClusterShareSettings {
 	sharePath?: string
 	resourceVersion: string
 	updatedAt?: string
+}
+
+export interface ClusterNotificationRules {
+  cpuEnabled: boolean
+  cpuThresholdPercent: number
+  memoryEnabled: boolean
+  memoryThresholdPercent: number
+  diskEnabled: boolean
+  diskThresholdPercent: number
+  trafficEnabled: boolean
+  trafficThresholdMiBPerSecond: number
+  sshLoginEnabled: boolean
+  hostOfflineEnabled: boolean
+}
+
+export type ClusterNotificationStatus = 'not_configured' | 'waiting_for_chat' | 'ready' | 'error'
+
+export interface ClusterNotificationTelegram {
+  configured: boolean
+  ready: boolean
+  status: ClusterNotificationStatus
+  botUsername?: string
+  lastCheckedAt?: string
+  lastSuccessAt?: string
+  lastErrorCode?: string
+}
+
+export interface ClusterNotificationSnapshot {
+  enabled: boolean
+  rules: ClusterNotificationRules
+  telegram: ClusterNotificationTelegram
+  resourceVersion: string
+  updatedAt: string
 }
 
 export type PublicClusterShareHostState = 'online' | 'degraded' | 'offline' | 'pending'

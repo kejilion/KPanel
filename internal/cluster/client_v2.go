@@ -369,7 +369,10 @@ func (c *RemoteClient) exchangeV2(
 		return err
 	}
 	if path == v2SummaryPath {
-		request.Header.Set(FederationCapabilitiesHeader, SecurityEntrancePathCapability)
+		request.Header.Set(
+			FederationCapabilitiesHeader,
+			SecurityEntrancePathCapability+", "+SSHLoginCapability,
+		)
 	}
 	var response v2Envelope
 	if err := c.doJSON(request, maxV2EnvelopeBytes, &response); err != nil {

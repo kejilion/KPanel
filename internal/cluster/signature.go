@@ -23,8 +23,10 @@ const (
 )
 
 const (
-	FederationCapabilitiesHeader   = "X-KPanel-Response-Capabilities"
-	SecurityEntrancePathCapability = "security-entrance-path-v1"
+	FederationCapabilitiesHeader    = "X-KPanel-Response-Capabilities"
+	SecurityEntrancePathCapability  = "security-entrance-path-v1"
+	SSHLoginCapability              = "ssh-login-v1"
+	LightResponseCapabilitiesHeader = "X-KPanel-Light-Response-Capabilities"
 )
 
 // Response capabilities are transport hints, not authorization inputs. V1 is

@@ -2,6 +2,8 @@ package systemmanage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,10 +25,14 @@ import (
 const (
 	systemLogFileTailBytes int64 = 1 << 20
 	systemLogUsageTimeout        = 2 * time.Second
+	sshLoginCacheTTL             = 15 * time.Second
 )
 
 var (
 	journalDiskUsagePattern = regexp.MustCompile(`(?i)([0-9]+(?:\.[0-9]+)?)\s*([kmgtpe]?)(?:i?b)?`)
+	sshAcceptedPattern      = regexp.MustCompile(`(?i)\bAccepted\s+([^\s]+)\s+for\s+([^\s]+)\s+from\s+([^\s]+)`)
+	sshLoginTokenPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+:/-]{0,127}$`)
+	sshLoginAddressPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:%_-]{0,252}$`)
 )
 
 // SystemLogCapabilities keeps read access independent from the host-write
@@ -235,6 +241,86 @@ func (m *Manager) SystemLogs(ctx context.Context, query contract.SystemLogQuery)
 	default:
 		return result, fmt.Errorf("%w: unknown system log source", ErrInvalidInput)
 	}
+}
+
+// LatestSSHLogin returns only the newest accepted SSH authentication event.
+// The full authentication log remains behind the dedicated system-log API;
+// telemetry carries this bounded event so the cluster controller can detect a
+// new login without receiving host configuration or arbitrary log text.
+func (m *Manager) LatestSSHLogin(ctx context.Context) (*contract.SSHLoginEvent, error) {
+	if runtime.GOOS != "linux" || m.effectiveUID() != 0 {
+		return nil, fmt.Errorf("%w: SSH login events are unavailable on this host", ErrUnsupported)
+	}
+	m.sshLoginMu.Lock()
+	defer m.sshLoginMu.Unlock()
+	now := m.now().UTC()
+	if !m.sshLoginCheckedAt.IsZero() && now.Sub(m.sshLoginCheckedAt) >= 0 &&
+		now.Sub(m.sshLoginCheckedAt) < sshLoginCacheTTL {
+		return cloneSSHLoginEvent(m.sshLoginCache), nil
+	}
+	entries, _, journalErr := m.readJournalLogs(ctx, contract.SystemLogQuery{
+		Source: "security", Limit: 50, Priority: "all",
+	}, true)
+	if journalErr == nil {
+		m.sshLoginCache = latestSSHLogin(entries, now)
+		m.sshLoginCheckedAt = now
+		return cloneSSHLoginEvent(m.sshLoginCache), nil
+	}
+	_, entries, _, fileErr := m.readFixedAuthLog(50)
+	if fileErr != nil {
+		return nil, errors.Join(journalErr, fileErr)
+	}
+	m.sshLoginCache = latestSSHLogin(entries, now)
+	m.sshLoginCheckedAt = now
+	return cloneSSHLoginEvent(m.sshLoginCache), nil
+}
+
+func cloneSSHLoginEvent(event *contract.SSHLoginEvent) *contract.SSHLoginEvent {
+	if event == nil {
+		return nil
+	}
+	clone := *event
+	return &clone
+}
+
+func latestSSHLogin(entries []contract.SystemLogEntry, observedAt time.Time) *contract.SSHLoginEvent {
+	for index := len(entries) - 1; index >= 0; index-- {
+		if event, ok := parseSSHLoginEntry(entries[index], observedAt); ok {
+			return &event
+		}
+	}
+	return nil
+}
+
+func parseSSHLoginEntry(entry contract.SystemLogEntry, observedAt time.Time) (contract.SSHLoginEvent, bool) {
+	identity := strings.ToLower(entry.Identifier + " " + entry.Unit)
+	if !strings.Contains(identity, "sshd") && !strings.Contains(strings.ToLower(entry.Message), "sshd") {
+		return contract.SSHLoginEvent{}, false
+	}
+	match := sshAcceptedPattern.FindStringSubmatch(entry.Message)
+	if len(match) != 4 || !sshLoginTokenPattern.MatchString(match[1]) ||
+		!sshLoginTokenPattern.MatchString(match[2]) || !sshLoginAddressPattern.MatchString(match[3]) {
+		return contract.SSHLoginEvent{}, false
+	}
+	occurredAt := observedAt.UTC()
+	if entry.Timestamp != nil {
+		occurredAt = entry.Timestamp.UTC()
+	}
+	id := strings.TrimSpace(entry.Cursor)
+	if id == "" {
+		hash := sha256.Sum256([]byte(strings.Join([]string{
+			occurredAt.Format(time.RFC3339Nano), match[1], match[2], match[3], entry.Message,
+		}, "\x00")))
+		id = "sha256:" + hex.EncodeToString(hash[:])
+	}
+	event := contract.SSHLoginEvent{
+		ID: id, OccurredAt: occurredAt, Method: match[1],
+		Username: match[2], RemoteAddress: match[3],
+	}
+	if !contract.ValidSSHLoginEvent(event) {
+		return contract.SSHLoginEvent{}, false
+	}
+	return event, true
 }
 
 func (m *Manager) readJournalLogs(
@@ -460,7 +546,11 @@ func (m *Manager) readFixedAuthLog(limit int) (string, []contract.SystemLogEntry
 	truncated := truncatedByBytes || len(values) > limit
 	entries := make([]contract.SystemLogEntry, 0, len(values))
 	for _, value := range values {
+		hash := sha256.Sum256([]byte(strings.Join([]string{
+			path, value,
+		}, "\x00")))
 		entries = append(entries, contract.SystemLogEntry{
+			Cursor:     "sha256:" + hex.EncodeToString(hash[:]),
 			Identifier: filepath.Base(path),
 			Message:    normalizeLogText(value, contract.SystemLogMaxMessageBytes),
 		})

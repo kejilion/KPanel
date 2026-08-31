@@ -125,6 +125,9 @@ type Manager struct {
 	processSignaler        ProcessSignaler
 	rebootScheduled        bool
 	mu                     sync.Mutex
+	sshLoginMu             sync.Mutex
+	sshLoginCache          *contract.SSHLoginEvent
+	sshLoginCheckedAt      time.Time
 }
 
 func NewManager(config Config) *Manager {

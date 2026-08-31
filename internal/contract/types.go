@@ -241,6 +241,17 @@ type NetworkSummary struct {
 	UDPConnections int    `json:"udpConnections"`
 }
 
+// SSHLoginEvent is the narrow, read-only authentication event that can be
+// carried with a host telemetry snapshot. It deliberately contains no
+// command, credential or full log message.
+type SSHLoginEvent struct {
+	ID            string    `json:"id"`
+	OccurredAt    time.Time `json:"occurredAt"`
+	Username      string    `json:"username"`
+	RemoteAddress string    `json:"remoteAddress"`
+	Method        string    `json:"method"`
+}
+
 type PublicNetworkSummary struct {
 	IPv4        string     `json:"ipv4,omitempty"`
 	IPv6        string     `json:"ipv6,omitempty"`
@@ -274,6 +285,7 @@ type HostTelemetry struct {
 	Disk                 DiskCapacitySummary  `json:"disk"`
 	Network              NetworkSummary       `json:"network"`
 	PublicNetwork        PublicNetworkSummary `json:"publicNetwork"`
+	SSHLogin             *SSHLoginEvent       `json:"sshLogin,omitempty"`
 	CollectedAt          time.Time            `json:"collectedAt"`
 }
 

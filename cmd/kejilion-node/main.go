@@ -27,6 +27,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
+	"github.com/kejilion/kejilion-panel/internal/systemmanage"
 	"github.com/kejilion/kejilion-panel/internal/version"
 )
 
@@ -47,6 +48,7 @@ type nodeConfig struct {
 	TargetNodeID   string `json:"targetNodeId,omitempty"`
 	ReportingKey   string `json:"reportingKey"`
 	ReportInterval int    `json:"reportIntervalSeconds"`
+	SSHLogin       bool   `json:"sshLogin,omitempty"`
 }
 
 type tokenWire struct {
@@ -134,14 +136,14 @@ func runEnroll(arguments []string) error {
 		TerminalPublicKey: base64.RawURLEncoding.EncodeToString(terminalKey.Public),
 	}
 	var response enrollResponse
-	status, err := postJSONWithStatus(context.Background(), origin+lightEnrollPath, request, nil, &response)
+	status, responseHeaders, err := postJSONWithStatusAndHeaders(context.Background(), origin+lightEnrollPath, request, nil, &response)
 	if err != nil && status == http.StatusBadRequest {
 		// A pre-v2 center rejects the optional key field because its decoder is
 		// strict. Retry the same one-time token without terminal capability so
 		// the node remains telemetry-compatible and never guesses a protocol.
 		request.TerminalPublicKey = ""
 		response = enrollResponse{}
-		_, err = postJSONWithStatus(context.Background(), origin+lightEnrollPath, request, nil, &response)
+		status, responseHeaders, err = postJSONWithStatusAndHeaders(context.Background(), origin+lightEnrollPath, request, nil, &response)
 	}
 	if err != nil {
 		return fmt.Errorf("enroll lightweight node: %w", err)
@@ -172,6 +174,7 @@ func runEnroll(arguments []string) error {
 	config := nodeConfig{
 		SchemaVersion: 1, Origin: origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
+		SSHLogin: hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
 	}
 	if terminalEnabled {
 		config.TargetNodeID = response.TargetNodeID
@@ -254,12 +257,17 @@ func collectAndReport(parent context.Context, collector *systeminfo.Collector, c
 		}
 		disk = contract.DiskCapacitySummary{TotalBytes: selected.TotalBytes, UsedBytes: selected.UsedBytes, UsagePercent: selected.UsagePercent}
 	}
+	var sshLogin *contract.SSHLoginEvent
+	if config.SSHLogin {
+		sshManager := systemmanage.NewManager(systemmanage.Config{Enabled: false})
+		sshLogin, _ = sshManager.LatestSSHLogin(ctx)
+	}
 	payload := reportRequest{Telemetry: contract.HostTelemetry{
 		AgentVersion: version.Version, AgentProtocolVersion: lightProtocol,
 		Hostname: summary.Hostname, OS: summary.OS, OSID: summary.OSID, OSLike: summary.OSLike,
 		Kernel: summary.Kernel, Architecture: summary.Architecture, UptimeSeconds: summary.UptimeSeconds,
 		Load: summary.Load, CPU: summary.CPU, Memory: summary.Memory, Disk: disk,
-		Network: summary.Network, PublicNetwork: summary.PublicNetwork, CollectedAt: summary.CollectedAt,
+		Network: summary.Network, PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	}}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -422,7 +430,8 @@ func postJSONWithStatus(ctx context.Context, endpoint string, input any, headers
 	if err != nil {
 		return 0, err
 	}
-	return postRawJSONWithStatus(ctx, endpoint, body, headers, output)
+	status, _, err := postRawJSONWithStatusAndHeaders(ctx, endpoint, body, headers, output)
+	return status, err
 }
 
 func postRawJSON(ctx context.Context, endpoint string, body []byte, headers map[string]string, output any) error {
@@ -431,9 +440,22 @@ func postRawJSON(ctx context.Context, endpoint string, body []byte, headers map[
 }
 
 func postRawJSONWithStatus(ctx context.Context, endpoint string, body []byte, headers map[string]string, output any) (int, error) {
+	status, _, err := postRawJSONWithStatusAndHeaders(ctx, endpoint, body, headers, output)
+	return status, err
+}
+
+func postJSONWithStatusAndHeaders(ctx context.Context, endpoint string, input any, headers map[string]string, output any) (int, http.Header, error) {
+	body, err := json.Marshal(input)
+	if err != nil {
+		return 0, nil, err
+	}
+	return postRawJSONWithStatusAndHeaders(ctx, endpoint, body, headers, output)
+}
+
+func postRawJSONWithStatusAndHeaders(ctx context.Context, endpoint string, body []byte, headers map[string]string, output any) (int, http.Header, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "KPanel-Light-Node/"+version.Version)
@@ -442,26 +464,43 @@ func postRawJSONWithStatus(ctx context.Context, endpoint string, body []byte, he
 	}
 	response, err := nodeHTTPClient.Do(request)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer response.Body.Close()
+	responseHeaders := response.Header.Clone()
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil || int64(len(content)) > maxResponseBytes {
-		return response.StatusCode, errors.New("server response is invalid")
+		return response.StatusCode, responseHeaders, errors.New("server response is invalid")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return response.StatusCode, fmt.Errorf("server returned HTTP %d", response.StatusCode)
+		return response.StatusCode, responseHeaders, fmt.Errorf("server returned HTTP %d", response.StatusCode)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(output); err != nil {
-		return response.StatusCode, errors.New("server response is invalid")
+		return response.StatusCode, responseHeaders, errors.New("server response is invalid")
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return response.StatusCode, errors.New("server response is invalid")
+		return response.StatusCode, responseHeaders, errors.New("server response is invalid")
 	}
-	return response.StatusCode, nil
+	return response.StatusCode, responseHeaders, nil
+}
+
+func hasResponseCapability(headers http.Header, capability string) bool {
+	if capability == "" {
+		return false
+	}
+	value := headers.Get(cluster.LightResponseCapabilitiesHeader)
+	if len(value) > 256 {
+		return false
+	}
+	for _, item := range strings.Split(value, ",") {
+		if strings.TrimSpace(item) == capability {
+			return true
+		}
+	}
+	return false
 }
 
 func newHTTPClient() *http.Client {

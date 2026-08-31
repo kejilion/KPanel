@@ -27,7 +27,8 @@ type clusterTelemetrySource struct {
 }
 
 func (s clusterTelemetrySource) Telemetry(ctx context.Context) (contract.HostTelemetry, error) {
-	response, err := s.agent.Get(ctx, "/v1/system/telemetry", "", newRequestID())
+	rawQuery := "capabilities=" + url.QueryEscape(cluster.SSHLoginCapability)
+	response, err := s.agent.Get(ctx, "/v1/system/telemetry", rawQuery, newRequestID())
 	if err != nil {
 		return contract.HostTelemetry{}, err
 	}
@@ -49,6 +50,9 @@ func (s clusterTelemetrySource) Telemetry(ctx context.Context) (contract.HostTel
 
 func (s *Server) StartBackground(ctx context.Context) {
 	s.cluster.Start(ctx)
+	if s.notifications != nil {
+		s.notifications.Start(ctx)
+	}
 }
 
 func (s *Server) Close() error {
@@ -60,10 +64,14 @@ func (s *Server) Close() error {
 		aiErr = s.ai.Close()
 	}
 	var clusterErr error
+	var notificationErr error
+	if s.notifications != nil {
+		notificationErr = s.notifications.Close()
+	}
 	if s.cluster != nil {
 		clusterErr = s.cluster.Close()
 	}
-	return errors.Join(aiErr, clusterErr)
+	return errors.Join(aiErr, notificationErr, clusterErr)
 }
 
 func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +102,8 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/controllers/") &&
 		r.Method == http.MethodDelete:
 		s.handleClusterControllerDelete(w, r)
+	case r.URL.Path == clusterNotificationsPath || strings.HasPrefix(r.URL.Path, clusterNotificationsPath+"/"):
+		s.handleClusterNotifications(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/hosts/"):
 		s.handleClusterHost(w, r)
 	default:
@@ -611,6 +621,9 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
+		// Rolling-upgrade hint: old lightweight nodes ignore this response
+		// header, while new nodes opt into the optional SSH event field.
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
 		_ = s.audit(r, "", "cluster.light-node.enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"protocol": cluster.LightNodeProtocol,
 		})
