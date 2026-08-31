@@ -29,4 +29,6 @@ export default [
   ["资源", "資源"],
   ["自动核对", "自動核對"],
   ["Cookie、Token、私钥、数据库密码及 Docker 环境变量不会写入审计详情。", "Cookie、Token、私鑰、資料庫密碼及 Docker 環境變數不會寫入審計詳情。"],
+  ["未记录", "未記錄"],
+  ["事件 {0}", "事件 {0}"],
 ] as const satisfies PhraseCatalog

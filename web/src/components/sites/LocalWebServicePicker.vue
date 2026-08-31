@@ -102,6 +102,11 @@ function containerSummary(candidate: LocalWebServiceCandidate): string {
   }).join('、')
 }
 
+function candidateAriaLabel(candidate: LocalWebServiceCandidate): string {
+  const label = phrase(`使用本机 TCP 端口 ${candidate.port}`)
+  return isReverseProxied(candidate) ? `${label} · ${phrase('已反代')}` : label
+}
+
 function isReverseProxied(candidate: LocalWebServiceCandidate): boolean {
   return reverseProxyPorts.value.has(candidate.port)
 }
@@ -183,7 +188,7 @@ onBeforeUnmount(() => controller?.abort())
             :key="candidate.port"
             class="local-web-service-picker__candidate"
             type="button"
-            :aria-label="phrase(`使用本机 TCP 端口 ${candidate.port}${isReverseProxied(candidate) ? '，已反代' : ''}`)"
+            :aria-label="candidateAriaLabel(candidate)"
             @click="selectCandidate(candidate)"
           >
             <span class="local-web-service-picker__candidate-top">

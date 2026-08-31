@@ -204,4 +204,10 @@ export default [
   ['站点服务', 'Site service'],
   ['其他建站方式', 'Other site-building methods'],
   ['成品站', 'ready-made site'],
+  ['删除站点', 'Delete site'],
+  ['网站详情', 'Site details'],
+  ['访问网站', 'Visit site'],
+  ['一键搭建 {0}', 'Set up {0} in one click'],
+  ['使用脚本搭建 {0}', 'Set up {0} with the script'],
+  ['删除 {0}', 'Delete {0}'],
 ] as const satisfies PhraseCatalog

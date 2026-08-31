@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { CircleAlert, Crosshair, ScanLine } from '@lucide/vue'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { DockerDeploymentDiagnostic } from '@/lib/dockerDeployment'
 
 const props = withDefaults(defineProps<{
@@ -31,6 +32,11 @@ const diagnosticLines = computed(() => [...new Set(
 const editorLineHeight = 18.975
 const editorVerticalPadding = 12
 let highlightTimer: number | undefined
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 function diagnosticToken(item: DockerDeploymentDiagnostic): string {
   return `${item.code}:${item.line}:${item.column}:${item.from}:${item.to}`
@@ -123,15 +129,15 @@ onBeforeUnmount(() => {
         wrap="off"
         spellcheck="false"
         autocomplete="off"
-        :aria-label="ariaLabel"
+        :aria-label="phrase(ariaLabel)"
         :aria-invalid="diagnostics.length > 0"
-        :placeholder="placeholder"
+        :placeholder="phrase(placeholder)"
         @input="update"
         @scroll="syncScroll"
       />
       <span class="deployment-editor__scanner" aria-hidden="true"><ScanLine :size="15" /></span>
     </div>
-    <div v-if="diagnostics.length" class="deployment-diagnostics" role="list" aria-label="语法问题">
+    <div v-if="diagnostics.length" class="deployment-diagnostics" role="list" :aria-label="phrase('语法问题')">
       <button
         v-for="item in diagnostics"
         :key="`${item.code}-${item.from}-${item.to}`"
@@ -141,8 +147,8 @@ onBeforeUnmount(() => {
       >
         <CircleAlert :size="16" />
         <span>
-          <strong>第 {{ item.line }} 行 · 第 {{ item.column }} 列</strong>
-          <small>{{ item.message }}<template v-if="item.hint"> {{ item.hint }}</template></small>
+          <strong>{{ phrase(`第 ${item.line} 行 · 第 ${item.column} 列`) }}</strong>
+          <small>{{ phrase(item.message) }}<template v-if="item.hint"> {{ phrase(item.hint) }}</template></small>
         </span>
         <Crosshair :size="15" />
       </button>

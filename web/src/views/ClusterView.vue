@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/ClusterView/en-US').then((module) => module.default)
   : import('@/i18n/pages/ClusterView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import {
   ArrowUpRight,
   Check,
@@ -1220,54 +1225,54 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="shareOpen"
-      title="公开分享"
-      description="生成匿名只读页面，向其他人展示当前集群的机器状态。"
+      :title="phrase('公开分享')"
+      :description="phrase('生成匿名只读页面，向其他人展示当前集群的机器状态。')"
       size="medium"
       @close="closeShare"
     >
-      <LoadingState v-if="shareLoading" title="正在读取分享设置…" />
+      <LoadingState v-if="shareLoading" :title="phrase('正在读取分享设置…')" />
       <form v-else id="cluster-share-form" class="cluster-share" @submit.prevent="saveShare">
         <label class="cluster-share__switch">
           <span>
-            <strong>启用公开分享</strong>
-            <small>默认关闭；关闭后现有链接立即返回 404。</small>
+            <strong>{{ phrase('启用公开分享') }}</strong>
+            <small>{{ phrase('默认关闭；关闭后现有链接立即返回 404。') }}</small>
           </span>
           <input v-model="shareForm.enabled" type="checkbox" role="switch" />
         </label>
 
         <label class="field">
-          展示标题
-          <input v-model="shareForm.title" maxlength="80" placeholder="我的 KPanel 集群" />
+          {{ phrase('展示标题') }}
+          <input v-model="shareForm.title" maxlength="80" :placeholder="phrase('我的 KPanel 集群')" />
         </label>
         <label class="field">
-          一句话介绍（可选）
+          {{ phrase('一句话介绍（可选）') }}
           <input
             v-model="shareForm.description"
             maxlength="240"
-            placeholder="例如：这些是我正在运行的服务器。"
+            :placeholder="phrase('例如：这些是我正在运行的服务器。')"
           />
         </label>
 
         <section class="cluster-share__privacy">
           <ShieldCheck :size="19" />
           <span>
-            <strong>公开字段经过白名单过滤</strong>
-            <small>仅展示名称、状态、地区、系统和资源使用情况；不公开 IP、面板地址、节点 ID、身份指纹、错误详情、版本或管理入口。</small>
+            <strong>{{ phrase('公开字段经过白名单过滤') }}</strong>
+            <small>{{ phrase('仅展示名称、状态、地区、系统和资源使用情况；不公开 IP、面板地址、节点 ID、身份指纹、错误详情、版本或管理入口。') }}</small>
           </span>
         </section>
 
         <section v-if="shareURL" class="cluster-share__link">
           <span>
-            <strong>{{ shareSettings?.enabled ? '当前公开链接' : '已暂停的公开链接' }}</strong>
-            <small>{{ shareSettings?.enabled ? '任何获得链接的人都可以查看。' : '保存并开启后，此链接恢复访问。' }}</small>
+            <strong>{{ phrase(shareSettings?.enabled ? '当前公开链接' : '已暂停的公开链接') }}</strong>
+            <small>{{ phrase(shareSettings?.enabled ? '任何获得链接的人都可以查看。' : '保存并开启后，此链接恢复访问。') }}</small>
           </span>
           <pre>{{ shareURL }}</pre>
           <div>
             <button class="button button--secondary button--small" type="button" @click="copyShareLink">
-              <Copy :size="14" /> 复制链接
+              <Copy :size="14" /> {{ phrase('复制链接') }}
             </button>
             <button class="button button--secondary button--small" type="button" @click="previewShare">
-              <ArrowUpRight :size="14" /> 预览
+              <ArrowUpRight :size="14" /> {{ phrase('预览') }}
             </button>
             <button
               class="button button--ghost button--small"
@@ -1276,14 +1281,14 @@ onBeforeUnmount(() => {
               @click="resetShareLink"
             >
               <LoaderCircle v-if="shareResetting" class="spin" :size="14" />
-              <RotateCcw v-else :size="14" /> 重置链接
+              <RotateCcw v-else :size="14" /> {{ phrase('重置链接') }}
             </button>
           </div>
         </section>
-        <p v-else class="cluster-share__hint">首次开启并保存后生成随机公开链接。</p>
+        <p v-else class="cluster-share__hint">{{ phrase('首次开启并保存后生成随机公开链接。') }}</p>
       </form>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="shareSaving" @click="closeShare">取消</button>
+        <button class="button button--secondary" type="button" :disabled="shareSaving" @click="closeShare">{{ phrase('取消') }}</button>
         <button
           class="button button--primary"
           type="submit"
@@ -1292,15 +1297,15 @@ onBeforeUnmount(() => {
         >
           <LoaderCircle v-if="shareSaving" class="spin" :size="16" />
           <Share2 v-else :size="16" />
-          {{ shareSaving ? '正在保存…' : '保存分享设置' }}
+          {{ phrase(shareSaving ? '正在保存…' : '保存分享设置') }}
         </button>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="addOpen"
-      title="添加 KPanel 主机"
-      description="在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。"
+      :title="phrase('添加 KPanel 主机')"
+      :description="phrase('在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。')"
       size="small"
       @close="closeAdd"
     >
@@ -1312,20 +1317,20 @@ onBeforeUnmount(() => {
         @submit.prevent="addHost"
       >
         <label class="field">
-          主机名称（可选）
+          {{ phrase('主机名称（可选）') }}
           <input
             v-model="addForm.name"
             name="cluster-host-label"
             maxlength="80"
-            placeholder="例如：香港生产机"
+            :placeholder="phrase('例如：香港生产机')"
             autocomplete="off"
             data-1p-ignore
             data-lpignore="true"
           />
-          <small>留空时使用目标主机名。</small>
+          <small>{{ phrase('留空时使用目标主机名。') }}</small>
         </label>
         <label class="field">
-          接入凭据
+          {{ phrase('接入凭据') }}
           <textarea
             ref="addAccessInput"
             v-model="addForm.accessCredential"
@@ -1333,7 +1338,7 @@ onBeforeUnmount(() => {
             rows="4"
             required
             maxlength="1600"
-            placeholder="在目标 KPanel 一键复制，然后完整粘贴到这里"
+            :placeholder="phrase('在目标 KPanel 一键复制，然后完整粘贴到这里')"
             autocomplete="one-time-code"
             autocapitalize="off"
             spellcheck="false"
@@ -1354,20 +1359,20 @@ onBeforeUnmount(() => {
             }"
             :role="originError || originAssessment.mode === 'invalid' ? 'alert' : undefined"
           >
-            {{
+            {{ phrase(
               originError ||
               (parsedAccessCredential
                 ? originAssessment.message
                 : '凭据同时包含主机 URL 与一次性授权码，不会保存到浏览器或审计日志。')
-            }}
+            ) }}
           </small>
         </label>
         <section class="cluster-light-enrollment">
           <div>
             <Server :size="17" />
             <span>
-              <strong>非面板 Linux 主机</strong>
-              <small>无需 Docker；生成命令后，在目标机以 root 执行即可加入只读监控。</small>
+              <strong>{{ phrase('非面板 Linux 主机') }}</strong>
+              <small>{{ phrase('无需 Docker；生成命令后，在目标机以 root 执行即可加入只读监控。') }}</small>
             </span>
             <button
               v-if="!lightEnrollment"
@@ -1377,13 +1382,13 @@ onBeforeUnmount(() => {
               @click="createLightEnrollment"
             >
               <LoaderCircle v-if="generatingLightEnrollment" class="spin" :size="14" />
-              <Plus v-else :size="14" /> 生成接入命令
+              <Plus v-else :size="14" /> {{ phrase('生成接入命令') }}
             </button>
           </div>
           <div v-if="lightEnrollment" class="cluster-light-enrollment__command">
             <pre>{{ lightEnrollment.command }}</pre>
             <button class="button button--secondary button--small" type="button" @click="copyLightEnrollment">
-              <Copy :size="14" /> 复制命令
+              <Copy :size="14" /> {{ phrase('复制命令') }}
             </button>
             <button
               class="button button--ghost button--small"
@@ -1392,14 +1397,14 @@ onBeforeUnmount(() => {
               @click="createLightEnrollment"
             >
               <LoaderCircle v-if="generatingLightEnrollment" class="spin" :size="14" />
-              <RefreshCw v-else :size="14" /> 重新生成
+              <RefreshCw v-else :size="14" /> {{ phrase('重新生成') }}
             </button>
-            <small>一次性命令，{{ formatDateTime(lightEnrollment.expiresAt) }} 前有效。</small>
+            <small>{{ phrase(`一次性命令，${formatDateTime(lightEnrollment.expiresAt)} 前有效。`) }}</small>
           </div>
         </section>
       </form>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="adding" @click="closeAdd">取消</button>
+        <button class="button button--secondary" type="button" :disabled="adding" @click="closeAdd">{{ phrase('取消') }}</button>
         <button
           class="button button--primary"
           type="submit"
@@ -1412,15 +1417,15 @@ onBeforeUnmount(() => {
         >
           <LoaderCircle v-if="adding" class="spin" :size="16" />
           <Plus v-else :size="16" />
-          {{ adding ? '正在安全配对…' : '添加主机' }}
+          {{ phrase(adding ? '正在安全配对…' : '添加主机') }}
         </button>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="accessOpen"
-      title="本机接入授权"
-      description="其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。"
+      :title="phrase('本机接入授权')"
+      :description="phrase('其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。')"
       size="medium"
       @close="closeAccess"
     >
@@ -1429,8 +1434,8 @@ onBeforeUnmount(() => {
           <div>
             <KeyRound :size="20" />
             <span>
-              <strong>本机接入凭据</strong>
-              <small>同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。</small>
+              <strong>{{ phrase('本机接入凭据') }}</strong>
+              <small>{{ phrase('同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。') }}</small>
             </span>
           </div>
           <button
@@ -1441,54 +1446,53 @@ onBeforeUnmount(() => {
             @click="createPairingCode"
           >
             <LoaderCircle v-if="generatingCode" class="spin" :size="16" />
-            <KeyRound v-else :size="16" /> 生成接入凭据
+            <KeyRound v-else :size="16" /> {{ phrase('生成接入凭据') }}
           </button>
           <div v-else class="cluster-access__token">
             <pre>{{ accessCredentialText }}</pre>
             <button
               class="button button--secondary button--small"
               type="button"
-              aria-label="复制完整接入凭据"
+              :aria-label="phrase('复制完整接入凭据')"
               @click="copyAccessCredential"
             >
-              <Copy :size="14" /> 复制接入凭据
+              <Copy :size="14" /> {{ phrase('复制接入凭据') }}
             </button>
-            <small>到期时间：{{ formatDateTime(pairingCode.expiresAt) }}</small>
+            <small>{{ phrase(`到期时间：${formatDateTime(pairingCode.expiresAt)}`) }}</small>
           </div>
         </section>
 
         <section class="cluster-access__controllers">
           <header>
             <div>
-              <strong>已授权控制端</strong>
-              <small>这里只列出可读取本机概要的 KPanel，不包含任何远程管理权限。</small>
+                <strong>{{ phrase('已授权控制端') }}</strong>
+                <small>{{ phrase('这里只列出可读取本机概要的 KPanel，不包含任何远程管理权限。') }}</small>
             </div>
             <button
               class="icon-button icon-button--small"
               type="button"
-              aria-label="刷新已授权控制端"
+              :aria-label="phrase('刷新已授权控制端')"
               :disabled="controllersLoading"
               @click="loadControllers"
             >
               <RefreshCw :size="14" :class="{ spin: controllersLoading }" />
             </button>
           </header>
-          <p v-if="controllersLoading && !controllers.length">正在读取授权列表…</p>
-          <p v-else-if="!controllers.length">暂无已授权控制端。</p>
+          <p v-if="controllersLoading && !controllers.length">{{ phrase('正在读取授权列表…') }}</p>
+          <p v-else-if="!controllers.length">{{ phrase('暂无已授权控制端。') }}</p>
           <template v-else>
             <article v-for="controller in controllers" :key="controller.id">
               <span>
-                <strong>{{ controller.name || '未命名 KPanel' }}</strong>
+                <strong>{{ controller.name || phrase('未命名 KPanel') }}</strong>
                 <code>{{ controller.fingerprint }}</code>
                 <small>
-                  授权于 {{ formatDateTime(controller.createdAt) }} · 最近访问
-                  {{ relativeTime(controller.lastSeenAt) }}
+                  {{ phrase(`授权于 ${formatDateTime(controller.createdAt)} · 最近访问 ${relativeTime(controller.lastSeenAt)}`) }}
                 </small>
               </span>
               <button
                 class="icon-button icon-button--small icon-button--danger"
                 type="button"
-                :aria-label="`撤销 ${controller.name || '控制端'} 授权`"
+                :aria-label="phrase(`撤销 ${controller.name || '控制端'} 授权`)"
                 @click="revokeController(controller)"
               >
                 <Trash2 :size="14" />
@@ -1501,40 +1505,40 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="manageOpen"
-      :title="selected ? `管理 ${selected.name}` : '管理主机'"
+      :title="selected ? phrase(`管理 ${selected.name}`) : phrase('管理主机')"
       :description="
         selected?.isLocal
-          ? '修改本机在集群列表中的显示名称；本机节点始终保留。'
-          : '修改仅影响当前中心端显示；移除不会停止目标主机业务。'
+          ? phrase('修改本机在集群列表中的显示名称；本机节点始终保留。')
+          : phrase('修改仅影响当前中心端显示；移除不会停止目标主机业务。')
       "
       size="small"
       @close="closeManage"
     >
       <div v-if="selected" class="form-stack">
         <label class="field">
-          显示名称
+          {{ phrase('显示名称') }}
           <input v-model="editName" maxlength="80" autocomplete="off" />
         </label>
         <div class="cluster-manage__identity">
           <template v-if="selected.kind !== 'light_node'">
-            <span>目标地址</span><code>{{ displayOrigin(selected) }}</code>
+            <span>{{ phrase('目标地址') }}</span><code>{{ displayOrigin(selected) }}</code>
           </template>
-          <span>连接方式</span><code>{{ transportSecurityLabel(selected) }}</code>
+          <span>{{ phrase('连接方式') }}</span><code>{{ phrase(transportSecurityLabel(selected)) }}</code>
           <template v-if="selected.peerFingerprint">
-            <span>身份指纹</span><code>{{ selected.peerFingerprint }}</code>
+            <span>{{ phrase('身份指纹') }}</span><code>{{ selected.peerFingerprint }}</code>
           </template>
-          <span>节点 ID</span><code>{{ selected.remoteNodeId }}</code>
-          <span>{{ selected.kind === 'light_node' ? '节点程序' : 'Panel / Agent' }}</span>
-          <code v-if="selected.kind === 'light_node'">{{ selected.panelVersion || selected.lastSnapshot?.telemetry.agentVersion || '未知' }}</code>
-          <code v-else>{{ selected.panelVersion || '未知' }} / {{ selected.lastSnapshot?.telemetry.agentVersion || '未知' }}</code>
+          <span>{{ phrase('节点 ID') }}</span><code>{{ selected.remoteNodeId }}</code>
+          <span>{{ phrase(selected.kind === 'light_node' ? '节点程序' : 'Panel / Agent') }}</span>
+          <code v-if="selected.kind === 'light_node'">{{ selected.panelVersion || selected.lastSnapshot?.telemetry.agentVersion || phrase('未知') }}</code>
+          <code v-else>{{ selected.panelVersion || phrase('未知') }} / {{ selected.lastSnapshot?.telemetry.agentVersion || phrase('未知') }}</code>
           <template v-if="mutualFilesHostEligible(selected)">
-            <span>文件互传</span>
+          <span>{{ phrase('文件互传') }}</span>
             <div
               v-if="selected.mutualFileTransferAvailable"
               class="cluster-manage__mutual-controls"
             >
               <strong class="cluster-manage__mutual-state">
-                <Check :size="14" /> 双向文件互传已启用
+                <Check :size="14" /> {{ phrase('双向文件互传已启用') }}
               </strong>
               <button
                 class="button button--ghost button--small cluster-manage__mutual-button"
@@ -1544,7 +1548,7 @@ onBeforeUnmount(() => {
               >
                 <LoaderCircle v-if="enablingMutualFiles" class="spin" :size="14" />
                 <RefreshCw v-else :size="14" />
-                {{ enablingMutualFiles ? '正在刷新…' : '刷新连接' }}
+                {{ phrase(enablingMutualFiles ? '正在刷新…' : '刷新连接') }}
               </button>
             </div>
             <button
@@ -1556,7 +1560,7 @@ onBeforeUnmount(() => {
             >
               <LoaderCircle v-if="enablingMutualFiles" class="spin" :size="14" />
               <ShieldCheck v-else :size="14" />
-              {{ enablingMutualFiles ? '正在启用…' : '启用双向文件互传' }}
+              {{ phrase(enablingMutualFiles ? '正在启用…' : '启用双向文件互传') }}
             </button>
           </template>
         </div>
@@ -1570,9 +1574,9 @@ onBeforeUnmount(() => {
           @click="removeHost"
         >
           <LoaderCircle v-if="deleting" class="spin" :size="16" />
-          <Trash2 v-else :size="16" /> 移除主机
+          <Trash2 v-else :size="16" /> {{ phrase('移除主机') }}
         </button>
-        <button class="button button--secondary" type="button" :disabled="saving || deleting || enablingMutualFiles" @click="closeManage">关闭</button>
+        <button class="button button--secondary" type="button" :disabled="saving || deleting || enablingMutualFiles" @click="closeManage">{{ phrase('关闭') }}</button>
         <button
           class="button button--primary"
           type="button"
@@ -1580,7 +1584,7 @@ onBeforeUnmount(() => {
           @click="saveName"
         >
           <LoaderCircle v-if="saving" class="spin" :size="16" />
-          <Check v-else :size="16" /> 保存名称
+          <Check v-else :size="16" /> {{ phrase('保存名称') }}
         </button>
       </template>
     </ModalDialog>

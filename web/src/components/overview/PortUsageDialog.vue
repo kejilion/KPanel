@@ -5,6 +5,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import type { PortUsageContainer, PortUsageEntry, PortUsageSnapshot } from '@/types/api'
 
@@ -18,6 +19,11 @@ const refreshing = ref(false)
 const error = ref('')
 const search = ref('')
 let controller: AbortController | undefined
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 interface ProcessGroup {
   key: string
@@ -42,7 +48,7 @@ const processGroups = computed<ProcessGroup[]>(() => {
   for (const entry of values) {
     const name = processName(entry.process)
     const key = name || '__unknown__'
-    const group = groups.get(key) || { name: name || '系统未返回占用程序', identified: Boolean(name), pids: new Set<number>(), entries: new Map<string, PortUsageEntry>() }
+    const group = groups.get(key) || { name: name || '', identified: Boolean(name), pids: new Set<number>(), entries: new Map<string, PortUsageEntry>() }
     if (entry.pid) group.pids.add(entry.pid)
     group.entries.set(`${entry.protocol}:${entry.localAddress}:${entry.localPort}`, entry)
     groups.set(key, group)
@@ -91,7 +97,7 @@ function processName(value?: string): string {
 }
 
 function containerName(container: PortUsageContainer): string {
-  return container.name || container.id.slice(0, 12) || '未知容器'
+  return container.name || container.id.slice(0, 12) || phrase('未知容器')
 }
 
 function containerScope(container: PortUsageContainer): string {
@@ -99,14 +105,14 @@ function containerScope(container: PortUsageContainer): string {
 }
 
 function protocolLabel(protocol: string): string {
-  return protocol.toLowerCase() === 'udp' ? 'UDP 监听' : 'TCP 监听'
+  return phrase(protocol.toLowerCase() === 'udp' ? 'UDP 监听' : 'TCP 监听')
 }
 
 function listenScope(address: string): string {
-  if (address === '0.0.0.0' || address === '*') return '所有 IPv4 地址'
-  if (address === '::' || address === '[::]') return '所有 IPv6 地址'
-  if (address === '127.0.0.1' || address === '::1') return '仅本机'
-  return '指定地址'
+  if (address === '0.0.0.0' || address === '*') return phrase('所有 IPv4 地址')
+  if (address === '::' || address === '[::]') return phrase('所有 IPv6 地址')
+  if (address === '127.0.0.1' || address === '::1') return phrase('仅本机')
+  return phrase('指定地址')
 }
 
 async function load(silent = false): Promise<void> {
@@ -138,69 +144,69 @@ onBeforeUnmount(() => controller?.abort())
 <template>
   <ModalDialog
     :open="open"
-    title="端口占用查看"
-    description="通过 kejilion.sh 读取当前 TCP / UDP 监听端口；仅对 Docker 明确发布到宿主机的端口补充容器归属，host network 按宿主机进程显示。"
+    :title="phrase('端口占用查看')"
+    :description="phrase('通过 kejilion.sh 读取当前 TCP / UDP 监听端口；仅对 Docker 明确发布到宿主机的端口补充容器归属，host network 按宿主机进程显示。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="system-resource-dialog">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的端口占用适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的端口占用适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="5" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="system-resource-dialog__summary">
-          <span>共 {{ snapshot.total }} 条监听记录</span>
-          <span>已识别 {{ identifiedProcessCount }} 个占用程序</span>
-          <span v-if="dockerContainerCount">已关联 {{ dockerContainerCount }} 个 Docker 容器</span>
-          <span v-if="snapshot.truncated" class="text-warning">仅显示前 512 条</span>
-          <button class="icon-button" type="button" :disabled="refreshing" title="刷新端口占用" aria-label="刷新端口占用" @click="load(true)">
+          <span>{{ phrase(`共 ${snapshot.total} 条监听记录`) }}</span>
+          <span>{{ phrase(`已识别 ${identifiedProcessCount} 个占用程序`) }}</span>
+          <span v-if="dockerContainerCount">{{ phrase(`已关联 ${dockerContainerCount} 个 Docker 容器`) }}</span>
+          <span v-if="snapshot.truncated" class="text-warning">{{ phrase('仅显示前 512 条') }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing" :title="phrase('刷新端口占用')" :aria-label="phrase('刷新端口占用')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
         <label class="field system-resource-search">
-          <span>筛选</span>
-          <span class="system-resource-search__input"><Search :size="15" /><input v-model="search" autocomplete="off" placeholder="端口、地址、协议、进程、PID 或容器" /></span>
+          <span>{{ phrase('筛选') }}</span>
+          <span class="system-resource-search__input"><Search :size="15" /><input v-model="search" autocomplete="off" :placeholder="phrase('端口、地址、协议、进程、PID 或容器')" /></span>
         </label>
         <div v-if="snapshot.entries.length && identifiedProcessCount === 0" class="inline-alert inline-alert--warning">
-          当前主机未返回进程信息。常见于内核转发、容器网络或进程信息受限；端口与监听范围仍是实时结果。
+          {{ phrase('当前主机未返回进程信息。常见于内核转发、容器网络或进程信息受限；端口与监听范围仍是实时结果。') }}
         </div>
-        <EmptyState v-if="!processGroups.length" title="没有匹配的监听端口" description="调整筛选条件或刷新后重试。" />
+        <EmptyState v-if="!processGroups.length" :title="phrase('没有匹配的监听端口')" :description="phrase('调整筛选条件或刷新后重试。')" />
         <div v-else class="port-usage-list">
           <article v-for="group in processGroups" :key="group.key" class="port-usage-group">
             <header class="port-usage-group__header" :class="{ 'is-unknown': !group.identified }">
               <div>
-                <span>占用程序</span>
-                <strong class="port-usage-owner__name">{{ group.name }}</strong>
+                <span>{{ phrase('占用程序') }}</span>
+                <strong class="port-usage-owner__name">{{ group.identified ? group.name : phrase('系统未返回占用程序') }}</strong>
               </div>
               <small v-if="group.pids.length">PID {{ group.pids.join(', ') }}</small>
-              <span class="port-usage-group__count">{{ group.entries.length }} 个监听端口</span>
+              <span class="port-usage-group__count">{{ phrase(`${group.entries.length} 个监听端口`) }}</span>
             </header>
             <div class="port-usage-group__ports">
               <section v-for="entry in group.entries" :key="`${entry.protocol}:${entry.localAddress}:${entry.localPort}`" class="port-usage-item">
                 <header class="port-usage-item__header">
-                  <span class="port-usage-item__port-label">端口</span>
-                  <strong>{{ entry.localPort || '未知' }}</strong>
+                  <span class="port-usage-item__port-label">{{ phrase('端口') }}</span>
+                  <strong>{{ entry.localPort || phrase('未知') }}</strong>
                   <span class="system-resource-state is-on">{{ protocolLabel(entry.protocol) }}</span>
                 </header>
                 <dl class="port-usage-item__facts">
-                  <div><dt>监听范围</dt><dd>{{ listenScope(entry.localAddress) }}</dd></div>
-                  <div><dt>监听地址</dt><dd><code>{{ endpoint(entry.localAddress, entry.localPort) }}</code></dd></div>
+                  <div><dt>{{ phrase('监听范围') }}</dt><dd>{{ listenScope(entry.localAddress) }}</dd></div>
+                  <div><dt>{{ phrase('监听地址') }}</dt><dd><code>{{ endpoint(entry.localAddress, entry.localPort) }}</code></dd></div>
                 </dl>
                 <div v-if="entry.container" class="port-usage-item__docker">
                   <div class="port-usage-item__docker-header">
-                    <span>Docker 容器</span>
+                    <span>{{ phrase('Docker 容器') }}</span>
                     <strong :title="entry.container.id">{{ containerName(entry.container) }}</strong>
                   </div>
                   <div class="port-usage-item__docker-meta">
                     <span v-if="entry.container.image">{{ entry.container.image }}</span>
-                    <span v-if="entry.container.containerPort">容器端口 {{ entry.container.containerPort }}</span>
+                    <span v-if="entry.container.containerPort">{{ phrase(`容器端口 ${entry.container.containerPort}`) }}</span>
                     <span v-if="containerScope(entry.container)">{{ containerScope(entry.container) }}</span>
                   </div>
                 </div>
                 <details class="port-usage-item__details">
-                  <summary>技术详情</summary>
+                  <summary>{{ phrase('技术详情') }}</summary>
                   <code>{{ entry.raw }}</code>
                 </details>
               </section>

@@ -1585,74 +1585,74 @@ onBeforeUnmount(() => {
 
         <div v-if="capabilityState(selectedTool.capability).enabled" class="management-form">
           <label v-if="selectedTool.id === 'hostname'" class="field">
-            <span>新主机名</span>
+            <span>{{ phrase('新主机名') }}</span>
             <input v-model.trim="actionForm.hostname" maxlength="253" autocomplete="off" placeholder="server.example" />
-            <small>仅允许小写字母、数字、连字符和点。</small>
+            <small>{{ phrase('仅允许小写字母、数字、连字符和点。') }}</small>
           </label>
           <label v-else-if="selectedTool.id === 'ssh-port'" class="field">
-            <span>新的 SSH 端口</span>
+            <span>{{ phrase('新的 SSH 端口') }}</span>
             <input v-model.number="actionForm.port" type="number" min="1" max="65535" inputmode="numeric" />
-            <small>成功后替换原 SSH 监听端口；当前 SSH 会话通常不会立即断开。</small>
+            <small>{{ phrase('成功后替换原 SSH 监听端口；当前 SSH 会话通常不会立即断开。') }}</small>
           </label>
           <div v-else-if="selectedTool.id === 'dns'" class="form-stack compact">
             <label class="field">
-              <span>常用 DNS 方案</span>
+              <span>{{ phrase('常用 DNS 方案') }}</span>
               <select v-model="actionForm.dnsPreset" @change="applyDNSPreset">
-                <option :value="customPreset">自定义 DNS 地址</option>
+                <option :value="customPreset">{{ phrase('自定义 DNS 地址') }}</option>
                 <option v-for="preset in dnsPresets" :key="preset.value" :value="preset.value">
-                  {{ preset.label }}
+                  {{ phrase(preset.label) }}
                 </option>
               </select>
               <small>
-                {{
+                {{ phrase(
                   hasPublicIPv6
                     ? '已检测到公网 IPv6，预设会同时填充 2 个 IPv4 和 2 个 IPv6 地址。'
                     : '未检测到公网 IPv6，预设仅填充 IPv4 地址。'
-                }}
+                ) }}
               </small>
             </label>
             <label class="field">
-              <span>DNS 服务器</span>
+              <span>{{ phrase('DNS 服务器') }}</span>
               <textarea v-model.trim="actionForm.dns" rows="4" placeholder="1.1.1.1&#10;8.8.8.8"></textarea>
-              <small>每行一个地址，最多 2 个 IPv4 和 2 个 IPv6；由 kejilion.sh 按宿主机 DNS 后端应用。</small>
+              <small>{{ phrase('每行一个地址，最多 2 个 IPv4 和 2 个 IPv6；由 kejilion.sh 按宿主机 DNS 后端应用。') }}</small>
             </label>
           </div>
           <div v-else-if="selectedTool.id === 'timezone'" class="form-stack compact">
             <label class="field">
-              <span>常用城市与时区</span>
+              <span>{{ phrase('常用城市与时区') }}</span>
               <select v-model="actionForm.timezonePreset" @change="applyTimezonePreset">
                 <option v-for="preset in timezonePresets" :key="preset.value" :value="preset.value">
-                  {{ preset.label }}
+                  {{ phrase(preset.label) }}
                 </option>
-                <option :value="customPreset">其他 IANA 时区…</option>
+                <option :value="customPreset">{{ phrase('其他 IANA 时区…') }}</option>
               </select>
-              <small>选择城市后自动使用对应 IANA 时区，夏令时由系统规则处理。</small>
+              <small>{{ phrase('选择城市后自动使用对应 IANA 时区，夏令时由系统规则处理。') }}</small>
             </label>
             <label v-if="actionForm.timezonePreset === customPreset" class="field">
-              <span>自定义 IANA 时区</span>
+              <span>{{ phrase('自定义 IANA 时区') }}</span>
               <input
                 v-model.trim="actionForm.timezone"
                 maxlength="128"
                 autocomplete="off"
-                placeholder="例如 Europe/Amsterdam"
+                :placeholder="phrase('例如 Europe/Amsterdam')"
               />
-              <small>必须是服务器 `/usr/share/zoneinfo` 中存在的时区名称。</small>
+              <small>{{ phrase('必须是服务器 `/usr/share/zoneinfo` 中存在的时区名称。') }}</small>
             </label>
           </div>
           <div v-else-if="selectedTool.id === 'swap'" class="form-stack compact">
             <label class="field">
-              <span>虚拟内存方案</span>
+              <span>{{ phrase('虚拟内存方案') }}</span>
               <select v-model="actionForm.swapPreset" @change="applySwapPreset">
-                <option value="1024">1 GiB（kejilion.sh 默认）</option>
+                <option value="1024">{{ phrase('1 GiB（kejilion.sh 默认）') }}</option>
                 <option value="2048">2 GiB</option>
                 <option value="4096">4 GiB</option>
-                <option value="custom">自定义大小…</option>
-                <option value="0">停用 /swapfile</option>
+                <option value="custom">{{ phrase('自定义大小…') }}</option>
+                <option value="0">{{ phrase('停用 /swapfile') }}</option>
               </select>
-              <small>直接创建或调整 `/swapfile`，脚本端和 Web 端会读取同一份产物。</small>
+              <small>{{ phrase('直接创建或调整 `/swapfile`，脚本端和 Web 端会读取同一份产物。') }}</small>
             </label>
             <label v-if="actionForm.swapPreset === 'custom'" class="field">
-              <span>自定义大小（MiB）</span>
+              <span>{{ phrase('自定义大小（MiB）') }}</span>
               <input
                 v-model.number="actionForm.swapSizeMiB"
                 type="number"
@@ -1660,18 +1660,17 @@ onBeforeUnmount(() => {
                 step="1"
                 inputmode="numeric"
               />
-              <small>允许任意正整数 MiB；按 kejilion.sh 直接调整 `/swapfile`，底层命令失败时恢复原状态。</small>
+              <small>{{ phrase('允许任意正整数 MiB；按 kejilion.sh 直接调整 `/swapfile`，底层命令失败时恢复原状态。') }}</small>
             </label>
             <div
               v-if="data?.management.swap.legacyExists || data?.management.swap.legacyActive"
               class="inline-alert inline-alert--warning"
             >
-              检测到旧版 KPanel Swap。执行后会移除旧文件，并由所选大小的 `/swapfile`
-              替代，不会把两者容量相加，也不会改动其他 Swap。
+              {{ phrase('检测到旧版 KPanel Swap。执行后会移除旧文件，并由所选大小的 `/swapfile` 替代，不会把两者容量相加，也不会改动其他 Swap。') }}
             </div>
           </div>
           <fieldset v-else-if="selectedTool.id === 'mirror'" class="mirror-route-field">
-            <legend>选择更新源区域</legend>
+            <legend>{{ phrase('选择更新源区域') }}</legend>
             <div class="mirror-route-grid">
               <label
                 v-for="preset in mirrorPresets"
@@ -1681,56 +1680,54 @@ onBeforeUnmount(() => {
               >
                 <input v-model="actionForm.mirrorPreset" type="radio" :value="preset.value" />
                 <span class="mirror-route-card__body">
-                  <strong>{{ preset.title }}</strong>
-                  <small>{{ preset.route }}</small>
-                  <p>{{ preset.description }}</p>
+                   <strong>{{ phrase(preset.title) }}</strong>
+                   <small>{{ phrase(preset.route) }}</small>
+                   <p>{{ phrase(preset.description) }}</p>
                 </span>
                 <span class="mirror-route-card__check" aria-hidden="true"></span>
               </label>
             </div>
             <small class="mirror-route-field__note">
-              只修改已识别的 Debian / Ubuntu 发行版源；Docker、NodeSource 等第三方源保持不变。
-              执行过程不升级软件、不清缓存。
+              {{ phrase('只修改已识别的 Debian / Ubuntu 发行版源；Docker、NodeSource 等第三方源保持不变。执行过程不升级软件、不清缓存。') }}
             </small>
           </fieldset>
           <label v-else-if="selectedTool.id === 'ip-preference'" class="field">
-            <span>地址选择优先级</span>
+            <span>{{ phrase('地址选择优先级') }}</span>
             <select v-model="actionForm.preference">
-              <option value="ipv4">IPv4 优先</option>
-              <option value="system_default">系统默认（通常 IPv6 优先）</option>
+              <option value="ipv4">{{ phrase('IPv4 优先') }}</option>
+              <option value="system_default">{{ phrase('系统默认（通常 IPv6 优先）') }}</option>
             </select>
           </label>
           <label v-else-if="selectedTool.id === 'kernel'" class="field">
-            <span>Kejilion 内核调优模式</span>
+            <span>{{ phrase('Kejilion 内核调优模式') }}</span>
             <select v-model="actionForm.profile">
-              <option value="high">高性能优化：激进内存与网络参数</option>
-              <option value="balanced">均衡优化</option>
-              <option value="web">网站优化：超高并发连接队列</option>
-              <option value="stream">直播优化：大 UDP 缓冲区</option>
-              <option value="game">游戏服优化：低延迟优先</option>
-              <option value="off">还原默认设置</option>
+              <option value="high">{{ phrase('高性能优化：激进内存与网络参数') }}</option>
+              <option value="balanced">{{ phrase('均衡优化') }}</option>
+              <option value="web">{{ phrase('网站优化：超高并发连接队列') }}</option>
+              <option value="stream">{{ phrase('直播优化：大 UDP 缓冲区') }}</option>
+              <option value="game">{{ phrase('游戏服优化：低延迟优先') }}</option>
+              <option value="off">{{ phrase('还原默认设置') }}</option>
             </select>
             <small>
-              与 kejilion.sh 共用 `/etc/sysctl.d/99-kejilion-optimize.conf`，并根据服务器内存自动调整。
-              在线测速型“自动调优”仍请在脚本中执行，Web 不下载或执行远程 Shell。
+              {{ phrase('与 kejilion.sh 共用 `/etc/sysctl.d/99-kejilion-optimize.conf`，并根据服务器内存自动调整。在线测速型“自动调优”仍请在脚本中执行，Web 不下载或执行远程 Shell。') }}
             </small>
           </label>
           <label v-else-if="selectedTool.id === 'bbr'" class="field">
-            <span>目标状态</span>
+            <span>{{ phrase('目标状态') }}</span>
             <select v-model="actionForm.bbrEnabled">
-              <option :value="true">启用 BBR + fq</option>
-              <option :value="false">停用并恢复 cubic + fq_codel</option>
+              <option :value="true">{{ phrase('启用 BBR + fq') }}</option>
+              <option :value="false">{{ phrase('停用并恢复 cubic + fq_codel') }}</option>
             </select>
           </label>
           <label v-else-if="selectedTool.id === 'bbrv3'" class="field">
-            <span>BBRv3 操作</span>
+            <span>{{ phrase('BBRv3 操作') }}</span>
             <select v-model="actionForm.bbrv3Policy">
-              <option v-if="!data?.management.bbrv3.installed" value="install">安装 XanMod BBRv3 内核</option>
-              <option v-if="data?.management.bbrv3.installed" value="update">更新 XanMod BBRv3 内核</option>
-              <option v-if="data?.management.bbrv3.installed" value="uninstall">卸载 XanMod BBRv3 内核</option>
+              <option v-if="!data?.management.bbrv3.installed" value="install">{{ phrase('安装 XanMod BBRv3 内核') }}</option>
+              <option v-if="data?.management.bbrv3.installed" value="update">{{ phrase('更新 XanMod BBRv3 内核') }}</option>
+              <option v-if="data?.management.bbrv3.installed" value="uninstall">{{ phrase('卸载 XanMod BBRv3 内核') }}</option>
             </select>
             <small>
-              安装、更新或卸载内核后需要重启才能完成切换；KPanel 只提交后台任务，不会自动重启。
+              {{ phrase('安装、更新或卸载内核后需要重启才能完成切换；KPanel 只提交后台任务，不会自动重启。') }}
             </small>
           </label>
           <label v-else-if="selectedTool.id === 'system-update'" class="field">
@@ -1741,19 +1738,19 @@ onBeforeUnmount(() => {
             <small>{{ phrase('可能更新内核并重启部分系统服务，但不会自动重启服务器。') }}</small>
           </label>
           <label v-else-if="selectedTool.id === 'system-cleanup'" class="field">
-            <span>清理范围</span>
+            <span>{{ phrase('清理范围') }}</span>
             <select v-model="actionForm.maintenancePolicy">
-              <option value="cache">仅清理软件包缓存</option>
-              <option value="standard">标准清理：无用依赖、缓存和旧日志</option>
+              <option value="cache">{{ phrase('仅清理软件包缓存') }}</option>
+              <option value="standard">{{ phrase('标准清理：无用依赖、缓存和旧日志') }}</option>
             </select>
-            <small>不会清理 Docker、网站文件、数据库、`/tmp` 或 KPanel 配置备份。</small>
+            <small>{{ phrase('不会清理 Docker、网站文件、数据库、`/tmp` 或 KPanel 配置备份。') }}</small>
           </label>
           <div v-else-if="selectedTool.id === 'system-reboot'" class="form-stack compact">
             <div class="inline-alert inline-alert--danger">
               <CircleAlert :size="17" />
-              <span>重启会立即中断 SSH、网站请求和面板连接。请先确认没有正在执行的业务任务。</span>
+              <span>{{ phrase('重启会立即中断 SSH、网站请求和面板连接。请先确认没有正在执行的业务任务。') }}</span>
             </div>
-            <small>执行时间固定，不能从 Web 传入任意命令或延迟参数。</small>
+            <small>{{ phrase('执行时间固定，不能从 Web 传入任意命令或延迟参数。') }}</small>
           </div>
 
         </div>

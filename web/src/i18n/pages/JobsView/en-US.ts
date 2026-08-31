@@ -26,4 +26,9 @@ export default [
   ["自动核对", "Automatic state check"],
   ['进行中', 'In progress'],
   ['异常', 'Issues'],
+  ['任务失败', 'Task failed'],
+  ['任务详情', 'Task details'],
+  ['执行阶段', 'Execution stages'],
+  ['任务 {0}', 'Task {0}'],
+  ['进度 {0}%', 'Progress {0}%'],
 ] as const satisfies PhraseCatalog

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/ProcessManagerView/en-US').then((module) => module.default)
   : import('@/i18n/pages/ProcessManagerView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import {
   Activity,
   ArrowDown,
@@ -394,20 +399,20 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(pendingProcess)"
-      :title="pendingSignal === 'kill' ? labels.forceTitle : '结束进程'"
+      :title="phrase(pendingSignal === 'kill' ? labels.forceTitle : '结束进程')"
       :description="pendingProcess ? `${pendingProcess.name} · PID ${pendingProcess.pid}` : ''"
       size="small"
       @close="!actionRunning && (pendingProcess = undefined)"
     >
       <div class="process-confirm">
         <span :class="pendingSignal === 'kill' ? 'process-confirm__danger' : ''"><Skull v-if="pendingSignal === 'kill'" :size="22" /><CircleStop v-else :size="22" /></span>
-        <p v-if="pendingSignal === 'kill'">SIGKILL 不允许进程清理资源，可能造成未保存数据丢失。</p>
-        <p v-else>将发送 SIGTERM，让进程有机会保存状态并正常退出。</p>
+        <p v-if="pendingSignal === 'kill'">{{ phrase('SIGKILL 不允许进程清理资源，可能造成未保存数据丢失。') }}</p>
+        <p v-else>{{ phrase('将发送 SIGTERM，让进程有机会保存状态并正常退出。') }}</p>
       </div>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="actionRunning" @click="pendingProcess = undefined">取消</button>
+        <button class="button button--secondary" type="button" :disabled="actionRunning" @click="pendingProcess = undefined">{{ phrase('取消') }}</button>
         <button class="button button--danger" type="button" :disabled="actionRunning" @click="sendSignal">
-          {{ actionRunning ? labels.sending : labels.confirm }}
+          {{ phrase(actionRunning ? labels.sending : labels.confirm) }}
         </button>
       </template>
     </ModalDialog>

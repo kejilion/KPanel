@@ -4,7 +4,7 @@ import { KeyRound, RefreshCw, ShieldCheck, UserPlus, Users } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
 import type { AccountManagementActionInput, AccountManagementSnapshot, SystemAccount } from '@/types/api'
@@ -38,6 +38,11 @@ const migrationCredential = ref<'password' | 'key'>('key')
 const migrationSecret = ref('')
 let controller: AbortController | undefined
 
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
+
 function validSecretFrame(value: string, minimum: number, maximum: number): boolean {
   if (value.includes('\n') || value.includes('\r') || value.includes('\0')) return false
   const bytes = new TextEncoder().encode(value).length
@@ -67,15 +72,15 @@ const migrationValid = computed(() => {
 })
 
 function roleLabel(role: SystemAccount['role']): string {
-  return ({ root: 'Root', standard: '普通账户', administrator: '管理员', 'passwordless-admin': '免密管理员' } as const)[role]
+  return phrase(({ root: 'Root', standard: '普通账户', administrator: '管理员', 'passwordless-admin': '免密管理员' } as const)[role])
 }
 
 function passwordLabel(status: SystemAccount['passwordStatus']): string {
-  return ({ enabled: '密码可用', locked: '密码已锁定', unset: '未设置密码', unknown: '状态未知' } as const)[status]
+  return phrase(({ enabled: '密码可用', locked: '密码已锁定', unset: '未设置密码', unknown: '状态未知' } as const)[status])
 }
 
 function rootLoginLabel(value: AccountManagementSnapshot['sshPolicy']['rootLogin']): string {
-  return ({ enabled: '密码或密钥', 'key-only': '仅密钥', disabled: '禁止登录', custom: '自定义配置' } as const)[value]
+  return phrase(({ enabled: '密码或密钥', 'key-only': '仅密钥', disabled: '禁止登录', custom: '自定义配置' } as const)[value])
 }
 
 async function load(silent = false): Promise<void> {
@@ -225,76 +230,76 @@ onBeforeUnmount(() => controller?.abort())
 <template>
   <ModalDialog
     :open="open"
-    title="账户管理"
-    description="管理 Linux 账户、登录凭据和 SSH 登录策略，所有写入由 kejilion.sh 完成。"
+    :title="phrase('账户管理')"
+    :description="phrase('管理 Linux 账户、登录凭据和 SSH 登录策略，所有写入由 kejilion.sh 完成。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="account-manager">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的账户管理适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的账户管理适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="6" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="account-manager__summary">
-          <span><Users :size="16" /> {{ snapshot.total }} 个系统账户</span>
-          <span>密码登录：{{ snapshot.sshPolicy.passwordAuthentication ? '允许' : '关闭' }}</span>
-          <span>Root：{{ rootLoginLabel(snapshot.sshPolicy.rootLogin) }}</span>
-          <button class="icon-button" type="button" :disabled="refreshing || running" title="刷新账户" aria-label="刷新账户" @click="load(true)">
+          <span><Users :size="16" /> {{ phrase(`${snapshot.total} 个系统账户`) }}</span>
+          <span>{{ phrase(`密码登录：${phrase(snapshot.sshPolicy.passwordAuthentication ? '允许' : '关闭')}`) }}</span>
+          <span>{{ phrase(`Root：${rootLoginLabel(snapshot.sshPolicy.rootLogin)}`) }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing || running" :title="phrase('刷新账户')" :aria-label="phrase('刷新账户')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
 
-        <nav class="account-manager__tabs" aria-label="账户管理区域">
-          <button type="button" :class="{ 'is-active': activeTab === 'accounts' }" @click="activeTab = 'accounts'">账户</button>
-          <button type="button" :class="{ 'is-active': activeTab === 'ssh' }" @click="activeTab = 'ssh'">SSH 登录策略</button>
-          <button type="button" :class="{ 'is-active': activeTab === 'migration' }" @click="activeTab = 'migration'">禁用 Root 向导</button>
+        <nav class="account-manager__tabs" :aria-label="phrase('账户管理区域')">
+          <button type="button" :class="{ 'is-active': activeTab === 'accounts' }" @click="activeTab = 'accounts'">{{ phrase('账户') }}</button>
+          <button type="button" :class="{ 'is-active': activeTab === 'ssh' }" @click="activeTab = 'ssh'">{{ phrase('SSH 登录策略') }}</button>
+          <button type="button" :class="{ 'is-active': activeTab === 'migration' }" @click="activeTab = 'migration'">{{ phrase('禁用 Root 向导') }}</button>
         </nav>
 
-        <div v-if="!writable" class="inline-alert inline-alert--warning">当前 Agent 仅支持查看，账户写入适配器未就绪。</div>
+        <div v-if="!writable" class="inline-alert inline-alert--warning">{{ phrase('当前 Agent 仅支持查看，账户写入适配器未就绪。') }}</div>
 
         <section v-if="activeTab === 'accounts'" class="account-manager__section">
           <div class="account-manager__toolbar">
-            <input v-model="search" type="search" placeholder="搜索用户名、主目录或用户组" />
-            <label class="account-manager__check"><input v-model="showSystem" type="checkbox" /> 显示系统账户</label>
+            <input v-model="search" type="search" :placeholder="phrase('搜索用户名、主目录或用户组')" />
+            <label class="account-manager__check"><input v-model="showSystem" type="checkbox" /> {{ phrase('显示系统账户') }}</label>
             <button class="button button--primary button--small" type="button" :disabled="!writable || running" @click="showCreate = !showCreate">
-              <UserPlus :size="16" /> 创建账户
+              <UserPlus :size="16" /> {{ phrase('创建账户') }}
             </button>
           </div>
 
           <form v-if="showCreate" class="account-manager__form" @submit.prevent="createAccount">
-            <h3>创建新账户</h3>
-            <label class="field"><span>用户名</span><input v-model.trim="createUsername" maxlength="32" autocomplete="off" placeholder="operator" /></label>
-            <label class="field"><span>账户角色</span><select v-model="createRole"><option value="standard">普通账户</option><option value="administrator">管理员（sudo 需要密码）</option><option value="passwordless-admin">免密管理员（NOPASSWD sudo）</option></select></label>
-            <label class="field"><span>初始凭据</span><select v-model="createCredential"><option value="password">账户密码</option><option value="key">SSH 公钥</option></select></label>
-            <label class="field account-manager__secret"><span>{{ createCredential === 'password' ? '初始密码' : 'SSH 公钥' }}</span><textarea v-if="createCredential === 'key'" v-model="createSecret" rows="3" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea><input v-else v-model="createSecret" type="password" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" /></label>
-            <small v-if="createCredential === 'key'">密钥账户的系统密码会保持锁定；如需 sudo，请选择免密管理员。</small>
-            <div class="account-manager__actions"><button class="button button--secondary" type="button" @click="showCreate = false; createSecret = ''">取消</button><button class="button button--primary" type="submit" :disabled="!createValid || running">创建并验证</button></div>
+            <h3>{{ phrase('创建新账户') }}</h3>
+            <label class="field"><span>{{ phrase('用户名') }}</span><input v-model.trim="createUsername" maxlength="32" autocomplete="off" placeholder="operator" /></label>
+            <label class="field"><span>{{ phrase('账户角色') }}</span><select v-model="createRole"><option value="standard">{{ phrase('普通账户') }}</option><option value="administrator">{{ phrase('管理员（sudo 需要密码）') }}</option><option value="passwordless-admin">{{ phrase('免密管理员（NOPASSWD sudo）') }}</option></select></label>
+            <label class="field"><span>{{ phrase('初始凭据') }}</span><select v-model="createCredential"><option value="password">{{ phrase('账户密码') }}</option><option value="key">{{ phrase('SSH 公钥') }}</option></select></label>
+            <label class="field account-manager__secret"><span>{{ phrase(createCredential === 'password' ? '初始密码' : 'SSH 公钥') }}</span><textarea v-if="createCredential === 'key'" v-model="createSecret" rows="3" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea><input v-else v-model="createSecret" type="password" maxlength="256" autocomplete="new-password" :placeholder="phrase('至少 8 个字符')" /></label>
+            <small v-if="createCredential === 'key'">{{ phrase('密钥账户的系统密码会保持锁定；如需 sudo，请选择免密管理员。') }}</small>
+            <div class="account-manager__actions"><button class="button button--secondary" type="button" @click="showCreate = false; createSecret = ''">{{ phrase('取消') }}</button><button class="button button--primary" type="submit" :disabled="!createValid || running">{{ phrase('创建并验证') }}</button></div>
           </form>
 
-          <div v-if="snapshot.truncated" class="inline-alert inline-alert--warning">账户数量超过显示上限，仅展示前 256 个账户。</div>
+          <div v-if="snapshot.truncated" class="inline-alert inline-alert--warning">{{ phrase('账户数量超过显示上限，仅展示前 256 个账户。') }}</div>
           <div class="account-list">
             <article v-for="account in visibleAccounts" :key="account.username" class="account-card">
               <header>
                 <span class="account-card__identity"><strong>{{ account.username }}</strong><small>UID {{ account.uid }} · {{ account.home }}</small></span>
-                <span class="account-card__badges"><span>{{ roleLabel(account.role) }}</span><span>{{ passwordLabel(account.passwordStatus) }}</span><span>{{ account.sshKeys.length }} 把密钥</span></span>
+                <span class="account-card__badges"><span>{{ roleLabel(account.role) }}</span><span>{{ passwordLabel(account.passwordStatus) }}</span><span>{{ phrase(`${account.sshKeys.length} 把密钥`) }}</span></span>
               </header>
               <p>{{ account.shell }}<template v-if="account.groups.length"> · {{ account.groups.join(', ') }}</template></p>
               <div class="account-card__buttons">
-                <button type="button" :disabled="!writable || running" @click="startAccountAction(account, 'password')">修改密码</button>
-                <button type="button" :disabled="!writable || running" @click="startAccountAction(account, 'key')">添加公钥</button>
-                <button v-if="account.username !== 'root'" type="button" :disabled="!writable || running" @click="startAccountAction(account, 'role')">调整角色</button>
-                <button v-if="account.username !== 'root'" class="is-danger" type="button" :disabled="!writable || running" @click="deleteAccount(account)">删除账户</button>
+                <button type="button" :disabled="!writable || running" @click="startAccountAction(account, 'password')">{{ phrase('修改密码') }}</button>
+                <button type="button" :disabled="!writable || running" @click="startAccountAction(account, 'key')">{{ phrase('添加公钥') }}</button>
+                <button v-if="account.username !== 'root'" type="button" :disabled="!writable || running" @click="startAccountAction(account, 'role')">{{ phrase('调整角色') }}</button>
+                <button v-if="account.username !== 'root'" class="is-danger" type="button" :disabled="!writable || running" @click="deleteAccount(account)">{{ phrase('删除账户') }}</button>
               </div>
               <ul v-if="account.sshKeys.length" class="account-card__keys">
-                <li v-for="key in account.sshKeys" :key="key.id"><span><KeyRound :size="14" /> {{ key.type }} · {{ key.fingerprint }}<small v-if="key.comment">{{ key.comment }}</small></span><button type="button" :disabled="!writable || running" @click="deleteKey(account, key.id)">删除</button></li>
+                <li v-for="key in account.sshKeys" :key="key.id"><span><KeyRound :size="14" /> {{ key.type }} · {{ key.fingerprint }}<small v-if="key.comment">{{ key.comment }}</small></span><button type="button" :disabled="!writable || running" @click="deleteKey(account, key.id)">{{ phrase('删除') }}</button></li>
               </ul>
               <form v-if="editingUsername === account.username && editingAction" class="account-card__editor" @submit.prevent="applyAccountAction">
-                <label v-if="editingAction === 'password'" class="field"><span>新密码</span><input v-model="editingSecret" type="password" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" /></label>
-                <label v-else-if="editingAction === 'key'" class="field"><span>SSH 公钥</span><textarea v-model="editingSecret" rows="3" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea></label>
-                <label v-else class="field"><span>账户角色</span><select v-model="editingRole"><option value="standard">普通账户</option><option value="administrator">管理员（sudo 需要密码）</option><option value="passwordless-admin">免密管理员</option></select></label>
-                <div class="account-manager__actions"><button class="button button--secondary button--small" type="button" @click="editingAction = ''; editingSecret = ''">取消</button><button class="button button--primary button--small" type="submit" :disabled="running">保存</button></div>
+                <label v-if="editingAction === 'password'" class="field"><span>{{ phrase('新密码') }}</span><input v-model="editingSecret" type="password" maxlength="256" autocomplete="new-password" :placeholder="phrase('至少 8 个字符')" /></label>
+                <label v-else-if="editingAction === 'key'" class="field"><span>{{ phrase('SSH 公钥') }}</span><textarea v-model="editingSecret" rows="3" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea></label>
+                <label v-else class="field"><span>{{ phrase('账户角色') }}</span><select v-model="editingRole"><option value="standard">{{ phrase('普通账户') }}</option><option value="administrator">{{ phrase('管理员（sudo 需要密码）') }}</option><option value="passwordless-admin">{{ phrase('免密管理员') }}</option></select></label>
+                <div class="account-manager__actions"><button class="button button--secondary button--small" type="button" @click="editingAction = ''; editingSecret = ''">{{ phrase('取消') }}</button><button class="button button--primary button--small" type="submit" :disabled="running">{{ phrase('保存') }}</button></div>
               </form>
             </article>
           </div>
@@ -302,26 +307,26 @@ onBeforeUnmount(() => controller?.abort())
 
         <section v-else-if="activeTab === 'ssh'" class="account-manager__section">
           <div class="account-policy-grid">
-            <button type="button" :class="{ 'is-selected': !passwordAuthentication && rootLogin === 'key-only' }" @click="choosePolicy('key')"><KeyRound :size="20" /><strong>密钥登录模式</strong><small>关闭全局密码认证；Root 仅允许密钥。推荐用于公网服务器。</small></button>
-            <button type="button" :class="{ 'is-selected': passwordAuthentication && rootLogin === 'enabled' }" @click="choosePolicy('password')"><Users :size="20" /><strong>密码兼容模式</strong><small>密码和密钥都可用；Root 也允许密码登录。</small></button>
+            <button type="button" :class="{ 'is-selected': !passwordAuthentication && rootLogin === 'key-only' }" @click="choosePolicy('key')"><KeyRound :size="20" /><strong>{{ phrase('密钥登录模式') }}</strong><small>{{ phrase('关闭全局密码认证；Root 仅允许密钥。推荐用于公网服务器。') }}</small></button>
+            <button type="button" :class="{ 'is-selected': passwordAuthentication && rootLogin === 'enabled' }" @click="choosePolicy('password')"><Users :size="20" /><strong>{{ phrase('密码兼容模式') }}</strong><small>{{ phrase('密码和密钥都可用；Root 也允许密码登录。') }}</small></button>
           </div>
           <div class="account-manager__form">
-            <label class="field"><span>普通账户密码登录</span><select v-model="passwordAuthentication"><option :value="false">关闭，只允许 SSH 公钥</option><option :value="true">允许密码和 SSH 公钥</option></select></label>
-            <label class="field"><span>Root SSH 登录</span><select v-model="rootLogin"><option value="disabled">禁止 Root 登录</option><option value="key-only">Root 仅密钥登录</option><option value="enabled">Root 密码或密钥登录</option></select></label>
-            <div class="inline-alert inline-alert--info">策略通过独立 sshd 配置片段应用，先执行 <code>sshd -t</code>，验证失败会恢复原配置。</div>
-            <div class="account-manager__actions"><button class="button button--primary" type="button" :disabled="!writable || running" @click="applyPolicy"><ShieldCheck :size="16" /> 应用登录策略</button><button class="button button--danger" type="button" :disabled="!writable || running" @click="disableRoot">锁定并禁用 Root</button></div>
+            <label class="field"><span>{{ phrase('普通账户密码登录') }}</span><select v-model="passwordAuthentication"><option :value="false">{{ phrase('关闭，只允许 SSH 公钥') }}</option><option :value="true">{{ phrase('允许密码和 SSH 公钥') }}</option></select></label>
+            <label class="field"><span>{{ phrase('Root SSH 登录') }}</span><select v-model="rootLogin"><option value="disabled">{{ phrase('禁止 Root 登录') }}</option><option value="key-only">{{ phrase('Root 仅密钥登录') }}</option><option value="enabled">{{ phrase('Root 密码或密钥登录') }}</option></select></label>
+            <div class="inline-alert inline-alert--info">{{ phrase('策略通过独立 sshd 配置片段应用，先执行') }} <code>sshd -t</code>{{ phrase('，验证失败会恢复原配置。') }}</div>
+            <div class="account-manager__actions"><button class="button button--primary" type="button" :disabled="!writable || running" @click="applyPolicy"><ShieldCheck :size="16" /> {{ phrase('应用登录策略') }}</button><button class="button button--danger" type="button" :disabled="!writable || running" @click="disableRoot">{{ phrase('锁定并禁用 Root') }}</button></div>
           </div>
         </section>
 
         <section v-else class="account-manager__section">
-          <div class="inline-alert inline-alert--warning">该向导会先创建可登录管理员，再锁定 Root 密码并禁止 Root SSH 登录；任何一步失败都会尝试恢复账户数据库和 SSH 配置。</div>
+          <div class="inline-alert inline-alert--warning">{{ phrase('该向导会先创建可登录管理员，再锁定 Root 密码并禁止 Root SSH 登录；任何一步失败都会尝试恢复账户数据库和 SSH 配置。') }}</div>
           <form class="account-manager__form" @submit.prevent="migrateRoot">
-            <h3>创建替代管理员并禁用 Root</h3>
-            <label class="field"><span>新管理员用户名</span><input v-model.trim="migrationUsername" maxlength="32" autocomplete="off" placeholder="operator" /></label>
-            <label class="field"><span>登录凭据</span><select v-model="migrationCredential"><option value="key">SSH 公钥（推荐，自动使用免密 sudo）</option><option value="password">账户密码（sudo 需要密码）</option></select></label>
-            <label class="field account-manager__secret"><span>{{ migrationCredential === 'key' ? 'SSH 公钥' : '账户密码' }}</span><textarea v-if="migrationCredential === 'key'" v-model="migrationSecret" rows="4" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea><input v-else v-model="migrationSecret" type="password" maxlength="256" autocomplete="new-password" placeholder="至少 8 个字符" /></label>
-            <small>密钥模式会同时关闭全局密码认证；密码模式会保留普通账户密码认证，但 Root 仍被禁用。</small>
-            <div class="account-manager__actions"><button class="button button--danger" type="submit" :disabled="!writable || running || !migrationValid">创建管理员并禁用 Root</button></div>
+            <h3>{{ phrase('创建替代管理员并禁用 Root') }}</h3>
+            <label class="field"><span>{{ phrase('新管理员用户名') }}</span><input v-model.trim="migrationUsername" maxlength="32" autocomplete="off" placeholder="operator" /></label>
+            <label class="field"><span>{{ phrase('登录凭据') }}</span><select v-model="migrationCredential"><option value="key">{{ phrase('SSH 公钥（推荐，自动使用免密 sudo）') }}</option><option value="password">{{ phrase('账户密码（sudo 需要密码）') }}</option></select></label>
+            <label class="field account-manager__secret"><span>{{ phrase(migrationCredential === 'key' ? 'SSH 公钥' : '账户密码') }}</span><textarea v-if="migrationCredential === 'key'" v-model="migrationSecret" rows="4" maxlength="4096" placeholder="ssh-ed25519 AAAA... laptop"></textarea><input v-else v-model="migrationSecret" type="password" maxlength="256" autocomplete="new-password" :placeholder="phrase('至少 8 个字符')" /></label>
+            <small>{{ phrase('密钥模式会同时关闭全局密码认证；密码模式会保留普通账户密码认证，但 Root 仍被禁用。') }}</small>
+            <div class="account-manager__actions"><button class="button button--danger" type="submit" :disabled="!writable || running || !migrationValid">{{ phrase('创建管理员并禁用 Root') }}</button></div>
           </form>
         </section>
       </template>

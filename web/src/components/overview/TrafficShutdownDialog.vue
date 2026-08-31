@@ -4,7 +4,7 @@ import { Power, RefreshCw } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
 import { useToast } from '@/stores/toast'
@@ -25,6 +25,11 @@ const txThresholdGiB = ref(100)
 const resetDay = ref(1)
 let controller: AbortController | undefined
 
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
+
 const formValid = computed(() =>
   Number.isInteger(rxThresholdGiB.value) && rxThresholdGiB.value >= 1 && rxThresholdGiB.value <= 8_388_607 &&
   Number.isInteger(txThresholdGiB.value) && txThresholdGiB.value >= 1 && txThresholdGiB.value <= 8_388_607 &&
@@ -32,7 +37,7 @@ const formValid = computed(() =>
 )
 
 const healthLabel = computed(() => ({
-  ready: '运行正常', disabled: '未启用', inconsistent: '配置不完整',
+  ready: phrase('运行正常'), disabled: phrase('未启用'), inconsistent: phrase('配置不完整'),
 }[snapshot.value?.health || 'disabled']))
 
 async function load(silent = false): Promise<void> {
@@ -94,44 +99,44 @@ onBeforeUnmount(() => controller?.abort())
 <template>
   <ModalDialog
     :open="open"
-    title="限流自动关机"
-    description="按 kejilion.sh 的累计流量目的，在达到接收或发送阈值时关闭服务器。"
+    :title="phrase('限流自动关机')"
+    :description="phrase('按 kejilion.sh 的累计流量目的，在达到接收或发送阈值时关闭服务器。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="system-resource-dialog">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的限流关机适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的限流关机适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="4" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="system-resource-dialog__summary">
           <span>{{ healthLabel }}</span>
-          <span>累计接收 {{ formatBytes(snapshot.rxBytes) }}</span>
-          <span>累计发送 {{ formatBytes(snapshot.txBytes) }}</span>
-          <button class="icon-button" type="button" :disabled="refreshing || running" title="刷新限流关机" aria-label="刷新限流关机" @click="load(true)">
+          <span>{{ phrase('累计接收') }} {{ formatBytes(snapshot.rxBytes) }}</span>
+          <span>{{ phrase('累计发送') }} {{ formatBytes(snapshot.txBytes) }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing || running" :title="phrase('刷新限流关机')" :aria-label="phrase('刷新限流关机')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
         <div v-if="snapshot.health === 'inconsistent'" class="inline-alert inline-alert--warning">
-          检测到脚本或定时任务不完整。重新启用可由 kejilion.sh 修复为托管配置。
+          {{ phrase('检测到脚本或定时任务不完整。重新启用可由 kejilion.sh 修复为托管配置。') }}
         </div>
         <div class="inline-alert inline-alert--warning">
-          流量从本次开机开始累计；达到任一阈值会立即关机。重置日会在当日 01:00 重启服务器，重启后计数归零。
+          {{ phrase('流量从本次开机开始累计；达到任一阈值会立即关机。重置日会在当日 01:00 重启服务器，重启后计数归零。') }}
         </div>
         <div v-if="!writable" class="inline-alert inline-alert--warning">
-          当前 Agent 仅支持查看，写入适配器未就绪。
+          {{ phrase('当前 Agent 仅支持查看，写入适配器未就绪。') }}
         </div>
         <form class="system-resource-form system-resource-form--traffic" @submit.prevent="execute('enable')">
-          <label class="field"><span>接收阈值（GiB）</span><input v-model.number="rxThresholdGiB" type="number" min="1" max="8388607" /></label>
-          <label class="field"><span>发送阈值（GiB）</span><input v-model.number="txThresholdGiB" type="number" min="1" max="8388607" /></label>
-          <label class="field"><span>每月重置日</span><input v-model.number="resetDay" type="number" min="1" max="31" /></label>
+          <label class="field"><span>{{ phrase('接收阈值（GiB）') }}</span><input v-model.number="rxThresholdGiB" type="number" min="1" max="8388607" /></label>
+          <label class="field"><span>{{ phrase('发送阈值（GiB）') }}</span><input v-model.number="txThresholdGiB" type="number" min="1" max="8388607" /></label>
+          <label class="field"><span>{{ phrase('每月重置日') }}</span><input v-model.number="resetDay" type="number" min="1" max="31" /></label>
           <div class="system-resource-form__actions">
             <button class="button button--primary" type="submit" :disabled="!writable || running || !formValid">
-              <Power :size="16" /> {{ running ? '正在应用…' : snapshot.enabled ? '更新配置' : '启用' }}
+              <Power :size="16" /> {{ phrase(running ? '正在应用…' : snapshot.enabled ? '更新配置' : '启用') }}
             </button>
-            <button class="button button--secondary" type="button" :disabled="!writable || running || snapshot.health === 'disabled'" @click="execute('disable')">停用</button>
+            <button class="button button--secondary" type="button" :disabled="!writable || running || snapshot.health === 'disabled'" @click="execute('disable')">{{ phrase('停用') }}</button>
           </div>
         </form>
       </template>

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/EnvironmentView/en-US').then((module) => module.default)
   : import('@/i18n/pages/EnvironmentView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import {
   Archive,
   Box,
@@ -629,8 +634,8 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="terminalOpen"
-      title="LDNMP 后台任务"
-      description="关闭窗口不会停止任务；可在环境页持续查看状态。"
+      :title="phrase('LDNMP 后台任务')"
+      :description="phrase('关闭窗口不会停止任务；可在环境页持续查看状态。')"
       size="large"
       @close="terminalOpen = false"
     >

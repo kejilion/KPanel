@@ -5,7 +5,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
 import type { CronEntry, CronSnapshot } from '@/types/api'
@@ -30,6 +30,11 @@ const expression = ref('')
 const command = ref('')
 const editingLine = ref<number>()
 let controller: AbortController | undefined
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 const canSubmit = computed(() =>
   props.writable && Boolean(snapshot.value?.resourceVersion && expression.value.trim() && command.value.trim()),
@@ -135,63 +140,63 @@ onBeforeUnmount(() => controller?.abort())
 <template>
   <ModalDialog
     :open="open"
-    title="定时任务管理"
-    description="读取并管理 kejilion.sh 兼容的系统定时任务。"
+    :title="phrase('定时任务管理')"
+    :description="phrase('读取并管理 kejilion.sh 兼容的系统定时任务。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="system-resource-dialog">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的定时任务适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的定时任务适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="4" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="system-resource-dialog__summary">
-          <span>共 {{ snapshot.total }} 条定时任务记录</span>
-          <span v-if="snapshot.truncated" class="text-warning">列表已截断</span>
-          <button class="icon-button" type="button" :disabled="refreshing || running" title="刷新定时任务" aria-label="刷新定时任务" @click="load(true)">
+          <span>{{ phrase(`共 ${snapshot.total} 条定时任务记录`) }}</span>
+          <span v-if="snapshot.truncated" class="text-warning">{{ phrase('列表已截断') }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing || running" :title="phrase('刷新定时任务')" :aria-label="phrase('刷新定时任务')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
 
         <div v-if="!writable" class="inline-alert inline-alert--warning">
-          当前 Agent 仅支持查看定时任务，写入适配器未就绪。
+          {{ phrase('当前 Agent 仅支持查看定时任务，写入适配器未就绪。') }}
         </div>
 
         <form class="system-resource-form system-resource-form--cron" @submit.prevent="submit">
           <label class="field">
-            <span>Cron 表达式</span>
-            <input v-model="expression" autocomplete="off" placeholder="例如 0 3 * * *" />
+            <span>{{ phrase('Cron 表达式') }}</span>
+            <input v-model="expression" autocomplete="off" :placeholder="phrase('例如 0 3 * * *')" />
           </label>
           <label class="field system-resource-form__wide">
-            <span>执行命令</span>
-            <input v-model="command" autocomplete="off" placeholder="由 kejilion.sh 兼容适配器校验并写入" />
+            <span>{{ phrase('执行命令') }}</span>
+            <input v-model="command" autocomplete="off" :placeholder="phrase('由 kejilion.sh 兼容适配器校验并写入')" />
           </label>
           <div class="system-resource-form__actions">
             <button v-if="editingLine !== undefined" class="button button--secondary" type="button" :disabled="running" @click="resetForm">
-              <X :size="16" /> 取消编辑
+              <X :size="16" /> {{ phrase('取消编辑') }}
             </button>
             <button class="button button--primary" type="submit" :disabled="!canSubmit || running">
               <Pencil v-if="editingLine !== undefined" :size="16" />
               <Plus v-else :size="16" />
-              {{ editingLine === undefined ? '添加任务' : '保存修改' }}
+              {{ phrase(editingLine === undefined ? '添加任务' : '保存修改') }}
             </button>
           </div>
         </form>
 
-        <EmptyState v-if="!snapshot.entries.length" title="暂无定时任务" description="可在上方添加新的 Cron 任务。" />
+        <EmptyState v-if="!snapshot.entries.length" :title="phrase('暂无定时任务')" :description="phrase('可在上方添加新的 Cron 任务。')" />
         <div v-else class="system-resource-list">
           <article v-for="entry in snapshot.entries" :key="`${entry.line}-${entry.raw}`" class="system-resource-item">
             <div class="system-resource-item__main">
               <strong>{{ entry.expression || entry.kind }}</strong>
               <span>{{ entry.command || entry.raw }}</span>
-              <small>{{ entry.kind }} · 第 {{ entry.line }} 行</small>
+              <small>{{ phrase(`${entry.kind} · 第 ${entry.line} 行`) }}</small>
             </div>
-            <button class="icon-button" type="button" :disabled="!writable || running || !entry.expression || !entry.command" title="编辑定时任务" aria-label="编辑定时任务" @click="editEntry(entry)">
+            <button class="icon-button" type="button" :disabled="!writable || running || !entry.expression || !entry.command" :title="phrase('编辑定时任务')" :aria-label="phrase('编辑定时任务')" @click="editEntry(entry)">
               <Pencil :size="16" />
             </button>
-            <button class="icon-button icon-button--danger" type="button" :disabled="!writable || running" title="删除定时任务" aria-label="删除定时任务" @click="removeEntry(entry)">
+            <button class="icon-button icon-button--danger" type="button" :disabled="!writable || running" :title="phrase('删除定时任务')" :aria-label="phrase('删除定时任务')" @click="removeEntry(entry)">
               <Trash2 :size="16" />
             </button>
           </article>

@@ -183,4 +183,6 @@ export default [
   ['阻止', 'Block'],
   ['已阻止直接访问', 'Direct access blocked'],
   ['允许直接访问', 'Direct access allowed'],
+  ['仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。', 'End only the current interactive task; the app is not deleted. KPanel rereads the container, domain, and access policy state afterward.'],
+  ['结束任务', 'End task'],
 ] as const satisfies PhraseCatalog
