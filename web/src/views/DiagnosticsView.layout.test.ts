@@ -240,14 +240,24 @@ describe('diagnostics workspace layout', () => {
       /\.diagnostic-report-card__data-row > \.diagnostic-report-card__meta\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/,
     )
     expect(diagnosticsSource).toMatch(
+      /\.diagnostic-report-card__data-row > \.diagnostic-report-risk\s*\{[^}]*flex:\s*1 1 auto;[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/,
+    )
+    expect(diagnosticsSource).toMatch(
       /@container diagnostic-result \(max-width: 520px\)[\s\S]*?\.diagnostic-report-card__data-row\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*margin-top:\s*0;/,
     )
   })
 
-  it('does not reserve an empty IP quality metadata row', () => {
-    expect(diagnosticsSource).toContain(
-      "v-if=\"summaryValue('ip', 'is_proxy') || summaryValue('ip', 'usage_type') || summaryValue('ip', 'ip_type') || reportIPQualityDetail()\"",
-    )
+  it('merges IP quality details into one group and omits risk tags', () => {
+    const cardStart = diagnosticsSource.indexOf('<strong>IP 质量</strong>')
+    const cardEnd = diagnosticsSource.indexOf('</article>', cardStart)
+    expect(cardStart).toBeGreaterThanOrEqual(0)
+    expect(cardEnd).toBeGreaterThan(cardStart)
+    const ipQualityCard = diagnosticsSource.slice(cardStart, cardEnd)
+    expect(ipQualityCard.match(/class="diagnostic-report-card__data-row"/g)).toHaveLength(1)
+    expect(ipQualityCard.match(/class="diagnostic-report-risk"/g)).toHaveLength(1)
+    expect(ipQualityCard).not.toContain('diagnostic-report-card__meta')
+    expect(ipQualityCard).not.toContain('risk_tag')
+    expect(diagnosticsSource).not.toContain('reportIPRiskTags')
   })
 
   it('uses the same icon box specification for identity data and metric cards', () => {
@@ -289,14 +299,13 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).toContain('reportIPTypeScore() * 0.1')
     expect(diagnosticsSource).toContain('reportIPProxyScore() * 0.05')
     expect(diagnosticsSource).toContain('reportIPMetadataScore() * 0.05')
-    expect(diagnosticsSource).toContain('reportIPRiskTags()')
     expect(diagnosticsSource).toContain('reportIPAttributeDetails()')
     expect(diagnosticsSource).toContain("'is-native-ip': detail.isNativeIP")
     expect(diagnosticsSource).toMatch(
       /\.diagnostic-report-identity strong\.is-isp\s*\{[^}]*color:\s*var\(--brand-strong\);/,
     )
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-risk \.is-isp,[\s\S]*?\.diagnostic-report-card__meta \.is-native-ip\s*\{[^}]*color:\s*var\(--brand-strong\);/,
+      /\.diagnostic-report-risk \.is-native-ip\s*\{[^}]*color:\s*var\(--brand-strong\);/,
     )
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-low')
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-medium')

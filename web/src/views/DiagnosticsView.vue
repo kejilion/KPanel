@@ -567,15 +567,6 @@ function reportIPType(): string {
   return labels[value.toLowerCase() as keyof typeof labels] || value
 }
 
-function reportIPRiskTags(): Array<{ value: string; isISP: boolean }> {
-  const tag = summaryValue('ip', 'risk_tag') || '未发现风险标签'
-  return tag
-    .split(/\s*·\s*/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => ({ value, isISP: value.toLowerCase() === 'isp' }))
-}
-
 function reportIPAttributeDetails(): Array<{ value: string; isNativeIP: boolean }> {
   const parts: Array<{ value: string; isNativeIP: boolean }> = []
   const ipType = reportIPType()
@@ -1178,24 +1169,15 @@ onBeforeUnmount(() => {
                   <article class="diagnostic-report-card">
                     <header><div class="diagnostic-report-card__heading"><span class="is-ip"><Globe2 :size="17" /></span><div><strong>IP 质量</strong><small>服务器出口风险</small></div></div></header>
                     <div class="diagnostic-report-card__data-row">
-                      <div v-if="summaryValue('ip', 'risk_level') || summaryValue('ip', 'risk_score') || summaryValue('ip', 'risk_tag')" class="diagnostic-report-risk">
+                      <div class="diagnostic-report-risk">
                         <span v-if="summaryValue('ip', 'risk_level')" class="diagnostic-report-risk__level" :class="`is-${reportIPRiskTone()}`">{{ reportIPRiskLevel() }}</span>
                         <span v-if="summaryValue('ip', 'risk_score')" class="diagnostic-report-risk__score"><b>风险分</b>{{ summaryValue('ip', 'risk_score') }}%</span>
-                        <template v-for="(detail, index) in reportIPRiskTags()" :key="`${detail.value}-${index}`">
-                          <span v-if="index || summaryValue('ip', 'risk_level') || summaryValue('ip', 'risk_score')" aria-hidden="true">·</span>
-                          <span :class="{ 'is-isp': detail.isISP }">{{ detail.value }}</span>
-                        </template>
-                      </div>
-                      <strong v-else class="diagnostic-report-card__value diagnostic-report-card__value--text">{{ reportIPQualitySummary() }}</strong>
-                      <div
-                        v-if="summaryValue('ip', 'is_proxy') || summaryValue('ip', 'usage_type') || summaryValue('ip', 'ip_type') || reportIPQualityDetail()"
-                        class="diagnostic-report-card__meta"
-                      >
-                        <span v-if="summaryValue('ip', 'is_proxy') || summaryValue('ip', 'usage_type') || summaryValue('ip', 'ip_type')">
+                        <strong v-if="!summaryValue('ip', 'risk_level') && !summaryValue('ip', 'risk_score')" class="diagnostic-report-card__value diagnostic-report-card__value--text">{{ reportIPQualitySummary() }}</strong>
+                        <template v-if="reportIPAttributeDetails().length">
                           <template v-for="(detail, index) in reportIPAttributeDetails()" :key="`${detail.value}-${index}`">
-                            <span v-if="index" aria-hidden="true"> · </span><span :class="{ 'is-native-ip': detail.isNativeIP }">{{ detail.value }}</span>
+                            <span aria-hidden="true">·</span><span :class="{ 'is-native-ip': detail.isNativeIP }">{{ detail.value }}</span>
                           </template>
-                        </span>
+                        </template>
                         <span v-else-if="reportIPQualityDetail()">{{ reportIPQualityDetail() }}</span>
                       </div>
                     </div>
@@ -3192,9 +3174,7 @@ onBeforeUnmount(() => {
   font-weight: 650;
 }
 
-.diagnostic-report-risk .is-isp,
-.diagnostic-report-card__meta .is-isp,
-.diagnostic-report-card__meta .is-native-ip {
+.diagnostic-report-risk .is-native-ip {
   color: var(--brand-strong);
   font-weight: 750;
 }
@@ -3285,7 +3265,7 @@ onBeforeUnmount(() => {
 }
 
 .diagnostic-report-card__data-row > .diagnostic-report-risk {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   overflow: hidden;
   white-space: nowrap;
@@ -3345,6 +3325,17 @@ onBeforeUnmount(() => {
   margin-top: 11px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.diagnostic-report-risk > .diagnostic-report-card__value {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diagnostic-report-risk__score b {
