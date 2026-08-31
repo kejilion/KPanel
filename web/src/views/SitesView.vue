@@ -509,7 +509,7 @@ function siteTargetLabel(site: Site): string {
 
 function siteTargetValue(site: Site): string {
   if (site.type === 'php' || site.type === 'wordpress') {
-    const runtime = site.upstream === 'php74' ? 'PHP 7.4' : site.upstream === 'php' ? 'PHP 最新版' : ''
+    const runtime = site.upstream === 'php74' ? 'PHP 7.4' : site.upstream === 'php' ? phrase('PHP 最新版') : ''
     return [site.rootPath, runtime].filter(Boolean).join(' · ') || '—'
   }
   return site.upstream || site.rootPath || '—'
@@ -1115,23 +1115,23 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="webTerminalOpen"
-      title="网站终端管理"
-      description="正在运行 kejilion.sh 的 k web 原生菜单；请按终端提示输入。"
+      :title="phrase('网站终端管理')"
+      :description="phrase('正在运行 kejilion.sh 的 k web 原生菜单；请按终端提示输入。')"
       size="wide"
       allow-fullscreen
       @close="closeWebTerminal"
     >
       <div class="site-management-terminal">
         <div v-if="webTerminalOpening" class="site-management-terminal__state" role="status">
-          <LoaderCircle class="spin" :size="22" /> 正在启动 k web…
+          <LoaderCircle class="spin" :size="22" /> {{ phrase('正在启动 k web…') }}
         </div>
         <div v-else-if="webTerminalError" class="inline-alert inline-alert--danger" role="alert">
-          {{ webTerminalError }}
+          {{ phrase(webTerminalError) }}
         </div>
         <HostTerminal
           v-else-if="webTerminalSession"
           :session-id="webTerminalSession.sessionId"
-          host-name="本机网站管理"
+          :host-name="phrase('本机网站管理')"
           :initial-offset="webTerminalSession.offset"
         />
       </div>
@@ -1139,8 +1139,8 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(selectedSite)"
-      :title="selectedSite?.primaryDomain || '网站详情'"
-      description="以下信息来自最近一次服务器状态核对。"
+      :title="selectedSite?.primaryDomain || phrase('网站详情')"
+      :description="phrase('以下信息来自最近一次服务器状态核对。')"
       size="large"
       @close="selectedSite = undefined"
     >
@@ -1153,44 +1153,44 @@ onBeforeUnmount(() => {
 
         <dl class="detail-list detail-list--grid">
           <div>
-            <dt>类型</dt>
-            <dd>{{ typeLabel(selectedSite.type) }}</dd>
+            <dt>{{ phrase('类型') }}</dt>
+            <dd>{{ phrase(typeLabel(selectedSite.type)) }}</dd>
           </div>
           <div>
-            <dt>来源</dt>
-            <dd>{{ sourceLabel(selectedSite.source) }}</dd>
+            <dt>{{ phrase('来源') }}</dt>
+            <dd>{{ phrase(sourceLabel(selectedSite.source)) }}</dd>
           </div>
           <div>
-            <dt>资源版本</dt>
+            <dt>{{ phrase('资源版本') }}</dt>
             <dd><code>{{ shortId(selectedSite.resourceVersion, 20) }}</code></dd>
           </div>
           <div>
-            <dt>最后核对</dt>
+            <dt>{{ phrase('最后核对') }}</dt>
             <dd>{{ formatDateTime(selectedSite.observedAt) }}</dd>
           </div>
           <div class="detail-list__wide">
-            <dt>{{ siteTargetLabel(selectedSite) }}</dt>
+            <dt>{{ phrase(siteTargetLabel(selectedSite)) }}</dt>
             <dd><code>{{ siteTargetValue(selectedSite) }}</code></dd>
           </div>
           <div class="detail-list__wide">
-            <dt>绑定域名</dt>
+            <dt>{{ phrase('绑定域名') }}</dt>
             <dd>{{ selectedSite.domains.join('、') }}</dd>
           </div>
         </dl>
 
         <section class="detail-section">
-          <h3><KeyRound :size="17" /> TLS 证书</h3>
+          <h3><KeyRound :size="17" /> TLS {{ phrase('证书') }}</h3>
           <div class="detail-section__line">
             <StatusBadge :status="selectedSite.certificate?.status || 'unknown'" />
             <span v-if="selectedSite.certificate?.expiresAt">
-              到期时间 {{ formatDateTime(selectedSite.certificate.expiresAt) }}
+              {{ phrase('到期时间') }} {{ formatDateTime(selectedSite.certificate.expiresAt) }}
             </span>
-            <span v-else>未发现可用证书到期信息</span>
+            <span v-else>{{ phrase('未发现可用证书到期信息') }}</span>
           </div>
         </section>
 
         <section v-if="selectedSite.artifacts?.length" class="detail-section">
-          <h3><FileCode2 :size="17" /> 实际配置与文件</h3>
+          <h3><FileCode2 :size="17" /> {{ phrase('实际配置与文件') }}</h3>
           <ul class="artifact-list">
             <li v-for="artifact in selectedSite.artifacts" :key="`${artifact.kind}-${artifact.path}`">
               <Braces :size="15" />
@@ -1213,28 +1213,28 @@ onBeforeUnmount(() => {
           target="_blank"
           rel="noopener noreferrer"
         >
-          <ExternalLink :size="16" /> 访问网站
+          <ExternalLink :size="16" /> {{ phrase('访问网站') }}
         </a>
         <button
           v-if="selectedSite?.allowedActions?.includes('delete')"
           class="button button--ghost button--danger-text"
           type="button"
           :disabled="panel.isReadOnly.value || !canDelete"
-          :title="!canDelete ? siteDeleteReason : ''"
+          :title="!canDelete ? phrase(siteDeleteReason) : ''"
           @click="openDelete(selectedSite)"
         >
-          <Trash2 :size="16" /> 删除站点
+          <Trash2 :size="16" /> {{ phrase('删除站点') }}
         </button>
-        <button class="button button--secondary" type="button" @click="selectedSite = undefined">关闭</button>
+        <button class="button button--secondary" type="button" @click="selectedSite = undefined">{{ phrase('关闭') }}</button>
         <button
           v-if="selectedSite?.allowedActions?.includes('update')"
           class="button button--primary"
           type="button"
           :disabled="panel.isReadOnly.value || !canCreate"
-          :title="!canCreate ? siteWriteReason : ''"
+          :title="!canCreate ? phrase(siteWriteReason) : ''"
           @click="openEdit(selectedSite)"
         >
-          编辑设置
+          {{ phrase('编辑设置') }}
         </button>
       </template>
     </ModalDialog>
@@ -1456,7 +1456,7 @@ onBeforeUnmount(() => {
               :aria-pressed="form.phpVersion === '7.4'"
               @click="form.phpVersion = '7.4'"
             >
-              {{ phrase('PHP 7.4') }}
+              PHP 7.4
             </button>
           </div>
           <small>{{ phrase('分别对应脚本架构中的 php 与 php74 PHP-FPM 服务。') }}</small>

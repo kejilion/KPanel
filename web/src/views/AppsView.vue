@@ -1498,13 +1498,13 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="installOpen && Boolean(selected)"
       :title="i18n.t('apps.installTitle', { name: selected ? appName(selected) : '' })"
-      description="任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。"
+      :description="phrase('任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。')"
       size="small"
       @close="installOpen = false"
     >
       <form id="app-install-form" class="form-stack" @submit.prevent="install">
         <label v-if="selected?.installPortConfigurable" class="field">
-          <span>访问端口</span>
+          <span>{{ phrase('访问端口') }}</span>
           <input
             v-model.number="installPort"
             type="number"
@@ -1514,7 +1514,7 @@ watch(windowActive, syncJobPollingForWindow)
             :placeholder="selected?.defaultPort ? String(selected.defaultPort) : i18n.t('apps.defaultPortPlaceholder')"
             @blur="checkInstallPort()"
           />
-          <small>端口由面板传给 kejilion.sh；提交前会再次检查宿主机监听与 Docker 映射，避免安装到一半才发现冲突。</small>
+          <small>{{ phrase('端口由面板传给 kejilion.sh；提交前会再次检查宿主机监听与 Docker 映射，避免安装到一半才发现冲突。') }}</small>
           <span
             v-if="installPortMessage"
             class="install-port-status"
@@ -1523,39 +1523,39 @@ watch(windowActive, syncJobPollingForWindow)
             <LoaderCircle v-if="installPortState === 'checking'" class="spin" :size="13" />
             <CheckCircle2 v-else-if="installPortState === 'available'" :size="13" />
             <Activity v-else :size="13" />
-            {{ installPortMessage }}
+            {{ phrase(installPortMessage) }}
           </span>
         </label>
         <fieldset v-if="selected?.installer === 'declarative'" class="access-options">
-          <legend>初始访问方式</legend>
+          <legend>{{ phrase('初始访问方式') }}</legend>
           <button
             type="button"
             :class="{ 'is-active': installAccess === 'direct' }"
             @click="installAccess = 'direct'"
           >
-            <UnlockKeyhole :size="18" /><span><strong>IP + 端口</strong><small>安装后立即可访问</small></span>
+            <UnlockKeyhole :size="18" /><span><strong>{{ phrase('IP + 端口') }}</strong><small>{{ phrase('安装后立即可访问') }}</small></span>
           </button>
           <button
             type="button"
             :class="{ 'is-active': installAccess === 'domain_only' }"
             @click="installAccess = 'domain_only'"
           >
-            <LockKeyhole :size="18" /><span><strong>仅域名访问</strong><small>绑定到 127.0.0.1</small></span>
+            <LockKeyhole :size="18" /><span><strong>{{ phrase('仅域名访问') }}</strong><small>{{ phrase('绑定到 127.0.0.1') }}</small></span>
           </button>
         </fieldset>
         <div class="inline-alert inline-alert--info">
           <ShieldCheck :size="17" />
-          {{
+          {{ phrase(
             selected?.installer === 'kejilion'
               ? selected?.installPortConfigurable
                 ? '端口已在面板确定；提交后打开 kejilion.sh 网页终端，账号、密码等其余参数仍按原脚本提示输入。'
                 : '该应用使用自定义安装器；提交后打开 kejilion.sh 网页终端，并按原脚本提示完成必要参数。'
               : '使用固定声明式模板；容器创建失败不会写入脚本安装标记。'
-          }}
+          ) }}
         </div>
       </form>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="installOpen = false">取消</button>
+        <button class="button button--secondary" type="button" @click="installOpen = false">{{ phrase('取消') }}</button>
         <button
           class="button button--primary"
           type="submit"
@@ -1575,7 +1575,7 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="jobDetailsOpen && Boolean(activeJob)"
       :title="i18n.t('apps.jobProgressTitle', { name: activeJob?.appName || '', action: jobActionLabel(activeJob?.action) })"
-      description="任务由宿主机后台执行，离开本页面不会中断。"
+      :description="phrase('任务由宿主机后台执行，离开本页面不会中断。')"
       size="large"
       @close="jobDetailsOpen = false"
     >
@@ -1587,7 +1587,7 @@ watch(windowActive, syncJobPollingForWindow)
             <Activity v-else :size="21" />
           </span>
           <div>
-            <strong>{{ activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) }) }}</strong>
+            <strong>{{ phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) })) }}</strong>
             <small>{{ i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id }) }}</small>
           </div>
           <StatusBadge :status="activeJob.status" />
@@ -1604,11 +1604,11 @@ watch(windowActive, syncJobPollingForWindow)
         />
         <section v-else class="job-log">
           <header>
-            <strong>实时日志</strong>
+            <strong>{{ phrase('实时日志') }}</strong>
             <small>{{ i18n.t('apps.recentLogs', { count: activeJob.logs.length }) }}</small>
           </header>
-          <pre v-if="activeJob.logs.length">{{ activeJob.logs.join('\n') }}</pre>
-          <p v-else>任务已进入队列，正在等待首批输出…</p>
+          <pre v-if="activeJob.logs.length" data-i18n-ignore>{{ activeJob.logs.join('\n') }}</pre>
+          <p v-else>{{ phrase('任务已进入队列，正在等待首批输出…') }}</p>
         </section>
       </template>
       <template #footer>
@@ -1618,10 +1618,10 @@ watch(windowActive, syncJobPollingForWindow)
           type="button"
           @click="requestCancelJob"
         >
-          <Square :size="14" /> 结束任务
+          <Square :size="14" /> {{ phrase('结束任务') }}
         </button>
         <button class="button button--secondary" type="button" @click="jobDetailsOpen = false">
-          {{ isActiveJob(activeJob) ? '后台运行' : '关闭窗口' }}
+          {{ phrase(isActiveJob(activeJob) ? '后台运行' : '关闭窗口') }}
         </button>
         <button
           v-if="!isActiveJob(activeJob)"
@@ -1629,21 +1629,21 @@ watch(windowActive, syncJobPollingForWindow)
           type="button"
           @click="dismissJob"
         >
-          关闭记录
+          {{ phrase('关闭记录') }}
         </button>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="cancelJobPending"
-      title="结束当前交互任务？"
-      description="这会停止当前 kejilion.sh 交互终端并释放应用管理锁；已经执行完成的脚本步骤不会自动回滚。"
+      :title="phrase('结束当前交互任务？')"
+      :description="phrase('这会停止当前 kejilion.sh 交互终端并释放应用管理锁；已经执行完成的脚本步骤不会自动回滚。')"
       size="small"
       @close="cancelJobPending = false"
     >
       <div class="inline-alert inline-alert--warning">
         <Activity :size="17" />
-        仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。
+        {{ phrase('仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。') }}
       </div>
       <template #footer>
         <button
@@ -1652,7 +1652,7 @@ watch(windowActive, syncJobPollingForWindow)
           :disabled="cancellingJob"
           @click="cancelJobPending = false"
         >
-          继续运行
+          {{ phrase('继续运行') }}
         </button>
         <button
           class="button button--danger"
@@ -1661,7 +1661,7 @@ watch(windowActive, syncJobPollingForWindow)
           @click="confirmCancelJob"
         >
           <LoaderCircle v-if="cancellingJob" class="spin" :size="16" />
-          <Square v-else :size="14" /> {{ cancellingJob ? '正在结束…' : '确认结束任务' }}
+          <Square v-else :size="14" /> {{ phrase(cancellingJob ? '正在结束…' : '确认结束任务') }}
         </button>
       </template>
     </ModalDialog>
@@ -1678,7 +1678,7 @@ watch(windowActive, syncJobPollingForWindow)
         <div><strong>{{ selected ? appName(selected) : '' }}</strong><small>{{ selected?.runtime.containerName }}</small></div>
       </div>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="confirmAction = undefined">取消</button>
+        <button class="button button--secondary" type="button" @click="confirmAction = undefined">{{ phrase('取消') }}</button>
         <button
           class="button"
           :class="confirmAction === 'uninstall' ? 'button--danger' : 'button--primary'"

@@ -5,7 +5,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
 import type { NetworkInterfaceEntry, NetworkInterfacesSnapshot } from '@/types/api'
@@ -30,6 +30,11 @@ let controller: AbortController | undefined
 
 function reasonMessage(reason: unknown, fallback: string): string {
   return reason instanceof ApiError ? reason.message : fallback
+}
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
 }
 
 function isEnabled(entry: NetworkInterfaceEntry): boolean {
@@ -98,41 +103,41 @@ onBeforeUnmount(() => controller?.abort())
 <template>
   <ModalDialog
     :open="open"
-    title="网卡管理"
-    description="查看网卡、硬件地址和本机地址，并通过固定动作启用或停用接口。"
+    :title="phrase('网卡管理')"
+    :description="phrase('查看网卡、硬件地址和本机地址，并通过固定动作启用或停用接口。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="system-resource-dialog">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的网卡适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的网卡适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="4" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="system-resource-dialog__summary">
-          <span>共 {{ snapshot.total }} 个网络接口</span>
-          <span v-if="snapshot.truncated" class="text-warning">列表已截断</span>
-          <button class="icon-button" type="button" :disabled="refreshing || Boolean(runningInterface)" title="刷新网卡" aria-label="刷新网卡" @click="load(true)">
+          <span>{{ phrase(`共 ${snapshot.total} 个网络接口`) }}</span>
+          <span v-if="snapshot.truncated" class="text-warning">{{ phrase('列表已截断') }}</span>
+          <button class="icon-button" type="button" :disabled="refreshing || Boolean(runningInterface)" :title="phrase('刷新网卡')" :aria-label="phrase('刷新网卡')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
 
         <div v-if="!writable" class="inline-alert inline-alert--warning">
-          当前 Agent 仅支持查看网卡，写入适配器未就绪。
+          {{ phrase('当前 Agent 仅支持查看网卡，写入适配器未就绪。') }}
         </div>
 
-        <EmptyState v-if="!snapshot.entries.length" title="未发现网络接口" description="Agent 没有返回可管理的网卡。" />
+        <EmptyState v-if="!snapshot.entries.length" :title="phrase('未发现网络接口')" :description="phrase('Agent 没有返回可管理的网卡。')" />
         <div v-else class="system-resource-list system-resource-list--interfaces">
           <article v-for="entry in snapshot.entries" :key="entry.name" class="system-resource-item system-resource-item--interface">
             <span class="system-resource-item__icon"><Network :size="18" /></span>
             <div class="system-resource-item__main">
               <strong>{{ entry.name }}</strong>
-              <span>{{ entry.addresses.length ? entry.addresses.join(' · ') : '未配置地址' }}</span>
-              <small>{{ entry.macAddress || '未识别硬件地址' }}<template v-if="entry.loopback"> · 回环接口</template></small>
+              <span>{{ entry.addresses.length ? entry.addresses.join(' · ') : phrase('未配置地址') }}</span>
+              <small>{{ entry.macAddress || phrase('未识别硬件地址') }}<template v-if="entry.loopback"> · {{ phrase('回环接口') }}</template></small>
             </div>
             <span class="system-resource-state" :class="{ 'is-on': isEnabled(entry) }">
-              {{ isEnabled(entry) ? '已启用' : entry.state || '未知状态' }}
+              {{ isEnabled(entry) ? phrase('已启用') : entry.state || phrase('未知状态') }}
             </span>
             <button
               class="button button--secondary button--small"
@@ -140,7 +145,7 @@ onBeforeUnmount(() => controller?.abort())
               :disabled="!writable || Boolean(runningInterface)"
               @click="setInterfaceState(entry)"
             >
-              {{ runningInterface === entry.name ? '正在应用…' : isEnabled(entry) ? '停用' : '启用' }}
+              {{ runningInterface === entry.name ? phrase('正在应用…') : isEnabled(entry) ? phrase('停用') : phrase('启用') }}
             </button>
           </article>
         </div>

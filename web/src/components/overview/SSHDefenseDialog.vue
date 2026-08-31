@@ -4,7 +4,7 @@ import { RefreshCw, ShieldCheck, ShieldOff, Trash2, Unlock } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
-import { translatePhrase } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
 import type { SSHDefenseActionInput, SSHDefenseSnapshot } from '@/types/api'
@@ -28,6 +28,11 @@ const banSearch = ref('')
 const trustedAddress = ref('')
 let controller: AbortController | undefined
 let pollTimer: number | undefined
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 const profiles = [
   { id: 'mild', title: '温和', detail: '10 分钟内失败 8 次，封禁 10 分钟' },
@@ -133,7 +138,7 @@ async function uninstall(): Promise<void> {
 }
 
 function eventActionLabel(action: 'found' | 'ban' | 'unban'): string {
-  return { found: '登录失败', ban: '已封禁', unban: '已解封' }[action]
+  return phrase({ found: '登录失败', ban: '已封禁', unban: '已解封' }[action])
 }
 
 watch(() => [props.open, props.readable] as const, ([open, readable]) => {
@@ -154,95 +159,95 @@ onBeforeUnmount(() => {
 <template>
   <ModalDialog
     :open="open"
-    title="SSH 防御"
-    description="自动封禁反复尝试 SSH 登录的来源；由 kejilion.sh 管理 Fail2Ban。"
+    :title="phrase('SSH 防御')"
+    :description="phrase('自动封禁反复尝试 SSH 登录的来源；由 kejilion.sh 管理 Fail2Ban。')"
     size="wide"
     @close="emit('close')"
   >
     <div class="ssh-defense-manager">
       <div v-if="!readable" class="inline-alert inline-alert--warning">
-        {{ unavailableReason || '当前 Agent 的 SSH 防御适配器未就绪。' }}
+        {{ phrase(unavailableReason || '当前 Agent 的 SSH 防御适配器未就绪。') }}
       </div>
       <LoadingState v-else-if="loading && !snapshot" :rows="5" />
-      <ErrorState v-else-if="error && !snapshot" :message="error" @retry="load()" />
+      <ErrorState v-else-if="error && !snapshot" :message="phrase(error)" @retry="load()" />
       <template v-else-if="snapshot">
         <header class="ssh-defense-manager__summary">
           <span class="ssh-defense-manager__state" :class="{ 'is-enabled': snapshot.enabled }">
             <ShieldCheck v-if="snapshot.enabled" :size="18" />
             <ShieldOff v-else :size="18" />
-            <strong>{{ snapshot.enabled ? '防御已开启' : snapshot.installed ? '防御已停用' : '尚未安装' }}</strong>
+            <strong>{{ phrase(snapshot.enabled ? '防御已开启' : snapshot.installed ? '防御已停用' : '尚未安装') }}</strong>
           </span>
-          <span>当前封禁 <strong>{{ snapshot.currentBanned }}</strong></span>
-          <span>累计拦截 <strong>{{ snapshot.totalBanned }}</strong></span>
-          <button class="icon-button" type="button" :disabled="refreshing || running" title="刷新 SSH 防御" aria-label="刷新 SSH 防御" @click="load(true)">
+          <span>{{ phrase('当前封禁') }} <strong>{{ snapshot.currentBanned }}</strong></span>
+          <span>{{ phrase('累计拦截') }} <strong>{{ snapshot.totalBanned }}</strong></span>
+          <button class="icon-button" type="button" :disabled="refreshing || running" :title="phrase('刷新 SSH 防御')" :aria-label="phrase('刷新 SSH 防御')" @click="load(true)">
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
           </button>
         </header>
 
         <div v-if="maintenanceRunning" class="inline-alert inline-alert--info">
-          {{ snapshot.maintenance.message || 'SSH 防御任务正在后台执行…' }}（{{ snapshot.maintenance.progress }}%）
+          {{ phrase(snapshot.maintenance.message || 'SSH 防御任务正在后台执行…') }}（{{ snapshot.maintenance.progress }}%）
         </div>
-        <div v-if="!writable" class="inline-alert inline-alert--warning">当前 Agent 仅支持查看，写入适配器未就绪。</div>
+        <div v-if="!writable" class="inline-alert inline-alert--warning">{{ phrase('当前 Agent 仅支持查看，写入适配器未就绪。') }}</div>
 
         <section class="ssh-defense-manager__section ssh-defense-manager__primary">
           <div>
-            <h3>防御开关</h3>
-            <p>{{ snapshot.enabled ? 'Fail2Ban 正在监控 SSH 登录失败。停用后保留配置，随时可以重新开启。' : '开启后自动安装并启用 Fail2Ban，不需要手动配置规则。' }}</p>
+            <h3>{{ phrase('防御开关') }}</h3>
+            <p>{{ phrase(snapshot.enabled ? 'Fail2Ban 正在监控 SSH 登录失败。停用后保留配置，随时可以重新开启。' : '开启后自动安装并启用 Fail2Ban，不需要手动配置规则。') }}</p>
           </div>
           <button class="button" :class="snapshot.enabled ? 'button--secondary' : 'button--primary'" type="button" :disabled="!writable || running || maintenanceRunning" @click="toggleDefense">
-            {{ running || maintenanceRunning ? '正在处理…' : snapshot.enabled ? '停用防御' : '开启防御' }}
+            {{ phrase(running || maintenanceRunning ? '正在处理…' : snapshot.enabled ? '停用防御' : '开启防御') }}
           </button>
         </section>
 
         <section v-if="snapshot.enabled" class="ssh-defense-manager__section">
           <div class="ssh-defense-manager__heading">
-            <div><h3>防御强度</h3><p>推荐“标准”，调整后立即验证并重载配置。</p></div>
-            <span v-if="snapshot.profile === 'custom'" class="ssh-defense-manager__custom">当前为自定义规则</span>
+            <div><h3>{{ phrase('防御强度') }}</h3><p>{{ phrase('推荐“标准”，调整后立即验证并重载配置。') }}</p></div>
+            <span v-if="snapshot.profile === 'custom'" class="ssh-defense-manager__custom">{{ phrase('当前为自定义规则') }}</span>
           </div>
           <div class="ssh-defense-manager__profiles">
             <button v-for="profile in profiles" :key="profile.id" type="button" :class="{ 'is-active': snapshot.profile === profile.id }" :disabled="!writable || running" @click="setProfile(profile.id)">
-              <strong>{{ profile.title }}</strong><small>{{ profile.detail }}</small>
+              <strong>{{ phrase(profile.title) }}</strong><small>{{ phrase(profile.detail) }}</small>
             </button>
           </div>
         </section>
 
         <section v-if="snapshot.installed" class="ssh-defense-manager__section">
           <div class="ssh-defense-manager__heading">
-            <div><h3>已封禁 IP</h3><p>按 IP 搜索并单独解封。</p></div>
-            <button class="button button--secondary button--small" type="button" :disabled="!writable || running || snapshot.currentBanned === 0" @click="unbanAll">全部解封</button>
+            <div><h3>{{ phrase('已封禁 IP') }}</h3><p>{{ phrase('按 IP 搜索并单独解封。') }}</p></div>
+            <button class="button button--secondary button--small" type="button" :disabled="!writable || running || snapshot.currentBanned === 0" @click="unbanAll">{{ phrase('全部解封') }}</button>
           </div>
-          <input v-model.trim="banSearch" class="ssh-defense-manager__search" type="search" placeholder="搜索 IP 地址" />
+          <input v-model.trim="banSearch" class="ssh-defense-manager__search" type="search" :placeholder="phrase('搜索 IP 地址')" />
           <div v-if="filteredBans.length" class="ssh-defense-manager__list">
-            <div v-for="address in filteredBans" :key="address"><code>{{ address }}</code><button class="button button--secondary button--small" type="button" :disabled="!writable || running" @click="unban(address)"><Unlock :size="14" /> 解封</button></div>
+            <div v-for="address in filteredBans" :key="address"><code>{{ address }}</code><button class="button button--secondary button--small" type="button" :disabled="!writable || running" @click="unban(address)"><Unlock :size="14" /> {{ phrase('解封') }}</button></div>
           </div>
-          <p v-else class="ssh-defense-manager__empty">{{ snapshot.currentBanned ? '没有匹配的 IP。' : '当前没有被封禁的 IP。' }}</p>
-          <small v-if="snapshot.bansTruncated">封禁数量较多，仅显示前 256 个 IP。</small>
+          <p v-else class="ssh-defense-manager__empty">{{ phrase(snapshot.currentBanned ? '没有匹配的 IP。' : '当前没有被封禁的 IP。') }}</p>
+          <small v-if="snapshot.bansTruncated">{{ phrase('封禁数量较多，仅显示前 256 个 IP。') }}</small>
         </section>
 
         <section v-if="snapshot.enabled" class="ssh-defense-manager__section">
-          <div class="ssh-defense-manager__heading"><div><h3>信任地址</h3><p>可信办公网或固定出口不会被自动封禁。</p></div></div>
+          <div class="ssh-defense-manager__heading"><div><h3>{{ phrase('信任地址') }}</h3><p>{{ phrase('可信办公网或固定出口不会被自动封禁。') }}</p></div></div>
           <form class="ssh-defense-manager__trusted-form" @submit.prevent="addTrusted">
-            <input v-model.trim="trustedAddress" maxlength="80" placeholder="例如 203.0.113.10 或 203.0.113.0/24" />
-            <button class="button button--secondary" type="submit" :disabled="!writable || running || !trustedAddressValid">添加</button>
+            <input v-model.trim="trustedAddress" maxlength="80" :placeholder="phrase('例如 203.0.113.10 或 203.0.113.0/24')" />
+            <button class="button button--secondary" type="submit" :disabled="!writable || running || !trustedAddressValid">{{ phrase('添加') }}</button>
           </form>
           <div class="ssh-defense-manager__chips">
-            <span v-for="address in snapshot.trustedAddresses" :key="address"><code>{{ address }}</code><button type="button" :disabled="!writable || running" :aria-label="`移除信任地址 ${address}`" @click="removeTrusted(address)">×</button></span>
+            <span v-for="address in snapshot.trustedAddresses" :key="address"><code>{{ address }}</code><button type="button" :disabled="!writable || running" :aria-label="phrase(`移除信任地址 ${address}`)" @click="removeTrusted(address)">×</button></span>
           </div>
         </section>
 
         <section v-if="snapshot.installed" class="ssh-defense-manager__section">
-          <h3>最近事件</h3>
+          <h3>{{ phrase('最近事件') }}</h3>
           <div v-if="recentEvents.length" class="ssh-defense-manager__events">
             <div v-for="(event, index) in recentEvents" :key="`${event.occurredAt}-${event.address}-${index}`">
               <time>{{ event.occurredAt }}</time><span :class="`is-${event.action}`">{{ eventActionLabel(event.action) }}</span><code>{{ event.address }}</code>
             </div>
           </div>
-          <p v-else class="ssh-defense-manager__empty">最近没有 SSH 防御事件。</p>
+          <p v-else class="ssh-defense-manager__empty">{{ phrase('最近没有 SSH 防御事件。') }}</p>
         </section>
 
         <section v-if="snapshot.installed" class="ssh-defense-manager__danger">
-          <div><strong>卸载 Fail2Ban</strong><small>仅在不再需要 SSH 防御时使用。</small></div>
-          <button class="button button--secondary button--small" type="button" :disabled="!writable || running || maintenanceRunning" @click="uninstall"><Trash2 :size="14" /> 卸载</button>
+          <div><strong>{{ phrase('卸载 Fail2Ban') }}</strong><small>{{ phrase('仅在不再需要 SSH 防御时使用。') }}</small></div>
+          <button class="button button--secondary button--small" type="button" :disabled="!writable || running || maintenanceRunning" @click="uninstall"><Trash2 :size="14" /> {{ phrase('卸载') }}</button>
         </section>
       </template>
     </div>
