@@ -40,9 +40,25 @@ const form = reactive({
   telegramBotToken: '',
 })
 
+const notificationProviders = [
+  { id: 'telegram', name: 'Telegram', glyph: '', available: true },
+  { id: 'feishu', name: '飞书', glyph: 'F', available: false },
+  { id: 'dingtalk', name: '钉钉', glyph: 'D', available: false },
+  { id: 'wecom', name: '企微', glyph: 'W', available: false },
+] as const
+
+type NotificationProvider = typeof notificationProviders[number]['id']
+
+const selectedProvider = ref<NotificationProvider>('telegram')
+
 function phrase(value: string): string {
   phraseCatalogVersion.value
   return translatePhrase(value)
+}
+
+function chooseProvider(provider: NotificationProvider): void {
+  if (provider !== 'telegram') return
+  selectedProvider.value = provider
 }
 
 function applySnapshot(value: ClusterNotificationSnapshot): void {
@@ -247,21 +263,45 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else-if="snapshot">
-        <section class="cluster-notifications__channel" :class="statusClass(snapshot.telegram.status)">
-          <div class="cluster-notifications__channel-icon"><Send :size="18" /></div>
-          <div class="cluster-notifications__channel-main">
-            <div class="cluster-notifications__channel-title">
-              <strong>Telegram</strong>
-              <span class="cluster-notifications__status">
-                <span class="cluster-notifications__status-dot" />{{ phrase(statusLabel(snapshot.telegram.status)) }}
-              </span>
+        <section class="cluster-notifications__providers" aria-labelledby="cluster-notifications-provider-title">
+          <div class="cluster-notifications__section-heading">
+            <div>
+              <h3 id="cluster-notifications-provider-title">{{ phrase('通知渠道') }}</h3>
+              <p>{{ phrase('选择接收告警的通知渠道；目前仅开放 Telegram。') }}</p>
             </div>
-            <p v-if="snapshot.telegram.botUsername">
-              @{{ snapshot.telegram.botUsername }}<span v-if="snapshot.telegram.lastCheckedAt"> · {{ phrase('最近检查') }} {{ formatDateTime(snapshot.telegram.lastCheckedAt) }}</span>
-            </p>
-            <p v-else>{{ phrase('私聊机器人发送 /start，KPanel 会自动发现接收会话。') }}</p>
           </div>
-          <ShieldCheck v-if="snapshot.telegram.ready" class="cluster-notifications__ready-icon" :size="18" />
+          <div class="cluster-notifications__provider-grid" role="radiogroup" :aria-label="phrase('通知渠道')">
+            <button
+              v-for="provider in notificationProviders"
+              :key="provider.id"
+              class="cluster-notifications__provider"
+              :class="[provider.id === 'telegram' ? statusClass(snapshot.telegram.status) : '', { 'is-selected': selectedProvider === provider.id, 'is-disabled': !provider.available }]"
+              type="button"
+              role="radio"
+              :aria-checked="selectedProvider === provider.id"
+              :disabled="!provider.available"
+              :title="phrase(provider.available ? '当前可用' : '暂未开放')"
+              @click="chooseProvider(provider.id)"
+            >
+              <span class="cluster-notifications__provider-icon" aria-hidden="true">
+                <Send v-if="provider.id === 'telegram'" :size="16" />
+                <span v-else>{{ provider.glyph }}</span>
+              </span>
+              <span class="cluster-notifications__provider-copy">
+                <strong>{{ phrase(provider.name) }}</strong>
+                <span v-if="provider.id === 'telegram'" class="cluster-notifications__status">
+                  <span class="cluster-notifications__status-dot" />{{ phrase(statusLabel(snapshot.telegram.status)) }}
+                </span>
+                <span v-else class="cluster-notifications__provider-status--disabled">{{ phrase('暂未开放') }}</span>
+              </span>
+              <ShieldCheck v-if="provider.id === 'telegram' && snapshot.telegram.ready" class="cluster-notifications__ready-icon" :size="17" />
+              <CheckCircle2 v-else-if="selectedProvider === provider.id" class="cluster-notifications__provider-selected-icon" :size="17" />
+            </button>
+          </div>
+          <p v-if="snapshot.telegram.botUsername" class="cluster-notifications__provider-detail">
+            @{{ snapshot.telegram.botUsername }}<span v-if="snapshot.telegram.lastCheckedAt"> · {{ phrase('最近检查') }} {{ formatDateTime(snapshot.telegram.lastCheckedAt) }}</span>
+          </p>
+          <p v-else class="cluster-notifications__provider-detail">{{ phrase('私聊机器人发送 /start，KPanel 会自动发现接收会话。') }}</p>
         </section>
 
         <label class="field cluster-notifications__token">
@@ -412,20 +452,57 @@ onBeforeUnmount(() => {
   color: var(--text-soft);
 }
 
-.cluster-notifications__channel {
-  display: flex;
-  align-items: center;
+.cluster-notifications__providers {
+  display: grid;
   gap: 11px;
-  padding: 12px;
-  background: var(--surface-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
 }
 
-.cluster-notifications__channel-icon {
+.cluster-notifications__provider-grid {
   display: grid;
-  width: 34px;
-  height: 34px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cluster-notifications__provider {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 74px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  color: var(--text-soft);
+  text-align: left;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.cluster-notifications__provider:not(:disabled) {
+  cursor: pointer;
+}
+
+.cluster-notifications__provider:not(:disabled):hover {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+}
+
+.cluster-notifications__provider.is-selected {
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--brand) 58%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.cluster-notifications__provider.is-disabled {
+  cursor: not-allowed;
+  opacity: .52;
+}
+
+.cluster-notifications__provider-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--brand);
@@ -433,23 +510,46 @@ onBeforeUnmount(() => {
   border-radius: 10px;
 }
 
-.cluster-notifications__channel-main {
+.cluster-notifications__provider-copy {
+  display: grid;
   min-width: 0;
-  flex: 1;
+  gap: 3px;
+  align-content: center;
 }
 
-.cluster-notifications__channel-title,
+.cluster-notifications__provider-copy strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.cluster-notifications__provider-detail {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.cluster-notifications__provider-status--disabled {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cluster-notifications__provider-selected-icon {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  color: var(--brand);
+}
+
 .cluster-notifications__status {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.cluster-notifications__channel-title {
-  justify-content: space-between;
-}
-
-.cluster-notifications__status {
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
@@ -479,14 +579,10 @@ onBeforeUnmount(() => {
   background: var(--danger);
 }
 
-.cluster-notifications__channel-main p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
 .cluster-notifications__ready-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   color: var(--success);
 }
 
@@ -676,6 +772,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 620px) {
+  .cluster-notifications__provider-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cluster-notifications__channel-actions .button {
     flex: 1 1 145px;
   }
