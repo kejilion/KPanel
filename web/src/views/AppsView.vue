@@ -2,7 +2,12 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import type { MessageKey } from '@/i18n/messages/zh-CN'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -1240,7 +1245,7 @@ watch(windowActive, syncJobPollingForWindow)
 
     <ModalDialog
       :open="Boolean(selected) && !installOpen && !confirmAction && !deletingDomainSite"
-      :title="selected ? appName(selected) : '应用详情'"
+      :title="selected ? appName(selected) : phrase('应用详情')"
       :description="selected ? appDescription(selected) : ''"
       size="wide"
       @close="selectedID = ''"
@@ -1268,32 +1273,32 @@ watch(windowActive, syncJobPollingForWindow)
             :href="selected.url"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="打开应用官网"
+            :aria-label="phrase('打开应用官网')"
           >
             <ArrowUpRight :size="18" />
           </a>
         </div>
 
         <div v-if="selected.runtime.warning" class="inline-alert inline-alert--warning">
-          <Wrench :size="17" /> {{ selected.runtime.warning }}
+          <Wrench :size="17" /> {{ phrase(selected.runtime.warning) }}
         </div>
 
         <section v-if="selected.runtime.installed" class="app-control-panel">
           <div class="app-control-panel__status">
             <div>
-              <span>运行状态</span>
+              <span>{{ phrase('运行状态') }}</span>
               <strong>{{ stateLabel(selected) }}</strong>
-              <small>{{ selected.runtime.status || selected.runtime.image || i18n.t('apps.runtime.scriptMarkedInstalled') }}</small>
+              <small>{{ phrase(selected.runtime.status || selected.runtime.image || i18n.t('apps.runtime.scriptMarkedInstalled')) }}</small>
             </div>
             <div>
-              <span>更新状态</span>
+              <span>{{ phrase('更新状态') }}</span>
               <strong>{{ updateLabel(selected) }}</strong>
-              <small>{{ capability(selected, 'update') ? i18n.t('apps.update.safe') : i18n.t('apps.update.originalManagement') }}</small>
+              <small>{{ phrase(capability(selected, 'update') ? i18n.t('apps.update.safe') : i18n.t('apps.update.originalManagement')) }}</small>
             </div>
             <div>
-              <span>访问策略</span>
+              <span>{{ phrase('访问策略') }}</span>
               <strong>{{ accessModeLabel(selected) }}</strong>
-              <small>{{ selectedPort ? `${selectedPort.ip || '0.0.0.0'}:${selectedPort.publicPort}` : i18n.t('apps.access.noHTTPPort') }}</small>
+              <small>{{ phrase(selectedPort ? `${selectedPort.ip || '0.0.0.0'}:${selectedPort.publicPort}` : i18n.t('apps.access.noHTTPPort')) }}</small>
             </div>
           </div>
           <div class="app-control-panel__actions">
@@ -1302,11 +1307,11 @@ watch(windowActive, syncJobPollingForWindow)
               class="button button--secondary"
               type="button"
               :disabled="Boolean(operation) || applicationTaskActive"
-              title="打开该应用对应的 kejilion.sh 原生交互菜单"
+              :title="phrase('打开该应用对应的 kejilion.sh 原生交互菜单')"
               @click="openScriptManage"
             >
               <LoaderCircle v-if="operation === 'manage'" class="spin" :size="15" />
-              <Wrench v-else :size="15" /> 脚本管理
+              <Wrench v-else :size="15" /> {{ phrase('脚本管理') }}
             </button>
             <button
               v-if="capability(selected, 'start')"
@@ -1315,7 +1320,7 @@ watch(windowActive, syncJobPollingForWindow)
               :disabled="Boolean(operation) || applicationTaskActive"
               @click="lifecycle('start')"
             >
-              <Play :size="15" /> 启动
+              <Play :size="15" /> {{ phrase('启动') }}
             </button>
             <button
               v-if="capability(selected, 'stop')"
@@ -1324,7 +1329,7 @@ watch(windowActive, syncJobPollingForWindow)
               :disabled="Boolean(operation) || applicationTaskActive"
               @click="lifecycle('stop')"
             >
-              <Square :size="14" /> 停止
+              <Square :size="14" /> {{ phrase('停止') }}
             </button>
             <button
               v-if="capability(selected, 'restart')"
@@ -1333,7 +1338,7 @@ watch(windowActive, syncJobPollingForWindow)
               :disabled="Boolean(operation) || applicationTaskActive"
               @click="lifecycle('restart')"
             >
-              <RotateCw :size="15" /> 重启
+              <RotateCw :size="15" /> {{ phrase('重启') }}
             </button>
             <button
               v-if="capability(selected, 'check_update')"
@@ -1343,7 +1348,7 @@ watch(windowActive, syncJobPollingForWindow)
               @click="checkUpdate"
             >
               <LoaderCircle v-if="operation === 'check_update'" class="spin" :size="15" />
-              <RefreshCw v-else :size="15" /> 检查更新
+              <RefreshCw v-else :size="15" /> {{ phrase('检查更新') }}
             </button>
             <a
               v-if="openURL(selected)"
@@ -1352,7 +1357,7 @@ watch(windowActive, syncJobPollingForWindow)
               target="_blank"
               rel="noopener noreferrer"
             >
-              <ArrowUpRight :size="15" /> 打开应用
+              <ArrowUpRight :size="15" /> {{ phrase('打开应用') }}
             </a>
           </div>
         </section>
@@ -1360,14 +1365,14 @@ watch(windowActive, syncJobPollingForWindow)
         <div v-if="!selected.runtime.installed" class="app-install-state">
           <PackageCheck :size="25" />
           <div>
-            <strong>当前未安装</strong>
+            <strong>{{ phrase('当前未安装') }}</strong>
             <p v-if="capability(selected, 'install') && selected.installer === 'kejilion'">
-              此应用会在后台打开 kejilion.sh 原生交互终端；专属安装向导、端口、域名和凭据输入均与 SSH 端一致。
+              {{ phrase('此应用会在后台打开 kejilion.sh 原生交互终端；专属安装向导、端口、域名和凭据输入均与 SSH 端一致。') }}
             </p>
             <p v-else-if="capability(selected, 'install')">
-              此应用已有固定镜像、端口和回滚策略，可以由 KPanel 在后台安全安装。
+              {{ phrase('此应用已有固定镜像、端口和回滚策略，可以由 KPanel 在后台安全安装。') }}
             </p>
-            <p v-else>{{ selected.capabilities.install?.reason || '等待专属安装适配器。' }}</p>
+            <p v-else>{{ phrase(selected.capabilities.install?.reason || '等待专属安装适配器。') }}</p>
           </div>
           <button
             v-if="capability(selected, 'install')"
@@ -1375,13 +1380,13 @@ watch(windowActive, syncJobPollingForWindow)
             type="button"
             @click="openInstall(selected)"
           >
-            <Download :size="16" /> 开始安装
+            <Download :size="16" /> {{ phrase('开始安装') }}
           </button>
         </div>
 
         <div v-if="selected.runtime.installed" class="app-detail-grid">
           <section class="app-detail-section app-detail-section--domain">
-            <header><Globe2 :size="18" /><div><strong>域名访问</strong><small>复用 KPanel 网站反向代理</small></div></header>
+            <header><Globe2 :size="18" /><div><strong>{{ phrase('域名访问') }}</strong><small>{{ phrase('复用 KPanel 网站反向代理') }}</small></div></header>
             <div v-if="selectedDomains.length" class="domain-list">
               <div
                 v-for="site in selectedDomains"
@@ -1395,7 +1400,7 @@ watch(windowActive, syncJobPollingForWindow)
                   class="icon-button icon-button--small icon-button--danger"
                   type="button"
                   :disabled="Boolean(operation) || applicationTaskActive"
-                  aria-label="解绑域名"
+                  :aria-label="phrase('解绑域名')"
                   @click="openDomainDelete(site)"
                 >
                   <LoaderCircle v-if="operation === `remove_domain:${site.id}`" class="spin" :size="14" />
@@ -1405,7 +1410,7 @@ watch(windowActive, syncJobPollingForWindow)
             </div>
             <form v-if="capability(selected, 'add_domain')" class="domain-form" @submit.prevent="addDomain">
               <label class="field">
-                <span>添加域名</span>
+                <span>{{ phrase('添加域名') }}</span>
                 <input v-model.trim="domain" placeholder="app.example.com" autocomplete="off" required />
               </label>
               <button
@@ -1414,7 +1419,7 @@ watch(windowActive, syncJobPollingForWindow)
                 :disabled="operation === 'add_domain' || applicationTaskActive || !domain"
               >
                 <LoaderCircle v-if="operation === 'add_domain'" class="spin" :size="15" />
-                <Globe2 v-else :size="15" /> 绑定
+                <Globe2 v-else :size="15" /> {{ phrase('绑定') }}
               </button>
             </form>
             <p v-if="sitesWarning" class="field-warning">{{ sitesWarning }}</p>
@@ -1431,24 +1436,24 @@ watch(windowActive, syncJobPollingForWindow)
           </section>
 
           <section class="app-detail-section app-detail-section--access">
-            <header><Network :size="18" /><div><strong>IP + 端口访问</strong><small>通过容器监听地址切换，不写入全局防火墙</small></div></header>
+            <header><Network :size="18" /><div><strong>{{ phrase('IP + 端口访问') }}</strong><small>{{ phrase('通过容器监听地址切换，不写入全局防火墙') }}</small></div></header>
             <div class="access-card">
               <span :class="selected.runtime.accessMode === 'domain_only' ? 'is-locked' : 'is-open'">
                 <LockKeyhole v-if="selected.runtime.accessMode === 'domain_only'" :size="19" />
                 <UnlockKeyhole v-else :size="19" />
               </span>
               <div>
-                <strong>{{ selected.runtime.accessMode === 'domain_only' ? '已阻止直接访问' : '允许直接访问' }}</strong>
-                <small>域名反向代理不受影响</small>
+                <strong>{{ phrase(selected.runtime.accessMode === 'domain_only' ? '已阻止直接访问' : '允许直接访问') }}</strong>
+                <small>{{ phrase('域名反向代理不受影响') }}</small>
               </div>
               <button
                 class="button button--secondary button--small"
                 type="button"
                 :disabled="!capability(selected, 'direct_access') || Boolean(operation) || applicationTaskActive"
-                :title="selected.capabilities.direct_access?.reason"
+                :title="phrase(selected.capabilities.direct_access?.reason || '')"
                 @click="toggleAccess"
               >
-                {{ selected.runtime.accessMode === 'domain_only' ? '放行' : '阻止' }}
+                {{ phrase(selected.runtime.accessMode === 'domain_only' ? '放行' : '阻止') }}
               </button>
             </div>
           </section>
@@ -1456,26 +1461,26 @@ watch(windowActive, syncJobPollingForWindow)
 
         <section v-if="selected.runtime.installed" class="danger-zone">
           <div>
-            <strong>维护与卸载</strong>
-            <small>更新失败会自动恢复旧容器；卸载只删除已核验的容器与兼容标记，不清理共享镜像。</small>
+            <strong>{{ phrase('维护与卸载') }}</strong>
+            <small>{{ phrase('更新失败会自动恢复旧容器；卸载只删除已核验的容器与兼容标记，不清理共享镜像。') }}</small>
           </div>
           <button
             class="button button--secondary"
             type="button"
             :disabled="!capability(selected, 'update') || Boolean(operation) || applicationTaskActive"
-            :title="selected.capabilities.update?.reason"
+            :title="phrase(selected.capabilities.update?.reason || '')"
             @click="confirmAction = 'update'"
           >
-            <RefreshCw :size="15" /> 更新
+            <RefreshCw :size="15" /> {{ phrase('更新') }}
           </button>
           <button
             class="button button--danger"
             type="button"
             :disabled="!capability(selected, 'uninstall') || Boolean(operation) || applicationTaskActive"
-            :title="selected.capabilities.uninstall?.reason"
+            :title="phrase(selected.capabilities.uninstall?.reason || '')"
             @click="confirmAction = 'uninstall'"
           >
-            <Trash2 :size="15" /> 卸载
+            <Trash2 :size="15" /> {{ phrase('卸载') }}
           </button>
         </section>
       </template>
@@ -1493,13 +1498,13 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="installOpen && Boolean(selected)"
       :title="i18n.t('apps.installTitle', { name: selected ? appName(selected) : '' })"
-      description="任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。"
+      :description="phrase('任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。')"
       size="small"
       @close="installOpen = false"
     >
       <form id="app-install-form" class="form-stack" @submit.prevent="install">
         <label v-if="selected?.installPortConfigurable" class="field">
-          <span>访问端口</span>
+          <span>{{ phrase('访问端口') }}</span>
           <input
             v-model.number="installPort"
             type="number"
@@ -1509,7 +1514,7 @@ watch(windowActive, syncJobPollingForWindow)
             :placeholder="selected?.defaultPort ? String(selected.defaultPort) : i18n.t('apps.defaultPortPlaceholder')"
             @blur="checkInstallPort()"
           />
-          <small>端口由面板传给 kejilion.sh；提交前会再次检查宿主机监听与 Docker 映射，避免安装到一半才发现冲突。</small>
+          <small>{{ phrase('端口由面板传给 kejilion.sh；提交前会再次检查宿主机监听与 Docker 映射，避免安装到一半才发现冲突。') }}</small>
           <span
             v-if="installPortMessage"
             class="install-port-status"
@@ -1518,39 +1523,39 @@ watch(windowActive, syncJobPollingForWindow)
             <LoaderCircle v-if="installPortState === 'checking'" class="spin" :size="13" />
             <CheckCircle2 v-else-if="installPortState === 'available'" :size="13" />
             <Activity v-else :size="13" />
-            {{ installPortMessage }}
+            {{ phrase(installPortMessage) }}
           </span>
         </label>
         <fieldset v-if="selected?.installer === 'declarative'" class="access-options">
-          <legend>初始访问方式</legend>
+          <legend>{{ phrase('初始访问方式') }}</legend>
           <button
             type="button"
             :class="{ 'is-active': installAccess === 'direct' }"
             @click="installAccess = 'direct'"
           >
-            <UnlockKeyhole :size="18" /><span><strong>IP + 端口</strong><small>安装后立即可访问</small></span>
+            <UnlockKeyhole :size="18" /><span><strong>{{ phrase('IP + 端口') }}</strong><small>{{ phrase('安装后立即可访问') }}</small></span>
           </button>
           <button
             type="button"
             :class="{ 'is-active': installAccess === 'domain_only' }"
             @click="installAccess = 'domain_only'"
           >
-            <LockKeyhole :size="18" /><span><strong>仅域名访问</strong><small>绑定到 127.0.0.1</small></span>
+            <LockKeyhole :size="18" /><span><strong>{{ phrase('仅域名访问') }}</strong><small>{{ phrase('绑定到 127.0.0.1') }}</small></span>
           </button>
         </fieldset>
         <div class="inline-alert inline-alert--info">
           <ShieldCheck :size="17" />
-          {{
+          {{ phrase(
             selected?.installer === 'kejilion'
               ? selected?.installPortConfigurable
                 ? '端口已在面板确定；提交后打开 kejilion.sh 网页终端，账号、密码等其余参数仍按原脚本提示输入。'
                 : '该应用使用自定义安装器；提交后打开 kejilion.sh 网页终端，并按原脚本提示完成必要参数。'
               : '使用固定声明式模板；容器创建失败不会写入脚本安装标记。'
-          }}
+          ) }}
         </div>
       </form>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="installOpen = false">取消</button>
+        <button class="button button--secondary" type="button" @click="installOpen = false">{{ phrase('取消') }}</button>
         <button
           class="button button--primary"
           type="submit"
@@ -1570,7 +1575,7 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="jobDetailsOpen && Boolean(activeJob)"
       :title="i18n.t('apps.jobProgressTitle', { name: activeJob?.appName || '', action: jobActionLabel(activeJob?.action) })"
-      description="任务由宿主机后台执行，离开本页面不会中断。"
+      :description="phrase('任务由宿主机后台执行，离开本页面不会中断。')"
       size="large"
       @close="jobDetailsOpen = false"
     >
@@ -1582,7 +1587,7 @@ watch(windowActive, syncJobPollingForWindow)
             <Activity v-else :size="21" />
           </span>
           <div>
-            <strong>{{ activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) }) }}</strong>
+            <strong>{{ phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) })) }}</strong>
             <small>{{ i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id }) }}</small>
           </div>
           <StatusBadge :status="activeJob.status" />
@@ -1599,11 +1604,11 @@ watch(windowActive, syncJobPollingForWindow)
         />
         <section v-else class="job-log">
           <header>
-            <strong>实时日志</strong>
+            <strong>{{ phrase('实时日志') }}</strong>
             <small>{{ i18n.t('apps.recentLogs', { count: activeJob.logs.length }) }}</small>
           </header>
-          <pre v-if="activeJob.logs.length">{{ activeJob.logs.join('\n') }}</pre>
-          <p v-else>任务已进入队列，正在等待首批输出…</p>
+          <pre v-if="activeJob.logs.length" data-i18n-ignore>{{ activeJob.logs.join('\n') }}</pre>
+          <p v-else>{{ phrase('任务已进入队列，正在等待首批输出…') }}</p>
         </section>
       </template>
       <template #footer>
@@ -1613,10 +1618,10 @@ watch(windowActive, syncJobPollingForWindow)
           type="button"
           @click="requestCancelJob"
         >
-          <Square :size="14" /> 结束任务
+          <Square :size="14" /> {{ phrase('结束任务') }}
         </button>
         <button class="button button--secondary" type="button" @click="jobDetailsOpen = false">
-          {{ isActiveJob(activeJob) ? '后台运行' : '关闭窗口' }}
+          {{ phrase(isActiveJob(activeJob) ? '后台运行' : '关闭窗口') }}
         </button>
         <button
           v-if="!isActiveJob(activeJob)"
@@ -1624,21 +1629,21 @@ watch(windowActive, syncJobPollingForWindow)
           type="button"
           @click="dismissJob"
         >
-          关闭记录
+          {{ phrase('关闭记录') }}
         </button>
       </template>
     </ModalDialog>
 
     <ModalDialog
       :open="cancelJobPending"
-      title="结束当前交互任务？"
-      description="这会停止当前 kejilion.sh 交互终端并释放应用管理锁；已经执行完成的脚本步骤不会自动回滚。"
+      :title="phrase('结束当前交互任务？')"
+      :description="phrase('这会停止当前 kejilion.sh 交互终端并释放应用管理锁；已经执行完成的脚本步骤不会自动回滚。')"
       size="small"
       @close="cancelJobPending = false"
     >
       <div class="inline-alert inline-alert--warning">
         <Activity :size="17" />
-        仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。
+        {{ phrase('仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。') }}
       </div>
       <template #footer>
         <button
@@ -1647,7 +1652,7 @@ watch(windowActive, syncJobPollingForWindow)
           :disabled="cancellingJob"
           @click="cancelJobPending = false"
         >
-          继续运行
+          {{ phrase('继续运行') }}
         </button>
         <button
           class="button button--danger"
@@ -1656,7 +1661,7 @@ watch(windowActive, syncJobPollingForWindow)
           @click="confirmCancelJob"
         >
           <LoaderCircle v-if="cancellingJob" class="spin" :size="16" />
-          <Square v-else :size="14" /> {{ cancellingJob ? '正在结束…' : '确认结束任务' }}
+          <Square v-else :size="14" /> {{ phrase(cancellingJob ? '正在结束…' : '确认结束任务') }}
         </button>
       </template>
     </ModalDialog>
@@ -1673,7 +1678,7 @@ watch(windowActive, syncJobPollingForWindow)
         <div><strong>{{ selected ? appName(selected) : '' }}</strong><small>{{ selected?.runtime.containerName }}</small></div>
       </div>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="confirmAction = undefined">取消</button>
+        <button class="button button--secondary" type="button" @click="confirmAction = undefined">{{ phrase('取消') }}</button>
         <button
           class="button"
           :class="confirmAction === 'uninstall' ? 'button--danger' : 'button--primary'"

@@ -2,6 +2,12 @@
 import { computed, ref } from 'vue'
 import { Check, Copy, ExternalLink, Network } from '@lucide/vue'
 import { siAlibabacloud, siCloudflare, siHuawei, type SimpleIcon } from 'simple-icons'
+import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 const props = defineProps<{
   ipv4?: string
@@ -57,8 +63,8 @@ async function copy(value: string): Promise<void> {
     <header>
       <span class="dns-guide__icon"><Network :size="17" /></span>
       <div>
-        <strong>先完成域名解析</strong>
-        <small>在域名托管平台添加以下记录，主机记录通常填写 <code>@</code> 或子域名前缀。</small>
+        <strong>{{ phrase('先完成域名解析') }}</strong>
+        <small>{{ phrase('在域名托管平台添加以下记录，主机记录通常填写') }} <code>@</code> {{ phrase('或子域名前缀。') }}</small>
       </div>
     </header>
 
@@ -67,7 +73,7 @@ async function copy(value: string): Promise<void> {
         v-for="record in records"
         :key="record.type"
         type="button"
-        :title="`复制 ${record.type} 记录地址`"
+        :title="phrase(`复制 ${record.type} 记录地址`)"
         @click="copy(record.value)"
       >
         <b>{{ record.type }}</b>
@@ -76,10 +82,10 @@ async function copy(value: string): Promise<void> {
         <Copy v-else :size="14" />
       </button>
     </div>
-    <p v-else>暂未识别本机公网 IP，请先在概览刷新“网络与位置”。</p>
+    <p v-else>{{ phrase('暂未识别本机公网 IP，请先在概览刷新“网络与位置”。') }}</p>
 
-    <nav aria-label="域名托管平台">
-      <span>打开 DNS 控制台</span>
+    <nav :aria-label="phrase('域名托管平台')">
+      <span>{{ phrase('打开 DNS 控制台') }}</span>
       <a
         v-for="provider in providers"
         :key="provider.name"
@@ -91,7 +97,7 @@ async function copy(value: string): Promise<void> {
           <path :d="provider.icon.path" :style="{ fill: `#${provider.icon.hex}` }" />
         </svg>
         <i v-else aria-hidden="true">{{ provider.fallback }}</i>
-        {{ provider.name }}
+        {{ phrase(provider.name) }}
         <ExternalLink :size="11" />
       </a>
     </nav>

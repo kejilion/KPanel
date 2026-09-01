@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Filter, LoaderCircle, RefreshCw, Search, ShieldCheck } from '@lucide/vue'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/AuditView/en-US').then((module) => module.default)
   : import('@/i18n/pages/AuditView/zh-TW').then((module) => module.default))
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -173,27 +178,27 @@ onBeforeUnmount(() => controller?.abort())
 
     <ModalDialog
       :open="Boolean(selectedEvent)"
-      title="审计事件详情"
-      :description="selectedEvent ? `事件 ${selectedEvent.id}` : ''"
+      :title="phrase('审计事件详情')"
+      :description="selectedEvent ? phrase(`事件 ${selectedEvent.id}`) : ''"
       @close="selectedEvent = undefined"
     >
       <template v-if="selectedEvent">
         <div class="modal-status-row">
           <StatusBadge :status="selectedEvent.outcome" />
-          <span>{{ sourceLabel(selectedEvent.source) }}</span>
+          <span>{{ phrase(sourceLabel(selectedEvent.source)) }}</span>
         </div>
         <dl class="detail-list">
-          <div><dt>时间</dt><dd>{{ formatDateTime(selectedEvent.occurredAt) }}</dd></div>
-          <div><dt>操作者</dt><dd>{{ selectedEvent.actor }}</dd></div>
-          <div><dt>来源地址</dt><dd>{{ selectedEvent.remoteAddress || '未记录' }}</dd></div>
-          <div><dt>动作</dt><dd><code>{{ selectedEvent.action }}</code></dd></div>
-          <div><dt>目标</dt><dd>{{ selectedEvent.resourceType || '系统' }} / {{ selectedEvent.resourceName || '—' }}</dd></div>
-          <div><dt>请求 ID</dt><dd><code>{{ selectedEvent.requestId || '—' }}</code></dd></div>
-          <div v-if="selectedEvent.summary"><dt>摘要</dt><dd>{{ selectedEvent.summary }}</dd></div>
+          <div><dt>{{ phrase('时间') }}</dt><dd>{{ formatDateTime(selectedEvent.occurredAt) }}</dd></div>
+          <div><dt>{{ phrase('操作者') }}</dt><dd>{{ selectedEvent.actor }}</dd></div>
+          <div><dt>{{ phrase('来源地址') }}</dt><dd>{{ selectedEvent.remoteAddress || phrase('未记录') }}</dd></div>
+          <div><dt>{{ phrase('动作') }}</dt><dd><code>{{ selectedEvent.action }}</code></dd></div>
+          <div><dt>{{ phrase('目标') }}</dt><dd>{{ selectedEvent.resourceType || phrase('系统') }} / {{ selectedEvent.resourceName || '—' }}</dd></div>
+          <div><dt>{{ phrase('请求 ID') }}</dt><dd><code>{{ selectedEvent.requestId || '—' }}</code></dd></div>
+          <div v-if="selectedEvent.summary"><dt>{{ phrase('摘要') }}</dt><dd>{{ selectedEvent.summary }}</dd></div>
         </dl>
       </template>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="selectedEvent = undefined">关闭</button>
+        <button class="button button--secondary" type="button" @click="selectedEvent = undefined">{{ phrase('关闭') }}</button>
       </template>
     </ModalDialog>
   </div>

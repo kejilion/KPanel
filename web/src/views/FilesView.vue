@@ -2,7 +2,12 @@
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/FilesView/en-US').then((module) => module.default)
@@ -2854,15 +2859,15 @@ onBeforeUnmount(() => {
         class="file-context-menu k-context-menu"
         :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
         role="menu"
-        aria-label="文件操作"
+        :aria-label="phrase('文件操作')"
         @pointermove="showContextMenuPointerFocus"
         @keydown.stop="handleContextMenuKeydown"
       >
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openEntry(contextMenu.entry)">
-        <Eye :size="15" />{{ contextMenu.entry.kind === 'directory' ? '打开' : '查看' }}
+        <Eye :size="15" />{{ phrase(contextMenu.entry.kind === 'directory' ? '打开' : '查看') }}
       </button>
       <button v-if="!contextMenu.entry" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
-        <Pin :size="15" />将当前文件夹添加到桌面
+        <Pin :size="15" />{{ phrase('将当前文件夹添加到桌面') }}
       </button>
       <button
         v-if="contextMenu.entry && contextBatchDownloadable"
@@ -2870,10 +2875,10 @@ onBeforeUnmount(() => {
         type="button"
         @click="downloadSelected(contextMenu.entry)"
       >
-        <Download :size="15" />{{ contextBatchEntries.length === 1 && contextBatchEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}
+        <Download :size="15" />{{ phrase(contextBatchEntries.length === 1 && contextBatchEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP') }}
       </button>
       <button v-if="contextShareEntry" role="menuitem" type="button" @click="openFileShare(contextMenu.entry)">
-        <Share2 :size="15" />分享
+        <Share2 :size="15" />{{ phrase('分享') }}
       </button>
       <button
         v-if="contextMenu.entry && !contextHasMultipleEntries && archiveFormat(contextMenu.entry)"
@@ -2881,33 +2886,33 @@ onBeforeUnmount(() => {
         type="button"
         @click="openDialog('extract', contextMenu.entry)"
       >
-        <FolderOpen :size="15" />解压到文件夹
+        <FolderOpen :size="15" />{{ phrase('解压到文件夹') }}
       </button>
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('compress', contextMenu.entry)">
-        <Archive :size="15" />压缩
+        <Archive :size="15" />{{ phrase('压缩') }}
       </button>
       <hr v-if="contextMenu.entry" role="separator" />
       <button v-if="contextMenu.entry && !contextHasMultipleEntries" role="menuitem" type="button" @click="openDialog('rename', contextMenu.entry)">
-        <Pencil :size="15" />重命名
+        <Pencil :size="15" />{{ phrase('重命名') }}
       </button>
-      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('copy', contextMenu.entry)"><Copy :size="15" />复制</button>
-      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('move', contextMenu.entry)"><Scissors :size="15" />剪切</button>
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('copy', contextMenu.entry)"><Copy :size="15" />{{ phrase('复制') }}</button>
+      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('move', contextMenu.entry)"><Scissors :size="15" />{{ phrase('剪切') }}</button>
       <button
         v-if="clipboard?.entries.length && contextMenu.entry?.kind === 'directory'"
         role="menuitem"
         type="button"
         :disabled="pasteBusy"
         @click="pasteClipboard(contextMenu.entry.path)"
-      ><ClipboardPaste :size="15" />粘贴到此文件夹</button>
+      ><ClipboardPaste :size="15" />{{ phrase('粘贴到此文件夹') }}</button>
       <button
         v-if="clipboard?.entries.length"
         role="menuitem"
         type="button"
         :disabled="pasteBusy"
         @click="pasteClipboard()"
-      ><ClipboardPaste :size="15" />粘贴到当前目录</button>
+      ><ClipboardPaste :size="15" />{{ phrase('粘贴到当前目录') }}</button>
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('chmod', contextMenu.entry)">
-        <ShieldCheck :size="15" />修改权限
+        <ShieldCheck :size="15" />{{ phrase('修改权限') }}
       </button>
       <button
         v-if="contextMenu.entry && contextBatchEntries.some(canAddToDesktop)"
@@ -2916,14 +2921,14 @@ onBeforeUnmount(() => {
         :disabled="desktopAdding"
         @click="addEntriesToDesktop(contextMenu.entry)"
       >
-        <Pin :size="15" />{{ contextHasMultipleEntries ? `添加 ${contextBatchEntries.filter(canAddToDesktop).length} 项到桌面` : '添加到桌面' }}
+        <Pin :size="15" />{{ phrase(contextHasMultipleEntries ? `添加 ${contextBatchEntries.filter(canAddToDesktop).length} 项到桌面` : '添加到桌面') }}
       </button>
       <button v-if="!contextMenu.entry" role="menuitem" type="button" @click="openDialog('mkdir')">
-        <Plus :size="15" />新建目录
+        <Plus :size="15" />{{ phrase('新建目录') }}
       </button>
       <hr v-if="contextMenu.entry" role="separator" />
       <button v-if="contextMenu.entry" class="danger-link k-context-menu__item--danger" role="menuitem" type="button" @click="openDialog('trash', contextMenu.entry)">
-        <Trash2 :size="15" />移入回收站
+        <Trash2 :size="15" />{{ phrase('移入回收站') }}
       </button>
       </div>
     </Teleport>
@@ -2999,8 +3004,8 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(dialogAction)"
-      :title="dialogTitle"
-      :description="
+      :title="phrase(dialogTitle)"
+      :description="phrase(
         dialogAction === 'trash'
           ? '文件将移动到 KPanel 隔离回收区，可在回收站中恢复。'
           : dialogAction === 'compress'
@@ -3008,7 +3013,7 @@ onBeforeUnmount(() => {
             : dialogAction === 'extract'
               ? '内容将解压到全新的文件夹，不覆盖已有文件。'
               : ''
-      "
+      )"
       size="small"
       @close="closeDialog"
     >
@@ -3016,7 +3021,7 @@ onBeforeUnmount(() => {
         <label>
           <span>
             {{
-              dialogAction === 'mkdir'
+              phrase(dialogAction === 'mkdir'
                 ? '文件夹名称'
                 : dialogAction === 'rename'
                   ? '新名称'
@@ -3024,40 +3029,40 @@ onBeforeUnmount(() => {
                     ? '权限（八进制）'
                     : dialogAction === 'compress'
                       ? '压缩包名称'
-                      : '目标文件夹名称'
+                      : '目标文件夹名称')
             }}
           </span>
           <input
             v-model="dialogValue"
             :placeholder="
-              dialogAction === 'chmod'
+              phrase(dialogAction === 'chmod'
                 ? '例如 644 或 755'
                 : dialogAction === 'compress'
                   ? '例如 website.tar.gz'
                   : dialogAction === 'extract'
                     ? '例如 website'
-                    : '输入名称'
+                    : '输入名称')
             "
             autocomplete="off"
             @keydown.enter="submitDialog"
           />
         </label>
         <label v-if="dialogAction === 'compress'">
-          <span>压缩格式</span>
+          <span>{{ phrase('压缩格式') }}</span>
           <select v-model="dialogFormat">
-            <option value="tar.gz">TAR.GZ（推荐）</option>
-            <option value="zip">ZIP（跨平台）</option>
-            <option value="tar">TAR（不压缩）</option>
+            <option value="tar.gz">{{ phrase('TAR.GZ（推荐）') }}</option>
+            <option value="zip">{{ phrase('ZIP（跨平台）') }}</option>
+            <option value="tar">{{ phrase('TAR（不压缩）') }}</option>
           </select>
         </label>
         <small v-if="dialogAction === 'compress' || dialogAction === 'extract'" class="archive-hint">
-          单次最多 100 项、10,000 个条目或解压后 10 GiB；不支持符号链接、硬链接和设备文件。
+          {{ phrase('单次最多 100 项、10,000 个条目或解压后 10 GiB；不支持符号链接、硬链接和设备文件。') }}
         </small>
       </div>
       <div v-else class="trash-summary">
         <Trash2 :size="24" />
-        <strong>确认移动 {{ dialogEntries.length }} 项？</strong>
-        <span>稍后可从文件管理右上角的回收站恢复或彻底删除。</span>
+        <strong>{{ phrase(`确认移动 ${dialogEntries.length} 项？`) }}</strong>
+        <span>{{ phrase('稍后可从文件管理右上角的回收站恢复或彻底删除。') }}</span>
       </div>
       <div class="dialog-actions">
         <button
@@ -3066,7 +3071,7 @@ onBeforeUnmount(() => {
           :disabled="dialogBusy && dialogAction !== 'compress' && dialogAction !== 'extract'"
           @click="dialogBusy ? cancelArchive() : closeDialog()"
         >
-          {{ dialogBusy && (dialogAction === 'compress' || dialogAction === 'extract') ? '停止' : '取消' }}
+          {{ phrase(dialogBusy && (dialogAction === 'compress' || dialogAction === 'extract') ? '停止' : '取消') }}
         </button>
         <button
           class="button"
@@ -3076,7 +3081,7 @@ onBeforeUnmount(() => {
           @click="submitDialog"
         >
           {{
-            dialogBusy
+            phrase(dialogBusy
               ? dialogAction === 'compress'
                 ? '压缩中…'
                 : dialogAction === 'extract'
@@ -3088,7 +3093,7 @@ onBeforeUnmount(() => {
                   ? '开始压缩'
                   : dialogAction === 'extract'
                     ? '开始解压'
-                    : '确认'
+                    : '确认')
           }}
         </button>
       </div>
@@ -3096,39 +3101,39 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="trashOpen"
-      title="回收站"
-      description="删除的文件保存在 Agent 隔离目录中；恢复时不会覆盖同名文件。"
+      :title="phrase('回收站')"
+      :description="phrase('删除的文件保存在 Agent 隔离目录中；恢复时不会覆盖同名文件。')"
       size="wide"
       @close="!trashBusy && (trashOpen = false)"
     >
       <div class="trash-manager">
         <header>
-          <span>共 {{ trashTotal }} 项<span v-if="trashTruncated">（显示最近 500 项）</span></span>
+          <span>{{ phrase(`${trashTotal} 项`) }}<span v-if="trashTruncated">{{ phrase('（显示最近 500 项）') }}</span></span>
           <div>
             <button
               class="button button--secondary"
               type="button"
               :disabled="trashLoading || trashBusy || !trashEntries.length"
               @click="toggleAllTrash"
-            >{{ allTrashSelected ? '取消选择' : '选择当前列表' }}</button>
+            >{{ phrase(allTrashSelected ? '取消选择' : '选择当前列表') }}</button>
             <button class="button button--secondary" type="button" :disabled="trashLoading || trashBusy" @click="loadTrash">
-              <RefreshCw :size="15" :class="{ spinning: trashLoading }" />刷新
+              <RefreshCw :size="15" :class="{ spinning: trashLoading }" />{{ phrase('刷新') }}
             </button>
             <button
               class="button button--secondary"
               type="button"
               :disabled="trashBusy || !selectedTrash.size || trashEntries.filter((entry) => selectedTrash.has(entry.id)).some((entry) => !entry.restorable)"
               @click="runTrashAction('trash_restore')"
-            ><RotateCcw :size="15" />恢复</button>
+            ><RotateCcw :size="15" />{{ phrase('恢复') }}</button>
             <button class="button button--danger" type="button" :disabled="trashBusy || !selectedTrash.size" @click="runTrashAction('trash_delete')">
-              <Trash2 :size="15" />彻底删除
+              <Trash2 :size="15" />{{ phrase('彻底删除') }}
             </button>
             <button class="button button--danger" type="button" :disabled="trashBusy || !trashTotal" @click="runTrashAction('trash_empty')">
-              清空回收站
+              {{ phrase('清空回收站') }}
             </button>
           </div>
         </header>
-        <div v-if="trashLoading" class="file-loading"><RefreshCw :size="22" class="spinning" />正在读取回收站…</div>
+        <div v-if="trashLoading" class="file-loading"><RefreshCw :size="22" class="spinning" />{{ phrase('正在读取回收站…') }}</div>
         <div v-else-if="trashEntries.length" class="trash-list">
           <label v-for="entry in trashEntries" :key="entry.id" class="trash-item">
             <input type="checkbox" :checked="selectedTrash.has(entry.id)" @change="toggleTrash(entry.id)" />
@@ -3138,40 +3143,40 @@ onBeforeUnmount(() => {
             </span>
             <span>
               <strong>{{ entry.name }}</strong>
-              <small>{{ entry.originalPath || '旧版回收站项目（仅支持彻底删除）' }}</small>
+              <small>{{ entry.originalPath || phrase('旧版回收站项目（仅支持彻底删除）') }}</small>
             </span>
-            <span>{{ entry.kind === 'directory' ? '文件夹' : formatBytes(entry.sizeBytes) }}</span>
+            <span>{{ entry.kind === 'directory' ? phrase('文件夹') : formatBytes(entry.sizeBytes) }}</span>
             <span>{{ formatTime(entry.deletedAt) }}</span>
           </label>
         </div>
         <div v-else class="file-empty">
           <Trash2 :size="34" />
-          <strong>回收站是空的</strong>
-          <span>移入回收站的文件会显示在这里。</span>
+          <strong>{{ phrase('回收站是空的') }}</strong>
+          <span>{{ phrase('移入回收站的文件会显示在这里。') }}</span>
         </div>
       </div>
     </ModalDialog>
 
     <ModalDialog
       :open="Boolean(previewEntry)"
-      :title="previewEntry?.name || '文件查看器'"
+      :title="previewEntry?.name || phrase('文件查看器')"
       :description="previewEntry ? `${previewEntry.path} · ${formatBytes(previewEntry.sizeBytes)}` : ''"
       size="wide"
       allow-fullscreen
       @close="closePreview"
     >
-      <div v-if="previewLoading" class="preview-loading"><RefreshCw :size="22" class="spinning" />正在打开文件…</div>
+      <div v-if="previewLoading" class="preview-loading"><RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}</div>
       <div v-else-if="previewEntry && previewMode === 'text'" class="code-viewer">
         <header>
-          <span><Code2 :size="15" />{{ previewEntry.mime || 'UTF-8 文本' }}</span>
+          <span><Code2 :size="15" />{{ previewEntry.mime || phrase('UTF-8 文本') }}</span>
           <span class="code-viewer__header-right">
             <span>{{ previewEntry.mode }} · {{ previewEntry.owner }}:{{ previewEntry.group }}</span>
             <span class="code-editor-tools">
               <button
                 class="code-editor-tool"
                 type="button"
-                title="查找或替换（Ctrl+F）"
-                aria-label="查找或替换"
+                :title="phrase('查找或替换（Ctrl+F）')"
+                :aria-label="phrase('查找或替换')"
                 @click="codeEditorRef?.openSearch()"
               >
                 <Search :size="15" />
@@ -3180,8 +3185,8 @@ onBeforeUnmount(() => {
                 class="code-editor-tool"
                 :class="{ 'is-active': editorLineWrap }"
                 type="button"
-                title="切换自动换行"
-                aria-label="切换自动换行"
+                :title="phrase('切换自动换行')"
+                :aria-label="phrase('切换自动换行')"
                 :aria-pressed="editorLineWrap"
                 @click="editorLineWrap = !editorLineWrap"
               >
@@ -3207,18 +3212,18 @@ onBeforeUnmount(() => {
         </div>
         <footer>
           <span>
-            {{ editorStatus?.lines || 1 }} 行
-            <template v-if="editorStatus"> · 行 {{ editorStatus.line }}，列 {{ editorStatus.column }}</template>
+            {{ editorStatus?.lines || 1 }} {{ phrase('行') }}
+            <template v-if="editorStatus"> · {{ phrase('行') }} {{ editorStatus.line }}，{{ phrase('列') }} {{ editorStatus.column }}</template>
             · UTF-8
             <template v-if="editorInfo">
               · {{ editorInfo.label }}
-              {{ editorInfo.highlighted ? '语法着色' : editorInfo.reason === 'large-file' ? '大文件纯文本' : '纯文本' }}
+              {{ phrase(editorInfo.highlighted ? '语法着色' : editorInfo.reason === 'large-file' ? '大文件纯文本' : '纯文本') }}
             </template>
           </span>
-          <span v-if="previewDirty">有未保存修改</span>
+          <span v-if="previewDirty">{{ phrase('有未保存修改') }}</span>
           <span class="code-editor-actions">
             <button class="button button--primary button--small" type="button" :disabled="previewSaving || !previewDirty" @click="savePreview()">
-              <Save :size="15" />{{ previewSaving ? '保存中…' : '保存 Ctrl+S' }}
+              <Save :size="15" />{{ phrase(previewSaving ? '保存中…' : '保存 Ctrl+S') }}
             </button>
           </span>
         </footer>
@@ -3243,18 +3248,18 @@ onBeforeUnmount(() => {
           </video>
           <div v-if="mediaLoading && !mediaError" class="media-player__loading" role="status" aria-live="polite">
             <RefreshCw :size="20" class="spinning" />
-            <span>正在连接视频流…</span>
+            <span>{{ phrase('正在连接视频流…') }}</span>
           </div>
           <div v-else-if="mediaError" class="media-player__error" role="alert">
-            <strong>{{ mediaErrorMessage || '视频暂时无法播放' }}</strong>
-            <span>{{ mediaErrorDetail || '请检查文件编码或服务器是否支持该格式。' }}</span>
+            <strong>{{ phrase(mediaErrorMessage || '视频暂时无法播放') }}</strong>
+            <span>{{ phrase(mediaErrorDetail || '请检查文件编码或服务器是否支持该格式。') }}</span>
             <button
               v-if="mediaRetryable"
               class="button button--secondary button--small"
               type="button"
               @click.stop="retryMedia"
             >
-              重试播放
+              {{ phrase('重试播放') }}
             </button>
           </div>
         </div>
@@ -3263,18 +3268,18 @@ onBeforeUnmount(() => {
         <iframe v-else-if="previewMode === 'pdf'" :src="previewURL" :title="previewEntry.name" loading="lazy" />
         <div v-else class="metadata-viewer">
           <component :is="entryIcon(previewEntry)" :size="44" />
-          <strong>此格式暂不在浏览器内解析</strong>
-          <span>{{ previewEntry.mime || '未知格式' }} · {{ formatBytes(previewEntry.sizeBytes) }}</span>
+          <strong>{{ phrase('此格式暂不在浏览器内解析') }}</strong>
+          <span>{{ previewEntry.mime || phrase('未知格式') }} · {{ formatBytes(previewEntry.sizeBytes) }}</span>
           <button class="button button--primary" type="button" @click="download(previewEntry)">
-            <Download :size="16" />下载文件
+            <Download :size="16" />{{ phrase('下载文件') }}
           </button>
         </div>
         <footer v-if="previewMode !== 'metadata'" class="media-viewer__footer">
           <span class="media-viewer__status" :class="{ 'is-loading': mediaLoading, 'is-error': mediaError }">
-            <i aria-hidden="true" />{{ mediaStatusLabel }}
+            <i aria-hidden="true" />{{ phrase(mediaStatusLabel) }}
           </span>
           <button class="button button--secondary button--small" type="button" @click="download(previewEntry)">
-            <Download :size="15" />下载原文件
+            <Download :size="15" />{{ phrase('下载原文件') }}
           </button>
         </footer>
       </div>
