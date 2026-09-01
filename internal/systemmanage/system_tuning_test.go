@@ -96,7 +96,7 @@ func TestSystemTuningPolicyRoundTrip(t *testing.T) {
 }
 
 func TestTrustedSystemTuningRequiresPinnedSources(t *testing.T) {
-	content := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"3\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\nKPANEL_SYSTEM_TUNING_PROTOCOL_VERSION=\"1\"\nKJ_SYSTEM_TUNING_NONINTERACTIVE\nkpanel_system_tuning_dispatch\nKPANEL_SYSTEM_TUNING_MIRROR_SHA256\nKPANEL_SYSTEM_TUNING_NETWORK_SHA256\n")
+	content := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"4\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\nKPANEL_SYSTEM_TUNING_PROTOCOL_VERSION=\"1\"\nKJ_SYSTEM_TUNING_NONINTERACTIVE\nkpanel_system_tuning_dispatch\nKPANEL_SYSTEM_TUNING_MIRROR_SHA256\nKPANEL_SYSTEM_TUNING_NETWORK_SHA256\n")
 	if !trustedKejilionSystemTuningContent(content) {
 		t.Fatal("current protocol markers were rejected")
 	}
@@ -108,7 +108,7 @@ func TestTrustedSystemTuningRequiresPinnedSources(t *testing.T) {
 func systemTuningScriptFixture(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kejilion.sh")
-	content := "#!/bin/bash\npermission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"3\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\nKPANEL_SYSTEM_TUNING_PROTOCOL_VERSION=\"1\"\nKJ_SYSTEM_TUNING_NONINTERACTIVE\nkpanel_system_tuning_dispatch\nKPANEL_SYSTEM_TUNING_MIRROR_SHA256\nKPANEL_SYSTEM_TUNING_NETWORK_SHA256\n# " + strings.Repeat("x", 1200)
+	content := "#!/bin/bash\npermission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"4\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\nKPANEL_SYSTEM_TUNING_PROTOCOL_VERSION=\"1\"\nKJ_SYSTEM_TUNING_NONINTERACTIVE\nkpanel_system_tuning_dispatch\nKPANEL_SYSTEM_TUNING_MIRROR_SHA256\nKPANEL_SYSTEM_TUNING_NETWORK_SHA256\n# " + strings.Repeat("x", 1200)
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
 	}

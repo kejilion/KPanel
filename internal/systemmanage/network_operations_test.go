@@ -17,7 +17,7 @@ func networkOperationsFixtureScript(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "kejilion.sh")
 	content := strings.Join([]string{
 		`permission_granted="true"`,
-		`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"`,
+		`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"`,
 		`KPANEL_NETWORK_OPERATIONS_PROTOCOL_VERSION="1"`,
 		`KJ_SYSTEM_RESOURCE_NONINTERACTIVE=1`,
 		`KJ_NETWORK_OPERATIONS_NONINTERACTIVE=1`,
@@ -142,7 +142,7 @@ func TestTrafficShutdownWriteUsesFixedScriptProtocolAndReadback(t *testing.T) {
 
 func TestNetworkOperationsTrustRequiresDedicatedV1Marker(t *testing.T) {
 	legacy := []byte(`permission_granted="true"
-KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"
+KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"
 KJ_SYSTEM_RESOURCE_NONINTERACTIVE
 kpanel_system_resource_dispatch
 KPANEL_SYSTEM_RESOURCE_STATUS

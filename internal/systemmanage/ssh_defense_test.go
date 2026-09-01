@@ -96,7 +96,7 @@ func TestSSHDefenseRunsAsPersistentFixedMaintenanceTask(t *testing.T) {
 	manager.executable = filepath.Join(stateDir, "kejilion-agent")
 	script := filepath.Join(stateDir, "kejilion.sh")
 	content := strings.Repeat("# padding\n", 160) + strings.Join([]string{
-		`permission_granted="true"`, `KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"`,
+		`permission_granted="true"`, `KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"`,
 		"KJ_SYSTEM_RESOURCE_NONINTERACTIVE", "kpanel_system_resource_dispatch", "KPANEL_SYSTEM_RESOURCE_STATUS", "KPANEL_SYSTEM_RESOURCE_VERSION",
 		`KPANEL_F2B_MANAGER_PROTOCOL_VERSION="1"`, "KJ_F2B_NONINTERACTIVE", "kpanel_f2b_manager_dispatch", "KPANEL_F2B_MANAGER_STATUS",
 	}, "\n")

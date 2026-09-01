@@ -13,20 +13,23 @@ import (
 )
 
 const (
-	SystemHostsMaxBytes      = 256 << 10
-	SystemHostsMaxLines      = 1024
-	SystemCronMaxBytes       = 256 << 10
-	SystemCronMaxLines       = 512
-	SystemNetworkMaxEntries  = 128
-	SystemFirewallMaxBytes   = 512 << 10
-	SystemFirewallMaxLines   = 512
-	SystemResourceMaxCommand = 2048
+	SystemHostsMaxBytes         = 256 << 10
+	SystemHostsMaxLines         = 1024
+	SystemCronMaxBytes          = 256 << 10
+	SystemCronMaxLines          = 512
+	SystemNetworkMaxEntries     = 128
+	SystemFirewallMaxBytes      = 512 << 10
+	SystemFirewallMaxLines      = 512
+	SystemFirewallIPSetMaxBytes = 8 << 20
+	SystemFirewallIPSetMaxLines = 131072
+	SystemResourceMaxCommand    = 2048
 )
 
 var (
 	systemResourceVersionPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	systemHostnameLabelPattern   = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 	systemInterfacePattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,14}$`)
+	systemCountryCodePattern     = regexp.MustCompile(`^[A-Z]{2}$`)
 )
 
 // SystemResourceActionRequest is the mutation contract for the independent
@@ -43,6 +46,7 @@ type SystemResourceActionRequest struct {
 	InterfaceName           string   `json:"interfaceName,omitempty"`
 	Enabled                 *bool    `json:"enabled,omitempty"`
 	Port                    int      `json:"port,omitempty"`
+	CountryCode             string   `json:"countryCode,omitempty"`
 	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
 
 	providedFields map[string]struct{}
@@ -59,6 +63,7 @@ type systemResourceActionRequestJSON struct {
 	InterfaceName           string   `json:"interfaceName,omitempty"`
 	Enabled                 *bool    `json:"enabled,omitempty"`
 	Port                    int      `json:"port,omitempty"`
+	CountryCode             string   `json:"countryCode,omitempty"`
 	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
 }
 
@@ -86,7 +91,7 @@ func (request *SystemResourceActionRequest) UnmarshalJSON(data []byte) error {
 		Action: value.Action, Address: value.Address, Hostnames: value.Hostnames,
 		Comment: value.Comment, Line: value.Line, Expression: value.Expression,
 		Command: value.Command, InterfaceName: value.InterfaceName, Enabled: value.Enabled,
-		Port: value.Port, ExpectedResourceVersion: value.ExpectedResourceVersion,
+		Port: value.Port, CountryCode: value.CountryCode, ExpectedResourceVersion: value.ExpectedResourceVersion,
 		providedFields: make(map[string]struct{}, len(fields)),
 	}
 	for field := range fields {
@@ -126,6 +131,8 @@ func ValidateSystemResourceAction(request *SystemResourceActionRequest) (string,
 		require("port")
 	case "firewall-allow-ip", "firewall-block-ip", "firewall-remove-ip":
 		require("address")
+	case "firewall-allow-country", "firewall-block-country", "firewall-remove-country":
+		require("countryCode")
 	case "firewall-open-all", "firewall-close-all", "firewall-enable-ping",
 		"firewall-disable-ping", "firewall-enable-ddos", "firewall-disable-ddos":
 	default:
@@ -209,6 +216,11 @@ func ValidateSystemResourceAction(request *SystemResourceActionRequest) (string,
 			return "address", "address must be an IPv4 address or IPv4 CIDR"
 		}
 		request.Address = address
+	case "firewall-allow-country", "firewall-block-country", "firewall-remove-country":
+		request.CountryCode = strings.ToUpper(strings.TrimSpace(request.CountryCode))
+		if !systemCountryCodePattern.MatchString(request.CountryCode) {
+			return "countryCode", "countryCode must be two uppercase letters such as US"
+		}
 	}
 	return "", ""
 }
@@ -244,6 +256,9 @@ func (request *SystemResourceActionRequest) actualProvidedFields() map[string]st
 	}
 	if request.Port != 0 {
 		fields["port"] = struct{}{}
+	}
+	if request.CountryCode != "" {
+		fields["countryCode"] = struct{}{}
 	}
 	return fields
 }
@@ -431,14 +446,22 @@ type SystemNetworkInterface struct {
 }
 
 type SystemFirewallSnapshot struct {
-	ResourceVersion string               `json:"resourceVersion"`
-	Backend         string               `json:"backend"`
-	InputPolicy     string               `json:"inputPolicy"`
-	Rules           []SystemFirewallRule `json:"rules"`
-	Total           int                  `json:"total"`
-	Truncated       bool                 `json:"truncated"`
-	PingAllowed     bool                 `json:"pingAllowed"`
-	DDoSEnabled     bool                 `json:"ddosEnabled"`
+	ResourceVersion string                      `json:"resourceVersion"`
+	Backend         string                      `json:"backend"`
+	InputPolicy     string                      `json:"inputPolicy"`
+	Rules           []SystemFirewallRule        `json:"rules"`
+	CountryRules    []SystemFirewallCountryRule `json:"countryRules"`
+	Total           int                         `json:"total"`
+	Truncated       bool                        `json:"truncated"`
+	PingAllowed     bool                        `json:"pingAllowed"`
+	DDoSEnabled     bool                        `json:"ddosEnabled"`
+}
+
+type SystemFirewallCountryRule struct {
+	Code         string `json:"code"`
+	Decision     string `json:"decision"`
+	Zone         string `json:"zone"`
+	NetworkCount int    `json:"networkCount"`
 }
 
 type SystemFirewallRule struct {

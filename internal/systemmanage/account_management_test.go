@@ -98,7 +98,7 @@ func TestAccountManagementInvocationKeepsSecretOutOfArgv(t *testing.T) {
 }
 
 func TestTrustedAccountManagementProtocolRequiresExactVersion(t *testing.T) {
-	base := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"3\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\n")
+	base := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"4\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\n")
 	if trustedKejilionAccountManagementContent(base) {
 		t.Fatal("system-resource-only script was trusted for account management")
 	}
@@ -114,7 +114,7 @@ func TestExecuteAccountManagementActionUsesFixedArgvSecretStdinAndReadback(t *te
 	}
 	script := filepath.Join(t.TempDir(), "kejilion.sh")
 	content := strings.Repeat("# padding\n", 160) + strings.Join([]string{
-		`permission_granted="true"`, `KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"`,
+		`permission_granted="true"`, `KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"`,
 		"KJ_SYSTEM_RESOURCE_NONINTERACTIVE", "kpanel_system_resource_dispatch", "KPANEL_SYSTEM_RESOURCE_STATUS", "KPANEL_SYSTEM_RESOURCE_VERSION",
 		`KPANEL_ACCOUNT_MANAGEMENT_PROTOCOL_VERSION="1"`, "KJ_ACCOUNT_MANAGEMENT_NONINTERACTIVE", "kpanel_account_dispatch", "KPANEL_ACCOUNT_MANAGEMENT_STATUS", "--secret-stdin",
 	}, "\n")

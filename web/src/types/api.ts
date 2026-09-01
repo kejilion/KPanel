@@ -629,10 +629,18 @@ export interface FirewallSnapshot {
   backend: string
   inputPolicy: string
   rules: FirewallRule[]
+  countryRules?: FirewallCountryRule[]
   total: number
   truncated: boolean
   pingAllowed: boolean
   ddosEnabled: boolean
+}
+
+export interface FirewallCountryRule {
+  code: string
+  decision: 'allow' | 'block'
+  zone: 'inbound'
+  networkCount: number
 }
 
 export type SystemResourceActionInput =
@@ -672,6 +680,11 @@ export type SystemResourceActionInput =
   | {
       action: 'firewall-allow-ip' | 'firewall-block-ip' | 'firewall-remove-ip'
       address: string
+      expectedResourceVersion: string
+    }
+  | {
+      action: 'firewall-allow-country' | 'firewall-block-country' | 'firewall-remove-country'
+      countryCode: string
       expectedResourceVersion: string
     }
   | {

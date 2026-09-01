@@ -99,12 +99,14 @@ opaque 设备标识、整表资源版本和受限 transient worker；浏览器�
 
 四类写操作统一调用可信 `kejilion.sh` 的
 `KJ_SYSTEM_RESOURCE_NONINTERACTIVE=1 k kpanel system-resource` 固定协议。Agent 仅信任包含
-`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"` 的脚本版本；该版本明确包含 Cron stdin 契约、稳定的
-防火墙规则版本及持久恢复备份。动作、资源版本和结构化字段以
+`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"` 的脚本版本；该版本明确包含 Cron stdin 契约、稳定的
+防火墙规则版本、ipset 状态及持久恢复备份。动作、资源版本和结构化字段以
 固定 argv 传递；Cron 命令正文通过最大 2048 字节、单行终止的 stdin 帧传递，避免泄露到进程列表。
 脚本适配器在请求期间只把命令保存为 Crontab 数据，不立即执行；之后由系统 Cron 按计划运行。
-防火墙端口动作与脚本一致，同时处理 TCP 和 UDP。脚本现有国家规则依赖
-未固定摘要的远程地址列表，且默认策略与解除规则尚未满足事务要求，因此本轮不向 Web 暴露。
+防火墙端口动作与脚本一致，同时处理 TCP 和 UDP。国家/地区规则作为 IP/网段规则中的一个简单模式，
+首版只处理入站的阻止、允许和清除；国家代码固定为两个英文字母，脚本从固定 HTTPS 数据源取得 IPv4
+网段并通过有界、临时 ipset 集合切换。国家数据不是实时地理定位，且“允许”会把默认入站策略设为禁止，
+必须在页面确认中明确提示风险。
 
 root Crontab 读取要求 Agent 实际以 root 运行；防火墙读取要求 `CAP_NET_ADMIN`。回滚失败或脚本报告需要
 人工检查时，接口保留 `503` 状态表达当前不可用，但明确返回 `retryable: false`，不得自动重复特权写入。

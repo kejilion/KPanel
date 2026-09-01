@@ -35,7 +35,7 @@ const (
 var (
 	errResourceOutputTooLarge = errors.New("system resource output exceeds its configured limit")
 	resourceVersionPattern    = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	resourceProtocolV3Pattern = regexp.MustCompile(`(?m)^KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"\r?$`)
+	resourceProtocolV4Pattern = regexp.MustCompile(`(?m)^KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"\r?$`)
 	resourceRecoveryPattern   = regexp.MustCompile(`^/var/lib/kejilion-panel/system/recovery/system-resource/[0-9]{8}T[0-9]{6}Z-(?:hosts|cron|firewall)\.[A-Za-z0-9]{6}$`)
 	firewallCounterPattern    = regexp.MustCompile(`^(.* )\[[0-9]+:[0-9]+\]$`)
 	firewallDDoSTCPLimit      = regexp.MustCompile(`^-A INPUT -p tcp(?: -m tcp)? (?:--syn|--tcp-flags (?:FIN,SYN,RST,ACK SYN|SYN,RST,ACK,FIN SYN|0x17 0x02|0x17/0x02)) -m limit --limit [0-9]+/(?:s|sec|second) --limit-burst 100 -j ACCEPT$`)
@@ -43,6 +43,7 @@ var (
 	firewallDDoSUDPLimit      = regexp.MustCompile(`^-A INPUT -p udp(?: -m udp)? -m limit --limit [0-9]+/(?:s|sec|second)(?: --limit-burst 5)? -j ACCEPT$`)
 	firewallDDoSUDPDrop       = regexp.MustCompile(`^-A INPUT -p udp(?: -m udp)? -j DROP$`)
 	firewallManagedPingRule   = regexp.MustCompile(`^-A INPUT -p icmp(?: -m icmp)? --icmp-type (?:8|echo-request) -j (?:ACCEPT|DROP)$`)
+	firewallCountrySetPattern = regexp.MustCompile(`^([a-z]{2})_block$`)
 	cronEnvironmentPattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\s*=`)
 	cronStandardLinePattern   = regexp.MustCompile(`^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.+)$`)
 	cronMacroLinePattern      = regexp.MustCompile(`^(@\S+)\s+(.+)$`)
@@ -304,6 +305,24 @@ func (m *Manager) resourceSpecificWriteAvailability(resource string, readErr err
 	return nil
 }
 
+func (m *Manager) resourceActionDependencyAvailability(action string) error {
+	commands := []string{}
+	switch action {
+	case "firewall-block-country", "firewall-allow-country":
+		commands = []string{"ipset", "wget"}
+	case "firewall-remove-country":
+		commands = []string{"ipset"}
+	default:
+		return nil
+	}
+	for _, command := range commands {
+		if _, err := m.runner.LookPath(command); err != nil {
+			return fmt.Errorf("%w: %s is unavailable for country firewall rules", ErrUnsupported, command)
+		}
+	}
+	return nil
+}
+
 func (m *Manager) hasEffectiveCapability(bit uint) bool {
 	file, err := os.Open(filepath.Join(m.procRoot, "self", "status"))
 	if err != nil {
@@ -533,6 +552,15 @@ func (m *Manager) Firewall(ctx context.Context) (contract.SystemFirewallSnapshot
 	if err != nil {
 		return contract.SystemFirewallSnapshot{}, fmt.Errorf("%w: read firewall: %v", ErrUnsupported, err)
 	}
+	ipsetAvailable := false
+	var ipsetRaw []byte
+	if _, lookErr := m.runner.LookPath("ipset"); lookErr == nil {
+		ipsetAvailable = true
+		ipsetRaw, _, err = m.runResourceCommand(ctx, contract.SystemFirewallIPSetMaxBytes, "ipset", "save")
+		if err != nil {
+			return contract.SystemFirewallSnapshot{}, fmt.Errorf("%w: read firewall country sets: %v", ErrUnsupported, err)
+		}
+	}
 	lines := resourceLines(raw)
 	backend := "iptables"
 	inputPolicy := ""
@@ -590,10 +618,15 @@ func (m *Manager) Firewall(ctx context.Context) (contract.SystemFirewallSnapshot
 	if !pingDecision {
 		pingAllowed = inputPolicy == "ACCEPT"
 	}
+	resourceVersion := firewallResourceVersion(raw)
+	if ipsetAvailable {
+		resourceVersion = firewallResourceVersion(raw, ipsetRaw)
+	}
 	return contract.SystemFirewallSnapshot{
-		ResourceVersion: firewallResourceVersion(raw), Backend: backend, InputPolicy: inputPolicy,
+		ResourceVersion: resourceVersion, Backend: backend, InputPolicy: inputPolicy,
 		Rules: rules, Total: total, Truncated: total > len(rules),
-		PingAllowed: pingAllowed, DDoSEnabled: ddosRules == 0b1111,
+		CountryRules: parseFirewallCountryRules(rules, ipsetRaw),
+		PingAllowed:  pingAllowed, DDoSEnabled: ddosRules == 0b1111,
 	}, nil
 }
 
@@ -612,8 +645,109 @@ func firewallDDoSRuleSignature(raw string) uint8 {
 	}
 }
 
-func firewallResourceVersion(raw []byte) string {
-	return resourceHash(canonicalFirewallRules(raw))
+func firewallResourceVersion(raw []byte, ipsetRaw ...[]byte) string {
+	canonical := canonicalFirewallRules(raw)
+	if len(ipsetRaw) == 0 {
+		return resourceHash(canonical)
+	}
+	value := make([]byte, 0, len(canonical)+len(ipsetRaw[0])+16)
+	value = append(value, "iptables\n"...)
+	value = append(value, canonical...)
+	value = append(value, "ipsets\n"...)
+	value = append(value, canonicalFirewallIPSets(ipsetRaw[0])...)
+	return resourceHash(value)
+}
+
+func canonicalFirewallIPSets(raw []byte) []byte {
+	lines := resourceLines(raw)
+	if len(lines) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func parseFirewallCountryRules(rules []contract.SystemFirewallRule, ipsetRaw []byte) []contract.SystemFirewallCountryRule {
+	networks := make(map[string]map[string]struct{})
+	for _, line := range resourceLines(ipsetRaw) {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "create" {
+			if match := firewallCountrySetPattern.FindStringSubmatch(fields[1]); match != nil {
+				if networks[match[1]] == nil {
+					networks[match[1]] = make(map[string]struct{})
+				}
+			}
+			continue
+		}
+		if len(fields) < 3 || fields[0] != "add" {
+			continue
+		}
+		match := firewallCountrySetPattern.FindStringSubmatch(fields[1])
+		if match == nil {
+			continue
+		}
+		if networks[match[1]] == nil {
+			networks[match[1]] = make(map[string]struct{})
+		}
+		networks[match[1]][fields[2]] = struct{}{}
+	}
+
+	result := make([]contract.SystemFirewallCountryRule, 0)
+	seen := make(map[string]bool)
+	for _, rule := range rules {
+		if rule.Chain != "INPUT" {
+			continue
+		}
+		setName, ok := firewallCountrySetFromRaw(rule.Raw)
+		if !ok {
+			continue
+		}
+		decision := ""
+		switch strings.ToUpper(rule.Target) {
+		case "ACCEPT":
+			decision = "allow"
+		case "DROP", "REJECT":
+			decision = "block"
+		default:
+			continue
+		}
+		match := firewallCountrySetPattern.FindStringSubmatch(setName)
+		if match == nil {
+			continue
+		}
+		key := match[1] + "|" + decision
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, contract.SystemFirewallCountryRule{
+			Code: strings.ToUpper(match[1]), Decision: decision, Zone: "inbound",
+			NetworkCount: len(networks[match[1]]),
+		})
+	}
+	slices.SortFunc(result, func(left, right contract.SystemFirewallCountryRule) int {
+		if left.Code != right.Code {
+			return strings.Compare(left.Code, right.Code)
+		}
+		if left.Decision == right.Decision {
+			return 0
+		}
+		if left.Decision == "block" {
+			return -1
+		}
+		return 1
+	})
+	return result
+}
+
+func firewallCountrySetFromRaw(raw string) (string, bool) {
+	fields := strings.Fields(raw)
+	for index := 0; index+2 < len(fields); index++ {
+		if fields[index] == "--match-set" && fields[index+2] == "src" &&
+			firewallCountrySetPattern.MatchString(fields[index+1]) {
+			return fields[index+1], true
+		}
+	}
+	return "", false
 }
 
 func canonicalFirewallRules(raw []byte) []byte {
@@ -683,6 +817,9 @@ func (m *Manager) ExecuteSystemResourceAction(
 	}
 	resource, action, arguments, input := systemResourceInvocation(request)
 	if err := m.resourceWriteAvailability(resource); err != nil {
+		return contract.SystemResourceActionResult{}, err
+	}
+	if err := m.resourceActionDependencyAvailability(request.Action); err != nil {
 		return contract.SystemResourceActionResult{}, err
 	}
 	lockContext, cancelLock := context.WithTimeout(ctx, resourceWriterLockTimeout)
@@ -819,6 +956,12 @@ func systemResourceInvocation(request contract.SystemResourceActionRequest) (str
 		return "firewall", "block-ip", []string{request.Address}, nil
 	case "firewall-remove-ip":
 		return "firewall", "remove-ip", []string{request.Address}, nil
+	case "firewall-allow-country":
+		return "firewall", "allow-country", []string{request.CountryCode}, nil
+	case "firewall-block-country":
+		return "firewall", "block-country", []string{request.CountryCode}, nil
+	case "firewall-remove-country":
+		return "firewall", "remove-country", []string{request.CountryCode}, nil
 	case "firewall-open-all":
 		return "firewall", "open-all", nil, nil
 	case "firewall-close-all":
@@ -1023,7 +1166,7 @@ func findKejilionSystemResourceScript() (string, error) {
 func trustedKejilionSystemResourceContent(content []byte) bool {
 	value := string(content)
 	return dnsScriptLicense.Match(content) &&
-		resourceProtocolV3Pattern.Match(content) &&
+		resourceProtocolV4Pattern.Match(content) &&
 		strings.Contains(value, "KJ_SYSTEM_RESOURCE_NONINTERACTIVE") &&
 		strings.Contains(value, "kpanel_system_resource_dispatch") &&
 		strings.Contains(value, "KPANEL_SYSTEM_RESOURCE_STATUS") &&
