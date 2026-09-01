@@ -311,7 +311,7 @@ describe('diagnostics workspace layout', () => {
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-medium')
     expect(diagnosticsSource).toContain('.diagnostic-report-risk__level.is-high')
     expect(diagnosticsSource).toMatch(
-      /\.diagnostic-report-identity strong\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*760;/,
+      /\.diagnostic-report-identity strong\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*700;/,
     )
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-card__value\s*\{[^}]*font-size:\s*16px;/)
     expect(diagnosticsSource).toMatch(/\.diagnostic-report-pair strong\s*\{[^}]*font-size:\s*16px;/)

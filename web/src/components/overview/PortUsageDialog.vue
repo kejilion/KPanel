@@ -302,7 +302,7 @@ onBeforeUnmount(() => controller?.abort())
 .port-usage-item__facts dt {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .port-usage-item__facts {
@@ -344,7 +344,7 @@ onBeforeUnmount(() => controller?.abort())
 .port-usage-item__docker-header span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .port-usage-item__docker-header strong {

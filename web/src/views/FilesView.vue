@@ -3387,7 +3387,7 @@ onBeforeUnmount(() => {
 
 .breadcrumbs button:last-child {
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .breadcrumbs button:disabled {
@@ -4111,7 +4111,7 @@ onBeforeUnmount(() => {
   min-height: 40px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   background: var(--surface-subtle);
 }
 
@@ -4390,7 +4390,7 @@ onBeforeUnmount(() => {
 }
 
 .operation-form label > span {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .operation-form input,

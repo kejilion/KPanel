@@ -27,7 +27,7 @@
   border-radius: 10px;
   color: var(--muted);
   text-align: center;
-  font-weight: 750;
+  font-weight: 700;
   text-decoration: none;
 }
 

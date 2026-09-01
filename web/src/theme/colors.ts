@@ -106,6 +106,14 @@ const DARK_FOUNDATION_LIGHTNESS = Object.freeze({
   raised: 0.125,
   neutralSoft: 0.105,
 })
+// The light foundation ladder, measured off the shipped palette in themes.css so
+// custom colors land on the same rhythm: page, subtle, surface, raised. `span` is
+// page -> raised in HSL lightness; the two middle values are positions inside it.
+const LIGHT_LADDER = Object.freeze({
+  span: 0.055,
+  subtle: 0.393,
+  surface: 0.75,
+})
 
 const HEX_TOKEN_NAMES = new Set<ThemeTokenName>([
   '--bg', '--surface', '--surface-subtle', '--surface-raised',
@@ -199,8 +207,11 @@ export function deriveThemeTokens(colors: ThemeColorIntent, mode: ThemeMode): Th
   const tonePosition = neutralIntentLightness < defaultNeutralLightness
     ? (neutralIntentLightness - defaultNeutralLightness) / defaultNeutralLightness
     : (neutralIntentLightness - defaultNeutralLightness) / (1 - defaultNeutralLightness)
+  // A lighter neutral intent cannot raise the light foundation — the ladder is
+  // already hung from white — so its expressive range lives entirely on the
+  // darkening side and is scaled to match.
   const lightToneOffset = mode === 'light'
-    ? tonePosition * (tonePosition < 0 ? 0.055 : 0.04)
+    ? tonePosition * (tonePosition < 0 ? 0.1 : 0.04)
     : 0
   const darkToneOffset = mode === 'dark'
     ? tonePosition * (tonePosition < 0 ? 0.05 : 0.09)
@@ -221,10 +232,29 @@ export function deriveThemeTokens(colors: ThemeColorIntent, mode: ThemeMode): Th
     target,
     mode === 'light' ? 'lighter' : 'darker',
   )
-  const bg = safeBackground(setLightness(neutralSeed, mode === 'light' ? 0.95 + lightToneOffset : DARK_FOUNDATION_LIGHTNESS.background + darkToneOffset))
-  const surface = safeBackground(setLightness(neutralSeed, mode === 'light' ? 0.99 + lightToneOffset : DARK_FOUNDATION_LIGHTNESS.surface + darkToneOffset))
-  const surfaceSubtle = safeBackground(setLightness(neutralSeed, mode === 'light' ? 0.972 + lightToneOffset : DARK_FOUNDATION_LIGHTNESS.subtle + darkToneOffset))
-  const surfaceRaised = safeBackground(setLightness(neutralSeed, mode === 'light' ? 0.998 + lightToneOffset : DARK_FOUNDATION_LIGHTNESS.raised + darkToneOffset))
+  // Four separable light steps: page < subtle < surface < raised. The ladder
+  // hangs from the raised step and keeps a fixed span, so every neutral intent
+  // gets the same rhythm. Only a darkening intent moves it: pinning the top at
+  // white for lighter intents both matches the shipped palette and keeps the
+  // accent solver a pure-white background to find a mid-tone against, while a
+  // ladder that stretched upward would push two steps into the lightness clamp
+  // at 1 and merge them into the same flat white.
+  const lightFoundation = mode === 'light'
+    ? (() => {
+        const raised = 1 + Math.min(lightToneOffset, 0)
+        const base = raised - LIGHT_LADDER.span
+        return {
+          background: base,
+          subtle: base + LIGHT_LADDER.span * LIGHT_LADDER.subtle,
+          surface: base + LIGHT_LADDER.span * LIGHT_LADDER.surface,
+          raised,
+        }
+      })()
+    : null
+  const bg = safeBackground(setLightness(neutralSeed, lightFoundation ? lightFoundation.background : DARK_FOUNDATION_LIGHTNESS.background + darkToneOffset))
+  const surface = safeBackground(setLightness(neutralSeed, lightFoundation ? lightFoundation.surface : DARK_FOUNDATION_LIGHTNESS.surface + darkToneOffset))
+  const surfaceSubtle = safeBackground(setLightness(neutralSeed, lightFoundation ? lightFoundation.subtle : DARK_FOUNDATION_LIGHTNESS.subtle + darkToneOffset))
+  const surfaceRaised = safeBackground(setLightness(neutralSeed, lightFoundation ? lightFoundation.raised : DARK_FOUNDATION_LIGHTNESS.raised + darkToneOffset))
   const neutralSoft = safeBackground(
     setLightness(neutralSeed, mode === 'light' ? 0.925 + lightToneOffset : DARK_FOUNDATION_LIGHTNESS.neutralSoft + darkToneOffset),
     AA_CONTRAST,
@@ -332,14 +362,16 @@ export function deriveThemeTokens(colors: ThemeColorIntent, mode: ThemeMode): Th
   const desktopAuroraTwo = `radial-gradient(circle, ${cssRgb(signature, 0.18)}, transparent 68%)`
 
   const shadowColor = mode === 'light' ? sidebar : '#000000'
+  // Mirrors the shadow model in themes.css: one contact shadow for small
+  // elevation, a second diffuse layer only for overlays.
   const shadowSm = mode === 'light'
-    ? `0 1px 2px ${cssRgb(shadowColor, 0.07)}, 0 7px 20px ${cssRgb(shadowColor, 0.04)}`
-    : `0 1px 2px ${cssRgb(shadowColor, 0.24)}, 0 8px 22px ${cssRgb(shadowColor, 0.14)}`
+    ? `0 1px 2px ${cssRgb(shadowColor, 0.07)}`
+    : `0 1px 2px ${cssRgb(shadowColor, 0.24)}`
   const shadowMd = mode === 'light'
-    ? `0 20px 48px ${cssRgb(shadowColor, 0.17)}`
-    : `0 22px 56px ${cssRgb(shadowColor, 0.42)}`
-  const shadowButton = `0 1px 2px ${cssRgb(mode === 'light' ? brand : shadowColor, mode === 'light' ? 0.18 : 0.28)}`
-  const shadowFeature = `0 ${mode === 'light' ? 2 : 3}px ${mode === 'light' ? 8 : 10}px ${cssRgb(shadowColor, mode === 'light' ? 0.08 : 0.19)}`
+    ? `0 1px 2px ${cssRgb(shadowColor, 0.09)}, 0 10px 28px ${cssRgb(shadowColor, 0.11)}`
+    : `0 1px 2px ${cssRgb(shadowColor, 0.3)}, 0 12px 32px ${cssRgb(shadowColor, 0.34)}`
+  const shadowButton = `0 1px 2px ${cssRgb(mode === 'light' ? brand : shadowColor, mode === 'light' ? 0.16 : 0.24)}`
+  const shadowFeature = `0 2px 6px ${cssRgb(shadowColor, mode === 'light' ? 0.07 : 0.2)}`
 
   const scrollbarTrack = neutralSoft
   const scrollbarThumb = mix(surface, text, mode === 'light' ? 0.28 : 0.27)
@@ -541,6 +573,17 @@ function closestAccessibleColor(
     if (!best || distance < best.distance) best = { color: candidate, distance }
   }
   if (best) return best.color
+  // A very light neutral intent yields a near-black sidebar and near-white
+  // surfaces at once, leaving the accent a window only a fraction of one
+  // lightness step wide. Desaturating widens it: the accent gives up some of
+  // the user's hue, which is the right trade against losing legibility on one
+  // of the two backgrounds.
+  for (const saturation of [0.7, 0.5, 0.35, 0.2, 0.1, 0]) {
+    for (let step = 0; step <= SEARCH_STEPS; step += 1) {
+      const candidate = toHex(hslToRgb({ ...hsl, s: hsl.s * saturation, l: step / SEARCH_STEPS }))
+      if (passes(candidate)) return candidate
+    }
+  }
   throw new Error('Unable to derive an accessible theme accent')
 }
 

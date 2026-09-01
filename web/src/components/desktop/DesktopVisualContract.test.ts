@@ -95,7 +95,7 @@ describe('desktop visual and interaction contract', () => {
   })
 
   it('gives shortcut fields a unified focusable control surface', () => {
-    expect(styles).toMatch(/\.desktop-shortcut-form__control\s*\{[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*12px;/)
+    expect(styles).toMatch(/\.desktop-shortcut-form__control\s*\{[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*var\(--radius\);/)
     expect(styles).toMatch(/\.desktop-shortcut-form__control:focus-within\s*\{[^}]*border-color:[^;]*var\(--brand\)/)
     expect(styles).toMatch(/\.desktop-shortcut-form__control :is\(input, textarea\)\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/)
     expect(styles).toMatch(/\.desktop-shortcut-form__icon-actions label:focus-within\s*\{[^}]*outline:/)
@@ -157,7 +157,7 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop__aurora\s*\{[^}]*opacity:\s*var\(--desktop-aurora-opacity\);/)
     expect(styles).toContain('background: var(--desktop-aurora-one)')
     expect(styles).toContain('background: var(--desktop-aurora-two)')
-    expect(themeStyles).toContain('--desktop-aurora-opacity: .2;')
+    expect(themeStyles).toContain('--desktop-aurora-opacity: .16;')
   })
 
   it('crossfades wallpaper layers and respects reduced motion', () => {

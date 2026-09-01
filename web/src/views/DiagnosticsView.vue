@@ -1376,7 +1376,7 @@ onBeforeUnmount(() => {
   padding: 7px 8px;
   color: inherit;
   background: transparent;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1546,7 +1546,7 @@ onBeforeUnmount(() => {
   padding: 4px 9px 5px;
   color: var(--diagnostic-category);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-command-group > header small {
@@ -1648,7 +1648,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   padding: 2px 6px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1663,7 +1663,7 @@ onBeforeUnmount(() => {
   color: var(--diagnostic-category);
   background: color-mix(in srgb, var(--diagnostic-category) 12%, var(--surface));
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1742,7 +1742,7 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
   color: var(--brand-strong);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-overview__eyebrow > span {
@@ -1783,7 +1783,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-overview__status i {
@@ -1899,7 +1899,7 @@ onBeforeUnmount(() => {
 .diagnostic-score-ring__center strong {
   color: var(--text);
   font-size: 24px;
-  font-weight: 750;
+  font-weight: 700;
   line-height: 1.1;
 }
 
@@ -1919,7 +1919,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   color: var(--brand-strong);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .diagnostic-score-hero__label span {
@@ -1929,7 +1929,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: .04em;
 }
 
@@ -1941,7 +1941,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   font-size: 12px;
   font-style: normal;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -2016,7 +2016,7 @@ onBeforeUnmount(() => {
 .diagnostic-score-route__header span {
   color: var(--brand-strong);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-score-route__item {
@@ -2171,7 +2171,7 @@ onBeforeUnmount(() => {
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-soft);
-  font-weight: 650;
+  font-weight: 600;
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -2279,7 +2279,7 @@ onBeforeUnmount(() => {
   border: 0;
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -2816,7 +2816,6 @@ onBeforeUnmount(() => {
     padding-right: 14px;
     padding-left: 14px;
   }
-
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2849,7 +2848,7 @@ onBeforeUnmount(() => {
 .diagnostic-score-total > span {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-score-total > div {
@@ -2862,9 +2861,9 @@ onBeforeUnmount(() => {
 .diagnostic-score-total strong {
   color: var(--text);
   font-size: clamp(46px, 6vw, 72px);
-  font-weight: 780;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -.06em;
+
   line-height: .95;
 }
 
@@ -2978,7 +2977,7 @@ onBeforeUnmount(() => {
 .diagnostic-report-section__title p span {
   color: var(--brand-strong);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: .04em;
 }
 
@@ -2986,7 +2985,7 @@ onBeforeUnmount(() => {
   padding-left: 7px;
   border-left: 1px solid var(--border);
   color: var(--text-soft);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .diagnostic-report-section__score {
@@ -2999,7 +2998,7 @@ onBeforeUnmount(() => {
 
 .diagnostic-report-section__score > small {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: .04em;
 }
 
@@ -3012,7 +3011,7 @@ onBeforeUnmount(() => {
 .diagnostic-report-section__score strong {
   color: var(--text);
   font-size: 24px;
-  font-weight: 780;
+  font-weight: 700;
   line-height: 1;
 }
 
@@ -3086,7 +3085,7 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-report-card__heading > span.is-cpu,
@@ -3146,7 +3145,7 @@ onBeforeUnmount(() => {
   margin-top: 12px;
   color: var(--text-soft);
   font-size: 16px;
-  font-weight: 760;
+  font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -3171,12 +3170,12 @@ onBeforeUnmount(() => {
 .diagnostic-report-card__meta b {
   margin-right: 4px;
   color: var(--text-soft);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .diagnostic-report-risk .is-native-ip {
   color: var(--brand-strong);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .diagnostic-report-pair {
@@ -3199,14 +3198,14 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .diagnostic-report-pair strong {
   display: block;
   color: var(--text-soft);
   font-size: 16px;
-  font-weight: 760;
+  font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -3307,7 +3306,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: var(--text-soft);
   font-size: 16px;
-  font-weight: 760;
+  font-weight: 700;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3340,7 +3339,7 @@ onBeforeUnmount(() => {
 
 .diagnostic-report-risk__score b {
   margin-right: 4px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .diagnostic-report-risk__level {
@@ -3351,7 +3350,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .diagnostic-report-risk__level.is-low {
@@ -3449,7 +3448,6 @@ onBeforeUnmount(() => {
   .diagnostic-report-section__body {
     padding: 12px 14px;
   }
-
 }
 
 @container diagnostic-result (min-width: 521px) {
