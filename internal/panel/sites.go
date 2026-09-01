@@ -16,6 +16,8 @@ const (
 	maxSiteDomainLength   = 253
 	maxSiteUpstreamLength = 2048
 	maxSiteUpstreams      = 8
+	maxSiteCertificate    = 16 << 10
+	maxSitePrivateKey     = 8 << 10
 )
 
 var siteIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -96,6 +98,8 @@ type siteWriteInput struct {
 	PrimaryDomain           optionalString  `json:"primaryDomain"`
 	Aliases                 optionalStrings `json:"aliases"`
 	Type                    optionalString  `json:"type"`
+	Certificate             optionalString  `json:"certificate"`
+	PrivateKey              optionalString  `json:"privateKey"`
 	Recipe                  optionalString  `json:"recipe"`
 	Upstream                optionalString  `json:"upstream"`
 	Upstreams               optionalStrings `json:"upstreams"`
@@ -110,6 +114,8 @@ type siteAgentPayload struct {
 	PrimaryDomain           *string   `json:"primaryDomain,omitempty"`
 	Aliases                 *[]string `json:"aliases,omitempty"`
 	Type                    *string   `json:"type,omitempty"`
+	Certificate             *string   `json:"certificate,omitempty"`
+	PrivateKey              *string   `json:"privateKey,omitempty"`
 	Recipe                  *string   `json:"recipe,omitempty"`
 	Upstream                *string   `json:"upstream,omitempty"`
 	Upstreams               *[]string `json:"upstreams,omitempty"`
@@ -404,6 +410,9 @@ func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail s
 	if input.Type.Set && !validPanelSiteType(input.Type.Value) {
 		return "type", "type must be wordpress, recipe, static, php, proxy, proxy_domain, load_balance, or redirect"
 	}
+	if field, detail := validateSiteCertificateInput(input, create); field != "" {
+		return field, detail
+	}
 	if input.Recipe.Set && input.Recipe.Value != "" && !validPanelSiteRecipe(input.Recipe.Value) {
 		return "recipe", "recipe is not supported"
 	}
@@ -543,6 +552,35 @@ func validateScriptedTemplateFields(input *siteWriteInput) (field, detail string
 	return "", ""
 }
 
+func validateSiteCertificateInput(input *siteWriteInput, create bool) (field, detail string) {
+	certificate := strings.TrimSpace(input.Certificate.Value)
+	privateKey := strings.TrimSpace(input.PrivateKey.Value)
+	if !create && (certificate != "" || privateKey != "") {
+		return "certificate", "custom certificates can only be supplied when creating a site"
+	}
+	if certificate == "" && privateKey == "" {
+		return "", ""
+	}
+	if certificate == "" {
+		return "certificate", "certificate and privateKey must be supplied together"
+	}
+	if privateKey == "" {
+		return "privateKey", "certificate and privateKey must be supplied together"
+	}
+	if len([]byte(certificate)) > maxSiteCertificate {
+		return "certificate", "certificate is too large"
+	}
+	if len([]byte(privateKey)) > maxSitePrivateKey {
+		return "privateKey", "privateKey is too large"
+	}
+	if hasUnsupportedPEMControlCharacter(certificate) || hasUnsupportedPEMControlCharacter(privateKey) {
+		return "certificate", "certificate material contains unsupported control characters"
+	}
+	input.Certificate.Value = certificate
+	input.PrivateKey.Value = privateKey
+	return "", ""
+}
+
 func (input siteWriteInput) agentPayload() siteAgentPayload {
 	var payload siteAgentPayload
 	if input.PrimaryDomain.Set {
@@ -553,6 +591,12 @@ func (input siteWriteInput) agentPayload() siteAgentPayload {
 	}
 	if input.Type.Set {
 		payload.Type = &input.Type.Value
+	}
+	if input.Certificate.Set {
+		payload.Certificate = &input.Certificate.Value
+	}
+	if input.PrivateKey.Set {
+		payload.PrivateKey = &input.PrivateKey.Value
 	}
 	if input.Recipe.Set {
 		payload.Recipe = &input.Recipe.Value
@@ -659,6 +703,18 @@ func validPanelDomainOrigin(value string) bool {
 func hasControlCharacter(value string) bool {
 	for _, character := range value {
 		if character < 0x20 || character == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUnsupportedPEMControlCharacter(value string) bool {
+	for _, character := range value {
+		if character < 0x20 && character != '\n' && character != '\t' {
+			return true
+		}
+		if character == 0x7f {
 			return true
 		}
 	}

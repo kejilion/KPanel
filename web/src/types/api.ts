@@ -1252,6 +1252,10 @@ export interface SiteInput {
   primaryDomain: string
   aliases?: string[]
   type: 'wordpress' | 'recipe' | 'static' | 'php' | 'proxy' | 'proxy_domain' | 'load_balance' | 'redirect'
+  /** PEM certificate chain; accepted only for script-backed site creation. */
+  certificate?: string
+  /** Unencrypted PEM private key; accepted only for script-backed site creation. */
+  privateKey?: string
   recipe?: 'discuz' | 'kodbox' | 'maccms' | 'dujiaoka' | 'flarum' | 'typecho' | 'linkstack' | 'ai-prompt' | 'bitwarden' | 'halo'
   upstream?: string
   upstreams?: string[]

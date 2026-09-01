@@ -90,22 +90,23 @@ type scriptTemplateDefinition struct {
 }
 
 type RecipeJob struct {
-	ID          string                `json:"id"`
-	Domain      string                `json:"domain"`
-	Recipe      string                `json:"recipe"`
-	ProxyHost   string                `json:"proxyHost,omitempty"`
-	ProxyPort   string                `json:"proxyPort,omitempty"`
-	Status      string                `json:"status"`
-	Stage       string                `json:"stage"`
-	Progress    int                   `json:"progress"`
-	Message     string                `json:"message,omitempty"`
-	Events      []RecipeJobEvent      `json:"events,omitempty"`
-	Interactive bool                  `json:"interactive,omitempty"`
-	InputOpen   bool                  `json:"inputOpen,omitempty"`
-	Site        *contract.SiteSummary `json:"site,omitempty"`
-	CreatedAt   time.Time             `json:"createdAt"`
-	StartedAt   *time.Time            `json:"startedAt,omitempty"`
-	FinishedAt  *time.Time            `json:"finishedAt,omitempty"`
+	ID                string                `json:"id"`
+	Domain            string                `json:"domain"`
+	Recipe            string                `json:"recipe"`
+	ProxyHost         string                `json:"proxyHost,omitempty"`
+	ProxyPort         string                `json:"proxyPort,omitempty"`
+	Status            string                `json:"status"`
+	Stage             string                `json:"stage"`
+	Progress          int                   `json:"progress"`
+	Message           string                `json:"message,omitempty"`
+	Events            []RecipeJobEvent      `json:"events,omitempty"`
+	Interactive       bool                  `json:"interactive,omitempty"`
+	CustomCertificate bool                  `json:"customCertificate,omitempty"`
+	InputOpen         bool                  `json:"inputOpen,omitempty"`
+	Site              *contract.SiteSummary `json:"site,omitempty"`
+	CreatedAt         time.Time             `json:"createdAt"`
+	StartedAt         *time.Time            `json:"startedAt,omitempty"`
+	FinishedAt        *time.Time            `json:"finishedAt,omitempty"`
 }
 
 type RecipeJobEvent struct {
@@ -180,6 +181,7 @@ func (m *Manager) configureRecipeJobState(
 	m.jobExecutable = executable
 	m.jobRunner = runner
 	m.recoverInterruptedRecipeJobs()
+	cleanupOrphanCustomCertificateFiles(registry)
 	return nil
 }
 
@@ -218,7 +220,11 @@ func (m *Manager) RecipeWritable() error {
 }
 
 func (m *Manager) WordPressWritable(_ context.Context) error {
-	return m.directSiteWritable(
+	return m.wordPressWritable(false)
+}
+
+func (m *Manager) wordPressWritable(useCustomCertificate bool) error {
+	return m.directSiteWritableWithCustomCertificate(useCustomCertificate,
 		"KJ_WEB_NONINTERACTIVE",
 		"KJ_WEB_INTERACTIVE",
 		"KJ_WEB_RECIPE",
@@ -228,7 +234,11 @@ func (m *Manager) WordPressWritable(_ context.Context) error {
 }
 
 func (m *Manager) ProxyWritable() error {
-	return m.directSiteWritable(
+	return m.proxyWritable(false)
+}
+
+func (m *Manager) proxyWritable(useCustomCertificate bool) error {
+	return m.directSiteWritableWithCustomCertificate(useCustomCertificate,
 		"KJ_WEB_NONINTERACTIVE",
 		"KJ_WEB_INTERACTIVE",
 		"KJ_WEB_RECIPE",
@@ -240,7 +250,11 @@ func (m *Manager) ProxyWritable() error {
 }
 
 func (m *Manager) TemplateWritable() error {
-	return m.directSiteWritable(
+	return m.templateWritable(false)
+}
+
+func (m *Manager) templateWritable(useCustomCertificate bool) error {
+	return m.directSiteWritableWithCustomCertificate(useCustomCertificate,
 		"KJ_WEB_NONINTERACTIVE",
 		"KJ_WEB_INTERACTIVE",
 		"KJ_WEB_RECIPE",
@@ -252,6 +266,22 @@ func (m *Manager) TemplateWritable() error {
 		"loadbalance-site)",
 		"static-site)",
 	)
+}
+
+func (m *Manager) CustomCertificateWritable() error {
+	return m.directSiteWritableWithCustomCertificate(
+		true,
+		"KJ_WEB_NONINTERACTIVE",
+		"KJ_WEB_INTERACTIVE",
+		"KJ_WEB_DOMAIN",
+	)
+}
+
+func (m *Manager) directSiteWritableWithCustomCertificate(useCustomCertificate bool, required ...string) error {
+	if useCustomCertificate {
+		required = append(required, customCertificateProtocolRequirements...)
+	}
+	return m.directSiteWritable(required...)
 }
 
 func (m *Manager) directSiteWritable(required ...string) error {
@@ -273,10 +303,19 @@ func (m *Manager) directSiteWritable(required ...string) error {
 	return nil
 }
 
-func (m *Manager) StartRecipe(_ context.Context, input SiteInput) (RecipeJob, error) {
-	domain, _, err := normalizeRecipeInput(input)
+func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	domain, _, err := normalizeRecipeInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
+	}
+	customCertificate, err := normalizeCustomCertificateInput(input.Certificate, input.PrivateKey, domain)
+	if err != nil {
+		return RecipeJob{}, err
+	}
+	if customCertificate.present() {
+		if err := m.CustomCertificateWritable(); err != nil {
+			return RecipeJob{}, err
+		}
 	}
 	if err := m.RecipeWritable(); err != nil {
 		return RecipeJob{}, err
@@ -297,66 +336,88 @@ func (m *Manager) StartRecipe(_ context.Context, input SiteInput) (RecipeJob, er
 		ID: hex.EncodeToString(identity[:]), Domain: domain, Recipe: input.Recipe,
 		Status: "queued", Stage: "queued", Progress: 0,
 		Message: "一键建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
-		Interactive: true,
+		Interactive:       true,
+		CustomCertificate: customCertificate.present(),
 	}
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
+	if err := stageCustomCertificateFiles(m.recipeJobs.stateDir, job.ID, customCertificate); err != nil {
+		return RecipeJob{}, fmt.Errorf("%w: stage custom certificate: %v", ErrUnavailable, err)
+	}
 	if err := hostpty.CreateInput(m.recipeJobs.inputPath(job.ID)); err != nil {
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: prepare interactive website terminal: %v", ErrUnavailable, err)
 	}
 	if err := m.recipeJobs.put(job); err != nil {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: persist recipe job: %v", ErrNeedsAttention, err)
 	}
 	if err := m.launchRecipeJob(context.Background(), job); err != nil {
 		m.failRecipeJob(job, "start_failed", err)
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: launch website job: %v", ErrUnavailable, err)
 	}
 	return job, nil
 }
 
-func (m *Manager) StartWordPress(ctx context.Context, input SiteInput) (RecipeJob, error) {
-	spec, err := normalizeWordPressInput(input)
+func (m *Manager) StartWordPress(ctx context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	spec, err := normalizeWordPressInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
 	}
-	if err := m.WordPressWritable(ctx); err != nil {
+	customCertificate, err := normalizeCustomCertificateInput(input.Certificate, input.PrivateKey, spec.Primary)
+	if err != nil {
+		return RecipeJob{}, err
+	}
+	if err := m.wordPressWritable(customCertificate.present()); err != nil {
 		return RecipeJob{}, err
 	}
 	return m.startDirectSiteJob(
 		spec,
 		"wordpress",
 		wordPressInvocation(spec.Primary),
+		customCertificate,
 	)
 }
 
-func (m *Manager) StartProxy(input SiteInput) (RecipeJob, error) {
-	spec, host, port, err := normalizeDirectProxyInput(input)
+func (m *Manager) StartProxy(input ScriptSiteInput) (RecipeJob, error) {
+	spec, host, port, err := normalizeDirectProxyInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
 	}
-	if err := m.ProxyWritable(); err != nil {
+	customCertificate, err := normalizeCustomCertificateInput(input.Certificate, input.PrivateKey, spec.Primary)
+	if err != nil {
+		return RecipeJob{}, err
+	}
+	if err := m.proxyWritable(customCertificate.present()); err != nil {
 		return RecipeJob{}, err
 	}
 	return m.startDirectSiteJob(
 		spec,
 		"reverse-proxy",
 		proxyInvocation(spec.Primary, host, port),
+		customCertificate,
 	)
 }
 
-func (m *Manager) StartTemplate(input SiteInput) (RecipeJob, error) {
-	domain, definition, err := normalizeTemplateInput(input)
+func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
+	domain, definition, err := normalizeTemplateInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
 	}
-	if err := m.TemplateWritable(); err != nil {
+	customCertificate, err := normalizeCustomCertificateInput(input.Certificate, input.PrivateKey, domain)
+	if err != nil {
+		return RecipeJob{}, err
+	}
+	if err := m.templateWritable(customCertificate.present()); err != nil {
 		return RecipeJob{}, err
 	}
 	return m.startDirectSiteJob(
 		managedSpec{Primary: domain, Kind: definition.kind},
 		definition.recipe,
 		templateInvocation(domain, definition),
+		customCertificate,
 	)
 }
 
@@ -426,6 +487,7 @@ func (m *Manager) startDirectSiteJob(
 	spec managedSpec,
 	recipe string,
 	invocation scriptSiteInvocation,
+	customCertificate normalizedCustomCertificate,
 ) (RecipeJob, error) {
 	siteWriteMutex.Lock()
 	defer siteWriteMutex.Unlock()
@@ -443,23 +505,30 @@ func (m *Manager) startDirectSiteJob(
 		ID: hex.EncodeToString(identity[:]), Domain: spec.Primary, Recipe: recipe,
 		Status: "queued", Stage: "queued", Progress: 0,
 		Message: "kejilion.sh 原生建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
-		Interactive: true,
+		Interactive:       true,
+		CustomCertificate: customCertificate.present(),
 	}
 	if recipe == "reverse-proxy" {
 		job.ProxyHost = invocation.arguments[2]
 		job.ProxyPort = invocation.arguments[3]
 	}
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
+	if err := stageCustomCertificateFiles(m.recipeJobs.stateDir, job.ID, customCertificate); err != nil {
+		return RecipeJob{}, fmt.Errorf("%w: stage custom certificate: %v", ErrUnavailable, err)
+	}
 	if err := hostpty.CreateInput(m.recipeJobs.inputPath(job.ID)); err != nil {
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: prepare interactive website terminal: %v", ErrUnavailable, err)
 	}
 	if err := m.recipeJobs.put(job); err != nil {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: persist website job: %v", ErrNeedsAttention, err)
 	}
 	if err := m.launchRecipeJob(context.Background(), job); err != nil {
 		m.failRecipeJob(job, "start_failed", err)
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 		return RecipeJob{}, fmt.Errorf("%w: launch website job: %v", ErrUnavailable, err)
 	}
 	return job, nil
@@ -714,6 +783,7 @@ func (m *Manager) markRecipeJobInterrupted(job RecipeJob) {
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
 	_ = m.recipeJobs.put(job)
 	_ = hostpty.RemoveInput(m.recipeJobs.inputPath(job.ID))
+	cleanupCustomCertificateFiles(m.recipeJobs.stateDir, job.ID)
 }
 
 func (m *Manager) RecipeJob(id string) (RecipeJob, error) {
@@ -841,6 +911,18 @@ func RunRecipeJob(ctx context.Context, stateDir, webRoot, id string) error {
 		job.Message = "后台建站任务参数无效"
 		job.FinishedAt = &finished
 		_ = registry.put(job)
+		cleanupCustomCertificateFiles(stateDir, id)
+		return err
+	}
+	invocation, err = withCustomCertificateInvocation(invocation, stateDir, id, job.CustomCertificate)
+	if err != nil {
+		finished := time.Now().UTC()
+		job.Status = "failed"
+		job.Stage = "invalid_job"
+		job.Message = "后台建站任务证书材料无效"
+		job.FinishedAt = &finished
+		_ = registry.put(job)
+		cleanupCustomCertificateFiles(stateDir, id)
 		return err
 	}
 	manager := NewManager(webRoot, NewDiscoverer(webRoot), nil)
@@ -920,6 +1002,7 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 	}
 	defer func() {
 		_ = hostpty.RemoveInput(m.recipeJobs.inputPath(id))
+		cleanupCustomCertificateFiles(m.recipeJobs.stateDir, id)
 	}()
 	script, err := findTrustedKejilionScript(invocation.required...)
 	if err != nil {
@@ -939,9 +1022,8 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 
 	commandArguments := append([]string{script}, invocation.arguments...)
 	command := exec.CommandContext(ctx, "/bin/bash", commandArguments...)
-	command.Env = append(
-		os.Environ(),
-		append(invocation.environment, "LC_ALL=C.UTF-8", "LANG=C.UTF-8", "TERM=xterm-256color")...,
+	command.Env = siteCommandEnvironment(
+		append(invocation.environment, "LC_ALL=C.UTF-8", "LANG=C.UTF-8", "TERM=xterm-256color"),
 	)
 	input, err := hostpty.OpenInput(m.recipeJobs.inputPath(id))
 	if err != nil {
@@ -1421,5 +1503,6 @@ func (registry *recipeJobRegistry) pruneLocked() {
 		_ = os.Remove(registry.path(job.ID))
 		_ = os.Remove(registry.logPath(job.ID))
 		_ = hostpty.RemoveInput(registry.inputPath(job.ID))
+		cleanupCustomCertificateFiles(registry.stateDir, job.ID)
 	}
 }
