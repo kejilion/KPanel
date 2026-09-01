@@ -3998,65 +3998,11 @@ textarea:focus-visible,
   background: var(--brand-soft);
 }
 
-.firewall-status-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.system-resource-toggle {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  color: var(--text);
-  text-align: left;
-  background: var(--surface-subtle);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.system-resource-toggle > svg {
-  flex: 0 0 auto;
-  color: var(--brand);
-}
-
-.system-resource-toggle > span {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.system-resource-toggle strong {
-  font-size: 12px;
-}
-
-.system-resource-toggle small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.system-resource-toggle:hover:not(:disabled) {
-  background: var(--interaction-hover-surface);
-  border-color: color-mix(in srgb, var(--brand) 24%, var(--border-strong));
-}
-
-.firewall-action-form--port {
-  grid-template-columns: minmax(180px, 1fr) auto;
-}
-
 @media (max-width: 680px) {
   .system-resource-form,
   .system-resource-form--hosts,
   .system-resource-form--cron,
-	.system-resource-form--traffic,
-  .firewall-action-form--port,
-  .firewall-status-grid {
+	.system-resource-form--traffic {
     grid-template-columns: minmax(0, 1fr);
   }
 

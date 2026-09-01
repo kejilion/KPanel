@@ -483,9 +483,9 @@ const networkTools = computed<ManagementTool[]>(() => {
     {
       id: 'firewall',
       title: '防火墙',
-      description: '按 kejilion.sh 固定动作管理端口、IP、Ping 与 DDoS 防护。',
-      value: capabilityState('system.firewall.read').enabled ? '打开后读取真实规则' : '适配器未就绪',
-      detail: '识别实际防火墙后端、INPUT 策略与规则',
+      description: '管理端口访问、阻止 IP 和基础防护。',
+      value: capabilityState('system.firewall.read').enabled ? '打开后按需设置' : '适配器未就绪',
+      detail: '常用操作不需要理解底层防火墙规则',
       capability: 'system.firewall.read',
       safety: '不接受原始规则或 Shell；所有动作使用固定字段和资源版本，完成后重新读取真实规则。',
       icon: ShieldCheck,

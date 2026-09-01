@@ -46,8 +46,12 @@ beforeEach(() => {
     resourceVersion: 'rv-firewall',
     backend: 'iptables-nft',
     inputPolicy: 'DROP',
-    rules: [],
-    total: 0,
+    rules: [
+      { line: 1, chain: 'INPUT', target: 'ACCEPT', protocol: 'tcp', source: '0.0.0.0/0', destination: '0.0.0.0/0', options: ['--dport', '443'], raw: '-A INPUT -p tcp --dport 443 -j ACCEPT' },
+      { line: 2, chain: 'OUTPUT', target: 'ACCEPT', protocol: 'tcp', source: '0.0.0.0/0', destination: '0.0.0.0/0', options: ['--dport', '443'], raw: '-A OUTPUT -p tcp --dport 443 -j ACCEPT' },
+      { line: 3, chain: 'FORWARD', target: 'DROP', protocol: 'all', source: '192.0.2.0/24', destination: '0.0.0.0/0', options: [], raw: '-A FORWARD -s 192.0.2.0/24 -j DROP' },
+    ],
+    total: 3,
     truncated: false,
     pingAllowed: true,
     ddosEnabled: false,
@@ -186,14 +190,54 @@ describe('overview system resource dialogs', () => {
     expect(mocks.networkInterfaces).toHaveBeenCalledTimes(2)
   })
 
-  it('opens a firewall port for TCP and UDP without a protocol field and rereads state', async () => {
+  it('shows firewall state, defaults to inbound, and filters readable rules', async () => {
     const wrapper = mount(FirewallManagerDialog, {
       props: { ...commonProps, open: true },
       global: { stubs: { teleport: true } },
     })
     await flushPromises()
 
-    const openButton = wrapper.findAll('button').find((button) => button.text().trim() === '开放端口')
+    expect(wrapper.find('.firewall-manager__status').exists()).toBe(true)
+    expect(wrapper.findAll('.firewall-manager__tab')).toHaveLength(4)
+    expect(wrapper.find('button[data-firewall-zone="inbound"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.findAll('.firewall-manager__parsed-rule')).toHaveLength(1)
+    expect(wrapper.find('.firewall-manager__rule-list-head').text()).toContain('动作')
+    expect(wrapper.find('.firewall-manager__rule-list-head').text()).toContain('来源')
+    expect(wrapper.find('.firewall-manager__rule-list-head').text()).toContain('目标')
+    const actionBadges = wrapper.find('.firewall-manager__rule-badges').text()
+    expect(actionBadges.indexOf('入站')).toBeLessThan(actionBadges.indexOf('允许'))
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).toContain('TCP · 端口 443')
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).toContain('所有 IP')
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).not.toContain('INPUT · ACCEPT · tcp')
+    expect(wrapper.find<HTMLDetailsElement>('details.firewall-manager__raw').element.open).toBe(false)
+
+    await wrapper.find('button[data-firewall-zone="all"]').trigger('click')
+    expect(wrapper.findAll('.firewall-manager__parsed-rule')).toHaveLength(3)
+
+    await wrapper.find('button[data-firewall-decision="block"]').trigger('click')
+    expect(wrapper.findAll('.firewall-manager__parsed-rule')).toHaveLength(1)
+    expect(wrapper.find('.firewall-manager__parsed-rule').text()).toContain('阻止')
+
+    await wrapper.find('button[data-firewall-zone="outbound"]').trigger('click')
+    expect(wrapper.findAll('.firewall-manager__parsed-rule')).toHaveLength(0)
+    expect(wrapper.find('.firewall-manager__other').exists()).toBe(true)
+  })
+
+  it('keeps the inbound quick action simple while opening a port for TCP and UDP', async () => {
+    const wrapper = mount(FirewallManagerDialog, {
+      props: { ...commonProps, open: true },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.firewall-manager__status').text()).toContain('默认禁止外部访问')
+    expect(wrapper.find('.firewall-manager__other').text()).toContain('其他功能选项')
+    expect(wrapper.find('.firewall-manager__other').text()).toContain('快速添加规则')
+    expect(wrapper.find('.firewall-manager__other').text()).not.toContain('防护开关、快速添加规则和高风险操作。')
+    expect(wrapper.find<HTMLDetailsElement>('details.firewall-manager__advanced').element.open).toBe(false)
+
+    const portCard = wrapper.findAll('.firewall-manager__quick-card')[0]
+    const openButton = portCard!.findAll('button').find((button) => button.text().trim() === '允许')
     await openButton!.trigger('click')
     await flushPromises()
 
@@ -213,7 +257,7 @@ describe('overview system resource dialogs', () => {
     })
     await flushPromises()
 
-    const allPortsButton = wrapper.findAll('button').find((button) => button.text().includes('全部端口'))
+    const allPortsButton = wrapper.find('.firewall-manager__advanced-section--danger button')
     await allPortsButton!.trigger('click')
     await flushPromises()
 
@@ -222,5 +266,28 @@ describe('overview system resource dialogs', () => {
       action: 'firewall-open-all',
       expectedResourceVersion: 'rv-firewall',
     })
+  })
+
+  it('disables the all-ports action when the inbound policy is unknown', async () => {
+    mocks.firewall.mockResolvedValue({
+      resourceVersion: 'rv-firewall',
+      backend: 'iptables-nft',
+      inputPolicy: 'UNKNOWN',
+      rules: [],
+      total: 0,
+      truncated: false,
+      pingAllowed: true,
+      ddosEnabled: false,
+    })
+    const wrapper = mount(FirewallManagerDialog, {
+      props: { ...commonProps, open: true },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    const allPortsButton = wrapper.find('.firewall-manager__advanced-section--danger button')
+    expect(allPortsButton.text()).toBe('无法确认当前状态')
+    expect(allPortsButton.attributes('disabled')).toBeDefined()
+    expect(mocks.resourceAction).not.toHaveBeenCalled()
   })
 })
