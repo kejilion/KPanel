@@ -142,6 +142,13 @@ func TestValidateSystemResourceActionBoundsSensitiveInputs(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid country code",
+			request: SystemResourceActionRequest{
+				Action: "firewall-block-country", CountryCode: "USA", ExpectedResourceVersion: version,
+			},
+			field: "countryCode",
+		},
+		{
 			name: "interface state",
 			request: SystemResourceActionRequest{
 				Action: "network-interface-state", InterfaceName: "lo", Enabled: &trueValue,
@@ -163,5 +170,15 @@ func TestValidateSystemResourceActionBoundsSensitiveInputs(t *testing.T) {
 				t.Fatalf("field=%q detail=%q want=%q", field, detail, test.field)
 			}
 		})
+	}
+}
+
+func TestValidateSystemResourceActionNormalizesCountryCode(t *testing.T) {
+	request := SystemResourceActionRequest{
+		Action: "firewall-block-country", CountryCode: " us ", ExpectedResourceVersion: strings.Repeat("a", 64),
+	}
+	field, detail := ValidateSystemResourceAction(&request)
+	if field != "" || detail != "" || request.CountryCode != "US" {
+		t.Fatalf("field=%q detail=%q countryCode=%q", field, detail, request.CountryCode)
 	}
 }

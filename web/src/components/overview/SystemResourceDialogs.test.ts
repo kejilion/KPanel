@@ -234,6 +234,10 @@ describe('overview system resource dialogs', () => {
     expect(wrapper.find('.firewall-manager__other').text()).toContain('其他功能选项')
     expect(wrapper.find('.firewall-manager__other').text()).toContain('快速添加规则')
     expect(wrapper.find('.firewall-manager__other').text()).not.toContain('防护开关、快速添加规则和高风险操作。')
+    expect(wrapper.findAll('.firewall-manager__other-group').map((group) => group.classes())).toEqual([
+      expect.arrayContaining(['firewall-manager__other-group--quick']),
+      expect.arrayContaining(['firewall-manager__other-group--basic']),
+    ])
     expect(wrapper.find<HTMLDetailsElement>('details.firewall-manager__advanced').element.open).toBe(false)
 
     const portCard = wrapper.findAll('.firewall-manager__quick-card')[0]
@@ -248,6 +252,64 @@ describe('overview system resource dialogs', () => {
       expectedResourceVersion: 'rv-firewall',
     })
     expect(mocks.firewall).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows country rules in the readable list and sends a simple country action', async () => {
+    mocks.firewall.mockResolvedValue({
+      resourceVersion: 'rv-firewall',
+      backend: 'iptables-nft',
+      inputPolicy: 'DROP',
+      rules: [],
+      countryRules: [{ code: 'US', decision: 'block', zone: 'inbound', networkCount: 2 }],
+      total: 0,
+      truncated: false,
+      pingAllowed: true,
+      ddosEnabled: false,
+    })
+    const wrapper = mount(FirewallManagerDialog, {
+      props: { ...commonProps, open: true },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).toContain('美国（US）')
+    await wrapper.find('button[data-firewall-zone="all"]').trigger('click')
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).toContain('美国（US）')
+    expect(wrapper.find('.firewall-manager__parsed-rules').text()).toContain('2 个 IPv4 网段')
+
+    await wrapper.find('button[data-firewall-rule-mode="country"]').trigger('click')
+    await wrapper.find('input[autocapitalize="characters"]').setValue('us')
+    const blockButton = wrapper.findAll('.firewall-manager__quick-card')[1]!.findAll('button').find((button) => button.text().trim() === '阻止')
+    await blockButton!.trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('美国（US）'))
+    expect(mocks.resourceAction).toHaveBeenCalledWith({
+      action: 'firewall-block-country',
+      countryCode: 'US',
+      expectedResourceVersion: 'rv-firewall',
+    })
+  })
+
+  it('warns before turning a country into an inbound allowlist', async () => {
+    const wrapper = mount(FirewallManagerDialog, {
+      props: { ...commonProps, open: true },
+      global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.find('button[data-firewall-rule-mode="country"]').trigger('click')
+    await wrapper.find('input[autocapitalize="characters"]').setValue('US')
+    const allowButton = wrapper.findAll('.firewall-manager__quick-card')[1]!.findAll('button').find((button) => button.text().trim() === '允许')
+    await allowButton!.trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('默认入站策略设为阻止'))
+    expect(mocks.resourceAction).toHaveBeenCalledWith({
+      action: 'firewall-allow-country',
+      countryCode: 'US',
+      expectedResourceVersion: 'rv-firewall',
+    })
   })
 
   it('discloses that the script-wide firewall action clears custom and Docker chains', async () => {

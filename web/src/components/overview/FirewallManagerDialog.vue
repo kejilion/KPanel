@@ -16,10 +16,11 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
+import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { useToast } from '@/stores/toast'
-import type { FirewallRule, FirewallSnapshot, SystemResourceActionInput } from '@/types/api'
+import type { FirewallCountryRule, FirewallRule, FirewallSnapshot, SystemResourceActionInput } from '@/types/api'
 
 type ResourceActionWithoutVersion = SystemResourceActionInput extends infer Action
   ? Action extends { expectedResourceVersion: string }
@@ -29,6 +30,7 @@ type ResourceActionWithoutVersion = SystemResourceActionInput extends infer Acti
 
 type FirewallPortAction = 'firewall-open-port' | 'firewall-close-port'
 type FirewallAddressAction = 'firewall-allow-ip' | 'firewall-block-ip' | 'firewall-remove-ip'
+type FirewallCountryAction = 'firewall-allow-country' | 'firewall-block-country' | 'firewall-remove-country'
 type FirewallAllPortsAction = 'firewall-open-all' | 'firewall-close-all'
 type FirewallZone = 'inbound' | 'outbound' | 'forward'
 type FirewallZoneFilter = FirewallZone | 'all'
@@ -36,9 +38,22 @@ type FirewallDecision = 'allow' | 'block' | 'other'
 type FirewallDecisionFilter = Exclude<FirewallDecision, 'other'> | 'all'
 
 interface ParsedFirewallRule {
+  kind: 'firewall'
   original: FirewallRule
   zone: FirewallZone | 'other'
   decision: FirewallDecision
+  protocol: string
+  port: string
+  source: string
+  destination: string
+}
+
+interface ParsedFirewallCountryRule {
+  kind: 'country'
+  countryCode: string
+  networkCount: number
+  zone: FirewallZone
+  decision: Exclude<FirewallDecision, 'other'>
   protocol: string
   port: string
   source: string
@@ -55,6 +70,7 @@ const props = withDefaults(
   { unavailableReason: '' },
 )
 const emit = defineEmits<{ close: [] }>()
+const { locale } = useI18n()
 const toast = useToast()
 const snapshot = ref<FirewallSnapshot>()
 const loading = ref(false)
@@ -63,6 +79,8 @@ const running = ref(false)
 const error = ref('')
 const port = ref(443)
 const address = ref('')
+const countryCode = ref('')
+const ruleMode = ref<'address' | 'country'>('address')
 const zoneFilter = ref<FirewallZoneFilter>('inbound')
 const decisionFilter = ref<FirewallDecisionFilter>('all')
 const zoneFilterOptions: Array<{ id: FirewallZoneFilter; label: string }> = [
@@ -79,6 +97,7 @@ const decisionFilterOptions: Array<{ id: FirewallDecisionFilter; label: string }
 let controller: AbortController | undefined
 
 const rules = computed(() => snapshot.value?.rules || [])
+const countryRules = computed<FirewallCountryRule[]>(() => snapshot.value?.countryRules || [])
 const inputPolicy = computed(() => snapshot.value?.inputPolicy.trim().toUpperCase() || '')
 const allPortsAction = computed<FirewallAllPortsAction | undefined>(() => {
   if (inputPolicy.value === 'ACCEPT') return 'firewall-close-all'
@@ -87,6 +106,7 @@ const allPortsAction = computed<FirewallAllPortsAction | undefined>(() => {
 })
 const validPort = computed(() => Number.isInteger(port.value) && port.value >= 1 && port.value <= 65535)
 const addressReady = computed(() => Boolean(address.value.trim()))
+const countryReady = computed(() => /^[A-Za-z]{2}$/.test(countryCode.value.trim()))
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -167,6 +187,17 @@ function addressLabel(value: string): string {
   return addressValue
 }
 
+function countryLabel(value: string): string {
+  const code = value.trim().toUpperCase()
+  try {
+    const name = new Intl.DisplayNames([locale.value], { type: 'region' }).of(code)
+    if (!name) return code
+    return locale.value === 'en-US' ? `${name} (${code})` : `${name}（${code}）`
+  } catch {
+    return code
+  }
+}
+
 function decisionLabel(decision: FirewallDecision): string {
   if (decision === 'allow') return phrase('允许')
   if (decision === 'block') return phrase('阻止')
@@ -181,6 +212,7 @@ function zoneLabel(zone: FirewallZone | 'other'): string {
 }
 
 const parsedRules = computed<ParsedFirewallRule[]>(() => rules.value.map((rule) => ({
+  kind: 'firewall',
   original: rule,
   zone: zoneForChain(rule.chain),
   decision: decisionForTarget(rule.target),
@@ -190,7 +222,19 @@ const parsedRules = computed<ParsedFirewallRule[]>(() => rules.value.map((rule) 
   destination: addressLabel(rule.destination),
 })))
 
-const filteredRules = computed(() => parsedRules.value.filter((rule) => {
+const parsedCountryRules = computed<ParsedFirewallCountryRule[]>(() => countryRules.value.map((rule) => ({
+  kind: 'country',
+  countryCode: rule.code,
+  networkCount: rule.networkCount,
+  zone: 'inbound',
+  decision: rule.decision,
+  protocol: phrase('国家/地区'),
+  port: phrase('所有服务'),
+  source: countryLabel(rule.code),
+  destination: phrase('所有服务'),
+})))
+
+const filteredRules = computed(() => [...parsedRules.value, ...parsedCountryRules.value].filter((rule) => {
   const matchesZone = zoneFilter.value === 'all' || rule.zone === zoneFilter.value
   const matchesDecision = decisionFilter.value === 'all' || rule.decision === decisionFilter.value
   return matchesZone && matchesDecision
@@ -279,6 +323,20 @@ function addressAction(action: FirewallAddressAction): void {
     'firewall-remove-ip': '清除',
   } as const
   void execute({ action, address: value }, `确认${labels[action]} IP 规则 ${value} 吗？`)
+}
+
+function countryAction(action: FirewallCountryAction): void {
+  const value = countryCode.value.trim().toUpperCase()
+  if (!countryReady.value) return
+  const labels = {
+    'firewall-allow-country': '允许',
+    'firewall-block-country': '阻止',
+    'firewall-remove-country': '清除',
+  } as const
+  const confirmation = action === 'firewall-allow-country'
+    ? `确认允许${countryLabel(value)}访问入站连接吗？这会将默认入站策略设为阻止，可能影响其他来源和远程管理连接。`
+    : `确认${labels[action]}${countryLabel(value)}的国家/地区规则吗？`
+  void execute({ action, countryCode: value }, confirmation)
 }
 
 function allPortsConfirmation(): string {
@@ -385,7 +443,7 @@ onBeforeUnmount(() => controller?.abort())
               <span>{{ phrase('来源') }}</span>
               <span>{{ phrase('目标') }}</span>
             </div>
-            <article v-for="(rule, index) in filteredRules" :key="`${rule.original.line ?? index}-${rule.original.raw}`" class="firewall-manager__parsed-rule" role="listitem">
+            <article v-for="(rule, index) in filteredRules" :key="rule.kind === 'country' ? `country-${rule.countryCode}-${rule.decision}` : `${rule.original.line ?? index}-${rule.original.raw}`" class="firewall-manager__parsed-rule" role="listitem">
               <header class="firewall-manager__parsed-rule-head">
                 <div class="firewall-manager__rule-badges">
                   <span class="firewall-manager__zone-badge">{{ zoneLabel(rule.zone) }}</span>
@@ -399,17 +457,18 @@ onBeforeUnmount(() => controller?.abort())
               </header>
               <div class="firewall-manager__rule-connection">
                 <span class="firewall-manager__rule-list-label">{{ phrase('连接') }}</span>
-                <strong class="firewall-manager__parsed-rule-title">{{ rule.protocol }} · {{ rule.port }}</strong>
+                <strong class="firewall-manager__parsed-rule-title">{{ rule.kind === 'country' ? countryLabel(rule.countryCode) : `${rule.protocol} · ${rule.port}` }}</strong>
               </div>
               <div class="firewall-manager__rule-address">
                 <span class="firewall-manager__rule-list-label">{{ phrase('来源') }}</span>
-                <strong>{{ rule.source }}</strong>
+                <strong>{{ rule.kind === 'country' ? `${rule.networkCount} ${phrase('个 IPv4 网段')}` : rule.source }}</strong>
               </div>
               <div class="firewall-manager__rule-address">
                 <span class="firewall-manager__rule-list-label">{{ phrase('目标') }}</span>
-                <strong>{{ rule.destination }}</strong>
+                <strong>{{ rule.kind === 'country' ? phrase('所有服务') : rule.destination }}</strong>
               </div>
-              <p v-if="rule.decision === 'other'" class="firewall-manager__rule-note">{{ phrase('这是系统内部规则，通常不需要手动修改。') }}</p>
+              <p v-if="rule.kind === 'country'" class="firewall-manager__rule-note">{{ phrase('按该国家/地区的 IPv4 网段匹配，不是实时地理定位。') }}</p>
+              <p v-else-if="rule.decision === 'other'" class="firewall-manager__rule-note">{{ phrase('这是系统内部规则，通常不需要手动修改。') }}</p>
             </article>
           </div>
         </section>
@@ -420,6 +479,73 @@ onBeforeUnmount(() => controller?.abort())
               <h3>{{ phrase('其他功能选项') }}</h3>
             </div>
           </header>
+
+          <section class="firewall-manager__other-group firewall-manager__other-group--quick">
+            <header class="firewall-manager__section-heading">
+              <div>
+                <h4>{{ phrase('快速添加规则') }}</h4>
+                <p>{{ phrase('只处理入站连接；端口操作会同时处理 TCP 和 UDP。') }}</p>
+              </div>
+            </header>
+            <div class="firewall-manager__quick-grid">
+              <article class="firewall-manager__quick-card">
+                <header>
+                  <span class="firewall-manager__quick-icon firewall-manager__quick-icon--blue"><Globe2 :size="18" /></span>
+                  <div>
+                    <h4>{{ phrase('端口规则') }}</h4>
+                    <p>{{ phrase('让外部设备访问某个服务。') }}</p>
+                  </div>
+                </header>
+                <label class="field">
+                  <span>{{ phrase('端口号') }}</span>
+                  <input v-model.number="port" type="number" min="1" max="65535" inputmode="numeric" :aria-describedby="'firewall-port-help'" />
+                </label>
+                <div class="firewall-manager__actions">
+                  <button class="button button--secondary" type="button" :disabled="!writable || running || !validPort" @click="portAction('firewall-close-port')">{{ phrase('阻止') }}</button>
+                  <button class="button button--primary" type="button" :disabled="!writable || running || !validPort" @click="portAction('firewall-open-port')">{{ phrase('允许') }}</button>
+                </div>
+                <p id="firewall-port-help" class="firewall-manager__hint">{{ phrase('端口范围是 1–65535，例如网站常用 80 或 443。') }}</p>
+              </article>
+
+              <article class="firewall-manager__quick-card">
+                <header>
+                  <span class="firewall-manager__quick-icon firewall-manager__quick-icon--amber"><ShieldAlert :size="18" /></span>
+                  <div>
+                    <h4>{{ phrase('IP / 网段规则') }}</h4>
+                    <p>{{ phrase('按 IP、网段或国家/地区管理来源。') }}</p>
+                  </div>
+                </header>
+                <div class="firewall-manager__rule-mode" role="group" :aria-label="phrase('规则类型')">
+                  <button type="button" :class="{ 'is-active': ruleMode === 'address' }" :aria-pressed="ruleMode === 'address'" data-firewall-rule-mode="address" @click="ruleMode = 'address'">{{ phrase('IP / 网段') }}</button>
+                  <button type="button" :class="{ 'is-active': ruleMode === 'country' }" :aria-pressed="ruleMode === 'country'" data-firewall-rule-mode="country" @click="ruleMode = 'country'">{{ phrase('国家/地区') }}</button>
+                </div>
+                <template v-if="ruleMode === 'address'">
+                  <label class="field">
+                    <span>{{ phrase('IP 地址或网段') }}</span>
+                    <input v-model.trim="address" autocomplete="off" maxlength="43" :placeholder="phrase('例如 198.51.100.20 或 198.51.100.0/24')" />
+                  </label>
+                  <div class="firewall-manager__actions">
+                    <button class="button button--secondary" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-remove-ip')">{{ phrase('清除') }}</button>
+                    <button class="button button--danger" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-block-ip')">{{ phrase('阻止') }}</button>
+                    <button class="button button--primary" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-allow-ip')">{{ phrase('允许') }}</button>
+                  </div>
+                  <p class="firewall-manager__hint">{{ phrase('支持 IPv4 地址或网段，例如 198.51.100.0/24。') }}</p>
+                </template>
+                <template v-else>
+                  <label class="field">
+                    <span>{{ phrase('国家/地区代码') }}</span>
+                    <input v-model.trim="countryCode" autocomplete="off" maxlength="2" autocapitalize="characters" :placeholder="phrase('例如 US（美国）')" />
+                  </label>
+                  <div class="firewall-manager__actions">
+                    <button class="button button--secondary" type="button" :disabled="!writable || running || !countryReady" @click="countryAction('firewall-remove-country')">{{ phrase('清除') }}</button>
+                    <button class="button button--danger" type="button" :disabled="!writable || running || !countryReady" @click="countryAction('firewall-block-country')">{{ phrase('阻止') }}</button>
+                    <button class="button button--primary" type="button" :disabled="!writable || running || !countryReady" @click="countryAction('firewall-allow-country')">{{ phrase('允许') }}</button>
+                  </div>
+                  <p class="firewall-manager__hint">{{ phrase('例如 US 代表美国；按该国家的 IPv4 网段匹配。允许会将默认入站策略设为阻止。') }}</p>
+                </template>
+              </article>
+            </div>
+          </section>
 
           <section class="firewall-manager__other-group firewall-manager__other-group--basic">
             <header class="firewall-manager__section-heading">
@@ -451,55 +577,6 @@ onBeforeUnmount(() => controller?.abort())
               </article>
             </div>
           </section>
-
-          <section class="firewall-manager__other-group firewall-manager__other-group--quick">
-            <header class="firewall-manager__section-heading">
-              <div>
-                <h4>{{ phrase('快速添加规则') }}</h4>
-                <p>{{ phrase('只处理入站连接；端口操作会同时处理 TCP 和 UDP。') }}</p>
-              </div>
-            </header>
-          <div class="firewall-manager__quick-grid">
-            <article class="firewall-manager__quick-card">
-              <header>
-                <span class="firewall-manager__quick-icon firewall-manager__quick-icon--blue"><Globe2 :size="18" /></span>
-                <div>
-                  <h4>{{ phrase('端口规则') }}</h4>
-                  <p>{{ phrase('让外部设备访问某个服务。') }}</p>
-                </div>
-              </header>
-              <label class="field">
-                <span>{{ phrase('端口号') }}</span>
-                <input v-model.number="port" type="number" min="1" max="65535" inputmode="numeric" :aria-describedby="'firewall-port-help'" />
-              </label>
-              <div class="firewall-manager__actions">
-                <button class="button button--secondary" type="button" :disabled="!writable || running || !validPort" @click="portAction('firewall-close-port')">{{ phrase('阻止') }}</button>
-                <button class="button button--primary" type="button" :disabled="!writable || running || !validPort" @click="portAction('firewall-open-port')">{{ phrase('允许') }}</button>
-              </div>
-              <p id="firewall-port-help" class="firewall-manager__hint">{{ phrase('端口范围是 1–65535，例如网站常用 80 或 443。') }}</p>
-            </article>
-
-            <article class="firewall-manager__quick-card">
-              <header>
-                <span class="firewall-manager__quick-icon firewall-manager__quick-icon--amber"><ShieldAlert :size="18" /></span>
-                <div>
-                  <h4>{{ phrase('IP / 网段规则') }}</h4>
-                  <p>{{ phrase('只允许或阻止某个来源。') }}</p>
-                </div>
-              </header>
-              <label class="field">
-                <span>{{ phrase('IP 地址或网段') }}</span>
-                <input v-model.trim="address" autocomplete="off" maxlength="43" :placeholder="phrase('例如 198.51.100.20 或 198.51.100.0/24')" />
-              </label>
-              <div class="firewall-manager__actions">
-                <button class="button button--secondary" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-remove-ip')">{{ phrase('清除') }}</button>
-                <button class="button button--danger" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-block-ip')">{{ phrase('阻止') }}</button>
-                <button class="button button--primary" type="button" :disabled="!writable || running || !addressReady" @click="addressAction('firewall-allow-ip')">{{ phrase('允许') }}</button>
-              </div>
-              <p class="firewall-manager__hint">{{ phrase('支持 IPv4 地址或网段，例如 198.51.100.0/24。') }}</p>
-            </article>
-          </div>
-        </section>
 
         <details class="firewall-manager__advanced">
           <summary>
@@ -1021,6 +1098,44 @@ onBeforeUnmount(() => controller?.abort())
 
 .firewall-manager__quick-card .field {
   gap: 6px;
+}
+
+.firewall-manager__rule-mode {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.firewall-manager__rule-mode button {
+  min-height: 32px;
+  padding: 5px 10px;
+  color: var(--text-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.firewall-manager__rule-mode button:hover,
+.firewall-manager__rule-mode button:focus-visible {
+  border-color: var(--border-strong);
+}
+
+.firewall-manager__rule-mode button:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.firewall-manager__rule-mode button.is-active {
+  color: var(--brand-strong);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  box-shadow: var(--shadow-sm);
 }
 
 .firewall-manager__actions {

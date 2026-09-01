@@ -109,7 +109,7 @@ func TestParseSSHDefenseSnapshotReturnsStableEmptyCollections(t *testing.T) {
 }
 
 func TestTrustedSSHDefenseManagerProtocolRequiresExactVersion(t *testing.T) {
-	base := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"3\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\n")
+	base := []byte("permission_granted=\"true\"\nKPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"4\"\nKJ_SYSTEM_RESOURCE_NONINTERACTIVE\nkpanel_system_resource_dispatch\nKPANEL_SYSTEM_RESOURCE_STATUS\nKPANEL_SYSTEM_RESOURCE_VERSION\n")
 	if trustedKejilionSSHDefenseManagerContent(base) {
 		t.Fatal("system-resource-only script was trusted for SSH defense")
 	}

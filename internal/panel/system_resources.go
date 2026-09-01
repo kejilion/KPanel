@@ -100,6 +100,8 @@ func systemResourceAuditChange(input contract.SystemResourceActionRequest) map[s
 		change["port"] = input.Port
 	case "firewall-allow-ip", "firewall-block-ip", "firewall-remove-ip":
 		change["addressHash"], change["addressLength"] = auditValueMetadata(input.Address)
+	case "firewall-allow-country", "firewall-block-country", "firewall-remove-country":
+		change["countryCode"] = input.CountryCode
 	case "firewall-open-all", "firewall-close-all", "firewall-enable-ping",
 		"firewall-disable-ping", "firewall-enable-ddos", "firewall-disable-ddos":
 		change["requested"] = true
