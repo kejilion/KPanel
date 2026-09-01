@@ -967,7 +967,6 @@ export default [
 	['取消编辑', 'Cancel editing'],
 	['共 {0} 条定时任务记录', '{0} scheduled task records'],
 	['{0} · 第 {1} 行', '{0} · line {1}'],
-	['未知后端', 'Unknown backend'],
 	['{0} 条规则', '{0} rules'],
 	['第 {0} 行', 'Line {0}'],
 	['添加记录', 'Add record'],
