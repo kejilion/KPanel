@@ -1526,6 +1526,60 @@ textarea:focus-visible,
   font-weight: 500;
 }
 
+.site-certificate-options {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.site-certificate-options legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.site-certificate-options legend svg {
+  color: var(--brand);
+}
+
+.site-certificate-options > small,
+.site-certificate-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.5;
+}
+
+.site-certificate-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.site-certificate-inputs textarea {
+  min-height: 176px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.site-certificate-note {
+  margin: 0;
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--brand-soft) 52%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--border));
+  border-radius: var(--radius-sm);
+}
+
 .delete-mode-grid {
   display: grid;
   min-width: 0;
@@ -6239,6 +6293,10 @@ body.terminal-fullscreen-open .modal-panel {
 
   .choice-pills--four {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-certificate-inputs {
+    grid-template-columns: 1fr;
   }
 
   .metric-card {
