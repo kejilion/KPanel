@@ -439,21 +439,22 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	var (
-		dockerAvailable    bool
-		siteErr            error
-		siteWriteErr       error
-		wordPressWriteErr  error
-		proxyWriteErr      error
-		recipeWriteErr     error
-		templateWriteErr   error
-		siteDeleteErr      error
-		diagnosticErr      = errors.New("体检服务未配置")
-		environmentReadErr = errors.New("LDNMP 环境读取服务未配置")
-		environmentErr     = errors.New("LDNMP 环境服务未配置")
-		fileErr            = errors.New("文件管理服务未配置")
+		dockerAvailable      bool
+		siteErr              error
+		siteWriteErr         error
+		wordPressWriteErr    error
+		proxyWriteErr        error
+		recipeWriteErr       error
+		templateWriteErr     error
+		customCertificateErr error
+		siteDeleteErr        error
+		diagnosticErr        = errors.New("体检服务未配置")
+		environmentReadErr   = errors.New("LDNMP 环境读取服务未配置")
+		environmentErr       = errors.New("LDNMP 环境服务未配置")
+		fileErr              = errors.New("文件管理服务未配置")
 	)
 	var checks sync.WaitGroup
-	checks.Add(11)
+	checks.Add(12)
 	go func() {
 		defer checks.Done()
 		pingContext, pingCancel := context.WithTimeout(ctx, 800*time.Millisecond)
@@ -483,6 +484,10 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer checks.Done()
 		templateWriteErr = s.sitesManager.TemplateWritable()
+	}()
+	go func() {
+		defer checks.Done()
+		customCertificateErr = s.sitesManager.CustomCertificateWritable()
 	}()
 	go func() {
 		defer checks.Done()
@@ -530,6 +535,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "sites.proxy.install", Enabled: proxyWriteErr == nil, Reason: reasonIf(proxyWriteErr, "kejilion.sh IP+端口反向代理命令不可用"), Methods: []string{"POST"}},
 		{ID: "sites.recipes.install", Enabled: recipeWriteErr == nil, Reason: reasonIf(recipeWriteErr, "kejilion.sh 一键建站协议不可用"), Methods: []string{"POST"}},
 		{ID: "sites.templates.install", Enabled: templateWriteErr == nil, Reason: reasonIf(templateWriteErr, "kejilion.sh 交互建站模板不可用"), Methods: []string{"POST"}},
+		{ID: "sites.custom-certificate", Enabled: customCertificateErr == nil, Reason: reasonIf(customCertificateErr, "当前 kejilion.sh 不支持自定义证书协议"), Methods: []string{"POST"}},
 		{ID: "diagnostics.run", Enabled: diagnosticErr == nil, Reason: reasonIf(diagnosticErr, "请更新本机 kejilion.sh 以启用体检协议"), Methods: []string{"GET", "POST"}},
 		{ID: "files.read", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"GET"}},
 		{ID: "files.write", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"POST", "PUT"}},
@@ -810,7 +816,7 @@ func (s *Server) siteCollection(w http.ResponseWriter, r *http.Request, requestI
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_site_request", "网站写入 URL 无效", "")
 			return
 		}
-		var input sites.SiteInput
+		var input sites.ScriptSiteInput
 		if err := decodeJSON(w, r, &input); err != nil {
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
 			return
@@ -852,7 +858,14 @@ func (s *Server) siteCollection(w http.ResponseWriter, r *http.Request, requestI
 			writeJSON(w, http.StatusAccepted, job)
 			return
 		}
-		result, err := s.sitesManager.Create(r.Context(), input)
+		if input.HasCustomCertificate() {
+			s.writeSiteError(w, requestID, fmt.Errorf(
+				"%w: custom certificates are only accepted when creating a script-backed website",
+				sites.ErrUnprocessable,
+			))
+			return
+		}
+		result, err := s.sitesManager.Create(r.Context(), input.SiteInput)
 		if err != nil {
 			s.writeSiteError(w, requestID, err)
 			return
@@ -1019,12 +1032,19 @@ func (s *Server) siteOperation(w http.ResponseWriter, r *http.Request, requestID
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
-	var input sites.SiteInput
+	var input sites.ScriptSiteInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
 		return
 	}
-	result, err := s.sitesManager.Update(r.Context(), id, input)
+	if input.HasCustomCertificate() {
+		s.writeSiteError(w, requestID, fmt.Errorf(
+			"%w: custom certificates are only accepted when creating a script-backed website",
+			sites.ErrUnprocessable,
+		))
+		return
+	}
+	result, err := s.sitesManager.Update(r.Context(), id, input.SiteInput)
 	if err != nil {
 		s.writeSiteError(w, requestID, err)
 		return

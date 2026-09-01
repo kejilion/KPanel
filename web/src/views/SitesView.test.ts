@@ -51,6 +51,11 @@ interface SitesBindings {
   installationTaskView: ComputedRef<boolean>
   installationTaskFinished: ComputedRef<boolean>
   installProgress: Ref<SiteInstallationProgress | undefined>
+  form: {
+    certificateMode: 'automatic' | 'custom'
+    certificate: string
+    privateKey: string
+  }
   editorOpen: Ref<boolean>
   recentCreatedDomain: Ref<string>
   deletingSite: Ref<Site | undefined>
@@ -58,6 +63,8 @@ interface SitesBindings {
   webTerminalOpen: Ref<boolean>
   webTerminalSession: Ref<{ sessionId: string } | undefined>
   capabilitiesLoaded: Ref<boolean>
+  canUseCustomCertificate: ComputedRef<boolean>
+  customCertificateFormReason: ComputedRef<string>
   loading: Ref<boolean>
   showSiteWriteUnavailable: ComputedRef<boolean>
   featuredServiceOptions: ComputedRef<Array<{ type: string }>>
@@ -130,6 +137,26 @@ describe('SitesView creation experience', () => {
 
     view.capabilitiesLoaded.value = true
     expect(view.showSiteWriteUnavailable.value).toBe(true)
+  })
+
+  it('keeps custom certificates optional and validates both PEM fields when selected', () => {
+    const view = setupView()
+
+    expect(view.form.certificateMode).toBe('automatic')
+    expect(view.customCertificateFormReason.value).toBe('')
+
+    view.form.certificateMode = 'custom'
+    expect(view.customCertificateFormReason.value).toBe('请粘贴证书链（公钥）内容。')
+
+    view.form.certificate = 'certificate'
+    expect(view.customCertificateFormReason.value).toBe('请粘贴与证书匹配的私钥内容。')
+
+    view.form.privateKey = 'private-key'
+    expect(view.customCertificateFormReason.value).toBe('')
+
+    view.capabilitiesLoaded.value = true
+    expect(view.canUseCustomCertificate.value).toBe(false)
+    expect(view.customCertificateFormReason.value).toContain('自定义证书')
   })
 
   it('opens the local interactive terminal with the fixed k web command', async () => {

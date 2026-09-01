@@ -57,6 +57,7 @@ type Filter = 'all' | 'healthy' | 'drifted' | 'config-only'
 type SiteServiceType = SiteInput['type']
 type RedirectCode = NonNullable<SiteInput['redirectCode']>
 type PHPVersion = NonNullable<SiteInput['phpVersion']>
+type CertificateMode = 'automatic' | 'custom'
 
 const sites = ref<Site[]>([])
 const publicNetwork = ref<PublicNetworkSummary>()
@@ -318,6 +319,9 @@ const form = reactive({
   redirectTarget: '',
   redirectCode: 301 as RedirectCode,
   phpVersion: 'latest' as PHPVersion,
+  certificateMode: 'automatic' as CertificateMode,
+  certificate: '',
+  privateKey: '',
 })
 
 const siteWriteCapability = computed(() => capabilities.value.find((capability) => capability.id === 'sites.write'))
@@ -333,6 +337,9 @@ const recipeCapability = computed(() =>
 const templateCapability = computed(() =>
   capabilities.value.find((capability) => capability.id === 'sites.templates.install'),
 )
+const customCertificateCapability = computed(() =>
+  capabilities.value.find((capability) => capability.id === 'sites.custom-certificate'),
+)
 const localWebServiceCapability = computed(() =>
   capabilities.value.find((capability) => capability.id === 'system.port-usage.read'),
 )
@@ -345,6 +352,9 @@ const canInstallWordPress = computed(() => wordPressCapability.value?.enabled ==
 const canInstallProxy = computed(() => proxyCapability.value?.enabled === true)
 const canInstallRecipes = computed(() => recipeCapability.value?.enabled === true)
 const canInstallTemplates = computed(() => templateCapability.value?.enabled === true)
+const canUseCustomCertificate = computed(
+  () => !capabilitiesLoaded.value || customCertificateCapability.value?.enabled === true,
+)
 const canReadLocalWebServices = computed(
   () => !capabilitiesLoaded.value || localWebServiceCapability.value?.enabled === true,
 )
@@ -382,6 +392,26 @@ const localWebServiceReason = computed(
       ? 'Agent 当前无法读取本机端口占用状态。'
       : '未从 Agent 获取端口占用能力状态，请检查 Agent 连接与版本。'),
 )
+const customCertificateReason = computed(
+  () =>
+    customCertificateCapability.value?.reason?.trim() ||
+    (customCertificateCapability.value
+      ? '当前 Agent 使用的 kejilion.sh 尚未启用自定义证书协议。'
+      : '未从 Agent 获取自定义证书能力状态，请检查 Agent 连接与版本。'),
+)
+const useCustomCertificate = computed(
+  () => !editingSite.value && form.certificateMode === 'custom',
+)
+const customCertificateFormReason = computed(() => {
+  if (!useCustomCertificate.value) return ''
+  if (!canUseCustomCertificate.value) return customCertificateReason.value
+  if (!form.certificate.trim()) return '请粘贴证书链（公钥）内容。'
+  if (!form.privateKey.trim()) return '请粘贴与证书匹配的私钥内容。'
+  if (textByteLength(form.certificate.trim()) > 16 * 1024) return '证书链内容不能超过 16 KiB。'
+  if (textByteLength(form.privateKey.trim()) > 8 * 1024) return '私钥内容不能超过 8 KiB。'
+  return ''
+})
+const customCertificateFormValid = computed(() => !customCertificateFormReason.value)
 
 const filteredSites = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -425,6 +455,7 @@ const canSubmit = computed(
     (form.type !== 'proxy' || canInstallProxy.value) &&
     (form.type !== 'recipe' || canInstallRecipes.value) &&
     (!scriptedTemplateCreate.value || canInstallTemplates.value) &&
+    (!useCustomCertificate.value || (canUseCustomCertificate.value && customCertificateFormValid.value)) &&
     (form.type === 'wordpress' ||
       form.type === 'proxy' ||
       form.type === 'recipe' ||
@@ -435,6 +466,7 @@ const canSubmit = computed(
 const formValid = computed(() => {
   const domain = form.primaryDomain.trim()
   if (!isDomain(domain)) return false
+  if (useCustomCertificate.value && !customCertificateFormValid.value) return false
   if (scriptedTemplateCreate.value) return true
   if (form.type === 'proxy' || form.type === 'proxy_domain') return isOrigin(form.upstream)
   if (form.type === 'load_balance') {
@@ -444,6 +476,10 @@ const formValid = computed(() => {
   if (form.type === 'redirect') return isOrigin(form.redirectTarget)
   return true
 })
+
+function textByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
 
 function isDomain(value: string): boolean {
   return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(
@@ -584,6 +620,9 @@ function openCreate(): void {
   form.redirectTarget = ''
   form.redirectCode = 301
   form.phpVersion = 'latest'
+  form.certificateMode = 'automatic'
+  form.certificate = ''
+  form.privateKey = ''
   formError.value = ''
   installProgress.value = undefined
   focusedInstallationID = ''
@@ -728,6 +767,9 @@ function openEdit(site: Site): void {
   form.redirectCode = redirectMatch ? (Number(redirectMatch[1]) as RedirectCode) : 301
   form.redirectTarget = redirectMatch?.[2] || ''
   form.phpVersion = site.type === 'php' && site.upstream === 'php74' ? '7.4' : 'latest'
+  form.certificateMode = 'automatic'
+  form.certificate = ''
+  form.privateKey = ''
   formError.value = ''
   installProgress.value = undefined
   showMoreTemplates.value = false
@@ -738,7 +780,7 @@ function openEdit(site: Site): void {
 async function submitSite(): Promise<void> {
   formError.value = ''
   if (!formValid.value) {
-    formError.value = '请检查域名和当前服务所需的配置。'
+    formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
     return
   }
   if (form.type === 'wordpress' && !canInstallWordPress.value) {
@@ -755,6 +797,10 @@ async function submitSite(): Promise<void> {
   }
   if (scriptedTemplateCreate.value && !canInstallTemplates.value) {
     formError.value = templateCapability.value?.reason || '当前 Agent 尚未启用 kejilion.sh 交互建站模板。'
+    return
+  }
+  if (useCustomCertificate.value && !canUseCustomCertificate.value) {
+    formError.value = customCertificateReason.value
     return
   }
 
@@ -778,6 +824,8 @@ async function submitSite(): Promise<void> {
     redirectTarget: !scriptedTemplateCreate.value && form.type === 'redirect' ? form.redirectTarget.trim() : undefined,
     redirectCode: !scriptedTemplateCreate.value && form.type === 'redirect' ? form.redirectCode : undefined,
     phpVersion: !scriptedTemplateCreate.value && form.type === 'php' ? form.phpVersion : undefined,
+    certificate: useCustomCertificate.value ? form.certificate.trim() : undefined,
+    privateKey: useCustomCertificate.value ? form.privateKey.trim() : undefined,
     enabled: true,
     expectedResourceVersion: editingSite.value?.resourceVersion,
   }
@@ -1521,6 +1569,62 @@ onBeforeUnmount(() => {
           <textarea v-model="form.aliases" rows="3" placeholder="www.example.com&#10;api.example.com" />
           <small>{{ phrase('每行一个域名，最多 20 个；主域名不要重复填写。') }}</small>
         </label>
+        <fieldset v-if="!editingSite" class="field site-certificate-options">
+          <legend><KeyRound :size="16" /> HTTPS 证书（可选）</legend>
+          <div class="choice-pills">
+            <button
+              type="button"
+              :class="{ 'is-active': form.certificateMode === 'automatic' }"
+              :aria-pressed="form.certificateMode === 'automatic'"
+              @click="form.certificateMode = 'automatic'"
+            >
+              自动申请或复用
+            </button>
+            <button
+              type="button"
+              :class="{ 'is-active': form.certificateMode === 'custom' }"
+              :disabled="!canUseCustomCertificate"
+              :title="!canUseCustomCertificate ? customCertificateReason : ''"
+              :aria-pressed="form.certificateMode === 'custom'"
+              @click="form.certificateMode = 'custom'"
+            >
+              使用自定义证书
+            </button>
+          </div>
+          <small>
+            默认由 kejilion.sh 复用有效证书；没有可用证书时才申请新的 Let's Encrypt 证书。
+          </small>
+          <small v-if="!canUseCustomCertificate">{{ customCertificateReason }}</small>
+          <div v-if="useCustomCertificate" class="site-certificate-inputs">
+            <label class="field">
+              <span>公钥证书链（PEM）</span>
+              <textarea
+                v-model="form.certificate"
+                rows="8"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="-----BEGIN CERTIFICATE-----"
+                required
+              />
+              <small>粘贴证书链，不是单独的公钥；首个证书必须覆盖主域名。</small>
+            </label>
+            <label class="field">
+              <span>私钥（PEM）</span>
+              <textarea
+                v-model="form.privateKey"
+                rows="8"
+                spellcheck="false"
+                autocomplete="new-password"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                required
+              />
+              <small>仅接受未加密私钥，必须与首个证书匹配。</small>
+            </label>
+          </div>
+          <p v-if="useCustomCertificate" class="site-certificate-note">
+            私钥只用于本次创建；不会写入任务状态、审计详情或终端输出，脚本完成后清理临时副本。
+          </p>
+        </fieldset>
         <small v-if="!editingSite" class="site-create-footnote">
           <ShieldCheck :size="14" />
           {{ phrase('建站任务在后台执行，关闭窗口不会中断。') }}

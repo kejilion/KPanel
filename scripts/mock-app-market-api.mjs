@@ -1533,6 +1533,7 @@ createServer(async (request, response) => {
         { id: 'sites.proxy.install', enabled: true, methods: ['POST'] },
         { id: 'sites.recipes.install', enabled: true, methods: ['POST'] },
         { id: 'sites.templates.install', enabled: true, methods: ['POST'] },
+        { id: 'sites.custom-certificate', enabled: true, methods: ['POST'] },
         { id: 'sites.delete', enabled: true, methods: ['DELETE'] },
         { id: 'system.port-usage.read', enabled: true, methods: ['GET'] },
         { id: 'diagnostics.run', enabled: true, methods: ['GET', 'POST'] },

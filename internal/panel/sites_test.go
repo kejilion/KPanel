@@ -395,6 +395,90 @@ func TestSiteWriteCatalogValidationAndForwarding(t *testing.T) {
 	}
 }
 
+func TestSiteCertificateFieldsAreCreateOnlyAndForwarded(t *testing.T) {
+	certificate := "-----BEGIN CERTIFICATE-----\ncertificate-material\n-----END CERTIFICATE-----"
+	privateKey := "-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----"
+	body, err := json.Marshal(map[string]string{
+		"primaryDomain": "custom.example.com",
+		"type":          "static",
+		"certificate":   certificate,
+		"privateKey":    privateKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input siteWriteInput
+	if err := json.Unmarshal(body, &input); err != nil {
+		t.Fatal(err)
+	}
+	if field, detail := validateSiteWriteInput(&input, true); field != "" {
+		t.Fatalf("custom certificate create was rejected at %s: %s", field, detail)
+	}
+	payload, err := json.Marshal(input.agentPayload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var forwarded map[string]any
+	if err := json.Unmarshal(payload, &forwarded); err != nil {
+		t.Fatal(err)
+	}
+	if forwarded["certificate"] != certificate || forwarded["privateKey"] != privateKey {
+		t.Fatalf("custom certificate fields were not forwarded exactly: %#v", forwarded)
+	}
+
+	input.ExpectedResourceVersion = optionalString{
+		Value: "sha256:" + strings.Repeat("a", 64),
+		Set:   true,
+	}
+	if field, detail := validateSiteWriteInput(&input, false); field != "certificate" || detail == "" {
+		t.Fatalf("custom certificate update was accepted: field=%q detail=%q", field, detail)
+	}
+
+	invalidCases := []struct {
+		name  string
+		input siteWriteInput
+		field string
+	}{
+		{
+			name: "missing private key",
+			input: siteWriteInput{
+				PrimaryDomain: optionalString{Value: "custom.example.com", Set: true},
+				Type:          optionalString{Value: "static", Set: true},
+				Certificate:   optionalString{Value: certificate, Set: true},
+			},
+			field: "privateKey",
+		},
+		{
+			name: "certificate too large",
+			input: siteWriteInput{
+				PrimaryDomain: optionalString{Value: "custom.example.com", Set: true},
+				Type:          optionalString{Value: "static", Set: true},
+				Certificate:   optionalString{Value: strings.Repeat("x", maxSiteCertificate+1), Set: true},
+				PrivateKey:    optionalString{Value: privateKey, Set: true},
+			},
+			field: "certificate",
+		},
+		{
+			name: "control character",
+			input: siteWriteInput{
+				PrimaryDomain: optionalString{Value: "custom.example.com", Set: true},
+				Type:          optionalString{Value: "static", Set: true},
+				Certificate:   optionalString{Value: certificate + "\x00", Set: true},
+				PrivateKey:    optionalString{Value: privateKey, Set: true},
+			},
+			field: "certificate",
+		},
+	}
+	for _, test := range invalidCases {
+		t.Run(test.name, func(t *testing.T) {
+			field, detail := validateSiteWriteInput(&test.input, true)
+			if field != test.field || detail == "" {
+				t.Fatalf("invalid certificate input returned field=%q detail=%q, want %q", field, detail, test.field)
+			}
+		})
+	}
+}
+
 func TestScriptedSiteCreateRejectsDetailsThatBelongInTerminal(t *testing.T) {
 	for _, body := range []string{
 		`{"primaryDomain":"static.example.com","type":"static","aliases":["www.example.com"]}`,
