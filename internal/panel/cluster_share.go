@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
-	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
