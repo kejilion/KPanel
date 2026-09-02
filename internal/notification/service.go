@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	defaultEvaluationInterval = 30 * time.Second
-	alertRetryInterval        = 5 * time.Minute
-	alertRepeatInterval       = 6 * time.Hour
-	maxMessagesPerEvaluation  = 8
-	telegramSendTimeout       = 6 * time.Second
+	defaultEvaluationInterval    = 30 * time.Second
+	alertRetryInterval           = 5 * time.Minute
+	alertRepeatInterval          = 6 * time.Hour
+	maxMessagesPerEvaluation     = 8
+	telegramSendTimeout          = 6 * time.Second
+	cumulativeTrafficAlertSuffix = ":traffic-total"
+	bytesPerGigabyte             = uint64(1024 * 1024 * 1024)
 )
 
 type HostSource interface {
@@ -164,6 +166,7 @@ func (s *Service) Close() error {
 
 func (s *Service) Snapshot() Snapshot {
 	state := s.store.stateSnapshot()
+	now := s.now()
 	meta := state.Telegram
 	token, configured, tokenErr := s.store.token()
 	if tokenErr != nil {
@@ -180,7 +183,7 @@ func (s *Service) Snapshot() Snapshot {
 	} else if !meta.HasChat {
 		meta.Status = TelegramWaitingChat
 	}
-	return snapshotFromState(state, meta, configured && tokenErr == nil)
+	return snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(now))
 }
 
 func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, error) {
@@ -193,7 +196,12 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	if input.ExpectedResourceVersion == "" || input.ExpectedResourceVersion != state.ResourceVersion {
 		return Snapshot{}, ErrConflict
 	}
-	if err := input.Rules.Validate(); err != nil {
+	rules := normalizeRules(input.Rules)
+	locale := normalizeNotificationLocale(input.Locale)
+	if !validNotificationLocale(locale) {
+		return Snapshot{}, &ValidationError{Field: "locale", Message: "通知语言不受支持"}
+	}
+	if err := rules.Validate(); err != nil {
 		return Snapshot{}, err
 	}
 	newToken := strings.TrimSpace(input.TelegramBotToken)
@@ -208,7 +216,11 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 		return Snapshot{}, err
 	}
 	next := state
-	next.Settings = Settings{Enabled: input.Enabled, Rules: input.Rules}
+	next.Settings = Settings{Enabled: input.Enabled, Locale: locale, Rules: rules}
+	next.AlertStates = s.alertStateSnapshot()
+	if cumulativeTrafficRulesChanged(state.Settings.Rules, rules) {
+		removeAlertStates(next.AlertStates, cumulativeTrafficAlertSuffix)
+	}
 	next.UpdatedAt = s.now().UTC()
 	tokenChanged := false
 	if newToken != "" {
@@ -233,6 +245,7 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 		}
 		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
 	}
+	s.replaceAlertStates(next.AlertStates)
 	return s.Snapshot(), nil
 }
 
@@ -300,8 +313,9 @@ func (s *Service) Test(ctx context.Context) (Snapshot, error) {
 	if !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(token) {
 		return Snapshot{}, ErrNotReady
 	}
-	err = s.telegram.SendMessage(ctx, token, state.Telegram.ChatID, testMessage(s.now().UTC()))
-	now := s.now().UTC()
+	displayNow := s.now()
+	err = s.telegram.SendMessage(ctx, token, state.Telegram.ChatID, testMessage(displayNow, state.Settings.Locale))
+	now := displayNow.UTC()
 	if err != nil {
 		state.Telegram.Status = TelegramError
 		state.Telegram.LastErrorCode = telegramCode(err)
@@ -354,7 +368,8 @@ func (s *Service) evaluate(parent context.Context) error {
 	fetchCtx, cancel := context.WithTimeout(parent, 8*time.Second)
 	defer cancel()
 	hosts := s.hosts.Hosts(fetchCtx)
-	now := s.now().UTC()
+	now := s.now()
+	locale := normalizeNotificationLocale(state.Settings.Locale)
 	telegram := state.Telegram
 	sent := 0
 	stateChanged := s.pruneHostState(hosts.Items)
@@ -380,32 +395,37 @@ func (s *Service) evaluate(parent context.Context) error {
 	for _, host := range hosts.Items {
 		if host.LastSnapshot == nil {
 			if state.Settings.Rules.HostOfflineEnabled {
-				stateChanged = s.handleAvailability(host, now, trySend) || stateChanged
+				stateChanged = s.handleAvailability(host, now, locale, trySend) || stateChanged
 			}
 			continue
 		}
 		rate, rateAvailable := s.trafficRate(host, now)
 		if state.Settings.Rules.HostOfflineEnabled {
-			stateChanged = s.handleAvailability(host, now, trySend) || stateChanged
+			stateChanged = s.handleAvailability(host, now, locale, trySend) || stateChanged
 		}
 		if state.Settings.Rules.SSHLoginEnabled && host.LastSnapshot.Telemetry.SSHLogin != nil {
-			stateChanged = s.handleSSHLogin(host, *host.LastSnapshot.Telemetry.SSHLogin, now, trySend) || stateChanged
+			stateChanged = s.handleSSHLogin(host, *host.LastSnapshot.Telemetry.SSHLogin, now, locale, trySend) || stateChanged
 		}
 		if host.State != cluster.HostOnline && host.State != cluster.HostDegraded {
 			continue
 		}
 		rules := state.Settings.Rules
 		if rules.CPUEnabled && cpuMetricAvailable(host.LastSnapshot.Telemetry) {
-			stateChanged = s.handleThreshold(host, "cpu", "CPU 使用率", host.LastSnapshot.Telemetry.CPU.UsagePercent, float64(rules.CPUThresholdPercent), "%", now, trySend) || stateChanged
+			stateChanged = s.handleThreshold(host, "cpu", host.LastSnapshot.Telemetry.CPU.UsagePercent, float64(rules.CPUThresholdPercent), "%", now, locale, trySend) || stateChanged
 		}
 		if rules.MemoryEnabled && memoryMetricAvailable(host.LastSnapshot.Telemetry) {
-			stateChanged = s.handleThreshold(host, "memory", "内存使用率", host.LastSnapshot.Telemetry.Memory.UsagePercent, float64(rules.MemoryThresholdPercent), "%", now, trySend) || stateChanged
+			stateChanged = s.handleThreshold(host, "memory", host.LastSnapshot.Telemetry.Memory.UsagePercent, float64(rules.MemoryThresholdPercent), "%", now, locale, trySend) || stateChanged
 		}
 		if rules.DiskEnabled && diskMetricAvailable(host.LastSnapshot.Telemetry) {
-			stateChanged = s.handleThreshold(host, "disk", "磁盘使用率", host.LastSnapshot.Telemetry.Disk.UsagePercent, float64(rules.DiskThresholdPercent), "%", now, trySend) || stateChanged
+			stateChanged = s.handleThreshold(host, "disk", host.LastSnapshot.Telemetry.Disk.UsagePercent, float64(rules.DiskThresholdPercent), "%", now, locale, trySend) || stateChanged
 		}
 		if rules.TrafficEnabled && rateAvailable {
-			stateChanged = s.handleThreshold(host, "traffic", "网络吞吐", rate, float64(rules.TrafficThresholdMiBPerSecond), "MiB/s", now, trySend) || stateChanged
+			stateChanged = s.handleThreshold(host, "traffic", rate, float64(rules.TrafficThresholdMiBPerSecond), "MiB/s", now, locale, trySend) || stateChanged
+		}
+		if rules.TrafficTotalEnabled {
+			if total, ok := cumulativeTraffic(host); ok {
+				stateChanged = s.handleCumulativeThreshold(host, total, rules.TrafficTotalThresholdGiB, now, locale, trySend) || stateChanged
+			}
 		}
 	}
 	alertStates := s.alertStateSnapshot()
@@ -419,17 +439,18 @@ func (s *Service) evaluate(parent context.Context) error {
 
 func (s *Service) handleThreshold(
 	host cluster.Host,
-	ruleKey, label string,
+	ruleKey string,
 	value, threshold float64,
 	unit string,
 	now time.Time,
+	locale string,
 	send func(string) (bool, bool),
 ) bool {
 	if !finiteMetric(value) || (unit == "%" && (value < 0 || value > 100)) {
 		return false
 	}
 	if value < threshold {
-		return s.handleThresholdRecovery(host, ruleKey, label, value, unit, now, send)
+		return s.handleThresholdRecovery(host, ruleKey, value, unit, locale, now, send)
 	}
 	key := host.ID + ":" + ruleKey
 	state := s.getAlertState(key)
@@ -437,7 +458,7 @@ func (s *Service) handleThreshold(
 	if !state.Active && state.Consecutive >= s.sustain && canAlertAttempt(state, now) {
 		state.LastAttemptAt = now
 		s.setAlertState(key, state)
-		success, attempted := send(resourceAlertMessage(host, label, value, threshold, unit, now, false))
+		success, attempted := send(resourceAlertMessage(host, ruleKey, value, threshold, unit, now, locale, false))
 		if !attempted {
 			state.LastAttemptAt = time.Time{}
 			s.setAlertState(key, state)
@@ -456,7 +477,7 @@ func (s *Service) handleThreshold(
 	if state.Active && now.Sub(state.LastNotifiedAt) >= s.repeat && canAlertAttempt(state, now) {
 		state.LastAttemptAt = now
 		s.setAlertState(key, state)
-		success, attempted := send(resourceAlertMessage(host, label, value, threshold, unit, now, false))
+		success, attempted := send(resourceAlertMessage(host, ruleKey, value, threshold, unit, now, locale, false))
 		if !attempted {
 			state.LastAttemptAt = time.Time{}
 			s.setAlertState(key, state)
@@ -473,7 +494,7 @@ func (s *Service) handleThreshold(
 	return false
 }
 
-func (s *Service) handleThresholdRecovery(host cluster.Host, ruleKey, label string, value float64, unit string, now time.Time, send func(string) (bool, bool)) bool {
+func (s *Service) handleThresholdRecovery(host cluster.Host, ruleKey string, value float64, unit, locale string, now time.Time, send func(string) (bool, bool)) bool {
 	key := host.ID + ":" + ruleKey
 	state := s.getAlertState(key)
 	state.Consecutive = 0
@@ -483,7 +504,7 @@ func (s *Service) handleThresholdRecovery(host cluster.Host, ruleKey, label stri
 	}
 	state.LastAttemptAt = now
 	s.setAlertState(key, state)
-	success, attempted := send(resourceAlertMessage(host, label, value, 0, unit, now, true))
+	success, attempted := send(resourceAlertMessage(host, ruleKey, value, 0, unit, now, locale, true))
 	if !attempted {
 		state.LastAttemptAt = time.Time{}
 		s.setAlertState(key, state)
@@ -500,7 +521,50 @@ func (s *Service) handleThresholdRecovery(host cluster.Host, ruleKey, label stri
 	return false
 }
 
-func (s *Service) handleAvailability(host cluster.Host, now time.Time, send func(string) (bool, bool)) bool {
+func (s *Service) handleCumulativeThreshold(host cluster.Host, total uint64, thresholdGiB int, now time.Time, locale string, send func(string) (bool, bool)) bool {
+	if thresholdGiB <= 0 || thresholdGiB > MaxTrafficTotalThresholdGiB {
+		return false
+	}
+	thresholdBytes := uint64(thresholdGiB) * bytesPerGigabyte
+	key := host.ID + cumulativeTrafficAlertSuffix
+	state := s.getAlertState(key)
+	if state.LastNetworkTotalBytes > 0 && total < state.LastNetworkTotalBytes {
+		// Network counters are monotonic until an interface, host or agent
+		// restarts. A rollback starts a new accumulation cycle and must not
+		// generate a misleading recovery message.
+		state = alertState{}
+	}
+	state.LastNetworkTotalBytes = total
+	state.Consecutive = 0
+	if total < thresholdBytes {
+		state.Active = false
+		state.LastAttemptAt = time.Time{}
+		s.setAlertState(key, state)
+		return false
+	}
+	if state.Active || !canAlertAttempt(state, now) {
+		s.setAlertState(key, state)
+		return false
+	}
+	state.LastAttemptAt = now
+	s.setAlertState(key, state)
+	success, attempted := send(cumulativeTrafficAlertMessage(host, total, thresholdBytes, now, locale))
+	if !attempted {
+		state.LastAttemptAt = time.Time{}
+		s.setAlertState(key, state)
+		return false
+	}
+	if success {
+		state.Active = true
+		state.LastNotifiedAt = now
+		s.setAlertState(key, state)
+		return true
+	}
+	s.setAlertState(key, state)
+	return false
+}
+
+func (s *Service) handleAvailability(host cluster.Host, now time.Time, locale string, send func(string) (bool, bool)) bool {
 	key := host.ID + ":availability"
 	state := s.getAlertState(key)
 	unavailable := host.State == cluster.HostStale || host.State == cluster.HostOffline ||
@@ -516,7 +580,7 @@ func (s *Service) handleAvailability(host cluster.Host, now time.Time, send func
 		}
 		state.LastAttemptAt = now
 		s.setAlertState(key, state)
-		success, attempted := send(availabilityAlertMessage(host, now, true))
+		success, attempted := send(availabilityAlertMessage(host, now, locale, true))
 		if !attempted {
 			state.LastAttemptAt = time.Time{}
 			s.setAlertState(key, state)
@@ -537,7 +601,7 @@ func (s *Service) handleAvailability(host cluster.Host, now time.Time, send func
 	}
 	state.LastAttemptAt = now
 	s.setAlertState(key, state)
-	success, attempted := send(availabilityAlertMessage(host, now, false))
+	success, attempted := send(availabilityAlertMessage(host, now, locale, false))
 	if !attempted {
 		state.LastAttemptAt = time.Time{}
 		s.setAlertState(key, state)
@@ -552,7 +616,7 @@ func (s *Service) handleAvailability(host cluster.Host, now time.Time, send func
 	return false
 }
 
-func (s *Service) handleSSHLogin(host cluster.Host, event contract.SSHLoginEvent, now time.Time, send func(string) (bool, bool)) bool {
+func (s *Service) handleSSHLogin(host cluster.Host, event contract.SSHLoginEvent, now time.Time, locale string, send func(string) (bool, bool)) bool {
 	if !contract.ValidSSHLoginEvent(event) {
 		return false
 	}
@@ -576,7 +640,7 @@ func (s *Service) handleSSHLogin(host cluster.Host, event contract.SSHLoginEvent
 	state.PendingEventID = event.ID
 	state.LastAttemptAt = now
 	s.setAlertState(key, state)
-	success, attempted := send(sshLoginMessage(host, event, now))
+	success, attempted := send(sshLoginMessage(host, event, now, locale))
 	if !attempted {
 		state.LastAttemptAt = time.Time{}
 		state.PendingEventID = ""
@@ -606,6 +670,30 @@ func (s *Service) setAlertState(key string, value alertState) {
 		return
 	}
 	s.alerts[key] = value
+}
+
+func (s *Service) replaceAlertStates(states map[string]alertState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.alerts = make(map[string]alertState, len(states))
+	for key, value := range states {
+		s.alerts[key] = value
+	}
+}
+
+func removeAlertStates(states map[string]alertState, suffix string) {
+	for key := range states {
+		if strings.HasSuffix(key, suffix) {
+			delete(states, key)
+		}
+	}
+}
+
+func cumulativeTrafficRulesChanged(previous, next Rules) bool {
+	previous = normalizeRules(previous)
+	next = normalizeRules(next)
+	return previous.TrafficTotalEnabled != next.TrafficTotalEnabled ||
+		previous.TrafficTotalThresholdGiB != next.TrafficTotalThresholdGiB
 }
 
 func (s *Service) pruneHostState(hosts []cluster.Host) bool {
@@ -686,6 +774,13 @@ func (s *Service) trafficRate(host cluster.Host, now time.Time) (float64, bool) 
 	return rate, finiteMetric(rate)
 }
 
+func cumulativeTraffic(host cluster.Host) (uint64, bool) {
+	if host.LastSnapshot == nil {
+		return 0, false
+	}
+	return contract.TotalNetworkBytes(host.LastSnapshot.Telemetry.Network), true
+}
+
 func canAlertAttempt(state alertState, now time.Time) bool {
 	return state.LastAttemptAt.IsZero() || now.Sub(state.LastAttemptAt) >= alertRetryInterval
 }
@@ -722,10 +817,11 @@ func minInt(value, maximum int) int {
 	return value
 }
 
-func snapshotFromState(state persistedState, telegram telegramState, configured bool) Snapshot {
+func snapshotFromState(state persistedState, telegram telegramState, configured bool, timezone string) Snapshot {
 	ready := configured && telegram.HasChat && telegram.TokenFingerprint != "" && telegram.Status == TelegramReady
 	return Snapshot{
-		Enabled: state.Settings.Enabled, Rules: state.Settings.Rules,
+		Enabled: state.Settings.Enabled, Locale: normalizeNotificationLocale(state.Settings.Locale), Timezone: timezone,
+		Rules: normalizeRules(state.Settings.Rules),
 		Telegram: TelegramSnapshot{
 			Configured: configured, Ready: ready, Status: telegram.Status,
 			BotUsername: telegram.BotUsername, LastCheckedAt: cloneTime(telegram.LastCheckedAt),
@@ -793,26 +889,96 @@ func telegramCode(err error) string {
 	}
 }
 
-func resourceAlertMessage(host cluster.Host, label string, value, threshold float64, unit string, now time.Time, recovery bool) string {
-	if recovery {
-		return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n已恢复：%s 当前 %s\n时间：%s", safeMessageText(host.Name), label, formatMetric(value, unit), now.Format("2006-01-02 15:04:05 MST"))
+func resourceAlertMessage(host cluster.Host, ruleKey string, value, threshold float64, unit string, now time.Time, locale string, recovery bool) string {
+	hostName := safeMessageText(host.Name)
+	metric := localizedMetricLabel(ruleKey, locale)
+	current := formatMetric(value, unit)
+	when := formatNotificationTime(now)
+	switch locale {
+	case "en-US":
+		if recovery {
+			return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nRecovered: %s, current %s\nTime: %s", hostName, metric, current, when)
+		}
+		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\n%s reached %s (threshold %s)\nTime: %s", hostName, metric, current, formatMetric(threshold, unit), when)
+	case "zh-TW":
+		if recovery {
+			return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\n已恢復：%s 目前 %s\n時間：%s", hostName, metric, current, when)
+		}
+		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n%s達到 %s（閾值 %s）\n時間：%s", hostName, metric, current, formatMetric(threshold, unit), when)
+	default:
+		if recovery {
+			return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n已恢复：%s 当前 %s\n时间：%s", hostName, metric, current, when)
+		}
+		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n%s达到 %s（阈值 %s）\n时间：%s", hostName, metric, current, formatMetric(threshold, unit), when)
 	}
-	return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n%s达到 %s（阈值 %s）\n时间：%s", safeMessageText(host.Name), label, formatMetric(value, unit), formatMetric(threshold, unit), now.Format("2006-01-02 15:04:05 MST"))
 }
 
-func availabilityAlertMessage(host cluster.Host, now time.Time, recovery bool) string {
-	if recovery {
-		return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n连接已恢复，当前状态：%s\n时间：%s", safeMessageText(host.Name), hostStateLabel(host.State), now.Format("2006-01-02 15:04:05 MST"))
+func cumulativeTrafficAlertMessage(host cluster.Host, totalBytes, thresholdBytes uint64, now time.Time, locale string) string {
+	hostName := safeMessageText(host.Name)
+	metric := localizedMetricLabel("traffic-total", locale)
+	current := formatNetworkBytes(totalBytes)
+	threshold := formatNetworkBytes(thresholdBytes)
+	when := formatNotificationTime(now)
+	switch locale {
+	case "en-US":
+		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\n%s reached %s (threshold %s)\nTime: %s", hostName, metric, current, threshold, when)
+	case "zh-TW":
+		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n%s達到 %s（閾值 %s）\n時間：%s", hostName, metric, current, threshold, when)
+	default:
+		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n%s达到 %s（阈值 %s）\n时间：%s", hostName, metric, current, threshold, when)
 	}
-	return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n主机暂时失联，当前状态：%s\n时间：%s", safeMessageText(host.Name), hostStateLabel(host.State), now.Format("2006-01-02 15:04:05 MST"))
 }
 
-func sshLoginMessage(host cluster.Host, event contract.SSHLoginEvent, now time.Time) string {
-	return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\nSSH 登录：%s\n用户：%s\n来源：%s\n方式：%s\n时间：%s", safeMessageText(host.Name), event.OccurredAt.Format("2006-01-02 15:04:05 MST"), safeMessageText(event.Username), safeMessageText(event.RemoteAddress), safeMessageText(event.Method), now.Format("2006-01-02 15:04:05 MST"))
+func availabilityAlertMessage(host cluster.Host, now time.Time, locale string, recovery bool) string {
+	hostName := safeMessageText(host.Name)
+	state := localizedHostStateLabel(host.State, locale)
+	when := formatNotificationTime(now)
+	switch locale {
+	case "en-US":
+		if recovery {
+			return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nConnection recovered, current state: %s\nTime: %s", hostName, state, when)
+		}
+		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\nHost is temporarily unreachable, current state: %s\nTime: %s", hostName, state, when)
+	case "zh-TW":
+		if recovery {
+			return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\n連線已恢復，目前狀態：%s\n時間：%s", hostName, state, when)
+		}
+		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n主機暫時失聯，目前狀態：%s\n時間：%s", hostName, state, when)
+	default:
+		if recovery {
+			return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n连接已恢复，当前状态：%s\n时间：%s", hostName, state, when)
+		}
+		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n主机暂时失联，当前状态：%s\n时间：%s", hostName, state, when)
+	}
 }
 
-func testMessage(now time.Time) string {
-	return fmt.Sprintf("[KPanel 集群通知]\nTelegram 通道测试成功。\n时间：%s", now.Format("2006-01-02 15:04:05 MST"))
+func sshLoginMessage(host cluster.Host, event contract.SSHLoginEvent, now time.Time, locale string) string {
+	hostName := safeMessageText(host.Name)
+	eventTime := formatNotificationTime(event.OccurredAt.In(now.Location()))
+	sentAt := formatNotificationTime(now)
+	username := safeMessageText(event.Username)
+	remoteAddress := safeMessageText(event.RemoteAddress)
+	method := safeMessageText(event.Method)
+	switch locale {
+	case "en-US":
+		return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nSSH login: %s\nUser: %s\nSource: %s\nMethod: %s\nSent: %s", hostName, eventTime, username, remoteAddress, method, sentAt)
+	case "zh-TW":
+		return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\nSSH 登入：%s\n使用者：%s\n來源：%s\n方式：%s\n傳送時間：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
+	default:
+		return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\nSSH 登录：%s\n用户：%s\n来源：%s\n方式：%s\n发送时间：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
+	}
+}
+
+func testMessage(now time.Time, locale string) string {
+	when := formatNotificationTime(now)
+	switch locale {
+	case "en-US":
+		return fmt.Sprintf("[KPanel Cluster Notice]\nTelegram channel test succeeded.\nTime: %s", when)
+	case "zh-TW":
+		return fmt.Sprintf("[KPanel 叢集通知]\nTelegram 頻道測試成功。\n時間：%s", when)
+	default:
+		return fmt.Sprintf("[KPanel 集群通知]\nTelegram 通道测试成功。\n时间：%s", when)
+	}
 }
 
 func formatMetric(value float64, unit string) string {
@@ -820,6 +986,25 @@ func formatMetric(value float64, unit string) string {
 		return fmt.Sprintf("%.1f%%", value)
 	}
 	return fmt.Sprintf("%.1f %s", value, unit)
+}
+
+// formatNetworkBytes mirrors the desktop widget's binary formatter: 1024
+// bytes per step and one decimal place for non-byte units.
+func formatNetworkBytes(value uint64) string {
+	if value == 0 {
+		return "0 B"
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	scaled := float64(value)
+	index := 0
+	for scaled >= 1024 && index < len(units)-1 {
+		scaled /= 1024
+		index++
+	}
+	if index == 0 {
+		return fmt.Sprintf("%.0f B", scaled)
+	}
+	return fmt.Sprintf("%.1f %s", scaled, units[index])
 }
 
 func hostStateLabel(value cluster.HostState) string {
@@ -841,6 +1026,64 @@ func hostStateLabel(value cluster.HostState) string {
 	default:
 		return string(value)
 	}
+}
+
+func localizedMetricLabel(ruleKey, locale string) string {
+	labels := map[string]string{
+		"cpu": "CPU 使用率", "memory": "内存使用率", "disk": "磁盘使用率",
+		"traffic": "网络吞吐", "traffic-total": "累计流量",
+	}
+	if locale == "en-US" {
+		return map[string]string{
+			"cpu": "CPU usage", "memory": "Memory usage", "disk": "Disk usage",
+			"traffic": "Network throughput", "traffic-total": "Cumulative traffic",
+		}[ruleKey]
+	}
+	if locale == "zh-TW" {
+		return map[string]string{
+			"cpu": "CPU 使用率", "memory": "記憶體使用率", "disk": "磁碟使用率",
+			"traffic": "網路吞吐量", "traffic-total": "累計流量",
+		}[ruleKey]
+	}
+	return labels[ruleKey]
+}
+
+func localizedHostStateLabel(value cluster.HostState, locale string) string {
+	if locale == "en-US" {
+		if label := map[cluster.HostState]string{
+			cluster.HostStale: "stale data", cluster.HostOffline: "offline",
+			cluster.HostAuthFailed: "authorization failed", cluster.HostTLSFailed: "TLS error",
+			cluster.HostIncompatible: "protocol incompatible", cluster.HostDegraded: "degraded",
+			cluster.HostOnline: "online",
+		}[value]; label != "" {
+			return label
+		}
+	}
+	if locale == "zh-TW" {
+		if label := map[cluster.HostState]string{
+			cluster.HostStale: "資料過期", cluster.HostOffline: "離線",
+			cluster.HostAuthFailed: "授權失敗", cluster.HostTLSFailed: "TLS 錯誤",
+			cluster.HostIncompatible: "協定不相容", cluster.HostDegraded: "降級",
+			cluster.HostOnline: "線上",
+		}[value]; label != "" {
+			return label
+		}
+	}
+	return hostStateLabel(value)
+}
+
+func formatNotificationTime(value time.Time) string {
+	return value.Format("2006-01-02 15:04:05") + " (" + notificationTimezone(value) + ")"
+}
+
+func notificationTimezone(value time.Time) string {
+	_, offset := value.Zone()
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	return fmt.Sprintf("UTC%s%02d:%02d", sign, offset/3600, (offset%3600)/60)
 }
 
 func safeMessageText(value string) string {

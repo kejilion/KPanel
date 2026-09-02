@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { CheckCircle2, LoaderCircle, RefreshCw, Send, ShieldCheck } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
+import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
@@ -10,6 +11,8 @@ import type { ClusterNotificationRules, ClusterNotificationSnapshot } from '@/ty
 const props = defineProps<{
   open: boolean
 }>()
+
+const { locale } = useI18n()
 
 const emit = defineEmits<{
   close: []
@@ -35,6 +38,8 @@ const form = reactive({
   diskThresholdPercent: 90,
   trafficEnabled: false,
   trafficThresholdMiBPerSecond: 100,
+  trafficTotalEnabled: false,
+  trafficTotalThresholdGiB: 100,
   sshLoginEnabled: true,
   hostOfflineEnabled: true,
   telegramBotToken: '',
@@ -78,6 +83,8 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.diskThresholdPercent = value.rules.diskThresholdPercent
   form.trafficEnabled = value.rules.trafficEnabled
   form.trafficThresholdMiBPerSecond = value.rules.trafficThresholdMiBPerSecond
+  form.trafficTotalEnabled = value.rules.trafficTotalEnabled
+  form.trafficTotalThresholdGiB = value.rules.trafficTotalThresholdGiB || 100
   form.sshLoginEnabled = value.rules.sshLoginEnabled
   form.hostOfflineEnabled = value.rules.hostOfflineEnabled
   form.telegramBotToken = ''
@@ -109,6 +116,8 @@ function rulesFromForm(): ClusterNotificationRules {
     diskThresholdPercent: form.diskThresholdPercent,
     trafficEnabled: form.trafficEnabled,
     trafficThresholdMiBPerSecond: form.trafficThresholdMiBPerSecond,
+    trafficTotalEnabled: form.trafficTotalEnabled,
+    trafficTotalThresholdGiB: form.trafficTotalThresholdGiB,
     sshLoginEnabled: form.sshLoginEnabled,
     hostOfflineEnabled: form.hostOfflineEnabled,
   }
@@ -162,6 +171,7 @@ async function save(): Promise<void> {
   try {
     const value = await api.cluster.updateNotifications({
       enabled: form.enabled,
+      locale: locale.value,
       rules: rulesFromForm(),
       telegramBotToken: form.telegramBotToken.trim() || undefined,
       expectedResourceVersion: snapshot.value.resourceVersion,
@@ -220,6 +230,11 @@ function statusLabel(value?: ClusterNotificationSnapshot['telegram']['status']):
 
 function statusClass(value?: ClusterNotificationSnapshot['telegram']['status']): string {
   return value === 'ready' ? 'is-ready' : value === 'error' ? 'is-error' : 'is-pending'
+}
+
+function notificationLocaleLabel(value: ClusterNotificationSnapshot['locale']): string {
+  if (value === 'en-US') return 'English'
+  return phrase(value === 'zh-TW' ? '繁體中文' : '简体中文')
 }
 
 watch(
@@ -333,6 +348,27 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
+        <section class="cluster-notifications__section cluster-notifications__locale">
+          <div class="cluster-notifications__section-heading">
+            <div>
+              <h3>{{ phrase('语言与时间') }}</h3>
+              <p>{{ phrase('通知语言在保存时跟随当前 KPanel 界面；时间使用通知中心宿主机系统时区。') }}</p>
+            </div>
+          </div>
+          <div class="cluster-notifications__locale-grid">
+            <div>
+              <span>{{ phrase('通知语言') }}</span>
+              <strong>{{ notificationLocaleLabel(snapshot.locale) }}</strong>
+              <small>{{ phrase('当前界面') }}：{{ notificationLocaleLabel(locale) }} · {{ phrase('保存设置后生效') }}</small>
+            </div>
+            <div>
+              <span>{{ phrase('宿主机时区') }}</span>
+              <strong>{{ snapshot.timezone || 'UTC+00:00' }}</strong>
+              <small>{{ phrase('消息时间带 UTC 偏移，跨时区查看也不会混淆。') }}</small>
+            </div>
+          </div>
+        </section>
+
         <section class="cluster-notifications__section">
           <div class="cluster-notifications__section-heading">
             <div>
@@ -373,6 +409,11 @@ onBeforeUnmount(() => {
               <input v-model="form.trafficEnabled" type="checkbox" :aria-label="phrase('启用流量通知')" />
               <span><strong>{{ phrase('网络吞吐') }}</strong><small>{{ phrase('按收发总速率计算，首次采样使用已有速率。') }}</small></span>
               <span class="cluster-notifications__threshold"><input v-model.number="form.trafficThresholdMiBPerSecond" type="number" min="1" max="1048576" :aria-label="phrase('流量阈值')" /><em>MiB/s</em></span>
+            </label>
+            <label class="cluster-notifications__rule">
+              <input v-model="form.trafficTotalEnabled" type="checkbox" :aria-label="phrase('启用累计流量通知')" />
+              <span><strong>{{ phrase('累计流量') }}</strong><small>{{ phrase('每台主机收发累计达到阈值后通知一次；计数器重置后重新累计。') }}</small></span>
+              <span class="cluster-notifications__threshold"><input v-model.number="form.trafficTotalThresholdGiB" type="number" min="1" max="1048576" :aria-label="phrase('累计流量阈值')" /><em>GiB</em></span>
             </label>
           </div>
         </section>
@@ -603,6 +644,38 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
+.cluster-notifications__locale-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cluster-notifications__locale-grid > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 11px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cluster-notifications__locale-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cluster-notifications__locale-grid strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.cluster-notifications__locale-grid small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .cluster-notifications__section {
   display: grid;
   gap: 11px;
@@ -786,6 +859,10 @@ onBeforeUnmount(() => {
 
   .cluster-notifications__threshold {
     grid-column: 2;
+  }
+
+  .cluster-notifications__locale-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

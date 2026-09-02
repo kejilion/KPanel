@@ -37,13 +37,14 @@ type telegramState struct {
 }
 
 type alertState struct {
-	Active         bool      `json:"active,omitempty"`
-	Consecutive    int       `json:"consecutive,omitempty"`
-	LastAttemptAt  time.Time `json:"lastAttemptAt,omitempty"`
-	LastNotifiedAt time.Time `json:"lastNotifiedAt,omitempty"`
-	LastEventID    string    `json:"lastEventId,omitempty"`
-	PendingEventID string    `json:"pendingEventId,omitempty"`
-	LastValue      float64   `json:"lastValue,omitempty"`
+	Active                bool      `json:"active,omitempty"`
+	Consecutive           int       `json:"consecutive,omitempty"`
+	LastAttemptAt         time.Time `json:"lastAttemptAt,omitempty"`
+	LastNotifiedAt        time.Time `json:"lastNotifiedAt,omitempty"`
+	LastEventID           string    `json:"lastEventId,omitempty"`
+	PendingEventID        string    `json:"pendingEventId,omitempty"`
+	LastValue             float64   `json:"lastValue,omitempty"`
+	LastNetworkTotalBytes uint64    `json:"lastNetworkTotalBytes,omitempty"`
 }
 
 type persistedState struct {
@@ -80,7 +81,7 @@ func Open(dataDir string) (*Store, error) {
 		tokenPath: filepath.Join(directory, telegramTokenName),
 		state: persistedState{
 			SchemaVersion: StateSchemaVersion,
-			Settings:      Settings{Rules: DefaultRules()},
+			Settings:      Settings{Locale: DefaultNotificationLocale, Rules: DefaultRules()},
 			Telegram:      telegramState{Status: TelegramNotConfigured},
 			AlertStates:   make(map[string]alertState),
 		},
@@ -116,6 +117,11 @@ func decodeState(content []byte, state *persistedState) error {
 	if state.SchemaVersion != StateSchemaVersion {
 		return errors.New("notification state is invalid")
 	}
+	state.Settings.Locale = normalizeNotificationLocale(state.Settings.Locale)
+	state.Settings.Rules = normalizeRules(state.Settings.Rules)
+	if !validNotificationLocale(state.Settings.Locale) {
+		return errors.New("notification state locale is invalid")
+	}
 	if err := validateAlertStates(state.AlertStates); err != nil {
 		return err
 	}
@@ -150,6 +156,7 @@ func (s *Store) stateSnapshot() persistedState {
 }
 
 func (s *Store) commitState(next persistedState) error {
+	next = normalizePersistedState(next)
 	if next.SchemaVersion == 0 {
 		next.SchemaVersion = StateSchemaVersion
 	}
@@ -172,6 +179,9 @@ func decodeStateForCommit(state persistedState) error {
 	if err := validateAlertStates(state.AlertStates); err != nil {
 		return err
 	}
+	if !validNotificationLocale(normalizeNotificationLocale(state.Settings.Locale)) {
+		return errors.New("notification state locale is invalid")
+	}
 	if err := state.Settings.Rules.Validate(); err != nil {
 		return err
 	}
@@ -182,6 +192,15 @@ func decodeStateForCommit(state persistedState) error {
 		return errors.New("notification state telegram status is invalid")
 	}
 	return nil
+}
+
+func normalizePersistedState(state persistedState) persistedState {
+	state.Settings.Locale = normalizeNotificationLocale(state.Settings.Locale)
+	state.Settings.Rules = normalizeRules(state.Settings.Rules)
+	if state.AlertStates == nil {
+		state.AlertStates = make(map[string]alertState)
+	}
+	return state
 }
 
 func validateAlertStates(states map[string]alertState) error {

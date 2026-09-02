@@ -242,6 +242,8 @@ export interface ClusterNotificationRules {
   diskThresholdPercent: number
   trafficEnabled: boolean
   trafficThresholdMiBPerSecond: number
+  trafficTotalEnabled: boolean
+  trafficTotalThresholdGiB: number
   sshLoginEnabled: boolean
   hostOfflineEnabled: boolean
 }
@@ -260,6 +262,8 @@ export interface ClusterNotificationTelegram {
 
 export interface ClusterNotificationSnapshot {
   enabled: boolean
+  locale: 'zh-CN' | 'zh-TW' | 'en-US'
+  timezone: string
   rules: ClusterNotificationRules
   telegram: ClusterNotificationTelegram
   resourceVersion: string
@@ -279,7 +283,7 @@ export interface PublicClusterShareHost {
 	cpu: { cores: number; usagePercent: number }
 	memory: { totalBytes: number; usedBytes: number; usagePercent: number }
 	disk: { totalBytes: number; usedBytes: number; usagePercent: number }
-	network: { receiveBytesPerSecond: number; transmitBytesPerSecond: number }
+	network: { totalBytes: number; receiveBytesPerSecond: number; transmitBytesPerSecond: number }
 	location: {
 		isp?: string
 		country?: string

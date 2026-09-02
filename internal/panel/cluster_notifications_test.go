@@ -64,4 +64,7 @@ func TestClusterNotificationsAPIUsesSessionCSRFAndHidesChannelSecrets(t *testing
 	if snapshot.Enabled || snapshot.Telegram.Configured {
 		t.Fatalf("unexpected notification snapshot = %#v", snapshot)
 	}
+	if snapshot.Locale != notification.DefaultNotificationLocale || snapshot.Timezone == "" {
+		t.Fatalf("notification locale/timezone = %q/%q", snapshot.Locale, snapshot.Timezone)
+	}
 }

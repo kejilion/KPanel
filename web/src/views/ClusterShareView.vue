@@ -23,6 +23,7 @@ import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
+import { formatTotalNetworkTraffic } from '@/lib/networkTraffic'
 import {
   clampPercent,
   formatDateTime,
@@ -277,6 +278,10 @@ onBeforeUnmount(() => {
 
           <dl class="share-details">
             <div>
+              <dt><Activity :size="13" /> 累计流量</dt>
+              <dd>{{ host.collectedAt ? formatTotalNetworkTraffic(host.network) : '—' }}</dd>
+            </div>
+            <div>
               <dt><ArrowDown :size="13" /> 下行</dt>
               <dd>{{ formatRate(host.network.receiveBytesPerSecond || 0) }}</dd>
             </div>
@@ -497,7 +502,7 @@ onBeforeUnmount(() => {
 .share-metrics small { color: var(--muted); font-size: 10px; }
 .share-card__empty { padding: 29px; color: var(--muted); text-align: center; border-block: 1px solid var(--border); }
 
-.share-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
+.share-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
 .share-details div { min-width: 0; }
 .share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
 .share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
@@ -552,6 +557,7 @@ onBeforeUnmount(() => {
   .share-view-switch button span { display: none; }
   .share-view-switch button { width: 34px; justify-content: center; padding: 0; }
   .share-stats div { padding-inline: 10px; }
+  .share-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

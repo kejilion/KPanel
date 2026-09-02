@@ -44,6 +44,7 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { formatTotalNetworkTraffic } from '@/lib/networkTraffic'
 import {
   clampPercent,
   formatBytes,
@@ -954,7 +955,7 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small" type="button" @click="notificationsOpen = true">
           <Bell :size="15" /> 通知
         </button>
-        <button class="button button--primary button--small" type="button" @click="openAdd">
+        <button class="button button--primary button--small cluster-hero__add" type="button" @click="openAdd">
           <Plus :size="15" /> 添加主机
         </button>
       </div>
@@ -1182,8 +1183,8 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <span>网络</span>
-            <strong>↓ {{ formatRate(host.lastSnapshot.receiveBytesPerSecond) }}</strong>
-            <small>↑ {{ formatRate(host.lastSnapshot.transmitBytesPerSecond) }}</small>
+            <strong>总流量 {{ formatTotalNetworkTraffic(host.lastSnapshot.telemetry.network) }}</strong>
+            <small>↓ {{ formatRate(host.lastSnapshot.receiveBytesPerSecond) }} · ↑ {{ formatRate(host.lastSnapshot.transmitBytesPerSecond) }}</small>
           </div>
           <div>
             <span>运行时间</span>
@@ -2451,6 +2452,10 @@ onBeforeUnmount(() => {
 
   .cluster-hero__actions > * {
     width: 100%;
+  }
+
+  .cluster-hero__actions > .cluster-hero__add {
+    grid-column: 1 / -1;
   }
 
   .cluster-toolbar {

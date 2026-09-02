@@ -111,6 +111,9 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 	if item.ID == cluster.LocalHostID || item.Name != "Showcase node" || item.OS != "Debian GNU/Linux 13" || item.Location.ISP != "Example ISP" {
 		t.Fatalf("unexpected public host %#v", item)
 	}
+	if item.Network.TotalBytes != 777777 {
+		t.Fatalf("public cumulative network bytes = %d, want 777777", item.Network.TotalBytes)
+	}
 	serialized := publicResponse.Body.String()
 	for _, privateValue := range []string{
 		"203.0.113.10", "2001:db8::10", "secret-panel-version",
@@ -144,7 +147,7 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 		"cpu":      {"cores", "usagePercent"},
 		"memory":   {"totalBytes", "usedBytes", "usagePercent"},
 		"disk":     {"totalBytes", "usedBytes", "usagePercent"},
-		"network":  {"receiveBytesPerSecond", "transmitBytesPerSecond"},
+		"network":  {"totalBytes", "receiveBytesPerSecond", "transmitBytesPerSecond"},
 		"location": {"isp", "country", "countryCode", "region", "city"},
 	} {
 		var nested map[string]json.RawMessage

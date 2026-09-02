@@ -90,6 +90,12 @@ func (t *notificationTestTelegram) messageCount() int {
 	return len(t.messages)
 }
 
+func (t *notificationTestTelegram) messagesSnapshot() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]string(nil), t.messages...)
+}
+
 func newNotificationTestHost(now time.Time) *notificationHostSource {
 	return &notificationHostSource{host: cluster.Host{
 		ID: "host-1", Name: "测试主机", State: cluster.HostOnline,
@@ -394,6 +400,164 @@ func TestServiceTrafficRateRequiresFreshSnapshot(t *testing.T) {
 	rate, ok := service.trafficRate(host, clock.Now())
 	if !ok || rate < 1.9 || rate > 2.1 {
 		t.Fatalf("fresh traffic rate = %v, %v; want about 2 MiB/s", rate, ok)
+	}
+}
+
+func TestServiceCumulativeTrafficAlertsOncePerCounterCycle(t *testing.T) {
+	location := time.FixedZone("CST", 8*60*60)
+	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 23, 0, 0, 0, location)}
+	source := newNotificationTestHost(clock.Now())
+	telegram := &notificationTestTelegram{}
+	service := configureNotificationTestService(t, t.TempDir(), source, telegram, clock)
+	defer service.Close()
+
+	rules := DefaultRules()
+	rules.CPUEnabled = false
+	rules.MemoryEnabled = false
+	rules.DiskEnabled = false
+	rules.TrafficEnabled = false
+	rules.HostOfflineEnabled = false
+	rules.SSHLoginEnabled = false
+	rules.TrafficTotalEnabled = true
+	rules.TrafficTotalThresholdGiB = 1
+	configured, err := service.Configure(context.Background(), UpdateInput{
+		Enabled: true, Locale: "en-US", Rules: rules,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	})
+	if err != nil {
+		t.Fatalf("Configure() cumulative traffic rules error = %v", err)
+	}
+	if configured.Locale != "en-US" || configured.Timezone != "UTC+08:00" {
+		t.Fatalf("configured locale/timezone = %q/%q", configured.Locale, configured.Timezone)
+	}
+
+	telemetry := source.host.LastSnapshot.Telemetry
+	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 700 << 20, SentBytes: 500 << 20}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 1 {
+		t.Fatalf("cumulative threshold messages = %d, want 1", telegram.messageCount())
+	}
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 1 {
+		t.Fatalf("cumulative threshold repeated without reset: %d", telegram.messageCount())
+	}
+
+	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 800 << 20, SentBytes: 600 << 20}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 1 {
+		t.Fatalf("cumulative threshold repeated while active: %d", telegram.messageCount())
+	}
+
+	telemetry.Network = contract.NetworkSummary{}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 2 << 30}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 2 {
+		t.Fatalf("cumulative threshold did not re-arm after counter reset: %d", telegram.messageCount())
+	}
+
+	messages := telegram.messagesSnapshot()
+	if !strings.Contains(messages[0], "Cumulative traffic") ||
+		!strings.Contains(messages[0], "1.2 GB") ||
+		!strings.Contains(messages[0], "UTC+08:00") {
+		t.Fatalf("unexpected localized cumulative message: %q", messages[0])
+	}
+}
+
+func TestServiceCumulativeTrafficUsesExactCounterRollback(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 15, 0, 0, 0, time.UTC)}
+	source := newNotificationTestHost(clock.Now())
+	telegram := &notificationTestTelegram{}
+	service := configureNotificationTestService(t, t.TempDir(), source, telegram, clock)
+	defer service.Close()
+
+	rules := DefaultRules()
+	rules.CPUEnabled = false
+	rules.MemoryEnabled = false
+	rules.DiskEnabled = false
+	rules.TrafficEnabled = false
+	rules.HostOfflineEnabled = false
+	rules.SSHLoginEnabled = false
+	rules.TrafficTotalEnabled = true
+	rules.TrafficTotalThresholdGiB = 1
+	if _, err := service.Configure(context.Background(), UpdateInput{
+		Enabled: true, Rules: rules,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	}); err != nil {
+		t.Fatalf("Configure() exact cumulative traffic rules error = %v", err)
+	}
+
+	large := uint64(1) << 54
+	telemetry := source.host.LastSnapshot.Telemetry
+	telemetry.Network = contract.NetworkSummary{ReceivedBytes: large}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 1 {
+		t.Fatalf("large cumulative threshold messages = %d, want 1", telegram.messageCount())
+	}
+
+	telemetry.Network.ReceivedBytes = large - 1
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 2 {
+		t.Fatalf("one-byte counter rollback did not start a new cycle: %d", telegram.messageCount())
+	}
+}
+
+func TestServiceUsesConfiguredLocaleForResourceAlerts(t *testing.T) {
+	location := time.FixedZone("CST", 8*60*60)
+	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 23, 30, 0, 0, location)}
+	source := newNotificationTestHost(clock.Now())
+	telegram := &notificationTestTelegram{}
+	service := configureNotificationTestService(t, t.TempDir(), source, telegram, clock)
+	defer service.Close()
+
+	rules := DefaultRules()
+	rules.MemoryEnabled = false
+	rules.DiskEnabled = false
+	rules.TrafficEnabled = false
+	rules.TrafficTotalEnabled = false
+	rules.HostOfflineEnabled = false
+	rules.SSHLoginEnabled = false
+	if _, err := service.Configure(context.Background(), UpdateInput{
+		Enabled: true, Locale: "en-US", Rules: rules,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	}); err != nil {
+		t.Fatalf("Configure() locale rules error = %v", err)
+	}
+
+	telemetry := source.host.LastSnapshot.Telemetry
+	telemetry.CPU.UsagePercent = 95
+	source.setTelemetry(telemetry)
+	for index := 0; index < 3; index++ {
+		if err := service.evaluate(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		clock.Advance(time.Minute)
+	}
+	messages := telegram.messagesSnapshot()
+	if len(messages) != 1 || !strings.Contains(messages[0], "CPU usage") ||
+		!strings.Contains(messages[0], "[KPanel Cluster Alert]") ||
+		!strings.Contains(messages[0], "UTC+08:00") {
+		t.Fatalf("unexpected localized resource message: %#v", messages)
 	}
 }
 

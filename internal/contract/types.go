@@ -241,6 +241,15 @@ type NetworkSummary struct {
 	UDPConnections int    `json:"udpConnections"`
 }
 
+// TotalNetworkBytes returns the cumulative receive/send total without
+// wrapping when a malformed or unusually large counter pair overflows.
+func TotalNetworkBytes(network NetworkSummary) uint64 {
+	if network.ReceivedBytes > ^uint64(0)-network.SentBytes {
+		return ^uint64(0)
+	}
+	return network.ReceivedBytes + network.SentBytes
+}
+
 // SSHLoginEvent is the narrow, read-only authentication event that can be
 // carried with a host telemetry snapshot. It deliberately contains no
 // command, credential or full log message.
