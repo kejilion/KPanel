@@ -673,7 +673,7 @@ onBeforeUnmount(() => {
 
 .cluster-notifications__locale-grid span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .cluster-notifications__locale-grid strong {
@@ -683,7 +683,7 @@ onBeforeUnmount(() => {
 
 .cluster-notifications__locale-grid small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
