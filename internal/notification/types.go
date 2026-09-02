@@ -179,14 +179,16 @@ type BotInfo struct {
 }
 
 func normalizeRules(value Rules) Rules {
-	if value.TrafficTotalThresholdGiB == 0 {
-		value.TrafficTotalThresholdGiB = DefaultTrafficTotalThresholdGiB
-	}
-	if value.TrafficTotalReceivedThresholdGiB == 0 && value.TrafficTotalSentThresholdGiB == 0 && value.TrafficTotalThresholdGiB > 0 {
+	legacyFieldsPresent := value.TrafficTotalEnabled || value.TrafficTotalThresholdGiB > 0
+	if legacyFieldsPresent {
+		legacyThreshold := value.TrafficTotalThresholdGiB
+		if legacyThreshold == 0 {
+			legacyThreshold = DefaultTrafficTotalThresholdGiB
+		}
 		value.TrafficTotalReceivedEnabled = value.TrafficTotalEnabled
-		value.TrafficTotalReceivedThresholdGiB = value.TrafficTotalThresholdGiB
+		value.TrafficTotalReceivedThresholdGiB = legacyThreshold
 		value.TrafficTotalSentEnabled = value.TrafficTotalEnabled
-		value.TrafficTotalSentThresholdGiB = value.TrafficTotalThresholdGiB
+		value.TrafficTotalSentThresholdGiB = legacyThreshold
 	}
 	if value.TrafficTotalReceivedThresholdGiB == 0 {
 		value.TrafficTotalReceivedThresholdGiB = DefaultTrafficTotalThresholdGiB
