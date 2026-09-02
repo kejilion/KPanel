@@ -311,7 +311,7 @@ onBeforeUnmount(() => {
 .file-share-kicker {
   color: var(--brand-strong);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
@@ -320,7 +320,6 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   font-size: clamp(22px, 4vw, 30px);
   line-height: 1.18;
-  letter-spacing: -0.035em;
 }
 
 .file-share-file p {
@@ -362,7 +361,7 @@ onBeforeUnmount(() => {
   padding: 10px 16px;
   border-radius: 11px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
 }

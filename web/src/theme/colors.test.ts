@@ -57,6 +57,32 @@ function expectAccessible(tokens: ThemeTokenMap): void {
   }
 }
 
+/** HSL lightness, the axis the foundation ladder is actually built on. */
+function foundationLightness(hex: string): number {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+  return (Math.max(...channels) + Math.min(...channels)) / 2
+}
+
+/*
+ * The neutral ladder has to stay separable for every color intent, not just the
+ * shipped palette. Light mode runs page < subtle < surface < raised; dark mode
+ * recesses toward the page and lifts nested fills, so subtle sits above surface.
+ * Anchoring the light ladder below pure white is what keeps a lightening tone
+ * offset from folding two steps into the same clamped white.
+ */
+function expectSeparableLadder(tokens: ThemeTokenMap, mode: ThemeMode, neutral: string): void {
+  const ladder = mode === 'light'
+    ? (['--bg', '--surface-subtle', '--surface', '--surface-raised'] as const)
+    : (['--bg', '--surface', '--surface-subtle', '--surface-raised'] as const)
+
+  for (let index = 1; index < ladder.length; index += 1) {
+    const lower = ladder[index - 1]!
+    const upper = ladder[index]!
+    const step = foundationLightness(tokens[upper]) - foundationLightness(tokens[lower])
+    expect(step, `${mode} neutral ${neutral}: ${lower} -> ${upper}`).toBeGreaterThan(0.01)
+  }
+}
+
 function channelSpread(color: string): number {
   const channels = [
     Number.parseInt(color.slice(1, 3), 16),
@@ -337,6 +363,7 @@ describe('derived custom theme', () => {
         const first = deriveThemeTokens(colors, mode)
         expect(first).toEqual(deriveThemeTokens(colors, mode))
         expectAccessible(first)
+        expectSeparableLadder(first, mode, colors.neutral)
       }
     }
   })

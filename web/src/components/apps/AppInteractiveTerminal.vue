@@ -549,7 +549,7 @@ onBeforeUnmount(() => {
   padding: 8px 16px;
   color: var(--on-brand, #05251c);
   background: var(--terminal-accent);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 

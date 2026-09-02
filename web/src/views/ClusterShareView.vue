@@ -415,7 +415,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   cursor: pointer;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .share-view-switch button.is-active {
@@ -440,8 +440,8 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(18px);
 }
 
-.share-kicker { display: flex; align-items: center; gap: 7px; color: var(--brand-strong); font-size: 11px; font-weight: 800; letter-spacing: 0.16em; }
-.share-hero h1 { margin: 7px 0 4px; font-size: clamp(28px, 3vw, 38px); line-height: 1.05; letter-spacing: -0.04em; }
+.share-kicker { display: flex; align-items: center; gap: 7px; color: var(--brand-strong); font-size: 11px; font-weight: 700; letter-spacing: 0.16em; }
+.share-hero h1 { margin: 7px 0 4px; font-size: clamp(28px, 3vw, 38px); line-height: 1.05; }
 .share-hero p { max-width: 670px; margin: 0 0 7px; color: var(--text-soft); font-size: 14px; line-height: 1.5; }
 .share-hero small { color: var(--muted); }
 
@@ -511,7 +511,7 @@ onBeforeUnmount(() => {
 .share-details div { min-width: 0; }
 .share-details__traffic { display: grid; gap: 8px; }
 .share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
-.share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 
 .share-state { display: grid; min-height: 280px; place-items: center; align-content: center; gap: 12px; color: var(--muted); text-align: center; }
 .share-state p { margin: 0; }

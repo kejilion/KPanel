@@ -1766,7 +1766,6 @@ watch(windowActive, syncJobPollingForWindow)
 
 .market-stats strong {
   font-size: 19px;
-  letter-spacing: -0.04em;
 }
 
 .market-stats span {
@@ -1913,7 +1912,7 @@ watch(windowActive, syncJobPollingForWindow)
   border-radius: 999px;
   font-size: 10px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 @keyframes recent-app-pulse {
@@ -2020,7 +2019,7 @@ watch(windowActive, syncJobPollingForWindow)
 .app-card__meta em.is-new {
   color: var(--brand);
   background: var(--brand-soft);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .app-card__description {
@@ -2297,7 +2296,7 @@ watch(windowActive, syncJobPollingForWindow)
   gap: 6px;
   align-items: center;
   font-size: 11px;
-  font-weight: 450;
+  font-weight: 500;
   line-height: 1.5;
 }
 
@@ -2386,7 +2385,7 @@ watch(windowActive, syncJobPollingForWindow)
 .access-options legend {
   margin-bottom: 8px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .access-options button {

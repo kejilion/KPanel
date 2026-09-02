@@ -341,7 +341,7 @@ onBeforeUnmount(() => controller?.abort())
 .account-manager__summary .icon-button { margin-left: auto; }
 .account-manager__tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border-subtle); }
 .account-manager__tabs button { border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; background: transparent; color: var(--text-secondary); cursor: pointer; }
-.account-manager__tabs button.is-active { border-color: var(--accent); color: var(--text-primary); font-weight: 700; }
+.account-manager__tabs button.is-active { border-color: var(--accent); color: var(--text-primary); font-weight: 600; }
 .account-manager__section { display: grid; gap: 14px; }
 .account-manager__toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .account-manager__toolbar > input { flex: 1 1 220px; }

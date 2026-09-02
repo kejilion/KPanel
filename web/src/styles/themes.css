@@ -52,35 +52,34 @@
   --file-preview-shadow: inset 0 1px 0 color-mix(in srgb, var(--sidebar-text) 5%, transparent);
   --file-preview-scrollbar: color-mix(in srgb, var(--sidebar-text) 22%, var(--sidebar));
   --file-preview-scrollbar-hover: color-mix(in srgb, var(--brand) 48%, var(--sidebar));
-  /* Restrained depth layers. These remain composed from runtime semantic
-     colors so custom palettes inherit the same hierarchy without presets. */
+  /* Depth comes from the neutral ladder and one hairline border, not from
+     decorative glow. Each layer below is a single pass that describes real
+     lighting: pages get one vertical wash, raised surfaces get one top
+     highlight. Composed from runtime semantic colors so custom palettes
+     inherit the same hierarchy without presets. */
   --page-ambient-background:
-    radial-gradient(circle at 88% -8%, color-mix(in srgb, var(--brand-soft) 52%, transparent), transparent 34rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, var(--surface) 8%), var(--bg) 30rem);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, var(--brand-soft) 6%), var(--bg) 38rem);
   --surface-gradient:
-    linear-gradient(
-      155deg,
-      color-mix(in srgb, var(--surface-raised) 92%, var(--brand-soft) 8%) 0%,
-      var(--surface) 44%,
-      color-mix(in srgb, var(--surface) 97%, var(--bg) 3%) 100%
-    );
+    linear-gradient(180deg, var(--surface-raised), var(--surface));
   --surface-gradient-muted:
-    linear-gradient(110deg, color-mix(in srgb, var(--surface-subtle) 91%, var(--brand-soft) 9%), var(--surface-subtle) 68%);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-subtle) 94%, var(--surface-raised) 6%), var(--surface-subtle));
   --auth-brand-background:
-    radial-gradient(circle at 84% 15%, color-mix(in srgb, var(--sidebar-accent) 16%, transparent), transparent 29%),
-    radial-gradient(circle at 12% 82%, color-mix(in srgb, var(--brand) 11%, transparent), transparent 34%),
-    linear-gradient(145deg, color-mix(in srgb, var(--sidebar) 86%, var(--theme-accent) 14%), var(--sidebar) 72%);
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--sidebar) 84%, var(--sidebar-accent) 16%),
+      var(--sidebar) 78%);
   --auth-form-background:
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--brand-soft) 46%, transparent), transparent 31rem),
-    var(--surface);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--brand-soft) 6%), var(--surface) 24rem);
 }
 
 :root {
   color: #172320;
-  background: #f4f7f6;
-  --bg: #f4f7f6;
-  --surface: #ffffff;
-  --surface-subtle: #f6f9f8;
+  background: #eff3f2;
+  /* Four distinct neutral steps: page < subtle < surface < raised. Keeping
+     raised as the only pure white makes dialogs and menus read as lifted
+     without adding a heavier shadow. */
+  --bg: #eff3f2;
+  --surface: #fbfcfc;
+  --surface-subtle: #f5f8f7;
   --surface-raised: #ffffff;
   --text: #172320;
   --text-soft: #3e4d49;
@@ -126,11 +125,13 @@
     radial-gradient(circle at 50% 40%, transparent 42%, rgb(2 9 12 / 8%) 100%);
   --desktop-aurora-one: radial-gradient(circle, rgb(75 224 195 / 30%), transparent 67%);
   --desktop-aurora-two: radial-gradient(circle, rgb(67 169 230 / 24%), transparent 68%);
-  --desktop-aurora-opacity: .12;
-  --shadow-sm: 0 1px 2px rgb(20 44 38 / 5%), 0 7px 20px rgb(20 44 38 / 4%);
-  --shadow-md: 0 18px 46px rgb(18 39 34 / 14%);
-  --shadow-button: 0 1px 2px rgb(10 70 54 / 16%);
-  --shadow-feature: 0 2px 8px rgb(20 44 38 / 7%);
+  --desktop-aurora-opacity: .1;
+  /* One contact shadow carries small elevation; only overlays add a second
+     diffuse layer. Keeps depth readable without a heavy drop shadow. */
+  --shadow-sm: 0 1px 2px rgb(20 44 38 / 6%);
+  --shadow-md: 0 1px 2px rgb(20 44 38 / 8%), 0 10px 28px rgb(20 44 38 / 10%);
+  --shadow-button: 0 1px 2px rgb(10 70 54 / 14%);
+  --shadow-feature: 0 2px 6px rgb(20 44 38 / 6%);
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;
@@ -191,11 +192,11 @@
     radial-gradient(circle at 50% 40%, transparent 36%, rgb(2 9 12 / 12%) 100%);
   --desktop-aurora-one: radial-gradient(circle, rgb(75 224 195 / 30%), transparent 67%);
   --desktop-aurora-two: radial-gradient(circle, rgb(67 169 230 / 24%), transparent 68%);
-  --desktop-aurora-opacity: .2;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 22px rgb(0 0 0 / 13%);
-  --shadow-md: 0 20px 52px rgb(0 0 0 / 36%);
-  --shadow-button: 0 1px 2px rgb(0 0 0 / 24%);
-  --shadow-feature: 0 3px 10px rgb(0 0 0 / 16%);
+  --desktop-aurora-opacity: .16;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 22%);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 28%), 0 12px 32px rgb(0 0 0 / 30%);
+  --shadow-button: 0 1px 2px rgb(0 0 0 / 22%);
+  --shadow-feature: 0 2px 6px rgb(0 0 0 / 18%);
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;

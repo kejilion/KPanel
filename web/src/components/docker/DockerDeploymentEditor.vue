@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--danger) 58%, transparent);
-  font-weight: 800;
+  font-weight: 700;
 }
 .deployment-editor__gutter span.is-diagnostic-line {
   background: color-mix(in srgb, var(--danger) 18%, transparent);

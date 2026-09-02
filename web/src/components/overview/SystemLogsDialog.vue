@@ -1067,7 +1067,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   color: var(--text-soft);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .system-log-control--search {
@@ -1085,7 +1085,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   font: inherit;
-  font-weight: 450;
+  font-weight: 500;
 }
 
 .system-log-control select:focus,
@@ -1124,7 +1124,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   color: var(--text-soft);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .system-log-priority button {
@@ -1202,7 +1202,7 @@ onBeforeUnmount(() => {
 }
 
 .system-log-level {
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .system-log-level.is-danger {
@@ -1276,7 +1276,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   color: var(--text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .system-log-cleanup > summary small {

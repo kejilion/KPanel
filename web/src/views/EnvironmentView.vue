@@ -648,7 +648,7 @@ onBeforeUnmount(() => {
 .environment-page { gap: 16px; }
 .sites-section-tabs,
 .environment-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 5px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
-.environment-tabs button { min-width: 92px; padding: 9px 14px; border: 0; border-radius: 10px; color: var(--muted); background: transparent; font-weight: 700; cursor: pointer; }
+.environment-tabs button { min-width: 92px; padding: 9px 14px; border: 0; border-radius: 10px; color: var(--muted); background: transparent; font-weight: 600; cursor: pointer; }
 .environment-tabs button.is-active { color: var(--text); background: var(--surface-raised); box-shadow: var(--shadow-sm); }
 .environment-job-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 14px; padding: 15px 17px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); }
 .environment-job-banner > div { display: grid; gap: 5px; min-width: 0; }
@@ -660,7 +660,7 @@ onBeforeUnmount(() => {
 .environment-hero h2 { margin: 4px 0; font-size: 28px; }
 .environment-hero dl { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; }
 .environment-hero dl div { padding: 4px 16px; border-left: 1px solid var(--border); }
-.environment-hero dd { margin: 5px 0 0; font-size: 19px; font-weight: 800; }
+.environment-hero dd { margin: 5px 0 0; font-size: 19px; font-weight: 700; }
 .environment-checks, .environment-components, .environment-action-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .environment-checks > div, .environment-components article, .environment-action-grid article { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .environment-checks span, .environment-components article > div { display: grid; min-width: 0; gap: 3px; }

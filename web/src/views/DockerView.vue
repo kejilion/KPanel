@@ -2328,7 +2328,7 @@ onBeforeUnmount(() => {
 .form-grid { display: grid; gap: 14px; }
 .form-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .field { display: grid; gap: 7px; }
-.field > span { font-weight: 650; }
+.field > span { font-weight: 600; }
 .field > small { color: var(--muted); line-height: 1.45; }
 .text-area { width: 100%; resize: vertical; min-height: 84px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); padding: 10px 12px; font: inherit; }
 .text-area:focus { outline: 2px solid color-mix(in srgb, var(--brand) 25%, transparent); border-color: var(--brand); }
@@ -2337,7 +2337,7 @@ onBeforeUnmount(() => {
 .deployment-detection small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployment-detection.is-ready { color: var(--text); }
 .deployment-detection.is-invalid { color: var(--danger); }
-.deployment-kind { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; font-size: .82rem; font-weight: 750; }
+.deployment-kind { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; font-size: .82rem; font-weight: 700; }
 .deployment-options { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .deployment-advanced { margin-top: 14px; padding: 15px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
 .deployment-advanced > .form-section:first-child { margin-top: 0; }
@@ -2375,7 +2375,7 @@ onBeforeUnmount(() => {
 .stats-grid strong { font-size: 1.3rem; }
 .stats-grid .stats-time { font-size: .9rem; line-height: 1.4; }
 .console-command { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.console-command > span { font-family: ui-monospace, monospace; color: var(--brand); font-weight: 700; }
+.console-command > span { font-family: ui-monospace, monospace; color: var(--brand); font-weight: 600; }
 .console-output { min-height: 240px; margin-top: 14px; }
 .modal-copy { color: var(--muted); line-height: 1.65; }
 @media (max-width: 1000px) {

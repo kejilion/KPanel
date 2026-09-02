@@ -1736,7 +1736,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: calc(var(--radius-sm) - 3px);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .cluster-view-switch button:hover {
@@ -1899,7 +1899,7 @@ onBeforeUnmount(() => {
   padding: 2px 7px;
   font-size: 10px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 700;
   border-radius: 999px;
 }
 

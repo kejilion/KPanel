@@ -514,7 +514,7 @@ onBeforeUnmount(() => {
   margin-bottom: 1px;
   color: var(--text-soft);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .file-share-dialog__expiry label {
@@ -570,7 +570,7 @@ onBeforeUnmount(() => {
   margin-top: 3px;
   color: var(--text-soft);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .file-share-dialog__link-row {
