@@ -32,6 +32,7 @@ function createFixture() {
   git(repo, 'add', 'baseline.txt');
   git(repo, 'commit', '-m', 'baseline');
   const baseline = git(repo, 'rev-parse', 'HEAD');
+  git(repo, 'tag', '-a', 'v0.83.0', '-m', 'v0.83.0');
   git(repo, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
 
   mkdirSync(join(repo, 'docs'));
@@ -46,7 +47,7 @@ function createFixture() {
   git(repo, 'commit', '-m', 'candidate');
   const candidate = git(repo, 'rev-parse', 'HEAD');
   git(repo, 'remote', 'add', 'origin', remote);
-  git(repo, 'push', 'origin', 'main', 'refs/tags/v1.0.0');
+  git(repo, 'push', 'origin', 'main', 'refs/tags/v0.83.0', 'refs/tags/v1.0.0');
   git(remote, 'symbolic-ref', 'HEAD', 'refs/heads/main');
   git(repo, 'fetch', 'origin', '--no-tags', 'refs/heads/main:refs/remotes/origin/main');
   return { root, repo, candidate };
@@ -81,12 +82,12 @@ test('prepare-only builds and verifies a self-contained exact-SHA L3 kit', () =>
     const plan = readFileSync(join(artifactDir, 'plan.env'), 'utf8');
     assert.match(plan, new RegExp(`EXPECTED_COMMIT=${fixture.candidate}`));
     assert.match(plan, new RegExp(`BASE_MAIN_COMMIT=${fixture.candidate}`));
-    assert.match(plan, /REQUIRED_TAGS=v1\.0\.0/);
+  assert.match(plan, /REQUIRED_TAGS=v0\.83\.0,v1\.0\.0/);
     assert.match(plan, /BUNDLE_SHA256=[0-9a-f]{64}/);
     assert.match(plan, /REMOTE_SCRIPT_SHA256=[0-9a-f]{64}/);
     const manifest = JSON.parse(readFileSync(join(artifactDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.candidate, fixture.candidate);
-    assert.deepEqual(manifest.requiredTags, ['v1.0.0']);
+    assert.deepEqual(manifest.requiredTags, ['v0.83.0', 'v1.0.0']);
   } finally {
     removeFixture(fixture.root);
   }

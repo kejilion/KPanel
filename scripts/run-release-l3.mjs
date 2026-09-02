@@ -15,6 +15,8 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+import { COVERAGE_BASELINE } from './check-release-acceptance-coverage.mjs';
+
 const scriptRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/;
 
@@ -172,13 +174,13 @@ function exactRemoteMain(repo, candidate) {
   return remoteMain;
 }
 
-function requiredStableTags(repo, candidate, businessBaseline, baseTag) {
+function requiredStableTags(repo, candidate, baseTag) {
   const required = new Map();
   const remoteTags = remoteStableTags(repo);
   for (const entry of remoteTags) {
     if (!gitSucceeds(repo, ['cat-file', '-e', `${entry.commit}^{commit}`])) continue;
     if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', entry.commit, candidate])) continue;
-    if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', businessBaseline.commit, entry.commit])) continue;
+    if (compareTags(entry.tag, COVERAGE_BASELINE) < 0) continue;
     required.set(entry.tag, entry.commit);
   }
 
@@ -245,7 +247,7 @@ function prepare(options) {
     throw new Error('business context baseline tag is not reachable from its recorded commit');
   }
 
-  const requiredTags = requiredStableTags(repo, options.candidate, businessBaseline, options.baseTag);
+  const requiredTags = requiredStableTags(repo, options.candidate, options.baseTag);
   const artifactDir = resolve(options.artifactDir);
   const comparableRepo = comparablePath(repo);
   const comparableArtifact = comparablePath(artifactDir);
