@@ -580,14 +580,14 @@ onBeforeUnmount(() => {
   margin: -2px 0 0;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .cluster-notifications__provider-status--disabled {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.3;
 }
@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
 .cluster-notifications__token small {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -809,7 +809,7 @@ onBeforeUnmount(() => {
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.4;
 }
 

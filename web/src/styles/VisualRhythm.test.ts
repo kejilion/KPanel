@@ -1,12 +1,30 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import {
+  collectVueStyleBlocks,
+  collectVueStyleDeclarations,
+  isAllowedComponentBlurSelector,
+  isBlurFilter,
+  isNonTokenRadius,
+  isNonTokenShadow,
+  numericCssPixels,
+  visualDeclarationKey,
+} from './visualContract'
+import { VISUAL_CONTRACT_BASELINE, baselineKey } from './visualContractBaseline'
 
 const main = readFileSync(new URL('./main.css', import.meta.url), 'utf8')
 const desktop = readFileSync(new URL('./desktop.css', import.meta.url), 'utf8')
 const themes = readFileSync(new URL('./themes.css', import.meta.url), 'utf8')
 const filesView = readFileSync(new URL('../views/FilesView.vue', import.meta.url), 'utf8')
 const sources = { main, desktop }
+const webRoot = fileURLToPath(new URL('../../', import.meta.url))
+const componentStyleRoot = join(webRoot, 'src')
+const componentStyleBlocks = collectVueStyleBlocks(componentStyleRoot)
+const componentDeclarations = collectVueStyleDeclarations(componentStyleRoot)
+const baselineKeys = new Set(VISUAL_CONTRACT_BASELINE.map((entry) => baselineKey(entry)))
 
 /** Hex value of a token inside one themes.css block. */
 function token(block: string, name: string): string {
@@ -54,6 +72,21 @@ function radiusValues(source: string): string[] {
 
 const LANDSCAPE_QUERY = '@media (max-height: 560px) and (orientation: landscape)'
 
+const STANDARD_FONT_WEIGHTS = new Set(['400', '500', '600', '700'])
+
+function isComponentVisualDebt(declaration: (typeof componentDeclarations)[number]): boolean {
+  if (declaration.property === 'font-size') {
+    const size = numericCssPixels(declaration.value)
+    return size !== null && size < 12
+  }
+  if (declaration.property === 'border-radius') return isNonTokenRadius(declaration.value)
+  if (declaration.property === 'box-shadow') return isNonTokenShadow(declaration.value)
+  if (declaration.property === 'backdrop-filter') {
+    return isBlurFilter(declaration.value) && !isAllowedComponentBlurSelector(declaration.selector)
+  }
+  return false
+}
+
 /** Text of the landscape block only, so a later rule cannot satisfy an assertion. */
 function landscapeBlock(source: string): string {
   const start = source.indexOf(LANDSCAPE_QUERY)
@@ -64,6 +97,59 @@ function landscapeBlock(source: string): string {
 }
 
 describe('visual rhythm contract', () => {
+  it('discovers every Vue style block for the repo-wide contract', () => {
+    expect(componentStyleBlocks.length).toBeGreaterThan(0)
+    const files = new Set(componentStyleBlocks.map((block) => block.file))
+    expect(files.has('src/views/AppsView.vue')).toBe(true)
+    expect(files.has('src/components/apps/AppInteractiveTerminal.vue')).toBe(true)
+  })
+
+  it('keeps historical component visual debt explicit, current, and expiring', () => {
+    const sourceKeys = new Set(componentDeclarations.map(visualDeclarationKey))
+    const seen = new Set<string>()
+
+    for (const entry of VISUAL_CONTRACT_BASELINE) {
+      const key = baselineKey(entry)
+      expect(seen.has(key), `duplicate baseline entry: ${key}`).toBe(false)
+      seen.add(key)
+      expect(sourceKeys.has(key), `stale baseline entry: ${key}`).toBe(true)
+      expect(entry.reason.trim().length, `missing reason: ${key}`).toBeGreaterThan(0)
+      expect(entry.expandedPath.trim().length, `missing migration path: ${key}`).toBeGreaterThan(0)
+      expect(typeof entry.replaceable, `missing replaceability decision: ${key}`).toBe('boolean')
+      if (entry.property === 'font-size') {
+        expect(entry.calculatedPx, `font-size should have a pixel calculation: ${key}`).not.toBeNull()
+        expect(entry.calculatedPx, `font-size baseline must remain below 12px: ${key}`).toBeLessThan(12)
+      }
+      expect(Date.parse(entry.expires), `invalid or expired baseline: ${key}`).toBeGreaterThan(Date.now())
+    }
+  })
+
+  it('does not add unapproved visual debt in Vue style blocks', () => {
+    const offenders = componentDeclarations
+      .filter(isComponentVisualDebt)
+      .filter((declaration) => !baselineKeys.has(visualDeclarationKey(declaration)))
+      .map((declaration) => `${declaration.file}:${declaration.line} ${declaration.selector} ${declaration.property}: ${declaration.value}`)
+
+    expect(offenders).toEqual([])
+  })
+
+  it('keeps component font weights on the four standard values', () => {
+    const offenders = componentDeclarations
+      .filter((declaration) => declaration.property === 'font-weight')
+      .filter((declaration) => /^\d+$/.test(declaration.value) && !STANDARD_FONT_WEIGHTS.has(declaration.value))
+      .map((declaration) => `${declaration.file}:${declaration.line} ${declaration.selector}: ${declaration.value}`)
+
+    expect(offenders).toEqual([])
+  })
+
+  it('never uses negative letter-spacing in component styles', () => {
+    const offenders = componentDeclarations
+      .filter((declaration) => declaration.property === 'letter-spacing' && /^-/.test(declaration.value))
+      .map((declaration) => `${declaration.file}:${declaration.line} ${declaration.selector}: ${declaration.value}`)
+
+    expect(offenders).toEqual([])
+  })
+
   it('gives the light theme four separable neutral steps', () => {
     // Before this pass --surface and --surface-raised were both #ffffff, so
     // dialogs and menus had no elevation at all against their parent panel.
