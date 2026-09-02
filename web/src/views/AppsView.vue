@@ -1703,12 +1703,13 @@ watch(windowActive, syncJobPollingForWindow)
 
 .market-hero {
   position: relative;
-  display: grid;
+  display: flex;
   overflow: hidden;
-  grid-template-columns: max-content minmax(0, 1fr);
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   isolation: isolate;
-  gap: 20px;
+  gap: 12px 20px;
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--market-accent) 22%, var(--border));
   border-radius: 15px;
@@ -1739,8 +1740,8 @@ watch(windowActive, syncJobPollingForWindow)
 
 .market-hero__actions {
   display: flex;
+  flex: 0 1 auto;
   flex-wrap: wrap;
-  justify-self: end;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -1748,7 +1749,8 @@ watch(windowActive, syncJobPollingForWindow)
 .market-stats {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(4, minmax(116px, 132px));
+  flex: 0 1 auto;
+  grid-template-columns: repeat(4, minmax(96px, 132px));
 }
 
 .market-stats div {

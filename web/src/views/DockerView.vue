@@ -2159,16 +2159,18 @@ onBeforeUnmount(() => {
 .docker-job small { color: var(--muted); }
 .docker-job progress { width: 100%; }
 .docker-command-center { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
-.docker-command-center__header { display: flex; min-width: 0; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.docker-command-center__identity { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 10px; }
+.docker-command-center__header { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+/* `flex: 1 1 160px` lets the identity block wrap rather than being squeezed to
+   a few pixels wide when the header runs out of room. */
+.docker-command-center__identity { display: flex; min-width: 0; flex: 1 1 160px; align-items: center; gap: 10px; }
 .docker-command-center__identity > span:last-child { display: grid; min-width: 0; gap: 2px; }
 .docker-command-center__identity strong { font-size: .92rem; }
-.docker-command-center__identity small { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.docker-command-center__identity small { overflow: hidden; font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 .docker-command-center__header small { color: var(--muted); }
 .docker-command-center__stats { display: flex; flex: 0 0 auto; align-items: center; }
 .docker-command-center__stat { display: inline-flex; align-items: baseline; gap: 5px; padding: 0 12px; border-left: 1px solid var(--border); }
 .docker-command-center__stat strong { font-size: 1rem; line-height: 1; }
-.docker-command-center__stat small { font-size: .7rem; }
+.docker-command-center__stat small { font-size: .75rem; }
 .docker-command-center__stat--running strong { color: var(--brand-strong, var(--brand)); }
 .docker-command-center__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .docker-command-center__identity .workspace-card__icon { width: 34px; height: 34px; border-radius: 10px; }
@@ -2218,7 +2220,7 @@ onBeforeUnmount(() => {
 .resource-section__heading { display: flex !important; min-width: 180px; flex: 1 1 190px; align-items: center; gap: 10px; }
 .resource-section__heading > div { display: grid; min-width: 0; gap: 2px; }
 .resource-section__heading strong { font-size: .88rem; }
-.resource-section__heading small { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.resource-section__heading small { overflow: hidden; font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 .resource-section__controls { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .resource-section .table-scroll, .resource-section > .empty-state { margin: 0; }
 .docker-table { min-width: 1240px; }
@@ -2428,6 +2430,18 @@ onBeforeUnmount(() => {
   .deployment-detection small { white-space: normal; }
   .deployment-options { justify-content: stretch; flex-direction: column; }
   .deployment-options .button { width: 100%; }
+}
+/* A desktop window can be far narrower than the viewport, so the phone rules
+   above never fire there. Mirror the command-center part of them against the
+   window container: pair the identity with the actions on the tall row and let
+   the two counters share the short one, instead of letting each child claim a
+   row of its own. */
+@container desktop-window (max-width: 560px) {
+  .docker-command-center__header { row-gap: 8px; padding: 10px; }
+  .docker-command-center__identity { flex: 1 1 160px; }
+  .docker-command-center__actions { flex: 0 0 auto; }
+  .docker-command-center__stats { order: 3; width: 100%; flex: 1 1 100%; padding-top: 8px; border-top: 1px solid var(--border); }
+  .docker-command-center__stat:first-child { padding-left: 0; border-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .docker-group__toggle > svg,

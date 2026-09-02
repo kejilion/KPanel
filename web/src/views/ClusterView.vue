@@ -1608,12 +1608,13 @@ onBeforeUnmount(() => {
 
 .cluster-hero {
   position: relative;
-  display: grid;
+  display: flex;
   overflow: hidden;
-  grid-template-columns: max-content minmax(0, 1fr);
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   isolation: isolate;
-  gap: 20px;
+  gap: 12px 20px;
   padding: 12px 14px;
   background:
     radial-gradient(circle at 86% 0%, color-mix(in srgb, var(--cluster-accent) 10%, transparent), transparent 34%),
@@ -1642,11 +1643,12 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 
+/* Wraps onto its own row once the stats and actions no longer fit side by
+   side, instead of overflowing the hero and clipping the refresh button. */
 .cluster-hero__actions {
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  justify-self: end;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   white-space: nowrap;
@@ -1655,7 +1657,8 @@ onBeforeUnmount(() => {
 .cluster-stats {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(4, minmax(116px, 132px));
+  flex: 0 1 auto;
+  grid-template-columns: repeat(4, minmax(96px, 132px));
 }
 
 .cluster-stats div {
@@ -1678,7 +1681,7 @@ onBeforeUnmount(() => {
 .cluster-stats span {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .cluster-toolbar {

@@ -3608,6 +3608,23 @@ body.desktop-mode-open::-webkit-scrollbar {
     flex-direction: column;
   }
 
+  /* The column direction above reinterprets `.resource-section__heading`'s
+     `flex: 1 1 190px` as a 190px *height* basis, so the title grows to nearly
+     four times its content height. The phone rules pair the same column switch
+     with `flex: 0 0 auto` for exactly this reason; this block had copied only
+     half of that pair. The `__header >` step is load-bearing: without it these
+     selectors only tie with the view's scoped rules, which then win on source
+     order because component styles are injected after desktop.css. */
+  .desktop-window__body .resource-section__header > .resource-section__heading,
+  .desktop-window__body .resource-section__header > .resource-section__controls {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .desktop-window__body .resource-section__header > .resource-section__controls {
+    justify-content: flex-start;
+  }
+
   .desktop-window__body .cluster-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -3656,7 +3673,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .desktop-window__body :is(.market-hero, .market-toolbar, .docker-toolbar, .network-membership) {
+  .desktop-window__body :is(.market-toolbar, .docker-toolbar, .network-membership) {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
@@ -3803,6 +3820,19 @@ body.desktop-mode-open::-webkit-scrollbar {
     flex-direction: column;
   }
 
+  /* Two short buttons fit side by side well below this width (they need ~218px
+     of a 316px track), so the blanket column stack above just doubles the
+     header height. Match the phone rules and lay them out two-up instead. */
+  .desktop-window__body .resource-section__controls > .card-actions {
+    display: grid;
+    flex-direction: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop-window__body .resource-section__controls > .card-actions > * {
+    min-width: 0;
+  }
+
   .desktop-window__body .theme-options,
   .desktop-window__body .theme-color-studio {
     grid-template-columns: minmax(0, 1fr);
@@ -3896,12 +3926,39 @@ body.desktop-mode-open::-webkit-scrollbar {
     min-width: 0;
   }
 
+  /* `.error-state` above already has a narrow-window rule but `.empty-state`
+     never got one, so it keeps its 250px/38px desktop framing inside a window
+     a third that wide. Mirror the phone rule in main.css. */
+  .desktop-window__body .empty-state {
+    min-height: 220px;
+    padding: 28px 16px;
+  }
+
   .desktop-window__body .error-state p {
     overflow-wrap: anywhere;
   }
 
-  .desktop-window__body :is(.app-grid, .market-stats, .docker-summary, .stats-grid) {
+  .desktop-window__body :is(.app-grid, .docker-summary, .stats-grid) {
     grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  /* Counter summaries stay two-up in a narrow window, matching the phone
+     portrait rules in AppsView/ClusterView. Stacking four "number + label"
+     cells into one column only trades a wide hero for a very tall one. */
+  .desktop-window__body :is(.market-stats, .cluster-stats) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Two-up wrapping moves cells 3-4 onto a second row, so the separators have
+     to move with them: drop the stray vertical rule left of cell 3 and rule
+     off the new row instead. Same correction the phone rules make. */
+  .desktop-window__body :is(.market-stats, .cluster-stats) > :nth-child(3) {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .desktop-window__body :is(.market-stats, .cluster-stats) > :nth-child(4) {
+    border-top: 1px solid var(--border);
   }
 
   .desktop-window__body :is(
@@ -3925,7 +3982,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .desktop-window__body :is(.cluster-grid, .cluster-stats) {
+  .desktop-window__body .cluster-grid {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 

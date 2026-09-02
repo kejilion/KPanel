@@ -248,10 +248,14 @@ describe('ClusterView compact summary layout', () => {
   it('keeps summary metrics and actions on one decorated row', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
 
-    expect(source).toMatch(/\.cluster-hero\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/)
-    expect(source).toMatch(/\.cluster-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(116px, 132px\)\);/)
+    // The hero is a wrapping flex row rather than a two-track grid: a desktop
+    // window can be narrower than the stats + actions need, and the old
+    // `max-content` track plus `nowrap` pushed the refresh button off the left
+    // edge instead of letting the actions drop to their own row.
+    expect(source).toMatch(/\.cluster-hero\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
+    expect(source).toMatch(/\.cluster-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(96px, 132px\)\);/)
     expect(source).toMatch(/\.cluster-hero\s*\{[^}]*radial-gradient\([^}]*var\(--cluster-accent\)/)
-    expect(source).toMatch(/\.cluster-hero__actions\s*\{[^}]*flex-wrap:\s*nowrap;/)
+    expect(source).toMatch(/\.cluster-hero__actions\s*\{[^}]*flex-wrap:\s*wrap;/)
     expect(source).toContain('class="button button--primary button--small cluster-hero__add"')
     expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.cluster-hero__add\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/)
     expect(source).toContain('class="icon-button icon-button--small"')

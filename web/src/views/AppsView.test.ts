@@ -154,8 +154,10 @@ describe('AppsView catalog filtering performance', () => {
     expect(source).toMatch(/\.app-market\s*\{[^}]*--success:\s*var\(--brand\);/)
     expect(source).toMatch(/\.app-card\.is-installed\s*\{[^}]*border-color:\s*color-mix\(in srgb, var\(--success\) 72%, var\(--border\)\);/)
     expect(source).toMatch(/\.market-hero\s*\{[^}]*overflow:\s*hidden;[^}]*radial-gradient\([^}]*var\(--market-accent\)/)
-    expect(source).toMatch(/\.market-hero\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/)
-    expect(source).toMatch(/\.market-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(116px, 132px\)\);/)
+    // Wrapping flex row instead of a two-track grid, so the actions drop to
+    // their own row in a narrow desktop window rather than overflowing.
+    expect(source).toMatch(/\.market-hero\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
+    expect(source).toMatch(/\.market-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(96px, 132px\)\);/)
     expect(source).toMatch(/\.market-hero::before\s*\{[^}]*border:\s*30px solid color-mix\(in srgb, var\(--market-accent\) 7%, transparent\);/)
   })
 
