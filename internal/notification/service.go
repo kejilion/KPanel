@@ -32,10 +32,16 @@ type HostSource interface {
 	Hosts(context.Context) cluster.HostList
 }
 
+// TimezoneSource returns the timezone used by the notification center host.
+// The source may fall back to the process timezone when the host configuration
+// cannot be read; notification timestamps are still persisted as UTC.
+type TimezoneSource func(context.Context) *time.Location
+
 type Config struct {
 	DataDir            string
 	Hosts              HostSource
 	Telegram           TelegramAPI
+	Timezone           TimezoneSource
 	Now                func() time.Time
 	EvaluationInterval time.Duration
 	SustainSamples     int
@@ -52,6 +58,7 @@ type Service struct {
 	store      *Store
 	hosts      HostSource
 	telegram   TelegramAPI
+	timezone   TimezoneSource
 	now        func() time.Time
 	evaluation time.Duration
 	sustain    int
@@ -104,7 +111,7 @@ func NewService(config Config) (*Service, error) {
 	}
 	state := store.stateSnapshot()
 	service := &Service{
-		store: store, hosts: config.Hosts, telegram: config.Telegram, now: config.Now,
+		store: store, hosts: config.Hosts, telegram: config.Telegram, timezone: config.Timezone, now: config.Now,
 		evaluation: config.EvaluationInterval, sustain: config.SustainSamples,
 		repeat: config.RepeatInterval, alerts: make(map[string]alertState),
 		traffic: make(map[string]trafficSample),
@@ -165,6 +172,10 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) Snapshot() Snapshot {
+	return s.snapshot(context.Background())
+}
+
+func (s *Service) snapshot(ctx context.Context) Snapshot {
 	state := s.store.stateSnapshot()
 	now := s.now()
 	meta := state.Telegram
@@ -183,7 +194,7 @@ func (s *Service) Snapshot() Snapshot {
 	} else if !meta.HasChat {
 		meta.Status = TelegramWaitingChat
 	}
-	return snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(now))
+	return snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(s.displayTime(ctx, now)))
 }
 
 func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, error) {
@@ -246,7 +257,7 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
 	}
 	s.replaceAlertStates(next.AlertStates)
-	return s.Snapshot(), nil
+	return s.snapshot(ctx), nil
 }
 
 func (s *Service) Discover(ctx context.Context, expectedResourceVersion string) (Snapshot, error) {
@@ -290,7 +301,7 @@ func (s *Service) Discover(ctx context.Context, expectedResourceVersion string) 
 	if err := s.store.commitState(state); err != nil {
 		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
 	}
-	return s.Snapshot(), nil
+	return s.snapshot(ctx), nil
 }
 
 func (s *Service) Test(ctx context.Context) (Snapshot, error) {
@@ -313,7 +324,7 @@ func (s *Service) Test(ctx context.Context) (Snapshot, error) {
 	if !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(token) {
 		return Snapshot{}, ErrNotReady
 	}
-	displayNow := s.now()
+	displayNow := s.displayTime(ctx, s.now())
 	err = s.telegram.SendMessage(ctx, token, state.Telegram.ChatID, testMessage(displayNow, state.Settings.Locale))
 	now := displayNow.UTC()
 	if err != nil {
@@ -332,7 +343,7 @@ func (s *Service) Test(ctx context.Context) (Snapshot, error) {
 	if err := s.store.commitState(state); err != nil {
 		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
 	}
-	return s.Snapshot(), nil
+	return s.snapshot(ctx), nil
 }
 
 func (s *Service) ensureEnabledCanRun(enabled bool, newToken, oldToken string, oldPresent bool, meta telegramState) error {
@@ -368,7 +379,7 @@ func (s *Service) evaluate(parent context.Context) error {
 	fetchCtx, cancel := context.WithTimeout(parent, 8*time.Second)
 	defer cancel()
 	hosts := s.hosts.Hosts(fetchCtx)
-	now := s.now()
+	now := s.displayTime(parent, s.now())
 	locale := normalizeNotificationLocale(state.Settings.Locale)
 	telegram := state.Telegram
 	sent := 0
@@ -772,6 +783,16 @@ func (s *Service) trafficRate(host cluster.Host, now time.Time) (float64, bool) 
 	}
 	rate := (float64(current.received-previous.received) + float64(current.sent-previous.sent)) / elapsed / (1024 * 1024)
 	return rate, finiteMetric(rate)
+}
+
+func (s *Service) displayTime(ctx context.Context, value time.Time) time.Time {
+	location := value.Location()
+	if s.timezone != nil {
+		if configured := s.timezone(ctx); configured != nil {
+			location = configured
+		}
+	}
+	return value.In(location)
 }
 
 func cumulativeTraffic(host cluster.Host) (uint64, bool) {
