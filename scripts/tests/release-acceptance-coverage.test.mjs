@@ -65,6 +65,15 @@ test('history before the baseline is not required to be backfilled', () => {
   assert.equal(result.baseline, COVERAGE_BASELINE);
 });
 
+test('acceptance records before the baseline are outside the orphan check', () => {
+  const result = evaluateAcceptanceCoverage({
+    tags: ['v0.83.0'],
+    records: ['v0.20.3', 'v0.83.0'],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.orphans, []);
+});
+
 test('a lowered baseline exposes the historical gap instead of hiding it', () => {
   const result = evaluateAcceptanceCoverage({
     tags: ['v0.82.0', 'v0.83.0'],

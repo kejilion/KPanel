@@ -93,6 +93,7 @@ export function evaluateAcceptanceCoverage({ tags, records, baseline = COVERAGE_
   const stableTags = [...new Set(tags.filter((tag) => parseTagVersion(tag) !== null))].sort(compareTags);
   const recordTags = new Set(records.filter((tag) => parseTagVersion(tag) !== null));
   const inScope = stableTags.filter((tag) => compareTags(tag, baseline) >= 0);
+  const inScopeRecordTags = new Set([...recordTags].filter((tag) => compareTags(tag, baseline) >= 0));
 
   const exempt = inFlightTag !== null && inScope.includes(inFlightTag) && !recordTags.has(inFlightTag)
     ? inFlightTag
@@ -101,7 +102,7 @@ export function evaluateAcceptanceCoverage({ tags, records, baseline = COVERAGE_
 
   const versionTag = currentVersion === null ? null : 'v' + String(currentVersion).trim();
   const published = new Set(stableTags);
-  const orphans = [...recordTags]
+  const orphans = [...inScopeRecordTags]
     .filter((tag) => !published.has(tag) && tag !== versionTag)
     .sort(compareTags);
 
