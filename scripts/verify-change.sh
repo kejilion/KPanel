@@ -82,6 +82,11 @@ if [[ ${#acceptance_files[@]} -gt 0 ]]; then
   node scripts/report-release-metrics.mjs "${acceptance_args[@]}"
 fi
 
+# The check above is forward-only: it fires when a record is touched. The reverse direction catches
+# a published tag whose record was never written at all, which is how v0.100.0 reached production
+# without one.
+node scripts/check-release-acceptance-coverage.mjs
+
 needs_governance=false
 for path in "${changed_files[@]}"; do
   case "$path" in
@@ -91,6 +96,7 @@ for path in "${changed_files[@]}"; do
     docs/quality-improvement-proposal-template.md|docs/product-quality-review-*.md|\
     scripts/check-governance-consistency.mjs|scripts/check-governance-candidate-ci.mjs|scripts/check-environment-policy.mjs|\
     scripts/check-collaboration-state.mjs|\
+    scripts/check-release-acceptance-coverage.mjs|\
     scripts/run-repo-bash.mjs|\
     scripts/run-release-gate.sh|scripts/run-release-l3.mjs|scripts/run-release-l3-remote.sh|\
     scripts/run-production-evidence.mjs|scripts/run-production-evidence-remote.sh|\
@@ -105,6 +111,7 @@ for path in "${changed_files[@]}"; do
     scripts/tests/local-feature-preview.test.mjs|\
     scripts/tests/verify-change-forced-level.test.mjs|scripts/tests/business-context-freshness.test.mjs|\
     scripts/tests/report-release-metrics.test.mjs|scripts/tests/report-dependency-freshness.test.mjs|\
+    scripts/tests/release-acceptance-coverage.test.mjs|\
     .github/workflows/*.yml|.github/workflows/*.yaml)
       needs_governance=true
       ;;
