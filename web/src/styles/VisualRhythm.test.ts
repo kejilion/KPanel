@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const main = readFileSync(new URL('./main.css', import.meta.url), 'utf8')
 const desktop = readFileSync(new URL('./desktop.css', import.meta.url), 'utf8')
 const themes = readFileSync(new URL('./themes.css', import.meta.url), 'utf8')
+const filesView = readFileSync(new URL('../views/FilesView.vue', import.meta.url), 'utf8')
 const sources = { main, desktop }
 
 /** Hex value of a token inside one themes.css block. */
@@ -230,7 +231,11 @@ describe('visual rhythm contract', () => {
     // which left roughly 351px of usable height at 844x390.
     expect(mainBlock).toMatch(/--topbar-height:\s*56px;/)
     expect(mainBlock).toMatch(/max-height:\s*calc\(\s*100dvh - 24px - env\(safe-area-inset-top\) - env\(safe-area-inset-bottom\)\s*\)/)
+    expect(mainBlock).toMatch(/\.modal-backdrop--fullscreen\s*\{[^}]*padding:\s*0;/)
     expect(mainBlock).toMatch(/\.modal-panel--fullscreen\s*\{[^}]*height:\s*100dvh;/)
+    // The media viewer has a wider non-fullscreen override in its scoped CSS.
+    // Keep it from winning over the shared full-screen viewport contract.
+    expect(filesView).toMatch(/:global\(\.modal-panel--wide:not\(\.modal-panel--fullscreen\):has\(\.media-viewer\)\)/)
 
     const desktopBlock = landscapeBlock(desktop)
     // Windows and icons are re-cut against the taskbar reserve only. There is

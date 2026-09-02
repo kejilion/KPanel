@@ -169,7 +169,13 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="modal-backdrop" role="presentation" @mousedown.self="close">
+    <div
+      v-if="open"
+      class="modal-backdrop"
+      :class="{ 'modal-backdrop--fullscreen': fullscreen }"
+      role="presentation"
+      @mousedown.self="close"
+    >
       <section
         ref="panel"
         class="modal-panel"

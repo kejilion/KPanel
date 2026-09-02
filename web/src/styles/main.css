@@ -6887,6 +6887,10 @@ body.terminal-fullscreen-open .modal-panel {
     padding: 12px;
   }
 
+  .modal-backdrop--fullscreen {
+    padding: 0;
+  }
+
   .modal-panel,
   .modal-panel--compact,
   .modal-panel--small,
