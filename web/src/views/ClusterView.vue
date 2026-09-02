@@ -1181,9 +1181,17 @@ onBeforeUnmount(() => {
             <small>{{ host.lastSnapshot.telemetry.publicNetwork.isp || '运营商未知' }}</small>
           </div>
           <div>
-            <span>网络</span>
-            <strong>↓ {{ phrase('累计接收') }} {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'received') }}</strong>
-            <small>↑ {{ phrase('累计传送') }} {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent') }}</small>
+            <span>{{ phrase('累计流量') }}</span>
+            <strong :title="phrase('累计接收')">
+              <span aria-hidden="true">↓</span>
+              <span class="sr-only">{{ phrase('累计接收') }}</span>
+              {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'received') }}
+            </strong>
+            <small :title="phrase('累计传送')">
+              <span aria-hidden="true">↑</span>
+              <span class="sr-only">{{ phrase('累计传送') }}</span>
+              {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent') }}
+            </small>
           </div>
           <div>
             <span>运行时间</span>
@@ -2113,6 +2121,11 @@ onBeforeUnmount(() => {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* strong 是 flex 布局自带 gap，small 是单行块级，需要单独给箭头留间距 */
+.cluster-card__details small [aria-hidden='true'] {
+  margin-right: 5px;
 }
 
 .cluster-card__empty {

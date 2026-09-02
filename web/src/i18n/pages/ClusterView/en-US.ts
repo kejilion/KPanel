@@ -92,7 +92,7 @@ export default [
   ["添加 KPanel 主机", "Add KPanel host"],
   ["添加主机失败", "Failed to add host"],
   ["同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。", "Contains the current host URL and a one-time code valid for five minutes, granting summary reads, terminal access, and read-only file access."],
-  ["网络", "Network"],
+  ["累计流量", "Cumulative traffic"],
   ["累计接收", "Cumulative received"],
   ["累计传送", "Cumulative sent"],
   ["文件互传", "File transfer"],
