@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 )
