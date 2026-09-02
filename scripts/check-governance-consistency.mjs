@@ -50,6 +50,8 @@ const requiredFiles = [
   'scripts/tests/business-context-freshness.test.mjs',
   'scripts/report-dependency-freshness.mjs',
   'scripts/tests/report-dependency-freshness.test.mjs',
+  'scripts/check-release-acceptance-coverage.mjs',
+  'scripts/tests/release-acceptance-coverage.test.mjs',
   '.codex-workflows/README.md',
   '.codex-workflows/session-collaboration.workflow.yaml',
   '.codex-workflows/background-browser-validation.workflow.yaml',
@@ -280,6 +282,8 @@ requireText('scripts/verify-governance.sh', [
   'scripts/tests/run-repo-bash.test.mjs',
   'scripts/tests/release-l3-orchestrator.test.mjs',
   'scripts/tests/production-evidence-orchestrator.test.mjs',
+  'scripts/tests/release-acceptance-coverage.test.mjs',
+  'node scripts/check-release-acceptance-coverage.mjs',
 ]);
 requireText('scripts/verify-change.sh', [
   'needs_governance=false',
@@ -302,6 +306,8 @@ requireText('scripts/verify-change.sh', [
   'scripts/tests/production-evidence-orchestrator.test.mjs',
   'scripts/tests/governance-candidate-ci.test.mjs',
   '--validate-acceptance',
+  'node scripts/check-release-acceptance-coverage.mjs',
+  'scripts/tests/release-acceptance-coverage.test.mjs',
   '--diff-filter=ACMRTD',
   '.github/workflows/*.yml|.github/workflows/*.yaml',
   'verification_preflight=pass',
