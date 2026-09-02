@@ -4817,7 +4817,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 13%, transparent);
 }
 
-:global(.modal-panel--wide:has(.media-viewer)) {
+:global(.modal-panel--wide:not(.modal-panel--fullscreen):has(.media-viewer)) {
   width: min(1080px, calc(100vw - 32px));
 }
 
