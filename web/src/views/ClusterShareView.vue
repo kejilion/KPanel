@@ -277,28 +277,34 @@ onBeforeUnmount(() => {
 
           <dl class="share-details">
             <div class="share-details__traffic">
-              <div>
-                <dt title="累计接收">
+              <dt>实时流量</dt>
+              <dd>
+                <span title="实时下行">
+                  <ArrowDown :size="13" aria-hidden="true" />
+                  <span class="sr-only">实时下行</span>
+                  {{ formatRate(host.network.receiveBytesPerSecond || 0) }}
+                </span>
+                <span title="实时上行">
+                  <ArrowUp :size="13" aria-hidden="true" />
+                  <span class="sr-only">实时上行</span>
+                  {{ formatRate(host.network.transmitBytesPerSecond || 0) }}
+                </span>
+              </dd>
+            </div>
+            <div class="share-details__traffic">
+              <dt>累计流量</dt>
+              <dd>
+                <span title="累计接收">
                   <ArrowDown :size="13" aria-hidden="true" />
                   <span class="sr-only">累计接收</span>
-                </dt>
-                <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'received') : '—' }}</dd>
-              </div>
-              <div>
-                <dt title="累计传送">
+                  {{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'received') : '—' }}
+                </span>
+                <span title="累计传送">
                   <ArrowUp :size="13" aria-hidden="true" />
                   <span class="sr-only">累计传送</span>
-                </dt>
-                <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'sent') : '—' }}</dd>
-              </div>
-            </div>
-            <div>
-              <dt><ArrowDown :size="13" /> 下行</dt>
-              <dd>{{ formatRate(host.network.receiveBytesPerSecond || 0) }}</dd>
-            </div>
-            <div>
-              <dt><ArrowUp :size="13" /> 上行</dt>
-              <dd>{{ formatRate(host.network.transmitBytesPerSecond || 0) }}</dd>
+                  {{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'sent') : '—' }}
+                </span>
+              </dd>
             </div>
             <div>
               <dt><Clock3 :size="13" /> 运行时间</dt>
@@ -473,7 +479,7 @@ onBeforeUnmount(() => {
 
 .share-grid.is-list .share-card {
   display: grid;
-  grid-template-columns: minmax(300px, 1.08fr) minmax(360px, 1.3fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) minmax(400px, 1.35fr);
   grid-template-areas: "header metrics details";
   align-items: stretch;
 }
@@ -513,12 +519,12 @@ onBeforeUnmount(() => {
 .share-metrics small { color: var(--muted); font-size: 10px; }
 .share-card__empty { padding: 29px; color: var(--muted); text-align: center; border-block: 1px solid var(--border); }
 
-.share-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
+.share-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.46fr); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
 .share-details div { min-width: 0; }
-.share-details__traffic { display: grid; gap: 4px; }
-/* 累计收发只用箭头标示方向，箭头与数值同行排布，避免这一格比其他格高一倍 */
-.share-details__traffic > div { display: flex; min-width: 0; align-items: center; gap: 5px; }
-.share-details__traffic dt { margin-bottom: 0; }
+/* 实时和累计收发都只用箭头标示方向，左右并排后与其他格同高，不再撑高整张卡 */
+.share-details__traffic dd { display: flex; align-items: center; gap: 6px; }
+.share-details__traffic dd > span { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-details__traffic dd svg { flex: 0 0 auto; color: var(--muted); }
 .share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
 .share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 

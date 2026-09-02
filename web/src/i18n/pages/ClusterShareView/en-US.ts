@@ -2,6 +2,7 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
   ['全部机器', 'All machines'],
+  ['累计流量', 'Cumulative traffic'],
   ['累计接收', 'Cumulative received'],
   ['累计传送', 'Cumulative sent'],
   ['公开页不包含 IP、管理入口或访问凭据', 'This public page excludes IP addresses, management links, and access credentials'],
@@ -27,7 +28,9 @@ export default [
   ['集群状态概览', 'Cluster status overview'],
   ['核', 'cores'],
   ['内存', 'Memory'],
-  ['上行', 'Upload'],
+  ['实时流量', 'Live traffic'],
+  ['实时下行', 'Live download'],
+  ['实时上行', 'Live upload'],
   ['尚无数据', 'No data yet'],
   ['数据生成于', 'Generated at'],
   ['地区未公开', 'Location not shared'],
@@ -41,7 +44,6 @@ export default [
   ['网络信息未公开', 'Network information not shared'],
   ['无法打开分享页', 'Unable to open share page'],
   ['系统', 'System'],
-  ['下行', 'Download'],
   ['需关注', 'Attention'],
   ['磁盘', 'Disk'],
   ['当前保留上一次成功数据。', 'The last successful snapshot is still shown.'],
