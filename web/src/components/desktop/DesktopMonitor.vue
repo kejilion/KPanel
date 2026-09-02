@@ -5,6 +5,7 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { api, type SystemResourceSnapshot } from '@/lib/api'
 import { clampPercent, formatBytes, formatDuration, formatPercent, formatRate } from '@/lib/format'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import { useI18n } from '@/i18n'
 
 /**
@@ -191,8 +192,8 @@ onBeforeUnmount(() => {
             </span>
             <span class="desktop-monitor__network-line desktop-monitor__network-total">
               <small>{{ i18n.t('desktop.monitorTrafficTotal') }}</small>
-              <span :title="i18n.t('desktop.monitorTrafficReceived')">↓ {{ formatBytes(net?.totalReceivedBytes) }}</span>
-              <span :title="i18n.t('desktop.monitorTrafficSent')">↑ {{ formatBytes(net?.totalTransmittedBytes) }}</span>
+              <span :title="i18n.t('desktop.monitorTrafficReceived')">↓ {{ formatNetworkTrafficCounter(net, 'received') }}</span>
+              <span :title="i18n.t('desktop.monitorTrafficSent')">↑ {{ formatNetworkTrafficCounter(net, 'sent') }}</span>
             </span>
           </dd>
         </div>

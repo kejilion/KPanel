@@ -66,7 +66,7 @@ function publicSnapshot(): PublicClusterShareSnapshot {
       cpu: { cores: 4, usagePercent: 12.5 },
       memory: { totalBytes: 8 * 1024 ** 3, usedBytes: 3 * 1024 ** 3, usagePercent: 37.5 },
       disk: { totalBytes: 100 * 1024 ** 3, usedBytes: 20 * 1024 ** 3, usagePercent: 20 },
-      network: { receiveBytesPerSecond: 1024, transmitBytesPerSecond: 2048 },
+      network: { totalBytes: 3072, receiveBytesPerSecond: 1024, transmitBytesPerSecond: 2048 },
       location: { country: 'Singapore', countryCode: 'SG', city: 'Singapore', isp: 'Example ISP' },
       collectedAt: '2026-08-15T12:00:00Z',
     }],
@@ -123,6 +123,7 @@ describe('ClusterShareView anonymous snapshot', () => {
     }
     expect(source).toContain('<OperatingSystemIcon')
     expect(source).toContain('<CountryFlagIcon')
+    expect(source).toContain('formatTotalNetworkTraffic(host.network)')
     expect(source).toContain("const viewMode = ref<'list' | 'card'>('list')")
     expect(source).toContain('const { resolved: resolvedTheme, setTheme } = useTheme()')
     expect(source).toContain(':class="`is-${viewMode}`"')

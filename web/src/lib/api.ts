@@ -1457,6 +1457,7 @@ export const api = {
       request<ClusterNotificationSnapshot>('/cluster/notifications', { signal }),
     updateNotifications: (body: {
       enabled: boolean
+      locale: ClusterNotificationSnapshot['locale']
       rules: ClusterNotificationSnapshot['rules']
       telegramBotToken?: string
       expectedResourceVersion: string

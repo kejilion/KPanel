@@ -252,6 +252,8 @@ describe('ClusterView compact summary layout', () => {
     expect(source).toMatch(/\.cluster-stats\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(116px, 132px\)\);/)
     expect(source).toMatch(/\.cluster-hero\s*\{[^}]*radial-gradient\([^}]*var\(--cluster-accent\)/)
     expect(source).toMatch(/\.cluster-hero__actions\s*\{[^}]*flex-wrap:\s*nowrap;/)
+    expect(source).toContain('class="button button--primary button--small cluster-hero__add"')
+    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.cluster-hero__add\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/)
     expect(source).toContain('class="icon-button icon-button--small"')
     expect(source).toContain('aria-label="刷新集群状态"')
     expect(source.indexOf('aria-label="刷新集群状态"')).toBeLessThan(source.indexOf('@click="openAccess"'))

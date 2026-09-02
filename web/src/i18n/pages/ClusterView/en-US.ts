@@ -93,6 +93,7 @@ export default [
   ["添加主机失败", "Failed to add host"],
   ["同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。", "Contains the current host URL and a one-time code valid for five minutes, granting summary reads, terminal access, and read-only file access."],
   ["网络", "Network"],
+  ["总流量", "Total traffic"],
   ["文件互传", "File transfer"],
   ["无法读取集群主机，请稍后重试。", "Unable to load cluster hosts. Please try again."],
   ["无法读取授权列表", "Unable to read the authorization list"],

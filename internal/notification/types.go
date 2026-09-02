@@ -3,19 +3,23 @@ package notification
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
 const (
-	StateSchemaVersion            = 1
-	DefaultCPUThresholdPercent    = 90
-	DefaultMemoryThresholdPercent = 90
-	DefaultDiskThresholdPercent   = 90
-	DefaultTrafficThresholdMiB    = 100
-	DefaultSustainSamples         = 3
-	MaxTrafficThresholdMiB        = 1_048_576
-	MaxAlertStates                = 1_024
-	MaxTelegramTokenBytes         = 256
+	StateSchemaVersion              = 1
+	DefaultCPUThresholdPercent      = 90
+	DefaultMemoryThresholdPercent   = 90
+	DefaultDiskThresholdPercent     = 90
+	DefaultTrafficThresholdMiB      = 100
+	DefaultTrafficTotalThresholdGiB = 100
+	DefaultSustainSamples           = 3
+	MaxTrafficThresholdMiB          = 1_048_576
+	MaxTrafficTotalThresholdGiB     = 1_048_576
+	MaxAlertStates                  = 1_024
+	MaxTelegramTokenBytes           = 256
+	DefaultNotificationLocale       = "zh-CN"
 )
 
 var (
@@ -73,6 +77,8 @@ type Rules struct {
 	DiskThresholdPercent         int  `json:"diskThresholdPercent"`
 	TrafficEnabled               bool `json:"trafficEnabled"`
 	TrafficThresholdMiBPerSecond int  `json:"trafficThresholdMiBPerSecond"`
+	TrafficTotalEnabled          bool `json:"trafficTotalEnabled"`
+	TrafficTotalThresholdGiB     int  `json:"trafficTotalThresholdGiB"`
 	SSHLoginEnabled              bool `json:"sshLoginEnabled"`
 	HostOfflineEnabled           bool `json:"hostOfflineEnabled"`
 }
@@ -83,6 +89,7 @@ func DefaultRules() Rules {
 		MemoryEnabled: true, MemoryThresholdPercent: DefaultMemoryThresholdPercent,
 		DiskEnabled: true, DiskThresholdPercent: DefaultDiskThresholdPercent,
 		TrafficEnabled: false, TrafficThresholdMiBPerSecond: DefaultTrafficThresholdMiB,
+		TrafficTotalEnabled: false, TrafficTotalThresholdGiB: DefaultTrafficTotalThresholdGiB,
 		SSHLoginEnabled: true, HostOfflineEnabled: true,
 	}
 }
@@ -104,16 +111,21 @@ func (r Rules) Validate() error {
 	if r.TrafficThresholdMiBPerSecond < 1 || r.TrafficThresholdMiBPerSecond > MaxTrafficThresholdMiB {
 		return &ValidationError{Field: "rules.trafficThresholdMiBPerSecond", Message: "阈值超出允许范围"}
 	}
+	if r.TrafficTotalThresholdGiB < 1 || r.TrafficTotalThresholdGiB > MaxTrafficTotalThresholdGiB {
+		return &ValidationError{Field: "rules.trafficTotalThresholdGiB", Message: "累计流量阈值超出允许范围"}
+	}
 	return nil
 }
 
 type Settings struct {
-	Enabled bool  `json:"enabled"`
-	Rules   Rules `json:"rules"`
+	Enabled bool   `json:"enabled"`
+	Locale  string `json:"locale"`
+	Rules   Rules  `json:"rules"`
 }
 
 type UpdateInput struct {
 	Enabled                 bool   `json:"enabled"`
+	Locale                  string `json:"locale,omitempty"`
 	Rules                   Rules  `json:"rules"`
 	TelegramBotToken        string `json:"telegramBotToken,omitempty"`
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
@@ -140,6 +152,8 @@ type TelegramSnapshot struct {
 
 type Snapshot struct {
 	Enabled         bool             `json:"enabled"`
+	Locale          string           `json:"locale"`
+	Timezone        string           `json:"timezone"`
 	Rules           Rules            `json:"rules"`
 	Telegram        TelegramSnapshot `json:"telegram"`
 	ResourceVersion string           `json:"resourceVersion"`
@@ -150,4 +164,28 @@ type BotInfo struct {
 	ID        int64
 	FirstName string
 	Username  string
+}
+
+func normalizeRules(value Rules) Rules {
+	if value.TrafficTotalThresholdGiB == 0 {
+		value.TrafficTotalThresholdGiB = DefaultTrafficTotalThresholdGiB
+	}
+	return value
+}
+
+func normalizeNotificationLocale(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return DefaultNotificationLocale
+	}
+	return value
+}
+
+func validNotificationLocale(value string) bool {
+	switch value {
+	case "zh-CN", "zh-TW", "en-US":
+		return true
+	default:
+		return false
+	}
 }

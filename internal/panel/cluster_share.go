@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
@@ -91,6 +92,7 @@ type publicClusterShareCapacity struct {
 }
 
 type publicClusterShareNetwork struct {
+	TotalBytes             uint64  `json:"totalBytes"`
 	ReceiveBytesPerSecond  float64 `json:"receiveBytesPerSecond"`
 	TransmitBytesPerSecond float64 `json:"transmitBytesPerSecond"`
 }
@@ -349,6 +351,7 @@ func (s *Server) clusterShareSnapshot(ctx context.Context, value store.ClusterSh
 				UsagePercent: telemetry.Disk.UsagePercent,
 			}
 			item.Network = publicClusterShareNetwork{
+				TotalBytes:             contract.TotalNetworkBytes(telemetry.Network),
 				ReceiveBytesPerSecond:  snapshot.ReceiveBytesPerSecond,
 				TransmitBytesPerSecond: snapshot.TransmitBytesPerSecond,
 			}

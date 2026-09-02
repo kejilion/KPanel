@@ -441,6 +441,143 @@ const systemSummary = {
   collectedAt: new Date().toISOString(),
 }
 
+// The visual preview also covers the cluster notification and cumulative
+// traffic journeys. These values deliberately remain explicit mock data; they
+// are never presented as a real Agent or Telegram connection.
+const visualClusterShareToken = 'a'.repeat(64)
+
+function visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode }) {
+  const collectedAt = new Date().toISOString()
+  return {
+    agentVersion: '0.100.0',
+    agentProtocolVersion: 'v1',
+    hostname,
+    os,
+    osId,
+    osLike: ['linux'],
+    architecture: 'amd64',
+    uptimeSeconds,
+    load: { one: 0.38, five: 0.42, fifteen: 0.36 },
+    cpu: { model: 'AMD EPYC', cores: 4, usagePercent: usagePercent || 18.6 },
+    memory: { totalBytes: 8 * 1024 ** 3, availableBytes: 5 * 1024 ** 3, usedBytes: 3 * 1024 ** 3, usagePercent: 37.5 },
+    disk: { totalBytes: 80 * 1024 ** 3, usedBytes: 27 * 1024 ** 3, usagePercent: 33.75 },
+    network: { receivedBytes, sentBytes, tcpConnections: 96, udpConnections: 18 },
+    publicNetwork: { country, countryCode, region: city, city, isp: 'KPanel Visual Test' },
+    collectedAt,
+  }
+}
+
+function visualClusterHost({ id, name, isLocal, state, hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode }) {
+  const telemetry = visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode })
+  return {
+    id,
+    isLocal,
+    name,
+    kind: isLocal ? 'panel' : 'light_node',
+    origin: isLocal ? 'https://panel.example.com' : 'https://edge.example.com',
+    transportSecurity: 'tls',
+    remoteNodeId: isLocal ? 'local-node' : 'remote-node',
+    federationProtocol: 'v1',
+    scope: 'cluster.summary.read',
+    terminalAvailable: isLocal,
+    mutualFileTransferAvailable: false,
+    state,
+    consecutiveFailures: state === 'degraded' ? 1 : 0,
+    polling: true,
+    resourceVersion: `sha256:${id.slice(0, 1).repeat(64)}`,
+    createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastAttemptAt: new Date().toISOString(),
+    lastSuccessAt: new Date().toISOString(),
+    lastSnapshot: {
+      telemetry,
+      receivedAt: telemetry.collectedAt,
+      latencyMilliseconds: isLocal ? 0 : 42,
+      receiveBytesPerSecond: isLocal ? 2.5 * 1024 ** 2 : 1.2 * 1024 ** 2,
+      transmitBytesPerSecond: isLocal ? 640 * 1024 : 420 * 1024,
+    },
+  }
+}
+
+const visualClusterHosts = [
+  visualClusterHost({
+    id: 'e'.repeat(32), name: 'kpanel-demo', isLocal: true, state: 'online', hostname: 'kpanel-demo',
+    os: 'Debian GNU/Linux 13', osId: 'debian', uptimeSeconds: 864000,
+    receivedBytes: 24 * 1024 ** 3, sentBytes: 11 * 1024 ** 3,
+    city: 'Shanghai', country: 'China', countryCode: 'CN',
+  }),
+  visualClusterHost({
+    id: 'b'.repeat(32), name: 'edge-melbourne', isLocal: false, state: 'degraded', hostname: 'edge-melbourne',
+    os: 'Ubuntu 24.04 LTS', osId: 'ubuntu', uptimeSeconds: 432000,
+    receivedBytes: 8 * 1024 ** 3, sentBytes: 3 * 1024 ** 3, usagePercent: 63.2,
+    city: 'Melbourne', country: 'Australia', countryCode: 'AU',
+  }),
+]
+
+let mockNotificationRevision = 1
+let mockNotificationSnapshot = {
+  enabled: false,
+  locale: 'zh-CN',
+  timezone: 'Asia/Shanghai',
+  rules: {
+    cpuEnabled: true, cpuThresholdPercent: 90,
+    memoryEnabled: true, memoryThresholdPercent: 90,
+    diskEnabled: true, diskThresholdPercent: 90,
+    trafficEnabled: false, trafficThresholdMiBPerSecond: 100,
+    trafficTotalEnabled: true, trafficTotalThresholdGiB: 100,
+    sshLoginEnabled: true, hostOfflineEnabled: true,
+  },
+  telegram: { configured: false, ready: false, status: 'not_configured' },
+  resourceVersion: `sha256:${'1'.repeat(64)}`,
+  updatedAt: new Date().toISOString(),
+}
+
+let mockClusterShareSettings = {
+  enabled: true,
+  title: 'KPanel Visual Fleet',
+  description: '两台主机的公开状态预览。',
+  sharePath: `/share/${visualClusterShareToken}`,
+  resourceVersion: `sha256:${'2'.repeat(64)}`,
+  updatedAt: new Date().toISOString(),
+}
+
+function mockRevision(seed) {
+  return `sha256:${String(seed).padStart(64, '0').slice(-64)}`
+}
+
+function visualClusterPublicSnapshot() {
+  const generatedAt = new Date().toISOString()
+  const items = visualClusterHosts.map((host) => {
+    const telemetry = host.lastSnapshot.telemetry
+    return {
+      id: host.id,
+      name: host.name,
+      state: host.state === 'online' ? 'online' : 'degraded',
+      os: telemetry.os,
+      architecture: telemetry.architecture,
+      uptimeSeconds: telemetry.uptimeSeconds,
+      load: telemetry.load,
+      cpu: { cores: telemetry.cpu.cores, usagePercent: telemetry.cpu.usagePercent },
+      memory: telemetry.memory,
+      disk: telemetry.disk,
+      network: {
+        totalBytes: telemetry.network.receivedBytes + telemetry.network.sentBytes,
+        receiveBytesPerSecond: host.lastSnapshot.receiveBytesPerSecond,
+        transmitBytesPerSecond: host.lastSnapshot.transmitBytesPerSecond,
+      },
+      location: {
+        isp: telemetry.publicNetwork.isp,
+        country: telemetry.publicNetwork.country,
+        countryCode: telemetry.publicNetwork.countryCode,
+        region: telemetry.publicNetwork.region,
+        city: telemetry.publicNetwork.city,
+      },
+      collectedAt: telemetry.collectedAt,
+    }
+  })
+  return { title: mockClusterShareSettings.title, description: mockClusterShareSettings.description, generatedAt, total: items.length, online: items.filter((item) => item.state === 'online').length, attention: items.filter((item) => item.state !== 'online').length, items }
+}
+
 let systemLogCleanupJob
 
 function materializeSystemLogMaintenance() {
@@ -1061,6 +1198,37 @@ createServer(async (request, response) => {
     })
     return
   }
+  if (request.method === 'GET' && url.pathname === '/api/v1/cluster/notifications') {
+    send(response, 200, mockNotificationSnapshot)
+    return
+  }
+  if (request.method === 'PUT' && url.pathname === '/api/v1/cluster/notifications') {
+    const input = await readJSON(request)
+    if (input.expectedResourceVersion !== mockNotificationSnapshot.resourceVersion) {
+      send(response, 409, { title: '通知设置已发生变化', status: 409, code: 'cluster_notifications_changed' })
+      return
+    }
+    mockNotificationRevision += 1
+    mockNotificationSnapshot = {
+      ...mockNotificationSnapshot,
+      enabled: Boolean(input.enabled),
+      locale: ['zh-CN', 'zh-TW', 'en-US'].includes(input.locale) ? input.locale : 'zh-CN',
+      rules: input.rules || mockNotificationSnapshot.rules,
+      resourceVersion: mockRevision(mockNotificationRevision),
+      updatedAt: new Date().toISOString(),
+    }
+    send(response, 200, mockNotificationSnapshot)
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/cluster/share') {
+    send(response, 200, mockClusterShareSettings)
+    return
+  }
+  const publicClusterShareMatch = url.pathname.match(/^\/api\/v1\/public\/cluster-share\/([a-f0-9]{64})$/)
+  if (request.method === 'GET' && publicClusterShareMatch) {
+    send(response, publicClusterShareMatch[1] === visualClusterShareToken ? 200 : 404, publicClusterShareMatch[1] === visualClusterShareToken ? visualClusterPublicSnapshot() : { title: '分享不存在', status: 404, code: 'not_found' })
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/files') {
     const requestedPath = url.searchParams.get('path') || '/'
     const search = (url.searchParams.get('search') || '').trim().toLowerCase()
@@ -1422,47 +1590,7 @@ createServer(async (request, response) => {
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/hosts') {
     send(response, 200, {
-      items: [
-        {
-          id: 'e'.repeat(32),
-          isLocal: true,
-          name: 'kpanel-demo',
-          kind: 'panel',
-          origin: 'https://panel.example.com',
-          transportSecurity: 'tls',
-          remoteNodeId: 'local-node',
-          federationProtocol: 'v1',
-          scope: 'cluster.summary.read',
-          terminalAvailable: true,
-          mutualFileTransferAvailable: false,
-          state: 'online',
-          consecutiveFailures: 0,
-          polling: true,
-          resourceVersion: `sha256:${'f'.repeat(64)}`,
-          createdAt: new Date(Date.now() - 86_400_000).toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'a'.repeat(32),
-          isLocal: false,
-          name: 'edge-melbourne',
-          kind: 'light_node',
-          origin: 'https://edge.example.com',
-          transportSecurity: 'tls',
-          remoteNodeId: 'remote-node',
-          federationProtocol: 'v1',
-          scope: 'cluster.summary.read',
-          terminalAvailable: false,
-          mutualFileTransferAvailable: false,
-          state: 'degraded',
-          consecutiveFailures: 1,
-          lastError: '延迟偏高，保留上次成功快照',
-          polling: true,
-          resourceVersion: `sha256:${'a'.repeat(64)}`,
-          createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
+      items: visualClusterHosts,
       total: 2,
       remoteTotal: 1,
       maxHosts: 16,
