@@ -278,11 +278,17 @@ onBeforeUnmount(() => {
           <dl class="share-details">
             <div class="share-details__traffic">
               <div>
-                <dt><ArrowDown :size="13" /> 累计接收</dt>
+                <dt title="累计接收">
+                  <ArrowDown :size="13" aria-hidden="true" />
+                  <span class="sr-only">累计接收</span>
+                </dt>
                 <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'received') : '—' }}</dd>
               </div>
               <div>
-                <dt><ArrowUp :size="13" /> 累计传送</dt>
+                <dt title="累计传送">
+                  <ArrowUp :size="13" aria-hidden="true" />
+                  <span class="sr-only">累计传送</span>
+                </dt>
                 <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'sent') : '—' }}</dd>
               </div>
             </div>
@@ -509,7 +515,10 @@ onBeforeUnmount(() => {
 
 .share-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
 .share-details div { min-width: 0; }
-.share-details__traffic { display: grid; gap: 8px; }
+.share-details__traffic { display: grid; gap: 4px; }
+/* 累计收发只用箭头标示方向，箭头与数值同行排布，避免这一格比其他格高一倍 */
+.share-details__traffic > div { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.share-details__traffic dt { margin-bottom: 0; }
 .share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
 .share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 
