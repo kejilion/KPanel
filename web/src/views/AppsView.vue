@@ -2134,7 +2134,7 @@ watch(windowActive, syncJobPollingForWindow)
 .app-control-panel__status span,
 .app-control-panel__status small {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .app-control-panel__actions {
@@ -2281,13 +2281,13 @@ watch(windowActive, syncJobPollingForWindow)
 .field-error {
   margin: 7px 0 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .field-warning {
   margin: 7px 0 0;
   color: var(--amber);
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -2295,7 +2295,7 @@ watch(windowActive, syncJobPollingForWindow)
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.5;
 }
@@ -2371,7 +2371,7 @@ watch(windowActive, syncJobPollingForWindow)
 
 .danger-zone small {
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .access-options {

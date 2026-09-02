@@ -1954,7 +1954,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2137,7 +2137,7 @@ onBeforeUnmount(() => {
   color: var(--danger);
   background: var(--danger-soft);
   border-top: 1px solid color-mix(in srgb, var(--danger) 18%, transparent);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .cluster-card__footer {

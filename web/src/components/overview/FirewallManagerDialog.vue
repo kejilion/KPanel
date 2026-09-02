@@ -806,7 +806,7 @@ onBeforeUnmount(() => controller?.abort())
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .firewall-manager__tab:hover,
@@ -911,7 +911,7 @@ onBeforeUnmount(() => controller?.abort())
   border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .firewall-manager__filter-option:hover,
@@ -953,7 +953,7 @@ onBeforeUnmount(() => controller?.abort())
   background: var(--surface-subtle);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .firewall-manager__parsed-rule {
@@ -985,7 +985,7 @@ onBeforeUnmount(() => controller?.abort())
   padding: 5px 9px;
   border-radius: 7px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .firewall-manager__decision.is-allow {
@@ -1265,7 +1265,7 @@ onBeforeUnmount(() => controller?.abort())
   overflow-wrap: anywhere;
   color: var(--text-soft);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .firewall-manager__raw-rules {
