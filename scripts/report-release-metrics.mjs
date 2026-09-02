@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
@@ -174,6 +174,8 @@ const PROCESS_INCIDENT_FIELDS = [
 const PROCESS_INCIDENT_FINGERPRINT = /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*){2}$/;
 const PROCESS_INCIDENT_POSITIONS = new Set(['before-production-write', 'after-production-write']);
 const PROCESS_INCIDENT_PLACEHOLDER = /^(?:<.*>|无|未知|未记录|未验证|不适用|待.*|n\/?a|none|null|unknown|tbd|todo)$/i;
+const PROCESS_INCIDENT_REPEAT_WINDOW = 5;
+const PROCESS_INCIDENT_REPEAT_REQUIRED_FROM = [0, 100, 1];
 
 function acceptanceFields(markdown) {
   const fields = new Map();
@@ -239,6 +241,90 @@ function versionAtLeast(version, minimum) {
     if (version[index] !== minimum[index]) return version[index] > minimum[index];
   }
   return true;
+}
+
+function compareVersionDescending(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (right?.[index] ?? 0) - (left?.[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function releaseTagVersion(tag) {
+  return isStableReleaseTag(tag) ? tag.slice(1).split('.').map(Number) : null;
+}
+
+function incidentFingerprint(incident) {
+  return typeof incident?.fingerprint === 'string' ? incident.fingerprint.trim() : '';
+}
+
+export function detectRepeatedProcessIncidents(records, window = PROCESS_INCIDENT_REPEAT_WINDOW) {
+  const findings = [];
+  for (const [index, record] of records.entries()) {
+    const priorReleases = records.slice(index + 1, index + window);
+    for (const incident of record.incidents ?? []) {
+      const fingerprint = incidentFingerprint(incident);
+      if (!PROCESS_INCIDENT_FINGERPRINT.test(fingerprint)) continue;
+      const repeatedIn = priorReleases
+        .filter((prior) => (prior.incidents ?? []).some((prior_) => incidentFingerprint(prior_) === fingerprint))
+        .map((prior) => prior.tag);
+      if (repeatedIn.length === 0) continue;
+      const declared = new Set(Array.isArray(incident.historicalReleases) ? incident.historicalReleases : []);
+      findings.push({
+        tag: record.tag,
+        version: record.version ?? releaseTagVersion(record.tag),
+        label: record.label ?? record.tag,
+        reported: record.reported ?? true,
+        fingerprint,
+        repeatedIn,
+        undeclared: repeatedIn.filter((tag) => !declared.has(tag)),
+      });
+    }
+  }
+  return findings;
+}
+
+export function validateProcessIncidentHistory(records, window = PROCESS_INCIDENT_REPEAT_WINDOW) {
+  return detectRepeatedProcessIncidents(records, window)
+    .filter((finding) => finding.reported && finding.undeclared.length > 0 &&
+      versionAtLeast(finding.version, PROCESS_INCIDENT_REPEAT_REQUIRED_FROM))
+    .map((finding) => finding.label + ': release-process-incidents fingerprint "' + finding.fingerprint +
+      '" already appeared within the rolling ' + window + ' releases; historicalReleases must declare ' +
+      finding.undeclared.join(', '));
+}
+
+const ACCEPTANCE_FILENAME = /^release-(v\d+\.\d+\.\d+)-acceptance\.md$/i;
+
+export function readAcceptanceHistory(path, window = PROCESS_INCIDENT_REPEAT_WINDOW) {
+  const absolutePath = resolve(path);
+  const directory = dirname(absolutePath);
+  const target = ACCEPTANCE_FILENAME.exec(absolutePath.replaceAll('\\', '/').split('/').pop() ?? '');
+  if (target === null) return [];
+
+  const siblings = readdirSync(directory)
+    .flatMap((name) => {
+      const match = ACCEPTANCE_FILENAME.exec(name);
+      if (match === null) return [];
+      return [{ name, tag: match[1].toLowerCase(), version: releaseTagVersion(match[1].toLowerCase()) }];
+    })
+    .filter((entry) => entry.version !== null)
+    .sort((left, right) => compareVersionDescending(left.version, right.version));
+
+  const targetTag = target[1].toLowerCase();
+  const startIndex = siblings.findIndex((entry) => entry.tag === targetTag);
+  if (startIndex === -1) return [];
+
+  return siblings.slice(startIndex, startIndex + window).map((entry, index) => {
+    const filePath = index === 0 ? absolutePath : resolve(directory, entry.name);
+    return {
+      tag: entry.tag,
+      version: entry.version,
+      label: index === 0 ? path : filePath,
+      reported: index === 0,
+      incidents: extractProcessIncidents(readFileSync(filePath, 'utf8')),
+    };
+  });
 }
 
 function processFields(markdown) {
@@ -647,6 +733,13 @@ export function summarizeReleaseMetrics(releases, options) {
   const postProductionProcessIncidentCount = processIncidentReleases.length === 0 ? null :
     processIncidentReleases.reduce((total, release) =>
       total + release.acceptance.metrics.postProductionProcessIncidentCount, 0);
+  const repeatedProcessIncidents = detectRepeatedProcessIncidents(selected.map((release) => ({
+    tag: release.tag,
+    version: releaseTagVersion(release.tag),
+    label: release.acceptance.path,
+    reported: release.acceptance.exists,
+    incidents: release.acceptance.metrics.processIncidents ?? [],
+  })));
 
   return {
     generatedAt: options.now.toISOString(),
@@ -685,7 +778,11 @@ export function summarizeReleaseMetrics(releases, options) {
         Number((processIncidentReleaseCount / processIncidentReleases.length).toFixed(4)),
       processIncidentCount,
       postProductionProcessIncidentCount,
+      repeatedProcessIncidentCount: repeatedProcessIncidents.length,
+      undeclaredRepeatedProcessIncidentCount: repeatedProcessIncidents
+        .filter((finding) => finding.reported && finding.undeclared.length > 0).length,
     },
+    repeatedProcessIncidents,
     releases: selected,
   };
 }
@@ -773,12 +870,30 @@ export function renderMarkdown(report) {
     '| 已报告流程指标版本中的异常占比 | ' + percentage(report.recent.processIncidentReleaseRate) + ' | ' + report.recent.processIncidentReported + '/' + report.recent.available + ' |',
     '| 已记录发布流程异常/无效证据拦截总数 | ' + metric(report.recent.processIncidentCount) + ' | ' + report.recent.processIncidentReported + '/' + report.recent.available + ' |',
     '| 其中生产写操作开始后异常数 | ' + metric(report.recent.postProductionProcessIncidentCount) + ' | ' + report.recent.processIncidentReported + '/' + report.recent.available + ' |',
+    '| 滚动 5 个版本内重复的流程异常指纹数 | ' + metric(report.recent.repeatedProcessIncidentCount) + ' | ' + report.recent.acceptanceCount + '/' + report.recent.available + ' |',
+    '| 其中未在 historicalReleases 声明的重复数 | ' + metric(report.recent.undeclaredRepeatedProcessIncidentCount) + ' | ' + report.recent.acceptanceCount + '/' + report.recent.available + ' |',
+    '',
+    '## 重复流程异常指纹',
+    '',
+    '| 版本 | 指纹 | 滚动 5 版本内的历史版本 | 未声明历史版本 |',
+    '| --- | --- | --- | --- |',
+  ];
+
+  if ((report.repeatedProcessIncidents ?? []).length === 0) {
+    lines.push('| 无 | 无 | 无 | 无 |');
+  }
+  for (const finding of report.repeatedProcessIncidents ?? []) {
+    lines.push('| ' + finding.tag + ' | ' + finding.fingerprint + ' | ' + finding.repeatedIn.join('、') +
+      ' | ' + (finding.undeclared.length === 0 ? '无' : finding.undeclared.join('、')) + ' |');
+  }
+
+  lines.push(
     '',
     '## 最近版本证据',
     '',
     '| 标签 | 标签时间 | 验收记录 | 提交到生产 | 失败状态 | 流程异常 |',
     '| --- | --- | --- | --- | --- | --- |',
-  ];
+  );
 
   for (const release of report.releases) {
     const leadTime = productionLeadHours(release.acceptance.metrics);
@@ -788,7 +903,7 @@ export function renderMarkdown(report) {
       metric(release.acceptance.metrics.processIncidentCount) + ' |');
   }
 
-  lines.push('', '> 正式发布频率按稳定标签时间统计，生产部署频率只按验收记录中的生产完成时间统计；标签时间不等于生产完成时间。变更失败率只以明确填报“是/否”的验收记录为分母。发布流程异常独立统计，不把基础设施或无效证据问题歪曲为产品失败，也不把缺失数据推断为成功。');
+  lines.push('', '> 正式发布频率按稳定标签时间统计，生产部署频率只按验收记录中的生产完成时间统计；标签时间不等于生产完成时间。变更失败率只以明确填报“是/否”的验收记录为分母。发布流程异常独立统计，不把基础设施或无效证据问题歪曲为产品失败，也不把缺失数据推断为成功。重复指纹只按已存在验收记录比较，缺失记录不推断为无重复；机器不判断根因与永久处置真实性。');
   return lines.join('\n');
 }
 
@@ -815,6 +930,9 @@ export function main(argv) {
     const errors = options.acceptanceFiles.flatMap((path) =>
       validateAcceptanceMetrics(readFileSync(path, 'utf8'), path));
     if (errors.length > 0) throw new Error('\n- ' + errors.join('\n- '));
+    const historyErrors = options.acceptanceFiles.flatMap((path) =>
+      validateProcessIncidentHistory(readAcceptanceHistory(path)));
+    if (historyErrors.length > 0) throw new Error('\n- ' + [...new Set(historyErrors)].join('\n- '));
     process.stdout.write('Release acceptance metrics validation passed (' + options.acceptanceFiles.length + ' file(s)).\n');
     return;
   }
