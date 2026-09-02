@@ -44,14 +44,13 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
-import { formatTotalNetworkTraffic } from '@/lib/networkTraffic'
+import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import {
   clampPercent,
   formatBytes,
   formatDateTime,
   formatDuration,
   formatPercent,
-  formatRate,
   relativeTime,
 } from '@/lib/format'
 import { useToast } from '@/stores/toast'
@@ -1183,8 +1182,8 @@ onBeforeUnmount(() => {
           </div>
           <div>
             <span>网络</span>
-            <strong>总流量 {{ formatTotalNetworkTraffic(host.lastSnapshot.telemetry.network) }}</strong>
-            <small>↓ {{ formatRate(host.lastSnapshot.receiveBytesPerSecond) }} · ↑ {{ formatRate(host.lastSnapshot.transmitBytesPerSecond) }}</small>
+            <strong>↓ {{ phrase('累计接收') }} {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'received') }}</strong>
+            <small>↑ {{ phrase('累计传送') }} {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent') }}</small>
           </div>
           <div>
             <span>运行时间</span>

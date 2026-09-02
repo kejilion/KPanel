@@ -157,6 +157,23 @@ func configureNotificationTestService(t *testing.T, dataDir string, source *noti
 	return service
 }
 
+func TestNormalizeRulesMigratesLegacyCumulativeTraffic(t *testing.T) {
+	legacy := DefaultRules()
+	legacy.TrafficTotalEnabled = true
+	legacy.TrafficTotalThresholdGiB = 7
+
+	normalized := normalizeRules(legacy)
+	if !normalized.TrafficTotalReceivedEnabled || !normalized.TrafficTotalSentEnabled {
+		t.Fatalf("legacy cumulative enablement = received:%v sent:%v", normalized.TrafficTotalReceivedEnabled, normalized.TrafficTotalSentEnabled)
+	}
+	if normalized.TrafficTotalReceivedThresholdGiB != 7 || normalized.TrafficTotalSentThresholdGiB != 7 {
+		t.Fatalf("legacy cumulative thresholds = received:%d sent:%d", normalized.TrafficTotalReceivedThresholdGiB, normalized.TrafficTotalSentThresholdGiB)
+	}
+	if normalized.TrafficTotalEnabled || normalized.TrafficTotalThresholdGiB != 0 {
+		t.Fatalf("legacy cumulative fields were not cleared: %#v", normalized)
+	}
+}
+
 func TestServiceThresholdSustainsRecoversAndPersistsSamples(t *testing.T) {
 	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 10, 0, 0, 0, time.UTC)}
 	source := newNotificationTestHost(clock.Now())
@@ -421,7 +438,7 @@ func TestServiceTrafficRateRequiresFreshSnapshot(t *testing.T) {
 	}
 }
 
-func TestServiceCumulativeTrafficAlertsOncePerCounterCycle(t *testing.T) {
+func TestServiceCumulativeTrafficAlertsEachDirectionOncePerCounterCycle(t *testing.T) {
 	location := time.FixedZone("CST", 8*60*60)
 	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 23, 0, 0, 0, location)}
 	source := newNotificationTestHost(clock.Now())
@@ -436,8 +453,10 @@ func TestServiceCumulativeTrafficAlertsOncePerCounterCycle(t *testing.T) {
 	rules.TrafficEnabled = false
 	rules.HostOfflineEnabled = false
 	rules.SSHLoginEnabled = false
-	rules.TrafficTotalEnabled = true
-	rules.TrafficTotalThresholdGiB = 1
+	rules.TrafficTotalReceivedEnabled = true
+	rules.TrafficTotalReceivedThresholdGiB = 1
+	rules.TrafficTotalSentEnabled = true
+	rules.TrafficTotalSentThresholdGiB = 1
 	configured, err := service.Configure(context.Background(), UpdateInput{
 		Enabled: true, Locale: "en-US", Rules: rules,
 		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
@@ -455,44 +474,63 @@ func TestServiceCumulativeTrafficAlertsOncePerCounterCycle(t *testing.T) {
 	if err := service.evaluate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if telegram.messageCount() != 1 {
-		t.Fatalf("cumulative threshold messages = %d, want 1", telegram.messageCount())
-	}
-	if err := service.evaluate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if telegram.messageCount() != 1 {
-		t.Fatalf("cumulative threshold repeated without reset: %d", telegram.messageCount())
+	if telegram.messageCount() != 0 {
+		t.Fatalf("directional cumulative threshold messages = %d, want 0", telegram.messageCount())
 	}
 
-	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 800 << 20, SentBytes: 600 << 20}
+	telemetry.Network.ReceivedBytes = 1200 << 20
 	source.setTelemetry(telemetry)
 	if err := service.evaluate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if telegram.messageCount() != 1 {
-		t.Fatalf("cumulative threshold repeated while active: %d", telegram.messageCount())
+		t.Fatalf("received cumulative threshold messages = %d, want 1", telegram.messageCount())
 	}
-
-	telemetry.Network = contract.NetworkSummary{}
-	source.setTelemetry(telemetry)
+	if messages := telegram.messagesSnapshot(); !strings.Contains(messages[0], "Cumulative received") || !strings.Contains(messages[0], "1.2 GB") {
+		t.Fatalf("unexpected received cumulative message: %q", messages[0])
+	}
 	if err := service.evaluate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 2 << 30}
+	if telegram.messageCount() != 1 {
+		t.Fatalf("received cumulative threshold repeated without reset: %d", telegram.messageCount())
+	}
+
+	telemetry.Network = contract.NetworkSummary{ReceivedBytes: 1300 << 20, SentBytes: 1200 << 20}
 	source.setTelemetry(telemetry)
 	if err := service.evaluate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if telegram.messageCount() != 2 {
-		t.Fatalf("cumulative threshold did not re-arm after counter reset: %d", telegram.messageCount())
+		t.Fatalf("sent cumulative threshold messages = %d, want 2", telegram.messageCount())
+	}
+	if messages := telegram.messagesSnapshot(); !strings.Contains(messages[1], "Cumulative sent") || !strings.Contains(messages[1], "1.2 GB") {
+		t.Fatalf("unexpected sent cumulative message: %q", messages[1])
+	}
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 2 {
+		t.Fatalf("directional cumulative threshold repeated while active: %d", telegram.messageCount())
 	}
 
-	messages := telegram.messagesSnapshot()
-	if !strings.Contains(messages[0], "Cumulative traffic") ||
-		!strings.Contains(messages[0], "1.2 GB") ||
-		!strings.Contains(messages[0], "UTC+08:00") {
-		t.Fatalf("unexpected localized cumulative message: %q", messages[0])
+	// Reset only the receive counter. The sent rule remains active and must not
+	// emit a duplicate notification.
+	telemetry.Network = contract.NetworkSummary{SentBytes: 1300 << 20}
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	telemetry.Network.ReceivedBytes = 2 << 30
+	source.setTelemetry(telemetry)
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if telegram.messageCount() != 3 {
+		t.Fatalf("received cumulative threshold did not re-arm independently: %d", telegram.messageCount())
+	}
+	if messages := telegram.messagesSnapshot(); !strings.Contains(messages[2], "Cumulative received") || !strings.Contains(messages[2], "2.0 GB") || !strings.Contains(messages[2], "UTC+08:00") {
+		t.Fatalf("unexpected re-armed received cumulative message: %q", messages[2])
 	}
 }
 
@@ -510,8 +548,8 @@ func TestServiceCumulativeTrafficUsesExactCounterRollback(t *testing.T) {
 	rules.TrafficEnabled = false
 	rules.HostOfflineEnabled = false
 	rules.SSHLoginEnabled = false
-	rules.TrafficTotalEnabled = true
-	rules.TrafficTotalThresholdGiB = 1
+	rules.TrafficTotalReceivedEnabled = true
+	rules.TrafficTotalReceivedThresholdGiB = 1
 	if _, err := service.Configure(context.Background(), UpdateInput{
 		Enabled: true, Rules: rules,
 		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
@@ -552,7 +590,7 @@ func TestServiceUsesConfiguredLocaleForResourceAlerts(t *testing.T) {
 	rules.MemoryEnabled = false
 	rules.DiskEnabled = false
 	rules.TrafficEnabled = false
-	rules.TrafficTotalEnabled = false
+	rules.TrafficTotalReceivedEnabled = false
 	rules.HostOfflineEnabled = false
 	rules.SSHLoginEnabled = false
 	if _, err := service.Configure(context.Background(), UpdateInput{

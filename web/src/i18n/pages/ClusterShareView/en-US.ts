@@ -2,7 +2,8 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
   ['全部机器', 'All machines'],
-  ['累计流量', 'Cumulative traffic'],
+  ['累计接收', 'Cumulative received'],
+  ['累计传送', 'Cumulative sent'],
   ['公开页不包含 IP、管理入口或访问凭据', 'This public page excludes IP addresses, management links, and access credentials'],
   ['公开机器卡片列表', 'Public machine card grid'],
   ['公开机器行列表', 'Public machine list'],

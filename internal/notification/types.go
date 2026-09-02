@@ -69,18 +69,26 @@ func (e *ValidationError) Error() string {
 func (e *ValidationError) Unwrap() error { return ErrInvalidSettings }
 
 type Rules struct {
-	CPUEnabled                   bool `json:"cpuEnabled"`
-	CPUThresholdPercent          int  `json:"cpuThresholdPercent"`
-	MemoryEnabled                bool `json:"memoryEnabled"`
-	MemoryThresholdPercent       int  `json:"memoryThresholdPercent"`
-	DiskEnabled                  bool `json:"diskEnabled"`
-	DiskThresholdPercent         int  `json:"diskThresholdPercent"`
-	TrafficEnabled               bool `json:"trafficEnabled"`
-	TrafficThresholdMiBPerSecond int  `json:"trafficThresholdMiBPerSecond"`
-	TrafficTotalEnabled          bool `json:"trafficTotalEnabled"`
-	TrafficTotalThresholdGiB     int  `json:"trafficTotalThresholdGiB"`
-	SSHLoginEnabled              bool `json:"sshLoginEnabled"`
-	HostOfflineEnabled           bool `json:"hostOfflineEnabled"`
+	CPUEnabled                       bool `json:"cpuEnabled"`
+	CPUThresholdPercent              int  `json:"cpuThresholdPercent"`
+	MemoryEnabled                    bool `json:"memoryEnabled"`
+	MemoryThresholdPercent           int  `json:"memoryThresholdPercent"`
+	DiskEnabled                      bool `json:"diskEnabled"`
+	DiskThresholdPercent             int  `json:"diskThresholdPercent"`
+	TrafficEnabled                   bool `json:"trafficEnabled"`
+	TrafficThresholdMiBPerSecond     int  `json:"trafficThresholdMiBPerSecond"`
+	TrafficTotalReceivedEnabled      bool `json:"trafficTotalReceivedEnabled"`
+	TrafficTotalReceivedThresholdGiB int  `json:"trafficTotalReceivedThresholdGiB"`
+	TrafficTotalSentEnabled          bool `json:"trafficTotalSentEnabled"`
+	TrafficTotalSentThresholdGiB     int  `json:"trafficTotalSentThresholdGiB"`
+	SSHLoginEnabled                  bool `json:"sshLoginEnabled"`
+	HostOfflineEnabled               bool `json:"hostOfflineEnabled"`
+
+	// Deprecated aggregate fields are accepted while reading v1 state and old
+	// clients. normalizeRules migrates them to both directional rules and
+	// clears them before the next state/API write.
+	TrafficTotalEnabled      bool `json:"trafficTotalEnabled,omitempty"`
+	TrafficTotalThresholdGiB int  `json:"trafficTotalThresholdGiB,omitempty"`
 }
 
 func DefaultRules() Rules {
@@ -89,7 +97,8 @@ func DefaultRules() Rules {
 		MemoryEnabled: true, MemoryThresholdPercent: DefaultMemoryThresholdPercent,
 		DiskEnabled: true, DiskThresholdPercent: DefaultDiskThresholdPercent,
 		TrafficEnabled: false, TrafficThresholdMiBPerSecond: DefaultTrafficThresholdMiB,
-		TrafficTotalEnabled: false, TrafficTotalThresholdGiB: DefaultTrafficTotalThresholdGiB,
+		TrafficTotalReceivedEnabled: false, TrafficTotalReceivedThresholdGiB: DefaultTrafficTotalThresholdGiB,
+		TrafficTotalSentEnabled: false, TrafficTotalSentThresholdGiB: DefaultTrafficTotalThresholdGiB,
 		SSHLoginEnabled: true, HostOfflineEnabled: true,
 	}
 }
@@ -111,8 +120,11 @@ func (r Rules) Validate() error {
 	if r.TrafficThresholdMiBPerSecond < 1 || r.TrafficThresholdMiBPerSecond > MaxTrafficThresholdMiB {
 		return &ValidationError{Field: "rules.trafficThresholdMiBPerSecond", Message: "阈值超出允许范围"}
 	}
-	if r.TrafficTotalThresholdGiB < 1 || r.TrafficTotalThresholdGiB > MaxTrafficTotalThresholdGiB {
-		return &ValidationError{Field: "rules.trafficTotalThresholdGiB", Message: "累计流量阈值超出允许范围"}
+	if r.TrafficTotalReceivedThresholdGiB < 1 || r.TrafficTotalReceivedThresholdGiB > MaxTrafficTotalThresholdGiB {
+		return &ValidationError{Field: "rules.trafficTotalReceivedThresholdGiB", Message: "累计接收流量阈值超出允许范围"}
+	}
+	if r.TrafficTotalSentThresholdGiB < 1 || r.TrafficTotalSentThresholdGiB > MaxTrafficTotalThresholdGiB {
+		return &ValidationError{Field: "rules.trafficTotalSentThresholdGiB", Message: "累计传送流量阈值超出允许范围"}
 	}
 	return nil
 }
@@ -170,6 +182,20 @@ func normalizeRules(value Rules) Rules {
 	if value.TrafficTotalThresholdGiB == 0 {
 		value.TrafficTotalThresholdGiB = DefaultTrafficTotalThresholdGiB
 	}
+	if value.TrafficTotalReceivedThresholdGiB == 0 && value.TrafficTotalSentThresholdGiB == 0 && value.TrafficTotalThresholdGiB > 0 {
+		value.TrafficTotalReceivedEnabled = value.TrafficTotalEnabled
+		value.TrafficTotalReceivedThresholdGiB = value.TrafficTotalThresholdGiB
+		value.TrafficTotalSentEnabled = value.TrafficTotalEnabled
+		value.TrafficTotalSentThresholdGiB = value.TrafficTotalThresholdGiB
+	}
+	if value.TrafficTotalReceivedThresholdGiB == 0 {
+		value.TrafficTotalReceivedThresholdGiB = DefaultTrafficTotalThresholdGiB
+	}
+	if value.TrafficTotalSentThresholdGiB == 0 {
+		value.TrafficTotalSentThresholdGiB = DefaultTrafficTotalThresholdGiB
+	}
+	value.TrafficTotalEnabled = false
+	value.TrafficTotalThresholdGiB = 0
 	return value
 }
 

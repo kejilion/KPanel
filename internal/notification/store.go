@@ -37,14 +37,16 @@ type telegramState struct {
 }
 
 type alertState struct {
-	Active                bool      `json:"active,omitempty"`
-	Consecutive           int       `json:"consecutive,omitempty"`
-	LastAttemptAt         time.Time `json:"lastAttemptAt,omitempty"`
-	LastNotifiedAt        time.Time `json:"lastNotifiedAt,omitempty"`
-	LastEventID           string    `json:"lastEventId,omitempty"`
-	PendingEventID        string    `json:"pendingEventId,omitempty"`
-	LastValue             float64   `json:"lastValue,omitempty"`
-	LastNetworkTotalBytes uint64    `json:"lastNetworkTotalBytes,omitempty"`
+	Active           bool      `json:"active,omitempty"`
+	Consecutive      int       `json:"consecutive,omitempty"`
+	LastAttemptAt    time.Time `json:"lastAttemptAt,omitempty"`
+	LastNotifiedAt   time.Time `json:"lastNotifiedAt,omitempty"`
+	LastEventID      string    `json:"lastEventId,omitempty"`
+	PendingEventID   string    `json:"pendingEventId,omitempty"`
+	LastValue        float64   `json:"lastValue,omitempty"`
+	LastNetworkBytes uint64    `json:"lastNetworkBytes,omitempty"`
+	// Kept for decoding state written by the aggregate-threshold candidate.
+	LastNetworkTotalBytes uint64 `json:"lastNetworkTotalBytes,omitempty"`
 }
 
 type persistedState struct {

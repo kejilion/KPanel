@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  Activity,
   ArrowDown,
   ArrowUp,
   Clock3,
@@ -23,7 +22,7 @@ import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
-import { formatTotalNetworkTraffic } from '@/lib/networkTraffic'
+import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import {
   clampPercent,
   formatDateTime,
@@ -277,9 +276,15 @@ onBeforeUnmount(() => {
           <div v-else class="share-card__empty">等待第一份状态数据</div>
 
           <dl class="share-details">
-            <div>
-              <dt><Activity :size="13" /> 累计流量</dt>
-              <dd>{{ host.collectedAt ? formatTotalNetworkTraffic(host.network) : '—' }}</dd>
+            <div class="share-details__traffic">
+              <div>
+                <dt><ArrowDown :size="13" /> 累计接收</dt>
+                <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'received') : '—' }}</dd>
+              </div>
+              <div>
+                <dt><ArrowUp :size="13" /> 累计传送</dt>
+                <dd>{{ host.collectedAt ? formatNetworkTrafficCounter(host.network, 'sent') : '—' }}</dd>
+              </div>
             </div>
             <div>
               <dt><ArrowDown :size="13" /> 下行</dt>
@@ -504,6 +509,7 @@ onBeforeUnmount(() => {
 
 .share-details { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
 .share-details div { min-width: 0; }
+.share-details__traffic { display: grid; gap: 8px; }
 .share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
 .share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 

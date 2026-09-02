@@ -111,8 +111,8 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 	if item.ID == cluster.LocalHostID || item.Name != "Showcase node" || item.OS != "Debian GNU/Linux 13" || item.Location.ISP != "Example ISP" {
 		t.Fatalf("unexpected public host %#v", item)
 	}
-	if item.Network.TotalBytes != 777777 {
-		t.Fatalf("public cumulative network bytes = %d, want 777777", item.Network.TotalBytes)
+	if item.Network.ReceivedBytes != 123456 || item.Network.SentBytes != 654321 {
+		t.Fatalf("public cumulative network bytes = received:%d sent:%d, want 123456/654321", item.Network.ReceivedBytes, item.Network.SentBytes)
 	}
 	serialized := publicResponse.Body.String()
 	for _, privateValue := range []string{
@@ -147,7 +147,7 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 		"cpu":      {"cores", "usagePercent"},
 		"memory":   {"totalBytes", "usedBytes", "usagePercent"},
 		"disk":     {"totalBytes", "usedBytes", "usagePercent"},
-		"network":  {"totalBytes", "receiveBytesPerSecond", "transmitBytesPerSecond"},
+		"network":  {"receivedBytes", "sentBytes", "receiveBytesPerSecond", "transmitBytesPerSecond"},
 		"location": {"isp", "country", "countryCode", "region", "city"},
 	} {
 		var nested map[string]json.RawMessage

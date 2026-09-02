@@ -257,6 +257,9 @@ describe('ClusterView compact summary layout', () => {
     expect(source).toContain('class="icon-button icon-button--small"')
     expect(source).toContain('aria-label="刷新集群状态"')
     expect(source.indexOf('aria-label="刷新集群状态"')).toBeLessThan(source.indexOf('@click="openAccess"'))
+    expect(source).toContain("formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'received')")
+    expect(source).toContain("formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent')")
+    expect(source).not.toContain('formatTotalNetworkTraffic')
   })
 
   it('routes native confirmations through core i18n', () => {

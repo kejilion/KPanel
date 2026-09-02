@@ -242,8 +242,10 @@ export interface ClusterNotificationRules {
   diskThresholdPercent: number
   trafficEnabled: boolean
   trafficThresholdMiBPerSecond: number
-  trafficTotalEnabled: boolean
-  trafficTotalThresholdGiB: number
+  trafficTotalReceivedEnabled: boolean
+  trafficTotalReceivedThresholdGiB: number
+  trafficTotalSentEnabled: boolean
+  trafficTotalSentThresholdGiB: number
   sshLoginEnabled: boolean
   hostOfflineEnabled: boolean
 }
@@ -283,7 +285,7 @@ export interface PublicClusterShareHost {
 	cpu: { cores: number; usagePercent: number }
 	memory: { totalBytes: number; usedBytes: number; usagePercent: number }
 	disk: { totalBytes: number; usedBytes: number; usagePercent: number }
-	network: { totalBytes: number; receiveBytesPerSecond: number; transmitBytesPerSecond: number }
+	network: { receivedBytes: number; sentBytes: number; receiveBytesPerSecond: number; transmitBytesPerSecond: number }
 	location: {
 		isp?: string
 		country?: string

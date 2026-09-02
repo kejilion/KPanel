@@ -4,15 +4,14 @@ import { formatBytes } from '@/lib/format'
  * The panel receives the same monotonic byte counters through two API shapes:
  * the host summary uses receivedBytes/sentBytes, while the desktop monitor's
  * normalized snapshot calls them totalReceivedBytes/totalTransmittedBytes.
- * Keep the mapping and receive+send calculation in one place so every view
- * uses the same binary units and rounding.
+ * Keep the mapping and directional formatting in one place so every view uses
+ * the same binary units and rounding without inventing an aggregate metric.
  */
 export interface NetworkTrafficCounters {
   receivedBytes?: number
   sentBytes?: number
   totalReceivedBytes?: number
   totalTransmittedBytes?: number
-  totalBytes?: number
 }
 
 export type NetworkTrafficDirection = 'received' | 'sent'
@@ -33,22 +32,9 @@ export function networkTrafficCounterBytes(
   return finiteCounter(value.sentBytes) ?? finiteCounter(value.totalTransmittedBytes)
 }
 
-export function totalNetworkTrafficBytes(value?: NetworkTrafficCounters): number | undefined {
-  const received = networkTrafficCounterBytes(value, 'received')
-  const sent = networkTrafficCounterBytes(value, 'sent')
-  if (received === undefined && sent === undefined) return finiteCounter(value?.totalBytes)
-
-  const total = (received ?? 0) + (sent ?? 0)
-  return Number.isFinite(total) ? total : undefined
-}
-
 export function formatNetworkTrafficCounter(
   value: NetworkTrafficCounters | undefined,
   direction: NetworkTrafficDirection,
 ): string {
   return formatBytes(networkTrafficCounterBytes(value, direction))
-}
-
-export function formatTotalNetworkTraffic(value?: NetworkTrafficCounters): string {
-  return formatBytes(totalNetworkTrafficBytes(value))
 }
