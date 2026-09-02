@@ -187,7 +187,7 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 <style scoped>
 .tuning-dialog { display: grid; gap: 14px; }
 .tuning-summary { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-subtle); }
-.tuning-summary > span { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.tuning-summary > span { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .tuning-summary .icon-button { margin-left: auto; }
 .tuning-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tuning-toolbar button { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--muted); background: transparent; cursor: pointer; }
@@ -201,7 +201,7 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 .tuning-item.is-failed { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .tuning-item.is-failed .tuning-item__check { color: var(--danger); }
 .tuning-item__check { display: grid; place-items: center; color: var(--brand); }
-.tuning-item__number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--surface-subtle); font-size: 11px; font-weight: 800; }
+.tuning-item__number { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: var(--surface-subtle); font-size: 11px; font-weight: 700; }
 .tuning-item__body { display: grid; gap: 4px; min-width: 0; }
 .tuning-item__body small { color: var(--muted); line-height: 1.35; }
 .tuning-item__risk, .tuning-item__ready { padding: 3px 7px; border-radius: 999px; font-size: 11px; white-space: nowrap; }

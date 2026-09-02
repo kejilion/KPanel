@@ -481,7 +481,7 @@ onBeforeUnmount(() => { controller?.abort(); clearTimer() })
 .disk-inspector > header > div { display: grid; gap: 3px; min-width: 0; }
 .disk-inspector > header span { color: var(--muted); font-size: 12px; }
 .disk-inspector > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.disk-inspector__capacity { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--surface-subtle); color: inherit !important; font-weight: 700; }
+.disk-inspector__capacity { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--surface-subtle); color: inherit !important; font-weight: 600; }
 .disk-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 0; }
 .disk-facts div { display: grid; gap: 2px; padding: 8px 9px; border-radius: 9px; background: var(--surface-subtle); }
 .disk-facts dt { color: var(--muted); font-size: 12px; }

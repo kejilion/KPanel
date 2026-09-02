@@ -467,7 +467,7 @@ onBeforeUnmount(() => controller?.abort())
   border: 1px solid color-mix(in srgb, var(--success) 28%, var(--border));
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -482,7 +482,7 @@ onBeforeUnmount(() => controller?.abort())
 
 .local-web-service-picker__container {
   color: var(--brand-strong);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .local-web-service-picker__empty {

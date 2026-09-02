@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .file-share-manager__stop:hover:not(:disabled) {

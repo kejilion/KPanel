@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
 .process-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .process-summary__card { position: relative; min-width: 0; overflow: hidden; padding: 16px 17px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-soft); }
 .process-summary__card::after { position: absolute; right: -18px; bottom: -24px; width: 78px; height: 78px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 8%, transparent); content: ''; }
-.process-summary__card > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 750; }
+.process-summary__card > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .process-summary__card > strong { display: block; margin-top: 9px; color: var(--text); font-size: 25px; line-height: 1; font-variant-numeric: tabular-nums; }
 .process-summary__card > small { display: block; overflow: hidden; margin-top: 7px; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .process-meter { height: 3px; overflow: hidden; margin-top: 12px; border-radius: 999px; background: var(--line-soft); }
@@ -438,14 +438,14 @@ onBeforeUnmount(() => {
 .process-search input { width: 100%; height: 38px; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; font-size: 13px; }
 .process-toolbar__status { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .process-toolbar__controls { display: flex; min-width: 0; align-items: center; gap: 7px; }
-.process-live { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-weight: 750; }
+.process-live { display: inline-flex; align-items: center; gap: 6px; color: var(--success); font-weight: 700; }
 .process-live i, .process-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
 .process-layout { display: grid; min-height: 420px; grid-template-columns: minmax(0, 1fr); }
 .process-layout--details { grid-template-columns: minmax(0, 1fr) 250px; }
 .process-table-wrap { min-width: 0; overflow: auto; }
 .process-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .process-table th { position: sticky; z-index: 2; top: 0; padding: 0; border-bottom: 1px solid var(--line); background: var(--surface-muted); text-align: left; }
-.process-table th button, .process-table th > span { display: inline-flex; min-height: 38px; align-items: center; gap: 4px; padding: 0 11px; border: 0; color: var(--muted); background: transparent; font: inherit; font-size: 10px; font-weight: 800; letter-spacing: .04em; white-space: nowrap; }
+.process-table th button, .process-table th > span { display: inline-flex; min-height: 38px; align-items: center; gap: 4px; padding: 0 11px; border: 0; color: var(--muted); background: transparent; font: inherit; font-size: 10px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
 .process-table th button { cursor: pointer; }
 .process-table th button:hover { color: var(--text); }
 .process-table td { height: 49px; padding: 6px 11px; border-bottom: 1px solid var(--line-soft); color: var(--muted); white-space: nowrap; }
@@ -461,7 +461,7 @@ onBeforeUnmount(() => {
 .process-table tbody tr:hover .process-table__metric,
 .process-table tbody tr:focus-visible .process-table__metric,
 .process-table tbody tr.is-selected .process-table__metric { background-color: color-mix(in srgb, var(--brand) 6%, color-mix(in srgb, var(--brand) var(--process-metric-strength), var(--surface))); }
-.process-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.process-state { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .process-state--running { color: var(--success); }
 .process-state--danger { color: var(--danger); }
 .process-state--warning { color: var(--warning); }
@@ -474,7 +474,7 @@ onBeforeUnmount(() => {
 .process-details dl { display: grid; gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
 .process-details dl div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; background: var(--surface); }
 .process-details dt { color: var(--muted); font-size: 10px; }
-.process-details dd { overflow: hidden; margin: 0; color: var(--text); font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.process-details dd { overflow: hidden; margin: 0; color: var(--text); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .process-details__actions { display: grid; gap: 8px; }
 .process-details > p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .process-confirm { display: flex; align-items: flex-start; gap: 12px; }

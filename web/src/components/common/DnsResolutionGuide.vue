@@ -191,7 +191,7 @@ async function copy(value: string): Promise<void> {
 
 .dns-guide nav a {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .dns-guide nav svg,

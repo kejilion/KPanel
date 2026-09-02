@@ -197,11 +197,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   background: var(--desktop-glass);
   border: 1px solid var(--desktop-glass-border);
   border-radius: var(--radius-lg);
-  box-shadow:
-    0 12px 34px var(--desktop-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 18%);
-  backdrop-filter: blur(18px) saturate(135%);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
 
 .desktop__identity,
@@ -234,8 +232,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop__identity strong {
   font-size: 12px;
-  font-weight: 820;
-  letter-spacing: -.01em;
+  font-weight: 700;
 }
 
 .desktop__identity small {
@@ -266,7 +263,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--text-soft);
   background: rgb(255 255 255 / 9%);
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -309,7 +306,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop-clock__time {
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
@@ -333,7 +330,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-clock__server-time {
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -422,7 +419,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow: hidden;
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -465,16 +462,10 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-service-status {
   min-width: 0;
   color: var(--desktop-label);
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 12%), transparent 62%),
-    var(--desktop-glass);
-  border: 1px solid var(--desktop-glass-border);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow:
-    0 18px 44px var(--desktop-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 18%);
-  backdrop-filter: blur(22px) saturate(145%);
-  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  box-shadow: var(--shadow-md);
 }
 
 .desktop-clock {
@@ -492,7 +483,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   justify-content: space-between;
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -533,9 +524,9 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-clock__time {
   min-width: 0;
   font-size: clamp(40px, 3.7vw, 52px);
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -.055em;
+
   line-height: .95;
 }
 
@@ -546,7 +537,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   align-content: center;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 620;
+  font-weight: 500;
   line-height: 1.25;
   text-align: right;
 }
@@ -579,7 +570,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   place-items: center;
   color: color-mix(in srgb, var(--brand) 78%, var(--desktop-label));
   background: color-mix(in srgb, var(--brand) 13%, transparent);
-  border-radius: 9px;
+  border-radius: var(--radius);
 }
 
 .desktop-clock__server-copy {
@@ -606,7 +597,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 6px;
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 620;
+  font-weight: 500;
 }
 
 .desktop-clock__server-location-main {
@@ -628,7 +619,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -641,7 +632,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   flex: 0 0 auto;
   color: var(--desktop-label);
   font-size: 13px;
-  font-weight: 720;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -649,7 +640,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow: hidden;
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 680;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -762,13 +753,13 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-service-status__hero-copy strong {
   color: var(--text-soft);
   font-size: 14px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .desktop-service-status__hero-copy small {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.35;
 }
 
@@ -834,7 +825,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   place-items: center;
   color: var(--success);
   background: var(--success-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .desktop-service-status__metric-icon--brand {
@@ -882,7 +873,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-service-status__metric-label {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.35;
 }
 
@@ -898,7 +889,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--text-soft);
   font-size: 15px;
   font-variant-numeric: tabular-nums;
-  font-weight: 760;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -908,7 +899,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--muted);
   border-left: 1px solid color-mix(in srgb, var(--desktop-label) 16%, transparent);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.35;
 }
 
@@ -999,20 +990,20 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-monitor__host-block strong {
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 740;
+  font-weight: 600;
 }
 
 .desktop-monitor__host-block small {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 500;
 }
 
 .desktop-monitor__host-block .os-identity__mark {
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 
 .desktop-monitor__host-block .os-identity__mark svg {
@@ -1038,7 +1029,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 6px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 630;
+  font-weight: 500;
 }
 
 .desktop__taskbar-agent-status > i {
@@ -1064,7 +1055,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__taskbar-agent > small {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 610;
+  font-weight: 500;
 }
 
 .desktop__taskbar-agent-update {
@@ -1076,11 +1067,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: #8a4b00;
   background: rgb(196 122 22 / 13%);
   border: 1px solid rgb(138 75 0 / 24%);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .desktop__taskbar-agent-update:hover,
@@ -1145,7 +1136,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-monitor__row dd {
   max-width: 100%;
   font-size: 12px;
-  font-weight: 710;
+  font-weight: 600;
 }
 
 .desktop-monitor__network {
@@ -1273,11 +1264,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 10px;
   padding: 13px;
   color: var(--desktop-label);
-  background: color-mix(in srgb, var(--surface, #10231f) 92%, transparent);
+  background: var(--surface-raised);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border, #36514a));
   border-radius: var(--radius-lg);
-  box-shadow: 0 18px 48px var(--desktop-shadow), inset 0 1px rgb(255 255 255 / 6%);
-  backdrop-filter: blur(18px) saturate(1.1);
+  box-shadow: var(--shadow-md);
   animation: desktop-transfer-in 240ms cubic-bezier(.2, .9, .2, 1) both;
 }
 
@@ -1443,7 +1433,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 6px;
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .desktop__upload-location-form input {
@@ -1521,7 +1511,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   z-index: 11;
   background: color-mix(in srgb, var(--brand) 28%, transparent);
   border: 2px solid color-mix(in srgb, var(--brand) 86%, white 14%);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow:
     0 0 0 1px var(--desktop-shadow),
     inset 0 0 0 1px rgb(255 255 255 / 20%),
@@ -1562,15 +1552,13 @@ body.desktop-mode-open::-webkit-scrollbar {
   justify-content: center;
   padding: 4px 10px;
   color: var(--text-soft);
-  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--desktop-label) 12%, transparent);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 1.35;
   pointer-events: none;
   text-align: center;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .desktop__icon-slot {
@@ -1710,7 +1698,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--text-soft);
   background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--desktop-label) 14%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
   opacity: 0;
   pointer-events: none;
@@ -1755,13 +1743,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 5px;
   padding: 5px 6px 5px 12px;
   color: var(--desktop-label);
-  background: var(--desktop-glass-strong);
-  border: 1px solid var(--desktop-glass-border);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 14px 34px var(--desktop-shadow);
+  box-shadow: var(--shadow-md);
   transform: translateX(-50%);
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
 
 .desktop__selection-actions strong {
@@ -1781,7 +1767,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1866,7 +1852,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow: hidden;
   color: #fff;
   border: 1px solid rgb(126 121 143 / 62%);
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
   box-shadow:
     0 8px 18px rgb(1 11 14 / 18%),
     inset 0 1px 0 rgb(255 255 255 / 28%),
@@ -1897,7 +1883,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 100%;
   object-fit: cover;
   background: #f7f9f8;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .desktop__icon-img--native {
@@ -1936,7 +1922,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   inset: 2px 6px;
   background: linear-gradient(150deg, #fff 0%, #f5f7fa 72%, #dce4ec 100%);
   border: 1px solid rgb(255 255 255 / 78%);
-  border-radius: 9px;
+  border-radius: var(--radius);
   box-shadow: inset 0 1px 0 #fff, inset 0 -2px 5px rgb(51 65 85 / 12%);
   clip-path: polygon(0 0, 70% 0, 100% 30%, 100% 100%, 0 100%);
 }
@@ -1947,7 +1933,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   width: 12px;
   height: 12px;
   background: linear-gradient(135deg, #dbeafe, #fff);
-  border-radius: 0 7px 0 4px;
+  border-radius: 0 var(--radius-sm) 0 4px;
   box-shadow: -1px 1px 2px rgb(51 65 85 / 14%);
 }
 
@@ -1962,7 +1948,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .desktop__icon-glyph--dynamic {
@@ -1988,14 +1974,14 @@ body.desktop-mode-open::-webkit-scrollbar {
     radial-gradient(circle at 30% 22%, rgb(255 255 255 / 96%), transparent 34%),
     linear-gradient(145deg, #fff 0%, #eef2f7 66%, #d6dee8 100%);
   border: 1px solid rgb(255 255 255 / 76%);
-  border-radius: 13px;
+  border-radius: var(--radius);
   box-shadow:
     0 5px 10px rgb(15 23 42 / 25%),
     inset 0 1px 0 #fff,
     inset 0 -2px 5px rgb(51 65 85 / 10%);
   font-size: 21px;
-  font-weight: 850;
-  letter-spacing: -.04em;
+  font-weight: 700;
+
   line-height: 1;
   text-shadow: 0 1px 0 #fff;
   text-transform: uppercase;
@@ -2020,11 +2006,11 @@ body.desktop-mode-open::-webkit-scrollbar {
     radial-gradient(circle at 30% 22%, rgb(255 255 255 / 96%), transparent 34%),
     linear-gradient(145deg, #fff 0%, #eef2f7 66%, #d6dee8 100%);
   border: 1px solid rgb(255 255 255 / 76%);
-  border-radius: 13px;
+  border-radius: var(--radius);
   box-shadow: 0 5px 10px rgb(15 23 42 / 25%), inset 0 1px 0 #fff;
   font-size: 23px;
-  font-weight: 850;
-  letter-spacing: -.04em;
+  font-weight: 700;
+
   line-height: 1;
   text-shadow: 0 1px 0 #fff;
   text-transform: uppercase;
@@ -2039,11 +2025,11 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--desktop-label);
   background: rgb(3 13 16 / 68%);
   border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 1px 3px rgb(0 0 0 / 14%);
   font-size: 12px;
-  font-weight: 680;
-  letter-spacing: -.005em;
+  font-weight: 600;
+
   line-height: 18px;
   text-align: center;
   text-overflow: ellipsis;
@@ -2103,12 +2089,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow: hidden;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 82%, #fff 8%);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  box-shadow:
-    0 30px 76px var(--desktop-shadow),
-    0 8px 24px color-mix(in srgb, var(--desktop-shadow) 62%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 6%);
+  box-shadow: var(--shadow-md);
   opacity: 0;
   transform: translateY(12px) scale(.965);
   transform-origin: center 62%;
@@ -2162,11 +2145,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   position: absolute;
   z-index: 90;
   background: color-mix(in srgb, var(--brand) 18%, var(--desktop-glass));
-  border: 1px solid color-mix(in srgb, var(--brand) 58%, rgb(255 255 255 / 42%));
+  border: 1px solid color-mix(in srgb, var(--brand) 58%, transparent);
   border-radius: var(--radius);
-  box-shadow:
-    0 20px 54px rgb(0 0 0 / 18%),
-    inset 0 1px 0 rgb(255 255 255 / 28%);
+  box-shadow: var(--shadow-md);
   opacity: .92;
   pointer-events: none;
   animation: desktop-snap-preview-in .14s cubic-bezier(.22, 1, .36, 1) both;
@@ -2245,8 +2226,8 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-window__action--close:hover {
-  color: #fff;
-  background: #c42b1c;
+  color: var(--on-danger);
+  background: var(--danger-action);
 }
 
 .desktop-window__action:focus-visible {
@@ -2264,8 +2245,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 7px;
   justify-self: stretch;
   font-size: 12px;
-  font-weight: 680;
-  letter-spacing: -.005em;
+  font-weight: 600;
 }
 
 .desktop-window__title-label {
@@ -2282,7 +2262,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   place-items: center;
   color: #fff;
   border: 1px solid rgb(255 255 255 / 13%);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 20%);
 }
 
@@ -2291,7 +2271,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   height: 24px;
   overflow: hidden;
   background: color-mix(in srgb, var(--surface-raised) 90%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .desktop-window__app-glyph--image img {
@@ -2552,11 +2532,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   background: var(--desktop-glass-strong);
   border: 1px solid var(--desktop-glass-border);
   border-radius: var(--radius);
-  box-shadow:
-    0 18px 44px var(--desktop-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 16%);
-  backdrop-filter: blur(20px) saturate(145%);
-  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
 
 .desktop__taskbar-brand,
@@ -2572,7 +2550,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 8px;
   padding: 0 7px;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .desktop__taskbar-brand > :first-child {
@@ -2583,7 +2561,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__taskbar-brand .brand__mark {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 
 .desktop__taskbar-apps {
@@ -2609,7 +2587,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--desktop-label);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--radius);
   cursor: default;
   transition: width .18s ease, background-color .16s ease, border-color .16s ease, transform .16s ease;
 }
@@ -2679,7 +2657,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: #f6fbfa;
   background: rgb(5 14 17 / 88%);
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 6px 18px rgb(0 0 0 / 26%);
   font-size: 12px;
   opacity: 0;
@@ -2722,12 +2700,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   overscroll-behavior: contain;
   padding: 6px;
   color: var(--text);
-  background: var(--desktop-glass-strong);
-  border: 1px solid var(--desktop-glass-border);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 20px 52px var(--desktop-shadow);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: var(--shadow-md);
 }
 
 .desktop__context-menu button {
@@ -2772,7 +2748,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--border);
-  border-radius: 13px;
+  border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -2797,7 +2773,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   aspect-ratio: 16 / 9;
   background-position: center;
   background-size: cover;
-  border-radius: 9px;
+  border-radius: var(--radius);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
 }
 
@@ -2918,7 +2894,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   overflow-wrap: anywhere;
   color: var(--text);
   font-size: 15px;
-  font-weight: 750;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -2936,7 +2912,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   gap: 7px;
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .desktop__rename-form input {
@@ -2985,14 +2961,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 0 2px;
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: .01em;
 }
 
 .desktop-shortcut-form__field-heading small {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
   letter-spacing: 0;
 }
 
@@ -3006,7 +2982,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--muted);
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
   transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease, color .16s ease;
 }
@@ -3087,7 +3063,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 12px;
   background: color-mix(in srgb, var(--brand-soft) 22%, var(--surface-subtle));
   border: 1px solid color-mix(in srgb, var(--brand) 13%, var(--border));
-  border-radius: 15px;
+  border-radius: var(--radius-lg);
 }
 
 .desktop-shortcut-form__preview,
@@ -3098,7 +3074,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--brand-strong);
   background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 17px;
+  border-radius: var(--radius-lg);
 }
 
 .desktop-shortcut-form__preview {
@@ -3166,7 +3142,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 9px 11px;
   color: var(--danger, #ef7a7a);
   background: color-mix(in srgb, var(--danger, #ef7a7a) 9%, transparent);
-  border-radius: 9px;
+  border-radius: var(--radius);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -3183,7 +3159,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 14px;
   background: color-mix(in srgb, var(--surface-subtle) 78%, transparent);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .desktop-icon-manager__section--widgets {
@@ -3230,7 +3206,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--brand-strong);
   background: color-mix(in srgb, var(--brand-soft) 72%, var(--surface-raised));
   border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
-  border-radius: 12px;
+  border-radius: var(--radius);
 }
 
 .desktop-icon-manager__section-header strong {
@@ -3271,7 +3247,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 12px;
   background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
-  border-radius: 13px;
+  border-radius: var(--radius);
   transition: border-color .16s ease, opacity .16s ease, background-color .16s ease;
 }
 
@@ -3393,7 +3369,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   padding: 7px 8px;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius);
 }
 
 .desktop-icon-manager__glyph {
@@ -3405,9 +3381,9 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: #0f766e;
   background: #f7f9f8;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .desktop-icon-manager__glyph img {
@@ -3449,7 +3425,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--muted);
   background: var(--surface-subtle);
   border: 1px dashed var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius);
   font-size: 12px;
   text-align: center;
 }
@@ -3465,7 +3441,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   text-align: left;
   background: color-mix(in srgb, var(--brand-soft) 28%, var(--surface-subtle));
   border: 1px solid color-mix(in srgb, var(--brand) 16%, var(--border));
-  border-radius: 12px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
 }
@@ -3488,7 +3464,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   place-items: center;
   color: var(--brand-strong);
   background: color-mix(in srgb, var(--brand-soft) 72%, var(--surface-raised));
-  border-radius: 11px;
+  border-radius: var(--radius);
 }
 
 .desktop-icon-manager__layout-action > span:last-child {
@@ -4087,7 +4063,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   .desktop-shortcut-form__preview {
     width: 56px;
     height: 56px;
-    border-radius: 14px;
+    border-radius: var(--radius);
   }
 
   .desktop-shortcut-form__control :is(input, textarea) {
@@ -4110,7 +4086,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   .desktop__icon-glyph {
     width: 52px;
     height: 52px;
-    border-radius: 15px;
+    border-radius: var(--radius-lg);
   }
 
   .desktop-window {
@@ -4169,7 +4145,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     height: auto !important;
     min-width: 0 !important;
     min-height: 0 !important;
-    border-radius: 14px;
+    border-radius: var(--radius);
   }
 
   .desktop-window__titlebar {
@@ -4216,7 +4192,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     height: calc(100dvh - 76px) !important;
     min-width: 0;
     min-height: 0;
-    border-radius: 14px;
+    border-radius: var(--radius);
   }
 
   .desktop-window__titlebar {
@@ -4231,7 +4207,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     height: 54px;
     gap: 4px;
     padding: 4px;
-    border-radius: 13px;
+    border-radius: var(--radius);
   }
 
   .desktop__taskbar-brand {
@@ -4286,6 +4262,92 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop-mode-open .ai-settings-backdrop {
   z-index: 3000;
+}
+
+/* Landscape short viewport ----------------------------------------------
+   Held sideways, a phone gives the desktop shell ~390px of height. The
+   menubar and taskbar together would eat a quarter of it, so both shrink
+   and the window work area is re-cut against the smaller taskbar reserve.
+   Placed after the coarse-pointer and 420px blocks so it wins on short
+   landscape viewports; touch targets stay at 40px or above. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .desktop__menubar {
+    top: 6px;
+    right: 8px;
+    left: 8px;
+    height: 38px;
+    gap: 10px;
+    padding: 0 6px 0 10px;
+    border-radius: var(--radius);
+  }
+
+  .desktop__taskbar {
+    right: 6px;
+    bottom: 6px;
+    left: 6px;
+    height: 44px;
+    gap: 6px;
+    padding: 3px 5px;
+    border-radius: var(--radius);
+  }
+
+  .desktop__taskbar-item,
+  .desktop__tray-button,
+  .desktop__classic-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* The bar is wide enough to keep these labels, but not tall enough: they
+     would wrap to one character per line inside a 40px control. */
+  .desktop__classic-button span,
+  .desktop-clock__date {
+    display: none;
+  }
+
+  .desktop__classic-button {
+    padding: 0;
+  }
+
+  .desktop__taskbar-glyph {
+    width: 30px;
+    height: 30px;
+  }
+
+  .desktop__icons {
+    inset:
+      max(8px, env(safe-area-inset-top))
+      max(6px, env(safe-area-inset-right))
+      calc(52px + max(6px, env(safe-area-inset-bottom)))
+      max(6px, env(safe-area-inset-left));
+  }
+
+  .desktop-window,
+  .desktop-window.desktop-window--maximized {
+    top: max(8px, env(safe-area-inset-top)) !important;
+    right: max(6px, env(safe-area-inset-right)) !important;
+    bottom: calc(52px + max(6px, env(safe-area-inset-bottom))) !important;
+    left: max(6px, env(safe-area-inset-left)) !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    border-radius: var(--radius);
+  }
+
+  .desktop-window__titlebar {
+    min-height: 38px;
+    height: 38px;
+    padding: 0 6px 0 10px;
+  }
+
+  .desktop__selection-actions {
+    bottom: calc(58px + max(6px, env(safe-area-inset-bottom)));
+  }
+
+  .desktop__context-menu {
+    max-height: var(--context-menu-max-height, calc(100dvh - 12px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
