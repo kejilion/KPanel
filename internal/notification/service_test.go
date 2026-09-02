@@ -109,6 +109,24 @@ func newNotificationTestHost(now time.Time) *notificationHostSource {
 	}}
 }
 
+func TestServiceUsesConfiguredTimezoneSource(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 15, 0, 0, 0, time.UTC)}
+	source := newNotificationTestHost(clock.Now())
+	location := time.FixedZone("CST", 8*60*60)
+	service, err := NewService(Config{
+		DataDir: t.TempDir(), Hosts: source, Now: clock.Now,
+		Timezone: func(context.Context) *time.Location { return location },
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	defer service.Close()
+
+	if got := service.Snapshot().Timezone; got != "UTC+08:00" {
+		t.Fatalf("notification timezone = %q, want UTC+08:00", got)
+	}
+}
+
 func configureNotificationTestService(t *testing.T, dataDir string, source *notificationHostSource, telegram *notificationTestTelegram, clock *notificationTestClock) *Service {
 	t.Helper()
 	service, err := NewService(Config{

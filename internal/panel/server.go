@@ -146,8 +146,9 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize remote download jobs: %w", err)
 	}
+	timezoneSource := newNotificationTimezoneSource(agent)
 	notifications, err := notification.NewService(notification.Config{
-		DataDir: config.DataDir, Hosts: clusterService,
+		DataDir: config.DataDir, Hosts: clusterService, Timezone: timezoneSource.Location,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize notifications: %w", err)
