@@ -1,18 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import {
   classifyChangeFailure,
+  detectRepeatedProcessIncidents,
   durationHours,
   extractAcceptanceMetrics as extractAcceptanceMetricsRaw,
   gitEnvironment,
   isStableReleaseTag,
   parseArguments,
   productionLeadHours,
+  readAcceptanceHistory,
   renderMarkdown,
   summarizeReleaseMetrics,
   validateAcceptanceMetrics as validateAcceptanceMetricsRaw,
+  validateProcessIncidentHistory,
 } from '../report-release-metrics.mjs';
 
 const ACCEPTANCE_BLOCK_START = '<!-- kpanel-release-metrics:start -->';
@@ -71,6 +76,44 @@ function release(tag, createdAt, acceptance = {}) {
       },
     },
   };
+}
+
+function incidentRecord(tag, fingerprints, options = {}) {
+  return {
+    tag,
+    label: options.label ?? tag,
+    reported: options.reported ?? true,
+    incidents: fingerprints.map((entry) => ({
+      fingerprint: typeof entry === 'string' ? entry : entry.fingerprint,
+      position: 'before-production-write',
+      count: 1,
+      impact: 'release entry retried',
+      recoveryEvidence: 'gate log shows the retry succeeded',
+      permanentAction: 'preflight added to the single repository entry',
+      historicalReleases: typeof entry === 'string' ? [] : entry.historicalReleases,
+    })),
+  };
+}
+
+function acceptanceDocument(tag, incidents) {
+  return [
+    '# KPanel ' + tag + ' 发布验收记录',
+    ACCEPTANCE_BLOCK_START,
+    '- 首个纳入提交时间：未记录',
+    '- 候选冻结时间：未记录',
+    '- 生产完成时间：未记录',
+    '- 提交到生产用时：未记录',
+    '- 是否回滚、紧急热修复或重复发布：否',
+    '- 若发生失败，发现时间、恢复时间和逃逸门禁：不适用',
+    ACCEPTANCE_BLOCK_END,
+    PROCESS_BLOCK_START,
+    '- 已记录发布流程异常或无效证据拦截次数：' + incidents.length,
+    '- 其中生产写操作开始后异常次数：0',
+    PROCESS_BLOCK_END,
+    PROCESS_INCIDENTS_BLOCK_START,
+    JSON.stringify(incidents, null, 2),
+    PROCESS_INCIDENTS_BLOCK_END,
+  ].join('\n');
 }
 
 test('extractAcceptanceMetrics keeps absent production evidence unreported', () => {
@@ -310,6 +353,124 @@ test('process incident details are closed, count-consistent, and required from v
   assert.match(validateAcceptanceMetricsRaw(placeholderEvidence).join('\n'), /must contain explicit evidence/);
   const malformedJson = valid.replace('"count": 2', '"count":');
   assert.match(validateAcceptanceMetricsRaw(malformedJson).join('\n'), /must contain valid JSON/);
+});
+
+test('repeated process incident fingerprints are detected across the rolling five releases', () => {
+  const records = [
+    incidentRecord('v0.98.1', ['release-operator/oci-inspect/remote-quoting']),
+    incidentRecord('v0.98.0', ['release-operator/oci-inspect/remote-quoting']),
+  ];
+  const findings = detectRepeatedProcessIncidents(records);
+  assert.equal(findings.length, 1);
+  assert.deepEqual(findings[0].repeatedIn, ['v0.98.0']);
+  assert.deepEqual(findings[0].undeclared, ['v0.98.0']);
+  assert.deepEqual(validateProcessIncidentHistory(records), [],
+    'records before v0.100.1 keep their frozen evidence and are not rewritten retroactively');
+
+  const current = [
+    incidentRecord('v0.100.1', ['release-operator/oci-inspect/remote-quoting']),
+    incidentRecord('v0.100.0', ['release-operator/oci-inspect/remote-quoting']),
+  ];
+  assert.match(validateProcessIncidentHistory(current).join('\n'), /historicalReleases must declare v0\.100\.0/);
+
+  const declared = [
+    incidentRecord('v0.100.1', [{
+      fingerprint: 'release-operator/oci-inspect/remote-quoting',
+      historicalReleases: ['v0.100.0'],
+    }]),
+    incidentRecord('v0.100.0', ['release-operator/oci-inspect/remote-quoting']),
+  ];
+  assert.equal(detectRepeatedProcessIncidents(declared)[0].undeclared.length, 0);
+  assert.deepEqual(validateProcessIncidentHistory(declared), []);
+
+  const outsideWindow = [
+    incidentRecord('v0.100.5', ['release-operator/oci-inspect/remote-quoting']),
+    incidentRecord('v0.100.4', []),
+    incidentRecord('v0.100.3', []),
+    incidentRecord('v0.100.2', []),
+    incidentRecord('v0.100.1', []),
+    incidentRecord('v0.100.0', ['release-operator/oci-inspect/remote-quoting']),
+  ];
+  assert.deepEqual(detectRepeatedProcessIncidents(outsideWindow), []);
+  assert.deepEqual(validateProcessIncidentHistory(outsideWindow), []);
+
+  const unreported = [
+    incidentRecord('v0.100.1', ['release-operator/oci-inspect/remote-quoting'], { reported: false }),
+    incidentRecord('v0.100.0', ['release-operator/oci-inspect/remote-quoting']),
+  ];
+  assert.equal(detectRepeatedProcessIncidents(unreported).length, 1);
+  assert.deepEqual(validateProcessIncidentHistory(unreported), [],
+    'only the record under validation is blocked; siblings are compared as evidence only');
+
+  const malformed = [
+    incidentRecord('v0.100.1', ['Release Operator / OCI Inspect']),
+    incidentRecord('v0.100.0', ['Release Operator / OCI Inspect']),
+  ];
+  assert.deepEqual(detectRepeatedProcessIncidents(malformed), [],
+    'structure errors are reported by the existing field validation, not by repeat detection');
+});
+
+test('readAcceptanceHistory compares only existing sibling records and blocks undeclared repeats', () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'kpanel-acceptance-history-'));
+  const write = (tag, incidents) =>
+    writeFileSync(resolve(directory, 'release-' + tag + '-acceptance.md'), acceptanceDocument(tag, incidents));
+  const incident = (historicalReleases) => ({
+    fingerprint: 'release-operator/oci-inspect/remote-quoting',
+    position: 'before-production-write',
+    count: 1,
+    impact: 'remote OCI inspect returned an unusable payload',
+    recoveryEvidence: 'run log shows the fixed entry returned the digest',
+    permanentAction: 'quoting fixed in the single repository release script plus regression',
+    historicalReleases,
+  });
+
+  write('v0.100.0', [incident([])]);
+  write('v0.100.1', [incident([])]);
+  const undeclared = resolve(directory, 'release-v0.100.1-acceptance.md');
+  const history = readAcceptanceHistory(undeclared);
+  assert.deepEqual(history.map((record) => record.tag), ['v0.100.1', 'v0.100.0']);
+  assert.deepEqual(history.map((record) => record.reported), [true, false]);
+  assert.match(validateProcessIncidentHistory(history).join('\n'), /must declare v0\.100\.0/);
+
+  write('v0.100.1', [incident(['v0.100.0'])]);
+  assert.deepEqual(validateProcessIncidentHistory(readAcceptanceHistory(undeclared)), []);
+
+  assert.deepEqual(readAcceptanceHistory(resolve(directory, 'release-acceptance-template.md')), []);
+  assert.deepEqual(readAcceptanceHistory(resolve(directory, 'release-v0.100.9-acceptance.md')), []);
+});
+
+test('rolling report surfaces repeated fingerprints without inferring missing records', () => {
+  const repeated = (historicalReleases) => ({
+    fingerprint: 'release-operator/oci-inspect/remote-quoting',
+    position: 'before-production-write',
+    count: 1,
+    impact: 'remote OCI inspect returned an unusable payload',
+    recoveryEvidence: 'run log shows the fixed entry returned the digest',
+    permanentAction: 'quoting fixed in the single repository release script plus regression',
+    historicalReleases,
+  });
+  const report = summarizeReleaseMetrics([
+    release('v0.100.1', '2026-09-03T12:00:00Z', {
+      metrics: { processIncidentCount: 1, postProductionProcessIncidentCount: 0, processIncidents: [repeated([])] },
+    }),
+    release('v0.100.0', '2026-09-02T12:00:00Z', {
+      metrics: { processIncidentCount: 1, postProductionProcessIncidentCount: 0, processIncidents: [repeated([])] },
+    }),
+  ], { days: 14, releases: 20, now: new Date('2026-09-04T00:00:00Z') });
+
+  assert.equal(report.recent.repeatedProcessIncidentCount, 1);
+  assert.equal(report.recent.undeclaredRepeatedProcessIncidentCount, 1);
+  assert.deepEqual(report.repeatedProcessIncidents[0].repeatedIn, ['v0.100.0']);
+  const output = renderMarkdown(report);
+  assert.match(output, /滚动 5 个版本内重复的流程异常指纹数 \| 1/);
+  assert.match(output, /release-operator\/oci-inspect\/remote-quoting/);
+  assert.match(output, /缺失记录不推断为无重复/);
+
+  const missing = summarizeReleaseMetrics([
+    release('v0.100.1', '2026-09-03T12:00:00Z', { exists: false }),
+  ], { days: 14, releases: 20, now: new Date('2026-09-04T00:00:00Z') });
+  assert.equal(missing.recent.repeatedProcessIncidentCount, 0);
+  assert.match(renderMarkdown(missing), /\| 无 \| 无 \| 无 \| 无 \|/);
 });
 
 test('argument parser rejects invalid windows', () => {
