@@ -19,14 +19,24 @@ import (
 )
 
 const (
-	defaultEvaluationInterval    = 30 * time.Second
-	alertRetryInterval           = 5 * time.Minute
-	alertRepeatInterval          = 6 * time.Hour
-	maxMessagesPerEvaluation     = 8
-	telegramSendTimeout          = 6 * time.Second
-	cumulativeTrafficAlertSuffix = ":traffic-total"
-	bytesPerGigabyte             = uint64(1024 * 1024 * 1024)
+	defaultEvaluationInterval            = 30 * time.Second
+	alertRetryInterval                   = 5 * time.Minute
+	alertRepeatInterval                  = 6 * time.Hour
+	maxMessagesPerEvaluation             = 8
+	telegramSendTimeout                  = 6 * time.Second
+	cumulativeTrafficReceivedRuleKey     = "traffic-total-received"
+	cumulativeTrafficSentRuleKey         = "traffic-total-sent"
+	cumulativeTrafficReceivedAlertSuffix = ":" + cumulativeTrafficReceivedRuleKey
+	cumulativeTrafficSentAlertSuffix     = ":" + cumulativeTrafficSentRuleKey
+	legacyCumulativeTrafficAlertSuffix   = ":traffic-total"
+	bytesPerGigabyte                     = uint64(1024 * 1024 * 1024)
 )
+
+var cumulativeTrafficAlertSuffixes = []string{
+	cumulativeTrafficReceivedAlertSuffix,
+	cumulativeTrafficSentAlertSuffix,
+	legacyCumulativeTrafficAlertSuffix,
+}
 
 type HostSource interface {
 	Hosts(context.Context) cluster.HostList
@@ -230,8 +240,11 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	next.Settings = Settings{Enabled: input.Enabled, Locale: locale, Rules: rules}
 	next.AlertStates = s.alertStateSnapshot()
 	if cumulativeTrafficRulesChanged(state.Settings.Rules, rules) {
-		removeAlertStates(next.AlertStates, cumulativeTrafficAlertSuffix)
+		removeCumulativeTrafficAlertStates(next.AlertStates)
 	}
+	// The aggregate state is not meaningful for the directional rules, even
+	// when the migrated settings happen to retain the same threshold value.
+	removeAlertStates(next.AlertStates, legacyCumulativeTrafficAlertSuffix)
 	next.UpdatedAt = s.now().UTC()
 	tokenChanged := false
 	if newToken != "" {
@@ -433,10 +446,11 @@ func (s *Service) evaluate(parent context.Context) error {
 		if rules.TrafficEnabled && rateAvailable {
 			stateChanged = s.handleThreshold(host, "traffic", rate, float64(rules.TrafficThresholdMiBPerSecond), "MiB/s", now, locale, trySend) || stateChanged
 		}
-		if rules.TrafficTotalEnabled {
-			if total, ok := cumulativeTraffic(host); ok {
-				stateChanged = s.handleCumulativeThreshold(host, total, rules.TrafficTotalThresholdGiB, now, locale, trySend) || stateChanged
-			}
+		if rules.TrafficTotalReceivedEnabled {
+			stateChanged = s.handleCumulativeThreshold(host, cumulativeTrafficReceivedRuleKey, host.LastSnapshot.Telemetry.Network.ReceivedBytes, rules.TrafficTotalReceivedThresholdGiB, now, locale, trySend) || stateChanged
+		}
+		if rules.TrafficTotalSentEnabled {
+			stateChanged = s.handleCumulativeThreshold(host, cumulativeTrafficSentRuleKey, host.LastSnapshot.Telemetry.Network.SentBytes, rules.TrafficTotalSentThresholdGiB, now, locale, trySend) || stateChanged
 		}
 	}
 	alertStates := s.alertStateSnapshot()
@@ -532,22 +546,22 @@ func (s *Service) handleThresholdRecovery(host cluster.Host, ruleKey string, val
 	return false
 }
 
-func (s *Service) handleCumulativeThreshold(host cluster.Host, total uint64, thresholdGiB int, now time.Time, locale string, send func(string) (bool, bool)) bool {
+func (s *Service) handleCumulativeThreshold(host cluster.Host, ruleKey string, value uint64, thresholdGiB int, now time.Time, locale string, send func(string) (bool, bool)) bool {
 	if thresholdGiB <= 0 || thresholdGiB > MaxTrafficTotalThresholdGiB {
 		return false
 	}
 	thresholdBytes := uint64(thresholdGiB) * bytesPerGigabyte
-	key := host.ID + cumulativeTrafficAlertSuffix
+	key := host.ID + ":" + ruleKey
 	state := s.getAlertState(key)
-	if state.LastNetworkTotalBytes > 0 && total < state.LastNetworkTotalBytes {
+	if state.LastNetworkBytes > 0 && value < state.LastNetworkBytes {
 		// Network counters are monotonic until an interface, host or agent
 		// restarts. A rollback starts a new accumulation cycle and must not
 		// generate a misleading recovery message.
 		state = alertState{}
 	}
-	state.LastNetworkTotalBytes = total
+	state.LastNetworkBytes = value
 	state.Consecutive = 0
-	if total < thresholdBytes {
+	if value < thresholdBytes {
 		state.Active = false
 		state.LastAttemptAt = time.Time{}
 		s.setAlertState(key, state)
@@ -559,7 +573,7 @@ func (s *Service) handleCumulativeThreshold(host cluster.Host, total uint64, thr
 	}
 	state.LastAttemptAt = now
 	s.setAlertState(key, state)
-	success, attempted := send(cumulativeTrafficAlertMessage(host, total, thresholdBytes, now, locale))
+	success, attempted := send(cumulativeTrafficAlertMessage(host, ruleKey, value, thresholdBytes, now, locale))
 	if !attempted {
 		state.LastAttemptAt = time.Time{}
 		s.setAlertState(key, state)
@@ -700,11 +714,19 @@ func removeAlertStates(states map[string]alertState, suffix string) {
 	}
 }
 
+func removeCumulativeTrafficAlertStates(states map[string]alertState) {
+	for _, suffix := range cumulativeTrafficAlertSuffixes {
+		removeAlertStates(states, suffix)
+	}
+}
+
 func cumulativeTrafficRulesChanged(previous, next Rules) bool {
 	previous = normalizeRules(previous)
 	next = normalizeRules(next)
-	return previous.TrafficTotalEnabled != next.TrafficTotalEnabled ||
-		previous.TrafficTotalThresholdGiB != next.TrafficTotalThresholdGiB
+	return previous.TrafficTotalReceivedEnabled != next.TrafficTotalReceivedEnabled ||
+		previous.TrafficTotalReceivedThresholdGiB != next.TrafficTotalReceivedThresholdGiB ||
+		previous.TrafficTotalSentEnabled != next.TrafficTotalSentEnabled ||
+		previous.TrafficTotalSentThresholdGiB != next.TrafficTotalSentThresholdGiB
 }
 
 func (s *Service) pruneHostState(hosts []cluster.Host) bool {
@@ -793,13 +815,6 @@ func (s *Service) displayTime(ctx context.Context, value time.Time) time.Time {
 		}
 	}
 	return value.In(location)
-}
-
-func cumulativeTraffic(host cluster.Host) (uint64, bool) {
-	if host.LastSnapshot == nil {
-		return 0, false
-	}
-	return contract.TotalNetworkBytes(host.LastSnapshot.Telemetry.Network), true
 }
 
 func canAlertAttempt(state alertState, now time.Time) bool {
@@ -934,10 +949,10 @@ func resourceAlertMessage(host cluster.Host, ruleKey string, value, threshold fl
 	}
 }
 
-func cumulativeTrafficAlertMessage(host cluster.Host, totalBytes, thresholdBytes uint64, now time.Time, locale string) string {
+func cumulativeTrafficAlertMessage(host cluster.Host, ruleKey string, valueBytes, thresholdBytes uint64, now time.Time, locale string) string {
 	hostName := safeMessageText(host.Name)
-	metric := localizedMetricLabel("traffic-total", locale)
-	current := formatNetworkBytes(totalBytes)
+	metric := localizedMetricLabel(ruleKey, locale)
+	current := formatNetworkBytes(valueBytes)
 	threshold := formatNetworkBytes(thresholdBytes)
 	when := formatNotificationTime(now)
 	switch locale {
@@ -1052,18 +1067,18 @@ func hostStateLabel(value cluster.HostState) string {
 func localizedMetricLabel(ruleKey, locale string) string {
 	labels := map[string]string{
 		"cpu": "CPU 使用率", "memory": "内存使用率", "disk": "磁盘使用率",
-		"traffic": "网络吞吐", "traffic-total": "累计流量",
+		"traffic": "网络吞吐", cumulativeTrafficReceivedRuleKey: "累计接收", cumulativeTrafficSentRuleKey: "累计传送",
 	}
 	if locale == "en-US" {
 		return map[string]string{
 			"cpu": "CPU usage", "memory": "Memory usage", "disk": "Disk usage",
-			"traffic": "Network throughput", "traffic-total": "Cumulative traffic",
+			"traffic": "Network throughput", cumulativeTrafficReceivedRuleKey: "Cumulative received", cumulativeTrafficSentRuleKey: "Cumulative sent",
 		}[ruleKey]
 	}
 	if locale == "zh-TW" {
 		return map[string]string{
 			"cpu": "CPU 使用率", "memory": "記憶體使用率", "disk": "磁碟使用率",
-			"traffic": "網路吞吐量", "traffic-total": "累計流量",
+			"traffic": "網路吞吐量", cumulativeTrafficReceivedRuleKey: "累計接收", cumulativeTrafficSentRuleKey: "累計傳送",
 		}[ruleKey]
 	}
 	return labels[ruleKey]

@@ -92,7 +92,8 @@ type publicClusterShareCapacity struct {
 }
 
 type publicClusterShareNetwork struct {
-	TotalBytes             uint64  `json:"totalBytes"`
+	ReceivedBytes          uint64  `json:"receivedBytes"`
+	SentBytes              uint64  `json:"sentBytes"`
 	ReceiveBytesPerSecond  float64 `json:"receiveBytesPerSecond"`
 	TransmitBytesPerSecond float64 `json:"transmitBytesPerSecond"`
 }
@@ -351,7 +352,8 @@ func (s *Server) clusterShareSnapshot(ctx context.Context, value store.ClusterSh
 				UsagePercent: telemetry.Disk.UsagePercent,
 			}
 			item.Network = publicClusterShareNetwork{
-				TotalBytes:             contract.TotalNetworkBytes(telemetry.Network),
+				ReceivedBytes:          telemetry.Network.ReceivedBytes,
+				SentBytes:              telemetry.Network.SentBytes,
 				ReceiveBytesPerSecond:  snapshot.ReceiveBytesPerSecond,
 				TransmitBytesPerSecond: snapshot.TransmitBytesPerSecond,
 			}

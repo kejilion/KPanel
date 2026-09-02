@@ -38,8 +38,10 @@ const form = reactive({
   diskThresholdPercent: 90,
   trafficEnabled: false,
   trafficThresholdMiBPerSecond: 100,
-  trafficTotalEnabled: false,
-  trafficTotalThresholdGiB: 100,
+  trafficTotalReceivedEnabled: false,
+  trafficTotalReceivedThresholdGiB: 100,
+  trafficTotalSentEnabled: false,
+  trafficTotalSentThresholdGiB: 100,
   sshLoginEnabled: true,
   hostOfflineEnabled: true,
   telegramBotToken: '',
@@ -83,8 +85,10 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.diskThresholdPercent = value.rules.diskThresholdPercent
   form.trafficEnabled = value.rules.trafficEnabled
   form.trafficThresholdMiBPerSecond = value.rules.trafficThresholdMiBPerSecond
-  form.trafficTotalEnabled = value.rules.trafficTotalEnabled
-  form.trafficTotalThresholdGiB = value.rules.trafficTotalThresholdGiB || 100
+  form.trafficTotalReceivedEnabled = value.rules.trafficTotalReceivedEnabled
+  form.trafficTotalReceivedThresholdGiB = value.rules.trafficTotalReceivedThresholdGiB || 100
+  form.trafficTotalSentEnabled = value.rules.trafficTotalSentEnabled
+  form.trafficTotalSentThresholdGiB = value.rules.trafficTotalSentThresholdGiB || 100
   form.sshLoginEnabled = value.rules.sshLoginEnabled
   form.hostOfflineEnabled = value.rules.hostOfflineEnabled
   form.telegramBotToken = ''
@@ -116,8 +120,10 @@ function rulesFromForm(): ClusterNotificationRules {
     diskThresholdPercent: form.diskThresholdPercent,
     trafficEnabled: form.trafficEnabled,
     trafficThresholdMiBPerSecond: form.trafficThresholdMiBPerSecond,
-    trafficTotalEnabled: form.trafficTotalEnabled,
-    trafficTotalThresholdGiB: form.trafficTotalThresholdGiB,
+    trafficTotalReceivedEnabled: form.trafficTotalReceivedEnabled,
+    trafficTotalReceivedThresholdGiB: form.trafficTotalReceivedThresholdGiB,
+    trafficTotalSentEnabled: form.trafficTotalSentEnabled,
+    trafficTotalSentThresholdGiB: form.trafficTotalSentThresholdGiB,
     sshLoginEnabled: form.sshLoginEnabled,
     hostOfflineEnabled: form.hostOfflineEnabled,
   }
@@ -386,7 +392,7 @@ onBeforeUnmount(() => {
           <div class="cluster-notifications__section-heading">
             <div>
               <h3>{{ phrase('资源阈值') }}</h3>
-              <p>{{ phrase('应用于本机和所有已接入主机；连续 3 次采样达到阈值才通知。') }}</p>
+              <p>{{ phrase('应用于本机和所有已接入主机；资源占用和网络吞吐连续 3 次达到阈值，累计收发各自达到阈值后通知一次。') }}</p>
             </div>
           </div>
           <div class="cluster-notifications__rules">
@@ -411,9 +417,14 @@ onBeforeUnmount(() => {
               <span class="cluster-notifications__threshold"><input v-model.number="form.trafficThresholdMiBPerSecond" type="number" min="1" max="1048576" :aria-label="phrase('流量阈值')" /><em>MiB/s</em></span>
             </label>
             <label class="cluster-notifications__rule">
-              <input v-model="form.trafficTotalEnabled" type="checkbox" :aria-label="phrase('启用累计流量通知')" />
-              <span><strong>{{ phrase('累计流量') }}</strong><small>{{ phrase('每台主机收发累计达到阈值后通知一次；计数器重置后重新累计。') }}</small></span>
-              <span class="cluster-notifications__threshold"><input v-model.number="form.trafficTotalThresholdGiB" type="number" min="1" max="1048576" :aria-label="phrase('累计流量阈值')" /><em>GiB</em></span>
+              <input v-model="form.trafficTotalReceivedEnabled" type="checkbox" :aria-label="phrase('启用累计接收通知')" />
+              <span><strong>{{ phrase('累计接收') }}</strong><small>{{ phrase('累计接收达到阈值后通知一次；计数器重置后重新累计。') }}</small></span>
+              <span class="cluster-notifications__threshold"><input v-model.number="form.trafficTotalReceivedThresholdGiB" type="number" min="1" max="1048576" :aria-label="phrase('累计接收阈值')" /><em>GiB</em></span>
+            </label>
+            <label class="cluster-notifications__rule">
+              <input v-model="form.trafficTotalSentEnabled" type="checkbox" :aria-label="phrase('启用累计传送通知')" />
+              <span><strong>{{ phrase('累计传送') }}</strong><small>{{ phrase('累计传送达到阈值后通知一次；计数器重置后重新累计。') }}</small></span>
+              <span class="cluster-notifications__threshold"><input v-model.number="form.trafficTotalSentThresholdGiB" type="number" min="1" max="1048576" :aria-label="phrase('累计传送阈值')" /><em>GiB</em></span>
             </label>
           </div>
         </section>

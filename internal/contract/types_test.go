@@ -45,12 +45,3 @@ func TestAgentHealthCoreReady(t *testing.T) {
 		})
 	}
 }
-
-func TestTotalNetworkBytesSumsCountersWithoutOverflow(t *testing.T) {
-	if got := TotalNetworkBytes(NetworkSummary{ReceivedBytes: 7, SentBytes: 5}); got != 12 {
-		t.Fatalf("TotalNetworkBytes() = %d, want 12", got)
-	}
-	if got := TotalNetworkBytes(NetworkSummary{ReceivedBytes: ^uint64(0), SentBytes: 1}); got != ^uint64(0) {
-		t.Fatalf("overflowing TotalNetworkBytes() = %d, want max uint64", got)
-	}
-}
