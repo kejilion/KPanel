@@ -220,7 +220,7 @@ function fileHostStatus(host: ClusterHost): FileHostStatus {
   if (host.fileTransferAvailable === true) {
     return { action: 'open', label: phrase('已配对 · 仅支持接收') }
   }
-  return { action: 'manage', label: phrase('文件互传未启用') }
+  return { action: 'open', label: phrase('打开远端文件管理') }
 }
 
 function closeFileHostPicker(restoreFocus = false): void {

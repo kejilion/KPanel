@@ -295,11 +295,54 @@ describe('FilesView host switcher', () => {
     }
   })
 
-  it('sends hosts without file capability to the existing cluster management page', async () => {
+  it('opens a paired Panel file page even without cross-panel transfer capability', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',
       items: [fileHost('local', true), fileHost('pending', false, {
         name: 'pending-01',
+        fileTransferAvailable: false,
+        mutualFileTransferAvailable: false,
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(wrapper.get('[data-file-host-id="pending"]').text()).toContain('打开远端文件管理')
+      await wrapper.get('[data-file-host-id="pending"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith('https://edge.example.com/files', '_blank', 'noopener,noreferrer')
+      expect(mocks.push).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+    }
+  })
+
+  it('keeps telemetry-only light nodes in the existing cluster management page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('light', false, {
+        name: 'light-01',
+        kind: 'light_node',
+        origin: '',
+        federationProtocol: 'light-v1',
+        scope: 'cluster.summary.read',
         fileTransferAvailable: false,
         mutualFileTransferAvailable: false,
       })],
@@ -323,8 +366,8 @@ describe('FilesView host switcher', () => {
     try {
       await flushPromises()
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(wrapper.get('[data-file-host-id="pending"]').text()).toContain('文件互传未启用')
-      await wrapper.get('[data-file-host-id="pending"]').trigger('click')
+      expect(wrapper.get('[data-file-host-id="light"]').text()).toContain('文件互传未启用')
+      await wrapper.get('[data-file-host-id="light"]').trigger('click')
       expect(mocks.push).toHaveBeenCalledWith({ name: 'cluster' })
     } finally {
       wrapper.unmount()
