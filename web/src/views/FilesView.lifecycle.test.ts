@@ -168,6 +168,133 @@ describe('FilesView host switcher', () => {
     }
   })
 
+  it('reuses the remote Panel security entrance before appending the Files path', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('secure', false, {
+        name: 'secure-01',
+        origin: 'https://edge.example.com:8443',
+        securityEntrancePath: 'panel-secure1',
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      await wrapper.get('[data-file-host-id="secure"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith(
+        'https://edge.example.com:8443/panel-secure1/files',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+    }
+  })
+
+  it('requires the existing HTTP warning before opening an e2e_http Files page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('http', false, {
+        name: 'http-01',
+        origin: 'http://edge.example.com:8080',
+        transportSecurity: 'e2e_http',
+        securityEntrancePath: 'panel-secure1',
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      await wrapper.get('[data-file-host-id="http"]').trigger('click')
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/HTTP|Session/))
+      expect(openSpy).toHaveBeenCalledWith(
+        'http://edge.example.com:8080/panel-secure1/files',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+      confirmSpy.mockRestore()
+    }
+  })
+
+  it('does not open an e2e_http Files page after the warning is cancelled', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('http', false, {
+        name: 'http-01',
+        origin: 'http://edge.example.com:8080',
+        transportSecurity: 'e2e_http',
+        securityEntrancePath: 'panel-secure1',
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      await wrapper.get('[data-file-host-id="http"]').trigger('click')
+      expect(confirmSpy).toHaveBeenCalledOnce()
+      expect(openSpy).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+      confirmSpy.mockRestore()
+    }
+  })
+
   it('sends hosts without file capability to the existing cluster management page', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',

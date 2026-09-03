@@ -53,6 +53,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import { ApiError, api } from '@/lib/api'
+import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import {
   contextMenuFocusOrigin,
   type ContextMenuFocusOrigin,
@@ -206,6 +207,7 @@ const activeFileHostLabel = computed(() => {
 
 function fileHostStatus(host: ClusterHost): FileHostStatus {
   if (host.isLocal) return { action: 'select', label: phrase('当前面板') }
+  if (host.kind === 'light_node') return { action: 'manage', label: phrase('文件互传未启用') }
   if (['offline', 'auth_failed', 'tls_error', 'incompatible'].includes(host.state)) {
     return { action: 'manage', label: phrase('主机连接异常') }
   }
@@ -260,13 +262,22 @@ function openRemoteFileManager(host: ClusterHost): void {
   closeFileHostPicker()
   let target = ''
   try {
-    const url = new URL('/files', host.origin)
+    const panelURL = clusterHostPanelURL(host)
+    if (!panelURL) throw new Error('missing panel URL')
+    const url = new URL(panelURL)
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol')
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/files`
+    url.search = ''
+    url.hash = ''
     target = url.toString()
   } catch {
     void router.push({ name: 'cluster' })
     return
   }
+  if (
+    host.transportSecurity === 'e2e_http'
+    && !window.confirm(i18n.t('cluster.confirm.openHttpPanel'))
+  ) return
   const opened = typeof window !== 'undefined'
     ? window.open(target, '_blank', 'noopener,noreferrer')
     : null

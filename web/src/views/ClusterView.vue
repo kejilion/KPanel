@@ -42,6 +42,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
+import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
@@ -846,19 +847,8 @@ function displayOrigin(host: ClusterHost): string {
   return host.isLocal ? window.location.origin : host.origin
 }
 
-const securityEntrancePathPattern = /^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$/
-
 function panelURL(host: ClusterHost): string {
-  const origin = displayOrigin(host)
-  if (
-    !origin ||
-    host.isLocal ||
-    !host.securityEntrancePath ||
-    !securityEntrancePathPattern.test(host.securityEntrancePath)
-  ) {
-    return origin
-  }
-  return `${origin}/${host.securityEntrancePath}`
+  return clusterHostPanelURL(host)
 }
 
 function transportSecurityLabel(host: ClusterHost): string {
