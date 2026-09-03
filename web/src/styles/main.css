@@ -1776,6 +1776,10 @@ textarea:focus-visible,
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  --scrollbar-track: var(--sidebar);
+  --scrollbar-thumb: color-mix(in srgb, var(--sidebar-text) 22%, var(--sidebar));
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--sidebar-accent) 48%, var(--sidebar));
+  --scrollbar-thumb-active: var(--sidebar-accent);
   transition: padding 200ms ease;
 }
 
