@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	lightTokenPrefix    = "kpl1."
-	lightEnrollPath     = "/api/v3/federation/light/enroll"
-	lightReportPath     = "/api/v3/federation/light/report"
-	lightReportInterval = 30
-	maxLightTokenAge    = time.Hour
+	lightTokenPrefix                        = "kpl1."
+	lightEnrollPath                         = "/api/v3/federation/light/enroll"
+	lightReportPath                         = "/api/v3/federation/light/report"
+	lightReportInterval                     = 30
+	maxLightTokenAge                        = time.Hour
+	maxLightReportLatencyMilliseconds int64 = 15_000
 )
 
 type lightTokenWire struct {
@@ -33,11 +34,12 @@ type lightTokenWire struct {
 }
 
 type LightReportAuth struct {
-	Source    string
-	NodeID    string
-	Timestamp string
-	RequestID string
-	Signature string
+	Source                    string
+	NodeID                    string
+	Timestamp                 string
+	RequestID                 string
+	Signature                 string
+	ReportLatencyMilliseconds string
 }
 
 // LightRequestSignature remains only for the low-privilege telemetry
@@ -157,7 +159,7 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if !s.lightSources.Allow(cleanRateSubject(auth.Source), now) {
 		return LightReportResponse{}, ErrRateLimited
 	}
-	_, _, err := s.authenticateLightRequest(auth, lightReportPath, rawBody, MaxSummaryBytes, now)
+	record, _, err := s.authenticateLightRequest(auth, lightReportPath, rawBody, MaxSummaryBytes, now)
 	if err != nil {
 		return LightReportResponse{}, err
 	}
@@ -170,7 +172,18 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if err := validateTelemetry(input.Telemetry, now); err != nil {
 		return LightReportResponse{}, err
 	}
-	snapshot := HostSnapshot{Telemetry: cloneTelemetry(input.Telemetry), ReceivedAt: now}
+	latencyMilliseconds := parseLightReportLatency(auth.ReportLatencyMilliseconds)
+	if latencyMilliseconds == 0 && record.LastSnapshot != nil {
+		// The latency header is optional so an upgraded node can report to an
+		// older center. Preserve the last known value when the header is absent
+		// or invalid instead of turning a measured value back into zero.
+		latencyMilliseconds = max(0, record.LastSnapshot.LatencyMilliseconds)
+	}
+	snapshot := HostSnapshot{
+		Telemetry:           cloneTelemetry(input.Telemetry),
+		ReceivedAt:          now,
+		LatencyMilliseconds: latencyMilliseconds,
+	}
 	if _, err := s.light.UpdateReport(auth.NodeID, snapshot, input.Telemetry.AgentVersion, now); err != nil {
 		return LightReportResponse{}, err
 	}
@@ -321,4 +334,12 @@ func absDuration(value time.Duration) time.Duration {
 		return -value
 	}
 	return value
+}
+
+func parseLightReportLatency(value string) int64 {
+	latencyMilliseconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || latencyMilliseconds <= 0 || latencyMilliseconds > maxLightReportLatencyMilliseconds {
+		return 0
+	}
+	return latencyMilliseconds
 }

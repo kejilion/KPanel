@@ -121,6 +121,7 @@ interface ClusterBindings {
   transportSecurityLabel: (host: ClusterHost) => string
   shortFingerprint: (value?: string) => string
   hostOperatingSystemIdentity: (host: ClusterHost) => { key: string; label: string }
+  formatHostLatency: (host: ClusterHost) => string
 }
 
 function setupView(): ClusterBindings {
@@ -274,6 +275,13 @@ describe('ClusterView compact summary layout', () => {
 })
 
 describe('ClusterView inventory and navigation', () => {
+  it('does not present an unmeasured host latency as zero', () => {
+    const view = setupView()
+
+    expect(view.formatHostLatency(host('local', true, 'https://stored-local.invalid'))).toBe('--')
+    expect(view.formatHostLatency(host('remote', false, 'https://hk.example.com'))).toBe('42 ms')
+  })
+
   it('uses the overview operating-system identity mapping for host icons', () => {
     const view = setupView()
     const known = host('known', false, 'https://known.example.com')

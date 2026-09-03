@@ -147,6 +147,13 @@ const shareURL = computed(() =>
 const hostOperatingSystemIdentity = (host: ClusterHost) =>
   detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
 
+function formatHostLatency(host: ClusterHost): string {
+  const latency = host.lastSnapshot?.latencyMilliseconds
+  return typeof latency === 'number' && Number.isFinite(latency) && latency > 0
+    ? `${latency} ms`
+    : '--'
+}
+
 const orderedHosts = computed(() => {
   const items = inventory.value?.items || []
   const positions = new Map(hostOrder.value.map((id, index) => [id, index]))
@@ -1186,7 +1193,7 @@ onBeforeUnmount(() => {
           <div>
             <span>运行时间</span>
             <strong>{{ formatDuration(host.lastSnapshot.telemetry.uptimeSeconds) }}</strong>
-            <small>延迟 {{ host.lastSnapshot.latencyMilliseconds }} ms</small>
+            <small>延迟 {{ formatHostLatency(host) }}</small>
           </div>
         </div>
         <div v-else class="cluster-card__empty">

@@ -955,7 +955,7 @@ func (s *Service) poll(ctx context.Context, id string) {
 	}
 	snapshot := &HostSnapshot{
 		Telemetry: cloneTelemetry(summary.Telemetry), ReceivedAt: finishedAt,
-		LatencyMilliseconds: max(0, finishedAt.Sub(startedAt).Milliseconds()),
+		LatencyMilliseconds: elapsedMilliseconds(finishedAt.Sub(startedAt)),
 	}
 	if previous := current.snapshot; previous != nil && finishedAt.After(previous.ReceivedAt) {
 		elapsed := finishedAt.Sub(previous.ReceivedAt).Seconds()
@@ -1051,7 +1051,7 @@ func (s *Service) localHostSummary(ctx context.Context) Host {
 			snapshot := &HostSnapshot{
 				Telemetry:           cloneTelemetry(telemetry),
 				ReceivedAt:          finishedAt,
-				LatencyMilliseconds: max(0, finishedAt.Sub(startedAt).Milliseconds()),
+				LatencyMilliseconds: elapsedMilliseconds(finishedAt.Sub(startedAt)),
 			}
 			if previous := current.snapshot; previous != nil && finishedAt.After(previous.ReceivedAt) {
 				elapsed := finishedAt.Sub(previous.ReceivedAt).Seconds()
@@ -1261,6 +1261,17 @@ func validSecurityEntrancePath(value string) bool {
 		}
 	}
 	return true
+}
+
+func elapsedMilliseconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	milliseconds := duration.Milliseconds()
+	if milliseconds == 0 {
+		return 1
+	}
+	return milliseconds
 }
 
 func validateTelemetry(value contract.HostTelemetry, now time.Time) error {

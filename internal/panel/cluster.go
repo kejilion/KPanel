@@ -648,11 +648,12 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		response, err := s.cluster.AcceptLightReport(cluster.LightReportAuth{
-			Source:    s.remoteIP(r),
-			NodeID:    strings.TrimSpace(r.Header.Get("X-KPanel-Light-Node-ID")),
-			Timestamp: strings.TrimSpace(r.Header.Get("X-KPanel-Timestamp")),
-			RequestID: strings.TrimSpace(r.Header.Get("X-KPanel-Request-ID")),
-			Signature: strings.TrimSpace(r.Header.Get("X-KPanel-Signature")),
+			Source:                    s.remoteIP(r),
+			NodeID:                    strings.TrimSpace(r.Header.Get("X-KPanel-Light-Node-ID")),
+			Timestamp:                 strings.TrimSpace(r.Header.Get("X-KPanel-Timestamp")),
+			RequestID:                 strings.TrimSpace(r.Header.Get("X-KPanel-Request-ID")),
+			Signature:                 strings.TrimSpace(r.Header.Get("X-KPanel-Signature")),
+			ReportLatencyMilliseconds: strings.TrimSpace(r.Header.Get(cluster.LightReportLatencyHeader)),
 		}, rawBody, input)
 		if err != nil {
 			s.auditAuthFailure(r, "cluster.light-node.report")

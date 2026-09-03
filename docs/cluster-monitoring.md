@@ -124,6 +124,9 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   32 字节 reporting key 做 HMAC-SHA256，绑定方法、固定路径、节点 ID、时间戳、request ID
   和正文摘要；终端请求不复用 reporting key，而使用 root-only Noise 私钥和中心公钥，中心校验
   v2 信封、±2 分钟时间窗与有界重放缓存；
+- 节点以客户端实际 HTTPS 上报请求耗时作为连接延迟：首次上报没有历史样本，成功后在下一次
+  上报通过可选 `X-KPanel-Light-Report-Latency-Milliseconds` 传递上一轮 RTT；中心只接受
+  `1–15,000 ms` 的有界值，旧节点或无有效样本显示为未知，不把 `0 ms` 当作真实延迟；
 - 自动更新由 systemd timer 每 24 小时触发并加入 0–6 小时随机延迟。下载只允许 HTTPS、
   固定 GitHub Release 来源并验证 `SHA256SUMS`；重启健康检查失败时恢复上一二进制；
 - `k kpanel node status|update|uninstall` 分别用于状态、手动更新和本机卸载。中心删除记录

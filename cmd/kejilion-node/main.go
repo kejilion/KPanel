@@ -220,9 +220,17 @@ func runNode(arguments []string) error {
 	collector.PublicNetworkCacheTTL = 30 * time.Minute
 	interval := time.Duration(config.ReportInterval) * time.Second
 	backoff := time.Second
+	var lastReportLatencyMilliseconds int64
+	var hasReportLatency bool
 	for {
-		err := collectAndReport(ctx, collector, config, secret)
+		var previousReportLatency *int64
+		if hasReportLatency {
+			previousReportLatency = &lastReportLatencyMilliseconds
+		}
+		measuredLatency, err := collectAndReport(ctx, collector, config, secret, previousReportLatency)
 		if err == nil {
+			lastReportLatencyMilliseconds = measuredLatency
+			hasReportLatency = true
 			backoff = time.Second
 			if !waitContext(ctx, interval) {
 				return nil
@@ -242,12 +250,18 @@ func runNode(arguments []string) error {
 	}
 }
 
-func collectAndReport(parent context.Context, collector *systeminfo.Collector, config nodeConfig, secret []byte) error {
+func collectAndReport(
+	parent context.Context,
+	collector *systeminfo.Collector,
+	config nodeConfig,
+	secret []byte,
+	previousReportLatency *int64,
+) (int64, error) {
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	summary, collectErr := collector.Collect(ctx)
 	if collectErr != nil && summary.Hostname == "" {
-		return fmt.Errorf("collect host telemetry: %w", collectErr)
+		return 0, fmt.Errorf("collect host telemetry: %w", collectErr)
 	}
 	disk := contract.DiskCapacitySummary{}
 	if len(summary.Disks) > 0 {
@@ -273,28 +287,53 @@ func collectAndReport(parent context.Context, collector *systeminfo.Collector, c
 	}}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	headers, err := signedLightNodeHeaders(config, lightReportPath, body, secret)
+	headers, err := signedLightNodeHeaders(config, lightReportPath, body, secret, previousReportLatency)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var response reportResponse
-	return postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response)
+	requestStartedAt := time.Now()
+	if err := postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response); err != nil {
+		return 0, err
+	}
+	return elapsedMilliseconds(time.Since(requestStartedAt)), nil
 }
 
-func signedLightNodeHeaders(config nodeConfig, path string, body, secret []byte) (map[string]string, error) {
+func signedLightNodeHeaders(
+	config nodeConfig,
+	path string,
+	body []byte,
+	secret []byte,
+	previousReportLatency *int64,
+) (map[string]string, error) {
 	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
 	requestID, err := randomHex(16)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{
+	headers := map[string]string{
 		"X-KPanel-Light-Node-ID": config.NodeID,
 		"X-KPanel-Timestamp":     timestamp,
 		"X-KPanel-Request-ID":    requestID,
 		"X-KPanel-Signature":     cluster.LightRequestSignature(secret, http.MethodPost, path, config.NodeID, timestamp, requestID, body),
-	}, nil
+	}
+	if previousReportLatency != nil && *previousReportLatency > 0 {
+		headers[cluster.LightReportLatencyHeader] = strconv.FormatInt(*previousReportLatency, 10)
+	}
+	return headers, nil
+}
+
+func elapsedMilliseconds(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	milliseconds := duration.Milliseconds()
+	if milliseconds == 0 {
+		return 1
+	}
+	return milliseconds
 }
 
 func originFromToken(token string) (string, error) {
