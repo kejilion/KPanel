@@ -27,6 +27,7 @@ const (
 	SecurityEntrancePathCapability  = "security-entrance-path-v1"
 	SSHLoginCapability              = "ssh-login-v1"
 	LightResponseCapabilitiesHeader = "X-KPanel-Light-Response-Capabilities"
+	LightReportLatencyHeader        = "X-KPanel-Light-Report-Latency-Milliseconds"
 )
 
 // Response capabilities are transport hints, not authorization inputs. V1 is

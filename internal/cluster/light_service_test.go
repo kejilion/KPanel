@@ -175,6 +175,7 @@ func TestLightReportAuthenticatesBeforeReplayAndUpdatesState(t *testing.T) {
 	input := LightReportRequest{Telemetry: serviceTelemetry(now, "edge-1")}
 	requestID := strings.Repeat("a", 32)
 	body, auth := signedLightReportForTest(t, now, enrollment, input, requestID)
+	auth.ReportLatencyMilliseconds = "42"
 
 	badAuth := auth
 	badAuth.Signature = strings.Repeat("A", len(auth.Signature))
@@ -193,6 +194,7 @@ func TestLightReportAuthenticatesBeforeReplayAndUpdatesState(t *testing.T) {
 	secondInput.Telemetry.Network.ReceivedBytes += 30 * 1024
 	secondInput.Telemetry.Network.SentBytes += 60 * 1024
 	secondBody, secondAuth := signedLightReportForTest(t, clock.Now(), enrollment, secondInput, strings.Repeat("b", 32))
+	secondAuth.ReportLatencyMilliseconds = "not-a-number"
 	if _, err := service.AcceptLightReport(secondAuth, secondBody, secondInput); err != nil {
 		t.Fatalf("second valid report error = %v", err)
 	}
@@ -202,6 +204,9 @@ func TestLightReportAuthenticatesBeforeReplayAndUpdatesState(t *testing.T) {
 	}
 	if host.LastSnapshot.ReceiveBytesPerSecond != 1024 || host.LastSnapshot.TransmitBytesPerSecond != 2048 {
 		t.Fatalf("unexpected light-node network rates: %#v", host.LastSnapshot)
+	}
+	if host.LastSnapshot.LatencyMilliseconds != 42 {
+		t.Fatalf("invalid or absent latency reset the last known value: %d", host.LastSnapshot.LatencyMilliseconds)
 	}
 	if host.ResourceVersion != beforeReport.ResourceVersion {
 		t.Fatalf("telemetry changed management resourceVersion: %q -> %q", beforeReport.ResourceVersion, host.ResourceVersion)

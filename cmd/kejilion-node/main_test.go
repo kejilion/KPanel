@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/cluster"
 )
 
 func lightTokenForTest(t *testing.T, origin string, expiresAt time.Time) string {
@@ -148,6 +150,34 @@ func TestNodeHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	}
 	if targetCalls != 0 {
 		t.Fatalf("redirect target received %d requests", targetCalls)
+	}
+}
+
+func TestSignedLightNodeHeadersCarryPreviousReportLatencyOutOfBand(t *testing.T) {
+	config := nodeConfig{NodeID: strings.Repeat("a", 32)}
+	latency := int64(42)
+	headers, err := signedLightNodeHeaders(config, lightReportPath, []byte(`{"telemetry":{}}`), make([]byte, 32), &latency)
+	if err != nil {
+		t.Fatalf("signedLightNodeHeaders() error = %v", err)
+	}
+	if headers[cluster.LightReportLatencyHeader] != "42" {
+		t.Fatalf("report latency header = %q, want 42", headers[cluster.LightReportLatencyHeader])
+	}
+	withoutLatency, err := signedLightNodeHeaders(config, lightReportPath, []byte(`{"telemetry":{}}`), make([]byte, 32), nil)
+	if err != nil {
+		t.Fatalf("signedLightNodeHeaders() without latency error = %v", err)
+	}
+	if _, ok := withoutLatency[cluster.LightReportLatencyHeader]; ok {
+		t.Fatal("first report unexpectedly carried an unknown latency")
+	}
+}
+
+func TestElapsedMillisecondsDoesNotTruncateSuccessfulSubMillisecondRequestsToZero(t *testing.T) {
+	if got := elapsedMilliseconds(500 * time.Microsecond); got != 1 {
+		t.Fatalf("elapsedMilliseconds(500us) = %d, want 1", got)
+	}
+	if got := elapsedMilliseconds(0); got != 0 {
+		t.Fatalf("elapsedMilliseconds(0) = %d, want 0", got)
 	}
 }
 

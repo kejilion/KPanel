@@ -605,7 +605,7 @@ func (s *Service) pollV2Locked(ctx context.Context, id string) {
 	}
 	snapshot := &HostSnapshot{
 		Telemetry: cloneTelemetry(summary.Telemetry), ReceivedAt: finishedAt,
-		LatencyMilliseconds: max(0, finishedAt.Sub(startedAt).Milliseconds()),
+		LatencyMilliseconds: elapsedMilliseconds(finishedAt.Sub(startedAt)),
 	}
 	if previous := current.snapshot; previous != nil &&
 		finishedAt.After(previous.ReceivedAt) {
