@@ -14,6 +14,12 @@ describe('responsive application shell comfort', () => {
     expect(styles).toMatch(/@media \(max-width: 920px\)[\s\S]*?\.sidebar\s*\{[^}]*height:\s*100dvh;/)
   })
 
+  it('keeps the sidebar scrollbar aligned with its dark surface', () => {
+    expect(styles).toMatch(
+      /\.sidebar__nav\s*\{[^}]*--scrollbar-track:\s*var\(--sidebar\);[^}]*--scrollbar-thumb:\s*color-mix\(in srgb, var\(--sidebar-text\) 22%, var\(--sidebar\)\);[^}]*--scrollbar-thumb-hover:\s*color-mix\(in srgb, var\(--sidebar-accent\) 48%, var\(--sidebar\)\);[^}]*--scrollbar-thumb-active:\s*var\(--sidebar-accent\);/,
+    )
+  })
+
   it('uses the available phone width without reserving a desktop scrollbar gutter', () => {
     expect(styles).toMatch(/@media \(max-width: 920px\)[\s\S]*?html\s*\{[^}]*scrollbar-gutter:\s*auto;/)
     expect(styles).toContain('env(safe-area-inset-bottom)')
