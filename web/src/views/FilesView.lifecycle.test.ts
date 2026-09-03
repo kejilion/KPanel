@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from './FilesView.vue'
 
@@ -90,6 +91,118 @@ beforeEach(() => {
   mocks.list.mockResolvedValue(directory('/'))
   mocks.remoteDownloadJobs.mockResolvedValue({ items: [] })
   mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [] })
+})
+
+function fileHost(id: string, isLocal: boolean, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    isLocal,
+    kind: 'panel',
+    name: isLocal ? '当前 KPanel' : 'edge-01',
+    origin: isLocal ? 'https://center.example.com' : 'https://edge.example.com',
+    transportSecurity: 'tls',
+    remoteNodeId: isLocal ? 'local-node' : 'edge-node',
+    federationProtocol: 'v2',
+    scope: 'cluster.summary.read cluster.terminal.open cluster.files.read',
+    terminalAvailable: true,
+    fileTransferAvailable: !isLocal,
+    mutualFileTransferAvailable: !isLocal,
+    state: 'online',
+    consecutiveFailures: 0,
+    polling: false,
+    resourceVersion: `${id}-version`,
+    createdAt: '2026-08-22T00:00:00Z',
+    updatedAt: '2026-08-22T00:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('FilesView host switcher', () => {
+  it('keeps the path toolbar and opens a capable remote host in its existing Files page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('edge', false)],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      const trigger = wrapper.get('.file-host-switcher__trigger')
+      expect(trigger.text()).toContain('当前主机')
+      expect(trigger.text()).toContain('本机')
+      expect(wrapper.get('.breadcrumbs').text()).toContain('根目录')
+
+      await trigger.trigger('click')
+      expect(wrapper.get('#file-host-switcher-menu').text()).toContain('edge-01')
+      expect(wrapper.get('[data-file-host-id="local"]').attributes('aria-current')).toBe('true')
+
+      await wrapper.get('[data-file-host-id="edge"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith('https://edge.example.com/files', '_blank', 'noopener,noreferrer')
+      expect(wrapper.find('#file-host-switcher-menu').exists()).toBe(false)
+
+      await trigger.trigger('click')
+      const triggerElement = trigger.element as HTMLButtonElement
+      triggerElement.focus()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await nextTick()
+      expect(wrapper.find('#file-host-switcher-menu').exists()).toBe(false)
+      expect(document.activeElement).toBe(triggerElement)
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+    }
+  })
+
+  it('sends hosts without file capability to the existing cluster management page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('pending', false, {
+        name: 'pending-01',
+        fileTransferAvailable: false,
+        mutualFileTransferAvailable: false,
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(wrapper.get('[data-file-host-id="pending"]').text()).toContain('文件互传未启用')
+      await wrapper.get('[data-file-host-id="pending"]').trigger('click')
+      expect(mocks.push).toHaveBeenCalledWith({ name: 'cluster' })
+    } finally {
+      wrapper.unmount()
+    }
+  })
 })
 
 describe('FilesView remote download lifecycle', () => {

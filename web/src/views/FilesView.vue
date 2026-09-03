@@ -14,11 +14,15 @@ usePhraseCatalog((locale) => locale === 'en-US'
   : import('@/i18n/pages/FilesView/zh-TW').then((module) => module.default))
 import {
   Archive,
+  Check,
+  ChevronDown,
   ChevronRight,
   ClipboardPaste,
   Code2,
   Copy,
+  CircleAlert,
   Download,
+  ExternalLink,
   Eye,
   File,
   Folder,
@@ -36,6 +40,7 @@ import {
   Save,
   Scissors,
   Search,
+  Server,
   Share2,
   ShieldCheck,
   Trash2,
@@ -99,6 +104,8 @@ import {
 } from '@/lib/fileWindowTransfer'
 import { useToast } from '@/stores/toast'
 import type {
+  ClusterHost,
+  ClusterHostList,
   FileActionInput,
   FileActionResult,
   FileDirectory,
@@ -115,6 +122,12 @@ const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const filesPage = ref<HTMLElement>()
 const localClusterNodeId = ref('')
+const fileHostPickerButton = ref<HTMLButtonElement>()
+const fileHostPickerOpen = ref(false)
+const fileHostInventory = ref<ClusterHostList>()
+const fileHostInventoryLoading = ref(false)
+const fileHostInventoryError = ref(false)
+const activeFileHostId = ref('')
 let unregisterWindowCloseGuard: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
@@ -169,6 +182,116 @@ type UploadTaskSource =
 
 const toast = useToast()
 const i18n = useI18n()
+
+type FileHostAction = 'select' | 'open' | 'manage'
+
+interface FileHostStatus {
+  action: FileHostAction
+  label: string
+}
+
+const fileHosts = computed(() =>
+  [...(fileHostInventory.value?.items || [])].sort((left, right) => Number(right.isLocal) - Number(left.isLocal)),
+)
+
+const activeFileHost = computed(() =>
+  fileHosts.value.find((host) => host.id === activeFileHostId.value)
+    || fileHosts.value.find((host) => host.isLocal),
+)
+
+const activeFileHostLabel = computed(() => {
+  const host = activeFileHost.value
+  return host && !host.isLocal ? host.name : phrase('本机')
+})
+
+function fileHostStatus(host: ClusterHost): FileHostStatus {
+  if (host.isLocal) return { action: 'select', label: phrase('当前面板') }
+  if (['offline', 'auth_failed', 'tls_error', 'incompatible'].includes(host.state)) {
+    return { action: 'manage', label: phrase('主机连接异常') }
+  }
+  if (['pairing', 'revoking'].includes(host.state)) {
+    return { action: 'manage', label: phrase('主机状态处理中') }
+  }
+  if (host.mutualFileTransferAvailable) {
+    return { action: 'open', label: phrase('已配对 · 文件互传') }
+  }
+  if (host.fileTransferAvailable === true) {
+    return { action: 'open', label: phrase('已配对 · 仅支持接收') }
+  }
+  return { action: 'manage', label: phrase('文件互传未启用') }
+}
+
+function closeFileHostPicker(restoreFocus = false): void {
+  fileHostPickerOpen.value = false
+  if (restoreFocus) void nextTick(() => fileHostPickerButton.value?.focus())
+}
+
+async function loadFileHosts(): Promise<void> {
+  fileHostController?.abort()
+  const controller = new AbortController()
+  fileHostController = controller
+  fileHostInventoryLoading.value = true
+  fileHostInventoryError.value = false
+  try {
+    const inventory = await api.cluster.hosts(controller.signal)
+    if (controller.signal.aborted || unmounted) return
+    fileHostInventory.value = inventory
+    localClusterNodeId.value = inventory.nodeId
+    activeFileHostId.value = inventory.items.find((host) => host.isLocal)?.id || ''
+  } catch (error) {
+    if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
+    fileHostInventoryError.value = true
+  } finally {
+    if (fileHostController === controller) {
+      fileHostController = undefined
+      fileHostInventoryLoading.value = false
+    }
+  }
+}
+
+function toggleFileHostPicker(): void {
+  fileHostPickerOpen.value = !fileHostPickerOpen.value
+  if (fileHostPickerOpen.value && !fileHostInventory.value && !fileHostInventoryLoading.value) {
+    void loadFileHosts()
+  }
+}
+
+function openRemoteFileManager(host: ClusterHost): void {
+  closeFileHostPicker()
+  let target = ''
+  try {
+    const url = new URL('/files', host.origin)
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol')
+    target = url.toString()
+  } catch {
+    void router.push({ name: 'cluster' })
+    return
+  }
+  const opened = typeof window !== 'undefined'
+    ? window.open(target, '_blank', 'noopener,noreferrer')
+    : null
+  if (!opened) {
+    toast.show(phrase('远端文件页未打开'), { message: phrase('浏览器阻止了新标签页，请允许弹出窗口后重试。') })
+  }
+}
+
+function openClusterHostManager(): void {
+  closeFileHostPicker()
+  void router.push({ name: 'cluster' })
+}
+
+function handleFileHostSelection(host: ClusterHost): void {
+  const status = fileHostStatus(host)
+  if (status.action === 'select') {
+    activeFileHostId.value = host.id
+    closeFileHostPicker(true)
+  } else if (status.action === 'open') {
+    openRemoteFileManager(host)
+  } else {
+    openClusterHostManager()
+  }
+}
+
 const directory = ref<FileDirectory>()
 const currentPath = ref('/home')
 const search = ref('')
@@ -273,6 +396,7 @@ const trashTruncated = ref(false)
 const selectedTrash = ref(new Set<string>())
 const thumbnailFailures = ref(new Set<string>())
 let directoryController: AbortController | undefined
+let fileHostController: AbortController | undefined
 let queuedRemoteDownloadRefreshes = new Set<string>()
 let archiveController: AbortController | undefined
 let externalUploadController: AbortController | undefined
@@ -2178,6 +2302,7 @@ function formatTime(value: string): string {
 function handleWindowClick(event: MouseEvent): void {
   const target = event.target as HTMLElement
   if (!target.closest('.file-context-menu')) contextMenu.value = undefined
+  if (!target.closest('.file-host-switcher')) closeFileHostPicker()
 }
 
 function closeContextMenuOnViewportChange(): void {
@@ -2191,6 +2316,11 @@ function closeContextMenuOnScroll(event: Event): void {
 
 function handleFileShortcut(event: KeyboardEvent): void {
   if (!desktopWindowActive.value) return
+  if (event.key === 'Escape' && fileHostPickerOpen.value) {
+    event.preventDefault()
+    closeFileHostPicker(true)
+    return
+  }
   const target = event.target as HTMLElement | null
   const focusInside = filesPage.value?.contains(document.activeElement)
   if (!filesPage.value || (!filesPage.value.contains(target) && !focusInside)) return
@@ -2230,6 +2360,7 @@ function focusFilesPage(event: PointerEvent): void {
 
 watch(desktopWindowActive, (active) => {
   if (!active) contextMenu.value = undefined
+  if (!active) closeFileHostPicker()
 })
 
 onMounted(() => {
@@ -2254,9 +2385,7 @@ onMounted(() => {
     void loadDirectory()
   })
   restoreViewMode()
-  void api.cluster.hosts()
-    .then((hosts) => { localClusterNodeId.value = hosts.nodeId })
-    .catch(() => { localClusterNodeId.value = '' })
+  void loadFileHosts()
   void loadRequestedRoute().finally(() => {
     if (!unmounted) void loadRemoteDownloadJobs()
   })
@@ -2288,6 +2417,7 @@ onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
   unsubscribeFileDirectoryChanges?.()
   clearDesktopFileDrag()
+  fileHostController?.abort()
   unmounted = true
   queuedRemoteDownloadRefreshes.clear()
   stopRemoteDownloadPolling()
@@ -2370,19 +2500,94 @@ onBeforeUnmount(() => {
       @contextmenu="showDirectoryContext"
     >
       <header class="file-toolbar">
-        <nav class="breadcrumbs" aria-label="文件路径">
-          <button
-            v-for="(item, index) in breadcrumbs"
-            :key="item.path"
-            type="button"
-            :disabled="item.path === currentPath"
-            @click="navigateDirectory(item.path)"
-          >
-            <HardDrive v-if="index === 0" :size="15" />
-            <span>{{ item.name }}</span>
-            <ChevronRight v-if="index < breadcrumbs.length - 1" :size="14" />
-          </button>
-        </nav>
+        <div class="file-toolbar__path">
+          <div class="file-host-switcher" data-file-host-switcher>
+            <button
+              ref="fileHostPickerButton"
+              class="file-host-switcher__trigger"
+              type="button"
+              aria-haspopup="menu"
+              aria-controls="file-host-switcher-menu"
+              :aria-expanded="fileHostPickerOpen"
+              :title="phrase('切换主机')"
+              @click.stop="toggleFileHostPicker"
+            >
+              <Server :size="15" aria-hidden="true" />
+              <span>{{ phrase('当前主机') }}</span>
+              <strong>{{ activeFileHostLabel }}</strong>
+              <ChevronDown :size="15" aria-hidden="true" />
+            </button>
+            <div
+              v-if="fileHostPickerOpen"
+              id="file-host-switcher-menu"
+              class="file-host-switcher__menu"
+              role="menu"
+              :aria-label="phrase('切换主机')"
+              @click.stop
+            >
+              <strong class="file-host-switcher__heading">{{ phrase('切换主机') }}</strong>
+              <div v-if="fileHostInventoryLoading" class="file-host-switcher__message" role="status" aria-live="polite">
+                <RefreshCw :size="15" class="spinning" aria-hidden="true" />
+                <span>{{ phrase('正在读取主机列表…') }}</span>
+              </div>
+              <div v-else-if="fileHostInventoryError && !fileHosts.length" class="file-host-switcher__message file-host-switcher__message--error" role="alert">
+                <CircleAlert :size="15" aria-hidden="true" />
+                <span>{{ phrase('无法读取集群主机') }}</span>
+              </div>
+              <template v-else-if="fileHosts.length">
+                <button
+                  v-for="host in fileHosts"
+                  :key="host.id"
+                  class="file-host-switcher__item"
+                  :class="{
+                    'is-active': host.id === activeFileHostId,
+                    'is-manage': fileHostStatus(host).action === 'manage',
+                  }"
+                  type="button"
+                  role="menuitem"
+                  :aria-current="host.id === activeFileHostId ? 'true' : undefined"
+                  :title="fileHostStatus(host).action === 'open' ? phrase('打开远端文件管理') : undefined"
+                  :data-file-host-id="host.id"
+                  @click="handleFileHostSelection(host)"
+                >
+                  <Server :size="16" aria-hidden="true" />
+                  <span>
+                    <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
+                    <small>{{ fileHostStatus(host).label }}</small>
+                  </span>
+                  <Check v-if="host.id === activeFileHostId" :size="16" aria-hidden="true" />
+                  <ExternalLink v-else-if="fileHostStatus(host).action === 'open'" :size="15" aria-hidden="true" />
+                  <ChevronRight v-else :size="15" aria-hidden="true" />
+                </button>
+              </template>
+              <div v-else class="file-host-switcher__message">
+                <span>{{ phrase('暂未发现集群主机') }}</span>
+              </div>
+              <button
+                v-if="fileHostInventoryError && fileHosts.length"
+                class="file-host-switcher__retry"
+                type="button"
+                @click="loadFileHosts"
+              >
+                <CircleAlert :size="14" aria-hidden="true" />
+                {{ phrase('主机列表刷新失败，点击重试') }}
+              </button>
+            </div>
+          </div>
+          <nav class="breadcrumbs" aria-label="文件路径">
+            <button
+              v-for="(item, index) in breadcrumbs"
+              :key="item.path"
+              type="button"
+              :disabled="item.path === currentPath"
+              @click="navigateDirectory(item.path)"
+            >
+              <HardDrive v-if="index === 0" :size="15" />
+              <span>{{ item.name }}</span>
+              <ChevronRight v-if="index < breadcrumbs.length - 1" :size="14" />
+            </button>
+          </nav>
+        </div>
         <div class="file-toolbar__controls">
           <label class="file-search">
             <Search :size="16" />
@@ -3372,9 +3577,179 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--surface-subtle) 45%, var(--surface));
 }
 
+.file-toolbar__path {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-host-switcher {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.file-host-switcher__trigger {
+  display: inline-flex;
+  max-width: 220px;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color .16s ease, color .16s ease, background-color .16s ease;
+}
+
+.file-host-switcher__trigger:hover,
+.file-host-switcher__trigger:focus-visible,
+.file-host-switcher__trigger[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+  color: var(--brand);
+  outline: none;
+}
+
+.file-host-switcher__trigger > span {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.file-host-switcher__trigger > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-host-switcher__menu {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(300px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius);
+  background: var(--surface-raised, var(--surface));
+  box-shadow: var(--shadow-md, var(--shadow-sm));
+}
+
+.file-host-switcher__heading {
+  display: block;
+  padding: 11px 12px 9px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.file-host-switcher__item {
+  display: grid;
+  width: 100%;
+  min-height: 54px;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background-color .16s ease, color .16s ease;
+}
+
+.file-host-switcher__item:hover,
+.file-host-switcher__item:focus-visible {
+  background: var(--interaction-hover);
+  outline: none;
+}
+
+.file-host-switcher__item.is-active {
+  color: var(--brand-strong, var(--brand));
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface-raised, var(--surface)));
+}
+
+.file-host-switcher__item.is-manage {
+  color: var(--muted);
+}
+
+.file-host-switcher__item > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.file-host-switcher__item strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-host-switcher__item small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-host-switcher__item > svg:last-child {
+  justify-self: end;
+}
+
+.file-host-switcher__message,
+.file-host-switcher__retry {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.file-host-switcher__message--error {
+  color: var(--danger);
+}
+
+.file-host-switcher__retry {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--danger);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.file-host-switcher__retry:hover,
+.file-host-switcher__retry:focus-visible {
+  background: var(--interaction-hover);
+  outline: none;
+}
+
 .breadcrumbs {
   display: flex;
   min-width: 0;
+  flex: 1 1 auto;
   overflow-x: auto;
 }
 
@@ -4954,6 +5329,16 @@ onBeforeUnmount(() => {
     flex-direction: column;
     gap: 9px;
     padding: 10px;
+  }
+
+  .file-toolbar__path {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .file-host-switcher__trigger {
+    max-width: min(100%, 260px);
   }
 
   .breadcrumbs {
