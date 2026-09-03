@@ -467,20 +467,22 @@ function visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedByt
   }
 }
 
-function visualClusterHost({ id, name, isLocal, state, hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode }) {
+function visualClusterHost({ id, name, isLocal, state, hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode, kind = isLocal ? 'panel' : 'light_node', federationProtocol = 'v1', scope = 'cluster.summary.read', fileTransferAvailable = false, securityEntrancePath = '' }) {
   const telemetry = visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode })
   return {
     id,
     isLocal,
     name,
-    kind: isLocal ? 'panel' : 'light_node',
+    kind,
     origin: isLocal ? 'https://panel.example.com' : 'https://edge.example.com',
     transportSecurity: 'tls',
     remoteNodeId: isLocal ? 'local-node' : 'remote-node',
-    federationProtocol: 'v1',
-    scope: 'cluster.summary.read',
+    federationProtocol,
+    scope,
     terminalAvailable: isLocal,
+    fileTransferAvailable,
     mutualFileTransferAvailable: false,
+    securityEntrancePath,
     state,
     consecutiveFailures: state === 'degraded' ? 1 : 0,
     polling: true,
@@ -511,6 +513,7 @@ const visualClusterHosts = [
     os: 'Ubuntu 24.04 LTS', osId: 'ubuntu', uptimeSeconds: 432000,
     receivedBytes: 8 * 1024 ** 3, sentBytes: 3 * 1024 ** 3, usagePercent: 63.2,
     city: 'Melbourne', country: 'Australia', countryCode: 'AU',
+    kind: 'panel', federationProtocol: 'v2', securityEntrancePath: 'panel-secure1',
   }),
 ]
 
