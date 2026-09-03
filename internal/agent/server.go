@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
+	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/cluster/sshlogin"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/diagnostics"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
@@ -35,7 +37,7 @@ import (
 
 const (
 	maxAgentRequestBytes        = 64 << 10
-	sshLoginTelemetryCapability = "ssh-login-v1"
+	sshLoginTelemetryCapability = cluster.SSHLoginCapability
 )
 
 type Config struct {
@@ -46,6 +48,7 @@ type Config struct {
 	StateDir        string
 	System          *systeminfo.Collector
 	SystemManager   *systemmanage.Manager
+	SSHLoginSource  SSHLoginSource
 	Sites           *sites.Discoverer
 	SitesManager    *sites.Manager
 	Docker          *dockerx.Client
@@ -57,6 +60,13 @@ type Config struct {
 	Monitoring      monitoringHistoryProvider
 	Terminals       *terminal.Manager
 	Now             func() time.Time
+}
+
+// SSHLoginSource is the read-only cluster telemetry boundary. It keeps
+// authentication-event collection out of the System Center write manager so
+// regular Agents and lightweight nodes use the same narrow event contract.
+type SSHLoginSource interface {
+	LatestSSHLogin(context.Context) (*contract.SSHLoginEvent, error)
 }
 
 type siteIconProvider interface {
@@ -76,6 +86,7 @@ type Server struct {
 	webRoot          string
 	system           *systeminfo.Collector
 	systemManager    *systemmanage.Manager
+	sshLoginSource   SSHLoginSource
 	sites            *sites.Discoverer
 	sitesManager     *sites.Manager
 	docker           *dockerx.Client
@@ -114,6 +125,9 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.SystemManager == nil {
 		config.SystemManager = systemmanage.NewManager(systemmanage.Config{Enabled: false})
+	}
+	if config.SSHLoginSource == nil {
+		config.SSHLoginSource = sshlogin.NewReader(sshlogin.Config{Now: config.Now})
 	}
 	if config.Sites == nil {
 		config.Sites = sites.NewDiscoverer(config.WebRoot)
@@ -179,6 +193,7 @@ func NewServer(config Config) (*Server, error) {
 		webRoot:          config.WebRoot,
 		system:           config.System,
 		systemManager:    config.SystemManager,
+		sshLoginSource:   config.SSHLoginSource,
 		sites:            config.Sites,
 		sitesManager:     config.SitesManager,
 		docker:           config.Docker,
@@ -601,8 +616,8 @@ func (s *Server) systemTelemetry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var sshLogin *contract.SSHLoginEvent
-	if hasTelemetryCapability(r, sshLoginTelemetryCapability) && s.systemManager != nil {
-		sshLogin, _ = s.systemManager.LatestSSHLogin(r.Context())
+	if hasTelemetryCapability(r, sshLoginTelemetryCapability) && s.sshLoginSource != nil {
+		sshLogin, _ = s.sshLoginSource.LatestSSHLogin(r.Context())
 	}
 	writeJSON(w, http.StatusOK, contract.HostTelemetry{
 		AgentVersion: s.version, AgentProtocolVersion: s.protocolVersion,

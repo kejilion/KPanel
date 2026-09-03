@@ -13,8 +13,9 @@
 
 没有安装 KPanel 的 Linux 主机可以安装独立的 `kejilion-node`。它不是被控面板，不提供 Web、
 Agent、文件、网站或 Docker 管理能力；默认低权限遥测进程只通过出站 HTTPS 主动上报主机概要，
-另由同一安装包的 root `terminal-broker` 在完成中心认证后提供固定登录 Shell PTY。中心端可修改其
-备注、排序或移除记录，但不会显示“打开面板”。
+另由同一安装包的 root `terminal-broker` 在完成中心认证后提供固定登录 Shell PTY，并由独立的
+root `ssh-login-broker` 读取 SSH 登录记录后只发布一条窄事件文件。Telegram 凭据始终只保留在中心端，
+不下发到轻量节点。中心端可修改其备注、排序或移除记录，但不会显示“打开面板”。
 
 新 v2 配对可授权当前中心使用多主机终端和显式跨面板文件读取；既有 v1、旧 v2 与轻量节点不会自动获得新增权限。
 终端使用独立 Panel Session 和 Noise v2 请求，不共享目标面板登录态；详细契约见
@@ -114,7 +115,10 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
 - 服务使用无登录、无 home 的 `kejilion-node` 系统用户运行，配置目录 `0750`，遥测凭据文件
   `0640 root:kejilion-node`；终端 Noise 私钥另存为 `0600 root:root`，低权限遥测进程不可读取；
   遥测 systemd 单元继续启用 `NoNewPrivileges`、只读系统、隐藏 home、空 capability 及地址族限制，
-  root PTY broker 仅保留执行系统维护命令所需的宿主机访问能力；
+  root PTY broker 仅保留执行系统维护命令所需的宿主机访问能力；SSH 登录由独立的
+  `kejilion-node-ssh-login.service` 以 root 运行，只保留 `CAP_DAC_READ_SEARCH` 读取 journal、
+  `/var/log/secure` 或 `/var/log/auth.log`，通过 `AF_UNIX` 限制和 `0750 root:kejilion-node`
+  运行目录向遥测进程提供 `0640` 的单条事件，不传原始日志、凭据或网络请求；
 - 终端由独立的 root `kejilion-node-terminal.service` 运行 `kejilion-node terminal-broker`；它不监听
   TCP、SSH、HTTP 或可被低权限节点进程调用的 Unix Socket，只通过 v2 Noise relay 主动轮询中心。
   中心返回的固定 `open`、`input`、`resize`、`close` 命令 payload 直接使用既有 v2 终端请求结构，
@@ -129,8 +133,9 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   `1–15,000 ms` 的有界值，旧节点或无有效样本显示为未知，不把 `0 ms` 当作真实延迟；
 - 自动更新由 systemd timer 每 24 小时触发并加入 0–6 小时随机延迟。下载只允许 HTTPS、
   固定 GitHub Release 来源并验证 `SHA256SUMS`；重启健康检查失败时恢复上一二进制；
-- `k kpanel node status|update|uninstall` 分别用于状态、手动更新和本机卸载。中心删除记录
-  不远程执行卸载；节点被移除后上报凭据立即失效，目标机由用户自行卸载或重新接入。
+- `k kpanel node status|update|uninstall` 分别用于状态、手动更新和本机卸载；`status` 同时显示
+  遥测服务和 SSH 登录采集服务。中心删除记录不远程执行卸载；节点被移除后上报凭据立即失效，
+  目标机由用户自行卸载或重新接入。
 
 中心将轻量节点状态和凭据分别保存在 `cluster-light-state.json` 与
 `cluster-light-secrets/`。接入、改名和删除等配置变更立即使用 `0600`、同步和原子替换持久化；
@@ -267,7 +272,7 @@ SSRF 与 TLS 校验。对
 | 超时与重试 | 普通联邦连接 2 秒、响应头 3 秒、总计 6 秒；轻量终端长轮询最长 25 秒，节点请求总超时 40 秒；读取失败退避，旧中心的 404/405 退避 5 分钟；无写入自动重试 |
 | 真实状态与缓存 | 远端 Agent 实时摘要是事实；中心只缓存最近快照；本机摘要缓存 5 秒 |
 | 失败与恢复 | 保留最近成功快照；认证/TLS/身份错误单独标识；先尽力撤销远端授权，再删除状态，最后清理凭据；孤立凭据启动时回收 |
-| 性能预算 | 浏览器单请求，无 N+1；100 台 KPanel 按 30 秒轮询约 3.3 请求/秒、最多 8 并发；轻量 telemetry 每台约 2 请求/分钟，终端空闲时由长轮询维持，不触发中心出站 |
+| 性能预算 | 浏览器单请求，无 N+1；100 台 KPanel 按 30 秒轮询约 3.3 请求/秒、最多 8 并发；轻量 telemetry 每台约 2 请求/分钟；轻量 SSH broker 每 5 秒轮询但使用 15 秒读取缓存，约 4 次/分钟本地日志采样，不产生额外网络请求；终端空闲时由长轮询维持，不触发中心出站 |
 | 网络入侵风险 | SSRF、DNS rebinding、TLS 劫持、授权码猜测、签名重放、伪造遥测、恶意大响应和轮询/上报 DoS |
 
 ## 8. 验收
@@ -292,9 +297,11 @@ SSRF 与 TLS 校验。对
 发布前执行 L2 验证；正式版本与镜像发布仍按 L3 流程执行。
 
 轻量节点属于双端协议，发布顺序固定为：先发布兼容旧 KPanel 的 `kejilion.sh` 安装入口，再发布
-包含 `kejilion-node`、`SHA256SUMS`、`light-v1` 上报和 v2 Noise relay 的 KPanel Release。既有
-轻量节点必须再执行一次 `k kpanel node update`，由脚本写入并启用独立的
-`kejilion-node-terminal.service`；仅更新中心 Panel 不会凭空在目标机新增 systemd unit。脚本先
+包含 `kejilion-node`、`SHA256SUMS`、`light-v1` 上报、SSH 登录采集和 v2 Noise relay 的 KPanel Release。
+既有轻量节点不需要逐台手动执行 `k kpanel node update`，也不需要重新配对。节点现有的 root 自动更新
+任务下载并校验新版 Agent 时，会由已校验的临时二进制自动补写并启用独立的
+`kejilion-node-ssh-login.service`；报告密钥和节点身份保持不变。其他已存在的节点辅助单元继续按原有兼容流程管理。
+新节点接入会一次写入全部单元。脚本先
 发布期间下载资产返回 404 只会让新安装明确失败，不影响既有 KPanel 节点；KPanel Release 发布后
 必须在独立 Linux 主机完成安装、断网恢复、自动更新、摘要拒绝、终端 broker 重启、回滚与卸载
 闭环，才可结束 L3。

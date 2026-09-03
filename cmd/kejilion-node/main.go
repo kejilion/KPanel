@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/cluster/sshlogin"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
-	"github.com/kejilion/kejilion-panel/internal/systemmanage"
 	"github.com/kejilion/kejilion-panel/internal/version"
 )
 
@@ -79,7 +79,8 @@ type reportRequest struct {
 }
 
 type reportResponse struct {
-	NextReport int `json:"nextReportSeconds"`
+	AcceptedAt time.Time `json:"acceptedAt"`
+	NextReport int       `json:"nextReportSeconds"`
 }
 
 var nodeHTTPClient = newHTTPClient()
@@ -93,11 +94,14 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 1 && arguments[0] == "version" {
+		if err := maybeMigrateLegacySSHLoginInstall(); err != nil {
+			slog.Warn("legacy lightweight node SSH login integration was not installed", "error", err)
+		}
 		fmt.Printf("%s %s\n", version.Version, lightProtocol)
 		return nil
 	}
 	if len(arguments) == 0 {
-		return errors.New("expected enroll, run, terminal-broker, file-broker, or version")
+		return errors.New("expected enroll, run, terminal-broker, ssh-login-broker, file-broker, or version")
 	}
 	switch arguments[0] {
 	case "enroll":
@@ -106,6 +110,8 @@ func run(arguments []string) error {
 		return runNode(arguments[1:])
 	case "terminal-broker":
 		return runTerminalBroker(arguments[1:])
+	case "ssh-login-broker":
+		return runSSHLoginBroker(arguments[1:])
 	case "file-broker":
 		return runFileBroker(arguments[1:])
 	default:
@@ -218,6 +224,7 @@ func runNode(arguments []string) error {
 	defer stop()
 	collector := systeminfo.NewCollector()
 	collector.PublicNetworkCacheTTL = 30 * time.Minute
+	sshReader := sshlogin.NewReader(sshlogin.Config{EventPath: sshlogin.EventPath})
 	interval := time.Duration(config.ReportInterval) * time.Second
 	backoff := time.Second
 	var lastReportLatencyMilliseconds int64
@@ -227,8 +234,9 @@ func runNode(arguments []string) error {
 		if hasReportLatency {
 			previousReportLatency = &lastReportLatencyMilliseconds
 		}
-		measuredLatency, err := collectAndReport(ctx, collector, config, secret, previousReportLatency)
+		updatedConfig, measuredLatency, err := collectAndReport(ctx, collector, config, secret, sshReader, previousReportLatency)
 		if err == nil {
+			config = updatedConfig
 			lastReportLatencyMilliseconds = measuredLatency
 			hasReportLatency = true
 			backoff = time.Second
@@ -255,13 +263,14 @@ func collectAndReport(
 	collector *systeminfo.Collector,
 	config nodeConfig,
 	secret []byte,
+	sshReader *sshlogin.Reader,
 	previousReportLatency *int64,
-) (int64, error) {
+) (nodeConfig, int64, error) {
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	summary, collectErr := collector.Collect(ctx)
 	if collectErr != nil && summary.Hostname == "" {
-		return 0, fmt.Errorf("collect host telemetry: %w", collectErr)
+		return config, 0, fmt.Errorf("collect host telemetry: %w", collectErr)
 	}
 	disk := contract.DiskCapacitySummary{}
 	if len(summary.Disks) > 0 {
@@ -275,8 +284,15 @@ func collectAndReport(
 	}
 	var sshLogin *contract.SSHLoginEvent
 	if config.SSHLogin {
-		sshManager := systemmanage.NewManager(systemmanage.Config{Enabled: false})
-		sshLogin, _ = sshManager.LatestSSHLogin(ctx)
+		var sshErr error
+		if sshReader != nil {
+			sshLogin, sshErr = sshReader.LatestSSHLogin(ctx)
+		} else {
+			sshErr = errors.New("SSH login reader is unavailable")
+		}
+		if sshErr != nil {
+			slog.Warn("lightweight SSH login event unavailable", "error", sshErr)
+		}
 	}
 	payload := reportRequest{Telemetry: contract.HostTelemetry{
 		AgentVersion: version.Version, AgentProtocolVersion: lightProtocol,
@@ -287,18 +303,39 @@ func collectAndReport(
 	}}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return 0, err
+		return config, 0, err
 	}
 	headers, err := signedLightNodeHeaders(config, lightReportPath, body, secret, previousReportLatency)
 	if err != nil {
-		return 0, err
+		return config, 0, err
 	}
 	var response reportResponse
 	requestStartedAt := time.Now()
-	if err := postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response); err != nil {
-		return 0, err
+	status, responseHeaders, err := postRawJSONWithStatusAndHeaders(ctx, config.Origin+lightReportPath, body, headers, &response)
+	if err != nil && config.SSHLogin && shouldRetryLightReportWithoutSSHLogin(status) {
+		payload.Telemetry.SSHLogin = nil
+		body, err = json.Marshal(payload)
+		if err == nil {
+			headers, err = signedLightNodeHeaders(config, lightReportPath, body, secret, previousReportLatency)
+		}
+		if err == nil {
+			response = reportResponse{}
+			_, responseHeaders, err = postRawJSONWithStatusAndHeaders(ctx, config.Origin+lightReportPath, body, headers, &response)
+		}
 	}
-	return elapsedMilliseconds(time.Since(requestStartedAt)), nil
+	if err != nil {
+		return config, 0, err
+	}
+	return enableSSHLoginCapability(config, responseHeaders), elapsedMilliseconds(time.Since(requestStartedAt)), nil
+}
+
+func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig {
+	config.SSHLogin = hasResponseCapability(headers, cluster.SSHLoginCapability)
+	return config
+}
+
+func shouldRetryLightReportWithoutSSHLogin(status int) bool {
+	return status == http.StatusBadRequest || status == http.StatusUnprocessableEntity
 }
 
 func signedLightNodeHeaders(

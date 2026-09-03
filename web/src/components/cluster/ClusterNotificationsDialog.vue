@@ -337,10 +337,10 @@ onBeforeUnmount(() => {
         </label>
 
         <div class="cluster-notifications__channel-actions">
-          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || !form.telegramBotToken.trim()" @click="save">
+          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || (!snapshot.telegram.configured && !form.telegramBotToken.trim())" @click="save">
             <LoaderCircle v-if="saving" class="spin" :size="15" />
             <Send v-else :size="15" />
-            {{ phrase(saving ? '正在连接…' : '保存并连接') }}
+            {{ phrase(saving ? '正在连接…' : (form.telegramBotToken.trim() || !snapshot.telegram.configured ? '保存并连接' : '保存设置')) }}
           </button>
           <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || !snapshot.telegram.configured" @click="discover">
             <LoaderCircle v-if="discovering" class="spin" :size="15" />

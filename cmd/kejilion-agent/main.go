@@ -20,6 +20,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/agent"
 	"github.com/kejilion/kejilion-panel/internal/agentclient"
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
+	"github.com/kejilion/kejilion-panel/internal/cluster/sshlogin"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/diagnostics"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
@@ -162,6 +163,7 @@ func run(arguments []string) error {
 	handler, err := agent.NewServer(agent.Config{
 		Token: token, Version: version.Version, ProtocolVersion: version.ProtocolVersion,
 		WebRoot: *webRoot, StateDir: *stateDir, System: systemCollector,
+		SSHLoginSource: sshlogin.NewReader(sshlogin.Config{Now: time.Now}),
 		SystemManager: systemmanage.NewManager(systemmanage.Config{
 			Enabled: *enableSystemWrites, StateDir: filepath.Join(*stateDir, "system"),
 			Executable: executable,

@@ -89,6 +89,43 @@ func TestNodeConfigRoundTripIsStrictAndRejectsNonRegularTargets(t *testing.T) {
 	}
 }
 
+func TestLightNodeLearnsSSHCapabilityFromReportResponse(t *testing.T) {
+	config := nodeConfig{
+		SchemaVersion: 1, Origin: "https://panel.example", NodeID: strings.Repeat("b", 32),
+		ReportingKey: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), ReportInterval: 30,
+	}
+	headers := http.Header{}
+	headers.Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
+	updated := enableSSHLoginCapability(config, headers)
+	if !updated.SSHLogin {
+		t.Fatalf("enableSSHLoginCapability() = %#v", updated)
+	}
+	legacy := enableSSHLoginCapability(updated, nil)
+	if legacy.SSHLogin {
+		t.Fatalf("missing response capability kept SSH login enabled: %#v", legacy)
+	}
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		if !shouldRetryLightReportWithoutSSHLogin(status) {
+			t.Fatalf("status %d was not marked for compatibility retry", status)
+		}
+	}
+	if shouldRetryLightReportWithoutSSHLogin(http.StatusUnauthorized) {
+		t.Fatal("authentication failure was marked for compatibility retry")
+	}
+}
+
+func TestLightReportResponseMatchesPanelContract(t *testing.T) {
+	var response reportResponse
+	decoder := json.NewDecoder(strings.NewReader(`{"acceptedAt":"2026-09-03T00:00:00Z","nextReportSeconds":30}`))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&response); err != nil {
+		t.Fatalf("light report response was rejected: %v", err)
+	}
+	if response.AcceptedAt.IsZero() || response.NextReport != 30 {
+		t.Fatalf("unexpected light report response: %#v", response)
+	}
+}
+
 func TestTerminalConfigRoundTripIsStrictAndRootOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "terminal.json")
 	config := terminalConfig{

@@ -11,7 +11,8 @@
 - CPU、内存、磁盘、收发流量直接消费既有 `cluster.HostList` / `HostSnapshot`；
 - 掉线沿用集群现有 `online`、`degraded`、`stale`、`offline`、`auth_failed`、`tls_error`、`incompatible` 状态机；
 - SSH 登录只新增窄字段 `HostTelemetry.SSHLogin`，不传递原始认证日志、SSH 配置或凭据；
-- 配置使用有界 JSON，Bot API key 与状态分文件保存；不引入 Redis、SQLite、消息队列或新的 Agent 常驻服务。
+- 配置使用有界 JSON，Bot API key 与状态分文件保存；不引入 Redis、SQLite 或消息队列；轻量节点的
+  SSH 读取只增加受限 root broker，不下发 Bot 凭据，也不让遥测进程获得 root 权限。
 
 Telegram 接入只要求用户输入 BotFather 生成的 API key。KPanel 通过 Telegram Bot API `getMe` 校验机器人，
 再读取有限的 `getUpdates`，自动寻找用户私聊机器人后发送通知；用户不需要输入 `chat_id`。第一次接入时，
@@ -67,11 +68,20 @@ PUT、重新发现和测试均经过现有 Session、Origin/CSRF、审计和 `Ex
 ## 5. 兼容与协议边界
 
 新的 `SSHLogin` 是可选字段，并通过能力头协商：新 v1/v2 控制端声明 `ssh-login-v1` 后，被控端才返回；
-旧控制端仍收到旧形状摘要。轻量节点在重新 enrollment 时读取中心返回的
-`X-KPanel-Light-Response-Capabilities: ssh-login-v1`，只有新中心和新节点都支持时才主动上报该字段。
-本机 Panel 到 Agent 也只在带有 `capabilities=ssh-login-v1` 的遥测请求时读取该可选字段，避免旧 Agent/新 Panel
-升级窗口产生严格 JSON 解码冲突。
-旧轻节点、旧中心和已有未重新 enrollment 的轻节点仍保持资源/掉线通知能力，SSH 登录通知需要重新 enrollment；
+旧控制端仍收到旧形状摘要。本机 Panel 到 Agent 也只在带有 `capabilities=ssh-login-v1` 的遥测请求时读取该可选字段，
+避免旧 Agent/新 Panel 升级窗口产生严格 JSON 解码冲突。
+
+普通 Agent、轻量节点 root broker 和轻量节点遥测进程共用集群边界中的窄事件读取器。普通 Agent 直接读取
+Linux journal，journal 可读但没有 sshd 记录时回退 `/var/log/secure` 或 `/var/log/auth.log`；轻量节点由
+`kejilion-node-ssh-login.service` 以 root 读取相同来源，只把严格校验后的单条事件原子写入
+`/run/kejilion-node-ssh/ssh-login.json`，非 root 遥测服务继续通过原有 `light-v1` HMAC 上报。
+Telegram 发送仍只发生在中心端。
+
+新中心在 enrollment 和 report 响应中返回 `X-KPanel-Light-Response-Capabilities: ssh-login-v1`。
+新接入节点立即启用；已有轻量节点由现有 root 自动更新任务在下载并校验新版 Agent 时自动安装采集服务，
+不需要逐台执行 `k kpanel node update`，也不需要再次配对或消耗一次性授权码。节点配置和 reporting key
+保持不变；重启后最多先发送一次旧格式 report，再根据响应头启用 SSH 字段。旧中心不返回响应头时继续发送旧格式，
+不会破坏兼容性；若旧中心因严格 JSON 解码拒绝一次带字段 report，节点会自动去掉 SSH 字段重试并回退到旧格式。
 第一次看到已有登录记录时只建立基线，不会把历史记录当作新告警。
 
 本阶段只实现 Telegram。交互层保留 Telegram、飞书、钉钉、企微四个渠道选项，但后三者明确标记为“暂未开放”，

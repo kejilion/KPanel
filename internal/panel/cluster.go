@@ -660,6 +660,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
 		s.writeJSON(w, http.StatusOK, response)
 	default:
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
