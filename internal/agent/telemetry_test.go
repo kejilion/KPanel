@@ -1,12 +1,30 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
+
+type telemetrySSHLoginSource struct {
+	event *contract.SSHLoginEvent
+	calls int
+}
+
+func (s *telemetrySSHLoginSource) LatestSSHLogin(context.Context) (*contract.SSHLoginEvent, error) {
+	s.calls++
+	if s.event == nil {
+		return nil, nil
+	}
+	copy := *s.event
+	return &copy, nil
+}
 
 func TestSystemTelemetryRequiresAuthenticationAndIsReadOnly(t *testing.T) {
 	server := testServer(t)
@@ -90,5 +108,31 @@ func TestTelemetryCapabilityRequiresTheSingleKnownQuery(t *testing.T) {
 		if hasTelemetryCapability(request, "ssh-login-v1") {
 			t.Fatalf("unexpected telemetry capability acceptance for %q", target)
 		}
+	}
+}
+
+func TestSystemTelemetryUsesClusterSSHLoginSourceOnlyWhenNegotiated(t *testing.T) {
+	server := testServer(t)
+	source := &telemetrySSHLoginSource{event: &contract.SSHLoginEvent{
+		ID: "event-1", OccurredAt: time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC),
+		Username: "admin", RemoteAddress: "203.0.113.9", Method: "publickey",
+	}}
+	server.sshLoginSource = source
+	authorization := "Bearer " + strings.Repeat("x", 32)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/system/telemetry", nil)
+	request.Header.Set("Authorization", authorization)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || source.calls != 0 || strings.Contains(response.Body.String(), "sshLogin") {
+		t.Fatalf("telemetry without capability status=%d calls=%d body=%s", response.Code, source.calls, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/system/telemetry?capabilities=ssh-login-v1", nil)
+	request.Header.Set("Authorization", authorization)
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || source.calls != 1 || !strings.Contains(response.Body.String(), `"sshLogin"`) {
+		t.Fatalf("negotiated telemetry status=%d calls=%d body=%s", response.Code, source.calls, response.Body.String())
 	}
 }
