@@ -81,7 +81,8 @@
 - 候选冻结时间：2026-09-04T18:41:32+08:00
 - 生产完成时间：2026-09-04T20:06:07+08:00
 - 提交到生产用时：2.77 小时
-- 是否回滚、紧急热修复或重复发布：否（仅重建证据，未重复发布产品）
+- 是否回滚、紧急热修复或重复发布：是（发生生产前门禁失败；未回滚、未紧急热修复、未重复发布产品）
+- 若发生失败，发现时间、恢复时间和逃逸门禁：发现时间: 2026-09-04T20:03:43+08:00; 恢复时间: 2026-09-04T20:04:44+08:00; 逃逸门禁: 未逃逸: production evidence 在生产写入前阻断
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
@@ -94,7 +95,7 @@
 <!-- kpanel-release-process-incidents:start -->
 [
   {
-    "fingerprint": "l3/local-release-clone-tag-mismatch",
+    "fingerprint": "l3/run-release-l3/local-tag-mismatch",
     "position": "before-production-write",
     "count": 1,
     "impact": "第一次 L3 在共享本地管理树 preflight 发现 v0.86.2 本地 tag 与 origin 不一致，按规范停止；没有上传或生产写入。",
@@ -103,7 +104,7 @@
     "historicalReleases": []
   },
   {
-    "fingerprint": "production-baseline/stale-v1.1.0-preflight",
+    "fingerprint": "production/run-production-evidence/stale-baseline",
     "position": "before-production-write",
     "count": 2,
     "impact": "前两次 backup 使用旧 v1.1.0-production preflight；该历史快照 expected version 实际为 1.0.2，与当前线上 1.1.0 不匹配，因此两次证据收尾失败。",
