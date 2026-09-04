@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -189,7 +190,9 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 	}
 	defer storage.Close()
 	restored, restoredVersion := storage.ClusterShare()
-	if restored != want {
+	if restored.Enabled != want.Enabled || restored.Token != want.Token || restored.Title != want.Title ||
+		restored.Description != want.Description || !slices.Equal(restored.HostOrder, want.HostOrder) ||
+		!restored.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("restored cluster share = %#v, want %#v", restored, want)
 	}
 	differentOrder := want
@@ -209,7 +212,9 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 		t.Fatal("cluster share update unexpectedly survived an atomic write failure")
 	}
 	afterFailure, _ := storage.ClusterShare()
-	if afterFailure != want {
+	if afterFailure.Enabled != want.Enabled || afterFailure.Token != want.Token || afterFailure.Title != want.Title ||
+		afterFailure.Description != want.Description || !slices.Equal(afterFailure.HostOrder, want.HostOrder) ||
+		!afterFailure.UpdatedAt.Equal(want.UpdatedAt) {
 		t.Fatalf("failed write changed in-memory cluster share: %#v", afterFailure)
 	}
 }
