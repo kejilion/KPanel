@@ -21,7 +21,10 @@ test-deploy:
 
 security-audit:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-	$(NPM) audit --prefix web --audit-level=high
+	set -e; for attempt in 1 2 3; do \
+		if $(NPM) audit --prefix web --audit-level=high; then exit 0; fi; \
+		if [ "$$attempt" -lt 3 ]; then sleep $$((attempt * 10)); fi; \
+	done; exit 1
 
 governance-check:
 	node scripts/run-repo-bash.mjs scripts/verify-governance.sh
