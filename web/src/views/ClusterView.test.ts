@@ -95,6 +95,7 @@ interface ClusterBindings {
   selected: Ref<ClusterHost | undefined>
   pairingCode: Ref<ClusterPairingCode | undefined>
   lightEnrollment: Ref<ClusterLightEnrollment | undefined>
+  lightEnrollmentConnected: Ref<boolean>
   editName: Ref<string>
   addForm: { name: string; accessCredential: string }
   load: (silent?: boolean) => Promise<void>
@@ -466,21 +467,49 @@ describe('ClusterView inventory and navigation', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
   })
 
-  it('enables the primary action after preparing a light-node command', async () => {
+  it('enables the primary action only after a new light node appears', async () => {
     const view = setupView()
-    view.lightEnrollment.value = {
+    const initial = inventory()
+    view.inventory.value = initial
+    view.addForm.name = '英国AMR'
+    const enrollment: ClusterLightEnrollment = {
       command:
         "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
       expiresAt: '2026-07-29T10:05:00Z',
     }
+    mocks.createLightEnrollment.mockResolvedValueOnce(enrollment)
 
+    await view.createLightEnrollment()
+
+    expect(view.lightEnrollmentConnected.value).toBe(false)
+    expect(view.canSubmitAdd.value).toBe(false)
+
+    const connected = host('light-new', false, '')
+    connected.kind = 'light_node'
+    connected.name = '英国AMR'
+    connected.remoteNodeId = 'light-node'
+    connected.federationProtocol = 'light-v1'
+    mocks.hosts.mockResolvedValueOnce({
+      ...initial,
+      items: [...initial.items, connected],
+      total: 3,
+      remoteTotal: 2,
+    })
+
+    await view.load(true)
+
+    expect(view.lightEnrollmentConnected.value).toBe(true)
     expect(view.canSubmitAdd.value).toBe(true)
     await view.addHost()
 
     expect(mocks.add).not.toHaveBeenCalled()
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
-      '轻量节点命令已准备',
-      '请在目标机执行命令，中心端会自动更新主机列表。',
+      '轻量节点已连接',
+      '英国AMR 已出现在当前主机列表。',
+    )
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '轻量节点已添加',
+      '节点已出现在当前主机列表。',
     )
     expect(view.lightEnrollment.value).toBeUndefined()
   })
