@@ -218,6 +218,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleLightNodeFederation(w, r)
 	case isFederationV2Request(r):
 		s.handleFederationV2(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == cluster.FileRelayV1Path:
+		s.handleFederationFileRelayV1(w, r)
 	case isLightFileRelayRequest(r):
 		s.handleLightFileRelay(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/federation/pair":
@@ -746,7 +748,7 @@ func (s *Server) handleSecurityEntrance(w http.ResponseWriter, r *http.Request) 
 }
 
 func securityEntrancePublicPath(requestPath string) bool {
-	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
+	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v1/federation/") || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
 }
 
 func isStaticAssetPath(requestPath string) bool {

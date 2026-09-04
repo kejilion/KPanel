@@ -693,8 +693,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if targetHostID != "" {
 		host, hostErr := s.cluster.Host(r.Context(), targetHostID)
 		if hostErr != nil || host.IsLocal || !host.FileManagementAvailable ||
-			(host.Kind != cluster.HostKindLightNode &&
-				(host.Kind != cluster.HostKindPanel || host.FederationProtocol != cluster.FederationProtocolV2)) {
+			(host.Kind != cluster.HostKindLightNode && host.Kind != cluster.HostKindPanel) {
 			s.writeProblem(w, r, http.StatusConflict, "file_host_unavailable", "目标主机文件管理未就绪", "")
 			return
 		}

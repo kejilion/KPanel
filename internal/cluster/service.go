@@ -39,6 +39,10 @@ type remoteAPI interface {
 	Revoke(context.Context, string, string, string, ed25519.PrivateKey, time.Time) error
 }
 
+type remoteSummaryCapabilitiesAPI interface {
+	SummaryWithCapabilities(context.Context, string, string, string, ed25519.PrivateKey, time.Time) (FederationSummary, string, error)
+}
+
 type ServiceConfig struct {
 	DataDir         string
 	PanelVersion    string
@@ -67,16 +71,17 @@ type TerminalBackend interface {
 }
 
 type runtimeState struct {
-	snapshot            *HostSnapshot
-	lastAttemptAt       *time.Time
-	lastSuccessAt       *time.Time
-	consecutiveFailures int
-	lastErrorCode       string
-	lastError           string
-	panelVersion        string
-	nextPollAt          time.Time
-	inFlight            bool
-	nextFilePeerSyncAt  time.Time
+	snapshot                *HostSnapshot
+	lastAttemptAt           *time.Time
+	lastSuccessAt           *time.Time
+	consecutiveFailures     int
+	lastErrorCode           string
+	lastError               string
+	panelVersion            string
+	nextPollAt              time.Time
+	inFlight                bool
+	nextFilePeerSyncAt      time.Time
+	fileManagementAvailable bool
 
 	securityEntrancePath string
 }
@@ -944,11 +949,19 @@ func (s *Service) poll(ctx context.Context, id string) {
 	startedAt := s.now().UTC()
 	key, err := s.secrets.Read(record.CredentialFile)
 	var summary FederationSummary
+	var capabilities string
 	if err == nil {
-		summary, err = s.remote.Summary(
-			ctx, record.Origin, record.ControllerID,
-			record.RemoteNodeID, key, startedAt,
-		)
+		if remote, ok := s.remote.(remoteSummaryCapabilitiesAPI); ok {
+			summary, capabilities, err = remote.SummaryWithCapabilities(
+				ctx, record.Origin, record.ControllerID,
+				record.RemoteNodeID, key, startedAt,
+			)
+		} else {
+			summary, err = s.remote.Summary(
+				ctx, record.Origin, record.ControllerID,
+				record.RemoteNodeID, key, startedAt,
+			)
+		}
 	}
 	finishedAt := s.now().UTC()
 	if err == nil {
@@ -994,6 +1007,7 @@ func (s *Service) poll(ctx context.Context, id string) {
 	current.lastErrorCode = ""
 	current.lastError = ""
 	current.panelVersion = summary.PanelVersion
+	current.fileManagementAvailable = hasFederationCapability(capabilities, FileRelayV1Capability)
 	current.securityEntrancePath = summary.SecurityEntrancePath
 	current.nextPollAt = finishedAt.Add(s.jitter(s.pollInterval))
 	s.runtime[id] = current
@@ -1194,7 +1208,7 @@ func publicHost(record hostRecord, current runtimeState, now time.Time) Host {
 		TransportSecurity: TransportSecurityTLS,
 		PeerFingerprint:   "",
 		RemoteNodeID:      record.RemoteNodeID, FederationProtocol: record.FederationProtocol,
-		Scope: SummaryScope, TerminalAvailable: false, FileManagementAvailable: true,
+		Scope: SummaryScope, TerminalAvailable: false, FileManagementAvailable: current.fileManagementAvailable,
 		PanelVersion: panelVersion, State: hostState(current, now),
 
 		SecurityEntrancePath: current.securityEntrancePath,

@@ -25,6 +25,8 @@ const (
 	maxLightReportLatencyMilliseconds int64 = 15_000
 )
 
+const LightFileCapabilityPath = "/api/v3/federation/light/file-capability"
+
 type lightTokenWire struct {
 	Version   int    `json:"v"`
 	Origin    string `json:"origin"`
@@ -42,9 +44,9 @@ type LightReportAuth struct {
 	ReportLatencyMilliseconds string
 }
 
-// LightRequestSignature remains only for the low-privilege telemetry
-// endpoint. Terminal control is authenticated by the v2 Noise identity and
-// never reuses this reporting HMAC.
+// LightRequestSignature authenticates low-privilege node reporting and the
+// one-time file-capability upgrade. Terminal and file control are authenticated
+// by their v2 Noise identities and never reuse this reporting HMAC.
 func LightRequestSignature(secret []byte, method, path, nodeID, timestamp, requestID string, body []byte) string {
 	bodyHash := sha256.Sum256(body)
 	material := strings.Join([]string{
@@ -203,6 +205,41 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		return LightReportResponse{}, err
 	}
 	return LightReportResponse{AcceptedAt: now, NextReport: lightReportInterval}, nil
+}
+
+// UpgradeLightFileCapability binds a newly generated node-side Noise
+// identity to an existing light-node record. The reporting credential proves
+// ownership, so the operation does not require a new enrollment token.
+func (s *Service) UpgradeLightFileCapability(
+	auth LightReportAuth,
+	rawBody []byte,
+	input LightFileCapabilityRequest,
+) (LightFileCapabilityResponse, error) {
+	now := s.now().UTC()
+	if !s.lightSources.Allow(cleanRateSubject(auth.Source), now) {
+		return LightFileCapabilityResponse{}, ErrRateLimited
+	}
+	record, _, err := s.authenticateLightRequest(auth, LightFileCapabilityPath, rawBody, MaxPairBytes, now)
+	if err != nil {
+		return LightFileCapabilityResponse{}, err
+	}
+	if !s.lightReports.Allow(auth.NodeID, now) {
+		return LightFileCapabilityResponse{}, ErrRateLimited
+	}
+	if err := s.replays.Accept("file-capability:"+auth.NodeID, auth.RequestID, now); err != nil {
+		return LightFileCapabilityResponse{}, err
+	}
+	terminalPublicKey, err := decodeTerminalRelayPublicKey(input.TerminalPublicKey)
+	if err != nil || len(terminalPublicKey) != 32 {
+		return LightFileCapabilityResponse{}, ErrAuthentication
+	}
+	if err := s.light.SetTerminalPublicKey(record.ID, terminalPublicKey); err != nil {
+		return LightFileCapabilityResponse{}, err
+	}
+	return LightFileCapabilityResponse{
+		TerminalPeerPublicKey: base64.RawURLEncoding.EncodeToString(s.nodeIdentityV2.PublicKey),
+		TargetNodeID:          s.store.NodeID(),
+	}, nil
 }
 
 func (s *Service) authenticateLightRequest(

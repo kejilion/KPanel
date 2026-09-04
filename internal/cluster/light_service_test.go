@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -75,6 +76,78 @@ func signedLightReportForTest(
 	return body, LightReportAuth{
 		Source: "198.51.100.10", NodeID: response.NodeID, Timestamp: timestamp, RequestID: requestID,
 		Signature: base64.RawURLEncoding.EncodeToString(mac.Sum(nil)),
+	}
+}
+
+func signedLightCapabilityForTest(
+	t *testing.T,
+	now time.Time,
+	response LightEnrollResponse,
+	input LightFileCapabilityRequest,
+	requestID string,
+) ([]byte, LightReportAuth) {
+	t.Helper()
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := base64.RawURLEncoding.DecodeString(response.ReportingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timestamp := strconv.FormatInt(now.UTC().Unix(), 10)
+	return body, LightReportAuth{
+		Source: "198.51.100.10", NodeID: response.NodeID, Timestamp: timestamp, RequestID: requestID,
+		Signature: LightRequestSignature(key, "POST", LightFileCapabilityPath, response.NodeID, timestamp, requestID, body),
+	}
+}
+
+func TestLightFileCapabilityUpgradeUsesTheExistingReportingCredential(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	service := newLightServiceForTest(t, clock)
+	enrollment := enrollLightHostForTest(t, service, "edge-1")
+	before, err := service.Host(context.Background(), enrollment.NodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalKey, err := GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := LightFileCapabilityRequest{TerminalPublicKey: encodeTestKey(terminalKey.Public)}
+	body, auth := signedLightCapabilityForTest(t, now, enrollment, input, strings.Repeat("c", 32))
+	response, err := service.UpgradeLightFileCapability(auth, body, input)
+	if err != nil {
+		t.Fatalf("UpgradeLightFileCapability() error = %v", err)
+	}
+	peer, err := decodeTerminalRelayPublicKey(response.TerminalPeerPublicKey)
+	if err != nil || len(peer) != 32 || response.TargetNodeID != service.NodeID() {
+		t.Fatalf("invalid capability response = %#v, error = %v", response, err)
+	}
+	record, err := service.light.Host(enrollment.NodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := service.light.ReadTerminalPublicKey(record)
+	if err != nil || !bytes.Equal(stored, terminalKey.Public) {
+		t.Fatalf("stored terminal identity = %x, error = %v", stored, err)
+	}
+	readyContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, pollErr := service.lightFile.poll(readyContext, enrollment.NodeID, nil, nil)
+	if !errors.Is(pollErr, context.Canceled) {
+		t.Fatalf("light file readiness poll error = %v, want context.Canceled", pollErr)
+	}
+	after, err := service.Host(context.Background(), enrollment.NodeID)
+	if err != nil || !after.FileManagementAvailable || after.Scope != SummaryTerminalFilesScope {
+		t.Fatalf("upgraded light host = %#v, error = %v", after, err)
+	}
+	if after.ResourceVersion != before.ResourceVersion {
+		t.Fatalf("capability upgrade changed resourceVersion: %q -> %q", before.ResourceVersion, after.ResourceVersion)
+	}
+	if _, err := service.UpgradeLightFileCapability(auth, body, input); !errors.Is(err, ErrReplay) {
+		t.Fatalf("replayed capability upgrade error = %v, want ErrReplay", err)
 	}
 }
 

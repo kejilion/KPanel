@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	lightEnrollEndpoint = "/api/v3/federation/light/enroll"
-	lightReportEndpoint = "/api/v3/federation/light/report"
+	lightEnrollEndpoint         = "/api/v3/federation/light/enroll"
+	lightReportEndpoint         = "/api/v3/federation/light/report"
+	lightFileCapabilityEndpoint = cluster.LightFileCapabilityPath
 )
 
 type clusterTelemetrySource struct {
@@ -423,7 +424,32 @@ func (s *Server) handleFederationSummary(w http.ResponseWriter, r *http.Request)
 		s.writeClusterError(w, r, err)
 		return
 	}
+	w.Header().Set(cluster.FederationCapabilitiesHeader, cluster.FileRelayV1Capability)
 	s.writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleFederationFileRelayV1(w http.ResponseWriter, r *http.Request) {
+	input, err := s.cluster.AuthorizeFileRelayV1(s.remoteIP(r), r)
+	if err != nil {
+		s.auditAuthFailure(r, "cluster.federation.files.relay")
+		s.writeClusterError(w, r, err)
+		return
+	}
+	target := r.Clone(r.Context())
+	target.Method = input.Method
+	target.URL = &url.URL{Path: input.Path, RawQuery: input.RawQuery}
+	target.RequestURI = ""
+	target.Body = r.Body
+	if target.Body == nil {
+		target.Body = http.NoBody
+	}
+	target.ContentLength = input.BodyLength
+	target.Header = make(http.Header, len(input.Headers)+1)
+	for key, value := range input.Headers {
+		target.Header.Set(key, value)
+	}
+	target.Header.Set("X-Request-ID", requestID(r))
+	s.federatedFileHandler().ServeHTTP(w, target)
 }
 
 func (s *Server) handleFederationRevoke(w http.ResponseWriter, r *http.Request) {
@@ -599,7 +625,7 @@ func mustReadLimited(input io.Reader, limit int64) []byte {
 
 func isLightNodeRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost &&
-		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightReportEndpoint)
+		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint)
 }
 
 func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Request) {
@@ -663,6 +689,36 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
+		s.writeJSON(w, http.StatusOK, response)
+	case lightFileCapabilityEndpoint:
+		rawBody, err := readLimitedJSONBody(w, r, cluster.MaxPairBytes)
+		if err != nil {
+			return
+		}
+		var input cluster.LightFileCapabilityRequest
+		decoder := json.NewDecoder(bytes.NewReader(rawBody))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			writeProblemJSON(w, contract.Problem{Type: "about:blank", Title: "Invalid JSON", Status: http.StatusBadRequest, Code: "invalid_json"})
+			return
+		}
+		var extra any
+		if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+			writeProblemJSON(w, contract.Problem{Type: "about:blank", Title: "Invalid JSON", Status: http.StatusBadRequest, Code: "invalid_json"})
+			return
+		}
+		response, err := s.cluster.UpgradeLightFileCapability(cluster.LightReportAuth{
+			Source:    s.remoteIP(r),
+			NodeID:    strings.TrimSpace(r.Header.Get("X-KPanel-Light-Node-ID")),
+			Timestamp: strings.TrimSpace(r.Header.Get("X-KPanel-Timestamp")),
+			RequestID: strings.TrimSpace(r.Header.Get("X-KPanel-Request-ID")),
+			Signature: strings.TrimSpace(r.Header.Get("X-KPanel-Signature")),
+		}, rawBody, input)
+		if err != nil {
+			s.auditAuthFailure(r, "cluster.light-node.file-capability")
+			s.writeClusterError(w, r, err)
+			return
+		}
 		s.writeJSON(w, http.StatusOK, response)
 	default:
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")

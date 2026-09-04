@@ -26,8 +26,16 @@ const (
 	FederationCapabilitiesHeader    = "X-KPanel-Response-Capabilities"
 	SecurityEntrancePathCapability  = "security-entrance-path-v1"
 	SSHLoginCapability              = "ssh-login-v1"
+	FileRelayV1Capability           = "file-relay-v1"
 	LightResponseCapabilitiesHeader = "X-KPanel-Light-Response-Capabilities"
 	LightReportLatencyHeader        = "X-KPanel-Light-Report-Latency-Milliseconds"
+)
+
+const (
+	FileRelayV1Path         = "/api/v1/federation/files/relay"
+	FileRelayV1MethodHeader = "X-KPanel-File-Method"
+	FileRelayV1PathHeader   = "X-KPanel-File-Path"
+	FileRelayV1QueryHeader  = "X-KPanel-File-Query"
 )
 
 // Response capabilities are transport hints, not authorization inputs. V1 is

@@ -522,6 +522,45 @@ type serviceScriptedRemote struct {
 	calls      int
 }
 
+type serviceCapabilitiesRemote struct {
+	*serviceScriptedRemote
+	capabilities string
+}
+
+func (r *serviceCapabilitiesRemote) SummaryWithCapabilities(
+	ctx context.Context,
+	origin, controllerID, targetID string,
+	privateKey ed25519.PrivateKey,
+	now time.Time,
+) (FederationSummary, string, error) {
+	summary, err := r.Summary(ctx, origin, controllerID, targetID, privateKey, now)
+	return summary, r.capabilities, err
+}
+
+func TestLegacyPanelFileCapabilityComesFromTheSummaryHandshake(t *testing.T) {
+	requirePOSIXClusterCredentials(t)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	remote := &serviceCapabilitiesRemote{
+		serviceScriptedRemote: &serviceScriptedRemote{
+			nodeID: "abcdefabcdefabcdefabcdefabcdefab", hostname: "remote", now: clock.Now,
+		},
+		capabilities: FileRelayV1Capability,
+	}
+	service := newServiceForFederationTest(t, remote, clock.Now, "controller")
+	host, err := service.AddHost(context.Background(), AddHostInput{
+		Origin: "https://remote.example",
+		PairingCode: "0123456789abcdef." +
+			"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	})
+	if err != nil {
+		t.Fatalf("AddHost() error = %v", err)
+	}
+	if !host.FileManagementAvailable || host.Kind != HostKindPanel || host.FederationProtocol != FederationProtocol {
+		t.Fatalf("legacy Panel capability = %#v", host)
+	}
+}
+
 func (r *serviceScriptedRemote) Pair(
 	context.Context,
 	string,
