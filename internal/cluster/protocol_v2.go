@@ -174,12 +174,14 @@ type TerminalRelayPollResponse struct {
 }
 
 // FileRelayPollRequest and its companion types carry the file manager HTTP
-// contract over the lightweight node's existing outbound Noise poll. The
-// command body is deliberately an allow-listed request shape instead of an
-// arbitrary URL or shell command.
+// contract over the lightweight node's existing outbound Noise poll or the
+// paired Panel-to-Panel relay. The command body is deliberately an
+// allow-listed request shape instead of an arbitrary URL or shell command.
 type FileRelayPollRequest struct {
-	RequestIDs []string         `json:"requestIds,omitempty"`
-	Events     []FileRelayEvent `json:"events,omitempty"`
+	RequestIDs []string          `json:"requestIds,omitempty"`
+	Events     []FileRelayEvent  `json:"events,omitempty"`
+	SessionID  string            `json:"sessionId,omitempty"`
+	Command    *FileRelayCommand `json:"command,omitempty"`
 }
 
 type FileRelayEvent struct {
@@ -211,6 +213,7 @@ type FileRelayCommand struct {
 type FileRelayPollResponse struct {
 	Epoch   string            `json:"epoch,omitempty"`
 	Command *FileRelayCommand `json:"command,omitempty"`
+	Events  []FileRelayEvent  `json:"events,omitempty"`
 }
 
 type v2CommitPayload struct {
@@ -611,8 +614,8 @@ func v2FileRelayRequestPath(path string) bool {
 }
 
 // FileRelayRequestPath reports whether a browser file-manager route may cross
-// the lightweight-node relay. Keep this allowlist beside the federation
-// protocol rather than duplicating it in the Panel HTTP router.
+// a paired host relay. Keep this allowlist beside the federation protocol
+// rather than duplicating it in the Panel HTTP router.
 func FileRelayRequestPath(path string) bool {
 	return v2FileRelayRequestPath(path)
 }

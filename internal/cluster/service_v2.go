@@ -673,7 +673,7 @@ func publicHostV2(
 		FederationProtocol:      FederationProtocolV2,
 		Scope:                   normalizedV2Scope(record.Scope),
 		TerminalAvailable:       ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
-		FileManagementAvailable: true,
+		FileManagementAvailable: ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
 		FileTransferAvailable:   ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
 		PanelVersion:            panelVersion, State: state,
 
@@ -746,34 +746,65 @@ func (s *Service) handleFileRelayV2(
 	now time.Time,
 ) (FederationEnvelopeV2, error) {
 	record, err := s.light.Host(envelope.ControllerID)
-	if err != nil || s.lightFile == nil {
-		return FederationEnvelopeV2{}, ErrAuthentication
+	if err == nil {
+		if s.lightFile == nil {
+			return FederationEnvelopeV2{}, ErrAuthentication
+		}
+		filePublicKey, keyErr := s.light.ReadTerminalPublicKey(record)
+		if keyErr != nil || len(filePublicKey) != 32 {
+			return FederationEnvelopeV2{}, ErrAuthentication
+		}
+		payload, peerStatic, handshake, openErr := openV2Request(
+			http.MethodPost, v2FileRelayPath, envelope,
+			nodeNoiseKeyV2(s.nodeIdentityV2), nil,
+		)
+		if openErr != nil || !bytes.Equal(peerStatic, filePublicKey) {
+			return FederationEnvelopeV2{}, ErrAuthentication
+		}
+		if !s.lightFileRequests.Allow(envelope.ControllerID, now) {
+			return FederationEnvelopeV2{}, ErrRateLimited
+		}
+		if replayErr := s.replays.Accept("light:file:"+envelope.ControllerID, envelope.RequestID, now); replayErr != nil {
+			return FederationEnvelopeV2{}, replayErr
+		}
+		var input FileRelayPollRequest
+		if decodeErr := decodeV2Payload(payload, &input); decodeErr != nil || validateFileRelayPoll(input) != nil {
+			return FederationEnvelopeV2{}, ErrAuthentication
+		}
+		response, pollErr := s.lightFile.poll(ctx, envelope.ControllerID, input.RequestIDs, input.Events)
+		if pollErr != nil {
+			return FederationEnvelopeV2{}, pollErr
+		}
+		return sealV2JSONResponse(envelope, handshake, response)
 	}
-	filePublicKey, err := s.light.ReadTerminalPublicKey(record)
-	if err != nil || len(filePublicKey) != 32 {
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	payload, peerStatic, handshake, err := openV2Request(
-		http.MethodPost, v2FileRelayPath, envelope,
-		nodeNoiseKeyV2(s.nodeIdentityV2), nil,
+	return s.handlePanelFileRelayV2(ctx, envelope, now)
+}
+
+func (s *Service) handlePanelFileRelayV2(
+	ctx context.Context,
+	envelope v2Envelope,
+	now time.Time,
+) (FederationEnvelopeV2, error) {
+	controller, payload, handshake, err := s.openControllerV2(
+		v2FileRelayPath, envelope, now, controllerStateV2Active,
 	)
-	if err != nil || !bytes.Equal(peerStatic, filePublicKey) {
+	if err != nil || !ScopeAllowsFiles(normalizedV2Scope(controller.Scope)) {
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
-	if !s.lightFileRequests.Allow(envelope.ControllerID, now) {
-		return FederationEnvelopeV2{}, ErrRateLimited
-	}
-	if err := s.replays.Accept("light:file:"+envelope.ControllerID, envelope.RequestID, now); err != nil {
-		return FederationEnvelopeV2{}, err
+	if s.panelFileRelay == nil || !s.panelFileRelay.available() {
+		return FederationEnvelopeV2{}, ErrAuthentication
 	}
 	var input FileRelayPollRequest
-	if err := decodeV2Payload(payload, &input); err != nil || validateFileRelayPoll(input) != nil {
+	if decodeV2Payload(payload, &input) != nil ||
+		validatePanelFileRelayPoll(input, now) != nil ||
+		!fileRelayPayloadFits(input) {
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
-	response, err := s.lightFile.poll(ctx, envelope.ControllerID, input.RequestIDs, input.Events)
+	response, err := s.panelFileRelay.poll(ctx, input, now)
 	if err != nil {
 		return FederationEnvelopeV2{}, err
 	}
+	_ = s.storeV2.TouchController(controller.ID, now)
 	return sealV2JSONResponse(envelope, handshake, response)
 }
 
@@ -1007,6 +1038,8 @@ func (s *Service) openControllerV2(
 	requestLimiter := s.requestLimiter
 	if v2TerminalPath(path) {
 		requestLimiter = s.terminalRequests
+	} else if path == v2FileRelayPath {
+		requestLimiter = s.panelFileRequests
 	} else if path == v2FileOpenPath {
 		requestLimiter = s.fileRequests
 	}

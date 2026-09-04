@@ -199,7 +199,11 @@ const activeFileHost = computed(() =>
   fileHosts.value.find((host) => host.id === activeFileHostId.value)
     || fileHosts.value.find((host) => host.isLocal),
 )
-const isLightNodeFileHost = computed(() => activeFileHost.value?.kind === 'light_node')
+const isRemoteFileHost = computed(() => Boolean(activeFileHost.value && !activeFileHost.value.isLocal))
+const activeFileHostNodeId = computed(() => {
+  const host = activeFileHost.value
+  return host && !host.isLocal ? (host.remoteNodeId || host.id) : localClusterNodeId.value
+})
 
 const activeFileHostLabel = computed(() => {
   const host = activeFileHost.value
@@ -218,6 +222,9 @@ function fileHostStatus(host: ClusterHost): FileHostStatus {
   }
   if (['pairing', 'revoking'].includes(host.state)) {
     return { action: 'manage', label: phrase('主机状态处理中') }
+  }
+  if (host.federationProtocol === 'v2' && host.fileManagementAvailable === true) {
+    return { action: 'select', label: phrase('文件管理已就绪') }
   }
   if (host.mutualFileTransferAvailable) {
     return { action: 'open', label: phrase('已配对 · 文件互传') }
@@ -338,7 +345,7 @@ function handleFileHostSelection(host: ClusterHost): void {
     setFileHostId(host.isLocal ? undefined : host.id)
     search.value = ''
     clearSelection()
-    if (host.kind === 'light_node') {
+    if (!host.isLocal) {
       stopRemoteDownloadPolling()
       remoteDownloadJobs.value = []
       remoteDownloadJobsError.value = undefined
@@ -398,7 +405,7 @@ const remoteDownloadJobsErrorMessage = computed(() => {
   return error ? remoteDownloadErrorDetail(error.code, error.detail) : ''
 })
 const remoteDownloadTasksVisible = computed(() => (
-  !isLightNodeFileHost.value && (remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value))
+  !isRemoteFileHost.value && (remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value))
 ))
 const dialogAction = ref<DialogAction>()
 const dialogValue = ref('')
@@ -609,7 +616,7 @@ const contextBatchEntries = computed(() =>
 )
 const contextHasMultipleEntries = computed(() => contextBatchEntries.value.length > 1)
 const contextShareEntry = computed(() => {
-  if (isLightNodeFileHost.value) return undefined
+  if (isRemoteFileHost.value) return undefined
   const targets = contextBatchEntries.value
   return targets.length === 1 && targets[0]?.kind === 'file' ? targets[0] : undefined
 })
@@ -1135,8 +1142,8 @@ function currentDirectoryEntry() {
 
 async function addEntriesToDesktop(entry?: FileEntry, currentDirectory = false): Promise<void> {
   if (desktopAdding.value) return
-  if (isLightNodeFileHost.value) {
-    toast.show('轻量节点暂不支持桌面快捷方式', { message: '快捷方式属于当前 KPanel 桌面，请在本机文件中添加。' })
+  if (isRemoteFileHost.value) {
+    toast.show('远端主机暂不支持桌面快捷方式', { message: '快捷方式属于当前 KPanel 桌面，请在本机文件中添加。' })
     return
   }
   contextMenu.value = undefined
@@ -1182,9 +1189,7 @@ function startEntryDrag(event: DragEvent, entry: FileEntry): void {
     : nativeArchiveName
       ? api.files.archiveUrl(targets, nativeArchiveName)
       : undefined
-  const sourceNodeId = activeFileHost.value?.kind === 'light_node'
-    ? activeFileHost.value.id
-    : localClusterNodeId.value
+  const sourceNodeId = activeFileHostNodeId.value
   if (!beginDesktopFileDrag(
     event,
     targets,
@@ -1362,7 +1367,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     toast.danger('跨主机复制失败', '拖拽数据无效或超过 64 项，请从来源主机重新拖动。')
     return
   }
-  if (payload.sourceNodeId === localClusterNodeId.value && !isLightNodeFileHost.value) {
+  if (payload.sourceNodeId === activeFileHostNodeId.value) {
     toast.show('来源和目标是同一台主机', { message: '请在文件管理器中使用复制或移动。' })
     return
   }
@@ -1530,8 +1535,8 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
 }
 
 function openFileShare(entry?: FileEntry): void {
-  if (isLightNodeFileHost.value) {
-    toast.show('轻量节点暂不支持文件分享', { message: '文件管理已支持直接操作，分享链接仍需在 KPanel 本机创建。' })
+  if (isRemoteFileHost.value) {
+    toast.show('远端主机暂不支持文件分享', { message: '文件管理已支持直接操作，分享链接仍需在 KPanel 本机创建。' })
     return
   }
   const targets = entry ? entriesForBatch(entry) : []
@@ -1546,8 +1551,8 @@ function closeFileShare(): void {
 }
 
 function openShareManager(): void {
-  if (isLightNodeFileHost.value) {
-    toast.show('轻量节点暂不支持分享管理', { message: '分享链接属于当前 KPanel 的面板级能力。' })
+  if (isRemoteFileHost.value) {
+    toast.show('远端主机暂不支持分享管理', { message: '分享链接属于当前 KPanel 的面板级能力。' })
     return
   }
   shareManagerOpen.value = true
@@ -1585,7 +1590,7 @@ async function applySuccessfulFileChanges(
   target?: string,
 ): Promise<boolean> {
   let shortcutSyncFailed = false
-  if (!isLightNodeFileHost.value && result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
+  if (!isRemoteFileHost.value && result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
     try {
       await syncMovedDesktopShortcuts(result)
     } catch {
@@ -1869,8 +1874,8 @@ function setSort(key: 'name' | 'size' | 'modified'): void {
 }
 
 function openRemoteDownloadDialog(): void {
-  if (isLightNodeFileHost.value) {
-    toast.show('轻量节点暂不支持远程下载', { message: '远程下载任务属于当前 KPanel 的面板级能力。' })
+  if (isRemoteFileHost.value) {
+    toast.show('远端主机暂不支持远程下载', { message: '远程下载任务属于当前 KPanel 的面板级能力。' })
     return
   }
   if (remoteDownloadSubmitting.value) return
@@ -1968,6 +1973,12 @@ function upsertRemoteDownloadJob(job: FileRemoteDownloadJob): void {
 }
 
 async function loadRemoteDownloadJobs(silent = false): Promise<void> {
+  if (isRemoteFileHost.value) {
+    stopRemoteDownloadPolling()
+    remoteDownloadJobs.value = []
+    remoteDownloadJobsError.value = undefined
+    return
+  }
   if (remoteDownloadPollTimer !== undefined) window.clearTimeout(remoteDownloadPollTimer)
   remoteDownloadPollTimer = undefined
   remoteDownloadJobsController?.abort()
@@ -2543,8 +2554,8 @@ onBeforeUnmount(() => {
         <button
           class="button button--secondary button--small"
           type="button"
-          :disabled="isLightNodeFileHost"
-          :title="isLightNodeFileHost ? '轻量节点暂不支持分享管理' : '分享管理'"
+          :disabled="isRemoteFileHost"
+          :title="isRemoteFileHost ? '远端主机暂不支持分享管理' : '分享管理'"
           aria-label="分享管理"
           @click="openShareManager"
         >
@@ -2558,7 +2569,7 @@ onBeforeUnmount(() => {
           type="button"
           :title="i18n.t('files.remoteDownload.tooltip')"
           :aria-label="i18n.t('files.remoteDownload.tooltip')"
-          :disabled="remoteDownloadSubmitting || isLightNodeFileHost"
+          :disabled="remoteDownloadSubmitting || isRemoteFileHost"
           @click="openRemoteDownloadDialog"
         >
           <Download :size="15" /> {{ i18n.t('files.remoteDownload.label') }}
@@ -3131,7 +3142,7 @@ onBeforeUnmount(() => {
         <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
         <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
         <button
-          v-if="!isLightNodeFileHost && selectedEntries.some(canAddToDesktop)"
+          v-if="!isRemoteFileHost && selectedEntries.some(canAddToDesktop)"
           type="button"
           :disabled="desktopAdding"
           @click="addEntriesToDesktop()"
@@ -3161,7 +3172,7 @@ onBeforeUnmount(() => {
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openEntry(contextMenu.entry)">
         <Eye :size="15" />{{ phrase(contextMenu.entry.kind === 'directory' ? '打开' : '查看') }}
       </button>
-      <button v-if="!contextMenu.entry && !isLightNodeFileHost" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
+      <button v-if="!contextMenu.entry && !isRemoteFileHost" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
         <Pin :size="15" />{{ phrase('将当前文件夹添加到桌面') }}
       </button>
       <button
@@ -3210,7 +3221,7 @@ onBeforeUnmount(() => {
         <ShieldCheck :size="15" />{{ phrase('修改权限') }}
       </button>
       <button
-        v-if="contextMenu.entry && !isLightNodeFileHost && contextBatchEntries.some(canAddToDesktop)"
+        v-if="contextMenu.entry && !isRemoteFileHost && contextBatchEntries.some(canAddToDesktop)"
         role="menuitem"
         type="button"
         :disabled="desktopAdding"

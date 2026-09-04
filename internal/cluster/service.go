@@ -93,6 +93,7 @@ type Service struct {
 	terminal        TerminalBackend
 	lightTerminal   *lightTerminalRelay
 	lightFile       *lightFileRelay
+	panelFileRelay  *panelFileRelay
 	nodeIdentityV2  nodeIdentityV2
 	panelVersion    string
 	publicURL       string
@@ -124,6 +125,7 @@ type Service struct {
 	requestLimiter        *fixedWindowLimiter
 	fileSources           *fixedWindowLimiter
 	fileRequests          *fixedWindowLimiter
+	panelFileRequests     *fixedWindowLimiter
 	fileStreams           *fileStreamLimiter
 	terminalSources       *fixedWindowLimiter
 	terminalRequests      *fixedWindowLimiter
@@ -257,6 +259,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
+		panelFileRelay: newPanelFileRelay(),
 		publicURL:      strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
 		nodeIdentityV2: cloneNodeIdentityV2(nodeIdentity),
 		panelVersion:   cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
@@ -270,6 +273,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		requestLimiter:        newFixedWindowLimiter(30, time.Minute, 512),
 		fileSources:           newFixedWindowLimiter(1200, time.Minute, 2048),
 		fileRequests:          newFixedWindowLimiter(256, time.Minute, 512),
+		panelFileRequests:     newFixedWindowLimiter(1200, time.Minute, 512),
 		fileStreams:           newFileStreamLimiter(8, 2),
 		terminalSources:       newFixedWindowLimiter(1200, time.Minute, 2048),
 		terminalRequests:      newFixedWindowLimiter(600, time.Minute, 512),
@@ -348,7 +352,21 @@ func (s *Service) Close() error {
 	if s.lightFile != nil {
 		s.lightFile.closeAll()
 	}
+	if s.panelFileRelay != nil {
+		s.panelFileRelay.closeAll()
+	}
 	return s.checkpoint()
+}
+
+// SetFileRelayHandler supplies the already-authenticated Panel Agent file
+// surface to the cluster relay. It is called once during Panel construction;
+// the cluster service keeps the relay protocol and the Panel keeps Agent
+// authorization/route details in their respective packages.
+func (s *Service) SetFileRelayHandler(handler http.Handler) {
+	if s == nil || s.panelFileRelay == nil {
+		return
+	}
+	s.panelFileRelay.setHandler(handler)
 }
 
 func (s *Service) NodeID() string {

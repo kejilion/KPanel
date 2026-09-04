@@ -23,6 +23,9 @@ func validateFileRelayPoll(input FileRelayPollRequest) error {
 	if len(input.RequestIDs) > lightFileQueueLimit || len(input.Events) > lightFileEventLimit {
 		return ErrAuthentication
 	}
+	if input.SessionID != "" || input.Command != nil {
+		return ErrAuthentication
+	}
 	seen := make(map[string]struct{}, len(input.RequestIDs))
 	for _, id := range input.RequestIDs {
 		if !validID(id) {
@@ -34,6 +37,33 @@ func validateFileRelayPoll(input FileRelayPollRequest) error {
 		seen[id] = struct{}{}
 	}
 	for _, event := range input.Events {
+		if err := validateFileRelayEvent(event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePanelFileRelayPoll(input FileRelayPollRequest, now time.Time) error {
+	if input.SessionID == "" || !validID(input.SessionID) ||
+		len(input.RequestIDs) != 0 || len(input.Events) != 0 {
+		return ErrAuthentication
+	}
+	if input.Command == nil {
+		return nil
+	}
+	if input.Command.RequestID != input.SessionID ||
+		validateFileRelayCommand(*input.Command, now.UTC()) != nil {
+		return ErrAuthentication
+	}
+	return nil
+}
+
+func validatePanelFileRelayResponse(output FileRelayPollResponse) error {
+	if output.Epoch != "" || output.Command != nil || len(output.Events) > 1 {
+		return ErrAuthentication
+	}
+	for _, event := range output.Events {
 		if err := validateFileRelayEvent(event); err != nil {
 			return err
 		}
