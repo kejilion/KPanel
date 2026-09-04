@@ -28,10 +28,11 @@ const (
 )
 
 type clusterShareSettingsInput struct {
-	Enabled                 bool   `json:"enabled"`
-	Title                   string `json:"title"`
-	Description             string `json:"description"`
-	ExpectedResourceVersion string `json:"expectedResourceVersion"`
+	Enabled                 bool     `json:"enabled"`
+	Title                   string   `json:"title"`
+	Description             string   `json:"description"`
+	HostOrder               []string `json:"hostOrder"`
+	ExpectedResourceVersion string   `json:"expectedResourceVersion"`
 }
 
 type clusterShareTokenInput struct {
@@ -158,6 +159,14 @@ func (s *Server) handleClusterShareUpdate(w http.ResponseWriter, r *http.Request
 		title = defaultClusterShareTitle
 	}
 	current, _ := s.store.ClusterShare()
+	hostOrder := current.HostOrder
+	if input.HostOrder != nil {
+		if err := store.ValidateClusterShareHostOrder(input.HostOrder); err != nil {
+			s.writeProblem(w, r, http.StatusUnprocessableEntity, "cluster_share_host_order_invalid", "Cluster share host order is invalid", "")
+			return
+		}
+		hostOrder = append([]string(nil), input.HostOrder...)
+	}
 	token := current.Token
 	if input.Enabled && token == "" {
 		var err error
@@ -177,6 +186,7 @@ func (s *Server) handleClusterShareUpdate(w http.ResponseWriter, r *http.Request
 	}
 	value := store.ClusterShare{
 		Enabled: input.Enabled, Token: token, Title: title, Description: description,
+		HostOrder: hostOrder,
 		UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.store.ReplaceClusterShare(input.ExpectedResourceVersion, value); err != nil {
@@ -321,7 +331,7 @@ func (s *Server) clusterShareSnapshot(ctx context.Context, value store.ClusterSh
 	if result.Title == "" {
 		result.Title = defaultClusterShareTitle
 	}
-	for _, host := range inventory.Items {
+	for _, host := range orderClusterShareHosts(inventory.Items, value.HostOrder) {
 		item := publicClusterShareHost{
 			ID: publicClusterShareHostID(value.Token, host.ID), Name: host.Name,
 			State: publicClusterShareState(host.State),
@@ -370,6 +380,33 @@ func (s *Server) clusterShareSnapshot(ctx context.Context, value store.ClusterSh
 		resourceVersion: resourceVersion, expiresAt: now.Add(clusterShareCacheTTL), value: result,
 	}
 	return result
+}
+
+func orderClusterShareHosts(items []cluster.Host, order []string) []cluster.Host {
+	if len(items) < 2 || len(order) == 0 {
+		return items
+	}
+	byID := make(map[string]cluster.Host, len(items))
+	for _, host := range items {
+		byID[host.ID] = host
+	}
+	ordered := make([]cluster.Host, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, id := range order {
+		host, ok := byID[id]
+		if !ok {
+			continue
+		}
+		ordered = append(ordered, host)
+		seen[id] = struct{}{}
+	}
+	for _, host := range items {
+		if _, ok := seen[host.ID]; ok {
+			continue
+		}
+		ordered = append(ordered, host)
+	}
+	return ordered
 }
 
 func publicClusterShareState(state cluster.HostState) string {

@@ -171,6 +171,7 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 	want := ClusterShare{
 		Enabled: true, Token: strings.Repeat("a", 64), Title: "My fleet",
 		Description: "Public status", UpdatedAt: time.Now().UTC().Truncate(time.Second),
+		HostOrder: []string{"remote", "local"},
 	}
 	if err := storage.ReplaceClusterShare(version, want); err != nil {
 		t.Fatal(err)
@@ -191,6 +192,11 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 	if restored != want {
 		t.Fatalf("restored cluster share = %#v, want %#v", restored, want)
 	}
+	differentOrder := want
+	differentOrder.HostOrder = []string{"local", "remote"}
+	if ClusterShareResourceVersion(differentOrder) == restoredVersion {
+		t.Fatal("cluster share resource version ignored host order")
+	}
 
 	originalPath := storage.path
 	storage.path = filepath.Join(t.TempDir(), "missing", "state.json")
@@ -205,6 +211,20 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 	afterFailure, _ := storage.ClusterShare()
 	if afterFailure != want {
 		t.Fatalf("failed write changed in-memory cluster share: %#v", afterFailure)
+	}
+}
+
+func TestValidateClusterShareHostOrderRejectsUnboundedAndAmbiguousValues(t *testing.T) {
+	cases := [][]string{
+		{strings.Repeat("x", MaxClusterShareHostIDLength+1)},
+		{"duplicate", "duplicate"},
+		{" leading-space"},
+		{"line\nbreak"},
+	}
+	for _, order := range cases {
+		if !errors.Is(ValidateClusterShareHostOrder(order), ErrInvalidRecord) {
+			t.Fatalf("ValidateClusterShareHostOrder(%q) unexpectedly accepted", order)
+		}
 	}
 }
 

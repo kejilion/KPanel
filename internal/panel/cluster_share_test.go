@@ -71,6 +71,7 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 
 	updateBody, _ := json.Marshal(clusterShareSettingsInput{
 		Enabled: true, Title: "My global fleet", Description: "A small corner of the internet.",
+		HostOrder:               []string{cluster.LocalHostID},
 		ExpectedResourceVersion: settings.ResourceVersion,
 	})
 	missingCSRF := authenticatedRequest(
@@ -94,6 +95,10 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 	}
 	if !settings.Enabled || !isClusterSharePagePath(settings.SharePath) {
 		t.Fatalf("unexpected enabled settings %#v", settings)
+	}
+	storedShare, _ := server.store.ClusterShare()
+	if len(storedShare.HostOrder) != 1 || storedShare.HostOrder[0] != cluster.LocalHostID {
+		t.Fatalf("stored share host order = %v, want [%s]", storedShare.HostOrder, cluster.LocalHostID)
 	}
 	shareToken := strings.TrimPrefix(settings.SharePath, clusterSharePagePrefix)
 	publicResponse := performRequest(server, http.MethodGet, clusterShareAPIPrefix+shareToken, nil, nil)
@@ -220,6 +225,28 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 	disabledLink := performRequest(server, http.MethodGet, clusterShareAPIPrefix+newShareToken, nil, nil)
 	if disabledLink.Code != http.StatusNotFound {
 		t.Fatalf("disabled share status = %d, want 404", disabledLink.Code)
+	}
+}
+
+func TestOrderClusterShareHostsUsesConfiguredOrderAndAppendsNewHosts(t *testing.T) {
+	items := []cluster.Host{
+		{ID: cluster.LocalHostID, Name: "Local"},
+		{ID: "remote-a", Name: "Remote A"},
+		{ID: "remote-b", Name: "Remote B"},
+	}
+	ordered := orderClusterShareHosts(items, []string{"remote-b", "missing", cluster.LocalHostID})
+	got := make([]string, 0, len(ordered))
+	for _, host := range ordered {
+		got = append(got, host.ID)
+	}
+	want := []string{"remote-b", cluster.LocalHostID, "remote-a"}
+	if len(got) != len(want) {
+		t.Fatalf("ordered host count = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("ordered host IDs = %v, want %v", got, want)
+		}
 	}
 }
 

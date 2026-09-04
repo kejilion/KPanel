@@ -16,13 +16,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
-	maxStoreBytes int64 = 32 << 20
-	MaxFileShares       = 256
+	maxStoreBytes               int64 = 32 << 20
+	MaxFileShares                     = 256
+	MaxClusterShareHostOrder          = 101
+	MaxClusterShareHostIDLength       = 128
 )
 
 var (
@@ -88,12 +92,15 @@ type SecurityEntrance struct {
 
 // ClusterShare stores the opt-in public cluster page configuration. Token is
 // deliberately kept out of audit events and can be rotated to invalidate an
-// existing link without changing the cluster inventory.
+// existing link without changing the cluster inventory. HostOrder is an
+// optional bounded list of internal host IDs used only to preserve the
+// owner's presentation order on the anonymous public page.
 type ClusterShare struct {
 	Enabled     bool      `json:"enabled"`
 	Token       string    `json:"token,omitempty"`
 	Title       string    `json:"title,omitempty"`
 	Description string    `json:"description,omitempty"`
+	HostOrder   []string  `json:"hostOrder,omitempty"`
 	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
 }
 
@@ -186,6 +193,9 @@ func Open(path string) (*Store, error) {
 		}
 		if err := validateFileShares(s.data.FileShares); err != nil {
 			return nil, fmt.Errorf("validate file shares: %w", err)
+		}
+		if err := ValidateClusterShareHostOrder(s.data.ClusterShare.HostOrder); err != nil {
+			return nil, fmt.Errorf("validate cluster share host order: %w", err)
 		}
 	case errors.Is(err, os.ErrNotExist):
 		if err := s.persistLocked(); err != nil {
@@ -702,18 +712,21 @@ func SecurityEntranceResourceVersion(value SecurityEntrance) string {
 func (s *Store) ClusterShare() (ClusterShare, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	value := s.data.ClusterShare
+	value := cloneClusterShare(s.data.ClusterShare)
 	return value, ClusterShareResourceVersion(value)
 }
 
 func (s *Store) ReplaceClusterShare(expectedResourceVersion string, value ClusterShare) error {
+	if err := ValidateClusterShareHostOrder(value.HostOrder); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if expectedResourceVersion != ClusterShareResourceVersion(s.data.ClusterShare) {
 		return ErrConflict
 	}
 	previous := cloneDiskState(s.data)
-	s.data.ClusterShare = value
+	s.data.ClusterShare = cloneClusterShare(value)
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err
@@ -723,11 +736,12 @@ func (s *Store) ReplaceClusterShare(expectedResourceVersion string, value Cluste
 
 func ClusterShareResourceVersion(value ClusterShare) string {
 	payload := fmt.Sprintf(
-		"%t\x00%s\x00%s\x00%s\x00%s",
+		"%t\x00%s\x00%s\x00%s\x00%s\x00%s",
 		value.Enabled,
 		value.Token,
 		value.Title,
 		value.Description,
+		strings.Join(value.HostOrder, "\x00"),
 		value.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	)
 	digest := sha256.Sum256([]byte(payload))
@@ -1005,9 +1019,40 @@ func cloneDiskState(source diskState) diskState {
 		Audit:            append([]AuditEvent(nil), source.Audit...),
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
-		ClusterShare:     source.ClusterShare,
+		ClusterShare:     cloneClusterShare(source.ClusterShare),
 		FileShares:       cloneFileShares(source.FileShares),
 	}
+}
+
+func cloneClusterShare(source ClusterShare) ClusterShare {
+	source.HostOrder = append([]string(nil), source.HostOrder...)
+	return source
+}
+
+// ValidateClusterShareHostOrder keeps the persisted presentation preference
+// small and safe to include in the store resource version. Unknown IDs are
+// allowed so that removing a host does not make the whole share unavailable;
+// the public snapshot simply appends currently existing hosts after matches.
+func ValidateClusterShareHostOrder(order []string) error {
+	if len(order) > MaxClusterShareHostOrder {
+		return ErrInvalidRecord
+	}
+	seen := make(map[string]struct{}, len(order))
+	for _, id := range order {
+		if id == "" || id != strings.TrimSpace(id) || len(id) > MaxClusterShareHostIDLength || !utf8.ValidString(id) {
+			return ErrInvalidRecord
+		}
+		for _, character := range id {
+			if unicode.IsControl(character) {
+				return ErrInvalidRecord
+			}
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalidRecord
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func cloneFileShares(source []FileShare) []FileShare {
