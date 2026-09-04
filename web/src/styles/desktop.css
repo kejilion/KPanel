@@ -2374,6 +2374,12 @@ body.desktop-mode-open::-webkit-scrollbar {
   align-content: start;
 }
 
+/* File management has an in-flow sticky batch bar. Keep selection toggles
+   from redistributing extra window height across the page grid. */
+.desktop-window__body > .files-page {
+  align-content: start;
+}
+
 .desktop-window__body > .page > .page {
   min-height: 0;
   padding: 0;
