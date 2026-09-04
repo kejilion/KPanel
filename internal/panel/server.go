@@ -170,6 +170,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadCancels: make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
+	clusterService.SetFileRelayHandler(server.federatedFileHandler())
 	return server, nil
 }
 

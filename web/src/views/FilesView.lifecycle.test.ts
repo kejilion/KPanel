@@ -170,6 +170,43 @@ describe('FilesView host switcher', () => {
     }
   })
 
+  it('switches a file-capable paired Panel into the same Files page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('edge', false, {
+        fileManagementAvailable: true,
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(wrapper.get('[data-file-host-id="edge"]').text()).toContain('文件管理已就绪')
+      await wrapper.get('[data-file-host-id="edge"]').trigger('click')
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+    }
+  })
+
   it('reuses the remote Panel security entrance before appending the Files path', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',

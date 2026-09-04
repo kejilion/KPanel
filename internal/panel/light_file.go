@@ -12,6 +12,9 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 )
 
+// isLightFileRelayRequest keeps the historical name for the shared browser
+// route guard. v2 paired Panels and lightweight nodes both use this relay
+// surface; the target kind is selected after the authenticated host lookup.
 func isLightFileRelayRequest(r *http.Request) bool {
 	if r == nil || !cluster.FileRelayRequestPath(strings.TrimPrefix(r.URL.Path, "/api")) {
 		return false
@@ -57,20 +60,33 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead && !s.checkCSRF(w, r, session) {
 		return
 	}
+	host, hostErr := s.cluster.Host(r.Context(), hostID)
+	if hostErr != nil || host.IsLocal || !host.FileManagementAvailable {
+		s.writeProblem(w, r, http.StatusConflict, "file_host_unavailable", "目标主机文件管理未就绪", "")
+		return
+	}
 
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
 	defer cancel()
-	response, err := s.cluster.OpenLightFile(transferContext, hostID, cluster.LightFileRequest{
+	input := cluster.LightFileRequest{
 		Method: r.Method, Path: agentPath, RawQuery: values.Encode(),
 		Headers: lightFileRelayHeaders(r), Body: r.Body, BodyLength: r.ContentLength,
-	})
+	}
+	var response *http.Response
+	if host.Kind == cluster.HostKindLightNode {
+		response, err = s.cluster.OpenLightFile(transferContext, hostID, input)
+	} else if host.Kind == cluster.HostKindPanel && host.FederationProtocol == cluster.FederationProtocolV2 {
+		response, err = s.cluster.OpenRemotePanelFile(transferContext, hostID, input)
+	} else {
+		err = cluster.ErrFileRelayUnavailable
+	}
 	if err != nil {
-		status, code, detail := http.StatusServiceUnavailable, "file_relay_unavailable", "轻量节点文件代理未连接"
+		status, code, detail := http.StatusServiceUnavailable, "file_relay_unavailable", "远端主机文件代理未连接"
 		if errors.Is(err, cluster.ErrRateLimited) {
-			status, code, detail = http.StatusTooManyRequests, "file_relay_rate_limited", "轻量节点文件操作过于频繁"
+			status, code, detail = http.StatusTooManyRequests, "file_relay_rate_limited", "远端主机文件操作过于频繁"
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			_ = s.audit(r, session.User.ID, "file.light.relay", "light-node", hostID, "failure", nil)
+			_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, "failure", nil)
 		}
 		s.writeProblem(w, r, status, code, detail, "")
 		return
@@ -81,7 +97,7 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 			result = "success"
 		}
-		_ = s.audit(r, session.User.ID, "file.light.relay", "light-node", hostID, result, nil)
+		_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, result, nil)
 	}
 	copyFileHeaders(w.Header(), response.Header)
 	w.Header().Set("Cache-Control", "private, no-store")

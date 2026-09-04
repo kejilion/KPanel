@@ -685,16 +685,20 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	targetHostID := strings.TrimSpace(r.URL.Query().Get("hostId"))
+	targetHostKind := cluster.HostKind("")
 	if values, exists := r.URL.Query()["hostId"]; exists && (len(values) != 1 || targetHostID == "") {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_host_invalid", "目标文件主机无效", "")
 		return
 	}
 	if targetHostID != "" {
 		host, hostErr := s.cluster.Host(r.Context(), targetHostID)
-		if hostErr != nil || host.Kind != cluster.HostKindLightNode || !host.FileManagementAvailable {
-			s.writeProblem(w, r, http.StatusConflict, "file_host_unavailable", "目标轻量节点文件管理未就绪", "")
+		if hostErr != nil || host.IsLocal || !host.FileManagementAvailable ||
+			(host.Kind != cluster.HostKindLightNode &&
+				(host.Kind != cluster.HostKindPanel || host.FederationProtocol != cluster.FederationProtocolV2)) {
+			s.writeProblem(w, r, http.StatusConflict, "file_host_unavailable", "目标主机文件管理未就绪", "")
 			return
 		}
+		targetHostKind = host.Kind
 	}
 	if !s.checkOrigin(w, r) {
 		return
@@ -743,8 +747,8 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if targetHostID == "" {
 		ensureErr = s.ensureFileTransferDirectory(transferContext, input.TargetDirectory, requestID(r))
 	} else {
-		ensureErr = s.ensureLightFileTransferDirectory(
-			transferContext, targetHostID, input.TargetDirectory,
+		ensureErr = s.ensureFileHostTransferDirectory(
+			transferContext, targetHostID, targetHostKind, input.TargetDirectory,
 		)
 	}
 	if ensureErr != nil {
@@ -790,8 +794,8 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if targetHostID == "" {
 		name, err = s.uniqueFileTransferName(transferContext, input.TargetDirectory, metadata.Name, requestID(r))
 	} else {
-		name, err = s.uniqueLightFileTransferName(
-			transferContext, targetHostID, input.TargetDirectory, metadata.Name, requestID(r),
+		name, err = s.uniqueFileHostTransferName(
+			transferContext, targetHostID, targetHostKind, input.TargetDirectory, metadata.Name, requestID(r),
 		)
 	}
 	if err != nil {
@@ -835,7 +839,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 			requestID(r), tracked, headers, -1,
 		)
 	} else {
-		response, err = s.cluster.OpenLightFile(transferContext, targetHostID, cluster.LightFileRequest{
+		response, err = s.openFileHostRequest(transferContext, targetHostID, targetHostKind, cluster.LightFileRequest{
 			Method: http.MethodPost, Path: "/v1/files/transfer/import", RawQuery: query.Encode(),
 			Headers: map[string]string{"Content-Type": "application/octet-stream"},
 			Body:    tracked, BodyLength: -1,
@@ -941,9 +945,30 @@ func (s *Server) openLocalFileTransfer(
 	return response.Body, metadata, nil
 }
 
-func (s *Server) ensureLightFileTransferDirectory(ctx context.Context, hostID, directory string) error {
+func (s *Server) openFileHostRequest(
+	ctx context.Context,
+	hostID string,
+	kind cluster.HostKind,
+	input cluster.LightFileRequest,
+) (*http.Response, error) {
+	switch kind {
+	case cluster.HostKindLightNode:
+		return s.cluster.OpenLightFile(ctx, hostID, input)
+	case cluster.HostKindPanel:
+		return s.cluster.OpenRemotePanelFile(ctx, hostID, input)
+	default:
+		return nil, errors.New("unsupported file host")
+	}
+}
+
+func (s *Server) ensureFileHostTransferDirectory(
+	ctx context.Context,
+	hostID string,
+	kind cluster.HostKind,
+	directory string,
+) error {
 	query := url.Values{"path": []string{directory}}
-	response, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+	response, err := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
 		Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
 		Body: http.NoBody, BodyLength: 0,
 	})
@@ -966,7 +991,7 @@ func (s *Server) ensureLightFileTransferDirectory(ctx context.Context, hostID, d
 		return errors.New("target directory unavailable")
 	}
 	body, _ := json.Marshal(contract.FileActionRequest{Action: "mkdir", Target: "/home", Name: "KPanel Desktop"})
-	created, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+	created, err := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
 		Method: http.MethodPost, Path: "/v1/files/actions", Headers: map[string]string{
 			"Content-Type": "application/json",
 		}, Body: bytes.NewReader(body), BodyLength: int64(len(body)),
@@ -977,7 +1002,7 @@ func (s *Server) ensureLightFileTransferDirectory(ctx context.Context, hostID, d
 			return nil
 		}
 	}
-	checked, checkErr := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+	checked, checkErr := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
 		Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
 		Body: http.NoBody, BodyLength: 0,
 	})
@@ -1013,11 +1038,18 @@ func (s *Server) uniqueFileTransferName(ctx context.Context, directory, original
 	return "", errors.New("too many duplicate names")
 }
 
-func (s *Server) uniqueLightFileTransferName(ctx context.Context, hostID, directory, original, requestID string) (string, error) {
+func (s *Server) uniqueFileHostTransferName(
+	ctx context.Context,
+	hostID string,
+	kind cluster.HostKind,
+	directory string,
+	original string,
+	requestID string,
+) (string, error) {
 	for attempt := 0; attempt <= 999; attempt++ {
 		candidate := suffixedFileTransferName(original, attempt)
 		query := url.Values{"path": []string{path.Join(directory, candidate)}}
-		response, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+		response, err := s.openFileHostRequest(ctx, hostID, kind, cluster.LightFileRequest{
 			Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
 			Body: http.NoBody, BodyLength: 0,
 		})

@@ -299,7 +299,14 @@ func (c *RemoteClient) newRequest(
 }
 
 func (c *RemoteClient) doJSON(request *http.Request, limit int64, target any) error {
-	response, err := c.client.Do(request)
+	return c.doJSONWith(c.client, request, limit, target)
+}
+
+func (c *RemoteClient) doJSONWith(client *http.Client, request *http.Request, limit int64, target any) error {
+	if client == nil {
+		return &RemoteError{Code: "unreachable"}
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return classifyRemoteTransportError(err)
 	}
