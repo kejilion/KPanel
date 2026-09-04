@@ -109,7 +109,7 @@ func ensureFileCapability(
 	if err != nil {
 		return nodeConfig{}, terminalIdentity{}, err
 	}
-	headers, err := signedLightNodeHeaders(config, cluster.LightFileCapabilityPath, body, secret)
+	headers, err := signedLightNodeHeaders(config, cluster.LightFileCapabilityPath, body, secret, nil)
 	if err != nil {
 		return nodeConfig{}, terminalIdentity{}, err
 	}
