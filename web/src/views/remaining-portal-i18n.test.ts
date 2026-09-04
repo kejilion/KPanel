@@ -69,6 +69,7 @@ vi.mock('@/lib/api', () => ({
     cluster: { hosts: mocks.clusterHosts },
     system: { publicNetwork: vi.fn(), action: vi.fn() },
   },
+  setFileHostId: vi.fn(),
 }))
 
 vi.mock('@/stores/panel', () => ({

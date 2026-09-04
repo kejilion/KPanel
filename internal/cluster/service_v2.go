@@ -666,15 +666,16 @@ func publicHostV2(
 	}
 	return Host{
 		ID: record.ID, Name: name, Origin: record.Origin,
-		Kind:                  HostKindPanel,
-		TransportSecurity:     record.TransportSecurity,
-		PeerFingerprint:       record.PeerFingerprint,
-		RemoteNodeID:          record.RemoteNodeID,
-		FederationProtocol:    FederationProtocolV2,
-		Scope:                 normalizedV2Scope(record.Scope),
-		TerminalAvailable:     ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
-		FileTransferAvailable: ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
-		PanelVersion:          panelVersion, State: state,
+		Kind:                    HostKindPanel,
+		TransportSecurity:       record.TransportSecurity,
+		PeerFingerprint:         record.PeerFingerprint,
+		RemoteNodeID:            record.RemoteNodeID,
+		FederationProtocol:      FederationProtocolV2,
+		Scope:                   normalizedV2Scope(record.Scope),
+		TerminalAvailable:       ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
+		FileManagementAvailable: true,
+		FileTransferAvailable:   ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
+		PanelVersion:            panelVersion, State: state,
 
 		SecurityEntrancePath: current.securityEntrancePath,
 
@@ -700,6 +701,8 @@ func (s *Service) HandleFederationV2(
 	sourceLimiter := s.v2SourceLimiter
 	if v2TerminalPath(path) || path == v2TerminalRelayPath {
 		sourceLimiter = s.terminalSources
+	} else if path == v2FileRelayPath {
+		sourceLimiter = s.lightFileSources
 	}
 	if !sourceLimiter.Allow(cleanRateSubject(source), now) {
 		return FederationEnvelopeV2{}, ErrRateLimited
@@ -730,9 +733,48 @@ func (s *Service) HandleFederationV2(
 		return s.handleTerminalCloseV2(ctx, envelope, now)
 	case v2TerminalRelayPath:
 		return s.handleTerminalRelayV2(ctx, envelope, now)
+	case v2FileRelayPath:
+		return s.handleFileRelayV2(ctx, envelope, now)
 	default:
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
+}
+
+func (s *Service) handleFileRelayV2(
+	ctx context.Context,
+	envelope v2Envelope,
+	now time.Time,
+) (FederationEnvelopeV2, error) {
+	record, err := s.light.Host(envelope.ControllerID)
+	if err != nil || s.lightFile == nil {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	filePublicKey, err := s.light.ReadTerminalPublicKey(record)
+	if err != nil || len(filePublicKey) != 32 {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	payload, peerStatic, handshake, err := openV2Request(
+		http.MethodPost, v2FileRelayPath, envelope,
+		nodeNoiseKeyV2(s.nodeIdentityV2), nil,
+	)
+	if err != nil || !bytes.Equal(peerStatic, filePublicKey) {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	if !s.lightFileRequests.Allow(envelope.ControllerID, now) {
+		return FederationEnvelopeV2{}, ErrRateLimited
+	}
+	if err := s.replays.Accept("light:file:"+envelope.ControllerID, envelope.RequestID, now); err != nil {
+		return FederationEnvelopeV2{}, err
+	}
+	var input FileRelayPollRequest
+	if err := decodeV2Payload(payload, &input); err != nil || validateFileRelayPoll(input) != nil {
+		return FederationEnvelopeV2{}, ErrAuthentication
+	}
+	response, err := s.lightFile.poll(ctx, envelope.ControllerID, input.RequestIDs, input.Events)
+	if err != nil {
+		return FederationEnvelopeV2{}, err
+	}
+	return sealV2JSONResponse(envelope, handshake, response)
 }
 
 func (s *Service) handleTerminalRelayV2(

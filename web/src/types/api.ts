@@ -197,6 +197,7 @@ export interface ClusterHost {
   federationProtocol: string
   scope: string
   terminalAvailable: boolean
+  fileManagementAvailable?: boolean
   fileTransferAvailable?: boolean
   mutualFileTransferAvailable: boolean
   panelVersion?: string

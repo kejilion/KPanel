@@ -44,7 +44,7 @@ import {
   type DesktopEntries,
   type DesktopEntry,
 } from '@/lib/desktopEntries'
-import { api, ApiError, type SystemResourceSnapshot } from '@/lib/api'
+import { api, ApiError, isRemoteFileHostSelected, type SystemResourceSnapshot } from '@/lib/api'
 import {
   contextMenuFocusOrigin,
   focusFirstContextMenuItem,
@@ -61,12 +61,14 @@ import {
   clearDesktopFileDrag,
   crossPanelFileDragEntries,
   desktopFileDragOrigin,
+  desktopFileDragSourceNodeId,
   desktopFileDragEntries,
   DesktopShortcutLimitError,
   hasCrossPanelFileDrag,
   hasDesktopFileDrag,
   nativeArchiveDownloadName,
   peekDesktopFileDragOrigin,
+  peekDesktopFileDragSourceNodeId,
 } from '@/lib/desktopFileShortcuts'
 import {
   collectExternalDrop,
@@ -74,6 +76,7 @@ import {
   DesktopExternalDropError,
   hasExternalFileDrop,
   uploadExternalDrop,
+  type DesktopExternalTransferAPI,
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
@@ -219,6 +222,56 @@ function readDesktopUploadDirectory(): string {
   } catch {
     return DESKTOP_UPLOAD_DIRECTORY
   }
+}
+
+function localFileEntries(
+  paths: readonly string[],
+  signal: AbortSignal,
+): Promise<Awaited<ReturnType<typeof api.files.entries>>> {
+  return isRemoteFileHostSelected()
+    ? api.files.entries(paths, signal, null)
+    : api.files.entries(paths, signal)
+}
+
+function localFileEntry(path: string): Promise<Awaited<ReturnType<typeof api.files.entry>>> {
+  return isRemoteFileHostSelected()
+    ? api.files.entry(path, undefined, null)
+    : api.files.entry(path)
+}
+
+function localFileContentURL(path: string, disposition: 'inline' | 'attachment'): string {
+  return isRemoteFileHostSelected()
+    ? api.files.contentUrl(path, disposition, null)
+    : api.files.contentUrl(path, disposition)
+}
+
+function localFileArchiveURL(
+  entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[],
+  name: string,
+): string {
+  return isRemoteFileHostSelected()
+    ? api.files.archiveUrl(entries, name, null)
+    : api.files.archiveUrl(entries, name)
+}
+
+function localDesktopFileAPI(): DesktopExternalTransferAPI {
+  if (!isRemoteFileHostSelected()) return api.files
+  return {
+    entry: (path, signal) => api.files.entry(path, signal, null),
+    action: (input, signal) => api.files.action(input, signal, null),
+    upload: (path, file, overwrite, onProgress, signal) =>
+      api.files.upload(path, file, overwrite, onProgress, signal, null),
+  }
+}
+
+function localPanelTransfer(
+  input: Parameters<typeof api.files.transferFromPanel>[0],
+  onEvent: Parameters<typeof api.files.transferFromPanel>[1],
+  signal?: AbortSignal,
+): ReturnType<typeof api.files.transferFromPanel> {
+  return isRemoteFileHostSelected()
+    ? api.files.transferFromPanel(input, onEvent, signal, null)
+    : api.files.transferFromPanel(input, onEvent, signal)
 }
 
 function readSiteNames(): Record<string, string> {
@@ -579,7 +632,7 @@ async function refreshDesktopFileMetadata(paths: readonly string[], replaceAll =
   const controller = new AbortController()
   desktopFileMetadataAbort = controller
   try {
-    const result = await api.files.entries(requested, controller.signal)
+    const result = await localFileEntries(requested, controller.signal)
     if (controller.signal.aborted || sequence !== desktopFileMetadataSequence) return
     const next = replaceAll ? {} : { ...desktopFileMetadata.value }
     for (const path of requested) delete next[path]
@@ -1196,9 +1249,9 @@ function startDesktopShortcutDrag(event: DragEvent, entry: DesktopEntry): void {
     ? undefined
     : nativeArchiveDownloadName(transferable, 'KPanel Desktop')
   const nativeDownloadURL = directFile
-    ? api.files.contentUrl(transferable[0]!.path, 'attachment')
+    ? localFileContentURL(transferable[0]!.path, 'attachment')
     : nativeArchiveName
-      ? api.files.archiveUrl(transferable, nativeArchiveName)
+      ? localFileArchiveURL(transferable, nativeArchiveName)
       : undefined
   if (!beginDesktopFileDrag(
     event,
@@ -2115,6 +2168,16 @@ function desktopFileDropAllowed(event: DragEvent): boolean {
   return !target?.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar')
 }
 
+function isRemoteFileManagerDrag(event: DragEvent, protectedData = false): boolean {
+  if (!hasDesktopFileDrag(event)) return false
+  const origin = protectedData ? peekDesktopFileDragOrigin(event) : desktopFileDragOrigin(event)
+  if (origin !== 'file-manager') return false
+  const sourceNodeId = protectedData
+    ? peekDesktopFileDragSourceNodeId(event)
+    : desktopFileDragSourceNodeId(event)
+  return Boolean(sourceNodeId && sourceNodeId !== localClusterNodeId.value)
+}
+
 function onDesktopFileDragOver(event: DragEvent): void {
   if (!desktopFileDropAllowed(event)) {
     fileDropActive.value = false
@@ -2123,7 +2186,9 @@ function onDesktopFileDragOver(event: DragEvent): void {
   }
   event.preventDefault()
   const internal = hasDesktopFileDrag(event)
+  const remoteFileManager = isRemoteFileManagerDrag(event, true)
   const localShortcutMove = internal
+    && !remoteFileManager
     && desktopShortcutNativeDrag
     && peekDesktopFileDragOrigin(event) === 'desktop-shortcut'
   if (localShortcutMove) {
@@ -2134,7 +2199,7 @@ function onDesktopFileDragOver(event: DragEvent): void {
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
     return
   }
-  const crossPanel = !internal && hasCrossPanelFileDrag(event)
+  const crossPanel = remoteFileManager || (!internal && hasCrossPanelFileDrag(event))
   const external = !internal && !crossPanel && hasExternalFileDrop(event)
   if ((external || crossPanel) && desktopTransfer.value && ['preparing', 'uploading'].includes(desktopTransfer.value.phase)) {
     fileDropActive.value = false
@@ -2272,7 +2337,7 @@ async function saveUploadLocation(): Promise<void> {
   uploadLocationError.value = ''
   try {
     if (path !== DESKTOP_UPLOAD_DIRECTORY) {
-      const target = await api.files.entry(path)
+      const target = await localFileEntry(path)
       if (target.kind !== 'directory') {
         uploadLocationError.value = i18n.t('desktop.transferLocationNotDirectory')
         return
@@ -2368,7 +2433,7 @@ async function addExternalFileDrop(event: DragEvent, destination: DesktopIconPos
       currentName: manifest.roots[0]?.name || '', completedFiles: 0,
       totalFiles: manifest.files.length, loadedBytes: 0, totalBytes: manifest.totalBytes,
     }
-    const result = await uploadExternalDrop(manifest, api.files, controller.signal, (progress) => {
+    const result = await uploadExternalDrop(manifest, localDesktopFileAPI(), controller.signal, (progress) => {
       if (desktopTransferController !== controller || controller.signal.aborted) return
       desktopTransfer.value = {
         ...progress,
@@ -2467,7 +2532,7 @@ async function addCrossPanelFileDrop(event: DragEvent, destination: DesktopIconP
     const result = await transferCrossPanelFileBatch(
       payload,
       desktopUploadDirectory.value,
-      api.files.transferFromPanel,
+      localPanelTransfer,
       ({ source, event: progress, completed }) => {
         if (desktopTransferController !== controller || controller.signal.aborted) return
         const loadedBytes = progress.loadedBytes || 0
@@ -2574,6 +2639,7 @@ async function onDesktopFileDrop(event: DragEvent): Promise<void> {
     : desktopDropPosition(event)
   if (!destination) return
   if (localShortcutMove) await moveDesktopShortcutDrop(destination)
+  else if (isRemoteFileManagerDrag(event)) await addCrossPanelFileDrop(event, destination)
   else if (hasDesktopFileDrag(event)) await addInternalFileDrop(event, destination)
   else if (hasCrossPanelFileDrag(event)) await addCrossPanelFileDrop(event, destination)
   else if (hasExternalFileDrop(event)) await addExternalFileDrop(event, destination)
@@ -2680,7 +2746,7 @@ async function onFileMenuDownload(): Promise<void> {
   closeContextMenu()
   if (!entries.length) return
   try {
-    await downloadFileEntries(entries, 'KPanel Desktop')
+    await downloadFileEntries(entries, 'KPanel Desktop', null)
   } catch (error) {
     toast.danger(
       i18n.t('desktop.fileDownloadErrorTitle'),

@@ -481,6 +481,8 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 		action = "cluster.federation.v2.terminal.open"
 	case "/api/v2/federation/terminal/close":
 		action = "cluster.federation.v2.terminal.close"
+	case "/api/v2/federation/files/relay":
+		action = "cluster.federation.v2.files.relay"
 	}
 	if action != "" {
 		_ = s.audit(

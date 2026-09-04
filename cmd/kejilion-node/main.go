@@ -97,7 +97,7 @@ func run(arguments []string) error {
 		return nil
 	}
 	if len(arguments) == 0 {
-		return errors.New("expected enroll, run, terminal-broker, or version")
+		return errors.New("expected enroll, run, terminal-broker, file-broker, or version")
 	}
 	switch arguments[0] {
 	case "enroll":
@@ -106,6 +106,8 @@ func run(arguments []string) error {
 		return runNode(arguments[1:])
 	case "terminal-broker":
 		return runTerminalBroker(arguments[1:])
+	case "file-broker":
+		return runFileBroker(arguments[1:])
 	default:
 		return errors.New("unsupported kejilion-node command")
 	}

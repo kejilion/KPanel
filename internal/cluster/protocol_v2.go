@@ -28,6 +28,7 @@ const (
 	v2TerminalResizePath = "/api/v2/federation/terminal/resize"
 	v2TerminalClosePath  = "/api/v2/federation/terminal/close"
 	v2TerminalRelayPath  = "/api/v2/federation/terminal/relay"
+	v2FileRelayPath      = "/api/v2/federation/files/relay"
 	v2FileOpenPath       = "/api/v2/federation/files/open"
 	v2FileLinkPath       = "/api/v2/federation/files/link"
 	v2FileLinkedOpenPath = "/api/v2/federation/files/open-linked"
@@ -42,6 +43,7 @@ const (
 	V2TerminalInputPath  = v2TerminalInputPath
 	V2TerminalResizePath = v2TerminalResizePath
 	V2TerminalClosePath  = v2TerminalClosePath
+	V2FileRelayPath      = v2FileRelayPath
 )
 
 var v2NoiseSuite = noise.NewCipherSuite(
@@ -169,6 +171,46 @@ type TerminalRelayCommand struct {
 type TerminalRelayPollResponse struct {
 	Epoch   string                `json:"epoch,omitempty"`
 	Command *TerminalRelayCommand `json:"command,omitempty"`
+}
+
+// FileRelayPollRequest and its companion types carry the file manager HTTP
+// contract over the lightweight node's existing outbound Noise poll. The
+// command body is deliberately an allow-listed request shape instead of an
+// arbitrary URL or shell command.
+type FileRelayPollRequest struct {
+	RequestIDs []string         `json:"requestIds,omitempty"`
+	Events     []FileRelayEvent `json:"events,omitempty"`
+}
+
+type FileRelayEvent struct {
+	CommandID string            `json:"commandId,omitempty"`
+	RequestID string            `json:"requestId"`
+	Kind      string            `json:"kind"`
+	Status    int               `json:"status,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Offset    int64             `json:"offset,omitempty"`
+	Data      []byte            `json:"data,omitempty"`
+	Error     string            `json:"error,omitempty"`
+}
+
+type FileRelayCommand struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	RequestID  string            `json:"requestId"`
+	Method     string            `json:"method,omitempty"`
+	Path       string            `json:"path,omitempty"`
+	Query      string            `json:"query,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	BodyLength int64             `json:"bodyLength,omitempty"`
+	Offset     int64             `json:"offset,omitempty"`
+	Data       []byte            `json:"data,omitempty"`
+	Final      bool              `json:"final,omitempty"`
+	ExpiresAt  int64             `json:"expiresAt"`
+}
+
+type FileRelayPollResponse struct {
+	Epoch   string            `json:"epoch,omitempty"`
+	Command *FileRelayCommand `json:"command,omitempty"`
 }
 
 type v2CommitPayload struct {
@@ -537,7 +579,7 @@ func v2PathAllowed(method, path string) bool {
 	case v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
 		v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
 		v2TerminalResizePath, v2TerminalClosePath, v2TerminalRelayPath,
-		v2FileOpenPath,
+		v2FileRelayPath, v2FileOpenPath,
 		v2FileLinkPath, v2FileLinkedOpenPath:
 		return true
 	default:
@@ -553,4 +595,24 @@ func v2TerminalPath(path string) bool {
 	default:
 		return false
 	}
+}
+
+func v2FileRelayRequestPath(path string) bool {
+	switch path {
+	case "/v1/files", "/v1/files/entry", "/v1/files/entries",
+		"/v1/files/trash", "/v1/files/content", "/v1/files/archive",
+		"/v1/files/text", "/v1/files/tail", "/v1/files/upload",
+		"/v1/files/transfer/export", "/v1/files/transfer/import",
+		"/v1/files/actions":
+		return true
+	default:
+		return false
+	}
+}
+
+// FileRelayRequestPath reports whether a browser file-manager route may cross
+// the lightweight-node relay. Keep this allowlist beside the federation
+// protocol rather than duplicating it in the Panel HTTP router.
+func FileRelayRequestPath(path string) bool {
+	return v2FileRelayRequestPath(path)
 }

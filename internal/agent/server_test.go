@@ -494,7 +494,7 @@ func testServer(t *testing.T) *Server {
 }
 
 func TestDefaultFileManagerUsesWritableAgentStateDirectoryForTrash(t *testing.T) {
-	config := defaultFileManagerConfig("/home/docker/kpanel/data/agent")
+	config := DefaultFileManagerConfig("/home/docker/kpanel/data/agent")
 	if config.TrashVirtual != "/home/docker/kpanel/data/agent/file-trash" {
 		t.Fatalf("trash path = %q", config.TrashVirtual)
 	}

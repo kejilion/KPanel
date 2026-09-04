@@ -901,6 +901,56 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
+  it('copies a remote Files drag to the local desktop before adding its shortcut', async () => {
+    const copied = {
+      name: 'remote.txt', path: '/home/KPanel Desktop/remote.txt', kind: 'file' as const,
+      sizeBytes: 6, mode: '0644', owner: 'root', group: 'root',
+      modifiedAt: '2026-08-15T00:00:00Z', resourceVersion: 'sha256:target-remote',
+      editable: true, previewable: true,
+    }
+    mockedPanelTransfer.mockImplementation(async (_input, onEvent) => {
+      onEvent({ state: 'connecting' })
+      onEvent({ state: 'complete', loadedBytes: 6, totalBytes: 6, entry: copied })
+      return copied
+    })
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const values = new Map<string, string>()
+    const types: string[] = []
+    const dataTransfer = {
+      types, effectAllowed: 'none', dropEffect: 'none',
+      setData(type: string, value: string) {
+        if (!types.includes(type)) types.push(type)
+        values.set(type, value)
+      },
+      getData(type: string) { return values.get(type) || '' },
+    }
+    const source = {
+      name: 'remote.txt', path: '/home/remote.txt', kind: 'file' as const,
+      resourceVersion: 'sha256:source-remote',
+    }
+    const start = internalFileDragEvent('dragstart', dataTransfer, 40, 40)
+    expect(beginDesktopFileDrag(start, [source], 'a'.repeat(32), 'file-manager')).toBe(true)
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('dragover', {
+      ...dataTransfer,
+      getData: () => '',
+    }, 190, 160))
+    await nextTick()
+    expect(wrapper.get('.desktop__file-drop').text()).toContain('从另一台主机复制')
+
+    wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
+    await flushPromises()
+    expect(mockedPanelTransfer).toHaveBeenCalledWith({
+      sourceNodeId: 'a'.repeat(32), path: '/home/remote.txt', resourceVersion: 'sha256:source-remote',
+      targetDirectory: '/home/KPanel Desktop',
+    }, expect.any(Function), expect.any(AbortSignal))
+    expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].shortcuts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'remote.txt', targetType: 'file', path: '/home/KPanel Desktop/remote.txt' }),
+    ]))
+    wrapper.unmount()
+  })
+
   it('keeps local desktop shortcut movement available when cluster identity is unavailable', async () => {
     const shortcutID = '3'.repeat(32)
     mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
@@ -1119,7 +1169,7 @@ describe('DesktopView dynamic entries', () => {
 
     wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer))
     await nextTick()
-    expect(wrapper.get('.desktop__file-drop').text()).toContain('从另一个 KPanel 复制')
+    expect(wrapper.get('.desktop__file-drop').text()).toContain('从另一台主机复制')
     expect(wrapper.get('.desktop__file-drop').text()).toContain('/home/KPanel Desktop')
 
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 190, 160))
@@ -1131,7 +1181,7 @@ describe('DesktopView dynamic entries', () => {
     expect(mockedWorkspaceUpdate.mock.calls.at(-1)?.[0].shortcuts).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'app', targetType: 'directory', path: '/home/KPanel Desktop/app' }),
     ]))
-    expect(wrapper.get('.desktop-transfer').text()).toContain('跨面板复制完成')
+    expect(wrapper.get('.desktop-transfer').text()).toContain('跨主机复制完成')
     wrapper.unmount()
   })
 
@@ -1170,7 +1220,7 @@ describe('DesktopView dynamic entries', () => {
       expect.objectContaining({ name: 'one.txt', path: '/home/KPanel Desktop/one.txt' }),
       expect.objectContaining({ name: 'two.txt', path: '/home/KPanel Desktop/two.txt' }),
     ]))
-    expect(wrapper.get('.desktop-transfer').text()).toContain('跨面板复制完成')
+    expect(wrapper.get('.desktop-transfer').text()).toContain('跨主机复制完成')
     expect(wrapper.get('.desktop-transfer').text()).toContain('2 个项目')
     wrapper.unmount()
   })

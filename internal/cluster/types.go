@@ -88,6 +88,7 @@ type Host struct {
 	FederationProtocol          string            `json:"federationProtocol"`
 	Scope                       string            `json:"scope"`
 	TerminalAvailable           bool              `json:"terminalAvailable"`
+	FileManagementAvailable     bool              `json:"fileManagementAvailable"`
 	FileTransferAvailable       bool              `json:"fileTransferAvailable"`
 	MutualFileTransferAvailable bool              `json:"mutualFileTransferAvailable"`
 	PanelVersion                string            `json:"panelVersion,omitempty"`

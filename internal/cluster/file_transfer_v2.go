@@ -19,14 +19,17 @@ import (
 )
 
 const (
-	fileStreamContentType = "application/x-kpanel-noise-stream"
-	fileStreamChunkBytes  = 60 << 10
-	fileStreamMaxFrame    = noise.MaxMsgLen
-	fileRecordData        = byte(1)
-	fileRecordEnd         = byte(2)
-	fileRecordError       = byte(3)
-	fileStreamIdleTimeout = 45 * time.Second
+	fileStreamContentType      = "application/x-kpanel-noise-stream"
+	fileTransferMetadataHeader = "X-KPanel-File-Metadata"
+	fileStreamChunkBytes       = 60 << 10
+	fileStreamMaxFrame         = noise.MaxMsgLen
+	fileRecordData             = byte(1)
+	fileRecordEnd              = byte(2)
+	fileRecordError            = byte(3)
+	fileStreamIdleTimeout      = 45 * time.Second
 )
+
+const FileTransferMetadataHeader = fileTransferMetadataHeader
 
 type FederationFileOpenRequest struct {
 	Path            string `json:"path"`

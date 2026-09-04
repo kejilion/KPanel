@@ -3,18 +3,22 @@ import { archiveDownloadName, downloadFileEntries } from './fileDownloads'
 
 const mocks = vi.hoisted(() => ({
   archiveUrl: vi.fn(),
+  contentUrl: vi.fn(),
   createArchiveDownloadTicket: vi.fn(),
   createDownloadTicket: vi.fn(),
+  isRemoteFileHostSelected: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   api: {
     files: {
       archiveUrl: mocks.archiveUrl,
+      contentUrl: mocks.contentUrl,
       createArchiveDownloadTicket: mocks.createArchiveDownloadTicket,
       createDownloadTicket: mocks.createDownloadTicket,
     },
   },
+  isRemoteFileHostSelected: mocks.isRemoteFileHostSelected,
 }))
 
 function entry(name: string, kind: 'file' | 'directory' = 'file') {
@@ -50,8 +54,11 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   mocks.archiveUrl.mockReset()
+  mocks.contentUrl.mockReset()
   mocks.createArchiveDownloadTicket.mockReset()
   mocks.createDownloadTicket.mockReset()
+  mocks.isRemoteFileHostSelected.mockReset()
+  mocks.isRemoteFileHostSelected.mockReturnValue(false)
   mocks.createArchiveDownloadTicket.mockResolvedValue({
     downloadUrl: '/downloads/archive-ticket',
     expiresAt: '2026-08-20T00:05:00Z',
@@ -113,5 +120,36 @@ describe('downloadFileEntries', () => {
     expect(anchors).toHaveLength(1)
     expect(anchors[0]).toMatchObject({ href: '/downloads/archive-ticket', download: 'home.zip' })
     expect(anchors[0]!.click).toHaveBeenCalledOnce()
+  })
+
+  it('streams a single file directly from the selected remote host', async () => {
+    const { anchors } = installDocument()
+    const file = entry('nginx.conf')
+    mocks.isRemoteFileHostSelected.mockReturnValue(true)
+    mocks.contentUrl.mockReturnValue('/api/v1/files/content?path=%2Fnginx.conf&disposition=attachment')
+
+    await downloadFileEntries([file], 'etc')
+
+    expect(mocks.createDownloadTicket).not.toHaveBeenCalled()
+    expect(anchors[0]).toMatchObject({
+      href: '/api/v1/files/content?path=%2Fnginx.conf&disposition=attachment',
+      download: 'nginx.conf',
+    })
+  })
+
+  it('streams a remote directory archive directly from the selected host', async () => {
+    const { anchors } = installDocument()
+    const directory = entry('photos', 'directory')
+    mocks.isRemoteFileHostSelected.mockReturnValue(true)
+    mocks.archiveUrl.mockReturnValue('/api/v1/files/archive?selection=photos&name=photos.zip')
+
+    await downloadFileEntries([directory], 'home')
+
+    expect(mocks.createArchiveDownloadTicket).not.toHaveBeenCalled()
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([directory], 'photos.zip')
+    expect(anchors[0]).toMatchObject({
+      href: '/api/v1/files/archive?selection=photos&name=photos.zip',
+      download: 'photos.zip',
+    })
   })
 })

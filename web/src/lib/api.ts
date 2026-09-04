@@ -113,6 +113,8 @@ export interface RequestOptions {
   query?: Record<string, QueryValue>
   signal?: AbortSignal
   unwrapEnvelope?: boolean
+  /** Override the selected file host for this request; null forces the local panel. */
+  fileHostId?: string | null
 }
 interface ApiEnvelope<T> {
   data?: T
@@ -425,6 +427,7 @@ export class ApiError extends Error {
 }
 
 let csrfToken = ''
+let fileHostId = ''
 let previousNetworkSample:
   | { receivedBytes: number; sentBytes: number; collectedAtMs: number }
   | undefined
@@ -554,15 +557,36 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   return serialized ? `${url}?${serialized}` : url
 }
 
+const lightFileRelayPaths = new Set([
+  '/files', '/files/entry', '/files/entries', '/files/trash', '/files/content',
+  '/files/archive', '/files/text', '/files/tail', '/files/upload', '/files/actions',
+])
+const fileTargetQueryPaths = new Set([...lightFileRelayPaths, '/files/transfers'])
+
+function fileRequestQuery(
+  path: string,
+  query?: Record<string, QueryValue>,
+  targetHostId: string | null | undefined = fileHostId,
+): Record<string, QueryValue> | undefined {
+  if (!fileTargetQueryPaths.has(path) || !targetHostId) return query
+  return { ...query, hostId: targetHostId }
+}
+
 async function rawFileResponse(
   path: string,
-  options: { method?: 'GET' | 'POST'; body?: BodyInit; query?: Record<string, QueryValue>; headers?: HeadersInit } = {},
+  options: {
+    method?: 'GET' | 'POST'
+    body?: BodyInit
+    query?: Record<string, QueryValue>
+    headers?: HeadersInit
+    fileHostId?: string | null
+  } = {},
 ): Promise<Response> {
   const headers = new Headers(options.headers)
   if (options.method === 'POST' && csrfToken) headers.set('X-CSRF-Token', csrfToken)
   let response: Response
   try {
-    response = await fetch(buildUrl(path, options.query), {
+    response = await fetch(buildUrl(path, fileRequestQuery(path, options.query, options.fileHostId)), {
       method: options.method || 'GET',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -626,7 +650,7 @@ async function request<T>(
 
   let response: Response
   try {
-    response = await fetch(buildUrl(path, options.query), {
+    response = await fetch(buildUrl(path, fileRequestQuery(path, options.query, options.fileHostId)), {
       method,
       credentials: 'same-origin',
       cache: 'no-store',
@@ -727,12 +751,13 @@ async function streamFileEntry<TInput, TEvent extends FileEntryStreamEvent>(
   signal: AbortSignal | undefined,
   messages: FileEntryStreamMessages,
   allowedStates: ReadonlySet<string>,
+  fileHostId?: string | null,
 ): Promise<FileEntry> {
   const headers = new Headers({ Accept: 'application/x-ndjson', 'Content-Type': 'application/json' })
   if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
   let response: Response
   try {
-    response = await fetch(buildUrl(path), {
+    response = await fetch(buildUrl(path, fileRequestQuery(path, undefined, fileHostId)), {
       method: 'POST', credentials: 'same-origin', cache: 'no-store', headers,
       body: JSON.stringify(input), signal,
     })
@@ -1801,29 +1826,45 @@ export const api = {
       }),
   },
   files: {
-    entry: (path: string, signal?: AbortSignal): Promise<FileEntry> =>
-      request<FileEntry>('/files/entry', { query: { path }, signal }),
-    entries: (paths: readonly string[], signal?: AbortSignal): Promise<FileEntryBatchResult> =>
+    entry: (
+      path: string,
+      signal?: AbortSignal,
+      fileHostId?: string | null,
+    ): Promise<FileEntry> =>
+      request<FileEntry>('/files/entry', { query: { path }, signal, fileHostId }),
+    entries: (
+      paths: readonly string[],
+      signal?: AbortSignal,
+      fileHostId?: string | null,
+    ): Promise<FileEntryBatchResult> =>
       request<FileEntryBatchResult>('/files/entries', {
         method: 'POST',
         body: { paths },
         signal,
+        fileHostId,
       }),
     list: (
       path = '/',
       options?: { offset?: number; search?: string },
       signal?: AbortSignal,
+      fileHostId?: string | null,
     ): Promise<FileDirectory> =>
       request<FileDirectory>('/files', {
         query: { path, limit: 100, offset: options?.offset, search: options?.search },
         signal,
+        fileHostId,
       }),
-    contentUrl: (path: string, disposition: 'inline' | 'attachment' = 'inline'): string =>
-      buildUrl('/files/content', { path, disposition }),
+    contentUrl: (
+      path: string,
+      disposition: 'inline' | 'attachment' = 'inline',
+      fileHostId?: string | null,
+    ): string =>
+      buildUrl('/files/content', fileRequestQuery('/files/content', { path, disposition }, fileHostId)),
     archiveUrl: (
       entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[],
       name: string,
-    ): string => buildUrl('/files/archive', {
+      fileHostId?: string | null,
+    ): string => buildUrl('/files/archive', fileRequestQuery('/files/archive', {
       selection: JSON.stringify({
         sources: entries.map((entry) => entry.path),
         expectedResourceVersions: Object.fromEntries(
@@ -1831,7 +1872,7 @@ export const api = {
         ),
       }),
       name,
-    }),
+    }, fileHostId)),
     createDownloadTicket: (path: string): Promise<FileDownloadTicket> =>
       request<FileDownloadTicket>('/files/download-tickets', {
         method: 'POST',
@@ -1877,14 +1918,16 @@ export const api = {
       input: CrossPanelFileTransferInput,
       onEvent: (event: CrossPanelFileTransferEvent) => void,
       signal?: AbortSignal,
+      fileHostId?: string | null,
     ): Promise<FileEntry> => streamFileEntry(
       '/files/transfers', input, onEvent, signal,
       {
-        failed: '跨面板复制失败。', failedCode: 'file_transfer_failed',
+        failed: '跨主机复制失败。', failedCode: 'file_transfer_failed',
         invalid: '面板返回了无效的传输状态。', invalidCode: 'file_transfer_response_invalid',
-        incomplete: '跨面板复制未正常结束。', incompleteCode: 'file_transfer_incomplete',
+        incomplete: '跨主机复制未正常结束。', incompleteCode: 'file_transfer_incomplete',
       },
       crossPanelFileEntryStreamStates,
+      fileHostId,
     ),
     remoteDownload: async (
       input: FileRemoteDownloadInput,
@@ -1914,19 +1957,28 @@ export const api = {
       }),
     deleteRemoteDownloadJob: (id: string): Promise<void> =>
       request<void>(`/files/remote-downloads/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    thumbnailUrl: (path: string, version: string): string =>
-      buildUrl('/files/content', { path, disposition: 'inline', mode: 'thumbnail', version }),
-    text: async (path: string): Promise<string> =>
+    thumbnailUrl: (path: string, version: string, fileHostId?: string | null): string =>
+      buildUrl('/files/content', fileRequestQuery('/files/content', {
+        path, disposition: 'inline', mode: 'thumbnail', version,
+      }, fileHostId)),
+    text: async (path: string, fileHostId?: string | null): Promise<string> =>
       (
         await rawFileResponse('/files/content', {
           query: { path, disposition: 'inline', mode: 'text' },
+          fileHostId,
         })
       ).text(),
-    write: (path: string, content: string, expectedResourceVersion: string): Promise<FileWriteResult> =>
+    write: (
+      path: string,
+      content: string,
+      expectedResourceVersion: string,
+      fileHostId?: string | null,
+    ): Promise<FileWriteResult> =>
       request<FileWriteResult>('/files/content', {
         method: 'PUT',
         query: { path },
         body: { content, expectedResourceVersion },
+        fileHostId,
       }),
     upload: async (
       path: string,
@@ -1934,6 +1986,7 @@ export const api = {
       overwrite = false,
       onProgress?: (percent: number) => void,
       signal?: AbortSignal,
+      fileHostId?: string | null,
     ): Promise<FileEntry> =>
       new Promise<FileEntry>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -1945,7 +1998,9 @@ export const api = {
           callback()
         }
         const abort = (): void => xhr.abort()
-        xhr.open('POST', buildUrl('/files/upload', { path, name: file.name, overwrite }))
+        xhr.open('POST', buildUrl('/files/upload', fileRequestQuery('/files/upload', {
+          path, name: file.name, overwrite,
+        }, fileHostId)))
         xhr.withCredentials = true
         xhr.responseType = 'json'
         xhr.setRequestHeader('Content-Type', 'application/octet-stream')
@@ -1979,9 +2034,14 @@ export const api = {
         signal?.addEventListener('abort', abort, { once: true })
         xhr.send(file)
       }),
-    action: (input: FileActionInput, signal?: AbortSignal): Promise<FileActionResult> =>
-      request<FileActionResult>('/files/actions', { method: 'POST', body: input, signal }),
-    trash: (): Promise<FileTrashDirectory> => request<FileTrashDirectory>('/files/trash'),
+    action: (
+      input: FileActionInput,
+      signal?: AbortSignal,
+      fileHostId?: string | null,
+    ): Promise<FileActionResult> =>
+      request<FileActionResult>('/files/actions', { method: 'POST', body: input, signal, fileHostId }),
+    trash: (fileHostId?: string | null): Promise<FileTrashDirectory> =>
+      request<FileTrashDirectory>('/files/trash', { fileHostId }),
   },
   docker: {
     environment: (signal?: AbortSignal): Promise<DockerEnvironment> =>
@@ -2203,7 +2263,16 @@ export const api = {
 
 export function resetApiSecurityState(): void {
   csrfToken = ''
+  fileHostId = ''
   previousNetworkSample = undefined
+}
+
+export function setFileHostId(hostId?: string): void {
+  fileHostId = hostId?.trim() || ''
+}
+
+export function isRemoteFileHostSelected(): boolean {
+  return Boolean(fileHostId)
 }
 
 export function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {

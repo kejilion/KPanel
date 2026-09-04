@@ -69,7 +69,7 @@ export async function transferCrossPanelFileBatch(
       }
       result.failed.push({
         source,
-        detail: error instanceof Error ? error.message : '跨面板复制失败。',
+        detail: error instanceof Error ? error.message : '跨主机复制失败。',
       })
     }
   }

@@ -24,6 +24,8 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  setFileHostId: vi.fn(),
+  isRemoteFileHostSelected: vi.fn(() => false),
   ApiError: class MockApiError extends Error {
     readonly status = 0
     readonly code = 'request_failed'
@@ -334,7 +336,7 @@ describe('FilesView host switcher', () => {
     }
   })
 
-  it('keeps telemetry-only light nodes in the existing cluster management page', async () => {
+  it('switches a file-capable light node into the same Files page', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',
       items: [fileHost('local', true), fileHost('light', false, {
@@ -345,6 +347,7 @@ describe('FilesView host switcher', () => {
         scope: 'cluster.summary.read',
         fileTransferAvailable: false,
         mutualFileTransferAvailable: false,
+        fileManagementAvailable: true,
       })],
       total: 2,
       remoteTotal: 1,
@@ -366,9 +369,10 @@ describe('FilesView host switcher', () => {
     try {
       await flushPromises()
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(wrapper.get('[data-file-host-id="light"]').text()).toContain('文件互传未启用')
+      expect(wrapper.get('[data-file-host-id="light"]').text()).toContain('文件管理已就绪')
       await wrapper.get('[data-file-host-id="light"]').trigger('click')
-      expect(mocks.push).toHaveBeenCalledWith({ name: 'cluster' })
+      expect(mocks.push).not.toHaveBeenCalledWith({ name: 'cluster' })
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
     } finally {
       wrapper.unmount()
     }

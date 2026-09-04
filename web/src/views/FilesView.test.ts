@@ -48,6 +48,7 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  isRemoteFileHostSelected: vi.fn(() => false),
   ApiError: class MockApiError extends Error {
     readonly status: number
     readonly code: string
