@@ -4615,11 +4615,16 @@ onBeforeUnmount(() => {
   contain-intrinsic-size: auto 58px;
   font: inherit;
   cursor: default;
+  outline: none;
 }
 
 .file-row--entry:hover,
 .file-row--selected {
   background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+}
+
+.file-row--entry:focus-visible {
+  box-shadow: inset 3px 0 0 var(--brand);
 }
 
 .file-row--drop-target {

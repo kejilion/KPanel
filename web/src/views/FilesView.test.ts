@@ -1319,6 +1319,13 @@ describe('FilesView large icon layout', () => {
     expect(source).toMatch(/\.file-grid-card\s*\{[^}]*content-visibility:\s*auto;/)
   })
 
+  it('removes the pointer focus frame from list rows while keeping keyboard focus visible', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+
+    expect(source).toMatch(/\.file-row--entry\s*\{[^}]*outline:\s*none;/)
+    expect(source).toMatch(/\.file-row--entry:focus-visible\s*\{[^}]*box-shadow:\s*inset 3px 0 0 var\(--brand\);/)
+  })
+
   it('defaults to the list and persists the selected layout', () => {
     const view = setupView()
 
