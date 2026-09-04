@@ -17,7 +17,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
 )
 
-// federatedFileHandler is installed behind the authenticated v2 Panel relay.
+// federatedFileHandler is installed behind the authenticated Panel relay.
 // It deliberately calls only the same Agent file methods as the local file
 // page; browser session and CSRF checks have already happened on the source
 // Panel, while path, method and body contracts are checked again here.

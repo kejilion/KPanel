@@ -163,6 +163,50 @@ describe('FilesView host switcher', () => {
     }
   })
 
+  it('uses the host operating system mark in the file host selector', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [
+        fileHost('local', true),
+        fileHost('debian', false, {
+          name: 'debian-01',
+          fileManagementAvailable: true,
+          lastSnapshot: {
+            telemetry: {
+              os: 'Debian GNU/Linux 13',
+              osId: 'debian',
+            },
+          },
+        }),
+      ],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      const hostItem = wrapper.get('[data-file-host-id="debian"]')
+      expect(hostItem.get('.file-host-switcher__os').attributes('style')).toContain('--os-accent: #A81D33')
+      expect(hostItem.find('.file-host-switcher__os svg').exists()).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('keeps the path toolbar and opens a capable remote host in its existing Files page', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',
@@ -242,6 +286,45 @@ describe('FilesView host switcher', () => {
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
       expect(wrapper.get('[data-file-host-id="edge"]').text()).toContain('文件管理已就绪')
       await wrapper.get('[data-file-host-id="edge"]').trigger('click')
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
+    } finally {
+      wrapper.unmount()
+      openSpy.mockRestore()
+    }
+  })
+
+  it('switches a file-capable legacy v1 Panel into the same Files page', async () => {
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [fileHost('local', true), fileHost('legacy', false, {
+        name: 'legacy-01',
+        federationProtocol: 'v1',
+        fileManagementAvailable: true,
+      })],
+      total: 2,
+      remoteTotal: 1,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(wrapper.get('[data-file-host-id="legacy"]').text()).toContain('文件管理已就绪')
+      await wrapper.get('[data-file-host-id="legacy"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
     } finally {

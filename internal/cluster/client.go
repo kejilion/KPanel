@@ -229,26 +229,40 @@ func (c *RemoteClient) Summary(
 	privateKey ed25519.PrivateKey,
 	now time.Time,
 ) (FederationSummary, error) {
+	response, _, err := c.SummaryWithCapabilities(ctx, origin, controllerID, targetID, privateKey, now)
+	return response, err
+}
+
+// SummaryWithCapabilities keeps the legacy summary payload stable while
+// exposing optional target-side relay capabilities through a response header.
+// Older Panels ignore the request hint and simply omit the response header.
+func (c *RemoteClient) SummaryWithCapabilities(
+	ctx context.Context,
+	origin, controllerID, targetID string,
+	privateKey ed25519.PrivateKey,
+	now time.Time,
+) (FederationSummary, string, error) {
 	request, err := c.newRequest(ctx, http.MethodGet, origin, summaryPath, http.NoBody)
 	if err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
 	}
 	nonce, err := randomHex(16)
 	if err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
 	}
 	if err := SignRequest(request, controllerID, targetID, privateKey, now, nonce); err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
 	}
 	request.Header.Set(
 		FederationCapabilitiesHeader,
-		SecurityEntrancePathCapability+", "+SSHLoginCapability,
+		SecurityEntrancePathCapability+", "+SSHLoginCapability+", "+FileRelayV1Capability,
 	)
 	var response FederationSummary
-	if err := c.doJSON(request, MaxSummaryBytes, &response); err != nil {
-		return FederationSummary{}, err
+	headers, err := c.doJSONWithHeaders(c.client, request, MaxSummaryBytes, &response)
+	if err != nil {
+		return FederationSummary{}, "", err
 	}
-	return response, nil
+	return response, headers.Get(FederationCapabilitiesHeader), nil
 }
 
 func (c *RemoteClient) Revoke(
@@ -299,16 +313,22 @@ func (c *RemoteClient) newRequest(
 }
 
 func (c *RemoteClient) doJSON(request *http.Request, limit int64, target any) error {
-	return c.doJSONWith(c.client, request, limit, target)
+	_, err := c.doJSONWithHeaders(c.client, request, limit, target)
+	return err
 }
 
 func (c *RemoteClient) doJSONWith(client *http.Client, request *http.Request, limit int64, target any) error {
+	_, err := c.doJSONWithHeaders(client, request, limit, target)
+	return err
+}
+
+func (c *RemoteClient) doJSONWithHeaders(client *http.Client, request *http.Request, limit int64, target any) (http.Header, error) {
 	if client == nil {
-		return &RemoteError{Code: "unreachable"}
+		return nil, &RemoteError{Code: "unreachable"}
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return classifyRemoteTransportError(err)
+		return nil, classifyRemoteTransportError(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -324,28 +344,28 @@ func (c *RemoteClient) doJSONWith(client *http.Client, request *http.Request, li
 		case http.StatusUpgradeRequired:
 			code = "protocol_incompatible"
 		}
-		return &RemoteError{Code: code, StatusCode: response.StatusCode}
+		return nil, &RemoteError{Code: code, StatusCode: response.StatusCode}
 	}
 	if mediaType := strings.ToLower(response.Header.Get("Content-Type")); !strings.HasPrefix(mediaType, "application/json") {
-		return &RemoteError{Code: "invalid_response"}
+		return nil, &RemoteError{Code: "invalid_response"}
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return &RemoteError{Code: "invalid_response"}
+		return nil, &RemoteError{Code: "invalid_response"}
 	}
 	if int64(len(body)) > limit {
-		return &RemoteError{Code: "response_too_large"}
+		return nil, &RemoteError{Code: "response_too_large"}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return &RemoteError{Code: "invalid_response"}
+		return nil, &RemoteError{Code: "invalid_response"}
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return &RemoteError{Code: "invalid_response"}
+		return nil, &RemoteError{Code: "invalid_response"}
 	}
-	return nil
+	return response.Header.Clone(), nil
 }
 
 func classifyRemoteTransportError(err error) error {

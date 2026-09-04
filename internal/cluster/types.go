@@ -135,6 +135,17 @@ type LightEnrollResponse struct {
 	TargetNodeID          string `json:"targetNodeId,omitempty"`
 }
 
+// LightFileCapabilityRequest upgrades an already enrolled lightweight node to
+// the root file broker without consuming another enrollment token.
+type LightFileCapabilityRequest struct {
+	TerminalPublicKey string `json:"terminalPublicKey"`
+}
+
+type LightFileCapabilityResponse struct {
+	TerminalPeerPublicKey string `json:"terminalPeerPublicKey"`
+	TargetNodeID          string `json:"targetNodeId"`
+}
+
 type LightReportRequest struct {
 	Telemetry contract.HostTelemetry `json:"telemetry"`
 }

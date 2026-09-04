@@ -364,6 +364,47 @@ func (s *lightStore) ReadTerminalPublicKey(record lightHostRecord) ([]byte, erro
 	return key, nil
 }
 
+func (s *lightStore) SetTerminalPublicKey(id string, publicKey []byte) error {
+	if !validID(id) || len(publicKey) != 32 {
+		return ErrAuthentication
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := false
+	for _, record := range s.state.Hosts {
+		if record.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	path := terminalKeyPath(s.terminalDir, id)
+	if current, err := os.Lstat(path); err == nil {
+		if !current.Mode().IsRegular() || current.Mode()&os.ModeSymlink != 0 {
+			return ErrAuthentication
+		}
+		stored, readErr := s.ReadTerminalPublicKey(lightHostRecord{ID: id})
+		if readErr != nil {
+			return readErr
+		}
+		if len(stored) != 32 || !bytes.Equal(stored, publicKey) {
+			return ErrIdentityMismatch
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return atomicWriteFileV2(
+		path,
+		[]byte(base64.RawURLEncoding.EncodeToString(publicKey)),
+		0o600,
+		false,
+		s.ops,
+	)
+}
+
 func (s *lightStore) UpdateReport(id string, snapshot HostSnapshot, nodeVersion string, now time.Time) (lightHostRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

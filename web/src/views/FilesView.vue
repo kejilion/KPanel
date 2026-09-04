@@ -52,6 +52,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
+import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api, setFileHostId } from '@/lib/api'
 import {
   readClusterHostOrder,
@@ -75,6 +76,7 @@ import {
 } from '@/lib/desktopRouteKeys'
 import type { CodeLanguage } from '@/lib/code-editor-language'
 import { transferCrossPanelFileBatch } from '@/lib/crossPanelFileTransfer'
+import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import {
   collectExternalDrop,
   DesktopExternalDropError,
@@ -203,6 +205,9 @@ const fileHosts = computed(() => {
   return sortClusterHosts(fileHostInventory.value?.items || [], readClusterHostOrder())
 })
 
+const hostOperatingSystemIdentity = (host: ClusterHost) =>
+  detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
+
 const activeFileHost = computed(() =>
   fileHosts.value.find((host) => host.id === activeFileHostId.value)
     || fileHosts.value.find((host) => host.isLocal),
@@ -231,7 +236,7 @@ function fileHostStatus(host: ClusterHost): FileHostStatus {
   if (['pairing', 'revoking'].includes(host.state)) {
     return { action: 'manage', label: phrase('主机状态处理中') }
   }
-  if (host.federationProtocol === 'v2' && host.fileManagementAvailable === true) {
+  if (host.kind === 'panel' && host.fileManagementAvailable === true) {
     return { action: 'select', label: phrase('文件管理已就绪') }
   }
   if (host.mutualFileTransferAvailable) {
@@ -2663,7 +2668,11 @@ onBeforeUnmount(() => {
                   :data-file-host-id="host.id"
                   @click="handleFileHostSelection(host)"
                 >
-                  <Server :size="16" aria-hidden="true" />
+                  <OperatingSystemIcon
+                    class="file-host-switcher__os"
+                    :distro="hostOperatingSystemIdentity(host).key"
+                    :label="hostOperatingSystemIdentity(host).label"
+                  />
                   <span>
                     <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
                     <small>{{ fileHostStatus(host).label }}</small>
@@ -3770,7 +3779,7 @@ onBeforeUnmount(() => {
   display: grid;
   width: 100%;
   min-height: 54px;
-  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 9px;
   padding: 9px 12px;
@@ -3781,6 +3790,18 @@ onBeforeUnmount(() => {
   font: inherit;
   text-align: left;
   transition: background-color .16s ease, color .16s ease;
+}
+
+.file-host-switcher__item :deep(.file-host-switcher__os) {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.file-host-switcher__item :deep(.file-host-switcher__os svg) {
+  width: 17px;
+  height: 17px;
 }
 
 .file-host-switcher__item:hover,

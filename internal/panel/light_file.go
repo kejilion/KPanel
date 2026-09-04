@@ -75,6 +75,8 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	var response *http.Response
 	if host.Kind == cluster.HostKindLightNode {
 		response, err = s.cluster.OpenLightFile(transferContext, hostID, input)
+	} else if host.Kind == cluster.HostKindPanel && host.FederationProtocol == cluster.FederationProtocol {
+		response, err = s.cluster.OpenRemotePanelFileV1(transferContext, hostID, input)
 	} else if host.Kind == cluster.HostKindPanel && host.FederationProtocol == cluster.FederationProtocolV2 {
 		response, err = s.cluster.OpenRemotePanelFile(transferContext, hostID, input)
 	} else {
