@@ -80,7 +80,6 @@ interface ClusterBindings {
   originAssessment: ComputedRef<{ mode: string; message: string }>
   panelOrigin: ComputedRef<string>
   parsedAccessCredential: ComputedRef<{ origin: string; pairingCode: string } | undefined>
-  lightEnrollmentCompletion: ComputedRef<boolean>
   accessCredentialText: ComputedRef<string>
   search: Ref<string>
   viewMode: Ref<'list' | 'card'>
@@ -455,27 +454,15 @@ describe('ClusterView inventory and navigation', () => {
       expiresAt: '2026-07-29T10:05:00Z',
     }
     mocks.createLightEnrollment.mockResolvedValueOnce(enrollment)
+    view.addForm.name = '英国AMR'
 
     await view.createLightEnrollment()
     await view.copyLightEnrollment()
 
     expect(view.lightEnrollment.value).toEqual(enrollment)
-    expect(mocks.createLightEnrollment).toHaveBeenCalledOnce()
+    expect(mocks.createLightEnrollment).toHaveBeenCalledWith('英国AMR')
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith(enrollment.command)
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
-  })
-
-  it('treats a generated light-node command as complete without panel credentials', async () => {
-    const view = setupView()
-    view.lightEnrollment.value = {
-      command:
-        "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
-      expiresAt: '2026-07-29T10:05:00Z',
-    }
-
-    expect(view.lightEnrollmentCompletion.value).toBe(true)
-    view.addForm.accessCredential = 'KPANEL_CLUSTER_ACCESS_V1\nhttps://panel.example\nkp2.code'
-    expect(view.lightEnrollmentCompletion.value).toBe(false)
   })
 
   it('explains the only missing prerequisite when no authenticated HTTPS origin exists', async () => {

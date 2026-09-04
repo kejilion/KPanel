@@ -321,6 +321,33 @@ func TestLightNodeEnrollmentUsesAuthenticatedIntentAndPublicOneUseExchange(t *te
 	}
 }
 
+func TestLightNodeEnrollmentCarriesOptionalDisplayName(t *testing.T) {
+	server, tokenPath := newTestServerWithPublicURL(t, "https://panel.test")
+	sessionCookie, csrfCookie := bootstrapCookiesForOrigin(t, server, tokenPath, "https://panel.test")
+	body, err := json.Marshal(map[string]string{"name": "英国AMR"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := authenticatedRequest(
+		server, http.MethodPost, "/api/v1/cluster/light-enrollments", body,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json",
+			"Origin":       "https://panel.test",
+			"X-CSRF-Token": csrfCookie.Value,
+		},
+	)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("named light enrollment status = %d; body=%s", created.Code, created.Body.String())
+	}
+	var enrollment cluster.LightEnrollment
+	if err := json.Unmarshal(created.Body.Bytes(), &enrollment); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(enrollment.Command, " --name '英国AMR'") {
+		t.Fatalf("optional display name missing from command: %q", enrollment.Command)
+	}
+}
+
 func TestLightNodeEnrollmentUsesTrustedHTTPSProxyOrigin(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)

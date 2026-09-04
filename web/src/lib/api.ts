@@ -1540,8 +1540,11 @@ export const api = {
       }),
     createPairingCode: (): Promise<ClusterPairingCode> =>
       request<ClusterPairingCode>('/cluster/pairing-codes/v2', { method: 'POST' }),
-    createLightEnrollment: (): Promise<ClusterLightEnrollment> =>
-      request<ClusterLightEnrollment>('/cluster/light-enrollments', { method: 'POST' }),
+    createLightEnrollment: (name?: string): Promise<ClusterLightEnrollment> =>
+      request<ClusterLightEnrollment>('/cluster/light-enrollments', {
+        method: 'POST',
+        body: name?.trim() ? { name: name.trim() } : undefined,
+      }),
     controllers: async (signal?: AbortSignal): Promise<ApiList<ClusterController>> =>
       normalizeList(
         await request<ApiList<ClusterController> | ClusterController[]>(
