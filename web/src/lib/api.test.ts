@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, normalizeList, resetApiSecurityState } from './api'
+import { ApiError, api, normalizeList, resetApiSecurityState, setFileHostId } from './api'
 import type { SystemOverview } from '@/types/api'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -43,6 +43,58 @@ describe('API client', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       method: 'POST', credentials: 'same-origin', cache: 'no-store',
     }))
+  })
+
+  it('routes file-manager requests through the selected light host without changing the file API', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ path: '/', entries: [] }))
+      .mockResolvedValueOnce(new Response('content', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setFileHostId('light-node-01')
+
+    await api.files.list('/')
+    expect(api.files.contentUrl('/etc/hosts', 'attachment')).toBe(
+      '/api/v1/files/content?path=%2Fetc%2Fhosts&disposition=attachment&hostId=light-node-01',
+    )
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/v1/files?path=%2F&limit=100&hostId=light-node-01')
+  })
+
+  it('routes cross-host file transfers through the selected light host', async () => {
+    const entry = {
+      name: 'app', path: '/home/KPanel Desktop/app', kind: 'directory' as const,
+      sizeBytes: 0, mode: 'drwxr-xr-x', owner: 'root', group: 'root',
+      modifiedAt: '2026-08-15T00:00:00Z', resourceVersion: `sha256:${'c'.repeat(64)}`,
+      editable: false, previewable: false,
+    }
+    const stream = [
+      { state: 'connecting' }, { state: 'complete', entry },
+    ].map((event) => JSON.stringify(event)).join('\n') + '\n'
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(stream, {
+      status: 200,
+      headers: { 'content-type': 'application/x-ndjson' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    setFileHostId('light-node-01')
+
+    await expect(api.files.transferFromPanel({
+      sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:source',
+      targetDirectory: '/home/KPanel Desktop',
+    }, () => undefined)).resolves.toEqual(entry)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/files/transfers?hostId=light-node-01')
+  })
+
+  it('allows always-mounted desktop requests to force the local panel', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ entries: [], unavailable: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    setFileHostId('light-node-01')
+
+    await api.files.entries(['/home/app'], undefined, null)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/files/entries')
+    expect(api.files.contentUrl('/home/app', 'attachment', null)).toBe(
+      '/api/v1/files/content?path=%2Fhome%2Fapp&disposition=attachment',
+    )
   })
 
   it('streams remote download progress without putting the signed URL in the request URL', async () => {

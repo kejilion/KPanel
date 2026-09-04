@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -679,9 +680,21 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
 		return
 	}
-	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
+	if r.URL.RawPath != "" || !strictPanelQuery(r.URL.Query(), "hostId") {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "传输参数无效", "")
 		return
+	}
+	targetHostID := strings.TrimSpace(r.URL.Query().Get("hostId"))
+	if values, exists := r.URL.Query()["hostId"]; exists && (len(values) != 1 || targetHostID == "") {
+		s.writeProblem(w, r, http.StatusBadRequest, "file_host_invalid", "目标文件主机无效", "")
+		return
+	}
+	if targetHostID != "" {
+		host, hostErr := s.cluster.Host(r.Context(), targetHostID)
+		if hostErr != nil || host.Kind != cluster.HostKindLightNode || !host.FileManagementAvailable {
+			s.writeProblem(w, r, http.StatusConflict, "file_host_unavailable", "目标轻量节点文件管理未就绪", "")
+			return
+		}
 	}
 	if !s.checkOrigin(w, r) {
 		return
@@ -696,12 +709,15 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.SourceNodeID == "" || !validFileDownloadPath(input.Path) || input.Path == "/" ||
 		input.ResourceVersion == "" || !validFileDownloadPath(input.TargetDirectory) {
-		s.writeProblem(w, r, http.StatusBadRequest, "file_transfer_invalid", "跨面板传输参数无效", "")
+		s.writeProblem(w, r, http.StatusBadRequest, "file_transfer_invalid", "跨主机传输参数无效", "")
 		return
 	}
 	change := map[string]any{
 		"sourceNodeId":    input.SourceNodeID,
 		"targetDirectory": input.TargetDirectory,
+	}
+	if targetHostID != "" {
+		change["targetHostId"] = targetHostID
 	}
 	if err := s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "intent", change); err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
@@ -723,18 +739,45 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
 	defer cancel()
-	if err := s.ensureFileTransferDirectory(transferContext, input.TargetDirectory, requestID(r)); err != nil {
+	var ensureErr error
+	if targetHostID == "" {
+		ensureErr = s.ensureFileTransferDirectory(transferContext, input.TargetDirectory, requestID(r))
+	} else {
+		ensureErr = s.ensureLightFileTransferDirectory(
+			transferContext, targetHostID, input.TargetDirectory,
+		)
+	}
+	if ensureErr != nil {
 		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 		writeEvent(contract.FileTransferEvent{State: "error", Detail: "目标目录不存在或不可写。"})
 		return
 	}
-	content, metadata, err := s.cluster.OpenRemoteFileV2(
-		transferContext, input.SourceNodeID,
-		cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
-	)
+	var content io.ReadCloser
+	var metadata contract.FileTransferMetadata
+	var err error
+	if input.SourceNodeID == s.cluster.NodeID() {
+		content, metadata, err = s.openLocalFileTransfer(
+			transferContext,
+			cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
+			requestID(r),
+		)
+	} else {
+		sourceHost, sourceHostErr := s.cluster.Host(transferContext, input.SourceNodeID)
+		if sourceHostErr == nil && sourceHost.Kind == cluster.HostKindLightNode {
+			content, metadata, err = s.cluster.OpenLightFileTransfer(
+				transferContext, input.SourceNodeID,
+				cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
+			)
+		} else {
+			content, metadata, err = s.cluster.OpenRemoteFileV2(
+				transferContext, input.SourceNodeID,
+				cluster.FederationFileOpenRequest{Path: input.Path, ResourceVersion: input.ResourceVersion},
+			)
+		}
+	}
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源 KPanel，或配对未授权文件复制。"})
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源主机，或配对未授权文件复制。"})
 		return
 	}
 	defer content.Close()
@@ -743,7 +786,14 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		writeEvent(contract.FileTransferEvent{State: "error", Detail: "来源文件在拖拽后已发生变化。"})
 		return
 	}
-	name, err := s.uniqueFileTransferName(transferContext, input.TargetDirectory, metadata.Name, requestID(r))
+	var name string
+	if targetHostID == "" {
+		name, err = s.uniqueFileTransferName(transferContext, input.TargetDirectory, metadata.Name, requestID(r))
+	} else {
+		name, err = s.uniqueLightFileTransferName(
+			transferContext, targetHostID, input.TargetDirectory, metadata.Name, requestID(r),
+		)
+	}
 	if err != nil {
 		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法确定目标文件名。"})
 		return
@@ -770,18 +820,27 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	headers := make(http.Header)
 	headers.Set("Content-Type", "application/octet-stream")
-	streamer, ok := s.agent.(agentStreamAPI)
-	if !ok {
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
-		return
+	var response *http.Response
+	if targetHostID == "" {
+		streamer, ok := s.agent.(agentStreamAPI)
+		if !ok {
+			writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
+			return
+		}
+		response, err = streamer.OpenStream(
+			transferContext, http.MethodPost, "/v1/files/transfer/import", query.Encode(),
+			// Keep the local request chunked even for regular files. The Agent's
+			// exact-length reader must consume the Noise end record before Upload
+			// can atomically publish the destination.
+			requestID(r), tracked, headers, -1,
+		)
+	} else {
+		response, err = s.cluster.OpenLightFile(transferContext, targetHostID, cluster.LightFileRequest{
+			Method: http.MethodPost, Path: "/v1/files/transfer/import", RawQuery: query.Encode(),
+			Headers: map[string]string{"Content-Type": "application/octet-stream"},
+			Body:    tracked, BodyLength: -1,
+		})
 	}
-	response, err := streamer.OpenStream(
-		transferContext, http.MethodPost, "/v1/files/transfer/import", query.Encode(),
-		// Keep the local request chunked even for regular files. The Agent's
-		// exact-length reader must consume the Noise end record before Upload
-		// can atomically publish the destination.
-		requestID(r), tracked, headers, -1,
-	)
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断。"})
@@ -846,6 +905,96 @@ func (s *Server) ensureFileTransferDirectory(ctx context.Context, directory, req
 	return nil
 }
 
+func (s *Server) openLocalFileTransfer(
+	ctx context.Context,
+	input cluster.FederationFileOpenRequest,
+	requestID string,
+) (io.ReadCloser, contract.FileTransferMetadata, error) {
+	streamer, ok := s.agent.(agentStreamAPI)
+	if !ok {
+		return nil, contract.FileTransferMetadata{}, errors.New("local Agent file stream unavailable")
+	}
+	query := url.Values{
+		"path": []string{input.Path}, "resourceVersion": []string{input.ResourceVersion},
+	}
+	response, err := streamer.OpenStream(
+		ctx, http.MethodGet, "/v1/files/transfer/export", query.Encode(), requestID,
+		http.NoBody, nil, 0,
+	)
+	if err != nil {
+		return nil, contract.FileTransferMetadata{}, err
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		_ = response.Body.Close()
+		return nil, contract.FileTransferMetadata{}, fmt.Errorf("local file transfer source returned HTTP %d", response.StatusCode)
+	}
+	metadataPayload, decodeErr := base64.RawURLEncoding.DecodeString(
+		response.Header.Get(cluster.FileTransferMetadataHeader),
+	)
+	var metadata contract.FileTransferMetadata
+	if decodeErr != nil || json.Unmarshal(metadataPayload, &metadata) != nil ||
+		(metadata.Kind != "file" && metadata.Kind != "directory") || metadata.Name == "" ||
+		metadata.SizeBytes < 0 || metadata.ResourceVersion == "" {
+		_ = response.Body.Close()
+		return nil, contract.FileTransferMetadata{}, errors.New("local file transfer metadata is invalid")
+	}
+	return response.Body, metadata, nil
+}
+
+func (s *Server) ensureLightFileTransferDirectory(ctx context.Context, hostID, directory string) error {
+	query := url.Values{"path": []string{directory}}
+	response, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+		Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
+		Body: http.NoBody, BodyLength: 0,
+	})
+	if err == nil {
+		defer response.Body.Close()
+		if response.StatusCode == http.StatusOK {
+			var entry contract.FileEntry
+			if json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&entry) == nil && entry.Kind == "directory" {
+				return nil
+			}
+			return errors.New("target is not a directory")
+		}
+		if response.StatusCode != http.StatusNotFound {
+			return errors.New("target directory unavailable")
+		}
+	} else if directory != desktopFileTransferDirectory {
+		return errors.New("target directory unavailable")
+	}
+	if directory != desktopFileTransferDirectory {
+		return errors.New("target directory unavailable")
+	}
+	body, _ := json.Marshal(contract.FileActionRequest{Action: "mkdir", Target: "/home", Name: "KPanel Desktop"})
+	created, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+		Method: http.MethodPost, Path: "/v1/files/actions", Headers: map[string]string{
+			"Content-Type": "application/json",
+		}, Body: bytes.NewReader(body), BodyLength: int64(len(body)),
+	})
+	if err == nil {
+		_ = created.Body.Close()
+		if created.StatusCode >= http.StatusOK && created.StatusCode < http.StatusMultipleChoices {
+			return nil
+		}
+	}
+	checked, checkErr := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+		Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
+		Body: http.NoBody, BodyLength: 0,
+	})
+	if checkErr != nil {
+		return errors.New("create target directory failed")
+	}
+	defer checked.Body.Close()
+	if checked.StatusCode != http.StatusOK {
+		return errors.New("create target directory failed")
+	}
+	var entry contract.FileEntry
+	if json.NewDecoder(io.LimitReader(checked.Body, 1<<20)).Decode(&entry) != nil || entry.Kind != "directory" {
+		return errors.New("created target is not a directory")
+	}
+	return nil
+}
+
 func (s *Server) uniqueFileTransferName(ctx context.Context, directory, original, requestID string) (string, error) {
 	for attempt := 0; attempt <= 999; attempt++ {
 		candidate := suffixedFileTransferName(original, attempt)
@@ -858,6 +1007,31 @@ func (s *Server) uniqueFileTransferName(ctx context.Context, directory, original
 			return candidate, nil
 		}
 		if response.StatusCode != http.StatusOK {
+			return "", errors.New("target lookup failed")
+		}
+	}
+	return "", errors.New("too many duplicate names")
+}
+
+func (s *Server) uniqueLightFileTransferName(ctx context.Context, hostID, directory, original, requestID string) (string, error) {
+	for attempt := 0; attempt <= 999; attempt++ {
+		candidate := suffixedFileTransferName(original, attempt)
+		query := url.Values{"path": []string{path.Join(directory, candidate)}}
+		response, err := s.cluster.OpenLightFile(ctx, hostID, cluster.LightFileRequest{
+			Method: http.MethodGet, Path: "/v1/files/entry", RawQuery: query.Encode(),
+			Body: http.NoBody, BodyLength: 0,
+		})
+		if err != nil {
+			return "", err
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		_ = response.Body.Close()
+		switch response.StatusCode {
+		case http.StatusNotFound:
+			return candidate, nil
+		case http.StatusOK:
+			continue
+		default:
 			return "", errors.New("target lookup failed")
 		}
 	}

@@ -47,6 +47,7 @@ interface ActiveDesktopFileDrag {
   token: string
   entries: DesktopFileEntry[]
   origin: DesktopFileDragOrigin
+  sourceNodeId?: string
 }
 
 export type DesktopFileDragOrigin = 'file-manager' | 'desktop-shortcut'
@@ -229,7 +230,12 @@ export function beginDesktopFileDrag(
   const supported = entries.filter(supportedEntry)
   if (!dataTransfer || !supported.length) return false
   const token = randomToken()
-  activeDrag = { token, entries: supported.map((entry) => ({ ...entry })), origin }
+  activeDrag = {
+    token,
+    entries: supported.map((entry) => ({ ...entry })),
+    origin,
+    sourceNodeId,
+  }
   dataTransfer.effectAllowed = 'all'
   dataTransfer.setData(DESKTOP_FILE_DRAG_TYPE, token)
   const crossPanelEntries = supported.filter(
@@ -384,6 +390,12 @@ export function desktopFileDragOrigin(event: DragEvent): DesktopFileDragOrigin |
   return activeDrag.origin
 }
 
+export function desktopFileDragSourceNodeId(event: DragEvent): string | undefined {
+  const token = event.dataTransfer?.getData(DESKTOP_FILE_DRAG_TYPE)
+  if (!activeDrag || !token || token !== activeDrag.token) return undefined
+  return activeDrag.sourceNodeId
+}
+
 /** Drag data is protected before drop in some browsers, so hover uses only the active in-memory payload. */
 export function peekDesktopFileDragEntries(event: DragEvent): DesktopFileEntry[] {
   if (!hasDesktopFileDrag(event) || !activeDrag) return []
@@ -394,6 +406,11 @@ export function peekDesktopFileDragEntries(event: DragEvent): DesktopFileEntry[]
 export function peekDesktopFileDragOrigin(event: DragEvent): DesktopFileDragOrigin | undefined {
   if (!hasDesktopFileDrag(event) || !activeDrag) return undefined
   return activeDrag.origin
+}
+
+export function peekDesktopFileDragSourceNodeId(event: DragEvent): string | undefined {
+  if (!hasDesktopFileDrag(event) || !activeDrag) return undefined
+  return activeDrag.sourceNodeId
 }
 
 export function clearDesktopFileDrag(): void {

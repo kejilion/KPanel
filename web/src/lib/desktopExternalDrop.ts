@@ -40,14 +40,15 @@ export interface DesktopExternalTransferResult {
 }
 
 export interface DesktopExternalTransferAPI {
-  entry: (path: string, signal?: AbortSignal) => Promise<FileEntry>
-  action: (input: FileActionInput, signal?: AbortSignal) => Promise<FileActionResult>
+  entry: (path: string, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileEntry>
+  action: (input: FileActionInput, signal?: AbortSignal, fileHostId?: string | null) => Promise<FileActionResult>
   upload: (
     path: string,
     file: File,
     overwrite: boolean,
     onProgress?: (percent: number) => void,
     signal?: AbortSignal,
+    fileHostId?: string | null,
   ) => Promise<FileEntry>
 }
 
@@ -273,9 +274,50 @@ function suffixedName(name: string, attempt: number): string {
   return `${value}${suffix}${extension}`
 }
 
-async function pathExists(api: DesktopExternalTransferAPI, path: string, signal: AbortSignal): Promise<boolean> {
+async function fileEntry(
+  api: DesktopExternalTransferAPI,
+  path: string,
+  signal: AbortSignal,
+  fileHostId?: string | null,
+): Promise<FileEntry> {
+  return fileHostId === undefined
+    ? api.entry(path, signal)
+    : api.entry(path, signal, fileHostId)
+}
+
+async function fileAction(
+  api: DesktopExternalTransferAPI,
+  input: FileActionInput,
+  signal: AbortSignal,
+  fileHostId?: string | null,
+): Promise<FileActionResult> {
+  return fileHostId === undefined
+    ? api.action(input, signal)
+    : api.action(input, signal, fileHostId)
+}
+
+async function fileUpload(
+  api: DesktopExternalTransferAPI,
+  path: string,
+  file: File,
+  overwrite: boolean,
+  onProgress: (percent: number) => void,
+  signal: AbortSignal,
+  fileHostId?: string | null,
+): Promise<FileEntry> {
+  return fileHostId === undefined
+    ? api.upload(path, file, overwrite, onProgress, signal)
+    : api.upload(path, file, overwrite, onProgress, signal, fileHostId)
+}
+
+async function pathExists(
+  api: DesktopExternalTransferAPI,
+  path: string,
+  signal: AbortSignal,
+  fileHostId?: string | null,
+): Promise<boolean> {
   try {
-    await api.entry(path, signal)
+    await fileEntry(api, path, signal, fileHostId)
     return true
   } catch (error) {
     if (typeof error === 'object' && error && 'status' in error && error.status === 404) return false
@@ -288,10 +330,11 @@ async function uniqueName(
   directory: string,
   original: string,
   signal: AbortSignal,
+  fileHostId?: string | null,
 ): Promise<string> {
   for (let attempt = 0; attempt <= 999; attempt += 1) {
     const candidate = suffixedName(original, attempt)
-    if (!await pathExists(api, joinPath(directory, candidate), signal)) return candidate
+    if (!await pathExists(api, joinPath(directory, candidate), signal, fileHostId)) return candidate
   }
   throw new DesktopExternalDropError('invalid', `${original} 的同名副本过多。`)
 }
@@ -301,8 +344,9 @@ async function createDirectory(
   parent: string,
   name: string,
   signal: AbortSignal,
+  fileHostId?: string | null,
 ): Promise<string> {
-  const result = await api.action({ action: 'mkdir', target: parent, name }, signal)
+  const result = await fileAction(api, { action: 'mkdir', target: parent, name }, signal, fileHostId)
   if (result.failed.length) throw new Error(result.failed[0]?.detail || '目录创建失败。')
   return joinPath(parent, name)
 }
@@ -311,14 +355,15 @@ async function ensureDestinationDirectory(
   api: DesktopExternalTransferAPI,
   destination: string,
   signal: AbortSignal,
+  fileHostId?: string | null,
 ): Promise<void> {
-  if (await pathExists(api, destination, signal)) {
-    const entry = await api.entry(destination, signal)
+  if (await pathExists(api, destination, signal, fileHostId)) {
+    const entry = await fileEntry(api, destination, signal, fileHostId)
     if (entry.kind !== 'directory') throw new Error(`${destination} 已存在，但不是目录。`)
     return
   }
   if (destination !== DESKTOP_UPLOAD_DIRECTORY) throw new Error(`${destination} 不存在或无法访问。`)
-  await createDirectory(api, '/home', 'KPanel Desktop', signal)
+  await createDirectory(api, '/home', 'KPanel Desktop', signal, fileHostId)
 }
 
 export async function uploadExternalDrop(
@@ -327,11 +372,12 @@ export async function uploadExternalDrop(
   signal: AbortSignal,
   onProgress: (progress: DesktopExternalTransferProgress) => void,
   destination = DESKTOP_UPLOAD_DIRECTORY,
+  fileHostId?: string | null,
 ): Promise<DesktopExternalTransferResult> {
-  await ensureDestinationDirectory(api, destination, signal)
+  await ensureDestinationDirectory(api, destination, signal, fileHostId)
   const rootNames = new Map<string, string>()
   for (const root of manifest.roots) {
-    rootNames.set(root.name, await uniqueName(api, destination, root.name, signal))
+    rootNames.set(root.name, await uniqueName(api, destination, root.name, signal, fileHostId))
   }
   const mappedSegments = (segments: readonly string[]): string[] => [rootNames.get(segments[0]!)!, ...segments.slice(1)]
   const directoryPaths = new Set<string>()
@@ -341,7 +387,7 @@ export async function uploadExternalDrop(
     for (const name of mapped) {
       const path = joinPath(parent, name)
       if (!directoryPaths.has(path)) {
-        await createDirectory(api, parent, name, signal)
+        await createDirectory(api, parent, name, signal, fileHostId)
         directoryPaths.add(path)
       }
       parent = path
@@ -377,12 +423,12 @@ export async function uploadExternalDrop(
         const uploadFile = fileName === item.file.name
           ? item.file
           : new File([item.file], fileName, { type: item.file.type, lastModified: item.file.lastModified })
-        await api.upload(parent, uploadFile, false, (percent) => {
+        await fileUpload(api, parent, uploadFile, false, (percent) => {
           const next = Math.round(item.file.size * percent / 100)
           loadedBytes += next - (loadedByFile.get(index) || 0)
           loadedByFile.set(index, next)
           report(item.file.name)
-        }, signal)
+        }, signal, fileHostId)
         loadedBytes += item.file.size - (loadedByFile.get(index) || 0)
         loadedByFile.set(index, item.file.size)
         completedFiles += 1

@@ -217,6 +217,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleLightNodeFederation(w, r)
 	case isFederationV2Request(r):
 		s.handleFederationV2(w, r)
+	case isLightFileRelayRequest(r):
+		s.handleLightFileRelay(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/federation/pair":
 		s.handleFederationPair(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/federation/summary":
@@ -385,6 +387,7 @@ func isFederationV2Request(r *http.Request) bool {
 		"/api/v2/federation/terminal/resize",
 		"/api/v2/federation/terminal/close",
 		"/api/v2/federation/terminal/relay",
+		"/api/v2/federation/files/relay",
 		"/api/v2/federation/files/open",
 		"/api/v2/federation/files/link",
 		"/api/v2/federation/files/open-linked":

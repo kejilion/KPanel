@@ -14,6 +14,7 @@ import {
   crossPanelFileDragEntry,
   DESKTOP_FILE_DRAG_TYPE,
   desktopFileDragOrigin,
+  desktopFileDragSourceNodeId,
   desktopFileDragEntries,
   DesktopShortcutLimitError,
   hasCrossPanelFileDrag,
@@ -24,6 +25,7 @@ import {
   nativeFileDownloadDragDescriptor,
   peekDesktopFileDragEntries,
   peekDesktopFileDragOrigin,
+  peekDesktopFileDragSourceNodeId,
 } from './desktopFileShortcuts'
 
 function workspace(overrides: Partial<DesktopWorkspace> = {}): DesktopWorkspace {
@@ -145,6 +147,7 @@ describe('desktop file shortcuts', () => {
       name: 'app', path: '/app', kind: 'directory', resourceVersion: 'sha256:app',
     }], 'd'.repeat(32), 'desktop-shortcut')).toBe(true)
     expect(desktopFileDragOrigin(event)).toBe('desktop-shortcut')
+    expect(desktopFileDragSourceNodeId(event)).toBe('d'.repeat(32))
     const protectedHover = {
       dataTransfer: {
         types: event.dataTransfer!.types,
@@ -153,6 +156,7 @@ describe('desktop file shortcuts', () => {
     } as unknown as DragEvent
     expect(desktopFileDragOrigin(protectedHover)).toBeUndefined()
     expect(peekDesktopFileDragOrigin(protectedHover)).toBe('desktop-shortcut')
+    expect(peekDesktopFileDragSourceNodeId(protectedHover)).toBe('d'.repeat(32))
   })
 
   it('adds one same-origin file DownloadURL alongside the internal drag payload', () => {

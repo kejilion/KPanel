@@ -216,6 +216,9 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 	if s.lightTerminal != nil {
 		s.lightTerminal.deleteNode(id)
 	}
+	if s.lightFile != nil {
+		s.lightFile.deleteNode(id)
+	}
 	return DeleteHostResult{Deleted: true, CredentialRemoved: credentialRemoved}, nil
 }
 
@@ -225,13 +228,24 @@ func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
 		key, err := s.light.ReadTerminalPublicKey(record)
 		terminalAvailable = err == nil && len(key) == 32
 	}
-	return publicLightHost(record, now, terminalAvailable)
+	fileAvailable := false
+	if s.lightFile != nil && s.lightFile.available(record.ID) {
+		key, err := s.light.ReadTerminalPublicKey(record)
+		fileAvailable = err == nil && len(key) == 32
+	}
+	return publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
 }
 
 func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bool) Host {
+	return publicLightHostWithCapabilities(record, now, terminalAvailable, false)
+}
+
+func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, terminalAvailable, fileAvailable bool) Host {
 	state := HostUnknown
 	scope := SummaryScope
-	if terminalAvailable {
+	if fileAvailable {
+		scope = SummaryTerminalFilesScope
+	} else if terminalAvailable {
 		scope = SummaryTerminalScope
 	}
 	if record.LastSnapshot != nil && record.LastSuccessAt != nil {
@@ -249,7 +263,7 @@ func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bo
 		ID: record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
 		FederationProtocol: LightNodeProtocol, PanelVersion: record.NodeVersion,
-		Scope: scope, TerminalAvailable: terminalAvailable,
+		Scope: scope, TerminalAvailable: terminalAvailable, FileManagementAvailable: fileAvailable,
 		State: state, LastSnapshot: cloneSnapshot(record.LastSnapshot),
 		LastAttemptAt: cloneTime(record.LastAttemptAt), LastSuccessAt: cloneTime(record.LastSuccessAt),
 		ConsecutiveFailures: record.ConsecutiveFailures, LastErrorCode: record.LastErrorCode,

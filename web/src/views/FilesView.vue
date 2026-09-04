@@ -52,7 +52,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, setFileHostId } from '@/lib/api'
 import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import {
   contextMenuFocusOrigin,
@@ -199,6 +199,7 @@ const activeFileHost = computed(() =>
   fileHosts.value.find((host) => host.id === activeFileHostId.value)
     || fileHosts.value.find((host) => host.isLocal),
 )
+const isLightNodeFileHost = computed(() => activeFileHost.value?.kind === 'light_node')
 
 const activeFileHostLabel = computed(() => {
   const host = activeFileHost.value
@@ -207,7 +208,11 @@ const activeFileHostLabel = computed(() => {
 
 function fileHostStatus(host: ClusterHost): FileHostStatus {
   if (host.isLocal) return { action: 'select', label: phrase('当前面板') }
-  if (host.kind === 'light_node') return { action: 'manage', label: phrase('文件互传未启用') }
+  if (host.kind === 'light_node') {
+    return host.fileManagementAvailable === true
+      ? { action: 'select', label: phrase('文件管理已就绪') }
+      : { action: 'manage', label: phrase('文件代理未就绪') }
+  }
   if (['offline', 'auth_failed', 'tls_error', 'incompatible'].includes(host.state)) {
     return { action: 'manage', label: phrase('主机连接异常') }
   }
@@ -237,9 +242,16 @@ async function loadFileHosts(): Promise<void> {
   try {
     const inventory = await api.cluster.hosts(controller.signal)
     if (controller.signal.aborted || unmounted) return
+    const previousActiveHostId = activeFileHostId.value
     fileHostInventory.value = inventory
     localClusterNodeId.value = inventory.nodeId
-    activeFileHostId.value = inventory.items.find((host) => host.isLocal)?.id || ''
+    const localHost = inventory.items.find((host) => host.isLocal)
+    const previousHost = inventory.items.find((host) =>
+      host.id === previousActiveHostId && fileHostStatus(host).action === 'select',
+    )
+    const nextHost = previousHost || localHost
+    activeFileHostId.value = nextHost?.id || ''
+    setFileHostId(nextHost && !nextHost.isLocal ? nextHost.id : undefined)
   } catch (error) {
     if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
     fileHostInventoryError.value = true
@@ -294,8 +306,47 @@ function openClusterHostManager(): void {
 function handleFileHostSelection(host: ClusterHost): void {
   const status = fileHostStatus(host)
   if (status.action === 'select') {
+    if (host.id === activeFileHostId.value) {
+      closeFileHostPicker(true)
+      return
+    }
+    if (
+      fileTransferState.value?.phase === 'running'
+      || pasteBusy.value
+      || dialogBusy.value
+      || previewSaving.value
+      || desktopAdding.value
+      || remoteDownloadSubmitting.value
+      || uploadTasks.value.some((task) => task.phase === 'running')
+    ) {
+      toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
+      return
+    }
+    if (previewDirty.value) {
+      if (!window.confirm('文件尚未保存，确认切换主机吗？')) return
+      previewDirty.value = false
+    }
+    closePreview()
+    contextMenu.value = undefined
+    shareEntry.value = undefined
+    shareManagerOpen.value = false
+    remoteDownloadDialogOpen.value = false
+    clearClipboard()
+    dismissFileTransfer()
+    clearInternalDropTarget()
     activeFileHostId.value = host.id
+    setFileHostId(host.isLocal ? undefined : host.id)
+    search.value = ''
+    clearSelection()
+    if (host.kind === 'light_node') {
+      stopRemoteDownloadPolling()
+      remoteDownloadJobs.value = []
+      remoteDownloadJobsError.value = undefined
+    } else {
+      void loadRemoteDownloadJobs(true)
+    }
     closeFileHostPicker(true)
+    void navigateDirectory(host.isLocal ? '/home' : '/')
   } else if (status.action === 'open') {
     openRemoteFileManager(host)
   } else {
@@ -347,7 +398,7 @@ const remoteDownloadJobsErrorMessage = computed(() => {
   return error ? remoteDownloadErrorDetail(error.code, error.detail) : ''
 })
 const remoteDownloadTasksVisible = computed(() => (
-  remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value)
+  !isLightNodeFileHost.value && (remoteDownloadJobs.value.length > 0 || Boolean(remoteDownloadJobsErrorMessage.value))
 ))
 const dialogAction = ref<DialogAction>()
 const dialogValue = ref('')
@@ -486,11 +537,11 @@ const fileTransferTitle = computed(() => {
   const state = fileTransferState.value
   if (!state) return ''
   if (state.remote) {
-    if (state.phase === 'running') return `正在从另一台 KPanel 复制 ${state.completed || 0}/${state.count} 项`
-    if (state.phase === 'success') return `跨面板复制完成（${state.count} 项）`
-    if (state.phase === 'cancelled') return '跨面板复制已取消'
-    if (state.phase === 'error') return '跨面板复制失败'
-    return `跨面板复制部分完成（${state.count} 项）`
+    if (state.phase === 'running') return `正在从另一台主机复制 ${state.completed || 0}/${state.count} 项`
+    if (state.phase === 'success') return `跨主机复制完成（${state.count} 项）`
+    if (state.phase === 'cancelled') return '跨主机复制已取消'
+    if (state.phase === 'error') return '跨主机复制失败'
+    return `跨主机复制部分完成（${state.count} 项）`
   }
   if (state.mode === 'copy') {
     if (state.phase === 'running') return `正在复制 ${state.count} 项`
@@ -507,7 +558,7 @@ const fileTransferTitle = computed(() => {
 })
 
 const internalDropTitle = computed(() => crossPanelDropActive.value
-  ? `从另一台 KPanel 复制到 ${internalDropTarget.value}`
+  ? `从另一台主机复制到 ${internalDropTarget.value}`
   : internalDropMode.value === 'copy'
   ? `复制 ${internalDropCount.value} 项到 ${internalDropTarget.value}`
   : `移动 ${internalDropCount.value} 项到 ${internalDropTarget.value}`)
@@ -558,6 +609,7 @@ const contextBatchEntries = computed(() =>
 )
 const contextHasMultipleEntries = computed(() => contextBatchEntries.value.length > 1)
 const contextShareEntry = computed(() => {
+  if (isLightNodeFileHost.value) return undefined
   const targets = contextBatchEntries.value
   return targets.length === 1 && targets[0]?.kind === 'file' ? targets[0] : undefined
 })
@@ -1083,6 +1135,10 @@ function currentDirectoryEntry() {
 
 async function addEntriesToDesktop(entry?: FileEntry, currentDirectory = false): Promise<void> {
   if (desktopAdding.value) return
+  if (isLightNodeFileHost.value) {
+    toast.show('轻量节点暂不支持桌面快捷方式', { message: '快捷方式属于当前 KPanel 桌面，请在本机文件中添加。' })
+    return
+  }
   contextMenu.value = undefined
   const targets = currentDirectory
     ? [currentDirectoryEntry()]
@@ -1126,10 +1182,13 @@ function startEntryDrag(event: DragEvent, entry: FileEntry): void {
     : nativeArchiveName
       ? api.files.archiveUrl(targets, nativeArchiveName)
       : undefined
+  const sourceNodeId = activeFileHost.value?.kind === 'light_node'
+    ? activeFileHost.value.id
+    : localClusterNodeId.value
   if (!beginDesktopFileDrag(
     event,
     targets,
-    localClusterNodeId.value,
+    sourceNodeId,
     'file-manager',
     nativeDownloadURL,
     nativeArchiveName,
@@ -1300,11 +1359,11 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
   const payload = crossPanelFileDragEntries(event)
   clearInternalDropTarget()
   if (!payload) {
-    toast.danger('跨面板复制失败', '拖拽数据无效或超过 64 项，请从来源 KPanel 重新拖动。')
+    toast.danger('跨主机复制失败', '拖拽数据无效或超过 64 项，请从来源主机重新拖动。')
     return
   }
-  if (payload.sourceNodeId === localClusterNodeId.value) {
-    toast.show('来源和目标是同一个 KPanel', { message: '请在文件管理器中使用复制或移动。' })
+  if (payload.sourceNodeId === localClusterNodeId.value && !isLightNodeFileHost.value) {
+    toast.show('来源和目标是同一台主机', { message: '请在文件管理器中使用复制或移动。' })
     return
   }
   if (fileTransferState.value?.phase === 'running') {
@@ -1471,6 +1530,10 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
 }
 
 function openFileShare(entry?: FileEntry): void {
+  if (isLightNodeFileHost.value) {
+    toast.show('轻量节点暂不支持文件分享', { message: '文件管理已支持直接操作，分享链接仍需在 KPanel 本机创建。' })
+    return
+  }
   const targets = entry ? entriesForBatch(entry) : []
   if (targets.length !== 1 || targets[0]?.kind !== 'file') return
   contextMenu.value = undefined
@@ -1483,6 +1546,10 @@ function closeFileShare(): void {
 }
 
 function openShareManager(): void {
+  if (isLightNodeFileHost.value) {
+    toast.show('轻量节点暂不支持分享管理', { message: '分享链接属于当前 KPanel 的面板级能力。' })
+    return
+  }
   shareManagerOpen.value = true
 }
 
@@ -1518,7 +1585,7 @@ async function applySuccessfulFileChanges(
   target?: string,
 ): Promise<boolean> {
   let shortcutSyncFailed = false
-  if (result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
+  if (!isLightNodeFileHost.value && result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
     try {
       await syncMovedDesktopShortcuts(result)
     } catch {
@@ -1802,6 +1869,10 @@ function setSort(key: 'name' | 'size' | 'modified'): void {
 }
 
 function openRemoteDownloadDialog(): void {
+  if (isLightNodeFileHost.value) {
+    toast.show('轻量节点暂不支持远程下载', { message: '远程下载任务属于当前 KPanel 的面板级能力。' })
+    return
+  }
   if (remoteDownloadSubmitting.value) return
   remoteDownloadTarget.value = currentPath.value
   remoteDownloadURL.value = ''
@@ -2448,6 +2519,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.removeEventListener?.('resize', closeContextMenuOnViewportChange)
   window.visualViewport?.removeEventListener?.('scroll', closeContextMenuOnViewportChange)
+  setFileHostId()
 })
 </script>
 
@@ -2468,7 +2540,14 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
           <Trash2 :size="15" /> 回收站
         </button>
-        <button class="button button--secondary button--small" type="button" title="分享管理" aria-label="分享管理" @click="openShareManager">
+        <button
+          class="button button--secondary button--small"
+          type="button"
+          :disabled="isLightNodeFileHost"
+          :title="isLightNodeFileHost ? '轻量节点暂不支持分享管理' : '分享管理'"
+          aria-label="分享管理"
+          @click="openShareManager"
+        >
           <Share2 :size="15" /> 分享管理
         </button>
         <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" @click="openDialog('mkdir')">
@@ -2479,7 +2558,7 @@ onBeforeUnmount(() => {
           type="button"
           :title="i18n.t('files.remoteDownload.tooltip')"
           :aria-label="i18n.t('files.remoteDownload.tooltip')"
-          :disabled="remoteDownloadSubmitting"
+          :disabled="remoteDownloadSubmitting || isLightNodeFileHost"
           @click="openRemoteDownloadDialog"
         >
           <Download :size="15" /> {{ i18n.t('files.remoteDownload.label') }}
@@ -3052,7 +3131,7 @@ onBeforeUnmount(() => {
         <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
         <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
         <button
-          v-if="selectedEntries.some(canAddToDesktop)"
+          v-if="!isLightNodeFileHost && selectedEntries.some(canAddToDesktop)"
           type="button"
           :disabled="desktopAdding"
           @click="addEntriesToDesktop()"
@@ -3082,7 +3161,7 @@ onBeforeUnmount(() => {
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openEntry(contextMenu.entry)">
         <Eye :size="15" />{{ phrase(contextMenu.entry.kind === 'directory' ? '打开' : '查看') }}
       </button>
-      <button v-if="!contextMenu.entry" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
+      <button v-if="!contextMenu.entry && !isLightNodeFileHost" role="menuitem" type="button" :disabled="desktopAdding" @click="addEntriesToDesktop(undefined, true)">
         <Pin :size="15" />{{ phrase('将当前文件夹添加到桌面') }}
       </button>
       <button
@@ -3131,7 +3210,7 @@ onBeforeUnmount(() => {
         <ShieldCheck :size="15" />{{ phrase('修改权限') }}
       </button>
       <button
-        v-if="contextMenu.entry && contextBatchEntries.some(canAddToDesktop)"
+        v-if="contextMenu.entry && !isLightNodeFileHost && contextBatchEntries.some(canAddToDesktop)"
         role="menuitem"
         type="button"
         :disabled="desktopAdding"

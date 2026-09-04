@@ -92,6 +92,7 @@ type Service struct {
 	telemetry       TelemetrySource
 	terminal        TerminalBackend
 	lightTerminal   *lightTerminalRelay
+	lightFile       *lightFileRelay
 	nodeIdentityV2  nodeIdentityV2
 	panelVersion    string
 	publicURL       string
@@ -130,6 +131,8 @@ type Service struct {
 	lightSources          *fixedWindowLimiter
 	lightReports          *fixedWindowLimiter
 	lightTerminalRequests *fixedWindowLimiter
+	lightFileSources      *fixedWindowLimiter
+	lightFileRequests     *fixedWindowLimiter
 
 	localMu       sync.Mutex
 	localValue    contract.HostTelemetry
@@ -253,7 +256,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		store: store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
-		light: light, lightTerminal: newLightTerminalRelay(config.Now),
+		light: light, lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
 		publicURL:      strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
 		nodeIdentityV2: cloneNodeIdentityV2(nodeIdentity),
 		panelVersion:   cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
@@ -274,6 +277,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		lightSources:          newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:          newFixedWindowLimiter(180, time.Minute, MaxHosts),
 		lightTerminalRequests: newFixedWindowLimiter(300, time.Minute, MaxHosts),
+		lightFileSources:      newFixedWindowLimiter(1200, time.Minute, MaxHosts),
+		lightFileRequests:     newFixedWindowLimiter(600, time.Minute, MaxHosts),
 
 		securityEntrancePath: config.SecurityEntrancePath,
 	}
@@ -339,6 +344,9 @@ func (s *Service) Close() error {
 	}
 	if s.lightTerminal != nil {
 		s.lightTerminal.closeAll()
+	}
+	if s.lightFile != nil {
+		s.lightFile.closeAll()
 	}
 	return s.checkpoint()
 }
@@ -1141,7 +1149,7 @@ func localPublicHost(
 		Kind:              HostKindPanel,
 		TransportSecurity: TransportSecurityTLS,
 		RemoteNodeID:      nodeID, FederationProtocol: FederationProtocol,
-		Scope: SummaryTerminalScope, TerminalAvailable: true,
+		Scope: SummaryTerminalFilesScope, TerminalAvailable: true, FileManagementAvailable: true,
 		PanelVersion: panelVersion, State: hostState(current, now),
 		LastSnapshot:        cloneSnapshot(current.snapshot),
 		LastAttemptAt:       cloneTime(current.lastAttemptAt),
@@ -1168,7 +1176,7 @@ func publicHost(record hostRecord, current runtimeState, now time.Time) Host {
 		TransportSecurity: TransportSecurityTLS,
 		PeerFingerprint:   "",
 		RemoteNodeID:      record.RemoteNodeID, FederationProtocol: record.FederationProtocol,
-		Scope: SummaryScope, TerminalAvailable: false,
+		Scope: SummaryScope, TerminalAvailable: false, FileManagementAvailable: true,
 		PanelVersion: panelVersion, State: hostState(current, now),
 
 		SecurityEntrancePath: current.securityEntrancePath,

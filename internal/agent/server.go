@@ -167,7 +167,7 @@ func NewServer(config Config) (*Server, error) {
 	}
 	if config.Files == nil {
 		var fileErr error
-		config.Files, fileErr = filemanager.New(defaultFileManagerConfig(config.StateDir))
+		config.Files, fileErr = filemanager.New(DefaultFileManagerConfig(config.StateDir))
 		if fileErr != nil {
 			return nil, fmt.Errorf("initialize file manager: %w", fileErr)
 		}
@@ -197,7 +197,10 @@ func NewServer(config Config) (*Server, error) {
 	}, nil
 }
 
-func defaultFileManagerConfig(stateDirectory string) filemanager.Config {
+// DefaultFileManagerConfig is shared by the full Agent and the lightweight
+// node's root file broker. Keeping one policy here prevents the broker from
+// silently gaining a different protected or read-only filesystem surface.
+func DefaultFileManagerConfig(stateDirectory string) filemanager.Config {
 	trashDirectory := "/var/lib/kejilion-panel/file-trash"
 	protectedDirectories := []string{
 		"/var/lib/kejilion-panel",
@@ -208,6 +211,8 @@ func defaultFileManagerConfig(stateDirectory string) filemanager.Config {
 		"/home/docker/kpanel/data/agent",
 		"/home/docker/kpanel/run",
 		"/home/.kpanel-trash",
+		"/etc/kejilion-node",
+		"/var/lib/kejilion-node",
 	}
 	if stateDirectory = strings.TrimSpace(stateDirectory); stateDirectory != "" && path.IsAbs(stateDirectory) {
 		stateDirectory = path.Clean(stateDirectory)
