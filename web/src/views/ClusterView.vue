@@ -97,6 +97,8 @@ const shareSaving = ref(false)
 const shareResetting = ref(false)
 const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
+const lightEnrollmentConnected = ref(false)
+const lightEnrollmentRequestedName = ref('')
 const controllers = ref<ClusterController[]>([])
 const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
@@ -114,7 +116,9 @@ const dragOverHostId = ref('')
 let loadInFlight = false
 let loadController: AbortController | undefined
 let pollTimer: number | undefined
+let lightEnrollmentPollTimer: number | undefined
 const delayedRefreshes = new Set<number>()
+const lightEnrollmentBaselineHostIDs = new Set<string>()
 
 type OriginSecurityMode = 'empty' | 'tls' | 'e2e_http' | 'invalid'
 
@@ -136,6 +140,10 @@ const parsedAccessCredential = computed(() =>
 const originAssessment = computed<OriginSecurityAssessment>(() =>
   assessOriginSecurity(parsedAccessCredential.value?.origin || ''),
 )
+const canSubmitAdd = computed(() => {
+  if (!addForm.accessCredential.trim()) return lightEnrollmentConnected.value
+  return Boolean(parsedAccessCredential.value) && originAssessment.value.mode !== 'invalid'
+})
 const panelOrigin = computed(() =>
   typeof window === 'undefined' ? '' : window.location.origin,
 )
@@ -296,6 +304,64 @@ function isLiteralIPAddress(hostname: string): boolean {
   )
 }
 
+function stopLightEnrollmentWatch(): void {
+  if (lightEnrollmentPollTimer !== undefined && typeof window !== 'undefined') {
+    window.clearInterval(lightEnrollmentPollTimer)
+  }
+  lightEnrollmentPollTimer = undefined
+}
+
+function resetLightEnrollmentTracking(): void {
+  stopLightEnrollmentWatch()
+  lightEnrollmentBaselineHostIDs.clear()
+  lightEnrollmentConnected.value = false
+  lightEnrollmentRequestedName.value = ''
+}
+
+function captureLightEnrollmentBaseline(): void {
+  lightEnrollmentBaselineHostIDs.clear()
+  for (const host of inventory.value?.items || []) {
+    if (host.kind === 'light_node') lightEnrollmentBaselineHostIDs.add(host.id)
+  }
+}
+
+function detectLightEnrollmentConnection(): void {
+  if (!lightEnrollment.value || lightEnrollmentConnected.value || !inventory.value) return
+  const requestedName = lightEnrollmentRequestedName.value
+  const connectedHost = inventory.value.items.find(
+    (host) =>
+      host.kind === 'light_node' &&
+      !lightEnrollmentBaselineHostIDs.has(host.id) &&
+      (!requestedName || host.name === requestedName),
+  )
+  if (!connectedHost) return
+  lightEnrollmentConnected.value = true
+  stopLightEnrollmentWatch()
+  toast.success('轻量节点已连接', `${connectedHost.name} 已出现在当前主机列表。`)
+}
+
+function lightEnrollmentExpired(): boolean {
+  const expiresAt = Date.parse(lightEnrollment.value?.expiresAt || '')
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now()
+}
+
+async function pollLightEnrollmentConnection(): Promise<void> {
+  if (!lightEnrollment.value || lightEnrollmentConnected.value || lightEnrollmentExpired()) {
+    stopLightEnrollmentWatch()
+    return
+  }
+  await load(true)
+}
+
+function startLightEnrollmentWatch(): void {
+  stopLightEnrollmentWatch()
+  if (typeof window === 'undefined' || typeof window.setInterval !== 'function') return
+  lightEnrollmentPollTimer = window.setInterval(() => {
+    void pollLightEnrollmentConnection()
+  }, 2_000)
+  void pollLightEnrollmentConnection()
+}
+
 async function load(silent = false): Promise<void> {
   if (loadInFlight) return
   loadInFlight = true
@@ -305,6 +371,7 @@ async function load(silent = false): Promise<void> {
   try {
     inventory.value = await api.cluster.hosts(loadController.signal)
     reconcileHostOrder(inventory.value.items)
+    detectLightEnrollmentConnection()
     loadError.value = ''
     refreshWarning.value = ''
   } catch (reason) {
@@ -331,16 +398,25 @@ function closeAdd(): void {
   addForm.accessCredential = ''
   originError.value = ''
   lightEnrollment.value = undefined
+  resetLightEnrollmentTracking()
 }
 
 async function createLightEnrollment(): Promise<void> {
   if (generatingLightEnrollment.value) return
   generatingLightEnrollment.value = true
+  lightEnrollment.value = undefined
+  resetLightEnrollmentTracking()
+  lightEnrollmentRequestedName.value = addForm.name.trim()
   try {
+    if (!inventory.value) await load()
+    captureLightEnrollmentBaseline()
     lightEnrollment.value = await api.cluster.createLightEnrollment(
       addForm.name.trim() || undefined,
     )
+    startLightEnrollmentWatch()
   } catch (reason) {
+    lightEnrollment.value = undefined
+    resetLightEnrollmentTracking()
     toast.danger(
       '轻量节点命令生成失败',
       friendlyError(reason, '请确认当前 KPanel 已通过 HTTPS 域名访问；轻量节点不使用 HTTP 直连地址。'),
@@ -363,6 +439,11 @@ async function addHost(): Promise<void> {
   if (adding.value) return
   const accessCredential = parsedAccessCredential.value
   if (!accessCredential) {
+    if (lightEnrollmentConnected.value && !addForm.accessCredential.trim()) {
+      closeAdd()
+      toast.success('轻量节点已添加', '节点已出现在当前主机列表。')
+      return
+    }
     originError.value = '接入凭据格式无效，请完整粘贴目标 KPanel 生成的三行内容。'
     void nextTick(() => addAccessInput.value?.focus())
     return
@@ -891,6 +972,7 @@ watch(windowActive, (active) => {
 onBeforeUnmount(() => {
   loadController?.abort()
   if (pollTimer) window.clearInterval(pollTimer)
+  stopLightEnrollmentWatch()
   delayedRefreshes.forEach((timer) => window.clearTimeout(timer))
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
@@ -1390,6 +1472,9 @@ onBeforeUnmount(() => {
               <RefreshCw v-else :size="14" /> {{ phrase('重新生成') }}
             </button>
             <small>{{ phrase(`一次性命令，${formatDateTime(lightEnrollment.expiresAt)} 前有效。`) }}</small>
+            <small v-if="lightEnrollmentConnected" class="cluster-light-enrollment__status" role="status">
+              {{ phrase('轻量节点已连接，已出现在主机列表。') }}
+            </small>
           </div>
         </section>
       </form>
@@ -1399,11 +1484,7 @@ onBeforeUnmount(() => {
           class="button button--primary"
           type="submit"
           form="cluster-add-form"
-          :disabled="
-            adding ||
-            !parsedAccessCredential ||
-            originAssessment.mode === 'invalid'
-          "
+          :disabled="adding || !canSubmitAdd"
         >
           <LoaderCircle v-if="adding" class="spin" :size="16" />
           <Plus v-else :size="16" />
@@ -1985,6 +2066,10 @@ onBeforeUnmount(() => {
 .cluster-light-enrollment small {
   font-size: 11px;
   line-height: 1.45;
+}
+
+.cluster-light-enrollment__status {
+  color: var(--success);
 }
 
 .cluster-light-enrollment__command {

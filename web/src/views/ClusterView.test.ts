@@ -78,6 +78,7 @@ interface ClusterBindings {
   inventory: Ref<ClusterHostList | undefined>
   filteredHosts: ComputedRef<ClusterHost[]>
   originAssessment: ComputedRef<{ mode: string; message: string }>
+  canSubmitAdd: ComputedRef<boolean>
   panelOrigin: ComputedRef<string>
   parsedAccessCredential: ComputedRef<{ origin: string; pairingCode: string } | undefined>
   accessCredentialText: ComputedRef<string>
@@ -94,6 +95,7 @@ interface ClusterBindings {
   selected: Ref<ClusterHost | undefined>
   pairingCode: Ref<ClusterPairingCode | undefined>
   lightEnrollment: Ref<ClusterLightEnrollment | undefined>
+  lightEnrollmentConnected: Ref<boolean>
   editName: Ref<string>
   addForm: { name: string; accessCredential: string }
   load: (silent?: boolean) => Promise<void>
@@ -463,6 +465,53 @@ describe('ClusterView inventory and navigation', () => {
     expect(mocks.createLightEnrollment).toHaveBeenCalledWith('英国AMR')
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith(enrollment.command)
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
+  })
+
+  it('enables the primary action only after a new light node appears', async () => {
+    const view = setupView()
+    const initial = inventory()
+    view.inventory.value = initial
+    view.addForm.name = '英国AMR'
+    const enrollment: ClusterLightEnrollment = {
+      command:
+        "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
+      expiresAt: '2026-07-29T10:05:00Z',
+    }
+    mocks.createLightEnrollment.mockResolvedValueOnce(enrollment)
+
+    await view.createLightEnrollment()
+
+    expect(view.lightEnrollmentConnected.value).toBe(false)
+    expect(view.canSubmitAdd.value).toBe(false)
+
+    const connected = host('light-new', false, '')
+    connected.kind = 'light_node'
+    connected.name = '英国AMR'
+    connected.remoteNodeId = 'light-node'
+    connected.federationProtocol = 'light-v1'
+    mocks.hosts.mockResolvedValueOnce({
+      ...initial,
+      items: [...initial.items, connected],
+      total: 3,
+      remoteTotal: 2,
+    })
+
+    await view.load(true)
+
+    expect(view.lightEnrollmentConnected.value).toBe(true)
+    expect(view.canSubmitAdd.value).toBe(true)
+    await view.addHost()
+
+    expect(mocks.add).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '轻量节点已连接',
+      '英国AMR 已出现在当前主机列表。',
+    )
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '轻量节点已添加',
+      '节点已出现在当前主机列表。',
+    )
+    expect(view.lightEnrollment.value).toBeUndefined()
   })
 
   it('explains the only missing prerequisite when no authenticated HTTPS origin exists', async () => {
