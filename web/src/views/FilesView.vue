@@ -3795,7 +3795,7 @@ onBeforeUnmount(() => {
 .file-host-switcher__item :deep(.file-host-switcher__os) {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   box-shadow: none;
 }
 
