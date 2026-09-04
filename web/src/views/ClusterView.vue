@@ -42,6 +42,13 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
+import {
+  clusterHostOrderStorageKey,
+  notifyClusterHostOrderChanged,
+  readClusterHostOrder,
+  reconcileClusterHostOrder,
+  sortClusterHosts,
+} from '@/lib/clusterHostOrder'
 import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
@@ -100,7 +107,6 @@ const editName = ref('')
 const originError = ref('')
 type HostViewMode = 'list' | 'card'
 const hostViewModeStorageKey = 'kpanel:cluster-host-view'
-const hostOrderStorageKey = 'kpanel:cluster-host-order'
 const viewMode = ref<HostViewMode>('list')
 const hostOrder = ref<string[]>([])
 const draggedHostId = ref('')
@@ -154,23 +160,7 @@ function formatHostLatency(host: ClusterHost): string {
     : '--'
 }
 
-const orderedHosts = computed(() => {
-  const items = inventory.value?.items || []
-  const positions = new Map(hostOrder.value.map((id, index) => [id, index]))
-  return items
-    .map((host, originalIndex) => ({ host, originalIndex }))
-    .sort((left, right) => {
-      const leftPosition = positions.get(left.host.id)
-      const rightPosition = positions.get(right.host.id)
-      if (leftPosition === undefined && rightPosition === undefined) {
-        return left.originalIndex - right.originalIndex
-      }
-      if (leftPosition === undefined) return 1
-      if (rightPosition === undefined) return -1
-      return leftPosition - rightPosition
-    })
-    .map(({ host }) => host)
-})
+const orderedHosts = computed(() => sortClusterHosts(inventory.value?.items || [], hostOrder.value))
 
 const filteredHosts = computed(() => {
   const term = search.value.trim().toLocaleLowerCase()
@@ -619,33 +609,19 @@ function restoreViewMode(): void {
 
 function persistHostOrder(): void {
   try {
-    window.localStorage.setItem(hostOrderStorageKey, JSON.stringify(hostOrder.value))
+    window.localStorage.setItem(clusterHostOrderStorageKey, JSON.stringify(hostOrder.value))
   } catch {
     // 隐私模式或存储被禁用时仍保留本次页面顺序。
   }
+  notifyClusterHostOrderChanged()
 }
 
 function restoreHostOrder(): void {
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(hostOrderStorageKey) || '[]')
-    if (
-      Array.isArray(stored) &&
-      stored.length <= 101 &&
-      stored.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 128)
-    ) {
-      hostOrder.value = [...new Set(stored)]
-    }
-  } catch {
-    hostOrder.value = []
-  }
+  hostOrder.value = readClusterHostOrder()
 }
 
 function reconcileHostOrder(items: ClusterHost[]): void {
-  const validIDs = new Set(items.map((host) => host.id))
-  const next = hostOrder.value.filter((id) => validIDs.has(id))
-  for (const host of items) {
-    if (!next.includes(host.id)) next.push(host.id)
-  }
+  const next = reconcileClusterHostOrder(items, hostOrder.value)
   if (
     next.length !== hostOrder.value.length ||
     next.some((id, index) => id !== hostOrder.value[index])

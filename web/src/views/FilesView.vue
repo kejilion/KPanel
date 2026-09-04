@@ -53,6 +53,11 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import { ApiError, api, setFileHostId } from '@/lib/api'
+import {
+  readClusterHostOrder,
+  sortClusterHosts,
+  subscribeClusterHostOrder,
+} from '@/lib/clusterHostOrder'
 import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import {
   contextMenuFocusOrigin,
@@ -129,7 +134,9 @@ const fileHostInventory = ref<ClusterHostList>()
 const fileHostInventoryLoading = ref(false)
 const fileHostInventoryError = ref(false)
 const activeFileHostId = ref('')
+const clusterHostOrderRevision = ref(0)
 let unregisterWindowCloseGuard: (() => void) | undefined
+let unsubscribeClusterHostOrder: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
 
@@ -191,9 +198,10 @@ interface FileHostStatus {
   label: string
 }
 
-const fileHosts = computed(() =>
-  [...(fileHostInventory.value?.items || [])].sort((left, right) => Number(right.isLocal) - Number(left.isLocal)),
-)
+const fileHosts = computed(() => {
+  clusterHostOrderRevision.value
+  return sortClusterHosts(fileHostInventory.value?.items || [], readClusterHostOrder())
+})
 
 const activeFileHost = computed(() =>
   fileHosts.value.find((host) => host.id === activeFileHostId.value)
@@ -2457,6 +2465,9 @@ watch(desktopWindowActive, (active) => {
 })
 
 onMounted(() => {
+  unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
+    clusterHostOrderRevision.value += 1
+  })
   const guard = () => !previewDirty.value || window.confirm('文件尚未保存，确认关闭窗口吗？')
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
@@ -2508,6 +2519,7 @@ watch(search, () => {
 
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
+  unsubscribeClusterHostOrder?.()
   unsubscribeFileDirectoryChanges?.()
   clearDesktopFileDrag()
   fileHostController?.abort()

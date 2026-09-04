@@ -6,6 +6,13 @@ const hostTerminalSource = readFileSync(new URL('../components/terminal/HostTerm
 const desktopStyles = readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8')
 
 describe('multi-host terminal workspace layout', () => {
+  it('uses the shared persisted cluster host order', () => {
+    expect(terminalSource).toContain("import {\n  readClusterHostOrder,\n  sortClusterHosts,\n  subscribeClusterHostOrder,\n} from '@/lib/clusterHostOrder'")
+    expect(terminalSource).toContain(
+      'return sortClusterHosts(inventory.value?.items || [], readClusterHostOrder())',
+    )
+  })
+
   it('opens the available local host after the first successful inventory load', () => {
     expect(terminalSource).toContain('let initialHostLoad = true')
     expect(terminalSource).toContain('if (initialHostLoad) {')

@@ -93,6 +93,7 @@ beforeEach(() => {
   mocks.list.mockResolvedValue(directory('/'))
   mocks.remoteDownloadJobs.mockResolvedValue({ items: [] })
   mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [] })
+  window.localStorage.removeItem('kpanel:cluster-host-order')
 })
 
 function fileHost(id: string, isLocal: boolean, overrides: Record<string, unknown> = {}) {
@@ -120,6 +121,48 @@ function fileHost(id: string, isLocal: boolean, overrides: Record<string, unknow
 }
 
 describe('FilesView host switcher', () => {
+  it('uses the same persisted host order as the cluster page', async () => {
+    window.localStorage.setItem(
+      'kpanel:cluster-host-order',
+      JSON.stringify(['remote-2', 'local', 'remote-1']),
+    )
+    mocks.hosts.mockResolvedValue({
+      nodeId: 'local-node',
+      items: [
+        fileHost('local', true),
+        fileHost('remote-1', false, { name: 'remote-1', fileManagementAvailable: true }),
+        fileHost('remote-2', false, { name: 'remote-2', fileManagementAvailable: true }),
+      ],
+      total: 3,
+      remoteTotal: 2,
+      maxHosts: 100,
+      pollIntervalSeconds: 30,
+    })
+    const wrapper = mount(FilesView, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ModalDialog: {
+            props: ['open'],
+            template: '<div v-if="open"><slot /></div>',
+          },
+        },
+      },
+    })
+
+    try {
+      await flushPromises()
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(wrapper.findAll('[data-file-host-id]').map((item) => item.attributes('data-file-host-id'))).toEqual([
+        'remote-2',
+        'local',
+        'remote-1',
+      ])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('keeps the path toolbar and opens a capable remote host in its existing Files page', async () => {
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',
