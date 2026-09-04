@@ -78,6 +78,7 @@ interface ClusterBindings {
   inventory: Ref<ClusterHostList | undefined>
   filteredHosts: ComputedRef<ClusterHost[]>
   originAssessment: ComputedRef<{ mode: string; message: string }>
+  canSubmitAdd: ComputedRef<boolean>
   panelOrigin: ComputedRef<string>
   parsedAccessCredential: ComputedRef<{ origin: string; pairingCode: string } | undefined>
   accessCredentialText: ComputedRef<string>
@@ -463,6 +464,25 @@ describe('ClusterView inventory and navigation', () => {
     expect(mocks.createLightEnrollment).toHaveBeenCalledWith('英国AMR')
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith(enrollment.command)
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
+  })
+
+  it('enables the primary action after preparing a light-node command', async () => {
+    const view = setupView()
+    view.lightEnrollment.value = {
+      command:
+        "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
+      expiresAt: '2026-07-29T10:05:00Z',
+    }
+
+    expect(view.canSubmitAdd.value).toBe(true)
+    await view.addHost()
+
+    expect(mocks.add).not.toHaveBeenCalled()
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      '轻量节点命令已准备',
+      '请在目标机执行命令，中心端会自动更新主机列表。',
+    )
+    expect(view.lightEnrollment.value).toBeUndefined()
   })
 
   it('explains the only missing prerequisite when no authenticated HTTPS origin exists', async () => {

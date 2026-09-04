@@ -130,6 +130,10 @@ const parsedAccessCredential = computed(() =>
 const originAssessment = computed<OriginSecurityAssessment>(() =>
   assessOriginSecurity(parsedAccessCredential.value?.origin || ''),
 )
+const canSubmitAdd = computed(() => {
+  if (!addForm.accessCredential.trim()) return Boolean(lightEnrollment.value)
+  return Boolean(parsedAccessCredential.value) && originAssessment.value.mode !== 'invalid'
+})
 const panelOrigin = computed(() =>
   typeof window === 'undefined' ? '' : window.location.origin,
 )
@@ -373,6 +377,11 @@ async function addHost(): Promise<void> {
   if (adding.value) return
   const accessCredential = parsedAccessCredential.value
   if (!accessCredential) {
+    if (lightEnrollment.value && !addForm.accessCredential.trim()) {
+      closeAdd()
+      toast.success('轻量节点命令已准备', '请在目标机执行命令，中心端会自动更新主机列表。')
+      return
+    }
     originError.value = '接入凭据格式无效，请完整粘贴目标 KPanel 生成的三行内容。'
     void nextTick(() => addAccessInput.value?.focus())
     return
@@ -1422,11 +1431,7 @@ onBeforeUnmount(() => {
           class="button button--primary"
           type="submit"
           form="cluster-add-form"
-          :disabled="
-            adding ||
-            !parsedAccessCredential ||
-            originAssessment.mode === 'invalid'
-          "
+          :disabled="adding || !canSubmitAdd"
         >
           <LoaderCircle v-if="adding" class="spin" :size="16" />
           <Plus v-else :size="16" />
