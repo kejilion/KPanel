@@ -505,6 +505,7 @@ async function saveShare(): Promise<void> {
       enabled: shareForm.enabled,
       title: shareForm.title,
       description: shareForm.description,
+      hostOrder: [...hostOrder.value],
       expectedResourceVersion: shareSettings.value.resourceVersion,
     })
     applyShareSettings(settings)

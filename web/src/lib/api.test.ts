@@ -1828,6 +1828,7 @@ describe('API client', () => {
       enabled: true,
       title: settings.title,
       description: settings.description,
+      hostOrder: [],
       expectedResourceVersion: settings.resourceVersion,
     })
     await api.cluster.resetShareToken(settings.resourceVersion)

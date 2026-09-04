@@ -798,12 +798,14 @@ describe('ClusterView inventory and navigation', () => {
     await view.openShare()
     expect(view.shareOpen.value).toBe(true)
     view.shareForm.enabled = true
+    view.hostOrder.value = ['remote', 'local']
     await view.saveShare()
 
     expect(mocks.updateShare).toHaveBeenCalledWith({
       enabled: true,
       title: 'My fleet',
       description: 'Public status',
+      hostOrder: ['remote', 'local'],
       expectedResourceVersion: 'share-v1',
     })
     expect(view.shareURL.value).toBe(`https://center.example.com/share/${'a'.repeat(64)}`)
