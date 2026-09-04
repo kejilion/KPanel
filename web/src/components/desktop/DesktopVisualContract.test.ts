@@ -125,6 +125,12 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?animation-duration:\s*\.01ms !important;/)
   })
 
+  it('keeps light-theme drop feedback readable over the dark wallpaper', () => {
+    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop\s*\{[^}]*color:\s*var\(--sidebar-text\);[^}]*background:\s*color-mix\(in srgb, var\(--sidebar\) 88%, transparent\);/)
+    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop--upload\s*\{[^}]*background:[\s\S]*?color-mix\(in srgb, var\(--sidebar\) 88%, transparent\);/)
+    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop small,[\s\S]*?:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop code\s*\{[^}]*color:\s*var\(--sidebar-muted\);/)
+  })
+
   it('keeps the snap preview lightweight and below interactive desktop chrome', () => {
     expect(styles).toMatch(/\.desktop-window-snap-preview\s*\{[^}]*z-index:\s*90;[^}]*pointer-events:\s*none;/)
     const previewRule = styles.match(/\.desktop-window-snap-preview\s*\{([^}]*)\}/)?.[1] ?? ''

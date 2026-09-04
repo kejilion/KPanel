@@ -1238,6 +1238,26 @@ body.desktop-mode-open::-webkit-scrollbar {
   white-space: nowrap;
 }
 
+:root:not([data-theme='dark']) .desktop__file-drop {
+  color: var(--sidebar-text);
+  background: color-mix(in srgb, var(--sidebar) 88%, transparent);
+}
+
+:root:not([data-theme='dark']) .desktop__file-drop--upload {
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 48%),
+    color-mix(in srgb, var(--sidebar) 88%, transparent);
+}
+
+:root:not([data-theme='dark']) .desktop__file-drop small,
+:root:not([data-theme='dark']) .desktop__file-drop code {
+  color: var(--sidebar-muted);
+}
+
+:root:not([data-theme='dark']) .desktop__file-drop code {
+  background: color-mix(in srgb, var(--sidebar-text) 12%, transparent);
+}
+
 .desktop__drop-pulse {
   position: fixed;
   z-index: 21;
