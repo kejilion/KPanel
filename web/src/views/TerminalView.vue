@@ -7,6 +7,11 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
+import {
+  readClusterHostOrder,
+  sortClusterHosts,
+  subscribeClusterHostOrder,
+} from '@/lib/clusterHostOrder'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import type { ClusterHost, ClusterHostList } from '@/types/api'
 import { usePhraseCatalog } from '@/i18n/phrase'
@@ -43,9 +48,11 @@ const errorMessage = ref('')
 const search = ref('')
 const connectionsCollapsed = ref(false)
 const mobileConnectionsOpen = ref(false)
+const clusterHostOrderRevision = ref(0)
 const terminalRefs = new Map<string, HostTerminalHandle>()
 let controller: AbortController | undefined
 let initialHostLoad = true
+let unsubscribeClusterHostOrder: (() => void) | undefined
 const connectionsCollapsedStorageKey = 'kpanel:terminal:connections-collapsed'
 
 function refreshActiveTerminal(): void {
@@ -63,8 +70,10 @@ const {
 } = useTerminalFullscreen(refreshActiveTerminal)
 
 const hosts = computed(() => {
+  clusterHostOrderRevision.value
   const needle = search.value.trim().toLowerCase()
-  return (inventory.value?.items || []).filter((host) => !needle || `${host.name} ${host.origin}`.toLowerCase().includes(needle))
+  return sortClusterHosts(inventory.value?.items || [], readClusterHostOrder())
+    .filter((host) => !needle || `${host.name} ${host.origin}`.toLowerCase().includes(needle))
 })
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeSessionId.value))
@@ -194,6 +203,9 @@ function sessionStateLabel(state: OpenTerminal['state']): string {
 }
 
 onMounted(() => {
+  unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
+    clusterHostOrderRevision.value += 1
+  })
   try {
     connectionsCollapsed.value = window.localStorage.getItem(connectionsCollapsedStorageKey) === '1'
   } catch {
@@ -209,6 +221,7 @@ onMounted(() => {
   void loadHosts()
 })
 onBeforeUnmount(() => {
+  unsubscribeClusterHostOrder?.()
   unregisterWindowCloseGuard?.()
   controller?.abort()
 })
