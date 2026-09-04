@@ -1732,7 +1732,7 @@ describe('API client', () => {
     await api.cluster.refresh(hostID)
     await api.cluster.enableMutualFiles(hostID)
     await api.cluster.createPairingCode()
-    await api.cluster.createLightEnrollment()
+    await api.cluster.createLightEnrollment('香港轻量节点')
     await api.cluster.controllers()
     await api.cluster.revokeController(controllerID)
 
@@ -1779,7 +1779,9 @@ describe('API client', () => {
     expect((clusterCalls[5]?.[1] as RequestInit).body).toBeUndefined()
     expect((clusterCalls[6]?.[1] as RequestInit).body).toBeUndefined()
     expect((clusterCalls[7]?.[1] as RequestInit).body).toBeUndefined()
-    expect((clusterCalls[8]?.[1] as RequestInit).body).toBeUndefined()
+    expect(JSON.parse(String((clusterCalls[8]?.[1] as RequestInit).body))).toEqual({
+      name: '香港轻量节点',
+    })
 
     const mutationCalls = clusterCalls.filter(
       ([, init]) => (init as RequestInit).method !== 'GET',

@@ -56,15 +56,23 @@ func LightRequestSignature(secret []byte, method, path, nodeID, timestamp, reque
 }
 
 func (s *Service) CreateLightEnrollment() (LightEnrollment, error) {
-	return s.CreateLightEnrollmentForOrigin(s.publicURL)
+	return s.CreateLightEnrollmentForOriginAndName(s.publicURL, "")
 }
 
 func (s *Service) CreateLightEnrollmentForOrigin(origin string) (LightEnrollment, error) {
+	return s.CreateLightEnrollmentForOriginAndName(origin, "")
+}
+
+func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName string) (LightEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 	origin, err := validateLightOrigin(origin)
 	if err != nil {
 		return LightEnrollment{}, ErrLightHTTPSOrigin
+	}
+	name, err := validateOptionalName(requestedName)
+	if err != nil {
+		return LightEnrollment{}, err
 	}
 	now := s.now().UTC()
 	id, err := randomHex(16)
@@ -91,7 +99,14 @@ func (s *Service) CreateLightEnrollmentForOrigin(origin string) (LightEnrollment
 	}
 	token := lightTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
 	command := "bash <(curl -fsSL https://kejilion.sh) kpanel node join '" + token + "'"
+	if name != "" {
+		command += " --name " + shellSingleQuote(name)
+	}
 	return LightEnrollment{Command: command, ExpiresAt: expiresAt}, nil
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func (s *Service) EnrollLightNode(source string, input LightEnrollRequest) (LightEnrollResponse, error) {

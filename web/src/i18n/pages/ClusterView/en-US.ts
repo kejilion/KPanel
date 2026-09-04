@@ -98,7 +98,7 @@ export default [
   ["文件互传", "File transfer"],
   ["无法读取集群主机，请稍后重试。", "Unable to load cluster hosts. Please try again."],
   ["无法读取授权列表", "Unable to read the authorization list"],
-  ["无需 Docker；生成命令后，在目标机以 root 执行即可加入只读监控。", "Docker is not required; run the command as root on the target machine and the node will appear in the current host list automatically."],
+  ["无需 Docker；生成命令后，在目标机以 root 执行即可加入只读监控。", "Docker is not required; read-only monitoring can be added to the target machine after the command is generated."],
   ["系统", "System"],
   ["先在目标 KPanel 生成一次性授权码，再将它添加到当前面板。", "KPanel first generates a one-time authorization code and adds it to the current panel."],
   ["行列表", "Line List"],

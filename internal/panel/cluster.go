@@ -295,8 +295,10 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	var input struct {
+		Name string `json:"name"`
+	}
 	if r.ContentLength > 0 {
-		var input struct{}
 		if err := s.decodeJSON(w, r, &input); err != nil {
 			return
 		}
@@ -314,7 +316,7 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
 		return
 	}
-	enrollment, err := s.cluster.CreateLightEnrollmentForOrigin(origin)
+	enrollment, err := s.cluster.CreateLightEnrollmentForOriginAndName(origin, input.Name)
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "cluster.light-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", nil)
 		s.writeClusterError(w, r, err)

@@ -124,6 +124,19 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 	}
 }
 
+func TestLightEnrollmentCommandCarriesOptionalDisplayName(t *testing.T) {
+	clock := &serviceTestClock{now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)}
+	service := newLightServiceForTest(t, clock)
+
+	enrollment, err := service.CreateLightEnrollmentForOriginAndName("https://panel.example", "英国AMR's")
+	if err != nil {
+		t.Fatalf("CreateLightEnrollmentForOriginAndName() error = %v", err)
+	}
+	if !strings.HasSuffix(enrollment.Command, " --name '英国AMR'\\''s'") {
+		t.Fatalf("optional display name missing or not shell-quoted: %q", enrollment.Command)
+	}
+}
+
 func TestLightEnrollmentAcceptsLegacyThirtyMinuteTokenDuringRollingUpgrade(t *testing.T) {
 	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 	clock := &serviceTestClock{now: now}

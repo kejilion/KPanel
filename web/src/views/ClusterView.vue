@@ -127,9 +127,6 @@ const clusterAccessCredentialPrefix = 'KPANEL_CLUSTER_ACCESS_V1'
 const parsedAccessCredential = computed(() =>
   parseClusterAccessCredential(addForm.accessCredential),
 )
-const lightEnrollmentCompletion = computed(
-  () => Boolean(lightEnrollment.value) && !parsedAccessCredential.value,
-)
 const originAssessment = computed<OriginSecurityAssessment>(() =>
   assessOriginSecurity(parsedAccessCredential.value?.origin || ''),
 )
@@ -350,7 +347,9 @@ async function createLightEnrollment(): Promise<void> {
   if (generatingLightEnrollment.value) return
   generatingLightEnrollment.value = true
   try {
-    lightEnrollment.value = await api.cluster.createLightEnrollment()
+    lightEnrollment.value = await api.cluster.createLightEnrollment(
+      addForm.name.trim() || undefined,
+    )
   } catch (reason) {
     toast.danger(
       '轻量节点命令生成失败',
@@ -1341,7 +1340,7 @@ onBeforeUnmount(() => {
             data-1p-ignore
             data-lpignore="true"
           />
-          <small class="cluster-field-help">{{ phrase('留空时使用目标主机名。') }}</small>
+          <small>{{ phrase('留空时使用目标主机名。') }}</small>
         </label>
         <label class="field">
           {{ phrase('接入凭据') }}
@@ -1418,11 +1417,8 @@ onBeforeUnmount(() => {
         </section>
       </form>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="adding" @click="closeAdd">
-          {{ phrase(lightEnrollmentCompletion ? '完成' : '取消') }}
-        </button>
+        <button class="button button--secondary" type="button" :disabled="adding" @click="closeAdd">{{ phrase('取消') }}</button>
         <button
-          v-if="!lightEnrollmentCompletion"
           class="button button--primary"
           type="submit"
           form="cluster-add-form"
@@ -1979,11 +1975,6 @@ onBeforeUnmount(() => {
 
 .cluster-origin-help.is-danger {
   color: var(--danger);
-}
-
-:global(.field small.cluster-field-help),
-:global(.field small.cluster-origin-help:not(.is-danger):not(.is-secure)) {
-  color: var(--muted);
 }
 
 .cluster-light-enrollment {
