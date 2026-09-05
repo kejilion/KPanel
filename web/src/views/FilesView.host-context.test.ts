@@ -188,6 +188,35 @@ describe('FilesView real API multi-window host context', () => {
     expect(hasDesktopFileDrag(event)).toBe(true)
   })
 
+  it('rejects a cross-host path action while node inventory is still unavailable', async () => {
+    const a = await windowFor('a')
+    const b = await windowFor('b')
+    // Window host IDs are already known from routes; node IDs need an inventory response.
+    a.vm.fileHostInventory = undefined
+    b.vm.fileHostInventory = undefined
+    const event = dragEvent()
+    a.vm.startEntryDrag(event, entry)
+    requests.length = 0
+    expect(b.vm.updateInternalDropTarget(event, '/target')).toBe(false)
+    await b.vm.transferInternalFileDrop(event, '/target')
+    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(0)
+  })
+
+  it('keeps same-host path actions available before node inventory is ready', async () => {
+    const a = await windowFor('a')
+    const otherA = await windowFor('a')
+    a.vm.fileHostInventory = undefined
+    otherA.vm.fileHostInventory = undefined
+    const event = dragEvent()
+    a.vm.startEntryDrag(event, entry)
+    requests.length = 0
+    await otherA.vm.transferInternalFileDrop(event, '/target')
+    const writes = requests.filter((request) => request.method === 'POST')
+    expect(writes).toHaveLength(1)
+    expect(writes[0]?.url.pathname).toBe('/api/v1/files/actions')
+    expect(writes[0]?.url.searchParams.get('hostId')).toBe('a')
+  })
+
   it.each([403, 503])('retains a missing/revoked host and fails closed without replay on HTTP %s', async (status) => {
     const a = await windowFor('a')
     availableHosts = [hosts[0]!]
