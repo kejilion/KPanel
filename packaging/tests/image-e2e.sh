@@ -66,6 +66,13 @@ test "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' \
 	-H 'X-Forwarded-Proto: https' \
 	"http://127.0.0.1:$PORT/")" = 200
 
+# HTML alone does not exercise public files copied from a restrictive checkout.
+# Read real image bytes through the unprivileged Panel, not docker cp as root.
+for asset in desktop-icons/files-kpanel-flat-v1.webp wallpapers/kpanel-desktop.webp; do
+	curl --noproxy '*' -fsS --max-time 15 "http://127.0.0.1:$PORT/$asset" >"$TEST_DIR/public-asset"
+	cmp "$SCRIPT_DIR/../../web/public/$asset" "$TEST_DIR/public-asset"
+done
+
 BOOTSTRAP_TOKEN=$(tr -d '\r\n' <"$TEST_DIR/data/bootstrap.token")
 curl --noproxy '*' -sS -D "$TEST_DIR/bootstrap.headers" -o "$TEST_DIR/bootstrap.json" \
 	-H 'Host: panel.e2e.invalid' \
