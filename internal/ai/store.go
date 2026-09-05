@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,6 +182,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(7, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(8, 0)`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(9, 0)`,
+		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(10, 0)`,
 	}
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
@@ -199,6 +202,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		{"sessions", "thinking_level", "TEXT NOT NULL DEFAULT 'medium'"},
 		{"messages", "attachments_json", "BLOB NOT NULL DEFAULT X''"},
 		{"runs", "thinking_level", "TEXT NOT NULL DEFAULT 'medium'"},
+		{"runs", "retry_of", "TEXT DEFAULT NULL"},
 	} {
 		if err := ensureAIColumn(ctx, tx, column.table, column.name, column.definition); err != nil {
 			return err
@@ -240,6 +244,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		return fmt.Errorf("repair AI tool call timeline: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 9 AND applied_at = 0`, millis(s.now())); err != nil {
+		return fmt.Errorf("record AI migration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE schema_migrations SET applied_at = ? WHERE version = 10 AND applied_at = 0`, millis(s.now())); err != nil {
 		return fmt.Errorf("record AI migration: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -379,7 +386,7 @@ func (s *Store) DeleteProviderAndCancelPending(ctx context.Context, id string) (
 		return nil, ErrBusy
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id,session_id,user_id,provider_id,provider_name,model_id,model_name,
-		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at
+		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at,retry_of
 		FROM runs WHERE provider_id=? AND status=?`, id, RunPendingApproval)
 	if err != nil {
 		return nil, err
@@ -700,18 +707,29 @@ func (s *Store) ConversationMessages(ctx context.Context, sessionID string, limi
 }
 
 func (s *Store) ConversationMessagesPage(ctx context.Context, sessionID string, limit int, before string) (Page[Message], error) {
-	return s.messagesPage(ctx, sessionID, limit, before, true)
+	return s.messagesPage(ctx, sessionID, limit, before, true, false)
 }
 
 func (s *Store) MessagesPage(ctx context.Context, sessionID string, limit int, before string) (Page[Message], error) {
-	return s.messagesPage(ctx, sessionID, limit, before, false)
+	return s.messagesPage(ctx, sessionID, limit, before, false, false)
 }
 
-func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, before string, conversationOnly bool) (Page[Message], error) {
+// ConversationMessageMetadataPage is the history presentation path. Attachment
+// contents remain in storage and are never retained in the returned page.
+func (s *Store) ConversationMessageMetadataPage(ctx context.Context, sessionID string, limit int, before string) (Page[Message], error) {
+	return s.messagesPage(ctx, sessionID, limit, before, true, true)
+}
+
+func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, before string, conversationOnly, metadataOnly bool) (Page[Message], error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
-	query := `SELECT id,session_id,run_id,role,content,provider_id,provider_name,model_id,model_name,tool_call_id,attachments_json,created_at FROM messages WHERE session_id=?`
+	attachmentColumn := "attachments_json"
+	if metadataOnly {
+		// Bound the encoded row before the SQLite driver copies it into Go.
+		attachmentColumn = fmt.Sprintf("CASE WHEN length(CAST(attachments_json AS BLOB))<=%d THEN attachments_json ELSE NULL END", maxAttachmentReadBytes)
+	}
+	query := `SELECT id,session_id,run_id,role,content,provider_id,provider_name,model_id,model_name,tool_call_id,` + attachmentColumn + `,length(CAST(attachments_json AS BLOB)),created_at FROM messages WHERE session_id=?`
 	args := []any{sessionID}
 	if conversationOnly {
 		query += ` AND tool_call_id='' AND role IN ('user','assistant')`
@@ -731,12 +749,22 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 	for rows.Next() {
 		var item Message
 		var created int64
-		var attachments []byte
+		// Decode before Next; neither metadata nor decoded Data aliases this row.
+		var attachments sql.RawBytes
+		var attachmentBytes int64
 		if err := rows.Scan(&item.ID, &item.SessionID, &item.RunID, &item.Role, &item.Content, &item.ProviderID,
-			&item.ProviderName, &item.ModelID, &item.ModelName, &item.ToolCallID, &attachments, &created); err != nil {
+			&item.ProviderName, &item.ModelID, &item.ModelName, &item.ToolCallID, &attachments, &attachmentBytes, &created); err != nil {
 			return Page[Message]{}, err
 		}
-		if item.Attachments, err = decodeAttachments(attachments); err != nil {
+		if metadataOnly {
+			if attachmentBytes > maxAttachmentReadBytes {
+				return Page[Message]{}, errors.New("message attachment record exceeds the read limit")
+			}
+			item.Attachments, err = decodeAttachmentMetadata(attachments)
+		} else {
+			item.Attachments, err = decodeAttachments(attachments)
+		}
+		if err != nil {
 			return Page[Message]{}, err
 		}
 		item.CreatedAt = fromMillis(created)
@@ -759,99 +787,14 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 // ContextMessages compacts old turns once approximate usage exceeds 70% of
 // the model context window, then persists a bounded summary and recent turns.
 func (s *Store) ContextMessages(ctx context.Context, sessionID string, contextWindow int) ([]Message, string, error) {
-	var summary, cursor string
-	if err := s.db.QueryRowContext(ctx, `SELECT summary,summary_cursor FROM sessions WHERE id=?`, sessionID).Scan(&summary, &cursor); err != nil {
-		return nil, "", err
-	}
-	count, err := s.contextMessageCount(ctx, sessionID, cursor)
-	if err != nil {
-		return nil, "", err
-	}
-	originalCursor := cursor
-	summaryLimit := 8000
-	if contextWindow > 0 && contextWindow*4/5 < summaryLimit {
-		summaryLimit = contextWindow * 4 / 5
-	}
-	if summaryLimit < 512 {
-		summaryLimit = 512
-	}
-	for count > 200 {
-		batchSize := count - 200
-		if batchSize > 100 {
-			batchSize = 100
-		}
-		batch, err := s.contextMessageBatch(ctx, sessionID, cursor, batchSize)
-		if err != nil {
-			return nil, "", err
-		}
-		if len(batch) == 0 {
-			return nil, "", errors.New("AI context summary cursor did not advance")
-		}
-		summary = appendContextSummary(summary, batch, summaryLimit)
-		cursor = batch[len(batch)-1].ID
-		count -= len(batch)
-	}
-	messages, err := s.contextMessageBatch(ctx, sessionID, cursor, 200)
-	if err != nil {
-		return nil, "", err
-	}
-	if contextWindow >= 1024 {
-		chars := len(summary)
-		for _, item := range messages {
-			chars += len(item.Content)
-			for _, attachment := range item.Attachments {
-				if attachment.Kind == "text" {
-					chars += len(attachment.Data)
-				} else {
-					chars += 16_000
-				}
-			}
-		}
-		if chars > int(float64(contextWindow)*0.7*4) {
-			keepChars, split, running := int(float64(contextWindow)*0.45*4)-len(summary), len(messages), 0
-			if keepChars < 512 {
-				keepChars = 512
-			}
-			for index := len(messages) - 1; index >= 0; index-- {
-				running += len(messages[index].Content)
-				for _, attachment := range messages[index].Attachments {
-					if attachment.Kind == "text" {
-						running += len(attachment.Data)
-					} else {
-						running += 16_000
-					}
-				}
-				if running > keepChars {
-					split = index + 1
-					break
-				}
-			}
-			if split > 0 && split < len(messages) {
-				summary = appendContextSummary(summary, messages[:split], summaryLimit)
-				cursor = messages[split-1].ID
-				messages = messages[split:]
-			}
-		}
-	}
-	if cursor != originalCursor {
-		if _, err := s.db.ExecContext(ctx, `UPDATE sessions SET summary=?,summary_cursor=?,updated_at=? WHERE id=?`, summary, cursor, millis(s.now()), sessionID); err != nil {
-			return nil, "", err
-		}
-	}
-	return messages, summary, nil
+	snapshot, err := s.contextSnapshot(ctx, sessionID, "", contextWindow, false)
+	return snapshot.Messages, snapshot.Summary, err
 }
 
-func (s *Store) contextMessageCount(ctx context.Context, sessionID, cursor string) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE session_id=? AND
-		(?='' OR (created_at,id)>(SELECT created_at,id FROM messages WHERE id=? AND session_id=?))`,
-		sessionID, cursor, cursor, sessionID).Scan(&count)
-	return count, err
-}
-
-func (s *Store) contextMessageBatch(ctx context.Context, sessionID, cursor string, limit int) ([]Message, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,run_id,role,content,provider_id,provider_name,
-		model_id,model_name,tool_call_id,attachments_json,created_at FROM messages WHERE session_id=? AND
+// Summary compaction only uses message text; do not load attachment bodies that
+// will immediately be discarded by appendContextSummary.
+func (s *Store) contextSummaryBatch(ctx context.Context, sessionID, cursor string, limit int) ([]Message, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,role,content FROM messages WHERE session_id=? AND
 		(?='' OR (created_at,id)>(SELECT created_at,id FROM messages WHERE id=? AND session_id=?))
 		ORDER BY created_at ASC,id ASC LIMIT ?`, sessionID, cursor, cursor, sessionID, limit)
 	if err != nil {
@@ -861,16 +804,9 @@ func (s *Store) contextMessageBatch(ctx context.Context, sessionID, cursor strin
 	items := make([]Message, 0, limit)
 	for rows.Next() {
 		var item Message
-		var created int64
-		var attachments []byte
-		if err := rows.Scan(&item.ID, &item.SessionID, &item.RunID, &item.Role, &item.Content, &item.ProviderID,
-			&item.ProviderName, &item.ModelID, &item.ModelName, &item.ToolCallID, &attachments, &created); err != nil {
+		if err := rows.Scan(&item.ID, &item.Role, &item.Content); err != nil {
 			return nil, err
 		}
-		if item.Attachments, err = decodeAttachments(attachments); err != nil {
-			return nil, err
-		}
-		item.CreatedAt = fromMillis(created)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -908,8 +844,32 @@ func appendContextSummary(existing string, messages []Message, limit int) string
 }
 
 func (s *Store) CreateRun(ctx context.Context, run Run) (Run, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Run{}, err
+	}
+	defer tx.Rollback()
+	retryOf := ""
+	if run.RetryOf != nil {
+		retryOf = *run.RetryOf
+	}
+	if retryOf != "" {
+		var status RunStatus
+		err := tx.QueryRowContext(ctx, `SELECT r.status FROM runs r JOIN sessions s ON s.id=r.session_id
+			WHERE r.id=? AND r.user_id=? AND r.session_id=? AND s.user_id=?`, retryOf, run.UserID, run.SessionID, run.UserID).Scan(&status)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Run{}, ErrNotFound
+		}
+		if err != nil {
+			return Run{}, err
+		}
+		if status != RunFailed && status != RunInterrupted {
+			return Run{}, ErrConflict
+		}
+	}
+	run.RetryOf = &retryOf
 	var active int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE session_id=? AND status IN ('queued','running','pending_approval')`, run.SessionID).Scan(&active); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE session_id=? AND status IN ('queued','running','pending_approval')`, run.SessionID).Scan(&active); err != nil {
 		return Run{}, err
 	}
 	if active > 0 {
@@ -923,30 +883,36 @@ func (s *Store) CreateRun(ctx context.Context, run Run) (Run, error) {
 	}
 	now := s.now().UTC()
 	run.ID, run.Status, run.CreatedAt, run.UpdatedAt = newID("run"), RunQueued, now, now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs(id,session_id,user_id,provider_id,provider_name,model_id,
-		model_name,approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, run.ID, run.SessionID, run.UserID, run.ProviderID, run.ProviderName,
-		run.ModelID, run.ModelName, run.ApprovalMode, run.ThinkingLevel, run.Status, 0, 0, 0, "", "", millis(now), millis(now))
+	_, err = tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,user_id,provider_id,provider_name,model_id,
+		model_name,approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at,retry_of)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`, run.ID, run.SessionID, run.UserID, run.ProviderID, run.ProviderName,
+		run.ModelID, run.ModelName, run.ApprovalMode, run.ThinkingLevel, run.Status, 0, 0, 0, "", "", millis(now), millis(now), retryOf)
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
 		return Run{}, ErrBusy
 	}
-	return run, err
+	if err != nil {
+		return Run{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Run{}, err
+	}
+	return run, nil
 }
 
 func (s *Store) Run(ctx context.Context, userID, id string) (Run, error) {
 	return s.scanRun(s.db.QueryRowContext(ctx, `SELECT id,session_id,user_id,provider_id,provider_name,model_id,model_name,
-		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at
+		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at,retry_of
 		FROM runs WHERE id=? AND user_id=?`, id, userID))
 }
 
 func (s *Store) RunByID(ctx context.Context, id string) (Run, error) {
 	return s.scanRun(s.db.QueryRowContext(ctx, `SELECT id,session_id,user_id,provider_id,provider_name,model_id,model_name,
-		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at FROM runs WHERE id=?`, id))
+		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at,retry_of FROM runs WHERE id=?`, id))
 }
 
 func (s *Store) ActiveRun(ctx context.Context, sessionID, userID string) (Run, error) {
 	return s.scanRun(s.db.QueryRowContext(ctx, `SELECT id,session_id,user_id,provider_id,provider_name,model_id,model_name,
-		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at
+		approval_mode,thinking_level,status,step,input_tokens,output_tokens,error_code,error_message,created_at,updated_at,finished_at,retry_of
 		FROM runs WHERE session_id=? AND user_id=? AND status IN ('queued','running','pending_approval')
 		ORDER BY created_at DESC LIMIT 1`, sessionID, userID))
 }
@@ -975,7 +941,7 @@ func (s *Store) scanRun(row scanner) (Run, error) {
 	var created, updated, finished int64
 	err := row.Scan(&item.ID, &item.SessionID, &item.UserID,
 		&item.ProviderID, &item.ProviderName, &item.ModelID, &item.ModelName, &item.ApprovalMode, &item.ThinkingLevel, &item.Status, &item.Step,
-		&item.Usage.InputTokens, &item.Usage.OutputTokens, &item.ErrorCode, &item.ErrorMessage, &created, &updated, &finished)
+		&item.Usage.InputTokens, &item.Usage.OutputTokens, &item.ErrorCode, &item.ErrorMessage, &created, &updated, &finished, &item.RetryOf)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Run{}, ErrNotFound
 	}
@@ -1086,6 +1052,53 @@ type storedAttachment struct {
 	MimeType string `json:"mimeType"`
 	Kind     string `json:"kind"`
 	Data     string `json:"data"`
+}
+
+// A validated message contains at most 8 MiB raw data and four short metadata
+// records. 12 MiB leaves room for Base64 and JSON while bounding legacy rows.
+const maxAttachmentReadBytes = 12 << 20
+
+func decodeAttachmentMetadata(data []byte) ([]Attachment, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	if len(data) > maxAttachmentReadBytes {
+		return nil, errors.New("message attachment record exceeds the read limit")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("decode message attachments: %w", err)
+	}
+	if token != nil && token != json.Delim('[') {
+		return nil, errors.New("decode message attachments: expected an array")
+	}
+	items := []Attachment{}
+	for token != nil && decoder.More() {
+		if len(items) >= 4 {
+			return nil, errors.New("message attachment record exceeds the item read limit")
+		}
+		var item storedAttachment
+		if err := decoder.Decode(&item); err != nil {
+			return nil, fmt.Errorf("decode message attachments: %w", err)
+		}
+		// Streaming validation preserves Base64 errors and decoded sizes (including
+		// legacy CR/LF) without allocating the decoded image or text body.
+		size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding, strings.NewReader(item.Data)))
+		if err != nil {
+			return nil, fmt.Errorf("decode message attachment data: %w", err)
+		}
+		items = append(items, Attachment{Name: item.Name, MimeType: item.MimeType, Kind: item.Kind, Size: int(size)})
+	}
+	if token != nil {
+		if _, err := decoder.Token(); err != nil {
+			return nil, fmt.Errorf("decode message attachments: %w", err)
+		}
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, errors.New("decode message attachments: unexpected trailing data")
+	}
+	return items, nil
 }
 
 func encodeAttachments(items []Attachment) ([]byte, error) {

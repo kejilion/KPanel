@@ -3,16 +3,82 @@ package panel
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kejilion/kejilion-panel/internal/ai"
+	"github.com/kejilion/kejilion-panel/internal/auth"
 )
+
+type aiSnapshotRecorder struct {
+	*httptest.ResponseRecorder
+	cancel context.CancelFunc
+}
+
+func (w *aiSnapshotRecorder) Flush() {
+	w.ResponseRecorder.Flush()
+	w.cancel()
+}
+
+func TestAIHistoryAndStreamAttachmentMetadata(t *testing.T) {
+	server, _ := newTestServer(t)
+	if err := server.EnableAI(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	session, err := server.ai.Store.CreateSession(ctx, ai.Session{UserID: "admin", ProviderID: "provider", ModelID: "model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := server.ai.Store.CreateRun(ctx, ai.Run{SessionID: session.ID, UserID: "admin", ProviderID: "provider", ModelID: "model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := server.ai.Store.AddMessage(ctx, ai.Message{SessionID: session.ID, RunID: run.ID, Role: ai.RoleUser, Content: "read this",
+		Attachments: []ai.Attachment{{Name: "note.txt", MimeType: "text/plain", Kind: "text", Data: []byte("hello")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.aiMessages(response, httptest.NewRequest(http.MethodGet, "/", nil), "admin", session.ID)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"size":5`) || strings.Contains(response.Body.String(), "aGVsbG8=") {
+		t.Fatalf("history=%d %s", response.Code, response.Body.String())
+	}
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := &aiSnapshotRecorder{ResponseRecorder: httptest.NewRecorder(), cancel: cancel}
+	server.aiRunEvents(stream, httptest.NewRequest(http.MethodGet, "/", nil).WithContext(streamCtx), auth.Session{User: auth.PublicUser{ID: "admin"}}, run.ID)
+	if stream.Code != http.StatusOK || !strings.Contains(stream.Body.String(), "event: run.snapshot") || !strings.Contains(stream.Body.String(), `"size":5`) || strings.Contains(stream.Body.String(), "aGVsbG8=") {
+		t.Fatalf("stream=%d %s", stream.Code, stream.Body.String())
+	}
+	db, err := sql.Open("sqlite", filepath.Join(server.config.DataDir, "ai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, "UPDATE messages SET attachments_json=? WHERE id=?", []byte("{"), message.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, streamRequest := range []bool{false, true} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		if streamRequest {
+			server.aiRunEvents(response, request, auth.Session{User: auth.PublicUser{ID: "admin"}}, run.ID)
+		} else {
+			server.aiMessages(response, request, "admin", session.ID)
+		}
+		if response.Code != http.StatusUnprocessableEntity || strings.Contains(response.Body.String(), "run.snapshot") || !strings.Contains(response.Body.String(), "ai_request_failed") {
+			t.Fatalf("corrupt stream=%v: %d %s", streamRequest, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestAIMessageAcceptsMultipartAttachmentsWithoutBase64JSON(t *testing.T) {
 	server, _ := newTestServer(t)

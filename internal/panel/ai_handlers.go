@@ -524,7 +524,7 @@ func (s *Server) aiMessages(w http.ResponseWriter, r *http.Request, userID, sess
 	switch r.Method {
 	case http.MethodGet:
 		cursor := r.URL.Query().Get("cursor")
-		page, err := s.ai.Store.ConversationMessagesPage(r.Context(), sessionID, 50, cursor)
+		page, err := s.ai.Store.ConversationMessageMetadataPage(r.Context(), sessionID, 50, cursor)
 		if err != nil {
 			s.aiJSON(w, r, nil, err, 0)
 			return
@@ -599,6 +599,11 @@ func (s *Server) aiRunEvents(w http.ResponseWriter, r *http.Request, session aut
 		s.aiJSON(w, r, nil, err, 0)
 		return
 	}
+	page, err := s.ai.Store.ConversationMessageMetadataPage(r.Context(), run.SessionID, 50, "")
+	if err != nil {
+		s.aiJSON(w, r, nil, err, 0)
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -617,8 +622,7 @@ func (s *Server) aiRunEvents(w http.ResponseWriter, r *http.Request, session aut
 		return true
 	}
 	calls, _ := s.ai.Store.ToolCalls(r.Context(), id)
-	messages, _ := s.ai.Store.ConversationMessages(r.Context(), run.SessionID, 50)
-	if !write("run.snapshot", map[string]any{"run": run, "toolCalls": calls, "messages": messages}) {
+	if !write("run.snapshot", map[string]any{"run": run, "toolCalls": calls, "messages": page.Items}) {
 		return
 	}
 	channel, unsubscribe := s.ai.Events.Subscribe(id)

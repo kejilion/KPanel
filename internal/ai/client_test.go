@@ -430,6 +430,15 @@ func TestOpenAIChatRetriesTextOnlyWhenOnlyHistoryContainsImages(t *testing.T) {
 }
 
 func TestOpenAIChatNeverSilentlyDropsCurrentRunImage(t *testing.T) {
+	testOpenAIChatRequiredImage(t, true)
+}
+
+func TestOpenAIChatNeverSilentlyDropsRetryAncestorImage(t *testing.T) {
+	testOpenAIChatRequiredImage(t, false)
+}
+
+func testOpenAIChatRequiredImage(t *testing.T, currentRun bool) {
+	t.Helper()
 	requestNumber := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestNumber++
@@ -442,7 +451,7 @@ func TestOpenAIChatNeverSilentlyDropsCurrentRunImage(t *testing.T) {
 	image := Attachment{Name: "current.png", MimeType: "image/png", Kind: "image", Size: 3, Data: []byte{1, 2, 3}}
 	client := NewHTTPModelClient()
 	provider := Provider{ID: "text-only-current", Protocol: ProtocolOpenAICompatible, BaseURL: server.URL, EndpointScope: EndpointPrivate}
-	request := CompletionRequest{Model: "model", Messages: []ChatMessage{{Role: "user", Content: "analyze", Attachments: []Attachment{image}, CurrentRun: true}}}
+	request := CompletionRequest{Model: "model", Messages: []ChatMessage{{Role: "user", Content: "analyze", Attachments: []Attachment{image}, CurrentRun: currentRun, RequiredAttachments: !currentRun}}}
 	for attempt := 0; attempt < 2; attempt++ {
 		err := client.Stream(context.Background(), provider, "key", request, func(CompletionEvent) error { return nil })
 		var providerErr *ProviderError

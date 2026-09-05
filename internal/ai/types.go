@@ -114,6 +114,8 @@ const (
 )
 
 type Message struct {
+	RequiredAttachments bool `json:"-"`
+
 	ID           string       `json:"id"`
 	SessionID    string       `json:"sessionId"`
 	RunID        string       `json:"runId,omitempty"`
@@ -155,6 +157,8 @@ type Usage struct {
 }
 
 type Run struct {
+	// nil is legacy/unknown, empty is an independent input, otherwise the retry parent.
+	RetryOf       *string       `json:"-"`
 	ID            string        `json:"id"`
 	SessionID     string        `json:"sessionId"`
 	UserID        string        `json:"userId"`

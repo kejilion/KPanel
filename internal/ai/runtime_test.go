@@ -675,7 +675,7 @@ func TestServiceRetriesInterruptedRunWithOriginalSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retry.ID == previous.ID || retry.ProviderID != previous.ProviderID || retry.ModelID != previous.ModelID {
+	if retry.ID == previous.ID || retry.ProviderID != previous.ProviderID || retry.ModelID != previous.ModelID || retry.RetryOf == nil || *retry.RetryOf != previous.ID {
 		t.Fatalf("retry did not preserve immutable provider/model snapshot: %#v", retry)
 	}
 	select {
