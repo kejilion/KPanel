@@ -517,6 +517,13 @@ const visualClusterHosts = [
   }),
 ]
 
+// Optional local-only inventory for reviewing dense cluster/share layouts.
+if (process.env.KPANEL_MOCK_CLUSTER_FIXTURE) {
+  const hosts = JSON.parse(await readFile(process.env.KPANEL_MOCK_CLUSTER_FIXTURE, 'utf8'))
+  if (!Array.isArray(hosts) || hosts.length > 100) throw new Error('Mock cluster fixture must contain at most 100 hosts')
+  visualClusterHosts.splice(0, visualClusterHosts.length, ...hosts)
+}
+
 let mockNotificationRevision = 1
 let mockNotificationSnapshot = {
   enabled: false,
@@ -539,7 +546,7 @@ let mockNotificationSnapshot = {
 let mockClusterShareSettings = {
   enabled: true,
   title: 'KPanel Visual Fleet',
-  description: '两台主机的公开状态预览。',
+  description: `${visualClusterHosts.length} 台模拟主机的公开状态预览。`,
   sharePath: `/share/${visualClusterShareToken}`,
   resourceVersion: `sha256:${'2'.repeat(64)}`,
   updatedAt: new Date().toISOString(),
@@ -552,32 +559,32 @@ function mockRevision(seed) {
 function visualClusterPublicSnapshot() {
   const generatedAt = new Date().toISOString()
   const items = visualClusterHosts.map((host) => {
-    const telemetry = host.lastSnapshot.telemetry
+    const telemetry = host.lastSnapshot?.telemetry
     return {
       id: host.id,
       name: host.name,
-      state: host.state === 'online' ? 'online' : 'degraded',
-      os: telemetry.os,
-      architecture: telemetry.architecture,
-      uptimeSeconds: telemetry.uptimeSeconds,
-      load: telemetry.load,
-      cpu: { cores: telemetry.cpu.cores, usagePercent: telemetry.cpu.usagePercent },
-      memory: telemetry.memory,
-      disk: telemetry.disk,
+      state: ['online', 'offline', 'pending'].includes(host.state) ? host.state : 'degraded',
+      os: telemetry?.os,
+      architecture: telemetry?.architecture,
+      uptimeSeconds: telemetry?.uptimeSeconds,
+      load: telemetry?.load || { one: 0, five: 0, fifteen: 0 },
+      cpu: { cores: telemetry?.cpu.cores || 0, usagePercent: telemetry?.cpu.usagePercent || 0 },
+      memory: telemetry?.memory || { totalBytes: 0, usedBytes: 0, usagePercent: 0 },
+      disk: telemetry?.disk || { totalBytes: 0, usedBytes: 0, usagePercent: 0 },
       network: {
-        receivedBytes: telemetry.network.receivedBytes,
-        sentBytes: telemetry.network.sentBytes,
-        receiveBytesPerSecond: host.lastSnapshot.receiveBytesPerSecond,
-        transmitBytesPerSecond: host.lastSnapshot.transmitBytesPerSecond,
+        receivedBytes: telemetry?.network.receivedBytes || 0,
+        sentBytes: telemetry?.network.sentBytes || 0,
+        receiveBytesPerSecond: host.lastSnapshot?.receiveBytesPerSecond || 0,
+        transmitBytesPerSecond: host.lastSnapshot?.transmitBytesPerSecond || 0,
       },
       location: {
-        isp: telemetry.publicNetwork.isp,
-        country: telemetry.publicNetwork.country,
-        countryCode: telemetry.publicNetwork.countryCode,
-        region: telemetry.publicNetwork.region,
-        city: telemetry.publicNetwork.city,
+        isp: telemetry?.publicNetwork.isp,
+        country: telemetry?.publicNetwork.country,
+        countryCode: telemetry?.publicNetwork.countryCode,
+        region: telemetry?.publicNetwork.region,
+        city: telemetry?.publicNetwork.city,
       },
-      collectedAt: telemetry.collectedAt,
+      collectedAt: telemetry?.collectedAt,
     }
   })
   return { title: mockClusterShareSettings.title, description: mockClusterShareSettings.description, generatedAt, total: items.length, online: items.filter((item) => item.state === 'online').length, attention: items.filter((item) => item.state !== 'online').length, items }
@@ -1596,9 +1603,9 @@ createServer(async (request, response) => {
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/hosts') {
     send(response, 200, {
       items: visualClusterHosts,
-      total: 2,
-      remoteTotal: 1,
-      maxHosts: 16,
+      total: visualClusterHosts.length,
+      remoteTotal: visualClusterHosts.filter((host) => !host.isLocal).length,
+      maxHosts: Math.max(16, visualClusterHosts.length),
       pollIntervalSeconds: 30,
       nodeId: 'local-node',
     })

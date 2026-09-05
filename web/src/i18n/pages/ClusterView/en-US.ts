@@ -1,6 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["地球", "Globe"],
+  ["地球展示", "Globe view"],
   ["刷新集群状态", "Refresh cluster status"],
   ["· 最近访问", "• Recent visits"],
   ["{0} 当前保留上次成功数据。", "{0} currently maintains last successful data."],
@@ -20,7 +22,7 @@ export default [
   ["其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。", "Other KPanel instances can read summaries, open terminals, and browse files within the granted scope; access can be revoked at any time."],
   ["本机通过 Unix Socket 读取 Agent 摘要", "This server reads its Agent summary over a Unix socket"],
   ["集群概况与操作", "Cluster overview and actions"],
-  ["采集于", "Collect from"],
+  ["采集于", "Collected at"],
   ["撤销 {0} 的访问授权？", "Revoke access for {0}?"],
   ["撤销失败", "Undo failed"],
   ["磁盘使用率", "Disk Usage"],

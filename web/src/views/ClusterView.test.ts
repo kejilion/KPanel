@@ -83,7 +83,7 @@ interface ClusterBindings {
   parsedAccessCredential: ComputedRef<{ origin: string; pairingCode: string } | undefined>
   accessCredentialText: ComputedRef<string>
   search: Ref<string>
-  viewMode: Ref<'list' | 'card'>
+  viewMode: Ref<'list' | 'card' | 'globe'>
   hostOrder: Ref<string[]>
   accessOpen: Ref<boolean>
   manageOpen: Ref<boolean>
@@ -118,7 +118,7 @@ interface ClusterBindings {
   parseClusterAccessCredential: (
     raw: string,
   ) => { origin: string; pairingCode: string } | undefined
-  setViewMode: (mode: 'list' | 'card') => void
+  setViewMode: (mode: 'list' | 'card' | 'globe') => void
   moveHost: (hostID: string, offset: number) => void
   transportSecurityLabel: (host: ClusterHost) => string
   shortFingerprint: (value?: string) => string
@@ -436,16 +436,16 @@ describe('ClusterView inventory and navigation', () => {
     expect(view.transportSecurityLabel(light)).toBe('轻量节点')
   })
 
-  it('defaults to the row list and persists an explicit card preference', () => {
+  it.each(['card', 'globe'] as const)('defaults to the row list and persists the %s preference', (mode) => {
     const view = setupView()
 
     expect(view.viewMode.value).toBe('list')
-    view.setViewMode('card')
+    view.setViewMode(mode)
 
-    expect(view.viewMode.value).toBe('card')
+    expect(view.viewMode.value).toBe(mode)
     expect(mocks.localStorageSetItem).toHaveBeenCalledWith(
       'kpanel:cluster-host-view',
-      'card',
+      mode,
     )
   })
 

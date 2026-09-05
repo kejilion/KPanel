@@ -1,6 +1,12 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["搜索公开主机","Search public hosts"],
+  ["搜索名称、地区或系统…","Search name, location or OS…"],
+  ["没有匹配的主机","No matching hosts"],
+  ["清除搜索","Clear search"],
+  ['地球', 'Globe'],
+  ['地球展示', 'Globe view'],
   ['全部机器', 'All machines'],
   ['累计流量', 'Cumulative traffic'],
   ['累计接收', 'Cumulative received'],
