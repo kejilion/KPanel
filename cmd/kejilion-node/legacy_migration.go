@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,10 +13,24 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster/sshlogin"
 )
+
+// These templates are extracted verbatim from the paired kejilion.sh candidate.
+// scripts/sync-light-node-runtime.mjs verifies that the script remains the source.
+//
+//go:embed update_runtime/update.sh
+var lightNodeUpdater []byte
+
+//go:embed update_runtime/update.service
+var lightNodeUpdateService []byte
+
+//go:embed update_runtime/update.timer
+var lightNodeUpdateTimer []byte
 
 const (
 	lightUpdateStagingPrefix = "kejilion-node-update."
@@ -84,10 +100,71 @@ func maybeMigrateLegacySSHLoginInstall() error {
 	if !secureMigrationFile(defaultConfigPath) {
 		return nil
 	}
-	if err := installLightNodeSSHLoginIntegration(); err != nil {
-		return fmt.Errorf("install from %s: %w", stagedBinary, err)
+	updateErr := installLightNodeUpdateIntegration()
+	sshErr := installLightNodeSSHLoginIntegration()
+	if err := errors.Join(updateErr, sshErr); err != nil {
+		return fmt.Errorf("install runtime from %s: %w", stagedBinary, err)
 	}
 	return nil
+}
+
+func installLightNodeUpdateIntegration() error {
+	if _, err := exec.LookPath("flock"); err != nil {
+		return errors.New("flock is unavailable; retaining the existing updater")
+	}
+	const home = "/usr/local/lib/kejilion-node"
+	// The parent still executes its old script after this version command returns.
+	// Record PID plus start time, so the new flock updater can recognize that short
+	// handoff without being blocked later by PID reuse or a stale mkdir lock.
+	parent := os.Getppid()
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", parent))
+	if err != nil {
+		return err
+	}
+	start, ok := processStartTime(stat)
+	if !ok {
+		return errors.New("updater process identity is unavailable")
+	}
+	if err := writeMigrationFile(home+"/legacy-update.pid", []byte(strconv.Itoa(parent)+" "+start+"\n"), 0o600); err != nil {
+		return err
+	}
+	for _, template := range []struct {
+		path    string
+		content []byte
+		mode    os.FileMode
+	}{
+		{home + "/update.sh", lightNodeUpdater, 0o755},
+		{"/etc/systemd/system/kejilion-node-update.service", lightNodeUpdateService, 0o644},
+		{"/etc/systemd/system/kejilion-node-update.timer", lightNodeUpdateTimer, 0o644},
+	} {
+		if err := writeMigrationFile(template.path, template.content, template.mode); err != nil {
+			return err
+		}
+	}
+	systemctl, err := migrationSystemctlPath()
+	if err != nil {
+		return err
+	}
+	if err := runMigrationSystemctl(systemctl, "daemon-reload"); err != nil {
+		return err
+	}
+	if err := runMigrationSystemctl(systemctl, "enable", "kejilion-node-update.timer"); err != nil {
+		return err
+	}
+	return runMigrationSystemctl(systemctl, "restart", "--no-block", "kejilion-node-update.timer")
+}
+
+func processStartTime(stat []byte) (string, bool) {
+	end := strings.LastIndexByte(string(stat), ')')
+	if end < 0 {
+		return "", false
+	}
+	fields := strings.Fields(string(stat[end+1:]))
+	if len(fields) < 20 {
+		return "", false
+	}
+	_, err := strconv.ParseUint(fields[19], 10, 64)
+	return fields[19], err == nil
 }
 
 func verifiedStagedNodeBinary() (string, bool, error) {
@@ -179,7 +256,9 @@ func installLightNodeSSHLoginIntegration() error {
 }
 
 func runMigrationSystemctl(path string, arguments ...string) error {
-	command := exec.Command(path, arguments...)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, path, arguments...)
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
 	return command.Run()

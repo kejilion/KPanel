@@ -95,7 +95,7 @@ func main() {
 func run(arguments []string) error {
 	if len(arguments) == 1 && arguments[0] == "version" {
 		if err := maybeMigrateLegacySSHLoginInstall(); err != nil {
-			slog.Warn("legacy lightweight node SSH login integration was not installed", "error", err)
+			slog.Warn("legacy lightweight node runtime migration was incomplete", "error", err)
 		}
 		fmt.Printf("%s %s\n", version.Version, lightProtocol)
 		return nil
@@ -449,10 +449,14 @@ func writeConfigAtomic(path string, config nodeConfig) error {
 	if !filepath.IsAbs(path) {
 		return errors.New("configuration path must be absolute")
 	}
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+	previous, err := os.Lstat(path)
+	if err == nil && !previous.Mode().IsRegular() {
 		return errors.New("configuration target is not a regular file")
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	if runtime.GOOS != "windows" && previous != nil && previous.Mode().Perm()&0o137 != 0 {
+		return errors.New("configuration target permissions are unsafe")
 	}
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o750); err != nil {
@@ -468,6 +472,10 @@ func writeConfigAtomic(path string, config nodeConfig) error {
 	}
 	temporaryName := temporary.Name()
 	defer os.Remove(temporaryName)
+	if err := preserveNodeConfigAccess(temporary, previous); err != nil {
+		_ = temporary.Close()
+		return err
+	}
 	if _, err := temporary.Write(append(content, '\n')); err != nil {
 		temporary.Close()
 		return err
@@ -480,9 +488,6 @@ func writeConfigAtomic(path string, config nodeConfig) error {
 		return err
 	}
 	if err := os.Rename(temporaryName, path); err != nil {
-		return err
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
 		return err
 	}
 	if runtime.GOOS != "windows" {

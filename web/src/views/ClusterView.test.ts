@@ -247,6 +247,41 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('ClusterView live host details', () => {
+  it('refreshes an open light node version and telemetry without overwriting a name edit', async () => {
+    const view = setupView()
+    const initial = { ...host('light', false, ''), kind: 'light_node' as const }
+    view.openManage(initial)
+    view.editName.value = '正在编辑的名称'
+    const updated = { ...initial, panelVersion: '1.3.1', state: 'stale' as const, resourceVersion: 'changed-elsewhere',
+      lastSnapshot: { ...initial.lastSnapshot!, receivedAt: '2026-09-05T03:00:00Z',
+        telemetry: { ...initial.lastSnapshot!.telemetry, agentVersion: '1.3.1' } } }
+    mocks.hosts.mockResolvedValue({ ...inventory(), items: [updated] })
+    await view.load(true)
+    expect(view.selected.value).toEqual(updated)
+    mocks.rename.mockResolvedValueOnce(updated)
+    await view.saveName()
+    expect(mocks.rename).toHaveBeenCalledWith(initial.id, {
+      name: '正在编辑的名称', expectedResourceVersion: initial.resourceVersion,
+    })
+    expect(view.editName.value).toBe('正在编辑的名称')
+    expect(view.manageOpen.value).toBe(true)
+
+    mocks.hosts.mockRejectedValueOnce(new Error('offline'))
+    await view.load(true)
+    expect(view.selected.value).toEqual(updated)
+  })
+
+  it('closes details when a successful refresh confirms the node was removed', async () => {
+    const view = setupView()
+    view.openManage(host('removed', false, ''))
+    mocks.hosts.mockResolvedValue({ ...inventory(), items: [] })
+    await view.load(true)
+    expect(view.selected.value).toBeUndefined()
+    expect(view.manageOpen.value).toBe(false)
+  })
+})
+
 describe('ClusterView compact summary layout', () => {
   it('keeps summary metrics and actions on one decorated row', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')

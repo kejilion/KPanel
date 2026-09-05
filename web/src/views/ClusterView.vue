@@ -102,6 +102,7 @@ const lightEnrollmentRequestedName = ref('')
 const controllers = ref<ClusterController[]>([])
 const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
+const editResourceVersion = ref('')
 const addAccessInput = ref<HTMLTextAreaElement>()
 const addForm = reactive({ name: '', accessCredential: '' })
 const shareForm = reactive({ enabled: false, title: '', description: '' })
@@ -370,6 +371,11 @@ async function load(silent = false): Promise<void> {
   loadController = new AbortController()
   try {
     inventory.value = await api.cluster.hosts(loadController.signal)
+    if (selected.value) {
+      const fresh = inventory.value.items.find((host) => host.id === selected.value?.id)
+      if (fresh) selected.value = fresh
+      else if (!saving.value && !deleting.value && !enablingMutualFiles.value) closeManage()
+    }
     reconcileHostOrder(inventory.value.items)
     detectLightEnrollmentConnection()
     loadError.value = ''
@@ -770,6 +776,7 @@ async function revokeController(controller: ClusterController): Promise<void> {
 
 function openManage(host: ClusterHost): void {
   selected.value = host
+  editResourceVersion.value = host.resourceVersion
   editName.value = host.name
   manageOpen.value = true
 }
@@ -801,7 +808,10 @@ async function enableMutualFiles(): Promise<void> {
   try {
     const updated = await api.cluster.enableMutualFiles(host.id)
     upsertHost(updated)
-    if (selected.value?.id === host.id) selected.value = updated
+    if (selected.value?.id === host.id) {
+      selected.value = updated
+      editResourceVersion.value = updated.resourceVersion
+    }
     toast.success(
       refreshing ? '双向文件互传连接已刷新' : '双向文件互传已启用',
       refreshing
@@ -825,10 +835,11 @@ async function saveName(): Promise<void> {
   try {
     const updated = await api.cluster.rename(host.id, {
       name: editName.value.trim(),
-      expectedResourceVersion: host.resourceVersion,
+      expectedResourceVersion: editResourceVersion.value,
     })
     upsertHost(updated)
     selected.value = updated
+    editResourceVersion.value = updated.resourceVersion
     toast.success('主机名称已更新')
   } catch (reason) {
     toast.danger('保存失败', friendlyError(reason, '请刷新后重试。'))
@@ -864,6 +875,7 @@ async function removeHost(): Promise<void> {
     const fresh = inventory.value?.items.find((item) => item.id === host.id)
     if (fresh) {
       selected.value = fresh
+      editResourceVersion.value = fresh.resourceVersion
       editName.value = fresh.name
     } else {
       manageOpen.value = false
