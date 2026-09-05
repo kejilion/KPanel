@@ -108,7 +108,7 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   5 分钟过期且只能成功消费一次，非法名称或无效请求不会提前烧毁有效授权；
 - 通过可信 `k fd` 反向代理访问时，中心直接使用当前浏览器正在访问的 HTTPS 根地址，不要求
   用户修改安装时保存的 IP + 端口地址，也不额外填写或回传凭据；
-- 目标机只要求 Linux、root、systemd、`curl`、`sha256sum`、`install`、`mktemp` 和 `useradd`，
+- 目标机只要求 Linux、root、systemd、`curl`、`sha256sum`、`install`、`mktemp`、`flock` 和 `useradd`，
   不要求 Docker、Go、Node.js 或编译环境，首版支持 `amd64`、`arm64`；
 - `kejilion.sh` 只负责固定安装协议，下载 Release 中对应架构的静态 `kejilion-node` 和
   `SHA256SUMS`，校验摘要及二进制 `version` 后再原子安装；
