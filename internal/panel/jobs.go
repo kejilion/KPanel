@@ -1,9 +1,12 @@
 package panel
 
 import (
+	"bytes"
+	"container/heap"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -47,7 +50,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	for _, source := range []struct {
 		path   string
-		decode func([]byte) ([]contract.Job, error)
+		decode func(context.Context, []byte) ([]contract.Job, error)
 	}{
 		{"/v1/docker/jobs", decodeOwnerJobs(jobsFromDockerJobs)},
 		{"/v1/app-jobs", decodeOwnerJobs(jobsFromAppJobs)},
@@ -58,8 +61,12 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 			s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
 			return
 		}
-		owned, err := source.decode(response.Body)
+		owned, err := source.decode(ctx, response.Body)
 		if err != nil {
+			if ctx.Err() != nil {
+				s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
+				return
+			}
 			s.writeProblem(w, r, http.StatusBadGateway, "job_source_invalid", "后台任务状态无效，请稍后刷新", "")
 			return
 		}
@@ -74,17 +81,93 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, contract.PageResult[contract.Job]{Items: jobs})
 }
 
-func decodeOwnerJobs[T any](adapt func([]T) []contract.Job) func([]byte) ([]contract.Job, error) {
-	return func(body []byte) ([]contract.Job, error) {
-		var page contract.PageResult[T]
-		if err := json.Unmarshal(body, &page); err != nil {
+// Owners may expose more history than this view displays. The Agent transport
+// already bounds response bytes; decode one owner record at a time and retain
+// only the newest 100 (the maximum public jobs limit), regardless of input order.
+func decodeOwnerJobs[T any](adapt func([]T) []contract.Job) func(context.Context, []byte) ([]contract.Job, error) {
+	return func(ctx context.Context, body []byte) ([]contract.Job, error) {
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		invalid := errors.New("invalid owner job page")
+		if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+			return nil, invalid
+		}
+		latest := make(ownerJobWindow, 0, 100)
+		foundItems := false
+		for decoder.More() {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			key, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			if key != "items" {
+				// Preserve PageResult's compatibility with optional envelope fields.
+				var ignored json.RawMessage
+				if err := decoder.Decode(&ignored); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if foundItems {
+				return nil, invalid
+			}
+			foundItems = true
+			if token, err := decoder.Token(); err != nil || token != json.Delim('[') {
+				return nil, invalid
+			}
+			for decoder.More() {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				var item T
+				if err := decoder.Decode(&item); err != nil {
+					return nil, err
+				}
+				job := adapt([]T{item})[0]
+				if len(latest) < cap(latest) {
+					heap.Push(&latest, job)
+				} else if newerOwnerJob(job, latest[0]) {
+					latest[0] = job
+					heap.Fix(&latest, 0)
+				}
+			}
+			if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+				return nil, invalid
+			}
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !foundItems {
+			return nil, invalid
+		}
+		if _, err := decoder.Token(); err != io.EOF {
+			return nil, invalid
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if page.Items == nil || len(page.Items) > 200 {
-			return nil, errors.New("invalid owner job page")
-		}
-		return adapt(page.Items), nil
+		sort.Slice(latest, func(i, j int) bool { return newerOwnerJob(latest[i], latest[j]) })
+		return []contract.Job(latest), nil
 	}
+}
+
+type ownerJobWindow []contract.Job
+
+func newerOwnerJob(a, b contract.Job) bool {
+	if a.CreatedAt.Equal(b.CreatedAt) {
+		return a.ID < b.ID
+	}
+	return a.CreatedAt.After(b.CreatedAt)
+}
+func (w ownerJobWindow) Len() int           { return len(w) }
+func (w ownerJobWindow) Less(i, j int) bool { return newerOwnerJob(w[j], w[i]) }
+func (w ownerJobWindow) Swap(i, j int)      { w[i], w[j] = w[j], w[i] }
+func (w *ownerJobWindow) Push(value any)    { *w = append(*w, value.(contract.Job)) }
+func (w *ownerJobWindow) Pop() any {
+	last := len(*w) - 1
+	job := (*w)[last]
+	(*w)[last] = contract.Job{}
+	*w = (*w)[:last]
+	return job
 }
 
 func mergeOwnerJobs(jobs, owned []contract.Job) []contract.Job {

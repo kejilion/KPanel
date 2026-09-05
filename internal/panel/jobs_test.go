@@ -3,9 +3,12 @@ package panel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,123 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/webenv"
 )
+
+type webEnvironmentHistoryAgent struct {
+	*stubAgent
+	service *webenv.Service
+	reverse bool
+}
+
+func (a *webEnvironmentHistoryAgent) Get(ctx context.Context, path, query, requestID string) (AgentResponse, error) {
+	if path != "/v1/web-environment/jobs" {
+		return a.stubAgent.Get(ctx, path, query, requestID)
+	}
+	items := a.service.Jobs()
+	if a.reverse {
+		for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+			items[left], items[right] = items[right], items[left]
+		}
+	}
+	body, err := json.Marshal(contract.PageResult[webenv.Job]{Items: items})
+	return AgentResponse{StatusCode: http.StatusOK, Body: body}, err
+}
+
+func TestJobsAcceptsRealWebEnvironmentHistoryBeyondDisplayWindow(t *testing.T) {
+	for _, count := range []int{200, 201, 450} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			root := t.TempDir()
+			service, err := webenv.New(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := time.Date(2026, time.September, 5, 0, 0, 0, 0, time.UTC)
+			for i := 0; i < count; i++ {
+				created := base.Add(time.Duration(i) * time.Minute)
+				finished := created.Add(time.Second)
+				job := webenv.Job{ID: fmt.Sprintf("%032x", i+1), Action: "backup", Status: "succeeded", Stage: "completed", Progress: 100, CreatedAt: created, StartedAt: &created, FinishedAt: &finished}
+				if i == count-1 {
+					job.Status = "failed"
+					job.Stage = "failed"
+					job.Message = "latest backup failed"
+				}
+				data, err := json.Marshal(job)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, job.ID+".json"), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(service.Jobs()) != count {
+				t.Fatal("real owner did not expose all legal history")
+			}
+			server, tokenPath := newTestServer(t)
+			session, _ := bootstrapCookies(t, server, tokenPath)
+			agent := &webEnvironmentHistoryAgent{stubAgent: &stubAgent{response: AgentResponse{StatusCode: 200, Body: []byte(`{"items":[]}`)}}, service: service}
+			server.agent = agent
+			for _, reverse := range []bool{false, true} {
+				agent.reverse = reverse
+				source, err := agent.Get(context.Background(), "/v1/web-environment/jobs", "", "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				window, err := decodeOwnerJobs(jobsFromWebEnvironment)(context.Background(), source.Body)
+				if err != nil || len(window) != 100 || cap(window) != 100 {
+					t.Fatalf("unbounded or invalid owner display window: len=%d cap=%d err=%v", len(window), cap(window), err)
+				}
+				response := performRequest(server, "GET", "/api/v1/jobs?limit=50", nil, map[string]string{"Cookie": session.Name + "=" + session.Value})
+				if response.Code != 200 {
+					t.Fatalf("legal owner history count=%d reverse=%v returned %d: %s", count, reverse, response.Code, response.Body.String())
+				}
+				var page contract.PageResult[contract.Job]
+				if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				if len(page.Items) != 50 || page.Items[0].ID != "webenv:"+fmt.Sprintf("%032x", count) || page.Items[0].State != contract.JobFailedNeedsAttention {
+					t.Fatalf("latest failure omitted: %#v", page.Items)
+				}
+				for i, job := range page.Items {
+					if job.ID != "webenv:"+fmt.Sprintf("%032x", count-i) {
+						t.Fatalf("history order at %d: %s", i, job.ID)
+					}
+				}
+			}
+			if len(service.Jobs()) != count {
+				t.Fatal("display selection altered owner history")
+			}
+		})
+	}
+}
+
+func TestOwnerJobWindowValidatesWholePageAndHonorsCancellation(t *testing.T) {
+	decode := decodeOwnerJobs(jobsFromWebEnvironment)
+	if jobs, err := decode(context.Background(), []byte(`{"nextCursor":"future-compatible","items":[]}`)); err != nil || jobs == nil || len(jobs) != 0 {
+		t.Fatalf("valid empty page: %#v %v", jobs, err)
+	}
+	for _, body := range []string{`{}`, `{"items":null}`, `{"items":{}}`, `{"items":[]} {}`, `{"items":[],"items":[]}`} {
+		if _, err := decode(context.Background(), []byte(body)); err == nil {
+			t.Errorf("invalid page accepted: %s", body)
+		}
+	}
+	items := make([]webenv.Job, 201)
+	for i := range items {
+		items[i] = webenv.Job{ID: fmt.Sprintf("%032x", i+1), Status: "succeeded", CreatedAt: time.Unix(int64(i), 0)}
+	}
+	body, err := json.Marshal(contract.PageResult[webenv.Job]{Items: items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Invalid data after the retained window still invalidates the response.
+	malformed := append(append([]byte(nil), body[:len(body)-2]...), []byte(`,invalid]}`)...)
+	if _, err := decode(context.Background(), malformed); err == nil {
+		t.Fatal("ignored malformed tail after display window")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := decode(ctx, body); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+}
 
 type jobTruthAgent struct {
 	status  string
@@ -134,7 +254,7 @@ func TestOwnerJobsHaveDistinctSourceIDsAndUnknownStatesFailClosed(t *testing.T) 
 	if len(merged) != 2 || merged[0].State != contract.JobFailedNeedsAttention || merged[1].State != contract.JobQueued {
 		t.Fatalf("source collision or guessed status: %#v", merged)
 	}
-	if _, err := decodeOwnerJobs(jobsFromAppJobs)([]byte(`{}`)); err == nil {
+	if _, err := decodeOwnerJobs(jobsFromAppJobs)(context.Background(), []byte(`{}`)); err == nil {
 		t.Fatal("malformed owner page accepted as empty")
 	}
 	legacy := jobsFromAudit([]store.AuditEvent{{ID: "old", Action: "docker.image_pull", Result: "success"}}, 50)
