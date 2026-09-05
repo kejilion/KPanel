@@ -3,6 +3,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClusterGlobe from './ClusterGlobe.vue'
+import globeSource from './ClusterGlobe.vue?raw'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { registerPhraseCatalog } from '@/i18n/phrase'
 import english from '@/i18n/pages/shared/en-US'
@@ -66,6 +67,21 @@ function setup(hosts: GlobeHost[] = [host('alpha', 'CN'), host('beta')], active 
 }
 
 describe('cluster globe interaction and lifecycle', () => {
+  it('lets metric columns and capacity labels reflow with enlarged text', () => {
+    const source = globeSource
+    expect(source).toMatch(/\.cluster-globe__metrics\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(100%, 6em\), 1fr\)\);/)
+    expect(source).toMatch(/\.cluster-globe__metrics\s*>\s*div\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/)
+    expect(source).toMatch(/\.cluster-globe__metrics small span\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*normal;/)
+    expect(source).not.toMatch(/\.cluster-globe__metrics small span\s*\{[^}]*white-space:\s*nowrap;/)
+  })
+
+  it('keeps globe controls readable and lets their labels wrap', () => {
+    const source = globeSource
+    expect(source).toMatch(/\.cluster-globe \.button\s*\{[^}]*min-height:\s*40px;[^}]*max-width:\s*100%;[^}]*font-size:\s*max\(14px, \.875rem\);[^}]*white-space:\s*normal;/)
+    expect(source).toMatch(/\.cluster-globe button, \.cluster-globe input, \.cluster-globe select\s*\{[^}]*font-size:\s*max\(14px, \.875rem\);/)
+    expect(source).toMatch(/\.cluster-globe__controls \.icon-button\s*\{[^}]*min-width:\s*40px;[^}]*min-height:\s*40px;/)
+  })
+
   it.each(['unknown', 'pending'] as const)('does not count waiting state %s as needing attention', async state => {
     const waiting: GlobeHost = state === 'unknown'
       ? { ...host('waiting', 'SG'), state, lastSnapshot: undefined }

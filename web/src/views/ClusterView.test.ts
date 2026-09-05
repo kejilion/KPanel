@@ -315,7 +315,7 @@ describe('ClusterView compact summary layout', () => {
     expect(narrowStyles).not.toContain('42px repeat(3, minmax(0, 1fr))')
     expect(narrowStyles).toMatch(/\.cluster-hero__actions\s*>\s*\*\s*\{[^}]*flex:\s*1 0 auto;[^}]*max-width:\s*100%;[^}]*min-height:\s*40px;[^}]*white-space:\s*normal;/)
     expect(narrowStyles).toMatch(/\.cluster-hero__actions\s*>\s*\.icon-button\s*\{[^}]*flex:\s*0 0 40px;/)
-    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.button\s*\{[^}]*min-height:\s*40px;[^}]*font-size:\s*\.875rem;/)
+    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.button\s*\{[^}]*min-height:\s*40px;[^}]*font-size:\s*max\(14px, \.875rem\);/)
   })
 
   it.each([

@@ -1753,7 +1753,7 @@ onBeforeUnmount(() => {
 
 .cluster-hero__actions > .button {
   min-height: 40px;
-  font-size: .875rem;
+  font-size: max(14px, .875rem);
 }
 
 .cluster-stats {
