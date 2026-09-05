@@ -99,8 +99,11 @@ opaque 设备标识、整表资源版本和受限 transient worker；浏览器�
 
 四类写操作统一调用可信 `kejilion.sh` 的
 `KJ_SYSTEM_RESOURCE_NONINTERACTIVE=1 k kpanel system-resource` 固定协议。Agent 仅信任包含
-`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"` 的脚本版本；该版本明确包含 Cron stdin 契约、稳定的
-防火墙规则版本、ipset 状态及持久恢复备份。动作、资源版本和结构化字段以
+`KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="3"` 或 `"4"` 的脚本版本；两版均包含 Cron stdin 契约、稳定的
+防火墙规则版本、安全共享锁及持久恢复备份。v4 额外支持国家/地区规则与 ipset 版本；调优、端口扫描、
+账户、SSH 防御及原有资源动作继续兼容 v3。防火墙资源版本按实际可信脚本选择：v3 仅计算 iptables，
+v4 在存在 ipset 命令时同时计算 ipset；国家/地区写入仅交给 v4，v3 明确返回缺少协议的原因。
+动作、资源版本和结构化字段以
 固定 argv 传递；Cron 命令正文通过最大 2048 字节、单行终止的 stdin 帧传递，避免泄露到进程列表。
 脚本适配器在请求期间只把命令保存为 Crontab 数据，不立即执行；之后由系统 Cron 按计划运行。
 防火墙端口动作与脚本一致，同时处理 TCP 和 UDP。国家/地区规则作为 IP/网段规则中的一个简单模式，
