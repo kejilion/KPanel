@@ -1,0 +1,12 @@
+[Unit]
+Description=Update KPanel Lightweight Monitoring Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/kejilion-node/update.sh update
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+UMask=0077
