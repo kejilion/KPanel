@@ -16,8 +16,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	_ "modernc.org/sqlite"
 )
 
 var (
@@ -59,6 +57,9 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
+	if attachmentMetadataProjectionErr != nil {
+		return nil, fmt.Errorf("register AI attachment metadata projection: %w", attachmentMetadataProjectionErr)
+	}
 	if strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
 		return nil, errors.New("AI database path must be absolute")
 	}
@@ -725,8 +726,8 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 	}
 	attachmentColumn := "attachments_json"
 	if metadataOnly {
-		// Bound the encoded row before the SQLite driver copies it into Go.
-		attachmentColumn = fmt.Sprintf("CASE WHEN length(CAST(attachments_json AS BLOB))<=%d THEN attachments_json ELSE NULL END", maxAttachmentReadBytes)
+		// Validate inside SQLite so the driver copies only metadata into Go.
+		attachmentColumn = attachmentMetadataProjectionSQL()
 	}
 	columns := `id,session_id,run_id,role,content,provider_id,provider_name,model_id,model_name,tool_call_id,` + attachmentColumn + `,length(CAST(attachments_json AS BLOB)),created_at,messages.rowid`
 	selection := ` FROM messages WHERE session_id=?`
@@ -769,7 +770,7 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 			if attachmentBytes > maxAttachmentReadBytes {
 				return Page[Message]{}, errors.New("message attachment record exceeds the read limit")
 			}
-			item.Attachments, err = decodeAttachmentMetadata(attachments)
+			item.Attachments, err = decodeAttachmentMetadataProjection(attachments)
 		} else {
 			item.Attachments, err = decodeAttachments(attachments)
 		}

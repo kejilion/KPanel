@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 )
 
@@ -150,7 +149,7 @@ func readContextBatch(ctx context.Context, tx *sql.Tx, sessionID, cursor string,
 	attachmentColumn, lengthColumn := "X''", "0"
 	if !textOnly {
 		lengthColumn = "length(CAST(attachments_json AS BLOB))"
-		attachmentColumn = fmt.Sprintf("CASE WHEN %s<=%d THEN attachments_json ELSE NULL END", lengthColumn, maxAttachmentReadBytes)
+		attachmentColumn = attachmentMetadataProjectionSQL()
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id,run_id,role,content,tool_call_id,provider_id,provider_name,model_id,model_name,created_at,`+attachmentColumn+`,`+lengthColumn+` FROM messages WHERE session_id=? AND
 		(?='' OR (created_at,id)>(SELECT created_at,id FROM messages WHERE id=? AND session_id=?)) ORDER BY created_at ASC,id ASC LIMIT ?`, sessionID, cursor, cursor, sessionID, limit)
@@ -172,13 +171,16 @@ func readContextBatch(ctx context.Context, tx *sql.Tx, sessionID, cursor string,
 		}
 		item.SessionID = sessionID
 		item.CreatedAt = fromMillis(created)
-		item.Attachments, err = decodeAttachmentMetadata(data)
+		item.Attachments, err = decodeAttachmentMetadataProjection(data)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func contextRequiredAttachments(ctx context.Context, tx *sql.Tx, sessionID, userID, runID string) (map[string]int, error) {
@@ -214,8 +216,8 @@ func contextRequiredAttachments(ctx context.Context, tx *sql.Tx, sessionID, user
 		}
 		where = " AND run_id IN (" + strings.Join(marks, ",") + ")"
 	}
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT id,CASE WHEN length(CAST(attachments_json AS BLOB))<=%d THEN attachments_json ELSE NULL END,
-		length(CAST(attachments_json AS BLOB)) FROM messages WHERE session_id=? AND role='user' AND tool_call_id='' AND length(attachments_json)>0`, maxAttachmentReadBytes)+where, args...)
+	rows, err := tx.QueryContext(ctx, `SELECT id,`+attachmentMetadataProjectionSQL()+`,
+		length(CAST(attachments_json AS BLOB)) FROM messages WHERE session_id=? AND role='user' AND tool_call_id='' AND length(attachments_json)>0`+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +233,7 @@ func contextRequiredAttachments(ctx context.Context, tx *sql.Tx, sessionID, user
 		if encodedBytes > maxAttachmentReadBytes {
 			return nil, ErrContextAttachmentLimit
 		}
-		attachments, err := decodeAttachmentMetadata(data)
+		attachments, err := decodeAttachmentMetadataProjection(data)
 		if err != nil {
 			return nil, err
 		}
@@ -251,7 +253,10 @@ func contextRequiredAttachments(ctx context.Context, tx *sql.Tx, sessionID, user
 		}
 		required[id] = size
 	}
-	return required, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return required, nil
 }
 
 func hydrateContextAttachments(ctx context.Context, tx *sql.Tx, sessionID string, messages []Message, required map[string]int) error {
