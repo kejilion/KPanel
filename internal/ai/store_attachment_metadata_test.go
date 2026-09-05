@@ -145,3 +145,45 @@ func TestContextSummaryBatchReadsOnlyText(t *testing.T) {
 		t.Fatal("presentation hid corrupt body")
 	}
 }
+func TestConversationMetadataKeepsPaginationWhenUnorderedScansReverse(t *testing.T) {
+	ctx := context.Background()
+	store, err := OpenStore(filepath.Join(t.TempDir(), "ai.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.db.SetMaxOpenConns(1)
+	if _, err := store.db.ExecContext(ctx, "PRAGMA reverse_unordered_selects=ON"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.CreateSession(ctx, Session{UserID: "admin", ProviderID: "p", ModelID: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.UnixMilli(1788576000123)
+	for i, offset := range []int64{2, 1, 2, 0, 1} {
+		_, err := store.AddMessage(ctx, Message{ID: fmt.Sprintf("reverse_%d", 9-i), SessionID: session.ID, Role: RoleUser, Content: fmt.Sprint(i), CreatedAt: stamp.Add(time.Duration(offset) * time.Millisecond), Attachments: []Attachment{{Name: "body.txt", Kind: "text", MimeType: "text/plain", Data: []byte("original")}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursor := ""
+	for _, want := range [][]string{{"reverse_9", "reverse_7"}, {"reverse_8", "reverse_5"}, {"reverse_6"}} {
+		page, err := store.ConversationMessageMetadataPage(ctx, session.ID, 2, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) != len(want) {
+			t.Fatalf("page length=%d want %d", len(page.Items), len(want))
+		}
+		for i, item := range page.Items {
+			if item.ID != want[i] || len(item.Attachments) != 1 || item.Attachments[0].Size != 8 || item.Attachments[0].Data != nil {
+				t.Fatalf("item=%#v want id=%s", item, want[i])
+			}
+		}
+		cursor = page.NextCursor
+	}
+	if cursor != "" {
+		t.Fatalf("unexpected last cursor=%s", cursor)
+	}
+}

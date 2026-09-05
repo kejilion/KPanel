@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -729,31 +730,41 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 		// Bound the encoded row before the SQLite driver copies it into Go.
 		attachmentColumn = fmt.Sprintf("CASE WHEN length(CAST(attachments_json AS BLOB))<=%d THEN attachments_json ELSE NULL END", maxAttachmentReadBytes)
 	}
-	query := `SELECT id,session_id,run_id,role,content,provider_id,provider_name,model_id,model_name,tool_call_id,` + attachmentColumn + `,length(CAST(attachments_json AS BLOB)),created_at FROM messages WHERE session_id=?`
+	columns := `id,session_id,run_id,role,content,provider_id,provider_name,model_id,model_name,tool_call_id,` + attachmentColumn + `,length(CAST(attachments_json AS BLOB)),created_at,messages.rowid`
+	selection := ` FROM messages WHERE session_id=?`
 	args := []any{sessionID}
 	if conversationOnly {
-		query += ` AND tool_call_id='' AND role IN ('user','assistant')`
+		selection += ` AND tool_call_id='' AND role IN ('user','assistant')`
 	}
 	if before != "" {
-		query += ` AND (created_at,rowid)<(SELECT created_at,rowid FROM messages WHERE id=? AND session_id=?)`
+		selection += ` AND (created_at,rowid)<(SELECT created_at,rowid FROM messages WHERE id=? AND session_id=?)`
 		args = append(args, before, sessionID)
 	}
-	query += ` ORDER BY created_at DESC,rowid DESC LIMIT ?`
+	selection += ` ORDER BY created_at DESC,rowid DESC LIMIT ?`
 	args = append(args, limit+1)
+	query := `SELECT ` + columns + selection
+	if metadataOnly {
+		// The existing index breaks timestamp ties by id, while pagination uses
+		// rowid. Sort only rowids: carrying encoded attachments through SQLite's
+		// temporary sort can exhaust /tmp during overlapping history reads.
+		query = `WITH selected AS MATERIALIZED (SELECT rowid AS message_rowid` + selection + `)
+			SELECT ` + columns + ` FROM selected CROSS JOIN messages ON messages.rowid=selected.message_rowid`
+	}
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return Page[Message]{}, err
 	}
 	defer rows.Close()
 	items := []Message{}
+	rowIDs := make(map[string]int64)
 	for rows.Next() {
 		var item Message
-		var created int64
+		var created, rowID int64
 		// Decode before Next; neither metadata nor decoded Data aliases this row.
 		var attachments sql.RawBytes
 		var attachmentBytes int64
 		if err := rows.Scan(&item.ID, &item.SessionID, &item.RunID, &item.Role, &item.Content, &item.ProviderID,
-			&item.ProviderName, &item.ModelID, &item.ModelName, &item.ToolCallID, &attachments, &attachmentBytes, &created); err != nil {
+			&item.ProviderName, &item.ModelID, &item.ModelName, &item.ToolCallID, &attachments, &attachmentBytes, &created, &rowID); err != nil {
 			return Page[Message]{}, err
 		}
 		if metadataOnly {
@@ -768,10 +779,21 @@ func (s *Store) messagesPage(ctx context.Context, sessionID string, limit int, b
 			return Page[Message]{}, err
 		}
 		item.CreatedAt = fromMillis(created)
+		rowIDs[item.ID] = rowID
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return Page[Message]{}, err
+	}
+	if metadataOnly {
+		// Do not depend on the join's output order or sort attachment bodies in
+		// SQL. Only the bounded metadata page remains here.
+		sort.Slice(items, func(i, j int) bool {
+			if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
+				return items[i].CreatedAt.After(items[j].CreatedAt)
+			}
+			return rowIDs[items[i].ID] > rowIDs[items[j].ID]
+		})
 	}
 	next := ""
 	if len(items) > limit {
