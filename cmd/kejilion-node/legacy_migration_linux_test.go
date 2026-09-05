@@ -72,6 +72,18 @@ func testLegacyMigrationNamespace(t *testing.T) {
 	if err := os.WriteFile(defaultConfigPath, []byte("{}"), 0o640); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile("/etc/passwd", []byte("kejilion-node:x:65534:65534::/:/usr/sbin/nologin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("/etc/group", []byte("kejilion-node:x:65534:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown("/etc/kejilion-node", 0, 65534); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod("/etc/kejilion-node", 0o750); err != nil {
+		t.Fatal(err)
+	}
 	directory, err := os.MkdirTemp("/tmp", lightUpdateStagingPrefix)
 	if err != nil {
 		t.Fatal(err)
