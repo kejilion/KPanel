@@ -4,6 +4,8 @@ package main
 
 import "os"
 
+func repairLegacyNodeConfigAccess() error { return nil }
+
 func preserveNodeConfigAccess(file *os.File, previous os.FileInfo) error {
 	if previous != nil {
 		return file.Chmod(previous.Mode().Perm())

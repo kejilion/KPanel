@@ -100,9 +100,12 @@ func maybeMigrateLegacySSHLoginInstall() error {
 	if !secureMigrationFile(defaultConfigPath) {
 		return nil
 	}
+	// The old updater restarts telemetry before the next timer run. Restore the
+	// installer-owned credential now, not one hour after that first restart.
+	configErr := repairLegacyNodeConfigAccess()
 	updateErr := installLightNodeUpdateIntegration()
 	sshErr := installLightNodeSSHLoginIntegration()
-	if err := errors.Join(updateErr, sshErr); err != nil {
+	if err := errors.Join(configErr, updateErr, sshErr); err != nil {
 		return fmt.Errorf("install runtime from %s: %w", stagedBinary, err)
 	}
 	return nil

@@ -64,13 +64,16 @@ release_base="${release_url%/SHA256SUMS}"
 
 file_service="kejilion-node-file.service"
 file_service_path="/etc/systemd/system/${file_service}"
+file_service_unit_changed=false
 
 ensure_file_service_unit() {
-	if [ -e "$file_service_path" ]; then
-		[ -f "$file_service_path" ] || return 1
-		return 0
+	if [ -e "$file_service_path" ] || [ -L "$file_service_path" ]; then
+		[ -f "$file_service_path" ] && [ ! -L "$file_service_path" ] || return 1
+		[ "$(stat -c '%u' "$file_service_path")" = "0" ] || return 1
+		[ $(( 8#$(stat -c '%a' "$file_service_path") & 8#022 )) -eq 0 ] || return 1
 	fi
-	cat >"$file_service_path" <<'KPANEL_NODE_FILE_SERVICE'
+	local template="${temporary_dir}/file.service" unit_temporary
+	cat >"$template" <<'KPANEL_NODE_FILE_SERVICE'
 [Unit]
 Description=KPanel Lightweight Node File Manager
 After=network-online.target
@@ -103,7 +106,21 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 KPANEL_NODE_FILE_SERVICE
-	chmod 0644 "$file_service_path" || return 1
+	if [ -f "$file_service_path" ]; then
+		cmp -s "$file_service_path" "$template" && return 0
+		# Repair only the exact installer-owned legacy template. Preserve custom
+		# units and drop-ins; never erase an administrator's service policy.
+		if ! sed 's/^RestrictAddressFamilies=AF_UNIX$/RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6/' "$file_service_path" | cmp -s - "$template"; then
+			echo "KPanel file service has custom settings; retaining the existing unit" >&2
+			return 0
+		fi
+	fi
+	unit_temporary="$(mktemp "${file_service_path}.XXXXXX")" || return 1
+	if ! install -o root -g root -m 0644 "$template" "$unit_temporary" || ! mv -f -- "$unit_temporary" "$file_service_path"; then
+		rm -f -- "$unit_temporary"
+		return 1
+	fi
+	file_service_unit_changed=true
 	systemctl daemon-reload
 }
 
@@ -154,7 +171,7 @@ restart_optional_services() {
 	local service
 	for service in kejilion-node-terminal.service kejilion-node-ssh-login.service kejilion-node-file.service; do
 		if systemctl cat "$service" >/dev/null 2>&1; then
-			if service_running_current "$service"; then continue; fi
+			if service_running_current "$service" && { [ "$service" != "$file_service" ] || [ "$file_service_unit_changed" != true ]; }; then continue; fi
 			if ! systemctl restart "$service" || ! wait_for_service "$service"; then
 				echo "KPanel lightweight node updated; optional service unavailable: ${service}" >&2
 			fi
