@@ -24,8 +24,6 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/lib/api', () => ({
-  setFileHostId: vi.fn(),
-  isRemoteFileHostSelected: vi.fn(() => false),
   ApiError: class MockApiError extends Error {
     readonly status = 0
     readonly code = 'request_failed'
@@ -287,7 +285,7 @@ describe('FilesView host switcher', () => {
       expect(wrapper.get('[data-file-host-id="edge"]').text()).toContain('文件管理已就绪')
       await wrapper.get('[data-file-host-id="edge"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
-      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
     } finally {
       wrapper.unmount()
       openSpy.mockRestore()
@@ -326,7 +324,7 @@ describe('FilesView host switcher', () => {
       expect(wrapper.get('[data-file-host-id="legacy"]').text()).toContain('文件管理已就绪')
       await wrapper.get('[data-file-host-id="legacy"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
-      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'legacy')
     } finally {
       wrapper.unmount()
       openSpy.mockRestore()
@@ -535,7 +533,7 @@ describe('FilesView host switcher', () => {
       expect(wrapper.get('[data-file-host-id="light"]').text()).toContain('文件管理已就绪')
       await wrapper.get('[data-file-host-id="light"]').trigger('click')
       expect(mocks.push).not.toHaveBeenCalledWith({ name: 'cluster' })
-      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal))
+      expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'light')
     } finally {
       wrapper.unmount()
     }

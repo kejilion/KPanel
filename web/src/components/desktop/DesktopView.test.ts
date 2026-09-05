@@ -71,6 +71,23 @@ describe('DesktopView', () => {
     wrapper.unmount()
   })
 
+  it('opens a local file window instead of reusing a remote window at the same path', async () => {
+    const desktop = useDesktopMode()
+    desktop.enterDesktop()
+    desktop.openWindow('/files?path=%2F&hostId=remote-a', 'route.files', true)
+    const wrapper = mount(DesktopView)
+    try {
+      const files = wrapper.findAll('.desktop__icon').find((icon) => icon.attributes('aria-label') === '文件')
+      expect(files).toBeDefined()
+      await files!.trigger('dblclick')
+      await nextTick()
+      expect(desktop.windows.value.filter((window) => window.path.startsWith('/files'))).toHaveLength(2)
+      expect(desktop.windows.value.some((window) => window.path === '/files')).toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('selects an icon on single click and opens it on double click', async () => {
     const desktop = useDesktopMode()
     desktop.enterDesktop()
