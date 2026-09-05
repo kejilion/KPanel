@@ -66,6 +66,22 @@ function setup(hosts: GlobeHost[] = [host('alpha', 'CN'), host('beta')], active 
 }
 
 describe('cluster globe interaction and lifecycle', () => {
+  it.each(['unknown', 'pending'] as const)('does not count waiting state %s as needing attention', async state => {
+    const waiting: GlobeHost = state === 'unknown'
+      ? { ...host('waiting', 'SG'), state, lastSnapshot: undefined }
+      : { id: 'waiting', name: 'waiting', state, location: {} } as PublicClusterShareHost
+    const failed = { ...host('failed', 'US'), state: 'offline' as const }
+    const view = setup([waiting, failed, host('healthy', 'DE')])
+    const attentionButton = view.findAll('.cluster-globe__filters button').find(button => button.text().startsWith('需关注'))!
+    expect(attentionButton.text()).toBe('需关注 1')
+    await attentionButton.trigger('click')
+    expect(view.findAll('.cluster-globe__node')).toHaveLength(1)
+    expect(view.get('.cluster-globe__node').text()).toContain('failed')
+    await view.setProps({ hosts: [waiting] })
+    expect(attentionButton.text()).toBe('需关注 0')
+    expect(view.findAll('.cluster-globe__node')).toHaveLength(0)
+  })
+
   it('uses only public samples for a shared globe and never offers management actions', async () => {
     const shared: PublicClusterShareHost = {
       id: 'public-id', name: 'Public Singapore', state: 'degraded', os: 'Debian', architecture: 'arm64',

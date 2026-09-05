@@ -25,16 +25,18 @@ const showDetails = ref(false)
 const zoom = ref(1)
 const allRegions = computed(() => groupGlobeHosts(props.hosts))
 const knownIds = computed(() => new Set(allRegions.value.flatMap(region => region.hosts.map(host => host.id))))
+const needsAttention = (host: GlobeHost) => !['online', 'unknown', 'pending'].includes(host.state)
 const filteredHosts = computed(() => props.hosts.filter(host => {
   const location = globeHostLocation(host)
   if (statusFilter.value === 'online' && host.state !== 'online') return false
-  if (statusFilter.value === 'attention' && host.state === 'online') return false
+  if (statusFilter.value === 'attention' && !needsAttention(host)) return false
   if (regionFilter.value === 'unknown' && knownIds.value.has(host.id)) return false
   if (regionFilter.value && regionFilter.value !== 'unknown' && location?.countryCode?.trim().toUpperCase() !== regionFilter.value) return false
   const text = [host.name, location?.country, location?.city, location?.isp, hostSample(host)?.os].filter(Boolean).join(' ').toLowerCase()
   return text.includes(query.value.trim().toLowerCase())
 }))
 const online = computed(() => props.hosts.filter(host => host.state === 'online').length)
+const attention = computed(() => props.hosts.filter(needsAttention).length)
 const hasFilters = computed(() => Boolean(query.value || regionFilter.value || statusFilter.value !== 'all'))
 const regions = computed(() => groupGlobeHosts(filteredHosts.value))
 const located = computed(() => regions.value.reduce((sum, region) => sum + region.hosts.length, 0))
@@ -322,7 +324,7 @@ onBeforeUnmount(() => {
           <div class="cluster-globe__status-filters" role="group" aria-label="筛选节点状态">
             <button type="button" :aria-pressed="statusFilter === 'all'" @click="statusFilter = 'all'">全部 <span>{{ hosts.length }}</span></button>
             <button type="button" :aria-pressed="statusFilter === 'online'" @click="statusFilter = 'online'">在线 <span>{{ online }}</span></button>
-            <button type="button" :aria-pressed="statusFilter === 'attention'" @click="statusFilter = 'attention'">需关注 <span>{{ hosts.length - online }}</span></button>
+            <button type="button" :aria-pressed="statusFilter === 'attention'" @click="statusFilter = 'attention'">需关注 <span>{{ attention }}</span></button>
           </div>
           <div class="cluster-globe__region-filter"><Globe2 :size="16" /><select v-model="regionFilter" aria-label="筛选节点地区"><option value="">全部地区</option><option v-for="region in allRegions" :key="region.code" :value="region.code" data-i18n-ignore>{{ globeHostLocation(region.hosts[0]!)?.country || region.code }} · {{ region.hosts.length }}</option><option v-if="knownIds.size < hosts.length" value="unknown">位置未知</option></select><button v-if="hasFilters" type="button" class="icon-button icon-button--small" title="清除筛选" aria-label="清除筛选" @click="clearFilters"><X :size="14" /></button></div>
         </div>
