@@ -1,12 +1,12 @@
 ---
 name: evolve-kpanel
 description: "用可验证证据驱动 KPanel 规范、门禁和开发流程的受控自我改进，不自动提交、发布或放宽质量要求"
-version: "1.5"
+version: "1.6"
 author: "Codex"
 tags: [quality, governance, continuous-improvement, multi-agent, metrics]
 params: [project_dir, baseline_ref, observation_window, release_count, proposal_slug, candidate_branch]
 created: "2026-08-11T00:00:00+08:00"
-updated: "2026-08-23T12:33:02Z"
+updated: "2026-09-05T00:00:00+08:00"
 ---
 
 # KPanel Controlled Evolution
@@ -63,14 +63,17 @@ node scripts/report-release-metrics.mjs \
 
 **Expected output:** 方案解决已观察问题，不因追求单一指标破坏安全、稳定、性能、体验、数据或兼容性。
 
-### 4. 独立复核假设与准入
+### 4. 明确非作者复核与准入责任
 
 由未编写方案的复核者独立读取原始证据，检查样本代表性、替代解释、可证伪目标、规则自我弱化和指标投机风险。
 规范复核按正确性、一致性、完整性、可执行性、效率与比例性、可演进性六项固定矩阵执行；严重度同时
 考虑影响、正常路径可达性和发生可能性，不把非标准理论反例自动升级为阻断。
-按 `docs/project-management.md` 完成 Definition of Ready；复核不通过时停止实施并保留拒绝理由。
+按 `docs/project-management.md` 完成 Definition of Ready；用户已明确授权本地候选实施时，可以先形成
+下一步的本地差异，但不得将未复核候选记为已准入或永久采纳。非作者复核必须在正式采纳前完成。
+该复核可以由接手集成/发布任务承担，不要求额外常驻复核任务；接管后按项目管理 10.1 自行修复并重验，
+不返派原作者。发现阻断时保持候选未准入，并记录拒绝理由和实际修复结果。
 
-**Expected output:** 复核结论、异议和修订均写入提案，不能只记录“同意”。
+**Expected output:** 已完成的复核结论、异议和修订写入提案；未完成时明确状态，不能只记录“同意”或提前声称永久采纳。
 
 ### 5. 实施最小可回滚改动
 

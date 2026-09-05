@@ -1,12 +1,12 @@
 ---
 name: background-browser-validation
 description: "在登记的隔离环境后台执行 KPanel 真实浏览器验收，持久化状态、证据、资源保护和清理结果"
-version: "1.1"
+version: "1.2"
 author: "Codex"
 tags: [kpanel, browser, e2e, background, validation, stability]
 params: [project_dir, candidate_ref, test_environment, evidence_dir, timeout_seconds, command_spec]
 created: "2026-08-13T00:00:00+08:00"
-updated: "2026-08-15T09:20:00+08:00"
+updated: "2026-09-05T00:00:00+08:00"
 ---
 
 # KPanel Background Browser Validation
@@ -40,9 +40,8 @@ node scripts/check-environment-policy.mjs \
 ```
 
 按受影响行为决定测试强度：普通视觉、文案或确定性交互只跑完成条件明确的 E2E；涉及页面生命周期、
-重连、并发或恢复时，稳定性窗口通常至少 10 分钟；存在内存泄漏、流式传输、长连接或资源趋势风险时，
-提升到 30 分钟或足以覆盖风险的明确循环数。不得把固定 10/30 分钟机械套给所有修改，也不得因后台化
-缩短原本由风险画像要求的覆盖。
+重连、并发、恢复、流式或资源趋势时，在发布画像中按实际风险固定窗口或循环数及完成断言。
+不得把固定 10/30 分钟机械套给所有修改，也不得因后台化缩短原本由风险画像要求的覆盖。
 
 **Expected output:** 精确候选、登记的隔离环境、受影响旅程、完成条件、超时和资源预算清楚；108 未连接。
 
@@ -69,9 +68,11 @@ node scripts/background-browser-test.mjs start \
 
 **Expected output:** 命令立即返回；作业状态为 `queued/running`，前台会话可以继续其他无冲突工作或结束。
 
-### 4. 由监控任务进行有界状态检查
+### 4. 由当前责任任务读取终态
 
-监控者按约定间隔读取，不重新启动同一测试：
+当前责任任务按作业协议有界读取，不重新启动同一测试；发布期间由发布任务自行负责。
+按 `docs/project-management.md` 10.1，不另设监控会话，也不由协调中心定时催问发布任务。
+进程/cgroup watchdog 和以下持久化终态核对仍须保留：
 
 ```bash
 node scripts/background-browser-test.mjs status \
