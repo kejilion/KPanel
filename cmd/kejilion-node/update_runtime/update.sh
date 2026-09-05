@@ -72,7 +72,7 @@ ensure_file_service_unit() {
 		[ "$(stat -c '%u' "$file_service_path")" = "0" ] || return 1
 		[ $(( 8#$(stat -c '%a' "$file_service_path") & 8#022 )) -eq 0 ] || return 1
 	fi
-	local template="${temporary_dir}/file.service" unit_temporary
+	local template="${temporary_dir}/file.service" legacy_template="${temporary_dir}/file.legacy.service" unit_temporary
 	cat >"$template" <<'KPANEL_NODE_FILE_SERVICE'
 [Unit]
 Description=KPanel Lightweight Node File Manager
@@ -110,7 +110,11 @@ KPANEL_NODE_FILE_SERVICE
 		cmp -s "$file_service_path" "$template" && return 0
 		# Repair only the exact installer-owned legacy template. Preserve custom
 		# units and drop-ins; never erase an administrator's service policy.
-		if ! sed 's/^RestrictAddressFamilies=AF_UNIX$/RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6/' "$file_service_path" | cmp -s - "$template"; then
+		# The original managed unit also required terminal.json before file-broker
+		# could start. Compare that complete historical variant, not arbitrary edits.
+		sed -e '/^ConditionPathExists=/aConditionPathExists=/etc/kejilion-node/terminal.json' \
+			-e 's/^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6$/RestrictAddressFamilies=AF_UNIX/' "$template" >"$legacy_template"
+		if ! cmp -s "$file_service_path" "$legacy_template" && ! sed 's/^RestrictAddressFamilies=AF_UNIX$/RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6/' "$file_service_path" | cmp -s - "$template"; then
 			echo "KPanel file service has custom settings; retaining the existing unit" >&2
 			return 0
 		fi
