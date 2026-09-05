@@ -1,6 +1,9 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["通知", "Notifications"],
+  ["列表", "List"],
+  ["卡片", "Cards"],
   ["地球", "Globe"],
   ["地球展示", "Globe view"],
   ["刷新集群状态", "Refresh cluster status"],
@@ -40,7 +43,7 @@ export default [
   ["该 KPanel 已经添加到主机列表。", "The KPanel has been added to the host list."],
   ["该地址被网络安全策略拒绝；私网地址需由部署管理员加入 CIDR 白名单。", "The address was rejected by the cyber security strategy; the private address was to be added to the CIDR white list by the deployment manager."],
   ["关闭", "Close"],
-  ["核", "Nuclear"],
+  ["核", "cores"],
   ["集群监控", "Cluster monitoring"],
   ["集群监控数据端到端加密；普通浏览器管理页面仍是 HTTP", "Cluster monitoring data end-to-end encryption; normal browser management page remains HTTP"],
   ["集群监控数据已端到端加密，但这个管理页面仍通过普通 HTTP 打开，登录密码和 Session 不受加密直连保护。建议先为目标面板配置 HTTPS。仍然打开？", "The cluster monitoring data is encrypted to the end, but this management page is still open through normal HTTP, and login passwords and Session are not protected by encrypted connections. It is suggested that the target panel be configured first. Still open?"],

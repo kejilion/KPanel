@@ -1751,6 +1751,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.cluster-hero__actions > .button {
+  min-height: 40px;
+  font-size: .875rem;
+}
+
 .cluster-stats {
   display: grid;
   min-width: 0;
@@ -2561,18 +2566,24 @@ onBeforeUnmount(() => {
   }
 
   .cluster-hero__actions {
-    display: grid;
-    grid-template-columns: 42px repeat(3, minmax(0, 1fr));
     width: 100%;
     gap: 6px;
   }
 
   .cluster-hero__actions > * {
-    width: 100%;
+    flex: 1 0 auto;
+    max-width: 100%;
+    min-height: 40px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cluster-hero__actions > .icon-button {
+    flex: 0 0 40px;
   }
 
   .cluster-hero__actions > .cluster-hero__add {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
   }
 
   .cluster-toolbar {

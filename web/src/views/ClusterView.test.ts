@@ -3,6 +3,11 @@ import { createSSRApp, ssrContextKey, type ComputedRef, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClusterView from './ClusterView.vue'
 import { ApiError } from '@/lib/api'
+import { registerPhraseCatalog, translatePhrase } from '@/i18n/phrase'
+import english from '@/i18n/pages/ClusterView/en-US'
+import traditionalChinese from '@/i18n/pages/ClusterView/zh-TW'
+import sharedEnglish from '@/i18n/pages/shared/en-US'
+import sharedTraditionalChinese from '@/i18n/pages/shared/zh-TW'
 import type {
   ClusterHost,
   ClusterHostList,
@@ -295,13 +300,38 @@ describe('ClusterView compact summary layout', () => {
     expect(source).toMatch(/\.cluster-hero\s*\{[^}]*radial-gradient\([^}]*var\(--cluster-accent\)/)
     expect(source).toMatch(/\.cluster-hero__actions\s*\{[^}]*flex-wrap:\s*wrap;/)
     expect(source).toContain('class="button button--primary button--small cluster-hero__add"')
-    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.cluster-hero__add\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/)
+    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.cluster-hero__add\s*\{[^}]*flex-basis:\s*100%;/)
     expect(source).toContain('class="icon-button icon-button--small"')
     expect(source).toContain('aria-label="刷新集群状态"')
     expect(source.indexOf('aria-label="刷新集群状态"')).toBeLessThan(source.indexOf('@click="openAccess"'))
     expect(source).toContain("formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'received')")
     expect(source).toContain("formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent')")
     expect(source).not.toContain('formatTotalNetworkTraffic')
+  })
+
+  it('lets narrow hero actions wrap without squeezing translated labels', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    const narrowStyles = source.slice(source.indexOf('@media (max-width: 680px)'))
+    expect(narrowStyles).not.toContain('42px repeat(3, minmax(0, 1fr))')
+    expect(narrowStyles).toMatch(/\.cluster-hero__actions\s*>\s*\*\s*\{[^}]*flex:\s*1 0 auto;[^}]*max-width:\s*100%;[^}]*min-height:\s*40px;[^}]*white-space:\s*normal;/)
+    expect(narrowStyles).toMatch(/\.cluster-hero__actions\s*>\s*\.icon-button\s*\{[^}]*flex:\s*0 0 40px;/)
+    expect(source).toMatch(/\.cluster-hero__actions\s*>\s*\.button\s*\{[^}]*min-height:\s*40px;[^}]*font-size:\s*\.875rem;/)
+  })
+
+  it.each([
+    { locale: 'en-US', shared: sharedEnglish, page: english, expected: ['Notifications', 'List', 'Cards', 'cores'] },
+    { locale: 'zh-TW', shared: sharedTraditionalChinese, page: traditionalChinese, expected: ['通知', '列表', '卡片', '核'] },
+  ])('translates short controls and CPU cores with the $locale page catalog loaded after shared', ({ shared, page, expected }) => {
+    const unregisterShared = registerPhraseCatalog(shared)
+    const unregisterPage = registerPhraseCatalog(page)
+    try {
+      const labels = ['通知', '列表', '卡片', '核'] as const
+      expect(labels.map(label => new Map(page).get(label))).toEqual(expected)
+      expect(labels.map(translatePhrase)).toEqual(expected)
+    } finally {
+      unregisterPage()
+      unregisterShared()
+    }
   })
 
   it('routes native confirmations through core i18n', () => {
