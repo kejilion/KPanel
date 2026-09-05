@@ -98,6 +98,7 @@ import {
   hasDesktopFileDrag,
   nativeArchiveDownloadName,
   peekDesktopFileDragEntries,
+  peekDesktopFileDragSourceHostId,
   peekDesktopFileDragSourceNodeId,
 } from '@/lib/desktopFileShortcuts'
 import {
@@ -219,7 +220,7 @@ const activeFileHost = computed(() =>
 const isRemoteFileHost = computed(() => Boolean(fileHostId.value))
 const activeFileHostNodeId = computed(() => {
   const host = activeFileHost.value
-  return fileHostId.value ? (host?.remoteNodeId || host?.id || '') : localClusterNodeId.value
+  return fileHostId.value ? (host?.remoteNodeId || '') : localClusterNodeId.value
 })
 
 const activeFileHostLabel = computed(() => {
@@ -336,6 +337,9 @@ function resetFileHostContext(hostId: string): boolean {
   shareManagerOpen.value = false
   remoteDownloadDialogOpen.value = false
   dismissFileTransfer()
+  pasteBusy.value = false
+  fileTransferController?.abort()
+  fileTransferController = undefined
   clearInternalDropTarget()
   fileHostId.value = hostId
   activeFileHostId.value = hostId || fileHosts.value.find((host) => host.isLocal)?.id || ''
@@ -513,6 +517,7 @@ let remoteDownloadJobsController: AbortController | undefined
 let remoteDownloadPollTimer: number | undefined
 let remoteDownloadJobsInitialized = false
 let unsubscribeFileDirectoryChanges: (() => void) | undefined
+let fileTransferSequence = 0
 let searchTimer: number | undefined
 let mediaLoadTimer: number | undefined
 let unmounted = false
@@ -1247,6 +1252,7 @@ function startEntryDrag(event: DragEvent, entry: FileEntry): void {
     nativeDownloadURL,
     nativeArchiveName,
     fileWindowChangeOrigin,
+    fileHostId.value,
   )) event.preventDefault()
 }
 
@@ -1261,12 +1267,18 @@ function clearInternalDropTarget(): void {
 }
 
 function isOtherFileHostDrag(event: DragEvent): boolean {
-  const sourceNodeId = peekDesktopFileDragSourceNodeId(event)
-  return Boolean(sourceNodeId && sourceNodeId !== activeFileHostNodeId.value)
+  const sourceHostId = peekDesktopFileDragSourceHostId(event)
+  return sourceHostId !== undefined && sourceHostId !== fileHostId.value
 }
 
 function updateInternalDropTarget(event: DragEvent, target: string): boolean {
   if (fileTransferState.value?.phase === 'running') return false
+  if (isOtherFileHostDrag(event) && !/^[a-f0-9]{32}$/.test(peekDesktopFileDragSourceNodeId(event) || '')) {
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    clearInternalDropTarget()
+    return false
+  }
   if ((!hasDesktopFileDrag(event) || isOtherFileHostDrag(event)) && hasCrossPanelFileDrag(event)) {
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
@@ -1277,6 +1289,12 @@ function updateInternalDropTarget(event: DragEvent, target: string): boolean {
     return true
   }
   if (!hasDesktopFileDrag(event)) return false
+  if (isOtherFileHostDrag(event)) {
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    clearInternalDropTarget()
+    return false
+  }
   if (desktopFileDragOrigin(event) === 'desktop-shortcut') {
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
     clearInternalDropTarget()
@@ -1323,19 +1341,26 @@ function onEntryDragLeave(event: DragEvent, entry: FileEntry): void {
   clearInternalDropTarget()
 }
 
-function scheduleFileTransferClear(): void {
+function isCurrentFileTransfer(sequence: number): boolean {
+  return !unmounted && sequence === fileTransferSequence
+}
+
+function scheduleFileTransferClear(sequence = fileTransferSequence): void {
+  if (!isCurrentFileTransfer(sequence)) return
   if (fileTransferClearTimer !== undefined) {
     window.clearTimeout(fileTransferClearTimer)
     fileTransferClearTimer = undefined
   }
   if (!['success', 'cancelled'].includes(fileTransferState.value?.phase || '')) return
   fileTransferClearTimer = window.setTimeout(() => {
+    if (!isCurrentFileTransfer(sequence)) return
     fileTransferState.value = undefined
     fileTransferClearTimer = undefined
   }, 2200)
 }
 
 function dismissFileTransfer(): void {
+  fileTransferSequence += 1
   if (fileTransferClearTimer !== undefined) {
     window.clearTimeout(fileTransferClearTimer)
     fileTransferClearTimer = undefined
@@ -1372,6 +1397,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
   // targets. A move must run to a server result so successful path mappings can
   // be applied to desktop shortcuts without leaving stale references behind.
   const controller = operation === 'copy' ? new AbortController() : undefined
+  const sequence = ++fileTransferSequence
   fileTransferController = controller
   fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'running' }
   try {
@@ -1384,6 +1410,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
       ),
     }, controller?.signal)
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
+    if (!isCurrentFileTransfer(sequence)) return
     const partial = Boolean(result.failed.length || shortcutSyncFailed)
     fileTransferState.value = {
       mode: operation,
@@ -1397,6 +1424,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
         : undefined,
     }
   } catch (error) {
+    if (!isCurrentFileTransfer(sequence)) return
     if (controller?.signal.aborted) {
       fileTransferState.value = {
         mode: operation,
@@ -1416,8 +1444,8 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
     }
     if (!unmounted) await loadDirectory()
   } finally {
-    if (fileTransferController === controller) fileTransferController = undefined
-    if (!unmounted) scheduleFileTransferClear()
+    if (isCurrentFileTransfer(sequence) && fileTransferController === controller) fileTransferController = undefined
+    scheduleFileTransferClear(sequence)
   }
 }
 
@@ -1442,6 +1470,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     fileTransferClearTimer = undefined
   }
   const controller = new AbortController()
+  const sequence = ++fileTransferSequence
   fileTransferController = controller
   const total = payload.entries.length
   fileTransferState.value = {
@@ -1454,7 +1483,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
       target,
       fileAPI.value.transferFromPanel,
       ({ source, completed }) => {
-        if (fileTransferController !== controller || controller.signal.aborted) return
+        if (!isCurrentFileTransfer(sequence) || fileTransferController !== controller || controller.signal.aborted) return
         fileTransferState.value = {
           mode: 'copy', target, count: total, phase: 'running', remote: true,
           completed, currentName: source.name,
@@ -1462,6 +1491,10 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
       },
       controller.signal,
     )
+    if (result.succeeded.length) {
+      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
+    }
+    if (!isCurrentFileTransfer(sequence)) return
     const completed = result.succeeded.length + result.failed.length
     const phase = result.cancelled
       ? result.succeeded.length ? 'partial' : 'cancelled'
@@ -1478,11 +1511,10 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     }
     if (result.succeeded.length) {
       if (!unmounted) await loadDirectory()
-      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
     }
   } finally {
-    if (fileTransferController === controller) fileTransferController = undefined
-    if (!unmounted) scheduleFileTransferClear()
+    if (isCurrentFileTransfer(sequence) && fileTransferController === controller) fileTransferController = undefined
+    scheduleFileTransferClear(sequence)
   }
 }
 
@@ -1676,6 +1708,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
   }
   contextMenu.value = undefined
   dismissFileTransfer()
+  const sequence = ++fileTransferSequence
   pasteBusy.value = true
   fileTransferState.value = {
     mode: stored.mode,
@@ -1699,6 +1732,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
       else fileClipboard.clear()
     }
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
+    if (!isCurrentFileTransfer(sequence)) return
     const partial = Boolean(result.failed.length || shortcutSyncFailed)
     fileTransferState.value = {
       mode: stored.mode,
@@ -1712,6 +1746,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
         : undefined,
     }
   } catch (error) {
+    if (!isCurrentFileTransfer(sequence)) return
     fileTransferState.value = {
       mode: stored.mode,
       target,
@@ -1721,8 +1756,8 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
     }
     await loadDirectory()
   } finally {
-    pasteBusy.value = false
-    if (!unmounted) scheduleFileTransferClear()
+    if (isCurrentFileTransfer(sequence)) pasteBusy.value = false
+    scheduleFileTransferClear(sequence)
   }
 }
 

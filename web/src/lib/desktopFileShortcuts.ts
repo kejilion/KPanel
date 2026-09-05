@@ -45,6 +45,7 @@ export class DesktopShortcutLimitError extends Error {
 
 interface ActiveDesktopFileDrag {
   owner?: symbol
+  sourceHostId: string
   token: string
   entries: DesktopFileEntry[]
   origin: DesktopFileDragOrigin
@@ -227,6 +228,7 @@ export function beginDesktopFileDrag(
   nativeDownloadURL?: string,
   nativeArchiveName?: string,
   owner?: symbol,
+  sourceHostId = '',
 ): boolean {
   const dataTransfer = event.dataTransfer
   const supported = entries.filter(supportedEntry)
@@ -234,6 +236,7 @@ export function beginDesktopFileDrag(
   const token = randomToken()
   activeDrag = {
     owner,
+    sourceHostId,
     token,
     entries: supported.map((entry) => ({ ...entry })),
     origin,
@@ -414,6 +417,12 @@ export function peekDesktopFileDragOrigin(event: DragEvent): DesktopFileDragOrig
 export function peekDesktopFileDragSourceNodeId(event: DragEvent): string | undefined {
   if (!hasDesktopFileDrag(event) || !activeDrag) return undefined
   return activeDrag.sourceNodeId
+}
+
+/** Same-page host identity is available even while the cluster inventory loads. */
+export function peekDesktopFileDragSourceHostId(event: DragEvent): string | undefined {
+  if (!hasDesktopFileDrag(event) || !activeDrag) return undefined
+  return activeDrag.sourceHostId
 }
 
 export function clearDesktopFileDrag(owner?: symbol): void {
