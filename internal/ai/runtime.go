@@ -231,10 +231,21 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 		if err := ctx.Err(); err != nil {
 			return r.cancelled(ctx, run)
 		}
-		history, summary, err := r.store.ContextMessages(ctx, run.SessionID, model.ContextWindow)
+		snapshot, err := r.store.ContextForRun(ctx, run, model.ContextWindow)
 		if err != nil {
-			return r.fail(ctx, run, "history_unavailable", err)
+			if ctx.Err() != nil {
+				return r.cancelled(ctx, run)
+			}
+			code := "history_unavailable"
+			if errors.Is(err, ErrContextAttachmentLimit) {
+				code = "context_attachment_limit"
+			}
+			if errors.Is(err, ErrContextAttachmentSource) {
+				code = "context_attachment_source_unknown"
+			}
+			return r.fail(ctx, run, code, err)
 		}
+		history, summary := snapshot.Messages, snapshot.Summary
 		system := r.systemPrompt(ctx, run.UserID)
 		system += fmt.Sprintf("\n本轮思考强度为 %s：low 优先快速直接，medium 平衡验证与速度，high 对复杂运维任务增加交叉检查。不要输出隐藏推理原文，只输出结论、必要依据与可审计执行过程。", run.ThinkingLevel)
 		if summary != "" {
@@ -248,10 +259,7 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 		var calls []ToolCall
 		var usage Usage
 		emitted := false
-		userMessageCount, err := r.store.UserMessageCount(ctx, run.SessionID)
-		if err != nil {
-			return r.fail(ctx, run, "history_unavailable", err)
-		}
+		userMessageCount := snapshot.UserMessageCount
 		err = r.streamWithRetry(ctx, provider, apiKey, request, func(event CompletionEvent) error {
 			if event.Delta != "" {
 				if content.Len()+len(event.Delta) > MaxAssistantBytes {
@@ -320,7 +328,7 @@ func (r *NativeRuntime) loop(ctx context.Context, runID string, decision *Decisi
 					return
 				}
 				r.maybePropose(proposalCtx, run, provider, apiKey, model, history)
-			}(run, append([]Message(nil), history...))
+			}(run, proposalMessageText(history))
 			return nil
 		}
 		existing, _ := r.store.ToolCalls(ctx, run.ID)
@@ -445,7 +453,7 @@ func (r *NativeRuntime) completionMessages(ctx context.Context, history []Messag
 				continue
 			}
 		}
-		messages = append(messages, ChatMessage{ID: message.ID, Role: string(message.Role), Content: message.Content, Attachments: message.Attachments, CurrentRun: message.RunID == currentRunID})
+		messages = append(messages, ChatMessage{ID: message.ID, Role: string(message.Role), Content: message.Content, Attachments: message.Attachments, CurrentRun: message.RunID == currentRunID, RequiredAttachments: message.RequiredAttachments})
 		index++
 	}
 	return messages
@@ -752,11 +760,21 @@ func (r *NativeRuntime) Propose(ctx context.Context, runID string) error {
 	if err != nil {
 		return err
 	}
-	history, _, err := r.store.ContextMessages(ctx, run.SessionID, model.ContextWindow)
+	history, err := r.store.ContextTextMessages(ctx, run.SessionID, model.ContextWindow)
 	if err != nil {
 		return err
 	}
 	return r.generateProposal(ctx, run, provider, apiKey, model, history, true)
+}
+
+// Only text is used by learning. Drop attachment references before a background
+// proposal waits for its runtime slot, rather than after it starts running.
+func proposalMessageText(history []Message) []Message {
+	text := make([]Message, len(history))
+	for i, message := range history {
+		text[i] = Message{Role: message.Role, Content: message.Content}
+	}
+	return text
 }
 
 func (r *NativeRuntime) generateProposal(ctx context.Context, run Run, provider Provider, apiKey string, model Model, history []Message, forceProcedure bool) error {

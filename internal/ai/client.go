@@ -20,6 +20,8 @@ import (
 )
 
 type ChatMessage struct {
+	RequiredAttachments bool `json:"-"`
+
 	ID          string       `json:"id,omitempty"`
 	Role        string       `json:"role"`
 	Name        string       `json:"name,omitempty"`
@@ -1005,7 +1007,7 @@ func openAIChatRejectsImages(err error) bool {
 
 func requestHasCurrentRunImage(request CompletionRequest) bool {
 	for _, message := range request.Messages {
-		if message.CurrentRun && chatMessageHasImage(message) {
+		if (message.CurrentRun || message.RequiredAttachments) && chatMessageHasImage(message) {
 			return true
 		}
 	}

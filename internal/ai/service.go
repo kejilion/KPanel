@@ -298,7 +298,7 @@ func (s *Service) Retry(ctx context.Context, userID, runID string) (Run, error) 
 	if previous.Status != RunInterrupted && previous.Status != RunFailed {
 		return Run{}, ErrConflict
 	}
-	run, err := s.Store.CreateRun(ctx, Run{SessionID: previous.SessionID, UserID: userID, ProviderID: previous.ProviderID, ProviderName: previous.ProviderName, ModelID: previous.ModelID, ModelName: previous.ModelName, ApprovalMode: previous.ApprovalMode, ThinkingLevel: previous.ThinkingLevel})
+	run, err := s.Store.CreateRun(ctx, Run{RetryOf: &previous.ID, SessionID: previous.SessionID, UserID: userID, ProviderID: previous.ProviderID, ProviderName: previous.ProviderName, ModelID: previous.ModelID, ModelName: previous.ModelName, ApprovalMode: previous.ApprovalMode, ThinkingLevel: previous.ThinkingLevel})
 	if err != nil {
 		return Run{}, err
 	}
