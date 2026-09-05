@@ -417,11 +417,12 @@ onBeforeUnmount(() => {
 .cluster-globe__detail h3 { margin: 12px 0 8px; font-size: 1.25rem; line-height: 1.4; overflow-wrap: anywhere; }
 .cluster-globe__location { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: .8125rem; color: var(--text-soft); overflow-wrap: anywhere; }
 .cluster-globe__location svg { margin-top: 2px; flex-shrink: 0; }
-.cluster-globe__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr)); gap: 14px; margin: 20px 0 14px; }
+.cluster-globe__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); gap: 14px; margin: 20px 0 14px; }
+.cluster-globe__metrics > div { min-width: 0; overflow-wrap: anywhere; }
 .cluster-globe__metrics span { display: block; font-size: .8125rem; color: var(--text-soft); }
 .cluster-globe__metrics strong { display: block; margin: 4px 0 8px; font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .cluster-globe__metrics small { display: block; margin-top: 8px; color: var(--text-soft); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
-.cluster-globe__metrics small span { display: inline-block; font-size: inherit; white-space: nowrap; }
+.cluster-globe__metrics small span { display: inline-block; max-width: 100%; font-size: inherit; white-space: normal; }
 .cluster-globe__meter { height: 3px; border-radius: var(--radius-sm); background: var(--surface-subtle); overflow: hidden; }
 .cluster-globe__meter i { display: block; height: 100%; background: var(--brand); }
 .cluster-globe__host-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: 14px 16px; margin: 20px 0; padding-block: 16px; border-block: 1px solid var(--border); }
@@ -432,7 +433,7 @@ onBeforeUnmount(() => {
 .cluster-globe__host-details small { display: block; margin-top: 4px; font-size: .8125rem; color: var(--text-soft); }
 .cluster-globe__seen, .cluster-globe__unknown { margin: 10px 0 0; color: var(--text-soft); font-size: .8125rem; line-height: 1.6; }
 .cluster-globe__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.cluster-globe .button { font-size: .875rem; }
+.cluster-globe .button { min-height: 40px; max-width: 100%; font-size: max(14px, .875rem); white-space: normal; overflow-wrap: anywhere; }
 .cluster-globe__nodes-heading { display: flex; justify-content: space-between; padding: 20px 20px 14px; font-size: .875rem; }
 .cluster-globe__nodes-heading span { color: var(--text-soft); }
 .cluster-globe__explorer { display: flex; flex: 1; flex-direction: column; min-width: 0; }
@@ -462,6 +463,8 @@ onBeforeUnmount(() => {
 .cluster-globe__back { display: inline-flex; gap: 6px; align-items: center; min-height: 36px; padding: 0; color: var(--brand-strong); background: transparent; border: 0; font-size: .875rem; cursor: pointer; }
 .cluster-globe__empty { display: grid; place-items: center; align-content: center; gap: 16px; min-height: 300px; color: var(--text-soft); font-size: .875rem; }
 .cluster-globe__node > svg, .cluster-globe__node :deep(.country-flag) { flex-shrink: 0; }
+.cluster-globe button, .cluster-globe input, .cluster-globe select { font-size: max(14px, .875rem); }
+.cluster-globe__controls .icon-button { min-width: 40px; min-height: 40px; }
 @container (max-width: 760px) {
   .cluster-globe__heading { padding: 20px 16px 0; }
   .cluster-globe__legend { padding: 0 16px 16px; }
