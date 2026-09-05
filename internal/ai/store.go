@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -10,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1087,38 +1085,23 @@ func decodeAttachmentMetadata(data []byte) ([]Attachment, error) {
 	if len(data) > maxAttachmentReadBytes {
 		return nil, errors.New("message attachment record exceeds the read limit")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	token, err := decoder.Token()
-	if err != nil {
+	// One extra slot rejects overflow, including a fifth null/empty object.
+	// A fixed array bounds allocation even for legacy rows with many items.
+	var stored [5]attachmentMetadataJSON
+	stored[4].overflow = true
+	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil, fmt.Errorf("decode message attachments: %w", err)
 	}
-	if token != nil && token != json.Delim('[') {
-		return nil, errors.New("decode message attachments: expected an array")
-	}
 	items := []Attachment{}
-	for token != nil && decoder.More() {
-		if len(items) >= 4 {
-			return nil, errors.New("message attachment record exceeds the item read limit")
+	for _, item := range stored {
+		if !item.present {
+			break
 		}
-		var item storedAttachment
-		if err := decoder.Decode(&item); err != nil {
-			return nil, fmt.Errorf("decode message attachments: %w", err)
-		}
-		// Streaming validation preserves Base64 errors and decoded sizes (including
-		// legacy CR/LF) without allocating the decoded image or text body.
-		size, err := io.Copy(io.Discard, base64.NewDecoder(base64.StdEncoding, strings.NewReader(item.Data)))
+		size, err := item.Data.decodedSize()
 		if err != nil {
 			return nil, fmt.Errorf("decode message attachment data: %w", err)
 		}
-		items = append(items, Attachment{Name: item.Name, MimeType: item.MimeType, Kind: item.Kind, Size: int(size)})
-	}
-	if token != nil {
-		if _, err := decoder.Token(); err != nil {
-			return nil, fmt.Errorf("decode message attachments: %w", err)
-		}
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, errors.New("decode message attachments: unexpected trailing data")
+		items = append(items, Attachment{Name: item.Name, MimeType: item.MimeType, Kind: item.Kind, Size: size})
 	}
 	return items, nil
 }
