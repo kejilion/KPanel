@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -10,8 +11,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +20,27 @@ import { COVERAGE_BASELINE } from './check-release-acceptance-coverage.mjs';
 
 const scriptRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/;
+const canonicalOrigin = 'git@github.com:kejilion/KPanel.git';
+const gitTimeout = 120_000;
+const gitOutputLimit = 8 * 1024 * 1024;
+const preparationTimeout = 600_000;
+let gitDeadline = Infinity;
+let gitExecutable;
+
+function gitProgram() {
+  if (process.platform !== 'win32') return 'git';
+  if (gitExecutable) return gitExecutable;
+  // Git for Windows' cmd/git.exe launcher can exit before its real child.
+  // Own the actual Git process so taskkill /T still has a live tree root.
+  const result = spawnSync('git', ['--exec-path'], {
+    encoding: 'utf8', env: cleanGitEnvironment(), timeout: 10_000, maxBuffer: 16_384,
+  });
+  if (result.status !== 0) throw new Error('Git for Windows executable detection failed');
+  const executable = resolve(dirname(dirname(result.stdout.trim())), 'bin', 'git.exe');
+  if (!existsSync(executable)) throw new Error('Git for Windows executable was not found');
+  gitExecutable = executable;
+  return executable;
+}
 
 function usage(message) {
   if (message) process.stderr.write(`Release L3 orchestration failed: ${message}\n`);
@@ -79,13 +101,14 @@ function cleanGitEnvironment(environment = process.env) {
   return result;
 }
 
-function run(command, args, { cwd, inherit = false, environment = process.env } = {}) {
+function run(command, args, { cwd, inherit = false, environment = process.env, timeout } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     env: environment,
     shell: false,
     stdio: inherit ? 'inherit' : 'pipe',
+    timeout,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -95,21 +118,108 @@ function run(command, args, { cwd, inherit = false, environment = process.env } 
   return (result.stdout ?? '').trim();
 }
 
-function runGit(repo, args) {
-  return run('git', ['-C', repo, ...args], {
-    environment: cleanGitEnvironment(),
+// Git can include SSH commands, key paths and proxy credentials in stderr.
+// Never pass those diagnostics through the generic command/logging wrapper.
+export async function gitResult(repo, args, environment = cleanGitEnvironment(), timeout = gitTimeout) {
+  const remaining = gitDeadline - Date.now();
+  if (remaining <= 0) throw new Error('source preparation time budget exceeded');
+  return new Promise((resolveResult, reject) => {
+    const child = spawn(gitProgram(), ['-C', repo, ...args], {
+      env: environment, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true, detached: process.platform !== 'win32',
+    });
+    let failure;
+    let size = 0;
+    const stdout = [];
+    const stderr = [];
+    const stop = (code) => {
+      if (failure) return;
+      failure = code;
+      if (!child.pid) return;
+      // Stop the owned tree while its root still exists. Killing only Git first
+      // leaves an SSH child holding Windows directories and Linux output pipes.
+      if (process.platform === 'win32') {
+        const killed = spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+          windowsHide: true, stdio: 'ignore', timeout: 10_000,
+        });
+        if (killed.status !== 0) {
+          failure = 'termination-failed';
+          child.kill();
+          child.stdout.destroy();
+          child.stderr.destroy();
+        }
+      } else {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch (error) {
+          if (error.code !== 'ESRCH') failure = 'termination-failed';
+        }
+      }
+    };
+    const interrupt = () => stop('interrupted');
+    process.once('SIGINT', interrupt);
+    process.once('SIGTERM', interrupt);
+    const timer = setTimeout(() => stop('timeout'), Math.min(gitTimeout, remaining, timeout));
+    for (const [stream, chunks] of [[child.stdout, stdout], [child.stderr, stderr]]) {
+      stream.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > gitOutputLimit) stop('output-limit');
+        if (!failure) chunks.push(chunk);
+      });
+    }
+    child.on('error', () => { failure = 'process-failed'; });
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      process.removeListener('SIGINT', interrupt);
+      process.removeListener('SIGTERM', interrupt);
+      if (failure || signal) reject(new Error(`git ${args[0]} failed code=${failure || 'process-failed'}`));
+      else resolveResult({ status, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') });
+    });
   });
 }
 
-function gitSucceeds(repo, args) {
-  const result = spawnSync('git', ['-C', repo, ...args], {
-    encoding: 'utf8',
-    env: cleanGitEnvironment(),
-    shell: false,
-    stdio: 'pipe',
-  });
-  if (result.error) throw result.error;
+async function runGit(repo, args, environment) {
+  const result = await gitResult(repo, args, environment);
+  if (result.status !== 0) throw new Error(`git ${args[0]} failed exit=${result.status}`);
+  return result.stdout.trim();
+}
+
+async function gitSucceeds(repo, args) {
+  const result = await gitResult(repo, args);
   return result.status === 0;
+}
+
+async function optionalConfig(repo, key) {
+  const result = await gitResult(repo, ['config', '--get', key]);
+  if (result.status === 1) return undefined;
+  if (result.status !== 0) throw new Error('git config failed');
+  return result.stdout.trim();
+}
+
+export async function transportEnvironment(repo, environment = process.env) {
+  const result = cleanGitEnvironment(environment);
+  // core.sshCommand overrides GIT_SSH, but GIT_SSH_COMMAND overrides both.
+  if (result.GIT_SSH_COMMAND === undefined) {
+    const command = await optionalConfig(repo, 'core.sshCommand');
+    if (command !== undefined) result.GIT_SSH_COMMAND = command;
+  }
+  if (result.GIT_SSH_VARIANT === undefined) {
+    const variant = await optionalConfig(repo, 'ssh.variant');
+    if (variant !== undefined) result.GIT_SSH_VARIANT = variant;
+  }
+  return result;
+}
+
+function directoryIdentity(path) {
+  const stat = lstatSync(path);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('unsafe temporary directory');
+  return { dev: stat.dev, ino: stat.ino, real: canonicalPath(path) };
+}
+
+export function removeOwnedDirectory(path, identity) {
+  const current = directoryIdentity(path);
+  if (current.dev !== identity.dev || current.ino !== identity.ino || current.real !== identity.real) {
+    throw new Error('temporary directory identity changed; preserved for recovery');
+  }
+  rmSync(path, { recursive: true, force: false });
 }
 
 function sha256(path) {
@@ -126,9 +236,8 @@ function comparablePath(path) {
   return process.platform === 'win32' ? value.toLowerCase() : value;
 }
 
-function parseBusinessBaseline(repo) {
-  const path = resolve(repo, 'docs', 'product-quality-review-current.md');
-  const content = readFileSync(path, 'utf8');
+async function parseBusinessBaseline(repo, candidate) {
+  const content = await runGit(repo, ['show', `${candidate}:docs/product-quality-review-current.md`]);
   const commit = content.match(/^- 基线提交：`([0-9a-f]{40,64})`\s*$/m)?.[1];
   const tag = content.match(/^- 基线版本：`(v\d+\.\d+\.\d+)`\s*$/m)?.[1];
   if (!commit || !tag) throw new Error('current business context is missing a valid baseline commit or tag');
@@ -144,11 +253,12 @@ function compareTags(left, right) {
   return 0;
 }
 
-function remoteStableTags(repo) {
-  const output = runGit(repo, ['ls-remote', '--tags', 'origin', 'refs/tags/v*']);
+async function remoteStableTags(repo, environment) {
+  const output = await runGit(repo, ['ls-remote', '--tags', 'origin', 'refs/tags/v*'], environment);
   const entries = new Map();
   for (const line of output.split(/\r?\n/).filter(Boolean)) {
     const [object, rawRef] = line.split(/\s+/);
+    if (!/^[0-9a-f]{40,64}$/.test(object) || !rawRef) throw new Error('invalid remote tag response');
     const peeled = rawRef.endsWith('^{}');
     const ref = peeled ? rawRef.slice(0, -3) : rawRef;
     const tag = ref.replace('refs/tags/', '');
@@ -156,53 +266,41 @@ function remoteStableTags(repo) {
     const current = entries.get(tag) ?? {};
     entries.set(tag, peeled ? { ...current, commit: object } : { ...current, object });
   }
-  return [...entries.entries()].map(([tag, value]) => ({ tag, commit: value.commit ?? value.object }));
+  if (entries.size > 10_000) throw new Error('remote stable tag limit exceeded');
+  return [...entries.entries()].map(([tag, value]) => {
+    if (!value.object) throw new Error('remote tag object missing');
+    return { tag, object: value.object, commit: value.commit ?? value.object };
+  });
 }
 
-function exactRemoteMain(repo, candidate) {
-  const output = runGit(repo, ['ls-remote', '--heads', 'origin', 'refs/heads/main']);
+async function exactRemoteMain(repo, candidate, environment) {
+  const output = await runGit(repo, ['ls-remote', '--heads', 'origin', 'refs/heads/main'], environment);
   const match = output.match(/^([0-9a-f]{40,64})\s+refs\/heads\/main$/i);
   if (!match) throw new Error('origin/main is missing or ambiguous');
   const remoteMain = match[1].toLowerCase();
-  const trackedMain = runGit(repo, ['rev-parse', '--verify', 'refs/remotes/origin/main']).toLowerCase();
+  const trackedMain = (await runGit(repo, ['rev-parse', '--verify', 'refs/remotes/origin/main'])).toLowerCase();
   if (trackedMain !== remoteMain) {
     throw new Error('local origin/main is stale; fetch that exact ref with --no-tags before retrying');
   }
-  if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', remoteMain, candidate])) {
+  if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', remoteMain, candidate])) {
     throw new Error('current origin/main is not an ancestor of the candidate');
   }
   return remoteMain;
 }
 
-function requiredStableTags(repo, candidate, baseTag) {
+function requiredStableTags(ancestors, remoteTags, baseTag, businessTag) {
   const required = new Map();
-  const remoteTags = remoteStableTags(repo);
   for (const entry of remoteTags) {
-    if (!gitSucceeds(repo, ['cat-file', '-e', `${entry.commit}^{commit}`])) continue;
-    if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', entry.commit, candidate])) continue;
+    if (!ancestors.has(entry.commit)) continue;
     if (compareTags(entry.tag, COVERAGE_BASELINE) < 0) continue;
-    required.set(entry.tag, entry.commit);
+    required.set(entry.tag, entry);
   }
-
-  const remoteBase = remoteTags.find((entry) => entry.tag === baseTag);
-  if (!remoteBase) throw new Error(`base tag ${baseTag} is missing from origin`);
-  required.set(baseTag, remoteBase.commit);
-
-  const tags = [...required.entries()].sort(([left], [right]) => compareTags(left, right));
-  for (const [tag, remoteCommit] of tags) {
-    let localCommit;
-    try {
-      localCommit = runGit(repo, ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`]);
-    } catch {
-      throw new Error(
-        `required tag ${tag} is missing locally; fetch that exact tag with --no-tags before retrying`,
-      );
-    }
-    if (localCommit !== remoteCommit) {
-      throw new Error(`local tag ${tag} does not match origin; use a clean release clone instead of overwriting it`);
-    }
+  for (const tag of [baseTag, businessTag]) {
+    const entry = remoteTags.find((item) => item.tag === tag);
+    if (!entry) throw new Error(`required tag ${tag} is missing from origin`);
+    required.set(tag, entry);
   }
-  return tags.map(([tag]) => tag);
+  return [...required.values()].sort((left, right) => compareTags(left.tag, right.tag));
 }
 
 function validateInputs(options) {
@@ -220,69 +318,159 @@ function validateInputs(options) {
   if (!isAbsolute(options.artifactDir)) throw new Error('artifact directory must be absolute');
 }
 
-function prepare(options) {
-  validateInputs(options);
-  const repo = resolve(options.repo);
-  const root = resolve(runGit(repo, ['rev-parse', '--show-toplevel']));
+async function checkSource(repo, candidate) {
+  const root = resolve(await runGit(repo, ['rev-parse', '--show-toplevel']));
   if (canonicalPath(root) !== canonicalPath(repo)) {
-    throw new Error(`--repo must be the candidate repository root: ${root}`);
+    throw new Error('--repo must be the candidate repository root');
   }
-  if (runGit(repo, ['rev-parse', 'HEAD']) !== options.candidate) {
+  if (await runGit(repo, ['rev-parse', 'HEAD']) !== candidate) {
     throw new Error('candidate does not match HEAD');
   }
-  if (runGit(repo, ['status', '--short', '--untracked-files=all']) !== '') {
+  if (await runGit(repo, ['status', '--short', '--untracked-files=all']) !== '') {
     throw new Error('candidate worktree must be clean');
   }
-  const baseMainCommit = exactRemoteMain(repo, options.candidate);
-  if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', options.baseTag, options.candidate])) {
-    throw new Error('base tag is not an ancestor of the candidate');
+  if (await optionalConfig(repo, 'remote.origin.url') !== canonicalOrigin ||
+      await runGit(repo, ['remote', 'get-url', 'origin']) !== canonicalOrigin) {
+    throw new Error('origin must be the canonical KPanel SSH remote');
   }
+}
 
-  const businessBaseline = parseBusinessBaseline(repo);
-  if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', businessBaseline.commit, options.candidate])) {
-    throw new Error('business context baseline is not an ancestor of the candidate');
-  }
-  const baselineTagCommit = runGit(repo, ['rev-parse', '--verify', `${businessBaseline.tag}^{commit}`]);
-  if (!gitSucceeds(repo, ['merge-base', '--is-ancestor', baselineTagCommit, businessBaseline.commit])) {
-    throw new Error('business context baseline tag is not reachable from its recorded commit');
-  }
-
-  const requiredTags = requiredStableTags(repo, options.candidate, options.baseTag);
+async function prepare(options) {
+  validateInputs(options);
+  options.candidate = options.candidate.toLowerCase();
+  const source = resolve(options.repo);
   const artifactDir = resolve(options.artifactDir);
-  const comparableRepo = comparablePath(repo);
-  const comparableArtifact = comparablePath(artifactDir);
+  const comparableRepo = canonicalPath(source);
+  // Resolve existing parents too: an artifact symlink must not point into source.
+  let parent = artifactDir;
+  while (!existsSync(parent)) parent = dirname(parent);
+  const comparableArtifact = comparablePath(resolve(canonicalPath(parent), artifactDir.slice(parent.length).replace(/^[/\\]+/, '')));
   if (comparableArtifact === comparableRepo || comparableArtifact.startsWith(comparableRepo + sep)) {
     throw new Error('artifact directory must stay outside the candidate repository');
   }
   if (existsSync(artifactDir)) throw new Error('artifact directory already exists; retries require a new run ID and path');
   mkdirSync(artifactDir, { recursive: true, mode: 0o700 });
+  const statePath = join(artifactDir, 'source-prepare.json');
+  const started = Date.now();
+  gitDeadline = started + preparationTimeout;
+  const state = { schemaVersion: 1, runId: options.runId, candidate: options.candidate, status: 'running', phase: 'source-check', cleanup: 'not-created' };
+  const record = () => writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+  const phase = (name) => {
+    state.phase = name;
+    record();
+    if (Date.now() - started >= preparationTimeout) throw new Error('source preparation time budget exceeded');
+  };
+  record();
+  let ownedRoot;
+  let identity;
+  let prepared;
+  let failure;
+  try {
+    await checkSource(source, options.candidate);
+    const promisor = await gitResult(source, ['config', '--bool', '--get-regexp', '^remote\\..*\\.promisor$']);
+    if (![0, 1].includes(promisor.status)) throw new Error('git config failed');
+    if (await runGit(source, ['rev-parse', '--is-shallow-repository']) !== 'false' ||
+        await optionalConfig(source, 'extensions.partialClone') !== undefined ||
+        promisor.stdout.split(/\r?\n/).some((line) => line.endsWith(' true'))) {
+      throw new Error('source must have complete non-shallow, non-partial candidate history');
+    }
+    // This proves the closure, rather than treating an absent remote tag object as
+    // an error: a complete candidate cannot have that commit as an ancestor.
+    await runGit(source, ['rev-list', '--objects', '--missing=error', options.candidate]);
+    const ancestors = new Set((await runGit(source, ['rev-list', options.candidate])).split('\n'));
+    const environment = await transportEnvironment(source);
+    phase('remote-snapshot');
+    const baseMainCommit = await exactRemoteMain(source, options.candidate, environment);
+    const businessBaseline = await parseBusinessBaseline(source, options.candidate);
+    const tags = requiredStableTags(ancestors, await remoteStableTags(source, environment), options.baseTag, businessBaseline.tag);
+    state.sourceTagDifferences = [];
+    for (const { tag, object } of tags) {
+      const result = await gitResult(source, ['rev-parse', '--verify', `refs/tags/${tag}`]);
+      if (result.status !== 0 || result.stdout.trim() !== object) state.sourceTagDifferences.push(tag);
+    }
+    phase('isolated-source');
+    ownedRoot = mkdtempSync(join(tmpdir(), 'kpanel-release-source-'));
+    identity = directoryIdentity(ownedRoot);
+    state.cleanup = 'pending';
+    state.temporaryDirectory = ownedRoot;
+    record();
+    const seed = join(ownedRoot, 'candidate.bundle');
+    const repo = join(ownedRoot, 'repo');
+    // HEAD only: no source tags, config, hooks or shared object alternates.
+    await runGit(source, ['bundle', 'create', seed, 'HEAD']);
+    await runGit(ownedRoot, ['clone', '--no-checkout', '--no-tags', seed, repo]);
+    await runGit(repo, ['remote', 'set-url', 'origin', canonicalOrigin]);
+    await runGit(repo, ['checkout', '--detach', options.candidate]);
+    await checkSource(repo, options.candidate);
+    await runGit(repo, ['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main',
+      ...tags.map(({ tag }) => `refs/tags/${tag}:refs/tags/${tag}`)], environment);
+    if (await runGit(repo, ['rev-parse', 'refs/remotes/origin/main']) !== baseMainCommit) {
+      throw new Error('origin/main moved during source preparation');
+    }
+    for (const { tag, object, commit } of tags) {
+      if (await runGit(repo, ['rev-parse', `refs/tags/${tag}`]) !== object ||
+          await runGit(repo, ['rev-parse', `refs/tags/${tag}^{commit}`]) !== commit) {
+        throw new Error(`required tag ${tag} changed during source preparation`);
+      }
+    }
+    if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', options.baseTag, options.candidate])) {
+      throw new Error('base tag is not an ancestor of the candidate');
+    }
+    if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', businessBaseline.commit, options.candidate])) {
+      throw new Error('business context baseline is not an ancestor of the candidate');
+    }
+    if (!await gitSucceeds(repo, ['merge-base', '--is-ancestor', businessBaseline.tag, businessBaseline.commit])) {
+      throw new Error('business context baseline tag is not reachable from its recorded commit');
+    }
+    phase('bundle-verification');
+    prepared = await buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags: tags.map(({ tag }) => tag), ownedRoot });
+    phase('final-source-check');
+    await checkSource(source, options.candidate);
+    if (await exactRemoteMain(source, options.candidate, environment) !== baseMainCommit ||
+        JSON.stringify(requiredStableTags(ancestors, await remoteStableTags(source, environment), options.baseTag, businessBaseline.tag)) !== JSON.stringify(tags)) {
+      throw new Error('origin main or required tags changed during source preparation');
+    }
+    phase('cleanup');
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (ownedRoot && identity) {
+      try {
+        removeOwnedDirectory(ownedRoot, identity);
+        state.cleanup = 'removed';
+      } catch {
+        state.cleanup = 'preserved';
+        failure = new Error('temporary source cleanup failed; preserved for recovery');
+      }
+    }
+    state.status = failure ? 'failed' : 'pass';
+    if (failure) state.error = failure.message;
+    record();
+    gitDeadline = Infinity;
+  }
+  if (failure) throw failure;
+  return prepared;
+}
 
+async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBaseline, requiredTags, ownedRoot }) {
   const bundleName = `kpanel-${options.runId}.bundle`;
   const bundlePath = join(artifactDir, bundleName);
   const tagRefs = requiredTags.map((tag) => `refs/tags/${tag}`);
-  runGit(repo, ['bundle', 'create', bundlePath, 'HEAD', ...tagRefs]);
-  runGit(repo, ['bundle', 'verify', bundlePath]);
+  await runGit(repo, ['bundle', 'create', bundlePath, 'HEAD', ...tagRefs]);
+  await runGit(repo, ['bundle', 'verify', bundlePath]);
 
-  const verifyRoot = mkdtempSync(join(tmpdir(), 'kpanel-release-l3-'));
-  try {
-    const verifyRepo = join(verifyRoot, 'repo');
-    run('git', ['clone', '--no-checkout', bundlePath, verifyRepo], {
-      environment: cleanGitEnvironment(),
-    });
-    runGit(verifyRepo, ['checkout', '--detach', options.candidate]);
-    if (runGit(verifyRepo, ['rev-parse', 'HEAD']) !== options.candidate) {
-      throw new Error('offline bundle clone did not reproduce the candidate');
-    }
-    for (const tag of requiredTags) runGit(verifyRepo, ['show-ref', '--verify', `refs/tags/${tag}`]);
-    run(process.execPath, [resolve(verifyRepo, 'scripts', 'check-business-context-freshness.mjs')], {
-      cwd: verifyRepo,
-      environment: cleanGitEnvironment(),
-    });
-  } finally {
-    const safePrefix = resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/');
-    if (!resolve(verifyRoot).startsWith(safePrefix)) throw new Error('refusing to remove unexpected verification path');
-    rmSync(verifyRoot, { recursive: true, force: true });
+  const verifyRepo = join(ownedRoot, 'offline');
+  await runGit(ownedRoot, ['clone', '--no-checkout', bundlePath, verifyRepo]);
+  await runGit(verifyRepo, ['checkout', '--detach', options.candidate]);
+  if (await runGit(verifyRepo, ['rev-parse', 'HEAD']) !== options.candidate) {
+    throw new Error('offline bundle clone did not reproduce the candidate');
   }
+  for (const tag of requiredTags) await runGit(verifyRepo, ['show-ref', '--verify', `refs/tags/${tag}`]);
+  run(process.execPath, [resolve(verifyRepo, 'scripts', 'check-business-context-freshness.mjs')], {
+    cwd: verifyRepo,
+    environment: cleanGitEnvironment(),
+    timeout: Math.max(1, Math.min(gitTimeout, gitDeadline - Date.now())),
+  });
 
   const remoteScriptSource = resolve(repo, 'scripts', 'run-release-l3-remote.sh');
   if (!existsSync(remoteScriptSource)) throw new Error('tracked remote L3 entrypoint is missing');
@@ -321,7 +509,7 @@ function prepare(options) {
         businessBaseline,
         requiredTags,
         runnerImage: options.runnerImage,
-        origin: runGit(repo, ['remote', 'get-url', 'origin']),
+        origin: canonicalOrigin,
         files: {
           bundle: { name: bundleName, sha256: sha256(bundlePath) },
           plan: { name: 'plan.env', sha256: sha256(planPath) },
@@ -354,9 +542,9 @@ function uploadAndRun(options, prepared) {
   });
 }
 
-try {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) try {
   const options = parseArgs(process.argv.slice(2));
-  const prepared = prepare(options);
+  const prepared = await prepare(options);
   process.stdout.write(
     `release_l3_prepare=pass run_id=${options.runId} candidate=${options.candidate.toLowerCase()} ` +
       `tags=${prepared.requiredTags.length} manifest=${prepared.manifestPath}\n`,
