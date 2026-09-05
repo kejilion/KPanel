@@ -385,6 +385,19 @@ func TestTrustedSystemResourceProtocolMarkers(t *testing.T) {
 	if !trustedKejilionSystemResourceContent(current) {
 		t.Fatal("current protocol markers were rejected")
 	}
+	versionThree := []byte(strings.Replace(string(current), `PROTOCOL_VERSION="4"`, `PROTOCOL_VERSION="3"`, 1))
+	if !trustedKejilionSystemResourceContent(versionThree) {
+		t.Fatal("compatible v3 protocol was rejected")
+	}
+	for _, invalid := range []string{
+		strings.Replace(string(current), `PROTOCOL_VERSION="4"`, `PROTOCOL_VERSION="5"`, 1),
+		string(current) + "KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION=\"3\"\n",
+		strings.Replace(string(current), `permission_granted="true"`, `permission_granted="false"`, 1),
+	} {
+		if trustedKejilionSystemResourceContent([]byte(invalid)) {
+			t.Fatal("unsupported, ambiguous or unlicensed protocol was trusted")
+		}
+	}
 }
 
 func TestSystemResourceWriteRejectsStaleVersionBeforeScript(t *testing.T) {

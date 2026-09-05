@@ -35,7 +35,7 @@ const (
 var (
 	errResourceOutputTooLarge = errors.New("system resource output exceeds its configured limit")
 	resourceVersionPattern    = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	resourceProtocolV4Pattern = regexp.MustCompile(`(?m)^KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="4"\r?$`)
+	resourceProtocolPattern   = regexp.MustCompile(`(?m)^KPANEL_SYSTEM_RESOURCE_PROTOCOL_VERSION="([0-9]+)"\r?$`)
 	resourceRecoveryPattern   = regexp.MustCompile(`^/var/lib/kejilion-panel/system/recovery/system-resource/[0-9]{8}T[0-9]{6}Z-(?:hosts|cron|firewall)\.[A-Za-z0-9]{6}$`)
 	firewallCounterPattern    = regexp.MustCompile(`^(.* )\[[0-9]+:[0-9]+\]$`)
 	firewallDDoSTCPLimit      = regexp.MustCompile(`^-A INPUT -p tcp(?: -m tcp)? (?:--syn|--tcp-flags (?:FIN,SYN,RST,ACK SYN|SYN,RST,ACK,FIN SYN|0x17 0x02|0x17/0x02)) -m limit --limit [0-9]+/(?:s|sec|second) --limit-burst 100 -j ACCEPT$`)
@@ -621,6 +621,11 @@ func (m *Manager) Firewall(ctx context.Context) (contract.SystemFirewallSnapshot
 	resourceVersion := firewallResourceVersion(raw)
 	if ipsetAvailable {
 		resourceVersion = firewallResourceVersion(raw, ipsetRaw)
+		// v3 hashes only iptables, even when ipset is installed. Keep reads
+		// available without an adapter, but match a trusted v3 writer exactly.
+		if _, protocol, scriptErr := m.systemResourceScript(); scriptErr == nil && protocol == 3 {
+			resourceVersion = firewallResourceVersion(raw)
+		}
 	}
 	return contract.SystemFirewallSnapshot{
 		ResourceVersion: resourceVersion, Backend: backend, InputPolicy: inputPolicy,
@@ -848,9 +853,12 @@ func (m *Manager) ExecuteSystemResourceAction(
 	if err := m.validateResourceTarget(ctx, resource, request); err != nil {
 		return contract.SystemResourceActionResult{}, err
 	}
-	script, err := m.systemResourceScriptPath()
+	script, protocol, err := m.systemResourceScript()
 	if err != nil {
 		return contract.SystemResourceActionResult{}, err
+	}
+	if resource == "firewall" && strings.HasSuffix(action, "-country") && protocol < 4 {
+		return contract.SystemResourceActionResult{}, fmt.Errorf("%w: country firewall rules require kejilion.sh system-resource protocol v4; installed protocol is v%d", ErrUnsupported, protocol)
 	}
 	commandArguments := []string{
 		"KJ_SYSTEM_RESOURCE_NONINTERACTIVE=1", "bash", script,
@@ -1111,25 +1119,30 @@ func receiptValue(line, key string) (string, bool) {
 }
 
 func (m *Manager) systemResourceScriptPath() (string, error) {
+	path, _, err := m.systemResourceScript()
+	return path, err
+}
+
+func (m *Manager) systemResourceScript() (string, int, error) {
 	path, err := m.resourceScript()
 	if err != nil {
-		return "", fmt.Errorf("%w: trusted kejilion.sh system-resource protocol was not found", ErrUnsupported)
+		return "", 0, fmt.Errorf("%w: trusted kejilion.sh system-resource protocol was not found", ErrUnsupported)
 	}
 	path = filepath.Clean(path)
 	if !filepath.IsAbs(path) {
-		return "", fmt.Errorf("%w: system-resource script path must be absolute", ErrUnsupported)
+		return "", 0, fmt.Errorf("%w: system-resource script path must be absolute", ErrUnsupported)
 	}
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() ||
 		info.Size() < 1024 || info.Size() > resourceScriptMaxBytes ||
 		info.Mode().Perm()&0o022 != 0 || !dnsScriptOwnerTrusted(info) {
-		return "", fmt.Errorf("%w: system-resource script is not a trusted root-owned regular file", ErrUnsupported)
+		return "", 0, fmt.Errorf("%w: system-resource script is not a trusted root-owned regular file", ErrUnsupported)
 	}
 	content, err := readResourceFile(path, resourceScriptMaxBytes)
 	if err != nil || !trustedKejilionSystemResourceContent(content) {
-		return "", fmt.Errorf("%w: kejilion.sh system-resource protocol marker is missing", ErrUnsupported)
+		return "", 0, fmt.Errorf("%w: kejilion.sh system-resource protocol v3/v4 marker is missing or unsupported", ErrUnsupported)
 	}
-	return path, nil
+	return path, systemResourceProtocolVersion(content), nil
 }
 
 func findKejilionSystemResourceScript() (string, error) {
@@ -1166,11 +1179,26 @@ func findKejilionSystemResourceScript() (string, error) {
 func trustedKejilionSystemResourceContent(content []byte) bool {
 	value := string(content)
 	return dnsScriptLicense.Match(content) &&
-		resourceProtocolV4Pattern.Match(content) &&
+		systemResourceProtocolVersion(content) != 0 &&
 		strings.Contains(value, "KJ_SYSTEM_RESOURCE_NONINTERACTIVE") &&
 		strings.Contains(value, "kpanel_system_resource_dispatch") &&
 		strings.Contains(value, "KPANEL_SYSTEM_RESOURCE_STATUS") &&
 		strings.Contains(value, "KPANEL_SYSTEM_RESOURCE_VERSION")
+}
+
+func systemResourceProtocolVersion(content []byte) int {
+	matches := resourceProtocolPattern.FindAllSubmatch(content, -1)
+	if len(matches) != 1 {
+		return 0
+	}
+	switch string(matches[0][1]) {
+	case "3":
+		return 3
+	case "4":
+		return 4
+	default:
+		return 0
+	}
 }
 
 func readResourceFile(path string, limit int) ([]byte, error) {
