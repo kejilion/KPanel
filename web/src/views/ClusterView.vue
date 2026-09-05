@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -17,6 +17,7 @@ import {
   Check,
   Copy,
   Gauge,
+  Globe2,
   GripVertical,
   KeyRound,
   LayoutGrid,
@@ -71,6 +72,7 @@ import type {
   ClusterShareSettings,
 } from '@/types/api'
 
+const ClusterGlobe = defineAsyncComponent(() => import('@/components/cluster/ClusterGlobe.vue'))
 const toast = useToast()
 const { t } = useI18n()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
@@ -107,7 +109,7 @@ const addForm = reactive({ name: '', accessCredential: '' })
 const shareForm = reactive({ enabled: false, title: '', description: '' })
 const editName = ref('')
 const originError = ref('')
-type HostViewMode = 'list' | 'card'
+type HostViewMode = 'list' | 'card' | 'globe'
 const hostViewModeStorageKey = 'kpanel:cluster-host-view'
 const viewMode = ref<HostViewMode>('list')
 const hostOrder = ref<string[]>([])
@@ -683,7 +685,7 @@ function setViewMode(mode: HostViewMode): void {
 function restoreViewMode(): void {
   try {
     const stored = window.localStorage.getItem(hostViewModeStorageKey)
-    if (stored === 'list' || stored === 'card') viewMode.value = stored
+    if (stored === 'list' || stored === 'card' || stored === 'globe') viewMode.value = stored
   } catch {
     // 隐私模式或存储被禁用时使用默认行列表。
   }
@@ -1051,6 +1053,15 @@ onBeforeUnmount(() => {
         >
           <LayoutGrid :size="15" /> 卡片
         </button>
+        <button
+          type="button"
+          :class="{ 'is-active': viewMode === 'globe' }"
+          :aria-pressed="viewMode === 'globe'"
+          title="地球展示"
+          @click="setViewMode('globe')"
+        >
+          <Globe2 :size="15" /> 地球
+        </button>
       </div>
     </div>
 
@@ -1069,6 +1080,15 @@ onBeforeUnmount(() => {
       v-else-if="!filteredHosts.length"
       title="没有匹配的主机"
       description="请清除搜索词后重试。"
+    />
+
+    <ClusterGlobe
+      v-else-if="viewMode === 'globe'"
+      :hosts="filteredHosts"
+      :searchable="false"
+      :aria-busy="refreshing"
+      @manage="openManage"
+      @open-panel="openPanel"
     />
 
     <section
@@ -1803,7 +1823,7 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   border-radius: calc(var(--radius-sm) - 3px);
-  font-size: 11px;
+  font-size: .875rem;
   font-weight: 600;
 }
 
@@ -1841,6 +1861,15 @@ onBeforeUnmount(() => {
 .cluster-card.is-drag-over {
   border-color: color-mix(in srgb, var(--brand) 56%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.cluster-grid.is-card .cluster-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.cluster-grid.is-card .cluster-card__header {
+  flex: 1;
 }
 
 .cluster-grid.is-list .cluster-card {
@@ -1949,23 +1978,24 @@ onBeforeUnmount(() => {
 
 .cluster-card__header > div > span {
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   align-items: center;
   gap: 8px;
 }
 
 .cluster-card__header strong {
-  overflow: hidden;
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .cluster-card__local,
 .cluster-card__transport {
   flex: 0 0 auto;
   padding: 2px 7px;
-  font-size: 10px;
+  font-size: .75rem;
   font-style: normal;
   font-weight: 700;
   border-radius: 999px;
@@ -1998,7 +2028,7 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: .875rem;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2118,8 +2148,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--muted);
-  font-size: 10px;
+  color: var(--text-soft);
+  font-size: .8125rem;
 }
 
 .cluster-card__metrics strong {
@@ -2127,11 +2157,10 @@ onBeforeUnmount(() => {
 }
 
 .cluster-card__metrics small {
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-soft);
+  font-size: .75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .cluster-card__metrics i {
@@ -2163,8 +2192,8 @@ onBeforeUnmount(() => {
 }
 
 .cluster-card__details span {
-  color: var(--muted);
-  font-size: 10px;
+  color: var(--text-soft);
+  font-size: .75rem;
 }
 
 .cluster-card__details strong {
@@ -2173,13 +2202,13 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: .875rem;
 }
 
 .cluster-card__details small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: .75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2230,7 +2259,7 @@ onBeforeUnmount(() => {
 .cluster-card__footer > span {
   display: grid;
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: .75rem;
 }
 
 .cluster-card__footer small {
