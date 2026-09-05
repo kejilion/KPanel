@@ -1,0 +1,11 @@
+[Unit]
+Description=Check KPanel Lightweight Monitoring Node Updates
+
+[Timer]
+OnBootSec=15min
+OnUnitInactiveSec=1h
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
