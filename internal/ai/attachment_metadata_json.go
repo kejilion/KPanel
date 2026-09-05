@@ -12,6 +12,8 @@ import (
 // These views live only while the caller owns the current attachments_json row.
 // json.Unmarshal validates JSON without Decoder's growing object buffer. Data
 // deliberately borrows its token: RawMessage and string would copy the body.
+// The standard depth limit includes the outer array. Stored attachments are
+// flat string fields; excessively nested unknown legacy fields fail explicitly.
 type attachmentMetadataJSON struct {
 	Name     string             `json:"name"`
 	MimeType string             `json:"mimeType"`
