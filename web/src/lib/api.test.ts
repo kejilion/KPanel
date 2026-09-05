@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, normalizeList, resetApiSecurityState, setFileHostId } from './api'
+import { ApiError, api, normalizeList, resetApiSecurityState } from './api'
 import type { SystemOverview } from '@/types/api'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -50,10 +50,9 @@ describe('API client', () => {
       .mockResolvedValueOnce(jsonResponse({ path: '/', entries: [] }))
       .mockResolvedValueOnce(new Response('content', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    setFileHostId('light-node-01')
 
-    await api.files.list('/')
-    expect(api.files.contentUrl('/etc/hosts', 'attachment')).toBe(
+    await api.files.list('/', undefined, undefined, 'light-node-01')
+    expect(api.files.contentUrl('/etc/hosts', 'attachment', 'light-node-01')).toBe(
       '/api/v1/files/content?path=%2Fetc%2Fhosts&disposition=attachment&hostId=light-node-01',
     )
 
@@ -75,19 +74,17 @@ describe('API client', () => {
       headers: { 'content-type': 'application/x-ndjson' },
     }))
     vi.stubGlobal('fetch', fetchMock)
-    setFileHostId('light-node-01')
 
     await expect(api.files.transferFromPanel({
       sourceNodeId: 'a'.repeat(32), path: '/app', resourceVersion: 'sha256:source',
       targetDirectory: '/home/KPanel Desktop',
-    }, () => undefined)).resolves.toEqual(entry)
+    }, () => undefined, undefined, 'light-node-01')).resolves.toEqual(entry)
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/files/transfers?hostId=light-node-01')
   })
 
   it('allows always-mounted desktop requests to force the local panel', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ entries: [], unavailable: [] }))
     vi.stubGlobal('fetch', fetchMock)
-    setFileHostId('light-node-01')
 
     await api.files.entries(['/home/app'], undefined, null)
 

@@ -44,6 +44,7 @@ export class DesktopShortcutLimitError extends Error {
 }
 
 interface ActiveDesktopFileDrag {
+  owner?: symbol
   token: string
   entries: DesktopFileEntry[]
   origin: DesktopFileDragOrigin
@@ -225,12 +226,14 @@ export function beginDesktopFileDrag(
   origin: DesktopFileDragOrigin = 'file-manager',
   nativeDownloadURL?: string,
   nativeArchiveName?: string,
+  owner?: symbol,
 ): boolean {
   const dataTransfer = event.dataTransfer
   const supported = entries.filter(supportedEntry)
   if (!dataTransfer || !supported.length) return false
   const token = randomToken()
   activeDrag = {
+    owner,
     token,
     entries: supported.map((entry) => ({ ...entry })),
     origin,
@@ -413,7 +416,8 @@ export function peekDesktopFileDragSourceNodeId(event: DragEvent): string | unde
   return activeDrag.sourceNodeId
 }
 
-export function clearDesktopFileDrag(): void {
+export function clearDesktopFileDrag(owner?: symbol): void {
+  if (owner && activeDrag?.owner !== owner) return
   activeDrag = undefined
 }
 

@@ -48,7 +48,6 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 
 vi.mock('@/lib/api', () => ({
-  isRemoteFileHostSelected: vi.fn(() => false),
   ApiError: class MockApiError extends Error {
     readonly status: number
     readonly code: string
@@ -499,7 +498,7 @@ describe('FilesView external upload', () => {
 
     await view.onDrop(externalFileDrop(externalFileEntry('notes.txt', 'hello')))
 
-    expect(mocks.upload).toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'notes.txt' }), false, expect.any(Function))
+    expect(mocks.upload).toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'notes.txt' }), false, expect.any(Function), undefined, '')
     expect(mocks.entry).not.toHaveBeenCalled()
     expect(mocks.action).not.toHaveBeenCalled()
     expect(mocks.danger).not.toHaveBeenCalled()
@@ -542,9 +541,9 @@ describe('FilesView external upload', () => {
       { path: '/srv/project', name: 'README.md' },
       { path: '/srv/project/src', name: 'main.ts' },
     ]))
-    expect(mocks.upload).not.toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'project' }), expect.anything(), expect.anything())
+    expect(mocks.upload).not.toHaveBeenCalledWith('/srv', expect.objectContaining({ name: 'project' }), expect.anything(), expect.anything(), undefined, '')
     expect(mocks.danger).not.toHaveBeenCalled()
-    expect(mocks.list).toHaveBeenCalledWith('/srv', expect.anything(), expect.anything())
+    expect(mocks.list).toHaveBeenCalledWith('/srv', expect.anything(), expect.anything(), '')
   })
 
   it('retains a failed direct upload for inline retry without a duplicate toast', async () => {
@@ -1038,7 +1037,7 @@ describe('FilesView desktop shortcuts', () => {
 
     expect(single.dataTransfer?.types).toContain(DESKTOP_FILE_DRAG_TYPE)
     expect(single.dataTransfer?.types).toContain(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)
-    expect(mocks.contentUrl).toHaveBeenCalledWith('/one.txt', 'attachment')
+    expect(mocks.contentUrl).toHaveBeenCalledWith('/one.txt', 'attachment', '')
     expect(single.dataTransfer?.getData(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toContain(
       '/api/v1/files/content?path=%2Fone.txt&disposition=attachment',
     )
@@ -1049,7 +1048,7 @@ describe('FilesView desktop shortcuts', () => {
     view.startEntryDrag(selection, first)
     expect(selection.dataTransfer?.types).toContain(DESKTOP_FILE_DRAG_TYPE)
     expect(selection.dataTransfer?.types).toContain(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)
-    expect(mocks.archiveUrl).toHaveBeenCalledWith([first, second], 'home.zip')
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([first, second], 'home.zip', '')
     expect(selection.dataTransfer?.getData(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toContain(
       'application/zip:home.zip:https://panel.example/api/v1/files/archive',
     )
@@ -1059,7 +1058,7 @@ describe('FilesView desktop shortcuts', () => {
     view.startEntryDrag(directory, folder)
     expect(directory.dataTransfer?.types).toContain(DESKTOP_FILE_DRAG_TYPE)
     expect(directory.dataTransfer?.types).toContain(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)
-    expect(mocks.archiveUrl).toHaveBeenCalledWith([folder], 'photos.zip')
+    expect(mocks.archiveUrl).toHaveBeenCalledWith([folder], 'photos.zip', '')
     expect(directory.dataTransfer?.getData(NATIVE_FILE_DOWNLOAD_DRAG_TYPE)).toContain(
       'application/zip:photos.zip:https://panel.example/api/v1/files/archive',
     )
@@ -1096,7 +1095,7 @@ describe('FilesView desktop shortcuts', () => {
 
     await view.openRequestedFile(entry.path)
 
-    expect(mocks.entry).toHaveBeenCalledWith(entry.path)
+    expect(mocks.entry).toHaveBeenCalledWith(entry.path, undefined, '')
     expect(view.selected.value).toEqual(new Set([entry.path]))
     expect(view.previewEntry.value).toEqual(entry)
   })
@@ -1416,7 +1415,7 @@ describe('FilesView directory loading', () => {
     expect(mocks.list).toHaveBeenCalledWith(
       '/web',
       { offset: 0, search: undefined },
-      expect.any(AbortSignal),
+      expect.any(AbortSignal), ''
     )
     expect(view.currentPath.value).toBe('/web')
     expect(view.directory.value?.entries).toEqual([])
@@ -1452,7 +1451,7 @@ describe('FilesView directory loading', () => {
     expect(mocks.list).toHaveBeenLastCalledWith(
       '/web',
       { offset: 1, search: undefined },
-      expect.any(AbortSignal),
+      expect.any(AbortSignal), ''
     )
     expect(view.directory.value?.entries.map((entry) => entry.name)).toEqual([
       'first.txt',
@@ -1492,7 +1491,7 @@ describe('FilesView directory loading', () => {
       action: 'trash',
       sources: ['/keep.txt'],
       expectedResourceVersions: { '/keep.txt': 'sha256:keep.txt' },
-    })
+    }, undefined, '')
     expect(mocks.danger).toHaveBeenCalledWith(
       '文件操作未完成',
       '0 项成功，1 项失败：文件状态已变化',
@@ -1529,7 +1528,7 @@ describe('FilesView directory loading', () => {
         [first.path]: first.resourceVersion,
         [second.path]: second.resourceVersion,
       },
-    }, expect.any(AbortSignal))
+    }, expect.any(AbortSignal), '')
     expect(mocks.success).toHaveBeenCalledWith('压缩完成', '1 项已处理')
   })
 
@@ -1554,7 +1553,7 @@ describe('FilesView directory loading', () => {
       name: 'backup',
       format: 'tar.gz',
       expectedResourceVersion: entry.resourceVersion,
-    }, expect.any(AbortSignal))
+    }, expect.any(AbortSignal), '')
     expect(mocks.success).toHaveBeenCalledWith('解压完成', '1 项已处理')
   })
 
@@ -1613,7 +1612,7 @@ describe('FilesView directory loading', () => {
       action: 'trash_restore',
       trashIds: ['trash-id'],
       expectedResourceVersions: { 'trash-id': 'sha256:trash' },
-    })
+    }, undefined, '')
     expect(mocks.success).toHaveBeenCalledWith('恢复完成', '1 项已处理')
   })
 
@@ -1656,7 +1655,7 @@ describe('FilesView directory loading', () => {
         'trash-first': 'sha256:first',
         'trash-second': 'sha256:second',
       },
-    })
+    }, undefined, '')
   })
 
   it('saves the live editor value without copying the document on every keystroke', async () => {
@@ -1679,7 +1678,7 @@ describe('FilesView directory loading', () => {
     expect(mocks.write).toHaveBeenCalledWith(
       entry.path,
       'latest editor content',
-      entry.resourceVersion,
+      entry.resourceVersion, ''
     )
     expect(view.previewContent.value).toBe('latest editor content')
     expect(view.previewDirty.value).toBe(false)
@@ -1817,7 +1816,7 @@ describe('FilesView directory loading', () => {
         [first.path]: first.resourceVersion,
         [second.path]: second.resourceVersion,
       },
-    })
+    }, undefined, '')
   })
 
   it('submits every selected entry and resource version for batch chmod', async () => {
@@ -1844,7 +1843,7 @@ describe('FilesView directory loading', () => {
         [first.path]: first.resourceVersion,
         [second.path]: second.resourceVersion,
       },
-    })
+    }, undefined, '')
   })
 
   it('downloads a selected batch as one ZIP from a selected entry context menu', async () => {
@@ -2071,7 +2070,7 @@ describe('FilesView directory loading', () => {
       sources: [entry.path],
       target: '/target',
       expectedResourceVersions: { [entry.path]: entry.resourceVersion },
-    })
+    }, undefined, '')
     expect(view.clipboard.value?.entries).toEqual([entry])
     expect(mocks.list).toHaveBeenCalled()
     expect(mocks.success).not.toHaveBeenCalled()
@@ -2119,7 +2118,7 @@ describe('FilesView directory loading', () => {
       sources: [entry.path],
       target: '/target',
       expectedResourceVersions: { [entry.path]: entry.resourceVersion },
-    }, undefined)
+    }, undefined, '')
     expect(view.fileTransferState.value).toMatchObject({
       mode: 'move', target: '/target', count: 1, phase: 'success',
     })

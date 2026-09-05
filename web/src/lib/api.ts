@@ -427,7 +427,6 @@ export class ApiError extends Error {
 }
 
 let csrfToken = ''
-let fileHostId = ''
 let previousNetworkSample:
   | { receivedBytes: number; sentBytes: number; collectedAtMs: number }
   | undefined
@@ -566,7 +565,7 @@ const fileTargetQueryPaths = new Set([...lightFileRelayPaths, '/files/transfers'
 function fileRequestQuery(
   path: string,
   query?: Record<string, QueryValue>,
-  targetHostId: string | null | undefined = fileHostId,
+  targetHostId?: string | null,
 ): Record<string, QueryValue> | undefined {
   if (!fileTargetQueryPaths.has(path) || !targetHostId) return query
   return { ...query, hostId: targetHostId }
@@ -2267,16 +2266,7 @@ export const api = {
 
 export function resetApiSecurityState(): void {
   csrfToken = ''
-  fileHostId = ''
   previousNetworkSample = undefined
-}
-
-export function setFileHostId(hostId?: string): void {
-  fileHostId = hostId?.trim() || ''
-}
-
-export function isRemoteFileHostSelected(): boolean {
-  return Boolean(fileHostId)
 }
 
 export function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {

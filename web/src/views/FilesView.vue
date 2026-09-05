@@ -53,7 +53,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
-import { ApiError, api, setFileHostId } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import {
   readClusterHostOrder,
   sortClusterHosts,
@@ -84,6 +84,7 @@ import {
   type ExternalDropManifest,
 } from '@/lib/desktopExternalDrop'
 import { fileEntryIcon as entryIcon, fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
+import { fileAPIForHost } from '@/lib/fileHostContext'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
   addFileEntriesToDesktop,
@@ -97,6 +98,7 @@ import {
   hasDesktopFileDrag,
   nativeArchiveDownloadName,
   peekDesktopFileDragEntries,
+  peekDesktopFileDragSourceNodeId,
 } from '@/lib/desktopFileShortcuts'
 import {
   changedFileDirectories,
@@ -136,6 +138,8 @@ const fileHostInventory = ref<ClusterHostList>()
 const fileHostInventoryLoading = ref(false)
 const fileHostInventoryError = ref(false)
 const activeFileHostId = ref('')
+const fileHostId = ref(typeof route.query.hostId === 'string' ? route.query.hostId : '')
+const fileAPI = computed(() => fileAPIForHost(fileHostId.value))
 const clusterHostOrderRevision = ref(0)
 let unregisterWindowCloseGuard: (() => void) | undefined
 let unsubscribeClusterHostOrder: (() => void) | undefined
@@ -187,8 +191,8 @@ interface UploadTask {
 }
 
 type UploadTaskSource =
-  | { kind: 'file'; file: File; target: string }
-  | { kind: 'directory'; manifest: ExternalDropManifest; target: string }
+  | { kind: 'file'; file: File; target: string; hostId: string }
+  | { kind: 'directory'; manifest: ExternalDropManifest; target: string; hostId: string }
 
 const toast = useToast()
 const i18n = useI18n()
@@ -210,17 +214,17 @@ const hostOperatingSystemIdentity = (host: ClusterHost) =>
 
 const activeFileHost = computed(() =>
   fileHosts.value.find((host) => host.id === activeFileHostId.value)
-    || fileHosts.value.find((host) => host.isLocal),
+    || (!fileHostId.value ? fileHosts.value.find((host) => host.isLocal) : undefined),
 )
-const isRemoteFileHost = computed(() => Boolean(activeFileHost.value && !activeFileHost.value.isLocal))
+const isRemoteFileHost = computed(() => Boolean(fileHostId.value))
 const activeFileHostNodeId = computed(() => {
   const host = activeFileHost.value
-  return host && !host.isLocal ? (host.remoteNodeId || host.id) : localClusterNodeId.value
+  return fileHostId.value ? (host?.remoteNodeId || host?.id || '') : localClusterNodeId.value
 })
 
 const activeFileHostLabel = computed(() => {
   const host = activeFileHost.value
-  return host && !host.isLocal ? host.name : phrase('本机')
+  return fileHostId.value ? host?.name || fileHostId.value : phrase('本机')
 })
 
 function fileHostStatus(host: ClusterHost): FileHostStatus {
@@ -269,9 +273,8 @@ async function loadFileHosts(): Promise<void> {
     const previousHost = inventory.items.find((host) =>
       host.id === previousActiveHostId && fileHostStatus(host).action === 'select',
     )
-    const nextHost = previousHost || localHost
-    activeFileHostId.value = nextHost?.id || ''
-    setFileHostId(nextHost && !nextHost.isLocal ? nextHost.id : undefined)
+    // A missing/revoked remote host must retain its target and fail closed.
+    activeFileHostId.value = fileHostId.value || previousHost?.id || localHost?.id || ''
   } catch (error) {
     if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
     fileHostInventoryError.value = true
@@ -323,6 +326,31 @@ function openClusterHostManager(): void {
   void router.push({ name: 'cluster' })
 }
 
+function resetFileHostContext(hostId: string): boolean {
+  if (previewDirty.value && !window.confirm('文件尚未保存，确认切换主机吗？')) return false
+  previewDirty.value = false
+  directoryController?.abort()
+  closePreview()
+  contextMenu.value = undefined
+  shareEntry.value = undefined
+  shareManagerOpen.value = false
+  remoteDownloadDialogOpen.value = false
+  dismissFileTransfer()
+  clearInternalDropTarget()
+  fileHostId.value = hostId
+  activeFileHostId.value = hostId || fileHosts.value.find((host) => host.isLocal)?.id || ''
+  directory.value = undefined
+  dialogAction.value = undefined
+  trashOpen.value = false
+  trashEntries.value = []
+  selectedTrash.value = new Set()
+  uploadTasks.value.forEach((task) => dismissUploadTask(task.id))
+  search.value = ''
+  clearSelection()
+  openedRouteFile = ''
+  return true
+}
+
 function handleFileHostSelection(host: ClusterHost): void {
   const status = fileHostStatus(host)
   if (status.action === 'select') {
@@ -334,6 +362,8 @@ function handleFileHostSelection(host: ClusterHost): void {
       fileTransferState.value?.phase === 'running'
       || pasteBusy.value
       || dialogBusy.value
+      || trashBusy.value
+      || externalUploadController
       || previewSaving.value
       || desktopAdding.value
       || remoteDownloadSubmitting.value
@@ -346,18 +376,8 @@ function handleFileHostSelection(host: ClusterHost): void {
       if (!window.confirm('文件尚未保存，确认切换主机吗？')) return
       previewDirty.value = false
     }
-    closePreview()
-    contextMenu.value = undefined
-    shareEntry.value = undefined
-    shareManagerOpen.value = false
-    remoteDownloadDialogOpen.value = false
-    clearClipboard()
-    dismissFileTransfer()
-    clearInternalDropTarget()
-    activeFileHostId.value = host.id
-    setFileHostId(host.isLocal ? undefined : host.id)
-    search.value = ''
-    clearSelection()
+    resetFileHostContext(host.isLocal ? '' : host.id)
+    void router.push({ name: 'files', query: { path: currentPath.value, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
     if (!host.isLocal) {
       stopRemoteDownloadPolling()
       remoteDownloadJobs.value = []
@@ -430,7 +450,8 @@ const contextMenuElement = ref<HTMLElement>()
 const shareEntry = ref<FileEntry>()
 const shareManagerOpen = ref(false)
 const fileClipboard = useFileClipboard()
-const clipboard = fileClipboard.clipboard
+const clipboard = computed(() => fileClipboard.clipboard.value?.hostId === fileHostId.value
+  ? fileClipboard.clipboard.value : undefined)
 const pasteBusy = ref(false)
 const internalDropTarget = ref('')
 const internalDropMode = ref<FileTransferOperation>('move')
@@ -456,6 +477,7 @@ const desktopAdding = ref(false)
 const previewEntry = ref<FileEntry>()
 const previewContent = ref('')
 const previewLoading = ref(false)
+let previewRequestId = 0
 const previewSaving = ref(false)
 const previewDirty = ref(false)
 const mediaLoading = ref(false)
@@ -665,7 +687,7 @@ const mediaStatusLabel = computed(() => {
   return ''
 })
 const previewURL = computed(() =>
-  previewEntry.value ? api.files.contentUrl(previewEntry.value.path, 'inline') : '',
+  previewEntry.value ? fileAPI.value.contentUrl(previewEntry.value.path, 'inline') : '',
 )
 const dialogTitle = computed(() => {
   const titles: Record<DialogAction, string> = {
@@ -783,7 +805,7 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
   loading.value = true
   contextMenu.value = undefined
   try {
-    const result = await api.files.list(
+    const result = await fileAPI.value.list(
       path,
       {
         offset: append ? directory.value?.nextOffset : 0,
@@ -831,16 +853,18 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
 async function navigateDirectory(path: string): Promise<void> {
   const resolvedPath = await loadDirectory(path)
   const routePath = requestedFilePath(route.query.path) || '/'
-  if (!resolvedPath || resolvedPath === routePath) return
-  await router.push({ name: 'files', query: { path: resolvedPath } })
+  if (!resolvedPath || (resolvedPath === routePath && (route.query.hostId || '') === fileHostId.value)) return
+  await router.push({ name: 'files', query: { path: resolvedPath, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
 }
 
 async function openRequestedFile(value: unknown): Promise<void> {
+  const hostId = fileHostId.value
   const filePath = requestedFilePath(value)
   if (!filePath || filePath === '/' || filePath === openedRouteFile) return
   openedRouteFile = filePath
   try {
-    const entry = await api.files.entry(filePath)
+    const entry = await fileAPI.value.entry(filePath)
+    if (unmounted || hostId !== fileHostId.value) return
     if (entry.kind !== 'file') {
       toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
       return
@@ -854,7 +878,9 @@ async function openRequestedFile(value: unknown): Promise<void> {
 }
 
 async function loadRequestedRoute(): Promise<void> {
+  const hostId = fileHostId.value
   await loadDirectory(requestedFilePath(route.query.path) || '/')
+  if (unmounted || hostId !== fileHostId.value) return
   await openRequestedFile(route.query.file)
 }
 
@@ -915,6 +941,8 @@ function resetMediaState(entry?: FileEntry): void {
 }
 
 async function openPreview(entry: FileEntry): Promise<void> {
+  const hostId = fileHostId.value
+  const requestId = ++previewRequestId
   previewEntry.value = entry
   previewContent.value = ''
   previewDirty.value = false
@@ -926,12 +954,15 @@ async function openPreview(entry: FileEntry): Promise<void> {
   if (!entry.editable) return
   previewLoading.value = true
   try {
-    previewContent.value = await api.files.text(entry.path)
+    const content = await fileAPI.value.text(entry.path)
+    if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
+    previewContent.value = content
   } catch (error) {
+    if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
     toast.danger('文件打开失败', errorMessage(error))
     previewEntry.value = undefined
   } finally {
-    previewLoading.value = false
+    if (requestId === previewRequestId) previewLoading.value = false
   }
 }
 
@@ -1006,6 +1037,8 @@ function retryMedia(): void {
 
 function closePreview(): void {
   if (previewDirty.value && !window.confirm('文件尚未保存，确认关闭吗？')) return
+  previewRequestId += 1
+  previewLoading.value = false
   previewEntry.value = undefined
   previewContent.value = ''
   previewDirty.value = false
@@ -1022,13 +1055,16 @@ function closePreview(): void {
 }
 
 async function savePreview(content?: string): Promise<void> {
+  const hostId = fileHostId.value
+  const requestId = previewRequestId
   const entry = previewEntry.value
   if (!entry || !entry.editable || !previewDirty.value) return
   const nextContent = content ?? codeEditorRef.value?.getValue() ?? previewContent.value
   previewContent.value = nextContent
   previewSaving.value = true
   try {
-    const result = await api.files.write(entry.path, nextContent, entry.resourceVersion)
+    const result = await fileAPI.value.write(entry.path, nextContent, entry.resourceVersion)
+    if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
     previewEntry.value = result.entry
     if ((codeEditorRef.value?.getValue() ?? nextContent) === nextContent) {
       previewDirty.value = false
@@ -1198,9 +1234,9 @@ function startEntryDrag(event: DragEvent, entry: FileEntry): void {
     ? undefined
     : nativeArchiveDownloadName(targets, currentDirectoryEntry().name)
   const nativeDownloadURL = directFile
-    ? api.files.contentUrl(targets[0]!.path, 'attachment')
+    ? fileAPI.value.contentUrl(targets[0]!.path, 'attachment')
     : nativeArchiveName
-      ? api.files.archiveUrl(targets, nativeArchiveName)
+      ? fileAPI.value.archiveUrl(targets, nativeArchiveName)
       : undefined
   const sourceNodeId = activeFileHostNodeId.value
   if (!beginDesktopFileDrag(
@@ -1210,11 +1246,12 @@ function startEntryDrag(event: DragEvent, entry: FileEntry): void {
     'file-manager',
     nativeDownloadURL,
     nativeArchiveName,
+    fileWindowChangeOrigin,
   )) event.preventDefault()
 }
 
 function finishEntryDrag(): void {
-  clearDesktopFileDrag()
+  clearDesktopFileDrag(fileWindowChangeOrigin)
 }
 
 function clearInternalDropTarget(): void {
@@ -1223,9 +1260,14 @@ function clearInternalDropTarget(): void {
   crossPanelDropActive.value = false
 }
 
+function isOtherFileHostDrag(event: DragEvent): boolean {
+  const sourceNodeId = peekDesktopFileDragSourceNodeId(event)
+  return Boolean(sourceNodeId && sourceNodeId !== activeFileHostNodeId.value)
+}
+
 function updateInternalDropTarget(event: DragEvent, target: string): boolean {
   if (fileTransferState.value?.phase === 'running') return false
-  if (!hasDesktopFileDrag(event) && hasCrossPanelFileDrag(event)) {
+  if ((!hasDesktopFileDrag(event) || isOtherFileHostDrag(event)) && hasCrossPanelFileDrag(event)) {
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
     internalDropMode.value = 'copy'
@@ -1306,6 +1348,12 @@ function cancelFileTransfer(): void {
 }
 
 async function transferInternalFileDrop(event: DragEvent, target: string): Promise<void> {
+  const hostId = fileHostId.value
+  if (isOtherFileHostDrag(event)) {
+    await transferCrossPanelFileDrop(event, target)
+    clearDesktopFileDrag()
+    return
+  }
   const entries = desktopFileDragEntries(event)
   const operation = fileTransferOperation(event)
   clearInternalDropTarget()
@@ -1327,7 +1375,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
   fileTransferController = controller
   fileTransferState.value = { mode: operation, target, count: entries.length, phase: 'running' }
   try {
-    const result = await api.files.action({
+    const result = await fileAPI.value.action({
       action: operation,
       sources: entries.map((entry) => entry.path),
       target,
@@ -1335,7 +1383,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
         entries.flatMap((entry) => entry.resourceVersion ? [[entry.path, entry.resourceVersion]] : []),
       ),
     }, controller?.signal)
-    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target)
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
     const partial = Boolean(result.failed.length || shortcutSyncFailed)
     fileTransferState.value = {
       mode: operation,
@@ -1374,6 +1422,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
 }
 
 async function transferCrossPanelFileDrop(event: DragEvent, target: string): Promise<void> {
+  const hostId = fileHostId.value
   const payload = crossPanelFileDragEntries(event)
   clearInternalDropTarget()
   if (!payload) {
@@ -1403,7 +1452,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     const result = await transferCrossPanelFileBatch(
       payload,
       target,
-      api.files.transferFromPanel,
+      fileAPI.value.transferFromPanel,
       ({ source, completed }) => {
         if (fileTransferController !== controller || controller.signal.aborted) return
         fileTransferState.value = {
@@ -1429,7 +1478,7 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     }
     if (result.succeeded.length) {
       if (!unmounted) await loadDirectory()
-      notifyFileDirectoriesChanged([target, currentPath.value], fileWindowChangeOrigin)
+      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
     }
   } finally {
     if (fileTransferController === controller) fileTransferController = undefined
@@ -1590,7 +1639,7 @@ function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
-  fileClipboard.set(mode, entriesToStore)
+  fileClipboard.set(mode, entriesToStore, fileHostId.value)
   clearSelection()
 }
 
@@ -1600,10 +1649,11 @@ function clearClipboard(): void {
 
 async function applySuccessfulFileChanges(
   result: FileActionResult,
-  target?: string,
+  target: string | undefined,
+  hostId: string,
 ): Promise<boolean> {
   let shortcutSyncFailed = false
-  if (!isRemoteFileHost.value && result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
+  if (!hostId && result.succeeded.length && (result.action === 'move' || result.action === 'rename')) {
     try {
       await syncMovedDesktopShortcuts(result)
     } catch {
@@ -1611,12 +1661,13 @@ async function applySuccessfulFileChanges(
     }
   }
   const changedDirectories = changedFileDirectories(result, target)
-  if (!unmounted) await loadDirectory()
-  notifyFileDirectoriesChanged(changedDirectories, fileWindowChangeOrigin, successfulFileMoves(result))
+  if (!unmounted && fileHostId.value === hostId) await loadDirectory()
+  notifyFileDirectoriesChanged(changedDirectories, fileWindowChangeOrigin, successfulFileMoves(result), hostId)
   return shortcutSyncFailed
 }
 
 async function pasteClipboard(target = currentPath.value): Promise<void> {
+  const hostId = fileHostId.value
   const stored = clipboard.value
   if (!stored?.entries.length || pasteBusy.value) return
   if (fileTransferState.value?.phase === 'running') {
@@ -1633,7 +1684,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
     phase: 'running',
   }
   try {
-    const result = await api.files.action({
+    const result = await fileAPI.value.action({
       action: stored.mode,
       sources: stored.entries.map((entry) => entry.path),
       target,
@@ -1641,13 +1692,13 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
         stored.entries.map((entry) => [entry.path, entry.resourceVersion]),
       ),
     })
-    if (stored.mode === 'move') {
+    if (stored.mode === 'move' && fileClipboard.clipboard.value === stored) {
       const failed = new Set(result.failed.map((item) => item.path))
       const remaining = stored.entries.filter((entry) => failed.has(entry.path))
-      if (remaining.length) fileClipboard.set('move', remaining)
+      if (remaining.length) fileClipboard.set('move', remaining, stored.hostId)
       else fileClipboard.clear()
     }
-    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target)
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result, target, hostId)
     const partial = Boolean(result.failed.length || shortcutSyncFailed)
     fileTransferState.value = {
       mode: stored.mode,
@@ -1676,6 +1727,7 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
 }
 
 async function submitDialog(): Promise<void> {
+  const hostId = fileHostId.value
   const action = dialogAction.value
   if (!action) return
   const controller = action === 'compress' || action === 'extract'
@@ -1741,9 +1793,9 @@ async function submitDialog(): Promise<void> {
       throw new Error(`不支持的文件操作：${unsupportedAction}`)
     }
     const result = controller
-      ? await api.files.action(input, controller.signal)
-      : await api.files.action(input)
-    const shortcutSyncFailed = await applySuccessfulFileChanges(result)
+      ? await fileAPI.value.action(input, controller.signal)
+      : await fileAPI.value.action(input)
+    const shortcutSyncFailed = await applySuccessfulFileChanges(result, undefined, hostId)
     if (result.failed.length || shortcutSyncFailed) {
       toast.danger(
         shortcutSyncFailed ? '文件已处理，快捷方式未同步' : result.succeeded.length ? '部分文件未处理' : '文件操作未完成',
@@ -1789,9 +1841,11 @@ async function openTrash(): Promise<void> {
 }
 
 async function loadTrash(): Promise<void> {
+  const hostId = fileHostId.value
   trashLoading.value = true
   try {
-    const result = await api.files.trash()
+    const result = await fileAPI.value.trash()
+    if (unmounted || hostId !== fileHostId.value) return
     trashEntries.value = result.entries
     trashTotal.value = result.total
     trashTruncated.value = result.truncated
@@ -1833,7 +1887,7 @@ async function runTrashAction(action: 'trash_restore' | 'trash_delete' | 'trash_
           ? undefined
           : Object.fromEntries(chosen.map((entry) => [entry.id, entry.resourceVersion])),
     }
-    const result = await api.files.action(input)
+    const result = await fileAPI.value.action(input)
     if (result.failed.length) {
       toast.danger(
         result.succeeded.length ? '部分回收站项目未处理' : '回收站操作失败',
@@ -1855,7 +1909,7 @@ async function runTrashAction(action: 'trash_restore' | 'trash_delete' | 'trash_
 async function download(entry: FileEntry): Promise<void> {
   contextMenu.value = undefined
   try {
-    await downloadFileEntries([entry], entry.name)
+    await downloadFileEntries([entry], entry.name, fileHostId.value)
   } catch (error) {
     toast.danger('下载失败', errorMessage(error))
   }
@@ -1872,6 +1926,7 @@ async function downloadSelected(entry?: FileEntry): Promise<void> {
     await downloadFileEntries(
       targets,
       currentDirectoryEntry().name,
+      fileHostId.value,
     )
   } catch (error) {
     toast.danger('下载失败', errorMessage(error))
@@ -2203,7 +2258,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
     progress: Math.max(0, Math.min(100, progress)),
   })
   try {
-    await api.files.upload(source.target, source.file, false, onProgress)
+    await fileAPIForHost(source.hostId).upload(source.target, source.file, false, onProgress)
   } catch (error) {
     if (
       error instanceof ApiError
@@ -2211,7 +2266,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
       && window.confirm(`${source.file.name} 已存在，是否覆盖？`)
     ) {
       try {
-        await api.files.upload(source.target, source.file, true, onProgress)
+        await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
       } catch (overwriteError) {
         updateUploadTask(id, { phase: 'error', detail: errorMessage(overwriteError) })
         return
@@ -2225,17 +2280,20 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
   scheduleUploadTaskClear(id)
 }
 
-async function uploadFiles(files: FileList | File[]): Promise<void> {
+async function uploadFiles(
+  files: FileList | File[],
+  target = currentPath.value,
+  hostId = fileHostId.value,
+): Promise<void> {
   const values = Array.from(files)
   if (!values.length) return
-  const target = currentPath.value
   for (const file of values) {
-    const source = { kind: 'file', file, target } as const
+    const source = { kind: 'file', file, target, hostId } as const
     const task = createUploadTask(source)
     await runFileUploadTask(task.id, source)
   }
   if (uploadInput.value) uploadInput.value.value = ''
-  if (!unmounted && currentPath.value === target) await loadDirectory(target)
+  if (!unmounted && fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
 }
 
 function externalUploadErrorMessage(error: unknown): string {
@@ -2254,10 +2312,11 @@ async function runDirectoryUploadTask(
   manifest: ExternalDropManifest,
   target: string,
   signal: AbortSignal,
+  hostId: string,
 ): Promise<void> {
   updateUploadTask(id, { phase: 'running', progress: 0, detail: undefined })
   try {
-    const result = await uploadExternalDrop(manifest, api.files, signal, (progress) => {
+    const result = await uploadExternalDrop(manifest, fileAPIForHost(hostId), signal, (progress) => {
       const percent = progress.totalBytes > 0
         ? Math.round(progress.loadedBytes / progress.totalBytes * 100)
         : progress.totalFiles > 0
@@ -2277,8 +2336,8 @@ async function runDirectoryUploadTask(
     updateUploadTask(id, { phase: 'error', detail: externalUploadErrorMessage(error) })
   } finally {
     if (!unmounted) {
-      if (currentPath.value === target) await loadDirectory(target)
-      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin)
+      if (fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
+      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
     }
   }
 }
@@ -2287,19 +2346,22 @@ async function uploadDirectoryManifest(
   manifest: ExternalDropManifest,
   target: string,
   signal: AbortSignal,
+  hostId = fileHostId.value,
 ): Promise<void> {
-  const source = { kind: 'directory', manifest, target } as const
+  const source = { kind: 'directory', manifest, target, hostId } as const
   const task = createUploadTask(source)
-  await runDirectoryUploadTask(task.id, manifest, target, signal)
+  await runDirectoryUploadTask(task.id, manifest, target, signal, source.hostId)
 }
 
 async function retryUploadTask(id: string): Promise<void> {
   const task = uploadTasks.value.find((item) => item.id === id)
   const source = uploadTaskSources.get(id)
   if (!task || task.phase !== 'error' || !source) return
+  // Retrying after navigation must never target a different host.
+  if (source.hostId !== fileHostId.value) return
   if (source.kind === 'file') {
     await runFileUploadTask(id, source)
-    if (!unmounted && currentPath.value === source.target) await loadDirectory(source.target)
+    if (!unmounted && fileHostId.value === source.hostId && currentPath.value === source.target) await loadDirectory(source.target)
     return
   }
   if (externalUploadController) {
@@ -2309,13 +2371,15 @@ async function retryUploadTask(id: string): Promise<void> {
   const controller = new AbortController()
   externalUploadController = controller
   try {
-    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal)
+    await runDirectoryUploadTask(id, source.manifest, source.target, controller.signal, source.hostId)
   } finally {
     if (externalUploadController === controller) externalUploadController = undefined
   }
 }
 
 async function onDrop(event: DragEvent): Promise<void> {
+  const target = currentPath.value
+  const hostId = fileHostId.value
   dragging.value = false
   if (hasDesktopFileDrag(event)) {
     if (desktopFileDragOrigin(event) === 'desktop-shortcut') {
@@ -2342,10 +2406,10 @@ async function onDrop(event: DragEvent): Promise<void> {
     const manifest = await collectExternalDrop(dataTransfer, controller.signal)
     if (manifest.roots.every((root) => root.kind === 'file')) {
       externalUploadController = undefined
-      await uploadFiles(manifest.files.map((item) => item.file))
+      await uploadFiles(manifest.files.map((item) => item.file), target, hostId)
       return
     }
-    await uploadDirectoryManifest(manifest, currentPath.value, controller.signal)
+    await uploadDirectoryManifest(manifest, target, controller.signal, hostId)
   } catch (error) {
     if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) {
       toast.danger('文件上传失败', externalUploadErrorMessage(error))
@@ -2371,7 +2435,7 @@ function canShowThumbnail(entry: FileEntry): boolean {
 }
 
 function thumbnailURL(entry: FileEntry): string {
-  return api.files.thumbnailUrl(entry.path, entry.resourceVersion)
+  return fileAPI.value.thumbnailUrl(entry.path, entry.resourceVersion)
 }
 
 function markThumbnailFailed(path: string): void {
@@ -2483,8 +2547,8 @@ onMounted(() => {
   document.addEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.addEventListener?.('resize', closeContextMenuOnViewportChange)
   window.visualViewport?.addEventListener?.('scroll', closeContextMenuOnViewportChange)
-  unsubscribeFileDirectoryChanges = subscribeFileDirectoryChanges((directories, origin, moves = []) => {
-    if (origin === fileWindowChangeOrigin) return
+  unsubscribeFileDirectoryChanges = subscribeFileDirectoryChanges((directories, origin, moves = [], hostId = '') => {
+    if (hostId !== fileHostId.value || origin === fileWindowChangeOrigin) return
     const relocatedPath = remapMovedFilePath(currentPath.value, moves)
     if (relocatedPath !== currentPath.value) {
       void navigateDirectory(relocatedPath)
@@ -2501,13 +2565,24 @@ onMounted(() => {
 })
 
 watch(
-  () => [route.query.path, route.query.file] as const,
-  ([pathValue, fileValue], previous) => {
-    if (pathValue === previous?.[0] && fileValue === previous?.[1]) return
+  () => [route.query.path, route.query.file, route.query.hostId] as const,
+  ([pathValue, fileValue, hostValue], previous) => {
+    const hostId = typeof hostValue === 'string' ? hostValue : ''
+    const hostChanged = hostId !== fileHostId.value
+    if (hostChanged) {
+      if (!resetFileHostContext(hostId)) {
+        void router.push({ name: 'files', query: { path: currentPath.value, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
+        return
+      }
+      stopRemoteDownloadPolling()
+      remoteDownloadJobs.value = []
+    }
+    if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1]) return
     const directoryPath = requestedFilePath(pathValue) || '/'
     void (async () => {
-      if (directoryPath !== currentPath.value) await loadDirectory(directoryPath)
-      if (fileValue !== previous?.[1]) {
+      if (hostChanged || directoryPath !== currentPath.value) await loadDirectory(directoryPath)
+      if (unmounted || hostId !== fileHostId.value) return
+      if (hostChanged || fileValue !== previous?.[1]) {
         openedRouteFile = ''
         await openRequestedFile(fileValue)
       }
@@ -2526,7 +2601,7 @@ onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
   unsubscribeClusterHostOrder?.()
   unsubscribeFileDirectoryChanges?.()
-  clearDesktopFileDrag()
+  clearDesktopFileDrag(fileWindowChangeOrigin)
   fileHostController?.abort()
   unmounted = true
   queuedRemoteDownloadRefreshes.clear()
@@ -2547,7 +2622,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('scroll', closeContextMenuOnScroll, true)
   window.visualViewport?.removeEventListener?.('resize', closeContextMenuOnViewportChange)
   window.visualViewport?.removeEventListener?.('scroll', closeContextMenuOnViewportChange)
-  setFileHostId()
 })
 </script>
 

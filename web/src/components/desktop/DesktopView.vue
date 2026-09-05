@@ -44,7 +44,7 @@ import {
   type DesktopEntries,
   type DesktopEntry,
 } from '@/lib/desktopEntries'
-import { api, ApiError, isRemoteFileHostSelected, type SystemResourceSnapshot } from '@/lib/api'
+import { api, ApiError, type SystemResourceSnapshot } from '@/lib/api'
 import {
   contextMenuFocusOrigin,
   focusFirstContextMenuItem,
@@ -228,50 +228,23 @@ function localFileEntries(
   paths: readonly string[],
   signal: AbortSignal,
 ): Promise<Awaited<ReturnType<typeof api.files.entries>>> {
-  return isRemoteFileHostSelected()
-    ? api.files.entries(paths, signal, null)
-    : api.files.entries(paths, signal)
+  return api.files.entries(paths, signal)
 }
 
-function localFileEntry(path: string): Promise<Awaited<ReturnType<typeof api.files.entry>>> {
-  return isRemoteFileHostSelected()
-    ? api.files.entry(path, undefined, null)
-    : api.files.entry(path)
+function localFileEntry(path: string) { return api.files.entry(path) }
+function localFileContentURL(path: string, disposition: 'inline' | 'attachment') {
+  return api.files.contentUrl(path, disposition)
 }
-
-function localFileContentURL(path: string, disposition: 'inline' | 'attachment'): string {
-  return isRemoteFileHostSelected()
-    ? api.files.contentUrl(path, disposition, null)
-    : api.files.contentUrl(path, disposition)
+function localFileArchiveURL(entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[], name: string) {
+  return api.files.archiveUrl(entries, name)
 }
-
-function localFileArchiveURL(
-  entries: readonly Pick<FileEntry, 'path' | 'resourceVersion'>[],
-  name: string,
-): string {
-  return isRemoteFileHostSelected()
-    ? api.files.archiveUrl(entries, name, null)
-    : api.files.archiveUrl(entries, name)
-}
-
-function localDesktopFileAPI(): DesktopExternalTransferAPI {
-  if (!isRemoteFileHostSelected()) return api.files
-  return {
-    entry: (path, signal) => api.files.entry(path, signal, null),
-    action: (input, signal) => api.files.action(input, signal, null),
-    upload: (path, file, overwrite, onProgress, signal) =>
-      api.files.upload(path, file, overwrite, onProgress, signal, null),
-  }
-}
-
+function localDesktopFileAPI(): DesktopExternalTransferAPI { return api.files }
 function localPanelTransfer(
   input: Parameters<typeof api.files.transferFromPanel>[0],
   onEvent: Parameters<typeof api.files.transferFromPanel>[1],
   signal?: AbortSignal,
 ): ReturnType<typeof api.files.transferFromPanel> {
-  return isRemoteFileHostSelected()
-    ? api.files.transferFromPanel(input, onEvent, signal, null)
-    : api.files.transferFromPanel(input, onEvent, signal)
+  return api.files.transferFromPanel(input, onEvent, signal)
 }
 
 function readSiteNames(): Record<string, string> {
@@ -788,6 +761,8 @@ function fileWindowDirectory(fullPath: string): string | undefined {
   if (queryIndex === -1) return '/'
   const hashIndex = fullPath.indexOf('#', queryIndex)
   const query = new URLSearchParams(fullPath.slice(queryIndex + 1, hashIndex === -1 ? undefined : hashIndex))
+  // Desktop shortcuts refer to this Panel; a remote window is a different identity.
+  if (query.get('hostId')) return undefined
   const pathValues = query.getAll('path')
   if (pathValues.length > 1) return undefined
   const path = pathValues[0] || '/'

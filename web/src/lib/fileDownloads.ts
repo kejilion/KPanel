@@ -1,4 +1,4 @@
-import { api, isRemoteFileHostSelected } from '@/lib/api'
+import { api } from '@/lib/api'
 import type { FileEntry } from '@/types/api'
 
 export type FileDownloadEntry = Pick<FileEntry, 'name' | 'path' | 'kind' | 'resourceVersion'>
@@ -41,11 +41,8 @@ async function downloadSingleFile(
   entry: FileDownloadEntry,
   fileHostId?: string | null,
 ): Promise<void> {
-  const remoteHostSelected = fileHostId === undefined ? isRemoteFileHostSelected() : Boolean(fileHostId)
-  if (remoteHostSelected) {
-    const url = fileHostId === undefined
-      ? api.files.contentUrl(entry.path, 'attachment')
-      : api.files.contentUrl(entry.path, 'attachment', fileHostId)
+  if (fileHostId) {
+    const url = api.files.contentUrl(entry.path, 'attachment', fileHostId)
     triggerDownload(url, entry.name)
     return
   }
@@ -69,11 +66,8 @@ export async function downloadFileEntries(
   const archiveName = archiveDownloadName(entries, batchName)
   if (!archiveName) throw new TypeError('download archive name is unavailable')
 
-  const remoteHostSelected = fileHostId === undefined ? isRemoteFileHostSelected() : Boolean(fileHostId)
-  if (remoteHostSelected) {
-    const url = fileHostId === undefined
-      ? api.files.archiveUrl(entries, archiveName)
-      : api.files.archiveUrl(entries, archiveName, fileHostId)
+  if (fileHostId) {
+    const url = api.files.archiveUrl(entries, archiveName, fileHostId)
     triggerDownload(url, archiveName)
     return
   }

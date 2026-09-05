@@ -8,6 +8,7 @@ export type FileTransferEntry = Pick<FileEntry, 'name' | 'path' | 'kind' | 'reso
 export type FileTransferTargetError = 'invalid' | 'same_location' | 'inside_source'
 
 export interface FileClipboardState {
+  hostId: string
   mode: FileTransferOperation
   entries: FileEntry[]
 }
@@ -21,6 +22,7 @@ type DirectoryChangeListener = (
   directories: ReadonlySet<string>,
   origin?: symbol,
   moves?: readonly FilePathMove[],
+  hostId?: string,
 ) => void
 
 const clipboard = ref<FileClipboardState>()
@@ -129,13 +131,14 @@ export function notifyFileDirectoriesChanged(
   directories: readonly string[],
   origin?: symbol,
   moves: readonly FilePathMove[] = [],
+  hostId = '',
 ): void {
   const normalized = new Set(directories.filter(isCanonicalAbsolutePath))
   const normalizedMoves = moves
     .filter((move) => isCanonicalAbsolutePath(move.source) && isCanonicalAbsolutePath(move.destination))
     .sort((left, right) => right.source.length - left.source.length)
   if (!normalized.size && !normalizedMoves.length) return
-  for (const listener of directoryChangeListeners) listener(normalized, origin, normalizedMoves)
+  for (const listener of directoryChangeListeners) listener(normalized, origin, normalizedMoves, hostId)
 }
 
 export function subscribeFileDirectoryChanges(listener: DirectoryChangeListener): () => void {
@@ -146,8 +149,8 @@ export function subscribeFileDirectoryChanges(listener: DirectoryChangeListener)
 export function useFileClipboard() {
   return {
     clipboard: readonly(clipboard),
-    set(mode: FileTransferOperation, entries: readonly FileEntry[]) {
-      clipboard.value = { mode, entries: entries.map((entry) => ({ ...entry })) }
+    set(mode: FileTransferOperation, entries: readonly FileEntry[], hostId = '') {
+      clipboard.value = { mode, hostId, entries: entries.map((entry) => ({ ...entry })) }
     },
     clear() {
       clipboard.value = undefined
