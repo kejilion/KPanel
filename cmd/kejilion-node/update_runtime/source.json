@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/kejilion/sh",
-  "revision": "3005c6b520078e065cb437873ca36d1a8617ee58",
-  "scriptSHA256": "bcaec60adcdc6a8a4a626b4d0a9e842c81f2b11216674852decc89b8234ecb8c",
+  "revision": "a74495cc3ea4bac1b0b42bf572f0f122ba9e2cf1",
+  "scriptSHA256": "d9e2a75d97e5914c2fb3d163122e025dee8e1c757ae8515cc34ba6991b319974",
   "templates": {
-    "update.sh": "839a2ea34bbb657d61a6aa8a2ad883341ec5b775c761dfbe87c177ee2354c248",
+    "update.sh": "215b5ef95b480da15b62be7d13d55764d26ac560d0b45116e372de392fac47e8",
     "update.service": "cb9474f3eb92d9e6fbcf2d180c99dcc70a551bcdade7c34ff9c9e9cbde9b3a3a",
     "update.timer": "c759dcd84597b425357943b1454f6ef98248c30f4028a57082a4b9c5859e63a4"
   }
