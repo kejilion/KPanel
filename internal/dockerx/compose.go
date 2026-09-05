@@ -45,6 +45,150 @@ type composeProjectState struct {
 	ComposeProject
 }
 
+type composeEditFile struct {
+	info os.FileInfo // nil means the path must remain absent
+	data []byte
+}
+
+// This guard closes external-command windows, not the final check/rename race
+// with writers that do not coordinate with KPanel. Real files remain authoritative.
+type composeEditGuard struct {
+	files       map[string]composeEditFile
+	directories map[string]os.FileInfo
+	replaceFile func(string, string) (bool, error)
+}
+
+func newComposeEditGuard(project ComposeProject) (*composeEditGuard, error) {
+	guard := &composeEditGuard{
+		files: make(map[string]composeEditFile), directories: make(map[string]os.FileInfo),
+		replaceFile: replaceComposeProjectFile,
+	}
+	files := append([]ComposeProjectFile(nil), project.ConfigFiles...)
+	environment := ComposeProjectFile{Path: filepath.Join(project.WorkingDirectory, ".env")}
+	if project.EnvironmentFile != nil {
+		environment = *project.EnvironmentFile
+	}
+	files = append(files, environment)
+	for _, file := range files {
+		dir := filepath.Dir(file.Path)
+		info, err := os.Lstat(dir)
+		resolved, resolveErr := filepath.EvalSymlinks(dir)
+		if err != nil || resolveErr != nil || resolved != dir || !info.IsDir() {
+			return nil, composeEditConflict()
+		}
+		guard.directories[dir] = info
+		current, err := readComposeEditFile(file.Path)
+		if err != nil {
+			return nil, composeEditConflict()
+		}
+		if file.ResourceVersion == "" {
+			if current.info != nil {
+				return nil, composeEditConflict()
+			}
+		} else if current.info == nil || resourceHash(struct {
+			Path string
+			Mode os.FileMode
+			Data []byte
+		}{file.Path, current.info.Mode().Perm(), current.data}) != file.ResourceVersion {
+			return nil, composeEditConflict()
+		}
+		guard.files[file.Path] = current
+	}
+	return guard, guard.check()
+}
+
+func composeEditConflict() error {
+	return fmt.Errorf("Compose configuration changed externally; current files preserved and need review: %w", ErrResourceConflict)
+}
+
+func readComposeEditFile(path string) (composeEditFile, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return composeEditFile{}, nil
+	}
+	if err != nil {
+		return composeEditFile{}, err
+	}
+	data, err := readBoundedRegularFile(path, maxComposeSourceBytes)
+	if err != nil {
+		return composeEditFile{}, err
+	}
+	after, err := os.Lstat(path)
+	if err != nil || !sameComposeEditIdentity(info, after) {
+		return composeEditFile{}, composeEditConflict()
+	}
+	return composeEditFile{info: info, data: data}, nil
+}
+
+func sameComposeEditIdentity(left, right os.FileInfo) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	uid, gid, err := fileNumericOwnership(left)
+	otherUID, otherGID, otherErr := fileNumericOwnership(right)
+	return err == nil && otherErr == nil && os.SameFile(left, right) &&
+		left.Mode() == right.Mode() && uid == otherUID && gid == otherGID
+}
+
+func (guard *composeEditGuard) check() error {
+	for path, expected := range guard.directories {
+		info, err := os.Lstat(path)
+		resolved, resolveErr := filepath.EvalSymlinks(path)
+		if err != nil || resolveErr != nil || resolved != path || !sameComposeEditIdentity(expected, info) {
+			return composeEditConflict()
+		}
+	}
+	for path, expected := range guard.files {
+		current, err := readComposeEditFile(path)
+		if err != nil || !sameComposeEditIdentity(expected.info, current.info) || !bytes.Equal(expected.data, current.data) {
+			return composeEditConflict()
+		}
+	}
+	return nil
+}
+
+func (guard *composeEditGuard) replace(stagedPath, target string, staged composeEditFile) error {
+	if err := guard.check(); err != nil {
+		return err
+	}
+	current, err := readComposeEditFile(stagedPath)
+	if err != nil || staged.info == nil || !sameComposeEditIdentity(staged.info, current.info) || !bytes.Equal(staged.data, current.data) {
+		return errors.New("Compose staged configuration is unavailable or changed")
+	}
+	replaced, err := guard.replaceFile(stagedPath, target)
+	if replaced {
+		// A failed directory sync does not undo the successful rename.
+		guard.files[target] = staged
+	}
+	return err
+}
+
+func (guard *composeEditGuard) restore(path string, original composeEditFile) error {
+	if err := guard.check(); err != nil {
+		return err
+	}
+	if sameComposeEditIdentity(guard.files[path].info, original.info) && bytes.Equal(guard.files[path].data, original.data) {
+		return nil
+	}
+	if original.info == nil {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		guard.files[path] = original
+		return syncDirectoryPath(filepath.Dir(path))
+	}
+	stagedPath, err := stageComposeProjectFile(path, original.data, original.info)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(stagedPath)
+	staged, err := readComposeEditFile(stagedPath)
+	if err != nil || !bytes.Equal(staged.data, original.data) {
+		return errors.New("Compose staged configuration is unavailable or changed")
+	}
+	return guard.replace(stagedPath, path, staged)
+}
+
 func (c *Client) ComposeProject(ctx context.Context, name string) (ComposeProject, error) {
 	state, err := c.resolveComposeProject(ctx, name)
 	if err != nil {
@@ -475,46 +619,15 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 		!validComposeEnvironment(input.ComposeEnvironment) {
 		return ErrInvalidDockerJob
 	}
-	info, err := os.Lstat(selected.Path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return ErrResourceConflict
-	}
-	original, err := os.ReadFile(selected.Path)
+	guard, err := newComposeEditGuard(state.ComposeProject)
 	if err != nil {
 		return err
 	}
-	currentVersion := resourceHash(struct {
-		Path string
-		Mode os.FileMode
-		Data []byte
-	}{selected.Path, info.Mode().Perm(), original})
-	if currentVersion != selected.ResourceVersion {
-		return ErrResourceConflict
-	}
+	original := guard.files[selected.Path]
+	info := original.info
 	environmentPath := filepath.Join(state.WorkingDirectory, ".env")
-	environmentExisted := state.EnvironmentFile != nil
-	var environmentInfo os.FileInfo
-	var environmentOriginal []byte
-	if environmentExisted {
-		environmentInfo, err = os.Lstat(environmentPath)
-		if err != nil || !environmentInfo.Mode().IsRegular() || environmentInfo.Mode()&os.ModeSymlink != 0 {
-			return ErrResourceConflict
-		}
-		environmentOriginal, err = os.ReadFile(environmentPath)
-		if err != nil {
-			return err
-		}
-		environmentVersion := resourceHash(struct {
-			Path string
-			Mode os.FileMode
-			Data []byte
-		}{environmentPath, environmentInfo.Mode().Perm(), environmentOriginal})
-		if environmentVersion != state.EnvironmentFile.ResourceVersion {
-			return ErrResourceConflict
-		}
-	} else if _, statErr := os.Lstat(environmentPath); !errors.Is(statErr, os.ErrNotExist) {
-		return ErrResourceConflict
-	}
+	environmentOriginal := guard.files[environmentPath]
+	environmentInfo := environmentOriginal.info
 	updated := []byte(input.Compose)
 	if !bytes.HasSuffix(updated, []byte("\n")) {
 		updated = append(updated, '\n')
@@ -524,7 +637,7 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 		return err
 	}
 	defer os.Remove(stagedPath)
-	environmentSource := string(environmentOriginal)
+	environmentSource := string(environmentOriginal.data)
 	if input.ComposeEnvironment != nil {
 		environmentSource = *input.ComposeEnvironment
 	}
@@ -537,6 +650,14 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 		return err
 	}
 	defer os.Remove(stagedEnvironmentPath)
+	staged, err := readComposeEditFile(stagedPath)
+	if err != nil || !bytes.Equal(staged.data, updated) {
+		return errors.New("Compose staged configuration is unavailable or changed")
+	}
+	stagedEnvironment, err := readComposeEditFile(stagedEnvironmentPath)
+	if err != nil || !bytes.Equal(stagedEnvironment.data, updatedEnvironment) {
+		return errors.New("Compose staged environment is unavailable or changed")
+	}
 	stagedProject := state.ComposeProject
 	stagedProject.ConfigFiles = append([]ComposeProjectFile(nil), state.ConfigFiles...)
 	for index := range stagedProject.ConfigFiles {
@@ -552,11 +673,13 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 	if len(strings.Fields(string(services))) == 0 {
 		return errors.New("Compose configuration does not define an active service")
 	}
-	if err := replaceComposeProjectFile(stagedPath, selected.Path); err != nil {
-		return err
+	if err := guard.replace(stagedPath, selected.Path, staged); err != nil {
+		return fmt.Errorf("Compose configuration update failed: %w", errors.Join(rollbackComposeFiles(guard, selected.Path, original, environmentPath, environmentOriginal), err))
 	}
-	if err := replaceComposeProjectFile(stagedEnvironmentPath, environmentPath); err != nil {
-		_ = atomicWriteComposeProjectFile(selected.Path, original, info)
+	if err := guard.replace(stagedEnvironmentPath, environmentPath, stagedEnvironment); err != nil {
+		return fmt.Errorf("Compose configuration update failed: %w", errors.Join(rollbackComposeFiles(guard, selected.Path, original, environmentPath, environmentOriginal), err))
+	}
+	if err := guard.check(); err != nil {
 		return err
 	}
 	deployedProject := state.ComposeProject
@@ -564,9 +687,12 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 	base := composeProjectBase(deployedProject)
 	if _, err := c.runCompose(ctx, append(base, "up", "--detach", "--remove-orphans")...); err != nil {
 		return c.rollbackComposeRedeploy(
-			state.ComposeProject, selected.Path, original, info,
-			environmentPath, environmentOriginal, environmentInfo, environmentExisted, err,
+			state.ComposeProject, guard, selected.Path, original,
+			environmentPath, environmentOriginal, err,
 		)
+	}
+	if err := guard.check(); err != nil {
+		return err
 	}
 	containerIDs, err := c.runCompose(ctx, append(base, "ps", "--all", "--quiet")...)
 	if err != nil || !composeOutputHasContainer(containerIDs) {
@@ -574,31 +700,41 @@ func (c *Client) redeployComposeProject(ctx context.Context, input MaintenanceIn
 			err = errors.New("Docker Compose did not return a created container")
 		}
 		return c.rollbackComposeRedeploy(
-			state.ComposeProject, selected.Path, original, info,
-			environmentPath, environmentOriginal, environmentInfo, environmentExisted, err,
+			state.ComposeProject, guard, selected.Path, original,
+			environmentPath, environmentOriginal, err,
 		)
+	}
+	return guard.check()
+}
+
+// rollbackComposeFiles never adopts state read after a failed write. The guard
+// advances only to our known staged inode, including rename-success/sync-failure.
+func rollbackComposeFiles(guard *composeEditGuard, path string, original composeEditFile,
+	environmentPath string, environmentOriginal composeEditFile,
+) error {
+	if err := guard.restore(path, original); err != nil {
+		return fmt.Errorf("Compose redeploy failed; configuration needs attention: %w", err)
+	}
+	if err := guard.restore(environmentPath, environmentOriginal); err != nil {
+		return fmt.Errorf("Compose redeploy failed; environment needs attention: %w", err)
 	}
 	return nil
 }
 
 func (c *Client) rollbackComposeRedeploy(
 	project ComposeProject,
+	guard *composeEditGuard,
 	path string,
-	original []byte,
-	info os.FileInfo,
+	original composeEditFile,
 	environmentPath string,
-	environmentOriginal []byte,
-	environmentInfo os.FileInfo,
-	environmentExisted bool,
+	environmentOriginal composeEditFile,
 	cause error,
 ) error {
-	if err := atomicWriteComposeProjectFile(path, original, info); err != nil {
-		return fmt.Errorf("Compose redeploy failed and configuration rollback needs attention: %w", cause)
+	if err := rollbackComposeFiles(guard, path, original, environmentPath, environmentOriginal); err != nil {
+		return errors.Join(err, cause)
 	}
-	if err := restoreComposeEnvironmentFile(
-		environmentPath, environmentOriginal, environmentInfo, environmentExisted,
-	); err != nil {
-		return fmt.Errorf("Compose redeploy failed and environment rollback needs attention: %w", cause)
+	if err := guard.check(); err != nil {
+		return fmt.Errorf("Compose redeploy failed; current configuration needs attention: %w", errors.Join(err, cause))
 	}
 	rollbackContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -606,7 +742,10 @@ func (c *Client) rollbackComposeRedeploy(
 		rollbackContext,
 		append(composeProjectBase(project), "up", "--detach", "--remove-orphans")...,
 	); err != nil {
-		return fmt.Errorf("Compose redeploy failed and runtime rollback needs attention: %w", cause)
+		return fmt.Errorf("Compose redeploy failed and runtime rollback needs attention: %w", errors.Join(guard.check(), cause, err))
+	}
+	if err := guard.check(); err != nil {
+		return fmt.Errorf("Compose redeploy failed; current configuration needs attention: %w", errors.Join(err, cause))
 	}
 	return fmt.Errorf("Compose redeploy failed; previous configuration restored: %w", cause)
 }
@@ -699,16 +838,6 @@ func stageComposeEnvironmentFile(path string, data []byte, info os.FileInfo) (st
 	return tempPath, nil
 }
 
-func restoreComposeEnvironmentFile(path string, data []byte, info os.FileInfo, existed bool) error {
-	if existed {
-		return atomicWriteComposeProjectFile(path, data, info)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return syncDirectoryPath(filepath.Dir(path))
-}
-
 func stageComposeProjectFile(path string, data []byte, info os.FileInfo) (string, error) {
 	temp, err := os.CreateTemp(filepath.Dir(path), ".kpanel-compose-*.tmp")
 	if err != nil {
@@ -745,25 +874,16 @@ func stageComposeProjectFile(path string, data []byte, info os.FileInfo) (string
 	return tempPath, nil
 }
 
-func replaceComposeProjectFile(stagedPath, target string) error {
+func replaceComposeProjectFile(stagedPath, target string) (bool, error) {
 	if runtime.GOOS == "windows" {
 		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+			return false, err
 		}
 	}
 	if err := os.Rename(stagedPath, target); err != nil {
-		return err
+		return false, err
 	}
-	return syncDirectoryPath(filepath.Dir(target))
-}
-
-func atomicWriteComposeProjectFile(path string, data []byte, info os.FileInfo) error {
-	stagedPath, err := stageComposeProjectFile(path, data, info)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(stagedPath)
-	return replaceComposeProjectFile(stagedPath, path)
+	return true, syncDirectoryPath(filepath.Dir(target))
 }
 
 func (c *Client) rollbackComposeDeployment(
