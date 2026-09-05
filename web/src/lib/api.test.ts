@@ -1577,6 +1577,16 @@ describe('API client', () => {
     })
   })
 
+  it('keeps each task stage aligned with its owner state, including queued and cancelled', async () => {
+    const states = ['queued', 'running', 'succeeded', 'cancelled', 'interrupted', 'failed_needs_attention', 'unrecognized']
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ items: states.map((state) => ({
+      id: `docker:${state}`, action: 'docker.image_pull', state, stage: state, createdAt: '2026-09-05T00:00:00Z',
+    })) })))
+    const result = await api.jobs.list()
+    expect(result.items.map((job) => job.status)).toEqual([...states.slice(0, -1), 'failed'])
+    expect(result.items.map((job) => job.stages?.[0]?.status)).toEqual([...states.slice(0, -1), 'failed'])
+  })
+
   it('sends the observed resource version with Docker lifecycle actions', async () => {
     const fetchMock = vi
       .fn()

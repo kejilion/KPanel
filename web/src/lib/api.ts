@@ -1099,12 +1099,13 @@ function normalizeJob(raw: RawJob): Job {
     'interrupted',
     'cancelled',
   ]
+  const status: Job['status'] = knownStates.includes(raw.state as Job['status']) ? (raw.state as Job['status']) : 'failed'
   return {
     id: raw.id,
     action: raw.action,
     resourceType: raw.targetKind,
     resourceName: raw.targetLabel || raw.targetId,
-    status: knownStates.includes(raw.state as Job['status']) ? (raw.state as Job['status']) : 'failed',
+    status,
     progress: raw.progress,
     actor: raw.origin,
     source: (['web', 'cli', 'reconcile', 'system'].includes(raw.origin || '') ? raw.origin : 'system') as Job['source'],
@@ -1117,7 +1118,7 @@ function normalizeJob(raw: RawJob): Job {
       ? [
           {
             name: raw.stage,
-            status: raw.state === 'running' ? 'running' : raw.state === 'succeeded' ? 'succeeded' : 'failed',
+            status,
           },
         ]
       : undefined,
