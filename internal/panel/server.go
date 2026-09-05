@@ -540,11 +540,8 @@ func (s *Server) handleDockerTask(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	outcome := "success"
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		outcome = "failure"
-	}
-	_ = s.audit(r, session.User.ID, "docker."+input.Action, "docker", target, outcome, nil)
+	outcome, change := acceptedJobAudit(response, "docker", nil)
+	_ = s.audit(r, session.User.ID, "docker."+input.Action, "docker", target, outcome, change)
 	s.writeAgentResponse(w, r, response)
 }
 

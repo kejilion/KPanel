@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, RotateCw, Search, TimerReset } from '@lucide/vue'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -30,7 +31,16 @@ const refreshing = ref(false)
 const error = ref('')
 const search = ref('')
 const filter = ref<JobFilter>('all')
-const selectedJob = ref<Job>()
+const selectedJobId = ref('')
+const selectedAction = ref('')
+const selectedJob = computed(() => error.value ? undefined : jobs.value.find((job) => job.id === selectedJobId.value))
+const businessPath = computed(() => {
+  const action = selectedAction.value
+  if (action.startsWith('docker.')) return '/docker'
+  if (action.startsWith('app.')) return '/apps'
+  if (action.startsWith('site.') || action.startsWith('web.environment.')) return '/sites'
+  return ''
+})
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 let controller: AbortController | undefined
 let timer: number | undefined
@@ -78,50 +88,91 @@ function sourceLabel(source?: Job['source']): string {
   return { web: 'Web', cli: 'CLI', reconcile: '自动核对', system: '系统' }[source || 'system']
 }
 
+function stageLabel(stage: string): string {
+  const labels: Record<string, string> = {
+    queued: '等待执行', running: '执行中', executing: '执行中', completed: '执行完成', failed: '执行失败',
+    interrupted: '执行中断', not_started: '尚未执行', persistence_pending: '状态待保存',
+    status_unavailable: '结果未确认', outcome_unknown: '结果未确认', attention_required: '需要检查',
+  }
+  return phrase(labels[stage] || stage)
+}
+
+function jobErrorMessage(job: Job): string {
+  if (job.stages?.some((stage) => stage.name === 'persistence_pending') && job.id.startsWith('docker:')) {
+    return phrase(job.startedAt
+      ? 'Docker 任务执行已停止，但结果尚未保存；请恢复任务存储并刷新，系统只重试保存，不会重复执行'
+      : 'Docker 任务尚未执行，无法保存任务状态；请恢复任务存储并刷新，系统只重试保存，不会自动执行')
+  }
+  if (job.errorCode === 'job_status_unavailable') return phrase('任务不在当前可查询记录中，请返回业务页面核对资源状态')
+  if (job.errorCode === 'job_outcome_unknown') return phrase('仅有操作提交记录，执行结果未确认')
+  return job.errorMessage || ''
+}
+
 async function load(options: { silent?: boolean } = {}): Promise<void> {
+  if (timer) window.clearTimeout(timer)
+  timer = undefined
   controller?.abort()
-  controller = new AbortController()
+  const current = new AbortController()
+  controller = current
   if (options.silent) refreshing.value = true
   else loading.value = true
   error.value = ''
 
   try {
-    const result = await api.jobs.list({ limit: 50 }, controller.signal)
+    const result = await api.jobs.list({ limit: 50 }, current.signal)
+    if (controller !== current || current.signal.aborted) return
     jobs.value = result.items
   } catch (reason) {
+    if (controller !== current || current.signal.aborted) return
     if (reason instanceof DOMException && reason.name === 'AbortError') return
+    jobs.value = []
     if (reason instanceof ApiError && reason.status === 404) {
       error.value = '当前服务版本尚未开放任务查询接口。'
+    } else if (reason instanceof ApiError && reason.code === 'job_source_unavailable') {
+      error.value = '无法确认后台任务状态，请稍后刷新或返回业务页面查看'
+    } else if (reason instanceof ApiError && reason.code === 'job_source_invalid') {
+      error.value = '后台任务状态无效，请稍后刷新'
     } else {
       error.value = reason instanceof ApiError ? reason.message : '无法读取任务记录。'
     }
   } finally {
+    if (controller !== current) return
     loading.value = false
     refreshing.value = false
+    if (!current.signal.aborted && desktopWindowActive.value && (selectedJobId.value || error.value || jobs.value.some((job) => isActive(job.status) || job.stages?.some((stage) => stage.name === 'persistence_pending' || stage.name === 'status_unavailable')))) {
+      timer = window.setTimeout(() => void load({ silent: true }), 4_000)
+    }
   }
 }
 
 onMounted(() => {
   if (desktopWindowActive.value) void load()
-  timer = window.setInterval(() => {
-    if (desktopWindowActive.value && jobs.value.some((job) => isActive(job.status))) void load({ silent: true })
-  }, 4_000)
+})
+
+watch(selectedJobId, (id) => {
+  if (id && desktopWindowActive.value && !refreshing.value && !timer) {
+    timer = window.setTimeout(() => void load({ silent: true }), 4_000)
+  }
 })
 
 watch(desktopWindowActive, (active) => {
   if (active) void load({ silent: true })
-  else controller?.abort()
+  else {
+    controller?.abort()
+    if (timer) window.clearTimeout(timer)
+    timer = undefined
+  }
 })
 
 onBeforeUnmount(() => {
   controller?.abort()
-  if (timer) window.clearInterval(timer)
+  if (timer) window.clearTimeout(timer)
 })
 </script>
 
 <template>
   <div class="page">
-    <PageHeader title="变更记录" description="集中查看网站与容器变更的执行进度和结果。" />
+    <PageHeader title="变更记录" description="集中查看后台任务进度与操作记录。" />
 
     <section class="toolbar-card toolbar-card--search-tabs">
       <div class="search-field">
@@ -156,11 +207,11 @@ onBeforeUnmount(() => {
     <EmptyState
       v-else-if="!filteredJobs.length"
       :title="jobs.length ? '没有符合条件的记录' : '暂无变更记录'"
-      description="通过 KPanel 执行网站或容器变更后，进度与结果会显示在这里。"
+      description="执行操作后，任务进度与操作记录会显示在这里。"
     />
 
     <section v-else class="job-list">
-      <button v-for="job in filteredJobs" :key="job.id" class="job-item" type="button" @click="selectedJob = job">
+      <button v-for="job in filteredJobs" :key="job.id" class="job-item" type="button" @click="selectedJobId = job.id; selectedAction = job.action">
         <span class="job-item__status" :class="`is-${job.status}`">
           <LoaderCircle v-if="job.status === 'running'" class="spin" :size="19" />
           <Clock3 v-else-if="job.status === 'queued'" :size="19" />
@@ -180,18 +231,18 @@ onBeforeUnmount(() => {
             <i><b :style="{ width: `${job.progress || 0}%` }" /></i>
             <em>{{ job.progress || 0 }}%</em>
           </span>
-          <span v-else-if="job.errorMessage" class="job-item__error">{{ job.errorMessage }}</span>
+          <span v-else-if="job.errorMessage" class="job-item__error">{{ jobErrorMessage(job) }}</span>
         </span>
         <code>{{ shortId(job.id) }}</code>
       </button>
     </section>
 
     <ModalDialog
-      :open="Boolean(selectedJob)"
+      :open="Boolean(selectedJobId)"
       :title="selectedJob ? phrase(actionLabel(selectedJob.action)) : phrase('任务详情')"
       :description="selectedJob ? phrase(`任务 ${selectedJob.id}`) : ''"
       size="large"
-      @close="selectedJob = undefined"
+      @close="selectedJobId = ''"
     >
       <template v-if="selectedJob">
         <div class="modal-status-row">
@@ -223,19 +274,23 @@ onBeforeUnmount(() => {
             <li v-for="stage in selectedJob.stages" :key="stage.name">
               <span class="stage-list__marker" />
               <div>
-                <strong>{{ stage.name }}</strong>
+                <strong>{{ stageLabel(stage.name) }}</strong>
                 <small>{{ stage.message || formatDateTime(stage.finishedAt || stage.startedAt) }}</small>
               </div>
-              <StatusBadge :status="stage.status" subtle />
+              <StatusBadge :status="selectedJob.status" subtle />
             </li>
           </ol>
         </section>
         <div v-if="selectedJob.errorMessage" class="inline-alert inline-alert--danger">
-          <span><strong>{{ selectedJob.errorCode || phrase('任务失败') }}</strong><br />{{ selectedJob.errorMessage }}</span>
+          <span><strong>{{ selectedJob.errorCode || phrase('任务失败') }}</strong><br />{{ jobErrorMessage(selectedJob) }}</span>
         </div>
       </template>
+      <div v-else-if="selectedJobId" class="inline-alert inline-alert--warning" role="status">
+        {{ phrase(error || '该记录已不在当前查询窗口中，请返回业务页面核对状态。') }}
+      </div>
       <template #footer>
-        <button class="button button--secondary" type="button" @click="selectedJob = undefined">{{ phrase('关闭') }}</button>
+        <RouterLink v-if="businessPath" class="button button--secondary" :to="businessPath">{{ phrase('返回业务页面') }}</RouterLink>
+        <button class="button button--secondary" type="button" @click="selectedJobId = ''">{{ phrase('关闭') }}</button>
       </template>
     </ModalDialog>
   </div>

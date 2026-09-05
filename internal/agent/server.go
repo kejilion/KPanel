@@ -1777,6 +1777,8 @@ func (s *Server) dockerTask(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, dockerx.ErrDockerJobConflict):
 			status, code, title = http.StatusConflict, "docker_task_conflict", "已有 Docker 后台任务正在运行"
+		case errors.Is(err, dockerx.ErrDockerJobStorage):
+			status, code, title = http.StatusServiceUnavailable, "docker_job_storage_unavailable", "Docker 任务状态存储暂不可用"
 		case errors.Is(err, dockerx.ErrResourceConflict):
 			status, code, title = http.StatusConflict, "resource_conflict", "Docker 资源已发生变化"
 		case errors.Is(err, dockerx.ErrDockerJobNotFound):

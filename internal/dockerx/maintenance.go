@@ -111,6 +111,10 @@ type dockerJobRegistry struct {
 	mu       sync.Mutex
 	stateDir string
 	jobs     map[string]dockerJobRecord
+	// Only terminal records whose host execution has stopped may wait here.
+	// This is a write-back retry within the registry, never a second executor.
+	pending   map[string]dockerJobRecord
+	nextRetry time.Time
 }
 
 func (c *Client) ConfigureJobs(stateDir string) error {
@@ -146,7 +150,8 @@ func (c *Client) ConfigureJobs(stateDir string) error {
 			record.Message = "Docker 后台任务被 Agent 或服务器重启中断，请刷新资源后重试"
 			record.FinishedAt = &finished
 			record.Input = MaintenanceInput{Action: record.Action, Target: record.Target}
-			_ = registry.put(record)
+			registry.finish(record)
+			continue
 		}
 		registry.jobs[id] = record
 	}
@@ -170,7 +175,7 @@ func ensureDockerJobDirectory(path string) error {
 
 func (c *Client) StartMaintenance(ctx context.Context, input MaintenanceInput) (MaintenanceJob, error) {
 	if c.jobs == nil {
-		return MaintenanceJob{}, errors.New("Docker background jobs are unavailable")
+		return MaintenanceJob{}, ErrDockerJobStorage
 	}
 	input.Action = strings.TrimSpace(input.Action)
 	if err := c.validateMaintenanceInput(ctx, input); err != nil {
@@ -178,8 +183,8 @@ func (c *Client) StartMaintenance(ctx context.Context, input MaintenanceInput) (
 	}
 	c.jobStart.Lock()
 	defer c.jobStart.Unlock()
-	if c.jobs.hasActive() {
-		return MaintenanceJob{}, ErrDockerJobConflict
+	if err := c.jobs.startError(); err != nil {
+		return MaintenanceJob{}, err
 	}
 	var identity [16]byte
 	if _, err := rand.Read(identity[:]); err != nil {
@@ -208,7 +213,7 @@ func (c *Client) StartMaintenance(ctx context.Context, input MaintenanceInput) (
 		Input: input,
 	}
 	if err := c.jobs.put(record); err != nil {
-		return MaintenanceJob{}, err
+		return MaintenanceJob{}, fmt.Errorf("%w: %w", ErrDockerJobStorage, err)
 	}
 	go c.runMaintenance(record)
 	return record.MaintenanceJob, nil
@@ -353,6 +358,14 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 	record.Message = dockerActionProgress(record.Action)
 	record.StartedAt = &started
 	if c.jobs.put(record) != nil {
+		finished := c.now().UTC()
+		record.Status = "failed"
+		record.Stage = "not_started"
+		record.Progress = 0
+		record.StartedAt = nil
+		record.FinishedAt = &finished
+		record.Message = "Docker 任务未执行：无法保存运行状态，请恢复任务存储后重试"
+		c.jobs.finish(record)
 		return
 	}
 
@@ -438,7 +451,7 @@ func (c *Client) runMaintenance(record dockerJobRecord) {
 		record.Message = dockerActionCompleted(record.Action)
 	}
 	record.Input = MaintenanceInput{Action: record.Action, Target: record.Target}
-	_ = c.jobs.put(record)
+	c.jobs.finish(record)
 }
 
 func (c *Client) pullMaintenanceImage(ctx context.Context, reference string) error {
@@ -1116,19 +1129,70 @@ func safeDockerJobMessage(err error) string {
 }
 
 func (registry *dockerJobRegistry) hasActive() bool {
+	return registry.startError() != nil
+}
+
+func (registry *dockerJobRegistry) startError() error {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+	registry.reconcileLocked()
+	if len(registry.pending) != 0 {
+		return ErrDockerJobStorage
+	}
 	for _, record := range registry.jobs {
 		if record.Status == "queued" || record.Status == "running" {
-			return true
+			return ErrDockerJobConflict
 		}
 	}
-	return false
+	return nil
 }
 
 func (registry *dockerJobRegistry) put(record dockerJobRecord) error {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+	return registry.putLocked(record)
+}
+
+// finish keeps the actual terminal result for a bounded, storage-only retry.
+// While persistence is unavailable, readers see a fault, never stale running
+// or an uncommitted success. New execution waits until the old record is saved.
+func (registry *dockerJobRegistry) finish(record dockerJobRecord) {
+	record.Input = MaintenanceInput{Action: record.Action, Target: record.Target}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if err := registry.putLocked(record); err == nil {
+		return
+	}
+	if registry.pending == nil {
+		registry.pending = make(map[string]dockerJobRecord)
+	}
+	registry.pending[record.ID] = record
+	visible := record
+	visible.Status = "failed"
+	visible.Stage = "persistence_pending"
+	visible.Message = "Docker 任务执行已停止，但结果尚未保存；请恢复任务存储并刷新，系统只重试保存，不会重复执行"
+	if record.StartedAt == nil {
+		visible.Message = "Docker 任务尚未执行，无法保存任务状态；请恢复任务存储并刷新，系统只重试保存，不会自动执行"
+	}
+	registry.jobs[record.ID] = visible
+	registry.nextRetry = time.Now().Add(time.Second)
+}
+
+// A read or a new submission retries at most once per second, without spawning
+// workers or replaying input. The pending set shares the bounded job registry.
+func (registry *dockerJobRegistry) reconcileLocked() {
+	if len(registry.pending) == 0 || time.Now().Before(registry.nextRetry) {
+		return
+	}
+	registry.nextRetry = time.Now().Add(time.Second)
+	for id, record := range registry.pending {
+		if registry.putLocked(record) == nil {
+			delete(registry.pending, id)
+		}
+	}
+}
+
+func (registry *dockerJobRegistry) putLocked(record dockerJobRecord) error {
 	if !dockerJobIDPattern.MatchString(record.ID) {
 		return errors.New("invalid Docker job identity")
 	}
@@ -1168,6 +1232,9 @@ func (registry *dockerJobRegistry) put(record dockerJobRecord) error {
 	if err := os.Rename(tempPath, target); err != nil {
 		return err
 	}
+	if err := syncDirectoryPath(registry.stateDir); err != nil {
+		return err
+	}
 	registry.jobs[record.ID] = record
 	registry.pruneLocked()
 	return nil
@@ -1196,6 +1263,7 @@ func (registry *dockerJobRegistry) read(id string) (dockerJobRecord, error) {
 func (registry *dockerJobRegistry) list() []dockerJobRecord {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+	registry.reconcileLocked()
 	result := make([]dockerJobRecord, 0, len(registry.jobs))
 	for _, record := range registry.jobs {
 		result = append(result, record)
@@ -1209,6 +1277,7 @@ func (registry *dockerJobRegistry) list() []dockerJobRecord {
 func (registry *dockerJobRegistry) get(id string) (dockerJobRecord, bool) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+	registry.reconcileLocked()
 	record, ok := registry.jobs[id]
 	return record, ok
 }
@@ -1229,6 +1298,9 @@ func (registry *dockerJobRegistry) pruneLocked() {
 		return
 	}
 	for _, record := range records[100:] {
+		if _, pending := registry.pending[record.ID]; pending {
+			continue
+		}
 		if record.Status == "queued" || record.Status == "running" {
 			continue
 		}
@@ -1241,4 +1313,5 @@ var (
 	ErrInvalidDockerJob  = errors.New("invalid Docker maintenance request")
 	ErrDockerJobConflict = errors.New("another Docker maintenance job is already active")
 	ErrDockerJobNotFound = errors.New("Docker maintenance job does not exist")
+	ErrDockerJobStorage  = errors.New("Docker 任务状态存储需要恢复，本次新任务未启动；请恢复存储后刷新任务记录")
 )

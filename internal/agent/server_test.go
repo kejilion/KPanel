@@ -37,6 +37,19 @@ func TestBearerRequired(t *testing.T) {
 	}
 }
 
+func TestDockerTaskStorageUnavailableIsNotRunningConflict(t *testing.T) {
+	server := testServer(t)
+	// This test server has no configured Docker job store. No host action runs.
+	request := httptest.NewRequest(http.MethodPost, "/v1/docker/tasks", strings.NewReader(`{"action":"container_prune"}`))
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "docker_job_storage_unavailable") || strings.Contains(response.Body.String(), "docker_task_conflict") {
+		t.Fatalf("storage fault misreported as execution: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestAppIconRouteRequiresKnownDynamicSlug(t *testing.T) {
 	server := testServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/v1/apps/icons/unknown-app.webp", nil)

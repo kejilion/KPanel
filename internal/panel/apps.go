@@ -73,10 +73,7 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	result := "failure"
-	if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
-		result = "success"
-	}
+	result, change := acceptedJobAudit(response, "app", change)
 	_ = s.audit(r, session.User.ID, "app."+action, "application", appID, result, change)
 	s.writeAgentResponse(w, r, response)
 }
