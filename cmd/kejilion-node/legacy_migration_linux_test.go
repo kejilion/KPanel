@@ -34,6 +34,8 @@ func TestLegacyUpdateMigrationInMountNamespace(t *testing.T) {
 	command.Env = append(os.Environ(), "KPANEL_UPDATE_MIGRATION_TEST=namespace")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("isolated migration: %v\n%s", err, output)
+	} else {
+		t.Logf("isolated migration evidence:\n%s", output)
 	}
 }
 
@@ -104,6 +106,12 @@ func testLegacyMigrationNamespace(t *testing.T) {
 	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
 		t.Fatal("ordinary binary performed a migration")
 	}
+	if asset := os.Getenv("KPANEL_HISTORICAL_NODE_ASSET"); asset != "" {
+		testHistoricalReleaseProbe(t, asset)
+		if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -151,8 +159,43 @@ func testLegacyMigrationNamespace(t *testing.T) {
 	if err != nil || !strings.Contains(string(log), "restart --no-block kejilion-node-update.timer") {
 		t.Fatalf("timer migration missing: %q %v", log, err)
 	}
+	// Future generations must still receive their runtime through the new
+	// staging path, not merely disable all version-triggered migrations.
+	releaseDir, err := os.MkdirTemp("/tmp", lightReleaseStagingPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(releaseDir)
+	releaseBinary := filepath.Join(releaseDir, name)
+	if err := os.WriteFile(releaseBinary, content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(releaseDir, lightUpdateChecksumName), []byte(fmt.Sprintf("%x  %s\n", sum, name)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("/usr/local/lib/kejilion-node/update.sh", []byte("#!/bin/bash\n# KPANEL_NODE_RUNTIME_GENERATION=1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	releaseCommand := exec.Command(releaseBinary, "-test.run=^TestLegacyUpdateMigrationStagedHelper$")
+	releaseCommand.Env = append(os.Environ(), "KPANEL_UPDATE_MIGRATION_TEST=staged")
+	if output, err := releaseCommand.CombinedOutput(); err != nil {
+		t.Fatalf("new staged migration: %s %v", output, err)
+	}
+	if actual, err := os.ReadFile("/usr/local/lib/kejilion-node/update.sh"); err != nil || !bytes.Equal(actual, lightNodeUpdater) {
+		t.Fatalf("new staging path did not migrate runtime: %s %v", actual, err)
+	}
 	// Unsafe destinations fail closed and cannot replace another target.
 	path := "/usr/local/lib/kejilion-node/update.sh"
+	// The script is published before the new binary. A newer installed runtime
+	// is authoritative even when an older staged binary is perfectly verified.
+	newer := []byte("#!/bin/bash\n# KPANEL_NODE_RUNTIME_GENERATION=999\nexit 0\n")
+	if err := os.WriteFile(path, newer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if actual, err := os.ReadFile(path); err != nil || !bytes.Equal(actual, newer) {
+		t.Fatalf("newer installed updater was replaced: %s %v", actual, err)
+	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -173,5 +216,71 @@ func testLegacyMigrationNamespace(t *testing.T) {
 	log, err = os.ReadFile(logPath)
 	if err != nil || !strings.Contains(string(log), "enable kejilion-node-ssh-login.service") {
 		t.Fatalf("update failure blocked existing SSH migration: %q %v", log, err)
+	}
+}
+
+func testHistoricalReleaseProbe(t *testing.T, asset string) {
+	content, err := os.ReadFile(asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Published v1.4.0 amd64 asset, verified against its public SHA256SUMS.
+	if runtime.GOARCH != "amd64" || fmt.Sprintf("%x", sha256.Sum256(content)) != "6c91acadf01396268734faa8f0f8be5c4d6989aa8d0d75dcd5df36e2b1cba4f6" {
+		t.Fatal("historical asset is not the verified v1.4.0 amd64 release")
+	}
+	updater := "/usr/local/lib/kejilion-node/update.sh"
+	sentinel := []byte("#!/bin/bash\n# KPANEL_NODE_RUNTIME_GENERATION=999\nexit 0\n")
+	for _, prefix := range []string{lightUpdateStagingPrefix, lightReleaseStagingPrefix} {
+		dir, err := os.MkdirTemp("/tmp", prefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+		name := "kejilion-node-linux-amd64"
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, content, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte(fmt.Sprintf("%x  %s\n", sha256.Sum256(content), name)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(updater, sentinel, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		output, err := exec.Command(path, "version").CombinedOutput()
+		if err != nil || !strings.Contains(string(output), "1.4.0 light-v1") {
+			t.Fatalf("historical probe: %s %v", output, err)
+		}
+		actual, err := os.ReadFile(updater)
+		if err != nil {
+			t.Fatal(err)
+		}
+		preserved := bytes.Equal(actual, sentinel)
+		if preserved != (prefix == lightReleaseStagingPrefix) {
+			t.Fatalf("historical asset prefix=%s preserved=%v", prefix, preserved)
+		}
+		t.Logf("historical v1.4.0 asset prefix=%s installed runtime preserved=%v", prefix, preserved)
+	}
+	if err := os.Remove(updater); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLightRuntimeGeneration(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		want    uint64
+		invalid bool
+	}{
+		{"#!/bin/bash\n", 0, false},
+		{"# KPANEL_NODE_RUNTIME_GENERATION=2\n", 2, false},
+		{"# KPANEL_NODE_RUNTIME_GENERATION=0\n", 0, true},
+		{"# KPANEL_NODE_RUNTIME_GENERATION=no\n", 0, true},
+		{"# KPANEL_NODE_RUNTIME_GENERATION=2\n# KPANEL_NODE_RUNTIME_GENERATION=3\n", 0, true},
+	} {
+		got, err := lightRuntimeGeneration([]byte(tc.content))
+		if (err != nil) != tc.invalid || got != tc.want {
+			t.Fatalf("generation(%q) = %d, %v", tc.content, got, err)
+		}
 	}
 }

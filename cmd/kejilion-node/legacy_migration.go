@@ -33,10 +33,11 @@ var lightNodeUpdateService []byte
 var lightNodeUpdateTimer []byte
 
 const (
-	lightUpdateStagingPrefix = "kejilion-node-update."
-	lightUpdateChecksumName  = "SHA256SUMS"
-	maxLightChecksumBytes    = int64(64 << 10)
-	maxLightBinaryBytes      = int64(128 << 20)
+	lightUpdateStagingPrefix  = "kejilion-node-update."
+	lightReleaseStagingPrefix = "kejilion-node-release."
+	lightUpdateChecksumName   = "SHA256SUMS"
+	maxLightChecksumBytes     = int64(64 << 10)
+	maxLightBinaryBytes       = int64(128 << 20)
 
 	lightSSHLoginServiceUnit = "/etc/systemd/system/kejilion-node-ssh-login.service"
 )
@@ -116,6 +117,28 @@ func installLightNodeUpdateIntegration() error {
 		return errors.New("flock is unavailable; retaining the existing updater")
 	}
 	const home = "/usr/local/lib/kejilion-node"
+	// A script-first rollout may already have installed a newer runtime than
+	// the public binary. Never replace that runtime during a version probe.
+	// Increase the generation whenever the paired updater/unit templates change.
+	embeddedGeneration, err := lightRuntimeGeneration(lightNodeUpdater)
+	if err != nil || embeddedGeneration == 0 {
+		return errors.New("embedded lightweight node runtime generation is invalid")
+	}
+	if _, err := os.Lstat(home + "/update.sh"); err == nil {
+		installed, err := readBoundedMigrationFile(home+"/update.sh", 1<<20)
+		if err != nil {
+			return err
+		}
+		generation, err := lightRuntimeGeneration(installed)
+		if err != nil {
+			return err
+		}
+		if generation > embeddedGeneration {
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	// The parent still executes its old script after this version command returns.
 	// Record PID plus start time, so the new flock updater can recognize that short
 	// handoff without being blocked later by PID reuse or a stale mkdir lock.
@@ -157,6 +180,22 @@ func installLightNodeUpdateIntegration() error {
 	return runMigrationSystemctl(systemctl, "restart", "--no-block", "kejilion-node-update.timer")
 }
 
+func lightRuntimeGeneration(content []byte) (uint64, error) {
+	const prefix = "# KPANEL_NODE_RUNTIME_GENERATION="
+	var generation uint64
+	for _, line := range strings.Split(string(content), "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		value, err := strconv.ParseUint(strings.TrimPrefix(line, prefix), 10, 32)
+		if err != nil || value == 0 || generation != 0 {
+			return 0, errors.New("invalid lightweight node runtime generation")
+		}
+		generation = value
+	}
+	return generation, nil
+}
+
 func processStartTime(stat []byte) (string, bool) {
 	end := strings.LastIndexByte(string(stat), ')')
 	if end < 0 {
@@ -186,7 +225,8 @@ func verifiedStagedNodeBinary() (string, bool, error) {
 	}
 	directory := filepath.Dir(executable)
 	if filepath.Clean(filepath.Dir(directory)) != "/tmp" ||
-		!strings.HasPrefix(filepath.Base(directory), lightUpdateStagingPrefix) {
+		(!strings.HasPrefix(filepath.Base(directory), lightUpdateStagingPrefix) &&
+			!strings.HasPrefix(filepath.Base(directory), lightReleaseStagingPrefix)) {
 		return "", false, nil
 	}
 	if !secureMigrationDirectory(directory) {
