@@ -187,6 +187,12 @@ requireText('PROJECT_RULES.md', [
   'scripts/check-collaboration-state.mjs',
   'scripts/run-release-l3.mjs',
   '候选分支保留到同一 SHA 的主线 CI 成功',
+  '1.5 KPanel 与 `kejilion.sh` 跨仓库发布联动',
+  'crossRepositoryReleaseLinkage',
+  'not-required',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/development-quality-standard.md', [
   'ui-visual-language.md',
@@ -229,11 +235,45 @@ requireText('docs/project-management.md', [
   'scripts/check-governance-candidate-ci.mjs',
   'Patch 最晚 7 天启动/14 天决策/30 天完成处置',
   '重复报告不能重置期限',
+  'crossRepositoryReleaseLinkage',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/multi-agent-collaboration.md', [
   'scripts/check-collaboration-state.mjs',
   '只隔离',
 ]);
+// Keep lifecycle ownership in one canonical section; these checks validate document wiring,
+// not task messages, directory ownership, or permission to delete local files.
+requireText('docs/project-management.md', [
+  '### 10.1 发布接管后的责任',
+  '不得重新唤醒已交付的开发或验证任务',
+  '协调中心不定时催问发布任务',
+  '### 13.1 本地磁盘空间回收',
+  '实际净释放字节',
+  'Remove-Item -LiteralPath',
+  '禁止 `--force`',
+  '唯一原件',
+]);
+for (const path of ['AGENTS.md', 'CLAUDE.md', '.codex-workflows/README.md',
+  '.codex-workflows/session-collaboration.workflow.yaml', '.codex-workflows/release-kpanel.workflow.yaml']) {
+  requireText(path, ['docs/project-management.md', '10.1', '13.1']);
+}
+for (const path of ['docs/session-collaboration.md', 'docs/multi-agent-collaboration.md',
+  '.codex-workflows/background-browser-validation.workflow.yaml', '.codex-workflows/evolve-kpanel.workflow.yaml']) {
+  requireText(path, ['10.1']);
+}
+for (const path of ['docs/product-quality-review-current.md', 'docs/development-quality-standard.md']) {
+  if (/0\.x\s*(阶段|产品)/.test(read(path))) failures.push(path + ': current product context must not retain the obsolete 0.x stage');
+}
+for (const [path, obsolete] of [
+  ['docs/project-management.md', '回到原开发任务修复'],
+  ['.codex-workflows/release-kpanel.workflow.yaml', '由监控任务读取终态'],
+]) {
+  if (read(path).includes(obsolete)) failures.push(path + ': obsolete release ownership instruction: ' + obsolete);
+}
 requireText('.codex-workflows/README.md', [
   'ui-visual-language.md',
   'evolve-kpanel.workflow.yaml',
@@ -246,6 +286,9 @@ requireText('.codex-workflows/README.md', [
   'docs/product-quality-review-current.md',
   '规范复核执行 `PROJECT_RULES.md` 5.3',
   'kpanel-site-icon-cache-validation.workflow.yaml',
+  'crossRepositoryReleaseLinkage',
+  '无需发布脚本（不适用）',
+  'script-only',
 ]);
 requireText('docs/local-feature-preview-standard.md', [
   'ui-visual-language.md',
@@ -332,6 +375,11 @@ requireText('.codex-workflows/release-kpanel.workflow.yaml', [
   '冻结执行方案',
   '一次列全必需能力',
   '`visual-composition`',
+  'crossRepositoryReleaseLinkage',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'block-kpanel-candidate-or-remove-dependent-scope',
+  'script-only',
 ]);
 if (read('.codex-workflows/release-kpanel.workflow.yaml').includes('git fetch origin --tags')) {
   failures.push('.codex-workflows/release-kpanel.workflow.yaml: unbounded tag fetch is forbidden');
@@ -418,6 +466,11 @@ requireText('docs/release-acceptance-template.md', [
   'before-production-write',
   'L3 外层入口 run ID',
   '## 遗留风险与后续准入',
+  '## 跨仓库联动判定',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [
   '## 观察证据',

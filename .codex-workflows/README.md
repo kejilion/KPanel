@@ -5,12 +5,19 @@
 `docs/multi-agent-collaboration.md`、SSH 远端分支/提交和 CI；本目录不得形成第二套规范。
 
 - `session-collaboration.workflow.yaml`：复用或创建任务、检查管理/写入工作树角色、等待、复核并统一交付。
+- 任务复用截止到候选交付；发布接管后按 `docs/project-management.md` 10.1 由发布任务独立闭环，
+  不召回旧任务、不增加复核或监工任务，协调中心等待完成交付后再复盘。
+- 本地磁盘回收按 `docs/project-management.md` 13.1 在新建工作树前、任务交付后和发布结束后执行；
+  保护活跃路径、未提交内容和唯一证据，默认先盘点，不设周期清理监工。
 - `background-browser-validation.workflow.yaml`：在登记的隔离环境后台执行真实浏览器 E2E/稳定性验收，
   以持久化 job 状态和证据跨会话恢复；测试强度由风险画像决定，不机械套固定时长。
 - `local-feature-preview.workflow.yaml`：为可见功能交付统一的 mock/本地集成预览，自动分配回环端口，
   固定候选身份、体验步骤、证据目录和停止责任；不替代真机、L0-L3 或发布验收。
 - `release-kpanel.workflow.yaml`：版本准备、冻结执行方案、标准 Linux Runner、CI、Release、Docker Hub、
   应用市场、隔离验收、生产部署安全核对和重复流程异常收敛。
+- KPanel 与 `kejilion.sh` 的发布联动统一读取 `dependency-policy.json#crossRepositoryReleaseLinkage`：
+  `not-required` 明确表示“无需发布脚本（不适用）”，`coupled` 必须先有兼容脚本发布，`script-only`
+  走脚本独立流程且不改变 KPanel 版本、tag、Release 或镜像；禁止使用“暂不发布脚本”等模糊状态。
 - `quality-audit-kpanel.workflow.yaml`：快速迭代后的业务正确性、体验、性能、稳定、安全、交付节奏和
   发布门禁健康审计。
 - 界面与视觉变更统一参考 [`docs/ui-visual-language.md`](../docs/ui-visual-language.md)；本目录只提供执行适配，

@@ -44,6 +44,27 @@ const REQUIRED_FRESHNESS_TRIGGERS = [
   '.codex-workflows/**',
   '.github/workflows/**',
 ];
+const CROSS_REPOSITORY_LINKAGE_STATES = ['not-required', 'coupled', 'script-only'];
+const CROSS_REPOSITORY_LINKAGE_EVIDENCE = {
+  'not-required': ['candidate-diff-review', 'baseline-script-commit-and-digest', 'compatibility-check'],
+  coupled: [
+    'paired-change-set-id',
+    'script-commit-and-digest',
+    'root-cn-sync-check',
+    'script-smoke',
+    'kpanel-contract-tests',
+    'cross-repo-compatibility',
+    'paired-rollback',
+  ],
+  'script-only': ['script-commit-and-digest', 'root-cn-sync-check', 'script-smoke', 'supported-kpanel-compatibility', 'script-rollback'],
+};
+const CROSS_REPOSITORY_LINKAGE_BLOCKERS = [
+  'coupled-without-script-compatible-revision',
+  'coupled-without-paired-evidence',
+  'not-required-without-baseline-script-proof',
+  'script-only-with-kpanel-changes',
+  'state-missing-or-contradictory',
+];
 
 export function parseArguments(argv) {
   const options = {
@@ -243,6 +264,55 @@ export function validatePolicy(policy, repo) {
       }
     }
     if (!String(rule.minimumVerification ?? '').trim()) failures.push('adoption lifecycle verification is missing: ' + name);
+  }
+  const linkage = policy.crossRepositoryReleaseLinkage ?? {};
+  if (linkage.schemaVersion !== 1) failures.push('cross-repository linkage schemaVersion must be 1');
+  if (!Array.isArray(linkage.states) || linkage.states.length !== CROSS_REPOSITORY_LINKAGE_STATES.length ||
+      new Set(linkage.states).size !== CROSS_REPOSITORY_LINKAGE_STATES.length ||
+      !CROSS_REPOSITORY_LINKAGE_STATES.every((state) => linkage.states.includes(state))) {
+    failures.push('cross-repository linkage must expose not-required, coupled, and script-only states');
+  }
+  if (linkage.requiresExplicitDecision !== true || Object.hasOwn(linkage, 'defaultState')) {
+    failures.push('cross-repository linkage requires an explicit decision and must not define defaultState');
+  }
+  const kpanelRepository = linkage.repositories?.kpanel ?? {};
+  const scriptRepository = linkage.repositories?.script ?? {};
+  if (kpanelRepository.name !== 'kejilion/KPanel' || kpanelRepository.versionSource !== 'VERSION') {
+    failures.push('cross-repository linkage must identify KPanel VERSION as its version source');
+  }
+  if (scriptRepository.name !== 'kejilion/sh' || scriptRepository.branch !== 'main' || scriptRepository.revisionSource !== 'commit-and-content-digest') {
+    failures.push('cross-repository linkage must identify kejilion/sh main commit and content digest');
+  }
+  for (const state of CROSS_REPOSITORY_LINKAGE_STATES) {
+    const rule = linkage.decisionRules?.[state];
+    if (!rule) {
+      failures.push('cross-repository linkage decision rule is missing: ' + state);
+      continue;
+    }
+    if (!String(rule.when ?? '').trim()) failures.push('cross-repository linkage decision rule is missing when: ' + state);
+    if (!Array.isArray(rule.requiredEvidence) || !CROSS_REPOSITORY_LINKAGE_EVIDENCE[state].every((item) => rule.requiredEvidence.includes(item))) {
+      failures.push('cross-repository linkage evidence is incomplete: ' + state);
+    }
+  }
+  const notRequiredRule = linkage.decisionRules?.['not-required'] ?? {};
+  if (notRequiredRule.scriptRelease !== 'not-in-scope' || notRequiredRule.kpanelReleaseAllowed !== true) {
+    failures.push('not-required linkage must mean script release is not in scope and KPanel release remains allowed');
+  }
+  const coupledRule = linkage.decisionRules?.coupled ?? {};
+  if (coupledRule.scriptRelease !== 'required' || coupledRule.kpanelReleaseAllowed !== 'only-after-script-compatible-release' || coupledRule.ifScriptNotReady !== 'block-kpanel-candidate-or-remove-dependent-scope') {
+    failures.push('coupled linkage must require a compatible script release before KPanel release');
+  }
+  const scriptOnlyRule = linkage.decisionRules?.['script-only'] ?? {};
+  if (scriptOnlyRule.scriptRelease !== 'required' || scriptOnlyRule.kpanelReleaseAllowed !== false || scriptOnlyRule.kpanelVersionChange !== false) {
+    failures.push('script-only linkage must prohibit KPanel version, tag, release, and image changes');
+  }
+  const deliveryFields = new Set(linkage.requiredDeliveryFields ?? []);
+  for (const field of ['scriptLinkageState', 'changeSetId', 'baselineScriptRevision', 'baselineScriptSha256', 'candidateScriptRevision', 'candidateScriptSha256', 'compatibilityEvidence', 'releaseDecision']) {
+    if (!deliveryFields.has(field)) failures.push('cross-repository linkage delivery field is missing: ' + field);
+  }
+  const blockers = new Set(linkage.releaseBlockers ?? []);
+  for (const blocker of CROSS_REPOSITORY_LINKAGE_BLOCKERS) {
+    if (!blockers.has(blocker)) failures.push('cross-repository linkage release blocker is missing: ' + blocker);
   }
   const freshnessWorkflow = readFileSync(resolve(repo, '.github/workflows/dependency-freshness.yml'), 'utf8');
   for (const trigger of REQUIRED_FRESHNESS_TRIGGERS) {

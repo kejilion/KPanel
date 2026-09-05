@@ -305,7 +305,9 @@ SSRF 与 TLS 校验。对
 
 发布前执行 L2 验证；正式版本与镜像发布仍按 L3 流程执行。
 
-轻量节点属于双端协议，发布顺序固定为：先发布兼容旧 KPanel 的 `kejilion.sh` 安装入口，再发布
+轻量节点变更涉及新的脚本协议、安装/更新路径或内置脚本内容时，按 `PROJECT_RULES.md` 1.5 判为
+`coupled` 并记录变更集和成对证据；仅消费已有兼容契约的面板修改按实际差异判定，不能仅因属于轻量节点就要求脚本发布。
+需要双端联动时，发布顺序固定为：先发布兼容旧 KPanel 的 `kejilion.sh` 安装入口，再发布
 包含 `kejilion-node`、`SHA256SUMS`、`light-v1` 上报、SSH 登录采集和 v2 Noise relay 的 KPanel Release。
 既有轻量节点不需要逐台手动执行 `k kpanel node update`，也不需要重新配对。节点现有的 root 自动更新
 任务下载并校验新版 Agent 时，会由已校验的临时二进制自动补写并启用独立的

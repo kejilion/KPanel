@@ -11,7 +11,7 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| [项目管理规范](project-management.md) | 任务契约、Definition of Ready/Done、并发写任务与集成 |
+| [项目管理规范](project-management.md) | 任务契约、Definition of Ready/Done、发布接管、本地磁盘回收与集成 |
 | [多智能体协作](multi-agent-collaboration.md) | 角色、所有权、worktree/分支模型、冲突恢复 |
 | [开发质量标准](development-quality-standard.md) | 编码、测试与评审的质量基线 |
 | [会话协作](session-collaboration.md) | 跨会话与跨工具的协作约定 |
@@ -80,19 +80,21 @@
 [2026-08-11 产品质量评审](product-quality-review-2026-08-11.md)、
 [2026-08-13 产品质量评审](product-quality-review-2026-08-13.md)。
 
-## 质量改进提案
+## 质量改进提案与历史依据
 
-提案状态以各文件内的“提案状态”字段为准，本表随提案推进更新：
+提案保留形成时的讨论与验证状态，不是当前任务队列。是否已采纳以批准基线中的规范、精确提交和
+验收证据为准；不得仅凭旧提案的“待复核”文字恢复任务，也不为刷新索引改写历史原件。
 
-| 提案 | 状态 |
+| 提案 | 查阅用途 |
 | --- | --- |
-| [后台浏览器验收](quality-improvement-2026-08-13-background-browser-validation.md) | 已采纳 |
-| [治理反馈闭环](quality-improvement-2026-08-15-governance-feedback-loop.md) | 试行，CI 与独立复核已通过，待主线集成 |
-| [治理验收合同](quality-improvement-2026-08-17-governance-acceptance-contract.md) | 待独立复核 |
-| [本地功能预览标准](quality-improvement-2026-08-17-local-feature-preview-standard.md) | 已落地为 [local-feature-preview-standard.md](local-feature-preview-standard.md)，提案未标注状态字段 |
-| [执行效率](quality-improvement-2026-08-20-execution-efficiency.md) | 第一阶段已采纳；第二阶段待独立复核 |
-| [治理候选 CI](quality-improvement-2026-08-23-governance-candidate-ci.md) | 试行 |
-| [执行兼容性](quality-improvement-2026-08-24-execution-compatibility.md) | 试行 |
+| [后台浏览器验收](quality-improvement-2026-08-13-background-browser-validation.md) | 后台作业方案及初始验证依据 |
+| [治理反馈闭环](quality-improvement-2026-08-15-governance-feedback-loop.md) | 受控改进循环的设计依据 |
+| [治理验收合同](quality-improvement-2026-08-17-governance-acceptance-contract.md) | 固定六维矩阵和停止条件的设计依据 |
+| [本地功能预览标准](quality-improvement-2026-08-17-local-feature-preview-standard.md) | 当前入口为 [local-feature-preview-standard.md](local-feature-preview-standard.md) |
+| [执行效率](quality-improvement-2026-08-20-execution-efficiency.md) | 分级检查与执行效率的历史分析 |
+| [治理候选 CI](quality-improvement-2026-08-23-governance-candidate-ci.md) | 同 SHA 候选 CI 的设计依据 |
+| [执行兼容性](quality-improvement-2026-08-24-execution-compatibility.md) | 管理工作树和跨 Shell 入口的设计依据 |
+| [规范一致性与发布接管](quality-improvement-2026-09-05-standards-alignment.md) | 本次治理候选的范围、验证与待复核边界 |
 
 ## 发布验收记录
 

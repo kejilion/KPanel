@@ -137,6 +137,19 @@ test('policy validation keeps automation, cadence, and workflow triggers enforce
   assert.ok(failures.some((failure) => failure.includes('governed maximum') && failure.includes('eolReviewMaximumDays')));
 });
 
+test('policy validation fixes the cross-repository linkage vocabulary and release boundaries', () => {
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  policy.crossRepositoryReleaseLinkage.states = ['not-required', 'coupled'];
+  policy.crossRepositoryReleaseLinkage.decisionRules['not-required'].scriptRelease = 'deferred';
+  policy.crossRepositoryReleaseLinkage.decisionRules.coupled.ifScriptNotReady = 'continue';
+  policy.crossRepositoryReleaseLinkage.decisionRules['script-only'].kpanelVersionChange = true;
+  const failures = validatePolicy(policy, process.cwd());
+  assert.ok(failures.some((failure) => failure.includes('not-required, coupled, and script-only')));
+  assert.ok(failures.some((failure) => failure.includes('script release is not in scope')));
+  assert.ok(failures.some((failure) => failure.includes('compatible script release')));
+  assert.ok(failures.some((failure) => failure.includes('script-only linkage')));
+});
+
 test('policy validation requires bounded adoption decisions without forcing unsafe adoption', () => {
   const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
   policy.adoptionLifecycle.classes['major-toolchain-base'].decisionMaximumDays = 91;
@@ -144,6 +157,44 @@ test('policy validation requires bounded adoption decisions without forcing unsa
   const failures = validatePolicy(policy, process.cwd());
   assert.ok(failures.some((failure) => failure.includes('time-bounded exception')));
   assert.ok(failures.some((failure) => failure.includes('governed maximum') && failure.includes('major-toolchain-base.decisionMaximumDays')));
+});
+
+test('cross-repository linkage cannot silently default or extend its states', () => {
+  const cases = [
+    ['missing linkage', (policy) => { delete policy.crossRepositoryReleaseLinkage; }, /schemaVersion/],
+    ['missing decision', (policy) => { delete policy.crossRepositoryReleaseLinkage.requiresExplicitDecision; }, /explicit decision/],
+    ['false decision', (policy) => { policy.crossRepositoryReleaseLinkage.requiresExplicitDecision = false; }, /explicit decision/],
+    ['default not-required', (policy) => { policy.crossRepositoryReleaseLinkage.defaultState = 'not-required'; }, /must not define defaultState/],
+    ['null default', (policy) => { policy.crossRepositoryReleaseLinkage.defaultState = null; }, /must not define defaultState/],
+    ['extra state', (policy) => { policy.crossRepositoryReleaseLinkage.states.push('deferred'); }, /must expose not-required/],
+    ['duplicate state', (policy) => { policy.crossRepositoryReleaseLinkage.states.push('coupled'); }, /must expose not-required/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+    mutate(policy);
+    assert.ok(validatePolicy(policy, process.cwd()).some((failure) => expected.test(failure)), name);
+  }
+});
+
+test('each linkage state requires its own evidence and complete handoff fields', () => {
+  const baseline = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  for (const [state, rule] of Object.entries(baseline.crossRepositoryReleaseLinkage.decisionRules)) {
+    for (const evidence of rule.requiredEvidence) {
+      const policy = structuredClone(baseline);
+      policy.crossRepositoryReleaseLinkage.decisionRules[state].requiredEvidence = rule.requiredEvidence.filter((item) => item !== evidence);
+      assert.ok(validatePolicy(policy, process.cwd()).includes('cross-repository linkage evidence is incomplete: ' + state), state + ': ' + evidence);
+    }
+  }
+  for (const [field, prefix] of [
+    ['requiredDeliveryFields', 'cross-repository linkage delivery field is missing: '],
+    ['releaseBlockers', 'cross-repository linkage release blocker is missing: '],
+  ]) {
+    for (const item of baseline.crossRepositoryReleaseLinkage[field]) {
+      const policy = structuredClone(baseline);
+      policy.crossRepositoryReleaseLinkage[field] = policy.crossRepositoryReleaseLinkage[field].filter((value) => value !== item);
+      assert.ok(validatePolicy(policy, process.cwd()).includes(prefix + item), field + ': ' + item);
+    }
+  }
 });
 
 test('Go toolchain policy covers immutable Codex workflow images', () => {

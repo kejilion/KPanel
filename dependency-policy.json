@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "policyVersion": "2026-08-24",
+  "policyVersion": "2026-09-05",
   "purpose": "Continuously detect version-channel-stable dependency candidates without turning freshness into automatic adoption.",
   "stableRelease": {
     "excludePrerelease": true,
@@ -68,6 +68,61 @@
       "majorToolchainBase": "one compatibility domain per candidate; coupled adapters may travel together",
       "security": "do not wait for a routine batch when the vulnerability deadline is stricter"
     }
+  },
+  "crossRepositoryReleaseLinkage": {
+    "schemaVersion": 1,
+    "states": ["not-required", "coupled", "script-only"],
+    "requiresExplicitDecision": true,
+    "repositories": {
+      "kpanel": {
+        "name": "kejilion/KPanel",
+        "versionSource": "VERSION"
+      },
+      "script": {
+        "name": "kejilion/sh",
+        "branch": "main",
+        "revisionSource": "commit-and-content-digest"
+      }
+    },
+    "decisionRules": {
+      "not-required": {
+        "when": "KPanel does not change or require a new or changed script-defined protocol, runtime action, host artifact, install/update path, external configuration, or embedded script content; an existing compatible contract is allowed",
+        "requiredEvidence": ["candidate-diff-review", "baseline-script-commit-and-digest", "compatibility-check"],
+        "kpanelReleaseAllowed": true,
+        "scriptRelease": "not-in-scope"
+      },
+      "coupled": {
+        "when": "KPanel changes or consumes a new or changed script-defined protocol, runtime action, host artifact, install/update path, external configuration, or embedded script content",
+        "requiredEvidence": ["paired-change-set-id", "script-commit-and-digest", "root-cn-sync-check", "script-smoke", "kpanel-contract-tests", "cross-repo-compatibility", "paired-rollback"],
+        "kpanelReleaseAllowed": "only-after-script-compatible-release",
+        "scriptRelease": "required",
+        "ifScriptNotReady": "block-kpanel-candidate-or-remove-dependent-scope"
+      },
+      "script-only": {
+        "when": "Only kejilion/sh changes and the supported KPanel contract remains compatible without KPanel code, image, or configuration changes",
+        "requiredEvidence": ["script-commit-and-digest", "root-cn-sync-check", "script-smoke", "supported-kpanel-compatibility", "script-rollback"],
+        "kpanelReleaseAllowed": false,
+        "scriptRelease": "required",
+        "kpanelVersionChange": false
+      }
+    },
+    "requiredDeliveryFields": [
+      "scriptLinkageState",
+      "changeSetId",
+      "baselineScriptRevision",
+      "baselineScriptSha256",
+      "candidateScriptRevision",
+      "candidateScriptSha256",
+      "compatibilityEvidence",
+      "releaseDecision"
+    ],
+    "releaseBlockers": [
+      "coupled-without-script-compatible-revision",
+      "coupled-without-paired-evidence",
+      "not-required-without-baseline-script-proof",
+      "script-only-with-kpanel-changes",
+      "state-missing-or-contradictory"
+    ]
   },
   "requiredGroups": [
     "go-modules",

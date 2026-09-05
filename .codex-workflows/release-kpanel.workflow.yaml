@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.10"
+version: "2.12"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-08-24T08:00:00Z"
+updated: "2026-09-05T00:00:00Z"
 ---
 
 # Release KPanel
@@ -24,7 +24,8 @@ updated: "2026-08-24T08:00:00Z"
 - 发布范围已经由协调中心按精确提交哈希确认；当前只有一个发布任务、一个候选 worktree 和
   一个候选分支。新功能继续在独立分支开发，不得进入已冻结候选。
 - 发布任务已在协调中心声明唯一负责人、候选分支和精确提交清单；主要实现任务与最终验证/发布任务
-  相互独立。多个 AI 可用时，优先由另一种智能体复核提交清单、风险和回滚点。
+  相互独立。接手发布任务承担最终验证，完整职责按 `docs/project-management.md` 10.1 执行；
+  不召回已交付任务，不另设复核或监工任务，不等待协调中心对普通执行细节逐项审批。
 - 源码 fetch/push 统一使用 SSH 远端；GitHub Issue、PR、API、插件和 `gh` 登录不是发布候选分支的
   前置条件。GitHub Actions/Release 继续使用仓库内置临时 Token 完成远端自动化。
 - `${{project_dir}}` 是本次发布使用的独立、干净 KPanel 工作树，远端为
@@ -38,6 +39,8 @@ updated: "2026-08-24T08:00:00Z"
 - 保留所有无关未提交改动；只提交本次发布范围内的文件。
 - `${{validation_environment}}` 和 `${{production_environment}}` 必须登记在 `environment-policy.json`；
   两者默认均为 `arena-154`。`prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
+- 必须读取 `dependency-policy.json#crossRepositoryReleaseLinkage`，在候选冻结前确定唯一的
+  `scriptLinkageState`（`not-required` / `coupled` / `script-only`），并准备状态对应的交付字段和证据。
 
 ## Steps
 
@@ -77,6 +80,21 @@ node scripts/check-environment-policy.mjs \
 
 **Expected output:** 发布单写者成立，候选提交清单和基线明确，目标版本未占用，记录
 `${{previous_version}}` 对应源码和镜像回滚点；发布画像能够解释必测项和不适用维度。
+
+冻结前完成跨仓库联动判定，不能把“没有脚本提交”或“尚未发布”当作结论：
+
+- **`not-required`（无需发布脚本（不适用））**：差异不涉及新增或变更的脚本协议、运行时动作、宿主机
+  产物、安装/更新路径、外联配置或镜像内脚本内容；使用已有且兼容的脚本契约不改变此结论。记录
+  实际内置脚本基线 commit/SHA-256、差异审查和兼容性证据；本次不创建脚本提交、不发布脚本。
+- **`coupled`**：KPanel 依赖新的或变更的脚本能力或契约。记录同一变更集编号、双方专用分支和精确 commit/
+  摘要，完成根/中文同步、脚本 smoke、KPanel 契约测试、兼容矩阵和成对回滚；脚本兼容版本先可用，
+  再进入 KPanel 候选。脚本未就绪时执行 `block-kpanel-candidate-or-remove-dependent-scope`，不得继续
+  发布或改标为 `not-required`。
+- **`script-only`**：只有脚本仓库变化且既有 KPanel 契约兼容；走脚本仓库自己的发布流程，本次 KPanel
+  流程不得改 `VERSION`、tag、Release 或镜像。若 KPanel 同时有差异，状态必须改为 `coupled`。
+
+KPanel 发布流程只接受 `not-required` 或 `coupled`；`script-only` 不构成 KPanel 版本发布。所有状态
+和证据写入 `docs/release-vX.Y.Z-acceptance.md`，缺失、矛盾或使用“暂不发布脚本”等模糊状态时停止。
 
 同时建立本次冻结执行方案：列出生产写前后实际调用的唯一仓库脚本、Runner/镜像、SSH 身份、必需
 运行时、跨 Shell 参数承载方式和证据解析入口。所有必需项先在非生产环境预检；优先使用参数文件、
@@ -172,14 +190,14 @@ node scripts/run-release-l3.mjs \
 持久结果，但至少一个浏览器和自动回归仍须覆盖成功反馈，且各浏览器控制台错误必须为 0。
 
 若发布画像需要本地或远程长时间浏览器 E2E、跨视口回归或稳定性验收，使用登记的
-`${{validation_environment}}` 后台执行，前台发布任务只记录 job ID 并由监控任务读取终态：
+  `${{validation_environment}}` 后台执行，发布任务记录 job ID 并自行有界读取持久化终态：
 
 > Invoke workflow: `background-browser-validation` with params:
 > project_dir=${{project_dir}}, candidate_ref=<步骤 1 冻结的完整提交>, test_environment=${{validation_environment}},
 > evidence_dir=<本次唯一持久化证据目录>, timeout_seconds=<风险窗口加清理余量>,
 > command_spec=<无秘密、已哈希的仓库测试命令规格>
 
-六项输入必须在启动前一次固定；不得由后续监控会话自行补默认值。没有仓库稳定用例入口的新旅程可在
+六项输入必须在启动前一次固定；后续执行不得自行补默认值。没有仓库稳定用例入口的新旅程可在
 本次任务中形成最小命令规格；同类旅程第二次出现时应沉淀为仓库测试入口，避免每次发布临时重写。
 
 普通确定性交互不机械执行 soak；生命周期、重连、并发、流式或资源趋势风险按画像选择窗口或循环数。
@@ -402,6 +420,8 @@ node scripts/report-release-metrics.mjs \
 - L3 外层入口的 run ID、计划/脚本/bundle 摘要、不可变 Runner ID、终态与证据目录；
 - 保留的无关本地改动；
 - `${{previous_version}}` 回滚点及任何未验证风险。
+- 按 `docs/project-management.md` 13.1 在本次发布结束后回收自己持有的可再生本地资源，记录实际释放空间、
+  跳过项和保留的恢复/证据位置；不删除活跃路径、未提交内容或唯一原件，也不唤醒旧任务执行清理。
 
 **Expected output:** 验收文档结构完整且机器校验通过，用户无需查看其他会话即可区分已验证、不适用和
 未验证风险；后续 `make release-metrics` 能读取实际记录，而不是把已有生产事实显示为“未报告”。

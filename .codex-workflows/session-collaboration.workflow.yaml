@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.6"
+version: "4.7"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-08-29T16:43:01+08:00"
+updated: "2026-09-05T00:00:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -47,6 +47,8 @@ the precise remote baseline; do not reset, stash, clean, commit, or repair unkno
 ### 2. Route or create the task
 
 - Reuse an unfinished task only when its scope, role, provider, branch, and domain match and its worktree is not owned by another writer.
+- This routing applies before candidate handoff. After release takeover, follow `docs/project-management.md` section 10.1:
+  the release task completes remaining review, repairs, tooling and validation itself; do not recall delivered tasks or create replacement reviewers.
 - For Codex create `KPanel · Codex · ${{role}} · ${{scope}}`; for another provider use its own orchestrator. The remote branch and focused commits are the session-neutral state.
 - Read-only analysis may share the project directory.
 - Before any write, create a dedicated worktree and pass its absolute path to the task.
@@ -92,7 +94,8 @@ working tree and `acceptance` only for a clean checkpoint; mock, local integrati
 distinct. On handoff, pass the manifest path and stop responsibility instead of leaving an undocumented dev server.
 
 Long-running browser E2E or soak uses `background-browser-validation`: record its job ID and evidence directory, release
-the foreground task, and let a monitor/read-only task consume the terminal state. Validate remote purposes through
+the foreground wait, and let the current owner consume the terminal state. During release this owner is the release task;
+an additional monitor task and coordinator polling are not required. Validate remote purposes through
 `environment-policy.json`; never connect to `prod-108` for any KPanel operation.
 
 Expected: the diff matches the requested scope, quality dimensions and user journeys are classified, and the reported
@@ -103,6 +106,13 @@ tests and evidence are reproducible.
 Set the outcome to one of: executing, awaiting-input, awaiting-commit-authorization, awaiting-verification,
 ready-for-integration, blocked, or abandoned. Report exact Git state, quality/evidence status, remaining risk, target
 version recommendation, rollback point, and whether anything was committed, pushed, released, or deployed.
+
+After candidate handoff, stop the original writer. The release task sends one completion or termination delivery;
+the coordinator reviews actual evidence and only then arranges the next iteration, without periodic progress requests.
+
+Apply `docs/project-management.md` 13.1 before creating worktrees and when delivering completed work: stop owned preview
+processes no longer needed, preserve handoff inputs and unique evidence, reclaim only authorized reproducible resources,
+and report measured free space. Do not clean active release paths or infer deletion authority from an idle task.
 
 ## Parameters
 
