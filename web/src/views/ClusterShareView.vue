@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  Activity,
   ArrowDown,
   ArrowUp,
   Clock3,
@@ -15,6 +16,7 @@ import {
   Moon,
   RefreshCw,
   Server,
+  Search,
   Sun,
 } from '@lucide/vue'
 import LogoMark from '@/components/common/LogoMark.vue'
@@ -44,7 +46,15 @@ const snapshot = ref<PublicClusterShareSnapshot>()
 const loading = ref(true)
 const refreshing = ref(false)
 const errorMessage = ref('')
-const viewMode = ref<'list' | 'card'>('list')
+type ShareViewMode = 'list' | 'card' | 'globe'
+const viewMode = ref<ShareViewMode>('list')
+const viewModeStorageKey = 'kpanel:cluster-share-view'
+const search = ref('')
+const filteredHosts = computed(() => {
+  const keyword = search.value.trim().toLowerCase()
+  return (snapshot.value?.items || []).filter(host => [host.name, host.os, host.location.country, host.location.city, host.location.isp].filter(Boolean).join(' ').toLowerCase().includes(keyword))
+})
+const ClusterGlobe = defineAsyncComponent(() => import('@/components/cluster/ClusterGlobe.vue'))
 const { resolved: resolvedTheme, setTheme } = useTheme()
 let controller: AbortController | undefined
 let pollTimer: number | undefined
@@ -56,8 +66,16 @@ function operatingSystemIdentity(host: PublicClusterShareHost) {
   return detectOperatingSystemIdentity({ os: host.os })
 }
 
-function setViewMode(mode: 'list' | 'card'): void {
+function setViewMode(mode: ShareViewMode): void {
   viewMode.value = mode
+  try { window.localStorage.setItem(viewModeStorageKey, mode) } catch { /* Keep the current page choice. */ }
+}
+
+function restoreViewMode(): void {
+  try {
+    const stored = window.localStorage.getItem(viewModeStorageKey)
+    if (stored === 'list' || stored === 'card' || stored === 'globe') viewMode.value = stored
+  } catch { /* Default to the list when storage is unavailable. */ }
 }
 
 function toggleTheme(): void {
@@ -103,6 +121,7 @@ async function load(silent = false): Promise<void> {
     errorMessage.value = ''
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
+    if (reason instanceof ApiError && reason.status === 404) snapshot.value = undefined
     errorMessage.value = friendlyError(reason)
   } finally {
     loading.value = false
@@ -114,9 +133,10 @@ function onVisibilityChange(): void {
   if (!document.hidden) void load(true)
 }
 
-watch(token, () => void load())
+watch(token, () => { snapshot.value = undefined; void load() })
 
 onMounted(() => {
+  restoreViewMode()
   void load()
   pollTimer = window.setInterval(() => {
     if (!document.hidden) void load(true)
@@ -162,6 +182,15 @@ onBeforeUnmount(() => {
             >
               <LayoutGrid :size="15" /> <span>卡片</span>
             </button>
+            <button
+              type="button"
+              :class="{ 'is-active': viewMode === 'globe' }"
+              :aria-pressed="viewMode === 'globe'"
+              title="地球展示"
+              @click="setViewMode('globe')"
+            >
+              <Globe2 :size="15" /> <span>地球</span>
+            </button>
           </div>
           <button
             class="share-icon-button"
@@ -200,6 +229,8 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <div v-if="snapshot?.items.length" class="share-toolbar"><label class="share-search"><Search :size="17" /><input v-model="search" type="search" aria-label="搜索公开主机" placeholder="搜索名称、地区或系统…" /></label><span>{{ filteredHosts.length }} / {{ snapshot.items.length }}</span></div>
+
       <section v-if="loading && !snapshot" class="share-state" aria-live="polite">
         <RefreshCw class="spin" :size="24" />
         <strong>正在读取机器状态…</strong>
@@ -216,13 +247,17 @@ onBeforeUnmount(() => {
         {{ errorMessage }} 当前保留上一次成功数据。
       </div>
 
+      <section v-if="snapshot?.items.length && !filteredHosts.length" class="share-state"><Search :size="24" /><strong>没有匹配的主机</strong><button type="button" @click="search = ''">清除搜索</button></section>
+
+      <ClusterGlobe v-else-if="snapshot?.items.length && viewMode === 'globe'" :hosts="filteredHosts" :searchable="false" />
+
       <section
-        v-if="snapshot?.items.length"
+        v-else-if="filteredHosts.length"
         class="share-grid"
         :class="`is-${viewMode}`"
         :aria-label="viewMode === 'list' ? '公开机器行列表' : '公开机器卡片列表'"
       >
-        <article v-for="host in snapshot.items" :key="host.id" class="share-card">
+        <article v-for="host in filteredHosts" :key="host.id" class="share-card">
           <header class="share-card__header">
             <OperatingSystemIcon
               :distro="operatingSystemIdentity(host).key"
@@ -377,7 +412,7 @@ onBeforeUnmount(() => {
 }
 
 .share-header { justify-content: space-between; gap: 18px; margin-bottom: 18px; }
-.share-header__actions { justify-content: flex-end; gap: 9px; }
+.share-header__actions { justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .share-brand { gap: 10px; color: inherit; text-decoration: none; letter-spacing: 0.02em; }
 .share-brand__logo {
   flex: 0 0 auto;
@@ -426,7 +461,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 10px;
+  font-size: .875rem;
   font-weight: 600;
 }
 
@@ -465,7 +500,15 @@ onBeforeUnmount(() => {
 .share-stats .is-attention strong { color: var(--amber); }
 
 .share-grid { display: grid; gap: 12px; }
+.share-toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.share-toolbar > span { margin-left: auto; color: var(--text-soft); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.share-search { display: flex; align-items: center; gap: 10px; flex: 1; max-width: 520px; min-width: 0; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface); }
+.share-search input { min-width: 0; width: 100%; min-height: 42px; padding: 10px 0; font-size: .875rem; color: var(--text); background: transparent; border: 0; outline: none; box-shadow: none; }
+.share-search:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
 .share-grid.is-card { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.share-grid.is-card .share-card { display: flex; flex-direction: column; }
+.share-grid.is-card .share-card__header { grid-template-columns: auto minmax(0, 1fr); align-items: start; flex: 1; }
+.share-grid.is-card .share-card__aside { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; }
 .share-card {
   min-width: 0;
   overflow: hidden;
@@ -491,19 +534,17 @@ onBeforeUnmount(() => {
 .share-card__header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px; }
 .share-card__header :deep(.os-identity__mark) { width: 40px; height: 40px; border-radius: 11px; }
 .share-card__header :deep(.os-identity__mark svg) { width: 23px; height: 23px; }
-.share-card h2 { overflow: hidden; margin: 0 0 2px; font-size: 15px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.share-card h2 { margin: 0 0 6px; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
 .share-card__identity { min-width: 0; }
-.share-card__system { display: flex; min-width: 0; align-items: center; gap: 6px; margin: 0 0 5px; color: var(--text-soft); font-size: 11px; }
-.share-card__system span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-card__system small { flex: 0 0 auto; padding: 1px 4px; color: var(--muted); background: var(--neutral-soft); border-radius: 4px; font-size: 9px; }
-.share-card__location { display: flex; align-items: center; gap: 5px; overflow: hidden; margin: 0; color: var(--muted); font-size: 10px; white-space: nowrap; }
-.share-card__location > span { overflow: hidden; text-overflow: ellipsis; }
-.share-card__location em { overflow: hidden; color: color-mix(in srgb, var(--muted) 78%, transparent); font-size: 9px; font-style: normal; text-overflow: ellipsis; }
+.share-card__system { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 6px; margin: 0 0 7px; color: var(--text-soft); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.share-card__system small { flex: 0 0 auto; padding: 1px 4px; color: var(--text-soft); background: var(--neutral-soft); border-radius: var(--radius-sm); font-size: .75rem; }
+.share-card__location { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0; color: var(--text-soft); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
+.share-card__location em { color: var(--text-soft); font-size: .75rem; font-style: normal; }
 .share-card__location em::before { margin-right: 5px; content: "·"; }
 .share-card__location :deep(.country-flag) { width: 16px; height: 16px; }
 .share-card__aside { display: grid; min-width: 58px; justify-items: end; align-content: center; gap: 6px; }
-.share-card__aside > small { color: var(--muted); font-size: 9px; white-space: nowrap; }
-.share-status { gap: 5px; color: var(--muted); font-size: 11px; }
+.share-card__aside > small { color: var(--text-soft); font-size: .75rem; line-height: 1.5; }
+.share-status { gap: 5px; color: var(--text-soft); font-size: .8125rem; white-space: nowrap; }
 .share-status i { width: 7px; height: 7px; background: currentColor; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
 .share-status.is-online { color: var(--brand); }
 .share-status.is-degraded { color: var(--amber); }
@@ -512,21 +553,21 @@ onBeforeUnmount(() => {
 .share-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--border); }
 .share-metrics > div { display: grid; align-content: center; gap: 5px; padding: 11px 13px; border-left: 1px solid var(--border); }
 .share-metrics > div:first-child { border-left: 0; }
-.share-metrics span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.share-metrics span { display: flex; align-items: center; gap: 5px; color: var(--text-soft); font-size: .8125rem; }
 .share-metrics strong { font-size: 16px; }
 .share-metrics > div > i { height: 4px; overflow: hidden; background: var(--neutral-soft); border-radius: 10px; }
 .share-metrics b { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), var(--brand)); border-radius: inherit; }
-.share-metrics small { color: var(--muted); font-size: 10px; }
+.share-metrics small { color: var(--text-soft); font-size: .75rem; }
 .share-card__empty { padding: 29px; color: var(--muted); text-align: center; border-block: 1px solid var(--border); }
 
-.share-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.46fr); align-items: center; gap: 10px; padding: 12px 14px; margin: 0; }
+.share-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; padding: 14px; margin: 0; }
 .share-details div { min-width: 0; }
 /* 实时和累计收发都只用箭头标示方向，左右并排后与其他格同高，不再撑高整张卡 */
-.share-details__traffic dd { display: flex; align-items: center; gap: 6px; }
+.share-details__traffic dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .share-details__traffic dd > span { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-details__traffic dd svg { flex: 0 0 auto; color: var(--muted); }
-.share-details dt { gap: 4px; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
-.share-details dd { overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.share-details dt { gap: 4px; margin-bottom: 6px; color: var(--text-soft); font-size: .75rem; }
+.share-details dd { margin: 0; font-size: .875rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
 
 .share-state { display: grid; min-height: 280px; place-items: center; align-content: center; gap: 12px; color: var(--muted); text-align: center; }
 .share-state p { margin: 0; }
@@ -573,10 +614,9 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 430px) {
-  .share-header { align-items: flex-start; }
+  .share-header { align-items: center; flex-wrap: wrap; }
   .share-brand strong { display: none; }
-  .share-view-switch button span { display: none; }
-  .share-view-switch button { width: 34px; justify-content: center; padding: 0; }
+  .share-view-switch button { justify-content: center; }
   .share-stats div { padding-inline: 10px; }
   .share-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
