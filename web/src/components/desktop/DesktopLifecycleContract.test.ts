@@ -12,8 +12,8 @@ const terminal = source('../terminal/HostTerminal.vue')
 describe('desktop background lifecycle contract', () => {
   it('pauses active-job refreshes while the activity window is inactive', () => {
     expect(jobs).toContain('desktopWindowActiveKey')
-    expect(jobs).toContain('desktopWindowActive.value && jobs.value.some')
-    expect(jobs).toContain('else controller?.abort()')
+    expect(jobs).toContain('!current.signal.aborted && desktopWindowActive.value')
+    expect(jobs).toMatch(/watch\(desktopWindowActive,[\s\S]*?else\s*\{\s*controller\?\.abort\(\)\s*if \(timer\) window\.clearTimeout\(timer\)/)
   })
 
   it('buffers AI stream deltas without scheduling background animation frames', () => {

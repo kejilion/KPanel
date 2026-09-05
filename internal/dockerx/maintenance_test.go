@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -57,6 +58,148 @@ func TestImagePullRunsAsPersistentBackgroundJob(t *testing.T) {
 	}
 	if record.Input.Action != "image_pull" || record.Input.Image != "" {
 		t.Fatalf("completed job retained request details: %#v", record.Input)
+	}
+}
+
+func TestMaintenancePersistenceFailureDoesNotLeaveBusyOrReplay(t *testing.T) {
+	for _, phase := range []string{"queued", "running", "succeeded", "failed"} {
+		t.Run(phase, func(t *testing.T) {
+			var calls atomic.Int32
+			var inject atomic.Bool
+			inject.Store(true)
+			parent := t.TempDir()
+			root := filepath.Join(parent, "jobs")
+			blockStorage := func() error {
+				if err := os.Rename(root, root+".offline"); err != nil {
+					return err
+				}
+				return os.WriteFile(root, []byte("storage unavailable"), 0600)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if inject.Load() && (phase == "succeeded" || phase == "failed") {
+					if err := blockStorage(); err != nil {
+						t.Error(err)
+					}
+				}
+				if phase == "failed" {
+					http.Error(w, "engine failure", 500)
+					return
+				}
+				_, _ = w.Write([]byte("{}"))
+			}))
+			defer server.Close()
+			client := testHTTPClient(server)
+			if err := client.ConfigureJobs(root); err != nil {
+				t.Fatal(err)
+			}
+			record := dockerJobRecord{MaintenanceJob: MaintenanceJob{ID: strings.Repeat("a", 32), Action: "container_prune", Status: "queued", CreatedAt: time.Now()}, Input: MaintenanceInput{Action: "container_prune"}}
+			if phase == "queued" {
+				if err := blockStorage(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := client.StartMaintenance(context.Background(), record.Input); !errors.Is(err, ErrDockerJobStorage) {
+					t.Fatalf("queued write error = %v", err)
+				}
+				if client.jobs.hasActive() || calls.Load() != 0 {
+					t.Fatal("failed submission executed or stayed busy")
+				}
+			} else {
+				if err := client.jobs.put(record); err != nil {
+					t.Fatal(err)
+				}
+				if !errors.Is(client.jobs.startError(), ErrDockerJobConflict) {
+					t.Fatal("normal active job must retain conflict")
+				}
+				if phase == "running" {
+					if err := blockStorage(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				client.runMaintenance(record)
+				visible, err := client.MaintenanceJob(record.ID)
+				if err != nil || visible.Status != "failed" || visible.Stage != "persistence_pending" || visible.FinishedAt == nil {
+					t.Fatalf("missing stopped/storage fault: %#v %v", visible, err)
+				}
+				if phase == "running" && (visible.StartedAt != nil || !strings.Contains(visible.Message, "尚未执行")) {
+					t.Fatalf("unstarted action presented as executed: %#v", visible)
+				}
+				if _, err := client.StartMaintenance(context.Background(), record.Input); !errors.Is(err, ErrDockerJobStorage) {
+					t.Fatalf("pending result must be a storage fault, got %v", err)
+				}
+			}
+			if err := os.Remove(root); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(root+".offline", root); err != nil {
+				t.Fatal(err)
+			}
+			inject.Store(false)
+			time.Sleep(1100 * time.Millisecond)
+			if client.jobs.hasActive() {
+				t.Fatal("recovered storage left registry permanently busy")
+			}
+			if phase != "queued" {
+				saved, err := client.jobs.read(record.ID)
+				want := phase
+				if phase == "running" {
+					want = "failed"
+				}
+				if err != nil || saved.Status != want || saved.Input.Image != "" {
+					t.Fatalf("lost terminal result: %#v %v", saved, err)
+				}
+			}
+			wantCalls := int32(1)
+			if phase == "queued" || phase == "running" {
+				wantCalls = 0
+			}
+			if calls.Load() != wantCalls {
+				t.Fatalf("host actions=%d want=%d", calls.Load(), wantCalls)
+			}
+			next, err := client.StartMaintenance(context.Background(), record.Input)
+			if err != nil {
+				t.Fatalf("new task still blocked after storage recovered: %v", err)
+			}
+			waitForDockerJob(t, client, next.ID)
+			if calls.Load() != wantCalls+1 {
+				t.Fatal("new submission replayed old action")
+			}
+			if err := client.ConfigureJobs(root); err != nil {
+				t.Fatal(err)
+			}
+			if client.jobs.hasActive() {
+				t.Fatal("restart resurrected completed execution")
+			}
+		})
+	}
+}
+
+func TestDockerRestartDoesNotReplayUnsavedExecution(t *testing.T) {
+	for _, state := range []string{"queued", "running"} {
+		t.Run(state, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("restart replayed a host action") }))
+			defer server.Close()
+			client := testHTTPClient(server)
+			root := t.TempDir()
+			if err := client.ConfigureJobs(root); err != nil {
+				t.Fatal(err)
+			}
+			record := dockerJobRecord{MaintenanceJob: MaintenanceJob{ID: strings.Repeat("b", 32), Action: "container_prune", Status: state, CreatedAt: time.Now()}, Input: MaintenanceInput{Action: "container_prune", Image: "must-be-cleared"}}
+			if err := client.jobs.put(record); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.ConfigureJobs(root); err != nil {
+				t.Fatal(err)
+			}
+			result, err := client.MaintenanceJob(record.ID)
+			if err != nil || result.Status != "failed" || result.Stage != "interrupted" || client.jobs.hasActive() {
+				t.Fatalf("restart made up terminal success or retained busy: %#v %v", result, err)
+			}
+			saved, err := client.jobs.read(record.ID)
+			if err != nil || saved.Status != "failed" || saved.Input.Image != "" {
+				t.Fatalf("interruption did not persist: %#v %v", saved, err)
+			}
+		})
 	}
 }
 

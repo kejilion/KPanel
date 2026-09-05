@@ -62,10 +62,7 @@ func (s *Server) handleWebEnvironmentAction(w http.ResponseWriter, r *http.Reque
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
-	result := "failure"
-	if response.StatusCode >= 200 && response.StatusCode < 300 {
-		result = "accepted"
-	}
+	result, change := acceptedJobAudit(response, "webenv", change)
 	_ = s.audit(r, session.User.ID, "web.environment."+input.Action, "web_environment", target, result, change)
 	s.writeAgentResponse(w, r, response)
 }
