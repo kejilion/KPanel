@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 )
@@ -20,16 +19,6 @@ type attachmentMetadataJSON struct {
 	Kind     string             `json:"kind"`
 	Data     attachmentDataJSON `json:"data"`
 	present  bool
-	overflow bool
-}
-
-func (item *attachmentMetadataJSON) UnmarshalJSON(data []byte) error {
-	if item.overflow {
-		return errors.New("message attachment record exceeds the item read limit")
-	}
-	item.present = true
-	type fields attachmentMetadataJSON
-	return json.Unmarshal(data, (*fields)(item))
 }
 
 type attachmentDataJSON []byte
