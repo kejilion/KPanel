@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["刷新中", "Refreshing"],
   ["状态加载中", "Loading status"],
   ["状态读取失败", "Status unavailable"],
   ["部分状态读取失败，其他功能不受影响。", "Some status checks failed. Other tools remain available."],

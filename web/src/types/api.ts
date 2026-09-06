@@ -476,6 +476,7 @@ export type OverviewReadGroup = 'runtime' | 'config' | 'ssh-defense' | 'bbrv3' |
 export interface OverviewReadState {
   state: 'loading' | 'ready' | 'error'
   observedAt?: string
+  refreshing?: boolean
 }
 
 export interface SystemOverview {

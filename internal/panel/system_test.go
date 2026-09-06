@@ -213,7 +213,9 @@ func TestOverviewReadPathsAreExactAndRequireSession(t *testing.T) {
 		}
 		server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: []byte(`{"state":{},"observedAt":"2026-09-07T00:00:00Z"}`)}}
 		unauthorized := httptest.NewRecorder()
-		server.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, path, nil))
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Host = "panel.test"
+		server.ServeHTTP(unauthorized, request)
 		if unauthorized.Code != http.StatusUnauthorized {
 			t.Fatalf("unauthenticated read %s: %d", path, unauthorized.Code)
 		}

@@ -1,5 +1,31 @@
 import type { SystemOverview } from '@/types/api'
 
+// Keep the last explicitly observed state during background refresh. This
+// prevents cards/forms from collapsing every polling interval; its old time
+// and refreshing marker remain visible until this group's response arrives.
+export function mergeOverviewUpdate(previous: SystemOverview, incoming: SystemOverview): SystemOverview {
+  if (!previous.reads || !incoming.reads) return incoming
+  const reads = { ...incoming.reads }
+  let management = incoming.management
+  for (const group of ['config', 'ssh-defense', 'bbrv3', 'capabilities'] as const) {
+    if (incoming.reads[group]?.state !== 'loading' || previous.reads[group]?.state !== 'ready') continue
+    reads[group] = { ...previous.reads[group], state: 'ready', refreshing: true }
+    if (group === 'config') {
+      management = { ...previous.management,
+        ssh: { ...previous.management.ssh, defense: management.ssh.defense },
+        swap: { ...previous.management.swap, totalBytes: management.swap.totalBytes, usedBytes: management.swap.usedBytes },
+        bbrv3: management.bbrv3, capabilities: management.capabilities }
+    } else if (group === 'ssh-defense') {
+      management = { ...management, ssh: { ...management.ssh, defense: previous.management.ssh.defense } }
+    } else if (group === 'bbrv3') {
+      management = { ...management, bbrv3: previous.management.bbrv3 }
+    } else {
+      management = { ...management, capabilities: previous.management.capabilities }
+    }
+  }
+  return { ...incoming, reads, management }
+}
+
 // Structural defaults support rendering the static tool catalog. They are not
 // observations: consumers must gate all status values and actions on reads.
 export function pendingOverview(): SystemOverview {

@@ -64,7 +64,7 @@ import SystemLogsDialog from '@/components/overview/SystemLogsDialog.vue'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import { ApiError, api } from '@/lib/api'
-import { pendingOverview } from '@/lib/overviewState'
+import { mergeOverviewUpdate, pendingOverview } from '@/lib/overviewState'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import {
   clampPercent,
@@ -1030,8 +1030,9 @@ function toolStatusValue(tool: ManagementTool): string {
 }
 
 function toolObservedAt(tool: ManagementTool): string | undefined {
-  const observed = data.value?.reads?.[toolReadGroup(tool)]?.observedAt
-  return observed ? formatDateTime(observed) : undefined
+  const read = data.value?.reads?.[toolReadGroup(tool)]
+  const time = read?.observedAt ? formatDateTime(read.observedAt) : ''
+  return read?.refreshing ? `${time} · ${phrase('刷新中')}` : time || undefined
 }
 
 async function load(silent = false): Promise<void> {
@@ -1045,7 +1046,7 @@ async function load(silent = false): Promise<void> {
   try {
     const onPartial = (partial: SystemOverview) => {
           if (current.signal.aborted || controller !== current) return
-          data.value = partial
+          data.value = mergeOverviewUpdate(data.value, partial)
           loading.value = false
           if (partial.agent.version) panel.setAgent(partial.agent)
         }
