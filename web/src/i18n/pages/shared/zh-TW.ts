@@ -1,6 +1,13 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  // Lightweight node service health labels.
+  ["自动检查","自動檢查"],
+  ["遥测服务","遙測服務"],
+  ["终端服务","終端服務"],
+  ["文件服务","檔案服務"],
+  ["SSH 登录采集","SSH 登入採集"],
+  ["暂无记录","暫無記錄"],
   ['运营商', '電信業者'],
   ['运营商未知', '電信業者未知'],
   ['网络信息未公开', '網路資訊未公開'],

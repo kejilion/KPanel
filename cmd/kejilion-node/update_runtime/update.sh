@@ -76,7 +76,7 @@ kpanel_node_acquire_lock() {
 	trap 'exit 143' HUP TERM
 	rm -f -- "$legacy_marker"
 }
-# KPANEL_NODE_RUNTIME_GENERATION=2
+# KPANEL_NODE_RUNTIME_GENERATION=3
 set -euo pipefail
 
 mode="${1:-update}"
@@ -100,13 +100,51 @@ base_url="https://${github_host}/kejilion/KPanel/releases/latest/download"
 temporary_dir=""
 
 kpanel_node_acquire_lock || exit 1
+# A single credential-free observation; lifecycle lock serializes every writer.
+update_checked_at="$(date +%s)"
+update_result=running
+update_error=""
+optional_degraded=false
+write_update_status() {
+	local result="$1" error="$2" finished="$3" directory=/etc/kejilion-node
+	local status_file="$directory/update-status.json" gid status_temporary
+	gid="$(id -g kejilion-node)" || return 1
+	[ -d "$directory" ] && [ ! -L "$directory" ] && [ "$(stat -c '%u:%g:%a' "$directory")" = "0:$gid:750" ] || return 1
+	if [ -e "$status_file" ] || [ -L "$status_file" ]; then
+		[ -f "$status_file" ] && [ ! -L "$status_file" ] && [ "$(stat -c '%u:%g:%a:%h' "$status_file")" = "0:$gid:640:1" ] || return 1
+	fi
+	status_temporary="$directory/.update-status.pending"
+	# One fixed staging file also bounds residue after SIGKILL. Never follow it.
+	if [ -e "$status_temporary" ] || [ -L "$status_temporary" ]; then
+		[ -f "$status_temporary" ] && [ ! -L "$status_temporary" ] && [ "$(stat -c '%u:%h' "$status_temporary")" = "0:1" ] || return 1
+		rm -f -- "$status_temporary" || return 1
+	fi
+	(umask 077; set -C; : >"$status_temporary") || return 1
+	if ! printf '{"state":"%s","checkedAt":%s,"finishedAt":%s,"errorCode":"%s"}\n' "$result" "$update_checked_at" "$finished" "$error" >"$status_temporary" ||
+		! chown "0:$gid" "$status_temporary" || ! chmod 0640 "$status_temporary" || ! mv -f -- "$status_temporary" "$status_file"; then
+		rm -f -- "$status_temporary"
+		return 1
+	fi
+}
 cleanup() {
+	local exit_code=$? finished
+	trap - EXIT
+	if [ "$update_result" = running ]; then
+		update_result=failed
+		[ -n "$update_error" ] || update_error=internal
+	fi
+	if [ "$exit_code" = 130 ] || [ "$exit_code" = 143 ]; then update_result=interrupted; update_error=interrupted; fi
+	if [ "$exit_code" = 0 ] && [ "$optional_degraded" = true ]; then update_result=degraded; update_error=optional_service; fi
+	finished="$(date +%s)"
+	write_update_status "$update_result" "$update_error" "$finished" || echo "KPanel update status could not be recorded." >&2
 	[ -z "$temporary_dir" ] || rm -rf -- "$temporary_dir"
 	kpanel_node_release_lock
+	exit "$exit_code"
 }
 trap cleanup EXIT
 trap 'echo "KPanel lightweight node update interrupted; run the command again to retry." >&2; exit 130' INT
 trap 'exit 143' HUP TERM
+write_update_status running '' 0 || echo "KPanel update status could not be recorded." >&2
 
 # Old release assets only migrate in kejilion-node-update.*. The new staging
 # namespace prevents their `version` probe from restoring an obsolete updater.
@@ -114,6 +152,7 @@ temporary_dir="$(mktemp -d /tmp/kejilion-node-release.XXXXXX)"
 
 curl_progress=(--silent --show-error)
 [ ! -t 2 ] || curl_progress=(--progress-bar --show-error)
+update_error=release_check
 echo "Checking KPanel lightweight node release..."
 if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "${curl_progress[@]}" \
 	--connect-timeout 15 --max-time 60 --retry 3 --retry-delay 5 --retry-max-time 240 \
@@ -122,6 +161,7 @@ if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "$
 	echo "KPanel release check failed; check access to github.com and retry." >&2
 	exit 1
 fi
+update_error=manifest
 expected="$(awk -v name="$binary_name" '$2 == name { print $1 }' "${temporary_dir}/SHA256SUMS")"
 printf '%s' "$expected" | grep -Eq '^[0-9a-f]{64}$' || {
 	echo "release checksum is unavailable" >&2
@@ -239,9 +279,10 @@ fi
 
 restart_optional_services() {
 	if ! ensure_file_service_unit; then
+		optional_degraded=true
 		echo "KPanel lightweight node updated; file service unit is unavailable" >&2
 	fi
-	systemctl enable "$file_service" >/dev/null 2>&1 || true
+	systemctl enable "$file_service" >/dev/null 2>&1 || optional_degraded=true
 	# Telemetry is the core update contract. Optional brokers can be unavailable
 	# on older centers; their failure must not roll back a healthy reporting node.
 	local service
@@ -249,13 +290,16 @@ restart_optional_services() {
 		if systemctl cat "$service" >/dev/null 2>&1; then
 			if service_running_current "$service" && { [ "$service" != "$file_service" ] || [ "$file_service_unit_changed" != true ]; }; then continue; fi
 			if ! systemctl restart "$service" || ! wait_for_service "$service"; then
+				optional_degraded=true
 				echo "KPanel lightweight node updated; optional service unavailable: ${service}" >&2
 			fi
 		fi
 	done
 }
 restart_services() {
+	update_error=config
 	repair_config_access || return 1
+	update_error=restart
 	systemctl restart kejilion-node.service || return 1
 	wait_for_service kejilion-node.service || return 1
 	restart_optional_services
@@ -265,13 +309,16 @@ if [ -f "$binary_path" ] && [ "$(sha256sum "$binary_path" | awk '{print $1}')" =
 	if [ "$restart_required" = "true" ] && ! service_running_current kejilion-node.service; then
 		restart_services || { echo "installed node is current but restart failed" >&2; exit 1; }
 	elif [ "$restart_required" = "true" ]; then
+		update_error=config
 		repair_config_access || { echo "node configuration access is invalid" >&2; exit 1; }
 		restart_optional_services
 	fi
+	update_result=current; update_error=""
 	echo "KPanel lightweight node is already up to date."
 	exit 0
 fi
 
+update_error=download
 echo "Downloading KPanel lightweight node..."
 if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "${curl_progress[@]}" \
 	--connect-timeout 15 --max-time 180 --retry 3 --retry-delay 5 --retry-max-time 600 \
@@ -280,18 +327,21 @@ if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "$
 	echo "KPanel node download failed; check access to GitHub release downloads and retry." >&2
 	exit 1
 fi
+update_error=checksum
 actual="$(sha256sum "${temporary_dir}/${binary_name}" | awk '{print $1}')"
 [ "$actual" = "$expected" ] || {
 	echo "release checksum verification failed" >&2
 	exit 1
 }
 chmod 0755 "${temporary_dir}/${binary_name}"
+update_error=protocol
 version_output="$("${temporary_dir}/${binary_name}" version)"
 printf '%s\n' "$version_output" | grep -Eq '^[^[:space:]]+ light-v1$' || {
 	echo "release binary protocol is invalid" >&2
 	exit 1
 }
 
+update_error=internal
 install -o root -g root -m 0755 "${temporary_dir}/${binary_name}" "${binary_path}.new"
 had_previous=false
 if [ -f "$binary_path" ]; then
@@ -304,9 +354,11 @@ if [ "$restart_required" = "true" ] && ! restart_services; then
 	if [ "$had_previous" = "true" ] && [ -f "${binary_path}.previous" ]; then
 		mv -f -- "${binary_path}.previous" "$binary_path"
 		if ! restart_services; then
+			update_error=rollback
 			echo "KPanel lightweight node rollback restored the binary but service recovery failed." >&2
 			exit 1
 		fi
+		update_result=rolled_back; update_error=restart
 		echo "KPanel lightweight node update failed and was rolled back." >&2
 	else
 		echo "KPanel lightweight node update failed; no previous binary is available." >&2
@@ -314,4 +366,5 @@ if [ "$restart_required" = "true" ] && ! restart_services; then
 	exit 1
 fi
 rm -f -- "${binary_path}.previous"
+update_result=updated; update_error=""
 echo "KPanel lightweight node update completed: ${version_output}"

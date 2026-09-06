@@ -500,6 +500,10 @@ func cloneSnapshot(source *HostSnapshot) *HostSnapshot {
 		return nil
 	}
 	value := *source
+	if source.LightHealth != nil {
+		health := *source.LightHealth
+		value.LightHealth = &health
+	}
 	value.Telemetry.OSLike = append([]string(nil), source.Telemetry.OSLike...)
 	return &value
 }

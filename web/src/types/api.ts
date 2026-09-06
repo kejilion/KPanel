@@ -186,6 +186,7 @@ export interface ClusterHostSnapshot {
 }
 
 export interface ClusterHost {
+	lightHealth?: LightNodeHealth
   id: string
   isLocal: boolean
   name: string
@@ -214,6 +215,20 @@ export interface ClusterHost {
   resourceVersion: string
   createdAt: string
   updatedAt: string
+}
+
+export interface LightNodeServiceHealth {
+  loadState: string
+  activeState: string
+  subState: string
+  unitFileState: string
+}
+
+export interface LightNodeHealth {
+  observedAt: string
+  runtimeVersion: string
+  update: { state: string; checkedAt?: number; finishedAt?: number; errorCode?: string }
+  services: Record<'timer' | 'telemetry' | 'terminal' | 'file' | 'sshLogin', LightNodeServiceHealth>
 }
 
 export interface ClusterHostList {

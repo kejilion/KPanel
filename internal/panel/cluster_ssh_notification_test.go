@@ -2,6 +2,7 @@ package panel
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
 func TestLightReportAdvertisesSSHLoginCapability(t *testing.T) {
@@ -38,6 +40,8 @@ func TestLightReportAdvertisesSSHLoginCapability(t *testing.T) {
 		AgentVersion: "1.0.2", AgentProtocolVersion: cluster.LightNodeProtocol,
 		Hostname: "edge-ssh", OS: "Linux", CollectedAt: now,
 	}}
+	unknown := contract.LightNodeServiceHealth{LoadState: "unknown", ActiveState: "unknown", SubState: "unknown", UnitFileState: "unknown"}
+	input.Health = &contract.LightNodeHealth{ObservedAt: now, RuntimeVersion: "1.0.2", Update: contract.LightNodeUpdateHealth{State: "failed", CheckedAt: now.Unix() - 10, FinishedAt: now.Unix(), ErrorCode: "download"}, Services: contract.LightNodeServicesHealth{Timer: unknown, Telemetry: unknown, Terminal: unknown, File: unknown, SSHLogin: unknown}}
 	body, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +66,18 @@ func TestLightReportAdvertisesSSHLoginCapability(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("light report status = %d; body=%s", response.Code, response.Body.String())
 	}
-	if got := response.Header().Get(cluster.LightResponseCapabilitiesHeader); got != cluster.SSHLoginCapability {
+	if got := response.Header().Get(cluster.LightResponseCapabilitiesHeader); got != cluster.SSHLoginCapability+","+cluster.LightHealthCapability {
 		t.Fatalf("light report capability header = %q, want %q", got, cluster.SSHLoginCapability)
+	}
+	host, err := server.cluster.Host(context.Background(), lightNode.NodeID)
+	if err != nil || host.LightHealth == nil {
+		t.Fatal("authenticated health missing", err)
+	}
+	shared := server.clusterShareSnapshot(context.Background(), store.ClusterShare{Token: strings.Repeat("c", 64)}, "health-test")
+	public, _ := json.Marshal(shared)
+	for _, forbidden := range []string{"lightHealth", "runtimeVersion", "errorCode", "download", "1.0.2"} {
+		if bytes.Contains(public, []byte(forbidden)) {
+			t.Fatalf("anonymous share leaked %s", forbidden)
+		}
 	}
 }

@@ -69,42 +69,45 @@ const (
 )
 
 type HostSnapshot struct {
-	Telemetry              contract.HostTelemetry `json:"telemetry"`
-	ReceivedAt             time.Time              `json:"receivedAt"`
-	LatencyMilliseconds    int64                  `json:"latencyMilliseconds"`
-	ReceiveBytesPerSecond  float64                `json:"receiveBytesPerSecond"`
-	TransmitBytesPerSecond float64                `json:"transmitBytesPerSecond"`
+	// Health is ephemeral: old centers must still read persisted snapshots on rollback.
+	LightHealth            *contract.LightNodeHealth `json:"-"`
+	Telemetry              contract.HostTelemetry    `json:"telemetry"`
+	ReceivedAt             time.Time                 `json:"receivedAt"`
+	LatencyMilliseconds    int64                     `json:"latencyMilliseconds"`
+	ReceiveBytesPerSecond  float64                   `json:"receiveBytesPerSecond"`
+	TransmitBytesPerSecond float64                   `json:"transmitBytesPerSecond"`
 }
 
 type Host struct {
-	ID                          string            `json:"id"`
-	IsLocal                     bool              `json:"isLocal"`
-	Name                        string            `json:"name"`
-	Kind                        HostKind          `json:"kind"`
-	Origin                      string            `json:"origin"`
-	TransportSecurity           TransportSecurity `json:"transportSecurity"`
-	PeerFingerprint             string            `json:"peerFingerprint,omitempty"`
-	RemoteNodeID                string            `json:"remoteNodeId"`
-	FederationProtocol          string            `json:"federationProtocol"`
-	Scope                       string            `json:"scope"`
-	TerminalAvailable           bool              `json:"terminalAvailable"`
-	FileManagementAvailable     bool              `json:"fileManagementAvailable"`
-	FileTransferAvailable       bool              `json:"fileTransferAvailable"`
-	MutualFileTransferAvailable bool              `json:"mutualFileTransferAvailable"`
-	PanelVersion                string            `json:"panelVersion,omitempty"`
-	SecurityEntrancePath        string            `json:"securityEntrancePath,omitempty"`
-	State                       HostState         `json:"state"`
-	LastSnapshot                *HostSnapshot     `json:"lastSnapshot,omitempty"`
-	LastAttemptAt               *time.Time        `json:"lastAttemptAt,omitempty"`
-	LastSuccessAt               *time.Time        `json:"lastSuccessAt,omitempty"`
-	ConsecutiveFailures         int               `json:"consecutiveFailures"`
-	LastErrorCode               string            `json:"lastErrorCode,omitempty"`
-	LastError                   string            `json:"lastError,omitempty"`
-	Polling                     bool              `json:"polling"`
-	NextPollAt                  *time.Time        `json:"nextPollAt,omitempty"`
-	ResourceVersion             string            `json:"resourceVersion"`
-	CreatedAt                   time.Time         `json:"createdAt"`
-	UpdatedAt                   time.Time         `json:"updatedAt"`
+	LightHealth                 *contract.LightNodeHealth `json:"lightHealth,omitempty"`
+	ID                          string                    `json:"id"`
+	IsLocal                     bool                      `json:"isLocal"`
+	Name                        string                    `json:"name"`
+	Kind                        HostKind                  `json:"kind"`
+	Origin                      string                    `json:"origin"`
+	TransportSecurity           TransportSecurity         `json:"transportSecurity"`
+	PeerFingerprint             string                    `json:"peerFingerprint,omitempty"`
+	RemoteNodeID                string                    `json:"remoteNodeId"`
+	FederationProtocol          string                    `json:"federationProtocol"`
+	Scope                       string                    `json:"scope"`
+	TerminalAvailable           bool                      `json:"terminalAvailable"`
+	FileManagementAvailable     bool                      `json:"fileManagementAvailable"`
+	FileTransferAvailable       bool                      `json:"fileTransferAvailable"`
+	MutualFileTransferAvailable bool                      `json:"mutualFileTransferAvailable"`
+	PanelVersion                string                    `json:"panelVersion,omitempty"`
+	SecurityEntrancePath        string                    `json:"securityEntrancePath,omitempty"`
+	State                       HostState                 `json:"state"`
+	LastSnapshot                *HostSnapshot             `json:"lastSnapshot,omitempty"`
+	LastAttemptAt               *time.Time                `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt               *time.Time                `json:"lastSuccessAt,omitempty"`
+	ConsecutiveFailures         int                       `json:"consecutiveFailures"`
+	LastErrorCode               string                    `json:"lastErrorCode,omitempty"`
+	LastError                   string                    `json:"lastError,omitempty"`
+	Polling                     bool                      `json:"polling"`
+	NextPollAt                  *time.Time                `json:"nextPollAt,omitempty"`
+	ResourceVersion             string                    `json:"resourceVersion"`
+	CreatedAt                   time.Time                 `json:"createdAt"`
+	UpdatedAt                   time.Time                 `json:"updatedAt"`
 }
 
 func ScopeAllowsTerminal(scope string) bool {
@@ -147,7 +150,8 @@ type LightFileCapabilityResponse struct {
 }
 
 type LightReportRequest struct {
-	Telemetry contract.HostTelemetry `json:"telemetry"`
+	Telemetry contract.HostTelemetry    `json:"telemetry"`
+	Health    *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type LightReportResponse struct {

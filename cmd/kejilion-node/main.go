@@ -49,6 +49,7 @@ type nodeConfig struct {
 	ReportingKey   string `json:"reportingKey"`
 	ReportInterval int    `json:"reportIntervalSeconds"`
 	SSHLogin       bool   `json:"sshLogin,omitempty"`
+	Health         bool   `json:"-"`
 }
 
 type tokenWire struct {
@@ -75,7 +76,8 @@ type enrollResponse struct {
 }
 
 type reportRequest struct {
-	Telemetry contract.HostTelemetry `json:"telemetry"`
+	Telemetry contract.HostTelemetry    `json:"telemetry"`
+	Health    *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type reportResponse struct {
@@ -93,6 +95,9 @@ func main() {
 }
 
 func run(arguments []string) error {
+	if len(arguments) == 1 && arguments[0] == "health" {
+		return json.NewEncoder(os.Stdout).Encode(collectLightHealth(context.Background()))
+	}
 	if len(arguments) == 1 && arguments[0] == "version" {
 		if err := maybeMigrateLegacySSHLoginInstall(); err != nil {
 			slog.Warn("legacy lightweight node runtime migration was incomplete", "error", err)
@@ -183,6 +188,7 @@ func runEnroll(arguments []string) error {
 		SchemaVersion: 1, Origin: origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
 		SSHLogin: hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
+		Health:   hasResponseCapability(responseHeaders, cluster.LightHealthCapability),
 	}
 	if terminalEnabled {
 		config.TargetNodeID = response.TargetNodeID
@@ -301,6 +307,16 @@ func collectAndReport(
 		Load: summary.Load, CPU: summary.CPU, Memory: summary.Memory, Disk: disk,
 		Network: summary.Network, PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	}}
+	if config.Health {
+		payload.Health = collectLightHealth(ctx)
+	}
+	return sendLightReport(ctx, config, secret, payload, previousReportLatency)
+}
+
+func sendLightReport(ctx context.Context, config nodeConfig, secret []byte, payload reportRequest, previousReportLatency *int64) (nodeConfig, int64, error) {
+	if !config.Health {
+		payload.Health = nil
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return config, 0, err
@@ -312,8 +328,9 @@ func collectAndReport(
 	var response reportResponse
 	requestStartedAt := time.Now()
 	status, responseHeaders, err := postRawJSONWithStatusAndHeaders(ctx, config.Origin+lightReportPath, body, headers, &response)
-	if err != nil && config.SSHLogin && shouldRetryLightReportWithoutSSHLogin(status) {
+	if err != nil && (config.SSHLogin || config.Health) && shouldRetryLightReportWithoutSSHLogin(status) {
 		payload.Telemetry.SSHLogin = nil
+		payload.Health = nil
 		body, err = json.Marshal(payload)
 		if err == nil {
 			headers, err = signedLightNodeHeaders(config, lightReportPath, body, secret, previousReportLatency)
@@ -331,6 +348,7 @@ func collectAndReport(
 
 func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig {
 	config.SSHLogin = hasResponseCapability(headers, cluster.SSHLoginCapability)
+	config.Health = hasResponseCapability(headers, cluster.LightHealthCapability)
 	return config
 }
 
