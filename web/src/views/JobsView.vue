@@ -227,12 +227,12 @@ watch(desktopWindowActive, (active) => {
   if (active) { void load({ silent: true }); void loadDetail() }
   else {
     controller?.abort()
+    if (timer) window.clearTimeout(timer)
+    timer = undefined
     detailController?.abort()
     detail.value = undefined
     if (detailTimer) window.clearTimeout(detailTimer)
     detailTimer = undefined
-    if (timer) window.clearTimeout(timer)
-    timer = undefined
   }
 })
 
