@@ -62,19 +62,22 @@ type Manager struct {
 }
 
 type session struct {
-	mu        sync.Mutex
-	id        string
-	owner     string
-	process   Process
-	buffer    []byte
-	base      int64
-	next      int64
-	notify    chan struct{}
-	createdAt time.Time
-	updatedAt time.Time
-	exitedAt  *time.Time
-	exitError string
-	closed    bool
+	closeMu     sync.Mutex
+	mu          sync.Mutex
+	id          string
+	owner       string
+	process     Process
+	buffer      []byte
+	base        int64
+	next        int64
+	notify      chan struct{}
+	createdAt   time.Time
+	updatedAt   time.Time
+	exitedAt    *time.Time
+	exitError   string
+	closed      bool
+	terminated  bool
+	closeFailed bool
 }
 
 type Snapshot struct {
@@ -234,25 +237,41 @@ type transientTerminalProcess struct {
 	Process
 	systemctl string
 	unit      string
-	stopOnce  sync.Once
+	stopMu    sync.Mutex
+	stopped   bool
 }
 
-func (process *transientTerminalProcess) stopUnit() {
-	process.stopOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = exec.CommandContext(ctx, process.systemctl, "stop", process.unit).Run()
-	})
+func (process *transientTerminalProcess) stopUnit() error {
+	process.stopMu.Lock()
+	defer process.stopMu.Unlock()
+	if process.stopped {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, process.systemctl, "stop", process.unit).Run(); err != nil {
+		// --collect can unload the unit before a retry reaches systemd. Only
+		// an authoritative not-found state makes that failure idempotent.
+		state, stateErr := exec.CommandContext(ctx, process.systemctl, "show", process.unit, "--property=LoadState", "--value").Output()
+		if stateErr != nil || strings.TrimSpace(string(state)) != "not-found" {
+			return err
+		}
+	}
+	process.stopped = true
+	return nil
 }
 
 func (process *transientTerminalProcess) Close() error {
-	err := process.Process.Close()
-	process.stopUnit()
-	return err
+	if err := process.stopUnit(); err != nil {
+		return err
+	}
+	return process.Process.Close()
 }
 
 func (process *transientTerminalProcess) Kill() error {
-	process.stopUnit()
+	if err := process.stopUnit(); err != nil {
+		return err
+	}
 	return process.Process.Kill()
 }
 
@@ -393,20 +412,34 @@ func (m *Manager) Close(owner, id string) error {
 	if err != nil {
 		return err
 	}
+	item.closeMu.Lock()
+	defer item.closeMu.Unlock()
 	item.mu.Lock()
 	if item.closed {
 		item.mu.Unlock()
 		return nil
 	}
+	// Retain ownership and capacity while stop is pending or has failed. Do not
+	// hold the output/state lock across systemd I/O: that can stall all lookups
+	// through Open's manager lock as well as the terminal's output capture.
+	item.closeFailed = true
+	item.mu.Unlock()
+	if !item.terminated {
+		if err := item.process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+		item.terminated = true
+	}
+	if err := item.process.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+		return err
+	}
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	item.closeFailed = false
 	item.closed = true
 	item.updatedAt = m.config.Now().UTC()
 	close(item.notify)
 	item.notify = make(chan struct{})
-	item.mu.Unlock()
-	_ = item.process.Close()
-	if err := item.process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
 	return nil
 }
 
@@ -444,7 +477,7 @@ func (m *Manager) reap(now time.Time) {
 	for id, item := range m.sessions {
 		item.mu.Lock()
 		inactive := now.Sub(item.updatedAt) >= m.config.IdleTimeout || now.Sub(item.createdAt) >= m.config.Lifetime
-		finished := item.closed || item.exitedAt != nil
+		finished := item.closed || (item.exitedAt != nil && !item.closeFailed)
 		if finished && now.Sub(item.updatedAt) >= 5*time.Minute {
 			delete(m.sessions, id)
 		} else if inactive && !finished {
@@ -471,7 +504,7 @@ func (m *Manager) lookup(owner, id string) (*session, error) {
 func (item *session) isActive() bool {
 	item.mu.Lock()
 	defer item.mu.Unlock()
-	return !item.closed && item.exitedAt == nil
+	return !item.closed && (item.exitedAt == nil || item.closeFailed)
 }
 
 func (item *session) snapshot() Snapshot {

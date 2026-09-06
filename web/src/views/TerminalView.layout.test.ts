@@ -268,6 +268,6 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toMatch(
       /\.terminal-stage\.is-fullscreen\s*\{[^}]*position:fixed;[^}]*inset:0;[^}]*height:100dvh;[^}]*grid-template-rows:auto minmax\(0,1fr\);/,
     )
-    expect(hostTerminalSource).toContain('defineExpose({ focusTerminal, scrollToTop, scheduleResize })')
+    expect(hostTerminalSource).toContain('defineExpose({ focusTerminal, scrollToTop, scheduleResize, closeSession })')
   })
 })

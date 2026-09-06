@@ -98,6 +98,7 @@ func (s *terminalAgentStub) Do(_ context.Context, method, path, _ string, _ stri
 		s.resized++
 	case strings.HasSuffix(path, "/close"):
 		s.closed++
+		return AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: []byte(`{"closed":true}`)}, nil
 	default:
 		return AgentResponse{StatusCode: http.StatusNotFound, ContentType: "application/json"}, nil
 	}

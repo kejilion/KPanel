@@ -37,6 +37,7 @@ type panelTerminalSession struct {
 	Owner            string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	CloseRequested   bool
 }
 
 type terminalOpenRequest struct {
@@ -84,7 +85,19 @@ func (s clusterTerminalSource) Resize(ctx context.Context, owner, id string, row
 func (s clusterTerminalSource) Close(ctx context.Context, owner, id string) error {
 	body, _ := json.Marshal(map[string]string{"owner": owner})
 	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals/"+url.PathEscape(id)+"/close", "", newRequestID(), body)
-	return decodeTerminalAgentResponse(response, err, nil)
+	var result struct {
+		Closed bool `json:"closed"`
+	}
+	err = decodeTerminalAgentResponse(response, err, &result)
+	// Normalize confirmed absence at the authenticated target before federation
+	// transports the result; transport and authorization errors remain failures.
+	if errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
+		return nil
+	}
+	if err == nil && !result.Closed {
+		return errors.New("Agent terminal close was not confirmed")
+	}
+	return err
 }
 
 func decodeTerminalAgentResponse(response AgentResponse, err error, target any) error {
@@ -249,6 +262,9 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 	item, ok := s.terminalSessions[id]
 	if ok && item.UserID == userID {
 		item.UpdatedAt = time.Now().UTC()
+		if action == "close" && r.Method == http.MethodPost {
+			item.CloseRequested = true
+		}
 		s.terminalSessions[id] = item
 	} else {
 		ok = false
@@ -273,7 +289,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		output, err := s.outputTerminalBackend(r.Context(), item, offset, wait)
 		if err != nil {
 			if errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-				s.deleteTerminalSession(id)
+				s.deleteFinishedTerminalSession(id)
 				s.writeProblem(w, r, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 				return
 			}
@@ -281,7 +297,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		if output.Closed || output.ExitedAt != nil {
-			s.deleteTerminalSession(id)
+			s.deleteFinishedTerminalSession(id)
 		}
 		s.writeJSON(w, http.StatusOK, output)
 	case "input":
@@ -302,7 +318,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		}
 		if err := s.inputTerminalBackend(r.Context(), item, data); err != nil {
 			if errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-				s.deleteTerminalSession(id)
+				s.deleteFinishedTerminalSession(id)
 				s.writeProblem(w, r, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 				return
 			}
@@ -328,7 +344,7 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		}
 		if err := s.resizeTerminalBackend(r.Context(), item, input.Rows, input.Columns); err != nil {
 			if errors.Is(err, terminal.ErrNotFound) || errors.Is(err, terminal.ErrClosed) {
-				s.deleteTerminalSession(id)
+				s.deleteFinishedTerminalSession(id)
 				s.writeProblem(w, r, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 				return
 			}
@@ -341,7 +357,13 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
 			return
 		}
-		_ = s.closeTerminalBackend(r.Context(), item)
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		if err := s.closeTerminalBackend(ctx, item); err != nil && !errors.Is(err, terminal.ErrNotFound) && !errors.Is(err, terminal.ErrClosed) {
+			_ = s.audit(r, userID, "terminal.close", "cluster_host", item.HostID, "failure", nil)
+			s.writeProblem(w, r, http.StatusBadGateway, "terminal_close_failed", "Terminal close failed", "The terminal session was retained; retry closing it")
+			return
+		}
 		s.deleteTerminalSession(id)
 		_ = s.audit(r, userID, "terminal.close", "cluster_host", item.HostID, "success", nil)
 		s.writeJSON(w, http.StatusOK, map[string]bool{"closed": true})
@@ -392,6 +414,15 @@ func (s *Server) deleteTerminalSession(id string) {
 	s.terminalMu.Lock()
 	delete(s.terminalSessions, id)
 	s.terminalMu.Unlock()
+}
+
+func (s *Server) deleteFinishedTerminalSession(id string) {
+	s.terminalMu.Lock()
+	defer s.terminalMu.Unlock()
+	// A stale output/input response must not erase an unconfirmed close retry.
+	if item, ok := s.terminalSessions[id]; ok && !item.CloseRequested {
+		delete(s.terminalSessions, id)
+	}
 }
 
 func (s *Server) pruneTerminalSessions(before time.Time) []panelTerminalSession {

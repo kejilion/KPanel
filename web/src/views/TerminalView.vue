@@ -31,12 +31,15 @@ interface OpenTerminal {
   hostName: string
   offset: number
   state: 'connecting' | 'connected' | 'reconnecting' | 'finished'
+  closing?: boolean
+  closeFailed?: boolean
 }
 
 interface HostTerminalHandle {
   focusTerminal: () => void
   scrollToTop: () => void
   scheduleResize: () => void
+  closeSession: () => Promise<void>
 }
 
 const inventory = ref<ClusterHostList>()
@@ -125,6 +128,22 @@ async function openHost(host: ClusterHost): Promise<void> {
   }
 }
 
+async function closeSession(id: string): Promise<void> {
+  const item = sessions.value.find((session) => session.id === id)
+  const handle = terminalRefs.get(id)
+  if (!item || item.closing || !handle) return
+  item.closing = true
+  item.closeFailed = false
+  try {
+    await handle.closeSession()
+    removeSession(id)
+  } catch {
+    item.closeFailed = true
+  } finally {
+    item.closing = false
+  }
+}
+
 function removeSession(id: string): void {
   const index = sessions.value.findIndex((item) => item.id === id)
   if (index < 0) return
@@ -150,7 +169,8 @@ function setTerminalRef(
   if (
     typeof handle?.focusTerminal === 'function' &&
     typeof handle.scrollToTop === 'function' &&
-    typeof handle.scheduleResize === 'function'
+    typeof handle.scheduleResize === 'function' &&
+    typeof handle.closeSession === 'function'
   ) {
     terminalRefs.set(id, handle as HostTerminalHandle)
   } else {
@@ -232,6 +252,10 @@ onBeforeUnmount(() => {
     <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
+    <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
+      <strong>{{ item.hostName }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
+      <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
+    </div>
 
     <section
       class="terminal-workspace terminal-theme-scope"
@@ -350,12 +374,17 @@ onBeforeUnmount(() => {
             <Menu :size="18" />
           </button>
           <nav v-if="sessions.length" class="terminal-tabs" aria-label="已打开终端">
-            <button v-for="item in sessions" :key="item.id" type="button" class="terminal-tab" :class="{ 'is-active': item.id === activeSessionId }" :title="`${item.hostName} · ${sessionStateLabel(item.state)}`" @click="selectSession(item.id)">
+            <div v-for="item in sessions" :key="item.id" class="terminal-tab" :class="{ 'is-active': item.id === activeSessionId }" :title="`${item.hostName} · ${sessionStateLabel(item.state)}`">
+              <button type="button" class="terminal-tab__select" @click="selectSession(item.id)">
               <span class="terminal-tab__status" :class="`is-${item.state}`" aria-hidden="true" />
               <SquareTerminal :size="14" /><span class="terminal-tab__name">{{ item.hostName }}</span>
               <span class="sr-only">{{ sessionStateLabel(item.state) }}</span>
-              <X :size="14" @click.stop="removeSession(item.id)" />
-            </button>
+              </button>
+              <button type="button" class="terminal-tab__close" :disabled="item.closing" aria-label="关闭终端" @click="closeSession(item.id)" @keydown.enter.prevent="closeSession(item.id)" @keydown.space.prevent="closeSession(item.id)">
+              <LoaderCircle v-if="item.closing" class="spin" :size="14" aria-label="正在关闭终端" />
+              <X v-else :size="14" />
+              </button>
+            </div>
           </nav>
           <TerminalToolbar
             :fullscreen="workspaceFullscreen"
@@ -373,6 +402,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .terminal-page { min-height:calc(100vh - 100px); gap:18px; }
 .terminal-alert { border:1px solid color-mix(in srgb,var(--danger) 34%,var(--border)); border-radius:10px; padding:11px 13px; color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,var(--surface)); }
+.terminal-alert button { margin-left:8px; padding:4px 8px; border:1px solid currentColor; border-radius:var(--radius-sm); color:inherit; background:transparent; font:inherit; font-size:14px; cursor:pointer; }
+.terminal-tab__select { display:flex; align-items:center; gap:7px; min-width:0; padding:0; border:0; color:inherit; background:transparent; font:inherit; cursor:pointer; }
+.terminal-tab__close { display:grid; place-items:center; flex:0 0 24px; width:24px; height:24px; padding:0; border:0; border-radius:var(--radius-sm); color:inherit; background:transparent; cursor:pointer; }
+.terminal-tab__close:disabled { cursor:wait; }
+.terminal-tab__close:focus-visible,.terminal-tab__select:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
 .terminal-workspace { position:relative; display:grid; height:var(--terminal-workspace-height); min-height:var(--terminal-workspace-min-height); grid-template-columns:256px minmax(0,1fr); overflow:hidden; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--terminal-workspace-radius); background:var(--terminal-shell-background,#0b1214); box-shadow:var(--shadow-sm); transition:grid-template-columns 180ms ease; }
 :global(:root:not([data-theme='dark'])) .terminal-workspace { --terminal-shell-border:rgb(255 255 255 / 18%); }
 .terminal-workspace.is-connections-collapsed { grid-template-columns:52px minmax(0,1fr); }

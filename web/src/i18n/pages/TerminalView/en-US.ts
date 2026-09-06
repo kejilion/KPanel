@@ -1,6 +1,10 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['关闭未确认，会话已保留。请检查目标主机连接后重试。', 'Close was not confirmed. The session is retained. Check the host connection and retry.'],
+  ['重试关闭', 'Retry close'],
+  ['正在关闭终端', 'Closing terminal'],
+  ['关闭终端', 'Close terminal'],
   ['收起的主机列表', 'Collapsed host list'],
   ['多主机终端', 'Multi-host terminal'],
   ['通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。', 'Connect to this server, authorized KPanel nodes, and lightweight nodes through the encrypted cluster channel without opening additional SSH or public ports.'],

@@ -57,6 +57,24 @@ let mounted = false
 let lastRows = 0
 let lastColumns = 0
 let reconnectAttempts = 0
+let closeRequest: Promise<void> | undefined
+let closeConfirmed = false
+
+function closeSession(): Promise<void> {
+  if (closeConfirmed) return Promise.resolve()
+  if (closeRequest) return closeRequest
+  closeRequest = api.terminals.close(props.sessionId).then((result) => {
+    if (!result.closed) throw new Error('Terminal close was not confirmed')
+    closeConfirmed = true
+  }).catch((reason: unknown) => {
+    if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
+      closeConfirmed = true
+      return
+    }
+    throw reason
+  }).finally(() => { closeRequest = undefined })
+  return closeRequest
+}
 
 watch(state, (value) => emit('stateChange', value), { immediate: true })
 
@@ -185,7 +203,7 @@ function scheduleResize(): void {
   }, 100)
 }
 
-defineExpose({ focusTerminal, scrollToTop, scheduleResize })
+defineExpose({ focusTerminal, scrollToTop, scheduleResize, closeSession })
 
 watch(desktopWindowActive, (active) => {
   if (active) {
@@ -241,7 +259,7 @@ onBeforeUnmount(() => {
   if (resizeTimer) window.clearTimeout(resizeTimer)
   observer?.disconnect()
   terminal?.dispose()
-  void api.terminals.close(props.sessionId).catch(() => undefined)
+  void closeSession().catch(() => undefined)
 })
 </script>
 
