@@ -36,6 +36,7 @@ import {
 import PageHeader from '@/components/common/PageHeader.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ClusterNotificationsDialog from '@/components/cluster/ClusterNotificationsDialog.vue'
+import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -1667,6 +1668,7 @@ onBeforeUnmount(() => {
             </button>
           </template>
         </div>
+        <LightNodeHealth v-if="selected.kind === 'light_node'" :health="selected.lightHealth" />
       </div>
       <template #footer>
         <button

@@ -653,7 +653,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		}
 		// Rolling-upgrade hint: old lightweight nodes ignore this response
 		// header, while new nodes opt into the optional SSH event field.
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability)
 		_ = s.audit(r, "", "cluster.light-node.enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"protocol": cluster.LightNodeProtocol,
 		})
@@ -688,7 +688,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability)
 		s.writeJSON(w, http.StatusOK, response)
 	case lightFileCapabilityEndpoint:
 		rawBody, err := readLimitedJSONBody(w, r, cluster.MaxPairBytes)

@@ -26,6 +26,7 @@ const (
 	FederationCapabilitiesHeader    = "X-KPanel-Response-Capabilities"
 	SecurityEntrancePathCapability  = "security-entrance-path-v1"
 	SSHLoginCapability              = "ssh-login-v1"
+	LightHealthCapability           = "light-health-v1"
 	FileRelayV1Capability           = "file-relay-v1"
 	LightResponseCapabilitiesHeader = "X-KPanel-Light-Response-Capabilities"
 	LightReportLatencyHeader        = "X-KPanel-Light-Report-Latency-Milliseconds"

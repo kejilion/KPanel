@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
@@ -201,6 +203,12 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		ReceivedAt:          now,
 		LatencyMilliseconds: latencyMilliseconds,
 	}
+	// Invalid/missing optional health is unknown; it must neither reject core
+	// telemetry nor renew the freshness of a previously healthy observation.
+	if input.Health != nil && contract.ValidLightNodeHealth(*input.Health, now) && input.Health.RuntimeVersion == input.Telemetry.AgentVersion {
+		health := *input.Health
+		snapshot.LightHealth = &health
+	}
 	if _, err := s.light.UpdateReport(auth.NodeID, snapshot, input.Telemetry.AgentVersion, now); err != nil {
 		return LightReportResponse{}, err
 	}
@@ -306,6 +314,11 @@ func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bo
 }
 
 func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, terminalAvailable, fileAvailable bool) Host {
+	var health *contract.LightNodeHealth
+	if record.LastSnapshot != nil && record.LastSnapshot.LightHealth != nil {
+		value := *record.LastSnapshot.LightHealth
+		health = &value
+	}
 	state := HostUnknown
 	scope := SummaryScope
 	if fileAvailable {
@@ -325,7 +338,8 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 		}
 	}
 	return Host{
-		ID: record.ID, Name: record.Name, Kind: HostKindLightNode,
+		LightHealth: health,
+		ID:          record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
 		FederationProtocol: LightNodeProtocol, PanelVersion: record.NodeVersion,
 		Scope: scope, TerminalAvailable: terminalAvailable, FileManagementAvailable: fileAvailable,
