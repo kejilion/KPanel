@@ -27,6 +27,13 @@ let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
 const mockFileVersion = `sha256:${'a'.repeat(64)}`
 const mockRemoteDownloadJobs = new Map()
+// Explicitly simulated Docker update states for the local feature preview.
+const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailable'].map((status, index) => ({
+  id: String(index + 1).repeat(64), name: `mock-${status}`, image: status === 'fixed' ? `redis@sha256:${'f'.repeat(64)}` : `redis:${index + 5}`,
+  state: 'running', status: 'Mock · running', access: 'managed', consistency: 'synced',
+  ports: [], networks: ['bridge'], mounts: [], labels: {}, allowedActions: [],
+  resourceVersion: `sha256:${String(index + 5).repeat(64)}`, mockUpdateStatus: status,
+}))
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
   {
@@ -1752,7 +1759,19 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/docker/containers') {
-    send(response, 200, { items: [] })
+    send(response, 200, { items: mockDockerUpdateContainers })
+    return
+  }
+  if (request.method === 'POST' && /^\/api\/v1\/docker\/containers\/[1-4]{64}\/check_update$/.test(url.pathname)) {
+    const item = mockDockerUpdateContainers.find(item => item.id === url.pathname.split('/')[5])
+    if (!item) { send(response, 404, { code: 'mock_not_found' }); return }
+    await new Promise(resolve => setTimeout(resolve, 600))
+    if (item.mockUpdateStatus === 'unavailable') {
+      send(response, 503, { title: 'Mock: registry unavailable', code: 'docker_update_unavailable' })
+      return
+    }
+    send(response, 200, { containerId: item.id, image: item.image, resourceVersion: item.resourceVersion,
+      status: item.mockUpdateStatus, updateAvailable: item.mockUpdateStatus === 'available', checkedAt: new Date().toISOString() })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/system/processes') {
