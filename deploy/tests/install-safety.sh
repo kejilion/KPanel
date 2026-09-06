@@ -63,6 +63,27 @@ grep -F 'Private Panel endpoint: http://172.29.255.242:8080' "$TEST_DIR/success.
 test "$(wc -l <"$DOCKER_LOG" | tr -d ' ')" = 1
 grep -Fx -- '--host unix:///var/run/docker.sock compose version' "$DOCKER_LOG" >/dev/null
 
+# Exercise the real checksum implementation selected by this environment.
+if (AGENT_SHA=0000000000000000000000000000000000000000000000000000000000000000; run_installer) >"$TEST_DIR/checksum-mismatch.out" 2>&1; then
+	echo "installer accepted an incorrect Agent checksum" >&2
+	exit 1
+fi
+grep -F 'agent binary SHA-256 mismatch' "$TEST_DIR/checksum-mismatch.out" >/dev/null
+test "$(wc -l <"$DOCKER_LOG" | tr -d ' ')" = 2
+
+if (AGENT_SHA=invalid-checksum; run_installer) >"$TEST_DIR/checksum-invalid.out" 2>&1; then
+	echo "installer accepted a malformed Agent checksum" >&2
+	exit 1
+fi
+grep -F 'invalid agent SHA-256' "$TEST_DIR/checksum-invalid.out" >/dev/null
+
+if (AGENT_BINARY="$TEST_DIR/missing-agent"; run_installer) >"$TEST_DIR/checksum-missing.out" 2>&1; then
+	echo "installer accepted a missing Agent binary" >&2
+	exit 1
+fi
+grep -F 'agent binary not found' "$TEST_DIR/checksum-missing.out" >/dev/null
+test "$(wc -l <"$DOCKER_LOG" | tr -d ' ')" = 2
+
 BEFORE_LINES=$(wc -l <"$DOCKER_LOG" | tr -d ' ')
 if DOCKER_HOST=tcp://198.51.100.1:2375 run_installer >"$TEST_DIR/remote.out" 2>&1; then
 	echo "installer accepted DOCKER_HOST during dry-run" >&2

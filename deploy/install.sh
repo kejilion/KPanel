@@ -226,7 +226,7 @@ for command_name in \
 done
 [ "$(uname -s)" = "Linux" ] || fail "production deployment requires Linux"
 docker_local compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
-printf '%s  %s\n' "$AGENT_SHA256" "$AGENT_BINARY" | sha256sum -c -s ||
+printf '%s  %s\n' "$AGENT_SHA256" "$AGENT_BINARY" | sha256sum -c >/dev/null ||
 	fail "agent binary SHA-256 mismatch"
 [ -f "$PROJECT_DIR/VERSION" ] || fail "release VERSION file is missing"
 EXPECTED_VERSION=$(tr -d '\r\n' <"$PROJECT_DIR/VERSION")
