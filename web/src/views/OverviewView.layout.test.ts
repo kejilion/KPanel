@@ -8,6 +8,11 @@ const styles = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf
 const desktopStyles = readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8')
 
 describe('OverviewView service status layout', () => {
+  it('keeps static tool descriptions readable before a disabled tool can be opened', () => {
+    expect(styles).toMatch(/\.system-center-grid \.system-tool small\s*\{[^}]*white-space:\s*normal;[^}]*overflow:\s*visible;/)
+    expect(source).toContain('phrase(tool.description)')
+    expect(source).toContain(':aria-busy="toolReadState(tool) === \'loading\'"')
+  })
   it('uses an explicit details wrapper instead of styling every service item span', () => {
     expect(source).toContain('<span class="service-item__details">')
     expect(styles).toMatch(/\.service-item__details\s*\{[^}]*display:\s*grid;/)

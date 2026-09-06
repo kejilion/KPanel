@@ -3535,10 +3535,22 @@ textarea:focus-visible,
 
 .system-center-grid .system-tool > strong {
   font-size: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .system-center-grid .system-tool small {
   font-size: 13px;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.system-center-grid .system-tool > span:not(.system-tool__top):not(.maintenance-progress) {
+  font-size: 14px;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .system-tool > .maintenance-progress {
