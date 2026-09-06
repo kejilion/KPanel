@@ -1,0 +1,15 @@
+export default {
+  open: '生成问题报告', title: '本地问题报告', helpTitle: '帮助与问题报告',
+  help: '操作不符合预期，或者没有出现报错？可以先整理一份问题报告。',
+  privacy: '报告只在当前浏览器整理，不会自动发送。请勿填写密码或密钥，导出前检查预览。',
+  expected: '你希望发生什么？', actual: '实际发生了什么？', optional: '选填，最多 2000 字',
+  details: '查看与删减诊断信息', detailsHint: '取消勾选即可移除。缺失表示当前没有可确认的记录。',
+  preview: '导出预览', missing: '缺失', copy: '复制报告', copying: '正在复制…', download: '下载报告',
+  copied: '已复制当前预览。', copyFailed: '复制失败，请点击“下载报告”保存，或从预览手动复制。',
+  downloaded: '已请求浏览器保存报告。', downloadFailed: '无法开始下载，请从预览手动复制。', close: '关闭',
+  snapshot: '这是打开时的快照；重新打开可获取最新信息。关闭后不保留草稿。',
+  capturedAt: '快照时间', source: '报告入口', feature: '功能', webVersion: 'Web 版本',
+  browser: '浏览器类别', clientSystem: '客户端系统类别', recordState: '任务记录状态',
+  errorCode: '错误码', httpStatus: 'HTTP 状态', requestId: '请求 ID', jobId: '任务 ID',
+  action: '任务动作', jobStatus: '任务状态', failureStage: '失败阶段',
+} satisfies Record<string, string>

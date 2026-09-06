@@ -18,6 +18,8 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
+import ProblemReportButton from '@/components/problem-report/ProblemReportButton.vue'
+import type { ReportError } from '@/components/problem-report/report'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime, relativeTime, shortId } from '@/lib/format'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
@@ -29,6 +31,7 @@ const jobs = ref<Job[]>([])
 const loading = ref(true)
 const refreshing = ref(false)
 const error = ref('')
+const reportError = ref<ReportError>()
 const search = ref('')
 const filter = ref<JobFilter>('all')
 const route = useRoute()
@@ -37,6 +40,7 @@ const selectedJobId = ref(typeof route.query.job === 'string' ? route.query.job.
 const selectedAction = ref('')
 const detail = ref<Job>()
 const detailError = ref('')
+const detailReportError = ref<ReportError>()
 const detailLoading = ref(false)
 const sources = ref<JobSourceStatus[]>([])
 const partial = ref(false)
@@ -81,6 +85,7 @@ async function loadDetail(): Promise<void> {
   detailController = current
   detailLoading.value = true
   detailError.value = ''
+  detailReportError.value = undefined
   try {
     const job = await api.jobs.detail(owner[1] as JobOwner, owner[2]!, current.signal)
     if (detailController !== current || current.signal.aborted || selectedJobId.value !== identity) return
@@ -89,6 +94,8 @@ async function loadDetail(): Promise<void> {
   } catch (reason) {
     if (detailController !== current || current.signal.aborted || selectedJobId.value !== identity) return
     detail.value = undefined
+    detailReportError.value = reason instanceof ApiError
+      ? { code: reason.code, status: reason.status, requestId: reason.requestId } : undefined
     detailError.value = reason instanceof ApiError && reason.status === 404
       ? '任务不存在或已超出来源保留期'
       : '无法确认任务详情，请稍后刷新或返回业务页面查看'
@@ -173,6 +180,7 @@ async function load(options: { silent?: boolean } = {}): Promise<void> {
   if (options.silent) refreshing.value = true
   else loading.value = true
   error.value = ''
+  reportError.value = undefined
 
   try {
     const result = await api.jobs.list({ limit: 50 }, current.signal)
@@ -186,6 +194,8 @@ async function load(options: { silent?: boolean } = {}): Promise<void> {
     jobs.value = []
     sources.value = []
     partial.value = false
+    reportError.value = reason instanceof ApiError
+      ? { code: reason.code, status: reason.status, requestId: reason.requestId } : undefined
     if (reason instanceof ApiError && reason.status === 404) {
       error.value = '当前服务版本尚未开放任务查询接口。'
     } else if (reason instanceof ApiError && reason.code === 'job_source_unavailable') {
@@ -217,6 +227,7 @@ watch(() => route.query.job, (id) => {
 watch(selectedJobId, () => {
   detail.value = undefined
   detailError.value = ''
+  detailReportError.value = undefined
   void loadDetail()
   if (selectedJobId.value && desktopWindowActive.value && !refreshing.value && !timer) {
     timer = window.setTimeout(() => void load({ silent: true }), 4_000)
@@ -281,15 +292,16 @@ onBeforeUnmount(() => {
         {{ unavailableSources.map((source) => ownerLabel(source.source)).join('、') }}
       </span>
     </div>
+    <!-- Keep the teleported report mounted while background reads change the list state. -->
+    <ErrorState v-show="!loading && error && !jobs.length" :message="error" :report-error="reportError" report-feature="jobs" @retry="load()" />
     <LoadingState v-if="loading" :rows="5" />
-    <ErrorState v-else-if="error && !jobs.length" :message="error" @retry="load()" />
     <EmptyState
-      v-else-if="!filteredJobs.length"
+      v-else-if="!error && !filteredJobs.length"
       :title="jobs.length ? '没有符合条件的记录' : '暂无变更记录'"
       description="执行操作后，任务进度与操作记录会显示在这里。"
     />
 
-    <section v-else class="job-list">
+    <section v-else-if="!error" class="job-list">
       <button v-for="job in filteredJobs" :key="job.id" class="job-item" type="button" @click="selectJob(job.id, job.action)">
         <span class="job-item__status" :class="`is-${job.status}`">
           <LoaderCircle v-if="job.status === 'running'" class="spin" :size="19" />
@@ -369,6 +381,11 @@ onBeforeUnmount(() => {
         {{ phrase(detailError || error || '该记录已不在当前查询窗口中，请返回业务页面核对状态。') }}
       </div>
       <template #footer>
+        <ProblemReportButton
+          source="job" feature="jobs" :job="selectedJob"
+          :error="selectedOwner ? detailReportError : reportError"
+          :record-state="(selectedOwner ? detailLoading : refreshing || loading) ? 'refreshing' : selectedJob ? 'available' : 'unavailable'"
+        />
         <RouterLink v-if="businessPath" class="button button--secondary" :to="businessPath">{{ phrase('返回业务页面') }}</RouterLink>
         <button v-if="selectedOwner" class="button button--secondary" type="button" :disabled="detailLoading" @click="loadDetail()">{{ phrase('刷新任务详情') }}</button>
         <button class="button button--secondary" type="button" @click="selectJob('')">{{ phrase('关闭') }}</button>

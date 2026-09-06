@@ -30,6 +30,44 @@ describe('job owner state continuity', () => {
   beforeEach(() => { active.value = true; vi.useFakeTimers(); mocks.list.mockReset(); mocks.detail.mockReset(); mocks.detail.mockResolvedValue(job); mocks.list.mockResolvedValue({ items: [job] }) })
   afterEach(() => { wrapper?.unmount(); vi.useRealTimers() })
 
+  it('keeps an open error report and its draft when background polling recovers the list', async () => {
+    mocks.list.mockRejectedValue(new ApiError('offline', 503))
+    const view = await openView()
+    await view.get('.error-state .problem-report-open').trigger('click')
+    await view.get('[data-report-input="actual"]').setValue('Keep this draft')
+    mocks.list.mockResolvedValue({ items: [job] })
+    await vi.advanceTimersByTimeAsync(4000)
+    await flushPromises()
+    expect(view.find('[data-report-preview]').exists()).toBe(true)
+    expect((view.get('[data-report-preview]').element as HTMLTextAreaElement).value).toContain('Keep this draft')
+    expect(view.findAll('.job-item')).toHaveLength(1)
+  })
+
+  it('reports only the current confirmed job snapshot and never its resource or error body', async () => {
+    mocks.detail.mockResolvedValue({ ...job, status: 'failed', resourceName: '/root/private-seed', errorMessage: 'private-seed', stages: [{ name: 'failed', status: 'failed', message: 'private-seed' }] })
+    const view = await openView(`/jobs?job=${job.id}`)
+    await view.get('.dialog .problem-report-open').trigger('click')
+    const report = JSON.parse((view.get('[data-report-preview]').element as HTMLTextAreaElement).value)
+    expect(report.jobId).toBe(job.id)
+    expect(report.jobStatus).toBe('failed')
+    expect(report.failureStage).toBe('failed')
+    expect(report.requestId).toBeNull()
+    expect(JSON.stringify(report)).not.toContain('private-seed')
+  })
+
+  it('keeps an unavailable task missing while reporting the actual failed lookup request', async () => {
+    mocks.detail.mockRejectedValue(Object.assign(new ApiError('private-seed', 404), { code: 'job_not_found', requestId: 'c'.repeat(32) }))
+    mocks.list.mockResolvedValue({ items: [] })
+    const view = await openView(`/jobs?job=${job.id}`)
+    await view.get('.dialog .problem-report-open').trigger('click')
+    const report = JSON.parse((view.get('[data-report-preview]').element as HTMLTextAreaElement).value)
+    expect(report.recordState).toBe('unavailable')
+    expect(report.jobId).toBeNull()
+    expect(report.jobStatus).toBeNull()
+    expect(report.requestId).toBe('c'.repeat(32))
+    expect(report.errorCode).toBe('job_not_found')
+  })
+
   it('keeps the selected identity and refreshes queued, running and terminal detail', async () => {
     const view = await openView()
     await view.get('.job-item').trigger('click')
