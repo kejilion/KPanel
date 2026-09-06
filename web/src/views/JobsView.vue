@@ -376,3 +376,14 @@ onBeforeUnmount(() => {
     </ModalDialog>
   </div>
 </template>
+
+<style scoped>
+.inline-alert {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.job-item small {
+  font-size: 0.8125rem;
+}
+</style>
