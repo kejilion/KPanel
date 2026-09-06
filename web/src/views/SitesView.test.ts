@@ -40,6 +40,14 @@ vi.mock('@/stores/toast', () => ({
 }))
 
 interface SitesBindings {
+  certificateSite: Ref<Site | undefined>
+  replacement: { certificate: string; privateKey: string; error: string; submitting: boolean }
+  capabilities: Ref<Array<{ id: string; enabled: boolean }>>
+  canReplaceCertificate: ComputedRef<boolean>
+  replacementValid: ComputedRef<boolean>
+  openCertificateReplacement: (site: Site) => void
+  closeCertificateReplacement: () => void
+  replaceCertificate: () => Promise<void>
   siteDirectoryPath: (site: Site) => string | undefined
   sites: Ref<Site[]>
   filteredSites: ComputedRef<Site[]>
@@ -128,6 +136,54 @@ afterEach(() => {
 })
 
 describe('SitesView creation experience', () => {
+  it('replaces certificates with only immutable identity, version and private material', async () => {
+    const view = setupView()
+    const current = site('example.com')
+    view.capabilitiesLoaded.value = true
+    view.capabilities.value = [{ id: 'sites.certificate-replace', enabled: true }]
+    view.openCertificateReplacement(current)
+    view.replacement.certificate = ' certificate '
+    view.replacement.privateKey = ' private-key '
+    vi.mocked(api.sites.update).mockResolvedValue(current)
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [current], total: 1 })
+    vi.mocked(api.agent.capabilities).mockResolvedValue([])
+    vi.mocked(api.sites.installations).mockResolvedValue([])
+    vi.mocked(api.system.publicNetwork).mockResolvedValue({} as never)
+    await view.replaceCertificate()
+    expect(api.sites.update).toHaveBeenCalledWith(current.id, { primaryDomain: current.primaryDomain, type: 'static', expectedResourceVersion: current.resourceVersion, certificate: 'certificate', privateKey: 'private-key' })
+    expect(view.certificateSite.value).toBeUndefined()
+    expect(view.replacement.privateKey).toBe('')
+    expect(view.replacement.certificate).toBe('')
+  })
+
+  it('fails closed on missing replacement capability and clears dismissed private material', async () => {
+    const view = setupView()
+    view.openCertificateReplacement(site('example.com'))
+    view.replacement.certificate = 'certificate'
+    view.replacement.privateKey = 'private-key'
+    expect(view.canReplaceCertificate.value).toBe(false)
+    await view.replaceCertificate()
+    expect(api.sites.update).not.toHaveBeenCalled()
+    view.closeCertificateReplacement()
+    expect(view.replacement.privateKey).toBe('')
+  })
+
+  it('keeps replacement errors recoverable without changing the displayed site version', async () => {
+    const view = setupView()
+    const current = site('example.com')
+    view.capabilitiesLoaded.value = true
+    view.capabilities.value = [{ id: 'sites.certificate-replace', enabled: true }]
+    view.openCertificateReplacement(current)
+    view.replacement.certificate = 'certificate'
+    view.replacement.privateKey = 'private-key'
+    vi.mocked(api.sites.update).mockRejectedValue(new Error('resource version changed'))
+    await view.replaceCertificate()
+    expect(view.replacement.error).toBe('resource version changed')
+    expect(view.certificateSite.value?.resourceVersion).toBe(current.resourceVersion)
+    expect(view.replacement.submitting).toBe(false)
+    view.closeCertificateReplacement()
+    expect(view.replacement.privateKey).toBe('')
+  })
   it('does not show Agent unavailable before capability loading finishes', () => {
     const view = setupView()
 

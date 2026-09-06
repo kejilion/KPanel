@@ -395,7 +395,7 @@ func TestSiteWriteCatalogValidationAndForwarding(t *testing.T) {
 	}
 }
 
-func TestSiteCertificateFieldsAreCreateOnlyAndForwarded(t *testing.T) {
+func TestSiteCertificateFieldsAreForwardedForCreateAndReplacement(t *testing.T) {
 	certificate := "-----BEGIN CERTIFICATE-----\ncertificate-material\n-----END CERTIFICATE-----"
 	privateKey := "-----BEGIN PRIVATE KEY-----\nprivate-key-material\n-----END PRIVATE KEY-----"
 	body, err := json.Marshal(map[string]string{
@@ -430,8 +430,12 @@ func TestSiteCertificateFieldsAreCreateOnlyAndForwarded(t *testing.T) {
 		Value: "sha256:" + strings.Repeat("a", 64),
 		Set:   true,
 	}
-	if field, detail := validateSiteWriteInput(&input, false); field != "certificate" || detail == "" {
-		t.Fatalf("custom certificate update was accepted: field=%q detail=%q", field, detail)
+	if field, detail := validateSiteWriteInput(&input, false); field != "" {
+		t.Fatalf("custom certificate replacement rejected: field=%q detail=%q", field, detail)
+	}
+	input.Enabled = optionalBool{Set: true, Value: true}
+	if field, _ := validateSiteWriteInput(&input, false); field != "certificate" {
+		t.Fatal("combined certificate and config edit accepted")
 	}
 
 	invalidCases := []struct {

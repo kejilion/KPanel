@@ -459,19 +459,20 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	var (
-		dockerAvailable      bool
-		siteErr              error
-		siteWriteErr         error
-		wordPressWriteErr    error
-		proxyWriteErr        error
-		recipeWriteErr       error
-		templateWriteErr     error
-		customCertificateErr error
-		siteDeleteErr        error
-		diagnosticErr        = errors.New("体检服务未配置")
-		environmentReadErr   = errors.New("LDNMP 环境读取服务未配置")
-		environmentErr       = errors.New("LDNMP 环境服务未配置")
-		fileErr              = errors.New("文件管理服务未配置")
+		dockerAvailable       bool
+		siteErr               error
+		siteWriteErr          error
+		wordPressWriteErr     error
+		proxyWriteErr         error
+		recipeWriteErr        error
+		templateWriteErr      error
+		customCertificateErr  error
+		certificateReplaceErr error
+		siteDeleteErr         error
+		diagnosticErr         = errors.New("体检服务未配置")
+		environmentReadErr    = errors.New("LDNMP 环境读取服务未配置")
+		environmentErr        = errors.New("LDNMP 环境服务未配置")
+		fileErr               = errors.New("文件管理服务未配置")
 	)
 	var checks sync.WaitGroup
 	checks.Add(12)
@@ -508,6 +509,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer checks.Done()
 		customCertificateErr = s.sitesManager.CustomCertificateWritable()
+		certificateReplaceErr = s.sitesManager.CertificateReplaceWritable()
 	}()
 	go func() {
 		defer checks.Done()
@@ -556,6 +558,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "sites.recipes.install", Enabled: recipeWriteErr == nil, Reason: reasonIf(recipeWriteErr, "kejilion.sh 一键建站协议不可用"), Methods: []string{"POST"}},
 		{ID: "sites.templates.install", Enabled: templateWriteErr == nil, Reason: reasonIf(templateWriteErr, "kejilion.sh 交互建站模板不可用"), Methods: []string{"POST"}},
 		{ID: "sites.custom-certificate", Enabled: customCertificateErr == nil, Reason: reasonIf(customCertificateErr, "当前 kejilion.sh 不支持自定义证书协议"), Methods: []string{"POST"}},
+		{ID: "sites.certificate-replace", Enabled: certificateReplaceErr == nil, Reason: reasonIf(certificateReplaceErr, "当前 kejilion.sh 不支持更换证书协议"), Methods: []string{"PATCH"}},
 		{ID: "diagnostics.run", Enabled: diagnosticErr == nil, Reason: reasonIf(diagnosticErr, "请更新本机 kejilion.sh 以启用体检协议"), Methods: []string{"GET", "POST"}},
 		{ID: "files.read", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"GET"}},
 		{ID: "files.write", Enabled: fileErr == nil, Reason: reasonIf(fileErr, "宿主机文件根目录不可用"), Methods: []string{"POST", "PUT"}},
@@ -1057,14 +1060,13 @@ func (s *Server) siteOperation(w http.ResponseWriter, r *http.Request, requestID
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
 		return
 	}
+	var result contract.SiteSummary
+	var err error
 	if input.HasCustomCertificate() {
-		s.writeSiteError(w, requestID, fmt.Errorf(
-			"%w: custom certificates are only accepted when creating a script-backed website",
-			sites.ErrUnprocessable,
-		))
-		return
+		result, err = s.sitesManager.ReplaceCertificate(r.Context(), id, input)
+	} else {
+		result, err = s.sitesManager.Update(r.Context(), id, input.SiteInput)
 	}
-	result, err := s.sitesManager.Update(r.Context(), id, input.SiteInput)
 	if err != nil {
 		s.writeSiteError(w, requestID, err)
 		return

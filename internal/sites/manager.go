@@ -24,15 +24,16 @@ type SiteDataRuntime interface {
 }
 
 type Manager struct {
-	webRoot         string
-	discoverer      *Discoverer
-	nginx           NginxController
-	siteDataRuntime SiteDataRuntime
-	scriptDeleter   siteScriptDeleter
-	recipeJobs      *recipeJobRegistry
-	jobExecutable   string
-	jobRunner       recipeJobCommandRunner
-	testHook        func(stage, path string)
+	webRoot             string
+	discoverer          *Discoverer
+	nginx               NginxController
+	siteDataRuntime     SiteDataRuntime
+	scriptDeleter       siteScriptDeleter
+	certificateReplacer siteCertificateReplacer
+	recipeJobs          *recipeJobRegistry
+	jobExecutable       string
+	jobRunner           recipeJobCommandRunner
+	testHook            func(stage, path string)
 }
 
 var siteWriteMutex sync.Mutex
@@ -43,7 +44,8 @@ func NewManager(webRoot string, discoverer *Discoverer, nginx NginxController) *
 	}
 	manager := &Manager{
 		webRoot: filepath.Clean(webRoot), discoverer: discoverer, nginx: nginx,
-		scriptDeleter: kejilionSiteScriptDeleter{},
+		scriptDeleter:       kejilionSiteScriptDeleter{},
+		certificateReplacer: scriptCertificateReplacer{},
 	}
 	if runtime, ok := nginx.(SiteDataRuntime); ok {
 		manager.siteDataRuntime = runtime

@@ -23,6 +23,7 @@ const adapted = new Set(['speedtest', 'it-tools', 'dosgame'])
 const appJobs = new Map()
 const diagnosticJobs = new Map()
 let domainSiteDeleted = false
+let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
 const mockFileVersion = `sha256:${'a'.repeat(64)}`
 const mockRemoteDownloadJobs = new Map()
@@ -1603,11 +1604,26 @@ createServer(async (request, response) => {
           consistency: 'in_sync',
           origin: 'web',
           target: 'http://127.0.0.1:9000',
-          resourceVersion: `sha256:${'d'.repeat(64)}`,
+          resourceVersion: `sha256:${(siteCertificateReplaced ? 'e' : 'd').repeat(64)}`,
+          tls: { enabled: true, status: 'valid', expiresAt: siteCertificateReplaced ? '2027-09-06T00:00:00Z' : '2026-10-06T00:00:00Z' },
           allowedActions: ['update', 'delete'],
         },
       ],
     })
+    return
+  }
+  if (request.method === 'PATCH' && url.pathname === `/api/v1/sites/${'c'.repeat(32)}`) {
+    const input = await readJSON(request)
+    if (input.expectedResourceVersion !== `sha256:${(siteCertificateReplaced ? 'e' : 'd').repeat(64)}`) {
+      send(response, 409, { title: '网站状态已变化，请刷新后重试', code: 'site_conflict' })
+      return
+    }
+    if (!input.certificate?.includes('BEGIN CERTIFICATE') || !input.privateKey?.includes('PRIVATE KEY')) {
+      send(response, 422, { title: '证书或私钥格式无效', code: 'invalid_certificate' })
+      return
+    }
+    siteCertificateReplaced = true
+    send(response, 200, { id: 'c'.repeat(32), primaryDomain: 'tools.example.com', domains: ['tools.example.com'], kind: 'reverse_proxy', enabled: true, health: 'healthy', consistency: 'in_sync', origin: 'web', target: 'http://127.0.0.1:9000', resourceVersion: `sha256:${'e'.repeat(64)}`, allowedActions: ['update', 'delete'], tls: { enabled: true, status: 'valid', expiresAt: '2027-09-06T00:00:00Z' } })
     return
   }
   if (request.method === 'DELETE' && url.pathname === `/api/v1/sites/${'c'.repeat(32)}`) {
@@ -1702,6 +1718,7 @@ createServer(async (request, response) => {
         { id: 'sites.recipes.install', enabled: true, methods: ['POST'] },
         { id: 'sites.templates.install', enabled: true, methods: ['POST'] },
         { id: 'sites.custom-certificate', enabled: true, methods: ['POST'] },
+        { id: 'sites.certificate-replace', enabled: true, methods: ['PATCH'] },
         { id: 'sites.delete', enabled: true, methods: ['DELETE'] },
         { id: 'system.port-usage.read', enabled: true, methods: ['GET'] },
         { id: 'diagnostics.run', enabled: true, methods: ['GET', 'POST'] },

@@ -1,6 +1,13 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['自有证书需在到期前手动更换，脚本不会自动续签。', 'Replace your certificate before it expires. The script will not renew it automatically.'],
+  ['更换证书', 'Replace certificate'],
+  ['证书已更换', 'Certificate replaced'],
+  ['更换证书失败，请刷新网站状态后重试。', 'Certificate replacement failed. Refresh the site status and try again.'],
+  ['当前脚本尚不支持更换证书，请先更新配套脚本。', 'Update the matching script to enable certificate replacement.'],
+  ['仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。', 'Replace the HTTPS certificate while preserving site settings. The certificate must cover every domain on this site.'],
+  ['私钥仅用于本次更换；不写入任务或审计，完成后清理临时副本。', 'The private key is used only for this replacement. It is excluded from tasks and audit records; temporary copies are removed afterward.'],
   ["在文件管理中打开站点目录", "Open the site directory in File Manager"],
   ["{0} 的网站状态已与 kejilion.sh 完成核对。", "The website state for {0} has been checked against kejilion.sh."],
   ["{0} 已通过 k web del 删除。", "{0} was deleted through k web del."],

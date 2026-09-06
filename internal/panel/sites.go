@@ -413,6 +413,12 @@ func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail s
 	if field, detail := validateSiteCertificateInput(input, create); field != "" {
 		return field, detail
 	}
+	if !create && input.Certificate.Value != "" {
+		if input.Aliases.Set || input.Recipe.Set || input.Upstream.Set || input.Upstreams.Set || input.RedirectTarget.Set || input.RedirectCode.Set || input.PHPVersion.Set || input.Enabled.Set {
+			return "certificate", "replace certificates separately from site settings"
+		}
+		return "", ""
+	}
 	if input.Recipe.Set && input.Recipe.Value != "" && !validPanelSiteRecipe(input.Recipe.Value) {
 		return "recipe", "recipe is not supported"
 	}
@@ -555,9 +561,6 @@ func validateScriptedTemplateFields(input *siteWriteInput) (field, detail string
 func validateSiteCertificateInput(input *siteWriteInput, create bool) (field, detail string) {
 	certificate := strings.TrimSpace(input.Certificate.Value)
 	privateKey := strings.TrimSpace(input.PrivateKey.Value)
-	if !create && (certificate != "" || privateKey != "") {
-		return "certificate", "custom certificates can only be supplied when creating a site"
-	}
 	if certificate == "" && privateKey == "" {
 		return "", ""
 	}

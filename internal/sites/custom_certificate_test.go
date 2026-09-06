@@ -120,6 +120,10 @@ func TestNormalizeCustomCertificateInputValidatesCertificateAndKey(t *testing.T)
 	if _, err := normalizeCustomCertificateInput(expiredCertificate, expiredKey, "custom.example.com"); err == nil {
 		t.Fatal("expired certificate was accepted")
 	}
+	futureCertificate, futureKey := makeCustomCertificateMaterial(t, "custom.example.com", now.Add(time.Hour), now.Add(2*time.Hour))
+	if _, err := normalizeCustomCertificateInput(futureCertificate, futureKey, "custom.example.com"); err == nil {
+		t.Fatal("not-yet-valid certificate was accepted")
+	}
 }
 
 func TestCustomCertificateStagingUsesPrivateFilesAndCleansUp(t *testing.T) {

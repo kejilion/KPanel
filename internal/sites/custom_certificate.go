@@ -40,7 +40,7 @@ func sanitizeSiteCommandEnvironment(base, extra []string) []string {
 	environment := make([]string, 0, len(base)+len(extra))
 	for _, value := range base {
 		name, _, found := strings.Cut(value, "=")
-		if found && (name == "KJ_WEB_CERTIFICATE_FILE" || name == "KJ_WEB_PRIVATE_KEY_FILE") {
+		if found && (name == "KJ_WEB_CERTIFICATE_FILE" || name == "KJ_WEB_PRIVATE_KEY_FILE" || name == "KJ_WEB_CERTIFICATE_EPHEMERAL") {
 			continue
 		}
 		environment = append(environment, value)
