@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/httpstream"
@@ -53,6 +55,9 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.checkLightFileMethod(w, r) {
 		return
 	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && !s.checkOrigin(w, r) {
+		return
+	}
 	_, session, ok := s.requireSession(w, r)
 	if !ok {
 		return
@@ -68,9 +73,29 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
 	defer cancel()
+	// net/http body Close may wait for an active Read. A deadline interrupts
+	// that Read first; the same cancellation also releases a blocked download.
+	controller := http.NewResponseController(w)
+	deadlineDone := make(chan struct{})
+	stopDeadlines := context.AfterFunc(transferContext, func() {
+		_ = controller.SetReadDeadline(time.Now())
+		_ = controller.SetWriteDeadline(time.Now())
+		close(deadlineDone)
+	})
+	defer func() {
+		if !stopDeadlines() {
+			<-deadlineDone
+		}
+		_ = controller.SetReadDeadline(time.Time{})
+		_ = controller.SetWriteDeadline(time.Time{})
+	}()
+	body := &lightFileUploadBody{
+		ctx: transferContext, body: r.Body, controller: controller,
+	}
+	defer body.Close()
 	input := cluster.LightFileRequest{
 		Method: r.Method, Path: agentPath, RawQuery: values.Encode(),
-		Headers: lightFileRelayHeaders(r), Body: r.Body, BodyLength: r.ContentLength,
+		Headers: lightFileRelayHeaders(r), Body: body, BodyLength: r.ContentLength,
 	}
 	var response *http.Response
 	if host.Kind == cluster.HostKindLightNode {
@@ -94,12 +119,17 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer response.Body.Close()
+	stopResponse := context.AfterFunc(transferContext, func() { _ = response.Body.Close() })
+	defer stopResponse()
+	var copyErr error
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		result := "failure"
-		if response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
-			result = "success"
-		}
-		_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, result, nil)
+		defer func() {
+			result := "failure"
+			if copyErr == nil && transferContext.Err() == nil && response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
+				result = "success"
+			}
+			_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, result, nil)
+		}()
 	}
 	copyFileHeaders(w.Header(), response.Header)
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -109,7 +139,54 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+	_, copyErr = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+	if copyErr != nil {
+		// Headers are already committed. Abort the stream instead of emitting
+		// a clean chunked EOF for a truncated remote file.
+		panic(http.ErrAbortHandler)
+	}
+}
+
+type lightFileUploadBody struct {
+	ctx        context.Context
+	body       io.ReadCloser
+	controller *http.ResponseController
+	once       sync.Once
+	mu         sync.Mutex
+	closed     bool
+}
+
+func (body *lightFileUploadBody) Read(output []byte) (int, error) {
+	// Serialize only deadline setup with Close, never the blocking Read.
+	// Otherwise a racing Read could replace Close's expired deadline.
+	body.mu.Lock()
+	if body.closed {
+		body.mu.Unlock()
+		return 0, io.ErrClosedPipe
+	}
+	if err := body.ctx.Err(); err != nil {
+		body.mu.Unlock()
+		return 0, err
+	}
+	err := body.controller.SetReadDeadline(time.Now().Add(panelFileTransferIdleTimeout))
+	body.mu.Unlock()
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return 0, err
+	}
+	return body.body.Read(output)
+}
+
+func (body *lightFileUploadBody) Close() error {
+	body.once.Do(func() {
+		body.mu.Lock()
+		body.closed = true
+		_ = body.controller.SetReadDeadline(time.Now())
+		body.mu.Unlock()
+		if body.body != nil {
+			_ = body.body.Close()
+		}
+	})
+	return nil
 }
 
 func (s *Server) checkLightFileMethod(w http.ResponseWriter, r *http.Request) bool {
