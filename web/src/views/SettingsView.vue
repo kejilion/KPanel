@@ -26,6 +26,7 @@ import {
   UserRound,
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
+import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api, resetApiSecurityState } from '@/lib/api'
 import { formatDateTime, relativeTime } from '@/lib/format'
@@ -489,6 +490,8 @@ onMounted(async () => {
 <template>
   <div class="page page--narrow">
     <PageHeader title="设置" description="管理账户、安全验证和当前设备偏好；宿主机策略仍由 Agent 统一执行。" />
+
+    <ProblemReportHelp />
 
     <section class="settings-section panel-card">
       <header class="settings-section__header">
