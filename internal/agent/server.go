@@ -99,12 +99,13 @@ type Server struct {
 	terminals        *terminal.Manager
 	thumbnailGate    chan struct{}
 	storageUsageGate chan struct{}
-	processesGate    chan struct{}
+	processReads     processReads
 	systemLogsGate   chan struct{}
 	now              func() time.Time
 }
 
 func (s *Server) Close() {
+	s.processReads.close()
 	if s.terminals != nil {
 		s.terminals.CloseAll()
 	}
@@ -206,7 +207,6 @@ func NewServer(config Config) (*Server, error) {
 		terminals:        config.Terminals,
 		thumbnailGate:    make(chan struct{}, 2),
 		storageUsageGate: make(chan struct{}, 1),
-		processesGate:    make(chan struct{}, 1),
 		systemLogsGate:   make(chan struct{}, 1),
 		now:              config.Now,
 	}, nil
@@ -594,8 +594,17 @@ func (s *Server) systemSummary(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, requestIDFrom(w), http.StatusServiceUnavailable, "system_unavailable", "系统状态不可用", "")
 		return
 	}
-	summary.Management.SSH.Defense = s.systemManager.SSHDefenseStatus(r.Context())
+	// Preserve the CPU sampling window above: status subprocesses must not
+	// contribute their own work to that observation. The two independent,
+	// read-only protocols retain their individual deadlines and failure states.
+	var statusReads sync.WaitGroup
+	statusReads.Add(1)
+	go func() {
+		defer statusReads.Done()
+		summary.Management.SSH.Defense = s.systemManager.SSHDefenseStatus(r.Context())
+	}()
 	summary.Management.BBRv3 = s.systemManager.BBRv3Status(r.Context())
+	statusReads.Wait()
 	summary.Management.Maintenance = s.systemManager.MaintenanceStatus()
 	writeJSON(w, http.StatusOK, summary)
 }
@@ -667,19 +676,8 @@ func (s *Server) systemProcesses(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	select {
-	case s.processesGate <- struct{}{}:
-		defer func() { <-s.processesGate }()
-	default:
-		writeProblem(w, requestIDFrom(w), http.StatusTooManyRequests, "process_metrics_busy", "Another process sample is already running", "")
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-	var result systeminfo.ProcessSnapshot
-	if r.URL.RawQuery == "" {
-		result, err = s.system.Processes(ctx)
-	} else {
+	key := processReadKey{legacy: r.URL.RawQuery == ""}
+	if !key.legacy {
 		limit := 0
 		if value := values.Get("limit"); value != "" {
 			limit, err = strconv.Atoi(value)
@@ -695,7 +693,17 @@ func (s *Server) systemProcesses(w http.ResponseWriter, r *http.Request) {
 			writeProblem(w, requestIDFrom(w), http.StatusUnprocessableEntity, "invalid_process_query", "Process query is invalid", "")
 			return
 		}
-		result, err = s.system.QueryProcesses(ctx, query)
+		key.query = query
+	}
+	result, err := s.processReads.read(r.Context(), key, func(ctx context.Context) (systeminfo.ProcessSnapshot, error) {
+		if key.legacy {
+			return s.system.Processes(ctx)
+		}
+		return s.system.QueryProcesses(ctx, key.query)
+	})
+	if errors.Is(err, errProcessReadBusy) {
+		writeProblem(w, requestIDFrom(w), http.StatusTooManyRequests, "process_metrics_busy", "Another process sample is already running", "")
+		return
 	}
 	if err != nil {
 		writeProblem(w, requestIDFrom(w), http.StatusServiceUnavailable, "process_metrics_unavailable", "Process metrics are unavailable", "")
@@ -802,7 +810,14 @@ func (s *Server) systemAction(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if input.Action == "process-signal" {
+		s.processReads.seal()
+	}
 	result, err := s.systemManager.Execute(ctx, input)
+	if input.Action == "process-signal" {
+		// Also cover a sample that began while the action was executing.
+		s.processReads.seal()
+	}
 	if err != nil {
 		status, code, title := http.StatusServiceUnavailable, "system_action_failed", "系统操作失败"
 		switch {

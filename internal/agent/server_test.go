@@ -367,7 +367,10 @@ func TestSystemProcessesRejectsUnboundedQueriesBeforeCollection(t *testing.T) {
 
 func TestSystemProcessesBoundsConcurrentSampling(t *testing.T) {
 	server := testServer(t)
-	server.processesGate <- struct{}{}
+	server.processReads.active = &processReadCall{
+		key: processReadKey{query: systeminfo.ProcessQuery{Sort: "cpu", Order: "desc", Limit: 200}},
+		ctx: context.Background(), waiters: maxProcessReadWaiters,
+	}
 	request := httptest.NewRequest(http.MethodGet, "/v1/system/processes?sort=cpu&limit=200", nil)
 	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
 	response := httptest.NewRecorder()
