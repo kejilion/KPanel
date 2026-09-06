@@ -1727,7 +1727,7 @@ onBeforeUnmount(() => {
       </template>
     </ModalDialog>
     <ModalDialog :open="Boolean(certificateSite)" :title="phrase('更换证书')" @close="closeCertificateReplacement">
-      <form id="site-certificate-form" @submit.prevent="replaceCertificate">
+      <form id="site-certificate-form" class="form-stack" @submit.prevent="replaceCertificate">
         <p>{{ certificateSite?.primaryDomain }}</p>
         <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
         <label class="field">
@@ -1754,3 +1754,9 @@ onBeforeUnmount(() => {
     </ModalDialog>
   </div>
 </template>
+
+<style scoped>
+#site-certificate-form .field > small {
+  color: var(--muted);
+}
+</style>
