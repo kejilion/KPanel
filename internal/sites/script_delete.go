@@ -153,6 +153,7 @@ func (m *Manager) deleteWithScript(
 		{"certificate", filepath.Join(m.webRoot, "certs", normalized+"_cert.pem")},
 		{"certificate_key", filepath.Join(m.webRoot, "certs", normalized+"_key.pem")},
 		{"certificate_policy", filepath.Join(m.webRoot, "certs", normalized+".custom")},
+		{"certificate_renewal", filepath.Join(m.webRoot, "certs", normalized+".auto-renewal")},
 	}
 	removed := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
