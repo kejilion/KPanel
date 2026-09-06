@@ -3,6 +3,7 @@ package panel
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -193,6 +194,33 @@ func TestSystemLogReadPathsAreExactAndPreserveStrictQuery(t *testing.T) {
 	)
 	if encoded.Code != http.StatusNotFound || len(agent.snapshotCalls()) != 1 {
 		t.Fatalf("encoded system log path status=%d calls=%#v", encoded.Code, agent.snapshotCalls())
+	}
+}
+
+func TestOverviewReadPathsAreExactAndRequireSession(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	for _, suffix := range []string{"runtime", "management/config", "management/ssh-defense", "management/bbrv3"} {
+		path := "/api/v1/system/" + suffix
+		want := "/v1/system/" + suffix
+		if mapped, ok := allowedAgentPath(path); !ok || mapped != want {
+			t.Fatalf("%s mapped to %s, %v", path, mapped, ok)
+		}
+		for _, invalid := range []string{path + "/extra", path + "/../actions"} {
+			if _, ok := allowedAgentPath(invalid); ok {
+				t.Fatalf("unexpected allowed route %s", invalid)
+			}
+		}
+		server.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: []byte(`{"state":{},"observedAt":"2026-09-07T00:00:00Z"}`)}}
+		unauthorized := httptest.NewRecorder()
+		server.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, path, nil))
+		if unauthorized.Code != http.StatusUnauthorized {
+			t.Fatalf("unauthenticated read %s: %d", path, unauthorized.Code)
+		}
+		response := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodGet, path, nil, true)
+		if response.Code != http.StatusOK {
+			t.Fatalf("authenticated read %s: %d", path, response.Code)
+		}
 	}
 }
 

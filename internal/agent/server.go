@@ -262,6 +262,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.capabilities)
 	case r.URL.Path == "/v1/system/summary":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemSummary)
+	case r.URL.Path == "/v1/system/runtime":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.systemRuntime)
+	case r.URL.Path == "/v1/system/management/config", r.URL.Path == "/v1/system/management/ssh-defense", r.URL.Path == "/v1/system/management/bbrv3":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.systemManagementRead)
 	case r.URL.Path == "/v1/system/telemetry":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemTelemetry)
 	case r.URL.Path == "/v1/system/public-network":

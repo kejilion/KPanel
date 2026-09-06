@@ -3698,25 +3698,28 @@ textarea:focus-visible,
   gap: 4px;
 }
 
-.overview-system-card__body strong { font-size: 13px; }
+.overview-system-card__body strong { font-size: 14px; }
 
 .overview-system-card__body > span {
-  overflow: hidden;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .overview-system-card__body small {
-  display: -webkit-box;
-  overflow: hidden;
+  display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.overview-system-card:disabled,
+.system-tool:disabled {
+  opacity: 1;
+  cursor: wait;
+  transform: none;
 }
 
 .overview-system-card__arrow {

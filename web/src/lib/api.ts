@@ -1221,7 +1221,31 @@ export const api = {
     ): Promise<SystemOverview> => {
       type Capability = { id: string; enabled: boolean; reason?: string; methods?: string[] }
       // Keep the CPU sample isolated from the optional requests triggered by this page.
-      const system = await request<RawSystemSummary>('/system/summary', { signal })
+      let legacy = false
+      let runtimeFailed = false
+      const system = await request<RawSystemSummary>('/system/runtime', { signal }).catch((error) => {
+        if (!(error instanceof ApiError) || ![404, 501].includes(error.status)) throw error
+        legacy = true
+        return request<RawSystemSummary>('/system/summary', { signal })
+      }).catch((error) => {
+        if (signal?.aborted || (error instanceof ApiError && [401, 403].includes(error.status))) throw error
+        runtimeFailed = true
+        legacy = false
+        // Structural defaults are never displayed as observations; independent
+        // management reads can still recover when the runtime collector fails.
+        return { hostname: '', os: '', uptimeSeconds: 0, collectedAt: '',
+          load: { one: 0, five: 0, fifteen: 0 }, cpu: { cores: 0, usagePercent: 0 },
+          memory: { totalBytes: 0, availableBytes: 0, usedBytes: 0, usagePercent: 0 },
+          disks: [], network: { receivedBytes: 0, sentBytes: 0 } } as RawSystemSummary
+      })
+      const resources = normalizeSystemResources(system)
+      const reads: NonNullable<SystemOverview['reads']> = {
+        runtime: { state: runtimeFailed ? 'error' : 'ready', observedAt: system.collectedAt || undefined },
+        config: { state: legacy ? 'ready' : 'loading' },
+        'ssh-defense': { state: legacy ? 'ready' : 'loading' },
+        bbrv3: { state: legacy ? 'ready' : 'loading' },
+        capabilities: { state: 'loading' },
+      }
       const agentRequest = request<RawAgentHealth>('/agent/health', { signal })
       const capabilitiesRequest = request<ApiList<Capability> | Capability[]>('/capabilities', { signal })
         .catch(() => undefined)
@@ -1235,7 +1259,7 @@ export const api = {
         .catch(() => undefined)
       const appsRequest = request<AppMarketInventory>('/apps', { signal })
         .catch(() => undefined)
-      const agent = await agentRequest
+      let agent: RawAgentHealth | undefined
       let capabilitiesResult: ApiList<Capability> | Capability[] | undefined
       let sitesResult: ApiList<RawSite> | RawSite[] | undefined
       let appsResult: AppMarketInventory | undefined
@@ -1302,6 +1326,8 @@ export const api = {
         if (previousOverview) {
           previousOverview = {
             ...previousOverview,
+            reads: { ...reads },
+            agent: agent ? normalizeAgent(agent) : previousOverview.agent,
             publicNetwork: publicNetworkSummary(),
             management:
               previousOverview.management.capabilities === capabilities
@@ -1316,7 +1342,8 @@ export const api = {
           return previousOverview
         }
         const overview: SystemOverview = {
-          ...normalizeSystemResources(system),
+          ...resources,
+          reads: { ...reads },
           publicNetwork: publicNetworkSummary(),
           management: {
           ssh: {
@@ -1394,7 +1421,7 @@ export const api = {
           capabilities,
         },
         services,
-        agent: normalizeAgent(agent),
+        agent: agent ? normalizeAgent(agent) : { connected: false, compatible: false, readOnly: true },
         sites: sitesSummary,
         containers: containersSummary,
         apps: appsSummary,
@@ -1404,11 +1431,38 @@ export const api = {
         return overview
       }
 
-      onUpdate?.(build())
-      const emit = () => onUpdate?.(build())
+      const emit = () => { if (!signal?.aborted) onUpdate?.(build()) }
+      emit()
+      type Management = NonNullable<RawSystemSummary['management']>
+      const readManagement = async (group: 'config' | 'ssh-defense' | 'bbrv3') => {
+        if (legacy) return
+        try {
+          const snapshot = await request<{ state: Management & NonNullable<Management['bbrv3']> & NonNullable<NonNullable<Management['ssh']>['defense']>; observedAt: string }>(`/system/management/${group}`, { signal })
+          const existing = system.management || {}
+          if (group === 'config') {
+            // An independent slow read may have finished first; do not erase it.
+            system.management = { ...snapshot.state,
+              ssh: { ...snapshot.state.ssh, defense: existing.ssh?.defense }, bbrv3: existing.bbrv3 }
+          } else if (group === 'ssh-defense') {
+            system.management = { ...existing, ssh: { ...existing.ssh, defense: snapshot.state } }
+          } else {
+            system.management = { ...existing, bbrv3: snapshot.state }
+          }
+          const available = group === 'config' || snapshot.state.available === true
+          reads[group] = { state: available ? 'ready' : 'error', observedAt: snapshot.observedAt }
+        } catch {
+          reads[group] = { state: 'error' }
+        }
+        previousOverview = undefined
+        revision += 1
+        emit()
+      }
       await Promise.allSettled([
+        readManagement('config'), readManagement('ssh-defense'), readManagement('bbrv3'),
+        agentRequest.then((value) => { agent = value; revision += 1; emit() }),
         capabilitiesRequest.then((value) => {
-          if (value === undefined) return
+          reads.capabilities = { state: value === undefined ? 'error' : 'ready' }
+          if (value === undefined) { revision += 1; emit(); return }
           capabilitiesResult = value
           capabilities = Object.fromEntries(
             normalizeList(capabilitiesResult).items.map((capability) => [
@@ -1652,8 +1706,14 @@ export const api = {
     maintenance: async (
       signal?: AbortSignal,
     ): Promise<SystemOverview['management']['maintenance']> => {
-      const summary = await request<RawSystemSummary>('/system/summary', { signal })
-      return normalizeMaintenance(summary.management?.maintenance)
+      try {
+        const snapshot = await request<{ state: NonNullable<RawSystemSummary['management']> }>('/system/management/config', { signal })
+        return normalizeMaintenance(snapshot.state.maintenance)
+      } catch (error) {
+        if (!(error instanceof ApiError) || ![404, 501].includes(error.status)) throw error
+        const summary = await request<RawSystemSummary>('/system/summary', { signal })
+        return normalizeMaintenance(summary.management?.maintenance)
+      }
     },
     publicNetwork: (signal?: AbortSignal): Promise<RawPublicNetworkSummary> =>
       request<RawPublicNetworkSummary>('/system/public-network', { signal }),

@@ -416,7 +416,7 @@ const systemSummary = {
     timezone: 'Asia/Shanghai',
   },
   management: {
-    ssh: { ports: [22, 2222], source: 'configured' },
+    ssh: { ports: [22, 2222], source: 'configured', defense: { available: true, installed: true, running: true, enabled: true, autostart: true, jail: 'sshd', banned: 2 } },
     dns: { servers: ['1.1.1.1', '2606:4700:4700::1111'], manager: 'systemd-resolved' },
     timezone: 'Asia/Shanghai',
     swap: {
@@ -438,6 +438,7 @@ const systemSummary = {
     maintenance: { state: 'idle', progress: 0, rebootRequired: true },
     ipPreference: 'ipv4',
     kernelOptimization: { enabled: true, profile: '均衡优化模式', source: 'kejilion' },
+    bbrv3: { available: true, supported: true, installed: false, active: false, rebootRequired: false, architecture: 'x86_64', os: 'debian', codename: 'trixie', runningKernel: '6.12.0-amd64' },
     bbr: {
       supported: true,
       enabled: true,
@@ -1577,10 +1578,17 @@ createServer(async (request, response) => {
     send(response, 202, materializeJob(job))
     return
   }
-  if (request.method === 'GET' && url.pathname === '/api/v1/system/summary') {
+  if (request.method === 'GET' && ['/api/v1/system/management/config', '/api/v1/system/management/ssh-defense', '/api/v1/system/management/bbrv3'].includes(url.pathname)) {
+    const group = url.pathname.split('/').at(-1)
+    const state = group === 'config' ? { ...systemSummary.management, maintenance: materializeSystemLogMaintenance() }
+      : group === 'ssh-defense' ? systemSummary.management.ssh.defense : systemSummary.management.bbrv3
+    send(response, 200, { state, observedAt: new Date().toISOString() })
+    return
+  }
+  if (request.method === 'GET' && ['/api/v1/system/summary', '/api/v1/system/runtime'].includes(url.pathname)) {
     send(response, 200, {
       ...systemSummary,
-      management: {
+      management: url.pathname.endsWith('/runtime') ? undefined : {
         ...systemSummary.management,
         maintenance: materializeSystemLogMaintenance(),
       },

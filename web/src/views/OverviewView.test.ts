@@ -35,6 +35,8 @@ interface OverviewBindings {
   maintenanceActionFor: (toolID: string) => string | undefined
   actionForm: { timezone: string; timezonePreset: string }
   openTool: (tool: { id: string }) => void
+  toolReadState: (tool: { id: string }) => string
+  toolCanOpen: (tool: { id: string }) => boolean
   load: (silent?: boolean) => Promise<void>
 }
 
@@ -75,7 +77,41 @@ beforeEach(() => {
 })
 
 describe('OverviewView refresh stability', () => {
-  it('streams the first load but applies later refreshes atomically', async () => {
+  it('renders every tool title before network data and protects unknown action state', () => {
+    const view = setupView()
+    expect(view.basicSettings.value.length).toBeGreaterThan(0)
+    expect(view.networkTools.value.length).toBeGreaterThan(0)
+    expect(view.systemCenterSections.value.map((section) => section.id)).toEqual(['maintenance', 'basic', 'security', 'network', 'performance'])
+    expect(view.toolReadState({ id: 'bbrv3' })).toBe('loading')
+    expect(view.toolCanOpen({ id: 'bbrv3' })).toBe(false)
+    expect(view.toolCanOpen({ id: 'swap' })).toBe(false)
+    expect(view.toolAvailabilityLabel({ id: 'bbrv3', capability: '' })).toBe('状态加载中')
+    view.data.value!.reads!.capabilities = { state: 'ready' }
+    view.data.value!.reads!.config = { state: 'ready' }
+    view.data.value!.reads!.bbrv3 = { state: 'error' }
+    expect(view.toolAvailabilityLabel({ id: 'bbrv3', capability: '' })).toBe('状态读取失败')
+    expect(view.toolCanOpen({ id: 'bbrv3' })).toBe(false)
+    expect(view.toolCanOpen({ id: 'dns' })).toBe(true)
+    expect(view.toolCanOpen({ id: 'system-logs' })).toBe(true)
+  })
+
+  it('ignores stale completion and callbacks after a newer refresh', async () => {
+    let oldUpdate!: (value: SystemOverview) => void
+    let oldFinish!: (value: SystemOverview) => void
+    mocks.overviewGet.mockImplementationOnce((_signal, update) => {
+      oldUpdate = update
+      return new Promise<SystemOverview>((resolve) => { oldFinish = resolve })
+    }).mockResolvedValueOnce(overview('new'))
+    const view = setupView()
+    const old = view.load()
+    await view.load(true)
+    oldUpdate(overview('stale-partial'))
+    oldFinish(overview('stale-final'))
+    await old
+    expect(view.data.value).toStrictEqual(overview('new'))
+  })
+
+  it('streams initial and subsequent refreshes without waiting for optional reads', async () => {
     const initialPartial = overview('initial-partial')
     const initialComplete = overview('initial-complete')
     const refreshedComplete = overview('refreshed-complete')
@@ -87,7 +123,8 @@ describe('OverviewView refresh stability', () => {
         return initialComplete
       })
       .mockImplementationOnce((_signal: AbortSignal, onUpdate?: (value: SystemOverview) => void) => {
-        expect(onUpdate).toBeUndefined()
+        expect(onUpdate).toEqual(expect.any(Function))
+        onUpdate?.(overview('refresh-partial'))
         return new Promise<SystemOverview>((resolve) => {
           finishRefresh = resolve
         })
@@ -98,7 +135,7 @@ describe('OverviewView refresh stability', () => {
     expect(view.data.value).toStrictEqual(initialComplete)
 
     const refresh = view.load(true)
-    expect(view.data.value).toStrictEqual(initialComplete)
+    expect(view.data.value).toStrictEqual(overview('refresh-partial'))
     finishRefresh?.(refreshedComplete)
     await refresh
     expect(view.data.value).toStrictEqual(refreshedComplete)

@@ -1106,6 +1106,7 @@ describe('API client', () => {
     const fetchMock = vi
       .fn()
       .mockImplementationOnce(() => systemResponse)
+      .mockResolvedValueOnce(jsonResponse(system))
       .mockResolvedValueOnce(
         jsonResponse({
           status: 'ok',
@@ -1139,9 +1140,9 @@ describe('API client', () => {
     const updates: SystemOverview[] = []
     const overviewRequest = api.overview.get(undefined, (value) => updates.push(value))
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/system/summary')
-    resolveSystem(jsonResponse(system))
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(8))
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/system/runtime')
+    resolveSystem(jsonResponse({ title: 'not found' }, { status: 404 }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(9))
     const overview = await overviewRequest
 
     expect(overview.hostname).toBe('legacy-host')
@@ -1206,7 +1207,7 @@ describe('API client', () => {
       source: 'ipinfo.io',
     })
     expect(overview.apps).toEqual({ total: 4, installed: 3, running: 2, updateAvailable: 1 })
-    expect(updates).toHaveLength(7)
+    expect(updates).toHaveLength(8)
     expect(overview).toBe(updates.at(-1))
     expect(new Set(updates.map((value) => value.cpu)).size).toBe(1)
     const capabilityUpdates = updates.filter(
@@ -1217,6 +1218,7 @@ describe('API client', () => {
 
     const nextCollectedAt = '2026-07-25T10:00:20Z'
     fetchMock
+      .mockResolvedValueOnce(jsonResponse({ title: 'not found' }, { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({
         ...system,
         network: { ...system.network, receivedBytes: 500, sentBytes: 600 },

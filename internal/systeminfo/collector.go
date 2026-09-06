@@ -120,6 +120,15 @@ func (c *Collector) CollectRuntime(ctx context.Context) (contract.SystemSummary,
 	return c.collectRuntime(ctx)
 }
 
+// CollectManagement reads existing local configuration without sampling CPU or
+// running the optional SSH defense / BBRv3 status protocols.
+func (c *Collector) CollectManagement() contract.SystemManagementSummary {
+	c.prepareDefaults()
+	var result contract.SystemManagementSummary
+	c.readManagement(&result)
+	return result
+}
+
 func (c *Collector) Collect(ctx context.Context) (contract.SystemSummary, error) {
 	result, err := c.collectRuntime(ctx)
 	var errs []error

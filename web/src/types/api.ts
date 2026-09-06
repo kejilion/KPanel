@@ -472,7 +472,14 @@ export interface SystemManagement {
   capabilities: Record<string, CapabilityState>
 }
 
+export type OverviewReadGroup = 'runtime' | 'config' | 'ssh-defense' | 'bbrv3' | 'capabilities'
+export interface OverviewReadState {
+  state: 'loading' | 'ready' | 'error'
+  observedAt?: string
+}
+
 export interface SystemOverview {
+  reads?: Partial<Record<OverviewReadGroup, OverviewReadState>>
   hostname: string
   os: string
   osId?: string

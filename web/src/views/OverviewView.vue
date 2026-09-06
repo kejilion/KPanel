@@ -64,6 +64,7 @@ import SystemLogsDialog from '@/components/overview/SystemLogsDialog.vue'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import { ApiError, api } from '@/lib/api'
+import { pendingOverview } from '@/lib/overviewState'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import {
   clampPercent,
@@ -86,7 +87,7 @@ import {
 } from '@/lib/systemPresets'
 import { usePanelState } from '@/stores/panel'
 import { useToast } from '@/stores/toast'
-import type { SystemActionInput, SystemOverview } from '@/types/api'
+import type { OverviewReadGroup, SystemActionInput, SystemOverview } from '@/types/api'
 
 const props = withDefaults(defineProps<{
   systemCenterOnly?: boolean
@@ -94,7 +95,9 @@ const props = withDefaults(defineProps<{
   systemCenterOnly: false,
 })
 
-const data = ref<SystemOverview>()
+const data = ref<SystemOverview>(pendingOverview())
+const runtimeReady = computed(() => !data.value.reads?.runtime || data.value.reads.runtime.state === 'ready')
+const failedReads = computed(() => Object.values(data.value.reads || {}).some((read) => read?.state === 'error'))
 const loading = ref(true)
 const refreshing = ref(false)
 const error = ref('')
@@ -236,6 +239,8 @@ const publicCountryCode = computed(() => {
 const osIdentity = computed(() => detectOperatingSystemIdentity(data.value))
 
 const networkAlgorithm = computed(() => {
+  const state = data.value?.reads?.config?.state
+  if (state && state !== 'ready') return phrase(state === 'error' ? '状态读取失败' : '状态加载中')
   const bbr = data.value?.management.bbr
   return [bbr?.congestionControl, bbr?.defaultQDisc].filter(Boolean).join(' · ') || '未识别'
 })
@@ -666,6 +671,9 @@ const reinstallTool = computed<ManagementTool>(() => ({
 }))
 
 function capabilityState(id: string): { enabled: boolean; reason: string } {
+  if (data.value?.reads?.capabilities && data.value.reads.capabilities.state !== 'ready') {
+    return { enabled: false, reason: '状态加载中' }
+  }
   const capability = data.value?.management.capabilities[id]
   return {
     enabled: Boolean(capability?.enabled),
@@ -799,12 +807,16 @@ function resourceCapability(id: ResourceDialogID, mode: 'read' | 'write'): { ena
 }
 
 function toolAvailabilityLabel(tool: ManagementTool): string {
+  if (toolReadState(tool) !== 'ready') return toolReadState(tool) === 'error' ? '状态读取失败' : '状态加载中'
+  if (data.value?.reads?.capabilities?.state === 'loading') return '状态加载中'
+  if (data.value?.reads?.capabilities?.state === 'error') return '状态读取失败'
   if (!isResourceDialogID(tool.id)) return capabilityState(tool.capability).enabled ? '可配置' : '适配器未实现'
   if (!resourceCapability(tool.id, 'read').enabled) return '适配器未就绪'
   return resourceCapability(tool.id, 'write').enabled ? '可管理' : '仅查看'
 }
 
 function openTool(tool: ManagementTool): void {
+  if (!toolCanOpen(tool)) return
   if (isResourceDialogID(tool.id)) {
     selectedResourceDialog.value = tool.id
     return
@@ -990,27 +1002,63 @@ async function executeAction(): Promise<void> {
   }
 }
 
+function toolReadGroup(tool: Pick<ManagementTool, 'id'>): OverviewReadGroup {
+  if (tool.id === 'hostname' || tool.id === 'swap') return 'runtime'
+  if (tool.id === 'ssh-defense' || tool.id === 'bbrv3') return tool.id
+  if (isResourceDialogID(tool.id) && tool.id !== 'system-tuning') return 'capabilities'
+  return 'config'
+}
+
+function toolReadState(tool: Pick<ManagementTool, 'id'>): 'ready' | 'loading' | 'error' {
+  const group = toolReadGroup(tool)
+  const read = data.value?.reads?.[group]
+  // Swap actions also depend on the authoritative swapfile configuration.
+  if (tool.id === 'swap' && read?.state === 'ready') return data.value?.reads?.config?.state || 'ready'
+  return read?.state || 'ready'
+}
+
+function toolCanOpen(tool: Pick<ManagementTool, 'id'>): boolean {
+  if (data.value?.reads?.capabilities && data.value.reads.capabilities.state !== 'ready') return false
+  // Resource dialogs have their own scoped loading and action guards.
+  if (isResourceDialogID(tool.id)) return true
+  return toolReadState(tool) === 'ready' && (!data.value?.reads?.config || data.value.reads.config.state === 'ready')
+}
+
+function toolStatusValue(tool: ManagementTool): string {
+  const state = toolReadState(tool)
+  return state === 'ready' ? tool.value : state === 'error' ? '状态读取失败' : '状态加载中'
+}
+
+function toolObservedAt(tool: ManagementTool): string | undefined {
+  const observed = data.value?.reads?.[toolReadGroup(tool)]?.observedAt
+  return observed ? formatDateTime(observed) : undefined
+}
+
 async function load(silent = false): Promise<void> {
   controller?.abort()
-  controller = new AbortController()
+  const current = new AbortController()
+  controller = current
   if (silent) refreshing.value = true
   else loading.value = true
   error.value = ''
 
   try {
-    const onPartial = data.value
-      ? undefined
-      : (partial: SystemOverview) => {
+    const onPartial = (partial: SystemOverview) => {
+          if (current.signal.aborted || controller !== current) return
           data.value = partial
           loading.value = false
-          panel.setAgent(partial.agent)
+          if (partial.agent.version) panel.setAgent(partial.agent)
         }
-    data.value = await api.overview.get(controller.signal, onPartial)
-    panel.setAgent(data.value.agent)
+    const complete = await api.overview.get(current.signal, onPartial)
+    if (current.signal.aborted || controller !== current) return
+    data.value = complete
+    if (complete.agent.version) panel.setAgent(complete.agent)
   } catch (reason) {
+    if (current.signal.aborted || controller !== current) return
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     error.value = reason instanceof ApiError ? reason.message : '无法读取主机状态。'
   } finally {
+    if (current.signal.aborted || controller !== current) return
     loading.value = false
     refreshing.value = false
     if (!props.systemCenterOnly) {
@@ -1067,16 +1115,16 @@ onBeforeUnmount(() => {
         : '实时查看服务器资源与服务状态，并快速进入常用系统管理工具。'"
     />
 
-    <LoadingState v-if="loading" :rows="4" cards />
-    <ErrorState v-else-if="error && !data" :message="error" @retry="load()" />
+    <LoadingState v-if="!runtimeReady && !props.systemCenterOnly && loading" :rows="4" cards />
+    <ErrorState v-if="error && !runtimeReady" :message="error" @retry="load()" />
 
-    <template v-else-if="data">
-      <div v-if="error" class="inline-alert inline-alert--warning" role="status">
+    <template v-if="data">
+      <div v-if="error && runtimeReady" class="inline-alert inline-alert--warning" role="status">
         自动刷新暂时失败，正在显示上一次观测结果。
       </div>
 
       <section
-        v-if="!props.systemCenterOnly"
+        v-if="!props.systemCenterOnly && runtimeReady"
         class="realtime-monitoring"
         aria-labelledby="realtime-monitoring-title"
       >
@@ -1182,7 +1230,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <div v-if="!props.systemCenterOnly" class="overview-grid">
+      <div v-if="!props.systemCenterOnly && runtimeReady" class="overview-grid">
         <section class="panel-card panel-card--system">
           <header class="panel-card__header">
             <div>
@@ -1288,7 +1336,7 @@ onBeforeUnmount(() => {
             <div class="detail-list__wide">
               <dt>DNS 地址</dt>
               <dd class="detail-list__mono">
-                {{ data.management.dns.servers.length ? data.management.dns.servers.join(' · ') : '未识别' }}
+                {{ data.reads?.config && data.reads.config.state !== 'ready' ? phrase(data.reads.config.state === 'error' ? '状态读取失败' : '状态加载中') : data.management.dns.servers.length ? data.management.dns.servers.join(' · ') : '未识别' }}
               </dd>
             </div>
             <div>
@@ -1312,7 +1360,7 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <section v-if="!props.systemCenterOnly" class="panel-card panel-card--resource-overview">
+      <section v-if="!props.systemCenterOnly && runtimeReady" class="panel-card panel-card--resource-overview">
         <header class="panel-card__header">
           <div>
             <span class="panel-card__icon panel-card__icon--violet"><Activity :size="18" /></span>
@@ -1361,6 +1409,11 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <div v-if="failedReads" class="inline-alert inline-alert--warning" role="status">
+        <span>{{ phrase('部分状态读取失败，其他功能不受影响。') }}</span>
+        <button class="button button--secondary button--small" type="button" :disabled="refreshing" @click="load(true)">{{ phrase('重试状态读取') }}</button>
+      </div>
+
       <template v-if="props.systemCenterOnly">
         <div class="system-center-layout">
           <section
@@ -1408,6 +1461,8 @@ onBeforeUnmount(() => {
                 class="system-tool"
                 :class="{ 'is-featured': tool.id === 'system-tuning' }"
                 type="button"
+                :disabled="!toolCanOpen(tool)"
+                :aria-busy="toolReadState(tool) === 'loading'"
                 @click="openTool(tool)"
               >
                 <span class="system-tool__top">
@@ -1418,7 +1473,9 @@ onBeforeUnmount(() => {
                     <span v-if="tool.recommended" class="system-tool__recommend">推荐</span>
                     <span class="system-tool__state">
                       {{
-                        section.id === 'maintenance'
+                        toolReadState(tool) !== 'ready' || (data.reads?.capabilities && data.reads.capabilities.state !== 'ready')
+                          ? phrase(toolAvailabilityLabel(tool))
+                          : section.id === 'maintenance'
                           ? maintenanceRunning && maintenanceActionFor(tool.id)
                             ? data.management.maintenance.action === maintenanceActionFor(tool.id)
                               ? `进行中 ${data.management.maintenance.progress}%`
@@ -1434,8 +1491,10 @@ onBeforeUnmount(() => {
                   </span>
                 </span>
                 <strong>{{ tool.title }}</strong>
-                <span>{{ tool.value }}</span>
-                <small>{{ managementDetailLabel(tool.detail) }}</small>
+                <small>{{ phrase(tool.description) }}</small>
+                <span>{{ phrase(toolStatusValue(tool)) }}</span>
+                <small v-if="toolReadState(tool) === 'ready'">{{ managementDetailLabel(tool.detail) }}</small>
+                <small v-if="toolObservedAt(tool)">{{ toolObservedAt(tool) }}</small>
                 <span
                   v-if="
                     section.id === 'maintenance' &&
@@ -1482,6 +1541,7 @@ onBeforeUnmount(() => {
               <button
                 class="button button--danger button--small"
                 type="button"
+                :disabled="!toolCanOpen(reinstallTool)"
                 @click="openTool(reinstallTool)"
               >
                 查看安全要求
@@ -1521,6 +1581,8 @@ onBeforeUnmount(() => {
             :key="tool.id"
             class="overview-system-card"
             type="button"
+            :disabled="!toolCanOpen(tool)"
+            :aria-busy="toolReadState(tool) === 'loading'"
             @click="openTool(tool)"
           >
             <span class="overview-system-card__top">
@@ -1531,8 +1593,10 @@ onBeforeUnmount(() => {
             </span>
             <span class="overview-system-card__body">
               <strong>{{ tool.title }}</strong>
-              <span>{{ tool.value }}</span>
-              <small>{{ managementDetailLabel(tool.detail) }}</small>
+              <small>{{ phrase(tool.description) }}</small>
+              <span>{{ phrase(toolStatusValue(tool)) }}</span>
+              <small v-if="toolReadState(tool) === 'ready'">{{ managementDetailLabel(tool.detail) }}</small>
+              <small v-if="toolObservedAt(tool)">{{ toolObservedAt(tool) }}</small>
             </span>
             <ChevronRight class="overview-system-card__arrow" :size="17" />
           </button>
