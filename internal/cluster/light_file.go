@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -116,13 +117,15 @@ type lightFileSession struct {
 	id            string
 	responseReady chan struct{}
 	data          chan []byte
+	done          chan struct{}
+	space         chan struct{}
+	lastProgress  time.Time
 	status        int
 	headers       map[string]string
 	responseSeen  bool
 	finished      bool
 	err           error
 	nextOffset    int64
-	dataClosed    bool
 }
 
 func newLightFileRelay(now func() time.Time) *lightFileRelay {
@@ -223,6 +226,7 @@ func (r *lightFileRelay) poll(
 		ctx = context.Background()
 	}
 	item := r.node(nodeID, true)
+	applySnapshot := true
 	for {
 		now := r.now().UTC()
 		item.mu.Lock()
@@ -232,8 +236,23 @@ func (r *lightFileRelay) poll(
 		}
 		item.available = true
 		item.lastPoll = now
-		item.applyEvents(events, now)
-		item.reconcileSessions(requestIDs, now)
+		if applySnapshot {
+			// Reconcile once, before a data event can yield the node lock.
+			// Reapplying this old snapshot after wake could discard a request
+			// delivered by a newer overlapping poll. Terminal events can carry
+			// the last data for a just-removed node ID.
+			observed := append([]string(nil), requestIDs...)
+			for _, event := range events {
+				observed = append(observed, event.RequestID)
+			}
+			item.reconcileSessions(observed, now)
+			item.applyEvents(ctx, events, now)
+			applySnapshot = false
+		}
+		if item.closed {
+			item.mu.Unlock()
+			return FileRelayPollResponse{}, ErrFileRelayUnavailable
+		}
 		if command := item.takeCommand(now); command != nil {
 			item.resetEpoch = r.epoch
 			response := FileRelayPollResponse{Epoch: r.epoch, Command: &command.command}
@@ -305,12 +324,9 @@ func (item *lightFileNode) takeCommand(now time.Time) *lightFileCommand {
 	return nil
 }
 
-func (item *lightFileNode) applyEvents(events []FileRelayEvent, now time.Time) {
+func (item *lightFileNode) applyEvents(ctx context.Context, events []FileRelayEvent, now time.Time) {
 	for _, event := range events {
 		session := item.sessions[event.RequestID]
-		if session == nil {
-			continue
-		}
 		if event.CommandID != "" {
 			command := item.pending[event.CommandID]
 			if command != nil && command.command.RequestID == event.RequestID {
@@ -321,15 +337,26 @@ func (item *lightFileNode) applyEvents(events []FileRelayEvent, now time.Time) {
 				case "error":
 					err := errors.New(event.Error)
 					completeLightFileCommand(command, err)
-					session.finish(err)
+					if session != nil {
+						session.finish(err)
+					}
 				}
 			}
 		}
+		if session == nil {
+			continue
+		}
+		session.progress(now)
 		switch event.Kind {
 		case "response":
 			session.response(event.Status, event.Headers)
 		case "data":
-			if err := session.push(event.Offset, event.Data); err != nil {
+			// Backpressure belongs to this request. Never hold the node lock
+			// while waiting for the browser to consume a chunk.
+			item.mu.Unlock()
+			err := session.push(ctx, event.Offset, event.Data)
+			item.mu.Lock()
+			if err != nil {
 				session.finish(err)
 			}
 		case "end":
@@ -418,6 +445,16 @@ func (r *lightFileRelay) Open(
 	if !validID(nodeID) || !validFileRelayRequest(input) {
 		return nil, ErrFileRelayUnavailable
 	}
+	if input.Body != nil && input.Body != http.NoBody && input.BodyLength != 0 {
+		// Only finite in-memory readers may omit Close. Accepting an arbitrary
+		// blocking Reader would make cancellation unable to reclaim its goroutine.
+		switch input.Body.(type) {
+		case io.ReadCloser:
+		case *bytes.Reader, *bytes.Buffer, *strings.Reader:
+		default:
+			return nil, errors.New("file relay streaming request body must support Close")
+		}
+	}
 	item, err := r.commandNode(nodeID)
 	if err != nil {
 		return nil, err
@@ -429,6 +466,7 @@ func (r *lightFileRelay) Open(
 	now := r.now().UTC()
 	session := &lightFileSession{
 		id: requestID, responseReady: make(chan struct{}), data: make(chan []byte, 8),
+		done: make(chan struct{}), space: make(chan struct{}, 1), lastProgress: now,
 	}
 	command := FileRelayCommand{
 		ID: requestID, Kind: "request", RequestID: requestID,
@@ -443,7 +481,8 @@ func (r *lightFileRelay) Open(
 		return nil, err
 	}
 	item.mu.Lock()
-	if item.closed || len(item.pending) >= lightFileQueueLimit {
+	item.pruneCommands(now)
+	if item.closed || len(item.pending) >= lightFileQueueLimit || len(item.sessions) >= lightFileQueueLimit {
 		item.mu.Unlock()
 		return nil, ErrRateLimited
 	}
@@ -453,8 +492,10 @@ func (r *lightFileRelay) Open(
 	wakeLightFileNode(item)
 	item.mu.Unlock()
 
+	requestContext, stopRequest := context.WithCancel(ctx)
+	go r.watchSession(requestContext, stopRequest, item, session, input.Body)
 	if command.BodyLength != 0 && input.Body != nil && input.Body != http.NoBody {
-		go r.sendBody(ctx, item, session, input.Body, command.BodyLength)
+		go r.sendBody(requestContext, item, session, input.Body, command.BodyLength)
 	}
 	select {
 	case <-session.responseReady:
@@ -468,7 +509,6 @@ func (r *lightFileRelay) Open(
 		}, nil
 	case <-ctx.Done():
 		session.finish(ctx.Err())
-		r.cancel(item, nodeID, requestID)
 		return nil, ctx.Err()
 	}
 }
@@ -511,14 +551,28 @@ func (r *lightFileRelay) sendBody(ctx context.Context, item *lightFileNode, sess
 	buffer := make([]byte, lightFileChunkBytes)
 	offset := int64(0)
 	for {
+		if ctx.Err() != nil || session.isFinished() {
+			return
+		}
 		count, readErr := body.Read(buffer)
+		if count < 0 || count > len(buffer) {
+			session.finish(errors.New("file relay request body read is invalid"))
+			return
+		}
 		if count > 0 {
+			if offset+int64(count) > 512<<20 {
+				session.finish(errors.New("file relay request body exceeds limit"))
+				return
+			}
 			if length >= 0 && offset+int64(count) > length {
 				session.finish(errors.New("file relay request body exceeds declared length"))
-				r.cancel(item, item.id, session.id)
 				return
 			}
 			final := readErr == io.EOF || (length >= 0 && offset+int64(count) == length)
+			if readErr == io.EOF && length >= 0 && offset+int64(count) != length {
+				session.finish(errors.New("file relay request body is incomplete"))
+				return
+			}
 			command, err := r.newBodyCommand(session.id, offset, buffer[:count], final)
 			if err != nil {
 				session.finish(err)
@@ -553,12 +607,10 @@ func (r *lightFileRelay) sendBody(ctx context.Context, item *lightFileNode, sess
 				return
 			}
 			session.finish(readErr)
-			r.cancel(item, item.id, session.id)
 			return
 		}
 		if ctx.Err() != nil {
 			session.finish(ctx.Err())
-			r.cancel(item, item.id, session.id)
 			return
 		}
 	}
@@ -596,7 +648,11 @@ func (r *lightFileRelay) enqueueAndWait(ctx context.Context, item *lightFileNode
 	}
 	request := &lightFileCommand{command: command, done: make(chan error, 1)}
 	item.mu.Lock()
-	if item.closed || len(item.pending) >= lightFileQueueLimit {
+	if item.closed || ctx.Err() != nil || item.sessions[command.RequestID] == nil || item.sessions[command.RequestID].isFinished() {
+		item.mu.Unlock()
+		return contextError(ctx, nil)
+	}
+	if len(item.pending) >= lightFileQueueLimit {
 		item.mu.Unlock()
 		return ErrRateLimited
 	}
@@ -624,8 +680,90 @@ func waitLightFileCommand(ctx context.Context, item *lightFileNode, request *lig
 	}
 }
 
-func (r *lightFileRelay) cancel(item *lightFileNode, nodeID, requestID string) {
+// watchSession owns request cleanup, including after response headers have
+// already been returned. Neither a silent node nor an unread body can retain
+// a session indefinitely. Streaming upload readers must unblock on Close.
+func (r *lightFileRelay) watchSession(ctx context.Context, stop context.CancelFunc, item *lightFileNode, session *lightFileSession, body io.Reader) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	defer func() {
+		stop()
+		r.cancel(item, session.id, session.failure() != nil)
+		if closer, ok := body.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			session.finish(ctx.Err())
+			return
+		case <-session.done:
+			return
+		case <-ticker.C:
+			now := r.now().UTC()
+			item.mu.Lock()
+			offline := item.closed || now.Sub(item.lastPoll) > lightFileLiveness
+			item.mu.Unlock()
+			if offline {
+				session.finish(ErrFileRelayUnavailable)
+				return
+			}
+			session.mu.Lock()
+			idle := now.Sub(session.lastProgress) >= lightFileCommandTTL
+			session.mu.Unlock()
+			if idle {
+				session.finish(context.DeadlineExceeded)
+				return
+			}
+		}
+	}
+}
+
+func (session *lightFileSession) progress(now time.Time) {
+	session.mu.Lock()
+	session.lastProgress = now
+	session.mu.Unlock()
+}
+
+func (session *lightFileSession) failure() error {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.err
+}
+
+func (item *lightFileNode) pruneCommands(now time.Time) {
+	for id, command := range item.pending {
+		if command.cancel || now.Unix() >= command.command.ExpiresAt {
+			delete(item.pending, id)
+			completeLightFileCommand(command, ErrFileRelayUnavailable)
+		}
+	}
+	queued := item.queued[:0]
+	for _, command := range item.queued {
+		if item.pending[command.command.ID] == command {
+			queued = append(queued, command)
+		}
+	}
+	clear(item.queued[len(queued):])
+	item.queued = queued
+}
+
+func (r *lightFileRelay) cancel(item *lightFileNode, requestID string, notify bool) {
 	if item == nil || !validID(requestID) {
+		return
+	}
+	item.mu.Lock()
+	defer item.mu.Unlock()
+	delete(item.sessions, requestID)
+	for commandID, pending := range item.pending {
+		if pending.command.RequestID == requestID {
+			delete(item.pending, commandID)
+			completeLightFileCommand(pending, ErrFileRelayUnavailable)
+		}
+	}
+	item.pruneCommands(r.now().UTC())
+	if !notify || item.closed || len(item.pending) >= lightFileQueueLimit {
 		return
 	}
 	id, err := randomHex(16)
@@ -633,19 +771,9 @@ func (r *lightFileRelay) cancel(item *lightFileNode, nodeID, requestID string) {
 		return
 	}
 	command := FileRelayCommand{ID: id, Kind: "cancel", RequestID: requestID, ExpiresAt: r.now().UTC().Add(lightFileCommandTTL).Unix()}
-	if validateFileRelayCommand(command, r.now().UTC()) != nil {
-		return
-	}
-	item.mu.Lock()
-	if item.closed || len(item.pending) >= lightFileQueueLimit {
-		item.mu.Unlock()
-		return
-	}
 	item.pending[id] = &lightFileCommand{command: command, done: make(chan error, 1)}
 	item.queued = append(item.queued, item.pending[id])
 	wakeLightFileNode(item)
-	item.mu.Unlock()
-	_ = nodeID
 }
 
 func stopLightFileTimer(timer *time.Timer) {
@@ -675,15 +803,32 @@ func (session *lightFileSession) responseValues() (int, map[string]string, error
 	return session.status, cloneFileRelayHeaders(session.headers), session.err
 }
 
-func (session *lightFileSession) push(offset int64, data []byte) error {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	if session.finished || session.dataClosed || offset != session.nextOffset || len(data) == 0 {
+func (session *lightFileSession) push(ctx context.Context, offset int64, data []byte) error {
+	if len(data) == 0 || len(data) > lightFileChunkBytes {
 		return ErrFileRelayUnavailable
 	}
-	session.nextOffset += int64(len(data))
-	session.data <- append([]byte(nil), data...)
-	return nil
+	for {
+		session.mu.Lock()
+		if session.finished || offset != session.nextOffset {
+			session.mu.Unlock()
+			return ErrFileRelayUnavailable
+		}
+		select {
+		case session.data <- append([]byte(nil), data...):
+			session.nextOffset += int64(len(data))
+			session.mu.Unlock()
+			return nil
+		default:
+			session.mu.Unlock()
+		}
+		select {
+		case <-session.done:
+			return ErrFileRelayUnavailable
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-session.space:
+		}
+	}
 }
 
 func (session *lightFileSession) finish(err error) {
@@ -697,12 +842,12 @@ func (session *lightFileSession) finish(err error) {
 		session.err = err
 	}
 	if !session.responseSeen {
+		if session.err == nil {
+			session.err = ErrFileRelayUnavailable
+		}
 		close(session.responseReady)
 	}
-	if !session.dataClosed {
-		close(session.data)
-		session.dataClosed = true
-	}
+	close(session.done)
 }
 
 func (session *lightFileSession) isFinished() bool {
@@ -721,18 +866,35 @@ type lightFileResponseBody struct {
 }
 
 func (body *lightFileResponseBody) Read(output []byte) (int, error) {
+	if len(output) == 0 {
+		return 0, nil
+	}
+	if err := body.session.failure(); err != nil {
+		return 0, err
+	}
 	for len(body.buffer) == 0 {
-		chunk, ok := <-body.session.data
-		if !ok {
-			body.session.mu.Lock()
-			err := body.session.err
-			body.session.mu.Unlock()
-			if err != nil {
-				return 0, err
-			}
-			return 0, io.EOF
+		body.session.mu.Lock()
+		err, finished := body.session.err, body.session.finished
+		body.session.mu.Unlock()
+		if err != nil {
+			return 0, err
 		}
-		body.buffer = chunk
+		select {
+		case body.buffer = <-body.session.data:
+		default:
+			if finished {
+				return 0, io.EOF
+			}
+			select {
+			case body.buffer = <-body.session.data:
+			case <-body.session.done:
+				continue
+			}
+		}
+		select {
+		case body.session.space <- struct{}{}:
+		default:
+		}
 	}
 	count := copy(output, body.buffer)
 	body.buffer = body.buffer[count:]
@@ -743,7 +905,6 @@ func (body *lightFileResponseBody) Close() error {
 	body.once.Do(func() {
 		if body.relay != nil && body.item != nil && !body.session.isFinished() {
 			body.session.finish(io.ErrClosedPipe)
-			body.relay.cancel(body.item, body.nodeID, body.session.id)
 		}
 	})
 	return nil

@@ -180,7 +180,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-ID", requestID)
 	r = r.WithContext(context.WithValue(r.Context(), requestIDKey, requestID))
 	defer func() {
-		if recover() != nil {
+		if recovered := recover(); recovered != nil {
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
 			s.writeProblem(w, r, http.StatusInternalServerError, "internal_error", "Internal server error", "")
 		}
 	}()
