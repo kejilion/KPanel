@@ -111,7 +111,7 @@ func TestOwnerJobWindowValidatesWholePageAndHonorsCancellation(t *testing.T) {
 	if jobs, err := decode(context.Background(), []byte(`{"nextCursor":"future-compatible","items":[]}`)); err != nil || jobs == nil || len(jobs) != 0 {
 		t.Fatalf("valid empty page: %#v %v", jobs, err)
 	}
-	for _, body := range []string{`{}`, `{"items":null}`, `{"items":{}}`, `{"items":[]} {}`, `{"items":[],"items":[]}`} {
+	for _, body := range []string{`{}`, `{"items":null}`, `{"items":{}}`, `{"items":[null]}`, `{"items":[{}]}`, `{"items":[]} {}`, `{"items":[],"items":[]}`} {
 		if _, err := decode(context.Background(), []byte(body)); err == nil {
 			t.Errorf("invalid page accepted: %s", body)
 		}

@@ -1,6 +1,11 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['应用', 'Apps'], ['网站环境', 'Web environment'], ['操作记录', 'Operations'],
+  ['记录不完整，以下来源暂不可用；其他记录已更新。', 'History is incomplete. These sources are unavailable; other records have been refreshed.'],
+  ['任务不存在或已超出来源保留期', 'The task does not exist or is no longer retained by its source.'],
+  ['无法确认任务详情，请稍后刷新或返回业务页面查看', 'Unable to confirm task details. Refresh later or return to the resource page.'],
+  ['刷新任务详情', 'Refresh task details'],
   ['集中查看后台任务进度与操作记录。', 'Track background tasks and recorded operations in one place.'],
   ['执行操作后，任务进度与操作记录会显示在这里。', 'Task progress and operation records will appear here after you perform an action.'],
   ['等待执行', 'Queued'], ['执行中', 'Executing'], ['执行完成', 'Completed'], ['执行失败', 'Failed'],

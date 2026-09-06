@@ -279,6 +279,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleTerminalSession(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs":
 		s.handleJobs(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/jobs/"):
+		s.handleJobDetail(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"):

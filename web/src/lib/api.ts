@@ -56,6 +56,8 @@ import type {
   DiagnosticCatalog,
   DiagnosticJob,
   Job,
+  JobList,
+  JobOwner,
   AppInstallJob,
   AppTerminalChunk,
   LoginRequest,
@@ -2184,10 +2186,14 @@ export const api = {
       }),
   },
   jobs: {
-    list: async (query?: { limit?: number }, signal?: AbortSignal): Promise<ApiList<Job>> => {
-      const result = normalizeList(await request<ApiList<RawJob> | RawJob[]>('/jobs', { query, signal }))
-      return { ...result, items: result.items.map(normalizeJob) }
+    list: async (query?: { limit?: number }, signal?: AbortSignal): Promise<JobList> => {
+      const raw = await request<(ApiList<RawJob> & Pick<JobList, 'sources' | 'partial'>) | RawJob[]>('/jobs', { query, signal })
+      const result = normalizeList(raw)
+      return { ...result, items: result.items.map(normalizeJob),
+        ...(!Array.isArray(raw) ? { sources: raw.sources, partial: raw.partial } : {}) }
     },
+    detail: async (owner: JobOwner, id: string, signal?: AbortSignal): Promise<Job> =>
+      normalizeJob(await request<RawJob>(`/jobs/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`, { signal })),
   },
   audit: {
     list: async (

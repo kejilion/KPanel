@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, RotateCw, Search, TimerReset } from '@lucide/vue'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -21,7 +21,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime, relativeTime, shortId } from '@/lib/format'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import type { Job, JobStatus } from '@/types/api'
+import type { Job, JobOwner, JobSourceStatus, JobStatus } from '@/types/api'
 
 type JobFilter = 'all' | 'active' | 'succeeded' | 'failed'
 
@@ -31,11 +31,24 @@ const refreshing = ref(false)
 const error = ref('')
 const search = ref('')
 const filter = ref<JobFilter>('all')
-const selectedJobId = ref('')
+const route = useRoute()
+const router = useRouter()
+const selectedJobId = ref(typeof route.query.job === 'string' ? route.query.job.slice(0, 160) : '')
 const selectedAction = ref('')
-const selectedJob = computed(() => error.value ? undefined : jobs.value.find((job) => job.id === selectedJobId.value))
+const detail = ref<Job>()
+const detailError = ref('')
+const detailLoading = ref(false)
+const sources = ref<JobSourceStatus[]>([])
+const partial = ref(false)
+const unavailableSources = computed(() => sources.value.filter((source) => source.state !== 'available'))
+const selectedOwner = computed(() => /^(docker|app|webenv):([a-f0-9]{32})$/.exec(selectedJobId.value))
+const selectedJob = computed(() => selectedOwner.value ? detail.value : error.value ? undefined : jobs.value.find((job) => job.id === selectedJobId.value))
 const businessPath = computed(() => {
-  const action = selectedAction.value
+  const action = selectedJob.value?.action || selectedAction.value
+  const owner = selectedOwner.value?.[1]
+  if (owner === 'docker') return '/docker'
+  if (owner === 'app') return '/apps'
+  if (owner === 'webenv') return '/sites'
   if (action.startsWith('docker.')) return '/docker'
   if (action.startsWith('app.')) return '/apps'
   if (action.startsWith('site.') || action.startsWith('web.environment.')) return '/sites'
@@ -44,6 +57,49 @@ const businessPath = computed(() => {
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 let controller: AbortController | undefined
 let timer: number | undefined
+let detailController: AbortController | undefined
+let detailTimer: number | undefined
+
+function ownerLabel(source: JobSourceStatus['source']): string {
+  return phrase({ docker: 'Docker', app: '应用', webenv: '网站环境', audit: '操作记录' }[source])
+}
+
+function selectJob(id: string, action = ''): void {
+  selectedAction.value = action
+  selectedJobId.value = id
+  void router.replace({ query: { ...route.query, job: id || undefined } })
+}
+
+async function loadDetail(): Promise<void> {
+  if (detailTimer) window.clearTimeout(detailTimer)
+  detailTimer = undefined
+  detailController?.abort()
+  const owner = selectedOwner.value
+  if (!owner || !desktopWindowActive.value) return
+  const identity = selectedJobId.value
+  const current = new AbortController()
+  detailController = current
+  detailLoading.value = true
+  detailError.value = ''
+  try {
+    const job = await api.jobs.detail(owner[1] as JobOwner, owner[2]!, current.signal)
+    if (detailController !== current || current.signal.aborted || selectedJobId.value !== identity) return
+    if (job.id !== identity) throw new Error('identity mismatch')
+    detail.value = job
+  } catch (reason) {
+    if (detailController !== current || current.signal.aborted || selectedJobId.value !== identity) return
+    detail.value = undefined
+    detailError.value = reason instanceof ApiError && reason.status === 404
+      ? '任务不存在或已超出来源保留期'
+      : '无法确认任务详情，请稍后刷新或返回业务页面查看'
+  } finally {
+    if (detailController !== current) return
+    detailLoading.value = false
+    if (!current.signal.aborted && desktopWindowActive.value && selectedJobId.value === identity) {
+      detailTimer = window.setTimeout(() => void loadDetail(), 4_000)
+    }
+  }
+}
 
 const isActive = (status: JobStatus) => status === 'queued' || status === 'running'
 const isFailure = (status: JobStatus) =>
@@ -122,10 +178,14 @@ async function load(options: { silent?: boolean } = {}): Promise<void> {
     const result = await api.jobs.list({ limit: 50 }, current.signal)
     if (controller !== current || current.signal.aborted) return
     jobs.value = result.items
+    sources.value = result.sources || []
+    partial.value = Boolean(result.partial)
   } catch (reason) {
     if (controller !== current || current.signal.aborted) return
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     jobs.value = []
+    sources.value = []
+    partial.value = false
     if (reason instanceof ApiError && reason.status === 404) {
       error.value = '当前服务版本尚未开放任务查询接口。'
     } else if (reason instanceof ApiError && reason.code === 'job_source_unavailable') {
@@ -139,7 +199,7 @@ async function load(options: { silent?: boolean } = {}): Promise<void> {
     if (controller !== current) return
     loading.value = false
     refreshing.value = false
-    if (!current.signal.aborted && desktopWindowActive.value && (selectedJobId.value || error.value || jobs.value.some((job) => isActive(job.status) || job.stages?.some((stage) => stage.name === 'persistence_pending' || stage.name === 'status_unavailable')))) {
+    if (!current.signal.aborted && desktopWindowActive.value && (partial.value || selectedJobId.value || error.value || jobs.value.some((job) => isActive(job.status) || job.stages?.some((stage) => stage.name === 'persistence_pending' || stage.name === 'status_unavailable')))) {
       timer = window.setTimeout(() => void load({ silent: true }), 4_000)
     }
   }
@@ -147,18 +207,30 @@ async function load(options: { silent?: boolean } = {}): Promise<void> {
 
 onMounted(() => {
   if (desktopWindowActive.value) void load()
+  void loadDetail()
 })
 
-watch(selectedJobId, (id) => {
-  if (id && desktopWindowActive.value && !refreshing.value && !timer) {
+watch(() => route.query.job, (id) => {
+  selectedJobId.value = typeof id === 'string' ? id.slice(0, 160) : ''
+})
+
+watch(selectedJobId, () => {
+  detail.value = undefined
+  detailError.value = ''
+  void loadDetail()
+  if (selectedJobId.value && desktopWindowActive.value && !refreshing.value && !timer) {
     timer = window.setTimeout(() => void load({ silent: true }), 4_000)
   }
 })
 
 watch(desktopWindowActive, (active) => {
-  if (active) void load({ silent: true })
+  if (active) { void load({ silent: true }); void loadDetail() }
   else {
     controller?.abort()
+    detailController?.abort()
+    detail.value = undefined
+    if (detailTimer) window.clearTimeout(detailTimer)
+    detailTimer = undefined
     if (timer) window.clearTimeout(timer)
     timer = undefined
   }
@@ -166,6 +238,8 @@ watch(desktopWindowActive, (active) => {
 
 onBeforeUnmount(() => {
   controller?.abort()
+  detailController?.abort()
+  if (detailTimer) window.clearTimeout(detailTimer)
   if (timer) window.clearTimeout(timer)
 })
 </script>
@@ -197,11 +271,16 @@ onBeforeUnmount(() => {
           {{ item.label }} <span>{{ counts[item.key as JobFilter] }}</span>
         </button>
       </div>
-      <button class="icon-button" type="button" :disabled="refreshing" title="刷新变更记录" aria-label="刷新变更记录" @click="load({ silent: true })">
+      <button class="icon-button" type="button" :disabled="refreshing" title="刷新变更记录" aria-label="刷新变更记录" @click="load({ silent: true }); loadDetail()">
         <RefreshCw :size="17" :class="{ spin: refreshing }" />
       </button>
     </section>
 
+    <div v-if="partial" class="inline-alert inline-alert--warning" role="status">
+      <span>{{ phrase('记录不完整，以下来源暂不可用；其他记录已更新。') }}
+        {{ unavailableSources.map((source) => ownerLabel(source.source)).join('、') }}
+      </span>
+    </div>
     <LoadingState v-if="loading" :rows="5" />
     <ErrorState v-else-if="error && !jobs.length" :message="error" @retry="load()" />
     <EmptyState
@@ -211,7 +290,7 @@ onBeforeUnmount(() => {
     />
 
     <section v-else class="job-list">
-      <button v-for="job in filteredJobs" :key="job.id" class="job-item" type="button" @click="selectedJobId = job.id; selectedAction = job.action">
+      <button v-for="job in filteredJobs" :key="job.id" class="job-item" type="button" @click="selectJob(job.id, job.action)">
         <span class="job-item__status" :class="`is-${job.status}`">
           <LoaderCircle v-if="job.status === 'running'" class="spin" :size="19" />
           <Clock3 v-else-if="job.status === 'queued'" :size="19" />
@@ -242,9 +321,10 @@ onBeforeUnmount(() => {
       :title="selectedJob ? phrase(actionLabel(selectedJob.action)) : phrase('任务详情')"
       :description="selectedJob ? phrase(`任务 ${selectedJob.id}`) : ''"
       size="large"
-      @close="selectedJobId = ''"
+      @close="selectJob('')"
     >
-      <template v-if="selectedJob">
+      <LoadingState v-if="selectedOwner && detailLoading && !selectedJob" :rows="2" />
+      <template v-else-if="selectedJob">
         <div class="modal-status-row">
           <StatusBadge :status="selectedJob.status" />
           <span>{{ phrase(sourceLabel(selectedJob.source)) }}</span>
@@ -286,11 +366,12 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <div v-else-if="selectedJobId" class="inline-alert inline-alert--warning" role="status">
-        {{ phrase(error || '该记录已不在当前查询窗口中，请返回业务页面核对状态。') }}
+        {{ phrase(detailError || error || '该记录已不在当前查询窗口中，请返回业务页面核对状态。') }}
       </div>
       <template #footer>
         <RouterLink v-if="businessPath" class="button button--secondary" :to="businessPath">{{ phrase('返回业务页面') }}</RouterLink>
-        <button class="button button--secondary" type="button" @click="selectedJobId = ''">{{ phrase('关闭') }}</button>
+        <button v-if="selectedOwner" class="button button--secondary" type="button" :disabled="detailLoading" @click="loadDetail()">{{ phrase('刷新任务详情') }}</button>
+        <button class="button button--secondary" type="button" @click="selectJob('')">{{ phrase('关闭') }}</button>
       </template>
     </ModalDialog>
   </div>

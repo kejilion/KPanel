@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
@@ -30,6 +31,87 @@ type auditJobGroup struct {
 	outcome    *store.AuditEvent
 }
 
+// This envelope extends the existing items contract without changing PageResult.
+type jobsPage struct {
+	Items   []contract.Job    `json:"items"`
+	Sources []jobSourceStatus `json:"sources"`
+	Partial bool              `json:"partial"`
+}
+
+type jobSourceStatus struct {
+	Source string `json:"source"`
+	State  string `json:"state"`
+}
+
+type jobOwner struct {
+	name, path string
+	decode     func(context.Context, []byte) ([]contract.Job, error)
+	detail     func([]byte) (contract.Job, error)
+}
+
+const maxJobDetailBytes = 1 << 20
+const maxJobPageBytes = 8 << 20
+
+func jobOwners() []jobOwner {
+	return []jobOwner{
+		{"docker", "/v1/docker/jobs", decodeOwnerJobs(jobsFromDockerJobs), decodeOwnerJob(jobsFromDockerJobs)},
+		{"app", "/v1/app-jobs", decodeOwnerJobs(jobsFromAppJobs), decodeOwnerJob(jobsFromAppJobs)},
+		{"webenv", "/v1/web-environment/jobs", decodeOwnerJobs(jobsFromWebEnvironment), decodeOwnerJob(jobsFromWebEnvironment)},
+	}
+}
+
+func decodeOwnerJob[T any](adapt func([]T) []contract.Job) func([]byte) (contract.Job, error) {
+	return func(body []byte) (contract.Job, error) {
+		var item T
+		if len(body) > maxJobDetailBytes {
+			return contract.Job{}, errors.New("owner job too large")
+		}
+		if err := json.Unmarshal(body, &item); err != nil {
+			return contract.Job{}, err
+		}
+		job := adapt([]T{item})[0]
+		if job.CreatedAt.IsZero() {
+			return contract.Job{}, errors.New("invalid owner job")
+		}
+		return job, nil
+	}
+}
+
+func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/jobs/"), "/")
+	if r.URL.RawPath != "" || r.URL.RawQuery != "" || len(parts) != 2 || !ownerJobIDPattern.MatchString(parts[1]) {
+		s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
+		return
+	}
+	for _, owner := range jobOwners() {
+		if owner.name != parts[0] {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		response, err := s.hostOps.Get(ctx, owner.path+"/"+parts[1], "", requestID(r))
+		if err == nil && response.StatusCode == http.StatusNotFound {
+			s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
+			return
+		}
+		if err != nil || ctx.Err() != nil || response.StatusCode != http.StatusOK {
+			s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
+			return
+		}
+		job, err := owner.detail(response.Body)
+		if err != nil || job.ID != owner.name+":"+parts[1] {
+			s.writeProblem(w, r, http.StatusBadGateway, "job_source_invalid", "后台任务状态无效，请稍后刷新", "")
+			return
+		}
+		s.writeJSON(w, http.StatusOK, job)
+		return
+	}
+	s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
+}
+
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/api/v1/jobs" || r.URL.RawPath != "" {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
@@ -46,31 +128,46 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	events, _ := s.store.ListAudit(200, "")
 	jobs := jobsFromAudit(events, limit)
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	for _, source := range []struct {
-		path   string
-		decode func(context.Context, []byte) ([]contract.Job, error)
-	}{
-		{"/v1/docker/jobs", decodeOwnerJobs(jobsFromDockerJobs)},
-		{"/v1/app-jobs", decodeOwnerJobs(jobsFromAppJobs)},
-		{"/v1/web-environment/jobs", decodeOwnerJobs(jobsFromWebEnvironment)},
-	} {
-		response, err := s.hostOps.Get(ctx, source.path, "", requestID(r))
-		if err != nil || response.StatusCode != http.StatusOK {
-			s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
-			return
-		}
-		owned, err := source.decode(ctx, response.Body)
-		if err != nil {
-			if ctx.Err() != nil {
-				s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
-				return
+	page := jobsPage{Sources: make([]jobSourceStatus, 0, 4)}
+	page.Sources = append(page.Sources, jobSourceStatus{"audit", "available"})
+	available := 0
+	// Exactly three independent reads, each with its own deadline. No owner
+	// can consume another owner's time budget; no unbounded worker queue.
+	owners := jobOwners()
+	results := make([][]contract.Job, len(owners))
+	states := make([]string, len(owners))
+	var reads sync.WaitGroup
+	for i, source := range owners {
+		reads.Go(func() {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			response, err := s.hostOps.Get(ctx, source.path, "", requestID(r))
+			state := "available"
+			var owned []contract.Job
+			if err != nil || ctx.Err() != nil || response.StatusCode != http.StatusOK {
+				state = "unavailable"
+			} else if owned, err = source.decode(ctx, response.Body); err != nil {
+				state = "invalid"
+				if ctx.Err() != nil {
+					state = "unavailable"
+				}
 			}
-			s.writeProblem(w, r, http.StatusBadGateway, "job_source_invalid", "后台任务状态无效，请稍后刷新", "")
-			return
+			states[i], results[i] = state, owned
+		})
+	}
+	reads.Wait()
+	for i, source := range owners {
+		page.Sources = append(page.Sources, jobSourceStatus{source.name, states[i]})
+		if states[i] == "available" {
+			available++
+			jobs = mergeOwnerJobs(jobs, results[i])
+		} else {
+			page.Partial = true
 		}
-		jobs = mergeOwnerJobs(jobs, owned)
+	}
+	if available == 0 {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "job_source_unavailable", "无法确认后台任务状态，请稍后刷新或返回业务页面查看", "")
+		return
 	}
 	sort.SliceStable(jobs, func(left, right int) bool {
 		return jobs[left].CreatedAt.After(jobs[right].CreatedAt)
@@ -78,7 +175,11 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	if len(jobs) > limit {
 		jobs = jobs[:limit]
 	}
-	s.writeJSON(w, http.StatusOK, contract.PageResult[contract.Job]{Items: jobs})
+	page.Items = jobs
+	if page.Items == nil {
+		page.Items = []contract.Job{}
+	}
+	s.writeJSON(w, http.StatusOK, page)
 }
 
 // Owners may expose more history than this view displays. The Agent transport
@@ -86,6 +187,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 // only the newest 100 (the maximum public jobs limit), regardless of input order.
 func decodeOwnerJobs[T any](adapt func([]T) []contract.Job) func(context.Context, []byte) ([]contract.Job, error) {
 	return func(ctx context.Context, body []byte) ([]contract.Job, error) {
+		if len(body) > maxJobPageBytes {
+			return nil, errors.New("owner job page too large")
+		}
 		decoder := json.NewDecoder(bytes.NewReader(body))
 		invalid := errors.New("invalid owner job page")
 		if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
@@ -125,6 +229,10 @@ func decodeOwnerJobs[T any](adapt func([]T) []contract.Job) func(context.Context
 					return nil, err
 				}
 				job := adapt([]T{item})[0]
+				_, id, hasOwner := strings.Cut(job.ID, ":")
+				if !hasOwner || !ownerJobIDPattern.MatchString(id) || job.CreatedAt.IsZero() {
+					return nil, invalid
+				}
 				if len(latest) < cap(latest) {
 					heap.Push(&latest, job)
 				} else if newerOwnerJob(job, latest[0]) {
