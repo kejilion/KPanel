@@ -18,9 +18,64 @@ import (
 )
 
 const (
-	maxDockerBackupEntries = 100_000
-	maxDockerBackupBytes   = int64(50 << 30)
+	maxDockerBackupEntries   = 100_000
+	maxDockerBackupBytes     = int64(50 << 30)
+	maxDockerBackupFileBytes = int64(10 << 30)
 )
+
+// Count the entries and payload sizes written to/read from tar, not filesystem
+// directory sizes. Both sides must accept the same archive budget.
+type dockerBackupBudget struct {
+	entries int
+	bytes   int64
+}
+
+func (b *dockerBackupBudget) add(size int64) error {
+	if b.entries >= maxDockerBackupEntries {
+		return errors.New("Docker backup contains too many entries")
+	}
+	if size < 0 || size > maxDockerBackupFileBytes || size > maxDockerBackupBytes-b.bytes {
+		return errors.New("Docker backup exceeds the 50 GiB total or 10 GiB file safety limit")
+	}
+	b.entries++
+	b.bytes += size
+	return nil
+}
+
+func dockerBackupReservedTop(name string) bool {
+	return name == ".kpanel-backups" || strings.HasPrefix(name, ".kpanel-restore-rollback-")
+}
+
+func validateDockerBackupMetadata(header *tar.Header) error {
+	if header.Mode < 0 || header.Mode > int64(^uint32(0)) ||
+		header.Uid < 0 || header.Gid < 0 || header.Uid > 1<<31-1 || header.Gid > 1<<31-1 {
+		return errors.New("Docker backup contains invalid numeric metadata")
+	}
+	return nil
+}
+
+// Only controlled recovery location data bypasses the ordinary error excerpt.
+// The underlying errors remain available to callers through Unwrap.
+type dockerRestoreRecoveryError struct {
+	root    string
+	cause   error
+	applied bool
+}
+
+func (e *dockerRestoreRecoveryError) Error() string {
+	return fmt.Sprintf("Docker restore needs attention; previous data retained at %s; %v", e.root, e.cause)
+}
+func (e *dockerRestoreRecoveryError) Unwrap() error { return e.cause }
+
+type dockerRestoreOps struct {
+	removeAll func(string) error
+	rename    func(string, string) error
+	copyTree  func(context.Context, string, string) error
+}
+
+func defaultDockerRestoreOps() dockerRestoreOps {
+	return dockerRestoreOps{os.RemoveAll, os.Rename, copyRestoredDockerTreeContext}
+}
 
 var (
 	dockerBackupIDPattern  = regexp.MustCompile(`^docker-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}\.tar\.gz$`)
@@ -113,6 +168,10 @@ func (c *Client) resolvedDockerAppRoot() (string, error) {
 }
 
 func (c *Client) restoreDockerBackup(ctx context.Context, id string) error {
+	return c.restoreDockerBackupWithOps(ctx, id, defaultDockerRestoreOps())
+}
+
+func (c *Client) restoreDockerBackupWithOps(ctx context.Context, id string, ops dockerRestoreOps) error {
 	archivePath, err := c.dockerBackupPath(id)
 	if err != nil {
 		return err
@@ -142,8 +201,15 @@ func (c *Client) restoreDockerBackup(ctx context.Context, id string) error {
 		return err
 	}
 	var replacements []dockerRestoreReplacement
+	fail := func(cause error) error {
+		rollbackErr := rollbackDockerRestoreWithOps(replacements, rollbackRoot, appRoot, ops)
+		if rollbackErr != nil {
+			return errors.Join(rollbackErr, cause)
+		}
+		return fmt.Errorf("Docker restore failed; previous data restored: %w", cause)
+	}
 	for _, name := range topLevels {
-		if name == ".kpanel-backups" ||
+		if dockerBackupReservedTop(name) ||
 			name == "." || name == ".." || !dockerBackupTopPattern.MatchString(name) {
 			_ = os.RemoveAll(rollbackRoot)
 			return errors.New("Docker backup contains an unsafe top-level path")
@@ -152,8 +218,7 @@ func (c *Client) restoreDockerBackup(ctx context.Context, id string) error {
 	for _, name := range topLevels {
 		select {
 		case <-ctx.Done():
-			rollbackDockerRestore(replacements, rollbackRoot, appRoot)
-			return ctx.Err()
+			return fail(ctx.Err())
 		default:
 		}
 		source := filepath.Join(stageRoot, "docker", name)
@@ -161,26 +226,25 @@ func (c *Client) restoreDockerBackup(ctx context.Context, id string) error {
 		replacement := dockerRestoreReplacement{target: target}
 		if _, targetErr := os.Lstat(target); targetErr == nil {
 			replacement.previous = filepath.Join(rollbackRoot, name)
-			if err := os.Rename(target, replacement.previous); err != nil {
-				rollbackDockerRestore(replacements, rollbackRoot, appRoot)
-				return fmt.Errorf("stage existing /home/docker/%s for rollback: %w", name, err)
+			if err := ops.rename(target, replacement.previous); err != nil {
+				return fail(fmt.Errorf("stage existing /home/docker/%s for rollback: %w", name, err))
 			}
 		} else if !errors.Is(targetErr, os.ErrNotExist) {
-			rollbackDockerRestore(replacements, rollbackRoot, appRoot)
-			return fmt.Errorf("inspect existing /home/docker/%s: %w", name, targetErr)
+			return fail(fmt.Errorf("inspect existing /home/docker/%s: %w", name, targetErr))
 		}
 		replacements = append(replacements, replacement)
-		if err := copyRestoredDockerTree(source, target); err != nil {
-			rollbackDockerRestore(replacements, rollbackRoot, appRoot)
-			return err
+		if err := ops.copyTree(ctx, source, target); err != nil {
+			return fail(err)
 		}
 	}
-	if err := syncDirectoryPath(appRoot); err != nil {
-		rollbackDockerRestore(replacements, rollbackRoot, appRoot)
-		return err
+	if err := ctx.Err(); err != nil {
+		return fail(err)
 	}
-	if err := os.RemoveAll(rollbackRoot); err != nil {
-		return fmt.Errorf("restore completed but previous data cleanup failed: %w", err)
+	if err := syncDirectoryPath(appRoot); err != nil {
+		return fail(err)
+	}
+	if err := ops.removeAll(rollbackRoot); err != nil {
+		return &dockerRestoreRecoveryError{root: rollbackRoot, cause: fmt.Errorf("restore completed but previous data cleanup failed: %w", err), applied: true}
 	}
 	return syncDirectoryPath(appRoot)
 }
@@ -190,19 +254,49 @@ type dockerRestoreReplacement struct {
 	previous string
 }
 
-func rollbackDockerRestore(replacements []dockerRestoreReplacement, rollbackRoot, appRoot string) {
+func rollbackDockerRestore(replacements []dockerRestoreReplacement, rollbackRoot, appRoot string) error {
+	return rollbackDockerRestoreWithOps(replacements, rollbackRoot, appRoot, defaultDockerRestoreOps())
+}
+
+func rollbackDockerRestoreWithOps(replacements []dockerRestoreReplacement, rollbackRoot, appRoot string, ops dockerRestoreOps) error {
+	var failures []error
 	for index := len(replacements) - 1; index >= 0; index-- {
 		replacement := replacements[index]
-		if filepath.IsAbs(replacement.target) && pathWithin(replacement.target, appRoot) &&
-			replacement.target != appRoot {
-			_ = os.RemoveAll(replacement.target)
+		if !filepath.IsAbs(replacement.target) || !pathWithin(replacement.target, appRoot) || replacement.target == appRoot ||
+			(replacement.previous != "" && (!pathWithin(replacement.previous, rollbackRoot) || replacement.previous == rollbackRoot)) {
+			failures = append(failures, errors.New("unsafe rollback replacement"))
+			continue
 		}
-		if replacement.previous != "" && pathWithin(replacement.previous, rollbackRoot) {
-			_ = os.Rename(replacement.previous, replacement.target)
+		// Never delete the target unless the old copy is still available. This
+		// also preserves already recovered targets if recovery is retried.
+		if replacement.previous != "" {
+			if _, err := os.Lstat(replacement.previous); err != nil {
+				failures = append(failures, fmt.Errorf("inspect previous %s: %w", filepath.Base(replacement.target), err))
+				continue
+			}
+		}
+		if err := ops.removeAll(replacement.target); err != nil {
+			failures = append(failures, fmt.Errorf("remove replacement %s: %w", filepath.Base(replacement.target), err))
+			continue
+		}
+		if replacement.previous != "" {
+			if err := ops.rename(replacement.previous, replacement.target); err != nil {
+				failures = append(failures, fmt.Errorf("recover previous %s: %w", filepath.Base(replacement.target), err))
+			}
 		}
 	}
-	_ = os.RemoveAll(rollbackRoot)
-	_ = syncDirectoryPath(appRoot)
+	if err := syncDirectoryPath(appRoot); err != nil {
+		failures = append(failures, err)
+	}
+	if len(failures) == 0 {
+		if err := ops.removeAll(rollbackRoot); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if len(failures) > 0 {
+		return &dockerRestoreRecoveryError{root: rollbackRoot, cause: errors.Join(failures...)}
+	}
+	return nil
 }
 
 func extractDockerBackup(
@@ -222,8 +316,10 @@ func extractDockerBackup(
 	defer gzipReader.Close()
 	reader := tar.NewReader(gzipReader)
 	topLevels := make(map[string]bool)
-	var entries int
-	var total int64
+	// Apply directory metadata only after children have been written. This
+	// preserves read-only/zero modes and avoids process umask changing the backup.
+	directories := make(map[string]*tar.Header)
+	var budget dockerBackupBudget
 	for {
 		header, nextErr := reader.Next()
 		if nextErr == io.EOF {
@@ -232,9 +328,8 @@ func extractDockerBackup(
 		if nextErr != nil {
 			return nil, errors.New("Docker backup tar stream is invalid")
 		}
-		entries++
-		if entries > maxDockerBackupEntries {
-			return nil, errors.New("Docker backup contains too many entries")
+		if err := budget.add(header.Size); err != nil {
+			return nil, err
 		}
 		select {
 		case <-ctx.Done():
@@ -243,6 +338,9 @@ func extractDockerBackup(
 		}
 		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(header.Name)))
 		if clean == "." || clean == "docker" {
+			if header.Typeflag != tar.TypeDir {
+				return nil, errors.New("Docker backup root must be a directory")
+			}
 			continue
 		}
 		if strings.HasPrefix(clean, "/") || strings.HasPrefix(clean, "../") ||
@@ -253,19 +351,13 @@ func extractDockerBackup(
 		parts := strings.Split(relative, "/")
 		if len(parts) == 0 || !dockerBackupTopPattern.MatchString(parts[0]) ||
 			parts[0] == "." || parts[0] == ".." ||
-			parts[0] == ".kpanel-backups" {
+			dockerBackupReservedTop(parts[0]) {
 			return nil, errors.New("Docker backup contains an unsafe application path")
 		}
 		topLevels[parts[0]] = true
-		if header.Size < 0 || header.Size > 10<<30 || total+header.Size > maxDockerBackupBytes {
-			return nil, errors.New("Docker backup exceeds the restore safety limit")
+		if err := validateDockerBackupMetadata(header); err != nil {
+			return nil, err
 		}
-		if header.Mode < 0 || header.Mode > int64(^uint32(0)) ||
-			header.Uid < 0 || header.Gid < 0 ||
-			header.Uid > 1<<31-1 || header.Gid > 1<<31-1 {
-			return nil, errors.New("Docker backup contains invalid numeric metadata")
-		}
-		total += header.Size
 		target := filepath.Join(stageRoot, filepath.FromSlash(clean))
 		if !pathWithin(target, stageRoot) {
 			return nil, errors.New("Docker backup path escaped the staging directory")
@@ -273,27 +365,19 @@ func extractDockerBackup(
 		mode := os.FileMode(header.Mode).Perm() & 0o777
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if mode == 0 {
-				mode = 0o750
-			}
-			if err := os.MkdirAll(target, mode); err != nil {
+			if err := os.MkdirAll(target, 0o700); err != nil {
 				return nil, err
 			}
-			if err := applyNumericOwnership(target, header.Uid, header.Gid); err != nil {
-				return nil, err
-			}
+			directories[target] = header
 		case tar.TypeReg, tar.TypeRegA:
 			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 				return nil, err
-			}
-			if mode == 0 {
-				mode = 0o640
 			}
 			output, openErr := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 			if openErr != nil {
 				return nil, openErr
 			}
-			written, copyErr := io.Copy(output, io.LimitReader(reader, header.Size+1))
+			written, copyErr := io.Copy(output, dockerBackupContextReader{ctx, io.LimitReader(reader, header.Size+1)})
 			syncErr := output.Sync()
 			closeErr := output.Close()
 			if copyErr != nil || written != header.Size || syncErr != nil || closeErr != nil {
@@ -302,8 +386,29 @@ func extractDockerBackup(
 			if err := applyNumericOwnership(target, header.Uid, header.Gid); err != nil {
 				return nil, err
 			}
+			if err := os.Chmod(target, mode); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, errors.New("Docker backup contains links or unsupported filesystem objects")
+		}
+	}
+	// tar EOF does not by itself verify the gzip checksum/trailer.
+	if n, err := io.Copy(io.Discard, dockerBackupContextReader{ctx, io.LimitReader(gzipReader, (1<<20)+1)}); err != nil || n > 1<<20 {
+		return nil, errors.New("Docker backup gzip trailer is invalid or oversized")
+	}
+	directoryPaths := make([]string, 0, len(directories))
+	for path := range directories {
+		directoryPaths = append(directoryPaths, path)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(directoryPaths)))
+	for _, path := range directoryPaths {
+		header := directories[path]
+		if err := applyNumericOwnership(path, header.Uid, header.Gid); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(path, os.FileMode(header.Mode).Perm()); err != nil {
+			return nil, err
 		}
 	}
 	names := make([]string, 0, len(topLevels))
@@ -325,6 +430,25 @@ func pathWithin(candidate, root string) bool {
 }
 
 func copyRestoredDockerTree(source, target string) error {
+	return copyRestoredDockerTreeContext(context.Background(), source, target)
+}
+
+type dockerBackupContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r dockerBackupContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
+}
+
+func copyRestoredDockerTreeContext(ctx context.Context, source, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sourceInfo, err := os.Lstat(source)
 	if err != nil {
 		return err
@@ -333,7 +457,7 @@ func copyRestoredDockerTree(source, target string) error {
 		return errors.New("restore source contains a symbolic link")
 	}
 	if sourceInfo.IsDir() {
-		if err := os.Mkdir(target, sourceInfo.Mode().Perm()); err != nil {
+		if err := os.Mkdir(target, 0o700); err != nil {
 			return err
 		}
 		uid, gid, err := fileNumericOwnership(sourceInfo)
@@ -348,12 +472,15 @@ func copyRestoredDockerTree(source, target string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyRestoredDockerTree(
+			if err := copyRestoredDockerTreeContext(ctx,
 				filepath.Join(source, entry.Name()),
 				filepath.Join(target, entry.Name()),
 			); err != nil {
 				return err
 			}
+		}
+		if err := os.Chmod(target, sourceInfo.Mode().Perm()); err != nil {
+			return err
 		}
 		return syncDirectoryPath(target)
 	}
@@ -369,7 +496,7 @@ func copyRestoredDockerTree(source, target string) error {
 	if err != nil {
 		return err
 	}
-	written, copyErr := io.Copy(output, io.LimitReader(input, sourceInfo.Size()+1))
+	written, copyErr := io.Copy(output, dockerBackupContextReader{ctx, io.LimitReader(input, sourceInfo.Size()+1)})
 	syncErr := output.Sync()
 	closeErr := output.Close()
 	if copyErr != nil || written != sourceInfo.Size() || syncErr != nil || closeErr != nil {
@@ -379,7 +506,10 @@ func copyRestoredDockerTree(source, target string) error {
 	if err != nil {
 		return err
 	}
-	return applyNumericOwnership(target, uid, gid)
+	if err := applyNumericOwnership(target, uid, gid); err != nil {
+		return err
+	}
+	return os.Chmod(target, sourceInfo.Mode().Perm())
 }
 
 func validMigrationHost(value string) bool {

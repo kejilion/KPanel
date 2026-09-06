@@ -117,6 +117,24 @@ func TestExtractDockerBackupRejectsLinks(t *testing.T) {
 	}
 }
 
+func TestDockerRollbackRetainsOldBytesWhenRenameFails(t *testing.T) {
+	appRoot := t.TempDir()
+	rollbackRoot, err := os.MkdirTemp(appRoot, ".kpanel-restore-rollback-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := filepath.Join(rollbackRoot, "example")
+	if err := os.WriteFile(previous, []byte("old bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The target's parent disappeared: renaming the old copy back must fail.
+	rollbackDockerRestore([]dockerRestoreReplacement{{target: filepath.Join(appRoot, "missing", "example"), previous: previous}}, rollbackRoot, appRoot)
+	data, err := os.ReadFile(previous)
+	if err != nil || string(data) != "old bytes" {
+		t.Fatalf("old bytes lost after failed rollback: %q, %v", data, err)
+	}
+}
+
 func writeDockerBackupFixture(t *testing.T, path string, entries map[string]string) {
 	t.Helper()
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
