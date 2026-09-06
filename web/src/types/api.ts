@@ -1766,6 +1766,18 @@ export interface JobStage {
   message?: string
 }
 
+export type JobOwner = 'docker' | 'app' | 'webenv'
+
+export interface JobSourceStatus {
+  source: JobOwner | 'audit'
+  state: 'available' | 'unavailable' | 'invalid'
+}
+
+export interface JobList extends ApiList<Job> {
+  partial?: boolean
+  sources?: JobSourceStatus[]
+}
+
 export interface Job {
   id: string
   action: string

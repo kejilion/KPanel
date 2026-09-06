@@ -1584,6 +1584,18 @@ describe('API client', () => {
     expect(result.items.map((job) => job.stages?.[0]?.status)).toEqual([...states.slice(0, -1), 'failed'])
   })
 
+  it('preserves partial source metadata and recovers detail with a read-only owner request', async () => {
+    const id = 'a'.repeat(32)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [], partial: true, sources: [{ source: 'app', state: 'invalid' }] }))
+      .mockResolvedValueOnce(jsonResponse({ id: `docker:${id}`, action: 'docker.image_pull', state: 'cancelled', stage: 'cancelled', createdAt: '2026-09-05T00:00:00Z' }))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await api.jobs.list()).toMatchObject({ items: [], partial: true, sources: [{ source: 'app', state: 'invalid' }] })
+    expect(await api.jobs.detail('docker', id)).toMatchObject({ id: `docker:${id}`, status: 'cancelled' })
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`/api/v1/jobs/docker/${id}`)
+    expect(fetchMock.mock.calls[1]?.[1].method).toBe('GET')
+  })
+
   it('sends the observed resource version with Docker lifecycle actions', async () => {
     const fetchMock = vi
       .fn()

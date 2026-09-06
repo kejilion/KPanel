@@ -1472,6 +1472,34 @@ createServer(async (request, response) => {
     send(response, 200, { items: [...appJobs.values()].map(materializeJob) })
     return
   }
+  if (request.method === 'GET' && url.pathname === '/api/v1/jobs') {
+    const items = Array.from({ length: 60 }, (_, index) => ({
+      id: `docker:${(index + 1).toString(16).padStart(32, '0')}`,
+      action: 'docker.image_pull', origin: 'web', state: index === 0 ? 'running' : 'succeeded',
+      stage: index === 0 ? 'running' : 'completed', progress: index === 0 ? 35 : 100,
+      targetKind: 'docker', targetLabel: `mock-image-${index + 1}`, createdAt: '2026-09-06T00:00:00Z',
+    }))
+    send(response, 200, { items: items.slice(0, Number(url.searchParams.get('limit') || 50)), partial: true,
+      sources: [{ source: 'audit', state: 'available' }, { source: 'docker', state: 'available' },
+        { source: 'app', state: 'unavailable' }, { source: 'webenv', state: 'available' }] })
+    return
+  }
+  const managementJobMatch = url.pathname.match(/^\/api\/v1\/jobs\/(docker|app|webenv)\/([a-f0-9]{32})$/)
+  if (request.method === 'GET' && managementJobMatch) {
+    const [, owner, id] = managementJobMatch
+    if (owner === 'app') {
+      send(response, 503, { code: 'job_source_unavailable', title: '模拟任务来源不可用' })
+    } else if (owner === 'docker' && (Number.parseInt(id, 16) <= 60 || id === 'a'.repeat(32))) {
+      const running = id === 'a'.repeat(32) || Number.parseInt(id, 16) === 1
+      send(response, 200, { id: `docker:${id}`, action: 'docker.image_pull', origin: 'web',
+        state: running ? 'running' : 'succeeded', stage: running ? 'running' : 'completed', progress: running ? 35 : 100, targetKind: 'docker',
+        targetLabel: id === 'a'.repeat(32) ? 'mock-outside-latest50' : `mock-image-${Number.parseInt(id, 16)}`,
+        createdAt: '2026-09-05T00:00:00Z' })
+    } else {
+      send(response, 404, { code: 'job_not_found', title: '任务不存在或已超出来源保留期' })
+    }
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/diagnostics') {
     send(response, 200, diagnosticCatalog)
     return
