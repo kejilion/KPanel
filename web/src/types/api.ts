@@ -250,6 +250,7 @@ export interface ClusterShareSettings {
 }
 
 export interface ClusterNotificationRules {
+  resourceAlerts?: ClusterNotificationResourceRules
   cpuEnabled: boolean
   cpuThresholdPercent: number
   memoryEnabled: boolean
@@ -279,6 +280,7 @@ export interface ClusterNotificationTelegram {
 }
 
 export interface ClusterNotificationSnapshot {
+  resources?: ClusterNotificationResources
   enabled: boolean
   locale: 'zh-CN' | 'zh-TW' | 'en-US'
   timezone: string
@@ -286,6 +288,27 @@ export interface ClusterNotificationSnapshot {
   telegram: ClusterNotificationTelegram
   resourceVersion: string
   updatedAt: string
+}
+
+export interface ClusterNotificationContainerRule {
+  id: string
+  enabled: boolean
+  pausedUntil?: string
+}
+
+export interface ClusterNotificationResourceRules {
+  certificatesEnabled: boolean
+  pausedUntil?: string
+  containers: ClusterNotificationContainerRule[]
+}
+
+export interface ClusterNotificationResources {
+  certificateStatus: 'ready' | 'unknown' | 'limited'
+  containerStatus: 'ready' | 'unknown' | 'limited'
+  observedAt: string
+  stateCapacityReached: boolean
+  certificates: { id: string; name: string; fingerprint?: string; expiresAt?: string; maintenance: 'custom' | 'automatic' | 'unknown'; known: boolean }[]
+  containers: { id: string; name: string; state: string; health?: string; restartCount?: number; resourceVersion: string; known: boolean }[]
 }
 
 export type PublicClusterShareHostState = 'online' | 'degraded' | 'offline' | 'pending'

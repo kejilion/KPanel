@@ -254,6 +254,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.URL.Path == "/v1/notification-resources":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.notificationResources)
 	case r.URL.Path == "/v1/health":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.health)
 	case r.URL.Path == "/v1/capabilities":

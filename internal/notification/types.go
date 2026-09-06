@@ -69,20 +69,22 @@ func (e *ValidationError) Error() string {
 func (e *ValidationError) Unwrap() error { return ErrInvalidSettings }
 
 type Rules struct {
-	CPUEnabled                       bool `json:"cpuEnabled"`
-	CPUThresholdPercent              int  `json:"cpuThresholdPercent"`
-	MemoryEnabled                    bool `json:"memoryEnabled"`
-	MemoryThresholdPercent           int  `json:"memoryThresholdPercent"`
-	DiskEnabled                      bool `json:"diskEnabled"`
-	DiskThresholdPercent             int  `json:"diskThresholdPercent"`
-	TrafficEnabled                   bool `json:"trafficEnabled"`
-	TrafficThresholdMiBPerSecond     int  `json:"trafficThresholdMiBPerSecond"`
-	TrafficTotalReceivedEnabled      bool `json:"trafficTotalReceivedEnabled"`
-	TrafficTotalReceivedThresholdGiB int  `json:"trafficTotalReceivedThresholdGiB"`
-	TrafficTotalSentEnabled          bool `json:"trafficTotalSentEnabled"`
-	TrafficTotalSentThresholdGiB     int  `json:"trafficTotalSentThresholdGiB"`
-	SSHLoginEnabled                  bool `json:"sshLoginEnabled"`
-	HostOfflineEnabled               bool `json:"hostOfflineEnabled"`
+	// A nil value in an old client's PUT means preserve the resource rules.
+	ResourceAlerts                   *ResourceRules `json:"resourceAlerts,omitempty"`
+	CPUEnabled                       bool           `json:"cpuEnabled"`
+	CPUThresholdPercent              int            `json:"cpuThresholdPercent"`
+	MemoryEnabled                    bool           `json:"memoryEnabled"`
+	MemoryThresholdPercent           int            `json:"memoryThresholdPercent"`
+	DiskEnabled                      bool           `json:"diskEnabled"`
+	DiskThresholdPercent             int            `json:"diskThresholdPercent"`
+	TrafficEnabled                   bool           `json:"trafficEnabled"`
+	TrafficThresholdMiBPerSecond     int            `json:"trafficThresholdMiBPerSecond"`
+	TrafficTotalReceivedEnabled      bool           `json:"trafficTotalReceivedEnabled"`
+	TrafficTotalReceivedThresholdGiB int            `json:"trafficTotalReceivedThresholdGiB"`
+	TrafficTotalSentEnabled          bool           `json:"trafficTotalSentEnabled"`
+	TrafficTotalSentThresholdGiB     int            `json:"trafficTotalSentThresholdGiB"`
+	SSHLoginEnabled                  bool           `json:"sshLoginEnabled"`
+	HostOfflineEnabled               bool           `json:"hostOfflineEnabled"`
 
 	// Deprecated aggregate fields are accepted while reading v1 state and old
 	// clients. normalizeRules migrates them to both directional rules and
@@ -126,7 +128,7 @@ func (r Rules) Validate() error {
 	if r.TrafficTotalSentThresholdGiB < 1 || r.TrafficTotalSentThresholdGiB > MaxTrafficTotalThresholdGiB {
 		return &ValidationError{Field: "rules.trafficTotalSentThresholdGiB", Message: "累计传送流量阈值超出允许范围"}
 	}
-	return nil
+	return validateResourceRules(r.ResourceAlerts, time.Time{})
 }
 
 type Settings struct {
@@ -163,6 +165,7 @@ type TelegramSnapshot struct {
 }
 
 type Snapshot struct {
+	Resources       ResourceSnapshot `json:"resources"`
 	Enabled         bool             `json:"enabled"`
 	Locale          string           `json:"locale"`
 	Timezone        string           `json:"timezone"`

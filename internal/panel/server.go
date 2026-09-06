@@ -148,7 +148,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	timezoneSource := newNotificationTimezoneSource(agent)
 	notifications, err := notification.NewService(notification.Config{
-		DataDir: config.DataDir, Hosts: clusterService, Timezone: timezoneSource.Location,
+		Resources: notificationResourceSource{agent: agent},
+		DataDir:   config.DataDir, Hosts: clusterService, Timezone: timezoneSource.Location,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize notifications: %w", err)

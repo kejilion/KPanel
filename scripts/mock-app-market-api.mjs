@@ -538,6 +538,7 @@ let mockNotificationSnapshot = {
   locale: 'zh-CN',
   timezone: 'Asia/Shanghai',
   rules: {
+    resourceAlerts: { certificatesEnabled: false, containers: [] },
     cpuEnabled: true, cpuThresholdPercent: 90,
     memoryEnabled: true, memoryThresholdPercent: 90,
     diskEnabled: true, diskThresholdPercent: 90,
@@ -545,6 +546,19 @@ let mockNotificationSnapshot = {
     trafficTotalReceivedEnabled: true, trafficTotalReceivedThresholdGiB: 100,
     trafficTotalSentEnabled: true, trafficTotalSentThresholdGiB: 100,
     sshLoginEnabled: true, hostOfflineEnabled: true,
+  },
+  resources: {
+    certificateStatus: 'ready', containerStatus: 'ready', observedAt: new Date().toISOString(), stateCapacityReached: false,
+    certificates: [
+      { id: 'a'.repeat(64), name: 'custom.example.test', fingerprint: 'b'.repeat(64), expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(), maintenance: 'custom', known: true },
+      { id: 'b'.repeat(64), name: 'expired.example.test', fingerprint: 'c'.repeat(64), expiresAt: new Date(Date.now() - 86400000).toISOString(), maintenance: 'automatic', known: true },
+      { id: 'c'.repeat(64), name: 'unknown.example.test', maintenance: 'unknown', known: false },
+    ],
+    containers: [
+      { id: 'd'.repeat(64), name: 'important-web', state: 'running', health: 'healthy', restartCount: 0, resourceVersion: mockRevision(40), known: true },
+      { id: 'e'.repeat(64), name: 'important-worker', state: 'running', health: 'unhealthy', restartCount: 4, resourceVersion: mockRevision(41), known: true },
+      { id: 'f'.repeat(64), name: 'unavailable-container', state: '', resourceVersion: '', known: false },
+    ],
   },
   telegram: { configured: false, ready: false, status: 'not_configured' },
   resourceVersion: `sha256:${'1'.repeat(64)}`,
@@ -1219,6 +1233,7 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/notifications') {
+    mockNotificationSnapshot.resources.observedAt = new Date().toISOString()
     send(response, 200, mockNotificationSnapshot)
     return
   }
@@ -1233,7 +1248,7 @@ createServer(async (request, response) => {
       ...mockNotificationSnapshot,
       enabled: Boolean(input.enabled),
       locale: ['zh-CN', 'zh-TW', 'en-US'].includes(input.locale) ? input.locale : 'zh-CN',
-      rules: input.rules || mockNotificationSnapshot.rules,
+      rules: input.rules ? { ...input.rules, resourceAlerts: input.rules.resourceAlerts ?? mockNotificationSnapshot.rules.resourceAlerts } : mockNotificationSnapshot.rules,
       resourceVersion: mockRevision(mockNotificationRevision),
       updatedAt: new Date().toISOString(),
     }

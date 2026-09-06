@@ -48,6 +48,7 @@ type HostSource interface {
 type TimezoneSource func(context.Context) *time.Location
 
 type Config struct {
+	Resources          ResourceSource
 	DataDir            string
 	Hosts              HostSource
 	Telegram           TelegramAPI
@@ -65,14 +66,18 @@ type trafficSample struct {
 }
 
 type Service struct {
-	store      *Store
-	hosts      HostSource
-	telegram   TelegramAPI
-	timezone   TimezoneSource
-	now        func() time.Time
-	evaluation time.Duration
-	sustain    int
-	repeat     time.Duration
+	resources         ResourceSource
+	resourceMu        sync.Mutex
+	resourceCache     ResourceSnapshot
+	resourceFetchedAt time.Time
+	store             *Store
+	hosts             HostSource
+	telegram          TelegramAPI
+	timezone          TimezoneSource
+	now               func() time.Time
+	evaluation        time.Duration
+	sustain           int
+	repeat            time.Duration
 
 	opMu    sync.Mutex
 	mu      sync.Mutex
@@ -121,7 +126,8 @@ func NewService(config Config) (*Service, error) {
 	}
 	state := store.stateSnapshot()
 	service := &Service{
-		store: store, hosts: config.Hosts, telegram: config.Telegram, timezone: config.Timezone, now: config.Now,
+		resources: config.Resources,
+		store:     store, hosts: config.Hosts, telegram: config.Telegram, timezone: config.Timezone, now: config.Now,
 		evaluation: config.EvaluationInterval, sustain: config.SustainSamples,
 		repeat: config.RepeatInterval, alerts: make(map[string]alertState),
 		traffic: make(map[string]trafficSample),
@@ -204,7 +210,9 @@ func (s *Service) snapshot(ctx context.Context) Snapshot {
 	} else if !meta.HasChat {
 		meta.Status = TelegramWaitingChat
 	}
-	return snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(s.displayTime(ctx, now)))
+	result := snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(s.displayTime(ctx, now)))
+	result.Resources = s.resourceSnapshot(ctx)
+	return result
 }
 
 func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, error) {
@@ -218,6 +226,16 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 		return Snapshot{}, ErrConflict
 	}
 	rules := normalizeRules(input.Rules)
+	if rules.ResourceAlerts == nil {
+		rules.ResourceAlerts = cloneResourceRules(state.Settings.Rules.ResourceAlerts)
+	}
+	rules.ResourceAlerts = sortedResourceRules(rules.ResourceAlerts)
+	if err := validateResourceRules(rules.ResourceAlerts, s.now()); err != nil {
+		return Snapshot{}, err
+	}
+	if err := s.validateNewContainerSelections(ctx, state.Settings.Rules.ResourceAlerts, rules.ResourceAlerts); err != nil {
+		return Snapshot{}, err
+	}
 	locale := normalizeNotificationLocale(input.Locale)
 	if !validNotificationLocale(locale) {
 		return Snapshot{}, &ValidationError{Field: "locale", Message: "通知语言不受支持"}
@@ -239,6 +257,7 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	next := state
 	next.Settings = Settings{Enabled: input.Enabled, Locale: locale, Rules: rules}
 	next.AlertStates = s.alertStateSnapshot()
+	reconcileResourceAlertStates(next.AlertStates, state.Settings.Rules.ResourceAlerts, rules.ResourceAlerts)
 	if cumulativeTrafficRulesChanged(state.Settings.Rules, rules) {
 		removeCumulativeTrafficAlertStates(next.AlertStates)
 	}
@@ -453,6 +472,7 @@ func (s *Service) evaluate(parent context.Context) error {
 			stateChanged = s.handleCumulativeThreshold(host, cumulativeTrafficSentRuleKey, host.LastSnapshot.Telemetry.Network.SentBytes, rules.TrafficTotalSentThresholdGiB, now, locale, trySend) || stateChanged
 		}
 	}
+	s.evaluateResources(parent, state.Settings.Rules.ResourceAlerts, now, locale, trySend)
 	alertStates := s.alertStateSnapshot()
 	if !stateChanged && reflect.DeepEqual(telegram, state.Telegram) && reflect.DeepEqual(alertStates, state.AlertStates) {
 		return nil
@@ -478,7 +498,10 @@ func (s *Service) handleThreshold(
 		return s.handleThresholdRecovery(host, ruleKey, value, unit, locale, now, send)
 	}
 	key := host.ID + ":" + ruleKey
-	state := s.getAlertState(key)
+	state, tracked := s.reserveAlertState(key)
+	if !tracked {
+		return false
+	}
 	state.Consecutive = minInt(state.Consecutive+1, s.sustain)
 	if !state.Active && state.Consecutive >= s.sustain && canAlertAttempt(state, now) {
 		state.LastAttemptAt = now
@@ -552,7 +575,10 @@ func (s *Service) handleCumulativeThreshold(host cluster.Host, ruleKey string, v
 	}
 	thresholdBytes := uint64(thresholdGiB) * bytesPerGigabyte
 	key := host.ID + ":" + ruleKey
-	state := s.getAlertState(key)
+	state, tracked := s.reserveAlertState(key)
+	if !tracked {
+		return false
+	}
 	if state.LastNetworkBytes > 0 && value < state.LastNetworkBytes {
 		// Network counters are monotonic until an interface, host or agent
 		// restarts. A rollback starts a new accumulation cycle and must not
@@ -591,7 +617,10 @@ func (s *Service) handleCumulativeThreshold(host cluster.Host, ruleKey string, v
 
 func (s *Service) handleAvailability(host cluster.Host, now time.Time, locale string, send func(string) (bool, bool)) bool {
 	key := host.ID + ":availability"
-	state := s.getAlertState(key)
+	state, tracked := s.reserveAlertState(key)
+	if !tracked {
+		return false
+	}
 	unavailable := host.State == cluster.HostStale || host.State == cluster.HostOffline ||
 		host.State == cluster.HostAuthFailed || host.State == cluster.HostTLSFailed || host.State == cluster.HostIncompatible
 	if !unavailable && host.State != cluster.HostOnline && host.State != cluster.HostDegraded {
@@ -646,7 +675,10 @@ func (s *Service) handleSSHLogin(host cluster.Host, event contract.SSHLoginEvent
 		return false
 	}
 	key := host.ID + ":ssh"
-	state := s.getAlertState(key)
+	state, tracked := s.reserveAlertState(key)
+	if !tracked {
+		return false
+	}
 	if state.LastEventID == event.ID {
 		return false
 	}
@@ -742,6 +774,9 @@ func (s *Service) pruneHostState(hosts []cluster.Host) bool {
 	changed := false
 	s.mu.Lock()
 	for key := range s.alerts {
+		if strings.HasPrefix(key, resourceStatePrefix) {
+			continue
+		}
 		hostID, _, found := strings.Cut(key, ":")
 		if !found {
 			delete(s.alerts, key)
