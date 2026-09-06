@@ -1,3 +1,4 @@
+import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
 import type {
 	AccountManagementActionInput,
 	AccountManagementActionResult,
@@ -2050,6 +2051,10 @@ export const api = {
       request<FileTrashDirectory>('/files/trash', { fileHostId }),
   },
   docker: {
+    checkUpdate: (id: string, resourceVersion: string, signal?: AbortSignal) =>
+      request<DockerImageUpdateResult>(`/docker/containers/${encodeURIComponent(id)}/check_update`, {
+        method: 'POST', body: { resourceVersion }, signal,
+      }),
     environment: (signal?: AbortSignal): Promise<DockerEnvironment> =>
       request<DockerEnvironment>('/docker/environment', { signal }),
     inventory: async (

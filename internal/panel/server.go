@@ -1036,7 +1036,7 @@ func allowedDockerActionPath(publicPath string) (agentPath, containerID, action 
 		return "", "", "", false
 	}
 	switch parts[1] {
-	case "start", "stop", "restart", "pause", "unpause", "remove":
+	case "start", "stop", "restart", "pause", "unpause", "remove", "check_update":
 		return "/v1/docker/containers/" + parts[0] + "/" + parts[1], parts[0], parts[1], true
 	default:
 		return "", "", "", false

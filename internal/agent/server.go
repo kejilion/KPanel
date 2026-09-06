@@ -1800,6 +1800,10 @@ func (s *Server) containerOperation(w http.ResponseWriter, r *http.Request, requ
 		return
 	}
 	id, action := parts[0], parts[1]
+	if action == "check_update" {
+		s.checkDockerImageUpdate(w, r, requestID, id)
+		return
+	}
 	if action == "logs" {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)

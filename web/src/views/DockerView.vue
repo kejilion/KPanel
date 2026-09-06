@@ -44,6 +44,7 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
+import { useDockerImageUpdates, type DockerUpdateStatus } from '@/lib/dockerImageUpdate'
 import {
   contextMenuFocusOrigin,
   type ContextMenuFocusOrigin,
@@ -124,6 +125,20 @@ const refreshing = ref(false)
 const error = ref('')
 const search = ref('')
 const activeTab = ref<DockerTab>('containers')
+const imageUpdates = useDockerImageUpdates(
+  computed(() => data.value?.containers || []),
+  computed(() => windowActive.value && activeTab.value === 'containers'),
+  (id, version, signal) => api.docker.checkUpdate(id, version, signal),
+)
+const imageUpdateEntries = imageUpdates.entries
+const imageUpdateBusy = imageUpdates.busy
+function imageUpdateLabel(status?: DockerUpdateStatus): string {
+  const labels: Record<DockerUpdateStatus, string> = {
+    checking: '正在检查', available: '该标签有镜像更新', current: '该标签未发现更新',
+    fixed: '固定版本', unavailable: '无法确认 · 重试', expired: '结果已过期 · 重新检查',
+  }
+  return phrase(status ? labels[status] : '检查更新')
+}
 const resourceSort = ref<ResourceSort>('smart')
 const containerSort = ref<ContainerSort>('smart')
 const taskRunning = ref(false)
@@ -569,6 +584,7 @@ function closeContextMenuOnViewportChange(): void {
 }
 
 async function load(silent = false): Promise<void> {
+  imageUpdates.clear()
   controller?.abort()
   composeController?.abort()
   controller = new AbortController()
@@ -1650,7 +1666,17 @@ onBeforeUnmount(() => {
                   <td>
                     <div class="resource-name">
                       <span class="resource-name__icon resource-name__icon--docker"><Container :size="18" /></span>
-                      <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small></span>
+                      <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small>
+                        <span class="docker-image-update" aria-live="polite">
+                          <button class="docker-image-update__button" type="button"
+                            :data-update-status="imageUpdateEntries[container.id]?.status || 'unchecked'"
+                            :disabled="!container.resourceVersion || imageUpdateBusy || imageUpdateEntries[container.id]?.status === 'checking'"
+                            :title="phrase('仅检查当前镜像标签，不代表上游最高版本；不会拉取或重建容器。')"
+                            @click="imageUpdates.check(container)">{{ imageUpdateLabel(imageUpdateEntries[container.id]?.status) }}</button>
+                          <small v-if="imageUpdateEntries[container.id]?.checkedAt">{{ phrase('检查时间') }} · {{ formatDateTime(imageUpdateEntries[container.id]!.checkedAt!) }}</small>
+                          <small v-if="imageUpdateEntries[container.id]?.status === 'unavailable'">{{ phrase('仓库不可访问、摘要缺失或无法可靠比较，请稍后重试。') }}</small>
+                        </span>
+                      </span>
                     </div>
                   </td>
                   <td><div class="table-stack"><StatusBadge :status="container.state" /><small>{{ container.statusText || '—' }}</small></div></td>
@@ -2153,6 +2179,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.docker-image-update { display: grid; gap: 4px; margin-top: 8px; white-space: normal; }
+.docker-image-update__button { justify-self: start; padding: 2px 0; border: 0; background: transparent; color: var(--brand-strong); font: inherit; font-size: 0.875rem; line-height: 1.5; text-align: start; cursor: pointer; white-space: normal; }
+.docker-image-update__button:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: var(--radius-sm); }
+.docker-image-update__button:disabled { color: var(--text-soft); cursor: default; }
+.docker-image-update small { font-size: 0.8125rem; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .docker-page { gap: 14px; }
 .docker-job { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(160px, 28%); align-items: center; gap: 12px; }
 .docker-job span { display: grid; gap: 3px; }

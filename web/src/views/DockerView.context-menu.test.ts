@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   environment: vi.fn(),
   jobs: vi.fn(),
   publicNetwork: vi.fn(),
+  checkUpdate: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -24,6 +25,7 @@ vi.mock('@/lib/api', () => ({
   },
   api: {
     docker: {
+      checkUpdate: mocks.checkUpdate,
       inventory: mocks.inventory,
       backups: mocks.backups,
       environment: mocks.environment,
@@ -117,6 +119,23 @@ describe('Docker context menu', () => {
     wrapper?.unmount()
     desktop.remove()
     vi.restoreAllMocks()
+  })
+
+  it.each(['current', 'available', 'fixed', 'unavailable'])('checks ordinary container on demand and renders %s with time', async status => {
+    const container = inventory().containers[0]!
+    if (status === 'unavailable') mocks.checkUpdate.mockRejectedValueOnce(new Error('registry denied'))
+    else mocks.checkUpdate.mockResolvedValueOnce({ containerId: container.id, image: container.image,
+      resourceVersion: container.resourceVersion, status, updateAvailable: status === 'available', checkedAt: new Date().toISOString() })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+    expect(mocks.checkUpdate).not.toHaveBeenCalled()
+    const button = wrapper.get('.docker-image-update__button')
+    await button.trigger('click')
+    await flushPromises()
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    expect(button.attributes('data-update-status')).toBe(status)
+    expect(wrapper.get('.docker-image-update').text()).toContain('检查时间')
+    expect(button.attributes('disabled')).toBeUndefined()
   })
 
   it('measures the full container menu and keeps it above the desktop taskbar', async () => {

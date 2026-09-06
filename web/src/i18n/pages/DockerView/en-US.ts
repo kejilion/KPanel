@@ -1,6 +1,16 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["检查更新", "Check for updates"],
+  ["正在检查", "Checking"],
+  ["该标签有镜像更新", "Image update available for this tag"],
+  ["该标签未发现更新", "No update found for this tag"],
+  ["固定版本", "Pinned version"],
+  ["无法确认 · 重试", "Unable to confirm · Retry"],
+  ["结果已过期 · 重新检查", "Result expired · Check again"],
+  ["检查时间", "Checked at"],
+  ["仅检查当前镜像标签，不代表上游最高版本；不会拉取或重建容器。", "Checks only the current image tag, not the highest upstream version. Does not pull images or recreate containers."],
+  ["仓库不可访问、摘要缺失或无法可靠比较，请稍后重试。", "The registry is unreachable, digests are missing, or a reliable comparison is unavailable. Try again later."],
   ["刷新 Docker 状态", "Refresh Docker status"],
   ["· 观测于", "• Observations"],
   ["{0} 将移除与 kejilion.sh 相同的 DOCKER-USER 限制规则", "{0} will remove the DOCKER-USER restriction rules that are the same as kejilion.sh"],
