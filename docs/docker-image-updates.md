@@ -7,6 +7,8 @@
 - 本地身份始终使用容器 inspect 的 `Image`，而不是可能已被重新拉取的 `Config.Image` 标签。
 - 远端保留用户的 repository/tag；受管容器使用镜像 ID 创建时，复用已有镜像标签元数据。
 - 本地 `RepoDigests` 必须属于规范化后的同一仓库；相同摘要为 `current`，表示该标签未发现更新。
+- containerd 存储在标签移动后可能清空旧镜像的 `RepoDigests`；仅在该列表为空、inspect 返回的 ID
+  与运行镜像一致且 `Descriptor` 为有效 manifest/index 时，使用该内容摘要，并继续核对仓库中的摘要层级与平台。
 - 不同摘要先通过 Engine distribution 元数据确认层级可比；单平台 manifest 还需平台一致。
   多平台 index 与平台 manifest 不能直接比较。缺失类型、摘要或平台、仓库拒绝、超时、限流均无法确认。
 - `available` 表示该标签的可比较镜像摘要改变，不表示上游最高版本，也不跨标签寻找版本。

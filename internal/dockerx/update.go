@@ -106,7 +106,9 @@ func (c *Client) CheckContainerImageUpdate(
 		return ImageUpdateResult{}, ErrActionUnsupported
 	}
 	var local struct {
-		RepoDigests []string `json:"RepoDigests"`
+		ID          string           `json:"Id"`
+		RepoDigests []string         `json:"RepoDigests"`
+		Descriptor  updateDescriptor `json:"Descriptor"`
 	}
 	if err := c.getJSON(ctx, "/images/"+url.PathEscape(localImage)+"/json", &local); err != nil {
 		return ImageUpdateResult{}, err
@@ -119,6 +121,15 @@ func (c *Client) CheckContainerImageUpdate(
 			localDigests[digest] = true
 		}
 	}
+	localKindHint := ""
+	// The containerd image store drops repository aliases when a tag moves,
+	// but keeps the content descriptor of the image inspected by immutable ID.
+	// Never substitute a descriptor for an explicitly different repository.
+	if len(local.RepoDigests) == 0 && local.ID == localImage &&
+		digestPattern.MatchString(local.Descriptor.Digest) && updateDigestKind(local.Descriptor.MediaType) != "" {
+		localDigests[local.Descriptor.Digest] = true
+		localKindHint = updateDigestKind(local.Descriptor.MediaType)
+	}
 	if len(localDigests) == 0 {
 		return ImageUpdateResult{}, errors.New("running image does not expose a digest for this repository")
 	}
@@ -128,6 +139,9 @@ func (c *Client) CheckContainerImageUpdate(
 	}
 	remoteDigest := remote.Descriptor.Digest
 	localDigest := remoteDigest
+	if localDigests[remoteDigest] && localKindHint != "" && localKindHint != updateDigestKind(remote.Descriptor.MediaType) {
+		return ImageUpdateResult{}, errors.New("local image descriptor kind does not match registry metadata")
+	}
 	if !localDigests[remoteDigest] {
 		if len(localDigests) != 1 {
 			return ImageUpdateResult{}, errors.New("running image repository digest is ambiguous")
@@ -146,7 +160,8 @@ func (c *Client) CheckContainerImageUpdate(
 			return ImageUpdateResult{}, err
 		}
 		kind := updateDigestKind(remote.Descriptor.MediaType)
-		if localRemote.Descriptor.Digest != localDigest || kind == "" || kind != updateDigestKind(localRemote.Descriptor.MediaType) {
+		if localRemote.Descriptor.Digest != localDigest || kind == "" || kind != updateDigestKind(localRemote.Descriptor.MediaType) ||
+			(localKindHint != "" && localKindHint != kind) {
 			return ImageUpdateResult{}, errors.New("registry index and platform digests cannot be compared reliably")
 		}
 		if kind == "manifest" && (len(remote.Platforms) != 1 || len(localRemote.Platforms) != 1 ||

@@ -78,11 +78,18 @@ func TestImageUpdateAgainstEngineAfterLocalTagMoves(t *testing.T) {
 		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		_ = exec.CommandContext(cleanup, "docker", "rm", "-f", name).Run()
-		for _, ref := range []string{image, configDigests[0], configDigests[1]} {
+		// Classic storage uses config IDs; containerd uses manifest IDs and can
+		// retain the old untagged image after removing the moved tag.
+		for _, ref := range []string{image, configDigests[0], configDigests[1], digests[0], digests[1]} {
 			_ = exec.CommandContext(cleanup, "docker", "image", "rm", ref).Run()
 		}
 		if output, _ := exec.CommandContext(cleanup, "docker", "ps", "-aq", "--filter", "name=^/"+name+"$").Output(); len(strings.TrimSpace(string(output))) != 0 {
 			t.Error("test container remains")
+		}
+		for _, ref := range []string{configDigests[0], configDigests[1], digests[0], digests[1]} {
+			if exec.CommandContext(cleanup, "docker", "image", "inspect", ref).Run() == nil {
+				t.Errorf("test image remains: %s", ref)
+			}
 		}
 	})
 	run("pull", image)
