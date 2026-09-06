@@ -1086,14 +1086,25 @@ func decodeAttachmentMetadata(data []byte) ([]Attachment, error) {
 	if len(data) > maxAttachmentReadBytes {
 		return nil, errors.New("message attachment record exceeds the read limit")
 	}
-	// One extra slot rejects overflow, including a fifth null/empty object.
-	// A fixed array bounds allocation even for legacy rows with many items.
-	var stored [5]attachmentMetadataJSON
-	stored[4].overflow = true
+	// Unmarshal zeroes unused array slots, but leaves unexported fields intact
+	// for every supplied element, including null and {}. Seed presence so the
+	// fifth slot detects overflow without an object UnmarshalJSON method that
+	// would validate and scan each large body a second time. A fixed array still
+	// bounds allocation; the pointer preserves a top-level null as an empty list.
+	stored := new([5]attachmentMetadataJSON)
+	for i := range stored {
+		stored[i].present = true
+	}
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return nil, fmt.Errorf("decode message attachments: %w", err)
 	}
 	items := []Attachment{}
+	if stored == nil {
+		return items, nil
+	}
+	if stored[4].present {
+		return nil, errors.New("decode message attachments: message attachment record exceeds the item read limit")
+	}
 	for _, item := range stored {
 		if !item.present {
 			break

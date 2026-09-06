@@ -123,6 +123,32 @@ func TestAttachmentMetadataJSONLimits(t *testing.T) {
 	}
 }
 
+func TestAttachmentMetadataJSONArrayPresence(t *testing.T) {
+	// Null and empty objects both count as supplied attachments. Exercise every
+	// position, including trailing zero-valued elements and the overflow slot;
+	// JSON fields must not be able to overwrite the internal presence marker.
+	for count := 0; count <= 6; count++ {
+		for mask := 0; mask < 1<<count; mask++ {
+			parts := make([]string, count)
+			for i := range parts {
+				parts[i] = `{"present":false,"overflow":false}`
+				if mask&(1<<i) != 0 {
+					parts[i] = "null"
+				}
+			}
+			compareAttachmentMetadata(t, []byte("["+strings.Join(parts, ",")+"]"))
+		}
+	}
+	for _, data := range []string{
+		"null", " \r\n\tnull\t ",
+		`[null,{"data":"Zg=="},null,{}]`,
+		`[{"data":"Zg=="},null,{},null]`,
+		`[{"data":"Zg=="},null,{},null,null]`,
+	} {
+		compareAttachmentMetadata(t, []byte(data))
+	}
+}
+
 func TestAttachmentMetadataJSONDepthBoundary(t *testing.T) {
 	// encodeAttachments writes flat string fields. Unknown legacy nesting is
 	// still parsed, but Unmarshal counts the outer array toward its depth limit;
