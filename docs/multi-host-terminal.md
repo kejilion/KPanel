@@ -129,6 +129,13 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
 
 ## 5. 安全与失败规则
 
+- 显式关闭仅在目标端确认关闭或会话不存在后删除 Panel 索引、记录成功审计并移除页签。Agent/远端错误或
+  10 秒关闭超时返回失败审计和 `terminal_close_failed`；保留同一会话身份，用户每次重试最多发出一个关闭请求。
+  关闭请求发出后的迟到输出、input/resize 结束状态不得抢先清除关闭身份；既有 35 分钟索引过期上限继续有效。
+- Agent 先完成进程终止和 PTY 关闭再发布 `closed`；kill/stop 失败可重试，systemd 已回收的 unit 必须经
+  `LoadState=not-found` 确认。前端关闭失败显示持续提示和重试按钮，组件卸载仍为捕获错误的 best-effort，
+  不等价于真实资源已经回收。普通远端目标需包含此修复才能把 Agent 的已不存在状态规范为加密关闭确认；
+  旧远端返回的通用 HTTP 错误保持失败，不推断成功。轻节点 broker 继续复用既有结构化 `closed` 事件。
 - 浏览器所有写操作验证 Session、Origin 和 CSRF；跨用户会话查询返回 404；
 - Panel 间正文使用现有 Noise IK 身份认证、时间窗和 request ID 防重放，HTTP 链路上不出现
   命令或输出明文；HTTPS 仍执行证书验证，HTTP 字面量 IP 仅承载 Noise 密文；
