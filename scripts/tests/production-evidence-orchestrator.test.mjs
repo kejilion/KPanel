@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -22,6 +22,123 @@ function cleanup(root) {
   const prefix = resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/');
   assert.ok(resolve(root).startsWith(prefix));
   rmSync(root, { recursive: true, force: true });
+}
+
+const revision = 'a'.repeat(40);
+const digest = `sha256:${'b'.repeat(64)}`;
+const baseline = 'baseline-run';
+const phaseFields = {
+  preflight: {},
+  backup: { '--baseline-run-id': baseline },
+  postdeploy: {
+    '--expected-revision': revision,
+    '--expected-image-digest': digest,
+    '--baseline-run-id': baseline,
+  },
+};
+
+for (const [name, phase, fields] of [
+  ...Object.entries(phaseFields).map(([phase, fields]) => [phase, phase, fields]),
+  ['preflight placeholders', 'preflight', {
+    '--expected-revision': '-', '--expected-image-digest': '-', '--baseline-run-id': '-',
+  }],
+  ['backup placeholders', 'backup', {
+    ...phaseFields.backup, '--expected-revision': '-', '--expected-image-digest': '-',
+  }],
+]) {
+  test(`prepare-only accepts ${name} and preserves phase fields`, () => {
+    const fixture = createFixture();
+    try {
+      const artifactDir = join(fixture.root, 'artifacts');
+      const result = spawnSync(process.execPath, [
+        orchestrator, '--repo', fixture.repo, '--phase', phase,
+        '--run-id', 'phase-contract', '--expected-version', '1.4.1',
+        '--artifact-dir', artifactDir, '--prepare-only', ...Object.entries(fields).flat(),
+      ], { cwd: fixture.repo, encoding: 'utf8', shell: false });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const plan = readFileSync(join(artifactDir, 'plan.env'), 'utf8');
+      const manifest = JSON.parse(readFileSync(join(artifactDir, 'manifest.json'), 'utf8'));
+      assert.equal(manifest.phase, phase);
+      for (const [option, key, manifestKey] of [
+        ['--expected-revision', 'EXPECTED_REVISION', 'expectedRevision'],
+        ['--expected-image-digest', 'EXPECTED_IMAGE_DIGEST', 'expectedImageDigest'],
+        ['--baseline-run-id', 'BASELINE_RUN_ID', 'baselineRunId'],
+      ]) {
+        assert.ok(plan.split('\n').includes(`${key}=${fields[option] ?? '-'}`));
+        assert.equal(manifest[manifestKey], fields[option] ?? null);
+      }
+    } finally {
+      cleanup(fixture.root);
+    }
+  });
+}
+
+const invalidCases = [];
+for (const [phase, options] of [
+  ['preflight', Object.entries(phaseFields.postdeploy)],
+  ['backup', [['--expected-revision', revision], ['--expected-image-digest', digest]]],
+]) {
+  for (const [option, value] of options) {
+    invalidCases.push({ phase, name: `inapplicable ${option}`, fields: { ...phaseFields[phase], [option]: value },
+      message: `${phase} does not accept ${option}` });
+  }
+}
+invalidCases.push({
+  phase: 'preflight', name: 'postdeploy revision and digest together',
+  fields: { '--expected-revision': revision, '--expected-image-digest': digest },
+  message: 'preflight does not accept --expected-revision',
+});
+for (const [phase, option, message] of [
+  ['backup', '--baseline-run-id', 'backup requires a valid baseline run ID'],
+  ['postdeploy', '--expected-revision', 'postdeploy requires a full expected revision'],
+  ['postdeploy', '--expected-image-digest', 'postdeploy requires an immutable expected image digest'],
+  ['postdeploy', '--baseline-run-id', 'postdeploy requires a valid baseline run ID'],
+]) {
+  for (const [name, value] of [['missing', undefined], ['placeholder', '-'], ['malformed', 'bad/value']]) {
+    const fields = { ...phaseFields[phase], [option]: value };
+    if (value === undefined) delete fields[option];
+    invalidCases.push({ phase, name: `${name} ${option}`, fields, message });
+  }
+}
+
+for (const prepareOnly of [false, true]) {
+  for (const { phase, name, fields, message } of invalidCases) {
+    test(`${phase} rejects ${name} before artifacts or subprocesses (prepare-only=${prepareOnly})`, () => {
+      const fixture = createFixture();
+      try {
+        const artifactDir = join(fixture.root, 'artifacts');
+        const calls = join(fixture.root, 'subprocess-calls');
+        const ready = join(fixture.root, 'guard-ready');
+        // Intercept the imported builtin before the CLI loads, including ordinary execution mode.
+        const guard = `
+          import childProcess from 'node:child_process';
+          import { syncBuiltinESMExports } from 'node:module';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          childProcess.spawnSync = (command) => {
+            appendFileSync(${JSON.stringify(calls)}, command + '\\n');
+            throw new Error('unexpected subprocess: ' + command);
+          };
+          syncBuiltinESMExports();
+          writeFileSync(${JSON.stringify(ready)}, 'ready');
+        `;
+        const result = spawnSync(process.execPath, [
+          '--import', `data:text/javascript,${encodeURIComponent(guard)}`,
+          orchestrator, '--repo', fixture.repo, '--phase', phase,
+          '--run-id', 'phase-contract', '--expected-version', '1.4.1',
+          '--artifact-dir', artifactDir, ...(prepareOnly ? ['--prepare-only'] : []),
+          ...Object.entries(fields).flat(),
+        ], { cwd: fixture.repo, encoding: 'utf8', shell: false });
+        assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+        assert.ok(existsSync(ready), 'subprocess guard must have loaded');
+        assert.equal(existsSync(artifactDir), false, 'invalid arguments must not create artifacts');
+        assert.equal(existsSync(calls), false, 'invalid arguments must not start Git, SSH, or SCP');
+        assert.ok(result.stderr.includes(message), result.stderr);
+        assert.doesNotMatch(result.stdout, /production_evidence_prepare=pass/);
+      } finally {
+        cleanup(fixture.root);
+      }
+    });
+  }
 }
 
 test('prepare-only creates a hashed preflight plan without shell interpolation', () => {

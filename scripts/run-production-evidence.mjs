@@ -90,6 +90,17 @@ function validate(options) {
   if (!versionPattern.test(options.expectedVersion)) throw new Error('expected version must be X.Y.Z');
   if (options.target !== 'arena-154') throw new Error('KPanel production evidence target must be arena-154');
   if (!isAbsolute(options.artifactDir)) throw new Error('artifact directory must be absolute');
+  if (options.phase !== 'postdeploy') {
+    const inapplicableFields = ['expectedRevision', 'expectedImageDigest'];
+    if (options.phase === 'preflight') inapplicableFields.push('baselineRunId');
+    for (const key of inapplicableFields) {
+      // The remote plan uses '-' for fields that do not apply to this phase.
+      if (options[key] !== undefined && options[key] !== '-') {
+        const flag = key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+        throw new Error(`${options.phase} does not accept --${flag}`);
+      }
+    }
+  }
   if (options.phase === 'postdeploy') {
     if (!/^[0-9a-f]{40,64}$/i.test(options.expectedRevision ?? '')) {
       throw new Error('postdeploy requires a full expected revision');
