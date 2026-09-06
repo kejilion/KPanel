@@ -1,0 +1,77 @@
+// @vitest-environment jsdom
+import { mount, flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+import Dialog from './ClusterNotificationsDialog.vue'
+import english from '@/i18n/pages/ClusterNotifications/en-US'
+import traditional from '@/i18n/pages/ClusterNotifications/zh-TW'
+import { notificationPhrases } from '@/i18n/pages/ClusterNotifications/labels'
+
+const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn() }))
+vi.mock('@/lib/api', () => ({ ApiError: class extends Error {}, api: { cluster: { notifications: mocks.read, updateNotifications: mocks.save } } }))
+vi.mock('@/i18n', () => ({ getLocale: () => 'zh-CN', useI18n: () => ({ locale: ref('zh-CN') }) }))
+vi.mock('@/i18n/phrase', () => ({ usePhraseCatalog: vi.fn(), phraseCatalogVersion: { value: 1 }, translatePhrase: (s: string) => s }))
+
+function snapshot() { return {
+  enabled: false, locale: 'zh-CN', timezone: 'UTC', resourceVersion: 'v1', updatedAt: new Date().toISOString(),
+  rules: { cpuEnabled: true, cpuThresholdPercent: 90, memoryEnabled: true, memoryThresholdPercent: 90, diskEnabled: true, diskThresholdPercent: 90, trafficEnabled: false, trafficThresholdMiBPerSecond: 100, trafficTotalReceivedEnabled: false, trafficTotalReceivedThresholdGiB: 100, trafficTotalSentEnabled: false, trafficTotalSentThresholdGiB: 100, sshLoginEnabled: true, hostOfflineEnabled: true },
+  telegram: { configured: false, ready: false, status: 'not_configured' },
+  resources: { certificateStatus: 'ready', containerStatus: 'ready', observedAt: new Date().toISOString(), stateCapacityReached: false,
+    certificates: [{ id: 'a'.repeat(64), name: 'expired.test', expiresAt: '2020-01-01T00:00:00Z', known: true, maintenance: 'unknown' }],
+    containers: [{ id: 'b'.repeat(64), name: 'important', state: 'running', health: 'healthy', resourceVersion: 'r1', known: true }, { id: 'c'.repeat(64), name: 'unknown', state: '', resourceVersion: '', known: false }],
+  },
+} }
+const wrappers: ReturnType<typeof mount>[] = []
+async function open() {
+  const wrapper = mount(Dialog, { props: { open: true }, global: { stubs: { ModalDialog: { template: '<div><slot /><slot name="footer" /></div>' } } } })
+  wrappers.push(wrapper); await flushPromises(); return wrapper
+}
+beforeEach(() => { vi.clearAllMocks(); mocks.read.mockResolvedValue(snapshot()); mocks.save.mockImplementation(async (input) => ({ ...snapshot(), ...input, resourceVersion: 'v2' })) })
+afterEach(() => wrappers.splice(0).forEach((wrapper) => wrapper.unmount()))
+
+describe('local resource notifications', () => {
+  it('starts disabled, selects only explicit containers and saves bounded maintenance pauses', async () => {
+    const wrapper = await open()
+    expect((wrapper.get('input[aria-label="启用证书到期提醒"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.get('input[aria-label="提醒容器 unknown"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('已过期')
+    await wrapper.get('input[aria-label="启用证书到期提醒"]').setValue(true)
+    await wrapper.get('input[aria-label="提醒容器 important"]').setValue(true)
+    await wrapper.findAll('button').find((button) => button.text() === '暂停 1 小时')!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === '保存设置')!.trigger('click'); await flushPromises()
+    const rules = mocks.save.mock.calls[0]![0].rules.resourceAlerts
+    expect(rules.certificatesEnabled).toBe(true)
+    expect(rules.containers).toHaveLength(1)
+    expect(rules.containers[0].id).toBe('b'.repeat(64))
+    expect(Date.parse(rules.containers[0].pausedUntil) - Date.now()).toBeGreaterThan(3_500_000)
+  })
+  it('keeps source failures unknown and permits removing a missing selection', async () => {
+    const value: any = snapshot(); value.resources.containerStatus = 'unknown'; value.resources.containers = []
+    value.rules.resourceAlerts = { certificatesEnabled: false, containers: [{ id: 'b'.repeat(64), enabled: true }] }
+    mocks.read.mockResolvedValue(value); const wrapper = await open()
+    expect(wrapper.text()).toContain('容器读取不可用，当前状态未知。')
+    const checkbox = wrapper.get('input[aria-label="提醒容器 bbbbbbbbbbbb"]'); expect(checkbox.attributes('disabled')).toBeUndefined()
+    await checkbox.setValue(false); expect(wrapper.text()).not.toContain('bbbbbbbbbbbb')
+  })
+  it('does not send new fields back to an old notification API', async () => {
+    const value: any = snapshot(); delete value.resources; mocks.read.mockResolvedValue(value)
+    const wrapper = await open(); expect(wrapper.text()).toContain('当前服务尚不支持本机资源提醒。')
+    await wrapper.findAll('button').find((button) => button.text() === '保存设置')!.trigger('click'); await flushPromises()
+    expect(mocks.save.mock.calls[0]![0].rules.resourceAlerts).toBeUndefined()
+  })
+  it('marks old observations stale and prevents selecting them as current resources', async () => {
+    const value = snapshot(); value.resources.observedAt = new Date(Date.now() - 120_000).toISOString(); mocks.read.mockResolvedValue(value)
+    const wrapper = await open(); expect(wrapper.text()).toContain('资源状态已过期，请重新读取。')
+    expect(wrapper.get('input[aria-label="提醒容器 important"]').attributes('disabled')).toBeDefined()
+  })
+  it('shows a real read failure with retry', async () => {
+    mocks.read.mockRejectedValueOnce(new Error('fixture unavailable')); const wrapper = await open()
+    expect(wrapper.text()).toContain('暂时无法读取通知设置')
+    await wrapper.findAll('button').find((button) => button.text() === '重试')!.trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('本机资源提醒')
+  })
+  it('covers every dedicated notification phrase in English and Traditional Chinese', () => {
+    for (const entries of [english, traditional]) { const catalog = new Map<string, string>(entries); for (const text of Object.values(notificationPhrases)) expect(catalog.get(text)?.trim()).toBeTruthy() }
+    expect(new Set(english.map(([source]) => source))).toEqual(new Set(traditional.map(([source]) => source)))
+  })
+})
