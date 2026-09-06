@@ -121,11 +121,11 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 	stopResponse := context.AfterFunc(transferContext, func() { _ = response.Body.Close() })
 	defer stopResponse()
-	var copyErr error
+	copyCompleted := false
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		defer func() {
 			result := "failure"
-			if copyErr == nil && transferContext.Err() == nil && response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
+			if copyCompleted && transferContext.Err() == nil && response.StatusCode >= http.StatusOK && response.StatusCode < http.StatusMultipleChoices {
 				result = "success"
 			}
 			_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, result, nil)
@@ -136,15 +136,23 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
 	writer.WriteHeader(response.StatusCode)
+	defer func() {
+		if recover() != nil {
+			// A reader or writer panic after headers must not be recovered into
+			// a problem response appended to the file or a clean chunked EOF.
+			panic(http.ErrAbortHandler)
+		}
+	}()
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, copyErr = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+	_, copyErr := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
 	if copyErr != nil {
 		// Headers are already committed. Abort the stream instead of emitting
 		// a clean chunked EOF for a truncated remote file.
 		panic(http.ErrAbortHandler)
 	}
+	copyCompleted = true
 }
 
 type lightFileUploadBody struct {

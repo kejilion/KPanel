@@ -66,6 +66,26 @@ type lightFileFailingReader struct{}
 
 func (lightFileFailingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
+type lightFilePanickingReader struct{}
+
+func (lightFilePanickingReader) Read([]byte) (int, error) { panic("remote body read failed") }
+
+type lightFilePanickingWriter struct {
+	http.ResponseWriter
+	panicked bool
+}
+
+func (writer *lightFilePanickingWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
+
+func (writer *lightFilePanickingWriter) Write(data []byte) (int, error) {
+	n, err := writer.ResponseWriter.Write(data)
+	if !writer.panicked {
+		writer.panicked = true
+		panic("response write failed after sending bytes")
+	}
+	return n, err
+}
+
 type lightFileObservedBody struct {
 	io.ReadCloser
 	closed chan struct{}
@@ -79,7 +99,7 @@ func (body *lightFileObservedBody) Close() error {
 }
 
 func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
-	for _, outcome := range []string{"complete", "truncated", "cancel", "panic"} {
+	for _, outcome := range []string{"complete", "truncated", "cancel", "panic", "read-panic", "write-panic"} {
 		t.Run(outcome, func(t *testing.T) {
 			truncated := outcome == "truncated"
 			server, tokenPath := newTestServer(t)
@@ -99,6 +119,9 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 				if truncated {
 					reader = io.MultiReader(reader, lightFileFailingReader{})
 				}
+				if outcome == "read-panic" {
+					reader = io.MultiReader(reader, lightFilePanickingReader{})
+				}
 				return io.NopCloser(reader)
 			}}
 			service, err := cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Remote: remote, Telemetry: clusterTelemetrySource{agent: &stubAgent{}}})
@@ -111,7 +134,12 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 			if err != nil || !host.FileManagementAvailable {
 				t.Fatalf("legacy relay fixture: %#v, %v", host, err)
 			}
-			httpServer := httptest.NewServer(server)
+			httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if outcome == "write-panic" {
+					w = &lightFilePanickingWriter{ResponseWriter: w}
+				}
+				server.ServeHTTP(w, r)
+			}))
 			defer httpServer.Close()
 			request, err := http.NewRequest(http.MethodPut, httpServer.URL+"/api/v1/files/content?hostId="+host.ID, strings.NewReader("content"))
 			if err != nil {
@@ -144,6 +172,15 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 			if truncated && readErr == nil {
 				t.Fatal("truncated chunked stream ended successfully")
 			}
+			streamPanic := outcome == "read-panic" || outcome == "write-panic"
+			if streamPanic {
+				if readErr == nil {
+					t.Error("panicked stream ended successfully")
+				}
+				if response.StatusCode != http.StatusOK || len(content) == 0 || len(content) > 32<<10 || strings.Trim(string(content), "x") != "" {
+					t.Errorf("panicked response status=%d bytes=%d: expected only the partial file without an appended problem response", response.StatusCode, len(content))
+				}
+			}
 			if outcome == "cancel" {
 				if readErr == nil {
 					t.Fatal("cancelled download ended successfully")
@@ -173,7 +210,7 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 			}
 			events, _ := server.store.ListAudit(50, "")
 			want := "success"
-			if truncated || outcome == "cancel" {
+			if truncated || outcome == "cancel" || streamPanic {
 				want = "failure"
 			}
 			found := false
