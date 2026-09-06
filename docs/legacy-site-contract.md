@@ -132,6 +132,34 @@ KPanel 不再为新建站点维护第二套 WordPress、静态站、PHP、反向
 
 历史结构化编辑仍保留旧模板兼容，但处于冻结状态；新建链路不再调用该生成器。
 
+## 自定义证书生命周期
+
+创建继续默认自动签发或复用当前有效证书；自有证书为可选项。可信脚本必须包含
+`KPANEL_WEB_CERTIFICATE_PROTOCOL_VERSION="1"`。站点详情的独立换证操作另要求
+`KPANEL_WEB_CERTIFICATE_REPLACE_PROTOCOL_VERSION="1"`；旧脚本缺少能力时明确拒绝。
+换证复用 `PATCH /sites/:id`，只接受主域名、类型、`expectedResourceVersion`、证书链和私钥，
+不与其他网站设置同次提交，也不生成或重建 Nginx 配置。
+
+Agent 校验证书 PEM、域名（换证覆盖全部已绑定域名）、有效期和密钥匹配；证书链上限 16 KiB、
+私钥上限 8 KiB。临时目录 0700、文件 0600；独立 worker 仅清理校验过的本次专属材料目录。
+私钥不进入任务状态、审计或终端输出。脚本固定调用为
+`k web certificate-replace <domain> <config-sha256> <cert-sha256> <key-sha256>`，材料通过临时路径传入。
+脚本核对真实文件摘要、已有 TLS 绑定并持有证书锁；校验或 reload 失败恢复旧 pair。
+恢复本身失败时返回 `needs_attention`，保留 `/home/web/certs/.kpanel-certificate.*` 恢复材料及必要的续签保护标记。
+
+`/home/web/certs/<domain>.custom` 只记录 `custom-v1` 续签策略，PEM 文件仍是证书事实。
+标记随创建、换证回滚和删除保持一致。自有证书由用户在到期前更换；每日续签器跳过它，
+无标记旧证书仅在与本机 Certbot lineage 的证书、私钥均一致时继续原有自动续签流程。
+续签与换证共用有界文件锁。受管脚本可精确升级已安装的官方旧续签器，升级产物须与
+`auto_cert_renewal.sh` 同源字节一致；未知本地改动或仍运行的旧续签进程使换证失败关闭。
+
+状态：**已实现并通过本地夹具验证，未完成最终候选的隔离真机 TLS 握手、真实 cron/systemd、
+脚本 ↔ Panel 双向验收及公开产物 L3**。进程强杀／断电恢复仍需真机专项验收。
+配套状态为 `coupled`：脚本候选须先公开，Panel 才能使用其固定提交与 SHA-256 构建。
+
+交互对照采用 [cPanel SSL/TLS 官方文档](https://docs.cpanel.net/cpanel/security/ssl-tls/) 的按域名提交
+证书链和私钥、回读成功或失败的方式；业务路径与续签语义以 `kejilion.sh` 为准。
+
 ## 固定模板摘要
 
 用于兼容回归的当前模板 SHA-256：

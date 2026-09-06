@@ -324,6 +324,54 @@ const form = reactive({
   privateKey: '',
 })
 
+const certificateSite = ref<Site>()
+const replacement = reactive({ certificate: '', privateKey: '', error: '', submitting: false })
+const certificateReplaceCapability = computed(() => capabilities.value.find((item) => item.id === 'sites.certificate-replace'))
+const canReplaceCertificate = computed(() => capabilitiesLoaded.value && certificateReplaceCapability.value?.enabled === true)
+const replacementValid = computed(() => Boolean(replacement.certificate.trim() && replacement.privateKey.trim()) && textByteLength(replacement.certificate.trim()) <= 16 * 1024 && textByteLength(replacement.privateKey.trim()) <= 8 * 1024)
+
+function openCertificateReplacement(site: Site): void {
+  replacement.certificate = ''
+  replacement.privateKey = ''
+  replacement.error = ''
+  certificateSite.value = site
+  selectedSite.value = undefined
+}
+
+function closeCertificateReplacement(): void {
+  if (replacement.submitting) return
+  selectedSite.value = certificateSite.value
+  certificateSite.value = undefined
+  replacement.certificate = ''
+  replacement.privateKey = ''
+  replacement.error = ''
+}
+
+async function replaceCertificate(): Promise<void> {
+  const site = certificateSite.value
+  if (!site || !replacementValid.value || !canReplaceCertificate.value || panel.isReadOnly.value) return
+  replacement.submitting = true
+  replacement.error = ''
+  try {
+    const saved = await api.sites.update(site.id, {
+      primaryDomain: site.primaryDomain,
+      type: site.type as SiteInput['type'],
+      expectedResourceVersion: site.resourceVersion,
+      certificate: replacement.certificate.trim(),
+      privateKey: replacement.privateKey.trim(),
+    })
+    replacement.submitting = false
+    closeCertificateReplacement()
+    await load(true)
+    selectedSite.value = sites.value.find((item) => item.id === saved.id) || saved
+    toast.success(phrase('证书已更换'), saved.primaryDomain)
+  } catch (error) {
+    replacement.error = error instanceof Error ? error.message : phrase('更换证书失败，请刷新网站状态后重试。')
+  } finally {
+    replacement.submitting = false
+  }
+}
+
 const siteWriteCapability = computed(() => capabilities.value.find((capability) => capability.id === 'sites.write'))
 const wordPressCapability = computed(() =>
   capabilities.value.find((capability) => capability.id === 'sites.wordpress.install'),
@@ -1237,6 +1285,13 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <section v-if="selectedSite.allowedActions?.includes('delete') && selectedSite.certificate" class="detail-section">
+          <button class="button button--secondary" type="button" :disabled="panel.isReadOnly.value || !canReplaceCertificate" @click="openCertificateReplacement(selectedSite)">
+            <KeyRound :size="16" /> {{ phrase('更换证书') }}
+          </button>
+          <p v-if="!canReplaceCertificate">{{ certificateReplaceCapability?.reason || phrase('当前脚本尚不支持更换证书，请先更新配套脚本。') }}</p>
+        </section>
+
         <section v-if="selectedSite.artifacts?.length" class="detail-section">
           <h3><FileCode2 :size="17" /> {{ phrase('实际配置与文件') }}</h3>
           <ul class="artifact-list">
@@ -1624,6 +1679,7 @@ onBeforeUnmount(() => {
           <p v-if="useCustomCertificate" class="site-certificate-note">
             私钥只用于本次创建；不会写入任务状态、审计详情或终端输出，脚本完成后清理临时副本。
           </p>
+          <small v-if="useCustomCertificate">{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</small>
         </fieldset>
         <small v-if="!editingSite" class="site-create-footnote">
           <ShieldCheck :size="14" />
@@ -1668,6 +1724,32 @@ onBeforeUnmount(() => {
           }}
           </button>
         </template>
+      </template>
+    </ModalDialog>
+    <ModalDialog :open="Boolean(certificateSite)" :title="phrase('更换证书')" @close="closeCertificateReplacement">
+      <form id="site-certificate-form" @submit.prevent="replaceCertificate">
+        <p>{{ certificateSite?.primaryDomain }}</p>
+        <p>{{ phrase('仅更换 HTTPS 证书，网站配置保持不变。证书须覆盖本站全部域名。') }}</p>
+        <label class="field">
+          <span>{{ phrase('公钥证书链（PEM）') }}</span>
+          <textarea v-model="replacement.certificate" rows="7" autocomplete="off" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN CERTIFICATE-----" />
+          <small>{{ phrase('证书链内容不能超过 16 KiB。') }}</small>
+        </label>
+        <label class="field">
+          <span>{{ phrase('私钥（PEM）') }}</span>
+          <textarea v-model="replacement.privateKey" rows="7" autocomplete="new-password" spellcheck="false" required :disabled="replacement.submitting" placeholder="-----BEGIN PRIVATE KEY-----" />
+          <small>{{ phrase('仅接受未加密私钥，必须与首个证书匹配。') }}</small>
+        </label>
+        <p>{{ phrase('私钥仅用于本次更换；不写入任务或审计，完成后清理临时副本。') }}</p>
+        <p>{{ phrase('自有证书需在到期前手动更换，脚本不会自动续签。') }}</p>
+        <p v-if="replacement.error" class="inline-alert inline-alert--danger" role="alert">{{ replacement.error }}</p>
+      </form>
+      <template #footer>
+        <button class="button button--secondary" type="button" :disabled="replacement.submitting" @click="closeCertificateReplacement">{{ phrase('取消') }}</button>
+        <button class="button button--primary" type="submit" form="site-certificate-form" :disabled="replacement.submitting || !replacementValid || !canReplaceCertificate">
+          <LoaderCircle v-if="replacement.submitting" class="spin" :size="16" />
+          {{ phrase(replacement.submitting ? '正在提交…' : '更换证书') }}
+        </button>
       </template>
     </ModalDialog>
   </div>
