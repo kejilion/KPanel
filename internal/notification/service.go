@@ -211,7 +211,9 @@ func (s *Service) snapshot(ctx context.Context) Snapshot {
 		meta.Status = TelegramWaitingChat
 	}
 	result := snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(s.displayTime(ctx, now)))
-	result.Resources = s.resourceSnapshot(ctx)
+	// Local certificate/container alerts are withdrawn. Keep the response shape
+	// for compatible clients without discovering host resources.
+	result.Resources = unknownResources()
 	return result
 }
 
@@ -226,16 +228,10 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 		return Snapshot{}, ErrConflict
 	}
 	rules := normalizeRules(input.Rules)
-	if rules.ResourceAlerts == nil {
-		rules.ResourceAlerts = cloneResourceRules(state.Settings.Rules.ResourceAlerts)
-	}
-	rules.ResourceAlerts = sortedResourceRules(rules.ResourceAlerts)
-	if err := validateResourceRules(rules.ResourceAlerts, s.now()); err != nil {
-		return Snapshot{}, err
-	}
-	if err := s.validateNewContainerSelections(ctx, state.Settings.Rules.ResourceAlerts, rules.ResourceAlerts); err != nil {
-		return Snapshot{}, err
-	}
+	// Freeze withdrawn resource rules, including explicit writes by old clients.
+	// Preserve the stored value verbatim so ordinary saves need no migration and
+	// rollback can resume with the original configuration.
+	rules.ResourceAlerts = cloneResourceRules(state.Settings.Rules.ResourceAlerts)
 	locale := normalizeNotificationLocale(input.Locale)
 	if !validNotificationLocale(locale) {
 		return Snapshot{}, &ValidationError{Field: "locale", Message: "通知语言不受支持"}
@@ -257,7 +253,6 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	next := state
 	next.Settings = Settings{Enabled: input.Enabled, Locale: locale, Rules: rules}
 	next.AlertStates = s.alertStateSnapshot()
-	reconcileResourceAlertStates(next.AlertStates, state.Settings.Rules.ResourceAlerts, rules.ResourceAlerts)
 	if cumulativeTrafficRulesChanged(state.Settings.Rules, rules) {
 		removeCumulativeTrafficAlertStates(next.AlertStates)
 	}
@@ -472,7 +467,8 @@ func (s *Service) evaluate(parent context.Context) error {
 			stateChanged = s.handleCumulativeThreshold(host, cumulativeTrafficSentRuleKey, host.LastSnapshot.Telemetry.Network.SentBytes, rules.TrafficTotalSentThresholdGiB, now, locale, trySend) || stateChanged
 		}
 	}
-	s.evaluateResources(parent, state.Settings.Rules.ResourceAlerts, now, locale, trySend)
+	// Resource alert states remain dormant: no collection, evaluation, retries
+	// or recovery delivery, even when persisted rules are enabled.
 	alertStates := s.alertStateSnapshot()
 	if !stateChanged && reflect.DeepEqual(telegram, state.Telegram) && reflect.DeepEqual(alertStates, state.AlertStates) {
 		return nil
