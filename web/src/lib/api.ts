@@ -1856,9 +1856,10 @@ export const api = {
         method: 'POST',
         body,
       }),
-    checkUpdate: (id: string, resourceVersion: string): Promise<AppImageUpdateResult> =>
+    checkUpdate: (id: string, resourceVersion: string, signal?: AbortSignal): Promise<AppImageUpdateResult> =>
       request<AppImageUpdateResult>(`/apps/${encodeURIComponent(id)}/check_update`, {
         method: 'POST',
+        signal,
         body: { resourceVersion },
       }),
   },

@@ -15,7 +15,6 @@ import {
   Boxes,
   BrushCleaning,
   ChevronRight,
-  CircleArrowUp,
   CircleStop,
   Container,
   Copy,
@@ -43,6 +42,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
+import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
@@ -1663,10 +1663,7 @@ onBeforeUnmount(() => {
                     <div class="resource-name">
                       <span class="resource-name__icon resource-name__icon--docker docker-container-icon">
                         <Container :size="18" />
-                        <span v-if="imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update"
-                          role="img" :aria-label="phrase('有镜像更新')" :title="phrase('有镜像更新')">
-                          <CircleArrowUp :size="14" aria-hidden="true" />
-                        </span>
+                        <ImageUpdateBadge v-if="imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update" :label="phrase('有镜像更新')" />
                       </span>
                       <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small></span>
                     </div>
@@ -2172,7 +2169,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .docker-container-icon { position: relative; }
-.docker-image-update { position: absolute; top: -3px; right: -3px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); color: var(--warning); cursor: default; }
 .docker-page { gap: 14px; }
 .docker-job { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(160px, 28%); align-items: center; gap: 12px; }
 .docker-job span { display: grid; gap: 3px; }
