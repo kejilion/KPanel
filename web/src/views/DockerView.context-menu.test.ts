@@ -119,23 +119,55 @@ describe('Docker context menu', () => {
     wrapper?.unmount()
     desktop.remove()
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
-  it.each(['current', 'available', 'fixed', 'unavailable'])('checks ordinary container on demand and renders %s with time', async status => {
+  it.each(['current', 'available', 'fixed', 'unavailable'])('automatically checks %s, only highlights updates, and reveals details on request', async status => {
+    vi.useFakeTimers()
     const container = inventory().containers[0]!
-    if (status === 'unavailable') mocks.checkUpdate.mockRejectedValueOnce(new Error('registry denied'))
+    if (status === 'unavailable') mocks.checkUpdate.mockRejectedValueOnce({ code: 'docker_update_registry_auth' })
     else mocks.checkUpdate.mockResolvedValueOnce({ containerId: container.id, image: container.image,
       resourceVersion: container.resourceVersion, status, updateAvailable: status === 'available', checkedAt: new Date().toISOString() })
     wrapper = mount(DockerView, { attachTo: windowBody })
     await flushPromises()
     expect(mocks.checkUpdate).not.toHaveBeenCalled()
-    const button = wrapper.get('.docker-image-update__button')
-    await button.trigger('click')
+    expect(wrapper.find('.docker-image-update').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1_000)
     await flushPromises()
     expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.docker-image-update').exists()).toBe(status === 'available')
+    expect(wrapper.text()).not.toContain('检查时间')
+    await wrapper.get('button[aria-pressed]').trigger('click')
+    const button = wrapper.get('.docker-image-update__button')
     expect(button.attributes('data-update-status')).toBe(status)
     expect(wrapper.get('.docker-image-update').text()).toContain('检查时间')
+    if (status === 'unavailable') expect(wrapper.get('.docker-image-update').text()).toContain('仓库拒绝访问')
     expect(button.attributes('disabled')).toBeUndefined()
+    await wrapper.get('button[aria-pressed]').trigger('click')
+    expect(wrapper.find('.docker-image-update').exists()).toBe(status === 'available')
+  })
+
+  it('pauses automatic checks while the browser is hidden and reuses completed results on return', async () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const container = inventory().containers[0]!
+    mocks.checkUpdate.mockResolvedValue({ containerId: container.id, image: container.image,
+      resourceVersion: container.resourceVersion, status: 'current', updateAvailable: false, checkedAt: new Date().toISOString() })
+    wrapper = mount(DockerView, { attachTo: windowBody })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.checkUpdate).not.toHaveBeenCalled()
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    visibility.mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(60_000)
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
   })
 
   it('measures the full container menu and keeps it above the desktop taskbar', async () => {

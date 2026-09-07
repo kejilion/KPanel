@@ -15,8 +15,8 @@ func TestImageUpdateContainerdDescriptorAfterTagMoves(t *testing.T) {
 	old := "sha256:" + strings.Repeat("b", 64)
 	newDigest := "sha256:" + strings.Repeat("c", 64)
 	for _, tc := range []struct {
-		name, kind, remoteKind, want                   string
-		same, wrongID, wrongRepo, malformed, refuseOld bool
+		name, kind, remoteKind, want                             string
+		same, wrongID, wrongRepo, malformed, refuseOld, withRepo bool
 	}{
 		{name: "untagged index current", kind: index, remoteKind: index, same: true, want: "current"},
 		{name: "untagged index changed", kind: index, remoteKind: index, want: "available"},
@@ -28,7 +28,10 @@ func TestImageUpdateContainerdDescriptorAfterTagMoves(t *testing.T) {
 		{name: "invalid digest", kind: index, remoteKind: index, malformed: true},
 		{name: "manifest cannot compare with index", kind: manifest, remoteKind: index},
 		{name: "same digest inconsistent kind", kind: manifest, remoteKind: index, same: true},
-		{name: "old digest unavailable in repository", kind: index, remoteKind: index, refuseOld: true},
+		{name: "old index removed uses local identity", kind: index, remoteKind: index, refuseOld: true, want: "available"},
+		{name: "tagged old index removed uses local identity", kind: index, remoteKind: index, refuseOld: true, withRepo: true, want: "available"},
+		{name: "tagged wrong ID cannot bypass old lookup", kind: index, remoteKind: index, refuseOld: true, withRepo: true, wrongID: true},
+		{name: "old manifest removed still needs platform identity", kind: manifest, remoteKind: manifest, refuseOld: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			id := strings.Repeat("a", 64)
@@ -53,6 +56,9 @@ func TestImageUpdateContainerdDescriptorAfterTagMoves(t *testing.T) {
 						digest = "sha256:not-a-digest"
 					}
 					repos := []string{}
+					if tc.withRepo {
+						repos = []string{"example@" + old}
+					}
 					if tc.wrongRepo {
 						repos = []string{"other/image@" + old}
 					}
@@ -63,6 +69,9 @@ func TestImageUpdateContainerdDescriptorAfterTagMoves(t *testing.T) {
 						digest = old
 					}
 					if strings.Contains(r.URL.Path, "@") {
+						if tc.kind == index && !tc.wrongID && !tc.wrongRepo && !tc.malformed {
+							t.Error("trusted local index should not require an old registry manifest")
+						}
 						if tc.refuseOld {
 							http.Error(w, "not found", http.StatusNotFound)
 							return

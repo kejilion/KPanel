@@ -1772,11 +1772,11 @@ createServer(async (request, response) => {
     send(response, 200, {
       available: true,
       serverVersion: '28.3.2',
-      containers: 5,
+      containers: mockDockerUpdateContainers.length,
       running: 4,
       paused: 0,
       stopped: 1,
-      images: 12,
+      images: 0,
       collectedAt: new Date().toISOString(),
     })
     return
@@ -1785,12 +1785,22 @@ createServer(async (request, response) => {
     send(response, 200, { items: mockDockerUpdateContainers })
     return
   }
+  if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups|jobs|compose-projects)$/.test(url.pathname)) {
+    send(response, 200, { items: [], total: 0 })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/docker/environment') {
+    send(response, 200, { available: true, serverVersion: '28.3.2', containers: mockDockerUpdateContainers.length,
+      images: 0, mirrorPreset: 'official', registryMirrors: [], ipv6Enabled: false,
+      daemonConfig: 'valid', observedAt: new Date().toISOString() })
+    return
+  }
   if (request.method === 'POST' && /^\/api\/v1\/docker\/containers\/[1-4]{64}\/check_update$/.test(url.pathname)) {
     const item = mockDockerUpdateContainers.find(item => item.id === url.pathname.split('/')[5])
     if (!item) { send(response, 404, { code: 'mock_not_found' }); return }
     await new Promise(resolve => setTimeout(resolve, 600))
     if (item.mockUpdateStatus === 'unavailable') {
-      send(response, 503, { title: 'Mock: registry unavailable', code: 'docker_update_unavailable' })
+      send(response, 503, { title: 'Mock: registry connection timed out', code: 'docker_update_timeout' })
       return
     }
     send(response, 200, { containerId: item.id, image: item.image, resourceVersion: item.resourceVersion,

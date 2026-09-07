@@ -8,18 +8,75 @@ const response = (container = item()): DockerImageUpdateResult => ({ containerId
 afterEach(() => vi.useRealTimers())
 
 describe('Docker image checks', () => {
-  it('only checks on demand and expires successful results', async () => {
+  it('automatically checks, reuses results across refresh and inactivity, and rechecks after expiry', async () => {
     vi.useFakeTimers()
     const scope = effectScope()
     const request = vi.fn().mockResolvedValue(response())
-    const checks = scope.run(() => useDockerImageUpdates(ref([item()]), ref(true), request))!
+    const containers = ref([item()]), active = ref(true)
+    const checks = scope.run(() => useDockerImageUpdates(containers, active, request))!
     expect(request).not.toHaveBeenCalled()
-    await checks.check(item())
+    await vi.advanceTimersByTimeAsync(1_000)
     expect(checks.entries.value[item().id]?.status).toBe('current')
+    containers.value = [{ ...item() }]
+    active.value = false
     await vi.advanceTimersByTimeAsync(dockerUpdateTTL)
-    expect(checks.entries.value[item().id]?.status).toBe('expired')
     expect(request).toHaveBeenCalledTimes(1)
+    active.value = true
+    expect(checks.entries.value[item().id]?.status).toBe('expired')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(request).toHaveBeenCalledTimes(2)
     scope.stop()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('automatically drains a bounded scan without retrying failed images in a tight loop', async () => {
+    vi.useFakeTimers()
+    const scope = effectScope(), containers = ref([item(), item('b'), item('c')])
+    const request = vi.fn(async (id: string) => {
+      if (id === item('b').id) throw { code: 'docker_update_digest_missing', message: 'sensitive registry error' }
+      return response(containers.value.find(container => container.id === id)!)
+    })
+    const checks = scope.run(() => useDockerImageUpdates(containers, ref(true), request))!
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(request).toHaveBeenCalledTimes(3)
+    expect(checks.entries.value[item('b').id]).toMatchObject({ status: 'unavailable', reason: 'docker_update_digest_missing' })
+    expect(JSON.stringify(checks.entries.value)).not.toContain('sensitive')
+    scope.stop()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('caps automatic results at 200 without an eviction scan loop', async () => {
+    vi.useFakeTimers()
+    const scope = effectScope(), containers = ref(Array.from({ length: 205 }, (_, i) => item(String(i))))
+    const request = vi.fn(async (id: string) => response(containers.value.find(container => container.id === id)!))
+    const checks = scope.run(() => useDockerImageUpdates(containers, ref(true), request))!
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(request).toHaveBeenCalledTimes(200)
+    expect(Object.keys(checks.entries.value)).toHaveLength(200)
+    await checks.check(containers.value[204]!)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(request).toHaveBeenCalledTimes(201)
+    expect(Object.keys(checks.entries.value)).toHaveLength(200)
+    scope.stop()
+  })
+
+  it('resumes pending automatic checks with at most two in flight and aborts on dispose', async () => {
+    vi.useFakeTimers()
+    const scope = effectScope(), containers = ref([item(), item('b'), item('c')])
+    const resolves: ((result: DockerImageUpdateResult) => void)[] = []
+    const request = vi.fn((_id, _version, _signal) => new Promise<DockerImageUpdateResult>(resolve => resolves.push(resolve)))
+    const checks = scope.run(() => useDockerImageUpdates(containers, ref(true), request))!
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(request).toHaveBeenCalledTimes(2)
+    resolves[0]!(response())
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(request).toHaveBeenCalledTimes(3)
+    scope.stop()
+    expect(request.mock.calls[1]![2].aborted).toBe(true)
+    expect(request.mock.calls[2]![2].aborted).toBe(true)
+    resolves[1]!(response(item('b'))); resolves[2]!(response(item('c')))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(checks.entries.value).toEqual({})
     expect(vi.getTimerCount()).toBe(0)
   })
 
