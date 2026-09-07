@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 )
@@ -22,7 +24,7 @@ func (s *Server) checkDockerImageUpdate(w http.ResponseWriter, r *http.Request, 
 	}
 	result, err := s.docker.CheckContainerImageUpdate(r.Context(), id, input.ResourceVersion)
 	if err != nil && !errors.Is(err, dockerx.ErrImageUpdateFixed) {
-		status, code := http.StatusBadGateway, "docker_update_unavailable"
+		status, code := http.StatusBadGateway, dockerImageUpdateErrorCode(err)
 		switch {
 		case errors.Is(err, dockerx.ErrResourceConflict):
 			status, code = http.StatusConflict, "resource_conflict"
@@ -37,4 +39,32 @@ func (s *Server) checkDockerImageUpdate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// Return only stable categories to the UI; raw registry messages can contain
+// URLs or credentials and must never become notification text.
+func dockerImageUpdateErrorCode(err error) string {
+	switch {
+	case errors.Is(err, dockerx.ErrImageUpdateDigestMissing):
+		return "docker_update_digest_missing"
+	case errors.Is(err, dockerx.ErrImageUpdateIncomparable):
+		return "docker_update_incomparable"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "docker_update_timeout"
+	}
+	var apiError *dockerx.APIError
+	if errors.As(err, &apiError) {
+		message := strings.ToLower(apiError.Message)
+		switch {
+		case apiError.Status == 429 || strings.Contains(message, "toomanyrequests") || strings.Contains(message, "too many requests"):
+			return "docker_update_rate_limited"
+		case apiError.Status == 401 || apiError.Status == 403 || strings.Contains(message, "unauthorized") || strings.Contains(message, "denied"):
+			return "docker_update_registry_auth"
+		case apiError.Status == 404 || strings.Contains(message, "manifest unknown") || strings.Contains(message, "manifest_unknown"):
+			return "docker_update_registry_missing"
+		case apiError.Status == 504 || strings.Contains(message, "timeout") || strings.Contains(message, "deadline exceeded"):
+			return "docker_update_timeout"
+		}
+	}
+	return "docker_update_unavailable"
 }

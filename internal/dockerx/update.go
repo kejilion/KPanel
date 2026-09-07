@@ -34,6 +34,8 @@ var imageUpdateSlots = make(chan struct{}, 2)
 
 var ErrImageUpdateFixed = errors.New("image reference is fixed to an immutable digest")
 var ErrImageUpdateBusy = errors.New("image update checks are busy")
+var ErrImageUpdateDigestMissing = errors.New("running image does not expose a digest for this repository")
+var ErrImageUpdateIncomparable = errors.New("image digest identity cannot be compared reliably")
 
 type updateDescriptor struct {
 	Digest    string `json:"digest"`
@@ -131,8 +133,12 @@ func (c *Client) CheckContainerImageUpdate(
 		localKindHint = updateDigestKind(local.Descriptor.MediaType)
 	}
 	if len(localDigests) == 0 {
-		return ImageUpdateResult{}, errors.New("running image does not expose a digest for this repository")
+		return ImageUpdateResult{}, ErrImageUpdateDigestMissing
 	}
+	// A matching Engine descriptor already proves the local index kind. Old
+	// registry manifests may have been removed; do not require them again.
+	knownLocalIndex := local.ID == localImage && localDigests[local.Descriptor.Digest] &&
+		updateDigestKind(local.Descriptor.MediaType) == "index"
 	remote, err := c.remoteImageDistributionForUpdate(ctx, image)
 	if err != nil {
 		return ImageUpdateResult{}, err
@@ -140,11 +146,11 @@ func (c *Client) CheckContainerImageUpdate(
 	remoteDigest := remote.Descriptor.Digest
 	localDigest := remoteDigest
 	if localDigests[remoteDigest] && localKindHint != "" && localKindHint != updateDigestKind(remote.Descriptor.MediaType) {
-		return ImageUpdateResult{}, errors.New("local image descriptor kind does not match registry metadata")
+		return ImageUpdateResult{}, ErrImageUpdateIncomparable
 	}
 	if !localDigests[remoteDigest] {
 		if len(localDigests) != 1 {
-			return ImageUpdateResult{}, errors.New("running image repository digest is ambiguous")
+			return ImageUpdateResult{}, ErrImageUpdateIncomparable
 		}
 		for digest := range localDigests {
 			localDigest = digest
@@ -155,18 +161,21 @@ func (c *Client) CheckContainerImageUpdate(
 		if !ok {
 			return ImageUpdateResult{}, ErrActionUnsupported
 		}
-		localRemote, err := c.distributionForUpdate(ctx, remoteRepository+"@"+localDigest)
-		if err != nil {
-			return ImageUpdateResult{}, err
-		}
 		kind := updateDigestKind(remote.Descriptor.MediaType)
+		localRemote := updateDistribution{Descriptor: local.Descriptor}
+		if !knownLocalIndex {
+			localRemote, err = c.distributionForUpdate(ctx, remoteRepository+"@"+localDigest)
+			if err != nil {
+				return ImageUpdateResult{}, err
+			}
+		}
 		if localRemote.Descriptor.Digest != localDigest || kind == "" || kind != updateDigestKind(localRemote.Descriptor.MediaType) ||
 			(localKindHint != "" && localKindHint != kind) {
-			return ImageUpdateResult{}, errors.New("registry index and platform digests cannot be compared reliably")
+			return ImageUpdateResult{}, ErrImageUpdateIncomparable
 		}
 		if kind == "manifest" && (len(remote.Platforms) != 1 || len(localRemote.Platforms) != 1 ||
 			remote.Platforms[0].OS == "" || remote.Platforms[0].Architecture == "" || remote.Platforms[0] != localRemote.Platforms[0]) {
-			return ImageUpdateResult{}, errors.New("registry platform identity cannot be compared reliably")
+			return ImageUpdateResult{}, ErrImageUpdateIncomparable
 		}
 	}
 	refreshed, err := c.inspect(ctx, id)
