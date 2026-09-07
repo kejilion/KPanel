@@ -34,6 +34,9 @@ export const DEFAULT_WINDOW_HEIGHT = 600
 const TOP_MARGIN = 16
 const SIDE_MARGIN = 24
 const BOTTOM_MARGIN = 72
+// Leave drag space beside the three 46px title-bar action buttons.
+const MIN_VISIBLE_TITLEBAR_WIDTH = 200
+const TITLEBAR_HEIGHT = 42
 const SNAP_INSET = 10
 const SNAP_GAP = 10
 const SNAP_EDGE_THRESHOLD = 18
@@ -54,9 +57,9 @@ export function clampToViewport(geometry: WindowGeometry, viewport: ViewportSize
   const maxHeight = Math.max(viewport.height - TOP_MARGIN - BOTTOM_MARGIN, 1)
   const width = clamp(geometry.width, Math.min(MIN_WINDOW_WIDTH, maxWidth), maxWidth)
   const height = clamp(geometry.height, Math.min(MIN_WINDOW_HEIGHT, maxHeight), maxHeight)
-  const maxLeft = Math.max(viewport.width - SIDE_MARGIN - width, 0)
-  const left = clamp(geometry.left, 0, maxLeft)
-  const maxTop = Math.max(viewport.height - BOTTOM_MARGIN - height, TOP_MARGIN)
+  const visibleWidth = Math.min(MIN_VISIBLE_TITLEBAR_WIDTH, width, viewport.width)
+  const left = clamp(geometry.left, visibleWidth - width, viewport.width - visibleWidth)
+  const maxTop = Math.max(viewport.height - BOTTOM_MARGIN - TITLEBAR_HEIGHT, TOP_MARGIN)
   const top = clamp(geometry.top, TOP_MARGIN, maxTop)
   return { left, top, width, height }
 }
@@ -79,8 +82,8 @@ export function cascadePosition(
   const offset = (index % 6) * 28
   return clampToViewport(
     {
-      left: (viewport.width - w) / 2 + offset,
-      top: TOP_MARGIN + (usableHeight - h) / 2 - offset / 2,
+      left: clamp((viewport.width - w) / 2 + offset, 0, Math.max(viewport.width - SIDE_MARGIN - w, 0)),
+      top: clamp(TOP_MARGIN + (usableHeight - h) / 2 - offset / 2, TOP_MARGIN, TOP_MARGIN + usableHeight - h),
       width: w,
       height: h,
     },

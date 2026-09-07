@@ -222,6 +222,35 @@ describe('DesktopWindow lazy view loading', () => {
     wrapper.unmount()
   })
 
+  it.each(['pointerup', 'pointercancel'])('keeps an unsnapped window partially outside the desktop after %s', async (endEvent) => {
+    routeMocks.resolveWindowComponent.mockResolvedValue({ template: '<main />' })
+    const desktopRoot = document.createElement('div')
+    desktopRoot.className = 'desktop'
+    document.body.appendChild(desktopRoot)
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/overview', 'route.overview', false)
+    const windowState = desktop.windows.value.find((item) => item.id === id)!
+    desktop.updateGeometry(id, { left: 200, top: 80, width: 880, height: 600 })
+    const wrapper = mount(DesktopWindow, {
+      attachTo: desktopRoot,
+      props: { windowState, icon: () => null },
+    })
+    await flushPromises()
+    const titlebar = wrapper.get('.desktop-window__titlebar').element
+    titlebar.dispatchEvent(pointer('pointerdown', 250, 100))
+    window.dispatchEvent(pointer('pointermove', 1050, 480))
+    await flushPromises()
+    expect(desktopRoot.querySelector('.desktop-window-snap-preview')).toBeNull()
+    window.dispatchEvent(pointer(endEvent, 1050, 480))
+    await flushPromises()
+    expect(windowState.geometry).toEqual({ left: 1000, top: 460, width: 880, height: 600 })
+    expect(windowState.snap).toBeNull()
+    expect(windowState.maximized).toBe(false)
+    expect(JSON.parse(window.localStorage.getItem('kejilion-panel-desktop-windows')!)[0].geometry).toEqual(windowState.geometry)
+    wrapper.unmount()
+    desktopRoot.remove()
+  })
+
   it('previews a side snap, commits it on release, and restores it when dragged away', async () => {
     routeMocks.resolveWindowComponent.mockResolvedValue({ template: '<main />' })
     const desktopRoot = document.createElement('div')

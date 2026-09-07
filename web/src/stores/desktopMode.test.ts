@@ -135,6 +135,29 @@ describe('desktop mode', () => {
     expect(restored).toMatchObject({ left: 120, top: 80 })
   })
 
+  it('persists partial offscreen positions through reload, snap restore and viewport changes', () => {
+    setupViewport(1280, 800)
+    initializeDesktopMode()
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/overview', 'route.overview', false)
+    const geometry = { left: 1000, top: 460, width: 880, height: 600 }
+    desktop.updateGeometry(id, geometry, false)
+    desktop.commitGeometry(id)
+    expect(desktop.windows.value[0]?.geometry).toEqual(geometry)
+    expect(window.localStorage.getItem('kpanel:desktop-window-sizes:v1')).toBeNull()
+
+    resetDesktopModeForTest()
+    initializeDesktopMode()
+    expect(desktop.windows.value[0]?.geometry).toEqual(geometry)
+    desktop.snapWindow(id, 'right')
+    expect(desktop.restoreWindowForDrag(id, geometry)).toEqual(geometry)
+    desktop.resizeForViewport({ width: 768, height: 600 })
+    const resized = desktop.windows.value[0]!.geometry
+    expect(resized.left).toBe(568)
+    expect(resized.top).toBe(460)
+    expect(resized.width).toBe(720)
+  })
+
   it('restores valid side snap state and safely drops it on narrow viewports', () => {
     const storage = makeStorage()
     storage.store.set('kejilion-panel-desktop-windows', JSON.stringify([{
@@ -294,8 +317,8 @@ describe('desktop mode', () => {
     const desktop = useDesktopMode()
     expect(desktop.windows.value).toHaveLength(2)
     expect(desktop.windows.value[0]!.path).toBe('/overview')
-    // Offscreen window is clamped back into the viewport.
-    expect(desktop.windows.value[1]!.geometry.left + desktop.windows.value[1]!.geometry.width).toBeLessThanOrEqual(1280)
+    // An unreachable persisted window retains a usable title-bar slice.
+    expect(desktop.windows.value[1]!.geometry.left).toBe(1280 - 200)
     expect(desktop.focusedId.value).toBe(8)
     resetDesktopModeForTest()
   })

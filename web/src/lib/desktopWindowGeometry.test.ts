@@ -24,7 +24,7 @@ describe('desktop window geometry', () => {
     )
     expect(result.width).toBeLessThanOrEqual(1280 - 24 * 2)
     expect(result.height).toBeLessThanOrEqual(800 - 16 - 72)
-    expect(result.left).toBeGreaterThanOrEqual(0)
+    expect(result.left + result.width).toBeGreaterThanOrEqual(200)
     expect(result.top).toBeGreaterThanOrEqual(16)
   })
 
@@ -48,6 +48,27 @@ describe('desktop window geometry', () => {
     expect(third.left).not.toBe(second.left)
     expect(third.top).not.toBe(second.top)
   })
+
+  it.each([
+    { left: 1000, top: 460, width: 880, height: 600 },
+    { left: -500, top: 250, width: 880, height: 600 },
+  ])('preserves partially offscreen floating geometry: $left, $top', (geometry) => {
+    const viewport = { width: 1280, height: 800 }
+    expect(clampToViewport(geometry, viewport)).toEqual(geometry)
+    expect(normalizeGeometry(geometry, viewport)).toEqual(geometry)
+  })
+
+  it.each([{ width: 1920, height: 1080 }, { width: 768, height: 600 }, { width: 390, height: 844 }])(
+    'keeps a usable title bar above the taskbar after extreme moves in $width px',
+    (viewport) => {
+      for (const left of [-10000, 10000]) {
+        const geometry = clampToViewport({ left, top: 10000, width: 880, height: 600 }, viewport)
+        const visibleWidth = Math.min(geometry.left + geometry.width, viewport.width) - Math.max(geometry.left, 0)
+        expect(visibleWidth).toBeGreaterThanOrEqual(200)
+        expect(geometry.top + 42).toBeLessThanOrEqual(viewport.height - 72)
+      }
+    },
+  )
 
   it('keeps every cascade position fully inside the viewport', () => {
     const viewport = { width: 1280, height: 800 }
@@ -79,7 +100,7 @@ describe('desktop window geometry', () => {
     )
     expect(geometry.width).toBeLessThanOrEqual(1280 - 24 * 2)
     expect(geometry.height).toBeGreaterThanOrEqual(MIN_WINDOW_HEIGHT)
-    expect(geometry.left).toBeGreaterThanOrEqual(0)
+    expect(geometry.left + geometry.width).toBeGreaterThanOrEqual(200)
     expect(geometry.top).toBeGreaterThanOrEqual(16)
   })
 
