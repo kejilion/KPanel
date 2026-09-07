@@ -75,6 +75,28 @@ func (c *Client) CheckContainerImageUpdate(
 	if expectedVersion == "" {
 		return ImageUpdateResult{}, ErrVersionRequired
 	}
+	return WithImageUpdateCheck(ctx, func(ctx context.Context) (ImageUpdateResult, error) {
+		// Only a racing read snapshot gets one retry, within the original budget.
+		for attempt := 0; ; attempt++ {
+			result, err := c.checkContainerImageSnapshot(ctx, id)
+			if attempt == 1 || !errors.Is(err, ErrResourceConflict) || ctx.Err() != nil {
+				return result, err
+			}
+		}
+	})
+}
+
+type imageUpdateBudgetKey struct{}
+
+// WithImageUpdateCheck bounds the entire read, including application resolution.
+// A nested check shares the caller's slot and deadline; callbacks run serially.
+func WithImageUpdateCheck(ctx context.Context, check func(context.Context) (ImageUpdateResult, error)) (ImageUpdateResult, error) {
+	if ctx.Err() != nil {
+		return ImageUpdateResult{}, ctx.Err()
+	}
+	if ctx.Value(imageUpdateBudgetKey{}) != nil {
+		return check(ctx)
+	}
 	select {
 	case imageUpdateSlots <- struct{}{}:
 		defer func() { <-imageUpdateSlots }()
@@ -83,15 +105,7 @@ func (c *Client) CheckContainerImageUpdate(
 	}
 	ctx, cancel := context.WithTimeout(ctx, ImageUpdateCheckTimeout)
 	defer cancel()
-	// This read-only check uses a fresh snapshot, as the application market
-	// does. Mutating operations still require an exact browser resource version.
-	// A racing snapshot gets one retry within the same deadline and read slot.
-	for attempt := 0; ; attempt++ {
-		result, err := c.checkContainerImageSnapshot(ctx, id)
-		if attempt == 1 || !errors.Is(err, ErrResourceConflict) || ctx.Err() != nil {
-			return result, err
-		}
-	}
+	return check(context.WithValue(ctx, imageUpdateBudgetKey{}, true))
 }
 
 func (c *Client) checkContainerImageSnapshot(ctx context.Context, id string) (ImageUpdateResult, error) {

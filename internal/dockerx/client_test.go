@@ -72,6 +72,25 @@ func TestContainersBoundsParallelInspectWork(t *testing.T) {
 	}
 }
 
+func TestImageUpdateLookupOnlyListsContainersWithoutMutationAuthority(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodGet || r.URL.Path != "/containers/json" || r.URL.Query().Get("all") != "1" {
+			t.Errorf("unexpected read %s %s", r.Method, r.URL)
+		}
+		_ = json.NewEncoder(w).Encode([]containerListItem{{ID: strings.Repeat("a", 64), Names: []string{"/speedtest"}, Image: "redis:7", State: "running", Labels: map[string]string{"io.kejilion.panel.app": "speedtest"}}})
+	}))
+	defer server.Close()
+	got, err := testHTTPClient(server).ContainersForImageUpdate(context.Background())
+	if err != nil || requests != 1 || len(got) != 1 {
+		t.Fatalf("lookup requests=%d rows=%d err=%v", requests, len(got), err)
+	}
+	if len(got[0].AllowedActions) != 0 || got[0].Labels["io.kejilion.panel.app"] != "speedtest" {
+		t.Fatal("list lost identity or granted mutation authority")
+	}
+}
+
 func TestAllContainerOriginsExposeStateValidActions(t *testing.T) {
 	web := t.TempDir()
 	apps := t.TempDir()

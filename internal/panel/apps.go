@@ -56,6 +56,10 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
 		return
 	}
+	if action == "check_update" {
+		s.forwardImageUpdate(w, r, agentPath, body)
+		return
+	}
 	change := map[string]any{"action": action}
 	if input.HostPort.Set {
 		change["hostPort"] = input.HostPort.Value

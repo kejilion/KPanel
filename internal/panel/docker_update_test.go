@@ -1,8 +1,11 @@
 package panel
 
 import (
+	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,5 +43,63 @@ func TestDockerUpdateUsesAuthenticatedActionRoute(t *testing.T) {
 				t.Fatalf("boundary escaped: %d %s", w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestImageChecksDoNotRewriteAuditStoreButMutationsStillDo(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	body := []byte(`{"resourceVersion":"sha256:` + strings.Repeat("b", 64) + `"}`)
+	headers := map[string]string{"Origin": "http://panel.test", "X-CSRF-Token": csrf.Value, "Content-Type": "application/json"}
+	before, err := os.ReadFile(s.config.StorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(s.config.StorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/docker/containers/" + strings.Repeat("a", 64), "/api/v1/apps/builtin-28"} {
+		for _, code := range []int{http.StatusOK, http.StatusBadGateway, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+			agent := &stubAgent{response: AgentResponse{StatusCode: code, ContentType: "application/json", Body: []byte(`{"status":"current"}`)}}
+			if code == http.StatusServiceUnavailable {
+				agent.err = errors.New("simulated transport failure")
+			}
+			s.agent = agent
+			response := authenticatedRequest(s, http.MethodPost, path+"/check_update", body, session, csrf, headers)
+			if response.Code != code || len(agent.snapshotCalls()) != 1 {
+				t.Fatalf("%s code=%d calls=%d", path, response.Code, len(agent.snapshotCalls()))
+			}
+			after, err := os.ReadFile(s.config.StorePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterInfo, err := os.Stat(s.config.StorePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) || !os.SameFile(info, afterInfo) || !info.ModTime().Equal(afterInfo.ModTime()) {
+				t.Fatal("read-only check rewrote the identity/audit store")
+			}
+		}
+	}
+	for _, path := range []string{"/api/v1/docker/containers/" + strings.Repeat("a", 64), "/api/v1/apps/builtin-28"} {
+		s.agent = &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: []byte(`{}`)}}
+		response := authenticatedRequest(s, http.MethodPost, path+"/restart", body, session, csrf, headers)
+		if response.Code != http.StatusOK {
+			t.Fatalf("restart status=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+	events, _ := s.store.ListAudit(100, "")
+	for _, action := range []string{"docker.restart", "app.restart"} {
+		count := 0
+		for _, event := range events {
+			if event.Action == action {
+				count++
+			}
+		}
+		if count != 2 {
+			t.Fatalf("mutation %s lost intent/result auditing: %d", action, count)
+		}
 	}
 }

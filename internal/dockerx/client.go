@@ -185,6 +185,24 @@ func (c *Client) Summary(ctx context.Context) (contract.DockerSummary, error) {
 	}, nil
 }
 
+// ContainersForImageUpdate only locates an application's container. Its list
+// versions and capabilities must never authorize mutations; the shared checker
+// inspects the selected container again to establish its actual image identity.
+func (c *Client) ContainersForImageUpdate(ctx context.Context) ([]contract.ContainerSummary, error) {
+	var raw []containerListItem
+	if err := c.getJSON(ctx, "/containers/json?all=1&size=0", &raw); err != nil {
+		return nil, err
+	}
+	result := make([]contract.ContainerSummary, 0, len(raw))
+	for _, item := range raw {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		result = append(result, c.summaryFromList(item))
+	}
+	return result, nil
+}
+
 func (c *Client) Containers(ctx context.Context) ([]contract.ContainerSummary, error) {
 	var raw []containerListItem
 	if err := c.getJSON(ctx, "/containers/json?all=1&size=0", &raw); err != nil {

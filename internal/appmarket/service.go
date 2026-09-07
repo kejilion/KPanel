@@ -160,8 +160,33 @@ func newService(docker Docker, appRoot string, fetcher catalogFetcher) (*Service
 }
 
 func (s *Service) Inventory(ctx context.Context) (Inventory, error) {
+	return s.inventory(ctx, "")
+}
+
+// A nonempty imageUpdateID resolves only that application using list metadata.
+// Public inventory and all mutations continue to use full inspect snapshots.
+func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventory, error) {
 	catalogState := s.currentCatalog(ctx)
-	containers, err := s.docker.Containers(ctx)
+	readContainers := s.docker.Containers
+	if imageUpdateID != "" {
+		var selected *App
+		for _, app := range catalogState.Catalog.Apps {
+			if app.ID == imageUpdateID {
+				selected = &app
+				break
+			}
+		}
+		if selected == nil {
+			return Inventory{}, ErrNotFound
+		}
+		catalogState.Catalog.Apps = []App{*selected}
+		if reader, ok := s.docker.(interface {
+			ContainersForImageUpdate(context.Context) ([]contract.ContainerSummary, error)
+		}); ok {
+			readContainers = reader.ContainersForImageUpdate
+		}
+	}
+	containers, err := readContainers(ctx)
 	if err != nil {
 		return Inventory{}, err
 	}
@@ -760,12 +785,20 @@ func (s *Service) CheckUpdate(
 	if expectedVersion == "" {
 		return dockerx.ImageUpdateResult{}, dockerx.ErrVersionRequired
 	}
-	ctx, cancel := context.WithTimeout(ctx, dockerx.ImageUpdateCheckTimeout)
-	defer cancel()
-	item, err := s.Find(ctx, id)
+	return dockerx.WithImageUpdateCheck(ctx, func(ctx context.Context) (dockerx.ImageUpdateResult, error) {
+		return s.checkUpdate(ctx, id)
+	})
+}
+
+func (s *Service) checkUpdate(ctx context.Context, id string) (dockerx.ImageUpdateResult, error) {
+	inventory, err := s.inventory(ctx, id)
 	if err != nil {
 		return dockerx.ImageUpdateResult{}, err
 	}
+	if len(inventory.Items) != 1 {
+		return dockerx.ImageUpdateResult{}, ErrNotFound
+	}
+	item := inventory.Items[0]
 	if !item.Capabilities["check_update"].Enabled {
 		return dockerx.ImageUpdateResult{}, fmt.Errorf(
 			"%w: %s",
