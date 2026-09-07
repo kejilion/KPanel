@@ -435,6 +435,10 @@ func (s *Server) handleDockerAction(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusInternalServerError, "request_encoding_failed", "Request encoding failed", "")
 		return
 	}
+	if action == "check_update" {
+		s.forwardImageUpdate(w, r, agentPath, body)
+		return
+	}
 	change := map[string]any{"resourceVersion": input.ResourceVersion}
 	if err := s.audit(r, session.User.ID, "docker."+action, "container", containerID, "intent", change); err != nil {
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
