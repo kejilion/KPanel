@@ -122,7 +122,7 @@ describe('Docker context menu', () => {
     vi.useRealTimers()
   })
 
-  it.each(['current', 'available', 'fixed', 'unavailable'])('automatically checks %s, only highlights updates, and reveals details on request', async status => {
+  it.each(['current', 'available', 'fixed', 'unavailable'])('automatically checks %s and only exposes a passive available badge', async status => {
     vi.useFakeTimers()
     const container = inventory().containers[0]!
     if (status === 'unavailable') mocks.checkUpdate.mockRejectedValueOnce({ code: 'docker_update_registry_auth' })
@@ -137,14 +137,18 @@ describe('Docker context menu', () => {
     expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.docker-image-update').exists()).toBe(status === 'available')
     expect(wrapper.text()).not.toContain('检查时间')
-    await wrapper.get('button[aria-pressed]').trigger('click')
-    const button = wrapper.get('.docker-image-update__button')
-    expect(button.attributes('data-update-status')).toBe(status)
-    expect(wrapper.get('.docker-image-update').text()).toContain('检查时间')
-    if (status === 'unavailable') expect(wrapper.get('.docker-image-update').text()).toContain('仓库拒绝访问')
-    expect(button.attributes('disabled')).toBeUndefined()
-    await wrapper.get('button[aria-pressed]').trigger('click')
-    expect(wrapper.find('.docker-image-update').exists()).toBe(status === 'available')
+    expect(wrapper.find('.docker-update-details').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('仓库拒绝访问')
+    expect(wrapper.text()).not.toContain('有镜像更新')
+    if (status === 'available') {
+      const badge = wrapper.get('.docker-image-update')
+      expect(badge.attributes('role')).toBe('img')
+      expect(badge.attributes('title')).toBe('有镜像更新')
+      expect(badge.find('button').exists()).toBe(false)
+      await badge.trigger('click')
+      expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('.docker-image-update__button').exists()).toBe(false)
+    }
   })
 
   it('pauses automatic checks while the browser is hidden and reuses completed results on return', async () => {
