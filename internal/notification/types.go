@@ -69,7 +69,7 @@ func (e *ValidationError) Error() string {
 func (e *ValidationError) Unwrap() error { return ErrInvalidSettings }
 
 type Rules struct {
-	// A nil value in an old client's PUT means preserve the resource rules.
+	// Compatibility-only: reads retain stored resource rules; PUT preserves them.
 	ResourceAlerts                   *ResourceRules `json:"resourceAlerts,omitempty"`
 	CPUEnabled                       bool           `json:"cpuEnabled"`
 	CPUThresholdPercent              int            `json:"cpuThresholdPercent"`

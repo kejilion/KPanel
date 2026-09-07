@@ -3,9 +3,9 @@ package notification
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -55,16 +55,6 @@ func resourceService(t *testing.T) (*Service, *resourceTestSource, *notification
 	return s, r, telegram, clock
 }
 
-func saveResourceRules(t *testing.T, s *Service, rules *ResourceRules) {
-	t.Helper()
-	snapshot := s.Snapshot()
-	r := snapshot.Rules
-	r.ResourceAlerts = rules
-	_, err := s.Configure(context.Background(), UpdateInput{Enabled: true, Locale: "zh-CN", Rules: r, ExpectedResourceVersion: snapshot.ResourceVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
 func resourceTick(t *testing.T, s *Service, clock *notificationTestClock) {
 	t.Helper()
 	clock.Advance(30 * time.Second)
@@ -90,268 +80,6 @@ func TestCertificateStageExactBoundaries(t *testing.T) {
 		if got := certificateStage(now.Add(tc.delta), now); got != tc.want {
 			t.Fatalf("delta=%v got=%q want=%q", tc.delta, got, tc.want)
 		}
-	}
-}
-
-func TestResourceCertificatesDeduplicateRenewUnknownDeleteAndRestart(t *testing.T) {
-	s, source, tg, clock := resourceService(t)
-	source.value.Certificates = []CertificateResource{testCertificate(clock)}
-	saveResourceRules(t, s, &ResourceRules{CertificatesEnabled: true})
-	resourceTick(t, s, clock)
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	source.value.Certificates[0].Name = "renamed.example.com"
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("rename repeated alert")
-	}
-	source.stale = true
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("stale fabricated recovery")
-	}
-	source.stale = false
-	source.value.Certificates[0].Known = false
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("unknown fabricated recovery")
-	}
-	source.value.Certificates[0].Known = true
-	// Persisted delivered state must remain deduplicated after process restart.
-	next, err := NewService(Config{DataDir: filepath.Dir(s.store.directory), Hosts: s.hosts, Telegram: tg, Resources: source, Now: clock.Now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer next.Close()
-	resourceTick(t, next, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("restart repeated alert")
-	}
-	expiry := clock.Now().Add(90 * 24 * time.Hour)
-	source.value.Certificates[0].ExpiresAt = &expiry
-	source.value.Certificates[0].Fingerprint = strings.Repeat("e", 64)
-	resourceTick(t, next, clock)
-	if tg.messageCount() != 2 || !strings.Contains(tg.messagesSnapshot()[1], "已解除") {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	source.value.Certificates = nil
-	resourceTick(t, next, clock)
-	for key := range next.alertStateSnapshot() {
-		if strings.HasPrefix(key, resourceStatePrefix) {
-			t.Fatalf("deleted state retained %s", key)
-		}
-	}
-}
-
-func TestResourceContainersSustainUnknownPauseAndRecovery(t *testing.T) {
-	s, source, tg, clock := resourceService(t)
-	c := testContainer()
-	c.Health = "unhealthy"
-	source.value.Containers = []ContainerResource{c}
-	saveResourceRules(t, s, &ResourceRules{Containers: []ContainerRule{{ID: c.ID, Enabled: true}}})
-	resourceTick(t, s, clock)
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 0 {
-		t.Fatal("early alert")
-	}
-	source.value.ContainerStatus = "unknown"
-	resourceTick(t, s, clock)
-	source.value.ContainerStatus = "ready"
-	resourceTick(t, s, clock)
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 0 {
-		t.Fatal("unknown bridged continuous samples")
-	}
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	source.value.Containers[0].Health = "starting"
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("starting fabricated recovery")
-	}
-	source.value.Containers[0].Name = "renamed"
-	source.value.Containers[0].ResourceVersion = "sha256:" + strings.Repeat("e", 64)
-	source.value.Containers[0].Health = "healthy"
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 2 {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	pause := clock.Now().Add(time.Minute)
-	saveResourceRules(t, s, &ResourceRules{Containers: []ContainerRule{{ID: c.ID, Enabled: true, PausedUntil: &pause}}})
-	source.value.Containers[0].State = "exited"
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 2 {
-		t.Fatal("maintenance sent")
-	}
-	clock.Advance(5 * time.Minute)
-	for range 3 {
-		resourceTick(t, s, clock)
-	}
-	if tg.messageCount() != 3 || !strings.Contains(tg.messagesSnapshot()[2], "未运行") {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	saveResourceRules(t, s, &ResourceRules{})
-	for range 4 {
-		resourceTick(t, s, clock)
-	}
-	if tg.messageCount() != 3 {
-		t.Fatal("disabled sent")
-	}
-}
-
-func TestResourceRestartCounterRequiresObservedIncrements(t *testing.T) {
-	s, source, tg, clock := resourceService(t)
-	c := testContainer()
-	count := int64(900)
-	c.RestartCount = &count
-	source.value.Containers = []ContainerResource{c}
-	saveResourceRules(t, s, &ResourceRules{Containers: []ContainerRule{{ID: c.ID, Enabled: true}}})
-	for range 3 {
-		resourceTick(t, s, clock)
-	}
-	if tg.messageCount() != 0 {
-		t.Fatal("historical count alerted")
-	}
-	count = 903
-	for range 3 {
-		resourceTick(t, s, clock)
-	}
-	if tg.messageCount() != 1 || !strings.Contains(tg.messagesSnapshot()[0], "至少 3 次") {
-		t.Fatal(tg.messagesSnapshot())
-	}
-	count = 0
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 2 {
-		t.Fatal("counter reset did not resolve observed condition")
-	}
-}
-
-func TestResourceSendingBudgetCapacityAndTelegramRetry(t *testing.T) {
-	s, source, tg, clock := resourceService(t)
-	for i := range 12 {
-		c := testCertificate(clock)
-		c.ID = fmt.Sprintf("%064x", i+1)
-		source.value.Certificates = append(source.value.Certificates, c)
-	}
-	saveResourceRules(t, s, &ResourceRules{CertificatesEnabled: true})
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 8 {
-		t.Fatalf("budget %d", tg.messageCount())
-	}
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 12 {
-		t.Fatalf("pending %d", tg.messageCount())
-	}
-	s.mu.Lock()
-	s.alerts = map[string]alertState{}
-	for i := range MaxAlertStates {
-		s.alerts[fmt.Sprintf("host-1:full-%d", i)] = alertState{Active: true}
-	}
-	s.mu.Unlock()
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 12 || len(s.alertStateSnapshot()) != MaxAlertStates {
-		t.Fatal("capacity exceeded or untracked notification sent")
-	}
-	s.mu.Lock()
-	s.alerts = map[string]alertState{}
-	s.mu.Unlock()
-	source.value.Certificates = source.value.Certificates[:1]
-	tg.sendErr = errors.New("test Telegram failure")
-	resourceTick(t, s, clock)
-	state := s.getAlertState(resourceStatePrefix + "certificate:" + source.value.Certificates[0].ID)
-	first := state.LastAttemptAt
-	tg.sendErr = nil
-	resourceTick(t, s, clock)
-	if !s.getAlertState(resourceStatePrefix+"certificate:"+source.value.Certificates[0].ID).LastAttemptAt.Equal(first) || tg.messageCount() != 12 {
-		t.Fatal("retried before five minutes")
-	}
-	clock.Advance(5 * time.Minute)
-	resourceTick(t, s, clock)
-	if tg.messageCount() != 13 {
-		t.Fatal("failed notification not retried")
-	}
-}
-
-func TestResourceRulesOldClientPreservesAndLimits(t *testing.T) {
-	s, source, _, clock := resourceService(t)
-	c := testContainer()
-	source.value.Containers = []ContainerResource{c}
-	saveResourceRules(t, s, &ResourceRules{CertificatesEnabled: true, Containers: []ContainerRule{{ID: c.ID, Enabled: true}}})
-	old := s.Snapshot()
-	old.Rules.ResourceAlerts = nil
-	got, err := s.Configure(context.Background(), UpdateInput{Enabled: true, Rules: old.Rules, ExpectedResourceVersion: old.ResourceVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Rules.ResourceAlerts == nil || !got.Rules.ResourceAlerts.CertificatesEnabled || len(got.Rules.ResourceAlerts.Containers) != 1 {
-		t.Fatal("old client erased rules")
-	}
-	tooLong := clock.Now().Add(25 * time.Hour)
-	if validateResourceRules(&ResourceRules{PausedUntil: &tooLong}, clock.Now()) == nil {
-		t.Fatal("unbounded pause")
-	}
-	if validateResourceRules(&ResourceRules{Containers: []ContainerRule{{ID: c.ID}, {ID: c.ID}}}, clock.Now()) == nil {
-		t.Fatal("duplicate selection")
-	}
-	source.value.Containers = nil
-	clock.Advance(time.Minute)
-	got.Resources = s.resourceSnapshot(context.Background())
-	saveResourceRules(t, s, &ResourceRules{})
-	next := s.Snapshot()
-	next.Rules.ResourceAlerts = &ResourceRules{Containers: []ContainerRule{{ID: c.ID, Enabled: true}}}
-	_, err = s.Configure(context.Background(), UpdateInput{Enabled: true, Rules: next.Rules, ExpectedResourceVersion: next.ResourceVersion})
-	if err == nil {
-		t.Fatal("deleted ID silently selected")
-	}
-}
-
-func TestResourceReadCacheAndDisabledBudget(t *testing.T) {
-	s, source, _, clock := resourceService(t)
-	for range 20 {
-		s.Snapshot()
-	}
-	if source.calls != 1 {
-		t.Fatalf("uncached source calls %d", source.calls)
-	}
-	for range 3 {
-		resourceTick(t, s, clock)
-	}
-	if source.calls != 1 {
-		t.Fatal("disabled resources polled")
-	}
-}
-
-func TestResourceContainerSamplesSurviveRestartAndPauseDeadline(t *testing.T) {
-	s, source, tg, clock := resourceService(t)
-	c := testContainer()
-	c.State = "exited"
-	source.value.Containers = []ContainerResource{c}
-	saveResourceRules(t, s, &ResourceRules{Containers: []ContainerRule{{ID: c.ID, Enabled: true}}})
-	resourceTick(t, s, clock)
-	resourceTick(t, s, clock)
-	next, err := NewService(Config{DataDir: filepath.Dir(s.store.directory), Hosts: s.hosts, Telegram: tg, Resources: source, Now: clock.Now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer next.Close()
-	resourceTick(t, next, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("restart lost continuous samples")
-	}
-	until := clock.Now().Add(time.Minute)
-	saveResourceRules(t, next, &ResourceRules{PausedUntil: &until, Containers: []ContainerRule{{ID: c.ID, Enabled: true}}})
-	source.value.Containers[0].State = "running"
-	resourceTick(t, next, clock)
-	if tg.messageCount() != 1 {
-		t.Fatal("global pause sent recovery")
-	}
-	resourceTick(t, next, clock)
-	if tg.messageCount() != 2 {
-		t.Fatal("pause did not expire at exact deadline")
 	}
 }
 
@@ -392,5 +120,129 @@ func TestResourceFullStoreAlsoPreventsUntrackedHostDelivery(t *testing.T) {
 	})
 	if tg.messageCount() != 0 {
 		t.Fatal("full shared state store sent untracked host alert")
+	}
+}
+
+// Seed the on-disk shape produced by the released implementation. Configure
+// intentionally cannot enable or edit these rules once the feature is withdrawn.
+func seedDormantResources(t *testing.T, s *Service, clock *notificationTestClock) (*ResourceRules, map[string]alertState) {
+	t.Helper()
+	until := clock.Now().Add(time.Hour)
+	rules := &ResourceRules{CertificatesEnabled: true, PausedUntil: &until, Containers: []ContainerRule{{ID: testContainer().ID, Enabled: true, PausedUntil: &until}}}
+	states := map[string]alertState{
+		resourceStatePrefix + "certificate:" + strings.Repeat("a", 64): {Active: true, LastEventID: strings.Repeat("b", 64) + ":7", LastAttemptAt: clock.Now().Add(-time.Hour), LastNotifiedAt: clock.Now().Add(-24 * time.Hour)},
+		resourceStatePrefix + "container:" + testContainer().ID:        {Active: true, LastEventID: "unhealthy", PendingEventID: "restarting", Consecutive: 3, LastAttemptAt: clock.Now().Add(-time.Hour), RestartWindowAt: clock.Now(), RestartBaseline: 1, RestartCount: 4},
+	}
+	state := s.store.stateSnapshot()
+	state.Settings.Rules.ResourceAlerts = cloneResourceRules(rules)
+	state.AlertStates = states
+	state.ResourceVersion = configResourceVersion(state.Settings, state.Telegram)
+	if err := s.store.commitState(state); err != nil {
+		t.Fatal(err)
+	}
+	s.alerts = s.store.stateSnapshot().AlertStates
+	return rules, states
+}
+
+func TestWithdrawnResourcesRemainDormantAcrossRestartAndPauseExpiry(t *testing.T) {
+	for _, healthy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("healthy=%v", healthy), func(t *testing.T) {
+			s, source, tg, clock := resourceService(t)
+			rules, states := seedDormantResources(t, s, clock)
+			cert, container := testCertificate(clock), testContainer()
+			if healthy {
+				expiry := clock.Now().Add(90 * 24 * time.Hour)
+				cert.ExpiresAt = &expiry
+			} else {
+				container.State = "restarting"
+			}
+			source.value.Certificates = []CertificateResource{cert}
+			source.value.Containers = []ContainerResource{container}
+			for restart := range 2 {
+				if restart == 1 {
+					next, err := NewService(Config{DataDir: filepath.Dir(s.store.directory), Hosts: s.hosts, Telegram: tg, Resources: source, Now: clock.Now})
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer next.Close()
+					s = next
+				}
+				clock.Advance(25 * time.Hour)
+				for range 5 {
+					snapshot := s.Snapshot()
+					if !reflect.DeepEqual(snapshot.Rules.ResourceAlerts, rules) {
+						t.Fatal("compatibility read changed rules")
+					}
+					if !reflect.DeepEqual(snapshot.Resources, unknownResources()) {
+						t.Fatal("snapshot exposed inventory")
+					}
+					resourceTick(t, s, clock)
+				}
+				if source.calls != 0 || tg.messageCount() != 0 {
+					t.Fatalf("withdrawn resources collected/sent: %d/%d", source.calls, tg.messageCount())
+				}
+				for key, want := range states {
+					if !reflect.DeepEqual(s.alertStateSnapshot()[key], want) || !reflect.DeepEqual(s.store.stateSnapshot().AlertStates[key], want) {
+						t.Fatalf("dormant retry/recovery state changed: %s", key)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestWithdrawnResourceWritesPreserveConfigAndState(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%v", existing), func(t *testing.T) {
+			s, source, tg, clock := resourceService(t)
+			var rules *ResourceRules
+			states := s.alertStateSnapshot()
+			if existing {
+				rules, states = seedDormantResources(t, s, clock)
+			}
+			for _, incoming := range []*ResourceRules{nil, {}, {CertificatesEnabled: true, Containers: []ContainerRule{{ID: strings.Repeat("e", 64), Enabled: true}}}, {Containers: []ContainerRule{{ID: "invalid", Enabled: true}}}} {
+				snapshot := s.Snapshot()
+				input := snapshot.Rules
+				input.CPUThresholdPercent = 85
+				input.ResourceAlerts = incoming
+				got, err := s.Configure(context.Background(), UpdateInput{Enabled: true, Rules: input, ExpectedResourceVersion: snapshot.ResourceVersion})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.Rules.CPUThresholdPercent != 85 || !reflect.DeepEqual(got.Rules.ResourceAlerts, rules) {
+					t.Fatal("save lost ordinary settings or modified dormant rules")
+				}
+				if !reflect.DeepEqual(s.store.stateSnapshot().AlertStates, states) {
+					t.Fatal("save changed dormant state")
+				}
+			}
+			if source.calls != 0 {
+				t.Fatal("API write discovered resources")
+			}
+			// Original host alerts and Telegram test/discovery remain functional with
+			// dormant resource states sharing the same store and delivery budget.
+			hostSource := s.hosts.(*notificationHostSource)
+			telemetry := hostSource.host.LastSnapshot.Telemetry
+			telemetry.CPU.UsagePercent = 95
+			hostSource.setTelemetry(telemetry)
+			for range 3 {
+				resourceTick(t, s, clock)
+			}
+			if tg.messageCount() != 1 || !strings.Contains(tg.messagesSnapshot()[0], "CPU") {
+				t.Fatal("host CPU alert stopped")
+			}
+			if _, err := s.Discover(context.Background(), s.Snapshot().ResourceVersion); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Test(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if tg.messageCount() != 2 {
+				t.Fatal("Telegram test stopped")
+			}
+			if source.calls != 0 {
+				t.Fatal("Telegram operation discovered resources")
+			}
+		})
 	}
 }

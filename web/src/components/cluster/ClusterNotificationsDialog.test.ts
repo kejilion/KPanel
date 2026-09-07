@@ -29,48 +29,37 @@ async function open() {
 beforeEach(() => { vi.clearAllMocks(); mocks.read.mockResolvedValue(snapshot()); mocks.save.mockImplementation(async (input) => ({ ...snapshot(), ...input, resourceVersion: 'v2' })) })
 afterEach(() => wrappers.splice(0).forEach((wrapper) => wrapper.unmount()))
 
-describe('local resource notifications', () => {
-  it('starts disabled, selects only explicit containers and saves bounded maintenance pauses', async () => {
+describe('withdrawn local resource notifications', () => {
+  it('hides resources even when a compatible server returns enabled rules and inventory', async () => {
+    const value: any = snapshot()
+    value.rules.resourceAlerts = { certificatesEnabled: true, containers: [{ id: 'b'.repeat(64), enabled: true }] }
+    mocks.read.mockResolvedValue(value)
     const wrapper = await open()
-    expect((wrapper.get('input[aria-label="启用证书到期提醒"]').element as HTMLInputElement).checked).toBe(false)
-    expect(wrapper.get('input[aria-label="提醒容器 unknown"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('已过期')
-    await wrapper.get('input[aria-label="启用证书到期提醒"]').setValue(true)
-    await wrapper.get('input[aria-label="提醒容器 important"]').setValue(true)
-    await wrapper.findAll('button').find((button) => button.text() === '暂停 1 小时')!.trigger('click')
+    expect(wrapper.find('.resource-notifications').exists()).toBe(false)
+    for (const text of ['本机资源提醒', 'expired.test', 'important', '启用证书到期提醒']) expect(wrapper.text()).not.toContain(text)
+    for (const label of ['CPU 阈值百分比', '内存阈值百分比', '磁盘阈值百分比', '流量阈值', '累计接收阈值', '累计传送阈值', '启用主机掉线通知', '启用 SSH 登录通知']) expect(wrapper.find(`input[aria-label="${label}"]`).exists()).toBe(true)
+    await wrapper.get('input[aria-label="CPU 阈值百分比"]').setValue(85)
     await wrapper.findAll('button').find((button) => button.text() === '保存设置')!.trigger('click'); await flushPromises()
-    const rules = mocks.save.mock.calls[0]![0].rules.resourceAlerts
-    expect(rules.certificatesEnabled).toBe(true)
-    expect(rules.containers).toHaveLength(1)
-    expect(rules.containers[0].id).toBe('b'.repeat(64))
-    expect(Date.parse(rules.containers[0].pausedUntil) - Date.now()).toBeGreaterThan(3_500_000)
+    const input = mocks.save.mock.calls[0]![0]
+    expect(input.rules.cpuThresholdPercent).toBe(85)
+    expect(input.rules.resourceAlerts).toBeUndefined()
+    expect(input.expectedResourceVersion).toBe('v1')
   })
-  it('keeps source failures unknown and permits removing a missing selection', async () => {
-    const value: any = snapshot(); value.resources.containerStatus = 'unknown'; value.resources.containers = []
-    value.rules.resourceAlerts = { certificatesEnabled: false, containers: [{ id: 'b'.repeat(64), enabled: true }] }
-    mocks.read.mockResolvedValue(value); const wrapper = await open()
-    expect(wrapper.text()).toContain('容器读取不可用，当前状态未知。')
-    const checkbox = wrapper.get('input[aria-label="提醒容器 bbbbbbbbbbbb"]'); expect(checkbox.attributes('disabled')).toBeUndefined()
-    await checkbox.setValue(false); expect(wrapper.text()).not.toContain('bbbbbbbbbbbb')
-  })
-  it('does not send new fields back to an old notification API', async () => {
+  it('remains compatible with an old API without resource fields', async () => {
     const value: any = snapshot(); delete value.resources; mocks.read.mockResolvedValue(value)
-    const wrapper = await open(); expect(wrapper.text()).toContain('当前服务尚不支持本机资源提醒。')
+    const wrapper = await open()
+    expect(wrapper.text()).not.toContain('本机资源提醒')
     await wrapper.findAll('button').find((button) => button.text() === '保存设置')!.trigger('click'); await flushPromises()
     expect(mocks.save.mock.calls[0]![0].rules.resourceAlerts).toBeUndefined()
   })
-  it('marks old observations stale and prevents selecting them as current resources', async () => {
-    const value = snapshot(); value.resources.observedAt = new Date(Date.now() - 120_000).toISOString(); mocks.read.mockResolvedValue(value)
-    const wrapper = await open(); expect(wrapper.text()).toContain('资源状态已过期，请重新读取。')
-    expect(wrapper.get('input[aria-label="提醒容器 important"]').attributes('disabled')).toBeDefined()
-  })
-  it('shows a real read failure with retry', async () => {
+  it('shows a read failure and recovers through retry', async () => {
     mocks.read.mockRejectedValueOnce(new Error('fixture unavailable')); const wrapper = await open()
     expect(wrapper.text()).toContain('暂时无法读取通知设置')
     await wrapper.findAll('button').find((button) => button.text() === '重试')!.trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('本机资源提醒')
+    expect(wrapper.text()).toContain('事件通知')
+    expect(wrapper.text()).not.toContain('本机资源提醒')
   })
-  it('covers every dedicated notification phrase in English and Traditional Chinese', () => {
+  it('retains translated compatibility phrases', () => {
     for (const entries of [english, traditional]) { const catalog = new Map<string, string>(entries); for (const text of Object.values(notificationPhrases)) expect(catalog.get(text)?.trim()).toBeTruthy() }
     expect(new Set(english.map(([source]) => source))).toEqual(new Set(traditional.map(([source]) => source)))
   })

@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { CheckCircle2, LoaderCircle, RefreshCw, Send, ShieldCheck } from '@lucide/vue'
-import { notificationPhrases } from '@/i18n/pages/ClusterNotifications/labels'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import type { ClusterNotificationRules, ClusterNotificationSnapshot, ClusterNotificationResourceRules } from '@/types/api'
+import type { ClusterNotificationRules, ClusterNotificationSnapshot } from '@/types/api'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/ClusterNotifications/en-US').then((module) => module.default)
@@ -32,59 +31,6 @@ const errorMessage = ref('')
 const statusMessage = ref('')
 let loadController: AbortController | undefined
 let loadSequence = 0
-
-const resourceClock = ref(Date.now())
-let resourceClockTimer: ReturnType<typeof setInterval> | undefined
-watch(() => props.open, (open) => {
-  if (resourceClockTimer) clearInterval(resourceClockTimer)
-  resourceClockTimer = undefined
-  resourceClock.value = Date.now()
-  if (open) resourceClockTimer = setInterval(() => { resourceClock.value = Date.now() }, 30_000)
-}, { immediate: true })
-onBeforeUnmount(() => { if (resourceClockTimer) clearInterval(resourceClockTimer) })
-const resourcesStale = computed(() => {
-  const observed = Date.parse(snapshot.value?.resources?.observedAt || '')
-  return !Number.isFinite(observed) || resourceClock.value - observed > 90_000 || observed > resourceClock.value + 5000
-})
-const resourceRules = reactive<ClusterNotificationResourceRules>({ certificatesEnabled: false, containers: [] })
-const resourceContainers = computed(() => {
-  const current = snapshot.value?.resources?.containers || []
-  const ids = new Set(current.map((item) => item.id))
-  return [...current, ...resourceRules.containers.filter((rule) => !ids.has(rule.id)).map((rule) => ({
-    id: rule.id, name: rule.id.slice(0, 12), state: '', known: false, resourceVersion: '', health: '',
-  }))]
-})
-
-function containerRule(id: string) { return resourceRules.containers.find((rule) => rule.id === id) }
-function selectContainer(id: string, event: Event): void {
-  const enabled = (event.target as HTMLInputElement).checked
-  const existing = containerRule(id)
-  if (existing) existing.enabled = enabled
-  else if (enabled) resourceRules.containers.push({ id, enabled })
-  resourceRules.containers = resourceRules.containers.filter((rule) => rule.enabled)
-}
-function pauseResources(): void { resourceRules.pausedUntil = new Date(Date.now() + 3_600_000).toISOString() }
-function pauseContainer(id: string): void { const rule = containerRule(id); if (rule) rule.pausedUntil = new Date(Date.now() + 3_600_000).toISOString() }
-function resumeContainer(id: string): void { const rule = containerRule(id); if (rule) rule.pausedUntil = undefined }
-function certificateState(known: boolean, expiresAt?: string): string {
- if (resourcesStale.value) return notificationPhrases.stale
- if (!known || !expiresAt) return notificationPhrases.unknown
- const remaining = Date.parse(expiresAt) - Date.now()
- return remaining <= 0 ? notificationPhrases.expired : remaining <= 30 * 86400000 ? notificationPhrases.expiring : notificationPhrases.valid
-}
-function isPaused(value?: string): boolean { return Boolean(value && Date.parse(value) > resourceClock.value) }
-function maintenanceLabel(value: string): string {
-  return value === 'custom' ? notificationPhrases.customMaintenance : value === 'automatic' ? notificationPhrases.automaticMaintenance : notificationPhrases.maintenanceUnknown
-}
-function containerState(item: { known: boolean; state: string; health?: string }): string {
-  if (resourcesStale.value) return notificationPhrases.stale
-  if (!item.known) return notificationPhrases.missing
-  if (item.state === 'restarting') return notificationPhrases.restarting
-  if (item.state !== 'running') return notificationPhrases.notRunning
-  if (item.health === 'unhealthy') return notificationPhrases.unhealthy
-  if (item.health === 'starting') return notificationPhrases.starting
-  return notificationPhrases.running
-}
 
 const form = reactive({
   enabled: false,
@@ -150,10 +96,6 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.sshLoginEnabled = value.rules.sshLoginEnabled
   form.hostOfflineEnabled = value.rules.hostOfflineEnabled
   form.telegramBotToken = ''
-  resourceClock.value = Date.now()
-  resourceRules.certificatesEnabled = value.rules.resourceAlerts?.certificatesEnabled ?? false
-  resourceRules.pausedUntil = value.rules.resourceAlerts?.pausedUntil
-  resourceRules.containers = (value.rules.resourceAlerts?.containers || []).map((rule) => ({ ...rule }))
   if (modalControl) {
     void nextTick(() => {
       if (modalControl.isConnected) {
@@ -174,11 +116,6 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
 
 function rulesFromForm(): ClusterNotificationRules {
   return {
-    ...(snapshot.value?.resources ? { resourceAlerts: {
-      certificatesEnabled: resourceRules.certificatesEnabled,
-      pausedUntil: resourceRules.pausedUntil,
-      containers: resourceRules.containers.map((rule) => ({ ...rule })),
-    } } : {}),
     cpuEnabled: form.cpuEnabled,
     cpuThresholdPercent: form.cpuThresholdPercent,
     memoryEnabled: form.memoryEnabled,
@@ -494,58 +431,6 @@ onBeforeUnmount(() => {
               <span class="cluster-notifications__threshold"><input v-model.number="form.trafficTotalSentThresholdGiB" type="number" min="1" max="1048576" :aria-label="phrase('累计传送阈值')" /><em>GiB</em></span>
             </label>
           </div>
-        </section>
-
-        <section class="cluster-notifications__section resource-notifications" aria-labelledby="resource-notifications-title">
-          <h3 id="resource-notifications-title">{{ phrase(notificationPhrases.title) }}</h3>
-          <p>{{ phrase(notificationPhrases.scope) }}</p>
-          <p v-if="!snapshot.resources" role="status">{{ phrase(notificationPhrases.unsupported) }}</p>
-          <template v-else>
-            <div class="resource-notifications__actions">
-              <button type="button" class="button button--secondary" @click="load">{{ phrase(notificationPhrases.refresh) }}</button>
-              <small v-if="snapshot.resources.observedAt">{{ phrase(notificationPhrases.observedAt) }} {{ formatDateTime(snapshot.resources.observedAt) }}</small>
-            </div>
-            <p v-if="resourcesStale" role="status">{{ phrase(notificationPhrases.stale) }}</p>
-            <p v-if="snapshot.resources.stateCapacityReached" role="status" class="resource-notifications__warning">{{ phrase(notificationPhrases.capacity) }}</p>
-            <div class="resource-notifications__actions">
-              <button type="button" class="button button--secondary" @click="pauseResources">{{ phrase(notificationPhrases.pauseAll) }}</button>
-              <button v-if="isPaused(resourceRules.pausedUntil)" type="button" class="button button--secondary" @click="resourceRules.pausedUntil = undefined">{{ phrase(notificationPhrases.resume) }}</button>
-              <span v-if="isPaused(resourceRules.pausedUntil)">{{ phrase(notificationPhrases.pausedUntil) }} {{ formatDateTime(resourceRules.pausedUntil || '') }}</span>
-            </div>
-            <p class="resource-notifications__hint">{{ phrase(notificationPhrases.saveHint) }}</p>
-            <label class="cluster-notifications__event-rule">
-              <span><strong>{{ phrase(notificationPhrases.certificates) }}</strong><small>{{ phrase(notificationPhrases.stages) }}</small></span>
-              <input v-model="resourceRules.certificatesEnabled" type="checkbox" :aria-label="phrase(notificationPhrases.enableCertificates)" />
-            </label>
-            <p v-if="snapshot.resources.certificateStatus !== 'ready'" role="status">{{ phrase(snapshot.resources.certificateStatus === 'limited' ? notificationPhrases.certLimit : notificationPhrases.certUnknown) }}</p>
-            <details v-else>
-              <summary>{{ phrase(notificationPhrases.viewCertificates) }} · {{ snapshot.resources.certificates.length }}</summary>
-              <p v-if="!snapshot.resources.certificates.length">{{ phrase(notificationPhrases.noCertificates) }}</p>
-              <div v-for="certificate in snapshot.resources.certificates" :key="certificate.id" class="resource-notifications__item">
-                <strong>{{ certificate.name }}</strong>
-                <span>{{ phrase(certificateState(certificate.known, certificate.expiresAt)) }}</span>
-                <span>{{ certificate.known && certificate.expiresAt ? formatDateTime(certificate.expiresAt) : phrase(notificationPhrases.unknown) }}</span>
-                <small>{{ phrase(maintenanceLabel(certificate.maintenance)) }}</small>
-              </div>
-            </details>
-            <h4>{{ phrase(notificationPhrases.containers) }}</h4>
-            <p>{{ phrase(notificationPhrases.containerHint) }}</p>
-            <p v-if="snapshot.resources.containerStatus !== 'ready'" role="status">{{ phrase(snapshot.resources.containerStatus === 'limited' ? notificationPhrases.containerLimit : notificationPhrases.containerUnknown) }}</p>
-            <p v-else-if="!resourceContainers.length">{{ phrase(notificationPhrases.noContainers) }}</p>
-            <div v-for="container in resourceContainers" :key="container.id" class="resource-notifications__item">
-              <label class="resource-notifications__selection">
-                <input type="checkbox" :checked="containerRule(container.id)?.enabled || false" :disabled="!containerRule(container.id)?.enabled && (resourcesStale || !container.known || resourceRules.containers.length >= 64)" :aria-label="`${phrase(notificationPhrases.selectContainer)} ${container.name}`" @change="selectContainer(container.id, $event)" />
-                <strong>{{ container.name }}</strong>
-                <span>{{ phrase(containerState(container)) }}</span>
-              </label>
-              <div v-if="containerRule(container.id)?.enabled" class="resource-notifications__actions">
-                <button type="button" class="button button--secondary" @click="pauseContainer(container.id)">{{ phrase(notificationPhrases.pauseContainer) }}</button>
-                <button v-if="isPaused(containerRule(container.id)?.pausedUntil)" type="button" class="button button--secondary" @click="resumeContainer(container.id)">{{ phrase(notificationPhrases.resume) }}</button>
-                <small v-if="isPaused(containerRule(container.id)?.pausedUntil)">{{ phrase(notificationPhrases.pausedUntil) }} {{ formatDateTime(containerRule(container.id)?.pausedUntil || '') }}</small>
-              </div>
-            </div>
-            <p class="resource-notifications__hint">{{ phrase(notificationPhrases.selectionHint) }}</p>
-          </template>
         </section>
 
         <section class="cluster-notifications__section">
@@ -996,17 +881,4 @@ onBeforeUnmount(() => {
   }
 }
 
-.resource-notifications { display: grid; gap: 12px; min-width: 0; }
-.resource-notifications p { margin: 0; line-height: 1.6; font-size: .875rem; }
-.resource-notifications h4 { margin: 4px 0 0; font-size: .875rem; }
-.resource-notifications summary { cursor: pointer; font-size: .875rem; padding: 8px 0; }
-.resource-notifications__item { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere; }
-.resource-notifications__item strong, .resource-notifications__item span { font-size: .875rem; }
-.resource-notifications small, .resource-notifications .resource-notifications__hint { font-size: .8125rem; line-height: 1.5; color: var(--text-soft); }
-.resource-notifications__selection { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.resource-notifications__selection input { width: 20px; height: 20px; flex-shrink: 0; }
-.resource-notifications__selection strong { flex: 1; min-width: 100px; }
-.resource-notifications__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .875rem; }
-.resource-notifications .button { font-size: .875rem; white-space: normal; }
-.resource-notifications__warning { color: var(--text); background: var(--surface-subtle); padding: 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
 </style>

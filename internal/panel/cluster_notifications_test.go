@@ -32,6 +32,8 @@ func TestClusterNotificationsAPIUsesSessionCSRFAndHidesChannelSecrets(t *testing
 	}
 
 	rules := notification.DefaultRules()
+	// A direct authenticated PUT cannot create withdrawn resource rules.
+	rules.ResourceAlerts = &notification.ResourceRules{CertificatesEnabled: true, Containers: []notification.ContainerRule{{ID: strings.Repeat("a", 64), Enabled: true}}}
 	body, err := json.Marshal(notification.UpdateInput{
 		Enabled: false, Rules: rules, ExpectedResourceVersion: snapshot.ResourceVersion,
 	})
@@ -60,6 +62,9 @@ func TestClusterNotificationsAPIUsesSessionCSRFAndHidesChannelSecrets(t *testing
 	}
 	if err := json.Unmarshal(updated.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
+	}
+	if snapshot.Rules.ResourceAlerts != nil || len(snapshot.Resources.Certificates) != 0 || len(snapshot.Resources.Containers) != 0 {
+		t.Fatal("direct API write enabled withdrawn resources")
 	}
 	if snapshot.Enabled || snapshot.Telegram.Configured {
 		t.Fatalf("unexpected notification snapshot = %#v", snapshot)
