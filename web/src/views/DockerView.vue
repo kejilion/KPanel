@@ -15,6 +15,7 @@ import {
   Boxes,
   BrushCleaning,
   ChevronRight,
+  CircleArrowUp,
   CircleStop,
   Container,
   Copy,
@@ -42,9 +43,9 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
-import { localizeError, localizeImageUpdateError } from '@/i18n/errors'
+import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
-import { useDockerImageUpdates, type DockerUpdateStatus } from '@/lib/dockerImageUpdate'
+import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import {
   contextMenuFocusOrigin,
   type ContextMenuFocusOrigin,
@@ -126,7 +127,6 @@ const error = ref('')
 const search = ref('')
 const activeTab = ref<DockerTab>('containers')
 const documentVisible = ref(typeof document === 'undefined' || document.visibilityState !== 'hidden')
-const showUpdateDetails = ref(false)
 function updateDocumentVisibility() { documentVisible.value = document.visibilityState !== 'hidden' }
 const imageUpdates = useDockerImageUpdates(
   computed(() => data.value?.containers || []),
@@ -134,17 +134,6 @@ const imageUpdates = useDockerImageUpdates(
   (id, version, signal) => api.docker.checkUpdate(id, version, signal),
 )
 const imageUpdateEntries = imageUpdates.entries
-const imageUpdateBusy = imageUpdates.busy
-function imageUpdateLabel(status?: DockerUpdateStatus): string {
-  const labels: Record<DockerUpdateStatus, string> = {
-    checking: '正在检查', available: '有镜像更新', current: '未发现更新',
-    fixed: '固定版本', unavailable: '无法确认 · 重试', expired: '结果已过期 · 重新检查',
-  }
-  return phrase(status ? labels[status] : '等待检查')
-}
-function imageUpdateReason(code?: string): string {
-  return localizeImageUpdateError({ code })
-}
 const resourceSort = ref<ResourceSort>('smart')
 const containerSort = ref<ContainerSort>('smart')
 const taskRunning = ref(false)
@@ -1612,9 +1601,6 @@ onBeforeUnmount(() => {
                 </select>
               </div>
               <div class="card-actions">
-                <button class="button button--secondary button--small docker-update-details" type="button" :aria-pressed="showUpdateDetails"
-                  :title="phrase('打开容器页后自动检查，仅提示有更新；不会拉取或重建容器。')"
-                  @click="showUpdateDetails = !showUpdateDetails"><RefreshCw :size="15" /> {{ phrase(showUpdateDetails ? '收起检查详情' : '检查详情') }}</button>
                 <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
                   <BrushCleaning :size="15" /> 清理停止容器
                 </button>
@@ -1675,18 +1661,14 @@ onBeforeUnmount(() => {
                   >
                   <td>
                     <div class="resource-name">
-                      <span class="resource-name__icon resource-name__icon--docker"><Container :size="18" /></span>
-                      <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small>
-                        <span v-if="showUpdateDetails || imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update">
-                          <button class="docker-image-update__button" type="button"
-                            :data-update-status="imageUpdateEntries[container.id]?.status || 'unchecked'"
-                            :disabled="!container.resourceVersion || imageUpdateBusy || imageUpdateEntries[container.id]?.status === 'checking'"
-                            :title="phrase('仅检查当前镜像标签，不代表上游最高版本；不会拉取或重建容器。')"
-                            @click="showUpdateDetails ? imageUpdates.check(container) : (showUpdateDetails = true)">{{ imageUpdateLabel(imageUpdateEntries[container.id]?.status) }}</button>
-                          <small v-if="showUpdateDetails && imageUpdateEntries[container.id]?.checkedAt">{{ phrase('检查时间') }} · {{ formatDateTime(imageUpdateEntries[container.id]!.checkedAt!) }}</small>
-                          <small v-if="showUpdateDetails && imageUpdateEntries[container.id]?.status === 'unavailable'">{{ imageUpdateReason(imageUpdateEntries[container.id]?.reason) }}</small>
+                      <span class="resource-name__icon resource-name__icon--docker docker-container-icon">
+                        <Container :size="18" />
+                        <span v-if="imageUpdateEntries[container.id]?.status === 'available'" class="docker-image-update"
+                          role="img" :aria-label="phrase('有镜像更新')" :title="phrase('有镜像更新')">
+                          <CircleArrowUp :size="14" aria-hidden="true" />
                         </span>
                       </span>
+                      <span><strong>{{ container.name }}</strong><small :title="container.image">{{ container.image }}</small></span>
                     </div>
                   </td>
                   <td><div class="table-stack"><StatusBadge :status="container.state" /><small>{{ container.statusText || '—' }}</small></div></td>
@@ -2189,14 +2171,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.docker-image-update { display: grid; gap: 4px; margin-top: 8px; white-space: normal; }
-.docker-update-details { font-size: 0.875rem; }
-.docker-image-update__button { justify-self: start; min-height: 24px; padding: 2px 0; border: 0; background: transparent; color: var(--text-soft); font: inherit; font-size: 0.875rem; line-height: 1.5; text-align: start; cursor: pointer; white-space: normal; }
-.docker-image-update__button:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: var(--radius-sm); }
-.docker-image-update__button:disabled { cursor: default; }
-.docker-image-update__button[data-update-status="available"] { color: var(--warning); font-weight: 600; }
-.docker-image-update__button[data-update-status="current"] { color: var(--success); }
-.docker-image-update small { font-size: 0.8125rem; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
+.docker-container-icon { position: relative; }
+.docker-image-update { position: absolute; top: -3px; right: -3px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); color: var(--warning); cursor: default; }
 .docker-page { gap: 14px; }
 .docker-job { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(160px, 28%); align-items: center; gap: 12px; }
 .docker-job span { display: grid; gap: 3px; }
