@@ -2,6 +2,7 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import dialogSource from './ClusterNotificationsDialog.vue?raw'
 import Dialog from './ClusterNotificationsDialog.vue'
 import english from '@/i18n/pages/ClusterNotifications/en-US'
 import traditional from '@/i18n/pages/ClusterNotifications/zh-TW'
@@ -30,6 +31,10 @@ beforeEach(() => { vi.clearAllMocks(); mocks.read.mockResolvedValue(snapshot());
 afterEach(() => wrappers.splice(0).forEach((wrapper) => wrapper.unmount()))
 
 describe('withdrawn local resource notifications', () => {
+  it('keeps editable threshold values at the 14px control baseline', () => {
+    const rule = dialogSource.match(/\.cluster-notifications__threshold input\s*\{([^}]+)\}/)?.[1]
+    expect(rule).toMatch(/font-size:\s*14px;/)
+  })
   it('hides resources even when a compatible server returns enabled rules and inventory', async () => {
     const value: any = snapshot()
     value.rules.resourceAlerts = { certificatesEnabled: true, containers: [{ id: 'b'.repeat(64), enabled: true }] }

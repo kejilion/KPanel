@@ -830,6 +830,7 @@ onBeforeUnmount(() => {
   width: 72px;
   height: 34px;
   padding: 0 8px;
+  font-size: 14px;
   color: var(--text);
   text-align: right;
   background: var(--surface);
