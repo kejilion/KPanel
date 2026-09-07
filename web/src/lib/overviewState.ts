@@ -3,7 +3,7 @@ import type { SystemOverview } from '@/types/api'
 // Keep the last explicitly observed state during background refresh. This
 // prevents cards/forms from collapsing every polling interval; its old time
 // and refreshing marker remain visible until this group's response arrives.
-export function mergeOverviewUpdate(previous: SystemOverview, incoming: SystemOverview): SystemOverview {
+export function mergeOverviewUpdate(previous: SystemOverview, incoming: SystemOverview, preserveResources = false): SystemOverview {
   if (!previous.reads || !incoming.reads) return incoming
   const reads = { ...incoming.reads }
   let management = incoming.management
@@ -23,7 +23,14 @@ export function mergeOverviewUpdate(previous: SystemOverview, incoming: SystemOv
       management = { ...management, capabilities: previous.management.capabilities }
     }
   }
-  return { ...incoming, reads, management }
+  // Optional resources have no per-group completion marker. During a refresh,
+  // replace them atomically at request completion, not with empty partials.
+  // Runtime and independently observed management groups still update immediately.
+  const resources = preserveResources ? {
+    publicNetwork: previous.publicNetwork, services: previous.services,
+    sites: previous.sites, containers: previous.containers, apps: previous.apps,
+  } : {}
+  return { ...incoming, ...resources, reads, management }
 }
 
 // Structural defaults support rendering the static tool catalog. They are not

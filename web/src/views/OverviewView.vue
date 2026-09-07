@@ -97,6 +97,7 @@ const props = withDefaults(defineProps<{
 
 const data = ref<SystemOverview>(pendingOverview())
 const runtimeReady = computed(() => !data.value.reads?.runtime || data.value.reads.runtime.state === 'ready')
+const contentReady = computed(() => props.systemCenterOnly || runtimeReady.value)
 const failedReads = computed(() => Object.values(data.value.reads || {}).some((read) => read?.state === 'error'))
 const loading = ref(true)
 const refreshing = ref(false)
@@ -1042,18 +1043,27 @@ async function load(silent = false): Promise<void> {
   if (silent) refreshing.value = true
   else loading.value = true
   error.value = ''
+  const preserveResources = runtimeReady.value
+
+  const acceptSnapshot = (snapshot: SystemOverview, partial: boolean) => {
+    if (snapshot.reads?.runtime?.state === 'error' && !props.systemCenterOnly) {
+      error.value = '无法读取主机状态。'
+      loading.value = false
+      return
+    }
+    data.value = partial ? mergeOverviewUpdate(data.value, snapshot, preserveResources) : snapshot
+    loading.value = !runtimeReady.value
+    if (snapshot.agent.version) panel.setAgent(snapshot.agent)
+  }
 
   try {
     const onPartial = (partial: SystemOverview) => {
-          if (current.signal.aborted || controller !== current) return
-          data.value = mergeOverviewUpdate(data.value, partial)
-          loading.value = false
-          if (partial.agent.version) panel.setAgent(partial.agent)
-        }
+      if (current.signal.aborted || controller !== current) return
+      acceptSnapshot(partial, true)
+    }
     const complete = await api.overview.get(current.signal, onPartial)
     if (current.signal.aborted || controller !== current) return
-    data.value = complete
-    if (complete.agent.version) panel.setAgent(complete.agent)
+    acceptSnapshot(complete, false)
   } catch (reason) {
     if (current.signal.aborted || controller !== current) return
     if (reason instanceof DOMException && reason.name === 'AbortError') return
@@ -1119,7 +1129,7 @@ onBeforeUnmount(() => {
     <LoadingState v-if="!runtimeReady && !props.systemCenterOnly && loading" :rows="4" cards />
     <ErrorState v-if="error && !runtimeReady" :message="error" @retry="load()" />
 
-    <template v-if="data">
+    <template v-if="contentReady">
       <div v-if="error && runtimeReady" class="inline-alert inline-alert--warning" role="status">
         自动刷新暂时失败，正在显示上一次观测结果。
       </div>
@@ -1492,10 +1502,8 @@ onBeforeUnmount(() => {
                   </span>
                 </span>
                 <strong>{{ tool.title }}</strong>
-                <small>{{ phrase(tool.description) }}</small>
-                <span>{{ phrase(toolStatusValue(tool)) }}</span>
+                <span :title="toolObservedAt(tool)">{{ phrase(toolStatusValue(tool)) }}</span>
                 <small v-if="toolReadState(tool) === 'ready'">{{ managementDetailLabel(tool.detail) }}</small>
-                <small v-if="toolObservedAt(tool)">{{ toolObservedAt(tool) }}</small>
                 <span
                   v-if="
                     section.id === 'maintenance' &&
@@ -1594,10 +1602,8 @@ onBeforeUnmount(() => {
             </span>
             <span class="overview-system-card__body">
               <strong>{{ tool.title }}</strong>
-              <small>{{ phrase(tool.description) }}</small>
-              <span>{{ phrase(toolStatusValue(tool)) }}</span>
+              <span :title="toolObservedAt(tool)">{{ phrase(toolStatusValue(tool)) }}</span>
               <small v-if="toolReadState(tool) === 'ready'">{{ managementDetailLabel(tool.detail) }}</small>
-              <small v-if="toolObservedAt(tool)">{{ toolObservedAt(tool) }}</small>
             </span>
             <ChevronRight class="overview-system-card__arrow" :size="17" />
           </button>

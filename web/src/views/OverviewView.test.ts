@@ -2,6 +2,7 @@ import { createSSRApp, ssrContextKey, type ComputedRef, type Ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OverviewView from './OverviewView.vue'
 import type { SystemOverview } from '@/types/api'
+import { pendingOverview } from '@/lib/overviewState'
 
 const mocks = vi.hoisted(() => ({
   overviewGet: vi.fn(),
@@ -26,6 +27,9 @@ vi.mock('@/stores/toast', () => ({
 
 interface OverviewBindings {
   data: Ref<SystemOverview | undefined>
+  contentReady: ComputedRef<boolean>
+  loading: Ref<boolean>
+  error: Ref<string>
   basicSettings: ComputedRef<Array<{ id: string; title: string; capability: string }>>
   networkTools: ComputedRef<Array<{ id: string; title: string; capability: string }>>
   overviewSystemTools: ComputedRef<Array<{ id: string; title: string; capability: string }>>
@@ -40,15 +44,15 @@ interface OverviewBindings {
   load: (silent?: boolean) => Promise<void>
 }
 
-function setupView(): OverviewBindings {
+function setupView(systemCenterOnly = false): OverviewBindings {
   const component = OverviewView as unknown as {
-    setup: (props: Record<string, never>, context: { expose: () => void }) => OverviewBindings
+    setup: (props: { systemCenterOnly: boolean }, context: { expose: () => void }) => OverviewBindings
   }
   const app = createSSRApp({ render: () => null })
   app.provide(ssrContextKey, { modules: new Set<string>() })
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
-    return app.runWithContext(() => component.setup({}, { expose: () => undefined }))
+    return app.runWithContext(() => component.setup({ systemCenterOnly }, { expose: () => undefined }))
   } finally {
     warn.mockRestore()
   }
@@ -77,6 +81,96 @@ beforeEach(() => {
 })
 
 describe('OverviewView refresh stability', () => {
+  it('keeps observed resources during partial refresh, but accepts genuine empty completion', async () => {
+    const initial = pendingOverview()
+    initial.reads!.runtime = { state: 'ready' }
+    initial.services = [{ id: 'test', name: 'Test', state: 'running' }]
+    initial.sites = { total: 4, healthy: 4, drifted: 0 }
+    initial.publicNetwork = { ipv4: '192.0.2.1', source: 'test' }
+    mocks.overviewGet.mockResolvedValueOnce(initial)
+    const view = setupView()
+    await view.load()
+    let update!: (value: SystemOverview) => void
+    let complete!: (value: SystemOverview) => void
+    mocks.overviewGet.mockImplementationOnce((_signal, onUpdate) => {
+      update = onUpdate
+      return new Promise<SystemOverview>((resolve) => { complete = resolve })
+    })
+    const request = view.load(true)
+    const partial = pendingOverview()
+    partial.reads!.runtime = { state: 'ready' }
+    partial.cpu.value = 47
+    update(partial)
+    expect(view.data.value!.services).toEqual(initial.services)
+    expect(view.data.value!.sites).toEqual(initial.sites)
+    expect(view.data.value!.publicNetwork).toEqual(initial.publicNetwork)
+    expect(view.data.value!.cpu.value).toBe(47)
+    expect(view.contentReady.value).toBe(true)
+    complete(partial)
+    await request
+    expect(view.data.value!.services).toEqual([])
+    expect(view.data.value!.sites).toBeUndefined()
+    expect(view.data.value!.publicNetwork).toEqual({})
+  })
+
+  it('reports returned runtime errors, retaining prior content only if it was observed', async () => {
+    const failed = pendingOverview()
+    failed.reads!.runtime = { state: 'error' }
+    mocks.overviewGet.mockImplementationOnce(async (_signal, update) => { update(failed); return failed })
+    const view = setupView()
+    await view.load()
+    expect(view.contentReady.value).toBe(false)
+    expect(view.loading.value).toBe(false)
+    expect(view.error.value).not.toBe('')
+    mocks.overviewGet.mockResolvedValueOnce(overview('retry'))
+    await view.load()
+    expect(view.contentReady.value).toBe(true)
+    expect(view.error.value).toBe('')
+    mocks.overviewGet.mockImplementationOnce(async (_signal, update) => { update(failed); return failed })
+    await view.load(true)
+    expect(view.contentReady.value).toBe(true)
+    expect(view.data.value!.agent.version).toBe('retry')
+    expect(view.error.value).not.toBe('')
+  })
+
+  it('keeps the overview skeleton until runtime, then reveals ordered content without waiting for management', async () => {
+    let update!: (value: SystemOverview) => void
+    let complete!: (value: SystemOverview) => void
+    mocks.overviewGet.mockImplementationOnce((_signal, onUpdate) => {
+      update = onUpdate
+      return new Promise<SystemOverview>((resolve) => { complete = resolve })
+    })
+    const view = setupView()
+    const request = view.load()
+    expect(view.contentReady.value).toBe(false)
+    expect(view.loading.value).toBe(true)
+    const capabilitiesOnly = pendingOverview()
+    capabilitiesOnly.reads!.capabilities = { state: 'ready' }
+    update(capabilitiesOnly)
+    expect(view.contentReady.value).toBe(false)
+    expect(view.loading.value).toBe(true)
+    const runtime = pendingOverview()
+    runtime.reads!.runtime = { state: 'ready' }
+    update(runtime)
+    expect(view.contentReady.value).toBe(true)
+    expect(view.loading.value).toBe(false)
+    expect(view.toolReadState({ id: 'dns' })).toBe('loading')
+    complete(runtime)
+    await request
+  })
+
+  it('keeps the system center catalog immediate and leaves runtime failure recoverable on overview', async () => {
+    expect(setupView(true).contentReady.value).toBe(true)
+    mocks.overviewGet.mockRejectedValueOnce(new Error('runtime unavailable'))
+    const view = setupView()
+    await view.load()
+    expect(view.contentReady.value).toBe(false)
+    expect(view.loading.value).toBe(false)
+    mocks.overviewGet.mockResolvedValueOnce(overview('retry'))
+    await view.load()
+    expect(view.contentReady.value).toBe(true)
+  })
+
   it('renders every tool title before network data and protects unknown action state', () => {
     const view = setupView()
     expect(view.basicSettings.value.length).toBeGreaterThan(0)

@@ -8,10 +8,20 @@ const styles = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf
 const desktopStyles = readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8')
 
 describe('OverviewView service status layout', () => {
-  it('keeps static tool descriptions readable before a disabled tool can be opened', () => {
+  it('preserves title, status and detail card rows with script descriptions only in the dialog', () => {
     expect(styles).toMatch(/\.system-center-grid \.system-tool small\s*\{[^}]*white-space:\s*normal;[^}]*overflow:\s*visible;/)
-    expect(source).toContain('phrase(tool.description)')
+    expect(source).not.toContain('<small>{{ phrase(tool.description) }}</small>')
+    expect(source).not.toContain('<small v-if="toolObservedAt(tool)">')
+    expect(source).toContain(':description="selectedTool ? phrase(selectedTool.description) : \'\'"')
+    expect(source.match(/:title="toolObservedAt\(tool\)"/g)).toHaveLength(2)
     expect(source).toContain(':aria-busy="toolReadState(tool) === \'loading\'"')
+  })
+  it('gates the complete overview body together, keeping its original section order', () => {
+    expect(source).toContain('<template v-if="contentReady">')
+    const selectors = ['class="realtime-monitoring"', 'class="overview-grid"', 'class="panel-card panel-card--resource-overview"', 'class="panel-card overview-system-management"']
+    const positions = selectors.map((selector) => source.indexOf(selector))
+    expect(positions.every((position) => position > source.indexOf('<template v-if="contentReady">'))).toBe(true)
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
   })
   it('uses an explicit details wrapper instead of styling every service item span', () => {
     expect(source).toContain('<span class="service-item__details">')
