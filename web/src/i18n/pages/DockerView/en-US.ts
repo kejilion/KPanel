@@ -368,13 +368,4 @@ export default [
   ["检查详情","Check details"],
   ["收起检查详情","Hide check details"],
   ["打开容器页后自动检查，仅提示有更新；不会拉取或重建容器。","Checks automatically while this page is active. Only available updates are highlighted; images are not pulled and containers are not recreated."],
-  ["本地镜像缺少可比较摘要，可能由本地构建或导入；无法自动判断更新。","The local image has no comparable digest, possibly because it was built locally or imported. Updates cannot be determined automatically."],
-  ["镜像摘要层级或平台不一致，无法可靠判断更新。","Image digest types or platforms differ; updates cannot be determined reliably."],
-  ["仓库拒绝访问，请检查镜像是否公开及仓库访问权限。","Registry access denied. Check image visibility and registry access permissions."],
-  ["仓库标签或旧镜像摘要已移除，请核对镜像来源。","The registry tag or old image digest was removed. Check the image source."],
-  ["仓库请求受限，稍后自动重试。","Registry rate limit reached. Checks will retry later."],
-  ["连接仓库超时，请检查主机网络、代理或镜像源。","Registry connection timed out. Check the host network, proxy, or registry mirror."],
-  ["其他镜像正在检查，稍后自动重试。","Other image checks are running. Checks will retry shortly."],
-  ["容器状态已变化，请刷新列表后重试。","The container changed. Refresh the list and retry."],
-  ["暂时无法检查，请确认主机网络和仓库可访问后重试。","Unable to check right now. Verify the host network and registry access, then retry."],
 ] as const satisfies PhraseCatalog

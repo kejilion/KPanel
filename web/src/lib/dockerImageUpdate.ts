@@ -1,15 +1,13 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
-import type { DockerContainer } from '@/types/api'
+import type { DockerContainer, DockerImageUpdateResult } from '@/types/api'
+export type { DockerImageUpdateResult } from '@/types/api'
 
-export interface DockerImageUpdateResult {
-  containerId: string
-  image: string
-  status: 'available' | 'current' | 'fixed'
-  updateAvailable: boolean
-  resourceVersion: string
-  checkedAt: string
-  localDigest?: string
-  remoteDigest?: string
+export function isConfirmedImageUpdate(result: DockerImageUpdateResult): boolean {
+  return Boolean(result && typeof result.containerId === 'string' && result.containerId
+    && typeof result.resourceVersion === 'string' && result.resourceVersion
+    && ['available', 'current', 'fixed'].includes(result.status)
+    && result.updateAvailable === (result.status === 'available')
+    && Number.isFinite(Date.parse(result.checkedAt)))
 }
 
 export type DockerUpdateStatus = DockerImageUpdateResult['status'] | 'checking' | 'unavailable' | 'expired'
@@ -105,11 +103,11 @@ export function useDockerImageUpdates(
     try {
       const result = await request(container.id, container.resourceVersion, controller.signal)
       if (controllers.get(container.id) !== controller) return
-      if (controller.signal.aborted || result.containerId !== container.id || result.resourceVersion !== container.resourceVersion
-        || !['available', 'current', 'fixed'].includes(result.status)
-        || result.updateAvailable !== (result.status === 'available') || !Number.isFinite(Date.parse(result.checkedAt))) {
+      if (controller.signal.aborted || !isConfirmedImageUpdate(result) || result.containerId !== container.id) {
         throw new Error('Unconfirmed image update response')
       }
+      // The server may have refreshed a stale read-only snapshot. Keep the
+      // list version as our invalidation key; never advance mutation versions.
       entries.value[container.id] = { ...entry, status: result.status, checkedAt: result.checkedAt }
     } catch (error) {
       if (controllers.get(container.id) !== controller) return

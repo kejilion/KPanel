@@ -43,7 +43,7 @@ func (docker *racingUpdateDocker) CheckContainerImageUpdate(
 	}, nil
 }
 
-func TestCheckUpdateRefreshesAReadOnlyContainerConflict(t *testing.T) {
+func TestCheckUpdateUsesFreshInventoryWithoutMultiplyingSharedRetries(t *testing.T) {
 	containerID := strings.Repeat("a", 64)
 	docker := &racingUpdateDocker{
 		fakeDocker: &fakeDocker{containers: []contract.ContainerSummary{{
@@ -62,16 +62,11 @@ func TestCheckUpdateRefreshesAReadOnlyContainerConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := service.CheckUpdate(context.Background(), "builtin-28", "browser-stale-version")
-	if err != nil {
-		t.Fatal(err)
+	_, err = service.CheckUpdate(context.Background(), "builtin-28", "browser-stale-version")
+	if !errors.Is(err, dockerx.ErrResourceConflict) {
+		t.Fatalf("shared check conflict must remain visible after its retry budget: %v", err)
 	}
-	if result.ResourceVersion != "refreshed-version" {
-		t.Fatalf("result version = %q, want refreshed-version", result.ResourceVersion)
-	}
-	if len(docker.checked) != 2 ||
-		docker.checked[0] != "current-version" ||
-		docker.checked[1] != "refreshed-version" {
+	if len(docker.checked) != 1 || docker.checked[0] != "current-version" || docker.inventoryCalls != 1 {
 		t.Fatalf("checked versions = %#v", docker.checked)
 	}
 }

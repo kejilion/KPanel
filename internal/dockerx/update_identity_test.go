@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+type updateRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f updateRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
 func TestImageUpdateBoundsParallelReadsAndCancels(t *testing.T) {
 	started := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,9 +63,11 @@ func TestImageUpdateIdentityAndFailureBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name, image, repo, local, remote, localKind, remoteKind, want string
 		status                                                        int
-		race, managed                                                 bool
+		race, transientRace, managed, stale                           bool
 	}{
 		{name: "same normalized repository", image: "redis:alpine", repo: "index.docker.io/library/redis", local: old, remote: old, want: "current"},
+		{name: "stale browser snapshot uses current identity", image: "redis:alpine", repo: "redis", local: old, remote: old, stale: true, want: "current"},
+		{name: "transient snapshot race refreshes once", image: "redis:alpine", repo: "redis", local: old, remote: old, transientRace: true, want: "current"},
 		{name: "wrong repository same digest", image: "redis:alpine", repo: "other/redis", local: old, remote: old},
 		{name: "missing digest", image: "redis:alpine", repo: "redis", remote: old},
 		{name: "index versus platform", image: "redis:alpine", repo: "redis", local: old, remote: newDigest, localKind: manifest, remoteKind: index},
@@ -93,7 +99,7 @@ func TestImageUpdateIdentityAndFailureBoundaries(t *testing.T) {
 				case strings.HasPrefix(r.URL.Path, "/containers/"):
 					inspections++
 					response := raw
-					if tc.race && inspections > 1 {
+					if (tc.race && inspections%2 == 0) || (tc.transientRace && inspections > 1) {
 						response.Image = newDigest
 					}
 					_ = json.NewEncoder(w).Encode(response)
@@ -116,7 +122,41 @@ func TestImageUpdateIdentityAndFailureBoundaries(t *testing.T) {
 			}))
 			defer server.Close()
 			client := testHTTPClient(server)
-			result, err := client.CheckContainerImageUpdate(context.Background(), id, client.summaryFromInspect(raw).ResourceVersion)
+			var deadlines []time.Time
+			transport := client.httpClient.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			client.httpClient.Timeout = 0
+			client.httpClient.Transport = updateRoundTripper(func(r *http.Request) (*http.Response, error) {
+				deadline, ok := r.Context().Deadline()
+				if !ok {
+					t.Error("image check has no total deadline")
+				}
+				deadlines = append(deadlines, deadline)
+				return transport.RoundTrip(r)
+			})
+			version := client.summaryFromInspect(raw).ResourceVersion
+			if tc.stale {
+				version = "browser-stale-version"
+			}
+			result, err := client.CheckContainerImageUpdate(context.Background(), id, version)
+			if tc.status != 0 && registryCalls != 1 {
+				t.Fatalf("registry failure must not consume snapshot retry: calls=%d", registryCalls)
+			}
+			if tc.race || tc.transientRace {
+				if inspections != 4 || registryCalls != 2 {
+					t.Fatalf("retry budget exceeded: inspections=%d registryCalls=%d", inspections, registryCalls)
+				}
+				for _, deadline := range deadlines {
+					if !deadline.Equal(deadlines[0]) {
+						t.Fatal("retry extended the shared deadline")
+					}
+				}
+			}
+			if tc.stale && (result.ResourceVersion == version || inspections != 2 || registryCalls != 1) {
+				t.Fatalf("stale snapshot was not refreshed cheaply: %+v inspect=%d registry=%d", result, inspections, registryCalls)
+			}
 			if tc.want == "fixed" {
 				if !errors.Is(err, ErrImageUpdateFixed) || !errors.Is(err, ErrActionUnsupported) || registryCalls != 0 {
 					t.Fatalf("fixed=%+v err=%v calls=%d", result, err, registryCalls)

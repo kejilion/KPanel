@@ -1196,16 +1196,18 @@ export interface AppTerminalChunk {
   finished: boolean
 }
 
-export interface AppImageUpdateResult {
+export interface DockerImageUpdateResult {
   containerId: string
   image: string
-  status: 'available' | 'current'
+  status: 'available' | 'current' | 'fixed'
   updateAvailable: boolean
   localDigest?: string
   remoteDigest?: string
   resourceVersion: string
   checkedAt: string
 }
+
+export type AppImageUpdateResult = DockerImageUpdateResult
 
 export interface DiagnosticCategory {
   id: string

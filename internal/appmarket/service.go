@@ -760,6 +760,8 @@ func (s *Service) CheckUpdate(
 	if expectedVersion == "" {
 		return dockerx.ImageUpdateResult{}, dockerx.ErrVersionRequired
 	}
+	ctx, cancel := context.WithTimeout(ctx, dockerx.ImageUpdateCheckTimeout)
+	defer cancel()
 	item, err := s.Find(ctx, id)
 	if err != nil {
 		return dockerx.ImageUpdateResult{}, err
@@ -771,33 +773,10 @@ func (s *Service) CheckUpdate(
 			item.Capabilities["check_update"].Reason,
 		)
 	}
-	result, err := s.docker.CheckContainerImageUpdate(
+	return s.docker.CheckContainerImageUpdate(
 		ctx,
 		item.Runtime.ContainerID,
 		item.Runtime.ResourceVersion,
-	)
-	if !errors.Is(err, dockerx.ErrResourceConflict) {
-		return result, err
-	}
-
-	// Image inspection is read-only. A container may restart or be recreated
-	// between the inventory snapshot and Docker's second inspect, so refresh
-	// once instead of surfacing a harmless stale-browser conflict.
-	refreshed, refreshErr := s.Find(ctx, id)
-	if refreshErr != nil {
-		return dockerx.ImageUpdateResult{}, refreshErr
-	}
-	if !refreshed.Capabilities["check_update"].Enabled {
-		return dockerx.ImageUpdateResult{}, fmt.Errorf(
-			"%w: %s",
-			ErrForbidden,
-			refreshed.Capabilities["check_update"].Reason,
-		)
-	}
-	return s.docker.CheckContainerImageUpdate(
-		ctx,
-		refreshed.Runtime.ContainerID,
-		refreshed.Runtime.ResourceVersion,
 	)
 }
 

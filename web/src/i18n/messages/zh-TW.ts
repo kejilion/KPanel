@@ -1,6 +1,15 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const zhTWMessages = {
+  "error.imageUpdateUnavailable": "暫時無法檢查，請確認主機網路和倉庫可存取後重試。",
+  "error.imageUpdateDigestMissing": "本機映像缺少可比較摘要，可能由本機建置或匯入；無法自動判斷更新。",
+  "error.imageUpdateIncomparable": "映像摘要層級或平台不一致，無法可靠判斷更新。",
+  "error.imageUpdateRegistryAuth": "倉庫拒絕存取，請檢查映像是否公開及倉庫存取權限。",
+  "error.imageUpdateRegistryMissing": "倉庫標籤或舊映像摘要已移除，請核對映像來源。",
+  "error.imageUpdateRateLimited": "倉庫請求受限，請稍後重試。",
+  "error.imageUpdateTimeout": "連線倉庫逾時，請檢查主機網路、代理或映像來源。",
+  "error.imageUpdateBusy": "其他映像正在檢查，請稍後重試。",
+  "apps.update.fixed": "固定版本",
   "common.appName": "KPanel",
   "common.console": "控制台",
   "common.retry": "重新載入",
@@ -312,7 +321,7 @@ export const zhTWMessages = {
   "apps.state.dead": "異常",
   "apps.state.unknown": "待核對",
   "apps.update.available": "發現更新",
-  "apps.update.current": "已是最新",
+  'apps.update.current': "此標籤未發現更新",
   "apps.update.checkRequired": "可檢查更新",
   "apps.update.unknown": "更新狀態未知",
   "apps.update.notInstalled": "未安裝",

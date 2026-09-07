@@ -68,6 +68,11 @@ beforeEach(() => {
 })
 
 describe('KPanel update detection', () => {
+  it('does not report fixed image references as current or available', async () => {
+    mocks.inventory.mockResolvedValue(inventory())
+    mocks.checkUpdate.mockResolvedValue({ status: 'fixed', updateAvailable: false })
+    await expect(detectKPanelUpdate()).resolves.toBe('unavailable')
+  })
   it('checks only the installed KPanel application through the existing image API', async () => {
     const current = inventory()
     mocks.inventory.mockResolvedValue(current)

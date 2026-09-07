@@ -8,6 +8,17 @@ const response = (container = item()): DockerImageUpdateResult => ({ containerId
 afterEach(() => vi.useRealTimers())
 
 describe('Docker image checks', () => {
+  it('accepts a refreshed read-only snapshot without advancing list mutation versions', async () => {
+    const scope = effectScope(), containers = ref([item()])
+    const request = vi.fn().mockResolvedValue({ ...response(), resourceVersion: 'fresh-version' })
+    const checks = scope.run(() => useDockerImageUpdates(containers, ref(true), request))!
+    await checks.check(item())
+    expect(checks.entries.value[item().id]?.status).toBe('current')
+    expect(containers.value[0]?.resourceVersion).toBe('v1')
+    containers.value = [{ ...item(), resourceVersion: 'fresh-version' }]
+    expect(checks.entries.value[item().id]).toBeUndefined()
+    scope.stop()
+  })
   it('automatically checks, reuses results across refresh and inactivity, and rechecks after expiry', async () => {
     vi.useFakeTimers()
     const scope = effectScope()

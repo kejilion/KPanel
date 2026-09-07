@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,27 @@ func TestDockerUpdateRouteRequiresTokenMethodAndVersion(t *testing.T) {
 		s.ServeHTTP(w, r)
 		if w.Code != tc.status {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.suffix, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestSharedImageUpdateResponseKeepsFixedAndFailuresDistinct(t *testing.T) {
+	s := &Server{}
+	for _, tc := range []struct {
+		err    error
+		status int
+		body   string
+	}{
+		{errors.Join(dockerx.ErrActionUnsupported, dockerx.ErrImageUpdateFixed), http.StatusOK, `"status":"fixed"`},
+		{dockerx.ErrResourceConflict, http.StatusConflict, `"code":"resource_conflict"`},
+		{dockerx.ErrImageUpdateBusy, http.StatusTooManyRequests, `"code":"docker_update_busy"`},
+		{dockerx.ErrImageUpdateDigestMissing, http.StatusBadGateway, `"code":"docker_update_digest_missing"`},
+		{context.DeadlineExceeded, http.StatusBadGateway, `"code":"docker_update_timeout"`},
+	} {
+		w := httptest.NewRecorder()
+		s.writeImageUpdateResult(w, "check", dockerx.ImageUpdateResult{Status: "fixed"}, tc.err)
+		if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.body) {
+			t.Fatalf("shared response status=%d body=%s", w.Code, w.Body.String())
 		}
 	}
 }

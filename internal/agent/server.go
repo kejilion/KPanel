@@ -1410,11 +1410,7 @@ func (s *Server) appOperation(w http.ResponseWriter, r *http.Request, requestID 
 	}
 	if action == "check_update" {
 		result, err := s.appMarket.CheckUpdate(ctx, id, input.ResourceVersion)
-		if err != nil {
-			s.writeAppError(w, requestID, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, result)
+		s.writeImageUpdateResult(w, requestID, result, err)
 		return
 	}
 	if action != "update" && action != "uninstall" &&
