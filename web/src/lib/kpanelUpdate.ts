@@ -27,7 +27,7 @@ export async function detectKPanelUpdate(signal?: AbortSignal): Promise<KPanelUp
     return 'unavailable'
   }
   const result = await api.apps.checkUpdate(item.id, item.runtime.resourceVersion)
-  return result.status
+  return result.status === 'fixed' ? 'unavailable' : result.status
 }
 
 export function isKPanelSelfUpdate(job: Pick<AppInstallJob, 'action' | 'appId'>): boolean {

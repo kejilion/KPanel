@@ -1,6 +1,15 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const enUSMessages = {
+  "error.imageUpdateUnavailable": "Unable to check right now. Verify the host network and registry access, then retry.",
+  "error.imageUpdateDigestMissing": "The local image has no comparable digest, possibly because it was built locally or imported. Updates cannot be determined automatically.",
+  "error.imageUpdateIncomparable": "Image digest types or platforms differ; updates cannot be determined reliably.",
+  "error.imageUpdateRegistryAuth": "Registry access denied. Check image visibility and registry access permissions.",
+  "error.imageUpdateRegistryMissing": "The registry tag or old image digest was removed. Check the image source.",
+  "error.imageUpdateRateLimited": "Registry rate limit reached. Please retry later.",
+  "error.imageUpdateTimeout": "Registry connection timed out. Check the host network, proxy, or registry mirror.",
+  "error.imageUpdateBusy": "Other image checks are running. Please retry shortly.",
+  "apps.update.fixed": "Fixed version",
   'common.appName': 'KPanel',
   'common.console': 'Console',
   'common.retry': 'Reload',
@@ -321,7 +330,7 @@ export const enUSMessages = {
   'apps.state.dead': 'Unhealthy',
   'apps.state.unknown': 'Needs review',
   'apps.update.available': 'Update available',
-  'apps.update.current': 'Up to date',
+  'apps.update.current': "No update found for this tag",
   'apps.update.checkRequired': 'Update check available',
   'apps.update.unknown': 'Update status unknown',
   'apps.update.notInstalled': 'Not installed',

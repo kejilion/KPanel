@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/kejilion/kejilion-panel/internal/appmarket"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 )
 
@@ -23,6 +24,14 @@ func (s *Server) checkDockerImageUpdate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	result, err := s.docker.CheckContainerImageUpdate(r.Context(), id, input.ResourceVersion)
+	s.writeImageUpdateResult(w, requestID, result, err)
+}
+
+func (s *Server) writeImageUpdateResult(w http.ResponseWriter, requestID string, result dockerx.ImageUpdateResult, err error) {
+	if errors.Is(err, appmarket.ErrNotFound) || errors.Is(err, appmarket.ErrForbidden) || errors.Is(err, appmarket.ErrUnsupported) {
+		s.writeAppError(w, requestID, err)
+		return
+	}
 	if err != nil && !errors.Is(err, dockerx.ErrImageUpdateFixed) {
 		status, code := http.StatusBadGateway, dockerImageUpdateErrorCode(err)
 		switch {

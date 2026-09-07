@@ -9,11 +9,20 @@ import {
   setLocale,
   t,
 } from './index'
-import { localizeError } from './errors'
+import { localizeError, localizeImageUpdateError } from './errors'
 
 afterEach(() => {
   resetLocaleForTest()
   vi.unstubAllGlobals()
+})
+
+it('shares image-update recovery messages without leaking raw registry errors', async () => {
+  vi.stubGlobal('document', { documentElement: { lang: '', dir: '' } })
+  vi.stubGlobal('window', { localStorage: { setItem: vi.fn() } })
+  await setLocale('en-US')
+  expect(localizeImageUpdateError({ code: 'docker_update_registry_auth', message: 'token=secret' })).toContain('Registry access denied')
+  expect(localizeImageUpdateError({ code: 'unexpected', message: 'token=secret' })).not.toContain('secret')
+  expect(localizeImageUpdateError({ code: 'docker_update_timeout' })).toContain('timed out')
 })
 
 describe('locale selection', () => {

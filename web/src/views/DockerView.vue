@@ -42,7 +42,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
-import { localizeError } from '@/i18n/errors'
+import { localizeError, localizeImageUpdateError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
 import { useDockerImageUpdates, type DockerUpdateStatus } from '@/lib/dockerImageUpdate'
 import {
@@ -143,17 +143,7 @@ function imageUpdateLabel(status?: DockerUpdateStatus): string {
   return phrase(status ? labels[status] : '等待检查')
 }
 function imageUpdateReason(code?: string): string {
-  const reasons: Record<string, string> = {
-    docker_update_digest_missing: '本地镜像缺少可比较摘要，可能由本地构建或导入；无法自动判断更新。',
-    docker_update_incomparable: '镜像摘要层级或平台不一致，无法可靠判断更新。',
-    docker_update_registry_auth: '仓库拒绝访问，请检查镜像是否公开及仓库访问权限。',
-    docker_update_registry_missing: '仓库标签或旧镜像摘要已移除，请核对镜像来源。',
-    docker_update_rate_limited: '仓库请求受限，稍后自动重试。',
-    docker_update_timeout: '连接仓库超时，请检查主机网络、代理或镜像源。',
-    docker_update_busy: '其他镜像正在检查，稍后自动重试。',
-    resource_conflict: '容器状态已变化，请刷新列表后重试。',
-  }
-  return phrase(reasons[code || ''] || '暂时无法检查，请确认主机网络和仓库可访问后重试。')
+  return localizeImageUpdateError({ code })
 }
 const resourceSort = ref<ResourceSort>('smart')
 const containerSort = ref<ContainerSort>('smart')

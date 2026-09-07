@@ -2,6 +2,8 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
+import { localizeImageUpdateError } from '@/i18n/errors'
+import { isConfirmedImageUpdate, type DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 function phrase(value: string): string {
@@ -79,7 +81,7 @@ const sitesWarning = ref('')
 const deletingDomainSite = ref<Site>()
 const operation = ref('')
 const confirmAction = ref<ConfirmAction>()
-const checkedUpdates = ref<Record<string, 'available' | 'current'>>({})
+const checkedUpdates = ref<Record<string, DockerImageUpdateResult['status']>>({})
 const activeJob = ref<AppInstallJob>()
 const jobDetailsOpen = ref(false)
 const appGrid = ref<HTMLElement>()
@@ -283,6 +285,7 @@ function updateLabel(item: AppMarketItem): string {
   i18n.locale.value
   if (checkedUpdates.value[item.id] === 'available') return i18n.t('apps.update.available')
   if (checkedUpdates.value[item.id] === 'current') return i18n.t('apps.update.current')
+  if (checkedUpdates.value[item.id] === 'fixed') return i18n.t('apps.update.fixed')
   const labels: Record<string, MessageKey> = {
     available: 'apps.update.available',
     current: 'apps.update.current',
@@ -306,26 +309,13 @@ async function checkUpdate(): Promise<void> {
   if (!item?.runtime.resourceVersion || !capability(item, 'check_update')) return
   operation.value = 'check_update'
   try {
-    let result
-    try {
-      result = await api.apps.checkUpdate(item.id, item.runtime.resourceVersion)
-    } catch (reason) {
-      if (!(reason instanceof ApiError) || reason.code !== 'resource_conflict') throw reason
-      const refreshedInventory = await api.apps.inventory()
-      inventory.value = refreshedInventory
-      const refreshed = refreshedInventory.items.find((candidate) => candidate.id === item.id)
-      if (
-        !refreshed?.runtime.resourceVersion ||
-        !capability(refreshed, 'check_update')
-      ) {
-        throw reason
-      }
-      result = await api.apps.checkUpdate(refreshed.id, refreshed.runtime.resourceVersion)
-    }
+    const result = await api.apps.checkUpdate(item.id, item.runtime.resourceVersion)
+    if (!isConfirmedImageUpdate(result)) throw new Error('Unconfirmed image update response')
     checkedUpdates.value[item.id] = result.status
-    toast.success(result.updateAvailable ? '发现可用更新' : '当前已是最新镜像')
+    toast.success(i18n.t(result.status === 'available' ? 'apps.update.available' : result.status === 'fixed' ? 'apps.update.fixed' : 'apps.update.current'))
   } catch (reason) {
-    toast.danger('检查更新失败', reason instanceof ApiError ? reason.message : '镜像仓库暂时不可用。')
+    delete checkedUpdates.value[item.id]
+    toast.danger('检查更新失败', localizeImageUpdateError(reason))
   } finally {
     operation.value = ''
   }

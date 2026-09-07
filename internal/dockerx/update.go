@@ -19,6 +19,7 @@ var (
 )
 
 const (
+	ImageUpdateCheckTimeout    = 20 * time.Second
 	officialUpdateCheckTimeout = 4 * time.Second
 	countryLookupTimeout       = 250 * time.Millisecond
 	acceleratorCheckTimeout    = 4 * time.Second
@@ -80,16 +81,25 @@ func (c *Client) CheckContainerImageUpdate(
 	default:
 		return ImageUpdateResult{}, ErrImageUpdateBusy
 	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ImageUpdateCheckTimeout)
 	defer cancel()
+	// This read-only check uses a fresh snapshot, as the application market
+	// does. Mutating operations still require an exact browser resource version.
+	// A racing snapshot gets one retry within the same deadline and read slot.
+	for attempt := 0; ; attempt++ {
+		result, err := c.checkContainerImageSnapshot(ctx, id)
+		if attempt == 1 || !errors.Is(err, ErrResourceConflict) || ctx.Err() != nil {
+			return result, err
+		}
+	}
+}
+
+func (c *Client) checkContainerImageSnapshot(ctx context.Context, id string) (ImageUpdateResult, error) {
 	raw, err := c.inspect(ctx, id)
 	if err != nil {
 		return ImageUpdateResult{}, err
 	}
 	summary := c.summaryFromInspect(raw)
-	if summary.ResourceVersion != expectedVersion {
-		return ImageUpdateResult{}, ErrResourceConflict
-	}
 	image := strings.TrimSpace(raw.Config.Image)
 	localImage := strings.TrimSpace(raw.Image)
 	if strings.HasPrefix(image, "sha256:") &&
@@ -100,7 +110,7 @@ func (c *Client) CheckContainerImageUpdate(
 		ResourceVersion: summary.ResourceVersion, CheckedAt: c.now().UTC()}
 	if strings.Contains(image, "@sha256:") || digestPattern.MatchString(image) {
 		result.Status = "fixed"
-		// Existing application consumers still receive an error, never false success.
+		// Preserve the sentinel for Go consumers; both HTTP entry points expose fixed.
 		return result, errors.Join(ErrActionUnsupported, ErrImageUpdateFixed)
 	}
 	repository, valid := normalizedImageRepository(image)
@@ -182,7 +192,7 @@ func (c *Client) CheckContainerImageUpdate(
 	if err != nil {
 		return ImageUpdateResult{}, err
 	}
-	if refreshed.Image != raw.Image || c.summaryFromInspect(refreshed).ResourceVersion != expectedVersion {
+	if refreshed.Image != raw.Image || c.summaryFromInspect(refreshed).ResourceVersion != summary.ResourceVersion {
 		return ImageUpdateResult{}, ErrResourceConflict
 	}
 	available := localDigest != remoteDigest

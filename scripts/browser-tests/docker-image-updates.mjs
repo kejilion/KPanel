@@ -75,6 +75,51 @@ try {
     result.cases.push({ width, theme, locale, scale, mode, requests, geometry, focusOutline })
     await context.close()
   }
+  for (const locale of ['zh-CN', 'en-US']) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
+    await context.addInitScript(locale => {
+      localStorage.setItem('kejilion-panel-locale', locale)
+      localStorage.setItem('kejilion-panel-theme', 'light')
+      localStorage.setItem('kejilion-panel-desktop-mode', 'classic')
+    }, locale)
+    const page = await context.newPage()
+    page.setDefaultTimeout(15_000)
+    page.on('pageerror', error => result.errors.push(error.message))
+    let requests = 0, inventoryRequests = 0, status = 'current'
+    page.on('request', request => { if (new URL(request.url()).pathname === '/api/v1/apps') inventoryRequests++ })
+    await page.route('**/api/v1/apps/*/check_update', async route => {
+      requests++
+      const failed = status === 'unavailable'
+      await route.fulfill({ status: failed ? 502 : 200, contentType: 'application/json', body: JSON.stringify(failed
+        ? { code: 'docker_update_registry_auth', title: 'secret-registry.example/token=never-display' }
+        : { containerId: 'a'.repeat(64), image: 'ghcr.io/librespeed/speedtest:latest', resourceVersion: 'fresh-read-snapshot',
+            status, updateAvailable: status === 'available', checkedAt: new Date().toISOString() }) })
+    })
+    await page.goto(base + '/apps')
+    await page.locator('.app-card.is-installed').filter({ hasText: /LibreSpeed/i }).locator('.app-card__main').click()
+    const check = page.getByRole('button', { name: locale === 'en-US' ? 'Check for updates' : '检查更新', exact: true })
+    const state = page.locator('.app-control-panel__status > div').nth(1).locator('strong')
+    const inventoryBefore = inventoryRequests
+    const labels = locale === 'en-US'
+      ? ['No update found for this tag', 'Update available', 'Fixed version', 'Registry access denied. Check image visibility and registry access permissions.']
+      : ['该标签未发现更新', '发现更新', '固定版本', '仓库拒绝访问，请检查镜像是否公开及仓库访问权限。']
+    for (const [index, next] of ['current', 'available', 'fixed', 'unavailable'].entries()) {
+      status = next
+      await check.click()
+      if (next === 'unavailable') {
+        await page.getByText(labels[index], { exact: true }).waitFor()
+        assert(!['该标签未发现更新', '固定版本', 'No update found for this tag', 'Fixed version'].includes(await state.innerText()))
+        assert(!(await page.locator('body').innerText()).includes('secret-registry.example'))
+      } else {
+        await page.waitForFunction(({ label }) => document.querySelector('.app-control-panel__status > div:nth-child(2) strong')?.textContent === label, { label: labels[index] })
+      }
+      assert.equal(requests, index + 1, 'market must make exactly one request per explicit check')
+    }
+    assert.equal(inventoryRequests, inventoryBefore, 'market must not multiply shared retries by reloading inventory')
+    await page.screenshot({ path: `${out}/apps-${locale}-classified-failure.png`, fullPage: true })
+    result.cases.push({ consumer: 'apps', locale, requests, inventoryReloads: inventoryRequests - inventoryBefore, statuses: ['current', 'available', 'fixed', 'unavailable'] })
+    await context.close()
+  }
   assert.equal(resourceFailure, false)
   assert.deepEqual(result.errors, [])
   result.status = 'passed'

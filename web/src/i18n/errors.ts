@@ -29,6 +29,20 @@ const errorMessageKeys: Readonly<Record<string, MessageKey>> = {
   validation_failed: 'error.validationFailed',
   invalid_input: 'error.validationFailed',
   invalid_request: 'error.validationFailed',
+  docker_update_unavailable: 'error.imageUpdateUnavailable',
+  docker_update_digest_missing: 'error.imageUpdateDigestMissing',
+  docker_update_incomparable: 'error.imageUpdateIncomparable',
+  docker_update_registry_auth: 'error.imageUpdateRegistryAuth',
+  docker_update_registry_missing: 'error.imageUpdateRegistryMissing',
+  docker_update_rate_limited: 'error.imageUpdateRateLimited',
+  docker_update_timeout: 'error.imageUpdateTimeout',
+  docker_update_busy: 'error.imageUpdateBusy',
+}
+
+// Image checks share fixed recovery text; never surface raw registry output.
+export function localizeImageUpdateError(reason: unknown): string {
+  const code = reason && typeof reason === 'object' ? (reason as CodedError).code : undefined
+  return localizeError({ code }, 'error.imageUpdateUnavailable')
 }
 
 export function localizeError(

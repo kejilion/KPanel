@@ -107,7 +107,7 @@ interface AppsBindings {
   domainWarning: Ref<string>
   sitesWarning: Ref<string>
   deletingDomainSite: Ref<Site | undefined>
-  checkedUpdates: Ref<Record<string, 'available' | 'current'>>
+  checkedUpdates: Ref<Record<string, 'available' | 'current' | 'fixed'>>
   activeJob: Ref<AppInstallJob | undefined>
   jobDetailsOpen: Ref<boolean>
   confirmAction: Ref<'update' | 'uninstall' | undefined>
@@ -682,9 +682,8 @@ describe('AppsView domain binding', () => {
 })
 
 describe('AppsView update checks', () => {
-  it('refreshes the inventory and retries a read-only resource conflict once', async () => {
+  it('accepts the shared checker fresh snapshot without a second inventory scan', async () => {
     mocks.checkUpdate
-      .mockRejectedValueOnce(new ApiError('container resourceVersion changed', 409, 'resource_conflict'))
       .mockResolvedValueOnce({
         containerId: 'a'.repeat(64),
         image: 'cloudreve/cloudreve:latest',
@@ -693,7 +692,6 @@ describe('AppsView update checks', () => {
         resourceVersion: 'fresh-version',
         checkedAt: '2026-07-28T00:00:00Z',
       })
-    mocks.inventory.mockResolvedValueOnce(inventory('fresh-version'))
     const view = setupView()
     view.inventory.value = inventory('stale-version')
     view.selectedID.value = 'builtin-13'
@@ -701,9 +699,22 @@ describe('AppsView update checks', () => {
     await view.checkUpdate()
 
     expect(mocks.checkUpdate).toHaveBeenNthCalledWith(1, 'builtin-13', 'stale-version')
-    expect(mocks.checkUpdate).toHaveBeenNthCalledWith(2, 'builtin-13', 'fresh-version')
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    expect(mocks.inventory).not.toHaveBeenCalled()
     expect(view.checkedUpdates.value['builtin-13']).toBe('current')
     expect(mocks.toastDanger).not.toHaveBeenCalled()
+  })
+  it('does not multiply backend retry budgets or retain success after failure', async () => {
+    mocks.checkUpdate.mockRejectedValueOnce(new ApiError('raw registry detail', 409, 'resource_conflict'))
+    const view = setupView()
+    view.inventory.value = inventory('stale-version')
+    view.selectedID.value = 'builtin-13'
+    view.checkedUpdates.value['builtin-13'] = 'available'
+    await view.checkUpdate()
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    expect(mocks.inventory).not.toHaveBeenCalled()
+    expect(view.checkedUpdates.value['builtin-13']).toBeUndefined()
+    expect(mocks.toastDanger).toHaveBeenCalledWith('检查更新失败', '资源状态已变化，请刷新后重试。')
   })
 })
 
