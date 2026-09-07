@@ -208,7 +208,7 @@ const diagnosticCatalog = {
   ],
 }
 
-const items = catalog.apps.map((app) => {
+const items = catalog.apps.map((app, index) => {
   const mapping = legacyByNumber.get(app.num) || {}
   const runtime = installed.get(app.token)
   const isAdapted = adapted.has(app.token)
@@ -225,7 +225,7 @@ const items = catalog.apps.map((app) => {
           installed: true,
           state: runtime.state,
           status: isRunning ? 'Up 3 hours' : 'Exited (0) 20 minutes ago',
-          containerId: 'a'.repeat(64),
+          containerId: (index + 1).toString(16).padStart(64, '0'),
           containerName: mapping.container || app.slug,
           image: mapping.image || `${app.slug}:latest`,
           ports: port
@@ -1490,6 +1490,19 @@ createServer(async (request, response) => {
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/apps') {
     send(response, 200, inventory)
+    return
+  }
+  const appUpdateMatch = url.pathname.match(/^\/api\/v1\/apps\/([^/]+)\/check_update$/)
+  if (request.method === 'POST' && appUpdateMatch) {
+    const app = items.find(item => item.id === appUpdateMatch[1] && item.capabilities.check_update.enabled)
+    if (!app) { send(response, 404, { code: 'app_not_found' }); return }
+    const status = { speedtest: 'available', 'it-tools': 'current', openlist: 'fixed', n8n: 'unavailable' }[app.token] || 'current'
+    if (status === 'unavailable') {
+      send(response, 502, { code: 'docker_update_registry_auth', title: 'Simulated registry access failure' })
+      return
+    }
+    send(response, 200, { containerId: app.runtime.containerId, image: app.runtime.image,
+      resourceVersion: app.runtime.resourceVersion, checkedAt: new Date().toISOString(), status, updateAvailable: status === 'available' })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/app-jobs') {

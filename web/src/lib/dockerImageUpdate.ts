@@ -11,6 +11,7 @@ export function isConfirmedImageUpdate(result: DockerImageUpdateResult): boolean
 }
 
 export type DockerUpdateStatus = DockerImageUpdateResult['status'] | 'checking' | 'unavailable' | 'expired'
+export type ImageUpdateTarget = Pick<DockerContainer, 'id' | 'image' | 'resourceVersion'>
 interface Entry {
   status: DockerUpdateStatus
   resourceVersion: string
@@ -25,7 +26,7 @@ export const dockerUpdateInterval = 1_000
 const capacity = 200
 
 export function useDockerImageUpdates(
-  containers: Readonly<Ref<readonly DockerContainer[]>>,
+  containers: Readonly<Ref<readonly ImageUpdateTarget[]>>,
   active: Readonly<Ref<boolean>>,
   request: (id: string, version: string, signal: AbortSignal) => Promise<DockerImageUpdateResult>,
 ) {
@@ -87,7 +88,7 @@ export function useDockerImageUpdates(
   }, { flush: 'sync', immediate: true })
   onScopeDispose(() => { disposed = true; clearTimeout(timer); clear() })
 
-  async function check(container: DockerContainer) {
+  async function check(container: ImageUpdateTarget) {
     if (disposed || !active.value || busy.value || controllers.has(container.id) || !container.resourceVersion) return
     remove(container.id)
     if (Object.keys(entries.value).length >= capacity) {
@@ -123,6 +124,7 @@ export function useDockerImageUpdates(
       }
       schedule()
     }
+    return entries.value[container.id]
   }
   return { entries, busy, check, clear }
 }

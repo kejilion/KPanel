@@ -78,33 +78,61 @@ try {
     result.cases.push({ width, theme, locale, scale, mode, requests, geometry, beforeHeights, afterHeights })
     await context.close()
   }
-  for (const locale of ['zh-CN', 'en-US']) {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
-    await context.addInitScript(locale => {
+  for (const [width, theme, locale, scale, mode] of [
+    [1280, 'light', 'zh-CN', 1, 'classic'], [768, 'dark', 'en-US', 1.25, 'classic'],
+    [390, 'dark', 'zh-TW', 2, 'classic'], [1280, 'dark', 'zh-CN', 1, 'desktop'],
+  ]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' })
+    await context.addInitScript(({ locale, theme, mode }) => {
       localStorage.setItem('kejilion-panel-locale', locale)
-      localStorage.setItem('kejilion-panel-theme', 'light')
-      localStorage.setItem('kejilion-panel-desktop-mode', 'classic')
-    }, locale)
+      localStorage.setItem('kejilion-panel-theme', theme)
+      localStorage.setItem('kejilion-panel-desktop-mode', mode)
+    }, { locale, theme, mode })
     const page = await context.newPage()
     page.setDefaultTimeout(15_000)
     page.on('pageerror', error => result.errors.push(error.message))
-    let requests = 0, inventoryRequests = 0, status = 'current'
+    let requests = 0, inventoryRequests = 0, status
+    const market = await (await page.request.get(base + '/api/v1/apps')).json()
     page.on('request', request => { if (new URL(request.url()).pathname === '/api/v1/apps') inventoryRequests++ })
     await page.route('**/api/v1/apps/*/check_update', async route => {
       requests++
+      if (!status) { await route.continue(); return }
+      const item = market.items.find(item => item.id === new URL(route.request().url()).pathname.split('/').at(-2))
       const failed = status === 'unavailable'
       await route.fulfill({ status: failed ? 502 : 200, contentType: 'application/json', body: JSON.stringify(failed
         ? { code: 'docker_update_registry_auth', title: 'secret-registry.example/token=never-display' }
-        : { containerId: 'a'.repeat(64), image: 'ghcr.io/librespeed/speedtest:latest', resourceVersion: 'fresh-read-snapshot',
+        : { containerId: item.runtime.containerId, image: item.runtime.image, resourceVersion: 'fresh-read-snapshot',
             status, updateAvailable: status === 'available', checkedAt: new Date().toISOString() }) })
     })
-    await page.goto(base + '/apps')
+    await page.goto(base + (mode === 'desktop' ? '/' : '/apps'))
+    if (mode === 'desktop') await page.locator('[data-icon-key="nav:/apps"]').dblclick()
+    await page.evaluate(scale => { document.documentElement.style.fontSize = `${16 * scale}px` }, scale)
+    await page.locator('.app-card.is-installed').first().waitFor()
+    const beforeHeights = await page.locator('.app-card').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().height))
+    const badge = page.locator('.app-card .app-image-update')
+    await badge.waitFor()
+    await page.waitForTimeout(3_500)
+    const autoRequests = requests
+    assert.equal(autoRequests, 4, 'only the four installed eligible apps should be checked')
+    assert.equal(await badge.count(), 1)
+    assert.equal(await page.locator('.toast').count(), 0, 'automatic results and failures must stay silent')
+    const afterHeights = await page.locator('.app-card').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().height))
+    assert.deepEqual(afterHeights, beforeHeights, 'automatic badges must not increase card height')
+    await badge.hover()
+    assert.equal(await badge.getAttribute('title'), locale === 'en-US' ? 'Update available' : locale === 'zh-TW' ? '發現更新' : '发现更新')
+    await badge.click()
+    assert.equal(await page.locator('.app-control-panel').count(), 0, 'clicking a passive badge must not open details')
+    await page.screenshot({ path: `${out}/apps-${width}-${theme}-${mode}-automatic.png`, fullPage: true })
+    await page.locator('.market-hero__actions button').click()
+    await page.waitForTimeout(1_500)
+    assert.equal(requests, autoRequests, 'market refresh must reuse the same container snapshot cache')
     await page.locator('.app-card.is-installed').filter({ hasText: /LibreSpeed/i }).locator('.app-card__main').click()
-    const check = page.getByRole('button', { name: locale === 'en-US' ? 'Check for updates' : '检查更新', exact: true })
+    const check = page.getByRole('button', { name: locale === 'en-US' ? 'Check for updates' : locale === 'zh-TW' ? '檢查更新' : '检查更新', exact: true })
     const state = page.locator('.app-control-panel__status > div').nth(1).locator('strong')
     const inventoryBefore = inventoryRequests
     const labels = locale === 'en-US'
       ? ['No update found for this tag', 'Update available', 'Fixed version', 'Registry access denied. Check image visibility and registry access permissions.']
+      : locale === 'zh-TW' ? ['此標籤未發現更新', '發現更新', '固定版本', '倉庫拒絕存取，請檢查映像是否公開及倉庫存取權限。']
       : ['该标签未发现更新', '发现更新', '固定版本', '仓库拒绝访问，请检查镜像是否公开及仓库访问权限。']
     for (const [index, next] of ['current', 'available', 'fixed', 'unavailable'].entries()) {
       status = next
@@ -116,11 +144,11 @@ try {
       } else {
         await page.waitForFunction(({ label }) => document.querySelector('.app-control-panel__status > div:nth-child(2) strong')?.textContent === label, { label: labels[index] })
       }
-      assert.equal(requests, index + 1, 'market must make exactly one request per explicit check')
+      assert.equal(requests, autoRequests + index + 1, 'market must make exactly one request per explicit check')
+      assert.equal(await page.locator('.app-card .app-image-update').count(), next === 'available' ? 1 : 0, 'manual checks must update the same badge cache')
     }
     assert.equal(inventoryRequests, inventoryBefore, 'market must not multiply shared retries by reloading inventory')
-    await page.screenshot({ path: `${out}/apps-${locale}-classified-failure.png`, fullPage: true })
-    result.cases.push({ consumer: 'apps', locale, requests, inventoryReloads: inventoryRequests - inventoryBefore, statuses: ['current', 'available', 'fixed', 'unavailable'] })
+    result.cases.push({ consumer: 'apps', width, theme, locale, scale, mode, autoRequests, requests, beforeHeights, afterHeights, inventoryReloads: inventoryRequests - inventoryBefore, statuses: ['current', 'available', 'fixed', 'unavailable'] })
     await context.close()
   }
   assert.equal(resourceFailure, false)

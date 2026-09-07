@@ -3,7 +3,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { localizeImageUpdateError } from '@/i18n/errors'
-import { isConfirmedImageUpdate, type DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
+import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 function phrase(value: string): string {
@@ -45,6 +45,7 @@ import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
+import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import { appAccessURL, matchingAppProxySites } from '@/lib/appAccess'
@@ -81,7 +82,6 @@ const sitesWarning = ref('')
 const deletingDomainSite = ref<Site>()
 const operation = ref('')
 const confirmAction = ref<ConfirmAction>()
-const checkedUpdates = ref<Record<string, DockerImageUpdateResult['status']>>({})
 const activeJob = ref<AppInstallJob>()
 const jobDetailsOpen = ref(false)
 const appGrid = ref<HTMLElement>()
@@ -93,6 +93,33 @@ const i18n = useI18n()
 const route = useRoute()
 const router = useRouter()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
+const documentVisible = ref(typeof document === 'undefined' || document.visibilityState !== 'hidden')
+function updateDocumentVisibility() { documentVisible.value = document.visibilityState !== 'hidden' }
+const updateAppsByContainer = computed(() => {
+  const apps = new Map<string, AppMarketItem>()
+  for (const item of inventory.value?.items || []) {
+    if (item.runtime.installed && item.runtime.containerId && item.runtime.image && item.runtime.resourceVersion
+      && capability(item, 'check_update') && !apps.has(item.runtime.containerId)) apps.set(item.runtime.containerId, item)
+  }
+  return apps
+})
+const imageUpdateTargets = computed(() => Array.from(updateAppsByContainer.value, ([id, item]) => ({
+  id, image: item.runtime.image!, resourceVersion: item.runtime.resourceVersion!,
+})))
+const imageUpdates = useDockerImageUpdates(imageUpdateTargets,
+  computed(() => windowActive.value && documentVisible.value),
+  (containerId, version, signal) => {
+    const item = updateAppsByContainer.value.get(containerId)
+    if (!item) return Promise.reject({ code: 'resource_conflict' })
+    return api.apps.checkUpdate(item.id, version, signal)
+  })
+const imageUpdateEntries = imageUpdates.entries
+const imageUpdateBusy = imageUpdates.busy
+function hasImageUpdate(item: AppMarketItem): boolean {
+  return Boolean(item.runtime.installed && capability(item, 'check_update') && item.runtime.containerId
+    && updateAppsByContainer.value.has(item.runtime.containerId)
+    && imageUpdateEntries.value[item.runtime.containerId]?.status === 'available')
+}
 let controller: AbortController | undefined
 let jobController: AbortController | undefined
 let jobTimer: number | undefined
@@ -283,9 +310,11 @@ function stateLabel(item: AppMarketItem): string {
 
 function updateLabel(item: AppMarketItem): string {
   i18n.locale.value
-  if (checkedUpdates.value[item.id] === 'available') return i18n.t('apps.update.available')
-  if (checkedUpdates.value[item.id] === 'current') return i18n.t('apps.update.current')
-  if (checkedUpdates.value[item.id] === 'fixed') return i18n.t('apps.update.fixed')
+  const status = imageUpdateEntries.value[item.runtime.containerId || '']?.status
+  if (status === 'available') return i18n.t('apps.update.available')
+  if (status === 'current') return i18n.t('apps.update.current')
+  if (status === 'fixed') return i18n.t('apps.update.fixed')
+  if (status) return i18n.t('apps.update.unknown')
   const labels: Record<string, MessageKey> = {
     available: 'apps.update.available',
     current: 'apps.update.current',
@@ -307,14 +336,15 @@ function accessModeLabel(item: AppMarketItem): string {
 async function checkUpdate(): Promise<void> {
   const item = selected.value
   if (!item?.runtime.resourceVersion || !capability(item, 'check_update')) return
+  const target = imageUpdateTargets.value.find(target => target.id === item.runtime.containerId)
+  if (!target) return
   operation.value = 'check_update'
   try {
-    const result = await api.apps.checkUpdate(item.id, item.runtime.resourceVersion)
-    if (!isConfirmedImageUpdate(result)) throw new Error('Unconfirmed image update response')
-    checkedUpdates.value[item.id] = result.status
+    const result = await imageUpdates.check(target)
+    if (!result || result.status === 'checking' || result.status === 'expired') return
+    if (result.status === 'unavailable') throw { code: result.reason }
     toast.success(i18n.t(result.status === 'available' ? 'apps.update.available' : result.status === 'fixed' ? 'apps.update.fixed' : 'apps.update.current'))
   } catch (reason) {
-    delete checkedUpdates.value[item.id]
     toast.danger('检查更新失败', localizeImageUpdateError(reason))
   } finally {
     operation.value = ''
@@ -983,9 +1013,11 @@ function openURL(item: AppMarketItem): string {
 }
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', updateDocumentVisibility)
   void Promise.all([load(), restoreBackgroundJob()]).then(() => consumeRouteIntent())
 })
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', updateDocumentVisibility)
   controller?.abort()
   stopJobPolling()
   installPortController?.abort()
@@ -1160,15 +1192,18 @@ watch(windowActive, syncJobPollingForWindow)
         }"
       >
         <button class="app-card__main" type="button" @click="openDetails(item)">
-          <span class="app-card__icon">
-            <img
-              :src="item.icon"
-              :alt="appIconAlt(item)"
-              width="128"
-              height="128"
-              loading="lazy"
-              decoding="async"
-            />
+          <span class="app-icon-wrap">
+            <span class="app-card__icon">
+              <img
+                :src="item.icon"
+                :alt="appIconAlt(item)"
+                width="128"
+                height="128"
+                loading="lazy"
+                decoding="async"
+              />
+            </span>
+            <ImageUpdateBadge v-if="hasImageUpdate(item)" class="app-image-update" :label="i18n.t('apps.update.available')" />
           </span>
           <span class="app-card__body">
             <span class="app-card__title">
@@ -1242,8 +1277,9 @@ watch(windowActive, syncJobPollingForWindow)
     >
       <template v-if="selected">
         <div class="app-detail-head">
-          <span class="app-detail-head__icon">
-            <img :src="selected.icon" alt="" width="128" height="128" />
+          <span class="app-icon-wrap">
+            <span class="app-detail-head__icon"><img :src="selected.icon" alt="" width="128" height="128" /></span>
+            <ImageUpdateBadge v-if="hasImageUpdate(selected)" class="app-image-update" :label="i18n.t('apps.update.available')" />
           </span>
           <div>
             <span class="app-detail-head__badges">
@@ -1334,7 +1370,7 @@ watch(windowActive, syncJobPollingForWindow)
               v-if="capability(selected, 'check_update')"
               class="button button--secondary"
               type="button"
-              :disabled="Boolean(operation) || applicationTaskActive"
+              :disabled="Boolean(operation) || applicationTaskActive || imageUpdateBusy || imageUpdateEntries[selected.runtime.containerId || '']?.status === 'checking'"
               @click="checkUpdate"
             >
               <LoaderCircle v-if="operation === 'check_update'" class="spin" :size="15" />
@@ -1929,6 +1965,7 @@ watch(windowActive, syncJobPollingForWindow)
   cursor: pointer;
 }
 
+.app-icon-wrap { position: relative; display: block; flex: 0 0 auto; }
 .app-card__icon,
 .app-detail-head__icon {
   display: grid;

@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { createSSRApp, ref, ssrContextKey, type ComputedRef, type Ref } from 'vue'
+import { createSSRApp, effectScope, ref, ssrContextKey, type ComputedRef, type Ref } from 'vue'
 import { renderToString, type SSRContext } from 'vue/server-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppsView from './AppsView.vue'
 import { ApiError } from '@/lib/api'
+import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import type { AppInstallJob, AppMarketInventory, Site } from '@/types/api'
 
@@ -107,7 +108,9 @@ interface AppsBindings {
   domainWarning: Ref<string>
   sitesWarning: Ref<string>
   deletingDomainSite: Ref<Site | undefined>
-  checkedUpdates: Ref<Record<string, 'available' | 'current' | 'fixed'>>
+  imageUpdateEntries: ReturnType<typeof useDockerImageUpdates>['entries']
+  documentVisible: Ref<boolean>
+  hasImageUpdate: (item: AppMarketInventory['items'][number]) => boolean
   activeJob: Ref<AppInstallJob | undefined>
   jobDetailsOpen: Ref<boolean>
   confirmAction: Ref<'update' | 'uninstall' | undefined>
@@ -281,6 +284,7 @@ describe('AppsView catalog filtering performance', () => {
 
 })
 
+const viewScopes: ReturnType<typeof effectScope>[] = []
 function setupView(windowActive?: Ref<boolean>): AppsBindings {
   const component = AppsView as unknown as {
     setup: (props: Record<string, never>, context: { expose: () => void }) => AppsBindings
@@ -290,7 +294,9 @@ function setupView(windowActive?: Ref<boolean>): AppsBindings {
   if (windowActive) app.provide(desktopWindowActiveKey, windowActive)
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
-    return app.runWithContext(() => component.setup({}, { expose: () => undefined }))
+    const scope = effectScope()
+    viewScopes.push(scope)
+    return scope.run(() => app.runWithContext(() => component.setup({}, { expose: () => undefined })))!
   } finally {
     warn.mockRestore()
   }
@@ -364,6 +370,7 @@ function inventory(resourceVersion: string): AppMarketInventory {
           updateStatus: 'check_required',
           resourceVersion,
           containerId: 'a'.repeat(64),
+          image: 'cloudreve/cloudreve:latest',
           detectedBy: ['container'],
         },
         capabilities: {
@@ -471,6 +478,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  for (const scope of viewScopes.splice(0)) scope.stop()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -682,6 +691,23 @@ describe('AppsView domain binding', () => {
 })
 
 describe('AppsView update checks', () => {
+  it('cancels an automatic app request when hidden and ignores its late result', async () => {
+    vi.useFakeTimers()
+    let resolve!: (result: unknown) => void
+    mocks.checkUpdate.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const view = setupView()
+    view.inventory.value = inventory('v1')
+    await vi.advanceTimersByTimeAsync(1_000)
+    const signal = mocks.checkUpdate.mock.calls[0]![2] as AbortSignal
+    expect(signal.aborted).toBe(false)
+    view.documentVisible.value = false
+    expect(signal.aborted).toBe(true)
+    resolve({ containerId: 'a'.repeat(64), image: 'cloudreve/cloudreve:latest', resourceVersion: 'v1',
+      status: 'available', updateAvailable: true, checkedAt: new Date().toISOString() })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(view.imageUpdateEntries.value).toEqual({})
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+  })
   it('accepts the shared checker fresh snapshot without a second inventory scan', async () => {
     mocks.checkUpdate
       .mockResolvedValueOnce({
@@ -698,10 +724,10 @@ describe('AppsView update checks', () => {
 
     await view.checkUpdate()
 
-    expect(mocks.checkUpdate).toHaveBeenNthCalledWith(1, 'builtin-13', 'stale-version')
+    expect(mocks.checkUpdate).toHaveBeenNthCalledWith(1, 'builtin-13', 'stale-version', expect.any(AbortSignal))
     expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
     expect(mocks.inventory).not.toHaveBeenCalled()
-    expect(view.checkedUpdates.value['builtin-13']).toBe('current')
+    expect(view.imageUpdateEntries.value['a'.repeat(64)]?.status).toBe('current')
     expect(mocks.toastDanger).not.toHaveBeenCalled()
   })
   it('does not multiply backend retry budgets or retain success after failure', async () => {
@@ -709,12 +735,46 @@ describe('AppsView update checks', () => {
     const view = setupView()
     view.inventory.value = inventory('stale-version')
     view.selectedID.value = 'builtin-13'
-    view.checkedUpdates.value['builtin-13'] = 'available'
+    view.imageUpdateEntries.value['a'.repeat(64)] = { status: 'available', resourceVersion: 'stale-version', image: 'cloudreve/cloudreve:latest' }
     await view.checkUpdate()
     expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
     expect(mocks.inventory).not.toHaveBeenCalled()
-    expect(view.checkedUpdates.value['builtin-13']).toBeUndefined()
+    expect(view.imageUpdateEntries.value['a'.repeat(64)]?.status).toBe('unavailable')
+    expect(view.hasImageUpdate(view.selected.value!)).toBe(false)
     expect(mocks.toastDanger).toHaveBeenCalledWith('检查更新失败', '资源状态已变化，请刷新后重试。')
+  })
+  it.each(['available', 'current', 'fixed', 'unavailable'])('silently auto-checks installed eligible containers and displays only available (%s)', async status => {
+    vi.useFakeTimers()
+    const active = ref(false), view = setupView(active)
+    const data = inventory('v1'), item = data.items[0]!
+    const alias = { ...item, id: 'alias' }
+    const uninstalled = { ...item, id: 'uninstalled', runtime: { ...item.runtime, installed: false, containerId: 'b'.repeat(64) } }
+    const unsupported = { ...item, id: 'unsupported', runtime: { ...item.runtime, containerId: 'c'.repeat(64) }, capabilities: { check_update: { enabled: false } } }
+    const unidentified = { ...item, id: 'unidentified', runtime: { ...item.runtime, containerId: undefined } }
+    data.items.push(alias, uninstalled, unsupported, unidentified)
+    view.inventory.value = data
+    view.search.value = 'uninstalled' // Filtering must not discard eligible installed containers.
+    if (status === 'unavailable') mocks.checkUpdate.mockRejectedValueOnce({ code: 'docker_update_registry_auth' })
+    else mocks.checkUpdate.mockResolvedValueOnce({ containerId: item.runtime.containerId, image: item.runtime.image,
+      resourceVersion: 'fresh', status, updateAvailable: status === 'available', checkedAt: new Date().toISOString() })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.checkUpdate).not.toHaveBeenCalled()
+    active.value = true
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    expect(view.hasImageUpdate(item)).toBe(status === 'available')
+    expect(view.hasImageUpdate(alias)).toBe(status === 'available')
+    expect(view.hasImageUpdate(unsupported)).toBe(false)
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.toastDanger).not.toHaveBeenCalled()
+    view.documentVisible.value = false
+    await vi.advanceTimersByTimeAsync(60_000)
+    view.documentVisible.value = true
+    view.inventory.value = { ...data }
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.checkUpdate).toHaveBeenCalledTimes(1)
+    view.inventory.value = inventory('v2')
+    expect(view.hasImageUpdate(item)).toBe(false)
   })
 })
 
