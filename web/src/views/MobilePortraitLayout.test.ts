@@ -32,7 +32,8 @@ describe('phone portrait layout contract', () => {
 
   it('keeps operational pages usable at 360 to 430 pixels', () => {
     expect(view('DockerView')).toMatch(/\.workspace-card > header:not\(\.resource-section__header\)\s*\{[^}]*display:\s*grid;/)
-    expect(view('FilesView')).toMatch(/@media \(max-width: 480px\)[\s\S]*?\.file-command-bar__actions,[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+    expect(view('FilesView')).toMatch(/@media \(max-width: 480px\)[\s\S]*?\.file-command-bar__actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+    expect(view('FilesView')).toMatch(/\.batch-bar__actions\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/)
     expect(view('DiagnosticsView')).toMatch(/@media \(max-width: 680px\)[\s\S]*?\.diagnostic-command-panel\s*\{[^}]*transform: translateX\(-105%\);/)
     expect(view('DiagnosticsView')).toContain('class="diagnostic-mobile-selector"')
     expect(view('DiagnosticsView')).toContain('min-height: min(400px, 48dvh);')
