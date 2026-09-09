@@ -25,9 +25,29 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop\s*\{[^}]*z-index:\s*1000;/)
     expect(styles).toContain('z-index: 1200;')
     expect(styles).toContain('z-index: 2800 !important;')
-    expect(styles).toMatch(/\.desktop-mode-open :is\(\.file-context-menu, \.docker-context-menu, \.terminal-context-menu\)\s*\{[^}]*z-index:\s*4500 !important;/)
+    expect(styles).toMatch(/\.desktop-mode-open :is\(\.file-context-menu, \.docker-context-menu\)\s*\{[^}]*z-index:\s*4500 !important;/)
     expect(styles).toContain('z-index: 5000 !important;')
     expect(styles).toContain('z-index: 5200 !important;')
+  })
+
+  it('keeps teleported terminal menus above desktop task dialogs', () => {
+    const modalLayer = Number(cssRule(styles, '.desktop-mode-open .modal-backdrop')
+      .match(/z-index:\s*(\d+)/)?.[1])
+    expect(modalLayer).toBeGreaterThan(0)
+
+    // Include grouped :is() overrides: their !important layer previously hid
+    // app installation menus despite the component's own higher z-index.
+    const layers: number[] = []
+    for (const source of [terminalMenuSource, styles]) {
+      const rules = source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)
+      for (const rule of rules) {
+        if (!rule[1]!.includes('.terminal-context-menu')) continue
+        const layer = rule[2]!.match(/z-index:\s*(\d+)/)
+        if (layer) layers.push(Number(layer[1]))
+      }
+    }
+    expect(layers.length).toBeGreaterThan(0)
+    for (const layer of layers) expect(layer).toBeGreaterThan(modalLayer)
   })
 
   it('keeps desktop menus scrollable inside their measured safe area', () => {
