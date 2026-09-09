@@ -2709,7 +2709,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="filesPage" class="files-page" tabindex="-1" @pointerdown="focusFilesPage">
+  <section
+    ref="filesPage"
+    class="files-page"
+    :class="{ 'files-page--batch-active': selected.size > 0 }"
+    tabindex="-1"
+    @pointerdown="focusFilesPage"
+  >
     <PageHeader title="文件管理" description="浏览、编辑和传输服务器文件；KPanel 凭据与状态目录保持隔离。" />
 
     <div class="file-command-bar">
@@ -3324,29 +3330,31 @@ onBeforeUnmount(() => {
         aria-label="批量文件操作"
       >
         <strong>已选 {{ selected.size }} 项</strong>
-        <button
-          v-if="selectedEntriesDownloadable"
-          type="button"
-          @click="downloadSelected()"
-        ><Download :size="15" />{{ selectedEntries.length === 1 && selectedEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}</button>
-        <button type="button" :disabled="archiveTools?.checking" :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
-        <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
-        <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
-        <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
-        <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
-        <button
-          v-if="!isRemoteFileHost && selectedEntries.some(canAddToDesktop)"
-          type="button"
-          :disabled="desktopAdding"
-          @click="addEntriesToDesktop()"
-        ><Pin :size="15" />{{ desktopAdding ? '添加中…' : '添加到桌面' }}</button>
-        <button type="button" @click="invertSelection"><ListRestart :size="15" />反选</button>
-        <button class="danger-link" type="button" @click="openDialog('trash')">
-          <Trash2 :size="15" />回收站
-        </button>
-        <button type="button" aria-label="取消选择" title="取消选择" @click="clearSelection">
-          <X :size="15" />取消
-        </button>
+        <div class="batch-bar__actions">
+          <button
+            v-if="selectedEntriesDownloadable"
+            type="button"
+            @click="downloadSelected()"
+          ><Download :size="15" />{{ selectedEntries.length === 1 && selectedEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}</button>
+          <button type="button" :disabled="archiveTools?.checking" :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
+          <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
+          <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
+          <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
+          <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
+          <button
+            v-if="!isRemoteFileHost && selectedEntries.some(canAddToDesktop)"
+            type="button"
+            :disabled="desktopAdding"
+            @click="addEntriesToDesktop()"
+          ><Pin :size="15" />{{ desktopAdding ? '添加中…' : '添加到桌面' }}</button>
+          <button type="button" @click="invertSelection"><ListRestart :size="15" />反选</button>
+          <button class="danger-link" type="button" @click="openDialog('trash')">
+            <Trash2 :size="15" />回收站
+          </button>
+          <button type="button" aria-label="取消选择" title="取消选择" @click="clearSelection">
+            <X :size="15" />取消
+          </button>
+        </div>
       </div>
     </Transition>
 
@@ -4200,6 +4208,10 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   margin-right: 8px;
   white-space: nowrap;
+}
+
+.batch-bar__actions {
+  display: contents;
 }
 
 .batch-bar button {
@@ -5610,6 +5622,10 @@ onBeforeUnmount(() => {
     gap: 12px;
   }
 
+  .files-page--batch-active {
+    padding-bottom: 200px;
+  }
+
   .file-command-bar {
     align-items: stretch;
     flex-direction: column;
@@ -5914,9 +5930,36 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 480px) {
-  .file-command-bar__actions,
-  .batch-bar {
+  .files-page--batch-active {
+    padding-bottom: 126px;
+  }
+
+  .file-command-bar__actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .batch-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .batch-bar__actions {
+    grid-column: 1 / -1;
+    display: flex;
+    min-width: 0;
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .batch-bar__actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .batch-bar__actions button {
+    min-width: 104px;
+    scroll-snap-align: start;
   }
 
   .file-toolbar {
