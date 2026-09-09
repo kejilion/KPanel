@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,20 +85,9 @@ type declarativeSpec struct {
 	DefaultPort   uint16
 }
 
-var declarativeSpecs = map[string]declarativeSpec{
-	"speedtest": {
-		Token: "speedtest", ContainerName: "speedtest",
-		Image: "ghcr.io/librespeed/speedtest", ContainerPort: 8080, DefaultPort: 8028,
-	},
-	"it-tools": {
-		Token: "it-tools", ContainerName: "it-tools",
-		Image: "corentinth/it-tools:latest", ContainerPort: 80, DefaultPort: 8064,
-	},
-	"dosgame": {
-		Token: "dosgame", ContainerName: "dosgame",
-		Image: "oldiy/dosgame-web-docker:latest", ContainerPort: 262, DefaultPort: 8076,
-	},
-}
+// Catalog applications use the native script lifecycle. No application currently
+// opts into the declarative adapter.
+var declarativeSpecs = map[string]declarativeSpec{}
 
 type Service struct {
 	catalog                       Catalog
@@ -208,7 +198,7 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 	}
 	scriptInstallAvailable := s.scriptInstallAvailable()
 	scriptManageAvailable := s.scriptManageAvailable()
-	scriptMarkerRecoveryAvailable := s.scriptInteractiveManageAvailable()
+	scriptInteractiveManageAvailable := s.scriptInteractiveManageAvailable()
 	for _, app := range catalogState.Catalog.Apps {
 		legacy := s.legacy[app.Num]
 		item := Summary{
@@ -269,8 +259,10 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 				item.Runtime.DetectedBy = append(item.Runtime.DetectedBy, "app_config")
 			}
 			if scriptBacked {
-				item.Runtime.AccessMode = "unknown"
-				if mode, ok := s.readScriptAccessMode(storageName); ok {
+				if !hasLoopbackBinding(container.Ports) {
+					item.Runtime.AccessMode = "unknown"
+				}
+				if mode, ok := s.readScriptAccessMode(storageName); ok && !hasLoopbackBinding(container.Ports) {
 					item.Runtime.AccessMode = mode
 					item.Runtime.DetectedBy = append(item.Runtime.DetectedBy, "access_state")
 				}
@@ -287,14 +279,21 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 				item.Runtime.Warning = "kejilion.sh 安装标记存在，但 Docker Engine 中未发现运行产物"
 			}
 			disableInstalledCapabilities(&item, "Docker Engine 中没有可执行生命周期操作的容器")
-			_, markerRecoveryEligible := s.scriptSelectorFor(item)
-			if markerRecoveryEligible && scriptMarkerRecoveryAvailable {
-				item.Capabilities["manage"] = Capability{Enabled: true}
-			} else if markerRecoveryEligible {
-				item.Capabilities["manage"] = Capability{
-					Reason: "请更新本机 kejilion.sh 以启用安装标记恢复协议",
-				}
+		}
+		if _, eligible := s.scriptSelectorFor(item); item.Runtime.Installed && eligible {
+			item.Capabilities["manage"] = Capability{
+				Enabled: scriptInteractiveManageAvailable,
+				Reason:  reasonUnless(scriptInteractiveManageAvailable, "请更新本机 kejilion.sh 以启用应用交互管理协议"),
 			}
+		}
+		if hasContainer && scriptBacked && hasLoopbackBinding(container.Ports) {
+			// Native firewall actions do not rebind Docker ports, and native updates
+			// cannot preserve a loopback-only binding. Do not claim either succeeded.
+			reason := "当前脚本不支持保留或转换 Docker 回环端口绑定；需先完成端口绑定兼容处理"
+			for _, action := range []string{"update", "direct_access", "manage"} {
+				item.Capabilities[action] = Capability{Reason: reason}
+			}
+			item.Runtime.Warning = reason
 		}
 		if markerWarning != "" && item.Runtime.Warning == "" {
 			item.Runtime.Warning = markerWarning
@@ -472,13 +471,12 @@ func runtimeFromContainer(container contract.ContainerSummary) Runtime {
 		if port.PublicPort == 0 {
 			continue
 		}
-		switch port.IP {
-		case "127.0.0.1", "::1":
-			access = "domain_only"
-		case "", "0.0.0.0", "::":
-			if access != "domain_only" {
-				access = "direct"
+		if ip := net.ParseIP(port.IP); ip != nil && ip.IsLoopback() {
+			if access == "unknown" {
+				access = "domain_only"
 			}
+		} else {
+			access = "direct"
 		}
 	}
 	return Runtime{
@@ -487,6 +485,15 @@ func runtimeFromContainer(container contract.ContainerSummary) Runtime {
 		Ports: append([]contract.PortBinding{}, container.Ports...), AccessMode: access,
 		UpdateStatus: "check_required", ResourceVersion: container.ResourceVersion,
 	}
+}
+
+func hasLoopbackBinding(ports []contract.PortBinding) bool {
+	for _, port := range ports {
+		if ip := net.ParseIP(port.IP); port.PublicPort > 0 && ip != nil && ip.IsLoopback() {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultCapabilities(
@@ -570,9 +577,6 @@ func (s *Service) applyInstalledCapabilities(
 		item.Capabilities["update"] = Capability{Enabled: true}
 		item.Capabilities["uninstall"] = Capability{Enabled: true}
 		item.Capabilities["direct_access"] = Capability{Enabled: true}
-		item.Capabilities["manage"] = Capability{
-			Reason: "已发现应用容器，请使用面板提供的生命周期操作",
-		}
 	} else {
 		reason := "请更新本机 kejilion.sh 以启用应用非交互管理协议"
 		item.Capabilities["update"] = Capability{Reason: reason}

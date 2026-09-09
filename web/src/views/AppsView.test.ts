@@ -382,7 +382,7 @@ function inventory(resourceVersion: string): AppMarketInventory {
           restart: { enabled: true },
           update: { enabled: true },
           uninstall: { enabled: true },
-          manage: { enabled: false, reason: '已发现应用容器，请使用面板提供的生命周期操作' },
+          manage: { enabled: true },
         },
       },
     ],
@@ -911,9 +911,29 @@ describe('AppsView script management', () => {
     )
   })
 
-  it('does not open recovery-only script management for an application with a container', async () => {
+  it('opens native script management for an installed application with a container', async () => {
+    const job: AppInstallJob = {
+      id: '0123456789abcdef0123456789abcdef', appId: 'builtin-13', appName: 'Cloudreve',
+      action: 'manage', status: 'running', stage: 'interactive', progress: 5,
+      logs: [], createdAt: '2026-07-28T00:00:00Z', interactive: true, inputOpen: true,
+    }
+    mocks.action.mockResolvedValueOnce(job)
+    mocks.job.mockResolvedValue(job)
     const view = setupView()
     view.inventory.value = inventory('fresh-version')
+    view.selectedID.value = 'builtin-13'
+
+    await view.openScriptManage()
+
+    expect(mocks.action).toHaveBeenCalledWith('builtin-13', 'manage', { resourceVersion: 'fresh-version' })
+    expect(view.activeJob.value).toEqual(job)
+    expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('does not open script management when the host protocol is unavailable', async () => {
+    const view = setupView()
+    view.inventory.value = inventory('fresh-version')
+    view.inventory.value.items[0]!.capabilities.manage = { enabled: false, reason: '请更新本机 kejilion.sh' }
     view.selectedID.value = 'builtin-13'
 
     await view.openScriptManage()

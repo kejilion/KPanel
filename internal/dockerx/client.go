@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -466,6 +467,10 @@ type containerInspect struct {
 		} `json:"Health"`
 	} `json:"State"`
 	HostConfig struct {
+		PortBindings map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string `json:"HostPort"`
+		} `json:"PortBindings"`
 		Binds   []string `json:"Binds"`
 		CapAdd  []string `json:"CapAdd"`
 		Devices []struct {
@@ -555,7 +560,18 @@ func (c *Client) summaryFromInspect(raw containerInspect) contract.ContainerSumm
 		})
 	}
 	var ports []contract.PortBinding
-	for key, bindings := range raw.NetworkSettings.Ports {
+	portBindings := raw.NetworkSettings.Ports
+	if !raw.State.Running && len(raw.HostConfig.PortBindings) > 0 {
+		// Docker releases runtime bindings on stop; configured bindings remain
+		// authoritative for the next start and for application compatibility.
+		portBindings = maps.Clone(raw.HostConfig.PortBindings)
+		for key, bindings := range raw.NetworkSettings.Ports {
+			if len(bindings) > 0 || len(portBindings[key]) == 0 {
+				portBindings[key] = bindings
+			}
+		}
+	}
+	for key, bindings := range portBindings {
 		port, protocol, ok := strings.Cut(key, "/")
 		if !ok {
 			continue

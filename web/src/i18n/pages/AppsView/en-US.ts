@@ -1,6 +1,10 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["启停与卸载仍可使用；端口绑定需通过 Docker 或 SSH 调整。", "Start, stop and uninstall remain available. Adjust port bindings through Docker or SSH."],
+  ["通过 kejilion.sh 原生访问规则管理", "Managed through native kejilion.sh access rules"],
+  ["更新与卸载遵循 kejilion.sh 原生流程；影响范围以脚本提示为准。", "Updates and uninstall follow native kejilion.sh workflows; see the script prompts for their scope."],
+  ["当前脚本不支持保留或转换 Docker 回环端口绑定；需先完成端口绑定兼容处理", "The current script cannot preserve or convert Docker loopback port bindings. Port binding compatibility must be resolved first."],
   ["· 任务", "· Job"],
   ["{0} 安装期间可以继续使用面板。", "You can continue using KPanel while {0} is being installed."],
   ["{0} 处理期间可以继续使用面板。", "You can continue using KPanel while {0} is being processed."],
