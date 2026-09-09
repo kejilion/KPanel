@@ -52,7 +52,6 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
-import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import {
@@ -142,15 +141,6 @@ const fileHostInventoryError = ref(false)
 const activeFileHostId = ref('')
 const fileHostId = ref(typeof route.query.hostId === 'string' ? route.query.hostId : '')
 const fileAPI = computed(() => fileAPIForHost(fileHostId.value))
-const archiveTools = ref<InstanceType<typeof FileArchiveTools>>()
-
-function archiveChanged(hostId: string, path: string): void {
-  notifyFileDirectoriesChanged([path], fileWindowChangeOrigin, [], hostId)
-  if (fileHostId.value === hostId && currentPath.value === path) void loadDirectory()
-}
-function openArchiveResult(hostId: string, path: string): void {
-  if (fileHostId.value === hostId) void navigateDirectory(path)
-}
 const clusterHostOrderRevision = ref(0)
 let unregisterWindowCloseGuard: (() => void) | undefined
 let unsubscribeClusterHostOrder: (() => void) | undefined
@@ -484,7 +474,6 @@ const fileTransferState = ref<{
 const fileStatusStackVisible = computed(() => Boolean(
   clipboard.value?.entries.length
   || remoteDownloadTasksVisible.value
-  || archiveTools.value?.hasJobs
   || fileTransferState.value
   || uploadTasks.value.length,
 ))
@@ -919,7 +908,6 @@ function restoreViewMode(): void {
 }
 
 function openEntry(entry: FileEntry): void {
-  if (contextMenu.value && archiveFormat(entry) && archiveTools.value?.available) contextMenuOpener?.focus({ preventScroll: true })
   contextMenu.value = undefined
   if (entry.kind === 'directory') {
     void navigateDirectory(entry.path)
@@ -958,7 +946,6 @@ function resetMediaState(entry?: FileEntry): void {
 }
 
 async function openPreview(entry: FileEntry): Promise<void> {
-  if (archiveFormat(entry) && archiveTools.value?.available) { archiveTools.value.browse(entry); return }
   const hostId = fileHostId.value
   const requestId = ++previewRequestId
   previewEntry.value = entry
@@ -1615,17 +1602,10 @@ function handleContextMenuKeydown(event: KeyboardEvent): void {
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
-  if (contextMenu.value && (action === 'compress' || action === 'extract') && archiveTools.value?.available) contextMenuOpener?.focus({ preventScroll: true })
   contextMenu.value = undefined
-  const batchEntries = entriesForBatch(entry)
-  const isBatchExtract = action === 'extract' && archiveTools.value?.available && batchEntries.every(item => archiveFormat(item))
-  const isBatchAction = action === 'chmod' || action === 'compress' || action === 'trash' || isBatchExtract
-  dialogEntries.value = isBatchAction ? batchEntries : entry ? [entry] : [...selectedEntries.value]
+  const isBatchAction = action === 'chmod' || action === 'compress' || action === 'trash'
+  dialogEntries.value = isBatchAction ? entriesForBatch(entry) : entry ? [entry] : [...selectedEntries.value]
   if ((action === 'compress' || action === 'extract') && !dialogEntries.value.length) return
-  if ((action === 'compress' || action === 'extract') && archiveTools.value?.available) {
-    archiveTools.value.configure(action, dialogEntries.value)
-    return
-  }
   dialogAction.value = action
   if (action === 'mkdir') dialogValue.value = ''
   else if (action === 'rename') dialogValue.value = dialogEntries.value[0]?.name || ''
@@ -2881,7 +2861,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div v-show="fileStatusStackVisible" class="file-status-stack">
+      <div v-if="fileStatusStackVisible" class="file-status-stack">
       <Transition name="slide">
         <div v-if="clipboard?.entries.length" class="clipboard-bar">
           <span class="clipboard-bar__icon">
@@ -2902,7 +2882,6 @@ onBeforeUnmount(() => {
         </div>
       </Transition>
 
-      <FileArchiveTools ref="archiveTools" :host-id="fileHostId" :path="currentPath" @changed="archiveChanged" @open="openArchiveResult" />
       <Transition name="slide">
         <section
           v-if="remoteDownloadTasksVisible"
@@ -3289,7 +3268,6 @@ onBeforeUnmount(() => {
           @click="downloadSelected()"
         ><Download :size="15" />{{ selectedEntries.length === 1 && selectedEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}</button>
         <button type="button" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
-        <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
         <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
         <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
         <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
@@ -3339,7 +3317,7 @@ onBeforeUnmount(() => {
         <Share2 :size="15" />{{ phrase('分享') }}
       </button>
       <button
-        v-if="contextMenu.entry && archiveFormat(contextMenu.entry) && (!contextHasMultipleEntries || (archiveTools?.available && contextBatchEntries.every(entry => archiveFormat(entry))))"
+        v-if="contextMenu.entry && !contextHasMultipleEntries && archiveFormat(contextMenu.entry)"
         role="menuitem"
         type="button"
         @click="openDialog('extract', contextMenu.entry)"

@@ -103,9 +103,8 @@ func validateAppActionInput(action string, input appActionInput) (field, detail 
 		}
 	case "manage":
 		if !input.ResourceVersion.Set ||
-			(!resourceVersionPattern.MatchString(input.ResourceVersion.Value) &&
-				!markerResourceVersionPattern.MatchString(input.ResourceVersion.Value)) {
-			return "resourceVersion", "a valid resourceVersion is required"
+			!markerResourceVersionPattern.MatchString(input.ResourceVersion.Value) {
+			return "resourceVersion", "a valid marker resourceVersion is required"
 		}
 		if input.HostPort.Set || input.AccessMode.Set {
 			return "request", "only resourceVersion is allowed for this action"

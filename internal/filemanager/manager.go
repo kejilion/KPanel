@@ -70,9 +70,7 @@ type Manager struct {
 	shareGate      chan struct{}
 	maxCopyEntries int
 	maxCopyBytes   int64
-	writeMu        cancellableMutex
-	archiveIndex   archiveIndex
-	archiveJobs    archiveJobs
+	writeMu        sync.Mutex
 }
 
 type Config struct {
@@ -176,7 +174,6 @@ func (m *Manager) Available() error {
 }
 
 func (m *Manager) Close() error {
-	m.closeArchiveJobs()
 	return m.rootFS.Close()
 }
 
@@ -613,28 +610,8 @@ func (m *Manager) Action(
 	ctx context.Context,
 	input contract.FileActionRequest,
 ) (contract.FileActionResult, error) {
-	if err := m.writeMu.LockContext(ctx); err != nil {
-		return contract.FileActionResult{}, err
-	}
+	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return contract.FileActionResult{}, err
-	}
-	if err := validateArchiveSelection(input.ArchiveEntries); err != nil {
-		return contract.FileActionResult{}, err
-	}
-	if len(input.ArchiveEntries) > 0 {
-		if input.Action != "extract" {
-			return contract.FileActionResult{}, ErrAction
-		}
-		operation := archiveOptions(ctx)
-		if operation == nil {
-			operation = &archiveOperation{}
-		}
-		operation.selection = input.ArchiveEntries
-		operation.found = make(map[string]bool)
-		ctx = context.WithValue(ctx, archiveContextKey{}, operation)
-	}
 	result := contract.FileActionResult{
 		Action: input.Action, Succeeded: make([]contract.FileActionItem, 0),
 		Failed: make([]contract.FileActionFailure, 0),

@@ -28,8 +28,6 @@ let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
 const mockFileVersion = `sha256:${'a'.repeat(64)}`
 const mockRemoteDownloadJobs = new Map()
-const mockArchiveJobs = new Map()
-let mockArchiveCounter = 0
 // Explicitly simulated Docker update states for the local feature preview.
 const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailable'].map((status, index) => ({
   id: String(index + 1).repeat(64), name: `mock-${status}`, image: status === 'fixed' ? `redis@sha256:${'f'.repeat(64)}` : `redis:${index + 5}`,
@@ -39,7 +37,6 @@ const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailabl
 }))
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
-  ...['website.zip', 'logs.tar.gz'].map(name => ({ name, path: `/${name}`, kind: 'file', mime: 'application/octet-stream', sizeBytes: 1826048, mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt: '2026-09-09T08:30:00Z', resourceVersion: mockFileVersion, editable: false, previewable: false })),
   {
     name: 'kpanel-desktop.webp', path: '/kpanel-desktop.webp', kind: 'file', mime: 'image/webp',
     sizeBytes: mockSharedImage.length, mode: '-rw-r--r--', owner: 'root', group: 'root',
@@ -1282,62 +1279,6 @@ createServer(async (request, response) => {
       truncated: false, scanTruncated: false, readAt: new Date().toISOString(),
     })
     return
-  }
-  // Archive preview is explicitly simulated; no files or host tasks are written.
-  if (request.method === 'POST' && url.pathname === '/api/v1/files/archive-contents') {
-    const input = await readJSON(request)
-    const source = mockFiles.find(item => item.path === input.path)
-    if (!source || source.resourceVersion !== input.resourceVersion) { send(response, 409, { title: '文件状态已变化，请刷新后重试', code: 'file_conflict' }); return }
-    const members = [
-      { path: 'assets', name: 'assets', kind: 'directory', sizeBytes: 0 },
-      { path: 'assets/app.js', name: 'app.js', kind: 'file', sizeBytes: 384012 },
-      { path: 'assets/main.css', name: 'main.css', kind: 'file', sizeBytes: 28910 },
-      { path: 'index.html', name: 'index.html', kind: 'file', sizeBytes: 4852 },
-      { path: 'README.md', name: 'README.md', kind: 'file', sizeBytes: 1208 },
-    ].map(item => ({ ...item, modifiedAt: source.modifiedAt }))
-    const directory = input.directory || ''
-    const entries = members.filter(item => input.search ? (!directory || item.path.startsWith(`${directory}/`)) && item.path.toLowerCase().includes(input.search.toLowerCase()) : mockFileParent(`/${item.path}`) === `/${directory}`)
-    send(response, 200, { path: input.path, resourceVersion: input.resourceVersion, directory, entries, total: entries.length, truncated: false }); return
-  }
-  if (request.method === 'POST' && url.pathname === '/api/v1/files/entries') {
-    const { paths = [] } = await readJSON(request)
-    send(response, 200, { entries: mockFiles.filter(item => paths.includes(item.path)), unavailable: paths.filter(path => !mockFiles.some(item => item.path === path)) }); return
-  }
-  if (url.pathname === '/api/v1/files/archive-jobs') {
-    if (request.method === 'GET') {
-      const id = url.searchParams.get('id')
-      send(response, id && !mockArchiveJobs.has(id) ? 404 : 200, id ? mockArchiveJobs.get(id) || { title: '任务不存在' } : { items: [...mockArchiveJobs.values()].reverse() }); return
-    }
-    if (request.method === 'POST') {
-      const requestBody = await readJSON(request)
-      if (requestBody.operation === 'create') {
-        const input = requestBody.input
-        const id = (++mockArchiveCounter).toString(16).padStart(32, '0')
-        const now = new Date().toISOString()
-        const job = { id, action: input.action, name: input.sources.length > 1 && input.action === 'extract' ? `${input.sources.length} 个压缩包` : input.name, target: input.target, sources: input.sources, archiveEntries: input.archiveEntries, format: input.format, state: 'queued', entries: 0, processedBytes: 0, createdAt: now, updatedAt: now, result: { action: input.action, succeeded: [], failed: [] } }
-        mockArchiveJobs.set(id, job)
-        void (async () => {
-          await wait(500); if (job.state !== 'queued') return
-          job.state = 'running'
-          for (let index = 1; index <= 3; index++) { await wait(900); if (job.state !== 'running') return; job.entries = index; job.processedBytes = index * 1048576; job.updatedAt = new Date().toISOString() }
-          const sources = input.action === 'compress' ? input.sources.slice(0, 1) : input.sources
-          for (const source of sources) {
-            const name = input.action === 'extract' && sources.length > 1 ? source.split('/').at(-1).replace(/\.(tar\.gz|tgz|zip|tar)$/i, '') : input.name
-            const destination = mockFilePath(input.target, name)
-            if (mockFiles.some(item => item.path === destination)) { job.result.failed.push({ path: source, detail: '目标已存在，请修改名称后重试' }); continue }
-            job.result.succeeded.push({ path: source, destination })
-            mockFiles.push({ name, path: destination, kind: input.action === 'extract' ? 'directory' : 'file', sizeBytes: 3145728, mode: 'drwxr-xr-x', owner: 'root', group: 'root', modifiedAt: job.updatedAt, resourceVersion: mockFileVersion, editable: false, previewable: false })
-          }
-          job.state = job.result.failed.length ? (job.result.succeeded.length ? 'partial' : 'error') : 'complete'
-        })()
-        send(response, 202, job); return
-      }
-      const job = mockArchiveJobs.get(requestBody.id)
-      if (!job) { send(response, 404, { title: '任务不存在' }); return }
-      if (requestBody.operation === 'cancel') { job.state = 'cancelled'; job.updatedAt = new Date().toISOString() }
-      else if (requestBody.operation === 'clear') mockArchiveJobs.delete(job.id)
-      send(response, 200, { ok: true }); return
-    }
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/files/entry') {
     const entry = mockFiles.find((item) => item.path === url.searchParams.get('path'))

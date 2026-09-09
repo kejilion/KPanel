@@ -183,7 +183,7 @@ func (m *Manager) compressArchive(
 		return contract.FileEntry{}, err
 	}
 
-	temp, tempVirtual, err := m.createArchiveTemp(ctx, normalizedTarget)
+	temp, tempVirtual, err := m.createTemp(normalizedTarget, ".kpanel-archive-")
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -226,7 +226,7 @@ func (m *Manager) compressArchive(
 		return contract.FileEntry{}, ErrInvalidArchive
 	}
 
-	budget := archiveBudget(ctx, m)
+	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
 	stripSingleDirectory := len(prepared) == 1 && prepared[0].info.IsDir()
 	for _, source := range prepared {
 		archiveName := source.archiveName
@@ -248,9 +248,6 @@ func (m *Manager) compressArchive(
 		return contract.FileEntry{}, err
 	}
 	if err := temp.Close(); err != nil {
-		return contract.FileEntry{}, err
-	}
-	if err := ctx.Err(); err != nil {
 		return contract.FileEntry{}, err
 	}
 	if err := renameNoReplaceRoot(m.rootFS, tempVirtual, outputVirtual); err != nil {
@@ -295,7 +292,6 @@ func (m *Manager) walkArchive(
 			return err
 		}
 	}
-	archiveProgress(ctx, budget)
 	if !info.IsDir() {
 		return nil
 	}
@@ -458,9 +454,6 @@ func (m *Manager) extractArchive(
 	}
 
 	tempVirtual := joinVirtual(normalizedTarget, ".kpanel-extract-"+randomID())
-	if operation := archiveOptions(ctx); operation != nil && operation.tempSuffix != "" {
-		tempVirtual = joinVirtual(normalizedTarget, ".kpanel-extract-"+operation.tempSuffix)
-	}
 	if err := m.rootFS.Mkdir(rootName(tempVirtual), 0700); err != nil {
 		return contract.FileEntry{}, err
 	}
@@ -480,17 +473,40 @@ func (m *Manager) extractArchive(
 	if err != nil || !os.SameFile(sourceInfo, openedInfo) {
 		return contract.FileEntry{}, ErrConflict
 	}
-	budget := archiveBudget(ctx, m)
+	budget := &copyBudget{maxEntries: m.maxCopyEntries, maxBytes: m.maxCopyBytes}
+	seen := make(map[string]struct{})
 	directoryTimes := make([]archiveDirectoryTime, 0)
-	if err := m.readArchive(ctx, source, sourceInfo.Size(), format, tempVirtual, budget, &directoryTimes); err != nil {
-		return contract.FileEntry{}, err
-	}
-	if operation := archiveOptions(ctx); operation != nil {
-		for _, selected := range operation.selection {
-			if !operation.found[selected] {
-				return contract.FileEntry{}, ErrConflict
-			}
+	switch format {
+	case archiveFormatZIP:
+		if err := validateZIPDirectory(source, sourceInfo.Size(), budget.maxEntries); err != nil {
+			return contract.FileEntry{}, err
 		}
+		reader, zipErr := zip.NewReader(source, sourceInfo.Size())
+		if zipErr != nil {
+			return contract.FileEntry{}, ErrInvalidArchive
+		}
+		if err := m.extractZIP(ctx, reader, tempVirtual, budget, seen, &directoryTimes); err != nil {
+			return contract.FileEntry{}, err
+		}
+	case archiveFormatTAR, archiveFormatTARGZ:
+		if format == archiveFormatTAR && sourceInfo.Size() == 0 {
+			return contract.FileEntry{}, ErrInvalidArchive
+		}
+		var reader io.Reader = source
+		var gzipReader *gzip.Reader
+		if format == archiveFormatTARGZ {
+			gzipReader, err = gzip.NewReader(source)
+			if err != nil {
+				return contract.FileEntry{}, ErrInvalidArchive
+			}
+			defer gzipReader.Close()
+			reader = gzipReader
+		}
+		if err := m.extractTAR(ctx, tar.NewReader(&contextReader{ctx: ctx, reader: reader}), tempVirtual, budget, seen, &directoryTimes); err != nil {
+			return contract.FileEntry{}, err
+		}
+	default:
+		return contract.FileEntry{}, ErrInvalidArchive
 	}
 	if err := m.applyArchiveDirectoryTimes(directoryTimes); err != nil {
 		return contract.FileEntry{}, err
@@ -498,12 +514,6 @@ func (m *Manager) extractArchive(
 	currentInfo, err := source.Stat()
 	if err != nil || resourceVersion(normalizedSource, currentInfo) != resourceVersion(normalizedSource, sourceInfo) {
 		return contract.FileEntry{}, ErrConflict
-	}
-	if err := m.checkExpectedVersion(normalizedSource, resourceVersion(normalizedSource, sourceInfo)); err != nil {
-		return contract.FileEntry{}, err
-	}
-	if err := ctx.Err(); err != nil {
-		return contract.FileEntry{}, err
 	}
 	if err := renameNoReplaceRoot(m.rootFS, tempVirtual, outputVirtual); err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -518,13 +528,13 @@ func (m *Manager) extractArchive(
 	return m.Stat(outputVirtual)
 }
 
-func boundedZIPDirectory(ctx context.Context, reader io.ReaderAt, size int64, maxEntries int) (*archiveDirectoryReader, error) {
+func validateZIPDirectory(reader io.ReaderAt, size int64, maxEntries int) error {
 	const (
 		endRecordSize  = 22
 		maxCommentSize = 1<<16 - 1
 	)
 	if size < endRecordSize {
-		return nil, ErrInvalidArchive
+		return ErrInvalidArchive
 	}
 	tailSize := int64(endRecordSize + maxCommentSize)
 	if size < tailSize {
@@ -532,14 +542,14 @@ func boundedZIPDirectory(ctx context.Context, reader io.ReaderAt, size int64, ma
 	}
 	tail := make([]byte, tailSize)
 	if _, err := reader.ReadAt(tail, size-tailSize); err != nil {
-		return nil, ErrInvalidArchive
+		return ErrInvalidArchive
 	}
 	signature := []byte{'P', 'K', 0x05, 0x06}
 	index := len(tail) - endRecordSize
 	for index >= 0 {
 		candidate := bytes.LastIndex(tail[:index+len(signature)], signature)
 		if candidate < 0 {
-			return nil, ErrInvalidArchive
+			return ErrInvalidArchive
 		}
 		if candidate+endRecordSize <= len(tail) {
 			commentSize := int(binary.LittleEndian.Uint16(tail[candidate+20 : candidate+22]))
@@ -551,106 +561,22 @@ func boundedZIPDirectory(ctx context.Context, reader io.ReaderAt, size int64, ma
 		index = candidate - 1
 	}
 	if index < 0 {
-		return nil, ErrInvalidArchive
+		return ErrInvalidArchive
 	}
 	record := tail[index:]
 	if binary.LittleEndian.Uint16(record[4:6]) != 0 ||
 		binary.LittleEndian.Uint16(record[6:8]) != 0 {
-		return nil, ErrInvalidArchive
+		return ErrInvalidArchive
 	}
 	entriesOnDisk := binary.LittleEndian.Uint16(record[8:10])
 	totalEntries := binary.LittleEndian.Uint16(record[10:12])
 	if entriesOnDisk != totalEntries {
-		return nil, ErrInvalidArchive
+		return ErrInvalidArchive
 	}
 	if int(totalEntries) > maxEntries {
-		return nil, ErrTooLarge
+		return ErrTooLarge
 	}
-	directorySize := int64(binary.LittleEndian.Uint32(record[12:16]))
-	directoryOffset := int64(binary.LittleEndian.Uint32(record[16:20]))
-	endOffset := size - tailSize + int64(index)
-	// Go's ZIP reader also probes ZIP64 when directorySize == 0xffff.
-	// Reject that sentinel before it can replace the validated directory bounds.
-	if directorySize == 0xffff {
-		return nil, ErrInvalidArchive
-	}
-	if directorySize > maxArchiveIndexBytes {
-		return nil, ErrTooLarge
-	}
-	if directoryOffset == 0xffffffff || directoryOffset+directorySize != endOffset {
-		return nil, ErrInvalidArchive
-	}
-	// Freeze the entire bounded central directory and EOCD. A source changing
-	// after this check cannot trick zip.NewReader into allocating a larger index.
-	frozen := make([]byte, size-directoryOffset)
-	if _, err := reader.ReadAt(frozen, directoryOffset); err != nil {
-		return nil, ErrInvalidArchive
-	}
-	if !bytes.Equal(frozen[directorySize:], record) {
-		return nil, ErrConflict
-	}
-	position := int64(0)
-	for count := 0; count < int(totalEntries); count++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if position+46 > directorySize || binary.LittleEndian.Uint32(frozen[position:position+4]) != 0x02014b50 {
-			return nil, ErrInvalidArchive
-		}
-		header := frozen[position : position+46]
-		if binary.LittleEndian.Uint16(header[34:36]) != 0 {
-			return nil, ErrInvalidArchive
-		}
-		position += 46 + int64(binary.LittleEndian.Uint16(header[28:30])) + int64(binary.LittleEndian.Uint16(header[30:32])) + int64(binary.LittleEndian.Uint16(header[32:34]))
-		if position > directorySize {
-			return nil, ErrInvalidArchive
-		}
-	}
-	if position != directorySize {
-		return nil, ErrInvalidArchive
-	}
-	// Give the standard library a single canonical EOCD. Its more permissive
-	// signature search must not pick a fake EOCD embedded in the original comment.
-	frozen = frozen[:directorySize+endRecordSize]
-	binary.LittleEndian.PutUint16(frozen[directorySize+20:], 0)
-	return &archiveDirectoryReader{ctx: ctx, source: reader, offset: directoryOffset, frozen: frozen}, nil
-}
-
-type archiveDirectoryReader struct {
-	ctx    context.Context
-	source io.ReaderAt
-	offset int64
-	frozen []byte
-}
-
-func (r *archiveDirectoryReader) ReadAt(p []byte, offset int64) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	if offset < 0 {
-		return 0, ErrInvalidArchive
-	}
-	n := 0
-	if offset < r.offset {
-		count := min(int64(len(p)), r.offset-offset)
-		var err error
-		n, err = r.source.ReadAt(p[:count], offset)
-		if err != nil {
-			return n, err
-		}
-		offset += int64(n)
-	}
-	if n == len(p) {
-		return n, nil
-	}
-	if offset-r.offset >= int64(len(r.frozen)) {
-		return n, io.EOF
-	}
-	n += copy(p[n:], r.frozen[offset-r.offset:])
-	if n < len(p) {
-		return n, io.EOF
-	}
-	return n, nil
+	return nil
 }
 
 func (m *Manager) extractZIP(
@@ -674,21 +600,12 @@ func (m *Manager) extractZIP(
 		}
 		seen[name] = struct{}{}
 		info := entry.FileInfo()
-		if entry.Flags&1 != 0 || (entry.Method != zip.Store && entry.Method != zip.Deflate) || info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
 			return ErrInvalidArchive
 		}
 		budget.entries++
 		if budget.entries > budget.maxEntries || entry.UncompressedSize64 > uint64(budget.maxBytes-budget.bytes) {
 			return ErrTooLarge
-		}
-		include, err := archiveInclude(ctx, name, info, int64(entry.UncompressedSize64))
-		if err != nil {
-			return err
-		}
-		if !include {
-			budget.bytes += int64(entry.UncompressedSize64)
-			archiveProgress(ctx, budget)
-			continue
 		}
 		targetVirtual := joinVirtual(tempVirtual, name)
 		if info.IsDir() {
@@ -735,13 +652,6 @@ func (m *Manager) extractTAR(
 		if err != nil {
 			return ErrInvalidArchive
 		}
-		if (header.Name == "." || header.Name == "./") && header.Typeflag == tar.TypeDir {
-			budget.entries++
-			if budget.entries > budget.maxEntries {
-				return ErrTooLarge
-			}
-			continue
-		}
 		name, err := normalizeArchiveEntry(header.Name)
 		if err != nil {
 			return err
@@ -753,25 +663,6 @@ func (m *Manager) extractTAR(
 		budget.entries++
 		if budget.entries > budget.maxEntries || header.Size < 0 || header.Size > budget.maxBytes-budget.bytes {
 			return ErrTooLarge
-		}
-		if header.Typeflag != tar.TypeDir && header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			return ErrInvalidArchive
-		}
-		include, err := archiveInclude(ctx, name, header.FileInfo(), header.Size)
-		if err != nil {
-			return err
-		}
-		if !include {
-			written, err := io.Copy(io.Discard, &contextReader{ctx: ctx, reader: reader})
-			if err != nil {
-				return err
-			}
-			if written != header.Size {
-				return ErrInvalidArchive
-			}
-			budget.bytes += written
-			archiveProgress(ctx, budget)
-			continue
 		}
 		targetVirtual := joinVirtual(tempVirtual, name)
 		switch header.Typeflag {
@@ -832,7 +723,6 @@ func (m *Manager) writeExtractedFile(
 		return ErrTooLarge
 	}
 	budget.bytes += written
-	archiveProgress(ctx, budget)
 	if err := output.Sync(); err != nil {
 		return err
 	}
@@ -888,9 +778,6 @@ func validateArchiveSourceName(name, format string) error {
 }
 
 func normalizeArchiveEntry(value string) (string, error) {
-	for strings.HasPrefix(value, "./") {
-		value = strings.TrimPrefix(value, "./")
-	}
 	if value == "" || len(value) > maxPathBytes || strings.HasPrefix(value, "/") ||
 		strings.Contains(value, `\`) || strings.ContainsRune(value, 0) {
 		return "", ErrInvalidArchive

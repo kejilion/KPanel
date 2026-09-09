@@ -606,7 +606,7 @@ func v2FileRelayRequestPath(path string) bool {
 		"/v1/files/trash", "/v1/files/content", "/v1/files/archive",
 		"/v1/files/text", "/v1/files/tail", "/v1/files/upload",
 		"/v1/files/transfer/export", "/v1/files/transfer/import",
-		"/v1/files/actions", "/v1/files/archive-contents", "/v1/files/archive-jobs":
+		"/v1/files/actions":
 		return true
 	default:
 		return false

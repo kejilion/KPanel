@@ -19,22 +19,14 @@ type recoveryAgent struct {
 
 func (a *recoveryAgent) Get(ctx context.Context, path, query, id string) (AgentResponse, error) {
 	if query != "" {
-		if path != "/v1/files/archive-jobs" || !strings.HasPrefix(query, "id=") {
-			return AgentResponse{}, fmt.Errorf("unexpected query")
-		}
-		_, _ = a.stubAgent.Get(ctx, path, query, id)
-		return a.get(ctx, path+"/"+strings.TrimPrefix(query, "id="))
+		return AgentResponse{}, fmt.Errorf("unexpected query")
 	}
 	_, _ = a.stubAgent.Get(ctx, path, query, id)
 	return a.get(ctx, path)
 }
 
 func ownerBody(id, state string) string {
-	archiveState := state
-	if state == "succeeded" {
-		archiveState = "complete"
-	}
-	return fmt.Sprintf(`{"id":%q,"status":%q,"state":%q,"action":"compress","stage":%q,"createdAt":"2026-09-05T00:00:00Z","updatedAt":"2026-09-05T00:00:00Z"}`, id, state, archiveState, state)
+	return fmt.Sprintf(`{"id":%q,"status":%q,"action":"backup","stage":%q,"createdAt":"2026-09-05T00:00:00Z"}`, id, state, state)
 }
 
 func TestJobDetailRecoversEveryOwnerBeyondLatest50ReadOnly(t *testing.T) {
@@ -151,7 +143,7 @@ func TestJobsPartialSourcesRetainOnlyConfirmedResults(t *testing.T) {
 			s.agent = agent
 			response := performRequest(s, "GET", "/api/v1/jobs", nil, map[string]string{"Cookie": session.Name + "=" + session.Value})
 			var page jobsPage
-			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || !page.Partial || len(page.Items) != len(jobOwners())-1 || len(page.Sources) != len(jobOwners())+1 {
+			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || !page.Partial || len(page.Items) != 2 || len(page.Sources) != 4 {
 				t.Fatalf("partial result lost: %d %s", response.Code, response.Body.String())
 			}
 			if page.Sources[1].State == "available" || strings.Contains(response.Body.String(), "secret") {
@@ -197,7 +189,7 @@ func TestJobsSlowSourceDoesNotConsumeOtherOwnerDeadline(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(deadlines) != len(jobOwners()) {
-		t.Fatalf("expected every owner to have a bounded source read: %#v", deadlines)
+	if len(deadlines) != 3 {
+		t.Fatalf("expected three bounded source reads: %#v", deadlines)
 	}
 }

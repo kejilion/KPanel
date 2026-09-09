@@ -45,8 +45,6 @@ func (s *Server) federatedFileHandler() http.Handler {
 			s.federatedFileContent(w, r)
 		case "/v1/files/archive":
 			s.federatedFileArchive(w, r)
-		case "/v1/files/archive-contents", "/v1/files/archive-jobs":
-			s.proxyFileArchives(w, r, true, "")
 		case "/v1/files/text":
 			s.federatedFileText(w, r)
 		case "/v1/files/tail":

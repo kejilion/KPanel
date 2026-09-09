@@ -57,7 +57,6 @@ func jobOwners() []jobOwner {
 		{"docker", "/v1/docker/jobs", decodeOwnerJobs(jobsFromDockerJobs), decodeOwnerJob(jobsFromDockerJobs)},
 		{"app", "/v1/app-jobs", decodeOwnerJobs(jobsFromAppJobs), decodeOwnerJob(jobsFromAppJobs)},
 		{"webenv", "/v1/web-environment/jobs", decodeOwnerJobs(jobsFromWebEnvironment), decodeOwnerJob(jobsFromWebEnvironment)},
-		{"file-archive", "/v1/files/archive-jobs", decodeOwnerJobs(jobsFromFileArchives), decodeOwnerJob(jobsFromFileArchives)},
 	}
 }
 
@@ -93,12 +92,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		ownerPath, query := owner.path+"/"+parts[1], ""
-		if owner.name == "file-archive" {
-			ownerPath = owner.path
-			query = "id=" + parts[1]
-		}
-		response, err := s.hostOps.Get(ctx, ownerPath, query, requestID(r))
+		response, err := s.hostOps.Get(ctx, owner.path+"/"+parts[1], "", requestID(r))
 		if err == nil && response.StatusCode == http.StatusNotFound {
 			s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
 			return

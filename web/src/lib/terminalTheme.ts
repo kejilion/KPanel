@@ -30,18 +30,13 @@ function terminalColor(style: CSSStyleDeclaration, name: string, fallback: strin
 export function readTerminalTheme(element: Element): ITheme {
   const style = window.getComputedStyle(element)
   const background = terminalColor(style, '--terminal-shell-background', terminalColorFallbacks.background)
-  const selectionBackground = terminalColor(style, '--brand-soft', terminalColorFallbacks.selection)
 
   return {
     background,
     foreground: terminalColor(style, '--terminal-shell-text', terminalColorFallbacks.foreground),
     cursor: terminalColor(style, '--brand', terminalColorFallbacks.cursor),
     cursorAccent: background,
-    // The page selection surface can be light while the shell stays dark.
-    // Pair it with page text, including after focus moves to the composer.
-    selectionBackground,
-    selectionInactiveBackground: selectionBackground,
-    selectionForeground: terminalColor(style, '--text', terminalColorFallbacks.foreground),
+    selectionBackground: terminalColor(style, '--brand-soft', terminalColorFallbacks.selection),
     black: terminalColor(style, '--terminal-ansi-black', terminalColorFallbacks.black),
     red: terminalColor(style, '--terminal-ansi-red', terminalColorFallbacks.red),
     green: terminalColor(style, '--terminal-ansi-green', terminalColorFallbacks.green),
