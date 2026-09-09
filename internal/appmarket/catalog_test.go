@@ -182,6 +182,11 @@ func TestInventoryCombinesDockerTruthAndScriptMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := service.configureJobs(filepath.Join(root, "jobs"), filepath.Join(root, "agent"), &fakeJobRunner{}); err != nil {
+		t.Fatal(err)
+	}
+	service.scriptInteractiveFinder = func() (string, error) { return "/usr/local/bin/k", nil }
+	service.scriptManageFinder = func() (string, error) { return "/usr/local/bin/k", nil }
 	inventory, err := service.Inventory(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -570,7 +575,7 @@ func TestRemoteCatalogColdReadDoesNotWaitForNetwork(t *testing.T) {
 func TestCompatibilityFilesReconcileScriptAndManualDrift(t *testing.T) {
 	root := t.TempDir()
 	service := &Service{appRoot: root}
-	spec := declarativeSpecs["speedtest"]
+	spec := declarativeSpec{Token: "speedtest", ContainerName: "speedtest"}
 	item := Summary{App: App{Num: 28, Token: spec.Token}}
 	portPath := filepath.Join(root, spec.ContainerName+"_port.conf")
 	markerPath := filepath.Join(root, "appno.txt")

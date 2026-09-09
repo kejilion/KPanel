@@ -56,12 +56,10 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 		!appSelectorPattern.MatchString(record.Selector) {
 		return errors.New("application job contains an unsupported interactive request")
 	}
-	if record.Action != "install" && record.Action != "manage" &&
+	if record.Action != "install" &&
+		(record.Action != "manage" || record.ExpectedContainerID != "") &&
 		!containerIDPattern.MatchString(record.ExpectedContainerID) {
 		return errors.New("application job contains an invalid expected container")
-	}
-	if record.Action == "manage" && record.ExpectedContainerID != "" {
-		return errors.New("application recovery job unexpectedly targets a container")
 	}
 	if record.Action == "direct_access" &&
 		record.AccessMode != "direct" && record.AccessMode != "domain_only" {
@@ -177,7 +175,7 @@ func interactiveAppJobEnvironment(record appJobRecord) []string {
 	if record.Action == "install" && record.HostPort > 0 {
 		result = append(result, "KJ_APP_PORT="+strconv.Itoa(int(record.HostPort)))
 	}
-	if record.Action == "manage" {
+	if record.Action == "manage" && record.ExpectedContainerID == "" {
 		result = append(result, "KJ_APP_MARKER_RECOVERY=1")
 	}
 	if record.Action == "update" || record.Action == "uninstall" ||

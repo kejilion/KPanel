@@ -82,16 +82,16 @@ func TestThirdPartyScriptAppUsesVerifiedMainContainerAndLifecycleProtocol(t *tes
 			t.Fatalf("%s was not enabled: %#v", action, item.Capabilities[action])
 		}
 	}
-	if item.Capabilities["manage"].Enabled {
-		t.Fatalf("normal container application exposed recovery-only script management: %#v", item.Capabilities["manage"])
+	if !item.Capabilities["manage"].Enabled {
+		t.Fatalf("verified application did not expose script management: %#v", item.Capabilities["manage"])
 	}
 	if _, scriptBacked, err := service.StartScriptMutation(
 		context.Background(),
 		item.ID,
 		"manage",
-		MutationInput{ResourceVersion: item.Runtime.ResourceVersion},
+		MutationInput{ResourceVersion: "stale"},
 	); !scriptBacked || err == nil {
-		t.Fatalf("normal container application accepted recovery-only script management: script=%v err=%v", scriptBacked, err)
+		t.Fatalf("stale script management request was accepted: script=%v err=%v", scriptBacked, err)
 	}
 	if _, scriptBacked, err := service.StartScriptMutation(
 		context.Background(),
@@ -307,8 +307,8 @@ func TestDynamicThirdPartyConfigDoesNotBecomeAManagementGuardrail(t *testing.T) 
 			t.Fatalf("%s stayed disabled by config parsing: %#v", action, item.Capabilities[action])
 		}
 	}
-	if item.Capabilities["manage"].Enabled {
-		t.Fatalf("normal dynamic application exposed recovery-only script management")
+	if !item.Capabilities["manage"].Enabled {
+		t.Fatalf("dynamic application did not expose script management")
 	}
 }
 

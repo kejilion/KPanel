@@ -1306,7 +1306,13 @@ watch(windowActive, syncJobPollingForWindow)
         </div>
 
         <div v-if="selected.runtime.warning" class="inline-alert inline-alert--warning">
-          <Wrench :size="17" /> {{ phrase(selected.runtime.warning) }}
+          <Wrench :size="17" />
+          <span>
+            {{ phrase(selected.runtime.warning) }}
+            <template v-if="selected.runtime.warning === '当前脚本不支持保留或转换 Docker 回环端口绑定；需先完成端口绑定兼容处理'">
+              {{ phrase('启停与卸载仍可使用；端口绑定需通过 Docker 或 SSH 调整。') }}
+            </template>
+          </span>
         </div>
 
         <section v-if="selected.runtime.installed" class="app-control-panel">
@@ -1462,7 +1468,7 @@ watch(windowActive, syncJobPollingForWindow)
           </section>
 
           <section class="app-detail-section app-detail-section--access">
-            <header><Network :size="18" /><div><strong>{{ phrase('IP + 端口访问') }}</strong><small>{{ phrase('通过容器监听地址切换，不写入全局防火墙') }}</small></div></header>
+            <header><Network :size="18" /><div><strong>{{ phrase('IP + 端口访问') }}</strong><small>{{ phrase(selected.installer === 'declarative' ? '通过容器监听地址切换，不写入全局防火墙' : '通过 kejilion.sh 原生访问规则管理') }}</small></div></header>
             <div class="access-card">
               <span :class="selected.runtime.accessMode === 'domain_only' ? 'is-locked' : 'is-open'">
                 <LockKeyhole v-if="selected.runtime.accessMode === 'domain_only'" :size="19" />
@@ -1488,7 +1494,7 @@ watch(windowActive, syncJobPollingForWindow)
         <section v-if="selected.runtime.installed" class="danger-zone">
           <div>
             <strong>{{ phrase('维护与卸载') }}</strong>
-            <small>{{ phrase('更新失败会自动恢复旧容器；卸载只删除已核验的容器与兼容标记，不清理共享镜像。') }}</small>
+            <small>{{ phrase(selected.installer === 'declarative' ? '更新失败会自动恢复旧容器；卸载只删除已核验的容器与兼容标记，不清理共享镜像。' : '更新与卸载遵循 kejilion.sh 原生流程；影响范围以脚本提示为准。') }}</small>
           </div>
           <button
             class="button button--secondary"

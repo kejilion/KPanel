@@ -18,8 +18,9 @@ const installed = new Map([
   ['it-tools', { state: 'running', direct: false }],
   ['openlist', { state: 'running', direct: true }],
   ['n8n', { state: 'exited', direct: false }],
+  ['frps', { state: 'running', direct: true }],
+  ['frpc', { state: 'exited', direct: true }],
 ])
-const adapted = new Set(['speedtest', 'it-tools', 'dosgame'])
 const appJobs = new Map()
 const diagnosticJobs = new Map()
 let domainSiteDeleted = false
@@ -211,15 +212,14 @@ const diagnosticCatalog = {
 const items = catalog.apps.map((app, index) => {
   const mapping = legacyByNumber.get(app.num) || {}
   const runtime = installed.get(app.token)
-  const isAdapted = adapted.has(app.token)
   const isStandard = app.source === 'thirdparty' || mapping.usesDockerApp
   const isRunning = runtime?.state === 'running'
   const port = mapping.defaultPort || 0
   return {
     ...app,
     defaultPort: port,
-    installPortConfigurable: Boolean(port && (isAdapted || mapping.usesDockerApp)),
-    installer: isAdapted ? 'declarative' : isStandard ? 'kejilion' : 'guided',
+    installPortConfigurable: Boolean(port && mapping.usesDockerApp),
+    installer: 'kejilion',
     runtime: runtime
       ? {
           installed: true,
@@ -233,7 +233,7 @@ const items = catalog.apps.map((app, index) => {
                 {
                   privatePort: app.token === 'it-tools' ? 80 : 8080,
                   publicPort: port,
-                  ip: runtime.direct ? '0.0.0.0' : '127.0.0.1',
+                  ip: '0.0.0.0',
                   type: 'tcp',
                 },
               ]
@@ -253,17 +253,18 @@ const items = catalog.apps.map((app, index) => {
         },
     capabilities: {
       install: {
-        enabled: (isAdapted || isStandard) && !runtime,
-        reason: runtime ? '应用已安装' : isStandard ? '' : '该应用需要专属配置向导',
+        enabled: !runtime,
+        reason: runtime ? '应用已安装' : '',
       },
       start: { enabled: Boolean(runtime && !isRunning), reason: '当前状态不允许启动' },
       stop: { enabled: Boolean(runtime && isRunning), reason: '当前状态不允许停止' },
       restart: { enabled: Boolean(runtime && isRunning), reason: '当前状态不允许重启' },
       check_update: { enabled: Boolean(runtime) },
-      update: { enabled: Boolean(runtime && isAdapted), reason: '只允许更新配置完全匹配的声明式应用' },
-      uninstall: { enabled: Boolean(runtime && isAdapted), reason: '现有应用由 kejilion.sh 管理' },
+      update: { enabled: Boolean(runtime && isStandard) },
+      uninstall: { enabled: Boolean(runtime && isStandard) },
       add_domain: { enabled: Boolean(runtime && port) },
-      direct_access: { enabled: Boolean(runtime && isAdapted), reason: '仅声明式适配应用支持安全切换' },
+      direct_access: { enabled: Boolean(runtime && isStandard) },
+      manage: { enabled: Boolean(runtime) },
     },
   }
 })
@@ -282,6 +283,7 @@ const inventory = {
 }
 
 function materializeJob(job) {
+  if (job.native) return job.native
   const elapsed = Date.now() - job.created
   const progress = Math.min(100, Math.max(5, Math.floor(elapsed / 80)))
   return {
@@ -1563,6 +1565,33 @@ createServer(async (request, response) => {
     const job = appJobs.get(appJobMatch[1])
     send(response, job ? 200 : 404, job ? materializeJob(job) : { title: '任务不存在' })
     return
+  }
+  const appManageMatch = url.pathname.match(/^\/api\/v1\/apps\/([^/]+)\/manage$/)
+  if (request.method === 'POST' && appManageMatch) {
+    const app = items.find((item) => item.id === appManageMatch[1])
+    const input = await readJSON(request)
+    if (!app?.capabilities.manage.enabled) return send(response, 409, { title: '应用没有可用的脚本管理入口' })
+    if (input.resourceVersion !== app.runtime.resourceVersion) return send(response, 409, { title: '应用状态已变化，请刷新后重试' })
+    const id = `${Date.now().toString(16).padStart(16, '0')}${'b'.repeat(16)}`
+    const native = { id, appId: app.id, appName: app.name_zh, action: 'manage', interactive: true, inputOpen: true,
+      status: 'running', stage: 'interactive', progress: 5, logs: ['模拟终端：未执行宿主机脚本'], createdAt: new Date().toISOString() }
+    appJobs.set(id, { native })
+    return send(response, 202, native)
+  }
+  const appTerminalMatch = url.pathname.match(/^\/api\/v1\/app-jobs\/([a-f0-9]{32})\/(terminal|input|cancel)$/)
+  if (appTerminalMatch) {
+    const job = appJobs.get(appTerminalMatch[1])?.native
+    if (!job) return send(response, 404, { title: '模拟任务不存在' })
+    if (request.method === 'GET' && appTerminalMatch[2] === 'terminal') {
+      const output = Buffer.from(`模拟数据 · ${job.appName}\r\n脚本管理终端已打开（未执行宿主机命令）\r\n1. 安装  2. 更新  3. 卸载  0. 返回\r\n请输入你的选择: `)
+      const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0)
+      return send(response, 200, { dataBase64: output.subarray(offset).toString('base64'), nextOffset: output.length, inputOpen: job.inputOpen, finished: !job.inputOpen })
+    }
+    if (request.method === 'POST' && appTerminalMatch[2] === 'input') return send(response, 200, { accepted: true })
+    if (request.method === 'POST' && appTerminalMatch[2] === 'cancel') {
+      Object.assign(job, { status: 'cancelled', stage: 'cancelled', inputOpen: false, progress: 100, finishedAt: new Date().toISOString() })
+      return send(response, 200, job)
+    }
   }
   const appInstallMatch = url.pathname.match(/^\/api\/v1\/apps\/([^/]+)\/install$/)
   const appInstallPortMatch = url.pathname.match(/^\/api\/v1\/apps\/([^/]+)\/install-port$/)

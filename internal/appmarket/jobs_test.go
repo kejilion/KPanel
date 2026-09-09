@@ -42,52 +42,56 @@ func (*fakeJobRunner) LookPath(name string) (string, error) {
 	return "/usr/bin/systemd-run", nil
 }
 
-func TestDeclarativeInstallRunsAsPersistentBackgroundJob(t *testing.T) {
-	root := t.TempDir()
-	service, err := New(&fakeDocker{}, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := &fakeJobRunner{}
-	if err := service.configureJobs(
-		filepath.Join(root, "jobs"),
-		filepath.Join(root, "kejilion-agent"),
-		runner,
-	); err != nil {
-		t.Fatal(err)
-	}
+func TestFormerDeclarativeAppsUseNativeScriptJobs(t *testing.T) {
+	for _, id := range []string{"builtin-28", "builtin-64", "builtin-76"} {
+		t.Run(id, func(t *testing.T) {
+			root := t.TempDir()
+			service, err := New(&fakeDocker{}, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runner := &fakeJobRunner{}
+			if err := service.configureJobs(
+				filepath.Join(root, "jobs"),
+				filepath.Join(root, "kejilion-agent"),
+				runner,
+			); err != nil {
+				t.Fatal(err)
+			}
 
-	job, err := service.StartInstall(context.Background(), "builtin-28", InstallInput{
-		HostPort:   18028,
-		AccessMode: "domain_only",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job.Status != "queued" || job.Progress != 0 {
-		t.Fatalf("initial job = %#v", job)
-	}
+			service.scriptInteractiveFinder = func() (string, error) { return "/usr/local/bin/k", nil }
+			service.listeningPorts = func(context.Context) (map[uint16][]string, error) {
+				return map[uint16][]string{}, nil
+			}
+			item, err := service.Find(context.Background(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if item.Installer != "kejilion" || !item.InstallPortConfigurable {
+				t.Fatalf("application did not use the generic script adapter: %#v", item)
+			}
+			job, err := service.StartInstall(context.Background(), id, InstallInput{
+				HostPort: 18028,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job.Status != "queued" || job.Progress != 0 {
+				t.Fatalf("initial job = %#v", job)
+			}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		job, err = service.AppJob(job.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if job.Status == "succeeded" {
-			break
-		}
-		if job.Status == "failed" || time.Now().After(deadline) {
-			record, _ := service.jobs.read(job.ID)
-			t.Fatalf("background job did not succeed: public=%#v record=%#v launches=%#v", job, record, runner.calls)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if job.Progress != 100 || job.Stage != "completed" {
-		t.Fatalf("completed job = %#v", job)
-	}
-	if len(service.AppJobs()) != 1 {
-		t.Fatalf("job history count = %d", len(service.AppJobs()))
+			record, err := service.jobs.read(job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.Adapter != "kejilion" || !record.Interactive ||
+				record.Selector != strings.TrimPrefix(id, "builtin-") || record.HostPort != 18028 {
+				t.Fatalf("unexpected native job: %#v", record)
+			}
+			if len(service.AppJobs()) != 1 {
+				t.Fatalf("job history count = %d", len(service.AppJobs()))
+			}
+		})
 	}
 }
 
@@ -169,6 +173,7 @@ func TestInteractiveApplicationJobCanBeEndedAndReleasesTaskLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.scriptInteractiveFinder = func() (string, error) { return "/usr/local/bin/k", nil }
 	runner := &fakeJobRunner{unitState: "active"}
 	if err := service.configureJobs(
 		filepath.Join(root, "jobs"),
@@ -394,7 +399,7 @@ func TestAllAuditedBuiltinAppsOfferSafeInstallPath(t *testing.T) {
 		if !item.Capabilities["install"].Enabled {
 			t.Fatalf("builtin application %s has no install path: %#v", item.ID, item)
 		}
-		if item.Installer != "kejilion" && item.Installer != "declarative" {
+		if item.Installer != "kejilion" {
 			t.Fatalf("builtin application %s escaped trusted installers: %#v", item.ID, item)
 		}
 	}

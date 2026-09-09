@@ -417,14 +417,8 @@ func (s *Service) StartScriptMutation(
 		return AppJob{}, true, ErrConflict
 	}
 	expectedContainerID := item.Runtime.ContainerID
-	if action == "manage" {
-		if expectedContainerID != "" {
-			return AppJob{}, true, fmt.Errorf(
-				"%w: script recovery is available only when the application container is missing",
-				ErrConflict,
-			)
-		}
-	} else if !containerIDPattern.MatchString(expectedContainerID) {
+	if (action != "manage" || expectedContainerID != "") &&
+		!containerIDPattern.MatchString(expectedContainerID) {
 		return AppJob{}, true, ErrConflict
 	}
 	if action == "direct_access" && input.AccessMode != "direct" && input.AccessMode != "domain_only" {
