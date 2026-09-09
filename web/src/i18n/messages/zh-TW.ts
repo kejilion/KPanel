@@ -1,6 +1,7 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const zhTWMessages = {
+  "error.certificateRenewalUnavailable": "暫時無法更換憑證，請稍後重試。",
   "error.imageUpdateUnavailable": "暫時無法檢查，請確認主機網路和倉庫可存取後重試。",
   "error.imageUpdateDigestMissing": "本機映像缺少可比較摘要，可能由本機建置或匯入；無法自動判斷更新。",
   "error.imageUpdateIncomparable": "映像摘要層級或平台不一致，無法可靠判斷更新。",

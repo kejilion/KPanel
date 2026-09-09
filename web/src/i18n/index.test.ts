@@ -25,6 +25,17 @@ it('shares image-update recovery messages without leaking raw registry errors', 
   expect(localizeImageUpdateError({ code: 'docker_update_timeout' })).toContain('timed out')
 })
 
+it('localizes certificate renewal failures in every supported language', async () => {
+  vi.stubGlobal('document', { documentElement: { lang: '', dir: '' } })
+  vi.stubGlobal('window', { localStorage: { setItem: vi.fn() } })
+  for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
+    await setLocale(locale)
+    const message = localizeError({ code: 'site_certificate_renewal_unavailable', message: 'private-key=SECRET' })
+    expect(message).toBe(t('error.certificateRenewalUnavailable'))
+    expect(message).not.toContain('SECRET')
+  }
+})
+
 describe('locale selection', () => {
   it('uses a persisted user choice before the browser language', () => {
     expect(resolveInitialLocale('zh-CN', ['en-US'])).toBe('zh-CN')

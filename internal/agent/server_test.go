@@ -393,6 +393,7 @@ func TestSiteWriteErrorStatusMapping(t *testing.T) {
 		{"validation", sites.ErrUnprocessable, http.StatusUnprocessableEntity, "site_validation_failed"},
 		{"needs attention", sites.ErrNeedsAttention, http.StatusServiceUnavailable, "site_needs_attention"},
 		{"unavailable", sites.ErrUnavailable, http.StatusServiceUnavailable, "sites_unavailable"},
+		{"certificate renewal", sites.ErrCertificateRenewalUnavailable, http.StatusServiceUnavailable, "site_certificate_renewal_unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

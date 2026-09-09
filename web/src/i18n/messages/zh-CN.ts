@@ -381,6 +381,7 @@ export const zhCNMessages = {
   'error.secondFactorUnavailable': '身份验证器暂时不可用，请改用恢复码或检查 TOTP 加密密钥。',
   'error.forbidden': '当前账户无权执行此操作。',
   'error.agentUnavailable': '宿主机 Agent 暂时不可用。',
+  'error.certificateRenewalUnavailable': '暂时无法更换证书，请稍后重试。',
   'error.resourceChanged': '资源状态已变化，请刷新后重试。',
   'error.validationFailed': '输入内容未通过校验。',
   'error.requestFailed': '请求失败，请稍后重试。',
