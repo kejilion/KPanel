@@ -88,9 +88,11 @@ describe('terminal and editor workspace theme', () => {
 
   it('keeps the file editor on the preview workbench while using KPanel semantic tokens', () => {
     expect(editorSource).toContain('--code-background: var(--file-preview-background, var(--terminal-shell-background, #0b1214))')
-    expect(editorSource).toContain('--code-caret: var(--file-preview-accent, var(--brand, #35cba6))')
+    expect(editorSource).toContain('--code-caret: color-mix(in srgb, var(--file-preview-accent, var(--brand)) 50%, var(--code-text))')
     expect(editorSource).toContain('--code-active-line: var(--file-preview-active-line, rgb(53 203 166 / 8%))')
-    expect(editorSource).toContain('--code-keyword: var(--violet)')
+    expect(editorSource).toContain('--code-keyword: color-mix(in srgb, var(--violet) 50%, var(--code-text))')
+    expect(editorSource).toMatch(/'\.cm-content ::selection, \.cm-content::selection':\s*\{\s*color: 'currentColor',\s*backgroundColor: 'transparent'/)
+    expect(editorSource).toContain("'.cm-content.cm-lineWrapping': { minWidth: '0' }")
     expect(editorSource).toContain('color: var(--danger, #ef7a7a)')
     expect(editorSource).not.toContain('#409be8')
     expect(editorSource).not.toContain('#31415b')
