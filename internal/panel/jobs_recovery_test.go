@@ -75,6 +75,9 @@ func TestJobDetailRecoversEveryOwnerBeyondLatest50ReadOnly(t *testing.T) {
 				if job.ID != owner.name+":"+id || job.State != ownerJobState(status) {
 					t.Fatalf("identity/state drift: %#v", job)
 				}
+				if owner.name == "file-archive" && job.StartedAt != nil {
+					t.Fatalf("archive owner invented a start time: %#v", job.StartedAt)
+				}
 			}
 			for _, call := range agent.snapshotCalls() {
 				if call.method != "GET" {

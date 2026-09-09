@@ -339,10 +339,14 @@ func (m *Manager) StartArchiveJob(input contract.FileActionRequest) (contract.Fi
 	}
 	id := hex.EncodeToString(idBytes)
 	name := input.Name
+	jobFormat := input.Format
 	if input.Action == "extract" && len(input.Sources) > 1 {
 		name = fmt.Sprintf("%d 个压缩包", len(input.Sources))
+		jobFormat = ""
+	} else if input.Action == "extract" {
+		jobFormat = archiveFormatForName(input.Sources[0])
 	}
-	job := contract.FileArchiveJob{ID: id, Action: input.Action, Name: name, Target: target, Sources: input.Sources, ArchiveEntries: input.ArchiveEntries, Format: input.Format, State: "queued", CreatedAt: m.now().UTC(), UpdatedAt: m.now().UTC(), Result: contract.FileActionResult{Action: input.Action, Succeeded: []contract.FileActionItem{}, Failed: []contract.FileActionFailure{}}}
+	job := contract.FileArchiveJob{ID: id, Action: input.Action, Name: name, Target: target, Sources: input.Sources, ArchiveEntries: input.ArchiveEntries, Format: jobFormat, State: "queued", CreatedAt: m.now().UTC(), UpdatedAt: m.now().UTC(), Result: contract.FileActionResult{Action: input.Action, Succeeded: []contract.FileActionItem{}, Failed: []contract.FileActionFailure{}}}
 	record := &archiveJobRecord{Job: job}
 	count := len(input.Sources)
 	if input.Action == "compress" {

@@ -463,6 +463,9 @@ func TestFileEndpointsListWriteUploadAndRejectProtectedPaths(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &listing); err != nil {
 		t.Fatal(err)
 	}
+	if !listing.ArchiveManagementAvailable {
+		t.Fatal("file listing did not advertise archive management support")
+	}
 	version := listing.Entries[0].ResourceVersion
 
 	body := `{"content":"new","expectedResourceVersion":"` + version + `"}`

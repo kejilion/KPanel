@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/kejilion/kejilion-panel/internal/contract"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 func (s *Server) handleFileArchives(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +27,9 @@ func (s *Server) handleFileArchives(w http.ResponseWriter, r *http.Request) {
 func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, federated bool, userID string) {
 	agentPath := strings.TrimPrefix(r.URL.Path, "/api")
 	contents := agentPath == "/v1/files/archive-contents"
+	var auditAction, auditTargetKind, auditTargetID string
+	var auditChange map[string]any
+	auditEnabled := false
 	if r.URL.RawPath != "" || (!contents && !strictPanelQuery(r.URL.Query(), "id")) || (contents && r.URL.RawQuery != "") || (r.Method == http.MethodPost && r.URL.RawQuery != "") {
 		s.writeProblem(w, r, http.StatusBadRequest, "file_query_invalid", "文件查询参数无效", "")
 		return
@@ -55,7 +59,9 @@ func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, feder
 		}
 		var err error
 		if request, ok := input.(*contract.FileArchiveJobRequest); ok {
-			valid := (request.Operation == "create" && request.Input != nil && request.ID == "") ||
+			validCreate := request.Operation == "create" && request.Input != nil && request.ID == "" &&
+				(request.Input.Action == "compress" || request.Input.Action == "extract")
+			valid := validCreate ||
 				((request.Operation == "cancel" || request.Operation == "clear") && request.Input == nil && ownerJobIDPattern.MatchString(request.ID))
 			if !valid {
 				s.writeProblem(w, r, http.StatusBadRequest, "file_request_invalid", "文件请求无效", "")
@@ -69,7 +75,9 @@ func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, feder
 		}
 		if !federated && !contents {
 			request := input.(*contract.FileArchiveJobRequest)
-			if err := s.audit(r, userID, "file.archive."+request.Operation, "file", request.ID, "intent", nil); err != nil {
+			auditAction, auditTargetKind, auditTargetID, auditChange = fileArchiveAudit(*request)
+			auditEnabled = true
+			if err := s.audit(r, userID, auditAction, auditTargetKind, auditTargetID, "intent", cloneFileArchiveAuditChange(auditChange)); err != nil {
 				s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 				return
 			}
@@ -89,6 +97,9 @@ func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, feder
 			body, readErr := io.ReadAll(io.LimitReader(remote.Body, (4<<20)+1))
 			err = readErr
 			if len(body) > 4<<20 {
+				if auditEnabled {
+					_ = s.audit(r, userID, auditAction, auditTargetKind, auditTargetID, "failure", cloneFileArchiveAuditChange(auditChange))
+				}
 				s.writeProblem(w, r, http.StatusBadGateway, "archive_response_invalid", "归档响应超过上限", "")
 				return
 			}
@@ -98,15 +109,44 @@ func (s *Server) proxyFileArchives(w http.ResponseWriter, r *http.Request, feder
 		response, err = s.agent.Do(ctx, r.Method, agentPath, r.URL.RawQuery, requestID(r), payload)
 	}
 	if err != nil {
+		if auditEnabled {
+			_ = s.audit(r, userID, auditAction, auditTargetKind, auditTargetID, "failure", cloneFileArchiveAuditChange(auditChange))
+		}
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "archive_unavailable", "暂时无法确认归档状态，请刷新后重试", "")
 		return
 	}
-	if !federated && !contents && r.Method == http.MethodPost {
-		outcome := "failure"
-		if response.StatusCode >= 200 && response.StatusCode < 300 {
-			outcome = "accepted"
-		}
-		_ = s.audit(r, userID, "file.archive.request", "file", "archive-jobs", outcome, nil)
+	if auditEnabled {
+		outcome, change := acceptedJobAudit(response, "file-archive", cloneFileArchiveAuditChange(auditChange))
+		_ = s.audit(r, userID, auditAction, auditTargetKind, auditTargetID, outcome, change)
 	}
 	s.writeAgentResponse(w, r, response)
+}
+
+func fileArchiveAudit(request contract.FileArchiveJobRequest) (action, targetKind, targetID string, change map[string]any) {
+	if request.Operation != "create" || request.Input == nil {
+		return "file.archive." + request.Operation, "file-archive-job", request.ID, nil
+	}
+	input := request.Input
+	change = map[string]any{
+		"sourceCount": len(input.Sources),
+		"memberCount": len(input.ArchiveEntries),
+	}
+	if input.Name != "" && (input.Action == "compress" || len(input.Sources) == 1) {
+		change["name"] = input.Name
+	}
+	if input.Format != "" && input.Action == "compress" {
+		change["format"] = input.Format
+	}
+	return "file." + input.Action, "file", input.Target, change
+}
+
+func cloneFileArchiveAuditChange(source map[string]any) map[string]any {
+	if source == nil {
+		return nil
+	}
+	result := make(map[string]any, len(source)+2)
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }

@@ -645,9 +645,9 @@ export const zhCNMessages = {
   "files.archive.details": "查看结果",
   "files.archive.stop": "停止",
   "files.archive.openResult": "打开位置",
-  "files.archive.retryFailed": "重试失败项",
+  "files.archive.retryFailed": "重新处理未完成项",
   "files.archive.clear": "清除记录",
-  "files.archive.browseDescription": "查看包内内容，选择需要解压的文件或文件夹。",
+  "files.archive.browseDescription": "查看包内内容并选择需要解压的项目；切换目录、搜索或翻页会清空选择。",
   "files.archive.parent": "上一级",
   "files.archive.root": "压缩包",
   "files.archive.extractSelected": "解压所选 {count} 项",
@@ -668,7 +668,7 @@ export const zhCNMessages = {
   "files.archive.folderName": "新文件夹名称",
   "files.archive.batchFolders": "每个压缩包分别解压到同名新文件夹。",
   "files.archive.format": "压缩格式",
-  "files.archive.noOverwrite": "已有同名项目时保留原文件。",
+  "files.archive.noOverwrite": "同名目标已存在时不会写入，请改名后重试。",
   "files.archive.close": "关闭",
   "files.archive.submitting": "正在提交…",
   "files.archive.start": "开始处理",
@@ -686,6 +686,7 @@ export const zhCNMessages = {
   "files.archive.collapse": "收起任务",
   "files.archive.selectionLimit": "每次最多选择 100 项，也可以选择上级目录。",
   "files.archive.previous": "上一页",
+  "files.archive.checking": "正在确认该主机的压缩包能力，请稍候。",
 
 } as const
 

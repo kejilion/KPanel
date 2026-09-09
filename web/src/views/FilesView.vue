@@ -958,7 +958,16 @@ function resetMediaState(entry?: FileEntry): void {
 }
 
 async function openPreview(entry: FileEntry): Promise<void> {
-  if (archiveFormat(entry) && archiveTools.value?.available) { archiveTools.value.browse(entry); return }
+  if (archiveFormat(entry)) {
+    if (archiveTools.value?.checking) {
+      toast.show(i18n.t('files.archive.checking'))
+      return
+    }
+    if (archiveTools.value?.available) {
+      archiveTools.value.browse(entry)
+      return
+    }
+  }
   const hostId = fileHostId.value
   const requestId = ++previewRequestId
   previewEntry.value = entry
@@ -1615,8 +1624,13 @@ function handleContextMenuKeydown(event: KeyboardEvent): void {
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
-  if (contextMenu.value && (action === 'compress' || action === 'extract') && archiveTools.value?.available) contextMenuOpener?.focus({ preventScroll: true })
+  const archiveAction = action === 'compress' || action === 'extract'
+  if (contextMenu.value && archiveAction) contextMenuOpener?.focus({ preventScroll: true })
   contextMenu.value = undefined
+  if (archiveAction && archiveTools.value?.checking) {
+    toast.show(i18n.t('files.archive.checking'))
+    return
+  }
   const batchEntries = entriesForBatch(entry)
   const isBatchExtract = action === 'extract' && archiveTools.value?.available && batchEntries.every(item => archiveFormat(item))
   const isBatchAction = action === 'chmod' || action === 'compress' || action === 'trash' || isBatchExtract
@@ -2902,7 +2916,14 @@ onBeforeUnmount(() => {
         </div>
       </Transition>
 
-      <FileArchiveTools ref="archiveTools" :host-id="fileHostId" :path="currentPath" @changed="archiveChanged" @open="openArchiveResult" />
+      <FileArchiveTools
+        ref="archiveTools"
+        :host-id="fileHostId"
+        :path="currentPath"
+        :archive-management-available="directory ? directory.archiveManagementAvailable === true : undefined"
+        @changed="archiveChanged"
+        @open="openArchiveResult"
+      />
       <Transition name="slide">
         <section
           v-if="remoteDownloadTasksVisible"
@@ -3288,7 +3309,7 @@ onBeforeUnmount(() => {
           type="button"
           @click="downloadSelected()"
         ><Download :size="15" />{{ selectedEntries.length === 1 && selectedEntries[0]?.kind === 'file' ? '下载' : '下载 ZIP' }}</button>
-        <button type="button" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
+        <button type="button" :disabled="archiveTools?.checking" :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
         <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
         <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
         <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
@@ -3342,11 +3363,13 @@ onBeforeUnmount(() => {
         v-if="contextMenu.entry && archiveFormat(contextMenu.entry) && (!contextHasMultipleEntries || (archiveTools?.available && contextBatchEntries.every(entry => archiveFormat(entry))))"
         role="menuitem"
         type="button"
+        :disabled="archiveTools?.checking"
+        :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined"
         @click="openDialog('extract', contextMenu.entry)"
       >
         <FolderOpen :size="15" />{{ phrase('解压到文件夹') }}
       </button>
-      <button v-if="contextMenu.entry" role="menuitem" type="button" @click="openDialog('compress', contextMenu.entry)">
+      <button v-if="contextMenu.entry" role="menuitem" type="button" :disabled="archiveTools?.checking" :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined" @click="openDialog('compress', contextMenu.entry)">
         <Archive :size="15" />{{ phrase('压缩') }}
       </button>
       <hr v-if="contextMenu.entry" role="separator" />
@@ -5692,11 +5715,11 @@ onBeforeUnmount(() => {
   }
 
   .batch-bar button {
-    min-height: 40px;
+    min-height: 44px;
     justify-content: center;
     gap: 3px;
     padding: 5px 2px;
-    font-size: 11px;
+    font-size: 14px;
     white-space: nowrap;
   }
 

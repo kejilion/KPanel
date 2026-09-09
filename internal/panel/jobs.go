@@ -137,8 +137,8 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	page := jobsPage{Sources: make([]jobSourceStatus, 0, 4)}
 	page.Sources = append(page.Sources, jobSourceStatus{"audit", "available"})
 	available := 0
-	// Exactly three independent reads, each with its own deadline. No owner
-	// can consume another owner's time budget; no unbounded worker queue.
+	// Each owner uses an independent read with its own deadline. No owner can
+	// consume another owner's time budget; no unbounded worker queue.
 	owners := jobOwners()
 	results := make([][]contract.Job, len(owners))
 	states := make([]string, len(owners))

@@ -13,10 +13,6 @@ func jobsFromFileArchives(items []contract.FileArchiveJob) []contract.Job {
 			state = contract.JobRunning
 		}
 		job := contract.Job{ID: "file-archive:" + item.ID, Action: "file." + item.Action, Origin: contract.OriginWeb, State: state, Stage: item.State, TargetKind: "file", TargetID: item.Target, TargetLabel: item.Name, CreatedAt: item.CreatedAt}
-		if item.State != "queued" {
-			started := item.CreatedAt
-			job.StartedAt = &started
-		}
 		if item.State != "queued" && item.State != "running" && item.State != "cancelling" {
 			finished := item.UpdatedAt
 			job.FinishedAt = &finished

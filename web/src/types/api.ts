@@ -1954,6 +1954,7 @@ export interface FileDirectory {
   totalKnown?: boolean
   truncated: boolean
   scanTruncated?: boolean
+  archiveManagementAvailable?: boolean
   readAt: string
 }
 

@@ -633,9 +633,9 @@ export const zhTWMessages = {
   "files.archive.details": "查看結果",
   "files.archive.stop": "停止",
   "files.archive.openResult": "開啟位置",
-  "files.archive.retryFailed": "重試失敗項目",
+  "files.archive.retryFailed": "重新處理未完成項目",
   "files.archive.clear": "清除紀錄",
-  "files.archive.browseDescription": "查看壓縮檔內容，選取需要解壓的檔案或資料夾。",
+  "files.archive.browseDescription": "查看壓縮檔內容並選取需要解壓的項目；切換目錄、搜尋或翻頁會清除選取。",
   "files.archive.parent": "上一層",
   "files.archive.root": "壓縮檔",
   "files.archive.extractSelected": "解壓所選 {count} 項",
@@ -656,7 +656,7 @@ export const zhTWMessages = {
   "files.archive.folderName": "新資料夾名稱",
   "files.archive.batchFolders": "每個壓縮檔分別解壓至同名新資料夾。",
   "files.archive.format": "壓縮格式",
-  "files.archive.noOverwrite": "已有同名項目時保留原檔案。",
+  "files.archive.noOverwrite": "同名目標已存在時不會寫入，請改名後重試。",
   "files.archive.close": "關閉",
   "files.archive.submitting": "正在提交…",
   "files.archive.start": "開始處理",
@@ -674,5 +674,6 @@ export const zhTWMessages = {
   "files.archive.collapse": "收起任務",
   "files.archive.selectionLimit": "每次最多選擇 100 項，也可以選擇上級目錄。",
   "files.archive.previous": "上一頁",
+  "files.archive.checking": "正在確認此主機的壓縮檔能力，請稍候。",
 
 } as const satisfies LocaleMessages
