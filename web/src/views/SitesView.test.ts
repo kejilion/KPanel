@@ -60,11 +60,16 @@ interface SitesBindings {
   installationTaskFinished: ComputedRef<boolean>
   installProgress: Ref<SiteInstallationProgress | undefined>
   form: {
+    primaryDomain: string
+    type: 'redirect'
+    redirectTarget: string
     certificateMode: 'automatic' | 'custom'
     certificate: string
     privateKey: string
   }
   editorOpen: Ref<boolean>
+  formValid: ComputedRef<boolean>
+  submitSite: () => Promise<void>
   recentCreatedDomain: Ref<string>
   deletingSite: Ref<Site | undefined>
   deleteOpen: Ref<boolean>
@@ -136,6 +141,27 @@ afterEach(() => {
 })
 
 describe('SitesView creation experience', () => {
+  it('collects the redirect domain and forwards it through the scripted create API', async () => {
+    const view = setupView()
+    view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }]
+    view.form.primaryDomain = 'old.example.com'
+    view.form.type = 'redirect'
+    view.form.redirectTarget = ''
+    expect(view.formValid.value).toBe(false)
+    view.form.redirectTarget = 'OLD.example.com'
+    expect(view.formValid.value).toBe(false)
+    view.form.redirectTarget = 'new.example.com/path'
+    expect(view.formValid.value).toBe(false)
+    view.form.redirectTarget = 'NEW.example.com'
+    expect(view.formValid.value).toBe(true)
+    vi.mocked(api.sites.create).mockRejectedValue(new Error('script unavailable'))
+    await view.submitSite()
+    expect(api.sites.create).toHaveBeenCalledWith(expect.objectContaining({
+      primaryDomain: 'old.example.com', type: 'redirect',
+      redirectTarget: 'https://new.example.com', redirectCode: undefined, aliases: [],
+    }), expect.any(Function))
+  })
+
   it('replaces certificates with only immutable identity, version and private material', async () => {
     const view = setupView()
     const current = site('example.com')

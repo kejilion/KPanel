@@ -95,6 +95,7 @@ type RecipeJob struct {
 	Recipe            string                `json:"recipe"`
 	ProxyHost         string                `json:"proxyHost,omitempty"`
 	ProxyPort         string                `json:"proxyPort,omitempty"`
+	RedirectTarget    string                `json:"redirectTarget,omitempty"`
 	Status            string                `json:"status"`
 	Stage             string                `json:"stage"`
 	Progress          int                   `json:"progress"`
@@ -413,10 +414,21 @@ func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
 	if err := m.templateWritable(customCertificate.present()); err != nil {
 		return RecipeJob{}, err
 	}
+	invocation := templateInvocation(domain, definition)
+	if input.Type == "redirect" && input.RedirectTarget != "" {
+		target, err := normalizeScriptRedirectTarget(input.RedirectTarget, domain)
+		if err != nil {
+			return RecipeJob{}, err
+		}
+		invocation = redirectInvocation(domain, target)
+		if err := m.directSiteWritableWithCustomCertificate(customCertificate.present(), invocation.required...); err != nil {
+			return RecipeJob{}, err
+		}
+	}
 	return m.startDirectSiteJob(
 		managedSpec{Primary: domain, Kind: definition.kind},
 		definition.recipe,
-		templateInvocation(domain, definition),
+		invocation,
 		customCertificate,
 	)
 }
@@ -483,6 +495,25 @@ func templateInvocation(domain string, definition scriptTemplateDefinition) scri
 	}
 }
 
+func normalizeScriptRedirectTarget(raw, domain string) (string, error) {
+	origin, err := normalizeUpstream(raw, upstreamDomain)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme != "https" || parsed.Port() != "" || parsed.Hostname() == domain {
+		return "", fmt.Errorf("%w: script redirect requires a different HTTPS domain without a port", ErrUnprocessable)
+	}
+	return normalizeFQDN(parsed.Hostname())
+}
+
+func redirectInvocation(domain, target string) scriptSiteInvocation {
+	invocation := templateInvocation(domain, scriptTemplateDefinitions["redirect"])
+	invocation.arguments = append(invocation.arguments, target)
+	invocation.required = append(invocation.required, `KPANEL_WEB_REDIRECT_PROTOCOL_VERSION="1"`)
+	return invocation
+}
+
 func (m *Manager) startDirectSiteJob(
 	spec managedSpec,
 	recipe string,
@@ -511,6 +542,9 @@ func (m *Manager) startDirectSiteJob(
 	if recipe == "reverse-proxy" {
 		job.ProxyHost = invocation.arguments[2]
 		job.ProxyPort = invocation.arguments[3]
+	}
+	if recipe == "redirect-site" && len(invocation.arguments) == 3 {
+		job.RedirectTarget = invocation.arguments[2]
 	}
 	appendRecipeEvent(&job, job.Stage, job.Progress, job.Message)
 	if err := stageCustomCertificateFiles(m.recipeJobs.stateDir, job.ID, customCertificate); err != nil {
@@ -565,6 +599,16 @@ func normalizeTemplateInput(input SiteInput) (string, scriptTemplateDefinition, 
 	}
 	if input.Enabled != nil && !*input.Enabled {
 		return "", scriptTemplateDefinition{}, fmt.Errorf("%w: disabling sites is not supported", ErrUnprocessable)
+	}
+	if input.Type == "redirect" && input.RedirectTarget != "" {
+		if _, err := normalizeScriptRedirectTarget(input.RedirectTarget, domain); err != nil {
+			return "", scriptTemplateDefinition{}, err
+		}
+		if input.RedirectCode != 0 && input.RedirectCode != 301 {
+			return "", scriptTemplateDefinition{}, fmt.Errorf("%w: script redirect uses 301", ErrUnprocessable)
+		}
+		input.RedirectTarget = ""
+		input.RedirectCode = 0
 	}
 	if len(input.Aliases) > 0 || input.Recipe != "" || input.Upstream != "" ||
 		len(input.Upstreams) > 0 || input.RedirectTarget != "" ||
@@ -963,6 +1007,13 @@ func invocationForRecipeJob(job RecipeJob) (scriptSiteInvocation, error) {
 			domain, err := normalizeFQDN(job.Domain)
 			if err != nil {
 				return scriptSiteInvocation{}, err
+			}
+			if job.RedirectTarget != "" {
+				target, err := normalizeScriptRedirectTarget("https://"+job.RedirectTarget, domain)
+				if err != nil || job.Recipe != "redirect-site" || target != job.RedirectTarget {
+					return scriptSiteInvocation{}, fmt.Errorf("%w: invalid persisted redirect target", ErrInvalidInput)
+				}
+				return redirectInvocation(domain, target), nil
 			}
 			return templateInvocation(domain, definition), nil
 		}

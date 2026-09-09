@@ -365,6 +365,7 @@ func TestSiteWriteCatalogValidationAndForwarding(t *testing.T) {
 		{name: "domain proxy", body: `{"primaryDomain":"edge.example.com","type":"proxy_domain"}`},
 		{name: "load balance", body: `{"primaryDomain":"balanced.example.com","type":"load_balance"}`},
 		{name: "redirect", body: `{"primaryDomain":"old.example.com","type":"redirect"}`},
+		{name: "redirect with target", body: `{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"https://new.example.com","redirectCode":301}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -490,6 +491,10 @@ func TestScriptedSiteCreateRejectsDetailsThatBelongInTerminal(t *testing.T) {
 		`{"primaryDomain":"edge.example.com","type":"proxy_domain","upstream":"https://origin.example.net"}`,
 		`{"primaryDomain":"balanced.example.com","type":"load_balance","upstreams":["http://10.0.0.1:80","http://10.0.0.2:80"]}`,
 		`{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"https://new.example.com","redirectCode":308}`,
+		`{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"http://new.example.com"}`,
+		`{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"https://new.example.com:8443"}`,
+		`{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"https://old.example.com"}`,
+		`{"primaryDomain":"old.example.com","type":"redirect","redirectTarget":"https://new.example.com","aliases":["www.example.com"]}`,
 	} {
 		var input siteWriteInput
 		if err := json.Unmarshal([]byte(body), &input); err != nil {

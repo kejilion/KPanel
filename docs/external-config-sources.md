@@ -11,7 +11,7 @@
 
 | ID | 业务与 KPanel 入口 | `kejilion.sh` 权威来源 | 当前方式 | 状态与发布要求 |
 | --- | --- | --- | --- | --- |
-| `website-nginx-create` | 静态站、PHP、域名反代、负载均衡、跳转的新建入口 | `k static-site`、`k php-site`、`k domain-proxy`、`k loadbalance-site`、`k redirect-site`；分别固定映射 `k web` 的 30、20、24、28、22 | 默认面板只提交首个域名；选择自定义证书时额外提交一次性 PEM 证书链和未加密私钥，后台 PTY 仍直接执行可信脚本，源码、入口路径、上游和跳转目标继续由脚本原生交互询问 | **已合规（代码链路）**：默认证书策略由脚本复用有效既有证书、无可用证书时再申请；自定义证书不写入 Let’s Encrypt `live` 目录，关闭窗口不终止任务；完成状态以脚本凭据、Nginx 配置和真实产物对账共同确认，发布前仍需目标机逐模板实测 |
+| `website-nginx-create` | 静态站、PHP、域名反代、负载均衡、跳转的新建入口 | `k static-site`、`k php-site`、`k domain-proxy`、`k loadbalance-site`、`k redirect-site`；分别固定映射 `k web` 的 30、20、24、28、22 | 面板提交首个域名；重定向额外将目标域名作为独立 argv 传给 `k redirect-site <原域名> <目标域名>`，要求脚本 `KPANEL_WEB_REDIRECT_PROTOCOL_VERSION="1"`，沿用官方 `rewrite.conf` 的 301 HTTPS 跳转及路径/查询参数；其他模板细节仍由脚本原生交互询问。自定义证书继续通过一次性文件协议提供 | **已合规（代码链路，重定向传参待配套脚本发布与隔离 L2）**：`scriptLinkageState=coupled`，变更集 `redirect-script-inputs`；当前内置脚本基线仍为下文固定提交，发布前必须换成已发布且通过同步/smoke 的配套脚本提交和摘要。旧版域名单参数交互调用继续兼容；新传参协议缺失时明确失败。证书复用、自动签发和自定义材料仍由脚本处理，失败不继续生成/加载配置，关闭窗口不终止后台任务；不以本地测试代替真实 ACME、Nginx 和双端管理验收 |
 | `website-delete` | 网站管理删除站点、应用市场解绑域名 | `k web del <域名>`；`web_del()` 与 `KPANEL_DELETE_SITE` / `KPANEL_DELETE_DATABASE` 机器回执 | 两个入口只提交实际站点 ID 与规范化主域名；Agent 核对身份后通过受限 systemd 单元固定调用可信脚本，并在返回后复核站点目录、Nginx 配置和证书均已移除 | **已合规（代码链路，待隔离 L2）**：不保留仅删 Nginx 的第二路径；数据库失败按脚本回执报告部分成功，正式发布前须在隔离主机验证静态站、PHP 站和应用反代域名闭环 |
 | `website-nginx-edit` | 已有静态站、PHP、域名反代、负载均衡、跳转的结构化编辑；`internal/sites/managed_template.go` | `k web` 与脚本官方模板 | KPanel 历史 `renderManagedConfig()` 自行拼接，仅保留旧站兼容维护 | **不合规/冻结**：本次不扩展；后续须迁移到脚本同源编辑协议 |
 | `reverse-proxy-ip-port` | IP+端口反向代理；网站页热门入口 | `k fd <domain> <host> <port>`；`ldnmp_Proxy` 与 `reverse-proxy-backend.conf` | Go 后台 PTY 任务直接执行本机可信脚本命令，域名、固定上游参数和可选自定义证书由面板传入，其余提示可交互输入；完成后发现 `/home/web` 产物 | **已合规（代码链路）**：发布前仍需目标机实测创建、脚本管理、面板管理与删除 |
@@ -39,6 +39,13 @@
 <!-- external-config-debt:website-nginx:blocked -->
 
 ## KPanel 与 kejilion.sh 发布关系
+
+重定向传参候选变更集 `redirect-script-inputs`：`scriptLinkageState=coupled`，配套脚本本地提交
+`740724cb1db2f6208345c14920e0bd0c09147a3a`，SHA-256
+`a2eeeabfe027c1e28f5af4a089f24e2e573ac49198a3ce2a0873e1a38e2b431b`。
+根/中文同步、重定向传参及证书失败恢复 smoke 已通过；失败后保留原生重试/导入交互，证书可用后才继续。
+该提交尚未发布，镜像仍固定原脚本基线；集成发布前须先发布配套脚本并更新镜像固定来源，完成同 SHA
+候选 CI 与隔离主机 ACME/Nginx 双端验收。脚本回滚点为 `298f6f23751e36726660d73b5c0c83aef1b404f4`。
 
 网站证书生命周期固定来源：`kejilion/sh@298f6f23751e36726660d73b5c0c83aef1b404f4`，
 `k web certificate-replace` 与创建证书协议共用 `/home/web/certs`；不生成 Nginx 模板。

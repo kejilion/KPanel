@@ -532,6 +532,21 @@ func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail s
 		}
 	case "redirect":
 		if create {
+			if input.RedirectTarget.Value != "" {
+				target, err := url.Parse(input.RedirectTarget.Value)
+				if err != nil || !validPanelDomainOrigin(input.RedirectTarget.Value) ||
+					target.Scheme != "https" || target.Port() != "" ||
+					strings.EqualFold(target.Hostname(), input.PrimaryDomain.Value) {
+					return "redirectTarget", "script redirect requires a different HTTPS domain without a port"
+				}
+				if input.RedirectCode.Set && input.RedirectCode.Value != 301 {
+					return "redirectCode", "script redirect uses 301"
+				}
+				remaining := *input
+				remaining.RedirectTarget = optionalString{}
+				remaining.RedirectCode = optionalInt{}
+				return validateScriptedTemplateFields(&remaining)
+			}
 			return validateScriptedTemplateFields(input)
 		}
 		if !input.RedirectTarget.Set || input.RedirectTarget.Value == "" {
