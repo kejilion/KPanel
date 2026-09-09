@@ -37,6 +37,9 @@ import type {
   DesktopWorkspace,
   DesktopWorkspaceUpdate,
   FileActionInput,
+  FileArchiveQuery,
+  FileArchiveDirectory,
+  FileArchiveJob,
   FileActionResult,
   FileTrashDirectory,
   FileDirectory,
@@ -561,7 +564,7 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
 
 const lightFileRelayPaths = new Set([
   '/files', '/files/entry', '/files/entries', '/files/trash', '/files/content',
-  '/files/archive', '/files/text', '/files/tail', '/files/upload', '/files/actions',
+  '/files/archive', '/files/archive-contents', '/files/archive-jobs', '/files/text', '/files/tail', '/files/upload', '/files/actions',
 ])
 const fileTargetQueryPaths = new Set([...lightFileRelayPaths, '/files/transfers'])
 
@@ -1941,6 +1944,14 @@ export const api = {
       }),
       name,
     }, fileHostId)),
+    archiveContents: (input: FileArchiveQuery, signal?: AbortSignal, fileHostId?: string | null): Promise<FileArchiveDirectory> =>
+      request<FileArchiveDirectory>('/files/archive-contents', { method: 'POST', body: input, signal, fileHostId }),
+    archiveJobs: (signal?: AbortSignal, fileHostId?: string | null): Promise<{ items: FileArchiveJob[] }> =>
+      request<{ items: FileArchiveJob[] }>('/files/archive-jobs', { signal, fileHostId }),
+    createArchiveJob: (input: FileActionInput, fileHostId?: string | null): Promise<FileArchiveJob> =>
+      request<FileArchiveJob>('/files/archive-jobs', { method: 'POST', body: { operation: 'create', input }, fileHostId }),
+    changeArchiveJob: (id: string, operation: 'cancel' | 'clear', fileHostId?: string | null): Promise<{ ok: boolean }> =>
+      request<{ ok: boolean }>('/files/archive-jobs', { method: 'POST', body: { operation, id }, fileHostId }),
     createDownloadTicket: (path: string): Promise<FileDownloadTicket> =>
       request<FileDownloadTicket>('/files/download-tickets', {
         method: 'POST',

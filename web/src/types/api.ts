@@ -1814,7 +1814,7 @@ export interface JobStage {
   message?: string
 }
 
-export type JobOwner = 'docker' | 'app' | 'webenv'
+export type JobOwner = 'docker' | 'app' | 'webenv' | 'file-archive'
 
 export interface JobSourceStatus {
   source: JobOwner | 'audit'
@@ -2100,6 +2100,47 @@ export interface FileActionInput {
   mode?: string
   expectedResourceVersion?: string
   expectedResourceVersions?: Record<string, string>
+  archiveEntries?: string[]
+}
+
+export interface FileArchiveEntry {
+  path: string
+  name: string
+  kind: 'file' | 'directory'
+  sizeBytes: number
+  modifiedAt: string
+}
+export interface FileArchiveQuery {
+  path: string
+  resourceVersion: string
+  directory?: string
+  search?: string
+  offset?: number
+}
+export interface FileArchiveDirectory {
+  path: string
+  resourceVersion: string
+  directory: string
+  entries: FileArchiveEntry[]
+  total: number
+  truncated: boolean
+  nextOffset?: number
+}
+export interface FileArchiveJob {
+  id: string
+  action: 'compress' | 'extract'
+  name: string
+  target: string
+  sources: string[]
+  archiveEntries?: string[]
+  format?: 'tar.gz' | 'zip' | 'tar'
+  state: 'queued' | 'running' | 'cancelling' | 'complete' | 'partial' | 'error' | 'cancelled' | 'interrupted'
+  entries: number
+  processedBytes: number
+  createdAt: string
+  updatedAt: string
+  result: FileActionResult
+  detail?: string
 }
 
 export interface FileTrashEntry {

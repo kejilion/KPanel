@@ -69,6 +69,57 @@ type FileActionRequest struct {
 	Format                   string            `json:"format,omitempty"`
 	ExpectedResourceVersion  string            `json:"expectedResourceVersion,omitempty"`
 	ExpectedResourceVersions map[string]string `json:"expectedResourceVersions,omitempty"`
+	ArchiveEntries           []string          `json:"archiveEntries,omitempty"`
+}
+
+// Archive paths are relative member names, never host filesystem paths.
+type FileArchiveEntry struct {
+	Path       string    `json:"path"`
+	Name       string    `json:"name"`
+	Kind       string    `json:"kind"`
+	SizeBytes  int64     `json:"sizeBytes"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+type FileArchiveQuery struct {
+	Path            string `json:"path"`
+	ResourceVersion string `json:"resourceVersion"`
+	Directory       string `json:"directory,omitempty"`
+	Search          string `json:"search,omitempty"`
+	Offset          int    `json:"offset,omitempty"`
+}
+
+type FileArchiveDirectory struct {
+	Path            string             `json:"path"`
+	ResourceVersion string             `json:"resourceVersion"`
+	Directory       string             `json:"directory"`
+	Entries         []FileArchiveEntry `json:"entries"`
+	Total           int                `json:"total"`
+	NextOffset      int                `json:"nextOffset,omitempty"`
+	Truncated       bool               `json:"truncated"`
+}
+
+type FileArchiveJob struct {
+	ID             string           `json:"id"`
+	Action         string           `json:"action"`
+	Name           string           `json:"name"`
+	Target         string           `json:"target"`
+	State          string           `json:"state"`
+	Entries        int              `json:"entries"`
+	ProcessedBytes int64            `json:"processedBytes"`
+	CreatedAt      time.Time        `json:"createdAt"`
+	UpdatedAt      time.Time        `json:"updatedAt"`
+	Result         FileActionResult `json:"result"`
+	Detail         string           `json:"detail,omitempty"`
+	Sources        []string         `json:"sources"`
+	ArchiveEntries []string         `json:"archiveEntries,omitempty"`
+	Format         string           `json:"format,omitempty"`
+}
+
+type FileArchiveJobRequest struct {
+	Operation string             `json:"operation"`
+	ID        string             `json:"id,omitempty"`
+	Input     *FileActionRequest `json:"input,omitempty"`
 }
 
 type FileTrashEntry struct {

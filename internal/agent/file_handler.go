@@ -35,6 +35,10 @@ func NewFileHandler(files *filemanager.Manager) http.Handler {
 			server.fileContent(w, r, requestID)
 		case "/v1/files/archive":
 			server.fileArchive(w, r)
+		case "/v1/files/archive-contents":
+			server.requireMethod(w, r, requestID, http.MethodPost, server.fileArchiveContents)
+		case "/v1/files/archive-jobs":
+			server.fileArchiveJobs(w, r)
 		case "/v1/files/text":
 			server.requireMethod(w, r, requestID, http.MethodGet, server.fileText)
 		case "/v1/files/tail":

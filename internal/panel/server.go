@@ -335,6 +335,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleFileContent(w, r)
 	case r.URL.Path == "/api/v1/files/archive":
 		s.handleFileArchiveDownload(w, r)
+	case r.URL.Path == "/api/v1/files/archive-contents" || r.URL.Path == "/api/v1/files/archive-jobs":
+		s.handleFileArchives(w, r)
 	case r.URL.Path == "/api/v1/files/download-tickets":
 		s.handleFileDownloadTicketCreate(w, r)
 	case r.URL.Path == "/api/v1/files/archive-download-tickets":
