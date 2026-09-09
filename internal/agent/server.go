@@ -106,6 +106,9 @@ type Server struct {
 
 func (s *Server) Close() {
 	s.processReads.close()
+	if s.files != nil {
+		s.files.StopArchiveJobs()
+	}
 	if s.terminals != nil {
 		s.terminals.CloseAll()
 	}
@@ -370,6 +373,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.fileShareContent(w, r, requestID)
 	case r.URL.Path == "/v1/files/archive":
 		s.fileArchive(w, r)
+	case r.URL.Path == "/v1/files/archive-contents":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.fileArchiveContents)
+	case r.URL.Path == "/v1/files/archive-jobs":
+		s.fileArchiveJobs(w, r)
 	case r.URL.Path == "/v1/files/text":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.fileText)
 	case r.URL.Path == "/v1/files/tail":
