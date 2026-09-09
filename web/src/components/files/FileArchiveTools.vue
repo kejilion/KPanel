@@ -4,15 +4,19 @@ import { Archive, ArrowLeft, Folder, File, RefreshCw } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
-import { ApiError } from '@/lib/api'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import type { FileActionInput, FileArchiveDirectory, FileArchiveJob, FileEntry } from '@/types/api'
 
-const props = defineProps<{ hostId: string; path: string }>()
+const props = defineProps<{ hostId: string; path: string; archiveManagementAvailable?: boolean }>()
 const emit = defineEmits<{ changed: [hostId: string, path: string]; open: [hostId: string, path: string] }>()
 const i18n = useI18n()
 const jobs = ref<FileArchiveJob[]>([])
-const available = ref(false)
+const capability = computed(() => props.archiveManagementAvailable === undefined
+  ? 'checking'
+  : props.archiveManagementAvailable ? 'available' : 'legacy')
+const available = computed(() => capability.value === 'available')
+const checking = computed(() => capability.value === 'checking')
+const legacy = computed(() => capability.value === 'legacy')
 const jobsError = ref('')
 const expanded = ref(false)
 const pending = ref(new Set<string>())
@@ -41,6 +45,8 @@ let discoveryFailures = 0
 const batch = computed(() => form.value?.action === 'extract' && form.value.sources.length > 1)
 const entries = computed(() => contents.value?.entries || [])
 const allSelected = computed(() => entries.value.length > 0 && entries.value.every(entry => selection.value.has(entry.path)))
+const canSelectPage = computed(() => entries.value.length > 0 && entries.value.length <= 100)
+const selectionLimitVisible = computed(() => entries.value.length > 100 || selection.value.size >= 100)
 const active = (job: FileArchiveJob) => ['queued', 'running', 'cancelling'].includes(job.state)
 const baseName = (value: string) => value.replace(/\.(tar\.gz|tgz|zip|tar)$/i, '') || 'archive'
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KiB` : bytes < 1073741824 ? `${(bytes / 1048576).toFixed(1)} MiB` : `${(bytes / 1073741824).toFixed(2)} GiB`
@@ -53,14 +59,13 @@ const archiveDetails = new Set([
   '任务已停止，请核对目标目录中的已完成结果', '暂时无法确认归档状态，请刷新后重试',
 ])
 function detail(value: string) { phraseCatalogVersion.value; return archiveDetails.has(value) ? translatePhrase(value) : value }
-const errorDetail = (error: unknown) => error instanceof ApiError && [404, 405].includes(error.status)
-  ? i18n.t('files.archive.unsupported')
-  : error instanceof Error ? detail(error.message) : i18n.t('files.archive.error')
+const errorDetail = (error: unknown) => error instanceof Error ? detail(error.message) : i18n.t('files.archive.error')
 const stateLabel = (job: FileArchiveJob) => i18n.t(`files.archive.state.${job.state}`)
 
 async function refreshJobs() {
   clearTimeout(polling)
   jobsController?.abort()
+  if (!available.value) return
   const current = new AbortController(); jobsController = current
   const host = props.hostId; const token = generation
   try {
@@ -70,13 +75,11 @@ async function refreshJobs() {
     for (const job of result.items) {
       if (old.has(job.id) && active(old.get(job.id)!) && !active(job)) emit('changed', host, job.target)
     }
-    available.value = true; jobs.value = result.items; jobsError.value = ''; discoveryFailures = 0
+    jobs.value = result.items; jobsError.value = ''; discoveryFailures = 0
   } catch (error) {
     if (disposed || current.signal.aborted || token !== generation) return
-    const unsupported = error instanceof ApiError && [404, 405].includes(error.status)
-    if (!unsupported || jobs.value.length) jobsError.value = errorDetail(error)
-    if (unsupported) available.value = false
-    else ++discoveryFailures
+    jobsError.value = errorDetail(error)
+    ++discoveryFailures
   } finally {
     if (!disposed && token === generation && !current.signal.aborted && (jobs.value.some(active) || (jobsError.value && discoveryFailures <= 3))) {
       polling = setTimeout(refreshJobs, jobsError.value ? 10_000 : 2_500)
@@ -104,8 +107,16 @@ function browse(entry: FileEntry) {
 function closeBrowser() { browser.value = undefined; contentsController?.abort(); ++browseGeneration; clearTimeout(searching) }
 function navigate(value: string) { clearTimeout(searching); directory.value = value; search.value = ''; void loadContents() }
 function searchContents() { clearTimeout(searching); contentsController?.abort(); ++browseGeneration; loading.value = true; selection.value = new Set(); searching = setTimeout(() => loadContents(), 250) }
-function toggle(path: string) { const next = new Set(selection.value); next.has(path) ? next.delete(path) : next.add(path); selection.value = next }
-function toggleAll() { selection.value = allSelected.value ? new Set() : new Set(entries.value.map(entry => entry.path)) }
+function toggle(path: string) {
+  const next = new Set(selection.value)
+  if (next.has(path)) next.delete(path)
+  else if (next.size < 100) next.add(path)
+  selection.value = next
+}
+function toggleAll() {
+  if (!canSelectPage.value) return
+  selection.value = allSelected.value ? new Set() : new Set(entries.value.map(entry => entry.path))
+}
 function configure(action: 'compress' | 'extract', sources: FileEntry[], members?: string[]) {
   if (!sources.length) return
   form.value = { action, sources: sources.map(source => ({ ...source })), hostId: props.hostId, members }
@@ -123,18 +134,20 @@ async function extractContents() {
   if (!disposed && token === generation) configure('extract', [source], members)
 }
 function changeFormat() { name.value = `${baseName(name.value)}.${format.value}` }
+function closeForm() { if (!submitting.value) form.value = undefined }
 async function submit() {
   if (!form.value || submitting.value) return
   const snapshot = form.value
   const saveName = name.value.trim(); const target = destination.value.trim()
   if ((!batch.value && (!saveName || /[/\\\u0000]/.test(saveName) || ['.', '..'].includes(saveName))) || !target.startsWith('/')) { formError.value = i18n.t('files.archive.invalid'); return }
   const input: FileActionInput = { action: snapshot.action, sources: snapshot.sources.map(source => source.path), target, name: saveName,
-    format: format.value, archiveEntries: snapshot.members, expectedResourceVersions: Object.fromEntries(snapshot.sources.map(source => [source.path, source.resourceVersion])) }
+    ...(snapshot.action === 'compress' ? { format: format.value } : {}), archiveEntries: snapshot.members,
+    expectedResourceVersions: Object.fromEntries(snapshot.sources.map(source => [source.path, source.resourceVersion])) }
   submitting.value = true; formError.value = ''
   try {
     const job = await fileAPIForHost(snapshot.hostId).createArchiveJob(input)
     if (!disposed && snapshot.hostId === props.hostId) {
-      jobs.value = [job, ...jobs.value.filter(item => item.id !== job.id)]; available.value = true; form.value = undefined
+      jobs.value = [job, ...jobs.value.filter(item => item.id !== job.id)]; form.value = undefined
       await refreshJobs()
     }
   } catch (error) { if (!disposed && form.value === snapshot) formError.value = errorDetail(error) }
@@ -147,10 +160,17 @@ async function changeJob(job: FileArchiveJob, operation: 'cancel' | 'clear') {
   catch (error) { if (token === generation) jobsError.value = errorDetail(error) }
   finally { if (token === generation) { const next = new Set(pending.value); next.delete(job.id); pending.value = next } }
 }
+function retrySources(job: FileArchiveJob): string[] {
+  if (active(job) || job.state === 'complete') return []
+  if (job.action === 'compress') return job.result.succeeded.length ? [] : job.sources
+  const completed = new Set(job.result.succeeded.map(item => item.path))
+  return job.sources.filter(path => !completed.has(path))
+}
+const retryable = (job: FileArchiveJob) => retrySources(job).length > 0
 async function retry(job: FileArchiveJob) {
   const host = props.hostId; const token = generation
-  const completed = new Set(job.result.succeeded.map(item => item.path))
-  const paths = job.action === 'extract' ? job.sources.filter(path => !completed.has(path)) : job.sources
+  const paths = retrySources(job)
+  if (!paths.length) return
   pending.value = new Set(pending.value).add(job.id)
   try {
     const entries: FileEntry[] = []
@@ -166,13 +186,14 @@ async function retry(job: FileArchiveJob) {
   } catch (error) { if (token === generation) jobsError.value = errorDetail(error) }
   finally { if (token === generation) { const next = new Set(pending.value); next.delete(job.id); pending.value = next } }
 }
-watch(() => props.hostId, () => {
+watch([() => props.hostId, () => props.archiveManagementAvailable], () => {
   ++generation; jobsController?.abort(); clearTimeout(polling); closeBrowser(); form.value = undefined
-  jobs.value = []; jobsError.value = ''; pending.value = new Set(); available.value = false; discoveryFailures = 0; void refreshJobs()
+  jobs.value = []; jobsError.value = ''; pending.value = new Set(); discoveryFailures = 0
+  if (available.value) void refreshJobs()
 }, { immediate: true })
 onBeforeUnmount(() => { disposed = true; ++generation; jobsController?.abort(); contentsController?.abort(); clearTimeout(polling); clearTimeout(searching) })
 const hasJobs = computed(() => jobs.value.length > 0 || Boolean(jobsError.value))
-defineExpose({ configure, browse, available, hasJobs })
+defineExpose({ configure, browse, capability, available, checking, legacy, hasJobs })
 </script>
 
 <template>
@@ -180,27 +201,27 @@ defineExpose({ configure, browse, available, hasJobs })
     <header><strong>{{ i18n.t('files.archive.jobs') }}</strong><span>{{ i18n.t('files.archive.background') }}</span><button type="button" class="button button--secondary" :aria-label="i18n.t('files.archive.refresh')" @click="refreshJobs"><RefreshCw :size="15" /></button></header>
     <p v-if="jobsError" class="archive-error" role="alert">{{ jobsError }}</p>
     <div v-for="job in expanded ? jobs : jobs.slice(0, 3)" :key="job.id" class="archive-job">
-      <Archive :size="18" /><div class="archive-job__body"><strong>{{ job.name }}</strong><p role="status">{{ stateLabel(job) }}<template v-if="active(job)"> · {{ size(job.processedBytes) }} · {{ i18n.t('files.archive.count', { count: job.entries }) }}</template></p>
+      <Archive :size="18" /><div class="archive-job__body"><strong>{{ job.name }}</strong><p>{{ stateLabel(job) }}<template v-if="active(job)"> · {{ size(job.processedBytes) }} · {{ i18n.t('files.archive.count', { count: job.entries }) }}</template></p>
         <details v-if="job.detail || job.result.failed.length || job.result.succeeded.length"><summary>{{ i18n.t('files.archive.details') }}</summary><p v-if="job.detail">{{ detail(job.detail) }}</p><p v-for="item in job.result.failed" :key="item.path" class="archive-error"><span data-i18n-ignore>{{ item.path }}</span> · {{ detail(item.detail) }}</p><p v-for="item in job.result.succeeded" :key="item.path" data-i18n-ignore>{{ item.destination }}</p></details>
-      </div><div class="archive-job__actions"><button v-if="active(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id) || job.state === 'cancelling'" @click="changeJob(job, 'cancel')">{{ i18n.t('files.archive.stop') }}</button><template v-else><button v-if="job.result.succeeded.length" type="button" class="button button--secondary" @click="emit('open', props.hostId, job.target)">{{ i18n.t('files.archive.openResult') }}</button><button v-if="job.state !== 'complete'" type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="retry(job)">{{ i18n.t('files.archive.retryFailed') }}</button><button type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="changeJob(job, 'clear')">{{ i18n.t('files.archive.clear') }}</button></template></div>
+      </div><div class="archive-job__actions"><button v-if="active(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id) || job.state === 'cancelling'" @click="changeJob(job, 'cancel')">{{ i18n.t('files.archive.stop') }}</button><template v-else><button v-if="job.result.succeeded.length" type="button" class="button button--secondary" @click="emit('open', props.hostId, job.target)">{{ i18n.t('files.archive.openResult') }}</button><button v-if="retryable(job)" type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="retry(job)">{{ i18n.t('files.archive.retryFailed') }}</button><button type="button" class="button button--secondary" :disabled="pending.has(job.id)" @click="changeJob(job, 'clear')">{{ i18n.t('files.archive.clear') }}</button></template></div>
     </div>
     <button v-if="jobs.length > 3" type="button" class="button button--secondary" :aria-expanded="expanded" @click="expanded = !expanded">{{ i18n.t(expanded ? 'files.archive.collapse' : 'files.archive.showAll', { count: jobs.length }) }}</button>
   </section>
 
   <ModalDialog :open="Boolean(browser)" :title="browser?.name || i18n.t('files.archive.title')" :description="i18n.t('files.archive.browseDescription')" size="large" :allow-fullscreen="true" @close="closeBrowser">
     <div class="archive-browser">
-      <div class="archive-toolbar"><button type="button" class="button button--secondary" :disabled="!directory || loading" @click="navigate(directory.includes('/') ? directory.slice(0, directory.lastIndexOf('/')) : '')"><ArrowLeft :size="16" />{{ i18n.t('files.archive.parent') }}</button><button type="button" class="archive-root" @click="navigate('')">{{ i18n.t('files.archive.root') }}</button><span>{{ directory }}</span><button type="button" class="button button--primary" :disabled="loading || Boolean(browseError) || selection.size > 100" @click="extractContents">{{ selection.size ? i18n.t('files.archive.extractSelected', { count: selection.size }) : i18n.t('files.archive.extractAll') }}</button></div>
-      <p v-if="selection.size > 100" class="archive-error" role="alert">{{ i18n.t('files.archive.selectionLimit') }}</p>
+      <div class="archive-toolbar"><button type="button" class="button button--secondary" :disabled="!directory || loading" @click="navigate(directory.includes('/') ? directory.slice(0, directory.lastIndexOf('/')) : '')"><ArrowLeft :size="16" />{{ i18n.t('files.archive.parent') }}</button><button type="button" class="archive-root" @click="navigate('')">{{ i18n.t('files.archive.root') }}</button><span>{{ directory }}</span><button type="button" class="button button--primary" :disabled="loading || Boolean(browseError)" @click="extractContents">{{ selection.size ? i18n.t('files.archive.extractSelected', { count: selection.size }) : i18n.t('files.archive.extractAll') }}</button></div>
+      <p v-if="selectionLimitVisible" class="archive-selection-note">{{ i18n.t('files.archive.selectionLimit') }}</p>
       <input v-model="search" type="search" :placeholder="i18n.t('files.archive.search')" :aria-label="i18n.t('files.archive.search')" @input="searchContents">
       <p v-if="loading" role="status">{{ i18n.t('files.archive.loading') }}</p>
       <div v-else-if="browseError" class="archive-error" role="alert">{{ browseError }} <button type="button" class="button button--secondary" @click="loadContents()">{{ i18n.t('files.archive.refresh') }}</button></div>
-      <template v-else><table><thead><tr><th><input type="checkbox" :checked="allSelected" :aria-label="i18n.t('files.archive.selectAll')" @change="toggleAll"></th><th>{{ i18n.t('files.archive.name') }}</th><th>{{ i18n.t('files.archive.size') }}</th></tr></thead><tbody><tr v-for="entry in entries" :key="entry.path" :class="{ selected: selection.has(entry.path) }"><td><input type="checkbox" :checked="selection.has(entry.path)" :aria-label="entry.path" @change="toggle(entry.path)"></td><td><div class="archive-entry"><Folder v-if="entry.kind === 'directory'" :size="18" /><File v-else :size="18" /><button v-if="entry.kind === 'directory'" type="button" class="archive-root" @click="navigate(entry.path)">{{ search ? entry.path : entry.name }}</button><span v-else>{{ search ? entry.path : entry.name }}</span></div></td><td>{{ entry.kind === 'directory' ? '—' : size(entry.sizeBytes) }}</td></tr></tbody></table><p v-if="!entries.length">{{ i18n.t('files.archive.empty') }}</p>
+      <template v-else><table><thead><tr><th><input type="checkbox" :checked="allSelected" :indeterminate="selection.size > 0 && !allSelected" :disabled="!canSelectPage" :title="!canSelectPage && entries.length ? i18n.t('files.archive.selectionLimit') : undefined" :aria-label="i18n.t('files.archive.selectAll')" @change="toggleAll"></th><th>{{ i18n.t('files.archive.name') }}</th><th>{{ i18n.t('files.archive.size') }}</th></tr></thead><tbody><tr v-for="entry in entries" :key="entry.path" :class="{ selected: selection.has(entry.path) }"><td><input type="checkbox" :checked="selection.has(entry.path)" :disabled="selection.size >= 100 && !selection.has(entry.path)" :aria-label="entry.path" @change="toggle(entry.path)"></td><td><div class="archive-entry"><Folder v-if="entry.kind === 'directory'" :size="18" /><File v-else :size="18" /><button v-if="entry.kind === 'directory'" type="button" class="archive-root" @click="navigate(entry.path)">{{ search ? entry.path : entry.name }}</button><span v-else>{{ search ? entry.path : entry.name }}</span></div></td><td>{{ entry.kind === 'directory' ? '—' : size(entry.sizeBytes) }}</td></tr></tbody></table><p v-if="!entries.length">{{ i18n.t('files.archive.empty') }}</p>
         <footer><span>{{ i18n.t('files.archive.count', { count: contents?.total || 0 }) }}</span><button v-if="pageOffset" type="button" class="button button--secondary" @click="loadContents(Math.max(0, pageOffset - 500))">{{ i18n.t('files.archive.previous') }}</button><button v-if="contents?.truncated" type="button" class="button button--secondary" @click="loadContents(contents.nextOffset)">{{ i18n.t('files.archive.next') }}</button></footer>
       </template>
     </div>
   </ModalDialog>
 
-  <ModalDialog :open="Boolean(form)" :title="form?.action === 'compress' ? i18n.t('files.archive.createTitle') : i18n.t('files.archive.extractTitle')" size="small" @close="form = undefined">
+  <ModalDialog :open="Boolean(form)" :title="form?.action === 'compress' ? i18n.t('files.archive.createTitle') : i18n.t('files.archive.extractTitle')" size="small" :close-disabled="submitting" @close="closeForm">
     <form class="archive-form" @submit.prevent="submit">
       <p>{{ i18n.t('files.archive.sources', { count: form?.members?.length || form?.sources.length || 0 }) }}</p>
       <label><span>{{ i18n.t('files.archive.destination') }}</span><input v-model="destination" required :disabled="submitting"></label>
@@ -209,7 +230,7 @@ defineExpose({ configure, browse, available, hasJobs })
       <label v-if="form?.action === 'compress'"><span>{{ i18n.t('files.archive.format') }}</span><select v-model="format" :disabled="submitting" @change="changeFormat"><option value="tar.gz">TAR.GZ</option><option value="zip">ZIP</option><option value="tar">TAR</option></select></label>
       <small>{{ i18n.t('files.archive.background') }} {{ i18n.t('files.archive.noOverwrite') }}</small>
       <p v-if="formError" class="archive-error" role="alert">{{ formError }}</p>
-      <footer><button class="button button--secondary" type="button" @click="form = undefined">{{ i18n.t('files.archive.close') }}</button><button class="button button--primary" type="submit" :disabled="submitting">{{ submitting ? i18n.t('files.archive.submitting') : i18n.t('files.archive.start') }}</button></footer>
+      <footer><button class="button button--secondary" type="button" :disabled="submitting" @click="closeForm">{{ i18n.t('files.archive.close') }}</button><button class="button button--primary" type="submit" :disabled="submitting">{{ submitting ? i18n.t('files.archive.submitting') : i18n.t('files.archive.start') }}</button></footer>
     </form>
   </ModalDialog>
 </template>
@@ -223,8 +244,9 @@ defineExpose({ configure, browse, available, hasJobs })
 .archive-job__body{flex:1;min-width:160px;overflow-wrap:anywhere}
 .archive-job__body p{margin:4px 0;font-size:13px;color:var(--text-soft)}
 .archive-job__body strong{font-weight:500}
-.archive-job__actions .button{font-size:14px;min-height:36px}
+.archive-job__actions .button,.archive-toolbar .button,.archive-form footer .button{font-size:14px;min-height:40px}
 .archive-error,.archive-job__body .archive-error{color:var(--danger);overflow-wrap:anywhere}
+.archive-selection-note{margin:0 0 12px;color:var(--text-soft);font-size:13px;overflow-wrap:anywhere}
 .archive-browser,.archive-form{font-size:14px;line-height:1.55}
 .archive-toolbar{margin-bottom:14px}
 .archive-toolbar>span{flex:1;overflow-wrap:anywhere;color:var(--text-soft)}
@@ -244,5 +266,5 @@ defineExpose({ configure, browse, available, hasJobs })
 .archive-form label{display:grid;gap:8px;margin:16px 0}.archive-form p{overflow-wrap:anywhere}
 .archive-form small{font-size:13px;color:var(--text-soft)}
 .archive-form footer{justify-content:flex-end;margin-top:22px}
-@media(max-width:540px){.archive-toolbar>.button:last-child{margin-left:auto}.archive-job__actions{width:100%}.archive-browser th:last-child{width:84px}.archive-browser th,.archive-browser td{padding:10px 4px}}
+@media(max-width:540px){.archive-toolbar>.button:last-child{margin-left:auto}.archive-job__actions{width:100%}.archive-job__actions .button,.archive-toolbar .button,.archive-form footer .button{min-height:44px}.archive-browser th:last-child{width:84px}.archive-browser th,.archive-browser td{padding:10px 4px}}
 </style>

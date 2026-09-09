@@ -645,9 +645,9 @@ export const enUSMessages = {
   "files.archive.details": "View results",
   "files.archive.stop": "Stop",
   "files.archive.openResult": "Open location",
-  "files.archive.retryFailed": "Retry failed items",
+  "files.archive.retryFailed": "Retry unfinished items",
   "files.archive.clear": "Clear record",
-  "files.archive.browseDescription": "Browse the archive and select files or folders to extract.",
+  "files.archive.browseDescription": "Browse and select items to extract. Changing folders, searches, or pages clears the selection.",
   "files.archive.parent": "Up",
   "files.archive.root": "Archive",
   "files.archive.extractSelected": "Extract {count} selected",
@@ -668,7 +668,7 @@ export const enUSMessages = {
   "files.archive.folderName": "New folder name",
   "files.archive.batchFolders": "Extract each archive into its own named folder.",
   "files.archive.format": "Format",
-  "files.archive.noOverwrite": "Existing items are kept.",
+  "files.archive.noOverwrite": "An existing destination is never overwritten. Rename it before retrying.",
   "files.archive.close": "Close",
   "files.archive.submitting": "Submitting…",
   "files.archive.start": "Start",
@@ -686,5 +686,6 @@ export const enUSMessages = {
   "files.archive.collapse": "Collapse tasks",
   "files.archive.selectionLimit": "Select up to 100 items, or select their parent folder.",
   "files.archive.previous": "Previous page",
+  "files.archive.checking": "Checking this host's archive support. Please wait.",
 
 } satisfies LocaleMessages

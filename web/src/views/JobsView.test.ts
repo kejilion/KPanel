@@ -55,6 +55,25 @@ describe('job owner state continuity', () => {
     expect(JSON.stringify(report)).not.toContain('private-seed')
   })
 
+  it('renders archive actions and stages with product language instead of raw owner values', async () => {
+    const archiveJob: Job = {
+      id: `file-archive:${'d'.repeat(32)}`,
+      action: 'file.extract',
+      status: 'failed_needs_attention',
+      createdAt: '2026-09-05T00:00:00Z',
+      stages: [{ name: 'partial', status: 'failed_needs_attention' }],
+    }
+    mocks.list.mockResolvedValue({ items: [archiveJob] })
+    mocks.detail.mockResolvedValue(archiveJob)
+    const view = await openView()
+    expect(view.get('.job-item').text()).toContain('解压文件')
+    expect(view.get('.job-item').text()).not.toContain('file.extract')
+    await view.get('.job-item').trigger('click')
+    await flushPromises()
+    expect(view.get('.dialog').text()).toContain('部分完成')
+    expect(view.get('.dialog').text()).not.toContain('partial')
+  })
+
   it('keeps an unavailable task missing while reporting the actual failed lookup request', async () => {
     mocks.detail.mockRejectedValue(Object.assign(new ApiError('private-seed', 404), { code: 'job_not_found', requestId: 'c'.repeat(32) }))
     mocks.list.mockResolvedValue({ items: [] })

@@ -11,11 +11,13 @@ const props = withDefaults(
     description?: string
     size?: 'compact' | 'small' | 'medium' | 'large' | 'wide'
     allowFullscreen?: boolean
+    closeDisabled?: boolean
   }>(),
   {
     description: '',
     size: 'medium',
     allowFullscreen: false,
+    closeDisabled: false,
   },
 )
 
@@ -120,6 +122,7 @@ function deactivate(): void {
 }
 
 function close(): void {
+  if (props.closeDisabled) return
   fullscreen.value = false
   emit('close')
 }
@@ -202,7 +205,13 @@ onBeforeUnmount(() => {
               <Minimize2 v-if="fullscreen" :size="18" />
               <Maximize2 v-else :size="18" />
             </button>
-            <button class="icon-button" type="button" :aria-label="i18n.t('common.closeDialog')" @click="close">
+            <button
+              class="icon-button"
+              type="button"
+              :aria-label="i18n.t('common.closeDialog')"
+              :disabled="closeDisabled"
+              @click="close"
+            >
               <X :size="19" />
             </button>
           </div>

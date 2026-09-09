@@ -563,21 +563,21 @@ func boundedZIPDirectory(ctx context.Context, reader io.ReaderAt, size int64, ma
 	if entriesOnDisk != totalEntries {
 		return nil, ErrInvalidArchive
 	}
-	if int(totalEntries) > maxEntries {
-		return nil, ErrTooLarge
-	}
 	directorySize := int64(binary.LittleEndian.Uint32(record[12:16]))
 	directoryOffset := int64(binary.LittleEndian.Uint32(record[16:20]))
 	endOffset := size - tailSize + int64(index)
-	// Go's ZIP reader also probes ZIP64 when directorySize == 0xffff.
-	// Reject that sentinel before it can replace the validated directory bounds.
-	if directorySize == 0xffff {
+	// Reject the three ZIP64 EOCD sentinels before the standard library can
+	// replace the already validated classic-directory bounds.
+	if totalEntries == 0xffff || directorySize == 0xffffffff || directoryOffset == 0xffffffff {
 		return nil, ErrInvalidArchive
+	}
+	if int(totalEntries) > maxEntries {
+		return nil, ErrTooLarge
 	}
 	if directorySize > maxArchiveIndexBytes {
 		return nil, ErrTooLarge
 	}
-	if directoryOffset == 0xffffffff || directoryOffset+directorySize != endOffset {
+	if directoryOffset+directorySize != endOffset {
 		return nil, ErrInvalidArchive
 	}
 	// Freeze the entire bounded central directory and EOCD. A source changing

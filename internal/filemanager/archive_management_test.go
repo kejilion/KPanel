@@ -207,9 +207,12 @@ func TestArchiveJobsPersistPartialResultsAndNeverOverwrite(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "two", "keep.txt"), "keep")
 	one, _ := m.Stat("/one.zip")
 	two, _ := m.Stat("/two.zip")
-	job, err := m.StartArchiveJob(contract.FileActionRequest{Action: "extract", Sources: []string{one.Path, two.Path}, Target: "/", ExpectedResourceVersions: map[string]string{one.Path: one.ResourceVersion, two.Path: two.ResourceVersion}})
+	job, err := m.StartArchiveJob(contract.FileActionRequest{Action: "extract", Sources: []string{one.Path, two.Path}, Target: "/", Format: "tar.gz", ExpectedResourceVersions: map[string]string{one.Path: one.ResourceVersion, two.Path: two.ResourceVersion}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if job.Format != "" {
+		t.Fatalf("batch extract persisted unused format %q", job.Format)
 	}
 	done := waitArchiveJob(t, m, job.ID)
 	if done.State != "partial" || len(done.Result.Succeeded) != 1 || len(done.Result.Failed) != 1 || done.Result.Failed[0].Path != two.Path {
@@ -235,9 +238,12 @@ func TestArchiveJobCancelWhileMutationIsBusy(t *testing.T) {
 	source := makeArchiveFixture(t, m, root, "zip")
 	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
-	job, err := m.StartArchiveJob(contract.FileActionRequest{Action: "extract", Sources: []string{source.Path}, Target: "/", Name: "cancelled", ExpectedResourceVersion: source.ResourceVersion})
+	job, err := m.StartArchiveJob(contract.FileActionRequest{Action: "extract", Sources: []string{source.Path}, Target: "/", Name: "cancelled", Format: "tar.gz", ExpectedResourceVersion: source.ResourceVersion})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if job.Format != "zip" {
+		t.Fatalf("single extract format=%q, want zip", job.Format)
 	}
 	if err := m.ChangeArchiveJob(job.ID, "cancel"); err != nil {
 		t.Fatal(err)
@@ -375,14 +381,15 @@ func TestArchiveJobsRejectNonCanonicalSourcesBeforePersistence(t *testing.T) {
 	}
 }
 
-func TestZIP64ProbeCannotEscapeFrozenDirectory(t *testing.T) {
+func TestZIPDirectoryOf65535BytesIsAccepted(t *testing.T) {
 	m, root := newTestManager(t)
-	file, err := os.Create(filepath.Join(root, "zip64.zip"))
+	file, err := os.Create(filepath.Join(root, "large-directory.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := zip.NewWriter(file)
-	// Place a ZIP64 locator at the end of a valid central-header comment.
+	// A classic ZIP central directory may legitimately be exactly 65,535 bytes.
+	// A ZIP64-looking byte sequence inside its comment must remain ordinary data.
 	comment := make([]byte, 0xffff-46-len("file"))
 	copy(comment[len(comment)-20:], []byte{'P', 'K', 6, 7})
 	entry, err := w.CreateHeader(&zip.FileHeader{Name: "file", Method: zip.Store, Comment: string(comment)})
@@ -398,16 +405,57 @@ func TestZIP64ProbeCannotEscapeFrozenDirectory(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "zip64.zip"))
+	data, err := os.ReadFile(filepath.Join(root, "large-directory.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if size := binary.LittleEndian.Uint32(data[len(data)-22+12:]); size != 0xffff {
 		t.Fatalf("fixture size=%d", size)
 	}
-	source, _ := m.Stat("/zip64.zip")
-	if _, err := m.ArchiveContents(context.Background(), contract.FileArchiveQuery{Path: source.Path, ResourceVersion: source.ResourceVersion}); !errors.Is(err, ErrInvalidArchive) {
-		t.Fatalf("ZIP64 probe accepted=%v", err)
+	source, _ := m.Stat("/large-directory.zip")
+	listing, err := m.ArchiveContents(context.Background(), contract.FileArchiveQuery{Path: source.Path, ResourceVersion: source.ResourceVersion})
+	if err != nil || len(listing.Entries) != 1 || listing.Entries[0].Path != "file" {
+		t.Fatalf("browse large classic directory=%+v err=%v", listing, err)
+	}
+	if _, err := m.Action(context.Background(), contract.FileActionRequest{
+		Action: "extract", Sources: []string{source.Path}, Target: "/", Name: "large-directory",
+		Format: "zip", ExpectedResourceVersion: source.ResourceVersion,
+	}); err != nil {
+		t.Fatalf("extract large classic directory: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "large-directory", "file"))
+	if err != nil || string(content) != "test" {
+		t.Fatalf("extracted content=%q err=%v", content, err)
+	}
+}
+
+func TestZIP64EndRecordSentinelsAreRejected(t *testing.T) {
+	for _, field := range []string{"records", "size", "offset"} {
+		t.Run(field, func(t *testing.T) {
+			m, root := newTestManager(t)
+			writeZIPFixture(t, filepath.Join(root, "zip64.zip"), "hello.txt", 0644, "hello")
+			data, err := os.ReadFile(filepath.Join(root, "zip64.zip"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			end := len(data) - 22
+			switch field {
+			case "records":
+				binary.LittleEndian.PutUint16(data[end+8:], 0xffff)
+				binary.LittleEndian.PutUint16(data[end+10:], 0xffff)
+			case "size":
+				binary.LittleEndian.PutUint32(data[end+12:], 0xffffffff)
+			case "offset":
+				binary.LittleEndian.PutUint32(data[end+16:], 0xffffffff)
+			}
+			if err := os.WriteFile(filepath.Join(root, "zip64.zip"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			source, _ := m.Stat("/zip64.zip")
+			if _, err := m.ArchiveContents(context.Background(), contract.FileArchiveQuery{Path: source.Path, ResourceVersion: source.ResourceVersion}); !errors.Is(err, ErrInvalidArchive) {
+				t.Fatalf("ZIP64 %s sentinel accepted: %v", field, err)
+			}
+		})
 	}
 }
 

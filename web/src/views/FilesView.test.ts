@@ -118,6 +118,7 @@ function testDirectory(path: string): FileDirectoryResult {
 interface FileBindings {
   requestedFilePath: (value: unknown) => string | undefined
   openRequestedFile: (value: unknown) => Promise<void>
+  openPreview: (entry: TestFileEntry) => Promise<void>
   loadDirectory: (path?: string, append?: boolean) => Promise<string | undefined>
   navigateDirectory: (path: string) => Promise<void>
   savePreview: (content?: string) => Promise<void>
@@ -181,6 +182,14 @@ interface FileBindings {
     }
   }
   selected: { value: Set<string> }
+  archiveTools: {
+    value?: {
+      available: boolean
+      checking: boolean
+      browse: (entry: TestFileEntry) => void
+      configure: (action: 'compress' | 'extract', entries: TestFileEntry[]) => void
+    }
+  }
   clipboard: {
     value?: {
       mode: 'copy' | 'move'
@@ -1555,6 +1564,39 @@ describe('FilesView directory loading', () => {
       expectedResourceVersion: entry.resourceVersion,
     }, expect.any(AbortSignal), '')
     expect(mocks.success).toHaveBeenCalledWith('解压完成', '1 项已处理')
+  })
+
+  it('waits for archive capability instead of opening a preview or legacy write flow', async () => {
+    const view = setupView()
+    const archive = { ...testEntry('backup.zip'), mime: 'application/zip' }
+    const browse = vi.fn()
+    const configure = vi.fn()
+    view.directory.value = { path: '/', entries: [archive] }
+    view.archiveTools.value = { available: false, checking: true, browse, configure }
+
+    await view.openPreview(archive)
+    view.openDialog('compress', archive)
+
+    expect(browse).not.toHaveBeenCalled()
+    expect(configure).not.toHaveBeenCalled()
+    expect(view.previewEntry.value).toBeUndefined()
+    expect(view.dialogAction.value).toBeUndefined()
+    expect(mocks.show).toHaveBeenCalledTimes(2)
+    expect(mocks.action).not.toHaveBeenCalled()
+  })
+
+  it('uses the advertised archive workflow even when task status was temporarily unavailable', () => {
+    const view = setupView()
+    const archive = { ...testEntry('backup.zip'), mime: 'application/zip' }
+    const browse = vi.fn()
+    const configure = vi.fn()
+    view.directory.value = { path: '/', entries: [archive] }
+    view.archiveTools.value = { available: true, checking: false, browse, configure }
+
+    view.openDialog('extract', archive)
+
+    expect(configure).toHaveBeenCalledWith('extract', [archive])
+    expect(view.dialogAction.value).toBeUndefined()
   })
 
   it('aborts an active archive request and reports cleanup without a false failure', async () => {

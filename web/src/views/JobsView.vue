@@ -140,6 +140,8 @@ const counts = computed(() => ({
 }))
 
 function actionLabel(action: string): string {
+  if (action === 'file.compress') return i18n.t('files.archive.createTitle')
+  if (action === 'file.extract') return i18n.t('files.archive.extractTitle')
   const labels: Record<string, string> = {
     'site.create': '创建网站',
     'site.update': '更新网站',
@@ -156,6 +158,14 @@ function sourceLabel(source?: Job['source']): string {
 }
 
 function stageLabel(stage: string): string {
+  const archiveLabels: Record<string, string> = {
+    cancelling: i18n.t('files.archive.state.cancelling'),
+    complete: i18n.t('files.archive.state.complete'),
+    partial: i18n.t('files.archive.state.partial'),
+    error: i18n.t('files.archive.state.error'),
+    cancelled: i18n.t('files.archive.state.cancelled'),
+  }
+  if (archiveLabels[stage]) return archiveLabels[stage]
   const labels: Record<string, string> = {
     queued: '等待执行', running: '执行中', executing: '执行中', completed: '执行完成', failed: '执行失败',
     interrupted: '执行中断', not_started: '尚未执行', persistence_pending: '状态待保存',

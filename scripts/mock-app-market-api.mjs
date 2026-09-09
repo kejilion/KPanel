@@ -1279,7 +1279,7 @@ createServer(async (request, response) => {
     ))
     send(response, 200, {
       path: requestedPath, entries, offset: 0, total: entries.length, totalKnown: true,
-      truncated: false, scanTruncated: false, readAt: new Date().toISOString(),
+      truncated: false, scanTruncated: false, archiveManagementAvailable: true, readAt: new Date().toISOString(),
     })
     return
   }
@@ -1314,7 +1314,8 @@ createServer(async (request, response) => {
         const input = requestBody.input
         const id = (++mockArchiveCounter).toString(16).padStart(32, '0')
         const now = new Date().toISOString()
-        const job = { id, action: input.action, name: input.sources.length > 1 && input.action === 'extract' ? `${input.sources.length} 个压缩包` : input.name, target: input.target, sources: input.sources, archiveEntries: input.archiveEntries, format: input.format, state: 'queued', entries: 0, processedBytes: 0, createdAt: now, updatedAt: now, result: { action: input.action, succeeded: [], failed: [] } }
+        const extractFormat = input.sources.length === 1 ? input.sources[0]?.match(/\.(tar\.gz|tgz|zip|tar)$/i)?.[1]?.toLowerCase().replace('tgz', 'tar.gz') : undefined
+        const job = { id, action: input.action, name: input.sources.length > 1 && input.action === 'extract' ? `${input.sources.length} 个压缩包` : input.name, target: input.target, sources: input.sources, archiveEntries: input.archiveEntries, format: input.action === 'compress' ? input.format : extractFormat, state: 'queued', entries: 0, processedBytes: 0, createdAt: now, updatedAt: now, result: { action: input.action, succeeded: [], failed: [] } }
         mockArchiveJobs.set(id, job)
         void (async () => {
           await wait(500); if (job.state !== 'queued') return

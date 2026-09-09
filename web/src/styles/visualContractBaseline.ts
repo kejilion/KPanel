@@ -375,7 +375,6 @@ export const VISUAL_CONTRACT_BASELINE: readonly VisualContractBaselineEntry[] = 
   legacy("src/views/DockerView.vue", ".docker-group__summary small", "font-size", ".72rem", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/DockerView.vue", ".docker-nav button small", "font-size", ".7rem", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/EnvironmentView.vue", ".environment-components code", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
-  legacy("src/views/FilesView.vue", ".batch-bar button", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/FilesView.vue", ".file-grid-card > small", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/FilesView.vue", ".file-name small, .file-row > span > small", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/LoginView.vue", ".recovery-help pre", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),

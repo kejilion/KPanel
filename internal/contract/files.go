@@ -34,15 +34,16 @@ type FileShareEntry struct {
 const FileShareVersionHeader = "X-KPanel-File-Share-Version"
 
 type FileDirectory struct {
-	Path          string      `json:"path"`
-	Entries       []FileEntry `json:"entries"`
-	Offset        int         `json:"offset"`
-	NextOffset    int         `json:"nextOffset,omitempty"`
-	Total         int         `json:"total,omitempty"`
-	TotalKnown    bool        `json:"totalKnown,omitempty"`
-	Truncated     bool        `json:"truncated"`
-	ScanTruncated bool        `json:"scanTruncated,omitempty"`
-	ReadAt        time.Time   `json:"readAt"`
+	Path                       string      `json:"path"`
+	Entries                    []FileEntry `json:"entries"`
+	Offset                     int         `json:"offset"`
+	NextOffset                 int         `json:"nextOffset,omitempty"`
+	Total                      int         `json:"total,omitempty"`
+	TotalKnown                 bool        `json:"totalKnown,omitempty"`
+	Truncated                  bool        `json:"truncated"`
+	ScanTruncated              bool        `json:"scanTruncated,omitempty"`
+	ArchiveManagementAvailable bool        `json:"archiveManagementAvailable,omitempty"`
+	ReadAt                     time.Time   `json:"readAt"`
 }
 
 type FileEntryBatchRequest struct {

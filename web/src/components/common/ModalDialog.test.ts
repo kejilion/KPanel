@@ -11,6 +11,7 @@ interface DialogMountOptions {
     open: boolean
     title: string
     description?: string
+    closeDisabled?: boolean
   }
   slots?: Record<string, () => ReturnType<typeof h>>
 }
@@ -101,6 +102,51 @@ describe('ModalDialog focus management', () => {
     window.dispatchEvent(backward)
     expect(backward.defaultPrevented).toBe(true)
     expect(document.activeElement).toBe(last)
+  })
+
+  it('blocks close actions without breaking focus containment when close is disabled', async () => {
+    const wrapper = mountDialog({
+      props: { open: true, title: 'Locked dialog', closeDisabled: true },
+      slots: {
+        default: () => h('button', { 'data-test': 'body-action' }, 'Body action'),
+        footer: () => h('button', { 'data-test': 'footer-action' }, 'Footer action'),
+      },
+    })
+    await settleFocus()
+
+    const backdrop = document.querySelector<HTMLElement>('.modal-backdrop')!
+    const dialog = panelAt()
+    const closeButton = dialog.querySelector<HTMLButtonElement>('.modal-panel__actions button')!
+    const first = dialog.querySelector<HTMLElement>('[data-test="body-action"]')!
+    const last = dialog.querySelector<HTMLElement>('[data-test="footer-action"]')!
+
+    expect(closeButton.disabled).toBe(true)
+    expect(document.activeElement).toBe(first)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    backdrop.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    last.focus()
+    const forward = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    window.dispatchEvent(forward)
+    expect(forward.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(first)
+
+    const backward = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    window.dispatchEvent(backward)
+    expect(backward.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(last)
+
+    await wrapper.setProps({ closeDisabled: false })
+    closeButton.click()
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('uses the dialog panel as the focus target when no control is tabbable', async () => {

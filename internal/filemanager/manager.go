@@ -285,7 +285,8 @@ func (m *Manager) ListPage(
 	return contract.FileDirectory{
 		Path: normalized, Entries: entries,
 		Offset: options.Offset, NextOffset: nextOffset, Total: total, TotalKnown: reachedEOF,
-		Truncated: hasMore || scanTruncated, ScanTruncated: scanTruncated, ReadAt: m.now().UTC(),
+		Truncated: hasMore || scanTruncated, ScanTruncated: scanTruncated,
+		ArchiveManagementAvailable: true, ReadAt: m.now().UTC(),
 	}, nil
 }
 
