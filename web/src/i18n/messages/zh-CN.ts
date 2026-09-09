@@ -313,6 +313,11 @@ export const zhCNMessages = {
   'appScript.appNotFound': '应用目录中没有找到对应应用。',
   'appScript.manageUnavailable': '此应用没有可用的脚本管理入口。',
   'appScript.openFailed': '无法打开应用脚本终端。',
+  'appScript.closeConfirm': '关闭窗口会结束当前 kejilion.sh 进程并释放应用管理锁；已经执行的步骤不会自动回滚。是否继续？',
+  'appScript.closingTitle': '正在结束脚本终端…',
+  'appScript.closingDescription': '正在等待 Agent 确认后台进程退出并释放应用管理锁。',
+  'appScript.closePending': '已请求结束任务，但后台进程尚未确认退出。窗口已保留，请稍后重试关闭。',
+  'appScript.closeFailed': '无法确认脚本进程已结束，窗口已保留。请检查 Agent 状态后重试。',
 
   'apps.iconAlt': '{name} 图标',
   'apps.source.builtin': '内置 #{num}',

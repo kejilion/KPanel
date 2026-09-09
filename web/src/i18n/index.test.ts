@@ -115,6 +115,7 @@ describe('translations', () => {
       .toBe('Delete session “Running”? This cannot be undone.')
     expect(t('appScript.activeJob', { name: 'OpenClaw' }))
       .toBe('An app task is already running: OpenClaw')
+    expect(t('appScript.closeConfirm')).toContain('release the app-management lock')
     expect(t('apps.installTitle', { name: 'Cloudreve' })).toBe('Install Cloudreve')
     expect(t('terminal.task.title', { kind: 'App' })).toBe('App terminal')
     expect(t('terminal.closeSessionsConfirm', { count: 2 }))
