@@ -1,10 +1,35 @@
 package panel
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestAppManageHTTPForwardsBothResourceKinds(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	for _, prefix := range []string{"sha256:", "marker:sha256:"} {
+		for _, status := range []int{http.StatusAccepted, http.StatusConflict} {
+			version := prefix + strings.Repeat("a", 64)
+			agent := &stubAgent{response: AgentResponse{StatusCode: status, ContentType: "application/json", Body: []byte(`{"status":"forwarded"}`)}}
+			server.agent = agent
+			body, err := json.Marshal(map[string]string{"resourceVersion": version})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodPost, "/api/v1/apps/builtin-64/manage", body, true)
+			if response.Code != status {
+				t.Fatalf("%s: status = %d, want %d: %s", prefix, response.Code, status, response.Body.String())
+			}
+			calls := agent.snapshotCalls()
+			if len(calls) != 1 || calls[0].path != "/v1/apps/builtin-64/manage" || string(calls[0].body) != string(body) {
+				t.Fatalf("resource version must reach Agent unchanged: %#v", calls)
+			}
+		}
+	}
+}
 
 func TestAllowedAppActionPath(t *testing.T) {
 	id := "builtin-64"
@@ -64,8 +89,16 @@ func TestValidateAppActionInput(t *testing.T) {
 	}
 	if field, _ := validateAppActionInput("manage", appActionInput{
 		ResourceVersion: optionalString{Value: validVersion, Set: true},
-	}); field != "resourceVersion" {
-		t.Fatalf("container resourceVersion was accepted for marker recovery on %q", field)
+	}); field != "" {
+		t.Fatalf("container script management rejected on %q", field)
+	}
+	for _, invalid := range []string{"", "sha256:short", "marker:" + strings.Repeat("a", 64), "sha256:" + strings.Repeat("A", 64)} {
+		if field, _ := validateAppActionInput("manage", appActionInput{ResourceVersion: optionalString{Value: invalid, Set: true}}); field != "resourceVersion" {
+			t.Fatalf("invalid management version accepted: %q", invalid)
+		}
+	}
+	if field, _ := validateAppActionInput("manage", appActionInput{ResourceVersion: optionalString{Value: validVersion, Set: true}, HostPort: optionalInt{Value: 80, Set: true}}); field != "request" {
+		t.Fatalf("management accepted extra install parameters on %q", field)
 	}
 	if field, _ := validateAppActionInput("direct_access", appActionInput{
 		ResourceVersion: optionalString{Value: validVersion, Set: true},
