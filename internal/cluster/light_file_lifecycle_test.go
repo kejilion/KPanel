@@ -377,6 +377,144 @@ func TestLightFileBodyReadObservesCancellationAfterHeaders(t *testing.T) {
 	_ = response.Body.Close()
 }
 
+func TestLightFileLostRequestResponseIsRedeliveredUntilAcknowledged(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		relay := newLightFileRelay(time.Now)
+		defer relay.closeAll()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		nodeID := strings.Repeat("e", 32)
+		item := relay.node(nodeID, true)
+		item.available, item.lastPoll = true, time.Now()
+		opened := make(chan error, 1)
+		go func() {
+			response, err := relay.Open(ctx, nodeID, lifecycleDownload())
+			if response != nil {
+				_, err = io.ReadAll(response.Body)
+				_ = response.Body.Close()
+			}
+			opened <- err
+		}()
+		synctest.Wait()
+		first, err := relay.poll(ctx, nodeID, nil, nil)
+		if err != nil || first.Command == nil {
+			t.Fatalf("first delivery: %#v, %v", first, err)
+		}
+		// The HTTP response is lost before the node receives the request, so
+		// its retry still has an empty inventory. Sending is not receipt.
+		for range 2 {
+			pollCtx, stop := context.WithTimeout(ctx, time.Second)
+			retry, err := relay.poll(pollCtx, nodeID, nil, nil)
+			stop()
+			if err != nil || retry.Command == nil || retry.Command.ID != first.Command.ID {
+				t.Fatalf("lost response must redeliver the same request: %#v, %v", retry, err)
+			}
+		}
+		requestID := first.Command.RequestID
+		pollCtx, stop := context.WithCancel(ctx)
+		polled := make(chan struct{})
+		go func() {
+			_, _ = relay.poll(pollCtx, nodeID, nil, []FileRelayEvent{
+				{CommandID: first.Command.ID, RequestID: requestID, Kind: "accepted"},
+				{RequestID: requestID, Kind: "response", Status: http.StatusOK},
+				{RequestID: requestID, Kind: "end"},
+			})
+			close(polled)
+		}()
+		if err := <-opened; err != nil {
+			t.Fatalf("recovered request failed: %v", err)
+		}
+		stop()
+		<-polled
+		synctest.Wait()
+		if len(item.sessions) != 0 || len(item.pending) != 0 {
+			t.Fatal("completed request retained relay state")
+		}
+	})
+}
+
+func TestLightFileAcknowledgedSessionStillFailsWhenNodeLosesIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		relay := newLightFileRelay(time.Now)
+		item, _, response := openLifecycleFile(t, relay, context.Background(), lifecycleDownload())
+		ctx, cancel := context.WithCancel(context.Background())
+		polled := make(chan struct{})
+		go func() { _, _ = relay.poll(ctx, item.id, nil, nil); close(polled) }()
+		_, err := io.ReadAll(response.Body)
+		if !errors.Is(err, ErrFileRelayUnavailable) {
+			t.Fatalf("node lost an acknowledged request: %v", err)
+		}
+		_ = response.Body.Close()
+		cancel()
+		<-polled
+		synctest.Wait()
+		if len(item.sessions) != 0 {
+			t.Fatal("lost session was retained")
+		}
+	})
+}
+
+func TestLightFileUnacknowledgedReadStillExpires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		relay := newLightFileRelay(time.Now)
+		defer relay.closeAll()
+		item := relay.node(strings.Repeat("e", 32), true)
+		item.available, item.lastPoll = true, time.Now()
+		opened := make(chan error, 1)
+		go func() { _, err := relay.Open(context.Background(), item.id, lifecycleDownload()); opened <- err }()
+		synctest.Wait()
+		for range 3 {
+			poll, err := relay.poll(context.Background(), item.id, nil, nil)
+			if err != nil || poll.Command == nil || poll.Command.Kind != "request" {
+				t.Fatalf("read retry: %#v, %v", poll, err)
+			}
+			time.Sleep(40 * time.Second)
+		}
+		if err := <-opened; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("unacknowledged read did not expire: %v", err)
+		}
+		synctest.Wait()
+		if len(item.sessions) != 0 {
+			t.Fatal("retry retained an expired session")
+		}
+	})
+}
+
+func TestLightFileUncertainMutationIsNotReplayedAfterNodeRestart(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		t.Run(method, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				relay := newLightFileRelay(time.Now)
+				defer relay.closeAll()
+				item := relay.node(strings.Repeat("e", 32), true)
+				item.available, item.lastPoll = true, time.Now()
+				opened := make(chan error, 1)
+				go func() {
+					_, err := relay.Open(context.Background(), item.id, LightFileRequest{
+						Method: method, Path: "/v1/files/content", Body: http.NoBody,
+					})
+					opened <- err
+				}()
+				synctest.Wait()
+				first, err := relay.poll(context.Background(), item.id, nil, nil)
+				if err != nil || first.Command == nil || first.Command.Kind != "request" {
+					t.Fatalf("first mutation: %#v, %v", first, err)
+				}
+				// The node may have executed the write, then restarted before ACK.
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				retry, _ := relay.poll(ctx, item.id, nil, nil)
+				if retry.Command != nil && retry.Command.Kind == "request" {
+					t.Fatal("uncertain mutation was replayed into a fresh node process")
+				}
+				if err := <-opened; !errors.Is(err, ErrFileRelayUnavailable) {
+					t.Fatalf("uncertain write must fail explicitly: %v", err)
+				}
+			})
+		})
+	}
+}
+
 func TestLightFileOfflineAfterHeadersTerminatesRead(t *testing.T) {
 	clock := &serviceTestClock{now: time.Now()}
 	relay := newLightFileRelay(clock.Now)

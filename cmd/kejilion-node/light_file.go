@@ -64,18 +64,10 @@ func runLightFileControl(
 		processed: make(map[string]cluster.FileRelayEvent),
 	}
 	defer control.resetSessions()
-	unsupportedUntil := time.Time{}
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if time.Now().Before(unsupportedUntil) {
-			if !waitContext(ctx, time.Until(unsupportedUntil)) {
-				return
-			}
-			continue
-		}
-
 		events, _ := control.collectEvents()
 		response, err := relay.PollV2(
 			ctx, config.Origin, config.NodeID, config.TargetNodeID,
@@ -83,13 +75,10 @@ func runLightFileControl(
 			cluster.FileRelayPollRequest{RequestIDs: control.requestIDs(), Events: events},
 		)
 		if err != nil {
-			if terminalRelayUnsupported(err) {
-				unsupportedUntil = time.Now().Add(lightFileUnsupportedRetry)
-			} else {
-				slog.Warn("lightweight file relay failed", "error", err)
-				if !waitContext(ctx, lightFileFailureRetry) {
-					return
-				}
+			delay := control.retryDelay(err)
+			slog.Warn("lightweight file relay failed", "error", err, "retryAfter", delay)
+			if !waitContext(ctx, delay) {
+				return
 			}
 			continue
 		}
@@ -101,6 +90,16 @@ func runLightFileControl(
 			control.queueCommandError(*response.Command, err)
 		}
 	}
+}
+
+func (control *lightFileControl) retryDelay(err error) time.Duration {
+	// Only a peer that has never authenticated a file relay response needs
+	// the legacy-protocol backoff. A transient proxy error must not silence
+	// a known working broker for longer than the center's liveness window.
+	if terminalRelayUnsupported(err) && control.centerEpoch == "" {
+		return lightFileUnsupportedRetry
+	}
+	return lightFileFailureRetry
 }
 
 func (control *lightFileControl) acceptRelayResponse(response cluster.FileRelayPollResponse) {

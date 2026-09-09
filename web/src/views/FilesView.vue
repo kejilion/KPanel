@@ -354,6 +354,7 @@ function resetFileHostContext(hostId: string): boolean {
   fileHostId.value = hostId
   activeFileHostId.value = hostId || fileHosts.value.find((host) => host.isLocal)?.id || ''
   directory.value = undefined
+  directoryError.value = undefined
   dialogAction.value = undefined
   trashOpen.value = false
   trashEntries.value = []
@@ -415,6 +416,7 @@ const sortKey = ref<'name' | 'size' | 'modified'>('name')
 const sortDescending = ref(false)
 const viewMode = ref<FileViewMode>('list')
 const loading = ref(false)
+const directoryError = ref<{ message: string; path: string; append: boolean }>()
 const dragging = ref(false)
 const selected = ref(new Set<string>())
 const selectionAnchor = ref<string>()
@@ -819,16 +821,41 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
   const controller = new AbortController()
   directoryController = controller
   loading.value = true
+  directoryError.value = undefined
   contextMenu.value = undefined
   try {
-    const result = await fileAPI.value.list(
-      path,
-      {
-        offset: append ? directory.value?.nextOffset : 0,
-        search: search.value.trim() || undefined,
-      },
-      controller.signal,
-    )
+    // Capture this window's host and query for every attempt. Only directory
+    // reads may retry; uploads, edits and other actions are never replayed.
+    const client = fileAPI.value
+    const hostId = fileHostId.value
+    const options = {
+      offset: append ? directory.value?.nextOffset : 0,
+      search: search.value.trim() || undefined,
+    }
+    let result: FileDirectory
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await client.list(path, options, controller.signal)
+        break
+      } catch (error) {
+        if (controller.signal.aborted || directoryController !== controller) return undefined
+        const reconnecting = hostId && error instanceof ApiError && (
+          (error.status === 503 && error.code === 'file_relay_unavailable') ||
+          (error.status === 409 && error.code === 'file_host_unavailable')
+        )
+        if (!reconnecting || attempt >= 2) throw error
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            window.clearTimeout(timer)
+            controller.signal.removeEventListener('abort', finish)
+            resolve()
+          }
+          const timer = window.setTimeout(finish, 1000 * (attempt + 1))
+          controller.signal.addEventListener('abort', finish, { once: true })
+        })
+        if (controller.signal.aborted || directoryController !== controller) return undefined
+      }
+    }
     if (controller.signal.aborted || directoryController !== controller) return undefined
     if (append && directory.value?.path === result.path) {
       const known = new Set(directory.value.entries.map((entry) => entry.path))
@@ -850,8 +877,9 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
     }
     return result.path
   } catch (error) {
-    if (controller.signal.aborted) return undefined
-    toast.danger('目录读取失败', errorMessage(error))
+    if (controller.signal.aborted || directoryController !== controller) return undefined
+    directoryError.value = { message: errorMessage(error), path, append }
+    toast.danger('目录读取失败', directoryError.value.message)
     return undefined
   } finally {
     if (directoryController === controller) {
@@ -864,6 +892,13 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
       }
     }
   }
+}
+
+async function retryDirectory(): Promise<void> {
+  const failed = directoryError.value
+  if (!failed) return
+  if (failed.append) await loadDirectory(failed.path, true)
+  else await navigateDirectory(failed.path)
 }
 
 async function navigateDirectory(path: string): Promise<void> {
@@ -3259,7 +3294,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="!loading && !entries.length" class="file-empty">
+      <div v-if="!loading && directoryError" class="file-empty file-directory-error" role="alert">
+        <CircleAlert :size="34" />
+        <strong>{{ phrase('目录读取失败') }}</strong>
+        <span>{{ directoryError.path }} · {{ directoryError.message }}</span>
+        <button class="button button--secondary" type="button" @click="retryDirectory()">{{ phrase('重试') }}</button>
+      </div>
+      <div v-else-if="!loading && !entries.length" class="file-empty">
         <FolderOpen :size="34" />
         <strong>{{ search ? '没有匹配的文件' : '这个文件夹是空的' }}</strong>
         <span>{{ search ? '换一个关键词试试。' : '可直接拖入文件，或在右上角新建目录。' }}</span>
@@ -4937,6 +4978,12 @@ onBeforeUnmount(() => {
 
 .file-empty strong {
   color: var(--text);
+}
+
+.file-directory-error {
+  padding: 16px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .file-limit {

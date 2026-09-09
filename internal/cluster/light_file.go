@@ -382,12 +382,12 @@ func (item *lightFileNode) reconcileSessions(requestIDs []string, _ time.Time) {
 		if _, ok := keep[requestID]; ok {
 			continue
 		}
-		// A request can be created while the node is already holding a long
-		// poll, or immediately after its previous poll returned. In both cases
-		// the node has not had a chance to observe the new request ID yet. Keep
-		// the session until its request command has been delivered once; only
-		// then does an omitted ID prove that the node lost the session.
-		if item.hasUndeliveredRequest(requestID) {
+		// A returned poll response can be lost before the node receives it.
+		// Keep a read request until the node acknowledges it, allowing
+		// takeCommand to redeliver the same ID. Mutations whose receipt is
+		// uncertain must still fail: a restarted node loses its dedupe state.
+		// The existing command TTL and session watchdog still bound cleanup.
+		if item.canAwaitRequestAcknowledgement(requestID) {
 			continue
 		}
 		session.finish(ErrFileRelayUnavailable)
@@ -403,11 +403,11 @@ func (item *lightFileNode) reconcileSessions(requestIDs []string, _ time.Time) {
 	}
 }
 
-func (item *lightFileNode) hasUndeliveredRequest(requestID string) bool {
+func (item *lightFileNode) canAwaitRequestAcknowledgement(requestID string) bool {
 	for _, command := range item.pending {
 		if command.command.RequestID == requestID && command.command.Kind == "request" &&
-			!command.delivered && !command.cancel {
-			return true
+			!command.cancel {
+			return !command.delivered || command.command.Method == http.MethodGet || command.command.Method == http.MethodHead
 		}
 	}
 	return false
