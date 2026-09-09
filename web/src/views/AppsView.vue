@@ -1335,17 +1335,6 @@ watch(windowActive, syncJobPollingForWindow)
           </div>
           <div class="app-control-panel__actions">
             <button
-              v-if="capability(selected, 'manage')"
-              class="button button--secondary"
-              type="button"
-              :disabled="Boolean(operation) || applicationTaskActive"
-              :title="phrase('打开该应用对应的 kejilion.sh 原生交互菜单')"
-              @click="openScriptManage"
-            >
-              <LoaderCircle v-if="operation === 'manage'" class="spin" :size="15" />
-              <Wrench v-else :size="15" /> {{ phrase('脚本管理') }}
-            </button>
-            <button
               v-if="capability(selected, 'start')"
               class="button button--secondary"
               type="button"
@@ -1391,6 +1380,17 @@ watch(windowActive, syncJobPollingForWindow)
             >
               <ArrowUpRight :size="15" /> {{ phrase('打开应用') }}
             </a>
+            <button
+              v-if="capability(selected, 'manage')"
+              class="button button--secondary"
+              type="button"
+              :disabled="Boolean(operation) || applicationTaskActive"
+              :title="phrase('打开该应用对应的 kejilion.sh 原生交互菜单')"
+              @click="openScriptManage"
+            >
+              <LoaderCircle v-if="operation === 'manage'" class="spin" :size="15" />
+              <Wrench v-else :size="15" /> {{ phrase('脚本管理') }}
+            </button>
           </div>
         </section>
 
