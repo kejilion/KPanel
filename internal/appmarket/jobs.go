@@ -501,11 +501,13 @@ func (s *Service) launchScriptJob(ctx context.Context, record appJobRecord) erro
 		return errors.New("systemd background task runner is unavailable")
 	}
 	subcommand := "app-run"
+	stopTimeout := "10min"
 	if record.Interactive {
 		if err := createTerminalInput(s.jobs.inputPath(record.ID)); err != nil {
 			return fmt.Errorf("prepare interactive input: %w", err)
 		}
 		subcommand = "app-pty-run"
+		stopTimeout = "10s"
 	}
 	arguments := []string{
 		"--unit=" + appJobUnitPrefix + record.ID,
@@ -513,7 +515,8 @@ func (s *Service) launchScriptJob(ctx context.Context, record appJobRecord) erro
 		"--no-block",
 		"--property=Type=oneshot",
 		"--property=TimeoutStartSec=45min",
-		"--property=TimeoutStopSec=10min",
+		"--property=TimeoutStopSec=" + stopTimeout,
+		"--property=KillMode=control-group",
 		"--property=User=root",
 		"--property=UMask=0027",
 		"--property=PrivateTmp=yes",

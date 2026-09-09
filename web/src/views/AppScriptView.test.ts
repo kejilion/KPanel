@@ -3,11 +3,14 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetLocaleForTest, setLocale } from '@/i18n'
+import { desktopWindowCloseGuardKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
 import AppScriptView from './AppScriptView.vue'
 
 const mocks = vi.hoisted(() => ({
   inventory: vi.fn(),
   jobs: vi.fn(),
+  job: vi.fn(),
+  cancelJob: vi.fn(),
   action: vi.fn(),
 }))
 
@@ -19,6 +22,8 @@ vi.mock('@/lib/api', () => ({
     apps: {
       inventory: mocks.inventory,
       jobs: mocks.jobs,
+      job: mocks.job,
+      cancelJob: mocks.cancelJob,
       action: mocks.action,
     },
   },
@@ -54,7 +59,7 @@ const job = {
   createdAt: '',
 }
 
-async function mountView() {
+async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/app-script/:appId', component: AppScriptView }],
@@ -64,6 +69,7 @@ async function mountView() {
   const wrapper = shallowMount(AppScriptView, {
     global: {
       plugins: [router],
+      provide: closeGuards ? { [desktopWindowCloseGuardKey as symbol]: closeGuards } : undefined,
       stubs: { AppInteractiveTerminal: true },
     },
   })
@@ -77,10 +83,13 @@ describe('dedicated desktop app script terminal', () => {
     window.localStorage.clear()
     mocks.inventory.mockResolvedValue({ items: [app] })
     mocks.jobs.mockResolvedValue({ items: [] })
+    mocks.job.mockResolvedValue({ ...job, inputOpen: false, status: 'cancelled', stage: 'cancelled' })
+    mocks.cancelJob.mockResolvedValue({ ...job, inputOpen: false, stage: 'cancelling' })
     mocks.action.mockResolvedValue(job)
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     resetLocaleForTest()
   })
 
@@ -112,6 +121,63 @@ describe('dedicated desktop app script terminal', () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('An app task is already running: Other app')
+    wrapper.unmount()
+  })
+
+  it('stops the active process and waits for the terminal job before allowing the window to close', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    const unregister = vi.fn()
+    const closeGuards: DesktopWindowCloseGuardRegistry = {
+      register: vi.fn((candidate) => {
+        guard = candidate
+        return unregister
+      }),
+    }
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = await mountView(closeGuards)
+
+    expect(guard).toBeTypeOf('function')
+    await expect(Promise.resolve(guard?.())).resolves.toBe(true)
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('释放应用管理锁'))
+    expect(mocks.cancelJob).toHaveBeenCalledWith('job-1')
+    expect(mocks.job).toHaveBeenCalledWith('job-1')
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+
+    wrapper.unmount()
+    expect(unregister).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the window open when the Agent cannot confirm process shutdown', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    const closeGuards: DesktopWindowCloseGuardRegistry = {
+      register: (candidate) => {
+        guard = candidate
+        return vi.fn()
+      },
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.cancelJob.mockRejectedValue(new Error('Agent offline'))
+    const wrapper = await mountView(closeGuards)
+
+    await expect(Promise.resolve(guard?.())).resolves.toBe(false)
+    expect(wrapper.find('[role="alert"]').text()).toContain('Agent offline')
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe('job-1')
+    wrapper.unmount()
+  })
+
+  it('keeps the process running when window closure is cancelled', async () => {
+    let guard: (() => boolean | Promise<boolean>) | undefined
+    const closeGuards: DesktopWindowCloseGuardRegistry = {
+      register: (candidate) => {
+        guard = candidate
+        return vi.fn()
+      },
+    }
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = await mountView(closeGuards)
+
+    await expect(Promise.resolve(guard?.())).resolves.toBe(false)
+    expect(mocks.cancelJob).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

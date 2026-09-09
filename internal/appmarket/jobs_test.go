@@ -137,6 +137,8 @@ func TestKejilionStandardAppsBecomeDirectlyInstallable(t *testing.T) {
 	if len(runner.calls) != 1 || runner.calls[0][0] != "systemd-run" ||
 		!strings.Contains(strings.Join(runner.calls[0], " "), appJobUnitPrefix+job.ID) ||
 		!strings.Contains(strings.Join(runner.calls[0], " "), "app-pty-run") ||
+		!strings.Contains(strings.Join(runner.calls[0], " "), "TimeoutStopSec=10s") ||
+		!strings.Contains(strings.Join(runner.calls[0], " "), "KillMode=control-group") ||
 		!strings.Contains(
 			strings.Join(runner.calls[0], " "),
 			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",

@@ -6,7 +6,7 @@ import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
-import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowActiveKey, desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
@@ -17,13 +17,21 @@ usePhraseCatalog((locale) => locale === 'en-US'
 const route = useRoute()
 const i18n = useI18n()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
+const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const loading = ref(true)
 const error = ref('')
+const closeError = ref('')
+const closingJob = ref(false)
 const item = ref<AppMarketItem>()
 const job = ref<AppInstallJob>()
 let controller: AbortController | undefined
+let loadRequest: Promise<void> | undefined
+let closeRequest: Promise<boolean> | undefined
+let unregisterWindowCloseGuard: (() => void) | undefined
 
 const activeJobStorageKey = 'kpanel:active-app-job'
+const closePollDelay = 500
+const closePollAttempts = 25
 const appID = computed(() => String(route.params.appId || ''))
 function isActiveJob(value?: AppInstallJob): boolean {
   return value?.status === 'queued' || value?.status === 'running'
@@ -45,6 +53,20 @@ function rememberJob(id: string): void {
   } catch {
     // The terminal remains usable when browser storage is unavailable.
   }
+}
+
+function forgetJob(id: string): void {
+  try {
+    if (window.localStorage.getItem(activeJobStorageKey) === id) {
+      window.localStorage.removeItem(activeJobStorageKey)
+    }
+  } catch {
+    // Closing the process must not depend on browser storage availability.
+  }
+}
+
+function waitForClosePoll(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, closePollDelay))
 }
 
 async function existingInteractiveJob(appId: string, signal: AbortSignal): Promise<AppInstallJob | undefined> {
@@ -110,12 +132,84 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(() => void load())
-onBeforeUnmount(() => controller?.abort())
+function startLoad(): void {
+  const request = load()
+  loadRequest = request
+  void request.finally(() => {
+    if (loadRequest === request) loadRequest = undefined
+  })
+}
+
+async function waitForJobToStop(current: AppInstallJob): Promise<boolean> {
+  for (let attempt = 0; attempt < closePollAttempts && isActiveJob(current); attempt += 1) {
+    if (attempt > 0) await waitForClosePoll()
+    current = await api.apps.job(current.id)
+    job.value = current
+  }
+  return !isActiveJob(current)
+}
+
+async function stopActiveJobBeforeClose(): Promise<boolean> {
+  closeError.value = ''
+  controller?.abort()
+  await loadRequest
+
+  const active = job.value
+  if (!active || !isActiveJob(active)) return true
+  if (!window.confirm(i18n.t('appScript.closeConfirm'))) return false
+
+  closingJob.value = true
+  try {
+    let current: AppInstallJob
+    try {
+      current = await api.apps.cancelJob(active.id)
+    } catch (reason) {
+      if (!(reason instanceof ApiError) || reason.code !== 'app_job_not_active') throw reason
+      current = await api.apps.job(active.id)
+    }
+    job.value = current
+    if (!(await waitForJobToStop(current))) {
+      closeError.value = i18n.t('appScript.closePending')
+      return false
+    }
+    forgetJob(active.id)
+    return true
+  } catch (reason) {
+    closeError.value = localizeError(reason, 'appScript.closeFailed')
+    return false
+  } finally {
+    closingJob.value = false
+  }
+}
+
+function guardWindowClose(): Promise<boolean> {
+  if (closeRequest) return closeRequest
+  const request = stopActiveJobBeforeClose()
+  closeRequest = request
+  void request.finally(() => {
+    if (closeRequest === request) closeRequest = undefined
+  })
+  return request
+}
+
+onMounted(() => {
+  unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
+  startLoad()
+})
+onBeforeUnmount(() => {
+  unregisterWindowCloseGuard?.()
+  controller?.abort()
+})
 </script>
 
 <template>
   <section class="app-script-page">
+    <div v-if="closeError" class="app-script-page__close-error" role="alert">
+      <TriangleAlert :size="16" />
+      <span>{{ closeError }}</span>
+      <button type="button" @click="closeError = ''">{{ i18n.t('common.closeNotification') }}</button>
+    </div>
+
     <div v-if="loading" class="app-script-page__state" role="status">
       <LoaderCircle class="spin" :size="24" />
       <strong>正在启动脚本终端…</strong>
@@ -126,9 +220,15 @@ onBeforeUnmount(() => controller?.abort())
       <TriangleAlert :size="26" />
       <strong>脚本终端无法启动</strong>
       <small>{{ error }}</small>
-      <button class="button button--small" type="button" @click="load">
+      <button class="button button--small" type="button" @click="startLoad">
         <RefreshCw :size="14" /><span>重新尝试</span>
       </button>
+    </div>
+
+    <div v-else-if="closingJob" class="app-script-page__state" role="status">
+      <LoaderCircle class="spin" :size="24" />
+      <strong>{{ i18n.t('appScript.closingTitle') }}</strong>
+      <small>{{ i18n.t('appScript.closingDescription') }}</small>
     </div>
 
     <template v-else-if="job">
@@ -169,6 +269,30 @@ onBeforeUnmount(() => controller?.abort())
 .app-script-page__terminal :deep(.interactive-terminal__screen) {
   height: auto;
   min-height: 0;
+}
+
+.app-script-page__close-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 24%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.app-script-page__close-error span {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-script-page__close-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
 
 .app-script-page__state {
