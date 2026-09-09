@@ -131,6 +131,31 @@ func TestCertificateReceiptIsBounded(t *testing.T) {
 	}
 }
 
+func TestCertificateReplacementErrorReceipts(t *testing.T) {
+	for _, test := range []struct {
+		name, receipt string
+		want          error
+	}{
+		{"renewal", "KPANEL_CERTIFICATE renewal_adapter_unavailable\n", ErrCertificateRenewalUnavailable},
+		{"crlf", "KPANEL_CERTIFICATE renewal_adapter_unavailable\r\n", ErrCertificateRenewalUnavailable},
+		{"conflict", "KPANEL_CERTIFICATE conflict\n", ErrConflict},
+		{"recovery wins", "KPANEL_CERTIFICATE renewal_adapter_unavailable\nKPANEL_CERTIFICATE needs_attention\n", ErrNeedsAttention},
+		{"unknown", "private-key=SECRET\n", ErrUnavailable},
+		{"embedded", "log: KPANEL_CERTIFICATE renewal_adapter_unavailable\n", ErrUnavailable},
+		{"truncated", "KPANEL_CERTIFICATE renewal_adapter_unavailable", ErrUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := certificateReplacementError([]byte(test.receipt))
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "SECRET") {
+				t.Fatalf("unsafe or incorrect error: %v", err)
+			}
+			if test.want != ErrCertificateRenewalUnavailable && errors.Is(err, ErrCertificateRenewalUnavailable) {
+				t.Fatal("non-protocol output was treated as a renewal receipt")
+			}
+		})
+	}
+}
+
 func TestReplaceCertificateCoversAllServedNames(t *testing.T) {
 	m, f, id, input := certificateReplacementFixture(t)
 	path := filepath.Join(m.webRoot, "conf.d/example.com.conf")

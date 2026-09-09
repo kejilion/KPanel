@@ -24,6 +24,7 @@ const errorMessageKeys: Readonly<Record<string, MessageKey>> = {
   forbidden: 'error.forbidden',
   agent_unavailable: 'error.agentUnavailable',
   local_agent_unavailable: 'error.agentUnavailable',
+  site_certificate_renewal_unavailable: 'error.certificateRenewalUnavailable',
   resource_conflict: 'error.resourceChanged',
   resource_version_changed: 'error.resourceChanged',
   validation_failed: 'error.validationFailed',

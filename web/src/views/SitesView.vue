@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
+import { localizeError } from '@/i18n/errors'
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
@@ -366,7 +367,7 @@ async function replaceCertificate(): Promise<void> {
     selectedSite.value = sites.value.find((item) => item.id === saved.id) || saved
     toast.success(phrase('证书已更换'), saved.primaryDomain)
   } catch (error) {
-    replacement.error = error instanceof Error ? error.message : phrase('更换证书失败，请刷新网站状态后重试。')
+    replacement.error = error instanceof Error ? localizeError(error) : phrase('更换证书失败，请刷新网站状态后重试。')
   } finally {
     replacement.submitting = false
   }

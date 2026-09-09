@@ -381,6 +381,7 @@ export const enUSMessages = {
   'error.secondFactorUnavailable': 'The authenticator is temporarily unavailable. Use a recovery code or check the TOTP encryption key.',
   'error.forbidden': 'This account is not allowed to perform this action.',
   'error.agentUnavailable': 'The host Agent is temporarily unavailable.',
+  'error.certificateRenewalUnavailable': 'Unable to replace the certificate right now. Please try again later.',
   'error.resourceChanged': 'The resource changed. Refresh and try again.',
   'error.validationFailed': 'The input did not pass validation.',
   'error.requestFailed': 'The request failed. Try again later.',

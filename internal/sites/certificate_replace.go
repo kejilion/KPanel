@@ -18,6 +18,8 @@ var certificateReplaceRequirements = []string{
 	"kpanel_web_replace_certificate()",
 }
 
+var ErrCertificateRenewalUnavailable = fmt.Errorf("%w: certificate renewal adapter is incompatible or busy; existing certificates were not changed", ErrUnavailable)
+
 type certificateReplacement struct {
 	domain, configHash, certificateHash, keyHash string
 	certificatePath, keyPath                     string
@@ -193,17 +195,32 @@ func (scriptCertificateReplacer) Replace(ctx context.Context, input certificateR
 	command.Stdout = &receipt
 	// Raw script output must never be returned to audit/task/log consumers.
 	if err := command.Run(); err != nil {
-		code := ErrUnavailable
-		if strings.Contains(string(receipt.value), "KPANEL_CERTIFICATE conflict") {
-			code = ErrConflict
-		}
-		if strings.Contains(string(receipt.value), "KPANEL_CERTIFICATE needs_attention") {
-			code = ErrNeedsAttention
-		}
-		return fmt.Errorf("%w: certificate replacement failed; inspect site certificate state", code)
+		return certificateReplacementError(receipt.value)
 	}
 	if !strings.Contains(string(receipt.value), "KPANEL_CERTIFICATE replaced "+input.domain+"\n") {
 		return fmt.Errorf("%w: certificate replacement receipt missing", ErrNeedsAttention)
 	}
 	return nil
+}
+
+func certificateReplacementError(receipt []byte) error {
+	// Interpret only complete fixed protocol lines, never return raw script output.
+	lines := strings.Split(string(receipt), "\n")
+	hasReceipt := func(value string) bool {
+		for _, line := range lines[:len(lines)-1] {
+			if strings.TrimSuffix(line, "\r") == "KPANEL_CERTIFICATE "+value {
+				return true
+			}
+		}
+		return false
+	}
+	code := ErrUnavailable
+	if hasReceipt("needs_attention") {
+		code = ErrNeedsAttention
+	} else if hasReceipt("conflict") {
+		code = ErrConflict
+	} else if hasReceipt("renewal_adapter_unavailable") {
+		return ErrCertificateRenewalUnavailable
+	}
+	return fmt.Errorf("%w: certificate replacement failed; inspect site certificate state", code)
 }

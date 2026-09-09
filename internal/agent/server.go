@@ -1164,6 +1164,8 @@ func (s *Server) writeSiteError(w http.ResponseWriter, requestID string, err err
 		status, code, title = http.StatusUnprocessableEntity, "site_validation_failed", "网站配置验证失败"
 	case errors.Is(err, sites.ErrNeedsAttention):
 		status, code, title = http.StatusServiceUnavailable, "site_needs_attention", "网站操作需要人工检查"
+	case errors.Is(err, sites.ErrCertificateRenewalUnavailable):
+		status, code, title = http.StatusServiceUnavailable, "site_certificate_renewal_unavailable", "证书续签适配器不可用"
 	case errors.Is(err, sites.ErrUnavailable):
 		status, code, title = http.StatusServiceUnavailable, "sites_unavailable", "网站写入暂不可用"
 	}

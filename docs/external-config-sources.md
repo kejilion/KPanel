@@ -51,8 +51,13 @@
 `k web certificate-replace` 与创建证书协议共用 `/home/web/certs`；不生成 Nginx 模板。
 同源 `auto_cert_renewal.sh` SHA-256 为
 `3a63b9e0c1557fae9e18983a8eee284476a946a811c11b3076535aab1432e0d0`。
-主脚本仅将精确官方旧续签器 `ffc714440b503d5f8ee082006f31cc0b59b1c3fd8a1d015257a6cf5944153e83`
+当前固定脚本仅将精确官方旧续签器 `ffc714440b503d5f8ee082006f31cc0b59b1c3fd8a1d015257a6cf5944153e83`
 升级为该字节级一致的受保护版本，保留未知本地改动；来源标记只决定自动续签策略。
+兼容修复 `certificate-replacement-compat-20260909`（`coupled`，本地未发布）增加对官方
+`b3d0d35` 和 `014f450` 续签器的识别，迁移结果仍须等于上述当前摘要；不改写未知自定义脚本。
+Agent 将固定回执 `renewal_adapter_unavailable` 映射为 `site_certificate_renewal_unavailable`，
+兼容迁移在内部自动完成，不新增用户步骤或迁移提示；前端仅在操作失败时提示稍后重试，不展示续签适配细节或要求用户检查脚本。
+发布时须先发布配套脚本再更新受管脚本固定版本。
 本地候选 `site-certificate-lifecycle-20260906` 为 `coupled`，尚未公开脚本提交，远端镜像构建不可用。
 本地 PEM、事务、旧续签器迁移和失败恢复夹具已验证；真实 TLS、cron/systemd、双端互通和公开产物 L3 未验证。
 

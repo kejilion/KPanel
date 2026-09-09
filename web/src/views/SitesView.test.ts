@@ -210,6 +210,26 @@ describe('SitesView creation experience', () => {
     view.closeCertificateReplacement()
     expect(view.replacement.privateKey).toBe('')
   })
+  it('keeps internal renewal details out of the user flow and preserves material for a retry', async () => {
+    const view = setupView()
+    const current = site('example.com')
+    view.capabilitiesLoaded.value = true
+    view.capabilities.value = [{ id: 'sites.certificate-replace', enabled: true }]
+    view.openCertificateReplacement(current)
+    view.replacement.certificate = 'certificate'
+    view.replacement.privateKey = 'private-key'
+    vi.mocked(api.sites.update).mockRejectedValue(Object.assign(new Error('raw internal detail'), { code: 'site_certificate_renewal_unavailable' }))
+    await view.replaceCertificate()
+    expect(view.replacement.error).toBe('暂时无法更换证书，请稍后重试。')
+    expect(view.replacement.error).not.toContain('raw internal detail')
+    expect(view.replacement.certificate).toBe('certificate')
+    expect(view.replacement.privateKey).toBe('private-key')
+    expect(view.certificateSite.value?.resourceVersion).toBe(current.resourceVersion)
+    expect(view.replacement.submitting).toBe(false)
+    view.closeCertificateReplacement()
+    expect(view.replacement.privateKey).toBe('')
+  })
+
   it('does not show Agent unavailable before capability loading finishes', () => {
     const view = setupView()
 
