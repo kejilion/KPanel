@@ -363,7 +363,7 @@ export const enUSMessages = {
   'apps.updateContainerDescription': 'KPanel pulls the new image first and restores the original container if it fails.',
   'apps.confirmUninstall': 'Confirm uninstall',
   'apps.startUpdate': 'Start update',
-  'apps.backgroundInstall': 'Install in background',
+  'apps.backgroundInstall': 'Install',
   'apps.submitting': 'Submitting…',
 
   'cluster.confirm.resetShare': 'Reset the public link? The old link will stop working immediately.',

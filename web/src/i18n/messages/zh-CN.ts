@@ -363,7 +363,7 @@ export const zhCNMessages = {
   'apps.updateContainerDescription': 'KPanel 会先拉取新镜像，失败时恢复原容器。',
   'apps.confirmUninstall': '确认卸载',
   'apps.startUpdate': '开始更新',
-  'apps.backgroundInstall': '后台安装',
+  'apps.backgroundInstall': '安装',
   'apps.submitting': '正在提交…',
 
   'cluster.confirm.resetShare': '重置公开链接？旧链接会立即失效。',

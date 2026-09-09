@@ -772,7 +772,7 @@ async function install(): Promise<void> {
     selectedID.value = ''
     startJobPolling(job)
     jobDetailsOpen.value = true
-    toast.success('已转入后台安装', `${appName(item)} 安装期间可以继续使用面板。`)
+    toast.success('已提交安装', `${appName(item)} 安装期间可以继续使用面板。`)
   } catch (reason) {
     toast.danger('安装失败', reason instanceof ApiError ? reason.message : 'Agent 未能完成安装。')
   } finally {
@@ -1048,7 +1048,7 @@ watch(windowActive, syncJobPollingForWindow)
   <div class="page app-market">
     <PageHeader
       title="应用市场"
-      description="发现、安装和管理服务器应用；安装与更新继续通过 kejilion.sh 原生流程在后台运行。"
+      description="发现、安装和管理服务器应用。"
     />
 
     <section v-if="inventory" class="market-hero" aria-label="应用概况与操作">
@@ -1252,7 +1252,7 @@ watch(windowActive, syncJobPollingForWindow)
       <span><Store :size="22" /></span>
       <div>
         <strong>{{ inventory.installed ? '还想安装更多应用？' : '还没有安装应用' }}</strong>
-        <p>前往完整应用列表，选择支持后台安装的应用；安装期间可以继续使用面板。</p>
+        <p>前往完整应用列表，选择需要安装的应用。</p>
       </div>
       <button class="button button--primary" type="button" @click="showAllApps">
         浏览全部应用 <ChevronRight :size="16" />
@@ -1393,10 +1393,10 @@ watch(windowActive, syncJobPollingForWindow)
           <div>
             <strong>{{ phrase('当前未安装') }}</strong>
             <p v-if="capability(selected, 'install') && selected.installer === 'kejilion'">
-              {{ phrase('此应用会在后台打开 kejilion.sh 原生交互终端；专属安装向导、端口、域名和凭据输入均与 SSH 端一致。') }}
+              {{ phrase('此应用通过 kejilion.sh 安装，请按提示完成配置。') }}
             </p>
             <p v-else-if="capability(selected, 'install')">
-              {{ phrase('此应用已有固定镜像、端口和回滚策略，可以由 KPanel 在后台安全安装。') }}
+              {{ phrase('此应用可由 KPanel 直接安装。') }}
             </p>
             <p v-else>{{ phrase(selected.capabilities.install?.reason || '等待专属安装适配器。') }}</p>
           </div>
@@ -1524,7 +1524,7 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="installOpen && Boolean(selected)"
       :title="i18n.t('apps.installTitle', { name: selected ? appName(selected) : '' })"
-      :description="phrase('任务提交后会在宿主机后台运行；关闭窗口或切换页面不会中断安装。')"
+      :description="phrase('确认安装配置后，点击安装。')"
       size="small"
       @close="installOpen = false"
     >
