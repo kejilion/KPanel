@@ -355,7 +355,7 @@ export const zhTWMessages = {
   "apps.updateContainerDescription": "KPanel 會先拉取新映象，失敗時恢復原容器。",
   "apps.confirmUninstall": "確認解除安裝",
   "apps.startUpdate": "開始更新",
-  "apps.backgroundInstall": "後台安裝",
+  "apps.backgroundInstall": "安裝",
   "apps.submitting": "正在提交…",
   "cluster.confirm.resetShare": "重設公開連結？舊連結會立即失效。",
   "cluster.confirm.revokeController": "撤銷 {name} 的存取授權？",
