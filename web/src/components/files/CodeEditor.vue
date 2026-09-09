@@ -176,7 +176,6 @@ async function initialize(): Promise<void> {
         highlightActiveLineGutter,
         highlightSpecialChars,
         keymap,
-        lineNumbers,
       },
       { defaultKeymap, history, historyKeymap, indentWithTab },
       { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, syntaxHighlighting },
@@ -192,6 +191,7 @@ async function initialize(): Promise<void> {
       },
       { tags },
       language,
+      { selectableLineNumbers },
     ] = await Promise.all([
       import('@codemirror/state'),
       import('@codemirror/view'),
@@ -200,6 +200,7 @@ async function initialize(): Promise<void> {
       import('@codemirror/search'),
       import('@lezer/highlight'),
       loadCodeLanguage(props.fileName, props.mime, props.sizeBytes),
+      import('@/lib/code-editor-line-selection'),
     ])
     if (cancelled || !host.value) return
 
@@ -212,7 +213,7 @@ async function initialize(): Promise<void> {
       { tag: [tags.typeName, tags.className], color: 'var(--code-type)' },
       { tag: tags.tagName, color: 'var(--code-tag)' },
       { tag: [tags.attributeName, tags.propertyName], color: 'var(--code-property)' },
-      { tag: tags.invalid, color: 'var(--danger)', textDecoration: 'underline' },
+      { tag: tags.invalid, color: 'var(--code-tag)', textDecoration: 'underline' },
     ])
 
     lineWrapCompartment = new Compartment()
@@ -226,7 +227,7 @@ async function initialize(): Promise<void> {
       replaceAll,
     }
     const extensions = [
-      lineNumbers(),
+      selectableLineNumbers(),
       ...(language.highlighted ? [foldGutter()] : []),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
@@ -256,7 +257,7 @@ async function initialize(): Promise<void> {
           height: '100%',
           color: 'var(--code-text)',
           backgroundColor: 'var(--code-background)',
-          fontSize: '13px',
+          fontSize: '14px',
         },
         '.cm-scroller': {
           overflow: 'auto',
@@ -268,6 +269,7 @@ async function initialize(): Promise<void> {
           padding: '14px 0',
           caretColor: 'var(--code-caret)',
         },
+        '.cm-content.cm-lineWrapping': { minWidth: '0' },
         '.cm-cursor, .cm-dropCursor': {
           borderLeftColor: 'var(--code-caret)',
           borderLeftWidth: '2px',
@@ -282,6 +284,11 @@ async function initialize(): Promise<void> {
         '.cm-lineNumbers .cm-gutterElement': {
           minWidth: '46px',
           padding: '0 10px 0 6px',
+          cursor: 'pointer',
+        },
+        '.cm-lineNumbers .cm-gutterElement:hover': {
+          color: 'var(--code-text)',
+          backgroundColor: 'var(--code-active-line)',
         },
         '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
         '.cm-activeLineGutter': {
@@ -291,6 +298,11 @@ async function initialize(): Promise<void> {
         '&.cm-focused': { outline: 'none' },
         '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
           backgroundColor: 'var(--code-selection) !important',
+        },
+        // drawSelection paints the background; keep each token's foreground.
+        '.cm-content ::selection, .cm-content::selection': {
+          color: 'currentColor',
+          backgroundColor: 'transparent',
         },
         '.cm-panels': {
           color: 'var(--code-text)',
@@ -512,18 +524,20 @@ onBeforeUnmount(() => {
   --code-gutter: color-mix(in srgb, var(--file-preview-panel, var(--terminal-shell-panel, #111a1d)) 72%, var(--code-background) 28%);
   --code-panel: var(--file-preview-panel, var(--terminal-shell-panel, #111a1d));
   --code-text: var(--file-preview-text, var(--terminal-shell-text, #d8dddc));
-  --code-caret: var(--file-preview-accent, var(--brand, #35cba6));
+  --code-caret: color-mix(in srgb, var(--file-preview-accent, var(--brand)) 50%, var(--code-text));
   --code-line-number: var(--file-preview-muted, var(--terminal-shell-muted, #8a9695));
   --code-active-line: var(--file-preview-active-line, rgb(53 203 166 / 8%));
-  --code-selection: var(--file-preview-selection, rgb(53 203 166 / 27%));
+  --code-selection: color-mix(in srgb, var(--file-preview-accent, var(--brand)) 18%, var(--code-background));
   --code-border: var(--file-preview-border, var(--terminal-shell-border, #29383a));
-  --code-comment: color-mix(in srgb, var(--code-line-number) 78%, var(--code-caret) 22%);
-  --code-keyword: var(--violet);
-  --code-string: var(--success);
-  --code-number: var(--amber);
-  --code-function: var(--blue);
-  --code-type: color-mix(in srgb, var(--amber) 68%, var(--code-caret) 32%);
-  --code-tag: var(--danger);
+  /* The workbench stays dark in light themes too. Lift semantic hues toward
+     its own foreground instead of borrowing light-page text colors. */
+  --code-comment: color-mix(in srgb, var(--code-line-number) 65%, var(--code-text));
+  --code-keyword: color-mix(in srgb, var(--violet) 50%, var(--code-text));
+  --code-string: color-mix(in srgb, var(--success) 50%, var(--code-text));
+  --code-number: color-mix(in srgb, var(--amber) 50%, var(--code-text));
+  --code-function: color-mix(in srgb, var(--blue) 50%, var(--code-text));
+  --code-type: color-mix(in srgb, var(--amber) 35%, var(--code-text));
+  --code-tag: color-mix(in srgb, var(--danger) 50%, var(--code-text));
   --code-property: var(--code-caret);
   --code-search-match: color-mix(in srgb, var(--amber) 22%, transparent);
   --code-search-match-border: color-mix(in srgb, var(--amber) 62%, transparent);
