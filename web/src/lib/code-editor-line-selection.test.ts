@@ -16,7 +16,9 @@ function setup(doc = 'one\ntwo\nthree\nfour', selection = EditorSelection.cursor
     lineBlockAtHeight: (y: number) => state.doc.line(Math.max(1, Math.min(state.doc.lines, y))),
   } as unknown as EditorView
   let style: MouseSelectionStyle | null = null
+  let initialEvent: MouseEvent | null = null
   contentDOM.addEventListener('mousedown', event => {
+    initialEvent = event
     for (const create of state.facet(EditorView.mouseSelectionStyle)) {
       style = create(view, event)
       if (style) break
@@ -29,7 +31,11 @@ function setup(doc = 'one\ntwo\nthree\nfour', selection = EditorSelection.cursor
   return {
     view,
     start(line: number, button = 0) {
-      return gutter[0].value.domEventHandlers.mousedown(view, {}, new MouseEvent('mousedown', { clientY: line, button }))
+      return gutter[0].value.domEventHandlers.mousedown(view, { from: state.doc.line(line).from }, new MouseEvent('mousedown', { clientY: line, button }))
+    },
+    initialSelection() {
+      if (!style || !initialEvent) throw new Error('gutter gesture was not handled')
+      return style.get(initialEvent, false, false)
     },
     select(line: number, extend = false, multiple = false) {
       if (!style) throw new Error('gutter gesture was not handled')
@@ -86,6 +92,22 @@ describe('line number selection', () => {
     editor.map()
     const { from, to } = editor.select(4).main
     expect(editor.view.state.sliceDoc(from, to)).toBe('two\nthree\n')
+  })
+
+  it('measures pending padding before converting the first gutter coordinates', () => {
+    const editor = setup()
+    let top = 0
+    Object.defineProperty(editor.view, 'documentTop', { get: () => top })
+    const lineBlockAtHeight = editor.view.lineBlockAtHeight
+    editor.view.lineBlockAtHeight = (height: number) => {
+      top = 1
+      return lineBlockAtHeight(height)
+    }
+    editor.start(3)
+    const initial = editor.initialSelection().main
+    expect(editor.view.state.sliceDoc(initial.from, initial.to)).toBe('three\n')
+    const { from, to } = editor.select(4).main
+    expect(editor.view.state.sliceDoc(from, to)).toBe('three\n')
   })
 
   it('leaves right-click and ordinary content selection alone', () => {
