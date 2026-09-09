@@ -3,6 +3,7 @@ package sites
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -274,6 +275,48 @@ func TestInvocationForRecipeJobRestoresValidatedCommands(t *testing.T) {
 		ProxyHost: "127.0.0.1;id", ProxyPort: "8080",
 	}); err == nil {
 		t.Fatal("unsafe persisted proxy host was accepted")
+	}
+}
+
+func TestRedirectTemplatePassesTargetToScriptAndRestoresJob(t *testing.T) {
+	input := SiteInput{PrimaryDomain: "old.example.com", Type: "redirect", RedirectTarget: "https://NEW.example.com", RedirectCode: 301}
+	if _, _, err := normalizeTemplateInput(input); err != nil {
+		t.Fatal(err)
+	}
+	target, err := normalizeScriptRedirectTarget(input.RedirectTarget, input.PrimaryDomain)
+	if err != nil || target != "new.example.com" {
+		t.Fatalf("target = %q, %v", target, err)
+	}
+	invocation := redirectInvocation(input.PrimaryDomain, target)
+	job := RecipeJob{Domain: input.PrimaryDomain, Recipe: "redirect-site", RedirectTarget: target}
+	encoded, _ := json.Marshal(job)
+	var restored RecipeJob
+	if err := json.Unmarshal(encoded, &restored); err != nil {
+		t.Fatal(err)
+	}
+	got, err := invocationForRecipeJob(restored)
+	if err != nil || !reflect.DeepEqual(got, invocation) || !reflect.DeepEqual(got.arguments, []string{"redirect-site", "old.example.com", "new.example.com"}) {
+		t.Fatalf("restored invocation = %#v, %v", got, err)
+	}
+	if !containsAll(strings.Join(got.required, "\n"), []string{`KPANEL_WEB_REDIRECT_PROTOCOL_VERSION="1"`}) {
+		t.Fatal("new target protocol must be required before execution")
+	}
+	for _, raw := range []string{"https://old.example.com", "http://new.example.com", "https://new.example.com:8443", "https://new.example.com/path", "https://new.example.com?x=1", "https://new.example.com;id", "https://127.0.0.1", "https://user@new.example.com"} {
+		input.RedirectTarget = raw
+		if _, _, err := normalizeTemplateInput(input); err == nil {
+			t.Fatalf("accepted %q", raw)
+		}
+	}
+	input.RedirectTarget = "https://new.example.com"
+	input.RedirectCode = 308
+	if _, _, err := normalizeTemplateInput(input); err == nil {
+		t.Fatal("accepted non-script redirect code")
+	}
+	for _, raw := range []string{"new.example.com;id", "new.example.com/path", "old.example.com", "NEW.example.com"} {
+		job.RedirectTarget = raw
+		if _, err := invocationForRecipeJob(job); err == nil {
+			t.Fatalf("accepted persisted target %q", raw)
+		}
 	}
 }
 

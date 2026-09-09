@@ -263,7 +263,7 @@ const serviceOptions = [
     type: 'redirect',
     title: '域名重定向',
     summary: '将访问跳转到另一个域名',
-    detail: '脚本交互填写跳转目标',
+    detail: '填写目标域名，由脚本完成重定向',
     icon: ArrowRight,
     featured: false,
     badges: [],
@@ -515,7 +515,9 @@ const formValid = computed(() => {
   const domain = form.primaryDomain.trim()
   if (!isDomain(domain)) return false
   if (useCustomCertificate.value && !customCertificateFormValid.value) return false
-  if (scriptedTemplateCreate.value) return true
+  if (scriptedTemplateCreate.value) {
+    return form.type !== 'redirect' || (isDomain(form.redirectTarget.trim()) && form.redirectTarget.trim().toLowerCase() !== domain.toLowerCase())
+  }
   if (form.type === 'proxy' || form.type === 'proxy_domain') return isOrigin(form.upstream)
   if (form.type === 'load_balance') {
     const upstreams = splitUpstreams(form.upstreams)
@@ -869,7 +871,7 @@ async function submitSite(): Promise<void> {
     recipe: form.type === 'recipe' ? form.recipe : undefined,
     upstream: !scriptedTemplateCreate.value && (form.type === 'proxy' || form.type === 'proxy_domain') ? form.upstream.trim() : undefined,
     upstreams: !scriptedTemplateCreate.value && form.type === 'load_balance' ? splitUpstreams(form.upstreams) : undefined,
-    redirectTarget: !scriptedTemplateCreate.value && form.type === 'redirect' ? form.redirectTarget.trim() : undefined,
+    redirectTarget: form.type === 'redirect' ? (scriptedTemplateCreate.value ? `https://${form.redirectTarget.trim().toLowerCase()}` : form.redirectTarget.trim()) : undefined,
     redirectCode: !scriptedTemplateCreate.value && form.type === 'redirect' ? form.redirectCode : undefined,
     phpVersion: !scriptedTemplateCreate.value && form.type === 'php' ? form.phpVersion : undefined,
     certificate: useCustomCertificate.value ? form.certificate.trim() : undefined,
@@ -1596,6 +1598,12 @@ onBeforeUnmount(() => {
           <small>{{ phrase('每行一个 HTTP 源站，2–8 个；与 kejilion.sh 的 HTTP upstream 架构一致。') }}</small>
         </label>
 
+        <label v-if="form.type === 'redirect' && scriptedTemplateCreate" class="field site-redirect-field">
+          <span>{{ phrase('跳转目标') }}</span>
+          <input v-model.trim="form.redirectTarget" type="text" placeholder="www.example.com" required />
+          <small>{{ phrase('301 永久跳转到目标域名的 HTTPS 地址，保留路径和查询参数。') }}</small>
+        </label>
+
         <template v-if="form.type === 'redirect' && !scriptedTemplateCreate">
           <label class="field">
             <span>{{ phrase('跳转目标') }}</span>
@@ -1756,6 +1764,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.site-redirect-field > span,
+.site-redirect-field > input {
+  font-size: 0.875rem;
+}
+
 #site-certificate-form .field > small {
   color: var(--muted);
 }
