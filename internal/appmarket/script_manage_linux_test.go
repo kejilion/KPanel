@@ -68,7 +68,11 @@ func TestStoppedEngineBindingsPreserveDockerActionsWithoutScriptManagement(t *te
 					t.Fatalf("configured binding lost: %#v", item.Runtime)
 				}
 				manage := item.Capabilities["manage"]
-				if manage.Enabled || manage.Reason != "该应用使用 KPanel 常规管理入口" {
+				expectedManageReason := "该应用使用 KPanel 常规管理入口"
+				if ip != "0.0.0.0" {
+					expectedManageReason = "当前脚本不支持保留或转换 Docker 回环端口绑定；需先完成端口绑定兼容处理"
+				}
+				if manage.Enabled || manage.Reason != expectedManageReason {
 					t.Fatalf("docker app exposed script management: %#v", item.Capabilities)
 				}
 				for _, action := range []string{"update", "direct_access"} {
