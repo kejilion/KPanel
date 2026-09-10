@@ -486,14 +486,22 @@ func (r *lightFileRelay) Open(
 		item.mu.Unlock()
 		return nil, ErrRateLimited
 	}
+	request := &lightFileCommand{command: command, done: make(chan error, 1)}
 	item.sessions[requestID] = session
-	item.pending[command.ID] = &lightFileCommand{command: command, done: make(chan error, 1)}
-	item.queued = append(item.queued, item.pending[command.ID])
+	item.pending[command.ID] = request
+	item.queued = append(item.queued, request)
 	wakeLightFileNode(item)
 	item.mu.Unlock()
 
 	requestContext, stopRequest := context.WithCancel(ctx)
 	go r.watchSession(requestContext, stopRequest, item, session, input.Body)
+	if err := waitLightFileCommandWithin(ctx, item, request, lightFileCommandAckWait); err != nil {
+		session.finish(contextError(ctx, err))
+		return nil, contextError(ctx, err)
+	}
+	// Do not consume an upload body until the authenticated node has accepted
+	// the request. This keeps connection recovery separate from file transfer
+	// and avoids buffering work for a broker that is not actually reachable.
 	if command.BodyLength != 0 && input.Body != nil && input.Body != http.NoBody {
 		go r.sendBody(requestContext, item, session, input.Body, command.BodyLength)
 	}
@@ -664,7 +672,11 @@ func (r *lightFileRelay) enqueueAndWait(ctx context.Context, item *lightFileNode
 }
 
 func waitLightFileCommand(ctx context.Context, item *lightFileNode, request *lightFileCommand) error {
-	waitCtx, cancel := context.WithTimeout(ctx, lightFileCommandTTL)
+	return waitLightFileCommandWithin(ctx, item, request, lightFileCommandTTL)
+}
+
+func waitLightFileCommandWithin(ctx context.Context, item *lightFileNode, request *lightFileCommand, timeout time.Duration) error {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	select {
 	case err := <-request.done:
