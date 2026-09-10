@@ -132,6 +132,7 @@ interface AppsBindings {
   toggleAccess: () => Promise<void>
   openScriptManage: () => Promise<void>
   requestCancelJob: () => void
+  closeJobDetails: () => void
   confirmCancelJob: () => Promise<void>
   dismissJob: () => void
   consumeRouteIntent: () => Promise<void>
@@ -1080,6 +1081,42 @@ describe('AppsView script management', () => {
     expect(view.cancelJobPending.value).toBe(false)
     expect(view.activeJob.value?.stage).toBe('cancelling')
     expect(window.localStorage.getItem('kpanel:active-app-job')).toBe(job.id)
+  })
+
+  it('routes the job dialog close action through the interactive task cancellation flow', () => {
+    const job: AppInstallJob = {
+      id: '0123456789abcdef0123456789abcdef',
+      appId: 'builtin-114',
+      appName: 'OpenClaw',
+      action: 'manage',
+      interactive: true,
+      inputOpen: true,
+      status: 'running',
+      stage: 'interactive',
+      progress: 5,
+      logs: [],
+      createdAt: '2026-07-28T00:00:00Z',
+    }
+    const source = readFileSync(new URL('./AppsView.vue', import.meta.url), 'utf8')
+    const view = setupView()
+    view.activeJob.value = job
+    view.jobDetailsOpen.value = true
+
+    view.closeJobDetails()
+
+    expect(source).toContain('@close="closeJobDetails"')
+    expect(view.cancelJobPending.value).toBe(true)
+    expect(view.jobDetailsOpen.value).toBe(true)
+  })
+
+  it('closes the job dialog normally when no interactive task can be cancelled', () => {
+    const view = setupView()
+    view.jobDetailsOpen.value = true
+
+    view.closeJobDetails()
+
+    expect(view.cancelJobPending.value).toBe(false)
+    expect(view.jobDetailsOpen.value).toBe(false)
   })
 
   it('dismisses a finished task record without changing a running task', () => {
