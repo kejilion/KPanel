@@ -267,7 +267,7 @@ const items = catalog.apps.map((app, index) => {
       uninstall: { enabled: Boolean(runtime && isStandard) },
       add_domain: { enabled: Boolean(runtime && port) },
       direct_access: { enabled: Boolean(runtime && isStandard) },
-      manage: { enabled: Boolean(runtime) },
+      manage: { enabled: Boolean(runtime && !isStandard) },
     },
   }
 })
