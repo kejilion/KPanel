@@ -372,6 +372,7 @@ export interface TerminalOutput {
 }
 
 export interface ClusterLightEnrollment {
+  id: string
   command: string
   expiresAt: string
 }

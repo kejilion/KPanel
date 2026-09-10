@@ -101,6 +101,7 @@ interface ClusterBindings {
   pairingCode: Ref<ClusterPairingCode | undefined>
   lightEnrollment: Ref<ClusterLightEnrollment | undefined>
   lightEnrollmentConnected: Ref<boolean>
+  lightEnrollmentState: Ref<'waiting' | 'registered' | 'connected' | 'expired'>
   editName: Ref<string>
   addForm: { name: string; accessCredential: string }
   load: (silent?: boolean) => Promise<void>
@@ -516,6 +517,7 @@ describe('ClusterView inventory and navigation', () => {
   it('generates and copies the one-use non-panel Linux enrollment command', async () => {
     const view = setupView()
     const enrollment: ClusterLightEnrollment = {
+      id: 'light-enrollment',
       command:
         "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
       expiresAt: '2026-07-29T10:05:00Z',
@@ -532,12 +534,13 @@ describe('ClusterView inventory and navigation', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
   })
 
-  it('enables the primary action only after a new light node appears', async () => {
+  it('enables the primary action only after the exact enrolled node sends its first report', async () => {
     const view = setupView()
     const initial = inventory()
     view.inventory.value = initial
     view.addForm.name = '英国AMR'
     const enrollment: ClusterLightEnrollment = {
+      id: 'light-enrollment',
       command:
         "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.example-token'",
       expiresAt: '2026-07-29T10:05:00Z',
@@ -547,30 +550,54 @@ describe('ClusterView inventory and navigation', () => {
     await view.createLightEnrollment()
 
     expect(view.lightEnrollmentConnected.value).toBe(false)
+    expect(view.lightEnrollmentState.value).toBe('waiting')
     expect(view.canSubmitAdd.value).toBe(false)
 
-    const connected = host('light-new', false, '')
-    connected.kind = 'light_node'
-    connected.name = '英国AMR'
-    connected.remoteNodeId = 'light-node'
-    connected.federationProtocol = 'light-v1'
+    const unrelated = host('light-unrelated', false, '')
+    unrelated.kind = 'light_node'
+    unrelated.name = '英国AMR'
+    const registered = host(enrollment.id, false, '')
+    registered.kind = 'light_node'
+    registered.name = '英国AMR'
+    registered.state = 'unknown'
+    registered.lastSnapshot = undefined
+    registered.lastSuccessAt = undefined
     mocks.hosts.mockResolvedValueOnce({
       ...initial,
-      items: [...initial.items, connected],
-      total: 3,
-      remoteTotal: 2,
+      items: [...initial.items, unrelated, registered],
+      total: 4,
+      remoteTotal: 3,
     })
 
     await view.load(true)
 
+    expect(view.lightEnrollmentConnected.value).toBe(false)
+    expect(view.lightEnrollmentState.value).toBe('registered')
+    expect(view.canSubmitAdd.value).toBe(false)
+
+    const connected = {
+      ...registered,
+      ...host(enrollment.id, false, ''),
+      kind: 'light_node' as const,
+      name: '英国AMR',
+    }
+    mocks.hosts.mockResolvedValueOnce({
+      ...initial,
+      items: [...initial.items, unrelated, connected],
+      total: 4,
+      remoteTotal: 3,
+    })
+    await view.load(true)
+
     expect(view.lightEnrollmentConnected.value).toBe(true)
+    expect(view.lightEnrollmentState.value).toBe('connected')
     expect(view.canSubmitAdd.value).toBe(true)
     await view.addHost()
 
     expect(mocks.add).not.toHaveBeenCalled()
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
       '轻量节点已连接',
-      '英国AMR 已出现在当前主机列表。',
+      '英国AMR 已完成首次状态上报。',
     )
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
       '轻量节点已添加',
