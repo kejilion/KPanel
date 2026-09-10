@@ -12,6 +12,7 @@ const (
 	lightFileActivePollWait = 250 * time.Millisecond
 	lightFileLiveness       = 2 * time.Minute
 	lightFileCommandTTL     = 2 * time.Minute
+	lightFileCommandAckWait = 12 * time.Second
 	lightFileQueueLimit     = 128
 	lightFileEventLimit     = 16
 	lightFileChunkBytes     = 32 << 10

@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	lightFileUnsupportedRetry = 5 * time.Minute
-	lightFileFailureRetry     = 5 * time.Second
-	lightFileEventLimit       = 16
-	lightFileEventChunkBytes  = 16 << 10
+	lightFileUnsupportedRetryMin = time.Second
+	lightFileUnsupportedRetryMax = 5 * time.Minute
+	lightFileFailureRetry        = 5 * time.Second
+	lightFileEventLimit          = 16
+	lightFileEventChunkBytes     = 16 << 10
 )
 
 type lightNodeFileSession struct {
@@ -46,6 +47,7 @@ type lightFileControl struct {
 	processed     map[string]cluster.FileRelayEvent
 	processedIDs  []string
 	centerEpoch   string
+	unsupported   uint8
 }
 
 func runLightFileControl(
@@ -93,17 +95,27 @@ func runLightFileControl(
 }
 
 func (control *lightFileControl) retryDelay(err error) time.Duration {
-	// Only a peer that has never authenticated a file relay response needs
-	// the legacy-protocol backoff. A transient proxy error must not silence
-	// a known working broker for longer than the center's liveness window.
+	// An HTTP 404/405/426 before the first authenticated relay response can
+	// mean either an old center or a transient reverse-proxy response. Start
+	// with a short reconnect and exponentially settle at the legacy discovery
+	// interval. This keeps an unsupported center quiet without turning one
+	// cold-path proxy failure into a five-minute first connection.
 	if terminalRelayUnsupported(err) && control.centerEpoch == "" {
-		return lightFileUnsupportedRetry
+		delay := lightFileUnsupportedRetryMin << min(control.unsupported, 9)
+		if delay > lightFileUnsupportedRetryMax {
+			delay = lightFileUnsupportedRetryMax
+		}
+		if control.unsupported < 9 {
+			control.unsupported++
+		}
+		return delay
 	}
 	return lightFileFailureRetry
 }
 
 func (control *lightFileControl) acceptRelayResponse(response cluster.FileRelayPollResponse) {
 	control.pendingEvents = nil
+	control.unsupported = 0
 	if response.Epoch == "" {
 		return
 	}

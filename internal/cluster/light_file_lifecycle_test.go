@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -60,6 +61,91 @@ func openLifecycleFile(t *testing.T, relay *lightFileRelay, ctx context.Context,
 
 func lifecycleDownload() LightFileRequest {
 	return LightFileRequest{Method: http.MethodGet, Path: "/v1/files/content", Body: http.NoBody}
+}
+
+func TestLightFileOpenBoundsBrokerAcknowledgement(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		relay := newLightFileRelay(time.Now)
+		defer relay.closeAll()
+		item := relay.node(strings.Repeat("e", 32), true)
+		item.available, item.lastPoll = true, time.Now()
+		started := time.Now()
+		opened := make(chan error, 1)
+		go func() { _, err := relay.Open(context.Background(), item.id, lifecycleDownload()); opened <- err }()
+		poll, err := relay.poll(context.Background(), item.id, nil, nil)
+		if err != nil || poll.Command == nil || poll.Command.Kind != "request" {
+			t.Fatalf("request delivery: %#v, %v", poll, err)
+		}
+		if err := <-opened; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Open = %v, want acknowledgement timeout", err)
+		}
+		if elapsed := time.Since(started); elapsed != lightFileCommandAckWait {
+			t.Fatalf("acknowledgement timeout = %v, want %v", elapsed, lightFileCommandAckWait)
+		}
+		synctest.Wait()
+		item.mu.Lock()
+		defer item.mu.Unlock()
+		if len(item.sessions) != 0 {
+			t.Fatal("unacknowledged request retained a session")
+		}
+	})
+}
+
+type observedUploadReader struct {
+	reads atomic.Int32
+	data  []byte
+}
+
+func (reader *observedUploadReader) Read(output []byte) (int, error) {
+	reader.reads.Add(1)
+	if len(reader.data) == 0 {
+		return 0, io.EOF
+	}
+	count := copy(output, reader.data)
+	reader.data = reader.data[count:]
+	return count, io.EOF
+}
+
+func (*observedUploadReader) Close() error { return nil }
+
+func TestLightFileUploadStartsAfterBrokerAcknowledgement(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		relay := newLightFileRelay(time.Now)
+		defer relay.closeAll()
+		item := relay.node(strings.Repeat("e", 32), true)
+		item.available, item.lastPoll = true, time.Now()
+		reader := &observedUploadReader{data: []byte("upload")}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		opened := make(chan error, 1)
+		go func() {
+			_, err := relay.Open(ctx, item.id, LightFileRequest{
+				Method: http.MethodPut, Path: "/v1/files/content", Body: reader, BodyLength: int64(len(reader.data)),
+			})
+			opened <- err
+		}()
+		poll, err := relay.poll(context.Background(), item.id, nil, nil)
+		if err != nil || poll.Command == nil || poll.Command.Kind != "request" {
+			t.Fatalf("request delivery: %#v, %v", poll, err)
+		}
+		synctest.Wait()
+		if reads := reader.reads.Load(); reads != 0 {
+			t.Fatalf("upload read %d times before request acknowledgement", reads)
+		}
+		item.mu.Lock()
+		item.applyEvents(context.Background(), []FileRelayEvent{{
+			RequestID: poll.Command.RequestID, CommandID: poll.Command.ID, Kind: "accepted",
+		}}, time.Now())
+		item.mu.Unlock()
+		synctest.Wait()
+		if reads := reader.reads.Load(); reads != 1 {
+			t.Fatalf("upload read %d times after request acknowledgement, want 1", reads)
+		}
+		cancel()
+		if err := <-opened; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Open after cancellation = %v", err)
+		}
+	})
 }
 
 func TestLightFileSlowReaderCancelDoesNotLockNode(t *testing.T) {
@@ -450,32 +536,6 @@ func TestLightFileAcknowledgedSessionStillFailsWhenNodeLosesIt(t *testing.T) {
 		synctest.Wait()
 		if len(item.sessions) != 0 {
 			t.Fatal("lost session was retained")
-		}
-	})
-}
-
-func TestLightFileUnacknowledgedReadStillExpires(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		relay := newLightFileRelay(time.Now)
-		defer relay.closeAll()
-		item := relay.node(strings.Repeat("e", 32), true)
-		item.available, item.lastPoll = true, time.Now()
-		opened := make(chan error, 1)
-		go func() { _, err := relay.Open(context.Background(), item.id, lifecycleDownload()); opened <- err }()
-		synctest.Wait()
-		for range 3 {
-			poll, err := relay.poll(context.Background(), item.id, nil, nil)
-			if err != nil || poll.Command == nil || poll.Command.Kind != "request" {
-				t.Fatalf("read retry: %#v, %v", poll, err)
-			}
-			time.Sleep(40 * time.Second)
-		}
-		if err := <-opened; !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("unacknowledged read did not expire: %v", err)
-		}
-		synctest.Wait()
-		if len(item.sessions) != 0 {
-			t.Fatal("retry retained an expired session")
 		}
 	})
 }

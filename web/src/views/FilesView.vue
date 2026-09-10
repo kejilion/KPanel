@@ -824,38 +824,17 @@ async function loadDirectory(path = currentPath.value, append = false): Promise<
   directoryError.value = undefined
   contextMenu.value = undefined
   try {
-    // Capture this window's host and query for every attempt. Only directory
-    // reads may retry; uploads, edits and other actions are never replayed.
-    const client = fileAPI.value
-    const hostId = fileHostId.value
-    const options = {
-      offset: append ? directory.value?.nextOffset : 0,
-      search: search.value.trim() || undefined,
-    }
-    let result: FileDirectory
-    for (let attempt = 0; ; attempt++) {
-      try {
-        result = await client.list(path, options, controller.signal)
-        break
-      } catch (error) {
-        if (controller.signal.aborted || directoryController !== controller) return undefined
-        const reconnecting = hostId && error instanceof ApiError && (
-          (error.status === 503 && error.code === 'file_relay_unavailable') ||
-          (error.status === 409 && error.code === 'file_host_unavailable')
-        )
-        if (!reconnecting || attempt >= 2) throw error
-        await new Promise<void>((resolve) => {
-          const finish = () => {
-            window.clearTimeout(timer)
-            controller.signal.removeEventListener('abort', finish)
-            resolve()
-          }
-          const timer = window.setTimeout(finish, 1000 * (attempt + 1))
-          controller.signal.addEventListener('abort', finish, { once: true })
-        })
-        if (controller.signal.aborted || directoryController !== controller) return undefined
-      }
-    }
+    // The selected transport owns connection recovery and idempotent command
+    // redelivery. Keep one browser request so host changes and cancellation
+    // cannot leave duplicate directory reads behind.
+    const result = await fileAPI.value.list(
+      path,
+      {
+        offset: append ? directory.value?.nextOffset : 0,
+        search: search.value.trim() || undefined,
+      },
+      controller.signal,
+    )
     if (controller.signal.aborted || directoryController !== controller) return undefined
     if (append && directory.value?.path === result.path) {
       const known = new Set(directory.value.entries.map((entry) => entry.path))

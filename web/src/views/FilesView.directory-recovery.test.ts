@@ -55,34 +55,22 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-it('recovers a transient remote directory failure without an error or false empty state', async () => {
+it('surfaces a remote directory failure without scheduling duplicate reads', async () => {
   await mountAt()
   expect(reads).toHaveLength(1)
-  expect(wrapper!.find('.file-loading').exists()).toBe(true)
-  expect(wrapper!.find('.file-empty').exists()).toBe(false)
-  listReply = url => directory(url, [{ name: 'recovered.txt', path: '/target/recovered.txt', kind: 'file' }])
-  await vi.advanceTimersByTimeAsync(1000)
-  await flushPromises()
-  expect(reads).toHaveLength(2)
-  expect(reads.every(url => url.searchParams.get('hostId') === 'a' && url.searchParams.get('path') === '/target')).toBe(true)
-  expect(wrapper!.text()).toContain('recovered.txt')
-  expect(wrapper!.find('.file-directory-error').exists()).toBe(false)
-  expect(toast.danger).not.toHaveBeenCalled()
-})
-
-it('bounds retries and keeps a retryable failure tied to the requested path', async () => {
-  const router = await mountAt()
-  await vi.advanceTimersByTimeAsync(3000)
-  await flushPromises()
-  expect(reads).toHaveLength(3)
   expect(wrapper!.find('.file-directory-error').text()).toContain('/target')
   expect(wrapper!.text()).not.toContain('这个文件夹是空的')
   expect(toast.danger).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(60000)
-  expect(reads).toHaveLength(3)
+  expect(reads).toHaveLength(1)
+})
+
+it('keeps a manual retry tied to the requested path', async () => {
+  const router = await mountAt()
   listReply = url => directory(url)
   await wrapper!.get('.file-directory-error button').trigger('click')
   await flushPromises()
+  expect(reads).toHaveLength(2)
   expect(reads.at(-1)!.searchParams.get('path')).toBe('/target')
   expect(router.currentRoute.value.query.path).toBe('/target')
   expect(wrapper!.find('.file-directory-error').exists()).toBe(false)
@@ -101,7 +89,7 @@ it.each([
   expect(wrapper!.find('.file-directory-error').exists()).toBe(true)
 })
 
-it('cancels the old host backoff when another window route selects a new host', async () => {
+it('switches hosts without replaying the failed host request', async () => {
   const router = await mountAt()
   listReply = url => directory(url, [{ name: 'b.txt', path: '/b.txt', kind: 'file' }])
   synchronizeWindowRoute(router, '/files?path=/&hostId=b')
@@ -110,7 +98,7 @@ it('cancels the old host backoff when another window route selects a new host', 
   expect(reads.map(url => url.searchParams.get('hostId'))).toEqual(['a', 'b'])
   expect(wrapper!.text()).toContain('b.txt')
   expect(wrapper!.find('.file-directory-error').exists()).toBe(false)
-  expect(toast.danger).not.toHaveBeenCalled()
+  expect(toast.danger).toHaveBeenCalledTimes(1)
 })
 
 it('keeps the last successful listing and retries a failed next page at its original offset', async () => {
@@ -120,8 +108,6 @@ it('keeps the last successful listing and retries a failed next page at its orig
   await mountAt()
   listReply = unavailable
   await wrapper!.get('.file-limit button').trigger('click')
-  await flushPromises()
-  await vi.advanceTimersByTimeAsync(3000)
   await flushPromises()
   expect(wrapper!.text()).toContain('first.txt')
   expect(wrapper!.find('.file-directory-error').exists()).toBe(true)
@@ -133,11 +119,10 @@ it('keeps the last successful listing and retries a failed next page at its orig
   expect(wrapper!.text()).toContain('second.txt')
 })
 
-it('stops pending reconnect attempts when the file window closes', async () => {
+it('does not issue another read after the file window closes', async () => {
   await mountAt()
   wrapper!.unmount()
   wrapper = undefined
   await vi.advanceTimersByTimeAsync(10000)
   expect(reads).toHaveLength(1)
-  expect(toast.danger).not.toHaveBeenCalled()
 })
