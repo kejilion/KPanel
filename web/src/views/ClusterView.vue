@@ -101,7 +101,7 @@ const shareResetting = ref(false)
 const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
 const lightEnrollmentConnected = ref(false)
-const lightEnrollmentRequestedName = ref('')
+const lightEnrollmentState = ref<'waiting' | 'registered' | 'connected' | 'expired'>('waiting')
 const controllers = ref<ClusterController[]>([])
 const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
@@ -122,7 +122,6 @@ let loadController: AbortController | undefined
 let pollTimer: number | undefined
 let lightEnrollmentPollTimer: number | undefined
 const delayedRefreshes = new Set<number>()
-const lightEnrollmentBaselineHostIDs = new Set<string>()
 
 type OriginSecurityMode = 'empty' | 'tls' | 'e2e_http' | 'invalid'
 
@@ -147,6 +146,15 @@ const originAssessment = computed<OriginSecurityAssessment>(() =>
 const canSubmitAdd = computed(() => {
   if (!addForm.accessCredential.trim()) return lightEnrollmentConnected.value
   return Boolean(parsedAccessCredential.value) && originAssessment.value.mode !== 'invalid'
+})
+const lightEnrollmentPrimaryLabel = computed(() => {
+  if (addForm.accessCredential.trim() || !lightEnrollment.value) {
+    return adding.value ? '正在安全配对…' : '添加主机'
+  }
+  if (lightEnrollmentState.value === 'connected') return '添加主机'
+  if (lightEnrollmentState.value === 'registered') return '等待首次上报…'
+  if (lightEnrollmentState.value === 'expired') return '命令已过期'
+  return '等待节点执行…'
 })
 const panelOrigin = computed(() =>
   typeof window === 'undefined' ? '' : window.location.origin,
@@ -317,31 +325,31 @@ function stopLightEnrollmentWatch(): void {
 
 function resetLightEnrollmentTracking(): void {
   stopLightEnrollmentWatch()
-  lightEnrollmentBaselineHostIDs.clear()
   lightEnrollmentConnected.value = false
-  lightEnrollmentRequestedName.value = ''
-}
-
-function captureLightEnrollmentBaseline(): void {
-  lightEnrollmentBaselineHostIDs.clear()
-  for (const host of inventory.value?.items || []) {
-    if (host.kind === 'light_node') lightEnrollmentBaselineHostIDs.add(host.id)
-  }
+  lightEnrollmentState.value = 'waiting'
 }
 
 function detectLightEnrollmentConnection(): void {
   if (!lightEnrollment.value || lightEnrollmentConnected.value || !inventory.value) return
-  const requestedName = lightEnrollmentRequestedName.value
   const connectedHost = inventory.value.items.find(
-    (host) =>
-      host.kind === 'light_node' &&
-      !lightEnrollmentBaselineHostIDs.has(host.id) &&
-      (!requestedName || host.name === requestedName),
+    (host) => host.kind === 'light_node' && host.id === lightEnrollment.value?.id,
   )
-  if (!connectedHost) return
+  if (!connectedHost) {
+    lightEnrollmentState.value = 'waiting'
+    return
+  }
+  if (
+    connectedHost.state !== 'online' ||
+    !connectedHost.lastSuccessAt ||
+    !connectedHost.lastSnapshot
+  ) {
+    lightEnrollmentState.value = 'registered'
+    return
+  }
   lightEnrollmentConnected.value = true
+  lightEnrollmentState.value = 'connected'
   stopLightEnrollmentWatch()
-  toast.success('轻量节点已连接', `${connectedHost.name} 已出现在当前主机列表。`)
+  toast.success('轻量节点已连接', `${connectedHost.name} 已完成首次状态上报。`)
 }
 
 function lightEnrollmentExpired(): boolean {
@@ -350,7 +358,12 @@ function lightEnrollmentExpired(): boolean {
 }
 
 async function pollLightEnrollmentConnection(): Promise<void> {
-  if (!lightEnrollment.value || lightEnrollmentConnected.value || lightEnrollmentExpired()) {
+  if (!lightEnrollment.value || lightEnrollmentConnected.value) {
+    stopLightEnrollmentWatch()
+    return
+  }
+  if (lightEnrollmentExpired()) {
+    lightEnrollmentState.value = 'expired'
     stopLightEnrollmentWatch()
     return
   }
@@ -415,10 +428,8 @@ async function createLightEnrollment(): Promise<void> {
   generatingLightEnrollment.value = true
   lightEnrollment.value = undefined
   resetLightEnrollmentTracking()
-  lightEnrollmentRequestedName.value = addForm.name.trim()
   try {
     if (!inventory.value) await load()
-    captureLightEnrollmentBaseline()
     lightEnrollment.value = await api.cluster.createLightEnrollment(
       addForm.name.trim() || undefined,
     )
@@ -1505,8 +1516,16 @@ onBeforeUnmount(() => {
               <RefreshCw v-else :size="14" /> {{ phrase('重新生成') }}
             </button>
             <small>{{ phrase(`一次性命令，${formatDateTime(lightEnrollment.expiresAt)} 前有效。`) }}</small>
-            <small v-if="lightEnrollmentConnected" class="cluster-light-enrollment__status" role="status">
-              {{ phrase('轻量节点已连接，已出现在主机列表。') }}
+            <small class="cluster-light-enrollment__status" role="status">
+              {{ phrase(
+                lightEnrollmentState === 'connected'
+                  ? '连接成功，已收到轻量节点的首次状态上报。'
+                  : lightEnrollmentState === 'registered'
+                    ? '节点身份已创建，正在等待首次状态上报…'
+                    : lightEnrollmentState === 'expired'
+                      ? '命令已过期，请重新生成。'
+                      : '复制命令并在轻量节点以 root 执行，连接成功后这里会自动更新。'
+              ) }}
             </small>
           </div>
         </section>
@@ -1521,7 +1540,7 @@ onBeforeUnmount(() => {
         >
           <LoaderCircle v-if="adding" class="spin" :size="16" />
           <Plus v-else :size="16" />
-          {{ phrase(adding ? '正在安全配对…' : '添加主机') }}
+          {{ phrase(lightEnrollmentPrimaryLabel) }}
         </button>
       </template>
     </ModalDialog>

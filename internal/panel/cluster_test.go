@@ -278,7 +278,7 @@ func TestLightNodeEnrollmentUsesAuthenticatedIntentAndPublicOneUseExchange(t *te
 	if err := json.Unmarshal(response.Body.Bytes(), &enrolled); err != nil {
 		t.Fatal(err)
 	}
-	if enrolled.NodeID == "" || enrolled.ReportingKey == "" || enrolled.ReportInterval != 30 {
+	if enrollment.ID == "" || enrolled.NodeID != enrollment.ID || enrolled.ReportingKey == "" || enrolled.ReportInterval != 30 {
 		t.Fatalf("unexpected light enrollment response: %#v", enrolled)
 	}
 

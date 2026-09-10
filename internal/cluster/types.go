@@ -119,6 +119,7 @@ func ScopeAllowsFiles(scope string) bool {
 }
 
 type LightEnrollment struct {
+	ID        string    `json:"id"`
 	Command   string    `json:"command"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }

@@ -1724,6 +1724,7 @@ describe('API client', () => {
       }
       if (url === '/api/v1/cluster/light-enrollments') {
         return jsonResponse({
+          id: 'light-enrollment',
           command: "bash <(curl -fsSL https://example.com/kejilion.sh) kpanel node join 'kpl1.token'",
           expiresAt: '2026-07-29T12:05:00Z',
         })

@@ -161,7 +161,7 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 		t.Fatal(err)
 	}
 	if !strings.Contains(enrollment.Command, "curl -fsSL https://kejilion.sh) kpanel node join 'kpl1.") ||
-		!enrollment.ExpiresAt.Equal(now.Add(5*time.Minute)) {
+		len(enrollment.ID) != 32 || !enrollment.ExpiresAt.Equal(now.Add(5*time.Minute)) {
 		t.Fatalf("unexpected enrollment: %#v", enrollment)
 	}
 	token := strings.Trim(strings.Fields(enrollment.Command)[len(strings.Fields(enrollment.Command))-1], "'")
@@ -185,6 +185,9 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 	})
 	if err != nil {
 		t.Fatalf("valid enrollment after bad input error = %v", err)
+	}
+	if first.NodeID != enrollment.ID {
+		t.Fatalf("enrolled node ID = %q, want enrollment ID %q", first.NodeID, enrollment.ID)
 	}
 	if _, err := service.EnrollLightNode("198.51.100.10", LightEnrollRequest{
 		Token: token, Name: "edge-2", NodeVersion: "0.40.0",

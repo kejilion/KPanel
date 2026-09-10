@@ -106,7 +106,7 @@ func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName st
 	if name != "" {
 		command += " --name " + shellSingleQuote(name)
 	}
-	return LightEnrollment{Command: command, ExpiresAt: expiresAt}, nil
+	return LightEnrollment{ID: id, Command: command, ExpiresAt: expiresAt}, nil
 }
 
 func shellSingleQuote(value string) string {
@@ -144,10 +144,7 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if len(s.store.Hosts())+len(s.storeV2.Hosts())+len(s.light.Hosts()) >= MaxHosts {
 		return LightEnrollResponse{}, ErrHostLimit
 	}
-	nodeID, err := randomHex(16)
-	if err != nil {
-		return LightEnrollResponse{}, err
-	}
+	nodeID := wire.ID
 	reportingKey := make([]byte, 32)
 	if _, err := rand.Read(reportingKey); err != nil {
 		return LightEnrollResponse{}, err
