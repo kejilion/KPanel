@@ -668,6 +668,14 @@ function requestCancelJob(): void {
   cancelJobPending.value = true
 }
 
+function closeJobDetails(): void {
+  if (activeJobCancellable.value) {
+    requestCancelJob()
+    return
+  }
+  jobDetailsOpen.value = false
+}
+
 async function confirmCancelJob(): Promise<void> {
   const job = activeJob.value
   if (!job?.interactive || !isActiveJob(job) || cancellingJob.value) return
@@ -1609,7 +1617,7 @@ watch(windowActive, syncJobPollingForWindow)
       :title="i18n.t('apps.jobProgressTitle', { name: activeJob?.appName || '', action: jobActionLabel(activeJob?.action) })"
       :description="phrase('任务由宿主机后台执行，离开本页面不会中断。')"
       size="large"
-      @close="jobDetailsOpen = false"
+      @close="closeJobDetails"
     >
       <template v-if="activeJob">
         <div class="job-detail-summary">
