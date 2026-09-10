@@ -12,14 +12,10 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
-func TestInstalledApplicationsCanOpenNativeScriptManagement(t *testing.T) {
+func TestInstalledDedicatedApplicationsCanOpenNativeScriptManagement(t *testing.T) {
 	for _, app := range []struct{ id, token, selector string }{
 		{"builtin-55", "frps", "55"},
 		{"builtin-56", "frpc", "56"},
-		{"builtin-28", "speedtest", "28"},
-		{"builtin-64", "it-tools", "64"},
-		{"builtin-76", "dosgame", "76"},
-		{"thirdparty-CLIProxyAPI", "CLIProxyAPI", "CLIProxyAPI"},
 	} {
 		for _, state := range []string{"running", "exited"} {
 			t.Run(app.id+"/"+state, func(t *testing.T) {
@@ -74,6 +70,83 @@ func TestInstalledApplicationsCanOpenNativeScriptManagement(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestInstalledDockerAppApplicationsDoNotExposeNativeScriptManagement(t *testing.T) {
+	for _, app := range []struct{ id, token, selector string }{
+		{"builtin-17", "adguardhome", "17"},
+		{"builtin-28", "speedtest", "28"},
+		{"builtin-64", "it-tools", "64"},
+		{"builtin-76", "dosgame", "76"},
+	} {
+		t.Run(app.id, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "appno.txt"), []byte(app.selector+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			containerID := strings.Repeat("b", 64)
+			service, err := New(&fakeDocker{containers: []contract.ContainerSummary{{
+				ID: containerID, Name: app.token, State: "running", Image: "example/app:latest",
+				ResourceVersion: "current-version", AllowedActions: []string{"stop", "restart"},
+			}}}, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := service.configureJobs(filepath.Join(root, "jobs"), filepath.Join(root, "agent"), &fakeJobRunner{}); err != nil {
+				t.Fatal(err)
+			}
+			service.scriptInteractiveFinder = func() (string, error) { return "/usr/local/bin/k", nil }
+			service.scriptInteractiveManageFinder = service.scriptInteractiveFinder
+			service.scriptManageFinder = service.scriptInteractiveFinder
+
+			item, err := service.Find(context.Background(), app.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if item.Capabilities["manage"].Enabled || item.Capabilities["manage"].Reason != "该应用使用 KPanel 常规管理入口" {
+				t.Fatalf("docker_app application exposed native management: %#v", item.Capabilities["manage"])
+			}
+			for _, action := range []string{"stop", "restart", "update", "uninstall", "direct_access"} {
+				if !item.Capabilities[action].Enabled {
+					t.Fatalf("regular %s capability was lost: %#v", action, item.Capabilities[action])
+				}
+			}
+			if _, handled, err := service.StartScriptMutation(
+				context.Background(), app.id, "manage", MutationInput{ResourceVersion: item.Runtime.ResourceVersion},
+			); !handled || !errors.Is(err, ErrForbidden) {
+				t.Fatalf("docker_app management launch: handled=%v err=%v", handled, err)
+			}
+			if len(service.AppJobs()) != 0 {
+				t.Fatal("rejected docker_app management request created a job")
+			}
+		})
+	}
+}
+
+func TestMarkerOnlyDockerAppDoesNotExposeScriptRecovery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "appno.txt"), []byte("17\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(&fakeDocker{}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.configureJobs(filepath.Join(root, "jobs"), filepath.Join(root, "agent"), &fakeJobRunner{}); err != nil {
+		t.Fatal(err)
+	}
+	service.scriptInteractiveManageFinder = func() (string, error) { return "/usr/local/bin/k", nil }
+
+	item, err := service.Find(context.Background(), "builtin-17")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.Runtime.Installed || item.Runtime.ContainerID != "" {
+		t.Fatalf("marker-only docker_app state is incomplete: %#v", item.Runtime)
+	}
+	if item.Capabilities["manage"].Enabled || item.Capabilities["manage"].Reason != "该应用使用 KPanel 常规管理入口" {
+		t.Fatalf("marker-only docker_app exposed script recovery: %#v", item.Capabilities["manage"])
 	}
 }
 

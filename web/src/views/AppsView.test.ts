@@ -382,7 +382,7 @@ function inventory(resourceVersion: string): AppMarketInventory {
           restart: { enabled: true },
           update: { enabled: true },
           uninstall: { enabled: true },
-          manage: { enabled: true },
+          manage: { enabled: false, reason: '该应用使用 KPanel 常规管理入口' },
         },
       },
     ],
@@ -414,6 +414,31 @@ function markerOnlyInventory(resourceVersion: string): AppMarketInventory {
     capabilities: {
       add_domain: { enabled: false, reason: 'Docker Engine 中没有可执行生命周期操作的容器' },
       direct_access: { enabled: false, reason: 'Docker Engine 中没有可执行生命周期操作的容器' },
+      manage: { enabled: true },
+    },
+  }
+  return result
+}
+
+function dedicatedInventory(resourceVersion: string): AppMarketInventory {
+  const result = inventory(resourceVersion)
+  const current = result.items[0]
+  if (!current) throw new Error('test inventory is incomplete')
+  result.items[0] = {
+    ...current,
+    id: 'builtin-55',
+    num: 55,
+    token: 'frps',
+    name_zh: 'FRP 服务端',
+    name_en: 'FRP Server',
+    slug: 'frps',
+    runtime: {
+      ...current.runtime,
+      containerId: 'f'.repeat(64),
+      containerName: 'frps',
+    },
+    capabilities: {
+      ...current.capabilities,
       manage: { enabled: true },
     },
   }
@@ -846,6 +871,14 @@ describe('AppsView stopped applications', () => {
 })
 
 describe('AppsView script management', () => {
+  it('hides script management for docker apps and keeps it for dedicated flows', async () => {
+    const standard = inventory('standard-version')
+    const dedicated = dedicatedInventory('dedicated-version')
+
+    expect(await renderView(standard, standard.items[0]!.id)).not.toContain('脚本管理')
+    expect(await renderView(dedicated, dedicated.items[0]!.id)).toContain('脚本管理')
+  })
+
   it('consumes a desktop manage intent and opens the interactive shell job', async () => {
     const job: AppInstallJob = {
       id: '0123456789abcdef0123456789abcdef',
@@ -911,21 +944,21 @@ describe('AppsView script management', () => {
     )
   })
 
-  it('opens native script management for an installed application with a container', async () => {
+  it('opens native script management for an installed dedicated application with a container', async () => {
     const job: AppInstallJob = {
-      id: '0123456789abcdef0123456789abcdef', appId: 'builtin-13', appName: 'Cloudreve',
+      id: '0123456789abcdef0123456789abcdef', appId: 'builtin-55', appName: 'FRP 服务端',
       action: 'manage', status: 'running', stage: 'interactive', progress: 5,
       logs: [], createdAt: '2026-07-28T00:00:00Z', interactive: true, inputOpen: true,
     }
     mocks.action.mockResolvedValueOnce(job)
     mocks.job.mockResolvedValue(job)
     const view = setupView()
-    view.inventory.value = inventory('fresh-version')
-    view.selectedID.value = 'builtin-13'
+    view.inventory.value = dedicatedInventory('fresh-version')
+    view.selectedID.value = 'builtin-55'
 
     await view.openScriptManage()
 
-    expect(mocks.action).toHaveBeenCalledWith('builtin-13', 'manage', { resourceVersion: 'fresh-version' })
+    expect(mocks.action).toHaveBeenCalledWith('builtin-55', 'manage', { resourceVersion: 'fresh-version' })
     expect(view.activeJob.value).toEqual(job)
     expect(view.jobDetailsOpen.value).toBe(true)
   })

@@ -280,7 +280,11 @@ func (s *Service) inventory(ctx context.Context, imageUpdateID string) (Inventor
 			}
 			disableInstalledCapabilities(&item, "Docker Engine 中没有可执行生命周期操作的容器")
 		}
-		if _, eligible := s.scriptSelectorFor(item); item.Runtime.Installed && eligible {
+		if item.Runtime.Installed && scriptBacked {
+			item.Capabilities["manage"] = Capability{
+				Reason: "该应用使用 KPanel 常规管理入口",
+			}
+		} else if _, eligible := s.scriptSelectorFor(item); item.Runtime.Installed && eligible {
 			item.Capabilities["manage"] = Capability{
 				Enabled: scriptInteractiveManageAvailable,
 				Reason:  reasonUnless(scriptInteractiveManageAvailable, "请更新本机 kejilion.sh 以启用应用交互管理协议"),

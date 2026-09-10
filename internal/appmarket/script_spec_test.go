@@ -2,6 +2,7 @@ package appmarket
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,16 +83,16 @@ func TestThirdPartyScriptAppUsesVerifiedMainContainerAndLifecycleProtocol(t *tes
 			t.Fatalf("%s was not enabled: %#v", action, item.Capabilities[action])
 		}
 	}
-	if !item.Capabilities["manage"].Enabled {
-		t.Fatalf("verified application did not expose script management: %#v", item.Capabilities["manage"])
+	if item.Capabilities["manage"].Enabled {
+		t.Fatalf("verified docker_app_plus application exposed script management: %#v", item.Capabilities["manage"])
 	}
 	if _, scriptBacked, err := service.StartScriptMutation(
 		context.Background(),
 		item.ID,
 		"manage",
 		MutationInput{ResourceVersion: "stale"},
-	); !scriptBacked || err == nil {
-		t.Fatalf("stale script management request was accepted: script=%v err=%v", scriptBacked, err)
+	); !scriptBacked || !errors.Is(err, ErrForbidden) {
+		t.Fatalf("docker_app_plus script management request: script=%v err=%v", scriptBacked, err)
 	}
 	if _, scriptBacked, err := service.StartScriptMutation(
 		context.Background(),
@@ -130,7 +131,7 @@ func TestThirdPartyScriptAppUsesVerifiedMainContainerAndLifecycleProtocol(t *tes
 	}
 }
 
-func TestStoppedThirdPartyContainerRemainsManageableWithoutLegacyMarker(t *testing.T) {
+func TestStoppedThirdPartyContainerRemainsLifecycleManageableWithoutLegacyMarker(t *testing.T) {
 	root := t.TempDir()
 	configRoot := filepath.Join(root, "apps")
 	if err := os.Mkdir(configRoot, 0o750); err != nil {
@@ -184,6 +185,9 @@ func TestStoppedThirdPartyContainerRemainsManageableWithoutLegacyMarker(t *testi
 		if !item.Capabilities[action].Enabled {
 			t.Fatalf("%s was disabled for a verified stopped application: %#v", action, item.Capabilities[action])
 		}
+	}
+	if item.Capabilities["manage"].Enabled {
+		t.Fatalf("stopped docker_app_plus application exposed script management: %#v", item.Capabilities["manage"])
 	}
 }
 
@@ -247,7 +251,7 @@ func TestMarkerOnlyApplicationCanOpenFixedSelectorRecoveryTerminal(t *testing.T)
 	}
 }
 
-func TestDynamicThirdPartyConfigDoesNotBecomeAManagementGuardrail(t *testing.T) {
+func TestDynamicThirdPartyConfigDoesNotDisableLifecycleManagement(t *testing.T) {
 	root := t.TempDir()
 	configRoot := filepath.Join(root, "apps")
 	if err := os.Mkdir(configRoot, 0o750); err != nil {
@@ -307,8 +311,8 @@ func TestDynamicThirdPartyConfigDoesNotBecomeAManagementGuardrail(t *testing.T) 
 			t.Fatalf("%s stayed disabled by config parsing: %#v", action, item.Capabilities[action])
 		}
 	}
-	if !item.Capabilities["manage"].Enabled {
-		t.Fatalf("dynamic application did not expose script management")
+	if item.Capabilities["manage"].Enabled {
+		t.Fatalf("dynamic docker_app_plus application exposed script management")
 	}
 }
 
