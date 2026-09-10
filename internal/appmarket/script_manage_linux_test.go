@@ -15,7 +15,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 )
 
-func TestStoppedEngineBindingsReachNativeScriptCompatibilityCheck(t *testing.T) {
+func TestStoppedEngineBindingsPreserveDockerActionsWithoutScriptManagement(t *testing.T) {
 	for _, state := range []string{"created", "exited"} {
 		for _, ip := range []string{"127.0.0.1", "::1", "0.0.0.0"} {
 			t.Run(state+"/"+ip, func(t *testing.T) {
@@ -67,7 +67,11 @@ func TestStoppedEngineBindingsReachNativeScriptCompatibilityCheck(t *testing.T) 
 				if len(item.Runtime.Ports) != 1 || item.Runtime.Ports[0].IP != ip {
 					t.Fatalf("configured binding lost: %#v", item.Runtime)
 				}
-				for _, action := range []string{"manage", "update", "direct_access"} {
+				manage := item.Capabilities["manage"]
+				if manage.Enabled || manage.Reason != "该应用使用 KPanel 常规管理入口" {
+					t.Fatalf("docker app exposed script management: %#v", item.Capabilities)
+				}
+				for _, action := range []string{"update", "direct_access"} {
 					if item.Capabilities[action].Enabled != (ip == "0.0.0.0") {
 						t.Fatalf("%s ignored configured binding: %#v", action, item.Capabilities)
 					}
