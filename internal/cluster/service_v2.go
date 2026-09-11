@@ -701,7 +701,7 @@ func (s *Service) HandleFederationV2(
 	sourceLimiter := s.v2SourceLimiter
 	if v2TerminalPath(path) || path == v2TerminalRelayPath {
 		sourceLimiter = s.terminalSources
-	} else if path == v2FileRelayPath {
+	} else if path == v2FileRelayPath || path == HistoryRelayV2Path {
 		sourceLimiter = s.lightFileSources
 	}
 	if !sourceLimiter.Allow(cleanRateSubject(source), now) {
@@ -711,6 +711,8 @@ func (s *Service) HandleFederationV2(
 		return FederationEnvelopeV2{}, err
 	}
 	switch path {
+	case HistoryRelayV2Path:
+		return s.handleHistoryRelayV2(ctx, envelope, now)
 	case v2PairPath:
 		return s.handlePairV2(envelope, source, now)
 	case v2CommitPath:

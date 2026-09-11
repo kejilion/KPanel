@@ -476,6 +476,10 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 	); err != nil {
 		return
 	}
+	if r.URL.Path == cluster.HistoryV2Path {
+		s.handleFederationHistoryV2(w, r, envelope)
+		return
+	}
 	if r.URL.Path == "/api/v2/federation/files/open" ||
 		r.URL.Path == "/api/v2/federation/files/open-linked" {
 		s.handleFederationFileOpenV2(w, r, envelope)

@@ -5,16 +5,73 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 )
+
+func TestHistoryCapabilityRetryPreservesIdentityAfterLostResponse(t *testing.T) {
+	secret := bytes.Repeat([]byte{7}, 32)
+	peer, err := cluster.GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	var boundKey string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input cluster.LightFileCapabilityRequest
+		if json.NewDecoder(r.Body).Decode(&input) != nil {
+			w.WriteHeader(400)
+			return
+		}
+		if calls.Add(1) == 1 {
+			boundKey = input.TerminalPublicKey
+			// The center has bound the identity, but the response is lost.
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		if input.TerminalPublicKey != boundKey {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(cluster.LightFileCapabilityResponse{TerminalPeerPublicKey: base64.RawURLEncoding.EncodeToString(peer.Public), TargetNodeID: strings.Repeat("b", 32)})
+	}))
+	defer server.Close()
+	previous := nodeHTTPClient
+	nodeHTTPClient = server.Client()
+	defer func() { nodeHTTPClient = previous }()
+	configPath, terminalPath := filepath.Join(t.TempDir(), "node.json"), filepath.Join(t.TempDir(), "terminal.json")
+	config := nodeConfig{SchemaVersion: 1, Origin: server.URL, NodeID: strings.Repeat("a", 32), ReportingKey: base64.RawURLEncoding.EncodeToString(secret), ReportInterval: 30}
+	if err := writeConfigAtomic(configPath, config); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ensureFileCapability(context.Background(), configPath, config, secret, terminalPath); !errors.Is(err, errFileCapabilityConnection) {
+		t.Fatalf("first connection: %v", err)
+	}
+	if _, _, err := readTerminalConfig(terminalPath); err == nil {
+		t.Fatal("unpaired identity accepted for terminal sessions")
+	}
+	// Read from disk just as a restarted process would.
+	config, _, err = readConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, identity, err := ensureFileCapability(context.Background(), configPath, config, secret, terminalPath)
+	if err != nil || updated.TargetNodeID == "" || !bytes.Equal(identity.Peer, peer.Public) {
+		t.Fatalf("retry did not recover: %v", err)
+	}
+	if base64.RawURLEncoding.EncodeToString(identity.Key.Public) != boundKey || calls.Load() != 2 {
+		t.Fatal("bootstrap identity changed")
+	}
+}
 
 func TestEnsureFileCapabilityUpgradesAnExistingNodeWithoutEnrollment(t *testing.T) {
 	secret := bytes.Repeat([]byte{7}, 32)

@@ -5,6 +5,45 @@ export const monitoringContainerDefaultCount = 3
 export const monitoringContainerColors = ['#2563eb', '#0f766e', '#8b5cf6', '#d97706', '#db2777'] as const
 
 const preferenceKey = 'kejilion-panel-monitoring-containers-v1'
+const hostPreferenceKey = 'kejilion-panel-monitoring-host-containers-v1'
+
+function readHostPreferences(storage: PreferenceReader): Record<string, MonitoringContainerPreference> {
+  try {
+    const raw = storage.getItem(hostPreferenceKey)
+    if (!raw || raw.length > 128 * 1024) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const result: Record<string, MonitoringContainerPreference> = {}
+    for (const [id, value] of Object.entries(parsed).slice(-100)) {
+      if (!/^[a-f0-9]{32}$/.test(id)) continue
+      const preference = readMonitoringContainerPreference({ getItem: () => JSON.stringify(value) })
+      if (preference) result[id] = preference
+    }
+    return result
+  } catch { return {} }
+}
+
+export function readMonitoringHostContainerPreference(
+  hostId: string,
+  storage: PreferenceReader = localStorage,
+): MonitoringContainerPreference | undefined {
+  return hostId === 'local' ? readMonitoringContainerPreference(storage) : readHostPreferences(storage)[hostId]
+}
+
+export function writeMonitoringHostContainerPreference(
+  hostId: string,
+  preference: MonitoringContainerPreference,
+  storage: PreferenceReader & PreferenceWriter = localStorage,
+): void {
+  if (hostId === 'local') { writeMonitoringContainerPreference(preference, storage); return }
+  if (!/^[a-f0-9]{32}$/.test(hostId)) return
+  try {
+    const preferences = readHostPreferences(storage)
+    delete preferences[hostId]
+    writeMonitoringContainerPreference(preference, { setItem: (_key, value) => { preferences[hostId] = JSON.parse(value) } })
+    storage.setItem(hostPreferenceKey, JSON.stringify(Object.fromEntries(Object.entries(preferences).slice(-100))))
+  } catch { /* Storage may be disabled; selection still works in memory. */ }
+}
 
 interface PreferenceReader {
   getItem: (key: string) => string | null

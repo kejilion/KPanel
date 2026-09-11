@@ -87,29 +87,33 @@ type runtimeState struct {
 }
 
 type Service struct {
-	store           *Store
-	secrets         *secretStore
-	storeV2         *storeV2
-	filePeersV2     *filePeerStoreV2
-	secretsV2       *secretStoreV2
-	remote          remoteAPI
-	remoteV2        remoteV2API
-	telemetry       TelemetrySource
-	terminal        TerminalBackend
-	lightTerminal   *lightTerminalRelay
-	lightFile       *lightFileRelay
-	panelFileRelay  *panelFileRelay
-	nodeIdentityV2  nodeIdentityV2
-	panelVersion    string
-	publicURL       string
-	light           *lightStore
-	hostname        string
-	now             func() time.Time
-	pollInterval    time.Duration
-	schedulerTick   time.Duration
-	checkpointEvery time.Duration
-	jitter          func(time.Duration) time.Duration
-	sem             chan struct{}
+	store                *Store
+	secrets              *secretStore
+	storeV2              *storeV2
+	filePeersV2          *filePeerStoreV2
+	secretsV2            *secretStoreV2
+	remote               remoteAPI
+	remoteV2             remoteV2API
+	telemetry            TelemetrySource
+	terminal             TerminalBackend
+	lightTerminal        *lightTerminalRelay
+	lightFile            *lightFileRelay
+	panelFileRelay       *panelFileRelay
+	nodeIdentityV2       nodeIdentityV2
+	panelVersion         string
+	publicURL            string
+	light                *lightStore
+	lightHistory         *lightFileRelay
+	historyQueries       chan struct{}
+	historyStreams       *fileStreamLimiter
+	historyRelayRequests *fixedWindowLimiter
+	hostname             string
+	now                  func() time.Time
+	pollInterval         time.Duration
+	schedulerTick        time.Duration
+	checkpointEvery      time.Duration
+	jitter               func(time.Duration) time.Duration
+	sem                  chan struct{}
 
 	securityEntrancePath func() string
 
@@ -264,10 +268,14 @@ func NewService(config ServiceConfig) (*Service, error) {
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
-		panelFileRelay: newPanelFileRelay(),
-		publicURL:      strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
-		nodeIdentityV2: cloneNodeIdentityV2(nodeIdentity),
-		panelVersion:   cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
+		panelFileRelay:       newPanelFileRelay(),
+		lightHistory:         newLightHistoryRelay(config.Now),
+		historyQueries:       make(chan struct{}, 2),
+		historyStreams:       newFileStreamLimiter(2, 1),
+		historyRelayRequests: newFixedWindowLimiter(2400, time.Minute, 512),
+		publicURL:            strings.TrimRight(strings.TrimSpace(config.PublicURL), "/"),
+		nodeIdentityV2:       cloneNodeIdentityV2(nodeIdentity),
+		panelVersion:         cleanDisplayText(config.PanelVersion, 64), hostname: config.Hostname,
 		now: config.Now, pollInterval: config.PollInterval,
 		schedulerTick: config.SchedulerTick, checkpointEvery: config.CheckpointEvery,
 		jitter: config.Jitter, sem: make(chan struct{}, config.MaxConcurrency),
@@ -356,6 +364,9 @@ func (s *Service) Close() error {
 	}
 	if s.lightFile != nil {
 		s.lightFile.closeAll()
+	}
+	if s.lightHistory != nil {
+		s.lightHistory.closeAll()
 	}
 	if s.panelFileRelay != nil {
 		s.panelFileRelay.closeAll()

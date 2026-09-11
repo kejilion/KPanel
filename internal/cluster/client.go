@@ -51,6 +51,7 @@ type RemoteClient struct {
 	dialer         func(context.Context, string, string) (net.Conn, error)
 	client         *http.Client
 	streamClient   *http.Client
+	historyClient  *http.Client
 }
 
 type RemoteError struct {
@@ -122,6 +123,9 @@ func NewRemoteClient(config RemoteClientConfig) (*RemoteClient, error) {
 			return errors.New("cluster redirect rejected")
 		},
 	}
+	historyTransport := transport.Clone()
+	historyTransport.ResponseHeaderTimeout = 30 * time.Second
+	remote.historyClient = &http.Client{Transport: historyTransport, CheckRedirect: remote.streamClient.CheckRedirect, Timeout: HistoryTimeout}
 	return remote, nil
 }
 

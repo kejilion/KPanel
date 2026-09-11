@@ -31,6 +31,12 @@ type terminalIdentity struct {
 }
 
 func readTerminalConfig(path string) (terminalConfig, terminalIdentity, error) {
+	return readTerminalConfigMode(path, false)
+}
+
+// Only the capability bootstrap may resume an identity without a pinned peer.
+// Terminal and file sessions continue to require a fully paired identity.
+func readTerminalConfigMode(path string, allowPending bool) (terminalConfig, terminalIdentity, error) {
 	if !filepath.IsAbs(path) {
 		return terminalConfig{}, terminalIdentity{}, errors.New("terminal configuration path must be absolute")
 	}
@@ -67,7 +73,7 @@ func readTerminalConfig(path string) (terminalConfig, terminalIdentity, error) {
 	privateKey, privateErr := decodeTerminalKey(config.PrivateKey)
 	publicKey, publicErr := decodeTerminalKey(config.PublicKey)
 	peerKey, peerErr := decodeTerminalKey(config.PeerPublicKey)
-	if config.SchemaVersion != 1 || privateErr != nil || publicErr != nil || peerErr != nil {
+	if config.SchemaVersion != 1 || privateErr != nil || publicErr != nil || (peerErr != nil && (!allowPending || config.PeerPublicKey != "")) {
 		return terminalConfig{}, terminalIdentity{}, errors.New("terminal configuration file is invalid")
 	}
 	return config, terminalIdentity{

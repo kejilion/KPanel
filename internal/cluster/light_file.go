@@ -86,10 +86,11 @@ type LightFileRequest struct {
 }
 
 type lightFileRelay struct {
-	mu    sync.RWMutex
-	nodes map[string]*lightFileNode
-	now   func() time.Time
-	epoch string
+	history bool
+	mu      sync.RWMutex
+	nodes   map[string]*lightFileNode
+	now     func() time.Time
+	epoch   string
 }
 
 type lightFileNode struct {
@@ -264,6 +265,13 @@ func (r *lightFileRelay) poll(
 			response := FileRelayPollResponse{Epoch: r.epoch}
 			item.mu.Unlock()
 			return response, nil
+		}
+		// A history producer already has more bounded chunks queued. Acknowledge
+		// data immediately instead of adding 250 ms to every chunk round trip.
+		if r.history && len(events) > 0 {
+			item.resetEpoch = r.epoch
+			item.mu.Unlock()
+			return FileRelayPollResponse{Epoch: r.epoch}, nil
 		}
 		notify := item.wake
 		wait := lightFilePollWait
@@ -442,7 +450,11 @@ func (r *lightFileRelay) Open(
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !validID(nodeID) || !validFileRelayRequest(input) {
+	validRequest := validFileRelayRequest(input)
+	if r.history {
+		validRequest = validHistoryRelayRequest(input)
+	}
+	if !validID(nodeID) || !validRequest {
 		return nil, ErrFileRelayUnavailable
 	}
 	if input.Body != nil && input.Body != http.NoBody && input.BodyLength != 0 {
@@ -477,7 +489,11 @@ func (r *lightFileRelay) Open(
 	if input.Body == nil || input.Body == http.NoBody {
 		command.BodyLength = 0
 	}
-	if err := validateFileRelayCommand(command, now); err != nil {
+	validateCommand := validateFileRelayCommand
+	if r.history {
+		validateCommand = validHistoryRelayCommand
+	}
+	if err := validateCommand(command, now); err != nil {
 		return nil, err
 	}
 	item.mu.Lock()

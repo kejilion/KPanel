@@ -288,6 +288,7 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 	}
 	if s.lightFile != nil {
 		s.lightFile.deleteNode(id)
+		s.lightHistory.deleteNode(id)
 	}
 	return DeleteHostResult{Deleted: true, CredentialRemoved: credentialRemoved}, nil
 }

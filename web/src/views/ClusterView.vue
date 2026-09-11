@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -51,7 +52,7 @@ import {
   reconcileClusterHostOrder,
   sortClusterHosts,
 } from '@/lib/clusterHostOrder'
-import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
+import { clusterHostMonitoringRoute, clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
@@ -1209,7 +1210,7 @@ onBeforeUnmount(() => {
         </header>
 
         <div v-if="host.lastSnapshot" class="cluster-card__metrics">
-          <div>
+          <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'cpu')" :title="phrase('查看历史趋势')" :aria-label="`${phrase('查看历史趋势')} · ${host.name} · CPU`">
             <span><Gauge :size="14" /> CPU</span>
             <strong>{{ formatPercent(host.lastSnapshot.telemetry.cpu.usagePercent) }}</strong>
             <i
@@ -1222,8 +1223,8 @@ onBeforeUnmount(() => {
               <b :style="{ width: `${clampPercent(host.lastSnapshot.telemetry.cpu.usagePercent)}%` }" />
             </i>
             <small>{{ host.lastSnapshot.telemetry.cpu.cores }} 核</small>
-          </div>
-          <div>
+          </RouterLink>
+          <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'memory')" :title="phrase('查看历史趋势')" :aria-label="`${phrase('查看历史趋势')} · ${host.name} · ${phrase('内存')}`">
             <span><MemoryStick :size="14" /> 内存</span>
             <strong>{{ formatPercent(host.lastSnapshot.telemetry.memory.usagePercent) }}</strong>
             <i
@@ -1239,8 +1240,8 @@ onBeforeUnmount(() => {
               {{ formatBytes(host.lastSnapshot.telemetry.memory.usedBytes) }} /
               {{ formatBytes(host.lastSnapshot.telemetry.memory.totalBytes) }}
             </small>
-          </div>
-          <div>
+          </RouterLink>
+          <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'disk')" :title="phrase('查看历史趋势')" :aria-label="`${phrase('查看历史趋势')} · ${host.name} · ${phrase('磁盘')}`">
             <span><Server :size="14" /> 磁盘</span>
             <strong>{{ formatPercent(host.lastSnapshot.telemetry.disk.usagePercent) }}</strong>
             <i
@@ -1256,7 +1257,7 @@ onBeforeUnmount(() => {
               {{ formatBytes(host.lastSnapshot.telemetry.disk.usedBytes) }} /
               {{ formatBytes(host.lastSnapshot.telemetry.disk.totalBytes) }}
             </small>
-          </div>
+          </RouterLink>
         </div>
 
         <div v-if="host.lastSnapshot" class="cluster-card__details">
@@ -1282,7 +1283,7 @@ onBeforeUnmount(() => {
             </strong>
             <small>{{ host.lastSnapshot.telemetry.publicNetwork.isp || '运营商未知' }}</small>
           </div>
-          <div>
+          <RouterLink class="cluster-metric-link" :to="clusterHostMonitoringRoute(host, 'network')" :title="phrase('查看历史趋势')" :aria-label="`${phrase('查看历史趋势')} · ${host.name} · ${phrase('累计流量')}`">
             <span>{{ phrase('累计流量') }}</span>
             <strong :title="phrase('累计接收')">
               <span aria-hidden="true">↓</span>
@@ -1294,7 +1295,7 @@ onBeforeUnmount(() => {
               <span class="sr-only">{{ phrase('累计传送') }}</span>
               {{ formatNetworkTrafficCounter(host.lastSnapshot.telemetry.network, 'sent') }}
             </small>
-          </div>
+          </RouterLink>
           <div>
             <span>运行时间</span>
             <strong>{{ formatDuration(host.lastSnapshot.telemetry.uptimeSeconds) }}</strong>
@@ -1877,6 +1878,7 @@ onBeforeUnmount(() => {
 
 .cluster-grid {
   display: grid;
+  container: cluster-layout / inline-size;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
@@ -1934,7 +1936,7 @@ onBeforeUnmount(() => {
   border-bottom: 0;
 }
 
-.cluster-grid.is-list .cluster-card__metrics > div {
+.cluster-grid.is-list .cluster-card__metrics > .cluster-metric-link {
   place-content: center;
 }
 
@@ -2175,7 +2177,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--border);
 }
 
-.cluster-card__metrics > div {
+.cluster-card__metrics > .cluster-metric-link {
   display: grid;
   gap: 5px;
   padding: 12px;
@@ -2223,7 +2225,7 @@ onBeforeUnmount(() => {
   padding: 15px 16px;
 }
 
-.cluster-card__details > div {
+.cluster-card__details > :is(div, a) {
   display: grid;
   min-width: 0;
   gap: 3px;
@@ -2242,6 +2244,26 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   font-size: .875rem;
 }
+
+.cluster-metric-link {
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.cluster-metric-link:hover,
+.cluster-metric-link:focus-visible {
+  background: var(--brand-soft);
+}
+
+.cluster-metric-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.cluster-metric-link > span { font-size: .875rem; }
+.cluster-metric-link > small { font-size: .8125rem; }
+.cluster-card__details > .cluster-metric-link { border-radius: var(--radius-sm); }
 
 .cluster-card__details small {
   overflow: hidden;
@@ -2538,7 +2560,9 @@ onBeforeUnmount(() => {
   .cluster-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
+@container cluster-layout (max-width: 1140px) {
   .cluster-grid.is-list .cluster-card {
     grid-template-columns: minmax(280px, 1fr) minmax(240px, 0.8fr);
     grid-template-areas:
@@ -2656,11 +2680,13 @@ onBeforeUnmount(() => {
     padding: 12px;
   }
 
-  .cluster-card__metrics > div,
+  .cluster-card__metrics > .cluster-metric-link,
   .cluster-card__details {
     padding: 11px;
   }
+}
 
+@container cluster-layout (max-width: 680px) {
   .cluster-grid.is-list .cluster-card {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
@@ -2680,6 +2706,11 @@ onBeforeUnmount(() => {
   .cluster-grid.is-list .cluster-card__footer > div,
   .cluster-grid.is-list .cluster-card__footer .button {
     width: 100%;
+  }
+
+  .cluster-grid.is-list .cluster-card__footer > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

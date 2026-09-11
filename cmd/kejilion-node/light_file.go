@@ -77,6 +77,9 @@ func runLightFileControl(
 			cluster.FileRelayPollRequest{RequestIDs: control.requestIDs(), Events: events},
 		)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			delay := control.retryDelay(err)
 			slog.Warn("lightweight file relay failed", "error", err, "retryAfter", delay)
 			if !waitContext(ctx, delay) {
@@ -200,6 +203,10 @@ func (control *lightFileControl) startRequest(command cluster.FileRelayCommand) 
 		return nil
 	}
 	requestContext, cancel := context.WithCancel(control.ctx)
+	if command.Path == cluster.HistoryPath {
+		cancel()
+		requestContext, cancel = context.WithTimeout(control.ctx, cluster.HistoryTimeout)
+	}
 	var body io.Reader = http.NoBody
 	var bodyWriter *io.PipeWriter
 	if command.BodyLength != 0 {

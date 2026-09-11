@@ -17,7 +17,8 @@ import (
 // relay. It shares the v2 Noise identity and poll transport with the terminal
 // broker, but has an independent endpoint and command validation surface.
 type FileRelayClient struct {
-	client *http.Client
+	client  *http.Client
+	history bool
 }
 
 func NewFileRelayClient(client *http.Client) (*FileRelayClient, error) {
@@ -38,6 +39,12 @@ func (c *FileRelayClient) PollV2(
 	input FileRelayPollRequest,
 ) (FileRelayPollResponse, error) {
 	var output FileRelayPollResponse
+	requestPath := v2FileRelayPath
+	validateCommand := validateFileRelayCommand
+	if c != nil && c.history {
+		requestPath = HistoryRelayV2Path
+		validateCommand = validHistoryRelayCommand
+	}
 	if c == nil || c.client == nil {
 		return output, ErrAuthentication
 	}
@@ -57,7 +64,7 @@ func (c *FileRelayClient) PollV2(
 		return output, err
 	}
 	envelope, handshake, err := sealV2Request(
-		http.MethodPost, v2FileRelayPath,
+		http.MethodPost, requestPath,
 		v2Envelope{
 			Protocol: FederationProtocolV2, ControllerID: controllerID,
 			TargetID: targetID, Timestamp: now.UTC().Unix(), RequestID: requestID,
@@ -71,7 +78,7 @@ func (c *FileRelayClient) PollV2(
 		return output, ErrAuthentication
 	}
 	request, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, origin+v2FileRelayPath, bytes.NewReader(body),
+		ctx, http.MethodPost, origin+requestPath, bytes.NewReader(body),
 	)
 	if err != nil {
 		return output, err
@@ -121,7 +128,7 @@ func (c *FileRelayClient) PollV2(
 	if output.Epoch != "" && !validID(output.Epoch) {
 		return output, ErrAuthentication
 	}
-	if output.Command != nil && validateFileRelayCommand(*output.Command, now.UTC()) != nil {
+	if output.Command != nil && validateCommand(*output.Command, now.UTC()) != nil {
 		return output, ErrAuthentication
 	}
 	return output, nil

@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/flynn/noise"
@@ -520,12 +521,12 @@ type federationFileReader struct {
 	body   io.ReadCloser
 	cipher *noise.CipherState
 	buffer []byte
-	done   bool
+	done   atomic.Bool
 }
 
 func (r *federationFileReader) Read(output []byte) (int, error) {
 	for len(r.buffer) == 0 {
-		if r.done {
+		if r.done.Load() {
 			return 0, io.EOF
 		}
 		frame, err := readFileFrame(r.source, fileStreamMaxFrame)
@@ -546,7 +547,7 @@ func (r *federationFileReader) Read(output []byte) (int, error) {
 			if len(plain) != 1 {
 				return 0, ErrAuthentication
 			}
-			r.done = true
+			r.done.Store(true)
 		case fileRecordError:
 			return 0, &RemoteError{Code: "source_transfer_failed"}
 		default:
@@ -559,7 +560,7 @@ func (r *federationFileReader) Read(output []byte) (int, error) {
 }
 
 func (r *federationFileReader) Close() error {
-	r.done = true
+	r.done.Store(true)
 	return r.body.Close()
 }
 

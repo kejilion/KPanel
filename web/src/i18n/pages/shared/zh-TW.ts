@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["查看历史趋势", "查看歷史趨勢"],
   // Lightweight node service health labels.
   ["自动检查","自動檢查"],
   ["遥测服务","遙測服務"],

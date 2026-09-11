@@ -1,4 +1,9 @@
 import type { ClusterHost } from '@/types/api'
+import type { MonitoringMetric } from './monitoringNavigation'
+
+export function clusterHostMonitoringRoute(host: Pick<ClusterHost, 'id' | 'isLocal'>, metric: MonitoringMetric) {
+  return { path: '/monitoring', query: host.isLocal ? { metric } : { hostId: host.id, metric } }
+}
 
 export const clusterSecurityEntrancePathPattern = /^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$/
 

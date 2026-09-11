@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClusterGlobe from './ClusterGlobe.vue'
@@ -62,7 +62,7 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function setup(hosts: GlobeHost[] = [host('alpha', 'CN'), host('beta')], active = ref(true)) {
-  wrapper = mount(ClusterGlobe, { props: { hosts }, global: { provide: { [desktopWindowActiveKey as symbol]: active }, stubs: { CountryFlagIcon: true } } })
+  wrapper = mount(ClusterGlobe, { props: { hosts }, global: { provide: { [desktopWindowActiveKey as symbol]: active }, stubs: { CountryFlagIcon: true, RouterLink: RouterLinkStub } } })
   return wrapper
 }
 
@@ -70,7 +70,7 @@ describe('cluster globe interaction and lifecycle', () => {
   it('lets metric columns and capacity labels reflow with enlarged text', () => {
     const source = globeSource
     expect(source).toMatch(/\.cluster-globe__metrics\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(100%, 6em\), 1fr\)\);/)
-    expect(source).toMatch(/\.cluster-globe__metrics\s*>\s*div\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/)
+    expect(source).toMatch(/\.cluster-globe__metrics\s*>\s*:is\(div, a\)\s*\{[^}]*min-width:\s*0;[^}]*overflow-wrap:\s*anywhere;/)
     expect(source).toMatch(/\.cluster-globe__metrics small span\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*normal;/)
     expect(source).not.toMatch(/\.cluster-globe__metrics small span\s*\{[^}]*white-space:\s*nowrap;/)
   })
@@ -126,6 +126,7 @@ describe('cluster globe interaction and lifecycle', () => {
     expect(view.get('.cluster-globe__seen').text()).toContain('采集于')
     expect(view.get('.cluster-globe__seen').text()).not.toContain('最近在线')
     expect(view.find('.cluster-globe__actions').exists()).toBe(false)
+    expect(view.find('.cluster-metric-link').exists()).toBe(false)
     expect(render.focus).toHaveBeenCalledWith(expect.objectContaining({ code: 'SG' }))
     await view.setProps({ hosts: [{ ...shared, state: 'pending', location: {}, collectedAt: undefined }] })
     expect(view.get('.cluster-globe__detail-heading').text()).toContain('等待数据')

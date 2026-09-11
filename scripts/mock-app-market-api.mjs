@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { mockMonitoringHistory } from './mock-monitoring-history.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -530,6 +531,15 @@ const visualClusterHosts = [
     kind: 'panel', federationProtocol: 'v2', securityEntrancePath: 'panel-secure1',
   }),
 ]
+
+if (process.env.KPANEL_MOCK_MONITORING === '1') {
+  for (const [letter, name, state] of [['a', '轻量节点 · 东京', 'online'], ['c', '轻量节点 · 离线示例', 'offline'], ['d', '轻量节点 · 等待首次采样', 'online'], ['f', '旧版节点 · 升级示例', 'online']]) {
+    visualClusterHosts.push(visualClusterHost({ id: letter.repeat(32), name, isLocal: false, state,
+      kind: 'light_node', federationProtocol: 'v2',
+      hostname: `mock-${letter}`, os: 'Debian GNU/Linux 13', osId: 'debian', uptimeSeconds: 86400,
+      receivedBytes: 1024 ** 3, sentBytes: 1024 ** 3, usagePercent: 25, city: 'Tokyo', country: 'Japan', countryCode: 'JP' }))
+  }
+}
 
 // Optional local-only inventory for reviewing dense cluster/share layouts.
 if (process.env.KPANEL_MOCK_CLUSTER_FIXTURE) {
@@ -1193,6 +1203,20 @@ async function readJSON(request) {
 
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
+  if (request.method === 'GET' && ['/api/v1/monitoring/history', '/api/v1/monitoring/cluster-history'].includes(url.pathname)) {
+    const remote = url.pathname.endsWith('/cluster-history')
+    const id = url.searchParams.get('hostId')
+    if (remote && !visualClusterHosts.some((host) => !host.isLocal && host.id === id)) {
+      send(response, 404, { title: '所选主机已移除或不存在，请重新选择主机。', code: 'cluster_host_not_found' })
+    } else if (remote && id === 'c'.repeat(32)) {
+      send(response, 503, { title: '节点当前离线，连接恢复后可查询历史。', code: 'cluster_history_unavailable' })
+    } else if (remote && id === 'f'.repeat(32)) {
+      send(response, 426, { title: '当前节点版本尚不支持远程历史，请升级节点后重试。', code: 'monitoring_upgrade_required' })
+    } else {
+      send(response, 200, mockMonitoringHistory(url, remote))
+    }
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/auth/bootstrap') {
     send(response, 200, { required: false })
     return

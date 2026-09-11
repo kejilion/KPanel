@@ -5,8 +5,10 @@ import {
   defaultMonitoringContainerIDs,
   monitoringContainerSelectionLimit,
   readMonitoringContainerPreference,
+	readMonitoringHostContainerPreference,
   reconcileMonitoringContainerIDs,
   writeMonitoringContainerPreference,
+	writeMonitoringHostContainerPreference,
 } from './monitoringContainerSelection'
 
 function container(id: string, collectedAt?: string): MonitoringContainerSeries {
@@ -32,6 +34,22 @@ function container(id: string, collectedAt?: string): MonitoringContainerSeries 
 }
 
 describe('monitoring container selection', () => {
+  it('isolates host preferences, preserves local choices and bounds retained hosts', () => {
+    const values = new Map<string, string>()
+    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } }
+    writeMonitoringHostContainerPreference('local', { ids: ['local-container'], slots: {} }, storage)
+    for (let i = 1; i <= 101; i++) {
+      writeMonitoringHostContainerPreference(i.toString(16).padStart(32, '0'), { ids: [`container-${i}`], slots: {} }, storage)
+    }
+    expect(readMonitoringHostContainerPreference('local', storage)?.ids).toEqual(['local-container'])
+    expect(readMonitoringHostContainerPreference('1'.padStart(32, '0'), storage)).toBeUndefined()
+    expect(readMonitoringHostContainerPreference('2'.padStart(32, '0'), storage)?.ids).toEqual(['container-2'])
+    expect(Object.keys(JSON.parse(values.get('kejilion-panel-monitoring-host-containers-v1')!))).toHaveLength(100)
+    writeMonitoringHostContainerPreference('__proto__', { ids: ['bad'], slots: {} }, storage)
+    expect(values.size).toBe(2)
+    expect(readMonitoringHostContainerPreference('2'.padStart(32, '0'), { getItem: () => ' '.repeat(128 * 1024 + 1) })).toBeUndefined()
+  })
+
   it('defaults to three current containers and excludes historical rows', () => {
     const containers = [
       container('current-a', '2026-08-05T00:00:00Z'),
