@@ -672,6 +672,8 @@ func (s *Service) Find(ctx context.Context, id string) (Summary, error) {
 }
 
 func (s *Service) Lifecycle(ctx context.Context, id, action, expectedVersion string) (dockerx.ActionResult, error) {
+	s.actions.Lock()
+	defer s.actions.Unlock()
 	if action != "start" && action != "stop" && action != "restart" {
 		return dockerx.ActionResult{}, ErrUnsupported
 	}
@@ -681,6 +683,13 @@ func (s *Service) Lifecycle(ctx context.Context, id, action, expectedVersion str
 	}
 	if !item.Capabilities[action].Enabled {
 		return dockerx.ActionResult{}, fmt.Errorf("%w: %s", ErrForbidden, item.Capabilities[action].Reason)
+	}
+	if s.jobs != nil {
+		s.reconcileInactiveScriptJobs()
+		candidate := appJobRecord{AppJob: AppJob{AppID: item.ID}, ParallelSafe: true, ResourceKeys: s.appJobResourceKeys(item)}
+		if err := s.jobs.canStart(candidate); err != nil && !errors.Is(err, ErrTaskLimit) {
+			return dockerx.ActionResult{}, err
+		}
 	}
 	if spec, ok := declarativeSpecs[item.Token]; ok {
 		return s.docker.LifecycleDeclarativeApp(

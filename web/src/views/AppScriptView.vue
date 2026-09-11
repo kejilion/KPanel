@@ -71,7 +71,7 @@ function waitForClosePoll(): Promise<void> {
 
 async function existingInteractiveJob(appId: string, signal: AbortSignal): Promise<AppInstallJob | undefined> {
   const jobs = await api.apps.jobs(signal)
-  const active = jobs.items.find(isActiveJob)
+  const active = jobs.items.find((candidate) => candidate.appId === appId && isActiveJob(candidate))
   if (!active) return undefined
   if (active.appId === appId && active.action === 'manage' && active.interactive) return active
   throw new Error(i18n.t('appScript.activeJob', { name: active.appName }))

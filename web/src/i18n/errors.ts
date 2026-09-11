@@ -25,6 +25,8 @@ const errorMessageKeys: Readonly<Record<string, MessageKey>> = {
   agent_unavailable: 'error.agentUnavailable',
   local_agent_unavailable: 'error.agentUnavailable',
   site_certificate_renewal_unavailable: 'error.certificateRenewalUnavailable',
+  app_task_conflict: 'error.appTaskConflict',
+  app_task_limit: 'error.appTaskLimit',
   resource_conflict: 'error.resourceChanged',
   resource_version_changed: 'error.resourceChanged',
   validation_failed: 'error.validationFailed',

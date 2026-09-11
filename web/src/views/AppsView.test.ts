@@ -111,6 +111,11 @@ interface AppsBindings {
   imageUpdateEntries: ReturnType<typeof useDockerImageUpdates>['entries']
   documentVisible: Ref<boolean>
   hasImageUpdate: (item: AppMarketInventory['items'][number]) => boolean
+  applicationJobs: Ref<AppInstallJob[]>
+  runningJobs: ComputedRef<AppInstallJob[]>
+  applicationTaskActive: ComputedRef<boolean>
+  selectApplicationJob: (job: AppInstallJob) => void
+  restoreBackgroundJob: () => Promise<void>
   activeJob: Ref<AppInstallJob | undefined>
   jobDetailsOpen: Ref<boolean>
   confirmAction: Ref<'update' | 'uninstall' | undefined>
@@ -1224,5 +1229,56 @@ describe('AppsView application mutations', () => {
     expect(view.activeJob.value).toEqual(job)
     expect(view.confirmAction.value).toBeUndefined()
     expect(mocks.toastDanger).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('AppsView parallel shells', () => {
+  const job = (index: number): AppInstallJob => ({ id: String(index).repeat(32), appId: 'builtin-' + index, appName: 'App ' + index,
+    action: 'manage', interactive: true, inputOpen: true, status: 'running', stage: 'interactive', progress: 5, logs: [], createdAt: '' })
+
+  it('keeps all tabs stable while polling and refreshes background completion', async () => {
+    const view = setupView(ref(false))
+    const a = job(1), b = job(2)
+    view.startJobPolling(a)
+    view.startJobPolling(b)
+    mocks.job.mockImplementation(async id => id === a.id ? { ...a, status: 'failed' } : b)
+    await view.refreshJob(b.id)
+    expect(view.applicationJobs.value.map(item => item.id)).toEqual([a.id, b.id])
+    expect(view.runningJobs.value.map(item => item.id)).toEqual([b.id])
+    expect(view.applicationJobs.value[0]?.status).toBe('failed')
+    expect(view.activeJob.value?.id).toBe(b.id)
+    expect(mocks.job).toHaveBeenCalledTimes(2)
+    view.selectedID.value = a.appId
+    expect(view.applicationTaskActive.value).toBe(false)
+    view.selectedID.value = b.appId
+    expect(view.applicationTaskActive.value).toBe(true)
+  })
+
+  it('retains other shells when one is cancelled and pins cancellation to the selected tab', async () => {
+    const view = setupView(ref(false))
+    const a = job(1), b = job(2)
+    view.startJobPolling(a)
+    view.startJobPolling(b)
+    view.requestCancelJob()
+    view.selectApplicationJob(a)
+    expect(view.activeJob.value?.id).toBe(b.id)
+    mocks.cancelJob.mockResolvedValue({ ...b, status: 'cancelled', inputOpen: false })
+    await view.confirmCancelJob()
+    expect(mocks.cancelJob).toHaveBeenCalledWith(b.id)
+    expect(view.runningJobs.value.map(item => item.id)).toEqual([a.id])
+    view.dismissJob()
+    expect(view.activeJob.value?.id).toBe(a.id)
+  })
+
+  it('removes an expired background job without stopping another shell', async () => {
+    const view = setupView(ref(false))
+    const a = job(1), b = job(2)
+    view.startJobPolling(a)
+    view.startJobPolling(b)
+    mocks.job.mockImplementation(async id => { if (id === a.id) throw new ApiError('gone', 404); return b })
+    await view.refreshJob(b.id)
+    expect(view.runningJobs.value.map(item => item.id)).toEqual([b.id])
+    expect(view.activeJob.value?.id).toBe(b.id)
   })
 })

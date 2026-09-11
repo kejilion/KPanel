@@ -115,12 +115,20 @@ describe('dedicated desktop app script terminal', () => {
     wrapper.unmount()
   })
 
+  it('starts this app while another application has an active shell', async () => {
+    mocks.jobs.mockResolvedValue({ items: [{ ...job, id: 'other-job', appId: 'other-app' }] })
+    const wrapper = await mountView()
+    expect(mocks.action).toHaveBeenCalledWith('openclaw', 'manage', { resourceVersion: 'rv-1' })
+    expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
+    wrapper.unmount()
+  })
+
   it('localizes an active task conflict while preserving the app name', async () => {
     await setLocale('en-US', false)
-    mocks.jobs.mockResolvedValue({ items: [{ ...job, appId: 'other-app', appName: 'Other app' }] })
+    mocks.jobs.mockResolvedValue({ items: [{ ...job, action: 'update' }] })
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('An app task is already running: Other app')
+    expect(wrapper.text()).toContain('An app task is already running: OpenClaw')
     wrapper.unmount()
   })
 

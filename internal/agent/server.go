@@ -1487,8 +1487,11 @@ func (s *Server) writeAppError(w http.ResponseWriter, requestID string, err erro
 	case errors.Is(err, dockerx.ErrVersionRequired):
 		status, code, title = http.StatusBadRequest, "resource_version_required", "必须提供资源版本"
 	case errors.Is(err, appmarket.ErrTaskConflict):
-		status, code, title = http.StatusConflict, "app_task_conflict", "已有应用任务正在运行"
-		err = errors.New("请先完成或关闭当前任务；若后台进程已经结束，刷新后会自动释放任务锁")
+		status, code, title = http.StatusConflict, "app_task_conflict", "应用任务存在资源冲突"
+		err = errors.New("同一应用或共享资源已有任务运行，或正在使用不支持并行的旧版脚本；请完成或结束冲突任务后重试")
+	case errors.Is(err, appmarket.ErrTaskLimit):
+		status, code, title = http.StatusTooManyRequests, "app_task_limit", "应用并行任务已达上限"
+		err = errors.New("最多同时运行 4 个应用任务；请完成或结束其中一个后重试")
 	case errors.Is(err, appmarket.ErrPortConflict):
 		status, code, title = http.StatusConflict, "app_port_conflict", "应用安装端口已被占用"
 	case errors.Is(err, appmarket.ErrConflict),

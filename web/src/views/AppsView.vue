@@ -2,7 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
-import { localizeImageUpdateError } from '@/i18n/errors'
+import { localizeError, localizeImageUpdateError } from '@/i18n/errors'
 import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -83,6 +83,10 @@ const deletingDomainSite = ref<Site>()
 const operation = ref('')
 const confirmAction = ref<ConfirmAction>()
 const activeJob = ref<AppInstallJob>()
+const applicationJobs = ref<AppInstallJob[]>([])
+let jobsDisposed = false
+let jobListController: AbortController | undefined
+const runningJobs = computed(() => applicationJobs.value.filter(isActiveJob))
 const jobDetailsOpen = ref(false)
 const appGrid = ref<HTMLElement>()
 const recentInstalledID = ref('')
@@ -142,7 +146,8 @@ const selectedDomains = computed(() =>
   selected.value ? matchingAppProxySites(selected.value, sites.value) : [],
 )
 const applicationTaskActive = computed(
-  () => Boolean(activeJob.value) && isActiveJob(activeJob.value),
+  () => runningJobs.value.some((job) => job.appId === selectedID.value)
+    || (activeJob.value?.appId === selectedID.value && isActiveJob(activeJob.value)),
 )
 const activeJobCancellable = computed(
   () =>
@@ -417,7 +422,7 @@ async function checkInstallPort(): Promise<boolean> {
     if (isAbortError(reason)) return false
     installPortState.value = 'error'
     installPortMessage.value =
-      reason instanceof ApiError ? reason.message : '暂时无法检查端口，请稍后重试。'
+      reason instanceof ApiError ? localizeError(reason) : '暂时无法检查端口，请稍后重试。'
     return false
   }
 }
@@ -445,6 +450,18 @@ async function revealInstalledApp(appID: string): Promise<void> {
 
 function isActiveJob(job?: AppInstallJob): boolean {
   return job?.status === 'queued' || job?.status === 'running'
+}
+
+function rememberApplicationJob(job: AppInstallJob): void {
+  const index = applicationJobs.value.findIndex((item) => item.id === job.id)
+  if (index >= 0) applicationJobs.value[index] = job
+  else applicationJobs.value = [...applicationJobs.value, job].slice(-100)
+}
+
+function selectApplicationJob(job: AppInstallJob): void {
+  if (cancellingJob.value || cancelJobPending.value) return
+  startJobPolling(job)
+  jobDetailsOpen.value = true
 }
 
 function isBackgroundJob(result: unknown): result is AppInstallJob {
@@ -580,10 +597,29 @@ async function refreshJob(id: string, generation = jobPollGeneration): Promise<v
   try {
     const job = await api.apps.job(id, requestController.signal)
     if (generation !== jobPollGeneration || jobController !== requestController) return
+    // A single bounded scheduler refreshes all known live jobs. Terminal output
+    // is still read only by the selected/visible terminal component.
+    const others = runningJobs.value.filter((item) => item.id !== id).slice(0, 4)
+    const updates = await Promise.allSettled(others.map((item) => api.apps.job(item.id, requestController.signal)))
+    if (generation !== jobPollGeneration || jobController !== requestController) return
+    let completedAnotherJob = false
+    for (const [index, update] of updates.entries()) {
+      if (update.status !== 'fulfilled') {
+        if (update.reason instanceof ApiError && update.reason.status === 404) {
+          applicationJobs.value = applicationJobs.value.filter((item) => item.id !== others[index]?.id)
+          completedAnotherJob = true
+        }
+        continue
+      }
+      rememberApplicationJob(update.value)
+      if (isActiveJob(others[index]) && !isActiveJob(update.value)) completedAnotherJob = true
+    }
+    rememberApplicationJob(job)
     const previousStatus = activeJob.value?.status
     activeJob.value = job
+    if (completedAnotherJob) await load(true)
     if (isActiveJob(job)) return
-    stopJobPolling()
+    if (!runningJobs.value.length) stopJobPolling()
     window.localStorage.removeItem(activeJobStorageKey)
     if (previousStatus === 'queued' || previousStatus === 'running') {
       if (job.status === 'succeeded') {
@@ -605,7 +641,10 @@ async function refreshJob(id: string, generation = jobPollGeneration): Promise<v
     if (reason instanceof ApiError && reason.status === 404) {
       stopJobPolling()
       activeJob.value = undefined
+      applicationJobs.value = applicationJobs.value.filter((item) => item.id !== id)
       window.localStorage.removeItem(activeJobStorageKey)
+      const next = runningJobs.value[0]
+      if (next) startJobPolling(next)
     }
   } finally {
     if (jobController === requestController) jobController = undefined
@@ -632,18 +671,32 @@ function beginJobPolling(id: string, immediate = windowActive.value): void {
 }
 
 function startJobPolling(job: AppInstallJob): void {
+  rememberApplicationJob(job)
   activeJob.value = job
   beginJobPolling(job.id)
 }
 
 async function restoreBackgroundJob(): Promise<void> {
+  try {
+    const result = await api.apps.jobs()
+    if (jobsDisposed) return
+    applicationJobs.value = result.items.filter(isActiveJob).slice(0, 100)
+  } catch {
+    // Reattach to the selected job even when listing is temporarily unavailable.
+  }
+  if (jobsDisposed) return
   const savedID = window.localStorage.getItem(activeJobStorageKey)
   if (savedID) {
     try {
       const job = await api.apps.job(savedID)
+      if (jobsDisposed) return
       activeJob.value = job
+      rememberApplicationJob(job)
       if (isActiveJob(job)) startJobPolling(job)
-      else window.localStorage.removeItem(activeJobStorageKey)
+      else {
+        window.localStorage.removeItem(activeJobStorageKey)
+        if (runningJobs.value.length) beginJobPolling(job.id)
+      }
       return
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 404) {
@@ -655,8 +708,7 @@ async function restoreBackgroundJob(): Promise<void> {
     }
   }
   try {
-    const result = await api.apps.jobs()
-    const running = result.items.find((job) => isActiveJob(job))
+    const running = runningJobs.value[0]
     if (running) startJobPolling(running)
   } catch {
     // The catalog remains usable when an older Agent has no job endpoint.
@@ -682,12 +734,13 @@ async function confirmCancelJob(): Promise<void> {
   cancellingJob.value = true
   try {
     const next = await api.apps.cancelJob(job.id)
+    rememberApplicationJob(next)
     activeJob.value = next
     cancelJobPending.value = false
     if (isActiveJob(next)) {
       beginJobPolling(next.id)
     } else {
-      stopJobPolling()
+      if (!runningJobs.value.length) stopJobPolling()
       window.localStorage.removeItem(activeJobStorageKey)
       await load(true)
     }
@@ -700,7 +753,7 @@ async function confirmCancelJob(): Promise<void> {
     }
     toast.danger(
       '结束交互任务失败',
-      reason instanceof ApiError ? reason.message : 'Agent 未能停止该交互任务。',
+      reason instanceof ApiError ? localizeError(reason) : 'Agent 未能停止该交互任务。',
     )
   } finally {
     cancellingJob.value = false
@@ -709,10 +762,13 @@ async function confirmCancelJob(): Promise<void> {
 
 function dismissJob(): void {
   if (isActiveJob(activeJob.value)) return
+  applicationJobs.value = applicationJobs.value.filter((job) => job.id !== activeJob.value?.id)
   stopJobPolling()
   activeJob.value = undefined
   jobDetailsOpen.value = false
   window.localStorage.removeItem(activeJobStorageKey)
+  const next = runningJobs.value[0]
+  if (next) startJobPolling(next)
 }
 
 function isAbortError(reason: unknown): boolean {
@@ -757,7 +813,7 @@ async function load(silent = false): Promise<void> {
     publicNetwork.value = await publicNetworkPromise
   } catch (reason) {
     if (isAbortError(reason)) return
-    error.value = reason instanceof ApiError ? reason.message : '无法读取应用市场，请稍后重试。'
+    error.value = reason instanceof ApiError ? localizeError(reason) : '无法读取应用市场，请稍后重试。'
   } finally {
     if (controller === requestController) {
       loading.value = false
@@ -782,7 +838,7 @@ async function install(): Promise<void> {
     jobDetailsOpen.value = true
     toast.success('已提交安装', `${appName(item)} 安装期间可以继续使用面板。`)
   } catch (reason) {
-    toast.danger('安装失败', reason instanceof ApiError ? reason.message : 'Agent 未能完成安装。')
+    toast.danger('安装失败', reason instanceof ApiError ? localizeError(reason) : 'Agent 未能完成安装。')
   } finally {
     operation.value = ''
   }
@@ -798,7 +854,7 @@ async function lifecycle(action: 'start' | 'stop' | 'restart'): Promise<void> {
       if (action === 'stop' && status.value === 'running') status.value = 'installed'
       await load(true)
   } catch (reason) {
-    toast.danger('操作失败', reason instanceof ApiError ? reason.message : '应用状态未能变更。')
+    toast.danger('操作失败', reason instanceof ApiError ? localizeError(reason) : '应用状态未能变更。')
   } finally {
     operation.value = ''
   }
@@ -842,7 +898,7 @@ async function confirmMutation(): Promise<void> {
   } catch (reason) {
     toast.danger(
       action === 'update' ? '更新失败' : '卸载失败',
-      reason instanceof ApiError ? reason.message : 'Agent 拒绝了本次操作。',
+      reason instanceof ApiError ? localizeError(reason) : 'Agent 拒绝了本次操作。',
     )
   } finally {
     operation.value = ''
@@ -866,7 +922,7 @@ async function openScriptManage(): Promise<void> {
   } catch (reason) {
     toast.danger(
       '脚本管理启动失败',
-      reason instanceof ApiError ? reason.message : 'Agent 未能打开该应用的原生管理终端。',
+      reason instanceof ApiError ? localizeError(reason) : 'Agent 未能打开该应用的原生管理终端。',
     )
   } finally {
     operation.value = ''
@@ -915,7 +971,7 @@ async function toggleAccess(): Promise<void> {
     toast.success(next === 'domain_only' ? '已阻止 IP + 端口访问' : '已放行 IP + 端口访问')
     await load(true)
   } catch (reason) {
-    toast.danger('访问策略变更失败', reason instanceof ApiError ? reason.message : '容器端口绑定未能完成切换。')
+    toast.danger('访问策略变更失败', reason instanceof ApiError ? localizeError(reason) : '容器端口绑定未能完成切换。')
   } finally {
     operation.value = ''
   }
@@ -940,7 +996,7 @@ async function addDomain(): Promise<void> {
     sites.value = [createdSite, ...sites.value.filter((site) => site.id !== createdSite.id)]
     domain.value = ''
   } catch (reason) {
-    domainError.value = reason instanceof ApiError ? reason.message : '域名绑定失败，请检查网站与 Nginx 状态。'
+    domainError.value = reason instanceof ApiError ? localizeError(reason) : '域名绑定失败，请检查网站与 Nginx 状态。'
     operation.value = ''
     return
   }
@@ -970,7 +1026,7 @@ async function addDomain(): Promise<void> {
     }
     toast.success('域名已绑定', `${hostname} 已反向代理到 ${appName(refreshedItem)}。`)
   } catch (reason) {
-    const detail = reason instanceof ApiError ? reason.message : '应用状态暂时无法刷新'
+    const detail = reason instanceof ApiError ? localizeError(reason) : '应用状态暂时无法刷新'
     domainWarning.value = `域名已绑定，但 IP + 端口访问策略未调整：${detail}`
     toast.success('域名已绑定', `${hostname} 已生效；直接访问策略可稍后单独调整。`)
   } finally {
@@ -1006,7 +1062,7 @@ async function removeDomain(): Promise<void> {
     )
     await load(true)
   } catch (reason) {
-    domainError.value = reason instanceof ApiError ? reason.message : '域名站点删除失败，请核对 kejilion.sh 原始站点产物。'
+    domainError.value = reason instanceof ApiError ? localizeError(reason) : '域名站点删除失败，请核对 kejilion.sh 原始站点产物。'
   } finally {
     operation.value = ''
   }
@@ -1020,11 +1076,34 @@ function openURL(item: AppMarketItem): string {
   return appAccessURL(item, sites.value, directHost)
 }
 
+async function syncApplicationJobs(): Promise<void> {
+  if (jobsDisposed) return
+  jobListController?.abort()
+  const requestController = new AbortController()
+  jobListController = requestController
+  try {
+    const result = await api.apps.jobs(requestController.signal)
+    if (jobsDisposed || jobListController !== requestController) return
+    for (const job of result.items.filter(isActiveJob).slice(0, 100)) rememberApplicationJob(job)
+    const next = runningJobs.value[0]
+    if (next && !pollingJobID) startJobPolling(next)
+  } catch { /* Retry on the next window activation or task notification. */ }
+  finally { if (jobListController === requestController) jobListController = undefined }
+}
+
+function onApplicationJobStorage(event: StorageEvent): void {
+  if (event.key === activeJobStorageKey && event.newValue) void syncApplicationJobs()
+}
+
 onMounted(() => {
+  window.addEventListener('storage', onApplicationJobStorage)
   document.addEventListener('visibilitychange', updateDocumentVisibility)
   void Promise.all([load(), restoreBackgroundJob()]).then(() => consumeRouteIntent())
 })
 onBeforeUnmount(() => {
+  jobsDisposed = true
+  jobListController?.abort()
+  window.removeEventListener('storage', onApplicationJobStorage)
   document.removeEventListener('visibilitychange', updateDocumentVisibility)
   controller?.abort()
   stopJobPolling()
@@ -1043,6 +1122,7 @@ watch(
 )
 
 function syncJobPollingForWindow(active: boolean): void {
+  if (active) void syncApplicationJobs()
   const job = activeJob.value
   const jobID = job && isActiveJob(job) ? job.id : pollingJobID
   if (!jobID) return
@@ -1080,6 +1160,15 @@ watch(windowActive, syncJobPollingForWindow)
       {{ inventory.catalogWarning }}
     </div>
 
+    <nav v-if="applicationJobs.length" class="app-job-switcher" :aria-label="i18n.t('apps.parallelTasks')">
+      <strong>{{ i18n.t('apps.parallelTasks') }} · {{ runningJobs.length }}</strong>
+      <button v-for="job in applicationJobs" :key="job.id" class="button button--secondary button--small" type="button"
+        :class="{ 'is-active': activeJob?.id === job.id }" :aria-pressed="activeJob?.id === job.id"
+        :disabled="cancellingJob || cancelJobPending" @click="selectApplicationJob(job)">
+        {{ job.appName }} · {{ jobActionLabel(job.action) }}
+        <StatusBadge :status="job.status" subtle />
+      </button>
+    </nav>
     <section v-if="activeJob" class="app-job-banner" :class="`is-${activeJob.status}`">
       <span class="app-job-banner__icon">
         <LoaderCircle v-if="isActiveJob(activeJob)" class="spin" :size="20" />
@@ -1735,6 +1824,41 @@ watch(windowActive, syncJobPollingForWindow)
 </template>
 
 <style scoped>
+.app-job-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  }
+.app-job-switcher button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  }
+.app-job-switcher button[aria-pressed="true"] {
+  border-color: var(--market-accent);
+  background: color-mix(in srgb, var(--market-accent) 10%, var(--surface));
+  }
+.app-job-switcher button:focus-visible {
+  outline: 2px solid var(--market-accent);
+  outline-offset: 2px;
+  }
+.app-job-switcher button:disabled {
+  cursor: wait;
+  opacity: .6;
+  }
+
 .app-market {
   --market-accent: #6d5dfc;
   --market-accent-soft: color-mix(in srgb, var(--market-accent) 12%, transparent);

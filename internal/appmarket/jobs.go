@@ -55,11 +55,13 @@ type AppJob struct {
 
 type appJobRecord struct {
 	AppJob
-	Selector            string `json:"selector"`
-	HostPort            uint16 `json:"hostPort,omitempty"`
-	AccessMode          string `json:"accessMode,omitempty"`
-	Adapter             string `json:"adapter"`
-	ExpectedContainerID string `json:"expectedContainerId,omitempty"`
+	Selector            string   `json:"selector"`
+	HostPort            uint16   `json:"hostPort,omitempty"`
+	AccessMode          string   `json:"accessMode,omitempty"`
+	Adapter             string   `json:"adapter"`
+	ExpectedContainerID string   `json:"expectedContainerId,omitempty"`
+	ParallelSafe        bool     `json:"parallelSafe,omitempty"`
+	ResourceKeys        []string `json:"resourceKeys,omitempty"`
 }
 
 type appJobRegistry struct {
@@ -162,11 +164,21 @@ func (s *Service) recoverInterruptedJobs() {
 	}
 }
 
-func (s *Service) reconcileInactiveScriptJobs() {
+func (s *Service) reconcileInactiveScriptJobs(ids ...string) {
 	if s.jobs == nil || s.jobRunner == nil {
 		return
 	}
-	for _, record := range s.jobs.list() {
+	records := []appJobRecord{}
+	if len(ids) == 0 {
+		records = s.jobs.list()
+	} else {
+		for _, id := range ids {
+			if record, err := s.jobs.read(id); err == nil {
+				records = append(records, record)
+			}
+		}
+	}
+	for _, record := range records {
 		if record.Adapter != "kejilion" ||
 			(record.Status != "queued" && record.Status != "running") ||
 			(record.Stage != "cancelling" && s.now().Sub(record.CreatedAt) < appJobLaunchGrace) {
@@ -301,29 +313,36 @@ func (s *Service) StartInstall(
 		input.AccessMode = "direct"
 	}
 	s.reconcileInactiveScriptJobs()
-	if s.jobs.hasActive() {
-		return AppJob{}, ErrTaskConflict
-	}
-
 	selector, scriptBacked := s.scriptSelector(item)
 	adapter := "declarative"
 	if scriptBacked {
 		adapter = "kejilion"
 	}
 	input.Interactive = scriptBacked
+	parallelSafe := false
 	if scriptBacked {
 		if s.scriptInteractiveFinder == nil {
 			return AppJob{}, fmt.Errorf("%w: interactive kejilion.sh protocol is unavailable", ErrUnsupported)
 		}
-		if _, err := s.scriptInteractiveFinder(); err != nil {
+		path, err := s.scriptInteractiveFinder()
+		if err != nil {
 			return AppJob{}, fmt.Errorf(
 				"%w: the installed kejilion.sh does not support KPanel interactive jobs",
 				ErrUnsupported,
 			)
 		}
+		parallelSafe = s.parallelAppScript(path)
 	}
 	record, err := newAppJobRecord(item, selector, adapter, "install", input, "")
 	if err != nil {
+		return AppJob{}, err
+	}
+	record.ParallelSafe = parallelSafe && item.Token != "kpanel"
+	record.ResourceKeys = s.appJobResourceKeys(item)
+	if record.HostPort != 0 {
+		record.ResourceKeys = append(record.ResourceKeys, fmt.Sprintf("port:%d", record.HostPort))
+	}
+	if err := s.jobs.canStart(record); err != nil {
 		return AppJob{}, err
 	}
 	if err := s.jobs.put(record); err != nil {
@@ -404,7 +423,8 @@ func (s *Service) StartScriptMutation(
 	if scriptFinder == nil {
 		return AppJob{}, true, fmt.Errorf("%w: interactive kejilion.sh protocol is unavailable", ErrUnsupported)
 	}
-	if _, err := scriptFinder(); err != nil {
+	scriptPath, err := scriptFinder()
+	if err != nil {
 		return AppJob{}, true, fmt.Errorf(
 			"%w: the installed kejilion.sh does not support KPanel interactive jobs",
 			ErrUnsupported,
@@ -425,9 +445,6 @@ func (s *Service) StartScriptMutation(
 		return AppJob{}, true, fmt.Errorf("%w: invalid access mode", ErrForbidden)
 	}
 	s.reconcileInactiveScriptJobs()
-	if s.jobs.hasActive() {
-		return AppJob{}, true, ErrTaskConflict
-	}
 	record, err := newAppJobRecord(
 		item,
 		selector,
@@ -440,6 +457,11 @@ func (s *Service) StartScriptMutation(
 		return AppJob{}, true, err
 	}
 	record.Interactive = true
+	record.ParallelSafe = s.parallelAppScript(scriptPath) && item.Token != "kpanel"
+	record.ResourceKeys = s.appJobResourceKeys(item)
+	if err := s.jobs.canStart(record); err != nil {
+		return AppJob{}, true, err
+	}
 	if err := s.jobs.put(record); err != nil {
 		return AppJob{}, true, fmt.Errorf("%w: persist application job: %v", ErrNeedsAttention, err)
 	}
@@ -545,7 +567,7 @@ func (s *Service) AppJob(id string) (AppJob, error) {
 	if s.jobs == nil || !appJobIDPattern.MatchString(id) {
 		return AppJob{}, ErrNotFound
 	}
-	s.reconcileInactiveScriptJobs()
+	s.reconcileInactiveScriptJobs(id)
 	record, err := s.jobs.read(id)
 	if err != nil {
 		return AppJob{}, ErrNotFound
@@ -572,7 +594,7 @@ func (s *Service) CancelAppJob(id string) (AppJob, error) {
 	if s.jobs == nil || s.jobRunner == nil || !appJobIDPattern.MatchString(id) {
 		return AppJob{}, ErrNotFound
 	}
-	s.reconcileInactiveScriptJobs()
+	s.reconcileInactiveScriptJobs(id)
 	record, err := s.jobs.read(id)
 	if err != nil {
 		return AppJob{}, ErrNotFound
@@ -1107,14 +1129,26 @@ func (registry *appJobRegistry) public(record appJobRecord) AppJob {
 }
 
 func (registry *appJobRegistry) logTail(id string, maxLines int) []string {
-	data, err := os.ReadFile(registry.logPath(id))
+	file, err := os.Open(registry.logPath(id))
 	if err != nil {
 		return []string{}
 	}
-	if len(data) > maxAppJobLog {
-		data = data[len(data)-maxAppJobLog:]
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return []string{}
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+	if info.Size() > maxAppJobLog {
+		if _, err := file.Seek(info.Size()-maxAppJobLog, io.SeekStart); err != nil {
+			return []string{}
+		}
+	}
+	data := make([]byte, min(info.Size(), int64(maxAppJobLog)))
+	count, err := io.ReadFull(file, data)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return []string{}
+	}
+	lines := strings.Split(strings.TrimRight(string(data[:count]), "\r\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		return []string{}
 	}
