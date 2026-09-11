@@ -16,6 +16,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/monitoring"
 )
 
 type historyTestTelemetry struct{}
@@ -57,6 +58,11 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	value := contract.MonitoringHistory{Range: "6h", StartedAt: now.Add(-6 * time.Hour), EndedAt: now, BucketSeconds: 60, Host: []contract.MonitoringHostPoint{{CollectedAt: now, CPUPercent: 31.5, DiskIOAvailable: true, DiskReadRate: 12345}}, Containers: []contract.MonitoringContainerSeries{}, OperatorLatency: []contract.MonitoringOperatorLatencySeries{}, Storage: contract.MonitoringStorageStatus{Enabled: true, RetentionDays: 30, RollupRetentionDays: 365, HostIntervalSeconds: 60}}
+	for i := 1; i < 60; i++ {
+		point := value.Host[0]
+		point.CollectedAt = now.Add(-time.Duration(i) * time.Minute)
+		value.Host = append(value.Host, point)
+	}
 	content, _ := json.Marshal(value)
 	agent := &slowHistoryAgent{fileStubAgent: &fileStubAgent{stubAgent: &stubAgent{}, streamHeaders: http.Header{"Content-Type": {"application/json"}}, streamResponse: content}}
 	target.agent = agent
@@ -81,6 +87,10 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 		t.Fatal(err)
 	}
 	defer center.Close()
+	browserCenter, tokenPath := newTestServerWithPublicURL(t, "https://panel.test")
+	_ = browserCenter.cluster.Close()
+	browserCenter.cluster = center
+	session, csrf := bootstrapCookiesForOrigin(t, browserCenter, tokenPath, "https://panel.test")
 	for _, protocol := range []string{"v2", "v1"} {
 		if protocol == "v1" && runtime.GOOS == "windows" {
 			t.Log("V1 credential mode validation requires Linux; covered by the Linux gate")
@@ -109,6 +119,19 @@ func TestClusterHistoryPanelHTTPV1V2ParitySlowSourceAndSignedQuery(t *testing.T)
 		}
 		if result.Host[0].CPUPercent != 31.5 || !result.Host[0].DiskIOAvailable || result.Storage.RollupRetentionDays != 365 {
 			t.Fatalf("%s history not forwarded intact", protocol)
+		}
+		agent.delay = 0
+		for _, encoding := range []string{"gzip", "gzip;q=0"} {
+			response := authenticatedRequest(browserCenter, http.MethodGet, "/api/v1/monitoring/cluster-history?hostId="+host.ID+"&range=6h", nil, session, csrf, map[string]string{"Accept-Encoding": encoding})
+			compressed := response.Header().Get("Content-Encoding") == "gzip"
+			if response.Code != 200 || compressed != (encoding == "gzip") || response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("browser history: %d %v", response.Code, response.Header())
+			}
+			decoded, err := monitoring.ReadHistoryPayload(response.Body, compressed)
+			var browserValue contract.MonitoringHistory
+			if err != nil || json.Unmarshal(decoded, &browserValue) != nil || len(browserValue.Host) != len(value.Host) || browserValue.Host[0].CPUPercent != 31.5 {
+				t.Fatalf("browser history corrupted: %v", err)
+			}
 		}
 		if protocol == "v1" {
 			tamper.Store(true)

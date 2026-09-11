@@ -18,11 +18,23 @@ func NewMonitoringHandler(provider monitoringHistoryProvider) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if _, err := monitoring.ParseQuery(r.URL.RawQuery); err != nil || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		query, err := monitoring.ParseQuery(r.URL.RawQuery)
+		if err != nil || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 			writeProblem(w, requestIDFrom(w), http.StatusUnprocessableEntity, "invalid_monitoring_query", "监控查询参数无效", "")
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
+		if query.Gzip {
+			query.Gzip = false
+			r = r.Clone(r.Context())
+			r.URL.RawQuery = query.Encode()
+			compressed := monitoring.NewHistoryResponseWriter(w)
+			s.monitoringHistory(compressed, r)
+			if err := compressed.Close(); err != nil {
+				panic(http.ErrAbortHandler)
+			}
+			return
+		}
 		s.monitoringHistory(w, r)
 	})
 }

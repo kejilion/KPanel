@@ -74,6 +74,8 @@ func TestNodeHistoryMatchesLocalOverAuthenticatedOutboundRelayAndRestart(t *test
 	}
 	var center *cluster.Service
 	var polls atomic.Int64
+	var requestBytes atomic.Int64
+	var compression atomic.Bool
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != cluster.HistoryRelayV2Path {
 			http.NotFound(w, r)
@@ -85,6 +87,13 @@ func TestNodeHistoryMatchesLocalOverAuthenticatedOutboundRelayAndRestart(t *test
 			return
 		}
 		polls.Add(1)
+		requestBytes.Add(r.ContentLength)
+		// Repeatable network delay; this is a local relay test, not a WAN claim.
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
 		response, err := center.HandleFederationV2(r.Context(), "198.51.100.10", r.URL.Path, "", envelope)
 		if err != nil {
 			w.WriteHeader(403)
@@ -125,7 +134,16 @@ func TestNodeHistoryMatchesLocalOverAuthenticatedOutboundRelayAndRestart(t *test
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runLightFileControl(relayContext, nodeConfig, terminalIdentity{Key: key, Peer: peer}, relay, agent.NewMonitoringHandler(history))
+		handler := agent.NewMonitoringHandler(history)
+		runLightFileControl(relayContext, nodeConfig, terminalIdentity{Key: key, Peer: peer}, relay, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !compression.Load() {
+				r = r.Clone(r.Context())
+				query := r.URL.Query()
+				query.Del("gzip")
+				r.URL.RawQuery = query.Encode()
+			}
+			handler.ServeHTTP(w, r)
+		}))
 	}()
 	defer func() { stopRelay(); <-done }()
 	deadline := time.Now().Add(3 * time.Second)
@@ -146,7 +164,8 @@ func TestNodeHistoryMatchesLocalOverAuthenticatedOutboundRelayAndRestart(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("light query duration: %v, total relay polls: %d", time.Since(started), polls.Load())
+	plainDuration, plainPolls, plainBytes := time.Since(started), polls.Load(), requestBytes.Load()
+	t.Logf("plain light history: duration=%v polls=%d wire_request_bytes=%d", plainDuration, plainPolls, plainBytes)
 	// Reopening storage changes current-hour restoration bookkeeping; compare
 	// against the reopened native reader, exactly as the broker serves it.
 	want, err = history.History(ctx, "6h")
@@ -158,6 +177,17 @@ func TestNodeHistoryMatchesLocalOverAuthenticatedOutboundRelayAndRestart(t *test
 	}
 	if len(got.Containers) != 32 || len(got.OperatorLatency) != 9 || !got.Host[0].DiskIOAvailable || got.Storage.HostIntervalSeconds != 60 || got.Storage.RollupRetentionDays != 365 {
 		t.Fatal("native monitoring capabilities missing")
+	}
+	compression.Store(true)
+	started = time.Now()
+	got, err = center.History(ctx, node.NodeID, "6h", time.Time{}, time.Time{})
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("compressed history changed metrics: %v", err)
+	}
+	compressedPolls, compressedBytes := polls.Load()-plainPolls, requestBytes.Load()-plainBytes
+	t.Logf("gzip light history: duration=%v polls=%d wire_request_bytes=%d", time.Since(started), compressedPolls, compressedBytes)
+	if compressedBytes >= plainBytes/2 || compressedPolls >= plainPolls/2 {
+		t.Fatal("compression did not substantially reduce relay traffic and round trips")
 	}
 	stopRelay()
 	<-done

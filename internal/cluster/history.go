@@ -39,7 +39,7 @@ func historyScopeAllowed(scope string) bool {
 // substitutes a summary sample or another host when a query fails.
 func (s *Service) History(ctx context.Context, id, requestedRange string, start, end time.Time) (contract.MonitoringHistory, error) {
 	var result contract.MonitoringHistory
-	query := monitoring.Query{Range: requestedRange, Start: start, End: end}
+	query := monitoring.Query{Range: requestedRange, Start: start, End: end, Gzip: true}
 	if err := query.Validate(); err != nil {
 		return result, err
 	}
@@ -68,10 +68,12 @@ func (s *Service) History(ctx context.Context, id, requestedRange string, start,
 	if err := historyResponseStatus(response.StatusCode); err != nil {
 		return result, err
 	}
-	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "application/json") {
+	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(response.Header.Get("Content-Type"), ";", 2)[0]))
+	compressed := contentType == monitoring.GzipHistoryContentType
+	if contentType != "application/json" && !compressed {
 		return result, ErrHistoryUnavailable
 	}
-	result, err = decodeHistoryResponse(response.Body, query)
+	result, err = decodeHistoryPayload(response.Body, query, compressed)
 	if err != nil || ctx.Err() != nil {
 		return contract.MonitoringHistory{}, ErrHistoryUnavailable
 	}

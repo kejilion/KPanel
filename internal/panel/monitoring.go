@@ -2,11 +2,13 @@ package panel
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/monitoring"
 )
 
 func (s *Server) handleClusterHistory(w http.ResponseWriter, r *http.Request) {
@@ -43,5 +45,11 @@ func (s *Server) handleClusterHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	s.writeJSON(w, http.StatusOK, result)
+	content, err := json.Marshal(result)
+	if err != nil || int64(len(content)) > monitoring.MaxHistoryResponseBytes {
+		s.writeHistoryError(w, r, cluster.ErrHistoryUnavailable)
+		return
+	}
+	// Use the same negotiated browser compression as local history.
+	s.writeAgentResponse(w, r, AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json; charset=utf-8", Body: content})
 }
