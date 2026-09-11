@@ -39,6 +39,32 @@ func historyScopeAllowed(scope string) bool {
 // substitutes a summary sample or another host when a query fails.
 func (s *Service) History(ctx context.Context, id, requestedRange string, start, end time.Time) (contract.MonitoringHistory, error) {
 	var result contract.MonitoringHistory
+	err := s.WithHistory(ctx, id, requestedRange, start, end, func(value contract.MonitoringHistory) error {
+		result = value
+		return nil
+	})
+	return result, err
+}
+
+// WithHistory holds the shared query budget until consume returns, including
+// encoding and slow downstream writes. Consumers must not retain the history
+// or start background work with it after returning.
+func (s *Service) WithHistory(ctx context.Context, id, requestedRange string, start, end time.Time, consume func(contract.MonitoringHistory) error) error {
+	select {
+	case s.historyQueries <- struct{}{}:
+		defer func() { <-s.historyQueries }()
+	default:
+		return monitoring.ErrBusy
+	}
+	result, err := s.readHistory(ctx, id, requestedRange, start, end)
+	if err != nil {
+		return err
+	}
+	return consume(result)
+}
+
+func (s *Service) readHistory(ctx context.Context, id, requestedRange string, start, end time.Time) (contract.MonitoringHistory, error) {
+	var result contract.MonitoringHistory
 	query := monitoring.Query{Range: requestedRange, Start: start, End: end, Gzip: true}
 	if err := query.Validate(); err != nil {
 		return result, err
@@ -49,12 +75,6 @@ func (s *Service) History(ctx context.Context, id, requestedRange string, start,
 	host, err := s.Host(ctx, id)
 	if err != nil {
 		return result, err
-	}
-	select {
-	case s.historyQueries <- struct{}{}:
-		defer func() { <-s.historyQueries }()
-	default:
-		return result, monitoring.ErrBusy
 	}
 	ctx, cancel := context.WithTimeout(ctx, HistoryTimeout)
 	defer cancel()
