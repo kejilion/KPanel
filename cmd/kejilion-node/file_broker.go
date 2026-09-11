@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,6 +22,8 @@ import (
 )
 
 const defaultFileBrokerConfigPath = defaultConfigPath
+
+var errFileCapabilityConnection = errors.New("file capability connection unavailable")
 
 // runFileBroker is a root-only service. It reuses the Agent file-manager
 // policy, but exposes no local socket: every request arrives through the
@@ -45,9 +48,26 @@ func runFileBroker(arguments []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	config, identity, err := ensureFileCapability(ctx, *configPath, config, secret, *fileConfigPath)
-	if err != nil {
-		return err
+	historyHandler, stopHistory := startNodeMonitoring(ctx, "/var/lib/kejilion-node")
+	defer stopHistory()
+	var identity terminalIdentity
+	for {
+		updated, relayIdentity, capabilityErr := ensureFileCapability(ctx, *configPath, config, secret, *fileConfigPath)
+		if capabilityErr == nil {
+			config, identity = updated, relayIdentity
+			break
+		}
+		if !errors.Is(capabilityErr, errFileCapabilityConnection) {
+			return capabilityErr
+		}
+		// Keep sampling locally even when a legacy node cannot yet reach its center.
+		if ctx.Err() != nil {
+			return nil
+		}
+		slog.Warn("file capability connection unavailable; history collection continues", "error", capabilityErr)
+		if !waitContext(ctx, time.Minute) {
+			return nil
+		}
 	}
 	manager, err := filemanager.New(agent.DefaultFileManagerConfig("/var/lib/kejilion-node"))
 	if err != nil {
@@ -58,7 +78,18 @@ func runFileBroker(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	historyRelay, err := cluster.NewHistoryRelayClient(nodeHTTPClient)
+	if err != nil {
+		return err
+	}
+	historyDone := make(chan struct{})
+	go func() {
+		defer close(historyDone)
+		runLightFileControl(ctx, config, identity, historyRelay, historyHandler)
+	}()
 	runLightFileControl(ctx, config, identity, relay, agent.NewFileHandler(manager))
+	stop()
+	<-historyDone
 	return nil
 }
 
@@ -83,7 +114,7 @@ func ensureFileCapability(
 	)
 	if _, err := os.Lstat(fileConfigPath); err == nil {
 		var readErr error
-		terminal, identity, readErr = readTerminalConfig(fileConfigPath)
+		terminal, identity, readErr = readTerminalConfigMode(fileConfigPath, true)
 		if readErr != nil {
 			return nodeConfig{}, terminalIdentity{}, readErr
 		}
@@ -98,6 +129,11 @@ func ensureFileCapability(
 			PublicKey:     base64.RawURLEncoding.EncodeToString(key.Public),
 		}
 		identity = terminalIdentity{Key: key}
+		// Persist before sending: the center may bind this key even if its
+		// response is lost. Retries and restarts must reuse the same identity.
+		if err := writeTerminalConfigAtomic(fileConfigPath, terminal); err != nil {
+			return nodeConfig{}, terminalIdentity{}, err
+		}
 	} else {
 		return nodeConfig{}, terminalIdentity{}, err
 	}
@@ -126,7 +162,7 @@ func ensureFileCapability(
 		headers,
 		&response,
 	); err != nil {
-		return nodeConfig{}, terminalIdentity{}, fmt.Errorf("upgrade lightweight file capability: %w", err)
+		return nodeConfig{}, terminalIdentity{}, fmt.Errorf("upgrade lightweight file capability: %w", errors.Join(errFileCapabilityConnection, err))
 	}
 	peer, err := decodeTerminalKey(response.TerminalPeerPublicKey)
 	if err != nil || !validHexID(response.TargetNodeID) {

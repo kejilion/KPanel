@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ArrowLeft, ArrowUpRight, ChevronLeft, ChevronRight, Globe2, MapPin, Minus, Pause, Pencil, Play, Plus, RotateCcw, Search, X } from '@lucide/vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
+import { clusterHostMonitoringRoute } from '@/lib/clusterHostNavigation'
 import { clampPercent, formatBytes, formatDateTime, formatDuration, formatPercent, formatRate, relativeTime } from '@/lib/format'
 import { formatNetworkTrafficCounter } from '@/lib/networkTraffic'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -57,9 +59,9 @@ const latency = computed(() => {
 })
 const selectedLocated = computed(() => regions.value.some(region => region.hosts.some(host => host.id === selected.value?.id)))
 const metrics = computed(() => [
-  { label: 'CPU', value: sample.value?.cpu.usagePercent, details: [sample.value?.cpu.cores ? `${sample.value.cpu.cores} ${phrase('核')}` : '—'] },
-  { label: '内存', value: sample.value?.memory.usagePercent, details: [formatBytes(sample.value?.memory.usedBytes), formatBytes(sample.value?.memory.totalBytes)] },
-  { label: '磁盘', value: sample.value?.disk.usagePercent, details: [formatBytes(sample.value?.disk.usedBytes), formatBytes(sample.value?.disk.totalBytes)] },
+  { id: 'cpu' as const, label: 'CPU', value: sample.value?.cpu.usagePercent, details: [sample.value?.cpu.cores ? `${sample.value.cpu.cores} ${phrase('核')}` : '—'] },
+  { id: 'memory' as const, label: '内存', value: sample.value?.memory.usagePercent, details: [formatBytes(sample.value?.memory.usedBytes), formatBytes(sample.value?.memory.totalBytes)] },
+  { id: 'disk' as const, label: '磁盘', value: sample.value?.disk.usagePercent, details: [formatBytes(sample.value?.disk.usedBytes), formatBytes(sample.value?.disk.totalBytes)] },
 ])
 let renderer: GlobeRenderer | undefined
 let resizeObserver: ResizeObserver | undefined
@@ -76,6 +78,16 @@ let drag: { id: number; x: number; y: number; distance: number } | undefined
 function phrase(value: string): string {
   phraseCatalogVersion.value
   return translatePhrase(value)
+}
+
+function networkHistoryLink(label: string) {
+  const host = managementHost.value
+  if (!host) return {}
+  return {
+    class: 'cluster-metric-link', to: clusterHostMonitoringRoute(host, 'network'),
+    title: phrase('查看历史趋势'),
+    'aria-label': `${phrase('查看历史趋势')} · ${host.name} · ${phrase(label)}`,
+  }
 }
 
 function palette(): GlobePalette {
@@ -345,24 +357,34 @@ onBeforeUnmount(() => {
       </div>
       <div v-else class="cluster-globe__detail">
         <nav class="cluster-globe__detail-nav" aria-label="浏览节点详情"><button type="button" class="cluster-globe__back" @click="showDetails = false"><ArrowLeft :size="16" /> 节点列表</button><span>{{ selectedIndex + 1 }} / {{ filteredHosts.length }}</span><button class="icon-button icon-button--small" type="button" :disabled="selectedIndex <= 0" title="上一个节点" aria-label="上一个节点" @click="stepNode(-1)"><ChevronLeft :size="16" /></button><button class="icon-button icon-button--small" type="button" :disabled="selectedIndex >= filteredHosts.length - 1" title="下一个节点" aria-label="下一个节点" @click="stepNode(1)"><ChevronRight :size="16" /></button></nav>
-        <div class="cluster-globe__detail-heading"><span>当前节点</span><StatusBadge :status="selected.state" :label="stateLabel(selected)" subtle /></div>
+        <div class="cluster-globe__detail-heading">
+          <span>当前节点</span>
+          <StatusBadge :status="selected.state" :label="stateLabel(selected)" subtle />
+        </div>
         <h3 data-i18n-ignore>{{ selected.name }}</h3>
         <p class="cluster-globe__location"><MapPin :size="14" /><span data-i18n-ignore>{{ [location?.country, location?.region, location?.city].filter((value, index, items) => value && items.indexOf(value) === index).join(' · ') || phrase(publicHost ? '地区未公开' : '位置未知') }}</span></p>
         <p v-if="!selectedLocated" class="cluster-globe__unknown">地理信息不足，暂未在地球上标点。</p>
         <div class="cluster-globe__metrics">
-          <div v-for="metric in metrics" :key="metric.label">
+          <component
+            :is="managementHost ? RouterLink : 'div'"
+            v-for="metric in metrics" :key="metric.id"
+            :class="{ 'cluster-metric-link': managementHost }"
+            :to="managementHost ? clusterHostMonitoringRoute(managementHost, metric.id) : undefined"
+            :title="managementHost ? phrase('查看历史趋势') : undefined"
+            :aria-label="managementHost ? `${phrase('查看历史趋势')} · ${managementHost.name} · ${phrase(metric.label)}` : undefined"
+          >
             <span>{{ phrase(metric.label) }}</span><strong>{{ typeof metric.value === 'number' && Number.isFinite(metric.value) ? formatPercent(metric.value) : '--' }}</strong>
             <div class="cluster-globe__meter" aria-hidden="true"><i :style="{ width: `${clampPercent(metric.value ?? 0)}%` }" /></div>
             <small v-if="sample"><span v-for="(detail, index) in metric.details" :key="index">{{ index ? ' / ' : '' }}{{ detail }}</span></small>
-          </div>
+          </component>
         </div>
         <dl v-if="sample" class="cluster-globe__host-details">
           <div class="cluster-globe__system"><dt>系统</dt><dd><span data-i18n-ignore>{{ sample.os || '—' }}</span><small v-if="sample.architecture || telemetry?.kernel" data-i18n-ignore>{{ [sample.architecture, telemetry?.kernel].filter(Boolean).join(' · ') }}</small></dd></div>
           <div class="cluster-globe__isp"><dt>运营商</dt><dd data-i18n-ignore>{{ location?.isp || phrase(publicHost ? '网络信息未公开' : '运营商未知') }}</dd></div>
-          <div><dt>实时下行</dt><dd>{{ formatRate(receiveRate) }}</dd></div>
-          <div><dt>实时上行</dt><dd>{{ formatRate(transmitRate) }}</dd></div>
-          <div><dt>累计接收</dt><dd>{{ formatNetworkTrafficCounter(sample.network, 'received') }}</dd></div>
-          <div><dt>累计传送</dt><dd>{{ formatNetworkTrafficCounter(sample.network, 'sent') }}</dd></div>
+          <div><dt>实时下行</dt><dd><component :is="managementHost ? RouterLink : 'span'" v-bind="networkHistoryLink('实时下行')">{{ formatRate(receiveRate) }}</component></dd></div>
+          <div><dt>实时上行</dt><dd><component :is="managementHost ? RouterLink : 'span'" v-bind="networkHistoryLink('实时上行')">{{ formatRate(transmitRate) }}</component></dd></div>
+          <div><dt>累计接收</dt><dd><component :is="managementHost ? RouterLink : 'span'" v-bind="networkHistoryLink('累计接收')">{{ formatNetworkTrafficCounter(sample.network, 'received') }}</component></dd></div>
+          <div><dt>累计传送</dt><dd><component :is="managementHost ? RouterLink : 'span'" v-bind="networkHistoryLink('累计传送')">{{ formatNetworkTrafficCounter(sample.network, 'sent') }}</component></dd></div>
           <div><dt>运行时间</dt><dd>{{ formatDuration(sample.uptimeSeconds) }}</dd></div>
           <div v-if="managementHost"><dt>延迟</dt><dd>{{ latency }}</dd></div>
         </dl>
@@ -418,7 +440,7 @@ onBeforeUnmount(() => {
 .cluster-globe__location { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: .8125rem; color: var(--text-soft); overflow-wrap: anywhere; }
 .cluster-globe__location svg { margin-top: 2px; flex-shrink: 0; }
 .cluster-globe__metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); gap: 14px; margin: 20px 0 14px; }
-.cluster-globe__metrics > div { min-width: 0; overflow-wrap: anywhere; }
+.cluster-globe__metrics > :is(div, a) { min-width: 0; overflow-wrap: anywhere; }
 .cluster-globe__metrics span { display: block; font-size: .8125rem; color: var(--text-soft); }
 .cluster-globe__metrics strong { display: block; margin: 4px 0 8px; font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .cluster-globe__metrics small { display: block; margin-top: 8px; color: var(--text-soft); font-size: .8125rem; line-height: 1.5; overflow-wrap: anywhere; }
@@ -431,6 +453,10 @@ onBeforeUnmount(() => {
 .cluster-globe__host-details dt { margin-bottom: 4px; color: var(--text-soft); font-size: .8125rem; }
 .cluster-globe__host-details dd { margin: 0; font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .cluster-globe__host-details small { display: block; margin-top: 4px; font-size: .8125rem; color: var(--text-soft); }
+.cluster-metric-link { display: block; color: inherit; text-decoration: none; border-radius: var(--radius-sm); transition: background-color 150ms ease; }
+.cluster-metric-link:hover, .cluster-metric-link:focus-visible { background: var(--brand-soft); }
+.cluster-metric-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.cluster-globe__metrics > .cluster-metric-link > span { font-size: .875rem; }
 .cluster-globe__seen, .cluster-globe__unknown { margin: 10px 0 0; color: var(--text-soft); font-size: .8125rem; line-height: 1.6; }
 .cluster-globe__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .cluster-globe .button { min-height: 40px; max-width: 100%; font-size: max(14px, .875rem); white-space: normal; overflow-wrap: anywhere; }

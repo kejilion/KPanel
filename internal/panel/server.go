@@ -224,6 +224,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleFederationV2(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == cluster.FileRelayV1Path:
 		s.handleFederationFileRelayV1(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == cluster.HistoryV1Path:
+		s.handleFederationHistoryV1(w, r)
 	case isLightFileRelayRequest(r):
 		s.handleLightFileRelay(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/federation/pair":
@@ -278,6 +280,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleAudit(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/"):
 		s.handleCluster(w, r)
+	case r.URL.Path == "/api/v1/monitoring/cluster-history":
+		s.handleClusterHistory(w, r)
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
@@ -388,7 +392,7 @@ func isFederationV2Request(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/api/v2/federation/pair",
+	case cluster.HistoryV2Path, cluster.HistoryRelayV2Path, "/api/v2/federation/pair",
 		"/api/v2/federation/commit",
 		"/api/v2/federation/summary",
 		"/api/v2/federation/revoke",

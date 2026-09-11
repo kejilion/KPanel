@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/MonitoringView/en-US').then((module) => module.default)
   : import('@/i18n/pages/MonitoringView/zh-TW').then((module) => module.default))
-import { ArrowLeft, Box, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search } from '@lucide/vue'
+import { ArrowLeft, Box, Check, ChevronDown, ChevronRight, CircleAlert, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search, Server } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
+import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import TrendChart, { type TrendSeries } from '@/components/monitoring/TrendChart.vue'
 import { ApiError, api } from '@/lib/api'
+import { readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
+import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import type { ClusterHost } from '@/types/api'
 import { formatBytes, formatDateTime, formatPercent, formatRate } from '@/lib/format'
 import {
   monitoringTargetId,
@@ -30,9 +34,9 @@ import {
   assignMonitoringContainerColorSlots,
   monitoringContainerColors,
   monitoringContainerSelectionLimit,
-  readMonitoringContainerPreference,
+  readMonitoringHostContainerPreference,
   reconcileMonitoringContainerIDs,
-  writeMonitoringContainerPreference,
+  writeMonitoringHostContainerPreference,
 } from '@/lib/monitoringContainerSelection'
 import {
   latestOperatorLatency,
@@ -68,8 +72,35 @@ const regionLabels: Record<MonitoringOperatorLatencySeries['region'], string> = 
 const history = shallowRef<MonitoringHistory>()
 const route = useRoute()
 const router = useRouter()
+const selectedHostId = ref('local')
+const isRemoteHost = computed(() => selectedHostId.value !== 'local')
+const hosts = shallowRef<ClusterHost[]>([])
+const hostsLoading = ref(false)
+const hostsError = ref('')
+const orderRevision = ref(0)
+const orderedHosts = computed(() => {
+  orderRevision.value
+  return sortClusterHosts(hosts.value, readClusterHostOrder())
+})
+const selectedHost = computed(() => hosts.value.find((host) => isRemoteHost.value ? host.id === selectedHostId.value : host.isLocal))
+const hostPickerOpen = ref(false)
+const hostSearch = ref('')
+const hostPickerRoot = ref<HTMLElement>()
+const hostPickerButton = ref<HTMLButtonElement>()
+const hostSearchInput = ref<HTMLInputElement>()
+const hostPickerId = `monitoring-hosts-${useId()}`
+const activeHostLabel = computed(() => isRemoteHost.value
+  ? selectedHost.value?.name || phrase('所选主机（未在列表中）') : phrase('本机'))
+const filteredHosts = computed(() => {
+  const search = hostSearch.value.trim().toLocaleLowerCase()
+  return orderedHosts.value.filter((host) => !search ||
+    `${host.name} ${host.origin || ''} ${host.lastSnapshot?.telemetry.hostname || ''} ${host.isLocal ? phrase('本机') : ''}`.toLocaleLowerCase().includes(search))
+})
+const availableRanges = ranges
+let hostsController: AbortController | undefined
+let unsubscribeOrder: (() => void) | undefined
 const selectedRange = ref<MonitoringRange>('6h')
-const restoredContainerPreference = readMonitoringContainerPreference()
+const restoredContainerPreference = readMonitoringHostContainerPreference('local')
 const selectedContainerIds = ref<string[]>(restoredContainerPreference?.ids || [])
 const selectedContainerColorSlots = ref<Record<string, number>>(restoredContainerPreference?.slots || {})
 const containerSearch = ref('')
@@ -357,7 +388,7 @@ function persistContainerSelection(ids: string[]): void {
     selectedContainerColorSlots.value,
   )
   selectedContainerIds.value = ids
-  writeMonitoringContainerPreference({ ids, slots: selectedContainerColorSlots.value })
+  writeMonitoringHostContainerPreference(selectedHostId.value, { ids, slots: selectedContainerColorSlots.value })
 }
 
 function reconcileContainerSelection(containers: MonitoringContainerSeries[]): void {
@@ -434,6 +465,114 @@ function latestLatencyLabel(series: MonitoringOperatorLatencySeries): string {
 }
 
 type HistoryLoadMode = 'initial' | 'refresh' | 'zoom'
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
+const monitoringErrorMessages: Record<string, string> = {
+  cluster_host_not_found: '所选主机已移除或不存在，请重新选择主机。',
+  invalid_monitoring_query: '监控时间范围或查询参数无效。',
+  monitoring_busy: '历史查询繁忙，请稍后重试。',
+  cluster_history_unavailable: '节点历史监控暂不可用，请确认节点在线、已升级且监控服务正常运行。',
+  monitoring_upgrade_required: '当前节点版本尚不支持远程历史，请升级节点后重试。',
+  monitoring_access_denied: '节点历史查询授权无效，请检查配对关系。',
+}
+
+async function loadHosts(): Promise<void> {
+  hostsController?.abort()
+  const request = new AbortController()
+  hostsController = request
+  hostsLoading.value = true
+  hostsError.value = ''
+  try {
+    const result = await api.cluster.hosts(request.signal)
+    if (hostsController === request) hosts.value = result.items
+  } catch {
+    if (hostsController === request && !request.signal.aborted) hostsError.value = '主机列表读取失败，当前历史查询不受影响。'
+  } finally {
+    if (hostsController === request) hostsLoading.value = false
+  }
+}
+
+function closeHostPicker(restoreFocus = false): void {
+  hostPickerOpen.value = false
+  if (restoreFocus) void nextTick(() => hostPickerButton.value?.focus())
+}
+
+async function openHostPicker(focusSelection = false): Promise<void> {
+  hostSearch.value = ''
+  hostPickerOpen.value = true
+  await nextTick()
+  if (focusSelection) {
+    const option = hostPickerRoot.value?.querySelector<HTMLButtonElement>('.monitoring-host-option.is-active')
+      || hostPickerRoot.value?.querySelector<HTMLButtonElement>('.monitoring-host-option')
+    if (option) { option.focus(); return }
+  }
+  hostSearchInput.value?.focus()
+}
+
+function hostPickerKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && hostPickerOpen.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    closeHostPicker(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  if (!hostPickerOpen.value) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      void openHostPicker(true)
+    }
+    return
+  }
+  if (event.target === hostSearchInput.value && ['Home', 'End'].includes(event.key)) return
+  const options = Array.from(hostPickerRoot.value?.querySelectorAll<HTMLButtonElement>('.monitoring-host-option') || [])
+  if (!options.length) return
+  event.preventDefault()
+  const index = options.indexOf(document.activeElement as HTMLButtonElement)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+    : index < 0 ? (event.key === 'ArrowUp' ? options.length - 1 : 0)
+    : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length
+  options[next]?.focus()
+}
+
+function closeHostPickerOutside(event: PointerEvent): void {
+  if (hostPickerOpen.value && event.target instanceof Node && !hostPickerRoot.value?.contains(event.target)) closeHostPicker()
+}
+
+function hostPickerFocusout(event: FocusEvent): void {
+  if (event.relatedTarget instanceof Node && !hostPickerRoot.value?.contains(event.relatedTarget)) closeHostPicker()
+}
+
+function hostIsSelected(host: ClusterHost): boolean {
+  return host.isLocal ? !isRemoteHost.value : host.id === selectedHostId.value
+}
+
+function hostStatusLabel(host: ClusterHost): string {
+  if (host.isLocal) return phrase('当前面板')
+  const states: Record<string, string> = {
+    online: '在线', degraded: '连接不稳定', offline: '离线', stale: '数据过期',
+    unknown: '等待上报', pairing: '配对中', revoking: '正在移除', auth_failed: '认证失败',
+    tls_error: '证书异常', incompatible: '版本不兼容',
+  }
+  return phrase(states[host.state] || '等待上报')
+}
+
+function changeHost(hostId: string): void {
+  closeHostPicker(true)
+  if (hostId === selectedHostId.value) return
+  const range = selectedRange.value
+  const query = monitoringRouteQuery(range)
+  if (hostId === 'local') delete query.hostId
+  else query.hostId = hostId
+  void router.push({ query, state: { monitoringZoomDepth: 0 } })
+}
+
+function withHostGaps(series: TrendSeries[]): TrendSeries[] {
+  const interval = Math.max(history.value?.bucketSeconds || 60, history.value?.storage.hostIntervalSeconds || 60)
+  return series.map((item) => ({ ...item, maxGapMilliseconds: interval * 2_000 }))
+}
 
 async function load(mode: HistoryLoadMode = 'initial', query = activeWindow.value): Promise<void> {
   controller?.abort()
@@ -446,8 +585,10 @@ async function load(mode: HistoryLoadMode = 'initial', query = activeWindow.valu
   if (mode === 'initial') error.value = ''
   interactionError.value = ''
   try {
-    const result = await api.monitoring.history(range, query, requestController.signal)
-    if (controller !== requestController) return
+    const result = isRemoteHost.value
+      ? await api.monitoring.history(range, query, requestController.signal, selectedHostId.value)
+      : await api.monitoring.history(range, query, requestController.signal)
+    if (controller !== requestController || requestController.signal.aborted) return
     history.value = result
     activeWindow.value = query ? { ...query } : undefined
     if (!query) rootHistory.value = result
@@ -457,10 +598,11 @@ async function load(mode: HistoryLoadMode = 'initial', query = activeWindow.valu
     )
     reconcileContainerSelection(containerCatalog.value)
   } catch (reason) {
+    if (controller !== requestController || requestController.signal.aborted) return
     if (!(reason instanceof DOMException && reason.name === 'AbortError')) {
       const message = reason instanceof ApiError
-        ? reason.message
-        : '无法读取历史监控数据，请检查 Agent 状态后重试。'
+        ? monitoringErrorMessages[reason.code] || reason.message
+        : '无法读取历史监控数据，请稍后重试。'
       if (mode === 'initial' && !history.value) error.value = message
       else interactionError.value = message
     }
@@ -544,6 +686,28 @@ function currentZoomDepth(): number {
 }
 
 function applyRouteState(): void {
+  closeHostPicker()
+  const queryHost = route.query.hostId
+  const nextHost = typeof queryHost === 'string' && queryHost ? queryHost : 'local'
+  const hostChanged = nextHost !== selectedHostId.value
+  if (hostChanged) {
+    controller?.abort()
+    controller = undefined
+    selectedHostId.value = nextHost
+    history.value = undefined
+    rootHistory.value = undefined
+    diskChartMode.value = 'capacity'
+    networkChartMode.value = 'traffic'
+    operatorLatencyVisibility.value = {}
+    containerSearch.value = ''
+    containerSelectionError.value = ''
+    highlightedContainerId.value = ''
+    const preference = readMonitoringHostContainerPreference(nextHost)
+    selectedContainerIds.value = preference?.ids || []
+    selectedContainerColorSlots.value = preference?.slots || {}
+    refreshing.value = false
+    updating.value = false
+  }
   const nextRange = monitoringRangeFromQuery(route.query.range)
   const nextWindow = monitoringWindowFromQuery(route.query.start, route.query.end)
   const rangeChanged = nextRange !== selectedRange.value
@@ -557,6 +721,7 @@ function applyRouteState(): void {
   }
   if (!nextWindow && rootHistory.value?.range === nextRange) {
     controller?.abort()
+    controller = undefined
     history.value = rootHistory.value
     loading.value = false
     refreshing.value = false
@@ -598,21 +763,91 @@ watch(selectedContainerIds, (ids) => {
   }
 })
 watch(
-  [() => route.query.range, () => route.query.start, () => route.query.end],
+  [() => route.query.hostId, () => route.query.range, () => route.query.start, () => route.query.end],
   applyRouteState,
   { immediate: true },
 )
 
-onBeforeUnmount(() => controller?.abort())
+onMounted(() => {
+  void loadHosts()
+  unsubscribeOrder = subscribeClusterHostOrder(() => { orderRevision.value++ })
+  document.addEventListener('pointerdown', closeHostPickerOutside)
+})
+onBeforeUnmount(() => {
+  controller?.abort()
+  hostsController?.abort()
+  unsubscribeOrder?.()
+  document.removeEventListener('pointerdown', closeHostPickerOutside)
+})
 </script>
 
 <template>
   <section class="monitoring-page" :class="{ 'is-updating': updating }">
-    <PageHeader title="历史监控" description="查看主机与容器的资源趋势；历史数据只保存在当前服务器。" />
+    <PageHeader title="历史监控" description="选择主机，查看资源变化与历史趋势。" />
+
+    <div class="monitoring-host-bar">
+      <div ref="hostPickerRoot" class="monitoring-host-picker" @keydown="hostPickerKeydown" @focusout="hostPickerFocusout">
+        <button
+          ref="hostPickerButton" class="monitoring-host-trigger" type="button"
+          aria-haspopup="dialog" :aria-controls="hostPickerId" :aria-expanded="hostPickerOpen"
+          :aria-label="phrase(`切换主机：${activeHostLabel}`)" :title="selectedHost?.name || activeHostLabel"
+          @click="hostPickerOpen ? closeHostPicker() : openHostPicker()"
+        >
+          <Server :size="15" aria-hidden="true" />
+          <span>{{ phrase('当前主机') }}</span><strong>{{ activeHostLabel }}</strong>
+          <ChevronDown :size="15" aria-hidden="true" />
+        </button>
+        <div v-if="hostPickerOpen" :id="hostPickerId" class="monitoring-host-menu" role="dialog" :aria-label="phrase('切换主机')">
+          <header class="monitoring-host-heading">
+            <strong>{{ phrase('切换主机') }}</strong>
+            <button class="icon-button" type="button" :title="phrase('刷新主机列表')" :aria-label="phrase('刷新主机列表')" :disabled="hostsLoading" @click="loadHosts">
+              <RefreshCw :size="15" :class="{ 'is-spinning': hostsLoading }" />
+            </button>
+          </header>
+          <label class="monitoring-host-search">
+            <Search :size="15" aria-hidden="true" />
+            <input ref="hostSearchInput" v-model="hostSearch" type="search" :placeholder="phrase('搜索主机')" :aria-label="phrase('搜索主机')" />
+          </label>
+          <div class="monitoring-host-list" :aria-busy="hostsLoading">
+            <div v-if="hostsLoading && !hosts.length" class="monitoring-host-message" role="status"><RefreshCw :size="16" class="is-spinning" />{{ phrase('正在读取主机列表…') }}</div>
+            <template v-else>
+              <button v-if="!hosts.length && !hostSearch" type="button" class="monitoring-host-option" :class="{ 'is-active': !isRemoteHost }" :aria-pressed="!isRemoteHost" data-monitoring-host-id="local" @click="changeHost('local')">
+                <Server :size="24" aria-hidden="true" /><span><strong>{{ phrase('本机') }}</strong><small>{{ phrase('当前面板') }}</small></span><Check v-if="!isRemoteHost" :size="16" aria-hidden="true" />
+              </button>
+              <button
+                v-for="host in filteredHosts" :key="host.id" type="button" class="monitoring-host-option"
+                :class="{ 'is-active': hostIsSelected(host) }" :aria-pressed="hostIsSelected(host)"
+                :data-monitoring-host-id="host.isLocal ? 'local' : host.id"
+                :title="`${host.name} · ${hostStatusLabel(host)}`" @click="changeHost(host.isLocal ? 'local' : host.id)"
+              >
+                <OperatingSystemIcon class="monitoring-host-os" :distro="detectOperatingSystemIdentity(host.lastSnapshot?.telemetry).key" :label="detectOperatingSystemIdentity(host.lastSnapshot?.telemetry).label" :show-tooltip="false" />
+                <span>
+                  <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
+                  <small :class="{ 'is-offline': !host.isLocal && !['online', 'degraded'].includes(host.state) }">
+                    <i :class="{ 'is-online': host.state === 'online', 'is-degraded': host.state === 'degraded' }" aria-hidden="true" />
+                    {{ hostStatusLabel(host) }}<template v-if="host.kind === 'light_node'"> · {{ phrase('轻量节点') }}</template>
+                  </small>
+                </span>
+                <Check v-if="hostIsSelected(host)" :size="16" aria-hidden="true" /><ChevronRight v-else :size="15" aria-hidden="true" />
+              </button>
+              <div v-if="!filteredHosts.length && hostSearch" class="monitoring-host-message" role="status">{{ phrase('没有匹配的主机') }}</div>
+            </template>
+          </div>
+          <button v-if="hostsError" type="button" class="monitoring-host-retry" @click="loadHosts"><CircleAlert :size="16" />{{ phrase('主机列表刷新失败，点击重试') }}</button>
+        </div>
+      </div>
+      <span v-if="isRemoteHost" class="monitoring-host-meta">
+        {{ selectedHost?.kind === 'light_node' ? '轻量节点 · 含容器与三网延迟' : '集群主机 · 含容器与三网延迟' }}
+        <span v-if="selectedHost && !['online', 'degraded'].includes(selectedHost.state)" class="monitoring-host-offline">· 当前未在线，连接恢复后可查询历史</span>
+      </span>
+      <span v-else class="monitoring-host-meta">本机监控 · 含容器与三网延迟</span>
+    </div>
+    <p v-if="hostsError" class="monitoring-warning" role="status">{{ hostsError }}</p>
+    <p v-if="isRemoteHost" class="monitoring-source-note">历史保存在所选主机，采样与本机一致；连接恢复后可查看断线期间的记录。</p>
 
     <div class="monitoring-toolbar" aria-label="监控时间范围">
       <button
-        v-for="range in ranges"
+        v-for="range in availableRanges"
         :key="range.value"
         class="range-button"
         :class="{ 'range-button--active': selectedRange === range.value }"
@@ -622,9 +857,9 @@ onBeforeUnmount(() => controller?.abort())
         {{ range.label }}
       </button>
       <span v-if="history?.storage.lastSampleAt" class="monitoring-toolbar__meta">
-        最近采样 {{ formatDateTime(history.storage.lastSampleAt) }}
+        {{ phrase(`最近采样 ${formatDateTime(history.storage.lastSampleAt)}`) }}
       </span>
-      <button class="icon-button" type="button" :disabled="refreshing || updating" title="刷新监控数据" aria-label="刷新监控数据" @click="load('refresh')">
+      <button class="icon-button" type="button" :disabled="loading || refreshing || updating" title="刷新监控数据" aria-label="刷新监控数据" @click="load('refresh')">
         <RefreshCw :size="16" :class="{ 'is-spinning': refreshing }" />
       </button>
     </div>
@@ -649,11 +884,11 @@ onBeforeUnmount(() => controller?.abort())
     <LoadingState v-if="loading" :rows="4" cards label="正在读取历史监控数据" />
     <ErrorState v-else-if="error" title="历史监控读取失败" :message="error" @retry="load()" />
     <template v-else-if="history">
-      <div class="summary-grid">
+      <div v-if="history.host.length" class="summary-grid">
         <article class="summary-card">
           <span class="summary-card__icon"><Cpu :size="19" /></span>
           <div><span>CPU</span><strong>{{ formatPercent(latestHost?.cpuPercent) }}</strong></div>
-          <small>{{ latestHost?.cpuCores || 0 }} 核 · 负载 {{ latestHost?.loadOne.toFixed(2) || '0.00' }}</small>
+          <small>{{ phrase(`${latestHost?.cpuCores || 0} 核 · 负载 ${latestHost?.loadOne.toFixed(2) || '0.00'}`) }}</small>
         </article>
         <article class="summary-card">
           <span class="summary-card__icon is-blue"><MemoryStick :size="19" /></span>
@@ -669,8 +904,8 @@ onBeforeUnmount(() => controller?.abort())
           <span class="summary-card__icon is-violet"><Database :size="19" /></span>
           <div><span>历史数据</span><strong>{{ formatBytes(historyStorageBytes) }}</strong></div>
           <small>
-            原始 {{ history.storage.retentionDays }} 天 · 趋势 {{ history.storage.rollupRetentionDays || 0 }} 天 ·
-            上限 {{ formatBytes(historyStorageLimit) }}
+            {{ phrase(`原始 ${history.storage.retentionDays} 天`) }} · <template>{{ phrase(`趋势 ${history.storage.rollupRetentionDays || 0} 天`) }} ·</template>
+            {{ phrase(`上限 ${formatBytes(historyStorageLimit)}`) }}
           </small>
         </article>
       </div>
@@ -688,8 +923,8 @@ onBeforeUnmount(() => controller?.abort())
           class="chart-card"
           :class="{ 'chart-card--selected': chartIsSelected('cpu', 'load') }"
         >
-          <header><div><Cpu :size="18" /><strong>CPU 与负载</strong></div><span>{{ history.host.length }} 个点</span></header>
-          <TrendChart :series="hostCPU" :formatter="formatPercent" :max-value="100" :selectable="!updating" @select-range="zoomToRange" />
+          <header><div><Cpu :size="18" /><strong>CPU 与负载</strong></div><span>{{ phrase(`${history.host.length} 个点`) }}</span></header>
+          <TrendChart :series="withHostGaps(hostCPU)" :formatter="formatPercent" :max-value="100" :selectable="!updating" @select-range="zoomToRange" />
         </article>
         <article
           id="host-memory-history"
@@ -697,7 +932,7 @@ onBeforeUnmount(() => controller?.abort())
           :class="{ 'chart-card--selected': chartIsSelected('memory') }"
         >
           <header><div><MemoryStick :size="18" /><strong>内存</strong></div><span>内存 / Swap</span></header>
-          <TrendChart :series="hostMemory" :formatter="formatPercent" :max-value="100" :selectable="!updating" @select-range="zoomToRange" />
+          <TrendChart :series="withHostGaps(hostMemory)" :formatter="formatPercent" :max-value="100" :selectable="!updating" @select-range="zoomToRange" />
         </article>
         <article
           id="host-disk-history"
@@ -712,7 +947,7 @@ onBeforeUnmount(() => controller?.abort())
             </div>
           </header>
           <TrendChart
-            :series="activeHostDisk"
+            :series="withHostGaps(activeHostDisk)"
             :formatter="diskChartMode === 'io' ? formatRate : formatPercent"
             :max-value="diskChartMode === 'capacity' ? 100 : undefined"
             :selectable="!updating"
@@ -731,10 +966,10 @@ onBeforeUnmount(() => controller?.abort())
               <button type="button" :class="{ 'is-active': networkChartMode === 'connections' }" @click="networkChartMode = 'connections'">连接数</button>
             </div>
           </header>
-          <TrendChart :series="activeHostNetwork" :formatter="networkChartMode === 'traffic' ? formatRate : (value) => value.toFixed(0)" :selectable="!updating" @select-range="zoomToRange" />
+          <TrendChart :series="withHostGaps(activeHostNetwork)" :formatter="networkChartMode === 'traffic' ? formatRate : (value) => value.toFixed(0)" :selectable="!updating" @select-range="zoomToRange" />
         </article>
       </div>
-      <EmptyState v-else title="正在积累历史数据" description="功能启用后约 1 分钟生成首个主机采样点，刷新页面即可查看。" />
+      <EmptyState v-else title="所选时间内暂无历史数据" description="功能启用后约 1 分钟生成首个主机采样点，刷新页面即可查看。" />
 
       <section class="container-section">
         <header class="section-heading">
@@ -895,15 +1130,47 @@ onBeforeUnmount(() => controller?.abort())
       </article>
 
       <footer class="monitoring-footnote">
-        采样间隔：主机 {{ history.storage.hostIntervalSeconds }} 秒，容器
-        {{ history.storage.containerIntervalSeconds }} 秒。查询读取
-        {{ formatBytes(history.scannedBytes) }}，跳过 {{ history.skippedLines }} 条异常记录。
+        {{ phrase(`采样间隔：主机 ${history.storage.hostIntervalSeconds} 秒`) }}{{ phrase(`，容器 ${history.storage.containerIntervalSeconds} 秒`) }}。
+        {{ phrase(`查询读取 ${formatBytes(history.scannedBytes)}，跳过 ${history.skippedLines} 条异常记录。`) }}
       </footer>
     </template>
   </section>
 </template>
 
 <style scoped>
+.monitoring-host-bar { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.monitoring-host-picker { min-width: 0; max-width: 100%; }
+.monitoring-host-trigger { display: inline-flex; max-width: 100%; min-height: 38px; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); cursor: pointer; font: inherit; text-align: left; }
+.monitoring-host-trigger:hover, .monitoring-host-trigger[aria-expanded='true'] { border-color: color-mix(in srgb, var(--brand) 55%, var(--border)); color: var(--brand); }
+.monitoring-host-trigger > svg { flex: 0 0 auto; }
+.monitoring-host-trigger > span { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.monitoring-host-trigger > strong { min-width: 0; max-width: 220px; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.monitoring-host-menu { position: absolute; z-index: 8; top: calc(100% + 6px); left: 0; width: min(340px, 100%); max-height: min(480px, 65vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border-strong, var(--border)); border-radius: var(--radius); background: var(--surface-raised, var(--surface)); box-shadow: var(--shadow-md); }
+.monitoring-host-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.monitoring-host-search { display: flex; align-items: center; gap: 8px; margin: 10px 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface); }
+.monitoring-host-search > svg { flex-shrink: 0; }
+.monitoring-host-search input { width: 100%; min-width: 0; padding: 0; border: 0; outline: none; color: var(--text); background: transparent; font: inherit; font-size: 14px; }
+.monitoring-host-search:focus-within { outline: 2px solid var(--brand); outline-offset: 1px; }
+.monitoring-host-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.monitoring-host-option { display: grid; width: 100%; min-height: 58px; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: 9px; padding: 9px 12px; border: 0; color: var(--text); background: transparent; cursor: pointer; font: inherit; text-align: left; }
+.monitoring-host-option:hover { background: var(--interaction-hover); }
+.monitoring-host-option.is-active { color: var(--brand-strong, var(--brand)); background: color-mix(in srgb, var(--brand) 9%, var(--surface-raised, var(--surface))); }
+.monitoring-host-option :deep(.monitoring-host-os) { width: 28px; height: 28px; border-radius: var(--radius-sm); box-shadow: none; }
+.monitoring-host-option :deep(.monitoring-host-os svg) { width: 17px; height: 17px; }
+.monitoring-host-option > span { display: grid; min-width: 0; gap: 3px; }
+.monitoring-host-option strong { overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.45; }
+.monitoring-host-option small { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.monitoring-host-option small i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted); }
+.monitoring-host-option small i.is-online { background: var(--brand); }
+.monitoring-host-option small i.is-degraded { background: var(--amber); }
+.monitoring-host-option small.is-offline { color: var(--text-soft); }
+.monitoring-host-option > svg:last-child { justify-self: end; }
+.monitoring-host-message { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.monitoring-host-retry { display: flex; flex-shrink: 0; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; border-top: 1px solid var(--border); color: var(--danger); background: transparent; cursor: pointer; font: inherit; font-size: 14px; text-align: left; }
+.monitoring-host-trigger:focus-visible, .monitoring-host-option:focus-visible, .monitoring-host-retry:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.monitoring-host-meta, .monitoring-source-note { font-size: 13px; line-height: 1.65; color: var(--text-secondary); }
+.monitoring-host-offline { color: var(--amber); }
+.monitoring-source-note { margin: 0; }
 .monitoring-page { display: grid; align-content: start; gap: 18px; }
 .monitoring-page :deep(.trend-chart__line) { transition: opacity .14s ease; }
 .monitoring-page.is-updating :deep(.trend-chart__line) { opacity: .72; }

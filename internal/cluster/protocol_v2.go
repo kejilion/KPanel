@@ -579,7 +579,7 @@ func v2PathAllowed(method, path string) bool {
 		return false
 	}
 	switch path {
-	case v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
+	case HistoryV2Path, HistoryRelayV2Path, v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
 		v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
 		v2TerminalResizePath, v2TerminalClosePath, v2TerminalRelayPath,
 		v2FileRelayPath, v2FileOpenPath,

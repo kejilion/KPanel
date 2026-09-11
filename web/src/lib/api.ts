@@ -2256,9 +2256,10 @@ export const api = {
       range: MonitoringRange,
       query?: MonitoringHistoryQuery,
       signal?: AbortSignal,
+      hostId?: string,
     ): Promise<MonitoringHistory> =>
-      request<MonitoringHistory>('/monitoring/history', {
-        query: { range, start: query?.start, end: query?.end },
+      request<MonitoringHistory>(hostId && hostId !== 'local' ? '/monitoring/cluster-history' : '/monitoring/history', {
+        query: { range, start: query?.start, end: query?.end, ...(hostId && hostId !== 'local' ? { hostId } : {}) },
         signal,
       }),
   },
