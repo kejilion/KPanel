@@ -19,7 +19,8 @@ import (
 
 type HistoryAuthorization struct{ *FederationFileAuthorization }
 type historyStreamMetadata struct {
-	Status int `json:"status"`
+	Status      int    `json:"status"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
 func (s *Service) AuthorizeHistoryV2(source string, envelope FederationEnvelopeV2) (monitoring.Query, *HistoryAuthorization, error) {
@@ -46,10 +47,20 @@ func (s *Service) AuthorizeHistoryV2(source string, envelope FederationEnvelopeV
 }
 
 func (a *HistoryAuthorization) SealStatus(status int) (FederationEnvelopeV2, *noise.CipherState, error) {
+	return a.SealResponse(status, "application/json")
+}
+
+func (a *HistoryAuthorization) SealResponse(status int, contentType string) (FederationEnvelopeV2, *noise.CipherState, error) {
 	if a == nil || a.handshake == nil || status < 200 || status > 599 {
 		return FederationEnvelopeV2{}, nil, ErrAuthentication
 	}
-	payload, err := json.Marshal(historyStreamMetadata{Status: status})
+	if contentType != "application/json" && contentType != monitoring.GzipHistoryContentType {
+		return FederationEnvelopeV2{}, nil, ErrAuthentication
+	}
+	if contentType == "application/json" {
+		contentType = ""
+	} // Preserve the original metadata for uncompressed requests.
+	payload, err := json.Marshal(historyStreamMetadata{Status: status, ContentType: contentType})
 	if err != nil {
 		return FederationEnvelopeV2{}, nil, err
 	}
@@ -131,8 +142,14 @@ func (c *RemoteClient) OpenHistoryV2(ctx context.Context, origin, controllerID, 
 	if err := historyResponseStatus(metadata.Status); err != nil {
 		return nil, err
 	}
+	if metadata.ContentType == "" {
+		metadata.ContentType = "application/json"
+	}
+	if metadata.ContentType != "application/json" && metadata.ContentType != monitoring.GzipHistoryContentType {
+		return nil, ErrHistoryUnavailable
+	}
 	ok = true
-	return &http.Response{StatusCode: metadata.Status, Header: http.Header{"Content-Type": {"application/json"}}, Body: &federationFileReader{source: reader, body: stream, cipher: cipher}}, nil
+	return &http.Response{StatusCode: metadata.Status, Header: http.Header{"Content-Type": {metadata.ContentType}}, Body: &federationFileReader{source: reader, body: stream, cipher: cipher}}, nil
 }
 
 // V1's generic signature binds only the route. Bind the query digest into its

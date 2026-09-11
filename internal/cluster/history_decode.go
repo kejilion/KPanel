@@ -13,9 +13,13 @@ import (
 // Check container/point cardinality before allocating typed metric structs.
 // A byte limit alone would allow millions of tiny objects to expand in memory.
 func decodeHistoryResponse(reader io.Reader, query monitoring.Query) (contract.MonitoringHistory, error) {
+	return decodeHistoryPayload(reader, query, false)
+}
+
+func decodeHistoryPayload(reader io.Reader, query monitoring.Query, compressed bool) (contract.MonitoringHistory, error) {
 	var result contract.MonitoringHistory
-	content, err := io.ReadAll(io.LimitReader(reader, monitoring.MaxHistoryResponseBytes+1))
-	if err != nil || int64(len(content)) > monitoring.MaxHistoryResponseBytes {
+	content, err := monitoring.ReadHistoryPayload(reader, compressed)
+	if err != nil {
 		return result, ErrHistoryUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(content))

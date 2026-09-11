@@ -3,7 +3,6 @@ package panel
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 )
 
 func (s *Server) openLocalHistory(r *http.Request, query monitoring.Query) (*http.Response, error) {
+	query.Gzip = false // Compression is only for the remote hop; Agent keeps its existing query contract.
 	streamer, ok := s.agent.(agentStreamAPI)
 	if !ok {
 		return nil, cluster.ErrHistoryUnavailable
@@ -38,7 +38,12 @@ func (s *Server) handleFederationHistoryV2(w http.ResponseWriter, r *http.Reques
 	defer response.Body.Close()
 	stop := context.AfterFunc(ctx, func() { _ = response.Body.Close() })
 	defer stop()
-	sealed, cipher, err := authorization.SealStatus(response.StatusCode)
+	compress := query.Gzip && response.StatusCode == http.StatusOK
+	contentType := "application/json"
+	if compress {
+		contentType = monitoring.GzipHistoryContentType
+	}
+	sealed, cipher, err := authorization.SealResponse(response.StatusCode, contentType)
 	if err != nil {
 		s.writeHistoryError(w, r, err)
 		return
@@ -51,11 +56,7 @@ func (s *Server) handleFederationHistoryV2(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	stream := cluster.NewFederationFileWriter(writer, cipher)
-	reader := &io.LimitedReader{R: response.Body, N: monitoring.MaxHistoryResponseBytes + 1}
-	_, copyErr := io.CopyBuffer(stream, reader, make([]byte, 60<<10))
-	if reader.N <= 0 {
-		copyErr = errors.New("history response exceeds limit")
-	}
+	copyErr := monitoring.CopyHistoryPayload(stream, response.Body, compress)
 	_ = stream.Finish(copyErr)
 }
 
@@ -79,11 +80,13 @@ func (s *Server) handleFederationHistoryV1(w http.ResponseWriter, r *http.Reques
 	defer stop()
 	writer := httpstream.NewIdleResponseWriter(ctx, w, 30*time.Second)
 	writer.Header().Set("Content-Type", "application/json")
+	compress := query.Gzip && response.StatusCode == http.StatusOK
+	if compress {
+		writer.Header().Set("Content-Type", monitoring.GzipHistoryContentType)
+	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(response.StatusCode)
-	reader := &io.LimitedReader{R: response.Body, N: monitoring.MaxHistoryResponseBytes + 1}
-	_, err = io.CopyBuffer(writer, reader, make([]byte, 60<<10))
-	if err != nil || reader.N <= 0 {
+	if err := monitoring.CopyHistoryPayload(writer, response.Body, compress); err != nil {
 		panic(http.ErrAbortHandler)
 	}
 }

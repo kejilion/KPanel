@@ -121,7 +121,11 @@ func installHistoryTransport(t *testing.T, remote *RemoteClient, target *Service
 			response.StartedAt = query.Start
 			response.EndedAt = query.End
 		}
-		sealed, cipher, err := auth.SealStatus(http.StatusOK)
+		contentType := "application/json"
+		if query.Gzip {
+			contentType = monitoring.GzipHistoryContentType
+		}
+		sealed, cipher, err := auth.SealResponse(http.StatusOK, contentType)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +134,11 @@ func installHistoryTransport(t *testing.T, remote *RemoteClient, target *Service
 			return nil, err
 		}
 		writer := NewFederationFileWriter(&output, cipher)
-		if err := json.NewEncoder(writer).Encode(response); err != nil {
+		content, err := json.Marshal(response)
+		if err != nil {
+			return nil, err
+		}
+		if err := monitoring.CopyHistoryPayload(writer, bytes.NewReader(content), query.Gzip); err != nil {
 			return nil, err
 		}
 		if !truncate {
