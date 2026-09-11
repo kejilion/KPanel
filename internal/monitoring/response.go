@@ -41,14 +41,40 @@ func ReadHistoryPayload(source io.Reader, compressed bool) ([]byte, error) {
 }
 
 func readHistoryPayload(source io.Reader) ([]byte, error) {
-	content, err := io.ReadAll(io.LimitReader(source, MaxHistoryResponseBytes+1))
-	if err != nil {
-		return nil, err
+	// Double bounded storage instead of ReadAll's repeated small growth, which
+	// leaves several large discarded buffers for the garbage collector.
+	content := make([]byte, 0, 32<<10)
+	for emptyReads := 0; ; {
+		if len(content) == cap(content) && int64(len(content)) < MaxHistoryResponseBytes {
+			next := make([]byte, len(content), min(2*cap(content), int(MaxHistoryResponseBytes)))
+			copy(next, content)
+			content = next
+		}
+		var overflow [1]byte
+		destination := content[len(content):cap(content)]
+		if int64(len(content)) == MaxHistoryResponseBytes {
+			destination = overflow[:]
+		}
+		n, err := source.Read(destination)
+		if int64(len(content)+n) > MaxHistoryResponseBytes {
+			return nil, errors.New("history response exceeds limit")
+		}
+		content = content[:len(content)+n]
+		if err == io.EOF {
+			return content, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			emptyReads++
+			if emptyReads >= 100 {
+				return nil, io.ErrNoProgress
+			}
+		} else {
+			emptyReads = 0
+		}
 	}
-	if int64(len(content)) > MaxHistoryResponseBytes {
-		return nil, errors.New("history response exceeds limit")
-	}
-	return content, nil
 }
 
 // CopyHistoryPayload keeps compression streaming and low-CPU. Never close a

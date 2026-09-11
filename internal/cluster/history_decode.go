@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"strings"
+	"strconv"
+	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
@@ -22,11 +23,7 @@ func decodeHistoryPayload(reader io.Reader, query monitoring.Query, compressed b
 	if err != nil {
 		return result, ErrHistoryUnavailable
 	}
-	decoder := json.NewDecoder(bytes.NewReader(content))
-	if err := scanHistoryJSON(decoder, 0, 720); err != nil {
-		return result, ErrHistoryUnavailable
-	}
-	if _, err := decoder.Token(); err != io.EOF {
+	if err := scanHistoryJSON(content); err != nil {
 		return result, ErrHistoryUnavailable
 	}
 	if json.Unmarshal(content, &result) != nil || !validHistoryResponse(result, query) {
@@ -35,73 +32,147 @@ func decodeHistoryPayload(reader io.Reader, query monitoring.Query, compressed b
 	return result, nil
 }
 
-func scanHistoryJSON(decoder *json.Decoder, depth, arrayLimit int) error {
+// Let encoding/json validate syntax first. This second, bounded walk checks
+// shape without materializing millions of interface tokens and object maps.
+// Ordinary keys/strings borrow the input; only escaped strings need decoding.
+func scanHistoryJSON(content []byte) error {
+	if !json.Valid(content) {
+		return ErrHistoryUnavailable
+	}
+	scanner := historyJSONScanner{content: content}
+	return scanner.value(0, 720)
+}
+
+type historyJSONScanner struct {
+	content []byte
+	offset  int
+}
+
+func (s *historyJSONScanner) space() {
+	for s.offset < len(s.content) {
+		switch s.content[s.offset] {
+		case ' ', '\t', '\n', '\r':
+			s.offset++
+		default:
+			return
+		}
+	}
+}
+
+// Called only on syntax-validated JSON at an opening quote.
+func (s *historyJSONScanner) stringValue() ([]byte, error) {
+	start := s.offset
+	s.offset++
+	escaped := false
+	for s.content[s.offset] != '"' {
+		if s.content[s.offset] == '\\' {
+			escaped = true
+			s.offset++
+		}
+		s.offset++
+	}
+	s.offset++
+	value := s.content[start+1 : s.offset-1]
+	// A JSON escape uses at most six source bytes per decoded byte.
+	if len(value) > 6*4096 {
+		return nil, ErrHistoryUnavailable
+	}
+	if escaped || !utf8.Valid(value) {
+		var decoded string
+		if err := json.Unmarshal(s.content[start:s.offset], &decoded); err != nil {
+			return nil, err
+		}
+		value = []byte(decoded)
+	}
+	if len(value) > 4096 {
+		return nil, ErrHistoryUnavailable
+	}
+	return value, nil
+}
+
+func (s *historyJSONScanner) value(depth, arrayLimit int) error {
 	if depth > 8 {
 		return ErrHistoryUnavailable
 	}
-	token, err := decoder.Token()
-	if err != nil {
+	s.space()
+	switch s.content[s.offset] {
+	case '"':
+		_, err := s.stringValue()
 		return err
-	}
-	switch value := token.(type) {
-	case string:
-		if len(value) > 4096 {
-			return ErrHistoryUnavailable
+	case '[':
+		s.offset++
+		s.space()
+		for count := 0; s.content[s.offset] != ']'; count++ {
+			if count >= arrayLimit {
+				return ErrHistoryUnavailable
+			}
+			if err := s.value(depth+1, 720); err != nil {
+				return err
+			}
+			s.space()
+			if s.content[s.offset] == ',' {
+				s.offset++
+				s.space()
+			}
 		}
-	case json.Delim:
-		switch value {
-		case '[':
-			count := 0
-			for decoder.More() {
-				count++
-				if count > arrayLimit {
-					return ErrHistoryUnavailable
-				}
-				if err := scanHistoryJSON(decoder, depth+1, 720); err != nil {
-					return err
-				}
-			}
-			end, err := decoder.Token()
-			if err != nil || end != json.Delim(']') {
+		s.offset++
+	case '{':
+		s.offset++
+		s.space()
+		var seen [80][]byte
+		for count := 0; s.content[s.offset] != '}'; count++ {
+			key, err := s.stringValue()
+			if err != nil || len(key) > 128 || count >= len(seen) {
 				return ErrHistoryUnavailable
 			}
-		case '{':
-			seen := make(map[string]bool)
-			for decoder.More() {
-				token, err := decoder.Token()
-				if err != nil {
-					return err
-				}
-				key, ok := token.(string)
-				// The contract uses ASCII keys. encoding/json also folds Unicode
-				// lookalikes (e.g. long s), which must not bypass cardinality checks.
-				for _, character := range key {
-					if character > 127 {
-						return ErrHistoryUnavailable
-					}
-				}
-				key = strings.ToLower(key)
-				if !ok || len(key) > 128 || len(seen) >= 80 || seen[key] {
+			// Reject Unicode lookalikes before case-folded cardinality checks.
+			for _, character := range key {
+				if character > 127 {
 					return ErrHistoryUnavailable
 				}
-				seen[key] = true
-				limit := 720
-				if depth == 0 && key == "containers" {
-					limit = 32
-				}
-				if depth == 0 && key == "operatorlatency" {
-					limit = 9
-				}
-				if err := scanHistoryJSON(decoder, depth+1, limit); err != nil {
-					return err
+			}
+			for _, previous := range seen[:count] {
+				if bytes.EqualFold(key, previous) {
+					return ErrHistoryUnavailable
 				}
 			}
-			end, err := decoder.Token()
-			if err != nil || end != json.Delim('}') {
+			seen[count] = key
+			limit := 720
+			if depth == 0 && bytes.EqualFold(key, []byte("containers")) {
+				limit = 32
+			}
+			if depth == 0 && bytes.EqualFold(key, []byte("operatorLatency")) {
+				limit = 9
+			}
+			s.space()
+			s.offset++ // colon, guaranteed by json.Valid
+			if err := s.value(depth+1, limit); err != nil {
+				return err
+			}
+			s.space()
+			if s.content[s.offset] == ',' {
+				s.offset++
+				s.space()
+			}
+		}
+		s.offset++
+	default:
+		// Number, true, false or null; syntax is already validated.
+		start := s.offset
+		for s.offset < len(s.content) {
+			switch s.content[s.offset] {
+			case ',', '}', ']', ' ', '\t', '\n', '\r':
+				goto primitiveEnd
+			}
+			s.offset++
+		}
+	primitiveEnd:
+		if s.content[start] == '-' || (s.content[start] >= '0' && s.content[start] <= '9') {
+			// Match Decoder.Token's finite float requirement, including unknown
+			// fields that the subsequent typed unmarshal would otherwise skip.
+			if _, err := strconv.ParseFloat(string(s.content[start:s.offset]), 64); err != nil {
 				return ErrHistoryUnavailable
 			}
-		default:
-			return ErrHistoryUnavailable
 		}
 	}
 	return nil

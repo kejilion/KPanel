@@ -22,7 +22,7 @@ import (
 func TestClusterHistoryStreamCancellationAndByteLimit(t *testing.T) {
 	for _, field := range []string{"containers", "CONTAINERS", "containerſ"} {
 		input := `{"` + field + `":[` + strings.Repeat(`{},`, 32) + `{}]}`
-		if err := scanHistoryJSON(json.NewDecoder(strings.NewReader(input)), 0, 720); err == nil {
+		if err := scanHistoryJSON([]byte(input)); err == nil {
 			t.Fatalf("preflight accepted 33 containers under %q", field)
 		}
 	}
@@ -259,6 +259,36 @@ func TestClusterHistoryScopesReplayDeletionAndConcurrency(t *testing.T) {
 	}
 	if _, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{}); err == nil {
 		t.Fatal("revoked controller read history")
+	}
+}
+
+func TestClusterHistoryConsumerFailureReleasesBudget(t *testing.T) {
+	center, target, remote, host, now := historyPairFixture(t)
+	installHistoryTransport(t, remote, target, completeHistoryFixture(now, 2), false)
+	want := errors.New("downstream failed")
+	for _, shouldPanic := range []bool{false, true} {
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil && (!shouldPanic || recovered != want) {
+					t.Fatalf("unexpected panic: %v", recovered)
+				}
+			}()
+			err := center.WithHistory(context.Background(), host.ID, "6h", time.Time{}, time.Time{}, func(contract.MonitoringHistory) error {
+				if len(center.historyQueries) != 1 {
+					t.Fatal("consumer ran outside query budget")
+				}
+				if shouldPanic {
+					panic(want)
+				}
+				return want
+			})
+			if shouldPanic || !errors.Is(err, want) {
+				t.Fatalf("consumer error: %v", err)
+			}
+		}()
+		if len(center.historyQueries) != 0 {
+			t.Fatal("failed consumer leaked query slot")
+		}
 	}
 }
 

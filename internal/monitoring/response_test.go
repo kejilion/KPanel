@@ -22,6 +22,23 @@ func packedHistory(t *testing.T, data []byte) []byte {
 
 type failedHistoryEnd struct{ io.Reader }
 
+type stalledHistoryReader struct{}
+
+func (stalledHistoryReader) Read([]byte) (int, error) { return 0, nil }
+
+func TestHistoryCompressionReadGrowthAndExactLimit(t *testing.T) {
+	for _, size := range []int{0, 1, 32768, 32769, 65536, int(MaxHistoryResponseBytes)} {
+		data := bytes.Repeat([]byte("x"), size)
+		got, err := ReadHistoryPayload(bytes.NewReader(data), false)
+		if err != nil || !bytes.Equal(got, data) || int64(cap(got)) > MaxHistoryResponseBytes {
+			t.Fatalf("size %d: bytes=%d cap=%d err=%v", size, len(got), cap(got), err)
+		}
+	}
+	if _, err := ReadHistoryPayload(stalledHistoryReader{}, false); !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("non-progressing reader: %v", err)
+	}
+}
+
 func (r failedHistoryEnd) Read(p []byte) (int, error) {
 	n, err := r.Reader.Read(p)
 	if err == io.EOF {
