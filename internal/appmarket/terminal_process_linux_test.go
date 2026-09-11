@@ -4,6 +4,8 @@ package appmarket
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,51 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+func TestFourLinuxTerminalsRemainIsolatedWhenOneIsKilled(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	processes := make([]terminalProcess, 4)
+	outputs := make([]chan string, 4)
+	for index := range processes {
+		command := exec.CommandContext(ctx, "/bin/bash", "-c", "IFS= read -r value; printf 'reply:%s\\n' \"$value\"; IFS= read -r done")
+		process, err := startTerminalProcess(command, 24, 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		processes[index] = process
+		t.Cleanup(func() { _ = process.Kill(); _ = process.Close() })
+		outputs[index] = make(chan string, 1)
+		go func() {
+			data, _ := io.ReadAll(process)
+			_ = process.Wait()
+			outputs[index] <- string(data)
+		}()
+	}
+	if err := processes[0].Kill(); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index < len(processes); index++ {
+		if _, err := processes[index].Write([]byte(fmt.Sprintf("app-%d\nfinish\n", index))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, output := range outputs {
+		select {
+		case data := <-output:
+			if index > 0 && !strings.Contains(data, fmt.Sprintf("reply:app-%d", index)) {
+				t.Fatalf("terminal %d lost its response: %q", index, data)
+			}
+			for other := 1; other < len(processes); other++ {
+				if other != index && strings.Contains(data, fmt.Sprintf("app-%d", other)) {
+					t.Fatalf("terminal %d leaked terminal %d output", index, other)
+				}
+			}
+		case <-ctx.Done():
+			t.Fatal("terminal did not exit before timeout")
+		}
+	}
+}
 
 func TestLinuxTerminalProcessSupportsInteractiveRead(t *testing.T) {
 	command := exec.Command(

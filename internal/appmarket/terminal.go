@@ -70,7 +70,9 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 		scriptCompatible = isKPanelInteractiveManageCompatibleScript
 	}
 	script, err := findKejilionScriptMatching(
-		appScriptCompatible(scriptCompatible, record.AppID, record.Selector),
+		appScriptCompatible(func(content []byte) bool {
+			return scriptCompatible(content) && (!record.ParallelSafe || parallelAppProtocol.Match(content))
+		}, record.AppID, record.Selector),
 	)
 	if err != nil {
 		return registry.fail(record, "script_unavailable", err)
@@ -164,10 +166,15 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 func interactiveAppJobEnvironment(record appJobRecord) []string {
 	result := []string{
 		"KJ_APP_INTERACTIVE=1",
+		"KJ_APP_CONCURRENCY=0",
+		"KJ_APP_LOCKS_HELD=",
 		"KJ_APP_ACTION=" + record.Action,
 		"LC_ALL=C.UTF-8",
 		"LANG=C.UTF-8",
 		"TERM=xterm-256color",
+	}
+	if record.ParallelSafe {
+		result = append(result, "KJ_APP_CONCURRENCY=1")
 	}
 	if record.AccessMode != "" {
 		result = append(result, "KJ_APP_ACCESS_MODE="+record.AccessMode)
