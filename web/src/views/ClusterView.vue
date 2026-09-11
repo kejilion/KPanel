@@ -336,7 +336,8 @@ function detectLightEnrollmentConnection(): void {
     (host) => host.kind === 'light_node' && host.id === lightEnrollment.value?.id,
   )
   if (!connectedHost) {
-    lightEnrollmentState.value = 'waiting'
+    lightEnrollmentState.value = lightEnrollmentExpired() ? 'expired' : 'waiting'
+    if (lightEnrollmentState.value === 'expired') stopLightEnrollmentWatch()
     return
   }
   if (
@@ -360,11 +361,6 @@ function lightEnrollmentExpired(): boolean {
 
 async function pollLightEnrollmentConnection(): Promise<void> {
   if (!lightEnrollment.value || lightEnrollmentConnected.value) {
-    stopLightEnrollmentWatch()
-    return
-  }
-  if (lightEnrollmentExpired()) {
-    lightEnrollmentState.value = 'expired'
     stopLightEnrollmentWatch()
     return
   }
@@ -1453,7 +1449,7 @@ onBeforeUnmount(() => {
             v-model="addForm.accessCredential"
             name="cluster-access-credential"
             rows="4"
-            required
+            :required="!lightEnrollmentConnected"
             maxlength="1600"
             :placeholder="phrase('在目标 KPanel 一键复制，然后完整粘贴到这里')"
             autocomplete="one-time-code"
