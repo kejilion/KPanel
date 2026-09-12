@@ -72,8 +72,8 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
 最终 SHA 的 L3、候选 CI/freshness、main CI/freshness、tag freshness、Release、公开附件、公开镜像 E2E 和生产三阶段门禁均首轮产品通过。以下单独统计发布编排、取证或证据读取异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：11
-- 其中生产写操作开始后异常次数：4
+- 已记录发布流程异常或无效证据拦截次数：12
+- 其中生产写操作开始后异常次数：5
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -175,6 +175,15 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
     "impact": "本地临时文件清理的 PowerShell Remove-Item 调用被自动策略拒绝，文件和空目录当时仍保留。",
     "recoveryEvidence": "临时脚本改由补丁机制删除，空目录用同一 PowerShell 进程的 .NET API 在根路径与空目录断言后删除；远端精确路径清理也全部通过。",
     "permanentAction": "工作区内临时文本文件优先用补丁删除，空目录清理使用单进程绝对路径边界与空目录断言。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "postrelease/git-ref-read/powershell-pipeline-precedence",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "终态 Git 引用核对把管道后的 -split 解析为 Where-Object 参数，读取命令失败；远端引用没有发生写入。",
+    "recoveryEvidence": "用显式括号先取得 main 与 peeled tag 行再拆分，确认 main 为验收 SHA、v1.14.1 为产品 SHA、候选分支不存在且工作区干净。",
+    "permanentAction": "PowerShell 管道结果在使用运算符前统一放入显式字符串变量，不在 Where-Object 调用尾部直接连接 -split。",
     "historicalReleases": []
   }
 ]
