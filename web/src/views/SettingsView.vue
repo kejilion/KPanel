@@ -26,6 +26,7 @@ import {
   UserRound,
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
+import BackupCenter from '@/components/settings/BackupCenter.vue'
 import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api, resetApiSecurityState } from '@/lib/api'
@@ -794,6 +795,8 @@ onMounted(async () => {
         </button>
       </div>
     </section>
+
+    <BackupCenter />
 
     <section class="settings-section panel-card">
       <header class="settings-section__header">

@@ -27,6 +27,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/diagnostics"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
+	"github.com/kejilion/kejilion-panel/internal/hostbackup"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
 	"github.com/kejilion/kejilion-panel/internal/sites"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
@@ -41,25 +42,27 @@ const (
 )
 
 type Config struct {
-	Token           []byte
-	Version         string
-	ProtocolVersion string
-	WebRoot         string
-	StateDir        string
-	System          *systeminfo.Collector
-	SystemManager   *systemmanage.Manager
-	SSHLoginSource  SSHLoginSource
-	Sites           *sites.Discoverer
-	SitesManager    *sites.Manager
-	Docker          *dockerx.Client
-	AppMarket       *appmarket.Service
-	Diagnostics     *diagnostics.Service
-	WebEnvironment  *webenv.Service
-	Files           *filemanager.Manager
-	SiteIcons       siteIconProvider
-	Monitoring      monitoringHistoryProvider
-	Terminals       *terminal.Manager
-	Now             func() time.Time
+	Token              []byte
+	Version            string
+	ProtocolVersion    string
+	WebRoot            string
+	StateDir           string
+	BackupDockerSocket string
+	System             *systeminfo.Collector
+	SystemManager      *systemmanage.Manager
+	SSHLoginSource     SSHLoginSource
+	Sites              *sites.Discoverer
+	SitesManager       *sites.Manager
+	Docker             *dockerx.Client
+	AppMarket          *appmarket.Service
+	Diagnostics        *diagnostics.Service
+	WebEnvironment     *webenv.Service
+	Files              *filemanager.Manager
+	SiteIcons          siteIconProvider
+	Monitoring         monitoringHistoryProvider
+	Terminals          *terminal.Manager
+	Now                func() time.Time
+	Backups            *hostbackup.Service
 }
 
 // SSHLoginSource is the read-only cluster telemetry boundary. It keeps
@@ -102,9 +105,14 @@ type Server struct {
 	processReads     processReads
 	systemLogsGate   chan struct{}
 	now              func() time.Time
+	backups          *hostbackup.Service
+	backupMutationMu sync.Mutex
 }
 
 func (s *Server) Close() {
+	if s.backups != nil {
+		s.backups.Close()
+	}
 	s.processReads.close()
 	if s.files != nil {
 		s.files.StopArchiveJobs()
@@ -190,7 +198,19 @@ func NewServer(config Config) (*Server, error) {
 			return nil, fmt.Errorf("initialize file manager: %w", fileErr)
 		}
 	}
+	if config.Backups == nil && config.StateDir != "" {
+		var err error
+		socket := config.BackupDockerSocket
+		if socket == "" {
+			socket = "/var/run/docker.sock"
+		}
+		config.Backups, err = hostbackup.NewService(hostbackup.NewWithSocket(config.StateDir, socket))
+		if err != nil {
+			return nil, fmt.Errorf("initialize backup jobs: %w", err)
+		}
+	}
 	return &Server{
+		backups:          config.Backups,
 		tokenHash:        sha256.Sum256(config.Token),
 		version:          config.Version,
 		protocolVersion:  config.ProtocolVersion,
@@ -256,7 +276,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isBackup := r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/")
+	isTerminalClose := r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v1/terminals/") && strings.HasSuffix(r.URL.Path, "/close")
+	if r.Method != "GET" && r.Method != "HEAD" {
+		s.backupMutationMu.Lock()
+		defer s.backupMutationMu.Unlock()
+		if s.backups != nil && !isBackup && !isTerminalClose && s.backups.Jobs.Busy() {
+			writeProblem(w, requestID, 409, "backup_busy", "备份恢复正在处理主机数据，请完成后再操作", "")
+			return
+		}
+		if isBackup && r.Method == "POST" && (r.URL.Path == "/v1/backups" || strings.HasSuffix(r.URL.Path, "/recover")) && s.backupHostWorkersActive() {
+			writeProblem(w, requestID, 409, "backup_host_busy", "请关闭终端并等待主机任务完成后再备份恢复", "")
+			return
+		}
+	}
 	switch {
+	case r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/"):
+		if s.backups == nil {
+			writeProblem(w, requestID, 503, "backup_unavailable", "Backup adapter unavailable", "")
+			return
+		}
+		s.backups.ServeHTTP(w, r)
 	case r.URL.Path == "/v1/notification-resources":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.notificationResources)
 	case r.URL.Path == "/v1/health":

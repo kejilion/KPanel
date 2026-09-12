@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { mockMonitoringHistory } from './mock-monitoring-history.mjs'
+import { mockBackups } from './mock-backups.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1203,6 +1204,7 @@ async function readJSON(request) {
 
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
+  if (await mockBackups(request, response, url, send, readJSON)) return
   if (request.method === 'GET' && ['/api/v1/monitoring/history', '/api/v1/monitoring/cluster-history'].includes(url.pathname)) {
     const remote = url.pathname.endsWith('/cluster-history')
     const id = url.searchParams.get('hostId')

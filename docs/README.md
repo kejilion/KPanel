@@ -40,6 +40,7 @@
 
 | 文档 | 用途 |
 | --- | --- |
+| [备份与恢复](backup-center.md) | 数据范围、加密格式、双端互通、事务与迁移 |
 | [AI 工作区](ai-workspace.md) | AI 能力入口与边界 |
 | [应用市场](application-market.md) | 应用分发与安装 |
 | [Docker 管理](docker-management-v0.18.md) | 容器生命周期管理 |

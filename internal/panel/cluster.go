@@ -57,20 +57,29 @@ func (s *Server) StartBackground(ctx context.Context) {
 }
 
 func (s *Server) Close() error {
+	s.requestsMu.Lock()
+	s.requestsClosed = true
+	s.requestsMu.Unlock()
+	if s.backups != nil {
+		s.backups.Close()
+	}
 	s.closeRemoteDownloadJobs()
 	s.closeTerminalSessions()
 	s.closeFileShareStreams()
+	// Cluster-owned relay connections can outlive HTTP shutdown. Close their
+	// transport before waiting for handlers, or restore restarts can deadlock.
+	var clusterErr error
+	if s.cluster != nil {
+		clusterErr = s.cluster.Close()
+	}
+	s.requests.Wait()
 	var aiErr error
 	if s.ai != nil {
 		aiErr = s.ai.Close()
 	}
-	var clusterErr error
 	var notificationErr error
 	if s.notifications != nil {
 		notificationErr = s.notifications.Close()
-	}
-	if s.cluster != nil {
-		clusterErr = s.cluster.Close()
 	}
 	return errors.Join(aiErr, notificationErr, clusterErr)
 }

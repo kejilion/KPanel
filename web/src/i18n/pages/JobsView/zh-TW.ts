@@ -47,4 +47,5 @@ export default [
   ["执行阶段", "執行階段"],
   ["任务 {0}", "任務 {0}"],
   ["进度 {0}%", "進度 {0}%"],
+  ["备份与恢复", "備份與還原"],
 ] as const satisfies PhraseCatalog

@@ -319,6 +319,23 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 	return item.snapshot(), nil
 }
 
+// Busy includes shells whose output has ended but whose process scope has not
+// been explicitly closed. Open holds mu while starting, so it cannot escape
+// the host backup admission check by being between creation and registration.
+func (m *Manager) Busy() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, item := range m.sessions {
+		item.mu.Lock()
+		open := !item.closed
+		item.mu.Unlock()
+		if open {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) capture(item *session) {
 	buffer := make([]byte, 32<<10)
 	for {

@@ -653,6 +653,18 @@ func (m *Manager) currentDiskJob() *contract.DiskPartitionJob {
 	return job
 }
 
+// DiskJobActive prevents backup data switches while an asynchronous partition
+// worker may still mount, unmount or change the underlying filesystem.
+func (m *Manager) DiskJobActive() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, err := os.Lstat(m.diskJobPath()); errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	job := m.currentDiskJob()
+	return job == nil || job.Status == "queued" || job.Status == "running"
+}
+
 func (m *Manager) reconcileDiskJob(job *contract.DiskPartitionJob) {
 	if job == nil || (job.Status != "queued" && job.Status != "running") {
 		return

@@ -47,7 +47,7 @@ const detailLoading = ref(false)
 const sources = ref<JobSourceStatus[]>([])
 const partial = ref(false)
 const unavailableSources = computed(() => sources.value.filter((source) => source.state !== 'available'))
-const selectedOwner = computed(() => /^(docker|app|webenv|file-archive):([a-f0-9]{32})$/.exec(selectedJobId.value))
+const selectedOwner = computed(() => /^(docker|app|webenv|file-archive|backup):([a-f0-9]{32})$/.exec(selectedJobId.value))
 const selectedJob = computed(() => selectedOwner.value ? detail.value : error.value ? undefined : jobs.value.find((job) => job.id === selectedJobId.value))
 const businessPath = computed(() => {
   const action = selectedJob.value?.action || selectedAction.value
@@ -56,6 +56,7 @@ const businessPath = computed(() => {
   if (owner === 'app') return '/apps'
   if (owner === 'webenv') return '/sites'
   if (owner === 'file-archive') return '/files'
+  if (owner === 'backup') return '/settings'
   if (action.startsWith('docker.')) return '/docker'
   if (action.startsWith('app.')) return '/apps'
   if (action.startsWith('site.') || action.startsWith('web.environment.')) return '/sites'
@@ -69,6 +70,7 @@ let detailTimer: number | undefined
 
 function ownerLabel(source: JobSourceStatus['source']): string {
   if (source === 'file-archive') return i18n.t('files.archive.jobs')
+  if (source === 'backup') return '备份与恢复'
   return phrase({ docker: 'Docker', app: '应用', webenv: '网站环境', audit: '操作记录' }[source])
 }
 
