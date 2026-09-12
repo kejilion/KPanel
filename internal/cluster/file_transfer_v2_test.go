@@ -20,6 +20,9 @@ import (
 type fileV2RoundTripper func(*http.Request) (*http.Response, error)
 
 func (f fileV2RoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.Path == FileStreamV2Path {
+		return serviceV2HTTPResponse(http.StatusNotFound, nil), nil
+	}
 	return f(request)
 }
 

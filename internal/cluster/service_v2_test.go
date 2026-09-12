@@ -87,6 +87,9 @@ type serviceV2RoundTripper struct {
 func (t *serviceV2RoundTripper) RoundTrip(
 	request *http.Request,
 ) (*http.Response, error) {
+	if request.URL.Path == FileStreamV2Path {
+		return serviceV2HTTPResponse(http.StatusNotFound, nil), nil
+	}
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		return nil, err

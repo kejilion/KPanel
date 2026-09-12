@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"sync"
@@ -332,7 +334,18 @@ func (s *Service) OpenRemoteFileV2(
 	ctx context.Context,
 	remoteNodeID string,
 	input FederationFileOpenRequest,
-) (io.ReadCloser, contract.FileTransferMetadata, error) {
+) (body io.ReadCloser, metadata contract.FileTransferMetadata, resultErr error) {
+	var release func()
+	defer func() {
+		if release == nil {
+			return
+		}
+		if resultErr != nil {
+			release()
+			return
+		}
+		body = &streamOwnedBody{ReadCloser: body, done: release}
+	}()
 	if !validID(remoteNodeID) || !validTransferPath(input.Path) {
 		return nil, contract.FileTransferMetadata{}, ErrNotFound
 	}
@@ -345,6 +358,12 @@ func (s *Service) OpenRemoteFileV2(
 		}
 	}
 	if record.ID != "" {
+		ctx, release = s.fileStreamHub.requestContext(ctx, "host:"+record.ID)
+		current, err := s.storeV2.Host(record.ID)
+		if err != nil {
+			return nil, contract.FileTransferMetadata{}, err
+		}
+		record = current
 		if record.State != hostStateV2Active ||
 			!ScopeAllowsFiles(normalizedV2Scope(record.Scope)) {
 			return nil, contract.FileTransferMetadata{}, ErrNotFound
@@ -369,6 +388,7 @@ func (s *Service) OpenRemoteFileV2(
 	if err != nil || route.PeerNodeID != remoteNodeID || route.Scope != filePeerReadScope {
 		return nil, contract.FileTransferMetadata{}, ErrNotFound
 	}
+	ctx, release = s.fileStreamHub.requestContext(ctx, "controller:"+route.ControllerID)
 	controller, err := s.storeV2.Controller(route.ControllerID)
 	if err != nil || controller.State != controllerStateV2Active ||
 		!ScopeAllowsFiles(normalizedV2Scope(controller.Scope)) ||
@@ -443,6 +463,22 @@ func (c *RemoteClient) openFileV2(
 	if requestPath != v2FileOpenPath && requestPath != v2FileLinkedOpenPath {
 		return nil, contract.FileTransferMetadata{}, ErrAuthentication
 	}
+	if !validTransferPath(input.Path) || len(input.ResourceVersion) < 8 || len(input.ResourceVersion) > 256 {
+		return nil, contract.FileTransferMetadata{}, ErrAuthentication
+	}
+	role := "panel"
+	if requestPath == v2FileLinkedOpenPath {
+		role = "linked"
+	}
+	query := url.Values{"path": []string{input.Path}, "resourceVersion": []string{input.ResourceVersion}}
+	streamResponse, streamErr := c.openUnifiedFile(ctx, origin, controllerID, targetID, localKey, targetPublicKey, now, role,
+		LightFileRequest{Method: http.MethodGet, Path: "/v1/files/transfer/export", RawQuery: query.Encode(), Body: http.NoBody})
+	if !errors.Is(streamErr, ErrFileStreamUnsupported) {
+		if streamErr != nil {
+			return nil, contract.FileTransferMetadata{}, streamErr
+		}
+		return fileTransferStreamResponse(streamResponse)
+	}
 	payload, err := json.Marshal(input)
 	if err != nil || len(payload) > MaxSummaryBytes {
 		return nil, contract.FileTransferMetadata{}, ErrAuthentication
@@ -505,6 +541,20 @@ func (c *RemoteClient) openFileV2(
 		return nil, contract.FileTransferMetadata{}, &RemoteError{Code: "invalid_response"}
 	}
 	return &federationFileReader{source: reader, body: streamBody, cipher: decrypt}, metadata, nil
+}
+
+func fileTransferStreamResponse(response *http.Response) (io.ReadCloser, contract.FileTransferMetadata, error) {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_ = response.Body.Close()
+		return nil, contract.FileTransferMetadata{}, &RemoteError{StatusCode: response.StatusCode}
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(response.Header.Get(fileTransferMetadataHeader))
+	var metadata contract.FileTransferMetadata
+	if err != nil || json.Unmarshal(payload, &metadata) != nil || !validTransferMetadata(metadata) {
+		_ = response.Body.Close()
+		return nil, contract.FileTransferMetadata{}, ErrAuthentication
+	}
+	return response.Body, metadata, nil
 }
 
 func validateMatchingV2Response(request, response v2Envelope) error {

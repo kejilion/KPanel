@@ -47,6 +47,9 @@ func (t *serviceV2StatusPathTransport) Calls() int {
 }
 
 func (t *serviceV2FileFixtureTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.Path == FileStreamV2Path {
+		return serviceV2HTTPResponse(http.StatusNotFound, nil), nil
+	}
 	var envelope FederationEnvelopeV2
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()

@@ -87,7 +87,25 @@ func runFileBroker(arguments []string) error {
 		defer close(historyDone)
 		runLightFileControl(ctx, config, identity, historyRelay, historyHandler)
 	}()
-	runLightFileControl(ctx, config, identity, relay, agent.NewFileHandler(manager))
+	fileHandler := agent.NewFileHandler(manager)
+	backoff := time.Second
+	for ctx.Err() == nil {
+		streamErr := relay.RunFileStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer, fileHandler)
+		if errors.Is(streamErr, cluster.ErrFileStreamUnsupported) {
+			// Compatibility is selected before any file action. Keep this mode for
+			// this broker lifetime, so a capability recheck cannot interrupt writes.
+			runLightFileControl(ctx, config, identity, relay, fileHandler)
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		slog.Warn("file stream disconnected; reconnecting", "error", streamErr)
+		if !waitContext(ctx, backoff) {
+			break
+		}
+		backoff = min(5*time.Second, backoff*2)
+	}
 	stop()
 	<-historyDone
 	return nil

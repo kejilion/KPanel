@@ -10,6 +10,7 @@ KPanel.
 | --- | --- | --- | --- |
 | `kejilion.sh` | `f031d1206224de3743845d2fc81c4801ecda32f4` | Apache-2.0 | [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt) |
 | `github.com/flynn/noise` | `v1.1.0` | BSD-3-Clause | [`LICENSES/flynn-noise-BSD-3-Clause.txt`](LICENSES/flynn-noise-BSD-3-Clause.txt) |
+| `github.com/coder/websocket` | `v1.8.15` | ISC | [`LICENSES/coder-websocket-ISC.txt`](LICENSES/coder-websocket-ISC.txt) |
 | `golang.org/x/crypto` | `v0.54.0` | BSD-3-Clause | [`LICENSES/golang-x-crypto-BSD-3-Clause.txt`](LICENSES/golang-x-crypto-BSD-3-Clause.txt) |
 | `golang.org/x/image` | `v0.45.0` | BSD-3-Clause | [`LICENSES/golang-x-image-BSD-3-Clause.txt`](LICENSES/golang-x-image-BSD-3-Clause.txt) |
 | `golang.org/x/sys` | `v0.47.0` | BSD-3-Clause | [`LICENSES/golang-x-sys-BSD-3-Clause.txt`](LICENSES/golang-x-sys-BSD-3-Clause.txt) |

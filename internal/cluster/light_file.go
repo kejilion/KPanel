@@ -35,6 +35,9 @@ func (s *Service) OpenLightFile(ctx context.Context, nodeID string, input LightF
 	if err != nil || len(key) != 32 {
 		return nil, ErrFileRelayUnavailable
 	}
+	if s.fileStreamHub.prefersStream(nodeID) {
+		return s.fileStreamHub.openLight(ctx, nodeID, input)
+	}
 	return s.lightFile.Open(ctx, nodeID, input)
 }
 

@@ -530,6 +530,28 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, status, response)
 }
 
+func (s *Server) handleFederationFileStream(w http.ResponseWriter, r *http.Request) {
+	result := s.cluster.ServeFileStream(w, r, s.remoteIP(r))
+	if !result.Upgraded {
+		return
+	}
+	if !result.Authenticated {
+		s.auditAuthFailure(r, "cluster.federation.v2.files.stream")
+		return
+	}
+	// Control heartbeats are not file operations. Data sockets emit one audit
+	// event per complete/failed request, keeping paths and file bytes out of logs.
+	if result.Role == "light-control" {
+		return
+	}
+	status := "failure"
+	if result.Completed && result.StatusCode >= 200 && result.StatusCode < 400 {
+		status = "success"
+	}
+	_ = s.audit(r, "", "cluster.federation.v2.files.stream", "cluster-controller", result.PeerID, status,
+		map[string]any{"protocol": cluster.FederationProtocolV2, "role": result.Role})
+}
+
 func (s *Server) handleFederationFileOpenV2(
 	w http.ResponseWriter,
 	r *http.Request,

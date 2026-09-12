@@ -218,6 +218,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == cluster.FileStreamV2Path:
+		s.handleFederationFileStream(w, r)
 	case isLightNodeRequest(r):
 		s.handleLightNodeFederation(w, r)
 	case isFederationV2Request(r):
@@ -388,6 +390,9 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func isFederationV2Request(r *http.Request) bool {
+	if r.Method == http.MethodGet && r.URL.Path == cluster.FileStreamV2Path {
+		return true
+	}
 	if r.Method != http.MethodPost {
 		return false
 	}

@@ -566,28 +566,38 @@ func (s *Service) OpenRemotePanelFile(
 	if s == nil || !validID(hostID) || !validFileRelayRequest(input) {
 		return nil, ErrFileRelayUnavailable
 	}
+	ctx, stop := s.fileStreamHub.requestContext(ctx, "host:"+hostID)
 	record, err := s.storeV2.Host(hostID)
 	if err != nil || record.State != hostStateV2Active ||
 		!ScopeAllowsFiles(normalizedV2Scope(record.Scope)) {
+		stop()
 		return nil, ErrFileRelayUnavailable
 	}
 	credential, err := s.secretsV2.ReadCredential(record.CredentialFile)
 	if err != nil {
+		stop()
 		return nil, ErrFileRelayUnavailable
 	}
 	remote, ok := s.remoteV2.(remoteV2PanelFileAPI)
 	if !ok {
+		stop()
 		return nil, ErrProtocolMismatch
 	}
-	return remote.OpenFileRelayV2(
+	response, err := remote.OpenFileRelayV2(
 		ctx, record.Origin, record.ControllerID, record.RemoteNodeID,
 		noiseKeyV2(credential), credential.TargetPublic, s.now().UTC(), input,
 	)
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	response.Body = &streamOwnedBody{ReadCloser: response.Body, done: stop}
+	return response, nil
 }
 
-// OpenFileRelayV2 starts the paired Panel side of the HTTP-like file relay.
-// Each poll is a fresh authenticated Noise exchange, while the response body
-// remains a normal io.ReadCloser for the Panel HTTP handler.
+// OpenFileRelayV2 prefers one encrypted stream per file request. A target that
+// explicitly lacks the upgrade endpoint uses the compatible polling relay;
+// either transport exposes a normal io.ReadCloser to the Panel HTTP handler.
 func (c *RemoteClient) OpenFileRelayV2(
 	ctx context.Context,
 	origin string,
@@ -603,6 +613,10 @@ func (c *RemoteClient) OpenFileRelayV2(
 	}
 	if !validFileRelayRequest(input) {
 		return nil, ErrAuthentication
+	}
+	response, streamErr := c.openUnifiedFile(ctx, origin, controllerID, targetID, controllerKey, targetPublicKey, now, "panel", input)
+	if !errors.Is(streamErr, ErrFileStreamUnsupported) {
+		return response, streamErr
 	}
 	if input.Body == nil || input.Body == http.NoBody {
 		input.BodyLength = 0

@@ -428,6 +428,7 @@ func (s *Service) deleteHostV2Locked(
 	// The parent Host is no longer active before sidecar cleanup. Linked file
 	// authorization therefore fails closed even if deleting the grant hits a
 	// storage error.
+	s.fileStreamHub.closePeer("host:" + record.ID)
 	if err := s.deleteFilePeerGrant(record.ID); err != nil {
 		return DeleteHostResult{}, err
 	}
@@ -773,6 +774,7 @@ func (s *Service) handleFileRelayV2(
 		if decodeErr := decodeV2Payload(payload, &input); decodeErr != nil || validateFileRelayPoll(input) != nil {
 			return FederationEnvelopeV2{}, ErrAuthentication
 		}
+		s.fileStreamHub.observeLegacy(envelope.ControllerID)
 		response, pollErr := s.lightFile.poll(ctx, envelope.ControllerID, input.RequestIDs, input.Events)
 		if pollErr != nil {
 			return FederationEnvelopeV2{}, pollErr
@@ -1007,6 +1009,7 @@ func (s *Service) handleRevokeV2(
 			return FederationEnvelopeV2{}, err
 		}
 	}
+	s.fileStreamHub.closePeer("controller:" + controller.ID)
 	if err := s.filePeersV2.DeleteController(controller.ID); err != nil &&
 		!errors.Is(err, ErrNotFound) {
 		return FederationEnvelopeV2{}, err

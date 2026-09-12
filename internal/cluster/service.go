@@ -99,6 +99,7 @@ type Service struct {
 	lightTerminal        *lightTerminalRelay
 	lightFile            *lightFileRelay
 	panelFileRelay       *panelFileRelay
+	fileStreamHub        *fileStreamHub
 	nodeIdentityV2       nodeIdentityV2
 	panelVersion         string
 	publicURL            string
@@ -288,6 +289,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		fileRequests:          newFixedWindowLimiter(256, time.Minute, 512),
 		panelFileRequests:     newFixedWindowLimiter(1200, time.Minute, 512),
 		fileStreams:           newFileStreamLimiter(8, 2),
+		fileStreamHub:         newFileStreamHub(),
 		terminalSources:       newFixedWindowLimiter(1200, time.Minute, 2048),
 		terminalRequests:      newFixedWindowLimiter(600, time.Minute, 512),
 		lightEnrolls:          newFixedWindowLimiter(10, time.Minute, 2048),
@@ -349,6 +351,9 @@ func (s *Service) Start(parent context.Context) {
 }
 
 func (s *Service) Close() error {
+	if s.fileStreamHub != nil {
+		s.fileStreamHub.closeAll()
+	}
 	s.mu.Lock()
 	cancel := s.cancel
 	started := s.started
@@ -760,6 +765,7 @@ func (s *Service) DeleteController(id string) error {
 	if err != nil {
 		return err
 	}
+	s.fileStreamHub.closePeer("controller:" + id)
 	if err := s.filePeersV2.DeleteController(id); err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}

@@ -286,6 +286,7 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 	if s.lightTerminal != nil {
 		s.lightTerminal.deleteNode(id)
 	}
+	s.fileStreamHub.forgetNode(id)
 	if s.lightFile != nil {
 		s.lightFile.deleteNode(id)
 		s.lightHistory.deleteNode(id)
@@ -300,7 +301,7 @@ func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
 		terminalAvailable = err == nil && len(key) == 32
 	}
 	fileAvailable := false
-	if s.lightFile != nil && s.lightFile.available(record.ID) {
+	if s.lightFile != nil && (s.fileStreamHub.available(record.ID) || (!s.fileStreamHub.prefersStream(record.ID) && s.lightFile.available(record.ID))) {
 		key, err := s.light.ReadTerminalPublicKey(record)
 		fileAvailable = err == nil && len(key) == 32
 	}
