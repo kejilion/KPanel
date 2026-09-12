@@ -283,6 +283,7 @@ interface RawPublicNetworkSummary {
 }
 
 interface RawSite {
+  accessUrls?: string[]
   id: string
   primaryDomain: string
   domains?: string[]
@@ -1022,6 +1023,7 @@ function normalizeSite(raw: RawSite): Site {
   return {
     id: raw.id,
     primaryDomain: raw.primaryDomain,
+    accessUrls: raw.accessUrls,
     domains: raw.domains || [raw.primaryDomain],
     type: kindMap[raw.kind] || 'unknown',
     enabled: raw.enabled,

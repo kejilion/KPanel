@@ -163,6 +163,7 @@ func (d *Discoverer) fromConfig(path string, now time.Time) (contract.SiteSummar
 	versionInput := append([]byte("config:"+configHash+"\n"), certBytes...)
 	versionInput = append(versionInput, []byte("\nkind:"+string(kind)+"\ntarget:"+target+"\nroot:"+documentRoot)...)
 	site := contract.SiteSummary{
+		AccessURLs:      discoverAccessURLs(string(data), primary),
 		ID:              stableID("site", primary, path),
 		PrimaryDomain:   primary,
 		Domains:         domains,
@@ -467,8 +468,20 @@ func orphanSite(domain, kind, path string, now time.Time) contract.SiteSummary {
 
 func parseDirectives(clean string) map[string][]string {
 	result := make(map[string][]string)
-	for _, match := range directivePattern.FindAllStringSubmatch(clean, -1) {
-		result[strings.ToLower(match[1])] = append(result[strings.ToLower(match[1])], strings.TrimSpace(match[2]))
+	var statement []string
+	for _, token := range nginxTokens(clean) {
+		switch token.delimiter {
+		case '{', '}':
+			statement = nil
+		case ';':
+			if len(statement) > 1 {
+				name := strings.ToLower(statement[0])
+				result[name] = append(result[name], strings.Join(statement[1:], " "))
+			}
+			statement = nil
+		default:
+			statement = append(statement, token.value)
+		}
 	}
 	return result
 }

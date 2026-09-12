@@ -713,6 +713,36 @@ func TestNonCanonicalManagedConfigCanBeUpdatedWithoutDiscardingManualDirectives(
 	}
 }
 
+func TestUpdateIPv4HTTPProxyPreservesListener(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	path := filepath.Join(root, "conf.d", "192.168.1.10.conf")
+	config := "server {\n    listen 8443;\n    server_name 192.168.1.10;\n    location / {\n        proxy_pass http://127.0.0.1:3000;\n    }\n}\n"
+	if err := os.WriteFile(path, []byte(config), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	items, err := manager.discoverer.Discover()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("discover: %v %#v", err, items)
+	}
+	input := SiteInput{PrimaryDomain: "192.168.1.10", Type: "proxy", Upstream: "http://127.0.0.1:3001", ExpectedResourceVersion: items[0].ResourceVersion}
+	updated, err := manager.Update(context.Background(), items[0].ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil || string(actual) != strings.Replace(config, ":3000", ":3001", 1) ||
+		!containsString(updated.AccessURLs, "http://192.168.1.10:8443") {
+		t.Fatalf("listener or manual config changed: %v %s %#v", err, actual, updated)
+	}
+	if _, err := manager.Update(context.Background(), items[0].ID, input); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale edit: %v", err)
+	}
+	input.PrimaryDomain, input.ExpectedResourceVersion = "192.168.1.11", updated.ResourceVersion
+	if _, err := manager.Update(context.Background(), items[0].ID, input); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("rename accepted: %v", err)
+	}
+}
+
 func TestStrictSiteInputValidation(t *testing.T) {
 	invalid := []SiteInput{
 		{PrimaryDomain: "*.example.com", Type: "static"},

@@ -91,6 +91,7 @@ type scriptTemplateDefinition struct {
 
 type RecipeJob struct {
 	ID                string                `json:"id"`
+	HTTPPort          int                   `json:"httpPort,omitempty"`
 	Domain            string                `json:"domain"`
 	Recipe            string                `json:"recipe"`
 	ProxyHost         string                `json:"proxyHost,omitempty"`
@@ -305,6 +306,10 @@ func (m *Manager) directSiteWritable(required ...string) error {
 }
 
 func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
+	if addressErr != nil {
+		return RecipeJob{}, addressErr
+	}
 	domain, _, err := normalizeRecipeInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
@@ -334,7 +339,7 @@ func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJ
 		return RecipeJob{}, err
 	}
 	job := RecipeJob{
-		ID: hex.EncodeToString(identity[:]), Domain: domain, Recipe: input.Recipe,
+		ID: hex.EncodeToString(identity[:]), Domain: domain, Recipe: input.Recipe, HTTPPort: httpPort,
 		Status: "queued", Stage: "queued", Progress: 0,
 		Message: "一键建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
 		Interactive:       true,
@@ -363,6 +368,10 @@ func (m *Manager) StartRecipe(_ context.Context, input ScriptSiteInput) (RecipeJ
 }
 
 func (m *Manager) StartWordPress(ctx context.Context, input ScriptSiteInput) (RecipeJob, error) {
+	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
+	if addressErr != nil {
+		return RecipeJob{}, addressErr
+	}
 	spec, err := normalizeWordPressInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
@@ -378,11 +387,16 @@ func (m *Manager) StartWordPress(ctx context.Context, input ScriptSiteInput) (Re
 		spec,
 		"wordpress",
 		wordPressInvocation(spec.Primary),
+		httpPort,
 		customCertificate,
 	)
 }
 
 func (m *Manager) StartProxy(input ScriptSiteInput) (RecipeJob, error) {
+	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
+	if addressErr != nil {
+		return RecipeJob{}, addressErr
+	}
 	spec, host, port, err := normalizeDirectProxyInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
@@ -398,11 +412,16 @@ func (m *Manager) StartProxy(input ScriptSiteInput) (RecipeJob, error) {
 		spec,
 		"reverse-proxy",
 		proxyInvocation(spec.Primary, host, port),
+		httpPort,
 		customCertificate,
 	)
 }
 
 func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
+	input, httpPort, addressErr := normalizeScriptSiteAddress(input)
+	if addressErr != nil {
+		return RecipeJob{}, addressErr
+	}
 	domain, definition, err := normalizeTemplateInput(input.SiteInput)
 	if err != nil {
 		return RecipeJob{}, err
@@ -429,6 +448,7 @@ func (m *Manager) StartTemplate(input ScriptSiteInput) (RecipeJob, error) {
 		managedSpec{Primary: domain, Kind: definition.kind},
 		definition.recipe,
 		invocation,
+		httpPort,
 		customCertificate,
 	)
 }
@@ -518,6 +538,7 @@ func (m *Manager) startDirectSiteJob(
 	spec managedSpec,
 	recipe string,
 	invocation scriptSiteInvocation,
+	httpPort int,
 	customCertificate normalizedCustomCertificate,
 ) (RecipeJob, error) {
 	siteWriteMutex.Lock()
@@ -533,7 +554,7 @@ func (m *Manager) startDirectSiteJob(
 		return RecipeJob{}, err
 	}
 	job := RecipeJob{
-		ID: hex.EncodeToString(identity[:]), Domain: spec.Primary, Recipe: recipe,
+		ID: hex.EncodeToString(identity[:]), Domain: spec.Primary, Recipe: recipe, HTTPPort: httpPort,
 		Status: "queued", Stage: "queued", Progress: 0,
 		Message: "kejilion.sh 原生建站任务已进入后台队列", CreatedAt: time.Now().UTC(),
 		Interactive:       true,
@@ -576,7 +597,7 @@ func normalizeRecipeInput(input SiteInput) (string, string, error) {
 	if !ok {
 		return "", "", fmt.Errorf("%w: unsupported one-click recipe", ErrUnprocessable)
 	}
-	domain, err := normalizeFQDN(input.PrimaryDomain)
+	domain, err := normalizeScriptDomain(input.PrimaryDomain)
 	if err != nil {
 		return "", "", err
 	}
@@ -593,7 +614,7 @@ func normalizeTemplateInput(input SiteInput) (string, scriptTemplateDefinition, 
 	if !ok {
 		return "", scriptTemplateDefinition{}, fmt.Errorf("%w: unsupported scripted website template", ErrUnprocessable)
 	}
-	domain, err := normalizeFQDN(input.PrimaryDomain)
+	domain, err := normalizeScriptDomain(input.PrimaryDomain)
 	if err != nil {
 		return "", scriptTemplateDefinition{}, err
 	}
@@ -632,7 +653,7 @@ func scriptTemplateByRecipe(recipe string) (scriptTemplateDefinition, bool) {
 }
 
 func normalizeWordPressInput(input SiteInput) (managedSpec, error) {
-	primary, err := normalizeFQDN(input.PrimaryDomain)
+	primary, err := normalizeScriptDomain(input.PrimaryDomain)
 	if err != nil {
 		return managedSpec{}, err
 	}
@@ -658,10 +679,24 @@ func normalizeWordPressInput(input SiteInput) (managedSpec, error) {
 }
 
 func normalizeDirectProxyInput(input SiteInput) (managedSpec, string, string, error) {
-	spec, err := normalizeSiteInput(input)
+	primary, err := normalizeScriptDomain(input.PrimaryDomain)
 	if err != nil {
 		return managedSpec{}, "", "", err
 	}
+	if input.Enabled != nil && !*input.Enabled {
+		return managedSpec{}, "", "", fmt.Errorf("%w: disabling sites is not supported", ErrUnprocessable)
+	}
+	if len(input.Aliases) != 0 {
+		return managedSpec{}, "", "", fmt.Errorf("%w: proxy accepts one domain", ErrUnprocessable)
+	}
+	if err := rejectUnusedSiteFields(input, "proxy"); err != nil {
+		return managedSpec{}, "", "", err
+	}
+	upstream, err := normalizeUpstream(input.Upstream, upstreamPrivate)
+	if err != nil {
+		return managedSpec{}, "", "", err
+	}
+	spec := managedSpec{Primary: primary, Kind: contract.SiteReverseProxy, Upstream: upstream}
 	if input.Type != "proxy" || spec.Kind != contract.SiteReverseProxy {
 		return managedSpec{}, "", "", fmt.Errorf("%w: IP and port proxy type is required", ErrInvalidInput)
 	}
@@ -983,6 +1018,22 @@ func RunRecipeJob(ctx context.Context, stateDir, webRoot, id string) error {
 }
 
 func invocationForRecipeJob(job RecipeJob) (scriptSiteInvocation, error) {
+	if job.HTTPPort < 0 || job.HTTPPort > 65535 || (job.HTTPPort != 0 && job.CustomCertificate) {
+		return scriptSiteInvocation{}, fmt.Errorf("%w: invalid persisted HTTP port", ErrInvalidInput)
+	}
+	if job.HTTPPort != 0 {
+		host, _, err := contract.ParseSiteAddress(job.Domain + ":" + strconv.Itoa(job.HTTPPort))
+		if err != nil || host != job.Domain {
+			return scriptSiteInvocation{}, fmt.Errorf("%w: invalid HTTP host", ErrInvalidInput)
+		}
+	} else if _, err := normalizeFQDN(job.Domain); err != nil {
+		return scriptSiteInvocation{}, err
+	}
+	invocation, err := baseInvocationForRecipeJob(job)
+	return withHTTPPort(invocation, job.HTTPPort), err
+}
+
+func baseInvocationForRecipeJob(job RecipeJob) (scriptSiteInvocation, error) {
 	switch job.Recipe {
 	case "wordpress":
 		if _, err := normalizeWordPressInput(SiteInput{
@@ -1004,7 +1055,7 @@ func invocationForRecipeJob(job RecipeJob) (scriptSiteInvocation, error) {
 		return proxyInvocation(job.Domain, host, port), nil
 	default:
 		if definition, ok := scriptTemplateByRecipe(job.Recipe); ok {
-			domain, err := normalizeFQDN(job.Domain)
+			domain, err := normalizeScriptDomain(job.Domain)
 			if err != nil {
 				return scriptSiteInvocation{}, err
 			}
@@ -1137,7 +1188,7 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 		return
 	}
 	for index := range items {
-		if items[index].PrimaryDomain == job.Domain {
+		if items[index].PrimaryDomain == job.Domain && (job.HTTPPort == 0 || containsString(items[index].AccessURLs, "http://"+job.Domain+":"+strconv.Itoa(job.HTTPPort))) {
 			job.Site = &items[index]
 			break
 		}

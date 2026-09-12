@@ -1276,6 +1276,7 @@ export interface CertificateSummary {
 }
 
 export interface Site {
+  accessUrls?: string[]
   id: string
   primaryDomain: string
   domains: string[]

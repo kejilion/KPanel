@@ -127,7 +127,7 @@ func (m *Manager) deleteWithScript(
 	id string,
 	primaryDomain string,
 ) (DeleteResult, error) {
-	normalized, err := normalizeFQDN(primaryDomain)
+	normalized, err := normalizeScriptDomain(primaryDomain)
 	if err != nil || normalized != primaryDomain {
 		return DeleteResult{}, fmt.Errorf("%w: primaryDomain must be a valid normalized domain", ErrInvalidInput)
 	}

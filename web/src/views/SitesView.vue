@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { parseSiteAddress, sitePublicURL } from '../lib/siteAddress'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
@@ -448,8 +449,9 @@ const customCertificateReason = computed(
       ? '当前 Agent 使用的 kejilion.sh 尚未启用自定义证书协议。'
       : '未从 Agent 获取自定义证书能力状态，请检查 Agent 连接与版本。'),
 )
+const httpSiteAddress = computed(() => !editingSite.value ? parseSiteAddress(form.primaryDomain) : undefined)
 const useCustomCertificate = computed(
-  () => !editingSite.value && form.certificateMode === 'custom',
+  () => !editingSite.value && !httpSiteAddress.value?.port && form.certificateMode === 'custom',
 )
 const customCertificateFormReason = computed(() => {
   if (!useCustomCertificate.value) return ''
@@ -514,7 +516,7 @@ const canSubmit = computed(
 
 const formValid = computed(() => {
   const domain = form.primaryDomain.trim()
-  if (!isDomain(domain)) return false
+  if (editingSite.value ? !isDomain(domain) : !parseSiteAddress(domain)) return false
   if (useCustomCertificate.value && !customCertificateFormValid.value) return false
   if (scriptedTemplateCreate.value) {
     return form.type !== 'redirect' || (isDomain(form.redirectTarget.trim()) && form.redirectTarget.trim().toLowerCase() !== domain.toLowerCase())
@@ -976,12 +978,6 @@ watch(editorOpen, (open) => {
   }
 })
 
-function sitePublicURL(site: Site): string {
-  const certificateStatus = site.certificate?.status
-  const protocol = certificateStatus && !['missing', 'unknown'].includes(certificateStatus) ? 'https' : 'http'
-  return `${protocol}://${site.primaryDomain}`
-}
-
 onMounted(() => void load())
 onBeforeUnmount(() => {
   disposed = true
@@ -1134,7 +1130,7 @@ onBeforeUnmount(() => {
                   />
                   <span>
                     <strong>
-                      {{ site.primaryDomain }} <ExternalLink :size="11" />
+                      {{ sitePublicURL(site).replace(/^https?:\/\//, '') }} <ExternalLink :size="11" />
                       <em v-if="site.primaryDomain === recentCreatedDomain" class="site-recent-badge">刚刚创建</em>
                     </strong>
                     <SiteAppearanceName
@@ -1418,16 +1414,18 @@ onBeforeUnmount(() => {
           <span>{{ phrase('主域名') }}</span>
           <input
             v-model.trim="form.primaryDomain"
-            placeholder="example.com"
+            placeholder="example.com / example.com:8443 / 192.168.1.10:8080"
             autocomplete="off"
             required
             :disabled="Boolean(editingSite)"
           />
-          <small>{{ phrase(editingSite ? '首版更新不重命名主域名或移动网站目录。' : '不要包含协议、路径或端口。') }}</small>
+          <small>{{ phrase(editingSite ? '首版更新不重命名主域名或移动网站目录。' : '域名保持默认 HTTPS；域名或 IPv4 加端口使用 HTTP，例如 example.com:8443。不要包含协议或路径。') }}</small>
         </label>
 
+        <p v-if="httpSiteAddress?.port" class="site-certificate-note">{{ phrase('使用 HTTP，无需证书。访问地址：') }} http://{{ httpSiteAddress.host }}:{{ httpSiteAddress.port }}</p>
+
         <DnsResolutionGuide
-          v-if="!editingSite"
+          v-if="!editingSite && !/^[0-9.]+$/.test(httpSiteAddress?.host || '')"
           :ipv4="publicNetwork?.ipv4"
           :ipv6="publicNetwork?.ipv6"
           compact
@@ -1633,7 +1631,7 @@ onBeforeUnmount(() => {
           <textarea v-model="form.aliases" rows="3" placeholder="www.example.com&#10;api.example.com" />
           <small>{{ phrase('每行一个域名，最多 20 个；主域名不要重复填写。') }}</small>
         </label>
-        <fieldset v-if="!editingSite" class="field site-certificate-options">
+        <fieldset v-if="!editingSite && !httpSiteAddress?.port" class="field site-certificate-options">
           <legend><KeyRound :size="16" /> HTTPS 证书（可选）</legend>
           <div class="choice-pills">
             <button

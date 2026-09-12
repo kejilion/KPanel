@@ -141,6 +141,30 @@ afterEach(() => {
 })
 
 describe('SitesView creation experience', () => {
+  it('submits the HTTP address without stale certificate material and restores TLS for plain domains', async () => {
+    const view = setupView()
+    view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }, { id: 'sites.certificates.custom', enabled: true }]
+    view.form.type = 'redirect'
+    view.form.redirectTarget = 'target.example.com'
+    view.form.primaryDomain = '192.168.1.10:8443'
+    view.form.certificateMode = 'custom'
+    view.form.certificate = 'stale-cert'
+    view.form.privateKey = 'stale-key'
+    expect(view.formValid.value).toBe(true)
+    vi.mocked(api.sites.create).mockRejectedValue(new Error('script unavailable'))
+    await view.submitSite()
+    expect(api.sites.create).toHaveBeenCalledWith(expect.objectContaining({
+      primaryDomain: '192.168.1.10:8443', certificate: undefined, privateKey: undefined,
+    }), expect.any(Function))
+    view.form.primaryDomain = 'example.com:65536'
+    expect(view.formValid.value).toBe(false)
+    view.form.primaryDomain = 'example.com'
+    view.form.certificate = ''
+    expect(view.formValid.value).toBe(false)
+    view.form.certificateMode = 'automatic'
+    expect(view.formValid.value).toBe(true)
+  })
+
   it('collects the redirect domain and forwards it through the scripted create API', async () => {
     const view = setupView()
     view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }]
