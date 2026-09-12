@@ -72,8 +72,8 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
 最终 SHA 的 L3、候选 CI/freshness、main CI/freshness、tag freshness、Release、公开附件、公开镜像 E2E 和生产三阶段门禁均首轮产品通过。以下单独统计发布编排、取证或证据读取异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：9
-- 其中生产写操作开始后异常次数：2
+- 已记录发布流程异常或无效证据拦截次数：11
+- 其中生产写操作开始后异常次数：4
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -157,6 +157,24 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
     "impact": "公网健康通过后，本地应用配置对比把单个路径字符串按字符索引读取，证据命令失败；生产服务没有受影响。",
     "recoveryEvidence": "把 rg 结果显式转换为单一路径字符串后，KPanel 与 kejilion/apps 的 kpanel.conf 归一全文一致，apps 仓库保持干净。",
     "permanentAction": "PowerShell 的单路径结果先显式转为 string，并在读取前验证非空且不含多行。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "public-artifacts/github-api/rate-limit",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "读取验收文档提交的 CI 时，匿名 GitHub API 达到速率上限；本机 GitHub CLI 也没有登录，未形成该次状态证据。",
+    "recoveryEvidence": "把固定只读查询脚本上传到 arena-154，通过独立网络出口确认 CI 34668017312 精确绑定验收 SHA 并成功。",
+    "permanentAction": "远端工作流状态读取优先使用已注册验证环境的独立出口，并保留精确 SHA、workflow 与 run ID 过滤。",
+    "historicalReleases": ["v1.13.0"]
+  },
+  {
+    "fingerprint": "cleanup/windows-remove-item/policy-rejection",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "本地临时文件清理的 PowerShell Remove-Item 调用被自动策略拒绝，文件和空目录当时仍保留。",
+    "recoveryEvidence": "临时脚本改由补丁机制删除，空目录用同一 PowerShell 进程的 .NET API 在根路径与空目录断言后删除；远端精确路径清理也全部通过。",
+    "permanentAction": "工作区内临时文本文件优先用补丁删除，空目录清理使用单进程绝对路径边界与空目录断言。",
     "historicalReleases": []
   }
 ]
