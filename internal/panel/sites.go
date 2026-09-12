@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
@@ -265,6 +268,9 @@ func (s *Server) handleSiteDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalized, valid := normalizePanelSiteDomain(input.PrimaryDomain.Value)
+	if ip := net.ParseIP(input.PrimaryDomain.Value); ip != nil && ip.To4() != nil {
+		normalized, valid = ip.String(), true
+	}
 	if !valid {
 		s.writeValidationProblem(w, r, "primaryDomain", "primaryDomain must be a valid ASCII domain")
 		return
@@ -382,6 +388,22 @@ func validateSiteWriteInput(input *siteWriteInput, create bool) (field, detail s
 
 	if input.PrimaryDomain.Set {
 		normalized, valid := normalizePanelSiteDomain(input.PrimaryDomain.Value)
+		if !create {
+			if ip := net.ParseIP(input.PrimaryDomain.Value); ip != nil && ip.To4() != nil {
+				normalized, valid = ip.String(), true
+			}
+		}
+		if create {
+			host, port, err := contract.ParseSiteAddress(input.PrimaryDomain.Value)
+			valid = err == nil
+			normalized = host
+			if port != 0 {
+				normalized += ":" + strconv.Itoa(port)
+				if input.Certificate.Value != "" || input.PrivateKey.Value != "" {
+					return "certificate", "HTTP sites do not use certificates"
+				}
+			}
+		}
 		if !valid {
 			return "primaryDomain", "primaryDomain must be a valid ASCII domain"
 		}

@@ -1,6 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["域名保持默认 HTTPS；域名或 IPv4 加端口使用 HTTP，例如 example.com:8443。不要包含协议或路径。", "Domains use HTTPS by default. A domain or IPv4 address with a port uses HTTP, e.g. example.com:8443. Omit the scheme and path."],
+  ["使用 HTTP，无需证书。访问地址：", "HTTP requires no certificate. Address:"],
   ['自有证书需在到期前手动更换，脚本不会自动续签。', 'Replace your certificate before it expires. The script will not renew it automatically.'],
   ['更换证书', 'Replace certificate'],
   ['证书已更换', 'Certificate replaced'],
@@ -210,7 +212,6 @@ export default [
   ['从未', 'Never'],
   ['已显示 {0} / {1} 个网站', 'Showing {0} of {1} sites'],
   ['已启用{0}·{1}个域名', 'Enabled{0}·{1}domains'],
-  ['不要包含协议、路径或端口。', 'Do not include a scheme, path, or port.'],
   ['首版更新不重命名主域名或移动网站目录。', 'The initial update does not rename the main domain or move the site directory.'],
   ['{0} 个选项按需展开', 'Expand {0} options as needed'],
   ['热门搭建', 'Popular builds'],

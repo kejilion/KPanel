@@ -196,7 +196,7 @@ func (m *Manager) Create(ctx context.Context, input SiteInput) (contract.SiteSum
 }
 
 func (m *Manager) Update(ctx context.Context, id string, input SiteInput) (contract.SiteSummary, error) {
-	spec, err := normalizeSiteInput(input)
+	spec, err := normalizeEditableSiteInput(input)
 	if err != nil {
 		return contract.SiteSummary{}, err
 	}

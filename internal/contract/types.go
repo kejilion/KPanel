@@ -329,6 +329,7 @@ const (
 )
 
 type SiteSummary struct {
+	AccessURLs      []string    `json:"accessUrls,omitempty"`
 	ID              string      `json:"id"`
 	PrimaryDomain   string      `json:"primaryDomain"`
 	Domains         []string    `json:"domains"`
