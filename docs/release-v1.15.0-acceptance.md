@@ -82,8 +82,8 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
 最终 SHA 的 L3、候选 CI/freshness、main CI/freshness、tag freshness、Release、公开附件、公开镜像 E2E 和生产三阶段门禁均首轮产品通过。以下单独统计发布编排、取证或证据读取异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：10
-- 其中生产写操作开始后异常次数：2
+- 已记录发布流程异常或无效证据拦截次数：13
+- 其中生产写操作开始后异常次数：5
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -176,6 +176,24 @@ env KJ_APP_NONINTERACTIVE=1 KJ_APP_ACTION=update bash /home/docker/kpanel/bin/ke
     "impact": "L3 远端证据复制到 Windows 后直接运行 sha256sum -c，清单中的远端绝对路径不可读取，首次本地复核失败；远端 L3 与生产均未受影响。",
     "recoveryEvidence": "按清单路径 basename 映射到只读复制目录后，11 个文件 SHA256 全部匹配。",
     "permanentAction": "远端绝对路径证据清单回收后使用固定前缀映射验证，同时保留原清单字节不修改。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "postrelease/script-git/https-read-timeout",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "终态只读核对 kejilion/sh main 时，GitHub HTTPS 443 再次超时；没有远端写入。",
+    "recoveryEvidence": "脚本发布阶段已经确认远端 main、公开 raw 与 Git blob；终态本地候选 HEAD 和 origin/main 也都精确为 5ef0201947dfb80062d54a0ba8f11009e871cf04。",
+    "permanentAction": "脚本终态优先复用发布阶段保存的远端精确 SHA 证据，额外网络复核失败时只按幂等只读查询重试或使用独立出口。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "postrelease/script-evidence/cn-path-case",
+    "position": "after-production-write",
+    "count": 2,
+    "impact": "终态脚本复核先后使用了错误的 CN/kejilion.sh 和 CN/kejilion_CN.sh 路径，分别得到 404 和不存在结果，没有形成 CN 哈希结论。",
+    "recoveryEvidence": "从目标提交树读取真实路径 cn/kejilion.sh，Git blob SHA256 为 62b01b5b1ba736fafe1a167733d64eaba64606f9c5a4b77fa1cd136adbf843cc，与发布证据一致。",
+    "permanentAction": "多语言脚本路径从目标提交 git ls-tree 输出选择，保持仓库真实大小写，不凭历史目录命名拼接。",
     "historicalReleases": []
   }
 ]
