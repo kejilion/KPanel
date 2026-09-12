@@ -59,7 +59,7 @@ Agent Unix Socket 协议为 `/v1/backups`，格式/协议均为 1。固定动作
 
 ## 验证与发布联动
 
-变更集 `backup-center-20260912`，`scriptLinkageState=coupled`。Panel 基线 `8918a5e56483913b9d9e420cb472c6a0f59626e8`，脚本基线 `b776ae85850bd50c86b2902a904361d7a0794e39`；配套脚本尚未提交/发布时不得冻结新的内置脚本摘要或发布 KPanel。
+变更集 `backup-center-20260912`，`scriptLinkageState=coupled`。Panel 基线 `8918a5e56483913b9d9e420cb472c6a0f59626e8`；配套脚本已先发布到 `kejilion/sh@5ef0201947dfb80062d54a0ba8f11009e871cf04`，根脚本 SHA-256 为 `4adc9e163a6db31a180e3a16489dcec3bf1f1a48a95253a140aaf11100eae048`，CN 脚本 SHA-256 为 `62b01b5b1ba736fafe1a167733d64eaba64606f9c5a4b77fa1cd136adbf843cc`。KPanel 发布候选必须固定这一组合来源并完成 L3。
 
 验收包括加密包损坏/错误密码、选择依赖、原生匿名卷与 namespace/links、数据权限、离线账户事务、重启回滚与提交后清理、既有 AI 会话保留、前端失败预览阻断、根/CN 同步与 shell smoke，以及对应等级门禁和隔离 Docker 往返。测试结果以当前候选运行证据为准；本契约不宣称未运行的平台或发布验收已经完成。
 
