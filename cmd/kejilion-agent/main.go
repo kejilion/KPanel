@@ -41,6 +41,9 @@ func main() {
 }
 
 func run(arguments []string) error {
+	if len(arguments) > 0 && arguments[0] == "backup-center" {
+		return runBackupCLI(arguments[1:], os.Stdin, os.Stdout)
+	}
 	if len(arguments) > 0 && arguments[0] == "version" {
 		if len(arguments) != 1 {
 			return errors.New("kejilion-agent version does not accept arguments")
@@ -161,7 +164,8 @@ func run(arguments []string) error {
 	}
 	terminalManager := terminal.New(terminal.Config{ParentUnit: "kejilion-agent.service"})
 	handler, err := agent.NewServer(agent.Config{
-		Token: token, Version: version.Version, ProtocolVersion: version.ProtocolVersion,
+		BackupDockerSocket: *dockerSocket,
+		Token:              token, Version: version.Version, ProtocolVersion: version.ProtocolVersion,
 		WebRoot: *webRoot, StateDir: *stateDir, System: systemCollector,
 		SSHLoginSource: sshlogin.NewReader(sshlogin.Config{Now: time.Now}),
 		SystemManager: systemmanage.NewManager(systemmanage.Config{

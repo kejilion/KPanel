@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
+	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/store"
@@ -87,6 +88,15 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
 		return
 	}
+	if parts[0] == "backup" && s.backups != nil {
+		record, err := s.backups.Get(parts[1])
+		if err != nil {
+			s.writeProblem(w, r, 404, "job_not_found", "任务不存在或已超出来源保留期", "")
+			return
+		}
+		s.writeJSON(w, 200, backupContractJob(record))
+		return
+	}
 	for _, owner := range jobOwners() {
 		if owner.name != parts[0] {
 			continue
@@ -137,6 +147,16 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	page := jobsPage{Sources: make([]jobSourceStatus, 0, 4)}
 	page.Sources = append(page.Sources, jobSourceStatus{"audit", "available"})
 	available := 0
+	if s.backups != nil {
+		records := s.backups.List()
+		for _, r := range records {
+			jobs = append(jobs, backupContractJob(r))
+		}
+		if len(records) > 0 {
+			available++
+			page.Sources = append(page.Sources, jobSourceStatus{"backup", "available"})
+		}
+	}
 	// Each owner uses an independent read with its own deadline. No owner can
 	// consume another owner's time budget; no unbounded worker queue.
 	owners := jobOwners()
@@ -186,6 +206,26 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		page.Items = []contract.Job{}
 	}
 	s.writeJSON(w, http.StatusOK, page)
+}
+
+func backupContractJob(r backup.Record) contract.Job {
+	state := contract.JobQueued
+	switch r.Status {
+	case "running", "restarting":
+		state = contract.JobRunning
+	case "completed", "ready", "expired":
+		state = contract.JobSucceeded
+	case "failed":
+		state = contract.JobFailedNeedsAttention
+		if r.ErrorCode == "rolled_back" {
+			state = contract.JobFailedRolledBack
+		}
+	}
+	j := contract.Job{ID: "backup:" + r.ID, Action: "backup." + r.Action, Origin: contract.OriginWeb, State: state, Stage: r.Stage, TargetKind: "backup", TargetID: r.ID, TargetLabel: strings.Join(r.Modules, ", "), CreatedAt: r.CreatedAt}
+	if r.Status == "failed" {
+		j.Error = &contract.Problem{Code: r.ErrorCode, Title: "备份恢复未完成，请到设置中查看"}
+	}
+	return j
 }
 
 // Owners may expose more history than this view displays. The Agent transport

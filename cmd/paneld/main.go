@@ -55,6 +55,31 @@ func run(arguments []string) error {
 	if err := os.MkdirAll(config.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
+	if err := panel.RecoverPanelRestore(config); err != nil {
+		return fmt.Errorf("recover panel restore: %w", err)
+	}
+	for {
+		err := runPanelInstance(config)
+		if !errors.Is(err, panel.ErrBackupRestart) {
+			if err != nil && panel.PanelRestorePending(config) {
+				if recoveryErr := panel.RecoverPanelRestore(config); recoveryErr != nil {
+					return errors.Join(err, recoveryErr)
+				}
+				slog.Error("restore startup failed; previous configuration restored", "error", err)
+				return runPanelInstance(config)
+			}
+			return err
+		}
+		if err := panel.ApplyPanelRestore(config); err != nil {
+			slog.Error("panel restore failed; recovery retained", "error", err)
+			if recoveryErr := panel.RecoverPanelRestore(config); recoveryErr != nil {
+				return recoveryErr
+			}
+		}
+	}
+}
+
+func runPanelInstance(config panel.Config) error {
 
 	storage, err := store.Open(config.StorePath)
 	if err != nil {
@@ -100,12 +125,21 @@ func run(arguments []string) error {
 
 	shutdownSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	handler.StartBackground(shutdownSignal)
+	restoreRequested := make(chan struct{})
+	shutdownDone := make(chan error, 1)
 	go func() {
-		<-shutdownSignal.Done()
+		select {
+		case <-shutdownSignal.Done():
+		case <-handler.BackupRestart():
+			close(restoreRequested)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = server.Shutdown(ctx)
+		shutdownErr := server.Shutdown(ctx)
+		if shutdownErr != nil {
+			_ = server.Close()
+		}
+		shutdownDone <- shutdownErr
 	}()
 
 	slog.Info("starting paneld",
@@ -114,8 +148,25 @@ func run(arguments []string) error {
 		"listen", config.Listen,
 		"initialized", authService.IsInitialized(),
 	)
-	err = server.ListenAndServe()
+	listener, err := net.Listen("tcp", config.Listen)
+	if err != nil {
+		return err
+	}
+	if err := handler.FinalizePanelRestore(); err != nil {
+		listener.Close()
+		return err
+	}
+	handler.StartBackground(shutdownSignal)
+	err = server.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
+		if shutdownErr := <-shutdownDone; shutdownErr != nil {
+			return shutdownErr
+		}
+		select {
+		case <-restoreRequested:
+			return panel.ErrBackupRestart
+		default:
+		}
 		return nil
 	}
 	return err

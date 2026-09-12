@@ -58,6 +58,36 @@ func newFakeProcess() *fakeProcess {
 	return &fakeProcess{reader: reader, writer: writer}
 }
 
+func TestBackupBusyRetainsTerminalUntilScopeClosed(t *testing.T) {
+	p := newFakeProcess()
+	m := New(Config{Starter: func(uint16, uint16) (Process, error) { return p, nil }})
+	defer m.CloseAll()
+	if m.Busy() {
+		t.Fatal("empty manager is busy")
+	}
+	s, err := m.Open("backup-test", 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Busy() {
+		t.Fatal("running shell escaped backup gate")
+	}
+	item, err := m.lookup("backup-test", s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.setExit(nil, time.Now())
+	if !m.Busy() {
+		t.Fatal("exited shell scope escaped before close")
+	}
+	if err := m.Close("backup-test", s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m.Busy() {
+		t.Fatal("closed shell blocks backup")
+	}
+}
+
 func (p *fakeProcess) Read(data []byte) (int, error) { return p.reader.Read(data) }
 func (p *fakeProcess) Write(data []byte) (int, error) {
 	p.mu.Lock()

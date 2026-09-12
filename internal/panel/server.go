@@ -26,6 +26,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/ai"
 	"github.com/kejilion/kejilion-panel/internal/auth"
+	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
@@ -49,6 +50,11 @@ var (
 )
 
 type Server struct {
+	requestsMu            sync.Mutex
+	requests              sync.WaitGroup
+	requestsClosed        bool
+	backups               *backup.Manager
+	backupRestart         chan struct{}
 	config                Config
 	auth                  *auth.Service
 	store                 *store.Store
@@ -171,11 +177,35 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadCancels: make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
+	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
+	if err != nil {
+		return nil, fmt.Errorf("initialize backups: %w", err)
+	}
+	server.backupRestart = make(chan struct{}, 1)
+	if !PanelRestorePending(config) {
+		for _, r := range server.backups.List() {
+			if r.Status == "restarting" {
+				if err := server.backups.Abort(r.ID, "interrupted"); err != nil {
+					server.backups.Close()
+					return nil, err
+				}
+			}
+		}
+	}
 	clusterService.SetFileRelayHandler(server.federatedFileHandler())
 	return server, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.requestsMu.Lock()
+	if s.requestsClosed {
+		s.requestsMu.Unlock()
+		http.Error(w, "Panel is restarting", http.StatusServiceUnavailable)
+		return
+	}
+	s.requests.Add(1)
+	s.requestsMu.Unlock()
+	defer s.requests.Done()
 	s.setSecurityHeaders(w, r)
 	requestID := newRequestID()
 	w.Header().Set("X-Request-ID", requestID)
@@ -217,9 +247,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
+	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
+		s.writeProblem(w, r, http.StatusConflict, "backup_busy", "备份恢复正在执行，请稍后重试", "")
+		return
+	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == cluster.FileStreamV2Path:
 		s.handleFederationFileStream(w, r)
+	case r.URL.Path == "/api/v1/backups" || strings.HasPrefix(r.URL.Path, "/api/v1/backups/"):
+		s.handleBackups(w, r)
 	case isLightNodeRequest(r):
 		s.handleLightNodeFederation(w, r)
 	case isFederationV2Request(r):

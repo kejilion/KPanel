@@ -1816,7 +1816,7 @@ export interface JobStage {
   message?: string
 }
 
-export type JobOwner = 'docker' | 'app' | 'webenv' | 'file-archive'
+export type JobOwner = 'docker' | 'app' | 'webenv' | 'file-archive' | 'backup'
 
 export interface JobSourceStatus {
   source: JobOwner | 'audit'
