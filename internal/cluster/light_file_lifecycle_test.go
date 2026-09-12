@@ -347,14 +347,29 @@ func TestLightFilePollCancelReleasesBackpressure(t *testing.T) {
 		pollCtx, cancelPoll := context.WithCancel(context.Background())
 		pollDone := make(chan struct{})
 		go func() {
-			_, _ = relay.poll(pollCtx, item.id, []string{session.id}, []FileRelayEvent{{RequestID: session.id, Kind: "data", Offset: 8, Data: []byte("x")}})
+			_, _ = relay.poll(pollCtx, item.id, []string{session.id}, []FileRelayEvent{
+				{RequestID: session.id, Kind: "data", Offset: 8, Data: []byte("x")},
+				{RequestID: session.id, Kind: "end"},
+			})
 			close(pollDone)
 		}()
 		synctest.Wait()
 		cancelPoll()
 		<-pollDone
-		if _, err := response.Body.Read(make([]byte, 1)); !errors.Is(err, context.Canceled) {
-			t.Fatalf("poll cancellation Read = %v", err)
+		if session.isFinished() {
+			t.Fatal("lost broker connection discarded a live browser stream")
+		}
+		if _, err := io.CopyN(io.Discard, response.Body, 8); err != nil {
+			t.Fatalf("accepted data lost after poll cancellation: %v", err)
+		}
+		if _, err := relay.poll(ctx, item.id, []string{session.id}, []FileRelayEvent{
+			{RequestID: session.id, Kind: "data", Offset: 8, Data: []byte("x")},
+			{RequestID: session.id, Kind: "end"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if content, err := io.ReadAll(response.Body); err != nil || string(content) != "x" {
+			t.Fatalf("retry after backpressure = %q, %v", content, err)
 		}
 		_ = response.Body.Close()
 	})

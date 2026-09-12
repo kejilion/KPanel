@@ -21,7 +21,8 @@ const (
 	lightFileUnsupportedRetryMax = 5 * time.Minute
 	lightFileFailureRetry        = 5 * time.Second
 	lightFileEventLimit          = 16
-	lightFileEventChunkBytes     = 16 << 10
+	// Two chunks plus event metadata fit in the existing 64 KiB JSON envelope.
+	lightFileEventChunkBytes = 23 << 10
 )
 
 type lightNodeFileSession struct {
@@ -48,6 +49,8 @@ type lightFileControl struct {
 	processedIDs  []string
 	centerEpoch   string
 	unsupported   uint8
+	failures      uint8
+	lastCollected string
 }
 
 func runLightFileControl(
@@ -113,12 +116,19 @@ func (control *lightFileControl) retryDelay(err error) time.Duration {
 		}
 		return delay
 	}
-	return lightFileFailureRetry
+	// Recover one transient loss promptly, but back off persistent failures.
+	// Pending events and command IDs are retained until authenticated success.
+	delay := time.Second << min(control.failures, 3)
+	if control.failures < 3 {
+		control.failures++
+	}
+	return min(delay, lightFileFailureRetry)
 }
 
 func (control *lightFileControl) acceptRelayResponse(response cluster.FileRelayPollResponse) {
 	control.pendingEvents = nil
 	control.unsupported = 0
+	control.failures = 0
 	if response.Epoch == "" {
 		return
 	}
@@ -136,6 +146,7 @@ func (control *lightFileControl) resetSessions() {
 	control.pendingEvents = nil
 	control.processed = make(map[string]cluster.FileRelayEvent)
 	control.processedIDs = nil
+	control.lastCollected = ""
 }
 
 func (control *lightFileControl) requestIDs() []string {
@@ -152,27 +163,41 @@ func (control *lightFileControl) collectEvents() ([]cluster.FileRelayEvent, erro
 		return append([]cluster.FileRelayEvent(nil), control.pendingEvents...), nil
 	}
 	ids := control.requestIDs()
-	for _, requestID := range ids {
-		if len(control.pendingEvents) >= lightFileEventLimit {
-			break
-		}
-		session := control.sessions[requestID]
-		if session == nil {
-			continue
-		}
-		session.drain()
-		for len(session.pending) > 0 && len(control.pendingEvents) < lightFileEventLimit {
+	// Rotate the starting session as well as taking only one event per session
+	// per pass. A full data batch must not keep a later directory request waiting
+	// until a large download finishes.
+	start := sort.SearchStrings(ids, control.lastCollected)
+	if start < len(ids) && ids[start] == control.lastCollected {
+		start++
+	}
+	for len(control.pendingEvents) < lightFileEventLimit {
+		progressed := false
+		for index := 0; index < len(ids) && len(control.pendingEvents) < lightFileEventLimit; index++ {
+			requestID := ids[(start+index)%len(ids)]
+			session := control.sessions[requestID]
+			if session == nil {
+				continue
+			}
+			session.drain()
+			if len(session.pending) == 0 {
+				continue
+			}
 			candidate := session.pending[0]
 			if !control.pollPayloadFits(append(append([]cluster.FileRelayEvent(nil), control.pendingEvents...), candidate), ids) {
-				break
+				continue
 			}
 			control.pendingEvents = append(control.pendingEvents, candidate)
+			session.pending[0] = cluster.FileRelayEvent{}
 			session.pending = session.pending[1:]
+			control.lastCollected = requestID
+			progressed = true
 			if candidate.Kind == "end" {
 				delete(control.sessions, requestID)
 				session.close()
-				break
 			}
+		}
+		if !progressed {
+			break
 		}
 	}
 	return append([]cluster.FileRelayEvent(nil), control.pendingEvents...), nil
@@ -226,7 +251,7 @@ func (control *lightFileControl) startRequest(command cluster.FileRelayCommand) 
 	session := &lightNodeFileSession{
 		requestID: command.RequestID, ctx: requestContext, cancel: cancel,
 		bodyWriter: bodyWriter, head: command.Method == http.MethodHead,
-		events: make(chan cluster.FileRelayEvent, 32),
+		events: make(chan cluster.FileRelayEvent, lightFileEventLimit),
 	}
 	control.sessions[command.RequestID] = session
 	go serveLightFileRequest(control.handler, request, session)
@@ -357,7 +382,7 @@ func (writer *lightFileResponseWriter) send(event cluster.FileRelayEvent) {
 }
 
 func (session *lightNodeFileSession) drain() {
-	for {
+	for len(session.pending) < lightFileEventLimit {
 		select {
 		case event := <-session.events:
 			session.pending = append(session.pending, event)

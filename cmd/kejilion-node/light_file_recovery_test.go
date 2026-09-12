@@ -31,7 +31,7 @@ func TestLightFileTransientUnsupportedResponseAfterConnectionRecoversPromptly(t 
 				if !waitContext(context.Background(), control.retryDelay(err)) {
 					t.Fatal("reconnect wait unexpectedly canceled")
 				}
-				if elapsed := time.Since(started); elapsed != 5*time.Second {
+				if elapsed := time.Since(started); elapsed != time.Second {
 					t.Fatalf("temporary HTTP %d silenced a working broker for %v", status, elapsed)
 				}
 				ctx, cancel := context.WithCancel(context.Background())
@@ -41,5 +41,19 @@ func TestLightFileTransientUnsupportedResponseAfterConnectionRecoversPromptly(t 
 				}
 			})
 		})
+	}
+}
+
+func TestLightFileTransientRetryBacksOffAndResets(t *testing.T) {
+	control := &lightFileControl{}
+	err := &cluster.RemoteError{StatusCode: http.StatusBadGateway}
+	for attempt, expected := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 5 * time.Second, 5 * time.Second} {
+		if delay := control.retryDelay(err); delay != expected {
+			t.Fatalf("retry %d = %v, want %v", attempt, delay, expected)
+		}
+	}
+	control.acceptRelayResponse(cluster.FileRelayPollResponse{Epoch: strings.Repeat("a", 32)})
+	if delay := control.retryDelay(err); delay != time.Second {
+		t.Fatalf("first failure after recovery = %v", delay)
 	}
 }

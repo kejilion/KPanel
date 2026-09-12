@@ -9,7 +9,8 @@ import (
 
 const (
 	lightFilePollWait       = 25 * time.Second
-	lightFileActivePollWait = 250 * time.Millisecond
+	lightFileActivePollWait = 125 * time.Millisecond
+	lightFilePollInterval   = 125 * time.Millisecond
 	lightFileLiveness       = 2 * time.Minute
 	lightFileCommandTTL     = 2 * time.Minute
 	lightFileCommandAckWait = 12 * time.Second

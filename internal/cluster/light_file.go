@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -127,6 +128,13 @@ type lightFileSession struct {
 	finished      bool
 	err           error
 	nextOffset    int64
+	recentData    []lightFileChunkReceipt
+}
+
+type lightFileChunkReceipt struct {
+	offset int64
+	size   int
+	digest [sha256.Size]byte
 }
 
 func newLightFileRelay(now func() time.Time) *lightFileRelay {
@@ -226,6 +234,32 @@ func (r *lightFileRelay) poll(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	started := time.Now()
+	response, err := r.pollEvents(ctx, nodeID, requestIDs, events)
+	// Pace the acknowledgement, not delivery to the browser. This includes
+	// time already spent waiting for commands/backpressure, and protects old
+	// nodes too: a sequential broker stays below the existing 600 polls/minute
+	// limit without sleeping another 250 ms after every ready data batch.
+	if err == nil && !r.history {
+		if remaining := lightFilePollInterval - time.Since(started); remaining > 0 {
+			timer := time.NewTimer(remaining)
+			defer stopLightFileTimer(timer)
+			select {
+			case <-ctx.Done():
+				return FileRelayPollResponse{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return response, err
+}
+
+func (r *lightFileRelay) pollEvents(
+	ctx context.Context,
+	nodeID string,
+	requestIDs []string,
+	events []FileRelayEvent,
+) (FileRelayPollResponse, error) {
 	item := r.node(nodeID, true)
 	applySnapshot := true
 	for {
@@ -247,7 +281,10 @@ func (r *lightFileRelay) poll(
 				observed = append(observed, event.RequestID)
 			}
 			item.reconcileSessions(observed, now)
-			item.applyEvents(ctx, events, now)
+			if err := item.applyEvents(ctx, events, now); err != nil {
+				item.mu.Unlock()
+				return FileRelayPollResponse{}, err
+			}
 			applySnapshot = false
 		}
 		if item.closed {
@@ -266,9 +303,9 @@ func (r *lightFileRelay) poll(
 			item.mu.Unlock()
 			return response, nil
 		}
-		// A history producer already has more bounded chunks queued. Acknowledge
-		// data immediately instead of adding 250 ms to every chunk round trip.
-		if r.history && len(events) > 0 {
+		// The producer may already have another bounded batch waiting. File
+		// acknowledgements are paced by poll; history keeps its existing policy.
+		if len(events) > 0 {
 			item.resetEpoch = r.epoch
 			item.mu.Unlock()
 			return FileRelayPollResponse{Epoch: r.epoch}, nil
@@ -332,7 +369,7 @@ func (item *lightFileNode) takeCommand(now time.Time) *lightFileCommand {
 	return nil
 }
 
-func (item *lightFileNode) applyEvents(ctx context.Context, events []FileRelayEvent, now time.Time) {
+func (item *lightFileNode) applyEvents(ctx context.Context, events []FileRelayEvent, now time.Time) error {
 	for _, event := range events {
 		session := item.sessions[event.RequestID]
 		if event.CommandID != "" {
@@ -365,6 +402,12 @@ func (item *lightFileNode) applyEvents(ctx context.Context, events []FileRelayEv
 			err := session.push(ctx, event.Offset, event.Data)
 			item.mu.Lock()
 			if err != nil {
+				// Losing the broker HTTP connection does not cancel the browser's
+				// stream. Keep accepted chunks and let the next authenticated poll
+				// resend this batch; do not apply a later end event prematurely.
+				if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+					return err
+				}
 				session.finish(err)
 			}
 		case "end":
@@ -378,7 +421,7 @@ func (item *lightFileNode) applyEvents(ctx context.Context, events []FileRelayEv
 			delete(item.sessions, event.RequestID)
 		}
 	}
-	_ = now
+	return nil
 }
 
 func (item *lightFileNode) reconcileSessions(requestIDs []string, _ time.Time) {
@@ -835,15 +878,34 @@ func (session *lightFileSession) push(ctx context.Context, offset int64, data []
 	if len(data) == 0 || len(data) > lightFileChunkBytes {
 		return ErrFileRelayUnavailable
 	}
+	digest := sha256.Sum256(data)
 	for {
 		session.mu.Lock()
-		if session.finished || offset != session.nextOffset {
+		if session.finished {
+			session.mu.Unlock()
+			return ErrFileRelayUnavailable
+		}
+		if offset != session.nextOffset {
+			// A lost HTTP acknowledgement causes the node to resend its same
+			// event batch in a freshly authenticated envelope. Match complete
+			// chunks without retaining file bytes or accepting changed overlaps.
+			for _, receipt := range session.recentData {
+				if receipt.offset == offset && receipt.size == len(data) && receipt.digest == digest {
+					session.mu.Unlock()
+					return nil
+				}
+			}
 			session.mu.Unlock()
 			return ErrFileRelayUnavailable
 		}
 		select {
 		case session.data <- append([]byte(nil), data...):
 			session.nextOffset += int64(len(data))
+			if len(session.recentData) == lightFileEventLimit {
+				copy(session.recentData, session.recentData[1:])
+				session.recentData = session.recentData[:lightFileEventLimit-1]
+			}
+			session.recentData = append(session.recentData, lightFileChunkReceipt{offset: offset, size: len(data), digest: digest})
 			session.mu.Unlock()
 			return nil
 		default:
