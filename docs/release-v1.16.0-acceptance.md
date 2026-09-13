@@ -106,8 +106,8 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 最终 SHA 的 L2/L3、候选/main/tag 门禁、公开附件、公开 OCI E2E、停写备份与生产 postdeploy 均通过。以下单独记录发布执行、基础设施和证据通道异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：13
-- 其中生产写操作开始后异常次数：3
+- 已记录发布流程异常或无效证据拦截次数：14
+- 其中生产写操作开始后异常次数：4
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -218,6 +218,15 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
     "impact": "Web opener 因 sslip.io 域名含 IP 而拒绝打开公网健康 URL，没有发出请求。",
     "recoveryEvidence": "本机 curl 直连同一 HTTPS URL 返回 HTTP 200、ok、initialized 和 1.16.0。",
     "permanentAction": "公网健康证据固定使用仓库允许的 curl HTTPS 入口保存状态码和响应体，不再把该域名交给 Web opener。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "postrelease-ci/jq-filter/quote-stripping",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "查询最终文档 CI 的步骤进度时，跨 PowerShell/SSH 的 jq 字符串常量引号被剥离，过滤器编译失败，没有形成步骤结论。",
+    "recoveryEvidence": "最终 CI 继续使用已验证的 run 状态 API 精确核对，不依赖该可选步骤过滤器。",
+    "permanentAction": "跨 Shell 的 JSON 处理保存原始响应后在本地 Node 解析，远端 jq 只使用无字符串常量的固定表达式。",
     "historicalReleases": []
   }
 ]
