@@ -105,27 +105,37 @@ function friendlyError(reason: unknown): string {
 }
 
 async function load(silent = false): Promise<void> {
+  // A background poll must not interrupt a request or animate the page controls.
+  if (silent && controller) return
   controller?.abort()
-  controller = new AbortController()
-  if (!silent || !snapshot.value) loading.value = true
-  else refreshing.value = true
+  const requestController = new AbortController()
+  controller = requestController
+  if (!snapshot.value) loading.value = true
+  else if (!silent) refreshing.value = true
   if (!tokenIsValid.value) {
     snapshot.value = undefined
     errorMessage.value = '分享链接格式无效。'
     loading.value = false
     refreshing.value = false
+    controller = undefined
     return
   }
   try {
-    snapshot.value = await api.cluster.publicShare(token.value, controller.signal)
+    const nextSnapshot = await api.cluster.publicShare(token.value, requestController.signal)
+    if (requestController.signal.aborted || controller !== requestController) return
+    snapshot.value = nextSnapshot
     errorMessage.value = ''
   } catch (reason) {
+    if (requestController.signal.aborted || controller !== requestController) return
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     if (reason instanceof ApiError && reason.status === 404) snapshot.value = undefined
     errorMessage.value = friendlyError(reason)
   } finally {
-    loading.value = false
-    refreshing.value = false
+    if (controller === requestController) {
+      controller = undefined
+      loading.value = false
+      refreshing.value = false
+    }
   }
 }
 
@@ -206,11 +216,12 @@ onBeforeUnmount(() => {
             class="share-refresh"
             type="button"
             :disabled="loading || refreshing"
-            aria-label="刷新公开状态"
-            @click="load(true)"
+            :aria-label="refreshing ? '正在刷新' : '刷新公开状态'"
+            :aria-busy="loading || refreshing"
+            @click="load()"
           >
             <RefreshCw :size="16" :class="{ spin: refreshing }" />
-            <span>{{ refreshing ? '正在刷新' : '刷新' }}</span>
+            <span>刷新</span>
           </button>
         </div>
       </header>
@@ -341,7 +352,7 @@ onBeforeUnmount(() => {
                 </span>
               </dd>
             </div>
-            <div>
+            <div class="share-details__uptime">
               <dt><Clock3 :size="13" /> 运行时间</dt>
               <dd>{{ host.uptimeSeconds ? formatDuration(host.uptimeSeconds) : '—' }}</dd>
             </div>
@@ -528,8 +539,14 @@ onBeforeUnmount(() => {
 }
 
 .share-grid.is-list .share-card__header { grid-area: header; border-right: 1px solid var(--border); }
+.share-grid.is-list .share-card__aside { display: contents; }
+.share-grid.is-list .share-status { grid-column: 3; grid-row: 1; justify-self: end; }
+.share-grid.is-list .share-card__aside > small { grid-column: 2 / -1; grid-row: 2; }
 .share-grid.is-list .share-metrics { grid-area: metrics; border-block: 0; border-right: 1px solid var(--border); }
-.share-grid.is-list .share-details { grid-area: details; align-content: center; }
+.share-grid.is-list .share-details { grid-area: details; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 0; padding: 0; }
+.share-grid.is-list .share-details__traffic { grid-column: 1; padding: 12px 14px; }
+.share-grid.is-list .share-details__traffic:first-child { padding-bottom: 0; }
+.share-grid.is-list .share-details__uptime { grid-column: 2; grid-row: 1 / span 2; display: grid; align-content: center; align-self: stretch; padding: 14px; border-left: 1px solid var(--border); }
 
 .share-card__header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px; }
 .share-card__header :deep(.os-identity__mark) { width: 40px; height: 40px; border-radius: 11px; }
@@ -543,7 +560,7 @@ onBeforeUnmount(() => {
 .share-card__location em::before { margin-right: 5px; content: "·"; }
 .share-card__location :deep(.country-flag) { width: 16px; height: 16px; }
 .share-card__aside { display: grid; min-width: 58px; justify-items: end; align-content: center; gap: 6px; }
-.share-card__aside > small { color: var(--text-soft); font-size: .75rem; line-height: 1.5; }
+.share-card__aside > small { color: var(--text-soft); font-size: .75rem; line-height: 1.5; font-variant-numeric: tabular-nums; }
 .share-status { gap: 5px; color: var(--text-soft); font-size: .8125rem; white-space: nowrap; }
 .share-status i { width: 7px; height: 7px; background: currentColor; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
 .share-status.is-online { color: var(--brand); }
@@ -560,9 +577,9 @@ onBeforeUnmount(() => {
 .share-metrics small { color: var(--text-soft); font-size: .75rem; }
 .share-card__empty { padding: 29px; color: var(--muted); text-align: center; border-block: 1px solid var(--border); }
 
-.share-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; padding: 14px; margin: 0; }
+.share-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; padding: 14px; margin: 0; font-variant-numeric: tabular-nums; }
 .share-details div { min-width: 0; }
-/* 实时和累计收发都只用箭头标示方向，左右并排后与其他格同高，不再撑高整张卡 */
+/* Each direction stays together; list traffic rows share a separate uptime column. */
 .share-details__traffic dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .share-details__traffic dd > span { display: flex; min-width: 0; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-details__traffic dd svg { flex: 0 0 auto; color: var(--muted); }
