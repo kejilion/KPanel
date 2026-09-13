@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["复制到其他主机", "Copy to another host"],
   ["正在连接远程服务器", "Connecting to the remote server"],
   ["正在下载 {0}", "Downloading {0}"],
   ["正在接收远程文件", "Receiving the remote file"],
@@ -202,7 +203,6 @@ export default [
   ['跨主机复制部分完成（{0} 项）', 'Cross-host copy partially complete ({0} items)'],
   ['从另一台主机复制到 {0}', 'Copy from another host to {0}'],
   ['拖拽数据无效或超过 64 项，请从来源主机重新拖动。', 'The drag data is invalid or exceeds 64 items. Drag it again from the source host.'],
-  ['已完成的 {0} 项会保留在目标目录。', 'The {0} completed items remain in the destination folder.'],
   ['{0} 项成功，{1} 项失败{2}', '{0} succeeded, {1} failed{2}'],
   ['真实文件已移动，但桌面快捷方式路径同步失败，请刷新后重试。', 'The files were moved, but desktop shortcut paths could not be synchronized. Refresh and try again.'],
   ['已经复制完成的项目会保留在目标目录。', 'Items already copied remain in the destination folder.'],

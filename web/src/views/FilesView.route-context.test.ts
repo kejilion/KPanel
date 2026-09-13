@@ -137,12 +137,19 @@ it('window path synchronization updates the host and ignores an old internal mov
  expect(writes).toEqual(['a'])
 })
 
-it.each(['complete', 'error'])('late cross-host progress and %s cannot replace the new A operation after A-B-A', async (state) => {
+it.each([202, 503])('background submission result %s stays outside a new host operation', async status => {
  const { router, vm } = await mountAtA()
- vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
- let stream!: ReadableStreamDefaultController<Uint8Array>
- transferStream = new ReadableStream({ start(controller) { stream = controller } })
- const send = (event: unknown) => stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + '\n'))
+ let accept!: (response: Response) => void
+ const original = fetch
+ vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => {
+  const url = new URL(input, 'http://localhost')
+  if (url.pathname.endsWith('/transfer-jobs') && init?.method === 'POST') {
+   const body = JSON.parse(String(init.body)); writes.push(body.targetHostId)
+   return new Promise<Response>(resolve => { accept = resolve })
+  }
+  if (url.pathname.endsWith('/transfer-jobs')) return Promise.resolve(new Response(JSON.stringify({items: []}), {headers: {'content-type':'application/json'}}))
+  return original(input, init)
+ }))
  const data = new Map<string, string>()
  const event = { dataTransfer: {
   get types() { return [...data.keys()] },
@@ -152,27 +159,29 @@ it.each(['complete', 'error'])('late cross-host progress and %s cannot replace t
  beginDesktopFileDrag(event, [entry as any], 'd'.repeat(32))
  const older = vm.transferCrossPanelFileDrop(event, '/old-target')
  await flushPromises()
- send({ state: 'connecting' })
- await flushPromises()
- router.back()
- await flushPromises()
- router.forward()
- await flushPromises()
- expect(vm.fileHostId).toBe('a')
- useFileClipboard().set('copy', [entry as any], 'a')
- const newer = vm.pasteClipboard('/new-target')
- await flushPromises()
- send({ state: 'transferring', loadedBytes: 1, totalBytes: 2 })
- await flushPromises()
- expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/new-target' })
- send(state === 'complete' ? { state, entry } : { state, code: 'offline', detail: 'old source offline' })
- stream.close()
+ router.back(); await flushPromises()
+ expect(vm.fileHostId).toBe('b')
+ useFileClipboard().set('copy', [entry as any], 'b')
+ const newer = vm.pasteClipboard('/new-target'); await flushPromises()
+ accept(new Response(JSON.stringify(status === 202 ? { id: 'e'.repeat(32), sourceNodeId: 'd'.repeat(32), targetHostId:'a', targetDirectory:'/old-target',state:'queued',items:[],createdAt:'',updatedAt:'' } : {detail:'unavailable'}), {status, headers:{'content-type':'application/json'}}))
  await older
- await vi.advanceTimersByTimeAsync(2400)
  expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/new-target' })
  expect(vm.pasteBusy).toBe(true)
- finishAction(response('copy'))
- await newer
- expect(vm.fileTransferState).toMatchObject({ phase: 'success', target: '/new-target' })
- expect(writes).toEqual(['a', 'a'])
+ finishAction(response('copy')); await newer
+ expect(vm.fileTransferState).toMatchObject({ phase:'success', target:'/new-target' })
+ expect(writes).toEqual(['a','b'])
+})
+
+it('route navigation waits for a pending rename to finish on its original host', async () => {
+ const {router,vm}=await mountAtA()
+ vm.openDialog('rename',entry); vm.dialogValue='renamed.txt'
+ const pending=vm.submitDialog(); await flushPromises()
+ expect(vm.dialogBusy).toBe(true)
+ router.back(); await flushPromises()
+ expect(vm.fileHostId).toBe('a')
+ expect(router.currentRoute.value.query.hostId).toBe('a')
+ finishAction(response('rename')); await pending; await flushPromises()
+ expect(writes).toEqual(['a'])
+ await router.push('/files?path=/&hostId=b'); await flushPromises()
+ expect(vm.fileHostId).toBe('b')
 })

@@ -24,6 +24,8 @@ import type {
   ClusterShareSettings,
   CrossPanelFileTransferEvent,
   CrossPanelFileTransferInput,
+	FileTransferJob,
+	FileTransferJobInput,
   DockerInventory,
   DockerActionResult,
   DockerBackup,
@@ -1995,6 +1997,12 @@ export const api = {
       }),
     publicShare: (token: string, signal?: AbortSignal): Promise<PublicFileShareView> =>
       request<PublicFileShareView>(`/public/file-shares/${encodeURIComponent(token)}`, { signal }),
+    transferJobs: (signal?: AbortSignal): Promise<{ items: FileTransferJob[] }> =>
+      request('/files/transfer-jobs', { signal }),
+    createTransferJob: (body: FileTransferJobInput): Promise<FileTransferJob> =>
+      request('/files/transfer-jobs', { method: 'POST', body }),
+    changeTransferJob: (id: string, operation: 'cancel' | 'clear'): Promise<void> =>
+      request(`/files/transfer-jobs/${encodeURIComponent(id)}/${operation}`, { method: 'POST' }),
     transferFromPanel: async (
       input: CrossPanelFileTransferInput,
       onEvent: (event: CrossPanelFileTransferEvent) => void,
