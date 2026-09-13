@@ -65,6 +65,7 @@ export default [
   ["已配对 · 文件互传", "Paired · file transfer"],
   ["已配对 · 仅支持接收", "Paired · receive only"],
   ["文件管理已就绪", "File management ready"],
+  ["已授权文件管理", "File management authorized"],
   ["文件代理未就绪", "File broker is not ready"],
   ["当前主机有文件操作进行中", "A file operation is in progress on the current host"],
   ["操作完成后再切换主机，避免文件落到错误的位置。", "Finish the operation before switching hosts to avoid writing to the wrong location."],

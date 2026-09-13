@@ -3,6 +3,7 @@ package panel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -108,10 +109,7 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		err = cluster.ErrFileRelayUnavailable
 	}
 	if err != nil {
-		status, code, detail := http.StatusServiceUnavailable, "file_relay_unavailable", "远端主机文件代理未连接"
-		if errors.Is(err, cluster.ErrRateLimited) {
-			status, code, detail = http.StatusTooManyRequests, "file_relay_rate_limited", "远端主机文件操作过于频繁"
-		}
+		status, code, detail := fileRelayProblem(err)
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			_ = s.audit(r, session.User.ID, "file.remote.relay", "cluster-host", hostID, "failure", nil)
 		}
@@ -153,6 +151,37 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		panic(http.ErrAbortHandler)
 	}
 	copyCompleted = true
+}
+
+func fileRelayProblem(err error) (int, string, string) {
+	var stream *cluster.FileStreamError
+	switch {
+	case errors.Is(err, cluster.ErrRateLimited):
+		return http.StatusTooManyRequests, "file_relay_rate_limited", "远端主机文件操作过于频繁，请稍后重试"
+	case errors.Is(err, cluster.ErrAuthentication), errors.Is(err, cluster.ErrIdentityMismatch):
+		return http.StatusForbidden, "file_relay_authentication_failed", "远端文件通道认证失败，请检查配对身份、文件授权和两端系统时间"
+	case errors.Is(err, cluster.ErrPrivateOrigin):
+		return http.StatusBadGateway, "file_relay_address_rejected", "远端节点地址不在允许访问的网络范围内"
+	case errors.Is(err, cluster.ErrProtocolMismatch):
+		return http.StatusBadGateway, "file_relay_protocol_incompatible", "远端文件通道协议不兼容，请核对两端版本和反向代理配置"
+	case errors.As(err, &stream):
+		switch stream.Code {
+		case "timeout":
+			return http.StatusGatewayTimeout, "file_relay_timeout", "远端文件通道连接或响应超时，请检查网络和反向代理"
+		case "tls_error":
+			return http.StatusBadGateway, "file_relay_tls_error", "远端文件通道 TLS 证书验证失败"
+		case "http_rejected":
+			return http.StatusBadGateway, "file_relay_upgrade_rejected", fmt.Sprintf("远端或反向代理拒绝文件通道连接（HTTP %d）", stream.HTTPStatus)
+		case "connection_closed":
+			return http.StatusBadGateway, "file_relay_connection_closed", "远端文件通道在返回结果前中断，请检查节点和反向代理状态"
+		default:
+			return http.StatusBadGateway, "file_relay_connection_failed", "无法建立远端文件通道，请检查节点地址、网络和反向代理"
+		}
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout, "file_relay_timeout", "等待远端文件通道响应超时"
+	default:
+		return http.StatusServiceUnavailable, "file_relay_unavailable", "远端文件通道未就绪，请检查节点连接和文件授权"
+	}
 }
 
 type lightFileUploadBody struct {

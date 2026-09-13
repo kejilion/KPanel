@@ -282,7 +282,7 @@ describe('FilesView host switcher', () => {
     try {
       await flushPromises()
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(wrapper.get('[data-file-host-id="edge"]').text()).toContain('文件管理已就绪')
+      expect(wrapper.get('[data-file-host-id="edge"]').text()).toContain('已授权文件管理')
       await wrapper.get('[data-file-host-id="edge"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
@@ -321,7 +321,7 @@ describe('FilesView host switcher', () => {
     try {
       await flushPromises()
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(wrapper.get('[data-file-host-id="legacy"]').text()).toContain('文件管理已就绪')
+      expect(wrapper.get('[data-file-host-id="legacy"]').text()).toContain('已授权文件管理')
       await wrapper.get('[data-file-host-id="legacy"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'legacy')

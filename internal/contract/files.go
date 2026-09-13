@@ -8,6 +8,14 @@ const MaxFileEntryBatch = 64
 // anonymous file response. It matches the existing managed upload ceiling.
 const MaxFileShareBytes int64 = 512 << 20
 
+// Directory copies retain their existing content/entry budgets. The wire
+// budget also allows bounded TAR headers, PAX paths and padding per entry.
+const (
+	MaxFileTransferEntries            = 10_000
+	MaxFileTransferBytes        int64 = 10 << 30
+	MaxFileTransferArchiveBytes       = MaxFileTransferBytes + MaxFileTransferEntries*(16<<10) + 1024
+)
+
 type FileEntry struct {
 	Name            string    `json:"name"`
 	Path            string    `json:"path"`

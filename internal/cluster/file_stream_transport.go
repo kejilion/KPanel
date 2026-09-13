@@ -155,7 +155,10 @@ func dialFileStream(ctx context.Context, client *http.Client, origin, controller
 				return nil, ErrFileStreamUnsupported
 			}
 		}
-		return nil, err
+		if response != nil {
+			return nil, fileStreamHTTPError(response.StatusCode, err)
+		}
+		return nil, fileStreamTransportError("upgrade", err)
 	}
 	failed := true
 	defer func() {
@@ -172,11 +175,11 @@ func dialFileStream(ctx context.Context, client *http.Client, origin, controller
 		return nil, err
 	}
 	if err = ws.Write(handshakeCtx, websocket.MessageBinary, helloBytes); err != nil {
-		return nil, err
+		return nil, fileStreamTransportError("authentication", err)
 	}
 	kind, reply, err := ws.Read(handshakeCtx)
 	if err != nil {
-		return nil, err
+		return nil, fileStreamTransportError("authentication", err)
 	}
 	if kind != websocket.MessageBinary {
 		return nil, ErrAuthentication
@@ -244,12 +247,21 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 	hello, handshake, owner, err := s.authorizeFileStream(envelope)
 	if err != nil {
 		h.mu.Unlock()
+		if err == ErrRateLimited {
+			result.Authenticated, result.PeerID, result.Role = true, envelope.ControllerID, hello.Role
+			result.StatusCode = http.StatusTooManyRequests
+			_ = ws.Close(websocket.StatusTryAgainLater, "file stream busy")
+		} else {
+			_ = ws.Close(websocket.StatusPolicyViolation, "file stream authentication failed")
+		}
 		return
 	}
 	result.Authenticated, result.PeerID, result.Role = true, envelope.ControllerID, hello.Role
 	release, ok := h.sockets.acquire(envelope.ControllerID)
 	if !ok {
 		h.mu.Unlock()
+		result.StatusCode = http.StatusTooManyRequests
+		_ = ws.Close(websocket.StatusTryAgainLater, "file stream busy")
 		return
 	}
 	defer release()
@@ -360,7 +372,10 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 	} else if hello.RequestID != "" || hello.Generation != "" {
 		return fail()
 	}
-	if !s.panelFileRequests.Allow(envelope.ControllerID, now) || s.replays.Accept(envelope.ControllerID, envelope.RequestID, now) != nil {
+	if !s.panelFileRequests.Allow(envelope.ControllerID, now) {
+		return hello, handshake, owner, ErrRateLimited
+	}
+	if s.replays.Accept(envelope.ControllerID, envelope.RequestID, now) != nil {
 		return fail()
 	}
 	return hello, handshake, owner, nil
@@ -515,7 +530,23 @@ func (b *streamOwnedBody) Read(p []byte) (int, error) {
 func (b *streamOwnedBody) Close() error { err := b.ReadCloser.Close(); b.once.Do(b.done); return err }
 
 func (c *RemoteClient) openUnifiedFile(ctx context.Context, origin, controller, target string, key noise.DHKey, peer []byte, now time.Time, role string, input LightFileRequest) (*http.Response, error) {
-	c.fileStreamOnce.Do(func() { c.fileStreamLimits = newFileStreamLimits() })
+	if c == nil || c.streamClient == nil {
+		return nil, ErrFileRelayUnavailable
+	}
+	c.fileStreamOnce.Do(func() {
+		c.fileStreamLimits = newFileStreamLimits()
+		client := *c.streamClient
+		if transport, ok := client.Transport.(*http.Transport); ok {
+			transport = transport.Clone()
+			transport.TLSHandshakeTimeout = 8 * time.Second
+			transport.ResponseHeaderTimeout = 8 * time.Second
+			client.Transport = transport
+		}
+		// The common handshake context bounds DNS, dial, TLS, Upgrade and
+		// Noise together. Ordinary summary and legacy poll budgets stay intact.
+		client.Timeout = 0
+		c.fileStreamClient = &client
+	})
 	if normalized, err := NormalizeV2Origin(origin); err != nil || normalized != origin {
 		return nil, ErrInvalidOrigin
 	}
@@ -526,7 +557,7 @@ func (c *RemoteClient) openUnifiedFile(ctx context.Context, origin, controller, 
 	if !ok {
 		return nil, ErrRateLimited
 	}
-	conn, err := dialFileStream(ctx, c.streamClient, origin, controller, target, key, peer, now, fileStreamHello{Role: role})
+	conn, err := dialFileStream(ctx, c.fileStreamClient, origin, controller, target, key, peer, now, fileStreamHello{Role: role})
 	if err != nil {
 		release()
 		return nil, err
