@@ -110,8 +110,8 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 最终 SHA 的 L2/L3、候选/main/tag 门禁、公开附件、公开 OCI E2E、停写备份与生产 postdeploy 均通过。以下单独记录发布执行、基础设施和证据通道异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：22
-- 其中生产写操作开始后异常次数：11
+- 已记录发布流程异常或无效证据拦截次数：23
+- 其中生产写操作开始后异常次数：12
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -286,6 +286,15 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
     "recoveryEvidence": "改用 GitHub REST 的 prerelease 字段校验；最终工作流 run 34746414210 成功，公开状态与 Docker 摘要同时匹配。",
     "permanentAction": "Release 状态修改与校验统一使用同一 REST API 字段，避免 CLI 展示字段差异。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-ci/github-api/rate-limit",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "回滚文档候选 CI 轮询耗尽 arena-154 匿名 GitHub API 配额，末次只读查询返回 403，没有改变 CI 或生产状态。",
+    "recoveryEvidence": "停止轮询并改用公开 Actions 页面核对同一 run ID、分支和精确提交，待页面给出最终状态后再推进主线。",
+    "permanentAction": "CI 状态读取复用现有 run URL 并采用至少 60 秒退避；匿名 API 配额不足时只使用公开 Actions 页面，不切换到新的高频出口。",
+    "historicalReleases": ["v1.16.0"]
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
