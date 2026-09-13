@@ -2,16 +2,15 @@
 
 ## 当前功能与本轮优化（2026-09-13）
 
-本节描述候选分支实现，用户已授权提交；本轮未授权推送或部署，下面的历史任务授权不适用于本轮任务。
-工作树 `C:\GitHub\_codex-tasks\kpanel-cross-host-files-optimization-20260913`，
-分支 `feature/cross-host-files-optimization-20260913`；基线与回滚点为
-`1cc5a8421c4150f55731b32e6a829e4495be4928`。该基线在 `aa81c3c` 上包含已推送的
-文件流稳定性候选，发布前需由 release writer 一并核对。风险等级 L2。
+本节描述 KPanel v1.16.0 发布候选，用户已授权进入完整上线流程。发布工作树
+`C:\GitHub\_release-candidates\kpanel-post-v1150-20260913`，分支
+`release/post-v1.15.0-candidate-20260913`；发布基线与回滚点分别为
+`origin/main@aa81c3cb029819285e0003252ac3fe5151329617` 和 `v1.15.0`。风险等级 L3。
 `scriptLinkageState=not-required`：只复用 KPanel/Agent 文件协议，不改变脚本动作或产物；
 内置脚本 commit `5ef0201947dfb80062d54a0ba8f11009e871cf04`，
 SHA-256 `4adc9e163a6db31a180e3a16489dcec3bf1f1a48a95253a140aaf11100eae048`。
 
-候选验证：完整 L2 通过，包含 Go 全量测试与 vet、157 个前端测试文件 / 1,370 项测试、
+候选验证：完整 L2 通过，包含 Go 全量测试与 vet、157 个前端测试文件 / 1,373 项测试、
 国际化检查、生产构建、安装安全检查和 Linux amd64/arm64 构建；补充的任务管理与 Panel
 竞态检测通过。真实 Linux Agent 集成覆盖双向文件/目录复制、同名副本、部分失败和重复提交；
 7 项浏览器 mock-ui 检查通过。尚未进行跨物理主机长时间验收，浏览器模拟不作为真实传输 E2E 证据。
