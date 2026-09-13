@@ -16,6 +16,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -742,6 +744,22 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+	s.executeFileTransfer(r, session.User.ID, input, targetHostID, targetHostKind, change, writeEvent)
+}
+
+// Both foreground compatibility requests and durable jobs use the same copy
+// implementation, permissions, resource versions and atomic Agent import.
+func (s *Server) executeFileTransfer(r *http.Request, actorID string, input contract.FileTransferRequest, targetHostID string, targetHostKind cluster.HostKind, change map[string]any, emit func(contract.FileTransferEvent)) {
+	var eventMu sync.Mutex
+	finished := false
+	writeEvent := func(event contract.FileTransferEvent) {
+		eventMu.Lock()
+		defer eventMu.Unlock()
+		if !finished {
+			emit(event)
+		}
+	}
+	defer func() { eventMu.Lock(); finished = true; eventMu.Unlock() }()
 	writeEvent(contract.FileTransferEvent{State: "connecting"})
 
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
@@ -755,8 +773,8 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	if ensureErr != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "目标目录不存在或不可写。"})
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Code: "target_unavailable", Detail: "目标目录不存在或不可写。"})
 		return
 	}
 	var content io.ReadCloser
@@ -783,14 +801,20 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源主机，或配对未授权文件复制。"})
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Code: "source_unavailable", Detail: "无法连接来源主机，或配对未授权文件复制。"})
 		return
 	}
 	defer content.Close()
+	stopContent := context.AfterFunc(transferContext, func() { _ = content.Close() })
+	defer stopContent()
 	if metadata.Name != path.Base(input.Path) || metadata.ResourceVersion != input.ResourceVersion {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Detail: "来源文件在拖拽后已发生变化。"})
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Code: "source_changed", Detail: "来源文件在拖拽后已发生变化。"})
+		return
+	}
+	if metadata.Kind == "file" && metadata.SizeBytes > contract.MaxFileShareBytes || metadata.Kind == "directory" && metadata.SizeBytes > contract.MaxFileTransferBytes {
+		writeEvent(contract.FileTransferEvent{State: "error", Code: "transfer_too_large", Detail: "来源超过传输容量：单文件 512 MiB，目录内容 10 GiB。"})
 		return
 	}
 	var name string
@@ -810,13 +834,13 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	change["targetName"] = name
 	writeEvent(contract.FileTransferEvent{State: "transferring", TotalBytes: metadata.SizeBytes})
 
-	loaded := int64(0)
+	var loaded atomic.Int64
 	lastReported := time.Now()
 	tracked := &fileTransferProgressReader{source: content, report: func(count int64) {
-		loaded += count
+		loaded.Add(count)
 		if time.Since(lastReported) >= 180*time.Millisecond {
 			writeEvent(contract.FileTransferEvent{
-				State: "transferring", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes,
+				State: "transferring", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes,
 			})
 			lastReported = time.Now()
 		}
@@ -849,27 +873,27 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断。"})
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断，请检查目标目录。"})
 		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，未保留半成品。"})
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，请检查目标目录。"})
 		return
 	}
-	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes})
+	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes})
 	entry, err := decodeFileTransferEntry(response.Body)
-	if err != nil {
-		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果。"})
+	if err != nil || entry.Path != path.Join(input.TargetDirectory, name) || entry.Kind != metadata.Kind || entry.ResourceVersion == "" {
+		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果，请检查目标目录。"})
 		return
 	}
-	_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
+	_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
 	writeEvent(contract.FileTransferEvent{
-		State: "complete", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Entry: &entry,
+		State: "complete", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Entry: &entry,
 	})
 }
 
