@@ -419,15 +419,7 @@ func (s *Server) streamFederatedAgent(
 	// Transfer exports can legitimately contain a large file or directory;
 	// the Agent already applies the transfer contract and the relay applies
 	// the request/session duration limits. Do not truncate the stream here.
-	if _, err := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10)); err != nil {
-		panic(http.ErrAbortHandler)
-	}
-	if agentPath == "/v1/files/transfer/export" && response.StatusCode >= 200 && response.StatusCode < 300 {
-		if response.Trailer.Get("X-KPanel-Transfer-Result") != "ok" {
-			panic(http.ErrAbortHandler)
-		}
-		w.Header().Set("X-KPanel-Transfer-Result", "ok")
-	}
+	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
 }
 
 func formatContentLength(value int64) string {
