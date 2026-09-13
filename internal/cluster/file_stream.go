@@ -29,8 +29,7 @@ const (
 	streamPing             = byte(16)
 	streamPong             = byte(17)
 	streamReject           = byte(18)
-	streamMaxUpload        = int64(512 << 20)
-	streamHandshakeTimeout = 8 * time.Second
+	streamHandshakeTimeout = 15 * time.Second
 )
 
 var ErrFileStreamUnsupported = errors.New("file stream protocol is unsupported")
@@ -79,6 +78,28 @@ func (c *fileStreamConn) close() { c.stop(); _ = c.ws.CloseNow() }
 func (c *fileStreamConn) limitFileLifetime() {
 	timer := time.AfterFunc(2*time.Hour, c.stop)
 	context.AfterFunc(c.ctx, func() { timer.Stop() })
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(c.ctx, fileStreamIdleTimeout)
+				err := c.ws.Ping(ctx)
+				cancel()
+				if err != nil {
+					c.close()
+					return
+				}
+				// Native control frames never become Noise application records.
+				// Only an acknowledged ping extends connection liveness. Upload
+				// progress and blocked writes retain their own idle deadlines.
+				c.idle.Reset(fileStreamIdleTimeout)
+			}
+		}
+	}()
 }
 
 func (c *fileStreamConn) write(kind byte, data []byte) error {
@@ -155,8 +176,10 @@ func validStreamEnd(data []byte, size int64) bool {
 	return len(data) == 8 && binary.BigEndian.Uint64(data) == uint64(size)
 }
 
-func streamWriteBody(c *fileStreamConn, body io.Reader, length int64) error {
+func streamWriteBody(c *fileStreamConn, body io.Reader, length, limit int64) error {
 	var total int64
+	progress := time.AfterFunc(fileStreamIdleTimeout, c.close)
+	defer progress.Stop()
 	buffer := make([]byte, fileStreamChunkBytes)
 	if body == nil {
 		body = http.NoBody
@@ -165,12 +188,13 @@ func streamWriteBody(c *fileStreamConn, body io.Reader, length int64) error {
 		n, err := body.Read(buffer)
 		if n > 0 {
 			total += int64(n)
-			if total > streamMaxUpload || (length >= 0 && total > length) {
+			if total > limit || (length >= 0 && total > length) {
 				return ErrAuthentication
 			}
 			if writeErr := c.write(streamData, buffer[:n]); writeErr != nil {
 				return writeErr
 			}
+			progress.Reset(fileStreamIdleTimeout)
 		}
 		if err == io.EOF {
 			if length >= 0 && total != length {
@@ -208,7 +232,7 @@ func openStreamRequest(c *fileStreamConn, input LightFileRequest) (*http.Respons
 		return nil, err
 	}
 	go func() {
-		if err := streamWriteBody(c, input.Body, input.BodyLength); err != nil {
+		if err := streamWriteBody(c, input.Body, input.BodyLength, fileRelayBodyLimit(input.Method, input.Path, input.RawQuery)); err != nil {
 			c.close()
 		}
 	}()
@@ -218,7 +242,7 @@ func openStreamRequest(c *fileStreamConn, input LightFileRequest) (*http.Respons
 		response.Status < 200 || response.Status > 599 || !validFileRelayHeaders(response.Headers) {
 		c.close()
 		if err != nil {
-			return nil, err
+			return nil, fileStreamTransportError("response", err)
 		}
 		return nil, ErrAuthentication
 	}
@@ -281,7 +305,7 @@ func (b *fileStreamBody) Close() error { b.conn.close(); return nil }
 func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStreamLimits, peer string, readOnly bool) {
 	c.limitFileLifetime()
 	defer c.close()
-	kind, payload, err := c.read()
+	kind, payload, err := c.readControl()
 	var meta fileStreamRequest
 	if err != nil || kind != streamRequest || decodeV2Payload(payload, &meta) != nil {
 		return
@@ -292,6 +316,7 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 	}
 	release, ok := limits.acquire(peer, input)
 	if !ok {
+		rejectStreamRequest(c, http.StatusTooManyRequests, "file_relay_rate_limited", "远端主机文件操作过于频繁，请稍后重试")
 		return
 	}
 	defer release()
@@ -317,7 +342,8 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 		defer c.close()
 		var total int64
 		for {
-			kind, data, readErr := c.read()
+			// Heartbeats cannot keep an incomplete upload alive indefinitely.
+			kind, data, readErr := c.readControl()
 			if readErr != nil {
 				_ = writer.CloseWithError(readErr)
 				return
@@ -339,11 +365,14 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 				return
 			}
 			total += int64(len(data))
-			if total > streamMaxUpload || (meta.Length >= 0 && total > meta.Length) {
+			if total > fileRelayBodyLimit(meta.Method, meta.Path, meta.Query) || (meta.Length >= 0 && total > meta.Length) {
 				_ = writer.CloseWithError(ErrAuthentication)
 				return
 			}
-			if _, err := writer.Write(data); err != nil {
+			blocked := time.AfterFunc(fileStreamIdleTimeout, c.close)
+			_, err := writer.Write(data)
+			blocked.Stop()
+			if err != nil {
 				return
 			}
 		}
@@ -381,6 +410,19 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 	select {
 	case <-peerDone:
 	case <-c.ctx.Done():
+	}
+}
+
+func rejectStreamRequest(c *fileStreamConn, status int, code, title string) {
+	w := &fileStreamResponseWriter{conn: c, header: make(http.Header)}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "code": code, "title": title, "retryable": true})
+	if w.err == nil && c.write(streamEnd, streamSize(w.total)) == nil {
+		c.completed.Store(true)
+		// Close performs a bounded close handshake, allowing the reader to
+		// consume the complete response while an early upload is interrupted.
+		_ = c.ws.Close(websocket.StatusNormalClosure, "request rejected")
 	}
 }
 

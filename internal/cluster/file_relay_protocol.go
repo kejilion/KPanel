@@ -3,8 +3,11 @@ package cluster
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 const (
@@ -124,7 +127,7 @@ func validateFileRelayCommand(command FileRelayCommand, now time.Time) error {
 			command.Offset != 0 || len(command.Data) != 0 || command.Final {
 			return ErrAuthentication
 		}
-		if command.BodyLength < -1 || command.BodyLength > 512<<20 {
+		if command.BodyLength < -1 || command.BodyLength > fileRelayBodyLimit(command.Method, command.Path, command.Query) {
 			return ErrAuthentication
 		}
 	case "body":
@@ -140,6 +143,16 @@ func validateFileRelayCommand(command FileRelayCommand, now time.Time) error {
 		return ErrAuthentication
 	}
 	return nil
+}
+
+func fileRelayBodyLimit(method, path, query string) int64 {
+	if method == http.MethodPost && path == "/v1/files/transfer/import" {
+		values, err := url.ParseQuery(query)
+		if err == nil && len(values["kind"]) == 1 && values.Get("kind") == "directory" {
+			return contract.MaxFileTransferArchiveBytes
+		}
+	}
+	return contract.MaxFileShareBytes
 }
 
 func validFileRelayHeaders(headers map[string]string) bool {

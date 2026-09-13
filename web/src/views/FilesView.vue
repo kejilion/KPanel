@@ -252,7 +252,7 @@ function fileHostStatus(host: ClusterHost): FileHostStatus {
     return { action: 'manage', label: phrase('主机状态处理中') }
   }
   if (host.kind === 'panel' && host.fileManagementAvailable === true) {
-    return { action: 'select', label: phrase('文件管理已就绪') }
+    return { action: 'select', label: phrase('已授权文件管理') }
   }
   if (host.mutualFileTransferAvailable) {
     return { action: 'open', label: phrase('已配对 · 文件互传') }

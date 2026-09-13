@@ -297,7 +297,11 @@ func (s *Server) fileArchive(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err == nil {
-		_, _ = io.CopyBuffer(output, reader, buffer)
+		if _, err = io.CopyBuffer(output, reader, buffer); err != nil {
+			panic(http.ErrAbortHandler)
+		}
+	} else if err != io.EOF {
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -726,6 +730,9 @@ func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request) {
 	transferContext, cancel := context.WithTimeout(r.Context(), fileTransferMaxDuration)
 	defer cancel()
 	r.Body = http.MaxBytesReader(w, r.Body, filemanager.MaxUploadBytes+1)
+	// Reading a slow upload can outlive the Agent's default response deadline.
+	// Refresh it when either the success or failure result is actually written.
+	w = httpstream.NewIdleResponseWriter(transferContext, w, fileTransferIdleTimeout)
 	content := httpstream.NewIdleReader(
 		transferContext, w, r.Body, fileTransferIdleTimeout,
 	)
@@ -827,6 +834,7 @@ func (s *Server) fileTransferImport(w http.ResponseWriter, r *http.Request) {
 	transferContext, cancel := context.WithTimeout(r.Context(), fileTransferMaxDuration)
 	defer cancel()
 	content := httpstream.NewIdleReader(transferContext, w, r.Body, fileTransferIdleTimeout)
+	w = httpstream.NewIdleResponseWriter(transferContext, w, fileTransferIdleTimeout)
 	var entry contract.FileEntry
 	switch r.URL.Query().Get("kind") {
 	case "file":
@@ -839,6 +847,7 @@ func (s *Server) fileTransferImport(w http.ResponseWriter, r *http.Request) {
 			&exactTransferReader{source: content, remaining: size}, size, false,
 		)
 	case "directory":
+		content = http.MaxBytesReader(w, io.NopCloser(content), contract.MaxFileTransferArchiveBytes)
 		entry, err = s.files.ImportDirectory(
 			transferContext, r.URL.Query().Get("path"), r.URL.Query().Get("name"), content,
 		)

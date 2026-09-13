@@ -380,7 +380,9 @@ func (s *Server) streamFileDownload(w http.ResponseWriter, r *http.Request, rawQ
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+	if _, err := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10)); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (s *Server) streamFileArchiveDownload(w http.ResponseWriter, r *http.Request) {
@@ -417,7 +419,9 @@ func (s *Server) streamFileArchiveDownloadRequest(
 	w.Header().Set("Pragma", "no-cache")
 	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
 	writer.WriteHeader(response.StatusCode)
-	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
+	if _, err := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10)); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func writeFileArchiveDownloadHead(w http.ResponseWriter, name string) {
@@ -857,10 +861,8 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes})
-	var entry contract.FileEntry
-	responseDecoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	responseDecoder.DisallowUnknownFields()
-	if err := responseDecoder.Decode(&entry); err != nil {
+	entry, err := decodeFileTransferEntry(response.Body)
+	if err != nil {
 		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果。"})
 		return
@@ -941,7 +943,54 @@ func (s *Server) openLocalFileTransfer(
 		_ = response.Body.Close()
 		return nil, contract.FileTransferMetadata{}, errors.New("local file transfer metadata is invalid")
 	}
-	return response.Body, metadata, nil
+	return &localFileTransferBody{ReadCloser: response.Body, trailer: response.Trailer}, metadata, nil
+}
+
+// HTTP/TAR EOF alone cannot confirm a successful Agent export. The trailer
+// carries failures detected after the final data bytes (including source changes).
+type localFileTransferBody struct {
+	io.ReadCloser
+	trailer http.Header
+}
+
+func (b *localFileTransferBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF && b.trailer.Get("X-KPanel-Transfer-Result") != "ok" {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, err
+}
+
+func readFileTransferResponse(body io.Reader) ([]byte, error) {
+	const limit = 1 << 20
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, errors.New("file transfer response exceeds limit")
+	}
+	return data, nil
+}
+
+// Read through authenticated transport EOF before reporting success or closing
+// the socket. Decoding one JSON value alone can leave the end record unread.
+func decodeFileTransferEntry(body io.Reader) (contract.FileEntry, error) {
+	var entry contract.FileEntry
+	data, err := readFileTransferResponse(body)
+	if err != nil {
+		return entry, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&entry); err != nil {
+		return entry, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return entry, errors.New("invalid file transfer response")
+	}
+	return entry, nil
 }
 
 func (s *Server) openFileHostRequest(
@@ -974,8 +1023,8 @@ func (s *Server) ensureFileHostTransferDirectory(
 	if err == nil {
 		defer response.Body.Close()
 		if response.StatusCode == http.StatusOK {
-			var entry contract.FileEntry
-			if json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&entry) == nil && entry.Kind == "directory" {
+			entry, decodeErr := decodeFileTransferEntry(response.Body)
+			if decodeErr == nil && entry.Kind == "directory" {
 				return nil
 			}
 			return errors.New("target is not a directory")
@@ -996,8 +1045,9 @@ func (s *Server) ensureFileHostTransferDirectory(
 		}, Body: bytes.NewReader(body), BodyLength: int64(len(body)),
 	})
 	if err == nil {
+		_, readErr := readFileTransferResponse(created.Body)
 		_ = created.Body.Close()
-		if created.StatusCode >= http.StatusOK && created.StatusCode < http.StatusMultipleChoices {
+		if readErr == nil && created.StatusCode >= http.StatusOK && created.StatusCode < http.StatusMultipleChoices {
 			return nil
 		}
 	}
@@ -1012,8 +1062,8 @@ func (s *Server) ensureFileHostTransferDirectory(
 	if checked.StatusCode != http.StatusOK {
 		return errors.New("create target directory failed")
 	}
-	var entry contract.FileEntry
-	if json.NewDecoder(io.LimitReader(checked.Body, 1<<20)).Decode(&entry) != nil || entry.Kind != "directory" {
+	entry, decodeErr := decodeFileTransferEntry(checked.Body)
+	if decodeErr != nil || entry.Kind != "directory" {
 		return errors.New("created target is not a directory")
 	}
 	return nil
@@ -1055,8 +1105,11 @@ func (s *Server) uniqueFileHostTransferName(
 		if err != nil {
 			return "", err
 		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		_, readErr := readFileTransferResponse(response.Body)
 		_ = response.Body.Close()
+		if readErr != nil {
+			return "", readErr
+		}
 		switch response.StatusCode {
 		case http.StatusNotFound:
 			return candidate, nil
