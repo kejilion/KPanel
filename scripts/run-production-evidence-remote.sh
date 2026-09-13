@@ -111,14 +111,19 @@ snapshot() {
   local output_dir=$1
   install -d -m 700 "$output_dir"
   local health_ready=false
+  local health_error="$output_dir/health.error"
   for _ in $(seq 1 10); do
-    if curl -fsS http://127.0.0.1:8080/api/v1/health > "$output_dir/health.json"; then
+    if curl -fsS http://127.0.0.1:8080/api/v1/health > "$output_dir/health.json" 2> "$health_error"; then
       health_ready=true
       break
     fi
     sleep 1
   done
-  [ "$health_ready" = true ]
+  if [ "$health_ready" != true ]; then
+    cat "$health_error" >&2
+    return 1
+  fi
+  rm -f "$health_error"
   python3 - "$output_dir/health.json" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
@@ -157,7 +162,7 @@ PY
 }
 
 production_ready() {
-  curl -fsS http://127.0.0.1:8080/api/v1/health >/dev/null &&
+  curl -fsS http://127.0.0.1:8080/api/v1/health >/dev/null 2>&1 &&
     systemctl is-active --quiet kejilion-agent &&
     [ "$(docker inspect "$container" --format '{{.State.Status}}')" = running ] &&
     [ "$(docker inspect "$container" --format '{{.State.Health.Status}}')" = healthy ]

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-09-13
+
+### Fixed
+
+- 完整 KPanel 节点之间的文件浏览、上传、下载和复制恢复使用 Noise 加密连接与 HTTP POST 中继链路，避免完整节点误走轻量节点专用的 WebSocket 文件通道。
+- 轻量节点继续使用 v1.15.0 的 `light-control` / `light-data` WebSocket 文件实现，不需要重新接入或迁移身份。
+
+### Upgrade Notes
+
+- `scriptLinkageState=not-required`，继续使用 `kejilion/sh@5ef0201947dfb80062d54a0ba8f11009e871cf04`，无需发布或更新受管脚本。
+- 无数据库 schema、配置、端口、Compose、节点身份或业务数据迁移；完整 KPanel 节点需成对升级到 v1.15.1，轻量节点保持现状。
+- 可回滚至 v1.15.0；回滚会让完整 KPanel 节点重新使用 v1.15.0 WebSocket 文件链路，但不会删除已有配置、文件或节点数据。
+
 ## [1.15.0] - 2026-09-13
 
 ### Added

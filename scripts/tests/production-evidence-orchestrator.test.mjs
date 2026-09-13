@@ -217,8 +217,12 @@ test('remote production entrypoint is strict and never evaluates the plan', () =
   assert.match(content, /protected\.sha256/);
   assert.match(content, /sha256sum -c SHA256SUMS/);
   assert.match(content, /for _ in \$\(seq 1 10\); do/);
-  assert.match(content, /\[ "\$health_ready" = true \]/);
+  assert.match(content, /2> "\$health_error"/);
+  assert.match(content, /if \[ "\$health_ready" != true \]; then/);
+  assert.match(content, /cat "\$health_error" >&2/);
+  assert.match(content, /rm -f "\$health_error"/);
   assert.match(content, /production_ready\(\)/);
+  assert.match(content, /api\/v1\/health >\/dev\/null 2>&1/);
   assert.match(content, /if production_ready; then break; fi/);
   assert.doesNotMatch(content, /\beval\b/);
   assert.doesNotMatch(content, /(?:^|\n)\s*(?:source|\.)\s+"?\$plan/m);
