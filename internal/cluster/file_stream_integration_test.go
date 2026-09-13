@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -49,7 +50,7 @@ type fileStreamNode struct {
 	legacy  atomic.Int32
 }
 
-// A real TLS server and approved-IP RemoteClient exercise pairing and streaming.
+// A real TLS server and approved-IP RemoteClient exercise pairing and file relay.
 // Only the final dial is mapped into loopback; no public server is contacted.
 func newFileStreamNode(t *testing.T) *fileStreamNode {
 	t.Helper()
@@ -72,6 +73,10 @@ func newFileStreamNode(t *testing.T) *fileStreamNode {
 		var envelope cluster.FederationEnvelopeV2
 		if json.NewDecoder(r.Body).Decode(&envelope) != nil {
 			http.Error(w, "invalid", 400)
+			return
+		}
+		if r.URL.Path == "/api/v2/federation/files/open" || r.URL.Path == "/api/v2/federation/files/open-linked" {
+			n.serveLegacyFileOpen(w, r, envelope)
 			return
 		}
 		response, err := n.service.HandleFederationV2(r.Context(), "198.51.100.20", r.URL.Path, r.Header.Get(cluster.FederationCapabilitiesHeader), envelope)
@@ -106,6 +111,55 @@ func newFileStreamNode(t *testing.T) *fileStreamNode {
 	return n
 }
 
+func (n *fileStreamNode) serveLegacyFileOpen(w http.ResponseWriter, r *http.Request, envelope cluster.FederationEnvelopeV2) {
+	linked := r.URL.Path == "/api/v2/federation/files/open-linked"
+	var input cluster.FederationFileOpenRequest
+	var authorization *cluster.FederationFileAuthorization
+	var err error
+	if linked {
+		input, authorization, err = n.service.AuthorizeLinkedFederationFileV2("198.51.100.20", envelope)
+	} else {
+		input, authorization, err = n.service.AuthorizeFederationFileV2("198.51.100.20", envelope)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	defer authorization.Close()
+	query := url.Values{"path": {input.Path}, "resourceVersion": {input.ResourceVersion}}
+	request := httptest.NewRequest(http.MethodGet, "/v1/files/transfer/export?"+query.Encode(), nil)
+	recorder := httptest.NewRecorder()
+	agent.NewFileHandler(n.manager).ServeHTTP(recorder, request)
+	response := recorder.Result()
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		http.Error(w, "agent export failed", http.StatusBadGateway)
+		return
+	}
+	rawMetadata, err := base64.RawURLEncoding.DecodeString(response.Header.Get("X-KPanel-File-Metadata"))
+	var metadata contract.FileTransferMetadata
+	if err != nil || json.Unmarshal(rawMetadata, &metadata) != nil {
+		http.Error(w, "invalid metadata", http.StatusBadGateway)
+		return
+	}
+	sealed, cipher, err := authorization.SealMetadata(metadata)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-kpanel-noise-stream")
+	w.WriteHeader(http.StatusOK)
+	if err := cluster.WriteFederationFileHeader(w, sealed); err != nil {
+		return
+	}
+	writer := cluster.NewFederationFileWriter(w, cipher)
+	_, copyErr := io.CopyBuffer(writer, response.Body, make([]byte, 60<<10))
+	if copyErr == nil && response.Trailer.Get("X-KPanel-Transfer-Result") != "ok" {
+		copyErr = errors.New("agent transfer failed")
+	}
+	_ = writer.Finish(copyErr)
+}
+
 func streamRead(t *testing.T, response *http.Response, err error, status int) []byte {
 	t.Helper()
 	if err != nil {
@@ -119,7 +173,7 @@ func streamRead(t *testing.T, response *http.Response, err error, status int) []
 	return data
 }
 
-func TestUnifiedFileStreamRealFileOperationsAndCrossNodeCopy(t *testing.T) {
+func TestLegacyPanelFileRelayRealOperationsAndCrossNodeCopy(t *testing.T) {
 	center, target := newFileStreamNode(t), newFileStreamNode(t)
 	code, err := target.service.CreatePairingCodeV2()
 	if err != nil {
@@ -162,7 +216,7 @@ func TestUnifiedFileStreamRealFileOperationsAndCrossNodeCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Import a real file stream into the local Agent, checking authenticated EOF.
+	// Import the authenticated remote file into the local Agent.
 	request := httptest.NewRequest("POST", "/v1/files/transfer/import?path=%2F&name=copied.bin&kind=file&size="+fmt.Sprint(metadata.SizeBytes), reader)
 	request.Header.Set("Content-Type", "application/octet-stream")
 	request.ContentLength = -1
@@ -176,7 +230,7 @@ func TestUnifiedFileStreamRealFileOperationsAndCrossNodeCopy(t *testing.T) {
 	if err != nil || !bytes.Equal(stored, content) {
 		t.Fatalf("copied data: %v", err)
 	}
-	// The reverse linked grant reuses the same transport with export-only scope.
+	// The reverse linked grant keeps the previous export-only relay scope.
 	entry, _ = center.manager.Stat("/copied.bin")
 	reader, _, err = target.service.OpenRemoteFileV2(ctx, center.service.NodeID(), cluster.FederationFileOpenRequest{Path: entry.Path, ResourceVersion: entry.ResourceVersion})
 	if err != nil {
@@ -187,10 +241,11 @@ func TestUnifiedFileStreamRealFileOperationsAndCrossNodeCopy(t *testing.T) {
 	if err != nil || !bytes.Equal(stored, content) {
 		t.Fatalf("linked copy: %v", err)
 	}
-	if target.legacy.Load() != 0 || center.legacy.Load() != 0 {
-		t.Fatal("file operations used legacy endpoints")
+	if target.calls.Load() != 0 || center.calls.Load() != 0 || target.legacy.Load() == 0 || center.legacy.Load() == 0 {
+		t.Fatalf("Panel relay did not stay on legacy endpoints: target stream=%d legacy=%d center stream=%d legacy=%d",
+			target.calls.Load(), target.legacy.Load(), center.calls.Load(), center.legacy.Load())
 	}
-	t.Logf("real TLS + Agent: %d bytes upload/download/copy, range and reverse linked export verified; stream sockets target=%d center=%d", len(content), target.calls.Load(), center.calls.Load())
+	t.Logf("real TLS + Agent: %d bytes upload/download/copy, range and reverse linked export verified over the v1.14.1 Panel relay", len(content))
 }
 
 func TestUnifiedFileStreamLightRealUploadDownloadAndCopy(t *testing.T) {
@@ -255,8 +310,8 @@ func TestUnifiedFileStreamLightRealUploadDownloadAndCopy(t *testing.T) {
 	if err != nil || !bytes.Equal(stored, content) {
 		t.Fatalf("light copy: %v", err)
 	}
-	if center.legacy.Load() != 0 {
-		t.Fatal("light file operations used polling")
+	if center.calls.Load() == 0 || center.legacy.Load() != 0 {
+		t.Fatalf("light file operations left WebSocket transport: stream=%d polling=%d", center.calls.Load(), center.legacy.Load())
 	}
 	stop()
 	select {

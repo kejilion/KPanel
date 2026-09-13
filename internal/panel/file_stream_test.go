@@ -14,7 +14,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 )
 
-func TestFederationFileStreamRouteAndAudit(t *testing.T) {
+func TestFederationFileStreamRouteIsReservedForLightNodes(t *testing.T) {
 	server, _ := newTestServer(t)
 	server.cluster.SetFileRelayHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("fail") == "1" {
@@ -46,16 +46,14 @@ func TestFederationFileStreamRouteAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{"", "fail=1"} {
-		response, err := center.OpenRemotePanelFile(ctx, host.ID, cluster.LightFileRequest{Method: "GET", Path: "/v1/files", RawQuery: query})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = io.ReadAll(response.Body)
-		response.Body.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
+	response, err := center.OpenRemotePanelFile(ctx, host.ID, cluster.LightFileRequest{Method: "GET", Path: "/v1/files"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || string(body) != "file-result" {
+		t.Fatalf("legacy Panel relay: body=%q error=%v", body, err)
 	}
 	// The fixture's unavailable telemetry can consume the global auth audit
 	// cooldown during pairing; isolate the following stream-auth assertion.
@@ -88,7 +86,7 @@ func TestFederationFileStreamRouteAndAudit(t *testing.T) {
 				t.Fatal("file content entered audit")
 			}
 		}
-		if success == 1 && rejected == 1 && unauth == 1 {
+		if success == 0 && rejected == 0 && unauth == 1 {
 			break
 		}
 		if time.Now().After(deadline) {

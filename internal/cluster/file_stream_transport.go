@@ -3,7 +3,6 @@ package cluster
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -191,8 +190,9 @@ func dialFileStream(ctx context.Context, client *http.Client, origin, controller
 	return newFileStreamConn(ctx, ws, tx, rx), nil
 }
 
-// ServeFileStream authenticates a GET upgrade before any file operation is
-// sent. Requests and keys are bound to this exact route and Noise prologue.
+// ServeFileStream authenticates a lightweight-node GET upgrade before any
+// file operation is sent. Requests and keys are bound to this exact route and
+// Noise prologue.
 type FileStreamResult struct {
 	Upgraded      bool
 	Authenticated bool
@@ -269,14 +269,6 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 	cancel()
 	releasePreauth()
 	switch hello.Role {
-	case "panel", "linked":
-		s.panelFileRelay.mu.Lock()
-		handler := s.panelFileRelay.handler
-		s.panelFileRelay.mu.Unlock()
-		if handler == nil {
-			return
-		}
-		serveStreamRequest(c, handler, h.limits, envelope.ControllerID, hello.Role == "linked")
 	case "light-control":
 		h.serveControl(c, envelope.ControllerID, envelope.RequestID)
 	case "light-data":
@@ -305,39 +297,15 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 		return fail()
 	}
 	key := nodeNoiseKeyV2(s.nodeIdentityV2)
-	var expected []byte
-	role, owner := "", ""
-	if controller, err := s.storeV2.Controller(envelope.ControllerID); err == nil {
-		if controller.State != controllerStateV2Active || !ScopeAllowsFiles(controller.Scope) {
-			return fail()
-		}
-		expected, _ = base64.RawURLEncoding.DecodeString(controller.PublicKey)
-		role, owner = "panel", "controller:"+controller.ID
-	} else if node, err := s.light.Host(envelope.ControllerID); err == nil {
-		expected, _ = s.light.ReadTerminalPublicKey(node)
-		role, owner = "light", "light:"+node.ID
-	} else {
-		grant, err := s.filePeersV2.ActiveGrant(envelope.ControllerID, now)
-		if err != nil || grant.LinkID != envelope.ControllerID || grant.Scope != filePeerReadScope {
-			return fail()
-		}
-		host, err := s.storeV2.Host(grant.HostID)
-		if err != nil || host.State != hostStateV2Active || !ScopeAllowsFiles(normalizedV2Scope(host.Scope)) ||
-			host.ControllerID != grant.HostControllerID || host.TransactionID != grant.HostTransaction ||
-			host.RemoteNodeID != grant.PeerNodeID || host.PeerFingerprint != grant.PeerFingerprint {
-			return fail()
-		}
-		credential, err := s.secretsV2.ReadCredential(host.CredentialFile)
-		if err != nil {
-			return fail()
-		}
-		public, err := base64.RawURLEncoding.DecodeString(host.TargetPublicKey)
-		if err != nil || !bytes.Equal(public, credential.TargetPublic) || fingerprintV2(public) != host.PeerFingerprint {
-			return fail()
-		}
-		key, expected = noiseKeyV2(credential), credential.TargetPublic
-		role, owner = "linked", "host:"+host.ID
+	node, err := s.light.Host(envelope.ControllerID)
+	if err != nil {
+		return fail()
 	}
+	expected, err := s.light.ReadTerminalPublicKey(node)
+	if err != nil {
+		return fail()
+	}
+	owner := "light:" + node.ID
 	plain, peer, handshake, err := openV2Request(http.MethodGet, FileStreamV2Path, envelope, key, nil)
 	if err != nil || len(expected) != 32 || !bytes.Equal(peer, expected) {
 		return fail()
@@ -346,11 +314,7 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 	if decodeV2Payload(plain, &hello) != nil {
 		return fail()
 	}
-	if role == "light" {
-		if hello.Role != "light-control" && hello.Role != "light-data" {
-			return fail()
-		}
-	} else if hello.Role != role {
+	if hello.Role != "light-control" && hello.Role != "light-data" {
 		return fail()
 	}
 	if hello.Role == "light-data" {
@@ -513,33 +477,6 @@ func (b *streamOwnedBody) Read(p []byte) (int, error) {
 	return n, err
 }
 func (b *streamOwnedBody) Close() error { err := b.ReadCloser.Close(); b.once.Do(b.done); return err }
-
-func (c *RemoteClient) openUnifiedFile(ctx context.Context, origin, controller, target string, key noise.DHKey, peer []byte, now time.Time, role string, input LightFileRequest) (*http.Response, error) {
-	c.fileStreamOnce.Do(func() { c.fileStreamLimits = newFileStreamLimits() })
-	if normalized, err := NormalizeV2Origin(origin); err != nil || normalized != origin {
-		return nil, ErrInvalidOrigin
-	}
-	if !validFileRelayRequest(input) {
-		return nil, ErrAuthentication
-	}
-	release, ok := c.fileStreamLimits.acquire(controller, input)
-	if !ok {
-		return nil, ErrRateLimited
-	}
-	conn, err := dialFileStream(ctx, c.streamClient, origin, controller, target, key, peer, now, fileStreamHello{Role: role})
-	if err != nil {
-		release()
-		return nil, err
-	}
-	response, err := openStreamRequest(conn, input)
-	if err != nil {
-		release()
-		return nil, err
-	}
-	response.Body = &streamOwnedBody{ReadCloser: response.Body, done: release}
-	context.AfterFunc(conn.ctx, release)
-	return response, nil
-}
 
 // RunFileStream serves one authenticated control connection. Reconnection is
 // handled by the broker; only an explicit pre-upgrade unsupported response

@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -47,14 +46,12 @@ type RemoteClientConfig struct {
 }
 
 type RemoteClient struct {
-	allowedPrivate   []netip.Prefix
-	resolver         resolver
-	dialer           func(context.Context, string, string) (net.Conn, error)
-	client           *http.Client
-	streamClient     *http.Client
-	historyClient    *http.Client
-	fileStreamLimits *fileStreamLimits
-	fileStreamOnce   sync.Once
+	allowedPrivate []netip.Prefix
+	resolver       resolver
+	dialer         func(context.Context, string, string) (net.Conn, error)
+	client         *http.Client
+	streamClient   *http.Client
+	historyClient  *http.Client
 }
 
 type RemoteError struct {

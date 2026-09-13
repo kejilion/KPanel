@@ -6,18 +6,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/flynn/noise"
 )
 
@@ -101,40 +97,10 @@ func (f *streamFixture) dial(ctx context.Context, key noise.DHKey, hello fileStr
 	return dialFileStream(ctx, f.client.streamClient, f.server.URL, f.controller, f.service.NodeID(), key, nodeNoiseKeyV2(f.service.nodeIdentityV2).Public, time.Now(), hello)
 }
 
-func TestFileStreamPanelFullDuplexAndUnknownLength(t *testing.T) {
-	content := bytes.Repeat([]byte("binary\x00\xffpayload"), 150000)
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			_, _ = w.Write([]byte(`{"items":[]}`))
-			return
-		}
-		if r.Header.Get("Content-Type") != "application/octet-stream" || r.Header.Get("Authorization") != "" {
-			t.Error("header allowlist changed")
-		}
-		if r.ContentLength != -1 {
-			t.Error("upload must verify authenticated EOF")
-		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusCreated)
-		w.(http.Flusher).Flush()
-		if _, err := io.Copy(w, r.Body); err != nil {
-			panic(http.ErrAbortHandler)
-		}
+func TestFileStreamPanelUsesLegacyRelayAndCannotUpgrade(t *testing.T) {
+	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
 	}))
-	for _, length := range []int64{int64(len(content)), -1} {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		response, err := f.open(ctx, LightFileRequest{Method: http.MethodPost, Path: "/v1/files/upload", Headers: map[string]string{"Content-Type": "application/octet-stream", "Authorization": "must-not-forward"}, Body: bytes.NewReader(content), BodyLength: length})
-		if err != nil {
-			cancel()
-			t.Fatal(err)
-		}
-		got, err := io.ReadAll(response.Body)
-		response.Body.Close()
-		cancel()
-		if err != nil || !bytes.Equal(got, content) || response.StatusCode != http.StatusCreated {
-			t.Fatalf("roundtrip bytes=%d status=%d error=%v", len(got), response.StatusCode, err)
-		}
-	}
 	response, err := f.open(context.Background(), LightFileRequest{Method: http.MethodGet, Path: "/v1/files"})
 	if err != nil {
 		t.Fatal(err)
@@ -142,241 +108,17 @@ func TestFileStreamPanelFullDuplexAndUnknownLength(t *testing.T) {
 	got, err := io.ReadAll(response.Body)
 	response.Body.Close()
 	if err != nil || string(got) != `{"items":[]}` {
-		t.Fatalf("directory: %q %v", got, err)
+		t.Fatalf("legacy directory: %q %v", got, err)
 	}
-	if f.streamCalls.Load() != 3 || f.legacyCalls.Load() != 0 {
+	if f.streamCalls.Load() != 0 || f.legacyCalls.Load() == 0 {
 		t.Fatalf("stream=%d legacy=%d", f.streamCalls.Load(), f.legacyCalls.Load())
 	}
-}
-
-func TestFileStreamFailureNeverReplaysAnAction(t *testing.T) {
-	var actions atomic.Int32
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		actions.Add(1)
-		_, _ = w.Write([]byte("partial"))
-		panic(http.ErrAbortHandler)
-	}))
-	response, err := f.open(context.Background(), LightFileRequest{Method: http.MethodPost, Path: "/v1/files/actions"})
-	if err == nil {
-		_, err = io.ReadAll(response.Body)
-		response.Body.Close()
-	}
-	if err == nil || actions.Load() != 1 || f.legacyCalls.Load() != 0 {
-		t.Fatalf("err=%v actions=%d legacy=%d", err, actions.Load(), f.legacyCalls.Load())
-	}
-	wrong, _ := GenerateFederationV2Keypair()
-	conn, err := f.dial(context.Background(), wrong, fileStreamHello{Role: "panel"})
+	conn, err := f.dial(context.Background(), f.key, fileStreamHello{Role: "panel"})
 	if conn != nil {
 		conn.close()
 	}
-	if err == nil || actions.Load() != 1 || f.legacyCalls.Load() != 0 {
-		t.Fatal("wrong identity authorized or replayed")
-	}
-}
-
-func TestFileStreamTruncatedAndTamperedUploadsNeverReachEOF(t *testing.T) {
-	for _, mode := range []string{"missing-end", "bad-size", "tampered", "invalid-path"} {
-		t.Run(mode, func(t *testing.T) {
-			finished := make(chan error, 1)
-			var actions atomic.Int32
-			f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				actions.Add(1)
-				_, err := io.Copy(io.Discard, r.Body)
-				finished <- err
-			}))
-			conn, err := f.dial(context.Background(), f.key, fileStreamHello{Role: "panel"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			path := "/v1/files/upload"
-			if mode == "invalid-path" {
-				path = "/v1/terminal/open"
-			}
-			if err := conn.writeJSON(streamRequest, fileStreamRequest{Method: http.MethodPost, Path: path, Length: 5}); err != nil {
-				t.Fatal(err)
-			}
-			if mode == "tampered" {
-				sealed, _ := conn.tx.Encrypt(nil, nil, append([]byte{streamData}, []byte("hello")...))
-				sealed[len(sealed)-1] ^= 1
-				_ = conn.ws.Write(conn.ctx, websocket.MessageBinary, sealed)
-			} else {
-				_ = conn.write(streamData, []byte("hello"))
-				if mode == "bad-size" {
-					_ = conn.write(streamEnd, streamSize(4))
-				}
-			}
-			if mode == "missing-end" {
-				conn.close()
-			}
-			if mode == "invalid-path" {
-				_, _, err := conn.read()
-				if err == nil || actions.Load() != 0 {
-					t.Fatal("unrestricted path executed")
-				}
-			} else {
-				select {
-				case err := <-finished:
-					if err == nil {
-						t.Fatal("invalid upload returned clean EOF")
-					}
-				case <-time.After(3 * time.Second):
-					t.Fatal("upload handler leaked")
-				}
-			}
-			conn.close()
-		})
-	}
-}
-
-func TestFileStreamBulkSlotsPreserveDirectoryAndCancel(t *testing.T) {
-	closed := make(chan struct{}, 4)
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/files" {
-			_, _ = w.Write([]byte("directory"))
-			return
-		}
-		w.WriteHeader(200)
-		w.(http.Flusher).Flush()
-		<-r.Context().Done()
-		closed <- struct{}{}
-	}))
-	var responses []*http.Response
-	for range 4 {
-		response, err := f.open(context.Background(), LightFileRequest{Method: http.MethodGet, Path: "/v1/files/content"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		responses = append(responses, response)
-	}
-	_, err := f.open(context.Background(), LightFileRequest{Method: http.MethodGet, Path: "/v1/files/content"})
-	if !errors.Is(err, ErrRateLimited) {
-		t.Fatalf("fifth bulk request: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	response, err := f.open(ctx, LightFileRequest{Method: http.MethodGet, Path: "/v1/files"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || string(got) != "directory" {
-		t.Fatalf("directory blocked: %q %v", got, err)
-	}
-	for _, response := range responses {
-		response.Body.Close()
-	}
-	for range 4 {
-		select {
-		case <-closed:
-		case <-time.After(3 * time.Second):
-			t.Fatal("cancel did not reach handler")
-		}
-	}
-}
-
-func TestFileStreamEarlyResponseStopsBlockedUpload(t *testing.T) {
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "reject", http.StatusConflict) }))
-	reader, writer := io.Pipe()
-	defer writer.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	response, err := f.open(ctx, LightFileRequest{Method: http.MethodPost, Path: "/v1/files/upload", Body: reader, BodyLength: -1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusConflict {
-		t.Fatalf("early response: %d %v", response.StatusCode, err)
-	}
-	stopped := make(chan struct{})
-	go func() {
-		for {
-			if _, err := writer.Write([]byte("unused")); err != nil {
-				close(stopped)
-				return
-			}
-		}
-	}()
-	select {
-	case <-stopped:
-	case <-time.After(time.Second):
-		t.Fatal("upload reader was not closed")
-	}
-}
-
-func TestFileStreamEarlyResponseDoesNotWaitForUploadWriteLock(t *testing.T) {
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Let the continuous upload fill TCP/WebSocket buffers while the handler
-		// does not consume its request pipe, then return a complete rejection.
-		time.Sleep(150 * time.Millisecond)
-		http.Error(w, "reject", http.StatusRequestEntityTooLarge)
-	}))
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	started := time.Now()
-	response, err := f.open(ctx, LightFileRequest{Method: "POST", Path: "/v1/files/upload", Body: io.LimitReader(streamZeros{}, 256<<20), BodyLength: 256 << 20})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || response.StatusCode != 413 || time.Since(started) >= 2*time.Second {
-		t.Fatalf("early rejection delayed: status=%d elapsed=%v err=%v", response.StatusCode, time.Since(started), err)
-	}
-}
-
-type streamZeros struct{}
-
-func (streamZeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
-
-func TestFileStreamExportRequiresSuccessfulFinalTrailer(t *testing.T) {
-	for _, result := range []string{"ok", "error", ""} {
-		t.Run("trailer="+result, func(t *testing.T) {
-			f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Trailer", "X-KPanel-Transfer-Result")
-				_, _ = w.Write([]byte("complete-size-but-possibly-changed"))
-				w.Header().Set("X-KPanel-Transfer-Result", result)
-			}))
-			response, err := f.open(context.Background(), LightFileRequest{Method: "GET", Path: "/v1/files/transfer/export"})
-			if err == nil {
-				_, err = io.ReadAll(response.Body)
-				response.Body.Close()
-			}
-			if (err == nil) != (result == "ok") {
-				t.Fatalf("trailer=%q error=%v", result, err)
-			}
-		})
-	}
-}
-
-func TestFileStreamRevokeClosesActiveSocket(t *testing.T) {
-	closed := make(chan struct{})
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		w.(http.Flusher).Flush()
-		<-r.Context().Done()
-		close(closed)
-	}))
-	response, err := f.open(context.Background(), LightFileRequest{Method: http.MethodGet, Path: "/v1/files/content"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.service.DeleteController(f.controller); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(response.Body); err == nil {
-		t.Fatal("revocation returned clean EOF")
-	}
-	response.Body.Close()
-	select {
-	case <-closed:
-	case <-time.After(3 * time.Second):
-		t.Fatal("revoke left handler running")
-	}
-	if _, err := f.open(context.Background(), LightFileRequest{Method: http.MethodGet, Path: "/v1/files"}); err == nil {
-		t.Fatal("revoked controller reconnected")
+	if err == nil {
+		t.Fatal("full Panel role unexpectedly upgraded to the lightweight WebSocket transport")
 	}
 }
 
@@ -448,123 +190,6 @@ func TestFileStreamLightUsesIndependentOutboundSockets(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("light control did not stop")
-	}
-}
-
-func TestFileStreamFallbackOnlyBeforeUpgrade(t *testing.T) {
-	for _, status := range []int{404, 405, 426, 401, 403, 429, 502} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			key, _ := GenerateFederationV2Keypair()
-			peer, _ := GenerateFederationV2Keypair()
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
-			defer server.Close()
-			_, err := dialFileStream(context.Background(), server.Client(), server.URL, strings.Repeat("a", 32), strings.Repeat("b", 32), key, peer.Public, time.Now(), fileStreamHello{Role: "panel"})
-			want := status == 404 || status == 405 || status == 426
-			if errors.Is(err, ErrFileStreamUnsupported) != want {
-				t.Fatalf("status=%d fallback=%v error=%v", status, want, err)
-			}
-		})
-	}
-}
-
-type fileStreamLatencyTransport struct {
-	next  http.RoundTripper
-	delay time.Duration
-	calls atomic.Int32
-}
-
-func (t *fileStreamLatencyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	t.calls.Add(1)
-	timer := time.NewTimer(t.delay)
-	defer timer.Stop()
-	select {
-	case <-r.Context().Done():
-		return nil, r.Context().Err()
-	case <-timer.C:
-	}
-	return t.next.RoundTrip(r)
-}
-
-func TestFileStreamControlledRequestLatency(t *testing.T) {
-	content := bytes.Repeat([]byte("x"), 1<<20)
-	var durations [2]time.Duration
-	var calls [2]int32
-	for index, legacy := range []bool{true, false} {
-		f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(content) }))
-		f.legacyMode.Store(legacy)
-		transport := &fileStreamLatencyTransport{next: f.client.streamClient.Transport, delay: 25 * time.Millisecond}
-		client := *f.client.streamClient
-		client.Transport = transport
-		f.client.streamClient = &client
-		started := time.Now()
-		response, err := f.open(context.Background(), LightFileRequest{Method: "GET", Path: "/v1/files/content"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := io.ReadAll(response.Body)
-		response.Body.Close()
-		if err != nil || !bytes.Equal(got, content) {
-			t.Fatalf("legacy=%v bytes=%d err=%v", legacy, len(got), err)
-		}
-		durations[index], calls[index] = time.Since(started), transport.calls.Load()
-		if !legacy && f.legacyCalls.Load() != 0 {
-			t.Fatal("stream used legacy calls")
-		}
-	}
-	if calls[0] < 32 || calls[1] != 1 {
-		t.Fatalf("legacy/stream request counts=%v", calls)
-	}
-	t.Logf("1 MiB TLS download, artificial 25 ms delay per HTTP request (not WAN benchmark): legacy=%v/%d requests; stream=%v/%d request", durations[0], calls[0], durations[1], calls[1])
-}
-
-func TestFileStreamTransportRetainsTLSAddressAndProxyPolicies(t *testing.T) {
-	f := newStreamFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
-	roots := x509.NewCertPool()
-	roots.AddCert(f.server.Certificate())
-	guarded, err := NewRemoteClient(RemoteClientConfig{RootCAs: roots, PrivateCIDRs: []string{"127.0.0.1/32"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = guarded.OpenFileRelayV2(context.Background(), f.server.URL, f.controller, f.service.NodeID(), f.key, nodeNoiseKeyV2(f.service.nodeIdentityV2).Public, time.Now(), LightFileRequest{Method: "GET", Path: "/v1/files"})
-	if err == nil || f.streamCalls.Load() != 0 {
-		t.Fatal("stream bypassed loopback restriction")
-	}
-	_, err = dialFileStream(context.Background(), &http.Client{}, f.server.URL, f.controller, f.service.NodeID(), f.key, nodeNoiseKeyV2(f.service.nodeIdentityV2).Public, time.Now(), fileStreamHello{Role: "panel"})
-	if err == nil || f.streamCalls.Load() != 0 {
-		t.Fatal("stream accepted an untrusted certificate")
-	}
-	// The broker's HTTPClient proxy configuration must remain in the actual
-	// upgrade path. This local forward proxy tunnels a complete Noise request.
-	target, _ := url.Parse(f.server.URL)
-	forward := httputil.NewSingleHostReverseProxy(target)
-	forward.Transport = f.server.Client().Transport
-	var proxyCalls atomic.Int32
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { proxyCalls.Add(1); forward.ServeHTTP(w, r) }))
-	defer proxy.Close()
-	proxyURL, _ := url.Parse(proxy.URL)
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyURL(proxyURL)
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	conn, err := dialFileStream(context.Background(), client, "http://8.8.8.8:1801", f.controller, f.service.NodeID(), f.key, nodeNoiseKeyV2(f.service.nodeIdentityV2).Public, time.Now(), fileStreamHello{Role: "panel"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := openStreamRequest(conn, LightFileRequest{Method: "GET", Path: "/v1/files"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || string(body) != "ok" || proxyCalls.Load() != 1 {
-		t.Fatalf("proxy: %q %v calls=%d", body, err, proxyCalls.Load())
-	}
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, proxy.URL, 302) }))
-	defer redirect.Close()
-	client = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	_, err = dialFileStream(context.Background(), client, redirect.URL, f.controller, f.service.NodeID(), f.key, nodeNoiseKeyV2(f.service.nodeIdentityV2).Public, time.Now(), fileStreamHello{Role: "panel"})
-	if err == nil || errors.Is(err, ErrFileStreamUnsupported) || proxyCalls.Load() != 1 {
-		t.Fatal("redirect was followed or downgraded")
 	}
 }
 
