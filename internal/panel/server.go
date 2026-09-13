@@ -31,7 +31,6 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
-	"github.com/kejilion/kejilion-panel/internal/filetransfer"
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 	"github.com/kejilion/kejilion-panel/internal/store"
@@ -95,7 +94,6 @@ type Server struct {
 	remoteDownloadPending int
 	remoteDownloadClosing bool
 	remoteDownloadWG      sync.WaitGroup
-	fileTransferJobs      *filetransfer.Manager
 	ai                    *ai.Service
 	aiError               string
 	desktopWorkspace      *desktopworkspace.Store
@@ -176,7 +174,6 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadOpen:    remotedownload.NewClient(remotedownload.Config{}).Open,
 		remoteDownloadGate:    make(chan struct{}, maxPanelRemoteDownloads),
 		remoteDownloadJobs:    remoteDownloadJobs,
-		fileTransferJobs:      filetransfer.Open(filepath.Join(config.DataDir, "file-transfers")),
 		remoteDownloadCancels: make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
@@ -392,8 +389,6 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleFileUpload(w, r)
 	case r.URL.Path == "/api/v1/files/transfers":
 		s.handleFileTransfer(w, r)
-	case r.URL.Path == "/api/v1/files/transfer-jobs" || strings.HasPrefix(r.URL.Path, "/api/v1/files/transfer-jobs/"):
-		s.handleFileTransferJobs(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/files/remote-downloads":
 		s.handleFileRemoteDownloadJobs(w, r)
 	case r.URL.Path == "/api/v1/files/remote-downloads":

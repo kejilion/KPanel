@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesView from './FilesView.vue'
 import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
 import { resetFileWindowTransferForTest } from '@/lib/fileWindowTransfer'
-import { transferJobs } from '@/lib/fileTransferJobs'
 import { resetLocaleForTest, setLocale } from '@/i18n'
 import {
   beginDesktopFileDrag,
@@ -19,8 +18,6 @@ const mocks = vi.hoisted(() => ({
   entry: vi.fn(),
   action: vi.fn(),
   transferFromPanel: vi.fn(),
-  transferJobs: vi.fn(),
-  createTransferJob: vi.fn(),
   remoteDownload: vi.fn(),
   createRemoteDownloadJob: vi.fn(),
   remoteDownloadJobs: vi.fn(),
@@ -67,8 +64,6 @@ vi.mock('@/lib/api', () => ({
       list: mocks.list,
       action: mocks.action,
       transferFromPanel: mocks.transferFromPanel,
-      transferJobs: mocks.transferJobs,
-      createTransferJob: mocks.createTransferJob,
       remoteDownload: mocks.remoteDownload,
       createRemoteDownloadJob: mocks.createRemoteDownloadJob,
       remoteDownloadJobs: mocks.remoteDownloadJobs,
@@ -416,8 +411,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   resetDesktopIconsForTest()
   resetFileWindowTransferForTest()
-  transferJobs.value = []
-  mocks.transferJobs.mockResolvedValue({ items: [] })
   clearDesktopFileDrag()
   mocks.route = reactive({ query: {} as Record<string, unknown> })
   mocks.push.mockImplementation(async (location: { query?: Record<string, unknown> }) => {
@@ -2198,21 +2191,23 @@ describe('FilesView directory loading', () => {
     const first = { ...testEntry('one.txt'), path: '/source/one.txt' }
     const second = { ...testEntry('two.txt'), path: '/source/two.txt' }
     const event = crossPanelDrag([first, second])
-    mocks.list.mockResolvedValueOnce(testDirectory('/target'))
-    await view.loadDirectory('/target')
-    mocks.createTransferJob.mockImplementation(async input => ({ ...input, state: 'queued', createdAt: '', updatedAt: '', items: input.items.map((item: unknown) => ({ ...(item as object), state: 'queued', loadedBytes: 0, totalBytes: 0, retryable: true })) }))
+    mocks.transferFromPanel
+      .mockResolvedValueOnce({ ...first, path: '/target/one.txt' })
+      .mockRejectedValueOnce(new Error('source changed'))
 
     await view.transferCrossPanelFileDrop(event, '/target')
 
-    expect(mocks.createTransferJob).toHaveBeenCalledTimes(1)
-    expect(mocks.createTransferJob).toHaveBeenCalledWith({
-      id: expect.stringMatching(/^[a-f0-9]{32}$/),
-      sourceNodeId: 'a'.repeat(32), targetHostId: '', targetDirectory: '/target',
-      items: [{ path: first.path, resourceVersion: first.resourceVersion }, { path: second.path, resourceVersion: second.resourceVersion }],
+    expect(mocks.transferFromPanel).toHaveBeenCalledTimes(2)
+    expect(mocks.transferFromPanel.mock.calls[0]?.[0]).toEqual({
+      sourceNodeId: 'a'.repeat(32), path: '/source/one.txt',
+      resourceVersion: first.resourceVersion, targetDirectory: '/target',
     })
-    expect(mocks.transferFromPanel).not.toHaveBeenCalled()
-    expect(transferJobs.value[0]).toMatchObject({ state: 'queued', targetDirectory: '/target' })
+    expect(view.fileTransferState.value).toMatchObject({
+      mode: 'copy', target: '/target', count: 2, completed: 2, phase: 'partial', remote: true,
+    })
+    expect(view.fileTransferState.value?.detail).toBe('1 项成功，1 项失败：source changed')
     expect(mocks.danger).not.toHaveBeenCalled()
+    view.dismissFileTransfer()
     expect(view.fileTransferState.value).toBeUndefined()
     expect(mocks.list).toHaveBeenCalled()
   })

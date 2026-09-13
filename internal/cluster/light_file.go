@@ -565,7 +565,7 @@ func (r *lightFileRelay) Open(
 	// the request. This keeps connection recovery separate from file transfer
 	// and avoids buffering work for a broker that is not actually reachable.
 	if command.BodyLength != 0 && input.Body != nil && input.Body != http.NoBody {
-		go r.sendBody(requestContext, item, session, input.Body, command.BodyLength, fileRelayBodyLimit(input.Method, input.Path, input.RawQuery))
+		go r.sendBody(requestContext, item, session, input.Body, command.BodyLength)
 	}
 	select {
 	case <-session.responseReady:
@@ -590,7 +590,7 @@ func validFileRelayRequest(input LightFileRequest) bool {
 	if !v2FileRelayRequestPath(input.Path) || len(input.RawQuery) > lightFileMaxQueryBytes || strings.ContainsAny(input.RawQuery, "\r\n\x00") || !validFileRelayHeaders(input.Headers) {
 		return false
 	}
-	return input.BodyLength >= -1 && input.BodyLength <= fileRelayBodyLimit(input.Method, input.Path, input.RawQuery)
+	return input.BodyLength >= -1 && input.BodyLength <= 512<<20
 }
 
 func cloneFileRelayHeaders(headers map[string]string) map[string]string {
@@ -617,7 +617,7 @@ func wakeLightFileNode(item *lightFileNode) {
 	item.wake = make(chan struct{})
 }
 
-func (r *lightFileRelay) sendBody(ctx context.Context, item *lightFileNode, session *lightFileSession, body io.Reader, length, limit int64) {
+func (r *lightFileRelay) sendBody(ctx context.Context, item *lightFileNode, session *lightFileSession, body io.Reader, length int64) {
 	buffer := make([]byte, lightFileChunkBytes)
 	offset := int64(0)
 	for {
@@ -630,7 +630,7 @@ func (r *lightFileRelay) sendBody(ctx context.Context, item *lightFileNode, sess
 			return
 		}
 		if count > 0 {
-			if offset+int64(count) > limit {
+			if offset+int64(count) > 512<<20 {
 				session.finish(errors.New("file relay request body exceeds limit"))
 				return
 			}

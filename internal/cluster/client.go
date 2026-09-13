@@ -55,7 +55,6 @@ type RemoteClient struct {
 	historyClient    *http.Client
 	fileStreamLimits *fileStreamLimits
 	fileStreamOnce   sync.Once
-	fileStreamClient *http.Client
 }
 
 type RemoteError struct {

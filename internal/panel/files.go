@@ -16,8 +16,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -382,9 +380,7 @@ func (s *Server) streamFileDownload(w http.ResponseWriter, r *http.Request, rawQ
 	if r.Method == http.MethodHead {
 		return
 	}
-	if _, err := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10)); err != nil {
-		panic(http.ErrAbortHandler)
-	}
+	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
 }
 
 func (s *Server) streamFileArchiveDownload(w http.ResponseWriter, r *http.Request) {
@@ -421,9 +417,7 @@ func (s *Server) streamFileArchiveDownloadRequest(
 	w.Header().Set("Pragma", "no-cache")
 	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
 	writer.WriteHeader(response.StatusCode)
-	if _, err := io.CopyBuffer(writer, response.Body, make([]byte, 64<<10)); err != nil {
-		panic(http.ErrAbortHandler)
-	}
+	_, _ = io.CopyBuffer(writer, response.Body, make([]byte, 64<<10))
 }
 
 func writeFileArchiveDownloadHead(w http.ResponseWriter, name string) {
@@ -744,22 +738,6 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
-	s.executeFileTransfer(r, session.User.ID, input, targetHostID, targetHostKind, change, writeEvent)
-}
-
-// Both foreground compatibility requests and durable jobs use the same copy
-// implementation, permissions, resource versions and atomic Agent import.
-func (s *Server) executeFileTransfer(r *http.Request, actorID string, input contract.FileTransferRequest, targetHostID string, targetHostKind cluster.HostKind, change map[string]any, emit func(contract.FileTransferEvent)) {
-	var eventMu sync.Mutex
-	finished := false
-	writeEvent := func(event contract.FileTransferEvent) {
-		eventMu.Lock()
-		defer eventMu.Unlock()
-		if !finished {
-			emit(event)
-		}
-	}
-	defer func() { eventMu.Lock(); finished = true; eventMu.Unlock() }()
 	writeEvent(contract.FileTransferEvent{State: "connecting"})
 
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
@@ -773,8 +751,8 @@ func (s *Server) executeFileTransfer(r *http.Request, actorID string, input cont
 		)
 	}
 	if ensureErr != nil {
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Code: "target_unavailable", Detail: "目标目录不存在或不可写。"})
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "目标目录不存在或不可写。"})
 		return
 	}
 	var content io.ReadCloser
@@ -801,20 +779,14 @@ func (s *Server) executeFileTransfer(r *http.Request, actorID string, input cont
 		}
 	}
 	if err != nil {
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Code: "source_unavailable", Detail: "无法连接来源主机，或配对未授权文件复制。"})
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法连接来源主机，或配对未授权文件复制。"})
 		return
 	}
 	defer content.Close()
-	stopContent := context.AfterFunc(transferContext, func() { _ = content.Close() })
-	defer stopContent()
 	if metadata.Name != path.Base(input.Path) || metadata.ResourceVersion != input.ResourceVersion {
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", Code: "source_changed", Detail: "来源文件在拖拽后已发生变化。"})
-		return
-	}
-	if metadata.Kind == "file" && metadata.SizeBytes > contract.MaxFileShareBytes || metadata.Kind == "directory" && metadata.SizeBytes > contract.MaxFileTransferBytes {
-		writeEvent(contract.FileTransferEvent{State: "error", Code: "transfer_too_large", Detail: "来源超过传输容量：单文件 512 MiB，目录内容 10 GiB。"})
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", Detail: "来源文件在拖拽后已发生变化。"})
 		return
 	}
 	var name string
@@ -834,13 +806,13 @@ func (s *Server) executeFileTransfer(r *http.Request, actorID string, input cont
 	change["targetName"] = name
 	writeEvent(contract.FileTransferEvent{State: "transferring", TotalBytes: metadata.SizeBytes})
 
-	var loaded atomic.Int64
+	loaded := int64(0)
 	lastReported := time.Now()
 	tracked := &fileTransferProgressReader{source: content, report: func(count int64) {
-		loaded.Add(count)
+		loaded += count
 		if time.Since(lastReported) >= 180*time.Millisecond {
 			writeEvent(contract.FileTransferEvent{
-				State: "transferring", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes,
+				State: "transferring", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes,
 			})
 			lastReported = time.Now()
 		}
@@ -873,27 +845,29 @@ func (s *Server) executeFileTransfer(r *http.Request, actorID string, input cont
 		})
 	}
 	if err != nil {
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断，请检查目标目录。"})
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 写入中断。"})
 		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，请检查目标目录。"})
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标文件写入失败，未保留半成品。"})
 		return
 	}
-	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes})
-	entry, err := decodeFileTransferEntry(response.Body)
-	if err != nil || entry.Path != path.Join(input.TargetDirectory, name) || entry.Kind != metadata.Kind || entry.ResourceVersion == "" {
-		_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
-		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果，请检查目标目录。"})
+	writeEvent(contract.FileTransferEvent{State: "committing", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes})
+	var entry contract.FileEntry
+	responseDecoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	responseDecoder.DisallowUnknownFields()
+	if err := responseDecoder.Decode(&entry); err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
+		writeEvent(contract.FileTransferEvent{State: "error", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Detail: "目标 Agent 返回无效结果。"})
 		return
 	}
-	_ = s.audit(r, actorID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
+	_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "success", change)
 	writeEvent(contract.FileTransferEvent{
-		State: "complete", LoadedBytes: loaded.Load(), TotalBytes: metadata.SizeBytes, Entry: &entry,
+		State: "complete", LoadedBytes: loaded, TotalBytes: metadata.SizeBytes, Entry: &entry,
 	})
 }
 
@@ -967,54 +941,7 @@ func (s *Server) openLocalFileTransfer(
 		_ = response.Body.Close()
 		return nil, contract.FileTransferMetadata{}, errors.New("local file transfer metadata is invalid")
 	}
-	return &localFileTransferBody{ReadCloser: response.Body, trailer: response.Trailer}, metadata, nil
-}
-
-// HTTP/TAR EOF alone cannot confirm a successful Agent export. The trailer
-// carries failures detected after the final data bytes (including source changes).
-type localFileTransferBody struct {
-	io.ReadCloser
-	trailer http.Header
-}
-
-func (b *localFileTransferBody) Read(p []byte) (int, error) {
-	n, err := b.ReadCloser.Read(p)
-	if err == io.EOF && b.trailer.Get("X-KPanel-Transfer-Result") != "ok" {
-		return n, io.ErrUnexpectedEOF
-	}
-	return n, err
-}
-
-func readFileTransferResponse(body io.Reader) ([]byte, error) {
-	const limit = 1 << 20
-	data, err := io.ReadAll(io.LimitReader(body, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > limit {
-		return nil, errors.New("file transfer response exceeds limit")
-	}
-	return data, nil
-}
-
-// Read through authenticated transport EOF before reporting success or closing
-// the socket. Decoding one JSON value alone can leave the end record unread.
-func decodeFileTransferEntry(body io.Reader) (contract.FileEntry, error) {
-	var entry contract.FileEntry
-	data, err := readFileTransferResponse(body)
-	if err != nil {
-		return entry, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&entry); err != nil {
-		return entry, err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return entry, errors.New("invalid file transfer response")
-	}
-	return entry, nil
+	return response.Body, metadata, nil
 }
 
 func (s *Server) openFileHostRequest(
@@ -1047,8 +974,8 @@ func (s *Server) ensureFileHostTransferDirectory(
 	if err == nil {
 		defer response.Body.Close()
 		if response.StatusCode == http.StatusOK {
-			entry, decodeErr := decodeFileTransferEntry(response.Body)
-			if decodeErr == nil && entry.Kind == "directory" {
+			var entry contract.FileEntry
+			if json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&entry) == nil && entry.Kind == "directory" {
 				return nil
 			}
 			return errors.New("target is not a directory")
@@ -1069,9 +996,8 @@ func (s *Server) ensureFileHostTransferDirectory(
 		}, Body: bytes.NewReader(body), BodyLength: int64(len(body)),
 	})
 	if err == nil {
-		_, readErr := readFileTransferResponse(created.Body)
 		_ = created.Body.Close()
-		if readErr == nil && created.StatusCode >= http.StatusOK && created.StatusCode < http.StatusMultipleChoices {
+		if created.StatusCode >= http.StatusOK && created.StatusCode < http.StatusMultipleChoices {
 			return nil
 		}
 	}
@@ -1086,8 +1012,8 @@ func (s *Server) ensureFileHostTransferDirectory(
 	if checked.StatusCode != http.StatusOK {
 		return errors.New("create target directory failed")
 	}
-	entry, decodeErr := decodeFileTransferEntry(checked.Body)
-	if decodeErr != nil || entry.Kind != "directory" {
+	var entry contract.FileEntry
+	if json.NewDecoder(io.LimitReader(checked.Body, 1<<20)).Decode(&entry) != nil || entry.Kind != "directory" {
 		return errors.New("created target is not a directory")
 	}
 	return nil
@@ -1129,11 +1055,8 @@ func (s *Server) uniqueFileHostTransferName(
 		if err != nil {
 			return "", err
 		}
-		_, readErr := readFileTransferResponse(response.Body)
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
 		_ = response.Body.Close()
-		if readErr != nil {
-			return "", readErr
-		}
 		switch response.StatusCode {
 		case http.StatusNotFound:
 			return candidate, nil

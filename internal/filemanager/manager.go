@@ -33,8 +33,8 @@ const (
 	MaxTrashEntries     = 10_000
 	MaxTrashListEntries = 500
 	maxPathBytes        = 4096
-	maxCopyEntries      = contract.MaxFileTransferEntries
-	maxCopyBytes        = contract.MaxFileTransferBytes
+	maxCopyEntries      = 10_000
+	maxCopyBytes        = 10 << 30
 	maxShareReads       = 2
 )
 

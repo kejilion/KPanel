@@ -9,7 +9,6 @@ export type FileTransferTargetError = 'invalid' | 'same_location' | 'inside_sour
 
 export interface FileClipboardState {
   hostId: string
-  sourceNodeId?: string
   mode: FileTransferOperation
   entries: FileEntry[]
 }
@@ -150,8 +149,8 @@ export function subscribeFileDirectoryChanges(listener: DirectoryChangeListener)
 export function useFileClipboard() {
   return {
     clipboard: readonly(clipboard),
-    set(mode: FileTransferOperation, entries: readonly FileEntry[], hostId = '', sourceNodeId?: string) {
-      clipboard.value = { mode, hostId, ...(sourceNodeId ? { sourceNodeId } : {}), entries: entries.map((entry) => ({ ...entry })) }
+    set(mode: FileTransferOperation, entries: readonly FileEntry[], hostId = '') {
+      clipboard.value = { mode, hostId, entries: entries.map((entry) => ({ ...entry })) }
     },
     clear() {
       clipboard.value = undefined

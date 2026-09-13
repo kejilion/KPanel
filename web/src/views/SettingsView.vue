@@ -796,6 +796,8 @@ onMounted(async () => {
       </div>
     </section>
 
+    <BackupCenter />
+
     <section class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Palette :size="19" /></span>
@@ -940,8 +942,6 @@ onMounted(async () => {
         </div>
       </div>
     </section>
-
-    <BackupCenter />
 
     <section class="settings-section panel-card">
       <header class="settings-section__header">

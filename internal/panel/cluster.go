@@ -64,9 +64,6 @@ func (s *Server) Close() error {
 		s.backups.Close()
 	}
 	s.closeRemoteDownloadJobs()
-	if s.fileTransferJobs != nil {
-		s.fileTransferJobs.Close()
-	}
 	s.closeTerminalSessions()
 	s.closeFileShareStreams()
 	// Cluster-owned relay connections can outlive HTTP shutdown. Close their

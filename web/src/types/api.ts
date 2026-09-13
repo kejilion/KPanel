@@ -2011,33 +2011,6 @@ export interface CrossPanelFileTransferInput {
   targetDirectory: string
 }
 
-export interface FileTransferJobInput {
-  id: string
-  retryOf?: string
-  sourceNodeId: string
-  targetHostId: string
-  targetDirectory: string
-  items: { path: string; resourceVersion: string }[]
-}
-
-export interface FileTransferJobItem {
-  path: string
-  resourceVersion: string
-  state: string
-  loadedBytes: number
-  totalBytes: number
-  entry?: FileEntry
-  detail?: string
-  retryable: boolean
-}
-
-export interface FileTransferJob extends Omit<FileTransferJobInput, 'items'> {
-  state: string
-  items: FileTransferJobItem[]
-  createdAt: string
-  updatedAt: string
-}
-
 export type CrossPanelFileTransferState =
   | 'connecting'
   | 'transferring'

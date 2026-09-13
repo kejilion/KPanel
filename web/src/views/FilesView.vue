@@ -53,7 +53,6 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
-import FileTransferJobs from '@/components/files/FileTransferJobs.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import {
@@ -77,7 +76,7 @@ import {
   desktopWindowCloseGuardKey,
 } from '@/lib/desktopRouteKeys'
 import type { CodeLanguage } from '@/lib/code-editor-language'
-import { createTransferJob, newTransferJobID, transferJobs, transferJobsError } from '@/lib/fileTransferJobs'
+import { transferCrossPanelFileBatch } from '@/lib/crossPanelFileTransfer'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import {
   collectExternalDrop,
@@ -144,7 +143,6 @@ const activeFileHostId = ref('')
 const fileHostId = ref(typeof route.query.hostId === 'string' ? route.query.hostId : '')
 const fileAPI = computed(() => fileAPIForHost(fileHostId.value))
 const archiveTools = ref<InstanceType<typeof FileArchiveTools>>()
-const crossHostTransfers = ref<InstanceType<typeof FileTransferJobs>>()
 
 function archiveChanged(hostId: string, path: string): void {
   notifyFileDirectoriesChanged([path], fileWindowChangeOrigin, [], hostId)
@@ -254,7 +252,7 @@ function fileHostStatus(host: ClusterHost): FileHostStatus {
     return { action: 'manage', label: phrase('主机状态处理中') }
   }
   if (host.kind === 'panel' && host.fileManagementAvailable === true) {
-    return { action: 'select', label: phrase('已授权文件管理') }
+    return { action: 'select', label: phrase('文件管理已就绪') }
   }
   if (host.mutualFileTransferAvailable) {
     return { action: 'open', label: phrase('已配对 · 文件互传') }
@@ -281,7 +279,7 @@ async function loadFileHosts(): Promise<void> {
     if (controller.signal.aborted || unmounted) return
     const previousActiveHostId = activeFileHostId.value
     fileHostInventory.value = inventory
-    localClusterNodeId.value = inventory.nodeId || ''
+    localClusterNodeId.value = inventory.nodeId
     const localHost = inventory.items.find((host) => host.isLocal)
     const previousHost = inventory.items.find((host) =>
       host.id === previousActiveHostId && fileHostStatus(host).action === 'select',
@@ -340,14 +338,9 @@ function openClusterHostManager(): void {
 }
 
 function resetFileHostContext(hostId: string): boolean {
-  if (hasPendingHostMutation()) {
-    toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
-    return false
-  }
   if (previewDirty.value && !window.confirm('文件尚未保存，确认切换主机吗？')) return false
   previewDirty.value = false
   directoryController?.abort()
-  queuedRemoteDownloadRefreshes.clear()
   closePreview()
   contextMenu.value = undefined
   shareEntry.value = undefined
@@ -373,14 +366,6 @@ function resetFileHostContext(hostId: string): boolean {
   return true
 }
 
-// Also guard route/back/window synchronization. Cancellable path transfers have
-// their own generation checks; these mutations must finish on the current host.
-function hasPendingHostMutation(): boolean {
-  return Boolean(dialogBusy.value || trashBusy.value || externalUploadController
-    || previewSaving.value || desktopAdding.value || remoteDownloadSubmitting.value
-    || uploadTasks.value.some(task => task.phase === 'running'))
-}
-
 function handleFileHostSelection(host: ClusterHost): void {
   const status = fileHostStatus(host)
   if (status.action === 'select') {
@@ -391,7 +376,13 @@ function handleFileHostSelection(host: ClusterHost): void {
     if (
       fileTransferState.value?.phase === 'running'
       || pasteBusy.value
-      || hasPendingHostMutation()
+      || dialogBusy.value
+      || trashBusy.value
+      || externalUploadController
+      || previewSaving.value
+      || desktopAdding.value
+      || remoteDownloadSubmitting.value
+      || uploadTasks.value.some((task) => task.phase === 'running')
     ) {
       toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
       return
@@ -476,7 +467,6 @@ const shareEntry = ref<FileEntry>()
 const shareManagerOpen = ref(false)
 const fileClipboard = useFileClipboard()
 const clipboard = computed(() => fileClipboard.clipboard.value?.hostId === fileHostId.value
-  || fileClipboard.clipboard.value?.mode === 'copy' && Boolean(fileClipboard.clipboard.value?.sourceNodeId)
   ? fileClipboard.clipboard.value : undefined)
 const pasteBusy = ref(false)
 const internalDropTarget = ref('')
@@ -494,9 +484,6 @@ const fileTransferState = ref<{
   detail?: string
 }>()
 const fileStatusStackVisible = computed(() => Boolean(
-  crossHostTransfers.value?.hasActivity ||
-  transferJobs.value.length || transferJobsError.value
-  ||
   clipboard.value?.entries.length
   || remoteDownloadTasksVisible.value
   || archiveTools.value?.hasJobs
@@ -1499,10 +1486,10 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
 }
 
 async function transferCrossPanelFileDrop(event: DragEvent, target: string): Promise<void> {
-  const targetHostId = fileHostId.value
+  const hostId = fileHostId.value
   const payload = crossPanelFileDragEntries(event)
   clearInternalDropTarget()
-  if (!payload || !directory.value || loading.value || directoryError.value) {
+  if (!payload) {
     toast.danger('跨主机复制失败', '拖拽数据无效或超过 64 项，请从来源主机重新拖动。')
     return
   }
@@ -1510,17 +1497,63 @@ async function transferCrossPanelFileDrop(event: DragEvent, target: string): Pro
     toast.show('来源和目标是同一台主机', { message: '请在文件管理器中使用复制或移动。' })
     return
   }
+  if (fileTransferState.value?.phase === 'running') {
+    toast.show('已有文件操作正在进行')
+    return
+  }
+  if (fileTransferClearTimer !== undefined) {
+    window.clearTimeout(fileTransferClearTimer)
+    fileTransferClearTimer = undefined
+  }
+  const controller = new AbortController()
+  const sequence = ++fileTransferSequence
+  fileTransferController = controller
+  const total = payload.entries.length
+  fileTransferState.value = {
+    mode: 'copy', target, count: total, phase: 'running', remote: true,
+    completed: 0, currentName: payload.entries[0]?.name,
+  }
   try {
-    await createTransferJob({ id: newTransferJobID(), sourceNodeId: payload.sourceNodeId, targetHostId, targetDirectory: target,
-      items: payload.entries.map(({ path, resourceVersion }) => ({ path, resourceVersion })) })
-  } catch (error) { if (!unmounted) toast.danger('跨主机复制失败', errorMessage(error)) }
+    const result = await transferCrossPanelFileBatch(
+      payload,
+      target,
+      fileAPI.value.transferFromPanel,
+      ({ source, completed }) => {
+        if (!isCurrentFileTransfer(sequence) || fileTransferController !== controller || controller.signal.aborted) return
+        fileTransferState.value = {
+          mode: 'copy', target, count: total, phase: 'running', remote: true,
+          completed, currentName: source.name,
+        }
+      },
+      controller.signal,
+    )
+    if (result.succeeded.length) {
+      notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
+    }
+    if (!isCurrentFileTransfer(sequence)) return
+    const completed = result.succeeded.length + result.failed.length
+    const phase = result.cancelled
+      ? result.succeeded.length ? 'partial' : 'cancelled'
+      : result.succeeded.length === 0 ? 'error'
+        : result.failed.length ? 'partial' : 'success'
+    fileTransferState.value = {
+      mode: 'copy', target, count: total, phase, remote: true,
+      completed, currentName: result.succeeded.at(-1)?.entry.name,
+      detail: result.cancelled
+        ? `已完成的 ${result.succeeded.length} 项会保留在目标目录。`
+        : phase === 'success'
+          ? undefined
+          : `${result.succeeded.length} 项成功，${result.failed.length} 项失败${result.failed[0]?.detail ? `：${result.failed[0].detail}` : ''}`,
+    }
+    if (result.succeeded.length) {
+      if (!unmounted) await loadDirectory()
+    }
+  } finally {
+    if (isCurrentFileTransfer(sequence) && fileTransferController === controller) fileTransferController = undefined
+    scheduleFileTransferClear(sequence)
+  }
 }
 
-function openCrossHostCopy(entry: FileEntry): void {
-  const entries = entriesForBatch(entry)
-  contextMenu.value = undefined
-  crossHostTransfers.value?.openCopy(entries)
-}
 function onEntryDrop(event: DragEvent, entry: FileEntry): void {
   if (entry.kind !== 'directory' || (!hasDesktopFileDrag(event) && !hasCrossPanelFileDrag(event))) return
   event.preventDefault()
@@ -1686,7 +1719,7 @@ function setClipboard(mode: FileTransferOperation, entry?: FileEntry): void {
   contextMenu.value = undefined
   const entriesToStore = entriesForBatch(entry)
   if (!entriesToStore.length) return
-  fileClipboard.set(mode, entriesToStore, fileHostId.value, activeFileHostNodeId.value)
+  fileClipboard.set(mode, entriesToStore, fileHostId.value)
   clearSelection()
 }
 
@@ -1717,17 +1750,6 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
   const hostId = fileHostId.value
   const stored = clipboard.value
   if (!stored?.entries.length || pasteBusy.value) return
-  if (stored.hostId !== hostId && stored.mode === 'copy' && stored.sourceNodeId) {
-    if (!directory.value || loading.value || directoryError.value) return
-    pasteBusy.value = true
-    try {
-      await createTransferJob({ id: newTransferJobID(), sourceNodeId: stored.sourceNodeId, targetHostId: hostId, targetDirectory: target,
-        items: stored.entries.map(({ path, resourceVersion }) => ({ path, resourceVersion })) })
-      if (fileClipboard.clipboard.value === stored) fileClipboard.clear()
-    } catch (error) { if (!unmounted) toast.danger('跨主机复制失败', errorMessage(error)) }
-    finally { pasteBusy.value = false }
-    return
-  }
   if (fileTransferState.value?.phase === 'running') {
     toast.show('已有文件操作正在进行')
     return
@@ -2615,10 +2637,6 @@ onMounted(() => {
       void navigateDirectory(relocatedPath)
       return
     }
-    if (directoryController) {
-      for (const path of directories) queuedRemoteDownloadRefreshes.add(path)
-      return
-    }
     if (!directories.has(currentPath.value)) return
     void loadDirectory()
   })
@@ -2926,7 +2944,6 @@ onBeforeUnmount(() => {
         @changed="archiveChanged"
         @open="openArchiveResult"
       />
-      <FileTransferJobs ref="crossHostTransfers" :hosts="fileHosts" :source-node-id="activeFileHostNodeId" :local-node-id="localClusterNodeId" :host-id="fileHostId" :path="currentPath" />
       <Transition name="slide">
         <section
           v-if="remoteDownloadTasksVisible"
@@ -3322,7 +3339,6 @@ onBeforeUnmount(() => {
           <button type="button" :disabled="archiveTools?.checking" :title="archiveTools?.checking ? i18n.t('files.archive.checking') : undefined" @click="openDialog('compress')"><Archive :size="15" />压缩</button>
           <button v-if="archiveTools?.available && selectedEntries.every(entry => archiveFormat(entry))" type="button" @click="openDialog('extract')"><FolderOpen :size="15" />{{ i18n.t('files.archive.extractAll') }}</button>
           <button type="button" @click="setClipboard('copy')"><Copy :size="15" />复制</button>
-          <button type="button" :disabled="loading || !activeFileHostNodeId" @click="crossHostTransfers?.openCopy(selectedEntries)"><Server :size="15" />复制到其他主机</button>
           <button type="button" @click="setClipboard('move')"><Scissors :size="15" />剪切</button>
           <button type="button" @click="openDialog('chmod')"><ShieldCheck :size="15" />权限</button>
           <button
@@ -3389,7 +3405,6 @@ onBeforeUnmount(() => {
         <Pencil :size="15" />{{ phrase('重命名') }}
       </button>
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('copy', contextMenu.entry)"><Copy :size="15" />{{ phrase('复制') }}</button>
-      <button v-if="contextMenu.entry" role="menuitem" type="button" :disabled="loading || !activeFileHostNodeId" @click="openCrossHostCopy(contextMenu.entry)"><Server :size="15" />{{ phrase('复制到其他主机') }}</button>
       <button v-if="contextMenu.entry" role="menuitem" type="button" @click="setClipboard('move', contextMenu.entry)"><Scissors :size="15" />{{ phrase('剪切') }}</button>
       <button
         v-if="clipboard?.entries.length && contextMenu.entry?.kind === 'directory'"

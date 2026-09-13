@@ -119,21 +119,6 @@ describe('FilesView real API multi-window host context', () => {
     expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({ content: 'edited on a', expectedResourceVersion: 'v1' })
   })
 
-  it('queues a background completion refresh without aborting a different directory navigation', async () => {
-    const a = await windowFor('a')
-    let finish!: (response: Response) => void
-    let navigationSignal: AbortSignal | undefined
-    respond = (url, init) => url.pathname.endsWith('/files') && url.searchParams.get('path') === '/next'
-      ? new Promise(resolve => { finish = resolve; navigationSignal = init?.signal as AbortSignal }) : undefined
-    const navigation = a.vm.loadDirectory('/next'); await flushPromises()
-    notifyFileDirectoriesChanged(['/'], undefined, [], 'a')
-    await flushPromises()
-    expect(navigationSignal?.aborted).toBe(false)
-    finish(new Response(JSON.stringify({path:'/next',entries:[]}), {headers:{'content-type':'application/json'}}))
-    await navigation
-    expect(a.vm.currentPath).toBe('/next')
-  })
-
   it('captures the host for every file in an upload while another window changes hosts', async () => {
     const uploads: { url: URL; complete: () => void }[] = []
     vi.stubGlobal('XMLHttpRequest', class {
@@ -177,7 +162,7 @@ describe('FilesView real API multi-window host context', () => {
     expect(b.vm.clipboard.mode).toBe('copy')
   })
 
-  it('queues same-page cross-host drags with a frozen source and destination', async () => {
+  it('uses the existing cross-host transfer protocol for same-page drags between different hosts', async () => {
     const a = await windowFor('a')
     const b = await windowFor('b')
     respond = (url) => url.pathname.endsWith('/transfers')
@@ -188,9 +173,9 @@ describe('FilesView real API multi-window host context', () => {
     await b.vm.transferInternalFileDrop(event, '/target')
     const transfers = requests.filter((request) => request.method === 'POST')
     expect(transfers).toHaveLength(1)
-    expect(transfers[0]?.url.pathname).toBe('/api/v1/files/transfer-jobs')
-    expect(transfers[0]?.url.searchParams.get('hostId')).toBeNull()
-    expect(transfers[0]?.body).toMatchObject({ sourceNodeId: 'a'.repeat(32), targetHostId: 'b', targetDirectory: '/target', items: [{ path: entry.path, resourceVersion: 'v1' }] })
+    expect(transfers[0]?.url.pathname).toBe('/api/v1/files/transfers')
+    expect(transfers[0]?.url.searchParams.get('hostId')).toBe('b')
+    expect(transfers[0]?.body).toMatchObject({ sourceNodeId: 'a'.repeat(32), path: entry.path, targetDirectory: '/target', resourceVersion: 'v1' })
   })
 
   it('closing B does not clear A active drag', async () => {
