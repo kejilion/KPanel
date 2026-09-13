@@ -8,6 +8,8 @@
 
 上一稳定版本 / 回滚点：`v1.15.0` / `5bbbb50db1f5e958cc27bfc6f457478c4f5b0c92` / `sha256:80a9013765c56c4bd0efb1b0c19fb76a73a6467f318a70496b070c39c3cd40e9`
 
+最终状态：用户于 2026-09-13 明确要求完整回滚；生产、GitHub Latest、Docker `latest`、标准更新入口和源码主线均恢复到 `1.15.0`。`v1.16.0` 标签、Release、附件和版本镜像保留用于审计与按版本取用，Release 标记为 prerelease/withdrawn。
+
 ## 发布画像
 
 - 业务域：集群公开分享、设置页、集群文件流和文件管理跨主机复制。
@@ -68,10 +70,10 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 
 ## 发布产物与公开仓库复核
 
-- [v1.16.0 Release](https://github.com/kejilion/KPanel/releases/tag/v1.16.0) 于 2026-09-13T15:17:52+08:00 公开，为 Latest、非 draft、非 prerelease。
-- `1.16.0` 与 `latest` 同指 OCI index `sha256:7d1806ac669c942724a8f6dc60fb2df33b67f3f64f9c36b380ce12817ff5d245`；linux/amd64 manifest `sha256:1efc96fb7d45576e60d9125a14c1d8174b1cd431a1e8b10970c71c60ad4c5303`，linux/arm64 manifest `sha256:37cf64dbc817a3ed83c5ca9c60cb0f2234524c83b8fddb8910dd93d6c42ec2c6`，另有两个 attestations。
-- 8 个附件齐全：两种架构 Agent、两种架构 Node、部署归档、LICENSE、SHA256SUMS、THIRD_PARTY_NOTICES.md。5 个受 `SHA256SUMS` 管理的文件下载后逐项匹配，且全部 8 个文件的本地摘要与 GitHub asset digest 一致；证据 `C:/GitHub/_release-artifacts/v1160-public-assets-r1`。
-- `kejilion/apps` 更新入口报告 `Already up to date`；生产使用既有 `kpanel.conf`，本版无需 apps 或 sh 仓库发布。
+- [v1.16.0 Release](https://github.com/kejilion/KPanel/releases/tag/v1.16.0) 于 2026-09-13T15:17:52+08:00 公开；回滚后保留为非 draft、prerelease，标题为 `KPanel 1.16.0 (withdrawn)`。GitHub Latest 已恢复为 [v1.15.0](https://github.com/kejilion/KPanel/releases/tag/v1.15.0)。
+- `1.16.0` 版本标签仍指 OCI index `sha256:7d1806ac669c942724a8f6dc60fb2df33b67f3f64f9c36b380ce12817ff5d245`；Docker `latest` 已恢复为 `1.15.0` 的 `sha256:80a9013765c56c4bd0efb1b0c19fb76a73a6467f318a70496b070c39c3cd40e9`。
+- 8 个 v1.16.0 附件继续保留：两种架构 Agent、两种架构 Node、部署归档、LICENSE、SHA256SUMS、THIRD_PARTY_NOTICES.md。5 个受 `SHA256SUMS` 管理的文件下载后逐项匹配，且全部 8 个文件的本地摘要与 GitHub asset digest 一致；证据 `C:/GitHub/_release-artifacts/v1160-public-assets-r1`。
+- 公开默认通道恢复工作流 [34746414210](https://github.com/kejilion/KPanel/actions/runs/34746414210) 成功，精确核对 GitHub Latest、withdrawn 标记和 Docker `latest`；`kejilion/apps` 与 sh 仓库无需变更。
 
 ## 生产部署安全核对
 
@@ -82,15 +84,17 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 - postdeploy 于 15:21:55+08:00 至 15:21:56+08:00 通过：`1.16.0`、产品 revision、OCI 和受管脚本精确匹配；Panel running/healthy、restart 0、OOM false；Agent loaded/active/running/enabled、NeedDaemonReload=no；`panel/ai.db` quick check ok、顶层 `ai.db` 为空、保护文件 diff 为空。64 行数据清单比基线新增本版空任务索引，运行监控文件继续正常增长。
 - 公网 `https://kpanel.154.36.153.9.sslip.io/api/v1/health` 返回 HTTP 200、`status=ok`、`initialized=true`、`version=1.16.0`。三阶段证据分别为 `C:/GitHub/_release-artifacts/v1160-production-preflight-r1`、`v1160-production-backup-r1` 和 `v1160-production-postdeploy-r1`。
 - 生产未执行真实跨主机复制、故障注入、数据恢复、DNS/端口/身份切换或回滚演练。
+- 用户随后明确要求完整回滚。回滚 preflight 于 15:46:58+08:00 确认生产仍为健康 `1.16.0`；停写备份于 15:47:17+08:00 通过并创建 `/root/kpanel-backups/pre-v1.16.0-20260913T074727Z`。6 个备份文件与校验清单齐全，数据归档 SHA-256 `0148761242c42ab37fba1785e5d6a3ca383031fc3c427b753ba17cfd6c7cb886`，旧镜像归档 `1675408de98b37fac04a0169217fda410e757fc58137326fd55f2730107cf0d0`。
+- 标准应用更新入口拉取恢复后的 Docker `latest`，退出 0。回滚 postdeploy 于 15:58:32+08:00 至 15:58:34+08:00 通过：`1.15.0`、revision `5bbbb50db1f5e958cc27bfc6f457478c4f5b0c92`、OCI `sha256:80a9013765c56c4bd0efb1b0c19fb76a73a6467f318a70496b070c39c3cd40e9` 精确匹配；Panel healthy、restart 0、OOM false，Agent active/running/enabled、NeedDaemonReload=no，SQLite 与保护文件检查通过。公网 health 于 15:58:50+08:00 返回 HTTP 200、`status=ok`、`initialized=true`、`version=1.15.0`。
+- 回滚三阶段证据为 `C:/GitHub/_release-artifacts/v1160-rollback-preflight-r1`、`v1160-rollback-backup-r1` 和 `v1160-rollback-postdeploy-r1`。本轮只连接和操作登记目标 `arena-154`，未连接 `prod-108` / `108`。
 
 ## 回滚
 
-- 源码/tag：`v1.15.0` / `5bbbb50db1f5e958cc27bfc6f457478c4f5b0c92`；`v1.16.0` tag 保持不可变。
-- 镜像：`docker.io/kjlion/kejilion-panel@sha256:80a9013765c56c4bd0efb1b0c19fb76a73a6467f318a70496b070c39c3cd40e9`。
-- 脚本：`kejilion/sh@5ef0201947dfb80062d54a0ba8f11009e871cf04`。
-- 数据/配置：`/root/kpanel-backups/pre-v1.15.0-20260913T072053Z`，含旧镜像、Panel 数据、配置、service、inspect 和校验清单。
-- 需要回滚时停止 Agent/Panel，恢复备份数据、配置、service 和旧镜像，再重复 health、Agent、OCI、SQLite、保护文件和日志检查；本轮没有实际触发。
-- 当前生产实际为健康 `1.16.0`；GitHub Latest、Docker `latest` 与标准更新入口均指向新版本，因此公共默认更新通道决策为不适用。
+- 回滚已实际完成。源码以 revert 提交恢复 `1.15.0` 产品树，不改写历史；`v1.15.0` / `5bbbb50db1f5e958cc27bfc6f457478c4f5b0c92` 是最终产品基线，回滚候选 CI [34746198987](https://github.com/kejilion/KPanel/actions/runs/34746198987) 与 dependency freshness [34746199020](https://github.com/kejilion/KPanel/actions/runs/34746199020) 成功。
+- `v1.16.0` annotated tag、Release、附件和 `docker.io/kjlion/kejilion-panel:1.16.0` 保持不可变；Release 标记为 prerelease/withdrawn，避免进入默认升级路径。
+- GitHub Latest、Docker `latest` 与标准更新入口均指向 `1.15.0`；生产实际为健康 `1.15.0`，受管脚本保持 `kejilion/sh@5ef0201947dfb80062d54a0ba8f11009e871cf04`。
+- 回滚前的 `1.16.0` 数据、配置、service、inspect 和镜像保存在 `/root/kpanel-backups/pre-v1.16.0-20260913T074727Z`；原 `1.15.0` 上线前备份 `/root/kpanel-backups/pre-v1.15.0-20260913T072053Z` 继续保留。
+- 回滚保留当前数据，没有恢复旧数据快照；因此已复制文件和 `file-transfers/jobs.json` 不被删除，`1.15.0` 会忽略该任务索引。
 
 ## 交付节奏数据
 
@@ -99,15 +103,15 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 - 候选冻结时间：2026-09-13T14:59:49+08:00
 - 生产完成时间：2026-09-13T15:21:56+08:00
 - 提交到生产用时：6.82 小时
-- 是否回滚、紧急热修复或重复发布：否
-- 若发生失败，发现时间、恢复时间和逃逸门禁：不适用
+- 是否回滚、紧急热修复或重复发布：是（用户明确要求完整回滚到 1.15.0；非产品故障）
+- 若发生失败，发现时间、恢复时间和逃逸门禁：发现时间：2026-09-13T15:46:58+08:00；恢复时间：2026-09-13T15:58:50+08:00；逃逸门禁：未逃逸：本次为用户主动撤回决策，1.16.0 上线与回滚前均保持健康，公开默认通道、生产和源码主线按回滚门禁恢复到 1.15.0
 <!-- kpanel-release-metrics:end -->
 
 最终 SHA 的 L2/L3、候选/main/tag 门禁、公开附件、公开 OCI E2E、停写备份与生产 postdeploy 均通过。以下单独记录发布执行、基础设施和证据通道异常，不把它们写成产品失败。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：14
-- 其中生产写操作开始后异常次数：4
+- 已记录发布流程异常或无效证据拦截次数：22
+- 其中生产写操作开始后异常次数：11
 <!-- kpanel-release-process-metrics:end -->
 
 <!-- kpanel-release-process-incidents:start -->
@@ -223,10 +227,64 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
   {
     "fingerprint": "postrelease-ci/jq-filter/quote-stripping",
     "position": "after-production-write",
-    "count": 1,
+    "count": 2,
     "impact": "查询最终文档 CI 的步骤进度时，跨 PowerShell/SSH 的 jq 字符串常量引号被剥离，过滤器编译失败，没有形成步骤结论。",
     "recoveryEvidence": "最终 CI 继续使用已验证的 run 状态 API 精确核对，不依赖该可选步骤过滤器。",
     "permanentAction": "跨 Shell 的 JSON 处理保存原始响应后在本地 Node 解析，远端 jq 只使用无字符串常量的固定表达式。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-research/rg/windows-glob",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Windows 路径通配符直接传给 rg，首次验收记录检索被路径解析拒绝，没有形成结论。",
+    "recoveryEvidence": "改用仓库内固定文件路径读取 v1.15.0 之后的发布记录和当前验收文档。",
+    "permanentAction": "Windows 上先用 rg --files 生成候选文件清单，再对明确路径执行内容查询。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-backup/canonical-gate/connection-reset",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "回滚前停写备份恢复 1.16.0 后的首次健康探测遇到连接重置，生产降级尚未开始。",
+    "recoveryEvidence": "同一权威 backup gate 的有界重试确认 1.16.0、Panel、Agent、SQLite、保护文件和旧镜像加载全部健康，随后才恢复公开通道和生产版本。",
+    "permanentAction": "在 run-production-evidence-remote.sh 将受控恢复窗口的预期连接重置收敛为静默有界重试，最终健康断言继续 fail-closed。",
+    "historicalReleases": ["v1.16.0", "v1.15.0", "v1.14.1"]
+  },
+  {
+    "fingerprint": "rollback-preflight/yaml-parser/missing-dependency",
+    "position": "after-production-write",
+    "count": 2,
+    "impact": "两次尝试用本地 Node 解析一次性 Actions YAML 时缺少 yaml 模块，解析器在读取前停止。",
+    "recoveryEvidence": "使用 git diff --check、固定 Action SHA 和 GitHub Actions 实际执行验证工作流语法及行为；最终通道恢复 run 成功。",
+    "permanentAction": "临时工作流只使用仓库已有验证入口；未声明的本地 Node 模块不再作为 YAML 前置检查。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-preflight/action-pin-checker/wrong-path",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "一次性工作流的 Action 固定检查引用了仓库中不存在的脚本路径，没有形成固定性结论。",
+    "recoveryEvidence": "逐项复用仓库现有 workflow 的完整 Action commit SHA，GitHub Actions setup 与登录步骤成功。",
+    "permanentAction": "新增工作流前从仓库现有 workflow 读取 Action 固定值，并先用 rg --files 确认可用检查入口。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-channel/github-release/latest-prerelease-order",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "首次通道恢复 run 已恢复 Docker latest，但尝试先把当前 GitHub Latest 标记为 prerelease，GitHub 拒绝该顺序，Release 默认通道未改变。",
+    "recoveryEvidence": "后续 run 先把 v1.15.0 设为 Latest，再把 v1.16.0 标记为 prerelease/withdrawn；公开 API 精确确认最终状态。",
+    "permanentAction": "Release 回滚固定按目标稳定版 Latest、撤回版 prerelease、双重读取校验的顺序执行。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "rollback-channel/github-release/gh-json-field",
+    "position": "after-production-write",
+    "count": 1,
+    "impact": "第二次通道恢复 run 已完成所需 Release 修改，但尾部 gh release view 使用不兼容 JSON 字段导致工作流误报失败。",
+    "recoveryEvidence": "改用 GitHub REST 的 prerelease 字段校验；最终工作流 run 34746414210 成功，公开状态与 Docker 摘要同时匹配。",
+    "permanentAction": "Release 状态修改与校验统一使用同一 REST API 字段，避免 CLI 展示字段差异。",
     "historicalReleases": []
   }
 ]
@@ -234,8 +292,8 @@ dependency freshness 在候选、main 和 tag 三层均通过。业务上下文�
 
 ## 遗留风险与后续准入
 
-- 聚合发布分支在 tag/main/Release/生产均完成并可由不可变 tag 恢复后定向清理；保留 L2、L3、公开附件、公开镜像和生产三阶段证据及生产恢复包。
+- v1.16.0 聚合发布分支在 tag/main/Release/生产和完整回滚均完成后定向清理；保留 L2、L3、公开附件、版本镜像、原上线与回滚三阶段证据及两套生产恢复包。
 - 未验证风险：真实跨物理主机的长时间大目录复制、跨地域弱网、原生 arm64、长期 soak、真实浏览器 125%/200% 缩放与键盘焦点、生产故障注入。
 - 已实现待实机准入：跨主机复制队列、取消和重试已自动验证，真实跨机长流量在后续专项工作流验证。
-- 不阻断本版：所有新增状态有界且不自动重放不确定写入；无破坏性迁移；最终 SHA 的 L3、公开 OCI E2E、停写备份和生产 postdeploy 已通过。
+- 当前准入结论：v1.16.0 已退出默认通道；其新增状态有界且不自动重放不确定写入，无破坏性迁移。恢复后的 v1.15.0 已通过候选 CI、公开默认通道核对、停写备份和生产 postdeploy。
 - 后续门禁：在两台登记的非生产主机补跨物理主机长文件/目录、断线恢复与资源趋势专项；下一次 L3 前闭环重复的备份恢复连接重置指纹。
