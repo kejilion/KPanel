@@ -964,19 +964,19 @@ func resourceAlertMessage(host cluster.Host, ruleKey string, value, threshold fl
 	switch locale {
 	case "en-US":
 		if recovery {
-			return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nRecovered: %s, current %s\nTime: %s", hostName, metric, current, when)
+			return fmt.Sprintf("✅ [KPanel Cluster Notice]\n\nHost: %s\nRecovered: %s, current %s\n\nTime: %s", hostName, metric, current, when)
 		}
-		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\n%s reached %s (threshold %s)\nTime: %s", hostName, metric, current, formatMetric(threshold, unit), when)
+		return fmt.Sprintf("⚠️ [KPanel Cluster Alert]\n\nHost: %s\n%s reached %s\nThreshold: %s\n\nTime: %s", hostName, metric, current, formatMetric(threshold, unit), when)
 	case "zh-TW":
 		if recovery {
-			return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\n已恢復：%s 目前 %s\n時間：%s", hostName, metric, current, when)
+			return fmt.Sprintf("✅ [KPanel 叢集通知]\n\n主機：%s\n已恢復：%s 目前 %s\n\n時間：%s", hostName, metric, current, when)
 		}
-		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n%s達到 %s（閾值 %s）\n時間：%s", hostName, metric, current, formatMetric(threshold, unit), when)
+		return fmt.Sprintf("⚠️ [KPanel 叢集警報]\n\n主機：%s\n%s達到 %s\n閾值：%s\n\n時間：%s", hostName, metric, current, formatMetric(threshold, unit), when)
 	default:
 		if recovery {
-			return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n已恢复：%s 当前 %s\n时间：%s", hostName, metric, current, when)
+			return fmt.Sprintf("✅ [KPanel 集群通知]\n\n主机：%s\n已恢复：%s 当前 %s\n\n时间：%s", hostName, metric, current, when)
 		}
-		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n%s达到 %s（阈值 %s）\n时间：%s", hostName, metric, current, formatMetric(threshold, unit), when)
+		return fmt.Sprintf("⚠️ [KPanel 集群告警]\n\n主机：%s\n%s达到 %s\n阈值：%s\n\n时间：%s", hostName, metric, current, formatMetric(threshold, unit), when)
 	}
 }
 
@@ -988,11 +988,11 @@ func cumulativeTrafficAlertMessage(host cluster.Host, ruleKey string, valueBytes
 	when := formatNotificationTime(now)
 	switch locale {
 	case "en-US":
-		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\n%s reached %s (threshold %s)\nTime: %s", hostName, metric, current, threshold, when)
+		return fmt.Sprintf("⚠️ [KPanel Cluster Alert]\n\nHost: %s\n%s reached %s\nThreshold: %s\n\nTime: %s", hostName, metric, current, threshold, when)
 	case "zh-TW":
-		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n%s達到 %s（閾值 %s）\n時間：%s", hostName, metric, current, threshold, when)
+		return fmt.Sprintf("⚠️ [KPanel 叢集警報]\n\n主機：%s\n%s達到 %s\n閾值：%s\n\n時間：%s", hostName, metric, current, threshold, when)
 	default:
-		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n%s达到 %s（阈值 %s）\n时间：%s", hostName, metric, current, threshold, when)
+		return fmt.Sprintf("⚠️ [KPanel 集群告警]\n\n主机：%s\n%s达到 %s\n阈值：%s\n\n时间：%s", hostName, metric, current, threshold, when)
 	}
 }
 
@@ -1003,19 +1003,19 @@ func availabilityAlertMessage(host cluster.Host, now time.Time, locale string, r
 	switch locale {
 	case "en-US":
 		if recovery {
-			return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nConnection recovered, current state: %s\nTime: %s", hostName, state, when)
+			return fmt.Sprintf("✅ [KPanel Cluster Notice]\n\nHost: %s\nConnection recovered, current state: %s\n\nTime: %s", hostName, state, when)
 		}
-		return fmt.Sprintf("[KPanel Cluster Alert]\nHost: %s\nHost is temporarily unreachable, current state: %s\nTime: %s", hostName, state, when)
+		return fmt.Sprintf("⚠️ [KPanel Cluster Alert]\n\nHost: %s\nHost is temporarily unreachable, current state: %s\n\nTime: %s", hostName, state, when)
 	case "zh-TW":
 		if recovery {
-			return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\n連線已恢復，目前狀態：%s\n時間：%s", hostName, state, when)
+			return fmt.Sprintf("✅ [KPanel 叢集通知]\n\n主機：%s\n連線已恢復，目前狀態：%s\n\n時間：%s", hostName, state, when)
 		}
-		return fmt.Sprintf("[KPanel 叢集警報]\n主機：%s\n主機暫時失聯，目前狀態：%s\n時間：%s", hostName, state, when)
+		return fmt.Sprintf("⚠️ [KPanel 叢集警報]\n\n主機：%s\n主機暫時失聯，目前狀態：%s\n\n時間：%s", hostName, state, when)
 	default:
 		if recovery {
-			return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\n连接已恢复，当前状态：%s\n时间：%s", hostName, state, when)
+			return fmt.Sprintf("✅ [KPanel 集群通知]\n\n主机：%s\n连接已恢复，当前状态：%s\n\n时间：%s", hostName, state, when)
 		}
-		return fmt.Sprintf("[KPanel 集群告警]\n主机：%s\n主机暂时失联，当前状态：%s\n时间：%s", hostName, state, when)
+		return fmt.Sprintf("⚠️ [KPanel 集群告警]\n\n主机：%s\n主机暂时失联，当前状态：%s\n\n时间：%s", hostName, state, when)
 	}
 }
 
@@ -1028,11 +1028,11 @@ func sshLoginMessage(host cluster.Host, event contract.SSHLoginEvent, now time.T
 	method := safeMessageText(event.Method)
 	switch locale {
 	case "en-US":
-		return fmt.Sprintf("[KPanel Cluster Notice]\nHost: %s\nSSH login: %s\nUser: %s\nSource: %s\nMethod: %s\nSent: %s", hostName, eventTime, username, remoteAddress, method, sentAt)
+		return fmt.Sprintf("🔐 [KPanel Cluster Notice]\n\nHost: %s\nSSH login: %s\nUser: %s\nSource: %s\nMethod: %s\n\nSent: %s", hostName, eventTime, username, remoteAddress, method, sentAt)
 	case "zh-TW":
-		return fmt.Sprintf("[KPanel 叢集通知]\n主機：%s\nSSH 登入：%s\n使用者：%s\n來源：%s\n方式：%s\n傳送時間：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
+		return fmt.Sprintf("🔐 [KPanel 叢集通知]\n\n主機：%s\nSSH 登入：%s\n使用者：%s\n來源：%s\n方式：%s\n\n傳送時間：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
 	default:
-		return fmt.Sprintf("[KPanel 集群通知]\n主机：%s\nSSH 登录：%s\n用户：%s\n来源：%s\n方式：%s\n发送时间：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
+		return fmt.Sprintf("🔐 [KPanel 集群通知]\n\n主机：%s\nSSH 登录：%s\n用户：%s\n来源：%s\n方式：%s\n\n发送时间：%s", hostName, eventTime, username, remoteAddress, method, sentAt)
 	}
 }
 
@@ -1040,11 +1040,11 @@ func testMessage(now time.Time, locale string) string {
 	when := formatNotificationTime(now)
 	switch locale {
 	case "en-US":
-		return fmt.Sprintf("[KPanel Cluster Notice]\nTelegram channel test succeeded.\nTime: %s", when)
+		return fmt.Sprintf("🧪 [KPanel Cluster Notice]\n\nTelegram channel test succeeded.\n\nTime: %s", when)
 	case "zh-TW":
-		return fmt.Sprintf("[KPanel 叢集通知]\nTelegram 頻道測試成功。\n時間：%s", when)
+		return fmt.Sprintf("🧪 [KPanel 叢集通知]\n\nTelegram 頻道測試成功。\n\n時間：%s", when)
 	default:
-		return fmt.Sprintf("[KPanel 集群通知]\nTelegram 通道测试成功。\n时间：%s", when)
+		return fmt.Sprintf("🧪 [KPanel 集群通知]\n\nTelegram 通道测试成功。\n\n时间：%s", when)
 	}
 }
 
