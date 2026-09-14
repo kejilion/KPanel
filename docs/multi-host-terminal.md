@@ -47,8 +47,9 @@
 - Panel 继续无特权运行，宿主机 PTY 仅由 root Agent 创建；
 - 轻量节点的遥测进程继续使用无登录低权限账户；独立的 root `terminal-broker` 只读取 root-only 的终端 Noise 私钥，复用固定 PTY Manager。遥测 `reporting key` 不进入终端服务，两者之间没有可被低权限进程调用的 root Socket；
 - Agent 主服务因文件管理根目录为 `/` 而保持宿主机文件系统可写，Panel 状态目录继续通过
-  `ReadOnlyPaths` 独立保护。主机终端仍由 Agent 通过固定参数创建独立 transient systemd PTY，
-  以独立生命周期和审计边界提供 `apt`、`dnf` 等系统维护能力；其他 Agent API 仍只能调用各自的
+  `ReadOnlyPaths` 独立保护。主机终端仍由 Agent 通过固定参数创建独立 PTY：systemd 使用 transient
+  unit，OpenRC 使用 `setsid` 进程组、Agent `CloseAll` 与 Linux parent-death signal 回收；两者以独立生命周期和审计边界提供
+  `apk`、`apt`、`dnf` 等系统维护能力；其他 Agent API 仍只能调用各自的
   固定适配器；
 - 远端终端只允许已激活且 scope 包含 `cluster.terminal.open` 的 v2 控制端；当前合法 scope 为
   `cluster.summary.read cluster.terminal.open` 或新增文件读取权限后的
@@ -105,7 +106,8 @@ POST /v1/terminals/{id}/close
 
 接口不接受浏览器提交的 Shell 路径、启动参数、用户、环境变量或工作目录。Agent 只启动
 `/bin/bash -l`，不存在时回退 `/bin/sh -l`，并固定 `TERM=xterm-256color`。systemd 部署环境使用
-固定 transient unit 参数，最长运行 8 小时；关闭会话时同时停止 unit，Agent 停止或重启时也会结束会话。
+固定 transient unit 参数；OpenRC 使用由 PTY Manager 跟踪的独立 session/process group，并用
+parent-death signal 覆盖 Agent 无法执行优雅清理的退出。应用层统一限制最长运行 8 小时，关闭会话或 Agent 停止时结束会话。
 
 ## 4. 资源、生命周期与审计
 
@@ -133,7 +135,7 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
   10 秒关闭超时返回失败审计和 `terminal_close_failed`；保留同一会话身份，用户每次重试最多发出一个关闭请求。
   关闭请求发出后的迟到输出、input/resize 结束状态不得抢先清除关闭身份；既有 35 分钟索引过期上限继续有效。
 - Agent 先完成进程终止和 PTY 关闭再发布 `closed`；kill/stop 失败可重试，systemd 已回收的 unit 必须经
-  `LoadState=not-found` 确认。前端关闭失败显示持续提示和重试按钮，组件卸载仍为捕获错误的 best-effort，
+  `LoadState=not-found` 确认，OpenRC/direct PTY 则以进程组终止结果为准。前端关闭失败显示持续提示和重试按钮，组件卸载仍为捕获错误的 best-effort，
   不等价于真实资源已经回收。普通远端目标需包含此修复才能把 Agent 的已不存在状态规范为加密关闭确认；
   旧远端返回的通用 HTTP 错误保持失败，不推断成功。轻节点 broker 继续复用既有结构化 `closed` 事件。
 - 浏览器所有写操作验证 Session、Origin 和 CSRF；跨用户会话查询返回 404；
@@ -143,7 +145,7 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
 - 终端能力本质上等价于 root SSH。它不是任意 Shell API 的替代品，其他页面仍只能调用固定
   结构化动作，不能复用终端接口拼接后台业务命令；
 - 轻量节点终端不等于开放 `sshd`：中心必须先通过接入时绑定的终端 Noise 静态公钥完成 v2
-  身份认证；root `terminal-broker` 只在本机 systemd 服务中运行，节点不暴露 TCP/SSH/HTTP 监听；
+  身份认证；root `terminal-broker` 只在本机 systemd/OpenRC service 中运行，节点不暴露 TCP/SSH/HTTP 监听；
 - 网络断开只改变前端连接状态，不把“暂时没读到输出”误判为进程失败；PTY 真实退出才显示结束；
 - 远端撤销授权后不能新建终端；既有会话由目标 Agent 的会话上限、闲置时间和进程生命周期回收。
 
@@ -154,11 +156,11 @@ Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID�
 - 本机 open/output/input/resize/close；用户隔离、CSRF/Origin 和会话上限；
 - v2 远端完整生命周期、权限不足拒绝、重放拒绝以及命令明文不出现在传输中；
 - 轻量节点完整 `open/output/input/resize/close` 生命周期、Noise 密文/身份绑定/重放、旧中心 404 兼容、
-  节点重启会话回收、root broker systemd 启停和 `amd64`/`arm64` PTY 验收；
+  节点重启会话回收、root broker systemd/OpenRC 启停和 `amd64`/`arm64` PTY 验收；
 - UTF-8 输入、整行预输入、控制键、24 ms 合并、窗口缩放、5000 行滚动、智能跟随、手动回到底部、
   输出截断、断线重连和 URL 安全跳转；
 - 以超过单屏高度的主机和体检命令列表复核独立滚动，确认终端输出和预输入框始终可见；
-- 从测试 Agent 启动主机终端，验证 transient PTY 拥有独立 systemd 单元、可写系统目录并能运行
+- 从测试 Agent 启动主机终端，验证 transient systemd unit 或 OpenRC 独立进程组、可写系统目录并能运行
   系统维护命令；同时验证应用、建站、体检和环境任务仍只能调用各自的固定适配器；
 - 本机 Panel/Agent 退出关闭 PTY；远端关闭成功或链路中断后的闲置回收、过期索引回收均符合约定；
 - `amd64`、`arm64`，Chrome/Edge 桌面与移动端布局；

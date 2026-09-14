@@ -16,6 +16,8 @@ for (const [marker, name] of [
   ['KPANEL_NODE_UPDATE', 'update.sh'],
   ['KPANEL_NODE_UPDATE_SERVICE', 'update.service'],
   ['KPANEL_NODE_UPDATE_TIMER', 'update.timer'],
+  ['KPANEL_NODE_OPENRC_UPDATE', 'update.openrc'],
+  ['KPANEL_NODE_OPENRC_SSH_LOGIN_SERVICE', 'ssh-login.openrc'],
 ]) {
   let content = source.split(`<<'${marker}'\n`)[1]?.split(`\n${marker}\n`)[0];
   if (!content) throw new Error(`missing authoritative template: ${marker}`);

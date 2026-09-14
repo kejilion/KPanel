@@ -336,7 +336,7 @@ export default [
 	['日常维护', 'Routine maintenance'],
 	['系统更新、空间清理、日志与可控重启', 'System updates, space cleanup, logs, and controlled restarts'],
 	['系统日志', 'System logs'],
-	['按需查看 journal、服务、安全与登录日志，并安全清理旧 journal。', 'View journal, service, security, and login logs on demand, and safely clean old journal data.'],
+	['按需查看系统、服务、安全与登录日志，并安全清理旧日志。', 'View system, service, security, and login logs on demand, and safely clean old logs.'],
 	['打开后读取真实占用', 'Open to load real usage'],
 	['系统 · 服务 · 安全 · 登录 · 实时刷新', 'System · Service · Security · Login · Live refresh'],
 	['只接受固定日志范围、行数与清理策略；服务日志无需选择 unit，输出始终有界，不浏览或删除任意日志文件。', 'Only fixed log sources, line limits, and cleanup policies are accepted. Service logs require no unit selection, output stays bounded, and arbitrary log files cannot be browsed or deleted.'],

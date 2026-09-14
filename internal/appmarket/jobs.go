@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const (
@@ -229,6 +231,17 @@ func (s *Service) scriptJobUnitState(id string) (running bool, known bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	backend, backendErr := jobcontrol.Detect(s.jobRunner)
+	if backendErr != nil {
+		return false, false
+	}
+	if backend == jobcontrol.BackendOpenRC {
+		state, err := jobcontrol.Inspect(ctx, s.jobRunner, s.scriptJobSpec(id, false))
+		if err != nil {
+			return false, false
+		}
+		return state.Running, state.Known
+	}
 	output, err := s.jobRunner.Run(
 		ctx,
 		"systemctl",
@@ -519,8 +532,8 @@ func (s *Service) launchScriptJob(ctx context.Context, record appJobRecord) erro
 	if s.jobRunner == nil || s.jobExecutable == "" {
 		return errors.New("application background runner is unavailable")
 	}
-	if _, err := s.jobRunner.LookPath("systemd-run"); err != nil {
-		return errors.New("systemd background task runner is unavailable")
+	if err := jobcontrol.Available(s.jobRunner); err != nil {
+		return errors.New("systemd or OpenRC background task runner is unavailable")
 	}
 	subcommand := "app-run"
 	stopTimeout := "10min"
@@ -531,32 +544,15 @@ func (s *Service) launchScriptJob(ctx context.Context, record appJobRecord) erro
 		subcommand = "app-pty-run"
 		stopTimeout = "10s"
 	}
-	arguments := []string{
-		"--unit=" + appJobUnitPrefix + record.ID,
-		"--collect",
-		"--no-block",
-		"--property=Type=oneshot",
-		"--property=TimeoutStartSec=45min",
-		"--property=TimeoutStopSec=" + stopTimeout,
-		"--property=KillMode=control-group",
-		"--property=User=root",
-		"--property=UMask=0027",
-		"--property=PrivateTmp=yes",
-		"--property=NoNewPrivileges=no",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
-		"--property=Nice=5",
-		"--property=CPUWeight=40",
-		"--property=IOWeight=40",
-		"--property=SyslogIdentifier=kpanel-app",
-		"--",
-		s.jobExecutable,
-		subcommand,
-		"--state-dir",
-		s.jobs.stateDir,
-		"--id",
-		record.ID,
+	spec := s.scriptJobSpec(record.ID, record.Interactive)
+	spec.Arguments[0] = subcommand
+	spec.SystemdProperties = []string{
+		"Type=oneshot", "TimeoutStartSec=45min", "TimeoutStopSec=" + stopTimeout,
+		"KillMode=control-group", "User=root", "UMask=0027", "PrivateTmp=yes",
+		"NoNewPrivileges=no", "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+		"Nice=5", "CPUWeight=40", "IOWeight=40", "SyslogIdentifier=kpanel-app",
 	}
-	_, err := s.jobRunner.Run(ctx, "systemd-run", arguments...)
+	err := jobcontrol.Launch(ctx, s.jobRunner, spec)
 	if err != nil && record.Interactive {
 		_ = removeTerminalInput(s.jobs.inputPath(record.ID))
 	}
@@ -629,16 +625,19 @@ func (s *Service) CancelAppJob(id string) (AppJob, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := s.jobRunner.Run(
-		ctx,
-		"systemctl",
-		"stop",
-		"--no-block",
-		appJobUnitPrefix+id+".service",
-	); err != nil {
+	backend, backendErr := jobcontrol.Detect(s.jobRunner)
+	var stopErr error
+	if backendErr != nil {
+		stopErr = backendErr
+	} else if backend == jobcontrol.BackendSystemd {
+		_, stopErr = s.jobRunner.Run(ctx, "systemctl", "stop", "--no-block", appJobUnitPrefix+id+".service")
+	} else {
+		stopErr = jobcontrol.Stop(ctx, s.jobRunner, s.scriptJobSpec(id, true))
+	}
+	if stopErr != nil {
 		_ = os.Remove(s.jobs.cancelPath(id))
 		_ = s.jobs.put(original)
-		return AppJob{}, fmt.Errorf("%w: stop interactive application task: %v", ErrNeedsAttention, err)
+		return AppJob{}, fmt.Errorf("%w: stop interactive application task: %v", ErrNeedsAttention, stopErr)
 	}
 	_ = removeTerminalInput(s.jobs.inputPath(id))
 	return s.jobs.public(record), nil
@@ -669,7 +668,7 @@ func (s *Service) scriptInstallAvailable() bool {
 		s.scriptInteractiveFinder == nil {
 		return false
 	}
-	if _, err := s.jobRunner.LookPath("systemd-run"); err != nil {
+	if err := jobcontrol.Available(s.jobRunner); err != nil {
 		return false
 	}
 	_, err := s.scriptInteractiveFinder()
@@ -681,7 +680,7 @@ func (s *Service) scriptManageAvailable() bool {
 		s.scriptInteractiveFinder == nil || s.scriptManageFinder == nil {
 		return false
 	}
-	if _, err := s.jobRunner.LookPath("systemd-run"); err != nil {
+	if err := jobcontrol.Available(s.jobRunner); err != nil {
 		return false
 	}
 	if _, err := s.scriptInteractiveFinder(); err != nil {
@@ -696,11 +695,28 @@ func (s *Service) scriptInteractiveManageAvailable() bool {
 		s.scriptInteractiveManageFinder == nil {
 		return false
 	}
-	if _, err := s.jobRunner.LookPath("systemd-run"); err != nil {
+	if err := jobcontrol.Available(s.jobRunner); err != nil {
 		return false
 	}
 	_, err := s.scriptInteractiveManageFinder()
 	return err == nil
+}
+
+func (s *Service) scriptJobSpec(id string, interactive bool) jobcontrol.Spec {
+	stopTimeout := 10 * time.Minute
+	if interactive {
+		stopTimeout = 10 * time.Second
+	}
+	return jobcontrol.Spec{
+		Unit:        appJobUnitPrefix + id,
+		Executable:  s.jobExecutable,
+		Arguments:   []string{"app-run", "--state-dir", s.jobs.stateDir, "--id", id},
+		StateDir:    s.jobs.stateDir,
+		UMask:       "0027",
+		Nice:        5,
+		IOClass:     "2:6",
+		StopTimeout: stopTimeout,
+	}
 }
 
 func findKejilionScript() (string, error) {

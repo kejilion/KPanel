@@ -17,11 +17,13 @@ type SystemLogUsage struct {
 }
 
 type SystemLogSourceStatus struct {
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
+	Available        bool   `json:"available"`
+	Reason           string `json:"reason,omitempty"`
+	SupportsPriority bool   `json:"supportsPriority,omitempty"`
 }
 
 type SystemLogSources struct {
+	System   SystemLogSourceStatus `json:"system"`
 	Journal  SystemLogSourceStatus `json:"journal"`
 	Login    SystemLogSourceStatus `json:"login"`
 	Security SystemLogSourceStatus `json:"security"`
@@ -119,7 +121,7 @@ func ParseSystemLogQuery(values url.Values) (SystemLogQuery, string, string) {
 	if raw, present := values["priority"]; present {
 		query.Priority = raw[0]
 		if query.Source != "system" && query.Source != "service" {
-			return SystemLogQuery{}, "priority", "priority is only allowed for journal logs"
+			return SystemLogQuery{}, "priority", "priority is only allowed for system or service logs"
 		}
 	}
 	switch query.Priority {

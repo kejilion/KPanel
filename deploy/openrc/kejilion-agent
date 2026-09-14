@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+
+name="KPanel Host Agent"
+description="Privileged, typed host API for KPanel"
+command="/usr/local/libexec/kejilion-agent"
+command_user="root:kejilion-panel"
+directory="/"
+pidfile="/run/kejilion-panel/agent.pid"
+supervisor="supervise-daemon"
+respawn_delay=3
+respawn_max=10
+respawn_period=60
+retry="TERM/30/KILL/5"
+stopgroup=true
+umask=0077
+output_logger="logger -t kejilion-agent"
+error_logger="logger -t kejilion-agent"
+no_new_privs=true
+
+depend() {
+	need localmount docker
+	use net logger
+	after firewall
+}
+
+start_pre() {
+	checkpath --directory --mode 0750 --owner root:kejilion-panel /run/kejilion-panel
+}

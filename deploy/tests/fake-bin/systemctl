@@ -1,5 +1,9 @@
 #!/bin/sh
 case "$*" in
+	"--version")
+		printf '%s\n' 'systemd 255 (test fixture)'
+		exit 0
+		;;
 	"show --property=LoadState --value kejilion-agent.service")
 		printf '%s\n' "${KP_UNIT_LOAD_STATE:-not-found}"
 		exit 0

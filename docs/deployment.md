@@ -6,15 +6,17 @@ KPanel 使用两个独立进程：
 
 - `paneld` 以非 root Docker 容器运行，入口使用专用 `internal` 网络；联邦监控与 AI Provider
   复用独立受控出站网络，默认不发布宿主端口。
-- `kejilion-agent` 以受限 systemd 服务运行，只接受本机 Unix Socket 上的类型化请求。
+- `kejilion-agent` 以受限 systemd 或 OpenRC 服务运行，只接受本机 Unix Socket 上的类型化请求。
 
-宿主机必须使用 systemd。当前发行版代码路径覆盖 Debian/Ubuntu、
-RHEL/Fedora、Arch/Manjaro 和 openSUSE/SLES；具体实机验收层级见
-[宿主机系统兼容矩阵](platform-support.md)。Alpine/OpenRC 尚不属于正式部署目标。
+宿主机必须运行 systemd 或 OpenRC。当前发行版代码路径覆盖 Debian/Ubuntu、
+RHEL/Fedora、Arch/Manjaro、openSUSE/SLES，以及 Alpine Linux 3.24 `sys` mode；
+具体实机验收层级见[宿主机系统兼容矩阵](platform-support.md)。Alpine/OpenRC
+已有自动化契约证据，但尚未完成真实 PID 1 VPS/VM 的 L3 准入，不能写成已实机验证。
 
 安装器只管理 `/etc/kejilion-panel`、`/opt/kejilion-panel`、
 `/var/lib/kejilion-panel`、`/run/kejilion-panel`、
-`/usr/local/libexec/kejilion-agent`、对应 systemd unit、专用
+`/usr/local/libexec/kejilion-agent`、对应 systemd unit 或
+`/etc/init.d` 与 `/etc/conf.d` OpenRC 定义、专用
 `kejilion-panel` 容器，以及 `kejilion-panel-internal`、`kejilion-panel-egress`
 两张网络。安装器还会把固定
 digest 的 Panel 镜像拉入本机缓存。安装器不会执行或修改 `kejilion.sh`，也不会
@@ -103,6 +105,19 @@ Docker 服务必须由运维人员在评估现有容器后提前启动。预检�
 市场仍可正常工作；网站列表返回空列表，可信 `kejilion.sh` 提供的 WordPress、
 反向代理和一键建站入口仍可初始化 LDNMP 并创建站点。只有部分网站受管目录缺失时
 仍按环境异常处理，避免把已有站点损坏误报为空列表。其他失败项必须处理后再部署。
+
+Alpine 3.24 必须是持久化 `sys` mode，并启用 `community` 仓库。当前候选的基础准备为：
+
+```sh
+apk add bash curl coreutils e2fsprogs-extra iproute2 musl-utils openssl util-linux tzdata \
+  docker docker-cli-compose
+rc-update add docker default
+rc-service docker start
+```
+
+只支持本机 rootful Docker Socket；rootless Docker、远程 Docker Context、Alpine
+`diskless`/`data` mode 均不在当前部署契约内。账户管理、SSH 防御等可选功能还需按
+[兼容矩阵](platform-support.md)安装 `shadow`、`sudo`、`openssh`、`fail2ban`、`python3` 等工具。
 
 ## 安装
 
@@ -207,7 +222,12 @@ k fd panel.example.com 127.0.0.1 8080
 ## 验收
 
 ```sh
+# systemd 主机
 systemctl is-active kejilion-agent
+
+# OpenRC 主机改用
+rc-service kejilion-agent status
+
 sudo /usr/local/libexec/kejilion-agent healthcheck
 docker --host unix:///var/run/docker.sock compose \
   --project-name kejilion-panel \
@@ -235,33 +255,56 @@ curl --fail --silent --show-error https://panel.example.com/api/v1/health
 
 v0.1 不执行原地升级，因此没有“恢复旧版 Panel”的路径。全新安装在启动阶段
 失败时，安装器会尝试停止并禁用本次 Agent，并只在 Compose project/service
-标签同时匹配时停止 Panel 容器；随后复核容器运行态、Agent `ActiveState` 和
-`UnitFileState`。无法确认时会输出 `CRITICAL`，此时不得重试或启动相关服务。
+标签同时匹配时停止 Panel 容器；随后按实际 init backend 复核容器运行态、Agent
+运行状态和开机启动状态。无法确认时会输出 `CRITICAL`，此时不得重试或启动相关服务。
 安装器不会自动删除数据、日志或镜像。先保留现场并检查：
 
 ```sh
+# systemd
 journalctl -u kejilion-agent --no-pager
-docker --host unix:///var/run/docker.sock logs kejilion-panel
 systemctl show kejilion-agent.service -p LoadState -p FragmentPath -p DropInPaths
+
+# OpenRC
+rc-service kejilion-agent status
+grep -F 'kejilion-agent' /var/log/messages | tail -n 200
+readlink -f /etc/runlevels/default/kejilion-agent
+
+docker --host unix:///var/run/docker.sock logs kejilion-panel
 docker --host unix:///var/run/docker.sock inspect kejilion-panel \
   --format '{{json .Config.Labels}}'
 ```
 
-只有确认 unit 的 `FragmentPath` 是
-`/etc/systemd/system/kejilion-agent.service`，且容器标签同时包含
-`com.docker.compose.project=kejilion-panel` 与
-`com.docker.compose.service=panel` 后，才可执行以下全新安装恢复步骤：
+只有确认 systemd unit 的 `FragmentPath` 是
+`/etc/systemd/system/kejilion-agent.service`，或确认 OpenRC service 是本次安装的
+`/etc/init.d/kejilion-agent` 且 default runlevel 链接指向它，并且容器标签同时包含
+`com.docker.compose.project=kejilion-panel` 与 `com.docker.compose.service=panel` 后，
+才可执行以下全新安装恢复步骤。先执行共用的 Compose 清理：
 
 ```sh
 docker --host unix:///var/run/docker.sock compose \
   --project-name kejilion-panel \
   --env-file /opt/kejilion-panel/.env \
   -f /opt/kejilion-panel/compose.yml down
+```
+
+systemd 主机：
+
+```sh
 systemctl disable --now kejilion-agent.service
 rm -f -- /etc/systemd/system/kejilion-agent.service \
   /usr/local/libexec/kejilion-agent
 rm -rf -- /etc/kejilion-panel /opt/kejilion-panel /var/lib/kejilion-panel
 systemctl daemon-reload
+```
+
+OpenRC 主机：
+
+```sh
+rc-service kejilion-agent stop
+rc-update del kejilion-agent default
+rm -f -- /etc/init.d/kejilion-agent /etc/conf.d/kejilion-agent \
+  /usr/local/libexec/kejilion-agent
+rm -rf -- /etc/kejilion-panel /opt/kejilion-panel /var/lib/kejilion-panel
 ```
 
 `kejilion-panel` 组默认保留；只有能证明它由本次失败安装创建、没有显式成员且

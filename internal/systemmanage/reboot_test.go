@@ -3,6 +3,7 @@ package systemmanage
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -93,10 +94,40 @@ func TestScheduleRebootDoesNotUseMaintenanceAsAnAuthorizationGate(t *testing.T) 
 	}
 }
 
-func TestRebootCapabilityRequiresSystemdTools(t *testing.T) {
-	manager, _, _, _ := testManager(t, &fakeRunner{missing: map[string]bool{"systemd-run": true}})
+func TestRebootCapabilityRequiresAnInitBackend(t *testing.T) {
+	manager, _, _, _ := testManager(t, &fakeRunner{missing: map[string]bool{
+		"systemd-run": true, "start-stop-daemon": true, "rc-service": true,
+	}})
 	capability := findCapability(manager.Capabilities(), "system.reboot.write")
-	if capability.Enabled || !strings.Contains(capability.Reason, "systemd-run") {
+	if capability.Enabled || !strings.Contains(capability.Reason, "OpenRC") {
 		t.Fatalf("unexpected reboot capability: %#v", capability)
+	}
+}
+
+func TestScheduleRebootUsesFixedOpenRCWorker(t *testing.T) {
+	runner := &fakeRunner{
+		missing:     map[string]bool{"systemd-run": true},
+		runtimeDirs: map[string]bool{"/run/openrc": true},
+	}
+	manager, _, _, stateDir := testManager(t, runner)
+	changed, message, err := manager.scheduleReboot(
+		context.Background(), contract.SystemActionRequest{Action: "reboot"},
+	)
+	if err != nil || !changed || !strings.Contains(message, "15 秒") {
+		t.Fatalf("scheduleReboot() = %v, %q, %v", changed, message, err)
+	}
+	all := strings.Join(runner.commands, "\n")
+	for _, expected := range []string{
+		"start-stop-daemon --start --background --make-pidfile",
+		"--pidfile " + filepath.Join(stateDir, ".job-control", rebootUnitName+".pid"),
+		"/usr/local/libexec/kejilion-agent --chdir /",
+		"reboot-run --delay-seconds 15",
+	} {
+		if !strings.Contains(all, expected) {
+			t.Fatalf("OpenRC reboot launch missing %q:\n%s", expected, all)
+		}
+	}
+	if strings.Contains(all, "systemctl") {
+		t.Fatalf("OpenRC reboot unexpectedly invoked systemctl:\n%s", all)
 	}
 }

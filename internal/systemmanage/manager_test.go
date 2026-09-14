@@ -18,9 +18,14 @@ import (
 type fakeRunner struct {
 	run            func(context.Context, string, ...string) ([]byte, error)
 	missing        map[string]bool
+	runtimeDirs    map[string]bool
 	commands       []string
 	resourceInputs [][]byte
 	resourceLimits []int
+}
+
+func (runner *fakeRunner) InitRuntimeDirectoryExists(path string) bool {
+	return runner.runtimeDirs[path]
 }
 
 func (runner *fakeRunner) Run(ctx context.Context, name string, arguments ...string) ([]byte, error) {
@@ -116,6 +121,61 @@ func TestSetHostnameUpdatesHostsAndCreatesBackup(t *testing.T) {
 	}
 	if !regularFile(filepath.Join(backup, "manifest.tsv")) {
 		t.Fatalf("backup manifest missing at %s", backup)
+	}
+}
+
+func TestSetHostnamePrefersLiveOpenRCOverStrayHostnamectl(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, etcRoot, _, _ := testManager(t, runner)
+	if err := os.MkdirAll(filepath.Join(manager.runRoot, "openrc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(etcRoot, "hostname"), "old-host\n")
+	mustWrite(t, filepath.Join(etcRoot, "hosts"), "127.0.1.1\told-host\n")
+	runner.run = func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		if name == "hostnamectl" {
+			t.Fatalf("live OpenRC unexpectedly invoked hostnamectl: %#v", arguments)
+		}
+		if name == "hostname" {
+			return []byte("new-host\n"), nil
+		}
+		return nil, nil
+	}
+
+	changed, _, _, err := manager.setHostname(context.Background(), "new-host")
+	if err != nil || !changed {
+		t.Fatalf("set hostname through OpenRC: changed=%v err=%v", changed, err)
+	}
+	if commands := strings.Join(runner.commands, "\n"); !strings.Contains(commands, "hostname new-host") ||
+		strings.Contains(commands, "hostnamectl") {
+		t.Fatalf("unexpected OpenRC hostname commands:\n%s", commands)
+	}
+}
+
+func TestSetTimezonePrefersLiveOpenRCOverStrayTimedatectl(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, etcRoot, _, _ := testManager(t, runner)
+	if err := os.MkdirAll(filepath.Join(manager.runRoot, "openrc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	zoneRoot := filepath.Clean(filepath.Join(etcRoot, "..", "usr", "share", "zoneinfo"))
+	mustWrite(t, filepath.Join(zoneRoot, "Asia", "Shanghai"), "zone-data")
+	runner.run = func(_ context.Context, name string, arguments ...string) ([]byte, error) {
+		if name == "timedatectl" {
+			t.Fatalf("live OpenRC unexpectedly invoked timedatectl: %#v", arguments)
+		}
+		return nil, nil
+	}
+
+	changed, _, err := manager.setTimezone(context.Background(), "Asia/Shanghai")
+	if err != nil || !changed {
+		t.Fatalf("set timezone through OpenRC: changed=%v err=%v", changed, err)
+	}
+	if got := strings.TrimSpace(readLimited(filepath.Join(etcRoot, "timezone"))); got != "Asia/Shanghai" {
+		t.Fatalf("timezone metadata = %q", got)
+	}
+	if commands := strings.Join(runner.commands, "\n"); strings.Contains(commands, "timedatectl") {
+		t.Fatalf("unexpected OpenRC timezone commands:\n%s", commands)
 	}
 }
 

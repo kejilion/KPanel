@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +38,75 @@ func TestUpdateHealthParsing(t *testing.T) {
 				t.Fatalf("got %#v", got)
 			}
 		})
+	}
+}
+
+func TestOpenRCServiceHealthMapsServicesAndPeriodicUpdater(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("OpenRC executable-mode semantics require Unix")
+	}
+	root := t.TempDir()
+	for _, directory := range []string{"etc/init.d", "etc/periodic/hourly", "etc/runlevels/default"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(directory)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{
+		"etc/init.d/kejilion-node",
+		"etc/init.d/kejilion-node-file",
+		"etc/periodic/hourly/kejilion-node-update",
+	} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{
+		"etc/runlevels/default/kejilion-node",
+		"etc/runlevels/default/kejilion-node-file",
+		"etc/runlevels/default/crond",
+	} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := openRCServiceHealth(root, map[string]bool{"crond": true, "kejilion-node": true})
+	if got[0] != (contract.LightNodeServiceHealth{LoadState: "loaded", ActiveState: "active", SubState: "waiting", UnitFileState: "enabled"}) {
+		t.Fatalf("timer = %#v", got[0])
+	}
+	if got[1] != (contract.LightNodeServiceHealth{LoadState: "loaded", ActiveState: "active", SubState: "running", UnitFileState: "enabled"}) {
+		t.Fatalf("telemetry = %#v", got[1])
+	}
+	if got[2].LoadState != "not-found" || got[2].ActiveState != "inactive" || got[2].UnitFileState != "disabled" {
+		t.Fatalf("terminal = %#v", got[2])
+	}
+	if got[3].LoadState != "loaded" || got[3].ActiveState != "inactive" || got[3].UnitFileState != "enabled" {
+		t.Fatalf("file = %#v", got[3])
+	}
+}
+
+func TestOpenRCHealthAvailableRequiresLiveMarkerAndCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("OpenRC command lookup requires Unix executable semantics")
+	}
+	root := t.TempDir()
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	if openRCHealthAvailable(root) {
+		t.Fatal("OpenRC accepted without a live marker")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "run", "openrc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if openRCHealthAvailable(root) {
+		t.Fatal("OpenRC accepted without rc-service")
+	}
+	command := filepath.Join(bin, "rc-service")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !openRCHealthAvailable(root) {
+		t.Fatal("live OpenRC marker and rc-service were not accepted")
 	}
 }
 

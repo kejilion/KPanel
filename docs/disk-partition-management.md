@@ -23,7 +23,7 @@ KPanel 的磁盘管理以宿主机真实块设备状态为准，不在数据库�
 Browser
   -> Panel: session + Origin + CSRF + typed JSON + audit
   -> Agent: fixed Unix-socket routes
-  -> transient systemd worker: root, host /dev, restricted device/capability set
+  -> init-managed worker: systemd transient unit 或 OpenRC 独立进程组
   -> trusted kejilion.sh protocol
   -> util-linux / filesystem-specific tools
   -> fresh inventory readback
@@ -114,7 +114,7 @@ UUID=<id> <escaped-target> <fstype> defaults,nofail 0 <pass>
 - `needs_attention`：完成凭据缺失、回读不一致或回滚不完整，需要人工检查。
 
 浏览器断开不会取消已接受的任务。重新打开弹窗会读取持久化状态并继续轮询。
-systemd 单元退出码不能代替业务完成凭据；没有原子回执时不得推断成功。
+init manager 的退出状态不能代替业务完成凭据；没有原子回执时不得推断成功。
 
 ## 文件系统工具与兼容性
 
@@ -126,9 +126,9 @@ systemd 单元退出码不能代替业务完成凭据；没有原子回执时不
 | NTFS | `mkfs.ntfs`（兼容 `mkntfs`）、`ntfsfix` | 同上 |
 | FAT32 | `mkfs.vfat`（兼容 `mkfs.fat`）、`fsck.vfat`（兼容 `fsck.fat`） | 同上 |
 
-- 标准目标是使用 systemd 的 root Linux 主机；发行版由实际命令能力决定，不按名称猜测支持。
+- 标准目标是使用 systemd 或 OpenRC 的 root Linux 主机；发行版由实际命令能力决定，不按名称猜测支持。
 - WSL 2 可以读取真实拓扑，并允许操作独立挂入且未被占用的磁盘；系统盘和 WSL Swap 继续保护。
-- WSL 1、容器、非 root Agent、缺少 systemd 或可信脚本协议时只读降级或直接关闭 capability。
+- WSL 1、容器、非 root Agent、缺少可用 systemd/OpenRC 后台执行器或可信脚本协议时只读降级或直接关闭 capability。
 - util-linux 版本差异通过 `MOUNTPOINTS`/`MOUNTPOINT` 两种 `lsblk` 输出适配；未知字段和畸形输出失败关闭。
 
 ## 界面原则
@@ -143,7 +143,8 @@ systemd 单元退出码不能代替业务完成凭据；没有原子回执时不
 ## 验收与发布顺序
 
 自动化至少覆盖：严格 JSON、路由与认证、Origin/CSRF、审计脱敏、拓扑解析、相同 serial/WWN 去碰撞、
-保护传播、工具缺失、未知容量、资源冲突、单任务互斥、状态损坏、无可信回执、回滚失败和 systemd unit 属性。
+保护传播、工具缺失、未知容量、资源冲突、单任务互斥、状态损坏、无可信回执、回滚失败和
+systemd/OpenRC 后台执行契约。
 
 真实 Linux/WSL 验收只使用本轮创建的稀疏 loop image，并在格式化前复核 loop 设备、backing file 和
 `MAJ:MIN`。测试必须串行，结束后精确卸载、detach 并对比前后设备/挂载/Swap 快照。

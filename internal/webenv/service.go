@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/hostpty"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 var (
@@ -158,6 +159,42 @@ type Service struct {
 	now      func() time.Time
 }
 
+type backgroundRunner struct{}
+
+func (runner backgroundRunner) Run(ctx context.Context, name string, arguments ...string) ([]byte, error) {
+	if !filepath.IsAbs(name) {
+		resolved, err := runner.LookPath(name)
+		if err != nil {
+			return nil, err
+		}
+		name = resolved
+	}
+	return exec.CommandContext(ctx, name, arguments...).CombinedOutput()
+}
+
+func (backgroundRunner) LookPath(name string) (string, error) {
+	var candidates []string
+	switch name {
+	case "systemd-run", "systemctl":
+		candidates = []string{filepath.Join("/usr/bin", name), filepath.Join("/bin", name)}
+	case "start-stop-daemon", "rc-service":
+		candidates = []string{filepath.Join("/sbin", name), filepath.Join("/usr/sbin", name)}
+	default:
+		return "", errors.New("unsupported background control executable")
+	}
+	for _, candidate := range candidates {
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(resolved)
+		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0 && ownerTrusted(info) {
+			return resolved, nil
+		}
+	}
+	return "", errors.New("trusted background control executable was not found")
+}
+
 func New(stateDir string) (*Service, error) {
 	stateDir = filepath.Clean(stateDir)
 	if !filepath.IsAbs(stateDir) || stateDir == string(filepath.Separator) {
@@ -187,7 +224,7 @@ func (s *Service) Available() error {
 	if err := s.Readable(); err != nil {
 		return err
 	}
-	if _, err := trustedSystemdRun(); err != nil {
+	if err := jobcontrol.Available(backgroundRunner{}); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	return nil
@@ -307,27 +344,17 @@ func (s *Service) Start(ctx context.Context, input ActionRequest) (Job, error) {
 			return Job{}, err
 		}
 	}
-	systemdRun, _ := trustedSystemdRun()
 	executable, err := os.Executable()
 	if err != nil {
 		_ = os.Remove(s.secretPath(id))
 		_ = hostpty.RemoveInput(s.inputPath(id))
 		return Job{}, fmt.Errorf("%w: resolve Agent executable", ErrUnavailable)
 	}
-	unit := "kpanel-env-" + id
-	runArgs := []string{
-		"--unit=" + unit, "--collect", "--no-block",
-		"--property=Type=oneshot", "--property=TimeoutStartSec=90min",
-		"--property=TimeoutStopSec=10min", "--property=User=root",
-		"--property=UMask=0027", "--property=PrivateTmp=yes",
-		"--property=NoNewPrivileges=no", "--property=SyslogIdentifier=kpanel-web-environment",
-		"--", executable, "environment-run", "--state-dir", s.stateDir, "--id", id,
-	}
-	if output, err := exec.CommandContext(ctx, systemdRun, runArgs...).CombinedOutput(); err != nil {
+	if err := jobcontrol.Launch(ctx, backgroundRunner{}, s.backgroundSpec(id, executable)); err != nil {
 		_ = os.Remove(s.secretPath(id))
 		_ = hostpty.RemoveInput(s.inputPath(id))
 		job.Status, job.Stage, job.Progress = "failed", "start_failed", 100
-		job.Message = "无法启动 LDNMP 后台任务: " + strings.TrimSpace(string(output))
+		job.Message = "无法启动 LDNMP 后台任务: " + safeJobError(err)
 		finished := s.now().UTC()
 		job.FinishedAt = &finished
 		_ = s.writeJob(job)
@@ -464,7 +491,7 @@ func (s *Service) refreshLocked(job Job) Job {
 	data, err := os.ReadFile(s.receiptPath(job.ID))
 	if err != nil {
 		if job.StartedAt != nil && s.now().Sub(*job.StartedAt) > 3*time.Second {
-			active, statusErr := environmentUnitActive(job.ID)
+			active, statusErr := s.environmentUnitActive(job.ID)
 			if statusErr == nil && !active {
 				job.Status, job.Stage, job.Progress = "needs_attention", "receipt_missing", 100
 				job.Message = "后台任务已经退出，但未写入可信完成凭据；请查看终端输出并人工复核环境状态"
@@ -544,28 +571,44 @@ func readTail(path string, limit int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(file, limit))
 }
 
-func environmentUnitActive(id string) (bool, error) {
-	systemctl, err := trustedSystemctl()
+func (s *Service) environmentUnitActive(id string) (bool, error) {
+	executable, err := os.Executable()
 	if err != nil {
 		return false, err
 	}
-	output, err := exec.Command(systemctl, "show", "kpanel-env-"+id+".service",
-		"--property=LoadState", "--property=ActiveState", "--property=SubState", "--no-pager").CombinedOutput()
-	if err != nil && len(output) == 0 {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	state, err := jobcontrol.Inspect(ctx, backgroundRunner{}, s.backgroundSpec(id, executable))
+	if err != nil {
 		return false, err
 	}
-	values := map[string]string{}
-	for _, line := range strings.Split(string(output), "\n") {
-		key, value, ok := strings.Cut(line, "=")
-		if ok {
-			values[key] = value
-		}
+	return state.Running, nil
+}
+
+func (s *Service) backgroundSpec(id string, executable string) jobcontrol.Spec {
+	return jobcontrol.Spec{
+		Unit:       "kpanel-env-" + id,
+		Executable: filepath.Clean(executable),
+		Arguments:  []string{"environment-run", "--state-dir", s.stateDir, "--id", id},
+		StateDir:   s.stateDir,
+		SystemdProperties: []string{
+			"Type=oneshot", "TimeoutStartSec=90min", "TimeoutStopSec=10min",
+			"User=root", "UMask=0027", "PrivateTmp=yes", "NoNewPrivileges=no",
+			"SyslogIdentifier=kpanel-web-environment",
+		},
+		UMask:       "0027",
+		Nice:        5,
+		IOClass:     "2:6",
+		StopTimeout: 10 * time.Minute,
 	}
-	switch values["ActiveState"] {
-	case "active", "activating", "reloading":
-		return true, nil
+}
+
+func safeJobError(err error) string {
+	value := strings.TrimSpace(err.Error())
+	if len(value) > 300 {
+		value = value[:300]
 	}
-	return false, nil
+	return value
 }
 
 func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
@@ -918,24 +961,4 @@ func trustedScript() (string, error) {
 		}
 	}
 	return "", errors.New("trusted kejilion.sh LDNMP protocol was not found")
-}
-
-func trustedSystemdRun() (string, error) {
-	for _, candidate := range []string{"/usr/bin/systemd-run", "/bin/systemd-run"} {
-		info, err := os.Stat(candidate)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0 && ownerTrusted(info) {
-			return candidate, nil
-		}
-	}
-	return "", errors.New("trusted systemd-run was not found")
-}
-
-func trustedSystemctl() (string, error) {
-	for _, candidate := range []string{"/usr/bin/systemctl", "/bin/systemctl"} {
-		info, err := os.Stat(candidate)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0 && ownerTrusted(info) {
-			return candidate, nil
-		}
-	}
-	return "", errors.New("trusted systemctl was not found")
 }

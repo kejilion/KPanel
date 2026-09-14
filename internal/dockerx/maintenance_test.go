@@ -442,6 +442,37 @@ func TestDockerDaemonRestartFailureRollsBack(t *testing.T) {
 	}
 }
 
+func TestDockerRestartUsesLiveOpenRCService(t *testing.T) {
+	directoryPresent := func(path string) bool { return path == "/run/openrc" }
+	lookPath := func(name string) (string, error) {
+		if name == "rc-service" || name == "service" {
+			return "/sbin/" + name, nil
+		}
+		return "", errors.New("not found")
+	}
+	command, arguments, err := dockerServiceRestartInvocation(directoryPresent, lookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != "/sbin/rc-service" || strings.Join(arguments, " ") != "docker restart" {
+		t.Fatalf("OpenRC restart invocation = %q %#v", command, arguments)
+	}
+}
+
+func TestDockerRestartDoesNotCrossFallbackFromLiveOpenRC(t *testing.T) {
+	directoryPresent := func(path string) bool { return path == "/run/openrc" }
+	lookPath := func(name string) (string, error) {
+		if name == "service" || name == "systemctl" {
+			return "/sbin/" + name, nil
+		}
+		return "", errors.New("not found")
+	}
+	command, arguments, err := dockerServiceRestartInvocation(directoryPresent, lookPath)
+	if err == nil || command != "" || arguments != nil || !strings.Contains(err.Error(), "OpenRC is running") {
+		t.Fatalf("incomplete OpenRC restart invocation = %q %#v, %v", command, arguments, err)
+	}
+}
+
 func TestDockerIPv6CIDRValidation(t *testing.T) {
 	if !validDockerIPv6CIDR("fd42:6b50:616e:656c::/64") {
 		t.Fatal("valid IPv6 /64 was rejected")

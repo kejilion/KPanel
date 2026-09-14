@@ -35,7 +35,7 @@
 - 上传、下载、批量、复制大小和并发维持现有限额；全部写操作继续记录审计。
 - 浏览器下载前通过已认证的 `POST /api/v1/files/download-tickets` 获取 5 分钟内有效的内存 ticket；下载地址仅携带 256-bit 随机凭证，使手机系统下载器无需共享浏览器 Cookie。ticket 不持久化，业务日志和审计不得记录其明文，服务重启后自动失效，全局最多保留 128 个。
 - ticket 下载仅接受 `GET`、`HEAD` 和既有 `Range` 条件请求；实际文件读取仍经过 Agent 的保护路径、符号链接、权限、并发和流式传输边界。安全入口只放行格式有效的 ticket 路由，伪造或过期凭证统一返回 404。
-- Panel 容器不挂载 `/`，仅 Agent systemd 服务获得固定文件 API 所需的宿主机写权限。
+- Panel 容器不挂载 `/`，仅 Agent systemd/OpenRC 服务获得固定文件 API 所需的宿主机写权限。
 
 ## 验收基线
 
@@ -58,5 +58,6 @@
 - Go：`internal/store`、`internal/filemanager`、`internal/agent` 全量通过；Panel 认证、安全入口与密码回归通过；相关包 `go vet` 通过。
 - 前端：26 个测试文件、174 个用例通过；TypeScript 检查与生产构建通过。
 - 构建：Linux `amd64`、`arm64` 的 Panel/Agent 交叉构建通过；Linux 扩展属性测试已完成编译校验。
-- 部署脚本：Shell 语法检查通过；完整 `install-safety.sh` 需要具备 `groupadd`、systemd 等能力的 Linux 验收机执行。
+- 部署脚本：Shell 语法检查通过；完整 `install-safety.sh` 需要具备 systemd 或 OpenRC 及
+  `groupadd`/`addgroup` 等能力的 Linux 验收机执行。
 - 当前 Windows 环境的全仓 Go 测试仍包含项目既有的 Linux 专属/路径语义失败，未将其误报为本功能通过；合并前须由 Linux CI 完成 L2。

@@ -33,6 +33,7 @@ var (
 	sshAcceptedPattern      = regexp.MustCompile(`(?i)\bAccepted\s+([^\s]+)\s+for\s+([^\s]+)\s+from\s+([^\s]+)`)
 	sshLoginTokenPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+:/-]{0,127}$`)
 	sshLoginAddressPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:%_-]{0,252}$`)
+	syslogLinePattern       = regexp.MustCompile(`^(?:[A-Z][a-z]{2}\s+[ 0-9][0-9]\s+[0-9]{2}:[0-9]{2}:[0-9]{2}|[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+)\s+\S+\s+([A-Za-z0-9_.@/-]+)(?:\[([0-9]+)\])?:\s*(.*)$`)
 )
 
 // SystemLogCapabilities keeps read access independent from the host-write
@@ -55,7 +56,9 @@ func (m *Manager) SystemLogCapabilities() []contract.Capability {
 	_, lastErr := m.runner.LookPath("last")
 	_, duErr := m.runner.LookPath("du")
 	_, authPath, _ := m.fixedAuthLog()
-	if journalErr == nil || lastErr == nil || duErr == nil || authPath != "" {
+	_, systemPath, _ := m.fixedSystemLog()
+	openRC := m.openRCRuntimeActive()
+	if (!openRC && journalErr == nil) || lastErr == nil || duErr == nil || authPath != "" || systemPath != "" {
 		readCapability.Enabled = true
 		readCapability.Methods = []string{"GET"}
 	} else {
@@ -66,12 +69,16 @@ func (m *Manager) SystemLogCapabilities() []contract.Capability {
 		writeCapability.Reason = "宿主机系统写入开关未启用"
 		return []contract.Capability{readCapability, writeCapability}
 	}
-	if _, err := m.runner.LookPath("systemd-run"); err != nil {
-		writeCapability.Reason = "systemd 后台任务执行器不可用"
+	if err := m.backgroundJobsAvailable(); err != nil {
+		writeCapability.Reason = "systemd-run 或 OpenRC start-stop-daemon 后台任务执行器不可用"
 		return []contract.Capability{readCapability, writeCapability}
 	}
-	if journalErr != nil {
-		writeCapability.Reason = "journalctl 不可用"
+	if openRC && systemPath == "" {
+		writeCapability.Reason = "OpenRC 固定 syslog 文件不可用"
+		return []contract.Capability{readCapability, writeCapability}
+	}
+	if !openRC && journalErr != nil && systemPath == "" {
+		writeCapability.Reason = "journalctl 与固定 syslog 文件均不可用"
 		return []contract.Capability{readCapability, writeCapability}
 	}
 	if _, err := m.backgroundExecutable(); err != nil {
@@ -98,13 +105,19 @@ func (m *Manager) SystemLogSummary(ctx context.Context) (contract.SystemLogSumma
 	varLogContext, cancelVarLog := context.WithTimeout(ctx, systemLogUsageTimeout)
 	result.VarLog = m.varLogUsage(varLogContext)
 	cancelVarLog()
-	journalContext, cancelJournal := context.WithTimeout(ctx, systemLogUsageTimeout)
-	result.Journal = m.journalUsage(journalContext)
-	cancelJournal()
-	if _, err := m.runner.LookPath("journalctl"); err == nil {
-		result.Sources.Journal.Available = true
+	openRC := m.openRCRuntimeActive()
+	if openRC {
+		result.Journal.Reason = "OpenRC 主机不使用 systemd journal"
+		result.Sources.Journal.Reason = result.Journal.Reason
 	} else {
-		result.Sources.Journal.Reason = "journalctl 不可用"
+		journalContext, cancelJournal := context.WithTimeout(ctx, systemLogUsageTimeout)
+		result.Journal = m.journalUsage(journalContext)
+		cancelJournal()
+		if _, err := m.runner.LookPath("journalctl"); err == nil {
+			result.Sources.Journal.Available = true
+		} else {
+			result.Sources.Journal.Reason = "journalctl 不可用"
+		}
 	}
 
 	if _, err := m.runner.LookPath("last"); err == nil {
@@ -113,8 +126,20 @@ func (m *Manager) SystemLogSummary(ctx context.Context) (contract.SystemLogSumma
 		result.Sources.Login.Reason = "last 命令不可用"
 	}
 
+	_, fixedSystemPath, _ := m.fixedSystemLog()
+	if !openRC && result.Sources.Journal.Available {
+		result.Sources.System.Available = true
+		result.Sources.System.SupportsPriority = true
+	} else if fixedSystemPath != "" {
+		result.Sources.System.Available = true
+	} else if openRC {
+		result.Sources.System.Reason = "OpenRC 固定 syslog 文件不可用"
+	} else {
+		result.Sources.System.Reason = "journal 与固定 syslog 文件均不可用"
+	}
+
 	_, fixedAuthPath, _ := m.fixedAuthLog()
-	if result.Sources.Journal.Available {
+	if !openRC && result.Sources.Journal.Available {
 		result.Sources.Security.Available = true
 		result.AuthSource = "journal"
 	} else if fixedAuthPath != "" {
@@ -212,10 +237,26 @@ func (m *Manager) SystemLogs(ctx context.Context, query contract.SystemLogQuery)
 	}
 	switch query.Source {
 	case "system", "service":
+		if m.openRCRuntimeActive() {
+			_, entries, truncated, err := m.readFixedSystemLog(query)
+			result.Entries, result.Truncated = entries, truncated
+			return result, err
+		}
 		entries, truncated, err := m.readJournalLogs(ctx, query, false)
+		if err != nil && ctx.Err() == nil {
+			_, entries, truncated, err = m.readFixedSystemLog(query)
+		}
 		result.Entries, result.Truncated = entries, truncated
 		return result, err
 	case "security":
+		if m.openRCRuntimeActive() {
+			path, entries, truncated, err := m.readFixedAuthLog(query.Limit)
+			if err != nil {
+				return result, fmt.Errorf("%w: fixed authentication logs are unavailable on OpenRC: %v", ErrUnsupported, err)
+			}
+			result.Entries, result.Truncated, result.AuthSource = entries, truncated, path
+			return result, nil
+		}
 		entries, truncated, journalErr := m.readJournalLogs(ctx, query, true)
 		if journalErr == nil && len(entries) > 0 {
 			result.Entries, result.Truncated, result.AuthSource = entries, truncated, "journal"
@@ -258,17 +299,26 @@ func (m *Manager) LatestSSHLogin(ctx context.Context) (*contract.SSHLoginEvent, 
 		now.Sub(m.sshLoginCheckedAt) < sshLoginCacheTTL {
 		return cloneSSHLoginEvent(m.sshLoginCache), nil
 	}
-	entries, _, journalErr := m.readJournalLogs(ctx, contract.SystemLogQuery{
-		Source: "security", Limit: 50, Priority: "all",
-	}, true)
-	if journalErr == nil {
-		m.sshLoginCache = latestSSHLogin(entries, now)
-		m.sshLoginCheckedAt = now
-		return cloneSSHLoginEvent(m.sshLoginCache), nil
-	}
-	_, entries, _, fileErr := m.readFixedAuthLog(50)
-	if fileErr != nil {
-		return nil, errors.Join(journalErr, fileErr)
+	var entries []contract.SystemLogEntry
+	if m.openRCRuntimeActive() {
+		_, fixedEntries, _, fileErr := m.readFixedAuthLog(50)
+		if fileErr != nil {
+			return nil, fileErr
+		}
+		entries = fixedEntries
+	} else {
+		journalEntries, _, journalErr := m.readJournalLogs(ctx, contract.SystemLogQuery{
+			Source: "security", Limit: 50, Priority: "all",
+		}, true)
+		if journalErr == nil {
+			entries = journalEntries
+		} else {
+			_, fixedEntries, _, fileErr := m.readFixedAuthLog(50)
+			if fileErr != nil {
+				return nil, errors.Join(journalErr, fileErr)
+			}
+			entries = fixedEntries
+		}
 	}
 	m.sshLoginCache = latestSSHLogin(entries, now)
 	m.sshLoginCheckedAt = now
@@ -489,7 +539,15 @@ func (m *Manager) readLoginLogs(ctx context.Context, limit int) ([]contract.Syst
 }
 
 func (m *Manager) fixedAuthLog() (string, string, error) {
-	for _, name := range []string{"secure", "auth.log"} {
+	return m.fixedLog("secure", "auth.log", "messages")
+}
+
+func (m *Manager) fixedSystemLog() (string, string, error) {
+	return m.fixedLog("messages", "syslog")
+}
+
+func (m *Manager) fixedLog(names ...string) (string, string, error) {
+	for _, name := range names {
 		path := filepath.Join(m.logRoot, name)
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -507,6 +565,25 @@ func (m *Manager) readFixedAuthLog(limit int) (string, []contract.SystemLogEntry
 	if err != nil {
 		return "", nil, false, err
 	}
+	return m.readFixedLog(path, limit, filepath.Base(path) != "messages")
+}
+
+func (m *Manager) readFixedSystemLog(query contract.SystemLogQuery) (string, []contract.SystemLogEntry, bool, error) {
+	if query.Priority != "all" {
+		return "", nil, false, fmt.Errorf("%w: priority filtering is unavailable for fixed syslog files", ErrUnsupported)
+	}
+	_, path, err := m.fixedSystemLog()
+	if err != nil {
+		return "", nil, false, err
+	}
+	return m.readFixedLog(path, query.Limit, true)
+}
+
+func (m *Manager) readFixedLog(
+	path string,
+	limit int,
+	includeAll bool,
+) (string, []contract.SystemLogEntry, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", nil, false, err
@@ -539,7 +616,8 @@ func (m *Manager) readFixedAuthLog(limit int) (string, []contract.SystemLogEntry
 	}
 	values := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if line = strings.TrimSpace(line); line != "" {
+		if line = strings.TrimSpace(line); line != "" &&
+			(includeAll || fixedLogLineRelevant(path, line)) {
 			values = append(values, line)
 		}
 	}
@@ -549,17 +627,35 @@ func (m *Manager) readFixedAuthLog(limit int) (string, []contract.SystemLogEntry
 		hash := sha256.Sum256([]byte(strings.Join([]string{
 			path, value,
 		}, "\x00")))
-		entries = append(entries, contract.SystemLogEntry{
+		entry := contract.SystemLogEntry{
 			Cursor:     "sha256:" + hex.EncodeToString(hash[:]),
 			Identifier: filepath.Base(path),
 			Message:    normalizeLogText(value, contract.SystemLogMaxMessageBytes),
-		})
+		}
+		if match := syslogLinePattern.FindStringSubmatch(value); len(match) == 4 {
+			entry.Identifier = sanitizeLogText(match[1], 256)
+			if pid, parseErr := strconv.Atoi(match[2]); parseErr == nil && pid > 0 {
+				entry.PID = pid
+			}
+			entry.Message = normalizeLogText(match[3], contract.SystemLogMaxMessageBytes)
+		}
+		entries = append(entries, entry)
 	}
 	redactSystemLogEntries(entries)
 	if len(entries) > limit {
 		entries = entries[len(entries)-limit:]
 	}
 	return path, entries, truncated, nil
+}
+
+func fixedLogLineRelevant(path string, line string) bool {
+	if filepath.Base(path) != "messages" {
+		return true
+	}
+	lower := strings.ToLower(line)
+	return strings.Contains(lower, "sshd") || strings.Contains(lower, "dropbear") ||
+		strings.Contains(lower, "sudo") || strings.Contains(lower, "doas") ||
+		strings.Contains(lower, "authentication") || strings.Contains(lower, "pam_")
 }
 
 func sanitizeLogText(value string, limit int) string {

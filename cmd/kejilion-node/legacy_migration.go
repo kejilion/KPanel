@@ -32,6 +32,12 @@ var lightNodeUpdateService []byte
 //go:embed update_runtime/update.timer
 var lightNodeUpdateTimer []byte
 
+//go:embed update_runtime/update.openrc
+var lightNodeOpenRCUpdatePeriodic []byte
+
+//go:embed update_runtime/ssh-login.openrc
+var lightNodeSSHLoginOpenRCService []byte
+
 const (
 	lightUpdateStagingPrefix  = "kejilion-node-update."
 	lightReleaseStagingPrefix = "kejilion-node-release."
@@ -39,14 +45,22 @@ const (
 	maxLightChecksumBytes     = int64(64 << 10)
 	maxLightBinaryBytes       = int64(128 << 20)
 
-	lightSSHLoginServiceUnit = "/etc/systemd/system/kejilion-node-ssh-login.service"
+	lightSSHLoginSystemdUnit = "/etc/systemd/system/kejilion-node-ssh-login.service"
+	lightSSHLoginOpenRCUnit  = "/etc/init.d/kejilion-node-ssh-login"
+	lightNodeOpenRCPeriodic  = "/etc/periodic/hourly/kejilion-node-update"
 )
+
+type migrationTemplate struct {
+	path    string
+	content []byte
+	mode    os.FileMode
+}
 
 // This is the fixed compatibility bridge used by the root update service. The
 // old updater already downloads and verifies the release binary before calling
 // its "version" command, so a verified staged binary can install this helper
 // without asking users to run a command on every existing node.
-const lightSSHLoginService = `[Unit]
+const lightSSHLoginSystemdService = `[Unit]
 Description=KPanel SSH Login Event Collector
 After=systemd-journald.service
 Wants=systemd-journald.service
@@ -139,6 +153,10 @@ func installLightNodeUpdateIntegration() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	initSystem, err := migrationInitSystem()
+	if err != nil {
+		return err
+	}
 	// The parent still executes its old script after this version command returns.
 	// Record PID plus start time, so the new flock updater can recognize that short
 	// handoff without being blocked later by PID reuse or a stale mkdir lock.
@@ -154,30 +172,50 @@ func installLightNodeUpdateIntegration() error {
 	if err := writeMigrationFile(home+"/legacy-update.pid", []byte(strconv.Itoa(parent)+" "+start+"\n"), 0o600); err != nil {
 		return err
 	}
-	for _, template := range []struct {
-		path    string
-		content []byte
-		mode    os.FileMode
-	}{
+	templates := []migrationTemplate{
 		{home + "/update.sh", lightNodeUpdater, 0o755},
-		{"/etc/systemd/system/kejilion-node-update.service", lightNodeUpdateService, 0o644},
-		{"/etc/systemd/system/kejilion-node-update.timer", lightNodeUpdateTimer, 0o644},
-	} {
+	}
+	if initSystem == "systemd" {
+		templates = append(templates,
+			migrationTemplate{"/etc/systemd/system/kejilion-node-update.service", lightNodeUpdateService, 0o644},
+			migrationTemplate{"/etc/systemd/system/kejilion-node-update.timer", lightNodeUpdateTimer, 0o644},
+		)
+	} else {
+		templates = append(templates, migrationTemplate{lightNodeOpenRCPeriodic, lightNodeOpenRCUpdatePeriodic, 0o755})
+	}
+	for _, template := range templates {
 		if err := writeMigrationFile(template.path, template.content, template.mode); err != nil {
 			return err
 		}
 	}
-	systemctl, err := migrationSystemctlPath()
+	if initSystem == "systemd" {
+		systemctl, err := migrationSystemctlPath()
+		if err != nil {
+			return err
+		}
+		if err := runMigrationCommand(systemctl, "daemon-reload"); err != nil {
+			return err
+		}
+		if err := runMigrationCommand(systemctl, "enable", "kejilion-node-update.timer"); err != nil {
+			return err
+		}
+		return runMigrationCommand(systemctl, "restart", "--no-block", "kejilion-node-update.timer")
+	}
+	rcUpdate, err := migrationOpenRCToolPath("rc-update")
 	if err != nil {
 		return err
 	}
-	if err := runMigrationSystemctl(systemctl, "daemon-reload"); err != nil {
+	if err := runMigrationCommand(rcUpdate, "add", "crond", "default"); err != nil {
+		return fmt.Errorf("enable OpenRC crond: %w", err)
+	}
+	rcService, err := migrationOpenRCToolPath("rc-service")
+	if err != nil {
 		return err
 	}
-	if err := runMigrationSystemctl(systemctl, "enable", "kejilion-node-update.timer"); err != nil {
-		return err
+	if runMigrationCommand(rcService, "crond", "status") == nil {
+		return nil
 	}
-	return runMigrationSystemctl(systemctl, "restart", "--no-block", "kejilion-node-update.timer")
+	return runMigrationCommand(rcService, "crond", "start")
 }
 
 func lightRuntimeGeneration(content []byte) (uint64, error) {
@@ -276,29 +314,53 @@ func stagedChecksum(content []byte, name string) ([]byte, bool) {
 }
 
 func installLightNodeSSHLoginIntegration() error {
-	if err := writeMigrationFile(lightSSHLoginServiceUnit, []byte(lightSSHLoginService), 0o644); err != nil {
+	initSystem, err := migrationInitSystem()
+	if err != nil {
 		return err
 	}
-	systemctl, err := migrationSystemctlPath()
+	if initSystem == "systemd" {
+		if err := writeMigrationFile(lightSSHLoginSystemdUnit, []byte(lightSSHLoginSystemdService), 0o644); err != nil {
+			return err
+		}
+		systemctl, err := migrationSystemctlPath()
+		if err != nil {
+			return errors.New("systemctl is unavailable")
+		}
+		if err := runMigrationCommand(systemctl, "daemon-reload"); err != nil {
+			return fmt.Errorf("systemctl daemon-reload: %w", err)
+		}
+		if err := runMigrationCommand(systemctl, "enable", "kejilion-node-ssh-login.service"); err != nil {
+			return fmt.Errorf("enable SSH login collector: %w", err)
+		}
+		// The staged binary is called before the updater replaces the installed
+		// binary. Restart=always keeps the service retrying through that short
+		// window, so no second manual update is needed.
+		if err := runMigrationCommand(systemctl, "start", "--no-block", "kejilion-node-ssh-login.service"); err != nil {
+			return fmt.Errorf("start SSH login collector: %w", err)
+		}
+		return nil
+	}
+	if err := writeMigrationFile(lightSSHLoginOpenRCUnit, lightNodeSSHLoginOpenRCService, 0o755); err != nil {
+		return err
+	}
+	rcUpdate, err := migrationOpenRCToolPath("rc-update")
 	if err != nil {
-		return errors.New("systemctl is unavailable")
+		return err
 	}
-	if err := runMigrationSystemctl(systemctl, "daemon-reload"); err != nil {
-		return fmt.Errorf("systemctl daemon-reload: %w", err)
-	}
-	if err := runMigrationSystemctl(systemctl, "enable", "kejilion-node-ssh-login.service"); err != nil {
+	if err := runMigrationCommand(rcUpdate, "add", "kejilion-node-ssh-login", "default"); err != nil {
 		return fmt.Errorf("enable SSH login collector: %w", err)
 	}
-	// The staged binary is called before the updater replaces the installed
-	// binary. Restart=always keeps the service retrying through that short
-	// window, so no second manual update is needed.
-	if err := runMigrationSystemctl(systemctl, "start", "--no-block", "kejilion-node-ssh-login.service"); err != nil {
+	rcService, err := migrationOpenRCToolPath("rc-service")
+	if err != nil {
+		return err
+	}
+	if err := runMigrationCommand(rcService, "kejilion-node-ssh-login", "start"); err != nil {
 		return fmt.Errorf("start SSH login collector: %w", err)
 	}
 	return nil
 }
 
-func runMigrationSystemctl(path string, arguments ...string) error {
+func runMigrationCommand(path string, arguments ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, path, arguments...)
@@ -307,8 +369,41 @@ func runMigrationSystemctl(path string, arguments ...string) error {
 	return command.Run()
 }
 
+func migrationInitSystem() (string, error) {
+	if info, err := os.Stat("/run/systemd/system"); err == nil && info.IsDir() {
+		if _, err := migrationSystemctlPath(); err == nil {
+			return "systemd", nil
+		}
+	}
+	if info, err := os.Stat("/run/openrc"); err == nil && info.IsDir() {
+		if _, err := migrationOpenRCToolPath("rc-service"); err != nil {
+			return "", err
+		}
+		if _, err := migrationOpenRCToolPath("rc-update"); err != nil {
+			return "", err
+		}
+		return "openrc", nil
+	}
+	return "", errors.New("a running systemd or OpenRC service manager is unavailable")
+}
+
 func migrationSystemctlPath() (string, error) {
-	for _, candidate := range []string{"/usr/bin/systemctl", "/bin/systemctl"} {
+	return migrationTrustedExecutable("systemctl", "/usr/bin/systemctl", "/bin/systemctl")
+}
+
+func migrationOpenRCToolPath(name string) (string, error) {
+	switch name {
+	case "rc-service":
+		return migrationTrustedExecutable(name, "/sbin/rc-service", "/usr/sbin/rc-service")
+	case "rc-update":
+		return migrationTrustedExecutable(name, "/sbin/rc-update", "/usr/sbin/rc-update")
+	default:
+		return "", errors.New("unsupported OpenRC migration tool")
+	}
+}
+
+func migrationTrustedExecutable(name string, candidates ...string) (string, error) {
+	for _, candidate := range candidates {
 		resolved, err := filepath.EvalSymlinks(candidate)
 		if err != nil {
 			continue
@@ -318,7 +413,7 @@ func migrationSystemctlPath() (string, error) {
 			return resolved, nil
 		}
 	}
-	return "", errors.New("systemctl is unavailable")
+	return "", fmt.Errorf("%s is unavailable", name)
 }
 
 func writeMigrationFile(path string, content []byte, mode os.FileMode) error {

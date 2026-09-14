@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const maintenanceUnitPrefix = "kejilion-panel-maintenance-"
@@ -36,6 +37,7 @@ const (
 	maintenanceOperationPacmanOrphans = "pacman-orphans"
 	maintenanceOperationBBRv3         = "bbrv3"
 	maintenanceOperationSystemTuning  = "system-tuning"
+	maintenanceOperationSyslogCleanup = "syslog-cleanup"
 )
 
 var pacmanPackagePattern = regexp.MustCompile(`^[a-z0-9@._+][a-z0-9@._+-]{0,127}$`)
@@ -74,33 +76,23 @@ func (m *Manager) reconcileMaintenanceLaunch(status *contract.SystemMaintenanceS
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	output, err := m.runner.Run(
-		ctx,
-		"systemctl",
-		"show",
+	spec := m.backgroundJobSpec(
 		maintenanceUnitPrefix+status.ID,
-		"--property=LoadState",
-		"--property=ActiveState",
-		"--property=SubState",
-		"--property=Result",
-		"--property=ExecMainStatus",
-		"--no-pager",
+		m.executable,
+		[]string{"maintenance-run", "--state-dir", m.stateDir, status.Action},
+		nil,
+		"0027",
+		10,
+		5*time.Minute,
 	)
-	unit := make(map[string]string)
-	for _, line := range strings.Split(string(output), "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if ok {
-			unit[key] = value
-		}
-	}
-	active := unit["ActiveState"]
-	if err == nil && (active == "active" || active == "activating") {
+	state, err := jobcontrol.Inspect(ctx, m.runner, spec)
+	if err == nil && state.Running {
 		return
 	}
 	if err != nil && elapsed < maintenanceLaunchTimeout {
 		return
 	}
-	if err == nil && active == "" && strings.TrimSpace(unit["LoadState"]) == "" &&
+	if err == nil && !state.Known &&
 		elapsed < maintenanceLaunchTimeout {
 		return
 	}
@@ -118,24 +110,16 @@ func (m *Manager) reconcileMaintenanceLaunch(status *contract.SystemMaintenanceS
 		return
 	}
 
-	details := make([]string, 0, 5)
-	for _, key := range []string{"LoadState", "ActiveState", "SubState", "Result", "ExecMainStatus"} {
-		if value := strings.TrimSpace(unit[key]); value != "" {
-			details = append(details, key+"="+value)
-		}
-	}
-	detail := strings.Join(details, " / ")
+	detail := strings.TrimSpace(state.Detail)
 	if detail == "" && err != nil {
 		detail = maintenanceErrorMessage(err)
 	}
 	if detail == "" {
-		detail = "systemd 未返回执行状态"
+		detail = "init 后台任务管理器未返回执行状态"
 	}
 	finishedAt := m.now().UTC()
 	status.State = "failed"
-	if err == nil &&
-		strings.EqualFold(strings.TrimSpace(unit["Result"]), "success") &&
-		strings.TrimSpace(unit["ExecMainStatus"]) == "0" {
+	if err == nil && (state.Successful || (state.Backend == jobcontrol.BackendOpenRC && state.Known)) {
 		status.Stage = "completion_unverified"
 		status.Message = "后台维护进程已退出，但未写入任务完成凭据；不能判定为成功：" + detail
 	} else {
@@ -213,7 +197,7 @@ func (m *Manager) startMaintenanceTask(
 	status := contract.SystemMaintenanceSummary{
 		ID:    idForMaintenance(startedAt),
 		State: "running", Action: action, Policy: policy,
-		Stage: "launching", Progress: 2, Message: "正在启动 systemd 后台维护任务",
+		Stage: "launching", Progress: 2, Message: "正在启动后台维护任务",
 		StartedAt: &startedAt,
 	}
 	if err := m.writeMaintenance(status); err != nil {
@@ -226,58 +210,59 @@ func (m *Manager) startMaintenanceTask(
 	} else if action == "log-cleanup" {
 		timeoutStart = "10min"
 	}
-	arguments := []string{
-		"--unit=" + maintenanceUnitPrefix + status.ID,
-		"--collect",
-		"--no-block",
-		"--property=Type=oneshot",
-		"--property=TimeoutStartSec=" + timeoutStart,
-		"--property=TimeoutStopSec=5min",
-		"--property=User=root",
-		"--property=UMask=0027",
-		"--property=PrivateTmp=yes",
+	properties := []string{
+		"Type=oneshot",
+		"TimeoutStartSec=" + timeoutStart,
+		"TimeoutStopSec=5min",
+		"User=root",
+		"UMask=0027",
+		"PrivateTmp=yes",
 	}
 	if action == "log-cleanup" {
-		arguments = append(arguments,
-			"--property=ProtectSystem=strict",
-			"--property=ProtectHome=yes",
-			"--property=PrivateDevices=yes",
-			"--property=PrivateNetwork=yes",
-			"--property=ProtectKernelLogs=yes",
-			"--property=ProtectKernelModules=yes",
-			"--property=ProtectKernelTunables=yes",
-			"--property=ProtectControlGroups=yes",
-			"--property=ReadWritePaths="+m.stateDir+" -/var/log/journal -/run/log/journal",
-			"--property=NoNewPrivileges=yes",
-			"--property=CapabilityBoundingSet=",
-			"--property=AmbientCapabilities=",
-			"--property=RestrictNamespaces=yes",
-			"--property=RestrictSUIDSGID=yes",
-			"--property=LockPersonality=yes",
-			"--property=MemoryDenyWriteExecute=yes",
-			"--property=RestrictAddressFamilies=AF_UNIX",
+		properties = append(properties,
+			"ProtectSystem=strict",
+			"ProtectHome=yes",
+			"PrivateDevices=yes",
+			"PrivateNetwork=yes",
+			"ProtectKernelLogs=yes",
+			"ProtectKernelModules=yes",
+			"ProtectKernelTunables=yes",
+			"ProtectControlGroups=yes",
+			"ReadWritePaths="+m.stateDir+" -/var/log/journal -/run/log/journal",
+			"NoNewPrivileges=yes",
+			"CapabilityBoundingSet=",
+			"AmbientCapabilities=",
+			"RestrictNamespaces=yes",
+			"RestrictSUIDSGID=yes",
+			"LockPersonality=yes",
+			"MemoryDenyWriteExecute=yes",
+			"RestrictAddressFamilies=AF_UNIX",
 		)
 	} else {
-		arguments = append(arguments,
-			"--property=ProtectHome=read-only",
-			"--property=ReadWritePaths="+m.stateDir,
-			"--property=NoNewPrivileges=no",
-			"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+		properties = append(properties,
+			"ProtectHome=read-only",
+			"ReadWritePaths="+m.stateDir,
+			"NoNewPrivileges=no",
+			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
 		)
 	}
-	arguments = append(arguments,
-		"--property=Nice=10",
-		"--property=CPUWeight=20",
-		"--property=IOWeight=20",
-		"--property=SyslogIdentifier=kpanel-maintenance",
-		"--",
-		executable,
-		"maintenance-run",
-		"--state-dir",
-		m.stateDir,
-		mode,
+	properties = append(properties,
+		"Nice=10",
+		"CPUWeight=20",
+		"IOWeight=20",
+		"SyslogIdentifier=kpanel-maintenance",
 	)
-	if _, err := m.runner.Run(ctx, "systemd-run", arguments...); err != nil {
+	spec := m.backgroundJobSpec(
+		maintenanceUnitPrefix+status.ID,
+		executable,
+		[]string{"maintenance-run", "--state-dir", m.stateDir, mode},
+		properties,
+		"0027",
+		10,
+		5*time.Minute,
+	)
+	spec.NoNewPrivileges = action == "log-cleanup"
+	if err := jobcontrol.Launch(ctx, m.runner, spec); err != nil {
 		finishedAt := m.now().UTC()
 		status.State = "failed"
 		status.Stage = "launch_failed"
@@ -359,6 +344,8 @@ func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 					}
 				}
 			}
+		} else if step.operation == maintenanceOperationSyslogCleanup {
+			runErr = m.pruneRotatedSystemLogs(ctx, policy)
 		} else {
 			_, runErr = m.runner.Run(ctx, step.command, step.arguments...)
 		}
@@ -410,8 +397,23 @@ func (m *Manager) maintenanceSteps(
 		default:
 			return "", "", nil, fmt.Errorf("%w: unknown log cleanup policy", ErrInvalidInput)
 		}
+		if m.openRCRuntimeActive() {
+			if _, path, err := m.fixedSystemLog(); err != nil || path == "" {
+				return "", "", nil, fmt.Errorf("%w: OpenRC fixed syslog file is unavailable", ErrUnsupported)
+			}
+			return "log-cleanup", policy, []maintenanceStep{{
+				stage:    "log_syslog_" + strings.ReplaceAll(policy, "-", "_"),
+				progress: 60, operation: maintenanceOperationSyslogCleanup,
+			}}, nil
+		}
 		if _, err := m.runner.LookPath("journalctl"); err != nil {
-			return "", "", nil, fmt.Errorf("%w: journalctl is unavailable", ErrUnsupported)
+			if _, path, pathErr := m.fixedSystemLog(); pathErr != nil || path == "" {
+				return "", "", nil, fmt.Errorf("%w: journalctl and a fixed syslog file are unavailable", ErrUnsupported)
+			}
+			return "log-cleanup", policy, []maintenanceStep{{
+				stage:    "log_syslog_" + strings.ReplaceAll(policy, "-", "_"),
+				progress: 60, operation: maintenanceOperationSyslogCleanup,
+			}}, nil
 		}
 		return "log-cleanup", policy, []maintenanceStep{
 			{stage: "log_journal_rotate", progress: 35, command: "journalctl", arguments: []string{"--rotate"}},
@@ -793,6 +795,12 @@ func maintenanceStageMessage(stage string) string {
 		return "正在保留最近 3 天 journal"
 	case "log_journal_max_500m":
 		return "正在限制 journal 最大 500 MiB"
+	case "log_syslog_retain_7d":
+		return "正在清理 7 天前的轮转 syslog"
+	case "log_syslog_retain_3d":
+		return "正在清理 3 天前的轮转 syslog"
+	case "log_syslog_max_500m":
+		return "正在将轮转 syslog 归档限制到 500 MiB"
 	case "ssh_defense_enable":
 		return "正在安装并启用 Fail2Ban SSH 防御"
 	case "ssh_defense_disable":
@@ -839,11 +847,11 @@ func maintenanceSuccessMessage(action, policy string, rebootRequired bool) strin
 	if action == "log-cleanup" {
 		switch policy {
 		case "retain-7d":
-			return "journal 已轮转并仅保留最近 7 天归档"
+			return "系统日志归档已清理，仅保留最近 7 天"
 		case "retain-3d":
-			return "journal 已轮转并仅保留最近 3 天归档"
+			return "系统日志归档已清理，仅保留最近 3 天"
 		default:
-			return "journal 已轮转并限制归档最大 500 MiB"
+			return "系统日志归档已清理，并限制归档最大 500 MiB"
 		}
 	}
 	if action == "update" {
@@ -852,7 +860,7 @@ func maintenanceSuccessMessage(action, policy string, rebootRequired bool) strin
 	if policy == "cache" {
 		return "软件包缓存清理已完成"
 	}
-	return "系统支持的无用依赖、软件包缓存和旧 journal 已安全清理"
+	return "当前系统支持的标准清理步骤已完成"
 }
 
 func maintenanceCompletionMessage(

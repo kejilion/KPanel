@@ -44,6 +44,7 @@ const summary = {
   varLog: { available: true, bytes: 3_145_728 },
   journal: { available: true, bytes: 1_048_576 },
   sources: {
+    system: { available: true, supportsPriority: true },
     journal: { available: true },
     security: { available: true },
     login: { available: true },
@@ -113,6 +114,30 @@ describe('SystemLogsDialog', () => {
     expect(output.indexOf('older boot event')).toBeLessThan(output.indexOf('newer nginx event'))
     expect(wrapper.text()).toContain('/var/log 总占用')
     expect(wrapper.text()).toContain('两项不能相加')
+    wrapper.unmount()
+  })
+
+  it('uses fixed syslog on OpenRC without exposing unsupported priority filters', async () => {
+    mocks.logsSummary.mockResolvedValueOnce({
+      ...summary,
+      journal: { available: false, reason: 'OpenRC 主机不使用 systemd journal' },
+      sources: {
+        ...summary.sources,
+        system: { available: true },
+        journal: { available: false, reason: 'OpenRC 主机不使用 systemd journal' },
+      },
+      authSource: '/var/log/messages',
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    expect(mocks.logs).toHaveBeenCalledWith({
+      source: 'system',
+      limit: 100,
+      priority: 'all',
+    }, expect.any(AbortSignal))
+    expect(wrapper.find('.system-log-priority').exists()).toBe(false)
+    expect(wrapper.find('pre.system-log-output').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -309,7 +334,7 @@ describe('SystemLogsDialog', () => {
       })
 
     await wrapper.find('.system-log-realtime').trigger('click')
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await Promise.resolve()
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('保留最近 7 天'))
@@ -352,7 +377,7 @@ describe('SystemLogsDialog', () => {
       rebootRequired: false,
     })
 
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await flushPromises()
     await vi.advanceTimersByTimeAsync(800)
@@ -378,7 +403,7 @@ describe('SystemLogsDialog', () => {
       appliedAt: '2026-08-24T08:01:00Z',
     })
 
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await flushPromises()
 
@@ -407,7 +432,7 @@ describe('SystemLogsDialog', () => {
       appliedAt: '2026-08-24T08:01:00Z',
     })
 
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await flushPromises()
 
@@ -438,7 +463,7 @@ describe('SystemLogsDialog', () => {
       appliedAt: '2026-08-24T08:01:00Z',
     })
 
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await flushPromises()
 
@@ -458,7 +483,7 @@ describe('SystemLogsDialog', () => {
     await flushPromises()
     vi.useFakeTimers()
 
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await flushPromises()
     await wrapper.setProps({ open: false })
@@ -505,7 +530,7 @@ describe('SystemLogsDialog', () => {
     await wrapper.setProps({ open: false })
     await wrapper.setProps({ open: true })
     await flushPromises()
-    expect(wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))?.attributes('disabled')).toBeUndefined()
+    expect(wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))?.attributes('disabled')).toBeUndefined()
 
     mocks.maintenance.mockResolvedValueOnce({
       state: 'succeeded',
@@ -513,7 +538,7 @@ describe('SystemLogsDialog', () => {
       progress: 100,
       rebootRequired: false,
     })
-    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧 journal'))!
+    const cleanup = wrapper.findAll('button').find((button) => button.text().includes('确认清理旧系统日志'))!
     await cleanup.trigger('click')
     await Promise.resolve()
     await vi.advanceTimersByTimeAsync(800)
@@ -567,16 +592,16 @@ describe('SystemLogsDialog', () => {
 
     const bodyText = document.body.textContent || ''
     expect(bodyText).toContain('System log management')
-    expect(bodyText).toContain('All journal entries')
+    expect(bodyText).toContain('System messages')
     expect(bodyText).toContain('Lines')
     expect(bodyText).toContain('Search logs')
     expect(bodyText).toContain('Cleanup policy')
-    expect(bodyText).toContain('Clean old journal data')
+    expect(bodyText).toContain('Clean old system logs')
     expect(document.querySelector('[aria-label="Log source"]')).not.toBeNull()
     expect(document.querySelector<HTMLInputElement>('input[type="search"]')?.placeholder).toBe('Keyword, service, PID, or message')
     expect(document.querySelector('pre.system-log-output')?.textContent).toContain('关闭')
     expect(bodyText).not.toContain('系统日志管理')
-    expect(bodyText).not.toContain('全部 journal')
+    expect(bodyText).not.toContain('系统消息')
     expect(bodyText).not.toContain('读取行数')
     expect(bodyText).not.toContain('清理策略')
     wrapper.unmount()

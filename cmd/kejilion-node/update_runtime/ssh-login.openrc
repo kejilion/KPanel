@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+
+name="KPanel SSH Login Event Collector"
+description="SSH login event collector for KPanel lightweight node"
+command="/usr/local/lib/kejilion-node/kejilion-node"
+command_args="ssh-login-broker --output /run/kejilion-node-ssh/ssh-login.json"
+command_user="root:kejilion-node"
+directory="/"
+pidfile="/run/kejilion-node/kejilion-node-ssh-login.pid"
+supervisor="supervise-daemon"
+respawn_delay=15
+respawn_max=0
+retry="TERM/30/KILL/5"
+stopgroup=true
+umask=0027
+output_logger="logger -t kejilion-node-ssh-login"
+error_logger="logger -t kejilion-node-ssh-login"
+no_new_privs=true
+
+depend() {
+	need localmount
+	use logger
+	after sshd dropbear
+}
+
+start_pre() {
+	checkpath --directory --mode 0750 --owner root:root /run/kejilion-node
+	checkpath --directory --mode 0750 --owner root:kejilion-node /run/kejilion-node-ssh
+}

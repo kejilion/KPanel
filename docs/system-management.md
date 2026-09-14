@@ -55,10 +55,10 @@ IPinfo IPv4/IPv6 HTTPS 端点，成功结果缓存 30 分钟；外部查询超�
 | V4/V6 优先 | `gai.conf` | 维护 `kejilion.sh` 同一 precedence 规则并保留其他用户配置 |
 | 内核优化 | Kejilion sysctl 产物 | 五种固定预设、内存自适应、逐项应用和版本化回滚；合法脚本产物可接管 |
 | BBR | 当前/可用拥塞算法与 qdisc | 内核能力检查、独立 sysctl 文件、回读 |
-| BBRv3 | `k bbrv3 status|install|update|uninstall` | 可信 `kejilion.sh` 固定协议；XanMod 状态回读、systemd 后台任务、完成后提示重启 |
-| 系统更新 | APT/DNF/YUM/APK/Pacman/Zypper 源与后台任务状态 | 已实现对应包管理器和 systemd 后台执行器 |
-| 系统清理 | 软件包管理器与 journal 后台任务状态 | 缓存或标准策略；动作差异必须在生态对齐矩阵中明确 |
-| 重启服务器 | systemd 能力 | 普通确认后固定延迟约 15 秒执行；维护任务不构成禁止条件 |
+| BBRv3 | `k bbrv3 status|install|update|uninstall` | 可信 `kejilion.sh` 固定协议；XanMod 状态回读、init-managed 后台任务、完成后提示重启 |
+| 系统更新 | APT/DNF/YUM/APK/Pacman/Zypper 源与后台任务状态 | 已实现对应包管理器和 systemd/OpenRC 后台执行器 |
+| 系统清理 | 软件包管理器、journal 或固定 syslog 文件的后台任务状态 | 缓存或标准策略；动作差异必须在生态对齐矩阵中明确 |
+| 重启服务器 | systemd/OpenRC 能力 | 普通确认后固定延迟约 15 秒执行；维护任务不构成禁止条件 |
 | 重装系统 | 不适用 | 非交互后台执行与重装后结果回传适配器尚未实现 |
 
 ## v0.3 写入范围
@@ -131,7 +131,7 @@ SSH 防御以“状态、强度、封禁、信任”四个区域呈现，不暴�
 Panel 不保存第二份规则。策略与信任地址写入独立受管配置片段，脚本在共享 root-only 锁内复核
 `resourceVersion`，备份后原子替换，执行 `fail2ban-client -t`、reload 和回读；失败时恢复原配置。
 动态封禁和日志不参与资源版本，避免正常攻击流量造成无意义的写冲突。启停和卸载继续使用现有
-systemd 维护队列，关闭浏览器不会中断；停用不删除配置，卸载才移除 Fail2Ban 及其配置。
+systemd/OpenRC 维护队列，关闭浏览器不会中断；停用不删除配置，卸载才移除 Fail2Ban 及其配置。
 
 该功能使用 `KPANEL_F2B_MANAGER_PROTOCOL_VERSION="1"`，固定到
 `kejilion/sh@28f89c1b34df4b25e6ef9b144c328fdea75dbac9` 与原始 SHA-256
@@ -171,7 +171,7 @@ Shell→Agent→Panel L2 闭环。
 - 页面与普通 BBR 并排展示，状态始终来自 `kejilion.sh` 的
   `KJ_BBRV3_NONINTERACTIVE=1 k bbrv3 status`，不以 Panel 数据库推断安装结果。
 - Web 只接受 `install`、`update`、`uninstall` 三个枚举动作；Agent 通过可信脚本校验后，
-  使用现有 systemd 维护队列执行，同一时间不与系统更新、清理或 SSH 防御并发。
+  使用现有 systemd/OpenRC 维护队列执行，同一时间不与系统更新、清理或 SSH 防御并发。
 - 安装、更新和卸载继续复用脚本的 XanMod 软件源、CPU PSABI 匹配、磁盘/Swap 检查、
   BBR + fq 配置和包管理语义；KPanel 不维护第二份内核安装命令。
 - 任务完成后只标记“需要重启”，不会自动重启。用户可使用同页受控重启入口，并在重连后
@@ -183,7 +183,7 @@ Shell→Agent→Panel L2 闭环。
 ## v0.5 后台系统维护
 
 “系统更新”和“系统清理”参考当前 `kejilion.sh` 的业务顺序，但由固定参数的
-systemd transient service 执行。Web 请求只能选择 `update/full`、
+systemd transient unit 或 OpenRC `start-stop-daemon` 进程组执行。Web 请求只能选择 `update/full`、
 `cleanup/cache` 或 `cleanup/standard`，不能传入命令、包名或文件路径。
 
 - 更新：APT 执行 dpkg 恢复、刷新索引和 `full-upgrade`；RHEL 系执行
@@ -191,15 +191,16 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
   openSUSE/SLES 执行 Zypper 刷新与升级。
 - 缓存清理：只调用对应软件包管理器的固定缓存清理参数。
 - 标准清理：APT、DNF/YUM 在自身支持时额外执行 `autoremove`；Pacman 对原生
-  孤立包输出做包名语法校验后执行删除。所有 systemd 系统轮转 journal，保留最近 7 天并
-  限制到 500 MiB。
+  孤立包输出做包名语法校验后执行删除；APK 当前执行固定的缓存清理。存在 journal 的其他生态
+  可按既有可选步骤轮转和限制 journal。Alpine/OpenRC 的 syslog 归档不混入标准包清理，而由下方
+  “系统日志管理”三档独立动作处理。
 - 后台状态持久化在
   `/var/lib/kejilion-panel/system/maintenance-state.json`；同一时间只允许
   一个维护任务。
-- 只有 worker 原子写入的 `succeeded` 状态才是完成凭据；systemd 单元已退出、被
-  `--collect` 回收或返回默认的 `Result=success`，均不能替代业务完成状态。未取得
+- 只有 worker 原子写入的 `succeeded` 状态才是完成凭据；systemd unit 已退出/回收或
+  OpenRC PID file 已失活，均不能替代业务完成状态。未取得
   完成凭据时必须显示未验证失败，不能从启动进度直接推断成功。
-- systemd 对账属于并发观察者；写入任何推断终态前必须重新读取原子状态文件。若 worker
+- init backend 对账属于并发观察者；写入任何推断终态前必须重新读取原子状态文件。若 worker
   已推进阶段或写入终态，对账只能返回该新状态，不能用先前读取的启动快照覆盖。
 - 更新和清理属于不可逆的软件包事务，KPanel 不宣称自动回滚；失败时保留
   阶段和错误摘要供人工检查。任务不会自动重启宿主机。
@@ -210,23 +211,24 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
 ## 系统日志管理
 
 - 入口位于“系统中心 → 日常维护”，不增加概览首页快捷卡片。页面只在打开管理器时读取真实
-  `systemd journal`、登录记录和发行版认证日志，不把日志复制到 Panel 数据库，也不增加常驻采集进程。
+  systemd journal 或固定 `/var/log/messages`、登录记录和发行版认证日志，不把日志复制到 Panel 数据库，也不增加常驻采集进程。
 - 概览分别展示 `/var/log` 目录总占用和 journal 占用，并明确 journal 通常已包含在前者中，不能相加。
   `/var/log` 扫描和 journal 用量都有独立超时；任一来源不可用时展示真实降级状态，不把空白
   或零值冒充成功。
-- 查看范围固定为系统、全部服务、安全事件和最近登录。服务范围使用 Agent 内置的固定 `.service`
-  journal 查询，不要求用户先理解或选择 systemd unit；页面使用同一个搜索框按服务名、PID 或消息直接
-  筛选当前有界结果，并可把读取行数增加到 200。系统与服务日志提供全部、警告及以上、错误及以上三档
-  级别。每次只允许读取 50、100 或 200 条，命令输出、单条消息和 API 响应均有固定上限，日志正文不进入审计。
+- 查看范围固定为系统、全部服务、安全事件和最近登录。systemd 服务范围使用 Agent 内置的固定 `.service`
+  journal 查询；OpenRC 从固定 syslog 文件读取并解析 service/process 字段，不要求用户先理解或选择 init unit；页面使用同一个搜索框按服务名、PID 或消息直接
+  筛选当前有界结果，并可把读取行数增加到 200。journal 系统与服务日志提供全部、警告及以上、错误及以上三档
+  级别；传统固定 syslog 文件不可靠保留 severity 元数据，因此 OpenRC 页面只提供“全部”，API 对其他级别明确返回不支持，绝不静默忽略筛选条件。
+  每次只允许读取 50、100 或 200 条，命令输出、单条消息和 API 响应均有固定上限，日志正文不进入审计。
 - “实时刷新”只在弹窗打开且用户明确开启时每 3 秒读取一次有界尾部；同一管理器不并发请求，暂停、
   关闭弹窗或离开页面立即停止。它用于轻量观察最新状态，不建立无限 `journalctl -f` 会话，也不承诺
   代替完整日志归档。
-- 安全事件优先读取 journal 的 `auth`/`authpriv` 设施；发行版未写入 journal 时，只回退读取固定的
-  `/var/log/secure` 或 `/var/log/auth.log` 尾部。最近登录使用固定参数的 `last`，缺少数据源时明确显示
-  当前主机不支持。
-- 清理只接受“保留最近 7 天”“保留最近 3 天”或“限制归档 journal 最大 500 MiB”三种策略。管理员
-  普通确认后复用现有单槽 systemd 后台维护任务，先执行 `journalctl --rotate`，再执行对应的
-  `--vacuum-*` 固定参数；页面关闭不终止任务，完成后重新读取真实占用。命令失败、完成凭据缺失或
+- systemd 安全事件优先读取 journal 的 `auth`/`authpriv` 设施，缺失时回退固定认证日志；OpenRC 运行态
+  直接读取 `/var/log/secure`、`/var/log/auth.log` 或 `/var/log/messages` 中的认证事件，不会因系统里残留
+  `journalctl` 而跨用 systemd 后端。最近登录使用固定参数的 `last`，缺少数据源时明确显示当前主机不支持。
+- 清理只接受“保留最近 7 天”“保留最近 3 天”或“限制归档日志最大 500 MiB”三种策略。管理员
+  普通确认后复用现有单槽 systemd/OpenRC 后台维护任务；systemd 执行固定的 `journalctl --rotate`
+  与 `--vacuum-*`，OpenRC 只处理当前固定 system/auth syslog 文件对应的轮转归档，不触碰其他日志族。页面关闭不终止任务，完成后重新读取真实占用。命令失败、完成凭据缺失或
   维护槽冲突都不得显示成功。动作响应返回刚持久化的任务 ID 与策略；页面只跟踪 ID、动作和策略
   同时匹配的任务，缺失或被另一标签页任务替换时停止轮询，不得把其他任务的终态显示为本次成功。
 - 本功能不浏览、编辑或删除任意日志文件，不执行 `rm -rf /var/log/*`，不修改 `journald.conf` 或
@@ -257,9 +259,9 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
 
 - 页面使用一次普通确认；Panel 继续执行登录、Origin、CSRF 和审计校验。
 - Agent 只接受固定的 `reboot` 动作，不要求固定确认词，也不接受 Shell、命令参数、自定义延迟或计划时间。
-- 通过 `systemd-run` 创建一次性 transient timer，固定延迟约 15 秒调用系统
-  `systemctl --no-wall reboot`，让 Panel 有时间落盘成功审计并向浏览器返回结果。
-- 软件包更新或清理任务运行时仍允许管理员重启；缺少 systemd 工具、Agent 写入开关关闭、非 Linux 或
+- systemd 通过一次性 transient timer 固定延迟约 15 秒调用 `systemctl --no-wall reboot`；
+  OpenRC 通过受保护后台 worker 固定延迟后调用受信任的 `/sbin/reboot`。两者都让 Panel 有时间落盘成功审计并向浏览器返回结果。
+- 软件包更新或清理任务运行时仍允许管理员重启；缺少 systemd/OpenRC 后台工具、Agent 写入开关关闭、非 Linux 或
   Agent 非 root 时，页面显示真实依赖原因。
 - 重启会短暂中断 KPanel、网站和 SSH。KPanel 不声称业务已安全停机，因此管理员仍需先确认
   数据库迁移、备份、长连接和外部任务状态。
@@ -276,15 +278,15 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
 - 新文件、`fstab` 和 `swapon` 任一步失败时，恢复原文件、原 `fstab` 和原
   活动状态。成功后启动项使用脚本同款
   `/swapfile swap swap defaults 0 0`，脚本与 Web 可双向识别。
-- 文件系统写入由固定参数的 root systemd transient service 完成。常驻
-  Agent 仍受原 systemd 沙箱限制，Web 不能传入路径或任意命令。浏览器请求
+- 文件系统写入由固定参数的 root systemd transient unit 或 OpenRC worker 完成。常驻
+  Agent 仍受对应 service 边界限制，Web 不能传入路径或任意命令。浏览器请求
   中断不会杀死已经启动的事务，事务仍会完成或执行自身回滚。
 
 ## 一条龙系统调优
 
 - 入口位于“系统中心 → 性能优化”，概览也保留高频快捷卡片；它与“内核调优”保持独立：前者是 kejilion.sh 原有的一次性系统准备流程，后者用于长期切换内核参数预设。
 - 页面固定展示原脚本的 12 个项目并默认全选；管理员可以取消任意项目，但不能提交路径、命令、软件包名或其他 Shell 参数。
-- Agent 将所选项目拆成持久化 systemd 后台步骤，逐项调用 `KJ_SYSTEM_TUNING_NONINTERACTIVE=1 k kpanel system-tuning apply-item <id>`。页面关闭或浏览器断开不会取消任务，重新打开会继续显示真实阶段和进度。
+- Agent 将所选项目拆成持久化 systemd/OpenRC 后台步骤，逐项调用 `KJ_SYSTEM_TUNING_NONINTERACTIVE=1 k kpanel system-tuning apply-item <id>`。页面关闭或浏览器断开不会取消任务，重新打开会继续显示真实阶段和进度。
 - 每个项目由脚本共享锁串行执行并输出结构化回执；项目失败时任务立即停止，后续项目不会被标记为成功。系统更新、清理、换源和安装软件包属于不可整体回滚操作，界面不宣称整套事务可以自动撤销。
 - 后台执行分别采集原生操作日志与结构化 stdout 回执，软件包管理器、操作返回码和完成态回读任一失败都会停止；交互菜单 66 使用同一失败停止与回读规则，不再在失败后继续打印 `[OK]`。全新系统缺少 OpenSSH Server 时，仅一条龙 SSH 项会按发行版安装并处理 Ubuntu 24.04 的 `ssh.socket`/`ssh.service` 前置条件，再调用既有单项 SSH 协议。
 - 1 GiB Swap 按 `/swapfile` 的 1 GiB 文件大小、`/proc/swaps` 激活项和 `fstab` 启动项共同判断，不再使用会因 `mkswap` 元数据取整或其他 Swap 而误判的总量；自动 DNS 直接复用 KPanel 已有的固定 DNS 协议，不修改单项 DNS 功能。
@@ -320,8 +322,9 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
   `enable`、`disable`、双向 GiB 阈值、每月重置日和资源版本。
 - 端口记录由可信 `kejilion.sh` 固定执行 `ss -H -lntup`；脚本限制原始结果为 4 MiB/4096 行，
   最多向 Agent 返回 512 条，超出时明确标记截断。页面只在打开弹窗后读取，并支持本地筛选。
-- Agent 的 systemd 单元保留 `CAP_SYS_PTRACE`，当前用途仅是让可信 `ss` 适配器取得 socket 的程序名
-  和 PID；Web 与 Agent 不提供通用 ptrace、进程内存或任意命令入口。内核仍未返回归属时，页面降级为
+- Agent 的 systemd unit 保留 `CAP_SYS_PTRACE`；OpenRC Agent 以 root 运行且没有等价的 capability
+  bounding，当前用途仍仅是让可信 `ss` 适配器取得 socket 的程序名和 PID。Web 与 Agent 不提供通用
+  ptrace、进程内存或任意命令入口。内核仍未返回归属时，页面降级为
   “未知程序”分组并保留原始技术详情，不伪造进程身份。
 - 限流累计值继续只统计 `/proc/net/dev` 中 eth/ens/enp/eno 接口，从本次开机开始累计；接收或发送
   任一值达到阈值时执行 `shutdown -h now`。每月重置日会在 01:00 重启主机，以重置开机累计值。
@@ -344,12 +347,13 @@ systemd transient service 执行。Web 请求只能选择 `update/full`、
 - 已实现执行器为 APT/dpkg、DNF/DNF5/YUM、APK、Pacman 和 Zypper；Web 只能提交
   `full`、`cache` 或 `standard` 枚举，不能指定命令、包名、仓库或参数。
 - 启动后台任务前确认当前 Agent 绝对路径、软件包管理器、固定步骤命令和
-  `systemd-run`；软件源可位于发行版自定义目录，由原生包管理器进行最终校验。
+  `systemd-run` 或 OpenRC `start-stop-daemon`；软件源可位于发行版自定义目录，由原生包管理器进行最终校验。
 - `journalctl` 是标准清理的可选步骤；缺失时继续完成无用依赖和软件包缓存清理，
   不会让整个清理能力失效。
 - RHEL 系识别 `/etc/yum.repos.d/*.repo`，Arch 识别
   `/etc/pacman.d/mirrorlist`，openSUSE/SLES 识别
   `/etc/zypp/repos.d/*.repo`。
 - 软件源切换当前只实现 Debian/Ubuntu。RPM、Pacman、Zypper 的换源适配器仍需补齐。
-- APK 更新与缓存清理已有固定命令实现，但标准 Alpine/OpenRC 尚不能运行当前
-  systemd Agent 安装方式，因此不属于正式部署目标。
+- APK 更新、缓存清理、OpenRC 后台执行、日志降级、重启与 Agent/轻量节点服务路径均已实现。
+  当前 Alpine 3.24 `sys` mode 状态为“已实现，待实机准入”；`diskless`/`data` mode、rootless Docker
+  和 systemd 同等级 namespace/mount/capability 沙箱不在当前保证内。

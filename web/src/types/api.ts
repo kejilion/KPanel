@@ -532,6 +532,7 @@ export type SystemLogLimit = 50 | 100 | 200
 export interface SystemLogAvailability {
   available: boolean
   reason?: string
+  supportsPriority?: boolean
 }
 
 export interface SystemLogsSummary {
@@ -539,6 +540,7 @@ export interface SystemLogsSummary {
   varLog: SystemLogAvailability & { bytes?: number }
   journal: SystemLogAvailability & { bytes?: number }
   sources: {
+    system?: SystemLogAvailability
     journal: SystemLogAvailability
     login: SystemLogAvailability
     security: SystemLogAvailability

@@ -24,6 +24,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/hostpty"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const (
@@ -133,12 +134,42 @@ type scriptSiteInvocation struct {
 
 type recipeJobCommandRunner interface {
 	Run(context.Context, string, ...string) ([]byte, error)
+	LookPath(string) (string, error)
 }
 
 type systemRecipeJobRunner struct{}
 
 func (systemRecipeJobRunner) Run(ctx context.Context, name string, arguments ...string) ([]byte, error) {
+	if !filepath.IsAbs(name) {
+		resolved, err := (systemRecipeJobRunner{}).LookPath(name)
+		if err != nil {
+			return nil, err
+		}
+		name = resolved
+	}
 	return exec.CommandContext(ctx, name, arguments...).CombinedOutput()
+}
+
+func (systemRecipeJobRunner) LookPath(name string) (string, error) {
+	switch name {
+	case "systemd-run", "systemctl", "start-stop-daemon", "rc-service":
+	default:
+		return "", errors.New("background control executable is not allowed")
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 ||
+		!recipeScriptOwnerTrusted(info) {
+		return "", errors.New("background control executable is not trusted")
+	}
+	return resolved, nil
 }
 
 func newRecipeJobRegistry(stateDir string) *recipeJobRegistry {
@@ -211,7 +242,7 @@ func (m *Manager) RecipeWritable() error {
 	if m.jobRunner == nil || m.jobExecutable == "" {
 		return fmt.Errorf("%w: recipe background worker is unavailable", ErrUnavailable)
 	}
-	if _, err := findSystemdRun(); err != nil {
+	if err := jobcontrol.Available(m.jobRunner); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	_, err := findRecipeScript()
@@ -296,7 +327,7 @@ func (m *Manager) directSiteWritable(required ...string) error {
 	if m.jobRunner == nil || m.jobExecutable == "" {
 		return fmt.Errorf("%w: website background worker is unavailable", ErrUnavailable)
 	}
-	if _, err := findSystemdRun(); err != nil {
+	if err := jobcontrol.Available(m.jobRunner); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	if _, err := findTrustedKejilionScript(required...); err != nil {
@@ -733,28 +764,7 @@ func (m *Manager) launchRecipeJob(ctx context.Context, job RecipeJob) error {
 	if m.jobRunner == nil || m.jobExecutable == "" {
 		return errors.New("website background worker is unavailable")
 	}
-	systemdRun, err := findSystemdRun()
-	if err != nil {
-		return err
-	}
-	arguments := siteWorkerSystemdArguments(
-		job,
-		m.jobExecutable,
-		m.recipeJobs.stateDir,
-		m.webRoot,
-	)
-	output, err := m.jobRunner.Run(ctx, systemdRun, arguments...)
-	if err == nil {
-		return nil
-	}
-	detail := strings.TrimSpace(string(output))
-	if len(detail) > 300 {
-		detail = detail[:300]
-	}
-	if detail != "" {
-		return fmt.Errorf("%s: %w", detail, err)
-	}
-	return err
+	return jobcontrol.Launch(ctx, m.jobRunner, m.recipeJobSpec(job.ID))
 }
 
 func siteWorkerSystemdArguments(
@@ -798,6 +808,17 @@ func (m *Manager) recipeUnitState(id string) (running bool, known bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	backend, backendErr := jobcontrol.Detect(m.jobRunner)
+	if backendErr != nil {
+		return false, false
+	}
+	if backend == jobcontrol.BackendOpenRC {
+		state, err := jobcontrol.Inspect(ctx, m.jobRunner, m.recipeJobSpec(id))
+		if err != nil {
+			return false, false
+		}
+		return state.Running, state.Known
+	}
 	output, err := m.jobRunner.Run(
 		ctx,
 		"systemctl",
@@ -812,6 +833,30 @@ func (m *Manager) recipeUnitState(id string) (running bool, known bool) {
 		return false, true
 	default:
 		return false, err == nil && state != ""
+	}
+}
+
+func (m *Manager) recipeJobSpec(id string) jobcontrol.Spec {
+	return jobcontrol.Spec{
+		Unit:       recipeJobUnitPrefix + id,
+		Executable: m.jobExecutable,
+		Arguments: []string{
+			"site-pty-run", "--state-dir", m.recipeJobs.stateDir,
+			"--web-root", m.webRoot, "--id", id,
+		},
+		StateDir: m.recipeJobs.stateDir,
+		SystemdProperties: []string{
+			"Type=oneshot", "TimeoutStartSec=60min", "TimeoutStopSec=10min",
+			"User=root", "UMask=0027", "PrivateTmp=no", "NoNewPrivileges=no",
+			"ProtectSystem=no", "ProtectHome=no", "PrivateDevices=no",
+			"RestrictNamespaces=no",
+			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+			"SyslogIdentifier=kpanel-site",
+		},
+		UMask:       "0027",
+		Nice:        5,
+		IOClass:     "2:6",
+		StopTimeout: 10 * time.Minute,
 	}
 }
 
@@ -1315,11 +1360,11 @@ func recipeFailureMessage(job RecipeJob, stage string, cause error) string {
 	case stage == "script_unavailable":
 		return "未找到已授权且支持建站协议的 kejilion.sh，请先更新脚本后重试"
 	case stage == "runner_unavailable":
-		return "无法启动后台建站任务，请检查 systemd-run 和 Host Agent 状态"
+		return "无法启动后台建站任务，请检查 init 后台任务执行器和 Host Agent 状态"
 	case stage == "start_failed":
-		return "kejilion.sh 建站任务启动失败，请检查 Host Agent 的 systemd 权限"
+		return "kejilion.sh 建站任务启动失败，请检查 Host Agent 的 init 权限"
 	case stage == "terminal_unavailable":
-		return "建站交互终端启动失败，请检查 Host Agent 的 PTY、状态目录和 systemd 权限"
+		return "建站交互终端启动失败，请检查 Host Agent 的 PTY、状态目录和 init 权限"
 	case stage == "reconcile_failed":
 		return "脚本已结束，但 KPanel 未发现完整站点产物，请检查 Nginx 配置、站点目录和证书"
 	}
@@ -1381,17 +1426,6 @@ func findTrustedKejilionScript(required ...string) (string, error) {
 		}
 	}
 	return "", errors.New("a trusted kejilion.sh website command was not found")
-}
-
-func findSystemdRun() (string, error) {
-	for _, candidate := range []string{"/usr/bin/systemd-run", "/bin/systemd-run"} {
-		info, err := os.Stat(candidate)
-		if err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o022 == 0 &&
-			recipeScriptOwnerTrusted(info) {
-			return candidate, nil
-		}
-	}
-	return "", errors.New("trusted systemd-run is unavailable")
 }
 
 func containsAll(value string, required []string) bool {

@@ -51,7 +51,7 @@ const toast = useToast()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
 
 const sourceOptions: ReadonlyArray<{ id: SystemLogSource; label: string; detail: string }> = [
-  { id: 'system', label: '系统', detail: '全部 journal' },
+  { id: 'system', label: '系统', detail: '系统消息' },
   { id: 'service', label: '服务', detail: '全部服务日志' },
   { id: 'security', label: '安全', detail: '认证事件' },
   { id: 'login', label: '登录', detail: '最近登录记录' },
@@ -71,7 +71,7 @@ const limitOptions: SystemLogLimit[] = [50, 100, 200]
 const cleanupPolicies = [
   { id: 'retain-7d', label: '保留最近 7 天' },
   { id: 'retain-3d', label: '保留最近 3 天' },
-  { id: 'max-500m', label: '归档 journal 最大 500 MiB' },
+  { id: 'max-500m', label: '归档日志最大 500 MiB' },
 ] as const
 type CleanupPolicy = (typeof cleanupPolicies)[number]['id']
 interface CleanupTaskIdentity {
@@ -98,7 +98,10 @@ const systemLogBackendPhrases = [
   '系统日志清理仅支持 Linux',
   'Agent 必须以受限 root 服务运行',
   'journalctl、last 与系统日志文件均不可用',
-  'systemd 后台任务执行器不可用',
+  'systemd-run 或 OpenRC start-stop-daemon 后台任务执行器不可用',
+  'OpenRC 固定 syslog 文件不可用',
+  'OpenRC 主机不使用 systemd journal',
+  'journalctl 与固定 syslog 文件均不可用',
   'journalctl 不可用',
   'Agent 后台执行程序不可用，请更新或重新安装 KPanel',
   'last 命令不可用',
@@ -118,9 +121,12 @@ const systemLogBackendPhrases = [
   '正在保留最近 7 天 journal',
   '正在保留最近 3 天 journal',
   '正在限制 journal 最大 500 MiB',
-  'journal 已轮转并仅保留最近 7 天归档',
-  'journal 已轮转并仅保留最近 3 天归档',
-  'journal 已轮转并限制归档最大 500 MiB',
+  '正在清理 7 天前的轮转 syslog',
+  '正在清理 3 天前的轮转 syslog',
+  '正在将轮转 syslog 归档限制到 500 MiB',
+  '系统日志归档已清理，仅保留最近 7 天',
+  '系统日志归档已清理，仅保留最近 3 天',
+  '系统日志归档已清理，并限制归档最大 500 MiB',
 ] as const
 void systemLogBackendPhrases
 
@@ -169,7 +175,11 @@ function phrase(value: string): string {
   return translatePhrase(value)
 }
 
-const supportsPriority = computed(() => selectedSource.value === 'system' || selectedSource.value === 'service')
+const systemSourceStatus = computed(() => summary.value?.sources.system || summary.value?.sources.journal)
+const supportsPriority = computed(() =>
+  (selectedSource.value === 'system' || selectedSource.value === 'service') &&
+  Boolean(systemSourceStatus.value?.supportsPriority ?? summary.value?.sources.journal.available),
+)
 const effectivePriority = computed<SystemLogPriority>(() => supportsPriority.value ? selectedPriority.value : 'all')
 const entriesQueryKey = computed(() => JSON.stringify({
   source: selectedSource.value,
@@ -179,13 +189,13 @@ const entriesQueryKey = computed(() => JSON.stringify({
 
 function currentEntriesQuery(): SystemLogQuery {
   if (selectedSource.value === 'system') {
-    return { source: 'system', limit: selectedLimit.value, priority: selectedPriority.value }
+    return { source: 'system', limit: selectedLimit.value, priority: effectivePriority.value }
   }
   if (selectedSource.value === 'service') {
     return {
       source: 'service',
       limit: selectedLimit.value,
-      priority: selectedPriority.value,
+      priority: effectivePriority.value,
     }
   }
   return { source: selectedSource.value, limit: selectedLimit.value }
@@ -210,9 +220,10 @@ function sourceAvailability(source: SystemLogSource): { available: boolean; reas
       reason: summary.value.sources.security.reason || '当前主机没有可用的安全日志。',
     }
   }
+  const status = summary.value.sources.system || summary.value.sources.journal
   return {
-    available: summary.value.sources.journal.available,
-    reason: summary.value.sources.journal.reason || '当前主机没有可用的 systemd journal。',
+    available: status.available,
+    reason: status.reason || '当前主机没有可用的系统日志。',
   }
 }
 
@@ -496,7 +507,7 @@ function syncCleanupMaintenance(maintenance: SystemLogsSummary['maintenance']): 
     }
     cleanupRunning.value = maintenance.state === 'running'
     if (maintenance.state === 'running') {
-      cleanupNotice.value = maintenance.message || '正在清理旧 journal，关闭窗口不会中断任务。'
+      cleanupNotice.value = maintenance.message || '正在清理旧系统日志，关闭窗口不会中断任务。'
       cleanupError.value = ''
       startMaintenancePolling()
     } else if (maintenance.state === 'failed') {
@@ -571,7 +582,7 @@ async function pollMaintenance(): Promise<void> {
     }
     cleanupRunning.value = maintenance.state === 'running'
     if (cleanupRunning.value) {
-      cleanupNotice.value = maintenance.message || '正在清理旧 journal，关闭窗口不会中断任务。'
+      cleanupNotice.value = maintenance.message || '正在清理旧系统日志，关闭窗口不会中断任务。'
       scheduleMaintenancePoll()
       return
     }
@@ -607,7 +618,7 @@ async function submitCleanup(): Promise<void> {
   if (!props.writable || cleanupSubmitting.value || cleanupRunning.value || maintenanceBusy.value) return
   const policy = cleanupPolicies.find((item) => item.id === cleanupPolicy.value)!
   const confirmed = typeof window === 'undefined' || window.confirm(phrase(
-    `确认清理旧 journal 日志并${phrase(policy.label)}吗？此操作不会删除 /var/log 中的其他日志文件。`,
+    `确认清理旧系统日志并${phrase(policy.label)}吗？此操作不会删除 /var/log 中的其他日志文件。`,
   ))
   if (!confirmed) return
   realtime.value = false
@@ -889,7 +900,7 @@ onBeforeUnmount(() => {
 
           <details class="system-log-cleanup">
             <summary>
-              <span><Trash2 :size="18" /> {{ phrase('清理旧 journal') }}</span>
+              <span><Trash2 :size="18" /> {{ phrase('清理旧系统日志') }}</span>
               <small>{{ phrase('固定安全策略，不删除其他日志文件') }}</small>
             </summary>
             <div class="system-log-cleanup__body">
@@ -907,7 +918,7 @@ onBeforeUnmount(() => {
                   <option v-for="policy in cleanupPolicies" :key="policy.id" :value="policy.id">{{ phrase(policy.label) }}</option>
                 </select>
               </label>
-              <p>{{ phrase('执行时先轮转 journal，再应用所选保留策略；任务在后台运行，关闭窗口不会中断。') }}</p>
+              <p>{{ phrase('按当前日志后端应用固定保留策略；任务在后台运行，关闭窗口不会中断。') }}</p>
               <button
                 class="button button--danger-text"
                 type="button"
@@ -916,7 +927,7 @@ onBeforeUnmount(() => {
               >
                 <RefreshCw v-if="cleanupSubmitting || cleanupRunning" :size="17" class="spin" />
                 <Trash2 v-else :size="17" />
-                {{ phrase(cleanupSubmitting ? '正在提交…' : cleanupRunning ? '清理任务进行中' : '确认清理旧 journal') }}
+                {{ phrase(cleanupSubmitting ? '正在提交…' : cleanupRunning ? '清理任务进行中' : '确认清理旧系统日志') }}
               </button>
             </div>
           </details>
