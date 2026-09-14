@@ -119,12 +119,12 @@ SCRIPT
 				exit 0
 				;;
 		esac
+		mock_agent_version="${KPANEL_MOCK_AGENT_VERSION:-${KPANEL_RELEASE_VERSION:?}}"
 		cat >"$destination" <<'AGENT'
 #!/bin/sh
 case "${1:-}" in
 	version)
-		printf '%s v1alpha1\n' \
-			"${KPANEL_MOCK_AGENT_VERSION:-${KPANEL_RELEASE_VERSION:?}}"
+		printf '%s v1alpha1\n' '__KPANEL_MOCK_AGENT_VERSION__'
 		;;
 	healthcheck)
 		[ -f "${KEJILION_AGENT_TOKEN_FILE:?}" ]
@@ -134,6 +134,7 @@ case "${1:-}" in
 	*) exit 0 ;;
 esac
 AGENT
+		sed -i "s/__KPANEL_MOCK_AGENT_VERSION__/${mock_agent_version}/" "$destination"
 		chmod 755 "$destination"
 		exit 0
 		;;
