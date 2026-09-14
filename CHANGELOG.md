@@ -8,6 +8,7 @@
 
 - 集群通知新增飞书、钉钉和企业微信群机器人通道，与 Telegram 共用告警规则、状态、审计和受限出站校验；保存 Webhook 前会先发送验证消息。
 - KPanel 手动更新入口统一展示目标版本、发布说明、镜像摘要和升级风险；设置页、应用页与更新提示使用同一套检查及安装确认流程。
+- 添加轻量节点时可生成最多 100 台共用的批量接入授权；每台主机保存独立、仅 root 可读的尝试身份，同一命令可幂等续接且不会覆盖已接入节点。
 
 ### Fixed
 
@@ -16,7 +17,7 @@
 ### Upgrade Notes
 
 - 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
-- `scriptLinkageState=not-required`：继续使用 `kejilion/sh@6ebb945f6d5cb69fdb41e3761de23566acbaf762`，无需发布新的受管脚本；应用市场稳定配置继续使用 `kejilion/apps@b9be0ca3b56c5f81a463dc38aba891d06a52ab95`。
+- `scriptLinkageState=coupled`，变更集 `light-batch-enrollment-20260914`：批量接入配套脚本已先发布到 `kejilion/sh@4d61f7ef123fe5ecd7419cdaa1c93483bbfda403`；根脚本 SHA-256 为 `a0e6cf5193aa9bfbdc572ad91803d4b53d34549ac95259b3288d436766a229dc`，CN 脚本 SHA-256 为 `132b38bf1300e529ca88e365d075be599ef3466ac1aece48bce6ce7565f344d0`。应用市场稳定配置继续使用 `kejilion/apps@b9be0ca3b56c5f81a463dc38aba891d06a52ab95`。
 - 通知配置持久化 schema 仍为 v1，旧客户端继续获得 Telegram 兼容视图；无需迁移数据库、端口、Compose、节点身份或配对密钥。回滚至 KPanel v1.18.0 不会删除现有配置和数据，但机器人 Webhook 会被旧版识别为无效 Telegram 凭据并停止发送。
 - 加入预览版只切换更新来源，不会自动安装；退出预览版也不会自动降级，人工回滚仍需明确选择稳定镜像摘要并完成备份与恢复核对。
 
