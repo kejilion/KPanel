@@ -80,6 +80,7 @@ import {
   type DesktopExternalTransferProgress,
 } from '@/lib/desktopExternalDrop'
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
+import { kpanelUpdateSettingsPath } from '@/lib/kpanelUpdate'
 import {
   desktopIconGrid,
   desktopIconGridSlotForPosition,
@@ -711,10 +712,10 @@ function openApp(path: string): void {
 }
 
 function openKPanelUpdate(): void {
-  const app = findDesktopApp('/apps')
+  const app = findDesktopApp('/settings')
   if (!app) return
   const windowId = desktop.openWindow(
-    '/apps?app=kpanel&action=update',
+    kpanelUpdateSettingsPath,
     app.labelKey,
     app.allowMultiple,
     true,

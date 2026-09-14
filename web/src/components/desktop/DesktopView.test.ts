@@ -238,7 +238,7 @@ describe('DesktopView', () => {
     wrapper.unmount()
   })
 
-  it('replaces the taskbar version with the classic update action', async () => {
+  it('opens the shared settings update flow from the taskbar', async () => {
     const desktop = useDesktopMode()
     const wrapper = mount(DesktopView, {
       props: {
@@ -257,7 +257,7 @@ describe('DesktopView', () => {
     expect(update.text()).toContain('更新可用')
     expect(wrapper.find('.desktop__taskbar-agent > small').exists()).toBe(false)
     await update.trigger('click')
-    expect(desktop.windows.value[0]?.path).toBe('/apps?app=kpanel&action=update')
+    expect(desktop.windows.value[0]?.path).toBe('/settings?section=version-updates')
     wrapper.unmount()
   })
 

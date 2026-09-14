@@ -3,8 +3,15 @@ import type { AppInstallJob, AppMarketInventory, AppMarketItem } from '@/types/a
 
 export const kpanelAppID = 'thirdparty-kpanel'
 export const kpanelAppToken = 'kpanel'
+export const kpanelUpdateSettingsSection = 'version-updates'
+export const kpanelUpdateSettingsPath = `/settings?section=${kpanelUpdateSettingsSection}`
+export const kpanelAppUpdatePath = `/apps?app=${kpanelAppToken}&action=update`
 
 export type KPanelUpdateState = 'available' | 'current' | 'unavailable'
+
+export function isKPanelUpdateSettingsIntent(value: unknown): boolean {
+  return value === kpanelUpdateSettingsSection
+}
 
 export function kpanelUpdateHint(currentVersion?: string): string {
   const normalizedVersion = currentVersion?.trim().replace(/^v/i, '')

@@ -50,7 +50,11 @@ import {
   routeNavigationState,
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
-import { detectKPanelUpdate, kpanelUpdateHint } from '@/lib/kpanelUpdate'
+import {
+  detectKPanelUpdate,
+  kpanelUpdateHint,
+  kpanelUpdateSettingsPath,
+} from '@/lib/kpanelUpdate'
 import { useI18n } from '@/i18n'
 import type { MessageKey } from '@/i18n/messages/zh-CN'
 import {
@@ -206,10 +210,7 @@ async function enterDesktopSafely(): Promise<void> {
 function openKPanelUpdate(): void {
   if (!kpanelUpdateAvailable.value) return
   closeMenu()
-  void router.push({
-    name: 'apps',
-    query: { app: 'kpanel', action: 'update' },
-  })
+  void router.push(kpanelUpdateSettingsPath)
 }
 
 async function refreshKPanelUpdate(): Promise<void> {

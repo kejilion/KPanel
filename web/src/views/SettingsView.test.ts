@@ -26,8 +26,10 @@ const mocks = vi.hoisted(() => {
     disableTOTP: vi.fn(),
     resetApiSecurityState: vi.fn(),
     replace: vi.fn(),
+    route: { query: {} as Record<string, unknown> },
     toastSuccess: vi.fn(),
     toastDanger: vi.fn(),
+    toastShow: vi.fn(),
     themeSetTheme: vi.fn(),
     themeSetColors: vi.fn(),
     themeResetColors: vi.fn(),
@@ -52,6 +54,7 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('vue-router', () => ({
+  useRoute: () => mocks.route,
   useRouter: () => ({ replace: mocks.replace }),
 }))
 
@@ -116,6 +119,7 @@ vi.mock('@/stores/toast', () => ({
   useToast: () => ({
     success: mocks.toastSuccess,
     danger: mocks.toastDanger,
+    show: mocks.toastShow,
   }),
 }))
 
@@ -168,9 +172,12 @@ interface SettingsBindings {
 		candidateVersion?: string
 	} | undefined>
 	saveAutomaticUpdate: (enabled: boolean) => Promise<void>
-	checkAutomaticUpdate: () => Promise<void>
+	checkAutomaticUpdate: () => Promise<unknown>
 	togglePreviewProgram: (event: Event) => Promise<void>
 	installAutomaticUpdate: () => Promise<void>
+	manuallyUpdateKPanel: () => Promise<void>
+	automaticUpdateSection: Ref<HTMLElement | undefined>
+	focusAutomaticUpdateSection: () => Promise<void>
 }
 
 function setupView(): SettingsBindings {
@@ -194,6 +201,7 @@ function themeColorInput(value: string, type = 'text'): Event {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('confirm', vi.fn(() => true))
+  mocks.route.query = {}
   mocks.replace.mockResolvedValue(undefined)
   mocks.changePassword.mockResolvedValue(undefined)
   mocks.changeUsername.mockResolvedValue(undefined)
@@ -681,6 +689,67 @@ describe('SettingsView automatic updates', () => {
     expect(mocks.updateAutomaticUpdate).not.toHaveBeenCalled()
   })
 
+  it('checks the selected channel and installs an available release from the manual action', async () => {
+    const view = setupView()
+    view.automaticUpdate.value = {
+      enabled: false,
+      state: 'disabled',
+      channel: 'stable',
+      canInstall: false,
+      observationHours: 24,
+      resourceVersion: 'sha256:auto-initial',
+    }
+
+    await view.manuallyUpdateKPanel()
+
+    expect(mocks.checkAutomaticUpdate).toHaveBeenCalledOnce()
+    expect(mocks.installAutomaticUpdate).toHaveBeenCalledWith({
+      expectedResourceVersion: 'sha256:auto-checked',
+    })
+    expect(mocks.updateAutomaticUpdate).not.toHaveBeenCalled()
+    expect(view.automaticUpdate.value).toMatchObject({
+      state: 'queued',
+      installRequested: true,
+    })
+  })
+
+  it('keeps the manual action non-destructive when the selected channel is current', async () => {
+    mocks.checkAutomaticUpdate.mockResolvedValueOnce({
+      available: true, enabled: false, state: 'idle', channel: 'stable',
+      canInstall: false, installRequested: false, schedule: 'daily-04:00-local',
+      observationHours: 24, currentVersion: '1.18.0', resourceVersion: 'sha256:auto-current',
+    })
+    const view = setupView()
+    view.automaticUpdate.value = {
+      enabled: false,
+      state: 'disabled',
+      channel: 'stable',
+      canInstall: false,
+      observationHours: 24,
+      resourceVersion: 'sha256:auto-initial',
+    }
+
+    await view.manuallyUpdateKPanel()
+
+    expect(mocks.installAutomaticUpdate).not.toHaveBeenCalled()
+    expect(mocks.toastShow).toHaveBeenCalledWith('当前没有可手动安装的更新', {
+      message: '稳定版已是最新版本。',
+    })
+  })
+
+  it('focuses the version update card for the shared settings route intent', async () => {
+    mocks.route.query = { section: 'version-updates' }
+    const view = setupView()
+    const scrollIntoView = vi.fn()
+    const focus = vi.fn()
+    view.automaticUpdateSection.value = { scrollIntoView, focus } as unknown as HTMLElement
+
+    await view.focusAutomaticUpdateSection()
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+  })
+
   it('documents opt-in, observation, host timer, backup, and rollback in the visible settings surface', () => {
     expect(settingsSource).toContain('加入预览版计划')
     expect(settingsSource).toContain('不会因为勾选而自动安装')
@@ -693,6 +762,8 @@ describe('SettingsView automatic updates', () => {
     expect(settingsSource).toContain('失败时自动恢复原版本和数据')
     expect(settingsSource).toContain('data-testid="preview-program-toggle"')
     expect(settingsSource).toContain('data-testid="automatic-install-toggle"')
-    expect(settingsSource).toContain('data-testid="install-release-update"')
+    expect(settingsSource).toContain('id="version-updates"')
+    expect(settingsSource).toContain('data-testid="manual-release-update"')
+    expect(settingsSource).toContain('前往应用市场手动更新')
   })
 })
