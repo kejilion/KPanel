@@ -8,8 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -351,35 +349,7 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 }
 
 func parseLightToken(token string, now time.Time) (lightTokenWire, []byte, error) {
-	token = strings.TrimSpace(token)
-	if !strings.HasPrefix(token, lightTokenPrefix) || len(token) > 2048 {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	content, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, lightTokenPrefix))
-	if err != nil || len(content) > 1536 {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	var wire lightTokenWire
-	decoder := json.NewDecoder(strings.NewReader(string(content)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&wire); err != nil {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	secret, err := base64.RawURLEncoding.DecodeString(wire.Secret)
-	validatedOrigin, originErr := validateLightOrigin(wire.Origin)
-	if err != nil || originErr != nil || validatedOrigin != wire.Origin || len(secret) != 32 || wire.Version != 1 ||
-		!validID(wire.ID) {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	expiresAt := time.Unix(wire.ExpiresAt, 0).UTC()
-	if !expiresAt.After(now.UTC()) || expiresAt.After(now.UTC().Add(maxLightTokenAge)) {
-		return lightTokenWire{}, nil, ErrPairingCode
-	}
-	return wire, secret, nil
+	return parseLightTokenForPrefix(token, lightTokenPrefix, maxLightTokenAge, now)
 }
 
 func validateLightOrigin(value string) (string, error) {

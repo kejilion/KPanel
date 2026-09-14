@@ -301,6 +301,14 @@ func (s *lightStore) EnrollHost(
 }
 
 func (s *lightStore) AddHost(record lightHostRecord, secret []byte) error {
+	return s.AddHostWithTerminal(record, secret, nil)
+}
+
+func (s *lightStore) AddHostWithTerminal(
+	record lightHostRecord,
+	secret []byte,
+	terminalPublicKey []byte,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.state.Hosts) >= MaxHosts {
@@ -308,6 +316,7 @@ func (s *lightStore) AddHost(record lightHostRecord, secret []byte) error {
 	}
 	validatedName, nameErr := validateRequiredName(record.Name)
 	if !validID(record.ID) || nameErr != nil || validatedName != record.Name || len(secret) != 32 ||
+		(len(terminalPublicKey) != 0 && len(terminalPublicKey) != 32) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() {
 		return errors.New("light node host is invalid")
 	}
@@ -320,12 +329,30 @@ func (s *lightStore) AddHost(record lightHostRecord, secret []byte) error {
 	if err := atomicWriteFileV2(filepath.Join(s.secretDir, name), []byte(base64.RawURLEncoding.EncodeToString(secret)), 0o600, false, s.ops); err != nil {
 		return fmt.Errorf("write light node credential: %w", err)
 	}
+	terminalPath := terminalKeyPath(s.terminalDir, record.ID)
+	terminalWritten := false
+	if len(terminalPublicKey) > 0 {
+		if err := atomicWriteFileV2(
+			terminalPath,
+			[]byte(base64.RawURLEncoding.EncodeToString(terminalPublicKey)),
+			0o600,
+			false,
+			s.ops,
+		); err != nil {
+			_ = os.Remove(filepath.Join(s.secretDir, name))
+			return fmt.Errorf("write light node terminal key: %w", err)
+		}
+		terminalWritten = true
+	}
 	record.CredentialFile = name
 	record.ResourceVersion = lightResourceVersion(record)
 	s.state.Hosts = append(s.state.Hosts, record)
 	if err := s.persistLocked(); err != nil {
 		s.state.Hosts = s.state.Hosts[:len(s.state.Hosts)-1]
 		_ = os.Remove(filepath.Join(s.secretDir, name))
+		if terminalWritten {
+			_ = os.Remove(terminalPath)
+		}
 		return err
 	}
 	return nil

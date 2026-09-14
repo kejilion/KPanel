@@ -16,3 +16,7 @@ func preserveNodeConfigAccess(file *os.File, previous os.FileInfo) error {
 func rootOwned(os.FileInfo) bool {
 	return false
 }
+
+func processOwned(os.FileInfo) bool {
+	return true
+}

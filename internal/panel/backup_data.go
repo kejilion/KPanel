@@ -30,7 +30,7 @@ type panelBackupData struct {
 	AI       *ai.AccessBackup  `json:"ai,omitempty"`
 }
 
-var panelBackupRoots = []string{"cluster-state.json", "cluster-state-v2.json", "cluster-light-state.json", "cluster-file-peers-v2.json", "cluster-secrets", "cluster-secrets-v2", "cluster-light-secrets", "cluster-light-terminal-keys", "desktop-workspace", "notifications"}
+var panelBackupRoots = []string{"cluster-state.json", "cluster-state-v2.json", "cluster-light-state.json", "cluster-light-batch-state.json", "cluster-file-peers-v2.json", "cluster-secrets", "cluster-secrets-v2", "cluster-light-secrets", "cluster-light-terminal-keys", "desktop-workspace", "notifications"}
 var backupLeaf = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,160}$`)
 
 func panelBackupPath(name string) bool {
@@ -44,7 +44,7 @@ func panelBackupPath(name string) bool {
 		}
 	}
 	if len(parts) == 1 {
-		return name == "cluster-state.json" || name == "cluster-state-v2.json" || name == "cluster-light-state.json" || name == "cluster-file-peers-v2.json"
+		return name == "cluster-state.json" || name == "cluster-state-v2.json" || name == "cluster-light-state.json" || name == "cluster-light-batch-state.json" || name == "cluster-file-peers-v2.json"
 	}
 	switch parts[0] {
 	case "cluster-secrets", "cluster-secrets-v2", "cluster-light-secrets", "cluster-light-terminal-keys":

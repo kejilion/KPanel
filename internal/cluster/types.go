@@ -42,6 +42,7 @@ var (
 	ErrHostLimit              = errors.New("cluster host limit reached")
 	ErrInvalidOrigin          = errors.New("invalid cluster origin")
 	ErrLightHTTPSOrigin       = errors.New("light node requires an HTTPS origin")
+	ErrLightBatchInvalid      = errors.New("light node batch enrollment settings are invalid")
 	ErrPrivateOrigin          = errors.New("cluster origin is outside the configured private network allowlist")
 	ErrPairingCode            = errors.New("pairing code is invalid or expired")
 	ErrAuthentication         = errors.New("federation authentication failed")
@@ -124,11 +125,34 @@ type LightEnrollment struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+type CreateLightBatchEnrollmentInput struct {
+	NamePrefix       string `json:"namePrefix,omitempty"`
+	MaxUses          int    `json:"maxUses,omitempty"`
+	ExpiresInSeconds int    `json:"expiresInSeconds,omitempty"`
+}
+
+type LightBatchEnrollment struct {
+	ID             string    `json:"id"`
+	Command        string    `json:"command,omitempty"`
+	NamePrefix     string    `json:"namePrefix,omitempty"`
+	MaxUses        int       `json:"maxUses"`
+	UsedCount      int       `json:"usedCount"`
+	RemainingCount int       `json:"remainingCount"`
+	CreatedAt      time.Time `json:"createdAt"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+}
+
+type LightBatchEnrollmentList struct {
+	Items []LightBatchEnrollment `json:"items"`
+	Total int                    `json:"total"`
+}
+
 type LightEnrollRequest struct {
 	Token             string `json:"token"`
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`
 	TerminalPublicKey string `json:"terminalPublicKey,omitempty"`
+	AttemptID         string `json:"attemptId,omitempty"`
 }
 
 type LightEnrollResponse struct {

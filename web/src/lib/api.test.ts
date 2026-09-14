@@ -1980,4 +1980,35 @@ describe('API client', () => {
       total: 0,
     })
   })
+
+  it('lists, creates, and revokes lightweight-node batch authorizations', async () => {
+    const enrollment = {
+      id: 'batch-id', namePrefix: 'edge', maxUses: 100, usedCount: 0, remainingCount: 100,
+      createdAt: '2026-09-14T12:00:00Z', expiresAt: '2026-09-15T12:00:00Z',
+      command: "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.token'",
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [], total: 0 }))
+      .mockResolvedValueOnce(jsonResponse(enrollment))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.cluster.lightBatchEnrollments()
+    await api.cluster.createLightBatchEnrollment({
+      namePrefix: 'edge', maxUses: 100, expiresInSeconds: 86_400,
+    })
+    await api.cluster.revokeLightBatchEnrollment('batch/id')
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/cluster/light-batch-enrollments',
+      '/api/v1/cluster/light-batch-enrollments',
+      '/api/v1/cluster/light-batch-enrollments/batch%2Fid',
+    ])
+    expect(fetchMock.mock.calls.map(([, init]) => (init as RequestInit).method)).toEqual([
+      'GET', 'POST', 'DELETE',
+    ])
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
+      namePrefix: 'edge', maxUses: 100, expiresInSeconds: 86_400,
+    })
+  })
 })

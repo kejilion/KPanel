@@ -32,13 +32,16 @@ import (
 )
 
 const (
-	lightTokenPrefix  = "kpl1."
-	lightEnrollPath   = "/api/v3/federation/light/enroll"
-	lightReportPath   = "/api/v3/federation/light/report"
-	lightProtocol     = "light-v1"
-	defaultConfigPath = "/etc/kejilion-node/node.json"
-	maxResponseBytes  = int64(64 << 10)
-	maxTokenAge       = time.Hour
+	lightTokenPrefix      = "kpl1."
+	lightBatchTokenPrefix = "kpb1."
+	lightEnrollPath       = "/api/v3/federation/light/enroll"
+	lightBatchEnrollPath  = cluster.LightBatchEnrollPath
+	lightReportPath       = "/api/v3/federation/light/report"
+	lightProtocol         = "light-v1"
+	defaultConfigPath     = "/etc/kejilion-node/node.json"
+	maxResponseBytes      = int64(64 << 10)
+	maxTokenAge           = time.Hour
+	maxBatchTokenAge      = 7 * 24 * time.Hour
 )
 
 type nodeConfig struct {
@@ -65,6 +68,13 @@ type enrollRequest struct {
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`
 	TerminalPublicKey string `json:"terminalPublicKey,omitempty"`
+	AttemptID         string `json:"attemptId,omitempty"`
+}
+
+type enrollmentTarget struct {
+	Origin string
+	Path   string
+	Batch  bool
 }
 
 type enrollResponse struct {
@@ -130,13 +140,14 @@ func runEnroll(arguments []string) error {
 	name := flags.String("name", "", "optional display name")
 	configPath := flags.String("config", defaultConfigPath, "configuration path")
 	terminalConfigPath := flags.String("terminal-config", defaultTerminalConfigPath, "root-only terminal configuration path")
+	attemptPath := flags.String("attempt-file", "", "root-only resumable batch enrollment state")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected enrollment argument")
 	}
-	origin, err := originFromToken(*token)
+	target, err := enrollmentTargetFromToken(*token)
 	if err != nil {
 		return err
 	}
@@ -144,19 +155,43 @@ func runEnroll(arguments []string) error {
 	if err != nil {
 		return fmt.Errorf("generate terminal identity: %w", err)
 	}
+	batchAttemptFile := strings.TrimSpace(*attemptPath)
+	batchAttempt := batchEnrollmentAttempt{}
+	if target.Batch {
+		if batchAttemptFile == "" {
+			batchAttemptFile = filepath.Join(filepath.Dir(*configPath), "batch-enrollment-attempt.json")
+		}
+		attempt, privateKey, publicKey, err := prepareBatchEnrollmentAttempt(
+			batchAttemptFile,
+			strings.TrimSpace(*token),
+			strings.TrimSpace(*name),
+			terminalKey.Private,
+			terminalKey.Public,
+		)
+		if err != nil {
+			return err
+		}
+		terminalKey.Private = privateKey
+		terminalKey.Public = publicKey
+		defer clear(privateKey)
+		batchAttempt = attempt
+	}
 	request := enrollRequest{
 		Token: strings.TrimSpace(*token), Name: strings.TrimSpace(*name), NodeVersion: version.Version,
 		TerminalPublicKey: base64.RawURLEncoding.EncodeToString(terminalKey.Public),
 	}
+	if target.Batch {
+		request.AttemptID = batchAttempt.AttemptID
+	}
 	var response enrollResponse
-	status, responseHeaders, err := postJSONWithStatusAndHeaders(context.Background(), origin+lightEnrollPath, request, nil, &response)
-	if err != nil && status == http.StatusBadRequest {
+	status, responseHeaders, err := postJSONWithStatusAndHeaders(context.Background(), target.Origin+target.Path, request, nil, &response)
+	if err != nil && !target.Batch && status == http.StatusBadRequest {
 		// A pre-v2 center rejects the optional key field because its decoder is
 		// strict. Retry the same one-time token without terminal capability so
 		// the node remains telemetry-compatible and never guesses a protocol.
 		request.TerminalPublicKey = ""
 		response = enrollResponse{}
-		status, responseHeaders, err = postJSONWithStatusAndHeaders(context.Background(), origin+lightEnrollPath, request, nil, &response)
+		status, responseHeaders, err = postJSONWithStatusAndHeaders(context.Background(), target.Origin+target.Path, request, nil, &response)
 	}
 	if err != nil {
 		return fmt.Errorf("enroll lightweight node: %w", err)
@@ -185,7 +220,7 @@ func runEnroll(arguments []string) error {
 		}
 	}
 	config := nodeConfig{
-		SchemaVersion: 1, Origin: origin, NodeID: response.NodeID,
+		SchemaVersion: 1, Origin: target.Origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
 		SSHLogin: hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
 		Health:   hasResponseCapability(responseHeaders, cluster.LightHealthCapability),
@@ -208,6 +243,11 @@ func runEnroll(arguments []string) error {
 		}
 	} else if err := removeTerminalConfig(*terminalConfigPath); err != nil {
 		return err
+	}
+	if target.Batch {
+		if err := removeBatchEnrollmentAttempt(batchAttemptFile); err != nil {
+			return fmt.Errorf("remove completed batch enrollment state: %w", err)
+		}
 	}
 	fmt.Printf("KPanel lightweight node enrolled: %s\n", response.NodeID)
 	return nil
@@ -392,34 +432,54 @@ func elapsedMilliseconds(duration time.Duration) int64 {
 }
 
 func originFromToken(token string) (string, error) {
+	target, err := enrollmentTargetFromToken(token)
+	return target.Origin, err
+}
+
+func enrollmentTargetFromToken(token string) (enrollmentTarget, error) {
 	token = strings.TrimSpace(token)
-	if !strings.HasPrefix(token, lightTokenPrefix) || len(token) > 2048 {
-		return "", errors.New("enrollment token is invalid")
+	prefix := ""
+	maximumAge := time.Duration(0)
+	target := enrollmentTarget{}
+	switch {
+	case strings.HasPrefix(token, lightTokenPrefix):
+		prefix, maximumAge = lightTokenPrefix, maxTokenAge
+		target.Path = lightEnrollPath
+	case strings.HasPrefix(token, lightBatchTokenPrefix):
+		prefix, maximumAge = lightBatchTokenPrefix, maxBatchTokenAge
+		target.Path = lightBatchEnrollPath
+		target.Batch = true
+	default:
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
 	}
-	content, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, lightTokenPrefix))
+	if len(token) > 2048 {
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
+	}
+	content, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, prefix))
 	if err != nil || len(content) > 1536 {
-		return "", errors.New("enrollment token is invalid")
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
 	}
 	var wire tokenWire
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&wire); err != nil {
-		return "", errors.New("enrollment token is invalid")
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return "", errors.New("enrollment token is invalid")
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
 	}
 	now := time.Now().UTC()
 	expiresAt := time.Unix(wire.ExpiresAt, 0).UTC()
-	if wire.Version != 1 || !validHexID(wire.ID) || !expiresAt.After(now) || expiresAt.After(now.Add(maxTokenAge)) {
-		return "", errors.New("enrollment token is invalid or expired")
+	if wire.Version != 1 || !validHexID(wire.ID) || !expiresAt.After(now) || expiresAt.After(now.Add(maximumAge)) {
+		return enrollmentTarget{}, errors.New("enrollment token is invalid or expired")
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(wire.Secret)
 	if err != nil || len(secret) != 32 {
-		return "", errors.New("enrollment token is invalid")
+		return enrollmentTarget{}, errors.New("enrollment token is invalid")
 	}
-	return validateHTTPSOrigin(wire.Origin)
+	target.Origin, err = validateHTTPSOrigin(wire.Origin)
+	return target, err
 }
 
 func readConfig(path string) (nodeConfig, []byte, error) {

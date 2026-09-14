@@ -321,6 +321,108 @@ func TestLightNodeEnrollmentUsesAuthenticatedIntentAndPublicOneUseExchange(t *te
 	}
 }
 
+func TestLightNodeBatchEnrollmentSupportsOneHundredIdempotentJoinsAndRevocation(t *testing.T) {
+	server, tokenPath := newTestServerWithPublicURL(t, "https://panel.test")
+	sessionCookie, csrfCookie := bootstrapCookiesForOrigin(t, server, tokenPath, "https://panel.test")
+	createBody, err := json.Marshal(cluster.CreateLightBatchEnrollmentInput{
+		NamePrefix: "edge", MaxUses: 100, ExpiresInSeconds: 86400,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := authenticatedRequest(
+		server, http.MethodPost, "/api/v1/cluster/light-batch-enrollments", createBody,
+		sessionCookie, csrfCookie, map[string]string{
+			"Content-Type": "application/json", "Origin": "https://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		},
+	)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("batch enrollment status = %d; body=%s", created.Code, created.Body.String())
+	}
+	var enrollment cluster.LightBatchEnrollment
+	if err := json.Unmarshal(created.Body.Bytes(), &enrollment); err != nil {
+		t.Fatal(err)
+	}
+	if enrollment.MaxUses != 100 || enrollment.RemainingCount != 100 || !strings.Contains(enrollment.Command, "kpb1.") {
+		t.Fatalf("unexpected batch enrollment: %#v", enrollment)
+	}
+	token := strings.Trim(strings.Fields(enrollment.Command)[len(strings.Fields(enrollment.Command))-1], "'")
+	enrollBody, err := json.Marshal(cluster.LightEnrollRequest{
+		Token: token, Name: "worker", NodeVersion: "1.18.0", AttemptID: strings.Repeat("a", 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enroll := func(body []byte) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "https://panel.test"+cluster.LightBatchEnrollPath, strings.NewReader(string(body)))
+		request.Host = "panel.test"
+		request.RemoteAddr = "198.51.100.10:12345"
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		return response
+	}
+	first := enroll(enrollBody)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first batch node status = %d; body=%s", first.Code, first.Body.String())
+	}
+	var firstNode cluster.LightEnrollResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstNode); err != nil {
+		t.Fatal(err)
+	}
+	retry := enroll(enrollBody)
+	if retry.Code != http.StatusCreated {
+		t.Fatalf("batch retry status = %d; body=%s", retry.Code, retry.Body.String())
+	}
+	var retryNode cluster.LightEnrollResponse
+	if err := json.Unmarshal(retry.Body.Bytes(), &retryNode); err != nil || retryNode != firstNode {
+		t.Fatalf("batch retry changed node identity: %#v, %v", retryNode, err)
+	}
+
+	listed := authenticatedRequest(
+		server, http.MethodGet, "/api/v1/cluster/light-batch-enrollments", nil,
+		sessionCookie, csrfCookie, nil,
+	)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("batch list status = %d; body=%s", listed.Code, listed.Body.String())
+	}
+	var list cluster.LightBatchEnrollmentList
+	if err := json.Unmarshal(listed.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if list.Total != 1 || list.Items[0].UsedCount != 1 || list.Items[0].RemainingCount != 99 || list.Items[0].Command != "" {
+		t.Fatalf("unexpected batch list: %#v", list)
+	}
+
+	revoked := authenticatedRequest(
+		server, http.MethodDelete, "/api/v1/cluster/light-batch-enrollments/"+enrollment.ID, nil,
+		sessionCookie, csrfCookie, map[string]string{
+			"Origin": "https://panel.test", "X-CSRF-Token": csrfCookie.Value,
+		},
+	)
+	if revoked.Code != http.StatusOK {
+		t.Fatalf("batch revoke status = %d; body=%s", revoked.Code, revoked.Body.String())
+	}
+	newInput := cluster.LightEnrollRequest{
+		Token: token, Name: "worker-2", NodeVersion: "1.18.0", AttemptID: strings.Repeat("b", 32),
+	}
+	newBody, _ := json.Marshal(newInput)
+	if response := enroll(newBody); response.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked batch accepted a new node: %d %s", response.Code, response.Body.String())
+	}
+
+	events, _ := server.store.ListAudit(200, "")
+	serialized, err := json.Marshal(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{token, enrollment.Command, firstNode.ReportingKey} {
+		if strings.Contains(string(serialized), secret) {
+			t.Fatalf("batch enrollment secret leaked into audit: %s", serialized)
+		}
+	}
+}
+
 func TestLightNodeEnrollmentCarriesOptionalDisplayName(t *testing.T) {
 	server, tokenPath := newTestServerWithPublicURL(t, "https://panel.test")
 	sessionCookie, csrfCookie := bootstrapCookiesForOrigin(t, server, tokenPath, "https://panel.test")

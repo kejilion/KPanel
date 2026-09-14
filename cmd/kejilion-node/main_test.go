@@ -30,6 +30,19 @@ func lightTokenForTest(t *testing.T, origin string, expiresAt time.Time) string 
 	return lightTokenPrefix + base64.RawURLEncoding.EncodeToString(content)
 }
 
+func lightBatchTokenForNodeTest(t *testing.T, origin string, expiresAt time.Time) string {
+	t.Helper()
+	wire := tokenWire{
+		Version: 1, Origin: origin, ID: strings.Repeat("b", 32),
+		Secret: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), ExpiresAt: expiresAt.Unix(),
+	}
+	content, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lightBatchTokenPrefix + base64.RawURLEncoding.EncodeToString(content)
+}
+
 func TestOriginFromTokenRequiresStrictHTTPSOriginAndFutureExpiry(t *testing.T) {
 	valid := lightTokenForTest(t, "https://panel.example:8443", time.Now().UTC().Add(time.Minute))
 	if origin, err := originFromToken(valid); err != nil || origin != "https://panel.example:8443" {
@@ -50,6 +63,67 @@ func TestOriginFromTokenRequiresStrictHTTPSOriginAndFutureExpiry(t *testing.T) {
 		if _, err := originFromToken(token); err == nil {
 			t.Fatalf("originFromToken(%q) accepted an unsafe token", token)
 		}
+	}
+}
+
+func TestBatchEnrollmentTokenUsesDedicatedEndpointAndSevenDayBound(t *testing.T) {
+	token := lightBatchTokenForNodeTest(t, "https://panel.example", time.Now().UTC().Add(6*24*time.Hour))
+	target, err := enrollmentTargetFromToken(token)
+	if err != nil || target.Origin != "https://panel.example" || target.Path != lightBatchEnrollPath || !target.Batch {
+		t.Fatalf("enrollmentTargetFromToken(batch) = %#v, %v", target, err)
+	}
+	tooLong := lightBatchTokenForNodeTest(t, "https://panel.example", time.Now().UTC().Add(7*24*time.Hour+time.Minute))
+	if _, err := enrollmentTargetFromToken(tooLong); err == nil {
+		t.Fatal("batch token beyond seven days was accepted")
+	}
+	single := lightTokenForTest(t, "https://panel.example", time.Now().UTC().Add(time.Minute))
+	target, err = enrollmentTargetFromToken(single)
+	if err != nil || target.Path != lightEnrollPath || target.Batch {
+		t.Fatalf("enrollmentTargetFromToken(single) = %#v, %v", target, err)
+	}
+}
+
+func TestBatchEnrollmentAttemptPersistsIdentityWithoutRawToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "batch-attempt.json")
+	token := lightBatchTokenForNodeTest(t, "https://panel.example", time.Now().UTC().Add(time.Hour))
+	key, err := cluster.GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, firstPrivate, firstPublic, err := prepareBatchEnrollmentAttempt(path, token, "edge-1", key.Private, key.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validHexID(first.AttemptID) || len(firstPrivate) != 32 || len(firstPublic) != 32 {
+		t.Fatalf("invalid persisted batch attempt: %#v", first)
+	}
+	otherKey, err := cluster.GenerateFederationV2Keypair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, retryPrivate, retryPublic, err := prepareBatchEnrollmentAttempt(path, token, "edge-1", otherKey.Private, otherKey.Public)
+	if err != nil || retry != first || !bytes.Equal(retryPrivate, firstPrivate) || !bytes.Equal(retryPublic, firstPublic) {
+		t.Fatalf("batch retry changed identity: %#v, %v", retry, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(content, []byte(token)) {
+		t.Fatal("raw batch token was persisted")
+	}
+	if _, _, _, err := prepareBatchEnrollmentAttempt(path, token, "renamed", key.Private, key.Public); err == nil {
+		t.Fatal("batch retry accepted a changed node name")
+	}
+	unsafePath := filepath.Join(t.TempDir(), "unsafe-batch-attempt.json")
+	if _, _, _, err := prepareBatchEnrollmentAttempt(unsafePath, token, "edge\u0085node", key.Private, key.Public); err == nil {
+		t.Fatal("batch enrollment accepted a Unicode control character in the node name")
+	}
+	if err := removeBatchEnrollmentAttempt(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("completed batch attempt was not removed: %v", err)
 	}
 }
 

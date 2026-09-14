@@ -365,8 +365,6 @@ export const VISUAL_CONTRACT_BASELINE: readonly VisualContractBaselineEntry[] = 
   legacy("src/views/ClusterView.vue", ".cluster-access small", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/ClusterView.vue", ".cluster-access__controllers code", "font-size", "10px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/ClusterView.vue", ".cluster-access__token pre", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
-  legacy("src/views/ClusterView.vue", ".cluster-light-enrollment small", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
-  legacy("src/views/ClusterView.vue", ".cluster-light-enrollment__command pre", "font-size", "10px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/ClusterView.vue", ".cluster-manage__identity code", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/ClusterView.vue", ".cluster-manage__identity span", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),
   legacy("src/views/ClusterView.vue", ".cluster-share__link pre", "font-size", "11px", "历史紧凑文字，按受影响页面迁移到 12px 以上"),

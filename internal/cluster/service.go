@@ -104,6 +104,7 @@ type Service struct {
 	panelVersion         string
 	publicURL            string
 	light                *lightStore
+	lightBatches         *lightBatchStore
 	lightHistory         *lightFileRelay
 	historyQueries       chan struct{}
 	historyStreams       *fileStreamLimiter
@@ -140,6 +141,8 @@ type Service struct {
 	terminalSources       *fixedWindowLimiter
 	terminalRequests      *fixedWindowLimiter
 	lightEnrolls          *fixedWindowLimiter
+	lightBatchSources     *fixedWindowLimiter
+	lightBatchPolicies    *fixedWindowLimiter
 	lightSources          *fixedWindowLimiter
 	lightReports          *fixedWindowLimiter
 	lightTerminalRequests *fixedWindowLimiter
@@ -227,6 +230,10 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	lightBatches, err := openLightBatchStore(filepath.Join(config.DataDir, lightBatchStateFileName))
+	if err != nil {
+		return nil, err
+	}
 	if err := storeV2.EnsureNodeID(store.NodeID()); err != nil {
 		return nil, err
 	}
@@ -268,7 +275,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		store: store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
-		light: light, lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
+		light: light, lightBatches: lightBatches,
+		lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
 		panelFileRelay:       newPanelFileRelay(),
 		lightHistory:         newLightHistoryRelay(config.Now),
 		historyQueries:       make(chan struct{}, 2),
@@ -293,6 +301,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		terminalSources:       newFixedWindowLimiter(1200, time.Minute, 2048),
 		terminalRequests:      newFixedWindowLimiter(600, time.Minute, 512),
 		lightEnrolls:          newFixedWindowLimiter(10, time.Minute, 2048),
+		lightBatchSources:     newFixedWindowLimiter(240, time.Minute, 2048),
+		lightBatchPolicies:    newFixedWindowLimiter(240, time.Minute, maxLightBatchPolicyRateSubjects),
 		lightSources:          newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:          newFixedWindowLimiter(180, time.Minute, MaxHosts),
 		lightTerminalRequests: newFixedWindowLimiter(300, time.Minute, MaxHosts),
@@ -1073,6 +1083,7 @@ func (s *Service) checkpoint() error {
 		s.store.Checkpoint(runtime),
 		s.storeV2.Checkpoint(runtime),
 		s.light.Checkpoint(s.now().UTC()),
+		s.lightBatches.Checkpoint(s.now().UTC()),
 	)
 	return errors.Join(checkpointErr, s.cleanupV2(s.now().UTC()))
 }

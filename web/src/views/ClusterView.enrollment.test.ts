@@ -3,7 +3,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClusterView from './ClusterView.vue'
 
-const mocks = vi.hoisted(() => ({ hosts: vi.fn(), createLightEnrollment: vi.fn(), add: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  hosts: vi.fn(),
+  createLightEnrollment: vi.fn(),
+  lightBatchEnrollments: vi.fn(),
+  createLightBatchEnrollment: vi.fn(),
+  revokeLightBatchEnrollment: vi.fn(),
+  add: vi.fn(),
+}))
 vi.mock('@/lib/api', () => ({
   ApiError: class extends Error {},
   api: { cluster: mocks },
@@ -53,6 +60,17 @@ beforeEach(() => {
   mocks.createLightEnrollment.mockResolvedValue({
     id: node.id, command: 'test enrollment command', expiresAt: '2026-09-12T10:00:05Z',
   })
+  mocks.lightBatchEnrollments.mockResolvedValue({ items: [], total: 0 })
+  mocks.createLightBatchEnrollment.mockResolvedValue({
+    id: 'batch-enrollment',
+    command: "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.batch-token'",
+    maxUses: 100,
+    usedCount: 0,
+    remainingCount: 100,
+    createdAt: '2026-09-12T10:00:00Z',
+    expiresAt: '2026-09-13T10:00:00Z',
+  })
+  mocks.revokeLightBatchEnrollment.mockResolvedValue({ deleted: true })
 })
 
 afterEach(() => {
@@ -60,6 +78,7 @@ afterEach(() => {
   wrapper = undefined
   document.body.innerHTML = ''
   localStorage.clear()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -135,5 +154,72 @@ describe('light node enrollment form', () => {
     expect(primary().textContent).toContain('等待节点执行')
     expect(primary().disabled).toBe(true)
     expect(credential().required).toBe(true)
+  })
+
+  it('keeps the single flow as default and turns copy into done for a 100-host batch', async () => {
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText: clipboardWrite } })
+    wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.cluster-hero__add').trigger('click')
+
+    expect(document.querySelector('#cluster-add-form')).not.toBeNull()
+    const batchTab = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent?.includes('批量接入'))!
+    batchTab.click()
+    await flushPromises()
+
+    expect(mocks.lightBatchEnrollments).toHaveBeenCalledTimes(1)
+    const maxUses = document.querySelector<HTMLInputElement>('[name="cluster-light-batch-max-uses"]')!
+    expect(maxUses.value).toBe('100')
+    const generate = document.querySelector<HTMLButtonElement>('button[form="cluster-batch-add-form"]')!
+    expect(generate.textContent).toContain('生成批量命令')
+    generate.click()
+    await flushPromises()
+
+    expect(mocks.createLightBatchEnrollment).toHaveBeenCalledWith({
+      namePrefix: undefined,
+      maxUses: 100,
+      expiresInSeconds: 86_400,
+    })
+    const copy = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('复制命令') && !button.closest('.cluster-light-enrollment'))!
+    copy.click()
+    await flushPromises()
+
+    expect(clipboardWrite).toHaveBeenCalledWith(
+      "bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.batch-token'",
+    )
+    const done = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('完成'))!
+    done.click()
+    await flushPromises()
+    expect(document.querySelector('#cluster-batch-add-form')).toBeNull()
+  })
+
+  it('revokes only the selected future enrollment authorization', async () => {
+    const enrollment = {
+      id: 'active-batch', namePrefix: 'edge', maxUses: 100, usedCount: 23, remainingCount: 77,
+      createdAt: '2026-09-12T09:00:00Z', expiresAt: '2026-09-13T09:00:00Z',
+    }
+    mocks.lightBatchEnrollments.mockResolvedValueOnce({ items: [enrollment], total: 1 })
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+    await wrapper.get('.cluster-hero__add').trigger('click')
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent?.includes('批量接入'))!.click()
+    await flushPromises()
+
+    const revoke = Array.from(document.querySelectorAll<HTMLButtonElement>('.cluster-light-batch__active button'))
+      .find((button) => button.textContent?.includes('撤销'))!
+    revoke.click()
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(mocks.revokeLightBatchEnrollment).toHaveBeenCalledWith(enrollment.id)
+    expect(document.querySelector('#cluster-batch-add-form')).not.toBeNull()
+    expect(document.querySelector('.cluster-light-batch__active')?.textContent).not.toContain('edge')
   })
 })

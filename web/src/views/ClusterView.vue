@@ -69,6 +69,7 @@ import type {
   ClusterController,
   ClusterHost,
   ClusterHostList,
+  ClusterLightBatchEnrollment,
   ClusterLightEnrollment,
   ClusterPairingCode,
   ClusterShareSettings,
@@ -95,6 +96,8 @@ const deleting = ref(false)
 const enablingMutualFiles = ref(false)
 const generatingCode = ref(false)
 const generatingLightEnrollment = ref(false)
+const generatingLightBatchEnrollment = ref(false)
+const lightBatchEnrollmentsLoading = ref(false)
 const controllersLoading = ref(false)
 const shareLoading = ref(false)
 const shareSaving = ref(false)
@@ -103,12 +106,20 @@ const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
 const lightEnrollmentConnected = ref(false)
 const lightEnrollmentState = ref<'waiting' | 'registered' | 'connected' | 'expired'>('waiting')
+type AddMode = 'single' | 'batch'
+const addMode = ref<AddMode>('single')
+const lightBatchEnrollment = ref<ClusterLightBatchEnrollment>()
+const lightBatchEnrollments = ref<ClusterLightBatchEnrollment[]>([])
+const lightBatchCommandCopied = ref(false)
+const lightBatchEnrollmentsError = ref('')
+const revokingLightBatchEnrollmentID = ref('')
 const controllers = ref<ClusterController[]>([])
 const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
 const editResourceVersion = ref('')
 const addAccessInput = ref<HTMLTextAreaElement>()
 const addForm = reactive({ name: '', accessCredential: '' })
+const lightBatchForm = reactive({ namePrefix: '', maxUses: 100, expiresInSeconds: 86_400 })
 const shareForm = reactive({ enabled: false, title: '', description: '' })
 const editName = ref('')
 const originError = ref('')
@@ -122,6 +133,7 @@ let loadInFlight = false
 let loadController: AbortController | undefined
 let pollTimer: number | undefined
 let lightEnrollmentPollTimer: number | undefined
+let lightBatchEnrollmentPollTimer: number | undefined
 const delayedRefreshes = new Set<number>()
 
 type OriginSecurityMode = 'empty' | 'tls' | 'e2e_http' | 'invalid'
@@ -148,6 +160,13 @@ const canSubmitAdd = computed(() => {
   if (!addForm.accessCredential.trim()) return lightEnrollmentConnected.value
   return Boolean(parsedAccessCredential.value) && originAssessment.value.mode !== 'invalid'
 })
+const remainingHostCapacity = computed(() => Math.max(
+  0,
+  (inventory.value?.maxHosts || 100) - (inventory.value?.remoteTotal || 0),
+))
+const addModalDescription = computed(() => addMode.value === 'batch'
+  ? phrase('生成一条可重复执行的轻量节点命令，在多台 Linux 主机上分别运行。')
+  : phrase('在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。'))
 const lightEnrollmentPrimaryLabel = computed(() => {
   if (addForm.accessCredential.trim() || !lightEnrollment.value) {
     return adding.value ? '正在安全配对…' : '添加主机'
@@ -223,6 +242,7 @@ function friendlyError(reason: unknown, fallback: string): string {
     cluster_pairing_failed: '授权码无效、已过期或已被使用，请在目标 KPanel 重新生成。',
     cluster_duplicate: '该 KPanel 已经添加到主机列表。',
     cluster_host_limit: '已达到 100 台主机上限。',
+    cluster_light_batch_invalid: '批量接入参数无效；数量为 1–100 台，有效期为 5 分钟至 7 天。',
     cluster_remote_tls_error: '目标 KPanel 的 HTTPS 证书校验失败。',
     cluster_remote_authentication_failed: '加密响应校验失败，连接已拒绝。',
     cluster_mutual_files_unsupported: '目标 KPanel 版本不支持双向文件互传，请先升级目标面板后重试。',
@@ -408,18 +428,127 @@ async function load(silent = false): Promise<void> {
 }
 
 function openAdd(): void {
+  addMode.value = 'single'
   addOpen.value = true
   void nextTick(() => addAccessInput.value?.focus())
 }
 
 function closeAdd(): void {
-  if (adding.value || generatingLightEnrollment.value) return
+  if (adding.value || generatingLightEnrollment.value || generatingLightBatchEnrollment.value || revokingLightBatchEnrollmentID.value) return
   addOpen.value = false
   addForm.name = ''
   addForm.accessCredential = ''
   originError.value = ''
   lightEnrollment.value = undefined
   resetLightEnrollmentTracking()
+  stopLightBatchEnrollmentWatch()
+  addMode.value = 'single'
+  lightBatchEnrollment.value = undefined
+  lightBatchCommandCopied.value = false
+  lightBatchEnrollmentsError.value = ''
+  lightBatchForm.namePrefix = ''
+  lightBatchForm.maxUses = 100
+  lightBatchForm.expiresInSeconds = 86_400
+}
+
+function stopLightBatchEnrollmentWatch(): void {
+  if (lightBatchEnrollmentPollTimer !== undefined && typeof window !== 'undefined') {
+    window.clearInterval(lightBatchEnrollmentPollTimer)
+  }
+  lightBatchEnrollmentPollTimer = undefined
+}
+
+function startLightBatchEnrollmentWatch(): void {
+  stopLightBatchEnrollmentWatch()
+  if (typeof window === 'undefined' || typeof window.setInterval !== 'function') return
+  lightBatchEnrollmentPollTimer = window.setInterval(() => {
+    if (!document.hidden && addOpen.value && addMode.value === 'batch') {
+      void loadLightBatchEnrollments(true)
+    }
+  }, 5_000)
+}
+
+async function setAddMode(mode: AddMode): Promise<void> {
+  addMode.value = mode
+  if (mode === 'single') {
+    stopLightBatchEnrollmentWatch()
+    if (lightEnrollment.value && !lightEnrollmentConnected.value && !lightEnrollmentExpired()) {
+      startLightEnrollmentWatch()
+    }
+    await nextTick()
+    addAccessInput.value?.focus()
+    return
+  }
+  stopLightEnrollmentWatch()
+  await loadLightBatchEnrollments()
+  if (addOpen.value && addMode.value === 'batch') startLightBatchEnrollmentWatch()
+}
+
+async function loadLightBatchEnrollments(silent = false): Promise<void> {
+  if (lightBatchEnrollmentsLoading.value) return
+  lightBatchEnrollmentsLoading.value = true
+  try {
+    lightBatchEnrollments.value = (await api.cluster.lightBatchEnrollments()).items
+    lightBatchEnrollmentsError.value = ''
+  } catch (reason) {
+    lightBatchEnrollmentsError.value = friendlyError(reason, '无法读取批量接入授权，请稍后重试。')
+    if (!silent) toast.danger('批量接入授权读取失败', lightBatchEnrollmentsError.value)
+  } finally {
+    lightBatchEnrollmentsLoading.value = false
+  }
+}
+
+async function createLightBatchEnrollment(): Promise<void> {
+  if (generatingLightBatchEnrollment.value) return
+  generatingLightBatchEnrollment.value = true
+  lightBatchEnrollment.value = undefined
+  lightBatchCommandCopied.value = false
+  try {
+    const enrollment = await api.cluster.createLightBatchEnrollment({
+      namePrefix: lightBatchForm.namePrefix.trim() || undefined,
+      maxUses: Number(lightBatchForm.maxUses),
+      expiresInSeconds: Number(lightBatchForm.expiresInSeconds),
+    })
+    lightBatchEnrollment.value = enrollment
+    lightBatchEnrollments.value = [
+      enrollment,
+      ...lightBatchEnrollments.value.filter((item) => item.id !== enrollment.id),
+    ]
+  } catch (reason) {
+    toast.danger(
+      '批量接入命令生成失败',
+      friendlyError(reason, '请检查接入数量、有效期和当前 KPanel 的 HTTPS 地址。'),
+    )
+  } finally {
+    generatingLightBatchEnrollment.value = false
+  }
+}
+
+async function copyLightBatchEnrollment(): Promise<void> {
+  if (!lightBatchEnrollment.value?.command) return
+  lightBatchCommandCopied.value = await copyToClipboard(
+    lightBatchEnrollment.value.command,
+    '批量接入命令已复制',
+    '请手动选择完整批量命令复制。',
+  )
+}
+
+async function revokeLightBatchEnrollment(enrollment: ClusterLightBatchEnrollment): Promise<void> {
+  if (revokingLightBatchEnrollmentID.value || !window.confirm(t('cluster.confirm.revokeLightBatchEnrollment'))) return
+  revokingLightBatchEnrollmentID.value = enrollment.id
+  try {
+    await api.cluster.revokeLightBatchEnrollment(enrollment.id)
+    lightBatchEnrollments.value = lightBatchEnrollments.value.filter((item) => item.id !== enrollment.id)
+    if (lightBatchEnrollment.value?.id === enrollment.id) {
+      lightBatchEnrollment.value = undefined
+      lightBatchCommandCopied.value = false
+    }
+    toast.success('批量接入授权已撤销')
+  } catch (reason) {
+    toast.danger('撤销失败', friendlyError(reason, '请稍后重试。'))
+  } finally {
+    revokingLightBatchEnrollmentID.value = ''
+  }
 }
 
 async function createLightEnrollment(): Promise<void> {
@@ -641,12 +770,13 @@ function previewShare(): void {
   if (shareURL.value) window.open(shareURL.value, '_blank', 'noopener,noreferrer')
 }
 
-async function copyToClipboard(value: string, success: string, fallback: string): Promise<void> {
+async function copyToClipboard(value: string, success: string, fallback: string): Promise<boolean> {
   if (await writeClipboardText(value)) {
     toast.success(success)
-    return
+    return true
   }
   toast.danger('复制失败', fallback)
+  return false
 }
 
 async function writeClipboardText(value: string): Promise<boolean> {
@@ -1004,6 +1134,7 @@ onBeforeUnmount(() => {
   loadController?.abort()
   if (pollTimer) window.clearInterval(pollTimer)
   stopLightEnrollmentWatch()
+  stopLightBatchEnrollmentWatch()
   delayedRefreshes.forEach((timer) => window.clearTimeout(timer))
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
@@ -1433,11 +1564,34 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="addOpen"
       :title="phrase('添加 KPanel 主机')"
-      :description="phrase('在目标 KPanel 的“集群 → 接入授权”复制接入凭据，然后在此整段粘贴。')"
-      size="small"
+      :description="addModalDescription"
+      :size="addMode === 'batch' ? 'medium' : 'small'"
       @close="closeAdd"
     >
+      <div class="cluster-add-mode" role="tablist" :aria-label="phrase('添加方式')">
+        <button
+          class="button"
+          :class="addMode === 'single' ? 'button--primary is-active' : 'button--secondary'"
+          type="button"
+          role="tab"
+          :aria-selected="addMode === 'single'"
+          @click="setAddMode('single')"
+        >
+          <Server :size="16" /> {{ phrase('单台添加') }}
+        </button>
+        <button
+          class="button"
+          :class="addMode === 'batch' ? 'button--primary is-active' : 'button--secondary'"
+          type="button"
+          role="tab"
+          :aria-selected="addMode === 'batch'"
+          @click="setAddMode('batch')"
+        >
+          <Copy :size="16" /> {{ phrase('批量接入') }}
+        </button>
+      </div>
       <form
+        v-if="addMode === 'single'"
         id="cluster-add-form"
         class="form-stack"
         autocomplete="off"
@@ -1542,9 +1696,119 @@ onBeforeUnmount(() => {
           </div>
         </section>
       </form>
+      <form
+        v-else
+        id="cluster-batch-add-form"
+        class="form-stack cluster-light-batch"
+        autocomplete="off"
+        data-form-type="other"
+        @submit.prevent="createLightBatchEnrollment"
+      >
+        <div class="cluster-light-batch__fields">
+          <label class="field">
+            {{ phrase('名称前缀（可选）') }}
+            <input
+              v-model="lightBatchForm.namePrefix"
+              name="cluster-light-batch-prefix"
+              maxlength="40"
+              :placeholder="phrase('例如：香港')"
+              autocomplete="off"
+            />
+            <small>{{ phrase('节点会显示为“前缀 · 主机名”，便于按机房或用途识别。') }}</small>
+          </label>
+          <label class="field">
+            {{ phrase('最多接入') }}
+            <input
+              v-model.number="lightBatchForm.maxUses"
+              name="cluster-light-batch-max-uses"
+              type="number"
+              min="1"
+              max="100"
+              required
+              inputmode="numeric"
+            />
+            <small>{{ phrase('单条授权最多 100 台；已有远程主机仍占用总名额。') }}</small>
+          </label>
+          <label class="field">
+            {{ phrase('有效期') }}
+            <select v-model.number="lightBatchForm.expiresInSeconds" name="cluster-light-batch-expiry">
+              <option :value="3600">{{ phrase('1 小时') }}</option>
+              <option :value="86400">{{ phrase('24 小时') }}</option>
+              <option :value="604800">{{ phrase('7 天') }}</option>
+            </select>
+            <small>{{ phrase(`当前主机列表还可接入 ${remainingHostCapacity} 台。`) }}</small>
+          </label>
+        </div>
+
+        <section v-if="lightBatchEnrollment" class="cluster-light-batch__command" aria-live="polite">
+          <div>
+            <ShieldCheck :size="18" />
+            <span>
+              <strong>{{ phrase('批量命令已生成') }}</strong>
+              <small>{{ phrase('命令只在本次生成后展示；复制后可在每台目标机以 root 执行。') }}</small>
+            </span>
+          </div>
+          <pre>{{ lightBatchEnrollment.command }}</pre>
+          <small>
+            {{ phrase(`最多 ${lightBatchEnrollment.maxUses} 台 · ${formatDateTime(lightBatchEnrollment.expiresAt)} 前有效。`) }}
+          </small>
+        </section>
+
+        <section class="cluster-light-batch__active">
+          <header>
+            <span>
+              <strong>{{ phrase('有效的批量授权') }}</strong>
+              <small>{{ phrase('撤销只阻止新节点接入，已经接入的节点不受影响。') }}</small>
+            </span>
+            <button
+              class="icon-button icon-button--small"
+              type="button"
+              :aria-label="phrase('刷新批量授权')"
+              :disabled="lightBatchEnrollmentsLoading"
+              @click="loadLightBatchEnrollments()"
+            >
+              <RefreshCw :size="15" :class="{ spin: lightBatchEnrollmentsLoading }" />
+            </button>
+          </header>
+          <p v-if="lightBatchEnrollmentsError" class="cluster-light-batch__error" role="alert">
+            {{ phrase(lightBatchEnrollmentsError) }}
+          </p>
+          <p v-else-if="lightBatchEnrollmentsLoading && !lightBatchEnrollments.length" class="cluster-light-batch__empty">
+            {{ phrase('正在读取批量授权…') }}
+          </p>
+          <p v-else-if="!lightBatchEnrollments.length" class="cluster-light-batch__empty">
+            {{ phrase('暂无有效的批量授权。') }}
+          </p>
+          <template v-else>
+            <article v-for="enrollment in lightBatchEnrollments" :key="enrollment.id">
+              <span>
+                <strong>{{ enrollment.namePrefix || phrase('无名称前缀') }}</strong>
+                <small>{{ phrase(`已使用 ${enrollment.usedCount} / ${enrollment.maxUses}`) }}</small>
+                <small>{{ phrase(`${formatDateTime(enrollment.expiresAt)} 到期`) }}</small>
+              </span>
+              <button
+                class="button button--ghost button--small"
+                type="button"
+                :disabled="Boolean(revokingLightBatchEnrollmentID)"
+                @click="revokeLightBatchEnrollment(enrollment)"
+              >
+                <LoaderCircle v-if="revokingLightBatchEnrollmentID === enrollment.id" class="spin" :size="14" />
+                <Trash2 v-else :size="14" />
+                {{ phrase('撤销') }}
+              </button>
+            </article>
+          </template>
+        </section>
+      </form>
       <template #footer>
-        <button class="button button--secondary" type="button" :disabled="adding" @click="closeAdd">{{ phrase('取消') }}</button>
         <button
+          class="button button--secondary"
+          type="button"
+          :disabled="adding || generatingLightBatchEnrollment || Boolean(revokingLightBatchEnrollmentID)"
+          @click="closeAdd"
+        >{{ phrase('取消') }}</button>
+        <button
+          v-if="addMode === 'single'"
           class="button button--primary"
           type="submit"
           form="cluster-add-form"
@@ -1553,6 +1817,27 @@ onBeforeUnmount(() => {
           <LoaderCircle v-if="adding" class="spin" :size="16" />
           <Plus v-else :size="16" />
           {{ phrase(lightEnrollmentPrimaryLabel) }}
+        </button>
+        <button
+          v-else-if="!lightBatchEnrollment"
+          class="button button--primary"
+          type="submit"
+          form="cluster-batch-add-form"
+          :disabled="generatingLightBatchEnrollment"
+        >
+          <LoaderCircle v-if="generatingLightBatchEnrollment" class="spin" :size="16" />
+          <Plus v-else :size="16" />
+          {{ phrase(generatingLightBatchEnrollment ? '正在生成…' : '生成批量命令') }}
+        </button>
+        <button
+          v-else
+          class="button button--primary"
+          type="button"
+          @click="lightBatchCommandCopied ? closeAdd() : copyLightBatchEnrollment()"
+        >
+          <Check v-if="lightBatchCommandCopied" :size="16" />
+          <Copy v-else :size="16" />
+          {{ phrase(lightBatchCommandCopied ? '完成' : '复制命令') }}
         </button>
       </template>
     </ModalDialog>
@@ -2122,6 +2407,122 @@ onBeforeUnmount(() => {
   color: var(--danger);
 }
 
+.cluster-add-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 4px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cluster-add-mode .button {
+  justify-content: center;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.cluster-light-batch {
+  display: grid;
+  gap: 16px;
+}
+
+.cluster-light-batch__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cluster-light-batch__fields .field:last-child {
+  grid-column: 1 / -1;
+}
+
+.cluster-light-batch__fields small,
+.cluster-light-batch__command small,
+.cluster-light-batch__active small,
+.cluster-light-batch__empty,
+.cluster-light-batch__error {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cluster-light-batch__command,
+.cluster-light-batch__active {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--border));
+  border-radius: var(--radius-md);
+}
+
+.cluster-light-batch__command {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--brand-soft) 42%, var(--surface));
+}
+
+.cluster-light-batch__command > div,
+.cluster-light-batch__active header,
+.cluster-light-batch__active article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cluster-light-batch__command > div {
+  justify-content: flex-start;
+}
+
+.cluster-light-batch__command span,
+.cluster-light-batch__active span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.cluster-light-batch__command strong,
+.cluster-light-batch__active strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.cluster-light-batch__command pre {
+  max-height: 150px;
+  margin: 0;
+  padding: 11px;
+  overflow: auto;
+  color: var(--brand);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: all;
+}
+
+.cluster-light-batch__active {
+  border-color: var(--border);
+}
+
+.cluster-light-batch__active article {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.cluster-light-batch__empty,
+.cluster-light-batch__error {
+  margin: 0;
+  color: var(--muted);
+}
+
+.cluster-light-batch__error {
+  color: var(--danger);
+}
+
 .cluster-light-enrollment {
   display: grid;
   gap: 10px;
@@ -2147,11 +2548,11 @@ onBeforeUnmount(() => {
 
 .cluster-light-enrollment strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .cluster-light-enrollment small {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -2175,7 +2576,7 @@ onBeforeUnmount(() => {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -2689,6 +3090,14 @@ onBeforeUnmount(() => {
   .cluster-card__footer > div {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cluster-light-batch__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cluster-light-batch__fields .field:last-child {
+    grid-column: auto;
   }
 
   .cluster-card__header {

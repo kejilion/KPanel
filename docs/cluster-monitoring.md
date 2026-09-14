@@ -102,10 +102,23 @@ Ed25519 签名。新前端调用 `/api/v1/cluster/pairing-codes/v2`，不会把�
 bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
 ```
 
+同一窗口可切换到“批量接入”，生成一条 `kpb1` 命令并分别在多台目标机执行。批量授权默认与
+最多均为 100 次，默认有效期 24 小时、可选 1 小时或 7 天；远程 KPanel 与轻量节点仍共享
+100 台总上限，已有远程主机会占用名额。可选名称前缀仅用于显示，节点仍沿用既有
+`light_node` 类型、遥测、终端、文件和自动更新能力，不增加第二套运行时。
+
+批量命令复制成功后，页面主按钮变为“完成”；关闭窗口不会撤销授权。有效授权会显示已用/总数
+和到期时间，可显式撤销未来接入，已接入节点不受影响。原始命令只在创建响应中返回，列表不会
+再次返回 secret。
+
 规则：
 
 - 命令中的 `kpl1` 授权包含中心端当前已验证的 HTTPS 根地址、随机 ID、32 字节随机 secret 和到期时间；
   5 分钟过期且只能成功消费一次，非法名称或无效请求不会提前烧毁有效授权；
+- `kpb1` 授权按策略保存 secret 哈希、有效期、最多使用次数和已分配身份。每台目标机先在
+  root-only 暂存文件中生成独立 `attemptId` 与 Noise 密钥；网络响应丢失时复用同一身份重试，
+  中心返回同一节点 ID 与 reporting key，不重复占用名额。成功落盘后删除暂存；换 token、换名称
+  或密钥不一致时拒绝续接；
 - 通过可信 `k fd` 反向代理访问时，中心直接使用当前浏览器正在访问的 HTTPS 根地址，不要求
   用户修改安装时保存的 IP + 端口地址，也不额外填写或回传凭据；
 - 目标机只要求 Linux、root、正在运行的 systemd 或 OpenRC、`curl`、`sha256sum`、`install`、
@@ -154,11 +167,14 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   目标机由用户自行卸载或重新接入。
 
 中心将轻量节点状态和凭据分别保存在 `cluster-light-state.json` 与
-`cluster-light-secrets/`。接入、改名和删除等配置变更立即使用 `0600`、同步和原子替换持久化；
+`cluster-light-secrets/`，批量授权策略独立保存在 `cluster-light-batch-state.json`。策略文件只含
+secret 哈希，不含原始命令，并限制为 2 MiB、最多 16 条有效策略、每条最多 100 个分配记录；
+三者均纳入 Panel 备份。接入、改名和删除等配置变更立即使用 `0600`、同步和原子替换持久化；
 30 秒遥测只更新内存快照，由既有 5 分钟 checkpoint 或正常退出合并落盘，避免高频磁盘写入和
 无意义的 `resourceVersion` 冲突。reporting key 不进入状态、审计、
-浏览器响应或日志。接入消费、凭据写入和主机落盘属于同一事务，落盘失败会恢复授权并清理
-孤立凭据。
+浏览器响应或日志。单次接入的消费、凭据写入和主机落盘属于同一事务，落盘失败会恢复授权并清理
+孤立凭据；批量接入先持久化 attempt 分配，再原子写入节点凭据与主机状态，中途失败时同一 attempt 可续接且
+不重复占用名额。
 
 ## 4. 网络与 SSRF
 
@@ -199,6 +215,9 @@ POST   /api/v1/cluster/hosts/{id}/refresh
 POST   /api/v1/cluster/pairing-codes
 POST   /api/v1/cluster/pairing-codes/v2
 POST   /api/v1/cluster/light-enrollments
+GET    /api/v1/cluster/light-batch-enrollments
+POST   /api/v1/cluster/light-batch-enrollments
+DELETE /api/v1/cluster/light-batch-enrollments/{id}
 GET    /api/v1/cluster/controllers
 DELETE /api/v1/cluster/controllers/{id}
 ```
@@ -223,6 +242,7 @@ POST   /api/v2/federation/files/open
 GET    /api/v2/federation/files/stream
 
 POST   /api/v3/federation/light/enroll
+POST   /api/v3/federation/light/batch-enroll
 POST   /api/v3/federation/light/report
 POST   /api/v2/federation/terminal/relay
 ```
@@ -314,15 +334,15 @@ SSRF 与 TLS 校验。对
 | 项目 | 决策 |
 | --- | --- |
 | 流量路径 | 浏览器 → 当前 Panel；当前 Panel → 远端 Panel HTTPS 或 Noise 加密 HTTP → 远端 Agent Unix Socket；轻量节点 telemetry、root terminal-broker 与 root file-broker → 中心 Panel（遥测 HMAC，终端/文件 v2 Noise），file-broker 在节点内直连 filemanager |
-| 不可信输入 | 主机名称、origin、授权码、DNS 结果、远端证书、远端 JSON、轻量节点时间戳/request ID/HMAC/遥测、终端 Noise 信封 |
+| 不可信输入 | 主机名称/批量名称前缀、origin、单次或批量授权码、batch attempt ID、DNS 结果、远端证书、远端 JSON、轻量节点时间戳/request ID/HMAC/遥测、终端 Noise 信封 |
 | 权限与可写范围 | Panel 只写自身 v1/v2/light 集群状态与凭据目录；不写宿主机业务目录 |
-| 最坏输入/输出 | 远端主机合计 100；v1 配对 16 KiB；v2 外层 96 KiB、解密负载 64 KiB；摘要 64 KiB；轻量请求有界；Store 4 MiB；控制端 256；各类有效授权码均有界 |
+| 最坏输入/输出 | 远端主机合计 100；单条批量授权最多 100 次、同时最多 16 条、批量状态 2 MiB；v1 配对 16 KiB；v2 外层 96 KiB、解密负载 64 KiB；摘要 64 KiB；轻量请求有界；Store 4 MiB；控制端 256；各类有效授权码均有界 |
 | 最大并发 | 普通摘要轮询 8、单主机连接 2；每个轻量节点最多 4 个终端会话；轻量文件流按大文件/短请求分别全局 16、每身份 4 个，升级连接单独限额；请求与 nonce/rate-limit 缓存均有界 |
-| 超时与重试 | 普通联邦连接 2 秒、响应头 3 秒、总计 6 秒；轻量终端长轮询最长 25 秒，节点请求总超时 40 秒；轻量文件命令接单最多 12 秒；轻量节点首次收到旧中心 404/405/426 时从 1 秒指数退避至 5 分钟，其他文件连接失败按 1/2/4/5 秒退避；Relay 丢失确认时可重发同一命令和完全相同的数据批次，浏览器不重复请求，写入不自动重试 |
+| 超时与重试 | 普通联邦连接 2 秒、响应头 3 秒、总计 6 秒；批量接入以本机 root-only attempt 状态幂等续接；轻量终端长轮询最长 25 秒，节点请求总超时 40 秒；轻量文件命令接单最多 12 秒；轻量节点首次收到旧中心 404/405/426 时从 1 秒指数退避至 5 分钟，其他文件连接失败按 1/2/4/5 秒退避；Relay 丢失确认时可重发同一命令和完全相同的数据批次，浏览器不重复请求，写入不自动重试 |
 | 真实状态与缓存 | 远端 Agent 实时摘要是事实；中心只缓存最近快照；本机摘要缓存 5 秒 |
-| 失败与恢复 | 保留最近成功快照；认证/TLS/身份错误单独标识；先尽力撤销远端授权，再删除状态，最后清理凭据；孤立凭据启动时回收 |
+| 失败与恢复 | 保留最近成功快照；批量接入响应丢失时同 attempt 返回同一身份，撤销/到期只阻止新节点；认证/TLS/身份错误单独标识；先尽力撤销远端授权，再删除状态，最后清理凭据；孤立凭据启动时回收 |
 | 性能预算 | 浏览器单请求，无 N+1；100 台 KPanel 按 30 秒轮询约 3.3 请求/秒、最多 8 并发；轻量 telemetry 每台约 2 请求/分钟；轻量 SSH broker 每 5 秒轮询但使用 15 秒读取缓存，约 4 次/分钟本地日志采样，不产生额外网络请求；终端空闲时由长轮询维持，不触发中心出站 |
-| 网络入侵风险 | SSRF、DNS rebinding、TLS 劫持、授权码猜测、签名重放、伪造遥测、恶意大响应和轮询/上报 DoS |
+| 网络入侵风险 | SSRF、DNS rebinding、TLS 劫持、单次/批量授权码泄露或猜测、批量配额耗尽、签名重放、伪造遥测、恶意大响应和轮询/上报 DoS；批量入口按来源与策略各 240/分钟限速，允许 100 台并发接入及有界重试 |
 
 ## 8. 验收
 
@@ -332,6 +352,8 @@ SSRF 与 TLS 校验。对
 
 - HTTPS 与字面量 IP origin 规范化、loopback/私网/元数据/IPv4-mapped IPv6、混合 DNS 与 rebinding；
 - 授权码过期、错误次数、并发单次消费及明文不落盘；
+- 批量授权默认/最大 100、有效期与撤销、不同 attempt 的独立身份、同 attempt 的幂等续接、
+  名称/密钥不一致拒绝、总主机上限，以及 token/reporting key 不进入策略文件、列表或审计；
 - v1 签名及 v2 Noise 篡改、错误 PSK/身份/路径、过期/未来时间和 request ID 重放；
 - 两阶段配对重启恢复、密钥/状态原子性、慢节点不阻塞其他轮询与管理操作；
 - 本机始终只出现一次、不落盘、不占远端配额、不可删除；
@@ -396,7 +418,9 @@ default runlevel 链接和 hourly periodic 文件；查询失败为未知，`not
 
 - v1 的 `cluster-state.json`/`cluster-secrets` 与 v2 的
   `cluster-state-v2.json`/`cluster-secrets-v2` 保留，不影响其他面板功能；
-- `cluster-light-state.json`/`cluster-light-secrets` 同样是独立可忽略状态；旧 Panel 不读取它们，
+- `cluster-light-state.json`/`cluster-light-secrets` 同样是独立可忽略状态；批量策略另存于
+  `cluster-light-batch-state.json`，旧 Panel 会忽略它，回滚后尚未执行的 `kpb1` 命令不可接入；
+  旧 Panel 不读取轻量节点状态与凭据，
   目标机上的 `kejilion-node` 只会变为离线重试，不影响宿主机业务；
 - 旧版本继续读取 v1 文件并忽略 v2 文件，因此原有 v1 主机仍可回滚使用；
 - 如需彻底撤销，先在各节点“接入授权”中撤销控制端，再在停机维护窗口备份并删除集群文件；
