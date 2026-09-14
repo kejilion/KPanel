@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,9 @@ func newTestService(t *testing.T, source *testReleaseSource, now *time.Time, hol
 		StateDir: t.TempDir(), Source: source, Hold: hold,
 		Now: func() time.Time { return *now },
 	})
+	if err != nil && runtime.GOOS == "linux" && strings.Contains(err.Error(), "state path is not a real directory") {
+		t.Skip("automatic update state tests require a root-owned state directory on Linux")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

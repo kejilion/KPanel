@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -31,16 +32,25 @@ func authenticatedSelfUpdateRequest(server *Server, method, target, body string)
 	return response
 }
 
-func TestSelfUpdateEndpointsExposeTypedPolicyAndCheck(t *testing.T) {
-	server := testServer(t)
-	server.version = "1.0.0"
-	service, err := selfupdate.New(selfupdate.Config{
-		StateDir: t.TempDir(), Source: agentReleaseSource{version: "1.1.0"},
-		Now: func() time.Time { return time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC) },
-	})
+func newAgentSelfUpdateTestService(t *testing.T, config selfupdate.Config) *selfupdate.Service {
+	t.Helper()
+	service, err := selfupdate.New(config)
+	if err != nil && runtime.GOOS == "linux" && strings.Contains(err.Error(), "state path is not a real directory") {
+		t.Skip("automatic update state tests require a root-owned state directory on Linux")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
+	return service
+}
+
+func TestSelfUpdateEndpointsExposeTypedPolicyAndCheck(t *testing.T) {
+	server := testServer(t)
+	server.version = "1.0.0"
+	service := newAgentSelfUpdateTestService(t, selfupdate.Config{
+		StateDir: t.TempDir(), Source: agentReleaseSource{version: "1.1.0"},
+		Now: func() time.Time { return time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC) },
+	})
 	server.selfUpdate = service
 
 	read := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update", "")
@@ -74,10 +84,7 @@ func TestSelfUpdateEndpointsRejectUnavailableAndUntypedRequests(t *testing.T) {
 		t.Fatalf("unavailable status=%d body=%s", unavailable.Code, unavailable.Body.String())
 	}
 
-	service, err := selfupdate.New(selfupdate.Config{StateDir: t.TempDir(), Source: agentReleaseSource{version: "1.1.0"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	service := newAgentSelfUpdateTestService(t, selfupdate.Config{StateDir: t.TempDir(), Source: agentReleaseSource{version: "1.1.0"}})
 	server.selfUpdate = service
 	queried := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update?channel=beta", "")
 	if queried.Code != http.StatusBadRequest {
