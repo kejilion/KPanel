@@ -12,7 +12,7 @@ vi.mock('@/lib/api', () => ({
 let wrapper: ReturnType<typeof mount> | undefined
 let items: Record<string, unknown>[]
 const node = { id: 'enrolled-node', kind: 'light_node', name: 'Test node', state: 'unknown' }
-const reportedNode = () => ({
+const reportedNode = (publicNetwork: Record<string, string> = {}) => ({
   ...node,
   state: 'online',
   lastSuccessAt: new Date().toISOString(),
@@ -22,7 +22,7 @@ const reportedNode = () => ({
       memory: { usedBytes: 1024, totalBytes: 2048, usagePercent: 50 },
       disk: { usedBytes: 1024, totalBytes: 2048, usagePercent: 50 },
       network: { receivedBytes: 1024, sentBytes: 1024 },
-      publicNetwork: {}, os: 'Linux', uptimeSeconds: 60,
+      publicNetwork, os: 'Linux', uptimeSeconds: 60,
     },
   },
 })
@@ -64,6 +64,30 @@ afterEach(() => {
 })
 
 describe('light node enrollment form', () => {
+  it('shows reported public IPs in the host address position without making them links', async () => {
+    items = [reportedNode({ ipv4: '198.51.100.20', ipv6: '2001:db8::20' })]
+    wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+
+    const address = wrapper.get('.cluster-card__origin--static')
+    expect(address.element.tagName).toBe('SPAN')
+    expect(address.text()).toBe('198.51.100.20 · 2001:db8::20')
+    expect(address.attributes('href')).toBeUndefined()
+
+    const manage = wrapper.findAll('button').find((button) => button.text().includes('管理'))!
+    await manage.trigger('click')
+    expect(document.querySelector('.cluster-manage__identity')?.textContent).toContain('公网 IP')
+    expect(document.querySelector('.cluster-manage__identity')?.textContent).toContain('198.51.100.20 · 2001:db8::20')
+  })
+
+  it('keeps a clear placeholder before a light node reports its public IP', async () => {
+    items = [reportedNode()]
+    wrapper = mount(ClusterView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+
+    expect(wrapper.get('.cluster-card__origin--static').text()).toBe('公网 IP 未获取')
+  })
+
   it('submits the real form without credentials after a registered node reports past token expiry', async () => {
     await openEnrollment()
     expect(primary().disabled).toBe(true)
