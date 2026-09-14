@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-09-14
+
+### Added
+
+- KPanel Host Agent、轻量节点、安装器、后台任务、系统日志与系统管理支持 Alpine Linux 及 OpenRC，同时继续兼容 systemd。
+- 由 kejilion.sh 应用市场管理的 systemd KPanel 可在设置页启用稳定版自动更新；更新固定官方镜像摘要，并提供互斥、冷备份、失败回退和中断恢复。
+
+### Changed
+
+- Telegram 集群告警、恢复、SSH 登录与通道测试消息使用清晰的标题状态图标和分段排版，简体、繁体与英文保持一致。
+- systemd 与 OpenRC 共用明确的服务管理抽象；OpenRC 主机继续使用受控手动更新，当前不安装 systemd 自动更新定时器。
+
+### Upgrade Notes
+
+- `scriptLinkageState=coupled`：配套轻量节点脚本已先发布到 `kejilion/sh@6ebb945f6d5cb69fdb41e3761de23566acbaf762`，根脚本 SHA-256 为 `28cf3934c01fe79a19c51fac520f11a2bdd7656d762f37d6fc4153140a6df549`；应用配置为 `kejilion/apps@b5f24594d0044f348ccd33acdc0387a50d22c66b`。
+- 无数据库 schema、端口、Compose、节点身份或配对密钥迁移。升级前应等待正在执行的系统维护、备份恢复和文件任务结束。
+- 自动定时更新首版仅在 systemd 安装链路启用；Alpine/OpenRC 安装、手动升级、失败恢复和卸载保持可用，后续如启用 OpenRC 定时更新需单独完成 PID 1 与重启持久化验收。
+- 可回滚至 KPanel v1.15.1；脚本仓可恢复到 `5c4972229bd9c98669d99c81354c9b79915a02f3`，应用配置可恢复到 `2d8044adec98e3eb16f47cdbb297f6be9632a66f`。回滚不删除现有配置、数据或节点身份。
+
 ## [1.15.1] - 2026-09-13
 
 ### Fixed
