@@ -25,6 +25,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/diagnostics"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
+	"github.com/kejilion/kejilion-panel/internal/selfupdate"
 	"github.com/kejilion/kejilion-panel/internal/sites"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
 	"github.com/kejilion/kejilion-panel/internal/systemmanage"
@@ -81,12 +82,16 @@ func run(arguments []string) error {
 	if len(arguments) > 0 && arguments[0] == "environment-run" {
 		return runEnvironmentJob(arguments[1:])
 	}
+	if len(arguments) > 0 && arguments[0] == "self-update-run" {
+		return runSelfUpdate(arguments[1:])
+	}
 
 	flags := flag.NewFlagSet("kejilion-agent", flag.ContinueOnError)
 	socketPath := flags.String("socket", env("KEJILION_AGENT_SOCKET", "/run/kejilion-panel/agent.sock"), "Unix Socket path")
 	socketGroup := flags.String("socket-group", env("KEJILION_AGENT_SOCKET_GROUP", "kejilion-panel"), "Unix Socket group")
 	tokenFile := flags.String("token-file", env("KEJILION_AGENT_TOKEN_FILE", "/etc/kejilion-panel/agent.token"), "shared token file")
 	stateDir := flags.String("state-dir", env("KEJILION_AGENT_STATE_DIR", "/var/lib/kejilion-panel"), "Agent state directory")
+	selfUpdateStateDir := flags.String("self-update-state-dir", env("KEJILION_AGENT_SELF_UPDATE_STATE_DIR", ""), "managed KPanel automatic update state directory")
 	webRoot := flags.String("web-root", env("KEJILION_WEB_ROOT", "/home/web"), "Kejilion Web root")
 	dockerSocket := flags.String("docker-socket", env("KEJILION_DOCKER_SOCKET", "/var/run/docker.sock"), "Docker Engine Unix Socket")
 	dockerPIDFile := flags.String("docker-pid-file", env("KEJILION_DOCKER_PID_FILE", "/run/docker.pid"), "Docker daemon PID file")
@@ -163,6 +168,17 @@ func run(arguments []string) error {
 		slog.Warn("history monitoring is unavailable", "error", historyErr)
 	}
 	terminalManager := terminal.New(terminal.Config{ParentUnit: "kejilion-agent.service"})
+	var selfUpdateService *selfupdate.Service
+	if strings.TrimSpace(*selfUpdateStateDir) != "" {
+		selfUpdateService, err = selfupdate.New(selfupdate.Config{
+			StateDir: *selfUpdateStateDir,
+			Source:   selfupdate.NewGitHubLatestSource(),
+		})
+		if err != nil {
+			slog.Warn("automatic update state is unavailable", "error", err)
+			selfUpdateService = nil
+		}
+	}
 	handler, err := agent.NewServer(agent.Config{
 		BackupDockerSocket: *dockerSocket,
 		Token:              token, Version: version.Version, ProtocolVersion: version.ProtocolVersion,
@@ -174,6 +190,7 @@ func run(arguments []string) error {
 		}),
 		Sites: sites.NewDiscoverer(*webRoot), Docker: dockerClient, AppMarket: appMarket,
 		Diagnostics: diagnosticService, Monitoring: historyService, Terminals: terminalManager,
+		SelfUpdate: selfUpdateService,
 	})
 	clear(token)
 	if err != nil {
@@ -218,6 +235,43 @@ func run(arguments []string) error {
 		}
 	}
 	return nil
+}
+
+func runSelfUpdate(arguments []string) error {
+	flags := flag.NewFlagSet("kejilion-agent self-update-run", flag.ContinueOnError)
+	stateDir := flags.String("state-dir", "/home/docker/kpanel/update-state", "automatic update state directory")
+	scriptPath := flags.String("script", "/home/docker/kpanel/bin/kejilion.sh", "managed kejilion.sh path")
+	agentPath := flags.String("agent", "/home/docker/kpanel/bin/kejilion-agent", "installed Agent path")
+	lifecyclePath := flags.String("lifecycle", "/home/docker/kpanel/bin/kpanel.conf", "pinned KPanel lifecycle config path")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("self-update-run does not accept positional arguments")
+	}
+	if os.Geteuid() != 0 {
+		return errors.New("self-update-run requires root")
+	}
+	executor := selfupdate.CommandExecutor{
+		StateDir: *stateDir, ScriptPath: *scriptPath, AgentPath: *agentPath,
+		LifecyclePath: *lifecyclePath, Stdout: os.Stdout, Stderr: os.Stderr,
+	}
+	if err := executor.Validate(); err != nil {
+		return err
+	}
+	service, err := selfupdate.New(selfupdate.Config{
+		StateDir: *stateDir,
+		Source:   selfupdate.NewGitHubLatestSource(),
+	})
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Minute)
+	defer cancel()
+	_, err = service.Run(ctx, executor)
+	return err
 }
 
 func runMaintenance(arguments []string) error {

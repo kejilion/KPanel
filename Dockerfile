@@ -62,6 +62,7 @@ ADD --checksum=sha256:4adc9e163a6db31a180e3a16489dcec3bf1f1a48a95253a140aaf11100
     /release/kejilion.sh
 COPY --from=web-build /src/web/dist /app/web
 COPY VERSION /release/VERSION
+COPY packaging/kejilion-app/kpanel.conf /release/kpanel.conf
 COPY LICENSE /licenses/LICENSE
 COPY NOTICE /licenses/NOTICE
 COPY LICENSES/ /licenses/third-party/

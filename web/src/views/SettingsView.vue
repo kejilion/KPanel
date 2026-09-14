@@ -48,7 +48,7 @@ import {
 import { moveRadioFocus } from '@/theme/radioGroup'
 import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
-import type { TOTPEnrollment, TOTPStatus } from '@/types/api'
+import type { AutomaticUpdateStatus, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const router = useRouter()
 const session = useSession()
@@ -90,6 +90,10 @@ const totpAction = ref<'idle' | 'enroll' | 'verify' | 'recovery' | 'rotate' | 'd
 const totpError = ref('')
 const recoveryCodes = ref<string[]>([])
 const totpForm = reactive({ currentPassword: '', code: '', secondFactor: '' })
+const automaticUpdate = ref<AutomaticUpdateStatus>()
+const automaticUpdateError = ref('')
+const savingAutomaticUpdate = ref(false)
+const checkingAutomaticUpdate = ref(false)
 
 const securityEntryUrl = computed(() => {
   if (!securityEntry.value?.enabled || !securityEntry.value.path || typeof window === 'undefined') return ''
@@ -131,6 +135,30 @@ const agentState = computed(() => {
   if (!agent.compatible) return { status: 'incompatible', label: '不兼容' }
   if (agent.readOnly) return { status: 'read_only', label: '写入依赖未就绪' }
   return { status: 'connected', label: '正常' }
+})
+
+const automaticUpdateState = computed(() => {
+  switch (automaticUpdate.value?.state) {
+    case 'waiting': return { status: 'warning', label: '观察稳定版' }
+    case 'available': return { status: 'pending', label: '等待定时安装' }
+    case 'updating': return { status: 'running_job', label: '正在更新' }
+    case 'succeeded': return { status: 'connected', label: '最近更新成功' }
+    case 'failed': return { status: 'failed_rolled_back', label: '更新失败，已尝试回退' }
+    case 'blocked': return { status: 'warning', label: '此版本已暂停' }
+    case 'check_failed': return { status: 'warning', label: '检查失败' }
+    case 'idle': return { status: 'connected', label: '已是稳定版' }
+    default: return { status: 'stopped', label: '未启用' }
+  }
+})
+
+const automaticUpdateNotice = computed(() => {
+  const status = automaticUpdate.value
+  if (!status) return ''
+  if (status.state === 'failed') return '本次更新未完成；系统已自动尝试恢复原版本和更新前数据。'
+  if (status.state === 'blocked') return `版本 ${status.failedVersion || status.candidateVersion || '—'} 更新失败后已暂停，不会自动重复尝试。`
+  if (status.state === 'waiting' && status.candidateVersion) return `已发现 ${status.candidateVersion}，连续稳定 ${status.observationHours} 小时后才会自动安装。`
+  if (status.state === 'available' && status.candidateVersion) return `${status.candidateVersion} 已通过观察期，将在下次定时任务中安装。`
+  return ''
 })
 
 const themeModes: Array<{ id: ThemePreference; label: string; description: string; icon: typeof Sun }> = [
@@ -254,6 +282,41 @@ async function refreshAgent(): Promise<void> {
     toast.danger('无法连接 Agent', reason instanceof ApiError ? reason.message : '请检查宿主机服务。')
   } finally {
     refreshing.value = false
+  }
+}
+
+async function saveAutomaticUpdate(enabled: boolean): Promise<void> {
+  if (!automaticUpdate.value || savingAutomaticUpdate.value) return
+  savingAutomaticUpdate.value = true
+  try {
+    automaticUpdate.value = await api.settings.automaticUpdate.update({
+      enabled,
+      expectedResourceVersion: automaticUpdate.value.resourceVersion,
+    })
+    toast.success(enabled ? '自动更新已启用' : '自动更新已关闭')
+  } catch (reason) {
+    toast.danger('自动更新设置失败', reason instanceof ApiError ? reason.message : '请刷新后重试。')
+  } finally {
+    savingAutomaticUpdate.value = false
+  }
+}
+
+async function toggleAutomaticUpdate(event: Event): Promise<void> {
+  const input = event.currentTarget as HTMLInputElement
+  await saveAutomaticUpdate(input.checked)
+  input.checked = automaticUpdate.value?.enabled ?? false
+}
+
+async function checkAutomaticUpdate(): Promise<void> {
+  if (checkingAutomaticUpdate.value || savingAutomaticUpdate.value) return
+  checkingAutomaticUpdate.value = true
+  try {
+    automaticUpdate.value = await api.settings.automaticUpdate.check()
+    toast.success('稳定版检查完成')
+  } catch (reason) {
+    toast.danger('稳定版检查失败', reason instanceof ApiError ? reason.message : '请检查网络后重试。')
+  } finally {
+    checkingAutomaticUpdate.value = false
   }
 }
 
@@ -470,10 +533,11 @@ async function endAuthenticatedSession(): Promise<void> {
 }
 
 onMounted(async () => {
-  const [capabilityResult, entranceResult, totpResult] = await Promise.allSettled([
+  const [capabilityResult, entranceResult, totpResult, automaticUpdateResult] = await Promise.allSettled([
     api.agent.capabilities(),
     api.settings.securityEntrance.get(),
     api.settings.totp.status(),
+    api.settings.automaticUpdate.get(),
   ])
   capabilities.value = capabilityResult.status === 'fulfilled' ? capabilityResult.value : []
   if (entranceResult.status === 'fulfilled') {
@@ -484,6 +548,13 @@ onMounted(async () => {
     totpStatus.value = totpResult.value
   } else {
     totpStatusError.value = totpResult.reason instanceof ApiError ? totpResult.reason.message : '无法读取两步验证状态。'
+  }
+  if (automaticUpdateResult.status === 'fulfilled') {
+    automaticUpdate.value = automaticUpdateResult.value
+  } else {
+    automaticUpdateError.value = automaticUpdateResult.reason instanceof ApiError
+      ? automaticUpdateResult.reason.message
+      : '无法读取自动更新状态。'
   }
 })
 </script>
@@ -943,6 +1014,56 @@ onMounted(async () => {
       </div>
     </section>
 
+    <section class="settings-section panel-card automatic-update-section">
+      <header class="settings-section__header">
+        <span><RefreshCw :size="19" /></span>
+        <div><h2>自动更新</h2><p>只安装经过观察期的正式稳定版</p></div>
+        <StatusBadge v-if="automaticUpdate" :status="automaticUpdateState.status" :label="automaticUpdateState.label" />
+      </header>
+      <div v-if="automaticUpdate" class="automatic-update-panel">
+        <label class="automatic-update-switch">
+          <span>
+            <strong>自动安装稳定更新</strong>
+            <small>默认关闭；启用后由宿主机定时器执行，关闭网页不会中断。</small>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            :checked="automaticUpdate.enabled"
+            :disabled="savingAutomaticUpdate || automaticUpdate.state === 'updating'"
+            @change="toggleAutomaticUpdate"
+          />
+        </label>
+        <dl class="settings-list automatic-update-details">
+          <div><dt>当前版本</dt><dd>{{ automaticUpdate.currentVersion || '—' }}</dd></div>
+          <div><dt>候选版本</dt><dd>{{ automaticUpdate.candidateVersion || '—' }}</dd></div>
+          <div><dt>候选镜像摘要</dt><dd class="automatic-update-digest">{{ automaticUpdate.candidateImageDigest || '—' }}</dd></div>
+          <div><dt>最后检查</dt><dd>{{ formatDateTime(automaticUpdate.lastCheckedAt) }}</dd></div>
+          <div><dt>最近成功更新</dt><dd>{{ formatDateTime(automaticUpdate.lastSuccessAt) }}</dd></div>
+        </dl>
+        <div v-if="automaticUpdateNotice" class="inline-alert" :class="automaticUpdate.state === 'failed' ? 'inline-alert--warning' : 'inline-alert--info'">
+          {{ automaticUpdateNotice }}
+        </div>
+        <div class="automatic-update-actions">
+          <button
+            class="button button--secondary"
+            type="button"
+            :disabled="checkingAutomaticUpdate || savingAutomaticUpdate || automaticUpdate.state === 'updating'"
+            @click="checkAutomaticUpdate"
+          >
+            <LoaderCircle v-if="checkingAutomaticUpdate" class="spin" :size="15" />
+            <RefreshCw v-else :size="15" />
+            立即检查
+          </button>
+        </div>
+        <p class="settings-note">每天本地时间 04:00 检查，并随机延迟最多 30 分钟。新版本需稳定观察 24 小时；切换前会冷备份 Panel 与 Agent 数据，失败时自动恢复原版本和数据。</p>
+      </div>
+      <div v-else-if="automaticUpdateError" class="inline-alert inline-alert--warning">
+        {{ automaticUpdateError }}
+      </div>
+      <p v-else class="settings-note">正在读取自动更新状态…</p>
+    </section>
+
     <section class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Server :size="19" /></span>
@@ -1049,6 +1170,92 @@ onMounted(async () => {
   color: var(--brand);
 }
 
+.automatic-update-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.automatic-update-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.automatic-update-switch > span {
+  display: grid;
+  gap: 4px;
+}
+
+.automatic-update-switch small {
+  color: var(--muted);
+}
+
+.automatic-update-switch input {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.automatic-update-switch input::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: '';
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.automatic-update-switch input:checked {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.automatic-update-switch input:checked::after {
+  background: var(--brand);
+  transform: translateX(20px);
+}
+
+.automatic-update-switch input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.automatic-update-switch input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.automatic-update-details {
+  margin: 0;
+}
+
+.automatic-update-digest {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.automatic-update-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
 @media (max-width: 640px) {
   .password-form {
     max-width: none;
@@ -1074,6 +1281,15 @@ onMounted(async () => {
 
   .security-entry-actions .button {
     flex: 1 1 140px;
+  }
+
+  .automatic-update-switch {
+    align-items: flex-start;
+    padding: 14px;
+  }
+
+  .automatic-update-actions .button {
+    width: 100%;
   }
 }
 </style>

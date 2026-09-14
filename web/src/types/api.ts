@@ -1869,6 +1869,38 @@ export interface PanelSettings {
   telemetryEnabled?: boolean
 }
 
+export type AutomaticUpdateState =
+  | 'disabled'
+  | 'idle'
+  | 'waiting'
+  | 'available'
+  | 'updating'
+  | 'succeeded'
+  | 'failed'
+  | 'blocked'
+  | 'check_failed'
+
+export interface AutomaticUpdateStatus {
+  available: boolean
+  enabled: boolean
+  state: AutomaticUpdateState
+  channel: 'stable'
+  schedule: string
+  observationHours: number
+  currentVersion?: string
+  candidateVersion?: string
+  candidateImageDigest?: string
+  candidateFirstSeenAt?: string
+  lastCheckedAt?: string
+  lastAttemptAt?: string
+  lastSuccessAt?: string
+  lastErrorCode?: string
+  lastError?: string
+  failedVersion?: string
+  failedImageDigest?: string
+  resourceVersion: string
+}
+
 export interface DesktopIconPosition {
   /** Normalized horizontal coordinate in the current work area, from 0 to 1. */
   x: number
