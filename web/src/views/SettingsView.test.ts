@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => {
     getSecurityEntrance: vi.fn(),
     updateSecurityEntrance: vi.fn(),
     getTOTPStatus: vi.fn(),
+	getAutomaticUpdate: vi.fn(),
+	updateAutomaticUpdate: vi.fn(),
+	checkAutomaticUpdate: vi.fn(),
     startTOTPEnrollment: vi.fn(),
     confirmTOTPEnrollment: vi.fn(),
     rotateRecoveryCodes: vi.fn(),
@@ -72,6 +75,11 @@ vi.mock('@/lib/api', () => ({
         regenerateRecoveryCodes: mocks.rotateRecoveryCodes,
         disable: mocks.disableTOTP,
       },
+	  automaticUpdate: {
+		get: mocks.getAutomaticUpdate,
+		update: mocks.updateAutomaticUpdate,
+		check: mocks.checkAutomaticUpdate,
+	  },
     },
   },
   resetApiSecurityState: mocks.resetApiSecurityState,
@@ -148,6 +156,14 @@ interface SettingsBindings {
   startTOTPEnrollment: () => Promise<void>
   confirmTOTPEnrollment: () => Promise<void>
   finishTOTPFlow: () => Promise<void>
+	automaticUpdate: Ref<{
+		enabled: boolean
+		state: string
+		resourceVersion: string
+		observationHours: number
+	} | undefined>
+	saveAutomaticUpdate: (enabled: boolean) => Promise<void>
+	checkAutomaticUpdate: () => Promise<void>
 }
 
 function setupView(): SettingsBindings {
@@ -180,6 +196,20 @@ beforeEach(() => {
     resourceVersion: 'sha256:updated',
   })
   mocks.getTOTPStatus.mockResolvedValue({ enabled: false, recoveryCodesRemaining: 0 })
+	mocks.getAutomaticUpdate.mockResolvedValue({
+		available: true, enabled: false, state: 'disabled', channel: 'stable',
+		schedule: 'daily-04:00-local', observationHours: 24, resourceVersion: 'sha256:auto-initial',
+	})
+	mocks.updateAutomaticUpdate.mockResolvedValue({
+		available: true, enabled: true, state: 'idle', channel: 'stable',
+		schedule: 'daily-04:00-local', observationHours: 24, resourceVersion: 'sha256:auto-updated',
+	})
+	mocks.checkAutomaticUpdate.mockResolvedValue({
+		available: true, enabled: true, state: 'waiting', channel: 'stable',
+		schedule: 'daily-04:00-local', observationHours: 24, candidateVersion: '1.16.0',
+		candidateImageDigest: `sha256:${'a'.repeat(64)}`,
+		resourceVersion: 'sha256:auto-checked',
+	})
   mocks.startTOTPEnrollment.mockResolvedValue({
     id: 'enrollment-1', secret: 'JBSWY3DPEHPK3PXP', otpauthUri: 'otpauth://totp/KPanel:admin', expiresAt: '2026-08-01T00:10:00Z',
   })
@@ -536,5 +566,44 @@ describe('SettingsView two-factor authentication', () => {
     await view.finishTOTPFlow()
     expect(mocks.resetApiSecurityState).toHaveBeenCalled()
     expect(mocks.replace).toHaveBeenCalledWith({ name: 'login' })
+  })
+})
+
+describe('SettingsView automatic updates', () => {
+  it('persists an explicit opt-in and keeps check-now read-only with respect to installation', async () => {
+    const view = setupView()
+    view.automaticUpdate.value = {
+      enabled: false,
+      state: 'disabled',
+      observationHours: 24,
+      resourceVersion: 'sha256:auto-initial',
+    }
+
+    await view.saveAutomaticUpdate(true)
+
+    expect(mocks.updateAutomaticUpdate).toHaveBeenCalledWith({
+      enabled: true,
+      expectedResourceVersion: 'sha256:auto-initial',
+    })
+    expect(view.automaticUpdate.value?.resourceVersion).toBe('sha256:auto-updated')
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('自动更新已启用')
+
+    await view.checkAutomaticUpdate()
+
+    expect(mocks.checkAutomaticUpdate).toHaveBeenCalledOnce()
+    expect(view.automaticUpdate.value).toMatchObject({
+      state: 'waiting',
+      candidateVersion: '1.16.0',
+    })
+    expect(mocks.updateAutomaticUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('documents opt-in, observation, host timer, backup, and rollback in the visible settings surface', () => {
+    expect(settingsSource).toContain('自动安装稳定更新')
+    expect(settingsSource).toContain('每天本地时间 04:00 检查')
+    expect(settingsSource).toContain('新版本需稳定观察 24 小时')
+    expect(settingsSource).toContain('候选镜像摘要')
+    expect(settingsSource).toContain('冷备份 Panel 与 Agent 数据')
+    expect(settingsSource).toContain('失败时自动恢复原版本和数据')
   })
 })

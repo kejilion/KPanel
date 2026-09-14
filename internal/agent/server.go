@@ -29,6 +29,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
 	"github.com/kejilion/kejilion-panel/internal/hostbackup"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
+	"github.com/kejilion/kejilion-panel/internal/selfupdate"
 	"github.com/kejilion/kejilion-panel/internal/sites"
 	"github.com/kejilion/kejilion-panel/internal/systeminfo"
 	"github.com/kejilion/kejilion-panel/internal/systemmanage"
@@ -63,6 +64,7 @@ type Config struct {
 	Terminals          *terminal.Manager
 	Now                func() time.Time
 	Backups            *hostbackup.Service
+	SelfUpdate         *selfupdate.Service
 }
 
 // SSHLoginSource is the read-only cluster telemetry boundary. It keeps
@@ -106,6 +108,7 @@ type Server struct {
 	systemLogsGate   chan struct{}
 	now              func() time.Time
 	backups          *hostbackup.Service
+	selfUpdate       *selfupdate.Service
 	backupMutationMu sync.Mutex
 }
 
@@ -211,6 +214,7 @@ func NewServer(config Config) (*Server, error) {
 	}
 	return &Server{
 		backups:          config.Backups,
+		selfUpdate:       config.SelfUpdate,
 		tokenHash:        sha256.Sum256(config.Token),
 		version:          config.Version,
 		protocolVersion:  config.ProtocolVersion,
@@ -247,6 +251,7 @@ func DefaultFileManagerConfig(stateDirectory string) filemanager.Config {
 		"/home/docker/kpanel/secrets",
 		"/home/docker/kpanel/data/panel",
 		"/home/docker/kpanel/data/agent",
+		"/home/docker/kpanel/update-state",
 		"/home/docker/kpanel/run",
 		"/home/.kpanel-trash",
 		"/etc/kejilion-node",
@@ -291,6 +296,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case r.URL.Path == "/v1/self-update":
+		s.selfUpdateSettings(w, r, requestID)
+	case r.URL.Path == "/v1/self-update/check":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.selfUpdateCheck)
 	case r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/"):
 		if s.backups == nil {
 			writeProblem(w, requestID, 503, "backup_unavailable", "Backup adapter unavailable", "")

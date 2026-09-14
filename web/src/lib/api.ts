@@ -3,6 +3,7 @@ import type {
 	AccountManagementActionInput,
 	AccountManagementActionResult,
 	AccountManagementSnapshot,
+	AutomaticUpdateStatus,
 	SSHDefenseActionInput,
 	SSHDefenseActionResult,
 	SSHDefenseSnapshot,
@@ -2306,6 +2307,12 @@ export const api = {
   },
 	settings: {
     get: (signal?: AbortSignal) => request<PanelSettings>('/settings', { signal }),
+	automaticUpdate: {
+		get: () => request<AutomaticUpdateStatus>('/settings/automatic-update'),
+		update: (input: { enabled: boolean; expectedResourceVersion: string }) =>
+			request<AutomaticUpdateStatus>('/settings/automatic-update', { method: 'PUT', body: input }),
+		check: () => request<AutomaticUpdateStatus>('/settings/automatic-update/check', { method: 'POST' }),
+	},
 	securityEntrance: {
 		get: () => request<SecurityEntranceSettings>('/settings/security-entry'),
 		update: (input: {

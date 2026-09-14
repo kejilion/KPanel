@@ -206,12 +206,14 @@ jobs:
           bash scripts/check-managed-script-contract.sh kejilion-panel:release-check
           release_container="$(docker create kejilion-panel:release-check)"
           docker cp "$release_container:/release/kejilion.sh" release/kejilion.sh
+          docker cp "$release_container:/release/kpanel.conf" release/kpanel.conf
           docker cp "$release_container:/licenses/LICENSE" release/IMAGE_LICENSE
           docker cp "$release_container:/licenses/NOTICE" release/IMAGE_NOTICE
           docker cp "$release_container:/licenses/THIRD_PARTY_NOTICES.md" release/IMAGE_THIRD_PARTY_NOTICES.md
           docker cp "$release_container:/licenses/third-party/Apache-2.0.txt" release/IMAGE_APACHE_LICENSE
           docker rm "$release_container" >/dev/null
           test "$(sha256sum release/kejilion.sh | awk '{print $1}')" = "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.script.sha256"}}' kejilion-panel:release-check)"
+          cmp packaging/kejilion-app/kpanel.conf release/kpanel.conf
           cmp LICENSE release/IMAGE_LICENSE
           cmp NOTICE release/IMAGE_NOTICE
           cmp THIRD_PARTY_NOTICES.md release/IMAGE_THIRD_PARTY_NOTICES.md

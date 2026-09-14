@@ -10,6 +10,7 @@ set -eu
 PROJECT_DIR=${1:-/src}
 RELEASE_VERSION=$(tr -d '\r\n' <"$PROJECT_DIR/VERSION")
 export KPANEL_RELEASE_VERSION=$RELEASE_VERSION
+export KPANEL_PROJECT_DIR=$PROJECT_DIR
 TEST_DIR=$(mktemp -d /tmp/kpanel-app-conf-test.XXXXXX)
 FAKE_BIN="$TEST_DIR/bin"
 MOCK_STATE="$TEST_DIR/state"
@@ -38,8 +39,13 @@ require_state() {
 	}
 }
 case "$1 ${2:-}" in
-	"compose version"|"pull docker.io/kjlion/kejilion-panel:latest")
+	"compose version")
 		exit 0
+		;;
+	"pull "*)
+		printf '%s\n' "${2:-}" |
+			grep -Eq '^docker\.io/kjlion/kejilion-panel:(latest|[0-9]+\.[0-9]+\.[0-9]+)$|^docker\.io/kjlion/kejilion-panel@sha256:[0-9a-f]{64}$'
+		exit
 		;;
 	"ps -a")
 		exit 0
@@ -86,6 +92,11 @@ case "$1 ${2:-}" in
 	"cp "*)
 		destination=$3
 		case "$2" in
+			*:/release/kpanel.conf)
+				cp "${KPANEL_PROJECT_DIR:?}/packaging/kejilion-app/kpanel.conf" \
+					"$destination"
+				exit 0
+				;;
 			*:/release/VERSION)
 				printf '%s\n' \
 					"${KPANEL_MOCK_RELEASE_FILE_VERSION:-${KPANEL_RELEASE_VERSION:?}}" \
@@ -128,6 +139,10 @@ AGENT
 		;;
 	"image inspect")
 		case "$4" in
+			*"{{.Id}}"*)
+				printf '%s\n' \
+					"${KPANEL_MOCK_TARGET_IMAGE_ID:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+				;;
 			*org.opencontainers.image.version*)
 				printf '%s\n' \
 					"${KPANEL_MOCK_IMAGE_VERSION:-${KPANEL_RELEASE_VERSION:?}}"
@@ -184,10 +199,15 @@ AGENT
 				'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
 			*PortBindings*) printf '%s\n' "${KPANEL_MOCK_CURRENT_PORT:-18080}" ;;
 			*NetworkSettings*) printf '%s\n' 1 ;;
+			*org.opencontainers.image.version*)
+				printf '%s\n' \
+					"${KPANEL_MOCK_RUNNING_VERSION:-${KPANEL_MOCK_IMAGE_VERSION:-${KPANEL_RELEASE_VERSION:?}}}"
+				;;
 			*)
 				if [ "${KPANEL_MOCK_HEALTH_FAIL:-0}" = 1 ] ||
 					{ [ "${KPANEL_MOCK_UPDATE_HEALTH_FAIL:-0}" = 1 ] &&
-						[ ! -f "$state/rollback-tagged" ]; }; then
+						[ ! -f "$state/rollback-tagged" ] &&
+						[ ! -f "$state/automatic-restored" ]; }; then
 					printf '%s\n' unhealthy
 				else
 					printf '%s\n' healthy
@@ -201,6 +221,26 @@ AGENT
 		case "${4:-}" in
 			create) : >"$state/network" ;;
 			up)
+				if grep -Eq '^    image: docker\.io/kjlion/kejilion-panel@sha256:[0-9a-f]{64}$' \
+					/home/docker/kpanel/docker-compose.yml; then
+					: >"$state/automatic-target-started"
+					if [ "${KPANEL_MOCK_MUTATE_DATA_ON_UP:-0}" = 1 ] &&
+						[ ! -f "$state/automatic-data-mutated" ]; then
+						printf '%s\n' 'mutated-panel-data' \
+							>/home/docker/kpanel/data/panel/rollback-marker
+						printf '%s\n' 'mutated-agent-data' \
+							>/home/docker/kpanel/data/agent/rollback-marker
+						: >"$state/automatic-data-mutated"
+					fi
+					if [ "${KPANEL_MOCK_CRASH_AFTER_TARGET_UP:-0}" = 1 ] &&
+						[ ! -f "$state/automatic-crashed" ]; then
+						: >"$state/automatic-crashed"
+						kill -KILL "$PPID"
+						exit 137
+					fi
+				elif [ -f "$state/automatic-target-started" ]; then
+					: >"$state/automatic-restored"
+				fi
 				if [ "${KPANEL_MOCK_BOOTSTRAP_MISSING:-0}" != 1 ]; then
 					mkdir -p /home/docker/kpanel/data/panel
 					printf '%s\n' 'test-bootstrap-token' \
@@ -208,6 +248,7 @@ AGENT
 					chmod 600 /home/docker/kpanel/data/panel/bootstrap.token
 				fi
 				;;
+			stop) : ;;
 			down) rm -f "$state/network" ;;
 			*) exit 2 ;;
 		esac
@@ -227,7 +268,7 @@ if [ "$1" = "--version" ]; then
 fi
 case "$1" in
 	link)
-		ln -sf "$2" /etc/systemd/system/kejilion-agent.service
+		ln -sf "$2" "/etc/systemd/system/$(basename "$2")"
 		exit 0
 		;;
 	daemon-reload|enable|start|stop|disable) exit 0 ;;
@@ -257,6 +298,16 @@ cat >"$FAKE_BIN/sleep" <<'EOF'
 exit 0
 EOF
 
+cat >"$FAKE_BIN/flock" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
+cat >"$FAKE_BIN/journalctl" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
 cat >"$FAKE_BIN/sha256sum" <<'EOF'
 #!/bin/sh
 printf '%s  %s\n' \
@@ -272,6 +323,9 @@ ln -s "$FAKE_BIN/systemctl" /bin/systemctl
 
 run_lifecycle() {
 	local ipv4_address="198.51.100.25"
+	local interrupted_digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	local failed_digest="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	local mismatched_digest="sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
 	cat >/root/kejilion.sh <<'EOF'
 #!/usr/bin/env bash
@@ -361,6 +415,23 @@ EOF
 	test "$(stat -c '%u:%g' /home/docker/kpanel/secrets/agent.token)" = 0:987
 	test "$(tr -d '\r\n' </home/docker/kpanel/secrets/agent.token | wc -c)" = 64
 	test -f /home/docker/kpanel/.managed-by-kejilion-app
+	test -f /home/docker/kpanel/bin/kpanel.conf
+	cmp -s "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf" \
+		/home/docker/kpanel/bin/kpanel.conf
+	test "$(stat -c '%a' /home/docker/kpanel/bin/kpanel.conf)" = 600
+	test "$(stat -c '%a' /home/docker/kpanel/update-state)" = 700
+	test "$(stat -c '%u:%g' /home/docker/kpanel/update-state)" = 0:0
+	grep -Fx 'KEJILION_AGENT_SELF_UPDATE_STATE_DIR=/home/docker/kpanel/update-state' \
+		/home/docker/kpanel/agent.env >/dev/null
+	grep -F 'ExecStart=/home/docker/kpanel/bin/kejilion-agent self-update-run' \
+		/home/docker/kpanel/kejilion-panel-update.service >/dev/null
+	grep -Fx 'OnBootSec=15min' /home/docker/kpanel/kejilion-panel-update.timer >/dev/null
+	grep -Fx 'OnCalendar=*-*-* 04:00:00' /home/docker/kpanel/kejilion-panel-update.timer >/dev/null
+	grep -Fx 'RandomizedDelaySec=30min' /home/docker/kpanel/kejilion-panel-update.timer >/dev/null
+	test "$(readlink -f /etc/systemd/system/kejilion-panel-update.service)" = \
+		"$(readlink -f /home/docker/kpanel/kejilion-panel-update.service)"
+	test "$(readlink -f /etc/systemd/system/kejilion-panel-update.timer)" = \
+		"$(readlink -f /home/docker/kpanel/kejilion-panel-update.timer)"
 	test -x /home/docker/kpanel/bin/kejilion.sh
 	test "$(stat -c '%a' /home/docker/kpanel/bin/kejilion.sh)" = 700
 	grep -Fx 'permission_granted="true"' /home/docker/kpanel/bin/kejilion.sh >/dev/null
@@ -381,6 +452,7 @@ EOF
 	test ! -e "$MOCK_STATE/rollback-tagged"
 	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "$RELEASE_VERSION v1alpha1"
 
+	rm -rf /home/docker/kpanel/update-state
 	rm -f "$MOCK_STATE/image-rm"
 	local current_image_id='sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	local removable_image_id='sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -389,6 +461,9 @@ EOF
 		"$current_image_id" "$removable_image_id" "$retained_image_id")" \
 		KPANEL_MOCK_IN_USE_IMAGE_ID="$retained_image_id" \
 		docker_app_update >"$TEST_DIR/image-cleanup-output.txt"
+	test "$(stat -c '%a' /home/docker/kpanel/update-state)" = 700
+	test "$(stat -c '%u:%g' /home/docker/kpanel/update-state)" = 0:0
+	test "$(stat -c '%a' /home/docker/kpanel/update-state/backups)" = 700
 	test "$(cat "$MOCK_STATE/image-rm")" = "$removable_image_id"
 	if grep -Ei 'image|镜像|cleanup|清理' "$TEST_DIR/image-cleanup-output.txt" >/dev/null; then
 		echo "successful KPanel update exposed old-image cleanup output" >&2
@@ -442,6 +517,93 @@ EOF
 	grep -Fx 'KPANEL_SECURE_COOKIE=true' /home/docker/kpanel/.env >/dev/null
 	test ! -e /home/docker/kpanel/.env.rollback
 	test ! -e "$MOCK_STATE/image-rm"
+
+	rm -f "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/image-tag" \
+		"$MOCK_STATE/automatic-target-started" "$MOCK_STATE/automatic-restored"
+	if KJ_KPANEL_AUTOMATIC=1 \
+		KJ_KPANEL_TARGET_VERSION=9.9.7 \
+		KJ_KPANEL_TARGET_IMAGE="docker.io/kjlion/kejilion-panel@${mismatched_digest}" \
+		KPANEL_MOCK_IMAGE_VERSION=9.9.7 \
+		KPANEL_MOCK_RELEASE_FILE_VERSION=9.9.7 \
+		KPANEL_MOCK_AGENT_VERSION=9.9.7 \
+		KPANEL_MOCK_RUNNING_VERSION=9.9.7 \
+		KPANEL_MOCK_TARGET_IMAGE_ID=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+		docker_app_update >"$TEST_DIR/automatic-image-mismatch-output.txt" 2>&1; then
+		echo "automatic KPanel update accepted the wrong running image" >&2
+		return 1
+	fi
+	grep -F 'image: docker.io/kjlion/kejilion-panel:latest' \
+		/home/docker/kpanel/docker-compose.yml >/dev/null
+	test ! -e /home/docker/kpanel/update-state/transaction
+	test ! -e "$MOCK_STATE/rollback-tagged"
+	test ! -e "$MOCK_STATE/image-tag"
+	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "$RELEASE_VERSION v1alpha1"
+
+	printf '%s\n' 'original-panel-data' \
+		>/home/docker/kpanel/data/panel/rollback-marker
+	printf '%s\n' 'original-agent-data' \
+		>/home/docker/kpanel/data/agent/rollback-marker
+	rm -f "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/image-tag" \
+		"$MOCK_STATE/automatic-target-started" "$MOCK_STATE/automatic-restored" \
+		"$MOCK_STATE/automatic-data-mutated" "$MOCK_STATE/automatic-crashed"
+	if (
+		KJ_KPANEL_AUTOMATIC=1 \
+		KJ_KPANEL_TARGET_VERSION=9.9.8 \
+		KJ_KPANEL_TARGET_IMAGE="docker.io/kjlion/kejilion-panel@${interrupted_digest}" \
+		KPANEL_MOCK_IMAGE_VERSION=9.9.8 \
+		KPANEL_MOCK_RELEASE_FILE_VERSION=9.9.8 \
+		KPANEL_MOCK_AGENT_VERSION=9.9.8 \
+		KPANEL_MOCK_RUNNING_VERSION=9.9.8 \
+		KPANEL_MOCK_MUTATE_DATA_ON_UP=1 \
+		KPANEL_MOCK_CRASH_AFTER_TARGET_UP=1 \
+			docker_app_update
+	); then
+		echo "interrupted automatic KPanel update unexpectedly completed" >&2
+		return 1
+	fi
+	test -d /home/docker/kpanel/update-state/transaction
+	grep -Fx 'mutated-panel-data' \
+		/home/docker/kpanel/data/panel/rollback-marker >/dev/null
+	kpanel_recover_automatic_update >"$TEST_DIR/interrupted-recovery-output.txt"
+	grep -Fx 'original-panel-data' \
+		/home/docker/kpanel/data/panel/rollback-marker >/dev/null
+	grep -Fx 'original-agent-data' \
+		/home/docker/kpanel/data/agent/rollback-marker >/dev/null
+	test ! -e /home/docker/kpanel/update-state/transaction
+	test ! -e "$MOCK_STATE/rollback-tagged"
+	test ! -e "$MOCK_STATE/image-tag"
+
+	printf '%s\n' 'original-panel-data' \
+		>/home/docker/kpanel/data/panel/rollback-marker
+	printf '%s\n' 'original-agent-data' \
+		>/home/docker/kpanel/data/agent/rollback-marker
+	rm -f "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/image-tag" \
+		"$MOCK_STATE/automatic-target-started" "$MOCK_STATE/automatic-restored" \
+		"$MOCK_STATE/automatic-data-mutated" "$MOCK_STATE/automatic-crashed"
+	if KJ_KPANEL_AUTOMATIC=1 \
+		KJ_KPANEL_TARGET_VERSION=9.9.9 \
+		KJ_KPANEL_TARGET_IMAGE="docker.io/kjlion/kejilion-panel@${failed_digest}" \
+		KPANEL_MOCK_IMAGE_VERSION=9.9.9 \
+		KPANEL_MOCK_RELEASE_FILE_VERSION=9.9.9 \
+		KPANEL_MOCK_AGENT_VERSION=9.9.9 \
+		KPANEL_MOCK_RUNNING_VERSION=9.9.9 \
+		KPANEL_MOCK_UPDATE_HEALTH_FAIL=1 \
+		KPANEL_MOCK_MUTATE_DATA_ON_UP=1 \
+		docker_app_update >"$TEST_DIR/automatic-rollback-output.txt" 2>&1; then
+		echo "failed automatic KPanel update unexpectedly succeeded" >&2
+		return 1
+	fi
+	grep -Fx 'original-panel-data' \
+		/home/docker/kpanel/data/panel/rollback-marker >/dev/null
+	grep -Fx 'original-agent-data' \
+		/home/docker/kpanel/data/agent/rollback-marker >/dev/null
+	grep -F 'image: docker.io/kjlion/kejilion-panel:latest' \
+		/home/docker/kpanel/docker-compose.yml >/dev/null
+	test ! -e /home/docker/kpanel/update-state/transaction
+	test -n "$(find /home/docker/kpanel/update-state/backups -mindepth 1 -maxdepth 1 -type d -print -quit)"
+	test ! -e "$MOCK_STATE/rollback-tagged"
+	test ! -e "$MOCK_STATE/image-tag"
+	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "$RELEASE_VERSION v1alpha1"
 
 	docker_app_uninstall
 	[ ! -e /home/docker/kpanel ]
@@ -608,7 +770,9 @@ run_lifecycle
 run_symlinked_docker_root_lifecycle
 grep -Fx '1|daemon-reload' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
 grep -Fx '3|enable --now kejilion-agent.service' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
+grep -Fx '3|enable --now kejilion-panel-update.timer' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
 grep -Fx '3|disable --now kejilion-agent.service' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
+grep -Fx '3|disable --now kejilion-panel-update.timer' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
 if grep -F 'daemon-reload ' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null; then
 	echo "daemon-reload received the empty service argument from kejilion.sh's systemctl wrapper" >&2
 	exit 1

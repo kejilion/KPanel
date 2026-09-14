@@ -1,0 +1,109 @@
+package selfupdate
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func releaseResponse(request *http.Request, body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    request,
+	}
+}
+
+func sourceWithResponse(handler roundTripFunc) *GitHubLatestSource {
+	return &GitHubLatestSource{client: &http.Client{
+		Transport: handler,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}}
+}
+
+func validReleaseJSON(version, digest string) string {
+	return `{"tag_name":"v` + version + `","html_url":"https://github.com/kejilion/KPanel/releases/tag/v` + version +
+		`","body":"### 发布产物与完整性\n\n- 生产镜像：\u0060docker.io/kjlion/kejilion-panel@` + digest +
+		`\u0060\n","draft":false,"prerelease":false,"published_at":"2026-09-14T00:00:00Z"}`
+}
+
+func TestGitHubLatestSourceAcceptsOnePublishedStableDigest(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	var requestSeen *http.Request
+	source := sourceWithResponse(func(request *http.Request) (*http.Response, error) {
+		requestSeen = request
+		return releaseResponse(request, validReleaseJSON("12.34.56", digest)), nil
+	})
+
+	release, err := source.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "12.34.56" || release.ImageDigest != digest {
+		t.Fatalf("release = %#v", release)
+	}
+	if requestSeen == nil || requestSeen.Method != http.MethodGet || requestSeen.URL.String() != githubLatestURL ||
+		requestSeen.UserAgent() != "KPanel-Automatic-Update/1" ||
+		requestSeen.Header.Get("X-GitHub-Api-Version") != "2022-11-28" {
+		t.Fatalf("unexpected request: %#v", requestSeen)
+	}
+}
+
+func TestGitHubLatestSourceRejectsUntrustedOrMutableMetadata(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	valid := validReleaseJSON("1.2.3", digest)
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "redirect", status: http.StatusFound, body: valid},
+		{name: "prerelease", status: http.StatusOK, body: strings.Replace(valid, `"prerelease":false`, `"prerelease":true`, 1)},
+		{name: "draft", status: http.StatusOK, body: strings.Replace(valid, `"draft":false`, `"draft":true`, 1)},
+		{name: "missing stable flags", status: http.StatusOK, body: `{"tag_name":"v1.2.3"}`},
+		{name: "prerelease tag", status: http.StatusOK, body: strings.Replace(valid, "v1.2.3", "v1.2.3-rc.1", 2)},
+		{name: "wrong repository", status: http.StatusOK, body: strings.Replace(valid, "github.com/kejilion/KPanel", "github.com/other/KPanel", 1)},
+		{name: "tag image", status: http.StatusOK, body: strings.Replace(valid, "@"+digest, ":1.2.3", 1)},
+		{name: "duplicate digest", status: http.StatusOK, body: strings.Replace(valid, `\n","draft"`, `\n- 生产镜像：\u0060docker.io/kjlion/kejilion-panel@`+digest+`\u0060\n","draft"`, 1)},
+		{name: "trailing value", status: http.StatusOK, body: valid + `{}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := sourceWithResponse(func(request *http.Request) (*http.Response, error) {
+				response := releaseResponse(request, test.body)
+				response.StatusCode = test.status
+				return response, nil
+			})
+			if _, err := source.Latest(context.Background()); err == nil {
+				t.Fatal("unsafe release metadata was accepted")
+			}
+		})
+	}
+}
+
+func TestGitHubLatestSourceEnforcesResponseLimitAndTransportFailure(t *testing.T) {
+	oversized := sourceWithResponse(func(request *http.Request) (*http.Response, error) {
+		return releaseResponse(request, strings.Repeat("x", maxReleaseResponse+1)), nil
+	})
+	if _, err := oversized.Latest(context.Background()); err == nil {
+		t.Fatal("oversized response was accepted")
+	}
+
+	want := errors.New("offline")
+	offline := sourceWithResponse(func(*http.Request) (*http.Response, error) { return nil, want })
+	if _, err := offline.Latest(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("error = %v, want transport failure", err)
+	}
+}
