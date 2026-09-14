@@ -1548,6 +1548,9 @@ export const api = {
       enabled: boolean
       locale: ClusterNotificationSnapshot['locale']
       rules: ClusterNotificationSnapshot['rules']
+      provider: NonNullable<ClusterNotificationSnapshot['provider']>
+      channelCredential?: string
+      /** Compatibility input for servers released before multi-channel support. */
       telegramBotToken?: string
       expectedResourceVersion: string
     }): Promise<ClusterNotificationSnapshot> =>

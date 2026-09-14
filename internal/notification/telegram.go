@@ -47,7 +47,13 @@ func NewTelegramClient() *TelegramClient {
 	}
 	return &TelegramClient{
 		baseURL: telegramAPIBaseURL,
-		client:  &http.Client{Transport: transport, Timeout: telegramRequestTimeout},
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   telegramRequestTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 

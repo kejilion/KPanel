@@ -569,6 +569,8 @@ let mockNotificationSnapshot = {
   enabled: false,
   locale: 'zh-CN',
   timezone: 'Asia/Shanghai',
+  provider: 'telegram',
+  channel: { provider: 'telegram', configured: false, ready: false, status: 'not_configured' },
   rules: {
     resourceAlerts: { certificatesEnabled: false, containers: [] },
     cpuEnabled: true, cpuThresholdPercent: 90,
@@ -1366,15 +1368,52 @@ createServer(async (request, response) => {
       send(response, 409, { title: '通知设置已发生变化', status: 409, code: 'cluster_notifications_changed' })
       return
     }
+    const supportedProviders = new Set(['telegram', 'feishu', 'dingtalk', 'wecom'])
+    const provider = supportedProviders.has(input.provider) ? input.provider : mockNotificationSnapshot.provider
+    const credentialProvided = typeof input.channelCredential === 'string' && input.channelCredential.trim() !== ''
+    if (provider !== mockNotificationSnapshot.provider && !credentialProvided) {
+      send(response, 422, { title: '请先输入所选通知渠道的凭据', status: 422, code: 'cluster_notifications_credential_required' })
+      return
+    }
+    const channel = credentialProvided
+      ? { provider, configured: true, ready: true, status: 'ready', lastCheckedAt: new Date().toISOString(), lastSuccessAt: new Date().toISOString() }
+      : mockNotificationSnapshot.channel
     mockNotificationRevision += 1
     mockNotificationSnapshot = {
       ...mockNotificationSnapshot,
       enabled: Boolean(input.enabled),
       locale: ['zh-CN', 'zh-TW', 'en-US'].includes(input.locale) ? input.locale : 'zh-CN',
       rules: input.rules ? { ...input.rules, resourceAlerts: input.rules.resourceAlerts ?? mockNotificationSnapshot.rules.resourceAlerts } : mockNotificationSnapshot.rules,
+      provider,
+      channel,
+      telegram: provider === 'telegram'
+        ? { configured: channel.configured, ready: channel.ready, status: channel.status, lastCheckedAt: channel.lastCheckedAt, lastSuccessAt: channel.lastSuccessAt }
+        : { configured: false, ready: false, status: 'not_configured' },
       resourceVersion: mockRevision(mockNotificationRevision),
       updatedAt: new Date().toISOString(),
     }
+    send(response, 200, mockNotificationSnapshot)
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/notifications/discover') {
+    if (mockNotificationSnapshot.provider !== 'telegram' || !mockNotificationSnapshot.channel.configured) {
+      send(response, 422, { title: '通知渠道尚未就绪', status: 422, code: 'cluster_notifications_not_ready' })
+      return
+    }
+    const now = new Date().toISOString()
+    mockNotificationSnapshot.channel = { ...mockNotificationSnapshot.channel, ready: true, status: 'ready', botUsername: 'kpanel_preview_bot', lastCheckedAt: now, lastSuccessAt: now }
+    mockNotificationSnapshot.telegram = { ...mockNotificationSnapshot.channel }
+    send(response, 200, mockNotificationSnapshot)
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/notifications/test') {
+    if (!mockNotificationSnapshot.channel.ready) {
+      send(response, 422, { title: '通知渠道尚未就绪', status: 422, code: 'cluster_notifications_channel_not_ready' })
+      return
+    }
+    const now = new Date().toISOString()
+    mockNotificationSnapshot.channel = { ...mockNotificationSnapshot.channel, lastCheckedAt: now, lastSuccessAt: now }
+    if (mockNotificationSnapshot.provider === 'telegram') mockNotificationSnapshot.telegram = { ...mockNotificationSnapshot.channel }
     send(response, 200, mockNotificationSnapshot)
     return
   }

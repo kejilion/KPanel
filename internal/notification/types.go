@@ -19,11 +19,20 @@ const (
 	MaxTrafficTotalThresholdGiB     = 1_048_576
 	MaxAlertStates                  = 1_024
 	MaxTelegramTokenBytes           = 256
+	MaxChannelCredentialBytes       = 2_048
 	DefaultNotificationLocale       = "zh-CN"
 )
 
 var (
 	ErrConflict              = errors.New("notification settings changed")
+	ErrCredentialRequired    = errors.New("notification channel credential is required")
+	ErrInvalidCredential     = errors.New("notification channel credential is invalid")
+	ErrProviderMismatch      = errors.New("notification channel credential does not match provider")
+	ErrUnsupportedProvider   = errors.New("notification channel provider is unsupported")
+	ErrDiscoverUnsupported   = errors.New("notification channel does not support discovery")
+	ErrChannelNotConfigured  = errors.New("notification channel is not configured")
+	ErrChannelNotReady       = errors.New("notification channel is not ready")
+	ErrChannelUnavailable    = errors.New("notification channel is unavailable")
 	ErrTokenRequired         = errors.New("telegram bot token is required")
 	ErrNotConfigured         = errors.New("telegram notifications are not configured")
 	ErrNotReady              = errors.New("telegram notifications are not ready")
@@ -138,21 +147,49 @@ type Settings struct {
 }
 
 type UpdateInput struct {
-	Enabled                 bool   `json:"enabled"`
-	Locale                  string `json:"locale,omitempty"`
-	Rules                   Rules  `json:"rules"`
+	Enabled           bool     `json:"enabled"`
+	Locale            string   `json:"locale,omitempty"`
+	Rules             Rules    `json:"rules"`
+	Provider          Provider `json:"provider,omitempty"`
+	ChannelCredential string   `json:"channelCredential,omitempty"`
+	// TelegramBotToken remains accepted for older clients. New clients use
+	// Provider and ChannelCredential for every delivery channel.
 	TelegramBotToken        string `json:"telegramBotToken,omitempty"`
 	ExpectedResourceVersion string `json:"expectedResourceVersion"`
 }
 
-type TelegramStatus string
+type Provider string
 
 const (
-	TelegramNotConfigured TelegramStatus = "not_configured"
-	TelegramWaitingChat   TelegramStatus = "waiting_for_chat"
-	TelegramReady         TelegramStatus = "ready"
-	TelegramError         TelegramStatus = "error"
+	ProviderTelegram Provider = "telegram"
+	ProviderFeishu   Provider = "feishu"
+	ProviderDingTalk Provider = "dingtalk"
+	ProviderWeCom    Provider = "wecom"
 )
+
+type ChannelStatus string
+
+// TelegramStatus is kept as an alias so existing Go API consumers continue
+// to compile while the persisted v1 state retains its original field names.
+type TelegramStatus = ChannelStatus
+
+const (
+	TelegramNotConfigured ChannelStatus = "not_configured"
+	TelegramWaitingChat   ChannelStatus = "waiting_for_chat"
+	TelegramReady         ChannelStatus = "ready"
+	TelegramError         ChannelStatus = "error"
+)
+
+type ChannelSnapshot struct {
+	Provider      Provider      `json:"provider"`
+	Configured    bool          `json:"configured"`
+	Ready         bool          `json:"ready"`
+	Status        ChannelStatus `json:"status"`
+	BotUsername   string        `json:"botUsername,omitempty"`
+	LastCheckedAt *time.Time    `json:"lastCheckedAt,omitempty"`
+	LastSuccessAt *time.Time    `json:"lastSuccessAt,omitempty"`
+	LastErrorCode string        `json:"lastErrorCode,omitempty"`
+}
 
 type TelegramSnapshot struct {
 	Configured    bool           `json:"configured"`
@@ -165,11 +202,15 @@ type TelegramSnapshot struct {
 }
 
 type Snapshot struct {
-	Resources       ResourceSnapshot `json:"resources"`
-	Enabled         bool             `json:"enabled"`
-	Locale          string           `json:"locale"`
-	Timezone        string           `json:"timezone"`
-	Rules           Rules            `json:"rules"`
+	Resources ResourceSnapshot `json:"resources"`
+	Enabled   bool             `json:"enabled"`
+	Locale    string           `json:"locale"`
+	Timezone  string           `json:"timezone"`
+	Rules     Rules            `json:"rules"`
+	Provider  Provider         `json:"provider"`
+	Channel   ChannelSnapshot  `json:"channel"`
+	// Telegram mirrors Channel only when Telegram is active. It is retained
+	// for compatibility with clients released before multi-channel support.
 	Telegram        TelegramSnapshot `json:"telegram"`
 	ResourceVersion string           `json:"resourceVersion"`
 	UpdatedAt       time.Time        `json:"updatedAt"`
@@ -215,6 +256,15 @@ func normalizeNotificationLocale(value string) string {
 func validNotificationLocale(value string) bool {
 	switch value {
 	case "zh-CN", "zh-TW", "en-US":
+		return true
+	default:
+		return false
+	}
+}
+
+func validProvider(value Provider) bool {
+	switch value {
+	case ProviderTelegram, ProviderFeishu, ProviderDingTalk, ProviderWeCom:
 		return true
 	default:
 		return false

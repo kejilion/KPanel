@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { CheckCircle2, LoaderCircle, RefreshCw, Send, ShieldCheck } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import type { ClusterNotificationRules, ClusterNotificationSnapshot } from '@/types/api'
+import type { ClusterNotificationChannel, ClusterNotificationProvider, ClusterNotificationRules, ClusterNotificationSnapshot } from '@/types/api'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/ClusterNotifications/en-US').then((module) => module.default)
@@ -48,28 +48,66 @@ const form = reactive({
   trafficTotalSentThresholdGiB: 100,
   sshLoginEnabled: true,
   hostOfflineEnabled: true,
-  telegramBotToken: '',
+  channelCredential: '',
 })
 
 const notificationProviders = [
-  { id: 'telegram', name: 'Telegram', glyph: '', available: true },
-  { id: 'feishu', name: '飞书', glyph: 'F', available: false },
-  { id: 'dingtalk', name: '钉钉', glyph: 'D', available: false },
-  { id: 'wecom', name: '企微', glyph: 'W', available: false },
+  { id: 'telegram', name: 'Telegram', glyph: '' },
+  { id: 'feishu', name: '飞书', glyph: 'F' },
+  { id: 'dingtalk', name: '钉钉', glyph: 'D' },
+  { id: 'wecom', name: '企业微信', glyph: 'W' },
 ] as const
 
-type NotificationProvider = typeof notificationProviders[number]['id']
+const selectedProvider = ref<ClusterNotificationProvider>('telegram')
 
-const selectedProvider = ref<NotificationProvider>('telegram')
+const activeChannel = computed<ClusterNotificationChannel>(() => {
+  const value = snapshot.value
+  if (value?.channel) return value.channel
+  return {
+    provider: value?.provider || 'telegram',
+    configured: value?.telegram.configured || false,
+    ready: value?.telegram.ready || false,
+    status: value?.telegram.status || 'not_configured',
+    botUsername: value?.telegram.botUsername,
+    lastCheckedAt: value?.telegram.lastCheckedAt,
+    lastSuccessAt: value?.telegram.lastSuccessAt,
+    lastErrorCode: value?.telegram.lastErrorCode,
+  }
+})
+
+const selectedIsActive = computed(() => selectedProvider.value === activeChannel.value.provider)
+const selectedChannel = computed<ClusterNotificationChannel>(() => selectedIsActive.value
+  ? activeChannel.value
+  : { provider: selectedProvider.value, configured: false, ready: false, status: 'not_configured' })
+const selectedProviderName = computed(() => notificationProviders.find((provider) => provider.id === selectedProvider.value)?.name || 'Telegram')
+const credentialRequiredForSave = computed(() => !form.channelCredential.trim() && !selectedChannel.value.configured)
+const saveBlocked = computed(() => !form.channelCredential.trim() && (!selectedIsActive.value || (form.enabled && !selectedChannel.value.configured)))
+const credentialLabel = computed(() => selectedProvider.value === 'telegram' ? 'Bot API key' : 'Webhook 地址')
+const credentialPlaceholder = computed(() => {
+  if (selectedChannel.value.configured) return '已保存，留空则保持不变'
+  switch (selectedProvider.value) {
+    case 'feishu': return 'https://open.feishu.cn/open-apis/bot/v2/hook/...'
+    case 'dingtalk': return 'https://oapi.dingtalk.com/robot/send?access_token=...'
+    case 'wecom': return 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...'
+    default: return '粘贴 BotFather 提供的 key'
+  }
+})
 
 function phrase(value: string): string {
   phraseCatalogVersion.value
   return translatePhrase(value)
 }
 
-function chooseProvider(provider: NotificationProvider): void {
-  if (provider !== 'telegram') return
+function chooseProvider(provider: ClusterNotificationProvider): void {
+  if (provider === selectedProvider.value) return
   selectedProvider.value = provider
+  form.channelCredential = ''
+}
+
+function channelFor(provider: ClusterNotificationProvider): ClusterNotificationChannel {
+  return provider === activeChannel.value.provider
+    ? activeChannel.value
+    : { provider, configured: false, ready: false, status: 'not_configured' }
 }
 
 function applySnapshot(value: ClusterNotificationSnapshot): void {
@@ -80,6 +118,7 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   const activeLabel = modalControl?.getAttribute('aria-label') || ''
   const activeText = modalControl?.textContent?.trim() || ''
   snapshot.value = value
+  selectedProvider.value = value.channel?.provider || value.provider || 'telegram'
   form.enabled = value.enabled
   form.cpuEnabled = value.rules.cpuEnabled
   form.cpuThresholdPercent = value.rules.cpuThresholdPercent
@@ -95,7 +134,7 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.trafficTotalSentThresholdGiB = value.rules.trafficTotalSentThresholdGiB || 100
   form.sshLoginEnabled = value.rules.sshLoginEnabled
   form.hostOfflineEnabled = value.rules.hostOfflineEnabled
-  form.telegramBotToken = ''
+  form.channelCredential = ''
   if (modalControl) {
     void nextTick(() => {
       if (modalControl.isConnected) {
@@ -138,12 +177,21 @@ function friendlyError(reason: unknown): string {
     const messages: Record<string, string> = {
       cluster_notifications_changed: '配置已被其他页面更新，请重新读取后再保存。',
       cluster_notifications_token_required: '请先输入 Telegram Bot API key。',
+      cluster_notifications_credential_required: '请先输入所选通知渠道的 Webhook 地址。',
       cluster_notifications_not_configured: '还没有配置 Telegram Bot API key。',
+      cluster_notifications_channel_not_configured: '还没有配置所选通知渠道。',
       cluster_notifications_not_ready: '请先私聊机器人发送 /start，再重新发现聊天。',
+      cluster_notifications_channel_not_ready: '所选通知渠道尚未就绪，请重新保存 Webhook 并验证。',
+      cluster_notifications_provider_mismatch: '凭据与所选通知渠道不匹配，请检查后重试。',
+      cluster_notifications_unsupported_provider: '当前版本不支持这个通知渠道。',
+      cluster_notifications_discover_unsupported: '所选通知渠道不需要发现聊天。',
+      cluster_notifications_invalid_credential: 'Webhook 地址无效，请粘贴官方机器人提供的完整地址。',
       cluster_notifications_chat_not_found: '没有找到私聊会话，请先私聊机器人发送 /start。',
       cluster_notifications_invalid_token: 'Bot API key 无效，请检查后重试。',
       cluster_notifications_webhook_active: '这个机器人启用了 webhook，暂时无法自动发现私聊；请先关闭 webhook。',
       cluster_notifications_telegram_unavailable: 'Telegram 暂时不可用，请稍后重试。',
+      cluster_notifications_channel_unavailable: '通知渠道暂时不可用，请稍后重试。',
+      cluster_notifications_save_failed_after_delivery: '验证消息已发送，但通知设置未保存；请检查 KPanel 数据目录权限后重试。',
       cluster_notifications_unavailable: '通知配置暂时不可用，请检查 KPanel 数据目录权限。',
     }
     return messages[reason.code] || reason.message || '通知操作失败，请稍后重试。'
@@ -174,7 +222,7 @@ async function load(): Promise<void> {
 
 async function save(): Promise<void> {
   if (!snapshot.value || saving.value) return
-  const tokenProvided = Boolean(form.telegramBotToken.trim())
+  const credentialProvided = Boolean(form.channelCredential.trim())
   saving.value = true
   errorMessage.value = ''
   statusMessage.value = ''
@@ -183,12 +231,13 @@ async function save(): Promise<void> {
       enabled: form.enabled,
       locale: locale.value,
       rules: rulesFromForm(),
-      telegramBotToken: form.telegramBotToken.trim() || undefined,
+      provider: selectedProvider.value,
+      channelCredential: form.channelCredential.trim() || undefined,
       expectedResourceVersion: snapshot.value.resourceVersion,
     })
     applySnapshot(value)
-    statusMessage.value = tokenProvided
-      ? 'Bot API key 已保存并完成连接。'
+    statusMessage.value = credentialProvided
+      ? (selectedProvider.value === 'telegram' ? 'Bot API key 已保存并完成连接。' : '渠道凭据已保存并通过发送验证。')
       : '通知设置已保存。'
   } catch (reason) {
     errorMessage.value = friendlyError(reason)
@@ -229,7 +278,7 @@ async function testChannel(): Promise<void> {
   }
 }
 
-function statusLabel(value?: ClusterNotificationSnapshot['telegram']['status']): string {
+function statusLabel(value?: ClusterNotificationChannel['status']): string {
   switch (value) {
     case 'ready': return '已连接'
     case 'waiting_for_chat': return '等待私聊'
@@ -238,7 +287,7 @@ function statusLabel(value?: ClusterNotificationSnapshot['telegram']['status']):
   }
 }
 
-function statusClass(value?: ClusterNotificationSnapshot['telegram']['status']): string {
+function statusClass(value?: ClusterNotificationChannel['status']): string {
   return value === 'ready' ? 'is-ready' : value === 'error' ? 'is-error' : 'is-pending'
 }
 
@@ -269,7 +318,7 @@ onBeforeUnmount(() => {
   <ModalDialog
     :open="open"
     :title="phrase('集群通知')"
-    :description="phrase('只需一个 Telegram Bot API key，即可接收所有集群主机的关键变化。')"
+    :description="phrase('选择一个消息渠道，接收所有集群主机的关键变化。')"
     size="medium"
     @close="emit('close')"
   >
@@ -292,7 +341,7 @@ onBeforeUnmount(() => {
           <div class="cluster-notifications__section-heading">
             <div>
               <h3 id="cluster-notifications-provider-title">{{ phrase('通知渠道') }}</h3>
-              <p>{{ phrase('选择接收告警的通知渠道；目前仅开放 Telegram。') }}</p>
+              <p>{{ phrase('选择接收告警的通知渠道；同一时间只保存一个活动渠道。') }}</p>
             </div>
           </div>
           <div class="cluster-notifications__provider-grid" role="radiogroup" :aria-label="phrase('通知渠道')">
@@ -300,12 +349,11 @@ onBeforeUnmount(() => {
               v-for="provider in notificationProviders"
               :key="provider.id"
               class="cluster-notifications__provider"
-              :class="[provider.id === 'telegram' ? statusClass(snapshot.telegram.status) : '', { 'is-selected': selectedProvider === provider.id, 'is-disabled': !provider.available }]"
+              :class="[statusClass(channelFor(provider.id).status), { 'is-selected': selectedProvider === provider.id }]"
               type="button"
               role="radio"
               :aria-checked="selectedProvider === provider.id"
-              :disabled="!provider.available"
-              :title="phrase(provider.available ? '当前可用' : '暂未开放')"
+              :title="phrase('当前可用')"
               @click="chooseProvider(provider.id)"
             >
               <span class="cluster-notifications__provider-icon" aria-hidden="true">
@@ -314,44 +362,49 @@ onBeforeUnmount(() => {
               </span>
               <span class="cluster-notifications__provider-copy">
                 <strong>{{ phrase(provider.name) }}</strong>
-                <span v-if="provider.id === 'telegram'" class="cluster-notifications__status">
-                  <span class="cluster-notifications__status-dot" />{{ phrase(statusLabel(snapshot.telegram.status)) }}
+                <span class="cluster-notifications__status">
+                  <span class="cluster-notifications__status-dot" />{{ phrase(statusLabel(channelFor(provider.id).status)) }}
                 </span>
-                <span v-else class="cluster-notifications__provider-status--disabled">{{ phrase('暂未开放') }}</span>
               </span>
-              <ShieldCheck v-if="provider.id === 'telegram' && snapshot.telegram.ready" class="cluster-notifications__ready-icon" :size="17" />
+              <ShieldCheck v-if="channelFor(provider.id).ready" class="cluster-notifications__ready-icon" :size="17" />
               <CheckCircle2 v-else-if="selectedProvider === provider.id" class="cluster-notifications__provider-selected-icon" :size="17" />
             </button>
           </div>
-          <p v-if="snapshot.telegram.botUsername" class="cluster-notifications__provider-detail">
-            @{{ snapshot.telegram.botUsername }}<span v-if="snapshot.telegram.lastCheckedAt"> · {{ phrase('最近检查') }} {{ formatDateTime(snapshot.telegram.lastCheckedAt) }}</span>
+          <p v-if="selectedProvider === 'telegram' && selectedChannel.botUsername" class="cluster-notifications__provider-detail">
+            @{{ selectedChannel.botUsername }}<span v-if="selectedChannel.lastCheckedAt"> · {{ phrase('最近检查') }} {{ formatDateTime(selectedChannel.lastCheckedAt) }}</span>
           </p>
-          <p v-else class="cluster-notifications__provider-detail">{{ phrase('私聊机器人发送 /start，KPanel 会自动发现接收会话。') }}</p>
+          <p v-else-if="selectedProvider === 'telegram'" class="cluster-notifications__provider-detail">{{ phrase('私聊机器人发送 /start，KPanel 会自动发现接收会话。') }}</p>
+          <p v-else class="cluster-notifications__provider-detail">
+            <strong>{{ phrase(selectedProviderName) }}</strong> ·
+            <span v-if="selectedChannel.ready">{{ phrase('渠道已就绪') }}<span v-if="selectedChannel.lastCheckedAt"> · {{ phrase('最近检查') }} {{ formatDateTime(selectedChannel.lastCheckedAt) }}</span></span>
+            <span v-else>{{ phrase('粘贴群机器人 Webhook 地址；保存时会先发送一条验证消息。') }}</span>
+          </p>
         </section>
 
         <label class="field cluster-notifications__token">
-          <span>{{ phrase('Bot API key') }}</span>
+          <span>{{ phrase(credentialLabel) }}</span>
           <input
-            v-model="form.telegramBotToken"
+            v-model="form.channelCredential"
             type="password"
             autocomplete="new-password"
-            :placeholder="snapshot.telegram.configured ? phrase('已保存，留空则保持不变') : phrase('粘贴 BotFather 提供的 key')"
+            :aria-label="phrase(credentialLabel)"
+            :placeholder="credentialPlaceholder.startsWith('https://') ? credentialPlaceholder : phrase(credentialPlaceholder)"
           />
-          <small>{{ phrase('凭据仅保存在当前 KPanel 的受保护数据目录，不会显示在页面或通知内容中。') }}</small>
+          <small>{{ phrase('凭据仅保存在当前 KPanel 的受保护数据目录，不会显示在页面或通知内容中。') }} {{ phrase('切换渠道并保存时会替换已存凭据。') }}</small>
         </label>
 
         <div class="cluster-notifications__channel-actions">
-          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || (!snapshot.telegram.configured && !form.telegramBotToken.trim())" @click="save">
+          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || credentialRequiredForSave" @click="save">
             <LoaderCircle v-if="saving" class="spin" :size="15" />
             <Send v-else :size="15" />
-            {{ phrase(saving ? '正在连接…' : (form.telegramBotToken.trim() || !snapshot.telegram.configured ? '保存并连接' : '保存设置')) }}
+            {{ phrase(saving ? '正在连接…' : ((form.channelCredential.trim() || !selectedChannel.configured) ? (selectedProvider === 'telegram' ? '保存并连接' : '保存并验证') : '保存设置')) }}
           </button>
-          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || !snapshot.telegram.configured" @click="discover">
+          <button v-if="selectedProvider === 'telegram'" class="button button--secondary" type="button" :disabled="saving || discovering || testing || !selectedChannel.configured" @click="discover">
             <LoaderCircle v-if="discovering" class="spin" :size="15" />
             <RefreshCw v-else :size="15" />
             {{ phrase(discovering ? '正在发现…' : '重新发现私聊') }}
           </button>
-          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || !snapshot.telegram.ready" @click="testChannel">
+          <button class="button button--secondary" type="button" :disabled="saving || discovering || testing || !selectedChannel.ready" @click="testChannel">
             <LoaderCircle v-if="testing" class="spin" :size="15" />
             <CheckCircle2 v-else :size="15" />
             {{ phrase(testing ? '正在发送…' : '发送测试消息') }}
@@ -461,7 +514,7 @@ onBeforeUnmount(() => {
 
     <template #footer>
       <button class="button button--secondary" type="button" :disabled="saving" @click="emit('close')">{{ phrase('关闭') }}</button>
-      <button class="button button--primary" type="button" :disabled="saving || loading || !snapshot" @click="save">
+      <button class="button button--primary" type="button" :disabled="saving || loading || !snapshot || saveBlocked" @click="save">
         <LoaderCircle v-if="saving" class="spin" :size="15" />
         {{ phrase(saving ? '正在保存…' : '保存设置') }}
       </button>
@@ -646,7 +699,7 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.cluster-notifications__token small {
+.field.cluster-notifications__token small {
   color: var(--muted);
   font-size: 12px;
   font-weight: 400;
