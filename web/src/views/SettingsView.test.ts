@@ -331,6 +331,10 @@ describe('SettingsView username change', () => {
 })
 
 describe('SettingsView appearance', () => {
+  it('keeps backup and restore immediately after appearance and colors', () => {
+    expect(settingsSource).toMatch(/<h2>外观与配色<\/h2>[\s\S]*?<\/section>\s*<BackupCenter \/>/)
+  })
+
   it('provides accessible color inputs, linked accents, a local preview, and explicit actions', () => {
     expect(settingsSource).toContain('role="radiogroup" aria-label="推荐配色方案"')
     expect(settingsSource).toContain('@click="selectThemeColorPreset(preset.colors)"')
