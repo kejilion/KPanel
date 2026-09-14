@@ -337,7 +337,7 @@ describe('ClusterView compact summary layout', () => {
 
   it('routes native confirmations through core i18n', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
-    expect(source.match(/window\.confirm\(t\('cluster\.confirm\./g)).toHaveLength(4)
+    expect(source.match(/window\.confirm\(t\('cluster\.confirm\./g)).toHaveLength(5)
     expect(source).not.toContain('重置公开链接？旧链接会立即失效。')
   })
 })

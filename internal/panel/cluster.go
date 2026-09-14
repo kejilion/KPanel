@@ -19,6 +19,7 @@ import (
 
 const (
 	lightEnrollEndpoint         = "/api/v3/federation/light/enroll"
+	lightBatchEnrollEndpoint    = cluster.LightBatchEnrollPath
 	lightReportEndpoint         = "/api/v3/federation/light/report"
 	lightFileCapabilityEndpoint = cluster.LightFileCapabilityPath
 )
@@ -101,6 +102,15 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		s.handleClusterPairingCodeV2(w, r)
 	case r.URL.Path == "/api/v1/cluster/light-enrollments" && r.Method == http.MethodPost:
 		s.handleLightEnrollmentCreate(w, r)
+	case r.URL.Path == "/api/v1/cluster/light-batch-enrollments" && r.Method == http.MethodGet:
+		if _, _, ok := s.requireSession(w, r); !ok {
+			return
+		}
+		s.writeJSON(w, http.StatusOK, s.cluster.LightBatchEnrollments())
+	case r.URL.Path == "/api/v1/cluster/light-batch-enrollments" && r.Method == http.MethodPost:
+		s.handleLightBatchEnrollmentCreate(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/light-batch-enrollments/") && r.Method == http.MethodDelete:
+		s.handleLightBatchEnrollmentDelete(w, r)
 	case r.URL.Path == "/api/v1/cluster/pairing-codes" && r.Method == http.MethodPost:
 		s.handleClusterPairingCode(w, r)
 	case r.URL.Path == "/api/v1/cluster/controllers" && r.Method == http.MethodGet:
@@ -337,6 +347,75 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		"protocol":  cluster.LightNodeProtocol,
 	})
 	s.writeJSON(w, http.StatusCreated, enrollment)
+}
+
+func (s *Server) handleLightBatchEnrollmentCreate(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.requireClusterMutation(w, r)
+	if !ok {
+		return
+	}
+	var input cluster.CreateLightBatchEnrollmentInput
+	if r.ContentLength > 0 {
+		if err := s.decodeJSON(w, r, &input); err != nil {
+			return
+		}
+	}
+	change := map[string]any{
+		"namePrefix":       strings.TrimSpace(input.NamePrefix),
+		"maxUses":          input.MaxUses,
+		"expiresInSeconds": input.ExpiresInSeconds,
+	}
+	if err := s.audit(
+		r, session.User.ID, "cluster.light-batch-enrollment.create",
+		"cluster-node", s.cluster.NodeID(), "intent", change,
+	); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	origin, ok := s.lightEnrollmentOrigin(r)
+	if !ok {
+		_ = s.audit(r, session.User.ID, "cluster.light-batch-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", change)
+		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
+		return
+	}
+	enrollment, err := s.cluster.CreateLightBatchEnrollmentForOrigin(origin, input)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "cluster.light-batch-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", change)
+		s.writeClusterError(w, r, err)
+		return
+	}
+	change["id"] = enrollment.ID
+	change["maxUses"] = enrollment.MaxUses
+	change["expiresAt"] = enrollment.ExpiresAt
+	change["protocol"] = cluster.LightNodeProtocol
+	_ = s.audit(r, session.User.ID, "cluster.light-batch-enrollment.create", "cluster-node", s.cluster.NodeID(), "success", change)
+	s.writeJSON(w, http.StatusCreated, enrollment)
+}
+
+func (s *Server) handleLightBatchEnrollmentDelete(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.requireClusterMutation(w, r)
+	if !ok {
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/cluster/light-batch-enrollments/")
+	if id == "" || strings.Contains(id, "/") {
+		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
+		return
+	}
+	if err := s.audit(
+		r, session.User.ID, "cluster.light-batch-enrollment.revoke",
+		"cluster-light-batch-enrollment", id, "intent", nil,
+	); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	if err := s.cluster.DeleteLightBatchEnrollment(id); err != nil {
+		_ = s.audit(r, session.User.ID, "cluster.light-batch-enrollment.revoke", "cluster-light-batch-enrollment", id, "failure", nil)
+		s.writeClusterError(w, r, err)
+		return
+	}
+	_ = s.audit(r, session.User.ID, "cluster.light-batch-enrollment.revoke", "cluster-light-batch-enrollment", id, "success", nil)
+	s.writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 func (s *Server) handleClusterPairingCodeProtocol(
@@ -660,7 +739,8 @@ func mustReadLimited(input io.Reader, limit int64) []byte {
 
 func isLightNodeRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost &&
-		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint)
+		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightBatchEnrollEndpoint ||
+			r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint)
 }
 
 func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Request) {
@@ -691,6 +771,29 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability)
 		_ = s.audit(r, "", "cluster.light-node.enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"protocol": cluster.LightNodeProtocol,
+		})
+		s.writeJSON(w, http.StatusCreated, response)
+	case lightBatchEnrollEndpoint:
+		var input cluster.LightEnrollRequest
+		if err := decodeLimitedJSON(w, r, cluster.MaxPairBytes, &input); err != nil {
+			return
+		}
+		origin, ok := s.requestHTTPSOrigin(r)
+		if !ok {
+			s.auditAuthFailure(r, "cluster.light-node.batch-enroll")
+			s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
+			return
+		}
+		response, policyID, err := s.cluster.EnrollLightNodeBatch(s.remoteIP(r), origin, input)
+		if err != nil {
+			s.auditAuthFailure(r, "cluster.light-node.batch-enroll")
+			s.writeClusterError(w, r, err)
+			return
+		}
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability)
+		_ = s.audit(r, "", "cluster.light-node.batch-enroll", "cluster-host", response.NodeID, "success", map[string]any{
+			"batchEnrollmentId": policyID,
+			"protocol":          cluster.LightNodeProtocol,
 		})
 		s.writeJSON(w, http.StatusCreated, response)
 	case lightReportEndpoint:
@@ -840,6 +943,8 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_invalid", "Cluster origin is invalid"
 	case errors.Is(err, cluster.ErrLightHTTPSOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_https_required", "Light node HTTPS origin is required"
+	case errors.Is(err, cluster.ErrLightBatchInvalid):
+		status, code, title = http.StatusUnprocessableEntity, "cluster_light_batch_invalid", "Light node batch enrollment settings are invalid"
 	case errors.Is(err, cluster.ErrPrivateOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_blocked", "Cluster origin is blocked"
 	case errors.Is(err, cluster.ErrPairingCode):

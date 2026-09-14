@@ -75,3 +75,8 @@ func rootOwned(info os.FileInfo) bool {
 	// may intentionally be kejilion-node for the low-privilege relay.
 	return ok && stat.Uid == 0
 }
+
+func processOwned(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Uid == uint32(os.Geteuid())
+}

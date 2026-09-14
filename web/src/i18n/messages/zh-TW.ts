@@ -367,6 +367,7 @@ export const zhTWMessages = {
   "apps.submitting": "正在提交…",
   "cluster.confirm.resetShare": "重設公開連結？舊連結會立即失效。",
   "cluster.confirm.revokeController": "撤銷 {name} 的存取授權？",
+  "cluster.confirm.revokeLightBatchEnrollment": "撤銷這條批次接入授權？未使用名額將立即失效。",
   "cluster.confirm.removeHost": "從目前 KPanel 移除 {name}？目標主機業務不會受到影響。",
   "cluster.confirm.openHttpPanel": "叢集監控資料已端到端加密，但這個管理頁面仍透過普通 HTTP 開啟，登入密碼和 Session 不受加密直連保護。建議先為目標面板設定 HTTPS。仍要開啟嗎？",
   "error.network": "網路連線失敗，請檢查連線後重試。",

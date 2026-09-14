@@ -548,6 +548,19 @@ const visualClusterHosts = [
   }),
 ]
 
+let mockLightBatchEnrollmentCounter = 1
+let mockLightBatchEnrollments = [
+  {
+    id: '9'.repeat(32),
+    namePrefix: '新加坡',
+    maxUses: 100,
+    usedCount: 23,
+    remainingCount: 77,
+    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    expiresAt: new Date(Date.now() + 82_800_000).toISOString(),
+  },
+]
+
 if (process.env.KPANEL_MOCK_MONITORING === '1') {
   for (const [letter, name, state] of [['a', '轻量节点 · 东京', 'online'], ['c', '轻量节点 · 离线示例', 'offline'], ['d', '轻量节点 · 等待首次采样', 'online'], ['f', '旧版节点 · 升级示例', 'online']]) {
     visualClusterHosts.push(visualClusterHost({ id: letter.repeat(32), name, isLocal: false, state,
@@ -1898,10 +1911,53 @@ createServer(async (request, response) => {
       items: visualClusterHosts,
       total: visualClusterHosts.length,
       remoteTotal: visualClusterHosts.filter((host) => !host.isLocal).length,
-      maxHosts: Math.max(16, visualClusterHosts.length),
+      maxHosts: 100,
       pollIntervalSeconds: 30,
       nodeId: 'local-node',
     })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
+    send(response, 200, { items: mockLightBatchEnrollments, total: mockLightBatchEnrollments.length })
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
+    const input = await readJSON(request)
+    const maxUses = Number(input.maxUses || 100)
+    const expiresInSeconds = Number(input.expiresInSeconds || 86_400)
+    if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 100 ||
+      !Number.isInteger(expiresInSeconds) || expiresInSeconds < 300 || expiresInSeconds > 604_800) {
+      send(response, 422, { title: '批量接入参数无效', code: 'light_batch_invalid' })
+      return
+    }
+    mockLightBatchEnrollmentCounter += 1
+    const id = mockLightBatchEnrollmentCounter.toString(16).padStart(32, '0')
+    const now = new Date()
+    const enrollment = {
+      id,
+      command: `bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.preview-${mockLightBatchEnrollmentCounter}'`,
+      ...(String(input.namePrefix || '').trim() ? { namePrefix: String(input.namePrefix).trim() } : {}),
+      maxUses,
+      usedCount: 0,
+      remainingCount: maxUses,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + expiresInSeconds * 1000).toISOString(),
+    }
+    const { command: _command, ...storedEnrollment } = enrollment
+    mockLightBatchEnrollments = [storedEnrollment, ...mockLightBatchEnrollments]
+    send(response, 201, enrollment)
+    return
+  }
+  const lightBatchEnrollmentDeleteMatch = url.pathname.match(/^\/api\/v1\/cluster\/light-batch-enrollments\/([0-9a-f]{32})$/)
+  if (request.method === 'DELETE' && lightBatchEnrollmentDeleteMatch) {
+    const id = lightBatchEnrollmentDeleteMatch[1]
+    const previousLength = mockLightBatchEnrollments.length
+    mockLightBatchEnrollments = mockLightBatchEnrollments.filter((item) => item.id !== id)
+    if (mockLightBatchEnrollments.length === previousLength) {
+      send(response, 404, { title: '批量接入授权不存在', code: 'not_found' })
+      return
+    }
+    send(response, 200, { deleted: true })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/web-environment') {

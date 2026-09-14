@@ -19,6 +19,8 @@ import type {
   ClusterController,
   ClusterHost,
   ClusterHostList,
+  ClusterLightBatchEnrollment,
+  ClusterLightBatchEnrollmentList,
   ClusterLightEnrollment,
   ClusterNotificationSnapshot,
   ClusterPairingCode,
@@ -1609,6 +1611,22 @@ export const api = {
         method: 'POST',
         body: name?.trim() ? { name: name.trim() } : undefined,
       }),
+    lightBatchEnrollments: (signal?: AbortSignal): Promise<ClusterLightBatchEnrollmentList> =>
+      request<ClusterLightBatchEnrollmentList>('/cluster/light-batch-enrollments', { signal }),
+    createLightBatchEnrollment: (body: {
+      namePrefix?: string
+      maxUses: number
+      expiresInSeconds: number
+    }): Promise<ClusterLightBatchEnrollment> =>
+      request<ClusterLightBatchEnrollment>('/cluster/light-batch-enrollments', {
+        method: 'POST',
+        body,
+      }),
+    revokeLightBatchEnrollment: (id: string): Promise<{ deleted: boolean }> =>
+      request<{ deleted: boolean }>(
+        `/cluster/light-batch-enrollments/${encodeURIComponent(id)}`,
+        { method: 'DELETE' },
+      ),
     controllers: async (signal?: AbortSignal): Promise<ApiList<ClusterController>> =>
       normalizeList(
         await request<ApiList<ClusterController> | ClusterController[]>(

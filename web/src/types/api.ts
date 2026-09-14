@@ -377,6 +377,22 @@ export interface ClusterLightEnrollment {
   expiresAt: string
 }
 
+export interface ClusterLightBatchEnrollment {
+  id: string
+  command?: string
+  namePrefix?: string
+  maxUses: number
+  usedCount: number
+  remainingCount: number
+  createdAt: string
+  expiresAt: string
+}
+
+export interface ClusterLightBatchEnrollmentList {
+  items: ClusterLightBatchEnrollment[]
+  total: number
+}
+
 export interface ClusterController {
   id: string
   name?: string

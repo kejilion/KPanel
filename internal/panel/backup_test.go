@@ -42,6 +42,9 @@ func TestBackupPanelIdentityAndStagingValidation(t *testing.T) {
 	if len(before) == 0 {
 		t.Fatal("cluster identity omitted")
 	}
+	if len(value.Files["cluster-light-batch-state.json"]) == 0 {
+		t.Fatal("light batch enrollment state omitted")
+	}
 	if _, err := os.Stat(filepath.Join(s.backups.Root, "validate-fixture")); !os.IsNotExist(err) {
 		t.Fatal("validation plaintext retained")
 	}

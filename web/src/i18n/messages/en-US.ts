@@ -376,6 +376,7 @@ export const enUSMessages = {
 
   'cluster.confirm.resetShare': 'Reset the public link? The old link will stop working immediately.',
   'cluster.confirm.revokeController': 'Revoke access for {name}?',
+  'cluster.confirm.revokeLightBatchEnrollment': 'Revoke this batch authorization? Unused slots will become invalid immediately.',
   'cluster.confirm.removeHost': 'Remove {name} from the current KPanel? The target host services will not be affected.',
   'cluster.confirm.openHttpPanel': 'Cluster monitoring data is encrypted end to end, but this management page is still opened over plain HTTP. Login passwords and the Session are not protected by the encrypted direct channel. Configure HTTPS on the target Panel first if possible. Open it anyway?',
 
