@@ -113,6 +113,7 @@ interface ClusterBindings {
   enableMutualFiles: () => Promise<void>
   openPanel: (host: ClusterHost) => void
   panelURL: (host: ClusterHost) => string
+  displayHostAddress: (host: ClusterHost) => string
   copyAccessCredential: () => Promise<void>
   createLightEnrollment: () => Promise<void>
   copyLightEnrollment: () => Promise<void>
@@ -459,12 +460,32 @@ describe('ClusterView inventory and navigation', () => {
     light.origin = ''
     light.transportSecurity = 'tls'
     light.federationProtocol = 'light-v1'
+    light.lastSnapshot!.telemetry.publicNetwork = {
+      ipv4: '198.51.100.20',
+      ipv6: '2001:db8::20',
+    }
 
     view.openPanel(light)
 
     expect(mocks.open).not.toHaveBeenCalled()
     expect(mocks.confirm).not.toHaveBeenCalled()
     expect(view.transportSecurityLabel(light)).toBe('轻量节点')
+    expect(view.displayHostAddress(light)).toBe('198.51.100.20 · 2001:db8::20')
+  })
+
+  it('finds a lightweight node by either reported public IP', () => {
+    const view = setupView()
+    const light = host('light', false, '')
+    light.kind = 'light_node'
+    light.lastSnapshot!.telemetry.publicNetwork = {
+      ipv4: '198.51.100.20',
+      ipv6: '2001:db8::20',
+    }
+    view.inventory.value = { ...inventory(), items: [light], total: 1 }
+
+    view.search.value = '2001:db8'
+
+    expect(view.filteredHosts.value).toEqual([light])
   })
 
   it.each(['card', 'globe'] as const)('defaults to the row list and persists the %s preference', (mode) => {

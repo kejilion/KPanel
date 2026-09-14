@@ -194,6 +194,8 @@ const filteredHosts = computed(() => {
       host.isLocal ? '本机 当前面板' : '',
       telemetry?.hostname,
       telemetry?.os,
+      telemetry?.publicNetwork?.ipv4,
+      telemetry?.publicNetwork?.ipv6,
       telemetry?.publicNetwork?.country,
       telemetry?.publicNetwork?.city,
       telemetry?.publicNetwork?.isp,
@@ -932,9 +934,15 @@ function openPanel(host: ClusterHost): void {
   window.open(panelURL(host), '_blank', 'noopener,noreferrer')
 }
 
-function displayOrigin(host: ClusterHost): string {
-  if (host.kind === 'light_node') return ''
-  return host.isLocal ? window.location.origin : host.origin
+function displayHostAddress(host: ClusterHost): string {
+  if (host.kind !== 'light_node') {
+    return host.isLocal ? window.location.origin : host.origin
+  }
+  const network = host.lastSnapshot?.telemetry.publicNetwork
+  return [network?.ipv4, network?.ipv6]
+    .map((address) => address?.trim())
+    .filter((address): address is string => Boolean(address))
+    .join(' · ')
 }
 
 function panelURL(host: ClusterHost): string {
@@ -1171,7 +1179,7 @@ onBeforeUnmount(() => {
               target="_blank"
               rel="noopener noreferrer"
             >
-              {{ displayOrigin(host) }} <ArrowUpRight :size="12" />
+              {{ displayHostAddress(host) }} <ArrowUpRight :size="12" />
             </a>
             <button
               v-else-if="host.kind !== 'light_node'"
@@ -1180,8 +1188,15 @@ onBeforeUnmount(() => {
               :title="transportSecurityDescription(host)"
               @click="openPanel(host)"
             >
-              {{ displayOrigin(host) }} <ArrowUpRight :size="12" />
+              {{ displayHostAddress(host) }} <ArrowUpRight :size="12" />
             </button>
+            <span
+              v-else
+              class="cluster-card__origin cluster-card__origin--static"
+              :title="displayHostAddress(host) || phrase('公网 IP 未获取')"
+            >
+              {{ displayHostAddress(host) || phrase('公网 IP 未获取') }}
+            </span>
             <small
               v-if="!host.isLocal && host.peerFingerprint"
               class="cluster-card__fingerprint"
@@ -1641,7 +1656,13 @@ onBeforeUnmount(() => {
         </label>
         <div class="cluster-manage__identity">
           <template v-if="selected.kind !== 'light_node'">
-            <span>{{ phrase('目标地址') }}</span><code>{{ displayOrigin(selected) }}</code>
+            <span>{{ phrase('目标地址') }}</span><code>{{ displayHostAddress(selected) }}</code>
+          </template>
+          <template v-else>
+            <span>{{ phrase('公网 IP') }}</span>
+            <code :title="displayHostAddress(selected) || phrase('公网 IP 未获取')">
+              {{ displayHostAddress(selected) || '--' }}
+            </code>
           </template>
           <span>{{ phrase('连接方式') }}</span><code>{{ phrase(transportSecurityLabel(selected)) }}</code>
           <template v-if="selected.peerFingerprint">
@@ -2077,7 +2098,7 @@ onBeforeUnmount(() => {
   border: 0;
 }
 
-.cluster-card__origin:hover {
+.cluster-card__origin:is(a, button):hover {
   color: var(--brand);
 }
 

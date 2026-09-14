@@ -65,6 +65,8 @@ export default [
   ["从当前 KPanel 移除 {0}？目标主机业务不会受到影响。", "Remove {0} from the current KPanel? Target host business is not affected."],
   ["到期时间：", "Expires:"],
   ["地区", "Region"],
+  ["公网 IP", "Public IP"],
+  ["公网 IP 未获取", "Public IP unavailable"],
   ["等待首次主机摘要", "Waiting for the first host summary"],
   ["低权限 Agent 主动通过 HTTPS 上报只读主机摘要", "A least-privilege Agent sends read-only host summaries over HTTPS"],
   ["非面板 Linux 主机", "Non Panel Linux Host"],
