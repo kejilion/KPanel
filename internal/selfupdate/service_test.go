@@ -12,9 +12,13 @@ import (
 )
 
 type testReleaseSource struct {
-	version string
-	digest  string
-	err     error
+	version      string
+	digest       string
+	releaseURL   string
+	publishedAt  string
+	notes        []ReleaseNote
+	upgradeNotes []string
+	err          error
 }
 
 func (s *testReleaseSource) Latest(context.Context) (Release, error) {
@@ -22,7 +26,10 @@ func (s *testReleaseSource) Latest(context.Context) (Release, error) {
 	if digest == "" {
 		digest = "sha256:" + strings.Repeat("a", 64)
 	}
-	return Release{Version: s.version, ImageDigest: digest}, s.err
+	return Release{
+		Version: s.version, ImageDigest: digest, ReleaseURL: s.releaseURL,
+		PublishedAt: s.publishedAt, Notes: s.notes, UpgradeNotes: s.upgradeNotes,
+	}, s.err
 }
 
 type testExecutor struct {
@@ -257,9 +264,40 @@ func TestStateSchemaOneMigratesToStableChannel(t *testing.T) {
 		t.Fatalf("saved migrated status=%#v err=%v", status, err)
 	}
 	persisted, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(persisted), `"schemaVersion": 2`) ||
+	if err != nil || !strings.Contains(string(persisted), `"schemaVersion": 3`) ||
 		!strings.Contains(string(persisted), `"channel": "stable"`) {
 		t.Fatalf("persisted migration=%s err=%v", persisted, err)
+	}
+}
+
+func TestCandidateReleaseSummaryPersistsWithThePinnedDigest(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("b", 64)
+	source := &testReleaseSource{
+		version: "1.2.0", digest: digest,
+		releaseURL:  "https://github.com/kejilion/KPanel/releases/tag/v1.2.0",
+		publishedAt: "2026-09-14T00:00:00Z",
+		notes: []ReleaseNote{
+			{Kind: "added", Text: "显示更新内容"},
+			{Kind: "unknown", Text: "不可信分类"},
+		},
+		upgradeNotes: []string{"更新时服务会短暂重启"},
+	}
+	service := newTestService(t, source, &now, time.Hour)
+	status, err := service.Check(context.Background(), "1.1.0")
+	if err != nil || status.CandidateImageDigest != digest ||
+		status.CandidateReleaseURL != source.releaseURL || status.CandidatePublishedAt != source.publishedAt ||
+		len(status.CandidateNotes) != 1 || status.CandidateNotes[0].Text != "显示更新内容" ||
+		len(status.CandidateUpgradeNotes) != 1 {
+		t.Fatalf("candidate status=%#v err=%v", status, err)
+	}
+	reloaded, err := New(Config{StateDir: service.stateDir, Source: source, Now: func() time.Time { return now }, Hold: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = reloaded.Status("1.1.0")
+	if err != nil || status.CandidateReleaseURL != source.releaseURL || len(status.CandidateNotes) != 1 {
+		t.Fatalf("reloaded status=%#v err=%v", status, err)
 	}
 }
 

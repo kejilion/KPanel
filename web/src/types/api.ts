@@ -1883,6 +1883,31 @@ export type AutomaticUpdateState =
   | 'blocked'
   | 'check_failed'
 
+export type KPanelReleaseNoteKind =
+  | 'added'
+  | 'changed'
+  | 'fixed'
+  | 'security'
+  | 'performance'
+  | 'compatibility'
+
+export interface KPanelReleaseNote {
+  kind: KPanelReleaseNoteKind
+  text: string
+}
+
+export interface KPanelReleaseInfo {
+  channel: 'stable' | 'preview'
+  version: string
+  imageDigest: string
+  releaseUrl?: string
+  publishedAt?: string
+  notes?: KPanelReleaseNote[]
+  upgradeNotes?: string[]
+  cached: boolean
+  stale: boolean
+}
+
 export interface AutomaticUpdateStatus {
   available: boolean
   enabled: boolean
@@ -1895,6 +1920,10 @@ export interface AutomaticUpdateStatus {
   currentVersion?: string
   candidateVersion?: string
   candidateImageDigest?: string
+  candidateReleaseUrl?: string
+  candidatePublishedAt?: string
+  candidateNotes?: KPanelReleaseNote[]
+  candidateUpgradeNotes?: string[]
   candidateFirstSeenAt?: string
   lastCheckedAt?: string
   lastAttemptAt?: string

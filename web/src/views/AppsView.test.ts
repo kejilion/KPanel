@@ -6,7 +6,7 @@ import AppsView from './AppsView.vue'
 import { ApiError } from '@/lib/api'
 import { useDockerImageUpdates } from '@/lib/dockerImageUpdate'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import type { AppInstallJob, AppMarketInventory, Site } from '@/types/api'
+import type { AppInstallJob, AppMarketInventory, KPanelReleaseInfo, Site } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
   createSite: vi.fn(),
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   installPort: vi.fn(),
   action: vi.fn(),
   checkUpdate: vi.fn(),
+  getKPanelRelease: vi.fn(),
   job: vi.fn(),
   cancelJob: vi.fn(),
   publicNetwork: vi.fn(),
@@ -74,6 +75,11 @@ vi.mock('@/lib/api', () => ({
     system: {
       publicNetwork: mocks.publicNetwork,
     },
+    settings: {
+      kpanelRelease: {
+        get: mocks.getKPanelRelease,
+      },
+    },
   },
 }))
 
@@ -119,6 +125,8 @@ interface AppsBindings {
   activeJob: Ref<AppInstallJob | undefined>
   jobDetailsOpen: Ref<boolean>
   confirmAction: Ref<'update' | 'uninstall' | undefined>
+  kpanelUpdateConfirmOpen: ComputedRef<boolean>
+  kpanelRelease: Ref<KPanelReleaseInfo | undefined>
   cancelJobPending: Ref<boolean>
   load: (silent?: boolean) => Promise<void>
   openDetails: (item: AppMarketInventory['items'][number]) => void
@@ -490,6 +498,17 @@ beforeEach(() => {
   mocks.route.fullPath = '/apps'
   mocks.route.query = {}
   mocks.routerReplace.mockResolvedValue(undefined)
+  mocks.getKPanelRelease.mockResolvedValue({
+    channel: 'stable',
+    version: '1.18.0',
+    imageDigest: `sha256:${'c'.repeat(64)}`,
+    releaseUrl: 'https://github.com/kejilion/KPanel/releases/tag/v1.18.0',
+    publishedAt: '2026-09-14T00:00:00Z',
+    notes: [{ kind: 'changed', text: '统一 KPanel 更新入口。' }],
+    upgradeNotes: [],
+    cached: true,
+    stale: false,
+  } satisfies KPanelReleaseInfo)
   const storage = new Map<string, string>()
   vi.stubGlobal('window', {
     localStorage: {
@@ -1164,16 +1183,22 @@ describe('AppsView application mutations', () => {
     expect(mocks.routerReplace).toHaveBeenCalledWith({ query: {} })
   })
 
-  it('opens the existing KPanel update confirmation from the sidebar intent', async () => {
+  it('opens the dedicated KPanel update confirmation from the sidebar intent', async () => {
     const view = setupView()
     view.inventory.value = kpanelInventory('kpanel-version')
     mocks.route.query = { app: 'kpanel', action: 'update' }
     mocks.route.fullPath = '/apps?app=kpanel&action=update'
 
     await view.consumeRouteIntent()
+    await vi.waitFor(() => expect(mocks.getKPanelRelease).toHaveBeenCalled())
 
     expect(view.selected.value?.id).toBe('thirdparty-kpanel')
     expect(view.confirmAction.value).toBe('update')
+    expect(view.kpanelUpdateConfirmOpen.value).toBe(true)
+    expect(mocks.getKPanelRelease).toHaveBeenCalledWith('stable', expect.any(AbortSignal))
+    expect(view.kpanelRelease.value?.notes).toEqual([
+      { kind: 'changed', text: '统一 KPanel 更新入口。' },
+    ])
     expect(mocks.routerReplace).toHaveBeenCalledWith({ query: {} })
   })
 

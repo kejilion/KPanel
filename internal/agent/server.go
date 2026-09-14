@@ -43,29 +43,31 @@ const (
 )
 
 type Config struct {
-	Token              []byte
-	Version            string
-	ProtocolVersion    string
-	WebRoot            string
-	StateDir           string
-	BackupDockerSocket string
-	System             *systeminfo.Collector
-	SystemManager      *systemmanage.Manager
-	SSHLoginSource     SSHLoginSource
-	Sites              *sites.Discoverer
-	SitesManager       *sites.Manager
-	Docker             *dockerx.Client
-	AppMarket          *appmarket.Service
-	Diagnostics        *diagnostics.Service
-	WebEnvironment     *webenv.Service
-	Files              *filemanager.Manager
-	SiteIcons          siteIconProvider
-	Monitoring         monitoringHistoryProvider
-	Terminals          *terminal.Manager
-	Now                func() time.Time
-	Backups            *hostbackup.Service
-	SelfUpdate         *selfupdate.Service
-	SelfUpdateStarter  selfupdate.UpdateStarter
+	Token                []byte
+	Version              string
+	ProtocolVersion      string
+	WebRoot              string
+	StateDir             string
+	BackupDockerSocket   string
+	System               *systeminfo.Collector
+	SystemManager        *systemmanage.Manager
+	SSHLoginSource       SSHLoginSource
+	Sites                *sites.Discoverer
+	SitesManager         *sites.Manager
+	Docker               *dockerx.Client
+	AppMarket            *appmarket.Service
+	Diagnostics          *diagnostics.Service
+	WebEnvironment       *webenv.Service
+	Files                *filemanager.Manager
+	SiteIcons            siteIconProvider
+	Monitoring           monitoringHistoryProvider
+	Terminals            *terminal.Manager
+	Now                  func() time.Time
+	Backups              *hostbackup.Service
+	SelfUpdate           *selfupdate.Service
+	SelfUpdateStarter    selfupdate.UpdateStarter
+	StableReleaseSource  selfupdate.ReleaseSource
+	PreviewReleaseSource selfupdate.ReleaseSource
 }
 
 // SSHLoginSource is the read-only cluster telemetry boundary. It keeps
@@ -111,6 +113,9 @@ type Server struct {
 	backups           *hostbackup.Service
 	selfUpdate        *selfupdate.Service
 	selfUpdateStarter selfupdate.UpdateStarter
+	releaseSources    map[selfupdate.Channel]selfupdate.ReleaseSource
+	releaseCacheMu    sync.Mutex
+	releaseCache      map[selfupdate.Channel]cachedKPanelRelease
 	backupMutationMu  sync.Mutex
 }
 
@@ -218,27 +223,32 @@ func NewServer(config Config) (*Server, error) {
 		backups:           config.Backups,
 		selfUpdate:        config.SelfUpdate,
 		selfUpdateStarter: config.SelfUpdateStarter,
-		tokenHash:         sha256.Sum256(config.Token),
-		version:           config.Version,
-		protocolVersion:   config.ProtocolVersion,
-		webRoot:           config.WebRoot,
-		system:            config.System,
-		systemManager:     config.SystemManager,
-		sshLoginSource:    config.SSHLoginSource,
-		sites:             config.Sites,
-		sitesManager:      config.SitesManager,
-		docker:            config.Docker,
-		appMarket:         config.AppMarket,
-		diagnostics:       config.Diagnostics,
-		webEnvironment:    config.WebEnvironment,
-		files:             config.Files,
-		siteIcons:         config.SiteIcons,
-		monitoring:        config.Monitoring,
-		terminals:         config.Terminals,
-		thumbnailGate:     make(chan struct{}, 2),
-		storageUsageGate:  make(chan struct{}, 1),
-		systemLogsGate:    make(chan struct{}, 1),
-		now:               config.Now,
+		releaseSources: map[selfupdate.Channel]selfupdate.ReleaseSource{
+			selfupdate.ChannelStable:  config.StableReleaseSource,
+			selfupdate.ChannelPreview: config.PreviewReleaseSource,
+		},
+		releaseCache:     make(map[selfupdate.Channel]cachedKPanelRelease),
+		tokenHash:        sha256.Sum256(config.Token),
+		version:          config.Version,
+		protocolVersion:  config.ProtocolVersion,
+		webRoot:          config.WebRoot,
+		system:           config.System,
+		systemManager:    config.SystemManager,
+		sshLoginSource:   config.SSHLoginSource,
+		sites:            config.Sites,
+		sitesManager:     config.SitesManager,
+		docker:           config.Docker,
+		appMarket:        config.AppMarket,
+		diagnostics:      config.Diagnostics,
+		webEnvironment:   config.WebEnvironment,
+		files:            config.Files,
+		siteIcons:        config.SiteIcons,
+		monitoring:       config.Monitoring,
+		terminals:        config.Terminals,
+		thumbnailGate:    make(chan struct{}, 2),
+		storageUsageGate: make(chan struct{}, 1),
+		systemLogsGate:   make(chan struct{}, 1),
+		now:              config.Now,
 	}, nil
 }
 
@@ -305,6 +315,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodPost, s.selfUpdateCheck)
 	case r.URL.Path == "/v1/self-update/install":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.selfUpdateInstall)
+	case r.URL.Path == "/v1/self-update/release":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.selfUpdateRelease)
 	case r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/"):
 		if s.backups == nil {
 			writeProblem(w, requestID, 503, "backup_unavailable", "Backup adapter unavailable", "")

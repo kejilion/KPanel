@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -19,11 +20,16 @@ const (
 	maxReleaseResponse    = 1 << 20
 	officialImageName     = "docker.io/kjlion/kejilion-panel"
 	releaseRequestTimeout = 15 * time.Second
+	maxReleaseNotes       = 8
+	maxUpgradeNotes       = 3
+	maxReleaseNoteRunes   = 280
 )
 
 var releaseImagePattern = regexp.MustCompile(
 	`(?m)^- (生产|预览)镜像：\x60docker\.io/kjlion/kejilion-panel@(sha256:[0-9a-f]{64})\x60\r?$`,
 )
+
+var markdownLinkPattern = regexp.MustCompile(`\[([^\]]{1,200})\]\([^\r\n)]+\)`)
 
 type githubReleasePayload struct {
 	TagName     string `json:"tag_name"`
@@ -203,5 +209,119 @@ func releaseFromPayload(payload githubReleasePayload, version, expectedLabel str
 	if digest == "" {
 		return Release{}, fmt.Errorf("release v%s image digest is invalid", version)
 	}
-	return Release{Version: version, ImageDigest: digest}, nil
+	notes, upgradeNotes := parseReleaseNotes(payload.Body)
+	return Release{
+		Version: version, ImageDigest: digest, ReleaseURL: payload.HTMLURL,
+		PublishedAt: payload.PublishedAt, Notes: notes, UpgradeNotes: upgradeNotes,
+	}, nil
+}
+
+func parseReleaseNotes(body string) ([]ReleaseNote, []string) {
+	notes := make([]ReleaseNote, 0, maxReleaseNotes)
+	upgradeNotes := make([]string, 0, maxUpgradeNotes)
+	kind := ""
+	inUpgradeNotes := false
+	for _, rawLine := range strings.Split(body, "\n") {
+		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
+		if heading, ok := markdownHeading(line); ok {
+			if releaseKind := releaseNoteKind(heading); releaseKind != "" {
+				kind = releaseKind
+				inUpgradeNotes = false
+				continue
+			}
+			if isUpgradeNotesHeading(heading) {
+				kind = ""
+				inUpgradeNotes = true
+				continue
+			}
+			if !isReleaseNotesHeading(heading) {
+				kind = ""
+				inUpgradeNotes = false
+			}
+			continue
+		}
+		text, ok := markdownBulletText(line)
+		if !ok {
+			continue
+		}
+		text = plainReleaseNote(text)
+		if text == "" {
+			continue
+		}
+		if inUpgradeNotes && len(upgradeNotes) < maxUpgradeNotes {
+			upgradeNotes = append(upgradeNotes, text)
+		} else if kind != "" && len(notes) < maxReleaseNotes {
+			notes = append(notes, ReleaseNote{Kind: kind, Text: text})
+		}
+	}
+	return notes, upgradeNotes
+}
+
+func markdownHeading(line string) (string, bool) {
+	level := 0
+	for level < len(line) && line[level] == '#' {
+		level++
+	}
+	if level < 2 || level > 6 || level >= len(line) || line[level] != ' ' {
+		return "", false
+	}
+	heading := strings.TrimSpace(strings.TrimRight(strings.TrimSpace(line[level+1:]), "#"))
+	return heading, heading != ""
+}
+
+func markdownBulletText(line string) (string, bool) {
+	if len(line) < 3 || (line[0] != '-' && line[0] != '*') || line[1] != ' ' {
+		return "", false
+	}
+	return strings.TrimSpace(line[2:]), true
+}
+
+func releaseNoteKind(heading string) string {
+	switch strings.ToLower(strings.TrimSpace(heading)) {
+	case "新增", "added", "new":
+		return "added"
+	case "变更", "changed", "改进", "improved":
+		return "changed"
+	case "修复", "fixed", "bug fixes":
+		return "fixed"
+	case "安全", "security":
+		return "security"
+	case "性能", "performance":
+		return "performance"
+	case "兼容性", "compatibility":
+		return "compatibility"
+	default:
+		return ""
+	}
+}
+
+func isReleaseNotesHeading(heading string) bool {
+	switch strings.ToLower(strings.TrimSpace(heading)) {
+	case "版本更新内容", "更新内容", "release notes", "what's changed":
+		return true
+	default:
+		return false
+	}
+}
+
+func isUpgradeNotesHeading(heading string) bool {
+	switch strings.ToLower(strings.TrimSpace(heading)) {
+	case "升级注意事项", "upgrade notes", "breaking changes":
+		return true
+	default:
+		return false
+	}
+}
+
+func plainReleaseNote(value string) string {
+	value = markdownLinkPattern.ReplaceAllString(value, "$1")
+	for _, marker := range []string{"**", "__", "`"} {
+		value = strings.ReplaceAll(value, marker, "")
+	}
+	value = strings.Join(strings.Fields(value), " ")
+	if utf8.RuneCountInString(value) > maxReleaseNoteRunes {
+		runes := []rune(value)
+		value = strings.TrimSpace(string(runes[:maxReleaseNoteRunes-1])) + "…"
+	}
+	return value
 }

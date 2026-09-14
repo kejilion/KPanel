@@ -5,11 +5,15 @@ import {
   isKPanelSelfUpdate,
   isKPanelUpdateSettingsIntent,
   kpanelAppUpdatePath,
+  kpanelReleasesURL,
   kpanelUpdateHint,
   kpanelUpdateSettingsPath,
   kpanelUpdateSettingsSection,
+  officialKPanelReleaseURL,
+  releaseFromAutomaticUpdate,
+  releaseMatchesTarget,
 } from './kpanelUpdate'
-import type { AppMarketInventory } from '@/types/api'
+import type { AppMarketInventory, KPanelReleaseInfo } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({
   inventory: vi.fn(),
@@ -116,5 +120,34 @@ describe('KPanel update detection', () => {
       '当前版本 v0.34.1，发现可用更新，点击更新到最新版本',
     )
     expect(kpanelUpdateHint()).toBe('发现 KPanel 新版本，点击更新到最新版本')
+  })
+
+  it('builds only canonical official release links and pins notes to the target identity', () => {
+    const digest = `sha256:${'a'.repeat(64)}`
+    const release: KPanelReleaseInfo = {
+      channel: 'stable', version: '1.18.0', imageDigest: digest,
+      notes: [{ kind: 'added', text: '显示更新内容' }], cached: true, stale: false,
+    }
+
+    expect(officialKPanelReleaseURL('V1.18.0')).toBe(`${kpanelReleasesURL}/tag/v1.18.0`)
+    expect(officialKPanelReleaseURL('1.18')).toBe(kpanelReleasesURL)
+    expect(releaseMatchesTarget(release, 'v1.18.0', digest)).toBe(true)
+    expect(releaseMatchesTarget(release, '1.18.1', digest)).toBe(false)
+    expect(releaseMatchesTarget(release, '1.18.0', `sha256:${'b'.repeat(64)}`)).toBe(false)
+
+    expect(releaseFromAutomaticUpdate({
+      available: true,
+      enabled: false,
+      state: 'waiting',
+      channel: 'stable',
+      canInstall: true,
+      installRequested: false,
+      schedule: 'daily-04:00-local',
+      observationHours: 24,
+      candidateVersion: '1.18.0',
+      candidateImageDigest: digest,
+      candidateNotes: release.notes,
+      resourceVersion: 'sha256:state',
+    })).toMatchObject(release)
   })
 })

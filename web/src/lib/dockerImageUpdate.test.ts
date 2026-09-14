@@ -10,10 +10,14 @@ afterEach(() => vi.useRealTimers())
 describe('Docker image checks', () => {
   it('accepts a refreshed read-only snapshot without advancing list mutation versions', async () => {
     const scope = effectScope(), containers = ref([item()])
-    const request = vi.fn().mockResolvedValue({ ...response(), resourceVersion: 'fresh-version' })
+    const localDigest = `sha256:${'a'.repeat(64)}`
+    const remoteDigest = `sha256:${'b'.repeat(64)}`
+    const request = vi.fn().mockResolvedValue({
+      ...response(), resourceVersion: 'fresh-version', localDigest, remoteDigest,
+    })
     const checks = scope.run(() => useDockerImageUpdates(containers, ref(true), request))!
     await checks.check(item())
-    expect(checks.entries.value[item().id]?.status).toBe('current')
+    expect(checks.entries.value[item().id]).toMatchObject({ status: 'current', localDigest, remoteDigest })
     expect(containers.value[0]?.resourceVersion).toBe('v1')
     containers.value = [{ ...item(), resourceVersion: 'fresh-version' }]
     expect(checks.entries.value[item().id]).toBeUndefined()

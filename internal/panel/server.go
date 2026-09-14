@@ -308,6 +308,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path == "/api/v1/settings/automatic-update/check" ||
 		r.URL.Path == "/api/v1/settings/automatic-update/install":
 		s.handleAutomaticUpdateSettings(w, r)
+	case r.URL.Path == "/api/v1/settings/kpanel-release":
+		s.handleKPanelRelease(w, r)
 	case r.URL.Path == "/api/v1/cluster/share":
 		s.handleClusterShareSettings(w, r)
 	case r.URL.Path == "/api/v1/cluster/share/token":

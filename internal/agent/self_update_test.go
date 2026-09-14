@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -13,11 +14,21 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/selfupdate"
 )
 
-type agentReleaseSource struct{ version string }
+type agentReleaseSource struct {
+	version string
+	err     error
+}
 
 func (source agentReleaseSource) Latest(context.Context) (selfupdate.Release, error) {
+	if source.err != nil {
+		return selfupdate.Release{}, source.err
+	}
 	return selfupdate.Release{
 		Version: source.version, ImageDigest: "sha256:" + strings.Repeat("a", 64),
+		ReleaseURL:   "https://github.com/kejilion/KPanel/releases/tag/v" + source.version,
+		PublishedAt:  "2026-09-14T00:00:00Z",
+		Notes:        []selfupdate.ReleaseNote{{Kind: "added", Text: "显示目标版本更新内容"}},
+		UpgradeNotes: []string{"更新期间服务会短暂重启"},
 	}, nil
 }
 
@@ -111,6 +122,71 @@ func TestSelfUpdateEndpointsRejectUnavailableAndUntypedRequests(t *testing.T) {
 	checkBody := authenticatedSelfUpdateRequest(server, http.MethodPost, "/v1/self-update/check", `{}`)
 	if checkBody.Code != http.StatusBadRequest {
 		t.Fatalf("check body status=%d body=%s", checkBody.Code, checkBody.Body.String())
+	}
+}
+
+func TestSelfUpdateReleaseSummaryWorksWithoutAutomaticUpdaterAndUsesCache(t *testing.T) {
+	server := testServer(t)
+	server.releaseSources[selfupdate.ChannelStable] = agentReleaseSource{version: "1.2.0"}
+
+	first := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=stable", "")
+	if first.Code != http.StatusOK ||
+		!strings.Contains(first.Body.String(), `"version":"1.2.0"`) ||
+		!strings.Contains(first.Body.String(), `"text":"显示目标版本更新内容"`) ||
+		!strings.Contains(first.Body.String(), `"cached":false`) {
+		t.Fatalf("release status=%d body=%s", first.Code, first.Body.String())
+	}
+
+	server.releaseSources[selfupdate.ChannelStable] = agentReleaseSource{err: errors.New("github unavailable")}
+	cached := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=stable", "")
+	if cached.Code != http.StatusOK || !strings.Contains(cached.Body.String(), `"cached":true`) {
+		t.Fatalf("cached release status=%d body=%s", cached.Code, cached.Body.String())
+	}
+
+	invalid := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=beta", "")
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid release status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestSelfUpdateReleaseRefreshesExpiredPersistedCandidateAndFallsBackOffline(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	service := newAgentSelfUpdateTestService(t, selfupdate.Config{
+		StateDir: t.TempDir(), Source: agentReleaseSource{version: "1.1.0"},
+		Now: func() time.Time { return now },
+	})
+	if _, err := service.Check(context.Background(), "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	server := testServer(t)
+	server.version = "1.0.0"
+	server.now = func() time.Time { return now }
+	server.selfUpdate = service
+	server.releaseSources[selfupdate.ChannelStable] = agentReleaseSource{version: "1.2.0"}
+
+	freshCandidate := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=stable", "")
+	if freshCandidate.Code != http.StatusOK ||
+		!strings.Contains(freshCandidate.Body.String(), `"version":"1.1.0"`) ||
+		!strings.Contains(freshCandidate.Body.String(), `"cached":true`) {
+		t.Fatalf("fresh persisted release status=%d body=%s", freshCandidate.Code, freshCandidate.Body.String())
+	}
+
+	now = now.Add(kpanelReleaseCacheTTL)
+	refreshed := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=stable", "")
+	if refreshed.Code != http.StatusOK ||
+		!strings.Contains(refreshed.Body.String(), `"version":"1.2.0"`) ||
+		!strings.Contains(refreshed.Body.String(), `"cached":false`) {
+		t.Fatalf("refreshed release status=%d body=%s", refreshed.Code, refreshed.Body.String())
+	}
+
+	now = now.Add(kpanelReleaseCacheTTL)
+	server.releaseSources[selfupdate.ChannelStable] = agentReleaseSource{err: errors.New("github unavailable")}
+	stale := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update/release?channel=stable", "")
+	if stale.Code != http.StatusOK ||
+		!strings.Contains(stale.Body.String(), `"version":"1.2.0"`) ||
+		!strings.Contains(stale.Body.String(), `"cached":true`) ||
+		!strings.Contains(stale.Body.String(), `"stale":true`) {
+		t.Fatalf("stale release status=%d body=%s", stale.Code, stale.Body.String())
 	}
 }
 

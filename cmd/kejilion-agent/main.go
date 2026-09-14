@@ -171,13 +171,15 @@ func run(arguments []string) error {
 		slog.Warn("history monitoring is unavailable", "error", historyErr)
 	}
 	terminalManager := terminal.New(terminal.Config{ParentUnit: "kejilion-agent.service"})
+	stableReleaseSource := selfupdate.NewGitHubLatestSource()
+	previewReleaseSource := selfupdate.NewGitHubPreviewSource()
 	var selfUpdateService *selfupdate.Service
 	var selfUpdateStarter selfupdate.UpdateStarter
 	if strings.TrimSpace(*selfUpdateStateDir) != "" {
 		selfUpdateService, err = selfupdate.New(selfupdate.Config{
 			StateDir:      *selfUpdateStateDir,
-			StableSource:  selfupdate.NewGitHubLatestSource(),
-			PreviewSource: selfupdate.NewGitHubPreviewSource(),
+			StableSource:  stableReleaseSource,
+			PreviewSource: previewReleaseSource,
 		})
 		if err != nil {
 			slog.Warn("automatic update state is unavailable", "error", err)
@@ -198,6 +200,7 @@ func run(arguments []string) error {
 		Sites: sites.NewDiscoverer(*webRoot), Docker: dockerClient, AppMarket: appMarket,
 		Diagnostics: diagnosticService, Monitoring: historyService, Terminals: terminalManager,
 		SelfUpdate: selfUpdateService, SelfUpdateStarter: selfUpdateStarter,
+		StableReleaseSource: stableReleaseSource, PreviewReleaseSource: previewReleaseSource,
 	})
 	clear(token)
 	if err != nil {

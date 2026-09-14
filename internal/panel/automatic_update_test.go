@@ -125,6 +125,39 @@ func TestAutomaticUpdateCheckIsExplicitAuditedMutation(t *testing.T) {
 	}
 }
 
+func TestKPanelReleaseSummaryIsReadOnlyAndForwardsValidatedChannel(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	body := []byte(`{"channel":"stable","version":"1.2.0","cached":true,"stale":false}`)
+	agent := &stubAgent{response: AgentResponse{StatusCode: http.StatusOK, ContentType: "application/json", Body: body}}
+	server.agent = agent
+
+	unauthenticated := performRequest(server, http.MethodGet, "/api/v1/settings/kpanel-release?channel=stable", nil, nil)
+	if unauthenticated.Code != http.StatusUnauthorized || len(agent.snapshotCalls()) != 0 {
+		t.Fatalf("unauthenticated status=%d calls=%#v", unauthenticated.Code, agent.snapshotCalls())
+	}
+	response := authenticatedSiteRequest(
+		server, sessionCookie, csrfCookie, http.MethodGet,
+		"/api/v1/settings/kpanel-release?channel=stable", nil, false,
+	)
+	if response.Code != http.StatusOK || response.Body.String() != string(body) {
+		t.Fatalf("release status=%d body=%s", response.Code, response.Body.String())
+	}
+	calls := agent.snapshotCalls()
+	if len(calls) != 1 || calls[0].method != http.MethodGet ||
+		calls[0].path != "/v1/self-update/release" || calls[0].rawQuery != "channel=stable" {
+		t.Fatalf("release calls=%#v", calls)
+	}
+
+	invalid := authenticatedSiteRequest(
+		server, sessionCookie, csrfCookie, http.MethodGet,
+		"/api/v1/settings/kpanel-release?channel=beta", nil, false,
+	)
+	if invalid.Code != http.StatusUnprocessableEntity || len(agent.snapshotCalls()) != 1 {
+		t.Fatalf("invalid status=%d calls=%#v", invalid.Code, agent.snapshotCalls())
+	}
+}
+
 func TestAutomaticUpdateSettingsRejectUnknownOrQueriedInputs(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
