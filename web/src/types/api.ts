@@ -268,6 +268,7 @@ export interface ClusterNotificationRules {
 }
 
 export type ClusterNotificationStatus = 'not_configured' | 'waiting_for_chat' | 'ready' | 'error'
+export type ClusterNotificationProvider = 'telegram' | 'feishu' | 'dingtalk' | 'wecom'
 
 export interface ClusterNotificationTelegram {
   configured: boolean
@@ -279,12 +280,18 @@ export interface ClusterNotificationTelegram {
   lastErrorCode?: string
 }
 
+export interface ClusterNotificationChannel extends ClusterNotificationTelegram {
+  provider: ClusterNotificationProvider
+}
+
 export interface ClusterNotificationSnapshot {
   resources?: ClusterNotificationResources
   enabled: boolean
   locale: 'zh-CN' | 'zh-TW' | 'en-US'
   timezone: string
   rules: ClusterNotificationRules
+  provider?: ClusterNotificationProvider
+  channel?: ClusterNotificationChannel
   telegram: ClusterNotificationTelegram
   resourceVersion: string
   updatedAt: string

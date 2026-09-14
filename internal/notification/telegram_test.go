@@ -115,3 +115,14 @@ func TestValidBotTokenRejectsWhitespaceAndMalformedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestTelegramClientDisablesRedirects(t *testing.T) {
+	client := NewTelegramClient()
+	request, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.client.CheckRedirect(request, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("CheckRedirect() error = %v", err)
+	}
+}

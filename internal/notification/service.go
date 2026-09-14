@@ -23,7 +23,7 @@ const (
 	alertRetryInterval                   = 5 * time.Minute
 	alertRepeatInterval                  = 6 * time.Hour
 	maxMessagesPerEvaluation             = 8
-	telegramSendTimeout                  = 6 * time.Second
+	channelSendTimeout                   = 6 * time.Second
 	cumulativeTrafficReceivedRuleKey     = "traffic-total-received"
 	cumulativeTrafficSentRuleKey         = "traffic-total-sent"
 	cumulativeTrafficReceivedAlertSuffix = ":" + cumulativeTrafficReceivedRuleKey
@@ -52,6 +52,7 @@ type Config struct {
 	DataDir            string
 	Hosts              HostSource
 	Telegram           TelegramAPI
+	Robots             RobotAPI
 	Timezone           TimezoneSource
 	Now                func() time.Time
 	EvaluationInterval time.Duration
@@ -73,6 +74,7 @@ type Service struct {
 	store             *Store
 	hosts             HostSource
 	telegram          TelegramAPI
+	robots            RobotAPI
 	timezone          TimezoneSource
 	now               func() time.Time
 	evaluation        time.Duration
@@ -98,6 +100,9 @@ func NewService(config Config) (*Service, error) {
 	}
 	if config.Telegram == nil {
 		config.Telegram = NewTelegramClient()
+	}
+	if config.Robots == nil {
+		config.Robots = NewRobotClient()
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -127,7 +132,7 @@ func NewService(config Config) (*Service, error) {
 	state := store.stateSnapshot()
 	service := &Service{
 		resources: config.Resources,
-		store:     store, hosts: config.Hosts, telegram: config.Telegram, timezone: config.Timezone, now: config.Now,
+		store:     store, hosts: config.Hosts, telegram: config.Telegram, robots: config.Robots, timezone: config.Timezone, now: config.Now,
 		evaluation: config.EvaluationInterval, sustain: config.SustainSamples,
 		repeat: config.RepeatInterval, alerts: make(map[string]alertState),
 		traffic: make(map[string]trafficSample),
@@ -195,22 +200,31 @@ func (s *Service) snapshot(ctx context.Context) Snapshot {
 	state := s.store.stateSnapshot()
 	now := s.now()
 	meta := state.Telegram
-	token, configured, tokenErr := s.store.token()
-	if tokenErr != nil {
+	credential, configured, credentialErr := s.store.credential()
+	provider := ProviderTelegram
+	if credentialErr == nil && configured {
+		provider, _ = DetectProvider(credential)
+	}
+	if credentialErr != nil {
 		configured = true
 		meta.Status = TelegramError
-		meta.LastErrorCode = "token_file_unavailable"
+		meta.LastErrorCode = "credential_file_unavailable"
 	}
 	if !configured {
 		meta = telegramState{Status: TelegramNotConfigured}
-	} else if tokenErr == nil && meta.TokenFingerprint != tokenFingerprint(token) {
+	} else if credentialErr == nil && meta.TokenFingerprint != tokenFingerprint(credential) {
 		meta.Status = TelegramError
-		meta.LastErrorCode = "token_changed"
+		meta.LastErrorCode = "credential_changed"
 		meta.HasChat = false
 	} else if !meta.HasChat {
-		meta.Status = TelegramWaitingChat
+		if provider == ProviderTelegram {
+			meta.Status = TelegramWaitingChat
+		} else {
+			meta.Status = TelegramError
+			meta.LastErrorCode = "channel_not_ready"
+		}
 	}
-	result := snapshotFromState(state, meta, configured && tokenErr == nil, notificationTimezone(s.displayTime(ctx, now)))
+	result := snapshotFromState(state, meta, configured && credentialErr == nil, provider, notificationTimezone(s.displayTime(ctx, now)))
 	// Local certificate/container alerts are withdrawn. Keep the response shape
 	// for compatible clients without discovering host resources.
 	result.Resources = unknownResources()
@@ -239,15 +253,24 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	if err := rules.Validate(); err != nil {
 		return Snapshot{}, err
 	}
-	newToken := strings.TrimSpace(input.TelegramBotToken)
-	if newToken != "" && !ValidBotToken(newToken) {
-		return Snapshot{}, &Error{Code: "invalid_token", Cause: ErrTelegramInvalidToken}
+	oldCredential, oldPresent, err := s.store.credential()
+	storedCredentialInvalid := errors.Is(err, ErrInvalidCredential)
+	if err != nil && !storedCredentialInvalid {
+		return Snapshot{}, &Error{Code: "credential_file_unavailable", Retryable: true, Cause: err}
 	}
-	oldToken, oldPresent, err := s.store.token()
-	if err != nil && !errors.Is(err, ErrTelegramInvalidToken) {
-		return Snapshot{}, &Error{Code: "token_file_unavailable", Retryable: true, Cause: ErrNotConfigured}
+	if storedCredentialInvalid {
+		// Keep the existing repair path: a valid replacement can overwrite a
+		// manually damaged or legacy credential file.
+		oldCredential, oldPresent = "", false
 	}
-	if err := s.ensureEnabledCanRun(input.Enabled, newToken, oldToken, oldPresent, state.Telegram); err != nil {
+	provider, newCredential, err := resolveChannelInput(input, oldCredential, oldPresent)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if storedCredentialInvalid && newCredential == "" {
+		return Snapshot{}, &Error{Code: "invalid_credential", Cause: ErrInvalidCredential}
+	}
+	if err := s.ensureEnabledCanRun(input.Enabled, provider, newCredential, oldCredential, oldPresent, state.Telegram); err != nil {
 		return Snapshot{}, err
 	}
 	next := state
@@ -260,31 +283,103 @@ func (s *Service) Configure(ctx context.Context, input UpdateInput) (Snapshot, e
 	// when the migrated settings happen to retain the same threshold value.
 	removeAlertStates(next.AlertStates, legacyCumulativeTrafficAlertSuffix)
 	next.UpdatedAt = s.now().UTC()
-	tokenChanged := false
-	if newToken != "" {
-		bot, chatID, discoverErr := s.telegram.ValidateAndDiscover(ctx, newToken)
-		if discoverErr != nil {
-			return Snapshot{}, discoverErr
+	credentialChanged := false
+	delivered := false
+	if newCredential != "" {
+		var connectErr error
+		next.Telegram, delivered, connectErr = s.connectChannel(ctx, provider, newCredential, locale)
+		if connectErr != nil {
+			return Snapshot{}, connectErr
 		}
-		next.Telegram = readyTelegramState(newToken, bot, chatID, s.now().UTC())
-		tokenChanged = !oldPresent || oldToken != newToken
+		credentialChanged = !oldPresent || oldCredential != newCredential
 	} else if !oldPresent {
 		next.Telegram = telegramState{Status: TelegramNotConfigured}
 	}
 	next.ResourceVersion = configResourceVersion(next.Settings, next.Telegram)
-	if tokenChanged {
-		if err := s.store.replaceToken(newToken); err != nil {
-			return Snapshot{}, &Error{Code: "token_store_unavailable", Retryable: true, Cause: err}
+	if credentialChanged {
+		if err := s.store.replaceCredential(newCredential); err != nil {
+			return Snapshot{}, channelStoreError("credential_store_unavailable", delivered, err)
 		}
 	}
 	if err := s.store.commitState(next); err != nil {
-		if tokenChanged {
-			_ = s.store.restoreToken(oldToken, oldPresent)
+		if credentialChanged {
+			if restoreErr := s.store.restoreCredential(oldCredential, oldPresent); restoreErr != nil {
+				return Snapshot{}, channelStoreError("credential_rollback_failed", delivered, restoreErr)
+			}
 		}
-		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
+		return Snapshot{}, channelStoreError("state_store_unavailable", delivered, err)
 	}
 	s.replaceAlertStates(next.AlertStates)
 	return s.snapshot(ctx), nil
+}
+
+func resolveChannelInput(input UpdateInput, oldCredential string, oldPresent bool) (Provider, string, error) {
+	credential := strings.TrimSpace(input.ChannelCredential)
+	legacyToken := strings.TrimSpace(input.TelegramBotToken)
+	if credential != "" && legacyToken != "" {
+		return "", "", &Error{Code: "ambiguous_credential", Cause: ErrInvalidCredential}
+	}
+	provider := Provider(strings.TrimSpace(string(input.Provider)))
+	if provider != "" && !validProvider(provider) {
+		return "", "", &Error{Code: "unsupported_provider", Cause: ErrUnsupportedProvider}
+	}
+	if legacyToken != "" {
+		credential = legacyToken
+		if provider != "" && provider != ProviderTelegram {
+			return "", "", &Error{Code: "provider_mismatch", Cause: ErrProviderMismatch}
+		}
+		provider = ProviderTelegram
+	}
+	if credential != "" {
+		detected, ok := DetectProvider(credential)
+		if !ok {
+			if provider == ProviderTelegram {
+				return "", "", &Error{Code: "invalid_token", Cause: ErrTelegramInvalidToken}
+			}
+			return "", "", &Error{Code: "invalid_credential", Cause: ErrInvalidCredential}
+		}
+		if provider == "" {
+			provider = detected
+		}
+		if provider != detected {
+			return "", "", &Error{Code: "provider_mismatch", Cause: ErrProviderMismatch}
+		}
+		return provider, credential, nil
+	}
+	oldProvider := ProviderTelegram
+	if oldPresent {
+		oldProvider, _ = DetectProvider(oldCredential)
+	}
+	if provider == "" {
+		provider = oldProvider
+	}
+	if oldPresent && provider != oldProvider {
+		return "", "", credentialRequiredError(provider)
+	}
+	return provider, "", nil
+}
+
+func (s *Service) connectChannel(ctx context.Context, provider Provider, credential, locale string) (telegramState, bool, error) {
+	now := s.now().UTC()
+	if provider == ProviderTelegram {
+		bot, chatID, err := s.telegram.ValidateAndDiscover(ctx, credential)
+		if err != nil {
+			return telegramState{}, false, err
+		}
+		return readyTelegramState(credential, bot, chatID, now), false, nil
+	}
+	displayNow := s.displayTime(ctx, s.now())
+	if err := s.robots.SendMessage(ctx, provider, credential, testMessage(displayNow, locale, provider)); err != nil {
+		return telegramState{}, false, err
+	}
+	return readyRobotState(credential, now), true, nil
+}
+
+func channelStoreError(code string, delivered bool, cause error) error {
+	if delivered {
+		code += "_after_delivery"
+	}
+	return &Error{Code: code, Retryable: true, Cause: cause}
 }
 
 func (s *Service) Discover(ctx context.Context, expectedResourceVersion string) (Snapshot, error) {
@@ -297,24 +392,28 @@ func (s *Service) Discover(ctx context.Context, expectedResourceVersion string) 
 	if expectedResourceVersion == "" || expectedResourceVersion != state.ResourceVersion {
 		return Snapshot{}, ErrConflict
 	}
-	token, configured, err := s.store.token()
+	credential, configured, err := s.store.credential()
 	if err != nil {
-		if errors.Is(err, ErrTelegramInvalidToken) {
+		if errors.Is(err, ErrInvalidCredential) {
 			return Snapshot{}, &Error{Code: "invalid_token", Cause: err}
 		}
-		return Snapshot{}, &Error{Code: "token_file_unavailable", Retryable: true, Cause: err}
+		return Snapshot{}, &Error{Code: "credential_file_unavailable", Retryable: true, Cause: err}
 	}
 	if !configured {
 		return Snapshot{}, ErrNotConfigured
 	}
-	bot, chatID, discoverErr := s.telegram.ValidateAndDiscover(ctx, token)
+	provider, _ := DetectProvider(credential)
+	if provider != ProviderTelegram {
+		return Snapshot{}, &Error{Code: "discover_unsupported", Cause: ErrDiscoverUnsupported}
+	}
+	bot, chatID, discoverErr := s.telegram.ValidateAndDiscover(ctx, credential)
 	now := s.now().UTC()
 	if discoverErr != nil {
-		state.Telegram.TokenFingerprint = tokenFingerprint(token)
+		state.Telegram.TokenFingerprint = tokenFingerprint(credential)
 		state.Telegram.HasChat = false
 		state.Telegram.Status = TelegramError
 		state.Telegram.LastCheckedAt = timePtr(now)
-		state.Telegram.LastErrorCode = telegramCode(discoverErr)
+		state.Telegram.LastErrorCode = channelCode(provider, discoverErr)
 		if errors.Is(discoverErr, ErrChatNotFound) {
 			state.Telegram.Status = TelegramWaitingChat
 		}
@@ -322,7 +421,7 @@ func (s *Service) Discover(ctx context.Context, expectedResourceVersion string) 
 		_ = s.store.commitState(state)
 		return Snapshot{}, discoverErr
 	}
-	state.Telegram = readyTelegramState(token, bot, chatID, now)
+	state.Telegram = readyTelegramState(credential, bot, chatID, now)
 	state.ResourceVersion = configResourceVersion(state.Settings, state.Telegram)
 	state.UpdatedAt = now
 	if err := s.store.commitState(state); err != nil {
@@ -338,25 +437,28 @@ func (s *Service) Test(ctx context.Context) (Snapshot, error) {
 		ctx = context.Background()
 	}
 	state := s.store.stateSnapshot()
-	token, configured, err := s.store.token()
+	credential, configured, err := s.store.credential()
 	if err != nil {
-		if errors.Is(err, ErrTelegramInvalidToken) {
-			return Snapshot{}, &Error{Code: "invalid_token", Cause: err}
+		if errors.Is(err, ErrInvalidCredential) {
+			return Snapshot{}, &Error{Code: "invalid_credential", Cause: err}
 		}
-		return Snapshot{}, &Error{Code: "token_file_unavailable", Retryable: true, Cause: err}
+		return Snapshot{}, &Error{Code: "credential_file_unavailable", Retryable: true, Cause: err}
 	}
 	if !configured {
+		// With no stored credential there is no provider to infer. Preserve the
+		// original Telegram error contract for older API clients.
 		return Snapshot{}, ErrNotConfigured
 	}
-	if !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(token) {
-		return Snapshot{}, ErrNotReady
+	provider, _ := DetectProvider(credential)
+	if !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(credential) {
+		return Snapshot{}, channelNotReadyError(provider)
 	}
 	displayNow := s.displayTime(ctx, s.now())
-	err = s.telegram.SendMessage(ctx, token, state.Telegram.ChatID, testMessage(displayNow, state.Settings.Locale))
+	err = s.sendChannel(ctx, provider, credential, state.Telegram, testMessage(displayNow, state.Settings.Locale, provider))
 	now := displayNow.UTC()
 	if err != nil {
 		state.Telegram.Status = TelegramError
-		state.Telegram.LastErrorCode = telegramCode(err)
+		state.Telegram.LastErrorCode = channelCode(provider, err)
 		state.Telegram.LastCheckedAt = timePtr(now)
 		state.UpdatedAt = now
 		_ = s.store.commitState(state)
@@ -368,25 +470,50 @@ func (s *Service) Test(ctx context.Context) (Snapshot, error) {
 	state.Telegram.LastErrorCode = ""
 	state.UpdatedAt = now
 	if err := s.store.commitState(state); err != nil {
-		return Snapshot{}, &Error{Code: "state_store_unavailable", Retryable: true, Cause: err}
+		return Snapshot{}, channelStoreError("state_store_unavailable", true, err)
 	}
 	return s.snapshot(ctx), nil
 }
 
-func (s *Service) ensureEnabledCanRun(enabled bool, newToken, oldToken string, oldPresent bool, meta telegramState) error {
+func (s *Service) ensureEnabledCanRun(enabled bool, provider Provider, newCredential, oldCredential string, oldPresent bool, meta telegramState) error {
 	if !enabled {
 		return nil
 	}
-	if newToken != "" {
+	if newCredential != "" {
 		return nil
 	}
-	if !oldPresent || oldToken == "" {
-		return ErrTokenRequired
+	if !oldPresent || oldCredential == "" {
+		return credentialRequiredError(provider)
 	}
-	if meta.Status != TelegramReady || !meta.HasChat || meta.TokenFingerprint != tokenFingerprint(oldToken) {
-		return ErrNotReady
+	oldProvider, _ := DetectProvider(oldCredential)
+	if provider != oldProvider {
+		return credentialRequiredError(provider)
+	}
+	if meta.Status != TelegramReady || !meta.HasChat || meta.TokenFingerprint != tokenFingerprint(oldCredential) {
+		return channelNotReadyError(provider)
 	}
 	return nil
+}
+
+func credentialRequiredError(provider Provider) error {
+	if provider == ProviderTelegram {
+		return ErrTokenRequired
+	}
+	return ErrCredentialRequired
+}
+
+func channelNotReadyError(provider Provider) error {
+	if provider == ProviderTelegram {
+		return ErrNotReady
+	}
+	return ErrChannelNotReady
+}
+
+func (s *Service) sendChannel(ctx context.Context, provider Provider, credential string, meta telegramState, message string) error {
+	if provider == ProviderTelegram {
+		return s.telegram.SendMessage(ctx, credential, meta.ChatID, message)
+	}
+	return s.robots.SendMessage(ctx, provider, credential, message)
 }
 
 func (s *Service) evaluate(parent context.Context) error {
@@ -399,16 +526,17 @@ func (s *Service) evaluate(parent context.Context) error {
 	if !state.Settings.Enabled {
 		return nil
 	}
-	token, configured, tokenErr := s.store.token()
-	if tokenErr != nil || !configured || !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(token) {
+	credential, configured, credentialErr := s.store.credential()
+	if credentialErr != nil || !configured || !state.Telegram.HasChat || state.Telegram.TokenFingerprint != tokenFingerprint(credential) {
 		return nil
 	}
+	provider, _ := DetectProvider(credential)
 	fetchCtx, cancel := context.WithTimeout(parent, 8*time.Second)
 	defer cancel()
 	hosts := s.hosts.Hosts(fetchCtx)
 	now := s.displayTime(parent, s.now())
 	locale := normalizeNotificationLocale(state.Settings.Locale)
-	telegram := state.Telegram
+	channelState := state.Telegram
 	sent := 0
 	stateChanged := s.pruneHostState(hosts.Items)
 	trySend := func(message string) (bool, bool) {
@@ -416,18 +544,18 @@ func (s *Service) evaluate(parent context.Context) error {
 			return false, false
 		}
 		sent++
-		sendCtx, cancel := context.WithTimeout(parent, telegramSendTimeout)
-		err := s.telegram.SendMessage(sendCtx, token, telegram.ChatID, message)
+		sendCtx, cancel := context.WithTimeout(parent, channelSendTimeout)
+		err := s.sendChannel(sendCtx, provider, credential, channelState, message)
 		cancel()
-		telegram.LastCheckedAt = timePtr(now)
+		channelState.LastCheckedAt = timePtr(now)
 		if err != nil {
-			telegram.Status = TelegramError
-			telegram.LastErrorCode = telegramCode(err)
+			channelState.Status = TelegramError
+			channelState.LastErrorCode = channelCode(provider, err)
 			return false, true
 		}
-		telegram.Status = TelegramReady
-		telegram.LastSuccessAt = timePtr(now)
-		telegram.LastErrorCode = ""
+		channelState.Status = TelegramReady
+		channelState.LastSuccessAt = timePtr(now)
+		channelState.LastErrorCode = ""
 		return true, true
 	}
 	for _, host := range hosts.Items {
@@ -470,10 +598,10 @@ func (s *Service) evaluate(parent context.Context) error {
 	// Resource alert states remain dormant: no collection, evaluation, retries
 	// or recovery delivery, even when persisted rules are enabled.
 	alertStates := s.alertStateSnapshot()
-	if !stateChanged && reflect.DeepEqual(telegram, state.Telegram) && reflect.DeepEqual(alertStates, state.AlertStates) {
+	if !stateChanged && reflect.DeepEqual(channelState, state.Telegram) && reflect.DeepEqual(alertStates, state.AlertStates) {
 		return nil
 	}
-	state.Telegram = telegram
+	state.Telegram = channelState
 	state.AlertStates = alertStates
 	return s.store.commitState(state)
 }
@@ -884,16 +1012,25 @@ func minInt(value, maximum int) int {
 	return value
 }
 
-func snapshotFromState(state persistedState, telegram telegramState, configured bool, timezone string) Snapshot {
-	ready := configured && telegram.HasChat && telegram.TokenFingerprint != "" && telegram.Status == TelegramReady
+func snapshotFromState(state persistedState, channelState telegramState, configured bool, provider Provider, timezone string) Snapshot {
+	ready := configured && channelState.HasChat && channelState.TokenFingerprint != "" && channelState.Status == TelegramReady
+	channel := ChannelSnapshot{
+		Provider: provider, Configured: configured, Ready: ready, Status: channelState.Status,
+		BotUsername: channelState.BotUsername, LastCheckedAt: cloneTime(channelState.LastCheckedAt),
+		LastSuccessAt: cloneTime(channelState.LastSuccessAt), LastErrorCode: channelState.LastErrorCode,
+	}
+	telegram := TelegramSnapshot{Status: TelegramNotConfigured}
+	if provider == ProviderTelegram {
+		telegram = TelegramSnapshot{
+			Configured: configured, Ready: ready, Status: channelState.Status,
+			BotUsername: channelState.BotUsername, LastCheckedAt: cloneTime(channelState.LastCheckedAt),
+			LastSuccessAt: cloneTime(channelState.LastSuccessAt), LastErrorCode: channelState.LastErrorCode,
+		}
+	}
 	return Snapshot{
 		Enabled: state.Settings.Enabled, Locale: normalizeNotificationLocale(state.Settings.Locale), Timezone: timezone,
-		Rules: normalizeRules(state.Settings.Rules),
-		Telegram: TelegramSnapshot{
-			Configured: configured, Ready: ready, Status: telegram.Status,
-			BotUsername: telegram.BotUsername, LastCheckedAt: cloneTime(telegram.LastCheckedAt),
-			LastSuccessAt: cloneTime(telegram.LastSuccessAt), LastErrorCode: telegram.LastErrorCode,
-		},
+		Rules:    normalizeRules(state.Settings.Rules),
+		Provider: provider, Channel: channel, Telegram: telegram,
 		ResourceVersion: state.ResourceVersion, UpdatedAt: state.UpdatedAt,
 	}
 }
@@ -902,6 +1039,13 @@ func readyTelegramState(token string, bot BotInfo, chatID int64, now time.Time) 
 	return telegramState{
 		TokenFingerprint: tokenFingerprint(token), BotID: bot.ID, BotUsername: bot.Username,
 		ChatID: chatID, HasChat: true, Status: TelegramReady,
+		LastCheckedAt: timePtr(now), LastSuccessAt: timePtr(now),
+	}
+}
+
+func readyRobotState(credential string, now time.Time) telegramState {
+	return telegramState{
+		TokenFingerprint: tokenFingerprint(credential), HasChat: true, Status: TelegramReady,
 		LastCheckedAt: timePtr(now), LastSuccessAt: timePtr(now),
 	}
 }
@@ -937,7 +1081,7 @@ func timePtr(value time.Time) *time.Time {
 	return &value
 }
 
-func telegramCode(err error) string {
+func channelCode(provider Provider, err error) string {
 	var typed *Error
 	if errors.As(err, &typed) && typed.Code != "" {
 		return typed.Code
@@ -951,8 +1095,12 @@ func telegramCode(err error) string {
 		return "webhook_active"
 	case errors.Is(err, ErrTelegramUnavailable):
 		return "unavailable"
+	case errors.Is(err, ErrInvalidCredential):
+		return "invalid_credential"
+	case errors.Is(err, ErrChannelUnavailable):
+		return "unavailable"
 	default:
-		return "notification_failed"
+		return string(provider) + "_notification_failed"
 	}
 }
 
@@ -1036,15 +1184,16 @@ func sshLoginMessage(host cluster.Host, event contract.SSHLoginEvent, now time.T
 	}
 }
 
-func testMessage(now time.Time, locale string) string {
+func testMessage(now time.Time, locale string, provider Provider) string {
 	when := formatNotificationTime(now)
+	channel := providerName(provider, locale)
 	switch locale {
 	case "en-US":
-		return fmt.Sprintf("🧪 [KPanel Cluster Notice]\n\nTelegram channel test succeeded.\n\nTime: %s", when)
+		return fmt.Sprintf("🧪 [KPanel Cluster Notice]\n\n%s channel test succeeded.\n\nTime: %s", channel, when)
 	case "zh-TW":
-		return fmt.Sprintf("🧪 [KPanel 叢集通知]\n\nTelegram 頻道測試成功。\n\n時間：%s", when)
+		return fmt.Sprintf("🧪 [KPanel 叢集通知]\n\n%s 頻道測試成功。\n\n時間：%s", channel, when)
 	default:
-		return fmt.Sprintf("🧪 [KPanel 集群通知]\n\nTelegram 通道测试成功。\n\n时间：%s", when)
+		return fmt.Sprintf("🧪 [KPanel 集群通知]\n\n%s 通道测试成功。\n\n时间：%s", channel, when)
 	}
 }
 

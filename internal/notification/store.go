@@ -18,10 +18,12 @@ import (
 )
 
 const (
-	stateFileName           = "notification-state.json"
-	telegramTokenName       = "telegram-bot-token"
-	maxStateBytes     int64 = 4 << 20
-	maxTokenBytes     int64 = MaxTelegramTokenBytes + 1
+	stateFileName = "notification-state.json"
+	// Keep the original filename so backups and downgrade paths remain
+	// compatible. The file now stores the active channel credential.
+	telegramTokenName        = "telegram-bot-token"
+	maxStateBytes      int64 = 4 << 20
+	maxCredentialBytes int64 = MaxChannelCredentialBytes + 1
 )
 
 type telegramState struct {
@@ -224,28 +226,28 @@ func validateAlertStates(states map[string]alertState) error {
 	return nil
 }
 
-func (s *Store) token() (string, bool, error) {
-	content, err := readRegularFile(s.tokenPath, maxTokenBytes, true)
+func (s *Store) credential() (string, bool, error) {
+	content, err := readRegularFile(s.tokenPath, maxCredentialBytes, true)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, err
 	}
-	token := strings.TrimSpace(string(content))
-	if token == "" || !ValidBotToken(token) {
-		return "", false, ErrTelegramInvalidToken
+	credential := strings.TrimSpace(string(content))
+	if _, ok := DetectProvider(credential); !ok {
+		return "", false, ErrInvalidCredential
 	}
-	return token, true, nil
+	return credential, true, nil
 }
 
-func (s *Store) replaceToken(token string) error {
-	return atomicWrite(s.tokenPath, []byte(token+"\n"), 0o600)
+func (s *Store) replaceCredential(credential string) error {
+	return atomicWrite(s.tokenPath, []byte(credential+"\n"), 0o600)
 }
 
-func (s *Store) restoreToken(token string, present bool) error {
+func (s *Store) restoreCredential(credential string, present bool) error {
 	if present {
-		return s.replaceToken(token)
+		return s.replaceCredential(credential)
 	}
 	if err := removeRegularFile(s.tokenPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -317,7 +319,7 @@ func readRegularFile(path string, limit int64, secret bool) ([]byte, error) {
 		return nil, errors.New("notification file is not a regular file")
 	}
 	if secret && runtime.GOOS != "windows" && before.Mode().Perm()&0o077 != 0 {
-		return nil, errors.New("telegram token file is too broadly accessible")
+		return nil, errors.New("notification credential file is too broadly accessible")
 	}
 	file, err := os.Open(path)
 	if err != nil {

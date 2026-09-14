@@ -3,11 +3,31 @@ package panel
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/kejilion/kejilion-panel/internal/notification"
 )
+
+func TestClusterNotificationAfterDeliveryFailureIsExplicit(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPut, clusterNotificationsPath, nil)
+	response := httptest.NewRecorder()
+	server := &Server{}
+	server.writeNotificationError(response, request, &notification.Error{Code: "state_store_unavailable_after_delivery"})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; body=%s", response.Code, response.Body.String())
+	}
+	var problem struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.Code != "cluster_notifications_save_failed_after_delivery" {
+		t.Fatalf("problem code = %q; body=%s", problem.Code, response.Body.String())
+	}
+}
 
 func TestClusterNotificationsAPIUsesSessionCSRFAndHidesChannelSecrets(t *testing.T) {
 	server, tokenPath := newTestServer(t)
@@ -23,7 +43,7 @@ func TestClusterNotificationsAPIUsesSessionCSRFAndHidesChannelSecrets(t *testing
 	if settings.Code != http.StatusOK {
 		t.Fatalf("notification settings status = %d; body=%s", settings.Code, settings.Body.String())
 	}
-	if strings.Contains(settings.Body.String(), "chatId") || strings.Contains(settings.Body.String(), "telegramBotToken") {
+	if strings.Contains(settings.Body.String(), "chatId") || strings.Contains(settings.Body.String(), "telegramBotToken") || strings.Contains(settings.Body.String(), "channelCredential") {
 		t.Fatalf("notification settings exposed channel secrets: %s", settings.Body.String())
 	}
 	var snapshot notification.Snapshot

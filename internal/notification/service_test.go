@@ -65,6 +65,32 @@ type notificationTestTelegram struct {
 	messages    []string
 }
 
+type notificationTestRobot struct {
+	mu          sync.Mutex
+	sendErr     error
+	providers   []Provider
+	credentials []string
+	messages    []string
+}
+
+func (r *notificationTestRobot) SendMessage(_ context.Context, provider Provider, credential, message string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sendErr != nil {
+		return r.sendErr
+	}
+	r.providers = append(r.providers, provider)
+	r.credentials = append(r.credentials, credential)
+	r.messages = append(r.messages, message)
+	return nil
+}
+
+func (r *notificationTestRobot) calls() (providers []Provider, credentials, messages []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]Provider(nil), r.providers...), append([]string(nil), r.credentials...), append([]string(nil), r.messages...)
+}
+
 func (t *notificationTestTelegram) ValidateAndDiscover(context.Context, string) (BotInfo, int64, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -124,6 +150,147 @@ func TestServiceUsesConfiguredTimezoneSource(t *testing.T) {
 
 	if got := service.Snapshot().Timezone; got != "UTC+08:00" {
 		t.Fatalf("notification timezone = %q, want UTC+08:00", got)
+	}
+}
+
+func TestServiceConfiguresTestsAndDeliversThroughRobotChannel(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)}
+	source := newNotificationTestHost(clock.Now())
+	source.setTelemetry(contract.HostTelemetry{
+		CPU:         contract.CPUSummary{Cores: 4, UsagePercent: 99},
+		Memory:      contract.MemorySummary{TotalBytes: 8 << 30, UsedBytes: 2 << 30, AvailableBytes: 6 << 30, UsagePercent: 25},
+		Disk:        contract.DiskCapacitySummary{TotalBytes: 80 << 30, UsedBytes: 20 << 30, UsagePercent: 25},
+		Network:     contract.NetworkSummary{ReceivedBytes: 1000, SentBytes: 1000},
+		CollectedAt: clock.Now(),
+	})
+	robots := &notificationTestRobot{}
+	dataDir := t.TempDir()
+	service, err := NewService(Config{
+		DataDir: dataDir, Hosts: source, Telegram: &notificationTestTelegram{}, Robots: robots, Now: clock.Now,
+		EvaluationInterval: time.Minute, SustainSamples: 1, RepeatInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	defer service.Close()
+
+	const credential = "https://open.feishu.cn/open-apis/bot/v2/hook/12345678-abcd"
+	rules := DefaultRules()
+	rules.MemoryEnabled = false
+	rules.DiskEnabled = false
+	rules.SSHLoginEnabled = false
+	rules.HostOfflineEnabled = false
+	snapshot, err := service.Configure(context.Background(), UpdateInput{
+		Enabled: true, Locale: "en-US", Rules: rules, Provider: ProviderFeishu, ChannelCredential: credential,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	})
+	if err != nil {
+		t.Fatalf("Configure() error = %v", err)
+	}
+	if snapshot.Provider != ProviderFeishu || snapshot.Channel.Provider != ProviderFeishu || !snapshot.Channel.Ready || !snapshot.Channel.Configured {
+		t.Fatalf("configured snapshot = %#v", snapshot)
+	}
+	if snapshot.Telegram.Configured || snapshot.Telegram.Ready {
+		t.Fatalf("legacy Telegram snapshot exposed robot state = %#v", snapshot.Telegram)
+	}
+	if _, err := service.Discover(context.Background(), snapshot.ResourceVersion); !errors.Is(err, ErrDiscoverUnsupported) {
+		t.Fatalf("Discover() error = %v, want ErrDiscoverUnsupported", err)
+	}
+	if _, err := service.Test(context.Background()); err != nil {
+		t.Fatalf("Test() error = %v", err)
+	}
+	if err := service.evaluate(context.Background()); err != nil {
+		t.Fatalf("evaluate() error = %v", err)
+	}
+
+	providers, credentials, messages := robots.calls()
+	if len(messages) != 3 {
+		t.Fatalf("robot message count = %d, want validation + test + alert", len(messages))
+	}
+	for index := range providers {
+		if providers[index] != ProviderFeishu || credentials[index] != credential {
+			t.Fatalf("robot call %d = %q / %q", index, providers[index], credentials[index])
+		}
+	}
+	if !strings.Contains(messages[0], "Feishu channel test succeeded") || !strings.Contains(messages[2], "CPU") {
+		t.Fatalf("robot messages = %#v", messages)
+	}
+
+	stateContent, err := os.ReadFile(filepath.Join(dataDir, "notifications", stateFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stateContent), credential) || strings.Contains(string(stateContent), "12345678-abcd") {
+		t.Fatalf("notification state exposed channel credential: %s", stateContent)
+	}
+
+	_, err = service.Configure(context.Background(), UpdateInput{
+		Enabled: true, Locale: "en-US", Rules: rules, Provider: ProviderWeCom,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	})
+	if !errors.Is(err, ErrCredentialRequired) {
+		t.Fatalf("Configure() channel switch error = %v, want ErrCredentialRequired", err)
+	}
+}
+
+func TestServiceDoesNotStoreRobotCredentialWhenValidationFails(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)}
+	dataDir := t.TempDir()
+	robots := &notificationTestRobot{sendErr: &Error{Code: "api_error", Cause: ErrChannelUnavailable}}
+	service, err := NewService(Config{
+		DataDir: dataDir, Hosts: newNotificationTestHost(clock.Now()), Robots: robots, Now: clock.Now,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	defer service.Close()
+
+	_, err = service.Configure(context.Background(), UpdateInput{
+		Enabled: false, Rules: DefaultRules(), Provider: ProviderDingTalk,
+		ChannelCredential:       "https://oapi.dingtalk.com/robot/send?access_token=abc12345",
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	})
+	if !errors.Is(err, ErrChannelUnavailable) {
+		t.Fatalf("Configure() error = %v, want ErrChannelUnavailable", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dataDir, "notifications", telegramTokenName)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("credential file exists after failed validation: %v", statErr)
+	}
+}
+
+func TestServiceCanRepairInvalidStoredCredential(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)}
+	dataDir := t.TempDir()
+	robots := &notificationTestRobot{}
+	service, err := NewService(Config{
+		DataDir: dataDir, Hosts: newNotificationTestHost(clock.Now()), Robots: robots, Now: clock.Now,
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	defer service.Close()
+
+	credentialPath := filepath.Join(dataDir, "notifications", telegramTokenName)
+	if err := os.WriteFile(credentialPath, []byte("damaged\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const replacement = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc12345"
+	snapshot, err := service.Configure(context.Background(), UpdateInput{
+		Enabled: false, Rules: DefaultRules(), Provider: ProviderWeCom, ChannelCredential: replacement,
+		ExpectedResourceVersion: service.Snapshot().ResourceVersion,
+	})
+	if err != nil {
+		t.Fatalf("Configure() repair error = %v", err)
+	}
+	if snapshot.Provider != ProviderWeCom || !snapshot.Channel.Ready {
+		t.Fatalf("repaired snapshot = %#v", snapshot)
+	}
+	content, err := os.ReadFile(credentialPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(content)) != replacement {
+		t.Fatalf("stored replacement = %q", content)
 	}
 }
 
