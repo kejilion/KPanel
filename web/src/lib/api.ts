@@ -63,6 +63,7 @@ import type {
   Job,
   JobList,
   JobOwner,
+  KPanelReleaseInfo,
   AppInstallJob,
   AppTerminalChunk,
   LoginRequest,
@@ -2314,6 +2315,10 @@ export const api = {
 		check: () => request<AutomaticUpdateStatus>('/settings/automatic-update/check', { method: 'POST' }),
 		install: (input: { expectedResourceVersion: string }) =>
 			request<AutomaticUpdateStatus>('/settings/automatic-update/install', { method: 'POST', body: input }),
+	},
+	kpanelRelease: {
+		get: (channel: 'stable' | 'preview', signal?: AbortSignal) =>
+			request<KPanelReleaseInfo>('/settings/kpanel-release', { query: { channel }, signal }),
 	},
 	securityEntrance: {
 		get: () => request<SecurityEntranceSettings>('/settings/security-entry'),

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	stateSchemaVersion = 2
+	stateSchemaVersion = 3
 	stateFileName      = "state.json"
 	lockFileName       = ".lock"
 	maxStateBytes      = 64 << 10
@@ -43,8 +43,17 @@ func validChannel(channel Channel) bool {
 }
 
 type Release struct {
-	Version     string
-	ImageDigest string
+	Version      string        `json:"version"`
+	ImageDigest  string        `json:"imageDigest"`
+	ReleaseURL   string        `json:"releaseUrl,omitempty"`
+	PublishedAt  string        `json:"publishedAt,omitempty"`
+	Notes        []ReleaseNote `json:"notes,omitempty"`
+	UpgradeNotes []string      `json:"upgradeNotes,omitempty"`
+}
+
+type ReleaseNote struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
 }
 
 // ReleaseSource returns the newest release allowed by one configured channel
@@ -83,46 +92,54 @@ type Service struct {
 }
 
 type persistedState struct {
-	SchemaVersion        int        `json:"schemaVersion"`
-	Revision             uint64     `json:"revision"`
-	Enabled              bool       `json:"enabled"`
-	Channel              Channel    `json:"channel"`
-	State                string     `json:"state"`
-	InstallRequested     bool       `json:"installRequested,omitempty"`
-	CurrentVersion       string     `json:"currentVersion,omitempty"`
-	CandidateVersion     string     `json:"candidateVersion,omitempty"`
-	CandidateImageDigest string     `json:"candidateImageDigest,omitempty"`
-	CandidateFirstSeenAt *time.Time `json:"candidateFirstSeenAt,omitempty"`
-	LastCheckedAt        *time.Time `json:"lastCheckedAt,omitempty"`
-	LastAttemptAt        *time.Time `json:"lastAttemptAt,omitempty"`
-	LastSuccessAt        *time.Time `json:"lastSuccessAt,omitempty"`
-	LastErrorCode        string     `json:"lastErrorCode,omitempty"`
-	LastError            string     `json:"lastError,omitempty"`
-	FailedVersion        string     `json:"failedVersion,omitempty"`
-	FailedImageDigest    string     `json:"failedImageDigest,omitempty"`
+	SchemaVersion         int           `json:"schemaVersion"`
+	Revision              uint64        `json:"revision"`
+	Enabled               bool          `json:"enabled"`
+	Channel               Channel       `json:"channel"`
+	State                 string        `json:"state"`
+	InstallRequested      bool          `json:"installRequested,omitempty"`
+	CurrentVersion        string        `json:"currentVersion,omitempty"`
+	CandidateVersion      string        `json:"candidateVersion,omitempty"`
+	CandidateImageDigest  string        `json:"candidateImageDigest,omitempty"`
+	CandidateReleaseURL   string        `json:"candidateReleaseUrl,omitempty"`
+	CandidatePublishedAt  string        `json:"candidatePublishedAt,omitempty"`
+	CandidateNotes        []ReleaseNote `json:"candidateNotes,omitempty"`
+	CandidateUpgradeNotes []string      `json:"candidateUpgradeNotes,omitempty"`
+	CandidateFirstSeenAt  *time.Time    `json:"candidateFirstSeenAt,omitempty"`
+	LastCheckedAt         *time.Time    `json:"lastCheckedAt,omitempty"`
+	LastAttemptAt         *time.Time    `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt         *time.Time    `json:"lastSuccessAt,omitempty"`
+	LastErrorCode         string        `json:"lastErrorCode,omitempty"`
+	LastError             string        `json:"lastError,omitempty"`
+	FailedVersion         string        `json:"failedVersion,omitempty"`
+	FailedImageDigest     string        `json:"failedImageDigest,omitempty"`
 }
 
 type Status struct {
-	Available            bool       `json:"available"`
-	Enabled              bool       `json:"enabled"`
-	State                string     `json:"state"`
-	Channel              Channel    `json:"channel"`
-	CanInstall           bool       `json:"canInstall"`
-	InstallRequested     bool       `json:"installRequested"`
-	Schedule             string     `json:"schedule"`
-	ObservationHours     int        `json:"observationHours"`
-	CurrentVersion       string     `json:"currentVersion,omitempty"`
-	CandidateVersion     string     `json:"candidateVersion,omitempty"`
-	CandidateImageDigest string     `json:"candidateImageDigest,omitempty"`
-	CandidateFirstSeenAt *time.Time `json:"candidateFirstSeenAt,omitempty"`
-	LastCheckedAt        *time.Time `json:"lastCheckedAt,omitempty"`
-	LastAttemptAt        *time.Time `json:"lastAttemptAt,omitempty"`
-	LastSuccessAt        *time.Time `json:"lastSuccessAt,omitempty"`
-	LastErrorCode        string     `json:"lastErrorCode,omitempty"`
-	LastError            string     `json:"lastError,omitempty"`
-	FailedVersion        string     `json:"failedVersion,omitempty"`
-	FailedImageDigest    string     `json:"failedImageDigest,omitempty"`
-	ResourceVersion      string     `json:"resourceVersion"`
+	Available             bool          `json:"available"`
+	Enabled               bool          `json:"enabled"`
+	State                 string        `json:"state"`
+	Channel               Channel       `json:"channel"`
+	CanInstall            bool          `json:"canInstall"`
+	InstallRequested      bool          `json:"installRequested"`
+	Schedule              string        `json:"schedule"`
+	ObservationHours      int           `json:"observationHours"`
+	CurrentVersion        string        `json:"currentVersion,omitempty"`
+	CandidateVersion      string        `json:"candidateVersion,omitempty"`
+	CandidateImageDigest  string        `json:"candidateImageDigest,omitempty"`
+	CandidateReleaseURL   string        `json:"candidateReleaseUrl,omitempty"`
+	CandidatePublishedAt  string        `json:"candidatePublishedAt,omitempty"`
+	CandidateNotes        []ReleaseNote `json:"candidateNotes,omitempty"`
+	CandidateUpgradeNotes []string      `json:"candidateUpgradeNotes,omitempty"`
+	CandidateFirstSeenAt  *time.Time    `json:"candidateFirstSeenAt,omitempty"`
+	LastCheckedAt         *time.Time    `json:"lastCheckedAt,omitempty"`
+	LastAttemptAt         *time.Time    `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt         *time.Time    `json:"lastSuccessAt,omitempty"`
+	LastErrorCode         string        `json:"lastErrorCode,omitempty"`
+	LastError             string        `json:"lastError,omitempty"`
+	FailedVersion         string        `json:"failedVersion,omitempty"`
+	FailedImageDigest     string        `json:"failedImageDigest,omitempty"`
+	ResourceVersion       string        `json:"resourceVersion"`
 }
 
 func New(config Config) (*Service, error) {
@@ -222,9 +239,7 @@ func (s *Service) SetPolicy(
 		state.LastError = ""
 		state.LastErrorCode = ""
 		if channelChanged {
-			state.CandidateVersion = ""
-			state.CandidateImageDigest = ""
-			state.CandidateFirstSeenAt = nil
+			clearCandidate(&state)
 			state.FailedVersion = ""
 			state.FailedImageDigest = ""
 			state.InstallRequested = false
@@ -437,9 +452,7 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 		state.State = "succeeded"
 		state.InstallRequested = false
 		state.CurrentVersion = target
-		state.CandidateVersion = ""
-		state.CandidateImageDigest = ""
-		state.CandidateFirstSeenAt = nil
+		clearCandidate(&state)
 		state.FailedVersion = ""
 		state.FailedImageDigest = ""
 		state.LastErrorCode = ""
@@ -460,9 +473,7 @@ func (s *Service) reconcileInterrupted(state *persistedState) {
 	if compareVersions(state.CurrentVersion, state.CandidateVersion) >= 0 {
 		state.State = "succeeded"
 		state.LastSuccessAt = &now
-		state.CandidateVersion = ""
-		state.CandidateImageDigest = ""
-		state.CandidateFirstSeenAt = nil
+		clearCandidate(state)
 		state.FailedVersion = ""
 		state.FailedImageDigest = ""
 		state.LastErrorCode = ""
@@ -501,9 +512,7 @@ func (s *Service) checkLocked(ctx context.Context, state *persistedState) error 
 	state.LastErrorCode = ""
 	state.LastError = ""
 	if compareVersions(latest.Version, state.CurrentVersion) <= 0 {
-		state.CandidateVersion = ""
-		state.CandidateImageDigest = ""
-		state.CandidateFirstSeenAt = nil
+		clearCandidate(state)
 		if compareVersions(state.FailedVersion, state.CurrentVersion) <= 0 {
 			state.FailedVersion = ""
 			state.FailedImageDigest = ""
@@ -511,7 +520,8 @@ func (s *Service) checkLocked(ctx context.Context, state *persistedState) error 
 		state.State = normalizeRestingState(*state)
 		return nil
 	}
-	if state.CandidateVersion != latest.Version || state.CandidateImageDigest != latest.ImageDigest {
+	candidateChanged := state.CandidateVersion != latest.Version || state.CandidateImageDigest != latest.ImageDigest
+	if candidateChanged {
 		state.CandidateVersion = latest.Version
 		state.CandidateImageDigest = latest.ImageDigest
 		state.CandidateFirstSeenAt = &now
@@ -519,6 +529,9 @@ func (s *Service) checkLocked(ctx context.Context, state *persistedState) error 
 			state.FailedVersion = ""
 			state.FailedImageDigest = ""
 		}
+	}
+	setCandidateMetadata(state, latest)
+	if candidateChanged {
 		state.State = "waiting"
 		return nil
 	}
@@ -584,8 +597,11 @@ func (s *Service) snapshot(state persistedState) Status {
 		InstallRequested: state.InstallRequested, Schedule: s.schedule,
 		ObservationHours: int(s.hold / time.Hour), CurrentVersion: state.CurrentVersion,
 		CandidateVersion: state.CandidateVersion, CandidateImageDigest: state.CandidateImageDigest,
-		CandidateFirstSeenAt: state.CandidateFirstSeenAt,
-		LastCheckedAt:        state.LastCheckedAt, LastAttemptAt: state.LastAttemptAt,
+		CandidateReleaseURL: state.CandidateReleaseURL, CandidatePublishedAt: state.CandidatePublishedAt,
+		CandidateNotes:        append([]ReleaseNote(nil), state.CandidateNotes...),
+		CandidateUpgradeNotes: append([]string(nil), state.CandidateUpgradeNotes...),
+		CandidateFirstSeenAt:  state.CandidateFirstSeenAt,
+		LastCheckedAt:         state.LastCheckedAt, LastAttemptAt: state.LastAttemptAt,
 		LastSuccessAt: state.LastSuccessAt, LastErrorCode: state.LastErrorCode,
 		LastError: state.LastError, FailedVersion: state.FailedVersion,
 		FailedImageDigest: state.FailedImageDigest,
@@ -629,8 +645,10 @@ func (s *Service) load() (persistedState, error) {
 		return persistedState{}, err
 	}
 	if state.SchemaVersion == 1 {
-		state.SchemaVersion = stateSchemaVersion
 		state.Channel = ChannelStable
+	}
+	if state.SchemaVersion == 1 || state.SchemaVersion == 2 {
+		state.SchemaVersion = stateSchemaVersion
 	}
 	if state.SchemaVersion != stateSchemaVersion || !validPersistedState(state) {
 		return persistedState{}, errors.New("automatic update state is invalid")
@@ -739,11 +757,114 @@ func validPersistedState(state persistedState) bool {
 		(state.FailedVersion == "") != (state.FailedImageDigest == "") {
 		return false
 	}
+	if state.CandidateVersion == "" {
+		if state.CandidateReleaseURL != "" || state.CandidatePublishedAt != "" ||
+			len(state.CandidateNotes) != 0 || len(state.CandidateUpgradeNotes) != 0 {
+			return false
+		}
+	} else if !validCandidateMetadata(state) {
+		return false
+	}
 	if state.InstallRequested != (state.State == "queued") ||
 		state.InstallRequested && state.CandidateVersion == "" {
 		return false
 	}
 	return true
+}
+
+func clearCandidate(state *persistedState) {
+	state.CandidateVersion = ""
+	state.CandidateImageDigest = ""
+	state.CandidateReleaseURL = ""
+	state.CandidatePublishedAt = ""
+	state.CandidateNotes = nil
+	state.CandidateUpgradeNotes = nil
+	state.CandidateFirstSeenAt = nil
+}
+
+func setCandidateMetadata(state *persistedState, release Release) {
+	state.CandidateReleaseURL = ""
+	if release.ReleaseURL == officialReleaseURL(release.Version) {
+		state.CandidateReleaseURL = release.ReleaseURL
+	}
+	state.CandidatePublishedAt = ""
+	if published, err := time.Parse(time.RFC3339, release.PublishedAt); err == nil {
+		state.CandidatePublishedAt = published.UTC().Format(time.RFC3339)
+	}
+	state.CandidateNotes = normalizedReleaseNotes(release.Notes, maxReleaseNotes)
+	state.CandidateUpgradeNotes = normalizedUpgradeNotes(release.UpgradeNotes, maxUpgradeNotes)
+}
+
+func normalizedReleaseNotes(values []ReleaseNote, limit int) []ReleaseNote {
+	result := make([]ReleaseNote, 0, min(len(values), limit))
+	for _, value := range values {
+		if !validReleaseNoteKind(value.Kind) {
+			continue
+		}
+		text := plainReleaseNote(value.Text)
+		if text != "" {
+			result = append(result, ReleaseNote{Kind: value.Kind, Text: text})
+		}
+		if len(result) == limit {
+			break
+		}
+	}
+	return result
+}
+
+func normalizedUpgradeNotes(values []string, limit int) []string {
+	result := make([]string, 0, min(len(values), limit))
+	for _, value := range values {
+		if text := plainReleaseNote(value); text != "" {
+			result = append(result, text)
+		}
+		if len(result) == limit {
+			break
+		}
+	}
+	return result
+}
+
+func validCandidateMetadata(state persistedState) bool {
+	if state.CandidateReleaseURL != "" && state.CandidateReleaseURL != officialReleaseURL(state.CandidateVersion) {
+		return false
+	}
+	if state.CandidatePublishedAt != "" {
+		if _, err := time.Parse(time.RFC3339, state.CandidatePublishedAt); err != nil {
+			return false
+		}
+	}
+	if len(state.CandidateNotes) > maxReleaseNotes || len(state.CandidateUpgradeNotes) > maxUpgradeNotes {
+		return false
+	}
+	for _, note := range state.CandidateNotes {
+		if !validReleaseNoteKind(note.Kind) || note.Text == "" || plainReleaseNote(note.Text) != note.Text {
+			return false
+		}
+	}
+	for _, note := range state.CandidateUpgradeNotes {
+		if note == "" || plainReleaseNote(note) != note {
+			return false
+		}
+	}
+	return true
+}
+
+func validReleaseNoteKind(kind string) bool {
+	switch kind {
+	case "added", "changed", "fixed", "security", "performance", "compatibility":
+		return true
+	default:
+		return false
+	}
+}
+
+func officialReleaseURL(version string) string {
+	normalized := normalizeReleaseVersion(version)
+	if normalized == "" {
+		return ""
+	}
+	return "https://github.com/kejilion/KPanel/releases/tag/v" + normalized
 }
 
 func resourceVersion(state persistedState) string {

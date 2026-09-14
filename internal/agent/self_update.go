@@ -9,6 +9,20 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/selfupdate"
 )
 
+const kpanelReleaseCacheTTL = 15 * time.Minute
+
+type cachedKPanelRelease struct {
+	release   selfupdate.Release
+	fetchedAt time.Time
+}
+
+type kpanelReleaseInfo struct {
+	Channel selfupdate.Channel `json:"channel"`
+	selfupdate.Release
+	Cached bool `json:"cached"`
+	Stale  bool `json:"stale"`
+}
+
 func (s *Server) selfUpdateSettings(w http.ResponseWriter, r *http.Request, requestID string) {
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
 		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "自动更新请求格式无效", "")
@@ -133,4 +147,89 @@ func (s *Server) selfUpdateInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, status)
+}
+
+func (s *Server) selfUpdateRelease(w http.ResponseWriter, r *http.Request) {
+	requestID := requestIDFrom(w)
+	if r.URL.RawPath != "" {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "版本说明请求格式无效", "")
+		return
+	}
+	values := r.URL.Query()
+	channels, ok := values["channel"]
+	if !ok || len(values) != 1 || len(channels) != 1 ||
+		(channels[0] != string(selfupdate.ChannelStable) && channels[0] != string(selfupdate.ChannelPreview)) {
+		writeProblem(w, requestID, http.StatusBadRequest, "invalid_update_channel", "更新通道只允许 stable 或 preview", "")
+		return
+	}
+	channel := selfupdate.Channel(channels[0])
+
+	if status, ok := s.cachedSelfUpdateRelease(channel, false); ok {
+		writeJSON(w, http.StatusOK, releaseInfo(channel, status, true, false))
+		return
+	}
+	if release, ok := s.cachedRelease(channel, false); ok {
+		writeJSON(w, http.StatusOK, releaseInfo(channel, release, true, false))
+		return
+	}
+	source := s.releaseSources[channel]
+	if source == nil {
+		writeProblem(w, requestID, http.StatusServiceUnavailable, "release_info_unavailable", "版本说明暂不可用", "")
+		return
+	}
+	release, err := source.Latest(r.Context())
+	if err != nil {
+		if stale, ok := s.cachedRelease(channel, true); ok {
+			writeJSON(w, http.StatusOK, releaseInfo(channel, stale, true, true))
+			return
+		}
+		if stale, ok := s.cachedSelfUpdateRelease(channel, true); ok {
+			writeJSON(w, http.StatusOK, releaseInfo(channel, stale, true, true))
+			return
+		}
+		writeProblem(w, requestID, http.StatusBadGateway, "release_info_fetch_failed", "版本说明加载失败", safeDetail(err))
+		return
+	}
+	s.releaseCacheMu.Lock()
+	s.releaseCache[channel] = cachedKPanelRelease{release: release, fetchedAt: s.now().UTC()}
+	s.releaseCacheMu.Unlock()
+	writeJSON(w, http.StatusOK, releaseInfo(channel, release, false, false))
+}
+
+func (s *Server) cachedSelfUpdateRelease(channel selfupdate.Channel, allowStale bool) (selfupdate.Release, bool) {
+	if s.selfUpdate == nil {
+		return selfupdate.Release{}, false
+	}
+	status, err := s.selfUpdate.Status(s.version)
+	if err != nil || status.Channel != channel || status.CandidateVersion == "" || status.CandidateImageDigest == "" {
+		return selfupdate.Release{}, false
+	}
+	if status.CandidateReleaseURL == "" && status.CandidatePublishedAt == "" &&
+		len(status.CandidateNotes) == 0 && len(status.CandidateUpgradeNotes) == 0 {
+		return selfupdate.Release{}, false
+	}
+	if !allowStale && (status.State == "check_failed" || status.LastCheckedAt == nil ||
+		s.now().UTC().Sub(status.LastCheckedAt.UTC()) >= kpanelReleaseCacheTTL) {
+		return selfupdate.Release{}, false
+	}
+	return selfupdate.Release{
+		Version: status.CandidateVersion, ImageDigest: status.CandidateImageDigest,
+		ReleaseURL: status.CandidateReleaseURL, PublishedAt: status.CandidatePublishedAt,
+		Notes:        append([]selfupdate.ReleaseNote(nil), status.CandidateNotes...),
+		UpgradeNotes: append([]string(nil), status.CandidateUpgradeNotes...),
+	}, true
+}
+
+func (s *Server) cachedRelease(channel selfupdate.Channel, allowStale bool) (selfupdate.Release, bool) {
+	s.releaseCacheMu.Lock()
+	defer s.releaseCacheMu.Unlock()
+	cached, ok := s.releaseCache[channel]
+	if !ok || (!allowStale && s.now().UTC().Sub(cached.fetchedAt) >= kpanelReleaseCacheTTL) {
+		return selfupdate.Release{}, false
+	}
+	return cached.release, true
+}
+
+func releaseInfo(channel selfupdate.Channel, release selfupdate.Release, cached, stale bool) kpanelReleaseInfo {
+	return kpanelReleaseInfo{Channel: channel, Release: release, Cached: cached, Stale: stale}
 }

@@ -47,13 +47,27 @@ import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
+import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import { appAccessURL, matchingAppProxySites } from '@/lib/appAccess'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
-import { isKPanelSelfUpdate, kpanelAppID, kpanelAppToken } from '@/lib/kpanelUpdate'
+import {
+  isKPanelSelfUpdate,
+  kpanelAppID,
+  kpanelAppToken,
+  releaseMatchesTarget,
+} from '@/lib/kpanelUpdate'
 import { reloadPanelInterface } from '@/lib/pageLifecycle'
+import { usePanelState } from '@/stores/panel'
 import { useToast } from '@/stores/toast'
-import type { AppInstallJob, AppMarketInventory, AppMarketItem, PublicNetworkSummary, Site } from '@/types/api'
+import type {
+  AppInstallJob,
+  AppMarketInventory,
+  AppMarketItem,
+  KPanelReleaseInfo,
+  PublicNetworkSummary,
+  Site,
+} from '@/types/api'
 
 type SourceFilter = 'all' | 'builtin' | 'thirdparty'
 type StatusFilter = 'all' | 'installed' | 'running' | 'adapted'
@@ -94,6 +108,7 @@ const cancelJobPending = ref(false)
 const cancellingJob = ref(false)
 const toast = useToast()
 const i18n = useI18n()
+const panel = usePanelState()
 const route = useRoute()
 const router = useRouter()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
@@ -132,6 +147,11 @@ let pollingJobID = ''
 let installPortController: AbortController | undefined
 let installPortTimer: number | undefined
 let recentInstalledTimer: number | undefined
+const kpanelRelease = ref<KPanelReleaseInfo>()
+const kpanelReleaseLoading = ref(false)
+const kpanelReleaseError = ref('')
+let kpanelReleaseController: AbortController | undefined
+let kpanelReleaseTimer: ReturnType<typeof setTimeout> | undefined
 const activeJobStorageKey = 'kpanel:active-app-job'
 const activeJobPollDelay = 2_000
 const backgroundJobPollDelay = 15_000
@@ -139,6 +159,14 @@ const millisecondsPerDay = 86_400_000
 const newAppWindowDays = 60
 
 const selected = computed(() => inventory.value?.items.find((item) => item.id === selectedID.value))
+const kpanelUpdateConfirmOpen = computed(() => (
+  confirmAction.value === 'update' && selected.value?.token === kpanelAppToken
+))
+const selectedUpdateDigest = computed(() => (
+  selected.value?.runtime.containerId
+    ? imageUpdateEntries.value[selected.value.runtime.containerId]?.remoteDigest
+    : undefined
+))
 const selectedPort = computed(() =>
   selected.value?.runtime.ports?.find((port) => port.type === 'tcp' && port.publicPort),
 )
@@ -497,6 +525,52 @@ function mutationConfirmationDescription(): string {
   return selected.value?.installer === 'kejilion'
     ? i18n.t('apps.updateScriptDescription')
     : i18n.t('apps.updateContainerDescription')
+}
+
+function stopKPanelReleaseRequest(): void {
+  kpanelReleaseController?.abort()
+  kpanelReleaseController = undefined
+  if (kpanelReleaseTimer !== undefined) clearTimeout(kpanelReleaseTimer)
+  kpanelReleaseTimer = undefined
+  kpanelReleaseLoading.value = false
+}
+
+async function loadKPanelRelease(): Promise<void> {
+  stopKPanelReleaseRequest()
+  const targetDigest = selectedUpdateDigest.value
+  if (
+    targetDigest &&
+    kpanelRelease.value &&
+    releaseMatchesTarget(kpanelRelease.value, undefined, targetDigest) &&
+    (kpanelRelease.value.notes?.length || kpanelRelease.value.upgradeNotes?.length)
+  ) {
+    kpanelReleaseError.value = ''
+    return
+  }
+  const controller = new AbortController()
+  kpanelReleaseController = controller
+  kpanelReleaseLoading.value = true
+  kpanelReleaseError.value = ''
+  kpanelReleaseTimer = setTimeout(() => controller.abort(), 6_000)
+  try {
+    const release = await api.settings.kpanelRelease.get('stable', controller.signal)
+    if (kpanelReleaseController === controller && kpanelUpdateConfirmOpen.value) {
+      kpanelRelease.value = release
+    }
+  } catch (reason) {
+    if (kpanelReleaseController === controller) {
+      kpanelReleaseError.value = reason instanceof ApiError
+        ? reason.message
+        : i18n.t('kpanelUpdate.loadFailed')
+    }
+  } finally {
+    if (kpanelReleaseController === controller) stopKPanelReleaseRequest()
+  }
+}
+
+function closeKPanelUpdateDialog(): void {
+  if (operation.value) return
+  confirmAction.value = undefined
 }
 
 function routeQueryValue(value: unknown): string {
@@ -1110,6 +1184,7 @@ onBeforeUnmount(() => {
   installPortController?.abort()
   if (installPortTimer) window.clearTimeout(installPortTimer)
   if (recentInstalledTimer) window.clearTimeout(recentInstalledTimer)
+  stopKPanelReleaseRequest()
 })
 
 watch(installPort, () => {
@@ -1120,6 +1195,11 @@ watch(
   () => route.fullPath,
   () => void consumeRouteIntent(),
 )
+
+watch(kpanelUpdateConfirmOpen, (open) => {
+  if (open) void loadKPanelRelease()
+  else stopKPanelReleaseRequest()
+})
 
 function syncJobPollingForWindow(active: boolean): void {
   if (active) void syncApplicationJobs()
@@ -1796,7 +1876,7 @@ watch(windowActive, syncJobPollingForWindow)
     </ModalDialog>
 
     <ModalDialog
-      :open="Boolean(confirmAction)"
+      :open="Boolean(confirmAction) && !kpanelUpdateConfirmOpen"
       :title="i18n.t(confirmAction === 'uninstall' ? 'apps.confirmUninstallTitle' : 'apps.confirmUpdateTitle')"
       :description="mutationConfirmationDescription()"
       size="small"
@@ -1820,6 +1900,21 @@ watch(windowActive, syncJobPollingForWindow)
         </button>
       </template>
     </ModalDialog>
+
+    <KPanelUpdateDialog
+      :open="kpanelUpdateConfirmOpen"
+      :release="kpanelRelease"
+      :loading="kpanelReleaseLoading"
+      :error="kpanelReleaseError"
+      :current-version="panel.state?.agent?.version"
+      :target-digest="selectedUpdateDigest"
+      :icon="selected?.icon"
+      :busy="Boolean(operation)"
+      strategy="script"
+      @close="closeKPanelUpdateDialog"
+      @retry="loadKPanelRelease"
+      @confirm="confirmMutation"
+    />
   </div>
 </template>
 

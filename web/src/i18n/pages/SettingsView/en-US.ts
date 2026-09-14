@@ -24,7 +24,6 @@ export default [
   ["{0} 已通过观察期，将在下次定时任务中安装，也可以立即安装。", "Version {0} passed the observation period. It will install on the next scheduled run, or you can install it now."],
   ["{0} 已可安装；自动安装仍保持关闭。", "Version {0} is ready to install. Automatic installation remains off."],
   ["预览版可能包含尚未充分验证的功能。加入后只会切换更新来源，不会自动安装；是否继续？", "Preview releases may contain features that are not fully validated. Joining only changes the update source and does not install anything automatically. Continue?"],
-  ["将立即安装 {0}。服务会短暂重启，并在失败时自动恢复，是否继续？", "Install {0} now? Services will restart briefly and recover automatically if the update fails."],
   ["已加入预览版计划", "Joined the preview program"],
   ["已切换到稳定版通道；当前版本不会自动降级", "Switched to the stable channel. The installed version will not be downgraded automatically."],
   ["自动安装已启用", "Automatic installation enabled"],

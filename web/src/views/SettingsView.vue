@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
@@ -28,6 +28,7 @@ import {
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import BackupCenter from '@/components/settings/BackupCenter.vue'
+import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
 import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api, resetApiSecurityState } from '@/lib/api'
@@ -35,6 +36,7 @@ import { formatDateTime, relativeTime } from '@/lib/format'
 import {
   isKPanelUpdateSettingsIntent,
   kpanelAppUpdatePath,
+  releaseFromAutomaticUpdate,
 } from '@/lib/kpanelUpdate'
 import { usePanelState } from '@/stores/panel'
 import { useSession } from '@/stores/session'
@@ -53,7 +55,7 @@ import {
 import { moveRadioFocus } from '@/theme/radioGroup'
 import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
-import type { AutomaticUpdateStatus, TOTPEnrollment, TOTPStatus } from '@/types/api'
+import type { AutomaticUpdateStatus, KPanelReleaseInfo, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -103,6 +105,12 @@ const checkingAutomaticUpdate = ref(false)
 const installingAutomaticUpdate = ref(false)
 const manuallyUpdatingKPanel = ref(false)
 const automaticUpdateSection = ref<HTMLElement>()
+const kpanelUpdateDialogOpen = ref(false)
+const kpanelRelease = ref<KPanelReleaseInfo>()
+const kpanelReleaseLoading = ref(false)
+const kpanelReleaseError = ref('')
+let kpanelReleaseController: AbortController | undefined
+let kpanelReleaseTimer: ReturnType<typeof setTimeout> | undefined
 
 const securityEntryUrl = computed(() => {
   if (!securityEntry.value?.enabled || !securityEntry.value.path || typeof window === 'undefined') return ''
@@ -390,20 +398,74 @@ async function checkAutomaticUpdate(showToast = true): Promise<AutomaticUpdateSt
 async function installAutomaticUpdate(): Promise<void> {
   const status = automaticUpdate.value
   if (!status?.canInstall || installingAutomaticUpdate.value || savingAutomaticUpdate.value) return
-  if (typeof globalThis.confirm === 'function' && !globalThis.confirm(
-    `将立即安装 ${status.candidateVersion || '候选版本'}。服务会短暂重启，并在失败时自动恢复，是否继续？`,
-  )) return
   installingAutomaticUpdate.value = true
   try {
     automaticUpdate.value = await api.settings.automaticUpdate.install({
       expectedResourceVersion: status.resourceVersion,
     })
+    stopKPanelReleaseRequest()
+    kpanelUpdateDialogOpen.value = false
     toast.success('更新任务已启动', '关闭网页不会中断宿主机更新。')
   } catch (reason) {
     toast.danger('立即安装失败', reason instanceof ApiError ? reason.message : '请刷新状态后重试。')
   } finally {
     installingAutomaticUpdate.value = false
   }
+}
+
+function stopKPanelReleaseRequest(): void {
+  kpanelReleaseController?.abort()
+  kpanelReleaseController = undefined
+  if (kpanelReleaseTimer !== undefined) clearTimeout(kpanelReleaseTimer)
+  kpanelReleaseTimer = undefined
+  kpanelReleaseLoading.value = false
+}
+
+async function loadKPanelRelease(status = automaticUpdate.value): Promise<void> {
+  if (!status?.candidateVersion || !status.candidateImageDigest) return
+  stopKPanelReleaseRequest()
+  const embedded = releaseFromAutomaticUpdate(status)
+  if (embedded) kpanelRelease.value = embedded
+  if (embedded?.notes?.length || embedded?.upgradeNotes?.length) {
+    kpanelReleaseError.value = ''
+    return
+  }
+
+  const controller = new AbortController()
+  kpanelReleaseController = controller
+  kpanelReleaseLoading.value = true
+  kpanelReleaseError.value = ''
+  kpanelReleaseTimer = setTimeout(() => controller.abort(), 6_000)
+  try {
+    const release = await api.settings.kpanelRelease.get(status.channel, controller.signal)
+    if (
+      kpanelReleaseController === controller &&
+      automaticUpdate.value?.candidateImageDigest === status.candidateImageDigest
+    ) {
+      kpanelRelease.value = release
+    }
+  } catch (reason) {
+    if (kpanelReleaseController === controller) {
+      kpanelReleaseError.value = reason instanceof ApiError
+        ? reason.message
+        : i18n.t('kpanelUpdate.loadFailed')
+    }
+  } finally {
+    if (kpanelReleaseController === controller) stopKPanelReleaseRequest()
+  }
+}
+
+function openKPanelUpdateDialog(status: AutomaticUpdateStatus): void {
+  kpanelRelease.value = releaseFromAutomaticUpdate(status)
+  kpanelReleaseError.value = ''
+  kpanelUpdateDialogOpen.value = true
+  void loadKPanelRelease(status)
+}
+
+function closeKPanelUpdateDialog(): void {
+  if (installingAutomaticUpdate.value) return
+  stopKPanelReleaseRequest()
+  kpanelUpdateDialogOpen.value = false
 }
 
 async function manuallyUpdateKPanel(): Promise<void> {
@@ -430,7 +492,7 @@ async function manuallyUpdateKPanel(): Promise<void> {
       })
       return
     }
-    await installAutomaticUpdate()
+    openKPanelUpdateDialog(checked)
   } finally {
     manuallyUpdatingKPanel.value = false
   }
@@ -685,6 +747,8 @@ onMounted(async () => {
 watch(() => route.query.section, () => {
   void focusAutomaticUpdateSection()
 })
+
+onBeforeUnmount(stopKPanelReleaseRequest)
 </script>
 
 <template>
@@ -1291,6 +1355,22 @@ watch(() => route.query.section, () => {
         </a>
       </div>
     </section>
+
+    <KPanelUpdateDialog
+      :open="kpanelUpdateDialogOpen"
+      :release="kpanelRelease"
+      :loading="kpanelReleaseLoading"
+      :error="kpanelReleaseError"
+      :current-version="automaticUpdate?.currentVersion"
+      :target-version="automaticUpdate?.candidateVersion"
+      :target-digest="automaticUpdate?.candidateImageDigest"
+      :channel="automaticUpdate?.channel"
+      :busy="installingAutomaticUpdate"
+      strategy="automatic"
+      @close="closeKPanelUpdateDialog"
+      @retry="loadKPanelRelease()"
+      @confirm="installAutomaticUpdate"
+    />
   </div>
 </template>
 

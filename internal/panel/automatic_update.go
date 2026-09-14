@@ -100,6 +100,38 @@ func (s *Server) handleAutomaticUpdateSettings(w http.ResponseWriter, r *http.Re
 	}
 }
 
+func (s *Server) handleKPanelRelease(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.requireSession(w, r); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.URL.RawPath != "" {
+		s.writeProblem(w, r, http.StatusBadRequest, "invalid_request", "Invalid release information request", "")
+		return
+	}
+	values := r.URL.Query()
+	channels, ok := values["channel"]
+	if !ok || len(values) != 1 || len(channels) != 1 ||
+		(channels[0] != "stable" && channels[0] != "preview") {
+		s.writeValidationProblem(w, r, "channel", "channel must be stable or preview")
+		return
+	}
+	response, err := s.agent.Get(
+		r.Context(),
+		"/v1/self-update/release",
+		"channel="+channels[0],
+		requestID(r),
+	)
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
+		return
+	}
+	s.writeAgentResponse(w, r, response)
+}
+
 func (s *Server) forwardAutomaticUpdateMutation(
 	w http.ResponseWriter,
 	r *http.Request,

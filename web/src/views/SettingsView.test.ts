@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createSSRApp, ssrContextKey, type ComputedRef, type Ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { THEME_COLOR_PRESETS, type ThemeColorIntent, type ThemeColorKey, type ThemeMode } from '@/theme/colors'
+import type { KPanelReleaseInfo } from '@/types/api'
 import SettingsView from './SettingsView.vue'
 
 const settingsSource = readFileSync(new URL('./SettingsView.vue', import.meta.url), 'utf8')
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => {
 	updateAutomaticUpdate: vi.fn(),
 	checkAutomaticUpdate: vi.fn(),
 	installAutomaticUpdate: vi.fn(),
+	getKPanelRelease: vi.fn(),
     startTOTPEnrollment: vi.fn(),
     confirmTOTPEnrollment: vi.fn(),
     rotateRecoveryCodes: vi.fn(),
@@ -84,6 +86,9 @@ vi.mock('@/lib/api', () => ({
         update: mocks.updateAutomaticUpdate,
         check: mocks.checkAutomaticUpdate,
         install: mocks.installAutomaticUpdate,
+      },
+      kpanelRelease: {
+        get: mocks.getKPanelRelease,
       },
     },
   },
@@ -176,6 +181,8 @@ interface SettingsBindings {
 	togglePreviewProgram: (event: Event) => Promise<void>
 	installAutomaticUpdate: () => Promise<void>
 	manuallyUpdateKPanel: () => Promise<void>
+	kpanelUpdateDialogOpen: Ref<boolean>
+	kpanelRelease: Ref<KPanelReleaseInfo | undefined>
 	automaticUpdateSection: Ref<HTMLElement | undefined>
 	focusAutomaticUpdateSection: () => Promise<void>
 }
@@ -236,6 +243,17 @@ beforeEach(() => {
 		candidateImageDigest: `sha256:${'b'.repeat(64)}`,
 		resourceVersion: 'sha256:auto-queued',
 	})
+	mocks.getKPanelRelease.mockResolvedValue({
+		channel: 'stable',
+		version: '1.16.0',
+		imageDigest: `sha256:${'a'.repeat(64)}`,
+		releaseUrl: 'https://github.com/kejilion/KPanel/releases/tag/v1.16.0',
+		publishedAt: '2026-09-14T00:00:00Z',
+		notes: [{ kind: 'added', text: '新增更新内容展示' }],
+		upgradeNotes: ['更新期间服务会短暂重启。'],
+		cached: true,
+		stale: false,
+	} satisfies KPanelReleaseInfo)
   mocks.startTOTPEnrollment.mockResolvedValue({
     id: 'enrollment-1', secret: 'JBSWY3DPEHPK3PXP', otpauthUri: 'otpauth://totp/KPanel:admin', expiresAt: '2026-08-01T00:10:00Z',
   })
@@ -689,7 +707,7 @@ describe('SettingsView automatic updates', () => {
     expect(mocks.updateAutomaticUpdate).not.toHaveBeenCalled()
   })
 
-  it('checks the selected channel and installs an available release from the manual action', async () => {
+  it('checks the selected channel and opens the dedicated confirmation before installation', async () => {
     const view = setupView()
     view.automaticUpdate.value = {
       enabled: false,
@@ -703,10 +721,18 @@ describe('SettingsView automatic updates', () => {
     await view.manuallyUpdateKPanel()
 
     expect(mocks.checkAutomaticUpdate).toHaveBeenCalledOnce()
+    expect(view.kpanelUpdateDialogOpen.value).toBe(true)
+    expect(mocks.getKPanelRelease).toHaveBeenCalledWith('stable', expect.any(AbortSignal))
+    expect(mocks.installAutomaticUpdate).not.toHaveBeenCalled()
+    expect(globalThis.confirm).not.toHaveBeenCalled()
+
+    await view.installAutomaticUpdate()
+
     expect(mocks.installAutomaticUpdate).toHaveBeenCalledWith({
       expectedResourceVersion: 'sha256:auto-checked',
     })
     expect(mocks.updateAutomaticUpdate).not.toHaveBeenCalled()
+    expect(view.kpanelUpdateDialogOpen.value).toBe(false)
     expect(view.automaticUpdate.value).toMatchObject({
       state: 'queued',
       installRequested: true,

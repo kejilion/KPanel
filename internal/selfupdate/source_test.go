@@ -60,10 +60,40 @@ func TestGitHubLatestSourceAcceptsOnePublishedStableDigest(t *testing.T) {
 	if release.Version != "12.34.56" || release.ImageDigest != digest {
 		t.Fatalf("release = %#v", release)
 	}
+	if release.ReleaseURL != "https://github.com/kejilion/KPanel/releases/tag/v12.34.56" ||
+		release.PublishedAt != "2026-09-14T00:00:00Z" {
+		t.Fatalf("release identity = %#v", release)
+	}
 	if requestSeen == nil || requestSeen.Method != http.MethodGet || requestSeen.URL.String() != githubLatestURL ||
 		requestSeen.UserAgent() != "KPanel-Release-Update/2" ||
 		requestSeen.Header.Get("X-GitHub-Api-Version") != "2022-11-28" {
 		t.Fatalf("unexpected request: %#v", requestSeen)
+	}
+}
+
+func TestReleaseNotesAreBoundedPlainTextAndKeepUpgradeWarningsSeparate(t *testing.T) {
+	body := `### 版本更新内容
+
+#### 新增
+- 增加 **KPanel 专用确认框**，详情见 [发布页](https://example.invalid/release)。
+#### 变更
+- 设置页与应用市场复用 **同一结构**。
+#### 修复
+- 修复更新内容不可见的问题。
+#### 升级注意事项
+- 更新期间服务会短暂重启。
+- 请先确认关键业务已有备份。
+
+### 发布产物与完整性
+- 生产镜像：忽略`
+	notes, upgradeNotes := parseReleaseNotes(body)
+	if len(notes) != 3 || notes[0] != (ReleaseNote{Kind: "added", Text: "增加 KPanel 专用确认框，详情见 发布页。"}) ||
+		notes[1] != (ReleaseNote{Kind: "changed", Text: "设置页与应用市场复用 同一结构。"}) ||
+		notes[2].Kind != "fixed" {
+		t.Fatalf("notes = %#v", notes)
+	}
+	if len(upgradeNotes) != 2 || upgradeNotes[0] != "更新期间服务会短暂重启。" {
+		t.Fatalf("upgrade notes = %#v", upgradeNotes)
 	}
 }
 

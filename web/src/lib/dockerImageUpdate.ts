@@ -17,6 +17,8 @@ interface Entry {
   resourceVersion: string
   image: string
   checkedAt?: string
+  localDigest?: string
+  remoteDigest?: string
   reason?: string
   expiresAt?: number
 }
@@ -109,7 +111,13 @@ export function useDockerImageUpdates(
       }
       // The server may have refreshed a stale read-only snapshot. Keep the
       // list version as our invalidation key; never advance mutation versions.
-      entries.value[container.id] = { ...entry, status: result.status, checkedAt: result.checkedAt }
+      entries.value[container.id] = {
+        ...entry,
+        status: result.status,
+        checkedAt: result.checkedAt,
+        localDigest: result.localDigest,
+        remoteDigest: result.remoteDigest,
+      }
     } catch (error) {
       if (controllers.get(container.id) !== controller) return
       const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : ''
