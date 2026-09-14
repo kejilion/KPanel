@@ -76,6 +76,11 @@ describe('responsive application shell comfort', () => {
     )
   })
 
+  it('opens sidebar update availability in the shared settings flow', () => {
+    expect(appShellSource).toContain('void router.push(kpanelUpdateSettingsPath)')
+    expect(appShellSource).not.toContain("query: { app: 'kpanel', action: 'update' }")
+  })
+
   it('falls back to the classic shell when the lazy desktop chunk cannot load', () => {
     expect(appShellSource).toContain('loadingComponent: DesktopLoadingView')
     expect(appShellSource).toContain('delay: 0')

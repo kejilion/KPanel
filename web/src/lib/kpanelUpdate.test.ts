@@ -3,7 +3,11 @@ import {
   detectKPanelUpdate,
   findKPanelApp,
   isKPanelSelfUpdate,
+  isKPanelUpdateSettingsIntent,
+  kpanelAppUpdatePath,
   kpanelUpdateHint,
+  kpanelUpdateSettingsPath,
+  kpanelUpdateSettingsSection,
 } from './kpanelUpdate'
 import type { AppMarketInventory } from '@/types/api'
 
@@ -68,6 +72,14 @@ beforeEach(() => {
 })
 
 describe('KPanel update detection', () => {
+  it('keeps the settings target and app-market fallback as canonical shared paths', () => {
+    expect(kpanelUpdateSettingsSection).toBe('version-updates')
+    expect(kpanelUpdateSettingsPath).toBe('/settings?section=version-updates')
+    expect(kpanelAppUpdatePath).toBe('/apps?app=kpanel&action=update')
+    expect(isKPanelUpdateSettingsIntent('version-updates')).toBe(true)
+    expect(isKPanelUpdateSettingsIntent(['version-updates'])).toBe(false)
+  })
+
   it('does not report fixed image references as current or available', async () => {
     mocks.inventory.mockResolvedValue(inventory())
     mocks.checkUpdate.mockResolvedValue({ status: 'fixed', updateAvailable: false })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -32,6 +32,10 @@ import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import { ApiError, api, resetApiSecurityState } from '@/lib/api'
 import { formatDateTime, relativeTime } from '@/lib/format'
+import {
+  isKPanelUpdateSettingsIntent,
+  kpanelAppUpdatePath,
+} from '@/lib/kpanelUpdate'
 import { usePanelState } from '@/stores/panel'
 import { useSession } from '@/stores/session'
 import { useTheme, type ThemePreference } from '@/stores/theme'
@@ -51,6 +55,7 @@ import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
 import type { AutomaticUpdateStatus, TOTPEnrollment, TOTPStatus } from '@/types/api'
 
+const route = useRoute()
 const router = useRouter()
 const session = useSession()
 const panel = usePanelState()
@@ -96,6 +101,8 @@ const automaticUpdateError = ref('')
 const savingAutomaticUpdate = ref(false)
 const checkingAutomaticUpdate = ref(false)
 const installingAutomaticUpdate = ref(false)
+const manuallyUpdatingKPanel = ref(false)
+const automaticUpdateSection = ref<HTMLElement>()
 
 const securityEntryUrl = computed(() => {
   if (!securityEntry.value?.enabled || !securityEntry.value.path || typeof window === 'undefined') return ''
@@ -156,6 +163,12 @@ const automaticUpdateState = computed(() => {
 
 const automaticUpdateChannelLabel = computed(() => (
   automaticUpdate.value?.channel === 'preview' ? '预览版' : '稳定版'
+))
+
+const manualUpdateButtonLabel = computed(() => (
+  automaticUpdate.value?.canInstall && automaticUpdate.value.candidateVersion
+    ? `手动更新至 ${automaticUpdate.value.candidateVersion}`
+    : '手动检查并更新'
 ))
 
 const automaticUpdateScheduleNote = computed(() =>
@@ -358,14 +371,17 @@ async function togglePreviewProgram(event: Event): Promise<void> {
   if (saved) await checkAutomaticUpdate(false)
 }
 
-async function checkAutomaticUpdate(showToast = true): Promise<void> {
-  if (checkingAutomaticUpdate.value || savingAutomaticUpdate.value) return
+async function checkAutomaticUpdate(showToast = true): Promise<AutomaticUpdateStatus | undefined> {
+  if (checkingAutomaticUpdate.value || savingAutomaticUpdate.value) return undefined
   checkingAutomaticUpdate.value = true
   try {
-    automaticUpdate.value = await api.settings.automaticUpdate.check()
+    const status = await api.settings.automaticUpdate.check()
+    automaticUpdate.value = status
     if (showToast) toast.success(`${automaticUpdateChannelLabel.value}检查完成`)
+    return status
   } catch (reason) {
     toast.danger(`${automaticUpdateChannelLabel.value}检查失败`, reason instanceof ApiError ? reason.message : '请检查网络后重试。')
+    return undefined
   } finally {
     checkingAutomaticUpdate.value = false
   }
@@ -388,6 +404,43 @@ async function installAutomaticUpdate(): Promise<void> {
   } finally {
     installingAutomaticUpdate.value = false
   }
+}
+
+async function manuallyUpdateKPanel(): Promise<void> {
+  const status = automaticUpdate.value
+  if (
+    !status ||
+    manuallyUpdatingKPanel.value ||
+    checkingAutomaticUpdate.value ||
+    installingAutomaticUpdate.value ||
+    savingAutomaticUpdate.value ||
+    status.state === 'queued' ||
+    status.state === 'updating'
+  ) return
+
+  manuallyUpdatingKPanel.value = true
+  try {
+    const checked = status.canInstall ? status : await checkAutomaticUpdate(false)
+    if (!checked) return
+    if (!checked.canInstall) {
+      toast.show('当前没有可手动安装的更新', {
+        message: checked.state === 'blocked'
+          ? '该候选版本因上次更新失败已暂停。'
+          : `${automaticUpdateChannelLabel.value}已是最新版本。`,
+      })
+      return
+    }
+    await installAutomaticUpdate()
+  } finally {
+    manuallyUpdatingKPanel.value = false
+  }
+}
+
+async function focusAutomaticUpdateSection(): Promise<void> {
+  if (!isKPanelUpdateSettingsIntent(route.query.section)) return
+  await nextTick()
+  automaticUpdateSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  automaticUpdateSection.value?.focus({ preventScroll: true })
 }
 
 async function changePassword(): Promise<void> {
@@ -603,6 +656,7 @@ async function endAuthenticatedSession(): Promise<void> {
 }
 
 onMounted(async () => {
+  void focusAutomaticUpdateSection()
   const [capabilityResult, entranceResult, totpResult, automaticUpdateResult] = await Promise.allSettled([
     api.agent.capabilities(),
     api.settings.securityEntrance.get(),
@@ -626,6 +680,10 @@ onMounted(async () => {
       ? automaticUpdateResult.reason.message
       : '无法读取自动更新状态。'
   }
+})
+
+watch(() => route.query.section, () => {
+  void focusAutomaticUpdateSection()
 })
 </script>
 
@@ -1084,10 +1142,17 @@ onMounted(async () => {
 
     <BackupCenter />
 
-    <section class="settings-section panel-card automatic-update-section" data-testid="release-update-settings">
+    <section
+      id="version-updates"
+      ref="automaticUpdateSection"
+      class="settings-section panel-card automatic-update-section"
+      data-testid="release-update-settings"
+      tabindex="-1"
+      aria-labelledby="version-updates-title"
+    >
       <header class="settings-section__header">
         <span><RefreshCw :size="19" /></span>
-        <div><h2>版本更新</h2><p>稳定版默认，预览版自愿加入；更新通道与自动安装相互独立</p></div>
+        <div><h2 id="version-updates-title">版本更新</h2><p>稳定版默认，预览版自愿加入；更新通道与自动安装相互独立</p></div>
         <StatusBadge v-if="automaticUpdate" :status="automaticUpdateState.status" :label="automaticUpdateState.label" />
       </header>
       <div v-if="automaticUpdate" class="automatic-update-panel">
@@ -1101,7 +1166,7 @@ onMounted(async () => {
             type="checkbox"
             role="switch"
             :checked="automaticUpdate.channel === 'preview'"
-            :disabled="savingAutomaticUpdate || checkingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            :disabled="savingAutomaticUpdate || checkingAutomaticUpdate || manuallyUpdatingKPanel || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
             @change="togglePreviewProgram"
           />
         </label>
@@ -1115,7 +1180,7 @@ onMounted(async () => {
             type="checkbox"
             role="switch"
             :checked="automaticUpdate.enabled"
-            :disabled="savingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            :disabled="savingAutomaticUpdate || checkingAutomaticUpdate || manuallyUpdatingKPanel || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
             @change="toggleAutomaticUpdate"
           />
         </label>
@@ -1138,7 +1203,7 @@ onMounted(async () => {
             data-testid="check-release-update"
             class="button button--secondary"
             type="button"
-            :disabled="checkingAutomaticUpdate || savingAutomaticUpdate || installingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            :disabled="checkingAutomaticUpdate || savingAutomaticUpdate || installingAutomaticUpdate || manuallyUpdatingKPanel || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
             @click="checkAutomaticUpdate()"
           >
             <LoaderCircle v-if="checkingAutomaticUpdate" class="spin" :size="15" />
@@ -1146,22 +1211,25 @@ onMounted(async () => {
             立即检查
           </button>
           <button
-            v-if="automaticUpdate.canInstall"
-            data-testid="install-release-update"
+            data-testid="manual-release-update"
             class="button button--primary"
             type="button"
-            :disabled="installingAutomaticUpdate || savingAutomaticUpdate || checkingAutomaticUpdate"
-            @click="installAutomaticUpdate"
+            :disabled="installingAutomaticUpdate || savingAutomaticUpdate || checkingAutomaticUpdate || manuallyUpdatingKPanel || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            @click="manuallyUpdateKPanel"
           >
-            <LoaderCircle v-if="installingAutomaticUpdate" class="spin" :size="15" />
+            <LoaderCircle v-if="installingAutomaticUpdate || manuallyUpdatingKPanel" class="spin" :size="15" />
             <Download v-else :size="15" />
-            立即安装 {{ automaticUpdate.candidateVersion }}
+            {{ manualUpdateButtonLabel }}
           </button>
         </div>
         <p class="settings-note">{{ automaticUpdateScheduleNote }}</p>
       </div>
-      <div v-else-if="automaticUpdateError" class="inline-alert inline-alert--warning">
-        {{ automaticUpdateError }}
+      <div v-else-if="automaticUpdateError" class="automatic-update-unavailable">
+        <div class="inline-alert inline-alert--warning">{{ automaticUpdateError }}</div>
+        <RouterLink class="button button--secondary" :to="kpanelAppUpdatePath">
+          <Download :size="15" />
+          前往应用市场手动更新
+        </RouterLink>
       </div>
       <p v-else class="settings-note">正在读取自动更新状态…</p>
     </section>
@@ -1275,6 +1343,24 @@ onMounted(async () => {
 .automatic-update-panel {
   display: grid;
   gap: 14px;
+}
+
+.automatic-update-section:focus {
+  outline: none;
+}
+
+.automatic-update-section:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 34%, transparent), var(--shadow-sm);
+}
+
+.automatic-update-unavailable {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.automatic-update-unavailable .button {
+  width: fit-content;
 }
 
 .automatic-update-switch {
@@ -1398,6 +1484,10 @@ onMounted(async () => {
   }
 
   .automatic-update-actions .button {
+    width: 100%;
+  }
+
+  .automatic-update-unavailable .button {
     width: 100%;
   }
 }
