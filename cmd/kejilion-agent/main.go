@@ -172,14 +172,18 @@ func run(arguments []string) error {
 	}
 	terminalManager := terminal.New(terminal.Config{ParentUnit: "kejilion-agent.service"})
 	var selfUpdateService *selfupdate.Service
+	var selfUpdateStarter selfupdate.UpdateStarter
 	if strings.TrimSpace(*selfUpdateStateDir) != "" {
 		selfUpdateService, err = selfupdate.New(selfupdate.Config{
-			StateDir: *selfUpdateStateDir,
-			Source:   selfupdate.NewGitHubLatestSource(),
+			StateDir:      *selfUpdateStateDir,
+			StableSource:  selfupdate.NewGitHubLatestSource(),
+			PreviewSource: selfupdate.NewGitHubPreviewSource(),
 		})
 		if err != nil {
 			slog.Warn("automatic update state is unavailable", "error", err)
 			selfUpdateService = nil
+		} else {
+			selfUpdateStarter = selfupdate.NewSystemdStarter()
 		}
 	}
 	handler, err := agent.NewServer(agent.Config{
@@ -193,7 +197,7 @@ func run(arguments []string) error {
 		}),
 		Sites: sites.NewDiscoverer(*webRoot), Docker: dockerClient, AppMarket: appMarket,
 		Diagnostics: diagnosticService, Monitoring: historyService, Terminals: terminalManager,
-		SelfUpdate: selfUpdateService,
+		SelfUpdate: selfUpdateService, SelfUpdateStarter: selfUpdateStarter,
 	})
 	clear(token)
 	if err != nil {
@@ -280,8 +284,9 @@ func runSelfUpdate(arguments []string) error {
 		return err
 	}
 	service, err := selfupdate.New(selfupdate.Config{
-		StateDir: *stateDir,
-		Source:   selfupdate.NewGitHubLatestSource(),
+		StateDir:      *stateDir,
+		StableSource:  selfupdate.NewGitHubLatestSource(),
+		PreviewSource: selfupdate.NewGitHubPreviewSource(),
 	})
 	if err != nil {
 		return err

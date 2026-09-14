@@ -1876,6 +1876,7 @@ export type AutomaticUpdateState =
   | 'idle'
   | 'waiting'
   | 'available'
+  | 'queued'
   | 'updating'
   | 'succeeded'
   | 'failed'
@@ -1886,7 +1887,9 @@ export interface AutomaticUpdateStatus {
   available: boolean
   enabled: boolean
   state: AutomaticUpdateState
-  channel: 'stable'
+  channel: 'stable' | 'preview'
+  canInstall: boolean
+  installRequested: boolean
   schedule: string
   observationHours: number
   currentVersion?: string

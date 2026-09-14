@@ -1,20 +1,20 @@
 ---
 name: release-kpanel
-description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.12"
+description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
+version: "3.0"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
-params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
+params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-05T00:00:00Z"
+updated: "2026-09-14T09:41:30Z"
 ---
 
 # Release KPanel
 
 ## Purpose
 
-把 KPanel 的 L3 发布链路固化为可重复执行、可验证、可回滚的流程。链路包括发布画像、版本准备、
-发布候选与主仓库 CI、GitHub Release、Docker Hub 多架构镜像、`latest` 提升、
+把 KPanel 稳定版与预览版的 L3 发布链路固化为可重复执行、可验证、可回滚的流程。链路包括发布画像、版本准备、
+发布候选与主仓库 CI、GitHub Release、Docker Hub 多架构镜像、`latest` / `preview` 通道提升、
 `kejilion/apps` 应用市场契约核对、公开镜像端到端验收，以及隔离真机/生产证据和统一验收记录。
 
 ## Prerequisites
@@ -41,13 +41,15 @@ updated: "2026-09-05T00:00:00Z"
   两者默认均为 `arena-154`。`prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
 - 必须读取 `dependency-policy.json#crossRepositoryReleaseLinkage`，在候选冻结前确定唯一的
   `scriptLinkageState`（`not-required` / `coupled` / `script-only`），并准备状态对应的交付字段和证据。
+- 必须读取 `docs/release-channels.md`。`${{release_channel}}` 只允许 `stable` 或 `preview`；稳定版要求
+  `${{version}}=${{release_train}}=X.Y.Z`，预览版要求 `${{version}}=${{release_train}}-rc.N`。通道与版本不匹配时停止。
 
 ## Steps
 
 ### 1. 预检发布状态
 
 先列出活跃 KPanel 任务和 `git worktree list`，确认候选 worktree 未被其他任务使用，且发布范围
-只包含协调中心批准的提交。再确认目标版本尚未作为正式 Release 发布、目标镜像标签尚未被占用，
+只包含协调中心批准的提交。再确认目标版本尚未发布为对应 stable / preview Release、目标镜像标签尚未被占用，
 并记录回滚点：
 
 ```bash
@@ -77,6 +79,7 @@ node scripts/check-environment-policy.mjs \
 - 受影响核心用户旅程和未变化契约；
 - 业务正确性、安全、稳定、性能/资源、用户体验、数据/迁移分别需要的证据；
 - 哪些危险、付费或耗流量场景只在隔离真机执行，哪些生产动作已获得授权。
+- `releaseChannel=${{release_channel}}`、`releaseTrain=${{release_train}}`、通道提升目标和生产适用性。
 
 **Expected output:** 发布单写者成立，候选提交清单和基线明确，目标版本未占用，记录
 `${{previous_version}}` 对应源码和镜像回滚点；发布画像能够解释必测项和不适用维度。
@@ -94,7 +97,7 @@ node scripts/check-environment-policy.mjs \
   流程不得改 `VERSION`、tag、Release 或镜像。若 KPanel 同时有差异，状态必须改为 `coupled`。
 
 KPanel 发布流程只接受 `not-required` 或 `coupled`；`script-only` 不构成 KPanel 版本发布。所有状态
-和证据写入 `docs/release-vX.Y.Z-acceptance.md`，缺失、矛盾或使用“暂不发布脚本”等模糊状态时停止。
+和证据写入 `docs/release-v<version>-acceptance.md`，缺失、矛盾或使用“暂不发布脚本”等模糊状态时停止。
 
 同时建立本次冻结执行方案：列出生产写前后实际调用的唯一仓库脚本、Runner/镜像、SSH 身份、必需
 运行时、跨 Shell 参数承载方式和证据解析入口。所有必需项先在非生产环境预检；优先使用参数文件、
@@ -109,7 +112,8 @@ JSON 或仓库脚本传值，不在生产命令中嵌套临时 PowerShell/SSH/Sh
 
 ### 2. 准备一致的版本变更
 
-将 `${{version}}` 同步到以下位置，并补充 `CHANGELOG.md`：
+将 `${{version}}` 同步到以下位置，并补充 `CHANGELOG.md`。版本必须是与 `${{release_channel}}` 匹配的
+规范 `X.Y.Z` 或 `X.Y.Z-rc.N`，不接受其他预发布后缀：
 
 - `VERSION`
 - `internal/version/version.go`（开发态使用 `${{version}}-dev`）
@@ -170,7 +174,8 @@ node scripts/run-release-l3.mjs \
 - Release tag 必须与 `VERSION` 完全一致；
 - Release 先保持 draft，镜像成功后才公开；
 - 镜像平台包含 `linux/amd64` 和 `linux/arm64`；
-- 稳定版本才提升 `latest`；
+- `stable` 必须是 GitHub Latest 并提升 `latest`，`preview` 必须是 prerelease、不得成为 Latest 且只提升 `preview`；
+- 预览版保留 `release/v${{release_train}}-candidate`，稳定版仅在 Tag 包含候选提交后删除；
 - Release action 和 Docker action 使用固定提交摘要。
 
 按发布画像补充自动门禁不能代替的证据：受影响性能基准、桌面/窄视口、浅/深色、键盘/焦点、
@@ -207,14 +212,14 @@ node scripts/run-release-l3.mjs \
 
 ### 4. 提交发布候选并等待 CI
 
-仅暂存发布范围文件，提交后先推送 `release/v${{version}}-candidate`，让 Linux CI
+仅暂存发布范围文件，提交后先推送同一发布序列共用的 `release/v${{release_train}}-candidate`，让 Linux CI
 独立验证准确的待发布提交：
 
 ```bash
 git add VERSION CHANGELOG.md internal/version/version.go \
   web/package.json web/package-lock.json
 git commit -m "chore: prepare KPanel ${{version}}"
-git push origin HEAD:refs/heads/release/v${{version}}-candidate
+git push origin HEAD:refs/heads/release/v${{release_train}}-candidate
 ```
 
 如果发布工作流本身需要修复，应将 `.github/workflows/release.yml` 纳入同一独立修复提交。
@@ -246,11 +251,12 @@ git push origin "v${{version}}"
 4. draft GitHub Release；
 5. Docker Hub 登录；
 6. 多架构版本镜像；
-7. 稳定版 `latest` 提升；
+7. 稳定版提升 `latest`，预览版提升 `preview`；
 8. GitHub Release 正式公开；
-9. 确认候选分支提交已包含于发布标签后自动删除候选分支。
+9. 稳定版确认候选分支提交已包含于发布标签后自动删除候选分支；预览版保留同一序列候选分支。
 
-**Expected output:** Release workflow 全绿，GitHub Release 为非 draft、非 prerelease。
+**Expected output:** Release workflow 全绿；`stable` 为非 draft、非 prerelease、GitHub Latest，`preview`
+为非 draft、prerelease、非 Latest，且候选分支处置与通道一致。
 
 ### 6. 验证 GitHub Release 和 Docker Hub
 
@@ -261,16 +267,19 @@ git push origin "v${{version}}"
 - `kejilion-panel-deploy-${{version}}.tar.gz`
 - `SHA256SUMS`
 
-核对 `${{image}}:${{version}}` 与稳定版 `${{image}}:latest` 的清单摘要完全一致，并确认
+核对 `${{image}}:${{version}}` 与目标通道标签（`stable` 使用 `${{image}}:latest`，`preview` 使用
+`${{image}}:preview`）的清单摘要完全一致，并确认
 `linux/amd64`、`linux/arm64` 均存在。额外的 `unknown/unknown` 条目可为 provenance/SBOM
 attestation，不能误判为架构缺失。
 
-**Expected output:** Release 附件完整，版本镜像与 `latest` 指向同一摘要，双架构齐全。
+**Expected output:** Release 附件完整，版本镜像与其 `latest` / `preview` 通道标签指向同一摘要，双架构齐全；
+另一个通道标签未被本次发布改变。
 
 ### 7. 核对应用市场契约，必要时同步
 
-当前 `kpanel.conf` 使用 `latest`，并从镜像 OCI 标签和内置 `/release/VERSION` 动态校验
-Panel/Agent 版本；普通 KPanel 版本发布不再同步硬编码版本。先把本仓库
+当前 `kpanel.conf` 的公共默认入口始终使用 `latest`，显式更新目标可以是规范稳定版或 RC，并从镜像 OCI
+标签和内置 `/release/VERSION` 动态校验 Panel/Agent 版本；普通 KPanel 版本发布不再同步硬编码版本，
+预览版也不得把应用市场默认入口改成 `preview`。先把本仓库
 `packaging/kejilion-app/kpanel.conf` 与 `${{apps_repo}}/kpanel.conf` 归一化对比：
 
 ```bash
@@ -293,7 +302,7 @@ blob 不一致必须停止；若仅因旧基线/换行表现导致状态差异�
 该文件，只恢复明确文件的旧索引状态，使用 `git pull --ff-only` 更新，并再次确认 blob、权限和工作树
 干净。不得重置整个仓库、覆盖其他文件或把同内容状态差异提交为空变更。
 
-**Expected output:** 应用市场配置与发布契约一致；无变化时工作树干净且无提交，有变化时
+**Expected output:** 应用市场配置与发布契约一致，默认仍指向稳定版；无变化时工作树干净且无提交，有变化时
 `kejilion/apps` 的 `main` 已更新且工作树干净。
 
 ### 8. 从公开仓库完成最终验收
@@ -309,10 +318,14 @@ KPANEL_EXPECTED_VERSION="${{version}}" \
 再次核对 GitHub Release 页面、Actions 结果、Docker Hub 摘要和应用市场契约；只有步骤 7
 实际产生配置差异时才核对 `kejilion/apps` 提交。
 
-**Expected output:** 输出 `image_e2e=pass`，Release、Actions 和 Docker Hub 均与
+**Expected output:** 输出 `image_e2e=pass`，Release、Actions、Docker Hub 和 `${{release_channel}}` 均与
 `${{version}}` 一致；应用市场为“同哈希且无需提交”或“配置已同步并提交”。
 
 ### 9. 在明确授权范围内完成生产部署安全核对
+
+本步骤只适用于 `${{release_channel}}=stable`。如果是 `preview`，在验收记录中写明“预览版禁止生产部署”，
+确认未请求 production 用途、未连接生产、未改变 GitHub Latest / Docker `latest` / 应用市场默认入口后，
+直接进入步骤 10；不得把隔离验收环境写成生产部署。稳定版继续执行以下流程。
 
 生产操作必须有本次明确授权。先再次检查环境用途：
 
@@ -368,14 +381,15 @@ Panel/Agent 健康、restart/OOM、受保护配置哈希、SQLite quick_check �
 紧急热修复或重复发布，该事件按变更失败计入；若同时由发布基础设施、执行器、验证通道或无效证据触发，
 还必须同时计入流程异常。首次生产写操作前被门禁拦截的流程异常只计流程指标，不计变更失败。
 
-**Expected output:** 已授权时 154（或用户新指定并登记的非 108 目标）运行版本与正式 digest/commit 一致、
+**Expected output:** 稳定版已授权时 154（或用户新指定并登记的非 108 目标）运行版本与正式 digest/commit 一致、
 备份和回滚可执行；未授权时没有生产状态变化；108 没有连接或操作记录；发生回滚时，生产实例和公共
-默认更新通道均有明确、可复核状态。
+默认更新通道均有明确、可复核状态。预览版没有任何生产操作，稳定默认入口保持不变。
 
 ### 10. 形成统一验收记录并交付
 
 从 `docs/release-acceptance-template.md` 创建 `docs/release-v${{version}}-acceptance.md`，记录精确提交、
-发布画像、多维质量状态、候选/主线/Release、公开产物、隔离真机、生产部署安全核对、回滚和遗留风险。
+`releaseChannel`、`releaseTrain`、发布画像、多维质量状态、候选/主线/Release、公开产物、候选分支处置、
+自更新通道、隔离真机、生产适用性、生产部署安全核对、回滚和遗留风险。
 自动测试、隔离真机、公开产物和生产部署安全核对必须分层填写；生产未执行的管理员写操作不得写成
 已验证。108 固定记录为“禁用全部 KPanel 操作，本次未连接、未部署、未核对”，不得把它写成测试覆盖、
 部署目标或发布门禁缺失。
@@ -409,7 +423,7 @@ node scripts/report-release-metrics.mjs \
 
 - 主仓库提交和 tag；
 - CI、Release run、GitHub Release、Docker Hub 链接；
-- 版本镜像和 `latest` 摘要；
+- 版本镜像和本次 `latest` / `preview` 通道摘要，以及另一通道未变化的证据；
 - 支持的平台；
 - `kejilion/apps` 契约核对结果，以及有变更时的提交；
 - 公开镜像 E2E 结果；
@@ -429,7 +443,9 @@ node scripts/report-release-metrics.mjs \
 ## Parameters
 
 - `${{project_dir}}`：本次发布候选所在的独立 KPanel 工作树绝对路径。
-- `${{version}}`：不含 `v` 的目标语义版本，例如 `0.20.2`。
+- `${{version}}`：不含 `v` 的目标版本；稳定版例如 `0.20.2`，预览版例如 `0.21.0-rc.1`。
+- `${{release_channel}}`：`stable` 或 `preview`，必须与 `${{version}}` 的格式一致。
+- `${{release_train}}`：去掉 `-rc.N` 的发布序列 `X.Y.Z`，用于共享候选分支。
 - `${{previous_version}}`：发布前稳定源码或镜像版本，用于回滚说明。
 - `${{image}}`：完整镜像仓库，默认 `docker.io/kjlion/kejilion-panel`。
 - `${{runner_image}}`：Linux L3 工具链 Runner；版本随依赖策略更新，执行时记录解析后的不可变 image ID。
@@ -447,7 +463,9 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
 py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workflow.py}" \
   run release-kpanel --project-dir "${{project_dir}}" \
   --param project_dir="${{project_dir}}" \
-  --param version=0.0.0-test \
+  --param version=0.0.1 \
+  --param release_channel=stable \
+  --param release_train=0.0.1 \
   --param previous_version=0.0.0 \
   --param image=docker.io/example/kpanel \
   --param runner_image=kpanel-release-gate:go1.26.7-node24 \
@@ -456,17 +474,21 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   --param production_environment=arena-154
 ```
 
-确认渲染结果中不存在未替换参数，并执行 `git diff --check`。
+上述占位值只用于工作流模板渲染，不构成发布授权。另以
+`version=0.0.1-rc.1 release_channel=preview release_train=0.0.1` 渲染一次；确认两次结果中不存在未替换参数，
+通道分支均可达，并执行 `git diff --check`。
 
 ## Notes
 
 - 工作流负责指导执行，不保存 GitHub、Docker Hub Token 或任何会话 ID。
-- Release 失败时先定位精确失败步骤；不得把登录成功等同于推送和提升 `latest` 成功。
-- 若失败发生在正式产物生成之后，修复后发布新的 patch 版本，不移动或覆盖旧 tag。
+- Release 失败时先定位精确失败步骤；不得把登录成功等同于推送和提升 `latest` / `preview` 成功。
+- 若失败发生在已公开产物生成之后，不移动或覆盖旧 tag；稳定版修复使用新的 patch，预览版修复使用同一
+  发布序列中递增的 `rc.N`。
 - 若仅生成 draft Release，不得手工公开；镜像成功且线上验收通过后才允许公开。
 - 高频发布不自动视为失败，也不自动豁免门禁；同一问题的候选冻结前连续微调应尽量聚合，
   冻结后的独立修复使用新 patch 版本并记录原因。
 - 源码回滚与镜像回滚分别记录；历史源码 tag 不代表一定存在可用 Docker 镜像。
+- 退出预览版只恢复稳定来源，不执行自动降级；需要回滚时按独立高风险动作处理精确 digest 和数据备份。
 - 发布 worktree 的分支、`HEAD` 或文件被外部任务改变时立即停止；不得重置他人改动，迁移到新的
   专用候选 worktree 并重新执行受影响门禁。
 - 浏览器后台作业可以跨会话继续，但候选 `HEAD`、命令规格、环境或资源参数变化时证据作废；禁止用

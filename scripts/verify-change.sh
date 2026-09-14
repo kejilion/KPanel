@@ -92,7 +92,7 @@ for path in "${changed_files[@]}"; do
   case "$path" in
     PROJECT_RULES.md|AGENTS.md|CLAUDE.md|Makefile|dependency-policy.json|environment-policy.json|\
     .codex-workflows/*|docs/project-management.md|docs/multi-agent-collaboration.md|\
-    docs/development-quality-standard.md|docs/release-acceptance-template.md|\
+    docs/development-quality-standard.md|docs/release-channels.md|docs/release-acceptance-template.md|\
     docs/quality-improvement-proposal-template.md|docs/product-quality-review-*.md|\
     scripts/check-governance-consistency.mjs|scripts/check-governance-candidate-ci.mjs|scripts/check-environment-policy.mjs|\
     scripts/check-collaboration-state.mjs|\

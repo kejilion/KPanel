@@ -21,6 +21,16 @@ func (source agentReleaseSource) Latest(context.Context) (selfupdate.Release, er
 	}, nil
 }
 
+type agentUpdateStarter struct {
+	calls int
+	err   error
+}
+
+func (starter *agentUpdateStarter) Start(context.Context) error {
+	starter.calls++
+	return starter.err
+}
+
 func authenticatedSelfUpdateRequest(server *Server, method, target, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, target, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
@@ -65,7 +75,7 @@ func TestSelfUpdateEndpointsExposeTypedPolicyAndCheck(t *testing.T) {
 		t.Fatalf("initial status=%#v", initial)
 	}
 
-	updateBody := `{"enabled":true,"expectedResourceVersion":"` + initial.ResourceVersion + `"}`
+	updateBody := `{"enabled":true,"channel":"stable","expectedResourceVersion":"` + initial.ResourceVersion + `"}`
 	updated := authenticatedSelfUpdateRequest(server, http.MethodPut, "/v1/self-update", updateBody)
 	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"enabled":true`) {
 		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
@@ -90,12 +100,61 @@ func TestSelfUpdateEndpointsRejectUnavailableAndUntypedRequests(t *testing.T) {
 	if queried.Code != http.StatusBadRequest {
 		t.Fatalf("query status=%d body=%s", queried.Code, queried.Body.String())
 	}
-	unknown := authenticatedSelfUpdateRequest(server, http.MethodPut, "/v1/self-update", `{"enabled":true,"expectedResourceVersion":"x","channel":"beta"}`)
+	status, err := service.Status(server.version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := authenticatedSelfUpdateRequest(server, http.MethodPut, "/v1/self-update", `{"enabled":true,"expectedResourceVersion":"`+status.ResourceVersion+`","channel":"beta"}`)
 	if unknown.Code != http.StatusBadRequest {
 		t.Fatalf("unknown field status=%d body=%s", unknown.Code, unknown.Body.String())
 	}
 	checkBody := authenticatedSelfUpdateRequest(server, http.MethodPost, "/v1/self-update/check", `{}`)
 	if checkBody.Code != http.StatusBadRequest {
 		t.Fatalf("check body status=%d body=%s", checkBody.Code, checkBody.Body.String())
+	}
+}
+
+func TestSelfUpdatePreviewCheckAndImmediateInstallAreSeparateActions(t *testing.T) {
+	server := testServer(t)
+	server.version = "1.0.0"
+	service := newAgentSelfUpdateTestService(t, selfupdate.Config{
+		StateDir:      t.TempDir(),
+		StableSource:  agentReleaseSource{version: "1.0.0"},
+		PreviewSource: agentReleaseSource{version: "1.1.0-rc.1"},
+	})
+	starter := &agentUpdateStarter{}
+	server.selfUpdate = service
+	server.selfUpdateStarter = starter
+
+	read := authenticatedSelfUpdateRequest(server, http.MethodGet, "/v1/self-update", "")
+	var initial selfupdate.Status
+	if read.Code != http.StatusOK || json.Unmarshal(read.Body.Bytes(), &initial) != nil {
+		t.Fatalf("read status=%d body=%s", read.Code, read.Body.String())
+	}
+	policy := authenticatedSelfUpdateRequest(
+		server,
+		http.MethodPut,
+		"/v1/self-update",
+		`{"enabled":false,"channel":"preview","expectedResourceVersion":"`+initial.ResourceVersion+`"}`,
+	)
+	if policy.Code != http.StatusOK || !strings.Contains(policy.Body.String(), `"channel":"preview"`) {
+		t.Fatalf("policy status=%d body=%s", policy.Code, policy.Body.String())
+	}
+	checked := authenticatedSelfUpdateRequest(server, http.MethodPost, "/v1/self-update/check", "")
+	var candidate selfupdate.Status
+	if checked.Code != http.StatusOK || json.Unmarshal(checked.Body.Bytes(), &candidate) != nil ||
+		candidate.CandidateVersion != "1.1.0-rc.1" || !candidate.CanInstall || candidate.Enabled {
+		t.Fatalf("check status=%d body=%s candidate=%#v", checked.Code, checked.Body.String(), candidate)
+	}
+	install := authenticatedSelfUpdateRequest(
+		server,
+		http.MethodPost,
+		"/v1/self-update/install",
+		`{"expectedResourceVersion":"`+candidate.ResourceVersion+`"}`,
+	)
+	if install.Code != http.StatusAccepted || starter.calls != 1 ||
+		!strings.Contains(install.Body.String(), `"state":"queued"`) ||
+		!strings.Contains(install.Body.String(), `"installRequested":true`) {
+		t.Fatalf("install status=%d body=%s starter calls=%d", install.Code, install.Body.String(), starter.calls)
 	}
 }

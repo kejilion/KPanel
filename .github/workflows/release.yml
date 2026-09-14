@@ -32,11 +32,35 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
-            echo "Release tag must be an exact semantic version" >&2
-            exit 1
-          }
           version="${GITHUB_REF_NAME#v}"
+          stable_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          preview_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$'
+          if [[ "$version" =~ $stable_pattern ]]; then
+            stable=true
+            channel=stable
+            release_train="$version"
+          elif [[ "$version" =~ $preview_pattern ]]; then
+            stable=false
+            channel=preview
+            release_train="${version%%-rc.*}"
+          else
+            echo "Release tag must be vX.Y.Z or vX.Y.Z-rc.N" >&2
+            exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$release_train"
+          for number in "$major" "$minor" "$patch"; do
+            (( 10#$number <= 999999 )) || {
+              echo "Release version components must not exceed 999999" >&2
+              exit 1
+            }
+          done
+          if [ "$channel" = preview ]; then
+            rc_number="${version##*-rc.}"
+            (( 10#$rc_number <= 999999 )) || {
+              echo "Release candidate number must not exceed 999999" >&2
+              exit 1
+            }
+          fi
           test "$version" = "$(tr -d '\r\n' < VERSION)" || {
             echo "Tag version does not match VERSION" >&2
             exit 1
@@ -56,10 +80,9 @@ jobs:
           {
             echo "version=$version"
             echo "image=docker.io/$DOCKERHUB_IMAGE"
-            case "$version" in
-              *-*) echo "stable=false" ;;
-              *) echo "stable=true" ;;
-            esac
+            echo "stable=$stable"
+            echo "channel=$channel"
+            echo "release_train=$release_train"
           } >> "$GITHUB_OUTPUT"
 
       - name: Validate release notes
@@ -253,8 +276,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release.outputs.version }}
+          STABLE: ${{ steps.release.outputs.stable }}
         run: |
           set -euo pipefail
+          create_flags=(--latest=false)
+          prerelease_value=false
+          if [ "$STABLE" = false ]; then
+            create_flags+=(--prerelease)
+            prerelease_value=true
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             draft="$(
               gh release view "$GITHUB_REF_NAME" \
@@ -266,6 +296,8 @@ jobs:
               exit 1
             }
             gh release edit "$GITHUB_REF_NAME" \
+              --latest=false \
+              --prerelease="$prerelease_value" \
               --title "KPanel $VERSION" \
               --notes-file release/DRAFT_NOTES.md
             gh release upload "$GITHUB_REF_NAME" --clobber \
@@ -281,6 +313,7 @@ jobs:
             gh release create "$GITHUB_REF_NAME" \
               --verify-tag \
               --draft \
+              "${create_flags[@]}" \
               --title "KPanel $VERSION" \
               --notes-file release/DRAFT_NOTES.md \
               release/kejilion-agent-linux-amd64 \
@@ -315,15 +348,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Promote stable image to latest
-        if: steps.release.outputs.stable == 'true'
+      - name: Promote image to its release channel
         shell: bash
         env:
+          CHANNEL: ${{ steps.release.outputs.channel }}
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
+          channel_tag=preview
+          if [ "$CHANNEL" = stable ]; then
+            channel_tag=latest
+          fi
           manifest_digest() {
             docker buildx imagetools inspect "$1" \
               --format '{{json .Manifest}}' | jq -r '.digest'
@@ -359,10 +396,10 @@ jobs:
           test "$version_digest" = "$IMAGE_DIGEST"
           retry docker buildx imagetools inspect "$IMAGE@$IMAGE_DIGEST" >/dev/null
           retry docker buildx imagetools create \
-            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:$channel_tag" \
             "$IMAGE@$IMAGE_DIGEST"
-          retry_capture latest_digest manifest_digest "$IMAGE:latest"
-          test "$latest_digest" = "$IMAGE_DIGEST"
+          retry_capture channel_digest manifest_digest "$IMAGE:$channel_tag"
+          test "$channel_digest" = "$IMAGE_DIGEST"
 
       - name: Publish GitHub release
         shell: bash
@@ -370,6 +407,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          STABLE: ${{ steps.release.outputs.stable }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
@@ -378,19 +416,31 @@ jobs:
             "$IMAGE" \
             "$IMAGE_DIGEST" \
             release/RELEASE_NOTES.md
-          gh release edit "$GITHUB_REF_NAME" \
-            --draft=false \
-            --title "KPanel $VERSION" \
-            --notes-file release/RELEASE_NOTES.md
+          if [ "$STABLE" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --draft=false \
+              --prerelease=false \
+              --latest \
+              --title "KPanel $VERSION" \
+              --notes-file release/RELEASE_NOTES.md
+          else
+            gh release edit "$GITHUB_REF_NAME" \
+              --draft=false \
+              --prerelease \
+              --latest=false \
+              --title "KPanel $VERSION" \
+              --notes-file release/RELEASE_NOTES.md
+          fi
 
       - name: Remove published candidate branch
+        if: steps.release.outputs.stable == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TRAIN: ${{ steps.release.outputs.release_train }}
         run: |
           set -euo pipefail
-          candidate="release/v${VERSION}-candidate"
+          candidate="release/v${RELEASE_TRAIN}-candidate"
           get_ref="repos/${GITHUB_REPOSITORY}/git/ref/heads/${candidate}"
           delete_ref="repos/${GITHUB_REPOSITORY}/git/refs/heads/${candidate}"
           if ! candidate_sha="$(gh api "$get_ref" --jq '.object.sha' 2>/dev/null)"; then

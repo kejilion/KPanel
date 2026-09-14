@@ -78,7 +78,7 @@ func (e CommandExecutor) InstalledVersion(ctx context.Context) (string, error) {
 	if len(fields) != 2 || fields[1] != "v1alpha1" {
 		return "", errors.New("installed Agent returned an invalid version contract")
 	}
-	version := normalizeStableVersion(fields[0])
+	version := normalizeReleaseVersion(fields[0])
 	if version == "" {
 		return "", errors.New("installed Agent returned an invalid version")
 	}
@@ -89,7 +89,7 @@ func (e CommandExecutor) Update(ctx context.Context, targetVersion, imageDigest 
 	if err := e.Validate(); err != nil {
 		return err
 	}
-	targetVersion = normalizeStableVersion(targetVersion)
+	targetVersion = normalizeReleaseVersion(targetVersion)
 	if targetVersion == "" {
 		return errors.New("automatic update target version is invalid")
 	}

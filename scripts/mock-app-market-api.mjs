@@ -25,6 +25,21 @@ const installed = new Map([
 ])
 const appJobs = new Map()
 const diagnosticJobs = new Map()
+let mockAutomaticUpdateRevision = 1
+let mockAutomaticUpdate = {
+  available: true,
+  enabled: false,
+  state: 'disabled',
+  channel: 'stable',
+  canInstall: false,
+  installRequested: false,
+  schedule: 'daily-04:00-local',
+  observationHours: 24,
+  currentVersion: '1.17.0',
+  candidateVersion: '',
+  candidateImageDigest: '',
+  resourceVersion: mockRevision(501),
+}
 let domainSiteDeleted = false
 let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
@@ -1229,6 +1244,82 @@ createServer(async (request, response) => {
       csrfToken: 'visual-test-csrf',
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/settings/security-entry') {
+    send(response, 200, { enabled: false, resourceVersion: mockRevision(520) })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/settings/totp') {
+    send(response, 200, { enabled: false, recoveryCodesRemaining: 0 })
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/settings/automatic-update') {
+    send(response, 200, mockAutomaticUpdate)
+    return
+  }
+  if (request.method === 'PUT' && url.pathname === '/api/v1/settings/automatic-update') {
+    const input = await readJSON(request)
+    if (input.expectedResourceVersion !== mockAutomaticUpdate.resourceVersion) {
+      send(response, 409, { title: '自动更新设置已变化，请刷新后重试', status: 409, code: 'resource_version_changed' })
+      return
+    }
+    if (typeof input.enabled !== 'boolean' || !['stable', 'preview'].includes(input.channel)) {
+      send(response, 422, { title: '自动更新策略无效', status: 422, code: 'validation_failed' })
+      return
+    }
+    mockAutomaticUpdateRevision += 1
+    mockAutomaticUpdate = {
+      ...mockAutomaticUpdate,
+      enabled: input.enabled,
+      state: input.enabled ? 'idle' : 'disabled',
+      channel: input.channel,
+      canInstall: false,
+      installRequested: false,
+      candidateVersion: '',
+      candidateImageDigest: '',
+      candidateFirstSeenAt: undefined,
+      resourceVersion: mockRevision(501 + mockAutomaticUpdateRevision),
+    }
+    send(response, 200, mockAutomaticUpdate)
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/settings/automatic-update/check') {
+    mockAutomaticUpdateRevision += 1
+    const preview = mockAutomaticUpdate.channel === 'preview'
+    mockAutomaticUpdate = {
+      ...mockAutomaticUpdate,
+      state: preview ? 'waiting' : (mockAutomaticUpdate.enabled ? 'idle' : 'disabled'),
+      canInstall: preview,
+      installRequested: false,
+      candidateVersion: preview ? '1.18.0-rc.1' : '',
+      candidateImageDigest: preview ? `sha256:${'b'.repeat(64)}` : '',
+      candidateFirstSeenAt: preview ? new Date().toISOString() : undefined,
+      lastCheckedAt: new Date().toISOString(),
+      resourceVersion: mockRevision(501 + mockAutomaticUpdateRevision),
+    }
+    send(response, 200, mockAutomaticUpdate)
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/settings/automatic-update/install') {
+    const input = await readJSON(request)
+    if (input.expectedResourceVersion !== mockAutomaticUpdate.resourceVersion) {
+      send(response, 409, { title: '自动更新设置已变化，请刷新后重试', status: 409, code: 'resource_version_changed' })
+      return
+    }
+    if (!mockAutomaticUpdate.canInstall || !mockAutomaticUpdate.candidateVersion) {
+      send(response, 409, { title: '当前没有可安装的更新', status: 409, code: 'automatic_update_not_available' })
+      return
+    }
+    mockAutomaticUpdateRevision += 1
+    mockAutomaticUpdate = {
+      ...mockAutomaticUpdate,
+      state: 'queued',
+      canInstall: false,
+      installRequested: true,
+      resourceVersion: mockRevision(501 + mockAutomaticUpdateRevision),
+    }
+    send(response, 202, mockAutomaticUpdate)
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/desktop/workspace') {

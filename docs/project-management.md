@@ -12,6 +12,7 @@
 | 层级 | 权威文件 | 只负责什么 | 不应包含什么 |
 | --- | --- | --- | --- |
 | 产品与工程不变量 | `PROJECT_RULES.md` | 业务真源、管理员能力、安全边界、质量等级、发布硬规则 | 工具按钮、会话 ID、临时任务状态 |
+| 版本通道契约 | `docs/release-channels.md` | 稳定版/预览版身份、提升、候选分支、自更新和验收边界 | 单次发布状态、临时版本计划 |
 | 多 AI 项目治理 | 本文件 | 角色、任务契约、状态、WIP、worktree、验证、集成、发布和权限 | Codex/Claude 专属操作 |
 | 跨工具运行手册 | `docs/multi-agent-collaboration.md` | 人和智能体可直接执行的最短协作步骤、移交与失败处理 | 重复完整工程规则 |
 | 工具入口 | `AGENTS.md`、`CLAUDE.md` | 工具启动检查、专属能力和如何进入共享规范 | 平行质量标准或门禁参数 |
@@ -352,11 +353,14 @@ git push origin HEAD:refs/heads/<task-branch>
 
 发布采用单写者模型：同一时刻只有一个发布任务、一个候选 worktree 和一个候选分支。
 
-发布前记录：候选基线、提交清单、发布画像、受影响用户旅程、目标版本、上一稳定标签、生产目标、
-备份位置和回滚命令。对 `kejilion.sh` 还必须先记录 `scriptLinkageState`、实际内置脚本基线
+发布前记录：候选基线、提交清单、发布画像、受影响用户旅程、`releaseChannel`、`releaseTrain`、
+目标版本、上一稳定标签、生产适用性、生产目标、备份位置和回滚命令。版本通道必须符合
+[`release-channels.md`](release-channels.md)。对 `kejilion.sh` 还必须先记录 `scriptLinkageState`、实际内置脚本基线
 commit/摘要及状态对应的跨仓库证据；候选开始
 `make verify-release` 后即冻结：
 
+- `stable` 只接受 `X.Y.Z`，`preview` 只接受 `X.Y.Z-rc.N`；同一发布序列固定使用
+  `release/vX.Y.Z-candidate`，不得为每个 RC 建立互相漂移的候选分支；
 - 开发任务不得切换候选 worktree 的分支或修改候选文件；
 - 新需求默认进入下一版本；
 - 候选发现缺陷时，由发布任务在自己拥有的独立修复分支形成提交，再纳入新候选并从受影响层级重新验证；
@@ -367,9 +371,12 @@ commit/摘要及状态对应的跨仓库证据；候选开始
   非生产环境修复唯一入口并重验；
 - 候选 CI、主线 CI、Release 和公开镜像依次通过后可标记“产物已发布”；只有生产部署已明确授权且
   备份、标准部署和部署安全核对完成，才标记“生产已部署”。
-- GitHub Release 公开后，Release workflow 仅在候选分支提交已包含于发布标签时自动删除该候选分支；
-  失败或发生分叉时保留分支并阻断清理，禁止强删。已合并功能分支在确认提交可由 `main`、Tag 或本地
+- 稳定版 GitHub Release 公开后，Release workflow 仅在候选分支提交已包含于发布标签时自动删除该候选
+  分支；预览版发布必须保留同一序列候选分支。失败或发生分叉时保留分支并阻断清理，禁止强删。
+  已合并功能分支在确认提交可由 `main`、Tag 或本地
   bundle 恢复后及时删除，并解除本地 upstream，避免普通推送重新创建。
+- 只有 `stable` 可以在明确授权后进入正式生产部署；`preview` 仅允许发布 prerelease、`preview` 镜像和在
+  登记隔离环境验收，不得提升 GitHub Latest、Docker `latest` 或应用市场默认更新入口；
 - 生产回滚不以单台实例恢复为结束：发布任务必须在同一交付包中记录 GitHub Latest、Docker `latest`
   和标准更新入口的实际指向。未通过生产部署安全核对的版本不得无提示继续成为公共默认更新；历史 tag、Release
   和不可变版本镜像继续保留，默认通道恢复或短期例外必须有证据、负责人和结束条件。

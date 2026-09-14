@@ -304,7 +304,9 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleTOTPRecoveryCodes(w, r)
 	case (r.Method == http.MethodGet || r.Method == http.MethodPut) && r.URL.Path == "/api/v1/settings/security-entry":
 		s.handleSecurityEntranceSettings(w, r)
-	case r.URL.Path == "/api/v1/settings/automatic-update" || r.URL.Path == "/api/v1/settings/automatic-update/check":
+	case r.URL.Path == "/api/v1/settings/automatic-update" ||
+		r.URL.Path == "/api/v1/settings/automatic-update/check" ||
+		r.URL.Path == "/api/v1/settings/automatic-update/install":
 		s.handleAutomaticUpdateSettings(w, r)
 	case r.URL.Path == "/api/v1/cluster/share":
 		s.handleClusterShareSettings(w, r)

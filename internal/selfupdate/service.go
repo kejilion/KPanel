@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	stateSchemaVersion = 1
+	stateSchemaVersion = 2
 	stateFileName      = "state.json"
 	lockFileName       = ".lock"
 	maxStateBytes      = 64 << 10
@@ -24,18 +24,32 @@ const (
 )
 
 var (
-	ErrBusy     = errors.New("automatic update state is busy")
-	ErrConflict = errors.New("automatic update state changed")
+	ErrBusy               = errors.New("automatic update state is busy")
+	ErrConflict           = errors.New("automatic update state changed")
+	ErrInvalidChannel     = errors.New("automatic update channel is invalid")
+	ErrChannelUnavailable = errors.New("automatic update channel is unavailable")
+	ErrNoUpdate           = errors.New("no installable KPanel update is available")
 )
+
+type Channel string
+
+const (
+	ChannelStable  Channel = "stable"
+	ChannelPreview Channel = "preview"
+)
+
+func validChannel(channel Channel) bool {
+	return channel == ChannelStable || channel == ChannelPreview
+}
 
 type Release struct {
 	Version     string
 	ImageDigest string
 }
 
-// ReleaseSource returns the current stable release and its immutable image
-// digest. Implementations must reject drafts, prereleases and mutable image
-// references.
+// ReleaseSource returns the newest release allowed by one configured channel
+// and its immutable image digest. Implementations must reject drafts,
+// channel-incompatible versions and mutable image references.
 type ReleaseSource interface {
 	Latest(context.Context) (Release, error)
 }
@@ -50,21 +64,21 @@ type Executor interface {
 }
 
 type Config struct {
-	StateDir    string
-	Source      ReleaseSource
-	Now         func() time.Time
-	Hold        time.Duration
-	Schedule    string
-	ChannelName string
+	StateDir      string
+	Source        ReleaseSource
+	StableSource  ReleaseSource
+	PreviewSource ReleaseSource
+	Now           func() time.Time
+	Hold          time.Duration
+	Schedule      string
 }
 
 type Service struct {
 	stateDir string
-	source   ReleaseSource
+	sources  map[Channel]ReleaseSource
 	now      func() time.Time
 	hold     time.Duration
 	schedule string
-	channel  string
 	mu       sync.Mutex
 }
 
@@ -72,7 +86,9 @@ type persistedState struct {
 	SchemaVersion        int        `json:"schemaVersion"`
 	Revision             uint64     `json:"revision"`
 	Enabled              bool       `json:"enabled"`
+	Channel              Channel    `json:"channel"`
 	State                string     `json:"state"`
+	InstallRequested     bool       `json:"installRequested,omitempty"`
 	CurrentVersion       string     `json:"currentVersion,omitempty"`
 	CandidateVersion     string     `json:"candidateVersion,omitempty"`
 	CandidateImageDigest string     `json:"candidateImageDigest,omitempty"`
@@ -90,7 +106,9 @@ type Status struct {
 	Available            bool       `json:"available"`
 	Enabled              bool       `json:"enabled"`
 	State                string     `json:"state"`
-	Channel              string     `json:"channel"`
+	Channel              Channel    `json:"channel"`
+	CanInstall           bool       `json:"canInstall"`
+	InstallRequested     bool       `json:"installRequested"`
 	Schedule             string     `json:"schedule"`
 	ObservationHours     int        `json:"observationHours"`
 	CurrentVersion       string     `json:"currentVersion,omitempty"`
@@ -112,8 +130,11 @@ func New(config Config) (*Service, error) {
 	if config.StateDir == "." || !filepath.IsAbs(config.StateDir) {
 		return nil, errors.New("automatic update state directory must be an absolute path")
 	}
-	if config.Source == nil {
-		return nil, errors.New("automatic update release source is required")
+	if config.StableSource == nil {
+		config.StableSource = config.Source
+	}
+	if config.StableSource == nil {
+		return nil, errors.New("stable automatic update release source is required")
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -127,15 +148,16 @@ func New(config Config) (*Service, error) {
 	if config.Schedule == "" {
 		config.Schedule = "daily-04:00-local"
 	}
-	if config.ChannelName == "" {
-		config.ChannelName = "stable"
-	}
 	if err := ensurePrivateDirectory(config.StateDir); err != nil {
 		return nil, fmt.Errorf("prepare automatic update state: %w", err)
 	}
 	service := &Service{
-		stateDir: config.StateDir, source: config.Source, now: config.Now,
-		hold: config.Hold, schedule: config.Schedule, channel: config.ChannelName,
+		stateDir: config.StateDir,
+		sources: map[Channel]ReleaseSource{
+			ChannelStable:  config.StableSource,
+			ChannelPreview: config.PreviewSource,
+		},
+		now: config.Now, hold: config.Hold, schedule: config.Schedule,
 	}
 	if _, err := service.load(); err != nil {
 		return nil, fmt.Errorf("load automatic update state: %w", err)
@@ -150,14 +172,28 @@ func (s *Service) Status(currentVersion string) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	result := s.snapshot(state)
+	persistedResourceVersion := resourceVersion(state)
 	if currentVersion = normalizeCurrentVersion(currentVersion); currentVersion != "" {
-		result.CurrentVersion = currentVersion
+		state.CurrentVersion = currentVersion
 	}
-	return result, nil
+	status := s.snapshot(state)
+	// CurrentVersion is supplied by the running binary and may legitimately
+	// differ from the last persisted updater transaction. Expose that live
+	// value without making a read-only status request invalidate the caller's
+	// optimistic policy token.
+	status.ResourceVersion = persistedResourceVersion
+	return status, nil
 }
 
 func (s *Service) SetEnabled(currentVersion, expectedResourceVersion string, enabled bool) (Status, error) {
+	return s.SetPolicy(currentVersion, expectedResourceVersion, enabled, "")
+}
+
+func (s *Service) SetPolicy(
+	currentVersion, expectedResourceVersion string,
+	enabled bool,
+	channel Channel,
+) (Status, error) {
 	var result Status
 	err := s.exclusive(func() error {
 		state, err := s.load()
@@ -167,16 +203,40 @@ func (s *Service) SetEnabled(currentVersion, expectedResourceVersion string, ena
 		if expectedResourceVersion == "" || expectedResourceVersion != resourceVersion(state) {
 			return ErrConflict
 		}
+		if state.State == "updating" || state.InstallRequested {
+			return ErrBusy
+		}
+		if channel == "" {
+			channel = state.Channel
+		}
+		if !validChannel(channel) {
+			return ErrInvalidChannel
+		}
+		if s.sources[channel] == nil {
+			return ErrChannelUnavailable
+		}
+		channelChanged := state.Channel != channel
 		state.Enabled = enabled
+		state.Channel = channel
 		state.CurrentVersion = normalizeCurrentVersion(currentVersion)
 		state.LastError = ""
 		state.LastErrorCode = ""
-		if enabled {
-			if state.State == "disabled" || state.State == "" {
-				state.State = "idle"
+		if channelChanged {
+			state.CandidateVersion = ""
+			state.CandidateImageDigest = ""
+			state.CandidateFirstSeenAt = nil
+			state.FailedVersion = ""
+			state.FailedImageDigest = ""
+			state.InstallRequested = false
+		}
+		if channelChanged || state.State == "disabled" || state.State == "" {
+			if state.CandidateVersion == "" {
+				state.State = normalizeRestingState(state)
+			} else {
+				state.State = "waiting"
 			}
 		} else {
-			state.State = "disabled"
+			state.State = normalizeRestingState(state)
 		}
 		if err := s.save(&state); err != nil {
 			return err
@@ -187,13 +247,16 @@ func (s *Service) SetEnabled(currentVersion, expectedResourceVersion string, ena
 	return result, err
 }
 
-// Check refreshes stable release metadata but never installs an update.
+// Check refreshes the selected release channel but never installs an update.
 func (s *Service) Check(ctx context.Context, currentVersion string) (Status, error) {
 	var result Status
 	err := s.exclusive(func() error {
 		state, err := s.load()
 		if err != nil {
 			return err
+		}
+		if state.State == "updating" || state.InstallRequested {
+			return ErrBusy
 		}
 		state.CurrentVersion = normalizeCurrentVersion(currentVersion)
 		if state.CurrentVersion == "" {
@@ -209,9 +272,70 @@ func (s *Service) Check(ctx context.Context, currentVersion string) (Status, err
 	return result, err
 }
 
-// Run is the systemd timer entry point. It serializes with settings writes and
-// manual checks, recovers stale transactions, observes a stable candidate for
-// the configured hold period, and invokes the exact-version executor once.
+// QueueInstall pins the already-observed candidate for one immediate host-side
+// run. It does not enable future automatic installs and never performs a
+// network lookup or privileged mutation in the caller's HTTP request.
+func (s *Service) QueueInstall(currentVersion, expectedResourceVersion string) (Status, error) {
+	var result Status
+	err := s.exclusive(func() error {
+		state, err := s.load()
+		if err != nil {
+			return err
+		}
+		if expectedResourceVersion == "" || expectedResourceVersion != resourceVersion(state) {
+			return ErrConflict
+		}
+		if state.State == "updating" || state.InstallRequested {
+			return ErrBusy
+		}
+		state.CurrentVersion = normalizeCurrentVersion(currentVersion)
+		if state.CurrentVersion == "" || state.CandidateVersion == "" ||
+			state.CandidateImageDigest == "" || compareVersions(state.CandidateVersion, state.CurrentVersion) <= 0 ||
+			(state.State != "waiting" && state.State != "available") {
+			return ErrNoUpdate
+		}
+		state.InstallRequested = true
+		state.State = "queued"
+		state.LastErrorCode = ""
+		state.LastError = ""
+		if err := s.save(&state); err != nil {
+			return err
+		}
+		result = s.snapshot(state)
+		return nil
+	})
+	return result, err
+}
+
+// CancelQueuedInstall makes a failed service-manager dispatch non-sticky. A
+// concurrently started updater may already have consumed the request; in that
+// case this method leaves its state untouched.
+func (s *Service) CancelQueuedInstall(version, digest string, cause error) (Status, error) {
+	var result Status
+	err := s.exclusive(func() error {
+		state, err := s.load()
+		if err != nil {
+			return err
+		}
+		if state.InstallRequested && state.CandidateVersion == version &&
+			state.CandidateImageDigest == digest {
+			state.InstallRequested = false
+			state.State = normalizeRestingState(state)
+			state.LastErrorCode = "install_start_failed"
+			state.LastError = boundedError(cause)
+			if err := s.save(&state); err != nil {
+				return err
+			}
+		}
+		result = s.snapshot(state)
+		return nil
+	})
+	return result, err
+}
+
+// Run is the host timer/service entry point. It serializes with settings
+// writes and checks, recovers stale transactions, and invokes the exact-version
+// executor after either the observation period or an explicit one-shot request.
 func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 	if executor == nil {
 		return Status{}, errors.New("automatic update executor is required")
@@ -222,10 +346,12 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 		if err != nil {
 			return err
 		}
+		manualRequested := state.InstallRequested
 		wasUpdating := state.State == "updating" && state.CandidateVersion != ""
 		if err := executor.Recover(ctx); err != nil {
 			now := s.utcNow()
 			state.State = "failed"
+			state.InstallRequested = false
 			state.LastAttemptAt = &now
 			state.LastErrorCode = "recovery_failed"
 			state.LastError = boundedError(err)
@@ -247,7 +373,7 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 				return err
 			}
 		}
-		if !state.Enabled {
+		if !state.Enabled && !manualRequested {
 			state.State = "disabled"
 			if err := s.save(&state); err != nil {
 				return err
@@ -255,12 +381,26 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 			result = s.snapshot(state)
 			return nil
 		}
-		if err := s.checkLocked(ctx, &state); err != nil {
-			if saveErr := s.save(&state); saveErr != nil {
-				return saveErr
+		if manualRequested {
+			if state.CandidateVersion == "" || state.CandidateImageDigest == "" ||
+				compareVersions(state.CandidateVersion, state.CurrentVersion) <= 0 {
+				state.InstallRequested = false
+				state.State = normalizeRestingState(state)
+				if err := s.save(&state); err != nil {
+					return err
+				}
+				result = s.snapshot(state)
+				return nil
 			}
-			result = s.snapshot(state)
-			return err
+			state.State = "available"
+		} else {
+			if err := s.checkLocked(ctx, &state); err != nil {
+				if saveErr := s.save(&state); saveErr != nil {
+					return saveErr
+				}
+				result = s.snapshot(state)
+				return err
+			}
 		}
 		if state.State != "available" || state.CandidateVersion == "" {
 			if err := s.save(&state); err != nil {
@@ -273,6 +413,7 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 		digest := state.CandidateImageDigest
 		now := s.utcNow()
 		state.State = "updating"
+		state.InstallRequested = false
 		state.LastAttemptAt = &now
 		state.LastErrorCode = ""
 		state.LastError = ""
@@ -281,6 +422,7 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 		}
 		if err := executor.Update(ctx, target, digest); err != nil {
 			state.State = "failed"
+			state.InstallRequested = false
 			state.FailedVersion = target
 			state.FailedImageDigest = digest
 			state.LastErrorCode = "update_failed"
@@ -289,10 +431,11 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 				return errors.Join(err, saveErr)
 			}
 			result = s.snapshot(state)
-			return fmt.Errorf("automatic update to %s failed: %w", target, err)
+			return fmt.Errorf("KPanel update to %s failed: %w", target, err)
 		}
 		now = s.utcNow()
 		state.State = "succeeded"
+		state.InstallRequested = false
 		state.CurrentVersion = target
 		state.CandidateVersion = ""
 		state.CandidateImageDigest = ""
@@ -313,6 +456,7 @@ func (s *Service) Run(ctx context.Context, executor Executor) (Status, error) {
 
 func (s *Service) reconcileInterrupted(state *persistedState) {
 	now := s.utcNow()
+	state.InstallRequested = false
 	if compareVersions(state.CurrentVersion, state.CandidateVersion) >= 0 {
 		state.State = "succeeded"
 		state.LastSuccessAt = &now
@@ -334,26 +478,29 @@ func (s *Service) reconcileInterrupted(state *persistedState) {
 
 func (s *Service) checkLocked(ctx context.Context, state *persistedState) error {
 	now := s.utcNow()
-	latest, err := s.source.Latest(ctx)
+	source := s.sources[state.Channel]
+	if source == nil {
+		return ErrChannelUnavailable
+	}
+	latest, err := source.Latest(ctx)
 	state.LastCheckedAt = &now
 	if err != nil {
 		state.State = "check_failed"
 		state.LastErrorCode = "release_check_failed"
 		state.LastError = boundedError(err)
-		return fmt.Errorf("check stable KPanel release: %w", err)
+		return fmt.Errorf("check %s KPanel release: %w", state.Channel, err)
 	}
-	latest.Version = normalizeStableVersion(latest.Version)
+	latest.Version = normalizeChannelVersion(state.Channel, latest.Version)
 	latest.ImageDigest = normalizeImageDigest(latest.ImageDigest)
 	if latest.Version == "" || latest.ImageDigest == "" {
 		state.State = "check_failed"
 		state.LastErrorCode = "invalid_release"
-		state.LastError = "the stable release endpoint returned an invalid version or image digest"
-		return errors.New("stable release endpoint returned invalid metadata")
+		state.LastError = fmt.Sprintf("the %s release endpoint returned an invalid version or image digest", state.Channel)
+		return fmt.Errorf("%s release endpoint returned invalid metadata", state.Channel)
 	}
 	state.LastErrorCode = ""
 	state.LastError = ""
 	if compareVersions(latest.Version, state.CurrentVersion) <= 0 {
-		state.State = "idle"
 		state.CandidateVersion = ""
 		state.CandidateImageDigest = ""
 		state.CandidateFirstSeenAt = nil
@@ -361,6 +508,7 @@ func (s *Service) checkLocked(ctx context.Context, state *persistedState) error 
 			state.FailedVersion = ""
 			state.FailedImageDigest = ""
 		}
+		state.State = normalizeRestingState(*state)
 		return nil
 	}
 	if state.CandidateVersion != latest.Version || state.CandidateImageDigest != latest.ImageDigest {
@@ -391,6 +539,30 @@ func (s *Service) checkLocked(ctx context.Context, state *persistedState) error 
 	return nil
 }
 
+func normalizeChannelVersion(channel Channel, version string) string {
+	if channel == ChannelStable {
+		return normalizeStableVersion(version)
+	}
+	if channel == ChannelPreview {
+		return normalizeReleaseVersion(version)
+	}
+	return ""
+}
+
+func normalizeRestingState(state persistedState) string {
+	if state.CandidateVersion != "" && state.CandidateImageDigest != "" {
+		if state.FailedVersion == state.CandidateVersion &&
+			state.FailedImageDigest == state.CandidateImageDigest {
+			return "blocked"
+		}
+		return "waiting"
+	}
+	if state.Enabled {
+		return "idle"
+	}
+	return "disabled"
+}
+
 func (s *Service) exclusive(fn func() error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -403,9 +575,13 @@ func (s *Service) exclusive(fn func() error) error {
 }
 
 func (s *Service) snapshot(state persistedState) Status {
+	canInstall := (state.State == "waiting" || state.State == "available") &&
+		state.CandidateVersion != "" && state.CandidateImageDigest != "" &&
+		compareVersions(state.CandidateVersion, state.CurrentVersion) > 0
 	return Status{
 		Available: true, Enabled: state.Enabled, State: state.State,
-		Channel: s.channel, Schedule: s.schedule,
+		Channel: state.Channel, CanInstall: canInstall,
+		InstallRequested: state.InstallRequested, Schedule: s.schedule,
 		ObservationHours: int(s.hold / time.Hour), CurrentVersion: state.CurrentVersion,
 		CandidateVersion: state.CandidateVersion, CandidateImageDigest: state.CandidateImageDigest,
 		CandidateFirstSeenAt: state.CandidateFirstSeenAt,
@@ -418,7 +594,11 @@ func (s *Service) snapshot(state persistedState) Status {
 }
 
 func (s *Service) load() (persistedState, error) {
-	state := persistedState{SchemaVersion: stateSchemaVersion, State: "disabled"}
+	state := persistedState{
+		SchemaVersion: stateSchemaVersion,
+		Channel:       ChannelStable,
+		State:         "disabled",
+	}
 	path := filepath.Join(s.stateDir, stateFileName)
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -447,6 +627,10 @@ func (s *Service) load() (persistedState, error) {
 			return persistedState{}, errors.New("automatic update state contains multiple values")
 		}
 		return persistedState{}, err
+	}
+	if state.SchemaVersion == 1 {
+		state.SchemaVersion = stateSchemaVersion
+		state.Channel = ChannelStable
 	}
 	if state.SchemaVersion != stateSchemaVersion || !validPersistedState(state) {
 		return persistedState{}, errors.New("automatic update state is invalid")
@@ -532,13 +716,17 @@ func validPersistedState(state persistedState) bool {
 	validStates := map[string]bool{
 		"disabled": true, "idle": true, "waiting": true, "available": true,
 		"updating": true, "succeeded": true, "failed": true, "blocked": true,
-		"check_failed": true,
+		"check_failed": true, "queued": true,
 	}
-	if !validStates[state.State] || len(state.LastError) > 512 || len(state.LastErrorCode) > 64 {
+	if !validStates[state.State] || !validChannel(state.Channel) ||
+		len(state.LastError) > 512 || len(state.LastErrorCode) > 64 {
 		return false
 	}
-	for _, candidate := range []string{state.CurrentVersion, state.CandidateVersion, state.FailedVersion} {
-		if candidate != "" && normalizeStableVersion(candidate) == "" {
+	if state.CurrentVersion != "" && normalizeReleaseVersion(state.CurrentVersion) == "" {
+		return false
+	}
+	for _, candidate := range []string{state.CandidateVersion, state.FailedVersion} {
+		if candidate != "" && normalizeChannelVersion(state.Channel, candidate) == "" {
 			return false
 		}
 	}
@@ -549,6 +737,10 @@ func validPersistedState(state persistedState) bool {
 	}
 	if (state.CandidateVersion == "") != (state.CandidateImageDigest == "") ||
 		(state.FailedVersion == "") != (state.FailedImageDigest == "") {
+		return false
+	}
+	if state.InstallRequested != (state.State == "queued") ||
+		state.InstallRequested && state.CandidateVersion == "" {
 		return false
 	}
 	return true

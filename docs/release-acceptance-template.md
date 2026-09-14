@@ -1,6 +1,6 @@
-# KPanel vX.Y.Z 发布验收记录模板
+# KPanel vX.Y.Z[-rc.N] 发布验收记录模板
 
-> 本文件是新版本验收记录的结构模板。复制为 `docs/release-vX.Y.Z-acceptance.md` 后删除本说明，
+> 本文件是新版本验收记录的结构模板。复制为 `docs/release-v<version>-acceptance.md` 后删除本说明，
 > 不回填或批量改写历史记录。状态只使用“已验证”“已实现未实机验证”“未实现”“不适用”。
 
 日期：YYYY-MM-DD
@@ -10,6 +10,12 @@
 候选提交 / 标签：`<commit>` / `vX.Y.Z`
 
 上一稳定版本 / 回滚点：`vX.Y.Z` / `<commit-or-image-digest>`
+
+`releaseChannel`：`stable` / `preview`
+
+`releaseTrain`：`X.Y.Z`
+
+候选分支与发布后处置：`release/vX.Y.Z-candidate` / 稳定版删除、预览版保留、失败保留
 
 ## 发布画像
 
@@ -79,14 +85,26 @@
 
 ## 发布产物与公开仓库复核
 
-- GitHub Release：
-- Docker 版本与 `latest` OCI index：
+- GitHub Release 的 draft / prerelease / Latest 状态：
+- Docker 版本与通道 OCI index：稳定版 `latest` / 预览版 `preview`
 - `linux/amd64`、`linux/arm64` digest：
 - 附件及 `SHA256SUMS`：
 - 公开镜像 `image_e2e=pass`：
 - `kejilion/apps` / `kejilion.sh` 契约结论：
 
+## 自更新通道验收
+
+- 稳定来源只选择正式 GitHub Latest，预览来源只选择规范稳定版或 RC，并校验唯一官方镜像 digest：
+- 加入预览只切换来源并立即检查，没有自动安装：
+- 自动安装开关与一次性立即安装相互独立：
+- 旧状态默认迁移到 `stable`，重启后通道选择保持：
+- 退出预览且稳定版较低时没有产生降级候选：
+- systemd 后台执行、更新前备份、失败恢复和失败版本隔离：
+- OpenRC 与轻量 Node 的当前边界已按 `docs/release-channels.md` 明确呈现：
+
 ## 生产部署安全核对
+
+> `preview` 必须将本节生产动作标记为“不适用（预览版禁止生产部署）”，不得用隔离验收代替生产证据。
 
 - 生产目标和部署授权范围：
 - 验证/灰度环境（必须来自 `environment-policy.json`，不得包含 `prod-108`）：

@@ -170,7 +170,7 @@ Compose / `daemon.json` 通用编辑器、系统重装非交互适配器，以�
 | 产品架构 | [架构与事实来源](docs/architecture.md) · [安全模型](docs/security-model.md) · [存储策略](docs/storage-strategy.md) |
 | 核心能力 | [AI 工作区](docs/ai-workspace.md) · [集群监控](docs/cluster-monitoring.md) · [Docker 管理](docs/docker-management-v0.18.md) · [应用市场](docs/application-market.md) |
 | 生态与质量 | [兼容基线](docs/compatibility.md) · [开发质量标准](docs/development-quality-standard.md) · [项目协作](docs/session-collaboration.md) |
-| 版本信息 | [更新记录](CHANGELOG.md) · [最新 Release](https://github.com/kejilion/KPanel/releases/latest) |
+| 版本信息 | [稳定版与预览版](docs/release-channels.md) · [更新记录](CHANGELOG.md) · [最新稳定版](https://github.com/kejilion/KPanel/releases/latest) |
 
 <details>
 <summary>更多安全、设计与工程文档</summary>

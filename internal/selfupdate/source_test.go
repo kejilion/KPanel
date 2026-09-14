@@ -33,6 +33,12 @@ func sourceWithResponse(handler roundTripFunc) *GitHubLatestSource {
 	}}
 }
 
+func previewSourceWithResponse(handler roundTripFunc) *GitHubLatestSource {
+	source := sourceWithResponse(handler)
+	source.channel = ChannelPreview
+	return source
+}
+
 func validReleaseJSON(version, digest string) string {
 	return `{"tag_name":"v` + version + `","html_url":"https://github.com/kejilion/KPanel/releases/tag/v` + version +
 		`","body":"### 发布产物与完整性\n\n- 生产镜像：\u0060docker.io/kjlion/kejilion-panel@` + digest +
@@ -55,9 +61,77 @@ func TestGitHubLatestSourceAcceptsOnePublishedStableDigest(t *testing.T) {
 		t.Fatalf("release = %#v", release)
 	}
 	if requestSeen == nil || requestSeen.Method != http.MethodGet || requestSeen.URL.String() != githubLatestURL ||
-		requestSeen.UserAgent() != "KPanel-Automatic-Update/1" ||
+		requestSeen.UserAgent() != "KPanel-Release-Update/2" ||
 		requestSeen.Header.Get("X-GitHub-Api-Version") != "2022-11-28" {
 		t.Fatalf("unexpected request: %#v", requestSeen)
+	}
+}
+
+func TestGitHubPreviewSourceSelectsHighestStableOrRCRelease(t *testing.T) {
+	stableDigest := "sha256:" + strings.Repeat("a", 64)
+	previewDigest := "sha256:" + strings.Repeat("b", 64)
+	payload := `[` +
+		validReleaseJSON("1.8.0", stableDigest) + `,` +
+		strings.ReplaceAll(
+			strings.ReplaceAll(validReleaseJSON("1.9.0-rc.2", previewDigest), `"prerelease":false`, `"prerelease":true`),
+			`生产镜像`, `预览镜像`,
+		) + `,` +
+		strings.ReplaceAll(validReleaseJSON("9.0.0-beta.1", previewDigest), `"prerelease":false`, `"prerelease":true`) +
+		`]`
+	var requestSeen *http.Request
+	source := previewSourceWithResponse(func(request *http.Request) (*http.Response, error) {
+		requestSeen = request
+		return releaseResponse(request, payload), nil
+	})
+
+	release, err := source.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "1.9.0-rc.2" || release.ImageDigest != previewDigest {
+		t.Fatalf("release = %#v", release)
+	}
+	if requestSeen == nil || requestSeen.URL.String() != githubPreviewURL {
+		t.Fatalf("unexpected request: %#v", requestSeen)
+	}
+}
+
+func TestGitHubPreviewSourceAllowsFinalStableToSupersedeRC(t *testing.T) {
+	previewDigest := "sha256:" + strings.Repeat("a", 64)
+	stableDigest := "sha256:" + strings.Repeat("b", 64)
+	preview := strings.ReplaceAll(
+		strings.ReplaceAll(validReleaseJSON("2.0.0-rc.9", previewDigest), `"prerelease":false`, `"prerelease":true`),
+		`生产镜像`, `预览镜像`,
+	)
+	payload := `[` + preview + `,` + validReleaseJSON("2.0.0", stableDigest) + `]`
+	source := previewSourceWithResponse(func(request *http.Request) (*http.Response, error) {
+		return releaseResponse(request, payload), nil
+	})
+
+	release, err := source.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "2.0.0" || release.ImageDigest != stableDigest {
+		t.Fatalf("release = %#v", release)
+	}
+}
+
+func TestGitHubPreviewSourceRejectsMismatchedOrAmbiguousMetadata(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	rc := strings.ReplaceAll(validReleaseJSON("1.2.0-rc.1", digest), `生产镜像`, `预览镜像`)
+	tests := []string{
+		`[` + rc + `]`,
+		`[` + strings.ReplaceAll(validReleaseJSON("1.2.0", digest), `"prerelease":false`, `"prerelease":true`) + `]`,
+		`[` + validReleaseJSON("1.2.0", digest) + `,` + validReleaseJSON("1.2.0", digest) + `]`,
+	}
+	for index, payload := range tests {
+		source := previewSourceWithResponse(func(request *http.Request) (*http.Response, error) {
+			return releaseResponse(request, payload), nil
+		})
+		if _, err := source.Latest(context.Background()); err == nil {
+			t.Fatalf("unsafe preview metadata %d was accepted", index)
+		}
 	}
 }
 

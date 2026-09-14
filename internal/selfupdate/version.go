@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+type parsedVersion struct {
+	core [3]uint64
+	rc   *uint64
+}
+
 func normalizeImageDigest(value string) string {
 	value = strings.TrimSpace(value)
 	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
@@ -21,52 +26,116 @@ func normalizeImageDigest(value string) string {
 func normalizeCurrentVersion(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.TrimSuffix(value, "-dev")
-	return normalizeStableVersion(value)
+	return normalizeReleaseVersion(value)
 }
 
 func normalizeStableVersion(value string) string {
-	value = strings.TrimSpace(strings.TrimPrefix(value, "v"))
-	parts := strings.Split(value, ".")
-	if len(parts) != 3 {
+	normalized, parsed, ok := parseReleaseVersion(value)
+	if !ok || parsed.rc != nil {
 		return ""
 	}
-	for _, part := range parts {
-		if part == "" || (len(part) > 1 && part[0] == '0') {
-			return ""
+	return normalized
+}
+
+func normalizePreviewVersion(value string) string {
+	normalized, parsed, ok := parseReleaseVersion(value)
+	if !ok || parsed.rc == nil {
+		return ""
+	}
+	return normalized
+}
+
+func normalizeReleaseVersion(value string) string {
+	normalized, _, ok := parseReleaseVersion(value)
+	if !ok {
+		return ""
+	}
+	return normalized
+}
+
+func parseReleaseVersion(value string) (string, parsedVersion, bool) {
+	value = strings.TrimSpace(strings.TrimPrefix(value, "v"))
+	coreValue := value
+	var releaseCandidate *uint64
+	if separator := strings.IndexByte(value, '-'); separator >= 0 {
+		coreValue = value[:separator]
+		suffix := value[separator+1:]
+		if !strings.HasPrefix(suffix, "rc.") {
+			return "", parsedVersion{}, false
 		}
-		for _, character := range part {
-			if character < '0' || character > '9' {
-				return ""
-			}
+		numberValue := strings.TrimPrefix(suffix, "rc.")
+		number, ok := parseVersionNumber(numberValue, false)
+		if !ok || number == 0 {
+			return "", parsedVersion{}, false
 		}
-		if number, err := strconv.ParseUint(part, 10, 31); err != nil || number > 999999 {
-			return ""
+		releaseCandidate = &number
+	}
+	parts := strings.Split(coreValue, ".")
+	if len(parts) != 3 {
+		return "", parsedVersion{}, false
+	}
+	parsed := parsedVersion{rc: releaseCandidate}
+	for index, part := range parts {
+		number, ok := parseVersionNumber(part, true)
+		if !ok {
+			return "", parsedVersion{}, false
+		}
+		parsed.core[index] = number
+	}
+	normalized := strings.Join(parts, ".")
+	if releaseCandidate != nil {
+		normalized += "-rc." + strconv.FormatUint(*releaseCandidate, 10)
+	}
+	return normalized, parsed, true
+}
+
+func parseVersionNumber(value string, allowZero bool) (uint64, bool) {
+	if value == "" || (len(value) > 1 && value[0] == '0') {
+		return 0, false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return 0, false
 		}
 	}
-	return strings.Join(parts, ".")
+	number, err := strconv.ParseUint(value, 10, 31)
+	if err != nil || number > 999999 || (!allowZero && number == 0) {
+		return 0, false
+	}
+	return number, true
 }
 
 func compareVersions(left, right string) int {
-	left = normalizeStableVersion(left)
-	right = normalizeStableVersion(right)
-	if left == "" && right == "" {
+	_, leftVersion, leftOK := parseReleaseVersion(left)
+	_, rightVersion, rightOK := parseReleaseVersion(right)
+	if !leftOK && !rightOK {
 		return 0
 	}
-	if left == "" {
+	if !leftOK {
 		return -1
 	}
-	if right == "" {
+	if !rightOK {
 		return 1
 	}
-	l := strings.Split(left, ".")
-	r := strings.Split(right, ".")
-	for index := range l {
-		ln, _ := strconv.Atoi(l[index])
-		rn, _ := strconv.Atoi(r[index])
-		if ln < rn {
+	for index := range leftVersion.core {
+		if leftVersion.core[index] < rightVersion.core[index] {
 			return -1
 		}
-		if ln > rn {
+		if leftVersion.core[index] > rightVersion.core[index] {
+			return 1
+		}
+	}
+	if leftVersion.rc == nil && rightVersion.rc != nil {
+		return 1
+	}
+	if leftVersion.rc != nil && rightVersion.rc == nil {
+		return -1
+	}
+	if leftVersion.rc != nil && rightVersion.rc != nil {
+		if *leftVersion.rc < *rightVersion.rc {
+			return -1
+		}
+		if *leftVersion.rc > *rightVersion.rc {
 			return 1
 		}
 	}

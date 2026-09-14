@@ -13,8 +13,9 @@
   以持久化 job 状态和证据跨会话恢复；测试强度由风险画像决定，不机械套固定时长。
 - `local-feature-preview.workflow.yaml`：为可见功能交付统一的 mock/本地集成预览，自动分配回环端口，
   固定候选身份、体验步骤、证据目录和停止责任；不替代真机、L0-L3 或发布验收。
-- `release-kpanel.workflow.yaml`：版本准备、冻结执行方案、标准 Linux Runner、CI、Release、Docker Hub、
-  应用市场、隔离验收、生产部署安全核对和重复流程异常收敛。
+- `release-kpanel.workflow.yaml`：按 [`docs/release-channels.md`](../docs/release-channels.md) 执行稳定版或
+  预览版的版本准备、冻结执行方案、标准 Linux Runner、CI、Release、Docker Hub 通道提升、应用市场、
+  隔离验收，以及仅适用于稳定版的生产部署安全核对和重复流程异常收敛。
 - KPanel 与 `kejilion.sh` 的发布联动统一读取 `dependency-policy.json#crossRepositoryReleaseLinkage`：
   `not-required` 明确表示“无需发布脚本（不适用）”，`coupled` 必须先有兼容脚本发布，`script-only`
   走脚本独立流程且不改变 KPanel 版本、tag、Release 或镜像；禁止使用“暂不发布脚本”等模糊状态。

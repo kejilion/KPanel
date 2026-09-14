@@ -65,6 +65,7 @@ type Config struct {
 	Now                func() time.Time
 	Backups            *hostbackup.Service
 	SelfUpdate         *selfupdate.Service
+	SelfUpdateStarter  selfupdate.UpdateStarter
 }
 
 // SSHLoginSource is the read-only cluster telemetry boundary. It keeps
@@ -85,31 +86,32 @@ type monitoringHistoryProvider interface {
 }
 
 type Server struct {
-	tokenHash        [32]byte
-	version          string
-	protocolVersion  string
-	webRoot          string
-	system           *systeminfo.Collector
-	systemManager    *systemmanage.Manager
-	sshLoginSource   SSHLoginSource
-	sites            *sites.Discoverer
-	sitesManager     *sites.Manager
-	docker           *dockerx.Client
-	appMarket        *appmarket.Service
-	diagnostics      *diagnostics.Service
-	webEnvironment   *webenv.Service
-	files            *filemanager.Manager
-	siteIcons        siteIconProvider
-	monitoring       monitoringHistoryProvider
-	terminals        *terminal.Manager
-	thumbnailGate    chan struct{}
-	storageUsageGate chan struct{}
-	processReads     processReads
-	systemLogsGate   chan struct{}
-	now              func() time.Time
-	backups          *hostbackup.Service
-	selfUpdate       *selfupdate.Service
-	backupMutationMu sync.Mutex
+	tokenHash         [32]byte
+	version           string
+	protocolVersion   string
+	webRoot           string
+	system            *systeminfo.Collector
+	systemManager     *systemmanage.Manager
+	sshLoginSource    SSHLoginSource
+	sites             *sites.Discoverer
+	sitesManager      *sites.Manager
+	docker            *dockerx.Client
+	appMarket         *appmarket.Service
+	diagnostics       *diagnostics.Service
+	webEnvironment    *webenv.Service
+	files             *filemanager.Manager
+	siteIcons         siteIconProvider
+	monitoring        monitoringHistoryProvider
+	terminals         *terminal.Manager
+	thumbnailGate     chan struct{}
+	storageUsageGate  chan struct{}
+	processReads      processReads
+	systemLogsGate    chan struct{}
+	now               func() time.Time
+	backups           *hostbackup.Service
+	selfUpdate        *selfupdate.Service
+	selfUpdateStarter selfupdate.UpdateStarter
+	backupMutationMu  sync.Mutex
 }
 
 func (s *Server) Close() {
@@ -213,29 +215,30 @@ func NewServer(config Config) (*Server, error) {
 		}
 	}
 	return &Server{
-		backups:          config.Backups,
-		selfUpdate:       config.SelfUpdate,
-		tokenHash:        sha256.Sum256(config.Token),
-		version:          config.Version,
-		protocolVersion:  config.ProtocolVersion,
-		webRoot:          config.WebRoot,
-		system:           config.System,
-		systemManager:    config.SystemManager,
-		sshLoginSource:   config.SSHLoginSource,
-		sites:            config.Sites,
-		sitesManager:     config.SitesManager,
-		docker:           config.Docker,
-		appMarket:        config.AppMarket,
-		diagnostics:      config.Diagnostics,
-		webEnvironment:   config.WebEnvironment,
-		files:            config.Files,
-		siteIcons:        config.SiteIcons,
-		monitoring:       config.Monitoring,
-		terminals:        config.Terminals,
-		thumbnailGate:    make(chan struct{}, 2),
-		storageUsageGate: make(chan struct{}, 1),
-		systemLogsGate:   make(chan struct{}, 1),
-		now:              config.Now,
+		backups:           config.Backups,
+		selfUpdate:        config.SelfUpdate,
+		selfUpdateStarter: config.SelfUpdateStarter,
+		tokenHash:         sha256.Sum256(config.Token),
+		version:           config.Version,
+		protocolVersion:   config.ProtocolVersion,
+		webRoot:           config.WebRoot,
+		system:            config.System,
+		systemManager:     config.SystemManager,
+		sshLoginSource:    config.SSHLoginSource,
+		sites:             config.Sites,
+		sitesManager:      config.SitesManager,
+		docker:            config.Docker,
+		appMarket:         config.AppMarket,
+		diagnostics:       config.Diagnostics,
+		webEnvironment:    config.WebEnvironment,
+		files:             config.Files,
+		siteIcons:         config.SiteIcons,
+		monitoring:        config.Monitoring,
+		terminals:         config.Terminals,
+		thumbnailGate:     make(chan struct{}, 2),
+		storageUsageGate:  make(chan struct{}, 1),
+		systemLogsGate:    make(chan struct{}, 1),
+		now:               config.Now,
 	}, nil
 }
 
@@ -300,6 +303,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.selfUpdateSettings(w, r, requestID)
 	case r.URL.Path == "/v1/self-update/check":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.selfUpdateCheck)
+	case r.URL.Path == "/v1/self-update/install":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.selfUpdateInstall)
 	case r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/"):
 		if s.backups == nil {
 			writeProblem(w, requestID, 503, "backup_unavailable", "Backup adapter unavailable", "")

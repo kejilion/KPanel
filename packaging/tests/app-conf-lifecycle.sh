@@ -326,6 +326,7 @@ run_lifecycle() {
 	local interrupted_digest="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	local failed_digest="sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	local mismatched_digest="sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	local preview_digest="sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 	cat >/root/kejilion.sh <<'EOF'
 #!/usr/bin/env bash
@@ -604,6 +605,22 @@ EOF
 	test ! -e "$MOCK_STATE/rollback-tagged"
 	test ! -e "$MOCK_STATE/image-tag"
 	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "$RELEASE_VERSION v1alpha1"
+
+	rm -f "$MOCK_STATE/automatic-target-started" "$MOCK_STATE/automatic-restored" \
+		"$MOCK_STATE/automatic-data-mutated" "$MOCK_STATE/automatic-crashed"
+	KJ_KPANEL_AUTOMATIC=1 \
+		KJ_KPANEL_TARGET_VERSION=10.0.0-rc.2 \
+		KJ_KPANEL_TARGET_IMAGE="docker.io/kjlion/kejilion-panel@${preview_digest}" \
+		KPANEL_MOCK_IMAGE_VERSION=10.0.0-rc.2 \
+		KPANEL_MOCK_RELEASE_FILE_VERSION=10.0.0-rc.2 \
+		KPANEL_MOCK_AGENT_VERSION=10.0.0-rc.2 \
+		KPANEL_MOCK_RUNNING_VERSION=10.0.0-rc.2 \
+		docker_app_update >"$TEST_DIR/preview-update-output.txt"
+	grep -F "image: docker.io/kjlion/kejilion-panel@${preview_digest}" \
+		/home/docker/kpanel/docker-compose.yml >/dev/null
+	grep -Fx 'KPanel 自动更新完成 / Automatic Update Complete' \
+		"$TEST_DIR/preview-update-output.txt" >/dev/null
+	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "10.0.0-rc.2 v1alpha1"
 
 	docker_app_uninstall
 	[ ! -e /home/docker/kpanel ]

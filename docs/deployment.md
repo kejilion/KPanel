@@ -41,7 +41,7 @@ v0.1 安装器只支持全新安装。发现任何既有 Panel 文件、同名�
 - 镜像 manifest digest。生产部署只使用
   `docker.io/<owner>/kejilion-panel@sha256:<digest>`，不使用可漂移标签。
 
-仓库的 `Release` 工作流仅接受精确的 `v<semver>` 标签。默认发布到
+仓库的 `Release` 工作流只接受精确的稳定标签 `vX.Y.Z` 或预览标签 `vX.Y.Z-rc.N`。默认发布到
 `docker.io/kjlion/kejilion-panel`，如需改用其他 Docker Hub 仓库，可覆盖：
 
 - Repository variable `DOCKERHUB_IMAGE`：`owner/repository`；
@@ -52,6 +52,10 @@ v0.1 安装器只支持全新安装。发现任何既有 Panel 文件、同名�
 工作流会先执行前后端验证，再构建双架构 Agent、带 SBOM/Provenance 的双架构
 镜像，并把固定镜像 digest 写入 GitHub Release。生产部署使用 Release 中的
 digest 与校验和，不直接使用 `latest`。
+
+稳定版会成为 GitHub Latest 并提升 Docker `latest`；预览版会标记为 GitHub prerelease，只提升
+Docker `preview`，不得改变公共稳定入口或进入正式生产部署。完整版本、候选分支和验收契约见
+[稳定版与预览版规范](release-channels.md)。
 
 每次发布必须先在 `CHANGELOG.md` 增加与 `VERSION` 完全一致的版本章节。Release
 工作流会从该章节生成 GitHub Release 的“版本更新内容”，并补充升级方式、兼容性与
@@ -66,7 +70,8 @@ make build-linux
 sha256sum dist/linux-amd64/kejilion-agent dist/linux-arm64/kejilion-agent
 ```
 
-推送 Docker Hub：
+手工构建示例仅展示稳定版标签；正式发布仍必须使用仓库 `Release` 工作流。预览版不得把同类命令中的
+`latest` 作为目标，应由工作流提升 `preview`：
 
 ```sh
 VERSION=0.16.0
@@ -86,6 +91,16 @@ docker buildx imagetools inspect "$IMAGE:$VERSION"
 ```
 
 发布前应把输出的 manifest digest 记录到发布说明；部署时必须使用该 digest。
+
+## 更新通道
+
+设置页的“加入预览版计划”只切换更新来源并立即检查，不会自动安装。用户还可以独立选择是否开启
+“自动安装更新”；默认关闭。检查到更高版本后，“立即安装”只排队本次已展示的精确版本和镜像 digest，
+不会开启以后自动安装。
+
+退出预览版计划只恢复稳定来源，不会自动降级当前 RC。稳定版尚未追上时保持现状；出现同版本正式版
+或更高稳定版后才向前升级。完整 KPanel 自动更新当前仅支持 systemd 宿主机，OpenRC 会明确显示不可用。
+轻量 Node 的无人值守更新仍只跟踪稳定版。
 
 ## 宿主机预检
 

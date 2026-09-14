@@ -2309,9 +2309,11 @@ export const api = {
     get: (signal?: AbortSignal) => request<PanelSettings>('/settings', { signal }),
 	automaticUpdate: {
 		get: () => request<AutomaticUpdateStatus>('/settings/automatic-update'),
-		update: (input: { enabled: boolean; expectedResourceVersion: string }) =>
+		update: (input: { enabled: boolean; channel: 'stable' | 'preview'; expectedResourceVersion: string }) =>
 			request<AutomaticUpdateStatus>('/settings/automatic-update', { method: 'PUT', body: input }),
 		check: () => request<AutomaticUpdateStatus>('/settings/automatic-update/check', { method: 'POST' }),
+		install: (input: { expectedResourceVersion: string }) =>
+			request<AutomaticUpdateStatus>('/settings/automatic-update/install', { method: 'POST', body: input }),
 	},
 	securityEntrance: {
 		get: () => request<SecurityEntranceSettings>('/settings/security-entry'),

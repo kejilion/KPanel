@@ -25,6 +25,40 @@ func (s *Server) handleAutomaticUpdateSettings(w http.ResponseWriter, r *http.Re
 		s.forwardAutomaticUpdateMutation(w, r, session.User.ID, "settings.automatic_update.check", nil, "/v1/self-update/check", nil)
 		return
 	}
+	if r.URL.Path == "/api/v1/settings/automatic-update/install" {
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+			return
+		}
+		if !s.checkOrigin(w, r) || !s.checkCSRF(w, r, session) {
+			return
+		}
+		var input struct {
+			ExpectedResourceVersion string `json:"expectedResourceVersion"`
+		}
+		if err := s.decodeJSON(w, r, &input); err != nil {
+			return
+		}
+		if !resourceVersionPattern.MatchString(input.ExpectedResourceVersion) {
+			s.writeValidationProblem(w, r, "expectedResourceVersion", "a valid resourceVersion is required")
+			return
+		}
+		body, err := json.Marshal(input)
+		if err != nil {
+			s.writeProblem(w, r, http.StatusInternalServerError, "automatic_update_request_failed", "Automatic update request failed", "")
+			return
+		}
+		s.forwardAutomaticUpdateMutation(
+			w,
+			r,
+			session.User.ID,
+			"settings.automatic_update.install",
+			nil,
+			"/v1/self-update/install",
+			body,
+		)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -40,6 +74,7 @@ func (s *Server) handleAutomaticUpdateSettings(w http.ResponseWriter, r *http.Re
 		}
 		var input struct {
 			Enabled                 bool   `json:"enabled"`
+			Channel                 string `json:"channel"`
 			ExpectedResourceVersion string `json:"expectedResourceVersion"`
 		}
 		if err := s.decodeJSON(w, r, &input); err != nil {
@@ -49,12 +84,16 @@ func (s *Server) handleAutomaticUpdateSettings(w http.ResponseWriter, r *http.Re
 			s.writeValidationProblem(w, r, "expectedResourceVersion", "a valid resourceVersion is required")
 			return
 		}
+		if input.Channel != "stable" && input.Channel != "preview" {
+			s.writeValidationProblem(w, r, "channel", "channel must be stable or preview")
+			return
+		}
 		body, err := json.Marshal(input)
 		if err != nil {
 			s.writeProblem(w, r, http.StatusInternalServerError, "automatic_update_request_failed", "Automatic update request failed", "")
 			return
 		}
-		change := map[string]any{"enabled": input.Enabled}
+		change := map[string]any{"enabled": input.Enabled, "channel": input.Channel}
 		s.forwardAutomaticUpdateMutation(w, r, session.User.ID, "settings.automatic_update.update", change, "/v1/self-update", body)
 	default:
 		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")

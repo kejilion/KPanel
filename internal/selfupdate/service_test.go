@@ -129,6 +129,140 @@ func TestRunObservesStableCandidateBeforeExactUpdate(t *testing.T) {
 	}
 }
 
+func TestPreviewPolicyPersistsAndReturningStableNeverDowngrades(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	stateDir := t.TempDir()
+	stableSource := &testReleaseSource{version: "1.9.0"}
+	previewSource := &testReleaseSource{version: "2.0.0-rc.2", digest: "sha256:" + strings.Repeat("b", 64)}
+	service, err := New(Config{
+		StateDir: stateDir, StableSource: stableSource, PreviewSource: previewSource,
+		Now: func() time.Time { return now }, Hold: 24 * time.Hour,
+	})
+	if err != nil && runtime.GOOS == "linux" && strings.Contains(err.Error(), "state path is not a real directory") {
+		t.Skip("automatic update state tests require a root-owned state directory on Linux")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status("1.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = service.SetPolicy("1.9.0", status.ResourceVersion, false, ChannelPreview)
+	if err != nil || status.Channel != ChannelPreview || status.Enabled {
+		t.Fatalf("preview policy status=%#v err=%v", status, err)
+	}
+	status, err = service.Check(context.Background(), "1.9.0")
+	if err != nil || status.CandidateVersion != "2.0.0-rc.2" || !status.CanInstall {
+		t.Fatalf("preview check status=%#v err=%v", status, err)
+	}
+
+	reloaded, err := New(Config{
+		StateDir: stateDir, StableSource: stableSource, PreviewSource: previewSource,
+		Now: func() time.Time { return now }, Hold: 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = reloaded.Status("2.0.0-rc.2")
+	if err != nil || status.Channel != ChannelPreview {
+		t.Fatalf("reloaded status=%#v err=%v", status, err)
+	}
+	status, err = reloaded.SetPolicy("2.0.0-rc.2", status.ResourceVersion, false, ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = reloaded.Check(context.Background(), "2.0.0-rc.2")
+	if err != nil || status.CandidateVersion != "" || status.Channel != ChannelStable || status.State != "disabled" {
+		t.Fatalf("stable return status=%#v err=%v", status, err)
+	}
+}
+
+func TestQueuedInstallBypassesHoldWithoutEnablingFutureUpdates(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	service := newTestService(t, &testReleaseSource{version: "1.2.0"}, &now, 24*time.Hour)
+	status, err := service.Check(context.Background(), "1.1.0")
+	if err != nil || !status.CanInstall || status.Enabled {
+		t.Fatalf("checked status=%#v err=%v", status, err)
+	}
+	status, err = service.QueueInstall("1.1.0", status.ResourceVersion)
+	if err != nil || status.State != "queued" || !status.InstallRequested || status.CanInstall {
+		t.Fatalf("queued status=%#v err=%v", status, err)
+	}
+	executor := &testExecutor{installed: "1.1.0"}
+	status, err = service.Run(context.Background(), executor)
+	if err != nil || status.State != "succeeded" || status.Enabled || status.InstallRequested ||
+		len(executor.targets) != 1 || executor.targets[0] != "1.2.0" {
+		t.Fatalf("manual run status=%#v targets=%v err=%v", status, executor.targets, err)
+	}
+	status, err = service.Run(context.Background(), executor)
+	if err != nil || status.State != "disabled" || len(executor.targets) != 1 {
+		t.Fatalf("future run status=%#v targets=%v err=%v", status, executor.targets, err)
+	}
+}
+
+func TestDisablingAutomaticInstallPreservesManualCandidate(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	service := newTestService(t, &testReleaseSource{version: "1.2.0"}, &now, 24*time.Hour)
+	status, err := service.Check(context.Background(), "1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = service.SetPolicy("1.1.0", status.ResourceVersion, true, ChannelStable)
+	if err != nil || !status.Enabled || !status.CanInstall {
+		t.Fatalf("enabled status=%#v err=%v", status, err)
+	}
+	status, err = service.SetPolicy("1.1.0", status.ResourceVersion, false, ChannelStable)
+	if err != nil || status.Enabled || status.State != "waiting" || !status.CanInstall ||
+		status.CandidateVersion != "1.2.0" {
+		t.Fatalf("disabled status=%#v err=%v", status, err)
+	}
+}
+
+func TestCancelQueuedInstallRecordsDispatchFailureWithoutStickyRequest(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	service := newTestService(t, &testReleaseSource{version: "1.2.0"}, &now, time.Hour)
+	status, err := service.Check(context.Background(), "1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = service.QueueInstall("1.1.0", status.ResourceVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err = service.CancelQueuedInstall(status.CandidateVersion, status.CandidateImageDigest, errors.New("systemd offline"))
+	if err != nil || status.InstallRequested || status.State != "waiting" ||
+		status.LastErrorCode != "install_start_failed" || !status.CanInstall {
+		t.Fatalf("cancelled status=%#v err=%v", status, err)
+	}
+}
+
+func TestStateSchemaOneMigratesToStableChannel(t *testing.T) {
+	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
+	service := newTestService(t, &testReleaseSource{version: "1.2.0"}, &now, time.Hour)
+	legacy := `{"schemaVersion":1,"revision":7,"enabled":true,"state":"idle","currentVersion":"1.1.0"}`
+	path := filepath.Join(service.stateDir, stateFileName)
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status("1.1.0")
+	if err != nil || status.Channel != ChannelStable || !status.Enabled || status.State != "idle" {
+		t.Fatalf("migrated status=%#v err=%v", status, err)
+	}
+	status, err = service.SetPolicy("1.1.0", status.ResourceVersion, true, ChannelStable)
+	if err != nil || status.Channel != ChannelStable {
+		t.Fatalf("saved migrated status=%#v err=%v", status, err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(persisted), `"schemaVersion": 2`) ||
+		!strings.Contains(string(persisted), `"channel": "stable"`) {
+		t.Fatalf("persisted migration=%s err=%v", persisted, err)
+	}
+}
+
 func TestFailedVersionIsQuarantinedUntilStableReleaseChanges(t *testing.T) {
 	now := time.Date(2026, 9, 14, 1, 0, 0, 0, time.UTC)
 	source := &testReleaseSource{version: "1.2.0"}
@@ -227,6 +361,21 @@ func TestStableVersionValidationAndOrdering(t *testing.T) {
 	}
 	if normalizeStableVersion("v1.20.3") != "1.20.3" || compareVersions("1.10.0", "1.9.9") <= 0 {
 		t.Fatal("stable version normalization or ordering failed")
+	}
+	for _, valid := range []string{"1.2.3", "v1.2.3", "1.2.3-rc.1", "v2.0.0-rc.12"} {
+		if normalizeReleaseVersion(valid) == "" {
+			t.Errorf("valid release version %q was rejected", valid)
+		}
+	}
+	for _, invalid := range []string{"1.2.3-rc.0", "1.2.3-rc.01", "1.2.3-beta.1", "1.2.3-rc.1-extra"} {
+		if normalizeReleaseVersion(invalid) != "" {
+			t.Errorf("invalid release version %q was accepted", invalid)
+		}
+	}
+	if compareVersions("2.0.0", "2.0.0-rc.9") <= 0 ||
+		compareVersions("2.0.0-rc.10", "2.0.0-rc.2") <= 0 ||
+		compareVersions("2.0.0-rc.1", "1.99.99") <= 0 {
+		t.Fatal("release candidate ordering failed")
 	}
 	if normalizeImageDigest("sha256:"+strings.Repeat("a", 64)) == "" ||
 		normalizeImageDigest("sha256:"+strings.Repeat("A", 64)) != "" {

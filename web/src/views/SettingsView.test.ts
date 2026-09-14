@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
 	getAutomaticUpdate: vi.fn(),
 	updateAutomaticUpdate: vi.fn(),
 	checkAutomaticUpdate: vi.fn(),
+	installAutomaticUpdate: vi.fn(),
     startTOTPEnrollment: vi.fn(),
     confirmTOTPEnrollment: vi.fn(),
     rotateRecoveryCodes: vi.fn(),
@@ -75,11 +76,12 @@ vi.mock('@/lib/api', () => ({
         regenerateRecoveryCodes: mocks.rotateRecoveryCodes,
         disable: mocks.disableTOTP,
       },
-	  automaticUpdate: {
-		get: mocks.getAutomaticUpdate,
-		update: mocks.updateAutomaticUpdate,
-		check: mocks.checkAutomaticUpdate,
-	  },
+      automaticUpdate: {
+        get: mocks.getAutomaticUpdate,
+        update: mocks.updateAutomaticUpdate,
+        check: mocks.checkAutomaticUpdate,
+        install: mocks.installAutomaticUpdate,
+      },
     },
   },
   resetApiSecurityState: mocks.resetApiSecurityState,
@@ -159,11 +161,16 @@ interface SettingsBindings {
 	automaticUpdate: Ref<{
 		enabled: boolean
 		state: string
+		channel: 'stable' | 'preview'
+		canInstall: boolean
 		resourceVersion: string
 		observationHours: number
+		candidateVersion?: string
 	} | undefined>
 	saveAutomaticUpdate: (enabled: boolean) => Promise<void>
 	checkAutomaticUpdate: () => Promise<void>
+	togglePreviewProgram: (event: Event) => Promise<void>
+	installAutomaticUpdate: () => Promise<void>
 }
 
 function setupView(): SettingsBindings {
@@ -186,6 +193,7 @@ function themeColorInput(value: string, type = 'text'): Event {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubGlobal('confirm', vi.fn(() => true))
   mocks.replace.mockResolvedValue(undefined)
   mocks.changePassword.mockResolvedValue(undefined)
   mocks.changeUsername.mockResolvedValue(undefined)
@@ -198,17 +206,27 @@ beforeEach(() => {
   mocks.getTOTPStatus.mockResolvedValue({ enabled: false, recoveryCodesRemaining: 0 })
 	mocks.getAutomaticUpdate.mockResolvedValue({
 		available: true, enabled: false, state: 'disabled', channel: 'stable',
+		canInstall: false, installRequested: false,
 		schedule: 'daily-04:00-local', observationHours: 24, resourceVersion: 'sha256:auto-initial',
 	})
 	mocks.updateAutomaticUpdate.mockResolvedValue({
 		available: true, enabled: true, state: 'idle', channel: 'stable',
+		canInstall: false, installRequested: false,
 		schedule: 'daily-04:00-local', observationHours: 24, resourceVersion: 'sha256:auto-updated',
 	})
 	mocks.checkAutomaticUpdate.mockResolvedValue({
 		available: true, enabled: true, state: 'waiting', channel: 'stable',
+		canInstall: true, installRequested: false,
 		schedule: 'daily-04:00-local', observationHours: 24, candidateVersion: '1.16.0',
 		candidateImageDigest: `sha256:${'a'.repeat(64)}`,
 		resourceVersion: 'sha256:auto-checked',
+	})
+	mocks.installAutomaticUpdate.mockResolvedValue({
+		available: true, enabled: false, state: 'queued', channel: 'preview',
+		canInstall: false, installRequested: true,
+		schedule: 'daily-04:00-local', observationHours: 24, candidateVersion: '1.17.0-rc.1',
+		candidateImageDigest: `sha256:${'b'.repeat(64)}`,
+		resourceVersion: 'sha256:auto-queued',
 	})
   mocks.startTOTPEnrollment.mockResolvedValue({
     id: 'enrollment-1', secret: 'JBSWY3DPEHPK3PXP', otpauthUri: 'otpauth://totp/KPanel:admin', expiresAt: '2026-08-01T00:10:00Z',
@@ -575,6 +593,8 @@ describe('SettingsView automatic updates', () => {
     view.automaticUpdate.value = {
       enabled: false,
       state: 'disabled',
+      channel: 'stable',
+      canInstall: false,
       observationHours: 24,
       resourceVersion: 'sha256:auto-initial',
     }
@@ -583,10 +603,11 @@ describe('SettingsView automatic updates', () => {
 
     expect(mocks.updateAutomaticUpdate).toHaveBeenCalledWith({
       enabled: true,
+      channel: 'stable',
       expectedResourceVersion: 'sha256:auto-initial',
     })
     expect(view.automaticUpdate.value?.resourceVersion).toBe('sha256:auto-updated')
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('自动更新已启用')
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('自动安装已启用')
 
     await view.checkAutomaticUpdate()
 
@@ -598,12 +619,76 @@ describe('SettingsView automatic updates', () => {
     expect(mocks.updateAutomaticUpdate).toHaveBeenCalledTimes(1)
   })
 
+  it('switches to preview only after warning and immediately checks that channel', async () => {
+    mocks.updateAutomaticUpdate.mockResolvedValueOnce({
+      available: true, enabled: false, state: 'disabled', channel: 'preview',
+      canInstall: false, installRequested: false, schedule: 'daily-04:00-local',
+      observationHours: 24, resourceVersion: 'sha256:preview-policy',
+    })
+    mocks.checkAutomaticUpdate.mockResolvedValueOnce({
+      available: true, enabled: false, state: 'waiting', channel: 'preview',
+      canInstall: true, installRequested: false, schedule: 'daily-04:00-local',
+      observationHours: 24, candidateVersion: '1.17.0-rc.1',
+      candidateImageDigest: `sha256:${'b'.repeat(64)}`,
+      resourceVersion: 'sha256:preview-check',
+    })
+    const view = setupView()
+    view.automaticUpdate.value = {
+      enabled: false, state: 'disabled', channel: 'stable', canInstall: false,
+      observationHours: 24, resourceVersion: 'sha256:auto-initial',
+    }
+    const input = { checked: true }
+
+    await view.togglePreviewProgram({ currentTarget: input } as unknown as Event)
+
+    expect(globalThis.confirm).toHaveBeenCalledOnce()
+    expect(mocks.updateAutomaticUpdate).toHaveBeenCalledWith({
+      enabled: false,
+      channel: 'preview',
+      expectedResourceVersion: 'sha256:auto-initial',
+    })
+    expect(mocks.checkAutomaticUpdate).toHaveBeenCalledOnce()
+    expect(view.automaticUpdate.value).toMatchObject({
+      channel: 'preview', candidateVersion: '1.17.0-rc.1', canInstall: true,
+    })
+    expect(input.checked).toBe(true)
+  })
+
+  it('queues immediate installation without enabling future automatic installs', async () => {
+    const view = setupView()
+    view.automaticUpdate.value = {
+      enabled: false,
+      state: 'waiting',
+      channel: 'preview',
+      canInstall: true,
+      observationHours: 24,
+      candidateVersion: '1.17.0-rc.1',
+      resourceVersion: 'sha256:preview-check',
+    }
+
+    await view.installAutomaticUpdate()
+
+    expect(mocks.installAutomaticUpdate).toHaveBeenCalledWith({
+      expectedResourceVersion: 'sha256:preview-check',
+    })
+    expect(view.automaticUpdate.value).toMatchObject({
+      enabled: false, state: 'queued', installRequested: true,
+    })
+    expect(mocks.updateAutomaticUpdate).not.toHaveBeenCalled()
+  })
+
   it('documents opt-in, observation, host timer, backup, and rollback in the visible settings surface', () => {
-    expect(settingsSource).toContain('自动安装稳定更新')
-    expect(settingsSource).toContain('每天本地时间 04:00 检查')
-    expect(settingsSource).toContain('新版本需稳定观察 24 小时')
+    expect(settingsSource).toContain('加入预览版计划')
+    expect(settingsSource).toContain('不会因为勾选而自动安装')
+    expect(settingsSource).toContain('自动安装更新')
+    expect(settingsSource).toContain('systemd 宿主机每天本地时间 04:00 检查')
+    expect(settingsSource).toContain('手动立即安装可跳过等待')
+    expect(settingsSource).toContain('退出预览版计划不会自动降级')
     expect(settingsSource).toContain('候选镜像摘要')
     expect(settingsSource).toContain('冷备份 Panel 与 Agent 数据')
     expect(settingsSource).toContain('失败时自动恢复原版本和数据')
+    expect(settingsSource).toContain('data-testid="preview-program-toggle"')
+    expect(settingsSource).toContain('data-testid="automatic-install-toggle"')
+    expect(settingsSource).toContain('data-testid="install-release-update"')
   })
 })

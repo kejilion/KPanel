@@ -11,6 +11,7 @@ import {
   Check,
   Clock3,
   Copy,
+  Download,
   ExternalLink,
   KeyRound,
   Languages,
@@ -94,6 +95,7 @@ const automaticUpdate = ref<AutomaticUpdateStatus>()
 const automaticUpdateError = ref('')
 const savingAutomaticUpdate = ref(false)
 const checkingAutomaticUpdate = ref(false)
+const installingAutomaticUpdate = ref(false)
 
 const securityEntryUrl = computed(() => {
   if (!securityEntry.value?.enabled || !securityEntry.value.path || typeof window === 'undefined') return ''
@@ -139,25 +141,37 @@ const agentState = computed(() => {
 
 const automaticUpdateState = computed(() => {
   switch (automaticUpdate.value?.state) {
-    case 'waiting': return { status: 'warning', label: '观察稳定版' }
-    case 'available': return { status: 'pending', label: '等待定时安装' }
+    case 'waiting': return { status: 'warning', label: automaticUpdate.value.channel === 'preview' ? '观察预览版' : '观察稳定版' }
+    case 'available': return { status: 'pending', label: '可立即安装' }
+    case 'queued': return { status: 'running_job', label: '安装任务已排队' }
     case 'updating': return { status: 'running_job', label: '正在更新' }
     case 'succeeded': return { status: 'connected', label: '最近更新成功' }
     case 'failed': return { status: 'failed_rolled_back', label: '更新失败，已尝试回退' }
     case 'blocked': return { status: 'warning', label: '此版本已暂停' }
     case 'check_failed': return { status: 'warning', label: '检查失败' }
-    case 'idle': return { status: 'connected', label: '已是稳定版' }
-    default: return { status: 'stopped', label: '未启用' }
+    case 'idle': return { status: 'connected', label: '已是最新版本' }
+    default: return { status: 'stopped', label: '自动安装关闭' }
   }
 })
+
+const automaticUpdateChannelLabel = computed(() => (
+  automaticUpdate.value?.channel === 'preview' ? '预览版' : '稳定版'
+))
+
+const automaticUpdateScheduleNote = computed(() =>
+  `systemd 宿主机每天本地时间 04:00 检查，并随机延迟最多 30 分钟。自动安装前观察 ${automaticUpdate.value?.observationHours ?? 24} 小时；手动立即安装可跳过等待。切换前会冷备份 Panel 与 Agent 数据，失败时自动恢复原版本和数据。退出预览版计划不会自动降级。`,
+)
 
 const automaticUpdateNotice = computed(() => {
   const status = automaticUpdate.value
   if (!status) return ''
   if (status.state === 'failed') return '本次更新未完成；系统已自动尝试恢复原版本和更新前数据。'
   if (status.state === 'blocked') return `版本 ${status.failedVersion || status.candidateVersion || '—'} 更新失败后已暂停，不会自动重复尝试。`
-  if (status.state === 'waiting' && status.candidateVersion) return `已发现 ${status.candidateVersion}，连续稳定 ${status.observationHours} 小时后才会自动安装。`
-  if (status.state === 'available' && status.candidateVersion) return `${status.candidateVersion} 已通过观察期，将在下次定时任务中安装。`
+  if (status.state === 'queued') return `版本 ${status.candidateVersion || '—'} 已排队，宿主机将在后台完成更新。`
+  if (status.state === 'waiting' && status.candidateVersion && status.enabled) return `已发现 ${status.candidateVersion}，连续观察 ${status.observationHours} 小时后自动安装，也可以立即安装。`
+  if (status.state === 'waiting' && status.candidateVersion) return `已发现 ${status.candidateVersion}；自动安装已关闭，你仍可以立即安装。`
+  if (status.state === 'available' && status.candidateVersion && status.enabled) return `${status.candidateVersion} 已通过观察期，将在下次定时任务中安装，也可以立即安装。`
+  if (status.state === 'available' && status.candidateVersion) return `${status.candidateVersion} 已可安装；自动安装仍保持关闭。`
   return ''
 })
 
@@ -285,20 +299,36 @@ async function refreshAgent(): Promise<void> {
   }
 }
 
-async function saveAutomaticUpdate(enabled: boolean): Promise<void> {
-  if (!automaticUpdate.value || savingAutomaticUpdate.value) return
+async function saveAutomaticUpdatePolicy(
+  enabled: boolean,
+  channel: 'stable' | 'preview',
+  successMessage: string,
+): Promise<boolean> {
+  if (!automaticUpdate.value || savingAutomaticUpdate.value) return false
   savingAutomaticUpdate.value = true
   try {
     automaticUpdate.value = await api.settings.automaticUpdate.update({
       enabled,
+      channel,
       expectedResourceVersion: automaticUpdate.value.resourceVersion,
     })
-    toast.success(enabled ? '自动更新已启用' : '自动更新已关闭')
+    toast.success(successMessage)
+    return true
   } catch (reason) {
     toast.danger('自动更新设置失败', reason instanceof ApiError ? reason.message : '请刷新后重试。')
+    return false
   } finally {
     savingAutomaticUpdate.value = false
   }
+}
+
+async function saveAutomaticUpdate(enabled: boolean): Promise<void> {
+  if (!automaticUpdate.value) return
+  await saveAutomaticUpdatePolicy(
+    enabled,
+    automaticUpdate.value.channel,
+    enabled ? '自动安装已启用' : '自动安装已关闭',
+  )
 }
 
 async function toggleAutomaticUpdate(event: Event): Promise<void> {
@@ -307,16 +337,56 @@ async function toggleAutomaticUpdate(event: Event): Promise<void> {
   input.checked = automaticUpdate.value?.enabled ?? false
 }
 
-async function checkAutomaticUpdate(): Promise<void> {
+async function togglePreviewProgram(event: Event): Promise<void> {
+  const input = event.currentTarget as HTMLInputElement
+  if (!automaticUpdate.value) return
+  const nextChannel = input.checked ? 'preview' : 'stable'
+  if (nextChannel === 'preview' && typeof globalThis.confirm === 'function' && !globalThis.confirm(
+    '预览版可能包含尚未充分验证的功能。加入后只会切换更新来源，不会自动安装；是否继续？',
+  )) {
+    input.checked = false
+    return
+  }
+  const saved = await saveAutomaticUpdatePolicy(
+    automaticUpdate.value.enabled,
+    nextChannel,
+    nextChannel === 'preview'
+      ? '已加入预览版计划'
+      : '已切换到稳定版通道；当前版本不会自动降级',
+  )
+  input.checked = automaticUpdate.value?.channel === 'preview'
+  if (saved) await checkAutomaticUpdate(false)
+}
+
+async function checkAutomaticUpdate(showToast = true): Promise<void> {
   if (checkingAutomaticUpdate.value || savingAutomaticUpdate.value) return
   checkingAutomaticUpdate.value = true
   try {
     automaticUpdate.value = await api.settings.automaticUpdate.check()
-    toast.success('稳定版检查完成')
+    if (showToast) toast.success(`${automaticUpdateChannelLabel.value}检查完成`)
   } catch (reason) {
-    toast.danger('稳定版检查失败', reason instanceof ApiError ? reason.message : '请检查网络后重试。')
+    toast.danger(`${automaticUpdateChannelLabel.value}检查失败`, reason instanceof ApiError ? reason.message : '请检查网络后重试。')
   } finally {
     checkingAutomaticUpdate.value = false
+  }
+}
+
+async function installAutomaticUpdate(): Promise<void> {
+  const status = automaticUpdate.value
+  if (!status?.canInstall || installingAutomaticUpdate.value || savingAutomaticUpdate.value) return
+  if (typeof globalThis.confirm === 'function' && !globalThis.confirm(
+    `将立即安装 ${status.candidateVersion || '候选版本'}。服务会短暂重启，并在失败时自动恢复，是否继续？`,
+  )) return
+  installingAutomaticUpdate.value = true
+  try {
+    automaticUpdate.value = await api.settings.automaticUpdate.install({
+      expectedResourceVersion: status.resourceVersion,
+    })
+    toast.success('更新任务已启动', '关闭网页不会中断宿主机更新。')
+  } catch (reason) {
+    toast.danger('立即安装失败', reason instanceof ApiError ? reason.message : '请刷新状态后重试。')
+  } finally {
+    installingAutomaticUpdate.value = false
   }
 }
 
@@ -1014,27 +1084,46 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="settings-section panel-card automatic-update-section">
+    <section class="settings-section panel-card automatic-update-section" data-testid="release-update-settings">
       <header class="settings-section__header">
         <span><RefreshCw :size="19" /></span>
-        <div><h2>自动更新</h2><p>只安装经过观察期的正式稳定版</p></div>
+        <div><h2>版本更新</h2><p>稳定版默认，预览版自愿加入；更新通道与自动安装相互独立</p></div>
         <StatusBadge v-if="automaticUpdate" :status="automaticUpdateState.status" :label="automaticUpdateState.label" />
       </header>
       <div v-if="automaticUpdate" class="automatic-update-panel">
-        <label class="automatic-update-switch">
+        <label class="automatic-update-switch automatic-update-switch--preview">
           <span>
-            <strong>自动安装稳定更新</strong>
-            <small>默认关闭；启用后由宿主机定时器执行，关闭网页不会中断。</small>
+            <strong>加入预览版计划</strong>
+            <small>接收正式稳定版和更高版本的 RC 预览版；不会因为勾选而自动安装。</small>
           </span>
           <input
+            data-testid="preview-program-toggle"
+            type="checkbox"
+            role="switch"
+            :checked="automaticUpdate.channel === 'preview'"
+            :disabled="savingAutomaticUpdate || checkingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            @change="togglePreviewProgram"
+          />
+        </label>
+        <label class="automatic-update-switch">
+          <span>
+            <strong>自动安装更新</strong>
+            <small>默认关闭；启用后只自动安装当前通道中已通过观察期的版本。</small>
+          </span>
+          <input
+            data-testid="automatic-install-toggle"
             type="checkbox"
             role="switch"
             :checked="automaticUpdate.enabled"
-            :disabled="savingAutomaticUpdate || automaticUpdate.state === 'updating'"
+            :disabled="savingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
             @change="toggleAutomaticUpdate"
           />
         </label>
+        <div v-if="automaticUpdate.channel === 'preview'" class="inline-alert inline-alert--warning">
+          你已加入预览版计划。预览版可能存在兼容性或稳定性问题；退出计划只切回稳定版来源，不会自动降级当前版本。
+        </div>
         <dl class="settings-list automatic-update-details">
+          <div><dt>更新通道</dt><dd>{{ automaticUpdateChannelLabel }}</dd></div>
           <div><dt>当前版本</dt><dd>{{ automaticUpdate.currentVersion || '—' }}</dd></div>
           <div><dt>候选版本</dt><dd>{{ automaticUpdate.candidateVersion || '—' }}</dd></div>
           <div><dt>候选镜像摘要</dt><dd class="automatic-update-digest">{{ automaticUpdate.candidateImageDigest || '—' }}</dd></div>
@@ -1046,17 +1135,30 @@ onMounted(async () => {
         </div>
         <div class="automatic-update-actions">
           <button
+            data-testid="check-release-update"
             class="button button--secondary"
             type="button"
-            :disabled="checkingAutomaticUpdate || savingAutomaticUpdate || automaticUpdate.state === 'updating'"
-            @click="checkAutomaticUpdate"
+            :disabled="checkingAutomaticUpdate || savingAutomaticUpdate || installingAutomaticUpdate || automaticUpdate.state === 'queued' || automaticUpdate.state === 'updating'"
+            @click="checkAutomaticUpdate()"
           >
             <LoaderCircle v-if="checkingAutomaticUpdate" class="spin" :size="15" />
             <RefreshCw v-else :size="15" />
             立即检查
           </button>
+          <button
+            v-if="automaticUpdate.canInstall"
+            data-testid="install-release-update"
+            class="button button--primary"
+            type="button"
+            :disabled="installingAutomaticUpdate || savingAutomaticUpdate || checkingAutomaticUpdate"
+            @click="installAutomaticUpdate"
+          >
+            <LoaderCircle v-if="installingAutomaticUpdate" class="spin" :size="15" />
+            <Download v-else :size="15" />
+            立即安装 {{ automaticUpdate.candidateVersion }}
+          </button>
         </div>
-        <p class="settings-note">每天本地时间 04:00 检查，并随机延迟最多 30 分钟。新版本需稳定观察 24 小时；切换前会冷备份 Panel 与 Agent 数据，失败时自动恢复原版本和数据。</p>
+        <p class="settings-note">{{ automaticUpdateScheduleNote }}</p>
       </div>
       <div v-else-if="automaticUpdateError" class="inline-alert inline-alert--warning">
         {{ automaticUpdateError }}
@@ -1195,6 +1297,11 @@ onMounted(async () => {
   color: var(--muted);
 }
 
+.automatic-update-switch--preview {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 45%, var(--surface-soft));
+}
+
 .automatic-update-switch input {
   position: relative;
   flex: 0 0 auto;
@@ -1253,6 +1360,8 @@ onMounted(async () => {
 
 .automatic-update-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
   justify-content: flex-start;
 }
 

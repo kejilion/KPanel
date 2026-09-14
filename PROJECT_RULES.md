@@ -307,6 +307,9 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
    `scripts/run-release-gate.sh` / `make verify-release`。外层入口负责精确 Tag、bundle、固定远端脚本、
    不可变 Runner ID、唯一 run ID 和证据终态；不得为单次发布另写 PowerShell/SSH/远端 wrapper。
    每次重试必须使用新 run ID 并保留旧证据，不能覆盖失败后将其报告为首轮成功。
+10. 稳定版与预览版统一遵守 [`docs/release-channels.md`](docs/release-channels.md)。稳定版是公共默认；
+    预览版必须显式加入，只允许规范 `X.Y.Z-rc.N`，不得成为 GitHub Latest 或 Docker `latest`，不得进入
+    正式生产部署。更新通道与自动安装是两个独立授权，退出预览版计划不得触发自动降级。
 
 ### 5.2 受控自我改进
 
@@ -414,6 +417,9 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
    校验失败不得创建或公开 Release。
 5. 发布后必须复核 GitHub Release 页面正文、附件、版本镜像摘要和 `latest` 指向，验收记录不得
    代替面向用户的 Release 更新说明。
+6. 预览版 Release 必须明确风险、加入方式和退出不自动降级；稳定版与预览版的 Tag、prerelease/Latest
+   属性、`latest`/`preview` 镜像标签及候选分支处置必须符合
+   [`docs/release-channels.md`](docs/release-channels.md)，不允许人工覆盖既有版本产物。
 
 ## 7. 多语言界面
 

@@ -24,7 +24,7 @@ func TestAutomaticUpdateSettingsRequireSessionCSRFAndForwardTypedPolicy(t *testi
 		t.Fatalf("read status=%d body=%s", read.Code, read.Body.String())
 	}
 
-	input := []byte(`{"enabled":true,"expectedResourceVersion":"sha256:` + strings.Repeat("b", 64) + `"}`)
+	input := []byte(`{"enabled":true,"channel":"preview","expectedResourceVersion":"sha256:` + strings.Repeat("b", 64) + `"}`)
 	withoutCSRF := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodPut, "/api/v1/settings/automatic-update", input, false)
 	if withoutCSRF.Code != http.StatusForbidden || len(agent.snapshotCalls()) != 1 {
 		t.Fatalf("missing csrf status=%d calls=%#v", withoutCSRF.Code, agent.snapshotCalls())
@@ -42,7 +42,8 @@ func TestAutomaticUpdateSettingsRequireSessionCSRFAndForwardTypedPolicy(t *testi
 	if err := json.Unmarshal(calls[1].body, &forwarded); err != nil {
 		t.Fatal(err)
 	}
-	if forwarded["enabled"] != true || forwarded["expectedResourceVersion"] != "sha256:"+strings.Repeat("b", 64) || len(forwarded) != 2 {
+	if forwarded["enabled"] != true || forwarded["channel"] != "preview" ||
+		forwarded["expectedResourceVersion"] != "sha256:"+strings.Repeat("b", 64) || len(forwarded) != 3 {
 		t.Fatalf("unexpected forwarded policy: %#v", forwarded)
 	}
 	audits, _ := server.store.ListAudit(20, "")
@@ -54,6 +55,47 @@ func TestAutomaticUpdateSettingsRequireSessionCSRFAndForwardTypedPolicy(t *testi
 	}
 	if !found {
 		t.Fatalf("automatic update policy success audit missing: %#v", audits)
+	}
+}
+
+func TestAutomaticUpdateInstallIsExplicitAuditedMutation(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+	agent := &stubAgent{response: AgentResponse{
+		StatusCode:  http.StatusAccepted,
+		ContentType: "application/json",
+		Body:        []byte(`{"state":"queued","installRequested":true}`),
+	}}
+	server.agent = agent
+	resourceVersion := "sha256:" + strings.Repeat("d", 64)
+	input := []byte(`{"expectedResourceVersion":"` + resourceVersion + `"}`)
+
+	response := authenticatedSiteRequest(
+		server,
+		sessionCookie,
+		csrfCookie,
+		http.MethodPost,
+		"/api/v1/settings/automatic-update/install",
+		input,
+		true,
+	)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("install status=%d body=%s", response.Code, response.Body.String())
+	}
+	calls := agent.snapshotCalls()
+	if len(calls) != 1 || calls[0].method != http.MethodPost ||
+		calls[0].path != "/v1/self-update/install" || string(calls[0].body) != string(input) {
+		t.Fatalf("unexpected install call: %#v", calls)
+	}
+	audits, _ := server.store.ListAudit(20, "")
+	found := false
+	for _, event := range audits {
+		if event.Action == "settings.automatic_update.install" && event.Result == "success" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("automatic update install success audit missing: %#v", audits)
 	}
 }
 
@@ -90,7 +132,7 @@ func TestAutomaticUpdateSettingsRejectUnknownOrQueriedInputs(t *testing.T) {
 	version := "sha256:" + strings.Repeat("c", 64)
 
 	unknown := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodPut, "/api/v1/settings/automatic-update", []byte(`{"enabled":true,"expectedResourceVersion":"`+version+`","channel":"beta"}`), true)
-	if unknown.Code != http.StatusBadRequest {
+	if unknown.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown field status=%d body=%s", unknown.Code, unknown.Body.String())
 	}
 	queried := authenticatedSiteRequest(server, sessionCookie, csrfCookie, http.MethodGet, "/api/v1/settings/automatic-update?channel=beta", nil, false)

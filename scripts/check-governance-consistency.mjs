@@ -18,6 +18,7 @@ const requiredFiles = [
   'docs/ui-visual-language.md',
   'docs/local-feature-preview-standard.md',
   'docs/product-quality-review-current.md',
+  'docs/release-channels.md',
   'docs/release-acceptance-template.md',
   'docs/quality-improvement-proposal-template.md',
   'dependency-policy.json',
@@ -38,6 +39,7 @@ const requiredFiles = [
   'scripts/tests/local-feature-preview.test.mjs',
   'scripts/run-release-gate.sh',
   'scripts/tests/release-gate-runner.test.mjs',
+  'scripts/tests/release-channel-contract.test.mjs',
   'scripts/run-release-l3.mjs',
   'scripts/run-release-l3-remote.sh',
   'scripts/tests/release-l3-orchestrator.test.mjs',
@@ -159,6 +161,7 @@ requireText('PROJECT_RULES.md', [
   'docs/development-quality-standard.md',
   'docs/ui-visual-language.md',
   'docs/release-acceptance-template.md',
+  'docs/release-channels.md',
   '受控自我改进',
   '不得自动放宽',
   '公共默认',
@@ -193,6 +196,7 @@ requireText('PROJECT_RULES.md', [
   '无需发布脚本（不适用）',
   'coupled',
   'script-only',
+  '退出预览版计划不得触发自动降级',
 ]);
 requireText('docs/development-quality-standard.md', [
   'ui-visual-language.md',
@@ -206,6 +210,8 @@ requireText('docs/development-quality-standard.md', [
   '30/90/90 天',
   '传递依赖归属信号',
   '版本变化幅度决定处理期限',
+  'release-channels.md',
+  '版本通道与自更新',
 ]);
 requireText('docs/product-quality-review-current.md', [
   'KPanel 当前业务事实与规范适配基线',
@@ -240,6 +246,24 @@ requireText('docs/project-management.md', [
   '无需发布脚本（不适用）',
   'coupled',
   'script-only',
+  'release-channels.md',
+  'releaseChannel',
+  'releaseTrain',
+]);
+requireText('docs/release-channels.md', [
+  '`stable`',
+  '`preview`',
+  '`X.Y.Z-rc.N`',
+  '`release/vX.Y.Z-candidate`',
+  'GitHub Latest',
+  'Docker `preview`',
+  '加入预览版计划',
+  '自动安装更新',
+  '不得自动降级',
+  'resourceVersion',
+  'systemd',
+  'OpenRC',
+  '轻量 Node',
 ]);
 requireText('docs/multi-agent-collaboration.md', [
   'scripts/check-collaboration-state.mjs',
@@ -289,6 +313,7 @@ requireText('.codex-workflows/README.md', [
   'crossRepositoryReleaseLinkage',
   '无需发布脚本（不适用）',
   'script-only',
+  'docs/release-channels.md',
 ]);
 requireText('docs/local-feature-preview-standard.md', [
   'ui-visual-language.md',
@@ -323,6 +348,7 @@ requireText('scripts/run-repo-bash.mjs', [
 requireText('scripts/verify-governance.sh', [
   'scripts/tests/governance-candidate-ci.test.mjs',
   'scripts/tests/run-repo-bash.test.mjs',
+  'scripts/tests/release-channel-contract.test.mjs',
   'scripts/tests/release-l3-orchestrator.test.mjs',
   'scripts/tests/production-evidence-orchestrator.test.mjs',
   'scripts/tests/release-acceptance-coverage.test.mjs',
@@ -330,6 +356,7 @@ requireText('scripts/verify-governance.sh', [
 ]);
 requireText('scripts/verify-change.sh', [
   'needs_governance=false',
+  'docs/release-channels.md',
   'GITHUB_TOKEN="$governance_ci_token" node scripts/check-governance-candidate-ci.mjs',
   'unset GOVERNANCE_CI_TOKEN GITHUB_TOKEN',
   'bash scripts/verify-governance.sh',
@@ -380,6 +407,11 @@ requireText('.codex-workflows/release-kpanel.workflow.yaml', [
   '无需发布脚本（不适用）',
   'block-kpanel-candidate-or-remove-dependent-scope',
   'script-only',
+  'releaseChannel',
+  'releaseTrain',
+  '${{release_channel}}',
+  '${{release_train}}',
+  '预览版禁止生产部署',
 ]);
 if (read('.codex-workflows/release-kpanel.workflow.yaml').includes('git fetch origin --tags')) {
   failures.push('.codex-workflows/release-kpanel.workflow.yaml: unbounded tag fetch is forbidden');
@@ -471,6 +503,10 @@ requireText('docs/release-acceptance-template.md', [
   '无需发布脚本（不适用）',
   'coupled',
   'script-only',
+  'releaseChannel',
+  'releaseTrain',
+  '## 自更新通道验收',
+  '预览版禁止生产部署',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [
   '## 观察证据',
