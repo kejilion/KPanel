@@ -79,6 +79,7 @@ func (commandRunner) LookPath(name string) (string, error) {
 type Config struct {
 	EventPath    string
 	LogRoot      string
+	RunRoot      string
 	Now          func() time.Time
 	Runner       Runner
 	EffectiveUID func() int
@@ -87,6 +88,7 @@ type Config struct {
 type Reader struct {
 	eventPath    string
 	logRoot      string
+	runRoot      string
 	now          func() time.Time
 	runner       Runner
 	effectiveUID func() int
@@ -99,6 +101,9 @@ type Reader struct {
 func NewReader(config Config) *Reader {
 	if config.LogRoot == "" {
 		config.LogRoot = "/var/log"
+	}
+	if config.RunRoot == "" {
+		config.RunRoot = "/run"
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -114,7 +119,7 @@ func NewReader(config Config) *Reader {
 		eventPath = filepath.Clean(eventPath)
 	}
 	return &Reader{
-		eventPath: eventPath, logRoot: filepath.Clean(config.LogRoot),
+		eventPath: eventPath, logRoot: filepath.Clean(config.LogRoot), runRoot: filepath.Clean(config.RunRoot),
 		now: config.Now, runner: config.Runner, effectiveUID: config.EffectiveUID,
 	}
 }
@@ -155,6 +160,13 @@ func (r *Reader) LatestSSHLogin(ctx context.Context) (*contract.SSHLoginEvent, e
 }
 
 func (r *Reader) latestFromLogs(ctx context.Context, observedAt time.Time) (*contract.SSHLoginEvent, error) {
+	if r.openRCRuntimeActive() {
+		entries, err := r.readFixedAuthLog()
+		if err != nil {
+			return nil, err
+		}
+		return latest(entries, observedAt), nil
+	}
 	entries, journalErr := r.readJournal(ctx)
 	if journalErr == nil {
 		if event := latest(entries, observedAt); event != nil {
@@ -172,6 +184,11 @@ func (r *Reader) latestFromLogs(ctx context.Context, observedAt time.Time) (*con
 		return nil, nil
 	}
 	return nil, errors.Join(journalErr, fileErr)
+}
+
+func (r *Reader) openRCRuntimeActive() bool {
+	info, err := os.Stat(filepath.Join(r.runRoot, "openrc"))
+	return err == nil && info.IsDir()
 }
 
 type logEntry struct {
@@ -266,7 +283,7 @@ func journalString(raw json.RawMessage) string {
 
 func (r *Reader) readFixedAuthLog() ([]logEntry, error) {
 	var path string
-	for _, name := range []string{"secure", "auth.log"} {
+	for _, name := range []string{"secure", "auth.log", "messages"} {
 		candidate := filepath.Join(r.logRoot, name)
 		info, err := os.Lstat(candidate)
 		if err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
@@ -309,6 +326,10 @@ func (r *Reader) readFixedAuthLog() ([]logEntry, error) {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		if filepath.Base(path) == "messages" && !strings.Contains(strings.ToLower(line), "sshd") &&
+			!strings.Contains(strings.ToLower(line), "dropbear") {
 			continue
 		}
 		hash := sha256.Sum256([]byte(path + "\x00" + line))

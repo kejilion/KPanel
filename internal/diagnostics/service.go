@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/hostpty"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const (
@@ -169,10 +170,8 @@ func (s *Service) Available() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("%w: diagnostics require Linux", ErrUnsupported)
 	}
-	for _, command := range []string{"systemd-run"} {
-		if _, err := s.runner.LookPath(command); err != nil {
-			return fmt.Errorf("%w: %s is unavailable", ErrUnsupported, command)
-		}
+	if err := jobcontrol.Available(s.runner); err != nil {
+		return fmt.Errorf("%w: systemd or OpenRC background execution is unavailable", ErrUnsupported)
 	}
 	return nil
 }
@@ -181,8 +180,8 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 	if runtime.GOOS != "linux" {
 		return Catalog{}, fmt.Errorf("%w: diagnostics require Linux", ErrUnsupported)
 	}
-	if _, err := s.runner.LookPath("systemd-run"); err != nil {
-		return Catalog{}, fmt.Errorf("%w: systemd-run is unavailable", ErrUnsupported)
+	if err := jobcontrol.Available(s.runner); err != nil {
+		return Catalog{}, fmt.Errorf("%w: systemd or OpenRC background execution is unavailable", ErrUnsupported)
 	}
 	result := nativeCatalog()
 	if s.scriptFinder == nil {
@@ -292,39 +291,24 @@ func (s *Service) Start(ctx context.Context, checkID string) (Job, error) {
 }
 
 func (s *Service) launch(ctx context.Context, item record) error {
-	arguments := []string{
-		"--unit=" + jobUnitPrefix + item.ID,
-		"--collect",
-		"--no-block",
-		"--property=Type=oneshot",
-		"--property=TimeoutStartSec=90min",
-		"--property=TimeoutStopSec=10min",
-		"--property=User=root",
-		"--property=UMask=0027",
-		"--property=PrivateTmp=yes",
-		"--property=NoNewPrivileges=no",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
-		"--property=Nice=10",
-		"--property=CPUWeight=30",
-		"--property=IOWeight=30",
-		"--property=SyslogIdentifier=kpanel-diagnostic",
-		"--",
-		s.executable,
-		"diagnostic-run",
-		"--state-dir",
-		s.stateDir,
-		"--id",
-		item.ID,
+	spec := jobcontrol.Spec{
+		Unit:       jobUnitPrefix + item.ID,
+		Executable: s.executable,
+		Arguments:  []string{"diagnostic-run", "--state-dir", s.stateDir, "--id", item.ID},
+		StateDir:   s.stateDir,
+		SystemdProperties: []string{
+			"Type=oneshot", "TimeoutStartSec=90min", "TimeoutStopSec=10min",
+			"User=root", "UMask=0027", "PrivateTmp=yes", "NoNewPrivileges=no",
+			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6", "Nice=10",
+			"CPUWeight=30", "IOWeight=30", "SyslogIdentifier=kpanel-diagnostic",
+		},
+		UMask:       "0027",
+		Nice:        10,
+		IOClass:     "2:7",
+		StopTimeout: 10 * time.Minute,
 	}
-	output, err := s.runner.Run(ctx, "systemd-run", arguments...)
+	err := jobcontrol.Launch(ctx, s.runner, spec)
 	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if len(detail) > 300 {
-			detail = detail[:300]
-		}
-		if detail != "" {
-			return fmt.Errorf("%s: %w", detail, err)
-		}
 		return err
 	}
 	return nil

@@ -48,7 +48,9 @@ KJ_TEST_NONINTERACTIVE=1 k test run <fixed-selector>
 
 ## 执行与恢复
 
-所有任务仍创建 `kejilion-panel-diagnostic-<job-id>` transient systemd unit，再由 root-only `diagnostic-run` 子命令执行。原生任务在 Agent 内置探针分支执行，不启动 Shell，结果汇总到首屏并保留服务端日志；脚本任务沿用可信脚本和 PTY 隔离，并在左侧独立进入终端。
+所有任务仍创建 `kejilion-panel-diagnostic-<job-id>` 独立后台执行单元：systemd 使用 transient unit，
+OpenRC 使用受保护 PID file 的 `start-stop-daemon` 进程组，再由 root-only `diagnostic-run` 子命令执行。
+原生任务在 Agent 内置探针分支执行，不启动 Shell，结果汇总到首屏并保留服务端日志；脚本任务沿用可信脚本和 PTY 隔离，并在左侧独立进入终端。
 
 - 同一时间只运行一个体检；
 - 最长运行 90 分钟；

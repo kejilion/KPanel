@@ -4,6 +4,9 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/init-system.sh"
+
 PUBLIC_URL=
 NETWORK_SUBNET=172.29.255.240/28
 FAILURES=0
@@ -153,14 +156,42 @@ else
 fi
 
 for command_name in \
-	awk cat curl dirname docker getent grep groupadd id install ip mkdir mktemp \
-	openssl rm rmdir sed sha256sum sleep stat systemctl systemd-analyze tr; do
+	awk cat curl dirname docker getent grep id install ip mkdir mktemp \
+	openssl rm rmdir sed sha256sum sleep stat tr; do
 	if command -v "$command_name" >/dev/null 2>&1; then
 		ok "command available: $command_name"
 	else
 		fail "required command not found: $command_name"
 	fi
 done
+
+if command -v groupadd >/dev/null 2>&1; then
+	ok "system group tool available: groupadd"
+elif command -v addgroup >/dev/null 2>&1; then
+	ok "system group tool available: addgroup"
+else
+	fail "required system group tool not found: groupadd or addgroup"
+fi
+
+if kpanel_detect_init_system; then
+	ok "init system supported: $KPANEL_INIT_SYSTEM"
+	case "$KPANEL_INIT_SYSTEM" in
+		systemd)
+			for command_name in systemctl systemd-analyze; do
+				command -v "$command_name" >/dev/null 2>&1 && ok "command available: $command_name" ||
+					fail "required command not found: $command_name"
+			done
+			;;
+		openrc)
+			for command_name in rc-service rc-update start-stop-daemon supervise-daemon; do
+				command -v "$command_name" >/dev/null 2>&1 && ok "command available: $command_name" ||
+					fail "required command not found: $command_name"
+			done
+			;;
+	esac
+else
+	fail "systemd or OpenRC service management is required"
+fi
 
 if command -v docker >/dev/null 2>&1; then
 	if docker --host unix:///var/run/docker.sock compose version >/dev/null 2>&1; then
@@ -177,7 +208,7 @@ if [ -S /var/run/docker.sock ]; then
 else
 	fail "Docker Unix socket is absent"
 fi
-if systemctl is-active --quiet docker.service; then
+if [ -n "${KPANEL_INIT_SYSTEM:-}" ] && kpanel_service_active docker.service; then
 	ok "Docker service is already active"
 else
 	fail "Docker service is not active; assess existing containers before starting it manually"
@@ -215,6 +246,9 @@ for managed_path in \
 	/var/lib/kejilion-panel \
 	/run/kejilion-panel \
 	/usr/local/libexec/kejilion-agent \
+	/etc/init.d/kejilion-agent \
+	/etc/conf.d/kejilion-agent \
+	/etc/runlevels/default/kejilion-agent \
 	/etc/systemd/system/kejilion-agent.service \
 	/etc/systemd/system/kejilion-agent.service.d \
 	/run/systemd/system/kejilion-agent.service \
@@ -228,7 +262,7 @@ for managed_path in \
 	fi
 done
 
-if command -v systemctl >/dev/null 2>&1; then
+if [ "${KPANEL_INIT_SYSTEM:-}" = systemd ]; then
 	if UNIT_LOAD_STATE=$(systemctl show \
 		--property=LoadState --value kejilion-agent.service 2>/dev/null) &&
 		UNIT_FRAGMENT_PATH=$(systemctl show \
@@ -244,6 +278,12 @@ if command -v systemctl >/dev/null 2>&1; then
 		fi
 	else
 		fail "cannot query systemd for an existing kejilion-agent.service"
+	fi
+elif [ "${KPANEL_INIT_SYSTEM:-}" = openrc ]; then
+	if [ ! -e /etc/init.d/kejilion-agent ] && [ ! -L /etc/init.d/kejilion-agent ]; then
+		ok "no existing OpenRC kejilion-agent service was found"
+	else
+		fail "an existing OpenRC kejilion-agent service was found"
 	fi
 fi
 

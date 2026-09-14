@@ -20,6 +20,13 @@ type fakeRecipeJobRunner struct {
 	unknown bool
 }
 
+func (*fakeRecipeJobRunner) LookPath(name string) (string, error) {
+	if name == "systemd-run" {
+		return "/usr/bin/systemd-run", nil
+	}
+	return "", errors.New("not found")
+}
+
 func (runner *fakeRecipeJobRunner) Run(
 	_ context.Context,
 	name string,

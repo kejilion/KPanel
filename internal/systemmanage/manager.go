@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 var (
@@ -243,17 +244,17 @@ func (m *Manager) Capabilities() []contract.Capability {
 		}
 		return contract.Capability{ID: id, Enabled: true, Methods: []string{"POST"}}
 	}
-	_, hostnamectlErr := m.runner.LookPath("hostnamectl")
+	hostnameWriteErr := m.hostnameWriteAvailable()
 	_, sshdErr := m.runner.LookPath("sshd")
 	_, ssErr := m.runner.LookPath("ss")
-	_, timedatectlErr := m.runner.LookPath("timedatectl")
+	timezoneWriteErr := m.timezoneWriteAvailable()
 	_, systemctlErr := m.runner.LookPath("systemctl")
 	_, mkswapErr := m.runner.LookPath("mkswap")
 	_, swaponErr := m.runner.LookPath("swapon")
 	_, swapoffErr := m.runner.LookPath("swapoff")
 	_, fallocateErr := m.runner.LookPath("fallocate")
 	_, sysctlErr := m.runner.LookPath("sysctl")
-	_, systemdRunErr := m.runner.LookPath("systemd-run")
+	jobRunnerErr := jobcontrol.Available(m.runner)
 	_, modprobeErr := m.runner.LookPath("modprobe")
 	_, helperErr := m.backgroundExecutable()
 	_, envErr := m.runner.LookPath("env")
@@ -269,6 +270,7 @@ func (m *Manager) Capabilities() []contract.Capability {
 		}
 	}
 	_, bbrv3ScriptErr := m.bbrv3Script()
+	rebootErr := m.rebootAvailable()
 
 	sshConfig := regularFile(filepath.Join(m.etcRoot, "ssh", "sshd_config"))
 	packageManager := m.detectPackageManager()
@@ -276,13 +278,13 @@ func (m *Manager) Capabilities() []contract.Capability {
 	_, _, _, updatePlanErr := m.maintenanceSteps("update")
 	_, _, _, cacheCleanupPlanErr := m.maintenanceSteps("cleanup-cache")
 	_, _, _, standardCleanupPlanErr := m.maintenanceSteps("cleanup-standard")
-	maintenanceExecutorAvailable := systemdRunErr == nil && helperErr == nil
+	maintenanceExecutorAvailable := jobRunnerErr == nil && helperErr == nil
 	updateSupported := maintenanceExecutorAvailable && updatePlanErr == nil
 	cleanupSupported := maintenanceExecutorAvailable &&
 		(cacheCleanupPlanErr == nil || standardCleanupPlanErr == nil)
 	executorReason := ""
-	if systemdRunErr != nil {
-		executorReason = "systemd 后台任务执行器不可用"
+	if jobRunnerErr != nil {
+		executorReason = "systemd-run 或 OpenRC start-stop-daemon 后台任务执行器不可用"
 	} else if helperErr != nil {
 		executorReason = "Agent 后台执行程序不可用，请更新或重新安装 KPanel"
 	}
@@ -321,24 +323,24 @@ func (m *Manager) Capabilities() []contract.Capability {
 		dnsReason = dnsBackendReason
 	}
 	capabilities := []contract.Capability{
-		capability("system.hostname.write", hostnamectlErr == nil, "hostnamectl 不可用"),
+		capability("system.hostname.write", hostnameWriteErr == nil, "hostnamectl 与 OpenRC hostname 后端均不可用"),
 		capability("system.ssh-port.write", envErr == nil && bashErr == nil && sshdErr == nil && ssErr == nil && sshScriptErr == nil && sshConfig, "请更新本机 kejilion.sh 并安装 OpenSSH/ss 以启用 KPanel SSH 端口协议"),
 		capability("system.dns.write", dnsSupported, dnsReason),
-		capability("system.timezone.write", timedatectlErr == nil, "timedatectl 不可用"),
+		capability("system.timezone.write", timezoneWriteErr == nil, "timedatectl 与 OpenRC timezone 后端均不可用"),
 		capability("system.processes.signal", processSignalSupported, "进程信号仅支持 Linux"),
-		capability("system.swap.write", mkswapErr == nil && swaponErr == nil && swapoffErr == nil && fallocateErr == nil && systemdRunErr == nil && helperErr == nil, "Swap 工具、Agent 后台执行程序或 systemd 事务执行器不完整"),
+		capability("system.swap.write", mkswapErr == nil && swaponErr == nil && swapoffErr == nil && fallocateErr == nil && jobRunnerErr == nil && helperErr == nil, "Swap 工具、Agent 后台执行程序或 init 事务执行器不完整"),
 		capability("system.mirror.write", aptMirrorSupported, mirrorReason),
 		capability("system.ip-preference.write", true, ""),
 		capability("system.kernel-tuning.write", sysctlErr == nil, "sysctl 不可用"),
 		capability("system.bbr.write", sysctlErr == nil && modprobeErr == nil, "内核调优工具不完整"),
 		capability(
 			"system.bbrv3.write",
-			systemdRunErr == nil && helperErr == nil && envErr == nil && bashErr == nil && bbrv3ScriptErr == nil,
+			jobRunnerErr == nil && helperErr == nil && envErr == nil && bashErr == nil && bbrv3ScriptErr == nil,
 			"请更新本机 kejilion.sh 以启用 BBRv3 固定协议",
 		),
 		capability("system.update.write", updateSupported, updateReason),
 		capability("system.cleanup.write", cleanupSupported, cleanupReason),
-		capability("system.reboot.write", systemctlErr == nil && systemdRunErr == nil, "systemctl 或 systemd-run 不可用"),
+		capability("system.reboot.write", rebootErr == nil, "systemctl/systemd-run 或 OpenRC reboot 后端不可用"),
 		{ID: "system.reinstall", Enabled: false, Reason: "尚未实现 kejilion.sh 重装流程的非交互参数与任务恢复协议"},
 	}
 	capabilities = append(capabilities, m.SystemResourceCapabilities()...)
@@ -477,17 +479,17 @@ func (m *Manager) setHostname(ctx context.Context, value string) (bool, string, 
 		_ = writeAtomic(hostnamePath, []byte(oldHostname+"\n"), 0o644)
 		return false, backup, "", fmt.Errorf("%w: %v", ErrRolledBack, err)
 	}
-	if _, err := m.runner.Run(ctx, "hostnamectl", "set-hostname", value); err != nil {
+	if err := m.setRuntimeHostname(ctx, value); err != nil {
 		_ = writeAtomic(hostnamePath, []byte(oldHostname+"\n"), 0o644)
 		_ = writeAtomic(hostsPath, oldHosts, 0o644)
-		_, _ = m.runner.Run(ctx, "hostnamectl", "set-hostname", oldHostname)
-		return false, backup, "", fmt.Errorf("%w: hostnamectl: %v", ErrRolledBack, err)
+		_ = m.setRuntimeHostname(ctx, oldHostname)
+		return false, backup, "", fmt.Errorf("%w: set runtime hostname: %v", ErrRolledBack, err)
 	}
 	output, err := m.runner.Run(ctx, "hostname")
 	if err != nil || strings.TrimSpace(string(output)) != value {
 		_ = writeAtomic(hostnamePath, []byte(oldHostname+"\n"), 0o644)
 		_ = writeAtomic(hostsPath, oldHosts, 0o644)
-		_, rollbackErr := m.runner.Run(ctx, "hostnamectl", "set-hostname", oldHostname)
+		rollbackErr := m.setRuntimeHostname(ctx, oldHostname)
 		if rollbackErr != nil {
 			return false, backup, "", fmt.Errorf("%w: hostname verification failed and rollback command failed", ErrNeedsAttention)
 		}
@@ -654,26 +656,32 @@ func (m *Manager) setTimezone(ctx context.Context, zone string) (bool, string, e
 	if err != nil || strings.HasPrefix(relative, "..") || !regularFileFollow(candidate) {
 		return false, "", fmt.Errorf("%w: timezone is not present in the IANA database", ErrInvalidInput)
 	}
-	oldOutput, err := m.runner.Run(ctx, "timedatectl", "show", "--property=Timezone", "--value")
-	if err != nil {
-		return false, "", fmt.Errorf("%w: read current timezone: %v", ErrUnsupported, err)
-	}
-	old := strings.TrimSpace(string(oldOutput))
-	if old == zone {
-		return false, "系统时区没有变化", nil
-	}
-	if _, err := m.runner.Run(ctx, "timedatectl", "set-timezone", zone); err != nil {
-		return false, "", fmt.Errorf("%w: set timezone: %v", ErrRolledBack, err)
-	}
-	currentOutput, err := m.runner.Run(ctx, "timedatectl", "show", "--property=Timezone", "--value")
-	if err != nil || strings.TrimSpace(string(currentOutput)) != zone {
-		_, rollbackErr := m.runner.Run(ctx, "timedatectl", "set-timezone", old)
-		if rollbackErr != nil {
-			return false, "", fmt.Errorf("%w: timezone verification failed and rollback failed", ErrNeedsAttention)
+	if !m.openRCRuntimeActive() {
+		if _, err := m.runner.LookPath("timedatectl"); err != nil {
+			return m.setOpenRCTimezone(candidate, zone)
 		}
-		return false, "", fmt.Errorf("%w: timezone verification failed", ErrRolledBack)
+		oldOutput, err := m.runner.Run(ctx, "timedatectl", "show", "--property=Timezone", "--value")
+		if err != nil {
+			return false, "", fmt.Errorf("%w: read current timezone: %v", ErrUnsupported, err)
+		}
+		old := strings.TrimSpace(string(oldOutput))
+		if old == zone {
+			return false, "系统时区没有变化", nil
+		}
+		if _, err := m.runner.Run(ctx, "timedatectl", "set-timezone", zone); err != nil {
+			return false, "", fmt.Errorf("%w: set timezone: %v", ErrRolledBack, err)
+		}
+		currentOutput, err := m.runner.Run(ctx, "timedatectl", "show", "--property=Timezone", "--value")
+		if err != nil || strings.TrimSpace(string(currentOutput)) != zone {
+			_, rollbackErr := m.runner.Run(ctx, "timedatectl", "set-timezone", old)
+			if rollbackErr != nil {
+				return false, "", fmt.Errorf("%w: timezone verification failed and rollback failed", ErrNeedsAttention)
+			}
+			return false, "", fmt.Errorf("%w: timezone verification failed", ErrRolledBack)
+		}
+		return true, "系统时区已更新并回读验证", nil
 	}
-	return true, "系统时区已更新并回读验证", nil
+	return m.setOpenRCTimezone(candidate, zone)
 }
 
 func (m *Manager) setIPPreference(preference string) (bool, string, string, error) {

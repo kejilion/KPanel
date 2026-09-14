@@ -125,7 +125,8 @@ IP + 端口反代入口位于 `kejilion.sh:3499`。它使用
 所有类型仍写入脚本可发现的 `/home/web/conf.d/<domain>.conf`；静态和 PHP
 目录映射保持 `/home/web/html/<domain>` → `/var/www/html/<domain>`。
 所有新建任务统一持久化到
-`/var/lib/kejilion-panel/site-recipe-jobs`。Agent 通过独立 systemd 后台单元执行
+`/var/lib/kejilion-panel/site-recipe-jobs`。Agent 通过独立 systemd transient unit 或
+OpenRC `start-stop-daemon` 进程组执行
 脚本原生命令，允许脚本按自身流程安装缺失的 Docker、Certbot 或 LDNMP 环境；
 KPanel 不再为新建站点维护第二套 WordPress、静态站、PHP、反向代理、负载均衡或
 重定向模板。Nginx Stream 不属于域名站点创建，继续由脚本专用入口管理。
@@ -155,7 +156,7 @@ Agent 校验证书 PEM、域名（换证覆盖全部已绑定域名）、有效�
 续签与换证共用有界文件锁。受管脚本可精确升级已安装的官方旧续签器，升级产物须与
 `auto_cert_renewal.sh` 同源字节一致；未知本地改动或仍运行的旧续签进程使换证失败关闭。
 
-状态：**已实现并通过本地夹具验证，未完成最终候选的隔离真机 TLS 握手、真实 cron/systemd、
+状态：**已实现并通过本地夹具验证，未完成最终候选的隔离真机 TLS 握手、真实 cron/init backend、
 脚本 ↔ Panel 双向验收及公开产物 L3**。进程强杀／断电恢复仍需真机专项验收。
 配套状态为 `coupled`：脚本候选须先公开，Panel 才能使用其固定提交与 SHA-256 构建。
 

@@ -76,7 +76,7 @@ kpanel_node_acquire_lock() {
 	trap 'exit 143' HUP TERM
 	rm -f -- "$legacy_marker"
 }
-# KPANEL_NODE_RUNTIME_GENERATION=3
+# KPANEL_NODE_RUNTIME_GENERATION=4
 set -euo pipefail
 
 mode="${1:-update}"
@@ -150,10 +150,14 @@ write_update_status running '' 0 || echo "KPanel update status could not be reco
 # namespace prevents their `version` probe from restoring an obsolete updater.
 temporary_dir="$(mktemp -d /tmp/kejilion-node-release.XXXXXX)"
 
+quiet=false
+[ "${KPANEL_NODE_QUIET:-0}" != "1" ] || quiet=true
 curl_progress=(--silent --show-error)
-[ ! -t 2 ] || curl_progress=(--progress-bar --show-error)
+if [ "$quiet" != true ] && [ -t 2 ]; then
+	curl_progress=(--progress-bar --show-error)
+fi
 update_error=release_check
-echo "Checking KPanel lightweight node release..."
+[ "$quiet" = true ] || echo "Checking KPanel lightweight node release..."
 if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "${curl_progress[@]}" \
 	--connect-timeout 15 --max-time 60 --retry 3 --retry-delay 5 --retry-max-time 240 \
 	--max-filesize 65536 --dump-header "${temporary_dir}/headers" \
@@ -175,8 +179,54 @@ release_url="$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2 }'
 release_base="${release_url%/SHA256SUMS}"
 
 file_service="kejilion-node-file.service"
-file_service_path="/etc/systemd/system/${file_service}"
-file_service_unit_changed=false
+update_init_system=""
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+	update_init_system=systemd
+elif [ -d /run/openrc ] && command -v rc-service >/dev/null 2>&1 && command -v rc-update >/dev/null 2>&1 &&
+	command -v supervise-daemon >/dev/null 2>&1 && command -v logger >/dev/null 2>&1; then
+	update_init_system=openrc
+else
+	echo "KPanel lightweight node requires a running systemd or OpenRC service manager" >&2
+	exit 1
+fi
+if [ "$update_init_system" = systemd ]; then
+	file_service_path="/etc/systemd/system/${file_service}"
+else
+	file_service_path="/etc/init.d/${file_service%.service}"
+fi
+file_service_definition_changed=false
+
+updater_service_name() {
+	case "$update_init_system" in
+		openrc) printf '%s\n' "${1%.service}" ;;
+		*) printf '%s\n' "$1" ;;
+	esac
+}
+
+updater_service_exists() {
+	local service
+	service="$(updater_service_name "$1")" || return 1
+	case "$update_init_system" in
+		systemd) systemctl cat "$service" >/dev/null 2>&1 ;;
+		openrc) [ -f "/etc/init.d/${service}" ] && [ ! -L "/etc/init.d/${service}" ] && [ -x "/etc/init.d/${service}" ] ;;
+	esac
+}
+
+updater_service_action() {
+	local action="$1" service
+	service="$(updater_service_name "$2")" || return 1
+	case "$update_init_system" in
+		systemd) systemctl "$action" "$service" ;;
+		openrc)
+			case "$action" in
+				enable) rc-update add "$service" default ;;
+				is-active) rc-service "$service" status >/dev/null 2>&1 ;;
+				restart) rc-service "$service" restart ;;
+				*) return 2 ;;
+			esac
+			;;
+	esac
+}
 
 ensure_file_service_unit() {
 	if [ -e "$file_service_path" ] || [ -L "$file_service_path" ]; then
@@ -184,7 +234,54 @@ ensure_file_service_unit() {
 		[ "$(stat -c '%u' "$file_service_path")" = "0" ] || return 1
 		[ $(( 8#$(stat -c '%a' "$file_service_path") & 8#022 )) -eq 0 ] || return 1
 	fi
-	local template="${temporary_dir}/file.service" legacy_template="${temporary_dir}/file.legacy.service" unit_temporary
+	local template legacy_template="" unit_temporary
+	if [ "$update_init_system" = openrc ]; then
+		template="${temporary_dir}/file.openrc"
+		cat >"$template" <<'KPANEL_NODE_FILE_OPENRC'
+#!/sbin/openrc-run
+
+name="KPanel Lightweight Node File Manager"
+description="Privileged file broker for KPanel lightweight node"
+command="/usr/local/lib/kejilion-node/kejilion-node"
+command_args="file-broker --config /etc/kejilion-node/node.json --terminal-config /etc/kejilion-node/terminal.json"
+command_user="root:root"
+directory="/"
+pidfile="/run/kejilion-node/kejilion-node-file.pid"
+supervisor="supervise-daemon"
+respawn_delay=15
+respawn_max=0
+retry="TERM/30/KILL/5"
+stopgroup=true
+umask=0077
+output_logger="logger -t kejilion-node-file"
+error_logger="logger -t kejilion-node-file"
+no_new_privs=true
+
+depend() {
+	need localmount
+	use net logger
+}
+
+start_pre() {
+	[ -f /etc/kejilion-node/node.json ] || return 1
+	checkpath --directory --mode 0750 --owner root:root /run/kejilion-node
+}
+KPANEL_NODE_FILE_OPENRC
+		if [ -f "$file_service_path" ]; then
+			cmp -s "$file_service_path" "$template" && return 0
+			echo "KPanel file service has custom settings; retaining the existing OpenRC service" >&2
+			return 0
+		fi
+		unit_temporary="$(mktemp "${file_service_path}.XXXXXX")" || return 1
+		if ! install -o root -g root -m 0755 "$template" "$unit_temporary" || ! mv -f -- "$unit_temporary" "$file_service_path"; then
+			rm -f -- "$unit_temporary"
+			return 1
+		fi
+		file_service_definition_changed=true
+		return 0
+	fi
+	template="${temporary_dir}/file.service"
+	legacy_template="${temporary_dir}/file.legacy.service"
 	cat >"$template" <<'KPANEL_NODE_FILE_SERVICE'
 [Unit]
 Description=KPanel Lightweight Node File Manager
@@ -236,14 +333,17 @@ KPANEL_NODE_FILE_SERVICE
 		rm -f -- "$unit_temporary"
 		return 1
 	fi
-	file_service_unit_changed=true
+	file_service_definition_changed=true
 	systemctl daemon-reload
 }
 
 service_running_current() {
 	local service="$1" pid
-	systemctl is-active --quiet "$service" || return 1
-	pid="$(systemctl show "$service" --property=MainPID --value)" || return 1
+	updater_service_action is-active "$service" || return 1
+	case "$update_init_system" in
+		systemd) pid="$(systemctl show "$service" --property=MainPID --value)" || return 1 ;;
+		openrc) pid="$(cat "/run/kejilion-node/$(updater_service_name "$service").pid" 2>/dev/null)" || return 1 ;;
+	esac
 	[[ "$pid" =~ ^[1-9][0-9]*$ ]] && [ "/proc/${pid}/exe" -ef "$binary_path" ]
 }
 wait_for_service() {
@@ -273,7 +373,7 @@ repair_config_access() {
 	chown "root:${gid}" "$config" && chmod 0640 "$config"
 }
 restart_required=false
-if [ "$mode" = "update" ] && systemctl cat kejilion-node.service >/dev/null 2>&1; then
+if [ "$mode" = "update" ] && updater_service_exists kejilion-node.service; then
 	restart_required=true
 fi
 
@@ -282,14 +382,14 @@ restart_optional_services() {
 		optional_degraded=true
 		echo "KPanel lightweight node updated; file service unit is unavailable" >&2
 	fi
-	systemctl enable "$file_service" >/dev/null 2>&1 || optional_degraded=true
+	updater_service_action enable "$file_service" >/dev/null 2>&1 || optional_degraded=true
 	# Telemetry is the core update contract. Optional brokers can be unavailable
 	# on older centers; their failure must not roll back a healthy reporting node.
 	local service
 	for service in kejilion-node-terminal.service kejilion-node-ssh-login.service kejilion-node-file.service; do
-		if systemctl cat "$service" >/dev/null 2>&1; then
-			if service_running_current "$service" && { [ "$service" != "$file_service" ] || [ "$file_service_unit_changed" != true ]; }; then continue; fi
-			if ! systemctl restart "$service" || ! wait_for_service "$service"; then
+		if updater_service_exists "$service"; then
+			if service_running_current "$service" && { [ "$service" != "$file_service" ] || [ "$file_service_definition_changed" != true ]; }; then continue; fi
+			if ! updater_service_action restart "$service" || ! wait_for_service "$service"; then
 				optional_degraded=true
 				echo "KPanel lightweight node updated; optional service unavailable: ${service}" >&2
 			fi
@@ -300,7 +400,7 @@ restart_services() {
 	update_error=config
 	repair_config_access || return 1
 	update_error=restart
-	systemctl restart kejilion-node.service || return 1
+	updater_service_action restart kejilion-node.service || return 1
 	wait_for_service kejilion-node.service || return 1
 	restart_optional_services
 }
@@ -314,12 +414,12 @@ if [ -f "$binary_path" ] && [ "$(sha256sum "$binary_path" | awk '{print $1}')" =
 		restart_optional_services
 	fi
 	update_result=current; update_error=""
-	echo "KPanel lightweight node is already up to date."
+	[ "$quiet" = true ] || echo "KPanel lightweight node is already up to date."
 	exit 0
 fi
 
 update_error=download
-echo "Downloading KPanel lightweight node..."
+[ "$quiet" = true ] || echo "Downloading KPanel lightweight node..."
 if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location "${curl_progress[@]}" \
 	--connect-timeout 15 --max-time 180 --retry 3 --retry-delay 5 --retry-max-time 600 \
 	--max-filesize 134217728 \
@@ -367,4 +467,4 @@ if [ "$restart_required" = "true" ] && ! restart_services; then
 fi
 rm -f -- "${binary_path}.previous"
 update_result=updated; update_error=""
-echo "KPanel lightweight node update completed: ${version_output}"
+[ "$quiet" = true ] || echo "KPanel lightweight node update completed: ${version_output}"

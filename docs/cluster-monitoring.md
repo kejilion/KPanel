@@ -108,18 +108,24 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   5 分钟过期且只能成功消费一次，非法名称或无效请求不会提前烧毁有效授权；
 - 通过可信 `k fd` 反向代理访问时，中心直接使用当前浏览器正在访问的 HTTPS 根地址，不要求
   用户修改安装时保存的 IP + 端口地址，也不额外填写或回传凭据；
-- 目标机只要求 Linux、root、systemd、`curl`、`sha256sum`、`install`、`mktemp`、`flock` 和 `useradd`，
-  不要求 Docker、Go、Node.js 或编译环境，首版支持 `amd64`、`arm64`；
+- 目标机只要求 Linux、root、正在运行的 systemd 或 OpenRC、`curl`、`sha256sum`、`install`、
+  `mktemp`、`flock` 和系统账户创建工具；Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
+  Node.js 或编译环境，支持 `amd64`、`arm64`；
 - `kejilion.sh` 只负责固定安装协议，下载 Release 中对应架构的静态 `kejilion-node` 和
   `SHA256SUMS`，校验摘要及二进制 `version` 后再原子安装；
 - 服务使用无登录、无 home 的 `kejilion-node` 系统用户运行，配置目录 `0750`，遥测凭据文件
   `0640 root:kejilion-node`；终端 Noise 私钥另存为 `0600 root:root`，低权限遥测进程不可读取；
-  遥测 systemd 单元继续启用 `NoNewPrivileges`、只读系统、隐藏 home、空 capability 及地址族限制，
-  root PTY broker 仅保留执行系统维护命令所需的宿主机访问能力；SSH 登录由独立的
-  `kejilion-node-ssh-login.service` 以 root 运行，只保留 `CAP_DAC_READ_SEARCH` 读取 journal、
-  `/var/log/secure` 或 `/var/log/auth.log`，通过 `AF_UNIX` 限制和 `0750 root:kejilion-node`
-  运行目录向遥测进程提供 `0640` 的单条事件，不传原始日志、凭据或网络请求；
-- 终端由独立的 root `kejilion-node-terminal.service` 运行 `kejilion-node terminal-broker`；它不监听
+  遥测 systemd unit 继续启用 `NoNewPrivileges`、只读系统、隐藏 home、空 capability 及地址族限制；
+  OpenRC service 使用低权限用户、`no_new_privs`、严格 umask、`supervise-daemon` 和整组停止，
+  但不宣称具备 systemd namespace/mount/capability 沙箱的同等隔离。root PTY broker 仅保留执行
+  系统维护命令所需的宿主机访问能力；SSH 登录由独立 service 以 root 运行，systemd unit 只保留
+  `CAP_DAC_READ_SEARCH` 并限制 `AF_UNIX`，OpenRC service 则使用 `root:kejilion-node`、
+  `no_new_privs` 和严格 umask；两者读取 journal 或固定的 `/var/log/secure`、`/var/log/auth.log`、
+  `/var/log/messages`，通过 `0750 root:kejilion-node`
+  运行目录向遥测进程提供 `0640` 的单条事件，不传原始日志、凭据或网络请求；OpenRC 下各服务的
+  stdout/stderr 交给 `logger` 写入系统 syslog，不维护无轮转的私有日志文件；
+- 终端由独立的 root `kejilion-node-terminal` service（systemd 名称带 `.service`）运行
+  `kejilion-node terminal-broker`；它不监听
   TCP、SSH、HTTP 或可被低权限节点进程调用的 Unix Socket，只通过 v2 Noise relay 主动轮询中心。
   中心返回的固定 `open`、`input`、`resize`、`close` 命令 payload 直接使用既有 v2 终端请求结构，
   由接入时绑定的节点终端静态公钥完成认证后才进入 root PTY Manager；节点重启时会在轮询会话
@@ -131,8 +137,9 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
 - 节点以客户端实际 HTTPS 上报请求耗时作为连接延迟：首次上报没有历史样本，成功后在下一次
   上报通过可选 `X-KPanel-Light-Report-Latency-Milliseconds` 传递上一轮 RTT；中心只接受
   `1–15,000 ms` 的有界值，旧节点或无有效样本显示为未知，不把 `0 ms` 当作真实延迟；
-- 自动更新由节点本机 systemd timer 在启动约 15–30 分钟后检查，随后每次结束后 1 小时再检查，
-  加入 0–15 分钟随机延迟；中心端不推送更新。先下载有界 `SHA256SUMS`，仅在摘要变化时下载
+- 自动更新在 systemd 使用 timer（启动约 15–30 分钟后检查，随后每次结束后 1 小时再检查），
+  在 Alpine/OpenRC 使用 `/etc/periodic/hourly` 与 `crond`；两者都加入 0–15 分钟随机延迟，
+  中心端不推送更新。先下载有界 `SHA256SUMS`，仅在摘要变化时下载
   同一 Release 的二进制，HTTPS 下载带有界重试；内核 `flock` 在进程退出后自动释放。
   更新检查同时核对 `/proc/MainPID/exe`，恢复磁盘已替换但进程仍旧的中断；遥测重启失败回滚，
   可选终端、SSH 采集、文件服务失败单独报告，不阻断正常遥测升级；
@@ -335,7 +342,7 @@ SSRF 与 TLS 校验。对
   凭据原子性、错误请求限速和密钥不进入审计；轻量终端 v2 Noise 身份/密文/重放、重投递、
   会话 ID 对账、固定 root PTY、命令/输出上限、旧中心 404/405/426 兼容和 broker 故障不影响遥测；
 - `kejilion-node` 严格配置、拒绝重定向、固定动作、静态跨架构构建；安装器无 Docker 依赖、
-  Release 摘要验证、非特权 systemd、自动更新回滚与失败安装清理；
+  Release 摘要验证、systemd/OpenRC 服务权限、自动更新回滚与失败安装清理；
 - 标准 Compose 和应用市场部署都能出站验证 HTTPS，Panel 仍无 Docker Socket 和宿主权限。
 
 发布前执行 L2 验证；正式版本与镜像发布仍按 L3 流程执行。
@@ -346,7 +353,8 @@ SSRF 与 TLS 校验。对
 包含 `kejilion-node`、`SHA256SUMS`、`light-v1` 上报、SSH 登录采集和 v2 Noise relay 的 KPanel Release。
 既有轻量节点不需要逐台手动执行 `k kpanel node update`，也不需要重新配对。节点现有的 root 自动更新
 任务下载并校验新版 Agent 时，会由已校验的临时二进制自动补写并启用独立的
-`kejilion-node-ssh-login.service`；报告密钥和节点身份保持不变。其他已存在的节点辅助单元继续按原有兼容流程管理。
+SSH 登录采集 service（systemd 为 `kejilion-node-ssh-login.service`，OpenRC 为
+`kejilion-node-ssh-login`）；报告密钥和节点身份保持不变。其他已存在的节点辅助单元继续按原有兼容流程管理。
 新节点接入会一次写入全部单元。脚本先
 发布期间下载资产返回 404 只会让新安装明确失败，不影响既有 KPanel 节点；KPanel Release 发布后
 必须在独立 Linux 主机完成安装、断网恢复、自动更新、摘要拒绝、终端 broker 重启、回滚与卸载
@@ -371,13 +379,16 @@ SSRF 与 TLS 校验。对
 固定暂存文件最多一份，包含最近检查/完成时间、有限结果与错误码，不保存 stderr、URL、凭据或历史日志。
 退出码保持原更新语义；核心失败回滚、辅助服务降级、被中断与成功分开。已有安装失败/卸载清理配置目录的流程
 覆盖这些产物。遥测以 1 KiB 上限和无符号链接的安全读取获取状态，再以总计 2 秒、4 KiB 输出上限的固定
-`systemctl show` 查询 timer、telemetry、terminal、file、SSH login 五单元；查询失败为未知，`not-found` 才为未安装。
+后端查询 timer、telemetry、terminal、file、SSH login 五项：systemd 使用固定的 `systemctl show`，
+OpenRC 以活动中的 `/run/openrc` 为优先信号，只读取固定 service 的 `rc-service status`、init 脚本、
+default runlevel 链接和 hourly periodic 文件；查询失败为未知，`not-found` 才为未安装。
 单元运行不代表终端/文件权限或 relay 连接已经可用，原权限判断保持独立。
 
 中心健康仅存在内存快照，不改变旧中心严格解码的持久状态；中心重启后等待重新上报。页面按观测时间 90 秒
 判过期，检查记录超过 3 小时判过期，`running` 超过 30 分钟判中断；刷新失败时旧观测也会按时间失效。
-已实现并通过本地协议/权限/故障回归及加速 systemd timer 隔离链；下载为夹具、定时器使用加速触发，真实发行
-资产、原调度周期、旧节点自动迁移与公开产物 L3 尚未验证。证书/续签契约继续沿用成对父基线。
+已实现并通过本地协议/权限/故障回归、加速 systemd timer 及 OpenRC service/periodic 契约；
+下载为夹具、调度使用加速触发，真实 Alpine OpenRC PID 1、真实发行资产、原调度周期、旧节点自动迁移
+与公开产物 L3 尚未验证。证书/续签契约继续沿用成对父基线。
 
 ## 9. 回滚
 

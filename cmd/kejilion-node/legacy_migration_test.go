@@ -26,7 +26,7 @@ func TestUpdateRuntimeMatchesPinnedSourceDigests(t *testing.T) {
 	if source.Repository != "https://github.com/kejilion/sh" || len(source.Revision) != 40 || len(source.ScriptSHA256) != 64 {
 		t.Fatal("runtime source is not pinned")
 	}
-	for name, template := range map[string][]byte{"update.sh": lightNodeUpdater, "update.service": lightNodeUpdateService, "update.timer": lightNodeUpdateTimer} {
+	for name, template := range map[string][]byte{"update.sh": lightNodeUpdater, "update.service": lightNodeUpdateService, "update.timer": lightNodeUpdateTimer, "update.openrc": lightNodeOpenRCUpdatePeriodic, "ssh-login.openrc": lightNodeSSHLoginOpenRCService} {
 		sum := sha256.Sum256(template)
 		if hex.EncodeToString(sum[:]) != source.Templates[name] {
 			t.Fatalf("%s differs from pinned script; regenerate from kejilion.sh", name)

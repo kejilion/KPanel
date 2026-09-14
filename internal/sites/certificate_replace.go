@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 var certificateReplaceRequirements = []string{
@@ -39,8 +40,7 @@ func (scriptCertificateReplacer) Available() error {
 	if _, err := findTrustedKejilionScript(certificateReplaceRequirements...); err != nil {
 		return err
 	}
-	_, err := findSystemdRun()
-	return err
+	return jobcontrol.Available(systemRecipeJobRunner{})
 }
 
 func (m *Manager) CertificateReplaceWritable() error {
@@ -180,17 +180,41 @@ func (scriptCertificateReplacer) Replace(ctx context.Context, input certificateR
 	if err != nil {
 		return fmt.Errorf("%w: certificate protocol unavailable", ErrUnavailable)
 	}
-	runner, err := findSystemdRun()
-	if err != nil {
+	controlRunner := systemRecipeJobRunner{}
+	if err := jobcontrol.Available(controlRunner); err != nil {
 		return fmt.Errorf("%w: certificate worker unavailable", ErrUnavailable)
 	}
 	// Let the bounded transaction finish recovery even if the browser disconnects.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 100*time.Second)
 	defer cancel()
-	args := []string{"--wait", "--pipe", "--collect", "--quiet", "--property=Type=exec", "--property=RuntimeMaxSec=75s", "--property=TimeoutStopSec=15s", "--property=User=root", "--property=UMask=0077", "--setenv=KJ_WEB_NONINTERACTIVE=1", "--setenv=KJ_WEB_CERTIFICATE_FILE=" + input.certificatePath, "--setenv=KJ_WEB_PRIVATE_KEY_FILE=" + input.keyPath, "--", "/bin/bash", script, "web", "certificate-replace", input.domain, strings.TrimPrefix(input.configHash, "sha256:"), strings.TrimPrefix(input.certificateHash, "sha256:"), strings.TrimPrefix(input.keyHash, "sha256:")}
-	args = append([]string{"--setenv=KJ_WEB_CERTIFICATE_EPHEMERAL=1"}, args...)
-	command := exec.CommandContext(ctx, runner, args...)
-	command.Env = siteCommandEnvironment(nil)
+	spec := jobcontrol.Spec{
+		Unit:       "kpanel-certificate-replace-" + stableID(input.domain, time.Now().UTC().String())[:24],
+		Executable: "/bin/bash",
+		Arguments: []string{
+			script, "web", "certificate-replace", input.domain,
+			strings.TrimPrefix(input.configHash, "sha256:"),
+			strings.TrimPrefix(input.certificateHash, "sha256:"),
+			strings.TrimPrefix(input.keyHash, "sha256:"),
+		},
+		Environment: []string{
+			"KJ_WEB_CERTIFICATE_EPHEMERAL=1",
+			"KJ_WEB_NONINTERACTIVE=1",
+			"KJ_WEB_CERTIFICATE_FILE=" + input.certificatePath,
+			"KJ_WEB_PRIVATE_KEY_FILE=" + input.keyPath,
+		},
+		StateDir: "/var/lib/kejilion-panel/wordpress-jobs",
+		SystemdProperties: []string{
+			"Type=exec", "RuntimeMaxSec=75s", "TimeoutStopSec=15s",
+			"User=root", "UMask=0077",
+		},
+		UMask: "0077",
+	}
+	name, args, _, err := jobcontrol.ForegroundInvocation(controlRunner, spec)
+	if err != nil {
+		return fmt.Errorf("%w: certificate worker unavailable", ErrUnavailable)
+	}
+	command := exec.CommandContext(ctx, name, args...)
+	command.Env = siteCommandEnvironment(spec.Environment)
 	var receipt certificateReceipt
 	command.Stdout = &receipt
 	// Raw script output must never be returned to audit/task/log consumers.

@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const (
@@ -56,7 +57,7 @@ func (m *Manager) DiskPartitionCapabilities() []contract.Capability {
 	if runtime.GOOS != "linux" || m.effectiveUID() != 0 {
 		readErr = errors.New("磁盘检查需要以 root 运行的 Linux Agent")
 	} else {
-		for _, tool := range []string{"lsblk", "systemd-run"} {
+		for _, tool := range []string{"lsblk"} {
 			if _, err := m.runner.LookPath(tool); err != nil {
 				readErr = fmt.Errorf("%s 不可用", tool)
 				break
@@ -64,6 +65,9 @@ func (m *Manager) DiskPartitionCapabilities() []contract.Capability {
 		}
 		if readErr == nil {
 			_, readErr = m.backgroundExecutable()
+		}
+		if readErr == nil {
+			readErr = m.backgroundJobsAvailable()
 		}
 	}
 	read := contract.Capability{ID: "system.disk-partitions.read", Enabled: readErr == nil, Methods: []string{"GET"}}
@@ -199,21 +203,27 @@ func (m *Manager) launchDiskJob(ctx context.Context, record diskJobRecord) error
 	if record.Request.Action == "format" || record.Request.Action == "check" || record.Request.Action == "repair" {
 		timeout = "2h"
 	}
-	arguments := []string{
-		"--unit=" + diskUnitPrefix + record.ID, "--collect", "--no-block",
-		"--property=Type=oneshot", "--property=TimeoutStartSec=" + timeout, "--property=TimeoutStopSec=30s",
-		"--property=User=root", "--property=UMask=0077",
-		"--property=PrivateDevices=no", "--property=PrivateMounts=no",
-		"--property=DevicePolicy=closed", "--property=DeviceAllow=" + record.Target.Path + " rw",
-		"--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
-		"--property=AmbientCapabilities=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
-		"--property=NoNewPrivileges=yes", "--property=SystemCallFilter=@system-service @mount",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK", "--property=Nice=10",
-		"--property=CPUWeight=20", "--property=IOWeight=20", "--property=SyslogIdentifier=kpanel-disk-run",
-		"--", executable, "disk-run", "--state-dir", m.stateDir, "--id", record.ID,
-	}
-	_, err = m.runner.Run(ctx, "systemd-run", arguments...)
-	return err
+	spec := m.backgroundJobSpec(
+		diskUnitPrefix+record.ID,
+		executable,
+		[]string{"disk-run", "--state-dir", m.stateDir, "--id", record.ID},
+		[]string{
+			"Type=oneshot", "TimeoutStartSec=" + timeout, "TimeoutStopSec=30s",
+			"User=root", "UMask=0077", "PrivateDevices=no", "PrivateMounts=no",
+			"DevicePolicy=closed", "DeviceAllow=" + record.Target.Path + " rw",
+			"CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
+			"AmbientCapabilities=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
+			"NoNewPrivileges=yes", "SystemCallFilter=@system-service @mount",
+			"RestrictAddressFamilies=AF_UNIX AF_NETLINK", "Nice=10",
+			"CPUWeight=20", "IOWeight=20", "SyslogIdentifier=kpanel-disk-run",
+		},
+		"0077",
+		10,
+		30*time.Second,
+	)
+	spec.NoNewPrivileges = true
+	spec.IOClass = "2:7"
+	return jobcontrol.Launch(ctx, m.runner, spec)
 }
 
 // RunDiskJob is called only by the fixed root-only CLI worker.
@@ -680,19 +690,20 @@ func (m *Manager) reconcileDiskJob(job *contract.DiskPartitionJob) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	output, err := m.runner.Run(ctx, "systemctl", "show", diskUnitPrefix+job.ID, "--property=LoadState", "--property=ActiveState", "--property=SubState", "--property=Result", "--property=ExecMainStatus", "--no-pager")
-	unit := make(map[string]string)
-	for _, line := range strings.Split(string(output), "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if ok {
-			unit[key] = value
-		}
-	}
-	if err == nil && (unit["ActiveState"] == "active" || unit["ActiveState"] == "activating") {
+	state, err := jobcontrol.Inspect(ctx, m.runner, m.backgroundJobSpec(
+		diskUnitPrefix+job.ID,
+		m.executable,
+		[]string{"disk-run", "--state-dir", m.stateDir, "--id", job.ID},
+		nil,
+		"0077",
+		10,
+		30*time.Second,
+	))
+	if err == nil && state.Running {
 		return
 	}
 	elapsed := m.now().Sub(job.CreatedAt)
-	if elapsed < diskJobLaunchTimeout && (err != nil || (unit["LoadState"] == "" && unit["ActiveState"] == "")) {
+	if elapsed < diskJobLaunchTimeout && (err != nil || !state.Known) {
 		return
 	}
 	latest := m.readDiskJob()

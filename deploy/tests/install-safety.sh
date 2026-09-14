@@ -9,7 +9,7 @@ FAKE_BIN=$SCRIPT_DIR/fake-bin
 TEST_DIR=$(mktemp -d /tmp/kejilion-panel-install-test.XXXXXX)
 TEST_BIN=$TEST_DIR/fake-bin
 mkdir -p "$TEST_BIN"
-for command_name in curl groupadd openssl; do
+for command_name in curl groupadd addgroup openssl; do
 	printf '%s\n' \
 		'#!/bin/sh' \
 		"echo \"install-safety: unexpected $command_name invocation\" >&2" \
@@ -62,6 +62,46 @@ grep -F 'Docker daemon was not queried and no host state was changed.' "$TEST_DI
 grep -F 'Private Panel endpoint: http://172.29.255.242:8080' "$TEST_DIR/success.out" >/dev/null
 test "$(wc -l <"$DOCKER_LOG" | tr -d ' ')" = 1
 grep -Fx -- '--host unix:///var/run/docker.sock compose version' "$DOCKER_LOG" >/dev/null
+
+# Exercise Alpine/OpenRC selection independently of the test host's PID 1.
+OPENRC_LOG=$TEST_DIR/openrc.log
+mkdir -p "$TEST_DIR/openrc"
+cat >"$TEST_BIN/rc-service" <<'MOCK_RC_SERVICE'
+#!/bin/sh
+printf '%s\n' "$*" >>"${KP_OPENRC_LOG}"
+exit 0
+MOCK_RC_SERVICE
+cat >"$TEST_BIN/rc-update" <<'MOCK_RC_UPDATE'
+#!/bin/sh
+printf '%s\n' "$*" >>"${KP_OPENRC_LOG}"
+exit 0
+MOCK_RC_UPDATE
+for command_name in start-stop-daemon supervise-daemon; do
+	printf '%s\n' '#!/bin/sh' 'exit 0' >"$TEST_BIN/$command_name"
+done
+chmod 0700 "$TEST_BIN/rc-service" "$TEST_BIN/rc-update" \
+	"$TEST_BIN/start-stop-daemon" "$TEST_BIN/supervise-daemon"
+SYSTEMD_DOCKER_LOG=$DOCKER_LOG
+DOCKER_LOG=$TEST_DIR/openrc-docker.log
+: >"$DOCKER_LOG"
+KPANEL_SYSTEMD_RUNTIME_DIR="$TEST_DIR/no-systemd" \
+KPANEL_OPENRC_RUNTIME_DIR="$TEST_DIR/openrc" \
+KP_OPENRC_LOG="$OPENRC_LOG" \
+	run_installer >"$TEST_DIR/openrc-success.out"
+grep -F 'Init system: openrc' "$TEST_DIR/openrc-success.out" >/dev/null
+grep -Fx 'docker status' "$OPENRC_LOG" >/dev/null
+grep -Fx -- '--host unix:///var/run/docker.sock compose version' "$DOCKER_LOG" >/dev/null
+rm -f "$TEST_BIN/supervise-daemon"
+if KPANEL_SYSTEMD_RUNTIME_DIR="$TEST_DIR/no-systemd" \
+	KPANEL_OPENRC_RUNTIME_DIR="$TEST_DIR/openrc" \
+	KP_OPENRC_LOG="$OPENRC_LOG" \
+	run_installer >"$TEST_DIR/openrc-incomplete.out" 2>&1; then
+	echo "installer fell back from an incomplete live OpenRC runtime" >&2
+	exit 1
+fi
+grep -F 'systemd or OpenRC service management is required' \
+	"$TEST_DIR/openrc-incomplete.out" >/dev/null
+DOCKER_LOG=$SYSTEMD_DOCKER_LOG
 
 # Exercise the real checksum implementation selected by this environment.
 if (AGENT_SHA=0000000000000000000000000000000000000000000000000000000000000000; run_installer) >"$TEST_DIR/checksum-mismatch.out" 2>&1; then

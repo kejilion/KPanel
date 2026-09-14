@@ -88,9 +88,12 @@ func (m *Manager) systemTuningAvailability(write bool) error {
 		if !m.enabled {
 			return fmt.Errorf("%w: host system writes are disabled", ErrDisabled)
 		}
-		commands = append(commands, "flock", "systemd-run")
+		commands = append(commands, "flock")
 		if _, err := m.backgroundExecutable(); err != nil {
 			return fmt.Errorf("%w: Agent background executor is unavailable", ErrUnsupported)
+		}
+		if err := m.backgroundJobsAvailable(); err != nil {
+			return fmt.Errorf("%w: %v", ErrUnsupported, err)
 		}
 	}
 	for _, command := range commands {

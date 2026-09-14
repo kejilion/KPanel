@@ -62,16 +62,23 @@ func startPlatform(command *exec.Cmd, rows, columns uint16) (Process, error) {
 	command.Stdin = slave
 	command.Stdout = slave
 	command.Stderr = slave
-	command.SysProcAttr = &syscall.SysProcAttr{
-		Setsid:  true,
-		Setctty: true,
-		Ctty:    0,
-	}
+	command.SysProcAttr = ptyProcessAttributes()
 	if err := command.Start(); err != nil {
 		return nil, err
 	}
 	closeMaster = false
 	return &linuxProcess{File: master, command: command}, nil
+}
+
+func ptyProcessAttributes() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+		// OpenRC does not create a transient scope for the host terminal.
+		// Prevent a direct PTY shell from surviving an abrupt Agent/worker exit.
+		Pdeathsig: syscall.SIGKILL,
+	}
 }
 
 func (process *linuxProcess) Wait() error {

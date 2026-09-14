@@ -57,6 +57,9 @@ func run(arguments []string) error {
 	if len(arguments) > 0 && arguments[0] == "maintenance-run" {
 		return runMaintenance(arguments[1:])
 	}
+	if len(arguments) > 0 && arguments[0] == "reboot-run" {
+		return runDelayedReboot(arguments[1:])
+	}
 	if len(arguments) > 0 && arguments[0] == "swap-run" {
 		return runSwap(arguments[1:])
 	}
@@ -218,6 +221,23 @@ func run(arguments []string) error {
 		}
 	}
 	return nil
+}
+
+func runDelayedReboot(arguments []string) error {
+	flags := flag.NewFlagSet("kejilion-agent reboot-run", flag.ContinueOnError)
+	delaySeconds := flags.Int("delay-seconds", 0, "fixed reboot delay")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *delaySeconds != 15 {
+		return errors.New("reboot-run requires the fixed 15 second delay")
+	}
+	if os.Geteuid() != 0 {
+		return errors.New("reboot-run requires root")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return systemmanage.RunDelayedReboot(ctx, time.Duration(*delaySeconds)*time.Second)
 }
 
 func runMaintenance(arguments []string) error {

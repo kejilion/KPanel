@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | 身份 | Argon2id、一次性 Bootstrap Token、服务端 Session、登录限速、可选 TOTP 与一次性恢复码 | 未授权访问、撞库、密码泄露后的账户接管 |
 | Web 请求 | CSRF Token、严格 Origin、可信代理 CIDR、Secure/HttpOnly Cookie | 跨站请求伪造、代理头伪造 |
-| Agent | Unix Socket、独立 Bearer Token、最小 systemd 权限 | 绕过 Panel 直接提权 |
+| Agent | Unix Socket、独立 Bearer Token、受限 systemd/OpenRC 服务定义 | 绕过 Panel 直接提权 |
 | 输入 | 类型化 API、枚举或语法校验、禁止把 Web 字段拼成宿主机 Shell | 命令注入 |
 | 文件 | 固定业务根、路径穿越检查、符号链接检查、原子替换 | 任意文件覆盖、竞态篡改 |
 | 并发 | `resourceVersion`、任务互斥、提交前回读 | 旧页面覆盖新状态、并发破坏 |
@@ -42,7 +42,7 @@ TOTP 的注册、密钥保护、恢复和防绕过要求见
 
 ## 3. 真实状态与双端互通
 
-- Docker Engine、Nginx 配置、systemd、系统文件和 `kejilion.sh` 兼容产物是共享事实。
+- Docker Engine、Nginx 配置、init/service 状态、系统文件和 `kejilion.sh` 兼容产物是共享事实。
 - KPanel 每次读取真实产物并计算 `resourceVersion`；Panel 持久化只允许保存账户、Session、
   任务索引、审计和必要缓存，高权限任务状态由 Agent 独立保存。
 - 脚本、Compose、CLI 或 Web 创建的容器都可按实时状态执行生命周期、日志、性能、控制台和访问控制。

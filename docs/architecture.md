@@ -9,8 +9,10 @@
 - 面板状态：当前使用带进程锁和原子落盘的 JSON Store，保存账户、Session、登录限速和审计；
   Agent 后台任务使用独立的有界任务状态与日志。宿主机资源始终从实际文件系统和
   Docker Engine 读取。
-- 部署：无特权 `paneld` Docker 容器 + 受 systemd 限制的宿主机 Agent。
+- 部署：无特权 `paneld` Docker 容器 + 由 systemd 或 OpenRC 管理的宿主机 Agent。
   这种拆分让 Web 进程不接触 Docker Socket、宿主机根目录或任意 Shell。
+  systemd 使用 unit namespace/mount/capability 沙箱；OpenRC 使用固定 root:group、
+  `no_new_privs`、umask、受保护配置、`supervise-daemon` 和整组停止，隔离强度并不完全等价。
 
 该组合优先满足“轻量、快速、稳定、安全、可打包为多架构 Docker 镜像”的目标。
 未来按业务特征分层使用 JSON、JSONL、SQLite；只有多 Panel 共享写入、主动高可用或
@@ -26,7 +28,7 @@ Browser
 paneld（Docker，非 root）
    │ HTTP+JSON over Unix Socket
    ▼
-kejilion-agent（宿主机 systemd 服务）
+kejilion-agent（宿主机 systemd / OpenRC 服务）
    ├─ /proc 与系统状态
    ├─ Docker Engine API
    └─ /home/web 实际产物
@@ -112,12 +114,14 @@ Agent 不 `source` Shell 函数。需要写入脚本已定义的外联配置时�
 
 应用安装、体检和 `kejilion.sh` 建站等长任务遵循同一执行契约：
 
-1. Agent 先校验固定动作和参数，持久化任务 ID，再以 `systemd-run --no-block`
-   启动独立 worker；浏览器窗口和 Agent 主进程不持有任务生命周期。
+1. Agent 先校验固定动作和参数，持久化任务 ID，再以 `systemd-run --no-block` 或 OpenRC
+   `start-stop-daemon` 启动独立 worker；浏览器窗口和 Agent 主进程不持有任务生命周期。
 2. worker 通过 PTY 执行受信任入口，把原始 ANSI 输出写入有界日志，并只从该任务的
    `0600` FIFO 接收受长度与 NUL 校验的输入。
-3. Agent 重启后先查询原 systemd 单元；仍在运行时保留任务，单元明确结束且没有结果时
-   才标记为 `interrupted`。任务列表每次从原子状态文件刷新，不能依赖进程内旧副本。
+3. Agent 重启后按 backend 查询原 systemd unit 或受保护的 OpenRC PID file；仍在运行时保留任务，
+   manager 明确结束且没有结果时才标记为 `interrupted`。任务列表每次从原子状态文件刷新，
+   不能依赖进程内旧副本。OpenRC worker 置于独立进程组，停止时按整组 TERM/KILL，控制输出不创建
+   无界日志，业务日志仍由各任务自己的有界文件保存。
 4. Web 遇到 502、503、504 或网络错误时保持原业务状态并自动重连；只有任务记录明确返回
    `succeeded` 或 `failed`，才能结束进度、关闭输入或展示最终失败。
 

@@ -85,7 +85,8 @@ func TestSystemLogSummaryKeepsJournalSourceWhenDiskUsageFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.Journal.Available || !summary.Sources.Journal.Available || !summary.Sources.Security.Available ||
+	if summary.Journal.Available || !summary.Sources.Journal.Available || !summary.Sources.System.Available ||
+		!summary.Sources.System.SupportsPriority || !summary.Sources.Security.Available ||
 		summary.AuthSource != "journal" {
 		t.Fatalf("journal source was coupled to usage probe: %#v", summary)
 	}
@@ -94,6 +95,66 @@ func TestSystemLogSummaryKeepsJournalSourceWhenDiskUsageFails(t *testing.T) {
 	})
 	if err != nil || len(snapshot.Entries) != 1 || snapshot.Entries[0].Message != "journal remains readable" {
 		t.Fatalf("journal query failed after usage degradation: snapshot=%#v err=%v", snapshot, err)
+	}
+}
+
+func TestSystemLogsPreferLiveOpenRCSyslogOverStrayJournalctl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("system logs are Linux-only")
+	}
+	runner := &fakeRunner{run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "journalctl" {
+			t.Fatalf("live OpenRC attempted to use stray journalctl")
+		}
+		if name == "du" {
+			return []byte("4\t/var/log\n"), nil
+		}
+		return nil, nil
+	}}
+	manager, _, _, _ := testManager(t, runner)
+	if err := os.MkdirAll(filepath.Join(manager.runRoot, "openrc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager.logRoot = t.TempDir()
+	messagesPath := filepath.Join(manager.logRoot, "messages")
+	if err := os.WriteFile(messagesPath, []byte(
+		"Sep 14 12:00:00 alpine sshd[42]: Accepted publickey for root from 192.0.2.1 port 22 ssh2\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := manager.SystemLogSummary(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !summary.Sources.System.Available || summary.Sources.System.SupportsPriority ||
+		summary.Sources.Journal.Available || summary.Sources.Journal.Reason == "" ||
+		!summary.Sources.Security.Available || summary.AuthSource != messagesPath {
+		t.Fatalf("unexpected OpenRC log summary: %#v", summary)
+	}
+
+	systemLogs, err := manager.SystemLogs(context.Background(), contract.SystemLogQuery{
+		Source: "system", Limit: 50, Priority: "all",
+	})
+	if err != nil || len(systemLogs.Entries) != 1 || systemLogs.Entries[0].Identifier != "sshd" ||
+		systemLogs.Entries[0].PID != 42 {
+		t.Fatalf("OpenRC system logs = %#v, %v", systemLogs, err)
+	}
+	securityLogs, err := manager.SystemLogs(context.Background(), contract.SystemLogQuery{
+		Source: "security", Limit: 50, Priority: "all",
+	})
+	if err != nil || securityLogs.AuthSource != messagesPath || len(securityLogs.Entries) != 1 {
+		t.Fatalf("OpenRC security logs = %#v, %v", securityLogs, err)
+	}
+	login, err := manager.LatestSSHLogin(context.Background())
+	if err != nil || login == nil || login.Username != "root" || login.RemoteAddress != "192.0.2.1" {
+		t.Fatalf("OpenRC latest SSH login = %#v, %v", login, err)
+	}
+	_, err = manager.SystemLogs(context.Background(), contract.SystemLogQuery{
+		Source: "service", Limit: 50, Priority: "warning",
+	})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("fixed syslog priority error = %v", err)
 	}
 }
 
@@ -447,6 +508,59 @@ func TestLogCleanupPlansRotateBeforeExactVacuumPolicy(t *testing.T) {
 	}
 	if _, _, _, err := manager.maintenanceSteps("log-cleanup-forever"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("unknown policy error = %v", err)
+	}
+}
+
+func TestLogCleanupSuccessMessagesDoNotAssumeJournald(t *testing.T) {
+	for _, policy := range []string{"retain-7d", "retain-3d", "max-500m"} {
+		message := maintenanceSuccessMessage("log-cleanup", policy, false)
+		if !strings.Contains(message, "系统日志归档") || strings.Contains(message, "journal") {
+			t.Fatalf("policy %s returned backend-specific message %q", policy, message)
+		}
+	}
+}
+
+func TestLogCleanupUsesLiveOpenRCSyslogDespiteStrayJournalctl(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, _, _, _ := testManager(t, runner)
+	if err := os.MkdirAll(filepath.Join(manager.runRoot, "openrc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manager.logRoot = t.TempDir()
+	if err := os.WriteFile(filepath.Join(manager.logRoot, "messages"), []byte("current\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(manager.logRoot, "messages.1.gz")
+	recent := filepath.Join(manager.logRoot, "messages.0")
+	unrelated := filepath.Join(manager.logRoot, "fail2ban.log.9.gz")
+	for _, path := range []string{old, recent, unrelated} {
+		if err := os.WriteFile(path, []byte("archive\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+	if err := os.Chtimes(old, now.Add(-8*24*time.Hour), now.Add(-8*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(recent, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	action, policy, steps, err := manager.maintenanceSteps("log-cleanup-retain-7d")
+	if err != nil || action != "log-cleanup" || policy != "retain-7d" || len(steps) != 1 ||
+		steps[0].operation != maintenanceOperationSyslogCleanup {
+		t.Fatalf("OpenRC syslog plan = %q %q %#v, %v", action, policy, steps, err)
+	}
+	if err := manager.pruneRotatedSystemLogs(context.Background(), policy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old rotated log remains: %v", err)
+	}
+	for _, path := range []string{filepath.Join(manager.logRoot, "messages"), recent, unrelated} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("protected log %s was removed: %v", path, err)
+		}
 	}
 }
 

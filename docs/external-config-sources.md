@@ -34,15 +34,20 @@
 | `system-network` | 系统更新源、V4/V6、内核、BBR | `kejilion.sh` 系统工具对应函数和远程配置 | 多个 Go 适配器独立执行 | **待审计**：凡脚本已有外联模板/远程来源的项目必须迁移为同源；更新源仍不得以当前 Go 自编流程宣称完全对齐 |
 | `backup-center-shared-adapter` | 设置 → 备份与恢复；脚本三个备份菜单及 `k backup-center` | `kejilion/sh@5ef0201947dfb80062d54a0ba8f11009e871cf04` 的应用 `/home`、LDNMP `/home/web`、Docker inspect/Compose/挂载数据机制；新协议 `backup-center` 1 | 双端调用同一 `internal/hostbackup` Agent 适配器和 `.kpb` 认证加密格式；恢复归档中的实际配置，不生成外联模板；旧格式保留原脚本入口 | **已合规（组合候选待 L3）**：`scriptLinkageState=coupled`，变更集 `backup-center-20260912`；配套组合脚本已先发布，根/CN 同步、Linux 语法、HTTP 端口兼容、备份可信入口及加密包双向互通已通过，镜像固定上述提交与摘要。跨发行版 LDNMP/数据库迁移仍属于发布画像中的未验证边界，范围见 [备份契约](backup-center.md) |
 | `docker-environment` | Docker 安装、换源、维护、迁移、备份与还原 | `kejilion.sh` Docker 工具函数及其远程来源 | KPanel 固定动作适配器 | **待审计**：逐动作核对，不得新增自编外联配置 |
-| `cluster-light-node-runtime` | 集群 → 添加主机 → 非面板 Linux 主机 | `bash <(curl -fsSL https://kejilion.sh) kpanel node join <授权>`；官方短入口按区域加载 `kejilion/sh` 的根目录或 `cn/kejilion.sh`，二者保持同一节点协议；二进制与 `SHA256SUMS` 来自 `https://github.com/kejilion/KPanel/releases/latest/download/` | `kejilion.sh` 固定安装协议按架构下载静态 `kejilion-node`，严格校验 Release 摘要与 `version` 后原子安装；systemd timer 使用同一更新器自动更新并在健康失败时回滚 | **已合规（待 L3）**：不要求 Docker/Go；脚本入口仅使用 HTTPS 官方域名，Release 资产校验不变；正式发布须验证短入口、Release 资产、摘要、安装、断网重试、更新回滚与卸载 |
-| `cluster-light-node-update-migration` | 既有轻量节点自动更新恢复 | `kejilion/sh@9f612efc4f861459c0a525491c7cdf5eda756cf7`（配套脚本主线已发布）；完整脚本 SHA-256 `9f3eaabaae32fd51511d2c3749cfb874bd600fb4c3b0b139b2f640b9eb877663`；模板摘要见 `cmd/kejilion-node/update_runtime/source.json` | `scripts/sync-light-node-runtime.mjs` 原样组合安装器共用生命周期锁与 updater，并提取 service/timer 并嵌入节点；普通 Go 测试核对固定摘要，配对验收执行该脚本 `PATH_TO_KEJILION_SH --check`。仅已校验 root 临时 Release 的兼容入口可原子更新既有安装，保留 reporting key；官方历史文件 unit 精确匹配后同源迁移，自定义 unit 与 drop-in 保留 | **已实现（本版生命周期与防回退回归通过，最终真实 systemd / L3 待验）**：配置权限、锁/交接、下载失败、回滚、进程版本和命名空间迁移有回归；隔离 Ubuntu 24.04 的真实 systemd 已验证旧更新器首轮配置权限、两轮更新、timer、历史文件 unit 的网络族及失败回滚，下载使用受控夹具，不能代替公开 Release 下载与最终 SHA L3。最终发布按本版验收记录核对配套脚本、节点二进制与受管脚本，不得只更新中心端 |
+| `cluster-light-node-runtime` | 集群 → 添加主机 → 非面板 Linux 主机 | `bash <(curl -fsSL https://kejilion.sh) kpanel node join <授权>`；官方短入口按区域加载 `kejilion/sh` 的根目录或 `cn/kejilion.sh`，二者保持同一节点协议；二进制与 `SHA256SUMS` 来自 `https://github.com/kejilion/KPanel/releases/latest/download/` | `kejilion.sh` 固定安装协议按架构下载静态 `kejilion-node`，严格校验 Release 摘要与 `version` 后原子安装；systemd timer 或 OpenRC hourly periodic 使用同一更新器自动更新，并在健康失败时回滚 | **已实现（待 L3）**：不要求 Docker/Go；systemd 与 OpenRC 安装、更新、辅助服务和卸载契约已有自动化回归；正式发布须验证短入口、Release 资产、摘要、断网重试、更新回滚，以及真实 OpenRC PID 1 的重启恢复 |
+| `cluster-light-node-update-migration` | 既有轻量节点自动更新恢复 | 本地配对候选基于 `kejilion/sh@5c4972229bd9c98669d99c81354c9b79915a02f3`，候选完整脚本 SHA-256 `28cf3934c01fe79a19c51fac520f11a2bdd7656d762f37d6fc4153140a6df549`；模板摘要见 `cmd/kejilion-node/update_runtime/source.json`。该摘要尚未对应已提交的脚本 revision，正式合入前必须在脚本提交后重新固定精确 commit | `scripts/sync-light-node-runtime.mjs` 原样组合安装器共用生命周期锁与 updater，并提取 systemd service/timer、OpenRC periodic 与 SSH login service 后嵌入节点；普通 Go 测试核对模板摘要，配对验收执行该脚本 `PATH_TO_KEJILION_SH --check`。官方历史 unit 精确匹配后同源迁移，自定义 unit 与 drop-in 保留 | **已实现（候选待 L3）**：配置权限、锁/交接、下载失败、回滚、进程版本、systemd/OpenRC 命名空间迁移有回归；隔离 Ubuntu 24.04 的真实 systemd 历史证据继续有效，新增 OpenRC 仅有自动化契约证据。正式发布须先固定配套脚本提交，再完成真实 Alpine/OpenRC PID 1、公开 Release 资产和最终 SHA 验证 |
 | `monitoring-operator-latency` | 历史监控 → 三网延迟 | KPanel 原生只读监控；`kejilion.sh` 无同类历史业务。运营商网段归属离线复核自 `gaoyifan/china-operator-ip@4593b6c4d577b61e3c2189bcd06f1e4c24750b7d`，固定目标清单见 `docs/history-monitoring-design.md` | Agent 每 5 分钟对代码内固定九个运营商 DNS 地址执行有界 UDP/53 往返探测；运行时不下载地址列表，不接受 API 自定义目标 | **已合规（代码链路，待 L3）**：固定九目标、3 并发、1.5 秒超时、缺测不记 0、无新增 capability 已自动验证；发布前须在境内外真实 Linux 主机复核目标可达率与历史曲线 |
 
 <!-- external-config-debt:website-nginx:blocked -->
 
 ## KPanel 与 kejilion.sh 发布关系
 
-当前应用任务退出码变更集 `kpanel-v1100-native-app-status`：`scriptLinkageState=coupled`。
+当前 Alpine/OpenRC 变更集 `kpanel-openrc-alpine-v1`：`scriptLinkageState=coupled`。配套脚本
+仍是基于 `5c4972229bd9c98669d99c81354c9b79915a02f3` 的未提交候选；根/CN 同步与自动化回归已通过，
+但不得把该父提交当作候选内容的来源提交。合入前必须先提交并发布兼容旧 KPanel 的脚本，随后用该精确
+commit 重新生成 `cmd/kejilion-node/update_runtime/source.json`，再合入 KPanel 与应用目录定义。
+
+此前应用任务退出码变更集 `kpanel-v1100-native-app-status`：`scriptLinkageState=coupled`。
 配对脚本 `9f612efc4f861459c0a525491c7cdf5eda756cf7` 已发布到脚本主线，SHA-256
 `9f3eaabaae32fd51511d2c3749cfb874bd600fb4c3b0b139b2f640b9eb877663`。根/CN 同步、完整应用分发器
 失败码与成功码、普通 SSH 菜单兼容回归通过，旧脚本被新增负例拒绝。镜像与节点固定该来源，节点更新

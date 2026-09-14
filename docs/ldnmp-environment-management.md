@@ -39,11 +39,11 @@ KPANEL_LDNMP_RESULT {...}
 环境任务、KPanel 一键建站和关键网站写操作共同使用
 `/run/lock/kejilion-web-environment.lock`。任务成功必须同时满足：
 
-1. systemd worker 已退出；
+1. systemd/OpenRC worker 已退出；
 2. 脚本以原子替换写入 root 专属完成凭据；
 3. Agent 能重新读取最终环境产物。
 
-缺少完成凭据时，即使 systemd 显示 `Result=success`，任务仍标记为“需要人工处理”。
+缺少完成凭据时，即使 init backend 报告进程已成功退出，任务仍标记为“需要人工处理”。
 
 ## API 与任务
 
@@ -73,7 +73,8 @@ GET  /v1/web-environment/backups/{id}
 - `restore`
 - `uninstall`
 
-每个写入请求必须携带当前 `expectedResourceVersion`。Agent 由独立 systemd worker
+每个写入请求必须携带当前 `expectedResourceVersion`。Agent 由独立 systemd transient unit
+或 OpenRC `start-stop-daemon` worker
 启动 PTY，终端按偏移量读取并保留 ANSI 颜色，单次输入限制 16 KiB 且拒绝 NUL。
 浏览器关闭、刷新或 Agent 重启不改变 worker 的生命周期；页面可重新打开终端并全屏
 显示。环境任务也会映射到统一“活动记录”任务列表。
@@ -87,7 +88,7 @@ Cloudflare 账号、API Key/Token 与 Zone ID：
 
 - 不写入 Panel 数据库、任务 JSON、终端和审计 change；
 - 仅写入任务专属 `0600` 文件；
-- systemd 只接收文件路径，不接收凭据值；
+- 后台执行器只接收文件路径，不接收凭据值；
 - 脚本读取后立即删除输入文件；
 - 任务完成、启动失败或无凭据退出时 Agent 再次清理。
 

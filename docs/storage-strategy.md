@@ -9,7 +9,7 @@
 
 ## 1. 产品前提
 
-1. Docker Engine、Nginx、systemd、系统文件、`/home/web` 和 `kejilion.sh` 产物是业务
+1. Docker Engine、Nginx、init/service 状态、系统文件、`/home/web` 和 `kejilion.sh` 产物是业务
    真实状态；任何数据库都不得成为这些资源的第二套事实来源。
 2. Panel 只持久化面板自身数据，例如账户、Session、审计、任务索引、通知、计划和必要缓存。
 3. Agent 的高权限执行状态、完成凭据和有界日志保持独立，不能为了统一查询而扩大 Panel

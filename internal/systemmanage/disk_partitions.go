@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const (
@@ -166,34 +167,33 @@ func (m *Manager) inspectDiskPartitions(ctx context.Context) (diskInspectEnvelop
 	if err != nil {
 		return diskInspectEnvelope{}, err
 	}
-	if _, err := m.runner.LookPath("systemd-run"); err != nil {
-		return diskInspectEnvelope{}, fmt.Errorf("%w: systemd-run is unavailable", ErrUnsupported)
+	if err := m.backgroundJobsAvailable(); err != nil {
+		return diskInspectEnvelope{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
 	}
 	unitID := randomDiskID()
-	arguments := []string{
-		"--unit=" + diskUnitPrefix + "inspect-" + unitID,
-		"--wait", "--pipe", "--collect", "--quiet",
-		"--property=Type=oneshot",
-		"--property=TimeoutStartSec=30s",
-		"--property=TimeoutStopSec=10s",
-		"--property=User=root",
-		"--property=UMask=0077",
-		"--property=PrivateDevices=no",
-		"--property=PrivateMounts=no",
-		"--property=NoNewPrivileges=yes",
-		"--property=CapabilityBoundingSet=",
-		"--property=AmbientCapabilities=",
-		"--property=RestrictNamespaces=yes",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK",
-		"--property=Nice=10",
-		"--property=CPUWeight=20",
-		"--property=IOWeight=20",
-		"--property=SyslogIdentifier=kpanel-disk-inspect",
-		"--", executable, "disk-inspect", "--state-dir", m.stateDir,
+	spec := m.backgroundJobSpec(
+		diskUnitPrefix+"inspect-"+unitID,
+		executable,
+		[]string{"disk-inspect", "--state-dir", m.stateDir},
+		[]string{
+			"Type=oneshot", "TimeoutStartSec=30s", "TimeoutStopSec=10s",
+			"User=root", "UMask=0077", "PrivateDevices=no", "PrivateMounts=no",
+			"NoNewPrivileges=yes", "CapabilityBoundingSet=", "AmbientCapabilities=",
+			"RestrictNamespaces=yes", "RestrictAddressFamilies=AF_UNIX AF_NETLINK",
+			"Nice=10", "CPUWeight=20", "IOWeight=20",
+			"SyslogIdentifier=kpanel-disk-inspect",
+		},
+		"0077",
+		10,
+		10*time.Second,
+	)
+	command, arguments, _, err := jobcontrol.ForegroundInvocation(m.runner, spec)
+	if err != nil {
+		return diskInspectEnvelope{}, fmt.Errorf("%w: disk inspection backend: %v", ErrUnsupported, err)
 	}
 	inspectContext, cancel := context.WithTimeout(ctx, diskInspectTimeout)
 	defer cancel()
-	output, _, err := m.runResourceCommand(inspectContext, diskInspectOutputLimit, "systemd-run", arguments...)
+	output, _, err := m.runResourceCommand(inspectContext, diskInspectOutputLimit, command, arguments...)
 	if err != nil {
 		return diskInspectEnvelope{}, fmt.Errorf("%w: disk inspection failed: %v", ErrUnsupported, err)
 	}
@@ -540,10 +540,13 @@ func diskSupportedFilesystem(value string) bool {
 }
 
 func (m *Manager) diskWriteAvailability() error {
-	for _, tool := range []string{"systemd-run", "env", "bash"} {
+	for _, tool := range []string{"env", "bash"} {
 		if _, err := m.runner.LookPath(tool); err != nil {
 			return fmt.Errorf("%s is unavailable", tool)
 		}
+	}
+	if err := m.backgroundJobsAvailable(); err != nil {
+		return err
 	}
 	if _, err := m.backgroundExecutable(); err != nil {
 		return err

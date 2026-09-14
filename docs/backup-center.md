@@ -34,7 +34,7 @@ Panel 存储于 `<DataDir>/backups/<id>`，Agent 为 `<StateDir>/backup-center/<
 
 面板恢复等待 HTTP 请求、后台服务及 Store 关闭后离线替换，重新初始化账户、AI 和集群并成功绑定监听端口后提交。导入与应用前逐项验证已有配对所引用的密钥，排除待配对和孤儿密钥；未应用前检查失败会取消本次意图，不阻止旧配置启动。崩溃时根据日志完成已提交的清理或回滚未提交的数据。主机类别与面板类别有独立提交点；部分成功时展示 `completedModules`，不能承诺跨 Docker、JSON 与 SQLite 的全局原子事务。
 
-当前格式处理普通文件和目录，保留 Linux UID/GID、权限位。符号链接、特殊文件、包含独立挂载点的数据根、非本地卷驱动/带选项卷、rootless/userns-remap 需要对应适配器，预检拒绝并说明边界。运行中的 AutoRemove 容器须先由用户处理，避免冷停自动删除源容器。SELinux 标签、ACL/xattrs、发行版迁移、跨 CPU 架构与真实 systemd 沙箱仍需发布画像实测，不以单元测试代替。
+当前格式处理普通文件和目录，保留 Linux UID/GID、权限位。符号链接、特殊文件、包含独立挂载点的数据根、非本地卷驱动/带选项卷、rootless/userns-remap 需要对应适配器，预检拒绝并说明边界。运行中的 AutoRemove 容器须先由用户处理，避免冷停自动删除源容器。SELinux 标签、ACL/xattrs、发行版迁移、跨 CPU 架构与真实 systemd/OpenRC 服务边界仍需发布画像实测，不以单元测试代替。
 
 ## 集群迁移
 

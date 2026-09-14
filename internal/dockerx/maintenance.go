@@ -987,13 +987,38 @@ func restoreDockerDaemonConfig(path string, original []byte, existed bool) error
 }
 
 func restartDockerDaemon(ctx context.Context) error {
-	if _, err := os.Stat("/run/systemd/system"); err == nil {
-		return exec.CommandContext(ctx, "systemctl", "restart", "docker").Run()
+	command, arguments, err := dockerServiceRestartInvocation(directoryExists, exec.LookPath)
+	if err != nil {
+		return err
 	}
-	if _, err := exec.LookPath("service"); err == nil {
-		return exec.CommandContext(ctx, "service", "docker", "restart").Run()
+	return exec.CommandContext(ctx, command, arguments...).Run()
+}
+
+func dockerServiceRestartInvocation(
+	directoryPresent func(string) bool,
+	lookPath func(string) (string, error),
+) (string, []string, error) {
+	if directoryPresent("/run/systemd/system") {
+		if command, err := lookPath("systemctl"); err == nil {
+			return command, []string{"restart", "docker"}, nil
+		}
+		return "", nil, errors.New("systemd is running but systemctl is unavailable")
 	}
-	return errors.New("no supported Docker service manager was found")
+	if directoryPresent("/run/openrc") {
+		if command, err := lookPath("rc-service"); err == nil {
+			return command, []string{"docker", "restart"}, nil
+		}
+		return "", nil, errors.New("OpenRC is running but rc-service is unavailable")
+	}
+	if command, err := lookPath("service"); err == nil {
+		return command, []string{"docker", "restart"}, nil
+	}
+	return "", nil, errors.New("no supported Docker service manager was found")
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func syncDirectoryPath(path string) error {

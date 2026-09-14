@@ -7,6 +7,7 @@ export LC_ALL
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+. "$SCRIPT_DIR/init-system.sh"
 
 AGENT_BINARY=
 AGENT_SHA256=
@@ -101,6 +102,17 @@ docker_local() {
 	docker --host unix:///var/run/docker.sock "$@"
 }
 
+create_system_group() {
+	group_name=$1
+	if command -v groupadd >/dev/null 2>&1; then
+		groupadd --system "$group_name"
+	elif command -v addgroup >/dev/null 2>&1; then
+		addgroup -S "$group_name"
+	else
+		fail "required system group tool not found: groupadd or addgroup"
+	fi
+}
+
 inspect_panel_group() {
 	PANEL_GROUP_ENTRY=$(getent group "$PANEL_GROUP" 2>/dev/null) || return 1
 	PANEL_GROUP_MATCHES=$(printf '%s\n' "$PANEL_GROUP_ENTRY" |
@@ -124,7 +136,12 @@ inspect_panel_group() {
 		fail "$PANEL_GROUP gid is a primary group for host users: $PRIMARY_GROUP_USERS"
 }
 
-inspect_systemd_unit_absence() {
+inspect_agent_service_absence() {
+	if [ "$KPANEL_INIT_SYSTEM" = openrc ]; then
+		[ ! -e /etc/init.d/kejilion-agent ] && [ ! -L /etc/init.d/kejilion-agent ] ||
+			fail "an existing OpenRC kejilion-agent service was found"
+		return 0
+	fi
 	UNIT_LOAD_STATE=$(systemctl show \
 		--property=LoadState --value kejilion-agent.service 2>/dev/null) ||
 		fail "cannot query systemd for an existing kejilion-agent.service"
@@ -220,11 +237,27 @@ fi
 unset DOCKER_HOST DOCKER_CONTEXT
 
 for command_name in \
-	awk cat curl dirname docker getent grep groupadd id install ip mkdir \
-	mktemp openssl rm rmdir sed sha256sum sleep stat systemctl systemd-analyze tr uname; do
+	awk cat curl dirname docker getent grep id install ip mkdir \
+	mktemp openssl rm rmdir sed sha256sum sleep stat tr uname; do
 	command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: $command_name"
 done
+if ! command -v groupadd >/dev/null 2>&1 && ! command -v addgroup >/dev/null 2>&1; then
+	fail "required system group tool not found: groupadd or addgroup"
+fi
 [ "$(uname -s)" = "Linux" ] || fail "production deployment requires Linux"
+kpanel_detect_init_system || fail "systemd or OpenRC service management is required"
+case "$KPANEL_INIT_SYSTEM" in
+	systemd)
+		for command_name in systemctl systemd-analyze; do
+			command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: $command_name"
+		done
+		;;
+	openrc)
+		for command_name in rc-service rc-update start-stop-daemon supervise-daemon; do
+			command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: $command_name"
+		done
+		;;
+esac
 docker_local compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
 printf '%s  %s\n' "$AGENT_SHA256" "$AGENT_BINARY" | sha256sum -c >/dev/null ||
 	fail "agent binary SHA-256 mismatch"
@@ -249,6 +282,9 @@ for managed_path in \
 	/var/lib/kejilion-panel \
 	/run/kejilion-panel \
 	/usr/local/libexec/kejilion-agent \
+	/etc/init.d/kejilion-agent \
+	/etc/conf.d/kejilion-agent \
+	/etc/runlevels/default/kejilion-agent \
 	/etc/systemd/system/kejilion-agent.service \
 	/etc/systemd/system/kejilion-agent.service.d \
 	/run/systemd/system/kejilion-agent.service \
@@ -262,7 +298,7 @@ for managed_path in \
 	} ||
 		fail "existing Panel resource found; the v0.1 installer only supports a fresh install: $managed_path"
 done
-inspect_systemd_unit_absence
+inspect_agent_service_absence
 
 WEB_ROOT_KIND=$(stat -L -c %F /home/web 2>/dev/null || true)
 if [ "$WEB_ROOT_KIND" != "directory" ]; then
@@ -273,7 +309,7 @@ DOCKER_SOCKET_KIND=$(stat -L -c %F /var/run/docker.sock 2>/dev/null) ||
 	fail "local Docker Unix socket is unavailable: /var/run/docker.sock"
 [ "$DOCKER_SOCKET_KIND" = "socket" ] ||
 	fail "local Docker endpoint is not a Unix socket: /var/run/docker.sock"
-systemctl is-active --quiet docker.service ||
+kpanel_service_active docker.service ||
 	fail "Docker service is not already active; assess existing containers before starting it manually"
 
 PANEL_GROUP=kejilion-panel
@@ -284,6 +320,7 @@ fi
 
 if [ "$DRY_RUN" = true ]; then
 	printf 'Preflight passed.\n'
+	printf 'Init system: %s\n' "$KPANEL_INIT_SYSTEM"
 	printf 'Agent: %s\nImage: %s\nPublic URL: %s\nPrivate Panel endpoint: http://%s:8080\nNetwork subnet: %s\n' \
 		"$AGENT_BINARY" "$IMAGE" "$PUBLIC_URL" "$PANEL_IPV4" "$NETWORK_SUBNET"
 	printf 'Docker daemon was not queried and no host state was changed.\n'
@@ -329,7 +366,7 @@ cleanup() {
 	CLEANUP_FAILURES=0
 	if [ "$INSTALL_SUCCEEDED" != true ]; then
 		if [ "$PANEL_START_ATTEMPTED" = true ]; then
-			if systemctl is-active --quiet docker.service; then
+			if kpanel_service_active docker.service; then
 				stop_owned_container kejilion-panel panel ||
 					cleanup_failure "Panel ownership or stopped state could not be verified"
 			else
@@ -338,27 +375,25 @@ cleanup() {
 			fi
 		fi
 		if [ "$AGENT_START_ATTEMPTED" = true ]; then
-			systemctl stop kejilion-agent.service >/dev/null 2>&1 || true
-			if AGENT_ACTIVE_STATE=$(systemctl show \
-				--property=ActiveState --value kejilion-agent.service 2>/dev/null); then
-				case "$AGENT_ACTIVE_STATE" in
-					inactive|failed) ;;
-					*) cleanup_failure \
-						"Agent ActiveState is $AGENT_ACTIVE_STATE after stop" ;;
-				esac
-			else
-				cleanup_failure "cannot verify Agent ActiveState after stop"
+			kpanel_service_stop kejilion-agent.service >/dev/null 2>&1 || true
+			if kpanel_service_active kejilion-agent.service; then
+				cleanup_failure "Agent remains active after stop"
 			fi
 		fi
 		if [ "$AGENT_ENABLE_ATTEMPTED" = true ]; then
-			systemctl disable kejilion-agent.service >/dev/null 2>&1 || true
-			if AGENT_UNIT_FILE_STATE=$(systemctl show \
-				--property=UnitFileState --value kejilion-agent.service 2>/dev/null); then
-				[ "$AGENT_UNIT_FILE_STATE" = "disabled" ] ||
-					cleanup_failure \
-						"Agent UnitFileState is $AGENT_UNIT_FILE_STATE after disable"
-			else
-				cleanup_failure "cannot verify Agent UnitFileState after disable"
+			kpanel_service_disable kejilion-agent.service >/dev/null 2>&1 || true
+			if [ "$KPANEL_INIT_SYSTEM" = systemd ]; then
+				if AGENT_UNIT_FILE_STATE=$(systemctl show \
+					--property=UnitFileState --value kejilion-agent.service 2>/dev/null); then
+					[ "$AGENT_UNIT_FILE_STATE" = "disabled" ] ||
+						cleanup_failure \
+							"Agent UnitFileState is $AGENT_UNIT_FILE_STATE after disable"
+				else
+					cleanup_failure "cannot verify Agent UnitFileState after disable"
+				fi
+			elif [ -e /etc/runlevels/default/kejilion-agent ] ||
+				[ -L /etc/runlevels/default/kejilion-agent ]; then
+				cleanup_failure "Agent remains enabled in the OpenRC default runlevel"
 			fi
 		fi
 		if [ "$PANEL_START_ATTEMPTED" = true ] ||
@@ -385,7 +420,7 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-systemctl is-active --quiet docker.service ||
+kpanel_service_active docker.service ||
 	fail "Docker service is not already active; assess existing containers before starting it manually"
 docker_local info >/dev/null 2>&1 ||
 	fail "the active local Docker daemon is unavailable through /var/run/docker.sock"
@@ -428,7 +463,7 @@ if [ "$PANEL_GROUP_PRESENT" = true ]; then
 	inspect_panel_group ||
 		fail "$PANEL_GROUP group disappeared during installation"
 else
-	groupadd --system "$PANEL_GROUP"
+	create_system_group "$PANEL_GROUP"
 	inspect_panel_group ||
 		fail "cannot inspect the newly created $PANEL_GROUP group"
 fi
@@ -444,7 +479,11 @@ DIAGNOSTIC_STATE_DIR=/var/lib/kejilion-panel/diagnostic-jobs
 SITE_ICON_STATE_DIR=/var/lib/kejilion-panel/site-icons
 MONITORING_STATE_DIR=/var/lib/kejilion-panel/monitoring
 AGENT_TARGET=/usr/local/libexec/kejilion-agent
-SERVICE_TARGET=/etc/systemd/system/kejilion-agent.service
+if [ "$KPANEL_INIT_SYSTEM" = systemd ]; then
+	SERVICE_TARGET=/etc/systemd/system/kejilion-agent.service
+else
+	SERVICE_TARGET=/etc/init.d/kejilion-agent
+fi
 COMPOSE_TARGET=$OPT_DIR/compose.yml
 ENV_TARGET=$OPT_DIR/.env
 TOKEN_TARGET=$ETC_DIR/agent.token
@@ -459,8 +498,12 @@ install -d -o root -g root -m 0750 "$APP_STATE_DIR"
 install -d -o root -g root -m 0750 "$DIAGNOSTIC_STATE_DIR"
 install -d -o root -g root -m 0700 "$SITE_ICON_STATE_DIR"
 install -d -o root -g root -m 0700 "$MONITORING_STATE_DIR"
-install -d -o root -g root -m 0755 \
-	/etc/ssh/sshd_config.d /etc/systemd/resolved.conf.d /etc/sysctl.d
+install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d /etc/sysctl.d
+if [ "$KPANEL_INIT_SYSTEM" = systemd ]; then
+	install -d -o root -g root -m 0755 /etc/systemd/resolved.conf.d
+else
+	install -d -o root -g root -m 0755 /etc/conf.d
+fi
 [ -e /etc/gai.conf ] || install -o root -g root -m 0644 /dev/null /etc/gai.conf
 assert_panel_data_dir "after creation"
 install -d -o root -g root -m 0755 "$(dirname "$AGENT_TARGET")"
@@ -472,12 +515,20 @@ rm -f -- "$TEMP_TOKEN"
 TEMP_TOKEN=
 
 install -o root -g root -m 0755 "$AGENT_BINARY" "$AGENT_TARGET"
-install -o root -g root -m 0644 \
-	"$PROJECT_DIR/deploy/systemd/kejilion-agent.service" "$SERVICE_TARGET"
+if [ "$KPANEL_INIT_SYSTEM" = systemd ]; then
+	install -o root -g root -m 0644 \
+		"$PROJECT_DIR/deploy/systemd/kejilion-agent.service" "$SERVICE_TARGET"
+	systemd-analyze verify "$SERVICE_TARGET" ||
+		fail "Agent systemd unit is not supported by this host"
+else
+	install -o root -g root -m 0755 \
+		"$PROJECT_DIR/deploy/openrc/kejilion-agent" "$SERVICE_TARGET"
+	install -o root -g root -m 0644 \
+		"$PROJECT_DIR/deploy/openrc/kejilion-agent.conf" /etc/conf.d/kejilion-agent
+	sh -n "$SERVICE_TARGET" || fail "Agent OpenRC service script is invalid"
+fi
 install -o root -g root -m 0644 \
 	"$PROJECT_DIR/deploy/compose/compose.yml" "$COMPOSE_TARGET"
-systemd-analyze verify "$SERVICE_TARGET" ||
-	fail "Agent systemd unit is not supported by this host"
 
 TEMP_ENV=$(mktemp "$OPT_DIR/.env.XXXXXX")
 {
@@ -498,12 +549,12 @@ TEMP_ENV=
 
 docker_local compose --project-name kejilion-panel \
 	--env-file "$ENV_TARGET" -f "$COMPOSE_TARGET" config --quiet
-systemctl daemon-reload
+kpanel_reload_service_manager
 AGENT_ENABLE_ATTEMPTED=true
-systemctl enable kejilion-agent.service
+kpanel_service_enable kejilion-agent.service
 AGENT_START_ATTEMPTED=true
-systemctl restart kejilion-agent.service
-systemctl is-active --quiet kejilion-agent.service ||
+kpanel_service_start kejilion-agent.service
+kpanel_service_active kejilion-agent.service ||
 	fail "Agent service did not become active"
 assert_panel_data_dir "after Agent start"
 
@@ -517,7 +568,12 @@ while [ "$attempt" -lt 20 ]; do
 	attempt=$((attempt + 1))
 	sleep 1
 done
-[ "$socket_ready" = true ] || fail "Agent socket was not created; inspect: journalctl -u kejilion-agent"
+if [ "$socket_ready" != true ]; then
+	if [ "$KPANEL_INIT_SYSTEM" = systemd ]; then
+		fail "Agent socket was not created; inspect: journalctl -u kejilion-agent"
+	fi
+	fail "Agent socket was not created; inspect: rc-service kejilion-agent status and /var/log/messages"
+fi
 "$AGENT_TARGET" healthcheck ||
 	fail "Agent readiness, version, or protocol healthcheck failed"
 

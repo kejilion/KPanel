@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 const swapUnitPrefix = "kejilion-panel-swap-"
@@ -60,41 +62,28 @@ func (m *Manager) runSwapViaSystemd(
 		return false, "", "", err
 	}
 
-	arguments := []string{
-		"--unit=" + swapUnitPrefix + idForMaintenance(m.now()),
-		"--collect",
-		"--wait",
-		"--pipe",
-		"--quiet",
-		"--property=Type=oneshot",
-		"--property=TimeoutStartSec=5min",
-		"--property=TimeoutStopSec=1min",
-		"--property=User=root",
-		"--property=UMask=0077",
-		"--property=PrivateTmp=yes",
-		"--property=ProtectHome=read-only",
-		"--property=ReadWritePaths=" + m.stateDir,
-		"--property=ProtectSystem=no",
-		"--property=NoNewPrivileges=no",
-		"--property=RestrictAddressFamilies=AF_UNIX",
-		"--property=CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
-		"--property=Nice=10",
-		"--property=CPUWeight=20",
-		"--property=IOWeight=20",
-		"--property=SyslogIdentifier=kpanel-swap",
-		"--",
+	spec := m.backgroundJobSpec(
+		swapUnitPrefix+idForMaintenance(m.now()),
 		executable,
-		"swap-run",
-		"--state-dir",
-		m.stateDir,
-		"--swap-path",
-		m.swapPath,
-		"--size-mib",
-		strconv.Itoa(sizeMiB),
-	}
+		[]string{
+			"swap-run", "--state-dir", m.stateDir, "--swap-path", m.swapPath,
+			"--size-mib", strconv.Itoa(sizeMiB),
+		},
+		[]string{
+			"Type=oneshot", "TimeoutStartSec=5min", "TimeoutStopSec=1min",
+			"User=root", "UMask=0077", "PrivateTmp=yes", "ProtectHome=read-only",
+			"ReadWritePaths=" + m.stateDir, "ProtectSystem=no", "NoNewPrivileges=no",
+			"RestrictAddressFamilies=AF_UNIX",
+			"CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_FOWNER",
+			"Nice=10", "CPUWeight=20", "IOWeight=20", "SyslogIdentifier=kpanel-swap",
+		},
+		"0077",
+		10,
+		time.Minute,
+	)
 	transactionContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute+15*time.Second)
 	defer cancel()
-	output, err := m.runner.Run(transactionContext, "systemd-run", arguments...)
+	output, err := jobcontrol.RunForeground(transactionContext, m.runner, spec)
 	if err != nil {
 		return false, "", "", fmt.Errorf("%w: start swap transaction: %v", ErrUnsupported, err)
 	}

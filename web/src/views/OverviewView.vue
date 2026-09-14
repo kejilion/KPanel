@@ -637,7 +637,7 @@ const maintenanceTools = computed<ManagementTool[]>(() => {
     {
       id: 'system-logs',
       title: '系统日志',
-      description: '按需查看 journal、服务、安全与登录日志，并安全清理旧 journal。',
+      description: '按需查看系统、服务、安全与登录日志，并安全清理旧日志。',
       value: capabilityState('system.logs.read').enabled ? '打开后读取真实占用' : '适配器未就绪',
       detail: '系统 · 服务 · 安全 · 登录 · 实时刷新',
       capability: 'system.logs.read',

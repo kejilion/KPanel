@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
 type scriptDeleteOutcome struct {
@@ -36,8 +38,7 @@ func (kejilionSiteScriptDeleter) Available() error {
 	); err != nil {
 		return err
 	}
-	_, err := findSystemdRun()
-	return err
+	return jobcontrol.Available(systemRecipeJobRunner{})
 }
 
 func (m *Manager) DeleteWritable() error {
@@ -65,43 +66,34 @@ func (kejilionSiteScriptDeleter) Delete(
 	if err != nil {
 		return scriptDeleteOutcome{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
-	systemdRun, err := findSystemdRun()
-	if err != nil {
+	controlRunner := systemRecipeJobRunner{}
+	if err := jobcontrol.Available(controlRunner); err != nil {
 		return scriptDeleteOutcome{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	deleteCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	unitID := stableID("site-delete", domain, time.Now().UTC().String())[:24]
-	command := exec.CommandContext(
-		deleteCtx,
-		systemdRun,
-		"--unit=kpanel-site-delete-"+unitID,
-		"--wait",
-		"--pipe",
-		"--collect",
-		"--quiet",
-		"--property=Type=exec",
-		"--property=TimeoutStartSec=600s",
-		"--property=TimeoutStopSec=30s",
-		"--property=User=root",
-		"--property=UMask=0027",
-		"--property=NoNewPrivileges=no",
-		"--property=ProtectSystem=no",
-		"--property=ProtectHome=no",
-		"--property=PrivateTmp=no",
-		"--property=PrivateDevices=no",
-		"--property=RestrictNamespaces=no",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
-		"--setenv=LC_ALL=C.UTF-8",
-		"--setenv=LANG=C.UTF-8",
-		"--setenv=KJ_WEB_NONINTERACTIVE=1",
-		"--",
-		"/bin/bash",
-		script,
-		"web",
-		"del",
-		domain,
-	)
+	spec := jobcontrol.Spec{
+		Unit:        "kpanel-site-delete-" + unitID,
+		Executable:  "/bin/bash",
+		Arguments:   []string{script, "web", "del", domain},
+		Environment: []string{"LC_ALL=C.UTF-8", "LANG=C.UTF-8", "KJ_WEB_NONINTERACTIVE=1"},
+		StateDir:    "/var/lib/kejilion-panel/wordpress-jobs",
+		SystemdProperties: []string{
+			"Type=exec", "TimeoutStartSec=600s", "TimeoutStopSec=30s",
+			"User=root", "UMask=0027", "NoNewPrivileges=no", "ProtectSystem=no",
+			"ProtectHome=no", "PrivateTmp=no", "PrivateDevices=no",
+			"RestrictNamespaces=no",
+			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+		},
+		UMask: "0027",
+	}
+	name, arguments, _, err := jobcontrol.ForegroundInvocation(controlRunner, spec)
+	if err != nil {
+		return scriptDeleteOutcome{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	command := exec.CommandContext(deleteCtx, name, arguments...)
+	command.Env = siteCommandEnvironment(spec.Environment)
 	var output bytes.Buffer
 	command.Stdout = &output
 	command.Stderr = &output
