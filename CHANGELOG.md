@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-09-14
+
+### Added
+
+- 设置页新增稳定版与 RC 预览版双更新通道；加入预览版只切换版本来源，不会自动安装，退出预览版也不会自动降级。
+- systemd 主机支持管理员手动“立即安装”当前检查到的精确版本和不可变镜像摘要，并继续提供更新前备份、失败恢复和失败版本隔离。
+
+### Changed
+
+- GitHub Release、Docker 镜像与候选分支流程明确区分稳定版和预览版：稳定版提升 `latest`，预览版使用 `preview` 且不成为 GitHub Latest。
+- 设置页顺序调整为“外观与配色 → 备份与恢复 → 版本更新”，让备份入口紧邻外观设置并位于更新操作之前。
+
+### Upgrade Notes
+
+- `scriptLinkageState=not-required`：继续使用 `kejilion/sh@6ebb945f6d5cb69fdb41e3761de23566acbaf762`，无需发布新的受管脚本；应用市场配置配套更新为 `kejilion/apps@b9be0ca3b56c5f81a463dc38aba891d06a52ab95`。
+- 公共默认仍为稳定版；预览版必须由管理员显式加入。OpenRC 当前继续使用受控手动更新，轻量节点保持 stable-only。
+- 无数据库 schema、端口、Compose、节点身份或配对密钥迁移。可回滚至 KPanel v1.17.0；回滚不会删除现有配置、数据或节点身份。
+
 ## [1.17.0] - 2026-09-14
 
 ### Added
