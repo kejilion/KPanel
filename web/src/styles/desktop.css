@@ -2191,7 +2191,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   border-radius: 999px;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--desktop-shadow) 58%, transparent);
   content: '';
-  opacity: .72;
+  opacity: 0;
   transform: translate(-50%, -50%);
   transition: height .16s ease, background-color .16s ease, box-shadow .16s ease, opacity .16s ease;
 }

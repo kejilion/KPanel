@@ -692,6 +692,7 @@ let bounceTimer: number | undefined
 let resizeFrame: number | undefined
 let resizePersistTimer: number | undefined
 let sideSplitStartRatio = DEFAULT_SIDE_SPLIT_RATIO
+let sideSplitPointerTarget: HTMLElement | undefined
 
 function motionDuration(duration: number): number {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : duration
@@ -3160,6 +3161,7 @@ const sideSplitGesture = useWindowGesture(
     onStart: (_kind, event) => {
       sideSplitStartRatio = desktop.sideSplitRatio.value
       const target = event.currentTarget as HTMLElement | null
+      sideSplitPointerTarget = target ?? undefined
       target?.focus({ preventScroll: true })
     },
     onEnd: ({ moved, cancelled }) => {
@@ -3168,6 +3170,8 @@ const sideSplitGesture = useWindowGesture(
       } else if (moved) {
         desktop.commitSideSplitRatio()
       }
+      sideSplitPointerTarget?.blur()
+      sideSplitPointerTarget = undefined
     },
   },
 )

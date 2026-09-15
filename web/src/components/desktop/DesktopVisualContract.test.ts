@@ -161,7 +161,8 @@ describe('desktop visual and interaction contract', () => {
   it('provides a visible, keyboard-accessible center target for a snapped window pair', () => {
     expect(styles).toMatch(/\.desktop-window-split-resizer\s*\{[^}]*width:\s*24px;[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/)
     expect(styles).toMatch(/\.desktop \.desktop-window-split-resizer:focus-visible\s*\{[^}]*outline:\s*none;/)
-    expect(styles).toMatch(/\.desktop-window-split-resizer:is\(:hover, :focus-visible, \.desktop-window-split-resizer--active\)::before\s*\{[^}]*background:\s*var\(--brand\);/)
+    expect(styles).toMatch(/\.desktop-window-split-resizer::before\s*\{[^}]*opacity:\s*0;/)
+    expect(styles).toMatch(/\.desktop-window-split-resizer:is\(:hover, :focus-visible, \.desktop-window-split-resizer--active\)::before\s*\{[^}]*background:\s*var\(--brand\);[^}]*opacity:\s*1;/)
     expect(styles).toMatch(/@media \(max-width: 760px\), \(hover: none\) and \(pointer: coarse\)[\s\S]*?\.desktop-window-split-resizer\s*\{\s*display:\s*none;/)
     expect(styles).toMatch(/@media \(max-height: 560px\) and \(orientation: landscape\)[\s\S]*?\.desktop-window-split-resizer\s*\{\s*display:\s*none;/)
     expect(desktopViewSource).toContain('role="separator"')
