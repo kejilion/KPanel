@@ -83,13 +83,26 @@ func (c *RemoteClient) PairV2(
 ) (v2PairResult, error) {
 	var response v2PairResult
 	err := c.exchangeV2(
-		ctx, origin, v2PairPath, controllerID, pairing.NodeID, pairing.CodeID,
+		ctx, origin, v2PairTasksPath, controllerID, pairing.NodeID, pairing.CodeID,
 		controllerKey, pairing.TargetPublicKey, pairing.PairingKey, now,
 		v2PairPayload{
 			ControllerName: controllerName,
 			TransactionID:  transactionID,
 		}, &response,
 	)
+	var remoteError *RemoteError
+	if errors.As(err, &remoteError) && remoteError.StatusCode == http.StatusNotFound {
+		// Older targets do not know the authenticated maintenance-pairing path.
+		// Falling back can only grant the narrower historical scope.
+		err = c.exchangeV2(
+			ctx, origin, v2PairPath, controllerID, pairing.NodeID, pairing.CodeID,
+			controllerKey, pairing.TargetPublicKey, pairing.PairingKey, now,
+			v2PairPayload{
+				ControllerName: controllerName,
+				TransactionID:  transactionID,
+			}, &response,
+		)
+	}
 	return response, err
 }
 
@@ -202,6 +215,27 @@ func (c *RemoteClient) TerminalCloseV2(ctx context.Context, origin, controllerID
 		return ErrAuthentication
 	}
 	return nil
+}
+
+func (c *RemoteClient) BatchTaskV2(
+	ctx context.Context,
+	origin string,
+	controllerID string,
+	targetID string,
+	key noise.DHKey,
+	target []byte,
+	now time.Time,
+	input batchTaskV2Request,
+) (BatchTargetExecution, error) {
+	var response BatchTargetExecution
+	err := c.exchangeV2(
+		ctx, origin, v2BatchTaskPath, controllerID, targetID, "",
+		key, target, nil, now, input, &response,
+	)
+	if err == nil {
+		err = validateBatchTargetExecution(response)
+	}
+	return response, err
 }
 
 // TerminalRelayClient is the light-node side of the v2 reverse terminal

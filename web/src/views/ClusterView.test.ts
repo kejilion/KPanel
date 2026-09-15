@@ -325,23 +325,24 @@ describe('ClusterView capability disclosures', () => {
     expect(view.controllerCapabilitySummary(
       'cluster.summary.read cluster.terminal.open cluster.files.read',
     )).toBe('权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）')
+    expect(view.controllerCapabilitySummary(
+      'cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance',
+    )).toBe('权限：摘要读取 · 远程终端 · 文件管理（含写入与删除） · 固定批量系统维护')
   })
 
   it('states the full grant in the access and enrollment copy for every locale', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
-    const fullGrant = '权限包含摘要读取、远程终端和文件管理（含写入与删除）。'
+    const fullGrant = '权限包含摘要读取、远程终端、文件管理（含写入与删除）和固定批量系统维护。'
+    const accessDescription = '其他 KPanel 可按授权范围读取摘要、打开远程终端、管理文件（含写入与删除）并执行固定批量系统维护；授权可随时撤销。'
     const enrollment = '将加入摘要监控，并启用远程终端和文件管理（含写入与删除）。'
 
     expect(source).toContain(fullGrant)
+    expect(source).toContain(accessDescription)
     expect(source).toContain(enrollment)
     expect(source).not.toContain('文件只读访问')
     expect(source).not.toContain('不包含任何远程管理权限')
-    expect(new Map(english).get(
-      '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）',
-    )).toContain('writes and deletion')
-    expect(new Map(traditionalChinese).get(
-      '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）',
-    )).toContain('寫入與刪除')
+    expect(new Map(english).get(accessDescription)).toContain('fixed batch system maintenance')
+    expect(new Map(traditionalChinese).get(accessDescription)).toContain('固定批次系統維護')
   })
 })
 

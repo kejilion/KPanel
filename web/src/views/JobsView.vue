@@ -47,7 +47,7 @@ const detailLoading = ref(false)
 const sources = ref<JobSourceStatus[]>([])
 const partial = ref(false)
 const unavailableSources = computed(() => sources.value.filter((source) => source.state !== 'available'))
-const selectedOwner = computed(() => /^(docker|app|webenv|file-archive|backup):([a-f0-9]{32})$/.exec(selectedJobId.value))
+const selectedOwner = computed(() => /^(docker|app|webenv|file-archive|backup|cluster-batch):([a-f0-9]{32})$/.exec(selectedJobId.value))
 const selectedJob = computed(() => selectedOwner.value ? detail.value : error.value ? undefined : jobs.value.find((job) => job.id === selectedJobId.value))
 const businessPath = computed(() => {
   const action = selectedJob.value?.action || selectedAction.value
@@ -57,6 +57,7 @@ const businessPath = computed(() => {
   if (owner === 'webenv') return '/sites'
   if (owner === 'file-archive') return '/files'
   if (owner === 'backup') return '/settings'
+  if (owner === 'cluster-batch') return `/cluster/tasks?task=${selectedOwner.value?.[2] || ''}`
   if (action.startsWith('docker.')) return '/docker'
   if (action.startsWith('app.')) return '/apps'
   if (action.startsWith('site.') || action.startsWith('web.environment.')) return '/sites'
@@ -71,7 +72,7 @@ let detailTimer: number | undefined
 function ownerLabel(source: JobSourceStatus['source']): string {
   if (source === 'file-archive') return i18n.t('files.archive.jobs')
   if (source === 'backup') return '备份与恢复'
-  return phrase({ docker: 'Docker', app: '应用', webenv: '网站环境', audit: '操作记录' }[source])
+  return phrase({ docker: 'Docker', app: '应用', webenv: '网站环境', 'cluster-batch': '集群批量任务', audit: '操作记录' }[source])
 }
 
 function selectJob(id: string, action = ''): void {
@@ -151,6 +152,14 @@ function actionLabel(action: string): string {
     'docker.stop': '停止容器',
     'docker.restart': '重启容器',
     'app.install': '安装应用',
+    'cluster.batch.refresh': '刷新主机状态',
+    'cluster.batch.system-update': '系统更新',
+    'cluster.batch.cleanup-cache': '清理软件缓存',
+    'cluster.batch.cleanup-standard': '标准系统清理',
+    'cluster.batch.logs-retain-7d': '日志保留 7 天',
+    'cluster.batch.logs-retain-3d': '日志保留 3 天',
+    'cluster.batch.logs-max-500m': '日志上限 500 MiB',
+    'cluster.batch.reboot': '延迟重启',
   }
   return labels[action] || action
 }
@@ -169,9 +178,10 @@ function stageLabel(stage: string): string {
   }
   if (archiveLabels[stage]) return archiveLabels[stage]
   const labels: Record<string, string> = {
-    queued: '等待执行', running: '执行中', executing: '执行中', completed: '执行完成', failed: '执行失败',
+    queued: '等待执行', running: '执行中', executing: '执行中', completed: '执行完成', succeeded: '执行完成', failed: '执行失败',
     interrupted: '执行中断', not_started: '尚未执行', persistence_pending: '状态待保存',
     status_unavailable: '结果未确认', outcome_unknown: '结果未确认', attention_required: '需要检查',
+    needs_attention: '需要检查', cancelling: '正在取消', cancelled: '已取消', partial: '部分完成',
   }
   return phrase(labels[stage] || stage)
 }

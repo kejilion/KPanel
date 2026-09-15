@@ -354,7 +354,7 @@ func TestServiceV2PendingPairRestartPreservesMutualFileIntent(t *testing.T) {
 	centerDirectory := filepath.Join(t.TempDir(), "center")
 	centerRemote, route := newServiceV2Remote(t)
 	route.target = target
-	route.setFailurePath(v2PairPath)
+	route.setFailurePath(v2PairTasksPath)
 	centerConfig := ServiceConfig{
 		DataDir: centerDirectory, PanelVersion: "v0.77.0", Hostname: "center-v2",
 		Telemetry: serviceTestTelemetry{now: clock.Now, hostname: "center-v2"},

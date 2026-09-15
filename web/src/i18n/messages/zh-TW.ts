@@ -36,6 +36,7 @@ export const zhTWMessages = {
   "route.monitoring": "歷史監控",
   "route.processes": "程序管理器",
   "route.cluster": "叢集",
+  "route.clusterBatchTasks": "叢集 · 批次任務",
   "route.clusterShare": "叢集狀態",
   "route.fileShare": "檔案分享",
   "route.sites": "網站",

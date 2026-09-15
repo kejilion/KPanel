@@ -91,6 +91,12 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == "/api/v1/cluster/batch-actions" && r.Method == http.MethodGet:
+		s.handleClusterBatchTaskCatalog(w, r)
+	case r.URL.Path == clusterBatchTasksPath:
+		s.handleClusterBatchTasks(w, r)
+	case strings.HasPrefix(r.URL.Path, clusterBatchTasksPath+"/"):
+		s.handleClusterBatchTask(w, r)
 	case r.URL.Path == "/api/v1/cluster/hosts" && r.Method == http.MethodGet:
 		if _, _, ok := s.requireSession(w, r); !ok {
 			return
@@ -591,6 +597,9 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 	case "/api/v2/federation/pair":
 		action = "cluster.federation.v2.pair"
 		status = http.StatusCreated
+	case "/api/v2/federation/pair-maintenance":
+		action = "cluster.federation.v2.pair-maintenance"
+		status = http.StatusCreated
 	case "/api/v2/federation/commit":
 		action = "cluster.federation.v2.commit"
 	case "/api/v2/federation/revoke":
@@ -961,6 +970,14 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusUpgradeRequired, "federation_incompatible", "Federation protocol incompatible"
 	case errors.Is(err, cluster.ErrIdentityMismatch):
 		status, code, title = http.StatusConflict, "federation_identity_changed", "Federation identity changed"
+	case errors.Is(err, cluster.ErrBatchTaskInvalid):
+		status, code, title = http.StatusUnprocessableEntity, "cluster_batch_task_invalid", "Cluster batch task is invalid"
+	case errors.Is(err, cluster.ErrBatchTaskBusy):
+		status, code, title = http.StatusConflict, "cluster_batch_task_busy", "Cluster batch task capacity reached"
+	case errors.Is(err, cluster.ErrBatchTaskState):
+		status, code, title = http.StatusConflict, "cluster_batch_task_state", "Cluster batch task state does not allow this operation"
+	case errors.Is(err, cluster.ErrBatchTaskUnsupported):
+		status, code, title = http.StatusUnprocessableEntity, "cluster_batch_task_unsupported", "Cluster batch task action is unsupported"
 	default:
 		var remote *cluster.RemoteError
 		if errors.As(err, &remote) {

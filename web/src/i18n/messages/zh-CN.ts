@@ -34,6 +34,7 @@ export const zhCNMessages = {
   'route.monitoring': '历史监控',
   'route.processes': '进程管理器',
   'route.cluster': '集群',
+  'route.clusterBatchTasks': '集群 · 批量任务',
   'route.clusterShare': '集群状态',
   'route.fileShare': '文件分享',
   'route.sites': '网站',

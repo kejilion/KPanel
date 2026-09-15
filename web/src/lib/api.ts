@@ -17,6 +17,11 @@ import type {
   AuthSession,
   AuthStatus,
   ClusterController,
+  ClusterBatchTask,
+  ClusterBatchTaskCatalog,
+  ClusterBatchTaskInput,
+  ClusterBatchTaskList,
+  ClusterBatchTaskRetryInput,
   ClusterHost,
   ClusterHostList,
   ClusterLightBatchEnrollment,
@@ -1542,6 +1547,20 @@ export const api = {
   cluster: {
     hosts: (signal?: AbortSignal): Promise<ClusterHostList> =>
       request<ClusterHostList>('/cluster/hosts', { signal }),
+    batchActions: (signal?: AbortSignal): Promise<ClusterBatchTaskCatalog> =>
+      request<ClusterBatchTaskCatalog>('/cluster/batch-actions', { signal }),
+    batchTasks: (signal?: AbortSignal): Promise<ClusterBatchTaskList> =>
+      request<ClusterBatchTaskList>('/cluster/batch-tasks', { signal }),
+    batchTask: (id: string, signal?: AbortSignal): Promise<ClusterBatchTask> =>
+      request<ClusterBatchTask>(`/cluster/batch-tasks/${encodeURIComponent(id)}`, { signal }),
+    createBatchTask: (body: ClusterBatchTaskInput): Promise<ClusterBatchTask> =>
+      request<ClusterBatchTask>('/cluster/batch-tasks', { method: 'POST', body }),
+    cancelBatchTask: (id: string): Promise<ClusterBatchTask> =>
+      request<ClusterBatchTask>(`/cluster/batch-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+    retryBatchTask: (id: string, body: ClusterBatchTaskRetryInput): Promise<ClusterBatchTask> =>
+      request<ClusterBatchTask>(`/cluster/batch-tasks/${encodeURIComponent(id)}/retry`, { method: 'POST', body }),
+    deleteBatchTask: (id: string): Promise<{ deleted: boolean }> =>
+      request<{ deleted: boolean }>(`/cluster/batch-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     shareSettings: (signal?: AbortSignal): Promise<ClusterShareSettings> =>
       request<ClusterShareSettings>('/cluster/share', { signal }),
     notifications: (signal?: AbortSignal): Promise<ClusterNotificationSnapshot> =>

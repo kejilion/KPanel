@@ -44,20 +44,22 @@ type remoteSummaryCapabilitiesAPI interface {
 }
 
 type ServiceConfig struct {
-	DataDir         string
-	PanelVersion    string
-	PublicURL       string
-	PrivateCIDRs    []string
-	Telemetry       TelemetrySource
-	Terminal        TerminalBackend
-	Remote          remoteAPI
-	Now             func() time.Time
-	Hostname        string
-	PollInterval    time.Duration
-	SchedulerTick   time.Duration
-	CheckpointEvery time.Duration
-	MaxConcurrency  int
-	Jitter          func(time.Duration) time.Duration
+	DataDir           string
+	PanelVersion      string
+	PublicURL         string
+	PrivateCIDRs      []string
+	Telemetry         TelemetrySource
+	Terminal          TerminalBackend
+	Remote            remoteAPI
+	Now               func() time.Time
+	Hostname          string
+	PollInterval      time.Duration
+	SchedulerTick     time.Duration
+	CheckpointEvery   time.Duration
+	MaxConcurrency    int
+	Jitter            func(time.Duration) time.Duration
+	BatchActions      BatchActionBackend
+	BatchPollInterval time.Duration
 
 	SecurityEntrancePath func() string
 }
@@ -116,6 +118,13 @@ type Service struct {
 	checkpointEvery      time.Duration
 	jitter               func(time.Duration) time.Duration
 	sem                  chan struct{}
+	batchActions         BatchActionBackend
+	batchTasks           *batchTaskStore
+	batchPollInterval    time.Duration
+	batchSem             chan struct{}
+	batchMu              sync.Mutex
+	batchRecoveryMu      sync.Mutex
+	batchRuns            map[string]context.CancelFunc
 
 	securityEntrancePath func() string
 
@@ -193,6 +202,12 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if config.Jitter == nil {
 		config.Jitter = jitterDuration
 	}
+	if config.BatchPollInterval == 0 {
+		config.BatchPollInterval = 3 * time.Second
+	}
+	if config.BatchPollInterval < 10*time.Millisecond || config.BatchPollInterval > time.Minute {
+		return nil, errors.New("cluster batch task poll interval is invalid")
+	}
 	if config.Remote == nil {
 		remote, err := NewRemoteClient(RemoteClientConfig{PrivateCIDRs: config.PrivateCIDRs})
 		if err != nil {
@@ -232,6 +247,13 @@ func NewService(config ServiceConfig) (*Service, error) {
 	}
 	lightBatches, err := openLightBatchStore(filepath.Join(config.DataDir, lightBatchStateFileName))
 	if err != nil {
+		return nil, err
+	}
+	batchTasks, err := openBatchTaskStore(filepath.Join(config.DataDir, batchTaskStateFileName))
+	if err != nil {
+		return nil, err
+	}
+	if err := batchTasks.ReconcileMaintenanceGrants(storeV2.Hosts(), storeV2.Controllers()); err != nil {
 		return nil, err
 	}
 	if err := storeV2.EnsureNodeID(store.NodeID()); err != nil {
@@ -276,7 +298,11 @@ func NewService(config ServiceConfig) (*Service, error) {
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightBatches: lightBatches,
-		lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
+		batchActions: config.BatchActions, batchTasks: batchTasks,
+		batchPollInterval: config.BatchPollInterval,
+		batchSem:          make(chan struct{}, maxBatchConcurrency),
+		batchRuns:         make(map[string]context.CancelFunc),
+		lightTerminal:     newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
 		panelFileRelay:       newPanelFileRelay(),
 		lightHistory:         newLightHistoryRelay(config.Now),
 		historyQueries:       make(chan struct{}, 2),
@@ -358,6 +384,7 @@ func (s *Service) Start(parent context.Context) {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go s.run()
+	s.resumeBatchTasks()
 }
 
 func (s *Service) Close() error {
@@ -416,7 +443,7 @@ func (s *Service) Hosts(ctx context.Context) HostList {
 		items = append(items, publicHost(record, s.runtime[record.ID], now))
 	}
 	for _, record := range recordsV2 {
-		host := publicHostV2(record, s.runtime[record.ID], now)
+		host := publicHostV2(record, s.runtime[record.ID], now, s.effectiveHostScopeV2(record))
 		host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(record.ID, now)
 		items = append(items, host)
 	}
@@ -449,7 +476,7 @@ func (s *Service) Host(ctx context.Context, id string) (Host, error) {
 		current := s.runtime[id]
 		s.mu.RUnlock()
 		now := s.now().UTC()
-		host := publicHostV2(recordV2, current, now)
+		host := publicHostV2(recordV2, current, now, s.effectiveHostScopeV2(recordV2))
 		host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(recordV2.ID, now)
 		return host, nil
 	}
@@ -635,7 +662,7 @@ func (s *Service) RenameHost(id string, input UpdateHostInput) (Host, error) {
 	current := s.runtime[id]
 	s.mu.RUnlock()
 	now := s.now().UTC()
-	host := publicHostV2(recordV2, current, now)
+	host := publicHostV2(recordV2, current, now, s.effectiveHostScopeV2(recordV2))
 	host.MutualFileTransferAvailable = s.hasActiveFilePeerGrant(recordV2.ID, now)
 	return host, nil
 }
@@ -745,7 +772,7 @@ func (s *Service) Controllers() []Controller {
 		}
 		result = append(result, Controller{
 			ID: item.ID, Name: item.Name, Fingerprint: item.Fingerprint,
-			Scope: item.Scope, CreatedAt: item.CreatedAt,
+			Scope: s.effectiveControllerScopeV2(item), CreatedAt: item.CreatedAt,
 			LastSeenAt: cloneTime(item.LastSeenAt),
 		})
 	}
@@ -775,6 +802,7 @@ func (s *Service) DeleteController(id string) error {
 	if err != nil {
 		return err
 	}
+	_ = s.batchTasks.RevokeControllerMaintenance(id)
 	s.fileStreamHub.closePeer("controller:" + id)
 	if err := s.filePeersV2.DeleteController(id); err != nil && !errors.Is(err, ErrNotFound) {
 		return err
@@ -914,8 +942,10 @@ func (s *Service) run() {
 	defer s.wg.Done()
 	ticker := time.NewTicker(s.schedulerTick)
 	checkpoint := time.NewTicker(s.checkpointEvery)
+	batchRecovery := time.NewTicker(s.batchPollInterval)
 	defer ticker.Stop()
 	defer checkpoint.Stop()
+	defer batchRecovery.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -926,6 +956,8 @@ func (s *Service) run() {
 			s.launchDue()
 		case <-checkpoint.C:
 			_ = s.checkpoint()
+		case <-batchRecovery.C:
+			s.resumeBatchTasks()
 		}
 	}
 }
@@ -1139,6 +1171,10 @@ func (s *Service) localHostSummary(ctx context.Context) Host {
 		s.store.NodeID(), s.hostname, s.store.LocalName(),
 		s.panelVersion, current, finishedAt,
 	)
+	public.BatchTaskAvailable = s.batchActions != nil
+	if public.BatchTaskAvailable {
+		public.Scope = SummaryTerminalFilesTasksScope
+	}
 	s.mu.Unlock()
 	return public
 }

@@ -223,15 +223,28 @@ func TestClusterHistoryRejectsTruncatedStreamAndUnboundedJSON(t *testing.T) {
 func TestClusterHistoryScopesReplayDeletionAndConcurrency(t *testing.T) {
 	center, target, remote, host, now := historyPairFixture(t)
 	installHistoryTransport(t, remote, target, completeHistoryFixture(now, 2), false)
-	for _, scope := range []string{"cluster.files.read", "unknown", SummaryScope} {
+	for _, test := range []struct {
+		scope   string
+		allowed bool
+	}{
+		{scope: "cluster.files.read"},
+		{scope: "unknown"},
+		{scope: SummaryScope, allowed: true},
+		{scope: SummaryTerminalScope, allowed: true},
+		{scope: SummaryTerminalFilesScope, allowed: true},
+		{scope: SummaryTerminalFilesTasksScope, allowed: true},
+	} {
 		target.storeV2.mu.Lock()
-		target.storeV2.state.Controllers[0].Scope = scope
+		target.storeV2.state.Controllers[0].Scope = test.scope
 		target.storeV2.mu.Unlock()
 		_, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{})
-		if (scope == SummaryScope) != (err == nil) {
-			t.Fatalf("scope %q: %v", scope, err)
+		if test.allowed != (err == nil) {
+			t.Fatalf("scope %q: %v", test.scope, err)
 		}
 	}
+	target.storeV2.mu.Lock()
+	target.storeV2.state.Controllers[0].Scope = SummaryScope
+	target.storeV2.mu.Unlock()
 	center.historyQueries <- struct{}{}
 	center.historyQueries <- struct{}{}
 	if _, err := center.History(context.Background(), host.ID, "6h", time.Time{}, time.Time{}); !errors.Is(err, monitoring.ErrBusy) {
