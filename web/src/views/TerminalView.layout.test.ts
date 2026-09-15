@@ -45,15 +45,27 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).not.toContain('<Server v-else')
   })
 
-  it('keeps connection metadata and status at the visual language minimums', () => {
-    expect(terminalSource).toMatch(/\.terminal-host small\s*\{[^}]*font-size:13px;/)
-    expect(terminalSource).toMatch(/\.terminal-host em\s*\{[^}]*font-size:12px;/)
+  it('keeps compact host metadata and status at the visual language minimums', () => {
+    expect(terminalSource).toMatch(/\.terminal-host__meta small\s*\{[^}]*font-size:13px;/)
+    expect(terminalSource).toMatch(/\.terminal-host__state\s*\{[^}]*font-size:12px;/)
   })
 
-  it('uses core messages for runtime host states and session prompts', () => {
-    expect(terminalSource).toContain("t('terminal.hostState.local')")
+  it('uses explicit host kinds and actionable terminal states without repeated transport copy', () => {
+    expect(terminalSource).toContain("t('terminal.hostKind.local')")
+    expect(terminalSource).toContain("t('terminal.hostKind.panel')")
+    expect(terminalSource).toContain("t('terminal.hostKind.lightNode')")
+    expect(terminalSource).toContain("t('terminal.hostState.open')")
+    expect(terminalSource).toContain("t('terminal.hostState.available')")
+    expect(terminalSource).toContain("t('terminal.hostState.monitoringOnly')")
     expect(terminalSource).toContain("t('terminal.hostCount'")
     expect(terminalSource).toContain("t('terminal.closeSessionsConfirm'")
+    expect(terminalSource).toContain(':placeholder="t(\'terminal.searchPlaceholder\')"')
+    expect(terminalSource).toContain(':aria-disabled="!host.terminalAvailable"')
+    expect(terminalSource).toContain(':title="hostDescription(host)"')
+    expect(terminalSource).not.toContain('terminal.currentPanel')
+    expect(terminalSource).not.toContain('terminal.hostState.encrypted')
+    expect(terminalSource).not.toContain('<Plus')
+    expect(terminalSource).not.toContain('{{ host.origin ||')
     expect(terminalSource).not.toContain('关闭窗口将断开')
   })
 
@@ -65,7 +77,7 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toContain('terminal-connections__toggle terminal-connections__refresh')
     expect(terminalSource).toContain('class="terminal-connections__rail"')
     expect(terminalSource).toContain('class="terminal-host-rail"')
-    expect(terminalSource).toContain(':title="`${host.name} · ${hostStateLabel(host)}`"')
+    expect(terminalSource.match(/:title="hostDescription\(host\)"/g)).toHaveLength(2)
     expect(terminalSource).toMatch(
       /class="terminal-host-rail__os"[\s\S]*?:show-tooltip="false"/,
     )

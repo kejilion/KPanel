@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
-import { Circle, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import { LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -207,11 +207,25 @@ function hostStateLabel(host: ClusterHost): string {
   locale.value
   if (!host.terminalAvailable) {
     return host.kind === 'light_node'
-      ? t('terminal.hostState.lightNode')
+      ? t('terminal.hostState.monitoringOnly')
       : t('terminal.hostState.repairPairing')
   }
-  if (host.isLocal) return t('terminal.hostState.local')
-  return t('terminal.hostState.encrypted')
+  if (sessions.value.some((item) => item.hostId === host.id)) return t('terminal.hostState.open')
+  return t('terminal.hostState.available')
+}
+
+function hostKindLabel(host: ClusterHost): string {
+  locale.value
+  if (host.isLocal) return t('terminal.hostKind.local')
+  return host.kind === 'light_node'
+    ? t('terminal.hostKind.lightNode')
+    : t('terminal.hostKind.panel')
+}
+
+function hostDescription(host: ClusterHost): string {
+  const details = [host.name, hostKindLabel(host), hostStateLabel(host)]
+  if (host.origin) details.push(host.origin)
+  return details.join(' · ')
 }
 
 function sessionStateLabel(state: OpenTerminal['state']): string {
@@ -273,7 +287,10 @@ onBeforeUnmount(() => {
       />
       <aside id="terminal-connections-drawer" class="terminal-connections">
         <header>
-          <div class="terminal-connections__heading"><strong>连接列表</strong><small>{{ t('terminal.hostCount', { count: hosts.length }) }}</small></div>
+          <div class="terminal-connections__heading">
+            <strong>{{ t('terminal.hostList') }}</strong>
+            <small>{{ t('terminal.hostCountShort', { count: hosts.length }) }}</small>
+          </div>
           <div class="terminal-connections__actions">
             <button
               class="terminal-connections__toggle terminal-connections__refresh"
@@ -309,19 +326,55 @@ onBeforeUnmount(() => {
         </header>
         <label v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-search">
           <Search :size="15" aria-hidden="true" />
-          <input v-model="search" type="search" placeholder="搜索主机" />
+          <input
+            v-model="search"
+            type="search"
+            :aria-label="t('terminal.searchHosts')"
+            :placeholder="t('terminal.searchPlaceholder')"
+          />
         </label>
         <div id="terminal-connection-selector" v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-connections__list">
           <div v-if="!loading && !hosts.length" class="terminal-connections__empty">暂无可显示主机</div>
-          <button v-for="host in hosts" :key="host.id" class="terminal-host" :class="{ 'is-active': activeSession?.hostId === host.id }" type="button" :disabled="openingHostId === host.id" @click="openHost(host)">
+          <button
+            v-for="host in hosts"
+            :key="host.id"
+            class="terminal-host"
+            :class="{
+              'is-active': activeSession?.hostId === host.id,
+              'is-opening': openingHostId === host.id,
+              'is-unavailable': !host.terminalAvailable,
+            }"
+            type="button"
+            :disabled="openingHostId === host.id"
+            :aria-disabled="!host.terminalAvailable"
+            :title="hostDescription(host)"
+            :aria-label="hostDescription(host)"
+            @click="openHost(host)"
+          >
             <OperatingSystemIcon
               class="terminal-host__os"
               :distro="hostOperatingSystemIdentity(host).key"
               :label="hostOperatingSystemIdentity(host).label"
+              :show-tooltip="false"
             />
-            <span><strong>{{ host.name }}</strong><small>{{ host.origin || t('terminal.currentPanel') }}</small><em :class="{ 'is-ready': host.terminalAvailable }"><Circle :size="8" fill="currentColor" /> {{ hostStateLabel(host) }}</em></span>
+            <span class="terminal-host__content">
+              <strong>{{ host.name }}</strong>
+              <span class="terminal-host__meta">
+                <small>{{ hostKindLabel(host) }}</small>
+                <span class="terminal-host__separator" aria-hidden="true">·</span>
+                <span
+                  class="terminal-host__state"
+                  :class="{
+                    'is-ready': host.terminalAvailable,
+                    'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
+                  }"
+                >
+                  <i aria-hidden="true" />
+                  {{ hostStateLabel(host) }}
+                </span>
+              </span>
+            </span>
             <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
-            <Plus v-else-if="host.terminalAvailable && !sessions.some((item) => item.hostId === host.id)" :size="17" />
           </button>
         </div>
         <div v-show="connectionsCollapsed && !mobileConnectionsOpen" class="terminal-connections__rail" aria-label="收起的主机列表">
@@ -332,8 +385,9 @@ onBeforeUnmount(() => {
             :class="{ 'is-active': activeSession?.hostId === host.id }"
             type="button"
             :disabled="openingHostId === host.id"
-            :title="`${host.name} · ${hostStateLabel(host)}`"
-            :aria-label="`${host.name} · ${hostStateLabel(host)}`"
+            :aria-disabled="!host.terminalAvailable"
+            :title="hostDescription(host)"
+            :aria-label="hostDescription(host)"
             @click="openHost(host)"
           >
             <OperatingSystemIcon
@@ -411,10 +465,10 @@ onBeforeUnmount(() => {
 :global(:root:not([data-theme='dark'])) .terminal-workspace { --terminal-shell-border:rgb(255 255 255 / 18%); }
 .terminal-workspace.is-connections-collapsed { grid-template-columns:52px minmax(0,1fr); }
 .terminal-connections { display:grid; min-width:0; min-height:0; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; border-right:1px solid var(--terminal-shell-border,#29383a); color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-panel,#111a1d); }
-.terminal-connections>header { display:flex; align-items:center; justify-content:space-between; padding:15px 13px 10px; color:var(--brand); }
-.terminal-connections__heading { display:grid; min-width:0; gap:2px; color:var(--terminal-shell-text,#d8dddc); }
+.terminal-connections>header { display:flex; align-items:center; justify-content:space-between; padding:10px 10px 8px; color:var(--brand); }
+.terminal-connections__heading { display:flex; min-width:0; align-items:center; gap:7px; color:var(--terminal-shell-text,#d8dddc); }
 .terminal-connections__heading strong { font-size:15px; line-height:1.2; }
-.terminal-connections>header small { color:var(--terminal-shell-muted,#8a9695); font-weight: 500; }
+.terminal-connections__heading small { border:1px solid var(--terminal-shell-border,#29383a); border-radius:999px; padding:1px 6px; color:var(--terminal-shell-muted,#8a9695); font-size:12px; font-weight:500; line-height:1.35; }
 .terminal-connections__actions { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
 .terminal-connections__toggle { display:grid; width:30px; height:30px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-background,#0b1214); cursor:pointer; transition:border-color .16s ease,color .16s ease,background-color .16s ease; }
 .terminal-connections__toggle:hover,.terminal-connections__toggle:focus-visible { border-color:color-mix(in srgb,var(--brand) 62%,var(--terminal-shell-border,#29383a)); color:var(--brand); outline:none; }
@@ -436,21 +490,27 @@ onBeforeUnmount(() => {
 .terminal-host-rail { position:relative; display:grid; width:36px; height:36px; flex:0 0 auto; place-items:center; border:1px solid transparent; border-radius:9px; color:var(--terminal-shell-muted,#8a9695); background:transparent; cursor:pointer; }
 .terminal-host-rail:hover,.terminal-host-rail:focus-visible,.terminal-host-rail.is-active { border-color:color-mix(in srgb,var(--brand) 58%,var(--terminal-shell-border,#29383a)); color:var(--brand); background:color-mix(in srgb,var(--brand) 12%,var(--terminal-shell-panel,#111a1d)); outline:none; }
 .terminal-host-rail:disabled { cursor:wait; opacity:.55; }
+.terminal-host-rail[aria-disabled='true']:not(:disabled) { cursor:not-allowed; }
 .terminal-host-rail :deep(.terminal-host-rail__os) { width:26px; height:26px; border-radius:8px; box-shadow:none; }
 .terminal-host-rail :deep(.terminal-host-rail__os svg) { width:16px; height:16px; }
 .terminal-host-rail :deep(.terminal-host-rail__os img) { width:19px; height:19px; }
 .terminal-host-rail i { position:absolute; right:3px; bottom:3px; width:7px; height:7px; border:1px solid var(--terminal-shell-panel,#111a1d); border-radius:50%; background:var(--terminal-shell-muted,#8a9695); }
 .terminal-host-rail i.is-ready { background:var(--success); }
-.terminal-host { position:relative; display:grid; width:calc(100% - 12px); grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:9px; margin:2px 6px; border:1px solid transparent; border-radius:10px; padding:9px; text-align:left; color:var(--terminal-shell-text,#d8dddc); background:transparent; cursor:pointer; transition:border-color .16s ease,background-color .16s ease; }
+.terminal-host { position:relative; display:grid; width:calc(100% - 12px); min-height:50px; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; margin:1px 6px; border:1px solid transparent; border-radius:10px; padding:7px 9px; text-align:left; color:var(--terminal-shell-text,#d8dddc); background:transparent; cursor:pointer; transition:border-color .16s ease,background-color .16s ease; }
 .terminal-host:hover,.terminal-host:focus-visible,.terminal-host.is-active { border-color:color-mix(in srgb,var(--brand) 48%,var(--terminal-shell-border,#29383a)); background:color-mix(in srgb,var(--brand) 9%,var(--terminal-shell-panel,#111a1d)); outline:none; }
 .terminal-host.is-active { box-shadow:inset 3px 0 0 var(--brand); }
-.terminal-host:disabled { cursor:wait; opacity:.64; }
-.terminal-host :deep(.terminal-host__os) { width:34px; height:34px; flex:0 0 auto; border-radius:9px; box-shadow:none; }
-.terminal-host>span:nth-child(2) { display:grid; min-width:0; gap:2px; }
-.terminal-host strong,.terminal-host small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.terminal-host small { color:var(--terminal-shell-muted,#8a9695); font-size:13px; }
-.terminal-host em { display:flex; align-items:center; gap:5px; color:var(--terminal-shell-muted,#8a9695); font-size:12px; font-style:normal; }
-.terminal-host em.is-ready { color:var(--success); }
+.terminal-host.is-opening { cursor:wait; opacity:.64; }
+.terminal-host.is-unavailable { cursor:not-allowed; }
+.terminal-host :deep(.terminal-host__os) { width:32px; height:32px; flex:0 0 auto; border-radius:9px; box-shadow:none; }
+.terminal-host__content { display:grid; min-width:0; gap:3px; }
+.terminal-host__content>strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.terminal-host__meta { display:flex; min-width:0; align-items:center; gap:5px; color:var(--terminal-shell-muted,#8a9695); white-space:nowrap; }
+.terminal-host__meta small { overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+.terminal-host__separator { opacity:.64; }
+.terminal-host__state { display:flex; min-width:0; align-items:center; gap:5px; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
+.terminal-host__state>i { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:currentColor; }
+.terminal-host__state.is-ready { color:var(--success); }
+.terminal-host__state.is-attention { color:var(--warning); }
 .terminal-connections__empty { display:flex; align-items:center; justify-content:center; gap:8px; min-height:180px; padding:20px; color:var(--terminal-shell-muted,#8a9695); text-align:center; }
 .terminal-stage { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
 .terminal-stage.is-fullscreen { position:fixed; z-index:6000; inset:0; width:100vw; height:100dvh; min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; border:0; }
