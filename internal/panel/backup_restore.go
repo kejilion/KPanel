@@ -15,6 +15,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/store"
+	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
 	"github.com/kejilion/kejilion-panel/internal/version"
 )
 
@@ -69,6 +70,9 @@ func validatePanelRestoreConfig(c Config, value panelBackupData, directory strin
 		return err
 	}
 	if _, err := desktopworkspace.Open(filepath.Join(directory, "desktop-workspace")); err != nil {
+		return err
+	}
+	if _, err := terminalcommands.Open(filepath.Join(directory, "terminal-commands")); err != nil {
 		return err
 	}
 	ns, err := notification.NewService(notification.Config{DataDir: directory, Hosts: cs})

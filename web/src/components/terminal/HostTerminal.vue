@@ -102,11 +102,6 @@ function writeTerminalOutput(data: string | Uint8Array): void {
   })
 }
 
-function scrollToTop(): void {
-  terminal?.scrollToTop()
-  focusTerminal()
-}
-
 function focusTerminal(): void {
   terminal?.focus()
 }
@@ -156,6 +151,13 @@ function submitPendingLine(): void {
   queueInput(value)
 }
 
+function executeCommand(command: string): boolean {
+  if (!command.trim() || disposed || state.value === 'finished') return false
+  queueInput(terminalLineSubmission(command.replace(/\r\n?/g, '\n')))
+  focusTerminal()
+  return true
+}
+
 function handlePendingLineEnter(event: KeyboardEvent): void {
   if (!terminalEnterShouldSubmit(event)) return
   event.preventDefault()
@@ -203,7 +205,7 @@ function scheduleResize(): void {
   }, 100)
 }
 
-defineExpose({ focusTerminal, scrollToTop, scheduleResize, closeSession })
+defineExpose({ focusTerminal, executeCommand, scheduleResize, closeSession })
 
 watch(desktopWindowActive, (active) => {
   if (active) {

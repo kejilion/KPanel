@@ -9,7 +9,7 @@ vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: mocks.hosts }, terminals:
 vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineComponent({
   props: ['sessionId', 'hostName', 'initialOffset'],
   setup(_, { expose }) {
-    expose({ closeSession: mocks.close, focusTerminal() {}, scrollToTop() {}, scheduleResize() {} })
+    expose({ closeSession: mocks.close, focusTerminal() {}, executeCommand() { return true }, scheduleResize() {} })
     return () => null
   },
 }) }))

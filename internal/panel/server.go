@@ -34,6 +34,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
 	"github.com/kejilion/kejilion-panel/internal/store"
+	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
 	"github.com/kejilion/kejilion-panel/internal/version"
 )
 
@@ -97,6 +98,7 @@ type Server struct {
 	ai                    *ai.Service
 	aiError               string
 	desktopWorkspace      *desktopworkspace.Store
+	terminalCommands      *terminalcommands.Store
 }
 
 type agentAPI interface {
@@ -148,6 +150,10 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize desktop workspace: %w", err)
 	}
+	terminalCommands, err := terminalcommands.Open(filepath.Join(config.DataDir, "terminal-commands"))
+	if err != nil {
+		return nil, fmt.Errorf("initialize terminal commands: %w", err)
+	}
 	remoteDownloadJobs, err := remotedownload.OpenJobStore(filepath.Join(config.DataDir, "remote-downloads"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize remote download jobs: %w", err)
@@ -169,6 +175,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		trustedProxies:        trustedProxies,
 		lastAuthAudit:         make(map[string]time.Time),
 		desktopWorkspace:      desktopWorkspace,
+		terminalCommands:      terminalCommands,
 		fileShareStreamGate:   make(chan struct{}, maxPublicFileShareStreams),
 		fileShareMetadataGate: make(chan struct{}, maxFileShareMetadataReads),
 		remoteDownloadOpen:    remotedownload.NewClient(remotedownload.Config{}).Open,
@@ -247,7 +254,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
-	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
+	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || r.URL.Path == terminalCommandsPath || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
 		s.writeProblem(w, r, http.StatusConflict, "backup_busy", "备份恢复正在执行，请稍后重试", "")
 		return
 	}
@@ -329,6 +336,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
+	case r.URL.Path == "/api/v1/terminal-commands":
+		s.handleTerminalCommands(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs":
 		s.handleJobs(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/jobs/"):

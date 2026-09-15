@@ -108,6 +108,8 @@ import type {
   TOTPRecoveryCodes,
   TOTPStatus,
   TerminalOutput,
+  TerminalQuickCommands,
+  TerminalQuickCommandsUpdate,
   TerminalSession,
   WebEnvironmentActionInput,
   WebEnvironmentBackup,
@@ -1644,6 +1646,10 @@ export const api = {
       }),
   },
   terminals: {
+    commands: (signal?: AbortSignal): Promise<TerminalQuickCommands> =>
+      request<TerminalQuickCommands>('/terminal-commands', { signal }),
+    updateCommands: (body: TerminalQuickCommandsUpdate): Promise<TerminalQuickCommands> =>
+      request<TerminalQuickCommands>('/terminal-commands', { method: 'PUT', body }),
     open: (hostId: string, rows: number, columns: number): Promise<TerminalSession> =>
       request<TerminalSession>('/terminal-sessions', {
         method: 'POST',

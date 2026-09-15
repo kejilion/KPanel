@@ -98,9 +98,10 @@ describe('interactive task terminal layout', () => {
     expect(terminalSource).toContain('terminal.attachCustomKeyEventHandler')
   })
 
-  it('uses the shared top and fullscreen controls in every interactive task terminal', () => {
+  it('keeps fullscreen but removes the jump-to-top control from task terminals', () => {
     expect(terminalSource).toContain('<TerminalToolbar')
-    expect(terminalSource).toContain('@scroll-top="scrollToTop"')
+    expect(terminalSource).not.toContain('@scroll-top=')
+    expect(terminalSource).not.toContain('function scrollToTop')
     expect(terminalSource).toContain('@toggle-fullscreen="toggleFullscreen"')
     expect(terminalSource).toMatch(
       /\.interactive-terminal\.is-fullscreen\s*\{[^}]*position: fixed;[^}]*inset: 0;[^}]*height: 100dvh;/,

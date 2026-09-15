@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ArrowUpToLine, Maximize2, Minimize2 } from '@lucide/vue'
+import { Maximize2, Minimize2, PanelRightClose, PanelRightOpen } from '@lucide/vue'
 import { useI18n } from '@/i18n'
 
 defineProps<{
   fullscreen: boolean
+  quickCommands?: boolean
+  quickCommandsExpanded?: boolean
 }>()
 
 const emit = defineEmits<{
-  scrollTop: []
+  toggleQuickCommands: []
   toggleFullscreen: []
 }>()
 
@@ -17,12 +19,16 @@ const { t } = useI18n()
 <template>
   <div class="terminal-toolbar" role="toolbar" :aria-label="t('terminal.toolbar')" @contextmenu.prevent.stop>
     <button
+      v-if="quickCommands"
       type="button"
-      :title="t('terminal.scrollToTop')"
-      :aria-label="t('terminal.scrollToTop')"
-      @click.stop="emit('scrollTop')"
+      aria-controls="terminal-quick-commands"
+      :aria-expanded="Boolean(quickCommandsExpanded)"
+      :title="t(quickCommandsExpanded ? 'terminal.quickCommandsCollapse' : 'terminal.quickCommandsExpand')"
+      :aria-label="t(quickCommandsExpanded ? 'terminal.quickCommandsCollapse' : 'terminal.quickCommandsExpand')"
+      @click.stop="emit('toggleQuickCommands')"
     >
-      <ArrowUpToLine :size="17" />
+      <PanelRightClose v-if="quickCommandsExpanded" :size="17" />
+      <PanelRightOpen v-else :size="17" />
     </button>
     <button
       type="button"
