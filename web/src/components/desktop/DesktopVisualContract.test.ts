@@ -158,6 +158,19 @@ describe('desktop visual and interaction contract', () => {
     expect(windowSource).toContain('<Teleport v-if="snapTarget" to=".desktop">')
   })
 
+  it('provides a visible, keyboard-accessible center target for a snapped window pair', () => {
+    expect(styles).toMatch(/\.desktop-window-split-resizer\s*\{[^}]*width:\s*24px;[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/)
+    expect(styles).toMatch(/\.desktop \.desktop-window-split-resizer:focus-visible\s*\{[^}]*outline:\s*none;/)
+    expect(styles).toMatch(/\.desktop-window-split-resizer:is\(:hover, :focus-visible, \.desktop-window-split-resizer--active\)::before\s*\{[^}]*background:\s*var\(--brand\);/)
+    expect(styles).toMatch(/@media \(max-width: 760px\), \(hover: none\) and \(pointer: coarse\)[\s\S]*?\.desktop-window-split-resizer\s*\{\s*display:\s*none;/)
+    expect(styles).toMatch(/@media \(max-height: 560px\) and \(orientation: landscape\)[\s\S]*?\.desktop-window-split-resizer\s*\{\s*display:\s*none;/)
+    expect(desktopViewSource).toContain('role="separator"')
+    expect(desktopViewSource).toContain(':aria-valuenow="sideSplitPercent"')
+    expect(desktopViewSource).toContain("event.key === 'ArrowLeft'")
+    expect(desktopViewSource).toContain("event.key === 'ArrowRight'")
+    expect(desktopViewSource).toContain("event.key === 'Enter'")
+  })
+
   it('keeps desktop icons and labels crisp in both color themes', () => {
     expect(styles).toMatch(/\.desktop__icon-glyph--dynamic::before\s*\{[^}]*display:\s*none;/)
     expect(styles).toMatch(/\.desktop__icon-img\s*\{[^}]*background:\s*#f7f9f8;/)

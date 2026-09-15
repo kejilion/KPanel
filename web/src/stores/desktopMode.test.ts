@@ -176,6 +176,35 @@ describe('desktop mode', () => {
     expect(useDesktopMode().windows.value[0]?.snap).toBeNull()
   })
 
+  it('updates and persists one shared side-split ratio only when committed', () => {
+    setupViewport(1280, 800)
+    initializeDesktopMode(window.localStorage, { width: 1280, height: 800 })
+    const desktop = useDesktopMode()
+
+    desktop.setSideSplitRatio(0.62, false)
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(0.62)
+    expect(window.localStorage.getItem('kpanel:desktop-side-split:v1')).toBeNull()
+
+    desktop.commitSideSplitRatio()
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBeCloseTo(0.62)
+
+    resetDesktopModeForTest()
+    initializeDesktopMode(window.localStorage, { width: 1280, height: 800 })
+    expect(useDesktopMode().sideSplitRatio.value).toBeCloseTo(0.62)
+  })
+
+  it('rejects invalid split preferences and clamps panes to a usable width', () => {
+    const storage = makeStorage()
+    storage.store.set('kpanel:desktop-side-split:v1', 'not-a-ratio')
+    initializeDesktopMode(storage, { width: 1280, height: 800 })
+    expect(useDesktopMode().sideSplitRatio.value).toBe(0.5)
+
+    resetDesktopModeForTest()
+    storage.store.set('kpanel:desktop-side-split:v1', '0.05')
+    initializeDesktopMode(storage, { width: 1280, height: 800 })
+    expect(useDesktopMode().sideSplitRatio.value).toBeCloseTo(360 / 1250)
+  })
+
   it('does not write window storage during geometry frames and commits once at gesture end', () => {
     setupViewport(1280, 800)
     initializeDesktopMode(window.localStorage, { width: 1280, height: 800 })

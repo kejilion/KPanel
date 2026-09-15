@@ -30,6 +30,8 @@ export const MIN_WINDOW_WIDTH = 420
 export const MIN_WINDOW_HEIGHT = 280
 export const DEFAULT_WINDOW_WIDTH = 880
 export const DEFAULT_WINDOW_HEIGHT = 600
+export const DEFAULT_SIDE_SPLIT_RATIO = 0.5
+export const MIN_SIDE_SNAP_WIDTH = 360
 /** Taskbar + window chrome allowance so a window never opens fully offscreen. */
 const TOP_MARGIN = 16
 const SIDE_MARGIN = 24
@@ -37,8 +39,8 @@ const BOTTOM_MARGIN = 72
 // Leave drag space beside the three 46px title-bar action buttons.
 const MIN_VISIBLE_TITLEBAR_WIDTH = 200
 const TITLEBAR_HEIGHT = 42
-const SNAP_INSET = 10
-const SNAP_GAP = 10
+export const SNAP_INSET = 10
+export const SNAP_GAP = 10
 const SNAP_EDGE_THRESHOLD = 18
 const MIN_SIDE_SNAP_VIEWPORT_WIDTH = 760
 
@@ -115,8 +117,40 @@ export function detectWindowSnapTarget(point: ViewportPoint, viewport: ViewportS
   return null
 }
 
+/** Allowed shared divider range while keeping both snapped panes usable. */
+export function sideSplitRatioBounds(viewport: ViewportSize): { min: number; max: number } {
+  const availableWidth = Math.max(viewport.width - SNAP_INSET * 2 - SNAP_GAP, 1)
+  const minimumPaneWidth = Math.min(MIN_SIDE_SNAP_WIDTH, availableWidth / 2)
+  const min = minimumPaneWidth / availableWidth
+  return { min, max: 1 - min }
+}
+
+/** Clamp a persisted or user-supplied divider ratio for the current viewport. */
+export function normalizeSideSplitRatio(ratio: number, viewport: ViewportSize): number {
+  const { min, max } = sideSplitRatioBounds(viewport)
+  return clamp(Number.isFinite(ratio) ? ratio : DEFAULT_SIDE_SPLIT_RATIO, min, max)
+}
+
+/** Convert the divider's viewport x-coordinate into the shared pane ratio. */
+export function sideSplitRatioForPosition(positionX: number, viewport: ViewportSize): number {
+  const availableWidth = Math.max(viewport.width - SNAP_INSET * 2 - SNAP_GAP, 1)
+  const ratio = (positionX - SNAP_INSET - SNAP_GAP / 2) / availableWidth
+  return normalizeSideSplitRatio(ratio, viewport)
+}
+
+/** Center x-coordinate of the draggable gap between the two snapped panes. */
+export function sideSplitDividerPosition(viewport: ViewportSize, ratio: number): number {
+  const normalized = normalizeSideSplitRatio(ratio, viewport)
+  const availableWidth = Math.max(viewport.width - SNAP_INSET * 2 - SNAP_GAP, 1)
+  return SNAP_INSET + availableWidth * normalized + SNAP_GAP / 2
+}
+
 /** Geometry shared by the live snap preview and the final snapped window. */
-export function geometryForWindowSnap(target: WindowSnapTarget, viewport: ViewportSize): WindowGeometry {
+export function geometryForWindowSnap(
+  target: WindowSnapTarget,
+  viewport: ViewportSize,
+  splitRatio = DEFAULT_SIDE_SPLIT_RATIO,
+): WindowGeometry {
   const height = Math.max(viewport.height - SNAP_INSET - BOTTOM_MARGIN, 1)
   if (target === 'maximize') {
     return {
@@ -127,9 +161,11 @@ export function geometryForWindowSnap(target: WindowSnapTarget, viewport: Viewpo
     }
   }
 
-  const width = Math.max((viewport.width - SNAP_INSET * 2 - SNAP_GAP) / 2, 1)
+  const availableWidth = Math.max(viewport.width - SNAP_INSET * 2 - SNAP_GAP, 1)
+  const leftWidth = availableWidth * normalizeSideSplitRatio(splitRatio, viewport)
+  const width = target === 'left' ? leftWidth : availableWidth - leftWidth
   return {
-    left: target === 'left' ? SNAP_INSET : SNAP_INSET + width + SNAP_GAP,
+    left: target === 'left' ? SNAP_INSET : SNAP_INSET + leftWidth + SNAP_GAP,
     top: SNAP_INSET,
     width,
     height,

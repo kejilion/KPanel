@@ -165,10 +165,13 @@ const windowStyle = computed(() => {
     }
   }
   if (props.windowState.snap) {
+    const isLeft = props.windowState.snap === 'left'
     return {
-      left: props.windowState.snap === 'left' ? '10px' : 'calc(50vw + 5px)',
+      left: isLeft ? '10px' : 'var(--desktop-side-split-right-left, calc(50vw + 5px))',
       top: '10px',
-      width: 'calc(50vw - 15px)',
+      width: isLeft
+        ? 'var(--desktop-side-split-left-width, calc(50vw - 15px))'
+        : 'var(--desktop-side-split-right-width, calc(50vw - 15px))',
       height: 'calc(100dvh - 82px)',
       zIndex: props.windowState.z,
     }
@@ -187,7 +190,7 @@ const snapPreviewStyle = computed(() => {
   const geometry = geometryForWindowSnap(snapTarget.value, {
     width: window.innerWidth,
     height: window.innerHeight,
-  })
+  }, desktop.sideSplitRatio.value)
   return {
     left: `${geometry.left}px`,
     top: `${geometry.top}px`,
@@ -436,6 +439,7 @@ const handleEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
 <template>
   <section
     ref="windowElement"
+    :id="`desktop-window-${windowState.id}`"
     class="desktop-window"
     :class="{
       'desktop-window--focused': isFocused,

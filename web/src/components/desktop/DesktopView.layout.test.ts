@@ -99,6 +99,69 @@ describe('DesktopView icon layout interaction', () => {
     }))
   })
 
+  it('resizes both snapped panes from one accessible center divider and persists on release', async () => {
+    window.localStorage.removeItem('kpanel:desktop-side-split:v1')
+    const desktop = useDesktopMode()
+    const leftId = desktop.openWindow('/overview', 'route.overview', false)
+    const rightId = desktop.openWindow('/files', 'route.files', true)
+    desktop.snapWindow(leftId, 'left')
+    desktop.snapWindow(rightId, 'right')
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+
+    const divider = wrapper.get('.desktop-window-split-resizer')
+    expect(divider.attributes('role')).toBe('separator')
+    expect(divider.attributes('aria-controls')).toBe(`desktop-window-${leftId} desktop-window-${rightId}`)
+    expect(divider.attributes('aria-valuenow')).toBe('50')
+
+    divider.element.dispatchEvent(pointer('pointerdown', 640, 300))
+    window.dispatchEvent(pointer('pointermove', 790, 300))
+    window.dispatchEvent(pointer('pointerup', 790, 300))
+    await flushPromises()
+
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(0.62)
+    expect(divider.attributes('aria-valuenow')).toBe('62')
+    expect(wrapper.attributes('style')).toContain('--desktop-side-split-left-width: 775px')
+    expect(wrapper.attributes('style')).toContain('--desktop-side-split-right-width: 475px')
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBeCloseTo(0.62)
+
+    await divider.trigger('keydown', { key: 'ArrowLeft' })
+    expect(desktop.sideSplitRatio.value).toBeLessThan(0.62)
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBeCloseTo(
+      desktop.sideSplitRatio.value,
+    )
+
+    await divider.trigger('keydown', { key: 'Enter' })
+    expect(desktop.sideSplitRatio.value).toBe(0.5)
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBe(0.5)
+    wrapper.unmount()
+  })
+
+  it('restores the previous split after cancellation and hides the divider without a visible pair', async () => {
+    window.localStorage.removeItem('kpanel:desktop-side-split:v1')
+    const desktop = useDesktopMode()
+    const leftId = desktop.openWindow('/overview', 'route.overview', false)
+    const rightId = desktop.openWindow('/files', 'route.files', true)
+    desktop.snapWindow(leftId, 'left')
+    desktop.snapWindow(rightId, 'right')
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+
+    const divider = wrapper.get('.desktop-window-split-resizer')
+    divider.element.dispatchEvent(pointer('pointerdown', 640, 300))
+    window.dispatchEvent(pointer('pointermove', 790, 300))
+    window.dispatchEvent(pointer('pointercancel', 790, 300))
+    await flushPromises()
+
+    expect(desktop.sideSplitRatio.value).toBe(0.5)
+    expect(window.localStorage.getItem('kpanel:desktop-side-split:v1')).toBeNull()
+
+    desktop.minimizeWindow(rightId)
+    await flushPromises()
+    expect(wrapper.find('.desktop-window-split-resizer').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('persists one snapped drop and suppresses the click generated after dragging', async () => {
     const desktop = useDesktopMode()
     const wrapper = mount(DesktopView, { attachTo: document.body })

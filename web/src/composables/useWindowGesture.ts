@@ -206,6 +206,7 @@ export function useWindowGesture(
   return {
     onPointerDown,
     edgeForTarget,
+    cancel: () => finishGesture(undefined, true),
     active,
     RESIZE_MARGIN,
   }
