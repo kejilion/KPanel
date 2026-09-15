@@ -282,4 +282,13 @@ describe('multi-host terminal workspace layout', () => {
     )
     expect(hostTerminalSource).toContain("queueInput(terminalLineSubmission(command.replace(/\\r\\n?/g, '\\n')))")
   })
+
+  it('removes grid placement when the quick-command drawer becomes a narrow-screen overlay', () => {
+    expect(terminalSource).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.terminal-stage :deep\(\.terminal-quick-commands\)\s*\{[^}]*grid-row:auto;[^}]*grid-column:auto;[^}]*position:absolute;/,
+    )
+    expect(desktopStyles).toMatch(
+      /\.desktop-window__body \.terminal-stage \.terminal-quick-commands\s*\{[^}]*grid-row:\s*auto;[^}]*grid-column:\s*auto;[^}]*position:\s*absolute;/,
+    )
+  })
 })
