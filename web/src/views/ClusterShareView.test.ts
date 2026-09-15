@@ -233,6 +233,8 @@ describe('ClusterShareView anonymous snapshot', () => {
     expect(source.indexOf('<dt>实时流量</dt>')).toBeLessThan(source.indexOf('<dt>累计流量</dt>'))
     expect(source.indexOf('<dt>累计流量</dt>')).toBeLessThan(source.indexOf('运行时间</dt>'))
     expect(source).toContain('<div class="share-details__uptime">')
+    expect(source).toContain('grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) 24rem;')
+    expect(source).toMatch(/\.share-grid\.is-list \.share-details \{[^}]*grid-template-columns:\s*minmax\(0, 13rem\) minmax\(0, 11rem\);[^}]*justify-content:\s*start;/)
     expect(source).toMatch(/\.share-grid\.is-list \.share-details__traffic \{[^}]*grid-column:\s*1;/)
     expect(source).toMatch(/\.share-grid\.is-list \.share-details__uptime \{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/)
     expect(source).toContain('@click="load()"')
