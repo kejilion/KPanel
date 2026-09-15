@@ -1,12 +1,12 @@
 ---
 name: local-feature-preview
 description: "为 KPanel 功能会话建立可复现、可并行、可停止且证据分层明确的本地交互预览"
-version: "1.2"
+version: "1.3"
 author: "Codex"
 tags: [kpanel, preview, frontend, browser, multi-agent, quality]
-params: [project_dir, scope, preview_mode, preview_grade, acceptance_profile, api_target, evidence_dir, affected_journeys]
+params: [project_dir, scope, preview_mode, preview_grade, acceptance_profile, api_target, evidence_dir, affected_journeys, candidate_base_ref]
 created: "2026-08-17T12:25:44Z"
-updated: "2026-08-24T08:00:00Z"
+updated: "2026-09-15T00:00:00+08:00"
 ---
 
 # KPanel Local Feature Preview
@@ -21,6 +21,8 @@ updated: "2026-08-24T08:00:00Z"
 
 - 已阅读 `docs/local-feature-preview-standard.md`、`docs/ui-visual-language.md`、`PROJECT_RULES.md` 和本任务相关业务文档。
 - `${{project_dir}}` 是当前任务独占的 KPanel worktree；主线管理工作树不得承载功能预览。
+- `acceptance` 只在仓库写任务形成候选提交后运行，`${{candidate_base_ref}}` 是该任务的精确批准基线；
+  `draft` 可以在实现过程中提前运行，但不能满足完成交付。
 - `${{scope}}` 是稳定的小写连字符标识；`${{affected_journeys}}` 使用 3–7 个
   `操作步骤 => 预期结果` 并以 `|` 分隔；`${{acceptance_profile}}` 已按受影响风险选择。
 - `web/node_modules` 来自当前 `web/package-lock.json`；缺失时先在该 worktree 执行 `npm ci`。
@@ -35,6 +37,9 @@ cd "${{project_dir}}"
 git status --short --branch
 git rev-parse HEAD
 git diff --check
+if ("${{preview_grade}}" -eq "acceptance") {
+  node scripts/check-collaboration-state.mjs --role writer --base-ref "${{candidate_base_ref}}" --require-candidate
+}
 ```
 
 选择且只选择一种模式：
@@ -43,8 +48,9 @@ git diff --check
 - `integration`：前端连接本机回环 Panel/API，验证真实接口契约和本地状态。
 - 需要宿主机、Docker、脚本或跨重启闭环时，不提升本地预览结论，改用登记的隔离真机工作流。
 
-本次等级为 `${{preview_grade}}`；`draft` 允许 dirty worktree，只用于阶段体验，`acceptance` 必须是 clean checkpoint，
-可作为当前精确提交的浏览器证据。
+本次等级为 `${{preview_grade}}`；`draft` 允许 dirty worktree，只用于阶段体验且跳过上述候选完成检查；
+`acceptance` 必须在候选提交后通过上述检查，可作为当前精确提交的浏览器证据。若提交改变，停止或废弃
+旧预览并从受影响旅程重新执行。
 
 选择且只选择一种验收画像：`interaction` 用于普通确定性交互，`visual` 用于字号/主题/布局，
 `visual-composition` 用于实体、状态和徽章/浮层会同时出现或已有视觉逃逸的旅程。只覆盖实际受影响且
@@ -129,8 +135,8 @@ node scripts/local-feature-preview.mjs status --evidence-dir "${{evidence_dir}}"
 node scripts/local-feature-preview.mjs stop --evidence-dir "${{evidence_dir}}"
 ```
 
-结束后再次执行 `status`，并确认预览 URL 已不可访问。日志和 manifest 留在 `.codex-tmp` 或任务指定的
-非跟踪证据目录；不得提交运行态文件。
+用户完成体验、明确不再需要预览或责任已经移交后，再执行 stop。结束后再次执行 `status`，并确认预览
+URL 已不可访问。日志和 manifest 留在 `.codex-tmp` 或任务指定的非跟踪证据目录；不得提交运行态文件。
 
 **Expected output:** 只停止 manifest 记录且带 ownership marker 的进程，没有端口、进程或临时配置残留。
 
@@ -144,6 +150,7 @@ node scripts/local-feature-preview.mjs stop --evidence-dir "${{evidence_dir}}"
 - `${{api_target}}`：integration 模式的本机回环 API origin；mock 模式不使用。
 - `${{evidence_dir}}`：唯一、非 Git 跟踪的预览证据目录。
 - `${{affected_journeys}}`：3–7 个 `操作步骤 => 预期结果`，使用 `|` 分隔并写入 manifest。
+- `${{candidate_base_ref}}`：任务开始时冻结的精确批准基线；acceptance 用它证明预览发生在非空候选提交后。
 
 ## Verification
 
@@ -169,3 +176,4 @@ git diff --check
 - 多会话通过动态端口与唯一证据目录并行，不共用 PID 文件、固定端口或共享工作树。
 - 远程隧道、真实主机和生产均不属于本启动器；108 禁用全部 KPanel 操作。
 - 预览进程由启动会话负责停止；会话交接时必须同时交接 manifest 路径和停止命令。
+- 纯后端、文档、测试/构建基础设施或只能由登记隔离真机验证的任务记录不适用依据，不启动无关预览。

@@ -11,6 +11,7 @@ function usage() {
     '  --role <role>       management, writer, or auto',
     '  --base-ref <ref>    Approved baseline (default: origin/main)',
     '  --require-clean     Require a clean writer checkpoint',
+    '  --require-candidate Require a clean, non-empty writer commit above an explicit base',
   ].join('\n');
 }
 
@@ -21,6 +22,7 @@ function parseArgs(argv) {
     baseRef: 'origin/main',
     baseRefExplicit: false,
     requireClean: false,
+    requireCandidate: false,
   };
   const seen = new Set();
 
@@ -30,6 +32,13 @@ function parseArgs(argv) {
     if (argument === '--require-clean') {
       if (seen.has(argument)) throw new Error('duplicate option: ' + argument);
       seen.add(argument);
+      options.requireClean = true;
+      continue;
+    }
+    if (argument === '--require-candidate') {
+      if (seen.has(argument)) throw new Error('duplicate option: ' + argument);
+      seen.add(argument);
+      options.requireCandidate = true;
       options.requireClean = true;
       continue;
     }
@@ -54,6 +63,12 @@ function parseArgs(argv) {
   }
   if (options.role === 'management' && options.requireClean) {
     throw new Error('--require-clean is implicit for the management role');
+  }
+  if (options.requireCandidate && options.role !== 'writer') {
+    throw new Error('--require-candidate requires --role writer');
+  }
+  if (options.requireCandidate && !options.baseRefExplicit) {
+    throw new Error('--require-candidate requires an explicit --base-ref');
   }
   return options;
 }
@@ -147,6 +162,18 @@ function check(options) {
         git(root, ['merge-base', '--is-ancestor', baseCommit, headCommit]);
       } catch {
         failures.push(options.baseRef + ' is not an ancestor of the writer HEAD');
+      }
+    }
+    if (options.requireCandidate) {
+      if (headCommit === baseCommit || ahead === 0) {
+        failures.push('writer completion requires at least one candidate commit above ' + options.baseRef);
+      } else {
+        const changedPaths = git(root, ['diff', '--name-only', options.baseRef + '...HEAD'])
+          .split(/\r?\n/)
+          .filter(Boolean);
+        if (changedPaths.length === 0) {
+          failures.push('writer candidate must contain a non-empty task diff; empty commits do not satisfy completion');
+        }
       }
     }
   } else {
