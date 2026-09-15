@@ -19,6 +19,16 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount())
 
 describe('backup center user flow', () => {
+  it('uses the shared settings hierarchy and groups record controls', async () => {
+    render(); await flushPromises()
+
+    expect(wrapper.get('.backup-center').classes()).toContain('settings-section')
+    expect(wrapper.get('.backup-center > header').classes()).toContain('settings-section__header')
+    expect(wrapper.get('.backup-command__actions').findAll('button')[1]?.classes()).toContain('button--secondary')
+    expect(wrapper.get('.backup-history__header button').classes()).toContain('button--secondary')
+    expect(wrapper.get('.backup-empty').attributes('role')).toBe('status')
+  })
+
   it('requires the category that shares selected data', async () => {
     render(); await flushPromises()
     await wrapper.get('.backup-actions button').trigger('click'); await flushPromises()
@@ -58,6 +68,8 @@ describe('backup center user flow', () => {
     vi.mocked(backups.list).mockResolvedValue({ items: [{ ...record, action: 'export', status: 'completed' }], maxBytes: 50 * 2 ** 30 })
     render(); await flushPromises()
     expect(wrapper.get('a[download]').attributes('href')).toBe('/api/v1/backups/' + record.id + '/download')
+    expect(wrapper.get('a[download]').classes()).toContain('button--secondary')
+    expect(wrapper.get('.button--danger-text').classes()).toContain('button--ghost')
   })
 
   it('resolves interruption only through recovery after confirmation', async () => {

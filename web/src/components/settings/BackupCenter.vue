@@ -96,28 +96,40 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
 </script>
 
 <template>
-  <section class="backup-center panel-card" aria-labelledby="backup-center-title">
-    <header class="backup-heading"><Archive :size="22" aria-hidden="true" /><div><h2 id="backup-center-title">备份与恢复</h2><p>将需要的数据带走，在新面板中恢复。</p></div></header>
-    <div class="backup-actions">
-      <button class="button button--primary" :disabled="pending" @click="openExport"><Download :size="16" />导出备份</button>
-      <button class="button" :disabled="pending" @click="openImport"><Upload :size="16" />导入恢复</button>
-      <button class="button backup-refresh" @click="refreshNow"><RefreshCw :size="16" />刷新记录</button>
+  <section class="backup-center settings-section panel-card" aria-labelledby="backup-center-title">
+    <header class="settings-section__header">
+      <span aria-hidden="true"><Archive :size="19" /></span>
+      <div><h2 id="backup-center-title">备份与恢复</h2><p>将需要的数据带走，在新面板中恢复。</p></div>
+    </header>
+    <div class="backup-center__body">
+      <div class="backup-command">
+        <div class="backup-actions backup-command__actions">
+          <button type="button" class="button button--primary" :disabled="pending" @click="openExport"><Download :size="16" />导出备份</button>
+          <button type="button" class="button button--secondary" :disabled="pending" @click="openImport"><Upload :size="16" />导入恢复</button>
+        </div>
+        <p class="backup-note">支持全部或按类别选择。备份包使用密码加密，请下载到其他设备妥善保存。</p>
+      </div>
+      <section class="backup-history" aria-labelledby="backup-history-title">
+        <header class="backup-history__header">
+          <h3 id="backup-history-title">{{ phrase('备份任务记录') }}</h3>
+          <button type="button" class="button button--secondary backup-refresh" @click="refreshNow"><RefreshCw :size="16" />刷新记录</button>
+        </header>
+        <p v-if="notice" class="backup-notice" role="status">{{ notice }}</p>
+        <p v-if="listError" class="backup-error" role="alert">{{ listError }}</p>
+        <p v-if="!records.length && !listError" class="backup-empty" role="status">还没有备份记录</p>
+        <ul v-else class="backup-records" aria-label="备份任务记录">
+          <li v-for="record in records" :key="record.id">
+            <div class="backup-record-main"><strong>{{ action(record) }}</strong><span>{{ record.modules?.map(name).join(' · ') }}</span><small>{{ formatDateTime(record.createdAt) }}<template v-if="record.size"> · {{ formatBytes(record.size) }}</template></small></div>
+            <div class="backup-record-status"><span>{{ status(record) }}</span><small v-if="record.completedModules?.length">{{ phrase('已恢复：') }} {{ record.completedModules.map(name).join(' · ') }}</small><div class="backup-actions">
+              <a v-if="record.action === 'export' && record.status === 'completed'" class="button button--secondary" :href="backups.download(record.id)" download>下载备份</a>
+              <button v-if="record.status === 'ready'" type="button" class="button button--primary" :disabled="pending" @click="openRestore(record)">选择恢复内容</button>
+              <button v-if="record.status === 'failed' && ['cleanup_pending', 'recovery_required'].includes(record.errorCode || '')" type="button" class="button button--secondary" :disabled="pending" @click="source = record; dialog = 'recover'">处理恢复中断</button>
+              <button v-if="!['running', 'queued', 'restarting'].includes(record.status)" type="button" class="button button--ghost button--danger-text" :disabled="pending" @click="openDelete(record)">删除记录</button>
+            </div></div>
+          </li>
+        </ul>
+      </section>
     </div>
-    <p class="backup-note">支持全部或按类别选择。备份包使用密码加密，请下载到其他设备妥善保存。</p>
-    <p v-if="notice" role="status">{{ notice }}</p>
-    <p v-if="listError" class="backup-error" role="alert">{{ listError }}</p>
-    <p v-if="!records.length && !listError" class="backup-empty">还没有备份记录</p>
-    <ul v-else class="backup-records" aria-label="备份任务记录">
-      <li v-for="record in records" :key="record.id">
-        <div class="backup-record-main"><strong>{{ action(record) }}</strong><span>{{ record.modules?.map(name).join(' · ') }}</span><small>{{ formatDateTime(record.createdAt) }}<template v-if="record.size"> · {{ formatBytes(record.size) }}</template></small></div>
-        <div class="backup-record-status"><span>{{ status(record) }}</span><small v-if="record.completedModules?.length">{{ phrase('已恢复：') }} {{ record.completedModules.map(name).join(' · ') }}</small><div class="backup-actions">
-          <a v-if="record.action === 'export' && record.status === 'completed'" class="button" :href="backups.download(record.id)" download>下载备份</a>
-          <button v-if="record.status === 'ready'" class="button button--primary" :disabled="pending" @click="openRestore(record)">选择恢复内容</button>
-          <button v-if="record.status === 'failed' && ['cleanup_pending', 'recovery_required'].includes(record.errorCode || '')" class="button" :disabled="pending" @click="source = record; dialog = 'recover'">处理恢复中断</button>
-          <button v-if="!['running', 'queued', 'restarting'].includes(record.status)" class="button" :disabled="pending" @click="openDelete(record)">删除记录</button>
-        </div></div>
-      </li>
-    </ul>
     <ModalDialog :open="!!dialog" :title="phrase(title)" size="medium" :close-disabled="busy" @close="close">
       <form class="backup-form" @submit.prevent="submit">
         <p v-if="loading" role="status">{{ phrase('正在计算备份内容…') }}</p>
@@ -148,12 +160,170 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
         <p v-if="dialog === 'delete'">{{ phrase('删除服务器上的备份文件与记录，已经下载的副本不受影响。') }}</p>
         <p v-if="error" class="backup-error" role="alert">{{ phrase(error) }}</p>
         <p v-if="busy" role="status">{{ phrase('正在提交，请保持页面打开…') }}</p>
-        <footer class="backup-actions"><button class="button" type="button" :disabled="busy" @click="close">{{ phrase('取消') }}</button><button class="button button--primary" type="submit" :disabled="!canSubmit">{{ phrase(dialog === 'recover' ? '确认处理' : dialog === 'restore' ? '确认恢复' : dialog === 'import' ? '上传并检查' : dialog === 'delete' ? '确认删除' : '开始备份') }}</button></footer>
+        <footer class="backup-actions"><button class="button button--ghost" type="button" :disabled="busy" @click="close">{{ phrase('取消') }}</button><button class="button" :class="dialog === 'delete' ? 'button--danger' : 'button--primary'" type="submit" :disabled="!canSubmit">{{ phrase(dialog === 'recover' ? '确认处理' : dialog === 'restore' ? '确认恢复' : dialog === 'import' ? '上传并检查' : dialog === 'delete' ? '确认删除' : '开始备份') }}</button></footer>
       </form>
     </ModalDialog>
   </section>
 </template>
 
 <style scoped>
-.backup-center{padding:24px;font-size:14px;line-height:1.6}.backup-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}.backup-heading h2{margin:0;font-size:18px}.backup-heading p{margin:4px 0 0;color:var(--text-soft)}.backup-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.backup-actions .button{font-size:14px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:8px}.backup-refresh{margin-left:auto}.backup-note,.backup-empty{font-size:13px;color:var(--text-soft)}.backup-empty{padding:20px 0;margin:0}.backup-records{list-style:none;margin:16px 0 0;padding:0}.backup-records li{display:flex;justify-content:space-between;align-items:center;gap:20px;border-top:1px solid var(--border);padding:16px 0}.backup-record-main,.backup-record-status{display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}.backup-record-main small{font-size:13px;color:var(--text-soft)}.backup-record-status{align-items:flex-end}.backup-form{display:grid;gap:16px;font-size:14px;line-height:1.6}.backup-form p{margin:0}.backup-form>label{display:grid;gap:6px}.backup-form input:not([type=checkbox]){width:100%;min-height:40px;font-size:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);padding:8px 12px}.backup-form fieldset{border:0;margin:0;padding:0;min-width:0}.backup-form legend{font-size:14px;font-weight:600;margin-bottom:8px}.backup-choice{display:flex;align-items:flex-start;gap:12px;padding:12px 0;cursor:pointer}.backup-choice input{margin-top:5px;width:18px;height:18px;accent-color:var(--brand)}.backup-choice span{display:grid;gap:3px}.backup-choice small{font-size:13px;color:var(--text-soft)}.backup-error{color:var(--danger);font-size:14px}.backup-impact{padding:12px;background:var(--surface-subtle);border-left:3px solid var(--brand);border-radius:var(--radius-sm)}.backup-form footer{justify-content:flex-end}.backup-form :focus-visible{outline:2px solid var(--brand);outline-offset:3px}@media(max-width:640px){.backup-center{padding:16px}.backup-records li{align-items:flex-start;flex-direction:column;gap:12px}.backup-record-status{align-items:flex-start}.backup-refresh{margin-left:0}}
+.backup-center {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.backup-center__body {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.backup-command,
+.backup-history {
+  display: grid;
+  gap: 12px;
+}
+
+.backup-history {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.backup-history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backup-history__header h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.backup-actions .button {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.backup-note,
+.backup-empty {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.backup-empty {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.backup-notice,
+.backup-error {
+  padding: 10px 12px;
+  margin: 0;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+.backup-notice {
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--brand-soft) 45%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--border));
+}
+
+.backup-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+}
+
+.backup-records {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.backup-records li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.backup-record-main,
+.backup-record-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.backup-record-main small,
+.backup-record-status small {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.backup-record-status {
+  align-items: flex-end;
+}
+
+.backup-record-status > span {
+  font-weight: 600;
+}
+
+.backup-form{display:grid;gap:16px;font-size:14px;line-height:1.6}.backup-form p{margin:0}.backup-form>label{display:grid;gap:6px}.backup-form input:not([type=checkbox]){width:100%;min-height:40px;font-size:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);padding:8px 12px}.backup-form fieldset{border:0;margin:0;padding:0;min-width:0}.backup-form legend{font-size:14px;font-weight:600;margin-bottom:8px}.backup-choice{display:flex;align-items:flex-start;gap:12px;padding:12px 0;cursor:pointer}.backup-choice input{margin-top:5px;width:18px;height:18px;accent-color:var(--brand)}.backup-choice span{display:grid;gap:3px}.backup-choice small{font-size:13px;color:var(--text-soft)}.backup-impact{padding:12px;background:var(--surface-subtle);border-left:3px solid var(--brand);border-radius:var(--radius-sm)}.backup-form footer{justify-content:flex-end}.backup-form :focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+
+@media (max-width: 640px) {
+  .backup-center__body {
+    padding: 16px;
+  }
+
+  .backup-command__actions .button,
+  .backup-history__header .button {
+    width: 100%;
+  }
+
+  .backup-history__header,
+  .backup-records li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .backup-records li {
+    gap: 12px;
+  }
+
+  .backup-record-status {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .backup-record-status .backup-actions,
+  .backup-record-status .button {
+    width: 100%;
+  }
+}
 </style>
