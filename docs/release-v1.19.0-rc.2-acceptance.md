@@ -135,7 +135,7 @@
 产品载荷未造成回滚、紧急热修复或重复发布。以下流程异常均发生在生产写操作前；本次预览版没有生产写操作。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：6
+- 已记录发布流程异常或无效证据拦截次数：7
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -195,6 +195,15 @@
     "impact": "公开 OCI r1 误假设精简镜像内存在 cat/sha256sum，元数据读取在业务 E2E 前以 127 退出；临时运行未留下容器或网络。",
     "recoveryEvidence": "保留 r1 失败证据后，在独立 r2 目录改用 docker create 与 docker cp 只读提取元数据，固定 image-e2e.sh 输出 image_e2e=pass 和 public_oci_e2e=pass。",
     "permanentAction": "公开 OCI 元数据入口固定使用 docker inspect/create/cp，不在目标镜像内执行诊断工具；后续把该入口提交为仓库脚本并补无 shell 镜像回归。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "postrelease-ref/verification/command-time-budget",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "验收提交推送成功后，同一命令内连续回读 main、候选和 tag 超过 30 秒执行预算，没有返回完整复核结论。",
+    "recoveryEvidence": "独立只读命令随后确认 main=a29469a5，候选分支和 tag 均仍为产品 SHA cfc74247。",
+    "permanentAction": "发布后多 ref 复核拆成独立有界查询，或为只读批量核验使用明确的更长执行预算。",
     "historicalReleases": []
   }
 ]
