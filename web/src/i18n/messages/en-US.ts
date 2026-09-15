@@ -36,6 +36,7 @@ export const enUSMessages = {
   'route.monitoring': 'Monitoring history',
   'route.processes': 'Process manager',
   'route.cluster': 'Cluster',
+  'route.clusterBatchTasks': 'Cluster · Batch tasks',
   'route.clusterShare': 'Cluster status',
   'route.fileShare': 'Shared file',
   'route.sites': 'Sites',

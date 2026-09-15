@@ -156,6 +156,7 @@ export function canonicalDesktopAppPath(path: string): string {
   path = desktopRoutePath(path)
   if (path === '/monitoring') return '/overview'
   if (path === '/sites/environment') return '/sites'
+  if (path === '/cluster/tasks') return '/cluster'
   if (path.startsWith('/ai/s/')) return '/ai'
   if (path === '/jobs' || path === '/audit') return '/activity'
   return path

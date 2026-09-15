@@ -23,6 +23,7 @@ import {
   KeyRound,
   LayoutGrid,
   LayoutList,
+  ListChecks,
   LoaderCircle,
   MemoryStick,
   Pencil,
@@ -209,18 +210,26 @@ function lightNodeCapabilitySummary(host: ClusterHost): string {
   return '只读摘要 · 主动 HTTPS 上报'
 }
 
+function panelCapabilitySummary(host: ClusterHost): string {
+  const capabilities = [phrase('摘要监控')]
+  if (host.terminalAvailable) capabilities.push(phrase('远程终端'))
+  if (host.fileManagementAvailable) capabilities.push(phrase('文件管理'))
+  if (host.batchTaskAvailable) capabilities.push(phrase('固定批量维护'))
+  return capabilities.join(' · ')
+}
+
 function controllerCapabilitySummary(scope: string): string {
   const scopes = new Set(scope.split(/\s+/).filter(Boolean))
   const terminalAvailable = scopes.has('cluster.terminal.open')
   // `cluster.files.read` is the compatibility scope name; the authenticated
   // relay also permits file writes and actions, so the UI must disclose that.
   const fileManagementAvailable = scopes.has('cluster.files.read')
-  if (terminalAvailable && fileManagementAvailable) {
-    return '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）'
-  }
-  if (fileManagementAvailable) return '权限：摘要读取 · 文件管理（含写入与删除）'
-  if (terminalAvailable) return '权限：摘要读取 · 远程终端'
-  return '权限：摘要读取'
+  const maintenanceAvailable = scopes.has('cluster.system.maintenance')
+  const capabilities = [phrase('权限：摘要读取')]
+  if (terminalAvailable) capabilities.push(phrase('远程终端'))
+  if (fileManagementAvailable) capabilities.push(phrase('文件管理（含写入与删除）'))
+  if (maintenanceAvailable) capabilities.push(phrase('固定批量系统维护'))
+  return capabilities.join(' · ')
 }
 
 const orderedHosts = computed(() => sortClusterHosts(inventory.value?.items || [], hostOrder.value))
@@ -1197,6 +1206,9 @@ onBeforeUnmount(() => {
         <button class="button button--secondary button--small" type="button" @click="notificationsOpen = true">
           <Bell :size="15" /> 通知
         </button>
+        <RouterLink class="button button--secondary button--small" to="/cluster/tasks">
+          <ListChecks :size="15" /> 批量任务
+        </RouterLink>
         <button class="button button--primary button--small cluster-hero__add" type="button" @click="openAdd">
           <Plus :size="15" /> 添加主机
         </button>
@@ -1360,6 +1372,9 @@ onBeforeUnmount(() => {
             </small>
             <small v-else-if="host.kind === 'light_node'" class="cluster-card__fingerprint">
               {{ phrase(lightNodeCapabilitySummary(host)) }}
+            </small>
+            <small v-if="host.kind !== 'light_node'" class="cluster-card__fingerprint">
+              {{ panelCapabilitySummary(host) }}
             </small>
           </div>
           <button
@@ -1868,7 +1883,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="accessOpen"
       :title="phrase('本机接入授权')"
-      :description="phrase('其他 KPanel 可按授权范围读取摘要、打开远程终端和管理文件（含写入与删除）；授权可随时撤销。')"
+      :description="phrase('其他 KPanel 可按授权范围读取摘要、打开远程终端、管理文件（含写入与删除）并执行固定批量系统维护；授权可随时撤销。')"
       size="medium"
       @close="closeAccess"
     >
@@ -1878,7 +1893,7 @@ onBeforeUnmount(() => {
             <KeyRound :size="20" />
             <span>
               <strong>{{ phrase('本机接入凭据') }}</strong>
-              <small>{{ phrase('同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、远程终端和文件管理（含写入与删除）。') }}</small>
+              <small>{{ phrase('同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、远程终端、文件管理（含写入与删除）和固定批量系统维护。') }}</small>
             </span>
           </div>
           <button
@@ -1928,7 +1943,7 @@ onBeforeUnmount(() => {
               <span>
                 <strong>{{ controller.name || phrase('未命名 KPanel') }}</strong>
                 <code>{{ controller.fingerprint }}</code>
-                <small>{{ phrase(controllerCapabilitySummary(controller.scope)) }}</small>
+                <small>{{ controllerCapabilitySummary(controller.scope) }}</small>
                 <small>
                   {{ phrase(`授权于 ${formatDateTime(controller.createdAt)} · 最近访问 ${relativeTime(controller.lastSeenAt)}`) }}
                 </small>

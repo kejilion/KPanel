@@ -1815,6 +1815,81 @@ describe('API client', () => {
     })
   })
 
+  it('uses only typed batch-task endpoints and never invents a command payload', async () => {
+    const id = 'task/id'
+    const encodedID = encodeURIComponent(id)
+    const record = {
+      id,
+      action: 'system-update',
+      state: 'queued',
+      concurrency: 2,
+      timeoutSeconds: 900,
+      cancelRequested: false,
+      total: 1,
+      completed: 0,
+      succeeded: 0,
+      failed: 0,
+      needsAttention: 0,
+      cancelled: 0,
+      unsupported: 0,
+      createdAt: '2026-09-15T08:00:00Z',
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/bootstrap') return jsonResponse({ required: false })
+      if (url === '/api/v1/auth/session') {
+        return jsonResponse({
+          user: { id: 'user-1', username: 'admin', role: 'administrator' },
+          csrfToken: 'batch-csrf-secret',
+          expiresAt: '2026-09-15T09:00:00Z',
+        })
+      }
+      if (url.endsWith('/batch-actions')) {
+        return jsonResponse({ actions: [], limits: { maxTasks: 100 } })
+      }
+      if (url === '/api/v1/cluster/batch-tasks') return jsonResponse({ items: [record], total: 1 })
+      if (url.endsWith('/cancel') || url.endsWith('/retry') || url.endsWith(encodedID)) return jsonResponse(record)
+      return jsonResponse({ deleted: true })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await api.auth.status()
+    await api.cluster.batchActions()
+    await api.cluster.batchTasks()
+    await api.cluster.batchTask(id)
+    await api.cluster.createBatchTask({
+      action: 'system-update', hostIds: ['local'], concurrency: 2, timeoutSeconds: 900,
+    })
+    await api.cluster.cancelBatchTask(id)
+    await api.cluster.retryBatchTask(id, { confirmDisruptive: false })
+    await api.cluster.deleteBatchTask(id)
+
+    const calls = fetchMock.mock.calls.slice(2)
+    expect(calls.map(([url]) => url)).toEqual([
+      '/api/v1/cluster/batch-actions',
+      '/api/v1/cluster/batch-tasks',
+      `/api/v1/cluster/batch-tasks/${encodedID}`,
+      '/api/v1/cluster/batch-tasks',
+      `/api/v1/cluster/batch-tasks/${encodedID}/cancel`,
+      `/api/v1/cluster/batch-tasks/${encodedID}/retry`,
+      `/api/v1/cluster/batch-tasks/${encodedID}`,
+    ])
+    expect(calls.map(([, init]) => (init as RequestInit).method)).toEqual([
+      'GET', 'GET', 'GET', 'POST', 'POST', 'POST', 'DELETE',
+    ])
+    expect(JSON.parse(String((calls[3]![1] as RequestInit).body))).toEqual({
+      action: 'system-update', hostIds: ['local'], concurrency: 2, timeoutSeconds: 900,
+    })
+    expect(Object.keys(JSON.parse(String((calls[3]![1] as RequestInit).body))).sort()).toEqual([
+      'action', 'concurrency', 'hostIds', 'timeoutSeconds',
+    ])
+    for (const index of [3, 4, 5, 6]) {
+      expect(new Headers((calls[index]![1] as RequestInit).headers).get('x-csrf-token')).toBe('batch-csrf-secret')
+    }
+    expect((calls[4]![1] as RequestInit).body).toBeUndefined()
+    expect(JSON.parse(String((calls[5]![1] as RequestInit).body))).toEqual({ confirmDisruptive: false })
+    expect((calls[6]![1] as RequestInit).body).toBeUndefined()
+  })
+
   it('separates authenticated share settings from the anonymous public snapshot', async () => {
     const token = 'a'.repeat(64)
     const settings = {

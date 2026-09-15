@@ -56,7 +56,8 @@
   固定适配器；
 - 远端终端只允许已激活且 scope 包含 `cluster.terminal.open` 的 v2 控制端；当前合法 scope 为
   `cluster.summary.read cluster.terminal.open` 或新增文件读取权限后的
-  `cluster.summary.read cluster.terminal.open cluster.files.read`；
+  `cluster.summary.read cluster.terminal.open cluster.files.read`，以及重新配对后显式增加固定维护权限的
+  `cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance`；
 - 现有 v1 和旧 v2 授权不自动扩权，管理员必须撤销后重新配对；
 - 轻量节点终端由独立版本的 root `terminal-broker` 显式提供；服务启动后才通过已认证的 v2 Noise 轮询公布能力，不会因旧节点升级二进制而自动开放入站 Shell。
 

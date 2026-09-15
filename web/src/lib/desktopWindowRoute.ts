@@ -167,6 +167,11 @@ export function windowRouteRecords(): RouteRecordRaw[] {
       component: WINDOW_ROUTE_PLACEHOLDER,
     },
     {
+      path: '/cluster/tasks',
+      name: 'cluster-batch-tasks',
+      component: WINDOW_ROUTE_PLACEHOLDER,
+    },
+    {
       path: '/ai',
       name: 'ai',
       component: WINDOW_ROUTE_PLACEHOLDER,
