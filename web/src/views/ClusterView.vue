@@ -1156,7 +1156,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="cluster-hero__actions">
         <button
-          class="icon-button icon-button--small"
+          class="icon-button"
           type="button"
           :disabled="refreshing"
           title="刷新集群状态"
@@ -2669,12 +2669,12 @@ onBeforeUnmount(() => {
   transition: background-color 150ms ease;
 }
 
-.cluster-metric-link:hover,
-.cluster-metric-link:focus-visible {
-  background: var(--brand-soft);
+.cluster-metric-link:hover {
+  background: var(--interaction-hover-surface);
 }
 
 .cluster-metric-link:focus-visible {
+  background: var(--brand-soft);
   outline: 2px solid var(--brand);
   outline-offset: -2px;
 }
