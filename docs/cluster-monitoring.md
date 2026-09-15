@@ -2,7 +2,7 @@
 
 - 状态：集群监控已发布；多主机终端与轻量节点主动反向终端已按 v2 Noise 模型实现，自动化验证进行中；跨面板文件复制开发完成，待 L3 实机验收与发布
 - 协议：KPanel 新配对默认 `v2`、兼容既有 `v1`；轻量节点遥测仍为 `light-v1`，终端反向传输复用 v2 Noise 信封与终端 payload
-- 范围：主机概要监控、独立面板跳转、接入授权与撤销、多主机终端、轻量节点安全反向终端、跨面板文件复制、非面板 Linux 主机只读采集
+- 范围：主机概要监控、独立面板跳转、接入授权与撤销、多主机终端、轻量节点安全反向终端、跨面板文件复制、非面板 Linux 主机只读采集及经认证的远程终端/文件管理
 
 ## 1. 产品边界
 
@@ -11,13 +11,14 @@
 - **中心端**：保存远端节点授权，后台轮询远端概要并向当前浏览器提供缓存列表。
 - **被控端**：签发一次性授权码，向已授权中心端返回本机只读概要。
 
-没有安装 KPanel 的 Linux 主机可以安装独立的 `kejilion-node`。它不是被控面板，不提供 Web、
-Agent、文件、网站或 Docker 管理能力；默认低权限遥测进程只通过出站 HTTPS 主动上报主机概要，
-另由同一安装包的 root `terminal-broker` 在完成中心认证后提供固定登录 Shell PTY，并由独立的
-root `ssh-login-broker` 读取 SSH 登录记录后只发布一条窄事件文件。Telegram 凭据始终只保留在中心端，
+没有安装 KPanel 的 Linux 主机可以安装独立的 `kejilion-node`。它不是被控面板，不提供 Web 面板、
+Agent、网站或 Docker 管理能力；默认低权限遥测进程只通过出站 HTTPS 主动上报主机概要，
+另由同一安装包的 root `terminal-broker` 在完成中心认证后提供固定登录 Shell PTY，root `file-broker`
+提供包含写入与删除的文件管理链路，并由独立的 root `ssh-login-broker` 读取 SSH 登录记录后只发布一条窄事件文件。Telegram 凭据始终只保留在中心端，
 不下发到轻量节点。中心端可修改其备注、排序或移除记录，但不会显示“打开面板”。
 
-新 v2 配对可授权当前中心使用多主机终端和显式跨面板文件读取；既有 v1、旧 v2 与轻量节点不会自动获得新增权限。
+新 v2 配对固定授权当前中心使用多主机终端和远程文件管理；新轻量节点在相应 broker 通过认证并在线后
+显示终端或文件管理能力。既有 v1 与旧 v2 配对不会因升级自动获得新增权限。
 终端使用独立 Panel Session 和 Noise v2 请求，不共享目标面板登录态；详细契约见
 [`multi-host-terminal.md`](multi-host-terminal.md)。跨面板文件复制契约见
 [`cross-kpanel-file-transfer.md`](cross-kpanel-file-transfer.md)。集群公开分享契约见
@@ -65,8 +66,9 @@ kp2.<base64url-json>
 - 5 分钟过期，只能成功消费一次；
 - 连续 5 次错误后失效；
 - secret 只用于本地派生配对 PSK，不出现在联邦 HTTP 请求、状态、审计或日志中；
-- 新授权权限固定为 `cluster.summary.read cluster.terminal.open cluster.files.read`；旧授权保留
-  `cluster.summary.read`，不会因升级自动扩权。
+- 新授权权限固定为 `cluster.summary.read cluster.terminal.open cluster.files.read`；其中
+  `cluster.files.read` 是兼容保留的历史 scope 名称，当前授权实际包含文件写入与删除等管理操作；
+  旧授权保留 `cluster.summary.read`，不会因升级自动扩权。
 - 新版中心执行“添加主机”时，在主配对成功后另行协商一个文件专用的双向 link；它复用既有
   Noise 静态身份但不建立反向 Host、不授予反向终端或概要权限。旧 v2 配对可由管理员显式
   启用该 link，无需重新配对；不支持 link 的旧版本继续保持原单向能力。
