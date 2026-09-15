@@ -578,7 +578,7 @@ onBeforeUnmount(() => {
   .terminal-workspace.is-connections-drawer-open .terminal-connections__heading,.terminal-workspace.is-connections-drawer-open .terminal-connections__refresh { display:none; }
   .terminal-stage { min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; }
   .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
-  .terminal-stage :deep(.terminal-quick-commands) { position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
+  .terminal-stage :deep(.terminal-quick-commands) { grid-row:auto; grid-column:auto; position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

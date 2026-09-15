@@ -3857,6 +3857,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   }
 
   .desktop-window__body .terminal-stage .terminal-quick-commands {
+    grid-row: auto;
+    grid-column: auto;
     position: absolute;
     z-index: 20;
     top: 51px;
