@@ -43,6 +43,30 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
+  it('orders the host picker from the panel preference', async () => {
+    mocks.hosts.mockResolvedValueOnce({
+      items: [
+        { id: 'local', isLocal: true, name: '本机', state: 'online' },
+        { id: a, isLocal: false, name: '远程 A', kind: 'panel', state: 'online' },
+        { id: b, isLocal: false, name: '远程 B', kind: 'light_node', state: 'offline' },
+      ] as ClusterHost[],
+      hostOrder: {
+        ids: [b, 'local', a],
+        configured: true,
+        resourceVersion: 'sha256:server-order',
+      },
+    })
+    const { wrapper } = await mountAt(`?hostId=${a}`)
+
+    await wrapper.get('.monitoring-host-trigger').trigger('click')
+
+    expect(wrapper.findAll('[data-monitoring-host-id]').map((item) => item.attributes('data-monitoring-host-id'))).toEqual([
+      b,
+      'local',
+      a,
+    ])
+  })
+
   it('cancels the previous host and ignores its late response', async () => {
     const first = deferred<MonitoringHistory>()
     mocks.history.mockReturnValueOnce(first.promise).mockResolvedValueOnce(history(75))

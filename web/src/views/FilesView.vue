@@ -56,6 +56,7 @@ import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import {
+  applyClusterHostOrderPreference,
   readClusterHostOrder,
   sortClusterHosts,
   subscribeClusterHostOrder,
@@ -277,6 +278,7 @@ async function loadFileHosts(): Promise<void> {
   try {
     const inventory = await api.cluster.hosts(controller.signal)
     if (controller.signal.aborted || unmounted) return
+    applyClusterHostOrderPreference(inventory.hostOrder)
     const previousActiveHostId = activeFileHostId.value
     fileHostInventory.value = inventory
     localClusterNodeId.value = inventory.nodeId

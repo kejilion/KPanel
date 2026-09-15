@@ -19,6 +19,7 @@ import type {
   ClusterController,
   ClusterHost,
   ClusterHostList,
+  ClusterHostOrderPreference,
   ClusterLightBatchEnrollment,
   ClusterLightBatchEnrollmentList,
   ClusterLightEnrollment,
@@ -1544,6 +1545,13 @@ export const api = {
   cluster: {
     hosts: (signal?: AbortSignal): Promise<ClusterHostList> =>
       request<ClusterHostList>('/cluster/hosts', { signal }),
+    hostOrder: (signal?: AbortSignal): Promise<ClusterHostOrderPreference> =>
+      request<ClusterHostOrderPreference>('/cluster/host-order', { signal }),
+    updateHostOrder: (body: {
+      ids: string[]
+      expectedResourceVersion: string
+    }): Promise<ClusterHostOrderPreference> =>
+      request<ClusterHostOrderPreference>('/cluster/host-order', { method: 'PUT', body }),
     shareSettings: (signal?: AbortSignal): Promise<ClusterShareSettings> =>
       request<ClusterShareSettings>('/cluster/share', { signal }),
     notifications: (signal?: AbortSignal): Promise<ClusterNotificationSnapshot> =>

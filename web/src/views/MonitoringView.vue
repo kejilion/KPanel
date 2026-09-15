@@ -14,7 +14,7 @@ import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import TrendChart, { type TrendSeries } from '@/components/monitoring/TrendChart.vue'
 import { ApiError, api } from '@/lib/api'
-import { readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
+import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import type { ClusterHost } from '@/types/api'
 import { formatBytes, formatDateTime, formatPercent, formatRate } from '@/lib/format'
@@ -486,7 +486,10 @@ async function loadHosts(): Promise<void> {
   hostsError.value = ''
   try {
     const result = await api.cluster.hosts(request.signal)
-    if (hostsController === request) hosts.value = result.items
+    if (hostsController === request) {
+      applyClusterHostOrderPreference(result.hostOrder)
+      hosts.value = result.items
+    }
   } catch {
     if (hostsController === request && !request.signal.aborted) hostsError.value = '主机列表读取失败，当前历史查询不受影响。'
   } finally {

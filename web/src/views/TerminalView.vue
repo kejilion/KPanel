@@ -10,6 +10,7 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
 import {
+  applyClusterHostOrderPreference,
   readClusterHostOrder,
   sortClusterHosts,
   subscribeClusterHostOrder,
@@ -106,6 +107,7 @@ async function loadHosts(): Promise<void> {
     inventory.value = await api.cluster.hosts(controller.signal)
     const terminalHostIDs = new Set(inventory.value.items.filter((host) => host.terminalAvailable).map((host) => host.id))
     selectedBatchHostIDs.value = new Set([...selectedBatchHostIDs.value].filter((id) => terminalHostIDs.has(id)))
+    applyClusterHostOrderPreference(inventory.value.hostOrder)
     if (initialHostLoad) {
       initialHostLoad = false
       const localHost = inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)

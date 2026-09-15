@@ -95,7 +95,9 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := s.requireSession(w, r); !ok {
 			return
 		}
-		s.writeJSON(w, http.StatusOK, s.cluster.Hosts(r.Context()))
+		s.writeJSON(w, http.StatusOK, s.clusterHostsView(r.Context()))
+	case r.URL.Path == "/api/v1/cluster/host-order":
+		s.handleClusterHostOrder(w, r)
 	case r.URL.Path == "/api/v1/cluster/hosts" && r.Method == http.MethodPost:
 		s.handleClusterHostAdd(w, r)
 	case r.URL.Path == "/api/v1/cluster/pairing-codes/v2" && r.Method == http.MethodPost:

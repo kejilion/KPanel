@@ -119,10 +119,10 @@ function fileHost(id: string, isLocal: boolean, overrides: Record<string, unknow
 }
 
 describe('FilesView host switcher', () => {
-  it('uses the same persisted host order as the cluster page', async () => {
+  it('uses the panel host order instead of a conflicting browser cache', async () => {
     window.localStorage.setItem(
       'kpanel:cluster-host-order',
-      JSON.stringify(['remote-2', 'local', 'remote-1']),
+      JSON.stringify(['local', 'remote-1', 'remote-2']),
     )
     mocks.hosts.mockResolvedValue({
       nodeId: 'local-node',
@@ -135,6 +135,11 @@ describe('FilesView host switcher', () => {
       remoteTotal: 2,
       maxHosts: 100,
       pollIntervalSeconds: 30,
+      hostOrder: {
+        ids: ['remote-2', 'local', 'remote-1'],
+        configured: true,
+        resourceVersion: 'sha256:server-order',
+      },
     })
     const wrapper = mount(FilesView, {
       attachTo: document.body,
@@ -152,6 +157,11 @@ describe('FilesView host switcher', () => {
       await flushPromises()
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
       expect(wrapper.findAll('[data-file-host-id]').map((item) => item.attributes('data-file-host-id'))).toEqual([
+        'remote-2',
+        'local',
+        'remote-1',
+      ])
+      expect(JSON.parse(window.localStorage.getItem('kpanel:cluster-host-order') || '[]')).toEqual([
         'remote-2',
         'local',
         'remote-1',

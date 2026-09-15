@@ -25,8 +25,10 @@ import (
 const (
 	maxStoreBytes               int64 = 32 << 20
 	MaxFileShares                     = 256
-	MaxClusterShareHostOrder          = 101
-	MaxClusterShareHostIDLength       = 128
+	MaxClusterHostOrder               = 101
+	MaxClusterHostIDLength            = 128
+	MaxClusterShareHostOrder          = MaxClusterHostOrder
+	MaxClusterShareHostIDLength       = MaxClusterHostIDLength
 )
 
 var (
@@ -104,6 +106,13 @@ type ClusterShare struct {
 	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
 }
 
+// ClusterHostOrder stores the authenticated panel's preferred host ordering.
+// It is intentionally separate from ClusterShare.HostOrder, which controls
+// only the anonymous public page.
+type ClusterHostOrder struct {
+	IDs []string `json:"ids"`
+}
+
 // FileShare is a bounded, revocable authorization for one exact filesystem
 // resource. Path remains an Agent-owned fact. ResourceVersion preserves normal
 // filemanager concurrency semantics while ShareVersion adds the Agent's strong
@@ -131,14 +140,15 @@ type PasswordRecovery struct {
 }
 
 type diskState struct {
-	SchemaVersion    int              `json:"schemaVersion"`
-	Users            []User           `json:"users"`
-	Sessions         []Session        `json:"sessions"`
-	Audit            []AuditEvent     `json:"audit"`
-	LoginAttempts    []LoginAttempt   `json:"loginAttempts"`
-	SecurityEntrance SecurityEntrance `json:"securityEntrance,omitempty"`
-	ClusterShare     ClusterShare     `json:"clusterShare,omitempty"`
-	FileShares       []FileShare      `json:"fileShares,omitempty"`
+	SchemaVersion    int               `json:"schemaVersion"`
+	Users            []User            `json:"users"`
+	Sessions         []Session         `json:"sessions"`
+	Audit            []AuditEvent      `json:"audit"`
+	LoginAttempts    []LoginAttempt    `json:"loginAttempts"`
+	SecurityEntrance SecurityEntrance  `json:"securityEntrance,omitempty"`
+	ClusterShare     ClusterShare      `json:"clusterShare,omitempty"`
+	ClusterHostOrder *ClusterHostOrder `json:"clusterHostOrder,omitempty"`
+	FileShares       []FileShare       `json:"fileShares,omitempty"`
 }
 
 // Store is a small, single-node persistence layer. It deliberately stores only
@@ -196,6 +206,11 @@ func Open(path string) (*Store, error) {
 		}
 		if err := ValidateClusterShareHostOrder(s.data.ClusterShare.HostOrder); err != nil {
 			return nil, fmt.Errorf("validate cluster share host order: %w", err)
+		}
+		if s.data.ClusterHostOrder != nil {
+			if err := ValidateClusterHostOrder(s.data.ClusterHostOrder.IDs); err != nil {
+				return nil, fmt.Errorf("validate cluster host order: %w", err)
+			}
 		}
 	case errors.Is(err, os.ErrNotExist):
 		if err := s.persistLocked(); err != nil {
@@ -748,6 +763,45 @@ func ClusterShareResourceVersion(value ClusterShare) string {
 	return fmt.Sprintf("sha256:%x", digest[:])
 }
 
+func (s *Store) ClusterHostOrder() (ClusterHostOrder, bool, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value := cloneClusterHostOrder(s.data.ClusterHostOrder)
+	if value == nil {
+		return ClusterHostOrder{IDs: []string{}}, false, ClusterHostOrderResourceVersion(nil)
+	}
+	return *value, true, ClusterHostOrderResourceVersion(value)
+}
+
+func (s *Store) ReplaceClusterHostOrder(expectedResourceVersion string, value ClusterHostOrder) error {
+	if err := ValidateClusterHostOrder(value.IDs); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedResourceVersion != ClusterHostOrderResourceVersion(s.data.ClusterHostOrder) {
+		return ErrConflict
+	}
+	previous := cloneDiskState(s.data)
+	s.data.ClusterHostOrder = cloneClusterHostOrder(&value)
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
+func ClusterHostOrderResourceVersion(value *ClusterHostOrder) string {
+	configured := "0"
+	ids := []string(nil)
+	if value != nil {
+		configured = "1"
+		ids = value.IDs
+	}
+	digest := sha256.Sum256([]byte(configured + "\x00" + strings.Join(ids, "\x00")))
+	return fmt.Sprintf("sha256:%x", digest[:])
+}
+
 func (s *Store) FileShareByPath(filePath, resourceVersion string, now time.Time) (FileShare, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1020,6 +1074,7 @@ func cloneDiskState(source diskState) diskState {
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
 		ClusterShare:     cloneClusterShare(source.ClusterShare),
+		ClusterHostOrder: cloneClusterHostOrder(source.ClusterHostOrder),
 		FileShares:       cloneFileShares(source.FileShares),
 	}
 }
@@ -1029,17 +1084,23 @@ func cloneClusterShare(source ClusterShare) ClusterShare {
 	return source
 }
 
-// ValidateClusterShareHostOrder keeps the persisted presentation preference
-// small and safe to include in the store resource version. Unknown IDs are
-// allowed so that removing a host does not make the whole share unavailable;
-// the public snapshot simply appends currently existing hosts after matches.
-func ValidateClusterShareHostOrder(order []string) error {
-	if len(order) > MaxClusterShareHostOrder {
+func cloneClusterHostOrder(source *ClusterHostOrder) *ClusterHostOrder {
+	if source == nil {
+		return nil
+	}
+	return &ClusterHostOrder{IDs: append([]string{}, source.IDs...)}
+}
+
+// ValidateClusterHostOrder bounds and canonicalizes the shared private/public
+// host-order value. Unknown IDs remain valid so deleting or adding a host does
+// not corrupt the preference; callers reconcile against the live inventory.
+func ValidateClusterHostOrder(order []string) error {
+	if len(order) > MaxClusterHostOrder {
 		return ErrInvalidRecord
 	}
 	seen := make(map[string]struct{}, len(order))
 	for _, id := range order {
-		if id == "" || id != strings.TrimSpace(id) || len(id) > MaxClusterShareHostIDLength || !utf8.ValidString(id) {
+		if id == "" || id != strings.TrimSpace(id) || len(id) > MaxClusterHostIDLength || !utf8.ValidString(id) {
 			return ErrInvalidRecord
 		}
 		for _, character := range id {
@@ -1053,6 +1114,14 @@ func ValidateClusterShareHostOrder(order []string) error {
 		seen[id] = struct{}{}
 	}
 	return nil
+}
+
+// ValidateClusterShareHostOrder keeps the persisted presentation preference
+// small and safe to include in the store resource version. Unknown IDs are
+// allowed so that removing a host does not make the whole share unavailable;
+// the public snapshot simply appends currently existing hosts after matches.
+func ValidateClusterShareHostOrder(order []string) error {
+	return ValidateClusterHostOrder(order)
 }
 
 func cloneFileShares(source []FileShare) []FileShare {
