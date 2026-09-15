@@ -29,6 +29,8 @@ vi.mock('@/lib/api', () => ({
 
 interface ShareBindings {
   snapshot: Ref<PublicClusterShareSnapshot | undefined>
+  loading: Ref<boolean>
+  refreshing: Ref<boolean>
   errorMessage: Ref<string>
   tokenIsValid: ComputedRef<boolean>
   viewMode: Ref<'list' | 'card' | 'globe'>
@@ -112,6 +114,69 @@ describe('ClusterShareView anonymous snapshot', () => {
     expect(view.errorMessage.value).toBe('分享链接格式无效。')
   })
 
+  it('silently updates an existing snapshot without entering either loading state', async () => {
+    const view = setupView()
+    mocks.publicShare.mockResolvedValueOnce(publicSnapshot())
+    await view.load()
+    const previous = view.snapshot.value
+    let complete!: (snapshot: PublicClusterShareSnapshot) => void
+    mocks.publicShare.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+
+    const polling = view.load(true)
+    expect(view.loading.value).toBe(false)
+    expect(view.refreshing.value).toBe(false)
+    expect(view.snapshot.value).toBe(previous)
+
+    const updated = publicSnapshot()
+    updated.items[0]!.cpu.usagePercent = 80
+    complete(updated)
+    await polling
+    expect(view.snapshot.value?.items[0]?.cpu.usagePercent).toBe(80)
+  })
+
+  it('keeps a manual refresh in progress when a background poll is due', async () => {
+    const view = setupView()
+    mocks.publicShare.mockResolvedValueOnce(publicSnapshot())
+    await view.load()
+    let complete!: (snapshot: PublicClusterShareSnapshot) => void
+    mocks.publicShare.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+
+    const manualRefresh = view.load()
+    const signal = mocks.publicShare.mock.calls[1]![1] as AbortSignal
+    expect(view.loading.value).toBe(false)
+    expect(view.refreshing.value).toBe(true)
+    await view.load(true)
+    expect(mocks.publicShare).toHaveBeenCalledTimes(2)
+    expect(signal.aborted).toBe(false)
+    expect(view.refreshing.value).toBe(true)
+
+    complete(publicSnapshot())
+    await manualRefresh
+    expect(view.refreshing.value).toBe(false)
+  })
+
+  it('ignores a superseded request without clearing the current loading state', async () => {
+    const view = setupView()
+    let finishOld!: (snapshot: PublicClusterShareSnapshot) => void
+    let finishNew!: (snapshot: PublicClusterShareSnapshot) => void
+    mocks.publicShare.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+    mocks.publicShare.mockReturnValueOnce(new Promise(resolve => { finishNew = resolve }))
+
+    const oldRequest = view.load()
+    const newRequest = view.load()
+    finishOld(publicSnapshot())
+    await oldRequest
+    expect(view.snapshot.value).toBeUndefined()
+    expect(view.loading.value).toBe(true)
+
+    const current = publicSnapshot()
+    current.title = 'Current share'
+    finishNew(current)
+    await newRequest
+    expect(view.snapshot.value?.title).toBe('Current share')
+    expect(view.loading.value).toBe(false)
+  })
+
   it.each(['list', 'card', 'globe'] as const)('remembers the public %s view independently of the management page', (mode) => {
     const view = setupView()
     expect(view.viewMode.value).toBe('list')
@@ -165,6 +230,13 @@ describe('ClusterShareView anonymous snapshot', () => {
     expect(source).toContain(':hosts="filteredHosts"')
     expect(source).toContain('const { resolved: resolvedTheme, setTheme } = useTheme()')
     expect(source).toContain(':class="`is-${viewMode}`"')
+    expect(source.indexOf('<dt>实时流量</dt>')).toBeLessThan(source.indexOf('<dt>累计流量</dt>'))
+    expect(source.indexOf('<dt>累计流量</dt>')).toBeLessThan(source.indexOf('运行时间</dt>'))
+    expect(source).toContain('<div class="share-details__uptime">')
+    expect(source).toMatch(/\.share-grid\.is-list \.share-details__traffic \{[^}]*grid-column:\s*1;/)
+    expect(source).toMatch(/\.share-grid\.is-list \.share-details__uptime \{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/)
+    expect(source).toContain('@click="load()"')
+    expect(source).toContain('<span>刷新</span>')
     expect(source).toMatch(/@media \(max-width: 650px\)[\s\S]*?\.share-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/)
 
     const routerSource = readFileSync(new URL('../router.ts', import.meta.url), 'utf8')
