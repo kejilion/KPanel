@@ -115,10 +115,12 @@ describe('DesktopView icon layout interaction', () => {
     expect(divider.attributes('aria-valuenow')).toBe('50')
 
     divider.element.dispatchEvent(pointer('pointerdown', 640, 300))
+    expect(document.activeElement).toBe(divider.element)
     window.dispatchEvent(pointer('pointermove', 790, 300))
     window.dispatchEvent(pointer('pointerup', 790, 300))
     await flushPromises()
 
+    expect(document.activeElement).not.toBe(divider.element)
     expect(desktop.sideSplitRatio.value).toBeCloseTo(0.62)
     expect(divider.attributes('aria-valuenow')).toBe('62')
     expect(wrapper.attributes('style')).toContain('--desktop-side-split-left-width: 775px')
