@@ -179,6 +179,53 @@ test('writer must use a linked non-main worktree and may require a clean checkpo
   }
 });
 
+test('writer completion requires a clean non-empty candidate commit above the exact base', () => {
+  const state = fixture();
+  try {
+    let result = run(
+      state.writer,
+      '--role', 'writer',
+      '--base-ref', state.baseline,
+      '--require-candidate',
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /requires at least one candidate commit/);
+
+    git(state.writer, 'commit', '--allow-empty', '-m', 'test: empty candidate');
+    result = run(
+      state.writer,
+      '--role', 'writer',
+      '--base-ref', state.baseline,
+      '--require-candidate',
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /non-empty task diff/);
+
+    writeFileSync(join(state.writer, 'candidate.txt'), 'candidate\n');
+    result = run(
+      state.writer,
+      '--role', 'writer',
+      '--base-ref', state.baseline,
+      '--require-candidate',
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /writer checkpoint must be clean/);
+
+    git(state.writer, 'add', 'candidate.txt');
+    git(state.writer, 'commit', '-m', 'test: candidate checkpoint');
+    result = run(
+      state.writer,
+      '--role', 'writer',
+      '--base-ref', state.baseline,
+      '--require-candidate',
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /collaboration_state=pass role=writer/);
+  } finally {
+    state.cleanup();
+  }
+});
+
 test('caller Git repository overrides cannot redirect the evidence source', () => {
   const state = fixture();
   try {
@@ -214,4 +261,8 @@ test('invalid or duplicate arguments fail closed', () => {
   result = spawnSync(process.execPath, [script, '--role', 'writer', '--role', 'writer'], { encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /duplicate option/);
+
+  result = spawnSync(process.execPath, [script, '--role', 'writer', '--require-candidate'], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /requires an explicit --base-ref/);
 });

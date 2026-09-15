@@ -1,12 +1,12 @@
 ---
 name: evolve-kpanel
-description: "用可验证证据驱动 KPanel 规范、门禁和开发流程的受控自我改进，不自动提交、发布或放宽质量要求"
-version: "1.6"
+description: "用可验证证据驱动 KPanel 规范、门禁和开发流程的受控自我改进，写任务形成本地候选但不自动推送、发布或放宽质量要求"
+version: "1.7"
 author: "Codex"
 tags: [quality, governance, continuous-improvement, multi-agent, metrics]
 params: [project_dir, baseline_ref, observation_window, release_count, proposal_slug, candidate_branch]
 created: "2026-08-11T00:00:00+08:00"
-updated: "2026-09-05T00:00:00+08:00"
+updated: "2026-09-15T00:00:00+08:00"
 ---
 
 # KPanel Controlled Evolution
@@ -14,14 +14,16 @@ updated: "2026-09-05T00:00:00+08:00"
 ## Purpose
 
 把重复缺陷、指标恶化、证据缺口、事故逃逸或反复人工步骤转化为小范围、可证伪、可回滚的工程改进。
-本流程只产生改进提案、任务分支差异和验证证据；规范不能自行放宽门禁，流程不能自行提交、推送、发布或操作生产。
+本流程只在用户授权实施后产生改进提案、任务分支候选提交和验证证据；规范不能自行放宽门禁，流程
+不能自行启动修改、SSH 推送、更新主线、发布或操作生产。
 
 ## Prerequisites
 
 - 已完整阅读 `PROJECT_RULES.md`、`docs/project-management.md` 和 `docs/development-quality-standard.md`。
 - `${{project_dir}}` 是独立 KPanel worktree，`${{baseline_ref}}` 是精确且已批准的基线提交或标签。
 - 已有至少一种可复核触发证据：重复缺陷、滚动指标退化、验收记录缺口、CI/生产事件或高成本人工步骤。
-- 已明确允许修改范围、非目标、验证等级和回滚点；没有用户授权时不提交、不推送、不发布、不操作生产。
+- 已明确允许修改范围、非目标、验证等级和回滚点；没有用户修改授权时不写入。修改授权包含本地任务
+  候选提交，但不包含 SSH 推送、更新主线、发布或操作生产。
 - 涉及永久规范、工作流、策略或治理门禁时，已按 `PROJECT_RULES.md` 5.3 冻结规范验收合同；普通业务
   改进不额外创建规范审计。
 
@@ -80,7 +82,13 @@ node scripts/report-release-metrics.mjs \
 只在专用分支/worktree 修改提案范围内文件。优先改唯一脚本、测试或 Make 入口，再让文档和工具适配引用该入口；
 不得为了让门禁通过而删除测试、降低阈值、扩大例外或批量重写历史证据。
 
-**Expected output:** 差异聚焦、回滚点明确、现有用户改动保留，没有提交、推送或发布越权。
+形成非空、聚焦的本地任务候选提交，保持 worktree clean，并运行：
+
+```bash
+node scripts/check-collaboration-state.mjs --role writer --base-ref "${{baseline_ref}}" --require-candidate
+```
+
+**Expected output:** 候选提交相对基线非空、差异聚焦、回滚点明确、现有用户改动保留，没有推送或发布越权。
 
 ### 6. 从受影响层级验证并比较指标
 
@@ -99,9 +107,9 @@ make verify-change
 
 ### 7. 形成治理候选并验证远端 Linux CI
 
-本步骤只在用户已经明确授权提交、SSH 推送和更新主线时执行；没有相应授权时停在本地交付，不以
-工作流存在推定权限。先形成聚焦提交，确认 `${{candidate_branch}}` 使用 `docs/`、`feature/`、`fix/` 或
-`release/` 前缀，再通过 SSH 推送该专用分支。等待 GitHub `CI` 对候选精确 SHA 成功，并保留分支：
+本步骤只在用户已经明确授权 SSH 推送和更新主线时执行；没有相应授权时停在已提交的本地候选，不以
+工作流存在推定权限。确认 `${{candidate_branch}}` 使用 `docs/`、`feature/`、`fix/` 或 `release/` 前缀，
+再通过 SSH 推送该专用分支。等待 GitHub `CI` 对候选精确 SHA 成功，并保留分支：
 
 ```bash
 candidate_sha="$(git rev-parse HEAD)"

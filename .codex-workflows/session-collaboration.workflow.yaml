@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.7"
+version: "4.9"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-09-05T00:00:00+08:00"
+updated: "2026-09-15T00:00:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -19,7 +19,8 @@ isolate every writer in its own worktree, and keep cross-tool state in SSH remot
 ## Prerequisites
 
 - Read `AGENTS.md`, `PROJECT_RULES.md`, `docs/project-management.md`, and `docs/multi-agent-collaboration.md`.
-- The user request defines a concrete goal and does not implicitly authorize push, release, or deployment.
+- The user request defines a concrete goal. A KPanel modification request authorizes a focused local candidate commit,
+  but does not implicitly authorize SSH push, main, release, or deployment.
 - `${{base_ref}}` resolves to an approved KPanel baseline; default to `origin/main`.
 - `origin` is `git@github.com:kejilion/KPanel.git`; fetch and push use the repository's local SSH configuration.
 - GitHub Issue, PR, API, plugin, and `gh` authentication are optional and must not block Git work.
@@ -72,14 +73,17 @@ Expected: Definition of Ready is satisfied; the task can act without guessing ow
 ### 4. Wait and inspect the result
 
 Use provider-specific waiting only as a local optimization. The agent must meet Definition of Done and return the
-standard delivery package. When commit/push is authorized, form a focused commit and push the task branch over SSH;
-without commit authority keep the diff in the dedicated worktree and do not classify it ready for integration. Then inspect:
+standard delivery package. Any repository-writing task must form a non-empty focused local candidate commit and leave
+the worktree clean; only SSH push remains separately authorized. When the candidate contains locally reproducible
+user-visible behavior, invoke `local-feature-preview` with `preview_grade=acceptance` after that commit and bind the
+preview to the exact candidate. Then inspect:
 
 ```powershell
 git status --short --branch
 git log -3 --oneline --decorate
 git diff --check ${{base_ref}}...HEAD
 git diff --stat ${{base_ref}}...HEAD
+node scripts/check-collaboration-state.mjs --repo . --role writer --base-ref <exact-approved-base> --require-candidate
 ```
 
 Reuse successful evidence only when commit, environment, tools and parameters are unchanged. Run the required
@@ -103,8 +107,9 @@ tests and evidence are reproducible.
 
 ### 5. Classify the delivery
 
-Set the outcome to one of: executing, awaiting-input, awaiting-commit-authorization, awaiting-verification,
-ready-for-integration, blocked, or abandoned. Report exact Git state, quality/evidence status, remaining risk, target
+Set the outcome to one of: executing, awaiting-input, awaiting-candidate-push, awaiting-verification,
+ready-for-integration, blocked, no-change-closed, or abandoned. A writing task cannot be complete while dirty or without
+a non-empty candidate commit. Report exact Git state, quality/evidence status, remaining risk, target
 version recommendation, rollback point, and whether anything was committed, pushed, released, or deployed.
 
 After candidate handoff, stop the original writer. The release task sends one completion or termination delivery;
@@ -133,6 +138,10 @@ and report measured free space. Do not clean active release paths or infer delet
 - Existing evidence was reused only for an unchanged commit/environment/parameter tuple.
 - Visible feature work returned a reproducible local preview or stated why it was not applicable; no preview process was orphaned.
 - No push, tag, release, or deployment occurred without explicit authority.
+- Every completed writing task has a non-empty focused local candidate commit and a clean worktree; read-only and
+  no-change closures did not create empty commits.
+- Every locally reproducible user-visible candidate provided an acceptance preview after commit; inapplicable backend,
+  documentation, build/test infrastructure, or isolated-real-host-only tasks recorded the reason instead of creating noise.
 
 ## Notes
 

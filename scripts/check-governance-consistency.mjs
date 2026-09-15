@@ -152,6 +152,7 @@ const adapterTokens = [
   'docs/ui-visual-language.md',
   'docs/product-quality-review-current.md',
   'scripts/check-collaboration-state.mjs',
+  '--require-candidate',
   'scripts/run-repo-bash.mjs',
 ];
 requireText('AGENTS.md', adapterTokens);
@@ -173,6 +174,7 @@ requireText('PROJECT_RULES.md', [
   'environment-policy.json',
   '后台浏览器',
   '本地功能预览',
+  '候选提交后',
   'prod-108',
   '有界容器内控制台',
   '规范验收契约 v1.0',
@@ -188,6 +190,7 @@ requireText('PROJECT_RULES.md', [
   '流程异常指纹',
   'kpanel-release-process-incidents:start/end',
   'scripts/check-collaboration-state.mjs',
+  '--require-candidate',
   'scripts/run-release-l3.mjs',
   '候选分支保留到同一 SHA 的主线 CI 成功',
   '1.5 KPanel 与 `kejilion.sh` 跨仓库发布联动',
@@ -233,6 +236,7 @@ requireText('docs/project-management.md', [
   'background-browser-validation.workflow.yaml',
   'local-feature-preview-standard.md',
   '本地功能预览',
+  '候选提交后',
   '生产已部署',
   '仅唯一集成/发布任务且需要明确主线集成授权',
   'kpanel-release-process-metrics:start/end',
@@ -249,6 +253,7 @@ requireText('docs/project-management.md', [
   'release-channels.md',
   'releaseChannel',
   'releaseTrain',
+  '--require-candidate',
 ]);
 requireText('docs/release-channels.md', [
   '`stable`',
@@ -268,6 +273,7 @@ requireText('docs/release-channels.md', [
 requireText('docs/multi-agent-collaboration.md', [
   'scripts/check-collaboration-state.mjs',
   '只隔离',
+  '--require-candidate',
 ]);
 // Keep lifecycle ownership in one canonical section; these checks validate document wiring,
 // not task messages, directory ownership, or permission to delete local files.
@@ -326,6 +332,7 @@ requireText('docs/local-feature-preview-standard.md', [
   '`visual-composition`',
   '全量笛卡尔积',
   '停止方式',
+  '候选提交后',
 ]);
 requireText('scripts/local-feature-preview.mjs', [
   'local preview only accepts loopback API targets',
@@ -441,6 +448,8 @@ requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', [
 requireText('.codex-workflows/session-collaboration.workflow.yaml', [
   'scripts/check-collaboration-state.mjs',
   'quarantine only that worktree',
+  '--require-candidate',
+  'local-feature-preview',
 ]);
 requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
   'docs/local-feature-preview-standard.md',
@@ -448,6 +457,8 @@ requireText('.codex-workflows/local-feature-preview.workflow.yaml', [
   '--profile "${{acceptance_profile}}"',
   '--journeys "${{affected_journeys}}"',
   '全量笛卡尔积',
+  '--require-candidate',
+  '${{candidate_base_ref}}',
 ]);
 requireText('.codex-workflows/evolve-kpanel.workflow.yaml', [
   'PROJECT_RULES.md` 5.3',
