@@ -2823,6 +2823,7 @@ onBeforeUnmount(() => {
 
 .cluster-card__footer small {
   color: var(--muted);
+  font-size: 12px;
 }
 
 .cluster-card__footer > div {
