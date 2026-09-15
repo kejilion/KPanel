@@ -2269,8 +2269,27 @@ onBeforeUnmount(() => {
 .cluster-grid.is-list .cluster-card__details {
   grid-area: details;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-content: center;
+  align-content: stretch;
+  gap: 0;
+  padding: 0;
   border-right: 1px solid var(--border);
+}
+
+.cluster-grid.is-list .cluster-card__details > :is(div, a) {
+  align-content: center;
+  padding: 15px 8px;
+}
+
+.cluster-grid.is-list .cluster-card__details > :first-child {
+  padding-left: 16px;
+}
+
+.cluster-grid.is-list .cluster-card__details > :last-child {
+  padding-right: 16px;
+}
+
+.cluster-grid.is-list .cluster-card__details > .cluster-metric-link {
+  border-radius: 0;
 }
 
 .cluster-grid.is-list .cluster-card__empty {
@@ -2693,12 +2712,12 @@ onBeforeUnmount(() => {
   transition: background-color 150ms ease;
 }
 
-.cluster-metric-link:hover {
-  background: var(--interaction-hover-surface);
+.cluster-metric-link:hover,
+.cluster-metric-link:focus-visible {
+  background: var(--brand-soft);
 }
 
 .cluster-metric-link:focus-visible {
-  background: var(--brand-soft);
   outline: 2px solid var(--brand);
   outline-offset: -2px;
 }
