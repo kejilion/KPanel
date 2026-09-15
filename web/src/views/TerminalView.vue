@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
 import { LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
+import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
@@ -37,7 +38,7 @@ interface OpenTerminal {
 
 interface HostTerminalHandle {
   focusTerminal: () => void
-  scrollToTop: () => void
+  executeCommand: (command: string) => boolean
   scheduleResize: () => void
   closeSession: () => Promise<void>
 }
@@ -51,6 +52,7 @@ const errorMessage = ref('')
 const search = ref('')
 const connectionsCollapsed = ref(false)
 const mobileConnectionsOpen = ref(false)
+const quickCommandsOpen = ref(false)
 const clusterHostOrderRevision = ref(0)
 const terminalRefs = new Map<string, HostTerminalHandle>()
 let controller: AbortController | undefined
@@ -158,7 +160,10 @@ function removeSession(id: string): void {
       })
     }
   }
-  if (!sessions.value.length) exitWorkspaceFullscreen()
+  if (!sessions.value.length) {
+    quickCommandsOpen.value = false
+    exitWorkspaceFullscreen()
+  }
 }
 
 function setTerminalRef(
@@ -168,7 +173,7 @@ function setTerminalRef(
   const handle = instance as unknown as Partial<HostTerminalHandle> | null
   if (
     typeof handle?.focusTerminal === 'function' &&
-    typeof handle.scrollToTop === 'function' &&
+    typeof handle.executeCommand === 'function' &&
     typeof handle.scheduleResize === 'function' &&
     typeof handle.closeSession === 'function'
   ) {
@@ -186,8 +191,19 @@ function selectSession(id: string): void {
   })
 }
 
-function scrollActiveTerminalToTop(): void {
-  terminalRefs.get(activeSessionId.value)?.scrollToTop()
+function toggleQuickCommands(): void {
+  if (!activeSessionId.value) return
+  quickCommandsOpen.value = !quickCommandsOpen.value
+  void nextTick(refreshActiveTerminal)
+}
+
+function closeQuickCommands(): void {
+  quickCommandsOpen.value = false
+  void nextTick(refreshActiveTerminal)
+}
+
+function executeQuickCommand(command: string): void {
+  terminalRefs.get(activeSessionId.value)?.executeCommand(command)
 }
 
 function toggleConnections(): void {
@@ -401,7 +417,13 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <main class="terminal-stage" :class="{ 'is-fullscreen': workspaceFullscreen }">
+      <main
+        class="terminal-stage"
+        :class="{
+          'is-fullscreen': workspaceFullscreen,
+          'is-quick-commands-open': quickCommandsOpen,
+        }"
+      >
         <button
           v-if="!sessions.length"
           class="terminal-stage__mobile-selector"
@@ -442,12 +464,20 @@ onBeforeUnmount(() => {
           </nav>
           <TerminalToolbar
             :fullscreen="workspaceFullscreen"
-            @scroll-top="scrollActiveTerminalToTop"
+            quick-commands
+            :quick-commands-expanded="quickCommandsOpen"
+            @toggle-quick-commands="toggleQuickCommands"
             @toggle-fullscreen="toggleWorkspaceFullscreen"
           />
         </div>
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
         <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="item.state = $event" />
+        <TerminalQuickCommands
+          :open="quickCommandsOpen"
+          :disabled="!activeSession || activeSession.state === 'finished'"
+          @close="closeQuickCommands"
+          @execute="executeQuickCommand"
+        />
       </main>
     </section>
   </div>
@@ -512,13 +542,15 @@ onBeforeUnmount(() => {
 .terminal-host__state.is-ready { color:var(--success); }
 .terminal-host__state.is-attention { color:var(--warning); }
 .terminal-connections__empty { display:flex; align-items:center; justify-content:center; gap:8px; min-height:180px; padding:20px; color:var(--terminal-shell-muted,#8a9695); text-align:center; }
-.terminal-stage { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
+.terminal-stage { position:relative; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
+.terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr) 272px; }
 .terminal-stage.is-fullscreen { position:fixed; z-index:6000; inset:0; width:100vw; height:100dvh; min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; border:0; }
-.terminal-tabs-bar { display:flex; min-width:0; align-items:center; gap:12px; padding:8px 10px; border:0; border-bottom:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
+.terminal-tabs-bar { display:flex; min-width:0; grid-row:1; grid-column:1 / -1; align-items:center; gap:12px; padding:8px 10px; border:0; border-bottom:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-tabs-bar__connections { display:none; width:34px; height:34px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:transparent; cursor:pointer; }
 .terminal-tabs-bar__connections:hover,.terminal-tabs-bar__connections:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
 .terminal-tabs { display:flex; min-width:0; flex:1; gap:5px; overflow-x:auto; scrollbar-width:thin; }
-.terminal-stage :deep(.host-terminal) { border:0; border-radius:0; box-shadow:none; }
+.terminal-stage :deep(.host-terminal) { grid-row:2; grid-column:1; border:0; border-radius:0; box-shadow:none; }
+.terminal-stage :deep(.terminal-quick-commands) { grid-row:2; grid-column:2; }
 .terminal-tab { display:flex; flex:0 0 auto; align-items:center; gap:7px; max-width:220px; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:7px 9px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-tab.is-active { color:var(--terminal-shell-text,#d8dddc); border-color:var(--brand); }
 .terminal-tab__name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -545,6 +577,8 @@ onBeforeUnmount(() => {
   .terminal-workspace.is-connections-drawer-open .terminal-connections>header { min-height:42px; justify-content:flex-end; padding:6px 8px 0; }
   .terminal-workspace.is-connections-drawer-open .terminal-connections__heading,.terminal-workspace.is-connections-drawer-open .terminal-connections__refresh { display:none; }
   .terminal-stage { min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; }
+  .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
+  .terminal-stage :deep(.terminal-quick-commands) { position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

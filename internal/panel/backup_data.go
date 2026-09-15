@@ -30,7 +30,7 @@ type panelBackupData struct {
 	AI       *ai.AccessBackup  `json:"ai,omitempty"`
 }
 
-var panelBackupRoots = []string{"cluster-state.json", "cluster-state-v2.json", "cluster-light-state.json", "cluster-light-batch-state.json", "cluster-file-peers-v2.json", "cluster-secrets", "cluster-secrets-v2", "cluster-light-secrets", "cluster-light-terminal-keys", "desktop-workspace", "notifications"}
+var panelBackupRoots = []string{"cluster-state.json", "cluster-state-v2.json", "cluster-light-state.json", "cluster-light-batch-state.json", "cluster-file-peers-v2.json", "cluster-secrets", "cluster-secrets-v2", "cluster-light-secrets", "cluster-light-terminal-keys", "desktop-workspace", "terminal-commands", "notifications"}
 var backupLeaf = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,160}$`)
 
 func panelBackupPath(name string) bool {
@@ -51,6 +51,8 @@ func panelBackupPath(name string) bool {
 		return len(parts) == 2 && !strings.HasSuffix(parts[1], ".previous") && !strings.HasPrefix(parts[1], ".")
 	case "desktop-workspace":
 		return name == "desktop-workspace/workspace.json" || len(parts) == 3 && parts[1] == "icons" && strings.HasSuffix(parts[2], ".icon")
+	case "terminal-commands":
+		return name == "terminal-commands/commands.json"
 	case "notifications":
 		return name == "notifications/notification-state.json" || name == "notifications/telegram-bot-token"
 	}

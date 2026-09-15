@@ -248,6 +248,8 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toContain('@state-change="item.state = $event"')
     expect(terminalSource).toContain('class="terminal-tabs-bar"')
     expect(terminalSource).toContain('<TerminalToolbar')
+    expect(terminalSource).toContain('@toggle-quick-commands="toggleQuickCommands"')
+    expect(terminalSource).not.toContain('@scroll-top=')
     expect(terminalSource).toMatch(
       /\.terminal-tabs-bar\s*\{[^}]*display:flex;[^}]*background:var\(--terminal-shell-panel/,
     )
@@ -280,6 +282,16 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toMatch(
       /\.terminal-stage\.is-fullscreen\s*\{[^}]*position:fixed;[^}]*inset:0;[^}]*height:100dvh;[^}]*grid-template-rows:auto minmax\(0,1fr\);/,
     )
-    expect(hostTerminalSource).toContain('defineExpose({ focusTerminal, scrollToTop, scheduleResize, closeSession })')
+    expect(hostTerminalSource).toContain('defineExpose({ focusTerminal, executeCommand, scheduleResize, closeSession })')
+  })
+
+  it('opens a right-side quick-command drawer and executes through the active PTY queue', () => {
+    expect(terminalSource).toContain("import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'")
+    expect(terminalSource).toContain("'is-quick-commands-open': quickCommandsOpen")
+    expect(terminalSource).toContain('@execute="executeQuickCommand"')
+    expect(terminalSource).toMatch(
+      /\.terminal-stage\.is-quick-commands-open\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) 272px;/,
+    )
+    expect(hostTerminalSource).toContain("queueInput(terminalLineSubmission(command.replace(/\\r\\n?/g, '\\n')))")
   })
 })

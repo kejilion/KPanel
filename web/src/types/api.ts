@@ -378,6 +378,26 @@ export interface TerminalOutput {
   closed: boolean
 }
 
+export interface TerminalQuickCommand {
+  id: string
+  name: string
+  command: string
+}
+
+export interface TerminalQuickCommands {
+  schemaVersion: 1
+  resourceVersion: string
+  /** False means corrupt or unsupported persisted data was isolated read-only. */
+  available: boolean
+  warning?: string
+  items: TerminalQuickCommand[]
+}
+
+export interface TerminalQuickCommandsUpdate {
+  expectedResourceVersion: string
+  items: TerminalQuickCommand[]
+}
+
 export interface ClusterLightEnrollment {
   id: string
   command: string

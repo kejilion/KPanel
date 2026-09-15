@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/kejilion/kejilion-panel/internal/backup"
-	"github.com/kejilion/kejilion-panel/internal/store"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -14,6 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/backup"
+	"github.com/kejilion/kejilion-panel/internal/store"
+	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
 )
 
 func TestBackupPanelIdentityAndStagingValidation(t *testing.T) {
@@ -22,6 +24,14 @@ func TestBackupPanelIdentityAndStagingValidation(t *testing.T) {
 	// Match configured key paths as a real LoadConfig instance does.
 	s.config.TOTPKeyPath = filepath.Join(s.config.DataDir, "totp.key")
 	if err := s.EnableAI(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.terminalCommands.Replace(terminalcommands.ReplaceInput{
+		ExpectedResourceVersion: s.terminalCommands.Snapshot().ResourceVersion,
+		Items: []terminalcommands.Command{{
+			ID: "0123456789abcdef0123456789abcdef", Name: "容器列表", Command: "docker ps",
+		}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := s.exportPanelBackup(context.Background())
@@ -44,6 +54,9 @@ func TestBackupPanelIdentityAndStagingValidation(t *testing.T) {
 	}
 	if len(value.Files["cluster-light-batch-state.json"]) == 0 {
 		t.Fatal("light batch enrollment state omitted")
+	}
+	if !bytes.Contains(value.Files["terminal-commands/commands.json"], []byte("docker ps")) {
+		t.Fatal("terminal command favorites omitted")
 	}
 	if _, err := os.Stat(filepath.Join(s.backups.Root, "validate-fixture")); !os.IsNotExist(err) {
 		t.Fatal("validation plaintext retained")

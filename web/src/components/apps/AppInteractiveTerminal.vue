@@ -110,11 +110,6 @@ function flushTerminalOutput(): void {
   writeNormalizedTerminalOutput(outputNormalizer.flush())
 }
 
-function scrollToTop(): void {
-  terminal?.scrollToTop()
-  if (terminalInputOpen.value) focusTerminal()
-}
-
 function focusTerminal(): void {
   terminal?.focus()
 }
@@ -344,7 +339,6 @@ onBeforeUnmount(() => {
         </span>
         <TerminalToolbar
           :fullscreen="fullscreen"
-          @scroll-top="scrollToTop"
           @toggle-fullscreen="toggleFullscreen"
         />
       </div>

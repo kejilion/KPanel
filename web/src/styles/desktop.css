@@ -3852,6 +3852,20 @@ body.desktop-mode-open::-webkit-scrollbar {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .desktop-window__body .terminal-stage.is-quick-commands-open {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .desktop-window__body .terminal-stage .terminal-quick-commands {
+    position: absolute;
+    z-index: 20;
+    top: 51px;
+    right: 0;
+    bottom: 0;
+    width: min(300px, calc(100% - 32px));
+    box-shadow: var(--shadow-md);
+  }
+
   .desktop-window__body .terminal-stage__mobile-selector {
     display: flex !important;
   }
