@@ -1156,7 +1156,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="cluster-hero__actions">
         <button
-          class="icon-button icon-button--small"
+          class="icon-button"
           type="button"
           :disabled="refreshing"
           title="刷新集群状态"
@@ -2245,8 +2245,27 @@ onBeforeUnmount(() => {
 .cluster-grid.is-list .cluster-card__details {
   grid-area: details;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-content: center;
+  align-content: stretch;
+  gap: 0;
+  padding: 0;
   border-right: 1px solid var(--border);
+}
+
+.cluster-grid.is-list .cluster-card__details > :is(div, a) {
+  align-content: center;
+  padding: 15px 8px;
+}
+
+.cluster-grid.is-list .cluster-card__details > :first-child {
+  padding-left: 16px;
+}
+
+.cluster-grid.is-list .cluster-card__details > :last-child {
+  padding-right: 16px;
+}
+
+.cluster-grid.is-list .cluster-card__details > .cluster-metric-link {
+  border-radius: 0;
 }
 
 .cluster-grid.is-list .cluster-card__empty {
