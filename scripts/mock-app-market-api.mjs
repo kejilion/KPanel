@@ -634,8 +634,6 @@ let mockTerminalCommands = [
   { id: '2'.repeat(32), name: '系统负载', command: 'uptime' },
   { id: '3'.repeat(32), name: '磁盘占用', command: 'df -h' },
 ]
-let mockTerminalSessionCounter = 0
-const mockTerminalSessions = new Map()
 
 function mockTerminalCommandSnapshot() {
   return {
@@ -644,10 +642,6 @@ function mockTerminalCommandSnapshot() {
     available: true,
     items: mockTerminalCommands,
   }
-}
-
-function appendMockTerminalOutput(session, value) {
-  session.output = Buffer.concat([session.output, Buffer.from(value, 'utf8')])
 }
 
 function visualClusterPublicSnapshot() {
@@ -2099,59 +2093,6 @@ createServer(async (request, response) => {
     mockTerminalCommandRevision += 1
     send(response, 200, mockTerminalCommandSnapshot())
     return
-  }
-  if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
-    const input = await readJSON(request)
-    mockTerminalSessionCounter += 1
-    const sessionId = mockTerminalSessionCounter.toString(16).padStart(32, '0')
-    const createdAt = new Date().toISOString()
-    mockTerminalSessions.set(sessionId, {
-      hostId: String(input.hostId || visualClusterHosts[0].id),
-      output: Buffer.from('\u001b[36mKPanel 模拟终端\u001b[0m\r\n$ ', 'utf8'),
-      closed: false,
-    })
-    send(response, 201, { sessionId, hostId: input.hostId, offset: 0, createdAt })
-    return
-  }
-  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([a-f0-9]{32})\/(output|input|resize|close)$/)
-  if (terminalSessionMatch) {
-    const session = mockTerminalSessions.get(terminalSessionMatch[1])
-    if (!session) {
-      send(response, 404, { title: '终端会话不存在', code: 'terminal_not_found' })
-      return
-    }
-    const action = terminalSessionMatch[2]
-    if (request.method === 'GET' && action === 'output') {
-      const offset = Number.parseInt(url.searchParams.get('offset') || '0', 10)
-      await wait(offset >= session.output.length ? 450 : 40)
-      const nextOffset = session.output.length
-      send(response, 200, {
-        data: session.output.subarray(Math.max(0, offset), nextOffset).toString('base64').replace(/=+$/, ''),
-        offset,
-        nextOffset,
-        truncated: false,
-        closed: session.closed,
-      })
-      return
-    }
-    if (request.method === 'POST' && action === 'input') {
-      const input = await readJSON(request)
-      const value = Buffer.from(String(input.data || ''), 'base64').toString('utf8')
-      appendMockTerminalOutput(session, value.replace(/\r/g, '\r\n'))
-      if (value.includes('\r')) appendMockTerminalOutput(session, '\u001b[32m模拟执行完成\u001b[0m\r\n$ ')
-      send(response, 200, { accepted: true })
-      return
-    }
-    if (request.method === 'POST' && action === 'resize') {
-      await readJSON(request)
-      send(response, 200, { accepted: true })
-      return
-    }
-    if (request.method === 'POST' && action === 'close') {
-      session.closed = true
-      send(response, 200, { closed: true })
-      return
-    }
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
     send(response, 200, { items: mockLightBatchEnrollments, total: mockLightBatchEnrollments.length })
