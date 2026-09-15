@@ -82,6 +82,15 @@ import {
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
 import { kpanelUpdateSettingsPath } from '@/lib/kpanelUpdate'
 import {
+  DEFAULT_SIDE_SPLIT_RATIO,
+  geometryForWindowSnap,
+  sideSplitDividerPosition,
+  sideSplitRatioBounds,
+  sideSplitRatioForPosition,
+  type ViewportSize,
+  type WindowSnap,
+} from '@/lib/desktopWindowGeometry'
+import {
   desktopIconGrid,
   desktopIconGridSlotForPosition,
   desktopIconPositionForGridSlot,
@@ -105,9 +114,10 @@ import {
   desktopCloseGuardCoordinator,
   desktopCloseGuardCoordinatorKey,
 } from '@/lib/desktopRouteKeys'
-import { useDesktopMode } from '@/stores/desktopMode'
+import { useDesktopMode, type DesktopWindowState } from '@/stores/desktopMode'
 import { useDesktopIcons } from '@/stores/desktopIcons'
 import { useDocumentFullscreen } from '@/composables/useDocumentFullscreen'
+import { useWindowGesture } from '@/composables/useWindowGesture'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
 import { useToast } from '@/stores/toast'
@@ -137,6 +147,50 @@ const openWindows = computed(() => desktop.windows.value)
 const focusedWindow = computed(() =>
   desktop.windows.value.find((windowState) => windowState.id === desktop.focusedId.value),
 )
+const viewportSize = ref<ViewportSize>({ width: window.innerWidth, height: window.innerHeight })
+
+function topVisibleSnappedWindow(snap: WindowSnap): DesktopWindowState | undefined {
+  let top: DesktopWindowState | undefined
+  for (const windowState of desktop.windows.value) {
+    if (windowState.minimized || windowState.snap !== snap) continue
+    if (!top || windowState.z > top.z) top = windowState
+  }
+  return top
+}
+
+const sideSplitPair = computed(() => {
+  const left = topVisibleSnappedWindow('left')
+  const right = topVisibleSnappedWindow('right')
+  if (!left || !right) return undefined
+  return {
+    controls: `desktop-window-${left.id} desktop-window-${right.id}`,
+    z: Math.max(left.z, right.z),
+  }
+})
+const sideSplitBounds = computed(() => sideSplitRatioBounds(viewportSize.value))
+function ratioPercent(ratio: number): number {
+  return Math.round(ratio * 1_000) / 10
+}
+
+const sideSplitPercent = computed(() => ratioPercent(desktop.sideSplitRatio.value))
+const sideSplitMinPercent = computed(() => ratioPercent(sideSplitBounds.value.min))
+const sideSplitMaxPercent = computed(() => ratioPercent(sideSplitBounds.value.max))
+const sideSplitValueText = computed(() => i18n.t('desktop.splitResizeValue', {
+  left: sideSplitPercent.value,
+  right: Math.round((100 - sideSplitPercent.value) * 10) / 10,
+}))
+const desktopSplitStyle = computed<Record<string, string>>(() => {
+  const viewport = viewportSize.value
+  const ratio = desktop.sideSplitRatio.value
+  const left = geometryForWindowSnap('left', viewport, ratio)
+  const right = geometryForWindowSnap('right', viewport, ratio)
+  return {
+    '--desktop-side-split-left-width': `${left.width}px`,
+    '--desktop-side-split-right-left': `${right.left}px`,
+    '--desktop-side-split-right-width': `${right.width}px`,
+    '--desktop-side-split-divider-left': `${sideSplitDividerPosition(viewport, ratio)}px`,
+  }
+})
 const agentStatus = computed(() => {
   const agent = props.agent
   if (!agent?.connected) return { state: 'offline', label: i18n.t('agent.offline') }
@@ -637,6 +691,7 @@ watch(allIconKeys, (keys) => {
 let bounceTimer: number | undefined
 let resizeFrame: number | undefined
 let resizePersistTimer: number | undefined
+let sideSplitStartRatio = DEFAULT_SIDE_SPLIT_RATIO
 
 function motionDuration(duration: number): number {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : duration
@@ -1011,6 +1066,7 @@ function closeContextMenuOnViewportChange(): void {
 }
 
 function measureIconWorkArea(): void {
+  viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
   const rect = iconsElement.value?.getBoundingClientRect()
   iconBounds.value = {
     width: Math.max(90, rect?.width || window.innerWidth - 24),
@@ -3084,6 +3140,67 @@ async function loadSiteAppearanceNames(
   entries.value = applySiteNames(entries.value)
 }
 
+function currentViewport(): ViewportSize {
+  return { width: window.innerWidth, height: window.innerHeight }
+}
+
+const sideSplitGesture = useWindowGesture(
+  () => ({
+    left: sideSplitDividerPosition(currentViewport(), desktop.sideSplitRatio.value),
+    top: 0,
+    width: 1,
+    height: 1,
+  }),
+  (geometry) => {
+    const viewport = currentViewport()
+    viewportSize.value = viewport
+    desktop.setSideSplitRatio(sideSplitRatioForPosition(geometry.left, viewport), false, viewport)
+  },
+  {
+    onStart: (_kind, event) => {
+      sideSplitStartRatio = desktop.sideSplitRatio.value
+      const target = event.currentTarget as HTMLElement | null
+      target?.focus({ preventScroll: true })
+    },
+    onEnd: ({ moved, cancelled }) => {
+      if (cancelled) {
+        desktop.setSideSplitRatio(sideSplitStartRatio, false, currentViewport())
+      } else if (moved) {
+        desktop.commitSideSplitRatio()
+      }
+    },
+  },
+)
+const sideSplitResizeActive = sideSplitGesture.active
+
+function onSideSplitPointerDown(event: PointerEvent): void {
+  if (event.isPrimary === false) return
+  sideSplitGesture.onPointerDown(event, null)
+}
+
+function onSideSplitKeyDown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && sideSplitResizeActive.value) {
+    sideSplitGesture.cancel()
+    event.preventDefault()
+    return
+  }
+
+  const viewport = currentViewport()
+  const currentPosition = sideSplitDividerPosition(viewport, desktop.sideSplitRatio.value)
+  const step = event.shiftKey ? 48 : 16
+  let ratio: number | undefined
+  if (event.key === 'ArrowLeft') ratio = sideSplitRatioForPosition(currentPosition - step, viewport)
+  else if (event.key === 'ArrowRight') ratio = sideSplitRatioForPosition(currentPosition + step, viewport)
+  else if (event.key === 'Home') ratio = sideSplitRatioBounds(viewport).min
+  else if (event.key === 'End') ratio = sideSplitRatioBounds(viewport).max
+  else if (event.key === 'Enter') ratio = DEFAULT_SIDE_SPLIT_RATIO
+  if (ratio === undefined) return
+
+  viewportSize.value = viewport
+  desktop.setSideSplitRatio(ratio, true, viewport)
+  event.preventDefault()
+}
+
 onMounted(() => {
   document.documentElement.classList.add('desktop-mode-open')
   document.body.classList.add('desktop-mode-open')
@@ -3159,6 +3276,8 @@ function onViewportResize(): void {
   <div
     ref="desktopElement"
     class="desktop"
+    :class="{ 'desktop--split-resizing': sideSplitResizeActive }"
+    :style="desktopSplitStyle"
     tabindex="-1"
     @pointerdown="onDesktopPointerDown"
     @contextmenu="onContextMenu"
@@ -3432,6 +3551,26 @@ function onViewportResize(): void {
       :icon="windowIcon(windowState.path)"
       :icon-url="windowIconURL(windowState.path)"
       :title="windowTitle(windowState.titleKey, windowState.path)"
+    />
+
+    <div
+      v-if="sideSplitPair"
+      class="desktop-window-split-resizer"
+      :class="{ 'desktop-window-split-resizer--active': sideSplitResizeActive }"
+      :style="{ zIndex: sideSplitPair.z }"
+      role="separator"
+      tabindex="0"
+      aria-orientation="vertical"
+      :aria-label="i18n.t('desktop.splitResizeLabel')"
+      :aria-controls="sideSplitPair.controls"
+      :aria-valuemin="sideSplitMinPercent"
+      :aria-valuemax="sideSplitMaxPercent"
+      :aria-valuenow="sideSplitPercent"
+      :aria-valuetext="sideSplitValueText"
+      :title="i18n.t('desktop.splitResizeHint')"
+      @pointerdown.stop="onSideSplitPointerDown"
+      @keydown.stop="onSideSplitKeyDown"
+      @contextmenu.prevent.stop
     />
 
     <Transition name="desktop-menu" @after-leave="onContextMenuAfterLeave">

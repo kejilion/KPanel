@@ -5,6 +5,10 @@ import {
   detectWindowSnapTarget,
   geometryForWindowSnap,
   normalizeGeometry,
+  normalizeSideSplitRatio,
+  sideSplitDividerPosition,
+  sideSplitRatioBounds,
+  sideSplitRatioForPosition,
   supportsSideWindowSnap,
   MIN_WINDOW_WIDTH,
   MIN_WINDOW_HEIGHT,
@@ -127,5 +131,29 @@ describe('desktop window geometry', () => {
     expect(right).toEqual({ left: 645, top: 10, width: 625, height: 718 })
     expect(right.left - (left.left + left.width)).toBe(10)
     expect(maximized).toEqual({ left: 10, top: 10, width: 1260, height: 718 })
+  })
+
+  it('lays out both snapped panes from one adjustable divider ratio', () => {
+    const viewport = { width: 1280, height: 800 }
+    const left = geometryForWindowSnap('left', viewport, 0.62)
+    const right = geometryForWindowSnap('right', viewport, 0.62)
+
+    expect(left).toEqual({ left: 10, top: 10, width: 775, height: 718 })
+    expect(right).toEqual({ left: 795, top: 10, width: 475, height: 718 })
+    expect(right.left - (left.left + left.width)).toBe(10)
+    expect(sideSplitDividerPosition(viewport, 0.62)).toBe(790)
+    expect(sideSplitRatioForPosition(790, viewport)).toBeCloseTo(0.62)
+  })
+
+  it('keeps both snapped panes above their minimum width', () => {
+    const viewport = { width: 1280, height: 800 }
+    const bounds = sideSplitRatioBounds(viewport)
+
+    expect(bounds.min).toBeCloseTo(360 / 1250)
+    expect(bounds.max).toBeCloseTo(1 - 360 / 1250)
+    expect(normalizeSideSplitRatio(-1, viewport)).toBeCloseTo(bounds.min)
+    expect(normalizeSideSplitRatio(2, viewport)).toBeCloseTo(bounds.max)
+    expect(geometryForWindowSnap('left', viewport, -1).width).toBe(360)
+    expect(geometryForWindowSnap('right', viewport, 2).width).toBe(360)
   })
 })

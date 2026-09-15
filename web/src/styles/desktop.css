@@ -2161,6 +2161,60 @@ body.desktop-mode-open::-webkit-scrollbar {
   border-radius: var(--radius);
 }
 
+.desktop-window-split-resizer {
+  position: absolute;
+  top: 10px;
+  bottom: 72px;
+  left: var(--desktop-side-split-divider-left, 50%);
+  width: 24px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+  transform: translateX(-50%);
+}
+
+.desktop .desktop-window-split-resizer:focus-visible {
+  outline: none;
+}
+
+.desktop-window-split-resizer::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 64px;
+  background: color-mix(in srgb, var(--text-soft) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--surface) 72%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--desktop-shadow) 58%, transparent);
+  content: '';
+  opacity: .72;
+  transform: translate(-50%, -50%);
+  transition: height .16s ease, background-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+}
+
+.desktop-window-split-resizer:is(:hover, :focus-visible, .desktop-window-split-resizer--active)::before {
+  height: 82px;
+  background: var(--brand);
+  box-shadow:
+    0 4px 16px color-mix(in srgb, var(--desktop-shadow) 62%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--brand) 24%, transparent);
+  opacity: 1;
+}
+
+.desktop--split-resizing .desktop-window--snapped {
+  transition: box-shadow .15s ease, opacity .15s ease;
+  will-change: left, width;
+}
+
+.desktop--split-resizing,
+.desktop--split-resizing * {
+  cursor: col-resize !important;
+}
+
 .desktop-window-snap-preview {
   position: absolute;
   z-index: 90;
@@ -4248,6 +4302,10 @@ body.desktop-mode-open::-webkit-scrollbar {
     display: none;
   }
 
+  .desktop-window-split-resizer {
+    display: none;
+  }
+
   .desktop__taskbar {
     right: max(8px, env(safe-area-inset-right));
     bottom: max(8px, env(safe-area-inset-bottom));
@@ -4417,6 +4475,10 @@ body.desktop-mode-open::-webkit-scrollbar {
     min-width: 0 !important;
     min-height: 0 !important;
     border-radius: var(--radius);
+  }
+
+  .desktop-window-split-resizer {
+    display: none;
   }
 
   .desktop-window__titlebar {

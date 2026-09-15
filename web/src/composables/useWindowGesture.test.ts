@@ -148,6 +148,19 @@ describe('useWindowGesture', () => {
     expect(onEnd).toHaveBeenCalledTimes(2)
   })
 
+  it('allows an owning control to cancel an active gesture explicitly', async () => {
+    const onEnd = vi.fn()
+    const gesture = useWindowGesture(getGeometry, updateGeometry, { onEnd })
+    gesture.onPointerDown(pointer('pointerdown', 100, 100, 1), null)
+    window.dispatchEvent(pointer('pointermove', 140, 130, 1))
+
+    gesture.cancel()
+    await nextTick()
+
+    expect(gesture.active.value).toBe(false)
+    expect(onEnd).toHaveBeenCalledWith(expect.objectContaining({ moved: true, cancelled: true }))
+  })
+
   it('coalesces rapid pointer moves into one geometry update per animation frame', () => {
     let frame: FrameRequestCallback | undefined
     const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {

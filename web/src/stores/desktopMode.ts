@@ -2,7 +2,9 @@ import { computed, reactive, readonly } from 'vue'
 import {
   cascadePosition,
   clampToViewport,
+  DEFAULT_SIDE_SPLIT_RATIO,
   normalizeGeometry,
+  normalizeSideSplitRatio,
   supportsSideWindowSnap,
   type ViewportSize,
   type WindowGeometry,
@@ -40,6 +42,7 @@ interface DesktopState {
   mode: DesktopMode
   windows: DesktopWindowState[]
   focusedId: number
+  sideSplitRatio: number
 }
 
 export interface StorageLike {
@@ -50,6 +53,7 @@ export interface StorageLike {
 const MODE_KEY = 'kejilion-panel-desktop-mode'
 const WINDOWS_KEY = 'kejilion-panel-desktop-windows'
 const WINDOW_PREFERENCES_KEY = 'kpanel:desktop-window-sizes:v1'
+const SIDE_SPLIT_RATIO_KEY = 'kpanel:desktop-side-split:v1'
 const MAX_WINDOWS = 8
 const MAX_WINDOW_PREFERENCES = 32
 const MAX_WINDOW_PREFERENCES_BYTES = 8_192
@@ -67,6 +71,7 @@ const state = reactive<DesktopState>({
   mode: 'classic',
   windows: [],
   focusedId: 0,
+  sideSplitRatio: DEFAULT_SIDE_SPLIT_RATIO,
 })
 
 let nextWindowId = 1
@@ -271,6 +276,29 @@ function persistMode(storage: StorageLike | undefined): void {
   }
 }
 
+function readPersistedSideSplitRatio(
+  storage: StorageLike | undefined,
+  viewport: ViewportSize,
+): number {
+  try {
+    const raw = storage?.getItem(SIDE_SPLIT_RATIO_KEY) ?? null
+    if (!raw || raw.length > 32) return DEFAULT_SIDE_SPLIT_RATIO
+    const ratio = Number(raw)
+    if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) return DEFAULT_SIDE_SPLIT_RATIO
+    return normalizeSideSplitRatio(ratio, viewport)
+  } catch {
+    return DEFAULT_SIDE_SPLIT_RATIO
+  }
+}
+
+function persistSideSplitRatio(storage: StorageLike | undefined): void {
+  try {
+    storage?.setItem(SIDE_SPLIT_RATIO_KEY, String(state.sideSplitRatio))
+  } catch {
+    // The divider remains adjustable when browser storage is unavailable.
+  }
+}
+
 function bringToFront(id: number): void {
   const target = state.windows.find((windowState) => windowState.id === id)
   if (!target) return
@@ -291,11 +319,15 @@ function normalizeWindowStack(): void {
 }
 
 function resizeForViewport(viewport: ViewportSize, persist = true): void {
+  state.sideSplitRatio = normalizeSideSplitRatio(state.sideSplitRatio, viewport)
   for (const windowState of state.windows) {
     windowState.geometry = clampToViewport(windowState.geometry, viewport)
     if (windowState.snap && !supportsSideWindowSnap(viewport)) windowState.snap = null
   }
-  if (persist) persistWindows(defaultStorage())
+  if (persist) {
+    persistWindows(defaultStorage())
+    persistSideSplitRatio(defaultStorage())
+  }
 }
 
 function defaultViewport(): ViewportSize {
@@ -316,6 +348,7 @@ export function initializeDesktopMode(
   viewport: ViewportSize = defaultViewport(),
 ): void {
   state.mode = readPersistedMode(storage)
+  state.sideSplitRatio = readPersistedSideSplitRatio(storage, viewport)
   loadWindowPreferences(storage)
   const restored = readPersistedWindows(storage, viewport)
   if (restored.length) {
@@ -491,6 +524,19 @@ export function useDesktopMode() {
     persistWindows(defaultStorage())
   }
 
+  function setSideSplitRatio(
+    ratio: number,
+    persist = true,
+    viewport: ViewportSize = defaultViewport(),
+  ): void {
+    state.sideSplitRatio = normalizeSideSplitRatio(ratio, viewport)
+    if (persist) persistSideSplitRatio(defaultStorage())
+  }
+
+  function commitSideSplitRatio(): void {
+    persistSideSplitRatio(defaultStorage())
+  }
+
   function snapWindow(id: number, snap: WindowSnapTarget): void {
     const target = state.windows.find((windowState) => windowState.id === id)
     if (!target) return
@@ -530,6 +576,7 @@ export function useDesktopMode() {
     state: readonly(state),
     windows,
     focusedId: computed(() => state.focusedId),
+    sideSplitRatio: computed(() => state.sideSplitRatio),
     mode: computed(() => state.mode),
     enterDesktop,
     enterClassic,
@@ -543,6 +590,8 @@ export function useDesktopMode() {
     focusWindow,
     updateGeometry,
     commitGeometry,
+    setSideSplitRatio,
+    commitSideSplitRatio,
     snapWindow,
     restoreWindowForDrag,
     updateWindowRoute,
@@ -554,6 +603,7 @@ export function resetDesktopModeForTest(): void {
   state.mode = 'classic'
   state.windows.splice(0, state.windows.length)
   state.focusedId = 0
+  state.sideSplitRatio = DEFAULT_SIDE_SPLIT_RATIO
   nextWindowId = 1
   nextZ = BASE_WINDOW_Z
   windowPreferences.clear()
