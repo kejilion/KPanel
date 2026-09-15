@@ -238,6 +238,13 @@ export interface ClusterHostList {
   maxHosts: number
   pollIntervalSeconds: number
   nodeId: string
+  hostOrder?: ClusterHostOrderPreference
+}
+
+export interface ClusterHostOrderPreference {
+  ids: string[]
+  configured: boolean
+  resourceVersion: string
 }
 
 export interface ClusterShareSettings {

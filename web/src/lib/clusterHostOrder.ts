@@ -1,4 +1,7 @@
+import type { ClusterHostOrderPreference } from '@/types/api'
+
 const maxClusterHostOrderLength = 101
+const maxClusterHostIDBytes = 128
 
 export const clusterHostOrderStorageKey = 'kpanel:cluster-host-order'
 export const clusterHostOrderChangedEvent = 'kpanel:cluster-host-order-changed'
@@ -11,7 +14,11 @@ interface StorageReader {
   getItem: (key: string) => string | null
 }
 
-function browserStorage(): StorageReader | undefined {
+interface StorageWriter extends StorageReader {
+  setItem: (key: string, value: string) => void
+}
+
+function browserStorage(): StorageWriter | undefined {
   if (typeof window === 'undefined') return undefined
   try {
     return window.localStorage
@@ -20,21 +27,57 @@ function browserStorage(): StorageReader | undefined {
   }
 }
 
-export function readClusterHostOrder(storage = browserStorage()): string[] {
+function normalizeClusterHostOrder(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length > maxClusterHostOrderLength) return undefined
+  const order = [...new Set(value)]
+  if (!order.every((id) => {
+    if (typeof id !== 'string' || id.length === 0 || id !== id.trim()) return false
+    if (new TextEncoder().encode(id).byteLength > maxClusterHostIDBytes) return false
+    return !Array.from(id).some((character) => {
+      const codePoint = character.codePointAt(0) || 0
+      return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)
+    })
+  })) return undefined
+  return order as string[]
+}
+
+export function readClusterHostOrder(
+  storage: StorageReader | undefined = browserStorage(),
+): string[] {
   if (!storage) return []
   try {
     const stored: unknown = JSON.parse(storage.getItem(clusterHostOrderStorageKey) || '[]')
-    if (
-      !Array.isArray(stored)
-      || stored.length > maxClusterHostOrderLength
-      || !stored.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 128)
-    ) {
-      return []
-    }
-    return [...new Set(stored)]
+    return normalizeClusterHostOrder(stored) || []
   } catch {
     return []
   }
+}
+
+export function cacheClusterHostOrder(
+  order: readonly string[],
+  storage: StorageWriter | undefined = browserStorage(),
+): void {
+  const normalized = normalizeClusterHostOrder(order)
+  if (!normalized) return
+  const current = readClusterHostOrder(storage)
+  if (current.length === normalized.length && current.every((id, index) => id === normalized[index])) return
+  try {
+    storage?.setItem(clusterHostOrderStorageKey, JSON.stringify(normalized))
+  } catch {
+    // The current view still uses the server value when browser storage is unavailable.
+  }
+  notifyClusterHostOrderChanged()
+}
+
+export function applyClusterHostOrderPreference(
+  preference: ClusterHostOrderPreference | undefined,
+  storage: StorageWriter | undefined = browserStorage(),
+): string[] {
+  if (!preference?.configured) return readClusterHostOrder(storage)
+  const order = normalizeClusterHostOrder(preference.ids)
+  if (!order) return readClusterHostOrder(storage)
+  cacheClusterHostOrder(order, storage)
+  return order
 }
 
 export function sortClusterHosts<T extends HostWithID>(

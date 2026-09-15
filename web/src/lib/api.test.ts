@@ -15,6 +15,35 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('reads and updates the panel-owned cluster host order resource', async () => {
+    const initial = {
+      ids: ['local', 'remote'], configured: true, resourceVersion: 'sha256:order-v1',
+    }
+    const updated = {
+      ids: ['remote', 'local'], configured: true, resourceVersion: 'sha256:order-v2',
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(initial))
+      .mockResolvedValueOnce(jsonResponse(updated))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.cluster.hostOrder()).resolves.toEqual(initial)
+    await expect(api.cluster.updateHostOrder({
+      ids: updated.ids,
+      expectedResourceVersion: initial.resourceVersion,
+    })).resolves.toEqual(updated)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/cluster/host-order')
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/v1/cluster/host-order')
+    const update = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(update.method).toBe('PUT')
+    expect(JSON.parse(String(update.body))).toEqual({
+      ids: ['remote', 'local'],
+      expectedResourceVersion: 'sha256:order-v1',
+    })
+  })
+
   it('streams cross-panel file progress and returns the committed entry', async () => {
     const entry = {
       name: 'app', path: '/home/KPanel Desktop/app', kind: 'directory' as const,

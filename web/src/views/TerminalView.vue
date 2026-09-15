@@ -8,6 +8,7 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { api, ApiError } from '@/lib/api'
 import {
+  applyClusterHostOrderPreference,
   readClusterHostOrder,
   sortClusterHosts,
   subscribeClusterHostOrder,
@@ -91,6 +92,7 @@ async function loadHosts(): Promise<void> {
   errorMessage.value = ''
   try {
     inventory.value = await api.cluster.hosts(controller.signal)
+    applyClusterHostOrderPreference(inventory.value.hostOrder)
     if (initialHostLoad) {
       initialHostLoad = false
       const localHost = inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)

@@ -6,8 +6,9 @@ const hostTerminalSource = readFileSync(new URL('../components/terminal/HostTerm
 const desktopStyles = readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8')
 
 describe('multi-host terminal workspace layout', () => {
-  it('uses the shared persisted cluster host order', () => {
-    expect(terminalSource).toContain("import {\n  readClusterHostOrder,\n  sortClusterHosts,\n  subscribeClusterHostOrder,\n} from '@/lib/clusterHostOrder'")
+  it('uses the panel-backed cluster host order and its browser cache', () => {
+    expect(terminalSource).toContain("import {\n  applyClusterHostOrderPreference,\n  readClusterHostOrder,\n  sortClusterHosts,\n  subscribeClusterHostOrder,\n} from '@/lib/clusterHostOrder'")
+    expect(terminalSource).toContain('applyClusterHostOrderPreference(inventory.value.hostOrder)')
     expect(terminalSource).toContain(
       'return sortClusterHosts(inventory.value?.items || [], readClusterHostOrder())',
     )

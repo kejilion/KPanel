@@ -356,4 +356,8 @@ export default [
   ['批量接入命令已复制', 'Batch enrollment command copied'],
   ['请手动选择完整批量命令复制。', 'Select and copy the complete batch command manually.'],
   ['批量接入授权已撤销', 'Batch authorization revoked'],
+  ['主机顺序已在其他页面变化，请刷新后重试。', 'The host order changed elsewhere. Refresh and try again.'],
+  ['保存排序失败', 'Could not save host order'],
+  ['主机顺序未保存，请稍后重试。', 'The host order was not saved. Try again later.'],
+  ['正在保存主机顺序', 'Saving host order'],
 ] as const satisfies PhraseCatalog

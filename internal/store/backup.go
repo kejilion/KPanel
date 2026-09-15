@@ -8,6 +8,8 @@ import (
 
 // ExportIdentity excludes sessions, login attempts, audit history and live share
 // authorizations. Restoring a backup must never reactivate a bearer credential.
+// The private cluster host order is panel-owned, non-sensitive preference state
+// and is preserved independently from the public cluster share configuration.
 func (s *Store) ExportIdentity() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -16,7 +18,11 @@ func (s *Store) ExportIdentity() ([]byte, error) {
 	for i := range users {
 		users[i].TOTPRecoveryCodeHashes = nil
 	}
-	return json.Marshal(diskState{SchemaVersion: 1, Users: users})
+	return json.Marshal(diskState{
+		SchemaVersion:    1,
+		Users:            users,
+		ClusterHostOrder: cloneClusterHostOrder(s.data.ClusterHostOrder),
+	})
 }
 
 func ValidateIdentityBackup(data []byte) error {
@@ -26,6 +32,11 @@ func ValidateIdentityBackup(data []byte) error {
 	}
 	if state.SchemaVersion != 1 || len(state.Users) != 1 || len(state.Sessions) != 0 || len(state.Audit) != 0 || len(state.LoginAttempts) != 0 || len(state.FileShares) != 0 || state.ClusterShare.Enabled || state.ClusterShare.Token != "" || state.SecurityEntrance.Enabled {
 		return errors.New("invalid panel identity backup")
+	}
+	if state.ClusterHostOrder != nil {
+		if err := ValidateClusterHostOrder(state.ClusterHostOrder.IDs); err != nil {
+			return errors.New("invalid panel identity backup")
+		}
 	}
 	u := state.Users[0]
 	if u.ID == "" || len(u.ID) > 128 || u.Role != "admin" || u.Username == "" || len(u.Username) > 128 || len(u.PasswordHash) > 1024 || len(u.PasswordHash) < 32 || len(u.TOTPRecoveryCodeHashes) != 0 {
@@ -52,6 +63,7 @@ func (s *Store) RestoreIdentity(data []byte) error {
 	s.data.LoginAttempts = nil
 	s.data.FileShares = nil
 	s.data.ClusterShare = ClusterShare{}
+	s.data.ClusterHostOrder = cloneClusterHostOrder(incoming.ClusterHostOrder)
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err

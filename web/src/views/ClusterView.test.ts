@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   controllers: vi.fn(),
   revokeController: vi.fn(),
   shareSettings: vi.fn(),
+  updateHostOrder: vi.fn(),
   updateShare: vi.fn(),
   resetShareToken: vi.fn(),
   open: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock('@/lib/api', () => ({
       controllers: mocks.controllers,
       revokeController: mocks.revokeController,
       shareSettings: mocks.shareSettings,
+      updateHostOrder: mocks.updateHostOrder,
       updateShare: mocks.updateShare,
       resetShareToken: mocks.resetShareToken,
     },
@@ -90,6 +92,7 @@ interface ClusterBindings {
   search: Ref<string>
   viewMode: Ref<'list' | 'card' | 'globe'>
   hostOrder: Ref<string[]>
+  hostOrderResourceVersion: Ref<string>
   accessOpen: Ref<boolean>
   manageOpen: Ref<boolean>
   shareOpen: Ref<boolean>
@@ -126,7 +129,7 @@ interface ClusterBindings {
     raw: string,
   ) => { origin: string; pairingCode: string } | undefined
   setViewMode: (mode: 'list' | 'card' | 'globe') => void
-  moveHost: (hostID: string, offset: number) => void
+  moveHost: (hostID: string, offset: number) => Promise<void>
   transportSecurityLabel: (host: ClusterHost) => string
   shortFingerprint: (value?: string) => string
   hostOperatingSystemIdentity: (host: ClusterHost) => { key: string; label: string }
@@ -234,6 +237,11 @@ function inventory(): ClusterHostList {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.controllers.mockResolvedValue({ items: [] })
+  mocks.updateHostOrder.mockImplementation(async ({ ids }: { ids: string[] }) => ({
+    ids,
+    configured: true,
+    resourceVersion: 'sha256:order-v2',
+  }))
   vi.stubGlobal('window', {
     location: { origin: 'https://center.example.com' },
     open: mocks.open,
@@ -503,17 +511,96 @@ describe('ClusterView inventory and navigation', () => {
     )
   })
 
-  it('reorders the same host inventory and persists the preference locally', () => {
+  it('reorders the same host inventory and persists the preference through the panel', async () => {
     const view = setupView()
     view.inventory.value = inventory()
     view.hostOrder.value = ['local', 'remote']
+    view.hostOrderResourceVersion.value = 'sha256:order-v1'
 
-    view.moveHost('remote', -1)
+    await view.moveHost('remote', -1)
 
     expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['remote', 'local'])
+    expect(mocks.updateHostOrder).toHaveBeenCalledWith({
+      ids: ['remote', 'local'],
+      expectedResourceVersion: 'sha256:order-v1',
+    })
     expect(mocks.localStorageSetItem).toHaveBeenCalledWith(
       'kpanel:cluster-host-order',
       JSON.stringify(['remote', 'local']),
+    )
+  })
+
+  it('lets the panel order override a conflicting browser cache', async () => {
+    mocks.localStorageGetItem.mockReturnValue(JSON.stringify(['local', 'remote']))
+    mocks.hosts.mockResolvedValueOnce({
+      ...inventory(),
+      hostOrder: {
+        ids: ['remote', 'local'],
+        configured: true,
+        resourceVersion: 'sha256:server-order',
+      },
+    })
+    const view = setupView()
+
+    await view.load()
+
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['remote', 'local'])
+    expect(view.hostOrderResourceVersion.value).toBe('sha256:server-order')
+    expect(mocks.updateHostOrder).not.toHaveBeenCalled()
+    expect(mocks.localStorageSetItem).toHaveBeenCalledWith(
+      'kpanel:cluster-host-order',
+      JSON.stringify(['remote', 'local']),
+    )
+  })
+
+  it('migrates a legacy browser order once the panel reports no configured order', async () => {
+    mocks.localStorageGetItem.mockReturnValue(JSON.stringify(['remote', 'local']))
+    mocks.hosts.mockResolvedValueOnce({
+      ...inventory(),
+      hostOrder: {
+        ids: [],
+        configured: false,
+        resourceVersion: 'sha256:unconfigured',
+      },
+    })
+    const view = setupView()
+
+    await view.load()
+
+    expect(mocks.updateHostOrder).toHaveBeenCalledWith({
+      ids: ['remote', 'local'],
+      expectedResourceVersion: 'sha256:unconfigured',
+    })
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['remote', 'local'])
+  })
+
+  it('rolls an explicit reorder back when the panel rejects a stale version', async () => {
+    mocks.updateHostOrder.mockRejectedValueOnce(
+      new ApiError('changed', 409, 'cluster_host_order_changed'),
+    )
+    mocks.hosts.mockResolvedValueOnce({
+      ...inventory(),
+      hostOrder: {
+        ids: ['local', 'remote'],
+        configured: true,
+        resourceVersion: 'sha256:fresh',
+      },
+    })
+    const view = setupView()
+    view.inventory.value = inventory()
+    view.hostOrder.value = ['local', 'remote']
+    view.hostOrderResourceVersion.value = 'sha256:stale'
+
+    await view.moveHost('remote', -1)
+
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['local', 'remote'])
+    expect(mocks.localStorageSetItem).not.toHaveBeenCalledWith(
+      'kpanel:cluster-host-order',
+      JSON.stringify(['remote', 'local']),
+    )
+    expect(mocks.toastDanger).toHaveBeenCalledWith(
+      '保存排序失败',
+      '主机顺序已在其他页面变化，请刷新后重试。',
     )
   })
 

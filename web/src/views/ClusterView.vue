@@ -46,8 +46,8 @@ import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { ApiError, api } from '@/lib/api'
 import {
-  clusterHostOrderStorageKey,
-  notifyClusterHostOrderChanged,
+  applyClusterHostOrderPreference,
+  cacheClusterHostOrder,
   readClusterHostOrder,
   reconcileClusterHostOrder,
   sortClusterHosts,
@@ -127,6 +127,8 @@ type HostViewMode = 'list' | 'card' | 'globe'
 const hostViewModeStorageKey = 'kpanel:cluster-host-view'
 const viewMode = ref<HostViewMode>('list')
 const hostOrder = ref<string[]>([])
+const hostOrderResourceVersion = ref('')
+const hostOrderSaving = ref(false)
 const draggedHostId = ref('')
 const dragOverHostId = ref('')
 let loadInFlight = false
@@ -250,6 +252,7 @@ function friendlyError(reason: unknown, fallback: string): string {
     federation_identity_changed: '目标主机加密身份发生变化，已停止连接；确认服务器未被替换后请重新配对。',
     cluster_remote_unreachable: '暂时无法连接目标 KPanel，请检查域名、证书和网络。',
     cluster_resource_changed: '主机信息已变化，请刷新后重试。',
+    cluster_host_order_changed: '主机顺序已在其他页面变化，请刷新后重试。',
     cluster_share_changed: '分享设置已在其他页面变化，请重新打开后再保存。',
   }
   return messages[reason.code] || reason.message || fallback
@@ -406,6 +409,7 @@ async function load(silent = false): Promise<void> {
   loadController = new AbortController()
   try {
     inventory.value = await api.cluster.hosts(loadController.signal)
+    await applyPanelHostOrder(inventory.value.items, inventory.value.hostOrder)
     if (selected.value) {
       const fresh = inventory.value.items.find((host) => host.id === selected.value?.id)
       if (fresh) selected.value = fresh
@@ -838,15 +842,6 @@ function restoreViewMode(): void {
   }
 }
 
-function persistHostOrder(): void {
-  try {
-    window.localStorage.setItem(clusterHostOrderStorageKey, JSON.stringify(hostOrder.value))
-  } catch {
-    // 隐私模式或存储被禁用时仍保留本次页面顺序。
-  }
-  notifyClusterHostOrderChanged()
-}
-
 function restoreHostOrder(): void {
   hostOrder.value = readClusterHostOrder()
 }
@@ -858,24 +853,68 @@ function reconcileHostOrder(items: ClusterHost[]): void {
     next.some((id, index) => id !== hostOrder.value[index])
   ) {
     hostOrder.value = next
-    persistHostOrder()
   }
 }
 
-function moveHost(hostID: string, offset: number): void {
-  if (search.value.trim()) return
+async function applyPanelHostOrder(
+  items: ClusterHost[],
+  preference: ClusterHostList['hostOrder'],
+): Promise<void> {
+  const legacyOrder = readClusterHostOrder()
+  hostOrderResourceVersion.value = preference?.resourceVersion || ''
+  hostOrder.value = applyClusterHostOrderPreference(preference)
+  reconcileHostOrder(items)
+  if (preference && !preference.configured && legacyOrder.length > 0) {
+    await persistHostOrder([...hostOrder.value], false)
+  }
+}
+
+async function persistHostOrder(next: string[], showError = true): Promise<boolean> {
+  if (hostOrderSaving.value) return false
+  const previous = [...hostOrder.value]
+  hostOrder.value = next
+  if (!hostOrderResourceVersion.value) {
+    cacheClusterHostOrder(next)
+    return true
+  }
+
+  hostOrderSaving.value = true
+  let reloadAfterConflict = false
+  try {
+    const preference = await api.cluster.updateHostOrder({
+      ids: next,
+      expectedResourceVersion: hostOrderResourceVersion.value,
+    })
+    hostOrderResourceVersion.value = preference.resourceVersion
+    hostOrder.value = applyClusterHostOrderPreference(preference)
+    reconcileHostOrder(inventory.value?.items || [])
+    return true
+  } catch (reason) {
+    hostOrder.value = previous
+    reloadAfterConflict = reason instanceof ApiError && reason.code === 'cluster_host_order_changed'
+    if (showError) {
+      toast.danger('保存排序失败', friendlyError(reason, '主机顺序未保存，请稍后重试。'))
+    }
+    return false
+  } finally {
+    hostOrderSaving.value = false
+    if (reloadAfterConflict && !loadInFlight) void load(true)
+  }
+}
+
+async function moveHost(hostID: string, offset: number): Promise<void> {
+  if (search.value.trim() || hostOrderSaving.value) return
   const ids = orderedHosts.value.map((host) => host.id)
   const current = ids.indexOf(hostID)
   const target = Math.max(0, Math.min(ids.length - 1, current + offset))
   if (current < 0 || current === target) return
   ids.splice(current, 1)
   ids.splice(target, 0, hostID)
-  hostOrder.value = ids
-  persistHostOrder()
+  await persistHostOrder(ids)
 }
 
 function startHostDrag(event: DragEvent, hostID: string): void {
-  if (search.value.trim()) {
+  if (search.value.trim() || hostOrderSaving.value) {
     event.preventDefault()
     return
   }
@@ -886,19 +925,18 @@ function startHostDrag(event: DragEvent, hostID: string): void {
   }
 }
 
-function dropHost(targetID: string): void {
+async function dropHost(targetID: string): Promise<void> {
   const sourceID = draggedHostId.value
   dragOverHostId.value = ''
   draggedHostId.value = ''
-  if (!sourceID || sourceID === targetID || search.value.trim()) return
+  if (!sourceID || sourceID === targetID || search.value.trim() || hostOrderSaving.value) return
   const ids = orderedHosts.value.map((host) => host.id)
   const source = ids.indexOf(sourceID)
   const target = ids.indexOf(targetID)
   if (source < 0 || target < 0) return
   ids.splice(source, 1)
   ids.splice(target, 0, sourceID)
-  hostOrder.value = ids
-  persistHostOrder()
+  await persistHostOrder(ids)
 }
 
 function finishHostDrag(): void {
@@ -1255,7 +1293,7 @@ onBeforeUnmount(() => {
       v-else
       class="cluster-grid"
       :class="`is-${viewMode}`"
-      :aria-busy="refreshing"
+      :aria-busy="refreshing || hostOrderSaving"
       :aria-label="viewMode === 'list' ? '集群主机行列表' : '集群主机卡片列表'"
     >
       <article
@@ -1271,9 +1309,9 @@ onBeforeUnmount(() => {
           <button
             class="cluster-card__drag"
             type="button"
-            :draggable="!search.trim()"
-            :disabled="Boolean(search.trim())"
-            :title="search.trim() ? '清除搜索后可调整顺序' : '拖拽调整顺序；也可使用上下方向键'"
+            :draggable="!search.trim() && !hostOrderSaving"
+            :disabled="Boolean(search.trim()) || hostOrderSaving"
+            :title="hostOrderSaving ? phrase('正在保存主机顺序') : search.trim() ? phrase('清除搜索后可调整顺序') : phrase('拖拽调整顺序；也可使用上下方向键')"
             :aria-label="`调整 ${host.name} 的显示顺序`"
             @dragstart="startHostDrag($event, host.id)"
             @dragend="finishHostDrag"

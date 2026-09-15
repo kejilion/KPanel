@@ -221,6 +221,7 @@ func TestClusterSharePersistsRejectsConflictsAndRollsBackWriteFailure(t *testing
 
 func TestValidateClusterShareHostOrderRejectsUnboundedAndAmbiguousValues(t *testing.T) {
 	cases := [][]string{
+		make([]string, MaxClusterHostOrder+1),
 		{strings.Repeat("x", MaxClusterShareHostIDLength+1)},
 		{"duplicate", "duplicate"},
 		{" leading-space"},
@@ -230,6 +231,142 @@ func TestValidateClusterShareHostOrderRejectsUnboundedAndAmbiguousValues(t *test
 		if !errors.Is(ValidateClusterShareHostOrder(order), ErrInvalidRecord) {
 			t.Fatalf("ValidateClusterShareHostOrder(%q) unexpectedly accepted", order)
 		}
+	}
+}
+
+func TestOpenRejectsInvalidPersistedClusterHostOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"clusterHostOrder":{"ids":["duplicate","duplicate"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "validate cluster host order") {
+		t.Fatalf("Open invalid cluster host order error = %v", err)
+	}
+}
+
+func TestClusterHostOrderPersistsRejectsConflictsAndRollsBackWriteFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	storage, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial, configured, version := storage.ClusterHostOrder()
+	if configured || len(initial.IDs) != 0 {
+		t.Fatalf("unexpected initial cluster host order: %#v configured=%t", initial, configured)
+	}
+	want := ClusterHostOrder{IDs: []string{"remote-b", "local", "remote-a"}}
+	if err := storage.ReplaceClusterHostOrder(version, want); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.ReplaceClusterHostOrder(version, ClusterHostOrder{IDs: []string{"local"}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale cluster host order update error = %v, want ErrConflict", err)
+	}
+	want.IDs[0] = "mutated-by-caller"
+	stored, configured, storedVersion := storage.ClusterHostOrder()
+	if !configured || !slices.Equal(stored.IDs, []string{"remote-b", "local", "remote-a"}) || storedVersion == version {
+		t.Fatalf("unexpected stored cluster host order: %#v configured=%t version=%q", stored, configured, storedVersion)
+	}
+	stored.IDs[0] = "mutated-read"
+	storedAgain, _, _ := storage.ClusterHostOrder()
+	if storedAgain.IDs[0] != "remote-b" {
+		t.Fatalf("cluster host order read leaked its backing slice: %#v", storedAgain)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	storage, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	restored, configured, restoredVersion := storage.ClusterHostOrder()
+	if !configured || !slices.Equal(restored.IDs, []string{"remote-b", "local", "remote-a"}) {
+		t.Fatalf("cluster host order did not survive reopen: %#v configured=%t", restored, configured)
+	}
+
+	originalPath := storage.path
+	storage.path = filepath.Join(t.TempDir(), "missing", "state.json")
+	err = storage.ReplaceClusterHostOrder(restoredVersion, ClusterHostOrder{IDs: []string{"local"}})
+	storage.path = originalPath
+	if err == nil {
+		t.Fatal("cluster host order update unexpectedly survived an atomic write failure")
+	}
+	afterFailure, _, _ := storage.ClusterHostOrder()
+	if !slices.Equal(afterFailure.IDs, restored.IDs) {
+		t.Fatalf("failed write changed in-memory cluster host order: %#v", afterFailure)
+	}
+}
+
+func TestClusterHostOrderConfiguredEmptyDiffersFromUnconfigured(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	_, configured, initialVersion := storage.ClusterHostOrder()
+	if configured {
+		t.Fatal("new store unexpectedly has a configured host order")
+	}
+	if err := storage.ReplaceClusterHostOrder(initialVersion, ClusterHostOrder{IDs: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	value, configured, configuredVersion := storage.ClusterHostOrder()
+	if !configured || len(value.IDs) != 0 || configuredVersion == initialVersion {
+		t.Fatalf("configured empty host order = %#v configured=%t version=%q", value, configured, configuredVersion)
+	}
+}
+
+func TestClusterHostOrderIdentityBackupRoundTrip(t *testing.T) {
+	source, err := Open(filepath.Join(t.TempDir(), "source.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	now := time.Now().UTC()
+	if err := source.CreateInitialAdmin(User{
+		ID: "admin", Username: "admin", PasswordHash: strings.Repeat("h", 32), Role: "admin",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, version := source.ClusterHostOrder()
+	if err := source.ReplaceClusterHostOrder(version, ClusterHostOrder{IDs: []string{"remote", "local"}}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := source.ExportIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateIdentityBackup(data); err != nil {
+		t.Fatalf("exported identity backup is invalid: %v", err)
+	}
+
+	destination, err := Open(filepath.Join(t.TempDir(), "destination.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destination.Close()
+	if err := destination.RestoreIdentity(data); err != nil {
+		t.Fatal(err)
+	}
+	restored, configured, _ := destination.ClusterHostOrder()
+	if !configured || !slices.Equal(restored.IDs, []string{"remote", "local"}) {
+		t.Fatalf("restored cluster host order = %#v configured=%t", restored, configured)
+	}
+
+	var invalid diskState
+	if err := json.Unmarshal(data, &invalid); err != nil {
+		t.Fatal(err)
+	}
+	invalid.ClusterHostOrder = &ClusterHostOrder{IDs: []string{"duplicate", "duplicate"}}
+	invalidData, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateIdentityBackup(invalidData); err == nil {
+		t.Fatal("identity backup accepted an invalid cluster host order")
 	}
 }
 
