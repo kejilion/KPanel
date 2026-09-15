@@ -131,6 +131,8 @@ interface ClusterBindings {
   shortFingerprint: (value?: string) => string
   hostOperatingSystemIdentity: (host: ClusterHost) => { key: string; label: string }
   formatHostLatency: (host: ClusterHost) => string
+  lightNodeCapabilitySummary: (host: ClusterHost) => string
+  controllerCapabilitySummary: (scope: string) => string
 }
 
 function setupView(): ClusterBindings {
@@ -286,6 +288,60 @@ describe('ClusterView live host details', () => {
     await view.load(true)
     expect(view.selected.value).toBeUndefined()
     expect(view.manageOpen.value).toBe(false)
+  })
+})
+
+describe('ClusterView capability disclosures', () => {
+  it('describes each live light-node capability instead of labelling every node read-only', () => {
+    const view = setupView()
+    const lightNode = {
+      ...host('light-capabilities', false, ''),
+      kind: 'light_node' as const,
+      terminalAvailable: false,
+      fileManagementAvailable: false,
+    }
+
+    expect(view.lightNodeCapabilitySummary(lightNode)).toBe('只读摘要 · 主动 HTTPS 上报')
+    expect(view.lightNodeCapabilitySummary({ ...lightNode, terminalAvailable: true })).toBe(
+      '摘要监控 · 远程终端',
+    )
+    expect(view.lightNodeCapabilitySummary({ ...lightNode, fileManagementAvailable: true })).toBe(
+      '摘要监控 · 文件管理',
+    )
+    expect(view.lightNodeCapabilitySummary({
+      ...lightNode,
+      terminalAvailable: true,
+      fileManagementAvailable: true,
+    })).toBe('摘要监控 · 远程终端 · 文件管理')
+  })
+
+  it('maps controller scopes to their effective management permissions', () => {
+    const view = setupView()
+
+    expect(view.controllerCapabilitySummary('cluster.summary.read')).toBe('权限：摘要读取')
+    expect(view.controllerCapabilitySummary(
+      'cluster.summary.read cluster.terminal.open',
+    )).toBe('权限：摘要读取 · 远程终端')
+    expect(view.controllerCapabilitySummary(
+      'cluster.summary.read cluster.terminal.open cluster.files.read',
+    )).toBe('权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）')
+  })
+
+  it('states the full grant in the access and enrollment copy for every locale', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    const fullGrant = '权限包含摘要读取、远程终端和文件管理（含写入与删除）。'
+    const enrollment = '将加入摘要监控，并启用远程终端和文件管理（含写入与删除）。'
+
+    expect(source).toContain(fullGrant)
+    expect(source).toContain(enrollment)
+    expect(source).not.toContain('文件只读访问')
+    expect(source).not.toContain('不包含任何远程管理权限')
+    expect(new Map(english).get(
+      '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）',
+    )).toContain('writes and deletion')
+    expect(new Map(traditionalChinese).get(
+      '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）',
+    )).toContain('寫入與刪除')
   })
 })
 

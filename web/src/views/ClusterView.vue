@@ -200,6 +200,29 @@ function formatHostLatency(host: ClusterHost): string {
     : '--'
 }
 
+function lightNodeCapabilitySummary(host: ClusterHost): string {
+  if (host.terminalAvailable && host.fileManagementAvailable) {
+    return '摘要监控 · 远程终端 · 文件管理'
+  }
+  if (host.fileManagementAvailable) return '摘要监控 · 文件管理'
+  if (host.terminalAvailable) return '摘要监控 · 远程终端'
+  return '只读摘要 · 主动 HTTPS 上报'
+}
+
+function controllerCapabilitySummary(scope: string): string {
+  const scopes = new Set(scope.split(/\s+/).filter(Boolean))
+  const terminalAvailable = scopes.has('cluster.terminal.open')
+  // `cluster.files.read` is the compatibility scope name; the authenticated
+  // relay also permits file writes and actions, so the UI must disclose that.
+  const fileManagementAvailable = scopes.has('cluster.files.read')
+  if (terminalAvailable && fileManagementAvailable) {
+    return '权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）'
+  }
+  if (fileManagementAvailable) return '权限：摘要读取 · 文件管理（含写入与删除）'
+  if (terminalAvailable) return '权限：摘要读取 · 远程终端'
+  return '权限：摘要读取'
+}
+
 const orderedHosts = computed(() => sortClusterHosts(inventory.value?.items || [], hostOrder.value))
 
 const filteredHosts = computed(() => {
@@ -1336,7 +1359,7 @@ onBeforeUnmount(() => {
               身份指纹 {{ shortFingerprint(host.peerFingerprint) }}
             </small>
             <small v-else-if="host.kind === 'light_node'" class="cluster-card__fingerprint">
-              只读摘要 · 主动 HTTPS 上报
+              {{ phrase(lightNodeCapabilitySummary(host)) }}
             </small>
           </div>
           <button
@@ -1654,7 +1677,7 @@ onBeforeUnmount(() => {
             <Server :size="17" />
             <span>
               <strong>{{ phrase('非面板 Linux 主机') }}</strong>
-              <small>{{ phrase('无需 Docker；生成命令后，在目标机以 root 执行即可加入只读监控。') }}</small>
+              <small>{{ phrase('无需 Docker；在目标机以 root 执行命令后，将加入摘要监控，并启用远程终端和文件管理（含写入与删除）。') }}</small>
             </span>
             <button
               v-if="!lightEnrollment"
@@ -1845,7 +1868,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="accessOpen"
       :title="phrase('本机接入授权')"
-      :description="phrase('其他 KPanel 可按授权范围读取摘要、打开终端和浏览文件；授权可随时撤销。')"
+      :description="phrase('其他 KPanel 可按授权范围读取摘要、打开远程终端和管理文件（含写入与删除）；授权可随时撤销。')"
       size="medium"
       @close="closeAccess"
     >
@@ -1855,7 +1878,7 @@ onBeforeUnmount(() => {
             <KeyRound :size="20" />
             <span>
               <strong>{{ phrase('本机接入凭据') }}</strong>
-              <small>{{ phrase('同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、终端和文件只读访问。') }}</small>
+              <small>{{ phrase('同时包含当前主机 URL 与一次性授权码；5 分钟内只能使用一次，权限包含摘要读取、远程终端和文件管理（含写入与删除）。') }}</small>
             </span>
           </div>
           <button
@@ -1886,7 +1909,7 @@ onBeforeUnmount(() => {
           <header>
             <div>
                 <strong>{{ phrase('已授权控制端') }}</strong>
-                <small>{{ phrase('这里只列出可读取本机概要的 KPanel，不包含任何远程管理权限。') }}</small>
+                <small>{{ phrase('这里列出可访问本机的 KPanel，并按每个控制端的实际授权显示权限；授权可随时撤销。') }}</small>
             </div>
             <button
               class="icon-button icon-button--small"
@@ -1905,6 +1928,7 @@ onBeforeUnmount(() => {
               <span>
                 <strong>{{ controller.name || phrase('未命名 KPanel') }}</strong>
                 <code>{{ controller.fingerprint }}</code>
+                <small>{{ phrase(controllerCapabilitySummary(controller.scope)) }}</small>
                 <small>
                   {{ phrase(`授权于 ${formatDateTime(controller.createdAt)} · 最近访问 ${relativeTime(controller.lastSeenAt)}`) }}
                 </small>
