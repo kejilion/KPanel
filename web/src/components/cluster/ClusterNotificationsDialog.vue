@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="cluster-notifications__event-rules">
             <label class="cluster-notifications__event-rule">
-              <span><strong>{{ phrase('主机掉线 / 失联') }}</strong><small>{{ phrase('进入过期、离线、授权失败或协议异常状态时提醒。') }}</small></span>
+              <span><strong>{{ phrase('主机掉线 / 失联') }}</strong><small>{{ phrase('连续 3 次处于过期、离线、授权失败或协议异常状态时提醒。') }}</small></span>
               <input v-model="form.hostOfflineEnabled" type="checkbox" :aria-label="phrase('启用主机掉线通知')" />
             </label>
             <label class="cluster-notifications__event-rule">

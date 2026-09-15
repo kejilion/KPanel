@@ -285,7 +285,7 @@ export default [
   ['事件通知', 'Event notifications'],
   ['失联沿用集群现有状态；SSH 登录只发送新的登录事件。', 'Uses the existing cluster state for connectivity; SSH alerts are sent only for new login events.'],
   ['主机掉线 / 失联', 'Host offline / unreachable'],
-  ['进入过期、离线、授权失败或协议异常状态时提醒。', 'Alert when a host becomes stale, offline, authentication-failed, or incompatible.'],
+  ['连续 3 次处于过期、离线、授权失败或协议异常状态时提醒。', 'Alert after a host is stale, offline, authentication-failed, or incompatible for 3 consecutive checks.'],
   ['启用主机掉线通知', 'Enable host offline notifications'],
   ['SSH 登录', 'SSH login'],
   ['仅传递用户、来源、方式和时间，不传递原始日志。', 'Only the user, source, method, and time are sent; raw logs are never sent.'],

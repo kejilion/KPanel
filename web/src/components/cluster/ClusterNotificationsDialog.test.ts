@@ -64,6 +64,7 @@ describe('withdrawn local resource notifications', () => {
     expect(wrapper.find('.resource-notifications').exists()).toBe(false)
     for (const text of ['本机资源提醒', 'expired.test', 'important', '启用证书到期提醒']) expect(wrapper.text()).not.toContain(text)
     for (const label of ['CPU 阈值百分比', '内存阈值百分比', '磁盘阈值百分比', '流量阈值', '累计接收阈值', '累计传送阈值', '启用主机掉线通知', '启用 SSH 登录通知']) expect(wrapper.find(`input[aria-label="${label}"]`).exists()).toBe(true)
+    expect(wrapper.text()).toContain('连续 3 次处于过期、离线、授权失败或协议异常状态时提醒。')
     await wrapper.get('input[aria-label="CPU 阈值百分比"]').setValue(85)
     await wrapper.findAll('button').find((button) => button.text() === '保存设置')!.trigger('click'); await flushPromises()
     const input = mocks.save.mock.calls[0]![0]

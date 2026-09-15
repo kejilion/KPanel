@@ -533,6 +533,7 @@ func TestServiceSSHBaselineSurvivesRestart(t *testing.T) {
 func TestServiceAvailabilityAlertsAndRecovers(t *testing.T) {
 	clock := &notificationTestClock{now: time.Date(2026, 8, 31, 13, 0, 0, 0, time.UTC)}
 	source := newNotificationTestHost(clock.Now())
+	source.host.Kind = cluster.HostKindPanel
 	telegram := &notificationTestTelegram{}
 	service := configureNotificationTestService(t, t.TempDir(), source, telegram, clock)
 	defer service.Close()
@@ -549,13 +550,19 @@ func TestServiceAvailabilityAlertsAndRecovers(t *testing.T) {
 		t.Fatalf("Configure() availability rules error = %v", err)
 	}
 	source.setState(cluster.HostOffline)
-	if err := service.evaluate(context.Background()); err != nil {
-		t.Fatal(err)
+	for sample := 1; sample <= 3; sample++ {
+		if err := service.evaluate(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		wantMessages := 0
+		if sample == 3 {
+			wantMessages = 1
+		}
+		if telegram.messageCount() != wantMessages {
+			t.Fatalf("offline sample %d messages = %d, want %d", sample, telegram.messageCount(), wantMessages)
+		}
+		clock.Advance(time.Second)
 	}
-	if telegram.messageCount() != 1 {
-		t.Fatalf("offline messages = %d, want 1", telegram.messageCount())
-	}
-	clock.Advance(time.Second)
 	source.setState(cluster.HostUnknown)
 	if err := service.evaluate(context.Background()); err != nil {
 		t.Fatal(err)
@@ -570,6 +577,38 @@ func TestServiceAvailabilityAlertsAndRecovers(t *testing.T) {
 	}
 	if telegram.messageCount() != 2 {
 		t.Fatalf("offline recovery messages = %d, want 2", telegram.messageCount())
+	}
+}
+
+func TestServiceAvailabilityIgnoresTransientUnavailableStates(t *testing.T) {
+	clock := &notificationTestClock{now: time.Date(2026, 9, 15, 6, 47, 30, 0, time.UTC)}
+	source := newNotificationTestHost(clock.Now())
+	source.host.Kind = cluster.HostKindLightNode
+	telegram := &notificationTestTelegram{}
+	service := configureNotificationTestService(t, t.TempDir(), source, telegram, clock)
+	defer service.Close()
+
+	rules := DefaultRules()
+	rules.CPUEnabled = false
+	rules.MemoryEnabled = false
+	rules.DiskEnabled = false
+	rules.TrafficEnabled = false
+	rules.SSHLoginEnabled = false
+	rules.HostOfflineEnabled = true
+	configured := service.Snapshot()
+	if _, err := service.Configure(context.Background(), UpdateInput{Enabled: true, Rules: rules, ExpectedResourceVersion: configured.ResourceVersion}); err != nil {
+		t.Fatalf("Configure() availability rules error = %v", err)
+	}
+
+	for _, state := range []cluster.HostState{cluster.HostOffline, cluster.HostUnknown, cluster.HostOffline, cluster.HostOffline, cluster.HostOnline} {
+		source.setState(state)
+		if err := service.evaluate(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		clock.Advance(30 * time.Second)
+	}
+	if telegram.messageCount() != 0 {
+		t.Fatalf("transient availability messages = %d, want 0", telegram.messageCount())
 	}
 }
 

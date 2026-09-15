@@ -748,10 +748,12 @@ func (s *Service) handleAvailability(host cluster.Host, now time.Time, locale st
 	unavailable := host.State == cluster.HostStale || host.State == cluster.HostOffline ||
 		host.State == cluster.HostAuthFailed || host.State == cluster.HostTLSFailed || host.State == cluster.HostIncompatible
 	if !unavailable && host.State != cluster.HostOnline && host.State != cluster.HostDegraded {
+		state.Consecutive = 0
 		s.setAlertState(key, state)
 		return false
 	}
 	if !unavailable {
+		state.Consecutive = 0
 		if !state.Active || !canRecoveryAttempt(state, now) {
 			s.setAlertState(key, state)
 			return false
@@ -773,7 +775,8 @@ func (s *Service) handleAvailability(host cluster.Host, now time.Time, locale st
 		s.setAlertState(key, state)
 		return false
 	}
-	if state.Active || !canAlertAttempt(state, now) {
+	state.Consecutive = minInt(state.Consecutive+1, s.sustain)
+	if state.Active || state.Consecutive < s.sustain || !canAlertAttempt(state, now) {
 		s.setAlertState(key, state)
 		return false
 	}
