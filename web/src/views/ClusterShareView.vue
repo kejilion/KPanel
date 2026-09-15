@@ -533,7 +533,7 @@ onBeforeUnmount(() => {
 
 .share-grid.is-list .share-card {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) minmax(400px, 1.35fr);
+  grid-template-columns: minmax(300px, 1fr) minmax(300px, 0.95fr) 24rem;
   grid-template-areas: "header metrics details";
   align-items: stretch;
 }
@@ -543,7 +543,7 @@ onBeforeUnmount(() => {
 .share-grid.is-list .share-status { grid-column: 3; grid-row: 1; justify-self: end; }
 .share-grid.is-list .share-card__aside > small { grid-column: 2 / -1; grid-row: 2; }
 .share-grid.is-list .share-metrics { grid-area: metrics; border-block: 0; border-right: 1px solid var(--border); }
-.share-grid.is-list .share-details { grid-area: details; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 0; padding: 0; }
+.share-grid.is-list .share-details { grid-area: details; grid-template-columns: minmax(0, 13rem) minmax(0, 11rem); justify-content: start; gap: 0; padding: 0; }
 .share-grid.is-list .share-details__traffic { grid-column: 1; padding: 12px 14px; }
 .share-grid.is-list .share-details__traffic:first-child { padding-bottom: 0; }
 .share-grid.is-list .share-details__uptime { grid-column: 2; grid-row: 1 / span 2; display: grid; align-content: center; align-self: stretch; padding: 14px; border-left: 1px solid var(--border); }
@@ -636,6 +636,7 @@ onBeforeUnmount(() => {
   .share-view-switch button { justify-content: center; }
   .share-stats div { padding-inline: 10px; }
   .share-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .share-grid.is-list .share-details { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); justify-content: stretch; }
 }
 
 @media (prefers-reduced-motion: reduce) {
