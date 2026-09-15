@@ -16,11 +16,7 @@ let wrapper: ReturnType<typeof mount> | undefined
 const active = ref(true)
 
 async function openView(path = '/jobs') {
-  const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/jobs', component: JobsView },
-    { path: '/docker', component: { template: '<div />' } },
-    { path: '/cluster/tasks', component: { template: '<div />' } },
-  ] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/jobs', component: JobsView }, { path: '/docker', component: { template: '<div />' } }] })
   await router.push(path)
   wrapper = mount(JobsView, { global: { plugins: [router], provide: { [desktopWindowActiveKey as symbol]: active }, stubs: {
     ModalDialog: { props: ['open'], template: '<div v-if="open" class="dialog"><slot /><slot name="footer" /></div>' },
@@ -76,36 +72,6 @@ describe('job owner state continuity', () => {
     await flushPromises()
     expect(view.get('.dialog').text()).toContain('部分完成')
     expect(view.get('.dialog').text()).not.toContain('partial')
-  })
-
-  it('opens a cluster batch owner through its durable detail endpoint and links back to the exact task', async () => {
-    const id = 'e'.repeat(32)
-    const clusterJob: Job = {
-      id: `cluster-batch:${id}`,
-      action: 'cluster.batch.system-update',
-      resourceType: 'cluster',
-      resourceName: '3 台主机',
-      status: 'failed_needs_attention',
-      progress: 67,
-      createdAt: '2026-09-05T00:00:00Z',
-      stages: [{ name: 'needs_attention', status: 'failed_needs_attention' }],
-    }
-    mocks.list.mockResolvedValue({
-      items: [clusterJob],
-      partial: true,
-      sources: [{ source: 'cluster-batch', state: 'unavailable' }],
-    })
-    mocks.detail.mockResolvedValue(clusterJob)
-    const view = await openView()
-    expect(view.get('.job-item').text()).toContain('系统更新')
-    expect(view.get('.job-item').text()).not.toContain('cluster.batch.system-update')
-    expect(view.text()).toContain('集群批量任务')
-
-    await view.get('.job-item').trigger('click')
-    await flushPromises()
-    expect(mocks.detail).toHaveBeenCalledWith('cluster-batch', id, expect.any(AbortSignal))
-    expect(view.get('.dialog').text()).toContain('需要检查')
-    expect(view.get('.dialog a').attributes('href')).toBe(`/cluster/tasks?task=${id}`)
   })
 
   it('keeps an unavailable task missing while reporting the actual failed lookup request', async () => {

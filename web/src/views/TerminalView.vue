@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
-import { LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import { ListChecks, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import BatchTerminalPanel from '@/components/terminal/BatchTerminalPanel.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
@@ -50,6 +51,9 @@ const loading = ref(true)
 const openingHostId = ref('')
 const errorMessage = ref('')
 const search = ref('')
+const terminalMode = ref<'interactive' | 'batch'>('interactive')
+const selectedBatchHostIDs = ref<Set<string>>(new Set())
+const batchRunning = ref(false)
 const connectionsCollapsed = ref(false)
 const mobileConnectionsOpen = ref(false)
 const quickCommandsOpen = ref(false)
@@ -74,14 +78,21 @@ const {
   exitFullscreen: exitWorkspaceFullscreen,
 } = useTerminalFullscreen(refreshActiveTerminal)
 
-const hosts = computed(() => {
+const orderedHosts = computed(() => {
   clusterHostOrderRevision.value
-  const needle = search.value.trim().toLowerCase()
   return sortClusterHosts(inventory.value?.items || [], readClusterHostOrder())
+})
+
+const hosts = computed(() => {
+  const needle = search.value.trim().toLowerCase()
+  return orderedHosts.value
     .filter((host) => !needle || `${host.name} ${host.origin}`.toLowerCase().includes(needle))
 })
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeSessionId.value))
+const selectedBatchHosts = computed(() => orderedHosts.value.filter((host) => selectedBatchHostIDs.value.has(host.id)))
+const activeInteractiveSessionCount = computed(() => sessions.value.filter((item) => item.state !== 'finished').length)
+const batchSessionCapacity = computed(() => Math.max(0, 4 - activeInteractiveSessionCount.value))
 
 const hostOperatingSystemIdentity = (host: ClusterHost) =>
   detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
@@ -93,6 +104,8 @@ async function loadHosts(): Promise<void> {
   errorMessage.value = ''
   try {
     inventory.value = await api.cluster.hosts(controller.signal)
+    const terminalHostIDs = new Set(inventory.value.items.filter((host) => host.terminalAvailable).map((host) => host.id))
+    selectedBatchHostIDs.value = new Set([...selectedBatchHostIDs.value].filter((id) => terminalHostIDs.has(id)))
     if (initialHostLoad) {
       initialHostLoad = false
       const localHost = inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
@@ -207,6 +220,7 @@ function executeQuickCommand(command: string): void {
 }
 
 function toggleConnections(): void {
+  if (terminalMode.value === 'batch') return
   connectionsCollapsed.value = !connectionsCollapsed.value
   try {
     window.localStorage.setItem(
@@ -217,6 +231,29 @@ function toggleConnections(): void {
     // Storage can be unavailable in privacy modes; collapsing still works for this visit.
   }
   void nextTick(refreshActiveTerminal)
+}
+
+function toggleTerminalMode(): void {
+  if (terminalMode.value === 'interactive') {
+    terminalMode.value = 'batch'
+    connectionsCollapsed.value = false
+    mobileConnectionsOpen.value = false
+    exitWorkspaceFullscreen()
+    return
+  }
+  terminalMode.value = 'interactive'
+  void nextTick(() => {
+    refreshActiveTerminal()
+    focusActiveTerminal()
+  })
+}
+
+function toggleBatchHost(host: ClusterHost): void {
+  if (batchRunning.value || !host.terminalAvailable) return
+  const next = new Set(selectedBatchHostIDs.value)
+  if (next.has(host.id)) next.delete(host.id)
+  else next.add(host.id)
+  selectedBatchHostIDs.value = next
 }
 
 function hostStateLabel(host: ClusterHost): string {
@@ -262,7 +299,8 @@ onMounted(() => {
     connectionsCollapsed.value = false
   }
   const guard = () => {
-    const activeCount = sessions.value.filter((session) => session.state !== 'finished').length
+    if (batchRunning.value) return window.confirm(t('terminal.closeBatchExecutionConfirm'))
+    const activeCount = activeInteractiveSessionCount.value
     return !activeCount || window.confirm(t('terminal.closeSessionsConfirm', { count: activeCount }))
   }
   unregisterWindowCloseGuard = desktopWindowCloseGuards
@@ -290,7 +328,7 @@ onBeforeUnmount(() => {
     <section
       class="terminal-workspace terminal-theme-scope"
       :class="{
-        'is-connections-collapsed': connectionsCollapsed,
+        'is-connections-collapsed': connectionsCollapsed && terminalMode === 'interactive',
         'is-connections-drawer-open': mobileConnectionsOpen,
       }"
     >
@@ -304,8 +342,8 @@ onBeforeUnmount(() => {
       <aside id="terminal-connections-drawer" class="terminal-connections">
         <header>
           <div class="terminal-connections__heading">
-            <strong>{{ t('terminal.hostList') }}</strong>
-            <small>{{ t('terminal.hostCountShort', { count: hosts.length }) }}</small>
+            <strong>{{ terminalMode === 'batch' ? t('terminal.selectBatchHosts') : t('terminal.hostList') }}</strong>
+            <small>{{ terminalMode === 'batch' ? t('terminal.selectedHostCount', { count: selectedBatchHostIDs.size }) : t('terminal.hostCountShort', { count: hosts.length }) }}</small>
           </div>
           <div class="terminal-connections__actions">
             <button
@@ -319,6 +357,7 @@ onBeforeUnmount(() => {
               <RefreshCw :size="17" :class="{ spin: loading }" />
             </button>
             <button
+              v-if="terminalMode === 'interactive'"
               class="terminal-connections__toggle terminal-connections__collapse"
               type="button"
               aria-controls="terminal-connection-selector"
@@ -340,6 +379,14 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </header>
+        <div v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-mode-row">
+          <button class="terminal-mode-button" type="button" @click="toggleTerminalMode">
+            <SquareTerminal v-if="terminalMode === 'batch'" :size="16" aria-hidden="true" />
+            <ListChecks v-else :size="16" aria-hidden="true" />
+            {{ t(terminalMode === 'batch' ? 'terminal.interactiveTerminal' : 'terminal.batchExecution') }}
+            <LoaderCircle v-if="batchRunning" class="spin" :size="14" :aria-label="t('terminal.batchRunning')" />
+          </button>
+        </div>
         <label v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-search">
           <Search :size="15" aria-hidden="true" />
           <input
@@ -351,49 +398,65 @@ onBeforeUnmount(() => {
         </label>
         <div id="terminal-connection-selector" v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-connections__list">
           <div v-if="!loading && !hosts.length" class="terminal-connections__empty">暂无可显示主机</div>
-          <button
-            v-for="host in hosts"
-            :key="host.id"
-            class="terminal-host"
-            :class="{
-              'is-active': activeSession?.hostId === host.id,
-              'is-opening': openingHostId === host.id,
-              'is-unavailable': !host.terminalAvailable,
-            }"
-            type="button"
-            :disabled="openingHostId === host.id"
-            :aria-disabled="!host.terminalAvailable"
-            :title="hostDescription(host)"
-            :aria-label="hostDescription(host)"
-            @click="openHost(host)"
-          >
-            <OperatingSystemIcon
-              class="terminal-host__os"
-              :distro="hostOperatingSystemIdentity(host).key"
-              :label="hostOperatingSystemIdentity(host).label"
-              :show-tooltip="false"
-            />
-            <span class="terminal-host__content">
-              <strong>{{ host.name }}</strong>
-              <span class="terminal-host__meta">
-                <small>{{ hostKindLabel(host) }}</small>
-                <span class="terminal-host__separator" aria-hidden="true">·</span>
-                <span
-                  class="terminal-host__state"
-                  :class="{
-                    'is-ready': host.terminalAvailable,
-                    'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
-                  }"
-                >
-                  <i aria-hidden="true" />
-                  {{ hostStateLabel(host) }}
+          <template v-if="terminalMode === 'interactive'">
+            <button
+              v-for="host in hosts"
+              :key="host.id"
+              class="terminal-host"
+              :class="{
+                'is-active': activeSession?.hostId === host.id,
+                'is-opening': openingHostId === host.id,
+                'is-unavailable': !host.terminalAvailable,
+              }"
+              type="button"
+              :disabled="openingHostId === host.id"
+              :aria-disabled="!host.terminalAvailable"
+              :title="hostDescription(host)"
+              :aria-label="hostDescription(host)"
+              @click="openHost(host)"
+            >
+              <OperatingSystemIcon
+                class="terminal-host__os"
+                :distro="hostOperatingSystemIdentity(host).key"
+                :label="hostOperatingSystemIdentity(host).label"
+                :show-tooltip="false"
+              />
+              <span class="terminal-host__content">
+                <strong>{{ host.name }}</strong>
+                <span class="terminal-host__meta">
+                  <small>{{ hostKindLabel(host) }}</small>
+                  <span class="terminal-host__separator" aria-hidden="true">·</span>
+                  <span
+                    class="terminal-host__state"
+                    :class="{
+                      'is-ready': host.terminalAvailable,
+                      'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
+                    }"
+                  >
+                    <i aria-hidden="true" />
+                    {{ hostStateLabel(host) }}
+                  </span>
                 </span>
               </span>
-            </span>
-            <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
-          </button>
+              <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
+            </button>
+          </template>
+          <template v-else>
+            <label v-for="host in hosts" :key="host.id" class="terminal-host terminal-host--batch" :class="{ 'is-active': selectedBatchHostIDs.has(host.id), 'is-disabled': !host.terminalAvailable }">
+              <input type="checkbox" :checked="selectedBatchHostIDs.has(host.id)" :disabled="batchRunning || !host.terminalAvailable" @change="toggleBatchHost(host)" />
+              <OperatingSystemIcon class="terminal-host__os" :distro="hostOperatingSystemIdentity(host).key" :label="hostOperatingSystemIdentity(host).label" :show-tooltip="false" />
+              <span class="terminal-host__content">
+                <strong>{{ host.name }}</strong>
+                <span class="terminal-host__meta">
+                  <small>{{ hostKindLabel(host) }}</small>
+                  <span class="terminal-host__separator" aria-hidden="true">·</span>
+                  <span class="terminal-host__state" :class="{ 'is-ready': host.terminalAvailable }"><i aria-hidden="true" />{{ hostStateLabel(host) }}</span>
+                </span>
+              </span>
+            </label>
+          </template>
         </div>
-        <div v-show="connectionsCollapsed && !mobileConnectionsOpen" class="terminal-connections__rail" aria-label="收起的主机列表">
+        <div v-show="terminalMode === 'interactive' && connectionsCollapsed && !mobileConnectionsOpen" class="terminal-connections__rail" aria-label="收起的主机列表">
           <button
             v-for="host in hosts"
             :key="host.id"
@@ -417,8 +480,7 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <main
-        class="terminal-stage"
+      <main v-show="terminalMode === 'interactive'" class="terminal-stage"
         :class="{
           'is-fullscreen': workspaceFullscreen,
           'is-quick-commands-open': quickCommandsOpen,
@@ -479,6 +541,14 @@ onBeforeUnmount(() => {
           @execute="executeQuickCommand"
         />
       </main>
+      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch">
+        <button class="terminal-stage__mobile-selector" type="button" aria-controls="terminal-connections-drawer" :aria-expanded="mobileConnectionsOpen" aria-label="打开主机选择" @click="mobileConnectionsOpen = true">
+          <Menu :size="18" />
+          <span>{{ t('terminal.selectBatchHosts') }}</span>
+          <small>{{ t('terminal.selectedHostCount', { count: selectedBatchHostIDs.size }) }}</small>
+        </button>
+        <BatchTerminalPanel class="batch-terminal-stage" :hosts="selectedBatchHosts" :session-capacity="batchSessionCapacity" @running-change="batchRunning = $event" />
+      </main>
     </section>
   </div>
 </template>
@@ -494,7 +564,7 @@ onBeforeUnmount(() => {
 .terminal-workspace { position:relative; display:grid; height:var(--terminal-workspace-height); min-height:var(--terminal-workspace-min-height); grid-template-columns:256px minmax(0,1fr); overflow:hidden; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--terminal-workspace-radius); background:var(--terminal-shell-background,#0b1214); box-shadow:var(--shadow-sm); transition:grid-template-columns 180ms ease; }
 :global(:root:not([data-theme='dark'])) .terminal-workspace { --terminal-shell-border:rgb(255 255 255 / 18%); }
 .terminal-workspace.is-connections-collapsed { grid-template-columns:52px minmax(0,1fr); }
-.terminal-connections { display:grid; min-width:0; min-height:0; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; border-right:1px solid var(--terminal-shell-border,#29383a); color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-panel,#111a1d); }
+.terminal-connections { display:grid; min-width:0; min-height:0; grid-template-rows:auto auto auto minmax(0,1fr); overflow:hidden; border-right:1px solid var(--terminal-shell-border,#29383a); color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-connections>header { display:flex; align-items:center; justify-content:space-between; padding:10px 10px 8px; color:var(--brand); }
 .terminal-connections__heading { display:flex; min-width:0; align-items:center; gap:7px; color:var(--terminal-shell-text,#d8dddc); }
 .terminal-connections__heading strong { font-size:15px; line-height:1.2; }
@@ -502,6 +572,11 @@ onBeforeUnmount(() => {
 .terminal-connections__actions { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
 .terminal-connections__toggle { display:grid; width:30px; height:30px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-background,#0b1214); cursor:pointer; transition:border-color .16s ease,color .16s ease,background-color .16s ease; }
 .terminal-connections__toggle:hover,.terminal-connections__toggle:focus-visible { border-color:color-mix(in srgb,var(--brand) 62%,var(--terminal-shell-border,#29383a)); color:var(--brand); outline:none; }
+.terminal-mode-row { padding:0 10px 8px; }
+.terminal-mode-button { display:flex; width:100%; min-height:34px; align-items:center; gap:7px; padding:0 10px; color:var(--terminal-shell-muted,#8a9695); background:transparent; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--radius-sm); font:inherit; font-size:14px; font-weight:500; text-align:left; cursor:pointer; }
+.terminal-mode-button:hover,.terminal-mode-button:focus-visible { color:var(--terminal-shell-text,#d8dddc); background:color-mix(in srgb,var(--terminal-shell-text,#d8dddc) 4%,transparent); border-color:color-mix(in srgb,var(--terminal-shell-muted,#8a9695) 58%,var(--terminal-shell-border,#29383a)); outline:none; }
+.terminal-mode-button:focus-visible { box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 20%,transparent); }
+.terminal-mode-button .spin { margin-left:auto; }
 .terminal-connections__mobile-close,.terminal-connections-overlay,.terminal-stage__mobile-selector { display:none; }
 .terminal-stage__mobile-selector { width:100%; min-width:0; grid-row:1; grid-column:1; align-items:center; gap:8px; min-height:48px; border:0; border-bottom:1px solid var(--terminal-shell-border,#29383a); padding:7px 18px; color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-panel,#111a1d); font:inherit; font-weight: 600; text-align:left; cursor:pointer; }
 .terminal-stage__mobile-selector:hover,.terminal-stage__mobile-selector:focus-visible { color:var(--brand); background:color-mix(in srgb,var(--brand) 7%,var(--terminal-shell-panel,#111a1d)); outline:none; }
@@ -531,6 +606,9 @@ onBeforeUnmount(() => {
 .terminal-host.is-active { box-shadow:inset 3px 0 0 var(--brand); }
 .terminal-host.is-opening { cursor:wait; opacity:.64; }
 .terminal-host.is-unavailable { cursor:not-allowed; }
+.terminal-host.is-disabled { cursor:not-allowed; opacity:.58; }
+.terminal-host--batch { grid-template-columns:auto auto minmax(0,1fr); }
+.terminal-host--batch input { width:17px; height:17px; margin:0; accent-color:var(--brand); }
 .terminal-host :deep(.terminal-host__os) { width:32px; height:32px; flex:0 0 auto; border-radius:9px; box-shadow:none; }
 .terminal-host__content { display:grid; min-width:0; gap:3px; }
 .terminal-host__content>strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -544,6 +622,7 @@ onBeforeUnmount(() => {
 .terminal-connections__empty { display:flex; align-items:center; justify-content:center; gap:8px; min-height:180px; padding:20px; color:var(--terminal-shell-muted,#8a9695); text-align:center; }
 .terminal-stage { position:relative; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
 .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr) 272px; }
+.terminal-stage--batch .batch-terminal-stage { grid-row:1 / -1; min-height:0; }
 .terminal-stage.is-fullscreen { position:fixed; z-index:6000; inset:0; width:100vw; height:100dvh; min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; border:0; }
 .terminal-tabs-bar { display:flex; min-width:0; grid-row:1; grid-column:1 / -1; align-items:center; gap:12px; padding:8px 10px; border:0; border-bottom:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-tabs-bar__connections { display:none; width:34px; height:34px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:transparent; cursor:pointer; }
@@ -579,6 +658,7 @@ onBeforeUnmount(() => {
   .terminal-stage { min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; }
   .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
   .terminal-stage :deep(.terminal-quick-commands) { grid-row:auto; grid-column:auto; position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
+  .terminal-stage--batch .batch-terminal-stage { grid-row:2; }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

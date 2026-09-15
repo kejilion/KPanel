@@ -154,16 +154,10 @@ func TestJobsPartialSourcesRetainOnlyConfirmedResults(t *testing.T) {
 			s.agent = agent
 			response := performRequest(s, "GET", "/api/v1/jobs", nil, map[string]string{"Cookie": session.Name + "=" + session.Value})
 			var page jobsPage
-			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || !page.Partial || len(page.Items) != len(jobOwners())-1 || len(page.Sources) != len(jobOwners())+2 {
+			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &page) != nil || !page.Partial || len(page.Items) != len(jobOwners())-1 || len(page.Sources) != len(jobOwners())+1 {
 				t.Fatalf("partial result lost: %d %s", response.Code, response.Body.String())
 			}
-			dockerState := ""
-			for _, source := range page.Sources {
-				if source.Source == "docker" {
-					dockerState = source.State
-				}
-			}
-			if dockerState == "" || dockerState == "available" || strings.Contains(response.Body.String(), "secret") {
+			if page.Sources[1].State == "available" || strings.Contains(response.Body.String(), "secret") {
 				t.Fatal("source error was hidden or leaked")
 			}
 			for _, job := range page.Items {

@@ -866,8 +866,7 @@ func validateHostRecordV2(record hostRecordV2) error {
 		err != nil || normalizedOrigin != record.Origin ||
 		record.TransportSecurity != v2TransportSecurity(record.Origin) ||
 		record.FederationProtocol != FederationProtocolV2 ||
-		(record.Scope != "" && record.Scope != SummaryScope && record.Scope != SummaryTerminalScope &&
-			record.Scope != SummaryTerminalFilesScope) ||
+		(record.Scope != "" && record.Scope != SummaryScope && record.Scope != SummaryTerminalScope && record.Scope != SummaryTerminalFilesScope) ||
 		keyErr != nil || len(targetPublicKey) != 32 ||
 		record.PeerFingerprint != fingerprintV2(targetPublicKey) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
@@ -905,8 +904,7 @@ func validateControllerRecordV2(record controllerRecordV2) error {
 	if !validID(record.ID) || !validID(record.TransactionID) ||
 		err != nil || len(publicKey) != 32 ||
 		record.Fingerprint != fingerprintV2(publicKey) ||
-		(record.Scope != SummaryScope && record.Scope != SummaryTerminalScope &&
-			record.Scope != SummaryTerminalFilesScope) ||
+		(record.Scope != SummaryScope && record.Scope != SummaryTerminalScope && record.Scope != SummaryTerminalFilesScope) ||
 		record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() ||
 		len(record.Name) > 80 {
 		return errors.New("cluster v2 store contains an invalid controller record")

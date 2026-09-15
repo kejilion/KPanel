@@ -14,7 +14,6 @@ const routeViewLoaders = {
   '/monitoring': () => import('@/views/MonitoringView.vue'),
   '/processes': () => import('@/views/ProcessManagerView.vue'),
   '/cluster': () => import('@/views/ClusterView.vue'),
-  '/cluster/tasks': () => import('@/views/ClusterBatchTasksView.vue'),
   '/sites': () => import('@/views/SitesView.vue'),
   '/sites/environment': () => import('@/views/EnvironmentView.vue'),
   '/apps': () => import('@/views/AppsView.vue'),

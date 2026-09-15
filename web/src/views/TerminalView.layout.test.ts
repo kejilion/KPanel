@@ -36,12 +36,12 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).not.toContain("t('terminal.loadingHosts')")
   })
 
-  it('uses each cluster host operating system identity in both selector layouts', () => {
+  it('uses each cluster host operating system identity in interactive, batch, and collapsed selectors', () => {
     expect(terminalSource).toContain("import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'")
     expect(terminalSource).toContain("import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'")
     expect(terminalSource).toContain('detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)')
-    expect(terminalSource.match(/:distro="hostOperatingSystemIdentity\(host\)\.key"/g)).toHaveLength(2)
-    expect(terminalSource.match(/:label="hostOperatingSystemIdentity\(host\)\.label"/g)).toHaveLength(2)
+    expect(terminalSource.match(/:distro="hostOperatingSystemIdentity\(host\)\.key"/g)).toHaveLength(3)
+    expect(terminalSource.match(/:label="hostOperatingSystemIdentity\(host\)\.label"/g)).toHaveLength(3)
     expect(terminalSource).not.toContain('<Server v-else')
   })
 
@@ -67,6 +67,21 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).not.toContain('<Plus')
     expect(terminalSource).not.toContain('{{ host.origin ||')
     expect(terminalSource).not.toContain('关闭窗口将断开')
+  })
+
+  it('places a quiet batch-mode button above search without shrinking the terminal stage', () => {
+    expect(terminalSource).toMatch(
+      /class="terminal-mode-row"[\s\S]*?class="terminal-mode-button"[\s\S]*?@click="toggleTerminalMode"/,
+    )
+    expect(terminalSource).toContain("terminalMode.value = 'batch'")
+    expect(terminalSource).toContain('class="terminal-host terminal-host--batch"')
+    expect(terminalSource).toContain(':hosts="selectedBatchHosts"')
+    expect(terminalSource).toContain("v-show=\"terminalMode === 'interactive'\" class=\"terminal-stage\"")
+    expect(terminalSource).toContain("v-show=\"terminalMode === 'batch'\" class=\"terminal-stage terminal-stage--batch\"")
+    expect(terminalSource).toMatch(
+      /\.terminal-mode-button\s*\{[^}]*background:transparent;[^}]*border:1px solid var\(--terminal-shell-border/,
+    )
+    expect(terminalSource).not.toContain('class="terminal-mode-button button--primary"')
   })
 
   it('collapses the host selector into a persistent narrow rail', () => {

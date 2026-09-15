@@ -500,7 +500,6 @@ function visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedByt
 
 function visualClusterHost({ id, name, isLocal, state, hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode, kind = isLocal ? 'panel' : 'light_node', federationProtocol = 'v1', scope = 'cluster.summary.read', fileTransferAvailable = false, securityEntrancePath = '' }) {
   const telemetry = visualClusterTelemetry({ hostname, os, osId, uptimeSeconds, receivedBytes, sentBytes, usagePercent, city, country, countryCode })
-  const granted = new Set(scope.split(/\s+/).filter(Boolean))
   return {
     id,
     isLocal,
@@ -511,11 +510,9 @@ function visualClusterHost({ id, name, isLocal, state, hostname, os, osId, uptim
     remoteNodeId: isLocal ? 'local-node' : 'remote-node',
     federationProtocol,
     scope,
-    terminalAvailable: isLocal || granted.has('cluster.terminal.open'),
-    fileManagementAvailable: isLocal || granted.has('cluster.files.read'),
+    terminalAvailable: isLocal || scope.split(/\s+/).includes('cluster.terminal.open'),
     fileTransferAvailable,
     mutualFileTransferAvailable: false,
-    batchTaskAvailable: kind === 'panel' && granted.has('cluster.system.maintenance'),
     securityEntrancePath,
     state,
     consecutiveFailures: state === 'degraded' ? 1 : 0,
@@ -541,235 +538,18 @@ const visualClusterHosts = [
     os: 'Debian GNU/Linux 13', osId: 'debian', uptimeSeconds: 864000,
     receivedBytes: 24 * 1024 ** 3, sentBytes: 11 * 1024 ** 3,
     city: 'Shanghai', country: 'China', countryCode: 'CN',
-    scope: 'cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance',
   }),
   visualClusterHost({
     id: 'b'.repeat(32), name: 'edge-melbourne', isLocal: false, state: 'degraded', hostname: 'edge-melbourne',
     os: 'Ubuntu 24.04 LTS', osId: 'ubuntu', uptimeSeconds: 432000,
     receivedBytes: 8 * 1024 ** 3, sentBytes: 3 * 1024 ** 3, usagePercent: 63.2,
     city: 'Melbourne', country: 'Australia', countryCode: 'AU',
-    kind: 'panel', federationProtocol: 'v2', securityEntrancePath: 'panel-secure1',
-    scope: 'cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance',
+    kind: 'panel', federationProtocol: 'v2', scope: 'cluster.summary.read cluster.terminal.open', securityEntrancePath: 'panel-secure1',
   }),
 ]
 
-const mockClusterBatchCatalog = {
-  actions: [
-    { id: 'refresh', risk: 'read', requiresTaskScope: false, supportsLegacyPanels: true, supportsLightNodes: false },
-    { id: 'system-update', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'cleanup-cache', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'cleanup-standard', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'logs-retain-7d', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'logs-retain-3d', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'logs-max-500m', risk: 'write', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-    { id: 'reboot', risk: 'disruptive', requiresTaskScope: true, supportsLegacyPanels: false, supportsLightNodes: false },
-  ],
-  limits: {
-    maxTasks: 100,
-    maxActiveTasks: 4,
-    maxTargets: 50,
-    maxConcurrency: 4,
-    minTimeoutSeconds: 60,
-    maxTimeoutSeconds: 3600,
-    defaultTimeoutSeconds: 3600,
-  },
-}
-
-const mockClusterBatchActions = new Set(mockClusterBatchCatalog.actions.map((action) => action.id))
-const mockClusterBatchTerminalStates = new Set(['succeeded', 'partial', 'failed', 'cancelled', 'needs_attention'])
-const mockClusterBatchTargetTerminalStates = new Set(['succeeded', 'failed', 'cancelled', 'unsupported', 'needs_attention'])
-let mockClusterBatchTaskCounter = 0x100
-
-function deriveMockClusterBatchTask(task) {
-  const counts = { succeeded: 0, failed: 0, needs_attention: 0, cancelled: 0, unsupported: 0 }
-  for (const target of task.targets) {
-    if (Object.hasOwn(counts, target.state)) counts[target.state] += 1
-  }
-  task.total = task.targets.length
-  task.completed = Object.values(counts).reduce((total, value) => total + value, 0)
-  task.succeeded = counts.succeeded
-  task.failed = counts.failed
-  task.needsAttention = counts.needs_attention
-  task.cancelled = counts.cancelled
-  task.unsupported = counts.unsupported
-  if (task.completed < task.total) {
-    task.state = task.cancelRequested ? 'cancelling'
-      : task.targets.some((target) => target.state !== 'queued') ? 'running' : 'queued'
-    delete task.finishedAt
-    return task
-  }
-  if (task.needsAttention > 0) task.state = 'needs_attention'
-  else if (task.succeeded === task.total) task.state = 'succeeded'
-  else if (task.cancelled === task.total) task.state = 'cancelled'
-  else if (task.succeeded > 0) task.state = 'partial'
-  else task.state = 'failed'
-  task.finishedAt ||= new Date().toISOString()
-  return task
-}
-
-function materializeMockClusterBatchTask(task) {
-  if (!task._createdMs || mockClusterBatchTerminalStates.has(task.state) || task.cancelRequested) {
-    return deriveMockClusterBatchTask(task)
-  }
-  const elapsed = Date.now() - task._createdMs
-  if (elapsed >= 800) {
-    task.startedAt ||= new Date(task._createdMs + 800).toISOString()
-    for (const target of task.targets) {
-      if (target.state !== 'queued') continue
-      target.state = 'running'
-      target.stage = 'running'
-      target.progress = Math.min(88, 12 + Math.floor((elapsed - 800) / 60))
-      target.startedAt = task.startedAt
-      if (task.action !== 'refresh') target.executionId = `preview-${target.operationId}`
-      target.message = '预览数据：目标主机已接收固定维护动作'
-    }
-  }
-  if (elapsed >= 3_500 && task.targets[0] && !mockClusterBatchTargetTerminalStates.has(task.targets[0].state)) {
-    Object.assign(task.targets[0], {
-      state: 'succeeded', stage: 'completed', progress: 100,
-      message: '预览数据：固定动作已完成', finishedAt: new Date().toISOString(),
-    })
-  }
-  if (elapsed >= 6_500) {
-    for (const target of task.targets) {
-      if (mockClusterBatchTargetTerminalStates.has(target.state)) continue
-      Object.assign(target, {
-        state: 'succeeded', stage: 'completed', progress: 100,
-        message: '预览数据：固定动作已完成', finishedAt: new Date().toISOString(),
-      })
-    }
-  }
-  return deriveMockClusterBatchTask(task)
-}
-
-function publicMockClusterBatchTask(task, includeTargets = true) {
-  const materialized = materializeMockClusterBatchTask(task)
-  const result = { ...materialized }
-  delete result._createdMs
-  if (includeTargets) result.targets = materialized.targets.map((target) => ({ ...target }))
-  else delete result.targets
-  return result
-}
-
-function nextMockClusterBatchID() {
-  mockClusterBatchTaskCounter += 1
-  return mockClusterBatchTaskCounter.toString(16).padStart(32, '0')
-}
-
-function createMockClusterBatchTask(input, parentTaskId = '') {
-  const hostIds = Array.isArray(input.hostIds) ? input.hostIds : []
-  const concurrency = Number(input.concurrency || 2)
-  const timeoutSeconds = Number(input.timeoutSeconds || 3600)
-  if (!mockClusterBatchActions.has(input.action) || hostIds.length < 1 || hostIds.length > 50 ||
-    new Set(hostIds).size !== hostIds.length || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4 ||
-    !Number.isInteger(timeoutSeconds) || timeoutSeconds < 60 || timeoutSeconds > 3600 ||
-    (input.action === 'reboot' && input.confirmDisruptive !== true)) return null
-  const hosts = hostIds.map((id) => visualClusterHosts.find((host) => host.id === id))
-  if (hosts.some((host) => !host || host.kind !== 'panel' || (input.action !== 'refresh' && !host.batchTaskAvailable))) return null
-  let activeTasks = 0
-  for (const existing of mockClusterBatchTasks.values()) {
-    materializeMockClusterBatchTask(existing)
-    if (!mockClusterBatchTerminalStates.has(existing.state)) activeTasks += 1
-    if (!mockClusterBatchTerminalStates.has(existing.state) && existing.targets.some((target) => hostIds.includes(target.hostId))) return null
-  }
-  if (activeTasks >= 4) return null
-  const id = nextMockClusterBatchID()
-  const createdAt = new Date().toISOString()
-  const task = {
-    id,
-    ...(parentTaskId ? { parentTaskId } : {}),
-    action: input.action,
-    state: 'queued',
-    concurrency,
-    timeoutSeconds,
-    cancelRequested: false,
-    total: hosts.length,
-    completed: 0,
-    succeeded: 0,
-    failed: 0,
-    needsAttention: 0,
-    cancelled: 0,
-    unsupported: 0,
-    createdAt,
-    _createdMs: Date.now(),
-    targets: hosts.map((host, index) => ({
-      hostId: host.id,
-      hostName: host.name,
-      hostKind: host.kind,
-      operationId: (mockClusterBatchTaskCounter * 100 + index + 1).toString(16).padStart(32, '0'),
-      state: 'queued',
-      stage: 'queued',
-      progress: 0,
-    })),
-  }
-  mockClusterBatchTasks.set(id, task)
-  return task
-}
-
-function mockClusterBatchJob(task) {
-  const item = materializeMockClusterBatchTask(task)
-  const states = {
-    queued: 'queued', running: 'running', cancelling: 'running', succeeded: 'succeeded',
-    partial: 'failed_needs_attention', failed: 'failed_needs_attention',
-    cancelled: 'cancelled', needs_attention: 'failed_needs_attention',
-  }
-  const progress = item.total
-    ? Math.round(item.targets.reduce((sum, target) => sum + target.progress, 0) / item.total)
-    : 0
-  return {
-    id: `cluster-batch:${item.id}`,
-    action: `cluster.batch.${item.action}`,
-    origin: 'web',
-    state: states[item.state],
-    stage: item.state,
-    progress,
-    targetKind: 'cluster',
-    targetId: item.id,
-    targetLabel: `${item.total} 台主机`,
-    createdAt: item.createdAt,
-    ...(item.startedAt ? { startedAt: item.startedAt } : {}),
-    ...(item.finishedAt ? { finishedAt: item.finishedAt } : {}),
-    ...(['partial', 'failed', 'needs_attention'].includes(item.state)
-      ? { error: { title: '集群批量任务需要检查', status: 0, code: 'cluster_batch_task_attention', retryable: true } }
-      : {}),
-  }
-}
-
-const mockClusterBatchTasks = new Map()
-const mockClusterBatchSeedID = '7'.repeat(32)
-const mockClusterBatchSeedCreated = new Date(Date.now() - 45 * 60_000).toISOString()
-const mockClusterBatchSeedFinished = new Date(Date.now() - 38 * 60_000).toISOString()
-mockClusterBatchTasks.set(mockClusterBatchSeedID, {
-  id: mockClusterBatchSeedID,
-  action: 'cleanup-standard',
-  state: 'needs_attention',
-  concurrency: 2,
-  timeoutSeconds: 3600,
-  cancelRequested: false,
-  total: 2,
-  completed: 2,
-  succeeded: 1,
-  failed: 0,
-  needsAttention: 1,
-  cancelled: 0,
-  unsupported: 0,
-  createdAt: mockClusterBatchSeedCreated,
-  startedAt: mockClusterBatchSeedCreated,
-  finishedAt: mockClusterBatchSeedFinished,
-  targets: [
-    {
-      hostId: 'e'.repeat(32), hostName: 'kpanel-demo', hostKind: 'panel', operationId: '1'.repeat(32),
-      executionId: 'preview-local-cleanup', state: 'succeeded', stage: 'completed', progress: 100,
-      message: '标准清理已完成', startedAt: mockClusterBatchSeedCreated, finishedAt: mockClusterBatchSeedFinished,
-    },
-    {
-      hostId: 'b'.repeat(32), hostName: 'edge-melbourne', hostKind: 'panel', operationId: '2'.repeat(32),
-      executionId: 'preview-remote-cleanup', state: 'needs_attention', stage: 'tracking_timeout', progress: 100,
-      errorCode: 'batch_tracking_timeout', message: '预览数据：目标任务可能仍在运行，请人工核对',
-      startedAt: mockClusterBatchSeedCreated, finishedAt: mockClusterBatchSeedFinished,
-    },
-  ],
-})
+let mockTerminalSessionCounter = 0
+const mockTerminalSessions = new Map()
 
 let mockLightBatchEnrollmentCounter = 1
 let mockLightBatchEnrollments = [
@@ -1381,6 +1161,20 @@ function wait(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds))
 }
 
+function mockTerminalCommandResult(host, command) {
+  const lines = command.split('\n').map((line) => line.trim()).filter(Boolean)
+  const failed = lines.some((line) => line === 'false' || /^exit\s+[1-9]\d*$/.test(line) || line.includes('mock-fail'))
+  if (failed) return { output: '[UI Mock] 命令返回非零状态。', exitError: 'Process exited with status 1' }
+  if (lines.some((line) => /(^|\s)uname(?:\s|$)/.test(line))) {
+    const release = host.lastSnapshot?.telemetry?.osId === 'ubuntu' ? '6.8.0-45-generic' : '6.12.0-amd64'
+    return { output: `Linux ${host.lastSnapshot?.telemetry?.hostname || host.name} ${release} #1 SMP PREEMPT_DYNAMIC x86_64 GNU/Linux`, exitError: '' }
+  }
+  if (lines.some((line) => line === 'hostname')) {
+    return { output: host.lastSnapshot?.telemetry?.hostname || host.name, exitError: '' }
+  }
+  return { output: `[UI Mock] ${host.name} 已完成自定义命令。`, exitError: '' }
+}
+
 function mockFileParent(filePath) {
   const separator = filePath.lastIndexOf('/')
   return separator <= 0 ? '/' : filePath.slice(0, separator)
@@ -1986,24 +1780,15 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/jobs') {
-    const clusterItems = [...mockClusterBatchTasks.values()].map(mockClusterBatchJob)
-    const dockerItems = Array.from({ length: 60 }, (_, index) => ({
+    const items = Array.from({ length: 60 }, (_, index) => ({
       id: `docker:${(index + 1).toString(16).padStart(32, '0')}`,
       action: 'docker.image_pull', origin: 'web', state: index === 0 ? 'running' : 'succeeded',
       stage: index === 0 ? 'running' : 'completed', progress: index === 0 ? 35 : 100,
       targetKind: 'docker', targetLabel: `mock-image-${index + 1}`, createdAt: '2026-09-06T00:00:00Z',
     }))
-    const items = [...clusterItems, ...dockerItems]
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     send(response, 200, { items: items.slice(0, Number(url.searchParams.get('limit') || 50)), partial: true,
-      sources: [{ source: 'audit', state: 'available' }, { source: 'cluster-batch', state: 'available' }, { source: 'docker', state: 'available' },
+      sources: [{ source: 'audit', state: 'available' }, { source: 'docker', state: 'available' },
         { source: 'app', state: 'unavailable' }, { source: 'webenv', state: 'available' }] })
-    return
-  }
-  const clusterBatchManagementJobMatch = url.pathname.match(/^\/api\/v1\/jobs\/cluster-batch\/([a-f0-9]{32})$/)
-  if (request.method === 'GET' && clusterBatchManagementJobMatch) {
-    const task = mockClusterBatchTasks.get(clusterBatchManagementJobMatch[1])
-    send(response, task ? 200 : 404, task ? mockClusterBatchJob(task) : { code: 'job_not_found', title: '任务不存在或已超出来源保留期' })
     return
   }
   const managementJobMatch = url.pathname.match(/^\/api\/v1\/jobs\/(docker|app|webenv)\/([a-f0-9]{32})$/)
@@ -2199,99 +1984,91 @@ createServer(async (request, response) => {
     })
     return
   }
-  if (request.method === 'GET' && url.pathname === '/api/v1/cluster/batch-actions') {
-    send(response, 200, mockClusterBatchCatalog)
-    return
-  }
-  if (request.method === 'GET' && url.pathname === '/api/v1/cluster/batch-tasks') {
-    const tasks = [...mockClusterBatchTasks.values()]
-      .map((task) => publicMockClusterBatchTask(task, false))
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    send(response, 200, { items: tasks, total: tasks.length })
-    return
-  }
-  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/batch-tasks') {
+  if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
     const input = await readJSON(request)
-    const task = createMockClusterBatchTask(input)
-    if (!task) {
-      send(response, 422, { title: '批量任务参数或目标主机不可用', code: 'cluster_batch_task_invalid' })
+    const host = visualClusterHosts.find((item) => item.id === input.hostId)
+    if (!host?.terminalAvailable) {
+      send(response, 409, { title: 'Terminal unavailable', code: 'terminal_unavailable' })
       return
     }
-    send(response, 202, publicMockClusterBatchTask(task))
+    if (mockTerminalSessions.size >= 4) {
+      send(response, 429, { title: 'Terminal session limit reached', code: 'terminal_limit' })
+      return
+    }
+    mockTerminalSessionCounter += 1
+    const sessionId = `visual-terminal-${mockTerminalSessionCounter}`
+    const createdAt = new Date().toISOString()
+    mockTerminalSessions.set(sessionId, {
+      host,
+      data: Buffer.from(`root@${host.lastSnapshot?.telemetry?.hostname || host.name}:~# `),
+      exitedAt: '',
+      exitError: '',
+    })
+    send(response, 201, { sessionId, hostId: host.id, offset: 0, createdAt })
     return
   }
-  const clusterBatchTaskMatch = url.pathname.match(/^\/api\/v1\/cluster\/batch-tasks\/([a-f0-9]{32})(?:\/(cancel|retry))?$/)
-  if (clusterBatchTaskMatch) {
-    const [, id, action] = clusterBatchTaskMatch
-    const task = mockClusterBatchTasks.get(id)
-    if (!task) {
-      send(response, 404, { title: '批量任务不存在', code: 'cluster_batch_task_not_found' })
+  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input|resize|close)$/)
+  if (terminalSessionMatch) {
+    const [, sessionId, action] = terminalSessionMatch
+    const session = mockTerminalSessions.get(sessionId)
+    if (!session) {
+      send(response, 404, { title: 'Terminal session not found', code: 'terminal_not_found' })
       return
     }
-    materializeMockClusterBatchTask(task)
-    if (request.method === 'GET' && !action) {
-      send(response, 200, publicMockClusterBatchTask(task))
+    if (request.method === 'GET' && action === 'output') {
+      const requestedOffset = Number.parseInt(url.searchParams.get('offset') || '0', 10)
+      const offset = Number.isInteger(requestedOffset) ? Math.max(0, Math.min(requestedOffset, session.data.length)) : 0
+      if (offset === session.data.length && !session.exitedAt) await wait(220)
+      if (response.destroyed) return
+      const data = session.data.subarray(offset)
+      const nextOffset = offset + data.length
+      const finished = Boolean(session.exitedAt)
+      send(response, 200, {
+        data: data.toString('base64'),
+        offset,
+        nextOffset,
+        truncated: false,
+        ...(session.exitedAt ? { exitedAt: session.exitedAt } : {}),
+        ...(session.exitError ? { exitError: session.exitError } : {}),
+        closed: finished,
+      })
+      if (finished && nextOffset >= session.data.length) mockTerminalSessions.delete(sessionId)
       return
     }
-    if (request.method === 'POST' && action === 'cancel') {
-      if (mockClusterBatchTerminalStates.has(task.state)) {
-        send(response, 409, { title: '批量任务已经结束', code: 'cluster_batch_task_state' })
-        return
-      }
-      task.cancelRequested = true
-      for (const target of task.targets) {
-        if (target.state === 'queued') {
-          Object.assign(target, {
-            state: 'cancelled', stage: 'cancelled', progress: 100,
-            message: '任务在提交到目标主机前已取消', finishedAt: new Date().toISOString(),
-          })
-        } else if (!mockClusterBatchTargetTerminalStates.has(target.state)) {
-          Object.assign(target, {
-            state: 'needs_attention', stage: 'tracking_cancelled', progress: 100,
-            errorCode: 'batch_target_continues', message: '目标动作已提交，中心端不能撤销，请人工核对',
-            finishedAt: new Date().toISOString(),
-          })
-        }
-      }
-      send(response, 202, publicMockClusterBatchTask(deriveMockClusterBatchTask(task)))
-      return
-    }
-    if (request.method === 'POST' && action === 'retry') {
+    if (request.method === 'POST' && action === 'input') {
       const input = await readJSON(request)
-      if (!mockClusterBatchTerminalStates.has(task.state)) {
-        send(response, 409, { title: '批量任务尚未结束', code: 'cluster_batch_task_state' })
-        return
+      const decoded = Buffer.from(String(input.data || ''), 'base64').toString('utf8')
+      const lines = decoded.replace(/\r\n?/g, '\n').split('\n')
+      const exitIndex = lines.map((line) => line.trim()).lastIndexOf('exit')
+      const command = (exitIndex >= 0 ? lines.slice(0, exitIndex) : lines).join('\n').trim()
+      if (command) {
+        const result = mockTerminalCommandResult(session.host, command)
+        session.data = Buffer.concat([
+          session.data,
+          Buffer.from(`${command}\r\n${result.output}\r\n`),
+        ])
+        session.exitError = result.exitError
       }
-      if (Boolean(input?.confirmDisruptive) !== (task.action === 'reboot')) {
-        send(response, 422, { title: '重启重试需要重新确认服务中断', code: 'cluster_batch_task_invalid' })
-        return
+      if (exitIndex >= 0) {
+        session.data = Buffer.concat([session.data, Buffer.from('exit\r\n')])
+        session.exitedAt = new Date().toISOString()
       }
-      const hostIds = task.targets
-        .filter((target) => ['failed', 'cancelled', 'unsupported', 'needs_attention'].includes(target.state))
-        .map((target) => target.hostId)
-      const retried = createMockClusterBatchTask({
-        action: task.action,
-        hostIds,
-        concurrency: task.concurrency,
-        timeoutSeconds: task.timeoutSeconds,
-        confirmDisruptive: task.action === 'reboot',
-      }, task.id)
-      if (!retried) {
-        send(response, 409, { title: '没有可重试的目标，或目标主机正被其他任务占用', code: 'cluster_batch_task_state' })
-        return
-      }
-      send(response, 202, publicMockClusterBatchTask(retried))
+      send(response, 200, { accepted: true })
       return
     }
-    if (request.method === 'DELETE' && !action) {
-      if (!mockClusterBatchTerminalStates.has(task.state)) {
-        send(response, 409, { title: '只有已结束的任务可以删除', code: 'cluster_batch_task_state' })
-        return
-      }
-      mockClusterBatchTasks.delete(id)
-      send(response, 200, { deleted: true })
+    if (request.method === 'POST' && action === 'resize') {
+      await readJSON(request)
+      send(response, 200, { accepted: true })
       return
     }
+    if (request.method === 'POST' && action === 'close') {
+      await readJSON(request)
+      mockTerminalSessions.delete(sessionId)
+      send(response, 200, { closed: true })
+      return
+    }
+    send(response, 405, { title: 'Request method not allowed', code: 'method_not_allowed' })
+    return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/hosts') {
     send(response, 200, {

@@ -201,7 +201,6 @@ export interface ClusterHost {
   fileManagementAvailable?: boolean
   fileTransferAvailable?: boolean
   mutualFileTransferAvailable: boolean
-  batchTaskAvailable?: boolean
   panelVersion?: string
   securityEntrancePath?: string
   state: ClusterHostState
@@ -359,116 +358,7 @@ export interface ClusterPairingCode {
     | 'cluster.summary.read'
     | 'cluster.summary.read cluster.terminal.open'
     | 'cluster.summary.read cluster.terminal.open cluster.files.read'
-    | 'cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance'
   expiresAt: string
-}
-
-export type ClusterBatchAction =
-  | 'refresh'
-  | 'system-update'
-  | 'cleanup-cache'
-  | 'cleanup-standard'
-  | 'logs-retain-7d'
-  | 'logs-retain-3d'
-  | 'logs-max-500m'
-  | 'reboot'
-
-export type ClusterBatchActionRisk = 'read' | 'write' | 'disruptive'
-
-export interface ClusterBatchActionDefinition {
-  id: ClusterBatchAction
-  risk: ClusterBatchActionRisk
-  requiresTaskScope: boolean
-  supportsLegacyPanels: boolean
-  supportsLightNodes: boolean
-}
-
-export interface ClusterBatchTaskLimits {
-  maxTasks: number
-  maxActiveTasks: number
-  maxTargets: number
-  maxConcurrency: number
-  minTimeoutSeconds: number
-  maxTimeoutSeconds: number
-  defaultTimeoutSeconds: number
-}
-
-export interface ClusterBatchTaskCatalog {
-  actions: ClusterBatchActionDefinition[]
-  limits: ClusterBatchTaskLimits
-}
-
-export type ClusterBatchTaskState =
-  | 'queued'
-  | 'running'
-  | 'cancelling'
-  | 'succeeded'
-  | 'partial'
-  | 'failed'
-  | 'cancelled'
-  | 'needs_attention'
-
-export type ClusterBatchTargetState =
-  | 'queued'
-  | 'submitting'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'unsupported'
-  | 'needs_attention'
-
-export interface ClusterBatchTaskTarget {
-  hostId: string
-  hostName: string
-  hostKind: ClusterHostKind
-  operationId: string
-  executionId?: string
-  state: ClusterBatchTargetState
-  stage?: string
-  progress: number
-  message?: string
-  errorCode?: string
-  startedAt?: string
-  finishedAt?: string
-}
-
-export interface ClusterBatchTask {
-  id: string
-  parentTaskId?: string
-  action: ClusterBatchAction
-  state: ClusterBatchTaskState
-  concurrency: number
-  timeoutSeconds: number
-  cancelRequested: boolean
-  total: number
-  completed: number
-  succeeded: number
-  failed: number
-  needsAttention: number
-  cancelled: number
-  unsupported: number
-  targets?: ClusterBatchTaskTarget[]
-  createdAt: string
-  startedAt?: string
-  finishedAt?: string
-}
-
-export interface ClusterBatchTaskList {
-  items: ClusterBatchTask[]
-  total: number
-}
-
-export interface ClusterBatchTaskInput {
-  action: ClusterBatchAction
-  hostIds: string[]
-  concurrency?: number
-  timeoutSeconds?: number
-  confirmDisruptive?: boolean
-}
-
-export interface ClusterBatchTaskRetryInput {
-  confirmDisruptive: boolean
 }
 
 export interface TerminalSession {
@@ -1971,7 +1861,7 @@ export interface JobStage {
   message?: string
 }
 
-export type JobOwner = 'docker' | 'app' | 'webenv' | 'file-archive' | 'backup' | 'cluster-batch'
+export type JobOwner = 'docker' | 'app' | 'webenv' | 'file-archive' | 'backup'
 
 export interface JobSourceStatus {
   source: JobOwner | 'audit'

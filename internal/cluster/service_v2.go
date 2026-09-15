@@ -72,13 +72,6 @@ type remoteV2TerminalAPI interface {
 	TerminalCloseV2(context.Context, string, string, string, noise.DHKey, []byte, time.Time, TerminalCloseRequest) error
 }
 
-type remoteV2BatchTaskAPI interface {
-	BatchTaskV2(
-		context.Context, string, string, string, noise.DHKey, []byte,
-		time.Time, batchTaskV2Request,
-	) (BatchTargetExecution, error)
-}
-
 type v2OriginValidator interface {
 	ValidateV2Origin(context.Context, string) (string, error)
 }
@@ -135,11 +128,9 @@ func (s *Service) createPairingCodeV2() (PairingCode, error) {
 		return PairingCode{}, err
 	}
 	_ = s.secretsV2.RemoveOrphans(s.storeV2.CredentialReferences())
-	scope := SummaryTerminalFilesScope
-	if s.batchActions != nil {
-		scope = SummaryTerminalFilesTasksScope
-	}
-	return PairingCode{Code: code, Scope: scope, ExpiresAt: expiresAt}, nil
+	return PairingCode{
+		Code: code, Scope: SummaryTerminalFilesScope, ExpiresAt: expiresAt,
+	}, nil
 }
 
 func (s *Service) addHostV2Locked(
@@ -310,13 +301,6 @@ func (s *Service) advanceV2Host(
 			if response.Scope == "" {
 				response.Scope = SummaryScope
 			}
-			if ScopeAllowsBatchTasks(normalizedV2Scope(response.Scope)) {
-				if err := s.batchTasks.GrantHostMaintenance(record.ID); err != nil {
-					return record, err
-				}
-			} else if err := s.batchTasks.RevokeHostMaintenance(record.ID); err != nil {
-				return record, err
-			}
 			hostCredential := v2Credential{
 				ControllerPrivate: append([]byte(nil), credential.ControllerPrivate...),
 				ControllerPublic:  append([]byte(nil), credential.ControllerPublic...),
@@ -336,7 +320,7 @@ func (s *Service) advanceV2Host(
 			record.State = hostStateV2PendingCommit
 			record.CredentialFile = credentialFile
 			record.PanelVersion = response.PanelVersion
-			record.Scope = persistedV2Scope(response.Scope)
+			record.Scope = response.Scope
 			record.UpdatedAt = s.now().UTC()
 			record, err = s.storeV2.UpdateHost(record, record.ResourceVersion)
 			if err != nil {
@@ -415,7 +399,6 @@ func (s *Service) deleteHostV2Locked(
 		if _, err := s.storeV2.DeleteHost(id, record.ResourceVersion); err != nil {
 			return DeleteHostResult{}, err
 		}
-		_ = s.batchTasks.RevokeHostMaintenance(id)
 		s.mu.Lock()
 		delete(s.runtime, id)
 		s.mu.Unlock()
@@ -446,7 +429,6 @@ func (s *Service) deleteHostV2Locked(
 	// authorization therefore fails closed even if deleting the grant hits a
 	// storage error.
 	s.fileStreamHub.closePeer("host:" + record.ID)
-	_ = s.batchTasks.RevokeHostMaintenance(record.ID)
 	if err := s.deleteFilePeerGrant(record.ID); err != nil {
 		return DeleteHostResult{}, err
 	}
@@ -485,9 +467,6 @@ func (s *Service) finalizeLocalHostV2(
 	record hostRecordV2,
 	remoteRevoked bool,
 ) (DeleteHostResult, error) {
-	if err := s.batchTasks.RevokeHostMaintenance(record.ID); err != nil {
-		return DeleteHostResult{}, err
-	}
 	if err := s.deleteFilePeerGrant(record.ID); err != nil {
 		return DeleteHostResult{}, err
 	}
@@ -663,7 +642,6 @@ func publicHostV2(
 	record hostRecordV2,
 	current runtimeState,
 	now time.Time,
-	effectiveScope string,
 ) Host {
 	name := record.Name
 	if name == "" {
@@ -694,11 +672,10 @@ func publicHostV2(
 		PeerFingerprint:         record.PeerFingerprint,
 		RemoteNodeID:            record.RemoteNodeID,
 		FederationProtocol:      FederationProtocolV2,
-		Scope:                   effectiveScope,
-		TerminalAvailable:       ScopeAllowsTerminal(effectiveScope),
-		FileManagementAvailable: ScopeAllowsFiles(effectiveScope),
-		FileTransferAvailable:   ScopeAllowsFiles(effectiveScope),
-		BatchTaskAvailable:      ScopeAllowsBatchTasks(effectiveScope),
+		Scope:                   normalizedV2Scope(record.Scope),
+		TerminalAvailable:       ScopeAllowsTerminal(normalizedV2Scope(record.Scope)),
+		FileManagementAvailable: ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
+		FileTransferAvailable:   ScopeAllowsFiles(normalizedV2Scope(record.Scope)),
 		PanelVersion:            panelVersion, State: state,
 
 		SecurityEntrancePath: current.securityEntrancePath,
@@ -738,9 +715,7 @@ func (s *Service) HandleFederationV2(
 	case HistoryRelayV2Path:
 		return s.handleHistoryRelayV2(ctx, envelope, now)
 	case v2PairPath:
-		return s.handlePairV2(envelope, source, now, false)
-	case v2PairTasksPath:
-		return s.handlePairV2(envelope, source, now, true)
+		return s.handlePairV2(envelope, source, now)
 	case v2CommitPath:
 		return s.handleCommitV2(envelope, now)
 	case v2SummaryPath:
@@ -763,8 +738,6 @@ func (s *Service) HandleFederationV2(
 		return s.handleTerminalRelayV2(ctx, envelope, now)
 	case v2FileRelayPath:
 		return s.handleFileRelayV2(ctx, envelope, now)
-	case v2BatchTaskPath:
-		return s.handleBatchTaskV2(ctx, envelope, now)
 	default:
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
@@ -880,7 +853,6 @@ func (s *Service) handlePairV2(
 	envelope v2Envelope,
 	source string,
 	now time.Time,
-	requestMaintenanceScope bool,
 ) (FederationEnvelopeV2, error) {
 	if !s.pairLimiter.Allow(cleanRateSubject(source), now) {
 		return FederationEnvelopeV2{}, ErrRateLimited
@@ -894,12 +866,8 @@ func (s *Service) handlePairV2(
 		!bytes.Equal(credential.TargetPublic, s.nodeIdentityV2.PublicKey) {
 		return FederationEnvelopeV2{}, ErrAuthentication
 	}
-	pairPath := v2PairPath
-	if requestMaintenanceScope {
-		pairPath = v2PairTasksPath
-	}
 	payload, peerStatic, handshake, err := openV2Request(
-		http.MethodPost, pairPath, envelope,
+		http.MethodPost, v2PairPath, envelope,
 		nodeNoiseKeyV2(s.nodeIdentityV2), credential.PairingKey,
 	)
 	if err != nil {
@@ -925,17 +893,10 @@ func (s *Service) handlePairV2(
 		s.recordPairingFailureV2(envelope.CodeID, now)
 		return FederationEnvelopeV2{}, ErrPairingCode
 	}
-	grantedScope := SummaryTerminalFilesScope
-	// The requested privilege is authenticated by the Noise prologue's route,
-	// not by the unauthenticated capabilities header. Generic/light Services and
-	// older clients therefore remain on the established narrower scope.
-	if s.batchActions != nil && requestMaintenanceScope {
-		grantedScope = SummaryTerminalFilesTasksScope
-	}
 	controller := controllerRecordV2{
 		ID: envelope.ControllerID, Name: name,
 		PublicKey:   base64.RawURLEncoding.EncodeToString(peerStatic),
-		Fingerprint: fingerprintV2(peerStatic), Scope: persistedV2Scope(grantedScope),
+		Fingerprint: fingerprintV2(peerStatic), Scope: SummaryTerminalFilesScope,
 		State:         controllerStateV2Provisional,
 		TransactionID: input.TransactionID,
 		CreatedAt:     now, UpdatedAt: now,
@@ -945,70 +906,13 @@ func (s *Service) handlePairV2(
 	); err != nil {
 		return FederationEnvelopeV2{}, err
 	}
-	if ScopeAllowsBatchTasks(grantedScope) {
-		if err := s.batchTasks.GrantControllerMaintenance(controller.ID); err != nil {
-			return FederationEnvelopeV2{}, err
-		}
-	}
-	// A retry of the same pairing transaction can arrive through a different
-	// compatibility route. Always report the scope already persisted for that
-	// controller instead of claiming a privilege that was not actually stored.
-	storedController, err := s.storeV2.Controller(controller.ID)
-	if err != nil {
-		return FederationEnvelopeV2{}, err
-	}
-	grantedScope = s.effectiveControllerScopeV2(storedController)
 	return sealV2JSONResponse(envelope, handshake, v2PairResult{
 		TransactionID: input.TransactionID,
 		NodeID:        s.store.NodeID(), Hostname: s.hostname,
 		PanelVersion:       s.panelVersion,
 		FederationProtocol: FederationProtocolV2,
-		Scope:              grantedScope,
+		Scope:              SummaryTerminalFilesScope,
 	})
-}
-
-func (s *Service) handleBatchTaskV2(
-	ctx context.Context,
-	envelope v2Envelope,
-	now time.Time,
-) (FederationEnvelopeV2, error) {
-	controller, payload, handshake, err := s.openControllerV2(
-		v2BatchTaskPath, envelope, now, controllerStateV2Active,
-	)
-	if err != nil || !ScopeAllowsBatchTasks(s.effectiveControllerScopeV2(controller)) || s.batchActions == nil {
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	var input batchTaskV2Request
-	if decodeV2Payload(payload, &input) != nil || !validID(input.OperationID) ||
-		!validBatchAction(input.Action) {
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	invocation := BatchActionInvocation{
-		Action: input.Action, OperationID: input.OperationID, ControllerID: controller.ID,
-	}
-	var result BatchTargetExecution
-	switch input.Operation {
-	case "submit":
-		if input.ExecutionID != "" {
-			return FederationEnvelopeV2{}, ErrAuthentication
-		}
-		result, err = s.batchActions.Submit(ctx, invocation)
-	case "status":
-		if !batchExecutionIDPattern.MatchString(input.ExecutionID) {
-			return FederationEnvelopeV2{}, ErrAuthentication
-		}
-		result, err = s.batchActions.Status(ctx, invocation, input.ExecutionID)
-	default:
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	if err != nil || validateBatchTargetExecution(result) != nil {
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	if input.Operation == "status" && result.ExecutionID != input.ExecutionID {
-		return FederationEnvelopeV2{}, ErrAuthentication
-	}
-	_ = s.storeV2.TouchController(controller.ID, now)
-	return sealV2JSONResponse(envelope, handshake, result)
 }
 
 func (s *Service) handleCommitV2(
@@ -1105,7 +1009,6 @@ func (s *Service) handleRevokeV2(
 			return FederationEnvelopeV2{}, err
 		}
 	}
-	_ = s.batchTasks.RevokeControllerMaintenance(controller.ID)
 	s.fileStreamHub.closePeer("controller:" + controller.ID)
 	if err := s.filePeersV2.DeleteController(controller.ID); err != nil &&
 		!errors.Is(err, ErrNotFound) {
@@ -1171,7 +1074,7 @@ func (s *Service) validateV2Request(
 		requestedAt.After(now.Add(v2RequestSkew)) {
 		return ErrAuthentication
 	}
-	if path == v2PairPath || path == v2PairTasksPath {
+	if path == v2PairPath {
 		if envelope.CodeID == "" {
 			return ErrAuthentication
 		}
@@ -1200,8 +1103,7 @@ func validateV2PairResult(
 		response.TransactionID != expectedTransactionID {
 		return ErrProtocolMismatch
 	}
-	if response.Scope != "" && response.Scope != SummaryScope && response.Scope != SummaryTerminalScope &&
-		response.Scope != SummaryTerminalFilesScope && response.Scope != SummaryTerminalFilesTasksScope {
+	if response.Scope != "" && response.Scope != SummaryScope && response.Scope != SummaryTerminalScope && response.Scope != SummaryTerminalFilesScope {
 		return ErrProtocolMismatch
 	}
 	if cleanDisplayText(response.Hostname, 253) != response.Hostname ||
@@ -1212,40 +1114,10 @@ func validateV2PairResult(
 }
 
 func normalizedV2Scope(scope string) string {
-	if scope == SummaryTerminalScope || scope == SummaryTerminalFilesScope || scope == SummaryTerminalFilesTasksScope {
+	if scope == SummaryTerminalScope || scope == SummaryTerminalFilesScope {
 		return scope
 	}
 	return SummaryScope
-}
-
-func persistedV2Scope(scope string) string {
-	scope = normalizedV2Scope(scope)
-	if scope == SummaryTerminalFilesTasksScope {
-		return SummaryTerminalFilesScope
-	}
-	return scope
-}
-
-func (s *Service) effectiveHostScopeV2(record hostRecordV2) string {
-	scope := normalizedV2Scope(record.Scope)
-	if ScopeAllowsBatchTasks(scope) {
-		return scope
-	}
-	if scope == SummaryTerminalFilesScope && s.batchTasks.HostMaintenanceGranted(record.ID) {
-		return SummaryTerminalFilesTasksScope
-	}
-	return scope
-}
-
-func (s *Service) effectiveControllerScopeV2(record controllerRecordV2) string {
-	scope := normalizedV2Scope(record.Scope)
-	if ScopeAllowsBatchTasks(scope) {
-		return scope
-	}
-	if scope == SummaryTerminalFilesScope && s.batchTasks.ControllerMaintenanceGranted(record.ID) {
-		return SummaryTerminalFilesTasksScope
-	}
-	return scope
 }
 
 func validateFederationSummaryV2(

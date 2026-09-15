@@ -97,11 +97,6 @@ describe('desktop app catalogue', () => {
     expect(paths.indexOf('/system')).toBe(paths.indexOf('/cluster') + 1)
   })
 
-  it('keeps batch tasks inside the cluster desktop window without adding a launcher', () => {
-    expect(findDesktopApp('/cluster/tasks?task=' + 'a'.repeat(32))?.path).toBe('/cluster')
-    expect(desktopApps.map((app) => app.path)).not.toContain('/cluster/tasks')
-  })
-
   it('returns undefined for unknown paths', () => {
     expect(findDesktopApp('/nope')).toBeUndefined()
   })

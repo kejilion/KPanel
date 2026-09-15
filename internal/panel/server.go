@@ -129,14 +129,12 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, err
 	}
-	clusterBatchActions := &clusterBatchActionBackend{agent: agent, store: storage, now: time.Now}
 	clusterService, err := cluster.NewService(cluster.ServiceConfig{
 		DataDir: config.DataDir, PanelVersion: version.Version,
 		PublicURL:    config.PublicURL,
 		PrivateCIDRs: config.ClusterPrivateCIDRs,
 		Telemetry:    clusterTelemetrySource{agent: agent},
 		Terminal:     clusterTerminalSource{agent: agent},
-		BatchActions: clusterBatchActions,
 		SecurityEntrancePath: func() string {
 			entrance, _ := storage.SecurityEntrance()
 			if !authService.IsInitialized() || !entrance.Enabled {
@@ -148,7 +146,6 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize cluster service: %w", err)
 	}
-	clusterBatchActions.localNodeID = clusterService.NodeID()
 	desktopWorkspace, err := desktopworkspace.Open(filepath.Join(config.DataDir, "desktop-workspace"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize desktop workspace: %w", err)
@@ -452,7 +449,6 @@ func isFederationV2Request(r *http.Request) bool {
 	}
 	switch r.URL.Path {
 	case cluster.HistoryV2Path, cluster.HistoryRelayV2Path, "/api/v2/federation/pair",
-		"/api/v2/federation/pair-maintenance",
 		"/api/v2/federation/commit",
 		"/api/v2/federation/summary",
 		"/api/v2/federation/revoke",
@@ -465,8 +461,7 @@ func isFederationV2Request(r *http.Request) bool {
 		"/api/v2/federation/files/relay",
 		"/api/v2/federation/files/open",
 		"/api/v2/federation/files/link",
-		"/api/v2/federation/files/open-linked",
-		"/api/v2/federation/batch-task":
+		"/api/v2/federation/files/open-linked":
 		return true
 	default:
 		return false
