@@ -55,9 +55,8 @@
 | [磁盘分区管理](disk-partition-management.md) | 分区与挂载 |
 | [进程管理器设计](process-manager-design.md) | 进程视图与操作 |
 | [系统管理](system-management.md) | 宿主机系统操作 |
-| [多主机终端](multi-host-terminal.md) | 终端安全契约 |
+| [多主机终端](multi-host-terminal.md) | 交互终端、批量执行与安全契约 |
 | [集群监控](cluster-monitoring.md) | 多节点指标采集 |
-| [集群批量任务](cluster-batch-tasks.md) | 固定维护动作与恢复语义 |
 | [集群通知](cluster-notifications.md) | 告警与通知通道 |
 | [集群公开分享](cluster-public-share.md) | 对外分享入口 |
 | [历史监控设计](history-monitoring-design.md) | 指标留存与查询 |

@@ -32,8 +32,7 @@ type remoteHistoryV2API interface {
 }
 
 func historyScopeAllowed(scope string) bool {
-	return scope == SummaryScope || scope == SummaryTerminalScope || scope == SummaryTerminalFilesScope ||
-		scope == SummaryTerminalFilesTasksScope
+	return scope == SummaryScope || scope == SummaryTerminalScope || scope == SummaryTerminalFilesScope
 }
 
 // History reads the selected node's own bounded history. The center never

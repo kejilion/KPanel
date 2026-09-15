@@ -88,20 +88,6 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
 		return
 	}
-	if parts[0] == "cluster-batch" && s.cluster != nil {
-		if _, err := s.cluster.BatchTask(parts[1]); err != nil {
-			s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
-			return
-		}
-		for _, job := range s.cluster.BatchTaskJobs() {
-			if job.ID == "cluster-batch:"+parts[1] {
-				s.writeJSON(w, http.StatusOK, job)
-				return
-			}
-		}
-		s.writeProblem(w, r, http.StatusNotFound, "job_not_found", "任务不存在或已超出来源保留期", "")
-		return
-	}
 	if parts[0] == "backup" && s.backups != nil {
 		record, err := s.backups.Get(parts[1])
 		if err != nil {
@@ -158,14 +144,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	events, _ := s.store.ListAudit(200, "")
 	jobs := jobsFromAudit(events, limit)
-	page := jobsPage{Sources: make([]jobSourceStatus, 0, 7)}
+	page := jobsPage{Sources: make([]jobSourceStatus, 0, 4)}
 	page.Sources = append(page.Sources, jobSourceStatus{"audit", "available"})
 	available := 0
-	if s.cluster != nil {
-		jobs = mergeOwnerJobs(jobs, s.cluster.BatchTaskJobs())
-		page.Sources = append(page.Sources, jobSourceStatus{"cluster-batch", "available"})
-		available++
-	}
 	if s.backups != nil {
 		records := s.backups.List()
 		for _, r := range records {

@@ -1,8 +1,8 @@
 # KPanel 集群监控与联邦协议
 
-- 状态：集群监控已发布；多主机终端、跨面板文件与持久化批量任务已按 v2 Noise 模型实现；批量任务待发布，跨面板文件仍待 L3 实机验收与发布
+- 状态：集群监控已发布；多主机终端与轻量节点主动反向终端已按 v2 Noise 模型实现，自动化验证进行中；跨面板文件复制开发完成，待 L3 实机验收与发布
 - 协议：KPanel 新配对默认 `v2`、兼容既有 `v1`；轻量节点遥测仍为 `light-v1`，终端反向传输复用 v2 Noise 信封与终端 payload
-- 范围：主机概要监控、独立面板跳转、接入授权与撤销、多主机终端、轻量节点安全反向终端、跨面板文件复制、已授权 KPanel 的固定批量维护、非面板 Linux 主机只读采集及经认证的远程终端/文件管理
+- 范围：主机概要监控、独立面板跳转、接入授权与撤销、多主机终端、轻量节点安全反向终端、跨面板文件复制、非面板 Linux 主机只读采集及经认证的远程终端/文件管理
 
 ## 1. 产品边界
 
@@ -17,15 +17,12 @@ Agent、网站或 Docker 管理能力；默认低权限遥测进程只通过出�
 提供包含写入与删除的文件管理链路，并由独立的 root `ssh-login-broker` 读取 SSH 登录记录后只发布一条窄事件文件。Telegram 凭据始终只保留在中心端，
 不下发到轻量节点。中心端可修改其备注、排序或移除记录，但不会显示“打开面板”。
 
-新 v2 配对固定授权当前中心使用多主机终端和远程文件管理；目标端装载维护适配器时，同一次新配对还会
-显式授权固定批量系统维护；新轻量节点在相应 broker 通过认证并在线后
+新 v2 配对固定授权当前中心使用多主机终端和远程文件管理；新轻量节点在相应 broker 通过认证并在线后
 显示终端或文件管理能力。既有 v1 与旧 v2 配对不会因升级自动获得新增权限。
 终端使用独立 Panel Session 和 Noise v2 请求，不共享目标面板登录态；详细契约见
 [`multi-host-terminal.md`](multi-host-terminal.md)。跨面板文件复制契约见
 [`cross-kpanel-file-transfer.md`](cross-kpanel-file-transfer.md)。集群公开分享契约见
-[`cluster-public-share.md`](cluster-public-share.md)。固定批量维护契约见
-[`cluster-batch-tasks.md`](cluster-batch-tasks.md)；它只提供系统更新、两种清理、三种日志清理和延迟重启，
-不提供任意 Shell、脚本、路径、自定义参数或轻量节点维护。当前仍不提供免登录打开目标面板。
+[`cluster-public-share.md`](cluster-public-share.md)。当前不提供批量写操作或免登录打开目标面板。
 点击“打开面板”默认使用配对时保存的根地址；支持安全入口的目标面板会通过现有集群摘要同步可选入口路径，
 跳转时先进入该路径再由目标面板转到登录页，目标面板仍需独立登录。入口路径只在控制端声明兼容能力后返回，
 旧控制端、旧目标端或未启用安全入口时继续使用根地址，不需要重新配对。集群链路支持 HTTPS，或在没有域名时使用
@@ -50,10 +47,6 @@ Socket 读取本地 Agent，不配对、不生成密钥、不写入远端主机�
 刷新失败保留上一次成功数据。KPanel 与轻量节点合计最多 100 台远端主机，桌面三列、平板
 两列、手机一列。
 
-集群页通过“批量任务”进入独立路由 `/cluster/tasks`。该页读取服务端固定动作目录和持久化任务历史，
-最多选择 50 台符合权限的 KPanel，展示总体及逐台状态，并与统一任务中心双向深链。活动任务每 3 秒
-刷新；页面隐藏、桌面窗口失焦或任务全部结束后停止轮询。
-
 联邦摘要使用独立的 `HostTelemetry`，不返回网站、应用、Docker、SSH 端口、DNS、系统配置、
 凭据或宿主机管理能力。
 
@@ -73,11 +66,9 @@ kp2.<base64url-json>
 - 5 分钟过期，只能成功消费一次；
 - 连续 5 次错误后失效；
 - secret 只用于本地派生配对 PSK，不出现在联邦 HTTP 请求、状态、审计或日志中；
-- 已装载批量维护适配器的新目标端授权固定为
-  `cluster.summary.read cluster.terminal.open cluster.files.read cluster.system.maintenance`；未装载适配器或
-  回退到旧 v2 配对路径时最多为 `cluster.summary.read cluster.terminal.open cluster.files.read`。其中
+- 新授权权限固定为 `cluster.summary.read cluster.terminal.open cluster.files.read`；其中
   `cluster.files.read` 是兼容保留的历史 scope 名称，当前授权实际包含文件写入与删除等管理操作；
-  旧授权保留原 scope，不会因升级自动扩权；新增维护权限必须由管理员重新配对。
+  旧授权保留 `cluster.summary.read`，不会因升级自动扩权。
 - 新版中心执行“添加主机”时，在主配对成功后另行协商一个文件专用的双向 link；它复用既有
   Noise 静态身份但不建立反向 Host、不授予反向终端或概要权限。旧 v2 配对可由管理员显式
   启用该 link，无需重新配对；不支持 link 的旧版本继续保持原单向能力。
@@ -223,13 +214,6 @@ GET    /api/v1/cluster/hosts/{id}
 PATCH  /api/v1/cluster/hosts/{id}
 DELETE /api/v1/cluster/hosts/{id}
 POST   /api/v1/cluster/hosts/{id}/refresh
-GET    /api/v1/cluster/batch-actions
-GET    /api/v1/cluster/batch-tasks
-POST   /api/v1/cluster/batch-tasks
-GET    /api/v1/cluster/batch-tasks/{id}
-DELETE /api/v1/cluster/batch-tasks/{id}
-POST   /api/v1/cluster/batch-tasks/{id}/cancel
-POST   /api/v1/cluster/batch-tasks/{id}/retry
 POST   /api/v1/cluster/pairing-codes
 POST   /api/v1/cluster/pairing-codes/v2
 POST   /api/v1/cluster/light-enrollments
@@ -248,7 +232,6 @@ GET    /api/v1/federation/summary
 DELETE /api/v1/federation/revoke
 
 POST   /api/v2/federation/pair
-POST   /api/v2/federation/pair-maintenance
 POST   /api/v2/federation/commit
 POST   /api/v2/federation/summary
 POST   /api/v2/federation/revoke
@@ -259,7 +242,6 @@ POST   /api/v2/federation/terminal/resize
 POST   /api/v2/federation/terminal/close
 POST   /api/v2/federation/files/open
 GET    /api/v2/federation/files/stream
-POST   /api/v2/federation/batch-task
 
 POST   /api/v3/federation/light/enroll
 POST   /api/v3/federation/light/batch-enroll
@@ -339,14 +321,6 @@ payload 直接复用既有 v2 的 `TerminalOpenRequest`、`TerminalInputRequest`
 退出时 checkpoint。轮询进程重启后从最新快照和未完成事务恢复，真实状态仍由下一次远端
 摘要刷新。
 
-批量任务与新增维护授权 sidecar 独立保存在 `cluster-batch-task-state.json`，每次状态转换立即以 `0600`、
-同步和原子替换持久化，文件上限 4 MiB、最多 100 条。既有 `cluster-state-v2.json` 仍只保存旧版可识别的
-概要/终端/文件 scope，运行时合并 sidecar 后才展示维护权限，保证旧版本可继续加载主记录。服务恢复
-排队目标并继续跟踪带精确 execution ID 的运行目标；
-在提交确认前中断的目标进入 `needs_attention`，不会自动重放。该执行游标不进入 Panel 业务备份，
-避免恢复旧备份时重新激活维护动作；完整恢复与取消语义见
-[`cluster-batch-tasks.md`](cluster-batch-tasks.md)。
-
 删除主机时先尽力撤销远端授权，再让本地状态和凭据收敛。远端不可达不会把本地条目永久卡
 在“撤销中”；API 返回 `remoteRevoked=false`，目标端残留授权可在其“接入授权”页面手动
 撤销。若凭据清理暂时失败，API 会明确返回清理状态；下次服务初始化会删除无引用凭据。
@@ -362,13 +336,13 @@ SSRF 与 TLS 校验。对
 | 项目 | 决策 |
 | --- | --- |
 | 流量路径 | 浏览器 → 当前 Panel；当前 Panel → 远端 Panel HTTPS 或 Noise 加密 HTTP → 远端 Agent Unix Socket；轻量节点 telemetry、root terminal-broker 与 root file-broker → 中心 Panel（遥测 HMAC，终端/文件 v2 Noise），file-broker 在节点内直连 filemanager |
-| 不可信输入 | 主机名称/批量名称前缀、origin、单次或批量授权码、batch attempt ID、批量任务 action/host ID/并发/时限、DNS 结果、远端证书、远端 JSON、轻量节点时间戳/request ID/HMAC/遥测、终端与批量任务 Noise 信封 |
-| 权限与可写范围 | Panel 只写自身 v1/v2/light 集群状态、批量任务游标与凭据目录；目标系统只执行服务端映射的固定维护动作，不接受 Shell、路径或自定义参数 |
-| 最坏输入/输出 | 远端主机合计 100；单条批量授权最多 100 次、同时最多 16 条、批量接入状态 2 MiB；批量任务最多 100 条、每条 50 台、状态 4 MiB；v1 配对 16 KiB；v2 外层 96 KiB、解密负载 64 KiB；摘要 64 KiB；轻量请求有界；Store 4 MiB；控制端 256；各类有效授权码均有界 |
-| 最大并发 | 普通摘要轮询 8、单主机连接 2；批量任务最多 4 条活动、任务内与全局维护并发均为 4，同一主机只属于一条活动任务；每个轻量节点最多 4 个终端会话；轻量文件流按大文件/短请求分别全局 16、每身份 4 个，升级连接单独限额；请求与 nonce/rate-limit 缓存均有界 |
-| 超时与重试 | 普通联邦连接 2 秒、响应头 3 秒、总计 6 秒；批量维护单目标 60–3600 秒，提交不明不重放，失败重试创建新任务和 operation ID；批量接入以本机 root-only attempt 状态幂等续接；轻量终端长轮询最长 25 秒，节点请求总超时 40 秒；轻量文件命令接单最多 12 秒；轻量节点首次收到旧中心 404/405/426 时从 1 秒指数退避至 5 分钟，其他文件连接失败按 1/2/4/5 秒退避；Relay 丢失确认时可重发同一命令和完全相同的数据批次，浏览器不重复请求，写入不自动重试 |
+| 不可信输入 | 主机名称/批量名称前缀、origin、单次或批量授权码、batch attempt ID、DNS 结果、远端证书、远端 JSON、轻量节点时间戳/request ID/HMAC/遥测、终端 Noise 信封 |
+| 权限与可写范围 | Panel 只写自身 v1/v2/light 集群状态与凭据目录；不写宿主机业务目录 |
+| 最坏输入/输出 | 远端主机合计 100；单条批量授权最多 100 次、同时最多 16 条、批量状态 2 MiB；v1 配对 16 KiB；v2 外层 96 KiB、解密负载 64 KiB；摘要 64 KiB；轻量请求有界；Store 4 MiB；控制端 256；各类有效授权码均有界 |
+| 最大并发 | 普通摘要轮询 8、单主机连接 2；每个轻量节点最多 4 个终端会话；轻量文件流按大文件/短请求分别全局 16、每身份 4 个，升级连接单独限额；请求与 nonce/rate-limit 缓存均有界 |
+| 超时与重试 | 普通联邦连接 2 秒、响应头 3 秒、总计 6 秒；批量接入以本机 root-only attempt 状态幂等续接；轻量终端长轮询最长 25 秒，节点请求总超时 40 秒；轻量文件命令接单最多 12 秒；轻量节点首次收到旧中心 404/405/426 时从 1 秒指数退避至 5 分钟，其他文件连接失败按 1/2/4/5 秒退避；Relay 丢失确认时可重发同一命令和完全相同的数据批次，浏览器不重复请求，写入不自动重试 |
 | 真实状态与缓存 | 远端 Agent 实时摘要是事实；中心只缓存最近快照；本机摘要缓存 5 秒 |
-| 失败与恢复 | 保留最近成功快照；批量维护恢复排队目标、只跟踪带 execution ID 的运行目标、提交中断转人工核对；批量接入响应丢失时同 attempt 返回同一身份，撤销/到期只阻止新节点；认证/TLS/身份错误单独标识；先尽力撤销远端授权，再删除状态，最后清理凭据；孤立凭据启动时回收 |
+| 失败与恢复 | 保留最近成功快照；批量接入响应丢失时同 attempt 返回同一身份，撤销/到期只阻止新节点；认证/TLS/身份错误单独标识；先尽力撤销远端授权，再删除状态，最后清理凭据；孤立凭据启动时回收 |
 | 性能预算 | 浏览器单请求，无 N+1；100 台 KPanel 按 30 秒轮询约 3.3 请求/秒、最多 8 并发；轻量 telemetry 每台约 2 请求/分钟；轻量 SSH broker 每 5 秒轮询但使用 15 秒读取缓存，约 4 次/分钟本地日志采样，不产生额外网络请求；终端空闲时由长轮询维持，不触发中心出站 |
 | 网络入侵风险 | SSRF、DNS rebinding、TLS 劫持、单次/批量授权码泄露或猜测、批量配额耗尽、签名重放、伪造遥测、恶意大响应和轮询/上报 DoS；批量入口按来源与策略各 240/分钟限速，允许 100 台并发接入及有界重试 |
 
@@ -376,9 +350,6 @@ SSRF 与 TLS 校验。对
 
 自动测试至少覆盖：
 
-- 批量任务固定动作目录、无任意命令入口、重启确认、逐台能力判定、活动主机互斥、并发与时限上限；
-- 本机及 Noise v2 远端执行、精确任务 ID/动作/策略校验、审计、统一任务中心投影；提交结果不明、
-  取消、落盘失败、进程内协调和重启恢复均不重放维护动作；
 - 普通 Panel 的 v1.14.1 文件管理、跨节点复制与反向只读导出；轻量节点真实 TLS WebSocket 上传、下载和流间复制；轻量流提前拒绝、取消、帧篡改、缺失结束帧/最终 trailer、撤权及旧端点回退；
 
 - HTTPS 与字面量 IP origin 规范化、loopback/私网/元数据/IPv4-mapped IPv6、混合 DNS 与 rebinding；
@@ -453,10 +424,6 @@ default runlevel 链接和 hourly periodic 文件；查询失败为未知，`not
   `cluster-light-batch-state.json`，旧 Panel 会忽略它，回滚后尚未执行的 `kpb1` 命令不可接入；
   旧 Panel 不读取轻量节点状态与凭据，
   目标机上的 `kejilion-node` 只会变为离线重试，不影响宿主机业务；
-- 批量维护游标与新增授权 sidecar 另存于 `cluster-batch-task-state.json`，旧 Panel 会忽略它，既有
-  `cluster-state-v2.json` 不写入未知 scope；代码回滚不会撤销已经
-  提交到目标 Agent 的系统更新、清理或延迟重启，回滚前必须等待活动任务结束并核对
-  `needs_attention` 目标；该文件不随 Panel 业务备份恢复，避免旧动作被重新激活；
 - 旧版本继续读取 v1 文件并忽略 v2 文件，因此原有 v1 主机仍可回滚使用；
 - 如需彻底撤销，先在各节点“接入授权”中撤销控制端，再在停机维护窗口备份并删除集群文件；
 - 不得通过回滚删除 `/home/web`、Docker 容器或 Agent Token。

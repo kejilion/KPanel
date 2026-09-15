@@ -83,12 +83,6 @@ export const router = createRouter({
           meta: { titleKey: 'route.cluster' },
         },
         {
-          path: 'cluster/tasks',
-          name: 'cluster-batch-tasks',
-          component: () => loadNavigationRoute('/cluster/tasks'),
-          meta: { titleKey: 'route.clusterBatchTasks' },
-        },
-        {
           path: 'ai',
           name: 'ai',
           component: () => import('@/views/AiView.vue'),

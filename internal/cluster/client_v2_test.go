@@ -152,7 +152,7 @@ func TestRemoteClientV2EncryptsPairCommitSummaryAndRevoke(t *testing.T) {
 			return nil, err
 		}
 		psk := []byte(nil)
-		if request.URL.Path == v2PairTasksPath {
+		if request.URL.Path == v2PairPath {
 			psk = pairing.PairingKey
 		}
 		plaintext, peerStatic, handshake, err := openV2Request(
@@ -166,7 +166,7 @@ func TestRemoteClientV2EncryptsPairCommitSummaryAndRevoke(t *testing.T) {
 		}
 		var response any
 		switch request.URL.Path {
-		case v2PairTasksPath:
+		case v2PairPath:
 			var input v2PairPayload
 			if err := json.Unmarshal(plaintext, &input); err != nil ||
 				input.ControllerName != "controller" ||

@@ -200,9 +200,7 @@ func TestDockerAcceptedFollowsOwnerStateAndSurvivesAuditTruncation(t *testing.T)
 	}
 	agent.offline = true
 	r := performRequest(server, "GET", "/api/v1/jobs", nil, headers)
-	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"partial":true`) ||
-		!strings.Contains(r.Body.String(), `"source":"docker","state":"unavailable"`) ||
-		strings.Contains(r.Body.String(), `"succeeded"`) {
+	if r.Code != http.StatusServiceUnavailable || strings.Contains(r.Body.String(), `"succeeded"`) {
 		t.Fatalf("offline manufactured success: %s", r.Body.String())
 	}
 	agent.offline = false

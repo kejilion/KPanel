@@ -758,7 +758,7 @@ func TestServiceV2CredentialTransitionIsAtomicWithCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePairingCodeV2() error = %v", err)
 	}
-	route.setFailurePath(v2PairTasksPath)
+	route.setFailurePath(v2PairPath)
 	host, err := center.AddHost(context.Background(), AddHostInput{
 		Name: "atomic-transition", Origin: "http://8.8.8.8:1801",
 		PairingCode: code.Code,

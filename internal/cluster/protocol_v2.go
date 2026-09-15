@@ -19,7 +19,6 @@ import (
 const (
 	v2PairingCodePrefix  = "kp2."
 	v2PairPath           = "/api/v2/federation/pair"
-	v2PairTasksPath      = "/api/v2/federation/pair-maintenance"
 	v2CommitPath         = "/api/v2/federation/commit"
 	v2SummaryPath        = "/api/v2/federation/summary"
 	v2RevokePath         = "/api/v2/federation/revoke"
@@ -33,7 +32,6 @@ const (
 	v2FileOpenPath       = "/api/v2/federation/files/open"
 	v2FileLinkPath       = "/api/v2/federation/files/link"
 	v2FileLinkedOpenPath = "/api/v2/federation/files/open-linked"
-	v2BatchTaskPath      = "/api/v2/federation/batch-task"
 	maxV2PairingCode     = 1024
 	maxV2EnvelopeBytes   = MaxFederationV2Bytes
 )
@@ -137,13 +135,6 @@ type TerminalResizeRequest struct {
 
 type TerminalCloseRequest struct {
 	SessionID string `json:"sessionId"`
-}
-
-type batchTaskV2Request struct {
-	Operation   string      `json:"operation"`
-	Action      BatchAction `json:"action"`
-	OperationID string      `json:"operationId"`
-	ExecutionID string      `json:"executionId,omitempty"`
 }
 
 // TerminalRelayPollRequest is the reverse-transport message used by a
@@ -588,11 +579,11 @@ func v2PathAllowed(method, path string) bool {
 		return false
 	}
 	switch path {
-	case HistoryV2Path, HistoryRelayV2Path, v2PairPath, v2PairTasksPath, v2CommitPath, v2SummaryPath, v2RevokePath,
+	case HistoryV2Path, HistoryRelayV2Path, v2PairPath, v2CommitPath, v2SummaryPath, v2RevokePath,
 		v2TerminalOpenPath, v2TerminalOutputPath, v2TerminalInputPath,
 		v2TerminalResizePath, v2TerminalClosePath, v2TerminalRelayPath,
 		v2FileRelayPath, v2FileOpenPath,
-		v2FileLinkPath, v2FileLinkedOpenPath, v2BatchTaskPath:
+		v2FileLinkPath, v2FileLinkedOpenPath:
 		return true
 	default:
 		return false
