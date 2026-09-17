@@ -486,7 +486,7 @@ export const zhTWMessages = {
   "desktop.maximize": "最大化",
   "desktop.restore": "還原",
   "desktop.close": "關閉",
-  "desktop.splitResizeLabel": "調整左右視窗寬度",
+  "desktop.splitResizeLabel": "調整吸附視窗寬度",
   "desktop.splitResizeHint": "拖曳調整寬度；方向鍵微調，Enter 恢復均分",
   "desktop.splitResizeValue": "左側 {left}%，右側 {right}%",
   "desktop.back": "返回上一頁",
