@@ -205,4 +205,33 @@ describe('BatchTerminalPanel', () => {
     expect((pre.element as HTMLPreElement).scrollTop).toBe((pre.element as HTMLPreElement).scrollHeight - pre.element.clientHeight)
     wrapper.unmount()
   })
+
+  it('completes the host when a menu swallows the trailing exit but the prompt returns', async () => {
+    vi.useFakeTimers()
+    try {
+      const target = host('local', '本机', 'debian')
+      mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+      const fullOutput = '正在系统更新...\nroot@debian:~# '
+      let delivered = 0
+      let pollsAtStable = 0
+      mocks.output.mockImplementation(async () => {
+        if (delivered) {
+          pollsAtStable += 1
+          return { data: '', offset: fullOutput.length, nextOffset: fullOutput.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+        }
+        delivered = 1
+        return { data: Buffer.from(fullOutput).toString('base64'), offset: 0, nextOffset: fullOutput.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+      })
+      const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+      await wrapper.get('textarea').setValue('k 更新')
+      await wrapper.get('button.button--primary').trigger('click')
+      await vi.advanceTimersByTimeAsync(2500)
+
+      expect(wrapper.text()).toContain('执行成功')
+      expect(mocks.close).toHaveBeenCalledWith('session-local')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
