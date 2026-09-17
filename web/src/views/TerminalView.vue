@@ -568,12 +568,18 @@ onBeforeUnmount(() => {
         />
       </main>
       <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-quick-commands-open': quickCommandsOpen }">
-        <button class="terminal-stage__mobile-selector" type="button" aria-controls="terminal-connections-drawer" :aria-expanded="mobileConnectionsOpen" aria-label="打开主机选择" @click="mobileConnectionsOpen = true">
-          <Menu :size="18" />
-          <span>{{ t('terminal.selectBatchHosts') }}</span>
-          <small>{{ t('terminal.selectedHostCount', { count: selectedBatchHostIDs.size }) }}</small>
-        </button>
         <div class="terminal-tabs-bar terminal-tabs-bar--batch">
+          <button
+            class="terminal-tabs-bar__connections"
+            type="button"
+            aria-controls="terminal-connections-drawer"
+            :aria-expanded="mobileConnectionsOpen"
+            :title="t('terminal.expandConnections')"
+            :aria-label="t('terminal.expandConnections')"
+            @click="mobileConnectionsOpen = true"
+          >
+            <Menu :size="18" />
+          </button>
           <div class="terminal-tabs-bar__heading">
             <ListChecks :size="16" aria-hidden="true" />
             <strong>{{ t('terminal.batchExecution') }}</strong>
@@ -668,8 +674,7 @@ onBeforeUnmount(() => {
 .terminal-connections__empty { display:flex; align-items:center; justify-content:center; gap:8px; min-height:180px; padding:20px; color:var(--terminal-shell-muted,#8a9695); text-align:center; }
 .terminal-stage { position:relative; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
 .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr) 272px; }
-.terminal-stage--batch .batch-terminal-stage { grid-row:1 / -1; min-height:0; }
-.terminal-stage--batch.is-quick-commands-open .batch-terminal-stage { grid-column:1; grid-row:2; min-height:0; }
+.terminal-stage--batch .batch-terminal-stage { grid-column:1; grid-row:2; min-height:0; }
 .terminal-tabs-bar--batch { border-bottom:1px solid var(--terminal-shell-border,#29383a); }
 .terminal-tabs-bar__heading { display:flex; min-width:0; align-items:center; gap:9px; margin-right:auto; }
 .terminal-tabs-bar__heading svg { color:var(--brand); }
