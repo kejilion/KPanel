@@ -207,7 +207,7 @@ function selectSession(id: string): void {
 }
 
 function toggleQuickCommands(): void {
-  if (!activeSessionId.value) return
+  if (terminalMode.value === 'interactive' && !activeSessionId.value) return
   quickCommandsOpen.value = !quickCommandsOpen.value
   void nextTick(refreshActiveTerminal)
 }
@@ -218,6 +218,12 @@ function closeQuickCommands(): void {
 }
 
 function executeQuickCommand(command: string): void {
+  if (terminalMode.value === 'batch') {
+    if (batchRunning.value) return
+    batchPanelRefs.get('batch')?.applyQuickCommand(command)
+    closeQuickCommands()
+    return
+  }
   terminalRefs.get(activeSessionId.value)?.executeCommand(command)
 }
 
@@ -235,7 +241,25 @@ function toggleConnections(): void {
   void nextTick(refreshActiveTerminal)
 }
 
+interface BatchPanelHandle {
+  applyQuickCommand: (command: string) => void
+}
+
+const batchPanelRefs = new Map<string, BatchPanelHandle>()
+
+function setBatchPanelRef(
+  instance: Element | ComponentPublicInstance | null,
+): void {
+  const handle = instance as unknown as Partial<BatchPanelHandle> | null
+  if (typeof handle?.applyQuickCommand === 'function') {
+    batchPanelRefs.set('batch', handle as BatchPanelHandle)
+  } else {
+    batchPanelRefs.delete('batch')
+  }
+}
+
 function toggleTerminalMode(): void {
+  quickCommandsOpen.value = false
   if (terminalMode.value === 'interactive') {
     terminalMode.value = 'batch'
     connectionsCollapsed.value = false
@@ -543,13 +567,33 @@ onBeforeUnmount(() => {
           @execute="executeQuickCommand"
         />
       </main>
-      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch">
+      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-quick-commands-open': quickCommandsOpen }">
         <button class="terminal-stage__mobile-selector" type="button" aria-controls="terminal-connections-drawer" :aria-expanded="mobileConnectionsOpen" aria-label="打开主机选择" @click="mobileConnectionsOpen = true">
           <Menu :size="18" />
           <span>{{ t('terminal.selectBatchHosts') }}</span>
           <small>{{ t('terminal.selectedHostCount', { count: selectedBatchHostIDs.size }) }}</small>
         </button>
-        <BatchTerminalPanel class="batch-terminal-stage" :hosts="selectedBatchHosts" :session-capacity="batchSessionCapacity" @running-change="batchRunning = $event" />
+        <div class="terminal-tabs-bar terminal-tabs-bar--batch">
+          <div class="terminal-tabs-bar__heading">
+            <ListChecks :size="16" aria-hidden="true" />
+            <strong>{{ t('terminal.batchExecution') }}</strong>
+            <small>{{ t('terminal.selectedHostCount', { count: selectedBatchHostIDs.size }) }}</small>
+          </div>
+          <TerminalToolbar
+            quick-commands
+            :quick-commands-expanded="quickCommandsOpen"
+            :fullscreen="workspaceFullscreen && terminalMode === 'batch'"
+            @toggle-quick-commands="toggleQuickCommands"
+            @toggle-fullscreen="toggleWorkspaceFullscreen"
+          />
+        </div>
+        <BatchTerminalPanel :ref="setBatchPanelRef" class="batch-terminal-stage" :hosts="selectedBatchHosts" :session-capacity="batchSessionCapacity" @running-change="batchRunning = $event" />
+        <TerminalQuickCommands
+          :open="quickCommandsOpen && terminalMode === 'batch'"
+          :disabled="batchRunning"
+          @close="closeQuickCommands"
+          @execute="executeQuickCommand"
+        />
       </main>
     </section>
   </div>
@@ -625,6 +669,12 @@ onBeforeUnmount(() => {
 .terminal-stage { position:relative; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; min-height:0; overflow:hidden; padding:0; background:var(--terminal-shell-background,#0b1214); }
 .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr) 272px; }
 .terminal-stage--batch .batch-terminal-stage { grid-row:1 / -1; min-height:0; }
+.terminal-stage--batch.is-quick-commands-open .batch-terminal-stage { grid-column:1; grid-row:2; min-height:0; }
+.terminal-tabs-bar--batch { border-bottom:1px solid var(--terminal-shell-border,#29383a); }
+.terminal-tabs-bar__heading { display:flex; min-width:0; align-items:center; gap:9px; margin-right:auto; }
+.terminal-tabs-bar__heading svg { color:var(--brand); }
+.terminal-tabs-bar__heading strong { font-size:14px; color:var(--terminal-shell-text,#d8dddc); }
+.terminal-tabs-bar__heading small { color:var(--terminal-shell-muted,#8a9695); font-size:13px; }
 .terminal-stage.is-fullscreen { position:fixed; z-index:6000; inset:0; width:100vw; height:100dvh; min-height:0; grid-template-rows:auto minmax(0,1fr); padding:0; border:0; }
 .terminal-tabs-bar { display:flex; min-width:0; grid-row:1; grid-column:1 / -1; align-items:center; gap:12px; padding:8px 10px; border:0; border-bottom:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
 .terminal-tabs-bar__connections { display:none; width:34px; height:34px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:transparent; cursor:pointer; }
@@ -661,6 +711,7 @@ onBeforeUnmount(() => {
   .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
   .terminal-stage :deep(.terminal-quick-commands) { grid-row:auto; grid-column:auto; position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
   .terminal-stage--batch .batch-terminal-stage { grid-row:2; }
+  .terminal-stage--batch.is-quick-commands-open .batch-terminal-stage { grid-row:2; }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

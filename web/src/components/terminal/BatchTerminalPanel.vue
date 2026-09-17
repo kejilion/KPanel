@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
 import { CheckCircle2, ChevronDown, LoaderCircle, Play, TerminalSquare, XCircle } from '@lucide/vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
@@ -79,6 +79,18 @@ function expandAll(): void {
 
 function collapseAll(): void {
   expandedHosts.value = new Set()
+}
+
+let commandInput: HTMLTextAreaElement | undefined
+
+function setCommandInput(element: Element | ComponentPublicInstance | null): void {
+  commandInput = (element instanceof HTMLTextAreaElement ? element : undefined) ?? undefined
+}
+
+function applyQuickCommand(value: string): void {
+  if (executing.value || !value.trim()) return
+  command.value = value.replace(/\r\n?/g, '\n').replace(/\s+$/, '')
+  commandInput?.focus()
 }
 
 const allExpanded = computed(() => results.value.length > 0 && results.value.every((item) => expandedHosts.value.has(item.host.id)))
@@ -246,6 +258,8 @@ async function execute(): Promise<void> {
   }
 }
 
+defineExpose({ applyQuickCommand })
+
 onBeforeUnmount(() => {
   runController?.abort()
   runIdentity += 1
@@ -262,7 +276,7 @@ onBeforeUnmount(() => {
       </header>
       <label>
         <span class="sr-only">{{ phrase('输入自定义命令') }}</span>
-        <textarea v-model="command" :disabled="executing" rows="4" spellcheck="false" :placeholder="phrase('例如：uname -a')" />
+        <textarea v-model="command" :ref="setCommandInput" :disabled="executing" rows="4" spellcheck="false" :placeholder="phrase('例如：uname -a')" />
       </label>
       <footer>
         <p v-if="commandError" class="batch-command__error" role="alert">{{ commandError }}</p>

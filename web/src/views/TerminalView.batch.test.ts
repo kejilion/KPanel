@@ -4,7 +4,7 @@ import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TerminalView from './TerminalView.vue'
 
-const mocks = vi.hoisted(() => ({ hosts: vi.fn(), open: vi.fn(), terminalMounts: vi.fn() }))
+const mocks = vi.hoisted(() => ({ hosts: vi.fn(), open: vi.fn(), terminalMounts: vi.fn(), batchApplies: vi.fn() }))
 
 vi.mock('@/lib/api', () => ({
   api: { cluster: { hosts: mocks.hosts }, terminals: { open: mocks.open } },
@@ -24,6 +24,9 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 vi.mock('@/components/terminal/BatchTerminalPanel.vue', () => ({ default: defineComponent({
   name: 'BatchTerminalPanelStub',
   props: { hosts: { type: Array, default: () => [] }, sessionCapacity: Number },
+  setup(_props, { expose }) {
+    expose({ applyQuickCommand: mocks.batchApplies })
+  },
   template: '<div class="batch-panel-stub">{{ hosts.map((host) => host.name).join(",") }}</div>',
 }) }))
 
@@ -32,6 +35,7 @@ describe('terminal batch mode', () => {
     mocks.hosts.mockReset()
     mocks.open.mockReset()
     mocks.terminalMounts.mockReset()
+    mocks.batchApplies.mockReset()
     mocks.hosts.mockResolvedValue({
       items: [
         { id: 'local', name: '本机', origin: '', isLocal: true, kind: 'panel', terminalAvailable: true },
@@ -71,6 +75,24 @@ describe('terminal batch mode', () => {
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(1)
     expect(mocks.terminalMounts).toHaveBeenCalledTimes(1)
     expect(mocks.open).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('routes batch-mode quick commands through the panel handle and closes the drawer', async () => {
+    const wrapper = mount(TerminalView)
+    await flushPromises()
+
+    await wrapper.get('.terminal-mode-button').trigger('click')
+    expect(mocks.batchApplies).not.toHaveBeenCalled()
+
+    const batchStage = wrapper.findAll('.terminal-stage--batch')[0]
+    const aside = batchStage?.findComponent({ name: 'TerminalQuickCommands' })
+    expect(aside?.exists()).toBe(true)
+    aside?.vm.$emit('execute', 'docker ps')
+    await flushPromises()
+
+    expect(mocks.batchApplies).toHaveBeenCalledTimes(1)
+    expect(mocks.batchApplies).toHaveBeenCalledWith('docker ps')
     wrapper.unmount()
   })
 })
