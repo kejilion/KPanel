@@ -158,13 +158,13 @@ function topVisibleSnappedWindow(snap: WindowSnap): DesktopWindowState | undefin
   return top
 }
 
-const sideSplitPair = computed(() => {
-  const left = topVisibleSnappedWindow('left')
-  const right = topVisibleSnappedWindow('right')
-  if (!left || !right) return undefined
+const sideSplitWindows = computed(() => {
+  const snapped = [topVisibleSnappedWindow('left'), topVisibleSnappedWindow('right')]
+    .filter((windowState): windowState is DesktopWindowState => Boolean(windowState))
+  if (snapped.length === 0) return undefined
   return {
-    controls: `desktop-window-${left.id} desktop-window-${right.id}`,
-    z: Math.max(left.z, right.z),
+    controls: snapped.map((windowState) => `desktop-window-${windowState.id}`).join(' '),
+    z: Math.max(...snapped.map((windowState) => windowState.z)),
   }
 })
 const sideSplitBounds = computed(() => sideSplitRatioBounds(viewportSize.value))
@@ -3558,15 +3558,15 @@ function onViewportResize(): void {
     />
 
     <div
-      v-if="sideSplitPair"
+      v-if="sideSplitWindows"
       class="desktop-window-split-resizer"
       :class="{ 'desktop-window-split-resizer--active': sideSplitResizeActive }"
-      :style="{ zIndex: sideSplitPair.z }"
+      :style="{ zIndex: sideSplitWindows.z }"
       role="separator"
       tabindex="0"
       aria-orientation="vertical"
       :aria-label="i18n.t('desktop.splitResizeLabel')"
-      :aria-controls="sideSplitPair.controls"
+      :aria-controls="sideSplitWindows.controls"
       :aria-valuemin="sideSplitMinPercent"
       :aria-valuemax="sideSplitMaxPercent"
       :aria-valuenow="sideSplitPercent"

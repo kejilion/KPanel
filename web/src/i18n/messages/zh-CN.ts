@@ -499,7 +499,7 @@ export const zhCNMessages = {
   'desktop.maximize': '最大化',
   'desktop.restore': '还原',
   'desktop.close': '关闭',
-  'desktop.splitResizeLabel': '调整左右窗口宽度',
+  'desktop.splitResizeLabel': '调整吸附窗口宽度',
   'desktop.splitResizeHint': '拖拽调整宽度；方向键微调，Enter 恢复均分',
   'desktop.splitResizeValue': '左侧 {left}%，右侧 {right}%',
   'desktop.back': '返回上一页',

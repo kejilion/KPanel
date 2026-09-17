@@ -499,7 +499,7 @@ export const enUSMessages = {
   'desktop.maximize': 'Maximize',
   'desktop.restore': 'Restore',
   'desktop.close': 'Close',
-  'desktop.splitResizeLabel': 'Resize left and right windows',
+  'desktop.splitResizeLabel': 'Resize snapped windows',
   'desktop.splitResizeHint': 'Drag to resize; use arrow keys for fine control, or Enter to split evenly',
   'desktop.splitResizeValue': 'Left {left}%, right {right}%',
   'desktop.back': 'Go back',
