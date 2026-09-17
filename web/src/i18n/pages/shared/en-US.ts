@@ -1228,4 +1228,7 @@ export default [
   ["失败 {0}", "Failed {0}"],
   ["在左侧选择主机，输入命令后开始执行。", "Select hosts on the left, enter a command, and run it."],
   ["输出已截断，仅保留最后一部分。", "Output was truncated; only the latest portion is retained."],
+  ["展开输出", "Toggle output"],
+  ["全部展开", "Expand all"],
+  ["全部收起", "Collapse all"],
 ] as const satisfies PhraseCatalog

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { CheckCircle2, LoaderCircle, Play, TerminalSquare, XCircle } from '@lucide/vue'
+import { CheckCircle2, ChevronDown, LoaderCircle, Play, TerminalSquare, XCircle } from '@lucide/vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -40,6 +40,7 @@ const encoder = new TextEncoder()
 const command = ref('')
 const results = ref<BatchExecutionResult[]>([])
 const executing = ref(false)
+const expandedHosts = ref<Set<string>>(new Set())
 const activeSessions = new Map<string, string>()
 const outputDecoders = new Map<string, TextDecoder>()
 let runController: AbortController | undefined
@@ -64,6 +65,23 @@ watch(executing, (value) => emit('runningChange', value), { immediate: true })
 function operatingSystemIdentity(host: ClusterHost) {
   return detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
 }
+
+function toggleExpanded(hostID: string): void {
+  const next = new Set(expandedHosts.value)
+  if (next.has(hostID)) next.delete(hostID)
+  else next.add(hostID)
+  expandedHosts.value = next
+}
+
+function expandAll(): void {
+  expandedHosts.value = new Set(results.value.map((item) => item.host.id))
+}
+
+function collapseAll(): void {
+  expandedHosts.value = new Set()
+}
+
+const allExpanded = computed(() => results.value.length > 0 && results.value.every((item) => expandedHosts.value.has(item.host.id)))
 
 function executionLabel(state: ExecutionState): string {
   return phrase({
@@ -211,6 +229,7 @@ async function execute(): Promise<void> {
   results.value = targets.map((host) => ({
     host, state: 'queued', output: '', rawOutput: '', truncated: false, error: '',
   }))
+  expandedHosts.value = new Set()
   const queue = targets.map((host) => host.id)
   const worker = async () => {
     while (!current.signal.aborted && identity === runIdentity) {
@@ -260,9 +279,14 @@ onBeforeUnmount(() => {
     <div class="batch-status">
       <header>
         <div><strong>{{ phrase('执行情况') }}</strong><small v-if="results.length">{{ phrase(`已完成 ${completedCount} / ${results.length} 台`) }}</small></div>
-        <div v-if="results.length" class="batch-status__counts">
-          <span><CheckCircle2 :size="15" aria-hidden="true" /> {{ phrase(`成功 ${succeededCount}`) }}</span>
-          <span><XCircle :size="15" aria-hidden="true" /> {{ phrase(`失败 ${failedCount}`) }}</span>
+        <div v-if="results.length" class="batch-status__actions">
+          <div class="batch-status__counts">
+            <span><CheckCircle2 :size="15" aria-hidden="true" /> {{ phrase(`成功 ${succeededCount}`) }}</span>
+            <span><XCircle :size="15" aria-hidden="true" /> {{ phrase(`失败 ${failedCount}`) }}</span>
+          </div>
+          <button type="button" class="batch-status__toggle" @click="allExpanded ? collapseAll() : expandAll()">
+            {{ phrase(allExpanded ? '全部收起' : '全部展开') }}
+          </button>
         </div>
       </header>
       <div v-if="!results.length" class="batch-status__empty">
@@ -271,16 +295,26 @@ onBeforeUnmount(() => {
         <p>{{ phrase('在左侧选择主机，输入命令后开始执行。') }}</p>
       </div>
       <div v-else class="batch-result-list">
-        <article v-for="result in results" :key="result.host.id" class="batch-result">
-          <header>
+        <article v-for="result in results" :key="result.host.id" class="batch-result" :class="{ 'is-expanded': expandedHosts.has(result.host.id) }">
+          <button
+            type="button"
+            class="batch-result__summary"
+            :aria-expanded="expandedHosts.has(result.host.id)"
+            :aria-controls="`batch-result-detail-${result.host.id}`"
+            :aria-label="phrase('展开输出')"
+            @click="toggleExpanded(result.host.id)"
+          >
             <OperatingSystemIcon class="batch-result__os" :distro="operatingSystemIdentity(result.host).key" :label="operatingSystemIdentity(result.host).label" :show-tooltip="false" />
             <strong data-i18n-ignore>{{ result.host.name }}</strong>
             <StatusBadge :status="badgeStatus(result.state)" :label="executionLabel(result.state)" />
-          </header>
-          <pre v-if="result.output" data-i18n-ignore>{{ result.output }}</pre>
-          <div v-else-if="result.state === 'queued' || result.state === 'connecting' || result.state === 'running'" class="batch-result__pending"><LoaderCircle class="spin" :size="16" aria-hidden="true" /> {{ executionLabel(result.state) }}</div>
-          <p v-if="result.truncated" class="batch-result__notice">{{ phrase('输出已截断，仅保留最后一部分。') }}</p>
-          <p v-if="result.error" class="batch-result__error" role="alert"><span data-i18n-ignore>{{ result.error }}</span></p>
+            <ChevronDown :size="16" class="batch-result__chevron" aria-hidden="true" />
+          </button>
+          <div :id="`batch-result-detail-${result.host.id}`" v-show="expandedHosts.has(result.host.id)" class="batch-result__detail">
+            <pre v-if="result.output" data-i18n-ignore>{{ result.output }}</pre>
+            <div v-else-if="result.state === 'queued' || result.state === 'connecting' || result.state === 'running'" class="batch-result__pending"><LoaderCircle class="spin" :size="16" aria-hidden="true" /> {{ executionLabel(result.state) }}</div>
+            <p v-if="result.truncated" class="batch-result__notice">{{ phrase('输出已截断，仅保留最后一部分。') }}</p>
+            <p v-if="result.error" class="batch-result__error" role="alert"><span data-i18n-ignore>{{ result.error }}</span></p>
+          </div>
         </article>
       </div>
     </div>
@@ -313,6 +347,9 @@ onBeforeUnmount(() => {
 .batch-status__counts span { display: inline-flex; align-items: center; gap: 5px; color: var(--terminal-shell-muted, #8a9695); font-size: 13px; }
 .batch-status__counts span:first-child svg { color: var(--success); }
 .batch-status__counts span:last-child svg { color: var(--danger); }
+.batch-status__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.batch-status__toggle { padding: 5px 12px; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--radius-sm); color: var(--terminal-shell-text, #d8dddc); background: transparent; font: inherit; font-size: 13px; cursor: pointer; transition: border-color .16s ease, color .16s ease; }
+.batch-status__toggle:hover, .batch-status__toggle:focus-visible { border-color: var(--brand); color: var(--brand); outline: none; }
 .batch-status__empty { display: grid; place-content: center; justify-items: center; gap: 7px; padding: 24px; text-align: center; }
 .batch-status__empty > span { display: grid; width: 52px; height: 52px; place-items: center; color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); border-radius: var(--radius); }
 .batch-status__empty strong { font-size: 16px; }
@@ -321,7 +358,13 @@ onBeforeUnmount(() => {
 .batch-result { min-width: 0; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--radius-sm); background: var(--terminal-shell-panel, #111a1d); }
 .batch-result:last-child { margin-bottom: 0; }
 .batch-result > header { display: flex; min-height: 58px; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--terminal-shell-border, #29383a); }
-.batch-result > header strong { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 14px; }
+.batch-result__summary { display: flex; width: 100%; min-height: 58px; align-items: center; gap: 10px; padding: 10px 12px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.batch-result__summary:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.batch-result__summary strong { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 14px; }
+.batch-result__chevron { flex: 0 0 auto; color: var(--terminal-shell-muted, #8a9695); transition: transform .16s ease; }
+.batch-result.is-expanded > .batch-result__summary { border-bottom: 1px solid var(--terminal-shell-border, #29383a); }
+.batch-result.is-expanded > .batch-result__summary .batch-result__chevron { transform: rotate(180deg); color: var(--brand); }
+.batch-result__detail { display: grid; min-width: 0; }
 .batch-result :deep(.batch-result__os) { width: 34px; height: 34px; flex: 0 0 auto; border-radius: var(--radius-sm); box-shadow: none; }
 .batch-result pre { max-height: 190px; margin: 0; overflow: auto; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .batch-result__pending { display: flex; min-height: 64px; align-items: center; justify-content: center; gap: 7px; color: var(--terminal-shell-muted, #8a9695); font-size: 14px; }

@@ -92,12 +92,37 @@ describe('BatchTerminalPanel', () => {
       'uname -a\rexit\r',
     ])
     expect(mocks.input.mock.calls.every((call) => !decodeInput(call[1]).includes('/bin/sh -c'))).toBe(true)
-    expect(wrapper.text()).toContain('local ok')
-    expect(wrapper.text()).toContain('remote failed')
     expect(wrapper.text()).toContain('执行成功')
     expect(wrapper.text()).toContain('执行失败')
-    expect(wrapper.text()).toContain('exit status 2')
     expect(wrapper.html()).not.toContain('\u001b[32m')
+    const summaries = wrapper.findAll('.batch-result__summary')
+    expect(summaries).toHaveLength(2)
+    const details = wrapper.findAll('.batch-result__detail')
+    expect(summaries.every((summary) => summary.attributes('aria-expanded') === 'false')).toBe(true)
+    expect(details.every((detail) => (detail.element as HTMLElement).style.display === 'none')).toBe(true)
+
+    await summaries[0]!.trigger('click')
+    expect(summaries[0]!.attributes('aria-expanded')).toBe('true')
+    expect(((details[0]!.element) as HTMLElement).style.display).toBe('')
+    expect(((details[1]!.element) as HTMLElement).style.display).toBe('none')
+
+    await summaries[0]!.trigger('click')
+    expect(summaries[0]!.attributes('aria-expanded')).toBe('false')
+    expect(((details[0]!.element) as HTMLElement).style.display).toBe('none')
+
+    await summaries[1]!.trigger('click')
+    expect(((details[1]!.element) as HTMLElement).style.display).toBe('')
+
+    expect(wrapper.get('.batch-status__toggle').text()).toBe('全部展开')
+    await wrapper.get('.batch-status__toggle').trigger('click')
+    expect(summaries.every((summary) => summary.attributes('aria-expanded') === 'true')).toBe(true)
+    expect(details.every((detail) => (detail.element as HTMLElement).style.display === '')).toBe(true)
+    expect(wrapper.get('.batch-status__toggle').text()).toBe('全部收起')
+
+    await wrapper.get('.batch-status__toggle').trigger('click')
+    expect(summaries.every((summary) => summary.attributes('aria-expanded') === 'false')).toBe(true)
+    expect(details.every((detail) => (detail.element as HTMLElement).style.display === 'none')).toBe(true)
+    expect(wrapper.get('.batch-status__toggle').text()).toBe('全部展开')
     wrapper.unmount()
   })
 
