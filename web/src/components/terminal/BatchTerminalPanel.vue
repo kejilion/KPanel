@@ -20,7 +20,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ runningChange: [running: boolean] }>()
 
-type ExecutionState = 'queued' | 'connecting' | 'running' | 'succeeded' | 'failed' | 'timed_out'
+type ExecutionState = 'queued' | 'connecting' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'stopped'
 
 interface BatchExecutionResult {
   host: ClusterHost
@@ -65,7 +65,7 @@ const canExecute = computed(() => !executing.value
   && props.hosts.length > 0
   && props.sessionCapacity > 0)
 const completedCount = computed(() => results.value.filter((item) =>
-  item.state === 'succeeded' || item.state === 'failed' || item.state === 'timed_out').length)
+  item.state === 'succeeded' || item.state === 'failed' || item.state === 'timed_out' || item.state === 'stopped').length)
 const succeededCount = computed(() => results.value.filter((item) => item.state === 'succeeded').length)
 const failedCount = computed(() => results.value.filter((item) => item.state === 'failed' || item.state === 'timed_out').length)
 
@@ -129,7 +129,7 @@ const allExpanded = computed(() => results.value.length > 0 && results.value.eve
 function executionLabel(state: ExecutionState): string {
   return phrase({
     queued: '等待执行', connecting: '正在连接', running: '命令执行中', succeeded: '执行成功',
-    failed: '执行失败', timed_out: '执行超时',
+    failed: '执行失败', timed_out: '执行超时', stopped: '已手动终止',
   }[state])
 }
 
@@ -137,6 +137,7 @@ function badgeStatus(state: ExecutionState): string {
   if (state === 'succeeded') return 'succeeded'
   if (state === 'failed') return 'failed'
   if (state === 'timed_out') return 'expired'
+  if (state === 'stopped') return 'expired'
   if (state === 'running') return 'running_job'
   return 'queued'
 }
@@ -318,6 +319,18 @@ async function execute(): Promise<void> {
   }
 }
 
+function stopExecution(): void {
+  if (!executing.value) return
+  runController?.abort()
+  for (const item of results.value) {
+    if (item.state === 'queued' || item.state === 'connecting' || item.state === 'running') {
+      item.state = 'stopped'
+    }
+  }
+  for (const [hostID, sessionID] of activeSessions) void closeSession(hostID, sessionID)
+  executing.value = false
+}
+
 defineExpose({ applyQuickCommand })
 
 onBeforeUnmount(() => {
@@ -343,10 +356,13 @@ onBeforeUnmount(() => {
         <p v-if="commandError" class="batch-command__error" role="alert">{{ commandError }}</p>
         <p v-else-if="sessionCapacity < 1" class="batch-command__error" role="alert">{{ phrase('请先关闭至少一个交互终端。') }}</p>
         <p v-else>{{ phrase('页面关闭会终止仍在执行的命令。') }}</p>
-        <button class="button button--primary" type="button" :disabled="!canExecute" @click="execute">
-          <LoaderCircle v-if="executing" class="spin" :size="18" aria-hidden="true" />
-          <Play v-else :size="18" aria-hidden="true" />
-          {{ executing ? phrase('正在执行…') : phrase('执行命令') }}
+        <button v-if="executing" class="button button--danger" type="button" @click="stopExecution">
+          <XCircle :size="18" aria-hidden="true" />
+          {{ phrase('终止执行') }}
+        </button>
+        <button v-else class="button button--primary" type="button" :disabled="!canExecute" @click="execute">
+          <Play :size="18" aria-hidden="true" />
+          {{ phrase('执行命令') }}
         </button>
       </footer>
     </div>

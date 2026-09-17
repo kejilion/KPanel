@@ -234,4 +234,26 @@ describe('BatchTerminalPanel', () => {
       vi.useRealTimers()
     }
   })
+
+  it('stops the batch run manually and closes open sessions', async () => {
+    const target = host('local', '本机', 'debian')
+    mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+    mocks.output.mockImplementation((_sessionID: string, _offset: number, signal: AbortSignal) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+    }))
+    const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+    await wrapper.get('textarea').setValue('sleep 3600')
+    await wrapper.get('button.button--primary').trigger('click')
+    await flushPromises()
+
+    const stopButton = wrapper.get('.batch-command footer .button--danger')
+    expect(stopButton.text()).toContain('终止执行')
+    await stopButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已手动终止')
+    expect(mocks.close).toHaveBeenCalledWith('session-local')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).disabled).toBe(false)
+    wrapper.unmount()
+  })
 })

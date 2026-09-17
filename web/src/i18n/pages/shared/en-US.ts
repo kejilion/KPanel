@@ -1220,7 +1220,6 @@ export default [
   ["例如：uname -a", "For example: uname -a"],
   ["请先关闭至少一个交互终端。", "Close at least one interactive terminal first."],
   ["页面关闭会终止仍在执行的命令。", "Closing this page stops commands that are still running."],
-  ["正在执行…", "Running…"],
   ["命令执行中", "Running"],
   ["执行情况", "Execution status"],
   ["已完成 {0} / {1} 台", "Completed {0} of {1} hosts"],
@@ -1229,6 +1228,8 @@ export default [
   ["在左侧选择主机，输入命令后开始执行。", "Select hosts on the left, enter a command, and run it."],
   ["输出已截断，仅保留最后一部分。", "Output was truncated; only the latest portion is retained."],
   ["展开输出", "Toggle output"],
+  ["已手动终止", "Stopped manually"],
+  ["终止执行", "Stop execution"],
   ["全部展开", "Expand all"],
   ["全部收起", "Collapse all"],
 ] as const satisfies PhraseCatalog
