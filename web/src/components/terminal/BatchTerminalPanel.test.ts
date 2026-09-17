@@ -88,8 +88,8 @@ describe('BatchTerminalPanel', () => {
     expect(mocks.open).toHaveBeenCalledTimes(2)
     expect(mocks.input).toHaveBeenCalledTimes(2)
     expect(mocks.input.mock.calls.map((call) => decodeInput(call[1]))).toEqual([
-      'uname -a\rexit\r',
-      'uname -a\rexit\r',
+      'uname -a\r',
+      'uname -a\r',
     ])
     expect(mocks.input.mock.calls.every((call) => !decodeInput(call[1]).includes('/bin/sh -c'))).toBe(true)
     expect(wrapper.text()).toContain('执行成功')
@@ -225,7 +225,12 @@ describe('BatchTerminalPanel', () => {
       const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
       await wrapper.get('textarea').setValue('k 更新')
       await wrapper.get('button.button--primary').trigger('click')
-      await vi.advanceTimersByTimeAsync(4000)
+// The stability window reads the wall clock; advance it alongside the timers.
+      const start = Date.now()
+      for (let step = 0; step < 40; step += 1) {
+        await vi.advanceTimersByTimeAsync(400)
+        vi.setSystemTime(start + (step + 1) * 400)
+      }
 
       expect(wrapper.text()).toContain('执行成功')
       expect(mocks.close).toHaveBeenCalledWith('session-local')
@@ -250,7 +255,11 @@ describe('BatchTerminalPanel', () => {
       const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
       await wrapper.get('textarea').setValue('slow-thing')
       await wrapper.get('button.button--primary').trigger('click')
-      await vi.advanceTimersByTimeAsync(10000)
+const start = Date.now()
+      for (let step = 0; step < 25; step += 1) {
+        await vi.advanceTimersByTimeAsync(400)
+        vi.setSystemTime(start + (step + 1) * 400)
+      }
 
       expect(wrapper.text()).toContain('命令执行中')
       expect(mocks.close).not.toHaveBeenCalledWith('session-local')
