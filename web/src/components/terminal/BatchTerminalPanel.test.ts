@@ -141,4 +141,37 @@ describe('BatchTerminalPanel', () => {
     await flushPromises()
     expect(mocks.close).toHaveBeenCalledWith('session-local')
   })
+
+  it('retries transient output polling failures and keeps running long tasks', async () => {
+    const target = host('local', '本机', 'debian')
+    mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+    let polls = 0
+    mocks.output.mockImplementation(async (sessionID: string) => {
+      polls += 1
+      if (polls <= 2) throw new Error('transient network blip')
+      return {
+        data: Buffer.from('eventually done\r\n').toString('base64'),
+        offset: 0,
+        nextOffset: 14,
+        truncated: false,
+        exitedAt: '2026-09-15T00:00:09Z',
+        exitError: undefined,
+        closed: true,
+        sessionID,
+      }
+    })
+    const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+    await wrapper.get('textarea').setValue('sleep infinity')
+    await wrapper.get('button.button--primary').trigger('click')
+    await flushPromises()
+
+    for (let waited = 0; waited < 40 && mocks.output.mock.calls.length < 3; waited += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await flushPromises()
+
+    expect(mocks.output).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).toContain('执行成功')
+    wrapper.unmount()
+  })
 })

@@ -34,7 +34,10 @@ interface BatchExecutionResult {
 const MAX_CONCURRENCY = 4
 const MAX_COMMAND_BYTES = 16 * 1024
 const MAX_CAPTURE_CHARACTERS = 128 * 1024
-const EXECUTION_TIMEOUT_MS = 30 * 60 * 1000
+const EXECUTION_TIMEOUT_MS = 4 * 60 * 60 * 1000
+// Transient output-poll failures are retried with backoff instead of failing the host.
+const OUTPUT_RETRY_LIMIT = 5
+const OUTPUT_RETRY_BASE_DELAY_MS = 500
 const encoder = new TextEncoder()
 
 const command = ref('')
@@ -193,15 +196,27 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
     await sendTerminalText(sessionID, `${submittedCommand}${lineEnding}exit\r`, signal)
 
     let offset = opened.offset
+    let pollFailures = 0
     const deadline = Date.now() + EXECUTION_TIMEOUT_MS
     while (!signal.aborted && identity === runIdentity) {
       if (Date.now() >= deadline) {
         result.state = 'timed_out'
-        result.error = phrase('超过 30 分钟，终端会话已停止。')
+        result.error = phrase('超过 4 小时，终端会话已停止。')
         await closeSession(hostID, sessionID)
         return
       }
-      const chunk = await api.terminals.output(sessionID, offset, signal)
+      let chunk
+      try {
+        chunk = await api.terminals.output(sessionID, offset, signal)
+        pollFailures = 0
+      } catch (reason) {
+        if (identity !== runIdentity || signal.aborted) return
+        if (reason instanceof ApiError && reason.code === 'terminal_not_found') throw reason
+        pollFailures += 1
+        if (pollFailures > OUTPUT_RETRY_LIMIT) throw reason
+        await new Promise((resolve) => setTimeout(resolve, OUTPUT_RETRY_BASE_DELAY_MS * 2 ** (pollFailures - 1)))
+        continue
+      }
       offset = chunk.nextOffset
       result.truncated = result.truncated || chunk.truncated
       const finished = Boolean(chunk.exitedAt || chunk.closed)

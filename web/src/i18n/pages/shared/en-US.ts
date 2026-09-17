@@ -1212,7 +1212,7 @@ export default [
   ["目标主机的终端当前不可用。", "The target host terminal is currently unavailable."],
   ["目标终端连接已中断。", "The target terminal connection was interrupted."],
   ["连接或执行失败，请重试。", "Connection or execution failed. Try again."],
-  ["超过 30 分钟，终端会话已停止。", "The terminal session was stopped after exceeding 30 minutes."],
+  ["超过 4 小时，终端会话已停止。", "The terminal session was stopped after exceeding 4 hours."],
   ["批量执行", "Batch execution"],
   ["自定义命令", "Custom command"],
   ["已选择 {0} 台主机", "{0} hosts selected"],
