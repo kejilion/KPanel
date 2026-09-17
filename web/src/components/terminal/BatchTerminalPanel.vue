@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
 import { CheckCircle2, ChevronDown, LoaderCircle, Play, TerminalSquare, XCircle } from '@lucide/vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
@@ -69,15 +69,37 @@ function operatingSystemIdentity(host: ClusterHost) {
   return detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
 }
 
+const outputPreElements = new Map<string, HTMLPreElement>()
+
+function setOutputPre(hostID: string, element: Element | ComponentPublicInstance | null): void {
+  if (element instanceof HTMLPreElement) outputPreElements.set(hostID, element)
+  else outputPreElements.delete(hostID)
+}
+
+function isScrolledToBottom(hostID: string): boolean {
+  const pre = outputPreElements.get(hostID)
+  if (!pre) return true
+  return pre.scrollHeight - pre.scrollTop - pre.clientHeight < 8
+}
+
+function scrollOutputToBottom(hostID: string): void {
+  const pre = outputPreElements.get(hostID)
+  if (pre) pre.scrollTop = pre.scrollHeight
+}
+
 function toggleExpanded(hostID: string): void {
   const next = new Set(expandedHosts.value)
   if (next.has(hostID)) next.delete(hostID)
   else next.add(hostID)
   expandedHosts.value = next
+  if (next.has(hostID)) void nextTick(() => scrollOutputToBottom(hostID))
 }
 
 function expandAll(): void {
   expandedHosts.value = new Set(results.value.map((item) => item.host.id))
+  void nextTick(() => {
+    for (const hostID of expandedHosts.value) scrollOutputToBottom(hostID)
+  })
 }
 
 function collapseAll(): void {
@@ -140,6 +162,7 @@ function plainTerminalOutput(value: string): string {
 }
 
 function appendOutput(result: BatchExecutionResult, hostID: string, data: string, final = false): void {
+  const wasFollowing = expandedHosts.value.has(hostID) && isScrolledToBottom(hostID)
   const decoder = outputDecoders.get(hostID) || new TextDecoder()
   outputDecoders.set(hostID, decoder)
   if (data) result.rawOutput += decoder.decode(decodeBase64(data), { stream: !final })
@@ -149,6 +172,7 @@ function appendOutput(result: BatchExecutionResult, hostID: string, data: string
     result.truncated = true
   }
   result.output = plainTerminalOutput(result.rawOutput)
+  if (wasFollowing) void nextTick(() => scrollOutputToBottom(hostID))
 }
 
 async function sendTerminalText(sessionID: string, value: string, signal: AbortSignal): Promise<void> {
@@ -276,6 +300,7 @@ async function execute(): Promise<void> {
 defineExpose({ applyQuickCommand })
 
 onBeforeUnmount(() => {
+  outputPreElements.clear()
   runController?.abort()
   runIdentity += 1
   for (const [hostID, sessionID] of activeSessions) void closeSession(hostID, sessionID)
@@ -339,7 +364,7 @@ onBeforeUnmount(() => {
             <ChevronDown :size="16" class="batch-result__chevron" aria-hidden="true" />
           </button>
           <div :id="`batch-result-detail-${result.host.id}`" v-show="expandedHosts.has(result.host.id)" class="batch-result__detail">
-            <pre v-if="result.output" data-i18n-ignore>{{ result.output }}</pre>
+            <pre v-if="result.output" :ref="(element) => setOutputPre(result.host.id, element)" data-i18n-ignore>{{ result.output }}</pre>
             <div v-else-if="result.state === 'queued' || result.state === 'connecting' || result.state === 'running'" class="batch-result__pending"><LoaderCircle class="spin" :size="16" aria-hidden="true" /> {{ executionLabel(result.state) }}</div>
             <p v-if="result.truncated" class="batch-result__notice">{{ phrase('输出已截断，仅保留最后一部分。') }}</p>
             <p v-if="result.error" class="batch-result__error" role="alert"><span data-i18n-ignore>{{ result.error }}</span></p>
