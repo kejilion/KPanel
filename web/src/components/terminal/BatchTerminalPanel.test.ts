@@ -174,4 +174,35 @@ describe('BatchTerminalPanel', () => {
     expect(wrapper.text()).toContain('执行成功')
     wrapper.unmount()
   })
+
+  it('scrolls an expanded output block to the latest content', async () => {
+    const target = host('local', '本机', 'debian')
+    const longOutput = `${'line\n'.repeat(120)}tail-visible`
+    mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+    mocks.output.mockResolvedValue({
+      data: Buffer.from(longOutput).toString('base64'),
+      offset: 0,
+      nextOffset: longOutput.length,
+      truncated: false,
+      exitedAt: '2026-09-15T00:00:05Z',
+      exitError: undefined,
+      closed: true,
+    })
+    const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+    await wrapper.get('textarea').setValue('cat big.log')
+    await wrapper.get('button.button--primary').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.batch-result__summary').trigger('click')
+    await flushPromises()
+    const pre = wrapper.get('.batch-result__detail pre')
+    expect((pre.element as HTMLPreElement).scrollTop).toBe((pre.element as HTMLPreElement).scrollHeight - pre.element.clientHeight)
+
+    // Collapse and re-expand must land at the latest content again.
+    await wrapper.get('.batch-result__summary').trigger('click')
+    await wrapper.get('.batch-result__summary').trigger('click')
+    await flushPromises()
+    expect((pre.element as HTMLPreElement).scrollTop).toBe((pre.element as HTMLPreElement).scrollHeight - pre.element.clientHeight)
+    wrapper.unmount()
+  })
 })
