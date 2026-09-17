@@ -225,10 +225,35 @@ describe('BatchTerminalPanel', () => {
       const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
       await wrapper.get('textarea').setValue('k 更新')
       await wrapper.get('button.button--primary').trigger('click')
-      await vi.advanceTimersByTimeAsync(2500)
+      await vi.advanceTimersByTimeAsync(4000)
 
       expect(wrapper.text()).toContain('执行成功')
       expect(mocks.close).toHaveBeenCalledWith('session-local')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps running when output merely ends with a dollar sign that is not a prompt', async () => {
+    vi.useFakeTimers()
+    try {
+      const target = host('local', '本机', 'debian')
+      mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+      const staleTail = 'calculating... total $ '
+      let delivered = 0
+      mocks.output.mockImplementation(async () => {
+        if (delivered) return { data: '', offset: staleTail.length, nextOffset: staleTail.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+        delivered = 1
+        return { data: Buffer.from(staleTail).toString('base64'), offset: 0, nextOffset: staleTail.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+      })
+      const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+      await wrapper.get('textarea').setValue('slow-thing')
+      await wrapper.get('button.button--primary').trigger('click')
+      await vi.advanceTimersByTimeAsync(10000)
+
+      expect(wrapper.text()).toContain('命令执行中')
+      expect(mocks.close).not.toHaveBeenCalledWith('session-local')
       wrapper.unmount()
     } finally {
       vi.useRealTimers()
