@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [1.19.0-rc.4] - 2026-09-17
+
+### Added
+
+- 终端批量执行与快捷命令打通：批量模式内可直接选用面板同步的快捷命令。
+
+### Changed
+
+- 批量执行默认折叠已完成主机的输出，长任务输出不再挤占视图。
+- 更新 gosec 覆盖说明并固定终端空闲保活参数。
+
+### Fixed
+
+- 轻量节点批量接入的 enrollment 密钥比较改为常数时间，避免计时侧信道。
+- 批量执行对长任务的输出与状态更新更健壮。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，无需发布新的受管脚本。
+
 ## [1.19.0-rc.3] - 2026-09-16
 
 ### Added
