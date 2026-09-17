@@ -41,9 +41,12 @@ const OUTPUT_RETRY_BASE_DELAY_MS = 500
 // Menus and wrappers (e.g. `k 更新`, subshells) can swallow the trailing
 // `exit` sent with the command, so the shell never reports exitedAt. A steady
 // shell prompt with no further output means the command itself has finished.
-const PROMPT_STABLE_MS = 1500
+// The prompt must look like `user@host:path$/#` or a fallback `bash-N.N$`:
+// bare `$`/`#` line endings would also match ordinary command output and
+// wrongly finish still-running hosts.
+const PROMPT_STABLE_MS = 3000
 const PROMPT_POLL_IDLE_MS = 300
-const promptPattern = /(?:^|\r?\n|\r)[^\r\n]{0,120}[$#] ?$/
+const promptPattern = /(?:^|\r?\n|\r)[^\r\n]{0,64}@[^\r\n]{0,64}:[^\r\n]{0,80}[$#] ?$|(?:^|\r?\n|\r)(?:bash|sh)-[\d.]+\$ ?$/
 const encoder = new TextEncoder()
 
 const command = ref('')
