@@ -38,14 +38,16 @@ const EXECUTION_TIMEOUT_MS = 4 * 60 * 60 * 1000
 // Transient output-poll failures are retried with backoff instead of failing the host.
 const OUTPUT_RETRY_LIMIT = 5
 const OUTPUT_RETRY_BASE_DELAY_MS = 500
-// Menus and wrappers (e.g. `k 更新`, subshells) can swallow the trailing
-// `exit` sent with the command, so the shell never reports exitedAt. A steady
-// shell prompt with no further output means the command itself has finished.
-// The prompt must look like `user@host:path$/#` or a fallback `bash-N.N$`:
-// bare `$`/`#` line endings would also match ordinary command output and
-// wrongly finish still-running hosts.
+// A PTY input queue has no recipient: whoever reads first consumes the bytes,
+// so a trailing `exit` sent blind lands in menus or `read` loops instead of
+// the shell. Send only the command, then wait for a steady shell prompt — at
+// that point the queue is clear and a follow-up `exit` reliably reaches bash,
+// whose exit status inherits the last command's (real success/failure for
+// menu scripts too). Nested wrappers swallow early attempts; each prompt
+// reappearance retries, and exhaustion falls back to closing the session.
 const PROMPT_STABLE_MS = 3000
 const PROMPT_POLL_IDLE_MS = 300
+const MAX_EXIT_ATTEMPTS = 3
 const promptPattern = /(?:^|\r?\n|\r)[^\r\n]{0,64}@[^\r\n]{0,64}:[^\r\n]{0,80}[$#] ?$|(?:^|\r?\n|\r)(?:bash|sh)-[\d.]+\$ ?$/
 const encoder = new TextEncoder()
 
@@ -227,11 +229,12 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
     }
     result.state = 'running'
     const lineEnding = /[\r\n]$/.test(submittedCommand) ? '' : '\r'
-    await sendTerminalText(sessionID, `${submittedCommand}${lineEnding}exit\r`, signal)
+    await sendTerminalText(sessionID, `${submittedCommand}${lineEnding}`, signal)
 
     let offset = opened.offset
     let pollFailures = 0
     let promptSince = 0
+    let exitAttempts = 0
     const deadline = Date.now() + EXECUTION_TIMEOUT_MS
     while (!signal.aborted && identity === runIdentity) {
       if (Date.now() >= deadline) {
@@ -271,9 +274,21 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
       if (receivedNew) promptSince = 0
       else if (!promptSince && promptPattern.test(result.output)) promptSince = Date.now()
       if (promptSince && Date.now() - promptSince >= PROMPT_STABLE_MS) {
-        // The command finished; the trailing exit was consumed by a menu or
-        // wrapper. Close the session ourselves and judge by whatever the
-        // backend reported so far.
+        // The prompt is steady: the input queue is empty, so an `exit` sent
+        // now reaches the shell itself and reports the real exit status
+        // instead of being swallowed by a menu. Nested wrappers consume the
+        // earlier attempts; retry a bounded number of times, then fall back
+        // to closing the session.
+        if (exitAttempts < MAX_EXIT_ATTEMPTS) {
+          exitAttempts += 1
+          promptSince = 0
+          try {
+            await sendTerminalText(sessionID, 'exit\r', signal)
+          } catch {
+            // A failed send falls through to the close fallback below.
+          }
+          continue
+        }
         exited = false
         await closeSession(hostID, sessionID)
         result.state = 'succeeded'
