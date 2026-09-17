@@ -76,6 +76,7 @@
 | [范围 v0.1](scope-v0.1.md) | 初始范围快照 |
 
 历史评审快照按日期归档，仅作证据引用，不代表当前状态：
+[2026-09-17 gosec 更新与闲置保活复核](gosec-refresh-and-idle-keepalive-2026-09-17.md)、
 [2026-08-02 质量审计](quality-audit-2026-08-02.md)、
 [2026-07-28 安全与性能加固](security-performance-hardening-2026-07-28.md)、
 [2026-08-11 产品质量评审](product-quality-review-2026-08-11.md)、

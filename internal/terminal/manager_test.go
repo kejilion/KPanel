@@ -146,3 +146,38 @@ func TestManagerEnforcesSessionAndInputLimits(t *testing.T) {
 		t.Fatalf("second open = %v", err)
 	}
 }
+
+// Continuous forward polling must keep a silent session alive past the idle
+// timeout: batch executions poll output every second even while the command
+// produces nothing, and that polling itself is the liveness signal.
+func TestOutputPollingKeepsSilentSessionPastIdleTimeout(t *testing.T) {
+	now := time.Now()
+	process := newFakeProcess()
+	manager := New(Config{
+		Starter: func(uint16, uint16) (Process, error) { return process, nil },
+		Now: func() time.Time { return now },
+	})
+	snapshot, err := manager.Open("user-a", 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Advance past the configured idle timeout while polling output, simulating
+	// a silent long task (no process output, no input) with the browser's
+	// 1-second output long-poll landing on every tick.
+	for tick := 0; tick < 35; tick++ {
+		now = now.Add(time.Minute)
+		if _, err := manager.Output(context.Background(), "user-a", snapshot.ID, snapshot.Offset, 0); err != nil {
+			t.Fatalf("poll tick %d: %v", tick, err)
+		}
+	}
+	manager.reap(now.UTC())
+	item, err := manager.lookup("user-a", snapshot.ID)
+	if err != nil {
+		t.Fatalf("idle reap closed a polled session: %v", err)
+	}
+	if item.closed || item.exitedAt != nil {
+		t.Fatal("idle reap terminated a live session that was still being polled")
+	}
+	_ = manager.Close("user-a", snapshot.ID)
+	manager.CloseAll()
+}
