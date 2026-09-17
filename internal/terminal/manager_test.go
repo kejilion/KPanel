@@ -155,7 +155,7 @@ func TestOutputPollingKeepsSilentSessionPastIdleTimeout(t *testing.T) {
 	process := newFakeProcess()
 	manager := New(Config{
 		Starter: func(uint16, uint16) (Process, error) { return process, nil },
-		Now: func() time.Time { return now },
+		Now:     func() time.Time { return now },
 	})
 	snapshot, err := manager.Open("user-a", 24, 80)
 	if err != nil {
