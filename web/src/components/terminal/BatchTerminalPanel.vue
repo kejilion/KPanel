@@ -360,7 +360,7 @@ onBeforeUnmount(() => {
 .batch-command strong { font-size: 15px; }
 .batch-command small { color: var(--terminal-shell-muted, #8a9695); font-size: 13px; }
 .batch-command label { display: block; }
-.batch-command textarea { width: 100%; min-height: 104px; resize: vertical; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--radius-sm); outline: none; font: 14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.batch-command textarea { width: 100%; min-height: 104px; resize: vertical; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--radius-sm); outline: none; font: 14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; scrollbar-color: var(--terminal-shell-scrollbar, #35474a) var(--terminal-shell-background, #0b1214); scrollbar-width: thin; }
 .batch-command textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent); }
 .batch-command textarea:disabled { cursor: wait; opacity: .72; }
 .batch-command textarea::placeholder { color: var(--terminal-shell-muted, #8a9695); }
@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
 .batch-status__empty > span { display: grid; width: 52px; height: 52px; place-items: center; color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); border-radius: var(--radius); }
 .batch-status__empty strong { font-size: 16px; }
 .batch-status__empty p { margin: 0; color: var(--terminal-shell-muted, #8a9695); font-size: 14px; }
-.batch-result-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 18px; }
+.batch-result-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 18px; scrollbar-color: var(--terminal-shell-scrollbar, #35474a) var(--terminal-shell-panel, #111a1d); scrollbar-width: thin; }
 .batch-result { min-width: 0; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--radius-sm); background: var(--terminal-shell-panel, #111a1d); }
 .batch-result:last-child { margin-bottom: 0; }
 .batch-result > header { display: flex; min-height: 58px; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--terminal-shell-border, #29383a); }
@@ -395,7 +395,7 @@ onBeforeUnmount(() => {
 .batch-result.is-expanded > .batch-result__summary .batch-result__chevron { transform: rotate(180deg); color: var(--brand); }
 .batch-result__detail { display: grid; min-width: 0; }
 .batch-result :deep(.batch-result__os) { width: 34px; height: 34px; flex: 0 0 auto; border-radius: var(--radius-sm); box-shadow: none; }
-.batch-result pre { max-height: 190px; margin: 0; overflow: auto; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.batch-result pre { max-height: 190px; margin: 0; overflow: auto; padding: 12px 14px; color: var(--terminal-shell-text, #d8dddc); background: var(--terminal-shell-background, #0b1214); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-color: var(--terminal-shell-scrollbar, #35474a) var(--terminal-shell-background, #0b1214); scrollbar-width: thin; }
 .batch-result__pending { display: flex; min-height: 64px; align-items: center; justify-content: center; gap: 7px; color: var(--terminal-shell-muted, #8a9695); font-size: 14px; }
 .batch-result__notice, .batch-result__error { margin: 0; padding: 9px 13px; font-size: 13px; line-height: 1.45; }
 .batch-result__notice { color: var(--warning); }
