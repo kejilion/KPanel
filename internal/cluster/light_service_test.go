@@ -200,6 +200,47 @@ func TestLightEnrollmentIsHTTPSBoundOneUseAndPreservesValidTokenAfterBadInput(t 
 	}
 }
 
+func TestLightEnrollmentRejectsWrongSecretAndPreservesEnrollment(t *testing.T) {
+	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	service := newLightServiceForTest(t, clock)
+
+	enrollment, err := service.CreateLightEnrollment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Trim(strings.Fields(enrollment.Command)[len(strings.Fields(enrollment.Command))-1], "'")
+	wire, _, err := parseLightToken(token, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedSecret := []byte("ffffffffffffffffffffffffffffffff")
+	forged, err := json.Marshal(lightTokenWire{
+		Version: 1, Origin: wire.Origin, ID: wire.ID,
+		Secret: base64.RawURLEncoding.EncodeToString(forgedSecret), ExpiresAt: wire.ExpiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedToken := lightTokenPrefix + base64.RawURLEncoding.EncodeToString(forged)
+	if _, err := service.EnrollLightNode("198.51.100.10", LightEnrollRequest{
+		Token: forgedToken, Name: "edge-forged", NodeVersion: "0.40.0",
+	}); !errors.Is(err, ErrPairingCode) {
+		t.Fatalf("wrong secret error = %v, want ErrPairingCode", err)
+	}
+	// EnrollHost must still match by hash, so the failed attempt cannot burn
+	// the real one-time token.
+	legitimate, err := service.EnrollLightNode("198.51.100.10", LightEnrollRequest{
+		Token: token, Name: "edge-legitimate", NodeVersion: "0.40.0",
+	})
+	if err != nil {
+		t.Fatalf("legitimate enrollment after forged secret error = %v", err)
+	}
+	if legitimate.NodeID != enrollment.ID {
+		t.Fatalf("enrolled node ID = %q, want enrollment ID %q", legitimate.NodeID, enrollment.ID)
+	}
+}
+
 func TestLightEnrollmentCommandCarriesOptionalDisplayName(t *testing.T) {
 	clock := &serviceTestClock{now: time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)}
 	service := newLightServiceForTest(t, clock)

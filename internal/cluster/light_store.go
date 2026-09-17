@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -207,7 +208,9 @@ func (s *lightStore) ConsumeEnrollment(id, secretHash string, now time.Time) err
 	defer s.mu.Unlock()
 	index := -1
 	for current, record := range s.state.Enrollments {
-		if record.ID == id && record.SecretHash == secretHash && record.ExpiresAt.After(now.UTC()) {
+		if record.ID == id && len(record.SecretHash) == len(secretHash) &&
+			subtle.ConstantTimeCompare([]byte(record.SecretHash), []byte(secretHash)) == 1 &&
+			record.ExpiresAt.After(now.UTC()) {
 			index = current
 			break
 		}
@@ -239,7 +242,9 @@ func (s *lightStore) EnrollHost(
 	s.gcEnrollmentsLocked(now)
 	enrollmentIndex := -1
 	for index, enrollment := range s.state.Enrollments {
-		if enrollment.ID == enrollmentID && enrollment.SecretHash == secretHash && enrollment.ExpiresAt.After(now.UTC()) {
+		if enrollment.ID == enrollmentID && len(enrollment.SecretHash) == len(secretHash) &&
+			subtle.ConstantTimeCompare([]byte(enrollment.SecretHash), []byte(secretHash)) == 1 &&
+			enrollment.ExpiresAt.After(now.UTC()) {
 			enrollmentIndex = index
 			break
 		}
