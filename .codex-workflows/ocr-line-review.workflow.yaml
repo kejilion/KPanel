@@ -17,11 +17,13 @@ updated: "2026-09-18T00:00:00+08:00"
 OCR 只负责确定性的文件圈选与规则解析，评审由执行本工作流的智能体完成。它为候选差异提供
 逐文件覆盖清单（每个文件必须 reviewed 或写明 skipped 理由），补充而不替代自由评审、
 L0-L3 门禁、L2/L3 独立复核和验收记录。不是提交门禁，不进入 CI 与 Definition of Done。
+任何智能体框架（Codex、Claude 或其他读取 `AGENTS.md` 的智能体）经同一入口执行，无需人工提示。
 
 三档 `${{profile}}`：
 
-- **candidate**：写任务在形成候选提交前自查自己的差异（L1/L2 代码差异建议使用）；
-- **review**：L2/L3 独立复核者把它当作覆盖清单，与自己的自由评审并行；
+- **candidate**：候选差异含代码时，写任务在候选提交之后、交付之前自动执行（`session-collaboration` 第 4 步），
+  范围为 `<精确基线>..HEAD`；
+- **review**：`quality-audit-kpanel` 第 2 步与 L2/L3 独立复核者把它当作覆盖清单，与自己的自由评审并行；
 - **canary**：OCR 升级候选的回放验收，见 Step 6。
 
 ## Prerequisites
@@ -76,11 +78,15 @@ Panel/Agent 契约两端、文档与语言资源同步、运维级风险。约�
 end_line、category、severity、content）并加 `lane: constrained|free-form`。成立的发现转入正常
 开发流程：`candidate` 档在同一写任务修复；`review` 档交还候选负责人，复核者不修复。
 
-candidate/review 档在候选提交（或复核结论所在提交）的消息末尾加入一条 trailer：
+candidate/review 档在候选提交（或复核结论所在提交）的消息末尾加入一条 trailer：有修复时写在修复提交上；
+无修复时对尚未推送的本地候选用 `git commit --amend --trailer "OCR-Review: ..."` 追加，已推送的提交不改写。
 
 ```text
 OCR-Review: <版本> range=<base7>..<head7> files=<reviewed>/<total> valid=H<n>/M<n>/L<n> constrained-only=<n>
+OCR-Review: skipped reason=<具体理由>
 ```
+
+入口不可用（如无网络首次安装失败）时记录 skipped 与原因，不阻塞交付，也不改用 `ocr review` 绕行。
 
 `constrained-only` 为只有约束臂发现且经核验成立的条数，是 5.5 试用退出的主指标。
 

@@ -482,8 +482,14 @@ requireText('.codex-workflows/ocr-line-review.workflow.yaml', [
   'constrained-only',
   '不是提交门禁',
 ]);
+requireText('.codex-workflows/session-collaboration.workflow.yaml', ['`ocr-line-review` with `profile=candidate`']);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['`ocr-line-review`（`profile=review`']);
+requireText('AGENTS.md', ['.codex-workflows/ocr-line-review.workflow.yaml']);
+requireText('CLAUDE.md', ['.codex-workflows/ocr-line-review.workflow.yaml']);
+requireText('scripts/check-collaboration-state.mjs', ['ocr_line_review=']);
 requireText('PROJECT_RULES.md', [
   '### 5.5 行级评审辅助（open-code-review，试行）',
+  '**默认自动参与**',
   '不充当 L2/L3 独立复核',
   '单跑约束臂不得宣称"已评审"',
 ]);

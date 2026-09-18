@@ -108,6 +108,7 @@ function parseWorktrees(output) {
 
 function check(options) {
   const failures = [];
+  let ocrLineReview = null;
   const repo = realpathSync.native(resolve(options.repo));
   const root = realpathSync.native(git(repo, ['rev-parse', '--show-toplevel']));
   let branch = '(detached)';
@@ -174,6 +175,12 @@ function check(options) {
         if (changedPaths.length === 0) {
           failures.push('writer candidate must contain a non-empty task diff; empty commits do not satisfy completion');
         }
+        // PROJECT_RULES.md 5.5: advisory only, never a failure.
+        const codePaths = changedPaths.filter((path) => /\.(go|ts|tsx|vue|js|mjs|cjs|sh)$/.test(path));
+        if (codePaths.length > 0) {
+          const recorded = git(root, ['log', '--format=%(trailers:key=OCR-Review,valueonly)', options.baseRef + '..HEAD']);
+          ocrLineReview = (recorded ? 'recorded' : 'missing') + ' code_paths=' + codePaths.length;
+        }
       }
     }
   } else {
@@ -207,6 +214,13 @@ function check(options) {
     return;
   }
   process.stdout.write('collaboration_state=pass ' + summary + '\n');
+  if (ocrLineReview) {
+    const hint = ocrLineReview.startsWith('missing')
+      ? ' advisory: run .codex-workflows/ocr-line-review.workflow.yaml (profile=candidate) and add an OCR-Review trailer,'
+        + ' or record "OCR-Review: skipped reason=<why>"'
+      : '';
+    process.stdout.write('ocr_line_review=' + ocrLineReview + hint + '\n');
+  }
 }
 
 try {

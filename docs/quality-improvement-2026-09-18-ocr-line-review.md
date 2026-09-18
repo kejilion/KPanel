@@ -46,7 +46,9 @@
 
 - 允许修改：`PROJECT_RULES.md` 5.5、`.codex-workflows/ocr-line-review.workflow.yaml` 与 README 索引、
   `docs/multi-agent-collaboration.md` 一条、`.opencodereview/rule.json`、`.governance/ocr-review/README.md`、
-  `scripts/ocr-delegate.mjs` 及测试、`dependency-policy.json` 新组与报告器采集、治理一致性与 verify 脚本登记。
+  `scripts/ocr-delegate.mjs` 及测试、`dependency-policy.json` 新组与报告器采集、治理一致性与 verify 脚本登记；
+  自动参与挂点：`session-collaboration` 第 4 步与验证清单、`quality-audit-kpanel` 第 2 步、`AGENTS.md`/`CLAUDE.md`
+  各一条、`check-collaboration-state.mjs --require-candidate` 的非阻塞 `ocr_line_review` 提醒及其测试。
 - 明确不修改：CI、Definition of Done、L0-L3、发布工作流、验收模板、既有验收记录、产品代码。
 - 风险等级：L0 规范 + 治理脚本（按 5.3 验收）。
 
@@ -69,7 +71,7 @@
 | --- | --- | --- | --- |
 | A 维持不引入 | 零成本 | 圈选/覆盖清单能力缺失 | 否：圈选缺陷已有可验证修复，值得有退出条款的试行 |
 | B 默认模式接入 CI 门禁 | 自动化 | 外配 LLM 端点、源码外发、run-0 召回结构受限，门禁化会误导 | 否 |
-| C 委托模式可选辅助 + 自由臂必做 + 试用退出 | 轻量、零新门禁、可退出 | 需人工写 trailer | 采用 |
+| C 委托模式默认自动参与（挂在候选交付与质量审计流程，非阻塞提醒）+ 自由臂必做 + 试用退出 | 无需人工引导、零新门禁、可退出 | 每个代码候选增加一次评审成本 | 采用 |
 
 ## 最小改动方案
 
