@@ -274,6 +274,8 @@ test('open-code-review pin is validated and newer releases stay candidate signal
   const tool = policy.groups.find((group) => group.id === 'code-review-assistant').components['@alibaba-group/open-code-review'];
   tool.pinnedVersion = 'latest';
   assert.ok(validatePolicy(policy, process.cwd()).some((failure) => failure.includes('code-review-assistant')));
+  policy.groups.find((group) => group.id === 'code-review-assistant').components = {};
+  assert.ok(validatePolicy(policy, process.cwd()).some((failure) => failure.includes('code-review-assistant')));
   assert.equal(reviewAssistantCandidate('1.12.5', 'v1.12.5'), null);
   const update = reviewAssistantCandidate('1.12.5', 'v1.13.0');
   assert.equal(update.updateClass, 'minor');

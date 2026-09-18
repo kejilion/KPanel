@@ -60,17 +60,19 @@ node scripts/ocr-delegate.mjs rule --format json <preview 中的 reviewable 路�
 核对 `excluded_files`：除 `.opencodereview/rule.json` 明确排除和 `unsupported_ext`（文档等）外，
 出现 `default_path` 剔除测试文件即视为圈选策略失效，停止并报告，不带着失真圈选继续评审。
 
-### 3. 约束臂：逐文件覆盖
+### 3. 自由臂（必做，先跑）
+
+先于约束臂、在不看规则组和逐文件清单的情况下完成并落盘（`${{evidence_dir}}/free-form.json`），
+不受文件清单与规则分类限制，专查跨文件涌现行为：布局/媒体查询叠加、状态解耦后遗留旧路径、
+Panel/Agent 契约两端、文档与语言资源同步、运维级风险。run-0 的唯一 HIGH 只在自由臂出现
+（`.governance/ocr-review/README.md`），因此单跑约束臂不得宣称已评审。
+
+### 4. 约束臂：逐文件覆盖
 
 对每个 `(path, status)` 取 `git diff "$base".."$head" -- <path>`，按解析出的规则组评审，可按需
 读取上下文。每个文件以 reviewed 或 skipped+具体理由结束，覆盖率必须 100%。KPanel 专属尺度只
 引用不复述：`docs/development-quality-standard.md` 第 3 节固定信任边界与第 12 节代码评审核对。
-
-### 4. 自由臂（必做）
-
-不受文件清单与规则分类限制，专查跨文件涌现行为：布局/媒体查询叠加、状态解耦后遗留旧路径、
-Panel/Agent 契约两端、文档与语言资源同步、运维级风险。约束臂已报的发现不计重复。run-0
-的唯一 HIGH 只在自由臂出现（`.governance/ocr-review/README.md`），因此单跑约束臂不得宣称已评审。
+与已落盘自由臂结果相同的发现标为重复；只有新增且成立的计入 `constrained-only`。
 
 ### 5. 核验、分流与留痕
 

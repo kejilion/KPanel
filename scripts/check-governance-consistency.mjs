@@ -477,7 +477,7 @@ requireText('.codex-workflows/evolve-kpanel.workflow.yaml', [
 requireText('.codex-workflows/ocr-line-review.workflow.yaml', [
   'PROJECT_RULES.md` 5.5',
   'node scripts/ocr-delegate.mjs',
-  '自由臂（必做）',
+  '自由臂（必做，先跑）',
   'OCR-Review:',
   'constrained-only',
   '不是提交门禁',

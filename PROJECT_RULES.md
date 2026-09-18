@@ -445,7 +445,8 @@ Done，不充当 L2/L3 独立复核，也不替代验收记录中的运维级风
   OCR 配置端点的用法。圈选策略唯一真源是受跟踪的 `.opencodereview/rule.json`，其修改按 5.3 验收；
   KPanel 不覆盖上游系统规则文本，专属尺度引用 `docs/development-quality-standard.md` 第 3、12 节。
 - **双臂必做**：约束臂（逐文件覆盖率 100%）之外必须有不受清单限制的自由臂；run-0 基线的唯一
-  HIGH 只在自由臂出现。单跑约束臂不得宣称"已评审"。发现须逐条核对 file:line，成立者转正常修复流程。
+  HIGH 只在自由臂出现。单跑约束臂不得宣称"已评审"。自由臂先于约束臂盲跑并落盘，`constrained-only`
+  只计约束臂在其之外新增且成立的发现。发现须逐条核对 file:line，成立者转正常修复流程。
 - **留痕**：运行结果不入库；在候选提交消息加 `OCR-Review:` trailer（版本、范围、覆盖、分级有效
   发现、`constrained-only` 数）。基线、canary 与回放记录见 `.governance/ocr-review/README.md`。
 - **持续迭代**：版本 pin 只在 `dependency-policy.json` 的 `code-review-assistant` 组；依赖报告检测到

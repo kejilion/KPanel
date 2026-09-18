@@ -330,10 +330,10 @@ export function validatePolicy(policy, repo) {
   if (/^\s+[A-Za-z0-9_-]+:\s*write\s*$/m.test(freshnessWorkflow)) {
     failures.push('dependency freshness workflow must not request write permissions');
   }
-  const reviewAssistant = policy.groups?.find((group) => group.id === 'code-review-assistant')
-    ?.components?.['@alibaba-group/open-code-review'];
-  if (reviewAssistant && (!/^\d+\.\d+\.\d+$/.test(reviewAssistant.pinnedVersion ?? '')
-    || !/^[0-9a-f]{40}$/.test(reviewAssistant.pinnedCommit ?? ''))) {
+  const reviewGroup = policy.groups?.find((group) => group.id === 'code-review-assistant');
+  const reviewAssistant = reviewGroup?.components?.['@alibaba-group/open-code-review'];
+  if (reviewGroup && (!/^\d+\.\d+\.\d+$/.test(reviewAssistant?.pinnedVersion ?? '')
+    || !/^[0-9a-f]{40}$/.test(reviewAssistant?.pinnedCommit ?? ''))) {
     failures.push('code-review-assistant must pin open-code-review to X.Y.Z and its full release commit');
   }
   const trivy = policy.groups?.find((group) => group.id === 'security-tools')?.components?.trivy;

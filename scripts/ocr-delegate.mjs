@@ -79,7 +79,9 @@ export function main(argv, environment = process.env) {
     const actual = installedVersion(directory, env);
     if (actual !== pinnedVersion) throw new Error('installed OCR ' + actual + ' does not match pin ' + pinnedVersion);
   }
-  const result = runOcr(directory, [...forwarded, '--repo', process.cwd()], env, 'inherit');
+  // OCR reads .opencodereview/rule.json from --repo; a subdirectory would silently fall back to upstream selection.
+  const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  const result = runOcr(directory, [...forwarded, '--repo', worktree], env, 'inherit');
   return result.status ?? 1;
 }
 
