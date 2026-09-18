@@ -1,6 +1,6 @@
 # 质量改进提案：open-code-review 行级评审辅助轻量接入
 
-- 提案状态：试行（独立复核 PASS WITH FOLLOW-UP，四项 MEDIUM 已在同一候选修复）
+- 提案状态：试行（独立复核第一轮 PASS WITH FOLLOW-UP；修复后第二轮重验 PASS）
 - 提案日期：2026-09-18
 - 负责人：Claude（治理写任务 `docs/ocr-line-review-assistant`）
 - 适用业务域：开发评审流程（不涉及产品运行时）
@@ -95,12 +95,17 @@
   自动参与（L2/L3 或 ≥30 行代码的 L1）；M2 退出条款可被 `unreported` 或琐碎项无限保活 → `unreported`
   不计使用、`constrained-only` 只计 ≥ MEDIUM、由稳定版前 quality-audit 汇总并抽查、有效 trailer 覆盖率
   低于一半也退出；M3 amend 与预览绑定冲突 → OCR 在预览与最终核验前执行，已绑定证据改用 allow-empty
-  提交；M4 `--exclude` 与用户级全局 rule.json 可绕过圈选 → 参数白名单、隔离 HOME（实测两处均已拒绝或
-  不再生效）。L1 过期 trailer → 新增 `stale` 提醒；L2 遥测环境 → 剔除 `OCR_*`/`OTEL_*`；L4 run-0 计数
+  提交；M4 `--exclude` 可绕过圈选、用户级全局 rule.json 可覆盖规则文本（圈选本身因项目层优先不受影响）
+  → 参数白名单、隔离 HOME。L1 过期 trailer → 新增 `stale` 提醒；L2 遥测环境 → 剔除 `OCR_*`/`OTEL_*`；L4 run-0 计数
   表述更正；L5 trailer 增加 `free-form` 数。L3（pinnedCommit 运行时比对）暂缓，npm 精确版本与安装器
   sha256 校验已覆盖。
 - 门禁是否被削弱、绕过或只对样例优化：否；未新增门禁，canary 规则为通用模式。
-- 复核状态：修改后通过（修复项由同一复核会话按 5.3.1 只重验受影响项）。
+- 第二轮重验（同一复核会话，按 5.3.1 只重验受影响项，对象 `350a58e1`）：PASS。实测 `--exclude`（空格与 `=`
+  两种写法）、`--`、`rule -b`、`review` 均 EXIT=2 拒绝；恶意 HOME/USERPROFILE 带全局 rule.json 时 `rule` 仍为
+  `system / default`、preview 仍 6/6；`verify-governance` 174/174 通过。M1-M4、L1、L2、L4 已解决，L5 部分解决
+  （盲跑顺序仍为自我声明，靠审计抽查兜底），L3 同意暂缓。新增 LOW：N1 改名文件不计行数（已加
+  `--no-renames` 与测试）；N2 本节曾在重验前写入结论（已按实际重验结果改写）。
+- 复核状态：通过。
 
 ## 回滚
 
@@ -111,10 +116,10 @@
 ## 采纳决策与结果
 
 - 决策：进入试行（2026-09-18）
-- 决策依据和日期：—
+- 决策依据和日期：2026-09-18 独立复核两轮（PASS WITH FOLLOW-UP → 修复后 PASS）。
 - 观察窗口结果：未报告
 - 实际收益、回归和意外影响：未报告
 - 是否更新永久规范、测试、工作流或验收模板：是（见范围），验收模板不改
-- 规范验收结论（仅规范变更）：PASS WITH FOLLOW-UP
-- 规范验收停止依据：—
-- 后续事项：L3 pinnedCommit 运行时比对；trailer 汇总可接入只读报告；`security-audit-skill` 检测器缺口另立事项。
+- 规范验收结论（仅规范变更）：PASS
+- 规范验收停止依据：5.3 停止条件满足——回归集全绿、无 HIGH/MEDIUM 未决，仅余 LOW 待办。
+- 后续事项：L3 pinnedCommit 运行时比对；退出条款分母（达到阈值的代码候选数）暂由审计人工统计；trailer 汇总可接入只读报告；`security-audit-skill` 检测器缺口另立事项。

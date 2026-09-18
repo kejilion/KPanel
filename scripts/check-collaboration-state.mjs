@@ -95,7 +95,7 @@ const OCR_AUTO_MIN_CODE_LINES = 30;
 function codeChanges(root, range) {
   let paths = 0;
   let lines = 0;
-  for (const row of git(root, ['diff', '--numstat', range]).split(/\r?\n/).filter(Boolean)) {
+  for (const row of git(root, ['diff', '--numstat', '--no-renames', range]).split(/\r?\n/).filter(Boolean)) {
     const [added, deleted, path] = row.split('\t');
     if (!OCR_CODE_PATH.test(path)) continue;
     paths += 1;

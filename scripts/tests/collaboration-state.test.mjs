@@ -261,6 +261,26 @@ test('code candidates get a proportional, non-blocking OCR line review reminder'
   }
 });
 
+test('renamed code files still count toward the OCR line review threshold', () => {
+  const state = fixture();
+  try {
+    mkdirSync(join(state.writer, 'pkg'));
+    writeFileSync(join(state.writer, 'pkg', 'a.go'), 'package pkg\n');
+    git(state.writer, 'add', 'pkg/a.go');
+    git(state.writer, 'commit', '-m', 'test: small file');
+    const base = git(state.writer, 'rev-parse', 'HEAD');
+    git(state.writer, 'mv', 'pkg/a.go', 'pkg/b.go');
+    writeFileSync(join(state.writer, 'pkg', 'b.go'), 'package pkg\n' + '// line\n'.repeat(40));
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'feat: rename and grow');
+    const result = run(state.writer, '--role', 'writer', '--base-ref', base, '--require-candidate');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=missing /);
+  } finally {
+    state.cleanup();
+  }
+});
+
 test('caller Git repository overrides cannot redirect the evidence source', () => {
   const state = fixture();
   try {

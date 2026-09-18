@@ -60,7 +60,7 @@ rg -n "docker.sock|InsecureSkipVerify|Access-Control-Allow-Origin|/bin/sh -lc" \
 稳定版发车前的审计同时汇总 5.5 试用指标，并抽查 `constrained-only` 记录是否成立：
 
 ```bash
-git log --format='%h %(trailers:key=OCR-Review,valueonly)' "<上一稳定版 tag>..HEAD" | grep -v ' $'
+git log --format='%h %(trailers:key=OCR-Review,valueonly)' "<上一稳定版 tag>..HEAD" | awk 'NF > 1'
 ```
 
 ### 3. 执行完整功能与构建门禁
