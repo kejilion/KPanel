@@ -595,6 +595,7 @@ onBeforeUnmount(() => {
         </div>
         <BatchTerminalPanel :ref="setBatchPanelRef" class="batch-terminal-stage" :hosts="selectedBatchHosts" :session-capacity="batchSessionCapacity" @running-change="batchRunning = $event" />
         <TerminalQuickCommands
+          mode="batch"
           :open="quickCommandsOpen && terminalMode === 'batch'"
           :disabled="batchRunning"
           @close="closeQuickCommands"
