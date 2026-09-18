@@ -16,6 +16,7 @@ import {
   npmInvocation,
   parseConcatenatedJson,
   requestHeaders,
+  reviewAssistantCandidate,
   renderMarkdown,
   summarize,
   validatePolicy,
@@ -266,4 +267,15 @@ test('markdown report keeps multiline and pipe errors inside one bounded table c
   assert.doesNotMatch(markdown, /line one\nline/);
   assert.match(markdown, /line \\| two/);
   assert.ok(markdown.split('\n').find((line) => line.includes('line one')).length < 400);
+});
+
+test('open-code-review pin is validated and newer releases stay candidate signals', () => {
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  const tool = policy.groups.find((group) => group.id === 'code-review-assistant').components['@alibaba-group/open-code-review'];
+  tool.pinnedVersion = 'latest';
+  assert.ok(validatePolicy(policy, process.cwd()).some((failure) => failure.includes('code-review-assistant')));
+  assert.equal(reviewAssistantCandidate('1.12.5', 'v1.12.5'), null);
+  const update = reviewAssistantCandidate('1.12.5', 'v1.13.0');
+  assert.equal(update.updateClass, 'minor');
+  assert.equal(update.verificationFloor, 'canary-replay');
 });

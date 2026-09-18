@@ -159,7 +159,8 @@
     "github-actions",
     "security-tools",
     "managed-kejilion-script",
-    "security-audit-skill"
+    "security-audit-skill",
+    "code-review-assistant"
   ],
   "groups": [
     {
@@ -272,6 +273,25 @@
           "repository": "cloudflare/security-audit-skill",
           "pinnedCommit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
           "adoptionPolicy": "candidate-signal-only; upgrade requires scoped comparison run, ledger revalidation by new validators, and a separate governance commit (PROJECT_RULES 5.2/5.4)"
+        }
+      }
+    },
+    {
+      "id": "code-review-assistant",
+      "scope": "delegation-mode-line-review-cli",
+      "manifests": [
+        "scripts/ocr-delegate.mjs",
+        ".opencodereview/rule.json",
+        ".codex-workflows/ocr-line-review.workflow.yaml",
+        ".governance/ocr-review/README.md"
+      ],
+      "detector": "github-releases",
+      "components": {
+        "@alibaba-group/open-code-review": {
+          "repository": "alibaba/open-code-review",
+          "pinnedVersion": "1.12.5",
+          "pinnedCommit": "189be5b024d3309dd10fdc8cd8ee31b2530c210b",
+          "adoptionPolicy": "candidate-signal-only; upgrade requires the canary replay in .governance/ocr-review/README.md on the new version and a separate governance commit (PROJECT_RULES 5.2/5.5)"
         }
       }
     }

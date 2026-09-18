@@ -1,0 +1,14 @@
+{
+  "include": [
+    "**/*_test.go",
+    "web/**/*.{test,spec}.{ts,tsx,js,mjs}",
+    "scripts/tests/**/*.{mjs,js,sh}"
+  ],
+  "exclude": [
+    ".governance/**",
+    "**/testdata/**",
+    "LICENSES/**",
+    "web/package-lock.json",
+    "go.sum"
+  ]
+}

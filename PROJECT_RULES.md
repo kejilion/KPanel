@@ -428,6 +428,30 @@ confirmed。无 OS 沙箱的环境禁止执行目标代码。
 计为首个 full run。上游 skill 的更新遵循 5.2 受控自我改进与执行入口的 pin 规则：新
 commit 只产生候选信号，升级须先 scoped 对照并重验既有账本。
 
+### 5.5 行级评审辅助（open-code-review，试行）
+
+alibaba/open-code-review（OCR）以委托模式为代码差异提供确定性的文件圈选、规则解析和逐文件覆盖
+清单，由执行智能体完成评审。它是 L0-L3 之外的可选辅助，不是提交门禁，不进入 CI 与 Definition of
+Done，不充当 L2/L3 独立复核，也不替代验收记录中的运维级风险判断。唯一执行入口为
+[`.codex-workflows/ocr-line-review.workflow.yaml`](.codex-workflows/ocr-line-review.workflow.yaml) 与
+`scripts/ocr-delegate.mjs`，本节不复制其参数与命令。
+
+- **使用时机**：写任务形成 L1/L2 代码候选前自查（candidate），或 L2/L3 独立复核者作覆盖清单
+  （review）；纯文档、治理文本和发布操作不适用。
+- **只用委托模式**：入口只转发 LLM-free 子命令；禁止 `ocr review`/`scan`/`config` 等把源码发往
+  OCR 配置端点的用法。圈选策略唯一真源是受跟踪的 `.opencodereview/rule.json`，其修改按 5.3 验收；
+  KPanel 不覆盖上游系统规则文本，专属尺度引用 `docs/development-quality-standard.md` 第 3、12 节。
+- **双臂必做**：约束臂（逐文件覆盖率 100%）之外必须有不受清单限制的自由臂；run-0 基线的唯一
+  HIGH 只在自由臂出现。单跑约束臂不得宣称"已评审"。发现须逐条核对 file:line，成立者转正常修复流程。
+- **留痕**：运行结果不入库；在候选提交消息加 `OCR-Review:` trailer（版本、范围、覆盖、分级有效
+  发现、`constrained-only` 数）。基线、canary 与回放记录见 `.governance/ocr-review/README.md`。
+- **持续迭代**：版本 pin 只在 `dependency-policy.json` 的 `code-review-assistant` 组；依赖报告检测到
+  新版本只产生候选信号，升级须在新版本上通过 canary 回放，pin 变更为独立治理提交。
+- **试用退出条款**：观察序列自 v1.20.0 稳定版列车起算。连续 3 个稳定版周期内，trailer 累计
+  `constrained-only` 为 0（约束臂没有提供自由臂之外的有效发现），或期间没有任何 trailer（无人使用）
+  时，下一次治理周期移除本节、入口与配置，保留 README 与提交历史；单条 trailer 缺字段按"未报告"
+  处理，不推断为零或成功。
+
 ## 6. 变更纪律
 
 - 使用最小、可验证、可回滚的改动，不夹带无关重构。
