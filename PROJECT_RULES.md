@@ -392,6 +392,42 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
 不同审查者对同一事实使用本节同一尺度；若要改变矩阵、严重度或停止条件，必须先说明新证据和范围变化，
 不得在修复后追加强度来维持 `FAIL`。
 
+### 5.4 信任边界安全审计（例行手段）
+
+本节定义跨信任边界逻辑不变量审计的触发、产物和边界。它补充 `make security-audit`
+（已知依赖漏洞）与扫描器的盲区：验证入口校验、授权绑定、写路径隔离和跨组件契约不变量。
+这是 L0-L3 之外的例行安全复核手段，不是提交门禁，不进入 CI 与 Definition of Done，
+也不能替代人工安全复核——审计产出的 `confirmed` 记录是高可信线索，最终仍按正常修复
+流程验证与合并。
+
+**触发三档**（唯一执行入口为
+[`.codex-workflows/security-boundary-audit.workflow.yaml`](.codex-workflows/security-boundary-audit.workflow.yaml)，
+本节不复制其参数与命令）：
+
+| 档位 | 触发 | 产物 |
+| --- | --- | --- |
+| guidance | 开发/评审中提出安全问题或复查单个改动时随问随用 | 无文件，仅回答 |
+| scoped | 工作项改动触及信任边界包时：`internal/auth`、`internal/cluster`、`internal/hostbackup`、`internal/filemanager`、`internal/agent` 及面板侧对应入口 | 增量账本（按改动面对应单元） |
+| full | 稳定版列车发车前一轮；其他时机由用户明示 | 完整账本与报告 |
+
+**产物与状态**：账本、findings 与报告统一入库 `.governance/security-audit/`，
+run 递增编号并以上一 run 为增量输入；上游 skill 来源必须 pin 到固定 commit 并记录在
+run metadata。账本是覆盖声明的唯一真源——不以代理数量、运行时长或"跑过"表述覆盖。
+单次 full 约只能发现重复运行总发现的一半，禁止以单次未发现宣称安全；全量覆盖结论
+只在账本维度上声明。confirmed finding 转入正常开发流程修复，审计任务本身不修复。
+
+**机器/人工边界**：两个结构验证器（findings、coverage-ledger）PASS 是结构有效性的
+机器下限；验证器不校验 hunting 质量。凡需动态确认而沙箱（隔离网络、资源限额、
+scratch-only 写）不可用的线索必须记为 `needs_validation` 并写明缺失能力，不得降级为
+confirmed。无 OS 沙箱的环境禁止执行目标代码。
+
+**试用退出条款**：本节为试行规范。连续 3 个稳定版的 full run 增量均无 confirmed 或
+有效 finding 产出时，下一次治理周期将其降回外部工具模式并从本规范移除，同时保留账本
+历史；有效产出指转入修复流程且经独立复核成立的记录。观察序列自 v1.20.0 稳定版列车
+起算，规范生效前的 run-1（2026-09-18 全仓审计，迁入 `.governance/security-audit/run-1`）
+计为首个 full run。上游 skill 的更新遵循 5.2 受控自我改进与执行入口的 pin 规则：新
+commit 只产生候选信号，升级须先 scoped 对照并重验既有账本。
+
 ## 6. 变更纪律
 
 - 使用最小、可验证、可回滚的改动，不夹带无关重构。

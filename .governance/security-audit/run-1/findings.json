@@ -1,0 +1,215 @@
+[
+  {
+    "verdict": "confirmed",
+    "fingerprint": "hostbackup.restore.payload-root-unconfined-to-data-model",
+    "title": "hostbackup restore applies imported payload Root.Path values outside the /home data model (e.g. /root, /etc/ssh, /usr/local/bin, /var/lib/docker) with no positive allowlist",
+    "description": "The agent import/restore chain validates payload Root.Path values only against a negative exclusion list instead of the positive module data model the exporter produces. validatePayload (internal/hostbackup/archive.go:386-440) is the only scope check ever applied to Root.Path, and for roots it checks nothing beyond canonical-absolute form plus !e.excluded(r.Path). The export side (Engine.Inventory, engine.go:196-297) only ever produces roots from /home entries, container bind/volume mounts, and Compose working directories, classified by owner(). A crafted .kpb can declare any root that escapes the exclusion list: the literal /etc is rejected because excluded() tests within() in both directions (parents of excluded entries are excluded too), but /etc/ssh, /etc/cron.d, /etc/systemd, /root, /root/.ssh, /usr, /usr/local/bin and /var/lib/docker all pass. The restore confirmation surface never shows root paths at all (Preview carries only module summaries; the web BackupCenter and root-terminal CLI menu display module names/sizes only), so even an attentive admin cannot see the target before confirming. With zero declared containers, every inventory-derived gate in Engine.Restore is either a no-op or does not compare payload roots to the destination inventory. Engine.Restore then swaps attacker content into the host directory and deletes the original, running as host root (User=root, ProtectSystem=false). Restored files carry archived uid/gid and full modes (setuid subject to systemd RestrictSUIDSGID=true stripping on some releases — uid/gid-0 content and arbitrary mode-0777 files are unaffected and independently sufficient).",
+    "root_cause": "Validation asymmetry between export and import. Export derives roots exclusively from the inventoried data model (paths under /home, container mounts, Compose dirs) and derives Root.ID as hex(sha256(path)[:16]). Import-side validatePayload accepts any Root.Path that merely is absolute, canonical, and not on the negative excluded() list. It never calls owner(), never checks r.Module against owner(r.Path), never verifies the ID derivation convention, and Engine.Restore never compares payload roots against the destination Inventory's roots — the only destination checks are protected-runtime overlap, destination-writer mount overlap, and userns issues (restore.go:127-158). A module-labeled payload with zero containers therefore redirects the entire swap machinery to arbitrary non-excluded host directories.",
+    "intended_behavior": "The design intent is visible on the export side and in comments: roots belong to a fixed three-module data model — /home/web to module web, /home (including /home/docker children) to apps, container binds and Docker volume mountpoints to docker. The mount-coverage comment at restore.go:93-94 states an imported manifest cannot silently expand a selection to another application's data. The intended contract is that an imported archive can only restore the same class of data it exported, but nothing in the code enforces that the declared Root.Path belongs to the declared module's data model on either the import or restore path.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "internal/panel/backup_handlers.go",
+        "line": 439,
+        "scope": "panel HTTP handler (authenticated session + CSRF)",
+        "description": "Admin imports an attacker-supplied .kpb: multipart upload saved to upload.kpb; password is attacker-chosen (only 10-256 bytes enforced, no creator authentication)."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/panel/backup_handlers.go",
+        "line": 474,
+        "scope": "backupImport worker",
+        "description": "backup.ReadContext decrypts the container; inner module payload files are streamed to the Agent import job and inspect is triggered."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/archive.go",
+        "line": 254,
+        "scope": "Engine.ReadPayload (from Service inspect and Engine.Restore)",
+        "description": "e.validatePayload(p) is the only validation ever applied to the payload — no second, stronger validation exists at any later stage."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/archive.go",
+        "line": 393,
+        "scope": "validatePayload root check",
+        "description": "Root.Path checks only absolute form, Clean round-trip, and !e.excluded(). No positive allowlist, no owner() call, no module-vs-path consistency, no ID derivation check."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/engine.go",
+        "line": 159,
+        "scope": "excluded()",
+        "description": "Negative list: /proc,/sys,/dev,/run,/var/run,/etc/kejilion-panel,/var/lib/kejilion-panel,/home/docker/kpanel plus .kpanel-* filters. Bidirectional within() excludes parents (so literal /etc and /var/lib caught) but /etc/ssh, /root, /usr/local/bin, /var/lib/docker pass."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/service.go",
+        "line": 312,
+        "scope": "Service.create action=restore",
+        "description": "Restore reservation requires only import Status ready and destination Inventory revision match — the revision binds host state, never payload root paths."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/restore.go",
+        "line": 95,
+        "scope": "Restore mount-coverage loop",
+        "description": "With zero declared containers (no minimum enforced) the loop is a no-op; even with containers it only checks payload mounts against payload roots, not against the destination host."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/restore.go",
+        "line": 127,
+        "scope": "Restore destination checks",
+        "description": "The only inventory-derived gates: protectionRootOverlap against ProtectedRoots (Panel/Agent runtime dirs only), protected container names, userns, destination-writer overlap. current.Roots is never compared to payload roots; /root, /etc/ssh, /usr/local/bin, /var/lib/docker pass whenever nothing bind-mounts them (the default)."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/restore.go",
+        "line": 310,
+        "scope": "Restore swap",
+        "description": "os.Rename(entry.Target, entry.Previous) moves e.g. the real /root to /root.kpanel-restore-<id>; copyTree had populated .kpanel-next-<id> from the archive; os.Rename(entry.Next, entry.Target) installs attacker content at the target path."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/hostbackup/restore.go",
+        "line": 746,
+        "scope": "cleanupRecovery",
+        "description": "After success, removeDataTree(r.Previous) deletes the original host directory permanently."
+      },
+      {
+        "kind": "sink",
+        "file": "internal/hostbackup/restore.go",
+        "line": 654,
+        "scope": "copyTree + restoreOwnership",
+        "description": "Restored files receive archived uid/gid via os.Chown and full mode via os.Chmod; archiveMode maps 04000/02000 to setuid/setgid; ReadPayload accepts any mode 0..07777. e.host() is filepath.Join(Engine.Root, path) with Engine.Root hard-coded to '/' in production; agent runs as host root with ProtectSystem=false."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "internal/hostbackup/archive.go",
+        "line": 393,
+        "description": "Complete per-root validation is negative-only; no owner()/data-model/allowlist comparison anywhere in validatePayload."
+      },
+      {
+        "file": "internal/hostbackup/engine.go",
+        "line": 159,
+        "description": "excluded() list contents confirmed; /root, /etc/ssh, /etc/cron.d, /usr, /usr/local/bin, /var/lib/docker absent; bidirectional within() catches literal parents such as /etc itself."
+      },
+      {
+        "file": "internal/hostbackup/engine.go",
+        "line": 172,
+        "description": "owner() implements the export-side positive model but is never called on the restore path for roots — only in Inventory classification."
+      },
+      {
+        "file": "internal/hostbackup/restore.go",
+        "line": 127,
+        "description": "Full read of Restore confirms: destination Inventory used only for ProtectedRoots, ProtectedContainers, Modules, Containers. No comparison of payload roots to current.Roots."
+      },
+      {
+        "file": "internal/hostbackup/restore.go",
+        "line": 298,
+        "description": "Swap mechanics confirmed: copyTree to .kpanel-next, rename existing to .kpanel-restore-<id>, rename next to target; cleanupRecovery deletes the original."
+      },
+      {
+        "file": "internal/hostbackup/archive.go",
+        "line": 297,
+        "description": "Archive headers accept h.Mode 0..07777; archiveMode preserves setuid/setgid/sticky; restoreOwnership applies archived uid/gid."
+      },
+      {
+        "file": "internal/hostbackup/service.go",
+        "line": 35,
+        "description": "Preview exposes only Version/Revision/Modules — payload root paths never leave the engine."
+      },
+      {
+        "file": "web/src/components/settings/BackupCenter.vue",
+        "line": 36,
+        "description": "Web restore UI renders module ids, byte estimates and issue strings only — no root path display anywhere in the import→preview→restore flow."
+      },
+      {
+        "file": "cmd/kejilion-agent/backup_bundle.go",
+        "line": 335,
+        "description": "Root-terminal CLI menu prints only the module list before restore confirmation — same blindness, second attack vector."
+      },
+      {
+        "file": "deploy/systemd/kejilion-agent.service",
+        "line": 8,
+        "description": "Agent runs as User=root with ProtectSystem=false and ProtectHome=false; RestrictSUIDSGID=true (line 53) may strip setuid bits on some systemd releases but uid/gid-0 arbitrary-mode content is unaffected."
+      },
+      {
+        "file": "internal/hostbackup/backup_test.go",
+        "line": 187,
+        "description": "Existing tests only assert tampered mounts are rejected; no test constrains Root.Path to the data model."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Victim imports and restores an attacker-crafted .kpb (encrypted with an attacker-known password supplied along with the file) via the Panel Backup Center (authenticated session + CSRF) or the root-terminal CLI menu."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "Operator must import and restore the supplied .kpb using the attacker's password — social-engineering or untrusted-backup-source precondition. Every screen shows only module names and sizes; root paths are never displayed."
+      },
+      {
+        "kind": "data_state",
+        "description": "Payload declares matching module label, zero containers, and a root Path that is absolute, canonical, not on the exclusion list and not a parent of an excluded entry (e.g. /root, /etc/ssh, /etc/cron.d, /usr/local/bin, /var/lib/docker)."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Target is not a mountpoint and contains no nested mount (default for /root, /etc/*, /usr/local, /var/lib/docker); no existing container bind-mount overlaps it; destination inventory revision unchanged between preview and restore; stock deployment (Engine.Root='/', agent as root)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "I cannot reach the Agent socket directly. Instead I craft a .kpb that looks like an ordinary apps/web/docker backup and get an operator to import and restore it — e.g. posing as a migration helper or recovery scenario, supplying the password I chose. Every screen looks like a normal restore; root paths are never displayed. When the restore commits, my chosen host directory is atomically replaced with my content, owned by uids/gids I choose, and the original directory is deleted.",
+      "payloads": [
+        "Outer container: standard encrypted .kpb containing manifest.json with Parts=[{module:'apps'}] and apps.payload.",
+        "Inner apps.payload (gzip+tar): manifest.json with roots=[{id:'<32-hex>', path:'/root', module:'apps', directory:true}], containers:[], then entries data/<id>/.ssh/authorized_keys (uid 0, mode 0600). Variants: /etc/ssh replacing sshd_config; /etc/cron.d with a cron file; /usr/local/bin with a planted binary; /var/lib/docker to poison Docker state."
+      ],
+      "instructions": [
+        "Build the inner payload as a gzip tar whose first entry is manifest.json (&lt;=4MiB) naming the malicious root(s), followed by data/<rootID>/... entries (only regular files and dirs, mode <=07777, uid/gid 0).",
+        "Wrap as .kpb via the standard container format (or export a genuine backup and substitute the module payload before re-encrypting with the attacker's password).",
+        "This audit run cannot execute code; the construction is source-derived. Dynamic follow-up: Panel → Backup Center → Import, upload .kpb with password; inspect completes because validatePayload accepts /root.",
+        "Click Preview, then Restore selecting module apps.",
+        "Expected on host: /root renamed to /root.kpanel-restore-<jobid>, archive content installed at /root with uid/gid 0 and stored modes, original deleted after cleanup. CLI equivalent: root terminal 'backup' menu with the same file."
+      ],
+      "observed_result": "Not executed — settled from source per audit sandbox constraints. Reading the full call chain establishes deterministically: validatePayload accepts the crafted root; no later stage in Engine.Restore compares payload roots to the destination inventory or data model; the swap and cleanup deletion apply to the real host path running as host root; restored files receive archived uid/gid and modes including setgid/sticky (setuid subject to possible RestrictSUIDSGID stripping; uid/gid-0 arbitrary-mode content in /root, /etc/ssh, /etc/cron.d, /usr/local/bin is unaffected and independently sufficient for host takeover via authorized_keys or cron)."
+    },
+    "remediation": {
+      "strategy": "Replace the negative-exclusion check with positive scoping of imported Root.Path values to the module data model, revalidate against the destination inventory inside Engine.Restore before any rename, and make the restore confirmation surface the actual root paths so operators can see what will be replaced.",
+      "code_changes": [
+        {
+          "file_name": "internal/hostbackup/archive.go",
+          "fixed_code": "validatePayload: for each root require r.ID == hex(sha256(r.Path)[:16]) (exporter convention) and require the path to lie inside the module's data model — web: within('/home/web'); apps: within('/home') with owner()=='apps'; docker: path must equal a bind Source or resolved volume Mountpoint of a container declared in the same payload (zero containers => zero roots)."
+        },
+        {
+          "file_name": "internal/hostbackup/restore.go",
+          "fixed_code": "After e.Inventory, before staging, require every payload root path to be covered by the destination inventory (current.Roots, /home-derived candidates, or prepareVolumes-resolved mountpoints); reject otherwise."
+        },
+        {
+          "file_name": "internal/hostbackup/service.go",
+          "fixed_code": "Include payload root paths (path, module, bytes) in the inspect/preview response; display them in BackupCenter.vue and the backup_bundle.go CLI confirmation."
+        },
+        {
+          "file_name": "internal/hostbackup/backup_test.go",
+          "fixed_code": "Add cases asserting validatePayload/Restore reject roots at /root, /etc/ssh and any path outside the module model, including zero-container payloads."
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Requires an operator to import and restore an attacker-supplied .kpb using the attacker's password — social-engineering or untrusted-backup-source precondition, and either a panel session or a root terminal. No authentication bypass by itself. However, the confirmation UI shows only module names and sizes (never paths), the archive is encrypted with an attacker-known password, and the whole flow looks identical to a routine restore, so detection likelihood during the attack is very low."
+      },
+      "impact": {
+        "score": "critical",
+        "reason": "Arbitrary content placement and deletion as host root outside the backup data model: the existing /root, /etc/ssh, /etc/cron.d, /usr/local/bin or /var/lib/docker is renamed away, replaced with attacker files carrying attacker-chosen uid/gid and modes up to 07777 (setuid subject to possible RestrictSUIDSGID stripping), then the original directory is deleted. Planting /root/.ssh/authorized_keys, sshd_config, or cron entries yields direct host-level code execution as root."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The validation asymmetry is logically settled from source: validatePayload was read in full and provably contains the only Root.Path scope check (a negative list); the exporter's positive model is observable; Engine.Restore was traced end to end with every gate enumerated and none compares payload roots to the destination inventory; the swap/delete/Chown mechanics and the root-context deployment are all confirmed in-repo, as is the absence of any root-path display in web, CLI, or API previews. Remaining uncertainties are impact refinements only."
+    }
+  }
+]

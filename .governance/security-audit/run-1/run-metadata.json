@@ -1,0 +1,57 @@
+{
+  "run_id": "kejilion-panel-run-1",
+  "repo": "kejilion/KPanel",
+  "target": "C:/GitHub/kejilion-panel",
+  "source_ref": "6340e0783d3e57873fd2c93a964372aefb9e1a81 (main); worktree dirty: 19 files, +40/-640 (batch-terminal panel refactor removals, CHANGELOG/VERSION/docs updates)",
+  "profile": "standard",
+  "scope_paths": null,
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "companion_files_selected": [
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md"
+  ],
+  "prior_run_paths": [],
+  "shared_file_owners": {
+    "run-metadata.json": "parent",
+    "architecture.md": "parent",
+    "coverage-ledger.json": "parent",
+    "findings.json": "parent",
+    "REPORT.md": "parent",
+    "FINDINGS-DETAIL.md": "parent",
+    "NEEDS-VALIDATION.md": "parent"
+  },
+  "sandbox_note": "Host is Windows 11 without an OS-enforced sandbox (no network-namespace isolation, no rlimit enforcement for target processes). Per skill execution-safety rules, target-controlled execution is NOT authorized: all checks run source-only unless a bounded check can be established inside the repo's own test harness without external network, with the caveat that full OS sandbox guarantees are absent. Findings requiring dynamic confirmation will surface as needs_validation with the exact missing sandbox capability.",
+  "prior_ledgers_found": "none",
+  "run_status": "complete",
+  "agents_spent": {
+    "recon": 4,
+    "hunters_wave1": 8,
+    "hunters_wave2": 2,
+    "coverage_critics": 2,
+    "phase3_verifiers": 1,
+    "phase5_verifiers": 1,
+    "total": 18
+  },
+  "units": {
+    "total": 45,
+    "covered": 44,
+    "candidate_with_finding": 1,
+    "blocked": 0,
+    "deferred": 0
+  },
+  "findings": {
+    "confirmed": 1,
+    "needs_validation": 0,
+    "rejected": 0
+  },
+  "skill_source": {
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "pinned_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+    "cloned_at": "2026-09-18",
+    "note": "run-1 executed with this checkout of skills/security-audit; upstream updates require a scoped comparison run before full use"
+  }
+}

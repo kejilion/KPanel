@@ -32,7 +32,10 @@
     ]
   },
   "adoptionLifecycle": {
-    "actionableScopes": ["direct", "foundation"],
+    "actionableScopes": [
+      "direct",
+      "foundation"
+    ],
     "transitiveOwnership": "owning-direct-dependency-or-reachable-security-path",
     "deferralRequiresException": true,
     "resolutionDefinition": "adopt, reject with evidence, or create a time-bounded exception",
@@ -71,7 +74,11 @@
   },
   "crossRepositoryReleaseLinkage": {
     "schemaVersion": 1,
-    "states": ["not-required", "coupled", "script-only"],
+    "states": [
+      "not-required",
+      "coupled",
+      "script-only"
+    ],
     "requiresExplicitDecision": true,
     "repositories": {
       "kpanel": {
@@ -87,20 +94,38 @@
     "decisionRules": {
       "not-required": {
         "when": "KPanel does not change or require a new or changed script-defined protocol, runtime action, host artifact, install/update path, external configuration, or embedded script content; an existing compatible contract is allowed",
-        "requiredEvidence": ["candidate-diff-review", "baseline-script-commit-and-digest", "compatibility-check"],
+        "requiredEvidence": [
+          "candidate-diff-review",
+          "baseline-script-commit-and-digest",
+          "compatibility-check"
+        ],
         "kpanelReleaseAllowed": true,
         "scriptRelease": "not-in-scope"
       },
       "coupled": {
         "when": "KPanel changes or consumes a new or changed script-defined protocol, runtime action, host artifact, install/update path, external configuration, or embedded script content",
-        "requiredEvidence": ["paired-change-set-id", "script-commit-and-digest", "root-cn-sync-check", "script-smoke", "kpanel-contract-tests", "cross-repo-compatibility", "paired-rollback"],
+        "requiredEvidence": [
+          "paired-change-set-id",
+          "script-commit-and-digest",
+          "root-cn-sync-check",
+          "script-smoke",
+          "kpanel-contract-tests",
+          "cross-repo-compatibility",
+          "paired-rollback"
+        ],
         "kpanelReleaseAllowed": "only-after-script-compatible-release",
         "scriptRelease": "required",
         "ifScriptNotReady": "block-kpanel-candidate-or-remove-dependent-scope"
       },
       "script-only": {
         "when": "Only kejilion/sh changes and the supported KPanel contract remains compatible without KPanel code, image, or configuration changes",
-        "requiredEvidence": ["script-commit-and-digest", "root-cn-sync-check", "script-smoke", "supported-kpanel-compatibility", "script-rollback"],
+        "requiredEvidence": [
+          "script-commit-and-digest",
+          "root-cn-sync-check",
+          "script-smoke",
+          "supported-kpanel-compatibility",
+          "script-rollback"
+        ],
         "kpanelReleaseAllowed": false,
         "scriptRelease": "required",
         "kpanelVersionChange": false
@@ -133,55 +158,84 @@
     "dockerfile-frontend",
     "github-actions",
     "security-tools",
-    "managed-kejilion-script"
+    "managed-kejilion-script",
+    "security-audit-skill"
   ],
   "groups": [
     {
       "id": "go-modules",
       "scope": "direct-and-transitive",
-      "manifests": ["go.mod", "go.sum"],
+      "manifests": [
+        "go.mod",
+        "go.sum"
+      ],
       "detector": "go-list"
     },
     {
       "id": "npm-packages",
       "scope": "production-and-development-direct-and-transitive",
-      "manifests": ["web/package.json", "web/package-lock.json"],
+      "manifests": [
+        "web/package.json",
+        "web/package-lock.json"
+      ],
       "detector": "npm-outdated-all"
     },
     {
       "id": "go-toolchain",
       "scope": "compiler-and-build-runtime",
-      "manifests": ["go.mod", "Dockerfile", ".github/workflows/ci.yml", ".github/workflows/release.yml", ".codex-workflows"],
+      "manifests": [
+        "go.mod",
+        "Dockerfile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".codex-workflows"
+      ],
       "detector": "go-stable-releases"
     },
     {
       "id": "node-toolchain",
       "scope": "latest-supported-lts",
-      "manifests": ["web/package.json", "Dockerfile", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
+      "manifests": [
+        "web/package.json",
+        "Dockerfile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml"
+      ],
       "detector": "node-lts-releases"
     },
     {
       "id": "docker-base-images",
       "scope": "build-images-and-pinned-index-digests",
-      "manifests": ["Dockerfile"],
+      "manifests": [
+        "Dockerfile"
+      ],
       "detector": "dockerfile-base-images"
     },
     {
       "id": "dockerfile-frontend",
       "scope": "stable-version-and-pinned-digest",
-      "manifests": ["Dockerfile"],
+      "manifests": [
+        "Dockerfile"
+      ],
       "detector": "docker-hub-tags"
     },
     {
       "id": "github-actions",
       "scope": "all-workflow-actions",
-      "manifests": [".github/workflows"],
+      "manifests": [
+        ".github/workflows"
+      ],
       "detector": "github-releases"
     },
     {
       "id": "security-tools",
       "scope": "govulncheck-and-trivy",
-      "manifests": ["Makefile", ".github/workflows/ci.yml", ".github/workflows/release.yml", "scripts/security-scan.sh"],
+      "manifests": [
+        "Makefile",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "scripts/security-scan.sh"
+      ],
       "detector": "github-releases",
       "components": {
         "trivy": {
@@ -197,10 +251,29 @@
     {
       "id": "managed-kejilion-script",
       "scope": "upstream-commit-and-content-digest",
-      "manifests": ["Dockerfile", "docs/external-config-sources.md"],
+      "manifests": [
+        "Dockerfile",
+        "docs/external-config-sources.md"
+      ],
       "detector": "github-branch-head",
       "repository": "kejilion/sh",
       "branch": "main"
+    },
+    {
+      "id": "security-audit-skill",
+      "scope": "trust-boundary-audit-skill-origin",
+      "manifests": [
+        ".codex-workflows/security-boundary-audit.workflow.yaml",
+        ".governance/security-audit/README.md"
+      ],
+      "detector": "github-commits",
+      "components": {
+        "cloudflare/security-audit-skill": {
+          "repository": "cloudflare/security-audit-skill",
+          "pinnedCommit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+          "adoptionPolicy": "candidate-signal-only; upgrade requires scoped comparison run, ledger revalidation by new validators, and a separate governance commit (PROJECT_RULES 5.2/5.4)"
+        }
+      }
     }
   ],
   "adoptionClasses": [
