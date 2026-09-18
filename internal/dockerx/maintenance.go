@@ -1257,6 +1257,10 @@ func (registry *dockerJobRegistry) putLocked(record dockerJobRecord) error {
 	if !dockerJobIDPattern.MatchString(record.ID) {
 		return errors.New("invalid Docker job identity")
 	}
+	// Inputs carry Compose YAML and environment values from the user's .env;
+	// recovery never replays them, so they must not reach disk. Strip to the
+	// action/target pair the UI needs before serializing.
+	record.Input = MaintenanceInput{Action: record.Action, Target: record.Target}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err

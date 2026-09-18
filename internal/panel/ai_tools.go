@@ -17,6 +17,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/ai"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
+	"github.com/kejilion/kejilion-panel/internal/redact"
 	"github.com/kejilion/kejilion-panel/internal/store"
 )
 
@@ -656,17 +657,46 @@ func validateReadToolArguments(name string, raw json.RawMessage) error {
 	return nil
 }
 
+// topSecretSummaries are wholesale-replaced at any nesting depth, matching the
+// previous top-level behavior for these keys.
+var topSecretSummaries = map[string]struct{}{
+	"data": {}, "content": {}, "password": {}, "token": {}, "apiKey": {}, "key": {}, "command": {}, "reason": {},
+}
+
 func safeArgumentSummary(raw json.RawMessage) map[string]any {
 	var value map[string]any
 	if json.Unmarshal(raw, &value) != nil {
 		return map[string]any{"valid": false}
 	}
-	for _, key := range []string{"data", "content", "password", "token", "apiKey", "key", "command", "reason"} {
-		if _, ok := value[key]; ok {
-			value[key] = "[REDACTED]"
+	return redactSummaryValue(value).(map[string]any)
+}
+
+// redactSummaryValue walks nested tool arguments so that values which never
+// sit at the top level (compose blobs, environment arrays) still pass through
+// the central redactor instead of landing in the audit store verbatim.
+func redactSummaryValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		summary := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if _, drop := topSecretSummaries[key]; drop {
+				summary[key] = "[REDACTED]"
+				continue
+			}
+			summary[key] = redactSummaryValue(item)
 		}
+		return summary
+	case []any:
+		list := make([]any, len(typed))
+		for index, item := range typed {
+			list[index] = redactSummaryValue(item)
+		}
+		return list
+	case string:
+		return redact.Text(typed)
+	default:
+		return value
 	}
-	return value
 }
 
 func aiFileReadable(raw string) bool {

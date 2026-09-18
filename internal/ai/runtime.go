@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/redact"
 )
 
 const (
@@ -948,41 +950,7 @@ func normalizeEvolutionValue(value string) string {
 }
 
 func redactAndLimit(value string, limit int) string {
-	for _, marker := range []string{
-		"sk-", "Bearer ", "Basic ", "api_key=", "apikey=", "password=", "passwd=", "token=", "secret=",
-		`"apiKey":"`, `"password":"`, `"token":"`, `"secret":"`,
-	} {
-		for {
-			index := strings.Index(strings.ToLower(value), strings.ToLower(marker))
-			if index < 0 {
-				break
-			}
-			end := index + len(marker)
-			for end < len(value) && !strings.ContainsRune(" \t\r\n\"'&", rune(value[end])) {
-				end++
-			}
-			value = value[:index] + "[REDACTED]" + value[end:]
-		}
-	}
-	for {
-		begin := strings.Index(value, "-----BEGIN ")
-		if begin < 0 {
-			break
-		}
-		endMarker := "-----END "
-		end := strings.Index(value[begin:], endMarker)
-		if end < 0 {
-			value = value[:begin] + "[REDACTED PRIVATE KEY]"
-			break
-		}
-		end += begin
-		if lineEnd := strings.IndexByte(value[end:], '\n'); lineEnd >= 0 {
-			end += lineEnd + 1
-		} else {
-			end = len(value)
-		}
-		value = value[:begin] + "[REDACTED PRIVATE KEY]\n" + value[end:]
-	}
+	value = redact.Text(value)
 	if len(value) > limit {
 		return value[:limit] + "\n[TRUNCATED]"
 	}

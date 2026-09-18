@@ -505,3 +505,48 @@ func waitForDockerJob(t *testing.T, client *Client, id string) MaintenanceJob {
 	t.Fatalf("Docker job did not finish: %#v", client.MaintenanceJobs())
 	return MaintenanceJob{}
 }
+
+func TestComposeJobRecordOnDiskStripsCredentialsEarly(t *testing.T) {
+	stateDir := t.TempDir()
+	var composeCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/containers/json":
+			_, _ = response.Write([]byte("[]"))
+		case "/v1.41/containers/json":
+			_, _ = response.Write([]byte("[]"))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	_ = composeCalls
+	client := testHTTPClient(server)
+	if err := client.ConfigureJobs(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	input := MaintenanceInput{
+		Action: "image_pull", Image: "nginx:alpine",
+		Compose:     "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD=hunter2\n",
+		Environment: []ContainerCreateEnvironment{{Name: "TOKEN", Value: "sk-live-123"}},
+	}
+	job, err := client.StartMaintenance(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForDockerJob(t, client, job.ID)
+	raw, err := os.ReadFile(filepath.Join(stateDir, job.ID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "hunter2") || strings.Contains(string(raw), "sk-live-123") {
+		t.Fatalf("credential material persisted in job JSON:\n%s", raw)
+	}
+	var record dockerJobRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Input.Action != "image_pull" || record.Input.Compose != "" || len(record.Input.Environment) != 0 {
+		t.Fatalf("on-disk input must collapse to action/target, got %#v", record.Input)
+	}
+}
