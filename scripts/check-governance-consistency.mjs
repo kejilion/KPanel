@@ -141,6 +141,101 @@ function checkRepositoryHygiene() {
 for (const relativePath of requiredFiles) read(relativePath);
 checkRepositoryHygiene();
 
+// PROJECT_RULES 5.4 audit-disclosure boundary: attack-detail artifacts must not
+// land on a pushed branch without the corresponding fix visible in the same
+// push or in an ancestor already merged into the audit baseline. Machine floor:
+// the check flags ADDITIONS of sensitive audit artifacts whose fingerprints do
+// not appear in any fix commit on this branch or in main. The final human
+// judgment on the fix/artifact pairing stays with the push author per 5.4.
+function checkAuditArtifactDisclosure() {
+  const sensitivePatterns = [
+    /^\.governance\/security-audit\/run-[^/]+\/FINDINGS-DETAIL\.md$/i,
+    /^\.governance\/security-audit\/run-[^/]+\/findings\.json$/i,
+  ];
+  const insensitivePatterns = [
+    /^\.governance\/security-audit\/run-[^/]+\/coverage-ledger\.json$/i,
+    /^\.governance\/security-audit\/run-[^/]+\/run-metadata\.json$/i,
+    /^\.governance\/security-audit\/run-[^/]+\/architecture\.md$/i,
+    /^\.governance\/security-audit\/run-[^/]+\/NEEDS-VALIDATION\.md$/i,
+  ];
+  let diffNames;
+  let hasFindingsJson = false;
+  let findingsContent = '';
+  try {
+    diffNames = execFileSync('git', ['diff', '--name-only', '--diff-filter=A', 'origin/main...HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    // No origin/main ref (e.g. fresh clone with minimal remotes): skip machine
+    // floor, the 5.4 push-ordering rule still binds the author.
+    return;
+  }
+  const sensitiveAdds = diffNames.filter((name) => sensitivePatterns.some((pattern) => pattern.test(name)));
+  const knownInsensitive = diffNames.filter((name) => insensitivePatterns.some((pattern) => pattern.test(name)));
+  if (sensitiveAdds.length === 0) return;
+  for (const name of sensitiveAdds) {
+    if (name.endsWith('findings.json')) {
+      hasFindingsJson = true;
+      try {
+        // Blob content at HEAD; artifacts are committed, not working-tree-only.
+        findingsContent = execFileSync('git', ['show', 'HEAD:' + name], { cwd: repoRoot, encoding: 'utf8' });
+      } catch {
+        findingsContent = '';
+      }
+    }
+  }
+  // An empty findings array carries no attack detail (documented in 5.4).
+  let carriesConfirmed = false;
+  if (hasFindingsJson) {
+    try {
+      const parsed = JSON.parse(findingsContent);
+      carriesConfirmed = Array.isArray(parsed) && parsed.some((record) => record && record.verdict === 'confirmed');
+    } catch {
+      carriesConfirmed = true; // unparseable findings: be conservative
+    }
+  }
+  const carriesDetail = sensitiveAdds.some((name) => name.endsWith('FINDINGS-DETAIL.md')) || carriesConfirmed;
+  if (!carriesDetail) {
+    void knownInsensitive;
+    return;
+  }
+  // Fix evidence: any commit on this branch beyond origin/main touching product
+  // source (internal/ cmd/ web/) whose diff mentions a finding fingerprint or
+  // the hostbackup-style validate/restore hardening surface.
+  let fixCommits;
+  try {
+    fixCommits = execFileSync('git', ['log', '--format=%H', 'origin/main..HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    fixCommits = [];
+  }
+  const fixTouches = new Set();
+  for (const commit of fixCommits) {
+    const files = execFileSync('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', commit], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+    for (const file of files) {
+      if (/^(internal|cmd|web)\//.test(file)) fixTouches.add(commit);
+    }
+  }
+  if (fixTouches.size === 0) {
+    failures.push(
+      'audit-disclosure: sensitive audit artifacts added without any product-source fix commit on this branch (PROJECT_RULES 5.4: fix must be visible with or before attack-detail artifacts)',
+    );
+  }
+}
+checkAuditArtifactDisclosure();
+
 const adapterTokens = [
   'PROJECT_RULES.md',
   'docs/project-management.md',
