@@ -175,7 +175,7 @@ function removeSession(id: string): void {
       })
     }
   }
-  if (!sessions.value.length) {
+  if (!sessions.value.length && terminalMode.value === 'interactive') {
     quickCommandsOpen.value = false
     exitWorkspaceFullscreen()
   }
@@ -220,7 +220,7 @@ function closeQuickCommands(): void {
 function executeQuickCommand(command: string): void {
   if (terminalMode.value === 'batch') {
     if (batchRunning.value) return
-    batchPanelRefs.get('batch')?.applyQuickCommand(command)
+    batchPanelRef.value?.applyQuickCommand(command)
     closeQuickCommands()
     return
   }
@@ -245,16 +245,16 @@ interface BatchPanelHandle {
   applyQuickCommand: (command: string) => void
 }
 
-const batchPanelRefs = new Map<string, BatchPanelHandle>()
+const batchPanelRef = ref<BatchPanelHandle>()
 
 function setBatchPanelRef(
   instance: Element | ComponentPublicInstance | null,
 ): void {
   const handle = instance as unknown as Partial<BatchPanelHandle> | null
   if (typeof handle?.applyQuickCommand === 'function') {
-    batchPanelRefs.set('batch', handle as BatchPanelHandle)
+    batchPanelRef.value = handle as BatchPanelHandle
   } else {
-    batchPanelRefs.delete('batch')
+    batchPanelRef.value = undefined
   }
 }
 
@@ -561,13 +561,13 @@ onBeforeUnmount(() => {
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
         <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="item.state = $event" />
         <TerminalQuickCommands
-          :open="quickCommandsOpen"
+          :open="quickCommandsOpen && terminalMode === 'interactive'"
           :disabled="!activeSession || activeSession.state === 'finished'"
           @close="closeQuickCommands"
           @execute="executeQuickCommand"
         />
       </main>
-      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-quick-commands-open': quickCommandsOpen }">
+      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-fullscreen': workspaceFullscreen, 'is-quick-commands-open': quickCommandsOpen }">
         <div class="terminal-tabs-bar terminal-tabs-bar--batch">
           <button
             class="terminal-tabs-bar__connections"
@@ -595,6 +595,7 @@ onBeforeUnmount(() => {
         </div>
         <BatchTerminalPanel :ref="setBatchPanelRef" class="batch-terminal-stage" :hosts="selectedBatchHosts" :session-capacity="batchSessionCapacity" @running-change="batchRunning = $event" />
         <TerminalQuickCommands
+          mode="batch"
           :open="quickCommandsOpen && terminalMode === 'batch'"
           :disabled="batchRunning"
           @close="closeQuickCommands"
@@ -716,7 +717,6 @@ onBeforeUnmount(() => {
   .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
   .terminal-stage :deep(.terminal-quick-commands) { grid-row:auto; grid-column:auto; position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
   .terminal-stage--batch .batch-terminal-stage { grid-row:2; }
-  .terminal-stage--batch.is-quick-commands-open .batch-terminal-stage { grid-row:2; }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

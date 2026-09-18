@@ -11,6 +11,7 @@ import type { TerminalQuickCommand } from '@/types/api'
 const props = defineProps<{
   open: boolean
   disabled?: boolean
+  mode?: 'interactive' | 'batch'
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +22,10 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const toast = useToast()
 const commandStore = useTerminalCommands()
+// In batch mode clicking a name fills the command box instead of executing,
+// so run/empty guidance must say "fill", not "run".
+const actionPhraseKey = computed(() => props.mode === 'batch' ? 'terminal.quickCommandsFill' : 'terminal.quickCommandsRun')
+const emptyDescriptionKey = computed(() => props.mode === 'batch' ? 'terminal.quickCommandsEmptyDescriptionBatch' : 'terminal.quickCommandsEmptyDescription')
 const loadError = ref('')
 const formOpen = ref(false)
 const editingCommand = ref<TerminalQuickCommand>()
@@ -217,7 +222,7 @@ async function remove(): Promise<void> {
     <div v-else-if="!items.length" class="terminal-quick-commands__state terminal-quick-commands__state--empty">
       <span class="terminal-quick-commands__empty-icon"><Play :size="20" /></span>
       <strong>{{ t('terminal.quickCommandsEmptyTitle') }}</strong>
-      <span>{{ t('terminal.quickCommandsEmptyDescription') }}</span>
+      <span>{{ t(emptyDescriptionKey) }}</span>
       <button type="button" class="terminal-quick-commands__add-first" @click="beginAdd">
         <Plus :size="15" />{{ t('terminal.quickCommandsAdd') }}
       </button>
@@ -228,7 +233,7 @@ async function remove(): Promise<void> {
           type="button"
           class="terminal-quick-command__run"
           :disabled="disabled"
-          :title="t('terminal.quickCommandsRun', { name: item.name })"
+          :title="t(actionPhraseKey, { name: item.name })"
           @click="emit('execute', item.command)"
         >
           <Play :size="14" fill="currentColor" />
