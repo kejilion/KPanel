@@ -175,7 +175,7 @@ function removeSession(id: string): void {
       })
     }
   }
-  if (!sessions.value.length) {
+  if (!sessions.value.length && terminalMode.value === 'interactive') {
     quickCommandsOpen.value = false
     exitWorkspaceFullscreen()
   }
@@ -561,7 +561,7 @@ onBeforeUnmount(() => {
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
         <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="item.state = $event" />
         <TerminalQuickCommands
-          :open="quickCommandsOpen"
+          :open="quickCommandsOpen && terminalMode === 'interactive'"
           :disabled="!activeSession || activeSession.state === 'finished'"
           @close="closeQuickCommands"
           @execute="executeQuickCommand"
