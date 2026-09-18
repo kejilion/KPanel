@@ -98,6 +98,13 @@ func openLightStore(path string) (*lightStore, error) {
 		if err := decodeLightState(content, &store.state); err != nil {
 			return nil, err
 		}
+		// A crash between installing the target and removing its .previous
+		// backup leaves the residue that otherwise deadlocks every later
+		// persist with "backup already exists"; drop it once the target is
+		// validated, mirroring the batch store's verified open path.
+		if err := discardAtomicBackupV2(path, store.ops); err != nil {
+			return nil, fmt.Errorf("finalize light node store recovery: %w", err)
+		}
 	case errors.Is(err, os.ErrNotExist):
 		if err := store.persistLocked(); err != nil {
 			return nil, err
