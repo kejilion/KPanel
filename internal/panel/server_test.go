@@ -95,7 +95,7 @@ func TestAuthenticationHTTPFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 	bootstrap := performRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
 		"Content-Type": "application/json",
@@ -175,7 +175,7 @@ func TestSecurityEntranceGatesLoginWithoutBreakingSessions(t *testing.T) {
 	if directLogin.Code != http.StatusNotFound {
 		t.Fatalf("direct login should be hidden, got %d", directLogin.Code)
 	}
-	directAPI := loginRequest(server, "a-strong-password")
+	directAPI := loginRequest(server, "a-strong-password-1")
 	if directAPI.Code != http.StatusNotFound {
 		t.Fatalf("direct login API should be hidden, got %d", directAPI.Code)
 	}
@@ -201,7 +201,7 @@ func TestSecurityEntranceGatesLoginWithoutBreakingSessions(t *testing.T) {
 	if entryCookie == nil || !entryCookie.HttpOnly || entryCookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("unexpected entrance cookie: %#v", entry.Result().Cookies())
 	}
-	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "a-strong-password"})
+	loginBody, _ := json.Marshal(map[string]string{"username": "admin", "password": "a-strong-password-1"})
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(loginBody))
 	loginRequest.Host = "panel.test"
 	loginRequest.Header.Set("Content-Type", "application/json")
@@ -228,8 +228,8 @@ func TestPasswordChangeGuardsAndValidation(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
 	validBody, err := json.Marshal(map[string]string{
-		"currentPassword": "a-strong-password",
-		"newPassword":     "a-new-strong-password",
+		"currentPassword": "a-strong-password-1",
+		"newPassword":     "a-new-strong-password-4",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -267,15 +267,15 @@ func TestPasswordChangeGuardsAndValidation(t *testing.T) {
 	}{
 		{
 			name: "incorrect current password", current: "incorrect-password",
-			next: "a-new-strong-password", expectedField: "currentPassword",
+			next: "a-new-strong-password-4", expectedField: "currentPassword",
 		},
 		{
-			name: "weak new password", current: "a-strong-password",
+			name: "weak new password", current: "a-strong-password-1",
 			next: "too-short", expectedField: "newPassword",
 		},
 		{
-			name: "unchanged password", current: "a-strong-password",
-			next: "a-strong-password", expectedField: "newPassword",
+			name: "unchanged password", current: "a-strong-password-1",
+			next: "a-strong-password-1", expectedField: "newPassword",
 		},
 	}
 	for _, test := range tests {
@@ -302,7 +302,7 @@ func TestPasswordChangeGuardsAndValidation(t *testing.T) {
 		})
 	}
 
-	oldLogin := loginRequest(server, "a-strong-password")
+	oldLogin := loginRequest(server, "a-strong-password-1")
 	if oldLogin.Code != http.StatusOK {
 		t.Fatalf("validation failure changed the password: %d %s", oldLogin.Code, oldLogin.Body.String())
 	}
@@ -325,15 +325,15 @@ func TestPasswordChangeGuardsAndValidation(t *testing.T) {
 func TestPasswordChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	firstSession, firstCSRF := bootstrapCookies(t, server, tokenPath)
-	secondLogin := loginRequest(server, "a-strong-password")
+	secondLogin := loginRequest(server, "a-strong-password-1")
 	if secondLogin.Code != http.StatusOK {
 		t.Fatalf("second login failed: %d %s", secondLogin.Code, secondLogin.Body.String())
 	}
 	secondSession, secondCSRF := authCookies(t, secondLogin)
 
 	body, err := json.Marshal(map[string]string{
-		"currentPassword": "a-strong-password",
-		"newPassword":     "a-new-strong-password",
+		"currentPassword": "a-strong-password-1",
+		"newPassword":     "a-new-strong-password-4",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -375,11 +375,11 @@ func TestPasswordChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 		}
 	}
 
-	oldLogin := loginRequest(server, "a-strong-password")
+	oldLogin := loginRequest(server, "a-strong-password-1")
 	if oldLogin.Code != http.StatusUnauthorized {
 		t.Fatalf("old password remained valid: %d %s", oldLogin.Code, oldLogin.Body.String())
 	}
-	newLogin := loginRequest(server, "a-new-strong-password")
+	newLogin := loginRequest(server, "a-new-strong-password-4")
 	if newLogin.Code != http.StatusOK {
 		t.Fatalf("new password login failed: %d %s", newLogin.Code, newLogin.Body.String())
 	}
@@ -403,7 +403,7 @@ func TestUsernameChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
 	body, err := json.Marshal(map[string]string{
-		"currentPassword": "a-strong-password",
+		"currentPassword": "a-strong-password-1",
 		"newUsername":     "operator",
 	})
 	if err != nil {
@@ -446,11 +446,11 @@ func TestUsernameChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 		t.Fatalf("changing session remained valid: %d %s", sessionResponse.Code, sessionResponse.Body.String())
 	}
 
-	oldLogin := loginRequest(server, "a-strong-password")
+	oldLogin := loginRequest(server, "a-strong-password-1")
 	if oldLogin.Code != http.StatusUnauthorized {
 		t.Fatalf("old username remained valid: %d %s", oldLogin.Code, oldLogin.Body.String())
 	}
-	loginBody, _ := json.Marshal(map[string]string{"username": "operator", "password": "a-strong-password"})
+	loginBody, _ := json.Marshal(map[string]string{"username": "operator", "password": "a-strong-password-1"})
 	newLogin := performRequest(server, http.MethodPost, "/api/v1/auth/login", loginBody, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",
 	})
@@ -471,7 +471,7 @@ func TestPasswordChangeRequestBodyBound(t *testing.T) {
 	server.config.MaxRequestBytes = 1024
 	body, err := json.Marshal(map[string]string{
 		"currentPassword": strings.Repeat("x", 2048),
-		"newPassword":     "a-new-strong-password",
+		"newPassword":     "a-new-strong-password-4",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -506,7 +506,7 @@ func TestRejectsCrossOriginBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 	response := performRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
 		"Content-Type": "application/json",
@@ -524,7 +524,7 @@ func TestRejectsMissingOriginAndUnexpectedHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 
 	missingOrigin := performRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
@@ -576,7 +576,7 @@ func TestAllowIPHostsSupportsNATWithoutAllowingDNSHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -606,7 +606,7 @@ func TestTrustedHTTPSProxyAllowsKFDOriginAndSecureCookies(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -929,7 +929,7 @@ func bootstrapCookiesForOrigin(t *testing.T, server *Server, tokenPath, origin s
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(map[string]string{
-		"token": string(token), "username": "admin", "password": "a-strong-password",
+		"token": string(token), "username": "admin", "password": "a-strong-password-1",
 	})
 	if err != nil {
 		t.Fatal(err)

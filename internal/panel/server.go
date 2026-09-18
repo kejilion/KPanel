@@ -160,8 +160,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	timezoneSource := newNotificationTimezoneSource(agent)
 	notifications, err := notification.NewService(notification.Config{
-		Resources: notificationResourceSource{agent: agent},
-		DataDir:   config.DataDir, Hosts: clusterService, Timezone: timezoneSource.Location,
+		DataDir: config.DataDir, Hosts: clusterService, Timezone: timezoneSource.Location,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize notifications: %w", err)
@@ -633,7 +632,11 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	credentials, err := s.auth.Bootstrap(input.Token, input.Username, input.Password)
 	if err != nil {
 		s.auditAuthFailure(r, "auth.bootstrap")
+		var rateError *auth.RateLimitError
 		switch {
+		case errors.As(err, &rateError):
+			w.Header().Set("Retry-After", strconv.Itoa(max(int(rateError.RetryAfter.Seconds()), 1)))
+			s.writeProblem(w, r, http.StatusTooManyRequests, "bootstrap_busy", "Bootstrap is busy", "")
 		case errors.Is(err, auth.ErrBootstrapUnavailable):
 			s.writeProblem(w, r, http.StatusConflict, "bootstrap_unavailable", "Bootstrap unavailable", "")
 		case errors.Is(err, auth.ErrInvalidBootstrapToken):

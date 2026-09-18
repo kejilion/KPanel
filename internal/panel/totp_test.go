@@ -24,7 +24,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 		t.Fatalf("unauthenticated TOTP status = %d", unauthenticated.Code)
 	}
 
-	startBody, _ := json.Marshal(map[string]string{"currentPassword": "a-strong-password"})
+	startBody, _ := json.Marshal(map[string]string{"currentPassword": "a-strong-password-1"})
 	missingCSRF := authenticatedRequest(server, http.MethodPost, "/api/v1/settings/totp/enrollment", startBody, sessionCookie, csrfCookie, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",
 	})
@@ -71,7 +71,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 	if oldSession.Code != http.StatusUnauthorized {
 		t.Fatalf("old session survived TOTP enable: %d", oldSession.Code)
 	}
-	passwordOnly := loginRequest(server, "a-strong-password")
+	passwordOnly := loginRequest(server, "a-strong-password-1")
 	if passwordOnly.Code != http.StatusUnauthorized || !strings.Contains(passwordOnly.Body.String(), "totp_required") {
 		t.Fatalf("password-only login bypassed TOTP: %d %s", passwordOnly.Code, passwordOnly.Body.String())
 	}
@@ -88,7 +88,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 		t.Fatal(err)
 	}
 	unavailableBody, _ := json.Marshal(map[string]string{
-		"username": "admin", "password": "a-strong-password", "totpCode": panelTestTOTP(t, enrollment.Secret, time.Now()),
+		"username": "admin", "password": "a-strong-password-1", "totpCode": panelTestTOTP(t, enrollment.Secret, time.Now()),
 	})
 	unavailable := performRequest(server, http.MethodPost, "/api/v1/auth/login", unavailableBody, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",
@@ -97,7 +97,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 		t.Fatalf("missing TOTP key was not surfaced safely: %d %s", unavailable.Code, unavailable.Body.String())
 	}
 	recoveryWithoutKeyBody, _ := json.Marshal(map[string]string{
-		"username": "admin", "password": "a-strong-password", "totpCode": recovery.RecoveryCodes[9],
+		"username": "admin", "password": "a-strong-password-1", "totpCode": recovery.RecoveryCodes[9],
 	})
 	recoveryWithoutKey := performRequest(server, http.MethodPost, "/api/v1/auth/login", recoveryWithoutKeyBody, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",
@@ -110,7 +110,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 	}
 
 	loginBody, _ := json.Marshal(map[string]string{
-		"username": "admin", "password": "a-strong-password", "totpCode": panelTestTOTP(t, enrollment.Secret, time.Now()),
+		"username": "admin", "password": "a-strong-password-1", "totpCode": panelTestTOTP(t, enrollment.Secret, time.Now()),
 	})
 	login := performRequest(server, http.MethodPost, "/api/v1/auth/login", loginBody, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",
@@ -120,7 +120,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 	}
 
 	recoveryBody, _ := json.Marshal(map[string]string{
-		"username": "admin", "password": "a-strong-password", "totpCode": recovery.RecoveryCodes[0],
+		"username": "admin", "password": "a-strong-password-1", "totpCode": recovery.RecoveryCodes[0],
 	})
 	recoveryLogin := performRequest(server, http.MethodPost, "/api/v1/auth/login", recoveryBody, map[string]string{
 		"Content-Type": "application/json", "Origin": "http://panel.test",

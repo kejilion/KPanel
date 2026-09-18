@@ -25,10 +25,7 @@ func (c *Client) updateContainerAccess(
 	allowExternal bool,
 	allowedIP string,
 ) error {
-	if err := c.verifyContainerVersion(ctx, id, expectedVersion); err != nil {
-		return err
-	}
-	inspect, err := c.inspect(ctx, id)
+	inspect, err := c.inspectVerifiedContainer(ctx, id, expectedVersion)
 	if err != nil {
 		return err
 	}

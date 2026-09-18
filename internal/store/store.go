@@ -555,6 +555,8 @@ func (s *Store) revokeUserSessionsLocked(userID string) {
 	s.data.Sessions = sessions
 }
 
+const maxRetainedSessions = 128
+
 func (s *Store) PutSession(session Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -565,7 +567,14 @@ func (s *Store) PutSession(session Session) error {
 			filtered = append(filtered, item)
 		}
 	}
-	s.data.Sessions = append(filtered, session)
+	filtered = append(filtered, session)
+	// Expired sessions are pruned here on every login; the count cap keeps a
+	// burst of logins within one TTL from growing the shared state file.
+	// Sessions are appended in creation order, so the oldest are dropped.
+	if len(filtered) > maxRetainedSessions {
+		filtered = append([]Session(nil), filtered[len(filtered)-maxRetainedSessions:]...)
+	}
+	s.data.Sessions = filtered
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err
@@ -656,6 +665,8 @@ func (s *Store) ListAudit(limit int, cursor string) ([]AuditEvent, string) {
 	return items[start:end], next
 }
 
+const maxLoginAttempts = 4096
+
 func (s *Store) RecordLoginAttempt(attempt LoginAttempt, retainSince time.Time) error {
 	return s.RecordLoginAttempts([]LoginAttempt{attempt}, retainSince)
 }
@@ -670,7 +681,14 @@ func (s *Store) RecordLoginAttempts(attempts []LoginAttempt, retainSince time.Ti
 			filtered = append(filtered, item)
 		}
 	}
-	s.data.LoginAttempts = append(filtered, attempts...)
+	filtered = append(filtered, attempts...)
+	// The time window alone does not bound the list: many distinct sources
+	// inside one window could grow the shared state file toward its capacity
+	// limit. Keep the newest entries; per-key limits still hold for them.
+	if len(filtered) > maxLoginAttempts {
+		filtered = append([]LoginAttempt(nil), filtered[len(filtered)-maxLoginAttempts:]...)
+	}
+	s.data.LoginAttempts = filtered
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err

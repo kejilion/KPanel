@@ -67,7 +67,7 @@ func TestBackupHTTPAuthAndExport(t *testing.T) {
 	s, token := newTestServer(t)
 	session, csrf := bootstrapCookies(t, s, token)
 	s.config.TOTPKeyPath = filepath.Join(s.config.DataDir, "totp.key")
-	body := []byte(`{"password":"long-test-password","modules":["panel"]}`)
+	body := []byte(`{"password":"long-test-password-5","modules":["panel"]}`)
 	request := func(auth, origin, check bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/api/v1/backups/export", bytes.NewReader(body))
 		r.Host = "panel.test"
@@ -118,7 +118,7 @@ func TestBackupHTTPAuthAndExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := backup.Read(f, "long-test-password", t.TempDir()); err != nil {
+	if _, err := backup.Read(f, "long-test-password-5", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
@@ -126,7 +126,7 @@ func TestBackupHTTPAuthAndExport(t *testing.T) {
 	}
 	var upload bytes.Buffer
 	multipartWriter := multipart.NewWriter(&upload)
-	if err := multipartWriter.WriteField("password", "long-test-password"); err != nil {
+	if err := multipartWriter.WriteField("password", "long-test-password-5"); err != nil {
 		t.Fatal(err)
 	}
 	part, err := multipartWriter.CreateFormFile("file", "fixture.kpb")

@@ -48,7 +48,6 @@ type HostSource interface {
 type TimezoneSource func(context.Context) *time.Location
 
 type Config struct {
-	Resources          ResourceSource
 	DataDir            string
 	Hosts              HostSource
 	Telegram           TelegramAPI
@@ -67,19 +66,15 @@ type trafficSample struct {
 }
 
 type Service struct {
-	resources         ResourceSource
-	resourceMu        sync.Mutex
-	resourceCache     ResourceSnapshot
-	resourceFetchedAt time.Time
-	store             *Store
-	hosts             HostSource
-	telegram          TelegramAPI
-	robots            RobotAPI
-	timezone          TimezoneSource
-	now               func() time.Time
-	evaluation        time.Duration
-	sustain           int
-	repeat            time.Duration
+	store      *Store
+	hosts      HostSource
+	telegram   TelegramAPI
+	robots     RobotAPI
+	timezone   TimezoneSource
+	now        func() time.Time
+	evaluation time.Duration
+	sustain    int
+	repeat     time.Duration
 
 	opMu    sync.Mutex
 	mu      sync.Mutex
@@ -131,8 +126,7 @@ func NewService(config Config) (*Service, error) {
 	}
 	state := store.stateSnapshot()
 	service := &Service{
-		resources: config.Resources,
-		store:     store, hosts: config.Hosts, telegram: config.Telegram, robots: config.Robots, timezone: config.Timezone, now: config.Now,
+		store: store, hosts: config.Hosts, telegram: config.Telegram, robots: config.Robots, timezone: config.Timezone, now: config.Now,
 		evaluation: config.EvaluationInterval, sustain: config.SustainSamples,
 		repeat: config.RepeatInterval, alerts: make(map[string]alertState),
 		traffic: make(map[string]trafficSample),

@@ -68,7 +68,7 @@ func TestRunPasswordResetReplacesPasswordAndDisablesTOTP(t *testing.T) {
 	readCount := 0
 	reader := func(string) ([]byte, error) {
 		readCount++
-		return []byte("a-recovered-password"), nil
+		return []byte("a-recovered-password-3"), nil
 	}
 	var output bytes.Buffer
 	if err := runPasswordResetWithReader([]string{"--disable-2fa"}, &output, reader); err != nil {
@@ -96,7 +96,7 @@ func TestRunPasswordResetReplacesPasswordAndDisablesTOTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid, err := hasher.Verify("a-recovered-password", recovered.PasswordHash)
+	valid, err := hasher.Verify("a-recovered-password-3", recovered.PasswordHash)
 	if err != nil || !valid {
 		t.Fatalf("recovered password did not verify: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestRunPasswordResetReplacesPasswordAndDisablesTOTP(t *testing.T) {
 
 func TestRunPasswordResetRejectsMismatchedConfirmationWithoutChangingState(t *testing.T) {
 	directory, user := seedPasswordResetState(t)
-	first := []byte("a-recovered-password")
+	first := []byte("a-recovered-password-3")
 	second := []byte("a-different-password")
 	passwords := [][]byte{first, second}
 	reader := func(string) ([]byte, error) {

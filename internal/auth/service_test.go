@@ -56,7 +56,7 @@ func TestBootstrapLoginSessionAndLogout(t *testing.T) {
 	credentials, err := service.Bootstrap(
 		string(tokenBytes),
 		"admin",
-		"a-strong-password",
+		"a-strong-password-1",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestBootstrapLoginSessionAndLogout(t *testing.T) {
 		t.Fatalf("expected invalid session, got %v", err)
 	}
 
-	login, err := service.Login("127.0.0.1", "admin", "a-strong-password", "")
+	login, err := service.Login("127.0.0.1", "admin", "a-strong-password-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestLoginRateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Bootstrap(string(token), "admin", "a-strong-password"); err != nil {
+	if _, err := service.Bootstrap(string(token), "admin", "a-strong-password-1"); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -124,10 +124,10 @@ func TestLoginRateLimit(t *testing.T) {
 			t.Fatalf("expected invalid credentials, got %v", err)
 		}
 	}
-	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password", ""); !errors.Is(err, ErrRateLimited) {
+	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("expected rate limit, got %v", err)
 	}
-	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password", ""); err != nil {
+	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password-1", ""); err != nil {
 		t.Fatalf("a different IP could not use valid credentials after one IP was limited: %v", err)
 	}
 }
@@ -155,7 +155,7 @@ func TestLoginAppliesHigherDistributedAccountLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Bootstrap(string(token), "admin", "a-strong-password"); err != nil {
+	if _, err := service.Bootstrap(string(token), "admin", "a-strong-password-1"); err != nil {
 		t.Fatal(err)
 	}
 	for attempt := range 2 * accountFailureLimitMultiplier {
@@ -164,7 +164,7 @@ func TestLoginAppliesHigherDistributedAccountLimit(t *testing.T) {
 			t.Fatalf("attempt %d: expected invalid credentials, got %v", attempt, err)
 		}
 	}
-	if _, err := service.Login("198.51.100.1", "admin", "a-strong-password", ""); !errors.Is(err, ErrRateLimited) {
+	if _, err := service.Login("198.51.100.1", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("expected distributed account rate limit, got %v", err)
 	}
 }
@@ -251,7 +251,7 @@ func TestBootstrapSerializesPasswordHashing(t *testing.T) {
 			_, bootstrapErr := service.Bootstrap(
 				string(token),
 				"admin",
-				"a-strong-password",
+				"a-strong-password-1",
 			)
 			results <- bootstrapErr
 		}()
@@ -298,25 +298,25 @@ func TestChangePasswordRevokesSessionsAndReplacesCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstSession, err := service.Bootstrap(string(token), "admin", "a-strong-password")
+	firstSession, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondSession, err := service.Login("192.0.2.1", "admin", "a-strong-password", "")
+	secondSession, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.ChangePassword(firstSession.User.ID, "wrong-current", "an-even-stronger-password"); !errors.Is(err, ErrInvalidCurrentPassword) {
+	if err := service.ChangePassword(firstSession.User.ID, "wrong-current", "an-even-stronger-password-2"); !errors.Is(err, ErrInvalidCurrentPassword) {
 		t.Fatalf("expected invalid current password, got %v", err)
 	}
 	if _, err := service.Authenticate(firstSession.Token); err != nil {
 		t.Fatalf("failed change revoked a session: %v", err)
 	}
-	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password", "short"); !errors.Is(err, ErrWeakPassword) {
+	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password-1", "short"); !errors.Is(err, ErrWeakPassword) {
 		t.Fatalf("expected weak password rejection, got %v", err)
 	}
-	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password", "a-strong-password"); !errors.Is(err, ErrPasswordUnchanged) {
+	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password-1", "a-strong-password-1"); !errors.Is(err, ErrPasswordUnchanged) {
 		t.Fatalf("expected unchanged password rejection, got %v", err)
 	}
 
@@ -325,7 +325,7 @@ func TestChangePasswordRevokesSessionsAndReplacesCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.now = func() time.Time { return before.UpdatedAt.Add(time.Minute) }
-	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password", "an-even-stronger-password"); err != nil {
+	if err := service.ChangePassword(firstSession.User.ID, "a-strong-password-1", "an-even-stronger-password-2"); err != nil {
 		t.Fatal(err)
 	}
 	after, err := storage.UserByID(firstSession.User.ID)
@@ -343,10 +343,10 @@ func TestChangePasswordRevokesSessionsAndReplacesCredentials(t *testing.T) {
 			t.Fatalf("old session remained valid: %v", err)
 		}
 	}
-	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("old password remained valid: %v", err)
 	}
-	newSession, err := service.Login("192.0.2.2", "admin", "an-even-stronger-password", "")
+	newSession, err := service.Login("192.0.2.2", "admin", "an-even-stronger-password-2", "")
 	if err != nil {
 		t.Fatalf("new password was rejected: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestRecoverPasswordReplacesCredentialsWithoutCurrentPassword(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := service.Bootstrap(string(token), "admin", "a-strong-password")
+	credentials, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +389,7 @@ func TestRecoverPasswordReplacesCredentialsWithoutCurrentPassword(t *testing.T) 
 		t.Fatalf("rejected recovery revoked the session: %v", err)
 	}
 
-	recovered, err := service.RecoverPassword(credentials.User.ID, "a-recovered-password", false)
+	recovered, err := service.RecoverPassword(credentials.User.ID, "a-recovered-password-3", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,10 +399,10 @@ func TestRecoverPasswordReplacesCredentialsWithoutCurrentPassword(t *testing.T) 
 	if _, err := service.Authenticate(credentials.Token); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("old session survived recovery: %v", err)
 	}
-	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("old password remained valid: %v", err)
 	}
-	if _, err := service.Login("192.0.2.1", "admin", "a-recovered-password", ""); err != nil {
+	if _, err := service.Login("192.0.2.1", "admin", "a-recovered-password-3", ""); err != nil {
 		t.Fatalf("recovered password was rejected: %v", err)
 	}
 	events, _ := storage.ListAudit(10, "")
@@ -432,11 +432,11 @@ func TestChangeUsernameRevokesSessionsAndKeepsPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := service.Bootstrap(string(token), "admin", "a-strong-password")
+	first, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Login("192.0.2.10", "admin", "a-strong-password", "")
+	second, err := service.Login("192.0.2.10", "admin", "a-strong-password-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,13 +444,13 @@ func TestChangeUsernameRevokesSessionsAndKeepsPassword(t *testing.T) {
 	if err := service.ChangeUsername(first.User.ID, "wrong-password", "operator"); !errors.Is(err, ErrInvalidCurrentPassword) {
 		t.Fatalf("expected current password rejection, got %v", err)
 	}
-	if err := service.ChangeUsername(first.User.ID, "a-strong-password", "bad name"); !errors.Is(err, ErrInvalidUsername) {
+	if err := service.ChangeUsername(first.User.ID, "a-strong-password-1", "bad name"); !errors.Is(err, ErrInvalidUsername) {
 		t.Fatalf("expected username validation, got %v", err)
 	}
-	if err := service.ChangeUsername(first.User.ID, "a-strong-password", "admin"); !errors.Is(err, ErrUsernameUnchanged) {
+	if err := service.ChangeUsername(first.User.ID, "a-strong-password-1", "admin"); !errors.Is(err, ErrUsernameUnchanged) {
 		t.Fatalf("expected unchanged username rejection, got %v", err)
 	}
-	if err := service.ChangeUsername(first.User.ID, "a-strong-password", "operator"); err != nil {
+	if err := service.ChangeUsername(first.User.ID, "a-strong-password-1", "operator"); err != nil {
 		t.Fatal(err)
 	}
 	for _, credentials := range []Credentials{first, second} {
@@ -458,10 +458,10 @@ func TestChangeUsernameRevokesSessionsAndKeepsPassword(t *testing.T) {
 			t.Fatalf("old session remained valid: %v", err)
 		}
 	}
-	if _, err := service.Login("192.0.2.11", "admin", "a-strong-password", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := service.Login("192.0.2.11", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("old username remained valid: %v", err)
 	}
-	if _, err := service.Login("192.0.2.11", "operator", "a-strong-password", ""); err != nil {
+	if _, err := service.Login("192.0.2.11", "operator", "a-strong-password-1", ""); err != nil {
 		t.Fatalf("new username or existing password was rejected: %v", err)
 	}
 }
@@ -475,7 +475,7 @@ func TestChangePasswordRejectsInvalidInputs(t *testing.T) {
 	t.Cleanup(func() { _ = storage.Close() })
 	now := time.Now().UTC()
 	hasher := testHasher(t)
-	passwordHash, err := hasher.Hash("a-strong-password")
+	passwordHash, err := hasher.Hash("a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,13 +493,13 @@ func TestChangePasswordRejectsInvalidInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := service.ChangePassword("user-1", "", "an-even-stronger-password"); !errors.Is(err, ErrInvalidCurrentPassword) {
+	if err := service.ChangePassword("user-1", "", "an-even-stronger-password-2"); !errors.Is(err, ErrInvalidCurrentPassword) {
 		t.Fatalf("empty current password returned %v", err)
 	}
-	if err := service.ChangePassword("user-1", "a-strong-password", string(make([]byte, 257))); !errors.Is(err, ErrWeakPassword) {
+	if err := service.ChangePassword("user-1", "a-strong-password-1", string(make([]byte, 257))); !errors.Is(err, ErrWeakPassword) {
 		t.Fatalf("oversized new password returned %v", err)
 	}
-	if err := service.ChangePassword("missing-user", "a-strong-password", "an-even-stronger-password"); !errors.Is(err, ErrInvalidCurrentPassword) {
+	if err := service.ChangePassword("missing-user", "a-strong-password-1", "an-even-stronger-password-2"); !errors.Is(err, ErrInvalidCurrentPassword) {
 		t.Fatalf("missing user returned %v", err)
 	}
 }
@@ -513,7 +513,7 @@ func TestConcurrentPasswordChangesDoNotOverwriteWinner(t *testing.T) {
 	t.Cleanup(func() { _ = storage.Close() })
 	now := time.Now().UTC()
 	hasher := testHasher(t)
-	oldHash, err := hasher.Hash("a-strong-password")
+	oldHash, err := hasher.Hash("a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,12 +538,12 @@ func TestConcurrentPasswordChangesDoNotOverwriteWinner(t *testing.T) {
 	}
 	start := make(chan struct{})
 	results := make(chan result, 2)
-	for _, password := range []string{"first-new-password", "second-new-password"} {
+	for _, password := range []string{"first-new-password-6", "second-new-password-7"} {
 		go func(newPassword string) {
 			<-start
 			results <- result{
 				password: newPassword,
-				err:      service.ChangePassword("user-1", "a-strong-password", newPassword),
+				err:      service.ChangePassword("user-1", "a-strong-password-1", newPassword),
 			}
 		}(password)
 	}
@@ -585,7 +585,7 @@ func TestPasswordChangeRevokesSessionCreatedByInflightOldPasswordLogin(t *testin
 	t.Cleanup(func() { _ = storage.Close() })
 	now := time.Now().UTC()
 	if err := storage.CreateInitialAdmin(store.User{
-		ID: "user-1", Username: "admin", PasswordHash: "hash:a-strong-password",
+		ID: "user-1", Username: "admin", PasswordHash: "hash:a-strong-password-1",
 		Role: "admin", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
@@ -611,7 +611,7 @@ func TestPasswordChangeRevokesSessionCreatedByInflightOldPasswordLogin(t *testin
 		err         error
 	}, 1)
 	go func() {
-		credentials, loginErr := service.Login("192.0.2.1", "admin", "a-strong-password", "")
+		credentials, loginErr := service.Login("192.0.2.1", "admin", "a-strong-password-1", "")
 		loginResult <- struct {
 			credentials Credentials
 			err         error
@@ -625,7 +625,7 @@ func TestPasswordChangeRevokesSessionCreatedByInflightOldPasswordLogin(t *testin
 
 	changeResult := make(chan error, 1)
 	go func() {
-		changeResult <- service.ChangePassword("user-1", "a-strong-password", "an-even-stronger-password")
+		changeResult <- service.ChangePassword("user-1", "a-strong-password-1", "an-even-stronger-password-2")
 	}()
 	select {
 	case err := <-changeResult:
@@ -672,14 +672,14 @@ func TestChangePasswordBoundsConcurrentPasswordHashes(t *testing.T) {
 
 	firstResult := make(chan error, 1)
 	go func() {
-		firstResult <- service.ChangePassword("user-1", "a-strong-password", "an-even-stronger-password")
+		firstResult <- service.ChangePassword("user-1", "a-strong-password-1", "an-even-stronger-password-2")
 	}()
 	select {
 	case <-hasher.started:
 	case <-time.After(time.Second):
 		t.Fatal("first password verification did not start")
 	}
-	if err := service.ChangePassword("user-1", "a-strong-password", "another-strong-password"); !errors.Is(err, ErrRateLimited) {
+	if err := service.ChangePassword("user-1", "a-strong-password-1", "another-strong-password-8"); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("expected concurrent hash limit, got %v", err)
 	}
 	close(hasher.release)
@@ -757,7 +757,7 @@ func (h *inflightLoginHasher) Hash(password string) (string, error) {
 }
 
 func (h *inflightLoginHasher) Verify(password, encoded string) (bool, error) {
-	if encoded == "hash:a-strong-password" {
+	if encoded == "hash:a-strong-password-1" {
 		h.mu.Lock()
 		h.verifyCalls++
 		call := h.verifyCalls
@@ -772,4 +772,18 @@ func (h *inflightLoginHasher) Verify(password, encoded string) (bool, error) {
 
 func (h *inflightLoginHasher) unblock() {
 	h.releaseOnce.Do(func() { close(h.release) })
+}
+
+func TestValidatePasswordRequiresLettersAndDigits(t *testing.T) {
+	for password, want := range map[string]bool{
+		"only-letters-here": false,
+		"123456789012":      false,
+		"letters-and-1":     true,
+		"UPPER-CASE-9x":     true,
+		"short1":            false,
+	} {
+		if got := validatePassword(password) == nil; got != want {
+			t.Errorf("validatePassword(%q) accepted=%v, want %v", password, got, want)
+		}
+	}
 }

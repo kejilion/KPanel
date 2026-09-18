@@ -203,7 +203,7 @@ func TestBackupAndJobIdentifiersCannotEscape(t *testing.T) {
 	if _, err := service.Job(filepath.Join("..", "outside")); err == nil {
 		t.Fatal("unsafe job id unexpectedly accepted")
 	}
-	if _, err := service.BackupPath("../../etc/passwd"); err == nil {
+	if _, _, err := service.OpenBackup("../../etc/passwd"); err == nil {
 		t.Fatal("unsafe backup id unexpectedly accepted")
 	}
 }
@@ -218,5 +218,17 @@ func TestBackupsInEmptyDirectoryReturnsEmptySlice(t *testing.T) {
 	}
 	if len(backups) != 0 {
 		t.Fatalf("empty backup directory returned %d items", len(backups))
+	}
+}
+
+func TestCappedOutputBoundsStatusCommandOutput(t *testing.T) {
+	captured := &cappedOutput{limit: 8}
+	for _, chunk := range []string{"abc", "defgh", "ijk"} {
+		if n, err := captured.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write(%q) = %d, %v", chunk, n, err)
+		}
+	}
+	if string(captured.data) != "abcdefgh" || !captured.overflow {
+		t.Fatalf("captured %q overflow=%v", captured.data, captured.overflow)
 	}
 }

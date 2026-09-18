@@ -282,15 +282,30 @@ func (c *Client) RunningContainerStats(
 	return batch, nil
 }
 
+const maxConcurrentContainerExecs = 4
+
+var containerExecSlots = make(chan struct{}, maxConcurrentContainerExecs)
+
+// ErrContainerExecBusy reports that every container console slot is in use.
+var ErrContainerExecBusy = errors.New("too many container console commands are running")
+
 func (c *Client) ContainerExec(ctx context.Context, id string, input ContainerExecInput) (ContainerExecResult, error) {
+	if !containerIDPattern.MatchString(id) {
+		return ContainerExecResult{}, ErrInvalidDockerJob
+	}
+	// Each command may hold a Docker exec for up to maxContainerCommandRun;
+	// bound concurrent consoles and fail fast instead of queueing (§5.1).
+	select {
+	case containerExecSlots <- struct{}{}:
+		defer func() { <-containerExecSlots }()
+	default:
+		return ContainerExecResult{}, ErrContainerExecBusy
+	}
 	command := strings.TrimSpace(input.Command)
 	if !validContainerCommand(command) {
 		return ContainerExecResult{}, ErrActionUnsupported
 	}
-	if err := c.verifyContainerVersion(ctx, id, input.ResourceVersion); err != nil {
-		return ContainerExecResult{}, err
-	}
-	inspect, err := c.inspect(ctx, id)
+	inspect, err := c.inspectVerifiedContainer(ctx, id, input.ResourceVersion)
 	if err != nil {
 		return ContainerExecResult{}, err
 	}
@@ -357,7 +372,9 @@ func (c *Client) createManagedContainer(ctx context.Context, input MaintenanceIn
 	if err != nil {
 		return err
 	}
-	if jsonErr := decodeStrictDockerJSON(data, &created); jsonErr != nil ||
+	// Docker's create response gains fields across Engine versions, so it is
+	// decoded tolerantly; the returned identity is validated instead.
+	if jsonErr := json.Unmarshal(data, &created); jsonErr != nil ||
 		!dockerExecIDPattern.MatchString(created.ID) {
 		return errors.New("Docker returned an invalid container identity")
 	}
@@ -533,10 +550,6 @@ func (c *Client) containerCreatePayload(ctx context.Context, input MaintenanceIn
 func validContainerAbsolutePath(value string) bool {
 	return len(value) > 0 && len(value) <= 4096 && strings.HasPrefix(value, "/") &&
 		!strings.ContainsAny(value, "\r\n\x00")
-}
-
-func decodeStrictDockerJSON(data []byte, target any) error {
-	return json.Unmarshal(data, target)
 }
 
 func jsonMarshalDocker(value any) ([]byte, error) {

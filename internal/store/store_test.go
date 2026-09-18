@@ -1429,3 +1429,50 @@ func TestConcurrentReplaceUserPasswordUsesCompareAndSwap(t *testing.T) {
 		t.Fatalf("got %d successes and %d conflicts", successes, conflicts)
 	}
 }
+
+func TestLoginAttemptsKeepOnlyTheNewestEntries(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storage.Close() })
+	now := time.Now().UTC()
+	flood := make([]LoginAttempt, maxLoginAttempts+10)
+	for index := range flood {
+		flood[index] = LoginAttempt{Key: fmt.Sprintf("ip:flood-%d", index), OccurredAt: now}
+	}
+	if err := storage.RecordLoginAttempts(flood, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(storage.data.LoginAttempts); got != maxLoginAttempts {
+		t.Fatalf("retained %d login attempts, want %d", got, maxLoginAttempts)
+	}
+	if storage.FailedLoginCount("ip:flood-0", now.Add(-time.Hour)) != 0 ||
+		storage.FailedLoginCount(fmt.Sprintf("ip:flood-%d", maxLoginAttempts+9), now.Add(-time.Hour)) != 1 {
+		t.Fatal("login attempt cap did not keep the newest entries")
+	}
+}
+
+func TestPutSessionKeepsOnlyTheNewestSessions(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storage.Close() })
+	now := time.Now().UTC()
+	for index := range maxRetainedSessions + 3 {
+		session := Session{TokenHash: fmt.Sprintf("token-%d", index), UserID: "user-1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+		if err := storage.PutSession(session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(storage.data.Sessions); got != maxRetainedSessions {
+		t.Fatalf("retained %d sessions, want %d", got, maxRetainedSessions)
+	}
+	if _, err := storage.SessionByTokenHash("token-0", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("oldest session survived the cap: %v", err)
+	}
+	if _, err := storage.SessionByTokenHash(fmt.Sprintf("token-%d", maxRetainedSessions+2), now); err != nil {
+		t.Fatalf("newest session was dropped: %v", err)
+	}
+}

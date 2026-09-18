@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,6 +45,10 @@ func (s *Server) backupError(w http.ResponseWriter, r *http.Request, err error) 
 }
 func (s *Server) decodeBackupRequest(r *http.Request) (backupRequest, error) {
 	var input backupRequest
+	// Same JSON media-type contract as every other Panel action route.
+	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/json" {
+		return input, backup.ErrInvalid
+	}
 	data, err := io.ReadAll(io.LimitReader(r.Body, 16385))
 	if err != nil || len(data) > 16384 || backup.Decode(data, &input) != nil {
 		return input, backup.ErrInvalid

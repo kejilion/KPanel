@@ -22,7 +22,9 @@ import (
 func (s *Server) EnableAI() error {
 	service, err := ai.Open(s.config.DataDir, &panelAITools{server: s})
 	if err != nil {
-		s.aiError = err.Error()
+		// The detail reaches clients in the 503 body; send it through the same
+		// redaction and length limit as every other AI failure message.
+		s.aiError = ai.PublicError(err)
 		return err
 	}
 	s.ai = service

@@ -458,11 +458,7 @@ func (c *Client) pullMaintenanceImage(ctx context.Context, reference string) err
 	image, tag := splitImageReference(reference)
 	query := url.Values{"fromImage": {image}}
 	if tag != "" {
-		if strings.HasPrefix(tag, "sha256:") {
-			query.Set("tag", tag)
-		} else {
-			query.Set("tag", tag)
-		}
+		query.Set("tag", tag)
 	}
 	request, err := http.NewRequestWithContext(
 		ctx,
@@ -567,15 +563,22 @@ func (c *Client) verifyNetworkMutation(ctx context.Context, target, expected str
 }
 
 func (c *Client) verifyContainerVersion(ctx context.Context, id, expected string) error {
+	_, err := c.inspectVerifiedContainer(ctx, id, expected)
+	return err
+}
+
+// inspectVerifiedContainer returns the inspect that proved the expected
+// resource version, so callers act on that same observation instead of
+// paying for (and racing) a second inspect.
+func (c *Client) inspectVerifiedContainer(ctx context.Context, id, expected string) (containerInspect, error) {
 	inspect, err := c.inspect(ctx, id)
 	if err != nil {
-		return err
+		return containerInspect{}, err
 	}
-	summary := c.summaryFromInspect(inspect)
-	if summary.ResourceVersion != expected {
-		return ErrResourceConflict
+	if c.summaryFromInspect(inspect).ResourceVersion != expected {
+		return containerInspect{}, ErrResourceConflict
 	}
-	return nil
+	return inspect, nil
 }
 
 func (c *Client) verifyVolumeVersion(ctx context.Context, target, expected string) error {

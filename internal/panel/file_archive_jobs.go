@@ -20,7 +20,7 @@ func jobsFromFileArchives(items []contract.FileArchiveJob) []contract.Job {
 		if state == contract.JobSucceeded {
 			job.Progress = 100
 		}
-		if state == contract.JobFailedNeedsAttention || state == contract.JobInterrupted {
+		if jobStateFailed(state) || state == contract.JobInterrupted {
 			job.Error = &contract.Problem{Title: "归档任务需要检查", Code: "archive_job_attention", Detail: item.Detail}
 			if job.Error.Detail == "" && len(item.Result.Failed) > 0 {
 				job.Error.Detail = item.Result.Failed[0].Detail

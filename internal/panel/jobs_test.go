@@ -90,7 +90,7 @@ func TestJobsAcceptsRealWebEnvironmentHistoryBeyondDisplayWindow(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
 					t.Fatal(err)
 				}
-				if len(page.Items) != 50 || page.Items[0].ID != "webenv:"+fmt.Sprintf("%032x", count) || page.Items[0].State != contract.JobFailedNeedsAttention {
+				if len(page.Items) != 50 || page.Items[0].ID != "webenv:"+fmt.Sprintf("%032x", count) || page.Items[0].State != contract.JobFailed {
 					t.Fatalf("latest failure omitted: %#v", page.Items)
 				}
 				for i, job := range page.Items {
@@ -191,9 +191,6 @@ func TestDockerAcceptedFollowsOwnerStateAndSurvivesAuditTruncation(t *testing.T)
 			t.Fatal(err)
 		}
 		want := contract.JobState(state)
-		if state == "failed" {
-			want = contract.JobFailedNeedsAttention
-		}
 		if len(page.Items) != 1 || page.Items[0].State != want || page.Items[0].ID != "docker:"+strings.Repeat("a", 32) {
 			t.Fatalf("owner state %s: %s", state, r.Body.String())
 		}
@@ -208,7 +205,7 @@ func TestDockerAcceptedFollowsOwnerStateAndSurvivesAuditTruncation(t *testing.T)
 		_ = server.store.AppendAudit(store.AuditEvent{ID: fmt.Sprint(i), Action: "auth.login", Result: "success", OccurredAt: time.Now()}, 10000)
 	}
 	r = performRequest(server, "GET", "/api/v1/jobs", nil, headers)
-	if r.Code != 200 || !strings.Contains(r.Body.String(), `"failed_needs_attention"`) {
+	if r.Code != 200 || !strings.Contains(r.Body.String(), `"state":"failed"`) {
 		t.Fatalf("detail must query owner by ID despite audit truncation: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -376,7 +373,7 @@ func TestApplicationJobsMapToManagementJobs(t *testing.T) {
 		},
 	})
 	if len(jobs) != 2 || jobs[0].Action != "app.install" ||
-		jobs[0].State != contract.JobFailedNeedsAttention ||
+		jobs[0].State != contract.JobFailed ||
 		jobs[0].TargetID != "builtin-4" || jobs[0].Error == nil ||
 		jobs[0].Error.Detail != "port conflict" ||
 		jobs[1].State != contract.JobCancelled || jobs[1].Error != nil {

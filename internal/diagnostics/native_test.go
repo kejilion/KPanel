@@ -229,3 +229,23 @@ func TestNativeLocalProbesReturnMeasuredMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeProbeRedirectStaysShortAndHTTPS(t *testing.T) {
+	next := func(raw string) *http.Request {
+		request, err := http.NewRequest(http.MethodGet, raw, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	hop := next("https://example.com/")
+	if err := nativeProbeRedirect(next("https://example.com/a"), []*http.Request{hop}); err != nil {
+		t.Fatalf("single HTTPS redirect rejected: %v", err)
+	}
+	if err := nativeProbeRedirect(next("http://example.com/a"), []*http.Request{hop}); err == nil {
+		t.Fatal("HTTPS downgrade was followed")
+	}
+	if err := nativeProbeRedirect(next("https://example.com/d"), []*http.Request{hop, hop, hop}); err == nil {
+		t.Fatal("fourth redirect was followed")
+	}
+}

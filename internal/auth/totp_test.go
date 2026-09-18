@@ -85,7 +85,7 @@ func TestTOTPManagementPasswordIsRateLimited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := service.Bootstrap(string(token), "admin", "a-strong-password")
+	credentials, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestTOTPManagementPasswordIsRateLimited(t *testing.T) {
 			t.Fatalf("attempt %d error = %v", attempt+1, err)
 		}
 	}
-	if _, err := service.StartTOTPEnrollment(credentials.User.ID, "a-strong-password"); !errors.Is(err, ErrRateLimited) {
+	if _, err := service.StartTOTPEnrollment(credentials.User.ID, "a-strong-password-1"); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("management reauthentication was not rate limited: %v", err)
 	}
 }
@@ -125,12 +125,12 @@ func TestTOTPEnrollmentLoginRecoveryRotationAndDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial, err := service.Bootstrap(string(token), "admin", "a-strong-password")
+	initial, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	enrollment, err := service.StartTOTPEnrollment(initial.User.ID, "a-strong-password")
+	enrollment, err := service.StartTOTPEnrollment(initial.User.ID, "a-strong-password-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,43 +161,43 @@ func TestTOTPEnrollmentLoginRecoveryRotationAndDisable(t *testing.T) {
 		t.Fatal(err)
 	}
 	missingKeyCode, _ := totpAtStep(enrollment.Secret, now.Unix()/30)
-	if _, err := service.Login("192.0.2.10", "admin", "a-strong-password", missingKeyCode); !errors.Is(err, ErrSecondFactorUnavailable) {
+	if _, err := service.Login("192.0.2.10", "admin", "a-strong-password-1", missingKeyCode); !errors.Is(err, ErrSecondFactorUnavailable) {
 		t.Fatalf("missing encryption key was not reported as unavailable: %v", err)
 	}
-	missingKeyRecovery, err := service.Login("192.0.2.11", "admin", "a-strong-password", recoveryCodes[9])
+	missingKeyRecovery, err := service.Login("192.0.2.11", "admin", "a-strong-password-1", recoveryCodes[9])
 	if err != nil {
 		t.Fatalf("recovery login should work without the encryption key: %v", err)
 	}
 	if err := os.WriteFile(keyPath, key, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password", ""); !errors.Is(err, ErrTOTPRequired) {
+	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", ""); !errors.Is(err, ErrTOTPRequired) {
 		t.Fatalf("password-only login was not challenged: %v", err)
 	}
-	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password", code); !errors.Is(err, ErrInvalidSecondFactor) {
+	if _, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", code); !errors.Is(err, ErrInvalidSecondFactor) {
 		t.Fatalf("enrollment code replay was accepted: %v", err)
 	}
 
 	now = now.Add(30 * time.Second)
 	code, _ = totpAtStep(enrollment.Secret, now.Unix()/30)
-	login, err := service.Login("192.0.2.1", "admin", "a-strong-password", code)
+	login, err := service.Login("192.0.2.1", "admin", "a-strong-password-1", code)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password", code); !errors.Is(err, ErrInvalidSecondFactor) {
+	if _, err := service.Login("192.0.2.2", "admin", "a-strong-password-1", code); !errors.Is(err, ErrInvalidSecondFactor) {
 		t.Fatalf("TOTP replay was accepted: %v", err)
 	}
-	recoveryLogin, err := service.Login("192.0.2.3", "admin", "a-strong-password", recoveryCodes[0])
+	recoveryLogin, err := service.Login("192.0.2.3", "admin", "a-strong-password-1", recoveryCodes[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Login("192.0.2.4", "admin", "a-strong-password", recoveryCodes[0]); !errors.Is(err, ErrInvalidSecondFactor) {
+	if _, err := service.Login("192.0.2.4", "admin", "a-strong-password-1", recoveryCodes[0]); !errors.Is(err, ErrInvalidSecondFactor) {
 		t.Fatalf("recovery code replay was accepted: %v", err)
 	}
 
 	now = now.Add(30 * time.Second)
 	code, _ = totpAtStep(enrollment.Secret, now.Unix()/30)
-	rotated, err := service.RegenerateRecoveryCodes(initial.User.ID, "a-strong-password", code)
+	rotated, err := service.RegenerateRecoveryCodes(initial.User.ID, "a-strong-password-1", code)
 	if err != nil || len(rotated) != recoveryCodeCount {
 		t.Fatalf("recovery rotation failed: count=%d err=%v", len(rotated), err)
 	}
@@ -206,16 +206,16 @@ func TestTOTPEnrollmentLoginRecoveryRotationAndDisable(t *testing.T) {
 			t.Fatalf("recovery rotation did not revoke session: %v", err)
 		}
 	}
-	if _, err := service.Login("192.0.2.5", "admin", "a-strong-password", recoveryCodes[1]); !errors.Is(err, ErrInvalidSecondFactor) {
+	if _, err := service.Login("192.0.2.5", "admin", "a-strong-password-1", recoveryCodes[1]); !errors.Is(err, ErrInvalidSecondFactor) {
 		t.Fatalf("old recovery code survived rotation: %v", err)
 	}
 
 	now = now.Add(30 * time.Second)
 	code, _ = totpAtStep(enrollment.Secret, now.Unix()/30)
-	if err := service.DisableTOTP(initial.User.ID, "a-strong-password", code); err != nil {
+	if err := service.DisableTOTP(initial.User.ID, "a-strong-password-1", code); err != nil {
 		t.Fatal(err)
 	}
-	plainLogin, err := service.Login("192.0.2.6", "admin", "a-strong-password", "")
+	plainLogin, err := service.Login("192.0.2.6", "admin", "a-strong-password-1", "")
 	if err != nil || plainLogin.User.TOTPEnabled {
 		t.Fatalf("password login after disable failed: %#v err=%v", plainLogin.User, err)
 	}

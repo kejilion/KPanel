@@ -135,10 +135,6 @@ func New(config Config) *Manager {
 	return manager
 }
 
-func defaultStarter(rows, columns uint16) (Process, error) {
-	return starterWithParent(rows, columns, "kejilion-agent.service")
-}
-
 func starterWithParent(rows, columns uint16, parentUnit string) (Process, error) {
 	shell := "/bin/bash"
 	if _, err := os.Stat(shell); err != nil {

@@ -267,6 +267,31 @@ func (s *Service) Catalog(ctx context.Context) (Catalog, error) {
 	return result, nil
 }
 
+const (
+	maxStructuredOutputBytes = 1 << 20
+	maxStructuredErrorDetail = 2 << 10
+)
+
+// cappedOutput keeps at most limit bytes of a status command's output. It
+// keeps accepting writes so the script is not killed by a broken pipe; the
+// 20 second deadline still bounds how long it may run.
+type cappedOutput struct {
+	limit    int
+	data     []byte
+	overflow bool
+}
+
+func (c *cappedOutput) Write(chunk []byte) (int, error) {
+	room := c.limit - len(c.data)
+	if len(chunk) > room {
+		c.data = append(c.data, chunk[:max(room, 0)]...)
+		c.overflow = true
+		return len(chunk), nil
+	}
+	c.data = append(c.data, chunk...)
+	return len(chunk), nil
+}
+
 func runStructured(ctx context.Context, command string, target any) error {
 	script, err := trustedScript()
 	if err != nil {
@@ -276,9 +301,20 @@ func runStructured(ctx context.Context, command string, target any) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, script, "web", "env", command)
 	cmd.Env = append(os.Environ(), "KJ_LDNMP_NONINTERACTIVE=1", "KJ_LDNMP_PROTOCOL=1")
-	output, err := cmd.CombinedOutput()
+	captured := &cappedOutput{limit: maxStructuredOutputBytes}
+	cmd.Stdout = captured
+	cmd.Stderr = captured
+	err = cmd.Run()
+	output := captured.data
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrUnavailable, strings.TrimSpace(string(output)))
+		detail := strings.TrimSpace(string(output))
+		if len(detail) > maxStructuredErrorDetail {
+			detail = detail[:maxStructuredErrorDetail]
+		}
+		return fmt.Errorf("%w: %s", ErrUnavailable, detail)
+	}
+	if captured.overflow {
+		return fmt.Errorf("%w: script response exceeds %d bytes", ErrUnavailable, maxStructuredOutputBytes)
 	}
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	for index := len(lines) - 1; index >= 0; index-- {
@@ -729,16 +765,40 @@ func verifyBackupSidecar(archive string) bool {
 	return hex.EncodeToString(digest.Sum(nil)) == sidecar.SHA256
 }
 
-func (s *Service) BackupPath(id string) (string, error) {
+// OpenBackup opens a backup archive and confirms the opened file is the
+// regular file that was checked, so a path swapped for a symlink between the
+// check and the open is refused instead of followed.
+func (s *Service) OpenBackup(id string) (*os.File, os.FileInfo, error) {
+	path, checked, err := backupFileInfo(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(checked, opened) {
+		file.Close()
+		return nil, nil, ErrNotFound
+	}
+	return file, opened, nil
+}
+
+func backupFileInfo(id string) (string, os.FileInfo, error) {
 	if !backupPattern.MatchString(id) {
-		return "", ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	path := filepath.Join("/home", id)
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return "", ErrNotFound
+		return "", nil, ErrNotFound
 	}
-	return path, nil
+	return path, info, nil
 }
 
 func (s *Service) jobsLocked() []Job {

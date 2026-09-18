@@ -3,6 +3,7 @@ package dockerx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -294,5 +295,29 @@ func TestManagedContainerCreatePullsMissingImageAndAllowsAutomaticName(t *testin
 	}
 	if createCalls != 2 || !pulled {
 		t.Fatalf("create calls=%d pulled=%v", createCalls, pulled)
+	}
+}
+
+func TestContainerExecFailsFastWhenConsoleSlotsAreFull(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("busy console request reached Docker")
+	}))
+	defer server.Close()
+	client := testHTTPClient(server)
+	for range maxConcurrentContainerExecs {
+		containerExecSlots <- struct{}{}
+	}
+	defer func() {
+		for range maxConcurrentContainerExecs {
+			<-containerExecSlots
+		}
+	}()
+	_, err := client.ContainerExec(context.Background(), strings.Repeat("a", 64),
+		ContainerExecInput{ResourceVersion: "sha256:" + strings.Repeat("0", 64), Command: "id"})
+	if !errors.Is(err, ErrContainerExecBusy) {
+		t.Fatalf("busy console error = %v", err)
+	}
+	if _, err := client.ContainerExec(context.Background(), "not-an-id", ContainerExecInput{Command: "id"}); !errors.Is(err, ErrInvalidDockerJob) {
+		t.Fatalf("invalid container ID error = %v", err)
 	}
 }
