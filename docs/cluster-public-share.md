@@ -42,7 +42,7 @@
 ## API 与持久化
 
 - `GET /api/v1/cluster/share`：登录后读取设置。
-- `PUT /api/v1/cluster/share`：同源、Session、CSRF 和审计保护下保存启用状态、标题与介绍；使用 `expectedResourceVersion` 防止覆盖并发修改。
+- `PUT /api/v1/cluster/share`：同源、Session、CSRF 和审计保护下保存启用状态、标题与介绍；使用 `expectedResourceVersion` 防止覆盖并发修改。`hostOrder` 可选，缺省时保留匿名页现有顺序；管理界面仅在管理员勾选“按当前面板顺序排列公开页”时携带。
 - `POST /api/v1/cluster/share/token`：同等保护下重置链接；审计只记录 `tokenRotated: true`，不记录 Token 或完整 URL。
 - `GET /api/v1/public/cluster-share/{token}`：匿名读取严格白名单快照。
 - `GET /share/{token}`：匿名 Vue 展示页。

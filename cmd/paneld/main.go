@@ -237,7 +237,7 @@ func runPasswordResetWithReader(arguments []string, output io.Writer, readPasswo
 	if _, err := fmt.Fprintf(output, "Administrator: %s\n", user.Username); err != nil {
 		return err
 	}
-	password, err := readPassword("New password (12-256 bytes): ")
+	password, err := readPassword("New password (12-256 bytes, letters and digits): ")
 	if err != nil {
 		return fmt.Errorf("read new password: %w", err)
 	}

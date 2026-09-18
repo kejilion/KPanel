@@ -164,3 +164,45 @@ func TestTerminalUnitStopFailureRetryAndConfirmedAbsence(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenSpawnDoesNotBlockOtherSessionIO(t *testing.T) {
+	spawning := make(chan struct{})
+	release := make(chan struct{})
+	calls := 0
+	m := New(Config{Starter: func(uint16, uint16) (Process, error) {
+		// Opens are serialized, so calls needs no lock. The first spawn is the
+		// existing session; the second blocks inside the starter.
+		calls++
+		if calls == 2 {
+			close(spawning) // signal: manager is now inside the starter call
+			<-release
+		}
+		return newFakeProcess(), nil
+	}})
+	existing, err := m.Open("owner", 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spawnDone := make(chan error, 1)
+	go func() {
+		_, spawnErr := m.Open("owner", 24, 80)
+		spawnDone <- spawnErr
+	}()
+	<-spawning
+	// While the manager is mid-spawn, the existing session must be able to
+	// read output, resize, and take input; before this fix the manager write
+	// lock serialized all of them behind the fork.
+	if _, err := m.Output(context.Background(), "owner", existing.ID, 0, 0); err != nil {
+		t.Errorf("output during spawn: %v", err)
+	}
+	if err := m.Resize("owner", existing.ID, 30, 100); err != nil {
+		t.Errorf("resize during spawn: %v", err)
+	}
+	if err := m.Input("owner", existing.ID, []byte("id")); err != nil {
+		t.Errorf("input during spawn: %v", err)
+	}
+	close(release)
+	if err := <-spawnDone; err != nil {
+		t.Fatalf("second open failed: %v", err)
+	}
+}

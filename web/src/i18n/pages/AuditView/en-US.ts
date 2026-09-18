@@ -31,4 +31,7 @@ export default [
   ["Cookie、Token、私钥、数据库密码及 Docker 环境变量不会写入审计详情。", "Cookies, tokens, private keys, database passwords, and Docker environment variables are never written to audit details."],
   ["未记录", "Not recorded"],
   ["事件 {0}", "Event {0}"],
+  ["当前显示 {0} 条记录", "Showing {0} records"],
+  ["没有符合条件的记录", "No matching records"],
+  ["暂无审计记录", "No audit records yet"],
 ] as const satisfies PhraseCatalog

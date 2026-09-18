@@ -414,6 +414,7 @@ const (
 	JobQueued               JobState = "queued"
 	JobRunning              JobState = "running"
 	JobSucceeded            JobState = "succeeded"
+	JobFailed               JobState = "failed"
 	JobFailedRolledBack     JobState = "failed_rolled_back"
 	JobFailedNeedsAttention JobState = "failed_needs_attention"
 	JobInterrupted          JobState = "interrupted"

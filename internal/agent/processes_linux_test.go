@@ -63,6 +63,7 @@ func TestProcessSignalSealsSamplesBeforeAndAfterExecution(t *testing.T) {
 		},
 	})
 	request := httptest.NewRequest(http.MethodPost, "/v1/system/actions", strings.NewReader(`{"action":"process-signal","pid":42,"startTimeTicks":999,"signal":"term"}`))
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)

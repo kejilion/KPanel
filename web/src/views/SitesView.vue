@@ -1137,7 +1137,7 @@ onBeforeUnmount(() => {
                       :site-id="site.id"
                       :refresh-key="siteIconRefreshKey"
                     />
-                    <small>{{ site.enabled ? '已启用' : '已停用' }} · {{ site.domains.length }} 个域名</small>
+                    <small><span>{{ site.enabled ? '已启用' : '已停用' }}</span> · {{ site.domains.length }} 个域名</small>
                   </span>
                 </a>
               </td>

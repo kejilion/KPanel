@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -164,23 +163,18 @@ func (s *Server) webEnvironmentBackupDownload(w http.ResponseWriter, r *http.Req
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/v1/web-environment/backups/")
-	path, err := s.webEnvironment.BackupPath(id)
-	if err != nil {
+	file, info, err := s.webEnvironment.OpenBackup(id)
+	if errors.Is(err, webenv.ErrNotFound) {
 		writeProblem(w, requestIDFrom(w), http.StatusNotFound, "backup_not_found", "备份不存在", "")
 		return
 	}
-	file, err := os.Open(path)
 	if err != nil {
 		writeProblem(w, requestIDFrom(w), http.StatusServiceUnavailable, "backup_unavailable", "备份无法读取", "")
 		return
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		writeProblem(w, requestIDFrom(w), http.StatusServiceUnavailable, "backup_unavailable", "备份无法读取", "")
-		return
-	}
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(path)+`"`)
+	name := filepath.Base(file.Name())
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Content-Type", "application/gzip")
-	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
+	http.ServeContent(w, r, name, info.ModTime(), file)
 }

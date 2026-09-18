@@ -233,7 +233,7 @@ func (c *Client) resolveComposeProject(ctx context.Context, name string) (compos
 	if !composeProjectPattern.MatchString(name) {
 		return composeProjectState{}, ErrInvalidDockerJob
 	}
-	containers, err := c.Containers(ctx)
+	containers, err := c.ContainerListSummaries(ctx)
 	if err != nil {
 		return composeProjectState{}, err
 	}
@@ -465,7 +465,7 @@ func (c *Client) validateComposeDeploymentInput(ctx context.Context, input Maint
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
-	containers, err := c.Containers(ctx)
+	containers, err := c.ContainerListSummaries(ctx)
 	if err != nil {
 		return err
 	}

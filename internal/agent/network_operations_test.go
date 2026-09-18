@@ -35,6 +35,7 @@ func TestNetworkOperationsRoutesKeepStrictURLAndBodyBoundaries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/system/traffic-shutdown/actions", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", token)
 			response := httptest.NewRecorder()
 			server.ServeHTTP(response, request)

@@ -98,3 +98,25 @@ func TestCustomInstallerRejectsPanelPortOverride(t *testing.T) {
 		t.Fatalf("custom installer port error = %v, want ErrUnsupported", err)
 	}
 }
+
+func TestListeningSocketPortFiltersBySocketState(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		tcp  bool
+		port uint16
+		ok   bool
+	}{
+		{"tcp listen", "0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000 0 0 1", true, 8080, true},
+		{"tcp established", "1: 0100007F:1F90 0100007F:D2A4 01 00000000:00000000 00:00000000 00000000 0 0 2", true, 0, false},
+		{"udp bound server", "2: 00000000:0035 00000000:0000 07 00000000:00000000 00:00000000 00000000 0 0 3", false, 53, true},
+		{"udp connected client", "3: 0A00000F:C350 08080808:0035 01 00000000:00000000 00:00000000 00000000 0 0 4", false, 0, false},
+		{"short row", "4: 00000000:0035", false, 0, false},
+	}
+	for _, item := range cases {
+		port, ok := listeningSocketPort(item.line, item.tcp)
+		if port != item.port || ok != item.ok {
+			t.Errorf("%s: got (%d, %v), want (%d, %v)", item.name, port, ok, item.port, item.ok)
+		}
+	}
+}

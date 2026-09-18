@@ -84,6 +84,39 @@ func TestOperationsToolArgumentsAreStrictAndRecoverable(t *testing.T) {
 	}
 }
 
+func TestSafeArgumentSummaryRedactsNestedValues(t *testing.T) {
+	raw := json.RawMessage(`{"action":"deploy","compose":"services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD=hunter2\n","environment":["MYSQL_ROOT_PASSWORD=hunter2","API_TOKEN=sk-live-123"],"fetch":"https://root:loose@pkg.example.com/repo.git","nested":{"items":[{"apiKey":"sk-live-123"}]}}`)
+	summary := safeArgumentSummary(raw)
+	compose, _ := summary["compose"].(string)
+	if strings.Contains(compose, "hunter2") {
+		t.Fatalf("compose credential survived redaction: %s", compose)
+	}
+	environment, _ := summary["environment"].([]any)
+	if len(environment) != 2 {
+		t.Fatalf("environment list lost entries: %#v", summary["environment"])
+	}
+	for _, item := range environment {
+		if text, _ := item.(string); strings.Contains(text, "hunter2") || strings.Contains(text, "sk-live-123") {
+			t.Fatalf("environment credential survived redaction: %s", text)
+		}
+	}
+	fetch, _ := summary["fetch"].(string)
+	if strings.Contains(fetch, "loose") {
+		t.Fatalf("url userinfo survived redaction: %s", fetch)
+	}
+	nested, _ := summary["nested"].(map[string]any)
+	items, _ := nested["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("nested list lost entries: %#v", nested)
+	}
+	if item, _ := items[0].(map[string]any); item["apiKey"] != "[REDACTED]" {
+		t.Fatalf("nested apiKey survived redaction: %#v", items)
+	}
+	if summary["action"] != "deploy" {
+		t.Fatalf("non-secret values must be preserved verbatim: %#v", summary)
+	}
+}
+
 func TestAllAIToolSchemasExposeUniversalReasonMetadata(t *testing.T) {
 	definitions := (&panelAITools{}).Definitions()
 	if len(definitions) == 0 {

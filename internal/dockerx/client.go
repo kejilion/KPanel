@@ -18,6 +18,7 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,6 +55,8 @@ type Client struct {
 	pidFile               string
 	allowSocketActivation bool
 	imageUpdateCountry    func(context.Context) (string, error)
+	containersMu          sync.Mutex
+	containersCall        *containersCall
 }
 
 type ImageSummary struct {
@@ -190,6 +193,14 @@ func (c *Client) Summary(ctx context.Context) (contract.DockerSummary, error) {
 // versions and capabilities must never authorize mutations; the shared checker
 // inspects the selected container again to establish its actual image identity.
 func (c *Client) ContainersForImageUpdate(ctx context.Context) ([]contract.ContainerSummary, error) {
+	return c.ContainerListSummaries(ctx)
+}
+
+// ContainerListSummaries answers label, compose-membership, and runtime-port
+// questions from one list request with no per-container inspect. Its versions
+// and empty AllowedActions never authorize a mutation; action paths inspect
+// the chosen container again.
+func (c *Client) ContainerListSummaries(ctx context.Context) ([]contract.ContainerSummary, error) {
 	var raw []containerListItem
 	if err := c.getJSON(ctx, "/containers/json?all=1&size=0", &raw); err != nil {
 		return nil, err
@@ -204,7 +215,48 @@ func (c *Client) ContainersForImageUpdate(ctx context.Context) ([]contract.Conta
 	return result, nil
 }
 
+// Containers returns inspect-backed summaries whose versions and actions the
+// action paths trust. Concurrent callers share one list+inspect pass instead
+// of multiplying the per-container fan-out.
 func (c *Client) Containers(ctx context.Context) ([]contract.ContainerSummary, error) {
+	c.containersMu.Lock()
+	call := c.containersCall
+	if call == nil {
+		call = &containersCall{done: make(chan struct{})}
+		c.containersCall = call
+		// The shared pass must not die with whichever caller started it; it
+		// is still bounded by the HTTP client's own timeouts.
+		sharedContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), containersSharedTimeout)
+		go func() {
+			defer cancel()
+			call.result, call.err = c.inspectContainers(sharedContext)
+			c.containersMu.Lock()
+			c.containersCall = nil
+			c.containersMu.Unlock()
+			close(call.done)
+		}()
+	}
+	c.containersMu.Unlock()
+	select {
+	case <-call.done:
+		if call.err != nil {
+			return nil, call.err
+		}
+		return slices.Clone(call.result), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type containersCall struct {
+	done   chan struct{}
+	result []contract.ContainerSummary
+	err    error
+}
+
+const containersSharedTimeout = 60 * time.Second
+
+func (c *Client) inspectContainers(ctx context.Context) ([]contract.ContainerSummary, error) {
 	var raw []containerListItem
 	if err := c.getJSON(ctx, "/containers/json?all=1&size=0", &raw); err != nil {
 		return nil, err

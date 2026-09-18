@@ -818,7 +818,7 @@ async function confirmCancelJob(): Promise<void> {
       window.localStorage.removeItem(activeJobStorageKey)
       await load(true)
     }
-    toast.success('正在结束交互任务', `${job.appName} 的后台终端正在安全退出。`)
+    toast.success('正在结束交互任务', `${job.appName} 的后台终端正在终止，中途终止可能留下未完成的变更。`)
   } catch (reason) {
     if (reason instanceof ApiError && reason.code === 'app_job_not_active') {
       cancelJobPending.value = false

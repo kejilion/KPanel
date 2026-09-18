@@ -581,6 +581,7 @@ func (m *Manager) Upload(
 	}
 	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
+	replace := false
 	if !overwrite {
 		if _, err := m.rootFS.Lstat(rootName(targetVirtual)); err == nil {
 			return contract.FileEntry{}, ErrAlreadyExists
@@ -590,15 +591,22 @@ func (m *Manager) Upload(
 			resourceVersion(targetVirtual, current) != resourceVersion(targetVirtual, existing) {
 			return contract.FileEntry{}, ErrConflict
 		}
+		replace = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
-	if overwrite {
+	// Only a target verified just above may be replaced. When the overwrite
+	// target is absent at publish time, a file created externally since then
+	// must not be silently clobbered, so publish without replacement.
+	if replace {
 		if err := m.rootFS.Rename(rootName(tempVirtual), rootName(targetVirtual)); err != nil {
 			return contract.FileEntry{}, err
 		}
 	} else if err := renameNoReplaceRoot(m.rootFS, tempVirtual, targetVirtual); err != nil {
 		if errors.Is(err, os.ErrExist) {
+			if overwrite {
+				return contract.FileEntry{}, ErrConflict
+			}
 			return contract.FileEntry{}, ErrAlreadyExists
 		}
 		return contract.FileEntry{}, err

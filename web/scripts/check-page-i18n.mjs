@@ -72,12 +72,40 @@ function extractScriptPhrases(source, fileName, target) {
   visit(file)
 }
 
+// Text and interpolations inside one element compile into a compound node and
+// render as a single DOM text node, so the runtime translator only matches
+// the combined `{n}` pattern, never the static fragments on their own.
+function compoundPhrase(node) {
+  let value = ''
+  let index = 0
+  for (const child of node.children) {
+    if (typeof child === 'string') continue
+    if (child.type === 2) value += child.content
+    else if (child.type === 5) value += `{${index++}}`
+    else return ''
+  }
+  return index ? value : ''
+}
+
+let readExpressionSource = false
+
+function expressionSource(expression) {
+  if (!expression) return ''
+  if (typeof expression.content === 'string') return expression.content
+  return readExpressionSource ? expression.loc?.source || '' : ''
+}
+
 function walkTemplate(node, target) {
   if (!node || typeof node !== 'object') return
+  if (node.type === 8) addPhrase(target, compoundPhrase(node))
   if (node.type === 2) addPhrase(target, node.content)
   if (node.type === 6 && node.value?.content) addPhrase(target, node.value.content)
-  if (node.type === 5 && node.content?.content) extractScriptPhrases(node.content.content, 'template-expression.ts', target)
-  if (node.type === 7 && node.exp?.content) extractScriptPhrases(node.exp.content, 'template-directive.ts', target)
+  // Expressions that reference component state compile into compound nodes
+  // without a flat `content`; for views the original source keeps string and
+  // template literals intact. Shared components keep their phrases in the
+  // catalogs of the views that host them, so they stay on the flat reading.
+  if (node.type === 5) extractScriptPhrases(expressionSource(node.content), 'template-expression.ts', target)
+  if (node.type === 7) extractScriptPhrases(expressionSource(node.exp), 'template-directive.ts', target)
   if (Array.isArray(node.children)) node.children.forEach((child) => walkTemplate(child, target))
   if (Array.isArray(node.props)) node.props.forEach((child) => walkTemplate(child, target))
   if (node.branches) node.branches.forEach((child) => walkTemplate(child, target))
@@ -158,8 +186,10 @@ const groups = new Map()
 const shared = new Set()
 for (const file of sharedFiles) extractFile(file).forEach((phrase) => shared.add(phrase))
 groups.set('shared', shared)
+readExpressionSource = true
 for (const file of viewFiles) groups.set(path.basename(file, '.vue'), extractFile(path.join('views', file)))
 
+const sharedCatalogs = new Map(['en-US', 'zh-TW'].map((locale) => [locale, new Map(readCatalog('shared', locale))]))
 const errors = []
 let phraseCount = 0
 for (const [group, expected] of groups) {
@@ -170,7 +200,10 @@ for (const [group, expected] of groups) {
     const actual = new Map(entries)
     phraseCount += locale === 'en-US' ? expected.size : 0
     for (const phrase of expected) {
-      if (!actual.has(phrase)) errors.push(`${locale} ${group}: missing source phrase ${JSON.stringify(phrase)}`)
+      // App.vue registers the shared catalog on every route, so a view phrase
+      // it already covers is translated at runtime.
+      const coveredByShared = group !== 'shared' && sharedCatalogs.get(locale).has(phrase)
+      if (!actual.has(phrase) && !coveredByShared) errors.push(`${locale} ${group}: missing source phrase ${JSON.stringify(phrase)}`)
     }
     for (const [source, translation] of entries) {
       if (!expected.has(source) && !phraseExistsInSource(group, source)) {

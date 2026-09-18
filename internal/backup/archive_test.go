@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,5 +114,44 @@ func TestBackupJobRecoveryAndSingleWriter(t *testing.T) {
 	finished, _ := reopened.Get(active.ID)
 	if finished.Status != "completed" {
 		t.Fatal(finished)
+	}
+}
+
+func TestOpenManagerAcceptsRecordsBeyondTheLegacy32KiBCap(t *testing.T) {
+	// A legal large Docker import can approach 3x4096 root refs, which the
+	// legacy 32 KiB record budget rejected after the next restart. Build a
+	// record past that cap and confirm the manager still opens.
+	dir := t.TempDir()
+	id := strings.Repeat("c", 32)
+	jobDir := filepath.Join(dir, id)
+	if err := os.MkdirAll(jobDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := make([]RootRef, 700)
+	for index := range roots {
+		roots[index] = RootRef{Path: fmt.Sprintf("/var/lib/docker/volumes/expected-%06d", index), Module: "docker"}
+	}
+	record := Record{ID: id, Action: "import", Status: "completed", Modules: []string{"docker"}, Roots: roots, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	if err := WriteJSON(filepath.Join(jobDir, "record.json"), record); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(jobDir, "record.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= 32<<10 {
+		t.Fatalf("fixture must exceed the legacy 32 KiB cap, got %d bytes", len(body))
+	}
+	manager, err := OpenManager(dir)
+	if err != nil {
+		t.Fatalf("manager rejected a record the write side can legally produce: %v", err)
+	}
+	defer manager.Close()
+	got, err := manager.Get(id)
+	if err != nil {
+		t.Fatalf("record beyond the legacy cap was dropped: %v", err)
+	}
+	if len(got.Roots) != len(roots) {
+		t.Fatalf("root inventory lost after reopen: got %d want %d", len(got.Roots), len(roots))
 	}
 }

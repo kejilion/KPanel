@@ -1090,7 +1090,7 @@ describe('AppsView script management', () => {
       ...job,
       inputOpen: false,
       stage: 'cancelling',
-      message: '正在结束 kejilion.sh 交互任务，请等待后台进程安全退出',
+      message: '正在终止 kejilion.sh 交互任务：先发送终止信号，超时后强制结束；中途终止可能留下未完成的变更，请结束后检查应用状态',
     }
     mocks.cancelJob.mockResolvedValueOnce(cancelling)
     mocks.job.mockResolvedValue(cancelling)

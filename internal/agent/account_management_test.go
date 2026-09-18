@@ -28,6 +28,7 @@ func TestAccountManagementRoutesRejectQueriesUnknownFieldsAndInvalidSecrets(t *t
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/system/account-actions", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", token)
 			response := httptest.NewRecorder()
 			server.ServeHTTP(response, request)

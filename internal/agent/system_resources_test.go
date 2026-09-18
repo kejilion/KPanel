@@ -79,6 +79,7 @@ func TestSystemResourceActionKeepsStrictBodyAndErrorBoundaries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/system/resource-actions", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", token)
 			response := httptest.NewRecorder()
 			server.ServeHTTP(response, request)
@@ -91,6 +92,7 @@ func TestSystemResourceActionKeepsStrictBodyAndErrorBoundaries(t *testing.T) {
 	oversized := `{"action":"firewall-open-all","expectedResourceVersion":"` + version + `","unknown":"` +
 		strings.Repeat("x", maxAgentRequestBytes) + `"}`
 	request := httptest.NewRequest(http.MethodPost, "/v1/system/resource-actions", strings.NewReader(oversized))
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", token)
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)

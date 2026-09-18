@@ -14,6 +14,13 @@ import (
 var ErrBusy = errors.New("another backup operation is active")
 var ErrNotFound = errors.New("backup record not found")
 
+// maxRecordBytes bounds record.json reads. It must stay above what the write
+// side can legally produce: hostbackup permits 4096 roots per module across
+// up to three modules, and a fully populated record approaches 1 MiB, so the
+// previous 32 KiB cap turned a legal large import into an agent startup
+// failure after the next restart.
+const maxRecordBytes = 4 << 20
+
 type Record struct {
 	CompletedModules []string  `json:"completedModules,omitempty"`
 	ID               string    `json:"id"`
@@ -38,6 +45,19 @@ type Record struct {
 type RootRef struct {
 	Path   string `json:"path"`
 	Module string `json:"module"`
+}
+
+// RecordRootsExceedReadBudget reports whether a root inventory would push the
+// record past the manager's read budget. Import inspection calls this before
+// committing Roots so a legal-but-huge archive is refused at inspect time
+// rather than poisoning the next agent start.
+func RecordRootsExceedReadBudget(roots []RootRef) bool {
+	if len(roots) == 0 {
+		return false
+	}
+	const estimatedBytesPerRoot = 96
+	estimated := 512 + len(roots)*estimatedBytesPerRoot
+	return estimated > maxRecordBytes
 }
 
 // Manager persists intent before executing. Recovery never replays host writes.
@@ -71,11 +91,11 @@ func OpenManager(root string) (*Manager, error) {
 		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
 			return nil, ErrInvalid
 		}
-		body, err := ReadFile(filepath.Join(root, entry.Name(), "record.json"), 32<<10)
+		body, err := ReadFile(filepath.Join(root, entry.Name(), "record.json"), maxRecordBytes)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err != nil || len(body) > 32<<10 {
+		if err != nil || len(body) > maxRecordBytes {
 			return nil, ErrInvalid
 		}
 		var record Record

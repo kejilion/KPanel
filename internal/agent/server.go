@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -1949,6 +1950,9 @@ func (s *Server) containerOperation(w http.ResponseWriter, r *http.Request, requ
 			switch {
 			case errors.Is(err, dockerx.ErrResourceConflict):
 				status, code, title = http.StatusConflict, "resource_conflict", "资源已被其他操作修改"
+			case errors.Is(err, dockerx.ErrContainerExecBusy):
+				w.Header().Set("Retry-After", "1")
+				status, code, title = http.StatusTooManyRequests, "container_exec_busy", "容器控制台命令过多，请稍后重试"
 			case errors.Is(err, dockerx.ErrRuntimeContract), errors.Is(err, dockerx.ErrActionUnsupported):
 				status, code, title = http.StatusUnprocessableEntity, "container_exec_unsupported", "当前容器状态不支持控制台"
 			case errors.Is(err, dockerx.ErrVersionRequired):
@@ -1989,7 +1993,14 @@ func (s *Server) containerOperation(w http.ResponseWriter, r *http.Request, requ
 	writeJSON(w, http.StatusOK, result)
 }
 
+var errJSONContentType = errors.New("JSON request body required")
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, target interface{}) error {
+	// Match the Panel's JSON contract: action bodies must declare JSON rather
+	// than being parsed from whatever media type arrived.
+	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/json" {
+		return errJSONContentType
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAgentRequestBytes)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()

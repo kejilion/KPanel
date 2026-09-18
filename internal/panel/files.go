@@ -16,6 +16,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -606,6 +607,29 @@ func (s *Server) handleFileWrite(w http.ResponseWriter, r *http.Request) {
 	s.writeAgentResponse(w, r, response)
 }
 
+var errPanelUploadTooLarge = errors.New("upload exceeds the Panel byte ceiling")
+
+// panelUploadBody applies the upload ceiling on the Panel side and records
+// whether it tripped, so the handler can answer 413 instead of a generic
+// Agent failure.
+type panelUploadBody struct {
+	io.ReadCloser
+	exceeded atomic.Bool
+}
+
+func newPanelUploadBody(w http.ResponseWriter, body io.ReadCloser) *panelUploadBody {
+	return &panelUploadBody{ReadCloser: http.MaxBytesReader(w, body, filemanager.MaxUploadBytes)}
+}
+
+func (b *panelUploadBody) Read(buffer []byte) (int, error) {
+	n, err := b.ReadCloser.Read(buffer)
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		b.exceeded.Store(true)
+	}
+	return n, err
+}
+
 func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -647,15 +671,26 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	headers.Set("Content-Type", "application/octet-stream")
 	transferContext, cancel := context.WithTimeout(r.Context(), panelFileTransferMaxDuration)
 	defer cancel()
+	// Chunked uploads carry no Content-Length, so the Panel enforces the same
+	// byte ceiling itself instead of relying on the Agent alone.
+	body := newPanelUploadBody(w, r.Body)
 	content := httpstream.NewIdleReader(
-		transferContext, w, r.Body, panelFileTransferIdleTimeout,
+		transferContext, w, body, panelFileTransferIdleTimeout,
 	)
 	response, err := streamer.OpenStream(
 		transferContext, http.MethodPost, "/v1/files/upload", r.URL.RawQuery,
 		requestID(r), content, headers, r.ContentLength,
 	)
+	if err == nil && body.exceeded.Load() {
+		_ = response.Body.Close()
+		err = errPanelUploadTooLarge
+	}
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "file.upload", "file", target, "failure", change)
+		if body.exceeded.Load() {
+			s.writeProblem(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "文件超过 512 MiB", "")
+			return
+		}
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "agent_unavailable", "Agent unavailable", "")
 		return
 	}
@@ -798,6 +833,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	if err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法确定目标文件名。"})
 		return
 	}
@@ -827,6 +863,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if targetHostID == "" {
 		streamer, ok := s.agent.(agentStreamAPI)
 		if !ok {
+			_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 			writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
 			return
 		}

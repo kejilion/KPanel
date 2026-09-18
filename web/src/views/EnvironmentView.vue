@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
     <ErrorState v-else-if="error" title="环境状态读取失败" :message="error" @retry="load()" />
     <template v-else-if="summary">
       <div v-if="auxiliaryWarning" class="inline-alert inline-alert--warning" role="status">
-        {{ auxiliaryWarning }}，环境状态与可用管理功能不受影响。
+        <span>{{ auxiliaryWarning }}</span><span>，环境状态与可用管理功能不受影响。</span>
       </div>
       <section
         v-if="visibleJob"
@@ -578,15 +578,15 @@ onBeforeUnmount(() => {
             <div>
               <strong>{{ item.id === 'all' ? '完整环境' : componentLabel(item.id) }}</strong>
               <small>
-                当前：{{ summary.components.find((component) => component.name === item.id)?.version || '由脚本检测' }}
+                当前：<span>{{ summary.components.find((component) => component.name === item.id)?.version || '由脚本检测' }}</span>
                 ·
-                {{
+                <span>{{
                   summary.components.find((component) => component.name === item.id)?.updateStatus === 'available'
                     ? '有更新'
                     : summary.components.find((component) => component.name === item.id)?.updateStatus === 'current'
                       ? '已是最新'
                       : summary.components.find((component) => component.name === item.id)?.updateReason || '更新时实时确认'
-                }}
+                }}</span>
               </small>
             </div>
             <select v-model="updateVersions[item.id]" :aria-label="`${item.id} 目标版本`">
@@ -623,7 +623,7 @@ onBeforeUnmount(() => {
         <ul>
           <li>删除 LDNMP / PhpMyAdmin 相关容器、镜像及 <code>/home/web</code></li>
           <li>保留 KPanel、Docker、<code>/home/web_*.tar.gz</code> 备份及其他系统服务</li>
-          <li>当前 {{ summary.siteCount }} 个站点、{{ summary.databaseCount }} 个数据库；最近备份 {{ summary.latestBackup || '暂无' }}</li>
+          <li>当前 {{ summary.siteCount }} 个站点、{{ summary.databaseCount }} 个数据库；最近备份 <span>{{ summary.latestBackup || '暂无' }}</span></li>
         </ul>
         <label><input v-model="backupBeforeUninstall" type="checkbox" /> 卸载前创建冷备（推荐）</label>
         <button class="button button--danger" type="button" :disabled="jobActive || !environmentInstalled" @click="uninstall">

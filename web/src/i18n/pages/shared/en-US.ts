@@ -1233,4 +1233,9 @@ export default [
   ["终止执行", "Stop execution"],
   ["全部展开", "Expand all"],
   ["全部收起", "Collapse all"],
+  ["{0} · 待审核", "{0} · Pending review"],
+  ["{0} · 模型 {1}", "{0} · {1} models"],
+  ["{0} 个 API", "{0} APIs"],
+  ["{0} 个已启用 · {1} 个已同步", "{0} enabled · {1} synced"],
+  ["代码编辑器加载失败：{0}", "Code editor failed to load: {0}"],
 ] as const satisfies PhraseCatalog

@@ -208,6 +208,11 @@ func TestInteractiveApplicationJobCanBeEndedAndReleasesTaskLock(t *testing.T) {
 	if job.Status != "running" || job.Stage != "cancelling" || job.InputOpen {
 		t.Fatalf("cancellation request = %#v", job)
 	}
+	// The stop is an unacknowledged signal; the message must not promise a
+	// safe-stage exit (§7.2).
+	if strings.Contains(job.Message, "安全退出") || !strings.Contains(job.Message, "强制结束") {
+		t.Fatalf("cancellation message overstates safety: %q", job.Message)
+	}
 	if !service.jobs.cancelRequested(id) {
 		t.Fatal("cancellation marker was not persisted")
 	}

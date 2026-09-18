@@ -197,7 +197,7 @@ func (s *Service) SendWithAttachments(ctx context.Context, userID, sessionID, co
 		return Run{}, err
 	}
 	if _, err := s.Store.AddMessage(ctx, Message{SessionID: session.ID, RunID: run.ID, Role: RoleUser, Content: content, Attachments: attachments}); err != nil {
-		run.Status, run.ErrorCode, run.ErrorMessage = RunFailed, "message_store_failed", err.Error()
+		run.Status, run.ErrorCode, run.ErrorMessage = RunFailed, "message_store_failed", PublicError(err)
 		_ = s.Store.UpdateRun(ctx, run)
 		return Run{}, err
 	}

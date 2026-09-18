@@ -54,7 +54,20 @@ var nativeProbeOrder = []string{
 	nativeIPQualityCheckID,
 }
 
-var nativeHTTPClient = &http.Client{Timeout: 20 * time.Second}
+var nativeHTTPClient = &http.Client{Timeout: 20 * time.Second, CheckRedirect: nativeProbeRedirect}
+
+// Probes target fixed public HTTPS endpoints. Like every other outbound
+// client, they follow only a short HTTPS-only redirect chain instead of the
+// standard library's ten hops with scheme downgrades allowed.
+func nativeProbeRedirect(request *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return errors.New("diagnostic probe redirect limit reached")
+	}
+	if request.URL.Scheme != "https" {
+		return errors.New("diagnostic probe redirect left HTTPS")
+	}
+	return nil
+}
 
 var nativeIPingPageRiskPattern = regexp.MustCompile(`(?i)([0-9]{1,3}(?:\.[0-9]+)?)\s*%`)
 

@@ -229,6 +229,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					roots = append(roots, backup.RootRef{Path: root.Path, Module: root.Module})
 				}
 			}
+			// The restore record must survive the backup manager's read budget
+			// on the next restart; reject it here, at inspect time, instead of
+			// letting the agent fail to boot later.
+			if backup.RecordRootsExceedReadBudget(roots) {
+				return backup.ErrInvalid
+			}
 			i, err := s.Engine.Inventory(ctx)
 			if err != nil {
 				return err

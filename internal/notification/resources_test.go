@@ -25,34 +25,16 @@ func TestResourceAlertRulesRoundTrip(t *testing.T) {
 	}
 }
 
-type resourceTestSource struct {
-	value ResourceSnapshot
-	clock *notificationTestClock
-	calls int
-	stale bool
-}
-
-func (r *resourceTestSource) Resources(context.Context) ResourceSnapshot {
-	r.calls++
-	v := r.value
-	v.Certificates = append([]CertificateResource{}, v.Certificates...)
-	v.Containers = append([]ContainerResource{}, v.Containers...)
-	v.ObservedAt = r.clock.Now()
-	if r.stale {
-		v.ObservedAt = v.ObservedAt.Add(-10 * time.Minute)
-	}
-	return v
-}
-
-func resourceService(t *testing.T) (*Service, *resourceTestSource, *notificationTestTelegram, *notificationTestClock) {
+// The resource source was removed with the withdrawn alert engine, so no
+// inventory can be collected; these tests pin that saved rules and alert
+// state survive untouched and nothing is sent.
+func resourceService(t *testing.T) (*Service, *notificationTestTelegram, *notificationTestClock) {
 	t.Helper()
 	clock := &notificationTestClock{now: time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)}
 	telegram := &notificationTestTelegram{}
 	s := configureNotificationTestService(t, t.TempDir(), newNotificationTestHost(clock.Now()), telegram, clock)
-	r := &resourceTestSource{clock: clock, value: ResourceSnapshot{CertificateStatus: "ready", ContainerStatus: "ready"}}
-	s.resources = r
 	t.Cleanup(func() { _ = s.Close() })
-	return s, r, telegram, clock
+	return s, telegram, clock
 }
 
 func resourceTick(t *testing.T, s *Service, clock *notificationTestClock) {
@@ -71,43 +53,8 @@ func testContainer() ContainerResource {
 	return ContainerResource{ID: strings.Repeat("c", 64), Name: "important", State: "running", Health: "healthy", RestartCount: &count, ResourceVersion: "sha256:" + strings.Repeat("d", 64), Known: true}
 }
 
-func TestCertificateStageExactBoundaries(t *testing.T) {
-	now := time.Now()
-	for _, tc := range []struct {
-		delta time.Duration
-		want  string
-	}{{30*24*time.Hour + 1, ""}, {30 * 24 * time.Hour, "30"}, {7*24*time.Hour + 1, "30"}, {7 * 24 * time.Hour, "7"}, {24*time.Hour + 1, "7"}, {24 * time.Hour, "1"}, {1, "1"}, {0, "expired"}, {-1, "expired"}} {
-		if got := certificateStage(now.Add(tc.delta), now); got != tc.want {
-			t.Fatalf("delta=%v got=%q want=%q", tc.delta, got, tc.want)
-		}
-	}
-}
-
-func TestResourceSnapshotRejectsStaleFutureDuplicateAndOversize(t *testing.T) {
-	now := time.Now()
-	base := ResourceSnapshot{CertificateStatus: "ready", ContainerStatus: "ready", ObservedAt: now}
-	for _, delta := range []time.Duration{-91 * time.Second, 6 * time.Second} {
-		v := base
-		v.ObservedAt = now.Add(delta)
-		got := sanitizeResources(v, now)
-		if got.ContainerStatus != "unknown" || got.CertificateStatus != "unknown" {
-			t.Fatal("invalid observed time accepted")
-		}
-	}
-	v := base
-	v.Containers = []ContainerResource{testContainer(), testContainer()}
-	if sanitizeResources(v, now).ContainerStatus != "unknown" {
-		t.Fatal("duplicate IDs accepted")
-	}
-	v = base
-	v.Certificates = make([]CertificateResource, 129)
-	if sanitizeResources(v, now).CertificateStatus != "limited" {
-		t.Fatal("oversize certificate list accepted")
-	}
-}
-
 func TestResourceFullStoreAlsoPreventsUntrackedHostDelivery(t *testing.T) {
-	s, _, tg, clock := resourceService(t)
+	s, tg, clock := resourceService(t)
 	s.mu.Lock()
 	for i := range MaxAlertStates {
 		s.alerts[fmt.Sprintf("host-1:capacity-%d", i)] = alertState{}
@@ -145,22 +92,13 @@ func seedDormantResources(t *testing.T, s *Service, clock *notificationTestClock
 }
 
 func TestWithdrawnResourcesRemainDormantAcrossRestartAndPauseExpiry(t *testing.T) {
-	for _, healthy := range []bool{false, true} {
-		t.Run(fmt.Sprintf("healthy=%v", healthy), func(t *testing.T) {
-			s, source, tg, clock := resourceService(t)
+	{
+		{
+			s, tg, clock := resourceService(t)
 			rules, states := seedDormantResources(t, s, clock)
-			cert, container := testCertificate(clock), testContainer()
-			if healthy {
-				expiry := clock.Now().Add(90 * 24 * time.Hour)
-				cert.ExpiresAt = &expiry
-			} else {
-				container.State = "restarting"
-			}
-			source.value.Certificates = []CertificateResource{cert}
-			source.value.Containers = []ContainerResource{container}
 			for restart := range 2 {
 				if restart == 1 {
-					next, err := NewService(Config{DataDir: filepath.Dir(s.store.directory), Hosts: s.hosts, Telegram: tg, Resources: source, Now: clock.Now})
+					next, err := NewService(Config{DataDir: filepath.Dir(s.store.directory), Hosts: s.hosts, Telegram: tg, Now: clock.Now})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -178,8 +116,8 @@ func TestWithdrawnResourcesRemainDormantAcrossRestartAndPauseExpiry(t *testing.T
 					}
 					resourceTick(t, s, clock)
 				}
-				if source.calls != 0 || tg.messageCount() != 0 {
-					t.Fatalf("withdrawn resources collected/sent: %d/%d", source.calls, tg.messageCount())
+				if tg.messageCount() != 0 {
+					t.Fatalf("withdrawn resources sent %d messages", tg.messageCount())
 				}
 				for key, want := range states {
 					if !reflect.DeepEqual(s.alertStateSnapshot()[key], want) || !reflect.DeepEqual(s.store.stateSnapshot().AlertStates[key], want) {
@@ -187,14 +125,14 @@ func TestWithdrawnResourcesRemainDormantAcrossRestartAndPauseExpiry(t *testing.T
 					}
 				}
 			}
-		})
+		}
 	}
 }
 
 func TestWithdrawnResourceWritesPreserveConfigAndState(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("existing=%v", existing), func(t *testing.T) {
-			s, source, tg, clock := resourceService(t)
+			s, tg, clock := resourceService(t)
 			var rules *ResourceRules
 			states := s.alertStateSnapshot()
 			if existing {
@@ -216,9 +154,6 @@ func TestWithdrawnResourceWritesPreserveConfigAndState(t *testing.T) {
 					t.Fatal("save changed dormant state")
 				}
 			}
-			if source.calls != 0 {
-				t.Fatal("API write discovered resources")
-			}
 			// Original host alerts and Telegram test/discovery remain functional with
 			// dormant resource states sharing the same store and delivery budget.
 			hostSource := s.hosts.(*notificationHostSource)
@@ -239,9 +174,6 @@ func TestWithdrawnResourceWritesPreserveConfigAndState(t *testing.T) {
 			}
 			if tg.messageCount() != 2 {
 				t.Fatal("Telegram test stopped")
-			}
-			if source.calls != 0 {
-				t.Fatal("Telegram operation discovered resources")
 			}
 		})
 	}

@@ -247,3 +247,30 @@ func writeTestCertificate(t *testing.T, root, domain string, now time.Time) {
 		t.Fatal(err)
 	}
 }
+
+func TestDiscoverWithholdsUpdateFromAmbiguousSites(t *testing.T) {
+	root := t.TempDir()
+	copyFixtureTree(t, filepath.Join("testdata", "web"), root)
+	duplicate := "server {\n    listen 443 ssl;\n    server_name www.static.example.com;\n    root /var/www/html/static.example.com;\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "conf.d", "static-copy.example.com.conf"), []byte(duplicate), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := &Discoverer{WebRoot: root, Now: func() time.Time { return time.Unix(1_700_000_000, 0) }}
+	got, err := d.Discover()
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	ambiguous := 0
+	for _, site := range got {
+		if site.Consistency != contract.ConsistencyAmbiguous {
+			continue
+		}
+		ambiguous++
+		if containsString(site.AllowedActions, "update") {
+			t.Fatalf("ambiguous site still offers update: %#v", site)
+		}
+	}
+	if ambiguous == 0 {
+		t.Fatal("duplicate domain was not marked ambiguous")
+	}
+}

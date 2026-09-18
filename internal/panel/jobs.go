@@ -371,8 +371,8 @@ func jobsFromDockerJobs(items []dockerx.MaintenanceJob) []contract.Job {
 			State: ownerJobState(item.Status), Stage: item.Stage, Progress: item.Progress,
 			TargetKind: "docker", TargetID: item.Target, TargetLabel: item.Target,
 			CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt}
-		if job.State == contract.JobFailedNeedsAttention {
-			job.Error = &contract.Problem{Title: "Docker 任务需要检查", Code: "docker_job_attention", Detail: item.Message}
+		if jobStateFailed(job.State) {
+			job.Error = &contract.Problem{Title: ownerJobFailureTitle(job.State, "Docker 任务失败", "Docker 任务需要检查"), Code: "docker_job_attention", Detail: item.Message}
 		}
 		jobs = append(jobs, job)
 	}
@@ -391,9 +391,24 @@ func ownerJobState(status string) contract.JobState {
 		return contract.JobCancelled
 	case "interrupted":
 		return contract.JobInterrupted
+	case "failed":
+		// An ordinary reported failure; only a status this mapping does not
+		// recognise needs manual attention.
+		return contract.JobFailed
 	default:
 		return contract.JobFailedNeedsAttention
 	}
+}
+
+func jobStateFailed(state contract.JobState) bool {
+	return state == contract.JobFailed || state == contract.JobFailedNeedsAttention
+}
+
+func ownerJobFailureTitle(state contract.JobState, failed, attention string) string {
+	if state == contract.JobFailed {
+		return failed
+	}
+	return attention
 }
 
 func jobsFromAppJobs(items []appmarket.AppJob) []contract.Job {
@@ -406,9 +421,9 @@ func jobsFromAppJobs(items []appmarket.AppJob) []contract.Job {
 			TargetKind: "application", TargetID: item.AppID, TargetLabel: item.AppName,
 			CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt,
 		}
-		if state == contract.JobFailedNeedsAttention {
+		if jobStateFailed(state) {
 			job.Error = &contract.Problem{
-				Title: "应用任务需要检查", Code: "app_job_attention",
+				Title: ownerJobFailureTitle(state, "应用任务失败", "应用任务需要检查"), Code: "app_job_attention",
 				Detail: item.Message, Retryable: item.Status == "failed",
 			}
 		}
@@ -427,7 +442,7 @@ func jobsFromWebEnvironment(items []webenv.Job) []contract.Job {
 			TargetKind: "web_environment", TargetID: item.Target, TargetLabel: item.Target,
 			CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt,
 		}
-		if state == contract.JobFailedNeedsAttention {
+		if jobStateFailed(state) {
 			job.Error = &contract.Problem{
 				Title: "LDNMP 环境任务未完成", Code: "web_environment_job_failed",
 				Detail: item.Message, Retryable: item.Status == "failed",

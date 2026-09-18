@@ -1579,7 +1579,7 @@ export const api = {
       enabled: boolean
       title: string
       description: string
-      hostOrder: string[]
+      hostOrder?: string[]
       expectedResourceVersion: string
     }): Promise<ClusterShareSettings> =>
       request<ClusterShareSettings>('/cluster/share', { method: 'PUT', body }),

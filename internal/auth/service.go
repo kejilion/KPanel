@@ -26,7 +26,7 @@ var (
 	ErrInvalidCSRFToken        = errors.New("invalid csrf token")
 	ErrRateLimited             = errors.New("too many login attempts")
 	ErrInvalidUsername         = errors.New("username must contain 3-32 letters, numbers, dots, underscores, or hyphens")
-	ErrWeakPassword            = errors.New("password must contain 12-256 bytes")
+	ErrWeakPassword            = errors.New("password must contain 12-256 bytes with at least one letter and one digit")
 	ErrInvalidCurrentPassword  = errors.New("current password is invalid")
 	ErrPasswordUnchanged       = errors.New("new password must differ from current password")
 	ErrUsernameUnchanged       = errors.New("new username must differ from current username")
@@ -228,8 +228,13 @@ func (s *Service) Bootstrap(token, username, password string) (Credentials, erro
 		return Credentials{}, err
 	}
 
-	s.hashSlots <- struct{}{}
-	defer func() { <-s.hashSlots }()
+	// Fail fast like Login instead of queueing behind hash work.
+	select {
+	case s.hashSlots <- struct{}{}:
+		defer func() { <-s.hashSlots }()
+	default:
+		return Credentials{}, &RateLimitError{RetryAfter: time.Second}
+	}
 	passwordHash, err := s.hasher.Hash(password)
 	if err != nil {
 		return Credentials{}, fmt.Errorf("hash password: %w", err)
@@ -794,6 +799,20 @@ func validateUsername(username string) error {
 
 func validatePassword(password string) error {
 	if len(password) < 12 || len(password) > 256 {
+		return ErrWeakPassword
+	}
+	// The same composition rule the setup and settings pages show; enforcing
+	// it here keeps API and CLI callers from bypassing the UI check.
+	hasLetter, hasDigit := false, false
+	for _, character := range password {
+		switch {
+		case character >= 'a' && character <= 'z', character >= 'A' && character <= 'Z':
+			hasLetter = true
+		case character >= '0' && character <= '9':
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
 		return ErrWeakPassword
 	}
 	return nil

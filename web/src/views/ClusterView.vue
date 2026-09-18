@@ -120,7 +120,7 @@ const editResourceVersion = ref('')
 const addAccessInput = ref<HTMLTextAreaElement>()
 const addForm = reactive({ name: '', accessCredential: '' })
 const lightBatchForm = reactive({ namePrefix: '', maxUses: 100, expiresInSeconds: 86_400 })
-const shareForm = reactive({ enabled: false, title: '', description: '' })
+const shareForm = reactive({ enabled: false, title: '', description: '', applyPanelOrder: false })
 const editName = ref('')
 const originError = ref('')
 type HostViewMode = 'list' | 'card' | 'globe'
@@ -751,6 +751,7 @@ function applyShareSettings(settings: ClusterShareSettings): void {
   shareForm.enabled = settings.enabled
   shareForm.title = settings.title
   shareForm.description = settings.description
+  shareForm.applyPanelOrder = false
 }
 
 async function saveShare(): Promise<void> {
@@ -761,7 +762,9 @@ async function saveShare(): Promise<void> {
       enabled: shareForm.enabled,
       title: shareForm.title,
       description: shareForm.description,
-      hostOrder: [...hostOrder.value],
+      // The anonymous page keeps its own order (cluster-public-share.md); the
+      // panel order is copied only when the administrator asks for it.
+      ...(shareForm.applyPanelOrder ? { hostOrder: [...hostOrder.value] } : {}),
       expectedResourceVersion: shareSettings.value.resourceVersion,
     })
     applyShareSettings(settings)
@@ -1571,6 +1574,14 @@ onBeforeUnmount(() => {
             maxlength="240"
             :placeholder="phrase('例如：这些是我正在运行的服务器。')"
           />
+        </label>
+
+        <label class="cluster-share__switch">
+          <span>
+            <strong>{{ phrase('按当前面板顺序排列公开页') }}</strong>
+            <small>{{ phrase('仅在本次保存时复制；之后调整面板顺序不会改变公开页。') }}</small>
+          </span>
+          <input v-model="shareForm.applyPanelOrder" type="checkbox" role="switch" />
         </label>
 
         <section class="cluster-share__privacy">

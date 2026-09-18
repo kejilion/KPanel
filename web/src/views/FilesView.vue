@@ -2925,7 +2925,7 @@ onBeforeUnmount(() => {
             <Scissors v-else :size="17" />
           </span>
           <span>
-            <strong>{{ clipboard.mode === 'copy' ? '已复制' : '已剪切' }} {{ clipboard.entries.length }} 项</strong>
+            <strong><span>{{ clipboard.mode === 'copy' ? '已复制' : '已剪切' }}</span> {{ clipboard.entries.length }} 项</strong>
             <small>
               {{ clipboard.entries[0]?.name }}
               <template v-if="clipboard.entries.length > 1"> 等 {{ clipboard.entries.length }} 项</template>

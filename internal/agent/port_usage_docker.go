@@ -21,7 +21,9 @@ func (s *Server) enrichPortUsageWithDocker(ctx context.Context, snapshot contrac
 	}
 	dockerContext, cancel := context.WithTimeout(ctx, dockerPortUsageEnrichmentTimeout)
 	defer cancel()
-	containers, err := s.docker.Containers(dockerContext)
+	// Listening sockets belong to running containers, whose runtime bindings
+	// the list already carries; no per-container inspect is needed.
+	containers, err := s.docker.ContainerListSummaries(dockerContext)
 	if err != nil {
 		return snapshot
 	}

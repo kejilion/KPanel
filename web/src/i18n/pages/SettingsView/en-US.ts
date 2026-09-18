@@ -217,4 +217,9 @@ export default [
   ['现在', 'Now'],
   ['查看源码', 'View source'],
   ['查看许可协议', 'View license'],
+  ["{0} 个", "{0}"],
+  ["已启用 TOTP", "TOTP enabled"],
+  ["关闭后账户将恢复为仅密码登录。", "Turning this off returns the account to password-only sign-in."],
+  ["生成新恢复码后，旧恢复码会立即全部失效。", "Generating new recovery codes immediately invalidates all old ones."],
+  ["已启用", "Enabled"],
 ] as const satisfies PhraseCatalog
