@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
           @execute="executeQuickCommand"
         />
       </main>
-      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-quick-commands-open': quickCommandsOpen }">
+      <main v-show="terminalMode === 'batch'" class="terminal-stage terminal-stage--batch" :class="{ 'is-fullscreen': workspaceFullscreen, 'is-quick-commands-open': quickCommandsOpen }">
         <div class="terminal-tabs-bar terminal-tabs-bar--batch">
           <button
             class="terminal-tabs-bar__connections"
