@@ -1171,6 +1171,7 @@ export default [
   ["备份密码", "Backup password"],
   ["再次输入密码", "Repeat password"],
   ["恢复会覆盖所选数据。恢复面板数据后，需要使用备份中的账户重新登录。", "Restore overwrites the selected data. After restoring panel data, sign in with the account from the backup."],
+  ["将被替换的主机目录：", "Host directories that will be replaced: "],
   ["完整恢复面板身份和配对密钥，且域名、协议、端口不变时，可保留集群配对。迁移切换时请停止旧面板。", "Cluster pairing can be retained when panel identity and pairing keys are restored and the domain, protocol and port remain unchanged. Stop the old panel at migration cutover."],
   ["AI 只替换 API 接入配置，不导入会话；通知恢复后默认关闭。", "AI replaces API access settings only, without importing conversations. Notifications are disabled after restore."],
   ["删除服务器上的备份文件与记录，已经下载的副本不受影响。", "Delete the backup file and record from this server. Downloaded copies are unaffected."],

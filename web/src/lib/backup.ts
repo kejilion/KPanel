@@ -1,12 +1,17 @@
 import { apiRequest } from '@/lib/api'
 
 export type BackupModule = 'panel' | 'apps' | 'web' | 'docker'
+export interface BackupRootRef {
+  path: string
+  module: BackupModule
+}
 export interface BackupRecord {
   id: string
   action: 'export' | 'import' | 'restore' | 'recover'
   status: string
   stage: string
   modules: BackupModule[]
+  roots?: BackupRootRef[]
   createdAt: string
   size: number
   targetRevision?: string

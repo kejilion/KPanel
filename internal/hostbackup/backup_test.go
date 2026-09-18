@@ -190,6 +190,76 @@ func TestBackupHostNativeMountBindingAndRevision(t *testing.T) {
 	}
 }
 
+// Imported payload roots may only restore data the exporter's data model
+// produces. System directories outside /home must never pass validation,
+// regardless of module labels or container declarations.
+func TestBackupPayloadRootScopeValidation(t *testing.T) {
+	e, _, p := hostFixture(t)
+	if err := e.validatePayload(p); err != nil {
+		t.Fatal("legitimate apps root rejected:", err)
+	}
+	hashFor := func(path string) string {
+		hash := sha256.Sum256([]byte(path))
+		return hex.EncodeToString(hash[:16])
+	}
+	for _, module := range []string{"apps", "web", "docker"} {
+		for _, path := range []string{"/root", "/root/.ssh", "/etc/ssh", "/etc/cron.d", "/usr/local/bin", "/var/lib/docker"} {
+			bad := p
+			bad.Module = module
+			root := Root{ID: hashFor(path), Path: path, Module: module, Directory: true, Bytes: 16, Entries: 1}
+			bad.Roots = []Root{root}
+			for i := range bad.Containers {
+				bad.Containers[i].Module = module
+			}
+			if err := e.validatePayload(bad); err == nil {
+				t.Fatalf("payload root %s under module %s accepted", path, module)
+			}
+		}
+	}
+	// A payload ID that does not match the exporter's sha256(path) derivation
+	// must be rejected even when the path itself is in scope.
+	reid := p
+	reid.Roots = []Root{{ID: strings.Repeat("0", 32), Path: "/home/app", Module: "apps", Directory: true, Bytes: 4, Entries: 2}}
+	if err := e.validatePayload(reid); err == nil {
+		t.Fatal("root with non-derived ID accepted")
+	}
+	// Docker-module roots must be a bind source or volume mountpoint of a
+	// payload-declared container; zero containers means zero roots.
+	dockerOnly := Payload{Version: 1, Module: "docker", Roots: []Root{{ID: hashFor("/home/app"), Path: "/home/app", Module: "docker", Directory: true, Bytes: 4, Entries: 2}}, Containers: []Container{}, Networks: map[string]json.RawMessage{}, Volumes: map[string]Volume{}}
+	if err := e.validatePayload(dockerOnly); err == nil {
+		t.Fatal("docker root without a declaring container accepted")
+	}
+}
+
+// Engine.Restore must re-verify payload roots against the destination
+// inventory before any rename, closing the gap for paths that pass
+// data-model validation but exist on no destination (e.g. cross-host
+// imports of /home paths absent here).
+func TestBackupRestoreRejectsRootOutsideDestinationData(t *testing.T) {
+	e, _, p := hostFixture(t)
+	if err := os.MkdirAll(e.host("/home/other"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.host("/home/other/data"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte("/home/other"))
+	p.Roots = []Root{{ID: hex.EncodeToString(hash[:16]), Path: "/home/other", Module: "apps", Directory: true, Bytes: 1, Entries: 1}}
+	p.Containers = nil
+	directory := t.TempDir()
+	if err := e.writePayload(context.Background(), filepath.Join(directory, "apps.payload"), p); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.RemoveAll(e.host("/home/other"))
+	err := e.Restore(context.Background(), backup.NewID(), directory, []string{"apps"})
+	if err == nil || !strings.Contains(err.Error(), "not part of the destination data") {
+		t.Fatal("restore of inventory-external root accepted:", err)
+	}
+	if _, statErr := os.Lstat(e.host("/home/other")); !os.IsNotExist(statErr) {
+		t.Fatal("/home/other was created by rejected restore")
+	}
+}
+
 func TestBackupHostRejectsOversizedGzipTail(t *testing.T) {
 	e, _, p := hostFixture(t)
 	var out bytes.Buffer

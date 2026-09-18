@@ -546,7 +546,7 @@ func (s *Server) backupImport(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			if err := s.backups.Update(id, func(r *backup.Record) { r.AgentRevision = checked.TargetRevision }); err != nil {
+			if err := s.backups.Update(id, func(r *backup.Record) { r.AgentRevision = checked.TargetRevision; r.Roots = checked.Roots }); err != nil {
 				return err
 			}
 			for _, module := range host {

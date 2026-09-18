@@ -21,6 +21,7 @@ type Record struct {
 	Status           string    `json:"status"`
 	Stage            string    `json:"stage"`
 	Modules          []string  `json:"modules"`
+	Roots            []RootRef `json:"roots,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 	Size             int64     `json:"size"`
@@ -30,6 +31,13 @@ type Record struct {
 	SourceID         string    `json:"sourceId,omitempty"`
 	AgentID          string    `json:"agentId,omitempty"`
 	AgentRevision    string    `json:"agentRevision,omitempty"`
+}
+
+// RootRef names one data root inside a host backup payload so restore
+// confirmations can show the directories that will be replaced.
+type RootRef struct {
+	Path   string `json:"path"`
+	Module string `json:"module"`
 }
 
 // Manager persists intent before executing. Recovery never replays host writes.
