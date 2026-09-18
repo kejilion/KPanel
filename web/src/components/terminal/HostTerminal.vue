@@ -54,8 +54,11 @@ let inputSending = false
 let offset = Number.isFinite(props.initialOffset) && props.initialOffset >= 0 ? props.initialOffset : 0
 let disposed = false
 let mounted = false
-let lastRows = 0
-let lastColumns = 0
+const resizeRetryLimit = 3
+let syncedRows = 0
+let syncedColumns = 0
+let resizeSequence = 0
+let resizeFailures = 0
 let reconnectAttempts = 0
 let closeRequest: Promise<void> | undefined
 let closeConfirmed = false
@@ -174,8 +177,15 @@ async function poll(): Promise<void> {
     if (chunk.truncated) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.outputTruncated')}\x1b[0m\r\n`)
     if (chunk.data) writeTerminalOutput(decodeBase64(chunk.data))
     offset = chunk.nextOffset
+    const recovered = state.value === 'reconnecting'
     state.value = chunk.closed || chunk.exitedAt ? 'finished' : 'connected'
     reconnectAttempts = 0
+    if (recovered && state.value === 'connected') {
+      syncedRows = 0
+      syncedColumns = 0
+      resizeFailures = 0
+      scheduleResize()
+    }
     if (state.value === 'connected' && !inputQueue.empty) void flushInput()
     if (chunk.exitError) writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${chunk.exitError}\x1b[0m\r\n`)
     if (desktopWindowActive.value && state.value !== 'finished') pollTimer = window.setTimeout(() => void poll(), 0)
@@ -193,16 +203,39 @@ async function poll(): Promise<void> {
 }
 
 function scheduleResize(): void {
+  queueResize(100)
+}
+
+function queueResize(delay: number): void {
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
-    fitAddon?.fit()
-    const rows = terminal?.rows || 0
-    const columns = terminal?.cols || 0
-    if (!rows || !columns || rows > 500 || columns > 1000 || (rows === lastRows && columns === lastColumns)) return
-    lastRows = rows
-    lastColumns = columns
-    void api.terminals.resize(props.sessionId, rows, columns).catch(() => undefined)
-  }, 100)
+    resizeTimer = undefined
+    void syncResize()
+  }, delay)
+}
+
+// The PTY size is only recorded as synced after the Panel accepts it, so a
+// transient failure is retried (bounded) instead of leaving the browser and
+// PTY permanently out of step. A reconnect clears the synced size and resends.
+async function syncResize(): Promise<void> {
+  if (disposed || state.value === 'finished') return
+  fitAddon?.fit()
+  const rows = terminal?.rows || 0
+  const columns = terminal?.cols || 0
+  if (!rows || !columns || rows > 500 || columns > 1000 || (rows === syncedRows && columns === syncedColumns)) return
+  const sequence = ++resizeSequence
+  try {
+    await api.terminals.resize(props.sessionId, rows, columns)
+    if (sequence !== resizeSequence) return
+    syncedRows = rows
+    syncedColumns = columns
+    resizeFailures = 0
+  } catch {
+    if (disposed || sequence !== resizeSequence) return
+    resizeFailures++
+    if (resizeFailures === 1) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.resizeFailed')}\x1b[0m\r\n`)
+    if (resizeFailures <= resizeRetryLimit) queueResize(500 * 2 ** (resizeFailures - 1))
+  }
 }
 
 defineExpose({ focusTerminal, executeCommand, scheduleResize, closeSession })

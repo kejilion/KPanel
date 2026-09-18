@@ -159,6 +159,7 @@ export const zhCNMessages = {
   'terminal.inputPlaceholder': '预输入命令，按 Enter 整行发送',
   'terminal.send': '发送',
   'terminal.inputFailed': '输入发送失败，正在重连。',
+  'terminal.resizeFailed': '终端尺寸同步失败，正在重试；恢复前显示可能错位换行。',
   'terminal.taskInputFailed': '输入发送失败，请确认任务仍在等待输入。',
   'terminal.outputTruncated': '较早的终端输出已按容量上限截断。',
   'terminal.refreshConnections': '刷新连接',

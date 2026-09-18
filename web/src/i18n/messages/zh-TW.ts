@@ -159,6 +159,7 @@ export const zhTWMessages = {
   "terminal.inputPlaceholder": "預輸入命令，按 Enter 整行傳送",
   "terminal.send": "傳送",
   "terminal.inputFailed": "輸入傳送失敗，正在重連。",
+  "terminal.resizeFailed": "終端尺寸同步失敗，正在重試；恢復前顯示可能錯位換行。",
   "terminal.taskInputFailed": "輸入傳送失敗，請確認任務仍在等待輸入。",
   "terminal.outputTruncated": "較早的終端輸出已按容量上限截斷。",
   "terminal.refreshConnections": "重新整理連線",

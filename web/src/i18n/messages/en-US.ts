@@ -161,6 +161,7 @@ export const enUSMessages = {
   'terminal.inputPlaceholder': 'Compose a command, then press Enter to send the whole line',
   'terminal.send': 'Send',
   'terminal.inputFailed': 'Input failed to send. Reconnecting.',
+  'terminal.resizeFailed': 'Terminal size sync failed. Retrying; the display may wrap until it recovers.',
   'terminal.taskInputFailed': 'Input failed to send. Confirm that the task is still waiting for input.',
   'terminal.outputTruncated': 'Earlier terminal output was truncated at the capacity limit.',
   'terminal.refreshConnections': 'Refresh connections',

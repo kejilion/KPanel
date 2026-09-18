@@ -59,6 +59,11 @@ type Manager struct {
 	stop     chan struct{}
 	stopOnce sync.Once
 	closed   bool
+	// spawning marks a process being started outside mu so Busy cannot miss
+	// the admission window between spawn and registration. openSpawnMu keeps
+	// concurrent Open calls from racing the quota check across that window.
+	spawning    bool
+	openSpawnMu sync.Mutex
 }
 
 type session struct {
@@ -280,6 +285,8 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 	if owner == "" || rows == 0 || columns == 0 || rows > 500 || columns > 1000 {
 		return Snapshot{}, errors.New("invalid terminal session request")
 	}
+	m.openSpawnMu.Lock()
+	defer m.openSpawnMu.Unlock()
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -299,20 +306,43 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 		m.mu.Unlock()
 		return Snapshot{}, ErrLimit
 	}
-	process, err := m.config.Starter(rows, columns)
-	if err != nil {
-		m.mu.Unlock()
-		return Snapshot{}, err
+	// The spawn (fork + systemd-run) can take tens of milliseconds; run it
+	// without mu so every other session's Input/Output/Resize stays live.
+	// busy-visibility is preserved through m.spawning below.
+	m.spawning = true
+	m.mu.Unlock()
+	process, spawnErr := m.config.Starter(rows, columns)
+	m.mu.Lock()
+	m.spawning = false
+	closed := m.closed
+	m.mu.Unlock()
+	if spawnErr != nil {
+		if process != nil {
+			_ = process.Close()
+			_ = process.Kill()
+		}
+		return Snapshot{}, spawnErr
+	}
+	if closed {
+		_ = process.Close()
+		_ = process.Kill()
+		return Snapshot{}, ErrClosed
 	}
 	id, err := randomID()
 	if err != nil {
 		_ = process.Close()
 		_ = process.Kill()
-		m.mu.Unlock()
 		return Snapshot{}, err
 	}
 	now := m.config.Now().UTC()
 	item := &session{id: id, owner: owner, process: process, notify: make(chan struct{}), createdAt: now, updatedAt: now}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		_ = process.Close()
+		_ = process.Kill()
+		return Snapshot{}, ErrClosed
+	}
 	m.sessions[id] = item
 	m.mu.Unlock()
 	go m.capture(item)
@@ -320,11 +350,15 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 }
 
 // Busy includes shells whose output has ended but whose process scope has not
-// been explicitly closed. Open holds mu while starting, so it cannot escape
-// the host backup admission check by being between creation and registration.
+// been explicitly closed. A spawn starts outside mu, so it is counted while in
+// flight; it cannot escape the host backup admission check by being between
+// creation and registration.
 func (m *Manager) Busy() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.spawning {
+		return true
+	}
 	for _, item := range m.sessions {
 		item.mu.Lock()
 		open := !item.closed

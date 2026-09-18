@@ -240,6 +240,35 @@ describe('BatchTerminalPanel', () => {
     }
   })
 
+  it.each(['# ', '$ '])('completes the host on a bare-shell prompt %j without PS1', async (marker) => {
+    vi.useFakeTimers()
+    try {
+      const target = host('local', '本机', 'alpine')
+      mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+      const fullOutput = `done\n${marker}`
+      let delivered = 0
+      mocks.output.mockImplementation(async () => {
+        if (delivered) return { data: '', offset: fullOutput.length, nextOffset: fullOutput.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+        delivered = 1
+        return { data: Buffer.from(fullOutput).toString('base64'), offset: 0, nextOffset: fullOutput.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+      })
+      const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+      await wrapper.get('textarea').setValue('true')
+      await wrapper.get('button.button--primary').trigger('click')
+      const start = Date.now()
+      for (let step = 0; step < 40; step += 1) {
+        await vi.advanceTimersByTimeAsync(400)
+        vi.setSystemTime(start + (step + 1) * 400)
+      }
+
+      expect(mocks.input.mock.calls.some(([, payload]) => decodeInput(payload) === 'exit\r')).toBe(true)
+      expect(wrapper.text()).toContain('执行成功')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps running when output merely ends with a dollar sign that is not a prompt', async () => {
     vi.useFakeTimers()
     try {

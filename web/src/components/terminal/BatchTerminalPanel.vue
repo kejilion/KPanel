@@ -48,7 +48,12 @@ const OUTPUT_RETRY_BASE_DELAY_MS = 500
 const PROMPT_STABLE_MS = 3000
 const PROMPT_POLL_IDLE_MS = 300
 const MAX_EXIT_ATTEMPTS = 3
-const promptPattern = /(?:^|\r?\n|\r)[^\r\n]{0,64}@[^\r\n]{0,64}:[^\r\n]{0,80}[$#] ?$|(?:^|\r?\n|\r)(?:bash|sh)-[\d.]+\$ ?$/
+// Three prompt shapes: a full user@host:path marker, version-stamped
+// bash/sh banners, and the bare `# ` / `$ ` that a root /bin/sh -l fallback
+// prints when the fixed agent environment leaves PS1 unset. The bare branch
+// requires the marker to be alone on its line, so command output that merely
+// ends in a dollar sign is not mistaken for a prompt.
+const promptPattern = /(?:^|\r?\n|\r)[^\r\n]{0,64}@[^\r\n]{0,64}:[^\r\n]{0,80}[$#] ?$|(?:^|\r?\n|\r)(?:bash|sh)-[\d.]+\$ ?$|(?:^|\r?\n|\r)[$#] ?$/
 const encoder = new TextEncoder()
 
 const command = ref('')
