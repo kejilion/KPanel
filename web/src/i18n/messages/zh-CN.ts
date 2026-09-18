@@ -55,7 +55,7 @@ export const zhCNMessages = {
   'files.remoteDownload.nameLabel': '保存名称',
   'files.remoteDownload.optional': '选填',
   'files.remoteDownload.namePlaceholder': '留空时从响应识别，否则使用 download',
-  'files.remoteDownload.note': '支持公开 HTTP/HTTPS 地址，单个文件最多 512 MiB。',
+  'files.remoteDownload.note': '支持公开 HTTP/HTTPS 地址，单个文件最多 512 MiB。Panel 重启时任务会标记为中断且不自动重试；完整 URL 不会保存。',
   'files.remoteDownload.start': '开始下载',
   'files.remoteDownload.starting': '正在开始…',
   'files.remoteDownload.stop': '停止',

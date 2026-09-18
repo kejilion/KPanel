@@ -57,7 +57,7 @@ export const enUSMessages = {
   'files.remoteDownload.nameLabel': 'Save name',
   'files.remoteDownload.optional': 'Optional',
   'files.remoteDownload.namePlaceholder': 'Leave blank to detect it from the response; otherwise use download',
-  'files.remoteDownload.note': 'Supports public HTTP/HTTPS URLs up to 512 MiB per file.',
+  'files.remoteDownload.note': 'Supports public HTTP/HTTPS URLs up to 512 MiB per file. A Panel restart marks active downloads interrupted with no automatic retry, and the full URL is never saved.',
   'files.remoteDownload.start': 'Start download',
   'files.remoteDownload.starting': 'Starting…',
   'files.remoteDownload.stop': 'Stop',

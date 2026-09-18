@@ -216,6 +216,9 @@ func (m *Manager) Update(ctx context.Context, id string, input SiteInput) (contr
 	if current.PrimaryDomain != spec.Primary || current.Kind != spec.Kind {
 		return contract.SiteSummary{}, fmt.Errorf("%w: primary domain and site type are immutable", ErrForbidden)
 	}
+	if current.Consistency == contract.ConsistencyAmbiguous {
+		return contract.SiteSummary{}, fmt.Errorf("%w: site domain appears in multiple configuration files", ErrForbidden)
+	}
 	if current.ResourceVersion != input.ExpectedResourceVersion {
 		return contract.SiteSummary{}, fmt.Errorf("%w: resource version changed", ErrConflict)
 	}

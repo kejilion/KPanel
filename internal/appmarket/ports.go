@@ -147,19 +147,10 @@ func systemListeningPorts(ctx context.Context) (map[uint16][]string, error) {
 				first = false
 				continue
 			}
-			fields := strings.Fields(scanner.Text())
-			if len(fields) < 4 || (candidate.tcp && fields[3] != "0A") {
-				continue
-			}
-			_, rawPort, ok := strings.Cut(fields[1], ":")
+			port, ok := listeningSocketPort(scanner.Text(), candidate.tcp)
 			if !ok {
 				continue
 			}
-			value, parseErr := strconv.ParseUint(rawPort, 16, 16)
-			if parseErr != nil || value == 0 {
-				continue
-			}
-			port := uint16(value)
 			if !stringSliceContains(result[port], candidate.protocol) {
 				result[port] = append(result[port], candidate.protocol)
 			}
@@ -177,6 +168,29 @@ func systemListeningPorts(ctx context.Context) (map[uint16][]string, error) {
 		return nil, errors.New("Linux socket tables are unavailable")
 	}
 	return result, nil
+}
+
+// listeningSocketPort reads one /proc/net/{tcp,udp}{,6} row. TCP rows count
+// only in LISTEN (0A). UDP has no listen state; a bound server socket stays
+// unconnected (07), while connected client sockets (01, e.g. an outbound DNS
+// query) hold only an ephemeral port and must not block an install.
+func listeningSocketPort(line string, tcp bool) (uint16, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 4 {
+		return 0, false
+	}
+	if tcp && fields[3] != "0A" || !tcp && fields[3] != "07" {
+		return 0, false
+	}
+	_, rawPort, ok := strings.Cut(fields[1], ":")
+	if !ok {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(rawPort, 16, 16)
+	if err != nil || value == 0 {
+		return 0, false
+	}
+	return uint16(value), true
 }
 
 func stringSliceContains(values []string, target string) bool {

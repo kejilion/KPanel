@@ -56,7 +56,7 @@ export const zhTWMessages = {
   "files.remoteDownload.nameLabel": "儲存名稱",
   "files.remoteDownload.optional": "選填",
   "files.remoteDownload.namePlaceholder": "留空時從回應識別，否則使用 download",
-  "files.remoteDownload.note": "支援公開 HTTP/HTTPS 網址，單一檔案最多 512 MiB。",
+  "files.remoteDownload.note": "支援公開 HTTP/HTTPS 網址，單一檔案最多 512 MiB。Panel 重新啟動時任務會標記為中斷且不自動重試；完整 URL 不會儲存。",
   "files.remoteDownload.start": "開始下載",
   "files.remoteDownload.starting": "正在開始…",
   "files.remoteDownload.stop": "停止",

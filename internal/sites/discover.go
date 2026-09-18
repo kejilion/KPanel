@@ -87,9 +87,12 @@ func (d *Discoverer) Discover() ([]contract.SiteSummary, error) {
 		for _, domain := range result[i].Domains {
 			if domainCounts[domain] > 1 {
 				result[i].Consistency = contract.ConsistencyAmbiguous
+				// The CLI update path patches server_name across every server
+				// block in the file, so an ambiguous site must not offer it.
+				result[i].AllowedActions = withoutAction(result[i].AllowedActions, "update")
 				result[i].Warnings = uniqueStrings(append(
 					result[i].Warnings,
-					"同一域名出现在多个配置文件中；操作将按当前配置文件资源 ID 执行",
+					"同一域名出现在多个配置文件中；已暂停编辑，删除将按当前配置文件资源 ID 执行",
 				))
 				break
 			}
@@ -663,4 +666,14 @@ func hashBytes(data []byte) string {
 func stableID(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:16])
+}
+
+func withoutAction(actions []string, removed string) []string {
+	kept := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action != removed {
+			kept = append(kept, action)
+		}
+	}
+	return kept
 }
