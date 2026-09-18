@@ -220,7 +220,7 @@ function closeQuickCommands(): void {
 function executeQuickCommand(command: string): void {
   if (terminalMode.value === 'batch') {
     if (batchRunning.value) return
-    batchPanelRefs.get('batch')?.applyQuickCommand(command)
+    batchPanelRef.value?.applyQuickCommand(command)
     closeQuickCommands()
     return
   }
@@ -245,16 +245,16 @@ interface BatchPanelHandle {
   applyQuickCommand: (command: string) => void
 }
 
-const batchPanelRefs = new Map<string, BatchPanelHandle>()
+const batchPanelRef = ref<BatchPanelHandle>()
 
 function setBatchPanelRef(
   instance: Element | ComponentPublicInstance | null,
 ): void {
   const handle = instance as unknown as Partial<BatchPanelHandle> | null
   if (typeof handle?.applyQuickCommand === 'function') {
-    batchPanelRefs.set('batch', handle as BatchPanelHandle)
+    batchPanelRef.value = handle as BatchPanelHandle
   } else {
-    batchPanelRefs.delete('batch')
+    batchPanelRef.value = undefined
   }
 }
 
@@ -717,7 +717,6 @@ onBeforeUnmount(() => {
   .terminal-stage.is-quick-commands-open { grid-template-columns:minmax(0,1fr); }
   .terminal-stage :deep(.terminal-quick-commands) { grid-row:auto; grid-column:auto; position:absolute; z-index:20; top:51px; right:0; bottom:0; width:min(300px,calc(100% - 32px)); box-shadow:var(--shadow-md); }
   .terminal-stage--batch .batch-terminal-stage { grid-row:2; }
-  .terminal-stage--batch.is-quick-commands-open .batch-terminal-stage { grid-row:2; }
   .terminal-stage__mobile-selector { display:flex; }
   .terminal-tabs-bar__connections { display:grid; }
   .terminal-stage.is-fullscreen .terminal-stage__mobile-selector { display:none; }

@@ -120,7 +120,7 @@ function collapseAll(): void {
 let commandInput: HTMLTextAreaElement | undefined
 
 function setCommandInput(element: Element | ComponentPublicInstance | null): void {
-  commandInput = (element instanceof HTMLTextAreaElement ? element : undefined) ?? undefined
+  commandInput = element instanceof HTMLTextAreaElement ? element : undefined
 }
 
 function applyQuickCommand(value: string): void {
