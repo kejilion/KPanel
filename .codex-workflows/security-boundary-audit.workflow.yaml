@@ -1,3 +1,4 @@
+---
 name: security-boundary-audit
 description: "基于 Cloudflare security-audit-skill 方法的信任边界安全审计：侦察、覆盖账本、狩猎波、独立验证与结构化报告"
 version: "1.0"

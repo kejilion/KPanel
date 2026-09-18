@@ -70,6 +70,7 @@ const requiredFiles = [
   '.governance/ocr-review/README.md',
   'scripts/ocr-delegate.mjs',
   'scripts/tests/ocr-delegate.test.mjs',
+  '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 
 function read(relativePath) {
@@ -671,6 +672,7 @@ const workflows = [
   '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
   '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
   '.codex-workflows/ocr-line-review.workflow.yaml',
+  '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 for (const workflow of workflows) {
   const content = read(workflow);
