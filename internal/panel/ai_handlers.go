@@ -224,6 +224,10 @@ type aiMessageInput struct {
 	} `json:"attachments"`
 }
 
+const maxAIAttachmentBytes = 4 << 20
+
+var errAIAttachmentTooLarge = errors.New("AI attachment exceeds 4 MiB")
+
 func (s *Server) decodeAIMessage(w http.ResponseWriter, r *http.Request) (string, []ai.Attachment, error) {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
@@ -241,6 +245,10 @@ func (s *Server) decodeAIMessage(w http.ResponseWriter, r *http.Request) (string
 			if decodeErr != nil {
 				s.writeValidationProblem(w, r, fmt.Sprintf("attachments.%d.data", index), "attachment data must be valid base64")
 				return "", nil, decodeErr
+			}
+			if len(data) > maxAIAttachmentBytes {
+				s.writeProblem(w, r, http.StatusRequestEntityTooLarge, "attachment_too_large", "Each attachment must not exceed 4 MiB", "")
+				return "", nil, errAIAttachmentTooLarge
 			}
 			attachments = append(attachments, ai.Attachment{Name: item.Name, MimeType: item.MimeType, Data: data})
 		}
@@ -289,7 +297,9 @@ func (s *Server) decodeAIMessage(w http.ResponseWriter, r *http.Request) (string
 			s.writeValidationProblem(w, r, fmt.Sprintf("attachments.%d", index), "attachment could not be read")
 			return "", nil, openErr
 		}
-		data, readErr := io.ReadAll(io.LimitReader(file, (4<<20)+1))
+		// Read one byte past the limit so an oversized file is rejected
+		// explicitly instead of being truncated.
+		data, readErr := io.ReadAll(io.LimitReader(file, maxAIAttachmentBytes+1))
 		closeErr := file.Close()
 		if readErr != nil || closeErr != nil {
 			if readErr == nil {
@@ -297,6 +307,10 @@ func (s *Server) decodeAIMessage(w http.ResponseWriter, r *http.Request) (string
 			}
 			s.writeValidationProblem(w, r, fmt.Sprintf("attachments.%d", index), "attachment could not be read")
 			return "", nil, readErr
+		}
+		if len(data) > maxAIAttachmentBytes {
+			s.writeProblem(w, r, http.StatusRequestEntityTooLarge, "attachment_too_large", "Each attachment must not exceed 4 MiB", "")
+			return "", nil, errAIAttachmentTooLarge
 		}
 		attachments = append(attachments, ai.Attachment{Name: header.Filename, MimeType: header.Header.Get("Content-Type"), Data: data})
 	}

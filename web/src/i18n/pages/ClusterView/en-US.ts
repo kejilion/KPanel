@@ -381,4 +381,6 @@ export default [
   ["凭据同时包含主机 URL 与一次性授权码，不会保存到浏览器或审计日志。", "The credential contains the host URL and a one-time authorization code. It is never saved to the browser or the audit log."],
   ["控制端", "Controller"],
   ["节点程序", "Node program"],
+  ["按当前面板顺序排列公开页", "Order the public page like the panel"],
+  ["仅在本次保存时复制；之后调整面板顺序不会改变公开页。", "Copied only on this save; later panel reordering does not change the public page."],
 ] as const satisfies PhraseCatalog

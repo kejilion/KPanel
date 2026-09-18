@@ -98,7 +98,7 @@ interface ClusterBindings {
   shareOpen: Ref<boolean>
   shareSettings: Ref<ClusterShareSettings | undefined>
   shareURL: ComputedRef<string>
-  shareForm: { enabled: boolean; title: string; description: string }
+  shareForm: { enabled: boolean; title: string; description: string; applyPanelOrder: boolean }
   enablingMutualFiles: Ref<boolean>
   selected: Ref<ClusterHost | undefined>
   pairingCode: Ref<ClusterPairingCode | undefined>
@@ -1111,13 +1111,21 @@ describe('ClusterView inventory and navigation', () => {
     view.hostOrder.value = ['remote', 'local']
     await view.saveShare()
 
+    // Saving never mirrors the panel order implicitly.
     expect(mocks.updateShare).toHaveBeenCalledWith({
       enabled: true,
       title: 'My fleet',
       description: 'Public status',
-      hostOrder: ['remote', 'local'],
       expectedResourceVersion: 'share-v1',
     })
+    expect(view.shareForm.applyPanelOrder).toBe(false)
+
+    // An explicit request copies the current panel order once.
+    mocks.updateShare.mockResolvedValueOnce(enabled)
+    view.shareForm.applyPanelOrder = true
+    await view.saveShare()
+    expect(mocks.updateShare).toHaveBeenLastCalledWith(expect.objectContaining({ hostOrder: ['remote', 'local'] }))
+    expect(view.shareForm.applyPanelOrder).toBe(false)
     expect(view.shareURL.value).toBe(`https://center.example.com/share/${'a'.repeat(64)}`)
     await view.copyShareLink()
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith(view.shareURL.value)

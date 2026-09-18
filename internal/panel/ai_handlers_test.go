@@ -110,6 +110,30 @@ func TestAIMessageAcceptsMultipartAttachmentsWithoutBase64JSON(t *testing.T) {
 	}
 }
 
+func TestAIMessageRejectsOversizedMultipartAttachmentInsteadOfTruncating(t *testing.T) {
+	server, _ := newTestServer(t)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("attachments", "large.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, make([]byte, maxAIAttachmentBytes)...)
+	if _, err := part.Write(oversized); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ai/sessions/test/messages", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	_, attachments, err := server.decodeAIMessage(response, request)
+	if !errors.Is(err, errAIAttachmentTooLarge) || response.Code != http.StatusRequestEntityTooLarge || attachments != nil {
+		t.Fatalf("oversized attachment status=%d err=%v attachments=%d", response.Code, err, len(attachments))
+	}
+}
+
 func TestAIProviderModelSessionCRUD(t *testing.T) {
 	server, tokenPath := newTestServer(t)
 	if err := server.EnableAI(); err != nil {

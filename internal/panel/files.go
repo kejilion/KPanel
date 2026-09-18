@@ -833,6 +833,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	if err != nil {
+		_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 		writeEvent(contract.FileTransferEvent{State: "error", Detail: "无法确定目标文件名。"})
 		return
 	}
@@ -862,6 +863,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request) {
 	if targetHostID == "" {
 		streamer, ok := s.agent.(agentStreamAPI)
 		if !ok {
+			_ = s.audit(r, session.User.ID, "file.transfer.copy", "file-transfer", input.SourceNodeID, "failure", change)
 			writeEvent(contract.FileTransferEvent{State: "error", Detail: "Agent 文件流不可用。"})
 			return
 		}
