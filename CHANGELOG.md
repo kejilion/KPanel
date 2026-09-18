@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.20.0-rc.1] - 2026-09-18
+
+### Added
+
+- 信任边界安全审计标准与首轮 run 证据：定义 guidance/scoped/full 三档触发、覆盖账本与 findings 入库 `.governance/security-audit/`，并作为例行安全复核手段写入 `PROJECT_RULES.md` 5.4。
+
+### Fixed
+
+- 轻量节点 store 在原子写入残留旧备份文件时不再把残留当作有效状态丢弃，启动时从残留恢复。
+- 主机备份导入把 payload 根路径限定在导出数据模型内，拒绝越界根路径。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
+
 ## [1.19.0] - 2026-09-17
 
 v1.19.0 汇总预览版 rc.1 至 rc.5 的全部变更并转稳定发布。
