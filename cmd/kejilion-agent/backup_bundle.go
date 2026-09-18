@@ -333,6 +333,12 @@ func runBackupMenu(args []string, input io.Reader, output io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(output, "检查通过，所含类别：", strings.Join(record.Modules, ", "), "；确认后覆盖所选数据。面板数据请在 KPanel 中恢复。")
+	if len(record.Roots) > 0 {
+		fmt.Fprintln(output, "将被替换的主机目录：")
+		for _, root := range record.Roots {
+			fmt.Fprintln(output, "  ", root.Path)
+		}
+	}
 	yes, err := ask("确认恢复？[y/N]: ")
 	if err != nil {
 		return err

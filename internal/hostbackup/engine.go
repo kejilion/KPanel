@@ -179,6 +179,42 @@ func owner(path string) string {
 	return "docker"
 }
 
+// rootMatchesModule confines an imported payload root to the positive data
+// model the exporter produces. web restores only /home/web, apps restores
+// only /home paths owned by apps, and docker roots must be the bind source or
+// volume mountpoint of a container declared by the same payload. Mirrors
+// engine-side Root.ID derivation so an attacker cannot re-label a root.
+func rootMatchesModule(p Payload, r Root) bool {
+	hash := sha256.Sum256([]byte(r.Path))
+	if r.ID != hex.EncodeToString(hash[:16]) {
+		return false
+	}
+	switch p.Module {
+	case "web":
+		return r.Path == "/home/web"
+	case "apps":
+		return owner(r.Path) == "apps"
+	case "docker":
+		for _, c := range p.Containers {
+			for _, mount := range c.Mounts {
+				if mount.Type != "bind" && mount.Type != "volume" {
+					continue
+				}
+				if mount.Source == r.Path {
+					return true
+				}
+				if mount.Type == "volume" {
+					if v, ok := p.Volumes[mount.Name]; ok && v.Mountpoint == r.Path {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return false
+}
+
 func (e *Engine) Inventory(ctx context.Context) (Inventory, error) {
 	i := Inventory{Version: 1, Roots: []Root{}, Containers: []Container{}, Networks: map[string]json.RawMessage{}, Volumes: map[string]Volume{}}
 	issues := map[string]string{}

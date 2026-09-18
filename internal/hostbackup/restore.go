@@ -129,6 +129,20 @@ func (e *Engine) Restore(ctx context.Context, id, directory string, modules []st
 			return errors.New("restore data overlaps protected Panel data")
 		}
 	}
+	// Re-verify payload roots against the destination inventory: an imported
+	// manifest may only replace data the destination actually owns.
+	for _, root := range all.Roots {
+		covered := false
+		for _, existing := range current.Roots {
+			if existing.Path == root.Path {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			return fmt.Errorf("restore root %s is not part of the destination data", root.Path)
+		}
+	}
 	for _, c := range current.ProtectedContainers {
 		if names[c.Name] {
 			return errors.New("restore name conflicts with protected Panel runtime")

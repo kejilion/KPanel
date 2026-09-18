@@ -37,6 +37,7 @@ const available = computed(() => dialog.value === 'restore' ? choices.filter(c =
 const estimate = computed(() => selected.value.reduce((total, module) => total + (module === 'panel' ? inventory.value?.panelBytes || 0 : inventory.value?.host?.modules.find(m => m.id === module)?.bytes || 0), 0))
 const validPassword = computed(() => new TextEncoder().encode(password.value).length >= 10 && new TextEncoder().encode(password.value).length <= 256)
 const missingDependencies = computed(() => dialog.value !== 'export' ? [] : inventory.value?.host?.modules.filter(m => selected.value.includes(m.id)).flatMap(m => m.requires).filter(m => !selected.value.includes(m)) || [])
+const selectedRoots = computed(() => dialog.value === 'restore' ? (source.value?.roots || []).filter(root => selected.value.includes(root.module)) : [])
 const canSubmit = computed(() => !busy.value && !loading.value && (dialog.value === 'delete' || dialog.value === 'recover' || (dialog.value === 'import' ? !!file.value && validPassword.value : selected.value.length > 0 && missingDependencies.value.length === 0 && ((dialog.value === 'restore' && previewReady.value) || (dialog.value === 'export' && !!inventory.value && validPassword.value && password.value === confirmation.value)))))
 const name = (id: BackupModule) => phrase(choices.find(c => c.id === id)?.name || id)
 function unavailable(id: BackupModule) { return dialog.value === 'export' && id !== 'panel' && (!inventory.value?.hostAvailable || !!inventory.value.host?.modules.find(m => m.id === id)?.issue) }
@@ -153,6 +154,7 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
         </template>
         <template v-if="dialog === 'restore'">
           <p class="backup-impact">{{ phrase('恢复会覆盖所选数据。恢复面板数据后，需要使用备份中的账户重新登录。') }}</p>
+          <p v-if="selectedRoots.length" class="backup-note">{{ phrase('将被替换的主机目录：') }}<code v-for="root in selectedRoots" :key="root.path">{{ root.path }}</code></p>
           <p class="backup-note">{{ phrase('完整恢复面板身份和配对密钥，且域名、协议、端口不变时，可保留集群配对。迁移切换时请停止旧面板。') }}</p>
           <p class="backup-note">{{ phrase('AI 只替换 API 接入配置，不导入会话；通知恢复后默认关闭。') }}</p>
         </template>
@@ -170,6 +172,12 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(timer) })
 .backup-center {
   font-size: 14px;
   line-height: 1.6;
+}
+
+.backup-note code {
+  margin-right: 8px;
+  font-family: inherit;
+  overflow-wrap: anywhere;
 }
 
 .backup-center__body {

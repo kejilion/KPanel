@@ -393,6 +393,9 @@ func (e *Engine) validatePayload(p Payload) error {
 		if !backup.ValidID(r.ID) || ids[r.ID] || r.Module != p.Module || !strings.HasPrefix(r.Path, "/") || r.Path != filepath.ToSlash(filepath.Clean(r.Path)) || e.excluded(r.Path) {
 			return backup.ErrInvalid
 		}
+		if !rootMatchesModule(p, r) {
+			return backup.ErrInvalid
+		}
 		if r.Bytes < 0 || r.Bytes > backup.MaxBytes || r.Entries < 0 || r.Entries > 100000 {
 			return backup.ErrInvalid
 		}

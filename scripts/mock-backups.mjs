@@ -9,6 +9,7 @@ function create(action, selected, status = 'queued') {
   return record
 }
 create('import', ['panel', 'web'], 'ready')
+records.get([...records.keys()][0]).roots = [{ path: '/home/web', module: 'web' }]
 Object.assign(create('restore', ['docker'], 'failed'), { errorCode: 'cleanup_pending', completedModules: ['docker'] })
 function advance(record, status) {
   setTimeout(() => Object.assign(record, { status, stage: status, size: record.action === 'export' ? 24576 : 0, ...(record.action === 'restore' ? { completedModules: record.modules } : {}) }), 800).unref()

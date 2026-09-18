@@ -211,6 +211,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "inspect" && r.Method == "POST" && record.Action == "import" && record.Status == "queued" {
 		err := s.Jobs.Run(id, func(ctx context.Context, id string) error {
+			roots := []backup.RootRef{}
 			for _, module := range record.Modules {
 				destination := filepath.Join(dir, "check-"+module)
 				p, err := s.Engine.ReadPayload(ctx, filepath.Join(dir, module+".payload"), destination)
@@ -224,12 +225,18 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if p.Module != module {
 					return backup.ErrInvalid
 				}
+				for _, root := range p.Roots {
+					roots = append(roots, backup.RootRef{Path: root.Path, Module: root.Module})
+				}
 			}
 			i, err := s.Engine.Inventory(ctx)
 			if err != nil {
 				return err
 			}
-			return s.Jobs.Update(id, func(r *backup.Record) { r.TargetRevision = i.Revision })
+			return s.Jobs.Update(id, func(r *backup.Record) {
+				r.TargetRevision = i.Revision
+				r.Roots = roots
+			})
 		})
 		if err != nil {
 			backupProblem(w, err)
