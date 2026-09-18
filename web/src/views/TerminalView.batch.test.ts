@@ -24,6 +24,7 @@ vi.mock('@/components/terminal/HostTerminal.vue', () => ({ default: defineCompon
 vi.mock('@/components/terminal/BatchTerminalPanel.vue', () => ({ default: defineComponent({
   name: 'BatchTerminalPanelStub',
   props: { hosts: { type: Array, default: () => [] }, sessionCapacity: Number },
+  emits: ['runningChange'],
   setup(_props, { expose }) {
     expose({ applyQuickCommand: mocks.batchApplies })
   },
@@ -93,6 +94,40 @@ describe('terminal batch mode', () => {
 
     expect(mocks.batchApplies).toHaveBeenCalledTimes(1)
     expect(mocks.batchApplies).toHaveBeenCalledWith('docker ps')
+    // F1 regression guard: closing the drawer is observable on the open prop.
+    expect(aside?.props('open')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('ignores batch quick commands while a run is active and keeps the drawer open', async () => {
+    const wrapper = mount(TerminalView)
+    await flushPromises()
+
+    await wrapper.get('.terminal-mode-button').trigger('click')
+    await flushPromises()
+
+    // Open the batch drawer via its toolbar toggle.
+    const batchStage = wrapper.findAll('.terminal-stage--batch')[0]
+    const toolbarButtons = batchStage?.findAll('.terminal-toolbar button') ?? []
+    const expandButton = toolbarButtons.find((button) => button.attributes('aria-label') === '展开快捷命令')
+    await expandButton?.trigger('click')
+    await flushPromises()
+
+    const before = batchStage?.findComponent({ name: 'TerminalQuickCommands' })
+    expect(before?.props('open')).toBe(true)
+
+    // Drive the real batchRunning ref through the stubbed panel's event.
+    const panel = wrapper.findComponent({ name: 'BatchTerminalPanelStub' })
+    panel.vm.$emit('runningChange', true)
+    await flushPromises()
+
+    const aside = batchStage?.findComponent({ name: 'TerminalQuickCommands' })
+    expect(aside?.props('open')).toBe(true)
+    aside?.vm.$emit('execute', 'uptime')
+    await flushPromises()
+
+    expect(mocks.batchApplies).not.toHaveBeenCalledWith('uptime')
+    expect(aside?.props('open')).toBe(true)
     wrapper.unmount()
   })
 })
