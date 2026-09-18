@@ -65,6 +65,11 @@ const requiredFiles = [
   '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
   '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
   '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
+  '.codex-workflows/ocr-line-review.workflow.yaml',
+  '.opencodereview/rule.json',
+  '.governance/ocr-review/README.md',
+  'scripts/ocr-delegate.mjs',
+  'scripts/tests/ocr-delegate.test.mjs',
 ];
 
 function read(relativePath) {
@@ -469,6 +474,26 @@ requireText('.codex-workflows/evolve-kpanel.workflow.yaml', [
   'scripts/check-governance-candidate-ci.mjs',
   '候选分支保留到主线 CI 成功',
 ]);
+requireText('.codex-workflows/ocr-line-review.workflow.yaml', [
+  'PROJECT_RULES.md` 5.5',
+  'node scripts/ocr-delegate.mjs',
+  '自由臂（必做，先跑）',
+  'OCR-Review:',
+  'constrained-only',
+  '不是提交门禁',
+]);
+requireText('.codex-workflows/session-collaboration.workflow.yaml', ['`ocr-line-review` with `profile=candidate`']);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['`ocr-line-review`（`profile=review`']);
+requireText('AGENTS.md', ['.codex-workflows/ocr-line-review.workflow.yaml']);
+requireText('CLAUDE.md', ['.codex-workflows/ocr-line-review.workflow.yaml']);
+requireText('scripts/check-collaboration-state.mjs', ['ocr_line_review=']);
+requireText('PROJECT_RULES.md', [
+  '### 5.5 行级评审辅助（open-code-review，试行）',
+  '**按风险自动参与**',
+  'constrained-only` 只计约束臂在自由臂之外新增',
+  '不充当 L2/L3 独立复核',
+  '单跑约束臂不得宣称"已评审"',
+]);
 requireText('.codex-workflows/maintain-kpanel-dependencies.workflow.yaml', [
   '直接依赖',
   '传递依赖',
@@ -550,6 +575,7 @@ const workflows = [
   '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
   '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
   '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
+  '.codex-workflows/ocr-line-review.workflow.yaml',
 ];
 for (const workflow of workflows) {
   const content = read(workflow);

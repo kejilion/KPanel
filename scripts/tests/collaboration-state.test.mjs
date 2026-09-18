@@ -221,6 +221,61 @@ test('writer completion requires a clean non-empty candidate commit above the ex
     );
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /collaboration_state=pass role=writer/);
+    assert.doesNotMatch(result.stdout, /ocr_line_review=/);
+  } finally {
+    state.cleanup();
+  }
+});
+
+test('code candidates get a proportional, non-blocking OCR line review reminder', () => {
+  const state = fixture();
+  const check = () => run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
+  try {
+    writeFileSync(join(state.writer, 'small.go'), 'package main\n');
+    git(state.writer, 'add', 'small.go');
+    git(state.writer, 'commit', '-m', 'fix: one-line change');
+    let result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /ocr_line_review=/);
+
+    writeFileSync(join(state.writer, 'main.go'), 'package main\n' + '// line\n'.repeat(40));
+    git(state.writer, 'add', 'main.go');
+    git(state.writer, 'commit', '-m', 'feat: code candidate');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=missing code_paths=2 code_lines=42 advisory: run \.codex-workflows\/ocr-line-review/);
+
+    git(state.writer, 'commit', '--allow-empty', '-m', 'test: record review\n\nOCR-Review: skipped reason=test');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=recorded code_paths=2 code_lines=42\n/);
+
+    writeFileSync(join(state.writer, 'later.go'), 'package main\n');
+    git(state.writer, 'add', 'later.go');
+    git(state.writer, 'commit', '-m', 'feat: code after review');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=stale code_paths=3 .* advisory:/);
+  } finally {
+    state.cleanup();
+  }
+});
+
+test('renamed code files still count toward the OCR line review threshold', () => {
+  const state = fixture();
+  try {
+    mkdirSync(join(state.writer, 'pkg'));
+    writeFileSync(join(state.writer, 'pkg', 'a.go'), 'package pkg\n');
+    git(state.writer, 'add', 'pkg/a.go');
+    git(state.writer, 'commit', '-m', 'test: small file');
+    const base = git(state.writer, 'rev-parse', 'HEAD');
+    git(state.writer, 'mv', 'pkg/a.go', 'pkg/b.go');
+    writeFileSync(join(state.writer, 'pkg', 'b.go'), 'package pkg\n' + '// line\n'.repeat(40));
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'feat: rename and grow');
+    const result = run(state.writer, '--role', 'writer', '--base-ref', base, '--require-candidate');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=missing /);
   } finally {
     state.cleanup();
   }

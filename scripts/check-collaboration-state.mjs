@@ -89,6 +89,32 @@ function git(repo, args) {
   }).trim();
 }
 
+const OCR_CODE_PATH = /\.(go|ts|tsx|vue|js|mjs|cjs|sh)$/;
+const OCR_AUTO_MIN_CODE_LINES = 30;
+
+function codeChanges(root, range) {
+  let paths = 0;
+  let lines = 0;
+  for (const row of git(root, ['diff', '--numstat', '--no-renames', range]).split(/\r?\n/).filter(Boolean)) {
+    const [added, deleted, path] = row.split('\t');
+    if (!OCR_CODE_PATH.test(path)) continue;
+    paths += 1;
+    lines += (Number(added) || 0) + (Number(deleted) || 0);
+  }
+  return { paths, lines };
+}
+
+// PROJECT_RULES.md 5.5 advisory: small code candidates are exempt, and a trailer followed by more code is stale.
+function ocrLineReviewState(root, baseRef) {
+  const changes = codeChanges(root, baseRef + '...HEAD');
+  if (changes.lines < OCR_AUTO_MIN_CODE_LINES) return null;
+  const summary = ' code_paths=' + changes.paths + ' code_lines=' + changes.lines;
+  const newest = git(root, ['log', '--format=%H%x1f%(trailers:key=OCR-Review,valueonly)%x1e', baseRef + '..HEAD'])
+    .split('\x1e').map((record) => record.trim().split('\x1f')).find(([, trailer]) => trailer?.trim());
+  if (!newest) return 'missing' + summary;
+  return (codeChanges(root, newest[0] + '..HEAD').paths > 0 ? 'stale' : 'recorded') + summary;
+}
+
 function normalizedPath(path) {
   const normalized = realpathSync.native(resolve(path));
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -108,6 +134,7 @@ function parseWorktrees(output) {
 
 function check(options) {
   const failures = [];
+  let ocrLineReview = null;
   const repo = realpathSync.native(resolve(options.repo));
   const root = realpathSync.native(git(repo, ['rev-parse', '--show-toplevel']));
   let branch = '(detached)';
@@ -174,6 +201,8 @@ function check(options) {
         if (changedPaths.length === 0) {
           failures.push('writer candidate must contain a non-empty task diff; empty commits do not satisfy completion');
         }
+        // PROJECT_RULES.md 5.5: advisory only, never a failure.
+        ocrLineReview = ocrLineReviewState(root, options.baseRef);
       }
     }
   } else {
@@ -207,6 +236,13 @@ function check(options) {
     return;
   }
   process.stdout.write('collaboration_state=pass ' + summary + '\n');
+  if (ocrLineReview) {
+    const hint = !ocrLineReview.startsWith('recorded')
+      ? ' advisory: run .codex-workflows/ocr-line-review.workflow.yaml (profile=candidate) and add an OCR-Review trailer,'
+        + ' or record "OCR-Review: skipped reason=<why>"'
+      : '';
+    process.stdout.write('ocr_line_review=' + ocrLineReview + hint + '\n');
+  }
 }
 
 try {

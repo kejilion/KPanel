@@ -55,6 +55,14 @@ rg -n "docker.sock|InsecureSkipVerify|Access-Control-Allow-Origin|/bin/sh -lc" \
 
 **Expected output:** 不变量仍成立；例外均有具体文件、调用链和可利用性结论。
 
+`"${{baseline_ref}}..HEAD"` 含代码改动时，同步执行 `ocr-line-review`（`profile=review`，范围同上）作为逐文件
+覆盖清单，与本步人工复核组成双臂（`PROJECT_RULES.md` 5.5）；成立的发现并入本审计结论，按第 8 步处理。
+稳定版发车前的审计同时汇总 5.5 试用指标，并抽查 `constrained-only` 记录是否成立：
+
+```bash
+git log --format='%h %(trailers:key=OCR-Review,valueonly)' "<上一稳定版 tag>..HEAD" | awk 'NF > 1'
+```
+
 ### 3. 执行完整功能与构建门禁
 
 ```bash

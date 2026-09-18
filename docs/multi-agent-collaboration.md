@@ -121,6 +121,9 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
   智能体经 `.codex-workflows/security-boundary-audit.workflow.yaml` 同一入口执行；账本与 findings
   入库 `.governance/security-audit/`，是跨框架共享的增量状态，格式由 skill 验证器统一校验。
   审计产出的 confirmed 记录是高可信线索而非人工复核结论，后续修复与验证仍按正常流程执行。
+- OCR 行级评审辅助（`PROJECT_RULES.md` 5.5）同样框架中立：任何智能体经
+  `.codex-workflows/ocr-line-review.workflow.yaml` 与 `scripts/ocr-delegate.mjs` 同一入口执行，OCR 只做
+  圈选和规则解析，评审由执行智能体完成；约束臂与自由臂必须同时完成，它不构成独立复核。
 - L2 优先由不同任务独立复核；L3 的主要实现者与最终验证/发布者必须分离，接手发布任务可承担最终验证，
   不要求第三个常驻复核任务。无法使用另一提供商时，使用与主要实现分离的干净会话并记录限制。
 - 评审价值来自不同假设、失败边界和证据，不来自模型名称。最终仍以精确差异、测试、实机和 CI 判断。

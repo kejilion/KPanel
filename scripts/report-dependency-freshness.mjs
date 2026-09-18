@@ -330,6 +330,12 @@ export function validatePolicy(policy, repo) {
   if (/^\s+[A-Za-z0-9_-]+:\s*write\s*$/m.test(freshnessWorkflow)) {
     failures.push('dependency freshness workflow must not request write permissions');
   }
+  const reviewGroup = policy.groups?.find((group) => group.id === 'code-review-assistant');
+  const reviewAssistant = reviewGroup?.components?.['@alibaba-group/open-code-review'];
+  if (reviewGroup && (!/^\d+\.\d+\.\d+$/.test(reviewAssistant?.pinnedVersion ?? '')
+    || !/^[0-9a-f]{40}$/.test(reviewAssistant?.pinnedCommit ?? ''))) {
+    failures.push('code-review-assistant must pin open-code-review to X.Y.Z and its full release commit');
+  }
   const trivy = policy.groups?.find((group) => group.id === 'security-tools')?.components?.trivy;
   if (trivy) {
     const scanner = readFileSync(resolve(repo, 'scripts/security-scan.sh'), 'utf8');
@@ -654,6 +660,19 @@ async function collectSecurityTools(repo, policy) {
   ].filter(Boolean);
 }
 
+// A newer OCR release is only a candidate signal; adoption needs the canary replay (PROJECT_RULES.md 5.5).
+export function reviewAssistantCandidate(pinnedVersion, latest) {
+  return candidate('open-code-review', pinnedVersion, latest, 'review-assistant', 'GitHub releases/latest',
+    { verificationFloor: 'canary-replay' });
+}
+
+async function collectCodeReviewAssistant(policy) {
+  const tool = policy.groups.find((group) => group.id === 'code-review-assistant')
+    .components['@alibaba-group/open-code-review'];
+  const update = reviewAssistantCandidate(tool.pinnedVersion, await latestGitHubRelease(tool.repository));
+  return update ? [update] : [];
+}
+
 async function collectDockerfileFrontend(repo) {
   const dockerfile = readFileSync(resolve(repo, 'Dockerfile'), 'utf8');
   const current = dockerfile.match(/^# syntax=docker\/dockerfile:(\d+\.\d+\.\d+)@sha256:/m)?.[1];
@@ -853,6 +872,7 @@ export async function main(argv) {
     collectSource('security-tools', () => collectSecurityTools(options.repo, policy)),
     collectSource('dockerfile-frontend', () => collectDockerfileFrontend(options.repo)),
     collectSource('managed-kejilion-script', () => collectManagedScript(options.repo, policy)),
+    collectSource('code-review-assistant', () => collectCodeReviewAssistant(policy)),
   ]);
   const report = summarize(policy, sources);
   const rendered = options.format === 'json' ? JSON.stringify(report, null, 2) : renderMarkdown(report);

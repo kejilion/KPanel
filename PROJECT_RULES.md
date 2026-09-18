@@ -428,6 +428,38 @@ confirmed。无 OS 沙箱的环境禁止执行目标代码。
 计为首个 full run。上游 skill 的更新遵循 5.2 受控自我改进与执行入口的 pin 规则：新
 commit 只产生候选信号，升级须先 scoped 对照并重验既有账本。
 
+### 5.5 行级评审辅助（open-code-review，试行）
+
+alibaba/open-code-review（OCR）以委托模式为代码差异提供确定性的文件圈选、规则解析和逐文件覆盖
+清单，由执行智能体完成评审。它是 L0-L3 之外按风险自动参与的评审辅助，不是提交门禁，不进入 CI 与
+Definition of Done，不充当 L2/L3 独立复核，也不替代验收记录中的运维级风险判断。唯一执行入口为
+[`.codex-workflows/ocr-line-review.workflow.yaml`](.codex-workflows/ocr-line-review.workflow.yaml) 与
+`scripts/ocr-delegate.mjs`，本节不复制其参数与命令。
+
+- **按风险自动参与**：L2/L3 代码候选，或代码（`.go .ts .tsx .vue .js .mjs .cjs .sh`）改动合计 ≥30 行的
+  L1 候选，写任务在候选提交后、acceptance 预览与最终核验前无需提示即执行 candidate 档
+  （`session-collaboration` 第 4 步）；更小的代码改动、纯文档、治理文本和发布操作不适用。
+  `quality-audit-kpanel` 对审计范围执行 review 档；L2/L3 独立复核者可同样使用。智能体判断不适用时写
+  `OCR-Review: skipped reason=<理由>`。`check-collaboration-state.mjs --require-candidate` 对达到行数阈值
+  但缺 trailer 或 trailer 之后又有代码提交的候选输出 `ocr_line_review=missing|stale` 提醒，不失败。
+- **只用委托模式**：入口只转发 LLM-free 子命令与白名单参数，以隔离的 HOME 运行并剔除 `OCR_*`/`OTEL_*`
+  环境；禁止 `ocr review`/`scan`/`config` 等把源码发往 OCR 配置端点的用法。圈选策略唯一真源是受跟踪的
+  `.opencodereview/rule.json`，其修改按 5.3 验收；用户级 OCR 配置不参与，KPanel 不覆盖上游系统规则
+  文本，专属尺度引用 `docs/development-quality-standard.md` 第 3、12 节。
+- **双臂必做**：约束臂（逐文件覆盖率 100%）之外必须有不受清单限制的自由臂；run-0 基线的唯一
+  HIGH 只在自由臂出现。单跑约束臂不得宣称"已评审"。自由臂先于约束臂盲跑，发现数写入 trailer；
+  `constrained-only` 只计约束臂在自由臂之外新增、经核验成立且严重度 ≥ MEDIUM 的发现。
+  发现须逐条核对 file:line，成立者转正常修复流程。
+- **留痕**：运行结果不入库；在候选提交消息加 `OCR-Review:` trailer（版本、范围、覆盖、自由臂发现数、
+  分级有效发现、`constrained-only` 数）。基线、canary 与回放记录见 `.governance/ocr-review/README.md`。
+- **持续迭代**：版本 pin 只在 `dependency-policy.json` 的 `code-review-assistant` 组；依赖报告检测到
+  新版本只产生候选信号，升级须在新版本上通过 canary 回放，pin 变更为独立治理提交。
+- **试用退出条款**：观察序列自 v1.20.0 稳定版列车起算，每个稳定版发车前由 `quality-audit-kpanel`
+  汇总上一稳定版以来的 trailer，并抽查 `constrained-only` 记录是否成立。有效 trailer 指非 skipped 且
+  `constrained-only` 为数字的记录；`unreported` 或缺字段不计为使用，也不推断为零或成功。连续 3 个稳定版
+  周期内有效 trailer 累计 `constrained-only` 为 0，或有效 trailer 少于同期达到阈值代码候选的一半时，下一次
+  治理周期移除本节、入口、配置与自动参与挂点，保留 README 与提交历史。
+
 ## 6. 变更纪律
 
 - 使用最小、可验证、可回滚的改动，不夹带无关重构。

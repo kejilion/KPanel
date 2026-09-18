@@ -1,0 +1,130 @@
+---
+name: ocr-line-review
+description: "open-code-review 委托模式行级评审辅助：固定版本圈选+规则解析，约束评审与自由评审双臂，结果随候选提交 trailer 留痕"
+version: "1.0"
+author: "Claude"
+tags: [review, quality, governance, open-code-review]
+params: [project_dir, base_ref, head_ref, profile, evidence_dir]
+created: "2026-09-18T00:00:00+08:00"
+updated: "2026-09-18T00:00:00+08:00"
+---
+
+# KPanel OCR Line Review
+
+## Purpose
+
+按 `PROJECT_RULES.md` 5.5 使用 alibaba/open-code-review（OCR）的委托模式做行级评审辅助：
+OCR 只负责确定性的文件圈选与规则解析，评审由执行本工作流的智能体完成。它为候选差异提供
+逐文件覆盖清单（每个文件必须 reviewed 或写明 skipped 理由），补充而不替代自由评审、
+L0-L3 门禁、L2/L3 独立复核和验收记录。不是提交门禁，不进入 CI 与 Definition of Done。
+任何智能体框架（Codex、Claude 或其他读取 `AGENTS.md` 的智能体）经同一入口执行，无需人工提示。
+
+三档 `${{profile}}`：
+
+- **candidate**：L2/L3 代码候选或代码改动 ≥30 行的 L1 候选，写任务在候选提交之后、acceptance 预览与
+  最终核验之前自动执行（`session-collaboration` 第 4 步），范围为 `<精确基线>..HEAD`；
+- **review**：`quality-audit-kpanel` 第 2 步与 L2/L3 独立复核者把它当作覆盖清单，与自己的自由评审并行；
+- **canary**：OCR 升级候选的回放验收，见 Step 6。
+
+## Prerequisites
+
+- 已阅读 `PROJECT_RULES.md` 5.5 与本工作流；`${{project_dir}}` 是任务专用 worktree。
+- 唯一执行入口是 `node scripts/ocr-delegate.mjs`：它按 `dependency-policy.json` 的
+  `code-review-assistant` pin 把 OCR 安装到仓库外（默认 `~/.cache/kpanel-tools/ocr-<版本>`，
+  可用 `KPANEL_OCR_TOOL_DIR` 覆盖），设置 `OCR_NO_UPDATE=1`，以工具目录内隔离的 HOME 运行并剔除
+  `OCR_*`/`OTEL_*` 环境（用户级 `~/.opencodereview` 规则与遥测不参与），只转发 `preview`、`rule`、
+  `rules-check` 及白名单参数（`--from --to -c --commit -f --format` 与路径）。禁止直接调用
+  `ocr review`/`ocr scan`/`ocr config`：它们会把源码发往 OCR 配置的 LLM 端点；`--rule`/`--repo`/`--exclude`
+  等会替换仓库圈选策略的参数一律拒绝。Windows 原生 Node 可用，无需 WSL。
+- 圈选策略唯一真源是受跟踪的 `.opencodereview/rule.json`（把测试文件纳入评审、排除账本/夹具/
+  锁文件）；修改它属于规范变更，按 `PROJECT_RULES.md` 5.3 验收。
+- 证据写入 `${{evidence_dir}}`（仓库外），不入库。
+
+## Steps
+
+### 1. 冻结精确范围
+
+```bash
+cd "${{project_dir}}"
+base=$(git rev-parse "${{base_ref}}"); head=$(git rev-parse "${{head_ref}}")
+mkdir -p "${{evidence_dir}}"
+```
+
+范围必须是精确 SHA；候选变化后结论失效，从本步重跑。
+
+### 2. 圈选与规则
+
+```bash
+node scripts/ocr-delegate.mjs preview --from "$base" --to "$head" --format json > "${{evidence_dir}}/preview.json"
+node scripts/ocr-delegate.mjs rule --format json <preview 中的 reviewable 路径...> > "${{evidence_dir}}/rules.json"
+```
+
+核对 `excluded_files`：除 `.opencodereview/rule.json` 明确排除和 `unsupported_ext`（文档等）外，
+出现 `default_path` 剔除测试文件即视为圈选策略失效，停止并报告，不带着失真圈选继续评审。
+
+### 3. 自由臂（必做，先跑）
+
+先于约束臂、在不看规则组和逐文件清单的情况下完成并落盘（`${{evidence_dir}}/free-form.json`），
+不受文件清单与规则分类限制，专查跨文件涌现行为：布局/媒体查询叠加、状态解耦后遗留旧路径、
+Panel/Agent 契约两端、文档与语言资源同步、运维级风险。run-0 的唯一 HIGH 只在自由臂出现
+（`.governance/ocr-review/README.md`），因此单跑约束臂不得宣称已评审。
+
+### 4. 约束臂：逐文件覆盖
+
+对每个 `(path, status)` 取 `git diff "$base".."$head" -- <path>`，按解析出的规则组评审，可按需
+读取上下文。每个文件以 reviewed 或 skipped+具体理由结束，覆盖率必须 100%。KPanel 专属尺度只
+引用不复述：`docs/development-quality-standard.md` 第 3 节固定信任边界与第 12 节代码评审核对。
+与已落盘自由臂结果相同的发现标为重复；只有新增且成立的计入 `constrained-only`。
+
+### 5. 核验、分流与留痕
+
+每条发现逐一打开 file:line 核对，无法复现的丢弃。输出沿用 OCR 评论字段（path、start_line、
+end_line、category、severity、content）并加 `lane: constrained|free-form`。成立的发现转入正常
+开发流程：`candidate` 档在同一写任务修复；`review` 档交还候选负责人，复核者不修复。
+
+candidate/review 档在候选提交（或复核结论所在提交）的消息末尾加入一条 trailer：有修复时写在修复提交上；
+无修复时，只在尚未推送、且尚未绑定任何预览或核验证据的本地候选上用
+`git commit --amend --trailer "OCR-Review: ..."` 追加；否则另建一个只含 trailer 的 `--allow-empty` 提交，
+不改写已绑定证据或已推送的 SHA。
+
+```text
+OCR-Review: <版本> range=<base7>..<head7> files=<reviewed>/<total> free-form=<n> valid=H<n>/M<n>/L<n> constrained-only=<n>
+OCR-Review: skipped reason=<具体理由>
+```
+
+入口不可用（如无网络首次安装失败）时记录 skipped 与原因，不阻塞交付，也不改用 `ocr review` 绕行。
+
+`free-form` 为自由臂经核验成立的发现数；`constrained-only` 为约束臂在自由臂之外新增、经核验成立且
+严重度 ≥ MEDIUM 的条数，是 5.5 试用退出的主指标。无法按盲跑顺序测量时写 `unreported`，它不计为有效使用。
+
+### 6. canary：升级回放
+
+依赖报告出现 open-code-review 新版本时，在独立治理 worktree 临时修改 pin 后回放
+`.governance/ocr-review/README.md` 的 canary 样本，逐项满足其通过条件；结果写入该 README 的
+回放记录，pin 变更为独立治理提交。任一条件不满足则保持旧 pin 并记录原因。
+
+## Parameters
+
+- `${{project_dir}}`：任务 worktree。
+- `${{base_ref}}` / `${{head_ref}}`：评审范围（候选的精确基线与候选提交）。
+- `${{profile}}`：`candidate` / `review` / `canary`。
+- `${{evidence_dir}}`：仓库外证据目录。
+
+## Verification
+
+```bash
+node --test scripts/tests/ocr-delegate.test.mjs
+node scripts/report-dependency-freshness.mjs --validate-only
+node scripts/check-governance-consistency.mjs
+git log --format='%h %(trailers:key=OCR-Review,valueonly)' "${{base_ref}}".."${{head_ref}}"
+```
+
+入口测试与策略校验是机器下限；评审质量由核验后的有效发现与自由臂共同决定，不以覆盖率 100%
+或运行过本工作流代替。
+
+## Notes
+
+- 委托模式不调用任何 LLM 端点，OCR 遥测默认关闭；源码只在执行智能体自身的会话内处理。
+- 上游持续迭代：`make dependency-report` 的 `code-review-assistant` 组产生新版本候选信号，
+  升级只走 Step 6；OCR 系统规则随版本更新自动生效，KPanel 不复制或覆盖其规则文本。
+- Linux CI 不运行本工作流。

@@ -112,6 +112,7 @@ for path in "${changed_files[@]}"; do
     scripts/tests/verify-change-forced-level.test.mjs|scripts/tests/business-context-freshness.test.mjs|\
     scripts/tests/report-release-metrics.test.mjs|scripts/tests/report-dependency-freshness.test.mjs|\
     scripts/tests/release-acceptance-coverage.test.mjs|\
+    .opencodereview/*|scripts/ocr-delegate.mjs|scripts/tests/ocr-delegate.test.mjs|\
     .github/workflows/*.yml|.github/workflows/*.yaml)
       needs_governance=true
       ;;
