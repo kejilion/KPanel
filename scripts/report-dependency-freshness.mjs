@@ -17,6 +17,7 @@ const REQUIRED_GROUPS = [
   'github-actions',
   'security-tools',
   'managed-kejilion-script',
+  'security-audit-skill',
 ];
 const REQUIRED_ADOPTION_CLASSES = [
   'emergency-security',
@@ -162,6 +163,18 @@ export function validatePolicy(policy, repo) {
     }
     for (const manifest of group.manifests) {
       if (!existsSync(resolve(repo, manifest))) failures.push(group.id + ' manifest is missing: ' + manifest);
+    }
+  }
+  for (const group of (policy.groups ?? []).filter((item) => item.detector === 'github-commits')) {
+    const components = Object.entries(group.components ?? {});
+    if (components.length === 0) failures.push(group.id + ' must declare at least one pinned component');
+    for (const [name, component] of components) {
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(component.repository ?? ''))) {
+        failures.push(group.id + ' component repository must be owner/name: ' + name);
+      }
+      if (!/^[0-9a-f]{40}$/.test(String(component.pinnedCommit ?? ''))) {
+        failures.push(group.id + ' component pinnedCommit must be a 40-hex commit SHA: ' + name);
+      }
     }
   }
   const goToolchain = policy.groups?.find((group) => group.id === 'go-toolchain');
@@ -703,6 +716,34 @@ export function managedScriptRevisionCandidate(current, latest, currentContent, 
   };
 }
 
+async function collectGitHubCommitPins(policy, groupId) {
+  const group = policy.groups.find((item) => item.id === groupId);
+  const results = await Promise.all(Object.entries(group.components).map(async ([name, component]) => {
+    const repository = await fetchJson('https://api.github.com/repos/' + component.repository);
+    if (!repository.default_branch) throw new Error(component.repository + ' default branch could not be resolved');
+    const head = await fetchJson('https://api.github.com/repos/' + component.repository + '/commits/' + encodeURIComponent(repository.default_branch));
+    return auditSkillRevisionCandidate(name, component.pinnedCommit, head.sha, repository.default_branch);
+  }));
+  return results.filter(Boolean);
+}
+
+export function auditSkillRevisionCandidate(component, pinnedCommit, headCommit, branch) {
+  if (!/^[0-9a-f]{40}$/.test(String(headCommit ?? ''))) throw new Error(component + ' default-branch head is not a commit SHA');
+  if (pinnedCommit === headCommit) return null;
+  return {
+    component,
+    current: pinnedCommit.slice(0, 12),
+    candidate: headCommit.slice(0, 12),
+    updateClass: 'major-toolchain-base',
+    componentKind: 'audit-skill-revision',
+    verificationFloor: 'scoped-comparison-run',
+    pinnedCommit,
+    candidateCommit: headCommit,
+    branch,
+    source: 'GitHub default-branch head',
+  };
+}
+
 async function collectSource(id, collector) {
   try {
     return { id, status: 'ok', candidates: await collector(), error: null };
@@ -853,6 +894,7 @@ export async function main(argv) {
     collectSource('security-tools', () => collectSecurityTools(options.repo, policy)),
     collectSource('dockerfile-frontend', () => collectDockerfileFrontend(options.repo)),
     collectSource('managed-kejilion-script', () => collectManagedScript(options.repo, policy)),
+    collectSource('security-audit-skill', () => collectGitHubCommitPins(policy, 'security-audit-skill')),
   ]);
   const report = summarize(policy, sources);
   const rendered = options.format === 'json' ? JSON.stringify(report, null, 2) : renderMarkdown(report);

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 import {
+  auditSkillRevisionCandidate,
   classifyUpdate,
   compareVersions,
   goExecutable,
@@ -104,6 +105,38 @@ test('managed script revisions ignore unrelated repository commits but expose co
   assert.equal(update.component, 'managed kejilion.sh');
   assert.notEqual(update.currentSha256, update.candidateSha256);
   assert.match(update.source, /managed file content/);
+});
+
+test('audit skill revisions become scoped-comparison candidates only when the upstream head moves', () => {
+  const pinned = 'a'.repeat(40);
+  assert.equal(auditSkillRevisionCandidate('cloudflare/security-audit-skill', pinned, pinned, 'main'), null);
+  const update = auditSkillRevisionCandidate('cloudflare/security-audit-skill', pinned, 'b'.repeat(40), 'main');
+  assert.equal(update.componentKind, 'audit-skill-revision');
+  assert.equal(update.verificationFloor, 'scoped-comparison-run');
+  assert.equal(update.candidateCommit, 'b'.repeat(40));
+  assert.equal(update.current, 'a'.repeat(12));
+  assert.throws(() => auditSkillRevisionCandidate('skill', pinned, 'not-a-sha', 'main'), /not a commit SHA/);
+  const report = summarize({ policyVersion: 'test' }, [{ id: 'security-audit-skill', status: 'ok', candidates: [update], error: null }], new Date('2026-09-18T00:00:00Z'));
+  assert.equal(report.actionableCandidateCount, 1);
+  assert.equal(report.actionableCandidates[0].minimumVerification, 'scoped-comparison-run');
+});
+
+test('policy validation requires github-commits components to pin a full commit SHA', () => {
+  const cases = [
+    ['short sha', (component) => { component.pinnedCommit = 'c1c8a8c'; }, /pinnedCommit must be a 40-hex/],
+    ['uppercase sha', (component) => { component.pinnedCommit = component.pinnedCommit.toUpperCase(); }, /pinnedCommit must be a 40-hex/],
+    ['branch name', (component) => { component.pinnedCommit = 'main'; }, /pinnedCommit must be a 40-hex/],
+    ['missing sha', (component) => { delete component.pinnedCommit; }, /pinnedCommit must be a 40-hex/],
+    ['bad repository', (component) => { component.repository = 'security-audit-skill'; }, /repository must be owner\/name/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+    mutate(policy.groups.find((group) => group.id === 'security-audit-skill').components['cloudflare/security-audit-skill']);
+    assert.ok(validatePolicy(policy, process.cwd()).some((failure) => expected.test(failure)), name);
+  }
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  policy.groups = policy.groups.filter((group) => group.id !== 'security-audit-skill');
+  assert.ok(validatePolicy(policy, process.cwd()).includes('missing required dependency group: security-audit-skill'));
 });
 
 test('concatenated Go JSON parser keeps nested values and escaped braces intact', () => {

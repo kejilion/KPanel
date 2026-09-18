@@ -65,6 +65,7 @@ const requiredFiles = [
   '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
   '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
   '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
+  '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 
 function read(relativePath) {
@@ -550,6 +551,7 @@ const workflows = [
   '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
   '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
   '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
+  '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 for (const workflow of workflows) {
   const content = read(workflow);
