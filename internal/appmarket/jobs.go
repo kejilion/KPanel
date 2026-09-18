@@ -616,7 +616,9 @@ func (s *Service) CancelAppJob(id string) (AppJob, error) {
 		return AppJob{}, fmt.Errorf("%w: persist cancellation request: %v", ErrNeedsAttention, err)
 	}
 	record.Stage = "cancelling"
-	record.Message = "正在结束 kejilion.sh 交互任务，请等待后台进程安全退出"
+	// The stop is a signal (TERM, then KILL on timeout) that the script never
+	// acknowledges, so the message must not promise a safe-stage exit.
+	record.Message = "正在终止 kejilion.sh 交互任务：先发送终止信号，超时后强制结束；中途终止可能留下未完成的变更，请结束后检查应用状态"
 	record.InputOpen = false
 	if err := s.jobs.put(record); err != nil {
 		_ = os.Remove(s.jobs.cancelPath(id))

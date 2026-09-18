@@ -412,3 +412,82 @@ func managedInspect(id, startedAt string, restartCount int) containerInspect {
 func ensureDir(path string) error {
 	return osMkdirAll(path)
 }
+
+func TestContainerListPathsAvoidPerContainerInspect(t *testing.T) {
+	items := make([]containerListItem, 0, 6)
+	for index := range 6 {
+		items = append(items, containerListItem{
+			ID: fmt.Sprintf("%064x", index+1), Names: []string{"/svc-" + strconv.Itoa(index)},
+			Image: "example:latest", State: "running",
+			Labels: map[string]string{
+				"com.docker.compose.project":             "demo",
+				"com.docker.compose.service":             "svc" + strconv.Itoa(index),
+				"com.docker.compose.project.working_dir": "/opt/demo",
+			},
+		})
+	}
+	var lists, inspections atomic.Int32
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/containers/json" {
+			lists.Add(1)
+			_ = json.NewEncoder(w).Encode(items)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json") {
+			inspections.Add(1)
+			<-release
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/containers/"), "/json")
+			_ = json.NewEncoder(w).Encode(managedInspect(id, "2026-07-28T00:00:00Z", 0))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := testHTTPClient(server)
+
+	summaries, err := client.ContainerListSummaries(context.Background())
+	if err != nil || len(summaries) != len(items) {
+		t.Fatalf("list summaries = %d, %v", len(summaries), err)
+	}
+	// The fixture lacks compose config labels, so resolution is rejected;
+	// only the request shape matters here.
+	_, _ = client.resolveComposeProject(context.Background(), "demo")
+	if got := inspections.Load(); got != 0 {
+		t.Fatalf("list-only paths issued %d inspects", got)
+	}
+
+	// Concurrent inspect-backed listings share one list+inspect pass.
+	lists.Store(0)
+	var group sync.WaitGroup
+	errs := make(chan error, 5)
+	for range 5 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			got, err := client.Containers(context.Background())
+			if err == nil && len(got) != len(items) {
+				err = fmt.Errorf("got %d containers", len(got))
+			}
+			errs <- err
+		}()
+	}
+	for lists.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	group.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := lists.Load(); got != 1 {
+		t.Fatalf("concurrent Containers issued %d list requests, want 1", got)
+	}
+	if got := inspections.Load(); got != int32(len(items)) {
+		t.Fatalf("concurrent Containers issued %d inspects, want %d", got, len(items))
+	}
+}

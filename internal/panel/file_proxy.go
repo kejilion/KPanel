@@ -285,7 +285,7 @@ func (s *Server) federatedFileUpload(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "文件超过 512 MiB", "")
 		return
 	}
-	s.streamFederatedAgent(w, r, http.MethodPost, "/v1/files/upload", r.URL.RawQuery, r.Body, r.ContentLength)
+	s.streamFederatedAgent(w, r, http.MethodPost, "/v1/files/upload", r.URL.RawQuery, newPanelUploadBody(w, r.Body), r.ContentLength)
 }
 
 func (s *Server) federatedFileTransferExport(w http.ResponseWriter, r *http.Request) {

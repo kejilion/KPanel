@@ -9,7 +9,7 @@ export default [
   ["{0} 安装期间可以继续使用面板。", "You can continue using KPanel while {0} is being installed."],
   ["{0} 处理期间可以继续使用面板。", "You can continue using KPanel while {0} is being processed."],
   ["{0} 已通过 k web del 删除。", "{0} was deleted through k web del."],
-  ["{0} 的后台终端正在安全退出。", "{0}'s background terminal is safely exiting."],
+  ["{0} 的后台终端正在终止，中途终止可能留下未完成的变更。", "Terminating {0}'s background terminal. Stopping midway may leave unfinished changes."],
   ["{0} 已反向代理到 {1}。", "{0} is now reverse-proxied to {1}."],
   ["{0} 已生效，并已阻止 IP + 端口直接访问。", "{0} is active, and direct IP + port access has been blocked."],
   ["{0} 已生效，IP + 端口阻止规则正在后台应用。", "{0} is active. The IP + port blocking rule is being applied in the background."],
