@@ -27,8 +27,11 @@ findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复
 
 - 已阅读 `PROJECT_RULES.md` 5.4 节、本 workflow 全文和 skill 的 `SKILL.md`。
 - Skill 来源（上游 repo `cloudflare/security-audit-skill`）必须先 pin 到固定
-  commit 并记录在 `${{ledger_dir}}` 的 run metadata 中；上游更新时先对新 commit
-  完成一轮 scoped 对照，再用于 full。
+  commit 并记录在 `${{ledger_dir}}` 的 run metadata 中。上游会持续迭代：发现
+  新 commit 只产生候选信号（检测经 `dependency-freshness` 节奏，不自动升级）；
+  升级决策按 `PROJECT_RULES.md` 5.2 受控自我改进执行——先对新 commit 跑一轮
+  scoped 对照并产出差异报告，新验证器必须重验既有账本通过，值得升级才换 pin，
+  换 pin 本身是独立治理提交。
 - `${{project_dir}}` 是专用 worktree；审计为只读任务，但账本产物写入
   `${{ledger_dir}}`（默认 `.governance/security-audit/`）。
 - 审计智能体必须支持工具调用与并行子代理；验证器（`validate-findings.cjs`、
@@ -68,9 +71,8 @@ node <skill-dir>/validate-coverage-ledger.cjs "${{ledger_dir}}/coverage-ledger.j
 critic 复核缺口；critic 提出的新单元进入下一波。`scoped` 模式只指派
 范围内单元；full 模式持续到 critic 报告无缺口。
 
-信任边界五包（`internal/auth`、`internal/cluster`、`internal/hostbackup`、
-`internal/filemanager`、`internal/agent` 及面板侧对应入口）是 scoped 的
-默认范围。
+信任边界包清单以 `PROJECT_RULES.md` 5.4 触发表为唯一权威，本 workflow 不
+复述具体包名，防止双写漂移。
 
 ### 4. 候选独立验证
 
