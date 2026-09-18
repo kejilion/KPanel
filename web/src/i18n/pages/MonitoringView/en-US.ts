@@ -148,4 +148,8 @@ export default [
   ["框选区间太短，请选择至少两个数据桶。", "The selection is too short. Select at least two data buckets."],
   ["当前节点版本尚不支持远程历史，请升级节点后重试。","This node version does not support remote history. Upgrade the node and retry."],
   ["节点历史查询授权无效，请检查配对关系。","Node history authorization is invalid. Check the pairing relationship."],
+  ["{0} 个容器有历史数据 · 已选 {1}/{2}", "{0} containers with history · {1}/{2} selected"],
+  ["最近一轮成功 {0}/9 · 每 {1} 分钟", "Last round succeeded {0}/9 · every {1} min"],
+  ["历史数据已达到固定存储上限，系统将优先保留最新数据。", "History has reached its fixed storage limit; the newest data is kept first."],
+  ["聚焦 {0} 曲线", "Focus the {0} series"],
 ] as const satisfies PhraseCatalog

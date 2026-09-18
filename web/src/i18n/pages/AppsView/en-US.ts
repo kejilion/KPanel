@@ -186,4 +186,10 @@ export default [
   ['允许直接访问', 'Direct access allowed'],
   ['仅结束当前交互任务，不会删除应用；结束后 KPanel 会重新读取容器、域名和访问策略状态。', 'End only the current interactive task; the app is not deleted. KPanel rereads the container, domain, and access policy state afterward.'],
   ['结束任务', 'End task'],
+  ["正在准备后台任务…", "Preparing background task…"],
+  ["结束中", "Ending"],
+  ["交互中", "Interactive"],
+  ["等待专属安装适配器。", "Waiting for a dedicated install adapter."],
+  ["后台运行", "Running in background"],
+  ["关闭窗口", "Close window"],
 ] as const satisfies PhraseCatalog

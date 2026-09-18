@@ -148,7 +148,7 @@ onMounted(loadAll);onBeforeUnmount(()=>{closeStream();resetStream();if(searchTim
     </aside>
 
     <section class="ai-chat-panel">
-      <div v-if="!availableModels.length&&!loading" class="ai-onboarding"><div class="ai-orb"><Bot :size="32"/></div><span class="eyebrow">KPanel AI 工作区</span><h1>{{providers.length?'完成模型配置':'连接第一个 AI 服务'}}</h1><p>{{providers.length?'测试 API 连接并同步模型，或手动添加兼容模型。':'选择 AI 服务并填写密钥，KPanel 会自动测试连接并同步模型。'}} 密钥加密保存在本机，模型只能调用 KPanel 注册工具。</p><div class="ai-onboarding-steps"><span class="done"><CheckCircle2 :size="15"/>选择 API</span><i/><span>验证连接</span><i/><span>选择模型</span></div><button class="button button--primary" @click="settingsOpen=true"><Settings2 :size="17"/>{{providers.length?'继续配置模型':'添加 API'}}</button></div>
+      <div v-if="!availableModels.length&&!loading" class="ai-onboarding"><div class="ai-orb"><Bot :size="32"/></div><span class="eyebrow">KPanel AI 工作区</span><h1>{{providers.length?'完成模型配置':'连接第一个 AI 服务'}}</h1><p><span>{{providers.length?'测试 API 连接并同步模型，或手动添加兼容模型。':'选择 AI 服务并填写密钥，KPanel 会自动测试连接并同步模型。'}}</span> <span>密钥加密保存在本机，模型只能调用 KPanel 注册工具。</span></p><div class="ai-onboarding-steps"><span class="done"><CheckCircle2 :size="15"/>选择 API</span><i/><span>验证连接</span><i/><span>选择模型</span></div><button class="button button--primary" @click="settingsOpen=true"><Settings2 :size="17"/>{{providers.length?'继续配置模型':'添加 API'}}</button></div>
       <template v-else-if="active">
         <header class="ai-chat-header">
           <button class="icon-button ai-session-toggle" aria-label="打开会话列表" @click="sessionDrawer=true"><Menu :size="19"/></button>

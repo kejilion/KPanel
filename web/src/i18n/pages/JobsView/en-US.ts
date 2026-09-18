@@ -48,4 +48,7 @@ export default [
   ['任务 {0}', 'Task {0}'],
   ['进度 {0}%', 'Progress {0}%'],
   ["备份与恢复", "Backup and restore"],
+  ["没有符合条件的记录", "No matching records"],
+  ["暂无变更记录", "No change records yet"],
+  ["系统任务", "System task"],
 ] as const satisfies PhraseCatalog

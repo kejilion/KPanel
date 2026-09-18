@@ -54,4 +54,7 @@ export default [
   ['磁盘', 'Disk'],
   ['当前保留上一次成功数据。', 'The last successful snapshot is still shown.'],
   ['采集于', 'Collected'],
+  ["{0} 核", "{0} cores"],
+  ["数据生成于 {0} · {1}", "Generated {0} · {1}"],
+  ["采集于 {0}", "Collected {0}"],
 ] as const satisfies PhraseCatalog

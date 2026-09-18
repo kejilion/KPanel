@@ -370,4 +370,10 @@ export default [
 	['正在安排重启…', 'Scheduling restart…'],
 	['正在执行并验证…', 'Running and verifying…'],
 	['当前不可执行', 'Action unavailable'],
+  ["进行中 {0}%", "In progress {0}%"],
+  ["任务占用", "Busy with a task"],
+  ["依赖未就绪", "Dependencies not ready"],
+  ["未报告版本", "Version not reported"],
+  ["已检测到公网 IPv6，预设会同时填充 2 个 IPv4 和 2 个 IPv6 地址。", "Public IPv6 detected. The preset fills 2 IPv4 and 2 IPv6 addresses."],
+  ["未检测到公网 IPv6，预设仅填充 IPv4 地址。", "No public IPv6 detected. The preset fills IPv4 addresses only."],
 ] as const satisfies PhraseCatalog

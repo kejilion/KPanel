@@ -187,4 +187,11 @@ export default [
   ['基础信息', 'Basic information'],
   ['以上分数均来自服务器本机与服务器出口实测，不包含当前浏览器到服务器的访问质量。IP 质量按 IPING 风险分、IP 类型、代理状态和信息完整度加权计算；接口不可用时回退为基础信息完整度。', 'All scores use measurements from the server host and its egress; the current browser-to-server path is excluded. IP quality combines the IPING risk score, IP type, proxy status, and information completeness with explicit weights, then falls back to basic-information completeness when unavailable.'],
   ['完成一次核心体检后，这里会显示实际结果与分项分数。', 'Run a core diagnostic to see actual results and per-item scores.'],
+  ["{0} 个项目", "{0} items"],
+  ["{0} 核", "{0} cores"],
+  ["选择体检项目", "Select checks"],
+  ["等待 KPanel 核心体检", "Waiting for the KPanel core check"],
+  ["确认开始一键跑分？", "Start the one-click benchmark?"],
+  ["{0} · 预计 {1} 分钟", "{0} · about {1} min"],
+  ["综合评测", "Overall benchmark"],
 ] as const satisfies PhraseCatalog

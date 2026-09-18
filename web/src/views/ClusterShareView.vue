@@ -255,7 +255,7 @@ onBeforeUnmount(() => {
       </section>
 
       <div v-else-if="errorMessage" class="share-warning" role="status">
-        {{ errorMessage }} 当前保留上一次成功数据。
+        <span>{{ errorMessage }}</span> <span>当前保留上一次成功数据。</span>
       </div>
 
       <section v-if="snapshot?.items.length && !filteredHosts.length" class="share-state"><Search :size="24" /><strong>没有匹配的主机</strong><button type="button" @click="search = ''">清除搜索</button></section>
