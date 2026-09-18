@@ -1,0 +1,3577 @@
+[
+  {
+    "coverage_id": "cmd%2Fkejilion-node%2Fmain.go%23terminal-broker%20file-broker%20ssh-login-broker::internal%2Fcluster%2Flight_terminal.go%23relay%20command%20execution::cmd%2Fkejilion-node::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "cmd/kejilion-node/main.go#terminal-broker file-broker ssh-login-broker",
+      "boundary": "internal/cluster/light_terminal.go#relay command execution",
+      "subsystem": "cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "kejilion-node root brokers (terminal/file/ssh-login)",
+    "boundary": "node-side relay command re-validation before root execution",
+    "subsystem": "cmd/kejilion-node",
+    "attack_class": "Relay command authorization and node-side root execution",
+    "starting_paths": [
+      "cmd/kejilion-node/terminal_broker.go",
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/ssh_login_broker.go",
+      "cmd/kejilion-node/main.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "h-node2",
+    "reviewed_paths": [
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/legacy_migration.go",
+      "cmd/kejilion-node/light_file.go",
+      "cmd/kejilion-node/light_terminal.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/monitoring.go",
+      "cmd/kejilion-node/root_ownership_linux.go",
+      "cmd/kejilion-node/ssh_login_broker.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "cmd/kejilion-node/terminal_config.go",
+      "cmd/kejilion-node/update_runtime/update.service",
+      "cmd/kejilion-node/update_runtime/update.sh",
+      "internal/agent/file_handler.go",
+      "internal/agent/monitoring.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/file_relay_client.go",
+      "internal/cluster/file_relay_protocol.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/history.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/sshlogin/reader.go",
+      "internal/cluster/terminal_relay_protocol.go",
+      "internal/contract/ssh_login.go",
+      "internal/filemanager/manager.go",
+      "internal/selfupdate/executor.go",
+      "internal/terminal/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "cmd/kejilion-node/terminal_broker.go",
+          "cmd/kejilion-node/light_terminal.go",
+          "cmd/kejilion-node/main.go",
+          "internal/cluster/client_v2.go",
+          "internal/cluster/terminal_relay_protocol.go",
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Node re-validates every terminal command after Noise decryption before root action; PTY bounded per owner",
+        "method": "source",
+        "result": "HOLDS. PollV2 opens Noise envelope then runs validateTerminalRelayCommand (ID/SessionID hex, expiry within now..now+5min, four exact terminal paths, Rows<=500/Columns<=1000, input base64 bounded 16KiB). executeCommand requires DisallowUnknownFields decode; input/resize/close reject unknown session IDs — only locally-opened sessions addressable. manager.Open enforces bounds + MaxOwnerSessions=4. Expired/malformed fail tight. Blast radius on center compromise is full root shell by design (relay IS the terminal); input-level re-validation exists independently. Trust justified structurally (Noise IK, keys never leave node, peer-key change rejected ErrIdentityMismatch).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "cmd/kejilion-node/file_broker.go",
+          "cmd/kejilion-node/light_file.go",
+          "cmd/kejilion-node/monitoring.go",
+          "internal/cluster/file_relay_client.go",
+          "internal/cluster/file_relay_protocol.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/history.go",
+          "internal/cluster/light_file.go",
+          "internal/agent/file_handler.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "File broker commands re-validated node-side; filesystem effects constrained by node's own filemanager policy",
+        "method": "source",
+        "result": "HOLDS. Node-side PollV2 applies validateFileRelayCommand after decryption (exact path switch, no traversal, query <=48KiB no CRLF, BodyLength bounds, header hygiene, offset chaining). Requests dispatch into filemanager via agent.NewFileHandler serving only /v1/files* routes; resolveExisting rejects symlink components, enforces protected dirs including /etc/kejilion-node and /var/lib/kejilion-node (Noise keys unreachable), OpenRoot confinement. Stream transport re-validates, ContentLength=-1 forces authenticated EOF, streamMaxUpload + 2h lifetime. Malicious center touches only the intended admin file-manager surface with the same ceiling the full agent enforces.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "cmd/kejilion-node/ssh_login_broker.go",
+          "cmd/kejilion-node/health.go",
+          "cmd/kejilion-node/health_linux.go",
+          "internal/cluster/sshlogin/reader.go",
+          "internal/contract/ssh_login.go",
+          "internal/agent/monitoring.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "SSH-login broker only observes validated credential-free login events; reads no key material; executes no relay-supplied inputs",
+        "method": "source",
+        "result": "HOLDS. --output validated absolute non-root; exclusively journalctl fixed args or tail on fixed auth logs; events must match acceptedPattern + loginToken/loginAddress regexes; WriteSSHLoginEvent rejects fields failing contract.ValidSSHLoginEvent, untrusted dirs; writes 0640 atomic under /run/kejilion-node-ssh 0750. Telemetry process re-validates on read (Lstat/SameFile/DisallowUnknownFields); center re-validates again. No SSH key material or sshd config touched; relay file contains only four credential-free fields.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/terminal_config.go",
+          "cmd/kejilion-node/root_ownership_linux.go",
+          "cmd/kejilion-node/legacy_migration.go",
+          "cmd/kejilion-node/batch_enrollment_attempt.go",
+          "cmd/kejilion-node/health.go",
+          "cmd/kejilion-node/health_linux.go",
+          "cmd/kejilion-node/update_runtime/update.service"
+        ],
+        "invariant": "Node config and Noise key files root-owned, mode-restricted, symlink-immune, SameFile anti-TOCTOU on every read; failures hard refusals",
+        "method": "source",
+        "result": "HOLDS. node.json: regular Lstat + SameFile + <=8KiB + strict JSON + HTTPS-only origin + 32-byte key + hex NodeID; atomic 0600 writes preserving installer ownership. terminal.json (Noise identity): mode&0077==0 required (0600 only) + SameFile. Legacy migration never follows symlinks; migrationTrustedExecutable fixed absolute candidates re-validated. /etc/kejilion-node kept 0750 root:gid; update-status.json read only when dir exactly 0750 root-owned and file exactly 0640/nlink1/same-gid. Batch state 0600 with derived-public-key verification. Identity bootstrap refuses peer changes once pinned — center cannot silently re-key the node.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "cmd/kejilion-node/legacy_migration.go",
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/update_runtime/update.sh",
+          "cmd/kejilion-node/update_runtime/update.service",
+          "internal/selfupdate/executor.go"
+        ],
+        "invariant": "Node self-update installs only checksum-verified release binary with manifest pinned to release redirect, staging dirs re-verified before root action",
+        "method": "source",
+        "result": "HOLDS. update.sh fetches SHA256SUMS from fixed origin with curl proto/tls pinning, requires redirect Location to match ^https://github.com/kejilion/KPanel/releases/download/v\\d+.\\d+.\\d+/SHA256SUMS$ (pinning manifest to one release), checksum hex64, sha256sum verification before version probe; install -o root -g root -m 0755 with rollback. Comparable in class to panel self-update (OCI digest pinning vs asset SHA — same GitHub trust root). Root migration path independently re-hashes staged binary against SHA256SUMS inside staging dir with ownership/mode/symlink checks; templates generation-compared so newer runtimes never downgraded.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fagent%2Fserver.go%23%2Fv1%2Fbackups::internal%2Fhostbackup%2Frestore.go%23Restore%20journal::internal%2Fhostbackup::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/agent/server.go#/v1/backups",
+      "boundary": "internal/hostbackup/restore.go#Restore journal",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "agent /v1/backups and recover flow → hostbackup Engine",
+    "boundary": "internal/hostbackup/restore.go#payload roots and mount coverage",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "Host-side restore authority and path escape",
+    "starting_paths": [
+      "internal/hostbackup/service.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/mounts_linux.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "candidate",
+    "agent_id": "h-sys",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/backup_cli.go",
+      "internal/agent/server.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/mounts_linux.go",
+      "internal/hostbackup/native.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/recovery.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/recovery.go"
+        ],
+        "invariant": "Engine.Restore applies payloads journal-first with revalidatable identity, O_EXCL copy-only trees, protection against fresh inventory, rollback never deleting data while a new writer survives; Create reads only fixed enumeration",
+        "method": "source",
+        "result": "Boundary holds for this check. Journal before any mutation; previous/next paths verified non-existent; mount-coverage; protected-root and protected-container rejection; destination-writer overlap rejection; noLinkParents/noNestedMounts; copyTree O_EXCL; rollback deletes new writers before data, restores old last; committed flag gates cleanup. Recover validates journal structure strictly. No Go-side shell anywhere in hostbackup (Docker HTTP with PathEscape).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go"
+        ],
+        "invariant": "Crafted .kpb part paths cannot escape the payload root AND payload Root.Path values are confined to the data-scope the export producer emits",
+        "method": "source",
+        "result": "Part-path containment holds (parts[0]==data, matching root ID, Clean/ToSlash equality, no backslash/dot-dot, TypeReg/Dir only, volume mounts match). BUT root-scope assumption FAILS: validatePayload checks Root.Path only for absolute-canonical and !excluded(), and excluded() blocks solely panel-owned dirs + /proc,/sys,/dev,/run — host system directories (/etc, /root, /usr, /boot, /var/lib/docker) are accepted as restore roots. Export side never produces such roots (owner(): /home/web→web, /home→apps, else docker); no import-time or restore-time step compares payload roots against destination inventory. A structurally valid payload can swap host system directories — CANDIDATE FILED.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/hostbackup/mounts_linux.go",
+          "internal/hostbackup/restore.go"
+        ],
+        "invariant": "Restore cannot clobber mounted filesystems; restored container mounts pinned to inspected mounts so no stale ID redirects data",
+        "method": "source",
+        "result": "Boundary holds. noNestedMounts enforced before each target swap and inside removeDataTree; destination-container live-bind overlap rejected; declared mounts must be covered by selected modules; nativeMountConfig checked against container inspect-resolved mounts, VolumesFrom deleted. No user-controlled mount target; all originate from validated payload mounts.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/engine.go"
+        ],
+        "invariant": "protection.go prevents restore from replacing/deleting/impersonating Panel/Agent runtime; no bypass",
+        "method": "source",
+        "result": "Boundary holds for the panel-runtime scope. RuntimeProtection detects Panel/Agent via container name, env destinations, entrypoint/command base names, data/secret mounts; restore causes root-path overlap rejection, protected-name conflict, protected-namespace rejection; import rejects payloads claiming panel identity; excluded() independently hardcodes panel dirs. No bypass — but protection scope is Panel runtime dirs, NOT host system dirs (this gap is the filed candidate's subject).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/hostbackup/service.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/panel/backup_handlers.go",
+          "cmd/kejilion-agent/backup_cli.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "Panel import and CLI flows share one authenticated Agent service with identical validation; no caller can supply a filesystem path",
+        "method": "source",
+        "result": "Boundary holds. Single Service.ServeHTTP behind bearer-token agent server; module names constrained to record.Modules ∩ {apps,web,docker} before filename joins; IDs ValidID-checked; bodies bounded strict-decoded; restore requires ready import record + matching TargetRevision. CLI is HTTP client of same endpoints with same token. Single-writer enforced by backup.Manager gates + agent backupMutationMu. Directory arguments always internally derived.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "hostbackup.restore.payload-root-unconfined-to-data-model"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fagentclient%2Fclient.go%23AgentClient.Do%20bearer::internal%2Fagent%2Fserver.go%23authorized::internal%2Fagent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/agentclient/client.go#AgentClient.Do bearer",
+      "boundary": "internal/agent/server.go#authorized",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "panel→agent Unix socket requests",
+    "boundary": "internal/agent/server.go#bearer token constant-time compare",
+    "subsystem": "internal/agent",
+    "attack_class": "Agent auth and socket policy",
+    "starting_paths": [
+      "internal/agentclient/client.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "lead-parent",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "internal/agent/token_linux.go",
+      "internal/agentclient/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "lead-parent",
+        "reviewed_paths": [
+          "internal/agent/socket.go",
+          "internal/agent/token_linux.go"
+        ],
+        "invariant": "Agent socket is root:group 0660 in 0750 dir; token file root+exact-GID exactly-0640 regular non-symlink with SameFile race guard; stale socket refusal cannot replace non-socket path",
+        "method": "source",
+        "result": "Verified directly: ListenUnix absolute path, group required, dir 0750 root:gid, socket 0660 root:gid, removeStaleSocket refuses non-socket paths and live listeners, cleanup SameFile-guarded. PrepareTokenFile rejects non-regular/symlink, requires Uid==0 and exact GID and exactly 0640 perms, LimitReader 4097, length 32-4096 after trim, SameFile between Lstat and opened handle.",
+        "artifact": null
+      },
+      {
+        "agent_id": "lead-parent",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/agentclient/client.go"
+        ],
+        "invariant": "Every agent request carries the bearer token compared constant-time against SHA-256 hash; panel reads token fresh from file per client construction; agent requires ≥32-byte token at NewServer",
+        "method": "source",
+        "result": "Verified: authorized() at server.go:495-506 requires Bearer prefix, rejects comma/whitespace-forms, sha256+subtle.ConstantTimeCompare. ServeHTTP gates ALL routes on authorized before dispatch. agentclient attaches Authorization header per request; response bodies capped 8MiB; redirects refused.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fai%2Fproviders.go%23ValidateProviderURL::internal%2Fai%2Fproviders.go%23private%20endpoint%20confirmation::internal%2Fai::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/ai/providers.go#ValidateProviderURL",
+      "boundary": "internal/ai/providers.go#private endpoint confirmation",
+      "subsystem": "internal/ai",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "AI provider baseUrl configuration",
+    "boundary": "internal/ai/providers.go#HTTPS public / confirmed private rule",
+    "subsystem": "internal/ai",
+    "attack_class": "SSRF via AI provider URL",
+    "starting_paths": [
+      "internal/ai/providers.go",
+      "internal/ai/client.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/ai/client.go",
+      "internal/ai/providers.go",
+      "internal/ai/service.go",
+      "internal/panel/ai_handlers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/ai/providers.go",
+          "internal/ai/client.go"
+        ],
+        "invariant": "Public-scope provider URLs require https with no private/loopback resolved addresses; private scope explicitly confirmed; API key only sent to stored BaseURL; redirects re-validated with auth headers stripped",
+        "method": "source",
+        "result": "Invariant holds. ValidateProviderURL rejects userinfo/query/fragment/CRLF hosts; https for public; isLiteralBlocked + Dial-time ValidateResolvedAddresses reject if ANY resolved address blocked — rebinding closed (dial to addresses[0].IP, fresh client per request so no stale pooled connections). Redirects re-validate scope, cap 3, delete auth headers on cross-origin hops. API key attached only to stored BaseURL+endpoint — no path from message content/attachments/tool calls to the URL.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/panel/ai_handlers.go",
+          "internal/ai/service.go"
+        ],
+        "invariant": "No non-admin-influenced path selects or changes provider config; attachments bounded/validated without server-side image decode",
+        "method": "source",
+        "result": "Invariant holds. Single-admin model; provider mutation session+CSRF+origin; sessions only SELECT existing provider/model pairs; message POST takes content+attachments validated (≤4 items, 8MiB total, images ≤4MiB via DetectContentType + allowlisted extensions); never decoded server-side (no image.Decode in internal/ai) — no decompression bomb; multipart MaxBytesReader 12MiB with per-file LimitReader.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fappmarket%2Fterminal.go%23trusted%20script%20lookup::internal%2Fappmarket%2Fremote_catalog.go%23catalog%20fetch::internal%2Fappmarket::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/appmarket/terminal.go#trusted script lookup",
+      "boundary": "internal/appmarket/remote_catalog.go#catalog fetch",
+      "subsystem": "internal/appmarket",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "app market install/update",
+    "boundary": "internal/appmarket/terminal.go#root-owned trusted script + selector validation",
+    "subsystem": "internal/appmarket",
+    "attack_class": "App market script trust",
+    "starting_paths": [
+      "internal/appmarket/terminal.go",
+      "internal/appmarket/remote_catalog.go",
+      "internal/appmarket/script_spec.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Plugin and extension trust expansion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec2",
+    "reviewed_paths": [
+      "internal/appmarket/catalog.go",
+      "internal/appmarket/icon_cache.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/ports.go",
+      "internal/appmarket/remote_catalog.go",
+      "internal/appmarket/script_spec.go",
+      "internal/appmarket/service.go",
+      "internal/appmarket/terminal.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/appmarket/remote_catalog.go",
+          "internal/appmarket/catalog.go"
+        ],
+        "invariant": "Compromised catalog cannot install arbitrary content; controls only bounded display metadata",
+        "method": "source",
+        "result": "Held. Origin fixed https://app.kejilion.sh, 6s timeout, 2MiB cap, same-hostname redirects ≤2. Strict schema: source pinned, ≤500 apps, unique IDs/tokens, length bounds. Catalog controls display strings + suggested port + icon slug only; NOT the executed command (fixed kejilion.sh app <selector>), image, or container name.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/appmarket/jobs.go",
+          "internal/appmarket/terminal.go",
+          "internal/appmarket/service.go"
+        ],
+        "invariant": "Privileged exec path = root-owned script + validated selector charset + embedded protocol markers, re-validated at execution",
+        "method": "source",
+        "result": "Held. Selector charset re-validated by appSelectorPattern at both execution points; exec.Command argv never shell string; findKejilionScriptMatching requires root-owned non-world-writable 1KiB-4MiB with embedded KJ_APP_NONINTERACTIVE markers + license; builtin selectors require literal menu case; systemd units fixed argv — no unit content from catalog data.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/appmarket/script_spec.go",
+          "internal/appmarket/service.go"
+        ],
+        "invariant": "Third-party app configs are trusted files with fixed-shape assignments",
+        "method": "source",
+        "result": "Held. Lstat /root/apps/<token>.conf: regular, non-symlink, root-owned, ≤256KiB; only literal docker_name/docker_app_service assignments accepted, duplicates rejected, invalid shapes outright error; access-mode files ≤64 bytes direct|domain_only.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/appmarket/ports.go",
+          "internal/appmarket/jobs.go",
+          "internal/appmarket/service.go"
+        ],
+        "invariant": "Catalog-derived port data flows only as validated suggestion; conflicts detected before install",
+        "method": "source",
+        "result": "Held. DefaultPort bounded 1-65535; inspectInstallPort enumerates Docker bindings and /proc/net listeners, refuses conflicts; HostPort travels only via KJ_APP_PORT fixed env. Panel never composes docker run from catalog fields; container identity from build-time embedded legacy-apps.json.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/appmarket/icon_cache.go",
+          "internal/appmarket/remote_catalog.go"
+        ],
+        "invariant": "Icon fetches cannot escape official origin or smuggle content; embedded digest not remotely overridable",
+        "method": "source",
+        "result": "Held. Same scheme/host redirects ≤2, 4s timeout; re-validates token/icon patterns + source path; requires image/webp ≤128KiB with WebP magic + dimension caps; 0600 temp+rename into 0700 non-symlink dir; mergeRemoteCatalog keeps locally pinned Icon and IconSHA256 for known apps — remote cannot swap icon digest anchor.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Flight_service.go%23CreateLightEnrollmentForOriginAndName%20shellSingleQuote::internal%2Fcluster%2Fservice.go%23validateOptionalName::internal%2Fcluster::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/cluster/light_service.go#CreateLightEnrollmentForOriginAndName shellSingleQuote",
+      "boundary": "internal/cluster/service.go#validateOptionalName",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "light enrollment command generation",
+    "boundary": "internal/cluster/light_service.go#shellSingleQuote of validated name",
+    "subsystem": "internal/cluster",
+    "attack_class": "Shell injection via enrollment name",
+    "starting_paths": [
+      "internal/cluster/light_service.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/light_service.go",
+          "internal/cluster/service.go"
+        ],
+        "invariant": "User-provided names in copy-paste enrollment command cannot break out of single-quoted argument",
+        "method": "source",
+        "result": "UPHELD. shellSingleQuote maps each ' to '\\'' (close, escaped quote, reopen); input a' yields 'a'\\''' which POSIX-parses as single word a'. Metacharacters inert inside unbroken single-quoted spans; every emitted quote balanced. cleanDisplayText rejects all control characters and caps 80 runes.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/light_batch_service.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "No other name flow reaches a shell command string",
+        "method": "source",
+        "result": "UPHELD. Batch command embeds only token (no --name); lightBatchNodeName display-only capped 80 runes; controller names flow only into display records never command strings.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Flight_service.go%23authenticateLightRequest::internal%2Fcluster%2Flight_service.go%23EnrollLightNodeAtOrigin::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/light_service.go#authenticateLightRequest",
+      "boundary": "internal/cluster/light_service.go#EnrollLightNodeAtOrigin",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v3/federation/light/* enrollment and report",
+    "boundary": "internal/cluster/light_service.go#HMAC + timestamp + one-time enrollment",
+    "subsystem": "internal/cluster",
+    "attack_class": "light node enrollment/report auth",
+    "starting_paths": [
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_batch_service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/panel/cluster.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_store.go"
+        ],
+        "invariant": "kpl1 enrollment one-time and race-free",
+        "method": "source",
+        "result": "UPHELD. mutationMu serialization; EnrollHost consumes enrollment and adds host under one store lock with rollback on persist failure. nodeID is center-minted wire.ID; second enroll hits ErrPairingCode and duplicate-host check.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/light_batch_service.go",
+          "internal/cluster/light_batch_store.go",
+          "cmd/kejilion-node/batch_enrollment_attempt.go"
+        ],
+        "invariant": "kpb1 batch re-enroll cannot steal existing node's reporting key",
+        "method": "source",
+        "result": "UPHELD with documented reliance on attemptID secrecy. Reserve and re-check bind returned reporting key to full identity tuple (kpb1 token + victim 128-bit attemptID + matching name + matching terminal public key). attemptID root-only 0600 node-side, never listed by panel. kpb1 shared batch secret never used as reporting key — each node independent 32-byte key. NodeID center-generated per attempt. Concurrent serializes on mutationMu + store locks. (Structural-improvement note in hardening.)",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/light_service.go",
+          "internal/panel/cluster.go"
+        ],
+        "invariant": "Light report/file-capability HMAC authenticates exact raw body, method, path, node identity; replay-guarded",
+        "method": "source",
+        "result": "UPHELD. HMAC-SHA256 over POST\npath\nnodeID\nts\nrequestID\nsha256(rawBody); signed bytes are exactly the decoded JSON; constant-time compare; ±120s skew; replay guard keyed nodeID:RequestID with distinct namespace; separate rate limits per source and nodeID; pairing token binds origin preventing cross-origin replay.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fservice_v2.go%23handleFileRelayV2::internal%2Fcluster%2Ffile_relay_protocol.go%23validateFileRelayCommand::internal%2Fcluster::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/cluster/service_v2.go#handleFileRelayV2",
+      "boundary": "internal/cluster/file_relay_protocol.go#validateFileRelayCommand",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "/api/v2/federation/files/relay and stream",
+    "boundary": "internal/cluster/file_relay_protocol.go#path allowlist + command validation",
+    "subsystem": "internal/cluster",
+    "attack_class": "Federation file relay scope",
+    "starting_paths": [
+      "internal/cluster/file_relay_protocol.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/file_stream_transport.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "internal/cluster/file_relay_protocol.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/panel/file_proxy.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/file_relay_protocol.go",
+          "internal/cluster/light_file.go",
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/file_stream.go"
+        ],
+        "invariant": "File relay commands allowlisted at every layer; 512MiB cap enforced at byte-consumption points",
+        "method": "source",
+        "result": "UPHELD. validateFileRelayCommand at command construction in every relay; serveStreamRequest and panelFileRelaySession re-validate. Bounded by bytes: sendBody aborts at offset+count>512MiB; stream upload loop aborts on total>streamMaxUpload or declared length; federatedFileUpload rejects ContentLength>MaxUploadBytes and Agent wraps every upload with MaxBytesReader so chunked -1 declaration cannot bypass. relayRequestHeaders strips anything outside 6-name allowlist.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_stream.go"
+        ],
+        "invariant": "WebSocket stream authorization binds envelope freshness, node key equality, rate, replays; peer completes only panel-initiated requests",
+        "method": "source",
+        "result": "UPHELD. authorizeFileStream enforces envelope validation, TargetID, CodeID empty, ±120s, GET+path in IK prologue, peer static == node's stored key, rate, replay guard — all under hub mutex shared with revocation cleanup so no stale-auth race. data sockets must match hub-created pending requestID with generation and pointer equality; requestIDs hub-generated randomHex. Upload cap before handler sees EOF; only authenticated streamEnd closes body pipe — truncation cannot publish partial files.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/protocol_v2.go",
+          "internal/panel/file_proxy.go"
+        ],
+        "invariant": "Panel-target file relay executes only constrained Panel file surface with per-peer scope",
+        "method": "source",
+        "result": "UPHELD. handlePanelFileRelayV2 requires Active + ScopeAllowsFiles; Command.RequestID==SessionID identity binding; full validateFileRelayCommand; handler exclusively federatedFileHandler — never general agent proxy or router.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fservice_v2.go%23validateV2Request::internal%2Fcluster%2Fservice_v2.go%23openControllerV2::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/service_v2.go#validateV2Request",
+      "boundary": "internal/cluster/service_v2.go#openControllerV2",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v2/federation/* Noise envelopes",
+    "boundary": "internal/cluster/service_v2.go#Noise open + replay + peer key check",
+    "subsystem": "internal/cluster",
+    "attack_class": "v2 federation envelope auth",
+    "starting_paths": [
+      "internal/cluster/service_v2.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/cluster/guard.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/history_transport.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/terminal_v2.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/protocol_v2.go"
+        ],
+        "invariant": "No v2 route reaches handler without full envelope validation; every path exact-match v2PathAllowed",
+        "method": "source",
+        "result": "UPHELD. validateV2Request (POST-only, envelope shape, TargetID==NodeID, ±120s skew, CodeID only on pair) before any switch arm; pre-dispatched history/file paths run it independently; unknown paths ErrAuthentication. Panel match exact switch. Envelope metadata bound into Noise IK prologue; peer static key equality vs controller.PublicKey enforced.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/history_transport.go"
+        ],
+        "invariant": "Light-node and controller namespaces disjoint; cannot impersonate across stores even on ControllerID collision",
+        "method": "source",
+        "result": "UPHELD. Relay handlers first look up light.Host(ControllerID); on hit require IK-responder peer static key == node's stored Noise public key; controllers authenticated against controller.PublicKey — a key cannot satisfy both branches, collision fails closed. IDs both center-side randomHex(16), never caller-chosen.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/store_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/terminal_v2.go"
+        ],
+        "invariant": "Revoked controller retains no capability; revocation state machine fails closed",
+        "method": "source",
+        "result": "UPHELD. Every handler requires controllerStateV2Active (commit/revoke allow provisional/revoked); revoke idempotent-only. Retention 10min with GC in cleanupV2Locked run by pairing and 5-min checkpoint ticker. Terminal doubly gated (scope AND state); file peers and stream sockets closed at revoke; lingering PTY unreachable because Output/Input also require Active.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fsignature.go%23VerifyRequest::internal%2Fcluster%2Fstore.go%23ConsumePairingCode::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/signature.go#VerifyRequest",
+      "boundary": "internal/cluster/store.go#ConsumePairingCode",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v1/federation/* signed requests",
+    "boundary": "internal/cluster/signature.go#ed25519 + timestamp + nonce",
+    "subsystem": "internal/cluster",
+    "attack_class": "v1 federation signature bypass",
+    "starting_paths": [
+      "internal/cluster/signature.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/guard.go",
+      "internal/cluster/service.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/store.go",
+      "internal/cluster/store_v2.go",
+      "internal/panel/cluster.go",
+      "internal/panel/file_proxy.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/signature.go",
+          "internal/cluster/guard.go",
+          "internal/cluster/service.go"
+        ],
+        "invariant": "V1 ed25519 signatures unforgeable, non-replayable within window, unambiguous canonical string",
+        "method": "source",
+        "result": "UPHELD. canonicalRequest over METHOD\nEscapedPath\ncID\ntID\nts\nnonce\nsha256(empty). All v1 entry points reject RawPath!=\"\" so EscapedPath==Path exact-match before verification — no normalization ambiguity. Nonce 16-byte hex; ±60s window; replay guard retention 5min strictly longer than timestamp span; entries evicted only after expiry/Accept; guard rejects at capacity fail-closed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/panel/file_proxy.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/panel/cluster.go"
+        ],
+        "invariant": "Summary-scoped v1 controller relaying through FileRelayV1 cannot reach arbitrary agent paths or smuggle request data",
+        "method": "source",
+        "result": "UPHELD. validFileRelayRequest: method GET/HEAD/POST/PUT, Path in exact constant allowlist, RawQuery ≤48KiB no CRLF/NUL, headers limited to 6-name relay set, BodyLength [-1,512MiB]. federatedFileHandler re-checks FileRelayRequestPath plus per-route strictPanelQuery and method checks; uploads bounded agent-side. No terminal/general-proxy/non-allowlisted route reachable.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/store.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "invariant": "Pairing-code consumption and failure burn persisted atomically; every v1 route enforces SummaryScope",
+        "method": "source",
+        "result": "UPHELD. ConsumePairingCode increments Attempts on mismatch, removes at ≥5, persistLocked rolls back on failure. All v1 mutating routes require SummaryScope; only mutations are pair (pairing-code-bearer) and self-revocation (deletes only own record).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fterminal_v2.go%23TerminalOpen::internal%2Fterminal%2Fmanager.go%23lookup%20owner::internal%2Fcluster::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/cluster/terminal_v2.go#TerminalOpen",
+      "boundary": "internal/terminal/manager.go#lookup owner",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "/api/v2/federation/terminal/* and light terminal relay",
+    "boundary": "internal/cluster/terminal_v2.go#scope + owner binding",
+    "subsystem": "internal/cluster",
+    "attack_class": "Federation terminal authorization",
+    "starting_paths": [
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/light_terminal.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-fed",
+    "reviewed_paths": [
+      "internal/cluster/light_terminal.go",
+      "internal/cluster/terminal_relay_protocol.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/terminal/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/terminal_v2.go",
+          "internal/cluster/light_terminal.go",
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Every terminal route enforces terminal scope and owner binding; sessions cannot cross controllers or hosts",
+        "method": "source",
+        "result": "UPHELD. All v2 terminal routes through openTerminalControllerV2 = Active + ScopeAllowsTerminal; summary-only controller fails. Light relay path authenticates by node's Noise key against light store, unavailable to controllers; file stream light-nodes-only; other terminal surfaces session-gated UI. Sessions owner-bound (federation:{controllerID}; manager.lookup enforces owner); output of host A not readable via host B session; light sessions namespaced per nodeID.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-fed",
+        "reviewed_paths": [
+          "internal/cluster/terminal_v2.go",
+          "internal/cluster/light_terminal.go",
+          "internal/cluster/terminal_relay_protocol.go",
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Terminal dimensions, input size and relay command expiry bounded",
+        "method": "source",
+        "result": "UPHELD. Rows [1,500]/Columns [1,1000] at all three layers; input 16KiB at handler, lightTerminal.input, decodeTerminalPayload; output truncated 32KiB per federation read; relay commands 2-min TTL within now..now+5min; takeCommand drops expired before delivery.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fdockerx%2Fcontainer_tools.go%23ContainerExec::internal%2Fpanel%2Fserver.go%23handleDockerExec::internal%2Fdockerx::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/dockerx/container_tools.go#ContainerExec",
+      "boundary": "internal/panel/server.go#handleDockerExec",
+      "subsystem": "internal/dockerx",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "POST /api/v1/docker/containers/{id}/exec",
+    "boundary": "internal/dockerx/container_tools.go#single-line command + version check",
+    "subsystem": "internal/dockerx",
+    "attack_class": "Docker exec command handling",
+    "starting_paths": [
+      "internal/dockerx/container_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec1",
+    "reviewed_paths": [
+      "internal/dockerx/client.go",
+      "internal/dockerx/container_tools.go",
+      "internal/dockerx/maintenance.go",
+      "internal/dockerx/mysql.go",
+      "internal/dockerx/nginx.go",
+      "internal/redact/redact.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/dockerx/container_tools.go",
+          "internal/dockerx/mysql.go",
+          "internal/dockerx/nginx.go",
+          "internal/dockerx/client.go"
+        ],
+        "invariant": "Container-id path segment charset-constrained; exec lifecycle IDs validated at each hop",
+        "method": "source",
+        "result": "Pass. containerIDPattern pure hex — no path/query smuggling into API URL construction; createFixedExec enforces 64-hex on container ID and validates returned exec ID; startNginxExec/inspectNginxExec re-validate. Panel handler rejects RawPath/RawQuery, session+CSRF, re-checks patterns; AI tool path same patterns. Running commands in admin's own container is the documented feature.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/dockerx/container_tools.go",
+          "internal/dockerx/maintenance.go",
+          "internal/redact/redact.go"
+        ],
+        "invariant": "Exec commands single-line bounded, resource-version bound, time-bounded, output redacted and size-bounded",
+        "method": "source",
+        "result": "Pass. validContainerCommand rejects CR/LF/NUL/control; verifyContainerVersion before exec; 20s context; boundedRedactedNginxOutput applies redact.Lines regexes (password/token/secret/api-key/authorization/cookie/bearer/URL-credential/private-key), per-line 16KB cap, line-count cap, total truncation. Raw container output never passes unredacted.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Farchive.go%23normalizeArchiveEntry::internal%2Ffilemanager%2Farchive.go%23extract::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/archive.go#normalizeArchiveEntry",
+      "boundary": "internal/filemanager/archive.go#extract",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agent archive extract and archive-jobs",
+    "boundary": "internal/filemanager/archive.go#ZipSlip + symlink + special entry guards",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Archive extraction escape",
+    "starting_paths": [
+      "internal/filemanager/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/filemanager/archive.go",
+      "internal/filemanager/archive_contents.go",
+      "internal/filemanager/archive_jobs.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/filemanager/archive.go",
+          "internal/filemanager/archive_contents.go"
+        ],
+        "invariant": "normalizeArchiveEntry rejects absolute, backslash, NUL, dot/dot-dot components, oversize names, .kpanel-* names, Clean-escaping; extraction into .kpanel-extract-* temp renamed no-replace",
+        "method": "source",
+        "result": "Invariant holds. All writes joinVirtual(tempVirtual, name) inside resolveExisting-validated mutationError-checked target; no archive path climbs out (dot-dot rejected pre-Clean); ZipSlip impossible; entries never become symlinks (ZIP ModeSymlink and TAR non-Dir/Reg typeflags rejected BEFORE the selection filter runs); nested archives never auto-extracted.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/filemanager/archive.go",
+          "internal/filemanager/archive_contents.go",
+          "internal/filemanager/archive_jobs.go"
+        ],
+        "invariant": "Selection-based extraction validates every entry; budgets bound declared and actual bytes",
+        "method": "source",
+        "result": "Verified in code not only test: normalizeArchiveEntry + duplicate detection + type/mode checks run BEFORE archiveInclude; unselected entries drained and still counted against budgets. Actual byte accounting via LimitReader(remaining+1) plus written>remaining rejection — ZIP declaring small size but decompressing larger cannot blow past 10GiB/10k entries. boundedZIPDirectory bounds central directory 8MiB, rejects ZIP64 sentinels, verifies offsets, freezes directory bytes. Archive-jobs state restore never trusts stored temp path unless journal-owned; state dir pinned with component walk rejecting symlinks.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Fmanager.go%23Upload::internal%2Fpanel%2Ffiles.go%23handleFileUpload::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/manager.go#Upload",
+      "boundary": "internal/panel/files.go#handleFileUpload",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "POST /api/v1/files/upload → agent",
+    "boundary": "internal/filemanager/manager.go#atomic rename + size caps",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Upload write path integrity",
+    "starting_paths": [
+      "internal/filemanager/manager.go",
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/files.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "Upload filename validation rejects separators/parent names/.kpanel-*; parent resolveExisting-validated; staged as O_EXCL temp atomically renamed; 512MiB cap even without Content-Length",
+        "method": "source",
+        "result": "Invariant holds. Panel strictPanelQuery + octet-stream + ContentLength cap + streamed; agent re-checks all + MaxBytesReader. validateName blocks traversal (path separators rejected after decode); directory walk with full symlink rejection; temp O_EXCL fails on symlink at temp name; overwrite re-locks + re-stats + version-checked rename; failure always Removes temp. Chunked: LimitReader(MaxUploadBytes+1) plus written check enforces cap on actual bytes; remote-download runner independently caps before agent. No cleanup gap found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Fmanager.go%23resolveExisting::internal%2Ffilemanager%2Fmanager.go%23normalizeVirtual::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/manager.go#resolveExisting",
+      "boundary": "internal/filemanager/manager.go#normalizeVirtual",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agent /v1/files/* path handling",
+    "boundary": "internal/filemanager/manager.go#symlink walk + protected dirs",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Path traversal and symlink escape",
+    "starting_paths": [
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/filemanager/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "resolveExisting/normalizeVirtual reject traversal, separators, NUL, backslash, >4096B, non-absolute; every component Lstat-walked via os.Root with symlink rejection at each level; .kpanel-* internal names blocked; protected roots blocked",
+        "method": "source",
+        "result": "Invariant holds. Double slashes cleaned before walking and comparison (no equivalence bypass). All actual I/O uses rootFS Root-relative ops after the walk, never the absolute host-path string; renameNoReplaceRoot opens parents through the Root. TOCTOU window exists between walk and open, but no panel surface can create a symlink (no os.Symlink in non-test filemanager code; extract rejects symlink entries; O_EXCL temp creation) — declared principal cannot materialize the symlink needed. Unicode: byte-exact matching against ASCII protected list, homoglyph variants do not resolve.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/filemanager/manager.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "isMutationProtected blocks mutations into protected dirs AND of their ancestors; ReadOnly both directions; new-file destinations validate name and resolve parent cleanly",
+        "method": "source",
+        "result": "Invariant holds. isWithin(protected, virtual) makes chmod on / and /var rejected because KPanel state dirs are protected descendants. Upload/mkdir/rename validate name (no separators, NUL, >255, .kpanel-*, dot-dot) + resolveExisting-walked parent + mutationError on joined target; single-name-only prevents nested creation; trash restore re-validates metadata with RENAME_NOREPLACE; cross-device fallback via .kpanel-copy- temp + no-replace rename.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fai_tools.go%23RequiresApproval::internal%2Fai%2Fruntime.go%23approval%20gate::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/ai_tools.go#RequiresApproval",
+      "boundary": "internal/ai/runtime.go#approval gate",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "AI tool calls with host authority",
+    "boundary": "internal/panel/ai_tools.go#per-action approval policy",
+    "subsystem": "internal/panel",
+    "attack_class": "AI tool approval bypass",
+    "starting_paths": [
+      "internal/panel/ai_tools.go",
+      "internal/ai/runtime.go",
+      "internal/ai/secrets.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth2",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/ai/runtime.go",
+      "internal/ai/service.go",
+      "internal/ai/store.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_handlers.go",
+      "internal/panel/ai_tools.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/ai/service.go",
+          "internal/ai/store.go",
+          "internal/panel/ai_handlers.go"
+        ],
+        "invariant": "ApprovalMode cannot be influenced by model or message content",
+        "method": "source",
+        "result": "Settled: ApprovalMode only from sessions table; default manual; UpdateSession rejects non-manual/auto; no tool result/model output/message field reaches approval_mode writes.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go"
+        ],
+        "invariant": "No write-effect tool is marked ReadOnly (ReadOnly tools execute without approval)",
+        "method": "source",
+        "result": "Settled: enumerated every ReadOnly tool — all dispatch to hostOps.Get read-only routes. All write tools have ReadOnly unset; host_nginx_reload has no ReadOnly flag so cannot slip through the ReadOnly short-circuit.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go"
+        ],
+        "invariant": "ApprovalManual mode: every non-ReadOnly tool requires approval before execution",
+        "method": "source",
+        "result": "Settled: runtime forces RequiresApproval=true for manual+non-ReadOnly; every execution path only runs approved or policy-exempt calls; Resume requires matching pending states; DryRun before any approval-state impact.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/ai_handlers.go",
+          "internal/ai/store.go"
+        ],
+        "invariant": "Approve/reject endpoints authorize acting session user over the run",
+        "method": "source",
+        "result": "Settled: run resolution scoped by user_id in SQL; non-GET requires Origin+CSRF; write tools audit intent before execution with redacted summaries.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/ai_tools.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "host_file_write arguments validated per-tool and re-validated agent-side",
+        "method": "source",
+        "result": "Settled: reason stripped before validation; strict decode; path ≤4096 clean; content ≤64KiB; resourceVersion pattern; aiFileMutable denylist; agent-side filemanager mutationError re-check + existing-file + SameFile race guard + cap. host_file_write auto-approval in auto mode is the documented product decision (docs/ai-workspace.md matches code exactly).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_handlers.go"
+        ],
+        "invariant": "SSE run-event and session endpoints authenticated and bounded",
+        "method": "source",
+        "result": "Settled: session+ownership checks; 20s write deadlines/15s heartbeats; unsubscribe on return; depth bounded (12 model steps/20 tool calls/1MiB assistant bytes/64KiB args/16KiB messages/8MiB attachments).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fbackup_handlers.go%23import::internal%2Fbackup%2Farchive.go%23manifest%20validation::internal%2Fbackup::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/backup_handlers.go#import",
+      "boundary": "internal/backup/archive.go#manifest validation",
+      "subsystem": "internal/backup",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "backup import and restore",
+    "boundary": "internal/panel/backup_restore.go#out-of-place validation + path allowlist",
+    "subsystem": "internal/backup",
+    "attack_class": "Restore authority and path escape",
+    "starting_paths": [
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/panel/backup_data.go",
+      "internal/backup/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec2b",
+    "reviewed_paths": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/dependency-freshness.yml",
+      ".github/workflows/release.yml",
+      "dependency-policy.json",
+      "internal/auth/backup.go",
+      "internal/backup/archive.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/cluster/backup.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/store/backup.go",
+      "scripts/check-managed-script-contract.sh",
+      "scripts/render-release-notes.sh"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          "internal/backup/archive.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Archive decode authenticates every byte before use; part extraction cannot escape staging",
+        "method": "source",
+        "result": "Held. scrypt(N=32768) with file-supplied 32-byte salt, KDF params fixed by format; chacha20poly1305-X per 64KiB frame with AAD and monotonic numbering, authenticated final empty frame, total bounded. Read requires first tar entry exactly manifest.json ≤16KiB; part names exactly <module>.payload opened O_EXCL 0600 in private staging (no path interpolation from archive); per-part sha256 re-verified; trailing-zero enforcement. Import handler: MaxBytesReader, exactly two multipart parts, password 10-256 bytes, 2x space preflight.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          "internal/panel/backup_data.go",
+          "internal/panel/backup_restore.go",
+          "internal/backup/files.go"
+        ],
+        "invariant": "Restored panel filenames allowlisted; unreachable paths refused",
+        "method": "source",
+        "result": "Held. panelBackupPath accepts only fixed roots (cluster state, cluster-secrets*, desktop-workspace, terminal-commands, notifications), ≤3 components, leaf charset [a-zA-Z0-9_.-]{1,160} excluding dot/dotdot, per-root suffix rules. decodePanelBackup bounds ≤4096 files/8MiB each/32MiB total; re-sanitizes JSON state (pairing codes blanked, non-active hosts dropped, notice channels forced disabled). Rollback re-validates every name plus NoLinkParents on full parent chain; writes via AtomicFile into 0700 PrivateDir with no-symlink checks.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          "internal/cluster/backup.go",
+          "internal/panel/backup_restore.go"
+        ],
+        "invariant": "Out-of-place validation opens restored content through real owning services before anything live changes",
+        "method": "source",
+        "result": "Held. Staged copy into private temp dir; requires cluster-state.json + node-identity key; constructs actual cluster/desktop/terminalcommands/notification services over staged tree with NO background workers (no peer contact, no notifications). PruneBackupSecrets requires every credential referenced by an active host present; ValidateBackupReferences re-reads each credential requiring v2 public key match.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_restore.go",
+          "internal/store/backup.go",
+          "internal/auth/backup.go"
+        ],
+        "invariant": "Restore authorized only for authenticated admin; malicious archive cannot unauthenticated re-pair panel or resurrect bearer credentials",
+        "method": "source",
+        "result": "Held with one-by-design consequence: apply DOES replace cluster federation state, node identity key, controller records, and admin identity — an attacker-crafted .kpb (with attacker-known password) imported by an admin anchors controller trust to attacker keys. This is the documented admin-restore semantic (import password is the credential); no unauthenticated or CSRF-free path exists; identity payload structurally constrained (exactly one admin user, zero sessions/shares, ClusterShare+SecurityEntrance must be disabled, TOTP shape-checked under backup key). RestoreIdentity revokes all live sessions rather than reactivating tokens; restore carries over existing controller revocations.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          "internal/panel/backup_restore.go",
+          "internal/backup/jobs.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Restore transaction durable: intent precedes mutation, interrupted apply rolls back, completed restore never replayed; agent token and bootstrap not in payload",
+        "method": "source",
+        "result": "Held. Intent→pending journal before live change; second intent refused ErrBusy; ApplyPanelRestore snapshots previous state before first write, phased journal, full rollback on mid-apply failure; pending/committed never roll back. Files written = union of previous live names + payload names under DataDir + TOTP/identity — no config files, no agent token (host-side paths outside DataDir), no bootstrap token. Interrupted jobs marked failed at open; Sweep cannot delete in-flight journal.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2b",
+        "reviewed_paths": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          ".github/workflows/dependency-freshness.yml",
+          "scripts/render-release-notes.sh",
+          "scripts/check-managed-script-contract.sh",
+          "dependency-policy.json"
+        ],
+        "invariant": "(pipeline sweep) Build-time kejilion.sh fetch pinned to content; all third-party inputs digest-pinned; no untrusted code with secrets; release-body digest is the built artifact",
+        "method": "source",
+        "result": "Held. Dockerfile ADD pins upstream commit SHA + sha256 checksum; check-managed-script-contract enforces single revision+digest across Dockerfile/docs/image labels; release.yml re-verifies digest of file inside built image. Every uses: reference is 40-hex digest pin with persist-credentials:false; no pull_request_target; ci.yml read-scoped token. Multi-arch push outputs manifest digest; promote requires tag-digest==build-digest and channel-tag-digest==build-digest; draft release sentinel prevents partial publication; render-release-notes emits exact parser format only after equalities. All asserted in supply-chain hardening notes: govulncheck tag-pinned and app-market :latest pulls recorded separately.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fcluster_notifications.go%23%2Fapi%2Fv1%2Fcluster%2Fnotifications%2A::internal%2Fnotification%2Fchannel.go%23DetectProvider::internal%2Fnotification::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/cluster_notifications.go#/api/v1/cluster/notifications*",
+      "boundary": "internal/notification/channel.go#DetectProvider",
+      "subsystem": "internal/notification",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "cluster notifications settings/discover/test and outbound notification dispatch",
+    "boundary": "internal/notification/channel.go#fixed-HTTPS-host webhook allowlist",
+    "subsystem": "internal/notification",
+    "attack_class": "SSRF and data leakage via notification webhooks",
+    "starting_paths": [
+      "internal/notification/channel.go",
+      "internal/notification/robot.go",
+      "internal/notification/telegram.go",
+      "internal/notification/service.go",
+      "internal/panel/cluster_notifications.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "h-node2",
+    "reviewed_paths": [
+      "internal/auth/totp.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/service.go",
+      "internal/contract/ssh_login.go",
+      "internal/notification/channel.go",
+      "internal/notification/robot.go",
+      "internal/notification/service.go",
+      "internal/notification/store.go",
+      "internal/notification/telegram.go",
+      "internal/notification/types.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/cluster.go",
+      "internal/panel/cluster_notifications.go",
+      "internal/panel/cluster_notifications_resources.go",
+      "internal/panel/notification_timezone.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/notification/channel.go",
+          "internal/notification/robot.go",
+          "internal/notification/telegram.go"
+        ],
+        "invariant": "Every outbound destination is a fixed-origin HTTPS webhook chosen by DetectProvider; no free-form URL fetched; no redirect/port escape",
+        "method": "source",
+        "result": "HOLDS. DetectProvider accepts only Telegram token pattern (not a URL), feishu exact path with secret charset, dingtalk exact /robot/send single access_token, wecom exact /cgi-bin/webhook/send single key. Rejects non-https/userinfo/opaque/RawPath/fragment/any port/non-canonical. ValidChannelCredential requires detected==provider so Telegram token never dispatched as robot URL. Proxy nil, TLS>=1.2, redirects never followed, bounded reads. No other outbound HTTP in package — no SSRF/exfil channel.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/panel/cluster_notifications.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go",
+          "internal/panel/cluster_notifications_resources.go",
+          "internal/notification/service.go"
+        ],
+        "invariant": "Test/discover/update require session+Origin+CSRF; test sends never return or log stored credential; snapshots expose only salted fingerprint",
+        "method": "source",
+        "result": "HOLDS. All enter through requireClusterMutation. Audit change payloads record booleans only. Service consumes stored credential internally; snapshots surface TokenFingerprint=sha256 only; error mapping returns fixed code strings never echoing URLs or upstream bodies. Test messages fixed templates. GET read path session-only — correct.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/notification/telegram.go",
+          "internal/notification/robot.go",
+          "internal/notification/channel.go"
+        ],
+        "invariant": "Telegram bot token only in URL path of fixed api.telegram.org; never leaks to non-Telegram URLs, logs, or error text",
+        "method": "source",
+        "result": "HOLDS. token only on api.telegram.org path. RobotClient rejects telegram provider before URL use — token cannot be exfiltrated to feishu/dingtalk hosts. No slog/audit formats the token; errors are typed-code strings, upstream Description discarded.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/notification/service.go",
+          "internal/notification/types.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_service.go",
+          "internal/contract/ssh_login.go",
+          "internal/panel/cluster_notifications_resources.go",
+          "internal/panel/notification_timezone.go"
+        ],
+        "invariant": "No semi-trusted principal can inject control characters/newlines/markup into outbound messages; plain text only, no parse mode",
+        "method": "source",
+        "result": "HOLDS. Message interpolates only sanitized fields: host names via safeMessageText (strips all control chars, 240 runes; write-time cleanDisplayText validation prevents newline storage), SSH login fields regex-validated node+center, numeric metrics, fixed-format timestamps. Telegram no parse_mode + disable preview; robot payload text type only — no markdown/HTML rendering on any channel, injected glyphs display literally. Resource data withdrawn never interpolated; cluster peer names validated at store-write and on read.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/notification/store.go",
+          "internal/notification/service.go",
+          "internal/panel/backup_data.go",
+          "internal/auth/totp.go"
+        ],
+        "invariant": "Notification credentials at rest mode-restricted, symlink-immune, re-validated on read, never leave host except inside scrypt-encrypted backup archive",
+        "method": "source",
+        "result": "HOLDS with design gap in hardening. Credential in own file 0600 in 0700 dir; readRegularFile refuses world/group-readable + symlinks + in-place swap (SameFile); DetectProvider re-run on read. State file contains only TokenFingerprint sha256. Backups include the token filename but payload sealed with scrypt+AEAD. Gap: unlike TOTP secrets (AES-GCM sealed), notification credential is plaintext at 0600 — accepted single-admin choice, weaker than TOTP path, recorded in hardening.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fcluster_share.go%23handlePublicClusterShare::internal%2Fpanel%2Fcluster_share.go%23secureStringEqual%20token::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/cluster_share.go#handlePublicClusterShare",
+      "boundary": "internal/panel/cluster_share.go#secureStringEqual token",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /s/{token} and cluster share API",
+    "boundary": "internal/panel/cluster_share.go#constant-time token compare",
+    "subsystem": "internal/panel",
+    "attack_class": "Cluster share data exposure",
+    "starting_paths": [
+      "internal/panel/cluster_share.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-pub",
+    "reviewed_paths": [
+      "internal/panel/cluster.go",
+      "internal/panel/cluster_share.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/cluster_share.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Cluster telemetry only to exact 64-hex token holders, constant time, only while enabled",
+        "method": "source",
+        "result": "Control holds. secureStringEqual = sha256 digests compared with subtle.ConstantTimeCompare; 32 random bytes hex, 256-bit entropy; uniform 404; per-request re-read of store so disable takes effect immediately.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/cluster_share.go"
+        ],
+        "invariant": "Snapshot exposes no host secrets: no tokens, raw IDs, origins, credentials",
+        "method": "source",
+        "result": "Control holds. publicClusterShareSnapshot exposes telemetry fields only; public host IDs are HMAC-SHA256(share token, hostID) truncated 12 hex bytes; token never included in responses.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/cluster_share.go",
+          "internal/panel/cluster.go"
+        ],
+        "invariant": "Token rotation and share mutation require authenticated session",
+        "method": "source",
+        "result": "Control holds. GET settings requireSession; PUT/POST requireClusterMutation (origin+session+CSRF); rotation effective immediately; caches invalidated on rotation.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/cluster_share.go",
+          "internal/panel/server.go",
+          "internal/panel/config.go"
+        ],
+        "invariant": "Rate limiting not bypassable by address forgery under default deployment",
+        "method": "source",
+        "result": "Fixed 1-min window 120/min keyed by remoteIP with 2048-key cap. remoteIP honors forwarded headers only from trustedProxies (default loopback only); XFF walk right-to-left returns rightmost non-trusted entry. Remote attacker cannot spoof loopback source. Residual: loopback proxy that does not append client address is a config contract, hardening note.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fdiagnostics.go%23POST%20%2Fapi%2Fv1%2Fdiagnostic-jobs::internal%2Fdiagnostics%2Fscript_trust_linux.go%23trusted%20script%20resolution::internal%2Fdiagnostics::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/panel/diagnostics.go#POST /api/v1/diagnostic-jobs",
+      "boundary": "internal/diagnostics/script_trust_linux.go#trusted script resolution",
+      "subsystem": "internal/diagnostics",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "POST /api/v1/diagnostic-jobs → agent /v1/diagnostics",
+    "boundary": "internal/diagnostics/script_trust_linux.go#trusted diagnostic script + job state re-validation",
+    "subsystem": "internal/diagnostics",
+    "attack_class": "Diagnostic job script trust and interactive root terminal input",
+    "starting_paths": [
+      "internal/diagnostics/service.go",
+      "internal/diagnostics/script_trust_linux.go",
+      "internal/diagnostics/native.go",
+      "internal/panel/diagnostics.go",
+      "internal/panel/sites.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "h-node2",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/diagnostics/native.go",
+      "internal/diagnostics/script_trust_linux.go",
+      "internal/diagnostics/script_trust_other.go",
+      "internal/diagnostics/service.go",
+      "internal/diagnostics/summary.go",
+      "internal/hostpty/process.go",
+      "internal/hostpty/process_linux.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/diagnostics.go",
+      "internal/panel/sites.go",
+      "internal/sites/recipe_jobs.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/diagnostics/service.go",
+          "internal/diagnostics/script_trust_linux.go",
+          "internal/diagnostics/script_trust_other.go",
+          "internal/sites/recipe_jobs.go"
+        ],
+        "invariant": "Diagnostic script discovered only through trusted-marker chain identical in strength to recipe jobs",
+        "method": "source",
+        "result": "HOLDS with shared TOCTOU nuance in hardening. findScript is the same algorithm as findTrustedKejilionScript (same candidates, EvalSymlinks, size window, perm, root owner on Linux, license + KJ markers). Run path fixed argv never shell string. Nuance: Stat-then-ReadFile swap window (recipe twin shares it); exploitation requires root, so no invariant break under current threat models — hardening to unify with SameFile pattern.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/diagnostics/service.go",
+          "internal/diagnostics/native.go",
+          "internal/panel/diagnostics.go",
+          "internal/panel/sites.go",
+          "internal/panel/ai_tools.go"
+        ],
+        "invariant": "checkID never reaches a command position: regex-constrained at every boundary, matched against catalog before job creation, single argv element",
+        "method": "source",
+        "result": "HOLDS. selectorPattern enforced at panel handler, forwarder, AI tool gate, agent collection, service Start, and root RunJob re-read. Start requires ID in merged catalog; parseCatalog re-validates all IDs/categories against same pattern; ID alphabet excludes / and ; and delivered as one argv element. mergeCatalogs native-primary so script items cannot shadow native IDs; native dispatch hardcoded switch with default reject.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/hostpty/process.go",
+          "internal/hostpty/process_linux.go",
+          "internal/diagnostics/service.go",
+          "internal/panel/sites.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "Interactive diagnostic input follows shared interactive-job pattern: FIFO 0600, panel 1..16384 no-NUL, service re-check, bounded writes, output capped",
+        "method": "source",
+        "result": "HOLDS and does not deviate. mkfifo 0600; O_NONBLOCK with deadline; panel validates jobIDPattern + size + no-NUL + Origin+session+CSRF via strict allowlist. Service.WriteInput re-validates and requires Interactive/InputOpen/queued-or-running; reads capped 64KiB chunks; log truncated 8MiB; Pdeathsig so broker exit cannot leave stray shell.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/diagnostics/service.go",
+          "internal/diagnostics/native.go"
+        ],
+        "invariant": "Persisted job state re-read validated like webenv gate: ID matches filename, CheckID pattern, 256KiB bound, tampered dropped as not-found, run path re-validates before exec",
+        "method": "source",
+        "result": "HOLDS. readLocked enforces jobIDPattern, size, item.ID==id, selectorPattern; else ErrNotExist. listLocked drops unparseable; load ignores failures. Root RunJob re-checks selector and re-derives workspace path with Dir equality. BootID fences stale running jobs cross-boot. Minor hardening: json.Unmarshal without DisallowUnknownFields inconsistent with the rest — fields reaching execution re-checked anyway.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-node2",
+        "reviewed_paths": [
+          "internal/diagnostics/native.go",
+          "internal/diagnostics/summary.go"
+        ],
+        "invariant": "Native diagnostics fixed-endpoint policy: compile-time constant URLs, only dynamic input IPv4 re-validated by net.ParseIP",
+        "method": "source",
+        "result": "HOLDS. All probe URLs constants; IPing interpolates only public IP (url.Values encoded / PathEscape) onto fixed endpoints, requires To4(); publicIP from locally-parsed Cloudflare trace response. Bodies size-capped; summary metrics whitespace-collapsed and clamped. No admin-reachable setting alters endpoints.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffile_remote_downloads.go%23handleFileRemoteDownload::internal%2Fremotedownload%2Fclient.go%23publicAddress::internal%2Fremotedownload::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/file_remote_downloads.go#handleFileRemoteDownload",
+      "boundary": "internal/remotedownload/client.go#publicAddress",
+      "subsystem": "internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "POST /api/v1/files/remote-downloads",
+    "boundary": "internal/remotedownload/client.go#DNS pin + private address block",
+    "subsystem": "internal/remotedownload",
+    "attack_class": "SSRF via remote download",
+    "starting_paths": [
+      "internal/remotedownload/client.go",
+      "internal/panel/file_remote_downloads.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/panel/file_remote_downloads.go",
+      "internal/remotedownload/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/remotedownload/client.go",
+          "internal/panel/file_remote_downloads.go"
+        ],
+        "invariant": "URL validation permits only http/https LDH hostnames, no userinfo/fragment/backslash/control; dialer resolves then dials validated IP with publicAddress filtering; redirects re-validated, https→http refused, ≤5 hops, headers stripped",
+        "method": "source",
+        "result": "Invariant holds. validHostname rejects all-numeric hosts; hex/octal dotted forms pass LDH but resolve() filter applies to whatever the resolver returns (fail-closed). IPv6 zones rejected; IPv4-mapped Unmap'd; NAT64/Teredo/2002 in reservedPrefixes. DNS rebinding prevented (connection to validated IP, not hostname; Host/SNI original for TLS). maxDialAddresses truncation AFTER resolve() validated every record. Redirect policy per hop. Name never derived from URL path; target directory canonical absolute through agent entry endpoint walk; overwrite always false + uniqueFileTransferName.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffile_shares.go%23handlePublicFileShareContent::internal%2Fpanel%2Ffile_shares.go%23resolvePublicFileShare::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/file_shares.go#handlePublicFileShareContent",
+      "boundary": "internal/panel/file_shares.go#resolvePublicFileShare",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /f/{token} and /api/v1/file-shares/{token}",
+    "boundary": "internal/panel/file_shares.go#token validation + share version binding",
+    "subsystem": "internal/panel",
+    "attack_class": "Public file share bypass",
+    "starting_paths": [
+      "internal/panel/file_shares.go",
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-pub",
+    "reviewed_paths": [
+      "internal/panel/file_shares.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/file_shares.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Share metadata served only for valid unexpired token; no host path revealed",
+        "method": "source",
+        "result": "Control holds. Token 43-char base64url/32 bytes; FileShareByToken constant-time compare of sha256(token) + expiry; 256-bit entropy; uniform 404; second store lookup with ID comparison closes delete-replay race; JSON view exposes only Name/MIME/Size/ExpiresAt.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/file_shares.go"
+        ],
+        "invariant": "Share content streamed only for valid share; text/html never inline; fixed agent parameters",
+        "method": "source",
+        "result": "Control holds. Query exactly absent or download=1; 2-slot stream gate; deadline clamped to share expiry; registered stream cancellation on delete; If-Match from stored state; only Range-family headers forwarded; CSP with sandbox; inline only for image/* safe list, text/html forced octet-stream attachment.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/file_shares.go"
+        ],
+        "invariant": "Validation-limited requests cannot enumerate or DoS agent fingerprinting",
+        "method": "source",
+        "result": "Covered. allowFileShareValidation rejects before OpenStream; per-path and global budgets 512 units/min; sizes from stored share state not client input.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffiles.go%23handleFileDownloadTicket::internal%2Fpanel%2Ffiles.go%23issueDownloadTicket::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/files.go#handleFileDownloadTicket",
+      "boundary": "internal/panel/files.go#issueDownloadTicket",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /api/v1/files/download/{ticket}",
+    "boundary": "internal/panel/files.go#lookupFileDownloadTicket (no session)",
+    "subsystem": "internal/panel",
+    "attack_class": "Unauthenticated ticket reuse",
+    "starting_paths": [
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-pub",
+    "reviewed_paths": [
+      "internal/panel/files.go",
+      "internal/panel/files_test.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Anonymous ticket holder can download only the exact bound path, cannot guess/enumerate tickets, cannot alter agent request at redemption, expired tickets rejected",
+        "method": "source",
+        "result": "Control holds. Redemption files.go:307-342: GET/HEAD only, RawQuery rejected, token 43-char base64url decoding to 32 bytes keyed as sha256(decoded); lookup deletes expired entries; issuance session+origin+CSRF with canonical absolute path; token crypto/rand 32 bytes collision-checked, TTL 5min, cap 128; agent request rebuilt server-side from stored state; only Range/If-None-Match/If-Modified-Since/If-Range forwarded (not authz inputs); 256-bit entropy, wrong guess yields uniform 404.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/panel/files_test.go"
+        ],
+        "invariant": "Download tickets single-use vs reusability within TTL (recon lead)",
+        "method": "source",
+        "result": "Recon claim factually accurate but intended double-submit semantics: files_test.go:340-422 performs ranged GET then HEAD on the SAME ticket (resume support). Replay window bounded to 5 min, fixed path only, TTL enforced every lookup (files_test.go:424-434). Not a boundary violation; hardening note.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23POST%20%2Fapi%2Fv1%2Fauth%2Flogin::internal%2Fauth%2Fservice.go%23Login%20rate%20limit%20and%20Argon2id::internal%2Fauth::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#POST /api/v1/auth/login",
+      "boundary": "internal/auth/service.go#Login rate limit and Argon2id",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "POST /api/v1/auth/login",
+    "boundary": "internal/auth/service.go#Login (Argon2id, rate limit, dummy hash)",
+    "subsystem": "internal/auth",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/auth/password.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Password reset and broader recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth1",
+    "reviewed_paths": [
+      "internal/auth/password.go",
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Login rate-limit accounting uses both ip and account keys and cannot be raced",
+        "method": "source",
+        "result": "Covered. reserveLogin checks store failed counts + in-memory pending for ip and account keys (10x multiplier) under loginMu before verification; keys normalized identically in reserve and record (trim/lowercase/truncate); counter reset requires valid credential; IP randomization requires trusted-proxy misconfiguration (account key still applies).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/auth/password.go"
+        ],
+        "invariant": "Unknown-user and wrong-password paths structurally indistinguishable",
+        "method": "source",
+        "result": "Covered. Unknown user substitutes same dummyHash (DefaultArgon2idParams); both paths exactly one Argon2id Verify with identical parameters; inputInvalid branch rewrites to dummy preserving single-verify cost; Argon2id Verify constant-time; both return ErrInvalidCredentials. Timing parity structural (wall-clock not measured — noted in unresolved).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "TOTP second factor cannot be skipped; valid code cannot replay across concurrent logins",
+        "method": "source",
+        "result": "Covered. secondFactor required whenever TOTPSecret set; only password+2FA or local authority clears secret; ConsumeUserTOTPStep under store mutex requires step > TOTPLastUsedStep so concurrent same-step serializes and second fails; recovery codes single-use (hash removed under mutex); failed codes record both keys; empty-secondFactor early return records no failure but cannot succeed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Login input bounds and concurrency enforced",
+        "method": "source",
+        "result": "Covered. Password 1-256 bytes / username ≤64 pre-hash; hashSlots non-blocking semaphore (immediate RateLimitError when saturated); decodeJSON strict single-JSON; checkOrigin before credential work; Argon2id parameter ranges bounded.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "unresolved_notes": [
+      "Wall-clock equivalence of dummy-hash vs real-hash path is structurally established (same single Verify, same params) but not measured; a bounded local timing-regression test over N runs would settle it."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23allowedAgentPath::internal%2Fpanel%2Fserver.go%23handleAgentProxy::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#allowedAgentPath",
+      "boundary": "internal/panel/server.go#handleAgentProxy",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET /api/v1/* agent proxy paths",
+    "boundary": "internal/panel/server.go#allowedAgentPath allowlist",
+    "subsystem": "internal/panel",
+    "attack_class": "Agent proxy path confusion",
+    "starting_paths": [
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "lead-parent",
+    "reviewed_paths": [
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "lead-parent",
+        "reviewed_paths": [
+          "internal/panel/server.go"
+        ],
+        "invariant": "Agent proxy handles only GET with session, maps only exact allowlisted public paths to exact agent paths, rejects RawPath tricks and unknown paths",
+        "method": "source",
+        "result": "Verified: handleAgentProxy requires requireSession, rejects RawPath for system/logs paths and RawQuery for public resources, allowedAgentPath is an exact-match map of ~40 GET routes plus regex-validated docker container logs/stats paths with containerIDPattern; unmapped GET yields route_not_found. Server_test.go:778-894 asserts malformed IDs, extra segments, dot-dot and case tricks rejected (h-wild independently verified the preamble).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23checkCSRF::internal%2Fpanel%2Fserver.go%23ServeHTTP%20origin%20check::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#checkCSRF",
+      "boundary": "internal/panel/server.go#ServeHTTP origin check",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "all mutating /api/v1 routes",
+    "boundary": "internal/panel/server.go#checkCSRF + checkOrigin + checkHost",
+    "subsystem": "internal/panel",
+    "attack_class": "CSRF and origin binding",
+    "starting_paths": [
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth1",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/apps.go",
+      "internal/panel/cluster.go",
+      "internal/panel/config.go",
+      "internal/panel/files.go",
+      "internal/panel/server.go",
+      "internal/panel/sites.go",
+      "internal/panel/terminal.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/auth/service.go"
+        ],
+        "invariant": "CSRF double-submit constant-time and triple-bound",
+        "method": "source",
+        "result": "Covered. header==cookie (secureStringEqual) AND hashSecret(header)==session.CSRFHash; cookie tossing yields at most header==cookie but never the session-bound hash (256-bit preimage barrier); empty fails both; all write endpoints gate on this.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/config.go"
+        ],
+        "invariant": "No realistic cross-site request passes origin validation; PublicURL-empty fallback fail-closed for browsers",
+        "method": "source",
+        "result": "Covered. With Origin present: compared against PublicURL/validated IP origin/trusted-proxy origin/connection-derived scheme://host; 'null' cannot match. Origin absent + PublicURL set → rejected. Both absent → Sec-Fetch-Site consulted, all cross-site/same-site values rejected; only neither-header requests accepted which modern browsers do not produce for cross-site POSTs; any such legacy request still faces CSRF triple binding + SameSite=Strict. checkHost no-op only when PublicURL empty; nothing in auth flow trusts Host beyond deriving expected origin compared against attacker-controlled Origin; CORP+CSP set on every response.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/panel/cluster.go",
+          "internal/panel/files.go",
+          "internal/panel/sites.go",
+          "internal/panel/apps.go",
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "Every session-authenticated mutating route enforces both checkCSRF and checkOrigin",
+        "method": "source",
+        "result": "Covered with one hardening note. Enumerated all handle* dispatch paths; both checks on all mutating routes via direct code or requireClusterMutation. Single exception: POST /api/v1/files/entries (batch file-listing read) has session+CSRF but not checkOrigin — CSRF triple binding makes cross-site exploitation infeasible; recorded as hardening for uniformity.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "unresolved_notes": [
+      "Origin-empty/Sec-Fetch-absent branch behavior on pre-2020 embedded browser engines cannot be established from source; residual exposure bounded by CSRF session-hash binding + SameSite=Strict; confirming needs browser-matrix deployment test."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23handleBootstrap::internal%2Fauth%2Fservice.go%23Bootstrap%20one-time%20token::internal%2Fauth::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#handleBootstrap",
+      "boundary": "internal/auth/service.go#Bootstrap one-time token",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "POST /api/v1/auth/bootstrap",
+    "boundary": "internal/auth/service.go#Bootstrap (one-time token, single admin)",
+    "subsystem": "internal/auth",
+    "attack_class": "Bootstrap race and token handling",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Password reset and broader recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth1",
+    "reviewed_paths": [
+      "cmd/paneld/main.go",
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Two concurrent bootstraps cannot both create initial admin",
+        "method": "source",
+        "result": "Covered. bootstrapMu held for entire operation; second caller observes IsInitialized true. CreateInitialAdmin re-checks under store write mutex returning ErrAlreadyInitialized. Recovery flows local-only (RecoverPassword not HTTP; reset-password CLI fails when store locked by running panel).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "cmd/paneld/main.go"
+        ],
+        "invariant": "Bootstrap token constant-time, fails closed, consumed",
+        "method": "source",
+        "result": "Covered. Token 256 bits, 0600 O_EXCL fsync; removed once initialized; read fresh each call, secureEqual compare; missing file + uninitialized store = ErrBootstrapUnavailable (fail closed); wrong token returns before Argon2id work (no amplification); consumed after success; handler checkOrigin, never logs token.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Bootstrap identity meets policy; session is normal session",
+        "method": "source",
+        "result": "Covered. Username regex + password 12-256 bytes validated before hashing; Role admin; standard session; all subsequent boundaries apply; handler checkOrigin; 201 + cookies only on success.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23obvious%20exposures::internal%2Fpanel%2Fconfig.go%23defaults::internal%2Fpanel::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#obvious exposures",
+      "boundary": "internal/panel/config.go#defaults",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "basic exposures check",
+    "boundary": "cross-cutting",
+    "subsystem": "internal/panel",
+    "attack_class": "Obvious things",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "Dockerfile",
+      "deploy/compose/compose.yml"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+      ".gitignore",
+      "cmd/kejilion-agent/main.go",
+      "deploy/compose/.env.example",
+      "deploy/install.sh",
+      "deploy/systemd/agent.env.example",
+      "go.mod",
+      "go.sum",
+      "internal/agent/server.go",
+      "internal/agent/token_linux.go",
+      "internal/agentclient/client.go",
+      "internal/auth/service.go",
+      "internal/cluster/client.go",
+      "internal/panel",
+      "internal/panel/app_icons.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go",
+      "internal/systemmanage",
+      "packaging/tests",
+      "scripts/security-scan.sh",
+      "web/.env.example",
+      "web/package-lock.json",
+      "web/package.json",
+      "web/src",
+      "web/src/lib"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/src/lib"
+        ],
+        "invariant": "No hardcoded secrets",
+        "method": "source",
+        "result": "Clean — no hardcoded password/secret/apikey/token literals; TS hits are test files with dummy values.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "deploy/install.sh",
+          "internal/agent/token_linux.go"
+        ],
+        "invariant": "No default credentials",
+        "method": "source",
+        "result": "None — bootstrap token crypto/rand 32 bytes 0600 O_EXCL consumed once; agent token openssl rand -hex 32 to 0640 root:panel-group with ownership+perm validation.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/src"
+        ],
+        "invariant": "No debug/dev endpoints",
+        "method": "source",
+        "result": "Clean — no pprof/expvar/trace/debug registrations; no frontend debug modes gated on env/query.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/src",
+          "packaging/tests"
+        ],
+        "invariant": "No test/seed credentials in production paths",
+        "method": "source",
+        "result": "None — all credential-looking values are in _test files/fixtures; E2E provisions its own fresh instance.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "Unprotected health/metrics/status endpoints",
+        "method": "source",
+        "result": "/api/v1/health public-by-design (liveness, version+initialized duplicates intentionally public bootstrap flag); agent /v1/health requires bearer. No /metrics or /status endpoints. Informational.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          ".gitignore",
+          "deploy/compose/.env.example",
+          "deploy/systemd/agent.env.example",
+          "web/.env.example"
+        ],
+        "invariant": "No committed key files; gitignore coverage",
+        "method": "source",
+        "result": "Clean — no tracked .pem/.key/.token/.env files; only .example placeholders; .gitignore covers secrets patterns.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/package.json",
+          "web/package-lock.json",
+          "go.mod",
+          "go.sum",
+          "scripts/security-scan.sh"
+        ],
+        "invariant": "Dependencies pinned",
+        "method": "source",
+        "result": "Fully pinned — package.json exact versions, lock committed, no replace directives, 8 direct Go deps, trivy pinned-digest with HIGH/CRITICAL exit-code 1.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/src"
+        ],
+        "invariant": "No eval/exec/dynamic import sinks with untrusted strings",
+        "method": "source",
+        "result": "Clean — zero eval/new Function in web/src; scripts use fixed-argv spawn/execFileSync; background-browser-test.mjs sha256-pins spec commands, rejects secret-name envs, shell:false.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/config.go"
+        ],
+        "invariant": "Cookie attributes on every SetCookie site",
+        "method": "source",
+        "result": "All correct across 4 sites — entrance/session HttpOnly+Secure+SameSite=Strict; CSRF cookie non-HttpOnly BY DESIGN (JS double-submit header, server re-validates header==cookie==session hash constant-time); __Host- prefix validated in config.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/app_icons.go",
+          "internal/panel/server.go",
+          "web/src"
+        ],
+        "invariant": "No open redirects",
+        "method": "source",
+        "result": "None — single http.Redirect to constant fallback path; entrance meta-refresh fixed to /login; cluster client hard-rejects redirects.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel",
+          "internal/agent/server.go",
+          "internal/systemmanage"
+        ],
+        "invariant": "Error responses do not leak internals to unauthorized parties",
+        "method": "source",
+        "result": "Minor hygiene only — agent safeDetail forwards truncated err.Error()/stderr (300-500 bytes) into Problem.Detail, proxied to the authenticated operator. Content is trusted-binary stderr from operator's own host; no SQL/source-path injection; docker logs and AI output separately redacted. Informational.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/cluster/client.go",
+          "internal/agentclient/client.go",
+          "cmd/kejilion-agent/main.go"
+        ],
+        "invariant": "TLS not disabled anywhere",
+        "method": "source",
+        "result": "Clean — InsecureSkipVerify absent from project code; federation client enforces TLS12+ with verified chain and https-only origins; agent binds Unix socket only; panel :8080 HTTP-by-design behind operator proxy with SecureCookie/HSTS on TLS detection.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23public%20endpoints::internal%2Fpanel%2Ffile_shares.go%23rate%20limits::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#public endpoints",
+      "boundary": "internal/panel/file_shares.go#rate limits",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "unauthenticated public endpoints",
+    "boundary": "per-IP rate limiters on share/ticket/federation routes",
+    "subsystem": "internal/panel",
+    "attack_class": "Pre-auth resource exhaustion",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/file_shares.go",
+      "internal/panel/cluster_share.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "lead-parent",
+    "reviewed_paths": [
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/service.go",
+      "internal/panel/file_shares.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "lead-parent",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/file_shares.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_batch_service.go"
+        ],
+        "invariant": "All unauthenticated endpoints rate-limit before expensive work; bodies bounded; no unbounded pre-auth buffers",
+        "method": "source",
+        "result": "Synthesized from h-auth2 pre-auth checks plus h-pub share checks: federation pair decodeLimitedJSON 16KiB before AcceptPair rate limit (ordering hardening noted); light enroll/report rate-check before token parse under bounded mutationMu; ticket redemption is one map hit on admin-populated map; file-share metadata gate 16 + streams global 2 + double-lookup race closed; health trivial; panic recovery wraps all; decodeJSON MaxBytesReader.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23requireSession::internal%2Fauth%2Fservice.go%23Authenticate%20session%20lookup::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#requireSession",
+      "boundary": "internal/auth/service.go#Authenticate session lookup",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "all /api/v1 session-authenticated routes",
+    "boundary": "internal/panel/server.go#requireSession + cookie policy",
+    "subsystem": "internal/panel",
+    "attack_class": "Session lifecycle",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/auth/service.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth1",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Session tokens high entropy, stored only as hashes, expiration enforced at lookup",
+        "method": "source",
+        "result": "Covered. 32-byte crypto/rand tokens (~256-bit); persisted only as SHA-256 hex; SessionByTokenHash requires ExpiresAt.After(now) + user exists; TTL bounded 5min-7d by config; expired pruned on every PutSession.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Logout invalidates; every credential/TOTP change revokes all sessions",
+        "method": "source",
+        "result": "Covered. DeleteSession idempotent persisted; ReplaceUserPassword CAS + drops all sessions in same transition; username/TOTP/recovery/recover all revoke in one transition; in-flight-login race closed by lock ordering + revocation-after-creation (corroborated by test).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/config.go"
+        ],
+        "invariant": "Cookie flags and __Host- prefix rules structurally enforced",
+        "method": "source",
+        "result": "Covered. Session HttpOnly/SameSite=Strict/Path=//Secure; CSRF non-HttpOnly for double-submit; config enforces __Host- requires SecureCookie and vice versa; names distinct and grammar-valid; requireSession clears cookies on invalid session.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/panel/server.go"
+        ],
+        "invariant": "GET /api/v1/auth/session does not disclose usable CSRF token to session-cookie-only holder",
+        "method": "source",
+        "result": "Covered. Echoes CSRF cookie value only after ValidateCSRF binds to session CSRFHash; cookie-less holder gets empty csrfToken.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23securityEntrancePublicPath::internal%2Fpanel%2Fserver.go%23handleSecurityEntrance::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#securityEntrancePublicPath",
+      "boundary": "internal/panel/server.go#handleSecurityEntrance",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "security-entrance gate for all non-public paths",
+    "boundary": "internal/panel/server.go#entrance cookie derivation",
+    "subsystem": "internal/panel",
+    "attack_class": "Entrance gate bypass",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-pub",
+    "reviewed_paths": [
+      "internal/panel/cluster.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/server.go"
+        ],
+        "invariant": "With entrance enabled, every non-bypass path requires entrance cookie (constant-time vs derived value), valid session, or the path itself; cookie not synthesizable without path secret",
+        "method": "source",
+        "result": "Control holds. Entrance path panel-+hex(10 crypto/rand bytes)=80 bits; cookie sha256(key,path,UpdatedAt RFC3339Nano) verified secureStringEqual; UpdatedAt only via authenticated settings API; attacker with path can legitimately get the cookie (intended authz event); cookie HttpOnly/SameSite=Strict/Secure; meta-refresh page CSP default-src none.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/cluster.go"
+        ],
+        "invariant": "Every bypass path carries own auth; nothing sensitive reachable without entrance cookie",
+        "method": "source",
+        "result": "Control holds. Bypass list: health (liveness), download tickets (256-bit), static assets (inert), cluster/file-share pages+API (256-bit constant-time tokens), federation endpoints (ed25519/Noise/HMAC schemes). Enroll/report endpoints read no panel state, failures route to audit+writeClusterError — no state oracle.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-pub",
+        "reviewed_paths": [
+          "internal/panel/server.go"
+        ],
+        "invariant": "Sad-path: /api/v1/health anonymous disclosure decision",
+        "method": "source",
+        "result": "health discloses status, version.Version, protocolVersion, initialized before entrance and host checks. Deliberate liveness data; version disclosure aids targeting but no source-settled exploit chain; per candidate gate recorded as hardening, not candidate.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23serveAPI%20full%20route%20table::internal%2Fagent%2Fserver.go%23route%20table::internal%2Fpanel::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#serveAPI full route table",
+      "boundary": "internal/agent/server.go#route table",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "whole panel+agent route surface",
+    "boundary": "cross-cutting",
+    "subsystem": "internal/panel",
+    "attack_class": "Wildcard anomalies",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/agent/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+      "internal/agent/account_management.go",
+      "internal/cluster/history.go",
+      "internal/contract/account_management.go",
+      "internal/contract/ssh_defense_management.go",
+      "internal/desktopworkspace/workspace.go",
+      "internal/dockerx/maintenance.go",
+      "internal/panel/ai_handlers.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/cluster.go",
+      "internal/panel/desktop_workspace.go",
+      "internal/panel/files.go",
+      "internal/panel/jobs.go",
+      "internal/panel/monitoring.go",
+      "internal/panel/server.go",
+      "internal/panel/sites.go",
+      "internal/panel/system.go",
+      "internal/panel/terminal.go",
+      "internal/panel/terminal_commands.go",
+      "internal/selfupdate/executor.go",
+      "internal/terminal/manager.go",
+      "internal/webenv/service.go",
+      "web/src/lib/aiApi.ts",
+      "web/src/lib/api.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/system.go",
+          "internal/panel/cluster.go",
+          "internal/panel/sites.go",
+          "internal/panel/files.go"
+        ],
+        "invariant": "Every mutating handler has the full auth preamble (origin+session+CSRF)",
+        "method": "source",
+        "result": "Verified independently — all POST/PATCH/PUT/DELETE handlers follow identical preamble via direct code or requireClusterMutation; terminal additionally binds UserID; GET-only handlers require session only. No handler missing preamble.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/system.go",
+          "internal/contract/account_management.go",
+          "internal/agent/account_management.go",
+          "internal/contract/ssh_defense_management.go",
+          "internal/webenv/service.go",
+          "internal/dockerx/maintenance.go"
+        ],
+        "invariant": "Admin action strings are enum-validated, agent re-validates",
+        "method": "source",
+        "result": "Three-layer defense — panel contract validators (action enum+field lockdown via reflect.DeepEqual), agent-side revalidation with same contract functions, systemmanage third validation. Webenv and docker-task panels forward raw but agent enforces strict enum (hardening note).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/dockerx/maintenance.go"
+        ],
+        "invariant": "Docker task action validation asymmetry",
+        "method": "source",
+        "result": "handleDockerTask forwards MaintenanceInput without panel-side enum check (unlike contract siblings); agent validateMaintenanceInput enforces 25-action enum. Defense-in-depth asymmetry, not a bypass — hardening note.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/ai_handlers.go",
+          "internal/panel/desktop_workspace.go",
+          "internal/panel/terminal_commands.go"
+        ],
+        "invariant": "No half-finished features or commented-out auth; nil services fail closed 503",
+        "method": "source",
+        "result": "Clean — zero TODO/FIXME/HACK/XXX in Go code; no commented-out auth checks; optional features (AI, notifications, desktop, terminal commands, backups, webenv) gate on nil service returning 503.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/desktopworkspace/workspace.go"
+        ],
+        "invariant": "Desktop workspace input validation",
+        "method": "source",
+        "result": "No gaps — icon id ^[a-f0-9]{32}$ regex joined to fixed iconsDir (no traversal); real-image decode with dimension caps; shortcut URL/path validators (absolute http/https; canonical absolute POSIX no dot-dot); bounded collections (64 shortcuts/512 positions/256KiB/16MiB); resource-version conflict control; symlinks rejected; audit on mutations.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/jobs.go"
+        ],
+        "invariant": "Job identifiers not enumerable",
+        "method": "source",
+        "result": "Enumeration-resistant — job ids ^[a-f0-9]{32}$ random hex; detail handler validates pattern; owner responses re-checked to match requested id.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "web/src/lib/api.ts",
+          "web/src/lib/aiApi.ts"
+        ],
+        "invariant": "CSRF token flow and no absolute-URL requests",
+        "method": "source",
+        "result": "Clean — csrfToken from response headers on auth endpoints only, sent as X-CSRF-Token on all mutations; server enforces header==cookie==session token; all URLs via buildUrl relative to /api/v1; credentials same-origin only.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/monitoring.go",
+          "internal/cluster/history.go"
+        ],
+        "invariant": "Cluster monitoring host selection is by-design",
+        "method": "source",
+        "result": "Settled intended — hostId 32-char validated, host must exist, scope checks per path; single operator owns all paired hosts.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/terminal.go",
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Terminal session binding anomaly check",
+        "method": "source",
+        "result": "Passed — publicID 16 random bytes; every operation verifies UserID; systemd-run path via trustedTerminalExecutable fixed dirs.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/selfupdate/executor.go"
+        ],
+        "invariant": "Self-update script text fixed",
+        "method": "source",
+        "result": "No anomaly — /bin/bash -c with FIXED script string sourcing only trustedRegularFile-validated paths; digest pinned in env; no user-controlled script text.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-wild",
+        "reviewed_paths": [
+          "internal/panel/ai_tools.go"
+        ],
+        "invariant": "AI tools use same allowlists as browser routes and audit intents",
+        "method": "source",
+        "result": "Verified — allowed*Path shared with browser routes plus revalidation; host_file_write bounded 4KiB path/64KiB content/resourceVersion/mutable-path check; read tools fixed path table; ai.tool.* audited before hostOps calls.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fsystem.go%23POST%20%2Fapi%2Fv1%2Fsystem%2F%2A-actions::internal%2Fsystemmanage%2Fmanager.go%23commandRunner::internal%2Fsystemmanage::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/panel/system.go#POST /api/v1/system/*-actions",
+      "boundary": "internal/systemmanage/manager.go#commandRunner",
+      "subsystem": "internal/systemmanage",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "POST /api/v1/system/*-actions → agent /v1/system/* mutating routes",
+    "boundary": "internal/systemmanage/manager.go#commandRunner exec construction + atomic config writes",
+    "subsystem": "internal/systemmanage",
+    "attack_class": "System action injection into root commands and host config files",
+    "starting_paths": [
+      "internal/systemmanage/manager.go",
+      "internal/systemmanage/disk_partitions.go",
+      "internal/systemmanage/system_tuning.go",
+      "internal/systemmanage/network_operations.go",
+      "internal/systemmanage/ssh_defense.go",
+      "internal/panel/system.go",
+      "internal/panel/disk_partitions.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "h-sys",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/main.go",
+      "internal/contract/account_management.go",
+      "internal/contract/disk_partitions.go",
+      "internal/contract/system_resources.go",
+      "internal/contract/system_tuning.go",
+      "internal/panel/disk_partitions.go",
+      "internal/panel/network_operations.go",
+      "internal/panel/system.go",
+      "internal/systemmanage/account_management.go",
+      "internal/systemmanage/atomic_linux.go",
+      "internal/systemmanage/disk_jobs.go",
+      "internal/systemmanage/disk_partitions.go",
+      "internal/systemmanage/dns_trust_linux.go",
+      "internal/systemmanage/maintenance.go",
+      "internal/systemmanage/manager.go",
+      "internal/systemmanage/network_operations.go",
+      "internal/systemmanage/process_signal.go",
+      "internal/systemmanage/process_signal_linux.go",
+      "internal/systemmanage/reboot.go",
+      "internal/systemmanage/resources.go",
+      "internal/systemmanage/ssh_defense.go",
+      "internal/systemmanage/ssh_defense_management.go",
+      "internal/systemmanage/swap.go",
+      "internal/systemmanage/system_tuning.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/contract/disk_partitions.go",
+          "internal/systemmanage/disk_partitions.go",
+          "internal/systemmanage/disk_jobs.go",
+          "internal/panel/disk_partitions.go"
+        ],
+        "invariant": "Free-text MountPoint/Filesystem never reach mount/mkfs as command text; validated at Panel and Agent, re-validated against fresh privileged snapshot, transported as argv only (MountPoint hex-encoded, Filesystem enum, device by validated major:minor)",
+        "method": "source",
+        "result": "Boundary holds. validateDiskMountPoint (≤4096, no controls, abs, Clean-equality); Filesystem enum ext4/xfs/ntfs/vfat; action-specific field allowlist with duplicate rejection. Agent re-runs contract validation + fresh root-only inspect envelope + validateDiskMountDestination (protected-path refusal, occupied reservation, active-mount via /proc/self/mountinfo, real non-symlink empty dir). Record persistence re-validated on read; RunDiskJob re-verifies. Exec sink: argv with hex.EncodeToString(MountPoint) removing every metacharacter possibility; scripts content-verified root-owned.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/systemmanage/swap.go",
+          "internal/systemmanage/manager.go",
+          "internal/panel/system.go",
+          "cmd/kejilion-agent/main.go"
+        ],
+        "invariant": "Swap flow never accepts a path from the web request; swapfile path is manager config; size validated ≥0 at Panel, Agent, CLI; fixed paths with integer sizes as argv",
+        "method": "source",
+        "result": "Boundary holds. Panel validates SwapSizeMiB ≥0; agent revalidates; swap-run root-only flag-based with panel-configured paths. applySwap uses fixed primary/legacy paths only (fallocate/mkswap/swapoff/swapon with strconv sizes); fstab rewritten via writeAtomic to fixed /etc/fstab. No request field selects any path. Missing upper bound on size → hardening note.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/systemmanage/resources.go",
+          "internal/systemmanage/reboot.go",
+          "internal/systemmanage/system_tuning.go",
+          "internal/systemmanage/network_operations.go",
+          "internal/systemmanage/ssh_defense.go",
+          "internal/systemmanage/ssh_defense_management.go",
+          "internal/panel/network_operations.go",
+          "internal/systemmanage/maintenance.go",
+          "internal/systemmanage/account_management.go",
+          "internal/contract/system_resources.go",
+          "internal/contract/system_tuning.go",
+          "internal/contract/account_management.go"
+        ],
+        "invariant": "Every other systemmanage writer entry point consumes fixed command lists or injection-proof scalars as argv to trusted protocols or fixed system tools",
+        "method": "source",
+        "result": "Boundary holds for all listed entry points. Firewall IP/CIDR normalized via net.ParseIP/ParseCIDR; country codes ^[A-Z]{2}$; interface regex; cron command single-line ≤2048 via --command-stdin. System tuning enum IDs. Traffic-shutdown strconv of contract-bounded numbers. SSH defense fixed modes + netip. Account management username regex with $-suffix rejected, enums, secrets via --secret-stdin. Reboot validRebootRequest both sides + hardcoded trusted /sbin/reboot with owner+mode checks. Maintenance fixed package-manager command lists with pacman output regex-validated. No raw user string reaches any exec as command text.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/systemmanage/manager.go",
+          "internal/systemmanage/dns_trust_linux.go"
+        ],
+        "invariant": "DNS server addresses net.ParseIP'd and re-emitted canonical as argv to trusted script; resolv.conf symlink handling; writeAtomic to fixed paths",
+        "method": "source",
+        "result": "Boundary holds. setDNS 1-4 servers per-family caps, unspecified/multicast rejected, canonical ip.String() argv to content-verified trusted script. dnsBackupPath EvalSymlinks + regular-file refusal. Panel-side ParseIP-only is revalidated strictly at agent. No user string written into resolv.conf by Go code.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/systemmanage/process_signal.go",
+          "internal/systemmanage/process_signal_linux.go"
+        ],
+        "invariant": "process-signal accepts only numeric PID via direct syscall, gated by start-time identity cross-check",
+        "method": "source",
+        "result": "Boundary holds. PID>0, StartTimeTicks>0, signal enum, reflect.DeepEqual confinement both sides. /proc/PID/stat start-time match before syscall.Kill. PID only in strconv for file path read; no argv or shell.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-sys",
+        "reviewed_paths": [
+          "internal/systemmanage/atomic_linux.go",
+          "internal/systemmanage/manager.go"
+        ],
+        "invariant": "Atomic config writes target only config-derived fixed paths; no writeAtomic call site passes a request-derived path",
+        "method": "source",
+        "result": "Boundary holds. writeAtomic Lstat-refuses non-regular/symlink, temp+sync+rename. All call sites fixed joins of config roots; every user-influenced payload first validated (hostname labels, timezone confined zoneinfo, fixed renderers). No request field selects a write path.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fterminal.go%23handleTerminalSession::internal%2Fpanel%2Fterminal.go%23handleTerminalOperation::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/terminal.go#handleTerminalSession",
+      "boundary": "internal/panel/terminal.go#handleTerminalOperation",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "/api/v1/terminal-sessions/*",
+    "boundary": "internal/panel/terminal.go#UserID ownership + host TerminalAvailable",
+    "subsystem": "internal/panel",
+    "attack_class": "Terminal session ownership",
+    "starting_paths": [
+      "internal/panel/terminal.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth2",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/terminal.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "Random public terminal session IDs have real entropy",
+        "method": "source",
+        "result": "Settled: crypto/rand 32 bytes hex (256-bit) both panel and agent side.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "Ownership enforced on every operation via single strict parse path",
+        "method": "source",
+        "result": "Settled: exact-two-segment routing; UserID check under terminalMu; action switch defaults 404 — no fall-through. Non-GET requires Origin+CSRF; input base64 1..16KiB; output query exactly offset+wait ≤1000ms.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "Concurrent opens cannot exceed 16 total / 4 per user",
+        "method": "source",
+        "result": "Settled: reserveTerminalOpen counts live+in-flight under terminalMu before backend open; release on every exit path; prune-before-reserve.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/terminal.go",
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Panel terminal sessions do not outlive auth revocation in a reusable way",
+        "method": "source",
+        "result": "Settled: logout/password-change do not purge terminalSessions but every operation requires requireSession first — revoked token cannot issue any operation; residual root shell is idle-reaper bounded (30min agent/35min panel/8h cap), not a takeover path.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "UpdatedAt keepalive cannot keep session alive anonymously",
+        "method": "source",
+        "result": "Settled: refresh only for owning session user under authentication; owner polling extends up to 8h lifetime cap — owner's own interaction.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ftotp.go%23TOTP%20settings%20and%20enrollment%20endpoints::internal%2Fauth%2Fservice.go%23verifyAndConsumeSecondFactor::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/totp.go#TOTP settings and enrollment endpoints",
+      "boundary": "internal/auth/service.go#verifyAndConsumeSecondFactor",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "/api/v1/settings/totp* endpoints",
+    "boundary": "internal/auth/service.go#TOTP verify+consume step",
+    "subsystem": "internal/auth",
+    "attack_class": "MFA and step-up bypass",
+    "starting_paths": [
+      "internal/auth/totp.go",
+      "internal/auth/service.go",
+      "internal/panel/totp.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#MFA enrollment and assurance downgrade",
+      "WEB-PROTOCOL-AND-AUTH.md#Step-up binding and bypass"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth1",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/auth/totp.go",
+      "internal/panel/totp.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/totp.go"
+        ],
+        "invariant": "TOTP enrollment cannot start or confirm without current password",
+        "method": "source",
+        "result": "Covered. StartTOTPEnrollment calls verifyCurrentPassword (Argon2id + per-user reauth rate limit); ConfirmTOTPEnrollment requires enrollment ID randomToken(18) 144 bits returned only to password-verified caller; secureEqual + expiry + global cap 8; session-cookie thief without password can neither start nor confirm. All three handlers enforce session+CSRF+Origin.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/totp.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Recovery codes single-use even under concurrency",
+        "method": "source",
+        "result": "Covered. 10 random 10-byte codes persisted only as domain-separated SHA-256 hashes; ConsumeUserRecoveryCode removes matched hash atomically with rollback; repeated use returns ErrNotFound → ErrInvalidSecondFactor; Replace swaps set and revokes sessions.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/store/store.go",
+          "internal/auth/service.go",
+          "internal/auth/totp.go"
+        ],
+        "invariant": "Step-consumption race closed",
+        "method": "source",
+        "result": "Covered. matchTOTPStep accepts offsets {0,-1,+1} with constant-time compare; ConsumeUserTOTPStep wholly under store write mutex rejecting step ≤ TOTPLastUsedStep with secret-unchanged check; serialization means second consumer of identical step always fails; Enable rejects existing secret (ErrConflict) and revokes sessions in same transition.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/totp.go"
+        ],
+        "invariant": "Disable-TOTP and recovery rotation require password plus live second factor",
+        "method": "source",
+        "result": "Covered. Both call verifyCurrentPassword then verifyAndConsumeSecondFactor; all TOTP transitions revoke sessions atomically; handlers clear cookies; audit intent before mutation and success after; audit failure fails closed 503 before store mutation.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fselfupdate%2Fsource.go%23release%20body%20digest%20regex::internal%2Fselfupdate%2Fexecutor.go%23Update::internal%2Fselfupdate::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/selfupdate/source.go#release body digest regex",
+      "boundary": "internal/selfupdate/executor.go#Update",
+      "subsystem": "internal/selfupdate",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "self-update check and install",
+    "boundary": "internal/selfupdate/executor.go#trusted file checks + digest pin",
+    "subsystem": "internal/selfupdate",
+    "attack_class": "Self-update integrity chain",
+    "starting_paths": [
+      "internal/selfupdate/source.go",
+      "internal/selfupdate/service.go",
+      "internal/selfupdate/executor.go",
+      "internal/selfupdate/starter.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec2",
+    "reviewed_paths": [
+      "internal/selfupdate/executor.go",
+      "internal/selfupdate/owner_linux.go",
+      "internal/selfupdate/service.go",
+      "internal/selfupdate/source.go",
+      "internal/selfupdate/starter.go",
+      "internal/selfupdate/version.go",
+      "packaging/kejilion-app/kpanel.conf"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/selfupdate/source.go",
+          "internal/selfupdate/version.go"
+        ],
+        "invariant": "Installed image reference is the immutable digest observed on the official GitHub release body; only that digest reaches the privileged pull path",
+        "method": "source",
+        "result": "Held. Digest anchored to exact labelled line; FindAllStringSubmatch(body,2) rejects unless exactly one match; stable channel rejects draft/prerelease; validateReleaseIdentity pins tag and html_url to official GitHub. Payload ≤1MiB; redirects refused; default TLS. Attacker model (TLS break or upstream compromise) maps to documented trust root.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/selfupdate/executor.go",
+          "packaging/kejilion-app/kpanel.conf"
+        ],
+        "invariant": "Digest actually used at pull time; no swap to mutable tag",
+        "method": "source",
+        "result": "Held end-to-end. KJ_KPANEL_TARGET_IMAGE=docker.io/kjlion/kejilion-panel@sha256:<digest> env into fixed inline bash script; kpanel.conf re-validates ^pattern$, docker pull on digest-pinned reference, compose image line with digest, automatic_target_ready re-reads compose for exact digest and compares image IDs/labels/versions. No :latest in automatic chain.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/selfupdate/service.go"
+        ],
+        "invariant": "24h observation hold + QueueInstall pin a digest that cannot silently change between check and install",
+        "method": "source",
+        "result": "Held. Digest never re-fetched at install; edited release body leaves install pinned to previously-observed immutable digest — stale-but-pinned is safe. Release notes bounded, display-only, never reach command line or privileged env.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/selfupdate/service.go",
+          "internal/selfupdate/owner_linux.go",
+          "internal/selfupdate/executor.go",
+          "packaging/kejilion-app/kpanel.conf"
+        ],
+        "invariant": "Lower-privilege host process cannot inject or tamper candidate, transaction, or lifecycle script",
+        "method": "source",
+        "result": "Held. State Lstat: regular, non-symlink, Uid==0, perm 0077==0, ≤64KiB, DisallowUnknownFields, cross-checks. ensurePrivateDirectory 0700. Shell side independently validates storage root 0700. Executor paths canonical absolute + trustedRegularFile (regular, non-symlink, no group/world write, Uid 0) for script/agent/lifecycle config; fixedEnvironment PATH pinned.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec2",
+        "reviewed_paths": [
+          "internal/selfupdate/service.go",
+          "packaging/kejilion-app/kpanel.conf",
+          "internal/selfupdate/starter.go"
+        ],
+        "invariant": "Interrupted installs recover to previous version/data; cannot wedge or replay",
+        "method": "source",
+        "result": "Held. Recover runs before policy evaluation; lifecycle flock enforced; completion confirmed via digest+compose-line+image-ID+versions or rollback with sha256-verified snapshot; reconcileInterrupted marks succeeded only if installed version covers candidate; CancelQueuedInstall version+digest matched.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Ficon_cache.go%23localSiteIconDialAddress::internal%2Fsites%2Ficon_cache.go%23resolveSiteIconURL::internal%2Fsites::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/sites/icon_cache.go#localSiteIconDialAddress",
+      "boundary": "internal/sites/icon_cache.go#resolveSiteIconURL",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "site icon fetch",
+    "boundary": "internal/sites/icon_cache.go#127.0.0.1 pin + host allowlist",
+    "subsystem": "internal/sites",
+    "attack_class": "SSRF via site icon",
+    "starting_paths": [
+      "internal/sites/icon_cache.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-files",
+    "reviewed_paths": [
+      "internal/desktopworkspace/workspace.go",
+      "internal/panel/desktop_workspace.go",
+      "internal/sites/icon_cache.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/sites/icon_cache.go"
+        ],
+        "invariant": "Icon fetches pinned to 127.0.0.1:80/443 regardless of URL host; redirects never followed; linked icon hrefs must be same-host with default ports; bodies size/format-bounded without full decode",
+        "method": "source",
+        "result": "Invariant holds. DialContext maps EVERY dial through localSiteIconDialAddress (ports 80/443 only, host discarded); CheckRedirect ErrUseLastResponse (no following). Allowlist from nginx site discovery (admin-writable only); resolveSiteIconURL rejects different-host/port/scheme/userinfo/oversize; fetchBytes caps 256KiB; validateSiteIcon sniffs + parses only headers (DecodeConfig dimension caps, ICO directory validation, WebP container header) — no full decode, no decompression bomb.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-files",
+        "reviewed_paths": [
+          "internal/panel/desktop_workspace.go",
+          "internal/desktopworkspace/workspace.go"
+        ],
+        "invariant": "Desktop shortcut icon upload authenticated, size-capped, content-type restricted, fully decoded with dimension bounds before persistence",
+        "method": "source",
+        "result": "Invariant holds. Session+CSRF for PUT/DELETE; mime png/jpeg/webp; ContentLength + MaxBytesReader 256KiB (chunked capped); validateIcon full decode for PNG/JPEG/WebP with dimension and pixel caps + quota accounting for replaced icon; 0700 dir atomic temp write; readIcon re-rejects non-regular/symlink.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Fmanaged_template.go%23normalizeUpstream::internal%2Fsites%2Fmanaged_template.go%23renderManagedConfig::internal%2Fsites::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/sites/managed_template.go#normalizeUpstream",
+      "boundary": "internal/sites/managed_template.go#renderManagedConfig",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "site create/update → nginx conf generation",
+    "boundary": "internal/sites/managed_template.go#FQDN + upstream normalization",
+    "subsystem": "internal/sites",
+    "attack_class": "Nginx config injection",
+    "starting_paths": [
+      "internal/sites/managed_template.go",
+      "internal/sites/manager.go",
+      "internal/contract/site_address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec1",
+    "reviewed_paths": [
+      "internal/contract/site_address.go",
+      "internal/sites/custom_certificate.go",
+      "internal/sites/http_site.go",
+      "internal/sites/managed_template.go",
+      "internal/sites/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/sites/managed_template.go",
+          "internal/sites/manager.go"
+        ],
+        "invariant": "Every value interpolated into generated nginx conf is charset-validated and cannot introduce directive syntax or path separators",
+        "method": "source",
+        "result": "Pass. normalizeFQDN restricts to lowercase [a-z0-9-] labels (empty labels rejected so a..b and traversal via /,:,@,*,[ impossible); domain→path construction cannot escape webRoot. spec.Upstream built only by normalizeUpstream (http/https, no userinfo/path/query, LDH host or routable IP, port range, IPv6 re-bracketed); renderManagedConfig re-parses the normalized string so proxy_pass target, proxy_set_header Host, proxy_ssl_name inherit the charset. Load-balance entries via normalizeUpstreams; upstream block name = kp_+sha256 hex. RedirectCode enum; RedirectTarget normalized FQDN origin; phpVersion enum. Default index/PHP interpolate domain into HTML unescaped but FQDN charset contains no HTML metacharacters. Atomic rename then nginx -t before reload with rollback. No invariant disagreement.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/sites/custom_certificate.go",
+          "internal/sites/http_site.go",
+          "internal/contract/site_address.go"
+        ],
+        "invariant": "Custom certificate material and HTTP-port site addresses cannot introduce shell/env/path injection",
+        "method": "source",
+        "result": "Pass. PEMs parse-validated; written only to {stateDir}/{32-hex-jobID}.pem via O_EXCL 0600; passed via env with paths derived from regex-validated job ID not domain; sanitizeSiteCommandEnvironment strips those names from inherited env. Site address parsing permits IPv4:port with same LDH grammar; port as int via strconv in argv only.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Frecipe_jobs.go%23invocations::internal%2Fsites%2Frecipe_jobs.go%23findTrustedKejilionScript::internal%2Fsites::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/sites/recipe_jobs.go#invocations",
+      "boundary": "internal/sites/recipe_jobs.go#findTrustedKejilionScript",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "site recipe jobs (wordpress/template/proxy)",
+    "boundary": "internal/sites/recipe_jobs.go#argv construction + trusted script",
+    "subsystem": "internal/sites",
+    "attack_class": "Script job injection",
+    "starting_paths": [
+      "internal/sites/recipe_jobs.go",
+      "internal/sites/http_site.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec1",
+    "reviewed_paths": [
+      "deploy/systemd/kejilion-agent.service",
+      "internal/sites/certificate_replace.go",
+      "internal/sites/recipe_jobs.go",
+      "internal/sites/recipe_trust_linux.go",
+      "internal/sites/script_delete.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/sites/recipe_jobs.go",
+          "internal/sites/script_delete.go",
+          "internal/sites/certificate_replace.go"
+        ],
+        "invariant": "Recipe/web/wordpress/proxy/template/redirect/delete job commands argv-only; every argv element and env value from validated fields; persisted job state re-validated before root /bin/bash execution",
+        "method": "source",
+        "result": "Pass. Invocation builders build []string argv and fixed-name env vars from normalizeScriptDomain-validated domains (no =, NUL, whitespace — no env smuggling), validated proxy host/port, https-only FQDN redirect target, map-fixed selectors. Execution exec.CommandContext(/bin/bash, script, args...) — no shell string. Persisted replay path re-derives entire invocation through same normalizers — tampered state cannot inject. deleteWithScript requires domain==existing site's primaryDomain; secrets travel via 0600 files referenced by env, never argv.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/sites/recipe_jobs.go",
+          "internal/sites/recipe_trust_linux.go",
+          "deploy/systemd/kejilion-agent.service"
+        ],
+        "invariant": "Trusted kejilion.sh resolution applies identical trust checks to every candidate including PATH lookup",
+        "method": "source",
+        "result": "Pass with hardening notes. PATH result enters the SAME loop: EvalSymlinks, Stat regular/size/perm, Uid==0, content license+tokens. Agent systemd unit sets no PATH (compiled-in default root-owned dirs). Planted file must be root-owned and non-writable. Residual TOCTOU between Stat and ReadFile + unpinned PATH candidate set recorded as hardening — neither reachable without near-root directory write access.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fterminal%2Fmanager.go%23session%20limits::internal%2Fpanel%2Fterminal.go%23reserveTerminalOpen::internal%2Fterminal::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/terminal/manager.go#session limits",
+      "boundary": "internal/panel/terminal.go#reserveTerminalOpen",
+      "subsystem": "internal/terminal",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "terminal session lifecycle",
+    "boundary": "internal/terminal/manager.go#16 sessions / 4 per owner / TTLs",
+    "subsystem": "internal/terminal",
+    "attack_class": "Terminal resource exhaustion",
+    "starting_paths": [
+      "internal/terminal/manager.go",
+      "internal/panel/terminal.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-auth2",
+    "reviewed_paths": [
+      "internal/terminal/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Session counts, buffers, output and input sizes stay bounded",
+        "method": "source",
+        "result": "Settled: admission under m.mu across spawn; Output ≤64KiB with offset validation; Input ≤16KiB; ring buffer 1MiB trimming → 16 sessions cap ~16MiB total; fixed 32KiB read buffer.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Orphaned sessions without polling reaped",
+        "method": "source",
+        "result": "Settled: 1-minute reap loop; idle ≥30min or age ≥8h closed; finished deleted 5min after close; notify-channel backpressure with ≤1500ms waits; no unbounded queue.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-auth2",
+        "reviewed_paths": [
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "RuntimeMaxSec 8h bounds transient shell lifetime",
+        "method": "source",
+        "result": "Settled: 8h cap + PartOf/After parent; unsetting requires interactive root command in the shell itself — owner exercising own root authority, not panel-boundary bypass.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fwebenv%2Fservice.go%23storedArgumentsAllowed::internal%2Fwebenv%2Fservice.go%23RunJob::internal%2Fwebenv::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/webenv/service.go#storedArgumentsAllowed",
+      "boundary": "internal/webenv/service.go#RunJob",
+      "subsystem": "internal/webenv",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "web-environment jobs (LDNMP)",
+    "boundary": "internal/webenv/service.go#enum argv allowlist + trusted script",
+    "subsystem": "internal/webenv",
+    "attack_class": "Webenv job argument injection",
+    "starting_paths": [
+      "internal/webenv/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-exec1",
+    "reviewed_paths": [
+      "internal/webenv/service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-exec1",
+        "reviewed_paths": [
+          "internal/webenv/service.go"
+        ],
+        "invariant": "LDNMP job arguments closed enum at both Start and RunJob; job-derived paths constrained by job-id charset; Cloudflare secrets only via 0600 file in env, never argv",
+        "method": "source",
+        "result": "Pass. validateAction builds fixed-shape args from literal sets; Start persists via jobIDPattern ^[a-f0-9]{32}$ hex-only (no path escape); RunJob requires euid 0, re-validates id and stateDir, re-reads arguments.json and re-runs storedArgumentsAllowed — both ends validated, mismatch fails closed. Secrets only for the two cloudflare ops, length-capped, NUL/CR/LF-rejected, 0600 file, KJ_LDNMP_SECRET_FILE env; argv exactly [web env <validated args>]. trustedScript fixed absolute candidates with full trust checks.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Fai%2FAiMarkdown.vue%23v-html%20rendered::web%2Fsrc%2Fcomponents%2Fai%2FAiMarkdown.vue%23DOMPurify%20sanitize::web%2Fsrc::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "web/src/components/ai/AiMarkdown.vue#v-html rendered",
+      "boundary": "web/src/components/ai/AiMarkdown.vue#DOMPurify sanitize",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "AI markdown rendering into DOM",
+    "boundary": "web/src/components/ai/AiMarkdown.vue#DOMPurify + markdownIt(html:false)",
+    "subsystem": "web/src",
+    "attack_class": "DOM XSS via AI output",
+    "starting_paths": [
+      "web/src/components/ai/AiMarkdown.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#DOM-based XSS"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-web",
+    "reviewed_paths": [
+      "web/src/components/ai/AiMarkdown.vue",
+      "web/src/views/AiView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/components/ai/AiMarkdown.vue",
+          "web/src/views/AiView.vue"
+        ],
+        "invariant": "AI provider output, streamed deltas, and tool-result-derived content rendered into DOM must never become executable HTML",
+        "method": "source",
+        "result": "Held by two independent layers. markdown-it 15.0.0 with html:false emits raw HTML as escaped text; linkify produces only http/https/ftp autolinks; validateLink blocks javascript:/vbscript:/file:/data: (except data:image safe set). Fence override delegates to original fence renderer (escaped); copyCode writes textContent to clipboard only. DOMPurify 3.4.14 (package-lock) sanitize with html profile strips svg/mathml namespaces, script, on* handlers; FORBID_TAGS style/iframe/form; 3.4.14 postdates all published sanitizer escapes through the 3.2.4 mstyle fix. Tool-call arguments render as escaped pre interpolations. Test asserts img-onerror and script neutralized.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Fdesktop%2FDesktopView.vue%23localStorage%20reads::web%2Fsrc%2Fcomponents%2Fdesktop%2FDesktopView.vue%23readSiteNames::web%2Fsrc::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "web/src/components/desktop/DesktopView.vue#localStorage reads",
+      "boundary": "web/src/components/desktop/DesktopView.vue#readSiteNames",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "browser localStorage usage",
+    "boundary": "web/src/components/desktop/DesktopView.vue#bounded JSON parse",
+    "subsystem": "web/src",
+    "attack_class": "Storage parsing and stale state",
+    "starting_paths": [
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/i18n/index.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Browser-storage disclosure and stale authorization"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-web",
+    "reviewed_paths": [
+      "internal/desktopworkspace/workspace.go",
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/i18n/index.ts",
+      "web/src/lib/desktopExternalDrop.ts",
+      "web/src/stores/theme.ts",
+      "web/src/theme/colors.ts",
+      "web/src/views/ClusterView.vue",
+      "web/src/views/DockerView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/components/desktop/DesktopView.vue",
+          "web/src/lib/desktopExternalDrop.ts",
+          "internal/desktopworkspace/workspace.go"
+        ],
+        "invariant": "localStorage values structurally bounded; never reach HTML, URL-scheme, or server-side path-traversal context",
+        "method": "source",
+        "result": "Held. readSiteNames caps 16000 chars, object-only, ids≤128, names sliced to 48, flows only into Vue-escaped interpolation and server-side labels re-validated by workspace.go (validSiteKey). Wallpaper key is allowlist of 5 fixed ids. Upload location via normalizedHostDirectory (absolute, ≤4096, no dot-dot segments else fixed default); flows into upload query params — traversal rejected before use; worst tampered value selects different legitimate directory on same host (self-inflicted).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/i18n/index.ts",
+          "web/src/stores/theme.ts",
+          "web/src/theme/colors.ts",
+          "web/src/views/DockerView.vue",
+          "web/src/views/ClusterView.vue"
+        ],
+        "invariant": "Locale, theme-color, view-state strings from localStorage resolve through fixed allowlists; never into dynamic imports or style injection",
+        "method": "source",
+        "result": "Held. Locale only literal set zh-CN/zh-TW/en-US; non-zh maps to statically imported en-US messages — no dynamic import specifier from storage. Theme colors length-capped, allowlisted keys, exact version, normalizeHexColor #rgb/#rrggbb only. Remaining localStorage uses are enum/ID comparisons for display only.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Foverview%2FOperatingSystemIcon.vue%23v-html%20mark.svg::web%2Fsrc%2Fcomponents%2Foverview%2FOperatingSystemIcon.vue%23icons%20record::web%2Fsrc::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "web/src/components/overview/OperatingSystemIcon.vue#v-html mark.svg",
+      "boundary": "web/src/components/overview/OperatingSystemIcon.vue#icons record",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "OS icon SVG rendering",
+    "boundary": "web/src/components/overview/OperatingSystemIcon.vue#hasOwnProperty lookup",
+    "subsystem": "web/src",
+    "attack_class": "SVG injection",
+    "starting_paths": [
+      "web/src/components/overview/OperatingSystemIcon.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#DOM-based XSS"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-web",
+    "reviewed_paths": [
+      "web/src/components/overview/OperatingSystemIcon.vue",
+      "web/src/lib/operatingSystem.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/components/overview/OperatingSystemIcon.vue",
+          "web/src/lib/operatingSystem.ts"
+        ],
+        "invariant": "v-html sink receives only build-time constant SVG bytes; :src only build-time constant image",
+        "method": "source",
+        "result": "Held. icons record contains only hardcoded keys mapping to cleanBrandSvg()-processed build-time simple-icons 16.27.1 SVG imports plus one hardcoded PNG import; hasOwnProperty.call on props.distro with linuxMark fallback means __proto__/constructor/unicode distro strings fall back to fixed mark; distro originates from detectOperatingSystemIdentity returning only fixed record keys. Sink unreachable for attacker content.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fviews%2FClusterView.vue%23panelURL%20host%20origin::web%2Fsrc%2Flib%2FclusterHostNavigation.ts%23clusterHostPanelURL::web%2Fsrc::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "web/src/views/ClusterView.vue#panelURL host origin",
+      "boundary": "web/src/lib/clusterHostNavigation.ts#clusterHostPanelURL",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "cluster host panel links and navigation",
+    "boundary": "web/src/lib/clusterHostNavigation.ts#origin + entrance path pattern",
+    "subsystem": "web/src",
+    "attack_class": "Navigation confusion via host origin",
+    "starting_paths": [
+      "web/src/lib/clusterHostNavigation.ts",
+      "web/src/views/ClusterView.vue",
+      "web/src/views/FilesView.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Client-side navigation confusion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-web",
+    "reviewed_paths": [
+      "internal/cluster/client.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/store.go",
+      "internal/cluster/store_v2.go",
+      "internal/desktopworkspace/workspace.go",
+      "internal/panel/cluster_share.go",
+      "web/src/components/apps/AppInteractiveTerminal.vue",
+      "web/src/components/terminal/HostTerminal.vue",
+      "web/src/lib/clusterHostNavigation.ts",
+      "web/src/lib/terminalLinks.ts",
+      "web/src/views/AppsView.vue",
+      "web/src/views/ClusterView.vue",
+      "web/src/views/DiagnosticsView.vue",
+      "web/src/views/FilesView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/lib/clusterHostNavigation.ts",
+          "internal/cluster/client.go",
+          "internal/cluster/client_v2.go",
+          "internal/cluster/store.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "invariant": "Cluster host navigation URLs are http(s) origins validated at enrollment and re-validated on every persisted-state load; entrance path constrained to safe segment",
+        "method": "source",
+        "result": "Held. host.origin validated at pair time (NormalizeOrigin https-only; NormalizeV2Origin https or http+IP-literal) and re-validated on every persisted-state load (validatePersistedState, validateHostRecordV2) — hosts restored from backup or crafted DB cannot carry non-http(s) origin into href/window.open. securityEntrancePath validated client (^[a-z0-9] pattern) and server (validSecurityEntrancePath) on every federation summary sync. clusterHostPanelURL returns bare validated origin when any check fails.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-web",
+        "reviewed_paths": [
+          "web/src/views/ClusterView.vue",
+          "web/src/views/FilesView.vue",
+          "web/src/lib/terminalLinks.ts",
+          "web/src/components/terminal/HostTerminal.vue",
+          "web/src/components/apps/AppInteractiveTerminal.vue",
+          "web/src/views/DiagnosticsView.vue",
+          "web/src/views/AppsView.vue",
+          "internal/panel/cluster_share.go",
+          "internal/desktopworkspace/workspace.go"
+        ],
+        "invariant": "All externally-directed navigation uses validated http(s) targets with noopener isolation; no javascript:/data: target possible",
+        "method": "source",
+        "result": "Held across every caller. href anchor only for https origins; e2e_http hosts go through confirm dialog + window.open noopener,noreferrer. shareURL is server-generated prefix+64-hex. FilesView re-parses URL, rejects non-http(s), strips search/hash. DesktopView entry.url from server-validated workspace URLs. terminalLinks.openTerminalURL allowlists http/https then noopener,noreferrer — xterm WebLinksAddon routes every link through it so URLs printed by compromised host terminal output cannot become javascript: navigation. Every target=_blank carries noopener noreferrer. No scheme composed from host-controlled data.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]

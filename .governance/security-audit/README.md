@@ -1,0 +1,13 @@
+# 信任边界安全审计状态
+
+本目录是 `PROJECT_RULES.md` 5.4 定义的审计账本与 findings 入库位置，执行入口为
+`.codex-workflows/security-boundary-audit.workflow.yaml`。
+
+- `run-<N>/`：每次审计的 coverage-ledger.json、findings.json 与三份报告；
+  run 递增编号并以上一 run 为增量输入。
+- 每个 run 的 metadata 必须记录：精确基线、上游 skill 来源的固定 commit、profile、
+  实际成本（代理数/token/时长）与验证器结果。
+- 首个增量基线（run-1，2026-09-18，基线 6340e078，45 单元 / 1 confirmed /
+  12 加固项）迁入本目录后方可执行 run-2；迁移时保持文件原名不改。
+
+单次运行不构成安全结论；覆盖声明只在账本维度上成立（见 PROJECT_RULES.md 5.4）。

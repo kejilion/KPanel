@@ -1,0 +1,124 @@
+name: security-boundary-audit
+description: "基于 Cloudflare security-audit-skill 方法的信任边界安全审计：侦察、覆盖账本、狩猎波、独立验证与结构化报告"
+version: "1.0"
+author: "Claude"
+tags: [security, audit, trust-boundary, governance]
+params: [project_dir, baseline_ref, ledger_dir, profile, scope_paths]
+created: "2026-09-18T00:00:00+08:00"
+updated: "2026-09-18T00:00:00+08:00"
+---
+
+# KPanel Security Boundary Audit
+
+## Purpose
+
+对 KPanel 执行跨信任边界的逻辑不变量安全审计，补充 `make security-audit`
+（govulncheck/npm audit）和 Trivy 只覆盖已知依赖漏洞的盲区：验证入口校验、
+授权绑定、写路径隔离和跨组件契约不变量。审计只读源码并产出结构化账本与
+findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复核。
+
+三档模式按 `PROJECT_RULES.md` 5.4 选择：
+
+- **guidance**：回答安全问题或复查单个改动，不写任何文件，不编排子代理；
+- **scoped**：只审 `${{scope_paths}}` 指定包对应的既有账本单元；
+- **full**：全量重建账本（通常仅在稳定版列车发车前）。
+
+## Prerequisites
+
+- 已阅读 `PROJECT_RULES.md` 5.4 节、本 workflow 全文和 skill 的 `SKILL.md`。
+- Skill 来源（上游 repo `cloudflare/security-audit-skill`）必须先 pin 到固定
+  commit 并记录在 `${{ledger_dir}}` 的 run metadata 中；上游更新时先对新 commit
+  完成一轮 scoped 对照，再用于 full。
+- `${{project_dir}}` 是专用 worktree；审计为只读任务，但账本产物写入
+  `${{ledger_dir}}`（默认 `.governance/security-audit/`）。
+- 审计智能体必须支持工具调用与并行子代理；验证器（`validate-findings.cjs`、
+  `validate-coverage-ledger.cjs`）需要 Node.js 且 `O_NOFOLLOW` 支持意味着
+  Windows 原生 Node 不可用，须在 WSL 或 Linux 下运行。
+- 无 OS 沙箱（隔离网络、资源限额、scratch-only 写）时禁止执行目标代码；
+  需要动态确认的线索一律记为 `needs_validation` 并写明缺失能力，不得降级为
+  "已确认"。
+
+## Steps
+
+### 1. 固定范围、基线与既有账本
+
+```bash
+cd "${{project_dir}}"
+git rev-parse HEAD
+git status --short
+node <skill-dir>/validate-coverage-ledger.cjs "${{ledger_dir}}/coverage-ledger.json"
+```
+
+`${{profile}}` 为 `full` 时读取全部既有 run 目录做增量输入；`scoped` 只读取
+最近一次 run 的账本并筛选 `${{scope_paths}}` 相关单元。无账本（首次 full）时
+记录"no prior ledger"且不宣称既往覆盖。
+
+### 2. 侦察与账本播种
+
+按 skill 的 RECONNAISSANCE.md 派出多个只读侦察代理（产品栈、身份授权、
+入口面与 sink、执行能力），合成 `architecture.md`；以
+表面 × 信任边界 × 子系统 × 攻击类 派生确定性覆盖单元并写入
+`coverage-ledger.json`，排序后运行验证器。重复 ID 或编码违规必须修复后
+才能进入狩猎。
+
+### 3. 覆盖狩猎波
+
+按 HUNTING.md 为每个单元指派隔离 hunter 子代理；hunter 返回的结构化结果
+按单元回写账本（单写者：父进程唯一持有账本写入权）。每波后由独立 coverage
+critic 复核缺口；critic 提出的新单元进入下一波。`scoped` 模式只指派
+范围内单元；full 模式持续到 critic 报告无缺口。
+
+信任边界五包（`internal/auth`、`internal/cluster`、`internal/hostbackup`、
+`internal/filemanager`、`internal/agent` 及面板侧对应入口）是 scoped 的
+默认范围。
+
+### 4. 候选独立验证
+
+每个 hunter 产出的 candidate 交给未参与狩猎的独立验证代理尝试反驳；
+confirmed 必须有完整源码追溯，needs_validation 必须有精确 blocker。
+验证者不可是发现者。findings.json 按 skill 的 report-schema 写入并通过
+`validate-findings.cjs`。
+
+### 5. 记录核验与报告
+
+对每条 surviving 记录执行独立 Phase-5 记录核验（引用文件:行逐一打开核对）。
+最后派生 `REPORT.md`、`FINDINGS-DETAIL.md`、`NEEDS-VALIDATION.md`，与两个
+验证器最终结果一并入库。报告必须区分 confirmed / needs_validation / 加固
+建议，且明确"机器结论是高可信线索，不是人工安全复核结论"。
+
+### 6. 交付与试行观察
+
+按标准交付包回传：基线、账本变更、findings、成本（代理数/token/时长）和
+建议。full 结果同时记入试行观察（见 PROJECT_RULES.md 5.4 的试用退出条款）。
+所有 confirmed finding 转入正常开发流程修复，不在审计任务内修复。
+
+## Parameters
+
+- `${{project_dir}}`：审计目标 worktree。
+- `${{baseline_ref}}`：审计基线（full 默认 `origin/main`，scoped 为任务分支 HEAD）。
+- `${{ledger_dir}}`：账本目录，默认 `.governance/security-audit/run-<N>`，
+  上一 run 的目录用于增量输入。
+- `${{profile}}`：`guidance` / `scoped` / `full` 之一。
+- `${{scope_paths}}`：scoped 模式的包路径列表。
+
+## Verification
+
+```bash
+wsl -e sh -c "node <skill-dir>/validate-findings.cjs \
+  \"${{ledger_dir}}/findings.json\" && \
+  node <skill-dir>/validate-coverage-ledger.cjs \
+  \"${{ledger_dir}}/coverage-ledger.json\""
+```
+
+两个验证器 PASS 是结构有效性的机器下限；覆盖声明的质量以账本单元与
+reviewed_paths 为准，不以代理数量或运行时长为准。
+
+## Notes
+
+- 单次 full 大约只能发现重复运行总发现的一半；never 以"跑过一次未发现"
+  宣称安全，覆盖结论只在账本维度上声明。
+- 18+ 代理并行读仓时注意与其他并行任务的 worktree/资源冲突；审计本身
+  只读源码，不触碰测试环境与部署。
+- Linux CI 不运行本 workflow；它是例行安全复核手段，不是提交门禁。
+- run-1 基线（45 单元、1 confirmed、12 加固项，输出于
+  2026-09-18）应作为首个增量输入迁入 `${{ledger_dir}}`。
