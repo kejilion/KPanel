@@ -198,6 +198,24 @@ async function sendTerminalText(sessionID: string, value: string, signal: AbortS
   if (signal.aborted) throw new Error('batch terminal execution aborted')
 }
 
+function retryDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error('batch terminal execution aborted'))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    function onAbort(): void {
+      clearTimeout(timer)
+      reject(new Error('batch terminal execution aborted'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 function friendlyExecutionError(reason: unknown): string {
   if (reason instanceof ApiError) {
     if (reason.code === 'terminal_limit') return phrase('终端会话已满，请关闭其他终端后重试。')
@@ -250,9 +268,12 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
       } catch (reason) {
         if (identity !== runIdentity || signal.aborted) return
         if (reason instanceof ApiError && reason.code === 'terminal_not_found') throw reason
+        // Hard 4xx (auth, CSRF, bad request) never recover by retrying; only
+        // 429 and transport-level failures (status 0) may still come good.
+        if (reason instanceof ApiError && reason.status >= 400 && reason.status < 500 && reason.status !== 429) throw reason
         pollFailures += 1
         if (pollFailures > OUTPUT_RETRY_LIMIT) throw reason
-        await new Promise((resolve) => setTimeout(resolve, OUTPUT_RETRY_BASE_DELAY_MS * 2 ** (pollFailures - 1)))
+        await retryDelay(OUTPUT_RETRY_BASE_DELAY_MS * 2 ** (pollFailures - 1), signal)
         continue
       }
       const receivedNew = chunk.nextOffset > offset
