@@ -15,9 +15,9 @@ import { npmInvocation } from './report-dependency-freshness.mjs';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PACKAGE = '@alibaba-group/open-code-review';
 const ALLOWED = new Map([
-  ['preview', ['delegate', 'preview']],
-  ['rule', ['delegate', 'rule']],
-  ['rules-check', ['rules', 'check']],
+  ['preview', { mapped: ['delegate', 'preview'], flags: ['--from', '--to', '-c', '--commit', '-f', '--format'], paths: false }],
+  ['rule', { mapped: ['delegate', 'rule'], flags: ['-f', '--format'], paths: true }],
+  ['rules-check', { mapped: ['rules', 'check'], flags: [], paths: true }],
 ]);
 
 export function pinnedComponent(policy) {
@@ -31,15 +31,32 @@ export function pinnedComponent(policy) {
 
 export function ocrArguments(argv) {
   const [command, ...rest] = argv;
-  const mapped = ALLOWED.get(command);
-  if (!mapped) {
+  const spec = ALLOWED.get(command);
+  if (!spec) {
     throw new Error('unsupported command "' + (command ?? '') + '"; allowed: ' + [...ALLOWED.keys()].join(', ')
       + ' (review/scan/config are forbidden: they reach an OCR-managed LLM endpoint)');
   }
-  if (rest.some((value) => value === '--rule' || value.startsWith('--rule=') || value === '--repo' || value.startsWith('--repo='))) {
-    throw new Error('--rule/--repo are forbidden; the tracked .opencodereview/rule.json of the current worktree is the only selection policy');
+  // Whitelist flags: --rule/--repo/--exclude would replace the tracked .opencodereview/rule.json selection policy.
+  for (let index = 0; index < rest.length; index += 1) {
+    const value = rest[index];
+    if (!value.startsWith('-')) {
+      if (!spec.paths) throw new Error('unexpected argument "' + value + '" for ' + command);
+      continue;
+    }
+    const flag = value.split('=')[0];
+    if (!spec.flags.includes(flag)) {
+      throw new Error(flag + ' is forbidden for ' + command + '; allowed: ' + (spec.flags.join(', ') || 'none')
+        + ' (the tracked .opencodereview/rule.json is the only selection policy)');
+    }
+    if (!value.includes('=')) index += 1;
   }
-  return [...mapped, ...rest];
+  return [...spec.mapped, ...rest];
+}
+
+// Isolate OCR from user-level ~/.opencodereview (global rules override rule text per machine) and telemetry env.
+export function ocrEnvironment(environment, home) {
+  const env = Object.fromEntries(Object.entries(environment).filter(([key]) => !/^(OCR_|OTEL_)/i.test(key)));
+  return { ...env, OCR_NO_UPDATE: '1', HOME: home, USERPROFILE: home };
 }
 
 export function parseVersion(output) {
@@ -69,13 +86,15 @@ export function main(argv, environment = process.env) {
   const policy = JSON.parse(readFileSync(resolve(repoRoot, 'dependency-policy.json'), 'utf8'));
   const { pinnedVersion } = pinnedComponent(policy);
   const forwarded = ocrArguments(argv);
-  const env = { ...environment, OCR_NO_UPDATE: '1' };
   const directory = toolDirectory(pinnedVersion, environment);
+  const home = join(directory, 'isolated-home');
+  mkdirSync(home, { recursive: true });
+  const env = ocrEnvironment(environment, home);
   if (installedVersion(directory, env) !== pinnedVersion) {
     mkdirSync(directory, { recursive: true });
     const npm = npmInvocation(process.platform, environment);
     execFileSync(npm.command, [...npm.prefixArguments, 'install', '--prefix', directory, '--no-audit', '--no-fund',
-      PACKAGE + '@' + pinnedVersion], { env, stdio: ['ignore', 'ignore', 'inherit'] });
+      PACKAGE + '@' + pinnedVersion], { env: { ...environment, OCR_NO_UPDATE: '1' }, stdio: ['ignore', 'ignore', 'inherit'] });
     const actual = installedVersion(directory, env);
     if (actual !== pinnedVersion) throw new Error('installed OCR ' + actual + ' does not match pin ' + pinnedVersion);
   }

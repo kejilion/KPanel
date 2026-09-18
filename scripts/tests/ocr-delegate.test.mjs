@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { ocrArguments, parseVersion, pinnedComponent, toolDirectory } from '../ocr-delegate.mjs';
+import { ocrArguments, ocrEnvironment, parseVersion, pinnedComponent, toolDirectory } from '../ocr-delegate.mjs';
 
 test('only LLM-free delegation subcommands are forwarded', () => {
   assert.deepEqual(ocrArguments(['preview', '--from', 'abc^', '--to', 'def', '--format', 'json']),
@@ -19,6 +19,15 @@ test('selection policy cannot be swapped per run', () => {
   assert.throws(() => ocrArguments(['preview', '--rule', 'other.json']), /forbidden/);
   assert.throws(() => ocrArguments(['preview', '--rule=other.json']), /forbidden/);
   assert.throws(() => ocrArguments(['preview', '--repo', '../other']), /forbidden/);
+  assert.throws(() => ocrArguments(['preview', '--exclude', '**/*.test.ts']), /forbidden/);
+  assert.throws(() => ocrArguments(['preview', '--exclude=**/*.test.ts']), /forbidden/);
+  assert.throws(() => ocrArguments(['preview', 'stray.go']), /unexpected argument/);
+  assert.throws(() => ocrArguments(['rule', '-b', 'context', 'a.go']), /forbidden/);
+});
+
+test('OCR runs with an isolated home and without OCR/OTEL overrides', () => {
+  const env = ocrEnvironment({ PATH: 'p', OCR_ENABLE_TELEMETRY: '1', OTEL_EXPORTER_OTLP_ENDPOINT: 'x:4317', OCR_LLM_URL: 'u', HOME: '/root' }, '/iso');
+  assert.deepEqual(env, { PATH: 'p', HOME: '/iso', USERPROFILE: '/iso', OCR_NO_UPDATE: '1' });
 });
 
 test('pin comes from dependency-policy.json and installs outside the repository', () => {

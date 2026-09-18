@@ -74,12 +74,14 @@ Expected: Definition of Ready is satisfied; the task can act without guessing ow
 
 Use provider-specific waiting only as a local optimization. The agent must meet Definition of Done and return the
 standard delivery package. Any repository-writing task must form a non-empty focused local candidate commit and leave
-the worktree clean; only SSH push remains separately authorized. When the candidate contains locally reproducible
-user-visible behavior, invoke `local-feature-preview` with `preview_grade=acceptance` after that commit and bind the
-preview to the exact candidate. When the candidate diff touches code (`.go .ts .tsx .vue .js .mjs .cjs .sh`), the
-writer runs `ocr-line-review` with `profile=candidate` on `<exact-base>..HEAD` without waiting for a prompt, fixes
-verified findings, and records the `OCR-Review:` trailer (or `OCR-Review: skipped reason=<why>`) per
-`PROJECT_RULES.md` 5.5; `--require-candidate` prints `ocr_line_review=missing` as a non-blocking reminder. Then inspect:
+the worktree clean; only SSH push remains separately authorized. Right after that commit and before any preview or
+final verification is bound to it, an L2/L3 code candidate or an L1 candidate with at least 30 changed code lines
+(`.go .ts .tsx .vue .js .mjs .cjs .sh`) runs `ocr-line-review` with `profile=candidate` on `<exact-base>..HEAD`
+without waiting for a prompt, fixes verified findings, and records the `OCR-Review:` trailer (or
+`OCR-Review: skipped reason=<why>`) per `PROJECT_RULES.md` 5.5; `--require-candidate` prints
+`ocr_line_review=missing|stale` as a non-blocking reminder. When the candidate contains locally reproducible
+user-visible behavior, then invoke `local-feature-preview` with `preview_grade=acceptance` and bind the preview to
+the exact final candidate. Then inspect:
 
 ```powershell
 git status --short --branch

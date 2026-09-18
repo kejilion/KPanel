@@ -489,7 +489,8 @@ requireText('CLAUDE.md', ['.codex-workflows/ocr-line-review.workflow.yaml']);
 requireText('scripts/check-collaboration-state.mjs', ['ocr_line_review=']);
 requireText('PROJECT_RULES.md', [
   '### 5.5 行级评审辅助（open-code-review，试行）',
-  '**默认自动参与**',
+  '**按风险自动参与**',
+  'constrained-only` 只计约束臂在自由臂之外新增',
   '不充当 L2/L3 独立复核',
   '单跑约束臂不得宣称"已评审"',
 ]);

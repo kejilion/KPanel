@@ -227,20 +227,35 @@ test('writer completion requires a clean non-empty candidate commit above the ex
   }
 });
 
-test('code candidates get a non-blocking OCR line review reminder until a trailer is recorded', () => {
+test('code candidates get a proportional, non-blocking OCR line review reminder', () => {
   const state = fixture();
+  const check = () => run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
   try {
-    writeFileSync(join(state.writer, 'main.go'), 'package main\n');
+    writeFileSync(join(state.writer, 'small.go'), 'package main\n');
+    git(state.writer, 'add', 'small.go');
+    git(state.writer, 'commit', '-m', 'fix: one-line change');
+    let result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /ocr_line_review=/);
+
+    writeFileSync(join(state.writer, 'main.go'), 'package main\n' + '// line\n'.repeat(40));
     git(state.writer, 'add', 'main.go');
     git(state.writer, 'commit', '-m', 'feat: code candidate');
-    let result = run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
+    result = check();
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /ocr_line_review=missing code_paths=1 advisory: run \.codex-workflows\/ocr-line-review/);
+    assert.match(result.stdout, /ocr_line_review=missing code_paths=2 code_lines=42 advisory: run \.codex-workflows\/ocr-line-review/);
 
     git(state.writer, 'commit', '--allow-empty', '-m', 'test: record review\n\nOCR-Review: skipped reason=test');
-    result = run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
+    result = check();
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /ocr_line_review=recorded code_paths=1\n/);
+    assert.match(result.stdout, /ocr_line_review=recorded code_paths=2 code_lines=42\n/);
+
+    writeFileSync(join(state.writer, 'later.go'), 'package main\n');
+    git(state.writer, 'add', 'later.go');
+    git(state.writer, 'commit', '-m', 'feat: code after review');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ocr_line_review=stale code_paths=3 .* advisory:/);
   } finally {
     state.cleanup();
   }

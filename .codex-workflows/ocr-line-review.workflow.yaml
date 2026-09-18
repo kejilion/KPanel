@@ -21,8 +21,8 @@ L0-L3 门禁、L2/L3 独立复核和验收记录。不是提交门禁，不进�
 
 三档 `${{profile}}`：
 
-- **candidate**：候选差异含代码时，写任务在候选提交之后、交付之前自动执行（`session-collaboration` 第 4 步），
-  范围为 `<精确基线>..HEAD`；
+- **candidate**：L2/L3 代码候选或代码改动 ≥30 行的 L1 候选，写任务在候选提交之后、acceptance 预览与
+  最终核验之前自动执行（`session-collaboration` 第 4 步），范围为 `<精确基线>..HEAD`；
 - **review**：`quality-audit-kpanel` 第 2 步与 L2/L3 独立复核者把它当作覆盖清单，与自己的自由评审并行；
 - **canary**：OCR 升级候选的回放验收，见 Step 6。
 
@@ -31,9 +31,11 @@ L0-L3 门禁、L2/L3 独立复核和验收记录。不是提交门禁，不进�
 - 已阅读 `PROJECT_RULES.md` 5.5 与本工作流；`${{project_dir}}` 是任务专用 worktree。
 - 唯一执行入口是 `node scripts/ocr-delegate.mjs`：它按 `dependency-policy.json` 的
   `code-review-assistant` pin 把 OCR 安装到仓库外（默认 `~/.cache/kpanel-tools/ocr-<版本>`，
-  可用 `KPANEL_OCR_TOOL_DIR` 覆盖），设置 `OCR_NO_UPDATE=1`，只转发 `preview`、`rule`、
-  `rules-check`。禁止直接调用 `ocr review`/`ocr scan`/`ocr config`：它们会把源码发往 OCR 配置的
-  LLM 端点；也禁止 `--rule`/`--repo` 替换仓库圈选策略。Windows 原生 Node 可用，无需 WSL。
+  可用 `KPANEL_OCR_TOOL_DIR` 覆盖），设置 `OCR_NO_UPDATE=1`，以工具目录内隔离的 HOME 运行并剔除
+  `OCR_*`/`OTEL_*` 环境（用户级 `~/.opencodereview` 规则与遥测不参与），只转发 `preview`、`rule`、
+  `rules-check` 及白名单参数（`--from --to -c --commit -f --format` 与路径）。禁止直接调用
+  `ocr review`/`ocr scan`/`ocr config`：它们会把源码发往 OCR 配置的 LLM 端点；`--rule`/`--repo`/`--exclude`
+  等会替换仓库圈选策略的参数一律拒绝。Windows 原生 Node 可用，无需 WSL。
 - 圈选策略唯一真源是受跟踪的 `.opencodereview/rule.json`（把测试文件纳入评审、排除账本/夹具/
   锁文件）；修改它属于规范变更，按 `PROJECT_RULES.md` 5.3 验收。
 - 证据写入 `${{evidence_dir}}`（仓库外），不入库。
@@ -81,16 +83,19 @@ end_line、category、severity、content）并加 `lane: constrained|free-form`�
 开发流程：`candidate` 档在同一写任务修复；`review` 档交还候选负责人，复核者不修复。
 
 candidate/review 档在候选提交（或复核结论所在提交）的消息末尾加入一条 trailer：有修复时写在修复提交上；
-无修复时对尚未推送的本地候选用 `git commit --amend --trailer "OCR-Review: ..."` 追加，已推送的提交不改写。
+无修复时，只在尚未推送、且尚未绑定任何预览或核验证据的本地候选上用
+`git commit --amend --trailer "OCR-Review: ..."` 追加；否则另建一个只含 trailer 的 `--allow-empty` 提交，
+不改写已绑定证据或已推送的 SHA。
 
 ```text
-OCR-Review: <版本> range=<base7>..<head7> files=<reviewed>/<total> valid=H<n>/M<n>/L<n> constrained-only=<n>
+OCR-Review: <版本> range=<base7>..<head7> files=<reviewed>/<total> free-form=<n> valid=H<n>/M<n>/L<n> constrained-only=<n>
 OCR-Review: skipped reason=<具体理由>
 ```
 
 入口不可用（如无网络首次安装失败）时记录 skipped 与原因，不阻塞交付，也不改用 `ocr review` 绕行。
 
-`constrained-only` 为只有约束臂发现且经核验成立的条数，是 5.5 试用退出的主指标。
+`free-form` 为自由臂经核验成立的发现数；`constrained-only` 为约束臂在自由臂之外新增、经核验成立且
+严重度 ≥ MEDIUM 的条数，是 5.5 试用退出的主指标。无法按盲跑顺序测量时写 `unreported`，它不计为有效使用。
 
 ### 6. canary：升级回放
 

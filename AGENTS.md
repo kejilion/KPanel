@@ -68,9 +68,9 @@ git worktree list
   （L2/Release 通过 `--env VERIFY_LEVEL=<level> --` 传入）；不得直接调用可能指向 WSL 的裸 `bash`。
 - 证据只对精确提交、环境、工具和参数有效。组合未变化时可复用已有 CI，不机械重复全量测试；变化时
   从受影响层重跑。
-- 候选含代码改动时，交付前无需提示即按 `PROJECT_RULES.md` 5.5 执行
-  `.codex-workflows/ocr-line-review.workflow.yaml`（`node scripts/ocr-delegate.mjs` 入口，任何智能体框架通用），
-  约束臂与自由臂都做，并在提交消息写 `OCR-Review:` trailer；不适用时写明 skipped 理由。
+- L2/L3 代码候选或代码改动 ≥30 行的 L1 候选，在候选提交后、预览与最终核验前无需提示即按
+  `PROJECT_RULES.md` 5.5 执行 `.codex-workflows/ocr-line-review.workflow.yaml`（`node scripts/ocr-delegate.mjs`
+  入口，任何智能体框架通用），先自由臂后约束臂，并在提交消息写 `OCR-Review:` trailer；不适用时写明 skipped 理由。
 - 本地或远程长时间浏览器验收使用 `background-browser-validation` 工作流后台运行；先通过
   `environment-policy.json` 目标检查，再以持久化终态和证据交付，不占用前台会话等待。
 - 工作树、分支、`HEAD` 或文件所有权出现非预期变化时立即停止，按项目管理规范保留现场并迁移，
