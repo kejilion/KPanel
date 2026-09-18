@@ -508,7 +508,6 @@ func waitForDockerJob(t *testing.T, client *Client, id string) MaintenanceJob {
 
 func TestComposeJobRecordOnDiskStripsCredentialsEarly(t *testing.T) {
 	stateDir := t.TempDir()
-	var composeCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/containers/json":
@@ -520,7 +519,6 @@ func TestComposeJobRecordOnDiskStripsCredentialsEarly(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	_ = composeCalls
 	client := testHTTPClient(server)
 	if err := client.ConfigureJobs(stateDir); err != nil {
 		t.Fatal(err)
