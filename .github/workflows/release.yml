@@ -432,57 +432,11 @@ jobs:
               --notes-file release/RELEASE_NOTES.md
           fi
 
-      - name: Remove published candidate branch
+      - name: Archive published candidate branch
         if: steps.release.outputs.stable == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TRAIN: ${{ steps.release.outputs.release_train }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          candidate="release/v${RELEASE_TRAIN}-candidate"
-          get_ref="repos/${GITHUB_REPOSITORY}/git/ref/heads/${candidate}"
-          delete_ref="repos/${GITHUB_REPOSITORY}/git/refs/heads/${candidate}"
-          if ! candidate_sha="$(gh api "$get_ref" --jq '.object.sha' 2>/dev/null)"; then
-            echo "Candidate branch is already absent: $candidate"
-            exit 0
-          fi
-          release_sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          relation="$(
-            gh api \
-              "repos/${GITHUB_REPOSITORY}/compare/${candidate_sha}...${release_sha}" \
-              --jq '.status'
-          )"
-          case "$relation" in
-            identical|ahead) ;;
-            *)
-              echo "Refusing to delete $candidate: it is not contained in $release_sha" >&2
-              exit 1
-              ;;
-          esac
-          gh api --method DELETE "$delete_ref"
-          remote_url="https://github.com/${GITHUB_REPOSITORY}.git"
-          for attempt in {1..6}; do
-            set +e
-            git ls-remote --exit-code "$remote_url" "refs/heads/${candidate}" >/dev/null 2>&1
-            remote_status=$?
-            set -e
-            case "$remote_status" in
-              2)
-                echo "Removed published candidate branch: $candidate"
-                exit 0
-                ;;
-              0)
-                if (( attempt < 6 )); then
-                  sleep $((attempt * 2))
-                  continue
-                fi
-                echo "Candidate branch still exists after deletion: $candidate" >&2
-                exit 1
-                ;;
-              *)
-                echo "Failed to verify candidate branch deletion: $candidate" >&2
-                exit "$remote_status"
-                ;;
-            esac
-          done
+          node scripts/archive-release-candidate.mjs \
+            --tag "$GITHUB_REF_NAME" --release-sha "$GITHUB_SHA" --apply

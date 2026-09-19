@@ -64,3 +64,6 @@
   协调中心等待完成交付后再复盘。管理目录落后时读取任务精确基线中的规范，不沿用旧检出或未集成草稿。
 - Claude 实现的候选默认交给其他提供商独立复核；Claude 承担复核时同样写 `Independent-Review:` trailer，
   规则见 `docs/multi-agent-collaboration.md`。
+
+- 发布后的分支归档与下一轮候选筛选统一按 `docs/project-management.md` 10.2 执行；`archive/` 不进入
+  活跃候选队列，含未知或未提交内容的本地工作树单独保留待处置，不凭分支名称推断上线状态。

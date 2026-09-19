@@ -95,7 +95,7 @@ for path in "${changed_files[@]}"; do
     docs/development-quality-standard.md|docs/release-channels.md|docs/release-acceptance-template.md|\
     docs/quality-improvement-proposal-template.md|docs/product-quality-review-*.md|\
     scripts/check-governance-consistency.mjs|scripts/check-governance-candidate-ci.mjs|scripts/check-environment-policy.mjs|\
-    scripts/check-collaboration-state.mjs|\
+    scripts/check-collaboration-state.mjs|scripts/archive-release-candidate.mjs|scripts/tests/archive-release-candidate.test.mjs|\
     scripts/check-release-acceptance-coverage.mjs|\
     scripts/run-repo-bash.mjs|\
     scripts/run-release-gate.sh|scripts/run-release-l3.mjs|scripts/run-release-l3-remote.sh|\
