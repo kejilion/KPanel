@@ -147,14 +147,14 @@ onBeforeUnmount(() => { disposed = true; clearCredential() })
 .mcp-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .mcp-form > label, .mcp-credential label { display: grid; gap: 6px; }
 .mcp-form fieldset, .mcp-form > p { grid-column: 1 / -1; }
-.mcp-form fieldset { border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-width: 0; }
+.mcp-form fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-width: 0; }
 .mcp-form legend { padding: 0 6px; }
 .mcp-hosts { display: grid; gap: 12px; max-height: 240px; overflow: auto; }
 .mcp-hosts label { display: flex; gap: 10px; align-items: flex-start; overflow-wrap: anywhere; }
 .mcp-hosts input { width: 18px; height: 18px; flex: none; margin-top: 3px; }
 .mcp-hosts small { display: block; }
 .mcp-form > button { justify-self: start; }
-.mcp-credential { padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-subtle); }
+.mcp-credential { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
 .mcp-access h3 { font-size: 16px; margin: 0 0 8px; }
 .mcp-credential textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; font-family: var(--font-mono, monospace); font-size: 13px; overflow-wrap: anywhere; }
 .mcp-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
