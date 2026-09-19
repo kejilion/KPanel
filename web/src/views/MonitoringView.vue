@@ -957,73 +957,6 @@ onBeforeUnmount(() => {
         {{ history.storage.lastError || '历史数据已达到固定存储上限，系统将优先保留最新数据。' }}
       </div>
 
-      <article class="chart-card chart-card--wide operator-latency-card service-check-card">
-        <header class="operator-latency-heading">
-          <div>
-            <span class="operator-latency-icon"><RadioTower :size="18" /></span>
-            <span><strong>服务检测</strong><small>{{ activeCheckDescription() }}</small></span>
-          </div>
-          <div class="service-check-heading__actions">
-            <span v-if="operatorLatencyRoutes.length && history.storage.lastOperatorLatencyAt">
-              最近一轮成功 {{ activeCheckSuccessCount }}/{{ operatorLatencyRoutes.length }} · 每
-              {{ Math.max(1, Math.round((history.storage.operatorLatencyIntervalSeconds || 300) / 60)) }} 分钟
-            </span>
-            <span v-else-if="operatorLatencyRoutes.length">等待首次检测采样</span>
-            <button
-              class="button button--secondary button--small"
-              type="button"
-              :disabled="isRemoteHost"
-              :title="isRemoteHost ? '请在该节点所属面板管理检测项' : '管理检测项'"
-              @click="checksDialogOpen = true"
-            ><Settings2 :size="15" />管理检测项</button>
-          </div>
-        </header>
-        <div class="service-check-tabs" role="tablist" aria-label="检测协议">
-          <button v-for="kind in (['ping', 'tcp', 'http'] as const)" :key="kind" type="button" role="tab" :aria-selected="activeCheckKind === kind" :class="{ 'is-active': activeCheckKind === kind }" @click="activeCheckKind = kind">
-            {{ kind === 'ping' ? 'Ping' : kind.toUpperCase() }}<span>{{ checkKindCounts[kind] }}</span>
-          </button>
-        </div>
-        <template v-if="operatorLatencyRoutes.length">
-          <div class="operator-latency-controls">
-            <div class="operator-latency-routes" aria-label="检测项显示选择">
-              <button
-                v-for="series in operatorLatencyRoutes"
-                :key="series.id"
-                class="operator-route"
-                :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
-                type="button"
-                :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
-                :title="series.target || series.address"
-                @click="toggleOperatorLatency(series.id)"
-              >
-                <i :style="{ background: monitoringCheckColor(series.id) }" />
-                <span>{{ operatorLatencyLabel(series) }}</span>
-                <small>{{ latestLatencyLabel(series) }}</small>
-              </button>
-            </div>
-            <div class="operator-latency-actions">
-              <button type="button" @click="showAllOperatorLatency(true)">全显示</button>
-              <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
-            </div>
-          </div>
-          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线支持拖拽框选并沿用上方时间范围。</p>
-          <TrendChart
-            v-if="operatorLatencyChart.length"
-            :series="operatorLatencyChart"
-            :formatter="formatLatency"
-            :selectable="!updating"
-            :show-legend="false"
-            @select-range="zoomToRange"
-          />
-          <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
-          <div v-else class="operator-latency-empty">等待首次检测采样。</div>
-        </template>
-        <div v-else class="operator-latency-empty service-check-empty">
-          <strong>当前协议暂无检测项</strong>
-          <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
-        </div>
-      </article>
-
       <div v-if="history.host.length" class="chart-grid">
         <article
           id="host-cpu-load-history"
@@ -1186,6 +1119,73 @@ onBeforeUnmount(() => {
         </div>
         <EmptyState v-else title="暂无容器历史数据" description="没有运行中的 Docker 容器，或首轮容器采样尚未完成。" />
       </section>
+
+      <article class="chart-card chart-card--wide operator-latency-card service-check-card">
+        <header class="operator-latency-heading">
+          <div>
+            <span class="operator-latency-icon"><RadioTower :size="18" /></span>
+            <span><strong>服务检测</strong><small>{{ activeCheckDescription() }}</small></span>
+          </div>
+          <div class="service-check-heading__actions">
+            <span v-if="operatorLatencyRoutes.length && history.storage.lastOperatorLatencyAt">
+              最近一轮成功 {{ activeCheckSuccessCount }}/{{ operatorLatencyRoutes.length }} · 每
+              {{ Math.max(1, Math.round((history.storage.operatorLatencyIntervalSeconds || 300) / 60)) }} 分钟
+            </span>
+            <span v-else-if="operatorLatencyRoutes.length">等待首次检测采样</span>
+            <button
+              class="button button--secondary button--small"
+              type="button"
+              :disabled="isRemoteHost"
+              :title="isRemoteHost ? '请在该节点所属面板管理检测项' : '管理检测项'"
+              @click="checksDialogOpen = true"
+            ><Settings2 :size="15" />管理检测项</button>
+          </div>
+        </header>
+        <div class="service-check-tabs" role="tablist" aria-label="检测协议">
+          <button v-for="kind in (['ping', 'tcp', 'http'] as const)" :key="kind" type="button" role="tab" :aria-selected="activeCheckKind === kind" :class="{ 'is-active': activeCheckKind === kind }" @click="activeCheckKind = kind">
+            {{ kind === 'ping' ? 'Ping' : kind.toUpperCase() }}<span>{{ checkKindCounts[kind] }}</span>
+          </button>
+        </div>
+        <template v-if="operatorLatencyRoutes.length">
+          <div class="operator-latency-controls">
+            <div class="operator-latency-routes" aria-label="检测项显示选择">
+              <button
+                v-for="series in operatorLatencyRoutes"
+                :key="series.id"
+                class="operator-route"
+                :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
+                type="button"
+                :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
+                :title="series.target || series.address"
+                @click="toggleOperatorLatency(series.id)"
+              >
+                <i :style="{ background: monitoringCheckColor(series.id) }" />
+                <span>{{ operatorLatencyLabel(series) }}</span>
+                <small>{{ latestLatencyLabel(series) }}</small>
+              </button>
+            </div>
+            <div class="operator-latency-actions">
+              <button type="button" @click="showAllOperatorLatency(true)">全显示</button>
+              <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
+            </div>
+          </div>
+          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线支持拖拽框选并沿用上方时间范围。</p>
+          <TrendChart
+            v-if="operatorLatencyChart.length"
+            :series="operatorLatencyChart"
+            :formatter="formatLatency"
+            :selectable="!updating"
+            :show-legend="false"
+            @select-range="zoomToRange"
+          />
+          <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
+          <div v-else class="operator-latency-empty">等待首次检测采样。</div>
+        </template>
+        <div v-else class="operator-latency-empty service-check-empty">
+          <strong>当前协议暂无检测项</strong>
+          <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
+        </div>
+      </article>
 
       <footer class="monitoring-footnote">
         {{ phrase(`采样间隔：主机 ${history.storage.hostIntervalSeconds} 秒`) }}{{ phrase(`，容器 ${history.storage.containerIntervalSeconds} 秒`) }}。
