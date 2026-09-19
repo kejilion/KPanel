@@ -320,7 +320,7 @@ func (s *Server) appendRemoteDownloadJobAudit(task fileRemoteDownloadTask, resul
 		ActorID: task.actorID, SourceIP: task.sourceIP, Action: "file.remote_download",
 		TargetKind: targetKind, TargetID: targetID, Result: resultName,
 		RequestID: task.requestID, Change: change,
-	}, 10_000)
+	}, store.MaxAuditEntries)
 }
 
 func (s *Server) cancelRemoteDownloadJob(id string) bool {

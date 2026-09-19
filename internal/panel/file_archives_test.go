@@ -68,14 +68,14 @@ func TestArchiveProxySessionCSRFAndExactRoute(t *testing.T) {
 				t.Fatal("invalid query forwarded")
 			}
 			if route == "archive-jobs" {
-				events, _ := s.store.ListAudit(20, "")
+				events, _, _ := s.store.ListAudit(20, "")
 				results := map[string]int{}
 				for _, event := range events {
 					if event.Action != "file.extract" {
 						continue
 					}
 					results[event.Result]++
-					if event.TargetKind != "file" || event.TargetID != "/" || event.Change["sourceCount"] != 1 || event.Change["memberCount"] != 0 {
+					if event.TargetKind != "file" || event.TargetID != "/" || event.Change["sourceCount"] != float64(1) || event.Change["memberCount"] != float64(0) {
 						t.Fatalf("archive audit identity drift: %#v", event)
 					}
 					if event.Change["name"] != "site" {
@@ -158,7 +158,7 @@ func TestArchiveStreamFailureRecordsSafeMatchingOutcome(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), "private") {
 		t.Fatalf("unsafe transport response=%d %s", response.Code, response.Body.String())
 	}
-	events, _ := s.store.ListAudit(20, "")
+	events, _, _ := s.store.ListAudit(20, "")
 	results := map[string]int{}
 	for _, event := range events {
 		if event.Action != "file.extract" {
@@ -166,7 +166,7 @@ func TestArchiveStreamFailureRecordsSafeMatchingOutcome(t *testing.T) {
 		}
 		results[event.Result]++
 		encoded, _ := json.Marshal(event.Change)
-		if event.TargetID != "/safe" || event.Change["sourceCount"] != 1 || event.Change["memberCount"] != 1 || strings.Contains(string(encoded), "private") {
+		if event.TargetID != "/safe" || event.Change["sourceCount"] != float64(1) || event.Change["memberCount"] != float64(1) || strings.Contains(string(encoded), "private") {
 			t.Fatalf("unsafe archive failure audit: %#v", event)
 		}
 	}
@@ -186,7 +186,7 @@ func TestArchiveOversizedResponseRecordsFailure(t *testing.T) {
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("oversized response status=%d", response.Code)
 	}
-	events, _ := s.store.ListAudit(20, "")
+	events, _, _ := s.store.ListAudit(20, "")
 	results := map[string]int{}
 	for _, event := range events {
 		if event.Action == "file.archive.clear" {

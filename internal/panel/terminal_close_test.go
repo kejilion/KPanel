@@ -88,7 +88,7 @@ func TestTerminalCloseRetainsIdentityAndAuditsFailureBeforeRetry(t *testing.T) {
 			if _, ok := server.terminalSessions[session.SessionID]; !ok {
 				t.Fatal("late output erased unconfirmed close")
 			}
-			events, _ := server.store.ListAudit(10, "")
+			events, _, _ := server.store.ListAudit(10, "")
 			if len(events) == 0 || events[0].Action != "terminal.close" || events[0].Result != "failure" {
 				t.Fatalf("audit=%+v", events)
 			}
@@ -103,7 +103,7 @@ func TestTerminalCloseRetainsIdentityAndAuditsFailureBeforeRetry(t *testing.T) {
 			if len(stub.ids) != 2 || stub.ids[0] != stub.ids[1] || stub.owners[0] != stub.owners[1] {
 				t.Fatal("retry identity changed")
 			}
-			events, _ = server.store.ListAudit(10, "")
+			events, _, _ = server.store.ListAudit(10, "")
 			if events[0].Action != "terminal.close" || events[0].Result != "success" {
 				t.Fatalf("audit=%+v", events)
 			}

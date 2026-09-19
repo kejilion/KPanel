@@ -196,7 +196,7 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 			}
 			deadline := time.Now().Add(time.Second)
 			for time.Now().Before(deadline) {
-				events, _ := server.store.ListAudit(50, "")
+				events, _, _ := server.store.ListAudit(50, "")
 				found := false
 				for _, event := range events {
 					if event.Action == "file.remote.relay" {
@@ -208,7 +208,7 @@ func TestLightFileRelayTruncationAbortsHTTPAndAuditsFailure(t *testing.T) {
 				}
 				time.Sleep(time.Millisecond)
 			}
-			events, _ := server.store.ListAudit(50, "")
+			events, _, _ := server.store.ListAudit(50, "")
 			want := "success"
 			if truncated || outcome == "cancel" || streamPanic {
 				want = "failure"

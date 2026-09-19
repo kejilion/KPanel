@@ -105,7 +105,7 @@ func TestSystemResourceWriteRequiresOriginSessionCSRFAndRedactsCronCommand(t *te
 		t.Fatalf("unexpected Agent calls: %#v", calls)
 	}
 
-	events, _ := server.store.ListAudit(100, "")
+	events, _, _ := server.store.ListAudit(100, "")
 	found := 0
 	for _, event := range events {
 		if event.Action != "system.resource.cron-add" {
@@ -217,7 +217,7 @@ func TestSystemResourceWriteWaitsForAgentReceiptAfterBrowserCancellation(t *test
 	if response.Code != http.StatusOK {
 		t.Fatalf("write status=%d body=%s", response.Code, response.Body.String())
 	}
-	events, _ := server.store.ListAudit(100, "")
+	events, _, _ := server.store.ListAudit(100, "")
 	results := make(map[string]int, 2)
 	for _, event := range events {
 		if event.Action == "system.resource.cron-delete" {

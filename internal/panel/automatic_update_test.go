@@ -46,7 +46,7 @@ func TestAutomaticUpdateSettingsRequireSessionCSRFAndForwardTypedPolicy(t *testi
 		forwarded["expectedResourceVersion"] != "sha256:"+strings.Repeat("b", 64) || len(forwarded) != 3 {
 		t.Fatalf("unexpected forwarded policy: %#v", forwarded)
 	}
-	audits, _ := server.store.ListAudit(20, "")
+	audits, _, _ := server.store.ListAudit(20, "")
 	found := false
 	for _, event := range audits {
 		if event.Action == "settings.automatic_update.update" && event.Result == "success" {
@@ -87,7 +87,7 @@ func TestAutomaticUpdateInstallIsExplicitAuditedMutation(t *testing.T) {
 		calls[0].path != "/v1/self-update/install" || string(calls[0].body) != string(input) {
 		t.Fatalf("unexpected install call: %#v", calls)
 	}
-	audits, _ := server.store.ListAudit(20, "")
+	audits, _, _ := server.store.ListAudit(20, "")
 	found := false
 	for _, event := range audits {
 		if event.Action == "settings.automatic_update.install" && event.Result == "success" {
@@ -113,7 +113,7 @@ func TestAutomaticUpdateCheckIsExplicitAuditedMutation(t *testing.T) {
 	if len(calls) != 1 || calls[0].method != http.MethodPost || calls[0].path != "/v1/self-update/check" || len(calls[0].body) != 0 {
 		t.Fatalf("unexpected check call: %#v", calls)
 	}
-	audits, _ := server.store.ListAudit(20, "")
+	audits, _, _ := server.store.ListAudit(20, "")
 	found := false
 	for _, event := range audits {
 		if event.Action == "settings.automatic_update.check" && event.Result == "success" {

@@ -104,7 +104,7 @@ func TestClusterHostOrderLifecycleAndInventorySnapshot(t *testing.T) {
 		t.Fatalf("inventory omitted current host order: %#v", inventory.HostOrder)
 	}
 
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	serialized, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

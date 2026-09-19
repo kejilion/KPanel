@@ -183,7 +183,7 @@ func TestDiskPartitionWriteRequiresSecurityForwards202AndRedactsAudit(t *testing
 		t.Fatalf("unexpected forwarded body: %#v", forwarded)
 	}
 
-	events, _ := server.store.ListAudit(100, "")
+	events, _, _ := server.store.ListAudit(100, "")
 	results := make(map[string]int)
 	var serialized strings.Builder
 	for _, event := range events {

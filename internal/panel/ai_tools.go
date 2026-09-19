@@ -280,7 +280,7 @@ func (t *panelAITools) Execute(ctx context.Context, execution ai.ToolExecutionCo
 		return "", toolArgumentError(err)
 	}
 	change := map[string]any{"tool": name, "target": target, "sessionId": execution.SessionID, "runId": execution.RunID, "toolCallId": execution.ToolCallID, "arguments": safeArgumentSummary(arguments)}
-	if err := t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: "intent", RequestID: requestID, Change: change}, 10_000); err != nil {
+	if err := t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: "intent", RequestID: requestID, Change: change}, store.MaxAuditEntries); err != nil {
 		return "", errors.New("AI tool audit unavailable")
 	}
 	rawQuery := ""
@@ -488,7 +488,7 @@ func (t *panelAITools) finish(execution ai.ToolExecutionContext, name, target, r
 	if change == nil {
 		change = map[string]any{"tool": name, "target": target, "sessionId": execution.SessionID, "runId": execution.RunID, "toolCallId": execution.ToolCallID}
 	}
-	_ = t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: result, RequestID: requestID, Change: change}, 10_000)
+	_ = t.server.store.AppendAudit(store.AuditEvent{ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: "user", ActorID: execution.UserID, Action: "ai.tool." + name, TargetKind: "host_operation", TargetID: target, Result: result, RequestID: requestID, Change: change}, store.MaxAuditEntries)
 	if callErr != nil {
 		return "", errors.New("Agent unavailable")
 	}

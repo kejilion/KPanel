@@ -55,7 +55,7 @@ func TestTrafficShutdownWriteUsesAuthCSRFAndAuditsTypedThresholds(t *testing.T) 
 	if len(calls) != 1 || calls[0].path != "/v1/system/traffic-shutdown/actions" {
 		t.Fatalf("unexpected Agent calls: %#v", calls)
 	}
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	found := 0
 	for _, event := range events {
 		if event.Action != "system.traffic-shutdown.enable" {

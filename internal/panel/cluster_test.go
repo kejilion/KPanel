@@ -216,7 +216,7 @@ func TestClusterPairingCodeSecretIsNotAudited(t *testing.T) {
 		t.Fatalf("pairing code does not use the encrypted v2 protocol: %q", code.Code)
 	}
 
-	events, _ := server.store.ListAudit(200, "")
+	events, _, _ := server.store.ListAudit(200, "")
 	serialized, err := json.Marshal(events)
 	if err != nil {
 		t.Fatalf("marshal audit events: %v", err)
@@ -309,7 +309,7 @@ func TestLightNodeEnrollmentUsesAuthenticatedIntentAndPublicOneUseExchange(t *te
 		t.Fatalf("enrolled light host missing from inventory: %#v", inventory)
 	}
 
-	events, _ := server.store.ListAudit(200, "")
+	events, _, _ := server.store.ListAudit(200, "")
 	serialized, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)
@@ -411,7 +411,7 @@ func TestLightNodeBatchEnrollmentSupportsOneHundredIdempotentJoinsAndRevocation(
 		t.Fatalf("revoked batch accepted a new node: %d %s", response.Code, response.Body.String())
 	}
 
-	events, _ := server.store.ListAudit(200, "")
+	events, _, _ := server.store.ListAudit(200, "")
 	serialized, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

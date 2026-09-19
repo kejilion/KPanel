@@ -142,10 +142,17 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		s.writeValidationProblem(w, r, "limit", "limit must be between 1 and 100")
 		return
 	}
-	events, _ := s.store.ListAudit(200, "")
+	// An unreadable audit store must show up as an unavailable source rather
+	// than as a history with no jobs.
+	events, _, auditErr := s.store.ListAudit(200, "")
 	jobs := jobsFromAudit(events, limit)
 	page := jobsPage{Sources: make([]jobSourceStatus, 0, 4)}
-	page.Sources = append(page.Sources, jobSourceStatus{"audit", "available"})
+	auditState := "available"
+	if auditErr != nil {
+		auditState = "unavailable"
+		page.Partial = true
+	}
+	page.Sources = append(page.Sources, jobSourceStatus{"audit", auditState})
 	available := 0
 	if s.backups != nil {
 		records := s.backups.List()

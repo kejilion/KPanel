@@ -29,7 +29,7 @@ func TestSSHDefenseWriteRequiresCSRFAndAuditsTypedChange(t *testing.T) {
 	if len(calls) != 1 || calls[0].path != "/v1/system/ssh-defense/actions" {
 		t.Fatalf("unexpected Agent calls: %#v", calls)
 	}
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	found := false
 	for _, event := range events {
 		if event.Action != "system.ssh-defense.add-trusted" {

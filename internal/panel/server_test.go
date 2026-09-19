@@ -306,7 +306,7 @@ func TestPasswordChangeGuardsAndValidation(t *testing.T) {
 	if oldLogin.Code != http.StatusOK {
 		t.Fatalf("validation failure changed the password: %d %s", oldLogin.Code, oldLogin.Body.String())
 	}
-	events, _ := server.store.ListAudit(50, "")
+	events, _, _ := server.store.ListAudit(50, "")
 	passwordEvents := 0
 	for _, event := range events {
 		if event.Action != "auth.password.change" {
@@ -384,7 +384,7 @@ func TestPasswordChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 		t.Fatalf("new password login failed: %d %s", newLogin.Code, newLogin.Body.String())
 	}
 
-	events, _ := server.store.ListAudit(50, "")
+	events, _, _ := server.store.ListAudit(50, "")
 	successes := 0
 	for _, event := range events {
 		if event.Action == "auth.password.change" && event.Result == "success" {
@@ -457,7 +457,7 @@ func TestUsernameChangeInvalidatesSessionsAndCredentials(t *testing.T) {
 	if newLogin.Code != http.StatusOK {
 		t.Fatalf("new username login failed: %d %s", newLogin.Code, newLogin.Body.String())
 	}
-	events, _ := server.store.ListAudit(50, "")
+	events, _, _ := server.store.ListAudit(50, "")
 	for _, event := range events {
 		if event.Action == "auth.username.change" && event.Change != nil {
 			t.Fatalf("username audit event contains identity data: %#v", event.Change)

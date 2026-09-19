@@ -175,7 +175,7 @@ func TestFileRemoteDownloadBackgroundDetachesListsRedactsAndDeletes(t *testing.T
 		t.Fatalf("Agent stream calls = %#v", calls)
 	}
 
-	auditEvents, _ := server.store.ListAudit(50, "")
+	auditEvents, _, _ := server.store.ListAudit(50, "")
 	auditJSON, err := json.Marshal(auditEvents)
 	if err != nil {
 		t.Fatal(err)

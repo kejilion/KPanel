@@ -199,7 +199,7 @@ func TestClusterShareLifecycleRedactsPrivateFieldsAndBypassesSecurityEntrance(t 
 		t.Fatalf("old share link status = %d, want 404", oldLink.Code)
 	}
 
-	events, _ := server.store.ListAudit(200, "")
+	events, _, _ := server.store.ListAudit(200, "")
 	auditJSON, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

@@ -982,7 +982,7 @@ func fileShareEntryResponse(filePath, name, mime string, size int64) AgentRespon
 
 func mustAuditEvents(t *testing.T, server *Server) []store.AuditEvent {
 	t.Helper()
-	events, _ := server.store.ListAudit(50, "")
+	events, _, _ := server.store.ListAudit(50, "")
 	return events
 }
 

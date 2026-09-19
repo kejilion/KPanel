@@ -135,7 +135,7 @@ func TestTOTPHTTPFlowRequiresProtectedSessionAndCannotBeBypassed(t *testing.T) {
 		t.Fatalf("recovery code replay was not rejected: %d %s", replayed.Code, replayed.Body.String())
 	}
 
-	events, _ := server.store.ListAudit(100, "")
+	events, _, _ := server.store.ListAudit(100, "")
 	auditJSON, _ := json.Marshal(events)
 	if strings.Contains(string(auditJSON), enrollment.Secret) || strings.Contains(string(auditJSON), recovery.RecoveryCodes[0]) {
 		t.Fatal("TOTP secret or recovery code leaked into audit records")
