@@ -8,22 +8,25 @@
 - fingerprint：`hostbackup.restore.payload-root-unconfined-to-data-model`。
 - 原始审计：run-1，源码基线 `6340e0783d3e57873fd2c93a964372aefb9e1a81`；该次 dirty 状态缺完整快照。
 - 修复提交：`e99e6b3d225425aa0b9afd14c55c8a33d75722f9`；公开主线已包含。
-- 当前源码复核基线：`7836ae8ef968a618bd950b8fd46f03bef29fa6a2`，包含稳定版候选对后续 4 条待验证线索的修复。
+- 当前源码复核基线：`c98727c898f8b446cceea5d7b10f3205340926a2`（`v1.20.0`），包含稳定版候选对后续 4 条待验证线索的修复。
 - 复核状态：run-2 hunter 与独立覆盖复核均确认原路径已由模块绑定和目标真实清单校验约束，
   原 fingerprint 为源码层面已修复；未重新执行动态回归，不据此宣称全部备份行为安全。
 - 回归用例：`internal/hostbackup/backup_test.go` 的 `TestBackupPayloadRootScopeValidation` 和
   `TestBackupRestoreRejectsRootOutsideDestinationData`；本次只读审计未执行目标代码。
   既有发布级执行证据见 `docs/release-v1.20.0-rc.1-acceptance.md` 至 rc.3 验收记录，不能替代新正式候选 L3。
 - RC 已交付：`v1.20.0-rc.1`、`v1.20.0-rc.2`、`v1.20.0-rc.3` 均包含修复，公开 Release 均为 prerelease。
-- 稳定版状态：`pending-stable`；2026-09-19 GitHub Latest 为 `v1.19.0`，其 tag 不包含修复。
-- 部署状态：本任务未验证、未执行生产部署；不得用 RC 发布记录推断正式部署。
+- 稳定版状态：`delivered`；`v1.20.0` 为非 prerelease 的 GitHub Latest，tag 指向上述复核基线，
+  正式 OCI index 为 `sha256:a991b5d27d7d6519c694b6cbc88c037bbaa0fcef418a43b0ff94cb638dee575f`。
+- 部署状态：`arena-154` 已通过受控更新入口部署 `v1.20.0`，postdeploy 核对版本、revision、digest、
+  Panel/Agent 健康、配置哈希、SQLite quick_check 和致命日志均通过；`prod-108` 未连接或操作。
 
 ## 后续审计与正式发布责任
 
 run-2 为当前候选的 scoped 源码增量审计：16 个当前范围单元、46 个范围外单元；
 独立复核提出 4 条待验证线索、0 条新增确认漏洞。4 条线索已在稳定版候选
-`7836ae8ef968a618bd950b8fd46f03bef29fa6a2` 中分别补充最小修复和回归测试，尚需由同一候选的 L3
-验证后才能转为已关闭。完整审计记录保存在本地候选
+`7836ae8ef968a618bd950b8fd46f03bef29fa6a2` 中分别补充最小修复和回归测试；同一稳定候选
+`c98727c898f8b446cceea5d7b10f3205340926a2` 已通过 arena-154 L3，定向包、全量测试、竞态测试、
+前端检查、漏洞扫描和发布构建均通过，因此这 4 条线索转为已关闭。完整审计记录保存在本地候选
 `docs/security-audit-run2-local-20260919` 的 `.governance/security-audit/run-2/`，
 待验证攻击细节不先期推送；此分支不是公开远端依赖。
 待验证不等于已确认，也不等于已排除；不能用“审计运行完成”或源码修复替代“候选可发布”。
@@ -32,6 +35,6 @@ run-2 为当前候选的 scoped 源码增量审计：16 个当前范围单元、
 对应版本唯一发布任务负责在新候选冻结时核对未决问题，运行精确候选 L3，并在正式验收中补齐
 stable tag 祖先关系、公开 Release、镜像及适用的部署证据。
 
-`release/v1.20.0-candidate` 当前仍服务预览列车；稳定版候选通过 L3 后会把同一提交推进到该分支。
-正式版未发布时不执行归档或删除。发布成功后的处置统一引用 `docs/release-channels.md`，并由已集成的
-分支归档流程先创建不可变归档 ref，再删除活动候选分支。
+`release/v1.20.0-candidate` 已在稳定版发布成功后归档到
+`archive/release/v1.20.0-candidate`（`c98727c898f8b446cceea5d7b10f3205340926a2`），活动候选分支已删除。
+处置统一引用 `docs/release-channels.md`；归档 ref 与稳定 tag 共同提供恢复入口。
