@@ -63,6 +63,7 @@ describe('monitoring host selection', () => {
     expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
     expect(wrapper.find('.service-status-cell--success').exists()).toBe(true)
     expect(wrapper.find('.service-status-cell--failure').exists()).toBe(true)
+    expect(wrapper.get('.service-status-cells').attributes('style')).toContain('repeat(12, 7px)')
     await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('TCP'))!.trigger('click')
     expect(wrapper.text()).toContain('TCP 服务')
     expect(wrapper.text()).not.toContain('Ping 节点')
