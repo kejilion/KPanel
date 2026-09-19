@@ -161,6 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
+          node scripts/run-repo-bash.mjs scripts/build-mcp-clients.sh release
           ldflags="-s -w -X github.com/kejilion/kejilion-panel/internal/version.Version=$VERSION"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -trimpath -ldflags "$ldflags" \
@@ -185,6 +186,7 @@ jobs:
               kejilion-agent-linux-arm64 \
               kejilion-node-linux-amd64 \
               kejilion-node-linux-arm64 \
+              kpanel-mcp-* \
               "kejilion-panel-deploy-$VERSION.tar.gz" > SHA256SUMS
           )
 
@@ -301,6 +303,7 @@ jobs:
               --title "KPanel $VERSION" \
               --notes-file release/DRAFT_NOTES.md
             gh release upload "$GITHUB_REF_NAME" --clobber \
+              release/kpanel-mcp-* \
               release/kejilion-agent-linux-amd64 \
               release/kejilion-agent-linux-arm64 \
               release/kejilion-node-linux-amd64 \
@@ -311,6 +314,7 @@ jobs:
               THIRD_PARTY_NOTICES.md
           else
             gh release create "$GITHUB_REF_NAME" \
+              release/kpanel-mcp-* \
               --verify-tag \
               --draft \
               "${create_flags[@]}" \

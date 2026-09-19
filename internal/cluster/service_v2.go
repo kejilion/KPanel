@@ -712,6 +712,8 @@ func (s *Service) HandleFederationV2(
 		return FederationEnvelopeV2{}, err
 	}
 	switch path {
+	case ManagedOperationsV2Path:
+		return s.handleManagedOperationsV2(ctx, envelope, now)
 	case HistoryRelayV2Path:
 		return s.handleHistoryRelayV2(ctx, envelope, now)
 	case v2PairPath:

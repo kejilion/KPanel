@@ -155,6 +155,15 @@ func ApplyPanelRestore(c Config) (err error) {
 	if err := mcpaccess.Open(c.DataDir).Reset(); err != nil {
 		return err
 	}
+	if err := mcpaccess.OpenOAuth(c.DataDir).Reset(); err != nil {
+		return err
+	}
+	if err := mcpaccess.OpenOperations(c.DataDir).Reset(); err != nil {
+		return err
+	}
+	if err := cluster.ResetManagedGrants(c.DataDir); err != nil {
+		return err
+	}
 	j.Previous, err = readPanelBackupFiles(c.DataDir)
 	if err != nil {
 		return err

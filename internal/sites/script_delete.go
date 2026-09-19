@@ -118,6 +118,7 @@ func (m *Manager) deleteWithScript(
 	ctx context.Context,
 	id string,
 	primaryDomain string,
+	expectedResourceVersion string,
 ) (DeleteResult, error) {
 	normalized, err := normalizeScriptDomain(primaryDomain)
 	if err != nil || normalized != primaryDomain {
@@ -131,6 +132,9 @@ func (m *Manager) deleteWithScript(
 	}
 	if current.PrimaryDomain != normalized {
 		return DeleteResult{}, fmt.Errorf("%w: site identity and primaryDomain do not match", ErrConflict)
+	}
+	if expectedResourceVersion != "" && current.ResourceVersion != expectedResourceVersion {
+		return DeleteResult{}, fmt.Errorf("%w: site changed since approval", ErrConflict)
 	}
 	if m.scriptDeleter == nil {
 		return DeleteResult{}, fmt.Errorf("%w: k web del adapter is unavailable", ErrUnavailable)

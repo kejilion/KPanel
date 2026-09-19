@@ -100,6 +100,7 @@ func ValidateSSHDefenseAction(request *SSHDefenseActionRequest) (string, string)
 }
 
 type SSHDefenseActionResult struct {
+	TaskID          string    `json:"taskId,omitempty"`
 	Action          string    `json:"action"`
 	Status          string    `json:"status"`
 	Changed         bool      `json:"changed"`

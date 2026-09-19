@@ -5,7 +5,7 @@ import MCPAccess from './MCPAccess.vue'
 import { mcpAccess, type MCPSettings } from '@/lib/mcp'
 import { api } from '@/lib/api'
 
-vi.mock('@/lib/mcp', () => ({ mcpAccess: { get: vi.fn(), enable: vi.fn(), create: vi.fn(), revoke: vi.fn(), test: vi.fn() } }))
+vi.mock('@/lib/mcp', async (original) => ({ ...await original<typeof import('@/lib/mcp')>(), mcpAccess: { get: vi.fn(), enable: vi.fn(), create: vi.fn(), revoke: vi.fn(), test: vi.fn(), operations: vi.fn(), clusterGrants: vi.fn() } }))
 vi.mock('@/lib/api', () => ({ api: { cluster: { hosts: vi.fn() } } }))
 let wrapper: ReturnType<typeof mount>
 const initial = (): MCPSettings => ({ access: { enabled: false, available: true, resourceVersion: 'r1', clients: [] }, endpoint: 'https://panel.test/mcp', transportReady: true, maxClients: 32, permission: 'inspect' })
@@ -16,6 +16,8 @@ const button = (label: string) => wrapper.findAll('button').find(b => b.text() =
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(mcpAccess.get).mockResolvedValue(initial())
+  vi.mocked(mcpAccess.operations).mockResolvedValue({ items: [] })
+  vi.mocked(mcpAccess.clusterGrants).mockResolvedValue({ grants: { available: true, resourceVersion: 'g1', items: [] }, controllers: [] })
   vi.mocked(api.cluster.hosts).mockResolvedValue({ items: [{ id: 'local', name: 'Local', isLocal: true }, { id: 'remote', name: 'Remote', isLocal: false }] } as Awaited<ReturnType<typeof api.cluster.hosts>>)
 })
 afterEach(() => wrapper?.unmount())

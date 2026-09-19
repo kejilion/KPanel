@@ -354,7 +354,8 @@ type DeleteResult struct {
 }
 
 type DeleteInput struct {
-	PrimaryDomain string `json:"primaryDomain"`
+	PrimaryDomain           string `json:"primaryDomain"`
+	ExpectedResourceVersion string `json:"expectedResourceVersion,omitempty"`
 }
 
 type stagedDeleteArtifact struct {
@@ -370,7 +371,7 @@ func (m *Manager) DeleteWithOptions(
 	id string,
 	input DeleteInput,
 ) (DeleteResult, error) {
-	return m.deleteWithScript(ctx, id, input.PrimaryDomain)
+	return m.deleteWithScript(ctx, id, input.PrimaryDomain, input.ExpectedResourceVersion)
 }
 
 func (m *Manager) verifiedDeleteConfig(

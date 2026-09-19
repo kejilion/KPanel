@@ -395,11 +395,11 @@ func (m *Manager) ExecuteSSHDefenseAction(ctx context.Context, request contract.
 		return contract.SSHDefenseActionResult{}, fmt.Errorf("%w: expected resource version is stale", ErrConflict)
 	}
 	if request.Action == "enable" || request.Action == "disable" || request.Action == "uninstall" {
-		changed, message, err := m.startMaintenance(transactionContext, "ssh-defense", request.Action)
+		changed, message, taskID, err := m.startMaintenanceTask(transactionContext, "ssh-defense", request.Action)
 		if err != nil {
 			return contract.SSHDefenseActionResult{}, err
 		}
-		return contract.SSHDefenseActionResult{Action: request.Action, Status: "accepted", Changed: changed, Message: message, ResourceVersion: current.ResourceVersion, AppliedAt: m.now().UTC()}, nil
+		return contract.SSHDefenseActionResult{TaskID: taskID, Action: request.Action, Status: "accepted", Changed: changed, Message: message, ResourceVersion: current.ResourceVersion, AppliedAt: m.now().UTC()}, nil
 	}
 	output, runErr := m.runSSHDefenseManager(transactionContext, sshDefenseManagerInvocation(request)...)
 	receipt, parseErr := parseSSHDefenseManagerReceipt(output)

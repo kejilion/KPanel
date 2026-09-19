@@ -20,23 +20,48 @@ import (
 )
 
 const mcpSettingsPath = "/api/v1/settings/mcp"
-const mcpMaxRequest = 16 << 10
+const mcpMaxRequest = 128 << 10
 const mcpMaxResponse = 128 << 10
 
 type mcpContextKey struct{}
 type mcpRequest struct {
-	principal mcpaccess.Principal
-	request   *http.Request
+	principal        mcpaccess.Principal
+	request          *http.Request
+	authorize        func() bool
+	controllerID     string
+	credentialActive func() bool
 }
 type mcpService struct {
-	access  *mcpaccess.Store
-	gate    chan struct{}
-	once    sync.Once
-	handler http.Handler
+	access       *mcpaccess.Store
+	gate         chan struct{}
+	once         sync.Once
+	handler      http.Handler
+	operations   *mcpaccess.Operations
+	serversMu    sync.Mutex
+	servers      map[string]*mcp.Server
+	workerMu     sync.Mutex
+	workerClosed bool
+	workerCtx    context.Context
+	workerCancel context.CancelFunc
+	workers      sync.WaitGroup
+	workerSlots  chan struct{}
+	oauth        *mcpaccess.OAuth
+	oauthMu      sync.Mutex
+	oauthMinute  int64
+	oauthCounts  [3]int
 }
 
 func newMCPService(dataDir string) *mcpService {
-	return &mcpService{access: mcpaccess.Open(dataDir), gate: make(chan struct{}, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &mcpService{access: mcpaccess.Open(dataDir), oauth: mcpaccess.OpenOAuth(dataDir), operations: mcpaccess.OpenOperations(dataDir), gate: make(chan struct{}, 4), servers: make(map[string]*mcp.Server), workerCtx: ctx, workerCancel: cancel, workerSlots: make(chan struct{}, 2)}
+}
+
+func (m *mcpService) close() {
+	m.workerMu.Lock()
+	m.workerClosed = true
+	m.workerCancel()
+	m.workerMu.Unlock()
+	m.workers.Wait()
 }
 
 // Host identity is an authorization binding, never returned to the MCP client.
@@ -112,17 +137,27 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(r.Header.Values("Authorization")) != 1 {
+		s.mcpOAuthChallenge(w, r)
 		http.Error(w, "mcp_authentication_required", http.StatusUnauthorized)
 		return
 	}
 	authorization := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authorization, "Bearer ") {
+		s.mcpOAuthChallenge(w, r)
 		http.Error(w, "mcp_authentication_required", http.StatusUnauthorized)
 		return
 	}
-	principal, release, err := s.mcp.access.Begin(strings.TrimPrefix(authorization, "Bearer "))
+	token := strings.TrimPrefix(authorization, "Bearer ")
+	principal, release, err := s.mcp.access.Begin(token)
+	var credentialActive func() bool
+	if strings.HasPrefix(token, "kpo_") {
+		resource := s.mcpOAuthOrigin(r) + "/mcp"
+		principal, release, err = s.mcp.oauth.Begin(s.mcp.access, token, resource)
+		credentialActive = func() bool { return s.mcp.oauth.Active(s.mcp.access, token, resource, principal) }
+	}
 	if err != nil {
 		status := http.StatusUnauthorized
+		s.mcpOAuthChallenge(w, r)
 		if errors.Is(err, mcpaccess.ErrLimited) {
 			status = http.StatusTooManyRequests
 			w.Header().Set("Retry-After", "60")
@@ -161,19 +196,28 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(ctx)
-	r = r.WithContext(context.WithValue(ctx, mcpContextKey{}, mcpRequest{principal, r}))
+	r = r.WithContext(context.WithValue(ctx, mcpContextKey{}, mcpRequest{principal: principal, request: r, credentialActive: credentialActive}))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	s.mcp.once.Do(func() {
-		local := s.newMCPServer(true)
-		remote := s.newMCPServer(false)
 		s.mcp.handler = mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 			p := r.Context().Value(mcpContextKey{}).(mcpRequest).principal
+			s.mcp.serversMu.Lock()
+			defer s.mcp.serversMu.Unlock()
+			if server := s.mcp.servers[p.ID]; server != nil {
+				return server
+			}
+			local := false
 			for _, h := range p.Hosts {
 				if h.ID == cluster.LocalHostID {
-					return local
+					local = true
 				}
 			}
-			return remote
+			if len(s.mcp.servers) >= mcpaccess.MaxClients {
+				clear(s.mcp.servers)
+			}
+			server := s.newMCPServer(local, p.Policy)
+			s.mcp.servers[p.ID] = server
+			return server
 		}, &mcp.StreamableHTTPOptions{
 			Stateless: true, JSONResponse: true,
 			// Panel validates Host, Origin and TLS/trusted proxies above. The SDK's
@@ -185,7 +229,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	buffer := &mcpResponseBuffer{header: make(http.Header)}
 	s.mcp.handler.ServeHTTP(buffer, r)
 	// A revoked/expired token must not receive data from an in-flight read.
-	if !s.mcp.access.Active(principal) {
+	if !s.mcp.access.Active(principal) || (credentialActive != nil && !credentialActive()) {
+		s.mcpOAuthChallenge(w, r)
 		http.Error(w, "mcp_authentication_required", http.StatusUnauthorized)
 		return
 	}
@@ -252,6 +297,18 @@ func (s *Server) handleMCPSettings(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, 503, "mcp_access_unavailable", "MCP unavailable", "")
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, mcpSettingsPath+"/oauth/") {
+		s.handleMCPOAuthConsent(w, r, session.User.ID)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, mcpSettingsPath+"/operations") {
+		s.handleMCPOperations(w, r, session.User.ID)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, mcpSettingsPath+"/cluster-grants") {
+		s.handleMCPClusterGrants(w, r, session.User.ID)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == mcpSettingsPath {
 		s.writeJSON(w, 200, s.mcpSettingsView(r))
 		return
@@ -262,6 +319,10 @@ func (s *Server) handleMCPSettings(w http.ResponseWriter, r *http.Request) {
 		Name                    string   `json:"name"`
 		HostIDs                 []string `json:"hostIds"`
 		ExpiresInDays           int      `json:"expiresInDays"`
+		Domains                 []string `json:"domains"`
+		Write                   bool     `json:"write"`
+		AutoApprove             bool     `json:"autoApprove"`
+		FileRoots               []string `json:"fileRoots"`
 	}
 	action, target := "", "mcp"
 	switch {
@@ -288,7 +349,19 @@ func (s *Server) handleMCPSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var grants []mcpaccess.HostGrant
+	var policy *mcpaccess.Policy
 	if action == "mcp.client.create" {
+		if len(input.Domains) > 0 {
+			var err error
+			policy, err = managedPolicy(input.Domains, input.Write, input.AutoApprove, input.FileRoots)
+			if err != nil {
+				s.mcpSettingsError(w, r, mcpaccess.ErrInvalid)
+				return
+			}
+		} else if input.Write || input.AutoApprove || len(input.FileRoots) > 0 {
+			s.mcpSettingsError(w, r, mcpaccess.ErrInvalid)
+			return
+		}
 		if !s.mcpTransportAllowed(r) {
 			s.writeProblem(w, r, 403, "mcp_https_required", "Use HTTPS or a loopback connection", "")
 			return
@@ -318,13 +391,19 @@ func (s *Server) handleMCPSettings(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "mcp.settings.update":
 		_, err = s.mcp.access.SetEnabled(input.Enabled, input.ExpectedResourceVersion)
+		if err == nil && !input.Enabled {
+			err = s.mcp.operations.Invalidate("")
+		}
 	case "mcp.client.create":
-		client, token, err = s.mcp.access.Create(strings.TrimSpace(input.Name), grants, time.Duration(input.ExpiresInDays)*24*time.Hour, input.ExpectedResourceVersion)
+		client, token, err = s.mcp.access.CreateWithPolicy(strings.TrimSpace(input.Name), grants, policy, time.Duration(input.ExpiresInDays)*24*time.Hour, input.ExpectedResourceVersion)
 		if err == nil {
 			target = client.ID
 		}
 	case "mcp.client.revoke":
 		_, err = s.mcp.access.Revoke(target, input.ExpectedResourceVersion)
+		if err == nil {
+			err = s.mcp.operations.Invalidate(target)
+		}
 	}
 	if err != nil {
 		_ = s.audit(r, session.User.ID, action, "mcp_client", target, "failure", nil)

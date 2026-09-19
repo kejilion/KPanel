@@ -61,6 +61,9 @@ func (s *Server) Close() error {
 	s.requestsMu.Lock()
 	s.requestsClosed = true
 	s.requestsMu.Unlock()
+	if s.mcp != nil {
+		s.mcp.close()
+	}
 	if s.backups != nil {
 		s.backups.Close()
 	}

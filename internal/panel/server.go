@@ -185,6 +185,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	server.hostOps = newHostOperationService(server)
 	server.mcp = newMCPService(config.DataDir)
+	server.cluster.SetManagedOperationHandler(server.handleManagedClusterOperation, func() bool { access := server.mcp.access.Snapshot(); return access.Available && access.Enabled })
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize backups: %w", err)
@@ -234,6 +235,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/mcp" {
 		s.handleMCP(w, r)
+		return
+	}
+	if s.handleMCPOAuth(w, r) {
 		return
 	}
 	if s.handleSecurityEntrance(w, r) {
@@ -455,7 +459,7 @@ func isFederationV2Request(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case cluster.HistoryV2Path, cluster.HistoryRelayV2Path, "/api/v2/federation/pair",
+	case cluster.ManagedOperationsV2Path, cluster.HistoryV2Path, cluster.HistoryRelayV2Path, "/api/v2/federation/pair",
 		"/api/v2/federation/commit",
 		"/api/v2/federation/summary",
 		"/api/v2/federation/revoke",

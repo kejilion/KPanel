@@ -69,6 +69,7 @@ func ValidateSystemTuningAction(request *SystemTuningActionRequest) (string, str
 }
 
 type SystemTuningActionResult struct {
+	TaskID          string    `json:"taskId,omitempty"`
 	Action          string    `json:"action"`
 	Items           []string  `json:"items"`
 	Status          string    `json:"status"`

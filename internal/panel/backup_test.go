@@ -224,6 +224,12 @@ func TestBackupPanelOfflineTransactionRecovery(t *testing.T) {
 			s, token := newTestServer(t)
 			bootstrapCookies(t, s, token)
 			_, delegatedToken := mcpTestClient(t, s, true)
+			managedGrantPath := filepath.Join(s.config.DataDir, "cluster-managed-grants.json")
+			// Even an unreadable old delegation store must be destroyed at the
+			// offline identity restore boundary, not resurrected after re-enable.
+			if err := os.WriteFile(managedGrantPath, []byte(`{"oldDelegatedAuthority":true}`), 0600); err != nil {
+				t.Fatal(err)
+			}
 			s.config.TOTPKeyPath = filepath.Join(s.config.DataDir, "totp.key")
 			data, err := s.exportPanelBackup(context.Background())
 			if err != nil {
@@ -275,6 +281,14 @@ func TestBackupPanelOfflineTransactionRecovery(t *testing.T) {
 			access := mcpaccess.Open(s.config.DataDir)
 			if access.Snapshot().Enabled || len(access.Snapshot().Clients) != 0 {
 				t.Fatal("identity restore retained MCP grants")
+			}
+			managedData, err := os.ReadFile(managedGrantPath)
+			var managedState struct {
+				Version int               `json:"version"`
+				Items   []json.RawMessage `json:"items"`
+			}
+			if err != nil || json.Unmarshal(managedData, &managedState) != nil || managedState.Version != 1 || len(managedState.Items) != 0 {
+				t.Fatal("identity restore retained cluster management authority")
 			}
 			if _, release, err := access.Begin(delegatedToken); err == nil {
 				release()
