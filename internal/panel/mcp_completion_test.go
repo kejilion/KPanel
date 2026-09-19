@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
 )
 
@@ -258,6 +259,34 @@ func TestMCPFileActionsRequireSourceVersions(t *testing.T) {
 		body, _ = json.Marshal(args)
 		if _, err := managedCatalog()["host_file_action"].prepare(body, policy); err != nil {
 			t.Fatal(action, err)
+		}
+	}
+}
+
+func TestMCPArchiveVersionsMatchOwner(t *testing.T) {
+	policy, _ := managedPolicy([]string{"files"}, true, false, []string{"/home/web"})
+	version := "sha256:" + strings.Repeat("a", 64)
+	for _, action := range []string{"compress", "extract"} {
+		for _, test := range []struct {
+			name     string
+			sources  []string
+			versions map[string]string
+			singular string
+			valid    bool
+		}{
+			{"single-map", []string{"/home/web/a.zip"}, map[string]string{"/home/web/a.zip": version}, "", true},
+			{"multi-map", []string{"/home/web/a.zip", "/home/web/b.zip"}, map[string]string{"/home/web/a.zip": version, "/home/web/b.zip": version}, "", true},
+			{"single-fallback", []string{"/home/web/a.zip"}, nil, version, true},
+			{"multi-no-fallback", []string{"/home/web/a.zip", "/home/web/b.zip"}, nil, version, false},
+			{"map-takes-precedence", []string{"/home/web/a.zip"}, map[string]string{"/home/web/a.zip": "invalid"}, version, false},
+		} {
+			t.Run(action+"/"+test.name, func(t *testing.T) {
+				body, _ := json.Marshal(contract.FileActionRequest{Action: action, Sources: test.sources, Target: "/home/web/output", ExpectedResourceVersions: test.versions, ExpectedResourceVersion: test.singular})
+				_, err := managedCatalog()["host_file_action"].prepare(body, policy)
+				if (err == nil) != test.valid {
+					t.Fatalf("valid=%t, err=%v", test.valid, err)
+				}
+			})
 		}
 	}
 }
