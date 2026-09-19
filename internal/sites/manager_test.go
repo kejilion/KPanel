@@ -221,8 +221,12 @@ func TestDeleteManagedProxyUsesKWebDel(t *testing.T) {
 	}
 	runner := &fakeSiteScriptDeleter{root: root}
 	manager.scriptDeleter = runner
+	if _, err := manager.DeleteWithOptions(context.Background(), created.ID, DeleteInput{PrimaryDomain: created.PrimaryDomain, ExpectedResourceVersion: "sha256:" + strings.Repeat("f", 64)}); !errors.Is(err, ErrConflict) || runner.domain != "" {
+		t.Fatalf("stale approved deletion dispatched: %v", err)
+	}
 	result, err := manager.DeleteWithOptions(context.Background(), created.ID, DeleteInput{
-		PrimaryDomain: created.PrimaryDomain,
+		PrimaryDomain:           created.PrimaryDomain,
+		ExpectedResourceVersion: created.ResourceVersion,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -3,7 +3,7 @@ NPM ?= npm
 VERSION := $(shell tr -d '\r\n' < VERSION)
 LDFLAGS := -s -w -X github.com/kejilion/kejilion-panel/internal/version.Version=$(VERSION)
 
-.PHONY: fmt test test-go test-web test-deploy security-audit governance-check environment-policy-check release-metrics dependency-policy-check dependency-report verify-change verify-l2 verify-release build build-web build-linux build-linux-binaries clean
+.PHONY: fmt test test-go test-web test-deploy security-audit governance-check environment-policy-check release-metrics dependency-policy-check dependency-report verify-change verify-l2 verify-release build build-web build-linux build-linux-binaries build-mcp-clients clean
 
 fmt:
 	$(GO) fmt ./...
@@ -57,6 +57,10 @@ build: build-web
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/kejilion-agent ./cmd/kejilion-agent
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/kejilion-node ./cmd/kejilion-node
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/kpctl ./cmd/kpctl
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/kpanel-mcp ./cmd/kpanel-mcp
+
+build-mcp-clients:
+	node scripts/run-repo-bash.mjs scripts/build-mcp-clients.sh
 
 build-web:
 	cd web && $(NPM) run build
@@ -73,6 +77,8 @@ build-linux-binaries:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-arm64/kejilion-agent ./cmd/kejilion-agent
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-arm64/kejilion-node ./cmd/kejilion-node
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-arm64/kpctl ./cmd/kpctl
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-amd64/kpanel-mcp ./cmd/kpanel-mcp
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/linux-arm64/kpanel-mcp ./cmd/kpanel-mcp
 
 clean:
 	rm -rf dist web/dist coverage.out

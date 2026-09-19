@@ -63,6 +63,23 @@ func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" && (!s.checkOrigin(w, r) || !s.checkCSRF(w, r, session)) {
 		return
 	}
+	if r.Method != "GET" {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/backups"), "/")
+		action := "backup.operation"
+		if len(parts) > 1 {
+			action = "backup." + parts[len(parts)-1]
+		}
+		if err := s.audit(r, session.User.ID, action, "backup", "", "intent", nil); err != nil {
+			s.writeProblem(w, r, 503, "audit_unavailable", "无法记录备份操作，请稍后重试", "")
+			return
+		}
+	}
+	s.serveBackupOperation(w, r)
+}
+
+// The caller owns authentication, authorization and auditing. Both the Panel
+// route and the typed MCP registry reuse this one backup business workflow.
+func (s *Server) serveBackupOperation(w http.ResponseWriter, r *http.Request) {
 	if s.backups == nil {
 		s.backupError(w, r, backup.ErrBusy)
 		return
@@ -76,16 +93,6 @@ func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/backups"), "/")
-	if r.Method != "GET" {
-		action := "backup.operation"
-		if len(parts) > 1 {
-			action = "backup." + parts[len(parts)-1]
-		}
-		if err := s.audit(r, session.User.ID, action, "backup", "", "intent", nil); err != nil {
-			s.writeProblem(w, r, 503, "audit_unavailable", "无法记录备份操作，请稍后重试", "")
-			return
-		}
-	}
 	if len(parts) == 1 && parts[0] == "" && r.Method == "GET" {
 		s.writeJSON(w, 200, map[string]any{"items": s.backups.List(), "maxBytes": backup.MaxBytes})
 		return

@@ -1,4 +1,4 @@
-// Package mcpaccess owns delegated, read-only MCP credentials. It never owns
+// Package mcpaccess owns delegated MCP credentials. It never owns
 // host resources or accepts Panel sessions / Agent credentials.
 package mcpaccess
 
@@ -43,6 +43,7 @@ type Client struct {
 	Hosts     []HostGrant `json:"hosts"`
 	CreatedAt time.Time   `json:"createdAt"`
 	ExpiresAt time.Time   `json:"expiresAt"`
+	Policy    *Policy     `json:"policy,omitempty"`
 }
 
 type credential struct {
@@ -104,7 +105,7 @@ func validState(v state) bool {
 	}
 	ids := map[string]bool{}
 	for _, c := range v.Clients {
-		if !validHex(c.ID, 32) || !validHex(c.Digest, 64) || ids[c.ID] || !validName(c.Name) || !validHosts(c.Hosts) || c.CreatedAt.IsZero() || !c.ExpiresAt.After(c.CreatedAt) || c.ExpiresAt.Sub(c.CreatedAt) > 90*24*time.Hour {
+		if !validHex(c.ID, 32) || !validHex(c.Digest, 64) || ids[c.ID] || !validName(c.Name) || !validHosts(c.Hosts) || !c.Policy.Valid() || c.CreatedAt.IsZero() || !c.ExpiresAt.After(c.CreatedAt) || c.ExpiresAt.Sub(c.CreatedAt) > 90*24*time.Hour {
 			return false
 		}
 		ids[c.ID] = true
@@ -153,7 +154,11 @@ func (s *Store) snapshot() Snapshot {
 	}
 	return v
 }
-func clone(c Client) Client         { c.Hosts = append([]HostGrant(nil), c.Hosts...); return c }
+func clone(c Client) Client {
+	c.Hosts = append([]HostGrant(nil), c.Hosts...)
+	c.Policy = clonePolicy(c.Policy)
+	return c
+}
 func (s *Store) Snapshot() Snapshot { s.mu.Lock(); defer s.mu.Unlock(); return s.snapshot() }
 
 // Enabled is allocation-free for unauthenticated requests to the public route.
@@ -164,6 +169,10 @@ func (s *Store) Enabled() bool {
 }
 
 func (s *Store) save(next state) error {
+	data, err := json.Marshal(next)
+	if err != nil || len(data) > MaxBytes {
+		return ErrLimited
+	}
 	if err := s.write(s.path, next); err != nil {
 		// A failed directory sync may mean rename succeeded. Never keep using an
 		// in-memory credential set that could disagree with durable revocations.
@@ -197,12 +206,16 @@ func (s *Store) SetEnabled(enabled bool, version string) (Snapshot, error) {
 }
 
 func (s *Store) Create(name string, hosts []HostGrant, lifetime time.Duration, version string) (Client, string, error) {
+	return s.CreateWithPolicy(name, hosts, nil, lifetime, version)
+}
+
+func (s *Store) CreateWithPolicy(name string, hosts []HostGrant, policy *Policy, lifetime time.Duration, version string) (Client, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.expected(version); err != nil {
 		return Client{}, "", err
 	}
-	if !s.state.Enabled || !validName(name) || !validHosts(hosts) || lifetime < time.Hour || lifetime > 90*24*time.Hour || len(s.state.Clients) >= MaxClients {
+	if !s.state.Enabled || !validName(name) || !validHosts(hosts) || !policy.Valid() || lifetime < time.Hour || lifetime > 90*24*time.Hour || len(s.state.Clients) >= MaxClients {
 		return Client{}, "", ErrInvalid
 	}
 	var id [16]byte
@@ -216,7 +229,7 @@ func (s *Store) Create(name string, hosts []HostGrant, lifetime time.Duration, v
 	token := "kpm_" + hex.EncodeToString(secret[:])
 	digest := sha256.Sum256([]byte(token))
 	now := s.now().UTC()
-	c := Client{ID: hex.EncodeToString(id[:]), Name: name, Hosts: append([]HostGrant(nil), hosts...), CreatedAt: now, ExpiresAt: now.Add(lifetime)}
+	c := Client{ID: hex.EncodeToString(id[:]), Name: name, Hosts: append([]HostGrant(nil), hosts...), CreatedAt: now, ExpiresAt: now.Add(lifetime), Policy: clonePolicy(policy)}
 	next := s.state
 	next.Clients = append(append([]credential(nil), next.Clients...), credential{Client: c, Digest: hex.EncodeToString(digest[:])})
 	if err := s.save(next); err != nil {
@@ -231,6 +244,25 @@ func (s *Store) Revoke(id, version string) (Snapshot, error) {
 	if err := s.expected(version); err != nil {
 		return Snapshot{}, err
 	}
+	return s.revokeLocked(id)
+}
+
+// OAuth revocation already authenticates the token. It cannot race a UI
+// resource-version check and leave its backing grant usable for old approvals.
+func (s *Store) revokeOAuthGrant(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.available {
+		return ErrUnavailable
+	}
+	_, err := s.revokeLocked(id)
+	if errors.Is(err, ErrInvalid) {
+		return nil
+	}
+	return err
+}
+
+func (s *Store) revokeLocked(id string) (Snapshot, error) {
 	next := s.state
 	next.Clients = make([]credential, 0, len(s.state.Clients))
 	found := false
@@ -289,6 +321,25 @@ func (s *Store) Begin(token string) (Principal, func(), error) {
 	if err != nil {
 		return Principal{}, nil, err
 	}
+	return s.beginLocked(p)
+}
+
+func (s *Store) beginOAuthGrant(id string) (Principal, func(), error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.state.Clients {
+		if c.ID == id {
+			p, err := s.find(c.Digest)
+			if err != nil {
+				return Principal{}, nil, err
+			}
+			return s.beginLocked(p)
+		}
+	}
+	return Principal{}, nil, ErrUnauthorized
+}
+
+func (s *Store) beginLocked(p Principal) (Principal, func(), error) {
 	u := s.usage[p.ID]
 	if u == nil {
 		u = &usage{}
@@ -312,4 +363,17 @@ func (s *Store) Active(p Principal) bool {
 	defer s.mu.Unlock()
 	_, err := s.find(p.digest)
 	return err == nil
+}
+
+// LookupClient is for an already authenticated Panel administrator executing
+// an approved plan. It is never a public credential exchange endpoint.
+func (s *Store) LookupClient(id string) (Principal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.state.Clients {
+		if c.ID == id {
+			return s.find(c.Digest)
+		}
+	}
+	return Principal{}, ErrUnauthorized
 }

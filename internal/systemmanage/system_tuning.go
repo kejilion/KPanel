@@ -275,11 +275,12 @@ func (m *Manager) ExecuteSystemTuningAction(ctx context.Context, request contrac
 		return contract.SystemTuningActionResult{}, fmt.Errorf("%w: expected resource version is stale", ErrConflict)
 	}
 	policy := systemTuningMaintenancePolicy(request.Items, request.ExpectedResourceVersion)
-	changed, message, err := m.startMaintenance(transactionContext, "system-tuning", policy)
+	changed, message, taskID, err := m.startMaintenanceTask(transactionContext, "system-tuning", policy)
 	if err != nil {
 		return contract.SystemTuningActionResult{}, err
 	}
 	return contract.SystemTuningActionResult{
+		TaskID: taskID,
 		Action: request.Action, Items: append([]string(nil), request.Items...), Status: "accepted", Changed: changed,
 		Message: message, ResourceVersion: current.ResourceVersion, AcceptedAt: m.now().UTC(),
 	}, nil

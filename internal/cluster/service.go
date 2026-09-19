@@ -87,6 +87,7 @@ type runtimeState struct {
 }
 
 type Service struct {
+	managed              *managedControl
 	store                *Store
 	secrets              *secretStore
 	storeV2              *storeV2
@@ -272,7 +273,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 	remoteV2, _ := config.Remote.(remoteV2API)
 	now := config.Now().UTC()
 	service := &Service{
-		store: store, secrets: secrets,
+		managed: openManagedControl(config.DataDir),
+		store:   store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightBatches: lightBatches,
