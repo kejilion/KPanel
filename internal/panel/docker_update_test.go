@@ -90,7 +90,7 @@ func TestImageChecksDoNotRewriteAuditStoreButMutationsStillDo(t *testing.T) {
 			t.Fatalf("restart status=%d body=%s", response.Code, response.Body.String())
 		}
 	}
-	events, _ := s.store.ListAudit(100, "")
+	events, _, _ := s.store.ListAudit(100, "")
 	for _, action := range []string{"docker.restart", "app.restart"} {
 		count := 0
 		for _, event := range events {

@@ -140,10 +140,12 @@ type PasswordRecovery struct {
 }
 
 type diskState struct {
-	SchemaVersion    int               `json:"schemaVersion"`
-	Users            []User            `json:"users"`
-	Sessions         []Session         `json:"sessions"`
-	Audit            []AuditEvent      `json:"audit"`
+	SchemaVersion int       `json:"schemaVersion"`
+	Users         []User    `json:"users"`
+	Sessions      []Session `json:"sessions"`
+	// Audit is read only to migrate records written before audit history
+	// moved to its own database; it is never persisted again.
+	Audit            []AuditEvent      `json:"audit,omitempty"`
 	LoginAttempts    []LoginAttempt    `json:"loginAttempts"`
 	SecurityEntrance SecurityEntrance  `json:"securityEntrance,omitempty"`
 	ClusterShare     ClusterShare      `json:"clusterShare,omitempty"`
@@ -158,6 +160,7 @@ type Store struct {
 	mu            sync.RWMutex
 	path          string
 	data          diskState
+	audit         *auditLog
 	processLock   processLock
 	syncDirectory func(string) error
 }
@@ -222,9 +225,40 @@ func Open(path string) (*Store, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return nil, fmt.Errorf("protect store: %w", err)
 	}
+	// The audit database is opened under the same process lock as the state
+	// file, so only this process ever writes either of them.
+	audit, err := openAuditLog(auditLogPath(path))
+	if err != nil {
+		return nil, err
+	}
+	s.audit = audit
+	if err := s.migrateAuditLocked(); err != nil {
+		_ = audit.close()
+		return nil, err
+	}
 
 	opened = true
 	return s, nil
+}
+
+// migrateAuditLocked moves audit records still held in panel-state.json into
+// the audit database, then drops them from the state file. The import ignores
+// IDs it already holds, so a start interrupted between the two steps simply
+// repeats the migration without duplicating or losing records.
+func (s *Store) migrateAuditLocked() error {
+	if len(s.data.Audit) == 0 {
+		return nil
+	}
+	if err := s.audit.append(s.data.Audit, MaxAuditEntries, true); err != nil {
+		return fmt.Errorf("migrate audit history: %w", err)
+	}
+	previous := s.data.Audit
+	s.data.Audit = nil
+	if err := s.persistLocked(); err != nil {
+		s.data.Audit = previous
+		return fmt.Errorf("migrate audit history: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -233,9 +267,12 @@ func (s *Store) Close() error {
 	if s.processLock == nil {
 		return nil
 	}
+	// s.audit stays set: AppendAudit does not take s.mu, and a closed log
+	// answers ErrAuditUnavailable instead of racing on this field.
+	auditErr := s.audit.close()
 	err := s.processLock.Close()
 	s.processLock = nil
-	return err
+	return errors.Join(auditErr, err)
 }
 
 func (s *Store) IsInitialized() bool {
@@ -336,6 +373,13 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 		return ErrConflict
 	}
 
+	// The recovery is audited before the credential changes: the audit
+	// database is a separate file, so the two cannot commit atomically, and
+	// a recorded recovery that then fails is followed by a failure record
+	// rather than leaving a credential change with no audit trail.
+	if err := s.audit.append([]AuditEvent{input.AuditEvent}, input.MaxAuditEntries, false); err != nil {
+		return err
+	}
 	previous := cloneDiskState(s.data)
 	s.data.Users[userIndex].PasswordHash = input.NewHash
 	s.data.Users[userIndex].UpdatedAt = input.UpdatedAt
@@ -352,13 +396,12 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 	// subsequent network failures are recorded and limited normally.
 	s.data.LoginAttempts = nil
 
-	s.data.Audit = append(s.data.Audit, input.AuditEvent)
-	if input.MaxAuditEntries > 0 && len(s.data.Audit) > input.MaxAuditEntries {
-		s.data.Audit = append([]AuditEvent(nil), s.data.Audit[len(s.data.Audit)-input.MaxAuditEntries:]...)
-	}
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
-		return err
+		failure := input.AuditEvent
+		failure.ID += ":failed"
+		failure.Result = "failure"
+		return errors.Join(err, s.audit.append([]AuditEvent{failure}, input.MaxAuditEntries, false))
 	}
 	return nil
 }
@@ -617,52 +660,16 @@ func (s *Store) DeleteSession(tokenHash string) error {
 	return nil
 }
 
+// AppendAudit durably records one event. It does not take the state lock, so
+// audit writes no longer stall session checks and other state reads.
 func (s *Store) AppendAudit(event AuditEvent, maxEntries int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previous := cloneDiskState(s.data)
-	s.data.Audit = append(s.data.Audit, event)
-	if maxEntries > 0 && len(s.data.Audit) > maxEntries {
-		s.data.Audit = append([]AuditEvent(nil), s.data.Audit[len(s.data.Audit)-maxEntries:]...)
-	}
-	if err := s.persistLocked(); err != nil {
-		s.data = previous
-		return err
-	}
-	return nil
+	return s.audit.append([]AuditEvent{event}, maxEntries, false)
 }
 
-// ListAudit returns newest-first records. Cursor is the last event ID received.
-func (s *Store) ListAudit(limit int, cursor string) ([]AuditEvent, string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-
-	items := append([]AuditEvent(nil), s.data.Audit...)
-	sort.SliceStable(items, func(i, j int) bool {
-		return items[i].OccurredAt.After(items[j].OccurredAt)
-	})
-
-	start := 0
-	if cursor != "" {
-		for i, event := range items {
-			if event.ID == cursor {
-				start = i + 1
-				break
-			}
-		}
-	}
-	if start >= len(items) {
-		return []AuditEvent{}, ""
-	}
-	end := min(start+limit, len(items))
-	next := ""
-	if end < len(items) {
-		next = items[end-1].ID
-	}
-	return items[start:end], next
+// ListAudit returns newest-first records in write order. Cursor is the last
+// event ID received; an unknown cursor restarts from the newest record.
+func (s *Store) ListAudit(limit int, cursor string) ([]AuditEvent, string, error) {
+	return s.audit.list(limit, cursor)
 }
 
 const maxLoginAttempts = 4096

@@ -683,7 +683,7 @@ func (s *Service) RecoverPassword(userID, newPassword string, disableTOTP bool) 
 			ID: eventID, OccurredAt: now, ActorType: "cli", Action: "auth.password.recover",
 			TargetKind: "user", TargetID: user.ID, Result: "success", Change: change,
 		},
-		MaxAuditEntries: 10_000,
+		MaxAuditEntries: store.MaxAuditEntries,
 	}); err != nil {
 		if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrNotFound) {
 			return PublicUser{}, ErrInvalidCredentials

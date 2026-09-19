@@ -1030,7 +1030,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	events, next := s.store.ListAudit(limit, r.URL.Query().Get("cursor"))
+	events, next, err := s.store.ListAudit(limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
 	result := contract.PageResult[contract.AuditEvent]{
 		Items: make([]contract.AuditEvent, 0, len(events)),
 	}
@@ -1523,7 +1527,7 @@ func (s *Server) audit(r *http.Request, actorID, action, targetKind, targetID, r
 		ID: newRequestID(), OccurredAt: time.Now().UTC(), ActorType: actorType(actorID),
 		ActorID: actorID, SourceIP: s.remoteIP(r), Action: action, TargetKind: targetKind,
 		TargetID: targetID, Result: result, RequestID: requestID(r), Change: change,
-	}, 10_000)
+	}, store.MaxAuditEntries)
 }
 
 func actorType(actorID string) string {

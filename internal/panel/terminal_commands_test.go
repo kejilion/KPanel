@@ -76,7 +76,7 @@ func TestTerminalCommandsAPIAuthenticationPersistenceAndConflict(t *testing.T) {
 		t.Fatalf("stale update response = %d %s", stale.Code, stale.Body.String())
 	}
 
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	auditData, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

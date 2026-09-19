@@ -170,7 +170,7 @@ func TestDockerAcceptedFollowsOwnerStateAndSurvivesAuditTruncation(t *testing.T)
 	if response.Code != 202 {
 		t.Fatalf("submit: %d %s", response.Code, response.Body.String())
 	}
-	events, _ := server.store.ListAudit(200, "")
+	events, _, _ := server.store.ListAudit(200, "")
 	found := false
 	for _, event := range events {
 		if event.Action == "docker.image_pull" {
@@ -223,7 +223,7 @@ func TestAppAndWebEnvironmentSubmissionAuditLinksOnlyOwnerIdentity(t *testing.T)
 			if r.Code != 202 {
 				t.Fatalf("submit: %d %s", r.Code, r.Body.String())
 			}
-			events, _ := server.store.ListAudit(200, "")
+			events, _, _ := server.store.ListAudit(200, "")
 			var outcomes []store.AuditEvent
 			for _, event := range events {
 				if event.Action == tc.action {

@@ -62,8 +62,8 @@ func TestStorePersistsIdentitySessionAndAudit(t *testing.T) {
 	if _, err := reopened.SessionByTokenHash("token-hash", now); err != nil {
 		t.Fatal(err)
 	}
-	events, next := reopened.ListAudit(10, "")
-	if len(events) != 1 || events[0].ID != "event-1" || next != "" {
+	events, next, err := reopened.ListAudit(10, "")
+	if err != nil || len(events) != 1 || events[0].ID != "event-1" || next != "" {
 		t.Fatalf("unexpected audit page: %#v next=%q", events, next)
 	}
 }
@@ -1114,7 +1114,7 @@ func TestRecoverUserPasswordPreservesPanelStateAndRecordsAudit(t *testing.T) {
 	if gotEntrance != entrance {
 		t.Fatalf("security entrance changed: %#v", gotEntrance)
 	}
-	events, _ := storage.ListAudit(10, "")
+	events, _, _ := storage.ListAudit(10, "")
 	if len(events) != 1 || events[0].ID != event.ID {
 		t.Fatalf("recovery audit was not committed: %#v", events)
 	}
@@ -1218,9 +1218,11 @@ func TestRecoverUserPasswordPersistenceFailureRollsBackEntireTransition(t *testi
 	if count := storage.FailedLoginCount("account:admin", now.Add(-time.Hour)); count != 1 {
 		t.Fatalf("failed recovery cleared login attempts: %d", count)
 	}
-	events, _ := storage.ListAudit(10, "")
-	if len(events) != 0 {
-		t.Fatalf("failed recovery recorded an audit event: %#v", events)
+	// The audit database is a separate file, so the recovery is recorded
+	// first and a failed state commit is followed by a failure record.
+	events, _, _ := storage.ListAudit(10, "")
+	if len(events) != 2 || events[0].ID != "event:failed" || events[0].Result != "failure" || events[1].ID != "event" {
+		t.Fatalf("failed recovery audit trail: %#v", events)
 	}
 }
 

@@ -405,7 +405,7 @@ func TestRecoverPasswordReplacesCredentialsWithoutCurrentPassword(t *testing.T) 
 	if _, err := service.Login("192.0.2.1", "admin", "a-recovered-password-3", ""); err != nil {
 		t.Fatalf("recovered password was rejected: %v", err)
 	}
-	events, _ := storage.ListAudit(10, "")
+	events, _, _ := storage.ListAudit(10, "")
 	if len(events) != 1 || events[0].ActorType != "cli" || events[0].Action != "auth.password.recover" {
 		t.Fatalf("unexpected recovery audit: %#v", events)
 	}

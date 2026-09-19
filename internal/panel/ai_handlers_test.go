@@ -263,7 +263,7 @@ func TestAIToolUsesFixedAgentPathAndAudits(t *testing.T) {
 	if _, err := tools.Execute(context.Background(), execution, "host_system_summary", json.RawMessage(`{"unknown":true}`)); !errors.Is(err, ai.ErrToolArguments) || len(agent.snapshotCalls()) != 1 {
 		t.Fatalf("unknown read arguments were not rejected before Agent: %v", err)
 	}
-	audits, _ := server.store.ListAudit(10, "")
+	audits, _, _ := server.store.ListAudit(10, "")
 	if len(audits) == 0 || audits[0].Change["sessionId"] != "ses-1" || audits[0].Change["runId"] != "run-1" || audits[0].Change["toolCallId"] != "call-1" {
 		t.Fatalf("AI audit correlation missing: %#v", audits)
 	}
@@ -286,7 +286,7 @@ func TestAIToolReasonMetadataIsStrippedBeforeNginxReloadAndAudit(t *testing.T) {
 	if len(calls) != 1 || calls[0].path != "/v1/nginx/reload" || calls[0].method != http.MethodPost || string(calls[0].body) != `{}` {
 		t.Fatalf("nginx reload Agent call=%#v", calls)
 	}
-	audits, _ := server.store.ListAudit(10, "")
+	audits, _, _ := server.store.ListAudit(10, "")
 	encoded, _ := json.Marshal(audits)
 	if strings.Contains(string(encoded), "configuration validated") || strings.Contains(string(encoded), `"reason"`) {
 		t.Fatalf("reason metadata reached audit: %s", encoded)
@@ -312,7 +312,7 @@ func TestAIFileToolsUseBoundedAgentRoutesAndRedactContent(t *testing.T) {
 		calls[1].path != "/v1/files/content" || calls[1].method != http.MethodPut || calls[1].rawQuery != "path=%2Ftmp%2Fkpanel-ai-test.txt" {
 		t.Fatalf("file tool calls=%#v", calls)
 	}
-	audits, _ := server.store.ListAudit(20, "")
+	audits, _, _ := server.store.ListAudit(20, "")
 	for _, event := range audits {
 		encoded, _ := json.Marshal(event.Change)
 		if strings.Contains(string(encoded), "sensitive-value") {

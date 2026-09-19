@@ -112,7 +112,7 @@ func TestSiteCreateProxiesAgentProblemAndAuditsSafeMetadata(t *testing.T) {
 		t.Fatalf("create forwarded an expectedResourceVersion: %#v", forwarded)
 	}
 
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	var siteEvents int
 	for _, event := range events {
 		if event.Action != "site.create" {
@@ -205,7 +205,7 @@ func TestSiteDeleteRequiresDomainAndForwardsOnlyKWebDelIdentity(t *testing.T) {
 	if forwarded["primaryDomain"] != "example.com" || len(forwarded) != 1 {
 		t.Fatalf("unexpected delete payload: %#v", forwarded)
 	}
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	for _, event := range events {
 		if event.Action != "site.delete" {
 			continue

@@ -101,7 +101,7 @@ func TestDesktopWorkspaceAPIAuthenticationValidationAndConflict(t *testing.T) {
 		t.Fatalf("stale workspace response = %d %s", stale.Code, stale.Body.String())
 	}
 
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	auditJSON, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

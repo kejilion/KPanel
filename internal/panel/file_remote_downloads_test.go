@@ -237,7 +237,7 @@ func TestFileRemoteDownloadStreamsToAtomicAgentUploadAndAuditsRedactedSource(t *
 	if query.Get("path") != "/home" || query.Get("name") != "download (1)" || query.Get("overwrite") != "false" {
 		t.Fatalf("upload query = %#v", query)
 	}
-	auditEvents, _ := server.store.ListAudit(20, "")
+	auditEvents, _, _ := server.store.ListAudit(20, "")
 	serializedAudit, _ := json.Marshal(auditEvents)
 	leakedValues := []string{
 		"source-bearer-token", "secret-token", "redirect-bearer-token", "redirect-secret-token", "/build", "/assets",

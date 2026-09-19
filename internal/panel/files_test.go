@@ -798,7 +798,7 @@ func TestFileActionUsesFixedEnumAndWritesAudit(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("trash action = %d %s", response.Code, response.Body.String())
 	}
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	var intent, success bool
 	for _, event := range events {
 		if event.Action != "file.trash" {
@@ -852,7 +852,7 @@ func TestFileActionAuditsPartialFailure(t *testing.T) {
 	if response.Code != http.StatusMultiStatus {
 		t.Fatalf("partial response = %d %s", response.Code, response.Body.String())
 	}
-	events, _ := server.store.ListAudit(20, "")
+	events, _, _ := server.store.ListAudit(20, "")
 	for _, event := range events {
 		if event.Action == "file.trash" && event.Result == "partial_failure" {
 			return

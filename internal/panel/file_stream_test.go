@@ -69,7 +69,7 @@ func TestFederationFileStreamRouteIsReservedForLightNodes(t *testing.T) {
 	ws.CloseNow()
 	deadline := time.Now().Add(time.Second)
 	for {
-		events, _ := server.store.ListAudit(100, "")
+		events, _, _ := server.store.ListAudit(100, "")
 		var success, rejected, unauth int
 		for _, event := range events {
 			if event.Action != "cluster.federation.v2.files.stream" {
