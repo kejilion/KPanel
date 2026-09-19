@@ -35,16 +35,23 @@ beforeEach(() => {
 
 describe('MonitoringChecksDialog', () => {
   it('edits the unified list and saves one versioned replacement', async () => {
-    const wrapper = mount(MonitoringChecksDialog, { props: { open: true }, global: { stubs: { teleport: true } } })
+    const wrapper = mount(MonitoringChecksDialog, { attachTo: document.body, props: { open: true }, global: { stubs: { teleport: true } } })
     await flushPromises()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
     expect(wrapper.get('.check-editor input').element).toHaveProperty('value', '电信 · 北京')
 
+    const list = wrapper.get<HTMLElement>('.check-manager__list')
+    list.element.scrollTop = 120
     await wrapper.findAll('button').find((button) => button.text().includes('添加检测项'))!.trigger('click')
+    await flushPromises()
     const editors = wrapper.findAll('.check-editor')
     expect(editors).toHaveLength(2)
-    await editors[1]!.get('select').setValue('tcp')
-    const inputs = editors[1]!.findAll('input')
+    expect(editors[0]!.get('input').element).toHaveProperty('value', '')
+    expect(editors[1]!.get('input').element).toHaveProperty('value', '电信 · 北京')
+    expect(list.element.scrollTop).toBe(0)
+    expect(document.activeElement).toBe(editors[0]!.get('input').element)
+    await editors[0]!.get('select').setValue('tcp')
+    const inputs = editors[0]!.findAll('input')
     await inputs[0]!.setValue('官网 TLS')
     await inputs[1]!.setValue('example.com:443')
     await wrapper.findAll('button').find((button) => button.text().includes('保存变更'))!.trigger('click')
@@ -53,9 +60,13 @@ describe('MonitoringChecksDialog', () => {
     expect(mocks.updateChecks).toHaveBeenCalledTimes(1)
     expect(mocks.updateChecks.mock.calls[0]?.[0]).toMatchObject({
       expectedResourceVersion: version,
-      items: expect.arrayContaining([expect.objectContaining({ kind: 'tcp', name: '官网 TLS', target: 'example.com:443' })]),
+      items: [
+        expect.objectContaining({ kind: 'tcp', name: '官网 TLS', target: 'example.com:443' }),
+        expect.objectContaining({ id: 'telecom-beijing' }),
+      ],
     })
     expect(wrapper.emitted('saved')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it('allows deleting every item and persists an intentionally empty list', async () => {
