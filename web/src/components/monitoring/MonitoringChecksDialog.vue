@@ -157,8 +157,8 @@ onBeforeUnmount(() => controller?.abort())
       </div>
 
       <div v-if="items.length" ref="checkList" class="check-manager__list">
-        <article v-for="(item, index) in items" :key="item.id" class="check-editor">
-          <label><span>{{ phrase('类型') }}</span><select v-model="item.kind"><option value="ping">Ping</option><option value="tcp">TCP</option><option value="http">HTTP</option></select></label>
+        <article v-for="(item, index) in items" :key="item.id" class="check-editor" :class="`check-editor--${item.kind}`">
+          <label class="check-editor__kind"><span>{{ phrase('类型') }}</span><select v-model="item.kind"><option value="ping">Ping</option><option value="tcp">TCP</option><option value="http">HTTP</option></select></label>
           <label><span>{{ phrase('名称') }}</span><input v-model="item.name" maxlength="48" :placeholder="phrase('例如：官网首页')" /></label>
           <label class="check-editor__target"><span>{{ phrase('检测目标') }}</span><input v-model="item.target" maxlength="2048" :placeholder="checkPlaceholder(item.kind)" /></label>
           <button class="check-editor__delete" type="button" :aria-label="phrase(`删除 ${item.name || '未命名检测项'}`)" :title="phrase('删除检测项')" :disabled="saving" @click="removeCheck(index)"><Trash2 :size="17" /></button>
@@ -185,9 +185,20 @@ onBeforeUnmount(() => controller?.abort())
 .check-manager__toolbar { display: flex; align-items: center; gap: 8px; }
 .check-manager__toolbar > span { flex: 1; color: var(--muted); font-size: 13px; }
 .check-manager__list { display: grid; gap: 9px; max-height: min(58vh, 620px); overflow-y: auto; padding-right: 3px; }
-.check-editor { display: grid; grid-template-columns: 120px minmax(160px, .75fr) minmax(240px, 1.4fr) 38px; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.check-editor {
+  --check-type-accent: var(--blue);
+  display: grid; grid-template-columns: 120px minmax(160px, .75fr) minmax(240px, 1.4fr) 38px; align-items: end; gap: 10px; padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--check-type-accent) 18%, var(--border));
+  border-radius: var(--radius);
+  background: linear-gradient(110deg, color-mix(in srgb, var(--check-type-accent) 7%, var(--surface-subtle)), var(--surface-subtle) 72%);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--check-type-accent) 38%, transparent);
+}
+.check-editor--ping { --check-type-accent: color-mix(in srgb, var(--blue) 56%, var(--brand)); }
+.check-editor--tcp { --check-type-accent: var(--blue); }
+.check-editor--http { --check-type-accent: var(--violet); }
 .check-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
 .check-editor input, .check-editor select { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font: inherit; font-size: 14px; }
+.check-editor__kind select { border-color: color-mix(in srgb, var(--check-type-accent) 24%, var(--border)); background: color-mix(in srgb, var(--check-type-accent) 4%, var(--surface)); }
 .check-editor input:focus, .check-editor select:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
 .check-editor__delete { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--danger); background: var(--surface); cursor: pointer; }
 .check-editor__hint { grid-column: 1 / -1; margin: -2px 0 0; color: var(--amber); font-size: 13px; }
