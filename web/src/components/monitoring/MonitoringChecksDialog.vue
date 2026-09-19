@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Plus, RefreshCw, Trash2 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
@@ -13,6 +13,7 @@ const emit = defineEmits<{ close: []; saved: [snapshot: MonitoringCheckSnapshot]
 
 const snapshot = ref<MonitoringCheckSnapshot>()
 const items = ref<MonitoringCheck[]>([])
+const checkList = ref<HTMLElement>()
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -40,10 +41,13 @@ function newID(): string {
   return `check-${random}`.slice(0, 64).replace(/-$/, '0')
 }
 
-function addCheck(): void {
+async function addCheck(): Promise<void> {
   if (!canAdd.value) return
-  items.value.push({ id: newID(), kind: 'ping', name: '', target: '' })
+  if (checkList.value) checkList.value.scrollTop = 0
+  items.value.unshift({ id: newID(), kind: 'ping', name: '', target: '' })
   status.value = ''
+  await nextTick()
+  checkList.value?.querySelector<HTMLInputElement>('.check-editor input')?.focus()
 }
 
 function removeCheck(index: number): void {
@@ -152,7 +156,7 @@ onBeforeUnmount(() => controller?.abort())
         <button class="button button--primary button--small" type="button" :disabled="!canAdd || saving" @click="addCheck"><Plus :size="15" />{{ phrase('添加检测项') }}</button>
       </div>
 
-      <div v-if="items.length" class="check-manager__list">
+      <div v-if="items.length" ref="checkList" class="check-manager__list">
         <article v-for="(item, index) in items" :key="item.id" class="check-editor">
           <label><span>{{ phrase('类型') }}</span><select v-model="item.kind"><option value="ping">Ping</option><option value="tcp">TCP</option><option value="http">HTTP</option></select></label>
           <label><span>{{ phrase('名称') }}</span><input v-model="item.name" maxlength="48" :placeholder="phrase('例如：官网首页')" /></label>
