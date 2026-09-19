@@ -164,6 +164,9 @@ export function validatePolicy(policy, repo) {
     for (const manifest of group.manifests) {
       if (!existsSync(resolve(repo, manifest))) failures.push(group.id + ' manifest is missing: ' + manifest);
     }
+    if (!COLLECTORS.some((source) => source.groups.includes(group.id))) {
+      failures.push(group.id + ' declares detector ' + group.detector + ' but no collector implements it');
+    }
   }
   for (const group of (policy.groups ?? []).filter((item) => item.detector === 'github-commits')) {
     const components = Object.entries(group.components ?? {});
@@ -763,6 +766,21 @@ export function auditSkillRevisionCandidate(component, pinnedCommit, headCommit,
   };
 }
 
+// Single table for what runs and what validatePolicy reconciles: a policy group without a collector here
+// is a declared-but-unimplemented detector and fails validation.
+export const COLLECTORS = [
+  { id: 'go-modules', groups: ['go-modules'], collect: (repo) => collectGoModules(repo) },
+  { id: 'npm-packages', groups: ['npm-packages'], collect: (repo) => collectNpm(repo) },
+  { id: 'toolchains-and-base-images', groups: ['go-toolchain', 'node-toolchain'], collect: (repo) => collectToolchains(repo) },
+  { id: 'docker-base-images', groups: ['docker-base-images'], collect: (repo) => collectBaseImages(repo) },
+  { id: 'github-actions', groups: ['github-actions'], collect: (repo) => collectActions(repo) },
+  { id: 'security-tools', groups: ['security-tools'], collect: (repo, policy) => collectSecurityTools(repo, policy) },
+  { id: 'dockerfile-frontend', groups: ['dockerfile-frontend'], collect: (repo) => collectDockerfileFrontend(repo) },
+  { id: 'managed-kejilion-script', groups: ['managed-kejilion-script'], collect: (repo, policy) => collectManagedScript(repo, policy) },
+  { id: 'code-review-assistant', groups: ['code-review-assistant'], collect: (repo, policy) => collectCodeReviewAssistant(policy) },
+  { id: 'security-audit-skill', groups: ['security-audit-skill'], collect: (repo, policy) => collectGitHubCommitPins(policy, 'security-audit-skill') },
+];
+
 async function collectSource(id, collector) {
   try {
     return { id, status: 'ok', candidates: await collector(), error: null };
@@ -904,18 +922,8 @@ export async function main(argv) {
     process.stdout.write('Dependency policy validation passed (' + policy.groups.length + ' groups).\n');
     return 0;
   }
-  const sources = await Promise.all([
-    collectSource('go-modules', () => collectGoModules(options.repo)),
-    collectSource('npm-packages', () => collectNpm(options.repo)),
-    collectSource('toolchains-and-base-images', () => collectToolchains(options.repo)),
-    collectSource('docker-base-images', () => collectBaseImages(options.repo)),
-    collectSource('github-actions', () => collectActions(options.repo)),
-    collectSource('security-tools', () => collectSecurityTools(options.repo, policy)),
-    collectSource('dockerfile-frontend', () => collectDockerfileFrontend(options.repo)),
-    collectSource('managed-kejilion-script', () => collectManagedScript(options.repo, policy)),
-    collectSource('code-review-assistant', () => collectCodeReviewAssistant(policy)),
-    collectSource('security-audit-skill', () => collectGitHubCommitPins(policy, 'security-audit-skill')),
-  ]);
+  const sources = await Promise.all(COLLECTORS.map((source) =>
+    collectSource(source.id, () => source.collect(options.repo, policy))));
   const report = summarize(policy, sources);
   const rendered = options.format === 'json' ? JSON.stringify(report, null, 2) : renderMarkdown(report);
   process.stdout.write(rendered + '\n');

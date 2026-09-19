@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   auditSkillRevisionCandidate,
   classifyUpdate,
+  COLLECTORS,
   compareVersions,
   goExecutable,
   githubActionVersionCandidate,
@@ -313,4 +314,16 @@ test('open-code-review pin is validated and newer releases stay candidate signal
   const update = reviewAssistantCandidate('1.12.5', 'v1.13.0');
   assert.equal(update.updateClass, 'minor');
   assert.equal(update.verificationFloor, 'canary-replay');
+});
+
+test('every declared dependency group has an implemented collector', () => {
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  assert.deepEqual(validatePolicy(policy, process.cwd()), []);
+  policy.groups.push({ id: 'declared-only', detector: 'github-commits', manifests: ['dependency-policy.json'] });
+  assert.ok(validatePolicy(policy, process.cwd()).some((failure) => failure.includes('declared-only declares detector')));
+  const covered = new Set(COLLECTORS.flatMap((source) => source.groups));
+  assert.equal(new Set(COLLECTORS.map((source) => source.id)).size, COLLECTORS.length);
+  for (const group of JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8')).groups) {
+    assert.ok(covered.has(group.id), group.id);
+  }
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +70,8 @@ const requiredFiles = [
   '.governance/ocr-review/README.md',
   'scripts/ocr-delegate.mjs',
   'scripts/tests/ocr-delegate.test.mjs',
+  'scripts/report-governance-health.mjs',
+  'scripts/tests/report-governance-health.test.mjs',
   '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 
@@ -640,7 +642,15 @@ requireText('docs/release-acceptance-template.md', [
   '## 自更新通道验收',
   '预览版禁止生产部署',
 ]);
+requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天']);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict --since=']);
+requireText('docs/multi-agent-collaboration.md', ['Independent-Review: reviewer=<提供商> author=<提供商>', '默认由与实现者不同的模型']);
+requireText('PROJECT_RULES.md', ['复核者默认来自与实现者不同的模型提供商']);
+requireText('docs/quality-improvement-proposal-template.md', ['- 复核提供商 / 实现提供商：']);
+requireText('AGENTS.md', ['Independent-Review:']);
+requireText('CLAUDE.md', ['Independent-Review:']);
 requireText('docs/quality-improvement-proposal-template.md', [
+  '- 复核延期至：',
   '## 观察证据',
   '## 原因假设',
   '## 基线、目标与观察窗口',
@@ -660,20 +670,17 @@ requireText('docs/ui-visual-language.md', [
   'WCAG 2.2',
 ]);
 
-const workflows = [
-  '.codex-workflows/session-collaboration.workflow.yaml',
-  '.codex-workflows/background-browser-validation.workflow.yaml',
-  '.codex-workflows/local-feature-preview.workflow.yaml',
-  '.codex-workflows/release-kpanel.workflow.yaml',
-  '.codex-workflows/quality-audit-kpanel.workflow.yaml',
-  '.codex-workflows/evolve-kpanel.workflow.yaml',
-  '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
-  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
-  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
-  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
-  '.codex-workflows/ocr-line-review.workflow.yaml',
-  '.codex-workflows/security-boundary-audit.workflow.yaml',
-];
+// Reconcile by directory scan: every workflow on disk is structurally checked and indexed in the README,
+// so adding a workflow can never silently skip governance checks (a hand-written list once missed one).
+const workflowReadme = read('.codex-workflows/README.md');
+const workflows = readdirSync(resolve(repoRoot, '.codex-workflows'))
+  .filter((name) => name.endsWith('.workflow.yaml'))
+  .sort()
+  .map((name) => '.codex-workflows/' + name);
+for (const workflow of workflows) {
+  const name = workflow.slice('.codex-workflows/'.length);
+  if (!workflowReadme.includes(name)) failures.push('.codex-workflows/README.md: workflow ' + name + ' is not indexed');
+}
 for (const workflow of workflows) {
   const content = read(workflow);
   for (const key of ['name:', 'description:', 'version:', 'params:', 'updated:']) {

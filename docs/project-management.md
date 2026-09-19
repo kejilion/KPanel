@@ -319,7 +319,8 @@ worktree / branch / base：
 
 交付包必须包含本地及远端分支、精确提交哈希和推送状态。协调中心必须读取提交差异并复核关键测试；
 不得仅根据任一智能体的最终回复宣布完成。提交信息可追加 `AI-Scope: <scope>` 和
-`AI-Agent: <provider>` trailer，便于追踪，但作者身份不替代代码评审和验证证据。
+`AI-Agent: <provider>` trailer，便于追踪，但作者身份不替代代码评审和验证证据。独立复核的
+`Independent-Review:` trailer 格式与提供商规则见 `docs/multi-agent-collaboration.md`。
 
 获得任务分支推送授权后，使用 SSH 保存可复核检查点：
 
