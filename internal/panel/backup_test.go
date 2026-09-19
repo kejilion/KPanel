@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/backup"
+	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
 )
@@ -222,6 +223,7 @@ func TestBackupPanelOfflineTransactionRecovery(t *testing.T) {
 		t.Run(map[bool]string{false: "rollback-after-apply", true: "finish-committed"}[commit], func(t *testing.T) {
 			s, token := newTestServer(t)
 			bootstrapCookies(t, s, token)
+			_, delegatedToken := mcpTestClient(t, s, true)
 			s.config.TOTPKeyPath = filepath.Join(s.config.DataDir, "totp.key")
 			data, err := s.exportPanelBackup(context.Background())
 			if err != nil {
@@ -267,6 +269,16 @@ func TestBackupPanelOfflineTransactionRecovery(t *testing.T) {
 			}
 			if err := RecoverPanelRestore(s.config); err != nil {
 				t.Fatal(err)
+			}
+			// Neither a successful restore nor its recovery rollback may resurrect
+			// delegated credentials that belonged to the previous Panel identity.
+			access := mcpaccess.Open(s.config.DataDir)
+			if access.Snapshot().Enabled || len(access.Snapshot().Clients) != 0 {
+				t.Fatal("identity restore retained MCP grants")
+			}
+			if _, release, err := access.Begin(delegatedToken); err == nil {
+				release()
+				t.Fatal("identity restore accepted previous MCP credential")
 			}
 			reopened, err := store.Open(s.config.StorePath)
 			if err != nil {
