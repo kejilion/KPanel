@@ -16,7 +16,7 @@
 
 - 原分支 / 精确 tip / 处置分类：`release/v1.20.0-candidate` / `c98727c898f8b446cceea5d7b10f3205340926a2` / absorbed。
 - 归档 ref 与 SHA / 远端复核结果：`archive/release/v1.20.0-candidate` / `c98727c898f8b446cceea5d7b10f3205340926a2`；活动候选远端已不存在，归档 ref、stable tag 与发布提交一致。
-- 本次来源任务分支：审计规范与交付系列 `76af5a1b..cda7dd3e`、候选归档系列 `2774212b..fbe41d4a`、安全修复 `7836ae8e` 和审查证据 `ea995703` 全部纳入；与本版无关的 `fix/release-metrics-chronology-20260919` 未纳入。
+- 本次来源任务分支：审计规范与交付系列 `76af5a1b..cda7dd3e`、候选归档系列 `2774212b..fbe41d4a`、安全修复 `7836ae8e` 和审查证据 `ea995703` 全部纳入；原治理分支已分别归档为 `archive/docs/audit-evidence-lifecycle-20260919`（`f1119fbc`）和 `archive/docs/branch-archive-lifecycle-20260919`（`43a29fb6`），活动引用已删除；与本版无关的 `fix/release-metrics-chronology-20260919` 未纳入。
 - 本地分支/upstream/worktree：发布工作树和本地发布分支在验收提交完成后回收；L3、OCR、公开 OCI 与生产证据保留在仓库外证据目录和 arena-154。
 - 未完成归档项 / 责任人 / 下次复核触发条件：无；下一候选从发布后的 `main` 新建，不复用本分支。
 
