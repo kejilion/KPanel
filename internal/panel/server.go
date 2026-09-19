@@ -99,6 +99,7 @@ type Server struct {
 	aiError               string
 	desktopWorkspace      *desktopworkspace.Store
 	terminalCommands      *terminalcommands.Store
+	mcp                   *mcpService
 }
 
 type agentAPI interface {
@@ -183,6 +184,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		remoteDownloadCancels: make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
+	server.mcp = newMCPService(config.DataDir)
 	server.backups, err = backup.OpenManager(filepath.Join(config.DataDir, "backups"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize backups: %w", err)
@@ -230,6 +232,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		!s.checkHost(w, r) {
 		return
 	}
+	if r.URL.Path == "/mcp" {
+		s.handleMCP(w, r)
+		return
+	}
 	if s.handleSecurityEntrance(w, r) {
 		return
 	}
@@ -258,6 +264,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == mcpSettingsPath || strings.HasPrefix(r.URL.Path, mcpSettingsPath+"/"):
+		s.handleMCPSettings(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == cluster.FileStreamV2Path:
 		s.handleFederationFileStream(w, r)
 	case r.URL.Path == "/api/v1/backups" || strings.HasPrefix(r.URL.Path, "/api/v1/backups/"):
