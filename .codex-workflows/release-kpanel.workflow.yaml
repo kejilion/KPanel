@@ -175,7 +175,7 @@ node scripts/run-release-l3.mjs \
 - Release 先保持 draft，镜像成功后才公开；
 - 镜像平台包含 `linux/amd64` 和 `linux/arm64`；
 - `stable` 必须是 GitHub Latest 并提升 `latest`，`preview` 必须是 prerelease、不得成为 Latest 且只提升 `preview`；
-- 预览版保留 `release/v${{release_train}}-candidate`，稳定版仅在 Tag 包含候选提交后删除；
+- 预览版保留 `release/v${{release_train}}-candidate`，稳定版按 `docs/project-management.md` 10.2 归档后移除活跃引用；
 - Release action 和 Docker action 使用固定提交摘要。
 
 按发布画像补充自动门禁不能代替的证据：受影响性能基准、桌面/窄视口、浅/深色、键盘/焦点、

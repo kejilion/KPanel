@@ -72,6 +72,13 @@ test('unreachable remote is an error, not an absent candidate', t => {
   assert.throws(() => f.run({ apply: true }), /ls-remote failed/);
 });
 
+test('same-SHA archive with an active candidate requires explicit reconciliation', t => {
+  const f = fixture(t);
+  f.git(['push', 'origin', `${f.base}:refs/heads/archive/release/v1.2.3-candidate`]);
+  assert.throws(() => f.run({ apply: true }), /Archive collision/);
+  assert.match(f.git(['ls-remote', 'origin', 'refs/heads/release/*']), new RegExp(f.base));
+});
+
 test('atomic rejection does not leave a deleted candidate or partial archive', t => {
   const f = fixture(t);
   writeFileSync(join(f.remote, 'hooks', 'pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
@@ -99,4 +106,14 @@ test('release checkout with shallow history can verify ancestor candidate', t =>
   f.git(['clone', '--depth=1', '--branch', 'v1.2.3', url, shallow], f.root);
   assert.equal(f.git(['rev-parse', '--is-shallow-repository'], shallow), 'true');
   assert.equal(f.run({ repo: shallow, apply: true }).status, 'archived');
+});
+
+test('a concurrently created archive rejects the entire transaction', t => {
+  const f = fixture(t);
+  f.git(['config', 'core.hooksPath', join(f.repo, '.git', 'hooks')]);
+  const remotePath = f.remote.replaceAll('\\', '/').replaceAll("'", "'\\''");
+  writeFileSync(join(f.repo, '.git', 'hooks', 'pre-push'), `#!/bin/sh\ngit --git-dir='${remotePath}' update-ref refs/heads/archive/release/v1.2.3-candidate ${f.sha}\n`, { mode: 0o755 });
+  assert.throws(() => f.run({ apply: true }), /push failed/);
+  assert.match(f.git(['ls-remote', 'origin', 'refs/heads/release/*']), new RegExp(f.base));
+  assert.match(f.git(['ls-remote', 'origin', 'refs/heads/archive/*']), new RegExp(f.sha));
 });
