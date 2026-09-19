@@ -1425,6 +1425,7 @@ onBeforeUnmount(() => {
 .service-status-matrix {
   display: grid; gap: 10px; margin-top: 2px; padding: 12px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle);
+  container: service-status / inline-size;
 }
 .service-status-matrix > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .service-status-matrix__heading { display: grid; gap: 2px; }
@@ -1448,6 +1449,15 @@ onBeforeUnmount(() => {
 .service-status-cell--partial { background: color-mix(in srgb, var(--amber) 82%, var(--surface)); }
 .service-status-cell--failure { background: color-mix(in srgb, var(--danger) 82%, var(--surface)); }
 .service-status-cell--missing { background: color-mix(in srgb, var(--border) 78%, var(--surface)); }
+@container service-status (max-width: 560px) {
+  .service-status-matrix > header { align-items: flex-start; flex-direction: column; }
+  .service-status-legend { justify-content: flex-start; }
+  .service-status-rows { gap: 9px; }
+  .service-status-row {
+    grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 9px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  }
+}
 .container-section { padding: 18px; }
 .section-heading h2, .container-compare h3 { margin: 0; font-size: 1rem; }
 .section-heading p, .container-compare > header p { margin: 3px 0 0; color: var(--muted); font-size: .76rem; }
