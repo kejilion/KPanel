@@ -46,17 +46,27 @@ describe('monitoring host selection', () => {
   it('renders Ping, TCP, and HTTP as three views on the shared timeline', async () => {
     const value = history()
     value.operatorLatency = [
-      { id: 'ping-one', kind: 'ping', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [] },
-      { id: 'tcp-one', kind: 'tcp', name: 'TCP 服务', address: 'example.com:443', target: 'example.com:443', points: [] },
+      { id: 'ping-one', kind: 'ping', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [
+        { collectedAt: '2026-09-11T00:30:00Z', latencyMilliseconds: 18, successCount: 1, failureCount: 0 },
+        { collectedAt: '2026-09-11T01:00:00Z', latencyMilliseconds: null, successCount: 0, failureCount: 1 },
+      ] },
+      { id: 'tcp-one', kind: 'tcp', name: 'TCP 服务', address: 'example.com:443', target: 'example.com:443', points: [
+        { collectedAt: '2026-09-11T00:30:00Z', latencyMilliseconds: 24, successCount: 1, failureCount: 0 },
+      ] },
       { id: 'http-one', kind: 'http', name: 'HTTP 服务', address: 'https://example.com', target: 'https://example.com', points: [] },
     ]
     mocks.history.mockResolvedValue(value)
     const { wrapper } = await mountAt()
     expect(wrapper.text()).toContain('Ping 节点')
     expect(wrapper.text()).not.toContain('TCP 服务')
+    expect(wrapper.find('.service-status-matrix').exists()).toBe(true)
+    expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
+    expect(wrapper.find('.service-status-cell--success').exists()).toBe(true)
+    expect(wrapper.find('.service-status-cell--failure').exists()).toBe(true)
     await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('TCP'))!.trigger('click')
     expect(wrapper.text()).toContain('TCP 服务')
     expect(wrapper.text()).not.toContain('Ping 节点')
+    expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
   })
 
   it('orders the host picker from the panel preference', async () => {

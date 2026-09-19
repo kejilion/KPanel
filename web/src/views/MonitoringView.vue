@@ -44,6 +44,12 @@ import {
   mergeOperatorLatencyVisibility,
   operatorLatencyColors,
 } from '@/lib/operatorLatencyPresentation'
+import {
+  monitoringStatusCellCount,
+  monitoringStatusCells,
+  type MonitoringStatusCell,
+  type MonitoringStatusCellState,
+} from '@/lib/monitoringStatusMatrix'
 import type {
   MonitoringContainerSeries,
   MonitoringHistory,
@@ -306,6 +312,29 @@ const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes
 const operatorLatencyVisibleCount = computed(() => operatorLatencyRoutes.value
   .filter((series) => operatorLatencyVisibility.value[series.id]).length)
 const activeCheckSuccessCount = computed(() => operatorLatencyRoutes.value.filter((series) => latestOperatorLatency(series) != null).length)
+interface ServiceStatusRow {
+  series: MonitoringOperatorLatencySeries
+  cells: MonitoringStatusCell[]
+  successRate?: number
+}
+const serviceStatusCellCount = computed(() => monitoringStatusCellCount(operatorLatencyRoutes.value))
+const serviceStatusGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${serviceStatusCellCount.value}, minmax(4px, 1fr))`,
+}))
+const serviceStatusRows = computed<ServiceStatusRow[]>(() => {
+  const snapshot = history.value
+  if (!snapshot) return []
+  return operatorLatencyRoutes.value.map((series) => {
+    const cells = monitoringStatusCells(series.points, snapshot.startedAt, snapshot.endedAt, serviceStatusCellCount.value)
+    const successful = cells.reduce((total, cell) => total + cell.successCount, 0)
+    const failed = cells.reduce((total, cell) => total + cell.failureCount, 0)
+    return {
+      series,
+      cells,
+      successRate: successful + failed > 0 ? (successful / (successful + failed)) * 100 : undefined,
+    }
+  })
+})
 const containerCPU = computed<TrendSeries[]>(() => selectedContainers.value.flatMap((container) => {
   const average = containerCPUMode.value === 'average'
   const points = average
@@ -495,6 +524,36 @@ function activeCheckDescription(): string {
   if (activeCheckKind.value === 'tcp') return '检测端口建立连接的响应时间与可用性'
   if (activeCheckKind.value === 'http') return '检测 HTTP 状态与首个响应的耗时'
   return '包含默认三网九节点，可自由增删改'
+}
+
+function serviceStatusLabel(state: MonitoringStatusCellState): string {
+  if (state === 'success') return phrase('正常')
+  if (state === 'partial') return phrase('部分失败')
+  if (state === 'failure') return phrase('失败')
+  return phrase('无数据')
+}
+
+function serviceStatusRateLabel(row: ServiceStatusRow): string {
+  if (row.successRate === undefined) return phrase('无数据')
+  return `${row.successRate === 100 ? '100' : row.successRate.toFixed(1)}%`
+}
+
+function serviceStatusCellDescription(row: ServiceStatusRow, cell: MonitoringStatusCell): string {
+  return `${operatorLatencyLabel(row.series)} · ${formatWindowTime(cell.start)} – ${formatWindowTime(cell.end)} · ${serviceStatusLabel(cell.state)} · ${phrase('成功')} ${cell.successCount} · ${phrase('失败')} ${cell.failureCount}`
+}
+
+function zoomToStatusCell(cell: MonitoringStatusCell): void {
+  const snapshot = history.value
+  if (!snapshot) return
+  const historyStart = Date.parse(snapshot.startedAt)
+  const historyEnd = Date.parse(snapshot.endedAt)
+  const cellStart = Date.parse(cell.start)
+  const cellEnd = Date.parse(cell.end)
+  const minimumDuration = Math.max(1, snapshot.bucketSeconds) * 2_000
+  const duration = Math.max(minimumDuration, cellEnd - cellStart)
+  const center = cellStart + (cellEnd - cellStart) / 2
+  const start = Math.max(historyStart, Math.min(center - duration / 2, historyEnd - duration))
+  zoomToRange({ start: new Date(start).toISOString(), end: new Date(start + duration).toISOString() })
 }
 
 function handleChecksSaved(): void {
@@ -1180,6 +1239,42 @@ onBeforeUnmount(() => {
           />
           <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
           <div v-else class="operator-latency-empty">等待首次检测采样。</div>
+          <section class="service-status-matrix" aria-label="可用性状态">
+            <header>
+              <div class="service-status-matrix__heading">
+                <strong>可用性状态</strong>
+                <span>当前时间范围 · 点击格子可放大</span>
+              </div>
+              <div class="service-status-legend" aria-hidden="true">
+                <span><i class="service-status-cell--success" />正常</span>
+                <span><i class="service-status-cell--partial" />部分失败</span>
+                <span><i class="service-status-cell--failure" />失败</span>
+                <span><i class="service-status-cell--missing" />无数据</span>
+              </div>
+            </header>
+            <div class="service-status-rows">
+              <div v-for="row in serviceStatusRows" :key="row.series.id" class="service-status-row">
+                <div class="service-status-row__label" :title="row.series.target || row.series.address">
+                  <i :style="{ background: monitoringCheckColor(row.series.id) }" />
+                  <span>{{ operatorLatencyLabel(row.series) }}</span>
+                  <small>{{ serviceStatusRateLabel(row) }}</small>
+                </div>
+                <div class="service-status-cells" :style="serviceStatusGridStyle">
+                  <button
+                    v-for="(cell, index) in row.cells"
+                    :key="`${row.series.id}-${index}`"
+                    type="button"
+                    class="service-status-cell"
+                    :class="`service-status-cell--${cell.state}`"
+                    :disabled="updating"
+                    :title="serviceStatusCellDescription(row, cell)"
+                    :aria-label="serviceStatusCellDescription(row, cell)"
+                    @click="zoomToStatusCell(cell)"
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
         </template>
         <div v-else class="operator-latency-empty service-check-empty">
           <strong>当前协议暂无检测项</strong>
@@ -1327,6 +1422,32 @@ onBeforeUnmount(() => {
 .operator-latency-empty { display: grid; min-height: 210px; place-items: center; color: var(--muted); font-size: 14px; }
 .service-check-empty { align-content: center; gap: 6px; text-align: center; }
 .service-check-empty strong { color: var(--text); font-size: 15px; }
+.service-status-matrix {
+  display: grid; gap: 10px; margin-top: 2px; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle);
+}
+.service-status-matrix > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.service-status-matrix__heading { display: grid; gap: 2px; }
+.service-status-matrix__heading strong { color: var(--text); font-size: 13px; }
+.service-status-matrix__heading span { color: var(--muted); font-size: 12px; }
+.service-status-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 12px; }
+.service-status-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.service-status-legend i { width: 8px; height: 8px; border-radius: calc(var(--radius-sm) - 5px); }
+.service-status-rows { display: grid; gap: 7px; }
+.service-status-row { display: grid; grid-template-columns: minmax(140px, 190px) minmax(0, 1fr); align-items: center; gap: 10px; }
+.service-status-row__label { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 12px; }
+.service-status-row__label > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
+.service-status-row__label > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.service-status-row__label > small { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.service-status-cells { display: grid; min-width: 0; gap: 3px; }
+.service-status-cell { min-width: 0; height: 16px; padding: 0; border: 0; border-radius: calc(var(--radius-sm) - 5px); cursor: pointer; transition: filter .14s ease, transform .14s ease; }
+.service-status-cell:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.service-status-cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.service-status-cell:disabled { cursor: wait; opacity: .58; transform: none; }
+.service-status-cell--success { background: color-mix(in srgb, var(--success) 82%, var(--surface)); }
+.service-status-cell--partial { background: color-mix(in srgb, var(--amber) 82%, var(--surface)); }
+.service-status-cell--failure { background: color-mix(in srgb, var(--danger) 82%, var(--surface)); }
+.service-status-cell--missing { background: color-mix(in srgb, var(--border) 78%, var(--surface)); }
 .container-section { padding: 18px; }
 .section-heading h2, .container-compare h3 { margin: 0; font-size: 1rem; }
 .section-heading p, .container-compare > header p { margin: 3px 0 0; color: var(--muted); font-size: .76rem; }
@@ -1420,6 +1541,9 @@ onBeforeUnmount(() => {
   .operator-latency-actions { align-self: stretch; }
   .operator-latency-actions button { flex: 1; }
   .operator-route { flex: 1 1 calc(50% - 4px); justify-content: flex-start; }
+  .service-status-matrix > header { align-items: flex-start; flex-direction: column; }
+  .service-status-legend { justify-content: flex-start; }
+  .service-status-row { grid-template-columns: 1fr; gap: 5px; }
 }
 
 @media (max-width: 480px) {
