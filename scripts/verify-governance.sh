@@ -23,7 +23,9 @@ node --test \
   scripts/tests/report-release-metrics.test.mjs \
   scripts/tests/report-dependency-freshness.test.mjs \
   scripts/tests/release-acceptance-coverage.test.mjs \
-  scripts/tests/ocr-delegate.test.mjs
+  scripts/tests/ocr-delegate.test.mjs \
+  scripts/tests/report-governance-health.test.mjs
+node scripts/report-governance-health.mjs --validate
 node scripts/report-dependency-freshness.mjs --validate-only
 node scripts/check-release-acceptance-coverage.mjs
 

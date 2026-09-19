@@ -113,6 +113,7 @@ for path in "${changed_files[@]}"; do
     scripts/tests/report-release-metrics.test.mjs|scripts/tests/report-dependency-freshness.test.mjs|\
     scripts/tests/release-acceptance-coverage.test.mjs|\
     .opencodereview/*|scripts/ocr-delegate.mjs|scripts/tests/ocr-delegate.test.mjs|\
+    scripts/report-governance-health.mjs|scripts/tests/report-governance-health.test.mjs|docs/quality-improvement-*.md|\
     .github/workflows/*.yml|.github/workflows/*.yaml)
       needs_governance=true
       ;;

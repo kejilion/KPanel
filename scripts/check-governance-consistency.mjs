@@ -70,6 +70,8 @@ const requiredFiles = [
   '.governance/ocr-review/README.md',
   'scripts/ocr-delegate.mjs',
   'scripts/tests/ocr-delegate.test.mjs',
+  'scripts/report-governance-health.mjs',
+  'scripts/tests/report-governance-health.test.mjs',
   '.codex-workflows/security-boundary-audit.workflow.yaml',
 ];
 
@@ -640,7 +642,10 @@ requireText('docs/release-acceptance-template.md', [
   '## 自更新通道验收',
   '预览版禁止生产部署',
 ]);
+requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs']);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict']);
 requireText('docs/quality-improvement-proposal-template.md', [
+  '- 复核延期至：',
   '## 观察证据',
   '## 原因假设',
   '## 基线、目标与观察窗口',

@@ -137,10 +137,13 @@ Unix Socket 鉴权和最终容器限制。记录 Docker、containerd、runc、�
 
 ```bash
 make release-metrics
+node scripts/report-governance-health.mjs --strict
 ```
 
 **Expected output:** 同时报告交付速度、产品稳定性和流程可靠性；两类失败不混算，数据不足时先形成基线，
-不以高频或低频单独定性；重复指纹、处置状态和观察窗口可追溯。
+不以高频或低频单独定性；重复指纹、处置状态和观察窗口可追溯。稳定版发车前治理健康报告退出码为 0：
+超期待复核提案已完成复核、拒绝或写明延期，状态无法归类的提案已补为合法状态（`PROJECT_RULES.md` 5.2.7），
+并报告复核提供商记录数与跨提供商比例。
 
 ### 8. 只修复可复现缺陷或自动门禁
 
