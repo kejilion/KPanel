@@ -642,7 +642,7 @@ requireText('docs/release-acceptance-template.md', [
   '## 自更新通道验收',
   '预览版禁止生产部署',
 ]);
-requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs']);
+requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天']);
 requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict --since=']);
 requireText('docs/multi-agent-collaboration.md', ['Independent-Review: reviewer=<提供商> author=<提供商>', '默认由与实现者不同的模型']);
 requireText('PROJECT_RULES.md', ['复核者默认来自与实现者不同的模型提供商']);

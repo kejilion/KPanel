@@ -62,7 +62,7 @@
 - 权威入口：`scripts/report-governance-health.mjs`（`--validate` 日常、`--strict` 发车前）。
 - 固定验收矩阵：`PROJECT_RULES.md` 5.3 六维。
 - 预先确定的回归集：`node --test scripts/tests/report-governance-health.test.mjs scripts/tests/report-dependency-freshness.test.mjs`、
-  `verify-governance`、`workflow.py validate quality-audit-kpanel`、对当前 12 份提案实跑 `--strict` 应为退出码 3 并列出上述 5 条。
+  `verify-governance`、`workflow.py validate quality-audit-kpanel`、对全部提案实跑 `--strict` 应为退出码 3 并列出上述 3 条超期、2 条无法归类。
 - 本轮停止条件：回归全绿、独立复核无 HIGH/MEDIUM 未决。
 - 范围外发现：3 份超期提案与 2 份无法归类提案的实际处置，由下一次稳定版前质量审计执行，不在本任务改写。
 
