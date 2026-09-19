@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、生产部署安全核对和回滚记录"
-version: "2.10"
+version: "2.11"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-08-24T08:00:00Z"
+updated: "2026-09-05T00:00:00Z"
 ---
 
 # Release KPanel
@@ -38,6 +38,8 @@ updated: "2026-08-24T08:00:00Z"
 - 保留所有无关未提交改动；只提交本次发布范围内的文件。
 - `${{validation_environment}}` 和 `${{production_environment}}` 必须登记在 `environment-policy.json`；
   两者默认均为 `arena-154`。`prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
+- 必须读取 `dependency-policy.json#crossRepositoryReleaseLinkage`，在候选冻结前确定唯一的
+  `scriptLinkageState`（`not-required` / `coupled` / `script-only`），并准备状态对应的交付字段和证据。
 
 ## Steps
 
@@ -77,6 +79,21 @@ node scripts/check-environment-policy.mjs \
 
 **Expected output:** 发布单写者成立，候选提交清单和基线明确，目标版本未占用，记录
 `${{previous_version}}` 对应源码和镜像回滚点；发布画像能够解释必测项和不适用维度。
+
+冻结前完成跨仓库联动判定，不能把“没有脚本提交”或“尚未发布”当作结论：
+
+- **`not-required`（无需发布脚本（不适用））**：差异不涉及新增或变更的脚本协议、运行时动作、宿主机
+  产物、安装/更新路径、外联配置或镜像内脚本内容；使用已有且兼容的脚本契约不改变此结论。记录
+  实际内置脚本基线 commit/SHA-256、差异审查和兼容性证据；本次不创建脚本提交、不发布脚本。
+- **`coupled`**：KPanel 依赖新的或变更的脚本能力或契约。记录同一变更集编号、双方专用分支和精确 commit/
+  摘要，完成根/中文同步、脚本 smoke、KPanel 契约测试、兼容矩阵和成对回滚；脚本兼容版本先可用，
+  再进入 KPanel 候选。脚本未就绪时执行 `block-kpanel-candidate-or-remove-dependent-scope`，不得继续
+  发布或改标为 `not-required`。
+- **`script-only`**：只有脚本仓库变化且既有 KPanel 契约兼容；走脚本仓库自己的发布流程，本次 KPanel
+  流程不得改 `VERSION`、tag、Release 或镜像。若 KPanel 同时有差异，状态必须改为 `coupled`。
+
+KPanel 发布流程只接受 `not-required` 或 `coupled`；`script-only` 不构成 KPanel 版本发布。所有状态
+和证据写入 `docs/release-vX.Y.Z-acceptance.md`，缺失、矛盾或使用“暂不发布脚本”等模糊状态时停止。
 
 同时建立本次冻结执行方案：列出生产写前后实际调用的唯一仓库脚本、Runner/镜像、SSH 身份、必需
 运行时、跨 Shell 参数承载方式和证据解析入口。所有必需项先在非生产环境预检；优先使用参数文件、

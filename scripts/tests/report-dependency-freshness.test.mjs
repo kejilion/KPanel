@@ -137,6 +137,19 @@ test('policy validation keeps automation, cadence, and workflow triggers enforce
   assert.ok(failures.some((failure) => failure.includes('governed maximum') && failure.includes('eolReviewMaximumDays')));
 });
 
+test('policy validation fixes the cross-repository linkage vocabulary and release boundaries', () => {
+  const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
+  policy.crossRepositoryReleaseLinkage.states = ['not-required', 'coupled'];
+  policy.crossRepositoryReleaseLinkage.decisionRules['not-required'].scriptRelease = 'deferred';
+  policy.crossRepositoryReleaseLinkage.decisionRules.coupled.ifScriptNotReady = 'continue';
+  policy.crossRepositoryReleaseLinkage.decisionRules['script-only'].kpanelVersionChange = true;
+  const failures = validatePolicy(policy, process.cwd());
+  assert.ok(failures.some((failure) => failure.includes('not-required, coupled, and script-only')));
+  assert.ok(failures.some((failure) => failure.includes('script release is not in scope')));
+  assert.ok(failures.some((failure) => failure.includes('compatible script release')));
+  assert.ok(failures.some((failure) => failure.includes('script-only linkage')));
+});
+
 test('policy validation requires bounded adoption decisions without forcing unsafe adoption', () => {
   const policy = JSON.parse(readFileSync(resolve(process.cwd(), 'dependency-policy.json'), 'utf8'));
   policy.adoptionLifecycle.classes['major-toolchain-base'].decisionMaximumDays = 91;

@@ -187,6 +187,12 @@ requireText('PROJECT_RULES.md', [
   'scripts/check-collaboration-state.mjs',
   'scripts/run-release-l3.mjs',
   '候选分支保留到同一 SHA 的主线 CI 成功',
+  '1.5 KPanel 与 `kejilion.sh` 跨仓库发布联动',
+  'crossRepositoryReleaseLinkage',
+  'not-required',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/development-quality-standard.md', [
   'ui-visual-language.md',
@@ -229,6 +235,11 @@ requireText('docs/project-management.md', [
   'scripts/check-governance-candidate-ci.mjs',
   'Patch 最晚 7 天启动/14 天决策/30 天完成处置',
   '重复报告不能重置期限',
+  'crossRepositoryReleaseLinkage',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/multi-agent-collaboration.md', [
   'scripts/check-collaboration-state.mjs',
@@ -246,6 +257,9 @@ requireText('.codex-workflows/README.md', [
   'docs/product-quality-review-current.md',
   '规范复核执行 `PROJECT_RULES.md` 5.3',
   'kpanel-site-icon-cache-validation.workflow.yaml',
+  'crossRepositoryReleaseLinkage',
+  '无需发布脚本（不适用）',
+  'script-only',
 ]);
 requireText('docs/local-feature-preview-standard.md', [
   'ui-visual-language.md',
@@ -332,6 +346,11 @@ requireText('.codex-workflows/release-kpanel.workflow.yaml', [
   '冻结执行方案',
   '一次列全必需能力',
   '`visual-composition`',
+  'crossRepositoryReleaseLinkage',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'block-kpanel-candidate-or-remove-dependent-scope',
+  'script-only',
 ]);
 if (read('.codex-workflows/release-kpanel.workflow.yaml').includes('git fetch origin --tags')) {
   failures.push('.codex-workflows/release-kpanel.workflow.yaml: unbounded tag fetch is forbidden');
@@ -418,6 +437,11 @@ requireText('docs/release-acceptance-template.md', [
   'before-production-write',
   'L3 外层入口 run ID',
   '## 遗留风险与后续准入',
+  '## 跨仓库联动判定',
+  'scriptLinkageState',
+  '无需发布脚本（不适用）',
+  'coupled',
+  'script-only',
 ]);
 requireText('docs/quality-improvement-proposal-template.md', [
   '## 观察证据',

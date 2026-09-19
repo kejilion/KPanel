@@ -1,7 +1,7 @@
 # KPanel 多智能体项目管理规范
 
 - 状态：长期强制规范
-- 版本：2026-08-20
+- 版本：2026-09-05
 - 适用范围：KPanel 主仓、关联的 `kejilion/sh` 与 `kejilion/apps` 变更、Codex/Claude 等多智能体协作和版本发布
 - 权威关系：工程与产品规则以 `PROJECT_RULES.md` 为准；本文件负责工作分解、并发隔离、集成和发布治理
 
@@ -16,6 +16,7 @@
 | 跨工具运行手册 | `docs/multi-agent-collaboration.md` | 人和智能体可直接执行的最短协作步骤、移交与失败处理 | 重复完整工程规则 |
 | 工具入口 | `AGENTS.md`、`CLAUDE.md` | 工具启动检查、专属能力和如何进入共享规范 | 平行质量标准或门禁参数 |
 | 可执行适配 | `.codex-workflows/` | 参数化步骤、预期结果和验证 | 第二套规范、长期状态或会话 ID |
+| 跨仓库联动状态 | `dependency-policy.json#crossRepositoryReleaseLinkage` | `scriptLinkageState`、证据字段和发布阻断条件 | 临时口头状态或“暂不发布脚本” |
 | 证据 | CI、Release、验收记录、基线报告 | 精确提交/产物在声明环境的验证事实 | 无环境、无提交的“已通过”描述 |
 
 规则冲突时按表中自上而下的权威关系处理；同一规则只在最高适合层定义，其他文件使用链接引用。
@@ -150,6 +151,7 @@ clean 或覆盖未知改动。写角色必须是链接 task worktree 和非 `mai
 业务真源与受影响用户旅程：
 worktree / branch / base / rollback：
 依赖、相邻任务与冲突面：
+跨仓库联动：`scriptLinkageState`（`not-required` / `coupled` / `script-only`）、变更集编号、脚本基线/候选 commit 与 SHA-256、兼容性证据：
 风险等级 L0-L3 及理由：
 验收命令、实机/浏览器证据、环境 ID、前台/后台执行方式和完成条件：
 本地功能预览：不适用 / draft / acceptance；mock / integration / isolated-real-host；入口、旅程、证据目录和停止方式：
@@ -180,6 +182,26 @@ worktree / branch / base / rollback：
 7. 涉及依赖、工具链、基础镜像、Action、扫描器或受管脚本时，已读取 `dependency-policy.json` 和最近
    一次 `make dependency-report`，明确版本通道候选、检测失败、每日安全审计、EOL/例外期限、采用分类和
    是否需要独立 L2/L3。
+
+8. 只要任务涉及 KPanel、`kejilion/sh` 或两者的安装/更新/运行契约，必须依据
+   `dependency-policy.json#crossRepositoryReleaseLinkage` 决定 `scriptLinkageState`：
+   `not-required` 必须写明“无需发布脚本（不适用）”及脚本基线 commit/摘要；`coupled` 必须有同一
+   变更集编号、双方精确提交和兼容脚本发布计划；`script-only` 必须确认没有 KPanel 代码、镜像、
+   配置或版本变化。状态缺失、证据不足或矛盾时不得进入已就绪。
+
+### 6.3 跨仓库联动决策
+
+`scriptLinkageState` 是交付和发布的必填机器字段，不允许使用“暂不发布脚本”“之后再看”或空白状态：
+
+- `not-required` 表示本次不需要新的或变更的脚本契约/修订，而不是脚本发布延期；已有且兼容的脚本
+  契约可以继续使用。KPanel 可以继续发布，但必须锁定实际内置脚本基线并保留兼容性证据。
+- `coupled` 表示 KPanel 与新的或变更的脚本能力必须成对验收；脚本兼容版本未就绪时，阻断 KPanel 候选或移除依赖
+  范围，不得静默沿用旧脚本。
+- `script-only` 只允许脚本仓库独立发布；不改 KPanel `VERSION`、tag、Release 或镜像，并记录对
+  受支持 KPanel 基线的兼容性证据。
+
+跨仓库任务仍分别使用专用 worktree/分支，以同一变更集编号关联。脚本的根/中文同步、语法和 smoke
+属于脚本侧门禁；KPanel 的契约、镜像和发布门禁仍在 KPanel 侧执行，任何一侧证据变化都使成对结论失效。
 
 启动检查至少包含：
 
@@ -262,6 +284,9 @@ worktree / branch / base：
 8. 依赖类任务已重新生成新鲜度报告；采用、暂缓或拒绝都有证据，锁文件/固定 SHA/digest 可重建，
    自动检测、任务分支、主线、Release 和生产状态没有混写。
 9. 已启动的本地预览具有统一预览卡；交付后已停止或明确移交 manifest 和停止责任，没有遗留端口或进程。
+10. 涉及跨仓库契约时，交付包包含 `scriptLinkageState`、变更集编号、双方精确提交/摘要、状态对应的
+    兼容性证据和发布决定；`not-required` 明确记录“无需发布脚本（不适用）”，`script-only` 没有
+    KPanel 版本/镜像变化，`coupled` 具备成对回滚点。
 
 ### 7.2 验证证据复用
 
@@ -319,7 +344,8 @@ git push origin HEAD:refs/heads/<task-branch>
 发布采用单写者模型：同一时刻只有一个发布任务、一个候选 worktree 和一个候选分支。
 
 发布前记录：候选基线、提交清单、发布画像、受影响用户旅程、目标版本、上一稳定标签、生产目标、
-备份位置和回滚命令。候选开始
+备份位置和回滚命令。对 `kejilion.sh` 还必须先记录 `scriptLinkageState`、实际内置脚本基线
+commit/摘要及状态对应的跨仓库证据；候选开始
 `make verify-release` 后即冻结：
 
 - 开发任务不得切换候选 worktree 的分支或修改候选文件；
