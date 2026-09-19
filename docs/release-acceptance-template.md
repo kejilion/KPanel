@@ -31,6 +31,15 @@
 - 精确提交清单：
 - 明确未纳入的分支、文件或后续事项：
 
+## 外部审计与修复交付
+
+- 安全审计 run / 精确源码基线 / 范围与未覆盖项：
+- finding fingerprint / 修复 commit / 独立复核与回归证据：
+- 修复交付状态：源码 / RC / 稳定版 / 部署分别记录；stable tag 包含修复与公开 Release 的证据：
+- OCR 观察区间 / 适用候选计数及口径 / 有效、skipped、unreported 数 / 经抽查成立的 constrained-only：
+- 按 PROJECT_RULES.md 5.4/5.5 记录本稳定周期的观察结果；不足三个周期不提前宣称工具有效或应退出。
+- 候选分支的原始 tip、归档位置和远端核验统一填写本模板既有候选处置字段，遵守 `docs/release-channels.md`。
+
 ## 跨仓库联动判定
 
 - `scriptLinkageState`：`not-required`（无需发布脚本（不适用）） / `coupled` / `script-only`：

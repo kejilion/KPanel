@@ -70,6 +70,8 @@ const requiredFiles = [
   '.governance/ocr-review/README.md',
   'scripts/ocr-delegate.mjs',
   'scripts/tests/ocr-delegate.test.mjs',
+  'scripts/security-audit-baseline.mjs',
+  'scripts/tests/security-audit-baseline.test.mjs',
   'scripts/report-governance-health.mjs',
   'scripts/tests/report-governance-health.test.mjs',
   '.codex-workflows/security-boundary-audit.workflow.yaml',
