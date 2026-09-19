@@ -186,7 +186,7 @@ func addManagedExtensions(result map[string]managedOperation, add func(string, s
 			}
 			for _, source := range input.Sources {
 				version := input.ExpectedResourceVersions[source]
-				if input.Action == "rename" || input.Action == "extract" {
+				if input.Action == "rename" || ((input.Action == "compress" || input.Action == "extract") && len(input.Sources) == 1 && version == "") {
 					version = input.ExpectedResourceVersion
 				}
 				if !resourceVersionPattern.MatchString(version) {
