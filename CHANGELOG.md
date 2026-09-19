@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [1.20.0-rc.3] - 2026-09-19
+
+### Added
+
+- 规范执行健康度（`PROJECT_RULES.md` 5.2.4/5.2.7，试行）：质量改进提案复核有状态约定与 14 天时限，声明的检查项与已实现检查对账，独立复核默认由不同提供商执行；入口 `scripts/report-governance-health.mjs`（日常 `--validate`，稳定版发车前 `--strict`）。
+
 ### Changed
 
 - 审计历史从 `panel-state.json` 迁到同目录独立的 SQLite 审计库（`panel-state-audit.db`）。满 1 万条时，追加一条审计的 P95 从约 160 ms 降到约 1.3 ms；登录、会话等其他状态写入不再连带重写审计；峰值内存从约 68 MB 降到约 18 MB；启动加载从约 100 ms 降到约 3 ms。评审与测量见 `docs/audit-storage.md`（§5.2）。
+- 审计库不可读时，审计接口返回 503，任务页把审计来源标记为不可用而不是显示为空。
+- 行级评审辅助 open-code-review 的 pin 经 canary 回放后升级到 1.12.6（仅本地评审工具，不进镜像）。
 
 ### Upgrade Notes
 
@@ -12,6 +20,8 @@
 - 降级到旧版本时，审计页只显示降级后新写入的记录；历史仍保存在审计库中，再次升级时自动合并。
 - 手工拷贝数据目录前须先停止 `paneld`，避免拷到不一致的 SQLite 文件。
 - 本地密码恢复改为先写审计、再提交凭据；凭据提交失败时追加一条失败审计。
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
 
 ## [1.20.0-rc.2] - 2026-09-19
 
