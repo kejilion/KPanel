@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.2] - 2026-09-20
+
+### Added
+
+- MCP 从只读巡检扩展为按主机和业务域授权的结构化管理：写操作默认由登录态面板审批，远端完整节点还需在被控端明确授予控制端权限；不开放任意宿主机 Shell。
+- 新增 MCP OAuth 授权码 + PKCE、stdio 桥接和 Codex、Claude Code、Cursor、VS Code/Copilot、Windsurf 等客户端配置；Release 同步提供多平台 `kpanel-mcp` 二进制和校验和。
+- 监控页新增 Ping、TCP、HTTP 服务检测配置与状态矩阵，复用 Agent 采样、历史存储和失败状态，不增加独立轮询服务。
+
+### Changed
+
+- MCP 工具发现与执行同时按客户端、主机、业务域、目标节点能力和资源版本收敛；操作记录、OAuth 状态、请求、回执和并发均使用有界容量。
+- 服务可用性状态按检测类型区分，并在窄卡片中改为纵向信息行，保持多语言和响应式布局。
+
+### Fixed
+
+- 远程文件授权取控制端与目标端目录交集，并要求来源资源版本，避免跨授权目录或使用过期状态执行。
+- 备份归档操作按真实 task owner 校验资源版本，避免任务身份与审批记录错配。
+- 候选组装后刷新当前业务事实基线，明确 rc.1 只读证据不能替代本次 MCP 写操作与服务监控的组合验收。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- MCP 默认关闭；资源管理权限必须显式授予，删除、恢复和敏感系统变更仍需逐项确认。旧巡检凭据不会自动获得新增权限。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
+
 ## [1.21.0-rc.1] - 2026-09-20
 
 ### Added
