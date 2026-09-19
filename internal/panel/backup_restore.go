@@ -13,6 +13,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
+	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
@@ -148,6 +149,10 @@ func ApplyPanelRestore(c Config) (err error) {
 		return err
 	}
 	if err := validatePanelRestoreConfig(c, value, filepath.Join(c.DataDir, "backups", j.ID, "apply-check")); err != nil {
+		return err
+	}
+	// Delegated access is not portable and must not survive identity restoration.
+	if err := mcpaccess.Open(c.DataDir).Reset(); err != nil {
 		return err
 	}
 	j.Previous, err = readPanelBackupFiles(c.DataDir)

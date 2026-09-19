@@ -28,6 +28,7 @@ import {
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import BackupCenter from '@/components/settings/BackupCenter.vue'
+import MCPAccess from '@/components/settings/MCPAccess.vue'
 import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
 import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
@@ -1205,6 +1206,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
     </section>
 
     <BackupCenter />
+    <MCPAccess />
 
     <section
       id="version-updates"
