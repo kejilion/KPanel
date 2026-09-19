@@ -38,13 +38,24 @@ export function mockMonitoringHistory(url, remote = false) {
       blockReadBytesPerSecond: 100000 + index * 70000 + 20000 * Math.cos(i / 6), blockWriteBytesPerSecond: 80000 + index * 40000, pids: 8 + index * 5,
     })),
   }))
+  const operatorNames = { telecom: '电信', unicom: '联通', mobile: '移动' }
+  const regionNames = { beijing: '北京', shanghai: '上海', guangzhou: '广州' }
   const operatorLatency = ['telecom', 'unicom', 'mobile'].flatMap((operator, i) =>
-    ['beijing', 'shanghai', 'guangzhou'].map((region, j) => ({ id: `${operator}-${region}`, operator, region, address: `192.0.2.${i * 3 + j + 1}`,
+    ['beijing', 'shanghai', 'guangzhou'].map((region, j) => ({ id: `${operator}-${region}`, kind: 'ping', name: `${operatorNames[operator]} · ${regionNames[region]}`, operator, region, address: `192.0.2.${i * 3 + j + 1}`, target: `192.0.2.${i * 3 + j + 1}`,
       points: sampled.map((point, index) => ({ collectedAt: point.collectedAt,
         latencyMilliseconds: i === 2 && j === 1 && index % 23 === 0 ? null : 24 + i * 15 + j * 7 + 7 * Math.sin(index / 4 + j),
         successCount: i === 2 && j === 1 && index % 23 === 0 ? 0 : 1, failureCount: i === 2 && j === 1 && index % 23 === 0 ? 1 : 0,
       })),
-    })))
+    }))).concat([
+      { id: 'tcp-panel', kind: 'tcp', name: 'KPanel HTTPS', address: 'panel.example.test:443', target: 'panel.example.test:443',
+        points: sampled.map((point, index) => ({ collectedAt: point.collectedAt, latencyMilliseconds: 18 + 4 * Math.sin(index / 5), successCount: 1, failureCount: 0 })) },
+      { id: 'tcp-database', kind: 'tcp', name: '数据库端口', address: 'db.example.test:5432', target: 'db.example.test:5432',
+        points: sampled.map((point, index) => ({ collectedAt: point.collectedAt, latencyMilliseconds: index % 29 === 0 ? null : 31 + 6 * Math.cos(index / 6), successCount: index % 29 === 0 ? 0 : 1, failureCount: index % 29 === 0 ? 1 : 0 })) },
+      { id: 'http-home', kind: 'http', name: '官网首页', address: 'https://example.test/', target: 'https://example.test/',
+        points: sampled.map((point, index) => ({ collectedAt: point.collectedAt, latencyMilliseconds: 96 + 18 * Math.sin(index / 7), successCount: 1, failureCount: 0 })) },
+      { id: 'http-api', kind: 'http', name: 'API 健康检查', address: 'https://api.example.test/health', target: 'https://api.example.test/health',
+        points: sampled.map((point, index) => ({ collectedAt: point.collectedAt, latencyMilliseconds: 62 + 12 * Math.cos(index / 4), successCount: 1, failureCount: 0 })) },
+    ])
   return { range, startedAt: new Date(start).toISOString(), endedAt: new Date(end).toISOString(), bucketSeconds: bucket,
     host, containers, operatorLatency, scannedBytes: 140000, skippedLines: 0, truncatedSeries: 0,
     storage: { enabled: true, retentionDays: 30, hostIntervalSeconds: interval,
@@ -52,7 +63,7 @@ export function mockMonitoringHistory(url, remote = false) {
       maxContainers: 32, storageBytes: empty ? 0 : 238400, maxStorageBytes: 128 * 1024 ** 2,
       lastSampleAt: host.at(-1)?.collectedAt, lastContainerTotal: containers.length, lastContainerRecorded: containers.length, lastContainerFailed: 0,
       lastContainerTruncated: 0, lastDockerAvailable: !empty, operatorLatencyAvailable: true, lastOperatorLatencyAt: host.at(-1)?.collectedAt,
-      lastOperatorLatencySuccessful: 9, lastOperatorLatencyFailed: 0, storageLimitReached: false,
+      lastOperatorLatencySuccessful: operatorLatency.length, lastOperatorLatencyFailed: 0, storageLimitReached: false,
       rollupRetentionDays: 365, rollupStorageBytes: empty ? 0 : 481200, maxRollupStorageBytes: 128 * 1024 ** 2,
       rollupStorageLimitReached: false } }
 }

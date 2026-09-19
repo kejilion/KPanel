@@ -1265,9 +1265,49 @@ async function readJSON(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
 }
 
+let mockMonitoringCheckRevision = 1
+let mockMonitoringChecks = [
+  ...['telecom', 'unicom', 'mobile'].flatMap((operator, operatorIndex) =>
+    ['beijing', 'shanghai', 'guangzhou'].map((region, regionIndex) => ({
+      id: `${operator}-${region}`, kind: 'ping',
+      name: `${{ telecom: '电信', unicom: '联通', mobile: '移动' }[operator]} · ${{ beijing: '北京', shanghai: '上海', guangzhou: '广州' }[region]}`,
+      target: `192.0.2.${operatorIndex * 3 + regionIndex + 1}`, operator, region,
+    }))),
+  { id: 'tcp-panel', kind: 'tcp', name: 'KPanel HTTPS', target: 'panel.example.test:443' },
+  { id: 'tcp-database', kind: 'tcp', name: '数据库端口', target: 'db.example.test:5432' },
+  { id: 'http-home', kind: 'http', name: '官网首页', target: 'https://example.test/' },
+  { id: 'http-api', kind: 'http', name: 'API 健康检查', target: 'https://api.example.test/health' },
+]
+
+function mockMonitoringCheckSnapshot() {
+  return {
+    schemaVersion: 1,
+    resourceVersion: `sha256:${String(mockMonitoringCheckRevision).padStart(64, '0')}`,
+    available: true,
+    maxItems: 16,
+    items: mockMonitoringChecks,
+  }
+}
+
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
   if (await mockBackups(request, response, url, send, readJSON)) return
+  if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {
+    send(response, 200, mockMonitoringCheckSnapshot())
+    return
+  }
+  if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'PUT') {
+    const input = await readJSON(request)
+    const current = mockMonitoringCheckSnapshot()
+    if (input.expectedResourceVersion !== current.resourceVersion) {
+      send(response, 409, { title: '监控检测项已被修改', code: 'monitoring_checks_changed' })
+      return
+    }
+    mockMonitoringChecks = Array.isArray(input.items) ? input.items : mockMonitoringChecks
+    mockMonitoringCheckRevision += 1
+    send(response, 200, mockMonitoringCheckSnapshot())
+    return
+  }
   if (request.method === 'GET' && ['/api/v1/monitoring/history', '/api/v1/monitoring/cluster-history'].includes(url.pathname)) {
     const remote = url.pathname.endsWith('/cluster-history')
     const id = url.searchParams.get('hostId')
