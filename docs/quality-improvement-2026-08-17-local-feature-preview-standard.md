@@ -1,5 +1,7 @@
 # KPanel 本地功能预览标准化提案
 
+- 提案状态：已采纳（2026-09-19 发车前处置：独立复核 PASS WITH FOLLOW-UP，见文末"发车前处置"；原文无状态行）
+
 ## 观察证据
 
 - 当前只有 `web/README.md` 的单服务启动说明，Vite 固定 4173、mock API 固定 8080，多个功能会话可能冲突。
@@ -64,3 +66,16 @@
 
 实现会话结论为 `PASS`；永久采纳前仍需独立复核并获得主线集成授权。观察窗口为后续 3 个使用本地
 预览的功能任务，重点记录端口冲突、用户追问次数、预览残留、mock 误判和正式验收证据缺口。
+
+## 发车前处置（2026-09-19，v1.20.0 稳定版前质量审计）
+
+- 触发：`report-governance-health.mjs --strict --since=v1.19.0` 报告本提案无状态行、无法归类。
+- 真实生命周期：标准已进入主线（`85a93881`，首个包含它的发布为 v0.84.0），`scripts/local-feature-preview.mjs`、`docs/local-feature-preview-standard.md` 与工作流是当前唯一本地预览入口，被任务契约和 Definition of Done 引用。
+- 复核人 / 智能体：Claude（干净会话，未参与本提案编写或实现）。
+- 复核提供商 / 实现提供商：claude / 未记录（实现提交无提供商 trailer）
+- 是否独立读取原始证据：是。读取本提案、当前入口与测试、`C:/GitHub/_preview-evidence` 下 22 份 manifest，并在 2026-09-19 v1.20.0-rc.2 发布验收中实际使用该入口（acceptance/interaction，manifest 绑定 `7404fe29`）。
+- 假设与方案评审结论：mock、integration 与隔离真机证据分层有效；动态端口在 4173 被其他任务占用时自动选择 4174，并行预览没有冲突；`local-feature-preview.test.mjs` 通过。
+- 门禁是否被削弱、绕过或只对样例优化：否；acceptance 仍拒绝 dirty，dirty 只能 draft。
+- 复核状态：通过（PASS WITH FOLLOW-UP）
+- 观察窗口结果：端口冲突 0、mock 误判 0；预览残留不为 0：22 份 manifest 中 6 份停在 `ready`，但对应进程已不存在；另有一个已交付任务的预览进程（mock API + vite 4173）在任务结束约 7 小时后仍在运行，锁住 worktree 文件导致删除失败。
+- 后续事项：任务交付检查尚不核对本任务预览已停止，manifest 也不与进程存活状态对账。建议由独立治理任务在 `--require-candidate` 或交付包中加入"本任务预览已停止"核对，并让 `status` 能把失联进程标记为 `stale`。
