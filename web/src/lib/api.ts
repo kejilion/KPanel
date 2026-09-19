@@ -73,6 +73,8 @@ import type {
   MonitoringHistory,
   MonitoringHistoryQuery,
   MonitoringRange,
+  MonitoringCheckSnapshot,
+  MonitoringCheckUpdate,
   NetworkInterfacesSnapshot,
 	PortUsageSnapshot,
   PanelSettings,
@@ -2301,6 +2303,10 @@ export const api = {
         query: { range, start: query?.start, end: query?.end, ...(hostId && hostId !== 'local' ? { hostId } : {}) },
         signal,
       }),
+    checks: (signal?: AbortSignal): Promise<MonitoringCheckSnapshot> =>
+      request<MonitoringCheckSnapshot>('/monitoring/checks', { signal }),
+    updateChecks: (body: MonitoringCheckUpdate): Promise<MonitoringCheckSnapshot> =>
+      request<MonitoringCheckSnapshot>('/monitoring/checks', { method: 'PUT', body }),
   },
   jobs: {
     list: async (query?: { limit?: number }, signal?: AbortSignal): Promise<JobList> => {

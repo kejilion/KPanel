@@ -248,7 +248,8 @@ func TestContainerHistoryCPUResetsBaselineAfterCollectionFailure(t *testing.T) {
 
 func TestOperatorLatencyCollectionIsFixedBoundedAndPersisted(t *testing.T) {
 	current := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
-	failedAddress := operatorLatencyTargets[2].Address
+	targets := DefaultChecks()
+	failedAddress := targets[2].Target
 	prober := &fakeOperatorLatencyProber{failures: map[string]bool{failedAddress: true}}
 	service, err := New(Config{
 		StateDir: t.TempDir(), System: fakeSystemSource{summary: testSummary(1, 2)},
@@ -263,30 +264,30 @@ func TestOperatorLatencyCollectionIsFixedBoundedAndPersisted(t *testing.T) {
 	}
 	status := service.Status()
 	if !status.OperatorLatencyAvailable || status.OperatorLatencyIntervalSeconds != 60 ||
-		status.LastOperatorLatencySuccessful != len(operatorLatencyTargets)-1 ||
+		status.LastOperatorLatencySuccessful != len(targets)-1 ||
 		status.LastOperatorLatencyFailed != 1 {
 		t.Fatalf("unexpected operator latency status: %#v", status)
 	}
 	prober.mu.Lock()
 	callCount, maxActive := len(prober.calls), prober.maxActive
 	prober.mu.Unlock()
-	if callCount != len(operatorLatencyTargets) || maxActive > operatorProbeWorkers {
+	if callCount != len(targets) || maxActive > operatorProbeWorkers {
 		t.Fatalf("operator probe calls=%d max active=%d", callCount, maxActive)
 	}
 	history, err := service.History(context.Background(), "1h")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history.OperatorLatency) != len(operatorLatencyTargets) {
+	if len(history.OperatorLatency) != len(targets) {
 		t.Fatalf("operator series count=%d", len(history.OperatorLatency))
 	}
 	for index, series := range history.OperatorLatency {
-		target := operatorLatencyTargets[index]
+		target := targets[index]
 		if series.ID != target.ID || series.Operator != target.Operator ||
-			series.Region != target.Region || series.Address != target.Address || len(series.Points) != 1 {
+			series.Region != target.Region || series.Address != target.Target || len(series.Points) != 1 {
 			t.Fatalf("unexpected operator series at %d: %#v", index, series)
 		}
-		if target.Address == failedAddress {
+		if target.Target == failedAddress {
 			if series.Points[0].LatencyMilliseconds != nil {
 				t.Fatalf("failed probe was recorded as latency: %#v", series.Points[0])
 			}
@@ -297,22 +298,23 @@ func TestOperatorLatencyCollectionIsFixedBoundedAndPersisted(t *testing.T) {
 }
 
 func TestOperatorLatencyCatalogIsNineFixedIPv4Targets(t *testing.T) {
-	if len(operatorLatencyTargets) != 9 {
-		t.Fatalf("operator target count=%d", len(operatorLatencyTargets))
+	targets := DefaultChecks()
+	if len(targets) != 9 {
+		t.Fatalf("operator target count=%d", len(targets))
 	}
-	seen := make(map[string]struct{}, len(operatorLatencyTargets))
+	seen := make(map[string]struct{}, len(targets))
 	counts := make(map[string]int)
-	for _, target := range operatorLatencyTargets {
+	for _, target := range targets {
 		if target.ID != fmt.Sprintf("%s-%s", target.Operator, target.Region) {
 			t.Fatalf("target id mismatch: %#v", target)
 		}
-		if ip := net.ParseIP(target.Address); ip == nil || ip.To4() == nil {
+		if ip := net.ParseIP(target.Target); ip == nil || ip.To4() == nil {
 			t.Fatalf("target is not fixed IPv4: %#v", target)
 		}
-		if _, exists := seen[target.Address]; exists {
-			t.Fatalf("duplicate target address: %s", target.Address)
+		if _, exists := seen[target.Target]; exists {
+			t.Fatalf("duplicate target address: %s", target.Target)
 		}
-		seen[target.Address] = struct{}{}
+		seen[target.Target] = struct{}{}
 		counts[target.Operator]++
 	}
 	for _, operator := range []string{"telecom", "unicom", "mobile"} {
@@ -1018,7 +1020,7 @@ func TestCompactRecordFitsDailyStorageBudgetAtMaximumContainerCount(t *testing.T
 	full.ContainerSampled = true
 	full.DockerAvailable = true
 	full.ContainerTotal = defaultMaxContainers
-	for _, target := range operatorLatencyTargets {
+	for _, target := range DefaultChecks() {
 		full.OperatorLatency = append(full.OperatorLatency, diskOperatorLatencyPoint{
 			ID: target.ID, LatencyMilliseconds: 999.9, Reachable: true,
 		})
@@ -1469,7 +1471,7 @@ func maximumRollupRecord(at time.Time) diskRecord {
 	record.Host.NetworkTxPeakRate = 1 << 30
 	record.Host.DiskReadPeakRate = 1 << 30
 	record.Host.DiskWritePeakRate = 1 << 30
-	for _, target := range operatorLatencyTargets {
+	for _, target := range DefaultChecks() {
 		record.OperatorLatency = append(record.OperatorLatency, diskOperatorLatencyPoint{
 			ID: target.ID, LatencyMilliseconds: 999.9, Reachable: true,
 			SuccessCount: 6, FailureCount: 6,

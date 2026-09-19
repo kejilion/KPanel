@@ -66,9 +66,12 @@ type MonitoringOperatorLatencyPoint struct {
 
 type MonitoringOperatorLatencySeries struct {
 	ID       string                           `json:"id"`
+	Kind     string                           `json:"kind"`
+	Name     string                           `json:"name"`
 	Operator string                           `json:"operator"`
 	Region   string                           `json:"region"`
 	Address  string                           `json:"address"`
+	Target   string                           `json:"target"`
 	Points   []MonitoringOperatorLatencyPoint `json:"points"`
 }
 

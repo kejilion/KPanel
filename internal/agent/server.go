@@ -88,6 +88,11 @@ type monitoringHistoryProvider interface {
 	HistoryBetween(context.Context, string, time.Time, time.Time) (contract.MonitoringHistory, error)
 }
 
+type monitoringChecksProvider interface {
+	Checks() monitoring.CheckSnapshot
+	ReplaceChecks(monitoring.ReplaceChecksInput) (monitoring.CheckSnapshot, error)
+}
+
 type Server struct {
 	tokenHash         [32]byte
 	version           string
@@ -370,6 +375,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemLogs)
 	case r.URL.Path == "/v1/monitoring/history":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.monitoringHistory)
+	case r.URL.Path == "/v1/monitoring/checks":
+		s.monitoringChecks(w, r, requestID)
 	case r.URL.Path == "/v1/system/actions":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.systemAction)
 	case r.URL.Path == "/v1/system/resource-actions":
@@ -620,6 +627,7 @@ func (s *Server) capabilities(w http.ResponseWriter, r *http.Request) {
 		{ID: "system.processes.read", Enabled: true, Methods: []string{"GET"}},
 		{ID: "system.storage.read", Enabled: true, Methods: []string{"GET"}},
 		{ID: "monitoring.history.read", Enabled: s.monitoring != nil, Reason: reasonUnless(s.monitoring != nil, "历史监控服务未配置"), Methods: []string{"GET"}},
+		{ID: "monitoring.checks.write", Enabled: hasMonitoringChecks(s.monitoring), Reason: reasonUnless(hasMonitoringChecks(s.monitoring), "监控检测服务未配置"), Methods: []string{"GET", "PUT"}},
 		{ID: "apps.read", Enabled: dockerAvailable, Reason: reasonUnless(dockerAvailable, "Docker Engine 不可用"), Methods: []string{"GET"}},
 		{ID: "apps.lifecycle", Enabled: dockerAvailable, Reason: reasonUnless(dockerAvailable, "Docker Engine 不可用"), Methods: []string{"POST"}},
 		{ID: "apps.install", Enabled: dockerAvailable, Reason: reasonUnless(dockerAvailable, "Docker Engine 不可用"), Methods: []string{"POST"}},

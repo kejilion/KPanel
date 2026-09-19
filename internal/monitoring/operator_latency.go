@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,28 +20,6 @@ const (
 	operatorProbeTimeout        = 1500 * time.Millisecond
 	operatorProbeWorkers        = 3
 )
-
-// operatorLatencyTarget is an internal fixed catalog. Addresses are never
-// accepted from HTTP input, keeping the background probe from becoming an
-// SSRF or network scanning primitive.
-type operatorLatencyTarget struct {
-	ID       string
-	Operator string
-	Region   string
-	Address  string
-}
-
-var operatorLatencyTargets = []operatorLatencyTarget{
-	{ID: "telecom-beijing", Operator: "telecom", Region: "beijing", Address: "219.141.136.10"},
-	{ID: "telecom-shanghai", Operator: "telecom", Region: "shanghai", Address: "202.96.209.5"},
-	{ID: "telecom-guangzhou", Operator: "telecom", Region: "guangzhou", Address: "202.96.128.86"},
-	{ID: "unicom-beijing", Operator: "unicom", Region: "beijing", Address: "123.125.81.6"},
-	{ID: "unicom-shanghai", Operator: "unicom", Region: "shanghai", Address: "210.22.84.3"},
-	{ID: "unicom-guangzhou", Operator: "unicom", Region: "guangzhou", Address: "210.21.196.6"},
-	{ID: "mobile-beijing", Operator: "mobile", Region: "beijing", Address: "221.179.155.161"},
-	{ID: "mobile-shanghai", Operator: "mobile", Region: "shanghai", Address: "211.136.112.50"},
-	{ID: "mobile-guangzhou", Operator: "mobile", Region: "guangzhou", Address: "211.136.192.6"},
-}
 
 type OperatorLatencyProber interface {
 	Probe(context.Context, string) (time.Duration, error)
@@ -60,8 +40,8 @@ type icmpLatencyProbe struct {
 	nextSequence atomic.Uint32
 }
 
-// NewOperatorLatencyProber measures a bounded round trip to the fixed operator
-// catalog. ICMP uses Linux ping sockets, while TCP/53 and UDP DNS provide
+// NewOperatorLatencyProber measures a bounded round trip to configured IPv4
+// Ping targets. ICMP uses Linux ping sockets, while TCP/53 and UDP DNS provide
 // fallbacks for networks that filter one of the protocols. No CAP_NET_RAW is
 // added to the Agent capability boundary.
 func NewOperatorLatencyProber() OperatorLatencyProber {
@@ -213,7 +193,7 @@ func dnsRootNSQuery(id uint16) []byte {
 }
 
 type operatorLatencyResult struct {
-	target       operatorLatencyTarget
+	target       Check
 	milliseconds float64
 	reachable    bool
 }
@@ -221,21 +201,22 @@ type operatorLatencyResult struct {
 func collectOperatorLatency(
 	ctx context.Context,
 	prober OperatorLatencyProber,
+	targets []Check,
 ) []operatorLatencyResult {
-	if prober == nil {
+	if prober == nil || len(targets) == 0 {
 		return nil
 	}
-	results := make([]operatorLatencyResult, len(operatorLatencyTargets))
-	jobs := make(chan int, len(operatorLatencyTargets))
+	results := make([]operatorLatencyResult, len(targets))
+	jobs := make(chan int, len(targets))
 	var workers sync.WaitGroup
-	for worker := 0; worker < operatorProbeWorkers; worker++ {
+	for worker := 0; worker < min(operatorProbeWorkers, len(targets)); worker++ {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for index := range jobs {
-				target := operatorLatencyTargets[index]
+				target := targets[index]
 				result := operatorLatencyResult{target: target}
-				latency, err := prober.Probe(ctx, target.Address)
+				latency, err := probeCheck(ctx, prober, target)
 				if err == nil {
 					result.reachable = true
 					result.milliseconds = float64(latency) / float64(time.Millisecond)
@@ -244,10 +225,65 @@ func collectOperatorLatency(
 			}
 		}()
 	}
-	for index := range operatorLatencyTargets {
+	for index := range targets {
 		jobs <- index
 	}
 	close(jobs)
 	workers.Wait()
 	return results
+}
+
+func probeCheck(ctx context.Context, ping OperatorLatencyProber, target Check) (time.Duration, error) {
+	probeContext, cancel := context.WithTimeout(ctx, operatorProbeTimeout)
+	defer cancel()
+	switch target.Kind {
+	case "ping":
+		return ping.Probe(probeContext, target.Target)
+	case "tcp":
+		startedAt := time.Now()
+		connection, err := (&net.Dialer{Timeout: operatorProbeTimeout}).DialContext(probeContext, "tcp", target.Target)
+		latency := time.Since(startedAt)
+		if err != nil {
+			return 0, err
+		}
+		_ = connection.Close()
+		return latency, nil
+	case "http":
+		transport := &http.Transport{
+			Proxy:               nil,
+			DialContext:         (&net.Dialer{Timeout: operatorProbeTimeout}).DialContext,
+			TLSHandshakeTimeout: operatorProbeTimeout,
+			DisableKeepAlives:   true,
+		}
+		client := &http.Client{
+			Transport: transport,
+			CheckRedirect: func(request *http.Request, via []*http.Request) error {
+				if len(via) >= 3 {
+					return errors.New("too many redirects")
+				}
+				if request.URL.User != nil || (request.URL.Scheme != "http" && request.URL.Scheme != "https") {
+					return errors.New("unsafe HTTP redirect")
+				}
+				return nil
+			},
+		}
+		request, err := http.NewRequestWithContext(probeContext, http.MethodGet, target.Target, nil)
+		if err != nil {
+			return 0, err
+		}
+		request.Header.Set("User-Agent", "KPanel-Monitor/1")
+		startedAt := time.Now()
+		response, err := client.Do(request)
+		latency := time.Since(startedAt)
+		if err != nil {
+			return 0, err
+		}
+		_ = response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 400 {
+			return 0, fmt.Errorf("HTTP status %d", response.StatusCode)
+		}
+		return latency, nil
+	default:
+		return 0, errors.New("monitoring check kind is invalid")
+	}
 }

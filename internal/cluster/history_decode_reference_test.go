@@ -61,7 +61,7 @@ func scanHistoryJSONReference(decoder *json.Decoder, depth, arrayLimit int) erro
 					limit = 32
 				}
 				if depth == 0 && key == "operatorlatency" {
-					limit = 9
+					limit = 16
 				}
 				if err := scanHistoryJSONReference(decoder, depth+1, limit); err != nil {
 					return err

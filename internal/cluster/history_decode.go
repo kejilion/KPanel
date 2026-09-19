@@ -142,7 +142,7 @@ func (s *historyJSONScanner) value(depth, arrayLimit int) error {
 				limit = 32
 			}
 			if depth == 0 && bytes.EqualFold(key, []byte("operatorLatency")) {
-				limit = 9
+				limit = 16
 			}
 			s.space()
 			s.offset++ // colon, guaranteed by json.Valid

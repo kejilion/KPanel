@@ -1667,10 +1667,38 @@ export interface MonitoringOperatorLatencyPoint {
 
 export interface MonitoringOperatorLatencySeries {
   id: string
-  operator: 'telecom' | 'unicom' | 'mobile'
-  region: 'beijing' | 'shanghai' | 'guangzhou'
+  kind?: MonitoringCheckKind
+  name?: string
+  operator?: string
+  region?: string
   address: string
+  target?: string
   points: MonitoringOperatorLatencyPoint[]
+}
+
+export type MonitoringCheckKind = 'ping' | 'tcp' | 'http'
+
+export interface MonitoringCheck {
+  id: string
+  kind: MonitoringCheckKind
+  name: string
+  target: string
+  operator?: string
+  region?: string
+}
+
+export interface MonitoringCheckSnapshot {
+  schemaVersion: number
+  resourceVersion: string
+  available: boolean
+  warning?: string
+  maxItems: number
+  items: MonitoringCheck[]
+}
+
+export interface MonitoringCheckUpdate {
+  expectedResourceVersion: string
+  items: MonitoringCheck[]
 }
 
 export interface MonitoringStorageStatus {

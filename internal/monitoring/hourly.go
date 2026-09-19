@@ -38,6 +38,7 @@ type hourlyAccumulator struct {
 	containers         map[string]hourlyContainerAccumulator
 	previousContainers map[string]hourlyPreviousContainer
 	latency            map[string]diskOperatorLatencyPoint
+	latencyOrder       []string
 }
 
 func emptyHourlyAccumulator(hour time.Time) *hourlyAccumulator {
@@ -45,7 +46,8 @@ func emptyHourlyAccumulator(hour time.Time) *hourlyAccumulator {
 		hour:               hour.UTC().Truncate(time.Hour),
 		containers:         make(map[string]hourlyContainerAccumulator, maxScannedSeries),
 		previousContainers: make(map[string]hourlyPreviousContainer, maxScannedSeries),
-		latency:            make(map[string]diskOperatorLatencyPoint, len(operatorLatencyTargets)),
+		latency:            make(map[string]diskOperatorLatencyPoint, MaxChecks),
+		latencyOrder:       make([]string, 0, MaxChecks),
 	}
 }
 
@@ -116,6 +118,7 @@ func (a *hourlyAccumulator) add(record diskRecord) {
 			}
 		}
 		if !exists {
+			a.latencyOrder = append(a.latencyOrder, latency.ID)
 			latency.SuccessCount = success
 			latency.FailureCount = failure
 			a.latency[latency.ID] = latency
@@ -210,10 +213,8 @@ func (a *hourlyAccumulator) finalized() diskRecord {
 		record.Containers = append(record.Containers, point)
 	}
 	record.OperatorLatency = make([]diskOperatorLatencyPoint, 0, len(a.latency))
-	for _, target := range operatorLatencyTargets {
-		if latency, exists := a.latency[target.ID]; exists {
-			record.OperatorLatency = append(record.OperatorLatency, latency)
-		}
+	for _, id := range a.latencyOrder {
+		record.OperatorLatency = append(record.OperatorLatency, a.latency[id])
 	}
 	return record
 }

@@ -79,6 +79,7 @@ type Service struct {
 	system                  SystemSource
 	docker                  DockerSource
 	operatorLatency         OperatorLatencyProber
+	checks                  *checkStore
 	now                     func() time.Time
 	hostInterval            time.Duration
 	containerInterval       time.Duration
@@ -245,9 +246,14 @@ func New(config Config) (*Service, error) {
 	if err := os.Chmod(config.StateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("protect monitoring state directory: %w", err)
 	}
+	checks, err := openCheckStore(config.StateDir)
+	if err != nil {
+		return nil, fmt.Errorf("initialize monitoring checks: %w", err)
+	}
 	service := &Service{
 		stateDir: config.StateDir, system: config.System, docker: config.Docker,
 		operatorLatency: config.OperatorLatency,
+		checks:          checks,
 		now:             config.Now, hostInterval: config.HostInterval,
 		containerInterval: config.ContainerInterval, sampleTimeout: config.SampleTimeout,
 		operatorLatencyInterval: config.OperatorLatencyInterval,
@@ -317,6 +323,7 @@ func (s *Service) Sample(ctx context.Context) error {
 	}
 	includeOperatorLatency := s.operatorLatency != nil &&
 		(s.nextOperatorLatencyAt.IsZero() || !now.Before(s.nextOperatorLatencyAt))
+	checkItems := cloneChecks(s.checks.state.Items)
 	if includeOperatorLatency {
 		s.nextOperatorLatencyAt = now.Add(s.operatorLatencyInterval)
 	}
@@ -327,7 +334,7 @@ func (s *Service) Sample(ctx context.Context) error {
 		result := make(chan []operatorLatencyResult, 1)
 		operatorLatency = result
 		go func() {
-			result <- collectOperatorLatency(ctx, s.operatorLatency)
+			result <- collectOperatorLatency(ctx, s.operatorLatency, checkItems)
 		}()
 	}
 
@@ -451,6 +458,18 @@ func (s *Service) resetContainerCPU() {
 	s.mu.Lock()
 	s.containerCPU = make(map[string]containerCPUCounter)
 	s.mu.Unlock()
+}
+
+func (s *Service) Checks() CheckSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.checks.snapshot()
+}
+
+func (s *Service) ReplaceChecks(input ReplaceChecksInput) (CheckSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checks.replace(input)
 }
 
 func containerCPUPercent(previous containerCPUCounter, current containerCPUCounter) float64 {
@@ -748,7 +767,7 @@ func (s *Service) queryHistory(
 		BucketSeconds:   int(bucket.Seconds()),
 		Host:            []contract.MonitoringHostPoint{},
 		Containers:      []contract.MonitoringContainerSeries{},
-		OperatorLatency: operatorLatencyCatalog(),
+		OperatorLatency: s.monitoringCheckCatalog(),
 		Storage:         s.Status(),
 	}
 	hostPoints := make([]contract.MonitoringHostPoint, 0, maxHistoryPoints)
@@ -1023,12 +1042,25 @@ func maxFloat64(left float64, right float64) float64 {
 	return left
 }
 
+func (s *Service) monitoringCheckCatalog() []contract.MonitoringOperatorLatencySeries {
+	s.mu.RLock()
+	targets := cloneChecks(s.checks.state.Items)
+	s.mu.RUnlock()
+	return checkCatalog(targets)
+}
+
 func operatorLatencyCatalog() []contract.MonitoringOperatorLatencySeries {
-	series := make([]contract.MonitoringOperatorLatencySeries, 0, len(operatorLatencyTargets))
-	for _, target := range operatorLatencyTargets {
+	return checkCatalog(DefaultChecks())
+}
+
+func checkCatalog(targets []Check) []contract.MonitoringOperatorLatencySeries {
+	series := make([]contract.MonitoringOperatorLatencySeries, 0, len(targets))
+	for _, target := range targets {
 		series = append(series, contract.MonitoringOperatorLatencySeries{
-			ID: target.ID, Operator: target.Operator, Region: target.Region,
-			Address: target.Address, Points: []contract.MonitoringOperatorLatencyPoint{},
+			ID: target.ID, Kind: target.Kind, Name: target.Name,
+			Operator: target.Operator, Region: target.Region,
+			Address: target.Target, Target: target.Target,
+			Points: []contract.MonitoringOperatorLatencyPoint{},
 		})
 	}
 	return series
