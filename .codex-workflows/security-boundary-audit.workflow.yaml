@@ -1,12 +1,12 @@
 ---
 name: security-boundary-audit
 description: "基于 Cloudflare security-audit-skill 方法的信任边界安全审计：侦察、覆盖账本、狩猎波、独立验证与结构化报告"
-version: "1.0"
+version: "1.1"
 author: "Claude"
 tags: [security, audit, trust-boundary, governance]
-params: [project_dir, baseline_ref, ledger_dir, profile, scope_paths]
+params: [project_dir, baseline_ref, ledger_dir, profile, scope_paths, skill_dir, governance_dir]
 created: "2026-09-18T00:00:00+08:00"
-updated: "2026-09-18T00:00:00+08:00"
+updated: "2026-09-19T00:00:00+08:00"
 ---
 
 # KPanel Security Boundary Audit
@@ -21,7 +21,7 @@ findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复
 三档模式按 `PROJECT_RULES.md` 5.4 选择：
 
 - **guidance**：回答安全问题或复查单个改动，不写任何文件，不编排子代理；
-- **scoped**：只审 `${{scope_paths}}` 指定包对应的既有账本单元；
+- **scoped**：从 `${{scope_paths}}` 当前源码派生单元，复验相关旧单元并补充新入口、新边界与生命周期；
 - **full**：全量重建账本（通常仅在稳定版列车发车前）。
 
 ## Prerequisites
@@ -33,8 +33,10 @@ findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复
   升级决策按 `PROJECT_RULES.md` 5.2 受控自我改进执行——先对新 commit 跑一轮
   scoped 对照并产出差异报告，新验证器必须重验既有账本通过，值得升级才换 pin，
   换 pin 本身是独立治理提交。
-- `${{project_dir}}` 是专用 worktree；审计为只读任务，但账本产物写入
-  `${{ledger_dir}}`（默认 `.governance/security-audit/`）。
+- `${{project_dir}}` 是干净的专用源码 worktree；审计只读目标。`${{ledger_dir}}` 必须为仓库外新建 run 目录，
+  先在外部完成审计，结束后由父任务将经过披露审查的最小治理产物提交到 `.governance/security-audit/run-<N>/`。
+  原始 scratch、运行环境、秘密与未复核攻击细节不得随目录整包入库。
+- `${{skill_dir}}` 是已按依赖策略 pin 检出的上游 `skills/security-audit` 绝对路径。
 - 审计智能体必须支持工具调用与并行子代理；验证器（`validate-findings.cjs`、
   `validate-coverage-ledger.cjs`）需要 Node.js 且 `O_NOFOLLOW` 支持意味着
   Windows 原生 Node 不可用，须在 WSL 或 Linux 下运行。
@@ -48,14 +50,17 @@ findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复
 
 ```bash
 cd "${{project_dir}}"
-git rev-parse HEAD
-git status --short
-node <skill-dir>/validate-coverage-ledger.cjs "${{ledger_dir}}/coverage-ledger.json"
+node "${{governance_dir}}/scripts/security-audit-baseline.mjs" "${{project_dir}}" "${{baseline_ref}}"
 ```
 
-`${{profile}}` 为 `full` 时读取全部既有 run 目录做增量输入；`scoped` 只读取
-最近一次 run 的账本并筛选 `${{scope_paths}}` 相关单元。无账本（首次 full）时
-记录"no prior ledger"且不宣称既往覆盖。
+将输出的 commit/tree/clean 写入 run metadata，结束时重跑且必须与开始时相同。
+不匹配或 dirty 时停止，不 reset/stash 他人改动；保存为独立提交或另建干净源码工作树后重新冻结。
+治理入口可来自独立工作树，目标源码无需为了加入脚本改变身份；记录该入口的提交身份。
+本入口只绑定 Git 跟踪源码；忽略文件不属于输入，不执行或依赖这些文件。
+
+`${{profile}}` 为 `full` 时读取全部既有 run 目录做增量输入；`scoped` 读取所有兼容旧 run 中
+与 `${{scope_paths}}` 相关的账本及 findings，比较相关源码而非只比较旧 ref。无账本（首次 full）时
+记录"no prior ledger"且不宣称既往覆盖。历史 dirty run 缺完整快照时明确不可完全复现，不追溯伪造证据。
 
 ### 2. 侦察与账本播种
 
@@ -70,7 +75,8 @@ node <skill-dir>/validate-coverage-ledger.cjs "${{ledger_dir}}/coverage-ledger.j
 按 HUNTING.md 为每个单元指派隔离 hunter 子代理；hunter 返回的结构化结果
 按单元回写账本（单写者：父进程唯一持有账本写入权）。每波后由独立 coverage
 critic 复核缺口；critic 提出的新单元进入下一波。`scoped` 模式只指派
-范围内单元；full 模式持续到 critic 报告无缺口。
+范围内单元，包括 critic 新发现的范围内单元；范围外明确保留为 `out_of_scope`，不得沿用旧 covered
+声称本轮覆盖。full 模式持续到 critic 报告无缺口。
 
 信任边界包清单以 `PROJECT_RULES.md` 5.4 触发表为唯一权威，本 workflow 不
 复述具体包名，防止双写漂移。
@@ -94,27 +100,31 @@ confirmed 必须有完整源码追溯，needs_validation 必须有精确 blocker
 按标准交付包回传：基线、账本变更、findings、成本（代理数/token/时长）和
 建议。full 结果同时记入试行观察（见 PROJECT_RULES.md 5.4 的试用退出条款）。
 所有 confirmed finding 转入正常开发流程修复，不在审计任务内修复。
+在安全审计目录的修复追踪记录中保留 fingerprint、发现 run/source、修复 commit、独立复核与回归证据，
+分别核对 RC tag、stable tag 的祖先关系和实际 Release 状态；部署另以验收记录为证。
+稳定版尚未公开时状态保持 `pending-stable`，由该版本唯一发布任务在验收时补齐；不能为了关闭 finding
+提前删除仍服务 RC 的候选分支。候选处置引用 `docs/release-channels.md`，不在审计流程另定义归档规则。
 
 ## Parameters
 
 - `${{project_dir}}`：审计目标 worktree。
 - `${{baseline_ref}}`：审计基线（full 默认 `origin/main`，scoped 为任务分支 HEAD）。
-- `${{ledger_dir}}`：账本目录，默认 `.governance/security-audit/run-<N>`，
-  上一 run 的目录用于增量输入。
+- `${{ledger_dir}}`：仓库外的新 run 目录，结束后选择性入库；已有 run 只作为增量输入。
+- `${{skill_dir}}`：固定 commit 的上游 skill 绝对路径。
+- `${{governance_dir}}`：提供已提交基线检查入口的治理工作树，通常与 project_dir 相同；旧源码复核时可独立指定。
 - `${{profile}}`：`guidance` / `scoped` / `full` 之一。
 - `${{scope_paths}}`：scoped 模式的包路径列表。
 
 ## Verification
 
 ```bash
-wsl -e sh -c "node <skill-dir>/validate-findings.cjs \
-  \"${{ledger_dir}}/findings.json\" && \
-  node <skill-dir>/validate-coverage-ledger.cjs \
-  \"${{ledger_dir}}/coverage-ledger.json\""
+node "${{skill_dir}}/validate-findings.cjs" "${{ledger_dir}}/findings.json"
+node "${{skill_dir}}/validate-coverage-ledger.cjs" "${{ledger_dir}}/coverage-ledger.json"
 ```
 
 两个验证器 PASS 是结构有效性的机器下限；覆盖声明的质量以账本单元与
 reviewed_paths 为准，不以代理数量或运行时长为准。
+以上两个命令在支持 `O_NOFOLLOW` 的 Linux/WSL 中使用对应 Linux 路径执行；Windows 不静默跳过。
 
 ## Notes
 

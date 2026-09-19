@@ -424,6 +424,13 @@ run metadata。账本是覆盖声明的唯一真源——不以代理数量、�
 单次 full 约只能发现重复运行总发现的一半，禁止以单次未发现宣称安全；全量覆盖结论
 只在账本维度上声明。confirmed finding 转入正常开发流程修复，审计任务本身不修复。
 
+**可复现与修复追踪**：审计开始和结束通过 `scripts/security-audit-baseline.mjs` 绑定精确 commit、tree 与 clean
+源码工作树。脏改动先保存在独立提交，或另建干净源码工作树，禁止只记 dirty 文件数。
+审计输出先在仓库外生成，经结构验证与披露审查后由父任务选取治理产物入库。scoped 从当前源码播种单元，
+既有账本仅作增量输入，新增边界必须新增单元，范围外明确标记。finding 保留原 fingerprint，后续记录
+修复 commit、独立复核、回归证据及包含修复的 RC/稳定版身份；“源码已修复”“RC 已交付”“稳定版已交付”
+和“已部署”分别记录，不得相互替代。历史 run 不追溯改写，无法重建的 dirty 状态保留为证据局限。
+
 **机器/人工边界**：两个结构验证器（findings、coverage-ledger）PASS 是结构有效性的
 机器下限；验证器不校验 hunting 质量。凡需动态确认而沙箱（隔离网络、资源限额、
 scratch-only 写）不可用的线索必须记为 `needs_validation` 并写明缺失能力，不得降级为
@@ -471,6 +478,9 @@ Definition of Done，不充当 L2/L3 独立复核，也不替代验收记录中�
   分级有效发现、`constrained-only` 数）。基线、canary 与回放记录见 `.governance/ocr-review/README.md`。
 - **持续迭代**：版本 pin 只在 `dependency-policy.json` 的 `code-review-assistant` 组；依赖报告检测到
   新版本只产生候选信号，升级须在新版本上通过 canary 回放，pin 变更为独立治理提交。
+- **证据顺序**：自由臂结果必须在任何 OCR 圈选和规则输出被评审者读取前落盘；已经看过时如实写
+  `unreported`。仓库外证据记录精确范围、执行顺序、发现归属与重复项；规则命中、覆盖率和独立评审发现
+  不计作 OCR 新增收益。版本 pin 的修改仍按上述持续迭代要求执行。
 - **试用退出条款**：观察序列自 v1.20.0 稳定版列车起算，每个稳定版发车前由 `quality-audit-kpanel`
   汇总上一稳定版以来的 trailer，并抽查 `constrained-only` 记录是否成立。有效 trailer 指非 skipped 且
   `constrained-only` 为数字的记录；`unreported` 或缺字段不计为使用，也不推断为零或成功。连续 3 个稳定版

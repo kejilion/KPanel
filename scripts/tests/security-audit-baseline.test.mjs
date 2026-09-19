@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { auditBaseline } from '../security-audit-baseline.mjs';
+
+test('audit baseline binds the actual clean source and rejects lost source state', t => {
+  const repo = mkdtempSync(join(tmpdir(), 'kpanel-audit-baseline-'));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+  git('init', '-q');
+  git('config', 'user.name', 'Audit test');
+  git('config', 'user.email', 'audit@example.invalid');
+  git('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'source.txt'), 'initial\n');
+  git('add', '.'); git('commit', '-qm', 'initial');
+  const base = git('rev-parse', 'HEAD');
+  assert.deepEqual(auditBaseline(repo, base), { source_ref: base, source_tree: git('rev-parse', 'HEAD^{tree}'), source_dirty: false });
+  assert.throws(() => auditBaseline(repo, '--help'), /must not be an option/);
+  writeFileSync(join(repo, 'source.txt'), 'changed\n');
+  assert.throws(() => auditBaseline(repo, base), /must be clean/);
+  git('add', '.');
+  assert.throws(() => auditBaseline(repo, base), /must be clean/);
+  git('commit', '-qm', 'change');
+  assert.throws(() => auditBaseline(repo, base), /does not match/);
+  writeFileSync(join(repo, 'untracked.txt'), 'untracked\n');
+  assert.throws(() => auditBaseline(repo, 'HEAD'), /must be clean/);
+});
