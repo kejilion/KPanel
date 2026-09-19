@@ -494,7 +494,7 @@ test('readAcceptanceHistory treats an untagged target as newest and never loosen
 
 test('readAcceptanceHistory reads release times from repository tags', () => {
   const { directory, path } = rollbackPatchFixture();
-  const git = (args, date) => execFileSync('git', ['-C', directory, ...args], {
+  const git = (args, date) => execFileSync('git', ['-C', directory, '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false', ...args], {
     encoding: 'utf8',
     env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date,
       GIT_AUTHOR_NAME: 'KPanel Test', GIT_AUTHOR_EMAIL: 'kpanel-test@example.invalid',
@@ -502,10 +502,10 @@ test('readAcceptanceHistory reads release times from repository tags', () => {
   });
   git(['init', '--quiet'], '2026-09-12T09:00:00+08:00');
   git(['add', '.'], '2026-09-12T09:00:00+08:00');
-  git(['commit', '--quiet', '--no-gpg-sign', '-m', 'records'], '2026-09-12T09:00:00+08:00');
-  git(['tag', '--no-sign', '-a', 'v1.15.0', '-m', 'v1.15.0'], '2026-09-12T10:00:00+08:00');
-  git(['tag', '--no-sign', '-a', 'v1.16.0', '-m', 'v1.16.0'], '2026-09-13T14:36:49+08:00');
-  git(['tag', '--no-sign', '-a', 'v1.15.1', '-m', 'v1.15.1'], '2026-09-13T16:36:54+08:00');
+  git(['commit', '--quiet', '-m', 'records'], '2026-09-12T09:00:00+08:00');
+  git(['tag', '-a', 'v1.15.0', '-m', 'v1.15.0'], '2026-09-12T10:00:00+08:00');
+  git(['tag', '-a', 'v1.16.0', '-m', 'v1.16.0'], '2026-09-13T14:36:49+08:00');
+  git(['tag', '-a', 'v1.15.1', '-m', 'v1.15.1'], '2026-09-13T16:36:54+08:00');
 
   assert.deepEqual(readAcceptanceHistory(path('v1.16.0')).map((record) => record.tag), ['v1.16.0', 'v1.15.0']);
   assert.deepEqual(readAcceptanceHistory(path('v1.15.1')).map((record) => record.tag),
