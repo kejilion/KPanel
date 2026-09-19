@@ -33,6 +33,7 @@
 | [部署文档](deployment.md) | 构建产物、镜像 digest 与部署流程 |
 | [操作边界审计](operational-boundary-audit.md) | 允许与禁止的运维动作 |
 | [UI 视觉语言](ui-visual-language.md) | 布局、字体、主题、图标与动效的唯一入口 |
+| [按钮完整性契约](button-integrity-contract.md) | 窗口尺寸变化下按钮不换行、不截断、不越界的设计与分期 |
 | [品牌图标](brand-icons.md) | 图标资产规范 |
 | [国际化](internationalization.md) | 多语言架构与本地化契约 |
 
