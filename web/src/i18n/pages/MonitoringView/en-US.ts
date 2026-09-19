@@ -187,5 +187,12 @@ export default [
   ["保存变更", "Save changes"],
   ["最近一轮成功 {0}/{1} · 每 {2} 分钟", "Last round succeeded {0}/{1} · every {2} min"],
   ["· 每", "· Every"],
+  ["可用性状态", "Availability status"],
+  ["当前时间范围 · 点击格子可放大", "Current time range · Select a cell to zoom"],
+  ["正常", "Healthy"],
+  ["部分失败", "Partial failure"],
+  ["失败", "Failed"],
+  ["无数据", "No data"],
+  ["成功", "Successful"],
   ["取消", "Cancel"],
 ] as const satisfies PhraseCatalog
