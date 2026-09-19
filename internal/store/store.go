@@ -249,7 +249,7 @@ func (s *Store) migrateAuditLocked() error {
 	if len(s.data.Audit) == 0 {
 		return nil
 	}
-	if err := s.audit.append(s.data.Audit, MaxAuditEntries); err != nil {
+	if err := s.audit.append(s.data.Audit, MaxAuditEntries, true); err != nil {
 		return fmt.Errorf("migrate audit history: %w", err)
 	}
 	previous := s.data.Audit
@@ -267,8 +267,9 @@ func (s *Store) Close() error {
 	if s.processLock == nil {
 		return nil
 	}
+	// s.audit stays set: AppendAudit does not take s.mu, and a closed log
+	// answers ErrAuditUnavailable instead of racing on this field.
 	auditErr := s.audit.close()
-	s.audit = nil
 	err := s.processLock.Close()
 	s.processLock = nil
 	return errors.Join(auditErr, err)
@@ -376,7 +377,7 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 	// database is a separate file, so the two cannot commit atomically, and
 	// a recorded recovery that then fails is followed by a failure record
 	// rather than leaving a credential change with no audit trail.
-	if err := s.audit.append([]AuditEvent{input.AuditEvent}, input.MaxAuditEntries); err != nil {
+	if err := s.audit.append([]AuditEvent{input.AuditEvent}, input.MaxAuditEntries, false); err != nil {
 		return err
 	}
 	previous := cloneDiskState(s.data)
@@ -400,7 +401,7 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 		failure := input.AuditEvent
 		failure.ID += ":failed"
 		failure.Result = "failure"
-		return errors.Join(err, s.audit.append([]AuditEvent{failure}, input.MaxAuditEntries))
+		return errors.Join(err, s.audit.append([]AuditEvent{failure}, input.MaxAuditEntries, false))
 	}
 	return nil
 }
@@ -662,7 +663,7 @@ func (s *Store) DeleteSession(tokenHash string) error {
 // AppendAudit durably records one event. It does not take the state lock, so
 // audit writes no longer stall session checks and other state reads.
 func (s *Store) AppendAudit(event AuditEvent, maxEntries int) error {
-	return s.audit.append([]AuditEvent{event}, maxEntries)
+	return s.audit.append([]AuditEvent{event}, maxEntries, false)
 }
 
 // ListAudit returns newest-first records in write order. Cursor is the last

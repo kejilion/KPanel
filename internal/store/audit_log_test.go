@@ -86,7 +86,7 @@ func TestInterruptedMigrationRepeatsWithoutDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := partial.append(legacy, MaxAuditEntries); err != nil {
+	if err := partial.append(legacy, MaxAuditEntries, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := partial.close(); err != nil {
@@ -205,5 +205,46 @@ func TestAppendAuditFailsClosedWhenDatabaseFileIsRemoved(t *testing.T) {
 	}
 	if err := storage.AppendAudit(auditTestEvent("after-remove", time.Now().UTC()), 0); !errors.Is(err, ErrAuditUnavailable) {
 		t.Fatalf("append to removed audit database = %v", err)
+	}
+}
+
+// Background work can outlive the store during shutdown; it must get an
+// error rather than a panic or a race on the closed handle.
+func TestAuditAfterCloseReturnsUnavailable(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 50 {
+			_ = storage.AppendAudit(auditTestEvent(fmt.Sprintf("bg-%d", time.Now().UnixNano()), time.Now().UTC()), 0)
+		}
+	}()
+	if err := storage.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if err := storage.AppendAudit(auditTestEvent("after-close", time.Now().UTC()), 0); !errors.Is(err, ErrAuditUnavailable) {
+		t.Fatalf("append after close = %v", err)
+	}
+	if _, _, err := storage.ListAudit(10, ""); !errors.Is(err, ErrAuditUnavailable) {
+		t.Fatalf("list after close = %v", err)
+	}
+}
+
+func TestAppendAuditRejectsDuplicateIDs(t *testing.T) {
+	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	event := auditTestEvent("same", time.Now().UTC())
+	if err := storage.AppendAudit(event, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.AppendAudit(event, 0); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("duplicate audit ID = %v", err)
 	}
 }

@@ -38,6 +38,7 @@ type auditLog struct {
 	db     *sql.DB
 	path   string
 	opened os.FileInfo
+	closed bool
 }
 
 // auditLogPath keeps the audit database next to its state file and derives
@@ -98,10 +99,15 @@ func openAuditLog(path string) (*auditLog, error) {
 	return log, nil
 }
 
+// close is safe to race with writers: background work that outlives the
+// store gets ErrAuditUnavailable instead of touching a closed handle.
 func (l *auditLog) close() error {
-	if l == nil || l.db == nil {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
 		return nil
 	}
+	l.closed = true
 	return l.db.Close()
 }
 
@@ -109,6 +115,9 @@ func (l *auditLog) close() error {
 // replaced after open. SQLite would otherwise keep committing to the unlinked
 // inode, reporting success for records nobody can ever read back.
 func (l *auditLog) checkFileLocked() error {
+	if l.closed {
+		return fmt.Errorf("%w: audit database is closed", ErrAuditUnavailable)
+	}
 	current, err := os.Stat(l.path)
 	if err != nil || !os.SameFile(l.opened, current) {
 		return fmt.Errorf("%w: audit database file is missing or replaced", ErrAuditUnavailable)
@@ -129,9 +138,10 @@ func encodeAuditEvent(event AuditEvent) ([]byte, error) {
 }
 
 // append stores events in order and trims the oldest beyond maxEntries, all in
-// one transaction. Re-inserting a known ID is a no-op, which makes the
-// panel-state.json migration safe to repeat after an interrupted start.
-func (l *auditLog) append(events []AuditEvent, maxEntries int) error {
+// one transaction. A duplicate event ID is an error for normal writers; only
+// the panel-state.json migration skips IDs it already holds, which makes it
+// safe to repeat after an interrupted start.
+func (l *auditLog) append(events []AuditEvent, maxEntries int, skipKnownIDs bool) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -158,10 +168,19 @@ func (l *auditLog) append(events []AuditEvent, maxEntries int) error {
 		if err != nil {
 			return fmt.Errorf("encode audit event: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT OR IGNORE INTO audit_events(id, occurred_at, event) VALUES(?, ?, ?)`,
-			event.ID, event.OccurredAt.UnixNano(), data,
-		); err != nil {
+		insert := `INSERT INTO audit_events(id, occurred_at, event) VALUES(?, ?, ?)`
+		if skipKnownIDs {
+			insert = `INSERT OR IGNORE INTO audit_events(id, occurred_at, event) VALUES(?, ?, ?)`
+		} else {
+			var known int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM audit_events WHERE id = ?`, event.ID).Scan(&known); err != nil {
+				return fmt.Errorf("%w: %v", ErrAuditUnavailable, err)
+			}
+			if known > 0 {
+				return fmt.Errorf("%w: audit event %s", ErrAlreadyExists, event.ID)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, insert, event.ID, event.OccurredAt.UnixNano(), data); err != nil {
 			return fmt.Errorf("%w: %v", ErrAuditUnavailable, err)
 		}
 	}
@@ -187,6 +206,9 @@ func (l *auditLog) list(limit int, cursor string) ([]AuditEvent, string, error) 
 	defer cancel()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.closed {
+		return nil, "", fmt.Errorf("%w: audit database is closed", ErrAuditUnavailable)
+	}
 	before := int64(-1)
 	if cursor != "" {
 		err := l.db.QueryRowContext(ctx, `SELECT seq FROM audit_events WHERE id = ?`, cursor).Scan(&before)
