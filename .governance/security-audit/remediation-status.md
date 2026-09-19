@@ -1,7 +1,7 @@
 # 安全审计修复与交付追踪
 
 本记录区分源码修复、独立复核、RC 交付、稳定版交付和部署；执行标准见 `PROJECT_RULES.md` 5.4。
-本次核对日期：2026-09-19。审计历史原文不改写。
+本次核对日期：2026-09-20。审计历史原文不改写。
 
 ## run-1 已公开发现
 
@@ -44,4 +44,9 @@ stable tag 祖先关系、公开 Release、镜像及适用的部署证据。
 新增 MCP 范围的只读审计在独立验证阶段被平台中止；仅保存
 [`run-3/REPORT.md`](run-3/REPORT.md) 与运行身份，不宣称审计通过或完整覆盖。
 产品代码的普通开发验证与该中止审计分开记录，见 [`docs/mcp-access.md`](../../docs/mcp-access.md)。
-MCP 仍为未推送的本地候选，尚无 RC、稳定版或部署交付。
+MCP 产品源码已随 `v1.21.0-rc.1` 交付为公开 RC：tag 指向
+`679b39489824bf281fd8570d6d95d42d10c54085`，GitHub Release 为 prerelease，公开 OCI index 为
+`sha256:3add580bfd52fe25224de54782ddc52eeb5b87ba34a9af275e51cb131a3a5c21`，并通过
+`arena-154` L3、候选/主线/Release 门禁和公开镜像 E2E。稳定版尚未交付，生产未部署。
+来源分支精确 tip `291a646387a61f271f6f3c774a8d7980c55d0813` 已保存到
+`archive/feature/mcp-access-20260919`；run-3 仍保持“未完成、无审计结论”，不能因 RC 发布改写为通过。

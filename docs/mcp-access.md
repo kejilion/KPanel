@@ -77,7 +77,9 @@ WSL Ubuntu 24.04、linux/amd64、Go 1.26.7 的 3 轮/模式短样本显示：二
 （约 1.84 MiB），关闭/启用 MCP 后 RSS 中位数分别比基线增加约 2.5/3.625 MiB。
 样本为无 Agent、空资源和少量回环调用，包含认证后的堆保留，不能作为竞品对比或生产负载结论。
 
-候选代码和普通验证已经完成，完整验收仍未完成：标准预览启动器在用户明确允许后仍被自动审批以
-`blocked by policy` 拒绝，没有生成 acceptance manifest。既有回环 Panel 的静态构建可供本地集成体验，
-不冒充标准启动器验收。另有 scoped 审计被平台中止，状态见
-[`run-3/REPORT.md`](../.governance/security-audit/run-3/REPORT.md)。未推送、发布或部署。
+候选代码和普通验证已经完成；标准预览启动器曾在用户明确允许后仍被自动审批以
+`blocked by policy` 拒绝，没有生成 acceptance manifest。该限制没有被本地回环预览替代或误报为通过。
+最终候选 `679b39489824bf281fd8570d6d95d42d10c54085` 已通过 `arena-154` L3、候选和主线 CI、
+公开镜像 E2E，并于 2026-09-20 发布为 `v1.21.0-rc.1` prerelease；没有生产部署。
+另有 scoped 审计被平台中止，状态见
+[`run-3/REPORT.md`](../.governance/security-audit/run-3/REPORT.md)，该中止记录仍不构成审计通过结论。
