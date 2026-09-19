@@ -24,7 +24,13 @@ type managedJobAgent struct {
 }
 
 func (a *managedJobAgent) Get(_ context.Context, path, _, _ string) (AgentResponse, error) {
+	if path == "/v1/files/trash" {
+		return AgentResponse{StatusCode: 200, Body: []byte(`{"entries":[{"id":"client","originalPath":"/home/web/client/a","resourceVersion":"v1"},{"id":"other","originalPath":"/home/web/other/b","resourceVersion":"v2"}],"total":2}`)}, nil
+	}
 	if path == "/v1/files/archive-jobs" {
+		if a.foreignArchive {
+			return AgentResponse{StatusCode: 200, Body: []byte(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target":"/home/web/other/archive.zip","sources":["/home/web/other/file"],"state":"running"}`)}, nil
+		}
 		return AgentResponse{StatusCode: 200, Body: []byte(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","target":"/etc/private/archive.zip","sources":["/etc/private/secret"],"state":"running"}`)}, nil
 	}
 	state := "running"
@@ -154,6 +160,37 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	managedCall(center, token, "operation_execute", map[string]any{"operationId": id, "digest": digest})
 	if agent.calls.Load() != 1 {
 		t.Fatal("duplicate remote execution")
+	}
+	// The target trusts the controller for /home/web, but this particular AI
+	// client may only access /home/web/client. ID-only tools must also intersect
+	// both grants; checking only request paths would miss these operations.
+	files, _ := managedPolicy([]string{"apps", "files"}, true, false, []string{"/home/web"})
+	if err := target.cluster.SetManagedGrant(controller.ID, cluster.ManagedPolicy{Write: true, FileRoots: files.FileRoots, OperationVersions: files.OperationVersions}, time.Hour, target.cluster.ManagedGrants().ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	narrow, _ := managedPolicy([]string{"files"}, true, false, []string{"/home/web/client"})
+	_, narrowToken, err := center.mcp.access.CreateWithPolicy("Narrow files", []mcpaccess.HostGrant{{ID: host.ID, Identity: center.mcpHostIdentity(host)}}, narrow, time.Hour, center.mcp.access.Snapshot().ResourceVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := managedCall(center, narrowToken, "host_file_trash_list", map[string]any{"hostId": host.ID})
+	encoded, _ := json.Marshal(listing)
+	if listing == nil || !strings.Contains(string(encoded), "/home/web/client/a") || strings.Contains(string(encoded), "/home/web/other") {
+		t.Fatalf("remote roots not intersected: %s", encoded)
+	}
+	agent.foreignArchive = true
+	if got := managedCall(center, narrowToken, "host_file_archive_job", map[string]any{"hostId": host.ID, "jobId": strings.Repeat("a", 32)}); got != nil {
+		t.Fatal("remote job ID escaped client roots")
+	}
+	foreign := managedCall(center, narrowToken, "host_file_trash_action", map[string]any{"hostId": host.ID, "requestKey": "foreign-trash-1", "action": "trash_delete", "trashIds": []string{"other"}, "expectedResourceVersions": map[string]string{"other": "v2"}})
+	if foreign == nil {
+		t.Fatal("missing foreign plan")
+	}
+	foreignID, foreignDigest := foreign["operationId"].(string), foreign["digest"].(string)
+	_, _ = center.mcp.operations.Decide(foreignID, foreignDigest, "admin", true)
+	denied := managedCall(center, narrowToken, "operation_execute", map[string]any{"operationId": foreignID, "digest": foreignDigest})
+	if denied["state"] != "failed" || agent.calls.Load() != 1 {
+		t.Fatalf("remote trash ID escaped client roots: %#v", denied)
 	}
 	_, _ = target.mcp.access.SetEnabled(false, target.mcp.access.Snapshot().ResourceVersion)
 	capability = managedCall(center, token, "host_capabilities", map[string]any{"hostId": host.ID})

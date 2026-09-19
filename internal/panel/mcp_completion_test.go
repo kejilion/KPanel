@@ -243,3 +243,21 @@ func TestMCPFullToolDiscoveryFitsTransport(t *testing.T) {
 	}
 	t.Logf("full discovery: %d tools, %d response bytes", len(response.Result.Tools), w.Body.Len())
 }
+
+func TestMCPFileActionsRequireSourceVersions(t *testing.T) {
+	policy, _ := managedPolicy([]string{"files"}, true, false, []string{"/home/web"})
+	for _, action := range []string{"copy", "move", "trash", "chmod", "compress", "rename", "extract"} {
+		args := map[string]any{"action": action, "sources": []string{"/home/web/a"}, "target": "/home/web/b"}
+		body, _ := json.Marshal(args)
+		if _, err := managedCatalog()["host_file_action"].prepare(body, policy); err == nil {
+			t.Fatal("missing version accepted", action)
+		}
+		version := "sha256:" + strings.Repeat("a", 64)
+		args["expectedResourceVersion"] = version
+		args["expectedResourceVersions"] = map[string]string{"/home/web/a": version}
+		body, _ = json.Marshal(args)
+		if _, err := managedCatalog()["host_file_action"].prepare(body, policy); err != nil {
+			t.Fatal(action, err)
+		}
+	}
+}

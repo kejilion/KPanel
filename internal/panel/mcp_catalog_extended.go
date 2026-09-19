@@ -180,6 +180,20 @@ func addManagedExtensions(result map[string]managedOperation, add func(string, s
 		if len(input.Sources) == 0 && input.Target == "" {
 			return managedRequest{}, errors.New("invalid_file_action")
 		}
+		if input.Action != "mkdir" {
+			if len(input.Sources) == 0 {
+				return managedRequest{}, errors.New("invalid_file_action")
+			}
+			for _, source := range input.Sources {
+				version := input.ExpectedResourceVersions[source]
+				if input.Action == "rename" || input.Action == "extract" {
+					version = input.ExpectedResourceVersion
+				}
+				if !resourceVersionPattern.MatchString(version) {
+					return managedRequest{}, errors.New("file_resource_version_required")
+				}
+			}
+		}
 		body, _ := json.Marshal(input)
 		if input.Action == "compress" || input.Action == "extract" {
 			body, _ = json.Marshal(contract.FileArchiveJobRequest{Operation: "create", Input: &input})
