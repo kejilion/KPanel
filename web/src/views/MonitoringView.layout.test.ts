@@ -63,4 +63,11 @@ describe('monitoring container comparison layout', () => {
       /\.container-row\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*16px 6px minmax\(0, 1fr\) minmax\(64px, auto\);/,
     )
   })
+
+  it('stacks status labels above neutral row cards when the matrix is narrow', () => {
+    expect(monitoringSource).toContain('container: service-status / inline-size;')
+    expect(monitoringSource).toMatch(
+      /@container service-status \(max-width: 560px\)[\s\S]*?\.service-status-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*background:\s*var\(--surface\);/,
+    )
+  })
 })
