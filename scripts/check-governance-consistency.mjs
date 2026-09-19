@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -660,20 +660,17 @@ requireText('docs/ui-visual-language.md', [
   'WCAG 2.2',
 ]);
 
-const workflows = [
-  '.codex-workflows/session-collaboration.workflow.yaml',
-  '.codex-workflows/background-browser-validation.workflow.yaml',
-  '.codex-workflows/local-feature-preview.workflow.yaml',
-  '.codex-workflows/release-kpanel.workflow.yaml',
-  '.codex-workflows/quality-audit-kpanel.workflow.yaml',
-  '.codex-workflows/evolve-kpanel.workflow.yaml',
-  '.codex-workflows/maintain-kpanel-dependencies.workflow.yaml',
-  '.codex-workflows/kpanel-real-machine-app-lifecycle.workflow.yaml',
-  '.codex-workflows/kpanel-site-icon-cache-validation.workflow.yaml',
-  '.codex-workflows/normalize-kpanel-app-icons.workflow.yaml',
-  '.codex-workflows/ocr-line-review.workflow.yaml',
-  '.codex-workflows/security-boundary-audit.workflow.yaml',
-];
+// Reconcile by directory scan: every workflow on disk is structurally checked and indexed in the README,
+// so adding a workflow can never silently skip governance checks (a hand-written list once missed one).
+const workflowReadme = read('.codex-workflows/README.md');
+const workflows = readdirSync(resolve(repoRoot, '.codex-workflows'))
+  .filter((name) => name.endsWith('.workflow.yaml'))
+  .sort()
+  .map((name) => '.codex-workflows/' + name);
+for (const workflow of workflows) {
+  const name = workflow.slice('.codex-workflows/'.length);
+  if (!workflowReadme.includes(name)) failures.push('.codex-workflows/README.md: workflow ' + name + ' is not indexed');
+}
 for (const workflow of workflows) {
   const content = read(workflow);
   for (const key of ['name:', 'description:', 'version:', 'params:', 'updated:']) {
