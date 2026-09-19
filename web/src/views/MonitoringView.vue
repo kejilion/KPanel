@@ -319,7 +319,7 @@ interface ServiceStatusRow {
 }
 const serviceStatusCellCount = computed(() => monitoringStatusCellCount(operatorLatencyRoutes.value))
 const serviceStatusGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${serviceStatusCellCount.value}, 7px)`,
+  gridTemplateColumns: `repeat(${serviceStatusCellCount.value}, minmax(4px, 1fr))`,
 }))
 const serviceStatusRows = computed<ServiceStatusRow[]>(() => {
   const snapshot = history.value
@@ -1439,8 +1439,8 @@ onBeforeUnmount(() => {
 .service-status-row__label > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
 .service-status-row__label > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .service-status-row__label > small { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.service-status-cells { display: grid; min-width: 0; justify-content: end; gap: 3px; overflow-x: auto; padding-block: 2px; }
-.service-status-cell { width: 7px; height: 18px; padding: 0; border: 0; border-radius: calc(var(--radius-sm) - 5px); cursor: pointer; transition: filter .14s ease, transform .14s ease; }
+.service-status-cells { display: grid; min-width: 0; gap: 3px; }
+.service-status-cell { min-width: 0; height: 16px; padding: 0; border: 0; border-radius: calc(var(--radius-sm) - 5px); cursor: pointer; transition: filter .14s ease, transform .14s ease; }
 .service-status-cell:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .service-status-cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .service-status-cell:disabled { cursor: wait; opacity: .58; transform: none; }
