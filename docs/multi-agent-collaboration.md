@@ -123,7 +123,8 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
   审计产出的 confirmed 记录是高可信线索而非人工复核结论，后续修复与验证仍按正常流程执行。
 - OCR 行级评审辅助（`PROJECT_RULES.md` 5.5）同样框架中立：任何智能体经
   `.codex-workflows/ocr-line-review.workflow.yaml` 与 `scripts/ocr-delegate.mjs` 同一入口执行，OCR 只做
-  圈选和规则解析，评审由执行智能体完成；约束臂与自由臂必须同时完成，它不构成独立复核。
+  圈选和规则解析，评审由执行智能体完成；按 `PROJECT_RULES.md` 5.5 先保存自由臂结果，
+  再执行约束臂，两者均需完成；它不构成独立复核。
 - L2 优先由不同任务独立复核；L3 的主要实现者与最终验证/发布者必须分离，接手发布任务可承担最终验证，
   不要求第三个常驻复核任务。L2/L3 独立复核与 `PROJECT_RULES.md` 5.3 规范复核默认由与实现者不同的模型
   提供商执行，以减少同源模型的共享盲区；另一提供商不可用（未安装、无非交互入口、配额耗尽等）时，
