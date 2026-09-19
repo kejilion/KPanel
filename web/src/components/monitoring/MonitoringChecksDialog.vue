@@ -186,19 +186,18 @@ onBeforeUnmount(() => controller?.abort())
 .check-manager__toolbar > span { flex: 1; color: var(--muted); font-size: 13px; }
 .check-manager__list { display: grid; gap: 9px; max-height: min(58vh, 620px); overflow-y: auto; padding-right: 3px; }
 .check-editor {
-  --check-type-accent: var(--blue);
+  --check-type-accent: #4f86c6;
   display: grid; grid-template-columns: 120px minmax(160px, .75fr) minmax(240px, 1.4fr) 38px; align-items: end; gap: 10px; padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--check-type-accent) 18%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--check-type-accent) 28%, var(--border));
   border-radius: var(--radius);
-  background: linear-gradient(110deg, color-mix(in srgb, var(--check-type-accent) 7%, var(--surface-subtle)), var(--surface-subtle) 72%);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--check-type-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--check-type-accent) 12%, var(--surface));
 }
-.check-editor--ping { --check-type-accent: color-mix(in srgb, var(--blue) 56%, var(--brand)); }
-.check-editor--tcp { --check-type-accent: var(--blue); }
-.check-editor--http { --check-type-accent: var(--violet); }
+.check-editor--ping { --check-type-accent: #4f86c6; }
+.check-editor--tcp { --check-type-accent: #29947f; }
+.check-editor--http { --check-type-accent: #8968c2; }
 .check-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
 .check-editor input, .check-editor select { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); font: inherit; font-size: 14px; }
-.check-editor__kind select { border-color: color-mix(in srgb, var(--check-type-accent) 24%, var(--border)); background: color-mix(in srgb, var(--check-type-accent) 4%, var(--surface)); }
+.check-editor__kind select { border-color: color-mix(in srgb, var(--check-type-accent) 32%, var(--border)); background: color-mix(in srgb, var(--check-type-accent) 7%, var(--surface)); }
 .check-editor input:focus, .check-editor select:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
 .check-editor__delete { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--danger); background: var(--surface); cursor: pointer; }
 .check-editor__hint { grid-column: 1 / -1; margin: -2px 0 0; color: var(--amber); font-size: 13px; }
