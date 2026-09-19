@@ -110,7 +110,7 @@ func (s *Server) observeMCPOperation(ctx context.Context, call mcpRequest, o mcp
 		return o, errors.New("operation_not_authorized")
 	}
 	if !host.IsLocal {
-		response, err := s.cluster.ManagedRemote(ctx, host.ID, cluster.ManagedRequest{Version: 1, Mode: "status", ClientID: call.principal.ID, OperationID: o.ID})
+		response, err := s.cluster.ManagedRemote(ctx, host.ID, cluster.ManagedRequest{Version: 1, Mode: "status", FileRoots: call.principal.Policy.FileRoots, ClientID: call.principal.ID, OperationID: o.ID})
 		if err != nil {
 			return o, errors.New("remote_operation_status_unavailable")
 		}

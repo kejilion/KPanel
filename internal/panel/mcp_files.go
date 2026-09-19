@@ -5,11 +5,38 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/mcpaccess"
 )
+
+func intersectMCPFileRoots(target, client []string) []string {
+	roots := []string{}
+	for _, a := range target {
+		if path.Clean(a) != a || a == "/" {
+			continue
+		}
+		for _, b := range client {
+			if path.Clean(b) != b || b == "/" {
+				continue
+			}
+			candidate := ""
+			if a == b || strings.HasPrefix(a, b+"/") {
+				candidate = a
+			} else if strings.HasPrefix(b, a+"/") {
+				candidate = b
+			}
+			if candidate != "" && !slices.Contains(roots, candidate) {
+				roots = append(roots, candidate)
+			}
+		}
+	}
+	slices.Sort(roots)
+	return roots
+}
 
 type managedTrashAction struct {
 	Action                   string            `json:"action"`

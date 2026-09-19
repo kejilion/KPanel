@@ -46,6 +46,9 @@ func (s *Server) callMCPHostCapabilities(ctx context.Context, raw json.RawMessag
 		}
 	}
 	for name, op := range managedCatalog() {
+		if op.Domain == "files" && !host.IsLocal && (remote == nil || len(intersectMCPFileRoots(remote.FileRoots, call.principal.Policy.FileRoots)) == 0) {
+			continue
+		}
 		if op.allowed(call.principal.Policy) && (host.IsLocal || (supported && authorized && remote != nil && remote.OperationVersions[name] == op.signature() && (op.ReadOnly || remote.Write))) {
 			operations = append(operations, name)
 		}
@@ -104,10 +107,10 @@ func (s *Server) handleManagedClusterOperation(ctx context.Context, controllerID
 	// resurrected even if the controller and client IDs are reused.
 	digest := sha256.Sum256([]byte(controllerID + "\x00" + input.ClientID + "\x00" + grant.Revision))
 	clientID := hex.EncodeToString(digest[:16])
-	policy := &mcpaccess.Policy{Write: grant.Policy.Write, OperationVersions: map[string]string{}, FileRoots: slices.Clone(grant.Policy.FileRoots)}
+	policy := &mcpaccess.Policy{Write: grant.Policy.Write, OperationVersions: map[string]string{}, FileRoots: intersectMCPFileRoots(grant.Policy.FileRoots, input.FileRoots)}
 	for name, signature := range grant.Policy.OperationVersions {
 		op, ok := managedCatalog()[name]
-		if !ok || signature != op.signature() {
+		if !ok || signature != op.signature() || (op.Domain == "files" && len(policy.FileRoots) == 0) {
 			continue
 		}
 		policy.Operations = append(policy.Operations, name)
@@ -213,7 +216,7 @@ func (s *Server) readManagedRemote(ctx context.Context, call mcpRequest, hostID 
 	if len(args) > cluster.MaxManagedPayload-2048 {
 		return nil, errors.New("remote_arguments_too_large")
 	}
-	response, err := s.cluster.ManagedRemote(ctx, hostID, cluster.ManagedRequest{Version: 1, Mode: "read", ClientID: call.principal.ID, Tool: op.Name, Signature: op.signature(), Arguments: args, Offset: offset, Limit: limit})
+	response, err := s.cluster.ManagedRemote(ctx, hostID, cluster.ManagedRequest{Version: 1, Mode: "read", FileRoots: call.principal.Policy.FileRoots, ClientID: call.principal.ID, Tool: op.Name, Signature: op.signature(), Arguments: args, Offset: offset, Limit: limit})
 	if err != nil {
 		return nil, errors.New("remote_operation_unavailable")
 	}
@@ -229,7 +232,7 @@ func (s *Server) readManagedRemote(ctx context.Context, call mcpRequest, hostID 
 
 func (s *Server) finishManagedRemote(ctx context.Context, call mcpRequest, o mcpaccess.Operation) (mcpaccess.Operation, error) {
 	op := managedCatalog()[o.Tool]
-	response, err := s.cluster.ManagedRemote(ctx, o.HostID, cluster.ManagedRequest{Version: 1, Mode: "execute", ClientID: call.principal.ID, OperationID: o.ID, Tool: o.Tool, Signature: op.signature(), Arguments: o.Arguments})
+	response, err := s.cluster.ManagedRemote(ctx, o.HostID, cluster.ManagedRequest{Version: 1, Mode: "execute", FileRoots: call.principal.Policy.FileRoots, ClientID: call.principal.ID, OperationID: o.ID, Tool: o.Tool, Signature: op.signature(), Arguments: o.Arguments})
 	if err != nil {
 		return s.mcp.operations.Finish(o.ID, "unknown", nil, "remote_receipt_lost_check_operation_status")
 	}

@@ -61,6 +61,7 @@ type ManagedRequest struct {
 	Arguments   json.RawMessage `json:"arguments,omitempty"`
 	Offset      int             `json:"offset,omitempty"`
 	Limit       int             `json:"limit,omitempty"`
+	FileRoots   []string        `json:"fileRoots,omitempty"`
 }
 
 type ManagedResponse struct {
@@ -281,6 +282,14 @@ func (s *Service) managedGrant(controllerID, key string) (ManagedGrant, bool) {
 }
 
 func validManagedRequest(r ManagedRequest) bool {
+	if len(r.FileRoots) > 16 {
+		return false
+	}
+	for _, root := range r.FileRoots {
+		if root == "" || len(root) > 4096 || !strings.HasPrefix(root, "/") || strings.ContainsAny(root, "\x00\r\n\\") {
+			return false
+		}
+	}
 	if r.Version != 1 || r.Offset < 0 || r.Offset > 100000 || r.Limit < 0 || r.Limit > 50 || len(r.Arguments) > MaxManagedPayload {
 		return false
 	}
