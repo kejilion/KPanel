@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
-version: "3.0"
+version: "3.1"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-14T09:41:30Z"
+updated: "2026-09-19T08:29:18Z"
 ---
 
 # Release KPanel
@@ -253,7 +253,12 @@ git push origin "v${{version}}"
 6. 多架构版本镜像；
 7. 稳定版提升 `latest`，预览版提升 `preview`；
 8. GitHub Release 正式公开；
-9. 稳定版确认候选分支提交已包含于发布标签后自动删除候选分支；预览版保留同一序列候选分支。
+9. 稳定版按 `docs/project-management.md` 10.2 调用 `scripts/archive-release-candidate.mjs`，
+   确认精确 tip 包含于发布标签后原子保存到 `archive/release/v${{release_train}}-candidate` 并移除活跃引用；
+   预览版保留同一序列候选。查询失败、归档冲突、并发更新或分叉必须停止归档，不能误报已经不存在。
+
+归档只是远端引用收尾。后续公开 E2E、授权生产、验收记录和本地资源处置仍需各自完成；归档失败时修复
+并重试唯一入口，不重发已公开版本、不改 tag。
 
 **Expected output:** Release workflow 全绿；`stable` 为非 draft、非 prerelease、GitHub Latest，`preview`
 为非 draft、prerelease、非 Latest，且候选分支处置与通道一致。
@@ -399,7 +404,8 @@ Panel/Agent 健康、restart/OOM、受保护配置哈希、SQLite quick_check �
 使必需步骤无效、失败或需要重试的发布基础设施、执行器、验证通道和无效证据次数，以及其中发生在
 首次生产写操作之后的次数。流程异常不得歪曲为产品变更失败，缺失事实不得推断为零，供滚动
 14 天和最近 20 个版本的发布节奏复核。验收记录在获得相应提交/推送授权后形成独立聚焦提交；
-未获授权时保留工作树差异并回传，不得擅自更新 `main`。
+发布范围内的文档修改授权包含本地候选提交；未获推送或主线授权时交付 clean 的本地候选并如实标记，
+不得擅自更新 `main`，也不能把 dirty 差异宣布为完成。
 
 异常计数大于零时按模板补“流程异常明细”：每个事件或同根因批次使用“阶段/权威入口/根因类别”
 稳定指纹，记录生产写前后位置、实际影响、恢复证据、历史复发和永久处置。同一指纹在滚动 5 个正式
@@ -432,12 +438,15 @@ node scripts/report-release-metrics.mjs \
 - 发布节奏、产品变更失败和独立流程异常数据，以及重复发布原因（如有）；
 - 流程异常指纹、复发判断和永久处置（计数大于零时）；
 - L3 外层入口的 run ID、计划/脚本/bundle 摘要、不可变 Runner ID、终态与证据目录；
+- 按 `docs/project-management.md` 10.2 给出本次候选及来源任务分支的精确 tip、归档 ref/SHA、远端复核、
+  保留理由和未完成项；纯验收记录候选在同 SHA 主线 CI 成功后单独归档，不混入已公开版本的候选；
 - 保留的无关本地改动；
 - `${{previous_version}}` 回滚点及任何未验证风险。
 - 按 `docs/project-management.md` 13.1 在本次发布结束后回收自己持有的可再生本地资源，记录实际释放空间、
   跳过项和保留的恢复/证据位置；不删除活跃路径、未提交内容或唯一原件，也不唤醒旧任务执行清理。
 
-**Expected output:** 验收文档结构完整且机器校验通过，用户无需查看其他会话即可区分已验证、不适用和
+**Expected output:** 验收文档结构完整且机器校验通过，归档处置可恢复且与实际远端一致；未完成项明确列出，
+不把“产物已发布/生产已部署”误写成“全部收尾完成”。用户无需查看其他会话即可区分已验证、不适用和
 未验证风险；后续 `make release-metrics` 能读取实际记录，而不是把已有生产事实显示为“未报告”。
 
 ## Parameters

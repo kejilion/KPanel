@@ -40,6 +40,8 @@ const requiredFiles = [
   'scripts/run-release-gate.sh',
   'scripts/tests/release-gate-runner.test.mjs',
   'scripts/tests/release-channel-contract.test.mjs',
+  'scripts/archive-release-candidate.mjs',
+  'scripts/tests/archive-release-candidate.test.mjs',
   'scripts/run-release-l3.mjs',
   'scripts/run-release-l3-remote.sh',
   'scripts/tests/release-l3-orchestrator.test.mjs',
@@ -360,6 +362,15 @@ requireText('docs/project-management.md', [
   'releaseTrain',
   '--require-candidate',
 ]);
+requireText('PROJECT_RULES.md', ['发布归档是交付结束条件', '10.2']);
+requireText('docs/project-management.md', ['### 10.2 分支归档与下一轮候选筛选', 'archive/<原分支全名>', 'scripts/archive-release-candidate.mjs', 'expected-SHA', '本地待处置']);
+for (const path of ['AGENTS.md', 'CLAUDE.md', 'docs/multi-agent-collaboration.md', '.codex-workflows/release-kpanel.workflow.yaml']) {
+  requireText(path, ['10.2']);
+}
+requireText('docs/release-acceptance-template.md', ['精确 tip', '归档 ref', '责任人']);
+requireText('.github/workflows/release.yml', ['name: Archive published candidate branch', 'node scripts/archive-release-candidate.mjs', '--release-sha "$GITHUB_SHA" --apply']);
+requireText('scripts/verify-governance.sh', ['scripts/tests/archive-release-candidate.test.mjs']);
+requireText('scripts/verify-change.sh', ['scripts/archive-release-candidate.mjs', 'scripts/tests/archive-release-candidate.test.mjs']);
 requireText('docs/release-channels.md', [
   '`stable`',
   '`preview`',
