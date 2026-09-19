@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -437,6 +438,78 @@ test('readAcceptanceHistory compares only existing sibling records and blocks un
 
   assert.deepEqual(readAcceptanceHistory(resolve(directory, 'release-acceptance-template.md')), []);
   assert.deepEqual(readAcceptanceHistory(resolve(directory, 'release-v0.100.9-acceptance.md')), []);
+});
+
+function rollbackPatchFixture() {
+  // v1.16.0 shipped, was rolled back, then v1.15.1 shipped on the older line and repeated its incidents.
+  const directory = mkdtempSync(resolve(tmpdir(), 'kpanel-acceptance-order-'));
+  const incident = {
+    fingerprint: 'release-ci/github-api/rate-limit',
+    position: 'before-production-write',
+    count: 1,
+    impact: 'release run waited on the GitHub API rate limit',
+    recoveryEvidence: 'retried run log shows the job finished',
+    permanentAction: 'authenticated API calls in the single release entry',
+    historicalReleases: [],
+  };
+  for (const tag of ['v1.15.0', 'v1.16.0', 'v1.15.1']) {
+    writeFileSync(resolve(directory, 'release-' + tag + '-acceptance.md'),
+      acceptanceDocument(tag, tag === 'v1.15.0' ? [] : [incident]));
+  }
+  const times = new Map([
+    ['v1.15.0', Date.parse('2026-09-12T10:00:00+08:00')],
+    ['v1.16.0', Date.parse('2026-09-13T14:36:49+08:00')],
+    ['v1.15.1', Date.parse('2026-09-13T16:36:54+08:00')],
+  ]);
+  return { directory, times, path: (tag) => resolve(directory, 'release-' + tag + '-acceptance.md') };
+}
+
+test('readAcceptanceHistory orders the window by release time, not version', () => {
+  const { times, path } = rollbackPatchFixture();
+
+  const newer = readAcceptanceHistory(path('v1.16.0'), 5, times);
+  assert.deepEqual(newer.map((record) => record.tag), ['v1.16.0', 'v1.15.0']);
+  assert.deepEqual(validateProcessIncidentHistory(newer), []);
+
+  const patch = readAcceptanceHistory(path('v1.15.1'), 5, times);
+  assert.deepEqual(patch.map((record) => record.tag), ['v1.15.1', 'v1.16.0', 'v1.15.0']);
+  assert.match(validateProcessIncidentHistory(patch).join('\n'), /must declare v1\.16\.0/);
+});
+
+test('readAcceptanceHistory treats an untagged target as newest and never loosens without times', () => {
+  const { times, path } = rollbackPatchFixture();
+
+  const untagged = new Map(times);
+  untagged.delete('v1.15.1');
+  assert.deepEqual(readAcceptanceHistory(path('v1.15.1'), 5, untagged).map((record) => record.tag),
+    ['v1.15.1', 'v1.16.0', 'v1.15.0']);
+
+  const gap = new Map(times);
+  gap.delete('v1.15.0');
+  assert.deepEqual(readAcceptanceHistory(path('v1.16.0'), 5, gap).map((record) => record.tag),
+    ['v1.16.0', 'v1.15.1', 'v1.15.0']);
+  assert.deepEqual(readAcceptanceHistory(path('v1.16.0'), 5, null).map((record) => record.tag),
+    ['v1.16.0', 'v1.15.1', 'v1.15.0']);
+});
+
+test('readAcceptanceHistory reads release times from repository tags', () => {
+  const { directory, path } = rollbackPatchFixture();
+  const git = (args, date) => execFileSync('git', ['-C', directory, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date,
+      GIT_AUTHOR_NAME: 'KPanel Test', GIT_AUTHOR_EMAIL: 'kpanel-test@example.invalid',
+      GIT_COMMITTER_NAME: 'KPanel Test', GIT_COMMITTER_EMAIL: 'kpanel-test@example.invalid' },
+  });
+  git(['init', '--quiet'], '2026-09-12T09:00:00+08:00');
+  git(['add', '.'], '2026-09-12T09:00:00+08:00');
+  git(['commit', '--quiet', '--no-gpg-sign', '-m', 'records'], '2026-09-12T09:00:00+08:00');
+  git(['tag', '--no-sign', '-a', 'v1.15.0', '-m', 'v1.15.0'], '2026-09-12T10:00:00+08:00');
+  git(['tag', '--no-sign', '-a', 'v1.16.0', '-m', 'v1.16.0'], '2026-09-13T14:36:49+08:00');
+  git(['tag', '--no-sign', '-a', 'v1.15.1', '-m', 'v1.15.1'], '2026-09-13T16:36:54+08:00');
+
+  assert.deepEqual(readAcceptanceHistory(path('v1.16.0')).map((record) => record.tag), ['v1.16.0', 'v1.15.0']);
+  assert.deepEqual(readAcceptanceHistory(path('v1.15.1')).map((record) => record.tag),
+    ['v1.15.1', 'v1.16.0', 'v1.15.0']);
 });
 
 test('rolling report surfaces repeated fingerprints without inferring missing records', () => {

@@ -296,22 +296,51 @@ export function validateProcessIncidentHistory(records, window = PROCESS_INCIDEN
 
 const ACCEPTANCE_FILENAME = /^release-(v\d+\.\d+\.\d+)-acceptance\.md$/i;
 
-export function readAcceptanceHistory(path, window = PROCESS_INCIDENT_REPEAT_WINDOW) {
+function stableTagTimes(directory) {
+  const output = tryGit(directory, ['for-each-ref', '--format=%(refname:short)%09%(creatordate:iso-strict)', 'refs/tags/v*']);
+  if (!output) return null;
+  const times = new Map();
+  for (const line of output.split(/\r?\n/)) {
+    const [tag, created] = line.split('\t');
+    const at = Date.parse(created);
+    if (isStableReleaseTag(tag) && !Number.isNaN(at)) times.set(tag.toLowerCase(), at);
+  }
+  return times.size > 0 ? times : null;
+}
+
+// "Prior" means released earlier, not a lower version: a patch on an older line can ship after a
+// newer release (v1.15.1 followed the v1.16.0 rollback). Tag creation time orders the window; the
+// record being written may not be tagged yet and counts as newest. Without a time for every other
+// record (no Git, shallow clone without tags) the whole list keeps the previous version order, so
+// the check never becomes looser than before.
+function releaseOrder(entries, targetTag, times) {
+  const byVersion = [...entries].sort((left, right) => compareVersionDescending(left.version, right.version));
+  if (times === null) return byVersion;
+  const timed = byVersion.map((entry) => ({
+    ...entry,
+    releasedAt: times.get(entry.tag) ?? (entry.tag === targetTag ? Number.POSITIVE_INFINITY : null),
+  }));
+  if (timed.some((entry) => entry.releasedAt === null)) return byVersion;
+  return timed.sort((left, right) => (right.releasedAt - left.releasedAt) ||
+    compareVersionDescending(left.version, right.version));
+}
+
+export function readAcceptanceHistory(path, window = PROCESS_INCIDENT_REPEAT_WINDOW, times = undefined) {
   const absolutePath = resolve(path);
   const directory = dirname(absolutePath);
   const target = ACCEPTANCE_FILENAME.exec(absolutePath.replaceAll('\\', '/').split('/').pop() ?? '');
   if (target === null) return [];
 
-  const siblings = readdirSync(directory)
+  const targetTag = target[1].toLowerCase();
+  const entries = readdirSync(directory)
     .flatMap((name) => {
       const match = ACCEPTANCE_FILENAME.exec(name);
       if (match === null) return [];
       return [{ name, tag: match[1].toLowerCase(), version: releaseTagVersion(match[1].toLowerCase()) }];
     })
-    .filter((entry) => entry.version !== null)
-    .sort((left, right) => compareVersionDescending(left.version, right.version));
+    .filter((entry) => entry.version !== null);
+  const siblings = releaseOrder(entries, targetTag, times === undefined ? stableTagTimes(directory) : times);
 
-  const targetTag = target[1].toLowerCase();
   const startIndex = siblings.findIndex((entry) => entry.tag === targetTag);
   if (startIndex === -1) return [];
 
