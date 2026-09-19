@@ -1,0 +1,23 @@
+[
+  {
+    "agent_id": "f1b",
+    "decision": "verified",
+    "fingerprint": "ai/runtime/redactAndLimit-bare-credential-regression"
+  },
+  {
+    "agent_id": "f2",
+    "decision": "verified",
+    "fingerprint": "audit-migration-autoincrement-gap-retention-loss"
+  },
+  {
+    "agent_id": "f3",
+    "decision": "verified",
+    "fingerprint": "auth-login-global-history-evicts-active-lockouts"
+  },
+  {
+    "agent_id": "f4",
+    "decision": "verified",
+    "fingerprint": "backup.jobs.record-root-budget-ignores-path-bytes",
+    "correction": "parent accepted non-material scratch capacity and supporting citation correction; same payload, trace, cause, impact and verdict"
+  }
+]

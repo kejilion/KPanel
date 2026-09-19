@@ -1,0 +1,3001 @@
+[
+  {
+    "coverage_id": "cmd%2Fkejilion-agent%2Fbackup_bundle.go%23runBackupMenu::internal%2Fhostbackup%2Fservice.go%23Record.Roots%20confirmation%20rendering::cmd%2Fkejilion-agent::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "cmd/kejilion-agent/backup_bundle.go#runBackupMenu",
+      "boundary": "internal/hostbackup/service.go#Record.Roots confirmation rendering",
+      "subsystem": "cmd/kejilion-agent",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "imported roots confirmation display",
+    "boundary": "archive metadata to terminal and browser confirmation",
+    "subsystem": "cmd/kejilion-agent",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "cmd/kejilion-agent/backup_bundle.go",
+      "web/src/components/settings/BackupCenter.vue",
+      "internal/hostbackup/service.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "covered",
+    "agent_id": "h-display",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/backup_bundle.go",
+      "cmd/kejilion-agent/backup_bundle_test.go",
+      "web/src/components/settings/BackupCenter.vue",
+      "internal/hostbackup/service.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/backup_test.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-display",
+        "reviewed_paths": [
+          "cmd/kejilion-agent/backup_bundle.go",
+          "internal/hostbackup/service.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/restore.go"
+        ],
+        "invariant": "Lower-trust archive root text must not be mistaken for authority to replace a different destination resource; follow raw CLI rendering through the actual subsequent restore controls.",
+        "method": "source",
+        "result": "At exact clean source 23cbb9979ce0df84801b9fe614bd1b00d7ad8a99, changed CLI lines 335-342 print inspected roots directly before explicit y confirmation. Import selection is narrowed at backup_bundle.go:188-200; inspect waits for success at 220-224. ReadPayload decodes manifest JSON and validates it (archive.go:247-255,393-397); rootMatchesModule binds the root ID to exact path bytes and module scope (engine.go:187-214), but neither rejects embedded terminal control characters. service.go:217-244 copies those path bytes to Record.Roots, so terminal display manipulation is source-visible. This does not establish an archive-only unauthorized directory replacement: all selected roots are re-read and collectively checked against exact current inventory strings (restore.go:63-77,123-145) before directory staging at 217-237 and later replacement. A new control-character root used to disguise another root fails the entire root-membership check when it is not already destination data. Existing destination root names originate from host inventory (engine.go:233-257,400-425), not from display text. Source also enforces protected-root overlap and unselected writer checks (restore.go:127-169), ready/import status and module subset (service.go:325-335), and inventory revision before restore (365-378). The hypothetical additional ability to pre-establish an inventory root with those exact bytes is not demonstrated by this assigned display surface. No terminal execution, arbitrary-path extension, or successful unauthorized restore is claimed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-display",
+        "reviewed_paths": [
+          "web/src/components/settings/BackupCenter.vue",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "The changed browser preview must show only the selected modules' inspected roots and must not treat lower-trust root strings as HTML or executable markup.",
+        "method": "source",
+        "result": "Panel import stores the Agent's successfully inspected checked.Roots at backup_handlers.go:547-554. BackupCenter.vue:40 filters root.module against the selected modules; openRestore at 76-78 obtains preview and canSubmit at 41 gates restore on previewReady; submit at 87 sends the same selected list. Changed line 157 uses Vue text interpolation {{ root.path }} inside code elements, with no v-html, URL, style, event, or script sink. The adjacent CSS at 177-181 only changes font, spacing and wrapping. Browser control/bidi text can remain visually ambiguous, but no executable markup or alternate resource selector is introduced by this hunk. No browser execution was performed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-display",
+        "reviewed_paths": [
+          "cmd/kejilion-agent/backup_bundle_test.go",
+          "internal/hostbackup/backup_test.go"
+        ],
+        "invariant": "Existing test source should corroborate the separation between import/inspection and restore, and the destination-membership rejection, without being represented as executed validation.",
+        "method": "source",
+        "result": "Read TestBackupCLIFileInteroperability, which checks selected-module import and asserts import does not invoke restore. Read TestBackupRestoreRejectsRootOutsideDestinationData at backup_test.go:238-258, which removes a formerly exported destination root and expects the inventory-membership failure. These are source observations only; tests, fixtures, builds and terminal/browser rendering were not run because the required OS sandbox is not established.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-display",
+    "critic_reason": "Changed CLI fmt.Fprintln root.Path was not in prior reviewed_paths; inspect imported metadata rendering and strongest later restore controls. Include adjacent changed Vue root preview in same unit."
+  },
+  {
+    "coverage_id": "cmd%2Fkejilion-node%2Fmain.go%23terminal-broker%20file-broker%20ssh-login-broker::internal%2Fcluster%2Flight_terminal.go%23relay%20command%20execution::cmd%2Fkejilion-node::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "cmd/kejilion-node/main.go#terminal-broker file-broker ssh-login-broker",
+      "boundary": "internal/cluster/light_terminal.go#relay command execution",
+      "subsystem": "cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "kejilion-node root brokers (terminal/file/ssh-login)",
+    "boundary": "node-side relay command re-validation before root execution",
+    "subsystem": "cmd/kejilion-node",
+    "attack_class": "Relay command authorization and node-side root execution",
+    "starting_paths": [
+      "cmd/kejilion-node/terminal_broker.go",
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/ssh_login_broker.go",
+      "cmd/kejilion-node/main.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fagent%2Fserver.go%23%2Fv1%2Fbackups::internal%2Fhostbackup%2Frestore.go%23Restore%20journal::internal%2Fhostbackup::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/agent/server.go#/v1/backups",
+      "boundary": "internal/hostbackup/restore.go#Restore journal",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "agent /v1/backups and recover flow → hostbackup Engine",
+    "boundary": "internal/hostbackup/restore.go#payload roots and mount coverage",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "Host-side restore authority and path escape",
+    "starting_paths": [
+      "internal/hostbackup/service.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/mounts_linux.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fagent%2Fserver.go%23agent-json::internal%2Fagent%2Fserver.go%23agent-json::internal%2Fagent::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/agent/server.go#agent-json",
+      "boundary": "internal/agent/server.go#agent-json",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "agent-json",
+    "boundary": "agent-json invariant",
+    "subsystem": "internal/agent",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "internal/agent/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Context, retrieval, and memory attack classes",
+      "AI-AND-LLM.md#Tool and action attack classes",
+      "AI-AND-LLM.md#MCP and sub-agent trust classes",
+      "AI-AND-LLM.md#Output and disclosure attack classes",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-inputs",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/agent/decode_json_test.go",
+      "internal/agent/files.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-inputs",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/agent/decode_json_test.go",
+          "internal/agent/files.go"
+        ],
+        "invariant": "Agent action JSON is authenticated, media-typed, size-bounded, strict-field decoded and consumes exactly one JSON document.",
+        "method": "source",
+        "result": "internal/agent/server.go:292 and :496 authenticate before routing. decodeJSON at :1998 requires application/json, applies 64 KiB MaxBytesReader (:42), rejects unknown fields and non-EOF trailing data. Specialized file JSON paths at internal/agent/files.go:236 and :677 independently enforce media type, bounded size, strict fields and EOF. New media-type test was read, not executed. Duplicate-key last-wins decoding was considered; no second-parser authorization disagreement was found in this changed boundary.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-inputs"
+  },
+  {
+    "coverage_id": "internal%2Fagentclient%2Fclient.go%23AgentClient.Do%20bearer::internal%2Fagent%2Fserver.go%23authorized::internal%2Fagent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/agentclient/client.go#AgentClient.Do bearer",
+      "boundary": "internal/agent/server.go#authorized",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "panel→agent Unix socket requests",
+    "boundary": "internal/agent/server.go#bearer token constant-time compare",
+    "subsystem": "internal/agent",
+    "attack_class": "Agent auth and socket policy",
+    "starting_paths": [
+      "internal/agentclient/client.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fai%2Fproviders.go%23ValidateProviderURL::internal%2Fai%2Fproviders.go%23private%20endpoint%20confirmation::internal%2Fai::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/ai/providers.go#ValidateProviderURL",
+      "boundary": "internal/ai/providers.go#private endpoint confirmation",
+      "subsystem": "internal/ai",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "AI provider baseUrl configuration",
+    "boundary": "internal/ai/providers.go#HTTPS public / confirmed private rule",
+    "subsystem": "internal/ai",
+    "attack_class": "SSRF via AI provider URL",
+    "starting_paths": [
+      "internal/ai/providers.go",
+      "internal/ai/client.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fappmarket%2Fterminal.go%23trusted%20script%20lookup::internal%2Fappmarket%2Fremote_catalog.go%23catalog%20fetch::internal%2Fappmarket::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/appmarket/terminal.go#trusted script lookup",
+      "boundary": "internal/appmarket/remote_catalog.go#catalog fetch",
+      "subsystem": "internal/appmarket",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "app market install/update",
+    "boundary": "internal/appmarket/terminal.go#root-owned trusted script + selector validation",
+    "subsystem": "internal/appmarket",
+    "attack_class": "App market script trust",
+    "starting_paths": [
+      "internal/appmarket/terminal.go",
+      "internal/appmarket/remote_catalog.go",
+      "internal/appmarket/script_spec.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Plugin and extension trust expansion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fservice.go%23auth::internal%2Fstore%2Fstore.go%23auth::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/auth/service.go#auth",
+      "boundary": "internal/store/store.go#auth",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "auth",
+    "boundary": "auth invariant",
+    "subsystem": "internal/auth",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h-identity",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/auth/service_test.go",
+      "internal/auth/totp_test.go",
+      "internal/panel/server.go",
+      "internal/store/store.go",
+      "internal/store/store_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-identity",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/auth/service_test.go",
+          "internal/auth/totp_test.go",
+          "internal/store/store_test.go"
+        ],
+        "invariant": "Changed password validation, bootstrap hash admission and persistent sessions must preserve credential/session authority.",
+        "method": "source",
+        "result": "Read all changed hunks since 6340e078. Bootstrap checks initialization and secret before validation/hash admission (service.go:207-262); password composition is applied by Bootstrap, ChangePassword and CLI recovery (227,602,648,800-818), while Login continues accepting existing hashes. Session creation uses independent random token/CSRF secrets, keeps only hashes, and is reached after password and optional second-factor verification (265-317,750-775). Store session cap drops oldest entries and preserves token/expiry checks (store.go:603-636). Password replacement and recovery serialize against login through credentialMu, compare expected hashes, revoke sessions and roll back state on persistence failure (service.go:279,613,659; store.go:324-405). Tests were read, not run.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-identity",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Unrelated unauthenticated login traffic must not reset an account's active failure window.",
+        "method": "source",
+        "result": "Source establishes new global truncation of all login keys to 4096 records (store.go:675-698), while reserveLogin derives the entire IP/account budget from the retained records (service.go:532-545; store.go:706-721). Every completed failed login inserts two records, even for nonexistent accounts (service.go:282-298,778-783). The cap can therefore evict still-active failures; candidate requires bounded local confirmation. remoteIP trusts forwarding only from configured proxy peers (server.go:1752-1779), so source-IP diversity is a precondition, not assumed spoofing.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v3",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/auth/service_test.go",
+          "internal/panel/server.go",
+          "internal/store/store.go",
+          "internal/store/store_test.go"
+        ],
+        "invariant": "Independent refutation of auth-login-global-history-evicts-active-lockouts",
+        "method": "source",
+        "result": "needs_validation: Source shows that the new global 4096-record cap discards the oldest login history even while its configured failure window remains active. An unauthenticated requester who can reach the login endpoint, satisfy any enabled security-entrance gate, and supply sufficient distinct real source addresses could use rejected logins for unrelated usernames to remove a limited account's recorded failures. Subsequent password verification for that account would then be admitted within the original window. At defaults the intended account budget is 50 failures per 15 minutes; 2048 completed unrelated failures append 4096 records, provided the requester stays below the per-IP and per-account admission thresholds. This is a source-grounded verification-budget reset lead, not an observed credential compromise or an MFA bypass. No runtime reproduction or deployment applicability has been established.",
+        "artifact": null
+      },
+      {
+        "agent_id": "f3",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/auth/service_test.go",
+          "internal/panel/server.go",
+          "internal/store/store.go",
+          "internal/store/store_test.go"
+        ],
+        "invariant": "Final structured-record accuracy for auth-login-global-history-evicts-active-lockouts",
+        "method": "source",
+        "result": "verified needs_validation record; source locations, controls and exact validation limits independently checked; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "auth-login-global-history-evicts-active-lockouts"
+    ],
+    "unresolved": [
+      "The bounded native Service.Login reproduction has not run: an OS-enforced no-network, read-only-target/tools, scratch-only, resource- and wall-clock-limited execution sandbox and trusted artifact promotion are not established. Source establishes the eviction mechanism but no observed verification-budget reset is claimed.",
+      "Deployment applicability remains unobserved: the caller must reach login despite any security-entrance or ingress restriction, provide sufficient distinct legitimate source IPs, and complete enough successful failure-record writes before the configured LoginWindow expires. The one-slot default hasher and any ingress controls constrain that timing."
+    ],
+    "assignment": "h-identity"
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Flight_service.go%23CreateLightEnrollmentForOriginAndName%20shellSingleQuote::internal%2Fcluster%2Fservice.go%23validateOptionalName::internal%2Fcluster::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/cluster/light_service.go#CreateLightEnrollmentForOriginAndName shellSingleQuote",
+      "boundary": "internal/cluster/service.go#validateOptionalName",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "light enrollment command generation",
+    "boundary": "internal/cluster/light_service.go#shellSingleQuote of validated name",
+    "subsystem": "internal/cluster",
+    "attack_class": "Shell injection via enrollment name",
+    "starting_paths": [
+      "internal/cluster/light_service.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Flight_service.go%23authenticateLightRequest::internal%2Fcluster%2Flight_service.go%23EnrollLightNodeAtOrigin::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/light_service.go#authenticateLightRequest",
+      "boundary": "internal/cluster/light_service.go#EnrollLightNodeAtOrigin",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v3/federation/light/* enrollment and report",
+    "boundary": "internal/cluster/light_service.go#HMAC + timestamp + one-time enrollment",
+    "subsystem": "internal/cluster",
+    "attack_class": "light node enrollment/report auth",
+    "starting_paths": [
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_batch_service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Flight_store.go%23node-recovery::internal%2Fcluster%2Flight_store.go%23node-recovery::internal%2Fcluster::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/cluster/light_store.go#node-recovery",
+      "boundary": "internal/cluster/light_store.go#node-recovery",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "node-recovery",
+    "boundary": "node-recovery invariant",
+    "subsystem": "internal/cluster",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/cluster/light_store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-identity",
+    "reviewed_paths": [
+      "internal/cluster/light_store.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/light_store_recovery_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-identity",
+        "reviewed_paths": [
+          "internal/cluster/light_store.go",
+          "internal/cluster/store_v2.go",
+          "internal/cluster/light_batch_store.go",
+          "internal/cluster/light_store_recovery_test.go"
+        ],
+        "invariant": "Removing a stale .previous after restart must retain the validated current node identity and must not follow arbitrary node-supplied paths.",
+        "method": "source",
+        "result": "Read changed light-store hunk and full adjacent open/decode/persist/delete paths. openLightStore constrains the configured filename, protects directories, bounded-reads a regular target and strictly validates its schema, IDs and credentials before the new discard call (light_store.go:69-162). discardAtomicBackupV2 derives the sibling path from the configured target, rejects nonregular/symlink residue and syncs its removal (store_v2.go:1167-1182). EnrollHost persists one-time enrollment consumption and host creation together, rolls back on failure; DeleteHost commits deletion before removing keys (light_store.go:237-312,507-530). Compared batch-store recovery and read regression source; no new authority expansion identified in this hunk. No tests executed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-identity"
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fservice_v2.go%23handleFileRelayV2::internal%2Fcluster%2Ffile_relay_protocol.go%23validateFileRelayCommand::internal%2Fcluster::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/cluster/service_v2.go#handleFileRelayV2",
+      "boundary": "internal/cluster/file_relay_protocol.go#validateFileRelayCommand",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "/api/v2/federation/files/relay and stream",
+    "boundary": "internal/cluster/file_relay_protocol.go#path allowlist + command validation",
+    "subsystem": "internal/cluster",
+    "attack_class": "Federation file relay scope",
+    "starting_paths": [
+      "internal/cluster/file_relay_protocol.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/file_stream_transport.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fservice_v2.go%23validateV2Request::internal%2Fcluster%2Fservice_v2.go%23openControllerV2::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/service_v2.go#validateV2Request",
+      "boundary": "internal/cluster/service_v2.go#openControllerV2",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v2/federation/* Noise envelopes",
+    "boundary": "internal/cluster/service_v2.go#Noise open + replay + peer key check",
+    "subsystem": "internal/cluster",
+    "attack_class": "v2 federation envelope auth",
+    "starting_paths": [
+      "internal/cluster/service_v2.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/cluster/guard.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fsignature.go%23VerifyRequest::internal%2Fcluster%2Fstore.go%23ConsumePairingCode::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/signature.go#VerifyRequest",
+      "boundary": "internal/cluster/store.go#ConsumePairingCode",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "/api/v1/federation/* signed requests",
+    "boundary": "internal/cluster/signature.go#ed25519 + timestamp + nonce",
+    "subsystem": "internal/cluster",
+    "attack_class": "v1 federation signature bypass",
+    "starting_paths": [
+      "internal/cluster/signature.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fterminal_v2.go%23TerminalOpen::internal%2Fterminal%2Fmanager.go%23lookup%20owner::internal%2Fcluster::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/cluster/terminal_v2.go#TerminalOpen",
+      "boundary": "internal/terminal/manager.go#lookup owner",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "/api/v2/federation/terminal/* and light terminal relay",
+    "boundary": "internal/cluster/terminal_v2.go#scope + owner binding",
+    "subsystem": "internal/cluster",
+    "attack_class": "Federation terminal authorization",
+    "starting_paths": [
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/light_terminal.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fdiagnostics%2Fnative.go%23diagnostic-redirects::internal%2Fdiagnostics%2Fnative.go%23diagnostic-redirects::internal%2Fdiagnostics::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/diagnostics/native.go#diagnostic-redirects",
+      "boundary": "internal/diagnostics/native.go#diagnostic-redirects",
+      "subsystem": "internal/diagnostics",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "diagnostic-redirects",
+    "boundary": "diagnostic-redirects invariant",
+    "subsystem": "internal/diagnostics",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/diagnostics/native.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-external",
+    "reviewed_paths": [
+      "internal/diagnostics/native.go",
+      "internal/diagnostics/native_test.go",
+      "internal/diagnostics/service.go",
+      "internal/agent/server.go",
+      "internal/remotedownload/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-external",
+        "reviewed_paths": [
+          "internal/diagnostics/native.go",
+          "internal/diagnostics/native_test.go"
+        ],
+        "invariant": "Native diagnostic redirects retain HTTPS and terminate after a short chain; response consumption remains bounded.",
+        "method": "source",
+        "result": "Read complete 6340e078..23cbb997 changed hunks. internal/diagnostics/native.go:57 installs nativeProbeRedirect for every native HTTP call; :63 rejects len(via)>=3 and :66 rejects non-HTTPS destinations. Fixed initial endpoints are declared at :41-42, :102-105, :577, :597 and :885. Calls at :530, :583, :603, :731, :771 and :890 use that shared client. Timeout is 20 seconds (:57), with 5-second IPING contexts (:728, :758). Body bounds are applied at :535, :587, :606, :740, :779 and :898. Test source :233-251 covers short HTTPS redirect, downgrade and hop rejection; tests were read, not executed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-external",
+        "reviewed_paths": [
+          "internal/diagnostics/native.go",
+          "internal/diagnostics/service.go",
+          "internal/agent/server.go",
+          "internal/remotedownload/client.go"
+        ],
+        "invariant": "An unauthenticated or low-privilege caller must not supply an arbitrary diagnostic destination or outbound credential.",
+        "method": "source",
+        "result": "internal/agent/server.go:292 applies Agent bearer authentication before routes; :496-506 verifies the token hash. internal/diagnostics/service.go:226-246 resolves the requested check against the catalog; no request URL becomes a native endpoint. native.go:666 passes only an IPv4 into fixed IPING endpoints (:681-683), validating and encoding it at :715-723 and :753-765. Native requests do not attach Agent Authorization or cookies. The new redirect callback does not confine hostnames or resolved IPs, unlike the separate download transport at internal/remotedownload/client.go:90-109. However, a hostile redirect at a fixed authenticated-TLS provider was not established by this source; this is recorded as hardening rather than a claimed SSRF or credential disclosure.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-external"
+  },
+  {
+    "coverage_id": "internal%2Fdockerx%2Fcontainer_tools.go%23ContainerExec::internal%2Fpanel%2Fserver.go%23handleDockerExec::internal%2Fdockerx::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/dockerx/container_tools.go#ContainerExec",
+      "boundary": "internal/panel/server.go#handleDockerExec",
+      "subsystem": "internal/dockerx",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "POST /api/v1/docker/containers/{id}/exec",
+    "boundary": "internal/dockerx/container_tools.go#single-line command + version check",
+    "subsystem": "internal/dockerx",
+    "attack_class": "Docker exec command handling",
+    "starting_paths": [
+      "internal/dockerx/container_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fdockerx%2Fcontainer_tools.go%23docker-control::internal%2Fdockerx%2Faccess_linux.go%23docker-control::internal%2Fdockerx::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/dockerx/container_tools.go#docker-control",
+      "boundary": "internal/dockerx/access_linux.go#docker-control",
+      "subsystem": "internal/dockerx",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "docker-control",
+    "boundary": "docker-control invariant",
+    "subsystem": "internal/dockerx",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/dockerx/access_linux.go",
+      "internal/dockerx/container_tools.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-host",
+    "reviewed_paths": [
+      "internal/dockerx/access_linux.go",
+      "internal/dockerx/container_tools.go",
+      "internal/dockerx/container_tools_test.go",
+      "internal/dockerx/maintenance.go",
+      "internal/dockerx/maintenance_test.go",
+      "internal/dockerx/client.go",
+      "internal/dockerx/client_test.go",
+      "internal/dockerx/compose.go",
+      "internal/dockerx/nginx.go",
+      "internal/dockerx/mysql.go",
+      "internal/agent/server.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/dockerx/access_linux.go",
+          "internal/dockerx/container_tools.go",
+          "internal/dockerx/container_tools_test.go",
+          "internal/dockerx/maintenance.go",
+          "internal/dockerx/nginx.go",
+          "internal/dockerx/mysql.go",
+          "internal/agent/server.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Container execution and firewall actions use the inspected resource version, fixed Docker identity transport, authenticated administrator authority, and bounded request concurrency.",
+        "method": "source",
+        "result": "Read all changed hunks and adjacent call chain. ContainerExec validates the ID, fails fast at four slots, bounds command bytes, and uses the same inspect that proves the supplied version (container_tools.go:292-315; maintenance.go:573-582). Firewall addresses derive from that verified inspect and parsed IPv4 values, with fixed argv and rollback on persistence errors (access_linux.go:21-78). Panel session/origin/CSRF checks and audit intent precede forwarding (panel/server.go:523-570); Agent bearer authorization and mutation gate precede execution (agent/server.go:292-309,1942-1968). Docker exec creation validates returned IDs (mysql.go:87-130); response reads are bounded and context-bound (nginx.go:344-391). The new busy test is present at container_tools_test.go:301 and was read, not run. A canceled HTTP exec does not prove termination of the container process, but the reachable principal explicitly holds arbitrary administrator shell authority; no lower-trust or cross-principal resource attack was established.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/dockerx/client.go",
+          "internal/dockerx/client_test.go",
+          "internal/dockerx/compose.go"
+        ],
+        "invariant": "Coalesced container reads have finite fan-out and timeout; list-only summaries cannot substitute for mutation authorization or Compose source versions.",
+        "method": "source",
+        "result": "Containers shares one inspect pass per Client, publishes completion through a closed channel, gives callers independent cancellation, and bounds detached shared work to 60 seconds (client.go:221-257). inspectContainers has four workers and context-aware dispatch (259-301), with a 15-second HTTP timeout (135) and 16 MiB JSON read bound (33,765-804). List summaries expose empty AllowedActions (599-600); failed inspections also remove actions (282). Compose list-only use reads membership/labels but resolves allowed paths and computes versions from actual file/environment bytes (compose.go:232-361), checks existing-project versions again at action execution (582-610), and revalidates deployment collision state (448-488). Read the new list/inspect-count regression at client_test.go:416; no target execution was performed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/dockerx/maintenance.go",
+          "internal/dockerx/maintenance_test.go"
+        ],
+        "invariant": "Docker job persistence must not serialize submitted Compose/environment secrets or replay interrupted work, and persistence failure must not admit competing execution.",
+        "method": "source",
+        "result": "StartMaintenance holds jobStart across admission and initial durable record publication (maintenance.go:178-228). putLocked strips Input by value before marshaling, so initial queued/running records are redacted while runMaintenance retains its private input copy (1259-1268,352-389). Publication uses a 0600 temporary file, sync, rename, directory sync and then in-memory replacement (1275-1307). Failed running-state persistence prevents host work (358-369); terminal persistence failures retain a bounded pending result, block new jobs and retry storage at most once per second without replay (1199-1256). Startup converts queued/running work to interrupted failure (120-164); pruning keeps 100 recent records plus active/pending entries (1357-1380). Read the credential persistence test added at maintenance_test.go:509; it was not executed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-host"
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Farchive.go%23normalizeArchiveEntry::internal%2Ffilemanager%2Farchive.go%23extract::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/archive.go#normalizeArchiveEntry",
+      "boundary": "internal/filemanager/archive.go#extract",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agent archive extract and archive-jobs",
+    "boundary": "internal/filemanager/archive.go#ZipSlip + symlink + special entry guards",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Archive extraction escape",
+    "starting_paths": [
+      "internal/filemanager/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Fmanager.go%23Upload::internal%2Fpanel%2Ffiles.go%23handleFileUpload::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/manager.go#Upload",
+      "boundary": "internal/panel/files.go#handleFileUpload",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "POST /api/v1/files/upload → agent",
+    "boundary": "internal/filemanager/manager.go#atomic rename + size caps",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Upload write path integrity",
+    "starting_paths": [
+      "internal/filemanager/manager.go",
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Fmanager.go%23resolveExisting::internal%2Ffilemanager%2Fmanager.go%23normalizeVirtual::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/manager.go#resolveExisting",
+      "boundary": "internal/filemanager/manager.go#normalizeVirtual",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agent /v1/files/* path handling",
+    "boundary": "internal/filemanager/manager.go#symlink walk + protected dirs",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Path traversal and symlink escape",
+    "starting_paths": [
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Ffilemanager%2Fmanager.go%23upload-mutable-parent::internal%2Ffilemanager%2Frename_noreplace_linux.go%23parent-descriptor-binding::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/filemanager/manager.go#upload-mutable-parent",
+      "boundary": "internal/filemanager/rename_noreplace_linux.go#parent-descriptor-binding",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "unchanged upload parent path binding",
+    "boundary": "local filesystem principal to protected path",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/filemanager/manager.go",
+      "internal/filemanager/rename_noreplace_linux.go",
+      "internal/agent/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "OUT OF SCOPE LEAD FOR CRITIC: a lower-privilege local owner can potentially replace an administrator-selected upload parent with an in-root symlink between manager.go:518 preflight and :529 createTemp. The parent is reopened at :1398 and rename_noreplace_linux.go:13/:18; default Root '/' (:280) does not pin lexical protected directories. With an absent dummy leaf, publication may occur in a protected directory before final Stat rejects the symlink (:617-618). This is a distinct local-attacker/admin boundary, but the path-resolution mechanism already exists at baseline and is not causally introduced by the changed no-replace branch; it needs its own explicitly scoped unit and offline Linux deterministic validation before any finding."
+    ],
+    "assignment": null,
+    "critic_reason": "Changed file_proxy.go:288 wrapper not covered by local upload evidence; inspect inherited relay authorization, limits, cancellation and publication."
+  },
+  {
+    "coverage_id": "internal%2Fhostbackup%2Frestore.go%23backup-restore::internal%2Fhostbackup%2Fengine.go%23backup-restore::internal%2Fhostbackup::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/hostbackup/restore.go#backup-restore",
+      "boundary": "internal/hostbackup/engine.go#backup-restore",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "backup-restore",
+    "boundary": "backup-restore invariant",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/restore.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "prior_confirmed_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-backup",
+    "reviewed_paths": [
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/native.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/backup_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-backup",
+        "reviewed_paths": [
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/backup_test.go"
+        ],
+        "invariant": "An imported root outside the destination data inventory must not reach the privileged rename/delete restore sink.",
+        "method": "source",
+        "result": "Revalidated original fingerprint hostbackup.restore.payload-root-unconfined-to-data-model against 23cbb997. Its zero-container arbitrary-root path is refuted by current source: archive.go:393-398 invokes engine.go:185-217 rootMatchesModule, checking sha256-derived ID, web exact /home/web, apps /home ownership, and docker declared mounts. restore.go:127-145 checks protected roots and exact membership in independently enumerated current.Roots before root staging or rename. Native volume remapping at native.go:240-244 precedes that destination check, so does not bypass it. Existing native mount consistency, protected-container/name and writer-overlap checks remain in restore.go:93-169; noLinkParents/noNestedMounts precede swaps. Read all changed hunks, new source tests backup_test.go:196-262 and adjacent controls; tests not run. This is refutation of the prior source chain, not dynamic proof of all restore behavior.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-backup"
+  },
+  {
+    "coverage_id": "internal%2Fhostbackup%2Fservice.go%23backup-import::internal%2Fhostbackup%2Farchive.go%23backup-import::internal%2Fhostbackup::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/hostbackup/service.go#backup-import",
+      "boundary": "internal/hostbackup/archive.go#backup-import",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "backup-import",
+    "boundary": "backup-import invariant",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h-backup",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/backup/archive.go",
+      "internal/backup/archive_test.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/backup/space_unix.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/native.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-backup",
+        "reviewed_paths": [
+          "internal/hostbackup/service.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/backup/archive.go",
+          "internal/backup/files.go"
+        ],
+        "invariant": "Untrusted import metadata must remain bounded when transformed into persistent record roots; extraction must remain beneath private staging.",
+        "method": "source",
+        "result": "ReadPayload archive.go:247 caps each module manifest at 4 MiB; :289-304 rejects traversal, duplicate entries, links/special files and excessive entries/bytes; :343-367 checks gzip tail. Root validation :387-439 checks module, ID, canonical path and mounts but has no Path length bound. Extraction names use data/<hash-ID> (:305), never Root.Path, so very long virtual Path values do not hit filesystem path-length limits during inspect. service.go:215-244 accumulates roots from independent apps/docker payloads, checks the count-only budget, then stores all RootRefs. Per-module caps do not enforce the combined serialized record cap. One 3 MiB apps path and one 1.5 MiB docker bind path (declared by a valid container, empty HostConfig normalized by nativeMountConfig) are a source-derived bounded candidate: each inner manifest stays below 4 MiB, while copied RootRefs exceed 4 MiB. No fixture was generated or processed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v4",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/backup/archive.go",
+          "internal/backup/archive_test.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Independent refutation of backup.jobs.record-root-budget-ignores-path-bytes",
+        "method": "source",
+        "result": "needs_validation: A lower-trust archive author controls root metadata inside an otherwise valid password-protected backup. An administrator must import the archive; this is not an unauthenticated request or a claim about intended administrator shell power. Source independently shows that automatic host inspection aggregates roots from separately bounded module manifests and persists them using a count-only budget. Long canonical apps/docker paths can therefore exceed the persistent record reader limit without exceeding either module manifest limit. If destination Inventory succeeds, the write succeeds, and the record remains present until a later default Agent initialization, source predicts initialization failure at the 4 MiB record read limit. No archive fixture, persisted byte length, manager reopen or Agent failure has been observed in execution.",
+        "artifact": null
+      },
+      {
+        "agent_id": "f4",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/backup/archive.go",
+          "internal/backup/archive_test.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/backup/space_unix.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Final structured-record accuracy for backup.jobs.record-root-budget-ignores-path-bytes",
+        "method": "source",
+        "result": "verified needs_validation record; source locations, controls and exact validation limits independently checked; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "backup.jobs.record-root-budget-ignores-path-bytes"
+    ],
+    "unresolved": [
+      "Decisive execution is prohibited in this run because OS-enforced no-network, read-only target/tools, scratch-only writes, an empty allowlisted environment and resource/wall-clock limits are not jointly established. Source settles the budget mismatch and error propagation, but acceptance of the complete bounded fixture, actual persisted record length and isolated OpenManager reopen outcome remain unobserved. No target-produced artifact was created or promoted."
+    ],
+    "assignment": "h-backup"
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fai_handlers.go%23ai-copies::internal%2Fai%2Fruntime.go%23ai-copies::internal%2Fai::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/panel/ai_handlers.go#ai-copies",
+      "boundary": "internal/ai/runtime.go#ai-copies",
+      "subsystem": "internal/ai",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "ai-copies",
+    "boundary": "ai-copies invariant",
+    "subsystem": "internal/ai",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "internal/ai/runtime.go",
+      "internal/panel/ai_handlers.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Context, retrieval, and memory attack classes",
+      "AI-AND-LLM.md#Tool and action attack classes",
+      "AI-AND-LLM.md#MCP and sub-agent trust classes",
+      "AI-AND-LLM.md#Output and disclosure attack classes",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h-inputs",
+    "reviewed_paths": [
+      "docs/ai-workspace.md",
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/ai/client.go",
+      "internal/ai/context.go",
+      "internal/ai/runtime.go",
+      "internal/ai/runtime_test.go",
+      "internal/ai/service.go",
+      "internal/ai/store.go",
+      "internal/dockerx/container_tools.go",
+      "internal/dockerx/maintenance.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_handlers.go",
+      "internal/panel/ai_handlers_test.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/ai_tools_test.go",
+      "internal/redact/redact.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-inputs",
+        "reviewed_paths": [
+          "internal/panel/ai_handlers.go",
+          "internal/panel/ai_handlers_test.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/ai_tools_test.go",
+          "internal/ai/runtime.go",
+          "internal/ai/runtime_test.go",
+          "internal/ai/service.go",
+          "internal/ai/context.go",
+          "internal/ai/client.go",
+          "internal/redact/redact.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "internal/dockerx/container_tools.go",
+          "internal/dockerx/maintenance.go",
+          "internal/store/store.go",
+          "internal/store/audit_log.go"
+        ],
+        "invariant": "AI attachment ingestion is bounded and owner-scoped; secret filtering survives derived error, tool-result, model-context and audit copies.",
+        "method": "source",
+        "result": "handleAI authenticates and gates mutations by origin/CSRF (:36-51). ai_handlers.go:195-320 caps raw JSON/multipart at 12 MiB, rejects decoded attachments above 4 MiB, and removes multipart temporary files. service.go:154-261 checks session ownership, caps count=4/aggregate=8 MiB, validates media/name/text and copies bytes. context.go bounds attachment hydration and retains session scope. Error copies now use PublicError. However runtime.go:953 delegates to redact.Text whose complete pattern set omits the old bare sk- and Basic token rules, reaching stored tool context and provider serialization. Native Docker environment name/value objects also survive audit-summary redaction; recorded separately as hardening because no distinct unauthorized audit reader was established. Source tests were only read.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v1",
+        "reviewed_paths": [
+          "docs/ai-workspace.md",
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/ai/client.go",
+          "internal/ai/runtime.go",
+          "internal/ai/store.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/ai_handlers.go",
+          "internal/panel/ai_tools.go",
+          "internal/redact/redact.go"
+        ],
+        "invariant": "Independent refutation of ai/runtime/redactAndLimit-bare-credential-regression",
+        "method": "source",
+        "result": "needs_validation: The source diff removes the previous bare sk- and standalone Basic credential filters from AI tool results. During an authenticated administrator's AI run, lower-trust model output can select host_file_read for an otherwise allowed ordinary text file. If that file contains an unrelated service credential in either bare form, the current content filter does not match it, and source tracing reaches persistent tool context and the next request to the configured model provider. The affected boundary is host credential material versus an external provider, not administrator access to the file or another administrator session. This lead requires the credential to be outside other recognized secret assignments, headers, URLs or private-key blocks, within the retained result, and not intentionally shared with that provider. The filtering regression and propagation are source-supported; no runtime disclosure has been observed in this source-only pass.",
+        "artifact": null
+      },
+      {
+        "agent_id": "f1",
+        "reviewed_paths": [
+          "docs/ai-workspace.md",
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/ai/client.go",
+          "internal/ai/runtime.go",
+          "internal/ai/store.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/ai_handlers.go",
+          "internal/panel/ai_tools.go",
+          "internal/redact/redact.go"
+        ],
+        "invariant": "Final structured-record accuracy for ai/runtime/redactAndLimit-bare-credential-regression",
+        "method": "source",
+        "result": "verified needs_validation record; source locations, controls and exact validation limits independently checked; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "ai/runtime/redactAndLimit-bare-credential-regression"
+    ],
+    "unresolved": [
+      "A bounded native runtime demonstration of the dummy credential surviving both stored tool content and the captured next provider payload has not been performed. This audit forbids target execution because OS-enforced no-network isolation, read-only target/tool mounts, scratch-only writes and explicit resource/wall-clock limits are not established. Source already resolves the missing-pattern and propagation questions; a real provider's model behavior is not required to test them."
+    ],
+    "assignment": "h-inputs"
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fai_tools.go%23RequiresApproval::internal%2Fai%2Fruntime.go%23approval%20gate::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/ai_tools.go#RequiresApproval",
+      "boundary": "internal/ai/runtime.go#approval gate",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "AI tool calls with host authority",
+    "boundary": "internal/panel/ai_tools.go#per-action approval policy",
+    "subsystem": "internal/panel",
+    "attack_class": "AI tool approval bypass",
+    "starting_paths": [
+      "internal/panel/ai_tools.go",
+      "internal/ai/runtime.go",
+      "internal/ai/secrets.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fbackup_handlers.go%23backup-records::internal%2Fbackup%2Fjobs.go%23backup-records::internal%2Fbackup::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/backup_handlers.go#backup-records",
+      "boundary": "internal/backup/jobs.go#backup-records",
+      "subsystem": "internal/backup",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "backup-records",
+    "boundary": "backup-records invariant",
+    "subsystem": "internal/backup",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/backup/jobs.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h-backup",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/backup/archive.go",
+      "internal/backup/archive_test.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/backup/space_unix.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/native.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-backup",
+        "reviewed_paths": [
+          "internal/backup/jobs.go",
+          "internal/backup/files.go",
+          "internal/backup/archive_test.go",
+          "internal/panel/backup_handlers.go",
+          "internal/hostbackup/service.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "Any record accepted by the import write path must remain readable on the next manager initialization; malformed imported metadata must not disable unrelated Agent control-plane operations.",
+        "method": "source",
+        "result": "jobs.go:54-60 estimates 512 + 96*rootCount and ignores root string byte lengths. All legal root counts (at most 3*4096) remain below the 4 MiB limit under that formula. service.go:242-245 writes Roots through Manager.Update (:210-218), saveLocked (:165-171), and WriteJSON files.go:136-141 without a byte cap. OpenManager jobs.go:94-100 rejects a record over 4 MiB; NewService service.go:42-44 and agent/server.go:218-220 propagate that error and abort Agent construction. Panel backup import uploads and automatically inspects host payloads at backup_handlers.go:523-550, before restore authorization. A later failed response/abort does not delete the retained root list. Panel session/origin/CSRF checks (:59-65), new JSON Content-Type check (:49), single-active-job reservation, failed-persistence closure, selected-module checks, revision pinning and retained recovery journals were checked; these controls do not enforce persisted byte budget. Read the new >32 KiB reopen regression archive_test.go:120-157; it uses ordinary short paths and does not exercise this remaining mismatch. Dynamic restart impact is not claimed as observed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v4",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/backup/archive.go",
+          "internal/backup/archive_test.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Independent refutation of backup.jobs.record-root-budget-ignores-path-bytes",
+        "method": "source",
+        "result": "needs_validation: A lower-trust archive author controls root metadata inside an otherwise valid password-protected backup. An administrator must import the archive; this is not an unauthenticated request or a claim about intended administrator shell power. Source independently shows that automatic host inspection aggregates roots from separately bounded module manifests and persists them using a count-only budget. Long canonical apps/docker paths can therefore exceed the persistent record reader limit without exceeding either module manifest limit. If destination Inventory succeeds, the write succeeds, and the record remains present until a later default Agent initialization, source predicts initialization failure at the 4 MiB record read limit. No archive fixture, persisted byte length, manager reopen or Agent failure has been observed in execution.",
+        "artifact": null
+      },
+      {
+        "agent_id": "f4",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/backup/archive.go",
+          "internal/backup/archive_test.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/backup/space_unix.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "invariant": "Final structured-record accuracy for backup.jobs.record-root-budget-ignores-path-bytes",
+        "method": "source",
+        "result": "verified needs_validation record; source locations, controls and exact validation limits independently checked; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "backup.jobs.record-root-budget-ignores-path-bytes"
+    ],
+    "unresolved": [
+      "Decisive execution is prohibited in this run because OS-enforced no-network, read-only target/tools, scratch-only writes, an empty allowlisted environment and resource/wall-clock limits are not jointly established. Source settles the budget mismatch and error propagation, but acceptance of the complete bounded fixture, actual persisted record length and isolated OpenManager reopen outcome remain unobserved. No target-produced artifact was created or promoted."
+    ],
+    "assignment": "h-backup"
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fbackup_handlers.go%23import::internal%2Fbackup%2Farchive.go%23manifest%20validation::internal%2Fbackup::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/backup_handlers.go#import",
+      "boundary": "internal/backup/archive.go#manifest validation",
+      "subsystem": "internal/backup",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "backup import and restore",
+    "boundary": "internal/panel/backup_restore.go#out-of-place validation + path allowlist",
+    "subsystem": "internal/backup",
+    "attack_class": "Restore authority and path escape",
+    "starting_paths": [
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/panel/backup_data.go",
+      "internal/backup/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fcluster_notifications.go%23%2Fapi%2Fv1%2Fcluster%2Fnotifications%2A::internal%2Fnotification%2Fchannel.go%23DetectProvider::internal%2Fnotification::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/cluster_notifications.go#/api/v1/cluster/notifications*",
+      "boundary": "internal/notification/channel.go#DetectProvider",
+      "subsystem": "internal/notification",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "cluster notifications settings/discover/test and outbound notification dispatch",
+    "boundary": "internal/notification/channel.go#fixed-HTTPS-host webhook allowlist",
+    "subsystem": "internal/notification",
+    "attack_class": "SSRF and data leakage via notification webhooks",
+    "starting_paths": [
+      "internal/notification/channel.go",
+      "internal/notification/robot.go",
+      "internal/notification/telegram.go",
+      "internal/notification/service.go",
+      "internal/panel/cluster_notifications.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fcluster_share.go%23handlePublicClusterShare::internal%2Fpanel%2Fcluster_share.go%23secureStringEqual%20token::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/cluster_share.go#handlePublicClusterShare",
+      "boundary": "internal/panel/cluster_share.go#secureStringEqual token",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /s/{token} and cluster share API",
+    "boundary": "internal/panel/cluster_share.go#constant-time token compare",
+    "subsystem": "internal/panel",
+    "attack_class": "Cluster share data exposure",
+    "starting_paths": [
+      "internal/panel/cluster_share.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fdiagnostics.go%23POST%20%2Fapi%2Fv1%2Fdiagnostic-jobs::internal%2Fdiagnostics%2Fscript_trust_linux.go%23trusted%20script%20resolution::internal%2Fdiagnostics::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/panel/diagnostics.go#POST /api/v1/diagnostic-jobs",
+      "boundary": "internal/diagnostics/script_trust_linux.go#trusted script resolution",
+      "subsystem": "internal/diagnostics",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "POST /api/v1/diagnostic-jobs → agent /v1/diagnostics",
+    "boundary": "internal/diagnostics/script_trust_linux.go#trusted diagnostic script + job state re-validation",
+    "subsystem": "internal/diagnostics",
+    "attack_class": "Diagnostic job script trust and interactive root terminal input",
+    "starting_paths": [
+      "internal/diagnostics/service.go",
+      "internal/diagnostics/script_trust_linux.go",
+      "internal/diagnostics/native.go",
+      "internal/panel/diagnostics.go",
+      "internal/panel/sites.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffile_proxy.go%23federatedFileUpload::internal%2Fpanel%2Ffile_proxy.go%23streamFederatedAgent::internal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/file_proxy.go#federatedFileUpload",
+      "boundary": "internal/panel/file_proxy.go#streamFederatedAgent",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "federated upload",
+    "boundary": "relay authorization, byte limits and result publication",
+    "subsystem": "internal/panel",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/panel/file_proxy.go",
+      "internal/panel/cluster.go",
+      "internal/cluster/file_stream.go",
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "h-relay",
+    "reviewed_paths": [
+      "internal/panel/file_proxy.go",
+      "internal/panel/cluster.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_relay_v1_test.go",
+      "internal/panel/file_proxy_test.go",
+      "internal/panel/files.go",
+      "internal/panel/file_upload_limit_test.go",
+      "internal/agent/files.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/agent.go",
+      "internal/httpstream/idle.go",
+      "internal/cluster/file_stream.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-relay",
+        "reviewed_paths": [
+          "internal/panel/file_proxy.go",
+          "internal/panel/cluster.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/light_file.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_relay_v1_test.go",
+          "internal/panel/file_proxy_test.go"
+        ],
+        "invariant": "Only a registered, authenticated paired controller may reach the allowlisted federated upload; a lightweight node callback cannot invoke controller-side host mutation.",
+        "method": "source",
+        "result": "Reviewed exact 23cbb9979ce0df84801b9fe614bd1b00d7ad8a99 and full file_proxy.go changed hunk. cluster.go:522 authorizes before dispatch at :542. file_relay_v1.go:59-93 validates envelope, requires stored controller, verifies target-bound Ed25519 request with freshness (signature.go:84-105), rate-limits and rejects nonce replay. light_file.go:586-593 constrains methods, file paths, query, headers and declared lengths. file_proxy.go:31,270-288 rejects RawPath, wrong method, unknown/duplicate query and wrong media type. file_stream_transport.go:290-330 authenticates light nodes against their own key and limits roles to control/data; :274-285 binds data callbacks to a pending request, node and generation rather than dispatching a supplied request on Panel. Same-administrator paired Panel authority is intentional. Existing allowlist/replay tests were read, not run.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-relay",
+        "reviewed_paths": [
+          "internal/panel/file_proxy.go",
+          "internal/panel/files.go",
+          "internal/panel/file_upload_limit_test.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "Unknown-length and oversized federated uploads must not bypass the 512 MiB limit or publish a partial result after a body-read failure.",
+        "method": "source",
+        "result": "file_proxy.go:284 rejects declared over-limit sizes; changed :288 wraps the body with newPanelUploadBody. files.go:620-630 uses http.MaxBytesReader at MaxUploadBytes and propagates read errors, including unknown-length bodies. agent/files.go:722-739 independently applies declared-size, body, duration and idle controls before Upload; success is returned only at :744. filemanager/manager.go:123 and :498-501 cap active uploads at two, :529 creates a temporary file, :562-575 removes failed uploads and rejects copy/size errors before publication, :585-605 checks overwrite/version and uses no-replace publication for absent targets. The new wrapper does not substitute a successful EOF for its size error. Read file_upload_limit_test.go:18-28 boundary assertions without execution.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-relay",
+        "reviewed_paths": [
+          "internal/panel/file_proxy.go",
+          "internal/panel/files.go",
+          "internal/panel/agent.go",
+          "internal/httpstream/idle.go",
+          "internal/cluster/file_stream.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go"
+        ],
+        "invariant": "Relay work must carry cancellation/deadlines through the Agent request, use bounded streaming buffers, and release response/temp resources on failures.",
+        "method": "source",
+        "result": "file_proxy.go:390-404 derives a two-hour transfer context from the incoming request, defers cancellation, wraps inbound reads with a 45-second idle deadline and closes response bodies; :414-422 uses idle writes and a 64 KiB streaming buffer. files.go:30-31 defines those limits. panel/agent.go:131-154 passes the same context to the authenticated Unix Agent request and disables redirects. httpstream/idle.go:32-40 and :72-80 check context and refresh network deadlines; unsupported controllers defer to the enclosing transport limits. file_stream.go:68-81 closes sockets on cancellation/idle/max lifetime, :298-312 closes pipe ends on context cancellation and intentionally hides declared length until authenticated EOF; :325-343 rejects truncated/over-limit streams. Agent upload derives its own context and filemanager upload releases its gate and removes the temporary on copy errors. No source-grounded cross-principal retained-resource or partial-publication failure was established. No tests, builds, fixtures or network traffic were executed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-relay",
+    "critic_reason": "Changed file_proxy.go:288 wrapper not covered by local upload evidence; inspect inherited relay authorization, limits, cancellation and publication."
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffile_remote_downloads.go%23handleFileRemoteDownload::internal%2Fremotedownload%2Fclient.go%23publicAddress::internal%2Fremotedownload::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/file_remote_downloads.go#handleFileRemoteDownload",
+      "boundary": "internal/remotedownload/client.go#publicAddress",
+      "subsystem": "internal/remotedownload",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "POST /api/v1/files/remote-downloads",
+    "boundary": "internal/remotedownload/client.go#DNS pin + private address block",
+    "subsystem": "internal/remotedownload",
+    "attack_class": "SSRF via remote download",
+    "starting_paths": [
+      "internal/remotedownload/client.go",
+      "internal/panel/file_remote_downloads.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffile_shares.go%23handlePublicFileShareContent::internal%2Fpanel%2Ffile_shares.go%23resolvePublicFileShare::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/file_shares.go#handlePublicFileShareContent",
+      "boundary": "internal/panel/file_shares.go#resolvePublicFileShare",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /f/{token} and /api/v1/file-shares/{token}",
+    "boundary": "internal/panel/file_shares.go#token validation + share version binding",
+    "subsystem": "internal/panel",
+    "attack_class": "Public file share bypass",
+    "starting_paths": [
+      "internal/panel/file_shares.go",
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffiles.go%23file-upload::internal%2Ffilemanager%2Fmanager.go%23file-upload::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/files.go#file-upload",
+      "boundary": "internal/filemanager/manager.go#file-upload",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "file-upload",
+    "boundary": "file-upload invariant",
+    "subsystem": "internal/filemanager",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/filemanager/manager.go",
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Context, retrieval, and memory attack classes",
+      "AI-AND-LLM.md#Tool and action attack classes",
+      "AI-AND-LLM.md#MCP and sub-agent trust classes",
+      "AI-AND-LLM.md#Output and disclosure attack classes",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-inputs",
+    "reviewed_paths": [
+      "internal/panel/files.go",
+      "internal/panel/files_test.go",
+      "internal/panel/agent.go",
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/manager_test.go",
+      "internal/filemanager/rename_noreplace_linux.go",
+      "internal/httpstream/idle.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-inputs",
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/panel/files_test.go",
+          "internal/panel/agent.go",
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/filemanager/manager.go",
+          "internal/filemanager/manager_test.go",
+          "internal/filemanager/rename_noreplace_linux.go",
+          "internal/httpstream/idle.go"
+        ],
+        "invariant": "Authenticated uploads obey transfer limits, avoid replacing newly appeared targets, and publish only in the authorized non-symlink directory.",
+        "method": "source",
+        "result": "Panel files.go:633-702 enforces session/origin/CSRF, octet-stream, declared and streamed 512 MiB ceilings, timeout and auditing. Agent files.go:703-742 rechecks query/type/limit and passes a bounded idle reader. Manager Upload uses a two-slot gate, 512 MiB+1 reader, temp cleanup/sync, write mutex and final target comparison. The changed branch sets replace only for a target verified immediately above, and Linux renameNoReplaceRoot uses RENAME_NOREPLACE, so a target absent at final validation cannot be silently overwritten if it appears before publication. No boundary failure causally linked to these changed hunks survived source review. An unchanged mutable-parent race was separated into uncovered scope for critic triage, not treated as a finding of this incremental pass. Existing source tests were read; no tests were run.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-inputs"
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffiles.go%23handleFileDownloadTicket::internal%2Fpanel%2Ffiles.go%23issueDownloadTicket::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "internal/panel/files.go#handleFileDownloadTicket",
+      "boundary": "internal/panel/files.go#issueDownloadTicket",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /api/v1/files/download/{ticket}",
+    "boundary": "internal/panel/files.go#lookupFileDownloadTicket (no session)",
+    "subsystem": "internal/panel",
+    "attack_class": "Unauthenticated ticket reuse",
+    "starting_paths": [
+      "internal/panel/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23POST%20%2Fapi%2Fv1%2Fauth%2Flogin::internal%2Fauth%2Fservice.go%23Login%20rate%20limit%20and%20Argon2id::internal%2Fauth::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#POST /api/v1/auth/login",
+      "boundary": "internal/auth/service.go#Login rate limit and Argon2id",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "POST /api/v1/auth/login",
+    "boundary": "internal/auth/service.go#Login (Argon2id, rate limit, dummy hash)",
+    "subsystem": "internal/auth",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/auth/password.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Password reset and broader recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ],
+    "unresolved_notes": [
+      "Wall-clock equivalence of dummy-hash vs real-hash path is structurally established (same single Verify, same params) but not measured; a bounded local timing-regression test over N runs would settle it."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23allowedAgentPath::internal%2Fpanel%2Fserver.go%23handleAgentProxy::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#allowedAgentPath",
+      "boundary": "internal/panel/server.go#handleAgentProxy",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET /api/v1/* agent proxy paths",
+    "boundary": "internal/panel/server.go#allowedAgentPath allowlist",
+    "subsystem": "internal/panel",
+    "attack_class": "Agent proxy path confusion",
+    "starting_paths": [
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23checkCSRF::internal%2Fpanel%2Fserver.go%23ServeHTTP%20origin%20check::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#checkCSRF",
+      "boundary": "internal/panel/server.go#ServeHTTP origin check",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "all mutating /api/v1 routes",
+    "boundary": "internal/panel/server.go#checkCSRF + checkOrigin + checkHost",
+    "subsystem": "internal/panel",
+    "attack_class": "CSRF and origin binding",
+    "starting_paths": [
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ],
+    "unresolved_notes": [
+      "Origin-empty/Sec-Fetch-absent branch behavior on pre-2020 embedded browser engines cannot be established from source; residual exposure bounded by CSRF session-hash binding + SameSite=Strict; confirming needs browser-matrix deployment test."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23handleBootstrap::internal%2Fauth%2Fservice.go%23Bootstrap%20one-time%20token::internal%2Fauth::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#handleBootstrap",
+      "boundary": "internal/auth/service.go#Bootstrap one-time token",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "POST /api/v1/auth/bootstrap",
+    "boundary": "internal/auth/service.go#Bootstrap (one-time token, single admin)",
+    "subsystem": "internal/auth",
+    "attack_class": "Bootstrap race and token handling",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Password reset and broader recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23obvious%20exposures::internal%2Fpanel%2Fconfig.go%23defaults::internal%2Fpanel::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#obvious exposures",
+      "boundary": "internal/panel/config.go#defaults",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "basic exposures check",
+    "boundary": "cross-cutting",
+    "subsystem": "internal/panel",
+    "attack_class": "Obvious things",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "Dockerfile",
+      "deploy/compose/compose.yml"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23public%20endpoints::internal%2Fpanel%2Ffile_shares.go%23rate%20limits::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#public endpoints",
+      "boundary": "internal/panel/file_shares.go#rate limits",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "unauthenticated public endpoints",
+    "boundary": "per-IP rate limiters on share/ticket/federation routes",
+    "subsystem": "internal/panel",
+    "attack_class": "Pre-auth resource exhaustion",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/file_shares.go",
+      "internal/panel/cluster_share.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23requireSession::internal%2Fauth%2Fservice.go%23Authenticate%20session%20lookup::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#requireSession",
+      "boundary": "internal/auth/service.go#Authenticate session lookup",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "all /api/v1 session-authenticated routes",
+    "boundary": "internal/panel/server.go#requireSession + cookie policy",
+    "subsystem": "internal/panel",
+    "attack_class": "Session lifecycle",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/auth/service.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23securityEntrancePublicPath::internal%2Fpanel%2Fserver.go%23handleSecurityEntrance::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#securityEntrancePublicPath",
+      "boundary": "internal/panel/server.go#handleSecurityEntrance",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "security-entrance gate for all non-public paths",
+    "boundary": "internal/panel/server.go#entrance cookie derivation",
+    "subsystem": "internal/panel",
+    "attack_class": "Entrance gate bypass",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23serveAPI%20full%20route%20table::internal%2Fagent%2Fserver.go%23route%20table::internal%2Fpanel::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#serveAPI full route table",
+      "boundary": "internal/agent/server.go#route table",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "whole panel+agent route surface",
+    "boundary": "cross-cutting",
+    "subsystem": "internal/panel",
+    "attack_class": "Wildcard anomalies",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/agent/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fsystem.go%23POST%20%2Fapi%2Fv1%2Fsystem%2F%2A-actions::internal%2Fsystemmanage%2Fmanager.go%23commandRunner::internal%2Fsystemmanage::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/panel/system.go#POST /api/v1/system/*-actions",
+      "boundary": "internal/systemmanage/manager.go#commandRunner",
+      "subsystem": "internal/systemmanage",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "POST /api/v1/system/*-actions → agent /v1/system/* mutating routes",
+    "boundary": "internal/systemmanage/manager.go#commandRunner exec construction + atomic config writes",
+    "subsystem": "internal/systemmanage",
+    "attack_class": "System action injection into root commands and host config files",
+    "starting_paths": [
+      "internal/systemmanage/manager.go",
+      "internal/systemmanage/disk_partitions.go",
+      "internal/systemmanage/system_tuning.go",
+      "internal/systemmanage/network_operations.go",
+      "internal/systemmanage/ssh_defense.go",
+      "internal/panel/system.go",
+      "internal/panel/disk_partitions.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fterminal.go%23handleTerminalSession::internal%2Fpanel%2Fterminal.go%23handleTerminalOperation::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/terminal.go#handleTerminalSession",
+      "boundary": "internal/panel/terminal.go#handleTerminalOperation",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "/api/v1/terminal-sessions/*",
+    "boundary": "internal/panel/terminal.go#UserID ownership + host TerminalAvailable",
+    "subsystem": "internal/panel",
+    "attack_class": "Terminal session ownership",
+    "starting_paths": [
+      "internal/panel/terminal.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ftotp.go%23TOTP%20settings%20and%20enrollment%20endpoints::internal%2Fauth%2Fservice.go%23verifyAndConsumeSecondFactor::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/panel/totp.go#TOTP settings and enrollment endpoints",
+      "boundary": "internal/auth/service.go#verifyAndConsumeSecondFactor",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "/api/v1/settings/totp* endpoints",
+    "boundary": "internal/auth/service.go#TOTP verify+consume step",
+    "subsystem": "internal/auth",
+    "attack_class": "MFA and step-up bypass",
+    "starting_paths": [
+      "internal/auth/totp.go",
+      "internal/auth/service.go",
+      "internal/panel/totp.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#MFA enrollment and assurance downgrade",
+      "WEB-PROTOCOL-AND-AUTH.md#Step-up binding and bypass"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fselfupdate%2Fsource.go%23release%20body%20digest%20regex::internal%2Fselfupdate%2Fexecutor.go%23Update::internal%2Fselfupdate::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "internal/selfupdate/source.go#release body digest regex",
+      "boundary": "internal/selfupdate/executor.go#Update",
+      "subsystem": "internal/selfupdate",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "self-update check and install",
+    "boundary": "internal/selfupdate/executor.go#trusted file checks + digest pin",
+    "subsystem": "internal/selfupdate",
+    "attack_class": "Self-update integrity chain",
+    "starting_paths": [
+      "internal/selfupdate/source.go",
+      "internal/selfupdate/service.go",
+      "internal/selfupdate/executor.go",
+      "internal/selfupdate/starter.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Fdiscover.go%23site-identity::internal%2Fsites%2Fmanager.go%23site-identity::internal%2Fsites::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/sites/discover.go#site-identity",
+      "boundary": "internal/sites/manager.go#site-identity",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "site-identity",
+    "boundary": "site-identity invariant",
+    "subsystem": "internal/sites",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/sites/discover.go",
+      "internal/sites/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-host",
+    "reviewed_paths": [
+      "internal/sites/discover.go",
+      "internal/sites/discover_test.go",
+      "internal/sites/manager.go",
+      "internal/sites/manager_test.go",
+      "internal/sites/cli_update.go",
+      "internal/sites/script_delete.go",
+      "internal/sites/certificate_replace.go",
+      "internal/panel/sites.go",
+      "internal/agent/server.go",
+      "web/src/components/sites/SiteDeleteDialog.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/sites/discover.go",
+          "internal/sites/discover_test.go",
+          "internal/sites/manager.go",
+          "internal/sites/cli_update.go",
+          "internal/sites/certificate_replace.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "Ambiguous discovered site identities cannot reach configuration update through a stale capability or alternate handler.",
+        "method": "source",
+        "result": "Discover normalizes and deduplicates names (discover.go:581-590), builds stable IDs from primary domain and configuration path (170), counts domains across files and removes update after managed-site classification (80-99). Manager.Update reacquires discovery under siteWriteMutex, requires the action, explicitly rejects ambiguous state, and checks resource version/collisions (manager.go:198-229,647-669). Both managed publication (271-275) and CLI publication (cli_update.go:59-65) rediscover before exchange; therefore stale UI capability does not bypass the new rejection. Agent PATCH reaches Manager.Update unless performing separate certificate-only replacement (agent/server.go:1153-1166). That sibling rejects simultaneous setting edits and binds the selected configuration to the exact canonical domain path plus version and certificate hashes (certificate_replace.go:55-114), so it is not a path to the server_name update prohibited here. Read the duplicate-domain test at discover_test.go:251; no test was run.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/sites/script_delete.go",
+          "internal/sites/manager.go",
+          "internal/sites/manager_test.go",
+          "internal/panel/sites.go",
+          "web/src/components/sites/SiteDeleteDialog.vue"
+        ],
+        "invariant": "A site delete request must bind the selected identity to its explicitly authorized destructive scope.",
+        "method": "source",
+        "result": "Traced the retained delete action because the new discovery warning promises configuration-ID deletion. Actual DeleteWithOptions delegates to deleteWithScript (manager.go:368-373), which resolves the ID and rejects a mismatched normalized PrimaryDomain (script_delete.go:117-136), then deliberately runs domain-level k web del with fixed argv (75-80,161). Panel authenticates and requires origin/CSRF plus durable audit intent (panel/sites.go:247-290). The final dialog explicitly confirms deletion of that domain's directory, Nginx config, certificates and same-named database (SiteDeleteDialog.vue:33-41); existing tests explicitly require full domain deletion without resource version and reject domain mismatch (manager_test.go:264-317). Thus differing IDs sharing a domain do not establish an unauthorized action under the actual confirmation contract. The inaccurate resource-ID warning is recorded as hardening, not a vulnerability. External script behavior was not executed or assumed as validated.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-host"
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Ficon_cache.go%23localSiteIconDialAddress::internal%2Fsites%2Ficon_cache.go%23resolveSiteIconURL::internal%2Fsites::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/sites/icon_cache.go#localSiteIconDialAddress",
+      "boundary": "internal/sites/icon_cache.go#resolveSiteIconURL",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "site icon fetch",
+    "boundary": "internal/sites/icon_cache.go#127.0.0.1 pin + host allowlist",
+    "subsystem": "internal/sites",
+    "attack_class": "SSRF via site icon",
+    "starting_paths": [
+      "internal/sites/icon_cache.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Fmanaged_template.go%23normalizeUpstream::internal%2Fsites%2Fmanaged_template.go%23renderManagedConfig::internal%2Fsites::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/sites/managed_template.go#normalizeUpstream",
+      "boundary": "internal/sites/managed_template.go#renderManagedConfig",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "site create/update → nginx conf generation",
+    "boundary": "internal/sites/managed_template.go#FQDN + upstream normalization",
+    "subsystem": "internal/sites",
+    "attack_class": "Nginx config injection",
+    "starting_paths": [
+      "internal/sites/managed_template.go",
+      "internal/sites/manager.go",
+      "internal/contract/site_address.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fsites%2Frecipe_jobs.go%23invocations::internal%2Fsites%2Frecipe_jobs.go%23findTrustedKejilionScript::internal%2Fsites::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/sites/recipe_jobs.go#invocations",
+      "boundary": "internal/sites/recipe_jobs.go#findTrustedKejilionScript",
+      "subsystem": "internal/sites",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "site recipe jobs (wordpress/template/proxy)",
+    "boundary": "internal/sites/recipe_jobs.go#argv construction + trusted script",
+    "subsystem": "internal/sites",
+    "attack_class": "Script job injection",
+    "starting_paths": [
+      "internal/sites/recipe_jobs.go",
+      "internal/sites/http_site.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fstore%2Faudit_log.go%23audit-storage::internal%2Fstore%2Fstore.go%23audit-storage::internal%2Fstore::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/store/audit_log.go#audit-storage",
+      "boundary": "internal/store/store.go#audit-storage",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "audit-storage",
+    "boundary": "audit-storage invariant",
+    "subsystem": "internal/store",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h-identity",
+    "reviewed_paths": [
+      "go.mod",
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/audit_log_test.go",
+      "internal/store/process_lock_linux.go",
+      "internal/store/store.go",
+      "internal/store/store_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-identity",
+        "reviewed_paths": [
+          "internal/store/audit_log.go",
+          "internal/store/store.go",
+          "internal/store/process_lock_linux.go",
+          "internal/store/audit_log_test.go",
+          "internal/store/store_test.go",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "go.mod"
+        ],
+        "invariant": "Audit migration, append, paging and password recovery must maintain private durable records, with failed storage represented as failure.",
+        "method": "source",
+        "result": "Read complete new audit_log.go and all store/auth changed hunks plus consumers. Linux process lock excludes concurrent store owners; DB starts with 0600, a single connection, WAL/FULL sync, parameterized SQL, transactional append/trim, normal duplicate-ID rejection, closed/unlinked-file write checks, and page limit (audit_log.go:53-251; store.go:168-275). Audit reader is session-gated and returns storage errors (server.go:1019-1048). Password recovery appends before credential mutation and appends a failure record if state persistence fails (store.go:376-404). Existing interrupted-migration test only checks duplicate-free listing before a later append (audit_log_test.go:81-106); it does not settle sequence-gap retention. go.mod pins modernc.org/sqlite v1.55.0; no driver execution or external verification performed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-identity",
+        "reviewed_paths": [
+          "internal/store/audit_log.go",
+          "internal/store/store.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Repeating an interrupted migration must not reduce the retained audit history when the next normal event is written.",
+        "method": "source",
+        "result": "migrateAuditLocked explicitly repeats import after a crash between database commit and JSON cleanup (store.go:244-259). The table uses AUTOINCREMENT (audit_log.go:88-93), duplicate migration uses INSERT OR IGNORE (166-168), and pruning assumes contiguous sequence numbers (186-188). This creates the candidate sequence-gap data-loss path, pending exact-driver validation. An unauthenticated invalid login can append an audit event after the existing five-second global/one-minute source audit throttle allows it (server.go:681-683,864-889,1525-1530).",
+        "artifact": null
+      },
+      {
+        "agent_id": "v2",
+        "reviewed_paths": [
+          "go.mod",
+          "internal/panel/server.go",
+          "internal/store/audit_log.go",
+          "internal/store/audit_log_test.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Independent refutation of audit-migration-autoincrement-gap-retention-loss",
+        "method": "source",
+        "result": "needs_validation: The store explicitly promises that restarting an interrupted audit migration does not lose records. Its database import commits separately from removal of the legacy JSON array. Replaying the migration uses INSERT OR IGNORE in an AUTOINCREMENT table, whereas later retention measures sequence distance rather than the number of retained events. If ignored inserts advance the persisted sequence in the pinned driver, a subsequent ordinary event can delete history that should remain within the 10000-event cap; after one replay at capacity the candidate result is loss of all 10000 previous events. An unauthenticated requester able to reach the login handler and pass its existing request controls can supply that subsequent event through an ordinarily permitted failed login. The attacker is not shown to cause or detect the interrupted migration. This is a conditional audit-integrity candidate, not a demonstrated remote erasure vulnerability or an observed database result.",
+        "artifact": null
+      },
+      {
+        "agent_id": "f2",
+        "reviewed_paths": [
+          "go.mod",
+          "internal/panel/server.go",
+          "internal/store/audit_log.go",
+          "internal/store/audit_log_test.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Final structured-record accuracy for audit-migration-autoincrement-gap-retention-loss",
+        "method": "source",
+        "result": "verified needs_validation record; source locations, controls and exact validation limits independently checked; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "audit-migration-autoincrement-gap-retention-loss"
+    ],
+    "unresolved": [
+      "No bounded target-native observation establishes the pinned driver's persisted AUTOINCREMENT state after duplicate migration or the exact retained IDs after the next event. The required OS-enforced offline sandbox, read-only target/tools, scratch-only writes, resource limits and trusted artifact promotion are not established, so target and fixture execution was prohibited.",
+      "Source establishes a possible interruption window, not that any deployed store is in the replayed state or that an attacker can create it. Anonymous triggering is conditional on reaching login through the existing entrance and request controls; no deployed exposure or actual audit-history loss was observed."
+    ],
+    "assignment": "h-identity"
+  },
+  {
+    "coverage_id": "internal%2Fterminal%2Fmanager.go%23session%20limits::internal%2Fpanel%2Fterminal.go%23reserveTerminalOpen::internal%2Fterminal::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/terminal/manager.go#session limits",
+      "boundary": "internal/panel/terminal.go#reserveTerminalOpen",
+      "subsystem": "internal/terminal",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "terminal session lifecycle",
+    "boundary": "internal/terminal/manager.go#16 sessions / 4 per owner / TTLs",
+    "subsystem": "internal/terminal",
+    "attack_class": "Terminal resource exhaustion",
+    "starting_paths": [
+      "internal/terminal/manager.go",
+      "internal/panel/terminal.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fterminal%2Fmanager.go%23terminal-lifecycle::internal%2Fterminal%2Fmanager.go%23terminal-lifecycle::internal%2Fterminal::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/terminal/manager.go#terminal-lifecycle",
+      "boundary": "internal/terminal/manager.go#terminal-lifecycle",
+      "subsystem": "internal/terminal",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "terminal-lifecycle",
+    "boundary": "terminal-lifecycle invariant",
+    "subsystem": "internal/terminal",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-host",
+    "reviewed_paths": [
+      "internal/terminal/manager.go",
+      "internal/terminal/close_test.go",
+      "internal/agent/terminals.go",
+      "internal/agent/server.go",
+      "internal/agent/backup.go",
+      "internal/agent/backup_test.go",
+      "internal/panel/terminal.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/terminal/manager.go",
+          "internal/terminal/close_test.go",
+          "internal/agent/terminals.go",
+          "internal/panel/terminal.go"
+        ],
+        "invariant": "Moving process spawn outside the manager lock must preserve admission quotas, ownership and shutdown cleanup without blocking unrelated session reads.",
+        "method": "source",
+        "result": "Open serializes admission with openSpawnMu, counts active owner/global sessions under mu, then releases mu only for spawn and checks closed both after spawn and before registration (manager.go:279-343). Failure/closed paths close and kill the returned process. Close retains identity/capacity on kill failure, serializes retries with closeMu, and does not hold item.mu across stop I/O (457-490); reap preserves failed-close state (520-537). Lookup binds owner (541-549). Panel derives owner from authenticated user and reserves concurrent opens before Agent dispatch (panel/terminal.go:139-221); Agent input/output sizes and waits remain bounded (agent/terminals.go:151-176; manager.go:17-24,386-455). Read new spawn/nonblocking regression at close_test.go:168 and existing failed-stop/retry tests; no tests or subprocesses were executed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-host",
+        "reviewed_paths": [
+          "internal/terminal/manager.go",
+          "internal/agent/server.go",
+          "internal/agent/backup.go",
+          "internal/agent/backup_test.go"
+        ],
+        "invariant": "A terminal spawn cannot evade host-backup mutation exclusion between process creation and session registration.",
+        "method": "source",
+        "result": "Investigated the narrow window after spawning is cleared at manager.go:312 and before sessions registration at 342, during which a direct Manager.Busy caller could observe false. The reachable Agent requests cannot exploit that window: ServeHTTP holds backupMutationMu over the entire non-GET/HEAD handler, including terminal Open, and backup admission evaluates backupHostWorkersActive under the same mutex (agent/server.go:297-311; backup.go:3-6). A backup request therefore cannot race registration through the actual entrypoint. Busy includes all unclosed registered shells (manager.go:352-367), and the Agent separately permits close during backup. Existing backup gate test at agent/backup_test.go:24-65 was read only. Standalone manager bookkeeping can be hardened, but the complete source path refutes an exposed backup-admission vulnerability.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-host"
+  },
+  {
+    "coverage_id": "internal%2Fwebenv%2Fservice.go%23script-output::internal%2Fagent%2Fwebenv.go%23script-output::internal%2Fwebenv::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/webenv/service.go#script-output",
+      "boundary": "internal/agent/webenv.go#script-output",
+      "subsystem": "internal/webenv",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "script-output",
+    "boundary": "script-output invariant",
+    "subsystem": "internal/webenv",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/agent/webenv.go",
+      "internal/webenv/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h-external",
+    "reviewed_paths": [
+      "internal/webenv/service.go",
+      "internal/webenv/trust_linux.go",
+      "internal/webenv/service_test.go",
+      "internal/agent/webenv.go",
+      "internal/agent/server.go",
+      "internal/panel/webenv.go",
+      "internal/panel/server.go",
+      "internal/panel/webenv_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h-external",
+        "reviewed_paths": [
+          "internal/webenv/service.go",
+          "internal/webenv/trust_linux.go",
+          "internal/webenv/service_test.go",
+          "internal/agent/webenv.go"
+        ],
+        "invariant": "Script status/catalog output cannot allocate unbounded captured output, bypass overflow rejection, or be turned into arbitrary execution arguments.",
+        "method": "source",
+        "result": "Read complete changed parser hunks. internal/webenv/service.go:270-292 caps retained output to 1 MiB while acknowledging full writes; :304-307 attaches the same capture object to stdout/stderr. Command errors truncate detail to 2 KiB (:309-314); overflow is rejected before JSON parsing (:316-318). Only the last object-prefixed line is unmarshaled into typed Summary/Catalog (:319-328); malformed selected JSON fails closed. Commands are fixed status/catalog at :235 and :252, supplied as exec arguments at :302. trustedScript (:999-1023) accepts only fixed candidates, regular 1 KiB-4 MiB files without group/world write and Linux UID 0 (trust_linux.go:10-12). Summary protocol is checked at :238; actions remain enum/resource-version validated at :331-342 and :946-975. Test source service_test.go:224-234 covers repeated writes, exact capacity and overflow; no tests or scripts ran.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h-external",
+        "reviewed_paths": [
+          "internal/webenv/service.go",
+          "internal/webenv/service_test.go",
+          "internal/agent/webenv.go",
+          "internal/agent/server.go",
+          "internal/panel/webenv.go",
+          "internal/panel/server.go",
+          "internal/panel/webenv_test.go"
+        ],
+        "invariant": "Backup download serves the same regular file that passed a constrained identifier and identity check, only through authenticated paths.",
+        "method": "source",
+        "result": "Read all changed download hunks. service.go:34 constrains names to web_[14 digits].tar.gz; :792-801 joins only /home with that name and Lstat rejects symlinks/nonregular files. OpenBackup :771-789 opens once, verifies opened regular-file mode and os.SameFile against the checked inode, then returns that descriptor. Agent webenv.go:165-179 handles errors before headers and passes the same descriptor to ServeContent without reopening a path. Agent authentication and method restrictions are at server.go:292 and :405-406. Panel webenv.go:70-85 requires an authenticated session and allowedAgentPath; panel/server.go:1217-1222 validates the identifier again before escaping. Filename/header content is therefore confined to the strict identifier alphabet. Existing tests service_test.go:198-208 and panel/webenv_test.go:6-31 cover traversal and route rejection in source. No unauthorized file disclosure trace survived the identity check.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-external"
+  },
+  {
+    "coverage_id": "internal%2Fwebenv%2Fservice.go%23storedArgumentsAllowed::internal%2Fwebenv%2Fservice.go%23RunJob::internal%2Fwebenv::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "internal/webenv/service.go#storedArgumentsAllowed",
+      "boundary": "internal/webenv/service.go#RunJob",
+      "subsystem": "internal/webenv",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "web-environment jobs (LDNMP)",
+    "boundary": "internal/webenv/service.go#enum argv allowlist + trusted script",
+    "subsystem": "internal/webenv",
+    "attack_class": "Webenv job argument injection",
+    "starting_paths": [
+      "internal/webenv/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Fai%2FAiMarkdown.vue%23v-html%20rendered::web%2Fsrc%2Fcomponents%2Fai%2FAiMarkdown.vue%23DOMPurify%20sanitize::web%2Fsrc::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "web/src/components/ai/AiMarkdown.vue#v-html rendered",
+      "boundary": "web/src/components/ai/AiMarkdown.vue#DOMPurify sanitize",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "AI markdown rendering into DOM",
+    "boundary": "web/src/components/ai/AiMarkdown.vue#DOMPurify + markdownIt(html:false)",
+    "subsystem": "web/src",
+    "attack_class": "DOM XSS via AI output",
+    "starting_paths": [
+      "web/src/components/ai/AiMarkdown.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#DOM-based XSS"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Fdesktop%2FDesktopView.vue%23localStorage%20reads::web%2Fsrc%2Fcomponents%2Fdesktop%2FDesktopView.vue%23readSiteNames::web%2Fsrc::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "web/src/components/desktop/DesktopView.vue#localStorage reads",
+      "boundary": "web/src/components/desktop/DesktopView.vue#readSiteNames",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "browser localStorage usage",
+    "boundary": "web/src/components/desktop/DesktopView.vue#bounded JSON parse",
+    "subsystem": "web/src",
+    "attack_class": "Storage parsing and stale state",
+    "starting_paths": [
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/i18n/index.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Browser-storage disclosure and stale authorization"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Foverview%2FOperatingSystemIcon.vue%23v-html%20mark.svg::web%2Fsrc%2Fcomponents%2Foverview%2FOperatingSystemIcon.vue%23icons%20record::web%2Fsrc::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "web/src/components/overview/OperatingSystemIcon.vue#v-html mark.svg",
+      "boundary": "web/src/components/overview/OperatingSystemIcon.vue#icons record",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "OS icon SVG rendering",
+    "boundary": "web/src/components/overview/OperatingSystemIcon.vue#hasOwnProperty lookup",
+    "subsystem": "web/src",
+    "attack_class": "SVG injection",
+    "starting_paths": [
+      "web/src/components/overview/OperatingSystemIcon.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#DOM-based XSS"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fviews%2FClusterView.vue%23panelURL%20host%20origin::web%2Fsrc%2Flib%2FclusterHostNavigation.ts%23clusterHostPanelURL::web%2Fsrc::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "web/src/views/ClusterView.vue#panelURL host origin",
+      "boundary": "web/src/lib/clusterHostNavigation.ts#clusterHostPanelURL",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "cluster host panel links and navigation",
+    "boundary": "web/src/lib/clusterHostNavigation.ts#origin + entrance path pattern",
+    "subsystem": "web/src",
+    "attack_class": "Navigation confusion via host origin",
+    "starting_paths": [
+      "web/src/lib/clusterHostNavigation.ts",
+      "web/src/views/ClusterView.vue",
+      "web/src/views/FilesView.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Client-side navigation confusion"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior full-run breadth is not claimed. Relevant changed paths are represented in current scoped units; remaining source is outside this pass."
+    ]
+  }
+]

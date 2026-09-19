@@ -1,0 +1,68 @@
+{
+  "shared_file_owners": {
+    "REPORT.md": "parent",
+    "architecture.md": "parent",
+    "FINDINGS-DETAIL.md": "parent",
+    "coverage-ledger.json": "parent",
+    "findings.json": "parent",
+    "run-metadata.json": "parent",
+    "NEEDS-VALIDATION.md": "parent"
+  },
+  "started_at": "2026-09-19T08:54:22.8021368Z",
+  "run_status": "complete",
+  "target": "C:\\GitHub\\_codex-tasks\\kpanel-audit-source-20260919",
+  "prior_run_paths": [
+    ".governance/security-audit/run-1"
+  ],
+  "skill_source": {
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "pinned_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+  },
+  "run_id": "kejilion-panel-run-2",
+  "source_dirty": false,
+  "source_ref": "23cbb9979ce0df84801b9fe614bd1b00d7ad8a99",
+  "profile": "standard",
+  "repo": "kejilion/KPanel",
+  "execution_policy": "sandboxed-source-and-local-only",
+  "sandbox_note": "Source-only; no target execution. OS network/resource/filesystem isolation not established.",
+  "budget": null,
+  "companion_files_selected": [
+    "AI-AND-LLM.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "WEB-PROTOCOL-AND-AUTH.md"
+  ],
+  "scope_paths": [
+    "diff 6340e078..23cbb997 security-related production paths",
+    "internal/hostbackup original finding revalidation"
+  ],
+  "source_tree": "dc4aaf80391407317119fa0a4ff01b05508cccd1",
+  "agents_planned": {
+    "recon": 4,
+    "hunters": 5,
+    "critics": 2,
+    "validation": "one fresh verifier per candidate plus final record reviewer if retained"
+  },
+  "prior_source_limit": "run-1 dirty patch unavailable; committed delta is the comparison basis, not a reconstructed historical snapshot",
+  "scope_mode": "scoped",
+  "comparison_base": "6340e0783d3e57873fd2c93a964372aefb9e1a81",
+  "baseline_entry_commit": "fc1cd39f735d7348edb933f3939b0943139ac4c1",
+  "source_input_policy": "Git tracked source only; ignored/untracked files are not inputs",
+  "reviewed_path_count": 97,
+  "cost": {
+    "tokens": null,
+    "tokens_status": "unreported: execution API does not expose per-agent token totals",
+    "wall_seconds": 1861
+  },
+  "completed_at": "2026-09-19T09:25:23.694020+00:00",
+  "agents_spent": {
+    "recon": 4,
+    "hunters": 7,
+    "critics": 5,
+    "candidate_verifiers": 4,
+    "final_record_verifiers": 5,
+    "total": 25
+  },
+  "target_execution_performed": false,
+  "publication_status": "local-only; unresolved attack details not approved for public publication"
+}
