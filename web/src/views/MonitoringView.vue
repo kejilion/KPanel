@@ -1434,7 +1434,7 @@ onBeforeUnmount(() => {
 .service-status-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 12px; }
 .service-status-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .service-status-legend i { width: 8px; height: 8px; border-radius: calc(var(--radius-sm) - 5px); }
-.service-status-rows { display: grid; gap: 7px; }
+.service-status-rows { display: grid; gap: 9px; }
 .service-status-row { display: grid; grid-template-columns: minmax(140px, 190px) minmax(0, 1fr); align-items: center; gap: 10px; }
 .service-status-row__label { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 12px; }
 .service-status-row__label > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
