@@ -38,3 +38,10 @@ stable tag 祖先关系、公开 Release、镜像及适用的部署证据。
 `release/v1.20.0-candidate` 已在稳定版发布成功后归档到
 `archive/release/v1.20.0-candidate`（`c98727c898f8b446cceea5d7b10f3205340926a2`），活动候选分支已删除。
 处置统一引用 `docs/release-channels.md`；归档 ref 与稳定 tag 共同提供恢复入口。
+
+## MCP 本地候选（run-3）
+
+新增 MCP 范围的只读审计在独立验证阶段被平台中止；仅保存
+[`run-3/REPORT.md`](run-3/REPORT.md) 与运行身份，不宣称审计通过或完整覆盖。
+产品代码的普通开发验证与该中止审计分开记录，见 [`docs/mcp-access.md`](../../docs/mcp-access.md)。
+MCP 仍为未推送的本地候选，尚无 RC、稳定版或部署交付。

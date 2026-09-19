@@ -1,0 +1,36 @@
+{
+  "run_id": "run-3",
+  "repo": "kejilion/KPanel",
+  "project_mode": "scoped",
+  "run_status": "incomplete-platform-interruption",
+  "source_ref": "953c30fb3e7c19d57238fe5eeb488a703e15f925",
+  "source_tree": "a7e0a3f053516c947251793c2eaa71cdbd4af2ba",
+  "source_dirty": false,
+  "baseline_ref": "c98727c898f8b446cceea5d7b10f3205340926a2",
+  "started_at": "2026-09-19T10:38:01.1729769Z",
+  "interruption_recorded_at": "2026-09-19T11:24:07Z",
+  "skill_source": {
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "pinned_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+  },
+  "scope_paths": [
+    "internal/mcpaccess/**",
+    "internal/panel/mcp*",
+    "internal/panel/server.go:new MCP routes",
+    "internal/panel/backup_restore.go:MCP reset",
+    "web/src/components/settings/MCPAccess.vue",
+    "web/src/lib/mcp.ts"
+  ],
+  "execution_mode": "source-only; no target execution",
+  "os_execution_sandbox": false,
+  "blocker": "Audit agent terminated by platform: possible cybersecurity risk",
+  "final_record_validation": "not completed",
+  "final_structural_validation": "not completed",
+  "coverage_claim": "none; provisional ledger is not a finalized audit result",
+  "findings_verdict": "unavailable; no completed final findings report",
+  "artifacts_selected": ["run-metadata.json", "REPORT.md"],
+  "raw_artifacts": "retained outside repository; interrupted state preserved",
+  "tokens_used": null,
+  "later_product_source": "6446a9effe48244f6c01144b8a638df740ac70ce",
+  "later_product_checks": "ordinary development verification, not completion of this audit"
+}
