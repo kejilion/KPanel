@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 
 // This entry only retires one stable release candidate. Authorization and public
 // artifact verification belong to its caller; preview trains never enter here.
-export function archiveReleaseCandidate({ repo = '.', tag, releaseSha, apply = false }) {
+export function archiveReleaseCandidate({ repo = '.', tag, releaseSha, apply = false, onPlan = () => {} }) {
   if (!/^v(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/.test(tag ?? '')) {
     throw new Error('A canonical stable release tag is required');
   }
@@ -49,7 +49,10 @@ export function archiveReleaseCandidate({ repo = '.', tag, releaseSha, apply = f
   const candidateSha = refs.get(candidate);
   const archiveSha = refs.get(archive);
   if (!candidateSha && !archiveSha) throw new Error('Candidate absent without an archive; historical recovery evidence is required');
-  if (candidateSha && archiveSha && candidateSha !== archiveSha) throw new Error('Archive collision; preserve both branches');
+  // Git omits an up-to-date ref from push, even when a lease was supplied.
+  // Refuse a pre-existing archive (including the same SHA) while the candidate
+  // remains active, so BOTH mutations always participate in the transaction.
+  if (candidateSha && archiveSha) throw new Error('Archive collision; preserve both branches and reconcile explicitly');
   const savedSha = candidateSha || archiveSha;
   const shallow = git(['rev-parse', '--is-shallow-repository']).output === 'true';
   git(['fetch', '--no-tags', ...(shallow ? ['--unshallow'] : []), 'origin', tagRef]);
@@ -58,10 +61,18 @@ export function archiveReleaseCandidate({ repo = '.', tag, releaseSha, apply = f
   if (git(['merge-base', '--is-ancestor', savedSha, releaseSha], [0, 1]).status !== 0) {
     throw new Error('Candidate is not contained in the stable release tag');
   }
-  if (!candidateSha) return { status: 'already-archived', candidate, archive, sha: savedSha, tag, releaseSha };
+  if (!candidateSha) {
+    const after = remoteRefs();
+    checkTag(after);
+    if (after.has(candidate) || after.get(archive) !== savedSha) throw new Error('Remote archival verification failed');
+    return { status: 'already-archived', candidate, archive, sha: savedSha, tag, releaseSha };
+  }
   if (!apply) return { status: 'ready', candidate, archive, sha: savedSha, tag, releaseSha };
-  // One transaction, with expected old values on BOTH refs. A concurrent writer,
-  // archive collision, rejected deletion or unsupported atomic push preserves all.
+  onPlan({ status: 'planned', candidate, archive, sha: savedSha, tag, releaseSha });
+  // Atomic actual updates; the candidate deletion is pinned to its captured tip.
+  // Git can omit an archive created concurrently with the same value as a no-op.
+  // Verify afterwards and retain the plan + immutable tag as recovery evidence;
+  // a failed response after push does not prove that refs remained unchanged.
   git(['push', '--atomic',
     `--force-with-lease=${candidate}:${candidateSha}`,
     `--force-with-lease=${archive}:${archiveSha || ''}`,
@@ -80,7 +91,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       'release-sha': { type: 'string' },
       apply: { type: 'boolean', default: false },
     } });
-    console.log(JSON.stringify(archiveReleaseCandidate({ repo: values.repo, tag: values.tag, releaseSha: values['release-sha'], apply: values.apply })));
+    console.log(JSON.stringify(archiveReleaseCandidate({
+      repo: values.repo, tag: values.tag, releaseSha: values['release-sha'], apply: values.apply,
+      onPlan: plan => console.log(JSON.stringify(plan)),
+    })));
   } catch (error) {
     console.error(`candidate_archive=fail ${error.message}`);
     process.exitCode = 1;
