@@ -94,6 +94,41 @@
     .range-bar button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; cursor: pointer; }
     .range-bar button.active { color: var(--brand-strong); background: var(--brand-soft); font-weight: 650; }
     .range-bar__meta { margin-left: auto; padding: 0 9px; color: var(--muted); font-size: 13px; }
+    .protocol-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .protocol-tab { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 70px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-soft); background: var(--surface); cursor: pointer; text-align: left; }
+    .protocol-tab:hover { border-color: var(--border-strong); background: var(--surface-subtle); }
+    .protocol-tab.active { border-color: color-mix(in srgb, var(--protocol-color, var(--brand)) 55%, var(--border)); background: color-mix(in srgb, var(--protocol-color, var(--brand)) 8%, var(--surface)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--protocol-color, var(--brand)) 10%, transparent); }
+    .protocol-tab[data-protocol-view="ping"] { --protocol-color: var(--amber); }
+    .protocol-tab[data-protocol-view="tcp"] { --protocol-color: var(--violet); }
+    .protocol-tab[data-protocol-view="http"] { --protocol-color: var(--blue); }
+    .protocol-symbol { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 10px; color: var(--protocol-color); background: color-mix(in srgb, var(--protocol-color) 12%, transparent); font-size: 11px; font-weight: 800; letter-spacing: .02em; }
+    .protocol-copy { min-width: 0; }
+    .protocol-copy strong, .protocol-copy small { display: block; }
+    .protocol-copy strong { color: var(--text); font-size: 15px; }
+    .protocol-copy small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .protocol-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .curve-section { margin-bottom: 14px; padding: 17px 18px 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+    .curve-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .curve-kicker { display: block; margin-bottom: 4px; color: var(--brand-strong); font-size: 12px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+    .curve-head h2 { margin: 0; font-size: 17px; }
+    .curve-head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .curve-status { display: inline-flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 9px; border-radius: 999px; color: var(--brand-strong); background: var(--brand-soft); font-size: 12px; white-space: nowrap; }
+    .curve-status::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
+    .protocol-pane { display: none; margin-top: 14px; }
+    .protocol-pane.active { display: block; }
+    .curve-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+    .curve-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .curve-legend i { width: 15px; height: 3px; border-radius: 99px; background: var(--legend-color); }
+    .curve-legend b { color: var(--text-soft); font-variant-numeric: tabular-nums; }
+    .protocol-chart { width: 100%; height: 220px; overflow: visible; }
+    .protocol-chart .grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 5; }
+    .protocol-chart .axis { fill: var(--muted); font-size: 11px; }
+    .protocol-chart .area { opacity: .09; }
+    .protocol-chart .line { fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+    .protocol-chart .line.secondary { stroke-width: 1.8; opacity: .9; }
+    .protocol-chart .incident { fill: var(--danger-soft); }
+    .curve-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .curve-foot span:last-child { text-align: right; }
     .resource-placeholder { min-height: 520px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
     .resource-placeholder h2 { margin: 0 0 8px; font-size: 17px; }
     .resource-placeholder p { margin: 0; color: var(--muted); }
@@ -225,6 +260,9 @@
       .range-bar { flex-wrap: wrap; }
       .range-bar button { flex: 1 1 calc(25% - 5px); }
       .range-bar__meta { width: 100%; margin-left: 0; padding: 5px 7px; }
+      .protocol-tabs { grid-template-columns: 1fr; }
+      .protocol-tab { min-height: 62px; }
+      .protocol-chart { height: 190px; }
       .overview-grid { grid-template-columns: 1fr 1fr; }
       .overview-card.hero { grid-column: 1 / -1; }
       .toolbar { flex-wrap: wrap; }
@@ -247,6 +285,9 @@
       .health-counts { grid-column: 1 / -1; justify-content: space-between; }
       .select { flex: 1; min-width: 0; }
       .range-bar button { flex-basis: calc(33.333% - 5px); }
+      .curve-head, .curve-foot { display: grid; }
+      .curve-status { justify-self: start; }
+      .curve-foot span:last-child { text-align: left; }
       .toolbar .button.primary { flex: 1 1 100%; }
       .type-grid { grid-template-columns: 1fr; }
       .dialog-backdrop { padding: 0; align-items: end; }
@@ -294,6 +335,11 @@
             <button type="button">1 小时</button><button type="button">6 小时</button><button class="active" type="button">24 小时</button><button type="button">7 天</button><button type="button">30 天</button><button type="button">3 个月</button><button type="button">6 个月</button><button type="button">12 个月</button>
             <span class="range-bar__meta">统一时间轴 · 最近采样 18 秒前</span>
           </div>
+          <div class="protocol-tabs" role="tablist" aria-label="检测协议曲线视图">
+            <button class="protocol-tab active" type="button" role="tab" aria-selected="true" aria-controls="pingCurve" data-protocol-view="ping"><span class="protocol-symbol">PING</span><span class="protocol-copy"><strong>Ping</strong><small>延迟、丢包与线路波动</small></span><span class="protocol-count">9 项</span></button>
+            <button class="protocol-tab" type="button" role="tab" aria-selected="false" aria-controls="tcpCurve" data-protocol-view="tcp"><span class="protocol-symbol">TCP</span><span class="protocol-copy"><strong>TCP</strong><small>连接耗时与端口可用性</small></span><span class="protocol-count">1 项</span></button>
+            <button class="protocol-tab" type="button" role="tab" aria-selected="false" aria-controls="httpCurve" data-protocol-view="http"><span class="protocol-symbol">HTTP</span><span class="protocol-copy"><strong>HTTP</strong><small>响应耗时、状态码与可用率</small></span><span class="protocol-count">2 项 · 1 异常</span></button>
+          </div>
           <div class="overview-grid">
             <article class="overview-card hero"><span class="state-orb" aria-hidden="true">✓</span><div><strong>12 个监控项</strong><small>9 个默认项 · 3 个自定义项 · 全部使用同一检测模型</small></div><div class="health-counts"><span><b>10</b> 正常</span><span class="warn"><b>1</b> 波动</span><span class="down"><b>1</b> 故障</span></div></article>
             <article class="overview-card"><small>所选时间成功率</small><strong>99.94%</strong></article>
@@ -301,10 +347,56 @@
             <article class="overview-card"><small>今日异常事件</small><strong>2</strong></article>
           </div>
 
+          <section class="curve-section" aria-label="按协议划分的检测曲线">
+            <div class="curve-head"><div><span class="curve-kicker" id="curveKicker">Ping 曲线视图</span><h2 id="curveTitle">网络往返延迟</h2><p id="curveDescription">将默认九项与自定义 Ping 项放在同一时间轴比较，标签只负责分组，不改变通用检测模型。</p></div><span class="curve-status" id="curveStatus">8 正常 · 1 波动</span></div>
+
+            <div class="protocol-pane active" id="pingCurve" role="tabpanel" data-protocol-pane="ping">
+              <div class="curve-legend"><span><i style="--legend-color: var(--brand)"></i>电信 · 北京 <b>36 ms</b></span><span><i style="--legend-color: var(--blue)"></i>联通 · 上海 <b>118 ms</b></span><span><i style="--legend-color: var(--amber)"></i>移动 · 广州 <b>52 ms</b></span></div>
+              <svg class="protocol-chart" viewBox="0 0 1040 220" preserveAspectRatio="none" aria-label="Ping 检测项最近 24 小时延迟曲线">
+                <line class="grid" x1="48" y1="22" x2="1028" y2="22"/><line class="grid" x1="48" y1="72" x2="1028" y2="72"/><line class="grid" x1="48" y1="122" x2="1028" y2="122"/><line class="grid" x1="48" y1="172" x2="1028" y2="172"/>
+                <text class="axis" x="2" y="26">150 ms</text><text class="axis" x="8" y="76">100 ms</text><text class="axis" x="14" y="126">50 ms</text><text class="axis" x="26" y="176">0</text>
+                <path class="area" fill="var(--brand)" d="M48,145 C90,137 121,149 162,139 S232,126 278,137 S344,119 390,126 S461,142 510,128 S588,115 642,123 S720,101 770,111 S852,127 902,109 S975,118 1028,101 L1028,172 L48,172Z"/>
+                <path class="line" stroke="var(--brand)" d="M48,145 C90,137 121,149 162,139 S232,126 278,137 S344,119 390,126 S461,142 510,128 S588,115 642,123 S720,101 770,111 S852,127 902,109 S975,118 1028,101"/>
+                <path class="line secondary" stroke="var(--blue)" d="M48,114 C96,105 125,119 170,104 S236,86 282,97 S350,49 394,71 S462,93 510,80 S579,31 633,54 S706,78 758,66 S826,45 875,57 S957,41 1028,53"/>
+                <path class="line secondary" stroke="var(--amber)" d="M48,133 C93,126 124,136 168,128 S239,118 286,126 S353,108 401,116 S470,123 516,113 S590,102 642,111 S716,92 770,104 S842,96 894,101 S974,89 1028,95"/>
+                <text class="axis" x="48" y="207">00:00</text><text class="axis" x="282" y="207">06:00</text><text class="axis" x="523" y="207">12:00</text><text class="axis" x="766" y="207">18:00</text><text class="axis" x="990" y="207">现在</text>
+              </svg>
+              <div class="curve-foot"><span>平均 68 ms · P95 121 ms · 丢包率 0.12%</span><span>当前展示 3 / 9，可在图例中选择线路</span></div>
+            </div>
+
+            <div class="protocol-pane" id="tcpCurve" role="tabpanel" data-protocol-pane="tcp">
+              <div class="curve-legend"><span><i style="--legend-color: var(--violet)"></i>MySQL · 本机 <b>3 ms</b></span><span><i style="--legend-color: var(--brand)"></i>MySQL · 香港节点 <b>41 ms</b></span></div>
+              <svg class="protocol-chart" viewBox="0 0 1040 220" preserveAspectRatio="none" aria-label="TCP 检测项最近 24 小时连接耗时曲线">
+                <line class="grid" x1="48" y1="22" x2="1028" y2="22"/><line class="grid" x1="48" y1="72" x2="1028" y2="72"/><line class="grid" x1="48" y1="122" x2="1028" y2="122"/><line class="grid" x1="48" y1="172" x2="1028" y2="172"/>
+                <text class="axis" x="8" y="26">120 ms</text><text class="axis" x="14" y="76">80 ms</text><text class="axis" x="14" y="126">40 ms</text><text class="axis" x="26" y="176">0</text>
+                <rect class="incident" x="682" y="22" width="54" height="150" rx="5"/>
+                <path class="area" fill="var(--violet)" d="M48,158 C106,154 139,160 189,154 S281,150 334,155 S421,146 479,151 S565,157 624,150 S704,136 758,149 S852,154 916,148 S980,154 1028,146 L1028,172 L48,172Z"/>
+                <path class="line" stroke="var(--violet)" d="M48,158 C106,154 139,160 189,154 S281,150 334,155 S421,146 479,151 S565,157 624,150 S704,136 758,149 S852,154 916,148 S980,154 1028,146"/>
+                <path class="line secondary" stroke="var(--brand)" d="M48,125 C103,116 145,126 194,118 S282,108 338,117 S430,101 487,111 S575,116 630,106 S698,72 760,102 S850,111 908,104 S976,110 1028,99"/>
+                <text class="axis" x="48" y="207">00:00</text><text class="axis" x="282" y="207">06:00</text><text class="axis" x="523" y="207">12:00</text><text class="axis" x="766" y="207">18:00</text><text class="axis" x="990" y="207">现在</text>
+              </svg>
+              <div class="curve-foot"><span>平均建连 22 ms · P95 48 ms · 成功率 99.98%</span><span>红色区间表示某一路连接波动</span></div>
+            </div>
+
+            <div class="protocol-pane" id="httpCurve" role="tabpanel" data-protocol-pane="http">
+              <div class="curve-legend"><span><i style="--legend-color: var(--blue)"></i>KPanel 官网 <b>142 ms</b></span><span><i style="--legend-color: var(--danger)"></i>公共 API <b>超时</b></span></div>
+              <svg class="protocol-chart" viewBox="0 0 1040 220" preserveAspectRatio="none" aria-label="HTTP 检测项最近 24 小时响应耗时曲线">
+                <line class="grid" x1="48" y1="22" x2="1028" y2="22"/><line class="grid" x1="48" y1="72" x2="1028" y2="72"/><line class="grid" x1="48" y1="122" x2="1028" y2="122"/><line class="grid" x1="48" y1="172" x2="1028" y2="172"/>
+                <text class="axis" x="2" y="26">800 ms</text><text class="axis" x="2" y="76">500 ms</text><text class="axis" x="2" y="126">200 ms</text><text class="axis" x="26" y="176">0</text>
+                <rect class="incident" x="872" y="22" width="156" height="150" rx="5"/>
+                <path class="area" fill="var(--blue)" d="M48,140 C95,131 129,144 175,132 S250,120 298,129 S370,106 418,119 S493,136 542,122 S618,92 672,111 S742,127 798,105 S863,117 914,99 S984,111 1028,92 L1028,172 L48,172Z"/>
+                <path class="line" stroke="var(--blue)" d="M48,140 C95,131 129,144 175,132 S250,120 298,129 S370,106 418,119 S493,136 542,122 S618,92 672,111 S742,127 798,105 S863,117 914,99 S984,111 1028,92"/>
+                <path class="line secondary" stroke="var(--danger)" stroke-dasharray="7 6" d="M48,118 C105,105 139,124 194,103 S279,83 332,98 S420,70 474,86 S562,107 620,89 S701,55 754,79 S829,90 870,67"/>
+                <text class="axis" x="48" y="207">00:00</text><text class="axis" x="282" y="207">06:00</text><text class="axis" x="523" y="207">12:00</text><text class="axis" x="766" y="207">18:00</text><text class="axis" x="990" y="207">现在</text>
+              </svg>
+              <div class="curve-foot"><span>平均响应 284 ms · P95 612 ms · 可用率 98.96%</span><span>公共 API 在 21:10 后连续超时</span></div>
+            </div>
+          </section>
+
           <section class="section" aria-label="通用监控项列表">
             <div class="toolbar">
               <label class="search" aria-label="搜索监控项"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="搜索名称、地址或标签…"></label>
-              <select class="select" id="typeFilter" aria-label="筛选检测类型"><option value="all">全部类型</option><option value="latency">网络延迟</option><option value="http">HTTP(S)</option><option value="tcp">TCP</option></select>
+              <span class="source-badge" id="currentProtocol">当前：Ping</span>
               <select class="select" id="statusFilter" aria-label="筛选状态"><option value="all">全部状态</option><option value="up">正常</option><option value="warn">波动</option><option value="down">故障</option></select>
               <button class="button secondary" id="statePreview" type="button">状态预览</button>
               <span class="toolbar-spacer"></span>
@@ -312,8 +404,8 @@
             </div>
             <div class="table-head" aria-hidden="true"><span>监控项</span><span>共同时间轴 · 最近 24 小时</span><span>当前结果</span><span>成功率 / 频率</span><span></span></div>
             <div id="monitorList">
-              <div class="monitor-row" tabindex="0" data-type="latency" data-status="up" data-keywords="北京 电信 默认 网络延迟 219.141.136.10">
-                <div class="service-id"><span class="service-icon ping">延迟</span><span class="service-name"><strong><i class="status-dot up"></i>电信 · 北京 <em class="source-badge">默认</em></strong><small>219.141.136.10 · 电信 / 北京</small></span></div>
+              <div class="monitor-row" tabindex="0" data-type="ping" data-status="up" data-keywords="北京 电信 默认 Ping 网络延迟 219.141.136.10">
+                <div class="service-id"><span class="service-icon ping">PING</span><span class="service-name"><strong><i class="status-dot up"></i>电信 · 北京 <em class="source-badge">默认</em></strong><small>219.141.136.10 · 电信 / 北京</small></span></div>
                 <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>288 / 288</strong></div><div class="timeline" data-pattern="good"></div></div>
                 <div class="metric"><strong>36 ms</strong><small>丢包 0%</small></div>
                 <div class="metric"><strong>100%</strong><small>每 5 分钟</small></div>
@@ -324,8 +416,8 @@
                 <article class="panel"><div class="panel-head"><h3>最近事件</h3><span>2 条</span></div><div class="events"><div class="event"><i></i><div><strong>检测恢复</strong><small>连续 2 次探测成功</small></div><time>昨天 14:08</time></div><div class="event"><i class="down"></i><div><strong>节点超时</strong><small>连续 3 次未获得响应</small></div><time>昨天 13:58</time></div></div></article>
               </div>
 
-              <div class="monitor-row" tabindex="0" data-type="latency" data-status="warn" data-keywords="上海 联通 默认 网络延迟 210.22.84.3">
-                <div class="service-id"><span class="service-icon ping">延迟</span><span class="service-name"><strong><i class="status-dot warn"></i>联通 · 上海 <em class="source-badge">默认</em></strong><small>210.22.84.3 · 联通 / 上海</small></span></div>
+              <div class="monitor-row" tabindex="0" data-type="ping" data-status="warn" data-keywords="上海 联通 默认 Ping 网络延迟 210.22.84.3">
+                <div class="service-id"><span class="service-icon ping">PING</span><span class="service-name"><strong><i class="status-dot warn"></i>联通 · 上海 <em class="source-badge">默认</em></strong><small>210.22.84.3 · 联通 / 上海</small></span></div>
                 <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>285 / 288</strong></div><div class="timeline" data-pattern="warn"></div></div>
                 <div class="metric"><strong class="warn">118 ms</strong><small>较平时慢 42%</small></div>
                 <div class="metric"><strong>98.96%</strong><small>每 5 分钟</small></div>
@@ -370,7 +462,7 @@
       <form id="monitorForm">
         <div class="dialog-body">
           <div class="type-grid" role="radiogroup" aria-label="检测类型">
-            <button class="type-card active" type="button" role="radio" aria-checked="true" data-type="latency"><span class="service-icon ping">延迟</span><span><strong>网络延迟</strong><small>耗时、成功率、丢包</small></span></button>
+            <button class="type-card active" type="button" role="radio" aria-checked="true" data-type="ping"><span class="service-icon ping">PING</span><span><strong>Ping</strong><small>耗时、成功率、丢包</small></span></button>
             <button class="type-card" type="button" role="radio" aria-checked="false" data-type="http"><span class="service-icon">HTTP</span><span><strong>HTTP(S)</strong><small>状态码、关键词、证书</small></span></button>
             <button class="type-card" type="button" role="radio" aria-checked="false" data-type="tcp"><span class="service-icon tcp">TCP</span><span><strong>TCP 端口</strong><small>连接状态与耗时</small></span></button>
           </div>
@@ -433,21 +525,46 @@
     openRow(rows[0]);
 
     const searchInput = document.querySelector('#searchInput');
-    const typeFilter = document.querySelector('#typeFilter');
     const statusFilter = document.querySelector('#statusFilter');
+    const protocolButtons = [...document.querySelectorAll('[data-protocol-view]')];
+    const protocolPanes = [...document.querySelectorAll('[data-protocol-pane]')];
+    const currentProtocol = document.querySelector('#currentProtocol');
+    const curveKicker = document.querySelector('#curveKicker');
+    const curveTitle = document.querySelector('#curveTitle');
+    const curveDescription = document.querySelector('#curveDescription');
+    const curveStatus = document.querySelector('#curveStatus');
+    const protocolMeta = {
+      ping: { label: 'Ping', title: '网络往返延迟', description: '将默认九项与自定义 Ping 项放在同一时间轴比较，标签只负责分组，不改变通用检测模型。', status: '8 正常 · 1 波动' },
+      tcp: { label: 'TCP', title: 'TCP 建立连接耗时', description: '同一目标可以叠加本机或远端检测线路，曲线保持相同的采样时间与毫秒刻度。', status: '1 正常 · 2 条线路' },
+      http: { label: 'HTTP', title: 'HTTP 响应时间', description: '按检测项对比总响应耗时；状态码、关键词、TLS 与阶段耗时进入同一条历史记录。', status: '1 正常 · 1 故障' }
+    };
+    let activeProtocol = 'ping';
     function filterRows() {
       const query = searchInput.value.trim().toLowerCase();
-      const type = typeFilter.value;
       const status = statusFilter.value;
       rows.forEach((row) => {
-        const visible = (!query || row.dataset.keywords.toLowerCase().includes(query)) && (type === 'all' || row.dataset.type === type) && (status === 'all' || row.dataset.status === status);
+        const visible = (!query || row.dataset.keywords.toLowerCase().includes(query)) && row.dataset.type === activeProtocol && (status === 'all' || row.dataset.status === status);
         row.hidden = !visible;
         if (row.nextElementSibling?.classList.contains('detail') && !visible) row.nextElementSibling.classList.remove('open');
       });
     }
     searchInput.addEventListener('input', filterRows);
-    typeFilter.addEventListener('change', filterRows);
     statusFilter.addEventListener('change', filterRows);
+    protocolButtons.forEach((button) => button.addEventListener('click', () => {
+      activeProtocol = button.dataset.protocolView;
+      protocolButtons.forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-selected', String(item === button)); });
+      protocolPanes.forEach((pane) => pane.classList.toggle('active', pane.dataset.protocolPane === activeProtocol));
+      const meta = protocolMeta[activeProtocol];
+      curveKicker.textContent = `${meta.label} 曲线视图`;
+      curveTitle.textContent = meta.title;
+      curveDescription.textContent = meta.description;
+      curveStatus.textContent = meta.status;
+      currentProtocol.textContent = `当前：${meta.label}`;
+      filterRows();
+      const firstVisible = rows.find((row) => !row.hidden);
+      if (firstVisible) openRow(firstVisible);
+    }));
+    filterRows();
 
     const emptyState = document.querySelector('#emptyState');
     const loadingList = document.querySelector('#loadingList');
@@ -477,7 +594,7 @@
     document.querySelectorAll('.type-card').forEach((button) => button.addEventListener('click', () => {
       document.querySelectorAll('.type-card').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-checked', String(item === button)); });
       const help = document.querySelector('#targetHelp');
-      help.textContent = button.dataset.type === 'http' ? '输入 HTTP(S) URL；可配置成功状态码、响应关键词与 TLS 到期提醒。' : button.dataset.type === 'tcp' ? '输入 hostname:port；检测 TCP 连接状态与建立耗时。' : '输入规范公网 IPv4；系统使用有界网络往返探测，不要求 CAP_NET_RAW。';
+      help.textContent = button.dataset.type === 'http' ? '输入 HTTP(S) URL；可配置成功状态码、响应关键词与 TLS 到期提醒。' : button.dataset.type === 'tcp' ? '输入 hostname:port；检测 TCP 连接状态与建立耗时。' : '输入域名或 IP；记录 Ping 延迟、成功率与丢包，并可从多条检测线路发起。';
     }));
     document.querySelector('#monitorForm').addEventListener('submit', (event) => {
       event.preventDefault(); closeDialog();
