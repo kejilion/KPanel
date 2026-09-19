@@ -4,13 +4,13 @@ import { describe, expect, it } from 'vitest'
 const monitoringSource = readFileSync(new URL('./MonitoringView.vue', import.meta.url), 'utf8')
 
 describe('monitoring container comparison layout', () => {
-  it('places the unified service checks before host and container charts', () => {
+  it('places the unified service checks after host and container charts', () => {
     const checks = monitoringSource.indexOf('class="chart-card chart-card--wide operator-latency-card service-check-card"')
     const host = monitoringSource.indexOf('id="host-cpu-load-history"')
     const containers = monitoringSource.indexOf('class="container-section"')
     expect(checks).toBeGreaterThan(0)
-    expect(checks).toBeLessThan(host)
     expect(host).toBeLessThan(containers)
+    expect(containers).toBeLessThan(checks)
     expect(monitoringSource).toContain("(['ping', 'tcp', 'http'] as const)")
     expect(monitoringSource).toContain('@select-range="zoomToRange"')
   })
