@@ -456,7 +456,7 @@ func (s *Service) verifyCurrentPassword(userID, currentPassword string) (store.U
 	}
 	defer s.releaseAuthenticationAttempt(reauthKey)
 	record := func(success bool) error {
-		return s.store.RecordLoginAttempt(store.LoginAttempt{Key: reauthKey, OccurredAt: now, Success: success}, now.Add(-24*time.Hour))
+		return s.store.RecordLoginAttempt(store.LoginAttempt{Key: reauthKey, OccurredAt: now, Success: success}, now.Add(-s.config.LoginWindow))
 	}
 	if len(currentPassword) < 1 || len(currentPassword) > 256 {
 		if err := record(false); err != nil {
@@ -776,7 +776,7 @@ func (s *Service) createSession(user store.User) (Credentials, error) {
 }
 
 func (s *Service) recordLoginAttempt(ipKey, accountKey string, now time.Time, success bool) error {
-	retainSince := now.Add(-24 * time.Hour)
+	retainSince := now.Add(-s.config.LoginWindow)
 	return s.store.RecordLoginAttempts([]store.LoginAttempt{
 		{Key: ipKey, OccurredAt: now, Success: success},
 		{Key: accountKey, OccurredAt: now, Success: success},

@@ -155,3 +155,34 @@ func TestOpenManagerAcceptsRecordsBeyondTheLegacy32KiBCap(t *testing.T) {
 		t.Fatalf("root inventory lost after reopen: got %d want %d", len(got.Roots), len(roots))
 	}
 }
+
+func TestManagerRejectsRecordBeyondItsReopenBudget(t *testing.T) {
+	dir := t.TempDir()
+	manager, err := OpenManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := manager.Reserve("import", []string{"apps"})
+	if err != nil {
+		manager.Close()
+		t.Fatal(err)
+	}
+	err = manager.Update(record.ID, func(current *Record) {
+		current.Roots = []RootRef{{Path: "/home/" + strings.Repeat("a", maxRecordBytes), Module: "apps"}}
+	})
+	if !errors.Is(err, ErrInvalid) {
+		manager.Close()
+		t.Fatalf("oversized record error = %v, want ErrInvalid", err)
+	}
+	got, err := manager.Get(record.ID)
+	if err != nil || len(got.Roots) != 0 {
+		manager.Close()
+		t.Fatalf("oversized update changed in-memory record: roots=%d err=%v", len(got.Roots), err)
+	}
+	manager.Close()
+	reopened, err := OpenManager(dir)
+	if err != nil {
+		t.Fatalf("reopen after rejected update: %v", err)
+	}
+	reopened.Close()
+}

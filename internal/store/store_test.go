@@ -1432,14 +1432,21 @@ func TestConcurrentReplaceUserPasswordUsesCompareAndSwap(t *testing.T) {
 	}
 }
 
-func TestLoginAttemptsKeepOnlyTheNewestEntries(t *testing.T) {
+func TestLoginAttemptsRefuseToEvictActiveHistory(t *testing.T) {
 	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = storage.Close() })
 	now := time.Now().UTC()
-	flood := make([]LoginAttempt, maxLoginAttempts+10)
+	protected := make([]LoginAttempt, 50)
+	for index := range protected {
+		protected[index] = LoginAttempt{Key: "account:admin", OccurredAt: now.Add(time.Duration(index) * time.Millisecond)}
+	}
+	if err := storage.RecordLoginAttempts(protected, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	flood := make([]LoginAttempt, maxLoginAttempts-len(protected))
 	for index := range flood {
 		flood[index] = LoginAttempt{Key: fmt.Sprintf("ip:flood-%d", index), OccurredAt: now}
 	}
@@ -1449,9 +1456,14 @@ func TestLoginAttemptsKeepOnlyTheNewestEntries(t *testing.T) {
 	if got := len(storage.data.LoginAttempts); got != maxLoginAttempts {
 		t.Fatalf("retained %d login attempts, want %d", got, maxLoginAttempts)
 	}
-	if storage.FailedLoginCount("ip:flood-0", now.Add(-time.Hour)) != 0 ||
-		storage.FailedLoginCount(fmt.Sprintf("ip:flood-%d", maxLoginAttempts+9), now.Add(-time.Hour)) != 1 {
-		t.Fatal("login attempt cap did not keep the newest entries")
+	if err := storage.RecordLoginAttempt(LoginAttempt{Key: "ip:overflow", OccurredAt: now}, now.Add(-time.Hour)); !errors.Is(err, ErrLimitReached) {
+		t.Fatalf("overflow error = %v, want ErrLimitReached", err)
+	}
+	if got := storage.FailedLoginCount("account:admin", now.Add(-time.Hour)); got != len(protected) {
+		t.Fatalf("active account history was evicted: got %d want %d", got, len(protected))
+	}
+	if got := len(storage.data.LoginAttempts); got != maxLoginAttempts {
+		t.Fatalf("overflow changed retained attempts: got %d want %d", got, maxLoginAttempts)
 	}
 }
 

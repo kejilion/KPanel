@@ -47,19 +47,6 @@ type RootRef struct {
 	Module string `json:"module"`
 }
 
-// RecordRootsExceedReadBudget reports whether a root inventory would push the
-// record past the manager's read budget. Import inspection calls this before
-// committing Roots so a legal-but-huge archive is refused at inspect time
-// rather than poisoning the next agent start.
-func RecordRootsExceedReadBudget(roots []RootRef) bool {
-	if len(roots) == 0 {
-		return false
-	}
-	const estimatedBytesPerRoot = 96
-	estimated := 512 + len(roots)*estimatedBytesPerRoot
-	return estimated > maxRecordBytes
-}
-
 // Manager persists intent before executing. Recovery never replays host writes.
 // A failed terminal write keeps the manager closed to subsequent mutations.
 type Manager struct {
@@ -164,7 +151,11 @@ func (m *Manager) Get(id string) (Record, error) {
 
 func (m *Manager) saveLocked(record Record) error {
 	record.UpdatedAt = time.Now().UTC()
-	if err := WriteJSON(filepath.Join(m.Root, record.ID, "record.json"), record); err != nil {
+	data, err := json.Marshal(record)
+	if err != nil || len(data) > maxRecordBytes {
+		return ErrInvalid
+	}
+	if err := AtomicFile(filepath.Join(m.Root, record.ID, "record.json"), data); err != nil {
 		m.storageFailed = true
 		return err
 	}

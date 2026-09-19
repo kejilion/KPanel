@@ -185,7 +185,9 @@ func (l *auditLog) append(events []AuditEvent, maxEntries int, skipKnownIDs bool
 		}
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM audit_events WHERE seq <= (SELECT max(seq) FROM audit_events) - ?`, maxEntries,
+		`DELETE FROM audit_events WHERE seq IN (
+			SELECT seq FROM audit_events ORDER BY seq DESC LIMIT -1 OFFSET ?
+		)`, maxEntries,
 	); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuditUnavailable, err)
 	}

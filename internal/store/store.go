@@ -682,19 +682,19 @@ func (s *Store) RecordLoginAttempts(attempts []LoginAttempt, retainSince time.Ti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	previous := cloneDiskState(s.data)
-	filtered := s.data.LoginAttempts[:0]
+	filtered := make([]LoginAttempt, 0, len(s.data.LoginAttempts)+len(attempts))
 	for _, item := range s.data.LoginAttempts {
 		if item.OccurredAt.After(retainSince) {
 			filtered = append(filtered, item)
 		}
 	}
-	filtered = append(filtered, attempts...)
-	// The time window alone does not bound the list: many distinct sources
-	// inside one window could grow the shared state file toward its capacity
-	// limit. Keep the newest entries; per-key limits still hold for them.
-	if len(filtered) > maxLoginAttempts {
-		filtered = append([]LoginAttempt(nil), filtered[len(filtered)-maxLoginAttempts:]...)
+	// Never evict an active key's history to admit unrelated failures. Once
+	// the bounded window is full, fail closed until entries expire instead of
+	// silently weakening an existing IP or account lockout.
+	if len(filtered)+len(attempts) > maxLoginAttempts {
+		return ErrLimitReached
 	}
+	filtered = append(filtered, attempts...)
 	s.data.LoginAttempts = filtered
 	if err := s.persistLocked(); err != nil {
 		s.data = previous

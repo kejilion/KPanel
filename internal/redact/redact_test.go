@@ -15,6 +15,8 @@ func TestTextRedactsCredentialFamiliesAndKeepsSafeURLFields(t *testing.T) {
 		`Authorization: Basic YmFzaWMtc2VjcmV0`,
 		`Authorization: ApiKey arbitrary-auth-secret`,
 		`Proxy-Authorization=Custom another-auth-secret`,
+		`sk-example-dummy-secret`,
+		`Basic ZHVtbXk6ZHVtbXk=`,
 		`Cookie: session=cookie-secret; csrf=csrf-secret`,
 		`https://url-user:url-pass@example.test/path?access_token=query-secret&safe=visible`,
 		`https://token-only@example.test/path`,
@@ -24,6 +26,7 @@ func TestTextRedactsCredentialFamiliesAndKeepsSafeURLFields(t *testing.T) {
 	for _, secret := range []string{
 		"refresh-secret", "aws-secret", "pwd-secret", "p@ss#2026", "abc&def",
 		"YmFzaWMtc2VjcmV0", "ApiKey", "arbitrary-auth-secret", "Custom", "another-auth-secret",
+		"sk-example-dummy-secret", "ZHVtbXk6ZHVtbXk=",
 		"cookie-secret", "csrf-secret", "url-user", "url-pass", "query-secret", "token-only",
 	} {
 		if strings.Contains(output, secret) {

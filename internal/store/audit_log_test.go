@@ -104,6 +104,33 @@ func TestInterruptedMigrationRepeatsWithoutDuplicates(t *testing.T) {
 	}
 }
 
+func TestAuditRetentionCountsRowsAfterIgnoredMigrationReplay(t *testing.T) {
+	log, err := openAuditLog(filepath.Join(t.TempDir(), "audit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.close() })
+	now := time.Now().UTC()
+	legacy := []AuditEvent{
+		auditTestEvent("a", now.Add(-3*time.Minute)),
+		auditTestEvent("b", now.Add(-2*time.Minute)),
+		auditTestEvent("c", now.Add(-time.Minute)),
+	}
+	if err := log.append(legacy, 3, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.append(legacy, 3, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.append([]AuditEvent{auditTestEvent("d", now)}, 3, false); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := log.list(10, "")
+	if err != nil || strings.Join(auditIDs(events), ",") != "d,c,b" {
+		t.Fatalf("retention after replay = %v err=%v", auditIDs(events), err)
+	}
+}
+
 func TestAuditRetentionAndCursorPaging(t *testing.T) {
 	storage, err := Open(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {

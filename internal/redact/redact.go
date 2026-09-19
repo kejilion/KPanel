@@ -17,6 +17,8 @@ var (
 	authorizationFlag    = regexp.MustCompile(`(?i)(--?(?:proxy-)?authorization\s+)("(?:\\.|[^"\\])*"|'[^']*'|[^\r\n]+)`)
 	cookieHeader         = regexp.MustCompile(`(?i)\b(cookie|set-cookie)(\s*:\s*)[^\r\n]+`)
 	bearerSecret         = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
+	basicSecret          = regexp.MustCompile(`(?i)\bBasic\s+[A-Za-z0-9_+/=-]{8,}`)
+	openAISecret         = regexp.MustCompile(`(?i)\bsk-[A-Za-z0-9._~+/=-]{4,}`)
 	urlCredentials       = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/\s@]+@`)
 	urlSensitiveQuery    = regexp.MustCompile(`(?i)([?&](?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|key|secret|signature|sig|password|passwd|pwd|credential|x-amz-(?:signature|credential|security-token))=)[^&#\s]*`)
 	privateKeyBegin      = regexp.MustCompile(`(?i)-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----`)
@@ -161,6 +163,8 @@ func redactLine(value string) string {
 	value = secretAssignment.ReplaceAllString(value, "${1}${2}${3}[REDACTED]")
 	value = secretFlag.ReplaceAllString(value, "${1}[REDACTED]")
 	value = bearerSecret.ReplaceAllString(value, "Bearer [REDACTED]")
+	value = basicSecret.ReplaceAllString(value, "Basic [REDACTED]")
+	value = openAISecret.ReplaceAllString(value, "[REDACTED]")
 	value = urlCredentials.ReplaceAllString(value, "${1}[REDACTED]@")
 	return strings.Map(func(character rune) rune {
 		if character == '\t' || !unicode.IsControl(character) {
