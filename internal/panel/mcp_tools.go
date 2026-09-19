@@ -117,6 +117,14 @@ func (s *Server) callMCPTool(ctx context.Context, name string, raw json.RawMessa
 	if !ok || !s.mcp.access.Active(call.principal) {
 		return mcpToolError("mcp_authentication_required")
 	}
+	// JSON-RPC dispatch may detach HTTP cancellation, especially for legacy
+	// protocol versions. Bind every read to the saved, bounded HTTP context;
+	// also honor SDK cancellation notifications when available.
+	toolCtx, cancel := context.WithTimeout(call.request.Context(), 10*time.Second)
+	stopCancellation := context.AfterFunc(ctx, cancel)
+	defer stopCancellation()
+	defer cancel()
+	ctx = toolCtx
 	input, ok := mcpDecodeInput(name, raw)
 	if !ok {
 		return mcpToolError("invalid_arguments")
