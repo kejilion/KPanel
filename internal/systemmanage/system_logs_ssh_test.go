@@ -1,6 +1,11 @@
 package systemmanage
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +33,67 @@ func TestParseSSHLoginEntryKeepsOnlyAcceptedSSHFields(t *testing.T) {
 	} {
 		if _, ok := parseSSHLoginEntry(contract.SystemLogEntry{Identifier: "sshd", Message: message}, occurredAt); ok {
 			t.Fatalf("parseSSHLoginEntry() accepted unsafe or non-login message: %q", message)
+		}
+	}
+}
+
+func TestLatestSSHLoginFallsBackWhenJournalHasNoAcceptedEvent(t *testing.T) {
+	runner := &fakeRunner{run: func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "journalctl" {
+			return []byte(`{"SYSLOG_IDENTIFIER":"sshd","MESSAGE":"sshd: Failed password for admin from 203.0.113.9"}` + "\n"), nil
+		}
+		return nil, nil
+	}}
+	manager, _, _, _ := testManager(t, runner)
+	manager.logRoot = t.TempDir()
+	mustWrite(t, filepath.Join(manager.logRoot, "auth.log"),
+		"sshd[42]: Accepted publickey for admin from 203.0.113.9 port 22 ssh2\n")
+	event, err := manager.latestSSHLoginFromLogs(context.Background(), time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC))
+	if err != nil || event == nil {
+		t.Fatalf("latestSSHLoginFromLogs() = %#v, %v", event, err)
+	}
+	if event.Username != "admin" || event.RemoteAddress != "203.0.113.9" || event.Method != "publickey" {
+		t.Fatalf("unexpected fallback SSH event: %#v", event)
+	}
+}
+
+func TestSSHLoginEventFileIsStrictAndCredentialFree(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "ssh-login.json")
+	event := contract.SSHLoginEvent{
+		ID: "cursor-1", OccurredAt: time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC),
+		Username: "admin", RemoteAddress: "203.0.113.9", Method: "publickey",
+	}
+	if err := WriteSSHLoginEvent(path, event); err != nil {
+		t.Fatalf("WriteSSHLoginEvent() error = %v", err)
+	}
+	got, err := readSSHLoginEventFile(path)
+	if err != nil || got == nil || *got != event {
+		t.Fatalf("readSSHLoginEventFile() = %#v, %v", got, err)
+	}
+	if missing, err := readSSHLoginEventFile(filepath.Join(directory, "missing.json")); err != nil || missing != nil {
+		t.Fatalf("missing event file = %#v, %v", missing, err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := strings.TrimSpace(string(content))
+	invalid = strings.TrimSuffix(invalid, "}") + `,"unexpected":true}`
+	if err := os.WriteFile(path, []byte(invalid), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSSHLoginEventFile(path); err == nil {
+		t.Fatal("readSSHLoginEventFile() accepted an unknown field")
+	}
+
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(path, 0o660); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readSSHLoginEventFile(path); err == nil {
+			t.Fatal("readSSHLoginEventFile() accepted a group-writable event file")
 		}
 	}
 }

@@ -657,6 +657,10 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
+		// New nodes use this response hint to upgrade existing installations
+		// without consuming a one-time enrollment token again. Older nodes ignore
+		// the optional capability and continue receiving the legacy report shape.
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
 		s.writeJSON(w, http.StatusOK, response)
 	default:
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")

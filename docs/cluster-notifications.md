@@ -67,12 +67,18 @@ PUT、重新发现和测试均经过现有 Session、Origin/CSRF、审计和 `Ex
 ## 5. 兼容与协议边界
 
 新的 `SSHLogin` 是可选字段，并通过能力头协商：新 v1/v2 控制端声明 `ssh-login-v1` 后，被控端才返回；
-旧控制端仍收到旧形状摘要。轻量节点在重新 enrollment 时读取中心返回的
-`X-KPanel-Light-Response-Capabilities: ssh-login-v1`，只有新中心和新节点都支持时才主动上报该字段。
-本机 Panel 到 Agent 也只在带有 `capabilities=ssh-login-v1` 的遥测请求时读取该可选字段，避免旧 Agent/新 Panel
-升级窗口产生严格 JSON 解码冲突。
-旧轻节点、旧中心和已有未重新 enrollment 的轻节点仍保持资源/掉线通知能力，SSH 登录通知需要重新 enrollment；
-第一次看到已有登录记录时只建立基线，不会把历史记录当作新告警。
+旧控制端仍收到旧形状摘要。普通 KPanel Agent 会先读取 journal；journal 可读但没有 sshd 记录时，
+再回退 `/var/log/secure` 或 `/var/log/auth.log`，覆盖不同发行版的认证日志布局。本机 Panel 到 Agent
+也只在带有 `capabilities=ssh-login-v1` 的遥测请求时读取该可选字段，避免旧 Agent/新 Panel 升级窗口产生
+严格 JSON 解码冲突。
+
+轻量节点由 root `kejilion-node-ssh-login.service` 读取相同的 SSH 认证来源，只写入受保护的单条事件文件；
+非 root 遥测服务读取该文件并继续通过原有 `light-v1` HMAC 上报，Telegram 发送仍只发生在中心端。
+新中心在 enrollment 和 report 响应中返回 `X-KPanel-Light-Response-Capabilities: ssh-login-v1`。
+新接入节点立即启用；已有轻量节点由现有 root 自动更新任务在下载并校验新版 Agent 时自动安装采集服务，
+不需要逐台执行 `k kpanel node update`，也不需要再次配对或消耗一次性授权码。节点配置仍保持 `root` 可写、低权限进程只读；
+重启后最多多发送一次旧格式 report，再根据响应头重新启用。旧中心不返回该响应头时，节点继续发送旧格式，
+不会破坏兼容性。第一次看到已有登录记录时只建立基线，不会把历史记录当作新告警。
 
 本阶段只实现 Telegram。交互层保留 Telegram、飞书、钉钉、企微四个渠道选项，但后三者明确标记为“暂未开放”，
 不产生虚假的连接状态或配置契约；后续按同一通知通道边界逐个增加，避免每种通道引入独立后台系统。

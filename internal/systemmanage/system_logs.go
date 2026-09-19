@@ -1,6 +1,7 @@
 package systemmanage
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,9 +24,11 @@ import (
 )
 
 const (
-	systemLogFileTailBytes int64 = 1 << 20
-	systemLogUsageTimeout        = 2 * time.Second
-	sshLoginCacheTTL             = 15 * time.Second
+	systemLogFileTailBytes    int64 = 1 << 20
+	systemLogUsageTimeout           = 2 * time.Second
+	sshLoginCacheTTL                = 15 * time.Second
+	sshLoginEventFileMaxBytes       = int64(4 << 10)
+	SSHLoginEventPath               = "/run/kejilion-node-ssh/ssh-login.json"
 )
 
 var (
@@ -248,8 +251,11 @@ func (m *Manager) SystemLogs(ctx context.Context, query contract.SystemLogQuery)
 // telemetry carries this bounded event so the cluster controller can detect a
 // new login without receiving host configuration or arbitrary log text.
 func (m *Manager) LatestSSHLogin(ctx context.Context) (*contract.SSHLoginEvent, error) {
-	if runtime.GOOS != "linux" || m.effectiveUID() != 0 {
+	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("%w: SSH login events are unavailable on this host", ErrUnsupported)
+	}
+	if m.effectiveUID() != 0 && m.sshLoginEventPath == "" {
+		return nil, fmt.Errorf("%w: SSH login event relay is unavailable on this host", ErrUnsupported)
 	}
 	m.sshLoginMu.Lock()
 	defer m.sshLoginMu.Unlock()
@@ -258,21 +264,112 @@ func (m *Manager) LatestSSHLogin(ctx context.Context) (*contract.SSHLoginEvent, 
 		now.Sub(m.sshLoginCheckedAt) < sshLoginCacheTTL {
 		return cloneSSHLoginEvent(m.sshLoginCache), nil
 	}
-	entries, _, journalErr := m.readJournalLogs(ctx, contract.SystemLogQuery{
-		Source: "security", Limit: 50, Priority: "all",
-	}, true)
-	if journalErr == nil {
-		m.sshLoginCache = latestSSHLogin(entries, now)
+	if m.sshLoginEventPath != "" {
+		event, err := readSSHLoginEventFile(m.sshLoginEventPath)
+		if err != nil {
+			return nil, err
+		}
+		m.sshLoginCache = event
 		m.sshLoginCheckedAt = now
 		return cloneSSHLoginEvent(m.sshLoginCache), nil
 	}
-	_, entries, _, fileErr := m.readFixedAuthLog(50)
-	if fileErr != nil {
-		return nil, errors.Join(journalErr, fileErr)
+	event, err := m.latestSSHLoginFromLogs(ctx, now)
+	if err != nil {
+		return nil, err
 	}
-	m.sshLoginCache = latestSSHLogin(entries, now)
+	m.sshLoginCache = event
 	m.sshLoginCheckedAt = now
 	return cloneSSHLoginEvent(m.sshLoginCache), nil
+}
+
+func (m *Manager) latestSSHLoginFromLogs(ctx context.Context, observedAt time.Time) (*contract.SSHLoginEvent, error) {
+	entries, _, journalErr := m.readJournalLogs(ctx, contract.SystemLogQuery{
+		Source: "security", Limit: 50, Priority: "all",
+	}, true)
+	// A readable journal may contain no sshd records when the host writes
+	// authentication events only to /var/log/secure or /var/log/auth.log.
+	if journalErr == nil {
+		if event := latestSSHLogin(entries, observedAt); event != nil {
+			return event, nil
+		}
+	} else if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	_, entries, _, fileErr := m.readFixedAuthLog(50)
+	if fileErr == nil {
+		return latestSSHLogin(entries, observedAt), nil
+	}
+	if journalErr == nil {
+		return nil, nil
+	}
+	return nil, errors.Join(journalErr, fileErr)
+}
+
+func readSSHLoginEventFile(path string) (*contract.SSHLoginEvent, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) == string(filepath.Separator) {
+		return nil, fmt.Errorf("%w: SSH login event path is invalid", ErrConflict)
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() < 0 || info.Size() > sshLoginEventFileMaxBytes ||
+		!trustedSSHLoginEventMode(info.Mode()) {
+		return nil, fmt.Errorf("%w: SSH login event file is not trusted", ErrConflict)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() || opened.Mode()&os.ModeSymlink != 0 ||
+		!trustedSSHLoginEventMode(opened.Mode()) || opened.Size() > sshLoginEventFileMaxBytes {
+		return nil, fmt.Errorf("%w: SSH login event file changed while reading", ErrConflict)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, sshLoginEventFileMaxBytes+1))
+	if err != nil || int64(len(content)) > sshLoginEventFileMaxBytes {
+		return nil, fmt.Errorf("%w: SSH login event file is invalid", ErrConflict)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	var event contract.SSHLoginEvent
+	if err := decoder.Decode(&event); err != nil || !contract.ValidSSHLoginEvent(event) {
+		return nil, fmt.Errorf("%w: SSH login event file is invalid", ErrConflict)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: SSH login event file has trailing data", ErrConflict)
+	}
+	return &event, nil
+}
+
+func trustedSSHLoginEventMode(mode os.FileMode) bool {
+	return runtime.GOOS == "windows" || mode.Perm()&0o022 == 0
+}
+
+// WriteSSHLoginEvent publishes one validated, credential-free event for the
+// low-privilege lightweight telemetry process. The caller must be a root-owned
+// service; the file itself is intentionally only group-readable.
+func WriteSSHLoginEvent(path string, event contract.SSHLoginEvent) error {
+	if !contract.ValidSSHLoginEvent(event) {
+		return fmt.Errorf("%w: SSH login event is invalid", ErrInvalidInput)
+	}
+	if !filepath.IsAbs(path) || filepath.Clean(path) == string(filepath.Separator) {
+		return fmt.Errorf("%w: SSH login event path is invalid", ErrInvalidInput)
+	}
+	content, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	content = append(content, '\n')
+	if int64(len(content)) > sshLoginEventFileMaxBytes {
+		return fmt.Errorf("%w: SSH login event is too large", ErrInvalidInput)
+	}
+	return writeAtomic(path, content, 0o640)
 }
 
 func cloneSSHLoginEvent(event *contract.SSHLoginEvent) *contract.SSHLoginEvent {

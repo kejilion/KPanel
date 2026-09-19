@@ -93,11 +93,14 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 1 && arguments[0] == "version" {
+		if err := maybeMigrateLegacySSHLoginInstall(); err != nil {
+			slog.Warn("legacy lightweight node SSH login integration was not installed", "error", err)
+		}
 		fmt.Printf("%s %s\n", version.Version, lightProtocol)
 		return nil
 	}
 	if len(arguments) == 0 {
-		return errors.New("expected enroll, run, terminal-broker, or version")
+		return errors.New("expected enroll, run, terminal-broker, ssh-login-broker, or version")
 	}
 	switch arguments[0] {
 	case "enroll":
@@ -106,6 +109,8 @@ func run(arguments []string) error {
 		return runNode(arguments[1:])
 	case "terminal-broker":
 		return runTerminalBroker(arguments[1:])
+	case "ssh-login-broker":
+		return runSSHLoginBroker(arguments[1:])
 	default:
 		return errors.New("unsupported kejilion-node command")
 	}
@@ -219,8 +224,9 @@ func runNode(arguments []string) error {
 	interval := time.Duration(config.ReportInterval) * time.Second
 	backoff := time.Second
 	for {
-		err := collectAndReport(ctx, collector, config, secret)
+		updatedConfig, err := collectAndReport(ctx, collector, config, secret)
 		if err == nil {
+			config = updatedConfig
 			backoff = time.Second
 			if !waitContext(ctx, interval) {
 				return nil
@@ -240,12 +246,17 @@ func runNode(arguments []string) error {
 	}
 }
 
-func collectAndReport(parent context.Context, collector *systeminfo.Collector, config nodeConfig, secret []byte) error {
+func collectAndReport(
+	parent context.Context,
+	collector *systeminfo.Collector,
+	config nodeConfig,
+	secret []byte,
+) (nodeConfig, error) {
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	summary, collectErr := collector.Collect(ctx)
 	if collectErr != nil && summary.Hostname == "" {
-		return fmt.Errorf("collect host telemetry: %w", collectErr)
+		return config, fmt.Errorf("collect host telemetry: %w", collectErr)
 	}
 	disk := contract.DiskCapacitySummary{}
 	if len(summary.Disks) > 0 {
@@ -259,8 +270,14 @@ func collectAndReport(parent context.Context, collector *systeminfo.Collector, c
 	}
 	var sshLogin *contract.SSHLoginEvent
 	if config.SSHLogin {
-		sshManager := systemmanage.NewManager(systemmanage.Config{Enabled: false})
-		sshLogin, _ = sshManager.LatestSSHLogin(ctx)
+		sshManager := systemmanage.NewManager(systemmanage.Config{
+			Enabled: false, SSHLoginEventPath: systemmanage.SSHLoginEventPath,
+		})
+		var sshErr error
+		sshLogin, sshErr = sshManager.LatestSSHLogin(ctx)
+		if sshErr != nil {
+			slog.Warn("lightweight SSH login event unavailable", "error", sshErr)
+		}
 	}
 	payload := reportRequest{Telemetry: contract.HostTelemetry{
 		AgentVersion: version.Version, AgentProtocolVersion: lightProtocol,
@@ -271,14 +288,26 @@ func collectAndReport(parent context.Context, collector *systeminfo.Collector, c
 	}}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return config, err
 	}
 	headers, err := signedLightNodeHeaders(config, lightReportPath, body, secret)
 	if err != nil {
-		return err
+		return config, err
 	}
 	var response reportResponse
-	return postRawJSON(ctx, config.Origin+lightReportPath, body, headers, &response)
+	_, responseHeaders, err := postRawJSONWithStatusAndHeaders(ctx, config.Origin+lightReportPath, body, headers, &response)
+	if err != nil {
+		return config, err
+	}
+	return enableSSHLoginCapability(config, responseHeaders), nil
+}
+
+func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig {
+	if config.SSHLogin || !hasResponseCapability(headers, cluster.SSHLoginCapability) {
+		return config
+	}
+	config.SSHLogin = true
+	return config
 }
 
 func signedLightNodeHeaders(config nodeConfig, path string, body, secret []byte) (map[string]string, error) {

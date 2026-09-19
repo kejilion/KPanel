@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/cluster"
 )
 
 func lightTokenForTest(t *testing.T, origin string, expiresAt time.Time) string {
@@ -84,6 +86,23 @@ func TestNodeConfigRoundTripIsStrictAndRejectsNonRegularTargets(t *testing.T) {
 	}
 	if err := writeConfigAtomic(directoryTarget, config); err == nil {
 		t.Fatal("writeConfigAtomic() accepted a directory target")
+	}
+}
+
+func TestLightNodeLearnsSSHCapabilityFromReportResponse(t *testing.T) {
+	config := nodeConfig{
+		SchemaVersion: 1, Origin: "https://panel.example", NodeID: strings.Repeat("b", 32),
+		ReportingKey: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), ReportInterval: 30,
+	}
+	headers := http.Header{}
+	headers.Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability)
+	updated := enableSSHLoginCapability(config, headers)
+	if !updated.SSHLogin {
+		t.Fatalf("enableSSHLoginCapability() = %#v", updated)
+	}
+	unchanged := enableSSHLoginCapability(updated, nil)
+	if !unchanged.SSHLogin {
+		t.Fatalf("existing SSH capability was lost: %#v", unchanged)
 	}
 }
 

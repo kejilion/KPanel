@@ -81,25 +81,26 @@ func (commandRunner) LookPath(name string) (string, error) {
 }
 
 type Config struct {
-	Enabled         bool
-	EtcRoot         string
-	ProcRoot        string
-	SysRoot         string
-	RunRoot         string
-	LogRoot         string
-	StateDir        string
-	SwapPath        string
-	Executable      string
-	Now             func() time.Time
-	Runner          Runner
-	Country         CountryResolver
-	EffectiveUID    func() int
-	DNSScript       KejilionScriptFinder
-	ResourceScript  KejilionScriptFinder
-	DiskScript      KejilionScriptFinder
-	F2BScript       KejilionScriptFinder
-	BBRv3Script     KejilionScriptFinder
-	ProcessSignaler ProcessSignaler
+	Enabled           bool
+	EtcRoot           string
+	ProcRoot          string
+	SysRoot           string
+	RunRoot           string
+	LogRoot           string
+	SSHLoginEventPath string
+	StateDir          string
+	SwapPath          string
+	Executable        string
+	Now               func() time.Time
+	Runner            Runner
+	Country           CountryResolver
+	EffectiveUID      func() int
+	DNSScript         KejilionScriptFinder
+	ResourceScript    KejilionScriptFinder
+	DiskScript        KejilionScriptFinder
+	F2BScript         KejilionScriptFinder
+	BBRv3Script       KejilionScriptFinder
+	ProcessSignaler   ProcessSignaler
 }
 
 type Manager struct {
@@ -109,6 +110,7 @@ type Manager struct {
 	sysRoot                string
 	runRoot                string
 	logRoot                string
+	sshLoginEventPath      string
 	stateDir               string
 	swapPath               string
 	executable             string
@@ -145,6 +147,10 @@ func NewManager(config Config) *Manager {
 	}
 	if config.LogRoot == "" {
 		config.LogRoot = "/var/log"
+	}
+	sshLoginEventPath := strings.TrimSpace(config.SSHLoginEventPath)
+	if sshLoginEventPath != "" {
+		sshLoginEventPath = filepath.Clean(sshLoginEventPath)
 	}
 	if config.StateDir == "" {
 		config.StateDir = "/var/lib/kejilion-panel/system"
@@ -188,9 +194,10 @@ func NewManager(config Config) *Manager {
 	return &Manager{
 		enabled: config.Enabled, etcRoot: filepath.Clean(config.EtcRoot),
 		procRoot: filepath.Clean(config.ProcRoot), sysRoot: filepath.Clean(config.SysRoot),
-		runRoot:  filepath.Clean(config.RunRoot),
-		logRoot:  filepath.Clean(config.LogRoot),
-		stateDir: filepath.Clean(config.StateDir), swapPath: filepath.Clean(config.SwapPath),
+		runRoot:           filepath.Clean(config.RunRoot),
+		logRoot:           filepath.Clean(config.LogRoot),
+		sshLoginEventPath: sshLoginEventPath,
+		stateDir:          filepath.Clean(config.StateDir), swapPath: filepath.Clean(config.SwapPath),
 		executable: filepath.Clean(config.Executable),
 		now:        config.Now, runner: config.Runner, country: config.Country,
 		effectiveUID: config.EffectiveUID, dnsScript: config.DNSScript,
