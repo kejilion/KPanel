@@ -64,10 +64,13 @@ describe('monitoring container comparison layout', () => {
     )
   })
 
-  it('stacks status labels above neutral row cards when the matrix is narrow', () => {
+  it('uses neutral row cards and stacks their labels when the matrix is narrow', () => {
     expect(monitoringSource).toContain('container: service-status / inline-size;')
     expect(monitoringSource).toMatch(
-      /@container service-status \(max-width: 560px\)[\s\S]*?\.service-status-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*background:\s*var\(--surface\);/,
+      /\.service-status-row\s*\{[^}]*border:\s*1px solid var\(--border\);[^}]*background:\s*var\(--surface\);/,
+    )
+    expect(monitoringSource).toMatch(
+      /@container service-status \(max-width: 560px\)[\s\S]*?\.service-status-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/,
     )
   })
 })

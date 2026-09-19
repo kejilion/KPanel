@@ -1435,7 +1435,10 @@ onBeforeUnmount(() => {
 .service-status-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .service-status-legend i { width: 8px; height: 8px; border-radius: calc(var(--radius-sm) - 5px); }
 .service-status-rows { display: grid; gap: 9px; }
-.service-status-row { display: grid; grid-template-columns: minmax(140px, 190px) minmax(0, 1fr); align-items: center; gap: 10px; }
+.service-status-row {
+  display: grid; grid-template-columns: minmax(140px, 190px) minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+}
 .service-status-row__label { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 12px; }
 .service-status-row__label > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
 .service-status-row__label > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1453,10 +1456,7 @@ onBeforeUnmount(() => {
   .service-status-matrix > header { align-items: flex-start; flex-direction: column; }
   .service-status-legend { justify-content: flex-start; }
   .service-status-rows { gap: 9px; }
-  .service-status-row {
-    grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 9px;
-    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
-  }
+  .service-status-row { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 9px; }
 }
 .container-section { padding: 18px; }
 .section-heading h2, .container-compare h3 { margin: 0; font-size: 1rem; }
