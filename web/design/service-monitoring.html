@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KPanel 服务检测设计稿</title>
+  <title>KPanel 通用监控检测设计稿</title>
   <style>
     :root {
       color-scheme: light;
@@ -90,6 +90,10 @@
     .page-tabs button.active { color: var(--text); background: var(--surface); box-shadow: 0 1px 4px rgba(23, 33, 27, .08); font-weight: 650; }
     .view { display: none; margin-top: 16px; }
     .view.active { display: block; }
+    .range-bar { display: flex; align-items: center; gap: 5px; margin-bottom: 12px; padding: 5px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+    .range-bar button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; cursor: pointer; }
+    .range-bar button.active { color: var(--brand-strong); background: var(--brand-soft); font-weight: 650; }
+    .range-bar__meta { margin-left: auto; padding: 0 9px; color: var(--muted); font-size: 13px; }
     .resource-placeholder { min-height: 520px; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
     .resource-placeholder h2 { margin: 0 0 8px; font-size: 17px; }
     .resource-placeholder p { margin: 0; color: var(--muted); }
@@ -130,6 +134,7 @@
     .service-name { min-width: 0; }
     .service-name strong { display: flex; align-items: center; gap: 8px; font-size: 14px; }
     .service-name small { display: block; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .source-badge { display: inline-flex; min-height: 20px; align-items: center; padding: 0 6px; border-radius: 999px; color: var(--muted); background: var(--surface-subtle); font-size: 12px; font-style: normal; font-weight: 500; }
     .status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 10%, transparent); }
     .status-dot.up { background: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
     .status-dot.down { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-soft); }
@@ -217,6 +222,9 @@
       main { padding: 20px 14px 42px; }
       .page-head { display: block; }
       .page-tabs { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+      .range-bar { flex-wrap: wrap; }
+      .range-bar button { flex: 1 1 calc(25% - 5px); }
+      .range-bar__meta { width: 100%; margin-left: 0; padding: 5px 7px; }
       .overview-grid { grid-template-columns: 1fr 1fr; }
       .overview-card.hero { grid-column: 1 / -1; }
       .toolbar { flex-wrap: wrap; }
@@ -238,6 +246,7 @@
       .overview-card.hero { grid-column: auto; grid-template-columns: auto 1fr; }
       .health-counts { grid-column: 1 / -1; justify-content: space-between; }
       .select { flex: 1; min-width: 0; }
+      .range-bar button { flex-basis: calc(33.333% - 5px); }
       .toolbar .button.primary { flex: 1 1 100%; }
       .type-grid { grid-template-columns: 1fr; }
       .dialog-backdrop { padding: 0; align-items: end; }
@@ -269,81 +278,86 @@
           <strong>交互设计稿</strong><span>当前页面使用模拟数据，不执行网络请求，也不会保存检测配置。</span>
         </div>
         <div class="page-head">
-          <div><h1>历史监控</h1><p>从资源趋势到服务可用性，在同一主机视角下定位异常。</p></div>
+          <div><h1>历史监控</h1><p>在同一主机视角下查看资源趋势，并统一管理所有网络与服务检测项。</p></div>
         </div>
         <div class="page-tabs" role="tablist" aria-label="监控视图">
           <button type="button" role="tab" aria-selected="false" data-tab="resources">资源趋势</button>
-          <button class="active" type="button" role="tab" aria-selected="true" data-tab="services">服务检测 <span aria-label="1 个异常">· 1</span></button>
+          <button class="active" type="button" role="tab" aria-selected="true" data-tab="services">检测项 <span aria-label="1 个异常">· 1</span></button>
         </div>
 
         <section class="view" id="resources" role="tabpanel">
-          <div class="resource-placeholder"><h2>资源趋势</h2><p>这里保留现有 CPU、内存、磁盘、网络、容器和三网延迟视图。</p><div class="fake-charts"><div class="fake-chart"></div><div class="fake-chart"></div></div></div>
+          <div class="resource-placeholder"><h2>资源趋势</h2><p>这里保留现有 CPU、内存、磁盘、网络和容器视图；原“三网延迟”已经归入统一检测项。</p><div class="fake-charts"><div class="fake-chart"></div><div class="fake-chart"></div></div></div>
         </section>
 
         <section class="view active" id="services" role="tabpanel">
+          <div class="range-bar" aria-label="检测历史时间范围">
+            <button type="button">1 小时</button><button type="button">6 小时</button><button class="active" type="button">24 小时</button><button type="button">7 天</button><button type="button">30 天</button><button type="button">3 个月</button><button type="button">6 个月</button><button type="button">12 个月</button>
+            <span class="range-bar__meta">统一时间轴 · 最近采样 18 秒前</span>
+          </div>
           <div class="overview-grid">
-            <article class="overview-card hero"><span class="state-orb" aria-hidden="true">✓</span><div><strong>整体运行平稳</strong><small>最近一次检测于 18 秒前完成</small></div><div class="health-counts"><span><b>3</b> 正常</span><span class="warn"><b>1</b> 波动</span><span class="down"><b>1</b> 故障</span></div></article>
-            <article class="overview-card"><small>30 天可用率</small><strong>99.94%</strong></article>
-            <article class="overview-card"><small>平均响应时间</small><strong>186 ms</strong></article>
+            <article class="overview-card hero"><span class="state-orb" aria-hidden="true">✓</span><div><strong>12 个监控项</strong><small>9 个默认项 · 3 个自定义项 · 全部使用同一检测模型</small></div><div class="health-counts"><span><b>10</b> 正常</span><span class="warn"><b>1</b> 波动</span><span class="down"><b>1</b> 故障</span></div></article>
+            <article class="overview-card"><small>所选时间成功率</small><strong>99.94%</strong></article>
+            <article class="overview-card"><small>平均检测耗时</small><strong>86 ms</strong></article>
             <article class="overview-card"><small>今日异常事件</small><strong>2</strong></article>
           </div>
 
-          <section class="section" aria-label="服务检测列表">
+          <section class="section" aria-label="通用监控项列表">
             <div class="toolbar">
-              <label class="search" aria-label="搜索服务"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="搜索名称或地址…"></label>
+              <label class="search" aria-label="搜索监控项"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="搜索名称、地址或标签…"></label>
+              <select class="select" id="typeFilter" aria-label="筛选检测类型"><option value="all">全部类型</option><option value="latency">网络延迟</option><option value="http">HTTP(S)</option><option value="tcp">TCP</option></select>
               <select class="select" id="statusFilter" aria-label="筛选状态"><option value="all">全部状态</option><option value="up">正常</option><option value="warn">波动</option><option value="down">故障</option></select>
               <button class="button secondary" id="statePreview" type="button">状态预览</button>
               <span class="toolbar-spacer"></span>
-              <button class="button primary" id="openDialog" type="button"><span aria-hidden="true">＋</span> 新增检测</button>
+              <button class="button primary" id="openDialog" type="button"><span aria-hidden="true">＋</span> 新增监控项</button>
             </div>
-            <div class="table-head" aria-hidden="true"><span>服务</span><span>最近 30 天</span><span>响应时间</span><span>证书 / 检测</span><span></span></div>
+            <div class="table-head" aria-hidden="true"><span>监控项</span><span>共同时间轴 · 最近 24 小时</span><span>当前结果</span><span>成功率 / 频率</span><span></span></div>
             <div id="monitorList">
-              <div class="monitor-row" tabindex="0" data-status="up" data-keywords="官网 kejilion https">
-                <div class="service-id"><span class="service-icon">HTTPS</span><span class="service-name"><strong><i class="status-dot up"></i>官网</strong><small>https://kejilion.sh</small></span></div>
-                <div class="uptime-cell"><div class="uptime-meta"><span>30 天可用率</span><strong>99.99%</strong></div><div class="timeline" data-pattern="good"></div></div>
-                <div class="metric"><strong>142 ms</strong><small>5 分钟检测</small></div>
-                <div class="metric"><strong>83 天</strong><small>TLS 有效期</small></div>
+              <div class="monitor-row" tabindex="0" data-type="latency" data-status="up" data-keywords="北京 电信 默认 网络延迟 219.141.136.10">
+                <div class="service-id"><span class="service-icon ping">延迟</span><span class="service-name"><strong><i class="status-dot up"></i>电信 · 北京 <em class="source-badge">默认</em></strong><small>219.141.136.10 · 电信 / 北京</small></span></div>
+                <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>288 / 288</strong></div><div class="timeline" data-pattern="good"></div></div>
+                <div class="metric"><strong>36 ms</strong><small>丢包 0%</small></div>
+                <div class="metric"><strong>100%</strong><small>每 5 分钟</small></div>
                 <div class="chevron">›</div>
               </div>
               <div class="detail">
-                <article class="panel"><div class="panel-head"><h3>响应时间 · 最近 24 小时</h3><span>检测点：当前主机</span></div><svg class="latency-chart" viewBox="0 0 700 150" preserveAspectRatio="none" aria-label="官网最近 24 小时响应时间曲线"><line class="grid" x1="0" y1="30" x2="700" y2="30"/><line class="grid" x1="0" y1="75" x2="700" y2="75"/><line class="grid" x1="0" y1="120" x2="700" y2="120"/><path class="area" d="M0,112 C45,102 68,96 100,101 S170,80 208,89 S270,62 304,72 S363,88 398,70 S456,55 492,64 S548,41 584,59 S648,46 700,51 L700,145 L0,145Z"/><path class="line" d="M0,112 C45,102 68,96 100,101 S170,80 208,89 S270,62 304,72 S363,88 398,70 S456,55 492,64 S548,41 584,59 S648,46 700,51"/></svg><div class="chart-legend"><span>平均 <b>151 ms</b></span><span>P95 <b>238 ms</b></span><span>最慢 <b>412 ms</b></span></div></article>
-                <article class="panel"><div class="panel-head"><h3>最近事件</h3><span>3 条</span></div><div class="events"><div class="event"><i></i><div><strong>检测恢复</strong><small>连续 2 次请求成功</small></div><time>昨天 14:08</time></div><div class="event"><i class="down"></i><div><strong>响应超时</strong><small>超过 10 秒未响应</small></div><time>昨天 13:58</time></div><div class="event"><i></i><div><strong>配置已更新</strong><small>检测间隔调整为 5 分钟</small></div><time>09-17</time></div></div></article>
+                <article class="panel"><div class="panel-head"><h3>检测耗时 · 最近 24 小时</h3><span>统一时间轴 · 本机发起</span></div><svg class="latency-chart" viewBox="0 0 700 150" preserveAspectRatio="none" aria-label="电信北京节点最近 24 小时检测耗时曲线"><line class="grid" x1="0" y1="30" x2="700" y2="30"/><line class="grid" x1="0" y1="75" x2="700" y2="75"/><line class="grid" x1="0" y1="120" x2="700" y2="120"/><path class="area" d="M0,112 C45,102 68,96 100,101 S170,80 208,89 S270,62 304,72 S363,88 398,70 S456,55 492,64 S548,41 584,59 S648,46 700,51 L700,145 L0,145Z"/><path class="line" d="M0,112 C45,102 68,96 100,101 S170,80 208,89 S270,62 304,72 S363,88 398,70 S456,55 492,64 S548,41 584,59 S648,46 700,51"/></svg><div class="chart-legend"><span>平均 <b>35 ms</b></span><span>P95 <b>48 ms</b></span><span>最慢 <b>72 ms</b></span></div></article>
+                <article class="panel"><div class="panel-head"><h3>最近事件</h3><span>2 条</span></div><div class="events"><div class="event"><i></i><div><strong>检测恢复</strong><small>连续 2 次探测成功</small></div><time>昨天 14:08</time></div><div class="event"><i class="down"></i><div><strong>节点超时</strong><small>连续 3 次未获得响应</small></div><time>昨天 13:58</time></div></div></article>
               </div>
 
-              <div class="monitor-row" tabindex="0" data-status="warn" data-keywords="api 接口 api.kejilion https">
-                <div class="service-id"><span class="service-icon">HTTPS</span><span class="service-name"><strong><i class="status-dot warn"></i>公共 API</strong><small>https://api.kejilion.sh/health</small></span></div>
-                <div class="uptime-cell"><div class="uptime-meta"><span>30 天可用率</span><strong>99.72%</strong></div><div class="timeline" data-pattern="warn"></div></div>
-                <div class="metric"><strong class="warn">684 ms</strong><small>较平时慢 46%</small></div>
-                <div class="metric"><strong>41 天</strong><small>TLS 有效期</small></div>
+              <div class="monitor-row" tabindex="0" data-type="latency" data-status="warn" data-keywords="上海 联通 默认 网络延迟 210.22.84.3">
+                <div class="service-id"><span class="service-icon ping">延迟</span><span class="service-name"><strong><i class="status-dot warn"></i>联通 · 上海 <em class="source-badge">默认</em></strong><small>210.22.84.3 · 联通 / 上海</small></span></div>
+                <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>285 / 288</strong></div><div class="timeline" data-pattern="warn"></div></div>
+                <div class="metric"><strong class="warn">118 ms</strong><small>较平时慢 42%</small></div>
+                <div class="metric"><strong>98.96%</strong><small>每 5 分钟</small></div>
                 <div class="chevron">›</div>
               </div><div class="detail"></div>
 
-              <div class="monitor-row" tabindex="0" data-status="down" data-keywords="备份 s3 tcp 443">
-                <div class="service-id"><span class="service-icon tcp">TCP</span><span class="service-name"><strong><i class="status-dot down"></i>备份存储</strong><small>s3-backup.internal:443</small></span></div>
-                <div class="uptime-cell"><div class="uptime-meta"><span>30 天可用率</span><strong>98.63%</strong></div><div class="timeline" data-pattern="down"></div></div>
-                <div class="metric"><strong class="bad">超时</strong><small>连续失败 4 次</small></div>
-                <div class="metric"><strong>30 秒后</strong><small>下次检测</small></div>
+              <div class="monitor-row" tabindex="0" data-type="http" data-status="up" data-keywords="KPanel 官网 自定义 HTTP HTTPS kejilion.sh">
+                <div class="service-id"><span class="service-icon">HTTPS</span><span class="service-name"><strong><i class="status-dot up"></i>KPanel 官网</strong><small>https://kejilion.sh · 状态码 200–399</small></span></div>
+                <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>288 / 288</strong></div><div class="timeline" data-pattern="good"></div></div>
+                <div class="metric"><strong>142 ms</strong><small>HTTP 200</small></div>
+                <div class="metric"><strong>100%</strong><small>每 5 分钟</small></div>
                 <div class="chevron">›</div>
               </div><div class="detail"></div>
 
-              <div class="monitor-row" tabindex="0" data-status="up" data-keywords="mysql 数据库 tcp 3306">
+              <div class="monitor-row" tabindex="0" data-type="tcp" data-status="up" data-keywords="MySQL 数据库 自定义 TCP 3306">
                 <div class="service-id"><span class="service-icon tcp">TCP</span><span class="service-name"><strong><i class="status-dot up"></i>MySQL</strong><small>127.0.0.1:3306</small></span></div>
-                <div class="uptime-cell"><div class="uptime-meta"><span>30 天可用率</span><strong>100%</strong></div><div class="timeline" data-pattern="good"></div></div>
-                <div class="metric"><strong>3 ms</strong><small>1 分钟检测</small></div>
-                <div class="metric"><strong>本机</strong><small>TCP 连接</small></div>
+                <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>1,440 / 1,440</strong></div><div class="timeline" data-pattern="good"></div></div>
+                <div class="metric"><strong>3 ms</strong><small>TCP 已连接</small></div>
+                <div class="metric"><strong>100%</strong><small>每 1 分钟</small></div>
                 <div class="chevron">›</div>
               </div><div class="detail"></div>
 
-              <div class="monitor-row" tabindex="0" data-status="up" data-keywords="dns cloudflare ping 1.1.1.1">
-                <div class="service-id"><span class="service-icon ping">PING</span><span class="service-name"><strong><i class="status-dot up"></i>公网连通性</strong><small>1.1.1.1</small></span></div>
-                <div class="uptime-cell"><div class="uptime-meta"><span>30 天可用率</span><strong>99.98%</strong></div><div class="timeline" data-pattern="good"></div></div>
-                <div class="metric"><strong>37 ms</strong><small>丢包率 0%</small></div>
-                <div class="metric"><strong>1 分钟</strong><small>检测间隔</small></div>
+              <div class="monitor-row" tabindex="0" data-type="http" data-status="down" data-keywords="公共 API 自定义 HTTP api.kejilion health">
+                <div class="service-id"><span class="service-icon">HTTPS</span><span class="service-name"><strong><i class="status-dot down"></i>公共 API</strong><small>https://api.kejilion.sh/health · 包含 “ok”</small></span></div>
+                <div class="uptime-cell"><div class="uptime-meta"><span>24 小时采样</span><strong>282 / 288</strong></div><div class="timeline" data-pattern="down"></div></div>
+                <div class="metric"><strong class="bad">超时</strong><small>连续失败 4 次</small></div>
+                <div class="metric"><strong>97.92%</strong><small>每 5 分钟</small></div>
                 <div class="chevron">›</div>
               </div><div class="detail"></div>
             </div>
             <div class="loading-list" id="loadingList"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
-            <div class="empty-state" id="emptyState"><div><span aria-hidden="true">⌁</span><h3>还没有服务检测</h3><p>添加 HTTP(S)、TCP 或 Ping 检测后，这里会显示实时状态、可用率、响应时间和异常事件。</p><button class="button primary" type="button" data-open-dialog>新增第一个检测</button></div></div>
+            <div class="empty-state" id="emptyState"><div><span aria-hidden="true">⌁</span><h3>还没有监控项</h3><p>添加网络延迟、HTTP(S) 或 TCP 检测后，这里会在同一时间轴展示状态、成功率、检测耗时和异常事件。</p><button class="button primary" type="button" data-open-dialog>新增第一个监控项</button></div></div>
           </section>
         </section>
       </main>
@@ -352,28 +366,28 @@
 
   <div class="dialog-backdrop" id="dialogBackdrop" role="presentation">
     <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
-      <header class="dialog-head"><div><h2 id="dialogTitle">新增服务检测</h2><p>检测由所选 KPanel 主机发起，状态将保留为有界历史。</p></div><button class="icon-button" id="closeDialog" type="button" aria-label="关闭">×</button></header>
+      <header class="dialog-head"><div><h2 id="dialogTitle">新增监控项</h2><p>所有类型使用相同的生命周期、时间轴、历史保留和异常事件模型。</p></div><button class="icon-button" id="closeDialog" type="button" aria-label="关闭">×</button></header>
       <form id="monitorForm">
         <div class="dialog-body">
           <div class="type-grid" role="radiogroup" aria-label="检测类型">
-            <button class="type-card active" type="button" role="radio" aria-checked="true" data-type="HTTP(S)"><span class="service-icon">HTTP</span><span><strong>HTTP(S)</strong><small>状态码、延迟、证书</small></span></button>
-            <button class="type-card" type="button" role="radio" aria-checked="false" data-type="TCP"><span class="service-icon tcp">TCP</span><span><strong>TCP 端口</strong><small>连接是否可建立</small></span></button>
-            <button class="type-card" type="button" role="radio" aria-checked="false" data-type="Ping"><span class="service-icon ping">PING</span><span><strong>Ping</strong><small>连通性与丢包</small></span></button>
+            <button class="type-card active" type="button" role="radio" aria-checked="true" data-type="latency"><span class="service-icon ping">延迟</span><span><strong>网络延迟</strong><small>耗时、成功率、丢包</small></span></button>
+            <button class="type-card" type="button" role="radio" aria-checked="false" data-type="http"><span class="service-icon">HTTP</span><span><strong>HTTP(S)</strong><small>状态码、关键词、证书</small></span></button>
+            <button class="type-card" type="button" role="radio" aria-checked="false" data-type="tcp"><span class="service-icon tcp">TCP</span><span><strong>TCP 端口</strong><small>连接状态与耗时</small></span></button>
           </div>
           <div class="field-grid">
-            <div class="field"><label for="monitorName">名称</label><input id="monitorName" required placeholder="例如：官网"></div>
+            <div class="field"><label for="monitorName">名称</label><input id="monitorName" required placeholder="例如：北京线路"></div>
             <div class="field"><label for="monitorHost">检测主机</label><select id="monitorHost"><option>本机</option><option>香港节点</option><option>新加坡节点</option></select></div>
-            <div class="field full"><label for="monitorTarget">目标地址</label><input id="monitorTarget" required value="https://" aria-describedby="targetHelp"><small id="targetHelp">HTTP(S) 支持预期状态码与 TLS 到期提醒；重定向次数和响应体读取均应有上限。</small></div>
+            <div class="field full"><label for="monitorTarget">目标地址</label><input id="monitorTarget" required placeholder="例如：1.1.1.1" aria-describedby="targetHelp"><small id="targetHelp">输入规范公网 IPv4；系统使用有界网络往返探测，不要求 CAP_NET_RAW。</small></div>
             <div class="field"><label for="monitorInterval">检测间隔</label><select id="monitorInterval"><option>1 分钟</option><option selected>5 分钟</option><option>10 分钟</option><option>30 分钟</option></select></div>
             <div class="field"><label for="monitorTimeout">超时时间</label><select id="monitorTimeout"><option>5 秒</option><option selected>10 秒</option><option>20 秒</option></select></div>
           </div>
-          <details class="advanced"><summary>高级设置</summary><div class="field-grid"><div class="field"><label for="expectedStatus">成功状态码</label><input id="expectedStatus" value="200-399"></div><div class="field"><label for="failureThreshold">确认故障</label><select id="failureThreshold"><option>连续 1 次失败</option><option selected>连续 3 次失败</option><option>连续 5 次失败</option></select></div><div class="field full"><label for="keyword">响应关键词（可选）</label><input id="keyword" placeholder="响应中必须包含的文本"><small>首版建议不允许自定义脚本、请求体或任意 Header，先保证探测边界可控。</small></div></div></details>
+          <details class="advanced"><summary>高级设置</summary><div class="field-grid"><div class="field"><label for="failureThreshold">确认故障</label><select id="failureThreshold"><option>连续 1 次失败</option><option selected>连续 3 次失败</option><option>连续 5 次失败</option></select></div><div class="field"><label for="recoveryThreshold">确认恢复</label><select id="recoveryThreshold"><option>连续 1 次成功</option><option selected>连续 2 次成功</option><option>连续 3 次成功</option></select></div><div class="field full"><label for="keyword">标签（可选）</label><input id="keyword" placeholder="例如：电信、北京、核心服务"><small>默认九项的运营商与地区也只是普通标签，编辑、删除和排序能力与自定义项完全一致。</small></div></div></details>
         </div>
         <footer class="dialog-foot"><button class="button secondary" id="cancelDialog" type="button">取消</button><button class="button primary" type="submit">保存并立即检测</button></footer>
       </form>
     </section>
   </div>
-  <div class="toast" id="toast" role="status">设计稿不会保存配置；正式实现时这里将显示首次检测结果。</div>
+  <div class="toast" id="toast" role="status">设计稿不会保存配置；正式实现时这里将新增一个普通监控项并立即采样。</div>
 
   <script>
     const icons = {
@@ -391,6 +405,9 @@
       document.querySelectorAll('[data-tab]').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-selected', String(item === button)); });
       document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.id === button.dataset.tab));
     }));
+    document.querySelectorAll('.range-bar button').forEach((button) => button.addEventListener('click', () => {
+      document.querySelectorAll('.range-bar button').forEach((item) => item.classList.toggle('active', item === button));
+    }));
 
     const pattern = {
       good: Array(30).fill('up'),
@@ -399,7 +416,7 @@
     };
     document.querySelectorAll('.timeline').forEach((timeline) => {
       const items = pattern[timeline.dataset.pattern] || pattern.good;
-      timeline.innerHTML = items.map((state, index) => `<i class="${state === 'up' ? '' : state}" title="${30 - index} 天前：${state === 'up' ? '正常' : state === 'warn' ? '部分失败' : '故障'}"></i>`).join('');
+      timeline.innerHTML = items.map((state, index) => `<i class="${state === 'up' ? '' : state}" title="${Math.round((30 - index) * 24 / 30)} 小时前：${state === 'up' ? '正常' : state === 'warn' ? '部分失败' : '故障'}"></i>`).join('');
     });
 
     const rows = [...document.querySelectorAll('.monitor-row')];
@@ -416,17 +433,20 @@
     openRow(rows[0]);
 
     const searchInput = document.querySelector('#searchInput');
+    const typeFilter = document.querySelector('#typeFilter');
     const statusFilter = document.querySelector('#statusFilter');
     function filterRows() {
       const query = searchInput.value.trim().toLowerCase();
+      const type = typeFilter.value;
       const status = statusFilter.value;
       rows.forEach((row) => {
-        const visible = (!query || row.dataset.keywords.includes(query)) && (status === 'all' || row.dataset.status === status);
+        const visible = (!query || row.dataset.keywords.toLowerCase().includes(query)) && (type === 'all' || row.dataset.type === type) && (status === 'all' || row.dataset.status === status);
         row.hidden = !visible;
         if (row.nextElementSibling?.classList.contains('detail') && !visible) row.nextElementSibling.classList.remove('open');
       });
     }
     searchInput.addEventListener('input', filterRows);
+    typeFilter.addEventListener('change', filterRows);
     statusFilter.addEventListener('change', filterRows);
 
     const emptyState = document.querySelector('#emptyState');
@@ -457,7 +477,7 @@
     document.querySelectorAll('.type-card').forEach((button) => button.addEventListener('click', () => {
       document.querySelectorAll('.type-card').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-checked', String(item === button)); });
       const help = document.querySelector('#targetHelp');
-      help.textContent = button.dataset.type === 'HTTP(S)' ? 'HTTP(S) 支持预期状态码与 TLS 到期提醒；重定向次数和响应体读取均应有上限。' : button.dataset.type === 'TCP' ? '输入 hostname:port，仅验证 TCP 连接是否能在超时内建立。' : '输入 IP 或域名，展示往返延迟与丢包率；实现不应依赖 CAP_NET_RAW。';
+      help.textContent = button.dataset.type === 'http' ? '输入 HTTP(S) URL；可配置成功状态码、响应关键词与 TLS 到期提醒。' : button.dataset.type === 'tcp' ? '输入 hostname:port；检测 TCP 连接状态与建立耗时。' : '输入规范公网 IPv4；系统使用有界网络往返探测，不要求 CAP_NET_RAW。';
     }));
     document.querySelector('#monitorForm').addEventListener('submit', (event) => {
       event.preventDefault(); closeDialog();
