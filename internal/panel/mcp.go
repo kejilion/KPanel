@@ -154,6 +154,13 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mcp_request_too_large_or_unreadable", http.StatusRequestEntityTooLarge)
 		return
 	}
+	// Older protocol versions permit batches. Enforce one dispatch per budgeted
+	// HTTP request before the SDK can fan a batch out into concurrent tool calls.
+	if !bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
+		http.Error(w, "mcp_single_request_required", http.StatusBadRequest)
+		return
+	}
+	r = r.WithContext(ctx)
 	r = r.WithContext(context.WithValue(ctx, mcpContextKey{}, mcpRequest{principal, r}))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	s.mcp.once.Do(func() {
@@ -167,7 +174,13 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			return remote
-		}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+		}, &mcp.StreamableHTTPOptions{
+			Stateless: true, JSONResponse: true,
+			// Panel validates Host, Origin and TLS/trusted proxies above. The SDK's
+			// loopback-only Host rule otherwise rejects legitimate HTTPS proxies
+			// connected to a Panel listening on 127.0.0.1.
+			DisableLocalhostProtection: true,
+		})
 	})
 	buffer := &mcpResponseBuffer{header: make(http.Header)}
 	s.mcp.handler.ServeHTTP(buffer, r)
