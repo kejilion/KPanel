@@ -643,7 +643,12 @@ requireText('docs/release-acceptance-template.md', [
   '预览版禁止生产部署',
 ]);
 requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs']);
-requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict']);
+requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict --since=']);
+requireText('docs/multi-agent-collaboration.md', ['Independent-Review: reviewer=<提供商> author=<提供商>', '默认由与实现者不同的模型']);
+requireText('PROJECT_RULES.md', ['复核者默认来自与实现者不同的模型提供商']);
+requireText('docs/quality-improvement-proposal-template.md', ['- 复核提供商 / 实现提供商：']);
+requireText('AGENTS.md', ['Independent-Review:']);
+requireText('CLAUDE.md', ['Independent-Review:']);
 requireText('docs/quality-improvement-proposal-template.md', [
   '- 复核延期至：',
   '## 观察证据',

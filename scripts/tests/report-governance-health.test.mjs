@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assess, classifyStatus, parseProposal, validateProposal } from '../report-governance-health.mjs';
+import { assess, assessReviewTrailers, classifyStatus, parseProposal, parseReviewTrailer, validateProposal } from '../report-governance-health.mjs';
 
 function proposal(date, lines) {
   return parseProposal('quality-improvement-' + date + '-x.md', lines.join('\n') + '\n');
@@ -45,4 +45,15 @@ test('new proposals need a canonical status, a passed review and recorded provid
   const report = assess([sameProvider, fallback, cross], '2026-09-21');
   assert.equal(report.providerRecorded, 3);
   assert.equal(report.crossProvider, 1);
+});
+
+test('independent review trailers expose cross-provider ratio and unexplained same-provider reviews', () => {
+  const report = assessReviewTrailers([
+    'reviewer=codex author=claude result=PASS',
+    'reviewer=claude author=claude result=PASS WITH FOLLOW-UP fallback=codex-cli-unavailable',
+    'reviewer=claude author=claude result=PASS',
+    'reviewer=codex result=PASS',
+  ]);
+  assert.deepEqual(report, { total: 4, invalid: 1, cross: 1, unexplained: 1 });
+  assert.equal(parseReviewTrailer('reviewer=Codex author=claude result=FAIL').cross, true);
 });

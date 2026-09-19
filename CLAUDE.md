@@ -62,3 +62,5 @@
 - 跨智能体交接前原负责人停止写入并释放所有权；接手者重新 fetch、核对提交和差异后再接管。
 - 候选交付后按 `docs/project-management.md` 10.1 由发布任务独立完成；不召回旧任务，不另设复核或监工任务，
   协调中心等待完成交付后再复盘。管理目录落后时读取任务精确基线中的规范，不沿用旧检出或未集成草稿。
+- Claude 实现的候选默认交给其他提供商独立复核；Claude 承担复核时同样写 `Independent-Review:` trailer，
+  规则见 `docs/multi-agent-collaboration.md`。

@@ -4,6 +4,7 @@
 // independence. `--validate` checks proposal structure dated on or after the effective date (legacy
 // proposals are never rewritten); `--strict` exits 3 while overdue or unclassified proposals remain.
 
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,6 +88,33 @@ export function assess(proposals, today) {
   };
 }
 
+export function parseReviewTrailer(value) {
+  const pairs = Object.fromEntries([...value.matchAll(/(\w+)=([^\s]+(?:\s(?!\w+=)[^\s]+)*)/g)]
+    .map(([, key, raw]) => [key, raw.trim().toLowerCase()]));
+  const valid = Boolean(pairs.reviewer && pairs.author && pairs.result);
+  return {
+    valid,
+    cross: valid && pairs.reviewer !== pairs.author,
+    unexplained: valid && pairs.reviewer === pairs.author && !pairs.fallback,
+  };
+}
+
+export function assessReviewTrailers(values) {
+  const reviews = values.map(parseReviewTrailer);
+  return {
+    total: reviews.length,
+    invalid: reviews.filter((review) => !review.valid).length,
+    cross: reviews.filter((review) => review.cross).length,
+    unexplained: reviews.filter((review) => review.unexplained).length,
+  };
+}
+
+function reviewTrailers(since) {
+  return execFileSync('git', ['-C', repoRoot, 'log', '--format=%(trailers:key=Independent-Review,valueonly,separator=%x1e)',
+    since + '..HEAD'], { encoding: 'utf8' })
+    .split(/[\n\x1e]/).map((value) => value.trim()).filter(Boolean);
+}
+
 export function loadProposals(repo = repoRoot) {
   return readdirSync(join(repo, 'docs'))
     .filter((name) => /^quality-improvement-\d{4}-\d{2}-\d{2}-.+\.md$/.test(name))
@@ -121,8 +149,17 @@ export function main(argv, today = new Date().toISOString().slice(0, 10)) {
     return 0;
   }
   process.stdout.write(render(report, date) + '\n');
+  const since = argv.find((value) => value.startsWith('--since='))?.slice('--since='.length);
+  const reviews = since ? assessReviewTrailers(reviewTrailers(since)) : null;
+  if (reviews) {
+    process.stdout.write('independent_review_trailers since=' + since + ' total=' + reviews.total
+      + ' cross_provider=' + reviews.cross + ' invalid=' + reviews.invalid
+      + ' same_provider_without_fallback=' + reviews.unexplained + (reviews.total ? '' : ' (未报告)') + '\n');
+  }
   if (report.failures.length > 0) return 1;
-  if (argv.includes('--strict') && (report.overdue.length > 0 || report.unclassified.length > 0)) return 3;
+  const reviewDebt = reviews ? reviews.invalid + reviews.unexplained : 0;
+  const debt = report.overdue.length + report.unclassified.length + reviewDebt;
+  if (argv.includes('--strict') && debt > 0) return 3;
   return 0;
 }
 

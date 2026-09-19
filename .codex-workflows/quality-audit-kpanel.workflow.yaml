@@ -137,7 +137,7 @@ Unix Socket 鉴权和最终容器限制。记录 Docker、containerd、runc、�
 
 ```bash
 make release-metrics
-node scripts/report-governance-health.mjs --strict
+node scripts/report-governance-health.mjs --strict --since="<上一稳定版 tag>"
 ```
 
 **Expected output:** 同时报告交付速度、产品稳定性和流程可靠性；两类失败不混算，数据不足时先形成基线，
