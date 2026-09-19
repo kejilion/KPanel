@@ -210,7 +210,7 @@ func TestClusterHistoryRejectsTruncatedStreamAndUnboundedJSON(t *testing.T) {
 	for _, raw := range []string{
 		`{"host":[` + strings.Repeat(`{},`, 720) + `{}]}`,
 		`{"containers":[` + strings.Repeat(`{},`, 32) + `{}]}`,
-		`{"operatorLatency":[` + strings.Repeat(`{},`, 9) + `{}]}`,
+		`{"operatorLatency":[` + strings.Repeat(`{},`, 16) + `{}]}`,
 		`{"containers":[{"points":[` + strings.Repeat(`{},`, 720) + `{}]}]}`,
 		`{"host":[],"HOST":[]}`, `{"a":[[[[[[[[[[]]]]]]]]]]}`, `{} {}`,
 	} {

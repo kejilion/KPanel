@@ -6,13 +6,14 @@ import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/MonitoringView/en-US').then((module) => module.default)
   : import('@/i18n/pages/MonitoringView/zh-TW').then((module) => module.default))
-import { ArrowLeft, Box, Check, ChevronDown, ChevronRight, CircleAlert, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search, Server } from '@lucide/vue'
+import { ArrowLeft, Box, Check, ChevronDown, ChevronRight, CircleAlert, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search, Server, Settings2 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import TrendChart, { type TrendSeries } from '@/components/monitoring/TrendChart.vue'
+import MonitoringChecksDialog from '@/components/monitoring/MonitoringChecksDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
@@ -50,6 +51,7 @@ import type {
   MonitoringHostPoint,
   MonitoringOperatorLatencySeries,
   MonitoringRange,
+  MonitoringCheckKind,
 } from '@/types/api'
 
 const ranges: Array<{ value: MonitoringRange; label: string }> = [
@@ -62,10 +64,10 @@ const ranges: Array<{ value: MonitoringRange; label: string }> = [
   { value: '6m', label: '6 个月' },
   { value: '12m', label: '12 个月' },
 ]
-const operatorLabels: Record<MonitoringOperatorLatencySeries['operator'], string> = {
+const operatorLabels: Record<string, string> = {
   telecom: '电信', unicom: '联通', mobile: '移动',
 }
-const regionLabels: Record<MonitoringOperatorLatencySeries['region'], string> = {
+const regionLabels: Record<string, string> = {
   beijing: '北京', shanghai: '上海', guangzhou: '广州',
 }
 
@@ -116,6 +118,8 @@ const error = ref('')
 const diskChartMode = ref<'capacity' | 'io'>('capacity')
 const networkChartMode = ref<'traffic' | 'connections'>('traffic')
 const operatorLatencyVisibility = ref<Record<string, boolean>>({})
+const activeCheckKind = ref<MonitoringCheckKind>('ping')
+const checksDialogOpen = ref(false)
 const activeWindow = ref<MonitoringHistoryQuery>()
 const rootHistory = shallowRef<MonitoringHistory>()
 const updating = ref(false)
@@ -282,12 +286,18 @@ const hostNetworkConnections = computed<TrendSeries[]>(() => [
 const activeHostNetwork = computed(() => networkChartMode.value === 'traffic'
   ? hostNetworkTraffic.value
   : hostNetworkConnections.value)
-const operatorLatencyRoutes = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
+const allMonitoringChecks = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
+const operatorLatencyRoutes = computed(() => allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === activeCheckKind.value))
+const checkKindCounts = computed<Record<MonitoringCheckKind, number>>(() => ({
+  ping: allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === 'ping').length,
+  tcp: allMonitoringChecks.value.filter((series) => series.kind === 'tcp').length,
+  http: allMonitoringChecks.value.filter((series) => series.kind === 'http').length,
+}))
 const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes.value
   .filter((series) => operatorLatencyVisibility.value[series.id])
   .map((series) => ({
     label: operatorLatencyLabel(series),
-    color: operatorLatencyColors[series.id] || 'var(--brand)',
+    color: monitoringCheckColor(series.id),
     points: series.points.flatMap((point) => point.latencyMilliseconds === null
       ? []
       : [{ at: point.collectedAt, value: point.latencyMilliseconds }]),
@@ -295,6 +305,7 @@ const operatorLatencyChart = computed<TrendSeries[]>(() => operatorLatencyRoutes
   .filter((series) => series.points.length > 0))
 const operatorLatencyVisibleCount = computed(() => operatorLatencyRoutes.value
   .filter((series) => operatorLatencyVisibility.value[series.id]).length)
+const activeCheckSuccessCount = computed(() => operatorLatencyRoutes.value.filter((series) => latestOperatorLatency(series) != null).length)
 const containerCPU = computed<TrendSeries[]>(() => selectedContainers.value.flatMap((container) => {
   const average = containerCPUMode.value === 'average'
   const points = average
@@ -445,8 +456,20 @@ function toggleOperatorLatency(id: string): void {
 
 function showAllOperatorLatency(visible: boolean): void {
   operatorLatencyVisibility.value = Object.fromEntries(
-    operatorLatencyRoutes.value.map((series) => [series.id, visible]),
+    allMonitoringChecks.value.map((series) => [
+      series.id,
+      operatorLatencyRoutes.value.some((active) => active.id === series.id) ? visible : operatorLatencyVisibility.value[series.id] ?? true,
+    ]),
   )
+}
+
+const monitoringCheckPalette = ['#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#a78bfa', '#22d3ee', '#fb7185', '#4ade80']
+
+function monitoringCheckColor(id: string): string {
+  if (operatorLatencyColors[id]) return operatorLatencyColors[id]
+  let hash = 0
+  for (const character of id) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
+  return monitoringCheckPalette[Math.abs(hash) % monitoringCheckPalette.length] || 'var(--brand)'
 }
 
 function formatLatency(value: number): string {
@@ -454,7 +477,11 @@ function formatLatency(value: number): string {
 }
 
 function operatorLatencyLabel(series: MonitoringOperatorLatencySeries): string {
-  return `${operatorLabels[series.operator]} · ${regionLabels[series.region]}`
+  if (series.name) return series.name
+  if (series.operator && series.region) {
+    return `${operatorLabels[series.operator] || series.operator} · ${regionLabels[series.region] || series.region}`
+  }
+  return series.target || series.address
 }
 
 function latestLatencyLabel(series: MonitoringOperatorLatencySeries): string {
@@ -462,6 +489,16 @@ function latestLatencyLabel(series: MonitoringOperatorLatencySeries): string {
   if (latency === undefined) return '等待采样'
   if (latency === null) return '超时'
   return formatLatency(latency)
+}
+
+function activeCheckDescription(): string {
+  if (activeCheckKind.value === 'tcp') return '检测端口建立连接的响应时间与可用性'
+  if (activeCheckKind.value === 'http') return '检测 HTTP 状态与首个响应的耗时'
+  return '包含默认三网九节点，可自由增删改'
+}
+
+function handleChecksSaved(): void {
+  void load('refresh')
 }
 
 type HistoryLoadMode = 'initial' | 'refresh' | 'zoom'
@@ -840,10 +877,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <span v-if="isRemoteHost" class="monitoring-host-meta">
-        {{ selectedHost?.kind === 'light_node' ? '轻量节点 · 含容器与三网延迟' : '集群主机 · 含容器与三网延迟' }}
+        {{ selectedHost?.kind === 'light_node' ? '轻量节点 · 含容器与服务检测' : '集群主机 · 含容器与服务检测' }}
         <span v-if="selectedHost && !['online', 'degraded'].includes(selectedHost.state)" class="monitoring-host-offline">· 当前未在线，连接恢复后可查询历史</span>
       </span>
-      <span v-else class="monitoring-host-meta">本机监控 · 含容器与三网延迟</span>
+      <span v-else class="monitoring-host-meta">本机监控 · 含容器与服务检测</span>
     </div>
     <p v-if="hostsError" class="monitoring-warning" role="status">{{ hostsError }}</p>
     <p v-if="isRemoteHost" class="monitoring-source-note">历史保存在所选主机，采样与本机一致；连接恢复后可查看断线期间的记录。</p>
@@ -919,6 +956,73 @@ onBeforeUnmount(() => {
       >
         {{ history.storage.lastError || '历史数据已达到固定存储上限，系统将优先保留最新数据。' }}
       </div>
+
+      <article class="chart-card chart-card--wide operator-latency-card service-check-card">
+        <header class="operator-latency-heading">
+          <div>
+            <span class="operator-latency-icon"><RadioTower :size="18" /></span>
+            <span><strong>服务检测</strong><small>{{ activeCheckDescription() }}</small></span>
+          </div>
+          <div class="service-check-heading__actions">
+            <span v-if="operatorLatencyRoutes.length && history.storage.lastOperatorLatencyAt">
+              最近一轮成功 {{ activeCheckSuccessCount }}/{{ operatorLatencyRoutes.length }} · 每
+              {{ Math.max(1, Math.round((history.storage.operatorLatencyIntervalSeconds || 300) / 60)) }} 分钟
+            </span>
+            <span v-else-if="operatorLatencyRoutes.length">等待首次检测采样</span>
+            <button
+              class="button button--secondary button--small"
+              type="button"
+              :disabled="isRemoteHost"
+              :title="isRemoteHost ? '请在该节点所属面板管理检测项' : '管理检测项'"
+              @click="checksDialogOpen = true"
+            ><Settings2 :size="15" />管理检测项</button>
+          </div>
+        </header>
+        <div class="service-check-tabs" role="tablist" aria-label="检测协议">
+          <button v-for="kind in (['ping', 'tcp', 'http'] as const)" :key="kind" type="button" role="tab" :aria-selected="activeCheckKind === kind" :class="{ 'is-active': activeCheckKind === kind }" @click="activeCheckKind = kind">
+            {{ kind === 'ping' ? 'Ping' : kind.toUpperCase() }}<span>{{ checkKindCounts[kind] }}</span>
+          </button>
+        </div>
+        <template v-if="operatorLatencyRoutes.length">
+          <div class="operator-latency-controls">
+            <div class="operator-latency-routes" aria-label="检测项显示选择">
+              <button
+                v-for="series in operatorLatencyRoutes"
+                :key="series.id"
+                class="operator-route"
+                :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
+                type="button"
+                :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
+                :title="series.target || series.address"
+                @click="toggleOperatorLatency(series.id)"
+              >
+                <i :style="{ background: monitoringCheckColor(series.id) }" />
+                <span>{{ operatorLatencyLabel(series) }}</span>
+                <small>{{ latestLatencyLabel(series) }}</small>
+              </button>
+            </div>
+            <div class="operator-latency-actions">
+              <button type="button" @click="showAllOperatorLatency(true)">全显示</button>
+              <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
+            </div>
+          </div>
+          <p class="operator-latency-note">每 5 分钟统一采样；超时记为缺测，不记作 0 ms。曲线支持拖拽框选并沿用上方时间范围。</p>
+          <TrendChart
+            v-if="operatorLatencyChart.length"
+            :series="operatorLatencyChart"
+            :formatter="formatLatency"
+            :selectable="!updating"
+            :show-legend="false"
+            @select-range="zoomToRange"
+          />
+          <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">已隐藏全部检测项，选择上方项目即可显示。</div>
+          <div v-else class="operator-latency-empty">等待首次检测采样。</div>
+        </template>
+        <div v-else class="operator-latency-empty service-check-empty">
+          <strong>当前协议暂无检测项</strong>
+          <span>{{ isRemoteHost ? '请在该节点所属面板添加检测项。' : '点击“管理检测项”添加 Ping、TCP 或 HTTP 检测。' }}</span>
+        </div>
+      </article>
 
       <div v-if="history.host.length" class="chart-grid">
         <article
@@ -1083,61 +1187,13 @@ onBeforeUnmount(() => {
         <EmptyState v-else title="暂无容器历史数据" description="没有运行中的 Docker 容器，或首轮容器采样尚未完成。" />
       </section>
 
-      <article v-if="operatorLatencyRoutes.length" class="chart-card chart-card--wide operator-latency-card">
-        <header class="operator-latency-heading">
-          <div>
-            <span class="operator-latency-icon"><RadioTower :size="18" /></span>
-            <span><strong>三网延迟</strong><small>电信、联通、移动在北京、上海、广州的固定节点</small></span>
-          </div>
-          <span v-if="history.storage.lastOperatorLatencyAt">
-            最近一轮成功 {{ history.storage.lastOperatorLatencySuccessful || 0 }}/9 · 每
-            {{ Math.max(1, Math.round((history.storage.operatorLatencyIntervalSeconds || 300) / 60)) }} 分钟
-          </span>
-          <span v-else>等待首次三网延迟采样</span>
-        </header>
-        <div class="operator-latency-controls">
-          <div class="operator-latency-routes" aria-label="线路显示选择">
-            <button
-              v-for="series in operatorLatencyRoutes"
-              :key="series.id"
-              class="operator-route"
-              :class="{ 'operator-route--active': operatorLatencyVisibility[series.id] }"
-              type="button"
-              :aria-pressed="Boolean(operatorLatencyVisibility[series.id])"
-              :title="series.address"
-              @click="toggleOperatorLatency(series.id)"
-            >
-              <i :style="{ background: operatorLatencyColors[series.id] }" />
-              <span>{{ operatorLatencyLabel(series) }}</span>
-              <small>{{ latestLatencyLabel(series) }}</small>
-            </button>
-          </div>
-          <div class="operator-latency-actions">
-            <button type="button" @click="showAllOperatorLatency(true)">全显示</button>
-            <button type="button" @click="showAllOperatorLatency(false)">全隐藏</button>
-          </div>
-        </div>
-        <p class="operator-latency-note">每 5 分钟采样固定节点；超时记为缺测，不记作 0 ms。</p>
-        <TrendChart
-          v-if="operatorLatencyChart.length"
-          :series="operatorLatencyChart"
-          :formatter="formatLatency"
-          :selectable="!updating"
-          :show-legend="false"
-          @select-range="zoomToRange"
-        />
-        <div v-else-if="operatorLatencyVisibleCount === 0" class="operator-latency-empty">
-          已隐藏全部线路，选择上方线路即可显示。
-        </div>
-        <div v-else class="operator-latency-empty">等待首次三网延迟采样。</div>
-      </article>
-
       <footer class="monitoring-footnote">
         {{ phrase(`采样间隔：主机 ${history.storage.hostIntervalSeconds} 秒`) }}{{ phrase(`，容器 ${history.storage.containerIntervalSeconds} 秒`) }}。
         {{ phrase(`查询读取 ${formatBytes(history.scannedBytes)}，跳过 ${history.skippedLines} 条异常记录。`) }}
       </footer>
     </template>
   </section>
+  <MonitoringChecksDialog :open="checksDialogOpen" @close="checksDialogOpen = false" @saved="handleChecksSaved" />
 </template>
 
 <style scoped>
@@ -1239,29 +1295,38 @@ onBeforeUnmount(() => {
 .chart-switch button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: .72rem; cursor: pointer; }
 .chart-switch button:hover, .chart-switch button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-card { padding-bottom: 12px; }
+.service-check-card { display: grid; gap: 10px; }
 .operator-latency-icon {
   display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center;
   border-radius: 9px; color: var(--brand); background: var(--brand-soft);
 }
 .operator-latency-heading > div > span { display: grid; gap: 2px; }
-.operator-latency-heading small { color: var(--muted); font-size: .72rem; font-weight: 400; }
+.operator-latency-heading small { color: var(--muted); font-size: 13px; font-weight: 400; }
+.service-check-heading__actions { display: flex !important; align-items: center; justify-content: flex-end; gap: 10px !important; }
+.service-check-heading__actions > span { color: var(--muted); font-size: 13px; }
+.service-check-tabs { display: inline-flex; width: fit-content; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-subtle); }
+.service-check-tabs button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 15px; border: 0; border-radius: var(--radius-sm); color: var(--muted); background: transparent; cursor: pointer; font: inherit; font-size: 14px; }
+.service-check-tabs button span { min-width: 20px; padding: 1px 6px; border-radius: 999px; color: inherit; background: color-mix(in srgb, currentColor 9%, transparent); font-size: 12px; }
+.service-check-tabs button:hover, .service-check-tabs button.is-active { color: var(--brand-strong); background: var(--brand-soft); }
 .operator-latency-controls { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
 .operator-latency-routes { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; gap: 6px; }
 .operator-route {
   display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px;
   border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
-  background: var(--surface-subtle); font-size: .72rem; cursor: pointer;
+  background: var(--surface-subtle); font-size: 13px; cursor: pointer;
 }
 .operator-route:hover { border-color: color-mix(in srgb, var(--brand) 42%, var(--border)); color: var(--text); }
 .operator-route--active { border-color: color-mix(in srgb, var(--brand) 38%, var(--border)); color: var(--text); background: var(--brand-soft); }
 .operator-route i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; opacity: .38; }
 .operator-route--active i { opacity: 1; }
-.operator-route small { color: inherit; font-size: .66rem; opacity: .72; }
+.operator-route small { color: inherit; font-size: 12px; opacity: .72; }
 .operator-latency-actions { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); }
-.operator-latency-actions button { min-height: 26px; padding: 0 8px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: .7rem; cursor: pointer; }
+.operator-latency-actions button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 12px; cursor: pointer; }
 .operator-latency-actions button:hover { color: var(--brand-strong); background: var(--brand-soft); }
-.operator-latency-note { margin: 0 0 2px; color: var(--muted); font-size: .7rem; }
-.operator-latency-empty { display: grid; min-height: 210px; place-items: center; color: var(--muted); font-size: .8rem; }
+.operator-latency-note { margin: 0 0 2px; color: var(--muted); font-size: 13px; }
+.operator-latency-empty { display: grid; min-height: 210px; place-items: center; color: var(--muted); font-size: 14px; }
+.service-check-empty { align-content: center; gap: 6px; text-align: center; }
+.service-check-empty strong { color: var(--text); font-size: 15px; }
 .container-section { padding: 18px; }
 .section-heading h2, .container-compare h3 { margin: 0; font-size: 1rem; }
 .section-heading p, .container-compare > header p { margin: 3px 0 0; color: var(--muted); font-size: .76rem; }
@@ -1347,7 +1412,11 @@ onBeforeUnmount(() => {
   .container-list-shell { min-height: 0; }
   .container-list { position: static; max-height: 240px; }
   .container-detail > header { align-items: flex-start; flex-direction: column; }
-  .operator-latency-heading, .operator-latency-controls { align-items: flex-start; flex-direction: column; }
+  .operator-latency-heading, .operator-latency-controls, .service-check-heading__actions { align-items: flex-start; flex-direction: column; }
+  .service-check-heading__actions { width: 100%; }
+  .service-check-heading__actions .button { width: 100%; justify-content: center; }
+  .service-check-tabs { width: 100%; }
+  .service-check-tabs button { flex: 1; justify-content: center; padding: 0 8px; }
   .operator-latency-actions { align-self: stretch; }
   .operator-latency-actions button { flex: 1; }
   .operator-route { flex: 1 1 calc(50% - 4px); justify-content: flex-start; }

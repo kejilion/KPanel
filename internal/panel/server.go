@@ -253,7 +253,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
-	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || r.URL.Path == terminalCommandsPath || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
+	if s.backups != nil && s.backups.Busy() && r.Method != http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/settings/") || strings.HasPrefix(r.URL.Path, "/api/v1/desktop/") || strings.HasPrefix(r.URL.Path, "/api/v1/cluster/") || r.URL.Path == terminalCommandsPath || r.URL.Path == "/api/v1/monitoring/checks" || strings.HasPrefix(r.URL.Path, "/api/v1/ai/providers") || strings.HasPrefix(r.URL.Path, "/api/v1/ai/models")) {
 		s.writeProblem(w, r, http.StatusConflict, "backup_busy", "备份恢复正在执行，请稍后重试", "")
 		return
 	}
@@ -332,6 +332,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleCluster(w, r)
 	case r.URL.Path == "/api/v1/monitoring/cluster-history":
 		s.handleClusterHistory(w, r)
+	case r.URL.Path == "/api/v1/monitoring/checks":
+		s.handleMonitoringChecks(w, r)
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
@@ -1141,6 +1143,7 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		"/api/v1/system/system-tuning":          "/v1/system/system-tuning",
 		"/api/v1/system/disk-partitions":        "/v1/system/disk-partitions",
 		"/api/v1/monitoring/history":            "/v1/monitoring/history",
+		"/api/v1/monitoring/checks":             "/v1/monitoring/checks",
 		"/api/v1/sites":                         "/v1/sites",
 		"/api/v1/site-installations":            "/v1/site-installations",
 		"/api/v1/web-environment":               "/v1/web-environment",

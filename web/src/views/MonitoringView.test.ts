@@ -43,6 +43,22 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
+  it('renders Ping, TCP, and HTTP as three views on the shared timeline', async () => {
+    const value = history()
+    value.operatorLatency = [
+      { id: 'ping-one', kind: 'ping', name: 'Ping 节点', address: '1.1.1.1', target: '1.1.1.1', points: [] },
+      { id: 'tcp-one', kind: 'tcp', name: 'TCP 服务', address: 'example.com:443', target: 'example.com:443', points: [] },
+      { id: 'http-one', kind: 'http', name: 'HTTP 服务', address: 'https://example.com', target: 'https://example.com', points: [] },
+    ]
+    mocks.history.mockResolvedValue(value)
+    const { wrapper } = await mountAt()
+    expect(wrapper.text()).toContain('Ping 节点')
+    expect(wrapper.text()).not.toContain('TCP 服务')
+    await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('TCP'))!.trigger('click')
+    expect(wrapper.text()).toContain('TCP 服务')
+    expect(wrapper.text()).not.toContain('Ping 节点')
+  })
+
   it('orders the host picker from the panel preference', async () => {
     mocks.hosts.mockResolvedValueOnce({
       items: [

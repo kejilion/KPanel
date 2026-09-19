@@ -20,6 +20,22 @@ type fakeMonitoringProvider struct {
 	err        error
 }
 
+type fakeMonitoringChecksProvider struct {
+	*fakeMonitoringProvider
+	snapshot monitoring.CheckSnapshot
+	input    monitoring.ReplaceChecksInput
+	err      error
+}
+
+func (provider *fakeMonitoringChecksProvider) Checks() monitoring.CheckSnapshot {
+	return provider.snapshot
+}
+
+func (provider *fakeMonitoringChecksProvider) ReplaceChecks(input monitoring.ReplaceChecksInput) (monitoring.CheckSnapshot, error) {
+	provider.input = input
+	return provider.snapshot, provider.err
+}
+
 func (provider *fakeMonitoringProvider) HistoryBetween(
 	_ context.Context,
 	rangeValue string,
@@ -124,5 +140,48 @@ func TestMonitoringHistoryMapsBusyAndUnavailable(t *testing.T) {
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unavailable status = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestMonitoringChecksRequireAuthAndSupportAtomicReplacement(t *testing.T) {
+	server := testServer(t)
+	version := "sha256:" + strings.Repeat("a", 64)
+	provider := &fakeMonitoringChecksProvider{
+		fakeMonitoringProvider: &fakeMonitoringProvider{},
+		snapshot:               monitoring.CheckSnapshot{SchemaVersion: 1, ResourceVersion: version, Available: true, MaxItems: 16, Items: []monitoring.Check{}},
+	}
+	server.monitoring = provider
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/monitoring/checks", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status=%d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/monitoring/checks", nil)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"maxItems":16`) {
+		t.Fatalf("GET status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	body := `{"expectedResourceVersion":"` + version + `","items":[{"id":"tcp-web","kind":"tcp","name":"Web","target":"example.com:443"}]}`
+	request = httptest.NewRequest(http.MethodPut, "/v1/monitoring/checks", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || len(provider.input.Items) != 1 || provider.input.Items[0].Kind != "tcp" {
+		t.Fatalf("PUT status=%d input=%#v body=%s", response.Code, provider.input, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/monitoring/checks", nil)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 32))
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status=%d", response.Code)
 	}
 }
