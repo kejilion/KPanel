@@ -289,8 +289,8 @@
       "components": {
         "@alibaba-group/open-code-review": {
           "repository": "alibaba/open-code-review",
-          "pinnedVersion": "1.12.5",
-          "pinnedCommit": "189be5b024d3309dd10fdc8cd8ee31b2530c210b",
+          "pinnedVersion": "1.12.6",
+          "pinnedCommit": "7a571b78d3493b249f6ad14d835c6a79a0a67d2e",
           "adoptionPolicy": "candidate-signal-only; upgrade requires the canary replay in .governance/ocr-review/README.md on the new version and a separate governance commit (PROJECT_RULES 5.2/5.5)"
         }
       }
