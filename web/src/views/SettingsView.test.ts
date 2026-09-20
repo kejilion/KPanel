@@ -191,6 +191,7 @@ interface SettingsBindings {
 	manuallyUpdateKPanel: () => Promise<void>
 	kpanelUpdateDialogOpen: Ref<boolean>
 	kpanelRelease: Ref<KPanelReleaseInfo | undefined>
+	settingsBrowser: Ref<HTMLElement | undefined>
 	automaticUpdateSection: Ref<HTMLElement | undefined>
 	focusAutomaticUpdateSection: () => Promise<void>
 }
@@ -830,9 +831,11 @@ describe('SettingsView automatic updates', () => {
     const view = setupView()
     view.settingsSearch.value = '密码'
     view.activeSettingsCategory.value = 'account'
-    const scrollIntoView = vi.fn()
+    const scrollSettingsBrowserIntoView = vi.fn()
+    const scrollAutomaticUpdateIntoView = vi.fn()
     const focus = vi.fn()
-    view.automaticUpdateSection.value = { scrollIntoView, focus } as unknown as HTMLElement
+    view.settingsBrowser.value = { scrollIntoView: scrollSettingsBrowserIntoView } as unknown as HTMLElement
+    view.automaticUpdateSection.value = { scrollIntoView: scrollAutomaticUpdateIntoView, focus } as unknown as HTMLElement
 
     await view.focusAutomaticUpdateSection()
 
@@ -840,7 +843,8 @@ describe('SettingsView automatic updates', () => {
     expect(view.settingsSearch.value).toBe('')
     expect(view.activeSettingsCategory.value).toBe('system')
     expect(view.isSettingsSectionVisible('version-updates')).toBe(true)
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+    expect(scrollSettingsBrowserIntoView).toHaveBeenCalledWith({ block: 'start' })
+    expect(scrollAutomaticUpdateIntoView).not.toHaveBeenCalled()
     expect(focus).toHaveBeenCalledWith({ preventScroll: true })
   })
 
