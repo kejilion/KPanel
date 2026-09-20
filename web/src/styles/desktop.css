@@ -40,13 +40,12 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop {
-  /* Wallpaper-level group surfaces stay dark in both app themes, unlike widgets. */
-  --desktop-group-surface: rgb(15 32 48 / 78%);
-  --desktop-group-border: rgb(209 230 246 / 22%);
-  --desktop-group-text: #f3f7fb;
-  --desktop-group-muted: #d8e2eb;
-  --desktop-group-hover: rgb(225 239 250 / 10%);
-  --desktop-group-focus: #81dfce;
+  --desktop-group-surface: var(--desktop-glass-strong);
+  --desktop-group-border: var(--desktop-glass-border);
+  --desktop-group-text: var(--text);
+  --desktop-group-muted: var(--text-soft);
+  --desktop-group-hover: var(--interaction-hover);
+  --desktop-group-focus: var(--brand);
   position: fixed;
   z-index: 1000;
   inset: 0;

@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
+import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, GROUP_PADDING, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
 import { deriveDesktopGridLayout, desktopGridPlacementRect } from './desktopGridLayout'
 import type { DesktopGroup } from '@/types/api'
 
 const a: DesktopGroup = { id: 'a', name: 'A', columns: 3, collapsed: false, members: ['nav:/overview', 'nav:/files'] }
 const b: DesktopGroup = { id: 'b', name: 'B', columns: 3, collapsed: false, members: ['nav:/docker'] }
 describe('desktop groups', () => {
+  it('paints tight edges inside collision reservations without compacting reserved cells', () => {
+    for (const bounds of [{ width: 1200, height: 800 }, { width: 290, height: 550 }]) {
+      for (const columns of [2, 3, 4]) for (const rows of [1, 2, 3]) {
+        const group = { ...a, columns, rows }
+        const item = desktopGroupItem(group, new Set(group.members), bounds)
+        const placement = deriveDesktopGridLayout([item], [], bounds, true).placements[0]!
+        const rect = desktopGroupRect(group, placement, bounds)
+        const reservation = desktopGridPlacementRect(placement, bounds)
+        const cells = desktopGroupCells(group, placement, bounds)
+        expect(cells).toHaveLength(columns * rows)
+        expect(rect.width).toBeLessThanOrEqual(reservation.width)
+        expect(rect.height).toBeLessThanOrEqual(reservation.height)
+        expect(Math.min(...cells.map(cell => cell.left))).toBe(GROUP_PADDING)
+        expect(rect.width - Math.max(...cells.map(cell => cell.left + cell.width))).toBe(GROUP_PADDING)
+        expect(rect.height - Math.max(...cells.map(cell => cell.top + cell.height))).toBe(GROUP_PADDING)
+        expect(desktopGroupRect({ ...group, collapsed: true }, placement, bounds).height).toBe(56)
+      }
+    }
+  })
   it('retires only groups emptied by moving members out, keeping intentional empty groups', () => {
     const empty = { ...a, id: 'empty', members: [] }
     const moved = placeGroupMembers([a, b, empty], a.members)

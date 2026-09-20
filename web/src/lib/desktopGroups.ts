@@ -6,6 +6,7 @@ import { desktopIconGrid, desktopIconPixelsToPosition, type DesktopIconBounds } 
 export const MAX_DESKTOP_GROUPS = 32
 export const MAX_GROUP_CELLS = 512
 export const GROUP_HEADER_HEIGHT = 48
+export const GROUP_PADDING = 8
 export const GROUP_DWELL_MS = 450
 export const groupKey = (id: string) => 'group:' + id
 type ReadonlyGroup = Omit<DesktopGroup, 'members'> & { readonly members: readonly string[] }
@@ -84,18 +85,26 @@ function geometry(group: DesktopGroup, bounds: DesktopIconBounds, span?: number)
   const rowSegments = Math.ceil(group.columns / innerColumns)
   const slots = desktopGroupSlots(group)
   const logicalRows = Math.max(1, group.rows || 0, Math.ceil((Math.max(-1, ...Object.values(slots)) + 1) / group.columns))
-  return { grid, columns, innerColumns, rowSegments, logicalRows, slots }
+  const width = innerColumns * grid.stepX - grid.metrics.columnGap + GROUP_PADDING * 2
+  const height = group.collapsed ? 56 : GROUP_HEADER_HEIGHT + (logicalRows * rowSegments - 1) * grid.stepY + grid.metrics.height + GROUP_PADDING
+  return { grid, columns, innerColumns, rowSegments, logicalRows, slots, width, height }
 }
 
 export function desktopGroupItem(group: DesktopGroup, _visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridItem {
-  const { grid, columns, logicalRows, rowSegments } = geometry(group, bounds)
-  const height = group.collapsed ? 56 : GROUP_HEADER_HEIGHT + logicalRows * rowSegments * grid.stepY + 12
+  const { grid, columns, height } = geometry(group, bounds)
   return { key: groupKey(group.id), columns, rows: Math.ceil((height + grid.metrics.rowGap) / grid.stepY) }
+}
+
+/** Paint and hit-test tight content bounds, while reserving whole grid cells for collision safety. */
+export function desktopGroupRect(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds) {
+  const rect = desktopGridPlacementRect(placement, bounds)
+  const { width, height } = geometry(group, bounds, placement.columns)
+  return { ...rect, width: Math.min(rect.width, width), height }
 }
 
 export function desktopGroupCells(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds) {
   const { grid, innerColumns, rowSegments, logicalRows, slots } = geometry(group, bounds, placement.columns)
-  const rect = desktopGridPlacementRect(placement, bounds)
+  const rect = desktopGroupRect(group, placement, bounds)
   const padding = Math.max(0, (rect.width - innerColumns * grid.stepX + grid.metrics.columnGap) / 2)
   const byCell = new Map(Object.entries(slots).map(([key, cell]) => [cell, key]))
   return Array.from({ length: Math.min(MAX_GROUP_CELLS, logicalRows * group.columns) }, (_, index) => ({

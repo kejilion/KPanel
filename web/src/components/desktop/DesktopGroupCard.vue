@@ -50,9 +50,9 @@ function keydown(event: KeyboardEvent) {
 .desktop-group__previews { display: flex; flex: 0 0 auto; gap: 6px; margin-left: auto; pointer-events: none; }
 .desktop-group__previews + .desktop-group__menu { margin-left: 0; }
 .desktop-group--collapsed .desktop-group__header { height: 54px; }
-@container (max-width: 320px) { .desktop-group__previews :deep(> :nth-child(n+3)) { display: none; } }
-@container (max-width: 260px) { .desktop-group__previews :deep(> :nth-child(n+2)) { display: none; } }
-@container (max-width: 210px) { .desktop-group__previews { display: none; } .desktop-group__previews + .desktop-group__menu { margin-left: auto; } }
+@container (max-width: 280px) { .desktop-group__previews :deep(> :nth-child(n+3)) { display: none; } }
+@container (max-width: 240px) { .desktop-group__previews :deep(> :nth-child(n+2)) { display: none; } }
+@container (max-width: 180px) { .desktop-group__previews { display: none; } .desktop-group__previews + .desktop-group__menu { margin-left: auto; } }
 .desktop-group__toggle svg { transition: transform 180ms ease; }
 .desktop-group--collapsed .desktop-group__toggle svg { transform: rotate(-90deg); }
 .desktop-group--drop { border-color: var(--desktop-group-focus); box-shadow: 0 0 0 2px var(--desktop-group-hover); }
