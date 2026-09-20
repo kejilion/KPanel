@@ -4,6 +4,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -67,7 +68,7 @@ func ValidateVirusScanAction(input *VirusScanActionRequest) (string, string) {
 	for index, value := range input.Paths {
 		value = strings.TrimSpace(value)
 		if len(value) < 1 || len(value) > VirusScanMaxPathBytes || !path.IsAbs(value) || path.Clean(value) != value ||
-			strings.Contains(value, ",") || strings.ContainsAny(value, "\x00\r\n") {
+			strings.Contains(value, ",") || strings.ContainsFunc(value, unicode.IsControl) {
 			return "paths", "every path must be a canonical absolute Linux directory path without commas or control characters"
 		}
 		if _, ok := seen[value]; ok {
