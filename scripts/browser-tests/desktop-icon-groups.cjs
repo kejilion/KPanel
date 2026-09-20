@@ -68,6 +68,80 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     await settle()
     assert.equal(await group.count(), 0)
     assert.equal(writes, 0)
+    // Exercise the real multi-select workflow and sample live CSS transitions, not just final states.
+    const inspectMotion = async (button, phase) => {
+      const samples = await button.evaluate(async element => {
+        element.click()
+        await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame)
+        await new Promise(requestAnimationFrame)
+        const animations = document.getAnimations().filter(animation => {
+          const target = animation.effect?.target
+          return target instanceof Element && (target.matches('.desktop__icon-slot') || target.matches('.desktop-group'))
+        })
+        return animations.map(animation => {
+          const target = animation.effect.target
+          animation.pause()
+          const duration = Number(animation.effect.getTiming().duration)
+          animation.currentTime = 0
+          const start = { transform: getComputedStyle(target).transform, opacity: getComputedStyle(target).opacity }
+          animation.currentTime = duration * .4
+          const middle = { transform: getComputedStyle(target).transform, opacity: getComputedStyle(target).opacity }
+          return { target: target.matches('.desktop-group') ? 'surface' : 'icon', duration, start, middle, inert: target.inert }
+        })
+      })
+      report.cases.push({ phase, samples })
+      assert(samples.some(sample => sample.target === 'icon' && sample.duration === 280 && sample.start.transform !== sample.middle.transform), `${phase}: missing icon travel`)
+      assert(samples.some(sample => sample.target === 'surface' && sample.start.opacity !== sample.middle.opacity), `${phase}: missing surface fade`)
+      if (phase === 'dissolve') assert(samples.filter(sample => sample.target === 'surface').every(sample => sample.inert))
+      await page.screenshot({ path: `${out}/${phase}-mid-motion.png` })
+      await page.evaluate(() => document.getAnimations().forEach(animation => animation.play()))
+    }
+    const selected = ['nav:/overview', 'nav:/terminal', 'nav:/files', 'nav:/docker', 'nav:/settings', 'nav:/system']
+    await slot(selected[0]).locator('button').click()
+    for (const key of selected.slice(1)) await slot(key).locator('button').click({ modifiers: ['Control'] })
+    await page.locator('.desktop__selection-actions').getByRole('button', { name: '编为一组', exact: true }).click()
+    assert.equal(await page.locator('.desktop-group-form select').count(), 1)
+    await save(() => inspectMotion(page.getByRole('button', { name: '保存分组', exact: true }), 'create'))
+    assert.equal(state.groups[0].columns, 4)
+    assert.equal(state.groups[0].members.length, 6)
+    assert.equal(await group.locator('[data-group-cell]').count(), 8)
+    const row = await group.locator('[data-group-cell]').evaluateAll(cells => cells.slice(0, 5).map(cell => cell.getBoundingClientRect().top))
+    assert(row.slice(0, 4).every(y => y === row[0])); assert(row[4] > row[0])
+    await group.locator('.desktop-group__menu').click()
+    await save(() => inspectMotion(page.getByRole('button', { name: '解散分组', exact: true }), 'dissolve'))
+    assert.equal(await group.count(), 0)
+    await save(() => page.locator('.desktop-group-undo').getByText('撤销', { exact: true }).click())
+    assert.equal(state.groups[0].members.length, 6)
+    await group.locator('.desktop-group__menu').click()
+    const fastRemoval = page.waitForResponse(r => r.url().endsWith('/api/v1/desktop/workspace') && r.request().method() === 'PUT')
+    await page.getByRole('button', { name: '解散分组', exact: true }).evaluate(element => element.click())
+    assert.equal((await fastRemoval).status(), 200)
+    assert.equal(await page.locator('.desktop-group-surface-leave-active').count(), 1)
+    await save(() => page.locator('.desktop-group-undo').getByText('撤销', { exact: true }).evaluate(element => element.click()))
+    assert.equal(await group.count(), 1)
+    assert.equal(await group.evaluate(element => element.inert), false)
+    report.cases.push('undo during surface exit restores one interactive group without a ghost')
+    await group.locator('.desktop-group__menu').click()
+    failNext = true
+    const failedDissolution = page.waitForResponse(r => r.url().endsWith('/api/v1/desktop/workspace') && r.status() === 500)
+    await page.getByRole('button', { name: '解散分组', exact: true }).evaluate(element => element.click())
+    await failedDissolution; await settle()
+    assert.equal(await group.count(), 1)
+    assert.equal(await group.evaluate(element => element.inert), false)
+    await page.locator('.desktop-group-form [role="alert"]').waitFor()
+    await page.keyboard.press('Escape'); await settle()
+    report.cases.push('failed dissolve restores the group, editable form and error without an inert survivor')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await group.locator('.desktop-group__menu').click()
+    await save(() => page.getByRole('button', { name: '解散分组', exact: true }).click())
+    assert.equal(await group.count(), 0)
+    assert.equal(await slot(selected[0]).evaluate(element => getComputedStyle(element).transitionProperty), 'none')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    report.cases.push('reduced motion disables icon travel and removes the surface immediately')
+    // Return only this isolated mock fixture to the initial state for the existing journey matrix.
+    state = { ...state, groups: [], positions: {} }
+    await page.reload(); await slot('nav:/overview').waitFor(); await settle()
+    writes = 0
     const hoverIcon = async (from, to) => {
       const a = await slot(from).boundingBox(), b = await slot(to).boundingBox()
       await page.mouse.move(a.x + 45, a.y + 24); await page.mouse.down()
@@ -93,12 +167,12 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     report.cases.push('default ungrouped; dwell cancel; quick pass does not group; dwell release groups; loose positions preserved')
     await group.locator('.desktop-group__menu').click()
     await page.locator('.desktop-group-form input').fill('常用运维')
-    await page.locator('.desktop-group-form select').nth(1).selectOption('2')
+    await page.locator('.desktop-group-form select').selectOption('2')
     await save(() => page.getByRole('button', { name: '保存分组', exact: true }).click())
     assert.equal(state.groups[0].rows, 2)
-    assert.equal(await group.locator('[data-group-cell]').count(), 6)
+    assert.equal(await group.locator('[data-group-cell]').count(), 8)
     await group.locator('.desktop-group__menu').click()
-    await page.locator('.desktop-group-form select').nth(1).selectOption('3')
+    await page.locator('.desktop-group-form select').selectOption('3')
     await save(() => page.getByRole('button', { name: '保存分组', exact: true }).click())
     assert.equal(state.groups[0].name, '常用运维'); assert.equal(state.groups[0].rows, 3)
     const emptyCell = await group.locator('[data-group-cell="7"]').boundingBox()

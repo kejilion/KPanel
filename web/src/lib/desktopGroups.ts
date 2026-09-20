@@ -7,6 +7,7 @@ export const MAX_DESKTOP_GROUPS = 32
 export const MAX_GROUP_CELLS = 512
 export const GROUP_HEADER_HEIGHT = 48
 export const GROUP_PADDING = 8
+export const DESKTOP_GROUP_COLUMNS = 4
 export const GROUP_DWELL_MS = 450
 export const groupKey = (id: string) => 'group:' + id
 type ReadonlyGroup = Omit<DesktopGroup, 'members'> & { readonly members: readonly string[] }
@@ -33,6 +34,10 @@ export function desktopGroupSlots(group: ReadonlyGroup): Record<string, number> 
 export const cloneDesktopGroups = (groups: readonly ReadonlyGroup[]): DesktopGroup[] => groups.map(group => ({
   ...group, members: [...group.members], slots: desktopGroupSlots(group),
 }))
+
+/** Legacy column preferences become four-column rows without deleting deliberate holes. */
+export const normalizeDesktopGroupColumns = (groups: readonly ReadonlyGroup[]): DesktopGroup[] =>
+  cloneDesktopGroups(groups).map(group => ({ ...group, columns: DESKTOP_GROUP_COLUMNS }))
 
 /** Exact cell placement: a single internal move swaps; cross-group inserts preserve gaps. */
 export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, targetSlot?: number): DesktopGroup[] {

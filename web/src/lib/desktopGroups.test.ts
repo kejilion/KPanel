@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, GROUP_PADDING, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
+import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, GROUP_PADDING, normalizeDesktopGroupColumns, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
 import { deriveDesktopGridLayout, desktopGridPlacementRect } from './desktopGridLayout'
 import type { DesktopGroup } from '@/types/api'
 
 const a: DesktopGroup = { id: 'a', name: 'A', columns: 3, collapsed: false, members: ['nav:/overview', 'nav:/files'] }
 const b: DesktopGroup = { id: 'b', name: 'B', columns: 3, collapsed: false, members: ['nav:/docker'] }
 describe('desktop groups', () => {
+  it('uses four columns for legacy groups without losing slots, reserved rows or members', () => {
+    const legacy = { ...a, rows: 3, slots: { 'nav:/overview': 0, 'nav:/files': 7 } }
+    const group = normalizeDesktopGroupColumns([legacy])[0]!
+    expect(group).toEqual({ ...legacy, columns: 4 })
+    expect(legacy.columns).toBe(3)
+    expect(group.members).not.toBe(legacy.members)
+    expect(group.slots).not.toBe(legacy.slots)
+  })
   it('paints tight edges inside collision reservations without compacting reserved cells', () => {
     for (const bounds of [{ width: 1200, height: 800 }, { width: 290, height: 550 }]) {
       for (const columns of [2, 3, 4]) for (const rows of [1, 2, 3]) {
