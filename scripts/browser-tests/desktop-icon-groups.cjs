@@ -256,7 +256,39 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     report.cases.push('keyboard reorder and menu focus return')
     const thirdCell = await group.locator('[data-group-cell="0"]').boundingBox()
     await save(() => drag(slot('nav:/settings'), thirdCell.x + 45, thirdCell.y + 24))
-    await save(() => group.locator('.desktop-group__toggle').click())
+    const inspectCollapse = async collapsing => {
+      const anchor = await group.boundingBox()
+      const samples = await group.locator('.desktop-group__toggle').evaluate(async button => {
+        const member = document.querySelector('[data-icon-key="nav:/settings"]')
+        const glyph = member.querySelector('.desktop__icon-glyph')
+        button.click()
+        await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame)
+        const animations = member.getAnimations()
+        animations.forEach(animation => animation.pause())
+        const sample = progress => {
+          animations.forEach(animation => { animation.currentTime = Number(animation.effect.getTiming().duration) * progress })
+          const rect = glyph.getBoundingClientRect()
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, width: rect.width, opacity: Number(getComputedStyle(member).opacity), animations: animations.length }
+        }
+        const result = { start: sample(0), middle: sample(.4), end: sample(1) }
+        sample(.4)
+        return result
+      })
+      assert(samples.start.animations >= 2)
+      assert(samples.middle.width > 26 && samples.middle.width < 52)
+      assert(samples.middle.opacity > 0 && samples.middle.opacity < 1)
+      const folded = collapsing ? samples.end : samples.start
+      const expanded = collapsing ? samples.start : samples.end
+      assert(Math.abs(folded.x - (anchor.x + anchor.width - 58)) < 1)
+      assert(Math.abs(folded.y - (anchor.y + 28)) < 1)
+      assert(Math.abs(folded.width - 26) < 1 && Math.abs(expanded.width - 52) < 1)
+      assert(folded.x > expanded.x && folded.y < expanded.y)
+      assert.equal(folded.opacity, 0); assert.equal(expanded.opacity, 1)
+      await page.screenshot({ path: `${out}/${collapsing ? 'collapse' : 'expand'}-upper-right-mid.png` })
+      await page.evaluate(() => document.getAnimations().forEach(animation => animation.play()))
+      report.cases.push({ collapseMotion: collapsing ? 'upper-right' : 'reverse-expand', samples })
+    }
+    await save(() => inspectCollapse(true))
     assert.equal(await group.locator('.desktop-group-preview-icon').count(), 3)
     const expectedPreviewKeys = [...state.groups[0].members].sort((a, b) => state.groups[0].slots[a] - state.groups[0].slots[b])
     const expectedIconURLs = await Promise.all(expectedPreviewKeys.map(key => slot(key).locator('img').first().getAttribute('src')))
@@ -269,7 +301,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     assert.equal(await slot('nav:/overview').getAttribute('aria-hidden'), 'true')
     assert.equal(await slot('nav:/overview').evaluate(el => el.inert), true)
     await page.reload(); await group.waitFor(); assert.equal(await group.locator('.desktop-group__toggle').getAttribute('aria-expanded'), 'false')
-    await save(() => group.locator('.desktop-group__toggle').click())
+    await save(() => inspectCollapse(false))
     failNext = true
     const failed = page.waitForResponse(r => r.url().endsWith('/api/v1/desktop/workspace') && r.status() === 500)
     await group.locator('.desktop-group__toggle').click(); await failed; await settle()

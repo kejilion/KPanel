@@ -1614,6 +1614,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   box-sizing: border-box; padding: 6px 4px; width: 100%; overflow-wrap: anywhere; text-align: center; background: var(--surface-raised); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; line-height: 1.5; z-index: 30; pointer-events: none;
 }
+:root .desktop__icon-slot[data-group-member] {
+  transform-origin: center 28px;
+  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease, visibility 280ms;
+}
 :root .desktop__icon-slot[data-group-member] .desktop__icon {
   width: 100%; height: 100%; padding: 1px; gap: 2px;
 }
