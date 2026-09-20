@@ -60,4 +60,15 @@ describe('VirusScanDialog', () => {
     expect(mocks.scan).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('需要更新 kejilion.sh')
   })
+
+  it('keeps non-canonical custom paths disabled', async () => {
+    const wrapper = mount(VirusScanDialog, {
+      props: { open: true, readable: true, writable: true }, global: { stubs: { teleport: true } },
+    })
+    await flushPromises()
+    await wrapper.findAll('.virus-scan-options button')[2]!.trigger('click')
+    await wrapper.find('textarea').setValue('/srv/sites/../private')
+    expect(wrapper.find('.virus-scan-footer .button').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.virus-scan-paths small').classes()).toContain('is-invalid')
+  })
 })

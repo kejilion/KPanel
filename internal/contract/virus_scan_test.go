@@ -17,6 +17,7 @@ func TestValidateVirusScanAction(t *testing.T) {
 		{name: "relative", input: VirusScanActionRequest{Mode: VirusScanModeCustom, Paths: []string{"home"}}},
 		{name: "unclean", input: VirusScanActionRequest{Mode: VirusScanModeCustom, Paths: []string{"/home/../root"}}},
 		{name: "comma", input: VirusScanActionRequest{Mode: VirusScanModeCustom, Paths: []string{"/srv/a,b"}}},
+		{name: "control", input: VirusScanActionRequest{Mode: VirusScanModeCustom, Paths: []string{"/srv/a\tb"}}},
 		{name: "duplicate", input: VirusScanActionRequest{Mode: VirusScanModeCustom, Paths: []string{"/home", "/home"}}},
 	}
 	for _, test := range tests {

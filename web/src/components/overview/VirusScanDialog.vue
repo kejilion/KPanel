@@ -33,10 +33,15 @@ function phrase(value: string): string {
 const running = computed(() => snapshot.value?.maintenance.state === 'running' && snapshot.value.maintenance.action === 'virus-scan')
 const maintenanceBusy = computed(() => snapshot.value?.maintenance.state === 'running' && snapshot.value.maintenance.action !== 'virus-scan')
 const parsedPaths = computed(() => customPaths.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))
+function isCanonicalLinuxPath(value: string): boolean {
+  if (value === '/') return true
+  if (!/^\/(?:[^/]+)(?:\/[^/]+)*$/.test(value)) return false
+  return value.split('/').slice(1).every((part) => part !== '.' && part !== '..')
+}
 const customValid = computed(() => {
   const paths = parsedPaths.value
   return paths.length >= 1 && paths.length <= 8 && new Set(paths).size === paths.length && paths.every((value) =>
-    value.startsWith('/') && value.length <= 512 && !value.includes(',') && !value.includes('\0'))
+    isCanonicalLinuxPath(value) && value.length <= 512 && !value.includes(',') && !/[\u0000-\u001f\u007f]/.test(value))
 })
 const canSubmit = computed(() => props.writable && !running.value && !maintenanceBusy.value && !submitting.value && (mode.value !== 'custom' || customValid.value))
 const statusLabel = computed(() => {
