@@ -1,18 +1,13 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const enUSMessages = {
-  'desktop.groupRows': 'Reserved rows',
-  'desktop.groupRowsAuto': 'Grow with content',
-  'desktop.groupGridHint': 'Four icons per row, with automatic growth and narrow-screen reflow. Reserved rows set a minimum height. Drop into empty cells to keep gaps, or onto an icon to swap positions.',
+  'desktop.groupRename': 'Rename group',
   'desktop.groupHoldCreate': 'Hold briefly to create a group',
   'desktop.groupDropCreate': 'Release to create a group',
-  'desktop.groupSave': 'Save group',
   'desktop.groupCreate': "New group",
   'desktop.groupSelection': "Group selection",
   'desktop.groupDefaultName': "New group",
   'desktop.groupName': "Group name",
-  'desktop.groupColumns': "Icons per row",
-  'desktop.groupEdit': "Manage group",
   'desktop.groupHint': "Groups organize desktop shortcuts only. Dissolving returns icons to the desktop without deleting apps, sites or files.",
   'desktop.groupDissolve': "Dissolve group",
   'desktop.groupSaved': "Group updated",

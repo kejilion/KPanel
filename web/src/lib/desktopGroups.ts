@@ -37,7 +37,7 @@ export const cloneDesktopGroups = (groups: readonly ReadonlyGroup[]): DesktopGro
 
 /** Legacy column preferences become four-column rows without deleting deliberate holes. */
 export const normalizeDesktopGroupColumns = (groups: readonly ReadonlyGroup[]): DesktopGroup[] =>
-  cloneDesktopGroups(groups).map(group => ({ ...group, columns: DESKTOP_GROUP_COLUMNS }))
+  cloneDesktopGroups(groups).map(group => ({ ...group, columns: DESKTOP_GROUP_COLUMNS, rows: 0 }))
 
 /** Exact cell placement: a single internal move swaps; cross-group inserts preserve gaps. */
 export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, targetSlot?: number): DesktopGroup[] {
@@ -89,7 +89,7 @@ function geometry(group: DesktopGroup, bounds: DesktopIconBounds, span?: number)
   const innerColumns = Math.max(1, Math.min(group.columns, columns - 1))
   const rowSegments = Math.ceil(group.columns / innerColumns)
   const slots = desktopGroupSlots(group)
-  const logicalRows = Math.max(1, group.rows || 0, Math.ceil((Math.max(-1, ...Object.values(slots)) + 1) / group.columns))
+  const logicalRows = Math.max(1, Math.ceil((Math.max(-1, ...Object.values(slots)) + 1) / group.columns))
   const width = innerColumns * grid.stepX - grid.metrics.columnGap + GROUP_PADDING * 2
   const height = group.collapsed ? 56 : GROUP_HEADER_HEIGHT + (logicalRows * rowSegments - 1) * grid.stepY + grid.metrics.height + GROUP_PADDING
   return { grid, columns, innerColumns, rowSegments, logicalRows, slots, width, height }

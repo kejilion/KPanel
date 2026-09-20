@@ -492,9 +492,6 @@ const groupDropCell = ref<number>()
 const autoGroupTarget = ref('')
 const autoGroupReady = ref(false)
 let autoGroupTimer: number | undefined
-const groupDialog = ref<{ id?: string; keys: string[] }>()
-const groupName = ref('')
-const groupRows = ref(0)
 const groupError = ref('')
 const groupUndo = ref<{ groups: DesktopGroup[]; positions: Record<string, DesktopIconPosition>; version: string }>()
 const groupMembership = computed(() => new Map(localGroups.value.flatMap(group => group.members.map(key => [key, group.id] as const))))
@@ -580,17 +577,9 @@ function groupCells(group: DesktopGroup) {
   return placement && !group.collapsed ? desktopGroupCells(group, placement, iconBounds.value) : []
 }
 
-function showGroupDialog(keys: readonly string[] = [], id?: string): void {
-  closeContextMenu()
-  const group = localGroups.value.find(item => item.id === id)
-  groupName.value = group?.name || i18n.t('desktop.groupDefaultName')
-  groupRows.value = group?.rows || 0
-  groupError.value = ''
-  groupDialog.value = { id, keys: [...keys] }
-}
-
 async function commitGroups(groups: DesktopGroup[], positions = localPositions.value, remember = true): Promise<boolean> {
   if (groupSaving.value || !workspace.value.available) return false
+  groupError.value = ''
   const settled = placementsToWorkspacePositions(renderedDesktopLayout.value.placements).positions
   const requested = { ...settled, ...positions }
   const previous = { groups: cloneDesktopGroups(localGroups.value), positions: settled }
@@ -634,37 +623,33 @@ async function commitGroups(groups: DesktopGroup[], positions = localPositions.v
   } finally { groupSaving.value = false }
 }
 
-async function saveGroup(): Promise<void> {
-  const dialog = groupDialog.value
-  if (!dialog || !groupName.value.trim() || groupSaving.value || !workspace.value.available) return
-  if (!dialog.id && localGroups.value.length >= MAX_DESKTOP_GROUPS) {
+async function createGroup(keys: readonly string[] = []): Promise<void> {
+  closeContextMenu()
+  if (groupSaving.value || !workspace.value.available) return
+  if (localGroups.value.length >= MAX_DESKTOP_GROUPS) {
     groupError.value = i18n.t('desktop.groupLimit', { count: MAX_DESKTOP_GROUPS }); return
   }
-  const id = dialog.id || desktopIcons.generateShortcutID()
+  const id = desktopIcons.generateShortcutID()
   let groups = cloneDesktopGroups(localGroups.value)
-  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: DESKTOP_GROUP_COLUMNS, rows: groupRows.value } : group)
-  else {
-    groups.push({ id, name: groupName.value.trim(), members: [], columns: DESKTOP_GROUP_COLUMNS, rows: groupRows.value, slots: {}, collapsed: false })
-    groups = moveGroupMembers(groups, dialog.keys, id)
-  }
+  groups.push({ id, name: i18n.t('desktop.groupDefaultName'), members: [], columns: DESKTOP_GROUP_COLUMNS, rows: 0, slots: {}, collapsed: false })
+  groups = moveGroupMembers(groups, keys, id)
   const positions = { ...localPositions.value }
-  const origin = dialog.keys[0] && renderedPositionByKey.value.get(dialog.keys[0])
-  if (!dialog.id && origin) positions[groupKey(id)] = { ...origin }
-  // Reveal the optimistic layout immediately; restore the editable form on failure.
+  const origin = keys[0] && renderedPositionByKey.value.get(keys[0])
+  if (origin) positions[groupKey(id)] = { ...origin }
   const selection = [...selectedIcons.value]
   clearIconSelection()
-  groupDialog.value = undefined
-  if (!await commitGroups(groups, positions)) {
-    setIconSelection(selection)
-    groupDialog.value = dialog
-  }
+  if (!await commitGroups(groups, positions)) setIconSelection(selection)
 }
 
-async function dissolveGroup(): Promise<void> {
-  const dialog = groupDialog.value
-  if (!dialog?.id || groupSaving.value || !workspace.value.available) return
-  groupDialog.value = undefined
-  if (!await commitGroups(localGroups.value.filter(group => group.id !== dialog.id))) groupDialog.value = dialog
+async function renameGroup(id: string, name: string): Promise<boolean> {
+  const group = localGroups.value.find(item => item.id === id)
+  if (!group || !name.trim() || groupSaving.value || !workspace.value.available) return false
+  if (group.name === name.trim()) return true
+  return commitGroups(localGroups.value.map(item => item.id === id ? { ...item, name: name.trim() } : item))
+}
+
+function dissolveGroup(id: string): void {
+  void commitGroups(localGroups.value.filter(group => group.id !== id))
 }
 
 function toggleGroup(id: string): void {
@@ -3764,9 +3749,10 @@ function onViewportResize(): void {
         @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
         :cells="groupCells(group)" :drop-cell="groupDropTarget === group.id ? groupDropCell : undefined"
-        :busy="groupSaving" :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
+        :busy="groupSaving || !workspace.available" :rename="name => renameGroup(group.id, name)" :error="groupError"
+        :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
         :class="{ 'desktop-group--dragging': draggingWidgets.has(groupKey(group.id)) }"
-        @toggle="toggleGroup(group.id)" @menu="showGroupDialog([], group.id)"
+        @toggle="toggleGroup(group.id)" @dissolve="dissolveGroup(group.id)"
         @drag="beginWidgetDrag($event, groupKey(group.id))" @nudge="nudgeWidget(groupKey(group.id), $event)">
         <template #preview>
           <DesktopGroupPreviewIcon v-for="entry in groupPreviewEntries(group)" :key="entry.key"
@@ -4092,7 +4078,7 @@ function onViewportResize(): void {
             <MonitorCog :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.iconManagerTitle') }}
           </button>
-          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="showGroupDialog()">
+          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="createGroup()">
             <Plus :size="15" />{{ i18n.t('desktop.groupCreate') }}
           </button>
           <div class="desktop__context-separator" role="separator" />
@@ -4134,7 +4120,7 @@ function onViewportResize(): void {
         </template>
         <template v-if="contextMenuTarget === 'desktop' && menuGroupKeys().length">
           <div class="desktop__context-separator" role="separator" />
-          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="showGroupDialog(menuGroupKeys())">
+          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="createGroup(menuGroupKeys())">
             <Plus :size="15" />{{ i18n.t('desktop.groupSelection') }}
           </button>
           <button v-for="group in localGroups" :key="group.id" type="button" role="menuitem" :disabled="groupSaving" @click="moveMenuToGroup(group.id)">
@@ -4157,7 +4143,7 @@ function onViewportResize(): void {
         @contextmenu.prevent.stop
       >
         <strong>{{ i18n.t('desktop.selectedCount', { count: selectedIconCount }) }}</strong>
-        <button type="button" :disabled="groupSaving || !workspace.available" @click="showGroupDialog([...selectedIcons])">
+        <button type="button" :disabled="groupSaving || !workspace.available" @click="createGroup([...selectedIcons])">
           <Plus :size="15" />{{ i18n.t('desktop.groupSelection') }}
         </button>
         <button
@@ -4175,23 +4161,10 @@ function onViewportResize(): void {
       </div>
     </Transition>
 
-    <div v-if="groupUndo && groupUndo.version === workspace.resourceVersion" class="desktop-group-undo" role="status" @pointerdown.stop>
-      <span>{{ i18n.t('desktop.groupSaved') }}</span><button type="button" :disabled="groupSaving" @click="undoGroupChange">{{ i18n.t('desktop.groupUndo') }}</button>
-      <button type="button" :aria-label="i18n.t('common.closeNotification')" @click="groupUndo = undefined"><X :size="16" /></button>
+    <div v-if="groupError || groupUndo && groupUndo.version === workspace.resourceVersion" class="desktop-group-undo" :role="groupError ? 'alert' : 'status'" @pointerdown.stop>
+      <span>{{ groupError || i18n.t('desktop.groupSaved') }}</span><button v-if="!groupError" type="button" :disabled="groupSaving" @click="undoGroupChange">{{ i18n.t('desktop.groupUndo') }}</button>
+      <button type="button" :aria-label="i18n.t('common.closeNotification')" @click="groupError = ''; groupUndo = undefined"><X :size="16" /></button>
     </div>
-    <ModalDialog :open="Boolean(groupDialog)" :title="i18n.t(groupDialog?.id ? 'desktop.groupEdit' : 'desktop.groupCreate')" size="small" @close="groupDialog = undefined">
-      <form class="desktop-group-form" @submit.prevent="saveGroup">
-        <label>{{ i18n.t('desktop.groupName') }}<input v-model="groupName" maxlength="48" required autofocus :disabled="groupSaving" /></label>
-        <label>{{ i18n.t('desktop.groupRows') }}<select v-model.number="groupRows" :disabled="groupSaving"><option :value="0">{{ i18n.t('desktop.groupRowsAuto') }}</option><option v-for="row in 8" :key="row" :value="row">{{ row }}</option></select></label>
-        <p>{{ i18n.t('desktop.groupGridHint') }}</p>
-        <p>{{ i18n.t('desktop.groupHint') }}</p>
-        <p v-if="groupError" role="alert" class="desktop-group-form__error">{{ groupError }}</p>
-        <div class="desktop-group-form__actions">
-          <button v-if="groupDialog?.id" type="button" class="button button--ghost" :disabled="groupSaving" @click="dissolveGroup">{{ i18n.t('desktop.groupDissolve') }}</button>
-          <button class="button button--primary" type="submit" :disabled="groupSaving || !groupName.trim()">{{ i18n.t('desktop.groupSave') }}</button>
-        </div>
-      </form>
-    </ModalDialog>
 
     <footer
       class="desktop__taskbar"
