@@ -6,10 +6,23 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
+const PREVIEW_RELEASE_TAG = /^(v\d+\.\d+\.\d+)-rc\.\d+$/;
 const EMPTY_VALUE = /^(?:|[-—]|待填写|未记录|未验证|未知|不知道|稍后|不适用|N\/A)$/i;
 
 export function isStableReleaseTag(value) {
   return RELEASE_TAG.test(value);
+}
+
+// Preview (RC) tags are reported separately and never enter the stable metrics above: a preview
+// release has no production write, so mixing it into lead time, change failure or deployment
+// frequency would restate what those numbers have always meant.
+export function isPreviewReleaseTag(value) {
+  return PREVIEW_RELEASE_TAG.test(value);
+}
+
+export function previewReleaseTrain(value) {
+  const match = PREVIEW_RELEASE_TAG.exec(value ?? '');
+  return match === null ? null : match[1];
 }
 
 export function parseArguments(argv) {
@@ -816,6 +829,85 @@ export function summarizeReleaseMetrics(releases, options) {
   };
 }
 
+// Preview metrics answer one question the stable view structurally cannot: how much release friction
+// was spent before a stable tag existed. RC records carry the same process-incident evidence, so the
+// counts and the rolling repeat window are the existing ones; only the population differs. Nothing
+// here gates: `historicalReleases` accepts stable tags only, so an RC repeat cannot be declared yet
+// and must not be failed on.
+// `stableTags` is required rather than defaulted: an empty default would silently label every train
+// as in flight, which is exactly the kind of quiet wrong answer this view exists to remove.
+export function summarizePreviewMetrics(previewReleases, options, stableTags) {
+  const cutoff = new Date(options.now.getTime() - options.days * 86_400_000);
+  const windowReleases = previewReleases.filter((release) =>
+    release.createdAt >= cutoff && release.createdAt <= options.now);
+  const releasesPerDay = new Map();
+  for (const release of windowReleases) {
+    const day = release.createdAt.toISOString().slice(0, 10);
+    releasesPerDay.set(day, (releasesPerDay.get(day) ?? 0) + 1);
+  }
+
+  const selected = previewReleases.slice(0, options.releases);
+  const acceptanceCount = selected.filter((release) => release.acceptance.exists).length;
+  const reportsProcessMetrics = (release) =>
+    release.acceptance.metrics.processIncidentCount !== null &&
+    release.acceptance.metrics.postProductionProcessIncidentCount !== null;
+  const reported = selected.filter(reportsProcessMetrics);
+  const sumIncidents = (records) => records.length === 0 ? null :
+    records.reduce((total, release) => total + release.acceptance.metrics.processIncidentCount, 0);
+  const sumPostProduction = (records) => records.length === 0 ? null :
+    records.reduce((total, release) => total + release.acceptance.metrics.postProductionProcessIncidentCount, 0);
+
+  const repeated = detectRepeatedProcessIncidents(selected.map((release) => ({
+    tag: release.tag,
+    version: releaseTagVersion(previewReleaseTrain(release.tag) ?? ''),
+    label: release.acceptance.path,
+    reported: release.acceptance.exists,
+    incidents: release.acceptance.metrics.processIncidents ?? [],
+  })));
+
+  const trains = [];
+  for (const release of selected) {
+    const train = previewReleaseTrain(release.tag);
+    if (train === null) continue;
+    let entry = trains.find((candidate) => candidate.train === train);
+    if (entry === undefined) {
+      entry = { train, inFlight: !stableTags.has(train), previewCount: 0, releases: [] };
+      trains.push(entry);
+    }
+    entry.previewCount += 1;
+    entry.releases.push(release);
+  }
+  for (const entry of trains) {
+    const entryReported = entry.releases.filter(reportsProcessMetrics);
+    entry.processIncidentReported = entryReported.length;
+    entry.processIncidentCount = sumIncidents(entryReported);
+    entry.postProductionProcessIncidentCount = sumPostProduction(entryReported);
+    entry.repeatedProcessIncidentCount = repeated
+      .filter((finding) => previewReleaseTrain(finding.tag) === entry.train).length;
+    delete entry.releases;
+  }
+
+  return {
+    window: {
+      days: options.days,
+      releaseCount: windowReleases.length,
+      releaseDays: releasesPerDay.size,
+      maxReleasesPerDay: Math.max(0, ...releasesPerDay.values()),
+    },
+    requested: options.releases,
+    available: selected.length,
+    acceptanceCount,
+    acceptanceCoverage: selected.length === 0 ? null : Number((acceptanceCount / selected.length).toFixed(4)),
+    processIncidentReported: reported.length,
+    processIncidentCount: sumIncidents(reported),
+    postProductionProcessIncidentCount: sumPostProduction(reported),
+    repeatedProcessIncidentCount: repeated.length,
+    trains,
+    repeatedProcessIncidents: repeated,
+    releases: selected,
+  };
+}
+
 function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((left, right) => left - right);
@@ -824,7 +916,7 @@ function median(values) {
   return Number(((sorted[middle - 1] + sorted[middle]) / 2).toFixed(2));
 }
 
-function collectReleases(repo, evidenceCommit, acceptanceLimit) {
+function collectTaggedReleases(repo, evidenceCommit, acceptanceLimit, accepts) {
   const mergedTags = new Set(
     runGit(repo, ['tag', '--merged', evidenceCommit, '--list', 'v*']).split(/\r?\n/).filter(Boolean),
   );
@@ -837,7 +929,7 @@ function collectReleases(repo, evidenceCommit, acceptanceLimit) {
       const [tag, created] = line.split('\t');
       return { tag, createdAt: new Date(created) };
     })
-    .filter((release) => mergedTags.has(release.tag) && isStableReleaseTag(release.tag) && !Number.isNaN(release.createdAt.getTime()))
+    .filter((release) => mergedTags.has(release.tag) && accepts(release.tag) && !Number.isNaN(release.createdAt.getTime()))
     .map((release, index) => {
       const acceptancePath = 'docs/release-' + release.tag + '-acceptance.md';
       const markdown = index < acceptanceLimit ? tryGit(repo, ['show', evidenceCommit + ':' + acceptancePath]) : null;
@@ -852,6 +944,14 @@ function collectReleases(repo, evidenceCommit, acceptanceLimit) {
         },
       };
     });
+}
+
+function collectReleases(repo, evidenceCommit, acceptanceLimit) {
+  return collectTaggedReleases(repo, evidenceCommit, acceptanceLimit, isStableReleaseTag);
+}
+
+function collectPreviewReleases(repo, evidenceCommit, acceptanceLimit) {
+  return collectTaggedReleases(repo, evidenceCommit, acceptanceLimit, isPreviewReleaseTag);
 }
 
 function percentage(value) {
@@ -933,7 +1033,70 @@ export function renderMarkdown(report) {
   }
 
   lines.push('', '> 正式发布频率按稳定标签时间统计，生产部署频率只按验收记录中的生产完成时间统计；标签时间不等于生产完成时间。变更失败率只以明确填报“是/否”的验收记录为分母。发布流程异常独立统计，不把基础设施或无效证据问题歪曲为产品失败，也不把缺失数据推断为成功。重复指纹只按已存在验收记录比较，缺失记录不推断为无重复；机器不判断根因与永久处置真实性。');
+
+  if (report.preview) lines.push('', ...renderPreviewSection(report.preview));
   return lines.join('\n');
+}
+
+function renderPreviewSection(preview) {
+  const lines = [
+    '## 预览通道（RC）流程异常',
+    '',
+    '| 指标 | 结果 | 数据完整性 |',
+    '| --- | --- | --- |',
+    '| 窗口内 RC 标签数 | ' + preview.window.releaseCount + ' |  |',
+    '| 有 RC 标签的自然日 | ' + preview.window.releaseDays + ' |  |',
+    '| 单日最大 RC 标签数 | ' + preview.window.maxReleasesPerDay + ' |  |',
+    '| RC 验收记录覆盖率 | ' + preview.acceptanceCount + '/' + preview.available +
+      '（' + percentage(preview.acceptanceCoverage) + '） |  |',
+    '| RC 流程异常合计 | ' + metric(preview.processIncidentCount) + ' | ' +
+      preview.processIncidentReported + '/' + preview.available + ' |',
+    '| 其中生产写操作开始后异常数 | ' + metric(preview.postProductionProcessIncidentCount) + ' | ' +
+      preview.processIncidentReported + '/' + preview.available + ' |',
+    '| 滚动 ' + PROCESS_INCIDENT_REPEAT_WINDOW + ' 个 RC 内重复的流程异常指纹数 | ' +
+      preview.repeatedProcessIncidentCount + ' | ' + preview.acceptanceCount + '/' + preview.available + ' |',
+    '',
+    '### 按发布列车',
+    '',
+    '| 发布列车 | RC 数 | 流程异常 | 生产写操作开始后 | 重复指纹（发生于本列车） |',
+    '| --- | --- | --- | --- | --- |',
+  ];
+
+  if (preview.trains.length === 0) lines.push('| 无 | 无 | 无 | 无 | 无 |');
+  for (const train of preview.trains) {
+    lines.push('| ' + train.train + (train.inFlight ? '（进行中）' : '') + ' | ' + train.previewCount + ' | ' +
+      metric(train.processIncidentCount) + ' | ' + metric(train.postProductionProcessIncidentCount) + ' | ' +
+      train.repeatedProcessIncidentCount + ' |');
+  }
+
+  lines.push(
+    '',
+    '### RC 重复流程异常指纹',
+    '',
+    '| RC | 指纹 | 滚动 ' + PROCESS_INCIDENT_REPEAT_WINDOW + ' 个 RC 内的更早 RC |',
+    '| --- | --- | --- |',
+  );
+  if (preview.repeatedProcessIncidents.length === 0) lines.push('| 无 | 无 | 无 |');
+  for (const finding of preview.repeatedProcessIncidents) {
+    lines.push('| ' + finding.tag + ' | ' + finding.fingerprint + ' | ' + finding.repeatedIn.join('、') + ' |');
+  }
+
+  lines.push(
+    '',
+    '### RC 证据',
+    '',
+    '| 标签 | 标签时间 | 验收记录 | 流程异常 | 生产写操作开始后 |',
+    '| --- | --- | --- | --- | --- |',
+  );
+  for (const release of preview.releases) {
+    lines.push('| ' + release.tag + ' | ' + release.createdAt.toISOString() + ' | ' +
+      (release.acceptance.exists ? release.acceptance.path : '缺失') + ' | ' +
+      metric(release.acceptance.metrics.processIncidentCount) + ' | ' +
+      metric(release.acceptance.metrics.postProductionProcessIncidentCount) + ' |');
+  }
+
+  lines.push('', '> 本节只统计预览通道，独立于上述正式版本指标，不并入发布频率、前置时间、变更失败率或稳定版重复指纹。RC 没有生产写操作，“生产写操作开始后异常数”预期为 0，非 0 表示记录或流程有误。滚动窗口按 RC 标签时间排序，可以跨发布列车：“重复指纹（发生于本列车）”按发生重复的那个较新 RC 归属，被匹配到的更早 RC 可能属于上一个列车，逐条归属以下表为准。RC 重复指纹只作观察：`historicalReleases` 目前只接受稳定版标签，RC 重复无法声明，因此不构成门禁，也不推断根因。指纹按精确字符串比较，同一根因写成不同指纹时不会被识别为重复。');
+  return lines;
 }
 
 function help() {
@@ -968,7 +1131,13 @@ export function main(argv) {
   runGit(options.repo, ['rev-parse', '--is-inside-work-tree']);
   options.evidenceRef = options.ref ?? (tryGit(options.repo, ['rev-parse', '--verify', 'origin/main^{commit}']) ? 'origin/main' : 'HEAD');
   options.evidenceCommit = runGit(options.repo, ['rev-parse', '--verify', options.evidenceRef + '^{commit}']);
-  const report = summarizeReleaseMetrics(collectReleases(options.repo, options.evidenceCommit, Number.MAX_SAFE_INTEGER), options);
+  const stableReleases = collectReleases(options.repo, options.evidenceCommit, Number.MAX_SAFE_INTEGER);
+  const report = summarizeReleaseMetrics(stableReleases, options);
+  report.preview = summarizePreviewMetrics(
+    collectPreviewReleases(options.repo, options.evidenceCommit, Number.MAX_SAFE_INTEGER),
+    options,
+    new Set(stableReleases.map((release) => release.tag)),
+  );
   process.stdout.write((options.format === 'json' ? JSON.stringify(report, null, 2) : renderMarkdown(report)) + '\n');
 }
 

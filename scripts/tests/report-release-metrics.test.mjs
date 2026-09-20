@@ -11,11 +11,14 @@ import {
   durationHours,
   extractAcceptanceMetrics as extractAcceptanceMetricsRaw,
   gitEnvironment,
+  isPreviewReleaseTag,
   isStableReleaseTag,
   parseArguments,
+  previewReleaseTrain,
   productionLeadHours,
   readAcceptanceHistory,
   renderMarkdown,
+  summarizePreviewMetrics,
   summarizeReleaseMetrics,
   validateAcceptanceMetrics as validateAcceptanceMetricsRaw,
   validateProcessIncidentHistory,
@@ -911,4 +914,149 @@ test('acceptance validation keeps known failure state when historical completion
     '- 若发生失败，发现时间、恢复时间和逃逸门禁：已发现并恢复，复查逃逸门禁',
   ].join('\n'));
   assert.match(keywordsWithoutStructure.join('\n'), /requires discovery, recovery/);
+});
+
+test('preview tags are classified apart from stable tags', () => {
+  assert.equal(isPreviewReleaseTag('v1.21.0-rc.4'), true);
+  assert.equal(isPreviewReleaseTag('v1.21.0'), false);
+  assert.equal(isStableReleaseTag('v1.21.0-rc.4'), false);
+  assert.equal(previewReleaseTrain('v1.21.0-rc.4'), 'v1.21.0');
+  assert.equal(previewReleaseTrain('v1.21.0'), null);
+  // A malformed suffix must not silently join a train it does not belong to.
+  assert.equal(isPreviewReleaseTag('v1.21.0-rc'), false);
+  assert.equal(isPreviewReleaseTag('v1.21.0-beta.1'), false);
+});
+
+test('preview metrics aggregate per release train without touching stable numbers', () => {
+  const options = { days: 14, releases: 20, now: new Date('2026-09-20T13:00:00Z') };
+  const preview = summarizePreviewMetrics([
+    release('v1.21.0-rc.2', '2026-09-20T00:12:02Z', {
+      metrics: {
+        processIncidentCount: 4,
+        postProductionProcessIncidentCount: 0,
+        processIncidents: [{ fingerprint: 'release-monitor/github-api/anonymous-rate-limit', count: 1 }],
+      },
+    }),
+    release('v1.21.0-rc.1', '2026-09-19T18:09:04Z', {
+      metrics: {
+        processIncidentCount: 2,
+        postProductionProcessIncidentCount: 0,
+        processIncidents: [{ fingerprint: 'release-monitor/github-api/anonymous-rate-limit', count: 1 }],
+      },
+    }),
+    release('v1.20.0-rc.1', '2026-09-18T07:30:32Z', {
+      metrics: { processIncidentCount: 3, postProductionProcessIncidentCount: 0, processIncidents: [] },
+    }),
+  ], options, new Set(['v1.20.0']));
+
+  assert.equal(preview.available, 3);
+  assert.equal(preview.processIncidentReported, 3);
+  assert.equal(preview.processIncidentCount, 9);
+  assert.equal(preview.postProductionProcessIncidentCount, 0);
+  assert.equal(preview.repeatedProcessIncidentCount, 1);
+  assert.equal(preview.repeatedProcessIncidents[0].tag, 'v1.21.0-rc.2');
+  assert.deepEqual(preview.repeatedProcessIncidents[0].repeatedIn, ['v1.21.0-rc.1']);
+
+  assert.equal(preview.trains.length, 2);
+  const [inFlight, shipped] = preview.trains;
+  assert.equal(inFlight.train, 'v1.21.0');
+  assert.equal(inFlight.inFlight, true);
+  assert.equal(inFlight.previewCount, 2);
+  assert.equal(inFlight.processIncidentCount, 6);
+  assert.equal(inFlight.repeatedProcessIncidentCount, 1);
+  assert.equal(shipped.train, 'v1.20.0');
+  assert.equal(shipped.inFlight, false);
+  assert.equal(shipped.processIncidentCount, 3);
+  assert.equal(shipped.repeatedProcessIncidentCount, 0);
+});
+
+test('preview metrics never infer missing RC evidence as zero', () => {
+  const options = { days: 14, releases: 20, now: new Date('2026-09-20T13:00:00Z') };
+  const preview = summarizePreviewMetrics([
+    release('v1.21.0-rc.2', '2026-09-20T00:12:02Z', { exists: false }),
+    release('v1.21.0-rc.1', '2026-09-19T18:09:04Z', {
+      metrics: { processIncidentCount: 2, postProductionProcessIncidentCount: 0 },
+    }),
+  ], options, new Set());
+
+  assert.equal(preview.available, 2);
+  assert.equal(preview.acceptanceCount, 1);
+  assert.equal(preview.acceptanceCoverage, 0.5);
+  // The unreported RC leaves the denominator at 1 instead of contributing a zero.
+  assert.equal(preview.processIncidentReported, 1);
+  assert.equal(preview.processIncidentCount, 2);
+  assert.equal(preview.trains[0].processIncidentReported, 1);
+
+  const empty = summarizePreviewMetrics([], options, new Set());
+  assert.equal(empty.available, 0);
+  assert.equal(empty.acceptanceCoverage, null);
+  assert.equal(empty.processIncidentCount, null);
+  assert.equal(empty.postProductionProcessIncidentCount, null);
+  assert.deepEqual(empty.trains, []);
+});
+
+test('markdown keeps the preview view separate from the stable view', () => {
+  const options = { days: 14, releases: 20, now: new Date('2026-09-20T13:00:00Z') };
+  const report = summarizeReleaseMetrics([
+    release('v1.20.0', '2026-09-19T09:44:35Z', {
+      metrics: { processIncidentCount: 1, postProductionProcessIncidentCount: 0 },
+    }),
+  ], options);
+  const withoutPreview = renderMarkdown(report);
+  assert.equal(withoutPreview.includes('## 预览通道（RC）流程异常'), false);
+
+  report.preview = summarizePreviewMetrics([
+    release('v1.21.0-rc.1', '2026-09-19T18:09:04Z', {
+      metrics: { processIncidentCount: 2, postProductionProcessIncidentCount: 0 },
+    }),
+  ], options, new Set(['v1.20.0']));
+  const output = renderMarkdown(report);
+
+  assert.match(output, /## 预览通道（RC）流程异常/);
+  assert.match(output, /RC 流程异常合计 \| 2/);
+  assert.match(output, /v1\.21\.0（进行中）/);
+  assert.match(output, /本节只统计预览通道，独立于上述正式版本指标/);
+  assert.match(output, /RC 重复指纹只作观察/);
+  // The stable rows and their note keep their existing meaning.
+  assert.match(output, /已记录发布流程异常\/无效证据拦截总数 \| 1/);
+  assert.match(output, /正式发布频率按稳定标签时间统计/);
+  assert.equal(output.indexOf('正式发布频率按稳定标签时间统计') < output.indexOf('## 预览通道（RC）流程异常'), true);
+  assert.equal(report.recent.processIncidentCount, 1);
+});
+
+test('preview repeats may span trains and are attributed to the newer RC', () => {
+  const options = { days: 14, releases: 20, now: new Date('2026-09-20T13:00:00Z') };
+  const shared = [{ fingerprint: 'release-monitor/github-api/anonymous-rate-limit', count: 1 }];
+  const preview = summarizePreviewMetrics([
+    release('v1.21.0-rc.1', '2026-09-19T18:09:04Z', {
+      metrics: { processIncidentCount: 1, postProductionProcessIncidentCount: 0, processIncidents: shared },
+    }),
+    release('v1.20.0-rc.3', '2026-09-19T06:34:39Z', {
+      metrics: { processIncidentCount: 1, postProductionProcessIncidentCount: 0, processIncidents: shared },
+    }),
+  ], options, new Set(['v1.20.0']));
+
+  assert.equal(preview.repeatedProcessIncidentCount, 1);
+  assert.equal(preview.repeatedProcessIncidents[0].tag, 'v1.21.0-rc.1');
+  assert.deepEqual(preview.repeatedProcessIncidents[0].repeatedIn, ['v1.20.0-rc.3']);
+  // The finding belongs to the train of the newer RC; the matched RC stays in the earlier train.
+  const [newer, older] = preview.trains;
+  assert.equal(newer.train, 'v1.21.0');
+  assert.equal(newer.repeatedProcessIncidentCount, 1);
+  assert.equal(older.train, 'v1.20.0');
+  assert.equal(older.repeatedProcessIncidentCount, 0);
+  // Per-train counts still sum to the reported total, so the attribution loses nothing.
+  assert.equal(preview.trains.reduce((total, train) => total + train.repeatedProcessIncidentCount, 0),
+    preview.repeatedProcessIncidentCount);
+
+  const output = renderMarkdown({ ...summarizeReleaseMetrics([], options), preview });
+  assert.match(output, /重复指纹（发生于本列车）/);
+  assert.match(output, /滚动窗口按 RC 标签时间排序，可以跨发布列车/);
+});
+
+test('summarizePreviewMetrics refuses to guess whether a train already shipped', () => {
+  const options = { days: 14, releases: 20, now: new Date('2026-09-20T13:00:00Z') };
+  assert.throws(() => summarizePreviewMetrics([
+    release('v1.21.0-rc.1', '2026-09-19T18:09:04Z'),
+  ], options), TypeError);
 });
