@@ -680,6 +680,54 @@ function visualClusterPublicSnapshot() {
 
 let systemLogCleanupJob
 let virusScanJob
+let systemPackagesRevision = 1
+let systemPackagesJob
+let systemPackages = [
+  ['curl', 'network', true, false], ['wget', 'network', true, false],
+  ['sudo', 'system', true, false], ['socat', 'network', false, false],
+  ['htop', 'monitor', true, true], ['iftop', 'monitor', false, true],
+  ['unzip', 'archive', true, false], ['tar', 'archive', true, false],
+  ['tmux', 'terminal', true, true], ['ffmpeg', 'media', false, false],
+  ['btop', 'monitor', false, true], ['ranger', 'terminal', false, true],
+  ['ncdu', 'monitor', true, true], ['fzf', 'terminal', false, true],
+  ['vim', 'editor', true, false], ['nano', 'editor', true, false],
+  ['git', 'developer', true, false],
+].map(([id, category, installed, launchable]) => ({ id, category, installed, launchable }))
+
+function systemPackagesResourceVersion() {
+  return String(900 + systemPackagesRevision).padStart(64, '0')
+}
+
+function materializeSystemPackagesSnapshot() {
+  if (systemPackagesJob && Date.now() - systemPackagesJob.created >= 2_400 && !systemPackagesJob.applied) {
+    const selected = new Set(systemPackagesJob.items)
+    systemPackages = systemPackages.map((item) => selected.has(item.id)
+      ? { ...item, installed: systemPackagesJob.action === 'install' }
+      : item)
+    systemPackagesRevision += 1
+    systemPackagesJob.applied = true
+  }
+  const running = Boolean(systemPackagesJob && !systemPackagesJob.applied)
+  return {
+    manager: 'APT',
+    items: systemPackages,
+    maintenance: running
+      ? {
+          id: systemPackagesJob.id,
+          state: 'running',
+          action: 'packages',
+          policy: systemPackagesJob.action,
+          stage: `packages_${systemPackagesJob.action}`,
+          progress: 55,
+          message: systemPackagesJob.action === 'install' ? '正在安装所选软件包' : '正在卸载所选软件包',
+          startedAt: systemPackagesJob.startedAt,
+          rebootRequired: false,
+        }
+      : { state: 'idle', progress: 0, rebootRequired: false },
+    resourceVersion: systemPackagesResourceVersion(),
+    observedAt: new Date().toISOString(),
+  }
+}
 
 function materializeVirusScanSnapshot() {
   const now = Date.now()
@@ -1006,6 +1054,8 @@ const systemCapabilities = [
   { id: 'system.logs.write', enabled: true, methods: ['POST'] },
   { id: 'system.virus-scan.read', enabled: true, methods: ['GET'] },
   { id: 'system.virus-scan.write', enabled: true, methods: ['POST'] },
+  { id: 'system.packages.read', enabled: true, methods: ['GET'] },
+  { id: 'system.packages.write', enabled: true, methods: ['POST'] },
 ]
 
 const portUsageEntries = [
@@ -1997,6 +2047,47 @@ createServer(async (request, response) => {
     send(response, 200, materializeVirusScanSnapshot())
     return
   }
+  if (request.method === 'GET' && url.pathname === '/api/v1/system/packages') {
+    if (url.search) {
+      send(response, 422, { title: '软件包查询参数无效', code: 'invalid_system_packages_query' })
+      return
+    }
+    send(response, 200, materializeSystemPackagesSnapshot())
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/system/packages/actions') {
+    const input = await readJSON(request)
+    const ids = new Set(systemPackages.map((item) => item.id))
+    const selected = Array.isArray(input.items) ? input.items : []
+    if (!['install', 'remove'].includes(input.action) || selected.length < 1 || selected.some((id) => !ids.has(id))) {
+      send(response, 422, { title: '软件包操作无效', code: 'invalid_system_packages_action' })
+      return
+    }
+    if (input.expectedResourceVersion !== systemPackagesResourceVersion()) {
+      send(response, 409, { title: '软件包状态已变化，请刷新后重试', code: 'system_packages_changed' })
+      return
+    }
+    const created = Date.now()
+    systemPackagesJob = {
+      id: `system-packages-${created}`,
+      created,
+      startedAt: new Date(created).toISOString(),
+      action: input.action,
+      items: selected,
+      applied: false,
+    }
+    send(response, 202, {
+      taskId: systemPackagesJob.id,
+      action: input.action,
+      items: selected,
+      status: 'accepted',
+      changed: true,
+      message: input.action === 'install' ? '模拟软件包安装任务已提交' : '模拟软件包卸载任务已提交',
+      resourceVersion: systemPackagesResourceVersion(),
+      acceptedAt: systemPackagesJob.startedAt,
+    })
+    return
+  }
   if (request.method === 'POST' && url.pathname === '/api/v1/system/virus-scan/actions') {
     const input = await readJSON(request)
     const paths = Array.isArray(input.paths) ? input.paths : []
@@ -2098,7 +2189,9 @@ createServer(async (request, response) => {
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
     const input = await readJSON(request)
-    const host = visualClusterHosts.find((item) => item.id === input.hostId)
+    const host = input.hostId === 'local'
+      ? visualClusterHosts.find((item) => item.isLocal)
+      : visualClusterHosts.find((item) => item.id === input.hostId)
     if (!host?.terminalAvailable) {
       send(response, 409, { title: 'Terminal unavailable', code: 'terminal_unavailable' })
       return

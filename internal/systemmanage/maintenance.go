@@ -181,6 +181,11 @@ func (m *Manager) startMaintenanceTask(
 			return false, "", "", fmt.Errorf("%w: system tuning policy is invalid", ErrInvalidInput)
 		}
 		mode = "system-tuning-" + policy
+	case "packages":
+		if _, ok := parseSystemPackagesPolicy(policy); !ok {
+			return false, "", "", fmt.Errorf("%w: package action policy is invalid", ErrInvalidInput)
+		}
+		mode = "packages"
 	case "virus-scan":
 		if _, _, ok := parseVirusScanPolicy(policy); !ok {
 			return false, "", "", fmt.Errorf("%w: virus scan policy is invalid", ErrInvalidInput)
@@ -194,7 +199,11 @@ func (m *Manager) startMaintenanceTask(
 	if current.State == "running" {
 		return false, "", "", fmt.Errorf("%w: another maintenance task is already running", ErrConflict)
 	}
-	if action == "virus-scan" {
+	if action == "packages" {
+		if _, err := m.systemPackageSteps(policy); err != nil {
+			return false, "", "", err
+		}
+	} else if action == "virus-scan" {
 		if err := m.virusScanAvailability(true); err != nil {
 			return false, "", "", err
 		}
@@ -432,6 +441,17 @@ func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 func (m *Manager) maintenanceSteps(
 	mode string,
 ) (string, string, []maintenanceStep, error) {
+	if mode == "packages" {
+		status := m.readMaintenance()
+		if status.Action != "packages" {
+			return "", "", nil, fmt.Errorf("%w: package action state is unavailable", ErrInvalidInput)
+		}
+		steps, err := m.systemPackageSteps(status.Policy)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return "packages", status.Policy, steps, nil
+	}
 	if mode == "virus-scan" {
 		status := m.readMaintenance()
 		scanMode, _, ok := parseVirusScanPolicy(status.Policy)
@@ -813,6 +833,12 @@ func idForMaintenance(now time.Time) string {
 }
 
 func maintenanceStageMessage(stage string) string {
+	if strings.HasPrefix(stage, "packages_install_") {
+		return "正在安装 " + strings.TrimPrefix(stage, "packages_install_")
+	}
+	if strings.HasPrefix(stage, "packages_remove_") {
+		return "正在卸载 " + strings.TrimPrefix(stage, "packages_remove_")
+	}
 	if strings.HasPrefix(stage, "system_tuning_") {
 		item := strings.TrimPrefix(stage, "system_tuning_")
 		labels := map[string]string{
@@ -911,6 +937,13 @@ func maintenanceSuccessMessage(action, policy string, rebootRequired bool) strin
 	}
 	if action == "system-tuning" {
 		return "所选一条龙系统调优项目已全部完成"
+	}
+	if action == "packages" {
+		request, ok := parseSystemPackagesPolicy(policy)
+		if ok && request.Action == "remove" {
+			return "所选软件包已全部卸载"
+		}
+		return "所选软件包已全部安装"
 	}
 	if action == "virus-scan" {
 		return "病毒扫描已完成；请查看报告确认是否发现威胁"

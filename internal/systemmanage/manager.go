@@ -354,6 +354,7 @@ func (m *Manager) Capabilities() []contract.Capability {
 	capabilities = append(capabilities, m.AccountManagementCapabilities()...)
 	capabilities = append(capabilities, m.SSHDefenseManagementCapabilities()...)
 	capabilities = append(capabilities, m.SystemTuningCapabilities()...)
+	capabilities = append(capabilities, m.SystemPackagesCapabilities()...)
 	capabilities = append(capabilities, m.DiskPartitionCapabilities()...)
 	capabilities = append(capabilities, m.SystemLogCapabilities()...)
 	return append(capabilities, m.VirusScanCapabilities()...)

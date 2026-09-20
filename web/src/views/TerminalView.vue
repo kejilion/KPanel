@@ -206,6 +206,10 @@ function selectSession(id: string): void {
   })
 }
 
+function updateSessionState(item: OpenTerminal, state: OpenTerminal['state']): void {
+  item.state = state
+}
+
 function toggleQuickCommands(): void {
   if (terminalMode.value === 'interactive' && !activeSessionId.value) return
   quickCommandsOpen.value = !quickCommandsOpen.value
@@ -559,7 +563,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
-        <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="item.state = $event" />
+        <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="updateSessionState(item, $event)" />
         <TerminalQuickCommands
           :open="quickCommandsOpen && terminalMode === 'interactive'"
           :disabled="!activeSession || activeSession.state === 'finished'"
