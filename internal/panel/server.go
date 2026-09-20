@@ -444,6 +444,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSSHDefenseAction(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/system-tuning/actions":
 		s.handleSystemTuningAction(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/virus-scan/actions":
+		s.handleVirusScanAction(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/disk-partition-actions":
 		s.handleDiskPartitionAction(w, r)
 	case r.Method == http.MethodGet:
@@ -1069,7 +1071,8 @@ func (s *Server) handleAgentProxy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if (r.URL.Path == "/api/v1/system/logs" || r.URL.Path == "/api/v1/system/logs/summary") && r.URL.RawPath != "" {
+	if (r.URL.Path == "/api/v1/system/logs" || r.URL.Path == "/api/v1/system/logs/summary" ||
+		r.URL.Path == "/api/v1/system/virus-scan") && r.URL.RawPath != "" {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
 		return
 	}
@@ -1154,6 +1157,7 @@ func allowedAgentPath(publicPath string) (string, bool) {
 		"/api/v1/system/ssh-defense":            "/v1/system/ssh-defense",
 		"/api/v1/system/system-tuning":          "/v1/system/system-tuning",
 		"/api/v1/system/disk-partitions":        "/v1/system/disk-partitions",
+		"/api/v1/system/virus-scan":             "/v1/system/virus-scan",
 		"/api/v1/monitoring/history":            "/v1/monitoring/history",
 		"/api/v1/monitoring/checks":             "/v1/monitoring/checks",
 		"/api/v1/sites":                         "/v1/sites",

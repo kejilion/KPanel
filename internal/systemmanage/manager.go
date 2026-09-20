@@ -100,6 +100,7 @@ type Config struct {
 	DiskScript      KejilionScriptFinder
 	F2BScript       KejilionScriptFinder
 	BBRv3Script     KejilionScriptFinder
+	VirusScanReport string
 	ProcessSignaler ProcessSignaler
 }
 
@@ -123,6 +124,7 @@ type Manager struct {
 	diskScriptOwnerTrusted func(os.FileInfo) bool
 	f2bScript              KejilionScriptFinder
 	bbrv3Script            KejilionScriptFinder
+	virusScanReport        string
 	processSignaler        ProcessSignaler
 	rebootScheduled        bool
 	mu                     sync.Mutex
@@ -183,6 +185,9 @@ func NewManager(config Config) *Manager {
 	if config.BBRv3Script == nil {
 		config.BBRv3Script = findKejilionBBRv3Script
 	}
+	if config.VirusScanReport == "" {
+		config.VirusScanReport = "/home/docker/clamav/log/scan.log"
+	}
 	if config.ProcessSignaler == nil {
 		config.ProcessSignaler = platformProcessSignaler
 	}
@@ -199,6 +204,7 @@ func NewManager(config Config) *Manager {
 		diskScript:             config.DiskScript,
 		diskScriptOwnerTrusted: dnsScriptOwnerTrusted,
 		f2bScript:              config.F2BScript, bbrv3Script: config.BBRv3Script,
+		virusScanReport: filepath.Clean(config.VirusScanReport),
 		processSignaler: config.ProcessSignaler,
 	}
 }
@@ -349,7 +355,8 @@ func (m *Manager) Capabilities() []contract.Capability {
 	capabilities = append(capabilities, m.SSHDefenseManagementCapabilities()...)
 	capabilities = append(capabilities, m.SystemTuningCapabilities()...)
 	capabilities = append(capabilities, m.DiskPartitionCapabilities()...)
-	return append(capabilities, m.SystemLogCapabilities()...)
+	capabilities = append(capabilities, m.SystemLogCapabilities()...)
+	return append(capabilities, m.VirusScanCapabilities()...)
 }
 
 func (m *Manager) Execute(ctx context.Context, input contract.SystemActionRequest) (contract.SystemActionResult, error) {

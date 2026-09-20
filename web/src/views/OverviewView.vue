@@ -37,6 +37,7 @@ import {
   RefreshCw,
   RefreshCcw,
   ScrollText,
+  ScanSearch,
   Server,
   Settings2,
   ShieldCheck,
@@ -61,6 +62,7 @@ import SSHDefenseDialog from '@/components/overview/SSHDefenseDialog.vue'
 import SystemTuningDialog from '@/components/overview/SystemTuningDialog.vue'
 import DiskPartitionDialog from '@/components/overview/DiskPartitionDialog.vue'
 import SystemLogsDialog from '@/components/overview/SystemLogsDialog.vue'
+import VirusScanDialog from '@/components/overview/VirusScanDialog.vue'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import CountryFlagIcon from '@/components/overview/CountryFlagIcon.vue'
 import { ApiError, api } from '@/lib/api'
@@ -137,7 +139,7 @@ interface SystemCenterSection {
 
 type KernelProfile = 'high' | 'balanced' | 'web' | 'stream' | 'game' | 'off'
 type BBRv3Policy = 'install' | 'update' | 'uninstall'
-type ResourceDialogID = 'hosts' | 'cron' | 'network-interfaces' | 'firewall' | 'port-usage' | 'traffic-shutdown' | 'accounts' | 'ssh-defense' | 'system-tuning' | 'disk-partitions' | 'system-logs'
+type ResourceDialogID = 'hosts' | 'cron' | 'network-interfaces' | 'firewall' | 'port-usage' | 'traffic-shutdown' | 'accounts' | 'ssh-defense' | 'system-tuning' | 'disk-partitions' | 'system-logs' | 'virus-scan'
 
 const mirrorPresets: Array<{
   value: MirrorPreset
@@ -711,6 +713,29 @@ const overviewSystemTools = computed<ManagementTool[]>(() => {
   })
 })
 
+const virusScanTool = computed<ManagementTool>(() => {
+  const maintenance = data.value.management.maintenance
+  let value = capabilityState('system.virus-scan.read').enabled ? 'ClamAV · Docker' : '适配器未就绪'
+  let detail = '全盘 · 重要目录 · 自定义目录；只生成报告，不自动删除文件。'
+  if (maintenance.action === 'virus-scan' && maintenance.state !== 'idle') {
+    if (maintenance.state === 'running') value = `扫描中 · ${maintenance.progress}%`
+    else if (maintenance.state === 'failed') value = '上次扫描失败'
+    else value = '上次扫描已完成'
+    detail = maintenance.message || detail
+  }
+  return {
+    id: 'virus-scan',
+    title: '病毒查杀',
+    description: '对应 kejilion.sh 的 ClamAV 病毒扫描工具。',
+    value,
+    detail,
+    capability: 'system.virus-scan.read',
+    safety: '病毒库更新需要网络；扫描容器只读挂载目标目录并禁用网络，报告有界展示，不自动删除或隔离文件。',
+    icon: ScanSearch,
+    tone: 'amber',
+  }
+})
+
 const systemCenterSections = computed<SystemCenterSection[]>(() => {
   const tools = new Map(
     [...basicSettings.value, ...networkTools.value].map((tool) => [tool.id, tool]),
@@ -745,7 +770,7 @@ const systemCenterSections = computed<SystemCenterSection[]>(() => {
       description: '账户、SSH 与入站访问保护',
       icon: ShieldCheck,
       iconTone: 'amber',
-      tools: select(['ssh-port', 'ssh-defense', 'accounts', 'firewall']),
+      tools: [...select(['ssh-port', 'ssh-defense', 'accounts', 'firewall']), virusScanTool.value],
     },
     {
       id: 'network',
@@ -778,6 +803,7 @@ const resourceCapabilityNames: Record<ResourceDialogID, string> = {
 	'system-tuning': 'system.tuning',
 	'disk-partitions': 'system.disk-partitions',
 	'system-logs': 'system.logs',
+	'virus-scan': 'system.virus-scan',
 }
 
 const resourceCapabilityUnavailableReasons: Record<ResourceDialogID, string> = {
@@ -792,6 +818,7 @@ const resourceCapabilityUnavailableReasons: Record<ResourceDialogID, string> = {
 	'system-tuning': '当前 Agent 的系统综合调优能力尚未就绪。',
 	'disk-partitions': '当前 Agent 的磁盘管理 worker 尚未就绪。',
 	'system-logs': '当前 Agent 的系统日志适配器尚未就绪。',
+	'virus-scan': '当前 Agent 的病毒扫描适配器尚未就绪。',
 }
 
 function isResourceDialogID(id: string): id is ResourceDialogID {
@@ -1953,6 +1980,13 @@ onBeforeUnmount(() => {
 		:readable="resourceCapability('system-logs', 'read').enabled"
 		:writable="resourceCapability('system-logs', 'write').enabled"
 		:unavailable-reason="resourceCapability('system-logs', 'read').reason"
+		@close="closeResourceDialog"
+	/>
+	<VirusScanDialog
+		:open="selectedResourceDialog === 'virus-scan'"
+		:readable="resourceCapability('virus-scan', 'read').enabled"
+		:writable="resourceCapability('virus-scan', 'write').enabled"
+		:unavailable-reason="resourceCapability('virus-scan', 'read').reason"
 		@close="closeResourceDialog"
 	/>
   </div>
