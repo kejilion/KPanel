@@ -32,6 +32,7 @@ import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
+import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
 import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopShortcutDialog, {
@@ -509,6 +510,16 @@ function groupItems(groups = localGroups.value): DesktopGridItem[] {
 
 function groupCount(group: DesktopGroup): number {
   return group.members.filter(key => visibleKeySet.value.has(key)).length
+}
+
+function groupPreviewEntries(group: DesktopGroup) {
+  const slots = desktopGroupSlots(group)
+  return group.members.filter(key => visibleKeySet.value.has(key))
+    .sort((a, b) => slots[a]! - slots[b]!).slice(0, 3).map(key => {
+      const app = desktopApps.find(app => `nav:${app.path}` === key)
+      const entry = [...visibleDynamicEntries.value, ...shortcutEntries.value].find(entry => entry.key === key)
+      return { key, label: iconLabel(key), iconURL: app?.desktopIconURL || entry?.iconURL, icon: app?.icon || entry?.icon }
+    })
 }
 
 function groupCollapsed(key: string): boolean {
@@ -3737,7 +3748,12 @@ function onViewportResize(): void {
         :busy="groupSaving" :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
         :class="{ 'desktop-group--dragging': draggingWidgets.has(groupKey(group.id)) }"
         @toggle="toggleGroup(group.id)" @menu="showGroupDialog([], group.id)"
-        @drag="beginWidgetDrag($event, groupKey(group.id))" @nudge="nudgeWidget(groupKey(group.id), $event)" />
+        @drag="beginWidgetDrag($event, groupKey(group.id))" @nudge="nudgeWidget(groupKey(group.id), $event)">
+        <template #preview>
+          <DesktopGroupPreviewIcon v-for="entry in groupPreviewEntries(group)" :key="entry.key"
+            :label="entry.label" :icon-u-r-l="entry.iconURL" :icon="entry.icon" />
+        </template>
+      </DesktopGroupCard>
       <p
         v-if="renderedIconLayout.overflowKeys.length"
         class="desktop__icons-overflow-note"

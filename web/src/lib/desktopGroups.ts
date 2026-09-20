@@ -37,6 +37,9 @@ export const cloneDesktopGroups = (groups: readonly ReadonlyGroup[]): DesktopGro
 export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, targetSlot?: number): DesktopGroup[] {
   if (targetId && !groups.some(group => group.id === targetId)) return cloneDesktopGroups(groups)
   const moving = [...new Set(keys)]
+  // Only retire groups emptied by this move, not intentionally created empty groups.
+  const populated = new Set(groups.filter(group => group.members.length).map(group => group.id))
+  const keepGroup = (group: DesktopGroup) => group.members.length > 0 || !populated.has(group.id) || group.id === targetId
   const source = groups.find(group => group.id === targetId)
   const origin = source && moving.length === 1 ? desktopGroupSlots(source)[moving[0]!] : undefined
   const result = cloneDesktopGroups(groups).map(group => {
@@ -45,7 +48,7 @@ export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonl
     return group
   })
   const target = result.find(group => group.id === targetId)
-  if (!target) return result
+  if (!target) return result.filter(keepGroup)
   if (target.members.length + moving.length > MAX_GROUP_CELLS) return cloneDesktopGroups(groups)
   const slots = target.slots!
   const free = (from = 0) => {
@@ -66,7 +69,7 @@ export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonl
     slots[key] = origin !== undefined && !Object.values(slots).includes(origin) ? origin : free(Math.min(MAX_GROUP_CELLS, start + moving.length))
   }
   target.members = [...target.members, ...moving].sort((a, b) => slots[a]! - slots[b]!)
-  return result
+  return result.filter(keepGroup)
 }
 
 export function moveGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, beforeKey?: string): DesktopGroup[] {

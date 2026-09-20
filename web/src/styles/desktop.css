@@ -40,6 +40,13 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop {
+  /* Wallpaper-level group surfaces stay dark in both app themes, unlike widgets. */
+  --desktop-group-surface: rgb(15 32 48 / 78%);
+  --desktop-group-border: rgb(209 230 246 / 22%);
+  --desktop-group-text: #f3f7fb;
+  --desktop-group-muted: #d8e2eb;
+  --desktop-group-hover: rgb(225 239 250 / 10%);
+  --desktop-group-focus: #81dfce;
   position: fixed;
   z-index: 1000;
   inset: 0;
@@ -1597,12 +1604,12 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__icon-slot--group-ready { outline: 2px solid var(--brand); background: var(--brand-soft); }
 .desktop__icon-slot--group-candidate::after {
   content: attr(data-group-hint); position: absolute; top: 100%; left: 0;
-  box-sizing: border-box; padding: 6px; width: 100%; overflow-wrap: anywhere; text-align: center; background: var(--surface-raised); color: var(--text);
+  box-sizing: border-box; padding: 6px 4px; width: 100%; overflow-wrap: anywhere; text-align: center; background: var(--surface-raised); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; line-height: 1.5; z-index: 30; pointer-events: none;
 }
 :root .desktop__icon-slot[data-group-member] .desktop__icon-label {
   font-size: 14px;
-  color: var(--text);
+  color: var(--desktop-group-text);
   background: transparent;
   border-color: transparent;
   box-shadow: none;

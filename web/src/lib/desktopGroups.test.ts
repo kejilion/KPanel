@@ -6,6 +6,17 @@ import type { DesktopGroup } from '@/types/api'
 const a: DesktopGroup = { id: 'a', name: 'A', columns: 3, collapsed: false, members: ['nav:/overview', 'nav:/files'] }
 const b: DesktopGroup = { id: 'b', name: 'B', columns: 3, collapsed: false, members: ['nav:/docker'] }
 describe('desktop groups', () => {
+  it('retires only groups emptied by moving members out, keeping intentional empty groups', () => {
+    const empty = { ...a, id: 'empty', members: [] }
+    const moved = placeGroupMembers([a, b, empty], a.members)
+    expect(moved.map(group => group.id)).toEqual(['b', 'empty'])
+    expect(a.members).toHaveLength(2)
+    const transferred = placeGroupMembers([a, b, empty], b.members, 'a')
+    expect(transferred.map(group => group.id)).toEqual(['a', 'empty'])
+    expect(transferred[0]!.members).toContain('nav:/docker')
+    expect(placeGroupMembers([b], b.members, 'b', 4)[0]!.slots).toEqual({ 'nav:/docker': 4 })
+    expect(placeGroupMembers([a], ['nav:/files'])[0]!.members).toEqual(['nav:/overview'])
+  })
   it('moves and reorders members without duplication or mutating the original', () => {
     const moved = moveGroupMembers([a,b], ['nav:/files'], 'b', 'nav:/docker')
     expect(moved[0]!.members).toEqual(['nav:/overview'])
