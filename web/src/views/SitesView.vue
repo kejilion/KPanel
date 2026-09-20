@@ -1790,6 +1790,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.site-install-progress > p,
+.site-install-progress__heading > span,
+.site-install-progress__heading > strong {
+  font-size: 14px;
+}
+
 .site-redirect-field > span,
 .site-redirect-field > input {
   font-size: 0.875rem;
