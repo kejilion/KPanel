@@ -5,8 +5,10 @@ import { desktopIconGrid, desktopIconPixelsToPosition, type DesktopIconBounds } 
 
 export const MAX_DESKTOP_GROUPS = 32
 export const MAX_GROUP_CELLS = 512
-export const GROUP_HEADER_HEIGHT = 48
-export const GROUP_PADDING = 8
+export const GROUP_HEADER_HEIGHT = 36
+export const GROUP_PADDING = 16
+export const GROUP_CELL_HEIGHT = 78
+const GROUP_COLUMN_GAP = 8
 export const DESKTOP_GROUP_COLUMNS = 4
 export const GROUP_DWELL_MS = 450
 export const groupKey = (id: string) => 'group:' + id
@@ -85,19 +87,23 @@ export function moveGroupMembers(groups: readonly DesktopGroup[], keys: readonly
 
 function geometry(group: DesktopGroup, bounds: DesktopIconBounds, span?: number) {
   const grid = desktopIconGrid(bounds)
-  const columns = span ?? Math.min(grid.columns, group.columns + 1)
-  const innerColumns = Math.max(1, Math.min(group.columns, columns - 1))
+  const columns = span ?? Math.min(grid.columns, group.columns)
+  const innerColumns = Math.max(1, Math.min(group.columns, columns))
   const rowSegments = Math.ceil(group.columns / innerColumns)
   const slots = desktopGroupSlots(group)
   const logicalRows = Math.max(1, Math.ceil((Math.max(-1, ...Object.values(slots)) + 1) / group.columns))
-  const contentHeight = (logicalRows * rowSegments - 1) * grid.stepY + grid.metrics.height
-  const width = group.collapsed
-    ? innerColumns * grid.stepX - grid.metrics.columnGap + GROUP_PADDING * 2
-    : columns * grid.stepX - grid.metrics.columnGap
-  const rows = Math.ceil((GROUP_HEADER_HEIGHT + contentHeight + GROUP_PADDING + grid.metrics.rowGap) / grid.stepY)
+  const physicalRows = logicalRows * rowSegments
+  const width = columns * grid.stepX - grid.metrics.columnGap
+  const padding = Math.min(GROUP_PADDING, Math.max(0, (width - 58) / 2))
+  const cellWidth = (width - padding * 2 - (innerColumns - 1) * GROUP_COLUMN_GAP) / innerColumns
+  const contentHeight = physicalRows * GROUP_CELL_HEIGHT
+  const rows = Math.ceil((GROUP_HEADER_HEIGHT + contentHeight + 4 + grid.metrics.rowGap) / grid.stepY)
   const height = group.collapsed ? 56 : rows * grid.stepY - grid.metrics.rowGap
-  const top = Math.max(GROUP_HEADER_HEIGHT, (height - contentHeight) / 2)
-  return { grid, columns, innerColumns, rowSegments, logicalRows, slots, width, height, top }
+  // The outer frame uses desktop cells; its contents use their own compact rhythm.
+  const slack = Math.max(0, height - GROUP_HEADER_HEIGHT - contentHeight)
+  const rowGap = physicalRows > 1 ? Math.min(12, Math.max(0, (slack - 12) / (physicalRows - 1))) : 0
+  const top = GROUP_HEADER_HEIGHT + Math.max(0, (slack - rowGap * (physicalRows - 1) - 4) / 2)
+  return { grid, columns, innerColumns, rowSegments, logicalRows, slots, width, height, top, padding, cellWidth, rowGap }
 }
 
 export function desktopGroupItem(group: DesktopGroup, _visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridItem {
@@ -114,15 +120,13 @@ export function desktopGroupRect(group: DesktopGroup, placement: DesktopGridPlac
 }
 
 export function desktopGroupCells(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds) {
-  const { grid, innerColumns, rowSegments, logicalRows, slots, top } = geometry(group, bounds, placement.columns)
-  const rect = desktopGroupRect(group, placement, bounds)
-  const padding = Math.max(0, (rect.width - innerColumns * grid.stepX + grid.metrics.columnGap) / 2)
+  const { innerColumns, rowSegments, logicalRows, slots, top, padding, cellWidth, rowGap } = geometry(group, bounds, placement.columns)
   const byCell = new Map(Object.entries(slots).map(([key, cell]) => [cell, key]))
   return Array.from({ length: Math.min(MAX_GROUP_CELLS, logicalRows * group.columns) }, (_, index) => ({
     index, key: byCell.get(index),
-    left: padding + (index % group.columns % innerColumns) * grid.stepX,
-    top: top + (Math.floor(index / group.columns) * rowSegments + Math.floor(index % group.columns / innerColumns)) * grid.stepY,
-    width: grid.metrics.width, height: grid.metrics.height,
+    left: padding + (index % group.columns % innerColumns) * (cellWidth + GROUP_COLUMN_GAP),
+    top: top + (Math.floor(index / group.columns) * rowSegments + Math.floor(index % group.columns / innerColumns)) * (GROUP_CELL_HEIGHT + rowGap),
+    width: cellWidth, height: GROUP_CELL_HEIGHT,
   }))
 }
 
@@ -137,6 +141,7 @@ export function desktopGroupMembers(group: DesktopGroup, placement: DesktopGridP
   const rect = desktopGridPlacementRect(placement, bounds)
   return desktopGroupCells(group, placement, bounds).flatMap(cell => cell.key && visibleKeys.has(cell.key) ? [{
     key: cell.key, columns: 1, rows: 1,
+    pixelSize: { width: cell.width, height: cell.height },
     position: desktopIconPixelsToPosition({ left: rect.left + cell.left, top: rect.top + cell.top }, bounds),
   }] : [])
 }

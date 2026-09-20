@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, normalizeDesktopGroupColumns, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
+import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupRect, normalizeDesktopGroupColumns, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
 import { deriveDesktopGridLayout, desktopGridPlacementRect } from './desktopGridLayout'
 import type { DesktopGroup } from '@/types/api'
 
@@ -14,7 +14,7 @@ describe('desktop groups', () => {
     expect(group.members).not.toBe(legacy.members)
     expect(group.slots).not.toBe(legacy.slots)
   })
-  it('ignores legacy reserved rows and balances padding inside whole grid cells', () => {
+  it('fits an independent inner grid inside whole desktop cells, ignoring reserved rows', () => {
     for (const bounds of [{ width: 1200, height: 800 }, { width: 290, height: 550 }]) {
       for (const columns of [2, 3, 4]) for (const rows of [1, 2, 3]) {
         const group = { ...a, columns, rows }
@@ -28,12 +28,35 @@ describe('desktop groups', () => {
         expect(rect.height).toBeLessThanOrEqual(reservation.height)
         expect((rect.width + 5) % 95).toBe(0)
         expect((rect.height + 4) % 100).toBe(0)
-        expect(Math.min(...cells.map(cell => cell.left))).toBe(47.5)
-        expect(rect.width - Math.max(...cells.map(cell => cell.left + cell.width))).toBe(47.5)
-        expect(Math.min(...cells.map(cell => cell.top))).toBe(50)
-        expect(rect.height - Math.max(...cells.map(cell => cell.top + cell.height))).toBe(50)
+        expect(Math.min(...cells.map(cell => cell.left))).toBe(16)
+        expect(rect.width - Math.max(...cells.map(cell => cell.left + cell.width))).toBe(16)
+        expect(Math.min(...cells.map(cell => cell.top))).toBeGreaterThanOrEqual(36)
+        expect(rect.height - Math.max(...cells.map(cell => cell.top + cell.height))).toBeGreaterThanOrEqual(4)
+        for (const cell of cells) {
+          expect(cell.height).toBe(78)
+          expect(cell.width).toBeGreaterThanOrEqual(52)
+          expect(cell.width).toBeLessThanOrEqual(90)
+          expect(desktopGroupCellAtPoint(group, placement, bounds, cell.left + cell.width / 2, cell.top + cell.height / 2)).toBe(cell.index)
+        }
         expect(desktopGroupRect({ ...group, collapsed: true }, placement, bounds).height).toBe(56)
       }
+    }
+  })
+  it.each([8, 10, 12])('keeps four compact columns with matching paint and hit bounds for %s members', count => {
+    const bounds = { width: 1200, height: 800 }
+    const group = { ...a, columns: 4, members: Array.from({ length: count }, (_, i) => `app:${i}`) }
+    const visible = new Set(group.members)
+    const placement = deriveDesktopGridLayout([desktopGroupItem(group, visible, bounds)], [], bounds, true).placements[0]!
+    expect(desktopGroupRect(group, placement, bounds)).toMatchObject({ width: 375, height: count > 8 ? 296 : 196 })
+    const cells = desktopGroupCells(group, placement, bounds)
+    const members = desktopGroupMembers(group, placement, visible, bounds)
+    for (const [index, member] of members.entries()) {
+      expect(member.pixelSize).toEqual({ width: 79.75, height: 78 })
+      const rect = desktopGridPlacementRect(member, bounds)
+      expect(rect.left).toBeCloseTo(cells[index]!.left)
+      expect(rect.top).toBeCloseTo(cells[index]!.top)
+      expect(rect.width).toBe(cells[index]!.width)
+      expect(rect.height).toBe(cells[index]!.height)
     }
   })
   it('retires only groups emptied by moving members out, keeping intentional empty groups', () => {

@@ -776,6 +776,10 @@ const renderedIconLayout = computed(() => {
 const renderedPositionByKey = computed(() => new Map(
   renderedIconLayout.value.placements.map((placement) => [placement.key, placement.position]),
 ))
+const renderedIconSizeByKey = computed(() => new Map(
+  renderedIconLayout.value.placements.filter(placement => placement.pixelSize)
+    .map(placement => [placement.key, placement.pixelSize!]),
+))
 const renderedPlacementByKey = computed(() => new Map(
   renderedDesktopLayout.value.placements.map((placement) => [placement.key, placement]),
 ))
@@ -1370,6 +1374,10 @@ function iconSlotStyle(key: string): Record<string, string> {
       pixels = { left: pixels.left + groupPreview.left - origin.left, top: pixels.top + groupPreview.top - origin.top }
     }
     if (pixels) return {
+      ...(renderedIconSizeByKey.value.has(key) ? {
+        width: `${renderedIconSizeByKey.value.get(key)!.width}px`,
+        height: `${renderedIconSizeByKey.value.get(key)!.height}px`,
+      } : {}),
       left: '0px', top: '0px', transform: `translate3d(${pixels.left}px, ${pixels.top}px, 0)`,
       transition: draggingIcons.value.has(key) || groupPreview ? 'none' : '',
       zIndex: draggingIcons.value.has(key) || groupPreview ? '24' : '2',
