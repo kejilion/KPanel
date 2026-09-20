@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -662,17 +661,6 @@ func hasResponseCapability(headers http.Header, capability string) bool {
 		}
 	}
 	return false
-}
-
-func newHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	transport.MaxIdleConns = 4
-	transport.MaxIdleConnsPerHost = 2
-	return &http.Client{
-		Transport: transport, Timeout: 40 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
 }
 
 func validateHTTPSOrigin(value string) (string, error) {
