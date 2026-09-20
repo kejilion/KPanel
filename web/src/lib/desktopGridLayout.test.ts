@@ -73,7 +73,7 @@ describe('desktop mixed grid layout', () => {
   })
 })
 
-describe('pixel-accurate desktop groups', () => {
+describe('grid-aligned expanded desktop groups', () => {
   const group = (id: string, count: number, collapsed = false): DesktopGroup => ({
     id, name: id, columns: 4, rows: 0, collapsed,
     members: Array.from({ length: count }, (_, index) => `${id}:${index}`),
@@ -88,14 +88,14 @@ describe('pixel-accurate desktop groups', () => {
   ], bounds, false).placements
   const rect = (placements: ReturnType<typeof initial>, key = 'group:b') => desktopGridPlacementRect(placements.find(item => item.key === key)!, bounds)
 
-  it('uses the painted footprint, not the old five-cell reservation', () => {
-    expect(rect(initial(), 'group:a')).toMatchObject({ width: 391, height: 252 })
-    expect(rect(initial())).toMatchObject({ width: 391, height: 352 })
+  it('paints the full grid footprint including balanced breathing room', () => {
+    expect(rect(initial(), 'group:a')).toMatchObject({ width: 470, height: 296 })
+    expect(rect(initial())).toMatchObject({ width: 470, height: 396 })
   })
 
-  it.each([380, 403, 424])('snaps horizontal neighbours to 12px from a %spx pointer target and survives reload', left => {
+  it.each([450, 475, 499])('snaps horizontal neighbours to the 5px grid gap from %spx and survives reload', left => {
     const moved = dropDesktopGridItem(initial(), groupItems, 'group:b', position(left, 7), bounds)
-    expect(rect(moved).left).toBeCloseTo(403)
+    expect(rect(moved).left).toBeCloseTo(475)
     expect(rect(moved).top).toBe(0)
     const reloaded = deriveDesktopGridLayout(groupItems, moved.map(({ key, position }) => ({ key, position })), bounds, false)
     expect(rect(reloaded.placements)).toEqual(rect(moved))
@@ -103,28 +103,30 @@ describe('pixel-accurate desktop groups', () => {
   })
 
   it('snaps above/below as well as left/right, including collapsed cards', () => {
-    const below = dropDesktopGridItem(initial(), groupItems, 'group:b', position(8, 254), bounds)
-    expect(rect(below)).toMatchObject({ left: 0, top: 264 })
+    const below = dropDesktopGridItem(initial(), groupItems, 'group:b', position(8, 304), bounds)
+    expect(rect(below)).toMatchObject({ left: 0, top: 300 })
     const above = dropDesktopGridItem(below, groupItems, 'group:a', position(8, 10), bounds)
     expect(rect(above, 'group:a')).toMatchObject({ left: 0, top: 0 })
     const left = dropDesktopGridItem(initial(), groupItems, 'group:a', position(65, 0), bounds)
-    expect(rect(left, 'group:a').left).toBeCloseTo(72)
+    expect(rect(left, 'group:a').left).toBe(0)
     const collapsedItems = [desktopGroupItem({ ...first, collapsed: true }, new Set(), bounds), groupItems[1]!]
     const collapsed = deriveDesktopGridLayout(collapsedItems, initial(), bounds, false).placements
     const underHeader = dropDesktopGridItem(collapsed, collapsedItems, 'group:b', position(0, 60), bounds)
-    expect(rect(underHeader).top).toBeCloseTo(68)
+    expect(rect(underHeader).top).toBeCloseTo(100)
     const expanded = deriveDesktopGridLayout(groupItems, underHeader, bounds, false)
     expect(expanded.placements).toHaveLength(2)
     assertNoOverlap(expanded.placements)
   })
 
-  it('keeps free anchors and stops invalid drops without displacing neighbours', () => {
+  it('quantizes anchors and stops invalid drops without displacing neighbours', () => {
     const free = dropDesktopGridItem(initial(), groupItems, 'group:b', position(463, 93), bounds)
-    expect(rect(free)).toMatchObject({ left: 463, top: 93 })
+    expect(rect(free).left).toBeCloseTo(475)
+    expect(rect(free).top).toBeCloseTo(100)
     const blocked = dropDesktopGridItem(free, groupItems, 'group:b', position(100, 100), bounds)
     expect(blocked).toEqual(free)
     const edge = dropDesktopGridItem(free, groupItems, 'group:b', position(900, 400), bounds)
-    expect(rect(edge).left + rect(edge).width).toBeCloseTo(bounds.width)
+    expect(rect(edge).left + rect(edge).width).toBeLessThanOrEqual(bounds.width)
+    expect(rect(edge).left / 95).toBeCloseTo(Math.round(rect(edge).left / 95))
   })
 
   it('does not snap through standalone icons or widgets', () => {
@@ -139,9 +141,9 @@ describe('pixel-accurate desktop groups', () => {
     assertNoOverlap(layout.placements)
   })
 
-  it('uses the same snap for keyboard moves and retains fractional anchors on narrow screens', () => {
+  it('uses the same collision rule for keyboard moves and fits narrow screens', () => {
     const moved = moveDesktopGridItemByKeyboard(initial(), groupItems, 'group:b', 'left', bounds)
-    expect(rect(moved).left).toBeCloseTo(403)
+    expect(rect(moved).left).toBeCloseTo(475)
     for (const width of [320, 390, 760, 960]) {
       const narrowBounds = { width, height: 700 }
       const narrowItems = [first, second].map(value => desktopGroupItem(value, new Set(), narrowBounds))
@@ -152,5 +154,27 @@ describe('pixel-accurate desktop groups', () => {
         expect(r.left + r.width).toBeLessThanOrEqual(width + 1e-7)
       }
     }
+  })
+
+  it('aligns with loose icons and the clock in both directions without moving neighbours', () => {
+    const mixed = [groupItems[0]!, { key: 'icon:left' }, { key: 'icon:right' }, { key: 'widget:clock', columns: 4, rows: 2 }]
+    const saved = [
+      { key: 'group:a', position: position(101, 6) },
+      { key: 'icon:left', position: position(0, 100) },
+      { key: 'icon:right', position: position(570, 100) },
+      { key: 'widget:clock', position: position(95, 300) },
+    ]
+    const layout = deriveDesktopGridLayout(mixed, saved, bounds, false).placements
+    const groupRect = rect(layout, 'group:a')
+    const clock = rect(layout, 'widget:clock')
+    expect(groupRect.left).toBe(clock.left)
+    expect(groupRect.top + groupRect.height + 4).toBe(clock.top)
+    expect(groupRect.left - rect(layout, 'icon:left').left - 90).toBe(5)
+    expect(rect(layout, 'icon:right').left - groupRect.left - groupRect.width).toBe(5)
+    const movedIcon = dropDesktopGridItem(layout, mixed, 'icon:left', position(0, 0), bounds)
+    expect(rect(movedIcon, 'group:a')).toEqual(groupRect)
+    const movedGroup = dropDesktopGridItem(movedIcon, mixed, 'group:a', position(96, 2), bounds)
+    expect(rect(movedGroup, 'group:a')).toEqual(groupRect)
+    assertNoOverlap(movedGroup)
   })
 })
