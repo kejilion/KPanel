@@ -33,7 +33,7 @@ import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
 import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
-import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
+import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, desktopGroupRect, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopShortcutDialog, {
   type DesktopShortcutDraft,
@@ -689,9 +689,8 @@ function groupAtPoint(clientX: number, clientY: number): string | undefined {
   for (const group of localGroups.value) {
     const placement = renderedPlacementByKey.value.get(groupKey(group.id))
     if (!placement) continue
-    const rect = desktopGridPlacementRect(placement, iconBounds.value)
-    const height = group.collapsed ? 56 : rect.height
-    if (x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + height) return group.id
+    const rect = desktopGroupRect(group, placement, iconBounds.value)
+    if (x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height) return group.id
   }
 }
 
@@ -721,8 +720,10 @@ function handleGroupDrop(keys: string[], clientX: number, clientY: number, desti
 
 function groupSlotStyle(group: DesktopGroup): Record<string, string> {
   const style = widgetSlotStyle(groupKey(group.id))
-  if (style.display) return style
-  return { ...style, left: '0px', top: '0px', transform: `translate3d(${style.left}, ${style.top}, 0)`, ...(group.collapsed ? { height: '56px' } : {}) }
+  const placement = renderedPlacementByKey.value.get(groupKey(group.id))
+  if (style.display || !placement) return style
+  const rect = desktopGroupRect(group, placement, iconBounds.value)
+  return { ...style, left: '0px', top: '0px', transform: `translate3d(${style.left}, ${style.top}, 0)`, width: `${rect.width}px`, height: `${rect.height}px` }
 }
 
 const desktopWidgetItems = computed<DesktopGridItem[]>(() => {
