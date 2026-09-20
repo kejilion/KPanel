@@ -257,6 +257,8 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     const thirdCell = await group.locator('[data-group-cell="0"]').boundingBox()
     await save(() => drag(slot('nav:/settings'), thirdCell.x + 45, thirdCell.y + 24))
     const inspectCollapse = async collapsing => {
+      await group.locator('.desktop-group__toggle').hover()
+      await settle()
       const anchor = await group.boundingBox()
       const samples = await group.locator('.desktop-group__toggle').evaluate(async button => {
         const member = document.querySelector('[data-icon-key="nav:/settings"]')
