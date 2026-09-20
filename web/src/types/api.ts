@@ -483,7 +483,7 @@ export interface SystemManagement {
   maintenance: {
     id?: string
     state: 'idle' | 'running' | 'succeeded' | 'failed'
-    action?: 'update' | 'cleanup' | 'ssh-defense' | 'bbrv3' | 'system-tuning' | 'log-cleanup'
+    action?: 'update' | 'cleanup' | 'ssh-defense' | 'bbrv3' | 'system-tuning' | 'log-cleanup' | 'virus-scan'
     policy?: string
     stage?: string
     progress: number
@@ -621,6 +621,39 @@ export interface SystemLogEntries {
   entries: SystemLogEntry[]
   truncated: boolean
   observedAt: string
+}
+
+export type VirusScanMode = 'full' | 'important' | 'custom'
+
+export interface VirusScanSnapshot {
+  reportAvailable: boolean
+  reportPath: string
+  source?: 'kpanel' | 'script'
+  status: 'never' | 'running' | 'clean' | 'infected' | 'completed-with-errors' | 'unknown'
+  mode?: VirusScanMode
+  paths: string[]
+  scannedFiles: number
+  infectedFiles: number
+  errors: number
+  findings: string[]
+  truncated: boolean
+  completedAt?: string
+  observedAt: string
+  maintenance: SystemManagement['maintenance']
+}
+
+export interface VirusScanActionInput {
+  mode: VirusScanMode
+  paths?: string[]
+}
+
+export interface VirusScanActionResult {
+  status: string
+  taskId: string
+  mode: VirusScanMode
+  paths?: string[]
+  message: string
+  appliedAt: string
 }
 
 export type ProcessSort = 'cpu' | 'memory' | 'pid' | 'name' | 'user' | 'state' | 'threads'

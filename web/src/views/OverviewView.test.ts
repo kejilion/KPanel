@@ -301,7 +301,7 @@ describe('OverviewView refresh stability', () => {
     ).toEqual([
       { id: 'maintenance', tools: ['system-update', 'system-cleanup', 'system-logs', 'system-reboot'] },
       { id: 'basic', tools: ['swap', 'disk-partitions', 'hostname', 'timezone', 'mirror', 'cron'] },
-      { id: 'security', tools: ['ssh-port', 'ssh-defense', 'accounts', 'firewall'] },
+      { id: 'security', tools: ['ssh-port', 'ssh-defense', 'accounts', 'firewall', 'virus-scan'] },
       {
         id: 'network',
         tools: [
@@ -328,5 +328,7 @@ describe('OverviewView refresh stability', () => {
     expect(view.selectedResourceDialog.value).toBe('disk-partitions')
     view.openTool({ id: 'system-logs' })
     expect(view.selectedResourceDialog.value).toBe('system-logs')
+    view.openTool({ id: 'virus-scan' })
+    expect(view.selectedResourceDialog.value).toBe('virus-scan')
   })
 })

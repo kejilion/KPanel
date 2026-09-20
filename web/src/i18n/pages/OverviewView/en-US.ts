@@ -376,4 +376,12 @@ export default [
   ["未报告版本", "Version not reported"],
   ["已检测到公网 IPv6，预设会同时填充 2 个 IPv4 和 2 个 IPv6 地址。", "Public IPv6 detected. The preset fills 2 IPv4 and 2 IPv6 addresses."],
   ["未检测到公网 IPv6，预设仅填充 IPv4 地址。", "No public IPv6 detected. The preset fills IPv4 addresses only."],
+  ["全盘 · 重要目录 · 自定义目录；只生成报告，不自动删除文件。", "Full system · Key directories · Custom directories; reports only, with no automatic file deletion."],
+  ["扫描中 · {0}%", "Scanning · {0}%"],
+  ["上次扫描失败", "Last scan failed"],
+  ["上次扫描已完成", "Last scan completed"],
+  ["病毒查杀", "Virus scan"],
+  ["对应 kejilion.sh 的 ClamAV 病毒扫描工具。", "ClamAV virus scanning provided by kejilion.sh."],
+  ["病毒库更新需要网络；扫描容器只读挂载目标目录并禁用网络，报告有界展示，不自动删除或隔离文件。", "Signature updates require network access. The scan container mounts targets read-only with networking disabled, displays a bounded report, and never deletes or quarantines files automatically."],
+  ["当前 Agent 的病毒扫描适配器尚未就绪。", "Virus scanning is unavailable with the current Agent."],
 ] as const satisfies PhraseCatalog

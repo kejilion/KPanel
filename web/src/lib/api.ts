@@ -94,6 +94,9 @@ import type {
   SystemLogEntries,
   SystemLogQuery,
   SystemLogsSummary,
+	VirusScanActionInput,
+	VirusScanActionResult,
+	VirusScanSnapshot,
   SystemResourceActionInput,
   SystemResourceActionResult,
   SystemOverview,
@@ -869,16 +872,15 @@ function normalizeAgent(raw: RawAgentHealth): AgentStatus {
 function normalizeMaintenance(
   raw?: NonNullable<RawSystemSummary['management']>['maintenance'],
 ): SystemOverview['management']['maintenance'] {
+	const actions = ['update', 'cleanup', 'ssh-defense', 'bbrv3', 'system-tuning', 'log-cleanup', 'virus-scan'] as const
+	const action = actions.find((candidate) => candidate === raw?.action)
   return {
     id: raw?.id,
     state: ['running', 'succeeded', 'failed'].includes(raw?.state || '')
       ? (raw?.state as 'running' | 'succeeded' | 'failed')
       : 'idle',
-    action: raw?.action === 'update' || raw?.action === 'cleanup' ? raw.action : undefined,
-    policy:
-      raw?.policy === 'full' || raw?.policy === 'cache' || raw?.policy === 'standard'
-        ? raw.policy
-        : undefined,
+    action,
+    policy: raw?.policy,
     stage: raw?.stage,
     progress: raw?.progress || 0,
     message: raw?.message,
@@ -1739,8 +1741,12 @@ export const api = {
 		request<SSHDefenseActionResult>('/system/ssh-defense/actions', { method: 'POST', body }),
 	systemTuning: (signal?: AbortSignal): Promise<SystemTuningSnapshot> =>
 		request<SystemTuningSnapshot>('/system/system-tuning', { signal }),
-	systemTuningAction: (body: SystemTuningActionInput): Promise<SystemTuningActionResult> =>
+	 systemTuningAction: (body: SystemTuningActionInput): Promise<SystemTuningActionResult> =>
 		request<SystemTuningActionResult>('/system/system-tuning/actions', { method: 'POST', body }),
+	virusScan: (signal?: AbortSignal): Promise<VirusScanSnapshot> =>
+		request<VirusScanSnapshot>('/system/virus-scan', { signal }),
+	virusScanAction: (body: VirusScanActionInput): Promise<VirusScanActionResult> =>
+		request<VirusScanActionResult>('/system/virus-scan/actions', { method: 'POST', body }),
 	disks: (signal?: AbortSignal): Promise<DiskManagementSnapshot> =>
 		request<DiskManagementSnapshot>('/system/disk-partitions', { signal }),
 	diskAction: (body: DiskManagementActionInput): Promise<DiskManagementJob> =>

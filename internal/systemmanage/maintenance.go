@@ -38,6 +38,8 @@ const (
 	maintenanceOperationBBRv3         = "bbrv3"
 	maintenanceOperationSystemTuning  = "system-tuning"
 	maintenanceOperationSyslogCleanup = "syslog-cleanup"
+	maintenanceOperationVirusDB       = "virus-db"
+	maintenanceOperationVirusScan     = "virus-scan"
 )
 
 var pacmanPackagePattern = regexp.MustCompile(`^[a-z0-9@._+][a-z0-9@._+-]{0,127}$`)
@@ -51,6 +53,8 @@ func (m *Manager) MaintenanceStatus() contract.SystemMaintenanceSummary {
 	limit := time.Hour
 	if status.Action == "system-tuning" {
 		limit = 2 * time.Hour
+	} else if status.Action == "virus-scan" {
+		limit = 12 * time.Hour
 	}
 	if status.State == "running" && status.StartedAt != nil && m.now().Sub(*status.StartedAt) > limit {
 		finishedAt := m.now().UTC()
@@ -177,6 +181,11 @@ func (m *Manager) startMaintenanceTask(
 			return false, "", "", fmt.Errorf("%w: system tuning policy is invalid", ErrInvalidInput)
 		}
 		mode = "system-tuning-" + policy
+	case "virus-scan":
+		if _, _, ok := parseVirusScanPolicy(policy); !ok {
+			return false, "", "", fmt.Errorf("%w: virus scan policy is invalid", ErrInvalidInput)
+		}
+		mode = "virus-scan"
 	default:
 		return false, "", "", fmt.Errorf("%w: unknown maintenance action", ErrInvalidInput)
 	}
@@ -185,8 +194,14 @@ func (m *Manager) startMaintenanceTask(
 	if current.State == "running" {
 		return false, "", "", fmt.Errorf("%w: another maintenance task is already running", ErrConflict)
 	}
-	if _, _, _, err := m.maintenanceSteps(mode); err != nil {
-		return false, "", "", err
+	if action == "virus-scan" {
+		if err := m.virusScanAvailability(true); err != nil {
+			return false, "", "", err
+		}
+	} else {
+		if _, _, _, err := m.maintenanceSteps(mode); err != nil {
+			return false, "", "", err
+		}
 	}
 	executable, err := m.backgroundExecutable()
 	if err != nil {
@@ -207,6 +222,8 @@ func (m *Manager) startMaintenanceTask(
 	timeoutStart := "45min"
 	if action == "system-tuning" {
 		timeoutStart = "90min"
+	} else if action == "virus-scan" {
+		timeoutStart = "12h"
 	} else if action == "log-cleanup" {
 		timeoutStart = "10min"
 	}
@@ -237,6 +254,13 @@ func (m *Manager) startMaintenanceTask(
 			"LockPersonality=yes",
 			"MemoryDenyWriteExecute=yes",
 			"RestrictAddressFamilies=AF_UNIX",
+		)
+	} else if action == "virus-scan" {
+		properties = append(properties,
+			"ProtectHome=read-only",
+			"ReadWritePaths="+m.stateDir+" -/home/docker/clamav/log -/var/lock",
+			"NoNewPrivileges=no",
+			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
 		)
 	} else {
 		properties = append(properties,
@@ -276,8 +300,9 @@ func (m *Manager) startMaintenanceTask(
 }
 
 // RunMaintenance is only called by the Agent's root-only maintenance-run
-// subcommand. The mode selects one fixed command list; it never accepts shell
-// fragments, package names, paths, or arbitrary arguments from the Web API.
+// subcommand. The mode selects a fixed typed operation. Virus-scan paths are
+// decoded from the validated atomic maintenance state and remain separate argv;
+// no mode accepts shell fragments, package names, or arbitrary commands.
 func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 	action, policy, steps, err := m.maintenanceSteps(mode)
 	if err != nil {
@@ -346,6 +371,30 @@ func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 			}
 		} else if step.operation == maintenanceOperationSyslogCleanup {
 			runErr = m.pruneRotatedSystemLogs(ctx, policy)
+		} else if step.operation == maintenanceOperationVirusDB {
+			var receipt virusScanReceipt
+			receipt, runErr = m.runVirusScan(ctx, "update-db")
+			if runErr == nil && receipt.Status != "updated" {
+				runErr = fmt.Errorf("kejilion.sh returned virus database status %q", receipt.Status)
+			}
+		} else if step.operation == maintenanceOperationVirusScan {
+			mode, paths, ok := parseVirusScanPolicy(policy)
+			if !ok {
+				runErr = errors.New("virus scan policy became invalid")
+			} else {
+				arguments := []string{"scan", mode}
+				if mode == contract.VirusScanModeCustom {
+					arguments = append(arguments, paths...)
+				}
+				var receipt virusScanReceipt
+				receipt, runErr = m.runVirusScan(ctx, arguments...)
+				if runErr == nil && receipt.Status != "clean" && receipt.Status != "infected" {
+					runErr = fmt.Errorf("kejilion.sh returned virus scan status %q", receipt.Status)
+				}
+				if runErr == nil {
+					runErr = m.writeVirusScanResult(mode, paths, receipt.Status)
+				}
+			}
 		} else {
 			_, runErr = m.runner.Run(ctx, step.command, step.arguments...)
 		}
@@ -383,6 +432,17 @@ func (m *Manager) RunMaintenance(ctx context.Context, mode string) error {
 func (m *Manager) maintenanceSteps(
 	mode string,
 ) (string, string, []maintenanceStep, error) {
+	if mode == "virus-scan" {
+		status := m.readMaintenance()
+		scanMode, _, ok := parseVirusScanPolicy(status.Policy)
+		if status.Action != "virus-scan" || !ok {
+			return "", "", nil, fmt.Errorf("%w: unknown virus scan policy", ErrInvalidInput)
+		}
+		return "virus-scan", status.Policy, []maintenanceStep{
+			{stage: "virus_database_update", progress: 15, operation: maintenanceOperationVirusDB},
+			{stage: "virus_scan_" + scanMode, progress: 35, operation: maintenanceOperationVirusScan},
+		}, nil
+	}
 	if strings.HasPrefix(mode, "log-cleanup-") {
 		policy := strings.TrimPrefix(mode, "log-cleanup-")
 		vacuumArgument := ""
@@ -813,6 +873,14 @@ func maintenanceStageMessage(stage string) string {
 		return "正在更新 XanMod BBRv3 内核"
 	case "bbrv3_uninstall":
 		return "正在卸载 XanMod BBRv3 内核"
+	case "virus_database_update":
+		return "正在更新 ClamAV 病毒库"
+	case "virus_scan_full":
+		return "正在扫描整个系统，关闭窗口不会中断任务"
+	case "virus_scan_important":
+		return "正在扫描重要系统目录，关闭窗口不会中断任务"
+	case "virus_scan_custom":
+		return "正在扫描所选目录，关闭窗口不会中断任务"
 	default:
 		return "正在执行系统维护"
 	}
@@ -843,6 +911,9 @@ func maintenanceSuccessMessage(action, policy string, rebootRequired bool) strin
 	}
 	if action == "system-tuning" {
 		return "所选一条龙系统调优项目已全部完成"
+	}
+	if action == "virus-scan" {
+		return "病毒扫描已完成；请查看报告确认是否发现威胁"
 	}
 	if action == "log-cleanup" {
 		switch policy {
