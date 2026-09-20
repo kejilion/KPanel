@@ -64,11 +64,11 @@ func (m *Manager) virusScanAvailability(write bool) error {
 	if m.effectiveUID() != 0 {
 		return fmt.Errorf("%w: Agent must run as root for virus scanning", ErrUnsupported)
 	}
-	if _, err := m.virusScanScriptPath(); err != nil {
-		return err
-	}
 	if !write {
 		return nil
+	}
+	if _, err := m.virusScanScriptPath(); err != nil {
+		return err
 	}
 	if !m.enabled {
 		return fmt.Errorf("%w: host system writes are disabled", ErrDisabled)
@@ -201,6 +201,9 @@ func (m *Manager) runVirusScan(ctx context.Context, arguments ...string) (virusS
 	if runErr != nil {
 		return receipt, runErr
 	}
+	if len(arguments) >= 2 && arguments[0] == "scan" && receipt.Mode != arguments[1] {
+		return receipt, fmt.Errorf("virus scan completion receipt mode %q does not match request %q", receipt.Mode, arguments[1])
+	}
 	return receipt, nil
 }
 
@@ -282,16 +285,23 @@ func (m *Manager) VirusScanSnapshot(ctx context.Context) (contract.VirusScanSnap
 		return contract.VirusScanSnapshot{}, err
 	}
 	snapshot := contract.VirusScanSnapshot{
-		ReportPath: m.virusScanReport, Status: "never", Findings: []string{},
+		ReportPath: m.virusScanReport, Status: "never", Paths: []string{}, Findings: []string{},
 		ObservedAt: m.now().UTC(), Maintenance: m.MaintenanceStatus(),
 	}
 	if err := ctx.Err(); err != nil {
 		return contract.VirusScanSnapshot{}, err
 	}
-	file, err := os.Open(m.virusScanReport)
+	pathInfo, err := os.Lstat(m.virusScanReport)
 	if errors.Is(err, os.ErrNotExist) {
 		return snapshot, nil
 	}
+	if err != nil {
+		return contract.VirusScanSnapshot{}, fmt.Errorf("%w: inspect virus scan report: %v", ErrUnsupported, err)
+	}
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
+		return contract.VirusScanSnapshot{}, fmt.Errorf("%w: virus scan report is not a regular file", ErrNeedsAttention)
+	}
+	file, err := os.Open(m.virusScanReport)
 	if err != nil {
 		return contract.VirusScanSnapshot{}, fmt.Errorf("%w: open virus scan report: %v", ErrUnsupported, err)
 	}

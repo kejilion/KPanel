@@ -34,7 +34,7 @@ type VirusScanSnapshot struct {
 	Source          string                   `json:"source,omitempty"`
 	Status          string                   `json:"status"`
 	Mode            string                   `json:"mode,omitempty"`
-	Paths           []string                 `json:"paths,omitempty"`
+	Paths           []string                 `json:"paths"`
 	ScannedFiles    uint64                   `json:"scannedFiles"`
 	InfectedFiles   uint64                   `json:"infectedFiles"`
 	Errors          uint64                   `json:"errors"`
