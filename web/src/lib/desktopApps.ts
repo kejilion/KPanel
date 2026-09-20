@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import {
+  Activity,
   Boxes,
   Bot,
   ClipboardList,
@@ -7,6 +8,7 @@ import {
   Folder,
   HeartPulse,
   LayoutDashboard,
+  ListTree,
   Network,
   Settings,
   SquareTerminal,
@@ -16,8 +18,8 @@ import type { MessageKey } from '@/i18n/messages/zh-CN'
 import SystemCenterIcon from '@/components/icons/SystemCenterIcon.vue'
 
 /**
- * Desktop application catalogue. Mirrors the left-navigation items in
- * AppShell.vue, one icon per route page. The terminal is a single-instance app
+ * Desktop application catalogue. Includes the primary navigation pages and
+ * desktop-first system utilities. The terminal is a single-instance app
  * (opening it twice focuses the existing window).
  */
 
@@ -40,6 +42,22 @@ export const desktopApps: DesktopApp[] = [
     desktopIconURL: '/desktop-icons/overview-kpanel-flat-v1.webp',
     allowMultiple: false,
     gradient: ['#2dd4bf', '#0f766e'],
+  },
+  {
+    path: '/monitoring',
+    labelKey: 'route.monitoring',
+    icon: Activity,
+    desktopIconURL: '/desktop-icons/monitoring-kpanel-flat-v2.webp',
+    allowMultiple: false,
+    gradient: ['#38bdf8', '#0369a1'],
+  },
+  {
+    path: '/processes',
+    labelKey: 'route.processes',
+    icon: ListTree,
+    desktopIconURL: '/desktop-icons/processes-kpanel-flat-v2.webp',
+    allowMultiple: false,
+    gradient: ['#fb923c', '#c2410c'],
   },
   {
     path: '/ai',
@@ -154,7 +172,6 @@ export function desktopRoutePath(fullPath: string): string {
 
 export function canonicalDesktopAppPath(path: string): string {
   path = desktopRoutePath(path)
-  if (path === '/monitoring') return '/overview'
   if (path === '/sites/environment') return '/sites'
   if (path.startsWith('/ai/s/')) return '/ai'
   if (path === '/jobs' || path === '/audit') return '/activity'

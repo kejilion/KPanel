@@ -131,8 +131,8 @@ function browserHistoryPoint(fullPath = router.currentRoute.value.fullPath): Des
 let lastBrowserHistoryPoint = browserHistoryPoint(props.windowState.path)
 
 function handoffDesktopRoute(fullPath: string): boolean {
-  // System Center is launchable from the desktop, but links inside Overview
-  // stay in the current window just like the Process Manager utility route.
+  // System Center links inside Overview stay in the current window. Other
+  // registered desktop applications receive their own window.
   if (desktopRoutePath(fullPath) === '/system') return false
   const app = findDesktopApp(fullPath)
   if (!app) return false
