@@ -124,6 +124,7 @@ const settingsSections: SettingsSectionDefinition[] = [
 
 const settingsSearch = ref('')
 const activeSettingsCategory = ref<SettingsCategoryId>('all')
+const settingsBrowser = ref<HTMLElement>()
 const normalizedSettingsSearch = computed(() => settingsSearch.value.trim().toLocaleLowerCase())
 
 function settingsSectionMatchesSearch(section: SettingsSectionDefinition): boolean {
@@ -628,7 +629,8 @@ async function focusAutomaticUpdateSection(): Promise<void> {
   // Vue Router restores the destination scroll position after the view mounts.
   // Wait for that pass so it cannot overwrite this section-level navigation.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  automaticUpdateSection.value?.scrollIntoView?.({ block: 'start' })
+  const navigationTarget = settingsBrowser.value || automaticUpdateSection.value
+  navigationTarget?.scrollIntoView?.({ block: 'start' })
   automaticUpdateSection.value?.focus({ preventScroll: true })
 }
 
@@ -882,7 +884,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
   <div class="page page--narrow">
     <PageHeader title="设置" description="管理账户、安全验证和当前设备偏好；宿主机策略仍由 Agent 统一执行。" />
 
-    <section class="settings-browser panel-card" aria-label="设置导航">
+    <section ref="settingsBrowser" class="settings-browser panel-card" aria-label="设置导航">
       <label class="settings-browser__search">
         <Search :size="18" aria-hidden="true" />
         <input
@@ -1553,6 +1555,11 @@ onBeforeUnmount(stopKPanelReleaseRequest)
   display: grid;
   gap: 13px;
   padding: 16px;
+  scroll-margin-top: calc(var(--topbar-height) + 16px);
+}
+
+:global(.desktop-window__body) .settings-browser {
+  scroll-margin-top: 16px;
 }
 
 .settings-browser__search {
