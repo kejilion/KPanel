@@ -93,6 +93,12 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
       assert(samples.some(sample => sample.target === 'icon' && sample.duration === 280 && sample.start.transform !== sample.middle.transform), `${phase}: missing icon travel`)
       assert(samples.some(sample => sample.target === 'surface' && sample.start.opacity !== sample.middle.opacity), `${phase}: missing surface fade`)
       if (phase === 'dissolve') assert(samples.filter(sample => sample.target === 'surface').every(sample => sample.inert))
+      const feedbackOverlaps = await page.evaluate(() => {
+        const selection = document.querySelector('.desktop__selection-actions')?.getBoundingClientRect()
+        const undo = document.querySelector('.desktop-group-undo')?.getBoundingClientRect()
+        return Boolean(selection && undo && selection.top < undo.bottom && undo.top < selection.bottom)
+      })
+      assert.equal(feedbackOverlaps, false)
       await page.screenshot({ path: `${out}/${phase}-mid-motion.png` })
       await page.evaluate(() => document.getAnimations().forEach(animation => animation.play()))
     }

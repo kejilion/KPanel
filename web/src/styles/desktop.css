@@ -1660,6 +1660,8 @@ body.desktop-mode-open::-webkit-scrollbar {
   color: var(--text);
   cursor: pointer;
 }
+/* The selection toolbar remains mounted during its leave transition. */
+.desktop:has(.desktop__selection-actions) .desktop-group-undo { bottom: 136px; }
 .desktop-group-form { display: grid; gap: 16px; font-size: 14px; }
 .desktop-group-form label { display: grid; gap: 8px; }
 .desktop-group-form input, .desktop-group-form select {
