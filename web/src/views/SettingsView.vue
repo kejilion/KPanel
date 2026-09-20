@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { usePhraseCatalog } from '@/i18n/phrase'
+import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/SettingsView/en-US').then((module) => module.default)
@@ -21,10 +21,12 @@ import {
   Palette,
   RefreshCw,
   Scale,
+  Search,
   Server,
   ShieldCheck,
   Sun,
   UserRound,
+  X,
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import BackupCenter from '@/components/settings/BackupCenter.vue'
@@ -65,6 +67,125 @@ const panel = usePanelState()
 const theme = useTheme()
 const toast = useToast()
 const i18n = useI18n()
+
+function phrase(value: string): string {
+  phraseCatalogVersion.value
+  return translatePhrase(value)
+}
+
+type SettingsCategoryId = 'all' | 'account' | 'appearance' | 'data' | 'system' | 'support'
+type SettingsSectionId =
+  | 'help'
+  | 'account-overview'
+  | 'username'
+  | 'password'
+  | 'security-entrance'
+  | 'totp'
+  | 'language'
+  | 'appearance'
+  | 'backup'
+  | 'mcp'
+  | 'version-updates'
+  | 'agent'
+  | 'license'
+
+interface SettingsSectionDefinition {
+  id: SettingsSectionId
+  category: Exclude<SettingsCategoryId, 'all'>
+  title: string
+  description: string
+  keywords: string[]
+}
+
+const settingsCategories: Array<{ id: SettingsCategoryId; label: string }> = [
+  { id: 'all', label: '全部设置' },
+  { id: 'account', label: '账户与安全' },
+  { id: 'appearance', label: '外观与语言' },
+  { id: 'data', label: '数据与接入' },
+  { id: 'system', label: '系统与更新' },
+  { id: 'support', label: '帮助与关于' },
+]
+
+const settingsSections: SettingsSectionDefinition[] = [
+  { id: 'help', category: 'support', title: '帮助与问题报告', description: '生成问题报告并获取排查帮助', keywords: ['反馈', '诊断', '日志', '报告'] },
+  { id: 'account-overview', category: 'account', title: '管理账户', description: '当前登录身份与会话信息', keywords: ['管理员', 'Session', '登录', '身份验证'] },
+  { id: 'username', category: 'account', title: '修改用户名', description: '更新当前管理员账户的登录名称', keywords: ['账号', '名称'] },
+  { id: 'password', category: 'account', title: '修改密码', description: '更新当前管理员账户的登录凭据', keywords: ['凭据', '登录'] },
+  { id: 'security-entrance', category: 'account', title: '登录安全入口', description: '隐藏常规登录路径', keywords: ['安全路径', '公网扫描', '撞库'] },
+  { id: 'totp', category: 'account', title: '两步验证', description: '身份验证器与恢复码', keywords: ['TOTP', '2FA', '验证码', '恢复码'] },
+  { id: 'language', category: 'appearance', title: '语言', description: '选择界面显示语言', keywords: ['简体中文', '繁体中文', 'English'] },
+  { id: 'appearance', category: 'appearance', title: '外观', description: '主题配色与明暗模式', keywords: ['主题', '浅色', '深色', '颜色'] },
+  { id: 'backup', category: 'data', title: '备份中心', description: '备份、恢复与数据保护', keywords: ['备份', '恢复', '导出'] },
+  { id: 'mcp', category: 'data', title: 'MCP 接入', description: '外部工具与访问配置', keywords: ['MCP', 'API', 'Token', '令牌', '接入'] },
+  { id: 'version-updates', category: 'system', title: '版本更新', description: '更新通道与自动安装', keywords: ['版本', '升级', '稳定版', '预览版', '自动更新'] },
+  { id: 'agent', category: 'system', title: '宿主机 Agent', description: '面板唯一的特权操作边界', keywords: ['Agent', '协议', '能力', '宿主机'] },
+  { id: 'license', category: 'support', title: '开源许可', description: 'GNU AGPL v3.0 only', keywords: ['许可证', '源码', 'AGPL'] },
+]
+
+const settingsSearch = ref('')
+const activeSettingsCategory = ref<SettingsCategoryId>('all')
+const normalizedSettingsSearch = computed(() => settingsSearch.value.trim().toLocaleLowerCase())
+
+function settingsSectionMatchesSearch(section: SettingsSectionDefinition): boolean {
+  const query = normalizedSettingsSearch.value
+  if (!query) return true
+  return [section.title, section.description, ...section.keywords].some((value) => (
+    value.toLocaleLowerCase().includes(query) || phrase(value).toLocaleLowerCase().includes(query)
+  ))
+}
+
+const visibleSettingsSectionIds = computed(() => new Set(
+  settingsSections
+    .filter((section) => (
+      (activeSettingsCategory.value === 'all' || section.category === activeSettingsCategory.value) &&
+      settingsSectionMatchesSearch(section)
+    ))
+    .map((section) => section.id),
+))
+
+const visibleSettingsSectionCount = computed(() => visibleSettingsSectionIds.value.size)
+const settingsResultSummary = computed(() => phrase(
+  settingsSearch.value.trim()
+    ? `找到 ${visibleSettingsSectionCount.value} 项设置`
+    : `显示 ${visibleSettingsSectionCount.value} 项设置`,
+))
+
+function isSettingsSectionVisible(id: SettingsSectionId): boolean {
+  return visibleSettingsSectionIds.value.has(id)
+}
+
+function settingsCategoryCount(category: SettingsCategoryId): number {
+  return settingsSections.filter((section) => (
+    (category === 'all' || section.category === category) && settingsSectionMatchesSearch(section)
+  )).length
+}
+
+function clearSettingsSectionIntent(): void {
+  if (!isKPanelUpdateSettingsIntent(route.query.section)) return
+  const query = { ...route.query }
+  delete query.section
+  void router.replace({ query })
+}
+
+function selectSettingsCategory(category: SettingsCategoryId): void {
+  activeSettingsCategory.value = category
+  clearSettingsSectionIntent()
+}
+
+function onSettingsSearchInput(): void {
+  clearSettingsSectionIntent()
+}
+
+function clearSettingsSearch(): void {
+  settingsSearch.value = ''
+  clearSettingsSectionIntent()
+}
+
+function resetSettingsFilters(): void {
+  settingsSearch.value = ''
+  activeSettingsCategory.value = 'all'
+  clearSettingsSectionIntent()
+}
 
 function localeLabel(locale: SupportedLocale): string {
   if (locale === 'zh-CN') return i18n.t('common.locale.zhCN')
@@ -501,6 +622,8 @@ async function manuallyUpdateKPanel(): Promise<void> {
 
 async function focusAutomaticUpdateSection(): Promise<void> {
   if (!isKPanelUpdateSettingsIntent(route.query.section)) return
+  settingsSearch.value = ''
+  activeSettingsCategory.value = 'system'
   await nextTick()
   // Vue Router restores the destination scroll position after the view mounts.
   // Wait for that pass so it cannot overwrite this section-level navigation.
@@ -759,9 +882,45 @@ onBeforeUnmount(stopKPanelReleaseRequest)
   <div class="page page--narrow">
     <PageHeader title="设置" description="管理账户、安全验证和当前设备偏好；宿主机策略仍由 Agent 统一执行。" />
 
-    <ProblemReportHelp />
+    <section class="settings-browser panel-card" aria-label="设置导航">
+      <label class="settings-browser__search">
+        <Search :size="18" aria-hidden="true" />
+        <input
+          v-model="settingsSearch"
+          type="search"
+          placeholder="搜索设置，例如密码、主题或更新"
+          aria-label="搜索设置"
+          @input="onSettingsSearchInput"
+        />
+        <button
+          v-if="settingsSearch"
+          type="button"
+          aria-label="清除搜索"
+          @click="clearSettingsSearch"
+        ><X :size="16" /></button>
+      </label>
+      <div class="settings-browser__categories" role="tablist" aria-label="设置分类">
+        <button
+          v-for="category in settingsCategories"
+          :key="category.id"
+          type="button"
+          role="tab"
+          :aria-selected="activeSettingsCategory === category.id"
+          :class="{ 'is-active': activeSettingsCategory === category.id }"
+          @click="selectSettingsCategory(category.id)"
+        >
+          <span>{{ phrase(category.label) }}</span>
+          <small>{{ settingsCategoryCount(category.id) }}</small>
+        </button>
+      </div>
+      <p class="settings-browser__summary" role="status" aria-live="polite">
+        {{ settingsResultSummary }}
+      </p>
+    </section>
 
-    <section class="settings-section panel-card">
+    <ProblemReportHelp v-show="isSettingsSectionVisible('help')" />
+
+    <section v-show="isSettingsSectionVisible('account-overview')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><ShieldCheck :size="19" /></span>
         <div><h2>管理账户</h2><p>当前登录身份与会话信息</p></div>
@@ -790,7 +949,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p class="settings-note">账户安全设置由 KPanel 本机保存，不依赖 Agent 或 kejilion.sh。</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('username')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><UserRound :size="19" /></span>
         <div><h2>修改用户名</h2><p>更新当前管理员账户的登录名称</p></div>
@@ -833,7 +992,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p class="settings-note">修改成功后所有现有会话会立即失效；密码、两步验证和恢复码保持不变。</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('password')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><KeyRound :size="19" /></span>
         <div><h2>修改密码</h2><p>更新当前管理员账户的登录凭据</p></div>
@@ -895,7 +1054,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p class="settings-note">修改成功后当前会话将立即失效，需要使用新密码重新登录。</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('security-entrance')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><ShieldCheck :size="19" /></span>
         <div><h2>登录安全入口</h2><p>隐藏常规登录路径，减少公网扫描与撞库噪声</p></div>
@@ -933,7 +1092,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p class="settings-note">安全入口是登录验证前的额外门槛，不替代强密码、会话保护和登录限速；请妥善保存入口地址。</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('totp')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><ShieldCheck :size="19" /></span>
         <div><h2>两步验证</h2><p>兼容主流身份验证器的标准 TOTP，并提供一次性恢复码</p></div>
@@ -1038,7 +1197,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p class="settings-note">验证码每 30 秒更新，允许轻微时钟偏差；已成功使用的验证码和恢复码不能重放。</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('language')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Languages :size="19" /></span>
         <div><h2>{{ i18n.t('common.language') }}</h2><p>{{ i18n.t('common.languageDescription') }}</p></div>
@@ -1063,7 +1222,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       </div>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('appearance')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Palette :size="19" /></span>
         <div><h2>外观与配色</h2><p>自定义颜色和明暗模式仅保存在当前浏览器</p></div>
@@ -1208,12 +1367,13 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       </div>
     </section>
 
-    <BackupCenter />
-    <MCPAccess />
+    <BackupCenter v-show="isSettingsSectionVisible('backup')" />
+    <MCPAccess v-show="isSettingsSectionVisible('mcp')" />
 
     <section
       id="version-updates"
       ref="automaticUpdateSection"
+      v-show="isSettingsSectionVisible('version-updates')"
       class="settings-section panel-card automatic-update-section"
       data-testid="release-update-settings"
       tabindex="-1"
@@ -1303,7 +1463,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <p v-else class="settings-note">正在读取自动更新状态…</p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('agent')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Server :size="19" /></span>
         <div><h2>宿主机 Agent</h2><p>面板唯一的特权操作边界</p></div>
@@ -1333,7 +1493,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       </p>
     </section>
 
-    <section class="settings-section panel-card">
+    <section v-show="isSettingsSectionVisible('license')" class="settings-section panel-card">
       <header class="settings-section__header">
         <span><Scale :size="19" /></span>
         <div><h2>开源许可</h2><p>GNU AGPL v3.0 only</p></div>
@@ -1361,6 +1521,15 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       </div>
     </section>
 
+    <div v-if="visibleSettingsSectionCount === 0" class="settings-empty panel-card" role="status">
+      <Search :size="24" aria-hidden="true" />
+      <div>
+        <strong>没有找到匹配的设置</strong>
+        <p>尝试其他关键词，或清除当前分类和搜索条件。</p>
+      </div>
+      <button class="button button--secondary" type="button" @click="resetSettingsFilters">查看全部设置</button>
+    </div>
+
     <KPanelUpdateDialog
       :open="kpanelUpdateDialogOpen"
       :release="kpanelRelease"
@@ -1380,6 +1549,141 @@ onBeforeUnmount(stopKPanelReleaseRequest)
 </template>
 
 <style scoped>
+.settings-browser {
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+}
+
+.settings-browser__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--muted);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-browser__search:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.settings-browser__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-browser__search input::placeholder {
+  color: var(--muted);
+}
+
+.settings-browser__search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.settings-browser__search button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.settings-browser__search button:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.settings-browser__categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-browser__categories button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.settings-browser__categories button:hover {
+  border-color: color-mix(in srgb, var(--brand) 38%, var(--line));
+  color: var(--text);
+}
+
+.settings-browser__categories button.is-active {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.settings-browser__categories small {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  color: inherit;
+  font-size: 0.75rem;
+  line-height: 18px;
+  text-align: center;
+}
+
+.settings-browser__summary {
+  margin: -2px 2px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.settings-empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px;
+  color: var(--muted);
+}
+
+.settings-empty > svg {
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+.settings-empty > div {
+  flex: 1;
+}
+
+.settings-empty strong {
+  color: var(--text);
+}
+
+.settings-empty p {
+  margin: 4px 0 0;
+}
+
 .password-form {
   max-width: 560px;
   padding: 18px;
@@ -1545,6 +1849,35 @@ onBeforeUnmount(stopKPanelReleaseRequest)
 }
 
 @media (max-width: 640px) {
+  .settings-browser {
+    padding: 14px;
+  }
+
+  .settings-browser__categories {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .settings-browser__categories::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-browser__categories button {
+    flex: 0 0 auto;
+  }
+
+  .settings-empty {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 18px;
+  }
+
+  .settings-empty .button {
+    width: 100%;
+  }
+
   .password-form {
     max-width: none;
     padding: 14px;
