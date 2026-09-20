@@ -33,7 +33,7 @@ import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
 import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
-import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, desktopGroupRect, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
+import { cloneDesktopGroups, normalizeDesktopGroupColumns, DESKTOP_GROUP_COLUMNS, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, desktopGroupRect, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopShortcutDialog, {
   type DesktopShortcutDraft,
@@ -494,14 +494,13 @@ const autoGroupReady = ref(false)
 let autoGroupTimer: number | undefined
 const groupDialog = ref<{ id?: string; keys: string[] }>()
 const groupName = ref('')
-const groupColumns = ref(3)
 const groupRows = ref(0)
 const groupError = ref('')
 const groupUndo = ref<{ groups: DesktopGroup[]; positions: Record<string, DesktopIconPosition>; version: string }>()
 const groupMembership = computed(() => new Map(localGroups.value.flatMap(group => group.members.map(key => [key, group.id] as const))))
 const visibleKeySet = computed(() => new Set(allIconKeys.value))
 watch(() => workspace.value.groups, groups => {
-  if (!groupSaving.value) localGroups.value = cloneDesktopGroups(groups || [])
+  if (!groupSaving.value) localGroups.value = normalizeDesktopGroupColumns(groups || [])
 }, { immediate: true, deep: true })
 
 function groupItems(groups = localGroups.value): DesktopGridItem[] {
@@ -585,7 +584,6 @@ function showGroupDialog(keys: readonly string[] = [], id?: string): void {
   closeContextMenu()
   const group = localGroups.value.find(item => item.id === id)
   groupName.value = group?.name || i18n.t('desktop.groupDefaultName')
-  groupColumns.value = group?.columns || 3
   groupRows.value = group?.rows || 0
   groupError.value = ''
   groupDialog.value = { id, keys: [...keys] }
@@ -623,12 +621,12 @@ async function commitGroups(groups: DesktopGroup[], positions = localPositions.v
         if (key.startsWith('group:') && !groups.some(group => groupKey(group.id) === key)) delete draft.positions[key]
       }
     })
-    localGroups.value = cloneDesktopGroups(saved.groups || [])
+    localGroups.value = normalizeDesktopGroupColumns(saved.groups || [])
     if (remember) groupUndo.value = { ...previous, version: saved.resourceVersion }
     groupError.value = ''
     return true
   } catch (error) {
-    localGroups.value = cloneDesktopGroups(workspace.value.groups || [])
+    localGroups.value = normalizeDesktopGroupColumns(workspace.value.groups || [])
     localPositions.value = { ...workspace.value.positions }
     groupError.value = workspaceErrorMessage(error)
     toast.danger(i18n.t('desktop.workspaceSaveErrorTitle'), groupError.value)
@@ -638,27 +636,31 @@ async function commitGroups(groups: DesktopGroup[], positions = localPositions.v
 
 async function saveGroup(): Promise<void> {
   const dialog = groupDialog.value
-  if (!dialog || !groupName.value.trim()) return
+  if (!dialog || !groupName.value.trim() || groupSaving.value || !workspace.value.available) return
   if (!dialog.id && localGroups.value.length >= MAX_DESKTOP_GROUPS) {
     groupError.value = i18n.t('desktop.groupLimit', { count: MAX_DESKTOP_GROUPS }); return
   }
   const id = dialog.id || desktopIcons.generateShortcutID()
   let groups = cloneDesktopGroups(localGroups.value)
-  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: groupColumns.value, rows: groupRows.value } : group)
+  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: DESKTOP_GROUP_COLUMNS, rows: groupRows.value } : group)
   else {
-    groups.push({ id, name: groupName.value.trim(), members: [], columns: groupColumns.value, rows: groupRows.value, slots: {}, collapsed: false })
+    groups.push({ id, name: groupName.value.trim(), members: [], columns: DESKTOP_GROUP_COLUMNS, rows: groupRows.value, slots: {}, collapsed: false })
     groups = moveGroupMembers(groups, dialog.keys, id)
   }
   const positions = { ...localPositions.value }
   const origin = dialog.keys[0] && renderedPositionByKey.value.get(dialog.keys[0])
   if (!dialog.id && origin) positions[groupKey(id)] = { ...origin }
-  if (await commitGroups(groups, positions)) { groupDialog.value = undefined; clearIconSelection() }
+  // Reveal the optimistic layout immediately; restore the editable form on failure.
+  groupDialog.value = undefined
+  if (await commitGroups(groups, positions)) clearIconSelection()
+  else groupDialog.value = dialog
 }
 
 async function dissolveGroup(): Promise<void> {
-  const id = groupDialog.value?.id
-  if (!id) return
-  if (await commitGroups(localGroups.value.filter(group => group.id !== id))) groupDialog.value = undefined
+  const dialog = groupDialog.value
+  if (!dialog?.id || groupSaving.value || !workspace.value.available) return
+  groupDialog.value = undefined
+  if (!await commitGroups(localGroups.value.filter(group => group.id !== dialog.id))) groupDialog.value = dialog
 }
 
 function toggleGroup(id: string): void {
@@ -706,7 +708,7 @@ function handleGroupDrop(keys: string[], clientX: number, clientY: number, desti
   if (!id && autoTarget) {
     const newId = desktopIcons.generateShortcutID()
     const groups = cloneDesktopGroups(localGroups.value)
-    groups.push({ id: newId, name: i18n.t('desktop.groupDefaultName'), columns: 3, rows: 0, slots: {}, members: [], collapsed: false })
+    groups.push({ id: newId, name: i18n.t('desktop.groupDefaultName'), columns: DESKTOP_GROUP_COLUMNS, rows: 0, slots: {}, members: [], collapsed: false })
     const positions = { ...localPositions.value, [groupKey(newId)]: renderedPositionByKey.value.get(autoTarget)! }
     void commitGroups(placeGroupMembers(groups, [autoTarget, ...keys], newId), positions).then(saved => { if (saved) clearIconSelection() })
     return true
@@ -1386,19 +1388,19 @@ function iconSlotStyle(key: string): Record<string, string> {
   }
   const preview = dragPreviews.value[key]
   if (preview) {
-    return { left: `${preview.left}px`, top: `${preview.top}px` }
+    return { left: '0px', top: '0px', transform: `translate3d(${preview.left}px, ${preview.top}px, 0)` }
   }
   const position = renderedPositionByKey.value.get(key)
   if (position) {
     const pixels = desktopIconPositionToPixels(position, iconBounds.value)
-    return { left: `${pixels.left}px`, top: `${pixels.top}px` }
+    return { left: '0px', top: '0px', transform: `translate3d(${pixels.left}px, ${pixels.top}px, 0)` }
   }
   const overflowIndex = renderedOverflowIndexByKey.value.get(key)
   if (overflowIndex === undefined) return { display: 'none' }
   const grid = renderedIconLayout.value.grid
   return {
-    left: `${(overflowIndex % grid.columns) * grid.stepX}px`,
-    top: `${iconOverflowStartTop.value + Math.floor(overflowIndex / grid.columns) * grid.stepY}px`,
+    left: '0px', top: '0px',
+    transform: `translate3d(${(overflowIndex % grid.columns) * grid.stepX}px, ${iconOverflowStartTop.value + Math.floor(overflowIndex / grid.columns) * grid.stepY}px, 0)`,
   }
 }
 
@@ -3744,6 +3746,9 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
+      <TransitionGroup name="desktop-group-surface" move-class="desktop-group-surface-no-move"
+        @before-leave="(element: Element) => { (element as HTMLElement).inert = true; element.setAttribute('aria-hidden', 'true') }"
+        @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
         :cells="groupCells(group)" :drop-cell="groupDropTarget === group.id ? groupDropCell : undefined"
         :busy="groupSaving" :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
@@ -3755,6 +3760,7 @@ function onViewportResize(): void {
             :label="entry.label" :icon-u-r-l="entry.iconURL" :icon="entry.icon" />
         </template>
       </DesktopGroupCard>
+      </TransitionGroup>
       <p
         v-if="renderedIconLayout.overflowKeys.length"
         class="desktop__icons-overflow-note"
@@ -4163,7 +4169,6 @@ function onViewportResize(): void {
     <ModalDialog :open="Boolean(groupDialog)" :title="i18n.t(groupDialog?.id ? 'desktop.groupEdit' : 'desktop.groupCreate')" size="small" @close="groupDialog = undefined">
       <form class="desktop-group-form" @submit.prevent="saveGroup">
         <label>{{ i18n.t('desktop.groupName') }}<input v-model="groupName" maxlength="48" required autofocus :disabled="groupSaving" /></label>
-        <label>{{ i18n.t('desktop.groupColumns') }}<select v-model.number="groupColumns" :disabled="groupSaving"><option :value="2">2</option><option :value="3">3</option><option :value="4">4</option></select></label>
         <label>{{ i18n.t('desktop.groupRows') }}<select v-model.number="groupRows" :disabled="groupSaving"><option :value="0">{{ i18n.t('desktop.groupRowsAuto') }}</option><option v-for="row in 8" :key="row" :value="row">{{ row }}</option></select></label>
         <p>{{ i18n.t('desktop.groupGridHint') }}</p>
         <p>{{ i18n.t('desktop.groupHint') }}</p>

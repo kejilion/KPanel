@@ -3,7 +3,7 @@ import type { LocaleMessages } from './zh-CN'
 export const enUSMessages = {
   'desktop.groupRows': 'Reserved rows',
   'desktop.groupRowsAuto': 'Grow with content',
-  'desktop.groupGridHint': 'Reserve a minimum height; more icons expand the group. Drop into empty cells to keep gaps, or onto an icon to swap positions.',
+  'desktop.groupGridHint': 'Four icons per row, with automatic growth and narrow-screen reflow. Reserved rows set a minimum height. Drop into empty cells to keep gaps, or onto an icon to swap positions.',
   'desktop.groupHoldCreate': 'Hold briefly to create a group',
   'desktop.groupDropCreate': 'Release to create a group',
   'desktop.groupSave': 'Save group',

@@ -1,7 +1,7 @@
 export const zhCNMessages = {
   'desktop.groupRows': '预留行数',
   'desktop.groupRowsAuto': '随内容自动扩展',
-  'desktop.groupGridHint': '行数是预留的最小高度，图标增加会自动扩展。可拖到空格留白，拖到已有图标上交换位置。',
+  'desktop.groupGridHint': '每行固定 4 个，图标增加会自动扩展；窄屏会适配显示。预留行数只是最小高度，可拖到空格留白，拖到已有图标上交换位置。',
   'desktop.groupHoldCreate': '停留片刻以创建分组',
   'desktop.groupDropCreate': '松开创建分组',
   'desktop.groupSave': '保存分组',

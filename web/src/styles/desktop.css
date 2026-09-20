@@ -1593,12 +1593,20 @@ body.desktop-mode-open::-webkit-scrollbar {
   width: 90px;
   height: 96px;
   place-items: start center;
-  transition: left .2s cubic-bezier(.22, 1, .36, 1), top .2s cubic-bezier(.22, 1, .36, 1);
+  /* One coordinate space keeps first-group creation / last-group dissolution continuous. */
+  transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 160ms ease, visibility 160ms;
 }
 
-.desktop__icons--grouped .desktop__icon-slot {
-  transition: transform 180ms cubic-bezier(.22, 1, .36, 1), opacity 140ms ease, visibility 140ms;
+.desktop-group-surface-enter-active {
+  transition: opacity 220ms ease-out, scale 280ms cubic-bezier(.22, 1, .36, 1) !important;
 }
+.desktop-group-surface-leave-active {
+  transition: opacity 180ms ease-in, scale 200ms ease-in !important;
+  pointer-events: none;
+}
+.desktop-group-surface-enter-from, .desktop-group-surface-leave-to { opacity: 0; scale: .97; }
+/* Placement transforms already animate on the card; do not add Vue's second FLIP transform. */
+.desktop-group-surface-no-move { transition: none !important; }
 .desktop__icon-slot--group-candidate { border-radius: var(--radius-lg); outline: 1px dashed var(--brand); }
 .desktop__icon-slot--group-ready { outline: 2px solid var(--brand); background: var(--brand-soft); }
 .desktop__icon-slot--group-candidate::after {
@@ -1662,7 +1670,9 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-group-form .desktop-group-form__error { color: var(--danger); }
 .desktop-group-form__actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 @media (prefers-reduced-motion: reduce) {
-  .desktop__icons--grouped .desktop__icon-slot { transition: none; }
+  .desktop__icon-slot,
+  .desktop-group-surface-enter-active,
+  .desktop-group-surface-leave-active { transition: none !important; }
 }
 
 .desktop-widget-slot {

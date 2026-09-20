@@ -144,15 +144,18 @@ describe('DesktopView icon layout interaction', () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
     expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).toContain('translate3d(')
     await wrapper.get('[data-icon-key="nav:/overview"] button').trigger('click')
     await wrapper.get('[data-icon-key="nav:/terminal"] button').trigger('click', { ctrlKey: true })
     const create = wrapper.findAll('.desktop__selection-actions button').find(item => item.text().includes('编为一组'))!
     await create.trigger('click')
     await flushPromises()
     const form = document.querySelector<HTMLFormElement>('.desktop-group-form')!
+    expect(form.querySelectorAll('select')).toHaveLength(1)
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
     expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.members).toEqual(['nav:/overview', 'nav:/terminal'])
+    expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.columns).toBe(4)
     expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
     expect(wrapper.get('[data-icon-key="nav:/files"]').attributes('data-group-member')).toBeUndefined()
     await wrapper.get('.desktop-group__toggle').trigger('click')
@@ -165,6 +168,7 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     expect(wrapper.find('.desktop-group').exists()).toBe(false)
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).toContain('translate3d(')
     expect(updateWorkspace.mock.calls.at(-1)![0].hiddenEntryKeys).toEqual([])
     wrapper.unmount()
   })
@@ -179,6 +183,28 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     expect(wrapper.get('.desktop-group__toggle').attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
+    wrapper.unmount()
+  })
+
+  it('reveals dissolution before the response and restores its form and icons on failure', async () => {
+    const group = { id: 'a'.repeat(32), name: '运维', columns: 3, collapsed: false, members: ['nav:/overview'] }
+    loadWorkspace.mockResolvedValue(workspace({ groups: [group] }))
+    const response = deferred<DesktopWorkspace>()
+    updateWorkspace.mockReturnValue(response.promise)
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.desktop-group__menu').trigger('click')
+    await flushPromises()
+    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group-form button')].find(el => el.textContent?.includes('解散分组'))!
+    dissolve.click()
+    await flushPromises()
+    expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    expect(document.querySelector('.desktop-group-form')).toBeNull()
+    response.reject(new Error('disk full'))
+    await flushPromises()
+    expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('data-group-member')).toBe(group.id)
+    expect(document.querySelector('.desktop-group-form [role="alert"]')?.textContent).toBeTruthy()
     wrapper.unmount()
   })
 
@@ -514,11 +540,11 @@ describe('DesktopView icon layout interaction', () => {
 
     slot.element.dispatchEvent(pointer('pointerdown', 30, 100))
     window.dispatchEvent(pointer('pointermove', 30, 290))
-    const before = Number.parseFloat((slot.attributes('style') || '').match(/top:\s*([\d.]+)px/)?.[1] || '0')
+    const before = Number.parseFloat((slot.attributes('style') || '').match(/translate3d\([^,]+,\s*([\d.]+)px/)?.[1] || '0')
     expect(frameCallback).toBeTypeOf('function')
     frameCallback?.(performance.now())
     await flushPromises()
-    const after = Number.parseFloat((slot.attributes('style') || '').match(/top:\s*([\d.]+)px/)?.[1] || '0')
+    const after = Number.parseFloat((slot.attributes('style') || '').match(/translate3d\([^,]+,\s*([\d.]+)px/)?.[1] || '0')
 
     expect(workArea.scrollTop).toBeGreaterThan(0)
     expect(after).toBeGreaterThan(before)
@@ -704,7 +730,7 @@ describe('DesktopView icon layout interaction', () => {
     const extraSlot = wrapper.find('[data-icon-key="app:extra"]')
     const scrollSpace = wrapper.find('.desktop__icons-scroll-space')
 
-    expect(extraSlot.attributes('style')).toContain('top: 400px')
+    expect(extraSlot.attributes('style')).toContain('translate3d(0px, 400px, 0)')
     expect(Number.parseFloat((scrollSpace.attributes('style') || '').match(/height:\s*([\d.]+)px/)?.[1] || '0'))
       .toBeGreaterThan(480)
     expect(updateWorkspace).not.toHaveBeenCalled()
