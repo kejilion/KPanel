@@ -251,6 +251,12 @@ describe('visual rhythm contract', () => {
     }
   })
 
+  it('uses the same outer radius token for desktop groups and widgets', () => {
+    const group = readFileSync(new URL('../components/desktop/DesktopGroupCard.vue', import.meta.url), 'utf8')
+    expect(group.match(/\.desktop-group\s*\{([^}]+)\}/)?.[1]).toContain('border-radius: var(--radius-lg)')
+    expect(desktop.match(/\.desktop-widget-slot\s*\{([^}]+)\}/)?.[1]).toContain('border-radius: var(--radius-lg)')
+  })
+
   it('keeps font weights on the four the system font stack can actually render', () => {
     // There is no @font-face in the product, so Inter falls back to the
     // platform UI font. Weights like 650 or 780 snap to a neighbour and only

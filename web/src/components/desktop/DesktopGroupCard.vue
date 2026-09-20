@@ -152,7 +152,7 @@ function keydown(event: KeyboardEvent) {
 </template>
 
 <style scoped>
-.desktop-group { position: absolute; box-sizing: border-box; container-type: inline-size; border: 1px solid var(--desktop-group-border); border-radius: var(--radius); background: var(--desktop-group-surface); color: var(--desktop-group-text); box-shadow: inset 0 1px 0 var(--desktop-group-hover), 0 6px 20px rgb(0 8 18 / 10%); transition: transform 180ms cubic-bezier(.22,1,.36,1), height 200ms cubic-bezier(.22,1,.36,1), border-color 120ms; }
+.desktop-group { position: absolute; box-sizing: border-box; container-type: inline-size; border: 1px solid var(--desktop-group-border); border-radius: var(--radius-lg); background: var(--desktop-group-surface); color: var(--desktop-group-text); box-shadow: inset 0 1px 0 var(--desktop-group-hover), 0 6px 20px rgb(0 8 18 / 10%); transition: transform 180ms cubic-bezier(.22,1,.36,1), height 200ms cubic-bezier(.22,1,.36,1), border-color 120ms; }
 .desktop-group__header { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; cursor: grab; touch-action: none; }
 .desktop-group__cell { position: absolute; box-sizing: border-box; border: 1px dashed transparent; border-radius: var(--radius); pointer-events: none; }
 .desktop-group:hover .desktop-group__cell--empty, .desktop-group--drop .desktop-group__cell--empty { border-color: var(--desktop-group-border); }
