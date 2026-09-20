@@ -651,9 +651,13 @@ async function saveGroup(): Promise<void> {
   const origin = dialog.keys[0] && renderedPositionByKey.value.get(dialog.keys[0])
   if (!dialog.id && origin) positions[groupKey(id)] = { ...origin }
   // Reveal the optimistic layout immediately; restore the editable form on failure.
+  const selection = [...selectedIcons.value]
+  clearIconSelection()
   groupDialog.value = undefined
-  if (await commitGroups(groups, positions)) clearIconSelection()
-  else groupDialog.value = dialog
+  if (!await commitGroups(groups, positions)) {
+    setIconSelection(selection)
+    groupDialog.value = dialog
+  }
 }
 
 async function dissolveGroup(): Promise<void> {
