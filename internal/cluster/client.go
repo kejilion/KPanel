@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/tlsfallback"
 )
 
 const (
@@ -110,22 +112,24 @@ func NewRemoteClient(config RemoteClientConfig) (*RemoteClient, error) {
 			RootCAs:    config.RootCAs,
 		},
 	}
+	curveCache := &tlsfallback.HostCache{}
+	sharedTransport := tlsfallback.New(transport, curveCache)
 	remote.client = &http.Client{
-		Transport: transport,
+		Transport: sharedTransport,
 		Timeout:   config.Timeout,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return errors.New("cluster redirect rejected")
 		},
 	}
 	remote.streamClient = &http.Client{
-		Transport: transport,
+		Transport: sharedTransport,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return errors.New("cluster redirect rejected")
 		},
 	}
 	historyTransport := transport.Clone()
 	historyTransport.ResponseHeaderTimeout = 30 * time.Second
-	remote.historyClient = &http.Client{Transport: historyTransport, CheckRedirect: remote.streamClient.CheckRedirect, Timeout: HistoryTimeout}
+	remote.historyClient = &http.Client{Transport: tlsfallback.New(historyTransport, curveCache), CheckRedirect: remote.streamClient.CheckRedirect, Timeout: HistoryTimeout}
 	return remote, nil
 }
 

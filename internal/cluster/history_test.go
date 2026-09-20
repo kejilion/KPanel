@@ -17,6 +17,7 @@ import (
 
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/monitoring"
+	"github.com/kejilion/kejilion-panel/internal/tlsfallback"
 )
 
 func TestClusterHistoryStreamCancellationAndByteLimit(t *testing.T) {
@@ -322,16 +323,19 @@ func TestClusterHistoryRelayIsolationAndImmediateDataAcknowledgment(t *testing.T
 	}
 }
 
-func TestClusterHistoryDedicatedHeaderBudget(t *testing.T) {
+func TestClusterClientsUseSharedTLSFallback(t *testing.T) {
 	remote, err := NewRemoteClient(RemoteClientConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if remote.historyClient.Transport.(*http.Transport).ResponseHeaderTimeout != 30*time.Second {
-		t.Fatal("history header budget missing")
+	if _, ok := remote.historyClient.Transport.(*tlsfallback.Transport); !ok {
+		t.Fatal("history client is not using TLS fallback transport")
 	}
-	if remote.client.Transport.(*http.Transport).ResponseHeaderTimeout != 3*time.Second {
-		t.Fatal("summary budget changed")
+	if remote.client.Transport != remote.streamClient.Transport {
+		t.Fatal("summary and stream clients no longer share a transport")
+	}
+	if _, ok := remote.client.Transport.(*tlsfallback.Transport); !ok {
+		t.Fatal("summary client is not using TLS fallback transport")
 	}
 	for _, status := range []int{404, 405, 426} {
 		if !errors.Is(historyResponseStatus(status), ErrHistoryUnsupported) {
