@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.6] - 2026-09-21
+
+### Fixed
+
+- 从当前版本入口打开设置时，在首次渲染前直接选择“系统”分类，确保版本更新区域不会先被“全部”分类或后续路由同步遮蔽，并保留可点击版本号、设置搜索、分类导航和粘滞导航的 `rc.5` 行为。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
+
 ## [1.21.0-rc.5] - 2026-09-20
 
 ### Added
