@@ -16,6 +16,6 @@ watch(() => props.iconURL, () => { failed.value = false })
 </template>
 
 <style scoped>
-.desktop-group-preview-icon { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 6px; background: var(--desktop-group-hover); color: var(--desktop-group-text); overflow: hidden; font-size: 13px; font-weight: 600; }
+.desktop-group-preview-icon { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: var(--radius-sm); background: var(--desktop-group-hover); color: var(--desktop-group-text); overflow: hidden; font-size: 13px; font-weight: 600; }
 .desktop-group-preview-icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
 </style>
