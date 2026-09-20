@@ -384,6 +384,11 @@ export function dropDesktopGridItem(
     return placements.map(placement => placement.key === movingKey && snapped
       ? placementAt(movingItem, snapped, grid) : placement)
   }
+  // Expanded groups share the icon/widget grid, but a blocked drop must stay put.
+  if (movingKey.startsWith('group:')) {
+    return placements.map(placement => placement.key === movingKey && canPlace(movingItem, targetSlot, grid, occupied)
+      ? placementAt(movingItem, targetSlot, grid) : placement)
+  }
   const occupant = otherPlacements.find((placement) => {
     const item = safeItems.get(placement.key)
     if (!item) return false

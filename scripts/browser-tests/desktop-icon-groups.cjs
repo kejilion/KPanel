@@ -313,7 +313,9 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
         const boxes = cells.map(cell => cell.getBoundingClientRect())
         return [Math.min(...boxes.map(box => box.left)) - parent.left, parent.right - Math.max(...boxes.map(box => box.right)), parent.bottom - Math.max(...boxes.map(box => box.bottom))]
       })
-      assert(edges.every(edge => edge >= 6 && edge <= 10), JSON.stringify(edges))
+      assert(edges.every(edge => edge >= 46 && edge <= 51), JSON.stringify(edges))
+      assert(Math.abs((box.width + 5) / 95 - Math.round((box.width + 5) / 95)) < .01)
+      assert(Math.abs((box.height + 4) / 100 - Math.round((box.height + 4) / 100)) < .01)
       const titleSize = await group.locator('strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize))
       const memberSize = await slot('nav:/overview').locator('.desktop__icon-label').evaluate(el => parseFloat(getComputedStyle(el).fontSize))
       assert(titleSize >= 14); assert(memberSize >= 14)
@@ -424,21 +426,21 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     }
     const near = (actual, expected) => assert(Math.abs(actual - expected) < 1, `${actual} != ${expected}`)
     const a = await firstCard.boundingBox()
-    near(a.width, 391)
+    near(a.width, 470)
     await save(() => moveCard(secondCard, a.x + a.width + 3, a.y + 7, live => {
-      near(live.x - a.x - a.width, 12); near(live.y, a.y)
+      near(live.x - a.x - a.width, 5); near(live.y, a.y)
     }))
     const horizontal = await secondCard.boundingBox()
-    near(horizontal.x - a.x - a.width, 12); near(horizontal.y, a.y)
+    near(horizontal.x - a.x - a.width, 5); near(horizontal.y, a.y)
     const savedAnchors = structuredClone(state.positions)
     await page.reload(); await secondCard.waitFor(); await settle()
     near((await secondCard.boundingBox()).x, horizontal.x)
     assert.deepEqual(state.positions, savedAnchors)
     await page.screenshot({ path: `${out}/adjacent-groups-dark.png` })
     await save(() => moveCard(secondCard, a.x + 7, a.y + a.height + 4, live => {
-      near(live.y - a.y - a.height, 12); near(live.x, a.x)
+      near(live.y - a.y - a.height, 4); near(live.x, a.x)
     }))
-    near((await secondCard.boundingBox()).y - a.y - a.height, 12)
+    near((await secondCard.boundingBox()).y - a.y - a.height, 4)
     await page.screenshot({ path: `${out}/stacked-groups-dark.png` })
     const beforeFailure = await secondCard.boundingBox()
     failNext = true
@@ -448,13 +450,14 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     near((await secondCard.boundingBox()).y, beforeFailure.y)
     await save(() => moveCard(secondCard, a.x + 475, a.y))
     await secondCard.locator('.desktop-group__header').focus()
+    await save(() => page.keyboard.press('Control+ArrowRight'))
     await save(() => page.keyboard.press('Control+ArrowLeft'))
-    near((await secondCard.boundingBox()).x - a.x - a.width, 12)
+    near((await secondCard.boundingBox()).x - a.x - a.width, 5)
     const beforeBlocked = await secondCard.boundingBox()
     await moveCard(secondCard, a.x + 100, a.y + 80); await settle()
     near((await secondCard.boundingBox()).x, beforeBlocked.x)
     near((await secondCard.boundingBox()).y, beforeBlocked.y)
-    report.cases.push('8+9 sparse cards: live 12px horizontal/vertical snap, refresh, keyboard, blocked drop and failed save restore')
+    report.cases.push('8+9 sparse cards: live 5px horizontal/4px vertical grid gaps, refresh, keyboard, blocked drop and failed save restore')
     const groupCountBefore = state.groups.length
     await page.locator('.desktop__icons').click({ button: 'right', position: { x: 1100, y: 600 } })
     await save(() => page.getByRole('menuitem', { name: '新建分组', exact: true }).click())
@@ -469,6 +472,44 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     await save(() => emptyGroup.locator('input').press('Enter'))
     assert.equal(state.groups.at(-1).name, '我的空分组')
     report.cases.push('blank-desktop context menu creates an empty default group immediately; menu rename edits inline')
+    // User reference: an eleven-icon group, loose icons on both sides and a clock below.
+    const area = await page.locator('.desktop__icons').boundingBox()
+    const anchor = (left, top) => ({ x: left / (area.width - 90), y: top / Math.max(100, area.height - 96) })
+    state.groups = [{ id: '9'.repeat(32), name: '常用运维', columns: 4, rows: 0, collapsed: false, members: allKeys.slice(0, 11) }]
+    state.hiddenWidgetKeys = ['widget:monitor', 'widget:services']
+    state.positions = { [`group:${state.groups[0].id}`]: anchor(380, 0) }
+    const loose = allKeys.slice(11)
+    for (const [index, key] of loose.entries()) state.positions[key] = anchor(index < 3 ? 285 : 855, (index % 3) * 100)
+    state.widgetPositions = { 'widget:clock': anchor(380, 400) }
+    await page.reload(); await group.waitFor(); await settle()
+    const clock = page.getByRole('group', { name: 'widget:clock', exact: true })
+    const verifyMixed = async () => {
+      const g = await group.boundingBox(), c = await clock.boundingBox()
+      near(g.x, c.x); near(g.y + g.height + 4, c.y)
+      near(g.width, 470); near(g.height, 396)
+      for (const [index, key] of loose.entries()) {
+        const icon = await slot(key).boundingBox()
+        near(index < 3 ? g.x - icon.x - icon.width : icon.x - g.x - g.width, 5)
+      }
+    }
+    await verifyMixed()
+    // Blocked movement must not overlap the clock; successful movement is bidirectional.
+    await group.locator('.desktop-group__header').focus()
+    await page.keyboard.press('Control+ArrowDown'); await settle(); await verifyMixed()
+    const g = await group.boundingBox()
+    await save(() => moveCard(group, g.x + 665, g.y + 3))
+    await save(() => moveCard(group, g.x + 6, g.y + 3))
+    await verifyMixed()
+    const leftIcon = await slot(loose[0]).boundingBox()
+    await save(() => drag(slot(loose[0]), leftIcon.x - 95 + 45, leftIcon.y + 24))
+    await save(() => drag(slot(loose[0]), leftIcon.x + 45, leftIcon.y + 24))
+    await verifyMixed()
+    await page.reload(); await group.waitFor(); await settle(); await verifyMixed()
+    await page.screenshot({ path: `${out}/mixed-grid-alignment-dark.png` })
+    await page.evaluate(() => localStorage.setItem('kejilion-panel-theme', 'light'))
+    await page.reload(); await group.waitFor(); await settle(); await verifyMixed()
+    await page.screenshot({ path: `${out}/mixed-grid-alignment-light.png` })
+    report.cases.push('11-member group + loose icons + clock: common grid gaps, bidirectional drag, blocked collision, refresh and both themes')
     assert.equal(report.errors.length, 0)
     assert.equal(resourceFailure, false)
     await context.tracing.stop({ path: `${out}/trace.zip` })

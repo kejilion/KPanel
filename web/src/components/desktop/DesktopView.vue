@@ -1887,7 +1887,7 @@ function updateWidgetDragPreview(drag: WidgetDragState): void {
       Math.max(0, grid.maxRow * grid.stepY),
     ),
   }
-  if (placement.pixelSize) {
+  if (placement.pixelSize || drag.key.startsWith('group:')) {
     const snapped = dropDesktopGridItem(
       renderedDesktopLayout.value.placements, allDesktopLayoutItems.value, drag.key,
       desktopIconPixelsToPosition(preview, iconBounds.value), iconBounds.value,

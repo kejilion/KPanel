@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, GROUP_PADDING, normalizeDesktopGroupColumns, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
+import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, desktopGroupRect, normalizeDesktopGroupColumns, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
 import { deriveDesktopGridLayout, desktopGridPlacementRect } from './desktopGridLayout'
 import type { DesktopGroup } from '@/types/api'
 
@@ -14,7 +14,7 @@ describe('desktop groups', () => {
     expect(group.members).not.toBe(legacy.members)
     expect(group.slots).not.toBe(legacy.slots)
   })
-  it('ignores legacy reserved rows and paints tight content edges', () => {
+  it('ignores legacy reserved rows and balances padding inside whole grid cells', () => {
     for (const bounds of [{ width: 1200, height: 800 }, { width: 290, height: 550 }]) {
       for (const columns of [2, 3, 4]) for (const rows of [1, 2, 3]) {
         const group = { ...a, columns, rows }
@@ -26,9 +26,12 @@ describe('desktop groups', () => {
         expect(cells).toHaveLength(columns)
         expect(rect.width).toBeLessThanOrEqual(reservation.width)
         expect(rect.height).toBeLessThanOrEqual(reservation.height)
-        expect(Math.min(...cells.map(cell => cell.left))).toBe(GROUP_PADDING)
-        expect(rect.width - Math.max(...cells.map(cell => cell.left + cell.width))).toBe(GROUP_PADDING)
-        expect(rect.height - Math.max(...cells.map(cell => cell.top + cell.height))).toBe(GROUP_PADDING)
+        expect((rect.width + 5) % 95).toBe(0)
+        expect((rect.height + 4) % 100).toBe(0)
+        expect(Math.min(...cells.map(cell => cell.left))).toBe(47.5)
+        expect(rect.width - Math.max(...cells.map(cell => cell.left + cell.width))).toBe(47.5)
+        expect(Math.min(...cells.map(cell => cell.top))).toBe(50)
+        expect(rect.height - Math.max(...cells.map(cell => cell.top + cell.height))).toBe(50)
         expect(desktopGroupRect({ ...group, collapsed: true }, placement, bounds).height).toBe(56)
       }
     }
