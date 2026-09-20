@@ -756,6 +756,41 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
+  it.each([false, true])('keeps a held group pixel-following across cells and collisions (collapsed=%s)', async collapsed => {
+    const id = 'a'.repeat(32)
+    const initial = workspace({ groups: [{ id, name: 'Group', members: ['nav:/overview', 'nav:/terminal'], columns: 4, collapsed }],
+      positions: { [`group:${id}`]: { x: 0, y: 0 } },
+      hiddenWidgetKeys: ['widget:clock', 'widget:monitor', 'widget:services'],
+    })
+    loadWorkspace.mockResolvedValueOnce(initial)
+    updateWorkspace.mockImplementation(async body => ({ ...initial, ...body, resourceVersion: `sha256:${'2'.repeat(64)}` }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const group = wrapper.get('.desktop-group')
+    const header = group.get('.desktop-group__header')
+    const original = group.attributes('style')
+    header.element.dispatchEvent(pointer('pointerdown', 200, 80))
+    // Irregular and reversing sub-cell increments must never snap or jump back while held.
+    for (const [dx, dy] of [[13, 7], [14, 8], [95, 100], [96, 101], [23, 201], [24, 202]]) {
+      window.dispatchEvent(pointer('pointermove', 200 + dx!, 80 + dy!))
+      await flushPromises()
+      expect(group.attributes('style')).toContain(`translate3d(${dx}px, ${dy}px, 0)`)
+      expect(group.classes()).toContain('desktop-group--dragging')
+      expect(updateWorkspace).not.toHaveBeenCalled()
+    }
+    window.dispatchEvent(pointer('pointercancel', 224, 282))
+    await flushPromises()
+    expect(group.attributes('style')).toBe(original)
+    expect(group.classes()).not.toContain('desktop-group--dragging')
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    header.element.dispatchEvent(pointer('pointerdown', 200, 80))
+    window.dispatchEvent(pointer('pointermove', 213, 87))
+    window.dispatchEvent(pointer('pointerup', 213, 87))
+    await flushPromises()
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('keeps group containers and members accessible when dynamic entries overflow the position budget', async () => {
     const extras: DesktopEntry[] = Array.from({ length: 512 }, (_, index) => ({
       key: `app:overflow-${index}`, kind: 'app', id: `overflow-${index}`,

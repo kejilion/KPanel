@@ -1877,7 +1877,7 @@ function updateWidgetDragPreview(drag: WidgetDragState): void {
   const rect = desktopGridPlacementRect(placement, iconBounds.value)
   const grid = renderedDesktopLayout.value.grid
   const scrollDelta = (iconsElement.value?.scrollTop || 0) - drag.startScrollTop
-  let preview = {
+  const preview = {
     left: Math.min(
       Math.max(0, drag.origin.left + drag.lastX - drag.startX),
       Math.max(0, iconBounds.value.width - rect.width),
@@ -1887,16 +1887,7 @@ function updateWidgetDragPreview(drag: WidgetDragState): void {
       Math.max(0, grid.maxRow * grid.stepY),
     ),
   }
-  if (placement.pixelSize || drag.key.startsWith('group:')) {
-    const snapped = dropDesktopGridItem(
-      renderedDesktopLayout.value.placements, allDesktopLayoutItems.value, drag.key,
-      desktopIconPixelsToPosition(preview, iconBounds.value), iconBounds.value,
-    ).find(item => item.key === drag.key)
-    if (snapped) {
-      const rect = desktopGridPlacementRect(snapped, iconBounds.value)
-      preview = { left: rect.left, top: rect.top }
-    }
-  }
+  // Follow the pointer continuously; snapping/collision belongs only to pointerup.
   dragPreviews.value = { [drag.key]: preview }
 }
 
