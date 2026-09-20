@@ -166,7 +166,7 @@ function keydown(event: KeyboardEvent) {
 .desktop-group__header .desktop-group__name { display: block; flex: 0 1 auto; width: auto; min-width: 28px; max-width: 100%; padding: 0 4px; overflow: hidden; text-align: start; }
 .desktop-group__name strong { display: block; }
 .desktop-group__name-input { flex: 1 1 80px; width: 80px; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--desktop-group-focus); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; outline: 2px solid var(--desktop-group-hover); }
-.desktop-group__actions { position: fixed; z-index: 3400; display: grid; min-width: 120px; max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text); box-shadow: 0 6px 20px rgb(0 8 18 / 16%); }
+.desktop-group__actions { position: fixed; z-index: 3400; display: grid; min-width: 120px; max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-sm); }
 .desktop-group__actions button { border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; text-align: start; padding: 8px 12px; font: inherit; font-size: 14px; cursor: pointer; }
 .desktop-group__actions button:hover, .desktop-group__actions button:focus-visible { background: var(--surface-subtle); outline: 2px solid var(--brand); outline-offset: -2px; }
 .desktop-group__previews { display: flex; flex: 0 0 auto; gap: 6px; margin-left: auto; pointer-events: none; }

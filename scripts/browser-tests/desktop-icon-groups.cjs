@@ -204,7 +204,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     await save(() => nameInput.press('Enter'))
     assert.equal(await nameButton.evaluate(el => document.activeElement === el), true)
     await nameButton.click(); await nameInput.fill('常用运维 · 测试')
-    await save(() => page.locator('.desktop__taskbar-brand').click())
+    await save(() => page.locator('.desktop__icons').click({ position: { x: 1100, y: 600 } }))
     assert.equal(state.groups[0].name, '常用运维 · 测试')
     const afterRename = await group.boundingBox()
     assert.equal(afterRename.x, beforeRename.x); assert.equal(afterRename.y, beforeRename.y)
@@ -213,7 +213,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     report.cases.push('single-click inline rename: IME Enter, Escape, blank, failed save/retry, blur save, focus and refresh')
     // Legacy minimum height disappears, while a deliberate second-row gap survives.
     state.groups[0].rows = 8
-    state.groups[0].slots = { 'nav:/overview': 0, 'nav:/terminal': 7 }
+    state.groups[0].slots = { 'nav:/overview': 0, 'nav:/terminal': 4 }
     await page.reload(); await group.waitFor(); await settle()
     assert.equal(await group.locator('[data-group-cell]').count(), 8)
     const emptyCell = await group.locator('[data-group-cell="7"]').boundingBox()
