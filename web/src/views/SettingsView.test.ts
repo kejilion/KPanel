@@ -208,6 +208,10 @@ function themeColorInput(value: string, type = 'text'): Event {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('confirm', vi.fn(() => true))
+  vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+    callback(0)
+    return 1
+  }))
   mocks.route.query = {}
   mocks.replace.mockResolvedValue(undefined)
   mocks.changePassword.mockResolvedValue(undefined)
@@ -772,7 +776,8 @@ describe('SettingsView automatic updates', () => {
 
     await view.focusAutomaticUpdateSection()
 
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(requestAnimationFrame).toHaveBeenCalledOnce()
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
     expect(focus).toHaveBeenCalledWith({ preventScroll: true })
   })
 

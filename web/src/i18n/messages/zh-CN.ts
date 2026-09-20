@@ -248,6 +248,7 @@ export const zhCNMessages = {
   'nav.signOutFailed': '退出失败',
   'nav.signOutRetry': '请刷新页面后重试。',
   'nav.updateAvailable': '更新可用',
+  'nav.versionUpdates': '查看版本更新',
   'nav.themeToggle': '切换浅色或深色主题',
 
   'kpanelUpdate.title': '更新 KPanel',

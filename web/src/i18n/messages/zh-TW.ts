@@ -247,6 +247,7 @@ export const zhTWMessages = {
   "nav.signOutFailed": "退出失敗",
   "nav.signOutRetry": "請重新整理頁面後重試。",
   "nav.updateAvailable": "更新可用",
+  "nav.versionUpdates": "檢視版本更新",
   "nav.themeToggle": "切換淺色或深色主題",
   "kpanelUpdate.title": "更新 KPanel",
   "kpanelUpdate.description": "先查看目標版本的主要變更與升級注意事項，再確認更新。",

@@ -244,7 +244,8 @@ describe('DesktopView', () => {
     wrapper.unmount()
   })
 
-  it('mirrors the classic Agent status and version in the taskbar', () => {
+  it('opens version settings from the current taskbar version', async () => {
+    const desktop = useDesktopMode()
     const wrapper = mount(DesktopView, {
       props: {
         agent: {
@@ -257,7 +258,10 @@ describe('DesktopView', () => {
       },
     })
     expect(wrapper.find('.desktop__taskbar-agent-status').text()).toContain('Agent 在线')
-    expect(wrapper.find('.desktop__taskbar-agent > small').text()).toBe('v0.48.3')
+    const version = wrapper.find('.desktop__taskbar-agent-update')
+    expect(version.text()).toBe('v0.48.3')
+    await version.trigger('click')
+    expect(desktop.windows.value[0]?.path).toBe('/settings?section=version-updates')
     wrapper.unmount()
   })
 
@@ -278,7 +282,7 @@ describe('DesktopView', () => {
     })
     const update = wrapper.find('.desktop__taskbar-agent-update')
     expect(update.text()).toContain('更新可用')
-    expect(wrapper.find('.desktop__taskbar-agent > small').exists()).toBe(false)
+    expect(update.classes()).toContain('desktop__taskbar-agent-update--available')
     await update.trigger('click')
     expect(desktop.windows.value[0]?.path).toBe('/settings?section=version-updates')
     wrapper.unmount()

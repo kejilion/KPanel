@@ -4181,17 +4181,20 @@ function onViewportResize(): void {
             <span>{{ agentStatus.label }}</span>
           </span>
           <button
-            v-if="props.kpanelUpdateAvailable"
+            v-if="props.agent.version"
             class="desktop__taskbar-agent-update"
+            :class="{ 'desktop__taskbar-agent-update--available': props.kpanelUpdateAvailable }"
             type="button"
             :aria-label="props.kpanelUpdateDescription"
             :title="props.kpanelUpdateDescription"
             @click="openKPanelUpdate"
           >
-            <CircleArrowUp :size="13" aria-hidden="true" />
-            <span>{{ i18n.t('nav.updateAvailable') }}</span>
+            <template v-if="props.kpanelUpdateAvailable">
+              <CircleArrowUp :size="13" aria-hidden="true" />
+              <span>{{ i18n.t('nav.updateAvailable') }}</span>
+            </template>
+            <span v-else>v{{ props.agent.version }}</span>
           </button>
-          <small v-else-if="props.agent.version">v{{ props.agent.version }}</small>
         </div>
       </div>
       <div class="desktop__taskbar-apps">

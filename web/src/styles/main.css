@@ -1977,6 +1977,10 @@ textarea:focus-visible,
     font-size: 0;
   }
 
+  .sidebar--collapsed .sidebar__version--current {
+    display: none;
+  }
+
   .sidebar--collapsed .sidebar__user {
     gap: 0;
     padding: 8px 13px;
@@ -2009,6 +2013,7 @@ textarea:focus-visible,
 .sidebar__version {
   display: inline-flex;
   min-width: 0;
+  min-height: 24px;
   align-items: center;
   gap: 5px;
   padding: 3px 6px;
@@ -2016,11 +2021,17 @@ textarea:focus-visible,
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sidebar__version:hover,
+.sidebar__version:focus-visible {
+  color: var(--sidebar-text);
+  background: color-mix(in srgb, var(--sidebar-text) 9%, transparent);
 }
 
 .sidebar__version--update {
   color: #ff9f43;
-  cursor: pointer;
   background: rgb(255 159 67 / 10%);
 }
 
@@ -2031,7 +2042,7 @@ textarea:focus-visible,
 }
 
 .sidebar__version span {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 

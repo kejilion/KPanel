@@ -250,6 +250,7 @@ export const enUSMessages = {
   'nav.signOutFailed': 'Sign-out failed',
   'nav.signOutRetry': 'Refresh the page and try again.',
   'nav.updateAvailable': 'Update available',
+  'nav.versionUpdates': 'View version updates',
   'nav.themeToggle': 'Toggle light or dark theme',
 
   'kpanelUpdate.title': 'Update KPanel',
