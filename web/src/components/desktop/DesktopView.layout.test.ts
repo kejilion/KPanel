@@ -503,10 +503,10 @@ describe('DesktopView icon layout interaction', () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
     const overview = wrapper.get('[data-icon-key="nav:/overview"]')
-    const terminal = wrapper.get('[data-icon-key="nav:/terminal"]')
+    const monitoring = wrapper.get('[data-icon-key="nav:/monitoring"]')
 
     await overview.get('button').trigger('click')
-    await terminal.get('button').trigger('click', { ctrlKey: true })
+    await monitoring.get('button').trigger('click', { ctrlKey: true })
     expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 2 项')
 
     overview.element.dispatchEvent(pointer('pointerdown', 30, 30))
@@ -517,8 +517,8 @@ describe('DesktopView icon layout interaction', () => {
     expect(updateWorkspace).toHaveBeenCalledTimes(1)
     const positions = updateWorkspace.mock.calls[0]![0].positions
     expect(positions['nav:/overview']?.x).toBeGreaterThan(0)
-    expect(positions['nav:/terminal']?.x).toBe(positions['nav:/overview']?.x)
-    expect(positions['nav:/terminal']?.y).toBeGreaterThan(positions['nav:/overview']?.y || 0)
+    expect(positions['nav:/monitoring']?.x).toBe(positions['nav:/overview']?.x)
+    expect(positions['nav:/monitoring']?.y).toBeGreaterThan(positions['nav:/overview']?.y || 0)
     wrapper.unmount()
   })
 
@@ -546,8 +546,8 @@ describe('DesktopView icon layout interaction', () => {
     desktop.element.focus()
 
     await desktop.trigger('keydown', { key: 'a', ctrlKey: true })
-    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(12)
-    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 12 项')
+    expect(wrapper.findAll('.desktop__icon--selected')).toHaveLength(14)
+    expect(wrapper.find('.desktop__selection-actions').text()).toContain('已选 14 项')
 
     await desktop.trigger('keydown', { key: 'Delete' })
     await flushPromises()
@@ -830,7 +830,7 @@ describe('DesktopView icon layout interaction', () => {
   }, 10_000)
 
   it('keeps icons beyond the 512-position limit separate and refuses false auto-arrange success', async () => {
-    const extras: DesktopEntry[] = Array.from({ length: 501 }, (_, index) => ({
+    const extras: DesktopEntry[] = Array.from({ length: 499 }, (_, index) => ({
       key: `app:extra-${index}`,
       kind: 'app',
       id: `extra-${index}`,
@@ -844,8 +844,8 @@ describe('DesktopView icon layout interaction', () => {
 
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
-    const supported = wrapper.find('[data-icon-key="app:extra-499"]')
-    const overflow = wrapper.find('[data-icon-key="app:extra-500"]')
+    const supported = wrapper.find('[data-icon-key="app:extra-497"]')
+    const overflow = wrapper.find('[data-icon-key="app:extra-498"]')
 
     expect(overflow.attributes('style')).not.toBe(supported.attributes('style'))
     expect(overflow.attributes('style')).not.toContain('display: none')

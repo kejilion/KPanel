@@ -127,6 +127,29 @@ describe('DesktopView', () => {
     wrapper.unmount()
   })
 
+  it('shows and launches monitoring and process management from default desktop icons', async () => {
+    const desktop = useDesktopMode()
+    desktop.enterDesktop()
+    const wrapper = mount(DesktopView)
+
+    const monitoring = wrapper.get('[data-icon-key="nav:/monitoring"]')
+    const processes = wrapper.get('[data-icon-key="nav:/processes"]')
+    expect(monitoring.get('button').attributes('aria-label')).toBe('历史监控')
+    expect(processes.get('button').attributes('aria-label')).toBe('进程管理器')
+    expect(monitoring.get('img').attributes('src')).toBe('/desktop-icons/monitoring-kpanel-flat-v2.webp')
+    expect(processes.get('img').attributes('src')).toBe('/desktop-icons/processes-kpanel-flat-v2.webp')
+
+    await monitoring.get('button').trigger('dblclick')
+    await processes.get('button').trigger('dblclick')
+    await nextTick()
+
+    expect(desktop.windows.value).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '/monitoring', titleKey: 'route.monitoring' }),
+      expect.objectContaining({ path: '/processes', titleKey: 'route.processes' }),
+    ]))
+    wrapper.unmount()
+  })
+
   it('opens a desktop app on one touch tap', async () => {
     setupViewport(390, 844)
     const desktop = useDesktopMode()

@@ -221,7 +221,7 @@ describe('desktop mode', () => {
     expect(window.localStorage.getItem('kpanel:desktop-window-sizes:v1')).toContain('1040')
   })
 
-  it('remembers only the last user-resized size for a canonical application', () => {
+  it('keeps monitoring window size preferences separate from Overview', () => {
     setupViewport(1440, 900)
     initializeDesktopMode(window.localStorage, { width: 1440, height: 900 })
     const desktop = useDesktopMode()
@@ -232,8 +232,8 @@ describe('desktop mode', () => {
 
     const reopened = desktop.openWindow('/monitoring', 'route.monitoring', true)
     expect(desktop.windows.value.find((item) => item.id === reopened)?.geometry).toMatchObject({
-      width: 1040,
-      height: 650,
+      width: 880,
+      height: 600,
     })
     const raw = window.localStorage.getItem('kpanel:desktop-window-sizes:v1') ?? ''
     expect(raw).toContain('/overview')

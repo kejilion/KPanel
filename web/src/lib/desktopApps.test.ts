@@ -29,11 +29,13 @@ function webpDimensions(image: Buffer): { width: number; height: number } {
 }
 
 describe('desktop app catalogue', () => {
-  it('mirrors the classic navigation set', () => {
+  it('exposes the default desktop system applications', () => {
     const paths = desktopApps.map((app) => app.path)
     expect(paths).toEqual(
       expect.arrayContaining([
         '/overview',
+        '/monitoring',
+        '/processes',
         '/system',
         '/ai',
         '/sites',
@@ -47,7 +49,7 @@ describe('desktop app catalogue', () => {
         '/settings',
       ]),
     )
-    expect(desktopApps).toHaveLength(12)
+    expect(desktopApps).toHaveLength(14)
   })
 
   it('gives every app a distinct gradient', () => {
@@ -62,7 +64,7 @@ describe('desktop app catalogue', () => {
     expect(new Set(iconURLs).size).toBe(desktopApps.length)
 
     for (const iconURL of iconURLs) {
-      expect(iconURL).toMatch(/^\/desktop-icons\/[a-z]+-kpanel-flat-v1\.webp$/)
+      expect(iconURL).toMatch(/^\/desktop-icons\/[a-z]+-kpanel-flat-v\d+\.webp$/)
       const image = readFileSync(new URL(`../../public${iconURL}`, import.meta.url))
       expect(image.byteLength).toBeLessThanOrEqual(30 * 1024)
       expect(webpDimensions(image)).toEqual({ width: 512, height: 512 })
@@ -89,10 +91,13 @@ describe('desktop app catalogue', () => {
     expect(desktopApps.map((app) => app.path)).not.toContain('/app-script')
   })
 
-  it('exposes the system center launcher while keeping the process utility route internal', () => {
+  it('exposes monitoring, process management, and system center as desktop launchers', () => {
+    expect(findDesktopApp('/monitoring')?.labelKey).toBe('route.monitoring')
+    expect(findDesktopApp('/monitoring')?.allowMultiple).toBe(false)
+    expect(findDesktopApp('/processes')?.labelKey).toBe('route.processes')
+    expect(findDesktopApp('/processes')?.allowMultiple).toBe(false)
     expect(findDesktopApp('/system')?.labelKey).toBe('route.systemCenter')
     expect(findDesktopApp('/system')?.allowMultiple).toBe(false)
-    expect(findDesktopApp('/processes')).toBeUndefined()
     const paths = desktopApps.map((app) => app.path)
     expect(paths.indexOf('/system')).toBe(paths.indexOf('/cluster') + 1)
   })
