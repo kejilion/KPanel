@@ -258,7 +258,7 @@ func (m *Manager) startMaintenanceTask(
 	} else if action == "virus-scan" {
 		properties = append(properties,
 			"ProtectHome=read-only",
-			"ReadWritePaths="+m.stateDir+" -/home/docker/clamav/log -/var/lock",
+			"ReadWritePaths="+m.stateDir+" -/home/docker/clamav -/var/lock",
 			"NoNewPrivileges=no",
 			"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
 		)
