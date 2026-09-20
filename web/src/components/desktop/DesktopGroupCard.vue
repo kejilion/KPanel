@@ -2,7 +2,8 @@
 import { ChevronDown, MoreHorizontal } from '@lucide/vue'
 import type { DesktopGroup } from '@/types/api'
 import { useI18n } from '@/i18n'
-defineProps<{ group: DesktopGroup; count: number; dropping: boolean; busy: boolean }>()
+import type { desktopGroupCells } from '@/lib/desktopGroups'
+defineProps<{ group: DesktopGroup; count: number; dropping: boolean; busy: boolean; cells: ReturnType<typeof desktopGroupCells>; dropCell?: number }>()
 const emit = defineEmits<{ toggle: []; menu: []; drag: [event: PointerEvent]; nudge: [direction: 'left' | 'right' | 'up' | 'down'] }>()
 const i18n = useI18n()
 function keydown(event: KeyboardEvent) {
@@ -24,6 +25,10 @@ function keydown(event: KeyboardEvent) {
       <button type="button" class="desktop-group__menu" :aria-label="i18n.t('desktop.groupManage', { name: group.name })"
         :disabled="busy" @click="emit('menu')"><MoreHorizontal :size="18" /></button>
     </header>
+    <span v-for="cell in cells" :key="cell.index" class="desktop-group__cell"
+      :class="{ 'desktop-group__cell--empty': !cell.key, 'desktop-group__cell--target': dropping && dropCell === cell.index }"
+      :data-group-cell="cell.index" :data-cell-empty="!cell.key || undefined" aria-hidden="true"
+      :style="{ left: `${cell.left}px`, top: `${cell.top}px`, width: `${cell.width}px`, height: `${cell.height}px` }" />
     <p v-if="!count && !group.collapsed" class="desktop-group__empty">{{ i18n.t('desktop.groupEmpty') }}</p>
     <span v-if="dropping" class="desktop-group__drop-label">{{ i18n.t('desktop.groupDrop', { name: group.name }) }}</span>
   </section>
@@ -32,6 +37,9 @@ function keydown(event: KeyboardEvent) {
 <style scoped>
 .desktop-group { position: absolute; box-sizing: border-box; border: 1px solid var(--desktop-glass-border); border-radius: var(--radius-lg); background: var(--desktop-glass-strong); color: var(--text); transition: transform 180ms cubic-bezier(.22,1,.36,1), height 200ms cubic-bezier(.22,1,.36,1), border-color 120ms; }
 .desktop-group__header { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 10px; cursor: grab; touch-action: none; }
+.desktop-group__cell { position: absolute; box-sizing: border-box; border: 1px dashed transparent; border-radius: var(--radius); pointer-events: none; }
+.desktop-group:hover .desktop-group__cell--empty, .desktop-group--drop .desktop-group__cell--empty { border-color: var(--desktop-glass-border); }
+.desktop-group .desktop-group__cell--target { border: 2px solid var(--brand); background: var(--brand-soft); }
 .desktop-group__header strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .desktop-group__header button { flex: 0 0 28px; width: 28px; height: 32px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; }
 .desktop-group__header button:hover { background: var(--interaction-hover); }

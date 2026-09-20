@@ -951,7 +951,7 @@ describe('DesktopView dynamic entries', () => {
     wrapper.unmount()
   })
 
-  it('keeps local desktop shortcut movement available when cluster identity is unavailable', async () => {
+  it('keeps local shortcut movement available and resets grouping dwell after leaving the desktop', async () => {
     const shortcutID = '3'.repeat(32)
     mockedWorkspace.mockResolvedValueOnce(makeWorkspace({
       shortcuts: [{
@@ -990,6 +990,32 @@ describe('DesktopView dynamic entries', () => {
       /^text\/plain:fast\.txt:https?:\/\/[^/]+\/api\/v1\/files\/content\?path=%2Fhome%2Ffast\.txt&disposition=attachment$/,
     )
     expect(mockedClusterHosts.mock.calls.length).toBeGreaterThan(identityAttemptsBeforeDrag)
+    const overview = wrapper.get('[data-icon-key="nav:/overview"]')
+    vi.spyOn(wrapper.get('.desktop__icons').element, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 700, width: 1000, height: 700, toJSON() {},
+    })
+    vi.spyOn(overview.element, 'getBoundingClientRect').mockReturnValue({
+      x: 100, y: 100, left: 100, top: 100, right: 190, bottom: 196, width: 90, height: 96, toJSON() {},
+    })
+    vi.useFakeTimers()
+    try {
+      wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer, 145, 124))
+      await nextTick()
+      expect(overview.classes()).toContain('desktop__icon-slot--group-candidate')
+      await vi.advanceTimersByTimeAsync(200)
+      wrapper.element.dispatchEvent(internalFileDragEvent('dragleave', dataTransfer, 1100, 800))
+      await vi.advanceTimersByTimeAsync(500)
+      expect(overview.classes()).not.toContain('desktop__icon-slot--group-candidate')
+      wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer, 145, 124))
+      await nextTick()
+      expect(overview.classes()).not.toContain('desktop__icon-slot--group-ready')
+      await vi.advanceTimersByTimeAsync(449)
+      expect(overview.classes()).not.toContain('desktop__icon-slot--group-ready')
+      wrapper.element.dispatchEvent(internalFileDragEvent('dragleave', dataTransfer, 1100, 800))
+      wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer, 360, 260))
+      await nextTick()
+    } finally { vi.useRealTimers() }
+    dataTransfer.dropEffect = 'none'
     Object.defineProperty(document, 'elementFromPoint', {
       configurable: true,
       value: vi.fn(() => wrapper.element),

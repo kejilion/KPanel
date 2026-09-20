@@ -1,6 +1,11 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const zhTWMessages = {
+  'desktop.groupRows': '預留列數',
+  'desktop.groupRowsAuto': '隨內容自動擴展',
+  'desktop.groupGridHint': '列數為預留的最小高度，圖示增加會自動擴展。可拖至空格留白，拖至既有圖示上交換位置。',
+  'desktop.groupHoldCreate': '停留片刻以建立群組',
+  'desktop.groupDropCreate': '放開建立群組',
   'desktop.groupSave': '儲存分組',
   'desktop.groupCreate': "新增分組",
   'desktop.groupSelection': "編為一組",

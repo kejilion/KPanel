@@ -14,7 +14,7 @@ const EMPTY_RESOURCE_VERSION = 'sha256:' + '0'.repeat(64)
 
 function emptyWorkspace(): DesktopWorkspace {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     groups: [],
     resourceVersion: EMPTY_RESOURCE_VERSION,
     available: true,
@@ -40,7 +40,7 @@ function cloneShortcuts(shortcuts: DesktopShortcut[]): DesktopWorkspaceDraft['sh
 
 function draftFrom(value: DesktopWorkspace): DesktopWorkspaceDraft {
   return {
-    groups: (value.groups || []).map(group => ({ ...group, members: [...group.members] })),
+    groups: (value.groups || []).map(group => ({ ...group, members: [...group.members], ...(group.slots ? { slots: { ...group.slots } } : {}) })),
     hiddenEntryKeys: [...value.hiddenEntryKeys],
     hiddenWidgetKeys: [...(value.hiddenWidgetKeys || [])],
     positions: Object.fromEntries(
@@ -91,6 +91,7 @@ function mutate(change: DesktopWorkspaceMutation): Promise<DesktopWorkspace> {
     const shortcutKeys = new Set(draft.shortcuts.map(item => `shortcut:${item.id}`))
     for (const group of draft.groups || []) {
       group.members = group.members.filter(key => !key.startsWith('shortcut:') || shortcutKeys.has(key))
+      if (group.slots) group.slots = Object.fromEntries(Object.entries(group.slots).filter(([key]) => group.members.includes(key)))
     }
     saving.value = true
     try {

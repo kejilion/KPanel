@@ -32,7 +32,7 @@ import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
-import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, groupKey, MAX_DESKTOP_GROUPS, moveGroupMembers } from '@/lib/desktopGroups'
+import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopShortcutDialog, {
   type DesktopShortcutDraft,
@@ -487,9 +487,14 @@ const localGroups = ref<DesktopGroup[]>([])
 const groupSaving = ref(false)
 const groupDropTarget = ref('')
 const groupDropBefore = ref('')
+const groupDropCell = ref<number>()
+const autoGroupTarget = ref('')
+const autoGroupReady = ref(false)
+let autoGroupTimer: number | undefined
 const groupDialog = ref<{ id?: string; keys: string[] }>()
 const groupName = ref('')
 const groupColumns = ref(3)
+const groupRows = ref(0)
 const groupError = ref('')
 const groupUndo = ref<{ groups: DesktopGroup[]; positions: Record<string, DesktopIconPosition>; version: string }>()
 const groupMembership = computed(() => new Map(localGroups.value.flatMap(group => group.members.map(key => [key, group.id] as const))))
@@ -514,17 +519,55 @@ function groupCollapsed(key: string): boolean {
 function updateGroupDropTarget(clientX: number, clientY: number, keys: readonly string[]): void {
   groupDropTarget.value = groupAtPoint(clientX, clientY) || ''
   groupDropBefore.value = ''
+  groupDropCell.value = undefined
+  updateAutoGroupTarget(clientX, clientY, keys)
   const group = localGroups.value.find(item => item.id === groupDropTarget.value)
   const bounds = iconsElement.value?.getBoundingClientRect()
   if (!group || group.collapsed || !bounds) return
   const x = clientX - bounds.left, y = clientY - bounds.top + (iconsElement.value?.scrollTop || 0)
-  groupDropBefore.value = group.members.find(key => {
-    if (keys.includes(key)) return false
-    const position = renderedPositionByKey.value.get(key)
-    if (!position) return false
-    const point = desktopIconPositionToPixels(position, iconBounds.value)
-    return y < point.top + 96 && x < point.left + 60
-  }) || ''
+  const placement = renderedPlacementByKey.value.get(groupKey(group.id))
+  if (!placement) return
+  const rect = desktopGridPlacementRect(placement, iconBounds.value)
+  groupDropCell.value = desktopGroupCellAtPoint(group, placement, iconBounds.value, x - rect.left, y - rect.top)
+  const slots = desktopGroupSlots(group)
+  groupDropBefore.value = Object.keys(slots).find(key => !keys.includes(key) && slots[key] === groupDropCell.value) || ''
+}
+
+function clearAutoGroupPreview(): void {
+  if (autoGroupTimer !== undefined) window.clearTimeout(autoGroupTimer)
+  autoGroupTimer = undefined
+  autoGroupTarget.value = ''
+  autoGroupReady.value = false
+}
+
+function updateAutoGroupTarget(clientX: number, clientY: number, keys: readonly string[]): void {
+  let candidate = ''
+  if (!groupDropTarget.value && localGroups.value.length < MAX_DESKTOP_GROUPS) {
+    const bounds = iconsElement.value?.getBoundingClientRect()
+    if (bounds && clientX >= bounds.left && clientX <= bounds.right && clientY >= bounds.top && clientY <= bounds.bottom) {
+      for (const element of iconsElement.value!.querySelectorAll<HTMLElement>('[data-icon-key]')) {
+        const key = element.dataset.iconKey!
+        if (keys.includes(key) || groupMembership.value.has(key) || !renderedPositionByKey.value.has(key)) continue
+        const rect = element.getBoundingClientRect()
+        if (Math.abs(clientX - rect.left - rect.width / 2) <= rect.width / 2 + 8 && Math.abs(clientY - rect.top - rect.height / 2) <= rect.height / 2 + 8) {
+          candidate = key; break
+        }
+      }
+    }
+  }
+  if (candidate === autoGroupTarget.value) return
+  clearAutoGroupPreview()
+  if (!candidate) return
+  autoGroupTarget.value = candidate
+  autoGroupTimer = window.setTimeout(() => {
+    if (autoGroupTarget.value === candidate) autoGroupReady.value = true
+    autoGroupTimer = undefined
+  }, GROUP_DWELL_MS)
+}
+
+function groupCells(group: DesktopGroup) {
+  const placement = renderedPlacementByKey.value.get(groupKey(group.id))
+  return placement && !group.collapsed ? desktopGroupCells(group, placement, iconBounds.value) : []
 }
 
 function showGroupDialog(keys: readonly string[] = [], id?: string): void {
@@ -532,6 +575,7 @@ function showGroupDialog(keys: readonly string[] = [], id?: string): void {
   const group = localGroups.value.find(item => item.id === id)
   groupName.value = group?.name || i18n.t('desktop.groupDefaultName')
   groupColumns.value = group?.columns || 3
+  groupRows.value = group?.rows || 0
   groupError.value = ''
   groupDialog.value = { id, keys: [...keys] }
 }
@@ -589,9 +633,9 @@ async function saveGroup(): Promise<void> {
   }
   const id = dialog.id || desktopIcons.generateShortcutID()
   let groups = cloneDesktopGroups(localGroups.value)
-  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: groupColumns.value } : group)
+  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: groupColumns.value, rows: groupRows.value } : group)
   else {
-    groups.push({ id, name: groupName.value.trim(), members: [], columns: groupColumns.value, collapsed: false })
+    groups.push({ id, name: groupName.value.trim(), members: [], columns: groupColumns.value, rows: groupRows.value, slots: {}, collapsed: false })
     groups = moveGroupMembers(groups, dialog.keys, id)
   }
   const positions = { ...localPositions.value }
@@ -643,13 +687,24 @@ function groupAtPoint(clientX: number, clientY: number): string | undefined {
 function handleGroupDrop(keys: string[], clientX: number, clientY: number, destination: DesktopIconPosition): boolean {
   updateGroupDropTarget(clientX, clientY, keys)
   const id = groupAtPoint(clientX, clientY)
-  const before = groupDropBefore.value || undefined
+  const cell = groupDropCell.value
+  const autoTarget = autoGroupReady.value ? autoGroupTarget.value : ''
+  clearAutoGroupPreview()
   groupDropTarget.value = ''
   groupDropBefore.value = ''
+  groupDropCell.value = undefined
+  if (!id && autoTarget) {
+    const newId = desktopIcons.generateShortcutID()
+    const groups = cloneDesktopGroups(localGroups.value)
+    groups.push({ id: newId, name: i18n.t('desktop.groupDefaultName'), columns: 3, rows: 0, slots: {}, members: [], collapsed: false })
+    const positions = { ...localPositions.value, [groupKey(newId)]: renderedPositionByKey.value.get(autoTarget)! }
+    void commitGroups(placeGroupMembers(groups, [autoTarget, ...keys], newId), positions).then(saved => { if (saved) clearIconSelection() })
+    return true
+  }
   if (!id && !keys.some(key => groupMembership.value.has(key))) return false
   const positions = { ...localPositions.value }
   if (!id) keys.forEach((key, index) => { positions[key] = { x: destination.x, y: destination.y + index * 0.01 } })
-  void commitGroups(moveGroupMembers(localGroups.value, keys, id, before), positions)
+  void commitGroups(placeGroupMembers(localGroups.value, keys, id, cell), positions)
   return true
 }
 
@@ -1570,6 +1625,7 @@ function finishDesktopShortcutDrag(event: DragEvent): void {
   if (fallbackPosition) void moveDesktopShortcutDrop(fallbackPosition)
   clearDesktopShortcutNativeDragPreview()
   desktopShortcutNativeDrag = undefined
+  clearAutoGroupPreview()
   groupDropTarget.value = ''
   groupDropBefore.value = ''
   draggingIcons.value = new Set()
@@ -1580,6 +1636,10 @@ function finishDesktopShortcutDrag(event: DragEvent): void {
 }
 
 function clearDesktopShortcutNativeDragPreview(): void {
+  clearAutoGroupPreview()
+  groupDropTarget.value = ''
+  groupDropBefore.value = ''
+  groupDropCell.value = undefined
   const drag = desktopShortcutNativeDrag
   if (!drag?.localPreviewActive) return
   drag.localPreviewActive = false
@@ -2121,6 +2181,7 @@ function onIconDragEnd(event: PointerEvent): void {
 }
 
 function cancelIconDrag(): void {
+  clearAutoGroupPreview()
   groupDropTarget.value = ''
   groupDropBefore.value = ''
   const drag = finishIconDrag()
@@ -2160,11 +2221,9 @@ function nudgeIcon(key: string, deltaX: number, deltaY: number): void {
   const groupId = groupMembership.value.get(key)
   const group = localGroups.value.find(item => item.id === groupId)
   if (group) {
-    const members = [...group.members]
-    const index = members.indexOf(key)
-    const next = Math.max(0, Math.min(members.length - 1, index + (deltaX || deltaY * group.columns)))
-    members.splice(index, 1); members.splice(next, 0, key)
-    void commitGroups(localGroups.value.map(item => item.id === groupId ? { ...item, members } : item))
+    const index = desktopGroupSlots(group)[key]!
+    const next = Math.max(0, Math.min(MAX_GROUP_CELLS - 1, index + (deltaX || deltaY * group.columns)))
+    void commitGroups(placeGroupMembers(localGroups.value, [key], groupId, next))
     return
   }
   if (!renderedPositionByKey.value.has(key)) {
@@ -3674,6 +3733,7 @@ function onViewportResize(): void {
         @nudge="nudgeWidget(widget.key, $event)"
       />
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
+        :cells="groupCells(group)" :drop-cell="groupDropTarget === group.id ? groupDropCell : undefined"
         :busy="groupSaving" :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
         :class="{ 'desktop-group--dragging': draggingWidgets.has(groupKey(group.id)) }"
         @toggle="toggleGroup(group.id)" @menu="showGroupDialog([], group.id)"
@@ -3694,7 +3754,8 @@ function onViewportResize(): void {
         v-for="(app, index) in desktopApps"
         :key="app.path"
         class="desktop__icon-slot"
-        :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(`nav:${app.path}`) }"
+        :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(`nav:${app.path}`), 'desktop__icon-slot--group-candidate': autoGroupTarget === `nav:${app.path}`, 'desktop__icon-slot--group-ready': autoGroupReady && autoGroupTarget === `nav:${app.path}` }"
+        :data-group-hint="autoGroupTarget === `nav:${app.path}` ? i18n.t(autoGroupReady ? 'desktop.groupDropCreate' : 'desktop.groupHoldCreate') : undefined"
         :style="iconSlotStyle(`nav:${app.path}`)"
         :data-icon-key="`nav:${app.path}`"
         :data-group-member="groupMembership.get(`nav:${app.path}`)"
@@ -3729,7 +3790,8 @@ function onViewportResize(): void {
           v-for="(entry, index) in visibleDynamicEntries"
           :key="entry.key"
           class="desktop__icon-slot"
-          :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(entry.key) }"
+          :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(entry.key), 'desktop__icon-slot--group-candidate': autoGroupTarget === entry.key, 'desktop__icon-slot--group-ready': autoGroupReady && autoGroupTarget === entry.key }"
+          :data-group-hint="autoGroupTarget === entry.key ? i18n.t(autoGroupReady ? 'desktop.groupDropCreate' : 'desktop.groupHoldCreate') : undefined"
           :style="iconSlotStyle(entry.key)"
           :data-icon-key="entry.key"
           :data-group-member="groupMembership.get(entry.key)"
@@ -3762,9 +3824,12 @@ function onViewportResize(): void {
         :class="{
           'desktop__icon-slot--dragging': draggingIcons.has(entry.key),
           'desktop__icon-slot--native-drag-hidden': nativeDragHiddenIcons.has(entry.key),
+          'desktop__icon-slot--group-candidate': autoGroupTarget === entry.key,
+          'desktop__icon-slot--group-ready': autoGroupReady && autoGroupTarget === entry.key,
           'desktop__icon-slot--transferable': isTransferableDesktopShortcut(entry),
           'desktop__icon-slot--transfer-ready': desktopShortcutTransferReady(entry),
         }"
+        :data-group-hint="autoGroupTarget === entry.key ? i18n.t(autoGroupReady ? 'desktop.groupDropCreate' : 'desktop.groupHoldCreate') : undefined"
         :style="iconSlotStyle(entry.key)"
         :data-icon-key="entry.key"
         :data-group-member="groupMembership.get(entry.key)"
@@ -4082,6 +4147,8 @@ function onViewportResize(): void {
       <form class="desktop-group-form" @submit.prevent="saveGroup">
         <label>{{ i18n.t('desktop.groupName') }}<input v-model="groupName" maxlength="48" required autofocus :disabled="groupSaving" /></label>
         <label>{{ i18n.t('desktop.groupColumns') }}<select v-model.number="groupColumns" :disabled="groupSaving"><option :value="2">2</option><option :value="3">3</option><option :value="4">4</option></select></label>
+        <label>{{ i18n.t('desktop.groupRows') }}<select v-model.number="groupRows" :disabled="groupSaving"><option :value="0">{{ i18n.t('desktop.groupRowsAuto') }}</option><option v-for="row in 8" :key="row" :value="row">{{ row }}</option></select></label>
+        <p>{{ i18n.t('desktop.groupGridHint') }}</p>
         <p>{{ i18n.t('desktop.groupHint') }}</p>
         <p v-if="groupError" role="alert" class="desktop-group-form__error">{{ groupError }}</p>
         <div class="desktop-group-form__actions">
