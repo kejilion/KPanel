@@ -192,6 +192,25 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
+  it('keeps member dimensions while collapsing to the upper-right and restores expansion', async () => {
+    const group = { id: 'c'.repeat(32), name: '运维', columns: 4, collapsed: false, members: ['nav:/overview'] }
+    loadWorkspace.mockResolvedValue(workspace({ groups: [group] }))
+    updateWorkspace.mockImplementation(async body => workspace({ positions: body.positions, groups: body.groups }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    const icon = wrapper.get<HTMLElement>('[data-icon-key="nav:/overview"]').element
+    const expanded = { width: icon.style.width, height: icon.style.height, transform: icon.style.transform }
+    await wrapper.get('.desktop-group__toggle').trigger('click'); await flushPromises()
+    expect(icon.style.width).toBe(expanded.width)
+    expect(icon.style.height).toBe(expanded.height)
+    expect(icon.style.transform).toContain('scale(.5)')
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    await wrapper.get('.desktop-group__toggle').trigger('click'); await flushPromises()
+    expect(icon.style.transform).toBe(expanded.transform)
+    expect(icon.hasAttribute('aria-hidden')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('restores group state on failed saves and never leaves grouped icons lost', async () => {
     const group = { id: 'a'.repeat(32), name: '运维', columns: 3, collapsed: false, members: ['nav:/overview'] }
     loadWorkspace.mockResolvedValue(workspace({ groups: [group] }))

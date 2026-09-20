@@ -1356,11 +1356,15 @@ function resetIconDragSurface(): void {
 
 function iconSlotStyle(key: string): Record<string, string> {
   if (localGroups.value.length) {
+    const size = renderedIconSizeByKey.value.get(key)
+    const sizeStyle: Record<string, string> = size ? { width: `${size.width}px`, height: `${size.height}px` } : {}
     if (groupCollapsed(key)) {
       const placement = renderedPlacementByKey.value.get(groupKey(groupMembership.value.get(key)!))
       if (placement) {
         const rect = desktopGridPlacementRect(placement, iconBounds.value)
-        return { left: '0px', top: '0px', transform: `translate3d(${rect.left + 12}px, ${rect.top}px, 0) scale(.85)`, opacity: '0', visibility: 'hidden', pointerEvents: 'none' }
+        // End at the rightmost header preview; retain the same box and glyph pivot in both states.
+        const left = rect.left + Math.max(rect.width / 2, rect.width - 58) - (size?.width ?? 90) / 2
+        return { ...sizeStyle, left: '0px', top: '0px', transform: `translate3d(${left}px, ${rect.top}px, 0) scale(.5)`, opacity: '0', visibility: 'hidden', pointerEvents: 'none' }
       }
     }
     let pixels = dragPreviews.value[key]
@@ -1374,10 +1378,7 @@ function iconSlotStyle(key: string): Record<string, string> {
       pixels = { left: pixels.left + groupPreview.left - origin.left, top: pixels.top + groupPreview.top - origin.top }
     }
     if (pixels) return {
-      ...(renderedIconSizeByKey.value.has(key) ? {
-        width: `${renderedIconSizeByKey.value.get(key)!.width}px`,
-        height: `${renderedIconSizeByKey.value.get(key)!.height}px`,
-      } : {}),
+      ...sizeStyle,
       left: '0px', top: '0px', transform: `translate3d(${pixels.left}px, ${pixels.top}px, 0)`,
       transition: draggingIcons.value.has(key) || groupPreview ? 'none' : '',
       zIndex: draggingIcons.value.has(key) || groupPreview ? '24' : '2',
