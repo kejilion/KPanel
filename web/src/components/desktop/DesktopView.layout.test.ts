@@ -139,6 +139,49 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
+  it('starts ungrouped, creates a group from selection, collapses and dissolves without deleting entries', async () => {
+    updateWorkspace.mockImplementation(async body => workspace({ positions: body.positions, groups: body.groups, resourceVersion: `sha256:${'3'.repeat(64)}` }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    await wrapper.get('[data-icon-key="nav:/overview"] button').trigger('click')
+    await wrapper.get('[data-icon-key="nav:/terminal"] button').trigger('click', { ctrlKey: true })
+    const create = wrapper.findAll('.desktop__selection-actions button').find(item => item.text().includes('编为一组'))!
+    await create.trigger('click')
+    await flushPromises()
+    const form = document.querySelector<HTMLFormElement>('.desktop-group-form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.members).toEqual(['nav:/overview', 'nav:/terminal'])
+    expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
+    expect(wrapper.get('[data-icon-key="nav:/files"]').attributes('data-group-member')).toBeUndefined()
+    await wrapper.get('.desktop-group__toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('aria-hidden')).toBe('true')
+    await wrapper.get('.desktop-group__menu').trigger('click')
+    await flushPromises()
+    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group-form button')].find(el => el.textContent?.includes('解散分组'))!
+    dissolve.click()
+    await flushPromises()
+    expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
+    expect(updateWorkspace.mock.calls.at(-1)![0].hiddenEntryKeys).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('restores group state on failed saves and never leaves grouped icons lost', async () => {
+    const group = { id: 'a'.repeat(32), name: '运维', columns: 3, collapsed: false, members: ['nav:/overview'] }
+    loadWorkspace.mockResolvedValue(workspace({ groups: [group] }))
+    updateWorkspace.mockRejectedValue(new Error('disk full'))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('.desktop-group__toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.desktop-group__toggle').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
+    wrapper.unmount()
+  })
+
   it('restores the previous split after cancellation and hides the divider once no snapped window is visible', async () => {
     window.localStorage.removeItem('kpanel:desktop-side-split:v1')
     const desktop = useDesktopMode()
@@ -667,6 +710,25 @@ describe('DesktopView icon layout interaction', () => {
     expect(updateWorkspace).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('keeps group containers and members accessible when dynamic entries overflow the position budget', async () => {
+    const extras: DesktopEntry[] = Array.from({ length: 512 }, (_, index) => ({
+      key: `app:overflow-${index}`, kind: 'app', id: `overflow-${index}`,
+      name: `Extra ${index}`, launch: 'external', url: `https://example.com/${index}`,
+    }))
+    loadEntries.mockResolvedValueOnce({ apps: extras, sites: [], visible: extras, loadedAt: Date.now() })
+    loadWorkspace.mockResolvedValueOnce(workspace({ groups: [{
+      id: 'a'.repeat(32), name: 'Group', members: ['nav:/overview'], columns: 3, collapsed: false,
+    }] }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.get('.desktop-group').attributes('style')).not.toContain('display: none')
+    expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
+    expect(wrapper.get('[data-icon-key="app:overflow-511"]').attributes('style')).not.toContain('display: none')
+    expect(wrapper.find('.desktop__icons-overflow-note').exists()).toBe(true)
+    expect(updateWorkspace).not.toHaveBeenCalled()
+    wrapper.unmount()
+  }, 10_000)
 
   it('keeps icons beyond the 512-position limit separate and refuses false auto-arrange success', async () => {
     const extras: DesktopEntry[] = Array.from({ length: 501 }, (_, index) => ({

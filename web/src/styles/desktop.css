@@ -1590,6 +1590,68 @@ body.desktop-mode-open::-webkit-scrollbar {
   transition: left .2s cubic-bezier(.22, 1, .36, 1), top .2s cubic-bezier(.22, 1, .36, 1);
 }
 
+.desktop__icons--grouped .desktop__icon-slot {
+  transition: transform 180ms cubic-bezier(.22, 1, .36, 1), opacity 140ms ease, visibility 140ms;
+}
+:root .desktop__icon-slot[data-group-member] .desktop__icon-label {
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+:root .desktop__icon-slot[data-group-member] .desktop__icon--selected .desktop__icon-label {
+  color: var(--on-brand);
+  background: var(--brand-action);
+}
+.desktop__icon-slot[data-group-before]::before {
+  content: ''; position: absolute; left: -3px; top: 8px; height: 70px; width: 3px;
+  border-radius: 3px; background: var(--brand); pointer-events: none;
+}
+.desktop-group-undo {
+  position: absolute;
+  z-index: 45;
+  bottom: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+}
+.desktop-group-undo button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+.desktop-group-form { display: grid; gap: 16px; font-size: 14px; }
+.desktop-group-form label { display: grid; gap: 8px; }
+.desktop-group-form input, .desktop-group-form select {
+  width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit;
+}
+.desktop-group-form p { margin: 0; line-height: 1.6; color: var(--text-soft); }
+.desktop-group-form .desktop-group-form__error { color: var(--danger); }
+.desktop-group-form__actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) {
+  .desktop__icons--grouped .desktop__icon-slot { transition: none; }
+}
+
 .desktop-widget-slot {
   position: absolute;
   z-index: 20;

@@ -17,12 +17,11 @@ HTTP(S) URL 和可选本地图标的创建、编辑与删除。文件管理中�
 现有 Panel → Agent 文件流写入真实宿主机目录，再为成功的顶层文件或目录创建桌面入口。零配置默认目录
 为 `/home/KPanel Desktop`，不存在时首次上传自动创建；管理员可在传输状态中切换到任意已经存在、能由
 KPanel 文件管理访问的规范绝对目录。该位置是当前浏览器的轻量偏好，不进入 workspace，也不复制文件
-真源。本期不提供用于收纳图标的虚拟桌面文件夹、像素级自由重叠、
+真源。桌面编组是可选的展示容器，不提供文件系统文件夹、像素级自由重叠、
 多人独立桌面、跨主机 workspace 同步或远程图标抓取；已配对 KPanel 间的显式文件复制采用独立协议，
 见 [`cross-kpanel-file-transfer.md`](cross-kpanel-file-transfer.md)。不改变经典模式、应用安装状态、网站配置、Nginx、Docker
 或 `kejilion.sh` 产物。桌面图标落点吸附现有网格；超过单页容量时扩展纵向可滚动工作区，不隐藏、
-截断或重叠入口。虚拟桌面文件夹如后续需要，应作为只保存成员稳定键的独立容器层设计，不能映射为
-Linux 目录或成为文件真源。
+截断或重叠入口。编组只保存成员稳定键，不能映射为 Linux 目录或成为文件真源。
 
 ## 2. 真源与删除语义
 
@@ -45,16 +44,17 @@ URL、图标、安装状态等快照；真源变化后桌面刷新应采用最�
 右侧内置小插件只把稳定的 `widget:<id>` 加入 `hiddenWidgetKeys`，隐藏不会删除插件状态或
 `widgetPositions`；重新显示时优先恢复原位置，若该位置已被占用则由网格引擎重新吸附到可用位置。
 
-## 3. Workspace v3
+## 3. Workspace v4
 
 `GET /api/v1/desktop/workspace` 的响应结构如下；`iconVersion` 和 `iconURL` 仅在快捷方式已有合法图标时
 返回，`warning` 仅在存储不可用时返回：
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "resourceVersion": "sha256:<64 lowercase hex>",
   "available": true,
+  "groups": [],
   "hiddenEntryKeys": ["app:thirdparty-example"],
   "hiddenWidgetKeys": ["widget:services"],
   "positions": {
@@ -98,6 +98,7 @@ URL、图标、安装状态等快照；真源变化后桌面刷新应采用最�
 ```json
 {
   "expectedResourceVersion": "sha256:<64 lowercase hex>",
+  "groups": [],
   "hiddenEntryKeys": [],
   "hiddenWidgetKeys": [],
   "positions": {
@@ -125,7 +126,7 @@ URL、图标、安装状态等快照；真源变化后桌面刷新应采用最�
 `widgetPositions` 使用同样的归一化坐标；插件尺寸由前端注册表声明，布局引擎按矩形占用多个基础网格
 单元。服务端拒绝 NaN、Infinity、越界值及超过位置总量上限的请求。
 
-`positions` 允许 `nav:`、`app:`、`site:` 和已存在的 `shortcut:`；`widgetPositions` 只接受稳定的
+`positions` 允许 `nav:`、`app:`、`site:`、已存在的 `shortcut:` 和 `group:`；`widgetPositions` 只接受稳定的
 `widget:` 键；`labels` 只接受 `site:` 键，且只
 改变桌面显示名，不修改网站真源。`resourceVersion` 由规范化 metadata 计算，不包含图标内容；快捷
 方式时间戳由服务端维护，不由客户端提交。请求采用严格 JSON，未知字段、重复或非法稳定键、悬空
@@ -135,12 +136,13 @@ shortcut 位置均拒绝。
 且路径必须是最长 4096 字节的规范绝对 POSIX 路径。服务端不在 workspace PUT 时读取目标路径，避免
 每次布局保存产生文件系统 I/O；文件管理在实际打开时重新查询目标并显示已删除、无权限或类型变化。
 
-| 项目 | v3 上限 |
+| 项目 | v4 上限 |
 | --- | ---: |
 | 自定义快捷方式 | 64 个 |
 | 隐藏入口 | 512 个 |
 | 隐藏小插件 | 512 个 |
-| 图标 + 插件位置 | 512 个 |
+| 图标 + 分组 + 插件位置 | 512 个 |
+| 分组 / 分组成员合计 | 32 个 / 512 个 |
 | 工作区编码后大小 | 256 KiB |
 | 名称 / 描述 | 48 / 160 个 Unicode 字符 |
 | URL | 2048 字节 |
@@ -149,10 +151,29 @@ shortcut 位置均拒绝。
 | 图标边长 / 总像素 | 单边最大 1024 px / 最大 100 万像素 |
 
 Workspace v1 在读取时将既有快捷方式迁移为 `targetType:"url"`，Workspace v2 在读取时补充空的
-`widgetPositions`，下一次成功 PUT 后原子写为 v3；
+`widgetPositions`，v1/v2/v3 补充空 `groups`，下一次成功 PUT 后原子写为 v4；
 迁移不访问 URL 或宿主机文件。现有 `kpanel:desktop-site-names:v1` 只做一次迁移：将仍有效且服务端
 尚无值的站点别名合并进 `labels`，全量 PUT 成功后才删除旧 localStorage 键；冲突或写入失败时保留
 旧值，避免丢失或重复覆盖。
+
+### 3.1 可选桌面编组
+
+默认 `groups: []`，升级不自动编组，组外图标继续散放。每组为
+`{ id, name, members, columns, collapsed }`：ID 为唯一 32 位小写十六进制，名称 1–48 字符，
+列数 2–4，成员为有序且跨组唯一的 `nav:` / `app:` / `site:` / `shortcut:` 稳定键。
+不允许嵌套组或小插件，shortcut 成员必须存在；暂时隐藏/离线的应用和网站保留成员关系。
+组锚点保存为 `positions["group:<id>"]`，成员组内坐标由顺序和容器派生，不覆盖原散放坐标。
+
+桌面空白右键可新建空组，多选工具条和图标右键可“编为一组”；图标可拖入、拖出、
+在组内排序，也可通过菜单移动和 Ctrl/Command+方向键排序。拖动标题移动整组，标题按钮
+收起/展开，更多菜单修改名称/列数或解散。解散只恢复散放入口，不删除任何真实资源。
+每次放下或确认只提交一次 workspace；保存失败恢复已确认状态，冲突沿用已有 CAS 提示与重载。
+最近一次编组操作可撤销，后续 workspace 变更后撤销失效，防止覆盖新状态。
+使用短时 transform/opacity 动画，拖拽时跟手；减少动画偏好禁用过渡。
+收起成员不可键盘聚焦、框选或全选；窄屏派生布局不覆盖宽屏锚点。
+
+PUT 显式 `groups: []` 表示解散全部组；旧缓存客户端省略 `groups` 时保留已有组和组锚点，
+仅移除已删除快捷方式的成员引用。新客户端总是提交该字段。v4 不增加独立 API、权限或 Agent 写入。
 
 ## 4. API、权限与并发
 
@@ -302,12 +323,12 @@ workspace 全量 PUT 通过同目录临时文件、`fsync` 和原子重命名提
 metadata 提交后清理遗留临时文件与无引用 `.icon` 文件，但不删除其他任意文件。并发图标写入没有
 metadata 乐观锁，最终内容以最后完成的成功原子替换为准，不能影响 workspace metadata。
 
-缺少 workspace 文件时创建空 v3 配置。文件损坏、未知 schema、超限或非法结构时保留现场，并以
+缺少 workspace 文件时创建空 v4 配置。文件损坏、未知 schema、超限或非法结构时保留现场，并以
 `available:false`、`warning:"desktop_workspace_unavailable"` 返回空工作区；桌面继续使用真实来源和
 默认布局，后续 workspace 与图标写入返回 `503`，不得覆盖损坏文件。核心登录、应用、网站和经典模式
 不得受影响。
 
-代码回滚只需恢复上一稳定提交；仅支持 v2 的旧版本会把 v3 视为不可用并保留独立工作区，不会静默
+代码回滚可恢复上一稳定提交；仅支持 v3 或更早的旧版本会把 v4 视为不可用并保留独立工作区，不会静默
 覆盖，重新升级后可继续读取。发布前如需兼容旧二进制，应先停写并按版本门禁确认；如需
 回退数据，应停写并成对备份/恢复 `workspace.json` 与 `icons/`，再校验权限、JSON、快捷方式与图标
 对应关系，不能只恢复一侧。
