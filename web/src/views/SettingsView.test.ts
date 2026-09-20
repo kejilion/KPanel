@@ -129,6 +129,14 @@ vi.mock('@/stores/toast', () => ({
 }))
 
 interface SettingsBindings {
+  settingsSearch: Ref<string>
+  activeSettingsCategory: Ref<'all' | 'account' | 'appearance' | 'data' | 'system' | 'support'>
+  visibleSettingsSectionCount: ComputedRef<number>
+  isSettingsSectionVisible: (id: 'help' | 'account-overview' | 'username' | 'password' | 'security-entrance' | 'totp' | 'language' | 'appearance' | 'backup' | 'mcp' | 'version-updates' | 'agent' | 'license') => boolean
+  settingsCategoryCount: (category: 'all' | 'account' | 'appearance' | 'data' | 'system' | 'support') => number
+  selectSettingsCategory: (category: 'all' | 'account' | 'appearance' | 'data' | 'system' | 'support') => void
+  clearSettingsSearch: () => void
+  resetSettingsFilters: () => void
   usernameForm: { newUsername: string; currentPassword: string }
   usernameValid: ComputedRef<boolean>
   canChangeUsername: ComputedRef<boolean>
@@ -204,6 +212,56 @@ function setupView(): SettingsBindings {
 function themeColorInput(value: string, type = 'text'): Event {
   return { currentTarget: { value, type } } as unknown as Event
 }
+
+describe('SettingsView navigation', () => {
+  it('starts with every settings section visible and exposes useful category counts', () => {
+    const view = setupView()
+
+    expect(view.visibleSettingsSectionCount.value).toBe(13)
+    expect(view.settingsCategoryCount('account')).toBe(5)
+    expect(view.settingsCategoryCount('appearance')).toBe(2)
+    expect(view.settingsCategoryCount('data')).toBe(2)
+    expect(view.settingsCategoryCount('system')).toBe(2)
+    expect(view.settingsCategoryCount('support')).toBe(2)
+  })
+
+  it('filters sections by category without destroying their state', () => {
+    const view = setupView()
+
+    view.selectSettingsCategory('appearance')
+
+    expect(view.visibleSettingsSectionCount.value).toBe(2)
+    expect(view.isSettingsSectionVisible('language')).toBe(true)
+    expect(view.isSettingsSectionVisible('appearance')).toBe(true)
+    expect(view.isSettingsSectionVisible('password')).toBe(false)
+    expect(settingsSource).toContain('<BackupCenter v-show=')
+    expect(settingsSource).toContain('<MCPAccess v-show=')
+  })
+
+  it('searches section labels and keywords, then restores the complete list', () => {
+    const view = setupView()
+
+    view.settingsSearch.value = '恢复码'
+
+    expect(view.visibleSettingsSectionCount.value).toBe(1)
+    expect(view.isSettingsSectionVisible('totp')).toBe(true)
+    expect(view.isSettingsSectionVisible('backup')).toBe(false)
+
+    view.resetSettingsFilters()
+
+    expect(view.settingsSearch.value).toBe('')
+    expect(view.activeSettingsCategory.value).toBe('all')
+    expect(view.visibleSettingsSectionCount.value).toBe(13)
+  })
+
+  it('renders an accessible search, category tabs, and empty-result recovery action', () => {
+    expect(settingsSource).toContain('type="search"')
+    expect(settingsSource).toContain('role="tablist"')
+    expect(settingsSource).toContain(':aria-selected="activeSettingsCategory === category.id"')
+    expect(settingsSource).toContain('visibleSettingsSectionCount === 0')
+    expect(settingsSource).toContain('没有找到匹配的设置')
+  })
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -380,7 +438,7 @@ describe('SettingsView username change', () => {
 
 describe('SettingsView appearance', () => {
   it('keeps backup and restore immediately after appearance and colors', () => {
-    expect(settingsSource).toMatch(/<h2>外观与配色<\/h2>[\s\S]*?<\/section>\s*<BackupCenter \/>/)
+    expect(settingsSource).toMatch(/<h2>外观与配色<\/h2>[\s\S]*?<\/section>\s*<BackupCenter v-show=/)
   })
 
   it('provides accessible color inputs, linked accents, a local preview, and explicit actions', () => {
@@ -770,6 +828,8 @@ describe('SettingsView automatic updates', () => {
   it('focuses the version update card for the shared settings route intent', async () => {
     mocks.route.query = { section: 'version-updates' }
     const view = setupView()
+    view.settingsSearch.value = '密码'
+    view.activeSettingsCategory.value = 'account'
     const scrollIntoView = vi.fn()
     const focus = vi.fn()
     view.automaticUpdateSection.value = { scrollIntoView, focus } as unknown as HTMLElement
@@ -777,6 +837,9 @@ describe('SettingsView automatic updates', () => {
     await view.focusAutomaticUpdateSection()
 
     expect(requestAnimationFrame).toHaveBeenCalledOnce()
+    expect(view.settingsSearch.value).toBe('')
+    expect(view.activeSettingsCategory.value).toBe('system')
+    expect(view.isSettingsSectionVisible('version-updates')).toBe(true)
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
     expect(focus).toHaveBeenCalledWith({ preventScroll: true })
   })
