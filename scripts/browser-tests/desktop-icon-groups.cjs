@@ -428,7 +428,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     const a = await firstCard.boundingBox()
     near(a.width, 470)
     await save(() => moveCard(secondCard, a.x + a.width + 3, a.y + 7, live => {
-      near(live.x - a.x - a.width, 5); near(live.y, a.y)
+      near(live.x - a.x - a.width, 3); near(live.y, a.y + 7)
     }))
     const horizontal = await secondCard.boundingBox()
     near(horizontal.x - a.x - a.width, 5); near(horizontal.y, a.y)
@@ -438,7 +438,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     assert.deepEqual(state.positions, savedAnchors)
     await page.screenshot({ path: `${out}/adjacent-groups-dark.png` })
     await save(() => moveCard(secondCard, a.x + 7, a.y + a.height + 4, live => {
-      near(live.y - a.y - a.height, 4); near(live.x, a.x)
+      near(live.y - a.y - a.height, 4); near(live.x, a.x + 7)
     }))
     near((await secondCard.boundingBox()).y - a.y - a.height, 4)
     await page.screenshot({ path: `${out}/stacked-groups-dark.png` })
@@ -457,7 +457,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     await moveCard(secondCard, a.x + 100, a.y + 80); await settle()
     near((await secondCard.boundingBox()).x, beforeBlocked.x)
     near((await secondCard.boundingBox()).y, beforeBlocked.y)
-    report.cases.push('8+9 sparse cards: live 5px horizontal/4px vertical grid gaps, refresh, keyboard, blocked drop and failed save restore')
+    report.cases.push('8+9 sparse cards: free live motion then 5px horizontal/4px vertical grid drop, refresh, keyboard, blocked drop and failed save restore')
     const groupCountBefore = state.groups.length
     await page.locator('.desktop__icons').click({ button: 'right', position: { x: 1100, y: 600 } })
     await save(() => page.getByRole('menuitem', { name: '新建分组', exact: true }).click())
@@ -492,6 +492,39 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
         near(index < 3 ? g.x - icon.x - icon.width : icon.x - g.x - g.width, 5)
       }
     }
+    await verifyMixed()
+    const heldMotion = async collapsed => {
+      const start = await group.boundingBox()
+      const header = await group.locator('.desktop-group__header').boundingBox()
+      const member = collapsed ? undefined : await slot(state.groups[0].members[0]).boundingBox()
+      const clockBefore = await clock.boundingBox()
+      const beforeWrites = writes
+      const x = header.x + header.width / 2, y = header.y + header.height / 2
+      await page.mouse.move(x, y); await page.mouse.down()
+      const samples = []
+      for (const [dx, dy] of [[13, 17], [14, 18], [47, 49], [95, 100], [96, 101], [210, 310], [23, 399], [24, 400], [11, 37]]) {
+        await page.mouse.move(x + dx, y + dy)
+        await page.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame) })
+        const live = await group.boundingBox()
+        near(live.x, start.x + dx); near(live.y, start.y + dy)
+        assert.equal(writes, beforeWrites)
+        assert.deepEqual(await clock.boundingBox(), clockBefore)
+        if (member) {
+          const current = await slot(state.groups[0].members[0]).boundingBox()
+          near(current.x - live.x, member.x - start.x); near(current.y - live.y, member.y - start.y)
+        }
+        samples.push({ dx, dy, errorX: live.x - start.x - dx, errorY: live.y - start.y - dy })
+      }
+      await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+      await page.mouse.up(); await settle()
+      near((await group.boundingBox()).x, start.x); near((await group.boundingBox()).y, start.y)
+      assert.equal(writes, beforeWrites)
+      report.cases.push({ heldMotion: collapsed ? 'collapsed' : 'expanded', samples, cancelRestores: true, writesWhileHeld: 0 })
+    }
+    await heldMotion(false)
+    await save(() => group.locator('.desktop-group__toggle').click())
+    await heldMotion(true)
+    await save(() => group.locator('.desktop-group__toggle').click())
     await verifyMixed()
     // Blocked movement must not overlap the clock; successful movement is bidirectional.
     await group.locator('.desktop-group__header').focus()
