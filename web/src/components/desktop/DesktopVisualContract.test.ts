@@ -110,8 +110,15 @@ describe('desktop visual and interaction contract', () => {
   it('positions icon slots independently and disables slot motion while dragging', () => {
     expect(styles).toMatch(/\.desktop__icons\s*\{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/)
     expect(styles).toMatch(/\.desktop__icons-scroll-space\s*\{[^}]*pointer-events:\s*none;/)
-    expect(styles).toMatch(/\.desktop__icon-slot\s*\{[^}]*position:\s*absolute;[^}]*transition:\s*left [^;]+, top [^;]+;/)
+    expect(styles).toMatch(/\.desktop__icon-slot\s*\{[^}]*position:\s*absolute;[^}]*transition:\s*transform 280ms [^;]+, opacity 160ms ease, visibility 160ms;/)
     expect(styles).toMatch(/\.desktop__icon-slot--dragging\s*\{[^}]*transition:\s*none;/)
+  })
+
+  it('animates group surfaces without overriding placement, and disables motion on request', () => {
+    expect(styles).toMatch(/\.desktop-group-surface-enter-from, \.desktop-group-surface-leave-to\s*\{[^}]*opacity: 0; scale: \.97;/)
+    expect(styles).toMatch(/\.desktop-group-surface-leave-active\s*\{[^}]*pointer-events: none;/)
+    expect(styles).toMatch(/\.desktop-group-surface-no-move\s*\{ transition: none !important;/)
+    expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.desktop__icon-slot,[\s\S]*?\.desktop-group-surface-leave-active \{ transition: none !important;/)
   })
 
   it('gives shortcut fields a unified focusable control surface', () => {
