@@ -60,7 +60,7 @@
 | --- | --- | --- | --- | --- |
 | 主指标：发布摩擦可见比例（进入指标视图的流程异常数 ÷ 已记录流程异常总数） | 稳定版 182、RC 0 可见，RC 51 不可见（可见比例 78.1%） | 100%：每份已存在的 RC 验收记录都出现在报告中 | `report-release-metrics.mjs` 的预览通道小节 | v1.21.0 起 2 个稳定版列车 |
 | 防回归指标：稳定版指标不变 | 稳定版小节当前输出 | 同一 `--now` 下与基线逐字节一致（仅允许新增分节空行） | 基线与候选的报告输出 diff | 每次改动 |
-| 防回归指标：治理回归集 | 201 项通过 | 保持通过，新增用例只增不改 | `bash scripts/verify-governance.sh` | 每次改动 |
+| 防回归指标：治理回归集 | 基线 197 项通过 | 保持通过，新增用例只增不改（候选为 203 项） | `bash scripts/verify-governance.sh` | 每次改动 |
 
 数据不足时写"先建立基线"，不得把缺失值当作零缺陷或成功。本提案的 RC 重复指纹基线为 1，
 不代表 RC 只有 1 次重复根因——见"未验证项"。
@@ -128,11 +128,11 @@
 
 ## 验证与证据层级
 
-- 定向测试：`node --test scripts/tests/report-release-metrics.test.mjs` → 21/21 通过
-  （新增 4 项：标签分类、按列车聚合、缺失不推断为零、markdown 分区与向后兼容）。
+- 定向测试：`node --test scripts/tests/report-release-metrics.test.mjs` → 23/23 通过（基线 17/17，新增 6 项：
+  标签分类、按列车聚合、缺失不推断为零、markdown 分区与向后兼容、跨列车重复归属、stableTags 必传）。
 - `make verify-change` / `make verify-l2` / `make verify-release`：
-  `bash scripts/verify-governance.sh` → 201/201 通过，
-  `check-governance-consistency`、`report-governance-health --validate`（15 份提案）、
+  `bash scripts/verify-governance.sh` → 203/203 通过，
+  `check-governance-consistency`、`report-governance-health --validate`（16 份提案）、
   `report-dependency-freshness --validate-only`（11 组）、`check-release-acceptance-coverage` 均通过。
 - 交叉核对：对 12 份 RC 验收记录用一次性独立脚本重算合计与重复指纹，
   与脚本输出一致（51 / v1.21.0=22、v1.20.0=5、v1.19.0=24 / 重复 1 条
@@ -143,8 +143,13 @@
 - 公开产物证据：不适用（不进产品二进制与发布产物）。
 - 生产部署安全核对：不适用；本任务不触及生产。
 - 未验证项：
-  1. 候选分支的 Linux CI（`PROJECT_RULES.md` 5.2.6 要求，尚未推送）；
-  2. 非作者独立复核；
+  1. 已完成：候选分支 `docs/release-metrics-rc-view-20260920` 于 2026-09-20 推送，
+     `6c5f8e01` 的 Linux `CI` 成功（run 35515208788，`event=push`，head_sha 相符）。
+     本次更正提交后需在新的精确 SHA 上重新取得候选 CI 成功，才满足 5.2.6。
+  2. 已完成：非作者独立复核，结论 `PASS WITH FOLLOW-UP`（见「独立复核」一节）。
+     复核者未执行的项：候选 Linux CI（无推送权限）、自由臂是否真的先于约束臂落盘
+     （仓库外证据无版本控制，该条款本质依赖执行者自陈）、基线检出的 `verify-governance.sh`
+     全量实测（该脚本会创建临时 clone/worktree，与只读边界冲突，基线 197 由候选 203 减新增 6 推得）。
   3. RC 重复指纹真实数量——当前实现按指纹精确字符串比较，
      基线数据中至少存在 4 条同根因（Windows PowerShell 向远端 shell 传变量）但指纹不同的记录
      （`remote-registry-inspect/ssh-loop/powershell-variable-expansion`、
@@ -154,12 +159,27 @@
 
 ## 独立复核
 
-- 复核人 / 智能体：待指派（须独立于本提案作者与实现）
-- 复核提供商 / 实现提供商：待填写 / claude
-- 是否独立读取原始证据：待填写
-- 假设与方案评审结论：待填写
-- 门禁是否被削弱、绕过或只对样例优化：待填写
-- 复核状态：待复核
+- 复核人 / 智能体：Claude（干净会话，未参与本提案编写或实现），2026-09-20，复核对象 `6c5f8e01`
+- 复核提供商 / 实现提供商：claude / claude（本机无 Codex 非交互 CLI，跨提供商不可用，按
+  `docs/multi-agent-collaboration.md` 降级为与实现分离的干净会话）
+- 是否独立读取原始证据：是。复核者不 import 候选模块，自写解析器重算 12 份 RC 验收记录，
+  自写比较逻辑重算重复指纹，并在基线与候选两个检出各跑一次固定 `--now` 的报告做逐字节对拍。
+- 假设与方案评审结论：
+  - 独立重算与候选输出逐项一致：RC 合计 51、分列车 22 / 5 / 24、`post-production` 0、重复指纹 1 条。
+  - 口径判断独立成立：正确口径是声明的次数字段（51）而非 incidents 条目数（46），
+    依据是既有校验要求 `Σ incident.count` 等于声明字段。
+  - 稳定版未被改写：Markdown 前 87 行 `cmp` 零字节差异；JSON 剥离 `preview` 键后严格相等。
+  - 缺失不推断为零：复核者另构造 6 组候选测试未覆盖的形态（含「未记录」字段、全未填报、
+    指纹在两个更早 RC 重复、列车乱序、窗口边界距离 4/5、post-production>0），行为均符合声明口径。
+  - 「`historicalReleases` 只接受稳定版标签」的前提经代码核实属实，方案 C 的排除有据。
+- 门禁是否被削弱、绕过或只对样例优化：否。对仓库全部 204 份验收记录用基线与候选两版脚本
+  分别跑 `--validate-acceptance`，逐份比对退出码与 stderr，**0 处差异**；预览路径在
+  `--validate-acceptance` 的 return 之后，不在校验路径上，且不含任何 `throw`/`exitCode`。
+- 复核状态：通过（带后续事项）
+- 规范验收结论：`PASS WITH FOLLOW-UP`
+- 复核提出的重要事项及处置：提案「基线、目标与观察窗口」与「验证与证据层级」记录的回归集数字
+  取自补充测试之前的运行，与被复核提交不符（实际 23/23、新增 6 项、203/203、16 份提案，
+  基线 197）。已在本次提交更正；偏差方向均为「实际通过数更多」，未隐藏失败，未削弱门禁。
 
 ## 回滚
 
@@ -185,6 +205,12 @@
   1. 指纹根因聚类：现行重复检测按精确字符串比较，同一根因的不同指纹不被识别。
      取得两个发布列车的 RC 数据后评估是否引入聚类键，届时按 5.3 单独验收。
   2. RC 重复是否设门禁：需先放宽 `historicalReleases` 使其可声明 RC 标签，属独立治理变更，
-     不在本轮范围。
+     不在本轮范围。该前提已由独立复核在代码中核实属实。
+  4. `OCR-Review:` trailer 的 `range` 终点写的是 amend 前的提交对象，从已推送分支不可达。
+     独立复核确认这是项目既有惯例（近 12 个带 trailer 的提交同样写法），非本候选引入；
+     建议后续统一改为最终候选 SHA，或在仓库外证据中记录两者 tree 差异。属项目级后续事项。
+  5. 双臂分级计数口径：trailer 的 `valid=H/M/L` 目前只统计自由臂发现，约束臂新增的 LOW 未计入。
+     5.5 未明确该字段是否含约束臂，且不影响退出条款（只看 `constrained-only`）；
+     建议后续统一为「双臂全部成立发现的分级计数」。
   3. 发布列车总成本视图：把同一列车的 RC 异常与稳定版异常合并呈现，
      需先确认不改写稳定版既有口径，列入后续评估。
