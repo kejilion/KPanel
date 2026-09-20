@@ -763,7 +763,7 @@ describe('DesktopView icon layout interaction', () => {
       hiddenWidgetKeys: ['widget:clock', 'widget:monitor', 'widget:services'],
     })
     loadWorkspace.mockResolvedValueOnce(initial)
-    updateWorkspace.mockImplementation(async body => ({ ...initial, ...body, resourceVersion: `sha256:${'2'.repeat(64)}` }))
+    updateWorkspace.mockImplementation(async body => ({ ...initial, ...body, shortcuts: initial.shortcuts, resourceVersion: `sha256:${'2'.repeat(64)}` }))
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
     const group = wrapper.get('.desktop-group')
