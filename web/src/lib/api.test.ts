@@ -15,6 +15,46 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it.each([520, 521, 522, 523, 524])('resumes the same site job after CDN HTTP %i without resubmitting', async (status) => {
+    vi.useFakeTimers()
+    const job = { id: 'cdn-job', status: 'running', stage: 'installing', progress: 88, message: 'installing' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(job, { status: 202 }))
+      .mockResolvedValueOnce(new Response('<html>CDN unavailable</html>', { status }))
+      .mockResolvedValueOnce(jsonResponse({ ...job, status: 'succeeded', progress: 100, site: { id: 'site', primaryDomain: 'cdn.example.com' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onProgress = vi.fn()
+    const created = api.sites.create({ primaryDomain: 'cdn.example.com', type: 'wordpress', enabled: true }, onProgress)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'cdn-job', status: 'running', stage: 'reconnecting', progress: 88 }))
+    await vi.advanceTimersByTimeAsync(2_000)
+    await expect(created).resolves.toMatchObject({ primaryDomain: 'cdn.example.com' })
+    expect(fetchMock.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+      ['/api/v1/sites', 'POST'], ['/api/v1/site-installations/cdn-job', 'GET'], ['/api/v1/site-installations/cdn-job', 'GET'],
+    ])
+  })
+
+  it('backs off repeated CDN errors then reports a real backend site failure', async () => {
+    vi.useFakeTimers()
+    const job = { id: 'cdn-job', status: 'running', stage: 'installing', progress: 88, message: 'installing' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(job, { status: 202 }))
+      .mockResolvedValueOnce(jsonResponse({ detail: 'connection refused' }, { status: 521 }))
+      .mockResolvedValueOnce(jsonResponse({ detail: 'timeout' }, { status: 524 }))
+      .mockResolvedValueOnce(jsonResponse({ ...job, status: 'failed', message: 'certificate failed' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const onProgress = vi.fn()
+    const created = api.sites.create({ primaryDomain: 'cdn.example.com', type: 'wordpress', enabled: true }, onProgress)
+    const rejected = expect(created).rejects.toMatchObject({ code: 'site_install_failed' })
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ stage: 'reconnecting', progress: 88 }))
+    await vi.advanceTimersByTimeAsync(3_999)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(1)
+    await rejected
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', message: 'certificate failed' }))
+  })
   it('reads and updates the panel-owned cluster host order resource', async () => {
     const initial = {
       ids: ['local', 'remote'], configured: true, resourceVersion: 'sha256:order-v1',
@@ -648,7 +688,7 @@ describe('API client', () => {
       status: 'running',
       stage: 'reconnecting',
       progress: 38,
-      message: 'Agent 暂时不可用，后台建站任务不受影响，正在自动重连。',
+      message: '连接暂时中断，正在重新获取建站任务状态，请勿重复提交。',
     })
   })
 

@@ -49,7 +49,7 @@ import SiteFavicon from '@/components/sites/SiteFavicon.vue'
 import SiteAppearanceName from '@/components/sites/SiteAppearanceName.vue'
 import SiteDeleteDialog from '@/components/sites/SiteDeleteDialog.vue'
 import LocalWebServicePicker from '@/components/sites/LocalWebServicePicker.vue'
-import { ApiError, api, isTransientAgentError } from '@/lib/api'
+import { ApiError, api, isTransientAgentError, siteInstallationRetryDelay } from '@/lib/api'
 import { formatDateTime, relativeTime, shortId } from '@/lib/format'
 import { usePanelState } from '@/stores/panel'
 import { useToast } from '@/stores/toast'
@@ -164,7 +164,8 @@ const installStageLabels: Record<string, string> = {
   reconcile: '状态核对',
   completed: '搭建完成',
   interrupted: '任务中断',
-  reconnecting: 'Agent 重连中',
+  reconnecting: '连接恢复中',
+  connection_error: '任务状态待确认',
   script_unavailable: '脚本不可用',
   runner_unavailable: '后台执行器不可用',
   start_failed: '任务启动失败',
@@ -189,6 +190,7 @@ const installationTaskFinished = computed(
 const editorTitle = computed(() => {
   if (editingSite.value) return '编辑网站设置'
   if (!installationTaskView.value) return '新建网站'
+  if (installProgress.value?.stage === 'connection_error') return '任务状态待确认'
   if (installProgress.value?.status === 'succeeded') return '网站搭建完成'
   if (installProgress.value?.status === 'failed') return '网站搭建失败'
   return '正在搭建网站'
@@ -196,6 +198,9 @@ const editorTitle = computed(() => {
 const editorDescription = computed(() => {
   if (!installationTaskView.value) {
     return '脚本建站由独立后台任务执行；关闭窗口不会中断，可从网站页重新打开终端。'
+  }
+  if (installProgress.value?.stage === 'connection_error') {
+    return '暂时无法确认建站结果，请重新查询原任务，不要重复建站。'
   }
   if (installProgress.value?.status === 'succeeded') {
     return '任务已结束，终端输出仍会保留；请确认网站配置信息后手动关闭窗口。'
@@ -739,6 +744,10 @@ function monitorInstallation(id?: string): void {
   stopInstallationMonitor()
   if (!id || disposed) return
   const generation = installationPollGeneration
+  let connectionFailures = 0
+  let disconnectedAt: number | undefined
+  formError.value = ''
+  submitting.value = true
 
   const scheduleNextPoll = (delay: number): void => {
     if (disposed || generation !== installationPollGeneration) return
@@ -757,6 +766,8 @@ function monitorInstallation(id?: string): void {
       const progress = await api.sites.installation(id, requestController.signal)
       if (disposed || generation !== installationPollGeneration || requestController.signal.aborted) return
       installProgress.value = progress
+      connectionFailures = 0
+      disconnectedAt = undefined
       if (progress.status === 'queued' || progress.status === 'running') {
         submitting.value = true
         scheduleNextPoll(2_000)
@@ -772,39 +783,43 @@ function monitorInstallation(id?: string): void {
     } catch (reason) {
       if (disposed || generation !== installationPollGeneration || requestController.signal.aborted) return
       if (isTransientAgentError(reason)) {
+        disconnectedAt ??= Date.now()
+        if (Date.now() - disconnectedAt >= 5 * 60_000) {
+          pauseInstallationTracking()
+          return
+        }
+        connectionFailures += 1
         submitting.value = true
         formError.value = ''
         if (installProgress.value) {
           installProgress.value = {
             ...installProgress.value,
-            status: 'running',
             stage: 'reconnecting',
-            message: 'Agent 暂时不可用，后台建站任务不受影响，正在自动重连。',
+            message: '连接暂时中断，正在重新获取建站任务状态，请勿重复提交。',
           }
         }
-        scheduleNextPoll(2_000)
+        scheduleNextPoll(siteInstallationRetryDelay(connectionFailures))
         return
       }
-      submitting.value = false
       const message = reason instanceof ApiError ? reason.message : '无法继续读取后台建站任务。'
-      formError.value = message
-      installProgress.value = {
-        ...(installProgress.value || {
-          id,
-          status: 'failed',
-          stage: 'failed',
-          progress: 100,
-          message,
-        }),
-        status: 'failed',
-        stage: 'failed',
-        message,
-      }
+      pauseInstallationTracking(message)
     } finally {
       if (installationPollController === requestController) installationPollController = undefined
     }
   }
   void poll()
+}
+
+function pauseInstallationTracking(message = ''): void {
+  submitting.value = false
+  formError.value = message
+  const current = installProgress.value
+  if (!current || current.status === 'succeeded' || current.status === 'failed') return
+  installProgress.value = {
+    ...current,
+    stage: 'connection_error',
+    message: '暂时无法确认建站结果，请重新查询原任务，不要重复建站。',
+  }
 }
 
 function openEdit(site: Site): void {
@@ -831,6 +846,7 @@ function openEdit(site: Site): void {
 }
 
 async function submitSite(): Promise<void> {
+  if (submitting.value || (installTaskActive.value && installProgress.value?.id)) return
   formError.value = ''
   if (!formValid.value) {
     formError.value = customCertificateFormReason.value || '请检查域名和当前服务所需的配置。'
@@ -918,6 +934,10 @@ async function submitSite(): Promise<void> {
     }
   } catch (reason) {
     const message = reason instanceof ApiError ? reason.message : '操作失败，请稍后重试。'
+    if (installProgress.value?.id) {
+      pauseInstallationTracking(message)
+      return
+    }
     formError.value = message
     const current = installProgress.value
     if (current && current.status !== 'failed') {
@@ -1034,7 +1054,7 @@ onBeforeUnmount(() => {
           <strong>{{ installProgress.domain || '建站任务' }}</strong>
           <StatusBadge
             :status="installTaskActive ? 'running_job' : installProgress.status"
-            :label="installTaskActive ? '后台运行中' : installProgress.status === 'succeeded' ? '已完成' : '执行失败'"
+            :label="installProgress.stage === 'connection_error' ? '任务状态待确认' : installTaskActive ? '后台运行中' : installProgress.status === 'succeeded' ? '已完成' : '执行失败'"
           />
         </div>
         <small>{{ installStageName(installProgress.stage) }} · {{ installProgress.message }}</small>
@@ -1385,6 +1405,13 @@ onBeforeUnmount(() => {
             <span :style="{ width: `${installProgress.progress}%` }"></span>
           </div>
           <p>{{ phrase(installProgress.message) }}</p>
+          <button
+            v-if="installProgress.stage === 'connection_error'"
+            type="button"
+            class="button button--secondary"
+            :disabled="submitting"
+            @click="monitorInstallation(installProgress.id)"
+          >{{ phrase('重新查询任务状态') }}</button>
           <ol v-if="installProgress.events?.length" class="site-install-progress__events">
             <li
               v-for="(event, index) in installProgress.events"

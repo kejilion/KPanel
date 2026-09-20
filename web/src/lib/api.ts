@@ -939,9 +939,12 @@ async function createSite(
     return normalizeSite(result as RawSite)
   }
   let job = result as RawSiteInstallJob
+  let connectionFailures = 0
+  let disconnectedAt: number | undefined
+  const deadline = Date.now() + 30 * 60_000
   for (let attempt = 0; attempt <= 900; attempt += 1) {
     const progress = normalizeSiteInstallationProgress(job)
-    onProgress?.(progress)
+    if (connectionFailures === 0) onProgress?.(progress)
     if (job.status === 'succeeded') {
       if (!job.site) throw new ApiError('一键建站已完成，但网站对账结果缺失。', 503, 'site_result_missing')
       return normalizeSite(job.site)
@@ -953,19 +956,23 @@ async function createSite(
         'site_install_failed',
       )
     }
-    if (attempt === 900) break
-    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    if (attempt === 900 || Date.now() >= deadline) break
+    await new Promise((resolve) => setTimeout(resolve, siteInstallationRetryDelay(connectionFailures)))
     try {
       job = await request<RawSiteInstallJob>(
         `/site-installations/${encodeURIComponent(job.id)}`,
       )
+      connectionFailures = 0
+      disconnectedAt = undefined
     } catch (reason) {
       if (!isTransientAgentError(reason)) throw reason
+      disconnectedAt ??= Date.now()
+      if (Date.now() - disconnectedAt >= 5 * 60_000) throw reason
+      connectionFailures += 1
       onProgress?.({
         ...progress,
-        status: 'running',
         stage: 'reconnecting',
-        message: 'Agent 暂时不可用，后台建站任务不受影响，正在自动重连。',
+        message: '连接暂时中断，正在重新获取建站任务状态，请勿重复提交。',
       })
     }
   }
@@ -978,9 +985,14 @@ export function isTransientAgentError(reason: unknown): boolean {
     reason.status === 502 ||
     reason.status === 503 ||
     reason.status === 504 ||
+    (reason.status >= 520 && reason.status <= 524) ||
     reason.code === 'agent_unavailable' ||
     reason.code === 'network_error'
   )
+}
+
+export function siteInstallationRetryDelay(failures: number): number {
+  return Math.min(15_000, 2_000 * 2 ** Math.min(Math.max(failures - 1, 0), 3))
 }
 
 function normalizeSiteInstallationProgress(job: RawSiteInstallJob): SiteInstallationProgress {
