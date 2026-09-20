@@ -325,8 +325,8 @@ func TestOpenMigratesVersionOneURLShortcuts(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(workspacePath)
-	if err != nil || !bytes.Contains(data, []byte(`"schemaVersion": 4`)) || !bytes.Contains(data, []byte(`"widgetPositions": {}`)) || !bytes.Contains(data, []byte(`"targetType": "url"`)) {
-		t.Fatalf("migrated workspace was not persisted as v4: %s, %v", data, err)
+	if err != nil || !bytes.Contains(data, []byte(`"schemaVersion": 5`)) || !bytes.Contains(data, []byte(`"widgetPositions": {}`)) || !bytes.Contains(data, []byte(`"targetType": "url"`)) {
+		t.Fatalf("migrated workspace was not persisted as v5: %s, %v", data, err)
 	}
 }
 

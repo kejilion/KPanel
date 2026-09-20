@@ -4,43 +4,116 @@ import { desktopGridPlacementRect } from '@/lib/desktopGridLayout'
 import { desktopIconGrid, desktopIconPixelsToPosition, type DesktopIconBounds } from '@/lib/desktopIconLayout'
 
 export const MAX_DESKTOP_GROUPS = 32
+export const MAX_GROUP_CELLS = 512
 export const GROUP_HEADER_HEIGHT = 48
-export const groupKey = (id: string) => `group:${id}`
-export const cloneDesktopGroups = (groups: readonly (Omit<DesktopGroup, 'members'> & { readonly members: readonly string[] })[]): DesktopGroup[] => groups.map(group => ({ ...group, members: [...group.members] }))
+export const GROUP_DWELL_MS = 450
+export const groupKey = (id: string) => 'group:' + id
+type ReadonlyGroup = Omit<DesktopGroup, 'members'> & { readonly members: readonly string[] }
 
-export function moveGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, beforeKey?: string): DesktopGroup[] {
-  const moving = new Set(keys)
-  if (targetId && !groups.some(group => group.id === targetId)) return cloneDesktopGroups(groups)
-  return groups.map(group => {
-    const members = group.members.filter(key => !moving.has(key))
-    if (group.id === targetId) {
-      const index = beforeKey ? members.indexOf(beforeKey) : -1
-      members.splice(index < 0 ? members.length : index, 0, ...moving)
+/** Fill missing legacy assignments; never compact explicit empty cells. */
+export function desktopGroupSlots(group: ReadonlyGroup): Record<string, number> {
+  const slots: Record<string, number> = {}
+  const used = new Set<number>()
+  for (const key of group.members) {
+    const slot = group.slots?.[key]
+    if (slot !== undefined && Number.isInteger(slot) && slot >= 0 && slot < MAX_GROUP_CELLS && !used.has(slot)) {
+      slots[key] = slot; used.add(slot)
     }
-    return { ...group, members }
-  })
+  }
+  let cursor = 0
+  for (const key of group.members) {
+    if (slots[key] !== undefined) continue
+    while (used.has(cursor)) cursor++
+    slots[key] = cursor; used.add(cursor)
+  }
+  return slots
 }
 
-export function desktopGroupItem(group: DesktopGroup, visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridItem {
+export const cloneDesktopGroups = (groups: readonly ReadonlyGroup[]): DesktopGroup[] => groups.map(group => ({
+  ...group, members: [...group.members], slots: desktopGroupSlots(group),
+}))
+
+/** Exact cell placement: a single internal move swaps; cross-group inserts preserve gaps. */
+export function placeGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, targetSlot?: number): DesktopGroup[] {
+  if (targetId && !groups.some(group => group.id === targetId)) return cloneDesktopGroups(groups)
+  const moving = [...new Set(keys)]
+  const source = groups.find(group => group.id === targetId)
+  const origin = source && moving.length === 1 ? desktopGroupSlots(source)[moving[0]!] : undefined
+  const result = cloneDesktopGroups(groups).map(group => {
+    group.members = group.members.filter(key => !moving.includes(key))
+    for (const key of moving) delete group.slots![key]
+    return group
+  })
+  const target = result.find(group => group.id === targetId)
+  if (!target) return result
+  if (target.members.length + moving.length > MAX_GROUP_CELLS) return cloneDesktopGroups(groups)
+  const slots = target.slots!
+  const free = (from = 0) => {
+    const occupied = new Set(Object.values(slots))
+    for (let index = from; index < MAX_GROUP_CELLS; index++) if (!occupied.has(index)) return index
+    for (let index = 0; index < from; index++) if (!occupied.has(index)) return index
+    return -1
+  }
+  const start = targetSlot === undefined ? free() : Math.max(0, Math.min(MAX_GROUP_CELLS - 1, targetSlot))
+  const displaced: string[] = []
+  for (const [index, key] of moving.entries()) {
+    const cell = targetSlot === undefined ? free() : start + index < MAX_GROUP_CELLS ? start + index : free()
+    const occupant = Object.keys(slots).find(member => slots[member] === cell)
+    if (occupant) { displaced.push(occupant); delete slots[occupant] }
+    slots[key] = cell
+  }
+  for (const key of displaced) {
+    slots[key] = origin !== undefined && !Object.values(slots).includes(origin) ? origin : free(Math.min(MAX_GROUP_CELLS, start + moving.length))
+  }
+  target.members = [...target.members, ...moving].sort((a, b) => slots[a]! - slots[b]!)
+  return result
+}
+
+export function moveGroupMembers(groups: readonly DesktopGroup[], keys: readonly string[], targetId?: string, beforeKey?: string): DesktopGroup[] {
+  const target = groups.find(group => group.id === targetId)
+  return placeGroupMembers(groups, keys, targetId, target && beforeKey ? desktopGroupSlots(target)[beforeKey] : undefined)
+}
+
+function geometry(group: DesktopGroup, bounds: DesktopIconBounds, span?: number) {
   const grid = desktopIconGrid(bounds)
-  const columns = Math.min(grid.columns, group.columns + 1)
+  const columns = span ?? Math.min(grid.columns, group.columns + 1)
   const innerColumns = Math.max(1, Math.min(group.columns, columns - 1))
-  const count = group.members.filter(key => visibleKeys.has(key)).length
-  const height = group.collapsed ? 56 : GROUP_HEADER_HEIGHT + Math.max(1, Math.ceil(count / innerColumns)) * grid.stepY + 12
+  const rowSegments = Math.ceil(group.columns / innerColumns)
+  const slots = desktopGroupSlots(group)
+  const logicalRows = Math.max(1, group.rows || 0, Math.ceil((Math.max(-1, ...Object.values(slots)) + 1) / group.columns))
+  return { grid, columns, innerColumns, rowSegments, logicalRows, slots }
+}
+
+export function desktopGroupItem(group: DesktopGroup, _visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridItem {
+  const { grid, columns, logicalRows, rowSegments } = geometry(group, bounds)
+  const height = group.collapsed ? 56 : GROUP_HEADER_HEIGHT + logicalRows * rowSegments * grid.stepY + 12
   return { key: groupKey(group.id), columns, rows: Math.ceil((height + grid.metrics.rowGap) / grid.stepY) }
+}
+
+export function desktopGroupCells(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds) {
+  const { grid, innerColumns, rowSegments, logicalRows, slots } = geometry(group, bounds, placement.columns)
+  const rect = desktopGridPlacementRect(placement, bounds)
+  const padding = Math.max(0, (rect.width - innerColumns * grid.stepX + grid.metrics.columnGap) / 2)
+  const byCell = new Map(Object.entries(slots).map(([key, cell]) => [cell, key]))
+  return Array.from({ length: Math.min(MAX_GROUP_CELLS, logicalRows * group.columns) }, (_, index) => ({
+    index, key: byCell.get(index),
+    left: padding + (index % group.columns % innerColumns) * grid.stepX,
+    top: GROUP_HEADER_HEIGHT + (Math.floor(index / group.columns) * rowSegments + Math.floor(index % group.columns / innerColumns)) * grid.stepY,
+    width: grid.metrics.width, height: grid.metrics.height,
+  }))
+}
+
+export function desktopGroupCellAtPoint(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds, x: number, y: number): number | undefined {
+  return desktopGroupCells(group, placement, bounds).find(cell =>
+    x >= cell.left - 3 && x <= cell.left + cell.width + 3 && y >= cell.top - 3 && y <= cell.top + cell.height + 3,
+  )?.index
 }
 
 export function desktopGroupMembers(group: DesktopGroup, placement: DesktopGridPlacement, visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridPlacement[] {
   if (group.collapsed) return []
-  const grid = desktopIconGrid(bounds)
   const rect = desktopGridPlacementRect(placement, bounds)
-  const columns = Math.max(1, Math.min(group.columns, placement.columns - 1))
-  const padding = Math.max(0, (rect.width - columns * grid.stepX + grid.metrics.columnGap) / 2)
-  return group.members.filter(key => visibleKeys.has(key)).map((key, index) => ({
-    key, columns: 1, rows: 1,
-    position: desktopIconPixelsToPosition({
-      left: rect.left + padding + (index % columns) * grid.stepX,
-      top: rect.top + GROUP_HEADER_HEIGHT + Math.floor(index / columns) * grid.stepY,
-    }, bounds),
-  }))
+  return desktopGroupCells(group, placement, bounds).flatMap(cell => cell.key && visibleKeys.has(cell.key) ? [{
+    key: cell.key, columns: 1, rows: 1,
+    position: desktopIconPixelsToPosition({ left: rect.left + cell.left, top: rect.top + cell.top }, bounds),
+  }] : [])
 }

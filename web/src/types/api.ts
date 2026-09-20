@@ -2108,10 +2108,14 @@ export interface DesktopGroup {
   members: string[]
   columns: number
   collapsed: boolean
+  /** Minimum logical rows; zero/omitted grows with content. */
+  rows?: number
+  /** Stable member key to logical row-major cell. Empty cells are intentional. */
+  slots?: Record<string, number>
 }
 
 export interface DesktopWorkspace {
-  schemaVersion: 3 | 4
+  schemaVersion: 3 | 4 | 5
   groups?: DesktopGroup[]
   resourceVersion: string
   /** False means corrupt/unsupported persisted data was isolated read-only. */

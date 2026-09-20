@@ -86,7 +86,7 @@ func TestV3MigratesWithoutGroupingOrRepositioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := store.Workspace()
-	if !state.Available || state.SchemaVersion != 4 || len(state.Groups) != 0 || state.Positions["nav:/overview"].X != 0.25 {
+	if !state.Available || state.SchemaVersion != 5 || len(state.Groups) != 0 || state.Positions["nav:/overview"].X != 0.25 {
 		t.Fatalf("migration changed layout: %#v", state)
 	}
 }
@@ -125,5 +125,122 @@ func TestGroupLimitsAreValidatedBeforeCommit(t *testing.T) {
 				t.Fatal("invalid input changed confirmed state")
 			}
 		})
+	}
+}
+
+func TestSparseGroupsPersistAndLegacyClientsPreserveSlots(t *testing.T) {
+	root := t.TempDir()
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := validReplaceInput(store.Workspace().ResourceVersion)
+	input.Groups = []Group{{ID: testShortcutID, Name: "Group", Columns: 3, Rows: 3,
+		Members: []string{"nav:/overview", "shortcut:" + testShortcutID},
+		Slots:   map[string]int{"nav:/overview": 0, "shortcut:" + testShortcutID: 7}}}
+	saved, err := store.Replace(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(root)
+	if err != nil || !reflect.DeepEqual(reopened.Workspace().Groups, saved.Groups) {
+		t.Fatalf("reopen: %v", err)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups[0].Slots = nil
+	input.Groups[0].Rows = 0
+	input.Groups[0].Name = "Renamed by older client"
+	saved, err = store.Replace(input)
+	if err != nil || saved.Groups[0].Rows != 3 || saved.Groups[0].Slots["shortcut:"+testShortcutID] != 7 {
+		t.Fatalf("legacy lost gaps: %#v %v", saved, err)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups[0].Members = []string{"nav:/overview"}
+	saved, err = store.Replace(input)
+	if err != nil || len(saved.Groups[0].Slots) != 1 {
+		t.Fatalf("dangling legacy cell: %#v %v", saved, err)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups[0].Slots = map[string]int{}
+	saved, err = store.Replace(input)
+	if err != nil || len(saved.Groups[0].Slots) != 0 || saved.Groups[0].Rows != 0 {
+		t.Fatalf("explicit reset ignored: %#v %v", saved, err)
+	}
+}
+
+func TestSparseGroupValidationAndV4Migration(t *testing.T) {
+	store := openTestStore(t)
+	base := store.Workspace().ResourceVersion
+	for _, slots := range []map[string]int{{"nav:/overview": -1}, {"nav:/overview": 512}, {"nav:/missing": 0}, {"nav:/overview": 1, "nav:/files": 1}} {
+		input := validReplaceInput(base)
+		input.Groups = []Group{{ID: testShortcutID, Name: "Group", Columns: 3, Members: []string{"nav:/overview", "nav:/files"}, Slots: slots}}
+		if _, err := store.Replace(input); validationField(err) != "groups" {
+			t.Fatalf("accepted invalid cells: %v", err)
+		}
+	}
+	for _, rows := range []int{-1, 9} {
+		input := validReplaceInput(base)
+		input.Groups = []Group{{ID: testShortcutID, Name: "Group", Columns: 3, Rows: rows}}
+		if _, err := store.Replace(input); validationField(err) != "groups" {
+			t.Fatalf("accepted rows: %v", err)
+		}
+	}
+	root := t.TempDir()
+	data := `{"schemaVersion":4,"positions":{},"shortcuts":[],"groups":[{"id":"0123456789abcdef0123456789abcdef","name":"Old","members":["nav:/overview"],"columns":3,"collapsed":false}]}`
+	if err := os.WriteFile(filepath.Join(root, "workspace.json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := Open(root)
+	if err != nil || !migrated.Workspace().Available || migrated.Workspace().SchemaVersion != 5 || len(migrated.Workspace().Groups) != 1 {
+		t.Fatalf("migration: %v", err)
+	}
+}
+
+func TestV4SpreadPassthroughCanRemoveAndReorderButInvalidSlotsStillFail(t *testing.T) {
+	store := openTestStore(t)
+	input := validReplaceInput(store.Workspace().ResourceVersion)
+	input.Groups = []Group{{ID: testShortcutID, Name: "Group", Columns: 3, Rows: 3,
+		Members: []string{"nav:/overview", "nav:/files"}, Slots: map[string]int{"nav:/overview": 0, "nav:/files": 7}}}
+	saved, err := store.Replace(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups = cloneGroups(saved.Groups)
+	input.Groups[0].Members = []string{"nav:/files", "nav:/overview"}
+	saved, err = store.Replace(input)
+	if err != nil || saved.Groups[0].Slots["nav:/files"] != 0 || saved.Groups[0].Slots["nav:/overview"] != 7 {
+		t.Fatalf("legacy reorder: %v %#v", err, saved)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups = cloneGroups(saved.Groups)
+	input.Groups[0].Members = []string{"nav:/overview"}
+	saved, err = store.Replace(input)
+	if err != nil || len(saved.Groups[0].Slots) != 1 || saved.Groups[0].Slots["nav:/overview"] != 7 {
+		t.Fatalf("legacy remove: %v %#v", err, saved)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups = cloneGroups(saved.Groups)
+	input.Groups[0].Slots["nav:/files"] = 5
+	if _, err := store.Replace(input); validationField(err) != "groups" {
+		t.Fatalf("accepted non-passthrough invalid slots: %v", err)
+	}
+}
+
+func TestRenameDoesNotReorderExplicitCells(t *testing.T) {
+	store := openTestStore(t)
+	input := validReplaceInput(store.Workspace().ResourceVersion)
+	input.Groups = []Group{{ID: testShortcutID, Name: "Group", Columns: 3,
+		Members: []string{"nav:/overview", "nav:/files"}, Slots: map[string]int{"nav:/overview": 7, "nav:/files": 0}}}
+	saved, err := store.Replace(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ExpectedResourceVersion = saved.ResourceVersion
+	input.Groups = cloneGroups(saved.Groups)
+	input.Groups[0].Name = "Renamed"
+	renamed, err := store.Replace(input)
+	if err != nil || !reflect.DeepEqual(renamed.Groups[0].Slots, saved.Groups[0].Slots) {
+		t.Fatalf("rename moved explicit cells: %v %#v", err, renamed)
 	}
 }

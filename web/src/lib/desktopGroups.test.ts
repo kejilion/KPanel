@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desktopGroupItem, desktopGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
+import { desktopGroupItem, desktopGroupMembers, desktopGroupSlots, desktopGroupCells, placeGroupMembers, groupKey, moveGroupMembers } from './desktopGroups'
 import { deriveDesktopGridLayout, desktopGridPlacementRect } from './desktopGridLayout'
 import type { DesktopGroup } from '@/types/api'
 
@@ -12,8 +12,46 @@ describe('desktop groups', () => {
     expect(moved[1]!.members).toEqual(['nav:/files', 'nav:/docker'])
     expect(a.members).toHaveLength(2)
     expect(moveGroupMembers(moved, ['nav:/files'])[1]!.members).toEqual(['nav:/docker'])
-    expect(moveGroupMembers([a,b], ['nav:/files'], 'missing')).toEqual([a,b])
+    expect(moveGroupMembers([a,b], ['nav:/files'], 'missing')).toMatchObject([a,b])
   })
+  it('preserves holes, swaps occupied cells and fills vacancies when adding members', () => {
+    const sparse = placeGroupMembers([a], ['nav:/files'], 'a', 4)[0]!
+    expect(sparse.slots).toEqual({ 'nav:/overview': 0, 'nav:/files': 4 })
+    const added = moveGroupMembers([sparse], ['nav:/terminal', 'nav:/settings'], 'a')[0]!
+    expect(added.slots).toEqual({ 'nav:/overview': 0, 'nav:/files': 4, 'nav:/terminal': 1, 'nav:/settings': 2 })
+    const swapped = placeGroupMembers([added], ['nav:/overview'], 'a', 4)[0]!
+    expect(swapped.slots!['nav:/overview']).toBe(4)
+    expect(swapped.slots!['nav:/files']).toBe(0)
+    const removed = moveGroupMembers([swapped], ['nav:/terminal'])[0]!
+    expect(removed.slots!['nav:/settings']).toBe(2)
+    expect(Object.values(removed.slots!)).not.toContain(1)
+    expect(a.slots).toBeUndefined()
+  })
+
+  it('keeps reserved rows and deliberate gaps through narrow reflow', () => {
+    const group = { ...a, rows: 3, columns: 3, slots: { 'nav:/overview': 0, 'nav:/files': 7 } }
+    for (const bounds of [{ width: 1200, height: 800 }, { width: 290, height: 550 }]) {
+      const item = desktopGroupItem(group, new Set(group.members), bounds)
+      const placement = deriveDesktopGridLayout([item], [], bounds, true).placements[0]!
+      const cells = desktopGroupCells(group, placement, bounds)
+      expect(cells).toHaveLength(9)
+      expect(cells.filter(cell => !cell.key)).toHaveLength(7)
+      expect(desktopGroupMembers(group, placement, new Set(group.members), bounds)).toHaveLength(2)
+      expect(cells[7]!.top).toBeGreaterThan(cells[0]!.top)
+      expect(desktopGroupSlots(group)).toEqual(group.slots)
+    }
+  })
+
+  it('keeps bounded unique slots when a multi-selection lands on the last cell', () => {
+    const keys = Array.from({ length: 510 }, (_, i) => `app:item-${i}`)
+    const group = { ...a, members: keys }
+    const placed = placeGroupMembers([group], ['app:new-1', 'app:new-2'], 'a', 511)[0]!
+    expect(placed.members).toHaveLength(512)
+    expect(new Set(Object.values(placed.slots!)).size).toBe(512)
+    expect(Math.min(...Object.values(placed.slots!))).toBe(0)
+    expect(Math.max(...Object.values(placed.slots!))).toBe(511)
+  })
+
   it('allows tall containers, preserves other anchors and never overlaps standalone icons', () => {
     const bounds = {width: 1200, height: 350}
     const group = {...a, members:Array.from({length:64},(_,i)=>`app:item-${i}`)}

@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	SchemaVersion        = 4
+	SchemaVersion        = 5
 	MaxWorkspaceBytes    = 256 << 10
 	MaxIconBytes         = 256 << 10
 	MaxIconTotalBytes    = 16 << 20
@@ -512,7 +512,7 @@ func readPersistedWorkspace(path string) (persistedWorkspace, error) {
 			item.TargetType = ShortcutTargetURL
 		}
 		state.SchemaVersion = SchemaVersion
-	case 2, 3:
+	case 2, 3, 4:
 		state.SchemaVersion = SchemaVersion
 	case SchemaVersion:
 	default:
@@ -572,6 +572,7 @@ func buildPersistedWorkspace(input ReplaceInput, current persistedWorkspace, now
 		}
 		pruneDeletedGroupShortcuts(&state)
 	}
+	preserveLegacyGroupLayout(&state, current)
 	if err := validatePersistedWorkspace(state); err != nil {
 		return persistedWorkspace{}, err
 	}
