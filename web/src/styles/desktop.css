@@ -1662,6 +1662,8 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 /* The selection toolbar remains mounted during its leave transition. */
 .desktop:has(.desktop__selection-actions) .desktop-group-undo { bottom: 136px; }
+/* Keep transient success/undo feedback clear of inline editing near the bottom edge. */
+.desktop:has(.desktop-group__name-input) .desktop-group-undo[role="status"] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .desktop__icon-slot,
   .desktop-group-surface-enter-active,

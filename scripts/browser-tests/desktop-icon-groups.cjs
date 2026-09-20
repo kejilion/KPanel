@@ -333,6 +333,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
       const inputBox = await narrowInput.boundingBox()
       assert(inputBox.width >= 28 && inputBox.x >= collapsedBox.x && inputBox.x + inputBox.width <= collapsedBox.x + collapsedBox.width)
       assert.equal(await narrowInput.evaluate(el => document.activeElement === el), true)
+      assert.equal(await page.locator('.desktop-group-undo[role="status"]').isVisible(), false)
       await page.screenshot({ path: `${out}/${width}-${theme}-inline-rename.png` })
       await page.keyboard.press('Escape'); await settle()
       await group.locator('.desktop-group__menu').click()
