@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.3] - 2026-09-20
+
+### Changed
+
+- MCP 接入卡片统一内容内边距和状态区域布局；加载、错误、成功提示及刷新入口在不同状态下保持同一视觉层级。
+
+### Fixed
+
+- 轻量节点与完整节点客户端在默认后量子 TLS 曲线握手明确超时时，对可重放请求改用经典曲线重试；成功后按主机缓存兼容选择，避免每次请求重复等待超时。
+- 集群普通请求、流式请求和历史请求共享同一 TLS 兼容缓存，同时保留既有最低 TLS 版本、证书校验、超时和禁止重定向策略。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- TLS 兼容回退只在 Go 返回明确的 `TLS handshake timeout` 且请求体可重放时触发；默认连接仍优先使用 Go 当前的安全曲线选择。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
+
 ## [1.21.0-rc.2] - 2026-09-20
 
 ### Added
