@@ -1,12 +1,11 @@
 import { createSSRApp, nextTick, ssrContextKey, type ComputedRef, type Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SitesView from './SitesView.vue'
-import { api } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import type { Site, SiteInstallationProgress } from '@/types/api'
 
-vi.mock('@/lib/api', () => ({
-  ApiError: class MockApiError extends Error {},
-  isTransientAgentError: () => false,
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/api')>(),
   api: {
     agent: { capabilities: vi.fn() },
     sites: {
@@ -141,6 +140,92 @@ afterEach(() => {
 })
 
 describe('SitesView creation experience', () => {
+  const runningJob: SiteInstallationProgress = { id: 'recovery-job', status: 'running', stage: 'installing', progress: 88, message: 'installing' }
+
+  it.each(['succeeded', 'failed'] as const)('recovers CDN polling errors and accepts backend %s', async (status) => {
+    vi.mocked(api.sites.installation)
+      .mockRejectedValueOnce(new ApiError('CDN unavailable', 521))
+      .mockResolvedValueOnce({ ...runningJob, status, progress: status === 'succeeded' ? 100 : 88 })
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [], total: 0 })
+    vi.mocked(api.sites.installations).mockResolvedValue([])
+    vi.mocked(api.agent.capabilities).mockResolvedValue([])
+    vi.mocked(api.system.publicNetwork).mockResolvedValue(undefined as never)
+    const view = setupView()
+    view.editorOpen.value = true
+    view.installProgress.value = { ...runningJob }
+    view.monitorInstallation(runningJob.id)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(view.installProgress.value).toMatchObject({ status: 'running', stage: 'reconnecting', progress: 88 })
+    expect(view.installationTaskFinished.value).toBe(false)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(view.installProgress.value?.status).toBe(status)
+    expect(view.installationTaskFinished.value).toBe(true)
+    expect(api.sites.create).not.toHaveBeenCalled()
+    view.stopInstallationMonitor()
+  })
+
+  it.each([401, 403, 404, 525, 526])('pauses HTTP %i without inventing task failure and can query again', async (status) => {
+    vi.mocked(api.sites.installation).mockRejectedValueOnce(new ApiError('cannot read job', status))
+    const view = setupView()
+    view.installProgress.value = { ...runningJob }
+    view.monitorInstallation(runningJob.id)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(api.sites.installation).toHaveBeenCalledTimes(1)
+    expect(view.installProgress.value).toMatchObject({ id: runningJob.id, status: 'running', stage: 'connection_error', progress: 88 })
+    expect(view.installationTaskFinished.value).toBe(false)
+    vi.mocked(api.sites.installation).mockResolvedValueOnce({ ...runningJob, status: 'failed', message: 'script failed' })
+    view.monitorInstallation(runningJob.id)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(view.installProgress.value).toMatchObject({ status: 'failed', message: 'script failed' })
+    view.stopInstallationMonitor()
+  })
+
+  it('pauses prolonged outages and does not submit the existing site again', async () => {
+    vi.mocked(api.sites.installation).mockRejectedValue(new ApiError('CDN unavailable', 521))
+    const view = setupView()
+    view.installProgress.value = { ...runningJob }
+    view.monitorInstallation(runningJob.id)
+    await vi.advanceTimersByTimeAsync(330_000)
+    expect(view.installProgress.value).toMatchObject({ status: 'running', stage: 'connection_error', progress: 88 })
+    const attempts = vi.mocked(api.sites.installation).mock.calls.length
+    expect(attempts).toBeLessThan(30)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(api.sites.installation).toHaveBeenCalledTimes(attempts)
+    await view.submitSite()
+    expect(api.sites.create).not.toHaveBeenCalled()
+    view.stopInstallationMonitor()
+  })
+
+  it.each(['running', 'failed'] as const)('preserves backend %s when the initial creation wait rejects', async (status) => {
+    const view = setupView()
+    view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }]
+    view.form.type = 'redirect'
+    view.form.primaryDomain = 'source.example.com'
+    view.form.redirectTarget = 'target.example.com'
+    vi.mocked(api.sites.create).mockImplementationOnce(async (_input, onProgress) => {
+      onProgress?.({ ...runningJob, status, message: status === 'failed' ? 'script failed' : 'installing' })
+      throw new ApiError(status === 'failed' ? 'script failed' : 'connection refused', status === 'failed' ? 422 : 521)
+    })
+    await view.submitSite()
+    expect(api.sites.create).toHaveBeenCalledOnce()
+    expect(view.installProgress.value).toMatchObject({
+      id: runningJob.id, status, progress: 88,
+      stage: status === 'failed' ? 'installing' : 'connection_error',
+    })
+    expect(view.installationTaskFinished.value).toBe(status === 'failed')
+  })
+
+  it('cancels a scheduled reconnect when leaving the view', async () => {
+    vi.mocked(api.sites.installation).mockRejectedValueOnce(new ApiError('CDN unavailable', 521))
+    const view = setupView()
+    view.installProgress.value = { ...runningJob }
+    view.monitorInstallation(runningJob.id)
+    await vi.advanceTimersByTimeAsync(0)
+    view.stopInstallationMonitor()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(api.sites.installation).toHaveBeenCalledOnce()
+  })
+
   it('submits the HTTP address without stale certificate material and restores TLS for plain domains', async () => {
     const view = setupView()
     view.capabilities.value = [{ id: 'sites.templates.install', enabled: true }, { id: 'sites.certificates.custom', enabled: true }]

@@ -177,8 +177,6 @@ export default [
   ["自托管密码管理平台", "Host password management platform"],
   ["最后核对", "Last checked"],
   ["Agent 当前缺少网站写入依赖。", "The Agent is missing a dependency required for site writes."],
-  ["Agent 暂时不可用，后台建站任务不受影响，正在自动重连。", "The Agent is temporarily unavailable. Background site tasks continue while KPanel reconnects automatically."],
-  ["Agent 重连中", "Agent Reconnecting"],
   ["本机网站管理", "Local site management"],
   ["已达到终端会话上限，请先关闭不用的终端。", "The terminal session limit has been reached. Close an unused terminal first."],
   ["AI 提示词生成器", "AI prompt generator"],
@@ -244,4 +242,9 @@ export default [
   ["仅展示产物", "Artifacts only"],
   ["临时", "Temporary"],
   ["后台运行中", "Running in background"],
+  ["连接恢复中","Reconnecting"],
+  ["任务状态待确认","Task status unconfirmed"],
+  ["连接暂时中断，正在重新获取建站任务状态，请勿重复提交。","Connection interrupted. Reconnecting to the existing site task; do not submit it again."],
+  ["暂时无法确认建站结果，请重新查询原任务，不要重复建站。","The site result is currently unknown. Check the existing task again instead of creating the site again."],
+  ["重新查询任务状态","Check task status again"],
 ] as const satisfies PhraseCatalog
