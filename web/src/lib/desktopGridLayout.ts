@@ -12,6 +12,7 @@ import {
   desktopIconGridSlotForPosition,
   desktopIconPositionForGridSlot,
   desktopIconPositionToPixels,
+  desktopIconPixelsToPosition,
   DEFAULT_DESKTOP_ICON_METRICS,
   MAX_DESKTOP_ICON_POSITIONS,
   type DesktopIconBounds,
@@ -30,6 +31,8 @@ export interface DesktopGridItem {
   rows?: number
   /** Optional default anchor for a newly visible item. */
   defaultSlot?: DesktopIconGridSlot
+  /** Runtime-only content bounds; these containers retain pixel-accurate anchors. */
+  pixelSize?: { width: number; height: number }
 }
 
 export interface DesktopGridPlacement {
@@ -37,6 +40,7 @@ export interface DesktopGridPlacement {
   position: DesktopIconPosition
   columns: number
   rows: number
+  pixelSize?: { width: number; height: number }
 }
 
 export interface DesktopGridArrangement {
@@ -80,6 +84,13 @@ function clampSlot(
   item: DesktopGridItem & { columns: number; rows: number },
   grid: DesktopIconGrid,
 ): DesktopIconGridSlot {
+  if (item.pixelSize) {
+    const size = footprint(item, grid)
+    return {
+      column: Math.min(Math.max(0, slot.column), Math.max(0, (grid.bounds.width - size.width) / grid.stepX)),
+      row: Math.min(Math.max(0, slot.row), Math.max(0, grid.maxRow - (size.height - grid.metrics.height) / grid.stepY)),
+    }
+  }
   return {
     column: Math.min(Math.max(0, Math.round(slot.column)), Math.max(0, grid.columns - item.columns)),
     row: Math.min(Math.max(0, Math.round(slot.row)), Math.max(0, grid.maxRow - item.rows + 1)),
@@ -91,6 +102,10 @@ function slotForPosition(
   item: DesktopGridItem & { columns: number; rows: number },
   grid: DesktopIconGrid,
 ): DesktopIconGridSlot {
+  if (item.pixelSize) {
+    const pixels = desktopIconPositionToPixels(position, grid.bounds, grid.metrics)
+    return clampSlot({ column: pixels.left / grid.stepX, row: pixels.top / grid.stepY }, item, grid)
+  }
   return clampSlot(
     desktopIconGridSlotForPosition(position, grid.bounds, grid.metrics),
     item,
@@ -99,10 +114,11 @@ function slotForPosition(
 }
 
 function positionForSlot(slot: DesktopIconGridSlot, grid: DesktopIconGrid): DesktopIconPosition {
-  return desktopIconPositionForGridSlot(slot, grid.bounds, grid.metrics)
+  return desktopIconPixelsToPosition({ left: slot.column * grid.stepX, top: slot.row * grid.stepY }, grid.bounds, grid.metrics)
 }
 
 function footprint(item: DesktopGridItem & { columns: number; rows: number }, grid: DesktopIconGrid): { width: number; height: number } {
+  if (item.pixelSize) return { width: Math.min(grid.bounds.width, item.pixelSize.width), height: item.pixelSize.height }
   return {
     width: item.columns * grid.metrics.width + (item.columns - 1) * grid.metrics.columnGap,
     height: item.rows * grid.metrics.height + (item.rows - 1) * grid.metrics.rowGap,
@@ -152,7 +168,9 @@ function canPlace(
   occupied: readonly DesktopGridRect[],
 ): boolean {
   const safe = clampSlot(slot, item, grid)
-  if (safe.column !== Math.round(slot.column) || safe.row !== Math.round(slot.row)) return false
+  const column = item.pixelSize ? slot.column : Math.round(slot.column)
+  const row = item.pixelSize ? slot.row : Math.round(slot.row)
+  if (Math.abs(safe.column - column) > 1e-7 || Math.abs(safe.row - row) > 1e-7) return false
   const rect = rectForSlot(item, safe, grid)
   return !occupied.some((candidate) => overlaps(rect, candidate))
 }
@@ -166,11 +184,12 @@ function firstFreeSlot(
   // Containers may extend below one viewport; icons/widgets retain their existing paging.
   if (item.key.startsWith('group:')) {
     const lastOccupiedRow = Math.ceil(Math.max(0, ...occupied.map(rect => rect.top + rect.height)) / grid.stepY)
-    const lastRow = Math.min(grid.maxRow - item.rows + 1, Math.max(lastOccupiedRow + 1, requested?.row || 0))
+    const maximum = clampSlot({ column: Infinity, row: Infinity }, item, grid)
+    const lastRow = Math.min(maximum.row, Math.max(lastOccupiedRow + 1, requested?.row || 0))
     let best: DesktopIconGridSlot | undefined
     let distance = Infinity
     for (let row = 0; row <= lastRow; row += 1) {
-      for (let column = 0; column <= grid.columns - item.columns; column += 1) {
+      for (let column = 0; column <= maximum.column; column += 1) {
         const candidate = { column, row }
         const score = requested ? Math.abs(column - requested.column) + Math.abs(row - requested.row) : row * grid.columns + column
         if (score < distance && canPlace(item, candidate, grid, occupied)) { best = candidate; distance = score }
@@ -203,7 +222,8 @@ function placementAt(
   slot: DesktopIconGridSlot,
   grid: DesktopIconGrid,
 ): DesktopGridPlacement {
-  return { key: item.key, position: positionForSlot(slot, grid), columns: item.columns, rows: item.rows }
+  return { key: item.key, position: positionForSlot(slot, grid), columns: item.columns, rows: item.rows,
+    ...(item.pixelSize ? { pixelSize: item.pixelSize } : {}) }
 }
 
 function contentHeight(placements: readonly DesktopGridPlacement[], items: Map<string, DesktopGridItem & { columns: number; rows: number }>, grid: DesktopIconGrid): number {
@@ -301,6 +321,43 @@ export function desktopGridPlacementRect(
   return rectForSlot(item, slotForPosition(placement.position, item, grid), grid)
 }
 
+export const DESKTOP_GROUP_SNAP_GAP = 12
+const GROUP_SNAP_DISTANCE = 24
+
+/** Prefer nearby container edges, but never move a neighbour or overlap any item. */
+function snapContainerSlot(
+  item: DesktopGridItem & { columns: number; rows: number },
+  target: DesktopGridRect,
+  neighbours: readonly DesktopGridRect[],
+  occupied: readonly DesktopGridRect[],
+  grid: DesktopIconGrid,
+): DesktopIconGridSlot | undefined {
+  const xs: number[] = []
+  const ys: number[] = []
+  const reach = GROUP_SNAP_DISTANCE + DESKTOP_GROUP_SNAP_GAP
+  for (const rect of neighbours) {
+    if (target.top <= rect.top + rect.height + reach && target.top + target.height >= rect.top - reach) {
+      xs.push(rect.left, rect.left + rect.width - target.width,
+        rect.left + rect.width + DESKTOP_GROUP_SNAP_GAP, rect.left - target.width - DESKTOP_GROUP_SNAP_GAP)
+    }
+    if (target.left <= rect.left + rect.width + reach && target.left + target.width >= rect.left - reach) {
+      ys.push(rect.top, rect.top + rect.height - target.height,
+        rect.top + rect.height + DESKTOP_GROUP_SNAP_GAP, rect.top - target.height - DESKTOP_GROUP_SNAP_GAP)
+    }
+  }
+  const nearby = (values: number[], origin: number) => [...new Set(values)]
+    .filter(value => Math.abs(value - origin) <= GROUP_SNAP_DISTANCE)
+    .sort((a, b) => Math.abs(a - origin) - Math.abs(b - origin)).slice(0, 6)
+  const candidates = [...nearby(xs, target.left), target.left].flatMap((left, x, allX) =>
+    [...nearby(ys, target.top), target.top].map((top, y, allY) => ({
+      slot: { column: left / grid.stepX, row: top / grid.stepY },
+      snapped: Number(x < allX.length - 1) + Number(y < allY.length - 1),
+      distance: Math.abs(left - target.left) + Math.abs(top - target.top),
+    })))
+  candidates.sort((a, b) => b.snapped - a.snapped || a.distance - b.distance)
+  return candidates.find(candidate => canPlace(item, candidate.slot, grid, occupied))?.slot
+}
+
 /** Move one item to a snapped slot, exchanging only equal-size single cells. */
 export function dropDesktopGridItem(
   placements: readonly DesktopGridPlacement[],
@@ -320,6 +377,13 @@ export function dropDesktopGridItem(
   const targetRect = rectForSlot(movingItem, targetSlot, grid)
   const otherPlacements = placements.filter((placement) => placement.key !== movingKey)
   const occupied = occupiedRects(otherPlacements, safeItems, grid)
+  if (movingItem.pixelSize) {
+    const neighbours = occupiedRects(otherPlacements.filter(placement => safeItems.get(placement.key)?.pixelSize), safeItems, grid)
+    const snapped = snapContainerSlot(movingItem, targetRect, neighbours, occupied, grid)
+    // An invalid drop stays put, instead of teleporting to a distant free grid cell.
+    return placements.map(placement => placement.key === movingKey && snapped
+      ? placementAt(movingItem, snapped, grid) : placement)
+  }
   const occupant = otherPlacements.find((placement) => {
     const item = safeItems.get(placement.key)
     if (!item) return false
