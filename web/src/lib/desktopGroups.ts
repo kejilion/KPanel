@@ -96,11 +96,11 @@ function geometry(group: DesktopGroup, bounds: DesktopIconBounds, span?: number)
 }
 
 export function desktopGroupItem(group: DesktopGroup, _visibleKeys: ReadonlySet<string>, bounds: DesktopIconBounds): DesktopGridItem {
-  const { grid, columns, height } = geometry(group, bounds)
-  return { key: groupKey(group.id), columns, rows: Math.ceil((height + grid.metrics.rowGap) / grid.stepY) }
+  const { grid, columns, width, height } = geometry(group, bounds)
+  return { key: groupKey(group.id), columns, rows: Math.ceil((height + grid.metrics.rowGap) / grid.stepY), pixelSize: { width, height } }
 }
 
-/** Paint and hit-test tight content bounds, while reserving whole grid cells for collision safety. */
+/** Paint, hit-test and collision use the same tight content bounds. */
 export function desktopGroupRect(group: DesktopGroup, placement: DesktopGridPlacement, bounds: DesktopIconBounds) {
   const rect = desktopGridPlacementRect(placement, bounds)
   const { width, height } = geometry(group, bounds, placement.columns)

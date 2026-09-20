@@ -349,6 +349,62 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     const darkSurface = await group.evaluate(el => getComputedStyle(el).backgroundColor)
     assert.notEqual(lightSurface, darkSurface)
     report.cases.push({ composition: 'three compact expanded groups and collapsed preview strip in both themes', lightSurface, darkSurface })
+    // Reproduce the 8 + 9 reference cards: actual edges, live snap and saved anchors agree.
+    const allKeys = await page.locator('[data-icon-key]').evaluateAll(icons => icons.map(icon => icon.dataset.iconKey))
+    state.groups = [allKeys.slice(0, 8), allKeys.slice(8, 17)].map((members, index) => ({
+      id: String(index + 5).repeat(32), name: index ? '应用与服务' : '常用运维', members,
+      columns: 4, rows: 0, collapsed: false,
+      slots: Object.fromEntries(members.map((key, cell) => [key, index && cell === 8 ? 11 : cell])),
+    }))
+    state.positions = Object.fromEntries(state.groups.map((item, index) => [`group:${item.id}`, { x: index ? .36 : 0, y: 0 }]))
+    await page.reload(); await page.locator('.desktop-group').nth(1).waitFor(); await settle()
+    const firstCard = page.locator('.desktop-group').nth(0)
+    const secondCard = page.locator('.desktop-group').nth(1)
+    const moveCard = async (card, left, top, liveCheck) => {
+      await settle()
+      const before = await card.boundingBox()
+      const header = await card.locator('.desktop-group__header').boundingBox()
+      assert(before && header)
+      const x = header.x + header.width / 2, y = header.y + header.height / 2
+      await page.mouse.move(x, y); await page.mouse.down()
+      await page.mouse.move(x + left - before.x, y + top - before.y, { steps: 16 })
+      await settle()
+      if (liveCheck) await liveCheck(await card.boundingBox())
+      await page.mouse.up()
+    }
+    const near = (actual, expected) => assert(Math.abs(actual - expected) < 1, `${actual} != ${expected}`)
+    const a = await firstCard.boundingBox()
+    near(a.width, 391)
+    await save(() => moveCard(secondCard, a.x + a.width + 3, a.y + 7, live => {
+      near(live.x - a.x - a.width, 12); near(live.y, a.y)
+    }))
+    const horizontal = await secondCard.boundingBox()
+    near(horizontal.x - a.x - a.width, 12); near(horizontal.y, a.y)
+    const savedAnchors = structuredClone(state.positions)
+    await page.reload(); await secondCard.waitFor(); await settle()
+    near((await secondCard.boundingBox()).x, horizontal.x)
+    assert.deepEqual(state.positions, savedAnchors)
+    await page.screenshot({ path: `${out}/adjacent-groups-dark.png` })
+    await save(() => moveCard(secondCard, a.x + 7, a.y + a.height + 4, live => {
+      near(live.y - a.y - a.height, 12); near(live.x, a.x)
+    }))
+    near((await secondCard.boundingBox()).y - a.y - a.height, 12)
+    await page.screenshot({ path: `${out}/stacked-groups-dark.png` })
+    const beforeFailure = await secondCard.boundingBox()
+    failNext = true
+    const failedMove = page.waitForResponse(r => r.url().endsWith('/api/v1/desktop/workspace') && r.status() === 500)
+    await moveCard(secondCard, a.x + 475, a.y + 70); await failedMove; await settle()
+    near((await secondCard.boundingBox()).x, beforeFailure.x)
+    near((await secondCard.boundingBox()).y, beforeFailure.y)
+    await save(() => moveCard(secondCard, a.x + 475, a.y))
+    await secondCard.locator('.desktop-group__header').focus()
+    await save(() => page.keyboard.press('Control+ArrowLeft'))
+    near((await secondCard.boundingBox()).x - a.x - a.width, 12)
+    const beforeBlocked = await secondCard.boundingBox()
+    await moveCard(secondCard, a.x + 100, a.y + 80); await settle()
+    near((await secondCard.boundingBox()).x, beforeBlocked.x)
+    near((await secondCard.boundingBox()).y, beforeBlocked.y)
+    report.cases.push('8+9 sparse cards: live 12px horizontal/vertical snap, refresh, keyboard, blocked drop and failed save restore')
     assert.equal(report.errors.length, 0)
     assert.equal(resourceFailure, false)
     await context.tracing.stop({ path: `${out}/trace.zip` })
