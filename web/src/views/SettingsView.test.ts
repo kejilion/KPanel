@@ -215,6 +215,16 @@ function themeColorInput(value: string, type = 'text'): Event {
 }
 
 describe('SettingsView navigation', () => {
+  it('selects system settings before the first render for the version route intent', () => {
+    mocks.route.query = { section: 'version-updates' }
+
+    const view = setupView()
+
+    expect(view.activeSettingsCategory.value).toBe('system')
+    expect(view.visibleSettingsSectionCount.value).toBe(2)
+    expect(view.isSettingsSectionVisible('version-updates')).toBe(true)
+  })
+
   it('starts with every settings section visible and exposes useful category counts', () => {
     const view = setupView()
 

@@ -123,7 +123,9 @@ const settingsSections: SettingsSectionDefinition[] = [
 ]
 
 const settingsSearch = ref('')
-const activeSettingsCategory = ref<SettingsCategoryId>('all')
+const activeSettingsCategory = ref<SettingsCategoryId>(
+  isKPanelUpdateSettingsIntent(route.query.section) ? 'system' : 'all',
+)
 const settingsBrowser = ref<HTMLElement>()
 const normalizedSettingsSearch = computed(() => settingsSearch.value.trim().toLocaleLowerCase())
 
