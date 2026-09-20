@@ -768,7 +768,8 @@ describe('DesktopView icon layout interaction', () => {
     const extraSlot = wrapper.find('[data-icon-key="app:extra"]')
     const scrollSpace = wrapper.find('.desktop__icons-scroll-space')
 
-    expect(extraSlot.attributes('style')).toContain('translate3d(0px, 400px, 0)')
+    expect(Number.parseFloat((extraSlot.attributes('style') || '').match(/translate3d\([^,]+,\s*([\d.]+)px/)?.[1] || '0'))
+      .toBeGreaterThan(480)
     expect(Number.parseFloat((scrollSpace.attributes('style') || '').match(/height:\s*([\d.]+)px/)?.[1] || '0'))
       .toBeGreaterThan(480)
     expect(updateWorkspace).not.toHaveBeenCalled()

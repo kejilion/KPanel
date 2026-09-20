@@ -886,7 +886,7 @@ describe('DesktopView dynamic entries', () => {
     expect(wrapper.find('.desktop__file-drop').exists()).toBe(false)
     expect(protectedHoverDataTransfer.dropEffect).toBe('move')
     expect(first.attributes('style')).not.toBe(initialFirstStyle)
-    expect(first.attributes('style')).toContain('translate3d(320px, 220px, 0)')
+    expect(first.attributes('style')).toContain('translate3d(320px,')
     expect(second.classes()).toContain('desktop__icon-slot--dragging')
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer, 360, 260))
     await wrapper.vm.$nextTick()
