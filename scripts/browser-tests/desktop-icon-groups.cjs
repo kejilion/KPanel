@@ -293,7 +293,10 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
       for (const key of state.groups[0].members) {
         const member = await slot(key).boundingBox()
         assert(member.x >= box.x && member.x + member.width <= box.x + box.width + 1)
-        assert(member.y >= box.y + 47 && member.y + member.height <= box.y + box.height + 1)
+        assert(member.y >= box.y + 35 && member.y + member.height <= box.y + box.height + 1)
+        const nearCell = await group.locator(`[data-group-cell="${state.groups[0].slots[key]}"]`).boundingBox()
+        assert(Math.abs(member.width - nearCell.width) < 1 && Math.abs(member.height - nearCell.height) < 1)
+        assert(Math.abs(member.x - nearCell.x) <= 1 && Math.abs(member.y - nearCell.y) <= 1)
       }
       if (reduced) assert(Number.parseFloat(await group.evaluate(el => getComputedStyle(el).transitionDuration)) < 0.001)
       assert.equal(writes, previousWrites)
@@ -313,7 +316,8 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
         const boxes = cells.map(cell => cell.getBoundingClientRect())
         return [Math.min(...boxes.map(box => box.left)) - parent.left, parent.right - Math.max(...boxes.map(box => box.right)), parent.bottom - Math.max(...boxes.map(box => box.bottom))]
       })
-      assert(edges.every(edge => edge >= 46 && edge <= 51), JSON.stringify(edges))
+      assert(edges[0] >= 15 && edges[0] <= 17 && edges[1] >= 15 && edges[1] <= 17 && edges[2] >= 3, JSON.stringify(edges))
+      assert.equal(await slot('nav:/overview').locator('.desktop__icon-glyph').evaluate(el => parseFloat(getComputedStyle(el).width)), 52)
       assert(Math.abs((box.width + 5) / 95 - Math.round((box.width + 5) / 95)) < .01)
       assert(Math.abs((box.height + 4) / 100 - Math.round((box.height + 4) / 100)) < .01)
       const titleSize = await group.locator('strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize))
@@ -401,7 +405,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     const darkSurface = await group.evaluate(el => getComputedStyle(el).backgroundColor)
     assert.notEqual(lightSurface, darkSurface)
     report.cases.push({ composition: 'three compact expanded groups and collapsed preview strip in both themes', lightSurface, darkSurface })
-    // Reproduce the 8 + 9 reference cards: actual edges, live snap and saved anchors agree.
+    // Reproduce the 8 + 9 reference cards: compact edges and saved anchors agree.
     const allKeys = await page.locator('[data-icon-key]').evaluateAll(icons => icons.map(icon => icon.dataset.iconKey))
     state.groups = [allKeys.slice(0, 8), allKeys.slice(8, 17)].map((members, index) => ({
       id: String(index + 5).repeat(32), name: index ? '应用与服务' : '常用运维', members,
@@ -426,7 +430,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     }
     const near = (actual, expected) => assert(Math.abs(actual - expected) < 1, `${actual} != ${expected}`)
     const a = await firstCard.boundingBox()
-    near(a.width, 470)
+    near(a.width, 375)
     await save(() => moveCard(secondCard, a.x + a.width + 3, a.y + 7, live => {
       near(live.x - a.x - a.width, 3); near(live.y, a.y + 7)
     }))
@@ -448,7 +452,7 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     await moveCard(secondCard, a.x + 475, a.y + 70); await failedMove; await settle()
     near((await secondCard.boundingBox()).x, beforeFailure.x)
     near((await secondCard.boundingBox()).y, beforeFailure.y)
-    await save(() => moveCard(secondCard, a.x + 475, a.y))
+    await save(() => moveCard(secondCard, a.x + 380, a.y))
     await secondCard.locator('.desktop-group__header').focus()
     await save(() => page.keyboard.press('Control+ArrowRight'))
     await save(() => page.keyboard.press('Control+ArrowLeft'))
@@ -479,14 +483,14 @@ const report = { candidate, grade: draft ? 'draft' : 'acceptance', mode: 'mock-u
     state.hiddenWidgetKeys = ['widget:monitor', 'widget:services']
     state.positions = { [`group:${state.groups[0].id}`]: anchor(380, 0) }
     const loose = allKeys.slice(11)
-    for (const [index, key] of loose.entries()) state.positions[key] = anchor(index < 3 ? 285 : 855, (index % 3) * 100)
-    state.widgetPositions = { 'widget:clock': anchor(380, 400) }
+    for (const [index, key] of loose.entries()) state.positions[key] = anchor(index < 3 ? 285 : 760, (index % 3) * 100)
+    state.widgetPositions = { 'widget:clock': anchor(380, 300) }
     await page.reload(); await group.waitFor(); await settle()
     const clock = page.getByRole('group', { name: 'widget:clock', exact: true })
     const verifyMixed = async () => {
       const g = await group.boundingBox(), c = await clock.boundingBox()
       near(g.x, c.x); near(g.y + g.height + 4, c.y)
-      near(g.width, 470); near(g.height, 396)
+      near(g.width, 375); near(g.height, 296); near(g.width, c.width)
       for (const [index, key] of loose.entries()) {
         const icon = await slot(key).boundingBox()
         near(index < 3 ? g.x - icon.x - icon.width : icon.x - g.x - g.width, 5)
