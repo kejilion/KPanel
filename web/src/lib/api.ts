@@ -103,6 +103,9 @@ import type {
 	SystemTuningActionInput,
 	SystemTuningActionResult,
 	SystemTuningSnapshot,
+	SystemPackagesActionInput,
+	SystemPackagesActionResult,
+	SystemPackagesSnapshot,
 	DiskManagementActionInput,
 	DiskManagementJob,
 	DiskManagementSnapshot,
@@ -1743,6 +1746,10 @@ export const api = {
 		request<SystemTuningSnapshot>('/system/system-tuning', { signal }),
 	 systemTuningAction: (body: SystemTuningActionInput): Promise<SystemTuningActionResult> =>
 		request<SystemTuningActionResult>('/system/system-tuning/actions', { method: 'POST', body }),
+	packages: (signal?: AbortSignal): Promise<SystemPackagesSnapshot> =>
+		request<SystemPackagesSnapshot>('/system/packages', { signal }),
+	packagesAction: (body: SystemPackagesActionInput): Promise<SystemPackagesActionResult> =>
+		request<SystemPackagesActionResult>('/system/packages/actions', { method: 'POST', body }),
 	virusScan: (signal?: AbortSignal): Promise<VirusScanSnapshot> =>
 		request<VirusScanSnapshot>('/system/virus-scan', { signal }),
 	virusScanAction: (body: VirusScanActionInput): Promise<VirusScanActionResult> =>

@@ -444,6 +444,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleSSHDefenseAction(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/system-tuning/actions":
 		s.handleSystemTuningAction(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/packages/actions":
+		s.handleSystemPackagesAction(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/virus-scan/actions":
 		s.handleVirusScanAction(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/disk-partition-actions":

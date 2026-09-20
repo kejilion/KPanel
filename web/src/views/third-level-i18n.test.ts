@@ -145,6 +145,8 @@ const viewStubs = {
   AccountManagementDialog: true,
   SSHDefenseDialog: true,
   SystemTuningDialog: true,
+  SystemPackagesDialog: true,
+  VirusScanDialog: true,
   DiskPartitionDialog: true,
   SystemLogsDialog: true,
 }

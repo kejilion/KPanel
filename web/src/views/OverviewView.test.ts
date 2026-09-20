@@ -299,7 +299,7 @@ describe('OverviewView refresh stability', () => {
         tools: section.tools.map((tool) => tool.id),
       })),
     ).toEqual([
-      { id: 'maintenance', tools: ['system-update', 'system-cleanup', 'system-logs', 'system-reboot'] },
+      { id: 'maintenance', tools: ['system-update', 'system-cleanup', 'packages', 'system-logs', 'system-reboot'] },
       { id: 'basic', tools: ['swap', 'disk-partitions', 'hostname', 'timezone', 'mirror', 'cron'] },
       { id: 'security', tools: ['ssh-port', 'ssh-defense', 'accounts', 'firewall', 'virus-scan'] },
       {

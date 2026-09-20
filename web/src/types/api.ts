@@ -483,7 +483,7 @@ export interface SystemManagement {
   maintenance: {
     id?: string
     state: 'idle' | 'running' | 'succeeded' | 'failed'
-    action?: 'update' | 'cleanup' | 'ssh-defense' | 'bbrv3' | 'system-tuning' | 'log-cleanup' | 'virus-scan'
+    action?: 'update' | 'cleanup' | 'ssh-defense' | 'bbrv3' | 'system-tuning' | 'packages' | 'log-cleanup' | 'virus-scan'
     policy?: string
     stage?: string
     progress: number
@@ -979,6 +979,42 @@ export interface SystemTuningActionInput {
 export interface SystemTuningActionResult {
 	action: 'apply'
 	items: SystemTuningItemID[]
+	status: string
+	changed: boolean
+	message: string
+	resourceVersion: string
+	acceptedAt: string
+}
+
+export type SystemPackageID =
+	| 'curl' | 'wget' | 'sudo' | 'socat' | 'htop' | 'iftop' | 'unzip' | 'tar'
+	| 'tmux' | 'ffmpeg' | 'btop' | 'ranger' | 'ncdu' | 'fzf' | 'vim' | 'nano' | 'git'
+
+export interface SystemPackageItem {
+	id: SystemPackageID
+	category: 'network' | 'system' | 'monitor' | 'archive' | 'terminal' | 'media' | 'editor' | 'developer'
+	installed: boolean
+	launchable: boolean
+}
+
+export interface SystemPackagesSnapshot {
+	manager: string
+	items: SystemPackageItem[]
+	maintenance: SystemManagement['maintenance']
+	resourceVersion: string
+	observedAt: string
+}
+
+export interface SystemPackagesActionInput {
+	action: 'install' | 'remove'
+	items: SystemPackageID[]
+	expectedResourceVersion: string
+}
+
+export interface SystemPackagesActionResult {
+	taskId: string
+	action: SystemPackagesActionInput['action']
+	items: SystemPackageID[]
 	status: string
 	changed: boolean
 	message: string

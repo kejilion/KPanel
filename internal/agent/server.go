@@ -367,6 +367,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemSSHDefense)
 	case r.URL.Path == "/v1/system/system-tuning":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.systemTuning)
+	case r.URL.Path == "/v1/system/packages":
+		s.requireMethod(w, r, requestID, http.MethodGet, s.systemPackages)
 	case r.URL.Path == "/v1/system/disk-partitions":
 		s.requireMethod(w, r, requestID, http.MethodGet, s.diskPartitions)
 	case r.URL.Path == "/v1/system/logs/summary":
@@ -391,6 +393,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodPost, s.systemSSHDefenseAction)
 	case r.URL.Path == "/v1/system/system-tuning/actions":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.systemTuningAction)
+	case r.URL.Path == "/v1/system/packages/actions":
+		s.requireMethod(w, r, requestID, http.MethodPost, s.systemPackagesAction)
 	case r.URL.Path == "/v1/system/virus-scan/actions":
 		s.requireMethod(w, r, requestID, http.MethodPost, s.virusScanAction)
 	case r.URL.Path == "/v1/system/disk-partition-actions":

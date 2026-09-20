@@ -60,6 +60,7 @@ import TrafficShutdownDialog from '@/components/overview/TrafficShutdownDialog.v
 import AccountManagementDialog from '@/components/overview/AccountManagementDialog.vue'
 import SSHDefenseDialog from '@/components/overview/SSHDefenseDialog.vue'
 import SystemTuningDialog from '@/components/overview/SystemTuningDialog.vue'
+import SystemPackagesDialog from '@/components/overview/SystemPackagesDialog.vue'
 import DiskPartitionDialog from '@/components/overview/DiskPartitionDialog.vue'
 import SystemLogsDialog from '@/components/overview/SystemLogsDialog.vue'
 import VirusScanDialog from '@/components/overview/VirusScanDialog.vue'
@@ -139,7 +140,7 @@ interface SystemCenterSection {
 
 type KernelProfile = 'high' | 'balanced' | 'web' | 'stream' | 'game' | 'off'
 type BBRv3Policy = 'install' | 'update' | 'uninstall'
-type ResourceDialogID = 'hosts' | 'cron' | 'network-interfaces' | 'firewall' | 'port-usage' | 'traffic-shutdown' | 'accounts' | 'ssh-defense' | 'system-tuning' | 'disk-partitions' | 'system-logs' | 'virus-scan'
+type ResourceDialogID = 'hosts' | 'cron' | 'network-interfaces' | 'firewall' | 'port-usage' | 'traffic-shutdown' | 'accounts' | 'ssh-defense' | 'system-tuning' | 'packages' | 'disk-partitions' | 'system-logs' | 'virus-scan'
 
 const mirrorPresets: Array<{
   value: MirrorPreset
@@ -637,6 +638,21 @@ const maintenanceTools = computed<ManagementTool[]>(() => {
       tone: 'violet',
     },
     {
+      id: 'packages',
+      title: '常用软件包',
+      description: '精选 kejilion.sh“基础工具”中的常用实用项，按状态筛选并批量安装或卸载。',
+      value: maintenance.action === 'packages' && maintenance.state === 'running'
+        ? `进行中 · ${maintenance.progress}%`
+        : `${packageManager} · 17 个常用工具`,
+      detail: maintenance.action === 'packages' && maintenance.state !== 'idle'
+        ? maintenance.message || '软件包任务正在后台执行'
+        : '实用工具 · 独立终端启动',
+      capability: 'system.packages.read',
+      safety: '只允许固定目录中的软件包 ID；每项使用原生包管理器参数执行，不接受自定义包名或命令。',
+      icon: Boxes,
+      tone: 'blue',
+    },
+    {
       id: 'system-logs',
       title: '系统日志',
       description: '按需查看系统、服务、安全与登录日志，并安全清理旧日志。',
@@ -749,7 +765,7 @@ const systemCenterSections = computed<SystemCenterSection[]>(() => {
     {
       id: 'maintenance',
       title: '日常维护',
-      description: '系统更新、空间清理、日志与可控重启',
+      description: '软件包、系统更新、空间清理、日志与可控重启',
       icon: RefreshCw,
       iconTone: 'violet',
       tools: maintenanceTools.value.map((tool) => ({
@@ -801,6 +817,7 @@ const resourceCapabilityNames: Record<ResourceDialogID, string> = {
 		accounts: 'system.accounts',
 		'ssh-defense': 'system.ssh-defense',
 	'system-tuning': 'system.tuning',
+	packages: 'system.packages',
 	'disk-partitions': 'system.disk-partitions',
 	'system-logs': 'system.logs',
 	'virus-scan': 'system.virus-scan',
@@ -816,6 +833,7 @@ const resourceCapabilityUnavailableReasons: Record<ResourceDialogID, string> = {
 		accounts: '当前 Agent 的账户管理适配器未就绪。',
 		'ssh-defense': '当前 Agent 的 SSH 防御适配器未就绪。',
 	'system-tuning': '当前 Agent 的系统综合调优能力尚未就绪。',
+	packages: '当前 Agent 的软件包管理适配器尚未就绪。',
 	'disk-partitions': '当前 Agent 的磁盘管理 worker 尚未就绪。',
 	'system-logs': '当前 Agent 的系统日志适配器尚未就绪。',
 	'virus-scan': '当前 Agent 的病毒扫描适配器尚未就绪。',
@@ -1966,6 +1984,13 @@ onBeforeUnmount(() => {
 		:readable="resourceCapability('system-tuning', 'read').enabled"
 		:writable="resourceCapability('system-tuning', 'write').enabled"
 		:unavailable-reason="resourceCapability('system-tuning', 'read').reason"
+		@close="closeResourceDialog"
+	/>
+	<SystemPackagesDialog
+		:open="selectedResourceDialog === 'packages'"
+		:readable="resourceCapability('packages', 'read').enabled"
+		:writable="resourceCapability('packages', 'write').enabled"
+		:unavailable-reason="resourceCapability('packages', 'read').reason"
 		@close="closeResourceDialog"
 	/>
 	<DiskPartitionDialog
