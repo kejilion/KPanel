@@ -50,3 +50,10 @@ MCP 产品源码已随 `v1.21.0-rc.1` 交付为公开 RC：tag 指向
 `arena-154` L3、候选/主线/Release 门禁和公开镜像 E2E。稳定版尚未交付，生产未部署。
 来源分支精确 tip `291a646387a61f271f6f3c774a8d7980c55d0813` 已保存到
 `archive/feature/mcp-access-20260919`；run-3 仍保持“未完成、无审计结论”，不能因 RC 发布改写为通过。
+
+完整管理扩展已随 `v1.21.0-rc.2` 交付为公开 RC：tag 指向
+`8a1998b39e07908f278e6abbb8f934f2722ac0d2`，公开 OCI index 为
+`sha256:1836a60ffd9a39379ff70f43202a4006cbaead272d8571b36067bdb5cf57f4fd`。该候选通过新的
+`arena-154` L3、候选/主线/Release 门禁和公开镜像 E2E；新增结构化写操作继续受服务端授权、
+审批、资源版本、容量和并发预算约束。来源 tip `0dceeaf30454d5f57e9f51aca8aa8c94d7544304`
+已保存到 `archive/feature/mcp-complete-20260919`。稳定版仍未交付，生产未部署，run-3 状态不变。
