@@ -14,12 +14,42 @@ const menuButton = ref<HTMLButtonElement>()
 const menu = ref<HTMLElement>()
 const menuOpen = ref(false)
 const menuStyle = ref<Record<string, string>>({})
+const dropLabel = ref<HTMLElement>()
+const dropLabelStyle = ref<Record<string, string>>({ visibility: 'hidden' })
 const editing = ref(false)
 const draft = ref('')
 const submitting = ref(false)
 const renameFailed = ref(false)
 const menuId = useId()
 const composing = ref(false)
+
+function positionDropLabel() {
+  if (!props.dropping || !dropLabel.value) return
+  const anchor = root.value?.getBoundingClientRect()
+  const label = dropLabel.value?.getBoundingClientRect()
+  if (!anchor || !label) return
+  const below = anchor.bottom + 8
+  dropLabelStyle.value = {
+    left: `${Math.max(8, Math.min(anchor.left + (anchor.width - label.width) / 2, window.innerWidth - label.width - 8))}px`,
+    top: `${below + label.height <= window.innerHeight - 8 ? below : Math.max(8, anchor.top - label.height - 8)}px`,
+    visibility: 'visible',
+  }
+}
+// The hint lives outside the scrolling grid and never participates in drop hit-testing.
+watch(() => [props.dropping, props.group.name, props.group.collapsed, root.value, dropLabel.value] as const, ([dropping], _, cleanup) => {
+  if (!dropping || !root.value || !dropLabel.value) { dropLabelStyle.value = { visibility: 'hidden' }; return }
+  positionDropLabel()
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(positionDropLabel) : undefined
+  observer?.observe(root.value)
+  observer?.observe(dropLabel.value)
+  window.addEventListener('resize', positionDropLabel)
+  window.addEventListener('scroll', positionDropLabel, true)
+  cleanup(() => {
+    observer?.disconnect()
+    window.removeEventListener('resize', positionDropLabel)
+    window.removeEventListener('scroll', positionDropLabel, true)
+  })
+}, { flush: 'post', immediate: true })
 
 function closeMenu(restoreFocus = false) {
   menuOpen.value = false
@@ -114,7 +144,7 @@ function keydown(event: KeyboardEvent) {
 
 <template>
   <section ref="root" class="desktop-group" :class="{ 'desktop-group--collapsed': group.collapsed, 'desktop-group--drop': dropping, 'desktop-group--editing': editing || menuOpen }"
-    :data-group-id="group.id" :aria-label="group.name" @contextmenu="contextMenu" @pointerdown.stop>
+    :data-group-id="group.id" :aria-label="group.name" @contextmenu="contextMenu" @pointerdown.stop @transitionend.self="positionDropLabel">
     <header class="desktop-group__header" tabindex="0" :aria-label="i18n.t('desktop.groupMove', { name: group.name })"
       @keydown="keydown" @pointerdown="($event.target as Element).closest('button, input') ? undefined : emit('drag', $event)">
       <button type="button" class="desktop-group__toggle" :aria-expanded="!group.collapsed"
@@ -147,7 +177,9 @@ function keydown(event: KeyboardEvent) {
       :data-group-cell="cell.index" :data-cell-empty="!cell.key || undefined" aria-hidden="true"
       :style="{ left: `${cell.left}px`, top: `${cell.top}px`, width: `${cell.width}px`, height: `${cell.height}px` }" />
     <p v-if="!count && !group.collapsed" class="desktop-group__empty">{{ i18n.t('desktop.groupEmpty') }}</p>
-    <span v-if="dropping" class="desktop-group__drop-label">{{ i18n.t('desktop.groupDrop', { name: group.name }) }}</span>
+    <Teleport to="body">
+      <span v-if="dropping" ref="dropLabel" class="desktop-group__drop-label" :style="dropLabelStyle" role="status">{{ i18n.t('desktop.groupDrop', { name: group.name }) }}</span>
+    </Teleport>
   </section>
 </template>
 
@@ -179,7 +211,7 @@ function keydown(event: KeyboardEvent) {
 .desktop-group--collapsed .desktop-group__toggle svg { transform: rotate(-90deg); }
 .desktop-group--drop { border-color: var(--desktop-group-focus); box-shadow: 0 0 0 2px var(--desktop-group-hover); }
 .desktop-group__empty { margin: 24px 16px; text-align: center; font-size: 14px; color: var(--desktop-group-muted); }
-.desktop-group__drop-label { position: absolute; bottom: 8px; left: 12px; right: 12px; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--brand-action); color: var(--on-brand); font-size: 13px; text-align: center; pointer-events: none; z-index: 3; }
+.desktop-group__drop-label { position: fixed; width: max-content; max-width: min(360px, calc(100vw - 16px)); box-sizing: border-box; padding: 6px 12px; border: 1px solid var(--brand); border-radius: var(--radius); background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-sm); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; text-align: center; pointer-events: none; z-index: 3400; }
 .desktop-group--dragging { transition: none; z-index: 22; }
 @media (prefers-reduced-motion: reduce) { .desktop-group, .desktop-group__toggle svg { transition: none; } }
 </style>
