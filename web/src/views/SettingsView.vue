@@ -502,7 +502,10 @@ async function manuallyUpdateKPanel(): Promise<void> {
 async function focusAutomaticUpdateSection(): Promise<void> {
   if (!isKPanelUpdateSettingsIntent(route.query.section)) return
   await nextTick()
-  automaticUpdateSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  // Vue Router restores the destination scroll position after the view mounts.
+  // Wait for that pass so it cannot overwrite this section-level navigation.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  automaticUpdateSection.value?.scrollIntoView?.({ block: 'start' })
   automaticUpdateSection.value?.focus({ preventScroll: true })
 }
 
@@ -719,7 +722,6 @@ async function endAuthenticatedSession(): Promise<void> {
 }
 
 onMounted(async () => {
-  void focusAutomaticUpdateSection()
   const [capabilityResult, entranceResult, totpResult, automaticUpdateResult] = await Promise.allSettled([
     api.agent.capabilities(),
     api.settings.securityEntrance.get(),
@@ -743,6 +745,7 @@ onMounted(async () => {
       ? automaticUpdateResult.reason.message
       : '无法读取自动更新状态。'
   }
+  await focusAutomaticUpdateSection()
 })
 
 watch(() => route.query.section, () => {
@@ -1425,6 +1428,14 @@ onBeforeUnmount(stopKPanelReleaseRequest)
 .automatic-update-panel {
   display: grid;
   gap: 14px;
+}
+
+.automatic-update-section {
+  scroll-margin-top: calc(var(--topbar-height) + 16px);
+}
+
+:global(.desktop-window__body) .automatic-update-section {
+  scroll-margin-top: 16px;
 }
 
 .automatic-update-section:focus {

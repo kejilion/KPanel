@@ -1052,43 +1052,50 @@ body.desktop-mode-open::-webkit-scrollbar {
   box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 40%, transparent);
 }
 
-.desktop__taskbar-agent > small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
 .desktop__taskbar-agent-update {
   display: inline-flex;
   min-height: 24px;
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  color: #8a4b00;
-  background: rgb(196 122 22 / 13%);
-  border: 1px solid rgb(138 75 0 / 24%);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .desktop__taskbar-agent-update:hover,
 .desktop__taskbar-agent-update:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.desktop__taskbar-agent-update--available {
+  color: #8a4b00;
+  background: rgb(196 122 22 / 13%);
+  border-color: rgb(138 75 0 / 24%);
+  font-weight: 600;
+}
+
+.desktop__taskbar-agent-update--available:hover,
+.desktop__taskbar-agent-update--available:focus-visible {
   color: #6f3c00;
   background: rgb(196 122 22 / 20%);
   border-color: rgb(138 75 0 / 38%);
 }
 
-:root[data-theme='dark'] .desktop__taskbar-agent-update {
+:root[data-theme='dark'] .desktop__taskbar-agent-update--available {
   color: #ffb25f;
   background: rgb(255 159 67 / 11%);
   border-color: rgb(255 176 95 / 18%);
 }
 
-:root[data-theme='dark'] .desktop__taskbar-agent-update:hover,
-:root[data-theme='dark'] .desktop__taskbar-agent-update:focus-visible {
+:root[data-theme='dark'] .desktop__taskbar-agent-update--available:hover,
+:root[data-theme='dark'] .desktop__taskbar-agent-update--available:focus-visible {
   color: #ffd09b;
   background: rgb(255 159 67 / 18%);
   border-color: rgb(255 190 120 / 30%);

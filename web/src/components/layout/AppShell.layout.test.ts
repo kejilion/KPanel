@@ -78,6 +78,9 @@ describe('responsive application shell comfort', () => {
 
   it('opens sidebar update availability in the shared settings flow', () => {
     expect(appShellSource).toContain('void router.push(kpanelUpdateSettingsPath)')
+    expect(appShellSource).toContain('v-if="panel.state.agent?.version"')
+    expect(styles).toContain('.sidebar--collapsed .sidebar__version--current')
+    expect(appShellSource).not.toContain('if (!kpanelUpdateAvailable.value) return')
     expect(appShellSource).not.toContain("query: { app: 'kpanel', action: 'update' }")
   })
 

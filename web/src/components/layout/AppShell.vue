@@ -150,7 +150,9 @@ const signingOut = ref(false)
 const sidebarCollapsed = ref(readSidebarCollapsed())
 const kpanelUpdateAvailable = ref(false)
 const checkingKPanelUpdate = ref(false)
-const kpanelUpdateDescription = computed(() => kpanelUpdateHint(panel.state.agent?.version))
+const kpanelUpdateDescription = computed(() => kpanelUpdateAvailable.value
+  ? kpanelUpdateHint(panel.state.agent?.version)
+  : i18n.t('nav.versionUpdates'))
 
 const pageTitle = computed(() => route.meta.titleKey ? i18n.t(route.meta.titleKey) : 'KPanel')
 const isAIWorkspace = computed(() => route.path.startsWith('/ai'))
@@ -208,7 +210,6 @@ async function enterDesktopSafely(): Promise<void> {
 }
 
 function openKPanelUpdate(): void {
-  if (!kpanelUpdateAvailable.value) return
   closeMenu()
   void router.push(kpanelUpdateSettingsPath)
 }
@@ -356,17 +357,23 @@ watch(
         <div class="sidebar__agent" :title="sidebarCollapsed ? agentStatus.label : undefined">
           <StatusBadge :status="agentStatus.status" :label="agentStatus.label" subtle />
           <button
-            v-if="kpanelUpdateAvailable"
-            class="sidebar__version sidebar__version--update"
+            v-if="panel.state.agent?.version"
+            class="sidebar__version"
+            :class="{
+              'sidebar__version--current': !kpanelUpdateAvailable,
+              'sidebar__version--update': kpanelUpdateAvailable,
+            }"
             type="button"
             :aria-label="kpanelUpdateDescription"
             :title="kpanelUpdateDescription"
             @click="openKPanelUpdate"
           >
-            <CircleArrowUp :size="16" aria-hidden="true" />
-            <span>{{ i18n.t('nav.updateAvailable') }}</span>
+            <template v-if="kpanelUpdateAvailable">
+              <CircleArrowUp :size="16" aria-hidden="true" />
+              <span>{{ i18n.t('nav.updateAvailable') }}</span>
+            </template>
+            <span v-else>v{{ panel.state.agent.version }}</span>
           </button>
-          <small v-else-if="panel.state.agent?.version">v{{ panel.state.agent.version }}</small>
         </div>
         <button
           class="sidebar__user"
