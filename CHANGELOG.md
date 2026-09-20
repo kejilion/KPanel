@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.4] - 2026-09-20
+
+### Added
+
+- 系统中心新增病毒查杀卡片，支持全盘、重要目录和最多 8 个自定义绝对路径；扫描目标以只读方式挂载到断网 ClamAV 容器，结果以有界报告展示，不自动删除或隔离文件。
+- 系统中心新增常用软件包管理，可在 APT、DNF/DNF5、YUM、APK、Pacman 和 Zypper 主机上按固定目录安装或卸载 17 项工具；交互工具可打开独立本机终端会话。
+
+### Fixed
+
+- 病毒扫描路径在浏览器、KPanel API 和配套脚本中统一拒绝非规范路径、重复路径、逗号和控制字符。
+- ClamAV 病毒库更新绕过镜像默认初始化器，并使用受限 capability、无 copy-up 数据卷和临时日志文件系统，确保最小权限容器可以完成真实病毒库更新。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- 病毒扫描首次运行需要拉取 `clamav/clamav-debian:latest` 并下载病毒库；扫描期间会占用磁盘、网络、CPU 和内存，发现威胁后仍由管理员确认处置。
+- `scriptLinkageState=coupled`：配套 `kejilion.sh@2b90b2d2ca56bc954c9328a51bb5571e896f713d` 已先发布到权威主线，KPanel 镜像固定其 SHA-256 `806b4715664fad502f7faeccbc75972f2d1a24559d46208221b98f774ef56c99`。
+
 ## [1.21.0-rc.3] - 2026-09-20
 
 ### Changed
