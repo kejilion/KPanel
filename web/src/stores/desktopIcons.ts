@@ -14,7 +14,8 @@ const EMPTY_RESOURCE_VERSION = 'sha256:' + '0'.repeat(64)
 
 function emptyWorkspace(): DesktopWorkspace {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    groups: [],
     resourceVersion: EMPTY_RESOURCE_VERSION,
     available: true,
     hiddenEntryKeys: [],
@@ -39,6 +40,7 @@ function cloneShortcuts(shortcuts: DesktopShortcut[]): DesktopWorkspaceDraft['sh
 
 function draftFrom(value: DesktopWorkspace): DesktopWorkspaceDraft {
   return {
+    groups: (value.groups || []).map(group => ({ ...group, members: [...group.members] })),
     hiddenEntryKeys: [...value.hiddenEntryKeys],
     hiddenWidgetKeys: [...(value.hiddenWidgetKeys || [])],
     positions: Object.fromEntries(
@@ -85,6 +87,11 @@ function mutate(change: DesktopWorkspaceMutation): Promise<DesktopWorkspace> {
     const base = workspace.value
     const draft = draftFrom(base)
     if (change(draft) === false) return base
+    // Removing a shortcut also removes its reference from any group, in the same write.
+    const shortcutKeys = new Set(draft.shortcuts.map(item => `shortcut:${item.id}`))
+    for (const group of draft.groups || []) {
+      group.members = group.members.filter(key => !key.startsWith('shortcut:') || shortcutKeys.has(key))
+    }
     saving.value = true
     try {
       const saved = await api.desktop.updateWorkspace({

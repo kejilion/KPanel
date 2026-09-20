@@ -1005,7 +1005,8 @@ function materializeDiskSnapshot() {
 
 let desktopWorkspaceRevision = 1
 let desktopWorkspace = {
-  schemaVersion: 3,
+  schemaVersion: 4,
+  groups: [],
   resourceVersion: `sha256:${'1'.repeat(64)}`,
   available: true,
   hiddenEntryKeys: [],
@@ -1022,7 +1023,8 @@ let desktopWorkspace = {
 function commitDesktopWorkspace(input) {
   desktopWorkspaceRevision += 1
   desktopWorkspace = {
-    schemaVersion: 3,
+    schemaVersion: 4,
+    groups: Array.isArray(input.groups) ? structuredClone(input.groups) : desktopWorkspace.groups,
     resourceVersion: `sha256:${String(desktopWorkspaceRevision).padStart(64, '0')}`,
     available: true,
     hiddenEntryKeys: Array.isArray(input.hiddenEntryKeys) ? input.hiddenEntryKeys : [],

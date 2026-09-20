@@ -2102,8 +2102,17 @@ export interface DesktopShortcut {
   updatedAt: string
 }
 
+export interface DesktopGroup {
+  id: string
+  name: string
+  members: string[]
+  columns: number
+  collapsed: boolean
+}
+
 export interface DesktopWorkspace {
-  schemaVersion: 3
+  schemaVersion: 3 | 4
+  groups?: DesktopGroup[]
   resourceVersion: string
   /** False means corrupt/unsupported persisted data was isolated read-only. */
   available: boolean
@@ -2118,6 +2127,7 @@ export interface DesktopWorkspace {
 }
 
 export interface DesktopWorkspaceUpdate {
+  groups?: DesktopGroup[]
   expectedResourceVersion: string
   hiddenEntryKeys: string[]
   hiddenWidgetKeys?: string[]

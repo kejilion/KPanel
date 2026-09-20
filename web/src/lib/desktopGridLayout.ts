@@ -59,7 +59,9 @@ function span(value: number | undefined): number {
 }
 
 function normalizeItem(item: DesktopGridItem): DesktopGridItem & { columns: number; rows: number } {
-  return { ...item, columns: span(item.columns), rows: span(item.rows) }
+  return { ...item, columns: span(item.columns), rows: item.key.startsWith('group:')
+    ? Math.min(MAX_DESKTOP_ICON_POSITIONS + 1, Math.max(1, Math.floor(item.rows || 1)))
+    : span(item.rows) }
 }
 
 function uniqueItems(items: readonly DesktopGridItem[]): Array<DesktopGridItem & { columns: number; rows: number }> {
@@ -161,6 +163,21 @@ function firstFreeSlot(
   occupied: readonly DesktopGridRect[],
   requested?: DesktopIconGridSlot,
 ): DesktopIconGridSlot | undefined {
+  // Containers may extend below one viewport; icons/widgets retain their existing paging.
+  if (item.key.startsWith('group:')) {
+    const lastOccupiedRow = Math.ceil(Math.max(0, ...occupied.map(rect => rect.top + rect.height)) / grid.stepY)
+    const lastRow = Math.min(grid.maxRow - item.rows + 1, Math.max(lastOccupiedRow + 1, requested?.row || 0))
+    let best: DesktopIconGridSlot | undefined
+    let distance = Infinity
+    for (let row = 0; row <= lastRow; row += 1) {
+      for (let column = 0; column <= grid.columns - item.columns; column += 1) {
+        const candidate = { column, row }
+        const score = requested ? Math.abs(column - requested.column) + Math.abs(row - requested.row) : row * grid.columns + column
+        if (score < distance && canPlace(item, candidate, grid, occupied)) { best = candidate; distance = score }
+      }
+    }
+    return best
+  }
   const candidates: DesktopIconGridSlot[] = []
   const pageCount = Math.ceil(MAX_DESKTOP_ICON_POSITIONS / grid.pageCapacity)
   for (let page = 0; page < pageCount; page += 1) {
@@ -214,7 +231,12 @@ export function deriveDesktopGridLayout(
 ): DesktopGridArrangement {
   const normalizedItems = uniqueItems(items)
   const grid = desktopIconGrid(bounds, metrics)
-  const supportedItems = normalizedItems.slice(0, MAX_DESKTOP_ICON_POSITIONS)
+  // Containers must not disappear when new dynamic icons exceed the position
+  // budget. Reserve their slots while keeping the existing placement order.
+  const groupKeys = new Set(normalizedItems.filter(item => item.key.startsWith('group:')).map(item => item.key))
+  let iconBudget = Math.max(0, MAX_DESKTOP_ICON_POSITIONS - groupKeys.size)
+  const supportedItems = normalizedItems.filter(item => groupKeys.has(item.key) || iconBudget-- > 0)
+  const supportedKeys = new Set(supportedItems.map(item => item.key))
   const byKey = new Map(supportedItems.map((item) => [item.key, item]))
   const savedByKey = new Map(savedPlacements.map((placement) => [placement.key, placement]))
   const placements: DesktopGridPlacement[] = []
@@ -244,7 +266,8 @@ export function deriveDesktopGridLayout(
       : undefined
     const slot = (defaultSlot && canPlace(item, defaultSlot, grid, occupied))
       ? defaultSlot
-      : firstFreeSlot(item, grid, occupied)
+      : firstFreeSlot(item, grid, occupied, item.key.startsWith('group:') && savedByKey.has(item.key)
+        ? slotForPosition(savedByKey.get(item.key)!.position, item, grid) : undefined)
     if (!slot) {
       unplaced.push(item)
       continue
@@ -260,7 +283,7 @@ export function deriveDesktopGridLayout(
     placements,
     overflowKeys: [
       ...unplaced.map((item) => item.key),
-      ...normalizedItems.slice(MAX_DESKTOP_ICON_POSITIONS).map((item) => item.key),
+      ...normalizedItems.filter(item => !supportedKeys.has(item.key)).map((item) => item.key),
     ],
     grid,
     contentHeight: contentHeight(placements, byKey, grid),

@@ -356,7 +356,7 @@ describe('DesktopView dynamic entries', () => {
     await wrapper.find('button[title="Nginx"]').trigger('contextmenu', { clientX: 80, clientY: 80 })
     await nextTick()
     const appItems = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
-    expect(appItems).toHaveLength(3)
+    expect(appItems).toHaveLength(4)
     await appItems[1]?.trigger('click')
     expect(desktop.windows.value[0]?.path).toBe('/apps?app=nginx')
     wrapper.unmount()
@@ -385,12 +385,12 @@ describe('DesktopView dynamic entries', () => {
 
     await wrapper.find('button[title="Nginx"]').trigger('contextmenu', { clientX: 80, clientY: 80 })
     await nextTick()
-    expect(wrapper.findAll('.desktop__context-menu [role="menuitem"]')).toHaveLength(3)
+    expect(wrapper.findAll('.desktop__context-menu [role="menuitem"]')).toHaveLength(4)
 
     await wrapper.find('button[title="blog.example.com"]').trigger('contextmenu', { clientX: 120, clientY: 80 })
     await nextTick()
     const siteItems = wrapper.findAll('.desktop__context-menu [role="menuitem"]')
-    expect(siteItems).toHaveLength(4)
+    expect(siteItems).toHaveLength(5)
     await siteItems[2]?.trigger('click')
     await nextTick()
 
@@ -562,7 +562,7 @@ describe('DesktopView dynamic entries', () => {
     await wrapper.get('button[title="内部文档"]').trigger('click', { ctrlKey: true })
     const actions = wrapper.get('.desktop__selection-actions')
     expect(actions.text()).toContain('已选 3 项')
-    await actions.findAll('button')[0]!.trigger('click')
+    await actions.findAll('button').find(button => button.text().includes('从桌面移除'))!.trigger('click')
     await nextTick()
     expect(document.body.textContent).toContain('文件和目录不会被删除')
 

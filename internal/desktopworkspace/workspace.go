@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	SchemaVersion        = 3
+	SchemaVersion        = 4
 	MaxWorkspaceBytes    = 256 << 10
 	MaxIconBytes         = 256 << 10
 	MaxIconTotalBytes    = 16 << 20
@@ -100,6 +100,7 @@ type Shortcut struct {
 }
 
 type Workspace struct {
+	Groups           []Group             `json:"groups"`
 	SchemaVersion    int                 `json:"schemaVersion"`
 	ResourceVersion  string              `json:"resourceVersion"`
 	Available        bool                `json:"available"`
@@ -113,6 +114,7 @@ type Workspace struct {
 }
 
 type ReplaceInput struct {
+	Groups                  []Group             `json:"groups"`
 	ExpectedResourceVersion string              `json:"expectedResourceVersion"`
 	HiddenEntryKeys         []string            `json:"hiddenEntryKeys"`
 	HiddenWidgetKeys        []string            `json:"hiddenWidgetKeys"`
@@ -149,6 +151,7 @@ type shortcutRecord struct {
 }
 
 type persistedWorkspace struct {
+	Groups           []Group             `json:"groups"`
 	SchemaVersion    int                 `json:"schemaVersion"`
 	HiddenEntryKeys  []string            `json:"hiddenEntryKeys"`
 	HiddenWidgetKeys []string            `json:"hiddenWidgetKeys"`
@@ -342,7 +345,7 @@ func (s *Store) workspaceLocked() Workspace {
 		})
 	}
 	result := Workspace{
-		SchemaVersion: SchemaVersion, ResourceVersion: resourceVersion(state),
+		SchemaVersion: SchemaVersion, ResourceVersion: resourceVersion(state), Groups: cloneGroups(state.Groups),
 		Available: s.available, HiddenEntryKeys: append([]string{}, state.HiddenEntryKeys...),
 		HiddenWidgetKeys: append([]string{}, state.HiddenWidgetKeys...),
 		Positions:        clonePositions(state.Positions), Labels: cloneLabels(state.Labels),
@@ -509,7 +512,7 @@ func readPersistedWorkspace(path string) (persistedWorkspace, error) {
 			item.TargetType = ShortcutTargetURL
 		}
 		state.SchemaVersion = SchemaVersion
-	case 2:
+	case 2, 3:
 		state.SchemaVersion = SchemaVersion
 	case SchemaVersion:
 	default:
@@ -528,6 +531,7 @@ func buildPersistedWorkspace(input ReplaceInput, current persistedWorkspace, now
 		}
 	}
 	state := persistedWorkspace{
+		Groups:           cloneGroups(input.Groups),
 		SchemaVersion:    SchemaVersion,
 		HiddenEntryKeys:  append([]string(nil), input.HiddenEntryKeys...),
 		HiddenWidgetKeys: append([]string(nil), input.HiddenWidgetKeys...),
@@ -558,6 +562,16 @@ func buildPersistedWorkspace(input ReplaceInput, current persistedWorkspace, now
 		}
 		state.Shortcuts = append(state.Shortcuts, record)
 	}
+	// Cached older clients cannot erase groups they do not understand.
+	if input.Groups == nil {
+		state.Groups = cloneGroups(current.Groups)
+		for _, group := range current.Groups {
+			if position, ok := current.Positions["group:"+group.ID]; ok {
+				state.Positions["group:"+group.ID] = position
+			}
+		}
+		pruneDeletedGroupShortcuts(&state)
+	}
 	if err := validatePersistedWorkspace(state); err != nil {
 		return persistedWorkspace{}, err
 	}
@@ -573,6 +587,9 @@ func buildPersistedWorkspace(input ReplaceInput, current persistedWorkspace, now
 }
 
 func validatePersistedWorkspace(state persistedWorkspace) error {
+	if err := validateGroups(state); err != nil {
+		return err
+	}
 	if state.SchemaVersion != SchemaVersion {
 		return &ValidationError{Field: "schemaVersion", Detail: "unsupported desktop workspace schema"}
 	}
@@ -628,7 +645,7 @@ func validatePersistedWorkspace(state persistedWorkspace) error {
 		hiddenWidgets[key] = true
 	}
 	for key, position := range state.Positions {
-		if !validPositionKey(key) || math.IsNaN(position.X) || math.IsInf(position.X, 0) ||
+		if !(validPositionKey(key) || validGroupPositionKey(key, state.Groups)) || math.IsNaN(position.X) || math.IsInf(position.X, 0) ||
 			math.IsNaN(position.Y) || math.IsInf(position.Y, 0) ||
 			position.X < 0 || position.X > 1 || position.Y < 0 || position.Y > MaxPositions {
 			return &ValidationError{
@@ -763,6 +780,7 @@ func hasControl(value string) bool {
 
 func canonicalizePersistedWorkspace(state persistedWorkspace) persistedWorkspace {
 	result := persistedWorkspace{
+		Groups:           cloneGroups(state.Groups),
 		SchemaVersion:    SchemaVersion,
 		HiddenEntryKeys:  append([]string(nil), state.HiddenEntryKeys...),
 		HiddenWidgetKeys: append([]string(nil), state.HiddenWidgetKeys...),

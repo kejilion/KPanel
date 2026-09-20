@@ -31,6 +31,8 @@ import {
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
+import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
+import { cloneDesktopGroups, desktopGroupItem, desktopGroupMembers, groupKey, MAX_DESKTOP_GROUPS, moveGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
 import DesktopShortcutDialog, {
   type DesktopShortcutDraft,
@@ -122,7 +124,7 @@ import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
-import type { AgentStatus, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
+import type { AgentStatus, DesktopGroup, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
 
 /**
  * Desktop overlay with Windows-style selection/open behavior, desktop-side
@@ -481,6 +483,182 @@ const allIconKeys = computed(() => [
   ...shortcutEntries.value.map((entry) => entry.key),
 ])
 
+const localGroups = ref<DesktopGroup[]>([])
+const groupSaving = ref(false)
+const groupDropTarget = ref('')
+const groupDropBefore = ref('')
+const groupDialog = ref<{ id?: string; keys: string[] }>()
+const groupName = ref('')
+const groupColumns = ref(3)
+const groupError = ref('')
+const groupUndo = ref<{ groups: DesktopGroup[]; positions: Record<string, DesktopIconPosition>; version: string }>()
+const groupMembership = computed(() => new Map(localGroups.value.flatMap(group => group.members.map(key => [key, group.id] as const))))
+const visibleKeySet = computed(() => new Set(allIconKeys.value))
+watch(() => workspace.value.groups, groups => {
+  if (!groupSaving.value) localGroups.value = cloneDesktopGroups(groups || [])
+}, { immediate: true, deep: true })
+
+function groupItems(groups = localGroups.value): DesktopGridItem[] {
+  return groups.map(group => desktopGroupItem(group, visibleKeySet.value, iconBounds.value))
+}
+
+function groupCount(group: DesktopGroup): number {
+  return group.members.filter(key => visibleKeySet.value.has(key)).length
+}
+
+function groupCollapsed(key: string): boolean {
+  const id = groupMembership.value.get(key)
+  return Boolean(id && localGroups.value.find(group => group.id === id)?.collapsed)
+}
+
+function updateGroupDropTarget(clientX: number, clientY: number, keys: readonly string[]): void {
+  groupDropTarget.value = groupAtPoint(clientX, clientY) || ''
+  groupDropBefore.value = ''
+  const group = localGroups.value.find(item => item.id === groupDropTarget.value)
+  const bounds = iconsElement.value?.getBoundingClientRect()
+  if (!group || group.collapsed || !bounds) return
+  const x = clientX - bounds.left, y = clientY - bounds.top + (iconsElement.value?.scrollTop || 0)
+  groupDropBefore.value = group.members.find(key => {
+    if (keys.includes(key)) return false
+    const position = renderedPositionByKey.value.get(key)
+    if (!position) return false
+    const point = desktopIconPositionToPixels(position, iconBounds.value)
+    return y < point.top + 96 && x < point.left + 60
+  }) || ''
+}
+
+function showGroupDialog(keys: readonly string[] = [], id?: string): void {
+  closeContextMenu()
+  const group = localGroups.value.find(item => item.id === id)
+  groupName.value = group?.name || i18n.t('desktop.groupDefaultName')
+  groupColumns.value = group?.columns || 3
+  groupError.value = ''
+  groupDialog.value = { id, keys: [...keys] }
+}
+
+async function commitGroups(groups: DesktopGroup[], positions = localPositions.value, remember = true): Promise<boolean> {
+  if (groupSaving.value || !workspace.value.available) return false
+  const settled = placementsToWorkspacePositions(renderedDesktopLayout.value.placements).positions
+  const requested = { ...settled, ...positions }
+  const previous = { groups: cloneDesktopGroups(localGroups.value), positions: settled }
+  const members = new Set(groups.flatMap(group => group.members))
+  const items: DesktopGridItem[] = [
+    ...allIconKeys.value.filter(key => !members.has(key)).map(key => ({ key })),
+    ...desktopWidgetItems.value, ...groupItems(groups),
+  ]
+  const arranged = deriveDesktopGridLayout(items, [
+    ...Object.entries(requested).map(([key, position]) => ({ key, position })),
+    ...Object.entries(localWidgetPositions.value).map(([key, position]) => ({ key, position })),
+  ], iconBounds.value, compactIconLayout.value)
+  const next = compactIconLayout.value ? { ...positions } : placementsToWorkspacePositions(arranged.placements, requested).positions
+  for (const key of Object.keys(next)) {
+    if (key.startsWith('group:') && !groups.some(group => groupKey(group.id) === key)) delete next[key]
+  }
+  groupSaving.value = true
+  localGroups.value = cloneDesktopGroups(groups)
+  localPositions.value = next
+  try {
+    const saved = await desktopIcons.mutate(draft => {
+      draft.groups = cloneDesktopGroups(groups)
+      // Keep concurrent shortcut creation/removal owned by the serial workspace queue.
+      for (const [key, position] of Object.entries(next)) {
+        if (!key.startsWith('shortcut:') || draft.shortcuts.some(item => `shortcut:${item.id}` === key)) draft.positions[key] = { ...position }
+      }
+      for (const key of Object.keys(draft.positions)) {
+        if (key.startsWith('group:') && !groups.some(group => groupKey(group.id) === key)) delete draft.positions[key]
+      }
+    })
+    localGroups.value = cloneDesktopGroups(saved.groups || [])
+    if (remember) groupUndo.value = { ...previous, version: saved.resourceVersion }
+    groupError.value = ''
+    return true
+  } catch (error) {
+    localGroups.value = cloneDesktopGroups(workspace.value.groups || [])
+    localPositions.value = { ...workspace.value.positions }
+    groupError.value = workspaceErrorMessage(error)
+    toast.danger(i18n.t('desktop.workspaceSaveErrorTitle'), groupError.value)
+    return false
+  } finally { groupSaving.value = false }
+}
+
+async function saveGroup(): Promise<void> {
+  const dialog = groupDialog.value
+  if (!dialog || !groupName.value.trim()) return
+  if (!dialog.id && localGroups.value.length >= MAX_DESKTOP_GROUPS) {
+    groupError.value = i18n.t('desktop.groupLimit', { count: MAX_DESKTOP_GROUPS }); return
+  }
+  const id = dialog.id || desktopIcons.generateShortcutID()
+  let groups = cloneDesktopGroups(localGroups.value)
+  if (dialog.id) groups = groups.map(group => group.id === id ? { ...group, name: groupName.value.trim(), columns: groupColumns.value } : group)
+  else {
+    groups.push({ id, name: groupName.value.trim(), members: [], columns: groupColumns.value, collapsed: false })
+    groups = moveGroupMembers(groups, dialog.keys, id)
+  }
+  const positions = { ...localPositions.value }
+  const origin = dialog.keys[0] && renderedPositionByKey.value.get(dialog.keys[0])
+  if (!dialog.id && origin) positions[groupKey(id)] = { ...origin }
+  if (await commitGroups(groups, positions)) { groupDialog.value = undefined; clearIconSelection() }
+}
+
+async function dissolveGroup(): Promise<void> {
+  const id = groupDialog.value?.id
+  if (!id) return
+  if (await commitGroups(localGroups.value.filter(group => group.id !== id))) groupDialog.value = undefined
+}
+
+function toggleGroup(id: string): void {
+  clearIconSelection()
+  void commitGroups(localGroups.value.map(group => group.id === id ? { ...group, collapsed: !group.collapsed } : group))
+}
+
+async function undoGroupChange(): Promise<void> {
+  const undo = groupUndo.value
+  if (!undo || workspace.value.resourceVersion !== undo.version) return
+  if (await commitGroups(undo.groups, undo.positions, false)) groupUndo.value = undefined
+}
+
+function menuGroupKeys(): string[] {
+  return menuSelectionKeys.value.length ? menuSelectionKeys.value : menuEntry.value ? [menuEntry.value.key] : menuNavPath.value ? [`nav:${menuNavPath.value}`] : []
+}
+
+function moveMenuToGroup(id?: string): void {
+  const keys = menuGroupKeys()
+  closeContextMenu()
+  void commitGroups(moveGroupMembers(localGroups.value, keys, id))
+}
+
+function groupAtPoint(clientX: number, clientY: number): string | undefined {
+  const bounds = iconsElement.value?.getBoundingClientRect()
+  if (!bounds || clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) return
+  const x = clientX - bounds.left, y = clientY - bounds.top + (iconsElement.value?.scrollTop || 0)
+  for (const group of localGroups.value) {
+    const placement = renderedPlacementByKey.value.get(groupKey(group.id))
+    if (!placement) continue
+    const rect = desktopGridPlacementRect(placement, iconBounds.value)
+    const height = group.collapsed ? 56 : rect.height
+    if (x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + height) return group.id
+  }
+}
+
+function handleGroupDrop(keys: string[], clientX: number, clientY: number, destination: DesktopIconPosition): boolean {
+  updateGroupDropTarget(clientX, clientY, keys)
+  const id = groupAtPoint(clientX, clientY)
+  const before = groupDropBefore.value || undefined
+  groupDropTarget.value = ''
+  groupDropBefore.value = ''
+  if (!id && !keys.some(key => groupMembership.value.has(key))) return false
+  const positions = { ...localPositions.value }
+  if (!id) keys.forEach((key, index) => { positions[key] = { x: destination.x, y: destination.y + index * 0.01 } })
+  void commitGroups(moveGroupMembers(localGroups.value, keys, id, before), positions)
+  return true
+}
+
+function groupSlotStyle(group: DesktopGroup): Record<string, string> {
+  const style = widgetSlotStyle(groupKey(group.id))
+  if (style.display) return style
+  return { ...style, left: '0px', top: '0px', transform: `translate3d(${style.left}, ${style.top}, 0)`, ...(group.collapsed ? { height: '56px' } : {}) }
+}
+
 const desktopWidgetItems = computed<DesktopGridItem[]>(() => {
   if (!widgetLayoutVisible.value) return []
   const grid = desktopIconGrid(iconBounds.value)
@@ -493,8 +671,9 @@ const desktopWidgetItems = computed<DesktopGridItem[]>(() => {
 })
 
 const allDesktopLayoutItems = computed<DesktopGridItem[]>(() => [
-  ...allIconKeys.value.map((key) => ({ key })),
+  ...allIconKeys.value.filter(key => !groupMembership.value.has(key)).map((key) => ({ key })),
   ...desktopWidgetItems.value,
+  ...groupItems(),
 ])
 
 function widgetComponentProps(key: string): Record<string, unknown> {
@@ -525,7 +704,13 @@ const renderedIconLayout = computed(() => {
   const layout = renderedDesktopLayout.value
   return {
     ...layout,
-    placements: layout.placements.filter((placement) => iconKeys.has(placement.key)),
+    placements: [
+      ...layout.placements.filter((placement) => iconKeys.has(placement.key)),
+      ...localGroups.value.flatMap(group => {
+        const placement = layout.placements.find(item => item.key === groupKey(group.id))
+        return placement ? desktopGroupMembers({ ...group, collapsed: false }, placement, visibleKeySet.value, iconBounds.value) : []
+      }),
+    ],
     overflowKeys: layout.overflowKeys.filter((key) => iconKeys.has(key)),
   }
 })
@@ -1108,6 +1293,30 @@ function resetIconDragSurface(): void {
 }
 
 function iconSlotStyle(key: string): Record<string, string> {
+  if (localGroups.value.length) {
+    if (groupCollapsed(key)) {
+      const placement = renderedPlacementByKey.value.get(groupKey(groupMembership.value.get(key)!))
+      if (placement) {
+        const rect = desktopGridPlacementRect(placement, iconBounds.value)
+        return { left: '0px', top: '0px', transform: `translate3d(${rect.left + 12}px, ${rect.top}px, 0) scale(.85)`, opacity: '0', visibility: 'hidden', pointerEvents: 'none' }
+      }
+    }
+    let pixels = dragPreviews.value[key]
+    const position = renderedPositionByKey.value.get(key)
+    if (!pixels && position) pixels = desktopIconPositionToPixels(position, iconBounds.value)
+    const id = groupMembership.value.get(key)
+    const groupPreview = id && dragPreviews.value[groupKey(id)]
+    const placement = id && renderedPlacementByKey.value.get(groupKey(id))
+    if (pixels && groupPreview && placement) {
+      const origin = desktopGridPlacementRect(placement, iconBounds.value)
+      pixels = { left: pixels.left + groupPreview.left - origin.left, top: pixels.top + groupPreview.top - origin.top }
+    }
+    if (pixels) return {
+      left: '0px', top: '0px', transform: `translate3d(${pixels.left}px, ${pixels.top}px, 0)`,
+      transition: draggingIcons.value.has(key) || groupPreview ? 'none' : '',
+      zIndex: draggingIcons.value.has(key) || groupPreview ? '24' : '2',
+    }
+  }
   const preview = dragPreviews.value[key]
   if (preview) {
     return { left: `${preview.left}px`, top: `${preview.top}px` }
@@ -1256,7 +1465,7 @@ async function loadLocalClusterIdentity(): Promise<void> {
 }
 
 function startDesktopShortcutDrag(event: DragEvent, entry: DesktopEntry): void {
-  if (!event.dataTransfer || compactIconLayout.value || !isTransferableDesktopShortcut(entry)) {
+  if (!event.dataTransfer || groupSaving.value || compactIconLayout.value || !isTransferableDesktopShortcut(entry)) {
     event.preventDefault()
     return
   }
@@ -1361,6 +1570,8 @@ function finishDesktopShortcutDrag(event: DragEvent): void {
   if (fallbackPosition) void moveDesktopShortcutDrop(fallbackPosition)
   clearDesktopShortcutNativeDragPreview()
   desktopShortcutNativeDrag = undefined
+  groupDropTarget.value = ''
+  groupDropBefore.value = ''
   draggingIcons.value = new Set()
   nativeDragHiddenIcons.value = new Set()
   resetIconDragSurface()
@@ -1377,6 +1588,7 @@ function clearDesktopShortcutNativeDragPreview(): void {
 }
 
 function updateDesktopShortcutNativeDragPreview(clientX: number, clientY: number): void {
+  updateGroupDropTarget(clientX, clientY, desktopShortcutNativeDrag?.keys || [])
   const drag = desktopShortcutNativeDrag
   const element = iconsElement.value
   const anchorOrigin = drag?.origins[drag.anchorKey]
@@ -1416,6 +1628,12 @@ async function moveDesktopShortcutDrop(
   if (!drag || drag.localDropHandled) return
   drag.localDropHandled = true
   for (const key of drag.keys) suppressActivationAfterDrag.add(key)
+  if (handleGroupDrop(drag.keys, drag.lastX, drag.lastY, destination)) {
+    draggingIcons.value = new Set()
+    nativeDragHiddenIcons.value = new Set()
+    clearDesktopShortcutNativeDragPreview()
+    return
+  }
   const placements = drag.keys.length > 1
     ? moveDesktopGridItemGroup(
         renderedDesktopLayout.value.placements,
@@ -1520,6 +1738,7 @@ function clampedIconDragPreviews(
 }
 
 function updateIconDragPreview(drag: IconDragState): void {
+  updateGroupDropTarget(drag.lastX, drag.lastY, drag.keys)
   const scrollDelta = (iconsElement.value?.scrollTop || 0) - drag.startScrollTop
   dragPreviews.value = clampedIconDragPreviews(
     drag.origins,
@@ -1649,8 +1868,9 @@ function captureWidgetDragPointer(drag: WidgetDragState): void {
 }
 
 function beginWidgetDrag(event: PointerEvent, key: string): void {
+  if (groupSaving.value) return
   if (
-    !widgetLayoutVisible.value
+    (!widgetLayoutVisible.value && !key.startsWith('group:'))
     || compactIconLayout.value
     || event.button !== 0
     || event.isPrimary === false
@@ -1660,7 +1880,7 @@ function beginWidgetDrag(event: PointerEvent, key: string): void {
   const placement = renderedPlacementByKey.value.get(key)
   if (!placement) return
   const target = event.target instanceof Element
-    ? event.target.closest<HTMLElement>('.desktop-widget-slot') || undefined
+    ? event.target.closest<HTMLElement>('.desktop-widget-slot, .desktop-group') || undefined
     : undefined
   const rect = desktopGridPlacementRect(placement, iconBounds.value)
   widgetDrag = {
@@ -1792,6 +2012,7 @@ function captureIconDragPointer(drag: IconDragState): void {
 }
 
 function beginIconDrag(event: PointerEvent, key: string): void {
+  if (groupSaving.value) return
   if (event.button === 0 && event.isPrimary !== false) suppressActivationAfterDrag.delete(key)
   if (compactIconLayout.value || event.button !== 0 || event.isPrimary === false || iconDrag) return
   const pointerType = event.pointerType || 'mouse'
@@ -1875,6 +2096,7 @@ function onIconDragEnd(event: PointerEvent): void {
   if (!drag.moved || !anchorPreview) return
   for (const key of drag.keys) suppressActivationAfterDrag.add(key)
   const destination = desktopIconPixelsToPosition(anchorPreview, iconBounds.value)
+  if (handleGroupDrop(drag.keys, event.clientX, event.clientY, destination)) return
   const placements = drag.keys.length > 1
     ? moveDesktopGridItemGroup(
         renderedDesktopLayout.value.placements,
@@ -1899,6 +2121,8 @@ function onIconDragEnd(event: PointerEvent): void {
 }
 
 function cancelIconDrag(): void {
+  groupDropTarget.value = ''
+  groupDropBefore.value = ''
   const drag = finishIconDrag()
   dragPreviews.value = {}
   if (drag?.moved) for (const key of drag.keys) suppressActivationAfterDrag.add(key)
@@ -1933,6 +2157,16 @@ function iconLabel(key: string): string {
 
 function nudgeIcon(key: string, deltaX: number, deltaY: number): void {
   if (compactIconLayout.value) return
+  const groupId = groupMembership.value.get(key)
+  const group = localGroups.value.find(item => item.id === groupId)
+  if (group) {
+    const members = [...group.members]
+    const index = members.indexOf(key)
+    const next = Math.max(0, Math.min(members.length - 1, index + (deltaX || deltaY * group.columns)))
+    members.splice(index, 1); members.splice(next, 0, key)
+    void commitGroups(localGroups.value.map(item => item.id === groupId ? { ...item, members } : item))
+    return
+  }
   if (!renderedPositionByKey.value.has(key)) {
     const message = i18n.t('desktop.iconLayoutLimitMessage', { count: MAX_DESKTOP_ICON_POSITIONS })
     iconAnnouncement.value = message
@@ -2061,6 +2295,7 @@ function updateSelectionFromFrame(frame: DesktopSelectionFrame): void {
   selectionBox.value = { left, top, width: right - left, height: bottom - top }
   const next = frame.additive ? new Set(frame.previousSelection) : new Set<string>()
   for (const slot of iconsElement.value?.querySelectorAll<HTMLElement>('[data-icon-key]') || []) {
+    if (slot.dataset.iconKey && groupCollapsed(slot.dataset.iconKey)) continue
     const rect = slot.getBoundingClientRect()
     if (rect.right <= left || rect.left >= right || rect.bottom <= top || rect.top >= bottom) continue
     const key = slot.dataset.iconKey
@@ -2137,7 +2372,7 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   const desktopFocused = target instanceof Node && Boolean(desktopElement.value?.contains(target))
   if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'a' && desktopFocused && !editing) {
     event.preventDefault()
-    setIconSelection(allIconKeys.value)
+    setIconSelection(allIconKeys.value.filter(key => !groupCollapsed(key)))
     iconAnnouncement.value = i18n.t('desktop.selectedCount', { count: selectedIconCount.value })
     return
   }
@@ -2163,7 +2398,7 @@ function onContextMenuKeyDown(event: KeyboardEvent): void {
 
 function onDesktopPointerDown(event: PointerEvent): void {
   const target = event.target instanceof Element ? event.target : undefined
-  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar, .desktop__icon, .desktop__selection-actions')) return
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop__icon, .desktop__selection-actions')) return
   const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   currentTarget?.focus({ preventScroll: true })
   if (
@@ -3418,6 +3653,7 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
+      :class="{ 'desktop__icons--grouped': localGroups.length > 0 }"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="entriesLoading"
     >
@@ -3437,6 +3673,11 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
+      <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
+        :busy="groupSaving" :dropping="groupDropTarget === group.id" :style="groupSlotStyle(group)"
+        :class="{ 'desktop-group--dragging': draggingWidgets.has(groupKey(group.id)) }"
+        @toggle="toggleGroup(group.id)" @menu="showGroupDialog([], group.id)"
+        @drag="beginWidgetDrag($event, groupKey(group.id))" @nudge="nudgeWidget(groupKey(group.id), $event)" />
       <p
         v-if="renderedIconLayout.overflowKeys.length"
         class="desktop__icons-overflow-note"
@@ -3456,6 +3697,10 @@ function onViewportResize(): void {
         :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(`nav:${app.path}`) }"
         :style="iconSlotStyle(`nav:${app.path}`)"
         :data-icon-key="`nav:${app.path}`"
+        :data-group-member="groupMembership.get(`nav:${app.path}`)"
+        :data-group-before="groupDropBefore === `nav:${app.path}` || undefined"
+        :inert="groupCollapsed(`nav:${app.path}`)"
+        :aria-hidden="groupCollapsed(`nav:${app.path}`) || undefined"
         @pointerdown="beginIconDrag($event, `nav:${app.path}`)"
         @keydown.capture="clearDraggedActivationSuppression(`nav:${app.path}`)"
         @click.capture="suppressDraggedActivation($event, `nav:${app.path}`)"
@@ -3487,6 +3732,10 @@ function onViewportResize(): void {
           :class="{ 'desktop__icon-slot--dragging': draggingIcons.has(entry.key) }"
           :style="iconSlotStyle(entry.key)"
           :data-icon-key="entry.key"
+          :data-group-member="groupMembership.get(entry.key)"
+          :data-group-before="groupDropBefore === entry.key || undefined"
+          :inert="groupCollapsed(entry.key)"
+          :aria-hidden="groupCollapsed(entry.key) || undefined"
           @pointerdown="beginIconDrag($event, entry.key)"
           @keydown.capture="clearDraggedActivationSuppression(entry.key)"
           @click.capture="suppressDraggedActivation($event, entry.key)"
@@ -3518,6 +3767,10 @@ function onViewportResize(): void {
         }"
         :style="iconSlotStyle(entry.key)"
         :data-icon-key="entry.key"
+        :data-group-member="groupMembership.get(entry.key)"
+        :data-group-before="groupDropBefore === entry.key || undefined"
+        :inert="groupCollapsed(entry.key)"
+        :aria-hidden="groupCollapsed(entry.key) || undefined"
         :draggable="!compactIconLayout && isTransferableDesktopShortcut(entry)"
         @pointerdown="beginIconDrag($event, entry.key)"
         @dragstart.stop="startDesktopShortcutDrag($event, entry)"
@@ -3738,6 +3991,9 @@ function onViewportResize(): void {
             <MonitorCog :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.iconManagerTitle') }}
           </button>
+          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="showGroupDialog()">
+            <Plus :size="15" />{{ i18n.t('desktop.groupCreate') }}
+          </button>
           <div class="desktop__context-separator" role="separator" />
           <button type="button" role="menuitem" data-context-action="theme" @click="onContextMenuAction('theme')">
             <Sun v-if="theme.resolved.value === 'dark'" :size="15" aria-hidden="true" />
@@ -3775,6 +4031,18 @@ function onViewportResize(): void {
             {{ i18n.t('desktop.switchClassic') }}
           </button>
         </template>
+        <template v-if="contextMenuTarget === 'desktop' && menuGroupKeys().length">
+          <div class="desktop__context-separator" role="separator" />
+          <button type="button" role="menuitem" :disabled="groupSaving || !workspace.available" @click="showGroupDialog(menuGroupKeys())">
+            <Plus :size="15" />{{ i18n.t('desktop.groupSelection') }}
+          </button>
+          <button v-for="group in localGroups" :key="group.id" type="button" role="menuitem" :disabled="groupSaving" @click="moveMenuToGroup(group.id)">
+            <FolderOpen :size="15" />{{ i18n.t('desktop.groupMoveTo', { name: group.name }) }}
+          </button>
+          <button v-if="menuGroupKeys().some(key => groupMembership.has(key))" type="button" role="menuitem" :disabled="groupSaving" @click="moveMenuToGroup()">
+            <ArrowLeft :size="15" />{{ i18n.t('desktop.groupMoveOut') }}
+          </button>
+        </template>
       </div>
     </Transition>
 
@@ -3788,6 +4056,9 @@ function onViewportResize(): void {
         @contextmenu.prevent.stop
       >
         <strong>{{ i18n.t('desktop.selectedCount', { count: selectedIconCount }) }}</strong>
+        <button type="button" :disabled="groupSaving || !workspace.available" @click="showGroupDialog([...selectedIcons])">
+          <Plus :size="15" />{{ i18n.t('desktop.groupSelection') }}
+        </button>
         <button
           type="button"
           :disabled="!removableSelectedCount || !workspace.available || desktopIcons.saving.value"
@@ -3802,6 +4073,23 @@ function onViewportResize(): void {
         </button>
       </div>
     </Transition>
+
+    <div v-if="groupUndo && groupUndo.version === workspace.resourceVersion" class="desktop-group-undo" role="status" @pointerdown.stop>
+      <span>{{ i18n.t('desktop.groupSaved') }}</span><button type="button" :disabled="groupSaving" @click="undoGroupChange">{{ i18n.t('desktop.groupUndo') }}</button>
+      <button type="button" :aria-label="i18n.t('common.closeNotification')" @click="groupUndo = undefined"><X :size="16" /></button>
+    </div>
+    <ModalDialog :open="Boolean(groupDialog)" :title="i18n.t(groupDialog?.id ? 'desktop.groupEdit' : 'desktop.groupCreate')" size="small" @close="groupDialog = undefined">
+      <form class="desktop-group-form" @submit.prevent="saveGroup">
+        <label>{{ i18n.t('desktop.groupName') }}<input v-model="groupName" maxlength="48" required autofocus :disabled="groupSaving" /></label>
+        <label>{{ i18n.t('desktop.groupColumns') }}<select v-model.number="groupColumns" :disabled="groupSaving"><option :value="2">2</option><option :value="3">3</option><option :value="4">4</option></select></label>
+        <p>{{ i18n.t('desktop.groupHint') }}</p>
+        <p v-if="groupError" role="alert" class="desktop-group-form__error">{{ groupError }}</p>
+        <div class="desktop-group-form__actions">
+          <button v-if="groupDialog?.id" type="button" class="button button--ghost" :disabled="groupSaving" @click="dissolveGroup">{{ i18n.t('desktop.groupDissolve') }}</button>
+          <button class="button button--primary" type="submit" :disabled="groupSaving || !groupName.trim()">{{ i18n.t('desktop.groupSave') }}</button>
+        </div>
+      </form>
+    </ModalDialog>
 
     <footer
       class="desktop__taskbar"
