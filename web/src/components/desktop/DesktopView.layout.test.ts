@@ -150,10 +150,10 @@ describe('DesktopView icon layout interaction', () => {
     const create = wrapper.findAll('.desktop__selection-actions button').find(item => item.text().includes('编为一组'))!
     await create.trigger('click')
     await flushPromises()
-    const form = document.querySelector<HTMLFormElement>('.desktop-group-form')!
-    expect(form.querySelectorAll('select')).toHaveLength(1)
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await flushPromises()
+    expect(document.querySelector('.desktop-group-form')).toBeNull()
+    expect(updateWorkspace).toHaveBeenCalledTimes(1)
+    expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.name).toBe('新分组')
+    expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.rows).toBe(0)
     expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.members).toEqual(['nav:/overview', 'nav:/terminal'])
     expect(updateWorkspace.mock.calls[0]![0].groups?.[0]?.columns).toBe(4)
     expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
@@ -163,13 +163,32 @@ describe('DesktopView icon layout interaction', () => {
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('aria-hidden')).toBe('true')
     await wrapper.get('.desktop-group__menu').trigger('click')
     await flushPromises()
-    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group-form button')].find(el => el.textContent?.includes('解散分组'))!
+    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group__actions button')].find(el => el.textContent?.includes('解散分组'))!
     dissolve.click()
     await flushPromises()
     expect(wrapper.find('.desktop-group').exists()).toBe(false)
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).not.toContain('display: none')
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('style')).toContain('translate3d(')
     expect(updateWorkspace.mock.calls.at(-1)![0].hiddenEntryKeys).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('restores selection after failed one-step creation and allows retry without a form', async () => {
+    updateWorkspace.mockRejectedValueOnce(new Error('disk full'))
+    updateWorkspace.mockImplementationOnce(async body => workspace({ positions: body.positions, groups: body.groups }))
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('[data-icon-key="nav:/overview"] button').trigger('click')
+    await wrapper.get('[data-icon-key="nav:/terminal"] button').trigger('click', { ctrlKey: true })
+    const create = () => wrapper.findAll('.desktop__selection-actions button').find(item => item.text().includes('编为一组'))!
+    await create().trigger('click'); await flushPromises()
+    expect(wrapper.find('.desktop-group').exists()).toBe(false)
+    expect(wrapper.get('.desktop__selection-actions').text()).toContain('2')
+    expect(wrapper.get('.desktop-group-undo[role="alert"]').text()).toBeTruthy()
+    expect(document.querySelector('.desktop-group-form')).toBeNull()
+    await create().trigger('click'); await flushPromises()
+    expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
+    expect(updateWorkspace).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
@@ -186,7 +205,7 @@ describe('DesktopView icon layout interaction', () => {
     wrapper.unmount()
   })
 
-  it('reveals dissolution before the response and restores its form and icons on failure', async () => {
+  it('reveals dissolution before the response and restores icons with a persistent error on failure', async () => {
     const group = { id: 'a'.repeat(32), name: '运维', columns: 3, collapsed: false, members: ['nav:/overview'] }
     loadWorkspace.mockResolvedValue(workspace({ groups: [group] }))
     const response = deferred<DesktopWorkspace>()
@@ -195,7 +214,7 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     await wrapper.get('.desktop-group__menu').trigger('click')
     await flushPromises()
-    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group-form button')].find(el => el.textContent?.includes('解散分组'))!
+    const dissolve = [...document.querySelectorAll<HTMLButtonElement>('.desktop-group__actions button')].find(el => el.textContent?.includes('解散分组'))!
     dissolve.click()
     await flushPromises()
     expect(wrapper.find('.desktop-group').exists()).toBe(false)
@@ -204,7 +223,7 @@ describe('DesktopView icon layout interaction', () => {
     await flushPromises()
     expect(wrapper.findAll('.desktop-group')).toHaveLength(1)
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('data-group-member')).toBe(group.id)
-    expect(document.querySelector('.desktop-group-form [role="alert"]')?.textContent).toBeTruthy()
+    expect(wrapper.get('.desktop-group-undo[role="alert"]').text()).toBeTruthy()
     wrapper.unmount()
   })
 

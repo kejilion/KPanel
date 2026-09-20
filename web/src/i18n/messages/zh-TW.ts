@@ -1,18 +1,13 @@
 import type { LocaleMessages } from './zh-CN'
 
 export const zhTWMessages = {
-  'desktop.groupRows': '預留列數',
-  'desktop.groupRowsAuto': '隨內容自動擴展',
-  'desktop.groupGridHint': '每列固定 4 個，圖示增加會自動擴展；窄螢幕會適配顯示。預留列數只是最小高度，可拖至空格留白，拖至既有圖示上交換位置。',
+  'desktop.groupRename': '重新命名分組',
   'desktop.groupHoldCreate': '停留片刻以建立群組',
   'desktop.groupDropCreate': '放開建立群組',
-  'desktop.groupSave': '儲存分組',
   'desktop.groupCreate': "新增分組",
   'desktop.groupSelection': "編為一組",
   'desktop.groupDefaultName': "新分組",
   'desktop.groupName': "分組名稱",
-  'desktop.groupColumns': "每行圖示數",
-  'desktop.groupEdit': "管理分組",
   'desktop.groupHint': "分組僅整理桌面入口。解散後圖示回到桌面，不會刪除應用、網站或檔案。",
   'desktop.groupDissolve': "解散分組",
   'desktop.groupSaved': "分組已更新",
