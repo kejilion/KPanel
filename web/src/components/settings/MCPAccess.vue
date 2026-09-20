@@ -102,62 +102,63 @@ onBeforeUnmount(() => { disposed = true; clearCredential() })
       <span class="section-icon"><Plug :size="20" aria-hidden="true" /></span>
       <div><h2 id="mcp-title">MCP 接入</h2><p>让外部 AI 客户端按授权查询和管理主机，无需配置面板内置 AI。</p></div>
     </header>
-    <div v-if="loading" role="status">正在加载 MCP 接入…</div>
-    <div v-else-if="settings" class="mcp-content">
-      <MCPOAuthConsent v-if="oauthRequestId" :request-id="oauthRequestId" :hosts="hosts" :version="settings.access.resourceVersion" />
-      <div class="mcp-toolbar">
-        <div><strong>{{ settings.access.enabled ? '已启用' : '未启用' }}</strong><p class="mcp-note">默认仅提供巡检权限。管理权限按主机和业务范围单独授予，写操作默认需要审批。</p></div>
-        <button class="button button--secondary" type="button" :disabled="busy || !settings.access.available || (!settings.access.enabled && !settings.transportReady)" @click="toggle">{{ settings.access.enabled ? '关闭 MCP' : '启用 MCP' }}</button>
+    <div class="mcp-body">
+      <div v-if="loading" role="status">正在加载 MCP 接入…</div>
+      <div v-else-if="settings" class="mcp-content">
+        <MCPOAuthConsent v-if="oauthRequestId" :request-id="oauthRequestId" :hosts="hosts" :version="settings.access.resourceVersion" />
+        <div class="mcp-toolbar">
+          <div><strong>{{ settings.access.enabled ? '已启用' : '未启用' }}</strong><p class="mcp-note">默认仅提供巡检权限。管理权限按主机和业务范围单独授予，写操作默认需要审批。</p></div>
+          <button class="button button--secondary" type="button" :disabled="busy || !settings.access.available || (!settings.access.enabled && !settings.transportReady)" @click="toggle">{{ settings.access.enabled ? '关闭 MCP' : '启用 MCP' }}</button>
+        </div>
+        <p v-if="!settings.access.available" role="alert">MCP 授权存储不可用，请检查数据目录后重启面板。</p>
+        <p v-if="!settings.transportReady" role="status">请通过 HTTPS 或本机回环地址访问面板，再创建 MCP 客户端。</p>
+        <p v-if="settings.access.enabled && settings.endpoint" class="mcp-endpoint"><span>服务地址</span><code>{{ settings.endpoint }}</code></p>
+        <p v-if="settings.access.enabled" class="mcp-note">支持 OAuth 的客户端可直接填写服务地址，在浏览器中选择主机和权限完成授权；无需复制访问凭据。</p>
+        <form v-if="settings.access.enabled" class="mcp-form" @submit.prevent="create">
+          <label><span>客户端名称</span><input v-model="name" maxlength="48" required autocomplete="off" :placeholder="phrase('例如：我的桌面助手')" :disabled="busy || !!token" /></label>
+          <label><span>有效期</span><select v-model="days" :disabled="busy || !!token"><option :value="7">7 天</option><option :value="30">30 天</option><option :value="90">90 天</option></select></label>
+          <label><span>访问权限</span><select v-model="accessMode" :disabled="busy || !!token"><option value="inspect">基础巡检</option><option value="read">资源查询</option><option value="manage">资源管理</option></select></label>
+          <fieldset v-if="accessMode !== 'inspect'" :disabled="busy || !!token"><legend>授权范围</legend><div class="mcp-hosts"><label v-for="domain in domainOptions" :key="domain.id"><input v-model="domains" type="checkbox" :value="domain.id" /><span>{{ phrase(domain.name) }}</span></label></div>
+            <label v-if="domains.includes('files')" class="mcp-roots"><span>允许访问的文件目录（每行一个绝对路径）</span><textarea v-model="fileRoots" rows="3" placeholder="/home/web" /></label>
+            <label v-if="accessMode === 'manage'" class="mcp-auto"><input v-model="autoApprove" type="checkbox" /><span>允许自动执行日常启停和固定诊断；其他修改仍需逐项审批。</span></label>
+          </fieldset>
+          <fieldset :disabled="busy || !!token"><legend>授权主机</legend><div class="mcp-hosts"><label v-for="host in hosts" :key="host.id"><input v-model="selected" type="checkbox" :value="host.id" /><span>{{ host.name }} <small>{{ host.isLocal ? '本机' : '远程管理还需被控节点授权；轻节点仅支持摘要。' }}</small></span></label></div></fieldset>
+          <p class="mcp-note">新加入的主机不会自动授权。需要更换权限或凭据时，撤销该客户端并重新创建。</p>
+          <p v-if="settings.access.clients.length >= settings.maxClients" role="status">客户端数量已达上限，请撤销不再使用的客户端。</p>
+          <button class="button button--primary" type="submit" :disabled="!canCreate">{{ accessMode === 'inspect' ? '创建巡检客户端' : '创建授权客户端' }}</button>
+        </form>
+        <div v-if="token" class="mcp-credential" role="region" :aria-label="phrase('一次性连接配置')">
+          <label><span>AI 客户端</span><select v-model="clientKind"><option v-for="client in mcpClients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label>
+          <p v-if="clientKind === 'stdio'" class="mcp-note">先在 AI 客户端所在电脑安装对应系统的 kpanel-mcp，并确保客户端能找到该命令；也可将 command 改为程序的绝对路径。</p>
+          <p class="mcp-note">{{ phrase('将配置合并到客户端的个人设置，保留已有服务器。') }} <code>{{ clientLocation }}</code></p>
+          <h3>{{ credentialName }} · {{ phrase('连接配置') }}</h3>
+          <p>凭据只显示这一次。将配置加入支持 HTTP 请求头的 MCP 客户端，并妥善保存；面板备份不会包含这些凭据。</p>
+          <label><span>通用连接配置</span><textarea :value="config" readonly rows="10" spellcheck="false" :aria-label="phrase('通用连接配置')" /></label>
+          <div class="mcp-actions"><button type="button" class="button button--secondary" :disabled="busy" @click="copy">复制配置</button><button type="button" class="button button--secondary" :disabled="busy" @click="test">测试连接</button><button type="button" class="button button--secondary" :disabled="busy" @click="clearCredential">已保存，关闭凭据</button></div>
+        </div>
+        <div class="mcp-history">
+          <h3>已授权客户端</h3>
+          <p v-if="!settings.access.clients.length" class="mcp-note" role="status">尚未创建客户端。</p>
+          <ul v-else>
+            <li v-for="client in settings.access.clients" :key="client.id">
+              <div><strong>{{ client.name }}</strong><p>{{ client.hosts.map(h => hostLabel(h.id)).join('、') }}</p><p>{{ client.policy ? (client.policy.write ? '资源管理' : '资源查询') : '基础巡检' }} <span v-if="client.policy">· {{ client.policy.domains.map(id => phrase(domainOptions.find(domain => domain.id === id)?.name || id)).join('、') }}</span></p><small>{{ Date.parse(client.expiresAt) <= Date.now() ? '已过期' : '到期时间' }} · {{ formatDateTime(client.expiresAt) }}</small></div>
+              <button type="button" class="button button--secondary" :disabled="busy" :aria-label="`${phrase('撤销客户端')} ${client.name}`" @click="revoke(client.id)">撤销</button>
+            </li>
+          </ul>
+        </div>
+        <MCPOperations :clients="settings.access.clients" :hosts="hosts" />
+        <MCPClusterGrants :enabled="settings.access.enabled" :transport-ready="settings.transportReady" />
       </div>
-      <p v-if="!settings.access.available" role="alert">MCP 授权存储不可用，请检查数据目录后重启面板。</p>
-      <p v-if="!settings.transportReady" role="status">请通过 HTTPS 或本机回环地址访问面板，再创建 MCP 客户端。</p>
-      <p v-if="settings.access.enabled && settings.endpoint" class="mcp-endpoint"><span>服务地址</span><code>{{ settings.endpoint }}</code></p>
-      <p v-if="settings.access.enabled" class="mcp-note">支持 OAuth 的客户端可直接填写服务地址，在浏览器中选择主机和权限完成授权；无需复制访问凭据。</p>
-      <form v-if="settings.access.enabled" class="mcp-form" @submit.prevent="create">
-        <label><span>客户端名称</span><input v-model="name" maxlength="48" required autocomplete="off" :placeholder="phrase('例如：我的桌面助手')" :disabled="busy || !!token" /></label>
-        <label><span>有效期</span><select v-model="days" :disabled="busy || !!token"><option :value="7">7 天</option><option :value="30">30 天</option><option :value="90">90 天</option></select></label>
-        <label><span>访问权限</span><select v-model="accessMode" :disabled="busy || !!token"><option value="inspect">基础巡检</option><option value="read">资源查询</option><option value="manage">资源管理</option></select></label>
-        <fieldset v-if="accessMode !== 'inspect'" :disabled="busy || !!token"><legend>授权范围</legend><div class="mcp-hosts"><label v-for="domain in domainOptions" :key="domain.id"><input v-model="domains" type="checkbox" :value="domain.id" /><span>{{ phrase(domain.name) }}</span></label></div>
-          <label v-if="domains.includes('files')" class="mcp-roots"><span>允许访问的文件目录（每行一个绝对路径）</span><textarea v-model="fileRoots" rows="3" placeholder="/home/web" /></label>
-          <label v-if="accessMode === 'manage'" class="mcp-auto"><input v-model="autoApprove" type="checkbox" /><span>允许自动执行日常启停和固定诊断；其他修改仍需逐项审批。</span></label>
-        </fieldset>
-        <fieldset :disabled="busy || !!token"><legend>授权主机</legend><div class="mcp-hosts"><label v-for="host in hosts" :key="host.id"><input v-model="selected" type="checkbox" :value="host.id" /><span>{{ host.name }} <small>{{ host.isLocal ? '本机' : '远程管理还需被控节点授权；轻节点仅支持摘要。' }}</small></span></label></div></fieldset>
-        <p class="mcp-note">新加入的主机不会自动授权。需要更换权限或凭据时，撤销该客户端并重新创建。</p>
-        <p v-if="settings.access.clients.length >= settings.maxClients" role="status">客户端数量已达上限，请撤销不再使用的客户端。</p>
-        <button class="button button--primary" type="submit" :disabled="!canCreate">{{ accessMode === 'inspect' ? '创建巡检客户端' : '创建授权客户端' }}</button>
-      </form>
-      <div v-if="token" class="mcp-credential" role="region" :aria-label="phrase('一次性连接配置')">
-        <label><span>AI 客户端</span><select v-model="clientKind"><option v-for="client in mcpClients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label>
-        <p v-if="clientKind === 'stdio'" class="mcp-note">先在 AI 客户端所在电脑安装对应系统的 kpanel-mcp，并确保客户端能找到该命令；也可将 command 改为程序的绝对路径。</p>
-        <p class="mcp-note">{{ phrase('将配置合并到客户端的个人设置，保留已有服务器。') }} <code>{{ clientLocation }}</code></p>
-        <h3>{{ credentialName }} · {{ phrase('连接配置') }}</h3>
-        <p>凭据只显示这一次。将配置加入支持 HTTP 请求头的 MCP 客户端，并妥善保存；面板备份不会包含这些凭据。</p>
-        <label><span>通用连接配置</span><textarea :value="config" readonly rows="10" spellcheck="false" :aria-label="phrase('通用连接配置')" /></label>
-        <div class="mcp-actions"><button type="button" class="button button--secondary" :disabled="busy" @click="copy">复制配置</button><button type="button" class="button button--secondary" :disabled="busy" @click="test">测试连接</button><button type="button" class="button button--secondary" :disabled="busy" @click="clearCredential">已保存，关闭凭据</button></div>
-      </div>
-      <div class="mcp-history">
-        <h3>已授权客户端</h3>
-        <p v-if="!settings.access.clients.length" class="mcp-note" role="status">尚未创建客户端。</p>
-        <ul v-else>
-          <li v-for="client in settings.access.clients" :key="client.id">
-            <div><strong>{{ client.name }}</strong><p>{{ client.hosts.map(h => hostLabel(h.id)).join('、') }}</p><p>{{ client.policy ? (client.policy.write ? '资源管理' : '资源查询') : '基础巡检' }} <span v-if="client.policy">· {{ client.policy.domains.map(id => phrase(domainOptions.find(domain => domain.id === id)?.name || id)).join('、') }}</span></p><small>{{ Date.parse(client.expiresAt) <= Date.now() ? '已过期' : '到期时间' }} · {{ formatDateTime(client.expiresAt) }}</small></div>
-            <button type="button" class="button button--secondary" :disabled="busy" :aria-label="`${phrase('撤销客户端')} ${client.name}`" @click="revoke(client.id)">撤销</button>
-          </li>
-        </ul>
-      </div>
-      <MCPOperations :clients="settings.access.clients" :hosts="hosts" />
-      <MCPClusterGrants :enabled="settings.access.enabled" :transport-ready="settings.transportReady" />
+      <p v-if="error" class="mcp-error" role="alert">{{ phrase(error) }}</p>
+      <p v-if="notice" class="mcp-notice" role="status">{{ phrase(notice) }}</p>
+      <button class="button button--secondary mcp-refresh" type="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15" aria-hidden="true" />刷新接入状态</button>
     </div>
-    <p v-if="error" class="mcp-error" role="alert">{{ phrase(error) }}</p>
-    <p v-if="notice" class="mcp-notice" role="status">{{ phrase(notice) }}</p>
-    <button class="button button--secondary mcp-refresh" type="button" :disabled="loading || busy" @click="refresh"><RefreshCw :size="15" aria-hidden="true" />刷新接入状态</button>
   </section>
 </template>
 
 <style scoped>
-.mcp-access { min-width: 0; font-size: 14px; line-height: 1.6; }
-.mcp-access > :not(header) { margin-left: 24px; margin-right: 24px; }
-.mcp-access { padding-bottom: 24px; }
+.mcp-access { min-width: 0; padding: 0; font-size: 14px; line-height: 1.6; }
+.mcp-body { min-width: 0; padding: 18px; }
 .mcp-form input:not([type=checkbox]), .mcp-form select, .mcp-form textarea, .mcp-credential select, .mcp-credential textarea { min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 14px; width: 100%; min-width: 0; box-sizing: border-box; }
 .mcp-roots { display: grid; gap: 6px; margin-top: 16px; }
 .mcp-auto { display: flex; gap: 8px; margin-top: 16px; align-items: flex-start; }
@@ -190,4 +191,5 @@ onBeforeUnmount(() => { disposed = true; clearCredential() })
 .mcp-notice { color: var(--text-primary); }
 .mcp-refresh { margin-top: 18px; }
 @media (max-width: 600px) { .mcp-form { grid-template-columns: minmax(0, 1fr); } .mcp-toolbar { flex-direction: column; } }
+@media (max-width: 480px) { .mcp-body { padding: 14px 13px; } }
 </style>
