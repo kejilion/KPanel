@@ -11,6 +11,35 @@ describe('collapsed desktop group previews', () => {
       count: 0, dropping: false, busy: false, cells: [], rename },
   })
 
+  it('places the drop hint outside the group, flips above near the bottom and cleans up', async () => {
+    let top = 120
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('desktop-group') ? new DOMRect(100, top, 375, 296) : new DOMRect(0, 0, 180, 36)
+    })
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const wrapper = editable()
+    try {
+      expect(document.querySelector('.desktop-group__drop-label')).toBeNull()
+      await wrapper.setProps({ dropping: true })
+      const hint = document.querySelector<HTMLElement>('.desktop-group__drop-label')!
+      expect(wrapper.element.contains(hint)).toBe(false)
+      expect(hint.style.top).toBe('424px')
+      expect(hint.style.left).toBe('197.5px')
+      top = window.innerHeight - 200
+      window.dispatchEvent(new Event('scroll'))
+      await flushPromises()
+      expect(hint.style.top).toBe(`${top - 44}px`)
+      await wrapper.setProps({ dropping: false })
+      expect(document.querySelector('.desktop-group__drop-label')).toBeNull()
+      expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function), true)
+      expect(remove).toHaveBeenCalledWith('resize', expect.any(Function))
+      await wrapper.setProps({ dropping: true })
+    } finally {
+      wrapper.unmount(); rect.mockRestore(); remove.mockRestore()
+    }
+    expect(document.querySelector('.desktop-group__drop-label')).toBeNull()
+  })
+
   it('edits on a single name click and saves once with trimmed text and restored keyboard focus', async () => {
     const rename = vi.fn(async () => true)
     const wrapper = editable(rename)
