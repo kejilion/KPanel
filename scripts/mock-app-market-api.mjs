@@ -679,6 +679,45 @@ function visualClusterPublicSnapshot() {
 }
 
 let systemLogCleanupJob
+let virusScanJob
+
+function materializeVirusScanSnapshot() {
+  const now = Date.now()
+  const elapsed = virusScanJob ? now - virusScanJob.created : Number.POSITIVE_INFINITY
+  const running = elapsed < 3_000
+  const maintenance = running
+    ? {
+        id: virusScanJob.id,
+        state: 'running',
+        action: 'virus-scan',
+        policy: virusScanJob.mode,
+        stage: elapsed < 1_200 ? 'virus_database_update' : `virus_scan_${virusScanJob.mode}`,
+        progress: elapsed < 1_200 ? 15 : 58,
+        message: elapsed < 1_200 ? '正在更新 ClamAV 病毒库' : '正在扫描所选目录，关闭窗口不会中断任务',
+        startedAt: virusScanJob.startedAt,
+        rebootRequired: false,
+      }
+    : { state: 'idle', progress: 0, rebootRequired: false }
+  const completedAt = virusScanJob && !running
+    ? new Date(virusScanJob.created + 3_000).toISOString()
+    : '2026-09-20T04:00:00Z'
+  return {
+    reportAvailable: true,
+    reportPath: '/home/docker/clamav/log/scan.log',
+    source: 'kpanel',
+    status: running ? 'running' : 'clean',
+    mode: virusScanJob?.mode || 'important',
+    paths: virusScanJob?.paths || ['/etc', '/var', '/usr', '/home', '/root'],
+    scannedFiles: running ? 4821 : 12842,
+    infectedFiles: 0,
+    errors: 0,
+    findings: [],
+    truncated: false,
+    completedAt: running ? undefined : completedAt,
+    observedAt: new Date().toISOString(),
+    maintenance,
+  }
+}
 
 function materializeSystemLogMaintenance() {
   if (!systemLogCleanupJob) return systemSummary.management.maintenance
@@ -965,6 +1004,8 @@ const systemCapabilities = [
   ].map((action) => ({ id: `system.${action}.write`, enabled: true, methods: ['POST'] })),
   { id: 'system.logs.read', enabled: true, methods: ['GET'] },
   { id: 'system.logs.write', enabled: true, methods: ['POST'] },
+  { id: 'system.virus-scan.read', enabled: true, methods: ['GET'] },
+  { id: 'system.virus-scan.write', enabled: true, methods: ['POST'] },
 ]
 
 const portUsageEntries = [
@@ -1946,6 +1987,43 @@ createServer(async (request, response) => {
       return
     }
     send(response, 200, materializeSystemLogSummary())
+    return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/system/virus-scan') {
+    if (url.search) {
+      send(response, 422, { title: '病毒扫描查询参数无效', code: 'invalid_virus_scan_query' })
+      return
+    }
+    send(response, 200, materializeVirusScanSnapshot())
+    return
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/system/virus-scan/actions') {
+    const input = await readJSON(request)
+    const paths = Array.isArray(input.paths) ? input.paths : []
+    if (!['full', 'important', 'custom'].includes(input.mode) || (input.mode === 'custom' && (paths.length < 1 || paths.length > 8))) {
+      send(response, 422, { title: '病毒扫描选项无效', code: 'validation_failed' })
+      return
+    }
+    if (paths.includes('/simulate-failure')) {
+      send(response, 503, { title: '模拟：后台扫描任务启动失败', code: 'virus_scan_failed' })
+      return
+    }
+    const created = Date.now()
+    virusScanJob = {
+      id: `virus-scan-${created}`,
+      created,
+      startedAt: new Date(created).toISOString(),
+      mode: input.mode,
+      paths: input.mode === 'custom' ? paths : input.mode === 'full' ? ['/'] : ['/etc', '/var', '/usr', '/home', '/root'],
+    }
+    send(response, 202, {
+      status: 'accepted',
+      taskId: virusScanJob.id,
+      mode: virusScanJob.mode,
+      paths: virusScanJob.paths,
+      message: '模拟病毒扫描任务已提交',
+      appliedAt: virusScanJob.startedAt,
+    })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/system/logs') {
