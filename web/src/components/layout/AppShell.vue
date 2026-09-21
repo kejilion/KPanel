@@ -106,7 +106,10 @@ const DesktopLoadingView = defineComponent({
         role: 'status',
         'aria-label': i18n.t('common.loading'),
       },
-      [h('div', { class: 'desktop__wallpaper', 'aria-hidden': 'true' })],
+      [h('div', { class: 'desktop__wallpaper', 'aria-hidden': 'true' }, [
+        h('div', { class: 'desktop__wallpaper-image' }),
+        h('div', { class: 'desktop__wallpaper-veil' }),
+      ])],
     )
   },
 })
