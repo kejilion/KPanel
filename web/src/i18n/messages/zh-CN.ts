@@ -1,4 +1,7 @@
+import { passkeyZhCN } from '../passkeys'
+
 export const zhCNMessages = {
+  ...passkeyZhCN,
   'desktop.groupRename': '重命名分组',
   'desktop.groupHoldCreate': '停留片刻以创建分组',
   'desktop.groupDropCreate': '松开创建分组',

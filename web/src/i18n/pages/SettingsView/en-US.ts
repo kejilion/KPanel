@@ -1,6 +1,10 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['Passkey 通行密钥', 'Passkeys'],
+  ['设备验证与凭证管理', 'Device verification and credential management'],
+  ['指纹', 'Fingerprint'],
+  ['安全密钥', 'Security key'],
   ["检查 Agent 连接", "Check Agent connection"],
   ["自动更新", "Automatic updates"],
   ["版本更新", "Version updates"],
