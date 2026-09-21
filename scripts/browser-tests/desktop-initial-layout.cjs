@@ -36,6 +36,7 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
       })
       const verifyReveal = async label => {
         await page.locator('.desktop__icons--initializing').waitFor({ state: 'attached' })
+        await page.mouse.move(0, 0) // Keep legitimate hover transitions out of restoration samples.
         assert.equal(await page.locator('[data-icon-key="nav:/overview"]').isVisible(), false)
         assert.equal(await page.locator('.desktop__icons').evaluate(element => element.inert), true)
         // Capture every paint from the pending state through the first visible frames.
