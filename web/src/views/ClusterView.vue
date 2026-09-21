@@ -1348,9 +1348,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-      <p v-if="temporarySortActive" class="cluster-sort-note" role="status">
-        临时排序仅改变当前页面；关闭页面后恢复自定义顺序。总流量为累计接收与累计传送之和。
-      </p>
     </div>
 
     <LoadingState v-if="loading" title="正在读取集群主机…" />
@@ -2331,16 +2328,6 @@ onBeforeUnmount(() => {
 .cluster-sort button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.cluster-sort-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .cluster-view-switch {

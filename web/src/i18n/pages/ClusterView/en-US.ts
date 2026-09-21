@@ -374,7 +374,6 @@ export default [
   ['总流量（收发合计）', 'Total traffic (received + sent)'],
   ['当前从高到低；切换为从低到高', 'Currently high to low; switch to low to high'],
   ['当前从低到高；切换为从高到低', 'Currently low to high; switch to high to low'],
-  ['临时排序仅改变当前页面；关闭页面后恢复自定义顺序。总流量为累计接收与累计传送之和。', 'Temporary sorting affects only this page. Closing it restores the custom order. Total traffic is cumulative received plus cumulative sent.'],
   ['临时排序中，切回自定义顺序后可调整', 'Switch back to custom order before reordering hosts'],
   ["{0} 核", "{0} cores"],
   ["延迟 {0}", "Latency {0}"],
