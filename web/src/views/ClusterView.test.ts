@@ -9,6 +9,10 @@ import traditionalChinese from '@/i18n/pages/ClusterView/zh-TW'
 import sharedEnglish from '@/i18n/pages/shared/en-US'
 import sharedTraditionalChinese from '@/i18n/pages/shared/zh-TW'
 import type {
+  ClusterHostTemporarySortDirection,
+  ClusterHostTemporarySortKey,
+} from '@/lib/clusterHostTemporarySort'
+import type {
   ClusterHost,
   ClusterHostList,
   ClusterLightEnrollment,
@@ -93,6 +97,10 @@ interface ClusterBindings {
   viewMode: Ref<'list' | 'card' | 'globe'>
   hostOrder: Ref<string[]>
   hostOrderResourceVersion: Ref<string>
+  temporarySortKey: Ref<ClusterHostTemporarySortKey>
+  temporarySortDirection: Ref<ClusterHostTemporarySortDirection>
+  temporarySortActive: ComputedRef<boolean>
+  hostOrderControlTitle: ComputedRef<string>
   accessOpen: Ref<boolean>
   manageOpen: Ref<boolean>
   shareOpen: Ref<boolean>
@@ -587,6 +595,44 @@ describe('ClusterView inventory and navigation', () => {
       'kpanel:cluster-host-order',
       JSON.stringify(['remote', 'local']),
     )
+  })
+
+  it('temporarily sorts live metrics without changing or persisting the custom order', async () => {
+    const view = setupView()
+    const values = inventory()
+    values.items[0]!.lastSnapshot!.telemetry.cpu.usagePercent = 10
+    values.items[1]!.lastSnapshot!.telemetry.cpu.usagePercent = 80
+    view.inventory.value = values
+    view.hostOrder.value = ['local', 'remote']
+    view.hostOrderResourceVersion.value = 'sha256:order-v1'
+
+    view.temporarySortKey.value = 'cpu'
+
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['remote', 'local'])
+    expect(view.hostOrder.value).toEqual(['local', 'remote'])
+    expect(view.temporarySortActive.value).toBe(true)
+    expect(view.hostOrderControlTitle.value).toBe('临时排序中，切回自定义顺序后可调整')
+    await view.moveHost('remote', -1)
+    expect(mocks.updateHostOrder).not.toHaveBeenCalled()
+    expect(mocks.localStorageSetItem).not.toHaveBeenCalled()
+
+    view.temporarySortDirection.value = 'asc'
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['local', 'remote'])
+
+    view.temporarySortKey.value = 'custom'
+    expect(view.filteredHosts.value.map((item) => item.id)).toEqual(['local', 'remote'])
+    expect(view.temporarySortActive.value).toBe(false)
+  })
+
+  it('resets temporary sorting when a new cluster page instance opens', () => {
+    const current = setupView()
+    current.temporarySortKey.value = 'traffic'
+    current.temporarySortDirection.value = 'asc'
+
+    const reopened = setupView()
+
+    expect(reopened.temporarySortKey.value).toBe('custom')
+    expect(reopened.temporarySortDirection.value).toBe('desc')
   })
 
   it('lets the panel order override a conflicting browser cache', async () => {
