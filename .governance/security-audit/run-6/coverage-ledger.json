@@ -1,0 +1,570 @@
+[
+  {
+    "coverage_id": ".github%2Fworkflows%23release::deploy%23root-install::release::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": ".github/workflows#release",
+      "boundary": "deploy#root-install",
+      "subsystem": "release",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": ".github/workflows#release",
+    "boundary": "deploy#root-install",
+    "subsystem": "release",
+    "attack_class": "Access control",
+    "starting_paths": [
+      ".github/workflows"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Outside the Passkey feature and its direct authentication/identity boundary; no current coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fai%23provider::internal%2Fai%23tool-authority::internal%2Fai::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/ai#provider",
+      "boundary": "internal/ai#tool-authority",
+      "subsystem": "internal/ai",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "internal/ai#provider",
+    "boundary": "internal/ai#tool-authority",
+    "subsystem": "internal/ai",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/ai"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Outside the Passkey feature and its direct authentication/identity boundary; no current coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fpasskey.go%23BeginLogin::internal%2Fauth%2Fservice.go%23reserveLogin::internal%2Fauth::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/auth/passkey.go#BeginLogin",
+      "boundary": "internal/auth/service.go#reserveLogin",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "internal/auth/passkey.go#BeginLogin",
+    "boundary": "internal/auth/service.go#reserveLogin",
+    "subsystem": "internal/auth",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/store.go",
+      "internal/panel/passkey.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/store.go",
+      "internal/panel/passkey.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/passkey.go"
+        ],
+        "invariant": "pre-auth challenge allocation is bounded, rate-limited, and does not enumerate users",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fpasskey.go%23credential-commit::internal%2Fstore%2Fpasskeys.go%23UpdateUserPasskey::internal%2Fstore::ATTACK-CLASSES.md%23Stale%20authorization%20and%20derived%20copy%20use",
+    "canonical_refs": {
+      "surface": "internal/auth/passkey.go#credential-commit",
+      "boundary": "internal/store/passkeys.go#UpdateUserPasskey",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Stale authorization and derived copy use"
+    },
+    "surface": "internal/auth/passkey.go#credential-commit",
+    "boundary": "internal/store/passkeys.go#UpdateUserPasskey",
+    "subsystem": "internal/store",
+    "attack_class": "Stale authorization and derived copy use",
+    "starting_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Stale authorization and derived copy use",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/passkeys.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "CAS and atomic session/counter writes reject stale ceremonies and preserve rollback",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fcluster%23federation::internal%2Fcluster%23controller-policy::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/cluster#federation",
+      "boundary": "internal/cluster#controller-policy",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "internal/cluster#federation",
+    "boundary": "internal/cluster#controller-policy",
+    "subsystem": "internal/cluster",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Outside the Passkey feature and its direct authentication/identity boundary; no current coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fhostbackup%2Farchive.go%23import::internal%2Fhostbackup%2Frestore.go%23host-write::internal%2Fhostbackup::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/hostbackup/archive.go#import",
+      "boundary": "internal/hostbackup/restore.go#host-write",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "internal/hostbackup/archive.go#import",
+    "boundary": "internal/hostbackup/restore.go#host-write",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/hostbackup/archive.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Outside the Passkey feature and its direct authentication/identity boundary; no current coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fmcpaccess%23tokens::internal%2Fmcpaccess%23operations::internal%2Fmcpaccess::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/mcpaccess#tokens",
+      "boundary": "internal/mcpaccess#operations",
+      "subsystem": "internal/mcpaccess",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "internal/mcpaccess#tokens",
+    "boundary": "internal/mcpaccess#operations",
+    "subsystem": "internal/mcpaccess",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/mcpaccess"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Outside the Passkey feature and its direct authentication/identity boundary; no current coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23POST::internal%2Fpanel%2Fserver.go%23requestHTTPSOrigin::internal%2Fpanel::ATTACK-CLASSES.md%23Host%20and%20forwarded-header%20trust",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#POST",
+      "boundary": "internal/panel/server.go#requestHTTPSOrigin",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Host and forwarded-header trust"
+    },
+    "surface": "internal/panel/passkey.go#POST",
+    "boundary": "internal/panel/server.go#requestHTTPSOrigin",
+    "subsystem": "internal/panel",
+    "attack_class": "Host and forwarded-header trust",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "internal/auth/passkey.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Host and forwarded-header trust",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "internal/auth/passkey.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/panel/config.go",
+          "internal/auth/passkey.go"
+        ],
+        "invariant": "fixed HTTPS origin and trusted-proxy handling prevent origin or host confusion",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23audit::internal%2Fstore%2Faudit_log.go%23append::internal%2Fstore::ATTACK-CLASSES.md%23Analytics%2C%20logs%2C%20traces%2C%20and%20diagnostics%20as%20alternate%20readers",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#audit",
+      "boundary": "internal/store/audit_log.go#append",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Analytics, logs, traces, and diagnostics as alternate readers"
+    },
+    "surface": "internal/panel/passkey.go#audit",
+    "boundary": "internal/store/audit_log.go#append",
+    "subsystem": "internal/store",
+    "attack_class": "Analytics, logs, traces, and diagnostics as alternate readers",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Analytics, logs, traces, and diagnostics as alternate readers",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/audit_log.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "audit failures fail closed and sensitive credential material is excluded from logs",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23login::internal%2Fauth%2Fpasskey.go%23FinishLogin::internal%2Fauth::ATTACK-CLASSES.md%23WebAuthn%20and%20passkey%20verification",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#login",
+      "boundary": "internal/auth/passkey.go#FinishLogin",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#WebAuthn and passkey verification"
+    },
+    "surface": "internal/panel/passkey.go#login",
+    "boundary": "internal/auth/passkey.go#FinishLogin",
+    "subsystem": "internal/auth",
+    "attack_class": "WebAuthn and passkey verification",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/auth/totp.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#WebAuthn and passkey verification",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/auth/totp.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/auth/totp.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Origin, RP, UV, discoverable credential, userHandle, ceremony binding, single use, expiry, and credential version are enforced",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23register-delete::internal%2Fauth%2Fpasskey.go%23reauthenticate::internal%2Fauth::ATTACK-CLASSES.md%23Step-up%20binding%20and%20bypass",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#register-delete",
+      "boundary": "internal/auth/passkey.go#reauthenticate",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Step-up binding and bypass"
+    },
+    "surface": "internal/panel/passkey.go#register-delete",
+    "boundary": "internal/auth/passkey.go#reauthenticate",
+    "subsystem": "internal/auth",
+    "attack_class": "Step-up binding and bypass",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Step-up binding and bypass",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/passkeys.go"
+        ],
+        "invariant": "management requires session, CSRF, password, second factor, and a current credential snapshot",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "internal%2Fstore%2Fbackup.go%23RestoreIdentity::internal%2Fstore%2Fpasskeys.go%23advanceCredentialVersion::internal%2Fstore::ATTACK-CLASSES.md%23Restore%20reintroduces%20invalid%20state",
+    "canonical_refs": {
+      "surface": "internal/store/backup.go#RestoreIdentity",
+      "boundary": "internal/store/passkeys.go#advanceCredentialVersion",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Restore reintroduces invalid state"
+    },
+    "surface": "internal/store/backup.go#RestoreIdentity",
+    "boundary": "internal/store/passkeys.go#advanceCredentialVersion",
+    "subsystem": "internal/store",
+    "attack_class": "Restore reintroduces invalid state",
+    "starting_paths": [
+      "internal/store/backup.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go",
+      "internal/auth/backup.go",
+      "internal/backup/archive.go",
+      "internal/panel/backup_restore.go",
+      "cmd/paneld/main.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Restore reintroduces invalid state",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "internal/store/backup.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go",
+      "internal/auth/backup.go",
+      "internal/backup/archive.go",
+      "internal/panel/backup_restore.go",
+      "cmd/paneld/main.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "internal/store/backup.go",
+          "internal/store/passkeys.go",
+          "internal/store/store.go",
+          "internal/auth/backup.go",
+          "internal/backup/archive.go",
+          "internal/panel/backup_restore.go",
+          "cmd/paneld/main.go"
+        ],
+        "invariant": "backup and recovery do not reintroduce Passkeys or sessions and advance credential version",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "web%2Fsrc%2Fcomponents%2Fsettings%2FPasskeySettings.vue%23credentials::web%2Fsrc%2Flib%2Fpasskeys.ts%23credentialJSON::web%2Fsrc::ATTACK-CLASSES.md%23DOM-based%20XSS",
+    "canonical_refs": {
+      "surface": "web/src/components/settings/PasskeySettings.vue#credentials",
+      "boundary": "web/src/lib/passkeys.ts#credentialJSON",
+      "subsystem": "web/src",
+      "attack_class": "ATTACK-CLASSES.md#DOM-based XSS"
+    },
+    "surface": "web/src/components/settings/PasskeySettings.vue#credentials",
+    "boundary": "web/src/lib/passkeys.ts#credentialJSON",
+    "subsystem": "web/src",
+    "attack_class": "DOM-based XSS",
+    "starting_paths": [
+      "web/src/components/settings/PasskeySettings.vue",
+      "web/src/views/LoginView.vue",
+      "web/src/lib/passkeys.ts",
+      "web/src/lib/api.ts",
+      "web/src/stores/session.ts",
+      "web/src/types/api.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#DOM-based XSS",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "passkey_security_audit_retry",
+    "reviewed_paths": [
+      "web/src/components/settings/PasskeySettings.vue",
+      "web/src/views/LoginView.vue",
+      "web/src/lib/passkeys.ts",
+      "web/src/lib/api.ts",
+      "web/src/stores/session.ts",
+      "web/src/types/api.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "passkey_security_audit_retry",
+        "reviewed_paths": [
+          "web/src/components/settings/PasskeySettings.vue",
+          "web/src/views/LoginView.vue",
+          "web/src/lib/passkeys.ts",
+          "web/src/lib/api.ts",
+          "web/src/stores/session.ts",
+          "web/src/types/api.ts"
+        ],
+        "invariant": "native WebAuthn serialization and escaped display preserve the browser trust boundary",
+        "method": "source",
+        "result": "Independent source-only review of the Passkey path found the stated control present; no source-grounded confirmed boundary failure was retained.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]

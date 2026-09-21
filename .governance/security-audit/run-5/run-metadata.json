@@ -1,0 +1,15 @@
+{
+  "run_id": "run-5",
+  "repo": "kejilion/KPanel",
+  "scope_mode": "scoped",
+  "run_status": "interrupted-platform-policy",
+  "source_ref": "54650283ac66405f5bdb577665f2cfec535e1e7d",
+  "comparison_base": "1659b096c2b454010d787d1d0a361ce3b437f12f",
+  "source_dirty": false,
+  "scope_complete": false,
+  "target": "C:/GitHub/_codex-evidence/kpanel-passkey-20260921/security-audit-run-5",
+  "execution_policy": "sandboxed-source-and-local-only",
+  "profile": "standard",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "run_status_detail": "Independent audit was interrupted by platform policy before final validation; this run is retained as non-coverage evidence."
+}
