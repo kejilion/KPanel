@@ -330,6 +330,8 @@ func (s *Service) TOTPStatus(userID string) (TOTPStatus, error) {
 }
 
 func (s *Service) StartTOTPEnrollment(userID, currentPassword string) (TOTPEnrollment, error) {
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
 	user, err := s.verifyCurrentPassword(userID, currentPassword)
 	if err != nil {
 		return TOTPEnrollment{}, err
@@ -362,6 +364,8 @@ func (s *Service) StartTOTPEnrollment(userID, currentPassword string) (TOTPEnrol
 }
 
 func (s *Service) ConfirmTOTPEnrollment(userID, enrollmentID, code string) ([]string, error) {
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
 	if len(enrollmentID) < 1 || len(enrollmentID) > 128 {
 		return nil, ErrTOTPEnrollmentExpired
 	}
@@ -402,6 +406,8 @@ func (s *Service) ConfirmTOTPEnrollment(userID, enrollmentID, code string) ([]st
 }
 
 func (s *Service) RegenerateRecoveryCodes(userID, currentPassword, secondFactor string) ([]string, error) {
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
 	user, err := s.verifyCurrentPassword(userID, currentPassword)
 	if err != nil {
 		return nil, err
@@ -426,6 +432,8 @@ func (s *Service) RegenerateRecoveryCodes(userID, currentPassword, secondFactor 
 }
 
 func (s *Service) DisableTOTP(userID, currentPassword, secondFactor string) error {
+	s.credentialMu.Lock()
+	defer s.credentialMu.Unlock()
 	user, err := s.verifyCurrentPassword(userID, currentPassword)
 	if err != nil {
 		return err
@@ -675,7 +683,7 @@ func (s *Service) RecoverPassword(userID, newPassword string, disableTOTP bool) 
 		return PublicUser{}, fmt.Errorf("create password recovery audit ID: %w", err)
 	}
 	now := s.now()
-	change := map[string]any{"twoFactorDisabled": disableTOTP}
+	change := map[string]any{"twoFactorDisabled": disableTOTP, "passkeysRevoked": len(user.Passkeys)}
 	if err := s.store.RecoverUserPassword(store.PasswordRecovery{
 		UserID: user.ID, ExpectedHash: user.PasswordHash, NewHash: newHash,
 		DisableTOTP: disableTOTP, UpdatedAt: now,
@@ -748,31 +756,40 @@ func (s *Service) ChangeUsername(userID, currentPassword, newUsername string) er
 }
 
 func (s *Service) createSession(user store.User) (Credentials, error) {
-	token, err := randomToken(32)
+	credentials, session, err := s.newSession(user)
 	if err != nil {
 		return Credentials{}, err
+	}
+	if err := s.store.PutSession(session); err != nil {
+		return Credentials{}, err
+	}
+	return credentials, nil
+}
+
+func (s *Service) newSession(user store.User) (Credentials, store.Session, error) {
+	token, err := randomToken(32)
+	if err != nil {
+		return Credentials{}, store.Session{}, err
 	}
 	csrfToken, err := randomToken(32)
 	if err != nil {
-		return Credentials{}, err
+		return Credentials{}, store.Session{}, err
 	}
 	now := s.now()
 	expiresAt := now.Add(s.config.SessionTTL)
-	if err := s.store.PutSession(store.Session{
+	session := store.Session{
 		TokenHash: hashSecret(token),
 		CSRFHash:  hashSecret(csrfToken),
 		UserID:    user.ID,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
-	}); err != nil {
-		return Credentials{}, err
 	}
 	return Credentials{
 		Token:     token,
 		CSRFToken: csrfToken,
 		ExpiresAt: expiresAt,
 		User:      publicUser(user),
-	}, nil
+	}, session, nil
 }
 
 func (s *Service) recordLoginAttempt(ipKey, accountKey string, now time.Time, success bool) error {
