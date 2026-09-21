@@ -1,6 +1,8 @@
 import type { LocaleMessages } from './zh-CN'
+import { passkeyEnUS } from '../passkeys'
 
 export const enUSMessages = {
+  ...passkeyEnUS,
   'desktop.groupRename': 'Rename group',
   'desktop.groupHoldCreate': 'Hold briefly to create a group',
   'desktop.groupDropCreate': 'Release to create a group',

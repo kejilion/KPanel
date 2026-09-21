@@ -58,6 +58,7 @@ type Server struct {
 	backupRestart         chan struct{}
 	config                Config
 	auth                  *auth.Service
+	passkeys              *auth.PasskeyService
 	store                 *store.Store
 	agent                 agentAPI
 	hostOps               *HostOperationService
@@ -130,6 +131,17 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, err
 	}
+	var passkeys *auth.PasskeyService
+	passkeyOrigin := config.PasskeyOrigin
+	if passkeyOrigin == "" {
+		if origin, _, e := auth.PasskeyOrigin(config.PublicURL); e == nil {
+			passkeyOrigin = origin
+		}
+	}
+	passkeys, err = auth.NewPasskeyService(authService, passkeyOrigin)
+	if err != nil {
+		return nil, fmt.Errorf("configure passkeys: %w", err)
+	}
 	clusterService, err := cluster.NewService(cluster.ServiceConfig{
 		DataDir: config.DataDir, PanelVersion: version.Version,
 		PublicURL:    config.PublicURL,
@@ -167,7 +179,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		return nil, fmt.Errorf("initialize notifications: %w", err)
 	}
 	server := &Server{
-		config: config, auth: authService, store: storage, agent: agent,
+		passkeys: passkeys,
+		config:   config, auth: authService, store: storage, agent: agent,
 		cluster:               clusterService,
 		notifications:         notifications,
 		terminalSessions:      make(map[string]panelTerminalSession),
@@ -268,6 +281,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == "/api/v1/auth/passkeys" || strings.HasPrefix(r.URL.Path, "/api/v1/auth/passkeys/"):
+		s.handlePasskeys(w, r)
 	case r.URL.Path == mcpSettingsPath || strings.HasPrefix(r.URL.Path, mcpSettingsPath+"/"):
 		s.handleMCPSettings(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == cluster.FileStreamV2Path:

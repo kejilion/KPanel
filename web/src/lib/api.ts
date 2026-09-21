@@ -1,4 +1,6 @@
 import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
+import type { PasskeyList } from '@/types/api'
+import type { PasskeyCreationOptions, PasskeyRequestOptions, PasskeyCredentialJSON } from '@/lib/passkeys'
 import type {
 	AccountManagementActionInput,
 	AccountManagementActionResult,
@@ -689,7 +691,7 @@ async function request<T>(
   }
 
   const payload = await parsePayload(response)
-  if (path === '/auth/bootstrap' || path === '/auth/login' || path === '/auth/session') {
+  if (path === '/auth/bootstrap' || path === '/auth/login' || path === '/auth/session' || path === '/auth/passkeys/login/finish') {
     pickCsrfToken(response.headers, payload)
   }
 
@@ -1160,6 +1162,22 @@ function normalizeJob(raw: RawJob): Job {
 
 export const api = {
   auth: {
+    passkeys: {
+      status: (signal?: AbortSignal) => request<{ available: boolean }>('/auth/passkeys/status', { signal }),
+      list: (signal?: AbortSignal) => request<PasskeyList>('/auth/passkeys', { signal }),
+      registerBegin: (body: { password: string; totpCode?: string; name: string }, signal?: AbortSignal) =>
+        request<{ ceremonyId: string; publicKey: PasskeyCreationOptions }>('/auth/passkeys/register/begin', { method: 'POST', body, signal }),
+      registerFinish: (body: { ceremonyId: string; credential: PasskeyCredentialJSON }, signal?: AbortSignal) =>
+        request<{ reauthenticate: boolean }>('/auth/passkeys/register/finish', { method: 'POST', body, signal }),
+      delete: (body: { id: string; password: string; totpCode?: string }, signal?: AbortSignal) =>
+        request<{ reauthenticate: boolean }>('/auth/passkeys/delete', { method: 'POST', body, signal }),
+      loginBegin: (body: { username: string }, signal?: AbortSignal) =>
+        request<{ ceremonyId: string; publicKey: PasskeyRequestOptions }>('/auth/passkeys/login/begin', { method: 'POST', body, signal }),
+      loginFinish: async (body: { ceremonyId: string; credential: PasskeyCredentialJSON; totpCode?: string }, signal?: AbortSignal): Promise<AuthStatus> => {
+        const session = await request<AuthSession>('/auth/passkeys/login/finish', { method: 'POST', body, signal })
+        return { setupRequired: false, authenticated: true, user: session.user, csrfToken: session.csrfToken, expiresAt: session.expiresAt }
+      },
+    },
     status: async (signal?: AbortSignal): Promise<AuthStatus> => {
       const bootstrap = await request<{ required: boolean }>('/auth/bootstrap', { signal })
       if (bootstrap.required) return { setupRequired: true, authenticated: false }

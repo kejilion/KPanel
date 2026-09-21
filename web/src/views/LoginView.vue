@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Copy, Eye, EyeOff, LoaderCircle, LockKeyhole } from '@lucide/vue'
 import AuthLayout from '@/components/layout/AuthLayout.vue'
-import { ApiError } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
+import { getPasskey, passkeyError, passkeysSupported } from '@/lib/passkeys'
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { prefetchNavigationRoute } from '@/lib/navigation'
@@ -26,6 +27,12 @@ const recoveryCommandCopied = ref(false)
 const recoveryCommandCopyFailed = ref(false)
 const error = ref('')
 const loginPhase = ref<'idle' | 'authenticating' | 'entering'>('idle')
+const passkeyMode = ref(false)
+const passkeyAvailable = ref(false)
+const passkeyStatusError = ref(false)
+const passkeyStatusLoaded = ref(false)
+const passkeySupported = passkeysSupported()
+const passkeyController = new AbortController()
 
 const destination = computed(() => (
   typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
@@ -37,13 +44,13 @@ const busy = computed(() => loginPhase.value !== 'idle' || session.state.loading
 const submitLabel = computed(() => {
   if (loginPhase.value === 'entering') return i18n.t('auth.entering')
   if (loginPhase.value === 'authenticating' || session.state.loading) return i18n.t('auth.verifying')
-  return i18n.t('auth.secureLogin')
+  return i18n.t(passkeyMode.value ? 'passkey.login' : 'auth.secureLogin')
 })
 const recoveryCommand = `cd /home/docker/kpanel && sh -c 'set -e; cleanup() { status=$?; trap - EXIT; docker compose --env-file .env up -d panel; exit "$status"; }; trap cleanup EXIT; docker compose --env-file .env stop panel; docker compose --env-file .env run --rm --no-deps panel reset-password'`
 
 const canSubmit = computed(() =>
-  form.username.trim().length > 0 && form.password.length > 0 && (
-    !totpRequired.value || (useRecoveryCode.value
+  form.username.trim().length > 0 && (passkeyMode.value ? passkeyAvailable.value && passkeySupported : form.password.length > 0) && (
+    (!totpRequired.value && (!passkeyMode.value || !form.totpCode)) || (useRecoveryCode.value
       ? /^[A-Za-z2-7-]{15,17}$/.test(form.totpCode)
       : /^\d{6}$/.test(form.totpCode))
   ),
@@ -55,29 +62,57 @@ async function submit(): Promise<void> {
   loginPhase.value = 'authenticating'
 
   try {
-    await session.login({
-      username: form.username.trim(),
-      password: form.password,
-      totpCode: totpRequired.value ? form.totpCode : undefined,
-    })
+    if (passkeyMode.value) {
+      const ceremony = await api.auth.passkeys.loginBegin({ username: form.username.trim() }, passkeyController.signal)
+      passkeyController.signal.throwIfAborted()
+      const credential = await getPasskey(ceremony.publicKey, passkeyController.signal)
+      await session.loginPasskey({ ceremonyId: ceremony.ceremonyId, credential, totpCode: form.totpCode || undefined }, passkeyController.signal)
+    } else {
+      await session.login({
+        username: form.username.trim(),
+        password: form.password,
+        totpCode: totpRequired.value ? form.totpCode : undefined,
+      })
+    }
     loginPhase.value = 'entering'
     await router.replace(destination.value)
   } catch (reason) {
     if (reason instanceof ApiError && reason.code === 'totp_required') {
       totpRequired.value = true
-      error.value = i18n.t('auth.totpRequired')
+      error.value = i18n.t(passkeyMode.value ? 'passkey.retryFactor' : 'auth.totpRequired')
       return
     }
     if (reason instanceof ApiError && reason.code === 'invalid_second_factor') {
+      totpRequired.value = true
       error.value = i18n.t(useRecoveryCode.value ? 'auth.invalidRecovery' : 'auth.invalidTotp')
       form.totpCode = ''
       return
     }
     error.value = session.state.authenticated
       ? i18n.t('auth.loginResourceFailed')
-      : localizeError(reason, 'auth.loginFailed')
+      : passkeyMode.value ? passkeyError(reason) : localizeError(reason, 'auth.loginFailed')
   } finally {
     loginPhase.value = 'idle'
+  }
+}
+
+function togglePasskeyMode(): void {
+  if (busy.value) return
+  passkeyMode.value = !passkeyMode.value
+  form.password = ''
+  form.totpCode = ''
+  error.value = ''
+}
+
+async function loadPasskeyStatus(): Promise<void> {
+  passkeyStatusError.value = false
+  try {
+    const status = await api.auth.passkeys.status(passkeyController.signal)
+    passkeyAvailable.value = status.available
+  } catch {
+    if (!passkeyController.signal.aborted) passkeyStatusError.value = true
+  } finally {
+    passkeyStatusLoaded.value = true
   }
 }
 
@@ -123,10 +158,12 @@ async function copyRecoveryCommand(): Promise<void> {
 }
 
 onMounted(() => {
+  void loadPasskeyStatus()
   // Warm only the destination view. This overlaps the small chunk download
   // with credential entry without loading protected data or the full console.
   void prefetchNavigationRoute(destinationPath.value)
 })
+onBeforeUnmount(() => passkeyController.abort())
 </script>
 
 <template>
@@ -145,6 +182,7 @@ onMounted(() => {
       <button type="button" @click="retryConnection">{{ i18n.t('common.retryConnection') }}</button>
     </div>
     <div v-if="error" class="inline-alert inline-alert--danger" role="alert">{{ error }}</div>
+    <div v-if="route.query.passkeyChanged === '1'" class="inline-alert inline-alert--info" role="status">{{ i18n.t('passkey.changed') }}</div>
 
     <form class="form-stack" @submit.prevent="submit">
       <label class="field">
@@ -152,7 +190,7 @@ onMounted(() => {
         <input v-model.trim="form.username" autocomplete="username" autofocus required />
       </label>
 
-      <label class="field">
+      <label v-if="!passkeyMode" class="field">
         <span>{{ i18n.t('auth.password') }}</span>
         <span class="input-wrap input-wrap--action">
           <input
@@ -173,8 +211,8 @@ onMounted(() => {
         </span>
       </label>
 
-      <label v-if="totpRequired" class="field">
-        <span>{{ i18n.t(useRecoveryCode ? 'auth.recoveryCode' : 'auth.totpCode') }}</span>
+      <label v-if="totpRequired || passkeyMode" class="field">
+        <span>{{ i18n.t(passkeyMode && !totpRequired ? 'passkey.secondFactor' : useRecoveryCode ? 'auth.recoveryCode' : 'auth.totpCode') }}</span>
         <input
           v-model.trim="form.totpCode"
           :inputmode="useRecoveryCode ? 'text' : 'numeric'"
@@ -182,7 +220,7 @@ onMounted(() => {
           :maxlength="useRecoveryCode ? 17 : 6"
           :placeholder="i18n.t(useRecoveryCode ? 'auth.recoveryPlaceholder' : 'auth.totpPlaceholder')"
           autofocus
-          required
+          :required="totpRequired"
         />
         <button
           class="button-link auth-recovery-toggle"
@@ -197,6 +235,16 @@ onMounted(() => {
         <LoaderCircle v-if="busy" class="spin" :size="17" />
         {{ submitLabel }}
       </button>
+
+      <button v-if="passkeyAvailable && passkeySupported" class="button button--secondary button--block" type="button" :disabled="busy" @click="togglePasskeyMode">
+        {{ i18n.t(passkeyMode ? 'passkey.usePassword' : 'passkey.login') }}
+      </button>
+      <div v-if="passkeyStatusError" class="inline-alert inline-alert--warning" role="status">
+        {{ i18n.t('passkey.loadFailed') }}
+        <button class="button-link" type="button" @click="loadPasskeyStatus">{{ i18n.t('passkey.retry') }}</button>
+      </div>
+      <p v-else-if="passkeyStatusLoaded && (!passkeyAvailable || !passkeySupported)" class="passkey-help">{{ i18n.t(!passkeyAvailable ? 'passkey.unavailable' : 'passkey.unsupported') }}</p>
+      <p v-if="passkeyMode" class="passkey-help">{{ i18n.t('passkey.intro') }}</p>
 
       <button
         class="button-link auth-forgot-password"
@@ -240,6 +288,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.passkey-help {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
 .auth-forgot-password {
   justify-self: end;
   margin-top: -8px;

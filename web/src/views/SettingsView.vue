@@ -30,6 +30,7 @@ import {
 } from '@lucide/vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import BackupCenter from '@/components/settings/BackupCenter.vue'
+import PasskeySettings from '@/components/settings/PasskeySettings.vue'
 import MCPAccess from '@/components/settings/MCPAccess.vue'
 import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
 import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
@@ -81,6 +82,7 @@ type SettingsSectionId =
   | 'password'
   | 'security-entrance'
   | 'totp'
+  | 'passkeys'
   | 'language'
   | 'appearance'
   | 'backup'
@@ -113,6 +115,7 @@ const settingsSections: SettingsSectionDefinition[] = [
   { id: 'password', category: 'account', title: '修改密码', description: '更新当前管理员账户的登录凭据', keywords: ['凭据', '登录'] },
   { id: 'security-entrance', category: 'account', title: '登录安全入口', description: '隐藏常规登录路径', keywords: ['安全路径', '公网扫描', '撞库'] },
   { id: 'totp', category: 'account', title: '两步验证', description: '身份验证器与恢复码', keywords: ['TOTP', '2FA', '验证码', '恢复码'] },
+  { id: 'passkeys', category: 'account', title: 'Passkey 通行密钥', description: '设备验证与凭证管理', keywords: ['Passkey', 'WebAuthn', '指纹', '安全密钥'] },
   { id: 'language', category: 'appearance', title: '语言', description: '选择界面显示语言', keywords: ['简体中文', '繁体中文', 'English'] },
   { id: 'appearance', category: 'appearance', title: '外观', description: '主题配色与明暗模式', keywords: ['主题', '浅色', '深色', '颜色'] },
   { id: 'backup', category: 'data', title: '备份中心', description: '备份、恢复与数据保护', keywords: ['备份', '恢复', '导出'] },
@@ -1200,6 +1203,8 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       </div>
       <p class="settings-note">验证码每 30 秒更新，允许轻微时钟偏差；已成功使用的验证码和恢复码不能重放。</p>
     </section>
+
+    <PasskeySettings v-show="isSettingsSectionVisible('passkeys')" />
 
     <section v-show="isSettingsSectionVisible('language')" class="settings-section panel-card">
       <header class="settings-section__header">

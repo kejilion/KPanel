@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/kejilion/kejilion-panel/internal/auth"
 	"net"
 	"net/url"
 	"os"
@@ -27,6 +28,7 @@ type Config struct {
 	AgentTokenFile      string        `json:"agentTokenFile"`
 	WebRoot             string        `json:"webRoot"`
 	PublicURL           string        `json:"publicUrl"`
+	PasskeyOrigin       string        `json:"passkeyOrigin,omitempty"`
 	AllowIPHosts        bool          `json:"allowIpHosts"`
 	SecureCookie        bool          `json:"secureCookie"`
 	CookieName          string        `json:"cookieName"`
@@ -91,6 +93,7 @@ func LoadConfig(path string) (Config, error) {
 	applyStringEnv("KEJILION_PANEL_AGENT_TOKEN_FILE", &config.AgentTokenFile)
 	applyStringEnv("KEJILION_PANEL_WEB_ROOT", &config.WebRoot)
 	applyStringEnv("KEJILION_PANEL_PUBLIC_URL", &config.PublicURL)
+	applyStringEnv("KEJILION_PANEL_PASSKEY_ORIGIN", &config.PasskeyOrigin)
 	applyStringEnv("KEJILION_PANEL_COOKIE_NAME", &config.CookieName)
 	applyStringEnv("KEJILION_PANEL_SESSION_TTL", &config.SessionTTLText)
 	applyStringEnv("KEJILION_PANEL_LOGIN_WINDOW", &config.LoginWindowText)
@@ -221,7 +224,7 @@ func (c Config) Validate() error {
 	if c.SecureCookie {
 		csrfCookieName = "__Host-kejilion_csrf"
 	}
-	if c.CookieName == csrfCookieName {
+	if c.CookieName == csrfCookieName || c.CookieName == passkeyCookie {
 		return errors.New("session and CSRF cookie names must be distinct")
 	}
 	for _, cidr := range c.TrustedProxyCIDRs {
@@ -264,6 +267,11 @@ func (c Config) Validate() error {
 		}
 		if c.SecureCookie && parsed.Scheme != "https" {
 			return errors.New("secure cookies require an HTTPS publicUrl")
+		}
+	}
+	if c.PasskeyOrigin != "" {
+		if _, _, err := auth.PasskeyOrigin(c.PasskeyOrigin); err != nil {
+			return fmt.Errorf("invalid passkeyOrigin: %w", err)
 		}
 	}
 	return nil

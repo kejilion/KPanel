@@ -46,6 +46,8 @@ type processLock interface {
 }
 
 type User struct {
+	CredentialVersion      uint64     `json:"credentialVersion,omitempty"`
+	Passkeys               []Passkey  `json:"passkeys,omitempty"`
 	ID                     string     `json:"id"`
 	Username               string     `json:"username"`
 	PasswordHash           string     `json:"passwordHash"`
@@ -201,8 +203,16 @@ func Open(path string) (*Store, error) {
 		if err := json.Unmarshal(content, &s.data); err != nil {
 			return nil, fmt.Errorf("decode store: %w", err)
 		}
-		if s.data.SchemaVersion != 1 {
+		if s.data.SchemaVersion != 1 && s.data.SchemaVersion != 2 {
 			return nil, fmt.Errorf("unsupported store schema version %d", s.data.SchemaVersion)
+		}
+		for _, user := range s.data.Users {
+			if len(user.Passkeys) != 0 && s.data.SchemaVersion < 2 {
+				return nil, ErrInvalidRecord
+			}
+			if err := validatePasskeys(user.Passkeys); err != nil {
+				return nil, fmt.Errorf("validate passkeys: %w", err)
+			}
 		}
 		if err := validateFileShares(s.data.FileShares); err != nil {
 			return nil, fmt.Errorf("validate file shares: %w", err)
@@ -288,7 +298,13 @@ func (s *Store) CreateInitialAdmin(user User) error {
 		return ErrAlreadyInitialized
 	}
 	previous := cloneDiskState(s.data)
-	s.data.Users = append(s.data.Users, user)
+	if err := validatePasskeys(user.Passkeys); err != nil {
+		return err
+	}
+	if len(user.Passkeys) != 0 {
+		s.data.SchemaVersion = 2
+	}
+	s.data.Users = append(s.data.Users, cloneUser(user))
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err
@@ -301,7 +317,7 @@ func (s *Store) UserByUsername(username string) (User, error) {
 	defer s.mu.RUnlock()
 	for _, user := range s.data.Users {
 		if strings.EqualFold(user.Username, username) {
-			return user, nil
+			return cloneUser(user), nil
 		}
 	}
 	return User{}, ErrNotFound
@@ -312,7 +328,7 @@ func (s *Store) UserByID(id string) (User, error) {
 	defer s.mu.RUnlock()
 	for _, user := range s.data.Users {
 		if user.ID == id {
-			return user, nil
+			return cloneUser(user), nil
 		}
 	}
 	return User{}, ErrNotFound
@@ -340,6 +356,9 @@ func (s *Store) ReplaceUserPassword(userID, expectedHash, newHash string, update
 	}
 
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
 	s.data.Users[userIndex].PasswordHash = newHash
 	s.data.Users[userIndex].UpdatedAt = updatedAt
 	sessions := make([]Session, 0, len(s.data.Sessions))
@@ -372,6 +391,9 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 	if user.PasswordHash != input.ExpectedHash {
 		return ErrConflict
 	}
+	if user.CredentialVersion == ^uint64(0) {
+		return ErrLimitReached
+	}
 
 	// The recovery is audited before the credential changes: the audit
 	// database is a separate file, so the two cannot commit atomically, and
@@ -381,6 +403,10 @@ func (s *Store) RecoverUserPassword(input PasswordRecovery) error {
 		return err
 	}
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
+	s.data.Users[userIndex].Passkeys = nil
 	s.data.Users[userIndex].PasswordHash = input.NewHash
 	s.data.Users[userIndex].UpdatedAt = input.UpdatedAt
 	if input.DisableTOTP {
@@ -439,6 +465,9 @@ func (s *Store) ReplaceUserUsername(userID, expectedUsername, newUsername string
 	}
 
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
 	s.data.Users[userIndex].Username = newUsername
 	s.data.Users[userIndex].UpdatedAt = updatedAt
 	s.revokeUserSessionsLocked(userID)
@@ -451,17 +480,21 @@ func (s *Store) ReplaceUserUsername(userID, expectedUsername, newUsername string
 
 // EnableUserTOTP persists the encrypted authenticator secret and one-time
 // recovery hashes in the same atomic transition that revokes existing sessions.
-func (s *Store) EnableUserTOTP(userID, encryptedSecret string, enabledAt time.Time, lastUsedStep int64, recoveryHashes []string) error {
+// The enrollment's version must still hold at commit, including across restore.
+func (s *Store) EnableUserTOTP(userID string, expectedVersion uint64, encryptedSecret string, enabledAt time.Time, lastUsedStep int64, recoveryHashes []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	userIndex := s.userIndexLocked(userID)
 	if userIndex < 0 {
 		return ErrNotFound
 	}
-	if s.data.Users[userIndex].TOTPSecret != "" {
+	if s.data.Users[userIndex].TOTPSecret != "" || s.data.Users[userIndex].CredentialVersion != expectedVersion {
 		return ErrConflict
 	}
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
 	s.data.Users[userIndex].TOTPSecret = encryptedSecret
 	s.data.Users[userIndex].TOTPEnabledAt = &enabledAt
 	s.data.Users[userIndex].TOTPLastUsedStep = lastUsedStep
@@ -545,6 +578,9 @@ func (s *Store) ReplaceUserRecoveryCodes(userID string, recoveryHashes []string,
 		return ErrConflict
 	}
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
 	s.data.Users[userIndex].TOTPRecoveryCodeHashes = append([]string(nil), recoveryHashes...)
 	s.data.Users[userIndex].UpdatedAt = updatedAt
 	s.revokeUserSessionsLocked(userID)
@@ -566,6 +602,9 @@ func (s *Store) DisableUserTOTP(userID string, updatedAt time.Time) error {
 		return ErrConflict
 	}
 	previous := cloneDiskState(s.data)
+	if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+		return err
+	}
 	s.data.Users[userIndex].TOTPSecret = ""
 	s.data.Users[userIndex].TOTPEnabledAt = nil
 	s.data.Users[userIndex].TOTPLastUsedStep = 0
@@ -604,6 +643,15 @@ func (s *Store) PutSession(session Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	previous := cloneDiskState(s.data)
+	s.putSessionLocked(session)
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
+func (s *Store) putSessionLocked(session Session) {
 	filtered := s.data.Sessions[:0]
 	for _, item := range s.data.Sessions {
 		if item.TokenHash != session.TokenHash && item.ExpiresAt.After(time.Now().UTC()) {
@@ -618,11 +666,6 @@ func (s *Store) PutSession(session Session) error {
 		filtered = append([]Session(nil), filtered[len(filtered)-maxRetainedSessions:]...)
 	}
 	s.data.Sessions = filtered
-	if err := s.persistLocked(); err != nil {
-		s.data = previous
-		return err
-	}
-	return nil
 }
 
 func (s *Store) SessionByTokenHash(tokenHash string, now time.Time) (Session, error) {
@@ -1085,11 +1128,7 @@ func (s *Store) persistLocked() error {
 func cloneDiskState(source diskState) diskState {
 	users := append([]User(nil), source.Users...)
 	for index := range users {
-		users[index].TOTPRecoveryCodeHashes = append([]string(nil), users[index].TOTPRecoveryCodeHashes...)
-		if users[index].TOTPEnabledAt != nil {
-			enabledAt := *users[index].TOTPEnabledAt
-			users[index].TOTPEnabledAt = &enabledAt
-		}
+		users[index] = cloneUser(users[index])
 	}
 	return diskState{
 		SchemaVersion:    source.SchemaVersion,

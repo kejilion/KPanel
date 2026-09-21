@@ -269,7 +269,7 @@ func runPasswordResetWithReader(arguments []string, output io.Writer, readPasswo
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintln(output, "Password reset completed. All existing sessions were revoked.")
+	_, _ = fmt.Fprintln(output, "Password reset completed. All existing sessions were revoked. All passkeys were revoked.")
 	switch {
 	case *disableTOTP:
 		_, _ = fmt.Fprintln(output, "Two-factor authentication and recovery codes were disabled as requested.")

@@ -1,6 +1,8 @@
 import type { LocaleMessages } from './zh-CN'
+import { passkeyZhTW } from '../passkeys'
 
 export const zhTWMessages = {
+  ...passkeyZhTW,
   'desktop.groupRename': '重新命名分組',
   'desktop.groupHoldCreate': '停留片刻以建立群組',
   'desktop.groupDropCreate': '放開建立群組',
