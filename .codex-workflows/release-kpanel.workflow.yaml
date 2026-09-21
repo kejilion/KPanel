@@ -169,7 +169,24 @@ node scripts/run-release-l3.mjs \
 主线、Release 和公开镜像门禁保持不变。该通道固定使用策略登记的 `Ubuntu` WSL 与 `root` Docker。若本地没有
 `${{runner_id}}`，只允许从已保存的可信离线归档恢复，并在上面命令中同时追加
 `--runner-archive <绝对路径> --runner-archive-sha256 <归档SHA-256>`；缺少归档摘要、镜像 ID 不匹配或证据回收
-失败均关闭失败。不得现场重建同名 Runner 后把新 ID 当作既有 Runner。
+失败均关闭失败。Runner 只从 `packaging/release-runner/Dockerfile` 构建；基础镜像摘要、直接系统包版本和
+Node/npm smoke 必须保持可审查。重建会产生新的 ID，必须作为新的冻结执行方案和归档重新验收，不能把它
+冒充既有 Runner。
+
+需要把发布验证责任移交到另一台登记主机时，原责任任务先用同一命令追加 `--prepare-only` 和上述两个
+Runner 归档参数，生成只读 handoff kit，并通过独立通道交接 `manifest.json` 的 SHA-256。接收方不得重新
+组装候选或修改 run ID，只在自身已检出的同版本仓库入口执行：
+
+```bash
+node scripts/run-release-l3.mjs \
+  --execute-kit "<移交 kit 的绝对路径>" \
+  --kit-manifest-sha256 "<独立交接的 manifest.json SHA-256>" \
+  --target "${{validation_environment}}"
+```
+
+入口会重新核对 manifest、plan、bundle、执行脚本和 Runner 归档的全部摘要，再执行登记环境的用途检查；
+kit 不携带 SSH 密钥、Token、代理配置或生产授权。接收方使用原 run ID，目标已存在 inbox/work/evidence 时
+必须停止并由交接双方核对状态，不能改 ID 掩盖重复执行。
 
 每次尝试使用新 `run-id` 和新证据目录，旧计划、日志和失败状态原样保留；不得覆盖后重写成首轮成功。
 入口在任何前置条件失败时 fail-closed，候选代码未执行时记为流程异常而非产品失败。入口脚本自身需要

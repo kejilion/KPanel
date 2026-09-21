@@ -50,7 +50,9 @@ function usage(message) {
     'usage: node scripts/run-release-l3.mjs --candidate SHA --base-tag vX.Y.Z ' +
       '--runner-image IMAGE --runner-id sha256:HEX --run-id ID --artifact-dir ABSOLUTE_PATH ' +
       '[--runner-archive ABSOLUTE_PATH --runner-archive-sha256 HEX] ' +
-      '[--repo PATH] [--target ENVIRONMENT] [--prepare-only]\n',
+      '[--repo PATH] [--target ENVIRONMENT] [--prepare-only]\n' +
+      '   or: node scripts/run-release-l3.mjs --execute-kit ABSOLUTE_PATH ' +
+      '--kit-manifest-sha256 HEX --target ENVIRONMENT\n',
   );
   process.exit(2);
 }
@@ -68,6 +70,8 @@ function parseArgs(argv) {
     '--run-id',
     '--artifact-dir',
     '--target',
+    '--execute-kit',
+    '--kit-manifest-sha256',
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -84,6 +88,18 @@ function parseArgs(argv) {
     index += 1;
   }
 
+  if (options.executeKit) {
+    const incompatible = ['candidate', 'baseTag', 'runnerImage', 'runnerId', 'runId', 'artifactDir', 'runnerArchive', 'runnerArchiveSha256']
+      .filter((key) => options[key]);
+    if (options.prepareOnly || incompatible.length > 0) usage('--execute-kit only accepts --target');
+    if (!isAbsolute(options.executeKit)) usage('--execute-kit must be an absolute path');
+    if (!/^[0-9a-f]{64}$/.test(options.kitManifestSha256 ?? '')) {
+      usage('--kit-manifest-sha256 must contain 64 lowercase hexadecimal characters');
+    }
+    if (!options.target) usage('--target is required with --execute-kit');
+    return options;
+  }
+  if (options.kitManifestSha256) usage('--kit-manifest-sha256 requires --execute-kit');
   for (const key of ['candidate', 'baseTag', 'runnerImage', 'runnerId', 'runId', 'artifactDir']) {
     if (!options[key]) usage(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
   }
@@ -575,6 +591,88 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
   };
 }
 
+export function loadPreparedKit(kitDirectory, expectedManifestSha256) {
+  const artifactDir = resolve(kitDirectory);
+  const stat = lstatSync(artifactDir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('handoff kit must be a regular directory');
+  const manifestPath = join(artifactDir, 'manifest.json');
+  if (!/^[0-9a-f]{64}$/.test(expectedManifestSha256 ?? '') || sha256(manifestPath) !== expectedManifestSha256) {
+    throw new Error('handoff manifest checksum mismatch');
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (manifest?.schemaVersion !== 2 || manifest.origin !== canonicalOrigin) {
+    throw new Error('handoff manifest schema or origin is invalid');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,80}$/.test(manifest.runId ?? '') ||
+      !/^[0-9a-f]{40,64}$/.test(manifest.candidate ?? '') ||
+      !/^sha256:[0-9a-f]{64}$/.test(manifest.expectedRunnerId ?? '')) {
+    throw new Error('handoff manifest identity is invalid');
+  }
+  const file = (entry, expectedName) => {
+    if (entry?.name !== expectedName || !/^[0-9a-f]{64}$/.test(entry?.sha256 ?? '')) {
+      throw new Error(`handoff manifest file entry is invalid: ${expectedName}`);
+    }
+    const path = join(artifactDir, expectedName);
+    const fileStat = lstatSync(path);
+    if (!fileStat.isFile() || fileStat.isSymbolicLink() || sha256(path) !== entry.sha256) {
+      throw new Error(`handoff kit checksum mismatch: ${expectedName}`);
+    }
+    return path;
+  };
+  const bundleName = manifest.files?.bundle?.name;
+  if (!/^kpanel-[A-Za-z0-9._-]+\.bundle$/.test(bundleName ?? '')) {
+    throw new Error('handoff bundle name is invalid');
+  }
+  const bundlePath = file(manifest.files.bundle, bundleName);
+  const planPath = file(manifest.files?.plan, 'plan.env');
+  const remoteScriptPath = file(manifest.files?.remoteScript, 'run-release-l3-remote.sh');
+  let runnerArchivePath;
+  if (manifest.runnerArchive !== null) {
+    if (!/^kpanel-runner-[A-Za-z0-9._-]+\.tar$/.test(manifest.runnerArchive?.name ?? '')) {
+      throw new Error('handoff runner archive name is invalid');
+    }
+    runnerArchivePath = file(manifest.runnerArchive, manifest.runnerArchive.name);
+  }
+
+  const planEntries = new Map();
+  for (const line of readFileSync(planPath, 'utf8').split(/\r?\n/).filter(Boolean)) {
+    const separator = line.indexOf('=');
+    if (separator <= 0) throw new Error('handoff plan line is invalid');
+    const key = line.slice(0, separator);
+    if (planEntries.has(key)) throw new Error(`duplicate handoff plan key: ${key}`);
+    planEntries.set(key, line.slice(separator + 1));
+  }
+  const allowedKeys = new Set([
+    'SCHEMA_VERSION', 'RUN_ID', 'EXPECTED_COMMIT', 'BASE_MAIN_COMMIT', 'EXPECTED_BASE_TAG',
+    'BUSINESS_BASELINE_COMMIT', 'BUSINESS_BASELINE_TAG', 'RUNNER_IMAGE', 'EXPECTED_RUNNER_ID',
+    'RUNNER_ARCHIVE_FILE', 'RUNNER_ARCHIVE_SHA256', 'BUNDLE_FILE', 'BUNDLE_SHA256',
+    'REMOTE_SCRIPT_SHA256', 'REQUIRED_TAGS',
+  ]);
+  for (const key of planEntries.keys()) if (!allowedKeys.has(key)) throw new Error(`unknown handoff plan key: ${key}`);
+  if (planEntries.size !== allowedKeys.size || planEntries.get('SCHEMA_VERSION') !== '2' ||
+      planEntries.get('RUN_ID') !== manifest.runId ||
+      planEntries.get('EXPECTED_COMMIT') !== manifest.candidate ||
+      planEntries.get('EXPECTED_RUNNER_ID') !== manifest.expectedRunnerId ||
+      planEntries.get('BUNDLE_FILE') !== bundleName ||
+      planEntries.get('BUNDLE_SHA256') !== manifest.files.bundle.sha256 ||
+      planEntries.get('REMOTE_SCRIPT_SHA256') !== manifest.files.remoteScript.sha256 ||
+      planEntries.get('RUNNER_ARCHIVE_FILE') !== (manifest.runnerArchive?.name ?? '') ||
+      planEntries.get('RUNNER_ARCHIVE_SHA256') !== (manifest.runnerArchive?.sha256 ?? '')) {
+    throw new Error('handoff plan does not match its manifest');
+  }
+  return {
+    artifactDir,
+    bundlePath,
+    planPath,
+    remoteScriptPath,
+    manifestPath,
+    runnerArchivePath,
+    requiredTags: manifest.requiredTags,
+    runId: manifest.runId,
+    candidate: manifest.candidate,
+  };
+}
+
 function uploadAndRun(options, prepared) {
   const environment = checkEnvironment(loadPolicy(), options.target, 'candidate-validation');
   const uploadPaths = [prepared.bundlePath, prepared.planPath, prepared.remoteScriptPath, prepared.manifestPath];
@@ -642,6 +740,13 @@ function uploadAndRun(options, prepared) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) try {
   const options = parseArgs(process.argv.slice(2));
+  if (options.executeKit) {
+    const prepared = loadPreparedKit(options.executeKit, options.kitManifestSha256);
+    options.runId = prepared.runId;
+    uploadAndRun(options, prepared);
+    process.stdout.write(`release_l3_handoff=pass run_id=${prepared.runId} candidate=${prepared.candidate} target=${options.target}\n`);
+    process.exit(0);
+  }
   const prepared = await prepare(options);
   process.stdout.write(
     `release_l3_prepare=pass run_id=${options.runId} candidate=${options.candidate.toLowerCase()} ` +

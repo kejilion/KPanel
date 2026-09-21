@@ -33,6 +33,7 @@
 | Runner 身份完整性 | 只记录实际 ID | 计划冻结预期 ID，任何不一致均在门禁前失败 | `plan.env`、`runner.txt` | 每次 L3 |
 | 灾备权限边界 | 未登记 | 只允许 `candidate-validation`，生产及其他用途 100% 拒绝 | 环境策略测试 | 每次治理 CI |
 | 证据完整性 | 远端留存 | WSL 的状态、日志和摘要回收到本地 artifact 目录 | `wsl-evidence/` | 每次 WSL L3 |
+| 发布责任移交 | kit 只能由生成主机立即执行 | 接收方凭独立 manifest 摘要验证并执行同一 kit/run ID | handoff kit、终态 | 每次移交 |
 
 ## 范围与规范验收合同
 
@@ -40,7 +41,7 @@
 - 明确不修改：产品功能、版本元数据、GitHub Release、公开镜像、生产部署、`prod-108` 或现有 rc.7 候选。
 - 风险等级与验收：永久治理与发布门禁变更，按 L3 候选治理执行；实际产品发布仍需完整 L3 和后续门禁。
 - 精确规范基线：上述基线提交中的 `PROJECT_RULES.md` 5.1、环境策略与 `release-kpanel` 3.1。
-- 冻结允许范围：登记 `local-wsl-dr`、封闭传输配置、冻结 Runner ID、可选可信离线归档、证据回收、测试与对齐文档。
+- 冻结允许范围：登记 `local-wsl-dr`、封闭传输配置、冻结 Runner ID、仓库内固定 Runner 构建源、可选可信离线归档、证据回收、测试与对齐文档。
 - 明确非目标：把 WSL 变为生产或通用验收主机；自动回退；现场重建固定 Runner；改变质量阈值。
 - 权威入口：`scripts/run-release-l3.mjs` → `scripts/run-release-l3-remote.sh` → `scripts/run-release-gate.sh` → `make verify-release`。
 - 固定验收矩阵：正确性、一致性、完整性、可执行性、效率与比例性、可演进性。
@@ -60,7 +61,9 @@
 
 - `environment-policy.json` 登记 `local-wsl-dr`，只允许 `candidate-validation`，固定 `Ubuntu`/`root`，SSH 环境也显式登记传输。
 - L3 计划升级为 schema 2，强制 `EXPECTED_RUNNER_ID`；可选 Runner tar 必须同时冻结 SHA-256，执行脚本先验摘要、导入后再核对实际 ID。
+- `packaging/release-runner/Dockerfile` 固定基础镜像摘要和直接系统包版本，修复 npm 跨阶段布局并在构建时执行 Node/npm/npx smoke。
 - WSL 仅由 Windows 控制端按参数数组调用，不拼接 Shell；执行后只回收日志、状态和摘要到 `artifactDir/wsl-evidence`。
+- prepare-only kit 可通过 `--execute-kit` 在另一登记控制主机继续；manifest 摘要必须独立交接，kit 不含凭据和生产授权。
 - 默认仍为 `arena-154`，不自动静默回退；候选 CI、主线、Release、公开镜像与生产流程不变。
 
 ## 验证与证据层级

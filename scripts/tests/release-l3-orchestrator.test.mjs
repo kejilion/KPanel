@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { gitResult, removeOwnedDirectory, transportEnvironment } from '../run-release-l3.mjs';
+import { gitResult, loadPreparedKit, removeOwnedDirectory, transportEnvironment } from '../run-release-l3.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const orchestrator = resolve(repoRoot, 'scripts', 'run-release-l3.mjs');
@@ -272,6 +272,24 @@ test('prepare-only binds an optional offline runner archive by name and checksum
     assert.match(plan, /RUNNER_ARCHIVE_FILE=kpanel-runner-source-test\.tar/);
     assert.match(plan, new RegExp(`RUNNER_ARCHIVE_SHA256=${digest}`));
     assert.equal(readFileSync(join(fixture.root, 'artifacts', 'kpanel-runner-source-test.tar'), 'utf8'), 'offline runner fixture\n');
+  } finally { removeFixture(fixture.root); }
+});
+
+test('a handed-off kit is executable only with its out-of-band manifest digest', async () => {
+  const fixture = createFixture();
+  try {
+    const result = prepareFixture(fixture);
+    assert.equal(result.status, 0, result.stderr);
+    const artifactDir = join(fixture.root, 'artifacts');
+    const manifestPath = join(artifactDir, 'manifest.json');
+    const digest = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+    const prepared = loadPreparedKit(artifactDir, digest);
+    assert.equal(prepared.runId, 'source-test');
+    assert.equal(prepared.candidate, fixture.candidate);
+    assert.equal(prepared.runnerArchivePath, undefined);
+    assert.throws(() => loadPreparedKit(artifactDir, '0'.repeat(64)), /manifest checksum mismatch/);
+    writeFileSync(prepared.planPath, readFileSync(prepared.planPath, 'utf8') + 'UNKNOWN=value\n');
+    assert.throws(() => loadPreparedKit(artifactDir, digest), /kit checksum mismatch: plan\.env/);
   } finally { removeFixture(fixture.root); }
 });
 
