@@ -122,7 +122,13 @@ onBeforeUnmount(() => { disposed = true; clearCredential() })
             <label v-if="domains.includes('files')" class="mcp-roots"><span>允许访问的文件目录（每行一个绝对路径）</span><textarea v-model="fileRoots" rows="3" placeholder="/home/web" /></label>
             <label v-if="accessMode === 'manage'" class="mcp-auto"><input v-model="autoApprove" type="checkbox" /><span>允许自动执行日常启停和固定诊断；其他修改仍需逐项审批。</span></label>
           </fieldset>
-          <fieldset :disabled="busy || !!token"><legend>授权主机</legend><div class="mcp-hosts"><label v-for="host in hosts" :key="host.id"><input v-model="selected" type="checkbox" :value="host.id" /><span>{{ host.name }} <small>{{ host.isLocal ? '本机' : '远程管理还需被控节点授权；轻节点仅支持摘要。' }}</small></span></label></div></fieldset>
+          <fieldset :disabled="busy || !!token"><legend>授权主机</legend>
+            <div class="mcp-host-actions">
+              <button type="button" class="button button--secondary" :disabled="!hosts.length" @click="selected = hosts.map(host => host.id)">{{ phrase('全选') }}</button>
+              <button type="button" class="button button--secondary" :disabled="!hosts.length" @click="selected = hosts.filter(host => !selected.includes(host.id)).map(host => host.id)">{{ phrase('反选') }}</button>
+            </div>
+            <div class="mcp-hosts"><label v-for="host in hosts" :key="host.id"><input v-model="selected" type="checkbox" :value="host.id" /><span>{{ host.name }} <small>{{ host.isLocal ? '本机' : '远程管理还需被控节点授权；轻节点仅支持摘要。' }}</small></span></label></div>
+          </fieldset>
           <p class="mcp-note">新加入的主机不会自动授权。需要更换权限或凭据时，撤销该客户端并重新创建。</p>
           <p v-if="settings.access.clients.length >= settings.maxClients" role="status">客户端数量已达上限，请撤销不再使用的客户端。</p>
           <button class="button button--primary" type="submit" :disabled="!canCreate">{{ accessMode === 'inspect' ? '创建巡检客户端' : '创建授权客户端' }}</button>
@@ -176,6 +182,7 @@ onBeforeUnmount(() => { disposed = true; clearCredential() })
 .mcp-form fieldset, .mcp-form > p { grid-column: 1 / -1; }
 .mcp-form fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-width: 0; }
 .mcp-form legend { padding: 0 6px; }
+.mcp-host-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .mcp-hosts { display: grid; gap: 12px; max-height: 240px; overflow: auto; }
 .mcp-hosts label { display: flex; gap: 10px; align-items: flex-start; overflow-wrap: anywhere; }
 .mcp-hosts input { width: 18px; height: 18px; flex: none; margin-top: 3px; }

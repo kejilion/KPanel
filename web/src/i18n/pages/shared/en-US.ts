@@ -1288,6 +1288,8 @@ export default [
   ["允许访问的文件目录（每行一个绝对路径）","Allowed file directories (one absolute path per line)"],
   ["允许自动执行日常启停和固定诊断；其他修改仍需逐项审批。","Allow automatic routine start/stop actions and fixed diagnostics. Other changes still require individual approval."],
   ["授权主机","Authorized hosts"],
+  ["全选","Select all"],
+  ["反选","Invert selection"],
   ["AI 客户端","AI client"],
   ["无法加载集群管理授权，请刷新重试。","Unable to load cluster management grants. Refresh and retry."],
   ["集群管理授权已保存。","Cluster management grant saved."],
