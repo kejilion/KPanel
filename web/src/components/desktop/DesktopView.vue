@@ -420,7 +420,7 @@ const activeDesktopWallpaper = computed(() =>
   DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
     || DESKTOP_WALLPAPERS[0],
 )
-const desktopWallpaperStyle = computed<Record<string, string>>(() =>
+const desktopWallpaperStyle = computed((): Record<string, string> =>
   document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
     ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
 )
