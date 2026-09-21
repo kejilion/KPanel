@@ -15,13 +15,13 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
   const browser = await chromium.launch({ headless: true, executablePath: process.env.KPANEL_BROWSER_EXECUTABLE || undefined })
   try {
     for (const [width, theme, zoom] of [[1280, 'dark', 1], [1280, 'light', 2], [390, 'light', 1]]) {
-      const context = await browser.newContext({ viewport: { width, height: 900 } })
-      await context.addInitScript(({ theme, zoom }) => {
+      // Match the CSS viewport and pixel density of browser zoom without changing application styles.
+      const context = await browser.newContext({ viewport: { width: width / zoom, height: 900 / zoom }, deviceScaleFactor: zoom })
+      await context.addInitScript(({ theme }) => {
         localStorage.setItem('kejilion-panel-desktop-mode', 'desktop')
         localStorage.setItem('kejilion-panel-desktop-windows', '[]')
         localStorage.setItem('kejilion-panel-theme', theme)
-        document.addEventListener('DOMContentLoaded', () => { document.documentElement.style.zoom = String(zoom) })
-      }, { theme, zoom })
+      }, { theme })
       const page = await context.newPage()
       page.setDefaultTimeout(10000)
       page.on('pageerror', error => report.errors.push(error.message))
@@ -57,7 +57,7 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
         release()
         await page.waitForFunction(() => window.layoutFrames.filter(frame => frame.visible).length >= 8)
         const frames = await page.evaluate(() => window.layoutFrames.filter(frame => frame.visible))
-        report.cases.push({ label, width, theme, zoom, frames })
+        report.cases.push({ label, width, theme, zoom, zoomMode: 'effective-css-viewport', frames })
         assert(frames.every(frame => frame.animations === 0), `${label}: initial placement animated`)
         assert(frames.every(frame => frame.x === frames[0].x && frame.y === frames[0].y), `${label}: visible coordinates changed`)
         if (!failed) assert(frames.every(frame => frame.member === 'a'.repeat(32)), `${label}: ungrouped frame`)
