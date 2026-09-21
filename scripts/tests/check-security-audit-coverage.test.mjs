@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   assessCoverage,
   loadRuns,
   main,
   normalizeRun,
+  parseArguments,
   validatePolicy,
   validateRun,
 } from '../check-security-audit-coverage.mjs';
@@ -135,9 +137,45 @@ test('runs outside the target history are not coverage', (t) => {
   const side = commit(1, { 'internal/agent/server.go': 'side' });
   git('checkout', '-q', '-');
   run('run-4', full(side));
-  assert.equal(assess(repo).decision, 'full-required');
+  let report = assess(repo);
+  assert.equal(report.decision, 'full-required');
+  assert.deepEqual(report.outside.map((r) => r.name), ['run-4']);
   run('run-5', full(base));
-  assert.equal(assess(repo).lastFull.name, 'run-5');
+  report = assess(repo);
+  assert.equal(report.lastFull.name, 'run-5');
+  assert.deepEqual(report.outside.map((r) => r.name), ['run-4']);
+});
+
+test('nested packages count as new boundary packages; nested non-boundary paths do not', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  commit(1, { 'internal/agent/sshlogin/login.go': 'new', 'internal/version/sub/x.go': 'v', 'internal/agent/assets/a.txt': 'x' });
+  const report = assess(repo);
+  assert.equal(report.decision, 'scoped-required');
+  assert.deepEqual(report.newPackages, ['internal/agent/sshlogin']);
+});
+
+test('every invocation written in the workflows parses', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const invocations = ['release-kpanel', 'security-boundary-audit'].flatMap((name) =>
+    readFileSync(join(root, '.codex-workflows', name + '.workflow.yaml'), 'utf8')
+      .split('\n')
+      .filter((line) => line.includes('check-security-audit-coverage.mjs') && line.trim().startsWith('node')));
+  assert.equal(invocations.length, 2);
+  for (const line of invocations) {
+    const args = line.split('check-security-audit-coverage.mjs"')[1] ?? line.split('check-security-audit-coverage.mjs')[1];
+    const argv = args.trim().split(/\s+/).map((part) => part.replace(/"\$\{\{[a-z_]+\}\}"/, 'HEAD'));
+    assert.ok(parseArguments(argv), line);
+  }
+});
+
+test('the exact command spellings used by the workflows parse', () => {
+  assert.deepEqual(parseArguments(['--target', 'HEAD', '--require']), { validate: false, require: true, target: 'HEAD', format: 'text' });
+  assert.equal(parseArguments(['--target', 'abc', '--format=json']).format, 'json');
+  assert.equal(parseArguments(['--target=HEAD', '--format', 'json']).target, 'HEAD');
+  assert.equal(parseArguments(['--target']), null);
+  assert.equal(parseArguments(['--target', '--require']), null);
+  assert.equal(parseArguments(['--format=yaml']), null);
 });
 
 test('legacy metadata shapes are read as recorded; new runs need exact identities', () => {
@@ -180,6 +218,7 @@ test('main exits 3 only with --require and a pending decision', (t) => {
     assert.equal(main([], repo), 0);
     assert.equal(main(['--require'], repo), 3);
     assert.equal(main(['--require', '--format=json'], repo), 3);
+    assert.equal(main(['--target', 'HEAD', '--require'], repo), 3);
   } finally {
     process.stdout.write = write;
   }

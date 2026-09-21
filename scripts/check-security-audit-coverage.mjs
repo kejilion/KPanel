@@ -106,18 +106,22 @@ export function loadRuns(repo = repoRoot) {
 }
 
 // The chain starts at a completed full run; a completed scoped run extends it only when its comparison
-// base is already covered (no gap) and its source moves forward. Runs outside the target history are ignored.
+// base is already covered (no gap) and its source moves forward. Runs outside the target history are reported, never counted.
 export function coverageChain(git, runs, target) {
   let lastFull = null;
   let through = null;
   const interrupted = [];
   const gaps = [];
+  const outside = [];
   for (const run of runs) {
     if (!run.complete) {
       interrupted.push(run);
       continue;
     }
-    if (!run.source || !isAncestor(git, run.source, target)) continue;
+    if (!run.source || !isAncestor(git, run.source, target)) {
+      outside.push(run);
+      continue;
+    }
     if (run.mode === 'full') {
       lastFull = run;
       through = run;
@@ -128,7 +132,7 @@ export function coverageChain(git, runs, target) {
       gaps.push(run);
     }
   }
-  return { lastFull, through, interrupted, gaps };
+  return { lastFull, through, interrupted, gaps, outside };
 }
 
 function pathspecs(policy) {
@@ -140,11 +144,20 @@ function pathspecs(policy) {
   ];
 }
 
+// A package is any directory holding non-test Go source, nested ones included (e.g. internal/cluster/sshlogin).
 function packages(git, policy, ref) {
-  return policy.packageRoots.flatMap((root) => {
-    const listed = git('ls-tree', '-d', '--name-only', ref, root + '/');
-    return listed ? listed.split('\n') : [];
-  }).filter((path) => !(path in policy.nonBoundary));
+  const excluded = Object.keys(policy.nonBoundary);
+  const directories = new Set();
+  for (const root of policy.packageRoots) {
+    const listed = git('ls-tree', '-r', '--name-only', ref, root + '/');
+    for (const path of listed ? listed.split('\n') : []) {
+      const segments = path.split('/');
+      if (!path.endsWith('.go') || policy.ignoreSuffixes.some((suffix) => path.endsWith(suffix))) continue;
+      if (segments.some((segment) => policy.ignoreSegments.includes(segment))) continue;
+      directories.add(segments.slice(0, -1).join('/'));
+    }
+  }
+  return [...directories].filter((path) => !excluded.some((prefix) => path === prefix || path.startsWith(prefix + '/'))).sort();
 }
 
 export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs }) {
@@ -205,17 +218,34 @@ export function render(report, policy) {
   }
   for (const run of report.interrupted) lines.push('interrupted ' + run.name + ' status=' + run.status + ' (not coverage)');
   for (const run of report.gaps) lines.push('not_chained ' + run.name + ' (partial scope or comparison_base not covered; not coverage)');
+  for (const run of report.outside) lines.push('outside_history ' + run.name + ' (source is not in target history; not coverage)');
   return lines.join('\n');
 }
 
 function usage() {
-  return 'usage: node scripts/check-security-audit-coverage.mjs [--validate] [--target=<ref>] [--require] [--format=text|json]\n';
+  return 'usage: node scripts/check-security-audit-coverage.mjs [--validate] [--target <ref>] [--require] [--format text|json]\n';
+}
+
+// Workflows write `--target HEAD` and `--format=json`; both spellings must parse the same way.
+export function parseArguments(argv) {
+  const options = { validate: false, require: false, target: 'HEAD', format: 'text' };
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    const match = /^--(target|format)(?:=(.*))?$/.exec(argument);
+    if (argument === '--validate') options.validate = true;
+    else if (argument === '--require') options.require = true;
+    else if (match) {
+      const value = match[2] ?? argv[++index];
+      if (!value || value.startsWith('-')) return null;
+      options[match[1]] = value;
+    } else return null;
+  }
+  return ['text', 'json'].includes(options.format) ? options : null;
 }
 
 export function main(argv, repo = repoRoot) {
-  const value = (name) => argv.find((argument) => argument.startsWith(name + '='))?.slice(name.length + 1);
-  const known = /^--(validate|require|target=.+|format=(text|json))$/;
-  if (argv.some((argument) => !known.test(argument))) {
+  const options = parseArguments(argv);
+  if (!options) {
     process.stderr.write(usage());
     return 2;
   }
@@ -233,18 +263,18 @@ export function main(argv, repo = repoRoot) {
     process.stderr.write('Security audit coverage validation failed:\n- ' + failures.join('\n- ') + '\n');
     return 1;
   }
-  if (argv.includes('--validate')) {
+  if (options.validate) {
     process.stdout.write('Security audit coverage validation passed (' + runs.length + ' runs).\n');
     return 0;
   }
   let report;
   try {
-    report = assessCoverage({ repo, target: value('--target') ?? 'HEAD', policy, runs });
+    report = assessCoverage({ repo, target: options.target, policy, runs });
   } catch (error) {
     process.stderr.write('check-security-audit-coverage: ' + error.message + '\n');
     return 1;
   }
-  if (value('--format') === 'json') {
+  if (options.format === 'json') {
     const strip = (run) => run && { name: run.name, mode: run.mode, status: run.status, source: run.source, dirty: run.dirty };
     process.stdout.write(JSON.stringify({
       ...report,
@@ -252,11 +282,12 @@ export function main(argv, repo = repoRoot) {
       through: strip(report.through),
       interrupted: report.interrupted.map(strip),
       gaps: report.gaps.map(strip),
+      outside: report.outside.map(strip),
     }, null, 2) + '\n');
   } else {
     process.stdout.write(render(report, policy) + '\n');
   }
-  return argv.includes('--require') && report.decision !== 'ok' ? 3 : 0;
+  return options.require && report.decision !== 'ok' ? 3 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
