@@ -56,9 +56,19 @@ function applyTheme(animate = false): void {
   root.dataset.theme = mode
   root.style.colorScheme = mode
   clearAppliedColorTokens()
-  if (!customColors.value) return
-  const tokens = deriveThemeTokens(colors.value, mode)
-  for (const token of THEME_TOKEN_NAMES) root.style.setProperty(token, tokens[token])
+  if (customColors.value) {
+    const tokens = deriveThemeTokens(colors.value, mode)
+    for (const token of THEME_TOKEN_NAMES) root.style.setProperty(token, tokens[token])
+  }
+  try {
+    const style = getComputedStyle(root)
+    const tokens = Object.fromEntries(THEME_TOKEN_NAMES
+      .filter(token => token.startsWith('--desktop-wallpaper-') || token.startsWith('--desktop-aurora-'))
+      .map(token => [token, style.getPropertyValue(token).trim()]))
+    window.sessionStorage.setItem('kpanel:desktop-backdrop:v1', JSON.stringify({
+      theme: mode, colors: readPreference(COLOR_STORAGE_KEY), tokens,
+    }))
+  } catch { /* Optional per-tab paint cache must not affect theme selection. */ }
 }
 
 function readPreference(key: string): string | null {

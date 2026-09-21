@@ -6,6 +6,7 @@ const themeSource = readFileSync(new URL('../styles/themes.css', import.meta.url
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const mainSource = readFileSync(new URL('../styles/main.css', import.meta.url), 'utf8')
 const desktopSource = readFileSync(new URL('../styles/desktop.css', import.meta.url), 'utf8')
+  + readFileSync(new URL('../styles/desktopWallpaper.css', import.meta.url), 'utf8')
 
 const REQUIRED_DEFAULT_TOKENS = [
   ...THEME_TOKEN_NAMES,

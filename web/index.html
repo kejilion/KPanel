@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="/src/styles/desktopWallpaper.css" />
+    <script src="/appearance-init.js?v=20260922"></script>
     <meta name="application-name" content="KPanel" />
     <meta name="description" content="KPanel 是与 kejilion.sh 协同工作的轻量 Linux Web 管理面板。" />
     <meta name="theme-color" content="#0c9b78" />
@@ -15,6 +17,14 @@
     <title>KPanel · Linux 服务器管理面板</title>
   </head>
   <body>
+    <div id="desktop-boot" aria-hidden="true">
+      <div class="desktop__wallpaper">
+        <div class="desktop__wallpaper-image"></div>
+        <div class="desktop__wallpaper-veil"></div>
+        <div class="desktop__aurora desktop__aurora--one"></div>
+        <div class="desktop__aurora desktop__aurora--two"></div>
+      </div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveDesktopGridLayout,
+  reflowDesktopGridLayout,
   desktopGridPlacementRect,
   dropDesktopGridItem,
   moveDesktopGridItemByKeyboard,
@@ -19,11 +20,12 @@ const items = [
 
 function assertNoOverlap(
   placements: ReturnType<typeof deriveDesktopGridLayout>['placements'],
+  area = bounds,
 ): void {
   for (let left = 0; left < placements.length; left += 1) {
-    const first = desktopGridPlacementRect(placements[left]!, bounds)
+    const first = desktopGridPlacementRect(placements[left]!, area)
     for (let right = left + 1; right < placements.length; right += 1) {
-      const second = desktopGridPlacementRect(placements[right]!, bounds)
+      const second = desktopGridPlacementRect(placements[right]!, area)
       expect(
         first.left >= second.left + second.width
           || second.left >= first.left + first.width
@@ -70,6 +72,48 @@ describe('desktop mixed grid layout', () => {
     const layout = deriveDesktopGridLayout(items, [{ key: 'widget:clock', position: saved }], bounds, false)
     const clock = layout.placements.find((item) => item.key === 'widget:clock')!
     expect(clock.position).toEqual(saved)
+  })
+})
+
+describe('viewport reflow', () => {
+  const icons = Array.from({ length: 24 }, (_, index) => ({ key: `icon:${index}` }))
+  const widgets = [
+    { key: 'widget:clock', columns: 4, rows: 2 },
+    { key: 'widget:monitor', columns: 4, rows: 3 },
+    { key: 'widget:services', columns: 4, rows: 3 },
+  ]
+  it.each([{ width: 1895, height: 995 }, { width: 1100, height: 700 }])('fills icon holes and stacks widgets at $width x $height', area => {
+    const order = [...icons].reverse().map(item => item.key)
+    const layout = reflowDesktopGridLayout([...icons, ...widgets], order, area, false)
+    expect(layout.placements).toHaveLength(27)
+    assertNoOverlap(layout.placements, area)
+    const rects = new Map(layout.placements.map(item => [item.key, desktopGridPlacementRect(item, area)]))
+    order.slice(0, layout.grid.rows).forEach((key, row) => {
+      expect(rects.get(key)?.left).toBeCloseTo(0)
+      expect(rects.get(key)?.top).toBeCloseTo(row * 100)
+    })
+    expect(rects.get('widget:clock')?.top).toBeCloseTo(0)
+    expect(rects.get('widget:monitor')?.top).toBeCloseTo(200)
+    expect(rects.get('widget:services')?.top).toBeCloseTo(500)
+    expect(rects.get('widget:clock')?.left).toBeCloseTo(rects.get('widget:services')!.left)
+  })
+  it.each([390, 768, 1280])('keeps groups intact and reachable at %spx without mutating source data', width => {
+    const area = { width, height: 600 }
+    const group: DesktopGroup = { id: 'a', name: 'a', columns: 4, rows: 0, collapsed: false, members: ['a', 'b', 'c'] }
+    const source = [desktopGroupItem(group, new Set(group.members), area), ...icons]
+    const copy = structuredClone(source)
+    const layout = reflowDesktopGridLayout(source, source.map(item => item.key), area, width <= 760)
+    expect(layout.placements).toHaveLength(source.length)
+    expect(layout.placements.filter(item => item.key === 'group:a')).toHaveLength(1)
+    for (const item of layout.placements) {
+      const rect = desktopGridPlacementRect(item, area)
+      expect(rect.left).toBeGreaterThanOrEqual(0)
+      expect(rect.left + rect.width).toBeLessThanOrEqual(width + 0.001)
+      expect(rect.top + rect.height).toBeLessThanOrEqual(layout.contentHeight + 0.001)
+    }
+    assertNoOverlap(layout.placements, area)
+    expect(source).toEqual(copy)
+    expect(reflowDesktopGridLayout(source, source.map(item => item.key), area, width <= 760)).toEqual(layout)
   })
 })
 

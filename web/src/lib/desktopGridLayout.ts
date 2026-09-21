@@ -310,6 +310,31 @@ export function deriveDesktopGridLayout(
   }
 }
 
+/** Compact a resized viewport in stable visual order without rewriting saved anchors. */
+export function reflowDesktopGridLayout(
+  items: readonly DesktopGridItem[],
+  order: readonly string[],
+  bounds: DesktopIconBounds,
+  compact: boolean,
+): DesktopGridArrangement {
+  const rank = new Map(order.map((key, index) => [key, index]))
+  const ordered = [...items].sort((left, right) =>
+    (rank.get(left.key) ?? order.length) - (rank.get(right.key) ?? order.length),
+  )
+  const grid = desktopIconGrid(bounds)
+  let widgetRow = 0
+  // Reserve a contiguous right-hand widget column before packing icons and groups.
+  const widgets = ordered.filter(item => item.key.startsWith('widget:')).map(item => {
+    const defaultSlot = { column: Math.max(0, grid.columns - span(item.columns)), row: widgetRow }
+    widgetRow += span(item.rows)
+    return { ...item, defaultSlot }
+  })
+  return deriveDesktopGridLayout([
+    ...widgets,
+    ...ordered.filter(item => !item.key.startsWith('widget:')),
+  ], [], bounds, compact)
+}
+
 /** Resolve a mixed placement to the visible pixel rectangle. */
 export function desktopGridPlacementRect(
   placement: DesktopGridPlacement,

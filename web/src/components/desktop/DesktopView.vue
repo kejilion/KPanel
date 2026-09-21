@@ -104,6 +104,7 @@ import {
 } from '@/lib/desktopIconLayout'
 import {
   deriveDesktopGridLayout,
+  reflowDesktopGridLayout,
   desktopGridPlacementRect,
   dropDesktopGridItem,
   moveDesktopGridItemByKeyboard,
@@ -399,6 +400,10 @@ const desktopShortcutPaths = computed(() => [...new Set(
 const desktopShortcutPathSignature = computed(() => desktopShortcutPaths.value.join('\0'))
 
 const iconsElement = ref<HTMLElement>()
+const initialLayoutReady = ref(false)
+const initialLayoutTransitionsReady = ref(false)
+const viewportLayoutResizing = ref(false)
+const layoutBeforeResize = ref<{ bounds: DesktopIconBounds; order: string[] }>()
 const desktopElement = ref<HTMLElement>()
 const iconBounds = ref<DesktopIconBounds>({ width: 90, height: 96 })
 const compactIconLayout = ref(window.innerWidth <= 760)
@@ -418,9 +423,10 @@ const activeDesktopWallpaper = computed(() =>
   DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
     || DESKTOP_WALLPAPERS[0],
 )
-const desktopWallpaperStyle = computed(() => ({
-  '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")`,
-}))
+const desktopWallpaperStyle = computed((): Record<string, string> =>
+  document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
+    ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
+)
 const shortcutDialogOpen = ref(false)
 const editingShortcut = ref<DesktopShortcut>()
 const deletingShortcut = ref<DesktopShortcut>()
@@ -750,12 +756,21 @@ const savedPlacements = computed<Array<Pick<DesktopGridPlacement, 'key' | 'posit
   ...Object.entries(localWidgetPositions.value).map(([key, position]) => ({ key, position })),
 ])
 
-const renderedDesktopLayout = computed(() => deriveDesktopGridLayout(
+const renderedDesktopLayout = computed(() => layoutBeforeResize.value
+  && (layoutBeforeResize.value.bounds.width !== iconBounds.value.width
+    || layoutBeforeResize.value.bounds.height !== iconBounds.value.height)
+  ? reflowDesktopGridLayout(allDesktopLayoutItems.value, layoutBeforeResize.value.order, iconBounds.value, compactIconLayout.value)
+  : deriveDesktopGridLayout(
   allDesktopLayoutItems.value,
   savedPlacements.value,
   iconBounds.value,
   compactIconLayout.value,
 ))
+
+// A user edit or a new server snapshot becomes the new layout to preserve.
+watch([localPositions, localWidgetPositions, localGroups], () => {
+  layoutBeforeResize.value = undefined
+}, { flush: 'sync' })
 
 const renderedIconLayout = computed(() => {
   const iconKeys = new Set(allIconKeys.value)
@@ -1316,9 +1331,23 @@ function closeContextMenuOnViewportChange(): void {
 function measureIconWorkArea(): void {
   viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
   const rect = iconsElement.value?.getBoundingClientRect()
-  iconBounds.value = {
+  const bounds = {
     width: Math.max(90, rect?.width || window.innerWidth - 24),
     height: Math.max(96, rect?.height || window.innerHeight - 88),
+  }
+  if (bounds.width !== iconBounds.value.width || bounds.height !== iconBounds.value.height) {
+    if (initialLayoutReady.value && !layoutBeforeResize.value) {
+      const placements = renderedDesktopLayout.value.placements
+      layoutBeforeResize.value = {
+        bounds: { ...iconBounds.value },
+        order: [...placements].sort((left, right) => {
+          const a = desktopGridPlacementRect(left, iconBounds.value)
+          const b = desktopGridPlacementRect(right, iconBounds.value)
+          return a.left - b.left || a.top - b.top
+        }).map(item => item.key),
+      }
+    }
+    iconBounds.value = bounds
   }
   const compact = window.innerWidth <= 760
   const widgetsVisible = window.innerWidth > 900
@@ -1330,6 +1359,23 @@ function measureIconWorkArea(): void {
   compactIconLayout.value = compact
   widgetLayoutVisible.value = widgetsVisible
 }
+
+watch([entriesLoading, () => desktopIcons.loading.value], async ([entriesBusy, workspaceBusy], _, onCleanup) => {
+  if (entriesBusy || workspaceBusy || initialLayoutReady.value) return
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  measureIconWorkArea()
+  await nextTick()
+  if (cancelled || !iconsElement.value) return
+  // Commit the restored coordinates with transitions disabled before revealing them.
+  void iconsElement.value.offsetWidth
+  initialLayoutReady.value = true
+  await nextTick()
+  if (!iconsElement.value) return
+  // Revealing visibility must settle too, before normal interaction transitions resume.
+  void iconsElement.value.offsetWidth
+  initialLayoutTransitionsReady.value = true
+}, { flush: 'post' })
 
 function expandIconDragSurface(): boolean {
   const element = iconsElement.value
@@ -3052,6 +3098,7 @@ async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<
   theme.setColors(wallpaper.themePreset.colors)
   try {
     window.localStorage.setItem(DESKTOP_WALLPAPER_KEY, wallpaperID)
+    window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))
   } catch {
     // The wallpaper still applies to this session when storage is unavailable.
   }
@@ -3526,7 +3573,7 @@ onMounted(() => {
   void nextTick(() => {
     measureIconWorkArea()
     if (typeof ResizeObserver !== 'undefined' && iconsElement.value) {
-      iconsResizeObserver = new ResizeObserver(measureIconWorkArea)
+      iconsResizeObserver = new ResizeObserver(onViewportResize)
       iconsResizeObserver.observe(iconsElement.value)
     }
   })
@@ -3568,6 +3615,12 @@ onBeforeUnmount(() => {
 
 function onViewportResize(): void {
   closeContextMenu(false)
+  if (initialLayoutReady.value) {
+    viewportLayoutResizing.value = true
+    cancelIconDrag()
+    cancelWidgetDrag()
+    cancelSelectionFrame()
+  }
   if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame)
   resizeFrame = window.requestAnimationFrame(() => {
     resizeFrame = undefined
@@ -3575,9 +3628,13 @@ function onViewportResize(): void {
     desktop.resizeForViewport({ width: window.innerWidth, height: window.innerHeight }, false)
   })
   if (resizePersistTimer !== undefined) window.clearTimeout(resizePersistTimer)
-  resizePersistTimer = window.setTimeout(() => {
+  resizePersistTimer = window.setTimeout(async () => {
     resizePersistTimer = undefined
     desktop.resizeForViewport({ width: window.innerWidth, height: window.innerHeight })
+    await nextTick()
+    // Finish the final coordinates without transitions before restoring interaction motion.
+    if (iconsElement.value) void iconsElement.value.offsetWidth
+    viewportLayoutResizing.value = false
   }, 180)
 }
 </script>
@@ -3721,12 +3778,14 @@ function onViewportResize(): void {
       </button>
     </section>
 
+    <span v-if="!initialLayoutReady" class="desktop__sr-only" role="status">{{ i18n.t('desktop.entriesLoading') }}</span>
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--grouped': localGroups.length > 0 }"
+      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
+      :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
-      :aria-busy="entriesLoading"
+      :aria-busy="!initialLayoutReady || entriesLoading"
     >
       <div
         class="desktop__icons-scroll-space"
@@ -3744,7 +3803,7 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
-      <TransitionGroup name="desktop-group-surface" move-class="desktop-group-surface-no-move"
+      <TransitionGroup :css="initialLayoutTransitionsReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
         @before-leave="(element: Element) => { (element as HTMLElement).inert = true; element.setAttribute('aria-hidden', 'true') }"
         @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"
