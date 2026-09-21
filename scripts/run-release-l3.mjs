@@ -594,10 +594,11 @@ function uploadAndRun(options, prepared) {
 
   const prefix = ['-d', environment.transport.distribution, '-u', environment.transport.user, '--'];
   const wsl = (args, runOptions = {}) => run('wsl.exe', [...prefix, ...args], runOptions);
+  const windowsPathToWsl = (path) => wsl(['wslpath', '-a', path.replaceAll('\\', '/')]);
   wsl(['test', '!', '-e', inbox]);
   wsl(['install', '-d', '-m', '700', '--', inbox]);
   for (const path of uploadPaths) {
-    const source = wsl(['wslpath', '-a', path]);
+    const source = windowsPathToWsl(path);
     wsl(['cp', '--', source, `${inbox}/${basename(path)}`]);
   }
 
@@ -612,7 +613,7 @@ function uploadAndRun(options, prepared) {
     const remoteEvidence = `/root/kpanel-release-evidence/${options.runId}`;
     const localEvidence = join(prepared.artifactDir, 'wsl-evidence');
     mkdirSync(localEvidence, { recursive: false, mode: 0o700 });
-    const destination = wsl(['wslpath', '-a', localEvidence]);
+    const destination = windowsPathToWsl(localEvidence);
     const names = wsl(['find', remoteEvidence, '-maxdepth', '1', '-type', 'f', '-printf', '%f\n'])
       .split(/\r?\n/).filter(Boolean);
     for (const name of names) {
