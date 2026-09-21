@@ -14,9 +14,9 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
 ;(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.KPANEL_BROWSER_EXECUTABLE || undefined })
   try {
-    for (const [width, theme, zoom] of [[1280, 'dark', 1], [1280, 'light', 2], [390, 'light', 1]]) {
+    for (const [width, theme, zoom, reducedMotion] of [[1280, 'dark', 1, 'no-preference'], [1280, 'light', 2, 'no-preference'], [390, 'light', 1, 'no-preference'], [1280, 'dark', 1, 'reduce']]) {
       // Match the CSS viewport and pixel density of browser zoom without changing application styles.
-      const context = await browser.newContext({ viewport: { width: width / zoom, height: 900 / zoom }, deviceScaleFactor: zoom })
+      const context = await browser.newContext({ viewport: { width: width / zoom, height: 900 / zoom }, deviceScaleFactor: zoom, reducedMotion })
       await context.addInitScript(({ theme }) => {
         localStorage.setItem('kejilion-panel-desktop-mode', 'desktop')
         localStorage.setItem('kejilion-panel-desktop-windows', '[]')
@@ -50,7 +50,9 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
               const rect = icon.getBoundingClientRect()
               const animations = grid.getAnimations({ subtree: true }).filter(animation => animation.effect.target.matches('.desktop__icon, .desktop__icon-slot, .desktop-group'))
               const opacity = getComputedStyle(icon.querySelector('.desktop__icon')).opacity
-              window.layoutFrames.push({ visible, member: icon.dataset.groupMember, x: rect.x, y: rect.y, opacity, animations: animations.length })
+              const surfaceOpacity = Number(getComputedStyle(grid).opacity)
+              const surfaceAnimations = grid.getAnimations().map(animation => ({ name: animation.animationName, duration: animation.effect.getTiming().duration }))
+              window.layoutFrames.push({ visible, member: icon.dataset.groupMember, x: rect.x, y: rect.y, opacity, surfaceOpacity, surfaceAnimations, animations: animations.length })
             }
             if (window.layoutFrames.filter(frame => frame.visible).length < 8) requestAnimationFrame(capture)
           }
@@ -59,7 +61,15 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
         release()
         await page.waitForFunction(() => window.layoutFrames.filter(frame => frame.visible).length >= 8)
         const frames = await page.evaluate(() => window.layoutFrames.filter(frame => frame.visible))
-        report.cases.push({ label, width, theme, zoom, zoomMode: 'effective-css-viewport', frames })
+        report.cases.push({ label, width, theme, zoom, reducedMotion, zoomMode: 'effective-css-viewport', frames })
+        if (reducedMotion === 'reduce') {
+          assert(frames.every(frame => frame.surfaceOpacity === 1 && frame.surfaceAnimations.length === 0), `${label}: reduced motion animated`)
+        } else {
+          assert(frames.some(frame => frame.surfaceOpacity > 0 && frame.surfaceOpacity < 1), `${label}: missing gentle reveal`)
+          assert(frames.flatMap(frame => frame.surfaceAnimations).every(animation => animation.name === 'desktop-workspace-reveal' && animation.duration === 180))
+          assert(frames.every((frame, index) => index === 0 || frame.surfaceOpacity >= frames[index - 1].surfaceOpacity), `${label}: reveal restarted`)
+        }
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.desktop__icons')).opacity === '1')
         assert(frames.every(frame => frame.animations === 0), `${label}: initial placement animated`)
         assert(frames.every(frame => frame.opacity === '1'), `${label}: icon faded in after reveal`)
         assert(frames.every(frame => frame.x === frames[0].x && frame.y === frames[0].y), `${label}: visible coordinates changed`)
@@ -68,7 +78,7 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
       }
       await page.goto(base)
       await verifyReveal('initial refresh')
-      await page.screenshot({ path: `${out}/${width}-${theme}-${zoom}.png` })
+      await page.screenshot({ path: `${out}/${width}-${theme}-${zoom}-${reducedMotion}.png` })
       await page.locator('.desktop__classic-button').click()
       pending = new Promise(resolve => { release = resolve })
       await page.locator('.desktop-entry-button').click()

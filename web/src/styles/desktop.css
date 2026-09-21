@@ -1615,6 +1615,16 @@ body.desktop-mode-open::-webkit-scrollbar {
   animation: none !important;
 }
 
+/* Reveal the settled workspace together; never animate its placement or stagger icons. */
+.desktop__icons:not(.desktop__icons--restoring) {
+  animation: desktop-workspace-reveal 180ms ease-out;
+}
+
+@keyframes desktop-workspace-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .desktop-group-surface-enter-active {
   transition: opacity 220ms ease-out, scale 280ms cubic-bezier(.22, 1, .36, 1) !important;
 }
@@ -4617,6 +4627,10 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .desktop__icons:not(.desktop__icons--restoring) {
+    animation: none !important;
+  }
+
   .desktop *,
   .desktop *::before,
   .desktop *::after {
