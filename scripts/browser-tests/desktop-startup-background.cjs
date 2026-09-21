@@ -49,7 +49,7 @@ const deferred = () => {
         assert(before.equals(placeholder), `${theme}/${phase}: wallpaper/veil changed at placeholder handoff`)
         desktopGate.release()
         await page.locator('.desktop__icons:not(.desktop__icons--restoring)').waitFor()
-        const hideUI = await page.addStyleTag({ content: '.desktop > :not(.desktop__wallpaper) { visibility: hidden !important; }' })
+        const hideUI = await page.addStyleTag({ content: '.desktop > :not(.desktop__wallpaper) { opacity: 0 !important; animation: none !important; }' })
         const mounted = await page.screenshot({ path: `${out}/${theme}-${phase}-mounted-backdrop.png` })
         assert(placeholder.equals(mounted), `${theme}/${phase}: wallpaper/veil changed at desktop mount`)
         await hideUI.evaluate(element => element.remove())
