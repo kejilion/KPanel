@@ -388,6 +388,7 @@ async function prepare(options) {
   let identity;
   let prepared;
   let failure;
+  let evidenceFailure;
   try {
     await checkSource(source, options.candidate);
     const promisor = await gitResult(source, ['config', '--bool', '--get-regexp', '^remote\\..*\\.promisor$']);
@@ -627,9 +628,13 @@ function uploadAndRun(options, prepared) {
       }
     }
   } catch (error) {
-    if (!remoteFailure) throw error;
+    evidenceFailure = error;
+  }
+  if (remoteFailure && evidenceFailure) {
+    throw new Error(`${remoteFailure.message}; WSL evidence sync failed: ${evidenceFailure.message}`);
   }
   if (remoteFailure) throw remoteFailure;
+  if (evidenceFailure) throw evidenceFailure;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) try {

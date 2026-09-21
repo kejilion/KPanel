@@ -253,6 +253,7 @@ test('remote L3 entrypoint is syntax-valid and keeps verification inside fixed s
   assert.match(controller, /checkEnvironment\(loadPolicy\(\), options\.target, 'candidate-validation'\)/);
   assert.match(controller, /run\('wsl\.exe'/);
   assert.match(controller, /WSL evidence checksum mismatch/);
+  assert.match(controller, /WSL evidence sync failed/);
   assert.doesNotMatch(controller, /execSync|shell:\s*true/);
 });
 
