@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const styles = readFileSync(new URL('../../styles/desktop.css', import.meta.url), 'utf8')
+  + readFileSync(new URL('../../styles/desktopWallpaper.css', import.meta.url), 'utf8')
 const mainStyles = readFileSync(new URL('../../styles/main.css', import.meta.url), 'utf8')
 const themeStyles = readFileSync(new URL('../../styles/themes.css', import.meta.url), 'utf8')
 const themeStoreSource = readFileSync(new URL('../../stores/theme.ts', import.meta.url), 'utf8')

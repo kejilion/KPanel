@@ -109,6 +109,8 @@ const DesktopLoadingView = defineComponent({
       [h('div', { class: 'desktop__wallpaper', 'aria-hidden': 'true' }, [
         h('div', { class: 'desktop__wallpaper-image' }),
         h('div', { class: 'desktop__wallpaper-veil' }),
+        h('div', { class: 'desktop__aurora desktop__aurora--one' }),
+        h('div', { class: 'desktop__aurora desktop__aurora--two' }),
       ])],
     )
   },

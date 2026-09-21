@@ -420,9 +420,10 @@ const activeDesktopWallpaper = computed(() =>
   DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
     || DESKTOP_WALLPAPERS[0],
 )
-const desktopWallpaperStyle = computed(() => ({
-  '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")`,
-}))
+const desktopWallpaperStyle = computed<Record<string, string>>(() =>
+  document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
+    ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
+)
 const shortcutDialogOpen = ref(false)
 const editingShortcut = ref<DesktopShortcut>()
 const deletingShortcut = ref<DesktopShortcut>()
@@ -3071,6 +3072,7 @@ async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<
   theme.setColors(wallpaper.themePreset.colors)
   try {
     window.localStorage.setItem(DESKTOP_WALLPAPER_KEY, wallpaperID)
+    window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))
   } catch {
     // The wallpaper still applies to this session when storage is unavailable.
   }

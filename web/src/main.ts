@@ -15,6 +15,7 @@ async function bootstrap(): Promise<void> {
   await router.isReady()
   await nextTick()
   document.documentElement.classList.remove('desktop-boot')
+  document.getElementById('desktop-boot')?.remove()
 }
 
 void bootstrap()
