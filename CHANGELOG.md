@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.7] - 2026-09-21
+
+### Added
+
+- MCP 客户端授权主机支持“一键全选”和“反选”，空主机列表会禁用批量操作；选择变化不会提前提交，仍在创建客户端时按现有权限边界一次性保存。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮不修改 `kejilion.sh` 契约，继续使用既有脚本基线，无需发布新的受管脚本。
+
 ## [1.21.0-rc.6] - 2026-09-21
 
 ### Fixed
