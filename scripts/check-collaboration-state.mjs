@@ -121,18 +121,17 @@ function ocrLineReviewState(root, baseRef) {
 // scope is one feature, before an RC ships it. The stable preflight still enforces coverage either way.
 function securityAuditState(root, baseRef) {
   if (!existsSync(join(root, POLICY_PATH))) return null;
-  let added;
   try {
-    added = addedBoundaryPackages(root, baseRef, 'HEAD');
+    const added = addedBoundaryPackages(root, baseRef, 'HEAD');
+    if (added.length === 0) return null;
+    const summary = ' new_boundary_packages=' + added.join(',');
+    const newest = git(root, ['log', '--format=%H%x1f%(trailers:key=Security-Audit,valueonly)%x1e', baseRef + '..HEAD'])
+      .split('\x1e').map((record) => record.trim().split('\x1f')).find(([, trailer]) => trailer?.trim());
+    if (!newest) return 'missing' + summary;
+    return (addedBoundaryPackages(root, newest[0], 'HEAD').length > 0 ? 'stale' : 'recorded') + summary;
   } catch (error) {
     return 'unavailable reason=' + JSON.stringify(error.message.split('\n')[0]);
   }
-  if (added.length === 0) return null;
-  const summary = ' new_boundary_packages=' + added.join(',');
-  const newest = git(root, ['log', '--format=%H%x1f%(trailers:key=Security-Audit,valueonly)%x1e', baseRef + '..HEAD'])
-    .split('\x1e').map((record) => record.trim().split('\x1f')).find(([, trailer]) => trailer?.trim());
-  if (!newest) return 'missing' + summary;
-  return (addedBoundaryPackages(root, newest[0], 'HEAD').length > 0 ? 'stale' : 'recorded') + summary;
 }
 
 function normalizedPath(path) {
