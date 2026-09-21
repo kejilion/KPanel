@@ -64,6 +64,7 @@
 - `packaging/release-runner/Dockerfile` 固定基础镜像摘要和直接系统包版本，修复 npm 跨阶段布局并在构建时执行 Node/npm/npx smoke。
 - WSL 仅由 Windows 控制端按参数数组调用，不拼接 Shell；执行后只回收日志、状态和摘要到 `artifactDir/wsl-evidence`。
 - prepare-only kit 可通过 `--execute-kit` 在另一登记控制主机继续；manifest 摘要必须独立交接，kit 不含凭据和生产授权。
+- WSL/接收主机的标准代理变量只在执行时临时转发；Runner 使用主机网络兼容回环代理，镜像构建以 BuildKit secret 使用 HTTPS 代理，代理值不进入 kit、计划、manifest、日志、镜像历史或证据。
 - 默认仍为 `arena-154`，不自动静默回退；候选 CI、主线、Release、公开镜像与生产流程不变。
 
 ## 验证与证据层级

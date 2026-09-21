@@ -51,8 +51,24 @@ git merge-base --is-ancestor "$expected_base_tag" HEAD || {
 runner_id=$(docker image inspect "$runner_image" --format '{{.Id}}')
 echo "release_gate_preflight=pass commit=$expected_commit base=$expected_base_tag runner=$runner_id"
 
+proxy_args=()
+network_args=()
+for proxy_name in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+  if [ -n "${!proxy_name:-}" ]; then
+    proxy_args+=(--env "$proxy_name")
+  fi
+done
+if [ "${#proxy_args[@]}" -gt 0 ]; then
+  # Loopback proxies configured by WSL belong to the Linux host. Host networking
+  # keeps those endpoints reachable without copying proxy values into release plans.
+  network_args+=(--network host)
+  echo "release_gate_proxy=ambient variables_only count=$(( ${#proxy_args[@]} / 2 ))"
+fi
+
 docker run --rm \
   --entrypoint sh \
+  "${network_args[@]}" \
+  "${proxy_args[@]}" \
   -e "KPANEL_EXPECTED_COMMIT=$expected_commit" \
   -e "KPANEL_EXPECTED_BASE_TAG=$expected_base_tag" \
   -e "VERIFY_BASE_REF=$expected_base_tag" \

@@ -317,6 +317,19 @@ if [[ ${#missing_commands[@]} -gt 0 ]]; then
 fi
 echo "verification_preflight=pass platform=$(uname -s) level=$requested_level tools=$(IFS=,; echo "${required_commands[*]:-none}")"
 
+build_verification_image() {
+  local -a proxy_options=()
+  if [[ -z "${HTTPS_PROXY:-}" && -n "${https_proxy:-}" ]]; then
+    export HTTPS_PROXY=$https_proxy
+  fi
+  if [[ -n "${HTTPS_PROXY:-}" ]]; then
+    # The proxy value is supplied as a BuildKit secret and never enters image
+    # history. Host networking keeps WSL loopback proxy endpoints reachable.
+    proxy_options+=(--network host --secret id=https_proxy,env=HTTPS_PROXY)
+  fi
+  docker build "${proxy_options[@]}" --build-arg "VERSION=$(tr -d '\r\n' < VERSION)" -t kejilion-panel:verify .
+}
+
 if [[ ${#go_format_files[@]} -gt 0 ]]; then
   mapfile -t unformatted_go_files < <(gofmt -l "${go_format_files[@]}")
   if [[ ${#unformatted_go_files[@]} -gt 0 ]]; then
@@ -334,7 +347,7 @@ if [[ "$requested_level" == "3" || "$requested_level" == "l3" || "$requested_lev
   make security-audit
   bash scripts/security-scan.sh source
   make build-linux
-  docker build --build-arg "VERSION=$(tr -d '\r\n' < VERSION)" -t kejilion-panel:verify .
+  build_verification_image
   bash scripts/check-managed-script-contract.sh kejilion-panel:verify
   bash scripts/security-scan.sh image kejilion-panel:verify
   echo "L3 release verification completed."
@@ -369,7 +382,7 @@ if [[ "$needs_linux_build" == true ]]; then
 fi
 
 if [[ "$needs_image" == true ]] && command -v docker >/dev/null 2>&1; then
-  docker build --build-arg "VERSION=$(tr -d '\r\n' < VERSION)" -t kejilion-panel:verify .
+  build_verification_image
 fi
 
 echo "Change-aware verification completed."

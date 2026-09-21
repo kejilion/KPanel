@@ -319,6 +319,9 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
    Runner 时只能导入同时冻结 SHA-256 的可信离线归档，不能现场重建同名镜像并放行新 ID。
    发布验证移交只使用同一入口的 `--execute-kit` 模式；交接双方须通过独立通道核对 manifest SHA-256，
    接收方重新验证 kit 内全部摘要和环境用途，并沿用原 run ID。kit 不传递凭据、生产授权或环境别名覆盖。
+   执行主机可通过标准 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境变量提供本地网络出口；入口只把当前值
+   临时传入隔离 Runner，镜像构建只使用 BuildKit secret，任何代理值都不得进入 kit、计划、manifest、
+   日志或证据。移交接收方使用自己的环境配置，不沿用交出方的代理凭据。
    每次重试必须使用新 run ID 并保留旧证据，不能覆盖失败后将其报告为首轮成功。
 10. 稳定版与预览版统一遵守 [`docs/release-channels.md`](docs/release-channels.md)。稳定版是公共默认；
     预览版必须显式加入，只允许规范 `X.Y.Z-rc.N`，不得成为 GitHub Latest 或 Docker `latest`，不得进入

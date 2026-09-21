@@ -118,3 +118,10 @@ export -f git node npm make go gofmt docker
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
+
+test('image verification forwards HTTPS proxy only as an ephemeral BuildKit secret', () => {
+  const script = readFileSync(join(repoRoot, 'scripts', 'verify-change.sh'), 'utf8');
+  assert.match(script, /--network host --secret id=https_proxy,env=HTTPS_PROXY/);
+  assert.match(script, /build_verification_image/);
+  assert.doesNotMatch(script, /--build-arg\s+HTTPS_PROXY/);
+});

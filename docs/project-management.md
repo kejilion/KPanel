@@ -507,7 +507,8 @@ git worktree list --porcelain
   不在会话中重写跨 Shell wrapper，浏览器长测在后台运行，108 禁用全部 KPanel 操作。
 - 需要更换发布责任任务或控制主机时，原任务交付 prepare-only kit、独立 manifest 摘要、精确候选 SHA、
   Runner ID/归档摘要和未完成阶段；接收方只用 `run-release-l3.mjs --execute-kit` 继续原 run ID。移交不新增
-  推送、主线、Release 或生产权限，不能通过重打包或新 run ID 抹去旧终态。
+  推送、主线、Release 或生产权限，不能通过重打包或新 run ID 抹去旧终态。代理配置属于接收执行主机：
+  只允许从标准代理环境变量临时传入 Runner 和 BuildKit secret，不随 kit、日志或证据移交。
 - 每次发布后：整理未上线提交、废弃候选、风险和下一版本队列，更新滚动交付/稳定性数据；不把旧分支
   存在等同于未上线功能，也不为同一微调机械拆分多个生产版本。
 

@@ -17,6 +17,10 @@ test('release gate runner fixes candidate identity and nested Docker wiring', ()
   assert.match(script, /-v "\$repo_root:\$repo_root"/);
   assert.match(script, /-w "\$repo_root"/);
   assert.match(script, /"\$runner_id"/);
+  assert.match(script, /HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy/);
+  assert.match(script, /proxy_args\+=\(--env "\$proxy_name"\)/);
+  assert.match(script, /network_args\+=\(--network host\)/);
+  assert.doesNotMatch(script, /echo[^\n]*\$\{!proxy_name/);
   assert.match(script, /make verify-release/);
   assert.match(script, /packaging\/tests\/app-conf-lifecycle\.sh/);
 });
