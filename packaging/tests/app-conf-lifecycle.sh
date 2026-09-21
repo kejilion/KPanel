@@ -724,6 +724,40 @@ run_unmanaged_guard() {
 	rm -rf /home/docker/kpanel
 }
 
+run_partial_uninstall() (
+	docker_app_plus() { :; }
+	. "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
+	mkdir -p /home/docker/kpanel/data
+	: >/home/docker/kpanel/.managed-by-kejilion-app
+	printf '%s\n' preserved >/home/docker/kpanel/data/record
+	# Missing Compose and service files must not prevent clearing owned leftovers.
+	docker_app_uninstall
+	test ! -e /home/docker/kpanel
+
+	mkdir -p /home/docker/kpanel/data
+	: >/home/docker/kpanel/.managed-by-kejilion-app
+	: >/home/docker/kpanel/docker-compose.yml
+	: >/home/docker/kpanel/.env
+	printf '%s\n' preserved >/home/docker/kpanel/data/record
+	docker() { return 1; }
+	if docker_app_uninstall; then
+		echo "failed Docker cleanup removed installation data" >&2
+		exit 1
+	fi
+	grep -Fx preserved /home/docker/kpanel/data/record
+	# Without Compose, an existing container must also preserve the data.
+	rm /home/docker/kpanel/docker-compose.yml
+	docker() { printf '%s\n' kejilion-panel; }
+	if docker_app_uninstall; then
+		echo "incomplete configuration with a live container was removed" >&2
+		exit 1
+	fi
+	grep -Fx preserved /home/docker/kpanel/data/record
+	docker() { return 0; }
+	docker_app_uninstall
+	test ! -e /home/docker/kpanel
+)
+
 run_release_contract_guards() {
 	local candidate_agent="$TEST_DIR/release-contract-agent"
 	local candidate_script="$TEST_DIR/release-contract-script"
@@ -784,6 +818,8 @@ run_release_contract_guards() {
 export PATH="$FAKE_BIN:$PATH"
 export KPANEL_MOCK_STATE="$MOCK_STATE"
 export KPANEL_MOCK_SYSTEMCTL_LOG="$TEST_DIR/systemctl.log"
+# A leftover empty directory must not block the complete install/uninstall cycle.
+mkdir -p /home/docker/kpanel
 run_lifecycle
 run_symlinked_docker_root_lifecycle
 grep -Fx '1|daemon-reload' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
@@ -798,5 +834,6 @@ fi
 run_failed_install
 run_missing_bootstrap_token
 run_unmanaged_guard
+run_partial_uninstall
 run_release_contract_guards
 printf '%s\n' "app_conf_lifecycle=pass"
