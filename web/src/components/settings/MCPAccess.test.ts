@@ -23,6 +23,30 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount())
 
 describe('MCP access journey', () => {
+  it('selects all hosts and inverts the explicit selection without submitting the form', async () => {
+    vi.mocked(mcpAccess.get).mockResolvedValue(enabled())
+    wrapper = mount(MCPAccess); await flushPromises()
+    await wrapper.get('input[autocomplete="off"]').setValue('Assistant')
+    const checkedHosts = () => wrapper.findAll('.mcp-hosts input:checked').map(input => (input.element as HTMLInputElement).value)
+    await button('反选').trigger('click')
+    expect(checkedHosts()).toEqual(['remote'])
+    await button('全选').trigger('click')
+    expect(checkedHosts()).toEqual(['local', 'remote'])
+    await button('反选').trigger('click')
+    expect(checkedHosts()).toEqual([])
+    expect(button('创建巡检客户端').attributes('disabled')).toBeDefined()
+    expect(mcpAccess.create).not.toHaveBeenCalled()
+    await button('反选').trigger('click')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(mcpAccess.create).toHaveBeenCalledWith(expect.objectContaining({ hostIds: ['local', 'remote'] }))
+  })
+  it('disables bulk actions when the host list is empty', async () => {
+    vi.mocked(mcpAccess.get).mockResolvedValue(enabled())
+    vi.mocked(api.cluster.hosts).mockResolvedValue({ ...await api.cluster.hosts(), items: [] })
+    wrapper = mount(MCPAccess); await flushPromises()
+    expect(button('全选').attributes('disabled')).toBeDefined()
+    expect(button('反选').attributes('disabled')).toBeDefined()
+  })
   it('enables, creates a host-scoped credential, tests and revokes it without exposing it in the saved list', async () => {
     vi.mocked(mcpAccess.enable).mockResolvedValue(enabled())
     vi.mocked(mcpAccess.create).mockResolvedValue({ client, token: 'one-time-secret', settings: created() })
