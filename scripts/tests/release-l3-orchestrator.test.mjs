@@ -255,6 +255,8 @@ test('remote L3 entrypoint is syntax-valid and keeps verification inside fixed s
   assert.match(controller, /replaceAll\('\\\\', '\/'\)/);
   assert.match(controller, /WSL evidence checksum mismatch/);
   assert.match(controller, /WSL evidence sync failed/);
+  assert.match(controller, /'-print'/);
+  assert.doesNotMatch(controller, /'-printf'/);
   assert.doesNotMatch(controller, /execSync|shell:\s*true/);
 });
 

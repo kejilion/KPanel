@@ -614,12 +614,14 @@ function uploadAndRun(options, prepared) {
     const localEvidence = join(prepared.artifactDir, 'wsl-evidence');
     mkdirSync(localEvidence, { recursive: false, mode: 0o700 });
     const destination = windowsPathToWsl(localEvidence);
-    const names = wsl(['find', remoteEvidence, '-maxdepth', '1', '-type', 'f', '-printf', '%f\n'])
+    const evidencePaths = wsl(['find', remoteEvidence, '-maxdepth', '1', '-type', 'f', '-print'])
       .split(/\r?\n/).filter(Boolean);
-    for (const name of names) {
+    for (const sourcePath of evidencePaths) {
+      const expectedPrefix = `${remoteEvidence}/`;
+      if (!sourcePath.startsWith(expectedPrefix)) throw new Error('unsafe WSL evidence path');
+      const name = sourcePath.slice(expectedPrefix.length);
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) throw new Error('unsafe WSL evidence filename');
       if (!/\.(?:log|txt|sha256)$/.test(name)) continue;
-      const sourcePath = `${remoteEvidence}/${name}`;
       const destinationPath = `${destination}/${name}`;
       const sourceHash = wsl(['sha256sum', '--', sourcePath]).split(/\s+/)[0];
       wsl(['cp', '--', sourcePath, destinationPath]);
