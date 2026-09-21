@@ -50,6 +50,9 @@ case "$1 ${2:-}" in
 	"ps -a")
 		exit 0
 		;;
+	"network ls")
+		exit 0
+		;;
 	"network inspect")
 		require_state
 		if [ "${3:-}" = "--format" ]; then
@@ -753,8 +756,26 @@ run_partial_uninstall() (
 		exit 1
 	fi
 	grep -Fx preserved /home/docker/kpanel/data/record
-	docker() { return 0; }
+	local mock_network_state='other-project|0'
+	local network_removed=false
+	docker() {
+		case "$1 ${2:-}" in
+			'ps -a') return 0 ;;
+			'network ls') echo kejilion-panel-internal ;;
+			'network inspect') echo "$mock_network_state" ;;
+			'network rm') network_removed=true ;;
+			*) return 1 ;;
+		esac
+	}
+	if docker_app_uninstall; then exit 1; fi
+	test "$network_removed" = false
+	grep -Fx preserved /home/docker/kpanel/data/record
+	mock_network_state='kpanel|1'
+	if docker_app_uninstall; then exit 1; fi
+	test "$network_removed" = false
+	mock_network_state='kpanel|0'
 	docker_app_uninstall
+	test "$network_removed" = true
 	test ! -e /home/docker/kpanel
 )
 
