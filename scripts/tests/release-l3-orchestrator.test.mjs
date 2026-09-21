@@ -282,12 +282,19 @@ test('a handed-off kit is executable only with its out-of-band manifest digest',
     assert.equal(result.status, 0, result.stderr);
     const artifactDir = join(fixture.root, 'artifacts');
     const manifestPath = join(artifactDir, 'manifest.json');
-    const digest = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+    const originalManifest = readFileSync(manifestPath, 'utf8');
+    const digest = createHash('sha256').update(originalManifest).digest('hex');
     const prepared = loadPreparedKit(artifactDir, digest);
     assert.equal(prepared.runId, 'source-test');
     assert.equal(prepared.candidate, fixture.candidate);
     assert.equal(prepared.runnerArchivePath, undefined);
     assert.throws(() => loadPreparedKit(artifactDir, '0'.repeat(64)), /manifest checksum mismatch/);
+    const inconsistentManifest = JSON.parse(originalManifest);
+    inconsistentManifest.runnerImage = 'example/other-runner:stable';
+    writeFileSync(manifestPath, JSON.stringify(inconsistentManifest, null, 2) + '\n');
+    const inconsistentDigest = createHash('sha256').update(readFileSync(manifestPath)).digest('hex');
+    assert.throws(() => loadPreparedKit(artifactDir, inconsistentDigest), /plan does not match its manifest/);
+    writeFileSync(manifestPath, originalManifest);
     writeFileSync(prepared.planPath, readFileSync(prepared.planPath, 'utf8') + 'UNKNOWN=value\n');
     assert.throws(() => loadPreparedKit(artifactDir, digest), /kit checksum mismatch: plan\.env/);
   } finally { removeFixture(fixture.root); }

@@ -652,7 +652,13 @@ export function loadPreparedKit(kitDirectory, expectedManifestSha256) {
   if (planEntries.size !== allowedKeys.size || planEntries.get('SCHEMA_VERSION') !== '2' ||
       planEntries.get('RUN_ID') !== manifest.runId ||
       planEntries.get('EXPECTED_COMMIT') !== manifest.candidate ||
+      planEntries.get('BASE_MAIN_COMMIT') !== manifest.baseMainCommit ||
+      planEntries.get('EXPECTED_BASE_TAG') !== manifest.baseTag ||
+      planEntries.get('BUSINESS_BASELINE_COMMIT') !== manifest.businessBaseline?.commit ||
+      planEntries.get('BUSINESS_BASELINE_TAG') !== manifest.businessBaseline?.tag ||
+      planEntries.get('RUNNER_IMAGE') !== manifest.runnerImage ||
       planEntries.get('EXPECTED_RUNNER_ID') !== manifest.expectedRunnerId ||
+      planEntries.get('REQUIRED_TAGS') !== manifest.requiredTags?.join(',') ||
       planEntries.get('BUNDLE_FILE') !== bundleName ||
       planEntries.get('BUNDLE_SHA256') !== manifest.files.bundle.sha256 ||
       planEntries.get('REMOTE_SCRIPT_SHA256') !== manifest.files.remoteScript.sha256 ||
