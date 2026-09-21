@@ -188,7 +188,7 @@ node scripts/run-release-l3.mjs \
 kit 不携带 SSH 密钥、Token、代理配置或生产授权。接收方使用原 run ID，目标已存在 inbox/work/evidence 时
 必须停止并由交接双方核对状态，不能改 ID 掩盖重复执行。接收主机需要代理时只在本机设置标准
 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境变量；入口临时转发给 Runner，并通过 BuildKit secret 支持镜像
-构建，不把代理值写入 kit、计划、manifest、日志、证据或镜像历史。
+构建；固定安全扫描容器也只继承变量名。代理值不得写入 kit、计划、manifest、日志、证据或镜像历史。
 
 每次尝试使用新 `run-id` 和新证据目录，旧计划、日志和失败状态原样保留；不得覆盖后重写成首轮成功。
 入口在任何前置条件失败时 fail-closed，候选代码未执行时记为流程异常而非产品失败。入口脚本自身需要

@@ -1,0 +1,11 @@
+misconfigurations:
+  - id: AVD-DS-0002
+    paths:
+      - packaging/release-runner/Dockerfile
+    expired_at: 2026-12-21
+    statement: >-
+      The candidate-only release runner must write the isolated verification checkout and use the host Docker socket.
+      Docker socket access is already host-root equivalent for image builds and lifecycle tests, so changing only the
+      container UID would not reduce that authority. The runner remains digest-pinned, ephemeral, credential-free and
+      limited to fixed repository gates. Release maintainers must review this exception by 2026-12-21; it exits when
+      the gate no longer needs the host Docker socket or can use a separately isolated builder.

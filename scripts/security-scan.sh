@@ -12,9 +12,25 @@ command -v docker >/dev/null 2>&1 || {
 }
 mkdir -p "$cache_dir"
 
+proxy_args=()
+network_args=()
+for proxy_name in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+  if [[ -n "${!proxy_name:-}" ]]; then
+    proxy_args+=(--env "$proxy_name")
+  fi
+done
+if [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}${http_proxy:-}${https_proxy:-}" ]]; then
+  # Trivy runs as a nested container. Host networking is required for the
+  # loopback proxy endpoints commonly supplied by WSL, and --env NAME keeps
+  # the values out of command lines and persisted evidence.
+  network_args+=(--network host)
+fi
+
 case "$mode" in
   source)
     docker run --rm \
+      "${network_args[@]}" \
+      "${proxy_args[@]}" \
       -v "$repo_root:/src:ro" \
       -v "$cache_dir:/root/.cache/trivy" \
       "$trivy_image" \
@@ -22,6 +38,7 @@ case "$mode" in
       --scanners vuln,secret,misconfig \
       --severity HIGH,CRITICAL \
       --exit-code 1 \
+      --ignorefile /src/.trivyignore.yaml \
       --skip-files /src/go.sum \
       /src
     ;;
@@ -33,6 +50,8 @@ case "$mode" in
     }
     docker image inspect "$image_ref" >/dev/null
     docker run --rm \
+      "${network_args[@]}" \
+      "${proxy_args[@]}" \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$cache_dir:/root/.cache/trivy" \
       "$trivy_image" \
