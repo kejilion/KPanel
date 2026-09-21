@@ -2,6 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdtempSync,
@@ -11,12 +12,13 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { COVERAGE_BASELINE } from './check-release-acceptance-coverage.mjs';
+import { checkEnvironment, loadPolicy } from './check-environment-policy.mjs';
 
 const scriptRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/;
@@ -46,7 +48,8 @@ function usage(message) {
   if (message) process.stderr.write(`Release L3 orchestration failed: ${message}\n`);
   process.stderr.write(
     'usage: node scripts/run-release-l3.mjs --candidate SHA --base-tag vX.Y.Z ' +
-      '--runner-image IMAGE --run-id ID --artifact-dir ABSOLUTE_PATH ' +
+      '--runner-image IMAGE --runner-id sha256:HEX --run-id ID --artifact-dir ABSOLUTE_PATH ' +
+      '[--runner-archive ABSOLUTE_PATH --runner-archive-sha256 HEX] ' +
       '[--repo PATH] [--target ENVIRONMENT] [--prepare-only]\n',
   );
   process.exit(2);
@@ -59,6 +62,9 @@ function parseArgs(argv) {
     '--candidate',
     '--base-tag',
     '--runner-image',
+    '--runner-id',
+    '--runner-archive',
+    '--runner-archive-sha256',
     '--run-id',
     '--artifact-dir',
     '--target',
@@ -78,8 +84,11 @@ function parseArgs(argv) {
     index += 1;
   }
 
-  for (const key of ['candidate', 'baseTag', 'runnerImage', 'runId', 'artifactDir']) {
+  for (const key of ['candidate', 'baseTag', 'runnerImage', 'runnerId', 'runId', 'artifactDir']) {
     if (!options[key]) usage(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
+  }
+  if (Boolean(options.runnerArchive) !== Boolean(options.runnerArchiveSha256)) {
+    usage('--runner-archive and --runner-archive-sha256 must be supplied together');
   }
   if (!options.prepareOnly && !options.target) usage('--target is required unless --prepare-only is used');
   return options;
@@ -101,14 +110,16 @@ function cleanGitEnvironment(environment = process.env) {
   return result;
 }
 
-function run(command, args, { cwd, inherit = false, environment = process.env, timeout } = {}) {
+function run(command, args, { cwd, inherit = false, environment = process.env, timeout, input } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     env: environment,
     shell: false,
-    stdio: inherit ? 'inherit' : 'pipe',
+    stdio: inherit ? 'inherit' : ['pipe', 'pipe', 'pipe'],
     timeout,
+    input,
+    maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -309,6 +320,9 @@ function validateInputs(options) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,254}$/.test(options.runnerImage)) {
     throw new Error('runner image contains unsupported characters');
   }
+  if (!/^sha256:[0-9a-f]{64}$/.test(options.runnerId)) {
+    throw new Error('runner ID must be an immutable sha256 image ID');
+  }
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,80}$/.test(options.runId)) {
     throw new Error('run ID must contain only letters, numbers, dot, underscore, or hyphen');
   }
@@ -316,6 +330,15 @@ function validateInputs(options) {
     throw new Error('target contains unsupported characters');
   }
   if (!isAbsolute(options.artifactDir)) throw new Error('artifact directory must be absolute');
+  if (options.runnerArchive) {
+    if (!isAbsolute(options.runnerArchive)) throw new Error('runner archive path must be absolute');
+    if (!/^[0-9a-f]{64}$/.test(options.runnerArchiveSha256)) {
+      throw new Error('runner archive SHA-256 must contain 64 lowercase hexadecimal characters');
+    }
+    const archiveStat = lstatSync(options.runnerArchive);
+    if (!archiveStat.isFile() || archiveStat.isSymbolicLink()) throw new Error('runner archive must be a regular file');
+    if (sha256(options.runnerArchive) !== options.runnerArchiveSha256) throw new Error('runner archive checksum mismatch');
+  }
 }
 
 async function checkSource(repo, candidate) {
@@ -477,9 +500,20 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
   const remoteScriptPath = join(artifactDir, 'run-release-l3-remote.sh');
   writeFileSync(remoteScriptPath, readFileSync(remoteScriptSource));
 
+  let runnerArchivePath;
+  let runnerArchiveName = '';
+  if (options.runnerArchive) {
+    runnerArchiveName = `kpanel-runner-${options.runId}.tar`;
+    runnerArchivePath = join(artifactDir, runnerArchiveName);
+    copyFileSync(options.runnerArchive, runnerArchivePath);
+    if (sha256(runnerArchivePath) !== options.runnerArchiveSha256) {
+      throw new Error('copied runner archive checksum mismatch');
+    }
+  }
+
   const planPath = join(artifactDir, 'plan.env');
   const plan = [
-    'SCHEMA_VERSION=1',
+    'SCHEMA_VERSION=2',
     `RUN_ID=${options.runId}`,
     `EXPECTED_COMMIT=${options.candidate.toLowerCase()}`,
     `BASE_MAIN_COMMIT=${baseMainCommit}`,
@@ -487,6 +521,9 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
     `BUSINESS_BASELINE_COMMIT=${businessBaseline.commit.toLowerCase()}`,
     `BUSINESS_BASELINE_TAG=${businessBaseline.tag}`,
     `RUNNER_IMAGE=${options.runnerImage}`,
+    `EXPECTED_RUNNER_ID=${options.runnerId}`,
+    `RUNNER_ARCHIVE_FILE=${runnerArchiveName}`,
+    `RUNNER_ARCHIVE_SHA256=${options.runnerArchiveSha256 ?? ''}`,
     `BUNDLE_FILE=${bundleName}`,
     `BUNDLE_SHA256=${sha256(bundlePath)}`,
     `REMOTE_SCRIPT_SHA256=${sha256(remoteScriptPath)}`,
@@ -500,7 +537,7 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
     manifestPath,
     JSON.stringify(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt: new Date().toISOString(),
         runId: options.runId,
         candidate: options.candidate.toLowerCase(),
@@ -509,6 +546,11 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
         businessBaseline,
         requiredTags,
         runnerImage: options.runnerImage,
+        expectedRunnerId: options.runnerId,
+        runnerArchive: runnerArchivePath ? {
+          name: runnerArchiveName,
+          sha256: options.runnerArchiveSha256,
+        } : null,
         origin: canonicalOrigin,
         files: {
           bundle: { name: bundleName, sha256: sha256(bundlePath) },
@@ -522,24 +564,65 @@ async function buildKit(options, { repo, artifactDir, baseMainCommit, businessBa
     { encoding: 'utf8', mode: 0o600 },
   );
 
-  return { artifactDir, bundlePath, planPath, remoteScriptPath, manifestPath, requiredTags };
+  return {
+    artifactDir,
+    bundlePath,
+    planPath,
+    remoteScriptPath,
+    manifestPath,
+    runnerArchivePath,
+    requiredTags,
+  };
 }
 
 function uploadAndRun(options, prepared) {
-  run(process.execPath, [resolve(scriptRoot, 'scripts', 'check-environment-policy.mjs'), '--environment', options.target, '--purpose', 'candidate-validation'], {
-    cwd: scriptRoot,
-    inherit: true,
-  });
+  const environment = checkEnvironment(loadPolicy(), options.target, 'candidate-validation');
+  const uploadPaths = [prepared.bundlePath, prepared.planPath, prepared.remoteScriptPath, prepared.manifestPath];
+  if (prepared.runnerArchivePath) uploadPaths.push(prepared.runnerArchivePath);
 
   const inbox = `/root/kpanel-release-inbox/${options.runId}`;
-  run('ssh', [options.target, 'test', '!', '-e', inbox], { inherit: true });
-  run('ssh', [options.target, 'install', '-d', '-m', '700', '--', inbox], { inherit: true });
-  for (const path of [prepared.bundlePath, prepared.planPath, prepared.remoteScriptPath, prepared.manifestPath]) {
-    run('scp', [path, `${options.target}:${inbox}/`], { inherit: true });
+  if (environment.transport.kind === 'ssh') {
+    const target = environment.transport.target;
+    run('ssh', [target, 'test', '!', '-e', inbox], { inherit: true });
+    run('ssh', [target, 'install', '-d', '-m', '700', '--', inbox], { inherit: true });
+    for (const path of uploadPaths) run('scp', [path, `${target}:${inbox}/`], { inherit: true });
+    run('ssh', [target, 'bash', `${inbox}/run-release-l3-remote.sh`, `${inbox}/plan.env`], { inherit: true });
+    return;
   }
-  run('ssh', [options.target, 'bash', `${inbox}/run-release-l3-remote.sh`, `${inbox}/plan.env`], {
-    inherit: true,
-  });
+  if (environment.transport.kind !== 'wsl') throw new Error(`unsupported transport: ${environment.transport.kind}`);
+  if (process.platform !== 'win32') throw new Error('local-wsl-dr transport requires a Windows control host');
+
+  const prefix = ['-d', environment.transport.distribution, '-u', environment.transport.user, '--'];
+  const wsl = (args, runOptions = {}) => run('wsl.exe', [...prefix, ...args], runOptions);
+  wsl(['test', '!', '-e', inbox]);
+  wsl(['install', '-d', '-m', '700', '--', inbox]);
+  for (const path of uploadPaths) {
+    const source = wsl(['wslpath', '-a', path]);
+    wsl(['cp', '--', source, `${inbox}/${basename(path)}`]);
+  }
+
+  let remoteFailure;
+  try {
+    wsl(['bash', `${inbox}/run-release-l3-remote.sh`, `${inbox}/plan.env`], { inherit: true });
+  } catch (error) {
+    remoteFailure = error;
+  }
+  try {
+    const remoteEvidence = `/root/kpanel-release-evidence/${options.runId}`;
+    const localEvidence = join(prepared.artifactDir, 'wsl-evidence');
+    mkdirSync(localEvidence, { recursive: false, mode: 0o700 });
+    const destination = wsl(['wslpath', '-a', localEvidence]);
+    const names = wsl(['find', remoteEvidence, '-maxdepth', '1', '-type', 'f', '-printf', '%f\n'])
+      .split(/\r?\n/).filter(Boolean);
+    for (const name of names) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) throw new Error('unsafe WSL evidence filename');
+      if (!/\.(?:log|txt|sha256)$/.test(name)) continue;
+      wsl(['cp', '--', `${remoteEvidence}/${name}`, `${destination}/${name}`]);
+    }
+  } catch (error) {
+    if (!remoteFailure) throw error;
+  }
+  if (remoteFailure) throw remoteFailure;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) try {

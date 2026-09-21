@@ -20,6 +20,9 @@ EXPECTED_BASE_TAG=
 BUSINESS_BASELINE_COMMIT=
 BUSINESS_BASELINE_TAG=
 RUNNER_IMAGE=
+EXPECTED_RUNNER_ID=
+RUNNER_ARCHIVE_FILE=
+RUNNER_ARCHIVE_SHA256=
 BUNDLE_FILE=
 BUNDLE_SHA256=
 REMOTE_SCRIPT_SHA256=
@@ -30,7 +33,8 @@ while IFS='=' read -r key value; do
   [ -n "$key" ] || continue
   case "$key" in
     SCHEMA_VERSION|RUN_ID|EXPECTED_COMMIT|BASE_MAIN_COMMIT|EXPECTED_BASE_TAG|BUSINESS_BASELINE_COMMIT|\
-    BUSINESS_BASELINE_TAG|RUNNER_IMAGE|BUNDLE_FILE|BUNDLE_SHA256|REMOTE_SCRIPT_SHA256|REQUIRED_TAGS)
+    BUSINESS_BASELINE_TAG|RUNNER_IMAGE|EXPECTED_RUNNER_ID|RUNNER_ARCHIVE_FILE|RUNNER_ARCHIVE_SHA256|\
+    BUNDLE_FILE|BUNDLE_SHA256|REMOTE_SCRIPT_SHA256|REQUIRED_TAGS)
       [ -z "${seen_plan_keys[$key]+present}" ] || {
         echo "duplicate release plan key: $key" >&2
         exit 2
@@ -45,7 +49,7 @@ while IFS='=' read -r key value; do
   esac
 done < "$plan"
 
-[ "$SCHEMA_VERSION" = 1 ] || usage
+[ "$SCHEMA_VERSION" = 2 ] || usage
 [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,80}$ ]] || usage
 [[ "$EXPECTED_COMMIT" =~ ^[0-9a-fA-F]{40,64}$ ]] || usage
 [[ "$BASE_MAIN_COMMIT" =~ ^[0-9a-fA-F]{40,64}$ ]] || usage
@@ -53,6 +57,11 @@ done < "$plan"
 [[ "$BUSINESS_BASELINE_COMMIT" =~ ^[0-9a-fA-F]{40,64}$ ]] || usage
 [[ "$BUSINESS_BASELINE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
 [[ "$RUNNER_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,254}$ ]] || usage
+[[ "$EXPECTED_RUNNER_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || usage
+if [ -n "$RUNNER_ARCHIVE_FILE" ] || [ -n "$RUNNER_ARCHIVE_SHA256" ]; then
+  [[ "$RUNNER_ARCHIVE_FILE" =~ ^kpanel-runner-[A-Za-z0-9._-]+\.tar$ ]] || usage
+  [[ "$RUNNER_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]] || usage
+fi
 [[ "$BUNDLE_FILE" =~ ^kpanel-[A-Za-z0-9._-]+\.bundle$ ]] || usage
 [[ "$BUNDLE_SHA256" =~ ^[0-9a-f]{64}$ ]] || usage
 [[ "$REMOTE_SCRIPT_SHA256" =~ ^[0-9a-f]{64}$ ]] || usage
@@ -87,6 +96,17 @@ bundle="$inbox/$BUNDLE_FILE"
   echo "release bundle checksum mismatch" >&2
   exit 1
 }
+if [ -n "$RUNNER_ARCHIVE_FILE" ]; then
+  runner_archive="$inbox/$RUNNER_ARCHIVE_FILE"
+  [ -f "$runner_archive" ] || {
+    echo "runner archive is missing" >&2
+    exit 1
+  }
+  [ "$(sha256sum "$runner_archive" | awk '{print $1}')" = "$RUNNER_ARCHIVE_SHA256" ] || {
+    echo "runner archive checksum mismatch" >&2
+    exit 1
+  }
+fi
 
 work="/root/kpanel-release-work/$RUN_ID"
 evidence="/root/kpanel-release-evidence/$RUN_ID"
@@ -122,6 +142,9 @@ trap finish EXIT
 cp "$plan" "$script_path" "$bundle" "$inbox/manifest.json" "$evidence/"
 sha256sum "$evidence/plan.env" "$evidence/run-release-l3-remote.sh" "$evidence/$BUNDLE_FILE" \
   "$evidence/manifest.json" > "$evidence/input.sha256"
+if [ -n "$RUNNER_ARCHIVE_FILE" ]; then
+  sha256sum "$runner_archive" >> "$evidence/input.sha256"
+fi
 
 verify_repo="$work/bundle-verify.git"
 git init --bare "$verify_repo" > "$evidence/bundle-init.log"
@@ -142,15 +165,31 @@ for tag in "${required_tags[@]}"; do
   git -C "$candidate_repo" show-ref --verify "refs/tags/$tag" > /dev/null
 done
 
-runner_id=$(docker image inspect "$RUNNER_IMAGE" --format '{{.Id}}')
+if [ -n "$RUNNER_ARCHIVE_FILE" ]; then
+  docker load --input "$runner_archive" > "$evidence/runner-load.log" 2>&1
+fi
+if ! runner_id=$(docker image inspect "$RUNNER_IMAGE" --format '{{.Id}}' 2> "$evidence/runner-inspect.log"); then
+  {
+    echo "runner_image=$RUNNER_IMAGE"
+    echo "expected_runner_id=$EXPECTED_RUNNER_ID"
+    echo "runner_id=unavailable"
+  } > "$evidence/runner.txt"
+  echo "runner image is unavailable" >&2
+  exit 1
+fi
 [[ "$runner_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
   echo "runner image did not resolve to an immutable image ID" >&2
   exit 1
 }
 {
   echo "runner_image=$RUNNER_IMAGE"
+  echo "expected_runner_id=$EXPECTED_RUNNER_ID"
   echo "runner_id=$runner_id"
 } > "$evidence/runner.txt"
+[ "$runner_id" = "$EXPECTED_RUNNER_ID" ] || {
+  echo "runner image ID mismatch: expected $EXPECTED_RUNNER_ID, got $runner_id" >&2
+  exit 1
+}
 
 set +e
 (

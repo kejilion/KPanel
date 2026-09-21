@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -85,7 +86,7 @@ process.exit(result.status ?? 1);
 function prepareFixture(fixture, extra = [], environment = process.env) {
   return spawnSync(process.execPath, [orchestrator, '--repo', fixture.repo,
     '--candidate', fixture.candidate, '--base-tag', 'v1.0.0',
-    '--runner-image', 'example/release-runner:stable', '--run-id', 'source-test',
+    '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--run-id', 'source-test',
     '--artifact-dir', join(fixture.root, 'artifacts'), '--prepare-only', ...extra],
   { cwd: fixture.repo, encoding: 'utf8', shell: false, env: environment });
 }
@@ -118,7 +119,7 @@ test('prepare-only builds and verifies a self-contained exact-SHA L3 kit', async
         '--repo', fixture.repo,
         '--candidate', fixture.candidate,
         '--base-tag', 'v1.0.0',
-        '--runner-image', 'example/release-runner:stable',
+        '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         '--run-id', 'v1.1.0-test1',
         '--artifact-dir', artifactDir,
         '--prepare-only',
@@ -131,10 +132,14 @@ test('prepare-only builds and verifies a self-contained exact-SHA L3 kit', async
     assert.match(plan, new RegExp(`EXPECTED_COMMIT=${fixture.candidate}`));
     assert.match(plan, new RegExp(`BASE_MAIN_COMMIT=${fixture.candidate}`));
     assert.match(plan, /REQUIRED_TAGS=v0\.83\.0,v1\.0\.0/);
+    assert.match(plan, /EXPECTED_RUNNER_ID=sha256:a{64}/);
+    assert.match(plan, /RUNNER_ARCHIVE_FILE=\nRUNNER_ARCHIVE_SHA256=/);
     assert.match(plan, /BUNDLE_SHA256=[0-9a-f]{64}/);
     assert.match(plan, /REMOTE_SCRIPT_SHA256=[0-9a-f]{64}/);
     const manifest = JSON.parse(readFileSync(join(artifactDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.candidate, fixture.candidate);
+    assert.equal(manifest.expectedRunnerId, `sha256:${'a'.repeat(64)}`);
+    assert.equal(manifest.runnerArchive, null);
     assert.deepEqual(manifest.requiredTags, ['v0.83.0', 'v1.0.0']);
   } finally {
     removeFixture(fixture.root);
@@ -152,7 +157,7 @@ test('prepare-only fails closed on a dirty candidate and preserves the existing 
         '--repo', fixture.repo,
         '--candidate', fixture.candidate,
         '--base-tag', 'v1.0.0',
-        '--runner-image', 'example/release-runner:stable',
+        '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         '--run-id', 'v1.1.0-test2',
         '--artifact-dir', join(fixture.root, 'dirty-artifacts'),
         '--prepare-only',
@@ -186,7 +191,7 @@ test('prepare-only fails closed when origin main moves after the candidate was f
         '--repo', fixture.repo,
         '--candidate', fixture.candidate,
         '--base-tag', 'v1.0.0',
-        '--runner-image', 'example/release-runner:stable',
+        '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         '--run-id', 'v1.1.0-test3',
         '--artifact-dir', join(fixture.root, 'stale-main-artifacts'),
         '--prepare-only',
@@ -210,7 +215,7 @@ test('prepare-only refuses to place release evidence inside the candidate reposi
         '--repo', fixture.repo,
         '--candidate', fixture.candidate,
         '--base-tag', 'v1.0.0',
-        '--runner-image', 'example/release-runner:stable',
+        '--runner-image', 'example/release-runner:stable', '--runner-id', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         '--run-id', 'v1.1.0-test4',
         '--artifact-dir', join(fixture.repo, 'release-artifacts'),
         '--prepare-only',
@@ -237,11 +242,28 @@ test('remote L3 entrypoint is syntax-valid and keeps verification inside fixed s
   assert.match(content, /git init --bare/);
   assert.match(content, /git -C "\$verify_repo" bundle verify/);
   assert.match(content, /run-release-gate\.sh/);
+  assert.match(content, /runner image ID mismatch/);
+  assert.match(content, /docker load --input/);
   assert.match(content, /PIPESTATUS\[0\]/);
   assert.match(content, /use a new run ID for every attempt/);
   assert.match(content, /duplicate release plan key/);
   assert.doesNotMatch(content, /\beval\b/);
   assert.doesNotMatch(content, /(?:^|\n)\s*(?:source|\.)\s+"?\$plan/m);
+});
+
+test('prepare-only binds an optional offline runner archive by name and checksum', async () => {
+  const fixture = createFixture();
+  try {
+    const archive = join(fixture.root, 'trusted-runner.tar');
+    writeFileSync(archive, 'offline runner fixture\n');
+    const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
+    const result = prepareFixture(fixture, ['--runner-archive', archive, '--runner-archive-sha256', digest]);
+    assert.equal(result.status, 0, result.stderr);
+    const plan = readFileSync(join(fixture.root, 'artifacts', 'plan.env'), 'utf8');
+    assert.match(plan, /RUNNER_ARCHIVE_FILE=kpanel-runner-source-test\.tar/);
+    assert.match(plan, new RegExp(`RUNNER_ARCHIVE_SHA256=${digest}`));
+    assert.equal(readFileSync(join(fixture.root, 'artifacts', 'kpanel-runner-source-test.tar'), 'utf8'), 'offline runner fixture\n');
+  } finally { removeFixture(fixture.root); }
 });
 
 test('isolates conflicting or missing tags without changing a linked candidate or its shared refs', async () => {

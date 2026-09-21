@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
-version: "3.1"
+version: "3.2"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
-params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, apps_repo, validation_environment, production_environment]
+params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, runner_id, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-19T08:29:18Z"
+updated: "2026-09-21T01:59:11Z"
 ---
 
 # Release KPanel
@@ -38,7 +38,9 @@ updated: "2026-09-19T08:29:18Z"
   拉取和推送清单的权限。
 - 保留所有无关未提交改动；只提交本次发布范围内的文件。
 - `${{validation_environment}}` 和 `${{production_environment}}` 必须登记在 `environment-policy.json`；
-  两者默认均为 `arena-154`。`prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
+  两者默认均为 `arena-154`。仅当默认环境不可达且本次明确选择灾备时，L3 候选验证可把
+  `${{validation_environment}}` 设为 `local-wsl-dr`；生产环境仍只能使用已登记并允许生产用途的目标。
+  `prod-108`/`108` 已禁用全部 KPanel 操作，任何步骤都不得连接该目标。
 - 必须读取 `dependency-policy.json#crossRepositoryReleaseLinkage`，在候选冻结前确定唯一的
   `scriptLinkageState`（`not-required` / `coupled` / `script-only`），并准备状态对应的交付字段和证据。
 - 必须读取 `docs/release-channels.md`。`${{release_channel}}` 只允许 `stable` 或 `preview`；稳定版要求
@@ -144,10 +146,11 @@ bash scripts/check-version-consistency.sh
 跨 Shell 参数格式。入口失效时先停止并保持/恢复服务健康，在非生产环境修复唯一入口和回归测试后，
 从受影响层重跑；一次现场绕行不构成可复用流程。
 
-远程 L3 只使用仓库外层入口 `scripts/run-release-l3.mjs`。它以无 Shell 拼接的进程参数完成：候选
+L3 只使用仓库外层入口 `scripts/run-release-l3.mjs`。它按环境策略选择 SSH 或本地 WSL 传输，并以
+无 Shell 拼接的进程参数完成：候选
 SHA/干净状态、`origin` 稳定 Tag 与业务基线核对；自包含 bundle 的本地验证和离线克隆；固定摘要的
-计划、bundle 与受检远端脚本上传；在临时 bare repository 内执行远端 bundle verify；解析不可变
-Runner image ID，并调用内部唯一门禁 `scripts/run-release-gate.sh`。禁止另写本地 PowerShell/SSH
+计划、bundle 与受检执行脚本上传；在临时 bare repository 内执行 bundle verify；把实际 Runner image ID
+与冻结的 `${{runner_id}}` 精确比对，并调用内部唯一门禁 `scripts/run-release-gate.sh`。禁止另写本地 PowerShell/SSH
 包装器或远端 L3 脚本：
 
 ```bash
@@ -156,10 +159,17 @@ node scripts/run-release-l3.mjs \
   --candidate <冻结的完整提交> \
   --base-tag "v${{previous_version}}" \
   --runner-image "${{runner_image}}" \
+  --runner-id "${{runner_id}}" \
   --run-id "v${{version}}-<短SHA>-l3-r1" \
   --artifact-dir "<仓库外绝对路径>/v${{version}}-<短SHA>-l3-r1" \
   --target "${{validation_environment}}"
 ```
+
+`local-wsl-dr` 只替代候选 L3 的执行主机，不授予灰度、生产部署、浏览器、性能或故障注入权限；后续候选 CI、
+主线、Release 和公开镜像门禁保持不变。该通道固定使用策略登记的 `Ubuntu` WSL 与 `root` Docker。若本地没有
+`${{runner_id}}`，只允许从已保存的可信离线归档恢复，并在上面命令中同时追加
+`--runner-archive <绝对路径> --runner-archive-sha256 <归档SHA-256>`；缺少归档摘要、镜像 ID 不匹配或证据回收
+失败均关闭失败。不得现场重建同名 Runner 后把新 ID 当作既有 Runner。
 
 每次尝试使用新 `run-id` 和新证据目录，旧计划、日志和失败状态原样保留；不得覆盖后重写成首轮成功。
 入口在任何前置条件失败时 fail-closed，候选代码未执行时记为流程异常而非产品失败。入口脚本自身需要
@@ -458,6 +468,7 @@ node scripts/report-release-metrics.mjs \
 - `${{previous_version}}`：发布前稳定源码或镜像版本，用于回滚说明。
 - `${{image}}`：完整镜像仓库，默认 `docker.io/kjlion/kejilion-panel`。
 - `${{runner_image}}`：Linux L3 工具链 Runner；版本随依赖策略更新，执行时记录解析后的不可变 image ID。
+- `${{runner_id}}`：冻结执行方案中的不可变 Runner image ID，格式为 `sha256:<64位小写十六进制>`。
 - `${{apps_repo}}`：`kejilion/apps` 本地路径，默认 `C:\GitHub\kejilion\apps`。
 - `${{validation_environment}}`：登记的隔离验收环境，默认 `arena-154`。
 - `${{production_environment}}`：登记的稳定生产部署环境，默认 `arena-154`；禁止填写 `prod-108`/`108`。
@@ -478,6 +489,7 @@ py -3 "${CODEX_WORKFLOWS_CLI:-$HOME/.codex/skills/codex-workflows/scripts/workfl
   --param previous_version=0.0.0 \
   --param image=docker.io/example/kpanel \
   --param runner_image=kpanel-release-gate:go1.26.7-node24 \
+  --param runner_id=sha256:0ae41a9fb92e5a9dd5fc60cbdbcde8ef6e2d703f34c17a59b3b26f73d72495d3 \
   --param apps_repo=C:/tmp/apps \
   --param validation_environment=arena-154 \
   --param production_environment=arena-154

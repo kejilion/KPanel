@@ -53,6 +53,7 @@
   资格仍由风险分级任务补齐。
 - 主机必须登记在 `environment-policy.json`。`prod-108`/`108` 已禁用全部 KPanel 操作，测试、只读检查、
   备份、发布、部署和安全核对均由机器门禁拒绝；默认隔离验收与唯一正式部署环境均为 `arena-154`。
+  `local-wsl-dr` 仅是明确选择的候选 L3 灾备执行环境，不承载其他验收或生产操作。
 
 工作流由 `codex-workflows` 技能管理。使用前运行 `workflow.py list`，执行前使用
 `workflow.py run <name> --param key=value` 渲染参数，修改后必须运行

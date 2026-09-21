@@ -4,6 +4,10 @@
     "arena-154": {
       "role": "hybrid",
       "aliases": ["154"],
+      "transport": {
+        "kind": "ssh",
+        "target": "arena-154"
+      },
       "allowedPurposes": [
         "candidate-validation",
         "browser-validation",
@@ -12,6 +16,18 @@
         "staging-deploy",
         "production-deploy",
         "production-safety-check"
+      ]
+    },
+    "local-wsl-dr": {
+      "role": "validation",
+      "aliases": [],
+      "transport": {
+        "kind": "wsl",
+        "distribution": "Ubuntu",
+        "user": "root"
+      },
+      "allowedPurposes": [
+        "candidate-validation"
       ]
     },
     "prod-108": {

@@ -37,6 +37,28 @@ export function validatePolicy(policy) {
     if (environment?.disabled !== undefined && typeof environment.disabled !== 'boolean') {
       failures.push(`${name}: disabled must be a boolean`);
     }
+    if (!environment?.disabled) {
+      if (!environment?.transport || typeof environment.transport !== 'object') {
+        failures.push(`${name}: enabled environments must declare a transport`);
+      } else if (environment.transport.kind === 'ssh') {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$/.test(environment.transport.target ?? '')) {
+          failures.push(`${name}: ssh transport target is invalid`);
+        }
+        for (const key of Object.keys(environment.transport)) {
+          if (!['kind', 'target'].includes(key)) failures.push(`${name}: unsupported ssh transport field ${key}`);
+        }
+      } else if (environment.transport.kind === 'wsl') {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(environment.transport.distribution ?? '')) {
+          failures.push(`${name}: wsl distribution is invalid`);
+        }
+        if (environment.transport.user !== 'root') failures.push(`${name}: wsl transport user must be root`);
+        for (const key of Object.keys(environment.transport)) {
+          if (!['kind', 'distribution', 'user'].includes(key)) failures.push(`${name}: unsupported wsl transport field ${key}`);
+        }
+      } else {
+        failures.push(`${name}: transport kind must be ssh or wsl`);
+      }
+    }
     if (!Array.isArray(environment?.allowedPurposes)) {
       failures.push(`${name}: allowedPurposes must be an array`);
     } else if (environment.disabled && environment.allowedPurposes.length > 0) {
@@ -69,6 +91,13 @@ export function validatePolicy(policy) {
   if (!prod108 || prod108.role !== 'production') failures.push('prod-108 must be registered as production');
   if (prod108?.disabled !== true) failures.push('prod-108 must remain disabled');
   if (prod108?.allowedPurposes?.length !== 0) failures.push('prod-108 must not allow any purpose');
+  const localWsl = policy.environments['local-wsl-dr'];
+  if (!localWsl || localWsl.role !== 'validation') failures.push('local-wsl-dr must be registered as validation');
+  if (localWsl?.disabled === true) failures.push('local-wsl-dr must remain enabled');
+  if (JSON.stringify(localWsl?.allowedPurposes) !== JSON.stringify(['candidate-validation'])) {
+    failures.push('local-wsl-dr must allow candidate-validation only');
+  }
+  if (localWsl?.transport?.kind !== 'wsl') failures.push('local-wsl-dr must use wsl transport');
   return failures;
 }
 

@@ -88,6 +88,8 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
   本地集成与隔离真机结论不得混写，交接时同时交接 manifest 和停止责任。
 - 任何远程操作前使用 `environment-policy.json` 检查用途。`prod-108`/`108` 禁用全部 KPanel 操作；
   测试、只读检查、备份、部署、升级、回滚演练、健康采样、日志读取和清理均不得连接。
+- `local-wsl-dr` 是本机候选 L3 灾备环境，只由发布责任任务通过 `scripts/run-release-l3.mjs` 使用；不能
+  委派为浏览器、性能、故障注入、灰度或生产任务，也不能替代永久治理变更所需的独立复核和同 SHA CI。
 
 ## 跨智能体移交模板
 

@@ -75,6 +75,8 @@ git worktree list
   入口，任何智能体框架通用），先自由臂后约束臂，并在提交消息写 `OCR-Review:` trailer；不适用时写明 skipped 理由。
 - 本地或远程长时间浏览器验收使用 `background-browser-validation` 工作流后台运行；先通过
   `environment-policy.json` 目标检查，再以持久化终态和证据交付，不占用前台会话等待。
+- L3 只使用 `scripts/run-release-l3.mjs`；默认走 `arena-154`。明确选择 `local-wsl-dr` 灾备时只执行候选
+  验证，必须精确匹配冻结 Runner ID，并把 WSL 终态日志回收到本地证据目录，不能扩展为生产权限。
 - 工作树、分支、`HEAD` 或文件所有权出现非预期变化时立即停止，按项目管理规范保留现场并迁移，
   不执行 `reset --hard`、`clean`、强切分支或覆盖他人改动。
 
