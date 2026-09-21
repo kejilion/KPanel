@@ -399,6 +399,7 @@ const desktopShortcutPaths = computed(() => [...new Set(
 const desktopShortcutPathSignature = computed(() => desktopShortcutPaths.value.join('\0'))
 
 const iconsElement = ref<HTMLElement>()
+const initialLayoutReady = ref(false)
 const desktopElement = ref<HTMLElement>()
 const iconBounds = ref<DesktopIconBounds>({ width: 90, height: 96 })
 const compactIconLayout = ref(window.innerWidth <= 760)
@@ -1330,6 +1331,18 @@ function measureIconWorkArea(): void {
   compactIconLayout.value = compact
   widgetLayoutVisible.value = widgetsVisible
 }
+
+watch([entriesLoading, () => desktopIcons.loading.value], async ([entriesBusy, workspaceBusy], _, onCleanup) => {
+  if (entriesBusy || workspaceBusy || initialLayoutReady.value) return
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  measureIconWorkArea()
+  await nextTick()
+  if (cancelled || !iconsElement.value) return
+  // Commit the restored coordinates with transitions disabled before revealing them.
+  void iconsElement.value.offsetWidth
+  initialLayoutReady.value = true
+}, { flush: 'post' })
 
 function expandIconDragSurface(): boolean {
   const element = iconsElement.value
@@ -3721,12 +3734,14 @@ function onViewportResize(): void {
       </button>
     </section>
 
+    <span v-if="!initialLayoutReady" class="desktop__sr-only" role="status">{{ i18n.t('desktop.entriesLoading') }}</span>
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--grouped': localGroups.length > 0 }"
+      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady }"
+      :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
-      :aria-busy="entriesLoading"
+      :aria-busy="!initialLayoutReady || entriesLoading"
     >
       <div
         class="desktop__icons-scroll-space"
@@ -3744,7 +3759,7 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
-      <TransitionGroup name="desktop-group-surface" move-class="desktop-group-surface-no-move"
+      <TransitionGroup :css="initialLayoutReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
         @before-leave="(element: Element) => { (element as HTMLElement).inert = true; element.setAttribute('aria-hidden', 'true') }"
         @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"

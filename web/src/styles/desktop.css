@@ -1604,6 +1604,14 @@ body.desktop-mode-open::-webkit-scrollbar {
   transition: transform 280ms cubic-bezier(.22, 1, .36, 1), opacity 160ms ease, visibility 160ms;
 }
 
+/* Keep the measurable work area mounted while its first snapshot is restored. */
+.desktop__icons--initializing,
+.desktop__icons--initializing * {
+  visibility: hidden !important;
+  transition: none !important;
+  animation: none !important;
+}
+
 .desktop-group-surface-enter-active {
   transition: opacity 220ms ease-out, scale 280ms cubic-bezier(.22, 1, .36, 1) !important;
 }
