@@ -261,6 +261,57 @@ test('code candidates get a proportional, non-blocking OCR line review reminder'
   }
 });
 
+test('a candidate that adds a trust-boundary package gets a non-blocking audit reminder', () => {
+  const state = fixture();
+  const check = () => run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
+  const write = (path, text) => {
+    mkdirSync(join(state.writer, path, '..'), { recursive: true });
+    writeFileSync(join(state.writer, path), text);
+  };
+  try {
+    write('.governance/security-audit/boundary-policy.json', JSON.stringify({
+      schemaVersion: 1, boundaryRoots: ['internal'], packageRoots: ['internal'],
+      nonBoundary: { 'internal/version': 'constant only' }, ignoreSuffixes: ['_test.go'], ignoreSegments: ['testdata'],
+      scopedMaxAgeDays: 14, fullMaxAgeDays: 30,
+    }));
+    write('internal/version/v.go', 'package version\n');
+    write('internal/agent/agent_test.go', 'package agent\n');
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'chore: policy, non-boundary and test-only packages');
+    let result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /security_audit=/);
+
+    write('internal/mcpaccess/access.go', 'package mcpaccess\n');
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'feat: new boundary package');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /security_audit=missing new_boundary_packages=internal\/mcpaccess advisory: run \.codex-workflows\/security-boundary-audit/);
+
+    git(state.writer, 'commit', '--allow-empty', '-m', 'docs: defer audit\n\nSecurity-Audit: deferred reason=test');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /security_audit=recorded new_boundary_packages=internal\/mcpaccess\n/);
+
+    write('internal/mcpbridge/bridge.go', 'package mcpbridge\n');
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'feat: another boundary package after the decision');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /security_audit=stale new_boundary_packages=internal\/mcpaccess,internal\/mcpbridge advisory:/);
+
+    write('.governance/security-audit/boundary-policy.json', '{not json');
+    git(state.writer, 'add', '-A');
+    git(state.writer, 'commit', '-m', 'test: broken policy');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /security_audit=unavailable reason=/);
+  } finally {
+    state.cleanup();
+  }
+});
+
 test('renamed code files still count toward the OCR line review threshold', () => {
   const state = fixture();
   try {

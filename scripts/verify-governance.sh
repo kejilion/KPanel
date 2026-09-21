@@ -26,9 +26,11 @@ node --test \
   scripts/tests/release-acceptance-coverage.test.mjs \
   scripts/tests/ocr-delegate.test.mjs \
   scripts/tests/security-audit-baseline.test.mjs \
+  scripts/tests/check-security-audit-coverage.test.mjs \
   scripts/tests/report-governance-health.test.mjs
 node scripts/report-governance-health.mjs --validate
 node scripts/report-dependency-freshness.mjs --validate-only
 node scripts/check-release-acceptance-coverage.mjs
+node scripts/check-security-audit-coverage.mjs --validate
 
 echo "Governance verification passed."

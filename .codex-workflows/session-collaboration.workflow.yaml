@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.9"
+version: "4.10"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-09-15T00:00:00+08:00"
+updated: "2026-09-21T00:00:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -79,7 +79,10 @@ final verification is bound to it, an L2/L3 code candidate or an L1 candidate wi
 (`.go .ts .tsx .vue .js .mjs .cjs .sh`) runs `ocr-line-review` with `profile=candidate` on `<exact-base>..HEAD`
 without waiting for a prompt, fixes verified findings, and records the `OCR-Review:` trailer (or
 `OCR-Review: skipped reason=<why>`) per `PROJECT_RULES.md` 5.5; `--require-candidate` prints
-`ocr_line_review=missing|stale` as a non-blocking reminder. When the candidate contains locally reproducible
+`ocr_line_review=missing|stale` as a non-blocking reminder. If it also prints `security_audit=missing|stale` (the candidate
+adds a trust-boundary package per `PROJECT_RULES.md` 5.4), run `security-boundary-audit` with `profile=scoped` on
+this candidate while its scope is one feature and add `Security-Audit: scoped run-<N>`, or record
+`Security-Audit: deferred reason=<why>`; deferral leaves the stable preflight to enforce it. When the candidate contains locally reproducible
 user-visible behavior, then invoke `local-feature-preview` with `preview_grade=acceptance` and bind the preview to
 the exact final candidate. Then inspect:
 
@@ -146,7 +149,7 @@ and report measured free space. Do not clean active release paths or infer delet
 - Every completed writing task has a non-empty focused local candidate commit and a clean worktree; read-only and
   no-change closures did not create empty commits.
 - Every code candidate carries an `OCR-Review:` trailer (result or skip reason); a remaining `ocr_line_review=missing`
-  is reported in the delivery package instead of being silently dropped.
+  is reported in the delivery package instead of being silently dropped; the same applies to `security_audit=missing|stale`.
 - Every locally reproducible user-visible candidate provided an acceptance preview after commit; inapplicable backend,
   documentation, build/test infrastructure, or isolated-real-host-only tasks recorded the reason instead of creating noise.
 

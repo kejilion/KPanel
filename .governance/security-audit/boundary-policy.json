@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "boundaryRoots": ["internal", "cmd", "deploy", "packaging", "Dockerfile"],
+  "packageRoots": ["internal", "cmd"],
+  "nonBoundary": {
+    "internal/version": "只含构建注入的版本常量，无输入、权限、文件或网络 I/O"
+  },
+  "ignoreSuffixes": ["_test.go"],
+  "ignoreSegments": ["testdata"],
+  "scopedMaxAgeDays": 14,
+  "fullMaxAgeDays": 30
+}

@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
-version: "3.2"
+version: "3.3"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, runner_id, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-21T01:59:11Z"
+updated: "2026-09-21T12:00:00Z"
 ---
 
 # Release KPanel
@@ -74,6 +74,24 @@ node scripts/check-environment-policy.mjs \
 同时检查 GitHub Release、Actions 和 Docker Hub 标签。不得覆盖已经发布的 Release、镜像或
 可追溯版本；若版本已占用，必须提升版本号。把 `origin/main` 的提交记为发布基线；
 正式推送前若远端已前移，必须停止并重新审计，不得顺带合入其他会话或功能的代码。
+
+同时按 `PROJECT_RULES.md` 5.4 检查信任边界审计是否到期。预览版只运行不阻断，把 `decision` 与未审计提交数
+写入 RC 验收记录"安全审计"字段：
+
+```bash
+node scripts/check-security-audit-coverage.mjs --target HEAD
+```
+
+稳定版（`${{release_channel}}=stable`）必须带 `--require`：
+
+```bash
+node scripts/check-security-audit-coverage.mjs --target HEAD --require
+```
+
+稳定版退出码 0 时把输出的 `decision=ok` 与未审计提交数写入验收记录"安全审计"字段即可继续。退出码 3 时停止冻结：
+按输出的 `next_scoped` 基线执行 `security-boundary-audit`（`scoped-required`）或 full（`full-required`），完成并
+入库 run 元数据后重跑本命令；若用户明确决定本次不补审，把用户原话、理由和补审截止日（不超过 14 天）写入
+同一字段后才可继续。被平台中止或未完成的 run 不算补审，也不能写成通过。
 
 在冻结候选前按 `docs/release-acceptance-template.md` 建立发布画像，至少写明：
 

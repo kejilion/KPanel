@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+
+import { addedBoundaryPackages, POLICY_PATH } from './check-security-audit-coverage.mjs';
 
 function usage() {
   return [
@@ -115,6 +117,23 @@ function ocrLineReviewState(root, baseRef) {
   return (codeChanges(root, newest[0] + '..HEAD').paths > 0 ? 'stale' : 'recorded') + summary;
 }
 
+// PROJECT_RULES.md 5.4 advisory: a candidate that adds a trust-boundary package should be audited while its
+// scope is one feature, before an RC ships it. The stable preflight still enforces coverage either way.
+function securityAuditState(root, baseRef) {
+  if (!existsSync(join(root, POLICY_PATH))) return null;
+  try {
+    const added = addedBoundaryPackages(root, baseRef, 'HEAD');
+    if (added.length === 0) return null;
+    const summary = ' new_boundary_packages=' + added.join(',');
+    const newest = git(root, ['log', '--format=%H%x1f%(trailers:key=Security-Audit,valueonly)%x1e', baseRef + '..HEAD'])
+      .split('\x1e').map((record) => record.trim().split('\x1f')).find(([, trailer]) => trailer?.trim());
+    if (!newest) return 'missing' + summary;
+    return (addedBoundaryPackages(root, newest[0], 'HEAD').length > 0 ? 'stale' : 'recorded') + summary;
+  } catch (error) {
+    return 'unavailable reason=' + JSON.stringify(error.message.split('\n')[0]);
+  }
+}
+
 function normalizedPath(path) {
   const normalized = realpathSync.native(resolve(path));
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -135,6 +154,7 @@ function parseWorktrees(output) {
 function check(options) {
   const failures = [];
   let ocrLineReview = null;
+  let securityAudit = null;
   const repo = realpathSync.native(resolve(options.repo));
   const root = realpathSync.native(git(repo, ['rev-parse', '--show-toplevel']));
   let branch = '(detached)';
@@ -201,8 +221,9 @@ function check(options) {
         if (changedPaths.length === 0) {
           failures.push('writer candidate must contain a non-empty task diff; empty commits do not satisfy completion');
         }
-        // PROJECT_RULES.md 5.5: advisory only, never a failure.
+        // PROJECT_RULES.md 5.5 and 5.4: advisory only, never a failure.
         ocrLineReview = ocrLineReviewState(root, options.baseRef);
+        securityAudit = securityAuditState(root, options.baseRef);
       }
     }
   } else {
@@ -242,6 +263,13 @@ function check(options) {
         + ' or record "OCR-Review: skipped reason=<why>"'
       : '';
     process.stdout.write('ocr_line_review=' + ocrLineReview + hint + '\n');
+  }
+  if (securityAudit) {
+    const hint = securityAudit.startsWith('missing') || securityAudit.startsWith('stale')
+      ? ' advisory: run .codex-workflows/security-boundary-audit.workflow.yaml (profile=scoped) on this candidate and add'
+        + ' "Security-Audit: scoped run-<N>", or record "Security-Audit: deferred reason=<why>"'
+      : '';
+    process.stdout.write('security_audit=' + securityAudit + hint + '\n');
   }
 }
 

@@ -1,12 +1,12 @@
 ---
 name: security-boundary-audit
 description: "基于 Cloudflare security-audit-skill 方法的信任边界安全审计：侦察、覆盖账本、狩猎波、独立验证与结构化报告"
-version: "1.1"
+version: "1.2"
 author: "Claude"
 tags: [security, audit, trust-boundary, governance]
 params: [project_dir, baseline_ref, ledger_dir, profile, scope_paths, skill_dir, governance_dir]
 created: "2026-09-18T00:00:00+08:00"
-updated: "2026-09-19T00:00:00+08:00"
+updated: "2026-09-21T00:00:00+08:00"
 ---
 
 # KPanel Security Boundary Audit
@@ -22,7 +22,9 @@ findings；不修改业务代码，不替代 L0-L3，也不替代人工安全复
 
 - **guidance**：回答安全问题或复查单个改动，不写任何文件，不编排子代理；
 - **scoped**：从 `${{scope_paths}}` 当前源码派生单元，复验相关旧单元并补充新入口、新边界与生命周期；
-- **full**：全量重建账本（通常仅在稳定版列车发车前）。
+- **full**：全量重建账本（覆盖检查判定 `full-required`，或用户明示）。
+
+是否到期不凭记忆判断，统一由 `scripts/check-security-audit-coverage.mjs` 按 5.4 计算。
 
 ## Prerequisites
 
@@ -62,6 +64,21 @@ node "${{governance_dir}}/scripts/security-audit-baseline.mjs" "${{project_dir}}
 与 `${{scope_paths}}` 相关的账本及 findings，比较相关源码而非只比较旧 ref。无账本（首次 full）时
 记录"no prior ledger"且不宣称既往覆盖。历史 dirty run 缺完整快照时明确不可完全复现，不追溯伪造证据。
 
+scoped 的范围取自覆盖检查，不手写：
+
+```bash
+node "${{governance_dir}}/scripts/check-security-audit-coverage.mjs" --target "${{baseline_ref}}" --format=json
+```
+
+输出的 `through.source` 是本次 `comparison_base`，`files` 与 `commits` 是必须覆盖的改动面，
+`newPackages` 必须新增单元。只审其中一部分的 scoped run 可以入库，但不推进覆盖链；下一次检查仍会列出剩余改动。
+run-4 起 `run-metadata.json` 必须含 `scope_mode`（`full`/`scoped`）、`run_status`（完成写 `complete`，否则写中止原因）、
+精确 40 位 `source_ref`、`source_dirty: false`，scoped 另含 `comparison_base` 与 `scope_complete`（审完全部列出改动才写
+`true`）；`--validate` 在治理门禁中校验这些字段。
+
+运行被平台中止或未能完成验证时，`run_status` 如实写中止原因并入库元数据，它不计入覆盖。续跑时从已落盘的
+账本按单元拆成更小批次重新进入验证，只做源码核对；仍无法完成的线索记为 `needs_validation`，不重复整轮重跑。
+
 ### 2. 侦察与账本播种
 
 按 skill 的 RECONNAISSANCE.md 派出多个只读侦察代理（产品栈、身份授权、
@@ -78,8 +95,8 @@ critic 复核缺口；critic 提出的新单元进入下一波。`scoped` 模式
 范围内单元，包括 critic 新发现的范围内单元；范围外明确保留为 `out_of_scope`，不得沿用旧 covered
 声称本轮覆盖。full 模式持续到 critic 报告无缺口。
 
-信任边界包清单以 `PROJECT_RULES.md` 5.4 触发表为唯一权威，本 workflow 不
-复述具体包名，防止双写漂移。
+信任边界范围以 `.governance/security-audit/boundary-policy.json` 为唯一权威（默认全部为边界，
+只有写明理由的包除外），本 workflow 不复述具体包名，防止双写漂移。
 
 ### 4. 候选独立验证
 
@@ -113,7 +130,7 @@ confirmed 必须有完整源码追溯，needs_validation 必须有精确 blocker
 - `${{skill_dir}}`：固定 commit 的上游 skill 绝对路径。
 - `${{governance_dir}}`：提供已提交基线检查入口的治理工作树，通常与 project_dir 相同；旧源码复核时可独立指定。
 - `${{profile}}`：`guidance` / `scoped` / `full` 之一。
-- `${{scope_paths}}`：scoped 模式的包路径列表。
+- `${{scope_paths}}`：scoped 模式的改动面，取自覆盖检查输出的 `files`。
 
 ## Verification
 
@@ -132,6 +149,7 @@ reviewed_paths 为准，不以代理数量或运行时长为准。
   宣称安全，覆盖结论只在账本维度上声明。
 - 18+ 代理并行读仓时注意与其他并行任务的 worktree/资源冲突；审计本身
   只读源码，不触碰测试环境与部署。
-- Linux CI 不运行本 workflow；它是例行安全复核手段，不是提交门禁。
+- Linux CI 不运行本 workflow；它是例行安全复核手段，不是提交门禁。CI 只运行覆盖检查的 `--validate`
+  （策略与元数据结构），是否到期只在稳定版发车预检中阻断，预览版只记录。
 - run-1 基线（45 单元、1 confirmed、12 加固项，输出于
   2026-09-18）应从历史目录读取为增量输入；不得复制到本次 `${{ledger_dir}}` 冒充当前证据。
