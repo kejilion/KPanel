@@ -388,7 +388,6 @@ async function prepare(options) {
   let identity;
   let prepared;
   let failure;
-  let evidenceFailure;
   try {
     await checkSource(source, options.candidate);
     const promisor = await gitResult(source, ['config', '--bool', '--get-regexp', '^remote\\..*\\.promisor$']);
@@ -603,6 +602,7 @@ function uploadAndRun(options, prepared) {
   }
 
   let remoteFailure;
+  let evidenceFailure;
   try {
     wsl(['bash', `${inbox}/run-release-l3-remote.sh`, `${inbox}/plan.env`], { inherit: true });
   } catch (error) {
