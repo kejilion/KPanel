@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.8] - 2026-09-21
+
+### Added
+
+- 集群主机列表支持按 CPU、内存、磁盘和收发总流量临时排序，可切换升降序；临时排序不会改写已保存的自定义顺序，切回自定义顺序后继续支持拖拽和键盘调整。
+
+### Fixed
+
+- 重新安装前会安全移除空的真实 KPanel 目录；残缺安装卸载会在确认归属、容器不存在且 Compose 网络空闲后清理遗留资源，同时在 Docker 清理失败或数据归属不明时保留数据并停止。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会提升 Docker `preview` 并标记为 GitHub prerelease，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- 应用市场安装/卸载契约随镜像内 `kpanel.conf` 更新；默认安装入口仍使用 `latest`，显式预览升级固定到本版不可变 digest。
+- `scriptLinkageState=not-required`：本轮不需要新增或修改 `kejilion.sh` 协议与受管脚本，继续使用既有脚本基线；安装生命周期变化由 KPanel 随镜像发布的 `kpanel.conf` 承载。
+
 ## [1.21.0-rc.7] - 2026-09-21
 
 ### Added
