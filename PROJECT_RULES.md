@@ -451,7 +451,8 @@ skill 自带的 `project_mode` 视为同义；run-1 至 run-3 按原文读取，
    对应 run 再冻结；或由用户明确决定本次不补审，在验收记录写明用户原话、理由和不超过 14 天的补审截止日。
    豁免不改变检查结论，下一次稳定版预检仍会要求补审；截止日过后的稳定版预检不得再以豁免继续，必须先完成补审。
    v1.21.0 起稳定版验收记录的"覆盖检查"字段由 `report-release-metrics.mjs --validate-acceptance` 校验：必须写明
-   decision；非 `ok` 时必须写明补完的 `run-<N>`，或用户豁免及其 YYYY-MM-DD 截止日。
+   decision；非 `ok` 时必须写明已在 `.governance/security-audit` 记为 complete 的 `run-<N>`，或用户豁免及其
+   YYYY-MM-DD 截止日（截止日不超过 14 天由发布任务核对）。
 
 **产物与状态**：账本、findings 与报告统一入库 `.governance/security-audit/`，
 run 递增编号并以上一 run 为增量输入；上游 skill 来源必须 pin 到固定 commit 并记录在

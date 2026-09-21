@@ -89,17 +89,20 @@
   `nextScoped.comparison_base`（最近 full 的源码）。
 - 兼容：`project_mode` 视为 `scope_mode` 的同义字段；两者同时存在且不一致时校验失败。
 - 验收：v1.21.0 起的稳定版记录（按文件名识别，RC 不适用）必须有"覆盖检查"行并写明 decision；非 `ok` 时必须写明
-  `run-<N>`，或"豁免"加 YYYY-MM-DD 截止日。
+  已在 `.governance/security-audit` 记为 complete 的 `run-<N>`（提到中止的 run 不算），或"豁免"加 YYYY-MM-DD 截止日。
 - 适配入口：`AGENTS.md`、`CLAUDE.md` 在 OCR 条目后各补一条安全审计提醒。
-- 防止规则自我弱化：并集不放宽任何"什么算已审"的条件，只修正"已审的提交是否被识别"。
+- 防止规则自我弱化：并集不放宽任何"什么算已审"的条件，只修正"已审的提交是否被识别"。合并提交引入的新包
+  也参与新包判定（包在所有父提交里都不存在才算新增），避免并集相对旧实现收窄检测面；comparison_base 对象缺失的
+  scoped 记为 partial；已删除的包不再报为新包。
 
 ## 验证与证据层级
 
-- 定向测试：覆盖检查 14 个用例（新增真实拓扑的并行分支用例、并集区间与缺口、按时间取最近 full、`project_mode`
-  同义与冲突）；验收字段 1 个用例（缺失、空值、无 decision、pending 未说明、run-N、豁免加日期、RC 与 v1.20.0 不适用）。
+- 定向测试：覆盖检查 16 个用例（新增真实拓扑的并行分支用例、并集区间与缺口、按时间取最近 full、合并提交引入新包、
+  base 对象缺失记 partial 且已删包不报新包、`project_mode`
+  同义与冲突）；验收字段 1 个用例（缺失、空值、无 decision、pending 未说明、complete 的 run-N、中止的 run 不算、豁免加日期、RC 与 v1.20.0 不适用）。
 - 真实数据：在 `c5aadd8a` 上，不含 run-4 时 `covered_by_scoped run-6=4 run-2=11`、未审 19；含原样 run-4 时
   `--validate` 通过、`decision=ok`、未审 0。rc.9 验收记录的 `--validate-acceptance` 仍通过。
-- `verify-governance.sh`（Windows Git Bash）：224/224 通过（基线 221，新增 3：覆盖检查 2、验收字段 1）；提案 19 份。
+- `verify-governance.sh`（Windows Git Bash）：226/226 通过（基线 221，新增 5：覆盖检查 4、验收字段 1）；提案 19 份。
 - `verify-change.sh`：本机无 Go，预检失败关闭；完整门禁由候选分支 Linux CI 执行。
 - 未验证项：真实稳定版上的验收字段执行情况（需观察窗口）。
 

@@ -28,6 +28,15 @@ function gitRunner(repo) {
   return (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env }).trim();
 }
 
+function hasCommit(git, ref) {
+  try {
+    git('cat-file', '-e', ref + '^{commit}');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isAncestor(git, ancestor, descendant) {
   try {
     git('merge-base', '--is-ancestor', ancestor, descendant);
@@ -86,7 +95,7 @@ export function validateRun(run) {
   if (!run.source) failures.push(run.name + ': source_ref has no commit');
   if (run.number <= LEGACY_RUN_LIMIT) return failures;
   const meta = run.meta;
-  // `project_mode` is the skill's own key; runs begun before 5.4 named scope_mode keep it as a synonym.
+  // The skill writes `project_mode` itself (run-4 began before 5.4 named `scope_mode`), so it is accepted as a synonym.
   const mode = meta.scope_mode ?? meta.project_mode;
   if (!['full', 'scoped'].includes(mode)) failures.push(run.name + ': scope_mode (or project_mode) must be full or scoped');
   if (meta.scope_mode !== undefined && meta.project_mode !== undefined && meta.scope_mode !== meta.project_mode) {
@@ -127,7 +136,8 @@ export function classifyRuns(git, runs, target) {
     if (!run.complete) interrupted.push(run);
     else if (!run.source || !isAncestor(git, run.source, target)) outside.push(run);
     else if (run.mode === 'full') fulls.push(run);
-    else if (run.scopeComplete === true && run.base) scoped.push(run);
+    // A base whose object is gone (deleted branch, shallow clone) cannot bound a range: not coverage.
+    else if (run.scopeComplete === true && run.base && hasCommit(git, run.base)) scoped.push(run);
     else partial.push(run);
   }
   // The full-run age clock uses the newest full by source commit time, independent of run numbering.
@@ -201,6 +211,12 @@ export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs 
     run,
     commits: new Set(git('rev-list', run.base + '..' + run.source).split('\n').filter(Boolean)),
   }));
+  // A package is new in a commit when no parent has it; a root commit makes every package new (conservative).
+  const addedBy = (sha) => {
+    const parents = git('rev-list', '--parents', '-n', '1', sha).split(' ').slice(1);
+    const known = new Set(parents.flatMap((parent) => packages(git, policy, parent)));
+    return packages(git, policy, sha).filter((path) => !known.has(path));
+  };
   const files = new Set();
   for (const commit of pending) {
     const range = ranges.find((candidate) => candidate.commits.has(commit.sha));
@@ -210,12 +226,22 @@ export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs 
     }
     report.commits.push({ sha: commit.sha, ageDays: commit.ageDays, subject: commit.subject });
     for (const path of commit.paths) files.add(path);
-    const parent = git('rev-parse', commit.sha + '^');
-    const known = new Set(packages(git, policy, parent));
-    for (const path of packages(git, policy, commit.sha)) if (!known.has(path)) report.newPackages.push(path);
+    report.newPackages.push(...addedBy(commit.sha));
   }
+  // Merges are skipped above, but one can still introduce a package that neither side had.
+  const merges = git('log', '--merges', '--format=%H%x09%ct%x09%s', targetSha, ...exclusions);
+  for (const line of merges ? merges.split('\n') : []) {
+    const [sha, time, subject] = line.split('\t');
+    if (ranges.some((candidate) => candidate.commits.has(sha))) continue;
+    const added = addedBy(sha);
+    if (added.length === 0) continue;
+    report.commits.push({ sha, ageDays: ageDays(Number(time)), subject });
+    for (const path of added) files.add(path + '/');
+    report.newPackages.push(...added);
+  }
+  const present = new Set(packages(git, policy, targetSha));
   report.files = [...files].sort();
-  report.newPackages = [...new Set(report.newPackages)].sort();
+  report.newPackages = [...new Set(report.newPackages)].filter((path) => present.has(path)).sort();
   report.nextScoped = { comparison_base: classes.lastFull.source, source_ref: targetSha };
   report.oldestAgeDays = report.commits.length ? Math.max(...report.commits.map((commit) => commit.ageDays)) : 0;
   if (report.fullAgeDays > policy.fullMaxAgeDays) report.reasons.push('last full run is ' + report.fullAgeDays + ' days old (max ' + policy.fullMaxAgeDays + ')');

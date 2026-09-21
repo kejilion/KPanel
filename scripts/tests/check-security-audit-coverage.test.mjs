@@ -158,6 +158,36 @@ test('an old full run requires a full run even without pending changes', (t) => 
   assert.match(report.reasons[0], /31 days old/);
 });
 
+test('a package introduced only by a merge resolution is still a new boundary package', (t) => {
+  const { repo, git, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  git('checkout', '-qb', 'side');
+  commit(1, { 'internal/agent/side.go': 'side' });
+  git('checkout', '-q', '-');
+  commit(1, { 'internal/agent/main.go': 'main' });
+  execFileSync('git', ['-C', repo, 'merge', '-q', '--no-ff', '--no-commit', 'side'], { encoding: 'utf8' });
+  mkdirSync(join(repo, 'internal/evil'), { recursive: true });
+  writeFileSync(join(repo, 'internal/evil/e.go'), 'package evil\n');
+  git('add', '-A');
+  git('commit', '-qm', 'merge side');
+  const report = assess(repo);
+  assert.deepEqual(report.newPackages, ['internal/evil']);
+  assert.equal(report.decision, 'scoped-required');
+});
+
+test('a scoped run whose base object is missing is partial, and removed packages are not reported as new', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const added = commit(1, { 'internal/temp/t.go': 'temp' });
+  run('run-5', scoped('f'.repeat(40), added));
+  execFileSync('git', ['-C', repo, 'rm', '-rq', 'internal/temp'], { encoding: 'utf8' });
+  commit(2, {}, 'drop temp');
+  const report = assess(repo);
+  assert.deepEqual(report.partial.map((r) => r.name), ['run-5']);
+  assert.deepEqual(report.newPackages, []);
+  assert.equal(report.commits.length, 2);
+});
+
 test('the newest full run by source time sets the age clock, whatever its run number', (t) => {
   const { repo, commit, run, base } = fixture(t);
   const later = commit(10, { 'internal/agent/server.go': 'v2' });

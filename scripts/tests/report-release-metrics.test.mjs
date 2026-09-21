@@ -21,6 +21,7 @@ import {
   summarizePreviewMetrics,
   summarizeReleaseMetrics,
   validateAcceptanceMetrics as validateAcceptanceMetricsRaw,
+  securityCoverageErrors,
   validateProcessIncidentHistory,
 } from '../report-release-metrics.mjs';
 
@@ -1063,16 +1064,23 @@ test('summarizePreviewMetrics refuses to guess whether a train already shipped',
 
 test('stable records from v1.21.0 must state the coverage-check decision and how a pending one was resolved', () => {
   const record = (line) => acceptanceDocument('v1.21.0', []) + (line === null ? '' : '\n' + line) + '\n';
+  const done = new Set(['run-6', 'run-7']);
+  const direct = (line) => securityCoverageErrors(record(line), 'stable', done).join('\n');
+  assert.match(direct(null), /must record the 覆盖检查 decision/);
+  assert.match(direct('- 覆盖检查：'), /must record the 覆盖检查 decision/);
+  assert.match(direct('- 覆盖检查：已运行'), /must name the decision/);
+  assert.equal(direct('- 覆盖检查（decision、未审计提交数）：decision=ok，未审计 0'), '');
+  assert.match(direct('- 覆盖检查：decision=scoped-required'), /recorded as complete/);
+  assert.equal(direct('- 覆盖检查：decision=scoped-required，补完 run-7 后重跑为 ok'), '');
+  assert.match(direct('- 覆盖检查：decision=scoped-required，run-3/run-5 曾中断'), /recorded as complete/);
+  assert.match(direct('- 覆盖检查：decision=full-required，用户豁免'), /user waiver/);
+  assert.equal(direct('- 覆盖检查：decision=full-required；用户原话"先发"，豁免，补审截止 2026-10-05'), '');
+
+  // Through the real validator and the repository's own runs: run-6 is complete, run-3 and run-5 were interrupted.
   const stable = 'docs/release-v1.21.0-acceptance.md';
   const errors = (line, label = stable) => validateAcceptanceMetricsRaw(record(line), label).join('\n');
-  assert.match(errors(null), /must record the 覆盖检查 decision/);
-  assert.match(errors('- 覆盖检查：'), /must record the 覆盖检查 decision/);
-  assert.match(errors('- 覆盖检查：已运行'), /must name the decision/);
-  assert.equal(errors('- 覆盖检查（decision、未审计提交数）：decision=ok，未审计 0'), '');
-  assert.match(errors('- 覆盖检查：decision=scoped-required'), /must name the completed run-<N> or the user waiver/);
-  assert.equal(errors('- 覆盖检查：decision=scoped-required，补完 run-7 后重跑为 ok'), '');
-  assert.match(errors('- 覆盖检查：decision=full-required，用户豁免'), /user waiver/);
-  assert.equal(errors('- 覆盖检查：decision=full-required；用户原话"先发"，豁免，补审截止 2026-10-05'), '');
+  assert.equal(errors('- 覆盖检查：decision=scoped-required，补完 run-6'), '');
+  assert.match(errors('- 覆盖检查：decision=scoped-required，历史边界包仍要求补审且 run-3/run-5 曾中断'), /recorded as complete/);
   assert.equal(errors(null, 'docs/release-v1.21.0-rc.9-acceptance.md'), '');
   assert.equal(validateAcceptanceMetricsRaw(acceptanceDocument('v1.20.0', []) + '\n', 'docs/release-v1.20.0-acceptance.md').join('\n'), '');
 });

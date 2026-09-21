@@ -5,6 +5,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadRuns } from './check-security-audit-coverage.mjs';
+
 const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 const PREVIEW_RELEASE_TAG = /^(v\d+\.\d+\.\d+)-rc\.\d+$/;
 const EMPTY_VALUE = /^(?:|[-—]|待填写|未记录|未验证|未知|不知道|稍后|不适用|N\/A)$/i;
@@ -195,7 +197,12 @@ const SECURITY_COVERAGE_REQUIRED_FROM = [1, 21, 0];
 const SECURITY_COVERAGE_LINE = /^- 覆盖检查[^：\n]*：[ \t]*(.*)$/m;
 const SECURITY_COVERAGE_DECISIONS = /\b(?:ok|scoped-required|full-required)\b/g;
 
-export function securityCoverageErrors(markdown, label = 'acceptance record') {
+function completedAuditRuns() {
+  return new Set(loadRuns().filter((run) => run.complete).map((run) => run.name));
+}
+
+// A pending decision is resolved only by a run recorded as complete, not by mentioning an interrupted one.
+export function securityCoverageErrors(markdown, label = 'acceptance record', completedRuns = completedAuditRuns()) {
   const value = validValue(markdown.replace(/\r\n/g, '\n').match(SECURITY_COVERAGE_LINE)?.[1]);
   if (value === null) {
     return [label + ': release v1.21.0 and later must record the 覆盖检查 decision (PROJECT_RULES.md 5.4)'];
@@ -203,9 +210,11 @@ export function securityCoverageErrors(markdown, label = 'acceptance record') {
   const decisions = new Set(value.match(SECURITY_COVERAGE_DECISIONS) ?? []);
   if (decisions.size === 0) return [label + ': 覆盖检查 must name the decision: ok, scoped-required or full-required'];
   const pending = [...decisions].some((decision) => decision !== 'ok');
-  const resolved = /\brun-\d+\b/.test(value) || (/豁免/.test(value) && /\b\d{4}-\d{2}-\d{2}\b/.test(value));
-  return pending && !resolved
-    ? [label + ': a pending 覆盖检查 decision must name the completed run-<N> or the user waiver with its YYYY-MM-DD deadline']
+  const namedComplete = (value.match(/\brun-\d+\b/g) ?? []).some((name) => completedRuns.has(name));
+  const waived = /豁免/.test(value) && /\b\d{4}-\d{2}-\d{2}\b/.test(value);
+  return pending && !namedComplete && !waived
+    ? [label + ': a pending 覆盖检查 decision must name a run-<N> recorded as complete in .governance/security-audit,'
+      + ' or the user waiver with its YYYY-MM-DD deadline']
     : [];
 }
 
