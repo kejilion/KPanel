@@ -416,19 +416,32 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
 
 本节定义跨信任边界逻辑不变量审计的触发、产物和边界。它补充 `make security-audit`
 （已知依赖漏洞）与扫描器的盲区：验证入口校验、授权绑定、写路径隔离和跨组件契约不变量。
-这是 L0-L3 之外的例行安全复核手段，不是提交门禁，不进入 CI 与 Definition of Done，
-也不能替代人工安全复核——审计产出的 `confirmed` 记录是高可信线索，最终仍按正常修复
-流程验证与合并。
+这是 L0-L3 之外的例行安全复核手段，不是提交门禁，不进入 Definition of Done；CI 只校验边界策略与
+run 元数据结构，是否到期只在稳定版发车预检中判定。它也不能替代人工安全复核——审计产出的
+`confirmed` 记录是高可信线索，最终仍按正常修复流程验证与合并。
 
 **触发三档**（唯一执行入口为
 [`.codex-workflows/security-boundary-audit.workflow.yaml`](.codex-workflows/security-boundary-audit.workflow.yaml)，
-本节不复制其参数与命令）：
+本节不复制其参数与命令；到期由 `scripts/check-security-audit-coverage.mjs` 计算，不凭记忆判断）：
 
 | 档位 | 触发 | 产物 |
 | --- | --- | --- |
 | guidance | 开发/评审中提出安全问题或复查单个改动时随问随用 | 无文件，仅回答 |
-| scoped | 工作项改动触及信任边界包时：`internal/auth`、`internal/cluster`、`internal/hostbackup`、`internal/filemanager`、`internal/agent` 及面板侧对应入口 | 增量账本（按改动面对应单元） |
-| full | 稳定版列车发车前一轮；其他时机由用户明示 | 完整账本与报告 |
+| scoped | 覆盖检查为 `scoped-required`：出现新的边界包（含 `cmd/` 下新二进制），或最早一个未审计边界提交距目标提交超过 14 天；其他时机可随时发起 | 增量账本（按改动面对应单元） |
+| full | 覆盖检查为 `full-required`：目标历史中没有已完成的 full，或最近一次已完成 full 的源码提交距目标提交超过 30 天；其他时机由用户明示 | 完整账本与报告 |
+
+**边界范围与覆盖闭环**：边界范围只由 `.governance/security-audit/boundary-policy.json` 定义——
+`internal/`、`cmd/` 下全部包及部署、打包目录默认都是边界，只有写明具体理由的包可列为非边界；测试文件与
+testdata 不计。新包无需登记即进入范围，列为非边界的包被删除后策略校验失败。14/30 天是初始阈值，按日期
+取提交时间而非运行时钟，调整走 5.2。覆盖只沿已完成 run 组成的链推进：链从一次 `run_status=complete`
+的 full 开始；scoped 只有 `comparison_base` 已被覆盖、且以 `scope_complete: true` 声明审完覆盖检查列出的全部
+改动时才推进（该声明由独立复核核对账本）。被平台中止、
+未完成验证或只审部分改动的 run 如实入库元数据，但不计覆盖。run-4 起元数据字段由覆盖检查的 `--validate`
+在治理门禁中校验；run-1 至 run-3 按原文读取，不改写。
+
+稳定版发车预检必须运行覆盖检查（入口见 `release-kpanel` 工作流），预览版不判定。结论非 `ok` 时，先补完
+对应 run 再冻结；或由用户明确决定本次不补审，在验收记录写明用户原话、理由和不超过 14 天的补审截止日。
+豁免不改变检查结论，下一次稳定版预检仍会要求补审。
 
 **产物与状态**：账本、findings 与报告统一入库 `.governance/security-audit/`，
 run 递增编号并以上一 run 为增量输入；上游 skill 来源必须 pin 到固定 commit 并记录在
@@ -448,10 +461,10 @@ run metadata。账本是覆盖声明的唯一真源——不以代理数量、�
 scratch-only 写）不可用的线索必须记为 `needs_validation` 并写明缺失能力，不得降级为
 confirmed。无 OS 沙箱的环境禁止执行目标代码。
 
-**试用退出条款**：本节为试行规范。连续 3 个稳定版的 full run 增量均无 confirmed 或
-有效 finding 产出时，下一次治理周期将其降回外部工具模式并从本规范移除，同时保留账本
-历史；有效产出指转入修复流程且经独立复核成立的记录。观察序列自 v1.20.0 稳定版列车
-起算，规范生效前的 run-1（2026-09-18 全仓审计，迁入 `.governance/security-audit/run-1`）
+**试用退出条款**：本节为试行规范。连续 3 次已完成的 full run（连同其间已完成的 scoped
+run）均无 confirmed 或有效 finding 产出时，下一次治理周期将其降回外部工具模式并从本规范移除，同时保留账本
+历史；有效产出指转入修复流程且经独立复核成立的记录。被豁免、中止或未完成的周期不计为零产出。
+规范生效前的 run-1（2026-09-18 全仓审计，迁入 `.governance/security-audit/run-1`）
 计为首个 full run。上游 skill 的更新遵循 5.2 受控自我改进与执行入口的 pin 规则：新
 commit 只产生候选信号，升级须先 scoped 对照并重验既有账本。
 
