@@ -13,6 +13,8 @@ function phrase(value: string): string {
   return translatePhrase(value)
 }
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
   Bell,
   Check,
@@ -37,6 +39,7 @@ import {
 import PageHeader from '@/components/common/PageHeader.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ClusterNotificationsDialog from '@/components/cluster/ClusterNotificationsDialog.vue'
+import ClusterTemporarySortMenu from '@/components/cluster/ClusterTemporarySortMenu.vue'
 import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
@@ -52,6 +55,11 @@ import {
   reconcileClusterHostOrder,
   sortClusterHosts,
 } from '@/lib/clusterHostOrder'
+import {
+  sortClusterHostsTemporarily,
+  type ClusterHostTemporarySortDirection,
+  type ClusterHostTemporarySortKey,
+} from '@/lib/clusterHostTemporarySort'
 import { clusterHostMonitoringRoute, clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
@@ -129,6 +137,8 @@ const viewMode = ref<HostViewMode>('list')
 const hostOrder = ref<string[]>([])
 const hostOrderResourceVersion = ref('')
 const hostOrderSaving = ref(false)
+const temporarySortKey = ref<ClusterHostTemporarySortKey>('custom')
+const temporarySortDirection = ref<ClusterHostTemporarySortDirection>('desc')
 const draggedHostId = ref('')
 const dragOverHostId = ref('')
 let loadInFlight = false
@@ -227,7 +237,7 @@ function controllerCapabilitySummary(scope: string): string {
 
 const orderedHosts = computed(() => sortClusterHosts(inventory.value?.items || [], hostOrder.value))
 
-const filteredHosts = computed(() => {
+const matchingHosts = computed(() => {
   const term = search.value.trim().toLocaleLowerCase()
   if (!term) return orderedHosts.value
   return orderedHosts.value.filter((host) => {
@@ -247,6 +257,29 @@ const filteredHosts = computed(() => {
       .filter(Boolean)
       .some((value) => String(value).toLocaleLowerCase().includes(term))
   })
+})
+
+const temporarySortActive = computed(() => temporarySortKey.value !== 'custom')
+const temporarySortOptions = computed(() => [
+  { value: 'custom' as const, label: phrase('自定义顺序') },
+  { value: 'cpu' as const, label: phrase('CPU 使用率') },
+  { value: 'memory' as const, label: phrase('内存使用率') },
+  { value: 'disk' as const, label: phrase('磁盘使用率') },
+  { value: 'traffic' as const, label: phrase('总流量（收发合计）') },
+])
+const filteredHosts = computed(() => sortClusterHostsTemporarily(
+  matchingHosts.value,
+  temporarySortKey.value,
+  temporarySortDirection.value,
+))
+const temporarySortDirectionLabel = computed(() => temporarySortDirection.value === 'desc'
+  ? phrase('当前从高到低；切换为从低到高')
+  : phrase('当前从低到高；切换为从高到低'))
+const hostOrderControlTitle = computed(() => {
+  if (hostOrderSaving.value) return phrase('正在保存主机顺序')
+  if (search.value.trim()) return phrase('清除搜索后可调整顺序')
+  if (temporarySortActive.value) return phrase('临时排序中，切回自定义顺序后可调整')
+  return phrase('拖拽调整顺序；也可使用上下方向键')
 })
 
 const onlineCount = computed(
@@ -929,7 +962,7 @@ async function persistHostOrder(next: string[], showError = true): Promise<boole
 }
 
 async function moveHost(hostID: string, offset: number): Promise<void> {
-  if (search.value.trim() || hostOrderSaving.value) return
+  if (search.value.trim() || temporarySortActive.value || hostOrderSaving.value) return
   const ids = orderedHosts.value.map((host) => host.id)
   const current = ids.indexOf(hostID)
   const target = Math.max(0, Math.min(ids.length - 1, current + offset))
@@ -940,7 +973,7 @@ async function moveHost(hostID: string, offset: number): Promise<void> {
 }
 
 function startHostDrag(event: DragEvent, hostID: string): void {
-  if (search.value.trim() || hostOrderSaving.value) {
+  if (search.value.trim() || temporarySortActive.value || hostOrderSaving.value) {
     event.preventDefault()
     return
   }
@@ -955,7 +988,13 @@ async function dropHost(targetID: string): Promise<void> {
   const sourceID = draggedHostId.value
   dragOverHostId.value = ''
   draggedHostId.value = ''
-  if (!sourceID || sourceID === targetID || search.value.trim() || hostOrderSaving.value) return
+  if (
+    !sourceID
+    || sourceID === targetID
+    || search.value.trim()
+    || temporarySortActive.value
+    || hostOrderSaving.value
+  ) return
   const ids = orderedHosts.value.map((host) => host.id)
   const source = ids.indexOf(sourceID)
   const target = ids.indexOf(targetID)
@@ -1248,45 +1287,70 @@ onBeforeUnmount(() => {
       {{ refreshWarning }}
     </div>
 
-    <div v-if="inventory?.items.length" class="cluster-toolbar">
-      <label class="cluster-search">
-        <Server :size="17" />
-        <input
-          v-model="search"
-          type="search"
-          aria-label="搜索集群主机"
-          placeholder="搜索名称、系统、地区或运营商…"
-        />
-      </label>
-      <div class="cluster-view-switch" role="group" aria-label="主机排列方式">
-        <button
-          type="button"
-          :class="{ 'is-active': viewMode === 'list' }"
-          :aria-pressed="viewMode === 'list'"
-          title="行列表"
-          @click="setViewMode('list')"
-        >
-          <LayoutList :size="15" /> 列表
-        </button>
-        <button
-          type="button"
-          :class="{ 'is-active': viewMode === 'card' }"
-          :aria-pressed="viewMode === 'card'"
-          title="卡片排列"
-          @click="setViewMode('card')"
-        >
-          <LayoutGrid :size="15" /> 卡片
-        </button>
-        <button
-          type="button"
-          :class="{ 'is-active': viewMode === 'globe' }"
-          :aria-pressed="viewMode === 'globe'"
-          title="地球展示"
-          @click="setViewMode('globe')"
-        >
-          <Globe2 :size="15" /> 地球
-        </button>
+    <div v-if="inventory?.items.length" class="cluster-toolbar-block">
+      <div class="cluster-toolbar">
+        <label class="cluster-search">
+          <Server :size="17" />
+          <input
+            v-model="search"
+            type="search"
+            aria-label="搜索集群主机"
+            placeholder="搜索名称、系统、地区或运营商…"
+          />
+        </label>
+        <div class="cluster-toolbar__controls">
+          <div class="cluster-sort" role="group" aria-label="临时主机排序">
+            <ClusterTemporarySortMenu
+              v-model="temporarySortKey"
+              :options="temporarySortOptions"
+              :label="phrase('临时排序方式')"
+              :prefix="phrase('临时排序')"
+            />
+            <button
+              type="button"
+              :disabled="!temporarySortActive"
+              :title="temporarySortDirectionLabel"
+              :aria-label="temporarySortDirectionLabel"
+              @click="temporarySortDirection = temporarySortDirection === 'desc' ? 'asc' : 'desc'"
+            >
+              <ArrowDown v-if="temporarySortDirection === 'desc'" :size="15" />
+              <ArrowUp v-else :size="15" />
+            </button>
+          </div>
+          <div class="cluster-view-switch" role="group" aria-label="主机排列方式">
+            <button
+              type="button"
+              :class="{ 'is-active': viewMode === 'list' }"
+              :aria-pressed="viewMode === 'list'"
+              title="行列表"
+              @click="setViewMode('list')"
+            >
+              <LayoutList :size="15" /> 列表
+            </button>
+            <button
+              type="button"
+              :class="{ 'is-active': viewMode === 'card' }"
+              :aria-pressed="viewMode === 'card'"
+              title="卡片排列"
+              @click="setViewMode('card')"
+            >
+              <LayoutGrid :size="15" /> 卡片
+            </button>
+            <button
+              type="button"
+              :class="{ 'is-active': viewMode === 'globe' }"
+              :aria-pressed="viewMode === 'globe'"
+              title="地球展示"
+              @click="setViewMode('globe')"
+            >
+              <Globe2 :size="15" /> 地球
+            </button>
+          </div>
+        </div>
       </div>
+      <p v-if="temporarySortActive" class="cluster-sort-note" role="status">
+        临时排序仅改变当前页面；关闭页面后恢复自定义顺序。总流量为累计接收与累计传送之和。
+      </p>
     </div>
 
     <LoadingState v-if="loading" title="正在读取集群主机…" />
@@ -1335,9 +1399,9 @@ onBeforeUnmount(() => {
           <button
             class="cluster-card__drag"
             type="button"
-            :draggable="!search.trim() && !hostOrderSaving"
-            :disabled="Boolean(search.trim()) || hostOrderSaving"
-            :title="hostOrderSaving ? phrase('正在保存主机顺序') : search.trim() ? phrase('清除搜索后可调整顺序') : phrase('拖拽调整顺序；也可使用上下方向键')"
+            :draggable="!search.trim() && !temporarySortActive && !hostOrderSaving"
+            :disabled="Boolean(search.trim()) || temporarySortActive || hostOrderSaving"
+            :title="hostOrderControlTitle"
             :aria-label="`调整 ${host.name} 的显示顺序`"
             @dragstart="startHostDrag($event, host.id)"
             @dragend="finishHostDrag"
@@ -2183,11 +2247,26 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.cluster-toolbar-block {
+  display: grid;
+  gap: 8px;
+}
+
 .cluster-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.cluster-toolbar__controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .cluster-search {
@@ -2214,6 +2293,54 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   outline: 0;
+}
+
+.cluster-sort {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: stretch;
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cluster-sort:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.cluster-sort button {
+  display: inline-grid;
+  width: 40px;
+  min-height: 38px;
+  place-items: center;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--border);
+}
+
+.cluster-sort button:hover:not(:disabled) {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.cluster-sort button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cluster-sort-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .cluster-view-switch {
@@ -3145,6 +3272,17 @@ onBeforeUnmount(() => {
   .cluster-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .cluster-toolbar__controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cluster-sort,
+  .cluster-view-switch {
+    width: 100%;
   }
 
   .cluster-view-switch {
