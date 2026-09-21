@@ -23,6 +23,15 @@ import (
 const passkeyTestOrigin = "https://panel.example.com"
 const passkeyPassword = "a-strong-password-1"
 
+func TestPasskeyOriginCanonicalDefaultPort(t *testing.T) {
+	for _, value := range []string{"https://Panel.Example.com:443", "https://panel.example.com/"} {
+		origin, rp, err := PasskeyOrigin(value)
+		if err != nil || origin != "https://panel.example.com" || rp != "panel.example.com" {
+			t.Fatal(value, origin, rp, err)
+		}
+	}
+}
+
 type testAuthenticator struct {
 	key    *ecdsa.PrivateKey
 	id     []byte

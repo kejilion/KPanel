@@ -15,7 +15,7 @@ import (
 )
 
 const passkeyPrefix = "/api/v1/auth/passkeys"
-const passkeyCookie = "__Secure-kpanel_passkey"
+const passkeyCookie = "__Host-kpanel_passkey"
 
 func (s *Server) passkeysAvailable(r *http.Request) bool {
 	if s.passkeys == nil || s.passkeys.Origin == "" {
@@ -150,7 +150,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suff
 			s.writePasskeyProblem(w, r, err)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: passkeyCookie, Value: binding, Path: passkeyPrefix, MaxAge: 180, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: passkeyCookie, Value: binding, Path: "/", MaxAge: 180, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 		s.writeJSON(w, http.StatusOK, options)
 		return
 	}
@@ -159,11 +159,9 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suff
 		s.writePasskeyProblem(w, r, auth.ErrPasskeyInvalid)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: passkeyCookie, Path: passkeyPrefix, MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
-	if err := s.audit(r, "", "auth.passkey.login", "session", "", "intent", nil); err != nil {
-		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
-		return
-	}
+	http.SetCookie(w, &http.Cookie{Name: passkeyCookie, Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+	// Anonymous failures use the shared audit throttle; arbitrary ceremony IDs
+	// must not trigger an unbounded durable intent write before verification.
 	credentials, err := s.passkeys.FinishLogin(s.remoteIP(r), passkeyBinding(cookie.Value), input.CeremonyID, input.Credential, input.TOTPCode)
 	if err != nil {
 		s.auditAuthFailure(r, "auth.passkey.login")

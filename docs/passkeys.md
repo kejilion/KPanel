@@ -55,7 +55,8 @@ Secure/HttpOnly/SameSite=Strict 的随机浏览器 Cookie；挑战还绑定用�
 
 ## 审计
 
-注册 begin、注册完成、撤销、Passkey 登录记录独立 `auth.passkey.*` 动作与 intent/success/failure。
+注册 begin、注册完成、撤销记录独立 `auth.passkey.*` 动作与 intent/success/failure；
+Passkey 登录只记录 success 与限频 failure，匿名输入不能触发无界 intent 写入。
 敏感写入前审计不可用即拒绝；登录成功审计失败则撤销新 Session，不发认证 Cookie。凭证管理在
 intent 已持久化后变更，success 写失败仍保留 intent（审计库与身份 Store 不具备跨文件事务）。
 审计不包含密码、TOTP、恢复码、挑战、签名、Cookie、凭证公钥或用户输入的凭证名称。

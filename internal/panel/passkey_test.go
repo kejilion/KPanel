@@ -106,7 +106,7 @@ func TestPasskeyHTTPOriginSessionCSRFAndCookieBoundary(t *testing.T) {
 		t.Fatal(begin.Code, begin.Body.String())
 	}
 	cs := begin.Result().Cookies()
-	if len(cs) != 1 || !cs[0].HttpOnly || !cs[0].Secure || cs[0].SameSite != http.SameSiteStrictMode || cs[0].Path != passkeyPrefix {
+	if len(cs) != 1 || cs[0].Name != "__Host-kpanel_passkey" || cs[0].Domain != "" || !cs[0].HttpOnly || !cs[0].Secure || cs[0].SameSite != http.SameSiteStrictMode || cs[0].Path != "/" {
 		t.Fatal("unsafe binding cookie", cs)
 	}
 	if strings.Contains(begin.Body.String(), "allowCredentials") {
@@ -156,5 +156,31 @@ func TestPasskeyHTTPAuditUnavailableFailsBeforeEnrollment(t *testing.T) {
 	w := passkeyRequest(s, "POST", passkeyPrefix+"/register/begin", []byte(`{"password":"a-strong-password-1","name":"key"}`), []*http.Cookie{session, csrf}, map[string]string{"Origin": "https://panel.test", "Content-Type": "application/json", "X-CSRF-Token": csrf.Value}, true)
 	if w.Code != 503 || !strings.Contains(w.Body.String(), "audit_unavailable") {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestPasskeyHTTPInvalidAnonymousFinishCannotFloodAudit(t *testing.T) {
+	s, _ := newTestServerWithPublicURL(t, "https://panel.test")
+	for range 20 {
+		w := passkeyRequest(s, "POST", passkeyPrefix+"/login/finish", []byte(`{"ceremonyId":"invalid","credential":{}}`), []*http.Cookie{{Name: passkeyCookie, Value: "attacker-controlled"}}, map[string]string{"Origin": "https://panel.test", "Content-Type": "application/json"}, true)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	events, _, err := s.store.ListAudit(100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failures := 0
+	for _, event := range events {
+		if event.Action == "auth.passkey.login" {
+			if event.Result != "failure" {
+				t.Fatal("unverified request produced durable non-failure audit", event.Result)
+			}
+			failures++
+		}
+	}
+	if failures != 1 {
+		t.Fatal("expected one throttled failure", failures)
 	}
 }

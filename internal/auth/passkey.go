@@ -59,7 +59,11 @@ func PasskeyOrigin(value string) (origin, rpID string, err error) {
 			return "", "", ErrPasskeyUnavailable
 		}
 	}
-	return "https://" + strings.ToLower(u.Host), host, nil
+	origin = "https://" + host
+	if port := u.Port(); port != "" && port != "443" {
+		origin += ":" + port
+	}
+	return origin, host, nil
 }
 
 type PasskeyService struct {
