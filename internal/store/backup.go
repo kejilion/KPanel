@@ -6,8 +6,9 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/backup"
 )
 
-// ExportIdentity excludes sessions, login attempts, audit history and live share
-// authorizations. Restoring a backup must never reactivate a bearer credential.
+// ExportIdentity excludes sessions, passkeys, login attempts, audit history and
+// live share authorizations. Restoring a backup must never reactivate a revoked
+// credential. Passkeys must be enrolled again on the destination panel.
 // The private cluster host order is panel-owned, non-sensitive preference state
 // and is preserved independently from the public cluster share configuration.
 func (s *Store) ExportIdentity() ([]byte, error) {
@@ -17,6 +18,7 @@ func (s *Store) ExportIdentity() ([]byte, error) {
 	copy(users, s.data.Users)
 	for i := range users {
 		users[i].TOTPRecoveryCodeHashes = nil
+		users[i].Passkeys = nil
 	}
 	return json.Marshal(diskState{
 		SchemaVersion:    1,
@@ -39,7 +41,7 @@ func ValidateIdentityBackup(data []byte) error {
 		}
 	}
 	u := state.Users[0]
-	if u.ID == "" || len(u.ID) > 128 || u.Role != "admin" || u.Username == "" || len(u.Username) > 128 || len(u.PasswordHash) > 1024 || len(u.PasswordHash) < 32 || len(u.TOTPRecoveryCodeHashes) != 0 {
+	if u.ID == "" || len(u.ID) > 128 || u.Role != "admin" || u.Username == "" || len(u.Username) > 128 || len(u.PasswordHash) > 1024 || len(u.PasswordHash) < 32 || len(u.TOTPRecoveryCodeHashes) != 0 || len(u.Passkeys) != 0 {
 		return errors.New("invalid backup account")
 	}
 	return nil
@@ -57,6 +59,18 @@ func (s *Store) RestoreIdentity(data []byte) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Restoring an older backup must not resurrect a credential snapshot.
+	for i := range incoming.Users {
+		for _, current := range s.data.Users {
+			if current.CredentialVersion > incoming.Users[i].CredentialVersion {
+				incoming.Users[i].CredentialVersion = current.CredentialVersion
+			}
+		}
+		if err := advanceCredentialVersion(&incoming.Users[i]); err != nil {
+			return err
+		}
+		incoming.Users[i].Passkeys = nil
+	}
 	previous := cloneDiskState(s.data)
 	s.data.Users = incoming.Users
 	s.data.Sessions = nil
