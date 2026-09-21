@@ -249,6 +249,11 @@ test('remote L3 entrypoint is syntax-valid and keeps verification inside fixed s
   assert.match(content, /duplicate release plan key/);
   assert.doesNotMatch(content, /\beval\b/);
   assert.doesNotMatch(content, /(?:^|\n)\s*(?:source|\.)\s+"?\$plan/m);
+  const controller = readFileSync(orchestrator, 'utf8');
+  assert.match(controller, /checkEnvironment\(loadPolicy\(\), options\.target, 'candidate-validation'\)/);
+  assert.match(controller, /run\('wsl\.exe'/);
+  assert.match(controller, /WSL evidence checksum mismatch/);
+  assert.doesNotMatch(controller, /execSync|shell:\s*true/);
 });
 
 test('prepare-only binds an optional offline runner archive by name and checksum', async () => {

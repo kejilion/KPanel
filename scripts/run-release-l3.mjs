@@ -617,7 +617,14 @@ function uploadAndRun(options, prepared) {
     for (const name of names) {
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) throw new Error('unsafe WSL evidence filename');
       if (!/\.(?:log|txt|sha256)$/.test(name)) continue;
-      wsl(['cp', '--', `${remoteEvidence}/${name}`, `${destination}/${name}`]);
+      const sourcePath = `${remoteEvidence}/${name}`;
+      const destinationPath = `${destination}/${name}`;
+      const sourceHash = wsl(['sha256sum', '--', sourcePath]).split(/\s+/)[0];
+      wsl(['cp', '--', sourcePath, destinationPath]);
+      const destinationHash = wsl(['sha256sum', '--', destinationPath]).split(/\s+/)[0];
+      if (!/^[0-9a-f]{64}$/.test(sourceHash) || sourceHash !== destinationHash) {
+        throw new Error(`WSL evidence checksum mismatch: ${name}`);
+      }
     }
   } catch (error) {
     if (!remoteFailure) throw error;
