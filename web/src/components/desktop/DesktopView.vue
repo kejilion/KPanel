@@ -400,6 +400,7 @@ const desktopShortcutPathSignature = computed(() => desktopShortcutPaths.value.j
 
 const iconsElement = ref<HTMLElement>()
 const initialLayoutReady = ref(false)
+const initialLayoutTransitionsReady = ref(false)
 const desktopElement = ref<HTMLElement>()
 const iconBounds = ref<DesktopIconBounds>({ width: 90, height: 96 })
 const compactIconLayout = ref(window.innerWidth <= 760)
@@ -1342,6 +1343,11 @@ watch([entriesLoading, () => desktopIcons.loading.value], async ([entriesBusy, w
   // Commit the restored coordinates with transitions disabled before revealing them.
   void iconsElement.value.offsetWidth
   initialLayoutReady.value = true
+  await nextTick()
+  if (!iconsElement.value) return
+  // Revealing visibility must settle too, before normal interaction transitions resume.
+  void iconsElement.value.offsetWidth
+  initialLayoutTransitionsReady.value = true
 }, { flush: 'post' })
 
 function expandIconDragSurface(): boolean {
@@ -3738,7 +3744,7 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady }"
+      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady }"
       :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="!initialLayoutReady || entriesLoading"
@@ -3759,7 +3765,7 @@ function onViewportResize(): void {
         @drag-start="beginWidgetDrag($event, widget.key)"
         @nudge="nudgeWidget(widget.key, $event)"
       />
-      <TransitionGroup :css="initialLayoutReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
+      <TransitionGroup :css="initialLayoutTransitionsReady" name="desktop-group-surface" move-class="desktop-group-surface-no-move"
         @before-leave="(element: Element) => { (element as HTMLElement).inert = true; element.setAttribute('aria-hidden', 'true') }"
         @leave-cancelled="(element: Element) => { (element as HTMLElement).inert = false; element.removeAttribute('aria-hidden') }">
       <DesktopGroupCard v-for="group in localGroups" :key="group.id" :group="group" :count="groupCount(group)"

@@ -57,11 +57,11 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
         release()
         await page.waitForFunction(() => window.layoutFrames.filter(frame => frame.visible).length >= 8)
         const frames = await page.evaluate(() => window.layoutFrames.filter(frame => frame.visible))
+        report.cases.push({ label, width, theme, zoom, frames })
         assert(frames.every(frame => frame.animations === 0), `${label}: initial placement animated`)
         assert(frames.every(frame => frame.x === frames[0].x && frame.y === frames[0].y), `${label}: visible coordinates changed`)
         if (!failed) assert(frames.every(frame => frame.member === 'a'.repeat(32)), `${label}: ungrouped frame`)
         assert.equal(await page.locator('.desktop__icons').evaluate(element => element.inert), false)
-        report.cases.push({ label, width, theme, zoom, frames })
       }
       await page.goto(base)
       await verifyReveal('initial refresh')

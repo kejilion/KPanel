@@ -1608,6 +1608,9 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__icons--initializing,
 .desktop__icons--initializing * {
   visibility: hidden !important;
+}
+.desktop__icons--restoring,
+.desktop__icons--restoring * {
   transition: none !important;
   animation: none !important;
 }
