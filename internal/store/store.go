@@ -480,14 +480,15 @@ func (s *Store) ReplaceUserUsername(userID, expectedUsername, newUsername string
 
 // EnableUserTOTP persists the encrypted authenticator secret and one-time
 // recovery hashes in the same atomic transition that revokes existing sessions.
-func (s *Store) EnableUserTOTP(userID, encryptedSecret string, enabledAt time.Time, lastUsedStep int64, recoveryHashes []string) error {
+// The enrollment's version must still hold at commit, including across restore.
+func (s *Store) EnableUserTOTP(userID string, expectedVersion uint64, encryptedSecret string, enabledAt time.Time, lastUsedStep int64, recoveryHashes []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	userIndex := s.userIndexLocked(userID)
 	if userIndex < 0 {
 		return ErrNotFound
 	}
-	if s.data.Users[userIndex].TOTPSecret != "" {
+	if s.data.Users[userIndex].TOTPSecret != "" || s.data.Users[userIndex].CredentialVersion != expectedVersion {
 		return ErrConflict
 	}
 	previous := cloneDiskState(s.data)

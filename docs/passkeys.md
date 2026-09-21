@@ -39,6 +39,7 @@ Secure/HttpOnly/SameSite=Strict 的随机浏览器 Cookie；挑战还绑定用�
 一致性、RP ID、Origin 和 user handle 始终由服务端校验。
 
 密码/用户名、TOTP 开关、恢复码轮换、Passkey 管理与恢复推进凭证版本，旧挑战随之失效。
+TOTP 待确认绑定同样记录发起时的凭证版本，存储提交时原子校验；安全设置变化后须重新开始绑定。
 首次保存 Passkey 将 Panel Store Schema 由 1 升至 2；不含 Passkey 的旧 Store 仍可读取。
 删除全部凭证不降低 Schema，旧程序会拒绝打开新版 Store，避免静默丢弃认证数据。
 
@@ -50,8 +51,8 @@ Secure/HttpOnly/SameSite=Strict 的随机浏览器 Cookie；挑战还绑定用�
 - Panel 身份备份不导出 Passkey，恢复会清除目标现有 Passkey，并推进凭证版本；使用密码及现有
   TOTP 登录后重新绑定。这样不会从旧备份重新激活已撤销凭证。完整磁盘快照仍可能恢复旧授权，
   其恢复应按离线账户恢复处理，不等价于面板内置身份备份。
-- 回退到不支持 Schema 2 的程序前，必须备份当前数据，再使用本版导出的无 Passkey 身份备份按
-  既有恢复流程准备兼容 Store，或恢复升级前完整备份。禁止手工改 Schema 数字后直接运行旧程序。
+- 回退到不支持 Schema 2 的程序前，必须备份当前数据，再恢复升级前的完整备份及其匹配程序。
+  在原 Schema 2 Store 中恢复无 Passkey 身份备份不会降级 Schema。禁止手工改 Schema 数字后运行旧程序。
 
 ## 审计
 

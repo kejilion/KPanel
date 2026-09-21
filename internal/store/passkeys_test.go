@@ -376,7 +376,7 @@ func TestCredentialVersionTracksSecurityChangesOnly(t *testing.T) {
 	}{
 		{func() error { return s.ReplaceUserPassword(u.ID, u.PasswordHash, "new-hash", now) }, 1},
 		{func() error { return s.ReplaceUserUsername(u.ID, u.Username, "new-name", now) }, 2},
-		{func() error { return s.EnableUserTOTP(u.ID, "secret", now, 1, []string{"recovery"}) }, 3},
+		{func() error { return s.EnableUserTOTP(u.ID, 2, "secret", now, 1, []string{"recovery"}) }, 3},
 		{func() error { return s.ConsumeUserTOTPStep(u.ID, "secret", 2, now) }, 3},
 		{func() error { return s.ConsumeUserRecoveryCode(u.ID, "recovery", now) }, 3},
 		{func() error { return s.ReplaceUserRecoveryCodes(u.ID, []string{"new-recovery"}, now) }, 4},

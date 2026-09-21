@@ -359,7 +359,7 @@ func (s *Service) StartTOTPEnrollment(userID, currentPassword string) (TOTPEnrol
 	if len(s.enrollments) >= maxPendingEnrollments {
 		return TOTPEnrollment{}, &RateLimitError{RetryAfter: time.Minute}
 	}
-	s.enrollments[userID] = pendingTOTPEnrollment{id: id, secret: secret, expiresAt: expiresAt}
+	s.enrollments[userID] = pendingTOTPEnrollment{id: id, secret: secret, expiresAt: expiresAt, credentialVersion: user.CredentialVersion}
 	return TOTPEnrollment{ID: id, Secret: secret, OTPAuthURI: buildOTPAuthURI(user.Username, secret), ExpiresAt: expiresAt}, nil
 }
 
@@ -396,9 +396,9 @@ func (s *Service) ConfirmTOTPEnrollment(userID, enrollmentID, code string) ([]st
 		return nil, err
 	}
 	now := s.now()
-	if err := s.store.EnableUserTOTP(userID, encryptedSecret, now, step, hashes); err != nil {
+	if err := s.store.EnableUserTOTP(userID, pending.credentialVersion, encryptedSecret, now, step, hashes); err != nil {
 		if errors.Is(err, store.ErrConflict) {
-			return nil, ErrTOTPAlreadyEnabled
+			return nil, ErrTOTPEnrollmentExpired
 		}
 		return nil, err
 	}

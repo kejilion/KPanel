@@ -330,3 +330,45 @@ func TestPasskeySyncedZeroCountersAndLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestPendingTOTPEnrollmentExpiresOnCredentialChanges(t *testing.T) {
+	for _, change := range []string{"password", "username", "passkey", "restore", "recovery"} {
+		t.Run(change, func(t *testing.T) {
+			p, _, session := setupPasskeys(t)
+			enrollment, err := p.auth.StartTOTPEnrollment(session.User.ID, passkeyPassword)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "password":
+				err = p.auth.ChangePassword(session.User.ID, passkeyPassword, "replacement-strong-password-2")
+			case "username":
+				err = p.auth.ChangeUsername(session.User.ID, passkeyPassword, "renamed-admin")
+			case "passkey":
+				registerTestPasskey(t, p, session, 5)
+			case "restore":
+				var backup []byte
+				backup, err = p.auth.store.ExportIdentity()
+				if err == nil {
+					err = p.auth.store.RestoreIdentity(backup)
+				}
+			case "recovery":
+				_, err = p.auth.RecoverPassword(session.User.ID, "replacement-strong-password-2", false)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, err := totpAtStep(enrollment.Secret, p.auth.now().Unix()/30)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = p.auth.ConfirmTOTPEnrollment(session.User.ID, enrollment.ID, code); !errors.Is(err, ErrTOTPEnrollmentExpired) {
+				t.Fatalf("old enrollment survived %s: %v", change, err)
+			}
+			status, err := p.auth.TOTPStatus(session.User.ID)
+			if err != nil || status.Enabled {
+				t.Fatalf("TOTP changed after stale enrollment: %+v %v", status, err)
+			}
+		})
+	}
+}

@@ -82,7 +82,7 @@ func TestTOTPStatePersistsConsumesOnceAndRevokesSessions(t *testing.T) {
 	if err := storage.PutSession(Session{TokenHash: "before", CSRFHash: "csrf", UserID: user.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.EnableUserTOTP(user.ID, "encrypted", now, 122, []string{"one", "two"}); err != nil {
+	if err := storage.EnableUserTOTP(user.ID, user.CredentialVersion, "encrypted", now, 122, []string{"one", "two"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := storage.SessionByTokenHash("before", now); !errors.Is(err, ErrNotFound) {

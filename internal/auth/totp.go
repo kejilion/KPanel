@@ -51,9 +51,10 @@ type TOTPStatus struct {
 }
 
 type pendingTOTPEnrollment struct {
-	id        string
-	secret    string
-	expiresAt time.Time
+	id                string
+	secret            string
+	expiresAt         time.Time
+	credentialVersion uint64
 }
 
 func generateTOTPSecret() (string, error) {
