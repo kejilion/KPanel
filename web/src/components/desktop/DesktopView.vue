@@ -104,6 +104,7 @@ import {
 } from '@/lib/desktopIconLayout'
 import {
   deriveDesktopGridLayout,
+  reflowDesktopGridLayout,
   desktopGridPlacementRect,
   dropDesktopGridItem,
   moveDesktopGridItemByKeyboard,
@@ -401,6 +402,8 @@ const desktopShortcutPathSignature = computed(() => desktopShortcutPaths.value.j
 const iconsElement = ref<HTMLElement>()
 const initialLayoutReady = ref(false)
 const initialLayoutTransitionsReady = ref(false)
+const viewportLayoutResizing = ref(false)
+const layoutBeforeResize = ref<{ bounds: DesktopIconBounds; order: string[] }>()
 const desktopElement = ref<HTMLElement>()
 const iconBounds = ref<DesktopIconBounds>({ width: 90, height: 96 })
 const compactIconLayout = ref(window.innerWidth <= 760)
@@ -753,12 +756,21 @@ const savedPlacements = computed<Array<Pick<DesktopGridPlacement, 'key' | 'posit
   ...Object.entries(localWidgetPositions.value).map(([key, position]) => ({ key, position })),
 ])
 
-const renderedDesktopLayout = computed(() => deriveDesktopGridLayout(
+const renderedDesktopLayout = computed(() => layoutBeforeResize.value
+  && (layoutBeforeResize.value.bounds.width !== iconBounds.value.width
+    || layoutBeforeResize.value.bounds.height !== iconBounds.value.height)
+  ? reflowDesktopGridLayout(allDesktopLayoutItems.value, layoutBeforeResize.value.order, iconBounds.value, compactIconLayout.value)
+  : deriveDesktopGridLayout(
   allDesktopLayoutItems.value,
   savedPlacements.value,
   iconBounds.value,
   compactIconLayout.value,
 ))
+
+// A user edit or a new server snapshot becomes the new layout to preserve.
+watch([localPositions, localWidgetPositions, localGroups], () => {
+  layoutBeforeResize.value = undefined
+}, { flush: 'sync' })
 
 const renderedIconLayout = computed(() => {
   const iconKeys = new Set(allIconKeys.value)
@@ -1319,9 +1331,23 @@ function closeContextMenuOnViewportChange(): void {
 function measureIconWorkArea(): void {
   viewportSize.value = { width: window.innerWidth, height: window.innerHeight }
   const rect = iconsElement.value?.getBoundingClientRect()
-  iconBounds.value = {
+  const bounds = {
     width: Math.max(90, rect?.width || window.innerWidth - 24),
     height: Math.max(96, rect?.height || window.innerHeight - 88),
+  }
+  if (bounds.width !== iconBounds.value.width || bounds.height !== iconBounds.value.height) {
+    if (initialLayoutReady.value && !layoutBeforeResize.value) {
+      const placements = renderedDesktopLayout.value.placements
+      layoutBeforeResize.value = {
+        bounds: { ...iconBounds.value },
+        order: [...placements].sort((left, right) => {
+          const a = desktopGridPlacementRect(left, iconBounds.value)
+          const b = desktopGridPlacementRect(right, iconBounds.value)
+          return a.left - b.left || a.top - b.top
+        }).map(item => item.key),
+      }
+    }
+    iconBounds.value = bounds
   }
   const compact = window.innerWidth <= 760
   const widgetsVisible = window.innerWidth > 900
@@ -3547,7 +3573,7 @@ onMounted(() => {
   void nextTick(() => {
     measureIconWorkArea()
     if (typeof ResizeObserver !== 'undefined' && iconsElement.value) {
-      iconsResizeObserver = new ResizeObserver(measureIconWorkArea)
+      iconsResizeObserver = new ResizeObserver(onViewportResize)
       iconsResizeObserver.observe(iconsElement.value)
     }
   })
@@ -3589,6 +3615,12 @@ onBeforeUnmount(() => {
 
 function onViewportResize(): void {
   closeContextMenu(false)
+  if (initialLayoutReady.value) {
+    viewportLayoutResizing.value = true
+    cancelIconDrag()
+    cancelWidgetDrag()
+    cancelSelectionFrame()
+  }
   if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame)
   resizeFrame = window.requestAnimationFrame(() => {
     resizeFrame = undefined
@@ -3596,9 +3628,13 @@ function onViewportResize(): void {
     desktop.resizeForViewport({ width: window.innerWidth, height: window.innerHeight }, false)
   })
   if (resizePersistTimer !== undefined) window.clearTimeout(resizePersistTimer)
-  resizePersistTimer = window.setTimeout(() => {
+  resizePersistTimer = window.setTimeout(async () => {
     resizePersistTimer = undefined
     desktop.resizeForViewport({ width: window.innerWidth, height: window.innerHeight })
+    await nextTick()
+    // Finish the final coordinates without transitions before restoring interaction motion.
+    if (iconsElement.value) void iconsElement.value.offsetWidth
+    viewportLayoutResizing.value = false
   }, 180)
 }
 </script>
@@ -3746,7 +3782,7 @@ function onViewportResize(): void {
     <nav
       ref="iconsElement"
       class="desktop__icons"
-      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady }"
+      :class="{ 'desktop__icons--grouped': localGroups.length > 0, 'desktop__icons--initializing': !initialLayoutReady, 'desktop__icons--restoring': !initialLayoutTransitionsReady, 'desktop__icons--resizing': viewportLayoutResizing }"
       :inert="!initialLayoutReady || undefined"
       :aria-label="i18n.t('desktop.gridLabel')"
       :aria-busy="!initialLayoutReady || entriesLoading"

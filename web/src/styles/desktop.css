@@ -1496,6 +1496,13 @@ body.desktop-mode-open::-webkit-scrollbar {
   animation: none !important;
 }
 
+/* Viewport adaptation lands directly; interaction motion resumes after resizing. */
+.desktop__icons--resizing .desktop__icon-slot,
+.desktop__icons--resizing .desktop-widget-slot,
+.desktop__icons--resizing .desktop-group {
+  transition: none !important;
+}
+
 /* Reveal the settled workspace together; never animate its placement or stagger icons. */
 .desktop__icons:not(.desktop__icons--restoring) {
   animation: desktop-workspace-reveal 180ms ease-out;
