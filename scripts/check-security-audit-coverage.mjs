@@ -22,8 +22,10 @@ const SHA = /\b[0-9a-f]{40}\b/;
 const EXACT_SHA = /^[0-9a-f]{40}$/;
 const DAY_SECONDS = 86400;
 
+// Caller GIT_* overrides (GIT_DIR, GIT_WORK_TREE, ...) must not redirect which history is judged.
 function gitRunner(repo) {
-  return (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', env }).trim();
 }
 
 function isAncestor(git, ancestor, descendant) {
@@ -160,6 +162,17 @@ function packages(git, policy, ref) {
   return [...directories].filter((path) => !excluded.some((prefix) => path === prefix || path.startsWith(prefix + '/'))).sort();
 }
 
+export function loadPolicy(repo = repoRoot) {
+  return JSON.parse(readFileSync(join(repo, POLICY_PATH), 'utf8'));
+}
+
+// Candidate-time signal (5.4): boundary packages a writer candidate adds relative to its exact base.
+export function addedBoundaryPackages(repo, base, head = 'HEAD', policy = loadPolicy(repo)) {
+  const git = gitRunner(repo);
+  const known = new Set(packages(git, policy, base));
+  return packages(git, policy, head).filter((path) => !known.has(path));
+}
+
 export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs }) {
   const git = gitRunner(repo);
   const targetSha = git('rev-parse', '--verify', '--end-of-options', target + '^{commit}');
@@ -252,7 +265,7 @@ export function main(argv, repo = repoRoot) {
   let policy;
   let runs;
   try {
-    policy = JSON.parse(readFileSync(join(repo, POLICY_PATH), 'utf8'));
+    policy = loadPolicy(repo);
     runs = loadRuns(repo);
   } catch (error) {
     process.stderr.write('check-security-audit-coverage: ' + error.message + '\n');

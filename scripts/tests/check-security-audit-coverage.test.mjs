@@ -161,7 +161,7 @@ test('every invocation written in the workflows parses', () => {
     readFileSync(join(root, '.codex-workflows', name + '.workflow.yaml'), 'utf8')
       .split('\n')
       .filter((line) => line.includes('check-security-audit-coverage.mjs') && line.trim().startsWith('node')));
-  assert.equal(invocations.length, 2);
+  assert.equal(invocations.length, 3);
   for (const line of invocations) {
     const args = line.split('check-security-audit-coverage.mjs"')[1] ?? line.split('check-security-audit-coverage.mjs')[1];
     const argv = args.trim().split(/\s+/).map((part) => part.replace(/"\$\{\{[a-z_]+\}\}"/, 'HEAD'));
