@@ -596,6 +596,10 @@ export function loadPreparedKit(kitDirectory, expectedManifestSha256) {
   const stat = lstatSync(artifactDir);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('handoff kit must be a regular directory');
   const manifestPath = join(artifactDir, 'manifest.json');
+  const manifestStat = lstatSync(manifestPath);
+  if (!manifestStat.isFile() || manifestStat.isSymbolicLink() || manifestStat.size > 1024 * 1024) {
+    throw new Error('handoff manifest must be a bounded regular file');
+  }
   if (!/^[0-9a-f]{64}$/.test(expectedManifestSha256 ?? '') || sha256(manifestPath) !== expectedManifestSha256) {
     throw new Error('handoff manifest checksum mismatch');
   }
@@ -751,16 +755,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     options.runId = prepared.runId;
     uploadAndRun(options, prepared);
     process.stdout.write(`release_l3_handoff=pass run_id=${prepared.runId} candidate=${prepared.candidate} target=${options.target}\n`);
-    process.exit(0);
-  }
-  const prepared = await prepare(options);
-  process.stdout.write(
-    `release_l3_prepare=pass run_id=${options.runId} candidate=${options.candidate.toLowerCase()} ` +
-      `tags=${prepared.requiredTags.length} manifest=${prepared.manifestPath}\n`,
-  );
-  if (!options.prepareOnly) {
-    uploadAndRun(options, prepared);
-    process.stdout.write(`release_l3_remote=pass run_id=${options.runId} target=${options.target}\n`);
+  } else {
+    const prepared = await prepare(options);
+    process.stdout.write(
+      `release_l3_prepare=pass run_id=${options.runId} candidate=${options.candidate.toLowerCase()} ` +
+        `tags=${prepared.requiredTags.length} manifest=${prepared.manifestPath}\n`,
+    );
+    if (!options.prepareOnly) {
+      uploadAndRun(options, prepared);
+      process.stdout.write(`release_l3_remote=pass run_id=${options.runId} target=${options.target}\n`);
+    }
   }
 } catch (error) {
   process.stderr.write(`Release L3 orchestration failed: ${error.message}\n`);
