@@ -61,6 +61,19 @@ export interface AuthSession {
   expiresAt?: string
 }
 
+export interface PasskeySummary {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt?: string
+}
+
+export interface PasskeyList {
+  available: boolean
+  rpId: string
+  credentials: PasskeySummary[]
+}
+
 export interface TOTPStatus {
   enabled: boolean
   enabledAt?: string

@@ -1,5 +1,6 @@
 import { computed, reactive } from 'vue'
 import { api, resetApiSecurityState } from '@/lib/api'
+import type { PasskeyCredentialJSON } from '@/lib/passkeys'
 import type { AgentStatus, AuthStatus, LoginRequest, SetupRequest, User } from '@/types/api'
 
 interface SessionState {
@@ -71,6 +72,15 @@ async function setup(input: SetupRequest): Promise<void> {
   }
 }
 
+async function loginPasskey(input: { ceremonyId: string; credential: PasskeyCredentialJSON; totpCode?: string }, signal?: AbortSignal): Promise<void> {
+  state.loading = true
+  try {
+    applyStatus(await api.auth.passkeys.loginFinish(input, signal))
+  } finally {
+    state.loading = false
+  }
+}
+
 async function logout(): Promise<void> {
   try {
     await api.auth.logout()
@@ -90,6 +100,7 @@ export function useSession() {
     ),
     refresh,
     login,
+    loginPasskey,
     setup,
     logout,
   }
