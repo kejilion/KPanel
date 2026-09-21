@@ -10,9 +10,9 @@
   run-1 为原样迁入的历史基线（2026-09-18 全仓审计，skill 原生 profile 词汇
   standard≈full），不追溯补齐全字段、不改写内容。
 - 试用退出窗口（PROJECT_RULES.md 5.4）从 run-1 起算：run-1 计为首个 full run，
-  按已完成的 full run 计数（不再按稳定版计数）。
+  按已完成的 full run 计数（不再按稳定版计数）。覆盖按已完成 run 的并集计算，并行分支上的 scoped 同样计入。
 - 是否到期由 `scripts/check-security-audit-coverage.mjs` 从各 run 的 `run-metadata.json` 计算；边界范围见
-  `boundary-policy.json`。run-4 起元数据必须含 `scope_mode`、`run_status`、精确 `source_ref`、
+  `boundary-policy.json`。run-4 起元数据必须含 `scope_mode`（skill 的 `project_mode` 视为同义）、`run_status`、精确 `source_ref`、
   `source_dirty: false`，scoped 另含 `comparison_base` 与 `scope_complete`。
 - 首个增量基线（run-1，2026-09-18，基线 6340e078，45 单元 / 1 confirmed /
   12 加固项）迁入本目录后方可执行 run-2；迁移时保持文件原名不改。

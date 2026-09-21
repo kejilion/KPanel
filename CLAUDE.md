@@ -41,6 +41,9 @@
 - 证据只对精确提交、环境、工具和参数有效；未变化时复用，变化时从受影响层重跑。
 - L2/L3 代码候选或代码改动 ≥30 行的 L1 候选，在预览与最终核验前自动执行 `PROJECT_RULES.md` 5.5 的 OCR 行级评审（共享入口
   `.codex-workflows/ocr-line-review.workflow.yaml`，不另建 Claude 平行命令），并写 `OCR-Review:` trailer。
+- 候选检查输出 `security_audit=missing|stale`（候选新增信任边界包）时，按 `PROJECT_RULES.md` 5.4 趁范围仍是单个功能
+  执行 `security-boundary-audit`（profile=scoped），在提交写 `Security-Audit: scoped run-<N>`，或写
+  `Security-Audit: deferred reason=<理由>` 交由稳定版预检补审；安全审计 run 元数据按该工作流字段入库。
 - `.codex-workflows/` 是 Codex 执行适配层。Claude 可参考步骤，但共享规则仍以根规范和项目管理文档为准。
 - 发现 `HEAD`、分支、文件或所有权非预期变化时立即停止并按冲突恢复流程保留现场，不执行破坏性清理。
 

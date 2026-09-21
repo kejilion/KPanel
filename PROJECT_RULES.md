@@ -433,11 +433,12 @@ run 元数据结构，是否到期只在稳定版发车预检中阻断（预览�
 **边界范围与覆盖闭环**：边界范围只由 `.governance/security-audit/boundary-policy.json` 定义——
 `internal/`、`cmd/` 下全部包及部署、打包目录默认都是边界，只有写明具体理由的包可列为非边界；测试文件与
 testdata 不计。新包无需登记即进入范围，列为非边界的包被删除后策略校验失败。14/30 天是初始阈值，按日期
-取提交时间而非运行时钟，调整走 5.2。覆盖只沿已完成 run 组成的链推进：链从一次 `run_status=complete`
-的 full 开始；scoped 只有 `comparison_base` 已被覆盖、且以 `scope_complete: true` 声明审完覆盖检查列出的全部
-改动时才推进（该声明由独立复核核对账本）。被平台中止、
-未完成验证或只审部分改动的 run 如实入库元数据，但不计覆盖。run-4 起元数据字段由覆盖检查的 `--validate`
-在治理门禁中校验；run-1 至 run-3 按原文读取，不改写。
+取提交时间而非运行时钟，调整走 5.2。覆盖是目标历史中已完成 run 的并集，不要求首尾相接：`run_status=complete`
+的 full 覆盖其源码提交包含的全部改动；以 `scope_complete: true` 声明审完覆盖检查列出的全部改动的 scoped 覆盖
+`comparison_base..source_ref` 区间内的提交（该声明由独立复核核对账本），无论它与 full 是否在同一分支。
+full 间隔从源码提交时间最新的已完成 full 起算。被平台中止、未完成验证或只审部分改动的 run 如实入库元数据，
+但不计覆盖。run-4 起元数据字段由覆盖检查的 `--validate` 在治理门禁中校验，模式字段写 `scope_mode`，
+skill 自带的 `project_mode` 视为同义；run-1 至 run-3 按原文读取，不改写。
 
 **两层检查点**：高风险信号前移，累积改动批量处理，两层都不增加普通任务的必做步骤。
 
@@ -449,6 +450,8 @@ testdata 不计。新包无需登记即进入范围，列为非边界的包被�
 2. 稳定版层（阻断）：稳定版发车预检必须运行覆盖检查（入口见 `release-kpanel` 工作流）。结论非 `ok` 时，先补完
    对应 run 再冻结；或由用户明确决定本次不补审，在验收记录写明用户原话、理由和不超过 14 天的补审截止日。
    豁免不改变检查结论，下一次稳定版预检仍会要求补审；截止日过后的稳定版预检不得再以豁免继续，必须先完成补审。
+   v1.21.0 起稳定版验收记录的"覆盖检查"字段由 `report-release-metrics.mjs --validate-acceptance` 校验：必须写明
+   decision；非 `ok` 时必须写明补完的 `run-<N>`，或用户豁免及其 YYYY-MM-DD 截止日。
 
 **产物与状态**：账本、findings 与报告统一入库 `.governance/security-audit/`，
 run 递增编号并以上一 run 为增量输入；上游 skill 来源必须 pin 到固定 commit 并记录在

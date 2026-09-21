@@ -102,7 +102,7 @@ test('a new package is a new boundary and triggers a scoped run immediately', (t
   assert.deepEqual(report.newPackages, ['internal/mcpaccess']);
 });
 
-test('only completed, contiguous scoped runs advance coverage', (t) => {
+test('a completed scoped run covers exactly its range; interrupted and partial runs cover nothing', (t) => {
   const { repo, commit, run, base } = fixture(t);
   run('run-4', full(base));
   const first = commit(1, { 'internal/mcpaccess/access.go': 'new' });
@@ -114,11 +114,38 @@ test('only completed, contiguous scoped runs advance coverage', (t) => {
   run('run-6', scoped(first, second));
   run('run-7', scoped(base, second, 'complete', false));
   report = assess(repo);
-  assert.deepEqual(report.gaps.map((r) => r.name), ['run-6', 'run-7']);
-  assert.equal(report.through.name, 'run-4');
+  // run-6 starts after `first`, so the new package it did not audit stays pending; run-7 declared a partial scope.
+  assert.deepEqual(report.covered, { 'run-6': 1 });
+  assert.deepEqual(report.commits.map((c) => c.sha), [first]);
+  assert.deepEqual(report.newPackages, ['internal/mcpaccess']);
+  assert.deepEqual(report.partial.map((r) => r.name), ['run-7']);
   run('run-8', scoped(base, second));
   report = assess(repo);
-  assert.equal(report.through.name, 'run-8');
+  assert.equal(report.commits.length, 0);
+  assert.equal(report.decision, 'ok');
+});
+
+test('scoped runs on a feature branch beside the full run on a release branch both count after merging', (t) => {
+  const { repo, git, commit, run, base } = fixture(t);
+  const merge = (day, branch) => execFileSync('git', ['-C', repo, 'merge', '-q', '--no-ff', '-m', 'merge ' + branch, branch], {
+    encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: new Date((START + day * DAY) * 1000).toISOString(),
+      GIT_COMMITTER_DATE: new Date((START + day * DAY) * 1000).toISOString() },
+  });
+  git('checkout', '-qb', 'release');
+  const release = commit(1, { 'internal/version/version.go': 'v2', 'internal/agent/server.go': 'release' });
+  git('checkout', '-q', '-');
+  git('checkout', '-qb', 'feature');
+  commit(1, { 'internal/auth/passkey.go': 'store' });
+  const feature = commit(2, { 'internal/auth/passkey.go': 'login' });
+  git('checkout', '-q', '-');
+  merge(3, 'release');
+  merge(3, 'feature');
+  run('run-4', full(release));
+  run('run-6', scoped(base, feature));
+  const report = assess(repo);
+  assert.equal(report.lastFull.name, 'run-4');
+  assert.deepEqual(report.covered, { 'run-6': 2 });
+  assert.equal(report.commits.length, 0);
   assert.equal(report.decision, 'ok');
 });
 
@@ -129,6 +156,18 @@ test('an old full run requires a full run even without pending changes', (t) => 
   const report = assess(repo);
   assert.equal(report.decision, 'full-required');
   assert.match(report.reasons[0], /31 days old/);
+});
+
+test('the newest full run by source time sets the age clock, whatever its run number', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  const later = commit(10, { 'internal/agent/server.go': 'v2' });
+  run('run-4', full(later));
+  run('run-5', full(base));
+  commit(35, { 'README.md': 'x' });
+  const report = assess(repo);
+  assert.equal(report.lastFull.name, 'run-4');
+  assert.equal(report.fullAgeDays, 25);
+  assert.equal(report.decision, 'ok');
 });
 
 test('runs outside the target history are not coverage', (t) => {
@@ -194,6 +233,11 @@ test('legacy metadata shapes are read as recorded; new runs need exact identitie
   assert.match(failures, /comparison_base/);
   assert.match(failures, /scope_complete/);
   assert.deepEqual(validateRun(normalizeRun('run-4', scoped(sha, sha))), []);
+  const skillShape = { run_status: 'complete', source_ref: sha, source_dirty: false, project_mode: 'full' };
+  assert.deepEqual(validateRun(normalizeRun('run-4', skillShape)), []);
+  assert.equal(normalizeRun('run-4', skillShape).mode, 'full');
+  assert.match(validateRun(normalizeRun('run-4', { ...skillShape, project_mode: 'fast' })).join('\n'), /must be full or scoped/);
+  assert.match(validateRun(normalizeRun('run-4', { ...skillShape, scope_mode: 'scoped' })).join('\n'), /disagree/);
   assert.equal(normalizeRun('run-2', { scope_mode: 'scoped', source_ref: sha }).scopeComplete, true);
   assert.equal(normalizeRun('run-4', { scope_mode: 'scoped', source_ref: sha }).scopeComplete, false);
 });

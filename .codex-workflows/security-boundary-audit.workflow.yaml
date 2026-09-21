@@ -1,12 +1,12 @@
 ---
 name: security-boundary-audit
 description: "基于 Cloudflare security-audit-skill 方法的信任边界安全审计：侦察、覆盖账本、狩猎波、独立验证与结构化报告"
-version: "1.2"
+version: "1.3"
 author: "Claude"
 tags: [security, audit, trust-boundary, governance]
 params: [project_dir, baseline_ref, ledger_dir, profile, scope_paths, skill_dir, governance_dir]
 created: "2026-09-18T00:00:00+08:00"
-updated: "2026-09-21T00:00:00+08:00"
+updated: "2026-09-22T00:00:00+08:00"
 ---
 
 # KPanel Security Boundary Audit
@@ -70,9 +70,10 @@ scoped 的范围取自覆盖检查，不手写：
 node "${{governance_dir}}/scripts/check-security-audit-coverage.mjs" --target "${{baseline_ref}}" --format=json
 ```
 
-输出的 `through.source` 是本次 `comparison_base`，`files` 与 `commits` 是必须覆盖的改动面，
-`newPackages` 必须新增单元。只审其中一部分的 scoped run 可以入库，但不推进覆盖链；下一次检查仍会列出剩余改动。
-run-4 起 `run-metadata.json` 必须含 `scope_mode`（`full`/`scoped`）、`run_status`（完成写 `complete`，否则写中止原因）、
+输出的 `nextScoped.comparison_base`（最近一次已完成 full 的源码）是本次 `comparison_base`，`files` 与 `commits`
+是必须覆盖的改动面，`newPackages` 必须新增单元；已被其他 scoped 覆盖的提交单独计入 `covered`，不必重审。
+只审其中一部分的 scoped run 可以入库，但不计覆盖；下一次检查仍会列出剩余改动。
+run-4 起 `run-metadata.json` 必须含 `scope_mode`（`full`/`scoped`；skill 自带的 `project_mode` 视为同义）、`run_status`（完成写 `complete`，否则写中止原因）、
 精确 40 位 `source_ref`、`source_dirty: false`，scoped 另含 `comparison_base` 与 `scope_complete`（审完全部列出改动才写
 `true`）；`--validate` 在治理门禁中校验这些字段。
 

@@ -2,8 +2,8 @@
 
 // Trust-boundary audit trigger (PROJECT_RULES.md 5.4). For one target commit it answers: which
 // trust-boundary changes are not yet covered by a completed audit run, and is a scoped or full run due?
-// Coverage only advances through completed runs that form a contiguous chain from a full run; an
-// interrupted run never counts. Boundary scope is default-deny: every package under the policy's
+// Coverage is the union of completed runs (see classifyRuns); an interrupted or partial run never counts.
+// Boundary scope is default-deny: every package under the policy's
 // package roots is boundary unless named non-boundary with a reason, so a new package cannot silently
 // fall outside the trigger. Ages are measured from commit dates, never the wall clock, so a result is
 // reproducible for the same commits.
@@ -86,14 +86,19 @@ export function validateRun(run) {
   if (!run.source) failures.push(run.name + ': source_ref has no commit');
   if (run.number <= LEGACY_RUN_LIMIT) return failures;
   const meta = run.meta;
-  if (!['full', 'scoped'].includes(meta.scope_mode)) failures.push(run.name + ': scope_mode must be full or scoped');
+  // `project_mode` is the skill's own key; runs begun before 5.4 named scope_mode keep it as a synonym.
+  const mode = meta.scope_mode ?? meta.project_mode;
+  if (!['full', 'scoped'].includes(mode)) failures.push(run.name + ': scope_mode (or project_mode) must be full or scoped');
+  if (meta.scope_mode !== undefined && meta.project_mode !== undefined && meta.scope_mode !== meta.project_mode) {
+    failures.push(run.name + ': scope_mode and project_mode disagree');
+  }
   if (!EXACT_SHA.test(String(meta.source_ref ?? ''))) failures.push(run.name + ': source_ref must be an exact 40-hex commit');
   if (meta.source_dirty !== false) failures.push(run.name + ': source_dirty must be false');
   if (!run.status) failures.push(run.name + ': run_status is required (complete, or the interruption reason)');
-  if (meta.scope_mode === 'scoped' && !EXACT_SHA.test(String(meta.comparison_base ?? ''))) {
+  if (mode === 'scoped' && !EXACT_SHA.test(String(meta.comparison_base ?? ''))) {
     failures.push(run.name + ': scoped runs must record comparison_base as an exact 40-hex commit');
   }
-  if (meta.scope_mode === 'scoped' && typeof meta.scope_complete !== 'boolean') {
+  if (mode === 'scoped' && typeof meta.scope_complete !== 'boolean') {
     failures.push(run.name + ': scoped runs must record scope_complete (true only when every listed change was audited)');
   }
   return failures;
@@ -107,34 +112,28 @@ export function loadRuns(repo = repoRoot) {
     .sort((left, right) => left.number - right.number);
 }
 
-// The chain starts at a completed full run; a completed scoped run extends it only when its comparison
-// base is already covered (no gap) and its source moves forward. Runs outside the target history are reported, never counted.
-export function coverageChain(git, runs, target) {
-  let lastFull = null;
-  let through = null;
+// Coverage is the union of completed runs in the target history, not a chain: full runs usually audit a
+// release candidate while scoped runs audit feature branches beside it, so neither need descend from the
+// other. A completed full run covers every commit it contains; a completed scoped run that declares
+// scope_complete covers exactly comparison_base..source_ref. Interrupted, partial and out-of-history runs
+// are reported and never count.
+export function classifyRuns(git, runs, target) {
+  const fulls = [];
+  const scoped = [];
   const interrupted = [];
-  const gaps = [];
+  const partial = [];
   const outside = [];
   for (const run of runs) {
-    if (!run.complete) {
-      interrupted.push(run);
-      continue;
-    }
-    if (!run.source || !isAncestor(git, run.source, target)) {
-      outside.push(run);
-      continue;
-    }
-    if (run.mode === 'full') {
-      lastFull = run;
-      through = run;
-    } else if (through && run.scopeComplete === true && run.base
-      && isAncestor(git, run.base, through.source) && isAncestor(git, through.source, run.source)) {
-      through = run;
-    } else {
-      gaps.push(run);
-    }
+    if (!run.complete) interrupted.push(run);
+    else if (!run.source || !isAncestor(git, run.source, target)) outside.push(run);
+    else if (run.mode === 'full') fulls.push(run);
+    else if (run.scopeComplete === true && run.base) scoped.push(run);
+    else partial.push(run);
   }
-  return { lastFull, through, interrupted, gaps, outside };
+  // The full-run age clock uses the newest full by source commit time, independent of run numbering.
+  const time = (run) => Number(git('show', '-s', '--format=%ct', run.source));
+  const lastFull = fulls.map((run) => ({ run, at: time(run) })).sort((left, right) => right.at - left.at)[0]?.run ?? null;
+  return { fulls, scoped, lastFull, interrupted, partial, outside };
 }
 
 function pathspecs(policy) {
@@ -179,24 +178,45 @@ export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs 
   const commitTime = (ref) => Number(git('show', '-s', '--format=%ct', ref));
   const targetTime = commitTime(targetSha);
   const ageDays = (seconds) => Math.floor((targetTime - seconds) / DAY_SECONDS);
-  const chain = coverageChain(git, runs, targetSha);
-  const report = { target: targetSha, ...chain, fullAgeDays: null, commits: [], files: [], newPackages: [], reasons: [] };
-  if (!chain.lastFull) {
+  const classes = classifyRuns(git, runs, targetSha);
+  const report = {
+    target: targetSha, ...classes, fullAgeDays: null, commits: [], covered: {}, files: [], newPackages: [], reasons: [],
+  };
+  if (!classes.lastFull) {
     report.decision = 'full-required';
     report.reasons.push('no completed full run in target history');
     return report;
   }
-  report.fullAgeDays = ageDays(commitTime(chain.lastFull.source));
-  const range = chain.through.source + '..' + targetSha;
-  const log = git('log', '--no-merges', '--format=%H%x09%ct%x09%s', range, '--', ...pathspecs(policy));
-  report.commits = log ? log.split('\n').map((line) => {
-    const [sha, time, subject] = line.split('\t');
-    return { sha, ageDays: ageDays(Number(time)), subject };
-  }) : [];
-  const files = git('diff', '--name-only', chain.through.source, targetSha, '--', ...pathspecs(policy));
-  report.files = files ? files.split('\n') : [];
-  const known = new Set(packages(git, policy, chain.through.source));
-  report.newPackages = packages(git, policy, targetSha).filter((path) => !known.has(path));
+  report.fullAgeDays = ageDays(commitTime(classes.lastFull.source));
+  // Boundary commits no completed full run contains, each with the boundary files it touched.
+  const exclusions = [...new Set(classes.fulls.map((run) => '^' + run.source))];
+  const log = git('log', '--no-merges', '--name-only', '--format=%x1e%H%x09%ct%x09%s', targetSha, ...exclusions,
+    '--', ...pathspecs(policy));
+  const pending = log.split('\x1e').filter((record) => record.trim()).map((record) => {
+    const [header, ...paths] = record.trim().split('\n');
+    const [sha, time, subject] = header.split('\t');
+    return { sha, ageDays: ageDays(Number(time)), subject, paths: paths.filter(Boolean) };
+  });
+  const ranges = classes.scoped.map((run) => ({
+    run,
+    commits: new Set(git('rev-list', run.base + '..' + run.source).split('\n').filter(Boolean)),
+  }));
+  const files = new Set();
+  for (const commit of pending) {
+    const range = ranges.find((candidate) => candidate.commits.has(commit.sha));
+    if (range) {
+      report.covered[range.run.name] = (report.covered[range.run.name] ?? 0) + 1;
+      continue;
+    }
+    report.commits.push({ sha: commit.sha, ageDays: commit.ageDays, subject: commit.subject });
+    for (const path of commit.paths) files.add(path);
+    const parent = git('rev-parse', commit.sha + '^');
+    const known = new Set(packages(git, policy, parent));
+    for (const path of packages(git, policy, commit.sha)) if (!known.has(path)) report.newPackages.push(path);
+  }
+  report.files = [...files].sort();
+  report.newPackages = [...new Set(report.newPackages)].sort();
+  report.nextScoped = { comparison_base: classes.lastFull.source, source_ref: targetSha };
   report.oldestAgeDays = report.commits.length ? Math.max(...report.commits.map((commit) => commit.ageDays)) : 0;
   if (report.fullAgeDays > policy.fullMaxAgeDays) report.reasons.push('last full run is ' + report.fullAgeDays + ' days old (max ' + policy.fullMaxAgeDays + ')');
   if (report.reasons.length) {
@@ -222,15 +242,19 @@ export function render(report, policy) {
     lines.push('last_full run=' + report.lastFull.name + ' source=' + short(report.lastFull.source)
       + ' age_days=' + report.fullAgeDays + ' max=' + policy.fullMaxAgeDays
       + (report.lastFull.dirty ? ' source_dirty=true (not fully reproducible)' : ''));
-    lines.push('audited_through run=' + report.through.name + ' source=' + short(report.through.source));
+    const covered = Object.entries(report.covered).map(([name, count]) => name + '=' + count).join(' ');
+    lines.push('covered_by_scoped ' + (covered || 'none') + ' (boundary commits outside the full run, audited by these scoped runs)');
     lines.push('unaudited commits=' + report.commits.length + ' files=' + report.files.length
       + ' oldest_age_days=' + report.oldestAgeDays + ' max=' + policy.scopedMaxAgeDays);
     lines.push(...report.commits.map((commit) => '  ' + short(commit.sha) + ' ' + commit.ageDays + 'd ' + commit.subject));
     lines.push('new_boundary_packages=' + (report.newPackages.join(',') || 'none'));
-    if (report.decision !== 'ok') lines.push('next_scoped comparison_base=' + report.through.source + ' source_ref=' + report.target);
+    if (report.decision !== 'ok') {
+      lines.push('next_scoped comparison_base=' + report.nextScoped.comparison_base + ' source_ref=' + report.nextScoped.source_ref
+        + ' (audit the unaudited files listed by --format=json)');
+    }
   }
   for (const run of report.interrupted) lines.push('interrupted ' + run.name + ' status=' + run.status + ' (not coverage)');
-  for (const run of report.gaps) lines.push('not_chained ' + run.name + ' (partial scope or comparison_base not covered; not coverage)');
+  for (const run of report.partial) lines.push('partial ' + run.name + ' (scope_complete is not true or comparison_base is missing; not coverage)');
   for (const run of report.outside) lines.push('outside_history ' + run.name + ' (source is not in target history; not coverage)');
   return lines.join('\n');
 }
@@ -292,9 +316,10 @@ export function main(argv, repo = repoRoot) {
     process.stdout.write(JSON.stringify({
       ...report,
       lastFull: strip(report.lastFull),
-      through: strip(report.through),
+      fulls: report.fulls.map(strip),
+      scoped: report.scoped.map(strip),
       interrupted: report.interrupted.map(strip),
-      gaps: report.gaps.map(strip),
+      partial: report.partial.map(strip),
       outside: report.outside.map(strip),
     }, null, 2) + '\n');
   } else {

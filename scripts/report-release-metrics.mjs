@@ -189,6 +189,25 @@ const PROCESS_INCIDENT_POSITIONS = new Set(['before-production-write', 'after-pr
 const PROCESS_INCIDENT_PLACEHOLDER = /^(?:<.*>|无|未知|未记录|未验证|不适用|待.*|n\/?a|none|null|unknown|tbd|todo)$/i;
 const PROCESS_INCIDENT_REPEAT_WINDOW = 5;
 const PROCESS_INCIDENT_REPEAT_REQUIRED_FROM = [0, 100, 1];
+// PROJECT_RULES.md 5.4: from v1.21.0 every stable record states the coverage-check decision, and a pending
+// decision names the completed run or the user's waiver with its deadline. RC records only record it.
+const SECURITY_COVERAGE_REQUIRED_FROM = [1, 21, 0];
+const SECURITY_COVERAGE_LINE = /^- 覆盖检查[^：\n]*：[ \t]*(.*)$/m;
+const SECURITY_COVERAGE_DECISIONS = /\b(?:ok|scoped-required|full-required)\b/g;
+
+export function securityCoverageErrors(markdown, label = 'acceptance record') {
+  const value = validValue(markdown.replace(/\r\n/g, '\n').match(SECURITY_COVERAGE_LINE)?.[1]);
+  if (value === null) {
+    return [label + ': release v1.21.0 and later must record the 覆盖检查 decision (PROJECT_RULES.md 5.4)'];
+  }
+  const decisions = new Set(value.match(SECURITY_COVERAGE_DECISIONS) ?? []);
+  if (decisions.size === 0) return [label + ': 覆盖检查 must name the decision: ok, scoped-required or full-required'];
+  const pending = [...decisions].some((decision) => decision !== 'ok');
+  const resolved = /\brun-\d+\b/.test(value) || (/豁免/.test(value) && /\b\d{4}-\d{2}-\d{2}\b/.test(value));
+  return pending && !resolved
+    ? [label + ': a pending 覆盖检查 decision must name the completed run-<N> or the user waiver with its YYYY-MM-DD deadline']
+    : [];
+}
 
 function acceptanceFields(markdown) {
   const fields = new Map();
@@ -593,6 +612,10 @@ export function validateAcceptanceMetrics(markdown, label = 'acceptance record')
   }
   if (versionAtLeast(acceptanceVersion, PROCESS_INCIDENTS_REQUIRED_FROM) && !processIncidents.present) {
     errors.push(label + ': release v0.90.2 and later requires release-process-incidents evidence');
+  }
+  // Only a stable filename identifies a stable record; RC titles also parse as X.Y.Z.
+  if (versionAtLeast(versions.filename, SECURITY_COVERAGE_REQUIRED_FROM)) {
+    errors.push(...securityCoverageErrors(markdown, label));
   }
   for (const error of process.structureErrors) errors.push(label + ': ' + error);
   for (const error of processIncidents.structureErrors) errors.push(label + ': ' + error);
