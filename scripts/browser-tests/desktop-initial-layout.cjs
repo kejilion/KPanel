@@ -51,7 +51,7 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
               const animations = grid.getAnimations({ subtree: true }).filter(animation => animation.effect.target.matches('.desktop__icon, .desktop__icon-slot, .desktop-group'))
               const opacity = getComputedStyle(icon.querySelector('.desktop__icon')).opacity
               const surfaceOpacity = Number(getComputedStyle(grid).opacity)
-              const surfaceAnimations = grid.getAnimations().map(animation => ({ name: animation.animationName, duration: animation.effect.getTiming().duration }))
+              const surfaceAnimations = grid.getAnimations().filter(animation => animation instanceof CSSAnimation).map(animation => ({ name: animation.animationName, duration: animation.effect.getTiming().duration }))
               window.layoutFrames.push({ visible, member: icon.dataset.groupMember, x: rect.x, y: rect.y, opacity, surfaceOpacity, surfaceAnimations, animations: animations.length })
             }
             if (window.layoutFrames.filter(frame => frame.visible).length < 8) requestAnimationFrame(capture)
