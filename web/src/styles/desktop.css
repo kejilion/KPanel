@@ -1932,10 +1932,6 @@ body.desktop-mode-open::-webkit-scrollbar {
   border: 1px solid transparent;
   border-radius: var(--radius-lg);
   cursor: default;
-  opacity: 0;
-  transform: translateY(8px);
-  animation: desktop-icon-arrive .34s cubic-bezier(.22, 1, .36, 1) forwards;
-  animation-delay: min(calc(var(--desktop-entry-order, 0) * 24ms), 280ms);
   transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
@@ -2196,10 +2192,6 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop__icon--dragging .desktop__icon-glyph {
   box-shadow: 0 14px 30px rgb(1 11 14 / 30%);
   transform: translateY(-4px) scale(1.055);
-}
-
-@keyframes desktop-icon-arrive {
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes desktop-icon-launch {

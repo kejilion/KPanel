@@ -47,8 +47,9 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
             if (icon) {
               const visible = getComputedStyle(icon).visibility === 'visible'
               const rect = icon.getBoundingClientRect()
-              const animations = grid.getAnimations({ subtree: true }).filter(animation => animation.effect.target.matches('.desktop__icon-slot, .desktop-group'))
-              window.layoutFrames.push({ visible, member: icon.dataset.groupMember, x: rect.x, y: rect.y, animations: animations.length })
+              const animations = grid.getAnimations({ subtree: true }).filter(animation => animation.effect.target.matches('.desktop__icon, .desktop__icon-slot, .desktop-group'))
+              const opacity = getComputedStyle(icon.querySelector('.desktop__icon')).opacity
+              window.layoutFrames.push({ visible, member: icon.dataset.groupMember, x: rect.x, y: rect.y, opacity, animations: animations.length })
             }
             if (window.layoutFrames.filter(frame => frame.visible).length < 8) requestAnimationFrame(capture)
           }
@@ -59,12 +60,14 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
         const frames = await page.evaluate(() => window.layoutFrames.filter(frame => frame.visible))
         report.cases.push({ label, width, theme, zoom, zoomMode: 'effective-css-viewport', frames })
         assert(frames.every(frame => frame.animations === 0), `${label}: initial placement animated`)
+        assert(frames.every(frame => frame.opacity === '1'), `${label}: icon faded in after reveal`)
         assert(frames.every(frame => frame.x === frames[0].x && frame.y === frames[0].y), `${label}: visible coordinates changed`)
         if (!failed) assert(frames.every(frame => frame.member === 'a'.repeat(32)), `${label}: ungrouped frame`)
         assert.equal(await page.locator('.desktop__icons').evaluate(element => element.inert), false)
       }
       await page.goto(base)
       await verifyReveal('initial refresh')
+      await page.screenshot({ path: `${out}/${width}-${theme}-${zoom}.png` })
       await page.locator('.desktop__classic-button').click()
       pending = new Promise(resolve => { release = resolve })
       await page.locator('.desktop-entry-button').click()
@@ -74,7 +77,6 @@ const report = { candidate, mode: 'mock-ui', cases: [], errors: [] }
       await page.waitForFunction(() => document.querySelector('[data-icon-key="nav:/overview"]').getAttribute('aria-hidden') === 'true')
       await page.locator('.desktop-group__toggle').click()
       await page.locator('[data-icon-key="nav:/overview"]').waitFor({ state: 'visible' })
-      await page.screenshot({ path: `${out}/${width}-${theme}-${zoom}.png` })
       failed = true
       pending = new Promise(resolve => { release = resolve })
       await page.reload()
