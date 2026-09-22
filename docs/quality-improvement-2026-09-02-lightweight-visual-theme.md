@@ -1,12 +1,15 @@
 # KPanel 轻量简约视觉主题重做验收记录
 
-- 记录状态：待提交（本地验收完成）
+- 记录状态：**本分支已被取代**；代码改动已由 `codex/visual-system-enforcement` @ `6118939` 移植到
+  当前 `origin/main`。本文件是该轮改动唯一未随代码移植的验收记录，需交由集成方随代码落地。
 - 记录日期：2026-09-02
 - 适用业务域：Web 视觉语言、经典外壳、桌面模式外壳、主题求解器
 - 工作树 / 分支：`C:/GitHub/kejilion-panel-claude-visual-refinement` / `feature/visual-refinement-pass`
-- 精确基线：`06e43b7f572245165f7ed71e929f9ce1ceed7916`（`origin/main`，`clean=true ahead=0 behind=0`）
-- 权限状态：仅授权本任务分支的一个聚焦本地提交；未授权推送、更新 `main`、tag、Release 或部署
-- 依据规范：`docs/ui-visual-language.md` §3.1 / §7、`PROJECT_RULES.md` L1
+  （本地提交 `d92cec7`、`c210688`；已附 `git notes` 标记取代关系）
+- 精确基线：`06e43b7f572245165f7ed71e929f9ce1ceed7916`。**该基线已落后 `origin/main` 17 个提交**，
+  本分支不得再作为集成来源；后续以 Codex 分支为准。
+- 权限状态：本地提交已完成；未授权推送、更新 `main`、tag、Release 或部署
+- 依据规范：`docs/ui-visual-language.md` §3.1 / §6 / §7、`PROJECT_RULES.md` L1
 
 ## 本轮目标
 
@@ -132,3 +135,53 @@ CDP 直连真实 Chrome 实测（`landscape-probe.json`）：
 嵌套内角由 token 派生、字重限定四档、无负字距、玻璃只在许可选择器、中性面与窗口 chrome 无假高光、
 关闭键走危险色对、浅色四级阶单调、深色阶语义排序、两份主题表达的阴影模型一致、层级只用一次受光、
 横屏块存在且含预期声明、横屏触摸目标 ≥40px、横屏只按真实 chrome 预留空间、横屏块排在竖屏块之后。
+
+## 后续：覆盖面缺口与强制层（2026-09-02，由 Codex 落地）
+
+本轮交付后复盘发现，上述 16 条断言只覆盖三个全局 CSS 文件。全仓契约测试一律以
+`new URL('../../styles/main.css', import.meta.url)` 形式钉死路径，**无一处使用 glob**，
+且仓库没有 stylelint 或任何 lint script。实测缺口：
+
+| 检查项 | 全局 CSS（3 文件） | SFC `<style>`（33 文件） |
+| --- | --- | --- |
+| 契约测试覆盖 | 7 套 | **0 套**（33 个文件无一被任何测试按名引用） |
+| 字面圆角 | 已归并到 token | 285 处 / 21 种取值 |
+| 非 token `box-shadow` | 抬升类已归并 | 65 处 / 19 文件 |
+| `<12px` 字号 | 0 | **78 处**（11px×44、10px×28、9px×5、10.5px×1） |
+| `backdrop-filter` | 6 处（均在白名单） | 3 处（白名单外） |
+
+其中 7 处直接违反 §2.1「不得用于有语义的文案、状态、按钮、输入提示、错误信息」，
+非 §6 认可的 P2 装饰债务，已由 Codex 全部修复：
+
+| 选择器 | 原 | 现 |
+| --- | ---: | ---: |
+| `.field-error` / `.field-warning`（AppsView） | 11px | **14px** |
+| `.cluster-card__warning`（ClusterView） | 11px | **14px** |
+| `.install-port-status`（AppsView） | 11px | **13px** |
+| `.app-control-panel__status span, small`（AppsView） | 11px | **13px** |
+| `.danger-zone small`（AppsView） | 11px | **13px** |
+| `.cluster-card__fingerprint`（ClusterView） | 9px | **12px**（保留等宽字体） |
+
+`.cluster-card__fingerprint` 是 SSH 主机指纹，属用户需逐字核对的安全凭据，原以 9px 渲染。
+
+**强制层实现**（`codex/visual-system-enforcement` @ `6118939`，36 文件 +1602/−439）：
+
+- `web/src/styles/visualContract.ts`（132 行）：递归 glob 全部 `.vue`，把 `<style>` 块拆为
+  `{file, line, selector, property, value}`。`withoutComments()` 以等长空格替换注释而非删除，
+  保留字节偏移，因此报错定位回原始 SFC 行号。覆盖面从 3 个文件扩到全部 78 个 SFC。
+- `web/src/styles/visualContractBaseline.ts`（435 行）：379 条显式债务清单
+  （`border-radius` 267 / `font-size` 97 / `box-shadow` 15），每条带 `expires: '2027-03-31'`
+  与 `expandedPath` 迁移路径，落实 §6.4 要求的例外格式（元素、计算字号、是否可替代、
+  放大后可用路径、退出期限）。
+- 「只减不增」由两条断言强制：`stale baseline entry`（`VisualRhythm.test.ts:115`）要求
+  清单每条都能在源码中找到对应声明——样式一旦迁移，清单必须同步删条，故清单只能缩短；
+  `Date.parse(entry.expires) > Date.now()` 使全部未偿债务在 2027-03-31 自动转红。
+- 断言数由 16 条增至 21 条。
+
+**变异验证**（Claude 复核，非仅观察绿灯）：向 `views/ActivityView.vue` 注入
+`border-radius: 10px` / `font-size: 9px` / 非 token `box-shadow` / `backdrop-filter: blur(14px)`
+四条违规，`does not add unapproved visual debt in Vue style blocks` 如期失败并逐条定位到
+`src/views/ActivityView.vue:51-54`；还原后 21 条全绿，工作树 `git status` 干净。
+
+**结论**：`docs/ui-visual-language.md` 的标准本身完备，缺的是强制力。强制层落地后，
+后期功能开发新增违规会在门禁直接失败，不再依赖人工记忆规范。
