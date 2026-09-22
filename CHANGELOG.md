@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.13] - 2026-09-22
+
+本预览版重新发布 rc.12 候选内容，纳入 Passkey 二次验证按需显示与关闭/重新绑定流程。
+
+### Added
+
+- Passkey 设置支持在重新认证后关闭并重新绑定入口；关闭操作原子撤销全部 Passkey、清空本地 Origin 并使现有会话失效，服务器配置管理的 Origin 保持不可变。
+
+### Changed
+
+- Passkey 登录仅在服务端明确要求时显示 TOTP 或恢复码输入，保持主认证界面简洁并保留受保护账户的重试流程。
+- 补齐关闭流程的 Go、存储、面板 API、前端设置和多语言回归覆盖；密码、TOTP 与恢复码策略不变。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会标记 GitHub prerelease 并提升 Docker `preview`，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- 关闭 Passkey 会撤销本面板全部 Passkey 和会话，需使用密码/TOTP 或恢复码重新登录后再从新的可信 HTTPS 入口绑定。
+- `scriptLinkageState=not-required`：本轮未修改 `kejilion.sh` 或其调用契约，继续使用既有受管脚本基线。
+
 ## [1.21.0-rc.12] - 2026-09-22
 
 本预览版补齐 rc.11 之后 Passkey 候选分支遗漏的二次验证交互与安全关闭流程。
