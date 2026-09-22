@@ -1511,10 +1511,11 @@ func (c *HTTPModelClient) Models(ctx context.Context, provider Provider, apiKey 
 	if provider.Protocol == ProtocolAnthropic {
 		return nil, errors.New("Anthropic model discovery is not available; add models manually")
 	}
-	endpoint, headers := "/models", map[string]string{"Authorization": "Bearer " + apiKey}
+	// Model listing returns plain JSON; strict providers reject the SSE Accept default with 406.
+	endpoint, headers := "/models", map[string]string{"Authorization": "Bearer " + apiKey, "Accept": "application/json"}
 	if provider.Protocol == ProtocolGemini {
 		endpoint = "/models"
-		headers = map[string]string{"X-Goog-Api-Key": apiKey}
+		headers = map[string]string{"X-Goog-Api-Key": apiKey, "Accept": "application/json"}
 	}
 	response, err := c.do(ctx, provider, apiKey, http.MethodGet, endpoint, nil, headers)
 	if err != nil {
