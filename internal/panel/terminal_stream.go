@@ -195,6 +195,9 @@ func (s *Server) handleTerminalStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	controller := http.NewResponseController(w)
+	// The stream outlives the server's whole-request ReadTimeout; clear it
+	// explicitly rather than relying on how net/http treats background reads.
+	_ = controller.SetReadDeadline(time.Time{})
 	write := func(event string, value any) bool {
 		_ = controller.SetWriteDeadline(time.Now().Add(terminalStreamWriteTimeout))
 		var payload bytes.Buffer
@@ -381,6 +384,9 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 			}
 			continue
 		}
+		// After a reported failure, one event (even without data) tells the
+		// browser the terminal is reachable again.
+		recovered := failures > 0
 		failures = 0
 		finished := output.Closed || output.ExitedAt != nil
 		if len(output.Data) > 0 && len(output.Data) < terminalStreamCoalesceBytes && !finished {
@@ -399,7 +405,7 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 				finished = output.Closed || output.ExitedAt != nil
 			}
 		}
-		changed := len(output.Data) > 0 || output.Truncated ||
+		changed := recovered || len(output.Data) > 0 || output.Truncated ||
 			(output.ExitedAt != nil && !sentExit) || (output.Closed && !sentClosed)
 		if changed {
 			value := output

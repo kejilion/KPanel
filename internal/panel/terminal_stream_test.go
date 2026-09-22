@@ -230,3 +230,33 @@ func TestTerminalStreamLimitsAndBindsToSession(t *testing.T) {
 		t.Fatal("removed stream still counted")
 	}
 }
+
+// paneld sets ReadTimeout; net/http cancels a request context when that
+// deadline expires during the handler unless the handler clears it. The
+// stream must outlive the server read timeout.
+func TestTerminalStreamSurvivesServerReadTimeout(t *testing.T) {
+	previous := terminalStreamHeartbeat
+	terminalStreamHeartbeat = 50 * time.Millisecond
+	defer func() { terminalStreamHeartbeat = previous }()
+	server, tokenPath := newTestServer(t)
+	sessionCookie, _ := bootstrapCookies(t, server, tokenPath)
+	httpServer := httptest.NewUnstartedServer(server)
+	httpServer.Config.ReadTimeout = 200 * time.Millisecond
+	httpServer.Start()
+	t.Cleanup(httpServer.Close)
+	request, _ := http.NewRequest(http.MethodGet, httpServer.URL+terminalStreamPath, nil)
+	request.Host = "panel.test"
+	request.AddCookie(sessionCookie)
+	response, err := httpServer.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	reader := bufio.NewReader(response.Body)
+	deadline := time.Now().Add(700 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := reader.ReadString('\n'); err != nil {
+			t.Fatalf("stream ended after %v: %v", 700*time.Millisecond-time.Until(deadline), err)
+		}
+	}
+}

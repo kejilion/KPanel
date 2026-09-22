@@ -132,6 +132,9 @@ async function flushInput(): Promise<void> {
       () => !disposed,
       (chunk) => api.terminals.input(props.sessionId, encodeBase64(chunk)).then(() => undefined),
     )
+    // Pushed output only arrives on change; an accepted input proves the
+    // session is reachable again after a transient failure.
+    if (state.value === 'reconnecting' && streamSubscription) state.value = 'connected'
   } catch {
     writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t('terminal.inputFailed')}\x1b[0m\r\n`)
     state.value = 'reconnecting'
