@@ -542,7 +542,9 @@ const fileWindowChangeOrigin = Symbol('file-window')
 
 const fileViewStorageKey = 'kpanel:files:view:v1'
 const thumbnailSourceMaxBytes = 12 * 1024 * 1024
-const FILE_UPLOAD_CONCURRENCY = 3
+// Matches the Agent upload gate (2); a third concurrent upload would be
+// rejected with 429 instead of queued.
+const FILE_UPLOAD_CONCURRENCY = 2
 const mediaLoadTimeoutMs = 20_000
 const remoteDownloadPollDelay = 2_500
 const remoteDownloadPollRetryDelay = 10_000
