@@ -74,6 +74,7 @@ export interface PasskeyList {
   origin?: string
   detectedOrigin?: string
   configurable: boolean
+  originManaged: boolean
   credentials: PasskeySummary[]
 }
 

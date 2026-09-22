@@ -40,6 +40,8 @@ export const passkeyZhCN = {
   'passkey.configure': '使用当前入口启用',
   'passkey.configureNotice': 'Passkey 会固定到这个域名；更换域名后需要重新绑定。',
   'passkey.configureConfirm': '确认将 Passkey 入口固定为 {origin}。需要当前密码；已启用两步验证时还需验证码或恢复码。',
+  'passkey.disable': '关闭 Passkey',
+  'passkey.disableConfirm': '关闭后将撤销本面板所有 Passkey 并清空绑定域名；密码登录和两步验证不受影响，但所有会话需要重新登录。',
   'passkey.originManaged': 'Passkey 入口由服务器配置管理，请先更新服务配置。',
   'passkey.originRebind': '已有 Passkey，需先撤销后才能更换入口。',
 }
@@ -86,6 +88,8 @@ export const passkeyEnUS: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.configure': 'Use this entry to enable',
   'passkey.configureNotice': 'Passkeys are fixed to this domain. Changing the domain requires registering again.',
   'passkey.configureConfirm': 'Fix the Passkey entry to {origin}? Your current password is required; an authenticator or recovery code is also required when two-step verification is enabled.',
+  'passkey.disable': 'Disable Passkeys',
+  'passkey.disableConfirm': 'This revokes all Passkeys for this panel and clears the bound domain. Password sign-in and two-step verification remain available, but all sessions must sign in again.',
   'passkey.originManaged': 'The Passkey entry is managed by server configuration. Update the server configuration first.',
   'passkey.originRebind': 'Existing passkeys must be revoked before changing the entry.',
 }
@@ -132,6 +136,8 @@ export const passkeyZhTW: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.configure': '使用目前入口啟用',
   'passkey.configureNotice': 'Passkey 會固定到這個網域；更換網域後需要重新綁定。',
   'passkey.configureConfirm': '確認將 Passkey 入口固定為 {origin}。需要目前密碼；已啟用兩步驗證時還需驗證碼或復原碼。',
+  'passkey.disable': '關閉 Passkey',
+  'passkey.disableConfirm': '關閉後將撤銷此面板的所有 Passkey 並清除綁定網域；密碼登入和兩步驗證不受影響，但所有工作階段需要重新登入。',
   'passkey.originManaged': 'Passkey 入口由伺服器設定管理，請先更新伺服器設定。',
   'passkey.originRebind': '已有 Passkey，需先撤銷後才能更換入口。',
 }

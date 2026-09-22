@@ -228,6 +228,22 @@ func (p *PasskeyService) VerifyManagementFactors(userID, password, second string
 	return err
 }
 
+// Disable clears the global Passkey origin and all stored credentials only
+// after the current management factors have been reauthenticated. The store
+// commits the origin, credential, and session boundary atomically.
+func (p *PasskeyService) Disable(session Session, password, second, originResourceVersion string) error {
+	if p == nil || p.auth == nil || p.Origin == "" {
+		return ErrPasskeyUnavailable
+	}
+	p.auth.credentialMu.Lock()
+	defer p.auth.credentialMu.Unlock()
+	user, err := p.reauthenticate(session.User.ID, password, second)
+	if err != nil {
+		return err
+	}
+	return p.auth.store.DisablePasskeys(user, originResourceVersion, session.TokenHash, p.auth.now())
+}
+
 func (p *PasskeyService) BeginRegistration(session Session, password, second, name string) (PasskeyOptions, error) {
 	if p.web == nil {
 		return PasskeyOptions{}, ErrPasskeyUnavailable

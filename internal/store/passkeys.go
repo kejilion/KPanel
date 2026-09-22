@@ -51,6 +51,53 @@ func (s *Store) ReplacePasskeyOrigin(expectedResourceVersion, value string) erro
 	return nil
 }
 
+// DisablePasskeys clears the persisted browser-facing origin and all stored
+// passkey credentials as one compare-and-set transition. The authenticated
+// session and reauthenticated user snapshot must still be current; disabling
+// the global RP also revokes every panel session so no old authenticator state
+// remains active after the boundary changes.
+func (s *Store) DisablePasskeys(expected User, expectedOriginResourceVersion, sessionHash string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedOriginResourceVersion != PasskeyOriginResourceVersion(s.data.PasskeyOrigin) {
+		return ErrConflict
+	}
+	index := s.userIndexLocked(expected.ID)
+	if index < 0 {
+		return ErrNotFound
+	}
+	current := s.data.Users[index]
+	if current.CredentialVersion != expected.CredentialVersion || !secureStringEqual(current.PasswordHash, expected.PasswordHash) {
+		return ErrConflict
+	}
+	validSession := false
+	for _, session := range s.data.Sessions {
+		if session.TokenHash == sessionHash && session.UserID == expected.ID && session.ExpiresAt.After(now) {
+			validSession = true
+			break
+		}
+	}
+	if !validSession {
+		return ErrConflict
+	}
+	previous := cloneDiskState(s.data)
+	for userIndex := range s.data.Users {
+		if err := advanceCredentialVersion(&s.data.Users[userIndex]); err != nil {
+			s.data = previous
+			return err
+		}
+		s.data.Users[userIndex].Passkeys = nil
+		s.data.Users[userIndex].UpdatedAt = now
+	}
+	s.data.PasskeyOrigin = ""
+	s.data.Sessions = nil
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
 func PasskeyOriginResourceVersion(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return fmt.Sprintf("sha256:%x", digest[:])
