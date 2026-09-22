@@ -119,6 +119,29 @@ function fileHost(id: string, isLocal: boolean, overrides: Record<string, unknow
 }
 
 describe('FilesView host switcher', () => {
+  it('disables directory write controls during a host switch and failed read, then recovers', async () => {
+    mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [fileHost('local', true), fileHost('edge', false, { fileManagementAvailable: true })] })
+    const wrapper = shallowMount(FilesView)
+    try {
+      await flushPromises()
+      let fail!: (error: Error) => void
+      mocks.list.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      await wrapper.get('[data-file-host-id="edge"]').trigger('click')
+      const upload = () => wrapper.get('.file-command-bar .button--primary')
+      expect(upload().attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[aria-label="新建目录"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[aria-label="选择上传文件"]').attributes('disabled')).toBeDefined()
+      fail(new Error('host unavailable')); await flushPromises()
+      expect(upload().attributes('disabled')).toBeDefined()
+      mocks.list.mockResolvedValueOnce(directory('/'))
+      await wrapper.get('[aria-label="刷新目录"]').trigger('click'); await flushPromises()
+      expect(upload().attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('[aria-label="新建目录"]').attributes('disabled')).toBeUndefined()
+      expect(mocks.list).toHaveBeenLastCalledWith('/', expect.anything(), expect.any(AbortSignal), 'edge')
+    } finally { wrapper.unmount() }
+  })
+
   it('uses the same persisted host order as the cluster page', async () => {
     window.localStorage.setItem(
       'kpanel:cluster-host-order',

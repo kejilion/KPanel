@@ -229,7 +229,8 @@ describe('FilesView real API multi-window host context', () => {
     a.vm.openDialog('mkdir')
     a.vm.dialogValue = 'must-not-be-local'
     await a.vm.submitDialog()
-    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1)
+    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(0)
+    expect(a.vm.directoryReady).toBe(false)
     expect(requests.every((request) => request.url.searchParams.get('hostId') === 'a')).toBe(true)
   })
 

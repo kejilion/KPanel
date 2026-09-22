@@ -109,6 +109,34 @@ describe('archive UI host and task ownership', () => {
     expect(mocks.createArchiveJob).not.toHaveBeenCalled()
   })
 
+  it.each(['success', 'error'])('ignores an old submission %s after A-B-A without unlocking a new submission', async outcome => {
+    let finishOld!: (value: FileArchiveJob) => void
+    let failOld!: (error: Error) => void
+    let finishNew!: (value: FileArchiveJob) => void
+    mocks.createArchiveJob
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { finishOld = resolve; failOld = reject }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve }))
+    const view = await open()
+    view.vm.configure('extract', [source]); await flushPromises()
+    await view.get('.archive-form').trigger('submit')
+    expect(view.vm.busy).toBe(true)
+    await view.setProps({ hostId: 'host-b' }); await view.setProps({ hostId: 'host-a' })
+    expect(view.vm.busy).toBe(false)
+    view.vm.configure('compress', [source]); await flushPromises()
+    await view.get('.archive-form').trigger('submit')
+    if (outcome === 'success') finishOld(job)
+    else failOld(new Error('obsolete create failure'))
+    await flushPromises()
+    expect(view.vm.busy).toBe(true)
+    expect(view.find('.archive-form').exists()).toBe(true)
+    expect(view.find('.archive-job').exists()).toBe(false)
+    expect(view.text()).not.toContain('obsolete create failure')
+    expect(mocks.createArchiveJob.mock.calls.map(call => call[1])).toEqual(['host-a', 'host-a'])
+    finishNew({ ...job, id: 'b'.repeat(32) }); await flushPromises()
+    expect(view.vm.busy).toBe(false)
+    expect(view.find('.archive-form').exists()).toBe(false)
+  })
+
   it('returns keyboard focus to the file opener after browsing and configuring extraction', async () => {
     const opener = document.createElement('button'); document.body.append(opener); opener.focus()
     wrapper = mount(FileArchiveTools, { attachTo: document.body, props: { hostId: 'host-a', path: '/destination' } })

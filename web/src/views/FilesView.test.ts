@@ -406,9 +406,16 @@ function setupView(): FileBindings {
   }
 }
 
+function setupLoadedView(path: string): FileBindings {
+  const view = setupView()
+  view.currentPath.value = path
+  view.directory.value = testDirectory(path)
+  return view
+}
+
 beforeEach(() => {
   resetLocaleForTest()
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   resetDesktopIconsForTest()
   resetFileWindowTransferForTest()
   clearDesktopFileDrag()
@@ -497,7 +504,7 @@ beforeEach(() => {
 
 describe('FilesView external upload', () => {
   it('keeps an ordinary operating-system file drop on the existing direct upload path', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/srv')
     view.currentPath.value = '/srv'
     mocks.list.mockResolvedValue(testDirectory('/srv'))
     mocks.upload.mockImplementation(async (path: string, file: File) => ({
@@ -514,7 +521,7 @@ describe('FilesView external upload', () => {
   })
 
   it('uses the recursive desktop upload path for an operating-system directory drop', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/srv')
     const directories = new Set(['/srv'])
     view.currentPath.value = '/srv'
     mocks.list.mockResolvedValue(testDirectory('/srv'))
@@ -556,7 +563,7 @@ describe('FilesView external upload', () => {
   })
 
   it('retains a failed direct upload for inline retry without a duplicate toast', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/srv')
     const file = new File(['hello'], 'notes.txt', { type: 'text/plain' })
     view.currentPath.value = '/srv'
     mocks.list.mockResolvedValue(testDirectory('/srv'))
@@ -633,6 +640,7 @@ describe('FilesView remote download', () => {
       targetDirectory: '/home/releases',
     }))
     view.currentPath.value = '/home/releases'
+    view.directory.value = testDirectory('/home/releases')
     view.openRemoteDownloadDialog()
     expect(view.remoteDownloadTarget.value).toBe('/home/releases')
     view.remoteDownloadURL.value = 'https://downloads.example.com/release.zip?token=secret'
@@ -669,6 +677,7 @@ describe('FilesView remote download', () => {
     mocks.createRemoteDownloadJob.mockRejectedValueOnce(new Error('connection reset'))
     mocks.remoteDownloadJobs.mockResolvedValueOnce({ items: [recovered, known] })
     view.currentPath.value = '/home/releases'
+    view.directory.value = testDirectory('/home/releases')
     view.openRemoteDownloadDialog()
     view.remoteDownloadURL.value = 'https://downloads.example.com/release.zip?token=secret'
     view.remoteDownloadName.value = 'release.zip'
@@ -697,6 +706,7 @@ describe('FilesView remote download', () => {
     mocks.createRemoteDownloadJob.mockRejectedValueOnce(new Error('connection reset'))
     mocks.remoteDownloadJobs.mockResolvedValueOnce({ items: [unrelated] })
     view.currentPath.value = '/home/releases'
+    view.directory.value = testDirectory('/home/releases')
     view.openRemoteDownloadDialog()
     view.remoteDownloadURL.value = 'https://downloads.example.com/release.zip?token=secret'
     view.remoteDownloadName.value = 'release.zip'
@@ -710,7 +720,7 @@ describe('FilesView remote download', () => {
   })
 
   it('rejects an unsupported URL before calling the API', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/home')
     view.openRemoteDownloadDialog()
     view.remoteDownloadURL.value = 'file:///etc/passwd'
 
@@ -1480,7 +1490,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('reports partial batch results and refreshes the real directory state', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const entry = testEntry('keep.txt')
     view.directory.value = {
       path: '/',
@@ -1567,7 +1577,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('waits for archive capability instead of opening a preview or legacy write flow', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const archive = { ...testEntry('backup.zip'), mime: 'application/zip' }
     const browse = vi.fn()
     const configure = vi.fn()
@@ -1586,7 +1596,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('uses the advertised archive workflow even when task status was temporarily unavailable', () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const archive = { ...testEntry('backup.zip'), mime: 'application/zip' }
     const browse = vi.fn()
     const configure = vi.fn()
@@ -1801,7 +1811,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('keeps the full selection for every batch-capable context action', () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const first = testEntry('first.txt')
     const second = testEntry('second.txt')
     view.directory.value = { path: '/', entries: [first, second] }
@@ -1823,7 +1833,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('keeps rename and extract scoped to the context-menu entry', () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const first = testEntry('first.txt')
     const archive = { ...testEntry('second.zip'), mime: 'application/zip' }
     view.directory.value = { path: '/', entries: [first, archive] }
@@ -1837,7 +1847,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('trashes every selected entry from a selected entry context menu', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const first = testEntry('first.txt')
     const second = testEntry('second.txt')
     view.directory.value = { path: '/', entries: [first, second] }
@@ -1862,7 +1872,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('submits every selected entry and resource version for batch chmod', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const first = testEntry('first.txt')
     const second = testEntry('second.txt')
     view.directory.value = { path: '/', entries: [first, second] }
@@ -2097,7 +2107,7 @@ describe('FilesView directory loading', () => {
     const view = setupView()
     const entry = testEntry('source.txt')
     view.currentPath.value = '/target'
-    view.directory.value = { path: '/', entries: [entry] }
+    view.directory.value = { path: '/target', entries: [entry] }
     view.setClipboard('copy', entry)
     mocks.action.mockResolvedValueOnce({
       action: 'copy',
@@ -2119,7 +2129,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('keeps only failed entries after a partial cut paste', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/')
     const moved = testEntry('moved.txt')
     const failed = testEntry('failed.txt')
     view.directory.value = { path: '/', entries: [moved, failed] }
@@ -2143,7 +2153,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('moves a native file-window drag with version protection and completion feedback', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/target')
     const entry = { ...testEntry('project.txt'), path: '/source/project.txt' }
     const event = internalDrag([entry])
     view.currentPath.value = '/target'
@@ -2169,7 +2179,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('allows a copy to be cancelled without claiming that completed copies were removed', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/target')
     const entry = { ...testEntry('project.txt'), path: '/source/project.txt' }
     const event = internalDrag([entry], { ctrlKey: true })
     mocks.action.mockImplementationOnce((_input: unknown, signal?: AbortSignal) => new Promise((_resolve, reject) => {
@@ -2187,7 +2197,7 @@ describe('FilesView directory loading', () => {
   })
 
   it('copies a multi-selection from another KPanel into the dropped directory', async () => {
-    const view = setupView()
+    const view = setupLoadedView('/target')
     const first = { ...testEntry('one.txt'), path: '/source/one.txt' }
     const second = { ...testEntry('two.txt'), path: '/source/two.txt' }
     const event = crossPanelDrag([first, second])

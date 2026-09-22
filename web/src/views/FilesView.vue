@@ -143,6 +143,16 @@ const activeFileHostId = ref('')
 const fileHostId = ref(typeof route.query.hostId === 'string' ? route.query.hostId : '')
 const fileAPI = computed(() => fileAPIForHost(fileHostId.value))
 const archiveTools = ref<InstanceType<typeof FileArchiveTools>>()
+let fileHostGeneration = 0
+let routeRequestId = 0
+let routeFileRequestId = 0
+let trashRequestId = 0
+let acceptedFileRoute = { ...route.query }
+let restoringFileRoute: typeof route.query | undefined
+
+function isCurrentFileHost(generation: number): boolean {
+  return !unmounted && generation === fileHostGeneration
+}
 
 function archiveChanged(hostId: string, path: string): void {
   notifyFileDirectoriesChanged([path], fileWindowChangeOrigin, [], hostId)
@@ -337,10 +347,28 @@ function openClusterHostManager(): void {
   void router.push({ name: 'cluster' })
 }
 
-function resetFileHostContext(hostId: string): boolean {
+function resetFileHostContext(hostId: string, path = hostId ? '/' : '/home'): boolean {
+  if (
+    fileTransferState.value?.phase === 'running'
+    || pasteBusy.value || dialogBusy.value || trashBusy.value
+    || externalUploadController || uploadBatchCount.value > 0
+    || previewSaving.value || desktopAdding.value || remoteDownloadSubmitting.value
+    || remoteDownloadPendingActions.value.size > 0 || archiveTools.value?.busy
+    || uploadTasks.value.some((task) => task.phase === 'running')
+  ) {
+    toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
+    return false
+  }
   if (previewDirty.value && !window.confirm('文件尚未保存，确认切换主机吗？')) return false
+  ++fileHostGeneration
+  ++routeRequestId
+  ++routeFileRequestId
+  ++trashRequestId
   previewDirty.value = false
   directoryController?.abort()
+  directoryController = undefined
+  loading.value = false
+  queuedRemoteDownloadRefreshes.clear()
   closePreview()
   contextMenu.value = undefined
   shareEntry.value = undefined
@@ -354,11 +382,18 @@ function resetFileHostContext(hostId: string): boolean {
   fileHostId.value = hostId
   activeFileHostId.value = hostId || fileHosts.value.find((host) => host.isLocal)?.id || ''
   directory.value = undefined
+  currentPath.value = path
   directoryError.value = undefined
   dialogAction.value = undefined
+  dialogContext = undefined
   trashOpen.value = false
+  trashLoading.value = false
   trashEntries.value = []
+  trashTotal.value = 0
+  trashTruncated.value = false
   selectedTrash.value = new Set()
+  uploadSelection = undefined
+  if (uploadInput.value) uploadInput.value.value = ''
   uploadTasks.value.forEach((task) => dismissUploadTask(task.id))
   search.value = ''
   clearSelection()
@@ -373,25 +408,7 @@ function handleFileHostSelection(host: ClusterHost): void {
       closeFileHostPicker(true)
       return
     }
-    if (
-      fileTransferState.value?.phase === 'running'
-      || pasteBusy.value
-      || dialogBusy.value
-      || trashBusy.value
-      || externalUploadController
-      || previewSaving.value
-      || desktopAdding.value
-      || remoteDownloadSubmitting.value
-      || uploadTasks.value.some((task) => task.phase === 'running')
-    ) {
-      toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
-      return
-    }
-    if (previewDirty.value) {
-      if (!window.confirm('文件尚未保存，确认切换主机吗？')) return
-      previewDirty.value = false
-    }
-    resetFileHostContext(host.isLocal ? '' : host.id)
+    if (!resetFileHostContext(host.isLocal ? '' : host.id)) return
     void router.push({ name: 'files', query: { path: currentPath.value, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
     if (!host.isLocal) {
       stopRemoteDownloadPolling()
@@ -417,11 +434,23 @@ const sortDescending = ref(false)
 const viewMode = ref<FileViewMode>('list')
 const loading = ref(false)
 const directoryError = ref<{ message: string; path: string; append: boolean }>()
+const directoryReady = computed(() => Boolean(
+  directory.value && directory.value.path === currentPath.value && !loading.value && !directoryError.value,
+))
+
+function requireDirectoryReady(): boolean {
+  if (unmounted) return false
+  if (directoryReady.value) return true
+  toast.show(phrase('目录尚未就绪'), { message: phrase('请等待目录加载完成后重试。') })
+  return false
+}
 const dragging = ref(false)
 const selected = ref(new Set<string>())
 const selectionAnchor = ref<string>()
 const uploadInput = ref<HTMLInputElement>()
 const uploadTasks = ref<UploadTask[]>([])
+const uploadBatchCount = ref(0)
+let uploadSelection: { hostId: string; target: string; generation: number } | undefined
 const remoteDownloadURLInput = ref<HTMLInputElement>()
 const remoteDownloadDialogOpen = ref(false)
 const remoteDownloadURL = ref('')
@@ -461,6 +490,7 @@ const dialogValue = ref('')
 const dialogFormat = ref<ArchiveFormat>('tar.gz')
 const dialogBusy = ref(false)
 const dialogEntries = ref<FileEntry[]>([])
+let dialogContext: { hostId: string; path: string; generation: number } | undefined
 const contextMenu = ref<{ entry?: FileEntry; x: number; y: number }>()
 const contextMenuElement = ref<HTMLElement>()
 const shareEntry = ref<FileEntry>()
@@ -817,6 +847,7 @@ function normalizedArchiveName(name: string, format: ArchiveFormat): string {
 
 async function loadDirectory(path = currentPath.value, append = false): Promise<string | undefined> {
   if (append && !directory.value?.nextOffset) return undefined
+  if (path !== currentPath.value) ++routeFileRequestId
   directoryController?.abort()
   const controller = new AbortController()
   directoryController = controller
@@ -888,13 +919,16 @@ async function navigateDirectory(path: string): Promise<void> {
 }
 
 async function openRequestedFile(value: unknown): Promise<void> {
-  const hostId = fileHostId.value
+  const generation = fileHostGeneration
   const filePath = requestedFilePath(value)
   if (!filePath || filePath === '/' || filePath === openedRouteFile) return
+  const requestId = ++routeFileRequestId
+  const previewId = previewRequestId
+  const isCurrent = () => isCurrentFileHost(generation) && requestId === routeFileRequestId && previewId === previewRequestId
   openedRouteFile = filePath
   try {
     const entry = await fileAPI.value.entry(filePath)
-    if (unmounted || hostId !== fileHostId.value) return
+    if (!isCurrent()) return
     if (entry.kind !== 'file') {
       toast.show('目标类型已变化', { message: '该路径现在不是普通文件，请从文件管理重新添加。' })
       return
@@ -903,15 +937,19 @@ async function openRequestedFile(value: unknown): Promise<void> {
     selectionAnchor.value = entry.path
     await openPreview(entry)
   } catch (error) {
+    if (!isCurrent()) return
+    openedRouteFile = ''
     toast.danger('桌面目标无法打开', errorMessage(error))
   }
 }
 
 async function loadRequestedRoute(): Promise<void> {
-  const hostId = fileHostId.value
-  await loadDirectory(requestedFilePath(route.query.path) || '/')
-  if (unmounted || hostId !== fileHostId.value) return
-  await openRequestedFile(route.query.file)
+  const generation = fileHostGeneration
+  const requestId = ++routeRequestId
+  const file = route.query.file
+  const resolved = await loadDirectory(requestedFilePath(route.query.path) || '/')
+  if (!resolved || !isCurrentFileHost(generation) || requestId !== routeRequestId) return
+  await openRequestedFile(file)
 }
 
 function setViewMode(mode: FileViewMode): void {
@@ -972,6 +1010,8 @@ function resetMediaState(entry?: FileEntry): void {
 }
 
 async function openPreview(entry: FileEntry): Promise<void> {
+  const requestId = ++previewRequestId
+  previewLoading.value = false
   if (archiveFormat(entry)) {
     if (archiveTools.value?.checking) {
       toast.show(i18n.t('files.archive.checking'))
@@ -983,7 +1023,6 @@ async function openPreview(entry: FileEntry): Promise<void> {
     }
   }
   const hostId = fileHostId.value
-  const requestId = ++previewRequestId
   previewEntry.value = entry
   previewContent.value = ''
   previewDirty.value = false
@@ -1409,6 +1448,7 @@ function cancelFileTransfer(): void {
 }
 
 async function transferInternalFileDrop(event: DragEvent, target: string): Promise<void> {
+  if (!requireDirectoryReady()) return
   const hostId = fileHostId.value
   if (isOtherFileHostDrag(event)) {
     await transferCrossPanelFileDrop(event, target)
@@ -1486,6 +1526,7 @@ async function transferInternalFileDrop(event: DragEvent, target: string): Promi
 }
 
 async function transferCrossPanelFileDrop(event: DragEvent, target: string): Promise<void> {
+  if (!requireDirectoryReady()) return
   const hostId = fileHostId.value
   const payload = crossPanelFileDragEntries(event)
   clearInternalDropTarget()
@@ -1638,6 +1679,7 @@ function handleContextMenuKeydown(event: KeyboardEvent): void {
 }
 
 function openDialog(action: DialogAction, entry?: FileEntry): void {
+  if (dialogBusy.value || !requireDirectoryReady()) return
   const archiveAction = action === 'compress' || action === 'extract'
   if (contextMenu.value && archiveAction) contextMenuOpener?.focus({ preventScroll: true })
   contextMenu.value = undefined
@@ -1655,6 +1697,7 @@ function openDialog(action: DialogAction, entry?: FileEntry): void {
     return
   }
   dialogAction.value = action
+  dialogContext = { hostId: fileHostId.value, path: currentPath.value, generation: fileHostGeneration }
   if (action === 'mkdir') dialogValue.value = ''
   else if (action === 'rename') dialogValue.value = dialogEntries.value[0]?.name || ''
   else if (action === 'chmod') dialogValue.value = '644'
@@ -1747,6 +1790,7 @@ async function applySuccessfulFileChanges(
 }
 
 async function pasteClipboard(target = currentPath.value): Promise<void> {
+  if (!requireDirectoryReady()) return
   const hostId = fileHostId.value
   const stored = clipboard.value
   if (!stored?.entries.length || pasteBusy.value) return
@@ -1810,7 +1854,10 @@ async function pasteClipboard(target = currentPath.value): Promise<void> {
 }
 
 async function submitDialog(): Promise<void> {
-  const hostId = fileHostId.value
+  if (dialogBusy.value || !requireDirectoryReady()) return
+  const context = dialogContext
+  if (!context || !isCurrentFileHost(context.generation)) return
+  const hostId = context.hostId
   const action = dialogAction.value
   if (!action) return
   const controller = action === 'compress' || action === 'extract'
@@ -1821,7 +1868,7 @@ async function submitDialog(): Promise<void> {
   try {
     let input: FileActionInput
     if (action === 'mkdir') {
-      input = { action, target: currentPath.value, name: dialogValue.value.trim() }
+      input = { action, target: context.path, name: dialogValue.value.trim() }
     } else if (action === 'rename') {
       const entry = dialogEntries.value[0]
       if (!entry) throw new Error('请选择需要重命名的文件。')
@@ -1853,7 +1900,7 @@ async function submitDialog(): Promise<void> {
       input = {
         action,
         sources: dialogEntries.value.map((entry) => entry.path),
-        target: currentPath.value,
+        target: context.path,
         name: normalizedArchiveName(dialogValue.value, dialogFormat.value),
         format: dialogFormat.value,
         expectedResourceVersions: Object.fromEntries(
@@ -1866,7 +1913,7 @@ async function submitDialog(): Promise<void> {
       input = {
         action,
         sources: [entry.path],
-        target: currentPath.value,
+        target: context.path,
         name: dialogValue.value.trim(),
         format: dialogFormat.value,
         expectedResourceVersion: entry.resourceVersion,
@@ -1879,6 +1926,7 @@ async function submitDialog(): Promise<void> {
       ? await fileAPI.value.action(input, controller.signal)
       : await fileAPI.value.action(input)
     const shortcutSyncFailed = await applySuccessfulFileChanges(result, undefined, hostId)
+    if (!isCurrentFileHost(context.generation)) return
     if (result.failed.length || shortcutSyncFailed) {
       toast.danger(
         shortcutSyncFailed ? '文件已处理，快捷方式未同步' : result.succeeded.length ? '部分文件未处理' : '文件操作未完成',
@@ -1902,6 +1950,7 @@ async function submitDialog(): Promise<void> {
     dialogValue.value = ''
     dialogEntries.value = []
   } catch (error) {
+    if (!isCurrentFileHost(context.generation)) return
     if (controller?.signal.aborted) {
       if (!unmounted) toast.success('操作已停止', '未完成的临时文件已清理。')
       dialogAction.value = undefined
@@ -1924,11 +1973,13 @@ async function openTrash(): Promise<void> {
 }
 
 async function loadTrash(): Promise<void> {
-  const hostId = fileHostId.value
+  const generation = fileHostGeneration
+  const requestId = ++trashRequestId
+  const isCurrent = () => isCurrentFileHost(generation) && requestId === trashRequestId
   trashLoading.value = true
   try {
     const result = await fileAPI.value.trash()
-    if (unmounted || hostId !== fileHostId.value) return
+    if (!isCurrent()) return
     trashEntries.value = result.entries
     trashTotal.value = result.total
     trashTruncated.value = result.truncated
@@ -1936,9 +1987,10 @@ async function loadTrash(): Promise<void> {
       [...selectedTrash.value].filter((id) => result.entries.some((entry) => entry.id === id)),
     )
   } catch (error) {
+    if (!isCurrent()) return
     toast.danger('回收站读取失败', errorMessage(error))
   } finally {
-    trashLoading.value = false
+    if (isCurrent()) trashLoading.value = false
   }
 }
 
@@ -1956,6 +2008,7 @@ function toggleAllTrash(): void {
 }
 
 async function runTrashAction(action: 'trash_restore' | 'trash_delete' | 'trash_empty'): Promise<void> {
+  if (unmounted || trashLoading.value || trashBusy.value) return
   const chosen = trashEntries.value.filter((entry) => selectedTrash.value.has(entry.id))
   if (action !== 'trash_empty' && !chosen.length) return
   if (action === 'trash_delete' && !window.confirm(`彻底删除选中的 ${chosen.length} 项？此操作不可恢复。`)) return
@@ -2029,7 +2082,7 @@ function openRemoteDownloadDialog(): void {
     toast.show('远端主机暂不支持远程下载', { message: '远程下载任务属于当前 KPanel 的面板级能力。' })
     return
   }
-  if (remoteDownloadSubmitting.value) return
+  if (remoteDownloadSubmitting.value || !requireDirectoryReady()) return
   remoteDownloadTarget.value = currentPath.value
   remoteDownloadURL.value = ''
   remoteDownloadName.value = ''
@@ -2207,7 +2260,7 @@ async function reconcileFailedRemoteDownloadSubmission(
 }
 
 async function submitRemoteDownload(): Promise<void> {
-  if (remoteDownloadSubmitting.value || !validRemoteDownloadForm()) return
+  if (isRemoteFileHost.value || remoteDownloadSubmitting.value || !validRemoteDownloadForm()) return
   const sourceURL = remoteDownloadURL.value.trim()
   const requestedName = remoteDownloadName.value.trim()
   const target = remoteDownloadTarget.value
@@ -2336,6 +2389,8 @@ function uploadTaskStatus(task: UploadTask): string {
 }
 
 async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, { kind: 'file' }>): Promise<void> {
+  const generation = fileHostGeneration
+  const isCurrent = () => isCurrentFileHost(generation) && uploadTaskSources.get(id) === source
   updateUploadTask(id, { phase: 'running', progress: 0, detail: undefined })
   const onProgress = (progress: number): void => updateUploadTask(id, {
     progress: Math.max(0, Math.min(100, progress)),
@@ -2343,6 +2398,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
   try {
     await fileAPIForHost(source.hostId).upload(source.target, source.file, false, onProgress)
   } catch (error) {
+    if (!isCurrent()) return
     if (
       error instanceof ApiError
       && error.status === 409
@@ -2351,6 +2407,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
       try {
         await fileAPIForHost(source.hostId).upload(source.target, source.file, true, onProgress)
       } catch (overwriteError) {
+        if (!isCurrent()) return
         updateUploadTask(id, { phase: 'error', detail: errorMessage(overwriteError) })
         return
       }
@@ -2359,6 +2416,7 @@ async function runFileUploadTask(id: string, source: Extract<UploadTaskSource, {
       return
     }
   }
+  if (!isCurrent()) return
   updateUploadTask(id, { phase: 'success', progress: 100, detail: undefined })
   scheduleUploadTaskClear(id)
 }
@@ -2368,15 +2426,42 @@ async function uploadFiles(
   target = currentPath.value,
   hostId = fileHostId.value,
 ): Promise<void> {
+  if (hostId !== fileHostId.value || !requireDirectoryReady()) return
+  const generation = fileHostGeneration
   const values = Array.from(files)
   if (!values.length) return
-  for (const file of values) {
-    const source = { kind: 'file', file, target, hostId } as const
-    const task = createUploadTask(source)
-    await runFileUploadTask(task.id, source)
+  ++uploadBatchCount.value
+  try {
+    for (const file of values) {
+      if (!isCurrentFileHost(generation)) break
+      const source = { kind: 'file', file, target, hostId } as const
+      const task = createUploadTask(source)
+      await runFileUploadTask(task.id, source)
+    }
+    if (!isCurrentFileHost(generation)) return
+    if (uploadInput.value) uploadInput.value.value = ''
+    notifyFileDirectoriesChanged([target], fileWindowChangeOrigin, [], hostId)
+    if (currentPath.value === target) await loadDirectory(target)
+  } finally {
+    --uploadBatchCount.value
   }
-  if (uploadInput.value) uploadInput.value.value = ''
-  if (!unmounted && fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
+}
+
+function selectUploadFiles(): void {
+  if (!requireDirectoryReady()) return
+  uploadSelection = { hostId: fileHostId.value, target: currentPath.value, generation: fileHostGeneration }
+  uploadInput.value?.click()
+}
+
+async function onUploadFilesSelected(event: Event): Promise<void> {
+  const selection = uploadSelection
+  uploadSelection = undefined
+  const input = event.target as HTMLInputElement
+  if (!selection || !isCurrentFileHost(selection.generation)) {
+    input.value = ''
+    return
+  }
+  if (input.files) await uploadFiles(input.files, selection.target, selection.hostId)
 }
 
 function externalUploadErrorMessage(error: unknown): string {
@@ -2464,6 +2549,7 @@ async function onDrop(event: DragEvent): Promise<void> {
   const target = currentPath.value
   const hostId = fileHostId.value
   dragging.value = false
+  if (!requireDirectoryReady()) { clearInternalDropTarget(); return }
   if (hasDesktopFileDrag(event)) {
     if (desktopFileDragOrigin(event) === 'desktop-shortcut') {
       clearInternalDropTarget()
@@ -2487,8 +2573,8 @@ async function onDrop(event: DragEvent): Promise<void> {
   externalUploadController = controller
   try {
     const manifest = await collectExternalDrop(dataTransfer, controller.signal)
+    if (controller.signal.aborted || unmounted) return
     if (manifest.roots.every((root) => root.kind === 'file')) {
-      externalUploadController = undefined
       await uploadFiles(manifest.files.map((item) => item.file), target, hostId)
       return
     }
@@ -2650,21 +2736,34 @@ onMounted(() => {
 watch(
   () => [route.query.path, route.query.file, route.query.hostId] as const,
   ([pathValue, fileValue, hostValue], previous) => {
+    if (restoringFileRoute && pathValue === restoringFileRoute.path && fileValue === restoringFileRoute.file && hostValue === restoringFileRoute.hostId) {
+      restoringFileRoute = undefined
+      return
+    }
     const hostId = typeof hostValue === 'string' ? hostValue : ''
     const hostChanged = hostId !== fileHostId.value
+    const directoryPath = requestedFilePath(pathValue) || '/'
     if (hostChanged) {
-      if (!resetFileHostContext(hostId)) {
-        void router.push({ name: 'files', query: { path: currentPath.value, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
+      if (!resetFileHostContext(hostId, directoryPath)) {
+        restoringFileRoute = { ...acceptedFileRoute, path: currentPath.value }
+        void router.replace({ name: 'files', query: restoringFileRoute })
         return
       }
       stopRemoteDownloadPolling()
       remoteDownloadJobs.value = []
+      remoteDownloadJobsError.value = undefined
+      if (!hostId) void loadRemoteDownloadJobs(true)
     }
+    acceptedFileRoute = { ...route.query }
     if (!hostChanged && pathValue === previous?.[0] && fileValue === previous?.[1]) return
-    const directoryPath = requestedFilePath(pathValue) || '/'
+    const generation = fileHostGeneration
+    const requestId = ++routeRequestId
+    ++routeFileRequestId
     void (async () => {
-      if (hostChanged || directoryPath !== currentPath.value) await loadDirectory(directoryPath)
-      if (unmounted || hostId !== fileHostId.value) return
+      if (hostChanged || directoryPath !== currentPath.value) {
+        if (!await loadDirectory(directoryPath)) return
+      }
+      if (!isCurrentFileHost(generation) || requestId !== routeRequestId) return
       if (hostChanged || fileValue !== previous?.[1]) {
         openedRouteFile = ''
         await openRequestedFile(fileValue)
@@ -2675,6 +2774,7 @@ watch(
 
 watch(search, () => {
   if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+  if (!directory.value) return
   searchTimer = window.setTimeout(() => {
     void loadDirectory(currentPath.value)
   }, 250)
@@ -2741,7 +2841,7 @@ onBeforeUnmount(() => {
         >
           <Share2 :size="15" /> 分享管理
         </button>
-        <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" @click="openDialog('mkdir')">
+        <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" :disabled="!directoryReady" @click="openDialog('mkdir')">
           <Plus :size="15" /> 新建目录
         </button>
         <button
@@ -2749,12 +2849,12 @@ onBeforeUnmount(() => {
           type="button"
           :title="i18n.t('files.remoteDownload.tooltip')"
           :aria-label="i18n.t('files.remoteDownload.tooltip')"
-          :disabled="remoteDownloadSubmitting || isRemoteFileHost"
+          :disabled="remoteDownloadSubmitting || isRemoteFileHost || !directoryReady"
           @click="openRemoteDownloadDialog"
         >
           <Download :size="15" /> {{ i18n.t('files.remoteDownload.label') }}
         </button>
-        <button class="button button--primary button--small" type="button" @click="uploadInput?.click()">
+        <button class="button button--primary button--small" type="button" :disabled="!directoryReady" @click="selectUploadFiles">
           <Upload :size="15" /> 上传文件
         </button>
         <input
@@ -2763,7 +2863,8 @@ onBeforeUnmount(() => {
           type="file"
           aria-label="选择上传文件"
           multiple
-          @change="($event.target as HTMLInputElement).files && uploadFiles(($event.target as HTMLInputElement).files!)"
+          :disabled="!directoryReady"
+          @change="onUploadFilesSelected"
         />
       </div>
     </div>
@@ -2929,7 +3030,7 @@ onBeforeUnmount(() => {
               <template v-if="clipboard.entries.length > 1"> 等 {{ clipboard.entries.length }} 项</template>
             </small>
           </span>
-          <button type="button" :disabled="pasteBusy" @click="pasteClipboard()">
+          <button type="button" :disabled="pasteBusy || !directoryReady" @click="pasteClipboard()">
             <ClipboardPaste :size="15" />{{ pasteBusy ? '粘贴中…' : `粘贴到 ${currentPath}` }}
           </button>
           <button type="button" :disabled="pasteBusy" @click="clearClipboard">取消</button>
@@ -3586,7 +3687,7 @@ onBeforeUnmount(() => {
           class="button"
           :class="dialogAction === 'trash' ? 'button--danger' : 'button--primary'"
           type="button"
-          :disabled="dialogBusy || (dialogAction !== 'trash' && !dialogValue.trim())"
+          :disabled="dialogBusy || !directoryReady || (dialogAction !== 'trash' && !dialogValue.trim())"
           @click="submitDialog"
         >
           {{

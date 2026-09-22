@@ -118,7 +118,7 @@ function toggleAll() {
   selection.value = allSelected.value ? new Set() : new Set(entries.value.map(entry => entry.path))
 }
 function configure(action: 'compress' | 'extract', sources: FileEntry[], members?: string[]) {
-  if (!sources.length) return
+  if (!sources.length || submitting.value) return
   form.value = { action, sources: sources.map(source => ({ ...source })), hostId: props.hostId, members }
   destination.value = props.path; format.value = 'tar.gz'
   name.value = action === 'compress' ? `${sources.length === 1 ? sources[0]!.name : 'archive'}.tar.gz` : baseName(sources[0]!.name)
@@ -138,6 +138,7 @@ function closeForm() { if (!submitting.value) form.value = undefined }
 async function submit() {
   if (!form.value || submitting.value) return
   const snapshot = form.value
+  const token = generation
   const saveName = name.value.trim(); const target = destination.value.trim()
   if ((!batch.value && (!saveName || /[/\\\u0000]/.test(saveName) || ['.', '..'].includes(saveName))) || !target.startsWith('/')) { formError.value = i18n.t('files.archive.invalid'); return }
   const input: FileActionInput = { action: snapshot.action, sources: snapshot.sources.map(source => source.path), target, name: saveName,
@@ -146,12 +147,12 @@ async function submit() {
   submitting.value = true; formError.value = ''
   try {
     const job = await fileAPIForHost(snapshot.hostId).createArchiveJob(input)
-    if (!disposed && snapshot.hostId === props.hostId) {
+    if (!disposed && token === generation && form.value === snapshot) {
       jobs.value = [job, ...jobs.value.filter(item => item.id !== job.id)]; form.value = undefined
       await refreshJobs()
     }
-  } catch (error) { if (!disposed && form.value === snapshot) formError.value = errorDetail(error) }
-  finally { submitting.value = false }
+  } catch (error) { if (!disposed && token === generation && form.value === snapshot) formError.value = errorDetail(error) }
+  finally { if (!disposed && token === generation) submitting.value = false }
 }
 async function changeJob(job: FileArchiveJob, operation: 'cancel' | 'clear') {
   const host = props.hostId; const token = generation
@@ -189,11 +190,13 @@ async function retry(job: FileArchiveJob) {
 watch([() => props.hostId, () => props.archiveManagementAvailable], () => {
   ++generation; jobsController?.abort(); clearTimeout(polling); closeBrowser(); form.value = undefined
   jobs.value = []; jobsError.value = ''; pending.value = new Set(); discoveryFailures = 0
+  submitting.value = false; formError.value = ''
   if (available.value) void refreshJobs()
 }, { immediate: true })
 onBeforeUnmount(() => { disposed = true; ++generation; jobsController?.abort(); contentsController?.abort(); clearTimeout(polling); clearTimeout(searching) })
 const hasJobs = computed(() => jobs.value.length > 0 || Boolean(jobsError.value))
-defineExpose({ configure, browse, capability, available, checking, legacy, hasJobs })
+const busy = computed(() => submitting.value || pending.value.size > 0)
+defineExpose({ configure, browse, capability, available, checking, legacy, hasJobs, busy })
 </script>
 
 <template>

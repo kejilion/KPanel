@@ -1,6 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["目录尚未就绪", "Directory is not ready"],
+  ["请等待目录加载完成后重试。", "Wait for the directory to finish loading, then try again."],
   ["正在连接远程服务器", "Connecting to the remote server"],
   ["正在下载 {0}", "Downloading {0}"],
   ["正在接收远程文件", "Receiving the remote file"],

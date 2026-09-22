@@ -51,13 +51,15 @@ it('native window back must not display A copy completion inside B',async()=>{
  expect(vm.fileHostId).toBe('a') // selector correctly refuses while busy
  router.back()
  await flushPromises()
- expect(router.currentRoute.value.query.hostId).toBe('b')
- expect(vm.fileHostId).toBe('b') // real router history bypasses selector
- expect(vm.fileTransferState).toBeUndefined()
+ expect(router.currentRoute.value.query.hostId).toBe('a')
+ expect(vm.fileHostId).toBe('a') // history uses the same busy guard as the selector
+ expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/target-a' })
  finishAction(new Response(JSON.stringify({action:'copy',succeeded:[{path:'/test.txt',destination:'/target-a/test.txt'}],failed:[]}),{headers:{'content-type':'application/json'}}))
  await pending
  await flushPromises()
  expect(writes).toEqual(['a']) // no backend write misrouting
+ vm.handleFileHostSelection(hosts[2])
+ await flushPromises()
  expect(vm.fileHostId).toBe('b')
  expect(vm.fileTransferState).toBeUndefined()
 })
@@ -84,7 +86,7 @@ async function mountAtA() {
 it.each([
  { returnToA: false, status: 200 }, { returnToA: false, status: 503 },
  { returnToA: true, status: 200 }, { returnToA: true, status: 503 },
-])('late paste result does not own a new operation: %j', async ({ returnToA, status }) => {
+])('history waits for paste and old cleanup cannot own the next operation: %j', async ({ returnToA, status }) => {
  const { router, vm } = await mountAtA()
  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
  useFileClipboard().set('copy', [entry as any], 'a')
@@ -93,8 +95,18 @@ it.each([
  const finishOlder = finishAction
  router.back()
  await flushPromises()
+ expect(vm.fileHostId).toBe('a')
+ expect(router.currentRoute.value.query.hostId).toBe('a')
+ const blocked = vm.pasteClipboard('/new-target')
+ await blocked
+ expect(writes).toEqual(['a'])
+ finishOlder(response('copy', status))
+ await older
+ expect(vm.pasteBusy).toBe(false)
+ await router.push('/files?path=/&hostId=b')
+ await flushPromises()
  if (returnToA) {
-  router.forward()
+  await router.push('/files?path=/&hostId=a')
   await flushPromises()
  }
  const newHost = returnToA ? 'a' : 'b'
@@ -103,8 +115,6 @@ it.each([
  const newer = vm.pasteClipboard('/new-target')
  await flushPromises()
  const finishNewer = finishAction
- finishOlder(response('copy', status))
- await older
  expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/new-target' })
  expect(vm.pasteBusy).toBe(true)
  await vi.advanceTimersByTimeAsync(2400)
@@ -116,7 +126,7 @@ it.each([
  expect(writes).toEqual(['a', newHost])
 })
 
-it('window path synchronization updates the host and ignores an old internal move result', async () => {
+it('window path synchronization waits for an internal move before changing the host', async () => {
  const { router, vm } = await mountAtA()
  const data = new Map<string, string>()
  const event = { preventDefault: vi.fn(), ctrlKey: false, altKey: false, dataTransfer: {
@@ -130,14 +140,18 @@ it('window path synchronization updates the host and ignores an old internal mov
  const finishMove = finishAction
  synchronizeWindowRoute(router, '/files?path=/&hostId=b')
  await flushPromises()
- expect(vm.fileHostId).toBe('b')
+ expect(vm.fileHostId).toBe('a')
+ expect(router.currentRoute.value.query.hostId).toBe('a')
  finishMove(response('move'))
  await moving
+ synchronizeWindowRoute(router, '/files?path=/&hostId=b')
+ await flushPromises()
+ expect(vm.fileHostId).toBe('b')
  expect(vm.fileTransferState).toBeUndefined()
  expect(writes).toEqual(['a'])
 })
 
-it.each(['complete', 'error'])('late cross-host progress and %s cannot replace the new A operation after A-B-A', async (state) => {
+it.each(['complete', 'error'])('cross-host progress stays on A until %s and cannot clear a newer operation', async (state) => {
  const { router, vm } = await mountAtA()
  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
  let stream!: ReadableStreamDefaultController<Uint8Array>
@@ -160,14 +174,19 @@ it.each(['complete', 'error'])('late cross-host progress and %s cannot replace t
  await flushPromises()
  expect(vm.fileHostId).toBe('a')
  useFileClipboard().set('copy', [entry as any], 'a')
- const newer = vm.pasteClipboard('/new-target')
+ await vm.pasteClipboard('/new-target')
+ expect(writes).toEqual(['a'])
  await flushPromises()
  send({ state: 'transferring', loadedBytes: 1, totalBytes: 2 })
  await flushPromises()
- expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/new-target' })
+ expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/old-target' })
  send(state === 'complete' ? { state, entry } : { state, code: 'offline', detail: 'old source offline' })
  stream.close()
  await older
+ await router.push('/files?path=/&hostId=b'); await flushPromises()
+ await router.push('/files?path=/&hostId=a'); await flushPromises()
+ const newer = vm.pasteClipboard('/new-target')
+ await flushPromises()
  await vi.advanceTimersByTimeAsync(2400)
  expect(vm.fileTransferState).toMatchObject({ phase: 'running', target: '/new-target' })
  expect(vm.pasteBusy).toBe(true)
