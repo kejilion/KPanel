@@ -331,11 +331,19 @@ func TestClusterClientsUseSharedTLSFallback(t *testing.T) {
 	if _, ok := remote.historyClient.Transport.(*tlsfallback.Transport); !ok {
 		t.Fatal("history client is not using TLS fallback transport")
 	}
-	if remote.client.Transport != remote.streamClient.Transport {
-		t.Fatal("summary and stream clients no longer share a transport")
+	// Long file relays use their own connection pool so they cannot queue
+	// interactive terminal requests and summaries behind them; every client
+	// still shares the TLS fallback curve cache.
+	if remote.client.Transport == remote.streamClient.Transport {
+		t.Fatal("file relays share the interactive connection pool")
 	}
-	if _, ok := remote.client.Transport.(*tlsfallback.Transport); !ok {
-		t.Fatal("summary client is not using TLS fallback transport")
+	for name, client := range map[string]*http.Client{"summary": remote.client, "stream": remote.streamClient, "websocket": remote.wsClient} {
+		if _, ok := client.Transport.(*tlsfallback.Transport); !ok {
+			t.Fatalf("%s client is not using TLS fallback transport", name)
+		}
+	}
+	if remote.wsClient.Timeout != 0 {
+		t.Fatal("websocket client must rely on contexts, not a total timeout")
 	}
 	for _, status := range []int{404, 405, 426} {
 		if !errors.Is(historyResponseStatus(status), ErrHistoryUnsupported) {

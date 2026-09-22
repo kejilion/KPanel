@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
@@ -53,6 +55,40 @@ func runTerminalBroker(arguments []string) error {
 	defer manager.CloseAll()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	streamDone := make(chan struct{})
+	go func() {
+		defer close(streamDone)
+		runLightTerminalStream(ctx, config, identity, relayClient, manager)
+	}()
 	runLightTerminalControl(ctx, config, identity, relayClient, manager)
+	stop()
+	<-streamDone
 	return nil
+}
+
+// runLightTerminalStream keeps the optional push transport connected. The
+// polling relay stays authoritative for compatibility: an older center
+// rejects the stream role after the upgrade, so failures back off to long
+// intervals instead of retrying hot.
+func runLightTerminalStream(ctx context.Context, config nodeConfig, identity terminalIdentity, relay *cluster.TerminalRelayClient, manager *terminal.Manager) {
+	backoff := time.Minute
+	for ctx.Err() == nil {
+		connected := false
+		err := relay.RunTerminalStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer,
+			manager, lightTerminalOwner(config.NodeID), func() { connected = true })
+		if ctx.Err() != nil {
+			return
+		}
+		delay := backoff
+		if connected {
+			// An established stream that dropped reconnects quickly.
+			backoff, delay = time.Minute, time.Second
+		} else {
+			backoff = min(30*time.Minute, backoff*2)
+		}
+		slog.Debug("terminal stream unavailable; polling relay continues", "error", err, "retry", delay)
+		if !waitContext(ctx, delay) {
+			return
+		}
+	}
 }

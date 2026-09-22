@@ -620,6 +620,11 @@ func (s *Server) handleFederationV2(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"protocol": cluster.FederationProtocolV2},
 		)
 	}
+	if r.URL.Path == "/api/v2/federation/summary" {
+		// Unauthenticated hint only: a forged value makes the controller try a
+		// stream whose Noise handshake fails closed, then fall back to v2.
+		w.Header().Set(cluster.FederationCapabilitiesHeader, cluster.PanelStreamCapability)
+	}
 	s.writeJSON(w, status, response)
 }
 
@@ -634,7 +639,26 @@ func (s *Server) handleFederationFileStream(w http.ResponseWriter, r *http.Reque
 	}
 	// Control heartbeats are not file operations. Data sockets emit one audit
 	// event per complete/failed request, keeping paths and file bytes out of logs.
-	if result.Role == "light-control" {
+	switch result.Role {
+	case "light-control", "light-terminal-control":
+		return
+	case "panel-terminal":
+		// Terminal content is never audited; record only that a stream
+		// attached to a PTY on behalf of the controller.
+		status := "failure"
+		if result.SessionID != "" {
+			status = "success"
+		}
+		_ = s.audit(r, "", "cluster.federation.v3.terminal.stream", "cluster-controller", result.PeerID, status,
+			map[string]any{"protocol": cluster.FederationProtocolV2, "role": result.Role})
+		return
+	case "panel-file":
+		status := "failure"
+		if result.Requests > 0 {
+			status = "success"
+		}
+		_ = s.audit(r, "", "cluster.federation.v3.files.stream", "cluster-controller", result.PeerID, status,
+			map[string]any{"protocol": cluster.FederationProtocolV2, "role": result.Role, "requests": result.Requests})
 		return
 	}
 	status := "failure"

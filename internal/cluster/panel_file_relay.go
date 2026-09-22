@@ -575,6 +575,14 @@ func (s *Service) OpenRemotePanelFile(
 	if err != nil {
 		return nil, ErrFileRelayUnavailable
 	}
+	if s.streams.usable(hostID) {
+		response, streamErr := s.openPanelFileStream(ctx, hostID, input)
+		if streamErr == nil || !isStreamDialError(streamErr) {
+			return response, streamErr
+		}
+		// Nothing was sent yet; the v2 relay can carry this request unchanged.
+		s.streams.markLegacy(hostID)
+	}
 	remote, ok := s.remoteV2.(remoteV2PanelFileAPI)
 	if !ok {
 		return nil, ErrProtocolMismatch

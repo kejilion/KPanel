@@ -192,39 +192,86 @@ func streamWriteBody(c *fileStreamConn, body io.Reader, length int64) error {
 // a blocked upload. No body bytes are consumed before authentication succeeds.
 func openStreamRequest(c *fileStreamConn, input LightFileRequest) (*http.Response, error) {
 	c.limitFileLifetime()
+	return exchangeStreamRequest(c, input, nil)
+}
+
+// exchangeStreamRequest sends one request on c. With finish == nil the socket
+// is single-use and closes after the response. Otherwise finish(true) hands a
+// cleanly completed socket back for reuse (authenticated end received and the
+// whole upload sent); every other outcome closes it and reports finish(false).
+// Errors returned by this function always occur before a response header.
+func exchangeStreamRequest(c *fileStreamConn, input LightFileRequest, finish func(bool)) (*http.Response, error) {
+	var finishOnce sync.Once
+	done := func(clean bool) {
+		finishOnce.Do(func() {
+			if !clean {
+				c.close()
+			}
+			if finish != nil {
+				finish(clean)
+			}
+		})
+	}
 	if !validFileRelayRequest(input) {
-		c.close()
+		done(false)
 		return nil, ErrAuthentication
 	}
 	if input.Body == nil || input.Body == http.NoBody {
 		input.BodyLength = 0
 	}
+	stopBody := func() bool { return false }
 	if body, ok := input.Body.(io.Closer); ok {
-		context.AfterFunc(c.ctx, func() { _ = body.Close() })
+		stopBody = context.AfterFunc(c.ctx, func() { _ = body.Close() })
 	}
+	c.completed.Store(false)
+	c.responseStatus.Store(0)
 	meta := fileStreamRequest{input.Method, input.Path, input.RawQuery, input.Headers, input.BodyLength}
 	if err := c.writeJSON(streamRequest, meta); err != nil {
-		c.close()
+		stopBody()
+		done(false)
 		return nil, err
 	}
+	uploaded := make(chan error, 1)
 	go func() {
-		if err := streamWriteBody(c, input.Body, input.BodyLength); err != nil {
+		err := streamWriteBody(c, input.Body, input.BodyLength)
+		if err != nil {
 			c.close()
 		}
+		uploaded <- err
 	}()
 	kind, payload, err := c.read()
 	var response fileStreamResponse
 	if err != nil || kind != streamResponse || decodeV2Payload(payload, &response) != nil ||
 		response.Status < 200 || response.Status > 599 || !validFileRelayHeaders(response.Headers) {
-		c.close()
+		stopBody()
+		done(false)
 		if err != nil {
 			return nil, err
 		}
 		return nil, ErrAuthentication
 	}
 	c.responseStatus.Store(int32(response.Status))
+	body := &fileStreamBody{conn: c}
+	if finish != nil {
+		body.keep = func() bool {
+			stopBody()
+			// An early response (for example a conflict) may arrive while the
+			// upload is still streaming; such a socket is never reused.
+			timer := time.NewTimer(100 * time.Millisecond)
+			defer timer.Stop()
+			clean := false
+			select {
+			case uploadErr := <-uploaded:
+				clean = uploadErr == nil
+			case <-timer.C:
+			}
+			done(clean)
+			return clean
+		}
+		body.abort = func() { stopBody(); done(false) }
+	}
 	return &http.Response{StatusCode: response.Status, Header: fileRelayHTTPHeaders(response.Headers),
-		ContentLength: -1, Body: &fileStreamBody{conn: c}}, nil
+		ContentLength: -1, Body: body}, nil
 }
 
 type fileStreamBody struct {
@@ -232,6 +279,9 @@ type fileStreamBody struct {
 	buffer []byte
 	total  int64
 	done   bool
+	kept   bool
+	keep   func() bool
+	abort  func()
 }
 
 func (b *fileStreamBody) Read(p []byte) (int, error) {
@@ -261,7 +311,11 @@ func (b *fileStreamBody) Read(p []byte) (int, error) {
 			}
 			b.done = true
 			b.conn.completed.Store(true)
-			b.conn.close()
+			if b.keep != nil && b.keep() {
+				b.kept = true
+			} else {
+				b.conn.close()
+			}
 			return 0, io.EOF
 		default:
 			b.conn.close()
@@ -273,7 +327,16 @@ func (b *fileStreamBody) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (b *fileStreamBody) Close() error { b.conn.close(); return nil }
+func (b *fileStreamBody) Close() error {
+	if b.kept {
+		return nil
+	}
+	b.conn.close()
+	if b.abort != nil {
+		b.abort()
+	}
+	return nil
+}
 
 // serveStreamRequest is shared by full Panels and the lightweight file broker.
 // The pipe provides backpressure, and only an authenticated end closes it with
@@ -281,28 +344,63 @@ func (b *fileStreamBody) Close() error { b.conn.close(); return nil }
 func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStreamLimits, peer string, readOnly bool) {
 	c.limitFileLifetime()
 	defer c.close()
+	serveStreamExchange(c, handler, limits, peer, readOnly, false, nil)
+}
+
+// serveReusableStream serves sequential requests on one authenticated socket.
+// authorize is re-evaluated before every request, so a scope change or
+// revocation between requests is honored even if the socket were still open.
+func serveReusableStream(c *fileStreamConn, handler http.Handler, limits *fileStreamLimits, peer string, authorize func() bool) int {
+	c.limitFileLifetime()
+	defer c.close()
+	served := 0
+	for c.ctx.Err() == nil {
+		clean, handled := serveStreamExchange(c, handler, limits, peer, false, true, authorize)
+		if handled {
+			served++
+		}
+		if !clean {
+			break
+		}
+	}
+	return served
+}
+
+// serveStreamExchange handles one request. clean reports that the socket may
+// carry another request; handled reports that the request reached the handler.
+func serveStreamExchange(c *fileStreamConn, handler http.Handler, limits *fileStreamLimits, peer string, readOnly, reusable bool, authorize func() bool) (clean, handled bool) {
 	kind, payload, err := c.read()
 	var meta fileStreamRequest
 	if err != nil || kind != streamRequest || decodeV2Payload(payload, &meta) != nil {
-		return
+		return false, false
 	}
 	input := LightFileRequest{Method: meta.Method, Path: meta.Path, RawQuery: meta.Query, Headers: meta.Headers, BodyLength: meta.Length}
 	if !validFileRelayRequest(input) || (readOnly && (meta.Method != http.MethodGet || meta.Path != "/v1/files/transfer/export" || meta.Length != 0)) {
-		return
+		return false, false
+	}
+	if authorize != nil && !authorize() {
+		return false, false
 	}
 	release, ok := limits.acquire(peer, input)
 	if !ok {
-		return
+		if reusable {
+			// Report the limit instead of silently dropping a reusable socket;
+			// the body is drained so the connection stays aligned.
+			return rejectStreamExchange(c, meta, http.StatusTooManyRequests), false
+		}
+		return false, false
 	}
 	defer release()
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	defer writer.CloseWithError(io.ErrUnexpectedEOF)
-	stopPipe := context.AfterFunc(c.ctx, func() { _ = reader.CloseWithError(c.ctx.Err()); _ = writer.CloseWithError(c.ctx.Err()) })
+	requestCtx, cancelRequest := context.WithCancel(c.ctx)
+	defer cancelRequest()
+	stopPipe := context.AfterFunc(requestCtx, func() { _ = reader.CloseWithError(context.Canceled); _ = writer.CloseWithError(context.Canceled) })
 	defer stopPipe()
-	request, err := http.NewRequestWithContext(c.ctx, meta.Method, "http://kpanel-file-stream"+meta.Path, reader)
+	request, err := http.NewRequestWithContext(requestCtx, meta.Method, "http://kpanel-file-stream"+meta.Path, reader)
 	if err != nil {
-		return
+		return false, false
 	}
 	request.URL.RawQuery = meta.Query
 	request.Header = relayRequestHeaders(meta.Headers)
@@ -314,36 +412,45 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 	peerDone := make(chan struct{})
 	go func() {
 		defer close(peerDone)
-		defer c.close()
 		var total int64
 		for {
 			kind, data, readErr := c.read()
 			if readErr != nil {
 				_ = writer.CloseWithError(readErr)
+				c.close()
 				return
 			}
 			if kind == streamEnd {
 				if !validStreamEnd(data, total) || (meta.Length >= 0 && total != meta.Length) {
 					_ = writer.CloseWithError(io.ErrUnexpectedEOF)
+					c.close()
 					return
 				}
 				_ = writer.Close()
 				close(uploadDone)
+				if reusable {
+					// The next record belongs to the next request.
+					return
+				}
 				// Keep reading only to detect peer closure while the handler sends
 				// its response. No further request records are valid on this socket.
 				_, _, _ = c.read()
+				c.close()
 				return
 			}
 			if kind != streamData || len(data) == 0 {
 				_ = writer.CloseWithError(ErrAuthentication)
+				c.close()
 				return
 			}
 			total += int64(len(data))
 			if total > streamMaxUpload || (meta.Length >= 0 && total > meta.Length) {
 				_ = writer.CloseWithError(ErrAuthentication)
+				c.close()
 				return
 			}
 			if _, err := writer.Write(data); err != nil {
+				c.close()
 				return
 			}
 		}
@@ -352,11 +459,12 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 		select {
 		case <-uploadDone:
 		case <-c.ctx.Done():
-			return
+			return false, false
 		}
 		request.Body = http.NoBody
 		request.ContentLength = 0
 	}
+	handled = true
 	w := &fileStreamResponseWriter{conn: c, header: make(http.Header)}
 	// Handler panics must terminate the encrypted stream without emitting end.
 	func() {
@@ -368,20 +476,59 @@ func serveStreamRequest(c *fileStreamConn, handler http.Handler, limits *fileStr
 		handler.ServeHTTP(w, request)
 	}()
 	if w.err != nil {
-		return
+		return false, handled
 	}
 	w.WriteHeader(http.StatusOK)
 	if meta.Path == "/v1/files/transfer/export" && w.status >= 200 && w.status < 300 && w.header.Get("X-KPanel-Transfer-Result") != "ok" {
-		return
+		return false, handled
 	}
 	if w.err != nil || c.write(streamEnd, streamSize(w.total)) != nil {
-		return
+		return false, handled
 	}
 	c.completed.Store(true)
 	select {
 	case <-peerDone:
 	case <-c.ctx.Done():
+		return false, handled
 	}
+	if !reusable {
+		return false, handled
+	}
+	select {
+	case <-uploadDone:
+		return c.ctx.Err() == nil, handled
+	default:
+		return false, handled
+	}
+}
+
+// rejectStreamExchange answers a reusable socket with a bodyless status after
+// consuming the request body, keeping both sides aligned for the next request.
+func rejectStreamExchange(c *fileStreamConn, meta fileStreamRequest, status int) bool {
+	var total int64
+	for {
+		kind, data, err := c.read()
+		if err != nil {
+			return false
+		}
+		if kind == streamEnd {
+			if !validStreamEnd(data, total) {
+				return false
+			}
+			break
+		}
+		if kind != streamData || len(data) == 0 {
+			return false
+		}
+		total += int64(len(data))
+		if total > streamMaxUpload || (meta.Length >= 0 && total > meta.Length) {
+			return false
+		}
+	}
+	if c.writeJSON(streamResponse, fileStreamResponse{Status: status}) != nil {
+		return false
+	}
+	return c.write(streamEnd, streamSize(0)) == nil
 }
 
 type fileStreamResponseWriter struct {

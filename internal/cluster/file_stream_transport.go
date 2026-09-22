@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,20 +12,22 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/flynn/noise"
+	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
 
 type fileStreamHub struct {
-	mu          sync.Mutex
-	ctx         context.Context
-	stop        context.CancelFunc
-	connections map[*fileStreamConn]string
-	controls    map[string]*fileStreamControl
-	streamNodes map[string]bool
-	pending     map[string]*fileStreamPending
-	requests    map[*fileStreamLease]string
-	preauth     chan struct{}
-	sockets     *fileStreamLimiter
-	limits      *fileStreamLimits
+	mu               sync.Mutex
+	ctx              context.Context
+	stop             context.CancelFunc
+	connections      map[*fileStreamConn]string
+	controls         map[string]*fileStreamControl
+	streamNodes      map[string]bool
+	pending          map[string]*fileStreamPending
+	requests         map[*fileStreamLease]string
+	preauth          chan struct{}
+	sockets          *fileStreamLimiter
+	limits           *fileStreamLimits
+	terminalControls map[string]*fileStreamControl
 }
 
 type fileStreamLease struct {
@@ -47,7 +50,7 @@ func newFileStreamHub() *fileStreamHub {
 	return &fileStreamHub{ctx: ctx, stop: stop, connections: make(map[*fileStreamConn]string),
 		controls: make(map[string]*fileStreamControl), streamNodes: make(map[string]bool), pending: make(map[string]*fileStreamPending),
 		requests: make(map[*fileStreamLease]string), preauth: make(chan struct{}, 64),
-		sockets: newFileStreamLimiter(128, 10), limits: newFileStreamLimits()}
+		sockets: newFileStreamLimiter(128, 16), limits: newFileStreamLimits(), terminalControls: make(map[string]*fileStreamControl)}
 }
 
 func (h *fileStreamHub) closePeer(peer string) {
@@ -125,8 +128,18 @@ func (h *fileStreamHub) requestContext(ctx context.Context, peer string) (contex
 // Dial preserves the caller's TLS roots, redirect policy, approved-IP dialer
 // (Panel) or environment proxy (light broker). No alternate raw dial path exists.
 func dialFileStream(ctx context.Context, client *http.Client, origin, controllerID, targetID string, key noise.DHKey, peer []byte, now time.Time, hello fileStreamHello) (*fileStreamConn, error) {
+	return dialFileStreamWithParent(ctx, ctx, client, origin, controllerID, targetID, key, peer, now, hello)
+}
+
+// dialFileStreamWithParent bounds the handshake by ctx while the resulting
+// socket lives under parent, so pooled and terminal sockets outlive the HTTP
+// request that created them.
+func dialFileStreamWithParent(ctx, parent context.Context, client *http.Client, origin, controllerID, targetID string, key noise.DHKey, peer []byte, now time.Time, hello fileStreamHello) (*fileStreamConn, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if parent == nil {
+		parent = ctx
 	}
 	requestID, err := randomHex(16)
 	if err != nil {
@@ -187,7 +200,7 @@ func dialFileStream(ctx context.Context, client *http.Client, origin, controller
 		return nil, ErrAuthentication
 	}
 	failed = false
-	return newFileStreamConn(ctx, ws, tx, rx), nil
+	return newFileStreamConn(parent, ws, tx, rx), nil
 }
 
 // ServeFileStream authenticates a lightweight-node GET upgrade before any
@@ -200,6 +213,10 @@ type FileStreamResult struct {
 	StatusCode    int
 	PeerID        string
 	Role          string
+	// Requests counts file requests served on a reusable Panel socket.
+	Requests int
+	// SessionID is set when a Panel terminal stream opened or attached a PTY.
+	SessionID string
 }
 
 func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source string) (result FileStreamResult) {
@@ -270,11 +287,17 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 	releasePreauth()
 	switch hello.Role {
 	case "light-control":
-		h.serveControl(c, envelope.ControllerID, envelope.RequestID)
-	case "light-data":
+		h.serveControl(c, envelope.ControllerID, envelope.RequestID, false)
+	case streamRoleLightTerminalControl:
+		h.serveControl(c, envelope.ControllerID, envelope.RequestID, true)
+	case "light-data", streamRoleLightTerminalData:
+		controls := h.controls
+		if hello.Role == streamRoleLightTerminalData {
+			controls = h.terminalControls
+		}
 		h.mu.Lock()
 		pending := h.pending[hello.RequestID]
-		if pending == nil || pending.nodeID != envelope.ControllerID || pending.control != h.controls[pending.nodeID] ||
+		if pending == nil || pending.nodeID != envelope.ControllerID || pending.control != controls[pending.nodeID] ||
 			pending.control.generation != hello.Generation || !pending.expires.After(time.Now()) {
 			h.mu.Unlock()
 			return
@@ -283,8 +306,89 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 		pending.ready <- c
 		h.mu.Unlock()
 		<-c.ctx.Done()
+	case streamRolePanelFile:
+		s.panelFileRelay.mu.Lock()
+		handler := s.panelFileRelay.handler
+		s.panelFileRelay.mu.Unlock()
+		if handler == nil {
+			return
+		}
+		controllerID := envelope.ControllerID
+		result.Requests = serveReusableStream(c, handler, h.limits, controllerID, func() bool {
+			controller, err := s.storeV2.Controller(controllerID)
+			return err == nil && controller.State == controllerStateV2Active && ScopeAllowsFiles(normalizedV2Scope(controller.Scope))
+		})
+	case streamRolePanelTerminal:
+		result.SessionID = serveTerminalStream(c, s.terminal, "federation:"+envelope.ControllerID, nil)
 	}
 	return
+}
+
+// track registers an outbound socket under a peer owner so revocation and
+// shutdown close it exactly like inbound sockets.
+func (h *fileStreamHub) track(c *fileStreamConn, owner string) {
+	h.mu.Lock()
+	h.connections[c] = owner
+	h.mu.Unlock()
+	context.AfterFunc(c.ctx, func() { h.mu.Lock(); delete(h.connections, c); h.mu.Unlock() })
+}
+
+func (h *fileStreamHub) terminalAvailable(node string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	control := h.terminalControls[node]
+	return control != nil && control.conn.ctx.Err() == nil
+}
+
+// openLightTerminalConn asks the node's root terminal broker to dial back one
+// data socket. The center then drives the terminal protocol as the client.
+func (h *fileStreamHub) openLightTerminalConn(ctx context.Context, node string) (*fileStreamConn, error) {
+	requestID, err := randomHex(16)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	control := h.terminalControls[node]
+	if control == nil || control.conn.ctx.Err() != nil {
+		h.mu.Unlock()
+		return nil, ErrTerminalUnavailable
+	}
+	pending := &fileStreamPending{node, control, make(chan *fileStreamConn, 1), time.Now().Add(streamHandshakeTimeout)}
+	h.pending[requestID] = pending
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		delete(h.pending, requestID)
+		h.mu.Unlock()
+	}()
+	if err := control.conn.write(streamOpen, []byte(requestID)); err != nil {
+		return nil, err
+	}
+	wait, cancel := context.WithTimeout(ctx, streamHandshakeTimeout)
+	defer cancel()
+	select {
+	case c := <-pending.ready:
+		if c == nil {
+			return nil, terminal.ErrLimit
+		}
+		return c, nil
+	case <-control.conn.ctx.Done():
+		return nil, ErrTerminalUnavailable
+	case <-wait.Done():
+		// A late dial-back may still arrive; close it instead of leaking it.
+		go func() {
+			timer := time.NewTimer(streamHandshakeTimeout)
+			defer timer.Stop()
+			select {
+			case late := <-pending.ready:
+				if late != nil {
+					late.close()
+				}
+			case <-timer.C:
+			}
+		}()
+		return nil, wait.Err()
+	}
 }
 
 func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *noise.HandshakeState, string, error) {
@@ -297,15 +401,27 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 		return fail()
 	}
 	key := nodeNoiseKeyV2(s.nodeIdentityV2)
-	node, err := s.light.Host(envelope.ControllerID)
-	if err != nil {
-		return fail()
+	var expected []byte
+	var controller controllerRecordV2
+	panel := false
+	owner := ""
+	if record, err := s.storeV2.Controller(envelope.ControllerID); err == nil {
+		if record.State != controllerStateV2Active {
+			return fail()
+		}
+		expected, _ = base64.RawURLEncoding.DecodeString(record.PublicKey)
+		controller, panel, owner = record, true, "controller:"+record.ID
+	} else {
+		node, err := s.light.Host(envelope.ControllerID)
+		if err != nil {
+			return fail()
+		}
+		expected, err = s.light.ReadTerminalPublicKey(node)
+		if err != nil {
+			return fail()
+		}
+		owner = "light:" + node.ID
 	}
-	expected, err := s.light.ReadTerminalPublicKey(node)
-	if err != nil {
-		return fail()
-	}
-	owner := "light:" + node.ID
 	plain, peer, handshake, err := openV2Request(http.MethodGet, FileStreamV2Path, envelope, key, nil)
 	if err != nil || len(expected) != 32 || !bytes.Equal(peer, expected) {
 		return fail()
@@ -314,42 +430,63 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 	if decodeV2Payload(plain, &hello) != nil {
 		return fail()
 	}
-	if hello.Role != "light-control" && hello.Role != "light-data" {
+	limiter := s.panelFileRequests
+	switch hello.Role {
+	case streamRolePanelFile:
+		if !panel || !ScopeAllowsFiles(normalizedV2Scope(controller.Scope)) || s.panelFileRelay == nil {
+			return fail()
+		}
+	case streamRolePanelTerminal:
+		if !panel || !ScopeAllowsTerminal(normalizedV2Scope(controller.Scope)) || s.terminal == nil {
+			return fail()
+		}
+		limiter = s.terminalRequests
+	case "light-control", "light-data", streamRoleLightTerminalControl, streamRoleLightTerminalData:
+		if panel {
+			return fail()
+		}
+	default:
 		return fail()
 	}
-	if hello.Role == "light-data" {
+	if hello.Role == "light-data" || hello.Role == streamRoleLightTerminalData {
 		if !validID(hello.RequestID) || !validID(hello.Generation) {
 			return fail()
 		}
 	} else if hello.RequestID != "" || hello.Generation != "" {
 		return fail()
 	}
-	if !s.panelFileRequests.Allow(envelope.ControllerID, now) || s.replays.Accept(envelope.ControllerID, envelope.RequestID, now) != nil {
+	if !limiter.Allow(envelope.ControllerID, now) || s.replays.Accept(envelope.ControllerID, envelope.RequestID, now) != nil {
 		return fail()
 	}
 	return hello, handshake, owner, nil
 }
 
-func (h *fileStreamHub) serveControl(c *fileStreamConn, node, generation string) {
+func (h *fileStreamHub) serveControl(c *fileStreamConn, node, generation string, terminalRole bool) {
 	control := &fileStreamControl{c, generation}
 	if c.write(streamOpen, []byte(generation)) != nil {
 		return
+	}
+	controls := h.controls
+	if terminalRole {
+		controls = h.terminalControls
 	}
 	h.mu.Lock()
 	if c.ctx.Err() != nil {
 		h.mu.Unlock()
 		return
 	}
-	if previous := h.controls[node]; previous != nil {
+	if previous := controls[node]; previous != nil {
 		previous.conn.close()
 	}
-	h.controls[node] = control
-	h.streamNodes[node] = true
+	controls[node] = control
+	if !terminalRole {
+		h.streamNodes[node] = true
+	}
 	h.mu.Unlock()
 	defer func() {
 		h.mu.Lock()
-		if h.controls[node] == control {
-			delete(h.controls, node)
+		if controls[node] == control {
+			delete(controls, node)
 		}
 		h.mu.Unlock()
 	}()
