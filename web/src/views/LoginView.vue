@@ -243,7 +243,6 @@ onBeforeUnmount(() => passkeyController.abort())
         {{ i18n.t('passkey.loadFailed') }}
         <button class="button-link" type="button" @click="loadPasskeyStatus">{{ i18n.t('passkey.retry') }}</button>
       </div>
-      <p v-else-if="passkeyStatusLoaded && (!passkeyAvailable || !passkeySupported)" class="passkey-help">{{ i18n.t(!passkeyAvailable ? 'passkey.unavailable' : 'passkey.unsupported') }}</p>
       <p v-if="passkeyMode" class="passkey-help">{{ i18n.t('passkey.intro') }}</p>
 
       <button
