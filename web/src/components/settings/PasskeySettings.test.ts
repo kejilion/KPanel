@@ -53,7 +53,7 @@ describe('Passkey management', () => {
 
   it('requires password and enabled second factor, then clears all local session state after registration', async () => {
     await render()
-    await wrapper.get('button.button--secondary').trigger('click')
+    await wrapper.get('button.button--primary').trigger('click')
     await wrapper.get('input[maxlength="64"]').setValue('Phone')
     await wrapper.get('input[type="password"]').setValue('current-password')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
@@ -73,7 +73,7 @@ describe('Passkey management', () => {
     mocks.list.mockResolvedValue({ available: false, rpId: '', credentials: [credential] })
     await render()
     expect(wrapper.text()).toContain('固定的 HTTPS 域名')
-    expect(wrapper.get('button.button--secondary').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button.button--primary').attributes('disabled')).toBeDefined()
     await wrapper.get('li button').trigger('click')
     expect(wrapper.text()).toContain('撤销「Laptop」')
     expect(mocks.remove).not.toHaveBeenCalled()
@@ -103,7 +103,7 @@ describe('Passkey management', () => {
   it('does not finish registration or log out after browser cancellation and clears sensitive inputs', async () => {
     mocks.createPasskey.mockRejectedValueOnce(new DOMException('Cancelled', 'NotAllowedError'))
     await render()
-    await wrapper.get('button.button--secondary').trigger('click')
+    await wrapper.get('button.button--primary').trigger('click')
     await wrapper.get('input[maxlength="64"]').setValue('Phone')
     await fillAuthentication()
     await wrapper.get('form').trigger('submit')
@@ -129,7 +129,7 @@ describe('Passkey management', () => {
     let finish: ((value: { ceremonyId: string; publicKey: { challenge: string } }) => void) | undefined
     mocks.registerBegin.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     await render()
-    await wrapper.get('button.button--secondary').trigger('click')
+    await wrapper.get('button.button--primary').trigger('click')
     await wrapper.get('input[maxlength="64"]').setValue('Phone')
     await fillAuthentication()
     await wrapper.get('form').trigger('submit')
