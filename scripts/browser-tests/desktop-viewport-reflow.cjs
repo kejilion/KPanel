@@ -38,7 +38,7 @@ const overlap = (a, b) => a.x < b.x + b.width - 0.1 && b.x < a.x + a.width - 0.1
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
         await page.waitForFunction(() => {
         const grid = document.querySelector('.desktop__icons')
-        return grid && !grid.classList.contains('desktop__icons--resizing') && !grid.classList.contains('desktop__icons--restoring') && !grid.getAnimations({ subtree: true }).some(animation => animation instanceof CSSTransition && ['transform', 'left', 'top'].includes(animation.transitionProperty))
+        return grid && grid.getAttribute('aria-busy') === 'false' && !grid.classList.contains('desktop__icons--resizing') && !grid.classList.contains('desktop__icons--restoring') && !grid.getAnimations({ subtree: true }).some(animation => animation instanceof CSSTransition && ['transform', 'left', 'top'].includes(animation.transitionProperty))
         })
       }
       const snapshot = () => page.evaluate(() => {
