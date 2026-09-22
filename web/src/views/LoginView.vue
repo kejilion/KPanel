@@ -211,8 +211,8 @@ onBeforeUnmount(() => passkeyController.abort())
         </span>
       </label>
 
-      <label v-if="totpRequired || passkeyMode" class="field">
-        <span>{{ i18n.t(passkeyMode && !totpRequired ? 'passkey.secondFactor' : useRecoveryCode ? 'auth.recoveryCode' : 'auth.totpCode') }}</span>
+      <label v-if="totpRequired" class="field">
+        <span>{{ i18n.t(useRecoveryCode ? 'auth.recoveryCode' : 'auth.totpCode') }}</span>
         <input
           v-model.trim="form.totpCode"
           :inputmode="useRecoveryCode ? 'text' : 'numeric'"
