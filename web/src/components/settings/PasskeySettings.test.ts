@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PasskeySettings from './PasskeySettings.vue'
 
 const mocks = vi.hoisted(() => ({
-  list: vi.fn(), configureOrigin: vi.fn(), registerBegin: vi.fn(), registerFinish: vi.fn(), remove: vi.fn(),
+  list: vi.fn(), configureOrigin: vi.fn(), disableOrigin: vi.fn(), registerBegin: vi.fn(), registerFinish: vi.fn(), remove: vi.fn(),
   createPasskey: vi.fn(), supported: true, reset: vi.fn(), replace: vi.fn(),
   state: { authenticated: true, user: { totpEnabled: true } as { totpEnabled: boolean } | undefined, expiresAt: 'later' as string | undefined, agent: {} as object | undefined },
 }))
-vi.mock('@/lib/api', () => ({ api: { auth: { passkeys: { list: mocks.list, configureOrigin: mocks.configureOrigin, registerBegin: mocks.registerBegin, registerFinish: mocks.registerFinish, delete: mocks.remove } } }, resetApiSecurityState: mocks.reset }))
+vi.mock('@/lib/api', () => ({ api: { auth: { passkeys: { list: mocks.list, configureOrigin: mocks.configureOrigin, disableOrigin: mocks.disableOrigin, registerBegin: mocks.registerBegin, registerFinish: mocks.registerFinish, delete: mocks.remove } } }, resetApiSecurityState: mocks.reset }))
 vi.mock('@/lib/passkeys', () => ({ createPasskey: mocks.createPasskey, passkeysSupported: () => mocks.supported, passkeyError: (reason: Error) => reason.message }))
 vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.state }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: mocks.replace }) }))
@@ -25,11 +25,12 @@ beforeEach(() => {
   mocks.supported = true
   mocks.state.authenticated = true
   mocks.state.user = { totpEnabled: true }
-  mocks.list.mockResolvedValue({ available: true, rpId: 'panel.example.com', credentials: [credential] })
+  mocks.list.mockResolvedValue({ available: true, rpId: 'panel.example.com', origin: 'https://panel.example.com', originManaged: false, credentials: [credential] })
   mocks.registerBegin.mockResolvedValue({ ceremonyId: 'registration', publicKey: { challenge: 'AA' } })
   mocks.createPasskey.mockResolvedValue({ id: 'new' })
   mocks.registerFinish.mockResolvedValue({ reauthenticate: true })
   mocks.remove.mockResolvedValue({ reauthenticate: true })
+  mocks.disableOrigin.mockResolvedValue({ reauthenticate: true })
   mocks.configureOrigin.mockResolvedValue({ available: true, origin: 'https://panel.example.com', detectedOrigin: 'https://panel.example.com' })
   mocks.replace.mockResolvedValue(undefined)
 })
@@ -81,6 +82,22 @@ describe('Passkey management', () => {
     await flushPromises()
     expect(mocks.remove).toHaveBeenCalledWith({ id: 'old', password: 'current-password', totpCode: '123456' }, expect.any(AbortSignal))
     expect(mocks.createPasskey).not.toHaveBeenCalled()
+  })
+
+  it('disables Passkey without changing password or two-step verification and returns to login', async () => {
+    await render()
+    await wrapper.get('button.button--danger').trigger('click')
+    expect(wrapper.text()).toContain('清空绑定域名')
+    await fillAuthentication()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocks.disableOrigin).toHaveBeenCalledWith({ password: 'current-password', totpCode: '123456' }, expect.any(AbortSignal))
+    expect(mocks.remove).not.toHaveBeenCalled()
+    expect(mocks.registerBegin).not.toHaveBeenCalled()
+    expect(mocks.state).toMatchObject({ authenticated: false, user: undefined, expiresAt: undefined, agent: undefined })
+    expect(mocks.reset).toHaveBeenCalledOnce()
+    expect(mocks.replace).toHaveBeenCalledWith({ name: 'login', query: { passkeyChanged: '1' } })
   })
 
   it('does not finish registration or log out after browser cancellation and clears sensitive inputs', async () => {

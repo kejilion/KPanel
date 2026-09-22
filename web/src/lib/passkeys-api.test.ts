@@ -18,4 +18,17 @@ describe('Passkey API authentication', () => {
     expect(fetch.mock.calls[1]![1].headers.get('X-CSRF-Token')).toBe('passkey-csrf')
     expect(fetch.mock.calls[1]![1].credentials).toBe('same-origin')
   })
+
+  it('sends the management factors to the Passkey disable endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ reauthenticate: true }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+
+    await api.auth.passkeys.disableOrigin({ password: 'password', totpCode: '123456' })
+
+    expect(fetch).toHaveBeenCalledWith('/api/v1/auth/passkeys/origin/disable', expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+      body: JSON.stringify({ password: 'password', totpCode: '123456' }),
+    }))
+  })
 })

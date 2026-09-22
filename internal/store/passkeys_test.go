@@ -102,6 +102,38 @@ func TestHasPasskeysCoversAllUsers(t *testing.T) {
 	}
 }
 
+func TestDisablePasskeysClearsOriginCredentialsAndSessionsAtomically(t *testing.T) {
+	s, u, session, key := passkeyFixture(t, true)
+	origin := "https://panel.example.com"
+	version := PasskeyOriginResourceVersion("")
+	if err := s.ReplacePasskeyOrigin(version, origin); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.UserByID(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DisablePasskeys(u, PasskeyOriginResourceVersion(origin), session.TokenHash, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.PasskeyOrigin(); got != "" {
+		t.Fatalf("origin survived disable: %q", got)
+	}
+	got, err := s.UserByID(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Passkeys) != 0 || got.CredentialVersion != u.CredentialVersion+1 {
+		t.Fatalf("credentials were not revoked: %#v (key=%#v)", got, key)
+	}
+	if _, err := s.SessionByTokenHash(session.TokenHash, time.Now()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("session survived disable: %v", err)
+	}
+	if err := s.DisablePasskeys(got, PasskeyOriginResourceVersion(""), session.TokenHash, time.Now()); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale disable error = %v", err)
+	}
+}
+
 func TestPasskeyRegistrationPersistsSchemaAndRevokesSessions(t *testing.T) {
 	s, u, session, key := passkeyFixture(t, false)
 	if s.data.SchemaVersion != 1 {

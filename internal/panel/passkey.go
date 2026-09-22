@@ -22,6 +22,7 @@ type passkeyStatusResponse struct {
 	Origin         string `json:"origin,omitempty"`
 	DetectedOrigin string `json:"detectedOrigin,omitempty"`
 	Configurable   bool   `json:"configurable"`
+	OriginManaged  bool   `json:"originManaged"`
 }
 
 type passkeyListResponse struct {
@@ -30,6 +31,7 @@ type passkeyListResponse struct {
 	Origin         string             `json:"origin,omitempty"`
 	DetectedOrigin string             `json:"detectedOrigin,omitempty"`
 	Configurable   bool               `json:"configurable"`
+	OriginManaged  bool               `json:"originManaged"`
 	Credentials    []auth.PasskeyInfo `json:"credentials"`
 }
 
@@ -59,6 +61,10 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		s.handlePasskeyOrigin(w, r)
 		return
 	}
+	if suffix == "/origin/disable" {
+		s.handlePasskeyOriginDisable(w, r)
+		return
+	}
 	// Keep the service pointer stable for the complete operation. Origin
 	// changes take the write side of this lock, so an in-flight ceremony cannot
 	// finish against the old RP after the new service becomes active.
@@ -72,7 +78,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 			origin = passkeys.Origin
 		}
 		s.writeJSON(w, http.StatusOK, passkeyStatusResponse{
-			Available: available, Origin: origin, DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(),
+			Available: available, Origin: origin, DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(), OriginManaged: s.passkeyOriginLocked,
 		})
 		return
 	}
@@ -82,7 +88,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if passkeys == nil {
-			s.writeJSON(w, http.StatusOK, passkeyListResponse{Credentials: []auth.PasskeyInfo{}, DetectedOrigin: s.detectedPasskeyOrigin(r)})
+			s.writeJSON(w, http.StatusOK, passkeyListResponse{Credentials: []auth.PasskeyInfo{}, DetectedOrigin: s.detectedPasskeyOrigin(r), OriginManaged: s.passkeyOriginLocked})
 			return
 		}
 		entries, err := passkeys.List(session.User.ID)
@@ -93,7 +99,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		origin := passkeys.Origin
 		s.writeJSON(w, http.StatusOK, passkeyListResponse{
 			Available: available, RPID: passkeys.RPID, Origin: origin,
-			DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(), Credentials: entries,
+			DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(), OriginManaged: s.passkeyOriginLocked, Credentials: entries,
 		})
 		return
 	}
@@ -222,7 +228,7 @@ func (s *Server) handlePasskeyOrigin(w http.ResponseWriter, r *http.Request) {
 	currentOrigin := passkeys.Origin
 	locked := s.passkeyOriginLocked
 	if secureStringEqual(strings.ToLower(currentOrigin), strings.ToLower(detected)) {
-		s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: currentOrigin, DetectedOrigin: detected})
+		s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: currentOrigin, DetectedOrigin: detected, OriginManaged: locked})
 		return
 	}
 	if locked {
@@ -266,7 +272,76 @@ func (s *Server) handlePasskeyOrigin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.passkeys = candidate
 	_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "success", change)
-	s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: detected, DetectedOrigin: detected})
+	s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: detected, DetectedOrigin: detected, OriginManaged: false})
+}
+
+// handlePasskeyOriginDisable clears the locally managed Passkey origin after
+// the administrator confirms the current management factors. Server-managed
+// origins remain immutable and must be changed in the server configuration.
+func (s *Server) handlePasskeyOriginDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.Header.Get("Origin") == "" || !s.checkOrigin(w, r) {
+		if r.Header.Get("Origin") == "" {
+			s.writeProblem(w, r, http.StatusForbidden, "origin_validation_failed", "Origin validation failed", "")
+		}
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok || !s.checkCSRF(w, r, session) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var input struct {
+		Password string `json:"password"`
+		TOTPCode string `json:"totpCode,omitempty"`
+	}
+	if s.decodeJSON(w, r, &input) != nil {
+		return
+	}
+
+	s.passkeyMu.Lock()
+	defer s.passkeyMu.Unlock()
+	passkeys := s.passkeys
+	if passkeys == nil || passkeys.Origin == "" {
+		s.writePasskeyProblem(w, r, auth.ErrPasskeyUnavailable)
+		return
+	}
+	if s.passkeyOriginLocked {
+		s.writeProblem(w, r, http.StatusConflict, "passkey_origin_managed", "Passkey origin is managed by server configuration", "")
+		return
+	}
+	currentOrigin, version := s.store.PasskeyOrigin()
+	if currentOrigin == "" || !secureStringEqual(strings.ToLower(currentOrigin), strings.ToLower(passkeys.Origin)) {
+		s.writeProblem(w, r, http.StatusConflict, "resource_version_changed", "Passkey origin changed; refresh and retry", "")
+		return
+	}
+	change := map[string]any{"origin": currentOrigin, "source": "settings"}
+	if err := s.audit(r, session.User.ID, "settings.passkey_origin.disable", "panel", "passkey-origin", "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	candidate, err := auth.NewPasskeyService(s.auth, "")
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.disable", "panel", "passkey-origin", "failure", change)
+		s.writePasskeyProblem(w, r, err)
+		return
+	}
+	if err := passkeys.Disable(session, input.Password, input.TOTPCode, version); err != nil {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.disable", "panel", "passkey-origin", "failure", change)
+		if errors.Is(err, store.ErrConflict) {
+			s.writeProblem(w, r, http.StatusConflict, "resource_version_changed", "Passkey origin changed; refresh and retry", "")
+			return
+		}
+		s.writePasskeyProblem(w, r, err)
+		return
+	}
+	s.passkeys = candidate
+	_ = s.audit(r, session.User.ID, "settings.passkey_origin.disable", "panel", "passkey-origin", "success", change)
+	s.clearAuthCookies(w, r)
+	s.writeJSON(w, http.StatusOK, map[string]bool{"reauthenticate": true})
 }
 
 func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suffix string, passkeys *auth.PasskeyService) {

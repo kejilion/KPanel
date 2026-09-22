@@ -183,6 +183,42 @@ func TestPasskeyOriginCanBeConfirmedFromTrustedProxy(t *testing.T) {
 	}
 }
 
+func TestPasskeyOriginCanBeDisabledAndRebound(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	s.config.PublicURL = "https://panel.test"
+	s.passkeyMu.Lock()
+	s.passkeyOriginLocked = false
+	s.passkeys, _ = auth.NewPasskeyService(s.auth, "https://panel.test")
+	s.passkeyMu.Unlock()
+	_, originVersion := s.store.PasskeyOrigin()
+	if err := s.store.ReplacePasskeyOrigin(originVersion, "https://panel.test"); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte(`{"password":"a-strong-password-1"}`)
+	headers := map[string]string{"Origin": "https://panel.test", "Content-Type": "application/json", "X-CSRF-Token": csrf.Value}
+	disabled := passkeyRequest(s, http.MethodPost, passkeyPrefix+"/origin/disable", body, []*http.Cookie{session, csrf}, headers, true)
+	if disabled.Code != http.StatusOK || !strings.Contains(disabled.Body.String(), `"reauthenticate":true`) {
+		t.Fatalf("passkey origin disable failed: %d %s", disabled.Code, disabled.Body.String())
+	}
+	if origin, _ := s.store.PasskeyOrigin(); origin != "" || s.passkeys.Origin != "" {
+		t.Fatalf("passkey origin survived disable: store=%q service=%q", origin, s.passkeys.Origin)
+	}
+	login := passkeyRequest(s, http.MethodPost, "/api/v1/auth/login", []byte(`{"username":"admin","password":"a-strong-password-1"}`), nil, map[string]string{"Origin": "https://panel.test", "Content-Type": "application/json"}, true)
+	if login.Code != http.StatusOK {
+		t.Fatalf("password login after disable failed: %d %s", login.Code, login.Body.String())
+	}
+	newSession, newCSRF := authCookies(t, login)
+	reboundHeaders := map[string]string{"Origin": "https://panel.test", "Content-Type": "application/json", "X-CSRF-Token": newCSRF.Value}
+	rebound := passkeyRequest(s, http.MethodPost, passkeyPrefix+"/origin", body, []*http.Cookie{newSession, newCSRF}, reboundHeaders, true)
+	if rebound.Code != http.StatusOK || !strings.Contains(rebound.Body.String(), `"available":true`) {
+		t.Fatalf("passkey origin rebind failed: %d %s", rebound.Code, rebound.Body.String())
+	}
+	if origin, _ := s.store.PasskeyOrigin(); origin != "https://panel.test" {
+		t.Fatalf("passkey origin was not rebound: %q", origin)
+	}
+}
+
 func TestPasskeyOriginRejectsUntrustedForwardedHost(t *testing.T) {
 	s, tokenPath := newTestServer(t)
 	session, csrf := bootstrapCookies(t, s, tokenPath)

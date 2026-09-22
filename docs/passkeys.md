@@ -9,6 +9,9 @@ CSRF、接口鉴权或 Panel/Agent 隔离，不改变集群、MCP、宿主机与
 设置中的“通行密钥”支持最多 10 个凭证、名称、最后使用时间和撤销。绑定与撤销要求当前密码，
 已启用 TOTP 时还须第二因素；完成后全部现有 Session 失效。设备私钥、生物识别数据不交给 Panel。
 支持同步型 Passkey 与有用户验证能力的硬件安全密钥；不承诺所有浏览器、密码管理器和硬件组合。
+设置中也支持“关闭 Passkey”：管理员确认当前密码及已启用的第二因素后，面板会原子清空绑定
+Origin、撤销全部 Passkey 和现有 Session；密码、TOTP 与恢复码保持不变，之后可从新的可信 HTTPS
+入口重新绑定。
 
 ## 部署入口
 
@@ -21,8 +24,9 @@ CSRF、接口鉴权或 Panel/Agent 隔离，不改变集群、MCP、宿主机与
 - RP ID 为该配置的精确主机名，不扩大到父域；Origin 包含协议、域名及非默认端口。
   不从每次请求的 Host 自动生成允许列表。只信任既有可信代理 CIDR，外部请求必须实际呈现 HTTPS。
 - 登录/注册的 HTTP Origin 与签名内 Origin 均校验；禁止跨源 iframe 和关联域名登录。
-- 变更域名后旧凭证不能在新 RP ID 使用，先通过密码及原第二因素登录重新绑定，再撤销旧凭证。
-  同域名改变端口仍需更新配置。旧域名凭证继续可在设置中撤销。
+- 变更域名后旧凭证不能在新 RP ID 使用。使用设置中的“关闭 Passkey”清空旧 Origin 和凭证，
+  再从新的可信 HTTPS 入口确认绑定；同域名改变端口也需要重新绑定。服务器配置锁定的 Origin
+  不能从面板关闭，必须先更新服务端配置。
 
 ## 协议与存储边界
 
@@ -58,7 +62,8 @@ TOTP 待确认绑定同样记录发起时的凭证版本，存储提交时原子
 
 ## 审计
 
-注册 begin、注册完成、撤销记录独立 `auth.passkey.*` 动作与 intent/success/failure；
+注册 begin、注册完成、撤销、关闭和重新绑定记录独立 `auth.passkey.*` 或
+`settings.passkey_origin.*` 动作与 intent/success/failure；
 Passkey 登录只记录 success 与限频 failure，匿名输入不能触发无界 intent 写入。
 敏感写入前审计不可用即拒绝；登录成功审计失败则撤销新 Session，不发认证 Cookie。凭证管理在
 intent 已持久化后变更，success 写失败仍保留 intent（审计库与身份 Store 不具备跨文件事务）。
