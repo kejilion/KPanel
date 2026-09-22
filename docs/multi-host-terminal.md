@@ -46,13 +46,22 @@
 本机：浏览器 Session + CSRF/Origin → paneld → Agent Unix Socket → 固定登录 Shell PTY
 
 远端：浏览器 Session + CSRF/Origin → 中心 paneld
-      → Noise v2 已认证加密通道 → 目标 paneld
-      → 目标 Agent Unix Socket → 固定登录 Shell PTY
+      → 目标已声明 panel-stream-v3 时：每会话一条 Noise 认证的流式连接（panel-terminal 角色）
+        否则：Noise v2 已认证加密请求
+      → 目标 paneld → 目标 Agent Unix Socket → 固定登录 Shell PTY
 
 轻量：浏览器 Session + CSRF/Origin → 中心 paneld
-       → 轻量节点主动发起的 HTTPS 长轮询（v2 Noise 加密） → root `terminal-broker`
-       → 固定登录 Shell PTY
+       → 流式控制连接在线时：节点回拨的 light-terminal-data 流式连接
+         否则：轻量节点主动发起的 HTTPS 长轮询（v2 Noise 加密）
+       → root `terminal-broker` → 固定登录 Shell PTY
+
+输出：中心/本机 paneld → 每个浏览器标签页一条 SSE（/api/v1/terminal-stream）
+      不可用时回退到 /api/v1/terminal-sessions/{id}/output 长轮询
 ```
+
+流式连接复用既有 `GET /api/v2/federation/files/stream` 端点与静态密钥，不新增监听端口；
+能力协商、回退与连接上限见 [集群监控与联邦协议](cluster-monitoring.md) 的"完整 Panel 流式传输 v3"，
+设计与实测对比见 [终端与文件传输 v3](terminal-file-transport-v3.md)。
 
 - 不开放新的 TCP、SSH、WebSocket 或 Agent 公网监听端口；轻量节点也不接受中心入站连接，终端命令只通过其主动 HTTPS 连接返回；
 - Panel 继续无特权运行，宿主机 PTY 仅由 root Agent 创建；
@@ -129,15 +138,18 @@ parent-death signal 覆盖 Agent 无法执行优雅清理的退出。应用层�
 | 单次输入 | 16 KiB |
 | 批量执行并发 | 最多 4，且扣除同一用户尚未结束的交互终端会话 |
 | 批量前端等待上限 | 4 小时；超时后请求关闭对应终端；瞬态输出轮询失败按指数退避最多重试 5 次 |
-| 批量完成判定 | 命令与 `exit` 分离发送：命令发出后等待稳定 shell 提示符（3 秒无新输出）再补发 `exit`，最多重试 3 次以退出菜单/子 shell；bash 退出时上报真实退出码，重试耗尽由前端关闭会话并按已回传状态判定 |
+| 批量完成判定 | 命令包装为 `{ 命令⏎}; printf '\n__KPANEL_DONE_<每次随机 128 位>_%s__\n' "$?"` 并在同一行输入，由 shell 在命令结束后立即打印真实退出码，读到标记即关闭会话并判定成功/失败，显示输出时去掉包装与标记行；标记未出现（如命令语法错误）时回退原规则：等待稳定 shell 提示符（3 秒无新输出）再补发 `exit`，最多重试 3 次，重试耗尽由前端关闭会话 |
 | 批量页面保留输出 | 每台主机最后 128 KiB 字符；更早内容明确标记为截断 |
 | 单次输出 | 本机最多 64 KiB；远端加密封装最多 32 KiB，可按偏移连续读取 |
 | 每会话输出缓冲 | 1 MiB，仅内存 |
 | 闲置关闭 | 30 分钟；长时间无输出触发的服务端回收仍按 30 分钟执行，最长会话 8 小时不变 |
 | 最长会话 | 8 小时 |
-| 浏览器长轮询 | 最长 1 秒 |
+| 浏览器输出推送 | 每标签页 1 条 SSE，每用户最多 8 条、全局 32 条；每条最多 16 个订阅（主机、批量、任务终端）；输出 4 ms 合并；15 秒心跳并复核会话，注销或过期后立即结束；订阅变更走带 CSRF 的 POST 并绑定会话令牌 |
+| 浏览器长轮询（回退） | 最长 1 秒；429 视为背压，300 ms 后重试且不显示"重连中" |
 | Panel 失联会话索引 | 35 分钟后回收 |
-| 轻量节点无活动终端轮询 | 25 秒长轮询；有活动会话时 750 ms 轮询 |
+| 远端流式终端 | 每会话 1 条连接；输出 3 ms 合并推送；输入/调整尺寸/关闭需确认；断线后按偏移重新附着，6 秒内无法恢复时同一会话继续走 v2 请求；中心 40 分钟无读取即释放连接 |
+| 轻量节点无活动终端轮询 | 25 秒长轮询；有活动会话时 750 ms 轮询（流式控制连接在线时新会话不走轮询） |
+| 轻量流式终端 | 每节点最多 4 个并发回拨；会话 2 分钟无中心重新附着即关闭 PTY |
 
 Panel 公共会话 ID 使用独立 256 位随机值并绑定当前管理员 ID，不向浏览器暴露 Agent 或远端
 真实会话 ID。本机会话在 Agent 或 Panel 退出时关闭；远端关闭请求因网络不可达而无法送达时，

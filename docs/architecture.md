@@ -48,10 +48,10 @@ Agent，由文件管理器在目标目录内暂存、`fsync` 并原子发布。A
 ## 集群监控边界
 
 每台 KPanel 都可以同时作为中心端和被控端。中心端通过 HTTPS，或在无域名时通过 Noise
-端到端加密的公网 `IP + 端口`，与远端 `paneld` 的固定联邦接口通信；远端 `paneld`
+端到端加密的公网 `IP + 端口`，与远端 `paneld` 的固定联邦接口通信（目标声明 `panel-stream-v3` 时，终端与文件改用同一端口上经 Noise 认证的流式连接）；远端 `paneld`
 再通过本机 Unix Socket 读取 Agent 的窄化主机摘要，或在独立终端 scope 下创建有界 PTY。
 无 KPanel 的轻量节点则由低权限 telemetry 进程和独立 root `terminal-broker` 组成：broker
-只通过授权中心的出站 HTTPS v2 Noise 长轮询接收固定终端 payload，并在本机创建同样的固定登录 Shell PTY。
+只通过授权中心的出站 HTTPS v2 Noise 长轮询或其主动建立的 Noise 流式连接接收固定终端 payload，并在本机创建同样的固定登录 Shell PTY。
 它不监听入站 TCP、SSH、HTTP、WebSocket 或低权限 Unix Socket。Agent Token 和管理员 Session
 不会跨主机传递；终端能力只通过独立授权、认证加密通道开放。
 
