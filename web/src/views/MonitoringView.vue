@@ -132,7 +132,7 @@ const monitoringCategories: Array<{ id: MonitoringCategoryId; label: string }> =
   { id: 'containers', label: '容器' },
   { id: 'checks', label: '服务检测' },
 ]
-const monitoringCategoryStorageKey = 'kpanel.monitoring.category'
+const monitoringCategoryStorageKey = 'kpanel:monitoring:category'
 function readMonitoringCategory(): MonitoringCategoryId {
   try {
     const saved = window.localStorage.getItem(monitoringCategoryStorageKey)
@@ -868,8 +868,7 @@ function chartIsSelected(...metrics: MonitoringMetric[]): boolean {
 
 async function focusSelectedMetric(): Promise<void> {
   const metric = selectedMetric.value
-  if (!metric || !history.value?.host.length) return
-  if (!monitoringCategoryVisible('host')) activeMonitoringCategory.value = 'host'
+  if (!metric || !history.value?.host.length || !monitoringCategoryVisible('host')) return
   await nextTick()
   document.getElementById(monitoringTargetId(metric))?.scrollIntoView({
     behavior: 'smooth',
@@ -877,6 +876,10 @@ async function focusSelectedMetric(): Promise<void> {
   })
 }
 
+// 指标深链只在链接变化时切回主机分类；之后换时间范围或刷新不再覆盖用户手动选择的分类。
+watch(selectedMetric, (metric) => {
+  if (metric && !monitoringCategoryVisible('host')) activeMonitoringCategory.value = 'host'
+}, { immediate: true })
 watch([selectedMetric, () => history.value?.host.length], () => void focusSelectedMetric(), { flush: 'post' })
 watch(containerHasAverage, (available) => {
   if (!available && containerCPUMode.value === 'average') containerCPUMode.value = 'peak'

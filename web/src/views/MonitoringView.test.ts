@@ -34,7 +34,7 @@ beforeEach(() => {
     { id: b, isLocal: false, name: '远程 B', kind: 'light_node', state: 'offline' },
   ] as ClusterHost[] })
 })
-afterEach(() => { wrapper?.unmount(); wrapper = undefined; localStorage.clear() })
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; localStorage.clear(); vi.unstubAllGlobals(); delete (Element.prototype as Partial<Element>).scrollIntoView })
 
 async function selectHost(view: VueWrapper, id: string) {
   await view.get('.monitoring-host-trigger').trigger('click')
@@ -85,7 +85,7 @@ describe('monitoring host selection', () => {
     expect(sections()).toEqual({ summary: false, host: false, containers: false, checks: true })
     await wrapper.get('[data-monitoring-category="host"]').trigger('click')
     expect(sections()).toEqual({ summary: true, host: true, containers: false, checks: false })
-    expect(localStorage.getItem('kpanel.monitoring.category')).toBe('host')
+    expect(localStorage.getItem('kpanel:monitoring:category')).toBe('host')
     wrapper.unmount()
     const { wrapper: remounted } = await mountAt()
     expect(remounted.get('[data-monitoring-category="host"]').attributes('aria-selected')).toBe('true')
@@ -94,11 +94,26 @@ describe('monitoring host selection', () => {
 
   it('reveals host charts when a metric deep link arrives while another category is active', async () => {
     Element.prototype.scrollIntoView = vi.fn()
-    localStorage.setItem('kpanel.monitoring.category', 'checks')
+    localStorage.setItem('kpanel:monitoring:category', 'checks')
     const { wrapper } = await mountAt('?metric=memory')
     await flushPromises()
     expect(wrapper.get('[data-monitoring-category="host"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('#host-memory-history').exists()).toBe(true)
+  })
+
+  it('keeps a manually chosen category when a metric deep link reloads history', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    const { wrapper, router } = await mountAt('?metric=cpu')
+    expect(wrapper.get('[data-monitoring-category="all"]').attributes('aria-selected')).toBe('true')
+    await wrapper.get('[data-monitoring-category="containers"]').trigger('click')
+    const reloaded = history()
+    reloaded.host.push({ ...reloaded.host[0]!, collectedAt: '2026-09-11T01:05:00Z' })
+    mocks.history.mockResolvedValue(reloaded)
+    await router.push('/monitoring?metric=cpu&range=24h')
+    await flushPromises()
+    expect(mocks.history).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-monitoring-category="containers"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('.chart-grid').exists()).toBe(false)
   })
 
   it('orders the host picker from the panel preference', async () => {
