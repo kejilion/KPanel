@@ -36,3 +36,14 @@ describe('batch wrapper stripping edge cases', () => {
     expect(stripBatchWrapper('{ "json": true }\nok', '\necho ok', marker)).toBe('{ "json": true }\nok')
   })
 })
+
+describe('batch wrapper stripping repeats', () => {
+  it('strips the group prefix from every echoed copy of the command', () => {
+    const marker = '__KPANEL_DONE_ab_'
+    const output = `uptime\nroot@h:~# { uptime\n> }; printf '\n${marker}%s__\n' "$?"\n up 13 min\n${marker}0__\nroot@h:~#`
+    const stripped = stripBatchWrapper(output, 'uptime', marker)
+    expect(stripped).not.toContain('{ uptime')
+    expect(stripped).toContain('root@h:~# uptime')
+    expect(stripped).toContain('up 13 min')
+  })
+})
