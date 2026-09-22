@@ -410,6 +410,7 @@ const compactIconLayout = ref(window.innerWidth <= 760)
 const widgetLayoutVisible = ref(window.innerWidth > 900)
 const localPositions = ref<Record<string, DesktopIconPosition>>({})
 const localWidgetPositions = ref<Record<string, DesktopIconPosition>>({})
+const entryLoadAnchors = ref<Record<string, DesktopIconPosition>>({})
 const dragPreviews = ref<Record<string, { left: number; top: number }>>({})
 const iconDragSurfaceHeight = ref(0)
 const draggingIcons = ref<Set<string>>(new Set())
@@ -736,6 +737,10 @@ const desktopWidgetItems = computed<DesktopGridItem[]>(() => {
 
 const allDesktopLayoutItems = computed<DesktopGridItem[]>(() => [
   ...allIconKeys.value.filter(key => !groupMembership.value.has(key)).map((key) => ({ key })),
+  // Reserve saved app/site slots while their inventory is still loading.
+  ...Object.keys(localPositions.value).filter(key => entriesLoading.value
+    && /^(app|site):/.test(key) && !hiddenEntryKeys.value.has(key)
+    && !groupMembership.value.has(key) && !allIconKeys.value.includes(key)).map(key => ({ key })),
   ...desktopWidgetItems.value,
   ...groupItems(),
 ])
@@ -752,6 +757,7 @@ function widgetComponentProps(key: string): Record<string, unknown> {
 }
 
 const savedPlacements = computed<Array<Pick<DesktopGridPlacement, 'key' | 'position'>>>(() => [
+  ...Object.entries(entryLoadAnchors.value).map(([key, position]) => ({ key, position })),
   ...Object.entries(localPositions.value).map(([key, position]) => ({ key, position })),
   ...Object.entries(localWidgetPositions.value).map(([key, position]) => ({ key, position })),
 ])
@@ -770,6 +776,7 @@ const renderedDesktopLayout = computed(() => layoutBeforeResize.value
 // A user edit or a new server snapshot becomes the new layout to preserve.
 watch([localPositions, localWidgetPositions, localGroups], () => {
   layoutBeforeResize.value = undefined
+  entryLoadAnchors.value = {}
 }, { flush: 'sync' })
 
 const renderedIconLayout = computed(() => {
@@ -1360,8 +1367,8 @@ function measureIconWorkArea(): void {
   widgetLayoutVisible.value = widgetsVisible
 }
 
-watch([entriesLoading, () => desktopIcons.loading.value], async ([entriesBusy, workspaceBusy], _, onCleanup) => {
-  if (entriesBusy || workspaceBusy || initialLayoutReady.value) return
+watch(() => desktopIcons.loading.value, async (workspaceBusy, _, onCleanup) => {
+  if (workspaceBusy || initialLayoutReady.value) return
   let cancelled = false
   onCleanup(() => { cancelled = true })
   measureIconWorkArea()
@@ -3399,6 +3406,12 @@ async function closeTaskbarWindow(): Promise<void> {
   await windowHandle?.requestClose()
 }
 
+function preserveVisibleEntryLayout(): void {
+  if (!initialLayoutReady.value) return
+  entryLoadAnchors.value = Object.fromEntries(renderedDesktopLayout.value.placements
+    .map(({ key, position }) => [key, { ...position }]))
+}
+
 async function loadEntries(force = false): Promise<void> {
   entriesAbort?.abort()
   entriesAbort = new AbortController()
@@ -3407,11 +3420,15 @@ async function loadEntries(force = false): Promise<void> {
   try {
     const nextEntries = await loadDesktopEntries(entriesAbort.signal, undefined, force)
     if (sequence === entriesSequence) {
+      preserveVisibleEntryLayout()
       entries.value = applySiteNames(nextEntries)
       void loadSiteAppearanceNames(nextEntries, entriesAbort.signal, sequence)
     }
   } catch {
-    if (sequence === entriesSequence) entries.value = undefined
+    if (sequence === entriesSequence) {
+      preserveVisibleEntryLayout()
+      entries.value = undefined
+    }
   } finally {
     if (sequence === entriesSequence) entriesLoading.value = false
   }

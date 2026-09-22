@@ -185,19 +185,16 @@ export async function loadDesktopEntries(
   if (!force && cached) return cached
   const previous = desktopEntriesCache.get(key)
 
-  const publicNetwork = directHost
-    ? undefined
-    : await api.system.publicNetwork(signal).catch(() => previous?.publicNetwork)
+  const [publicNetwork, inventory, sites] = await Promise.all([
+    directHost ? undefined : api.system.publicNetwork(signal).catch(() => previous?.publicNetwork),
+    api.apps.inventory(signal).catch(() => undefined),
+    api.sites.list(undefined, signal).catch(() => undefined),
+  ])
   const host =
     directHost ||
     publicNetwork?.ipv4 ||
     publicNetwork?.ipv6 ||
     window.location.hostname
-
-  const [inventory, sites] = await Promise.all([
-    api.apps.inventory(signal).catch(() => undefined),
-    api.sites.list(undefined, signal).catch(() => undefined),
-  ])
 
   if (!inventory && !sites && previous) return previous
   const siteItems = sites?.items || previous?.sites.flatMap((entry) => entry.site ? [entry.site] : []) || []
