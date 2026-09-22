@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.11] - 2026-09-22
+
+本预览版补齐 rc.10 遗漏的 Passkey trusted-origin 与桌面异步清单候选修正。
+
+### Added
+
+- Passkey 可从直连 TLS 或受信任的 KFD 代理识别浏览器 HTTPS origin；显式服务端配置保持最高优先级，并在已有凭据时阻止 origin 重绑定。
+
+### Changed
+
+- Passkey origin 持久化前要求当前管理因子确认，并记录变更审计；同步所有支持语言的设置与确认流程文案。
+- 桌面并行加载应用/站点清单与公网地址，清单未完成时保留已保存位置；图标加载期间维持可操作的回退图形，避免异步首帧跳位。
+
+### Fixed
+
+- 补齐 Passkey origin 配置、凭据存储、备份和前端设置回归测试，以及桌面异步 inventory、布局恢复和图标加载回归测试。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会标记 GitHub prerelease 并提升 Docker `preview`，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- 本版包含认证 origin 配置和桌面首帧稳定性候选，建议仅由主动加入预览计划的用户验证。
+- `scriptLinkageState=not-required`：本轮未修改 `kejilion.sh` 或其调用契约，继续使用既有受管脚本基线。
+
 ## [1.21.0-rc.10] - 2026-09-22
 
 本预览版收敛 rc.9 之后的安全审计覆盖并集、候选门禁和发布流程指标治理修正。
