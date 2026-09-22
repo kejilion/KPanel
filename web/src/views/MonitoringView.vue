@@ -125,6 +125,30 @@ const diskChartMode = ref<'capacity' | 'io'>('capacity')
 const networkChartMode = ref<'traffic' | 'connections'>('traffic')
 const operatorLatencyVisibility = ref<Record<string, boolean>>({})
 const activeCheckKind = ref<MonitoringCheckKind>('ping')
+type MonitoringCategoryId = 'all' | 'host' | 'containers' | 'checks'
+const monitoringCategories: Array<{ id: MonitoringCategoryId; label: string }> = [
+  { id: 'all', label: '全部' },
+  { id: 'host', label: '主机' },
+  { id: 'containers', label: '容器' },
+  { id: 'checks', label: '服务检测' },
+]
+const monitoringCategoryStorageKey = 'kpanel.monitoring.category'
+function readMonitoringCategory(): MonitoringCategoryId {
+  try {
+    const saved = window.localStorage.getItem(monitoringCategoryStorageKey)
+    return monitoringCategories.find((category) => category.id === saved)?.id ?? 'all'
+  } catch {
+    return 'all'
+  }
+}
+const activeMonitoringCategory = ref<MonitoringCategoryId>(readMonitoringCategory())
+function selectMonitoringCategory(category: MonitoringCategoryId): void {
+  activeMonitoringCategory.value = category
+  try { window.localStorage.setItem(monitoringCategoryStorageKey, category) } catch { /* 仅为便利记忆，失败不影响切换 */ }
+}
+function monitoringCategoryVisible(category: Exclude<MonitoringCategoryId, 'all'>): boolean {
+  return activeMonitoringCategory.value === 'all' || activeMonitoringCategory.value === category
+}
 const checksDialogOpen = ref(false)
 const activeWindow = ref<MonitoringHistoryQuery>()
 const rootHistory = shallowRef<MonitoringHistory>()
@@ -294,6 +318,10 @@ const activeHostNetwork = computed(() => networkChartMode.value === 'traffic'
   : hostNetworkConnections.value)
 const allMonitoringChecks = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
 const operatorLatencyRoutes = computed(() => allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === activeCheckKind.value))
+const monitoringCategoryCounts = computed<Partial<Record<MonitoringCategoryId, number>>>(() => ({
+  containers: containerCatalog.value.length,
+  checks: allMonitoringChecks.value.length,
+}))
 const checkKindCounts = computed<Record<MonitoringCheckKind, number>>(() => ({
   ping: allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === 'ping').length,
   tcp: allMonitoringChecks.value.filter((series) => series.kind === 'tcp').length,
@@ -845,6 +873,7 @@ function chartIsSelected(...metrics: MonitoringMetric[]): boolean {
 async function focusSelectedMetric(): Promise<void> {
   const metric = selectedMetric.value
   if (!metric || !history.value?.host.length) return
+  if (!monitoringCategoryVisible('host')) activeMonitoringCategory.value = 'host'
   await nextTick()
   document.getElementById(monitoringTargetId(metric))?.scrollIntoView({
     behavior: 'smooth',
@@ -939,7 +968,21 @@ onBeforeUnmount(() => {
         {{ selectedHost?.kind === 'light_node' ? '轻量节点 · 含容器与服务检测' : '集群主机 · 含容器与服务检测' }}
         <span v-if="selectedHost && !['online', 'degraded'].includes(selectedHost.state)" class="monitoring-host-offline">· 当前未在线，连接恢复后可查询历史</span>
       </span>
-      <span v-else class="monitoring-host-meta">本机监控 · 含容器与服务检测</span>
+      <div class="monitoring-categories" role="tablist" aria-label="监控分类">
+        <button
+          v-for="category in monitoringCategories"
+          :key="category.id"
+          type="button"
+          role="tab"
+          :aria-selected="activeMonitoringCategory === category.id"
+          :class="{ 'is-active': activeMonitoringCategory === category.id }"
+          :data-monitoring-category="category.id"
+          @click="selectMonitoringCategory(category.id)"
+        >
+          <span>{{ phrase(category.label) }}</span>
+          <small v-if="monitoringCategoryCounts[category.id] !== undefined">{{ monitoringCategoryCounts[category.id] }}</small>
+        </button>
+      </div>
     </div>
     <p v-if="hostsError" class="monitoring-warning" role="status">{{ hostsError }}</p>
     <p v-if="isRemoteHost" class="monitoring-source-note">历史保存在所选主机，采样与本机一致；连接恢复后可查看断线期间的记录。</p>
@@ -983,7 +1026,7 @@ onBeforeUnmount(() => {
     <LoadingState v-if="loading" :rows="4" cards label="正在读取历史监控数据" />
     <ErrorState v-else-if="error" title="历史监控读取失败" :message="error" @retry="load()" />
     <template v-else-if="history">
-      <div v-if="history.host.length" class="summary-grid">
+      <div v-if="history.host.length && monitoringCategoryVisible('host')" class="summary-grid">
         <article class="summary-card">
           <span class="summary-card__icon"><Cpu :size="19" /></span>
           <div><span>CPU</span><strong>{{ formatPercent(latestHost?.cpuPercent) }}</strong></div>
@@ -1016,6 +1059,7 @@ onBeforeUnmount(() => {
         {{ history.storage.lastError || '历史数据已达到固定存储上限，系统将优先保留最新数据。' }}
       </div>
 
+      <template v-if="monitoringCategoryVisible('host')">
       <div v-if="history.host.length" class="chart-grid">
         <article
           id="host-cpu-load-history"
@@ -1069,8 +1113,9 @@ onBeforeUnmount(() => {
         </article>
       </div>
       <EmptyState v-else title="所选时间内暂无历史数据" description="功能启用后约 1 分钟生成首个主机采样点，刷新页面即可查看。" />
+      </template>
 
-      <section class="container-section">
+      <section v-if="monitoringCategoryVisible('containers')" class="container-section">
         <header class="section-heading">
           <div>
             <span class="section-heading__icon"><Box :size="18" /></span>
@@ -1179,7 +1224,7 @@ onBeforeUnmount(() => {
         <EmptyState v-else title="暂无容器历史数据" description="没有运行中的 Docker 容器，或首轮容器采样尚未完成。" />
       </section>
 
-      <article class="chart-card chart-card--wide operator-latency-card service-check-card">
+      <article v-if="monitoringCategoryVisible('checks')" class="chart-card chart-card--wide operator-latency-card service-check-card">
         <header class="operator-latency-heading">
           <div>
             <span class="operator-latency-icon"><RadioTower :size="18" /></span>
@@ -1324,6 +1369,12 @@ onBeforeUnmount(() => {
 .monitoring-host-trigger:focus-visible, .monitoring-host-option:focus-visible, .monitoring-host-retry:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .monitoring-host-meta, .monitoring-source-note { font-size: 13px; line-height: 1.65; color: var(--text-secondary); }
 .monitoring-host-offline { color: var(--amber); }
+.monitoring-categories { display: flex; flex-wrap: wrap; gap: 8px; }
+.monitoring-categories button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted-strong); background: var(--surface-raised); cursor: pointer; font: inherit; font-size: 0.88rem; transition: border-color 160ms ease, background 160ms ease, color 160ms ease; }
+.monitoring-categories button:hover { border-color: color-mix(in srgb, var(--brand) 38%, var(--line)); color: var(--text); }
+.monitoring-categories button.is-active { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); background: var(--brand-soft); color: var(--brand-strong); }
+.monitoring-categories button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.monitoring-categories small { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 9%, transparent); color: inherit; font-size: 0.75rem; text-align: center; }
 .monitoring-source-note { margin: 0; }
 .monitoring-page { display: grid; align-content: start; gap: 18px; }
 .monitoring-page :deep(.trend-chart__line) { transition: opacity .14s ease; }
@@ -1530,6 +1581,8 @@ onBeforeUnmount(() => {
   .container-charts { grid-template-columns: 1fr; }
 }
 @media (max-width: 780px) {
+  .monitoring-categories { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .monitoring-categories button { flex: 0 0 auto; }
   .monitoring-toolbar { flex-wrap: wrap; }
   .range-button { flex: 1 1 calc(33.333% - 6px); justify-content: center; padding: 0 8px; }
   .monitoring-toolbar__meta { width: 100%; margin-left: 0; padding: 4px 8px; }

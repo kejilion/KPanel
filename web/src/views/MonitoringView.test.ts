@@ -69,6 +69,38 @@ describe('monitoring host selection', () => {
     expect(wrapper.findAll('.service-status-row')).toHaveLength(1)
   })
 
+  it('switches between all, host, container and service check categories and remembers the choice', async () => {
+    const { wrapper } = await mountAt()
+    const sections = () => ({
+      summary: wrapper.find('.summary-grid').exists(),
+      host: wrapper.find('.chart-grid').exists(),
+      containers: wrapper.find('.container-section').exists(),
+      checks: wrapper.find('.service-check-card').exists(),
+    })
+    expect(wrapper.find('[data-monitoring-category="all"]').attributes('aria-selected')).toBe('true')
+    expect(sections()).toEqual({ summary: true, host: true, containers: true, checks: true })
+    await wrapper.get('[data-monitoring-category="containers"]').trigger('click')
+    expect(sections()).toEqual({ summary: false, host: false, containers: true, checks: false })
+    await wrapper.get('[data-monitoring-category="checks"]').trigger('click')
+    expect(sections()).toEqual({ summary: false, host: false, containers: false, checks: true })
+    await wrapper.get('[data-monitoring-category="host"]').trigger('click')
+    expect(sections()).toEqual({ summary: true, host: true, containers: false, checks: false })
+    expect(localStorage.getItem('kpanel.monitoring.category')).toBe('host')
+    wrapper.unmount()
+    const { wrapper: remounted } = await mountAt()
+    expect(remounted.get('[data-monitoring-category="host"]').attributes('aria-selected')).toBe('true')
+    expect(remounted.find('.container-section').exists()).toBe(false)
+  })
+
+  it('reveals host charts when a metric deep link arrives while another category is active', async () => {
+    Element.prototype.scrollIntoView = vi.fn()
+    localStorage.setItem('kpanel.monitoring.category', 'checks')
+    const { wrapper } = await mountAt('?metric=memory')
+    await flushPromises()
+    expect(wrapper.get('[data-monitoring-category="host"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('#host-memory-history').exists()).toBe(true)
+  })
+
   it('orders the host picker from the panel preference', async () => {
     mocks.hosts.mockResolvedValueOnce({
       items: [
