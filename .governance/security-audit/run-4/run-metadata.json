@@ -1,0 +1,73 @@
+{
+  "run_id": "kejilion-panel-run-4",
+  "repo": "kejilion/KPanel",
+  "target": "C:/GitHub/_codex-tasks/kpanel-v1.21.0-rc.1-20260919",
+  "source_ref": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "source_tree": "de988b2c9939aa9f8d2ae123c4170b481e04e87d",
+  "source_dirty": false,
+  "profile": "standard",
+  "project_mode": "full",
+  "scope_paths": null,
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "sandbox_note": "Source-only; the Windows host does not establish the skill-required OS network, environment, read-only mount, scratch-only write, and resource isolation controls. Target-controlled code is not executed.",
+  "target_execution_performed": false,
+  "companion_files_selected": [
+    "AI-AND-LLM.md",
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "PROTOCOLS-RPC-AND-MESSAGING.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md"
+  ],
+  "prior_run_paths": [
+    "C:/GitHub/_codex-tasks/kpanel-v1.21.0-rc.1-20260919/.governance/security-audit/run-1",
+    "C:/GitHub/_codex-tasks/kpanel-security-audit-run2-local-20260919/.governance/security-audit/run-2",
+    "C:/GitHub/_codex-tasks/kpanel-v1.21.0-rc.1-20260919/.governance/security-audit/run-3"
+  ],
+  "shared_file_owners": {
+    "run-metadata.json": "parent",
+    "architecture.md": "parent",
+    "coverage-ledger.json": "parent",
+    "findings.json": "parent",
+    "REPORT.md": "parent",
+    "FINDINGS-DETAIL.md": "parent",
+    "NEEDS-VALIDATION.md": "parent"
+  },
+  "skill_source": {
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "pinned_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+    "skill_dir": "C:/GitHub/_codex-tmp/security-audit-skill-20260919/skills/security-audit"
+  },
+  "source_input_policy": "Git tracked source only; ignored and untracked files are not audit inputs",
+  "started_at": "2026-09-21T06:45:37.9536736Z",
+  "run_status": "complete",
+  "plan": {
+    "units": 127,
+    "recon": 4,
+    "hunters_wave1": 12,
+    "post_wave_critic": 1,
+    "final_clean_critic": 1,
+    "validation_reserve": "one fresh Phase 3 and one distinct Phase 5 verifier per candidate; no strict budget"
+  },
+  "prior_run_note": "run-1 full baseline is historical and dirty-source-limited; run-2 is scoped; run-3 is incomplete with no coverage claim. Every inherited unit is current planned work and no prior covered status is counted as run-4 evidence.",
+  "completed_at": "2026-09-21T16:05:43.240Z",
+  "final_summary": {
+    "coverage_units": 127,
+    "covered_units": 95,
+    "candidate_units": 32,
+    "findings": {
+      "confirmed": 0,
+      "needs_validation": 34,
+      "rejected": 1
+    },
+    "phase3_dispositions": 35,
+    "retained_phase5_verified": 34,
+    "pending_replacements": 0,
+    "phase3_invalid_discarded": 7,
+    "target_execution_performed": false
+  }
+}
