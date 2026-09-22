@@ -190,6 +190,7 @@ onBeforeUnmount(() => {
 .passkey-setup { display: grid; gap: 4px; margin: 16px 0; }
 .passkey-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .passkey-actions--main .button--danger-text { margin-left: auto; }
+.passkey-actions--main + .passkey-note { margin: 12px 0 0; }
 .passkey-settings .button, .passkey-settings input, .passkey-settings .button-link { font-size: 14px; }
 @media (max-width: 600px) { .passkey-settings { padding: 16px; } }
 </style>
