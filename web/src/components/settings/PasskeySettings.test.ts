@@ -86,7 +86,7 @@ describe('Passkey management', () => {
 
   it('disables Passkey without changing password or two-step verification and returns to login', async () => {
     await render()
-    await wrapper.get('button.button--danger').trigger('click')
+    await wrapper.get('button.button--danger-text').trigger('click')
     expect(wrapper.text()).toContain('清空绑定域名')
     await fillAuthentication()
     await wrapper.get('form').trigger('submit')
