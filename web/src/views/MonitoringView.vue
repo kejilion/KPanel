@@ -318,10 +318,6 @@ const activeHostNetwork = computed(() => networkChartMode.value === 'traffic'
   : hostNetworkConnections.value)
 const allMonitoringChecks = computed<MonitoringOperatorLatencySeries[]>(() => history.value?.operatorLatency || [])
 const operatorLatencyRoutes = computed(() => allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === activeCheckKind.value))
-const monitoringCategoryCounts = computed<Partial<Record<MonitoringCategoryId, number>>>(() => ({
-  containers: containerCatalog.value.length,
-  checks: allMonitoringChecks.value.length,
-}))
 const checkKindCounts = computed<Record<MonitoringCheckKind, number>>(() => ({
   ping: allMonitoringChecks.value.filter((series) => (series.kind || 'ping') === 'ping').length,
   tcp: allMonitoringChecks.value.filter((series) => series.kind === 'tcp').length,
@@ -979,8 +975,7 @@ onBeforeUnmount(() => {
           :data-monitoring-category="category.id"
           @click="selectMonitoringCategory(category.id)"
         >
-          <span>{{ phrase(category.label) }}</span>
-          <small v-if="monitoringCategoryCounts[category.id] !== undefined">{{ monitoringCategoryCounts[category.id] }}</small>
+          {{ phrase(category.label) }}
         </button>
       </div>
     </div>
@@ -1374,7 +1369,6 @@ onBeforeUnmount(() => {
 .monitoring-categories button:hover { border-color: color-mix(in srgb, var(--brand) 38%, var(--line)); color: var(--text); }
 .monitoring-categories button.is-active { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); background: var(--brand-soft); color: var(--brand-strong); }
 .monitoring-categories button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.monitoring-categories small { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 9%, transparent); color: inherit; font-size: 0.75rem; text-align: center; }
 .monitoring-source-note { margin: 0; }
 .monitoring-page { display: grid; align-content: start; gap: 18px; }
 .monitoring-page :deep(.trend-chart__line) { transition: opacity .14s ease; }
