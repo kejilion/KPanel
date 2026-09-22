@@ -44,6 +44,8 @@ type fileStreamNodeOptions struct {
 	advertiseStream bool
 	rejectStream    bool
 	terminal        cluster.TerminalBackend
+	// latency delays each direction of the controller's outbound connections.
+	latency time.Duration
 }
 
 type fileStreamNode struct {
@@ -120,7 +122,11 @@ func newFileStreamNodeWith(t *testing.T, options fileStreamNodeOptions) *fileStr
 		if err != nil {
 			return nil, err
 		}
-		return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		if err != nil || options.latency == 0 {
+			return conn, err
+		}
+		return newLatencyConn(conn, options.latency), nil
 	}})
 	if err != nil {
 		t.Fatal(err)
