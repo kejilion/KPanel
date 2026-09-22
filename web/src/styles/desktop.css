@@ -1916,6 +1916,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   background: transparent;
 }
 
+/* Keep a usable fallback in the same cell until each image arrives independently. */
+.desktop__icon-glyph > * { grid-area: 1 / 1; }
+.desktop__icon-img--loading { opacity: 0; }
+
 .desktop__icon-glyph--shortcut::before {
   display: none;
 }

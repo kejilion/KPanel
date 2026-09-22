@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppMarketItem, Site } from '@/types/api'
+import type { AppMarketItem, PublicNetworkSummary, Site } from '@/types/api'
 import { clearDesktopEntriesCacheForTest, loadDesktopEntries } from './desktopEntries'
 import { api } from '@/lib/api'
 
@@ -94,6 +94,18 @@ describe('desktop entries', () => {
     expect(entries.apps[0]!.kind).toBe('app')
     expect(entries.apps[0]!.url).toContain('8080')
     expect(entries.visible).toHaveLength(1)
+  })
+
+  it('starts inventory and sites while public network discovery is still pending', async () => {
+    let release!: (value: PublicNetworkSummary) => void
+    vi.mocked(api.system.publicNetwork).mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+    vi.mocked(api.apps.inventory).mockResolvedValue(inventory([makeApp({ id: 'nginx' })]))
+    vi.mocked(api.sites.list).mockResolvedValue({ items: [], total: 0 })
+    const pending = loadDesktopEntries()
+    expect(api.apps.inventory).toHaveBeenCalledOnce()
+    expect(api.sites.list).toHaveBeenCalledOnce()
+    release({ ipv4: '192.168.1.5' })
+    expect((await pending).apps[0]?.url).toBe('http://192.168.1.5:8080')
   })
 
   it('keeps KPanel manageable but hides its redundant desktop self-entry', async () => {

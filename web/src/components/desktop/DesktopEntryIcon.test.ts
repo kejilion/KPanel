@@ -62,6 +62,24 @@ describe('DesktopEntryIcon touch interaction', () => {
     wrapper.unmount()
   })
 
+  it('keeps an actionable fallback until each image loads and resets it for a new URL', async () => {
+    const wrapper = mountIcon()
+    await wrapper.setProps({ navIconURL: '/slow.webp' })
+    expect(wrapper.get('.desktop__icon-monogram').text()).toBe('概')
+    expect(wrapper.get('img').classes()).toContain('desktop__icon-img--loading')
+    await wrapper.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('open')).toHaveLength(1)
+    await wrapper.get('img').trigger('load')
+    expect(wrapper.find('.desktop__icon-monogram').exists()).toBe(false)
+    expect(wrapper.get('img').classes()).not.toContain('desktop__icon-img--loading')
+    await wrapper.setProps({ navIconURL: '/other.webp' })
+    expect(wrapper.find('.desktop__icon-monogram').exists()).toBe(true)
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.find('.desktop__icon-monogram').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it.each([
     ['file', FileText],
     ['directory', FolderOpen],

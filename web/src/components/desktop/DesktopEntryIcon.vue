@@ -42,6 +42,7 @@ const CLICK_SUPPRESSION_DURATION = 800
 
 const iconElement = ref<HTMLButtonElement>()
 const imageFailed = ref(false)
+const imageLoaded = ref(false)
 let activePointerId: number | undefined
 let longPressTimer: number | undefined
 let pressX = 0
@@ -56,6 +57,7 @@ watch(
   () => props.navIconURL || props.entry?.iconURL,
   () => {
     imageFailed.value = false
+    imageLoaded.value = false
   },
 )
 
@@ -255,7 +257,7 @@ onBeforeUnmount(clearLongPress)
       <img
         v-if="(navIconURL || entry?.iconURL) && !imageFailed"
         class="desktop__icon-img"
-        :class="{ 'desktop__icon-img--native': Boolean(navIconURL) }"
+        :class="{ 'desktop__icon-img--native': Boolean(navIconURL), 'desktop__icon-img--loading': !imageLoaded }"
         :src="navIconURL || entry?.iconURL"
         alt=""
         draggable="false"
@@ -265,23 +267,26 @@ onBeforeUnmount(clearLongPress)
         width="38"
         height="38"
         @error="onImageError"
+        @load="imageLoaded = true"
       />
-      <DesktopShortcutArtwork
-        v-else-if="fileShortcutKind && (navIcon || entry?.icon)"
-        :kind="fileShortcutKind"
-        :icon="navIcon || entry?.icon"
-      />
-      <component
-        v-else-if="navIcon || entry?.icon"
-        :is="navIcon || entry?.icon"
-        :size="38"
-        :stroke-width="1.6"
-        aria-hidden="true"
-      />
-      <span v-else-if="entry?.kind === 'site'" class="desktop__site-fallback" aria-hidden="true">
-        <span class="desktop__site-fallback-letter">{{ monogram }}</span>
-      </span>
-      <span v-else class="desktop__icon-monogram" aria-hidden="true">{{ monogram }}</span>
+      <template v-if="!imageLoaded || imageFailed">
+        <DesktopShortcutArtwork
+          v-if="fileShortcutKind && (navIcon || entry?.icon)"
+          :kind="fileShortcutKind"
+          :icon="navIcon || entry?.icon"
+        />
+        <component
+          v-else-if="navIcon || entry?.icon"
+          :is="navIcon || entry?.icon"
+          :size="38"
+          :stroke-width="1.6"
+          aria-hidden="true"
+        />
+        <span v-else-if="entry?.kind === 'site'" class="desktop__site-fallback" aria-hidden="true">
+          <span class="desktop__site-fallback-letter">{{ monogram }}</span>
+        </span>
+        <span v-else class="desktop__icon-monogram" aria-hidden="true">{{ monogram }}</span>
+      </template>
     </span>
     <span class="desktop__icon-label">{{ label }}</span>
     <span
