@@ -12,7 +12,7 @@
 
 `releaseTrain`：`1.21.0`
 
-候选分支与发布后处置：`release/v1.21.0-candidate` 保留，远端候选分支、`main` 和预览标签均精确指向 `e122b189f9e9606635d04f43eedea2f4d80d8b07`。`e122b189` 是仅用于重跑候选门禁的空提交，不改变 rc.13 的产品树；验收记录提交只会使 `main` 继续前进，不改变产品标签。预览版不执行候选分支归档，Release workflow 的归档步骤按预期跳过。
+候选分支与发布后处置：`release/v1.21.0-candidate` 保留，远端候选分支和预览标签精确指向 `e122b189f9e9606635d04f43eedea2f4d80d8b07`；`main` 随验收记录提交前进至 `d4ef6b56074440f64bb23a112437a36a1524bb7d`，不改变产品标签。`e122b189` 是仅用于重跑候选门禁的空提交，不改变 rc.13 的产品树。预览版不执行候选分支归档，Release workflow 的归档步骤按预期跳过。
 
 本版只发布 GitHub Pre-release 与 Docker `1.21.0-rc.13`/`preview`，不部署生产、不更新 GitHub Latest、不更新 Docker `latest`。
 
@@ -33,6 +33,7 @@
 
 - 候选 Dependency freshness：[#542](https://github.com/kejilion/KPanel/actions/runs/35700034339) 成功，绑定 `dc7fdde5403bce327539a77c8019d6e86657d821`；重跑后的候选 CI [#1036](https://github.com/kejilion/KPanel/actions/runs/35700914788) 成功，绑定 `e122b189f9e9606635d04f43eedea2f4d80d8b07`。
 - 主线 CI [#1037](https://github.com/kejilion/KPanel/actions/runs/35701534437) 和主线 Dependency freshness [#543](https://github.com/kejilion/KPanel/actions/runs/35701534455) 均成功并绑定同一产品 SHA；标签 Dependency freshness [#545](https://github.com/kejilion/KPanel/actions/runs/35702662516) 成功并绑定 `v1.21.0-rc.13`。
+- 验收记录提交后的主线 CI [#1039](https://github.com/kejilion/KPanel/actions/runs/35704612715) 也成功，绑定文档提交 `d4ef6b56074440f64bb23a112437a36a1524bb7d`；该提交只包含验收记录与 CI 重试，不改变产品标签。
 - L3 回退环境 `local-wsl-dr`：run ID `v1.21.0-rc.13-e122b18-l3-r1`，候选 `e122b189f9e9606635d04f43eedea2f4d80d8b07`，`status=passed`、`exit_code=0`；开始 `2026-09-22T07:42:57Z`，完成 `2026-09-22T07:48:49Z`。Runner image `kpanel-release-gate:go1.26.7-node24`，Runner ID `sha256:a9f708891d1e81f17dd286bc7e9d6124658964716dc9a457b5c73340722f6a7d`，base tag `v1.20.0`。
 - L3 证据目录：`C:/GitHub/_release-evidence/v1.21.0-rc.13-e122b18-l3-r1`。bundle SHA-256 `4b98870592a7d6134768d0048eff721407e82dfa6387a5453990656260dc1f3a`，plan SHA-256 `f5d8a054af26becca2e4bcfa7532c4dc1d87877474ddf2d2f48c2134b67db2a7`，远端脚本 SHA-256 `21c08b11be3526a0fe766aa606a81d0e4047e8a4e89d79227da4e62914164979`，L3 日志 SHA-256 `9983420ba684c5ceda5cf07524943936f7d0ba58f546f4d321cf5f86c78b1f51`，manifest SHA-256 `bef5b5fdd11777ee433b7e0afd18906b1ca66ef04acf7ed63c45e2cb4b766734`。
 - L3 通过项目：Go 全量测试、`internal/panel`/`internal/auth`/`internal/dockerx` race、Web 测试、typecheck/build、govulncheck、npm audit、Trivy、双架构构建、managed script contract、镜像运行时限制和 app config lifecycle。
@@ -93,7 +94,7 @@
     "position": "before-production-write",
     "count": 1,
     "impact": "验收记录提交后的主线 CI #1038（run 35704106382）仅在 Detect races in privileged core packages 步骤失败，文档变更未进入产品标签或生产。",
-    "recoveryEvidence": "产品 SHA e122b189 的主线 CI #1037 已成功；随后创建不改产品树的重试提交 fc2c71ee6348da8ac13c8c718e3babcf13ec86d2，重新执行主线门禁。",
+    "recoveryEvidence": "产品 SHA e122b189 的主线 CI #1037 已成功；随后创建不改产品树的重试提交 fc2c71ee6348da8ac13c8c718e3babcf13ec86d2，最终主线 CI #1039（run 35704612715）成功。",
     "permanentAction": "文档验收提交也必须等待主线 race 门禁；失败时保留原始 run，使用独立重试提交恢复，不把文档 CI 抖动误判为产品漏洞或跳过 race 检查。",
     "historicalReleases": []
   }
