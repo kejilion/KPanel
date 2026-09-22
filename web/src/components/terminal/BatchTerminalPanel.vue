@@ -6,7 +6,9 @@ import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import { ApiError, api } from '@/lib/api'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import { batchExitCode, createBatchMarker, stripBatchWrapper, wrapBatchCommand } from '@/lib/batchCompletion'
 import { drainTerminalInputQueue, TerminalInputQueue } from '@/lib/terminalInput'
+import { createTerminalOutputReader, type TerminalOutputReader } from '@/lib/terminalOutputReader'
 import type { ClusterHost } from '@/types/api'
 
 function phrase(value: string): string {
@@ -242,6 +244,8 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
   result.state = 'connecting'
   let sessionID = ''
   let exited = false
+  let reader: TerminalOutputReader | undefined
+  const marker = createBatchMarker()
   try {
     const opened = await api.terminals.open(hostID, 30, 120)
     sessionID = opened.sessionId
@@ -251,8 +255,11 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
       return
     }
     result.state = 'running'
-    const lineEnding = /[\r\n]$/.test(submittedCommand) ? '' : '\r'
-    await sendTerminalText(sessionID, `${submittedCommand}${lineEnding}`, signal)
+    reader = createTerminalOutputReader(sessionID, opened.offset)
+    // The completion marker reports the real exit status as soon as the
+    // command ends; the steady-prompt path below stays as the fallback when
+    // the marker never prints (for example a syntax error in the command).
+    await sendTerminalText(sessionID, wrapBatchCommand(submittedCommand, marker), signal)
 
     let offset = opened.offset
     let pollFailures = 0
@@ -268,7 +275,7 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
       }
       let chunk
       try {
-        chunk = await api.terminals.output(sessionID, offset, signal)
+        chunk = await reader.next(signal)
         pollFailures = 0
       } catch (reason) {
         if (identity !== runIdentity || signal.aborted) return
@@ -281,11 +288,25 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
         await retryDelay(OUTPUT_RETRY_BASE_DELAY_MS * 2 ** (pollFailures - 1), signal)
         continue
       }
+      if (!chunk) {
+        // No output within the idle window: the same as an empty long-poll.
+        chunk = { data: '', offset, nextOffset: offset, truncated: false, closed: false }
+      }
       const receivedNew = chunk.nextOffset > offset
       offset = chunk.nextOffset
       result.truncated = result.truncated || chunk.truncated
       const finished = Boolean(chunk.exitedAt || chunk.closed)
       appendOutput(result, hostID, chunk.data, finished)
+      const exitCode = batchExitCode(result.rawOutput, marker)
+      if (exitCode !== null) {
+        result.output = stripBatchWrapper(result.output, submittedCommand, marker)
+        result.state = exitCode === 0 ? 'succeeded' : 'failed'
+        result.error = exitCode === 0 ? '' : `exit status ${exitCode}`
+        await closeSession(hostID, sessionID)
+        exited = true
+        return
+      }
+      result.output = stripBatchWrapper(result.output, submittedCommand, marker)
       if (finished) {
         exited = true
         activeSessions.delete(hostID)
@@ -327,6 +348,7 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
     result.state = 'failed'
     result.error = friendlyExecutionError(reason)
   } finally {
+    reader?.close()
     outputDecoders.delete(hostID)
     if (sessionID && !exited && activeSessions.get(hostID) === sessionID) {
       await closeSession(hostID, sessionID)

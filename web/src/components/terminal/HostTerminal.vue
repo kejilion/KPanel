@@ -5,7 +5,9 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
-import { api, ApiError } from '@/lib/api'
+import { api, ApiError, terminalStream } from '@/lib/api'
+import type { TerminalStreamSubscription } from '@/lib/terminalStream'
+import type { TerminalOutput } from '@/types/api'
 import { openTerminalURL } from '@/lib/terminalLinks'
 import { containWheelScroll } from '@/lib/scroll'
 import {
@@ -45,6 +47,7 @@ let fitAddon: FitAddon | undefined
 let observer: ResizeObserver | undefined
 let pollController: AbortController | undefined
 let pollTimer: number | undefined
+let streamSubscription: TerminalStreamSubscription | null = null
 let inputTimer: number | undefined
 let resizeTimer: number | undefined
 const inputQueue = new TerminalInputQueue()
@@ -167,32 +170,79 @@ function handlePendingLineEnter(event: KeyboardEvent): void {
   submitPendingLine()
 }
 
+function applyChunk(chunk: TerminalOutput): void {
+  if (chunk.truncated) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.outputTruncated')}\x1b[0m\r\n`)
+  if (chunk.data) writeTerminalOutput(decodeBase64(chunk.data))
+  offset = chunk.nextOffset
+  const recovered = state.value === 'reconnecting'
+  state.value = chunk.closed || chunk.exitedAt ? 'finished' : 'connected'
+  reconnectAttempts = 0
+  if (recovered && state.value === 'connected') {
+    syncedRows = 0
+    syncedColumns = 0
+    resizeFailures = 0
+    scheduleResize()
+  }
+  if (state.value === 'connected' && !inputQueue.empty) void flushInput()
+  if (chunk.exitError) writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${chunk.exitError}\x1b[0m\r\n`)
+  if (state.value === 'finished') stopOutput()
+}
+
+// applyChunk may finish the session; read the state through a call so the
+// compiler does not narrow it across that mutation.
+function terminalFinished(): boolean {
+  return state.value === 'finished'
+}
+
+// Output prefers the tab's shared push stream and falls back to long-polling
+// when the stream is unavailable; both paths feed applyChunk.
+function startOutput(): void {
+  if (disposed || !desktopWindowActive.value || state.value === 'finished' || streamSubscription) return
+  streamSubscription = terminalStream.subscribe({ kind: 'terminal', id: props.sessionId, offset }, {
+    output: applyChunk,
+    error: (code) => {
+      if (code === 'terminal_not_found') {
+        state.value = 'finished'
+        stopOutput()
+        return
+      }
+      state.value = 'reconnecting'
+    },
+    unavailable: () => {
+      streamSubscription = null
+      if (!disposed && desktopWindowActive.value) void poll()
+    },
+  })
+  if (!streamSubscription) void poll()
+}
+
+function stopOutput(): void {
+  streamSubscription?.close()
+  streamSubscription = null
+  pollController?.abort()
+  if (pollTimer) window.clearTimeout(pollTimer)
+  pollTimer = undefined
+}
+
 async function poll(): Promise<void> {
   pollTimer = undefined
-  if (disposed || !desktopWindowActive.value || state.value === 'finished') return
+  if (disposed || !desktopWindowActive.value || state.value === 'finished' || streamSubscription) return
   pollController?.abort()
   pollController = new AbortController()
   try {
     const chunk = await api.terminals.output(props.sessionId, offset, pollController.signal)
-    if (chunk.truncated) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.outputTruncated')}\x1b[0m\r\n`)
-    if (chunk.data) writeTerminalOutput(decodeBase64(chunk.data))
-    offset = chunk.nextOffset
-    const recovered = state.value === 'reconnecting'
-    state.value = chunk.closed || chunk.exitedAt ? 'finished' : 'connected'
-    reconnectAttempts = 0
-    if (recovered && state.value === 'connected') {
-      syncedRows = 0
-      syncedColumns = 0
-      resizeFailures = 0
-      scheduleResize()
-    }
-    if (state.value === 'connected' && !inputQueue.empty) void flushInput()
-    if (chunk.exitError) writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${chunk.exitError}\x1b[0m\r\n`)
-    if (desktopWindowActive.value && state.value !== 'finished') pollTimer = window.setTimeout(() => void poll(), 0)
+    applyChunk(chunk)
+    if (desktopWindowActive.value && !terminalFinished()) pollTimer = window.setTimeout(() => void poll(), 0)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
       state.value = 'finished'
+      return
+    }
+    if (reason instanceof ApiError && reason.status === 429) {
+      // Rate limiting is back-pressure, not a lost connection: keep the
+      // terminal marked connected and retry shortly.
+      if (desktopWindowActive.value) pollTimer = window.setTimeout(() => void poll(), 300)
       return
     }
     state.value = 'reconnecting'
@@ -242,12 +292,10 @@ defineExpose({ focusTerminal, executeCommand, scheduleResize, closeSession })
 
 watch(desktopWindowActive, (active) => {
   if (active) {
-    if (mounted && state.value !== 'finished') void poll()
+    if (mounted && state.value !== 'finished') startOutput()
     return
   }
-  pollController?.abort()
-  if (pollTimer) window.clearTimeout(pollTimer)
-  pollTimer = undefined
+  stopOutput()
 })
 
 watch([themeColors, resolvedTheme], () => {
@@ -282,14 +330,13 @@ onMounted(() => {
     scheduleResize()
     window.requestAnimationFrame(focusTerminal)
   }
-  if (desktopWindowActive.value) void poll()
+  if (desktopWindowActive.value) startOutput()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   mounted = false
-  pollController?.abort()
-  if (pollTimer) window.clearTimeout(pollTimer)
+  stopOutput()
   if (inputTimer) window.clearTimeout(inputTimer)
   if (resizeTimer) window.clearTimeout(resizeTimer)
   observer?.disconnect()

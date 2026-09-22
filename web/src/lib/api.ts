@@ -1,4 +1,5 @@
 import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
+import { TerminalStreamClient } from '@/lib/terminalStream'
 import type { PasskeyList } from '@/types/api'
 import type { PasskeyCreationOptions, PasskeyRequestOptions, PasskeyCredentialJSON } from '@/lib/passkeys'
 import type {
@@ -2456,7 +2457,14 @@ export const api = {
 export function resetApiSecurityState(): void {
   csrfToken = ''
   previousNetworkSample = undefined
+  terminalStream.reset()
 }
+
+/** Shared push channel for terminal output; see lib/terminalStream.ts. */
+export const terminalStream = new TerminalStreamClient({
+  url: () => buildUrl('/terminal-stream'),
+  subscribe: (body) => request<{ accepted: boolean }>('/terminal-stream/subscriptions', { method: 'POST', body }),
+})
 
 export function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return request<T>(path, options)

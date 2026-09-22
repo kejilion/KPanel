@@ -19,6 +19,8 @@ vi.mock('@/lib/api', () => ({
     }
   },
   api: { terminals: mocks },
+  // No EventSource in these tests: the reader takes the polling path.
+  terminalStream: { subscribe: () => null },
 }))
 
 function host(id: string, name: string, osId: string): ClusterHost {
@@ -87,10 +89,12 @@ describe('BatchTerminalPanel', () => {
 
     expect(mocks.open).toHaveBeenCalledTimes(2)
     expect(mocks.input).toHaveBeenCalledTimes(2)
-    expect(mocks.input.mock.calls.map((call) => decodeInput(call[1]))).toEqual([
-      'uname -a\r',
-      'uname -a\r',
-    ])
+    const sent = mocks.input.mock.calls.map((call) => decodeInput(call[1]))
+    for (const payload of sent) {
+      expect(payload).toMatch(/^\{ uname -a\n\}; printf '\\n__KPANEL_DONE_[0-9a-f]{32}_%s__\\n' "\$\?"\r$/)
+    }
+    // Each host run gets its own unforgeable completion marker.
+    expect(new Set(sent).size).toBe(2)
     expect(mocks.input.mock.calls.every((call) => !decodeInput(call[1]).includes('/bin/sh -c'))).toBe(true)
     expect(wrapper.text()).toContain('执行成功')
     expect(wrapper.text()).toContain('执行失败')
@@ -383,6 +387,39 @@ const start = Date.now()
     expect(mocks.output).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('连接或执行失败，请重试。')
     expect(mocks.close).toHaveBeenCalledWith('session-local')
+    wrapper.unmount()
+  })
+
+  it.each([[0, '执行成功'], [3, '执行失败']])('finishes as soon as the completion marker reports exit %i', async (code, label) => {
+    const target = host('local', '本机', 'debian')
+    mocks.open.mockResolvedValue({ sessionId: 'session-local', offset: 0 })
+    let marker = ''
+    mocks.input.mockImplementation(async (_sessionID: string, payload: string) => {
+      marker = /__KPANEL_DONE_[0-9a-f]{32}_/.exec(decodeInput(payload))?.[0] ?? marker
+      return { accepted: true }
+    })
+    let polls = 0
+    mocks.output.mockImplementation(async () => {
+      polls += 1
+      const text = `root@debian:~# { uptime\r\n> }; printf '\\n${marker}%s__\\n' "$?"\r\n 10:00 up 1 day\r\n\r\n${marker}${code}__\r\nroot@debian:~# `
+      return { data: Buffer.from(text).toString('base64'), offset: 0, nextOffset: text.length, truncated: false, exitedAt: '', exitError: '', closed: false }
+    })
+    const wrapper = mount(BatchTerminalPanel, { props: { hosts: [target], sessionCapacity: 1 } })
+    await wrapper.get('textarea').setValue('uptime')
+    await wrapper.get('button.button--primary').trigger('click')
+    await flushPromises()
+
+    // No steady-prompt wait: one read with the marker completes the host.
+    expect(polls).toBe(1)
+    expect(wrapper.text()).toContain(label)
+    expect(mocks.close).toHaveBeenCalledWith('session-local')
+    expect(mocks.input.mock.calls.some(([, payload]) => decodeInput(payload) === 'exit\r')).toBe(false)
+    await wrapper.get('.batch-result__summary').trigger('click')
+    const shown = wrapper.get('.batch-result__detail pre').text()
+    expect(shown).toContain('up 1 day')
+    expect(shown).toContain('root@debian:~# uptime')
+    expect(shown).not.toContain('__KPANEL_DONE_')
+    if (code) expect(wrapper.text()).toContain(`exit status ${code}`)
     wrapper.unmount()
   })
 
