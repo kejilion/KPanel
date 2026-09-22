@@ -56,6 +56,7 @@
 | [进程管理器设计](process-manager-design.md) | 进程视图与操作 |
 | [系统管理](system-management.md) | 宿主机系统操作 |
 | [多主机终端](multi-host-terminal.md) | 交互终端、批量执行与安全契约 |
+| [多主机传输 v3 提案](multi-host-transport-v3.md) | 长会话多路复用传输（提案，未实施） |
 | [集群监控](cluster-monitoring.md) | 多节点指标采集 |
 | [集群通知](cluster-notifications.md) | 告警与通知通道 |
 | [集群公开分享](cluster-public-share.md) | 对外分享入口 |
