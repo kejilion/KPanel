@@ -153,7 +153,7 @@ onBeforeUnmount(() => {
       <p v-else role="status">{{ i18n.t('passkey.empty') }}</p>
       <p v-if="status.originManaged" class="passkey-note">{{ i18n.t('passkey.originManaged') }}</p>
       <div v-if="!action" class="passkey-actions passkey-actions--main">
-        <button ref="addButton" class="button button--secondary" type="button" :disabled="!status.available || !supported" @click="startAction('add', undefined, $event)">{{ i18n.t('passkey.add') }}</button>
+        <button ref="addButton" class="button button--primary" type="button" :disabled="!status.available || !supported" @click="startAction('add', undefined, $event)">{{ i18n.t('passkey.add') }}</button>
         <button v-if="status.origin" class="button button--danger-text" type="button" :disabled="busy || status.originManaged" @click="startAction('disable', undefined, $event)">{{ i18n.t('passkey.disable') }}</button>
       </div>
       <form v-else ref="formElement" class="form-stack passkey-form" @submit.prevent="submit">
