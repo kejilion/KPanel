@@ -62,7 +62,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：2
+- 已记录发布流程异常或无效证据拦截次数：3
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -86,6 +86,15 @@
     "impact": "前一 rc.12 Release #244（run 35698886207）在 Verify source 步骤失败，未生成公开 Release 或镜像 promotion。",
     "recoveryEvidence": "保留 rc.12 原始失败标签，改以精确产品 SHA e122b189 发布 rc.13；Release #245（run 35702662539）全流程成功，GitHub Release、Docker rc.13/preview 均已核验。",
     "permanentAction": "发布工作流失败后不重用失败标签；重新冻结并通过 candidate/main/tag 门禁后使用新不可变预览标签，逐项核对 Release 和镜像 digest。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "ci/main/race-flake",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "验收记录提交后的主线 CI #1038（run 35704106382）仅在 Detect races in privileged core packages 步骤失败，文档变更未进入产品标签或生产。",
+    "recoveryEvidence": "产品 SHA e122b189 的主线 CI #1037 已成功；随后创建不改产品树的重试提交 fc2c71ee6348da8ac13c8c718e3babcf13ec86d2，重新执行主线门禁。",
+    "permanentAction": "文档验收提交也必须等待主线 race 门禁；失败时保留原始 run，使用独立重试提交恢复，不把文档 CI 抖动误判为产品漏洞或跳过 race 检查。",
     "historicalReleases": []
   }
 ]
