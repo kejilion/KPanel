@@ -112,6 +112,7 @@ type Server struct {
 	monitoring        monitoringHistoryProvider
 	terminals         *terminal.Manager
 	thumbnailGate     chan struct{}
+	thumbnails        *thumbnailCache
 	storageUsageGate  chan struct{}
 	processReads      processReads
 	systemLogsGate    chan struct{}
@@ -252,6 +253,7 @@ func NewServer(config Config) (*Server, error) {
 		monitoring:       config.Monitoring,
 		terminals:        config.Terminals,
 		thumbnailGate:    make(chan struct{}, 2),
+		thumbnails:       newThumbnailCache(thumbnailCacheBytes),
 		storageUsageGate: make(chan struct{}, 1),
 		systemLogsGate:   make(chan struct{}, 1),
 		now:              config.Now,

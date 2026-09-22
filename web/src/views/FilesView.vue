@@ -542,6 +542,7 @@ const fileWindowChangeOrigin = Symbol('file-window')
 
 const fileViewStorageKey = 'kpanel:files:view:v1'
 const thumbnailSourceMaxBytes = 12 * 1024 * 1024
+const FILE_UPLOAD_CONCURRENCY = 3
 const mediaLoadTimeoutMs = 20_000
 const remoteDownloadPollDelay = 2_500
 const remoteDownloadPollRetryDelay = 10_000
@@ -2372,11 +2373,17 @@ async function uploadFiles(
 ): Promise<void> {
   const values = Array.from(files)
   if (!values.length) return
-  for (const file of values) {
-    const source = { kind: 'file', file, target, hostId } as const
-    const task = createUploadTask(source)
-    await runFileUploadTask(task.id, source)
-  }
+  // A few uploads in flight hide per-file round trips (request, atomic
+  // commit, audit) without competing with one another for bandwidth.
+  let cursor = 0
+  await Promise.all(Array.from({ length: Math.min(FILE_UPLOAD_CONCURRENCY, values.length) }, async () => {
+    while (cursor < values.length) {
+      const file = values[cursor++]!
+      const source = { kind: 'file', file, target, hostId } as const
+      const task = createUploadTask(source)
+      await runFileUploadTask(task.id, source)
+    }
+  }))
   if (uploadInput.value) uploadInput.value.value = ''
   if (!unmounted && fileHostId.value === hostId && currentPath.value === target) await loadDirectory(target)
 }

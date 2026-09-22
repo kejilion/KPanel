@@ -11,7 +11,9 @@ import (
 // the lightweight node's root broker, which must not start the full Agent
 // socket or expose unrelated host APIs.
 func NewFileHandler(files *filemanager.Manager) http.Handler {
-	server := &Server{files: files, now: time.Now}
+	// The standalone handler serves light-node brokers; it needs the same bounded
+	// thumbnail gate as the Agent or thumbnail requests block until timeout.
+	server := &Server{files: files, now: time.Now, thumbnailGate: make(chan struct{}, 2), thumbnails: newThumbnailCache(thumbnailCacheBytes)}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := requestID()
 		w.Header().Set("X-Request-ID", requestID)

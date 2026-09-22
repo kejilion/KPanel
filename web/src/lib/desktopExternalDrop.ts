@@ -409,7 +409,7 @@ export async function uploadExternalDrop(
   report(manifest.roots[0]?.name || '')
 
   let cursor = 0
-  const workers = Array.from({ length: Math.min(2, Math.max(1, manifest.files.length)) }, async () => {
+  const workers = Array.from({ length: Math.min(3, Math.max(1, manifest.files.length)) }, async () => {
     while (cursor < manifest.files.length) {
       const index = cursor
       cursor += 1

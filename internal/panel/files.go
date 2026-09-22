@@ -372,8 +372,7 @@ func (s *Server) streamFileDownload(w http.ResponseWriter, r *http.Request, rawQ
 	if response.Header.Get("Content-Length") == "" && response.ContentLength >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
 	}
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Pragma", "no-cache")
+	setFileContentCacheControl(w, r, response.StatusCode)
 	writer := httpstream.NewIdleResponseWriter(
 		transferContext, w, panelFileTransferIdleTimeout,
 	)
@@ -1269,4 +1268,21 @@ func copyFileHeaders(target, source http.Header) {
 	if target.Get("Content-Security-Policy") == "" {
 		target.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	}
+}
+
+// thumbnailBrowserCacheSeconds lets the browser keep version-bound
+// thumbnails. The URL names the exact file revision (the Agent rejects a
+// mismatched version), so a cached copy is never stale; the cache stays
+// private and short-lived. Every other file response remains no-store.
+const thumbnailBrowserCacheSeconds = 3600
+
+func setFileContentCacheControl(w http.ResponseWriter, r *http.Request, status int) {
+	query := r.URL.Query()
+	if (status == http.StatusOK || status == http.StatusNotModified) && query.Get("mode") == "thumbnail" && query.Get("version") != "" {
+		w.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(thumbnailBrowserCacheSeconds))
+		w.Header().Del("Pragma")
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Pragma", "no-cache")
 }
