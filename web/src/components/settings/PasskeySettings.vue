@@ -151,11 +151,11 @@ onBeforeUnmount(() => {
         </li>
       </ul>
       <p v-else role="status">{{ i18n.t('passkey.empty') }}</p>
-      <div v-if="status.origin && !action" class="passkey-actions">
-        <button class="button button--danger" type="button" :disabled="busy || status.originManaged" @click="startAction('disable', undefined, $event)">{{ i18n.t('passkey.disable') }}</button>
-      </div>
       <p v-if="status.originManaged" class="passkey-note">{{ i18n.t('passkey.originManaged') }}</p>
-      <button v-if="!action" ref="addButton" class="button button--secondary" type="button" :disabled="!status.available || !supported" @click="startAction('add', undefined, $event)">{{ i18n.t('passkey.add') }}</button>
+      <div v-if="!action" class="passkey-actions passkey-actions--main">
+        <button ref="addButton" class="button button--secondary" type="button" :disabled="!status.available || !supported" @click="startAction('add', undefined, $event)">{{ i18n.t('passkey.add') }}</button>
+        <button v-if="status.origin" class="button button--danger-text" type="button" :disabled="busy || status.originManaged" @click="startAction('disable', undefined, $event)">{{ i18n.t('passkey.disable') }}</button>
+      </div>
       <form v-else ref="formElement" class="form-stack passkey-form" @submit.prevent="submit">
         <p v-if="action === 'revoke' && selected" class="inline-alert inline-alert--warning">{{ i18n.t('passkey.revokeNotice', { name: selected.name }) }}</p>
         <p v-if="action === 'configure' && status.detectedOrigin" class="inline-alert inline-alert--warning">{{ i18n.t('passkey.configureConfirm', { origin: status.detectedOrigin }) }}</p>
@@ -189,6 +189,7 @@ onBeforeUnmount(() => {
 .passkey-form { max-width: 560px; margin-top: 16px; }
 .passkey-setup { display: grid; gap: 4px; margin: 16px 0; }
 .passkey-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.passkey-actions--main .button--danger-text { margin-left: auto; }
 .passkey-settings .button, .passkey-settings input, .passkey-settings .button-link { font-size: 14px; }
 @media (max-width: 600px) { .passkey-settings { padding: 16px; } }
 </style>
