@@ -99,7 +99,7 @@ describe('DesktopView icon layout interaction', () => {
     }))
   })
 
-  it.each(['workspace', 'entries'])('reveals the restored layout only after the delayed %s response', async slow => {
+  it.each(['workspace', 'entries'])('keeps restored placement stable with a delayed %s response', async slow => {
     const workspaceRequest = deferred<DesktopWorkspace>()
     const entriesRequest = deferred<DesktopEntries>()
     loadWorkspace.mockReturnValue(workspaceRequest.promise)
@@ -115,7 +115,13 @@ describe('DesktopView icon layout interaction', () => {
     if (slow === 'workspace') entriesRequest.resolve(catalog)
     else workspaceRequest.resolve(saved)
     await flushPromises()
-    expect(grid.classes()).toContain('desktop__icons--initializing')
+    expect(grid.classes().includes('desktop__icons--initializing')).toBe(slow === 'workspace')
+    if (slow === 'entries') {
+      expect(grid.attributes('inert')).toBeUndefined()
+      expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('data-group-member')).toBe('a'.repeat(32))
+      expect(wrapper.find('[data-icon-key="app:example"]').exists()).toBe(false)
+    }
+    const earlyGroupStyle = slow === 'entries' ? wrapper.get('.desktop-group').attributes('style') : undefined
     expect(grid.attributes('aria-busy')).toBe('true')
     workspaceRequest.resolve(saved)
     entriesRequest.resolve(catalog)
@@ -125,6 +131,7 @@ describe('DesktopView icon layout interaction', () => {
     expect(grid.attributes('aria-busy')).toBe('false')
     expect(wrapper.get('[data-icon-key="nav:/overview"]').attributes('data-group-member')).toBe('a'.repeat(32))
     expect(wrapper.get('[data-icon-key="app:example"]').attributes('data-group-member')).toBe('a'.repeat(32))
+    if (earlyGroupStyle) expect(wrapper.get('.desktop-group').attributes('style')).toBe(earlyGroupStyle)
     expect(updateWorkspace).not.toHaveBeenCalled()
     wrapper.unmount()
 
