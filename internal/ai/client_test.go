@@ -23,6 +23,58 @@ func TestProviderHTTPErrorHidesRawHTMLAndExtractsJSONMessage(t *testing.T) {
 	}
 }
 
+func TestModelsRequestsJSONFromStrictProviders(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		protocol ProviderProtocol
+		body     string
+		want     string
+	}{
+		{name: "openai-compatible", protocol: ProtocolOpenAICompatible, body: `{"data":[{"id":"gpt-test"}]}`, want: "gpt-test"},
+		{name: "gemini", protocol: ProtocolGemini, body: `{"models":[{"name":"models/gemini-test","displayName":"Gemini Test"}]}`, want: "gemini-test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+					t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				// Mirrors providers that enforce content negotiation (issue #8, ChatAnyWhere).
+				if r.Header.Get("Accept") != "application/json" {
+					http.Error(w, "Http Media Type Not Acceptable", http.StatusNotAcceptable)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			provider := Provider{Protocol: tc.protocol, BaseURL: server.URL + "/v1", EndpointScope: EndpointPrivate}
+			models, err := NewHTTPModelClient().Models(context.Background(), provider, "test-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(models) != 1 || models[0].ModelID != tc.want {
+				t.Fatalf("models=%#v", models)
+			}
+		})
+	}
+}
+
+func TestStreamingRequestsKeepEventStreamAccept(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") != "text/event-stream" {
+			t.Fatalf("stream Accept=%q", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, "data: [DONE]")
+		fmt.Fprintln(w)
+	}))
+	defer server.Close()
+	provider := Provider{Protocol: ProtocolOpenAICompatible, BaseURL: server.URL + "/v1", EndpointScope: EndpointPrivate}
+	if err := NewHTTPModelClient().Stream(context.Background(), provider, "test-key", CompletionRequest{Model: "test"}, func(CompletionEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenAICompatibleStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer test-key" {
