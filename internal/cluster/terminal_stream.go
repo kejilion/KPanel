@@ -36,6 +36,7 @@ const (
 	terminalStreamReplyTimeout  = 10 * time.Second
 	terminalStreamReconnect     = 2 * time.Minute
 	terminalStreamRecordBytes   = fileStreamChunkBytes - 8
+	terminalStreamReadyTimeout  = 15 * time.Second
 )
 
 var errTerminalStreamDisconnected = errors.New("terminal stream disconnected")
@@ -358,8 +359,10 @@ type streamTerminal struct {
 	lastUsed time.Time
 }
 
-func openStreamTerminal(parent context.Context, hostID string, dial streamTerminalDialer, fallback streamTerminalFallback, rows, columns uint16) (*streamTerminal, TerminalOpenResponse, error) {
-	conn, ready, err := dial(parent, termOpen, terminalStreamOpen{Rows: rows, Columns: columns})
+// openStreamTerminal opens the session within the caller's ctx; the stream
+// then lives under parent until closed.
+func openStreamTerminal(ctx, parent context.Context, hostID string, dial streamTerminalDialer, fallback streamTerminalFallback, rows, columns uint16) (*streamTerminal, TerminalOpenResponse, error) {
+	conn, ready, err := dial(ctx, termOpen, terminalStreamOpen{Rows: rows, Columns: columns})
 	if err != nil {
 		return nil, TerminalOpenResponse{}, err
 	}

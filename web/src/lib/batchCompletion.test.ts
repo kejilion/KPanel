@@ -29,3 +29,10 @@ describe('batch completion marker', () => {
     expect(stripBatchWrapper(output, 'df -h', marker)).toBe('root@h:~# df -h\nFilesystem Size\n\nroot@h:~#')
   })
 })
+
+describe('batch wrapper stripping edge cases', () => {
+  it('leaves output untouched when the command starts with a blank line', () => {
+    const marker = '__KPANEL_DONE_ab_'
+    expect(stripBatchWrapper('{ "json": true }\nok', '\necho ok', marker)).toBe('{ "json": true }\nok')
+  })
+})

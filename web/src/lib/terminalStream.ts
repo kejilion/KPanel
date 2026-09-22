@@ -196,8 +196,12 @@ export class TerminalStreamClient {
         const entry = this.entries.get(key)
         if (!entry) continue
         this.entries.delete(key)
+        // The server may have started some of this batch before rejecting
+        // the rest; release those pumps instead of leaving them orphaned.
+        this.pendingRemove.add(key)
         entry.handlers.unavailable?.()
       }
+      this.scheduleFlush()
     }
   }
 

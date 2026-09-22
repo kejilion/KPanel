@@ -87,12 +87,16 @@ describe('TerminalStreamClient', () => {
   })
 
   it('hands a rejected subscription back to polling', async () => {
-    const { client } = newClient(vi.fn().mockRejectedValue(new Error('limit')))
+    const subscribe = vi.fn().mockRejectedValue(new Error('limit'))
+    const { client } = newClient(subscribe)
     const unavailable = vi.fn()
     client.subscribe({ kind: 'terminal', id: 's', offset: 0 }, { unavailable })
     FakeEventSource.instances[0]!.emit('ready', { streamId: 'stream' })
     await flush()
     expect(unavailable).toHaveBeenCalledTimes(1)
+    // Any pumps the server did start for the rejected batch are released.
+    await flush()
+    expect(subscribe).toHaveBeenLastCalledWith({ streamId: 'stream', add: [], remove: ['terminal:s'] })
   })
 
   it('stops on auth expiry', () => {

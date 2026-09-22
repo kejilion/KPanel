@@ -31,7 +31,9 @@ export function batchExitCode(output: string, marker: string): number | null {
 export function stripBatchWrapper(output: string, command: string, marker: string): string {
   const firstLine = command.replace(/[\r\n]+$/, '').split(/\r?\n/, 1)[0] ?? ''
   const lines = output.split('\n').filter((line) => !line.includes(marker))
-  const index = lines.findIndex((line) => line.includes(`{ ${firstLine}`))
-  if (index >= 0) lines[index] = lines[index]!.replace(`{ ${firstLine}`, firstLine)
+  if (firstLine.trim()) {
+    const index = lines.findIndex((line) => line.includes(`{ ${firstLine}`))
+    if (index >= 0) lines[index] = lines[index]!.replace(`{ ${firstLine}`, firstLine)
+  }
   return lines.join('\n').trimEnd()
 }

@@ -343,12 +343,15 @@ func (s *Service) openPanelFileStream(ctx context.Context, hostID string, input 
 
 // startTerminalStream sends the first record on a fresh socket and waits for
 // the target's ready or reject answer.
-func startTerminalStream(conn *fileStreamConn, first byte, payload any) (*fileStreamConn, terminalStreamReady, error) {
+func startTerminalStream(ctx context.Context, conn *fileStreamConn, first byte, payload any) (*fileStreamConn, terminalStreamReady, error) {
 	if err := conn.writeJSON(first, payload); err != nil {
 		conn.close()
 		return nil, terminalStreamReady{}, &streamDialError{err}
 	}
-	kind, data, err := conn.readControl()
+	// Opening a PTY is quick; do not let a stalled target hold the caller.
+	readCtx, cancel := context.WithTimeout(ctx, terminalStreamReadyTimeout)
+	defer cancel()
+	kind, data, err := conn.readContext(readCtx)
 	if err != nil {
 		conn.close()
 		return nil, terminalStreamReady{}, &streamDialError{err}
@@ -418,9 +421,9 @@ func (s *Service) openPanelStreamTerminal(ctx context.Context, hostID string, ro
 		if err != nil {
 			return nil, terminalStreamReady{}, err
 		}
-		return startTerminalStream(conn, first, payload)
+		return startTerminalStream(ctx, conn, first, payload)
 	}
-	t, response, err := openStreamTerminal(s.streams.ctx, hostID, dial, panelTerminalFallback{service: s, hostID: hostID}, rows, columns)
+	t, response, err := openStreamTerminal(ctx, s.streams.ctx, hostID, dial, panelTerminalFallback{service: s, hostID: hostID}, rows, columns)
 	if err != nil {
 		return TerminalOpenResponse{}, err
 	}
@@ -434,9 +437,9 @@ func (s *Service) openLightStreamTerminal(ctx context.Context, nodeID string, ro
 		if err != nil {
 			return nil, terminalStreamReady{}, &streamDialError{err}
 		}
-		return startTerminalStream(conn, first, payload)
+		return startTerminalStream(ctx, conn, first, payload)
 	}
-	t, response, err := openStreamTerminal(s.streams.ctx, nodeID, dial, nil, rows, columns)
+	t, response, err := openStreamTerminal(ctx, s.streams.ctx, nodeID, dial, nil, rows, columns)
 	if err != nil {
 		return TerminalOpenResponse{}, err
 	}

@@ -80,7 +80,7 @@ func (f *streamFixture) panelTerminalDialer(t *testing.T, dials *atomic.Int32) s
 		if err != nil {
 			return nil, terminalStreamReady{}, &streamDialError{err}
 		}
-		return startTerminalStream(conn, first, payload)
+		return startTerminalStream(ctx, conn, first, payload)
 	}
 }
 
@@ -219,7 +219,7 @@ func TestPanelTerminalStreamEchoResizeReattachAndClose(t *testing.T) {
 	manager := newEchoManager(t)
 	f.service.terminal = managerTerminalBackend{manager: manager}
 	var dials atomic.Int32
-	stream, opened, err := openStreamTerminal(context.Background(), "host-1", f.panelTerminalDialer(t, &dials), nil, 24, 80)
+	stream, opened, err := openStreamTerminal(context.Background(), context.Background(), "host-1", f.panelTerminalDialer(t, &dials), nil, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestPanelTerminalStreamFallsBackToV2WhenStreamStaysDown(t *testing.T) {
 		return real(ctx, first, payload)
 	}
 	fallback := &recordingTerminalFallback{}
-	stream, opened, err := openStreamTerminal(context.Background(), "host-1", dial, fallback, 24, 80)
+	stream, opened, err := openStreamTerminal(context.Background(), context.Background(), "host-1", dial, fallback, 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +332,9 @@ func TestLightTerminalStreamRunsOverControlConnection(t *testing.T) {
 		done <- relay.RunTerminalStream(ctx, f.server.URL, enrolled.NodeID, enrolled.TargetNodeID, key, peer, manager, "light-owner", func() { connected.Store(true) })
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for !f.service.fileStreamHub.terminalAvailable(enrolled.NodeID) && time.Now().Before(deadline) {
+	// The center registers the control socket just before the node reads its
+	// generation, so wait for both sides.
+	for (!f.service.fileStreamHub.terminalAvailable(enrolled.NodeID) || !connected.Load()) && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if !f.service.fileStreamHub.terminalAvailable(enrolled.NodeID) || !connected.Load() {
