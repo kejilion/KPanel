@@ -233,6 +233,8 @@ k fd panel.example.com 127.0.0.1 8080
 （IPv4 `/32`、IPv6 `/128`），从而支持宿主机 Nginx 转发，但不会信任整个出口网段。
 该路径会自动启用 Secure Cookie，并从 `X-Real-IP` 或安全解析后的
 `X-Forwarded-For` 恢复客户端地址；非可信来源不能利用这些请求头绕过 Host/Origin 校验。
+Passkey 设置页会把当前可信 HTTPS 域名作为候选入口显示；管理员确认密码后即可保存固定的
+`passkeyOrigin`，无需为直连 IP 安装额外编辑配置文件。若入口不是有效 HTTPS 域名，Passkey 仍保持禁用。
 
 ## 验收
 

@@ -215,6 +215,19 @@ func (p *PasskeyService) reauthenticate(userID, password, second string) (store.
 	return s.store.UserByID(userID)
 }
 
+// VerifyManagementFactors applies the same current-password and second-factor
+// budget used by passkey enrollment without starting a WebAuthn ceremony. It
+// is used when an administrator confirms a newly detected HTTPS origin.
+func (p *PasskeyService) VerifyManagementFactors(userID, password, second string) error {
+	if p == nil || p.auth == nil {
+		return ErrPasskeyUnavailable
+	}
+	p.auth.credentialMu.Lock()
+	defer p.auth.credentialMu.Unlock()
+	_, err := p.reauthenticate(userID, password, second)
+	return err
+}
+
 func (p *PasskeyService) BeginRegistration(session Session, password, second, name string) (PasskeyOptions, error) {
 	if p.web == nil {
 		return PasskeyOptions{}, ErrPasskeyUnavailable

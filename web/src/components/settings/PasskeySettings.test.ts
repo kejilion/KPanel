@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PasskeySettings from './PasskeySettings.vue'
 
 const mocks = vi.hoisted(() => ({
-  list: vi.fn(), registerBegin: vi.fn(), registerFinish: vi.fn(), remove: vi.fn(),
+  list: vi.fn(), configureOrigin: vi.fn(), registerBegin: vi.fn(), registerFinish: vi.fn(), remove: vi.fn(),
   createPasskey: vi.fn(), supported: true, reset: vi.fn(), replace: vi.fn(),
   state: { authenticated: true, user: { totpEnabled: true } as { totpEnabled: boolean } | undefined, expiresAt: 'later' as string | undefined, agent: {} as object | undefined },
 }))
-vi.mock('@/lib/api', () => ({ api: { auth: { passkeys: { list: mocks.list, registerBegin: mocks.registerBegin, registerFinish: mocks.registerFinish, delete: mocks.remove } } }, resetApiSecurityState: mocks.reset }))
+vi.mock('@/lib/api', () => ({ api: { auth: { passkeys: { list: mocks.list, configureOrigin: mocks.configureOrigin, registerBegin: mocks.registerBegin, registerFinish: mocks.registerFinish, delete: mocks.remove } } }, resetApiSecurityState: mocks.reset }))
 vi.mock('@/lib/passkeys', () => ({ createPasskey: mocks.createPasskey, passkeysSupported: () => mocks.supported, passkeyError: (reason: Error) => reason.message }))
 vi.mock('@/stores/session', () => ({ useSession: () => ({ state: mocks.state }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: mocks.replace }) }))
@@ -30,11 +30,26 @@ beforeEach(() => {
   mocks.createPasskey.mockResolvedValue({ id: 'new' })
   mocks.registerFinish.mockResolvedValue({ reauthenticate: true })
   mocks.remove.mockResolvedValue({ reauthenticate: true })
+  mocks.configureOrigin.mockResolvedValue({ available: true, origin: 'https://panel.example.com', detectedOrigin: 'https://panel.example.com' })
   mocks.replace.mockResolvedValue(undefined)
 })
 afterEach(() => wrapper?.unmount())
 
 describe('Passkey management', () => {
+  it('offers the current trusted HTTPS entry for one-time confirmation', async () => {
+    mocks.list.mockResolvedValueOnce({ available: false, rpId: '', detectedOrigin: 'https://panel.example.com', configurable: true, credentials: [] })
+      .mockResolvedValueOnce({ available: true, rpId: 'panel.example.com', origin: 'https://panel.example.com', configurable: false, credentials: [] })
+    await render()
+    expect(wrapper.text()).toContain('检测到当前 HTTPS 入口')
+    await wrapper.get('button.button--secondary').trigger('click')
+    await fillAuthentication()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.configureOrigin).toHaveBeenCalledWith({ password: 'current-password', totpCode: '123456' }, expect.any(AbortSignal))
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(mocks.state.authenticated).toBe(true)
+  })
+
   it('requires password and enabled second factor, then clears all local session state after registration', async () => {
     await render()
     await wrapper.get('button.button--secondary').trigger('click')

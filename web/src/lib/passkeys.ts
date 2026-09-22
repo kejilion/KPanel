@@ -106,6 +106,8 @@ export function passkeyError(reason: unknown): string {
       case 'totp_required': return t('passkey.currentFactor')
       case 'audit_unavailable': return t('passkey.auditUnavailable')
       case 'backup_busy': return t('passkey.backupBusy')
+      case 'passkey_origin_managed': return t('passkey.originManaged')
+      case 'passkey_origin_rebind_required': return t('passkey.originRebind')
     }
   }
   if (reason instanceof DOMException) {

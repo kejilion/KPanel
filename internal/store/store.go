@@ -150,6 +150,7 @@ type diskState struct {
 	Audit            []AuditEvent      `json:"audit,omitempty"`
 	LoginAttempts    []LoginAttempt    `json:"loginAttempts"`
 	SecurityEntrance SecurityEntrance  `json:"securityEntrance,omitempty"`
+	PasskeyOrigin    string            `json:"passkeyOrigin,omitempty"`
 	ClusterShare     ClusterShare      `json:"clusterShare,omitempty"`
 	ClusterHostOrder *ClusterHostOrder `json:"clusterHostOrder,omitempty"`
 	FileShares       []FileShare       `json:"fileShares,omitempty"`
@@ -1137,6 +1138,7 @@ func cloneDiskState(source diskState) diskState {
 		Audit:            append([]AuditEvent(nil), source.Audit...),
 		LoginAttempts:    append([]LoginAttempt(nil), source.LoginAttempts...),
 		SecurityEntrance: source.SecurityEntrance,
+		PasskeyOrigin:    source.PasskeyOrigin,
 		ClusterShare:     cloneClusterShare(source.ClusterShare),
 		ClusterHostOrder: cloneClusterHostOrder(source.ClusterHostOrder),
 		FileShares:       cloneFileShares(source.FileShares),

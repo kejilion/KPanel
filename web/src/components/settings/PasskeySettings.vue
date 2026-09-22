@@ -16,7 +16,7 @@ const status = ref<PasskeyList>()
 const loading = ref(true)
 const busy = ref(false)
 const error = ref('')
-const action = ref<'add' | 'revoke'>()
+const action = ref<'add' | 'revoke' | 'configure'>()
 const selected = ref<PasskeySummary>()
 const form = reactive({ name: '', password: '', totpCode: '' })
 const formElement = ref<HTMLFormElement>()
@@ -25,9 +25,12 @@ let actionOpener: HTMLElement | undefined
 const supported = passkeysSupported()
 const controller = new AbortController()
 const needsSecondFactor = computed(() => Boolean(session.state.user?.totpEnabled))
-const canSubmit = computed(() => !busy.value && Boolean(form.password) &&
-  (!needsSecondFactor.value || Boolean(form.totpCode)) &&
-  (action.value === 'revoke' ? Boolean(selected.value) : Boolean(status.value?.available && supported && form.name.trim())))
+const canSubmit = computed(() => {
+  if (busy.value || !form.password || (needsSecondFactor.value && !form.totpCode)) return false
+  if (action.value === 'revoke') return Boolean(selected.value)
+  if (action.value === 'configure') return Boolean(status.value?.configurable && status.value.detectedOrigin)
+  return Boolean(status.value?.available && supported && form.name.trim())
+})
 
 async function load(): Promise<void> {
   if (busy.value) return
@@ -51,7 +54,7 @@ function resetForm(): void {
   error.value = ''
 }
 
-async function startAction(next: 'add' | 'revoke', credential?: PasskeySummary, event?: Event): Promise<void> {
+async function startAction(next: 'add' | 'revoke' | 'configure', credential?: PasskeySummary, event?: Event): Promise<void> {
   if (busy.value) return
   actionOpener = event?.currentTarget as HTMLElement | undefined
   resetForm()
@@ -74,7 +77,12 @@ async function submit(): Promise<void> {
   error.value = ''
   try {
     const authentication = { password: form.password, totpCode: form.totpCode || undefined }
-    if (action.value === 'revoke' && selected.value) {
+    if (action.value === 'configure') {
+      await api.auth.passkeys.configureOrigin(authentication, controller.signal)
+      status.value = await api.auth.passkeys.list(controller.signal)
+      resetForm()
+      return
+    } else if (action.value === 'revoke' && selected.value) {
       await api.auth.passkeys.delete({ ...authentication, id: selected.value.id }, controller.signal)
     } else {
       const ceremony = await api.auth.passkeys.registerBegin({ ...authentication, name: form.name.trim() }, controller.signal)
@@ -121,7 +129,13 @@ onBeforeUnmount(() => {
     </div>
     <template v-if="status && !loading">
       <p v-if="!status.available" class="inline-alert inline-alert--info">{{ i18n.t('passkey.unavailable') }}</p>
-      <p v-else-if="!supported" class="inline-alert inline-alert--info">{{ i18n.t('passkey.unsupported') }}</p>
+      <p v-if="!status.available && status.origin" class="passkey-note">{{ i18n.t('passkey.domain', { domain: status.origin }) }}</p>
+      <div v-if="!status.available && status.configurable && status.detectedOrigin && !action" class="passkey-setup">
+        <p class="passkey-note">{{ i18n.t('passkey.detectedOrigin', { origin: status.detectedOrigin }) }}</p>
+        <p class="passkey-note">{{ i18n.t('passkey.configureNotice') }}</p>
+        <button class="button button--secondary" type="button" :disabled="busy" @click="startAction('configure', undefined, $event)">{{ i18n.t('passkey.configure') }}</button>
+      </div>
+      <p v-if="status.available && !supported" class="inline-alert inline-alert--info">{{ i18n.t('passkey.unsupported') }}</p>
       <p v-if="status.rpId" class="passkey-note">{{ i18n.t('passkey.domain', { domain: status.rpId }) }}</p>
       <ul v-if="status.credentials.length" class="passkey-list">
         <li v-for="credential in status.credentials" :key="credential.id">
@@ -137,14 +151,15 @@ onBeforeUnmount(() => {
       <button v-if="!action" ref="addButton" class="button button--secondary" type="button" :disabled="!status.available || !supported" @click="startAction('add', undefined, $event)">{{ i18n.t('passkey.add') }}</button>
       <form v-else ref="formElement" class="form-stack passkey-form" @submit.prevent="submit">
         <p v-if="action === 'revoke' && selected" class="inline-alert inline-alert--warning">{{ i18n.t('passkey.revokeNotice', { name: selected.name }) }}</p>
-        <p class="passkey-note">{{ i18n.t('passkey.changeNotice') }}</p>
+        <p v-if="action === 'configure' && status.detectedOrigin" class="inline-alert inline-alert--warning">{{ i18n.t('passkey.configureConfirm', { origin: status.detectedOrigin }) }}</p>
+        <p v-if="action !== 'configure'" class="passkey-note">{{ i18n.t('passkey.changeNotice') }}</p>
         <label v-if="action === 'add'" class="field"><span>{{ i18n.t('passkey.name') }}</span><input v-model="form.name" maxlength="64" :placeholder="i18n.t('passkey.nameHint')" :disabled="busy" required /></label>
         <label class="field"><span>{{ i18n.t('passkey.currentPassword') }}</span><input v-model="form.password" type="password" autocomplete="current-password" :disabled="busy" required /></label>
         <label v-if="needsSecondFactor" class="field"><span>{{ i18n.t('passkey.currentFactor') }}</span><input v-model.trim="form.totpCode" autocomplete="one-time-code" maxlength="17" :disabled="busy" required /></label>
         <p v-if="busy" role="status">{{ i18n.t('passkey.waiting') }}</p>
         <div class="passkey-actions">
           <button class="button button--ghost" type="button" :disabled="busy" @click="cancelForm">{{ i18n.t('passkey.cancel') }}</button>
-          <button class="button" :class="action === 'revoke' ? 'button--danger' : 'button--primary'" type="submit" :disabled="!canSubmit"><LoaderCircle v-if="busy" class="spin" :size="16" />{{ i18n.t(action === 'revoke' ? 'passkey.confirmRevoke' : 'passkey.add') }}</button>
+          <button class="button" :class="action === 'revoke' ? 'button--danger' : 'button--primary'" type="submit" :disabled="!canSubmit"><LoaderCircle v-if="busy" class="spin" :size="16" />{{ i18n.t(action === 'revoke' ? 'passkey.confirmRevoke' : action === 'configure' ? 'passkey.configure' : 'passkey.add') }}</button>
         </div>
       </form>
       <p class="passkey-note">{{ i18n.t('passkey.keepRecovery') }}</p>
@@ -164,6 +179,7 @@ onBeforeUnmount(() => {
 .passkey-details { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .passkey-details span { color: var(--text-soft); font-size: 13px; }
 .passkey-form { max-width: 560px; margin-top: 16px; }
+.passkey-setup { display: grid; gap: 4px; margin: 16px 0; }
 .passkey-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .passkey-settings .button, .passkey-settings input, .passkey-settings .button-link { font-size: 14px; }
 @media (max-width: 600px) { .passkey-settings { padding: 16px; } }

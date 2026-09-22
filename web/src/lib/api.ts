@@ -1163,8 +1163,10 @@ function normalizeJob(raw: RawJob): Job {
 export const api = {
   auth: {
     passkeys: {
-      status: (signal?: AbortSignal) => request<{ available: boolean }>('/auth/passkeys/status', { signal }),
+      status: (signal?: AbortSignal) => request<{ available: boolean; origin?: string; detectedOrigin?: string; configurable: boolean }>('/auth/passkeys/status', { signal }),
       list: (signal?: AbortSignal) => request<PasskeyList>('/auth/passkeys', { signal }),
+      configureOrigin: (body: { password: string; totpCode?: string }, signal?: AbortSignal) =>
+        request<{ available: boolean; origin?: string; detectedOrigin?: string }>('/auth/passkeys/origin', { method: 'POST', body, signal }),
       registerBegin: (body: { password: string; totpCode?: string; name: string }, signal?: AbortSignal) =>
         request<{ ceremonyId: string; publicKey: PasskeyCreationOptions }>('/auth/passkeys/register/begin', { method: 'POST', body, signal }),
       registerFinish: (body: { ceremonyId: string; credential: PasskeyCredentialJSON }, signal?: AbortSignal) =>
