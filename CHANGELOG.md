@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.21.0-rc.14] - 2026-09-22
+
+本预览版在 rc.13 基础上纳入历史监控分类切换与 Passkey 设置/登录界面收尾。
+
+### Added
+
+- 历史监控新增“全部 / 主机 / 容器 / 服务检测”分类切换，选择按浏览器记忆；指标深链到达时自动切回主机分类，之后切换时间范围或刷新不再覆盖手动选择。
+
+### Changed
+
+- Passkey 设置把“添加 Passkey”设为主操作，“关闭 Passkey”降为同行的次要危险文字按钮，并修正与托管提示之间的间距。
+- 登录页不再在 Passkey 不可用时额外显示提示文案；可用时的 Passkey 登录入口与失败重试保持不变。
+
+### Upgrade Notes
+
+- 这是 `preview` 预览版，只会标记 GitHub prerelease 并提升 Docker `preview`，不会改变 GitHub Latest、Docker `latest`、应用市场稳定默认入口或生产环境。
+- `scriptLinkageState=not-required`：本轮只涉及前端展示，未修改 `kejilion.sh` 或其调用契约，继续使用既有受管脚本基线。
+
 ## [1.21.0-rc.13] - 2026-09-22
 
 本预览版重新发布 rc.12 候选内容，纳入 Passkey 二次验证按需显示与关闭/重新绑定流程。
