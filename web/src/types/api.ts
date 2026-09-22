@@ -71,6 +71,9 @@ export interface PasskeySummary {
 export interface PasskeyList {
   available: boolean
   rpId: string
+  origin?: string
+  detectedOrigin?: string
+  configurable: boolean
   credentials: PasskeySummary[]
 }
 

@@ -59,6 +59,8 @@ type Server struct {
 	config                Config
 	auth                  *auth.Service
 	passkeys              *auth.PasskeyService
+	passkeyMu             sync.RWMutex
+	passkeyOriginLocked   bool
 	store                 *store.Store
 	agent                 agentAPI
 	hostOps               *HostOperationService
@@ -133,9 +135,13 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	}
 	var passkeys *auth.PasskeyService
 	passkeyOrigin := config.PasskeyOrigin
+	passkeyOriginLocked := passkeyOrigin != ""
 	if passkeyOrigin == "" {
 		if origin, _, e := auth.PasskeyOrigin(config.PublicURL); e == nil {
 			passkeyOrigin = origin
+			passkeyOriginLocked = true
+		} else if storedOrigin, _ := storage.PasskeyOrigin(); storedOrigin != "" {
+			passkeyOrigin = storedOrigin
 		}
 	}
 	passkeys, err = auth.NewPasskeyService(authService, passkeyOrigin)
@@ -179,8 +185,9 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		return nil, fmt.Errorf("initialize notifications: %w", err)
 	}
 	server := &Server{
-		passkeys: passkeys,
-		config:   config, auth: authService, store: storage, agent: agent,
+		passkeys:            passkeys,
+		passkeyOriginLocked: passkeyOriginLocked,
+		config:              config, auth: authService, store: storage, agent: agent,
 		cluster:               clusterService,
 		notifications:         notifications,
 		terminalSessions:      make(map[string]panelTerminalSession),
@@ -1365,6 +1372,8 @@ func (s *Server) checkOrigin(w http.ResponseWriter, r *http.Request) bool {
 		}
 		expected = scheme + "://" + r.Host
 	}
+	origin = canonicalHTTPSOrigin(origin)
+	expected = canonicalHTTPSOrigin(expected)
 	if !secureStringEqual(strings.ToLower(origin), strings.ToLower(expected)) {
 		s.writeProblem(w, r, http.StatusForbidden, "origin_validation_failed", "Origin validation failed", "")
 		return false
@@ -1372,13 +1381,44 @@ func (s *Server) checkOrigin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+func canonicalHTTPSOrigin(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Port() != "443" {
+		return value
+	}
+	hostname := parsed.Hostname()
+	if strings.Contains(hostname, ":") {
+		hostname = "[" + hostname + "]"
+	}
+	parsed.Host = hostname
+	return parsed.String()
+}
+
+func canonicalHTTPSHost(host string) string {
+	canonical := canonicalHTTPSOrigin("https://" + host)
+	parsed, err := url.Parse(canonical)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return host
+	}
+	return parsed.Host
+}
+
 func (s *Server) checkHost(w http.ResponseWriter, r *http.Request) bool {
 	if s.config.PublicURL == "" {
 		return true
 	}
 	publicURL, err := url.Parse(s.config.PublicURL)
+	requestHost := strings.TrimSpace(r.Host)
+	publicHost := ""
+	if err == nil {
+		publicHost = publicURL.Host
+		if publicURL.Scheme == "https" {
+			requestHost = canonicalHTTPSHost(requestHost)
+			publicHost = canonicalHTTPSHost(publicHost)
+		}
+	}
 	hostMatchesPublicURL := err == nil &&
-		secureStringEqual(strings.ToLower(strings.TrimSpace(r.Host)), strings.ToLower(publicURL.Host))
+		secureStringEqual(strings.ToLower(requestHost), strings.ToLower(publicHost))
 	_, trustedProxyOrigin := s.trustedProxyHTTPSOrigin(r)
 	_, allowedIPHost := directIPOrigin(r)
 	if !hostMatchesPublicURL && !trustedProxyOrigin &&
@@ -1436,6 +1476,7 @@ func (s *Server) trustedProxyHTTPSOrigin(r *http.Request) (string, bool) {
 		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", false
 	}
+	origin = canonicalHTTPSOrigin(origin)
 	return origin, true
 }
 
@@ -1458,6 +1499,7 @@ func (s *Server) requestHTTPSOrigin(r *http.Request) (string, bool) {
 		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", false
 	}
+	origin = canonicalHTTPSOrigin(origin)
 	return origin, true
 }
 

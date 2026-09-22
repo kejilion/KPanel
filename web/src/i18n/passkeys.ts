@@ -4,7 +4,7 @@ export const passkeyZhCN = {
   'passkey.login': '使用 Passkey 登录',
   'passkey.usePassword': '使用密码登录',
   'passkey.secondFactor': '验证码或恢复码（已启用两步验证时填写）',
-  'passkey.unavailable': 'Passkey 需要管理员配置固定的 HTTPS 域名入口。当前可继续使用密码登录。',
+  'passkey.unavailable': 'Passkey 需要固定的 HTTPS 域名入口。当前可继续使用密码登录。',
   'passkey.unsupported': '当前浏览器或入口不支持 Passkey。请在支持的浏览器中打开 HTTPS 域名，或使用密码登录。',
   'passkey.cancelled': 'Passkey 验证已取消或超时。可以重试，也可以使用密码登录。',
   'passkey.duplicate': '此设备上已有该账户的 Passkey，请选择其他设备或安全密钥。',
@@ -36,6 +36,12 @@ export const passkeyZhCN = {
   'passkey.changed': 'Passkey 已更新，所有会话已退出。请重新登录。',
   'passkey.retryFactor': '请输入验证码或恢复码，然后重新进行 Passkey 验证。',
   'passkey.keepRecovery': '建议绑定备用设备，并保留密码和两步验证恢复码。更换域名后需要重新绑定。',
+  'passkey.detectedOrigin': '检测到当前 HTTPS 入口：{origin}',
+  'passkey.configure': '使用当前入口启用',
+  'passkey.configureNotice': 'Passkey 会固定到这个域名；更换域名后需要重新绑定。',
+  'passkey.configureConfirm': '确认将 Passkey 入口固定为 {origin}。需要当前密码；已启用两步验证时还需验证码或恢复码。',
+  'passkey.originManaged': 'Passkey 入口由服务器配置管理，请先更新服务配置。',
+  'passkey.originRebind': '已有 Passkey，需先撤销后才能更换入口。',
 }
 
 export const passkeyEnUS: Record<keyof typeof passkeyZhCN, string> = {
@@ -44,7 +50,7 @@ export const passkeyEnUS: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.login': 'Sign in with a passkey',
   'passkey.usePassword': 'Sign in with a password',
   'passkey.secondFactor': 'Authenticator or recovery code (if two-step verification is enabled)',
-  'passkey.unavailable': 'Passkeys require a fixed HTTPS domain configured by the administrator. Password sign-in is still available.',
+  'passkey.unavailable': 'Passkeys require a fixed HTTPS domain. Password sign-in is still available.',
   'passkey.unsupported': 'This browser or address does not support passkeys. Open the HTTPS domain in a supported browser, or sign in with a password.',
   'passkey.cancelled': 'Passkey verification was cancelled or timed out. Retry or sign in with a password.',
   'passkey.duplicate': 'This device already has a passkey for this account. Choose another device or security key.',
@@ -76,6 +82,12 @@ export const passkeyEnUS: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.changed': 'Passkeys updated. All sessions have ended. Please sign in again.',
   'passkey.retryFactor': 'Enter an authenticator or recovery code, then repeat passkey verification.',
   'passkey.keepRecovery': 'Register a backup device and keep your password and two-step recovery codes. Changing the domain requires registering again.',
+  'passkey.detectedOrigin': 'Current HTTPS entry detected: {origin}',
+  'passkey.configure': 'Use this entry to enable',
+  'passkey.configureNotice': 'Passkeys are fixed to this domain. Changing the domain requires registering again.',
+  'passkey.configureConfirm': 'Fix the Passkey entry to {origin}? Your current password is required; an authenticator or recovery code is also required when two-step verification is enabled.',
+  'passkey.originManaged': 'The Passkey entry is managed by server configuration. Update the server configuration first.',
+  'passkey.originRebind': 'Existing passkeys must be revoked before changing the entry.',
 }
 
 export const passkeyZhTW: Record<keyof typeof passkeyZhCN, string> = {
@@ -84,7 +96,7 @@ export const passkeyZhTW: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.login': '使用 Passkey 登入',
   'passkey.usePassword': '使用密碼登入',
   'passkey.secondFactor': '驗證碼或復原碼（已啟用兩步驗證時填寫）',
-  'passkey.unavailable': 'Passkey 需要管理員設定固定的 HTTPS 網域入口。目前可繼續使用密碼登入。',
+  'passkey.unavailable': 'Passkey 需要固定的 HTTPS 網域入口。目前可繼續使用密碼登入。',
   'passkey.unsupported': '目前瀏覽器或入口不支援 Passkey。請在支援的瀏覽器中開啟 HTTPS 網域，或使用密碼登入。',
   'passkey.cancelled': 'Passkey 驗證已取消或逾時。可以重試，也可以使用密碼登入。',
   'passkey.duplicate': '此裝置上已有該帳戶的 Passkey，請選擇其他裝置或安全金鑰。',
@@ -116,4 +128,10 @@ export const passkeyZhTW: Record<keyof typeof passkeyZhCN, string> = {
   'passkey.changed': 'Passkey 已更新，所有工作階段已登出。請重新登入。',
   'passkey.retryFactor': '請輸入驗證碼或復原碼，然後重新進行 Passkey 驗證。',
   'passkey.keepRecovery': '建議綁定備用裝置，並保留密碼和兩步驗證復原碼。更換網域後需要重新綁定。',
+  'passkey.detectedOrigin': '偵測到目前 HTTPS 入口：{origin}',
+  'passkey.configure': '使用目前入口啟用',
+  'passkey.configureNotice': 'Passkey 會固定到這個網域；更換網域後需要重新綁定。',
+  'passkey.configureConfirm': '確認將 Passkey 入口固定為 {origin}。需要目前密碼；已啟用兩步驗證時還需驗證碼或復原碼。',
+  'passkey.originManaged': 'Passkey 入口由伺服器設定管理，請先更新伺服器設定。',
+  'passkey.originRebind': '已有 Passkey，需先撤銷後才能更換入口。',
 }

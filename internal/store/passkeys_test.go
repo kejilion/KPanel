@@ -47,6 +47,61 @@ func passkeyLogin(key Passkey, original Session) (Passkey, Session) {
 	return key, original
 }
 
+func TestPasskeyOriginPersistsWithCompareAndSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, version := s.PasskeyOrigin()
+	if initial != "" || version != PasskeyOriginResourceVersion("") {
+		t.Fatalf("unexpected initial origin: %q %q", initial, version)
+	}
+	if err := s.ReplacePasskeyOrigin(version, "https://panel.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplacePasskeyOrigin(version, "https://other.example.com"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale origin write error = %v", err)
+	}
+	if s.data.SchemaVersion != 2 {
+		t.Fatalf("origin setting did not protect store schema: %d", s.data.SchemaVersion)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	got, gotVersion := reopened.PasskeyOrigin()
+	if got != "https://panel.example.com" || gotVersion == version {
+		t.Fatalf("origin was not persisted: %q %q", got, gotVersion)
+	}
+	for _, value := range []string{" https://bad.example.com", "https://bad\n.example.com", strings.Repeat("x", 513)} {
+		if err := reopened.ReplacePasskeyOrigin(gotVersion, value); !errors.Is(err, ErrInvalidRecord) {
+			t.Fatalf("unsafe origin %q error = %v", value, err)
+		}
+	}
+}
+
+func TestHasPasskeysCoversAllUsers(t *testing.T) {
+	s, _, session, key := passkeyFixture(t, false)
+	if s.HasPasskeys() {
+		t.Fatal("empty store reported passkeys")
+	}
+	u, err := s.UserByID(session.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceUserPasskeys(u, []Passkey{key}, session.TokenHash, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !s.HasPasskeys() {
+		t.Fatal("stored passkey was not reported")
+	}
+}
+
 func TestPasskeyRegistrationPersistsSchemaAndRevokesSessions(t *testing.T) {
 	s, u, session, key := passkeyFixture(t, false)
 	if s.data.SchemaVersion != 1 {

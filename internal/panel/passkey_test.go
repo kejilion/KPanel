@@ -145,6 +145,88 @@ func TestPasskeyHTTPFixedOriginDoesNotTrustDynamicProxyHost(t *testing.T) {
 	}
 }
 
+func TestPasskeyOriginCanBeConfirmedFromTrustedProxy(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	s.config.PublicURL = "http://192.0.2.10:8080"
+	s.passkeyMu.Lock()
+	s.passkeyOriginLocked = false
+	s.passkeys, _ = auth.NewPasskeyService(s.auth, "")
+	s.passkeyMu.Unlock()
+	body := []byte(`{"password":"a-strong-password-1"}`)
+	request := httptest.NewRequest(http.MethodPost, "http://panel.example.com"+passkeyPrefix+"/origin", bytes.NewReader(body))
+	request.Host = "panel.example.com:443"
+	request.RemoteAddr = "127.0.0.1:1234"
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://panel.example.com")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-CSRF-Token", csrf.Value)
+	request.AddCookie(session)
+	request.AddCookie(csrf)
+	response := httptest.NewRecorder()
+	s.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"available":true`) {
+		t.Fatalf("trusted proxy origin was not accepted: %d %s", response.Code, response.Body.String())
+	}
+	origin, _ := s.store.PasskeyOrigin()
+	if origin != "https://panel.example.com" {
+		t.Fatalf("origin was not persisted: %q", origin)
+	}
+	statusRequest := httptest.NewRequest(http.MethodGet, "http://panel.example.com"+passkeyPrefix+"/status", nil)
+	statusRequest.Host = "panel.example.com:443"
+	statusRequest.RemoteAddr = "127.0.0.1:1234"
+	statusRequest.Header.Set("X-Forwarded-Proto", "https")
+	statusResponse := httptest.NewRecorder()
+	s.ServeHTTP(statusResponse, statusRequest)
+	if !strings.Contains(statusResponse.Body.String(), `"available":true`) || !strings.Contains(statusResponse.Body.String(), `"origin":"https://panel.example.com"`) {
+		t.Fatalf("configured origin was not active: %d %s", statusResponse.Code, statusResponse.Body.String())
+	}
+}
+
+func TestPasskeyOriginRejectsUntrustedForwardedHost(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, s, tokenPath)
+	s.config.PublicURL = "http://192.0.2.10:8080"
+	s.passkeyMu.Lock()
+	s.passkeyOriginLocked = false
+	s.passkeys, _ = auth.NewPasskeyService(s.auth, "")
+	s.passkeyMu.Unlock()
+	request := httptest.NewRequest(http.MethodPost, "http://panel.example.com"+passkeyPrefix+"/origin", bytes.NewReader([]byte(`{"password":"a-strong-password-1"}`)))
+	request.Host = "panel.example.com"
+	request.RemoteAddr = "192.0.2.1:1234"
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://panel.example.com")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-CSRF-Token", csrf.Value)
+	request.AddCookie(session)
+	request.AddCookie(csrf)
+	response := httptest.NewRecorder()
+	s.ServeHTTP(response, request)
+	if response.Code != http.StatusMisdirectedRequest || !strings.Contains(response.Body.String(), `"code":"host_validation_failed"`) {
+		t.Fatalf("untrusted forwarded host was accepted: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCanonicalHTTPSOriginRemovesOnlyDefaultPort(t *testing.T) {
+	for input, want := range map[string]string{
+		"https://panel.example.com:443":  "https://panel.example.com",
+		"https://panel.example.com:8443": "https://panel.example.com:8443",
+		"http://panel.example.com:443":   "http://panel.example.com:443",
+	} {
+		if got := canonicalHTTPSOrigin(input); got != want {
+			t.Fatalf("canonicalHTTPSOrigin(%q) = %q, want %q", input, got, want)
+		}
+	}
+	for input, want := range map[string]string{
+		"panel.example.com:443":  "panel.example.com",
+		"panel.example.com:8443": "panel.example.com:8443",
+	} {
+		if got := canonicalHTTPSHost(input); got != want {
+			t.Fatalf("canonicalHTTPSHost(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestPasskeyHTTPAuditUnavailableFailsBeforeEnrollment(t *testing.T) {
 	s, path := newTestServer(t)
 	session, csrf := bootstrapCookies(t, s, path)

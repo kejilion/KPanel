@@ -17,19 +17,63 @@ import (
 const passkeyPrefix = "/api/v1/auth/passkeys"
 const passkeyCookie = "__Host-kpanel_passkey"
 
-func (s *Server) passkeysAvailable(r *http.Request) bool {
-	if s.passkeys == nil || s.passkeys.Origin == "" {
+type passkeyStatusResponse struct {
+	Available      bool   `json:"available"`
+	Origin         string `json:"origin,omitempty"`
+	DetectedOrigin string `json:"detectedOrigin,omitempty"`
+	Configurable   bool   `json:"configurable"`
+}
+
+type passkeyListResponse struct {
+	Available      bool               `json:"available"`
+	RPID           string             `json:"rpId"`
+	Origin         string             `json:"origin,omitempty"`
+	DetectedOrigin string             `json:"detectedOrigin,omitempty"`
+	Configurable   bool               `json:"configurable"`
+	Credentials    []auth.PasskeyInfo `json:"credentials"`
+}
+
+func (s *Server) detectedPasskeyOrigin(r *http.Request) string {
+	detected, ok := s.requestHTTPSOrigin(r)
+	if !ok {
+		return ""
+	}
+	origin, _, err := auth.PasskeyOrigin(detected)
+	if err != nil {
+		return ""
+	}
+	return origin
+}
+
+func (s *Server) passkeysAvailable(r *http.Request, passkeys *auth.PasskeyService) bool {
+	if passkeys == nil || passkeys.Origin == "" {
 		return false
 	}
-	origin, ok := s.requestHTTPSOrigin(r)
-	return ok && secureStringEqual(strings.ToLower(origin), s.passkeys.Origin)
+	origin := s.detectedPasskeyOrigin(r)
+	return origin != "" && secureStringEqual(strings.ToLower(origin), passkeys.Origin)
 }
 
 func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
-	available := s.passkeysAvailable(r)
 	suffix := strings.TrimPrefix(r.URL.Path, passkeyPrefix)
+	if suffix == "/origin" {
+		s.handlePasskeyOrigin(w, r)
+		return
+	}
+	// Keep the service pointer stable for the complete operation. Origin
+	// changes take the write side of this lock, so an in-flight ceremony cannot
+	// finish against the old RP after the new service becomes active.
+	s.passkeyMu.RLock()
+	defer s.passkeyMu.RUnlock()
+	passkeys := s.passkeys
+	available := s.passkeysAvailable(r, passkeys)
 	if r.Method == http.MethodGet && suffix == "/status" {
-		s.writeJSON(w, http.StatusOK, map[string]bool{"available": available})
+		origin := ""
+		if passkeys != nil {
+			origin = passkeys.Origin
+		}
+		s.writeJSON(w, http.StatusOK, passkeyStatusResponse{
+			Available: available, Origin: origin, DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(),
+		})
 		return
 	}
 	if r.Method == http.MethodGet && suffix == "" {
@@ -37,16 +81,20 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		if s.passkeys == nil {
-			s.writeJSON(w, http.StatusOK, map[string]any{"available": false, "rpId": "", "credentials": []auth.PasskeyInfo{}})
+		if passkeys == nil {
+			s.writeJSON(w, http.StatusOK, passkeyListResponse{Credentials: []auth.PasskeyInfo{}, DetectedOrigin: s.detectedPasskeyOrigin(r)})
 			return
 		}
-		entries, err := s.passkeys.List(session.User.ID)
+		entries, err := passkeys.List(session.User.ID)
 		if err != nil {
 			s.writePasskeyProblem(w, r, err)
 			return
 		}
-		s.writeJSON(w, http.StatusOK, map[string]any{"available": available, "rpId": s.passkeys.RPID, "credentials": entries})
+		origin := passkeys.Origin
+		s.writeJSON(w, http.StatusOK, passkeyListResponse{
+			Available: available, RPID: passkeys.RPID, Origin: origin,
+			DetectedOrigin: s.detectedPasskeyOrigin(r), Configurable: !s.passkeyOriginLocked && !s.store.HasPasskeys(), Credentials: entries,
+		})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -63,11 +111,11 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if suffix != "/delete" && (!available || !secureStringEqual(strings.ToLower(r.Header.Get("Origin")), s.passkeys.Origin)) {
+	if suffix != "/delete" && (!available || passkeys == nil || !secureStringEqual(strings.ToLower(r.Header.Get("Origin")), passkeys.Origin)) {
 		s.writePasskeyProblem(w, r, auth.ErrPasskeyUnavailable)
 		return
 	}
-	if s.passkeys == nil {
+	if passkeys == nil {
 		s.writePasskeyProblem(w, r, auth.ErrPasskeyUnavailable)
 		return
 	}
@@ -78,7 +126,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	// Bound WebAuthn JSON before decoding; attestation is not an upload API.
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if strings.HasPrefix(suffix, "/login/") {
-		s.handlePasskeyLogin(w, r, suffix)
+		s.handlePasskeyLogin(w, r, suffix, passkeys)
 		return
 	}
 	_, session, ok := s.requireSession(w, r)
@@ -112,11 +160,11 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	var options auth.PasskeyOptions
 	switch suffix {
 	case "/register/begin":
-		options, err = s.passkeys.BeginRegistration(session, input.Password, input.TOTPCode, input.Name)
+		options, err = passkeys.BeginRegistration(session, input.Password, input.TOTPCode, input.Name)
 	case "/register/finish":
-		err = s.passkeys.FinishRegistration(session, input.CeremonyID, input.Credential)
+		err = passkeys.FinishRegistration(session, input.CeremonyID, input.Credential)
 	case "/delete":
-		err = s.passkeys.Delete(session, input.ID, input.Password, input.TOTPCode)
+		err = passkeys.Delete(session, input.ID, input.Password, input.TOTPCode)
 	}
 	if err != nil {
 		_ = s.audit(r, session.User.ID, action, "user", session.User.ID, "failure", nil)
@@ -132,7 +180,96 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]bool{"reauthenticate": true})
 }
 
-func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suffix string) {
+// handlePasskeyOrigin binds the panel to the current browser-facing HTTPS
+// origin after the administrator confirms current management factors. The
+// origin is derived only from direct TLS or an explicitly trusted proxy; the
+// client cannot submit an arbitrary Host value.
+func (s *Server) handlePasskeyOrigin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
+		return
+	}
+	if r.Header.Get("Origin") == "" || !s.checkOrigin(w, r) {
+		if r.Header.Get("Origin") == "" {
+			s.writeProblem(w, r, http.StatusForbidden, "origin_validation_failed", "Origin validation failed", "")
+		}
+		return
+	}
+	_, session, ok := s.requireSession(w, r)
+	if !ok || !s.checkCSRF(w, r, session) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var input struct {
+		Password string `json:"password"`
+		TOTPCode string `json:"totpCode,omitempty"`
+	}
+	if s.decodeJSON(w, r, &input) != nil {
+		return
+	}
+	detected := s.detectedPasskeyOrigin(r)
+	if detected == "" {
+		s.writePasskeyProblem(w, r, auth.ErrPasskeyUnavailable)
+		return
+	}
+	s.passkeyMu.Lock()
+	defer s.passkeyMu.Unlock()
+	passkeys := s.passkeys
+	if passkeys == nil {
+		s.writePasskeyProblem(w, r, auth.ErrPasskeyUnavailable)
+		return
+	}
+	currentOrigin := passkeys.Origin
+	locked := s.passkeyOriginLocked
+	if secureStringEqual(strings.ToLower(currentOrigin), strings.ToLower(detected)) {
+		s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: currentOrigin, DetectedOrigin: detected})
+		return
+	}
+	if locked {
+		s.writeProblem(w, r, http.StatusConflict, "passkey_origin_managed", "Passkey origin is managed by server configuration", "")
+		return
+	}
+	if s.store.HasPasskeys() {
+		s.writeProblem(w, r, http.StatusConflict, "passkey_origin_rebind_required", "Revoke existing passkeys before changing the HTTPS domain", "")
+		return
+	}
+	change := map[string]any{"origin": detected, "source": "current_https_origin"}
+	if err := s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	if err := passkeys.VerifyManagementFactors(session.User.ID, input.Password, input.TOTPCode); err != nil {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "failure", change)
+		s.writePasskeyProblem(w, r, err)
+		return
+	}
+	candidate, err := auth.NewPasskeyService(s.auth, detected)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "failure", change)
+		s.writePasskeyProblem(w, r, err)
+		return
+	}
+	storedOrigin, version := s.store.PasskeyOrigin()
+	if storedOrigin != currentOrigin {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "failure", change)
+		s.writeProblem(w, r, http.StatusConflict, "resource_version_changed", "Passkey origin changed; refresh and retry", "")
+		return
+	}
+	if err := s.store.ReplacePasskeyOrigin(version, detected); err != nil {
+		_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "failure", change)
+		if errors.Is(err, store.ErrConflict) {
+			s.writeProblem(w, r, http.StatusConflict, "resource_version_changed", "Passkey origin changed; refresh and retry", "")
+			return
+		}
+		s.writeProblem(w, r, http.StatusInternalServerError, "passkey_origin_update_failed", "Passkey origin update failed", "")
+		return
+	}
+	s.passkeys = candidate
+	_ = s.audit(r, session.User.ID, "settings.passkey_origin.update", "panel", "passkey-origin", "success", change)
+	s.writeJSON(w, http.StatusOK, passkeyStatusResponse{Available: true, Origin: detected, DetectedOrigin: detected})
+}
+
+func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suffix string, passkeys *auth.PasskeyService) {
 	var input struct {
 		Username   string          `json:"username"`
 		CeremonyID string          `json:"ceremonyId"`
@@ -144,7 +281,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suff
 	}
 	if suffix == "/login/begin" {
 		binding := rand.Text()
-		options, err := s.passkeys.BeginLogin(s.remoteIP(r), input.Username, passkeyBinding(binding))
+		options, err := passkeys.BeginLogin(s.remoteIP(r), input.Username, passkeyBinding(binding))
 		if err != nil {
 			s.auditAuthFailure(r, "auth.passkey.login")
 			s.writePasskeyProblem(w, r, err)
@@ -162,7 +299,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suff
 	http.SetCookie(w, &http.Cookie{Name: passkeyCookie, Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 	// Anonymous failures use the shared audit throttle; arbitrary ceremony IDs
 	// must not trigger an unbounded durable intent write before verification.
-	credentials, err := s.passkeys.FinishLogin(s.remoteIP(r), passkeyBinding(cookie.Value), input.CeremonyID, input.Credential, input.TOTPCode)
+	credentials, err := passkeys.FinishLogin(s.remoteIP(r), passkeyBinding(cookie.Value), input.CeremonyID, input.Credential, input.TOTPCode)
 	if err != nil {
 		s.auditAuthFailure(r, "auth.passkey.login")
 		s.writePasskeyProblem(w, r, err)

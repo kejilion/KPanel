@@ -2,8 +2,10 @@ package store
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -15,6 +17,57 @@ const (
 	MaxPasskeys               = 10
 	MaxPasskeyCredentialBytes = 16 << 10
 )
+
+// PasskeyOrigin returns the persisted browser-facing origin and a stable
+// version for optimistic updates. The origin is panel configuration, not a
+// credential, so it is kept outside the per-user passkey records.
+func (s *Store) PasskeyOrigin() (string, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data.PasskeyOrigin, PasskeyOriginResourceVersion(s.data.PasskeyOrigin)
+}
+
+// ReplacePasskeyOrigin persists a single canonical origin with compare-and-set
+// semantics. Panel validation performs the full WebAuthn origin policy check;
+// this layer still rejects unbounded/control values before touching disk.
+func (s *Store) ReplacePasskeyOrigin(expectedResourceVersion, value string) error {
+	if len(value) > 512 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\r\n") {
+		return ErrInvalidRecord
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expectedResourceVersion != PasskeyOriginResourceVersion(s.data.PasskeyOrigin) {
+		return ErrConflict
+	}
+	previous := cloneDiskState(s.data)
+	s.data.PasskeyOrigin = value
+	if value != "" && s.data.SchemaVersion < 2 {
+		s.data.SchemaVersion = 2
+	}
+	if err := s.persistLocked(); err != nil {
+		s.data = previous
+		return err
+	}
+	return nil
+}
+
+func PasskeyOriginResourceVersion(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("sha256:%x", digest[:])
+}
+
+// HasPasskeys reports whether changing the global RP would strand any stored
+// credential, including credentials belonging to another panel user.
+func (s *Store) HasPasskeys() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, user := range s.data.Users {
+		if len(user.Passkeys) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // Passkey contains public credential material only. WebAuthn parsing and
 // signature verification belong to auth; the store enforces bounded records.

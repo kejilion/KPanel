@@ -32,7 +32,7 @@ func ValidateIdentityBackup(data []byte) error {
 	if err := backup.Decode(data, &state); err != nil {
 		return err
 	}
-	if state.SchemaVersion != 1 || len(state.Users) != 1 || len(state.Sessions) != 0 || len(state.Audit) != 0 || len(state.LoginAttempts) != 0 || len(state.FileShares) != 0 || state.ClusterShare.Enabled || state.ClusterShare.Token != "" || state.SecurityEntrance.Enabled {
+	if state.SchemaVersion != 1 || len(state.Users) != 1 || len(state.Sessions) != 0 || len(state.Audit) != 0 || len(state.LoginAttempts) != 0 || len(state.FileShares) != 0 || state.ClusterShare.Enabled || state.ClusterShare.Token != "" || state.SecurityEntrance.Enabled || state.PasskeyOrigin != "" {
 		return errors.New("invalid panel identity backup")
 	}
 	if state.ClusterHostOrder != nil {

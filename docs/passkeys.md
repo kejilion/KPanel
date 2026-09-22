@@ -13,9 +13,11 @@ CSRF、接口鉴权或 Panel/Agent 隔离，不改变集群、MCP、宿主机与
 ## 部署入口
 
 - 使用固定域名和浏览器信任的 HTTPS。HTTP、IP 字面地址、公共后缀、通配符和不合法域名不能启用。
-- 默认使用 HTTPS 域名形式的 `KEJILION_PANEL_PUBLIC_URL`。直连 IP 后通过可信代理添加域名时，可配置
-  `KEJILION_PANEL_PASSKEY_ORIGIN=https://panel.example.com`（JSON 字段 `passkeyOrigin`）并重启 Panel。
-  该字段只指定认证来源，不创建反代、证书或扩大原有 Host 允许范围；仍须满足既有入口配置。
+- 默认使用 HTTPS 域名形式的 `KEJILION_PANEL_PUBLIC_URL`。直连 IP 后通过可信代理添加域名时，设置页会在
+  检测到有效的可信 HTTPS 入口后提供“使用当前入口启用”，管理员确认当前密码及已启用的第二因素后即可持久化
+  `passkeyOrigin`，无需手工编辑配置文件或重启 Panel。也可使用
+  `KEJILION_PANEL_PASSKEY_ORIGIN=https://panel.example.com`（JSON 字段 `passkeyOrigin`）进行服务器侧固定配置。
+  面板入口只接受当前可信 HTTPS Origin，不接受用户任意输入的域名；该字段只指定认证来源，不创建反代、证书或扩大原有 Host 允许范围。
 - RP ID 为该配置的精确主机名，不扩大到父域；Origin 包含协议、域名及非默认端口。
   不从每次请求的 Host 自动生成允许列表。只信任既有可信代理 CIDR，外部请求必须实际呈现 HTTPS。
 - 登录/注册的 HTTP Origin 与签名内 Origin 均校验；禁止跨源 iframe 和关联域名登录。
