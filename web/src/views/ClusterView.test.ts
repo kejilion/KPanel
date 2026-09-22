@@ -951,6 +951,28 @@ describe('ClusterView inventory and navigation', () => {
     expect(view.shortFingerprint(directHost.peerFingerprint)).toMatch(/^sha256:a+…a{8}$/)
   })
 
+  it('names the private-network allowlist settings when an origin is blocked', async () => {
+    const view = setupView()
+    mocks.add.mockRejectedValueOnce(
+      new ApiError('Cluster origin is blocked', 422, 'cluster_origin_blocked'),
+    )
+    view.addForm.accessCredential = view.formatClusterAccessCredential(
+      'http://10.120.6.54:8080',
+      `kp2.${'a'.repeat(180)}`,
+    )
+
+    await view.addHost()
+
+    const [title, detail] = mocks.toastDanger.mock.calls.at(-1) ?? []
+    expect(title).toBe('添加主机失败')
+    expect(detail).toContain('KPANEL_CLUSTER_PRIVATE_CIDRS')
+    expect(detail).toContain('KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS')
+    expect(detail).toContain('可信代理 CIDR 不控制此项')
+    for (const locale of [english, traditionalChinese]) {
+      expect(new Map(locale).get(detail)).toContain('KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS')
+    }
+  })
+
   it('does not report an unfinished two-phase pairing as complete', async () => {
     const view = setupView()
     const pending = host('pending', false, 'http://198.51.100.20:8080')

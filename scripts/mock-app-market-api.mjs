@@ -2288,6 +2288,19 @@ createServer(async (request, response) => {
     })
     return
   }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/hosts') {
+    const input = await readJSON(request)
+    // Mirrors the default private-network policy: RFC1918 origins are blocked unless allowlisted.
+    const hostname = (() => {
+      try { return new URL(String(input.origin || '')).hostname } catch { return '' }
+    })()
+    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) {
+      send(response, 422, { title: 'Cluster origin is blocked', code: 'cluster_origin_blocked' })
+      return
+    }
+    send(response, 401, { title: 'Cluster pairing failed', code: 'cluster_pairing_failed' })
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/terminal-commands') {
     send(response, 200, mockTerminalCommandSnapshot())
     return

@@ -202,7 +202,8 @@ secret 哈希，不含原始命令，并限制为 2 MiB、最多 16 条有效策
 - 每次拨号重新解析全部地址，先校验再直接拨校验后的 IP，TLS SNI 保留原主机名；
 - 默认拒绝 loopback、link-local、multicast、unspecified、RFC1918、ULA、CGNAT、
   文档保留地址、NAT64/6to4/Teredo 转换前缀和云元数据链路；
-- 私网只能通过部署端 `KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS` 精确放行；
+- 私网只能通过部署端 `KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS`（应用市场安装为 `.env` 的
+  `KPANEL_CLUSTER_PRIVATE_CIDRS`）精确放行，拒绝时界面提示会给出这两个配置项；
 - 混合返回公网与受限地址时整体拒绝，防止 DNS rebinding。
 
 轻量节点方向相反：中心不主动访问目标机，也不接收其 URL 或开放端口；节点只连接授权中

@@ -191,8 +191,9 @@ Nginx 必须与 Panel 同处一台宿主机或能安全路由到该内部网段�
 正文由 Noise 端到端加密。该能力不加密浏览器打开的管理页面，公网日常管理仍应配置 HTTPS。
 确需访问私有管理网时，在
 `/opt/kejilion-panel/.env` 的 `KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS` 中填写精确
-CIDR（逗号分隔）后重建 Panel 容器。loopback、link-local、组播和云元数据地址始终
-拒绝；不要填写覆盖范围过大的网段。
+CIDR（逗号分隔）后重建 Panel 容器；应用市场安装对应 `/home/docker/kpanel/.env` 的
+`KPANEL_CLUSTER_PRIVATE_CIDRS`。该项只控制集群出站访问，与可信代理 CIDR 无关。
+loopback、link-local、组播和云元数据地址始终拒绝；不要填写覆盖范围过大的网段。
 
 反向代理配置属于目标机业务配置，安装器不会自动写入。上线时应单独备份、新增
 独立域名配置、执行 `nginx -t`，成功后才 reload；验证失败时不得 reload。

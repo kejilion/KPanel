@@ -76,7 +76,7 @@ export default [
   ["启用双向文件互传失败", "啟用雙向檔案互傳失敗"],
   ["刷新双向文件互传连接失败", "重新整理雙向檔案互傳連線失敗"],
   ["该 KPanel 已经添加到主机列表。", "該 KPanel 已經新增到主機列表。"],
-  ["该地址被网络安全策略拒绝；私网地址需由部署管理员加入 CIDR 白名单。", "該位址被網路安全策略拒絕；私網位址需由部署管理員加入 CIDR 白名單。"],
+  ["该地址被网络安全策略拒绝。私网地址需在本机部署目录的 .env 中放行：应用市场安装填 KPANEL_CLUSTER_PRIVATE_CIDRS，独立安装填 KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS，然后重建 Panel 容器。可信代理 CIDR 不控制此项。","該位址被網路安全策略拒絕。私網位址需在本機部署目錄的 .env 中放行：應用市場安裝填 KPANEL_CLUSTER_PRIVATE_CIDRS，獨立安裝填 KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS，然後重建 Panel 容器。可信代理 CIDR 不控制此項。"],
   ["关闭", "關閉"],
   ["核", "核"],
   ["集群监控", "叢集監控"],

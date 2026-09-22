@@ -76,7 +76,7 @@ export default [
   ["启用双向文件互传失败", "Failed to enable two-way file transfer"],
   ["刷新双向文件互传连接失败", "Failed to refresh the two-way file transfer connection"],
   ["该 KPanel 已经添加到主机列表。", "The KPanel has been added to the host list."],
-  ["该地址被网络安全策略拒绝；私网地址需由部署管理员加入 CIDR 白名单。", "The address was rejected by the cyber security strategy; the private address was to be added to the CIDR white list by the deployment manager."],
+  ["该地址被网络安全策略拒绝。私网地址需在本机部署目录的 .env 中放行：应用市场安装填 KPANEL_CLUSTER_PRIVATE_CIDRS，独立安装填 KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS，然后重建 Panel 容器。可信代理 CIDR 不控制此项。","The address was blocked by the network security policy. To allow a private address, set KPANEL_CLUSTER_PRIVATE_CIDRS (app market install) or KEJILION_PANEL_CLUSTER_PRIVATE_CIDRS (standalone install) in this host's deployment .env, then recreate the Panel container. Trusted proxy CIDRs do not control this."],
   ["关闭", "Close"],
   ["核", "cores"],
   ["集群监控", "Cluster monitoring"],
