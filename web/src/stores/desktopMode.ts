@@ -276,16 +276,17 @@ function persistMode(storage: StorageLike | undefined): void {
   }
 }
 
-function readPersistedSideSplitRatio(
-  storage: StorageLike | undefined,
-  viewport: ViewportSize,
-): number {
+// The ratio the user chose. The effective ratio is derived from it per viewport, so a
+// temporarily narrow window clamps the layout without overwriting the saved preference.
+let preferredSideSplitRatio = DEFAULT_SIDE_SPLIT_RATIO
+
+function readPersistedSideSplitRatio(storage: StorageLike | undefined): number {
   try {
     const raw = storage?.getItem(SIDE_SPLIT_RATIO_KEY) ?? null
     if (!raw || raw.length > 32) return DEFAULT_SIDE_SPLIT_RATIO
     const ratio = Number(raw)
     if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) return DEFAULT_SIDE_SPLIT_RATIO
-    return normalizeSideSplitRatio(ratio, viewport)
+    return ratio
   } catch {
     return DEFAULT_SIDE_SPLIT_RATIO
   }
@@ -293,7 +294,7 @@ function readPersistedSideSplitRatio(
 
 function persistSideSplitRatio(storage: StorageLike | undefined): void {
   try {
-    storage?.setItem(SIDE_SPLIT_RATIO_KEY, String(state.sideSplitRatio))
+    storage?.setItem(SIDE_SPLIT_RATIO_KEY, String(preferredSideSplitRatio))
   } catch {
     // The divider remains adjustable when browser storage is unavailable.
   }
@@ -319,15 +320,12 @@ function normalizeWindowStack(): void {
 }
 
 function resizeForViewport(viewport: ViewportSize, persist = true): void {
-  state.sideSplitRatio = normalizeSideSplitRatio(state.sideSplitRatio, viewport)
+  state.sideSplitRatio = normalizeSideSplitRatio(preferredSideSplitRatio, viewport)
   for (const windowState of state.windows) {
     windowState.geometry = clampToViewport(windowState.geometry, viewport)
     if (windowState.snap && !supportsSideWindowSnap(viewport)) windowState.snap = null
   }
-  if (persist) {
-    persistWindows(defaultStorage())
-    persistSideSplitRatio(defaultStorage())
-  }
+  if (persist) persistWindows(defaultStorage())
 }
 
 function defaultViewport(): ViewportSize {
@@ -348,7 +346,8 @@ export function initializeDesktopMode(
   viewport: ViewportSize = defaultViewport(),
 ): void {
   state.mode = readPersistedMode(storage)
-  state.sideSplitRatio = readPersistedSideSplitRatio(storage, viewport)
+  preferredSideSplitRatio = readPersistedSideSplitRatio(storage)
+  state.sideSplitRatio = normalizeSideSplitRatio(preferredSideSplitRatio, viewport)
   loadWindowPreferences(storage)
   const restored = readPersistedWindows(storage, viewport)
   if (restored.length) {
@@ -530,10 +529,11 @@ export function useDesktopMode() {
     viewport: ViewportSize = defaultViewport(),
   ): void {
     state.sideSplitRatio = normalizeSideSplitRatio(ratio, viewport)
-    if (persist) persistSideSplitRatio(defaultStorage())
+    if (persist) commitSideSplitRatio()
   }
 
   function commitSideSplitRatio(): void {
+    preferredSideSplitRatio = state.sideSplitRatio
     persistSideSplitRatio(defaultStorage())
   }
 
@@ -604,6 +604,7 @@ export function resetDesktopModeForTest(): void {
   state.windows.splice(0, state.windows.length)
   state.focusedId = 0
   state.sideSplitRatio = DEFAULT_SIDE_SPLIT_RATIO
+  preferredSideSplitRatio = DEFAULT_SIDE_SPLIT_RATIO
   nextWindowId = 1
   nextZ = BASE_WINDOW_Z
   windowPreferences.clear()

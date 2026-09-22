@@ -205,6 +205,39 @@ describe('desktop mode', () => {
     expect(useDesktopMode().sideSplitRatio.value).toBeCloseTo(360 / 1250)
   })
 
+  it('keeps the saved split preference when a narrow viewport temporarily clamps it', () => {
+    setupViewport(1920, 1000)
+    initializeDesktopMode(window.localStorage, { width: 1920, height: 1000 })
+    const desktop = useDesktopMode()
+    desktop.setSideSplitRatio(0.8, true, { width: 1920, height: 1000 })
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(0.8)
+
+    desktop.resizeForViewport({ width: 1000, height: 800 })
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(1 - 360 / 970)
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBeCloseTo(0.8)
+
+    desktop.resizeForViewport({ width: 1920, height: 1000 })
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(0.8)
+
+    resetDesktopModeForTest()
+    initializeDesktopMode(window.localStorage, { width: 1000, height: 800 })
+    expect(useDesktopMode().sideSplitRatio.value).toBeCloseTo(1 - 360 / 970)
+    useDesktopMode().resizeForViewport({ width: 1920, height: 1000 })
+    expect(useDesktopMode().sideSplitRatio.value).toBeCloseTo(0.8)
+  })
+
+  it('saves a divider drag made at a narrow viewport as the new preference', () => {
+    setupViewport(1000, 800)
+    initializeDesktopMode(window.localStorage, { width: 1000, height: 800 })
+    const desktop = useDesktopMode()
+    desktop.setSideSplitRatio(0.55, false, { width: 1000, height: 800 })
+    desktop.commitSideSplitRatio()
+
+    desktop.resizeForViewport({ width: 1920, height: 1000 })
+    expect(desktop.sideSplitRatio.value).toBeCloseTo(0.55)
+    expect(Number(window.localStorage.getItem('kpanel:desktop-side-split:v1'))).toBeCloseTo(0.55)
+  })
+
   it('does not write window storage during geometry frames and commits once at gesture end', () => {
     setupViewport(1280, 800)
     initializeDesktopMode(window.localStorage, { width: 1280, height: 800 })
