@@ -136,7 +136,7 @@ describe('DesktopWindow lazy view loading', () => {
     wrapper.unmount()
   })
 
-  it('hands desktop applications to their own windows and restores native history by window', async () => {
+  it('keeps Overview utilities in one window and restores native history', async () => {
     routeMocks.resolveWindowComponent.mockResolvedValue({
       name: 'NavigableDesktopPageFixture',
       setup() {
@@ -178,31 +178,29 @@ describe('DesktopWindow lazy view loading', () => {
 
     await wrapper.get('[data-testid="open-monitoring"]').trigger('click')
     await flushPromises()
-    expect(windowState.path).toBe('/overview')
-    const monitoringWindow = desktop.windows.value.find((item) => item.path === '/monitoring')!
-    expect(monitoringWindow.titleKey).toBe('route.monitoring')
+    expect(windowState.path).toBe('/monitoring')
+    expect(windowState.titleKey).toBe('route.monitoring')
     expect(nativeHistory.history.navigate).toHaveBeenLastCalledWith(
       { windowId: id, fullPath: '/overview' },
-      { windowId: monitoringWindow.id, fullPath: '/monitoring' },
+      { windowId: id, fullPath: '/monitoring' },
     )
 
     await wrapper.get('[data-testid="open-processes"]').trigger('click')
     await flushPromises()
-    expect(windowState.path).toBe('/overview')
-    const processWindow = desktop.windows.value.find((item) => item.path === '/processes')!
-    expect(processWindow.titleKey).toBe('route.processes')
+    expect(windowState.path).toBe('/processes')
+    expect(windowState.titleKey).toBe('route.processes')
     expect(nativeHistory.history.navigate).toHaveBeenLastCalledWith(
-      { windowId: id, fullPath: '/overview' },
-      { windowId: processWindow.id, fullPath: '/processes' },
+      { windowId: id, fullPath: '/monitoring' },
+      { windowId: id, fullPath: '/processes' },
     )
 
     await wrapper.get('[data-testid="open-system"]').trigger('click')
     await flushPromises()
     expect(windowState.path).toBe('/system')
     expect(windowState.titleKey).toBe('route.systemCenter')
-    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.windows.value).toHaveLength(1)
     expect(nativeHistory.history.navigate).toHaveBeenLastCalledWith(
-      { windowId: id, fullPath: '/overview' },
+      { windowId: id, fullPath: '/processes' },
       { windowId: id, fullPath: '/system' },
     )
 
@@ -217,7 +215,7 @@ describe('DesktopWindow lazy view loading', () => {
 
     nativeHistory.emit({ windowId: id, fullPath: '/monitoring' })
     await vi.waitFor(() => expect(windowState.path).toBe('/monitoring'))
-    expect(desktop.windows.value).toHaveLength(3)
+    expect(desktop.windows.value).toHaveLength(1)
     expect(windowState.minimized).toBe(false)
 
     nativeHistory.emit({ windowId: id, fullPath: '/overview' })
