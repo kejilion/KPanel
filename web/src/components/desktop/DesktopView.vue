@@ -4478,26 +4478,25 @@ function onViewportResize(): void {
                 class="desktop-wallpaper-picker__status"
                 :data-scene-status="scene.id === pendingSceneID ? 'loading' : desktopSceneStatus[scene.id] ?? 'idle'"
               >
-                <template v-if="scene.id === pendingSceneID">
+                <span v-if="scene.id === pendingSceneID" class="desktop-wallpaper-picker__status-item">
                   {{ i18n.t('desktop.sceneDownloading') }}
-                </template>
-                <template v-else-if="desktopSceneStatus[scene.id] === 'error'">
+                </span>
+                <span v-else-if="desktopSceneStatus[scene.id] === 'error'" class="desktop-wallpaper-picker__status-item">
                   <CircleAlert :size="14" aria-hidden="true" />
                   {{ i18n.t('desktop.sceneDownloadFailed') }}
-                </template>
-                <template v-else-if="desktopSceneStatus[scene.id] === 'ready'">
+                </span>
+                <span v-else-if="desktopSceneStatus[scene.id] === 'ready'" class="desktop-wallpaper-picker__status-item">
                   <Check :size="14" aria-hidden="true" />
                   {{ i18n.t('desktop.sceneReady') }}
-                </template>
-                <template v-else>
+                </span>
+                <span v-else class="desktop-wallpaper-picker__status-item">
                   <Download :size="14" aria-hidden="true" />
                   {{ i18n.t('desktop.sceneOnDemand') }}
-                </template>
-                <template v-if="scene.timeAware">
-                  <span class="desktop-wallpaper-picker__status-separator" aria-hidden="true">·</span>
+                </span>
+                <span v-if="scene.timeAware" class="desktop-wallpaper-picker__status-item desktop-wallpaper-picker__status-item--time">
                   <Clock3 :size="14" aria-hidden="true" />
                   {{ i18n.t('desktop.sceneFollowsTime') }}
-                </template>
+                </span>
               </span>
             </span>
             <Check

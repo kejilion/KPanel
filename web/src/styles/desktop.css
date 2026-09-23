@@ -2910,7 +2910,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 5px;
+  gap: 2px 10px;
   margin-top: 2px;
   color: var(--text-soft);
   font-size: 13px;
@@ -2926,11 +2926,18 @@ body.desktop-mode-open::-webkit-scrollbar {
   font-weight: 500;
 }
 
-.desktop-wallpaper-picker__status svg {
+/* Icon and label wrap as one unit so an icon never ends a line on its own. */
+.desktop-wallpaper-picker__status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-wallpaper-picker__status-item svg {
   flex: none;
 }
 
-.desktop-wallpaper-picker__status-separator {
+.desktop-wallpaper-picker__status-item--time {
   color: var(--muted);
 }
 
@@ -2946,7 +2953,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop-wallpaper-picker__copy small {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
