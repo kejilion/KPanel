@@ -26,7 +26,7 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop\s*\{[^}]*z-index:\s*1000;/)
     expect(styles).toContain('z-index: 1200;')
     expect(styles).toContain('z-index: 2800 !important;')
-    expect(styles).toMatch(/\.desktop-mode-open :is\(\.file-context-menu, \.docker-context-menu\)\s*\{[^}]*z-index:\s*4500 !important;/)
+    expect(styles).toMatch(/\.desktop-mode-open :is\(\.file-context-menu, \.docker-context-menu, \.file-host-switcher__menu\)\s*\{[^}]*z-index:\s*4500 !important;/)
     expect(styles).toContain('z-index: 5000 !important;')
     expect(styles).toContain('z-index: 5200 !important;')
   })
