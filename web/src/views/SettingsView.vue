@@ -920,7 +920,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
           <small>{{ settingsCategoryCount(category.id) }}</small>
         </button>
       </div>
-      <p class="settings-browser__summary" role="status" aria-live="polite">
+      <p class="sr-only" role="status" aria-live="polite">
         {{ settingsResultSummary }}
       </p>
     </section>
@@ -1665,12 +1665,6 @@ onBeforeUnmount(stopKPanelReleaseRequest)
   font-size: 0.75rem;
   line-height: 18px;
   text-align: center;
-}
-
-.settings-browser__summary {
-  margin: -2px 2px 0;
-  color: var(--muted);
-  font-size: 0.82rem;
 }
 
 .settings-empty {
