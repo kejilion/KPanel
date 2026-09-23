@@ -122,7 +122,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：3
+- 已记录发布流程异常或无效证据拦截次数：4
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -156,13 +156,22 @@
     "recoveryEvidence": "保留 r1 失败日志；未改候选代码，同 SHA 的 L3 r2 全量通过，status=passed、exit_code=0。",
     "permanentAction": "稳定版前复核该 500ms 过期用例的时序敏感性与测试等待边界；不忽略首次失败或把复跑改写成首次通过。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "ci/main/race-flake",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "验收追记提交 `7ce1e9ac` 的主线 CI #35836105224 只在 Detect races in privileged core packages 步骤失败。日志定位到 `TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation`：第 193 行拿到 `state=executing`，而断言要求 `failed` 且 agent 调用数保持为 1。执行器在 worker 未于 100ms 内结束时会返回尚在执行的操作；日志未输出调用数，故尚不能确认失败来自异步等待还是多出了一次 agent 调用。",
+    "recoveryEvidence": "产品 SHA `370877ed` 的候选 CI #35832962156、主线 CI #35833327759 和 L3 r2 均通过；GitHub Actions 重跑 API 返回 403（Resource not accessible by integration），本机无 Go 工具链，尚未复跑该门禁，不宣称异常已恢复。",
+    "permanentAction": "复核此用例在 race 压力下的状态等待与 agent 调用计数，令断言等到操作终态并明确输出调用计数；确认无越权调用后再以新 CI run 验证。该 fingerprint 曾在 v1.21.0-rc.13/rc.14 出现，稳定版生产写前必须完成根因处置。",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
 
 ## 遗留风险与后续准入
 
-- 预览产物已发布，真机、浏览器矩阵、20 轮性能/资源趋势和公开镜像 E2E 仍未执行；不代表专项验收通过。稳定版候选前补齐相应验证，并复核首次 L3 测试超时的原因。
+- 预览产物已发布，真机、浏览器矩阵、20 轮性能/资源趋势和公开镜像 E2E 仍未执行；不代表专项验收通过。验收追记 CI #35836105224 的主线 race 步骤未通过，日志显示 MCP 跨集群 trash 权限测试在操作终态断言处看到 `executing`；这是 100ms 异步返回等待不足的可能性之一，但 agent 调用计数未记录，不能排除越权执行。产品 SHA 的主线 CI #35833327759 和 L3 r2 已通过，但不覆盖该流程异常。稳定版候选前补齐专项验证，并复核两项 race 测试异常。
 - 新轻量 Node 连接旧中心时可选 stream 被拒绝后按 1 分钟至 30 分钟退避，既有轮询继续；不是完全无请求回退。
 - 未修复审计线索保留本地，动态确认和修复单独排期；不公开可重用攻击细节。
 - 本地资源回收：未执行；保留当前候选、原始审计、回滚 ref 和验证证据。未处理其他任务的脏工作树。
