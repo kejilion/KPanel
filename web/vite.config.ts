@@ -28,6 +28,10 @@ export default defineConfig({
       },
     },
   },
+  worker: {
+    // Scene workers lazy-load each scene chunk, which needs ES module output.
+    format: 'es',
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

@@ -29,6 +29,11 @@ describe('appearance before application startup', () => {
   it('never interpolates an untrusted wallpaper URL', () => {
     expect(run({ 'kpanel:desktop-wallpaper:v1': 'https://example.com/image' }).properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
   })
+  it('marks a saved dynamic scene for its CSS poster and ignores unknown values', () => {
+    expect(run({ 'kpanel:desktop-scene:v1': 'seaside' }).root.dataset.desktopScene).toBe('seaside')
+    expect(run({ 'kpanel:desktop-scene:v1': 'url(https://example.com)' }).root.dataset.desktopScene).toBeUndefined()
+    expect(run({}, '/overview', true).root.dataset.desktopScene).toBeUndefined()
+  })
   it.each(['/login', '/setup', '/share/token', '/share/file/token'])('does not paint a desktop behind %s', pathname => {
     expect(run({ 'kejilion-panel-desktop-mode': 'desktop' }, pathname).classes.has('desktop-boot')).toBe(false)
   })

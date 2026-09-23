@@ -6,6 +6,22 @@ import DesktopView from '@/components/desktop/DesktopView.vue'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
+import { useToast } from '@/stores/toast'
+import { DESKTOP_SCENES } from '@/lib/desktopScenes/catalog'
+import type { SceneHostOptions } from '@/lib/desktopScenes/sceneHost'
+
+const sceneHosts = vi.hoisted(() => [] as Array<{
+  options: SceneHostOptions
+  setPaused: ReturnType<typeof vi.fn>
+}>)
+
+vi.mock('@/lib/desktopScenes/sceneHost', () => ({
+  createSceneHost: (_canvas: HTMLCanvasElement, options: SceneHostOptions) => {
+    const host = { options, mode: 'inline', resize: vi.fn(), setPaused: vi.fn(), setReducedMotion: vi.fn(), dispose: vi.fn() }
+    sceneHosts.push(host)
+    return host
+  },
+}))
 
 function setupViewport(width: number, height: number): void {
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
@@ -452,6 +468,94 @@ describe('DesktopView', () => {
     expect(restored.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('orbit')
     restored.unmount()
     theme.resetColors()
+  })
+
+  it('downloads a dynamic scene before swapping it in and falls back when it fails', async () => {
+    const theme = useTheme()
+    theme.resetColors()
+    sceneHosts.length = 0
+    const wrapper = mount(DesktopView)
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+
+    const dialog = document.body.querySelector<HTMLElement>('.desktop-wallpaper-picker')!
+    expect(dialog.querySelectorAll('[data-scene-option]')).toHaveLength(DESKTOP_SCENES.length)
+    expect(dialog.querySelector('[data-wallpaper-option="classic"]')?.getAttribute('aria-checked')).toBe('true')
+    dialog.querySelector<HTMLButtonElement>('[data-scene-option="aurora"]')!.click()
+    await nextTick()
+
+    // The pending scene downloads invisibly while the dialog shows progress.
+    expect(sceneHosts.map((host) => host.options.sceneId)).toEqual(['aurora'])
+    expect(sceneHosts[0]!.options.paused).toBe(true)
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="aurora"]').classes()).not.toContain('desktop-scene--active')
+    expect(dialog.querySelector('[data-scene-option="aurora"]')?.getAttribute('aria-busy')).toBe('true')
+    expect(dialog.querySelector('#desktop-scene-status-aurora')?.textContent).toContain('正在下载')
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBeNull()
+
+    vi.useFakeTimers()
+    sceneHosts[0]!.options.onReady()
+    await nextTick()
+    expect(document.body.querySelector('.desktop-wallpaper-picker')).toBeNull()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="aurora"]').classes()).toContain('desktop-scene--active')
+    expect(sceneHosts[0]!.setPaused).toHaveBeenLastCalledWith(false)
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBe('aurora')
+    expect(document.documentElement.dataset.desktopScene).toBe('aurora')
+    expect(theme.colors.value).toEqual(DESKTOP_SCENES.find((scene) => scene.id === 'aurora')!.colors)
+    vi.useRealTimers()
+
+    // A window covering the whole desktop pauses the animation.
+    const desktop = useDesktopMode()
+    const windowID = desktop.openWindow('/overview', 'nav.overview', false)
+    desktop.toggleMaximize(windowID)
+    await nextTick()
+    expect(sceneHosts[0]!.setPaused).toHaveBeenLastCalledWith(true)
+    desktop.minimizeWindow(windowID)
+    await nextTick()
+    expect(sceneHosts[0]!.setPaused).toHaveBeenLastCalledWith(false)
+
+    // A failed download keeps the current scene and offers a retry in place.
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+    document.body.querySelector<HTMLButtonElement>('[data-scene-option="rain"]')!.click()
+    await nextTick()
+    sceneHosts[1]!.options.onError('load')
+    await nextTick()
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="rain"]').exists()).toBe(false)
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="aurora"]').exists()).toBe(true)
+    expect(document.body.querySelector('#desktop-scene-status-rain')?.textContent).toContain('下载失败，点击重试')
+    expect(document.body.querySelector('.desktop-wallpaper-picker')).not.toBeNull()
+
+    // Choosing a static wallpaper clears the scene.
+    vi.useFakeTimers()
+    document.body.querySelector<HTMLButtonElement>('[data-wallpaper-option="horizon"]')!.click()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    vi.useRealTimers()
+    expect(wrapper.find('[data-wallpaper="horizon"]').exists()).toBe(true)
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBeNull()
+    expect(document.documentElement.dataset.desktopScene).toBeUndefined()
+    wrapper.unmount()
+    theme.resetColors()
+  })
+
+  it('falls back to the static wallpaper for the session when a saved scene cannot load', async () => {
+    sceneHosts.length = 0
+    window.localStorage.setItem('kpanel:desktop-scene:v1', 'seaside')
+    const wrapper = mount(DesktopView)
+    expect(sceneHosts[0]!.options).toMatchObject({ sceneId: 'seaside', paused: false })
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="seaside"]').classes()).toContain('desktop-scene--active')
+    sceneHosts[0]!.options.onError('load')
+    await nextTick()
+    expect(wrapper.find('.desktop-scene').exists()).toBe(false)
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBe('seaside')
+    expect(useToast().items.value.map((item) => item.title)).toContain('动态场景加载失败')
+    wrapper.unmount()
   })
 
   it('opens and closes a context menu on right-click', async () => {

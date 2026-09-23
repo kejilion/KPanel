@@ -49,6 +49,9 @@
       reader.readAsDataURL(blob)
     } catch { /* Network failures never block the desktop. */ }
   }
+  // A saved dynamic scene paints its CSS gradient poster until its chunk renders.
+  const scene = read('kpanel:desktop-scene:v1')
+  if (['daylight', 'seaside', 'aurora', 'rain', 'fireflies'].includes(scene)) root.dataset.desktopScene = scene
   const wallpaper = selectedWallpaper()
   root.dataset.desktopWallpaper = wallpaper.id
   const source = cachedImage(wallpaper.id) || wallpaper.url

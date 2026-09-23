@@ -135,3 +135,90 @@ html.desktop-wallpaper-loading .desktop__wallpaper { visibility: hidden; }
     transition: none;
   }
 }
+
+/* Dynamic scenes ----------------------------------------------------------- */
+
+/* Posters are the instant first paint, the picker preview and the fallback when a
+   scene cannot be downloaded. They only use gradients, never stored URLs. */
+[data-desktop-scene='daylight'] {
+  --desktop-scene-poster:
+    radial-gradient(circle at 62% 30%, rgb(255 250 236 / 92%) 0 1.6%, rgb(255 236 196 / 38%) 3%, transparent 24%),
+    linear-gradient(180deg, #2a78d4 0%, #69abea 42%, #cfe7f7 62%, #8ea9cb 64%, #56769c 78%, #2a4463 100%);
+}
+
+[data-desktop-scene='seaside'] {
+  --desktop-scene-poster:
+    radial-gradient(circle at 70% 40%, rgb(255 238 204 / 90%) 0 1.8%, rgb(255 205 150 / 40%) 3.5%, transparent 22%),
+    linear-gradient(180deg, #3674c6 0%, #86b3e0 34%, #f3ddb9 51.5%, #86b9d9 52.5%, #3a9bb5 66%, #177f98 81%, #ead3a6 83%, #d7bd8f 100%);
+}
+
+[data-desktop-scene='aurora'] {
+  --desktop-scene-poster:
+    radial-gradient(ellipse 62% 24% at 42% 40%, rgb(56 224 154 / 48%), transparent 70%),
+    radial-gradient(ellipse 48% 20% at 66% 28%, rgb(122 92 255 / 34%), transparent 70%),
+    radial-gradient(ellipse 60% 14% at 45% 88%, rgb(56 224 154 / 14%), transparent 70%),
+    linear-gradient(180deg, #02050f 0%, #07142a 42%, #0d2a3c 66%, #0e1b2e 70%, #060c18 76%, #0a2233 77%, #030811 100%);
+}
+
+[data-desktop-scene='rain'] {
+  --desktop-scene-poster:
+    radial-gradient(circle at 22% 72%, rgb(255 95 162 / 34%), transparent 30%),
+    radial-gradient(circle at 70% 72%, rgb(79 216 255 / 28%), transparent 28%),
+    radial-gradient(circle at 80% 30%, rgb(255 179 71 / 18%), transparent 9%),
+    linear-gradient(180deg, #05050f 0%, #150d2e 44%, #3d1a47 64%, #0b0916 66%, #0b0916 86%, #1a1024 86.5%, #07060c 100%);
+}
+
+[data-desktop-scene='fireflies'] {
+  --desktop-scene-poster:
+    radial-gradient(circle at 78% 17%, rgb(238 246 239 / 92%) 0 2.2%, rgb(207 232 224 / 22%) 3%, transparent 24%),
+    radial-gradient(circle at 34% 72%, rgb(233 255 154 / 20%), transparent 16%),
+    linear-gradient(180deg, #050b19 0%, #0c2032 38%, #23504f 64%, #0d252c 74%, #040b0e 100%);
+}
+
+html.desktop-boot[data-desktop-scene] #desktop-boot {
+  background: var(--desktop-scene-poster, var(--desktop-wallpaper-base));
+}
+
+.desktop-scene {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: var(--desktop-scene-poster);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .6s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-scene--active {
+  opacity: 1;
+}
+
+.desktop-scene__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity .6s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-scene--ready .desktop-scene__canvas {
+  opacity: 1;
+}
+
+.desktop-scene-fade-leave-active {
+  transition: opacity .5s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-scene-fade-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-scene,
+  .desktop-scene__canvas,
+  .desktop-scene-fade-leave-active {
+    transition: none;
+  }
+}

@@ -2820,7 +2820,33 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop-wallpaper-picker {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.desktop-wallpaper-picker__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.desktop-wallpaper-picker__heading:not(:first-child) {
+  margin-top: 8px;
+}
+
+.desktop-wallpaper-picker__heading small {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.desktop-wallpaper-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
   gap: 12px;
 }
 
@@ -2861,6 +2887,51 @@ body.desktop-mode-open::-webkit-scrollbar {
   background-size: cover;
   border-radius: var(--radius);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
+}
+
+.desktop-wallpaper-picker__preview--scene {
+  display: grid;
+  place-items: center;
+  background: var(--desktop-scene-poster);
+}
+
+.desktop-wallpaper-picker__spinner {
+  color: #fff;
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 45%));
+  animation: desktop-spin 1s linear infinite;
+}
+
+.desktop-wallpaper-picker__option--loading {
+  border-color: color-mix(in srgb, var(--brand) 65%, var(--border));
+  cursor: progress;
+}
+
+.desktop-wallpaper-picker__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 5px;
+  margin-top: 2px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.desktop-wallpaper-picker__status[data-scene-status='loading'] {
+  color: var(--brand);
+}
+
+.desktop-wallpaper-picker__status[data-scene-status='error'] {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.desktop-wallpaper-picker__status svg {
+  flex: none;
+}
+
+.desktop-wallpaper-picker__status-separator {
+  color: var(--muted);
 }
 
 .desktop-wallpaper-picker__copy {
