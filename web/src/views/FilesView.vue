@@ -64,6 +64,7 @@ import {
 import { clusterHostPanelURL } from '@/lib/clusterHostNavigation'
 import {
   contextMenuFocusOrigin,
+  contextMenuBounds,
   type ContextMenuFocusOrigin,
   focusFirstContextMenuItem,
   moveContextMenuFocus,
@@ -328,7 +329,13 @@ function positionFileHostPicker(): void {
   const button = fileHostPickerButton.value
   if (!fileHostPickerOpen.value || !menu || !button) return
   const anchor = button.getBoundingClientRect()
-  const placement = placeContextMenu(menu, { x: anchor.left, y: anchor.bottom + 6 }, button)
+  const bounds = contextMenuBounds(button)
+  const below = Math.max(0, bounds.bottom - anchor.bottom - 14)
+  const above = Math.max(0, anchor.top - bounds.top - 14)
+  const openAbove = below < 240 && above > below
+  menu.style.setProperty('--file-host-menu-height', `${openAbove ? above : below}px`)
+  const y = openAbove ? anchor.top - 6 - menu.offsetHeight : anchor.bottom + 6
+  const placement = placeContextMenu(menu, { x: anchor.left, y }, button)
   fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${placement.y}px` }
 }
 
@@ -359,7 +366,10 @@ function fileHostPickerFocusout(event: FocusEvent): void {
   if (event.relatedTarget instanceof Node && !fileHostPickerContains(event.relatedTarget)) closeFileHostPicker()
 }
 
-watch([fileHostPickerOpen, filteredFileHosts, fileHostInventoryLoading, fileHostInventoryError], positionFileHostPicker, { flush: 'post' })
+watch([fileHostPickerOpen, filteredFileHosts, fileHostInventoryLoading, fileHostInventoryError], async () => {
+  await nextTick()
+  positionFileHostPicker()
+}, { flush: 'post' })
 
 function openRemoteFileManager(host: ClusterHost): void {
   closeFileHostPicker()
@@ -4028,7 +4038,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   width: min(340px, calc(100vw - 32px), var(--context-menu-max-width, 340px));
-  max-height: min(480px, var(--context-menu-max-height, calc(100dvh - 16px)));
+  max-height: min(480px, var(--file-host-menu-height, 480px), var(--context-menu-max-height, calc(100dvh - 16px)));
   overflow: hidden;
   border: 1px solid var(--border-strong, var(--border));
   border-radius: var(--radius);
