@@ -631,7 +631,6 @@ async function openHostPicker(focusSelection = false): Promise<void> {
       || hostPickerRoot.value?.querySelector<HTMLButtonElement>('.monitoring-host-option')
     if (option) { option.focus(); return }
   }
-  hostSearchInput.value?.focus()
 }
 
 function hostPickerKeydown(event: KeyboardEvent): void {
