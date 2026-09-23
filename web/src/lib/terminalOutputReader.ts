@@ -34,6 +34,8 @@ export function createTerminalOutputReader(
   let waiter: (() => void) | undefined
   let subscription: TerminalStreamSubscription | null = null
   let streaming = false
+  let closed = false
+  let queuedBytes = 0
   const wake = () => {
     const resolve = waiter
     waiter = undefined
@@ -41,7 +43,20 @@ export function createTerminalOutputReader(
   }
   subscription = dependencies.stream.subscribe({ kind: 'terminal', id: sessionId, offset }, {
     output: (chunk) => {
+      if (closed || !streaming) return
+      // Resume from the last consumed offset if a slow consumer fills the
+      // budget; the backend ring reports any truncation explicitly.
+      if (queued.length >= 32 || queuedBytes + chunk.data.length > 1024 * 1024) {
+        subscription?.close()
+        subscription = null
+        streaming = false
+        queued.length = 0
+        queuedBytes = 0
+        wake()
+        return
+      }
       queued.push(chunk)
+      queuedBytes += chunk.data.length
       wake()
     },
     error: (code) => {
@@ -60,6 +75,7 @@ export function createTerminalOutputReader(
 
   return {
     async next(signal: AbortSignal): Promise<TerminalOutput | null> {
+      if (signal.aborted || closed) throw new DOMException('Aborted', 'AbortError')
       if (!streaming) {
         const chunk = await dependencies.output(sessionId, offset, signal)
         offset = chunk.nextOffset
@@ -67,15 +83,23 @@ export function createTerminalOutputReader(
       }
       if (!queued.length && failure === undefined) {
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => { waiter = undefined; resolve() }, dependencies.idleMs)
-          waiter = () => { clearTimeout(timer); resolve() }
-          signal.addEventListener('abort', () => waiter?.(), { once: true })
+          const finish = () => {
+            clearTimeout(timer)
+            signal.removeEventListener('abort', finish)
+            if (waiter === finish) waiter = undefined
+            resolve()
+          }
+          const timer = setTimeout(finish, dependencies.idleMs)
+          waiter = finish
+          signal.addEventListener('abort', finish, { once: true })
+          if (signal.aborted) finish()
         })
       }
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (signal.aborted || closed) throw new DOMException('Aborted', 'AbortError')
       if (failure !== undefined) throw failure
       const chunk = queued.shift()
       if (chunk) {
+        queuedBytes -= chunk.data.length
         offset = chunk.nextOffset
         return chunk
       }
@@ -84,9 +108,13 @@ export function createTerminalOutputReader(
       return null
     },
     close(): void {
+      closed = true
       subscription?.close()
       subscription = null
       streaming = false
+      queued.length = 0
+      queuedBytes = 0
+      wake()
     },
   }
 }

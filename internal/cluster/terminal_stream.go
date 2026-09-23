@@ -549,10 +549,14 @@ func (t *streamTerminal) request(ctx context.Context, kind byte, payload []byte)
 	reply := make(chan string, 1)
 	t.pending[seq] = reply
 	t.mu.Unlock()
-	if err := conn.write(kind, sequenced(seq, payload)); err != nil {
+	// Cancellation can win while the peer keeps the connection alive without
+	// replying. Release the waiter on every exit, not just timeout/disconnect.
+	defer func() {
 		t.mu.Lock()
 		delete(t.pending, seq)
 		t.mu.Unlock()
+	}()
+	if err := conn.write(kind, sequenced(seq, payload)); err != nil {
 		return ErrTerminalUnavailable
 	}
 	timer := time.NewTimer(terminalStreamReplyTimeout)
@@ -566,9 +570,6 @@ func (t *streamTerminal) request(ctx context.Context, kind byte, payload []byte)
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
-		t.mu.Lock()
-		delete(t.pending, seq)
-		t.mu.Unlock()
 		return ErrTerminalUnavailable
 	}
 }

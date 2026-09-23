@@ -346,7 +346,9 @@ func (s *Service) openPanelFileStream(ctx context.Context, hostID string, input 
 func startTerminalStream(ctx context.Context, conn *fileStreamConn, first byte, payload any) (*fileStreamConn, terminalStreamReady, error) {
 	if err := conn.writeJSON(first, payload); err != nil {
 		conn.close()
-		return nil, terminalStreamReady{}, &streamDialError{err}
+		// The first record may have reached the target. Do not retry an
+		// ambiguous PTY open through v2 and create a second session.
+		return nil, terminalStreamReady{}, err
 	}
 	// Opening a PTY is quick; do not let a stalled target hold the caller.
 	readCtx, cancel := context.WithTimeout(ctx, terminalStreamReadyTimeout)
@@ -354,7 +356,7 @@ func startTerminalStream(ctx context.Context, conn *fileStreamConn, first byte, 
 	kind, data, err := conn.readContext(readCtx)
 	if err != nil {
 		conn.close()
-		return nil, terminalStreamReady{}, &streamDialError{err}
+		return nil, terminalStreamReady{}, err
 	}
 	switch kind {
 	case termReady:
