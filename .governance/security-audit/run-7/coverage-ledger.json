@@ -1,0 +1,3494 @@
+[
+  {
+    "coverage_id": "Browser%20GET%20of%20versioned%20thumbnail%20response::internal%2Fpanel%2Ffiles.go%23Cache-Control%20for%20versioned%20thumbnail%20responses::internal%2Fpanel::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "Browser GET of versioned thumbnail response",
+      "boundary": "internal/panel/files.go#Cache-Control for versioned thumbnail responses",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "Browser GET of versioned thumbnail response",
+    "boundary": "internal/panel/files.go#Cache-Control for versioned thumbnail responses",
+    "subsystem": "internal/panel",
+    "attack_class": "Feature abuse and data leakage",
+    "starting_paths": [
+      "web/src/views/FilesView.vue",
+      "web/src/lib/api.ts",
+      "internal/panel/files.go",
+      "internal/panel/light_file.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/agent/file_handler.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit concerns HTTP private-cache identity and response reuse; it does not process executable content."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "web/src/lib/api.ts",
+      "web/src/views/FilesView.vue",
+      "internal/panel/files.go",
+      "internal/panel/light_file.go",
+      "internal/agent/files.go",
+      "internal/agent/thumbnail_cache.go",
+      "internal/filemanager/manager.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "web/src/lib/api.ts",
+          "web/src/views/FilesView.vue",
+          "internal/panel/files.go",
+          "internal/panel/light_file.go",
+          "internal/agent/files.go",
+          "internal/agent/thumbnail_cache.go",
+          "internal/filemanager/manager.go"
+        ],
+        "result": "前端请求带 path/mode/version；Panel 只对 200/304 版本化 thumbnail 设 private,max-age=3600，其余 no-store；Agent 先校验 ResourceVersion，再按 path/version 缓存，LRU 有界（FilesView.vue:3269-3276；panel/files.go:1273-1288；agent/files.go:467-508；thumbnail_cache.go:8-72）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "缩略图缓存只适用于私有、带版本的 thumbnail GET；Agent 校验当前版本，其他文件响应禁止缓存。"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "f2fcd7373bee69f8cf250cf03ed09860f25912be"
+    ]
+  },
+  {
+    "coverage_id": "FilesView%20cross-panel%20drag%20fallback::internal%2Fpanel%2Ffiles.go%23cross-panel%20file%20request%20and%20authorization%20boundary::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "FilesView cross-panel drag fallback",
+      "boundary": "internal/panel/files.go#cross-panel file request and authorization boundary",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "FilesView cross-panel drag fallback",
+    "boundary": "internal/panel/files.go#cross-panel file request and authorization boundary",
+    "subsystem": "internal/panel",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/lib/crossPanelFileTransfer.ts",
+      "web/src/views/FilesView.vue",
+      "internal/panel/files.go",
+      "internal/panel/server.go",
+      "internal/agent/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Policy and query disagreement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Resource and file handling",
+        "reason": "The claim is about request identity binding at the Panel file API, not execution of a file as code."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "web.cross-panel-drag.unbound-text-fallback"
+    ],
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/cluster/file_transfer_v2.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/panel/files.go",
+      "web/src/lib/api.ts",
+      "web/src/lib/crossPanelFileTransfer.ts",
+      "web/src/lib/desktopFileShortcuts.ts",
+      "web/src/lib/fileHostContext.ts",
+      "web/src/views/FilesView.vue"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "web/src/lib/desktopFileShortcuts.ts",
+          "web/src/lib/crossPanelFileTransfer.ts",
+          "web/src/views/FilesView.vue",
+          "internal/panel/files.go",
+          "internal/cluster/panel_file_relay.go"
+        ],
+        "result": "desktopFileShortcuts.ts:318-344 接受带固定前缀的 text/plain JSON，只校验版本、节点 ID 和条目字段，不校验 activeDrag token/source；FilesView.vue:1493-1535 将解析结果交给 transferCrossPanelFileBatch；files.go:711-749 的有效请求由本页管理员 session/CSRF 发起。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "跨 Panel 拖拽描述符应绑定当前页面发起的拖拽意图，再以用户会话调用复制接口。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_transfer_v2.go",
+          "internal/panel/files.go",
+          "web/src/lib/api.ts",
+          "web/src/lib/crossPanelFileTransfer.ts",
+          "web/src/lib/desktopFileShortcuts.ts",
+          "web/src/lib/fileHostContext.ts",
+          "web/src/views/FilesView.vue"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=web.cross-panel-drag.unbound-text-fallback. 源码确认：目标 Panel 会从通用 text/plain 中读取带固定前缀的跨 Panel 描述符；FilesView 在 drop 后会把其中的 sourceNodeId、路径和 resourceVersion 交给管理员页面发起复制。若攻击者能控制一个已配对且具有文件能力的来源节点，并知道其文件的当前路径与版本，伪造描述符可请求目标 Panel 将该文件复制到管理员实际 drop 的目录。服务端仍要求 Panel origin、管理员 session、CSRF、有效目标目录，以及已配对且获准文件访问的来源节点；这不是未经授权的 API 访问或从目标读取数据，且攻击者不能仅靠描述符指定任意目标路径。源码未证明支持的浏览器会把攻击源设置的 text/plain 暴露给目标 drop handler，也未验证这种交互能否可靠诱导用户，因此暂不能确认实际可利用性。",
+        "method": "source",
+        "agent_id": "verify_web_drag_fallback",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 决定性的浏览器事实未观测：受支持的 Chromium/WebKit 是否会将攻击源设置的带前缀 text/plain 暴露给目标页面的 drop 事件，并使 drop handler 获得完整值。源码中的兼容注释不能替代该观察。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_transfer_v2.go",
+          "internal/panel/files.go",
+          "web/src/lib/api.ts",
+          "web/src/lib/crossPanelFileTransfer.ts",
+          "web/src/lib/desktopFileShortcuts.ts",
+          "web/src/lib/fileHostContext.ts",
+          "web/src/views/FilesView.vue"
+        ],
+        "result": "Phase 5 research reviewer decision=replace; The deployment plan performs an actual drag and may send a /files/transfers request that creates a file in a deployed page. Phase 5 forbids deployment audit traffic, so I removed that plan and narrowed the blocker to the unresolved browser behavior. I also corrected source line anchors and added the direct endpoint and server write steps. Applied only source-line/validation-plan corrections; verdict remains needs_validation.",
+        "method": "source",
+        "agent_id": "research_review_web_drag",
+        "artifact": null,
+        "invariant": "The candidate remains unconfirmed pending its decisive bounded browser or storage validation."
+      }
+    ],
+    "result_fingerprints": [
+      "web.cross-panel-drag.unbound-text-fallback"
+    ],
+    "unresolved": [
+      "决定性的浏览器事实未观测：受支持的 Chromium/WebKit 是否会将攻击源设置的带前缀 text/plain 暴露给目标页面的 drop 事件，并使 drop handler 获得完整值。源码中的兼容注释不能替代该观察。",
+      "可行前提包括管理员实际将攻击页面中的可拖元素 drop 到目标 Panel、攻击者控制或能使用一个已配对且获准 files scope 的来源节点，以及该节点上存在攻击者选择的当前路径与 resourceVersion。服务端授权和数据流限制了影响；需验证在这些条件下是否确有未预期的文件写入，以及用户交互是否可被可靠诱导。",
+      "需由受支持浏览器确认跨源 text/plain 是否可到达 drop handler，以及复制前有无独立确认；本环境未运行浏览器。"
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Ffiles%2Fdownload%3Fmode%3Dthumbnail::internal%2Fagent%2Fthumbnail_cache.go%23Cache%20key%20and%20ResourceVersion%20comparison::internal%2Fagent::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "GET /api/v1/files/download?mode=thumbnail",
+      "boundary": "internal/agent/thumbnail_cache.go#Cache key and ResourceVersion comparison",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "GET /api/v1/files/download?mode=thumbnail",
+    "boundary": "internal/agent/thumbnail_cache.go#Cache key and ResourceVersion comparison",
+    "subsystem": "internal/agent",
+    "attack_class": "Feature abuse and data leakage",
+    "starting_paths": [
+      "internal/agent/files.go",
+      "internal/agent/thumbnail_cache.go",
+      "internal/agent/file_handler.go",
+      "internal/agent/server.go",
+      "internal/panel/files.go",
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Superlinear parsing, matching, or evaluation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Decompression and representation amplification",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The assigned effect is derived-image freshness and disclosure; no command or code interpreter is reached."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/agent/thumbnail_cache.go",
+      "internal/filemanager/manager.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/agent/thumbnail_cache.go",
+          "internal/filemanager/manager.go"
+        ],
+        "result": "Agent 每次先 Manager.Open 取得 entry，再与请求 version 比较后查 path/version 缓存（files.go:477-508）；LRU 总额 8 MiB、单项 512 KiB（thumbnail_cache.go:8-72）。ResourceVersion 为路径、大小、mtime、权限和所有者等元数据摘要，不是内容哈希；当前未显示跨独立授权边界的碰撞。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "缩略图缓存命中前须重解析路径并验证版本；缓存键和图像生成资源应有界。"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "f2fcd7373bee69f8cf250cf03ed09860f25912be"
+    ],
+    "parent_hardening_notes": [
+      "ResourceVersion 为路径/元数据摘要而非内容哈希；当前源码未证明跨授权边界影响。"
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fterminal%2Fstream::internal%2Fpanel%2Fterminal_stream.go%23session%20revalidation%20and%20stream%20termination::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "GET /api/v1/terminal/stream",
+      "boundary": "internal/panel/terminal_stream.go#session revalidation and stream termination",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET /api/v1/terminal/stream",
+    "boundary": "internal/panel/terminal_stream.go#session revalidation and stream termination",
+    "subsystem": "internal/panel",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/panel/terminal_stream.go",
+      "internal/panel/server.go",
+      "internal/auth/passkey.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit follows typed protocol, authorization, file or state values and reaches no command, SQL or template interpreter sink."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_stream.go",
+      "internal/store/store.go",
+      "web/src/lib/api.ts",
+      "web/src/lib/terminalStream.ts",
+      "web/src/stores/session.ts"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/terminal_stream.go",
+          "internal/panel/server.go",
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ],
+        "method": "source",
+        "invariant": "SSE 输出只能由仍有效的会话读取；注销等会话撤销应停止该流输出。",
+        "agent_id": "identity_sse_hunter",
+        "result": "流建立时 requireSession 并绑定 userID/token hash（terminal_stream.go:168-193）；Logout 删除 session（server.go:953-969；auth/service.go:595-599）。事件分支直接写 output，Authenticate 只在 15 秒 heartbeat 分支检查（terminal_stream.go:232-245），因此存在撤销后至下次检查前仍发送事件的源码路径。",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "web/src/lib/api.ts",
+          "web/src/lib/terminalStream.ts",
+          "web/src/stores/session.ts"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=terminal-sse-output-after-session-revocation. GET /api/v1/terminal-stream 在建立时验证会话，并把流绑定到 userID 与 token hash。Logout 删除对应 session，但服务端没有按 token 取消已注册的 stream；事件分支可直接写出排队的 output，Authenticate 只在 15 秒 ticker 分支执行。因此源码支持：一个仍打开且已有订阅的 SSE 连接，在同一 token 被注销后、下一次 heartbeat 认证终止该处理器之前，可能继续接收输出。项目 Web 客户端会在当前标签页的 logout 请求完成后 reset 并关闭该标签页的 EventSource；这不直接取消另一标签页或其他已建立客户端的服务端 stream。源码说明了有界心跳检查，但未验证注销后实际送达时间、输出和可见影响。",
+        "method": "source",
+        "agent_id": "verify_terminal_sse",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 当前环境没有工作流要求的 OS-enforced sandbox；本轮只读源码，未运行目标代码、测试、浏览器或网络请求。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "web/src/lib/api.ts",
+          "web/src/lib/terminalStream.ts",
+          "web/src/stores/session.ts"
+        ],
+        "result": "Phase 5 independent source review verified: trace, boundary, and blocker assessed; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_terminal_sse",
+        "artifact": null,
+        "invariant": "session revoke 只从持久化 store 删除 token 对应记录，没有通知 terminalStreamHub 取消该 token 的 stream；流循环在收到 event 时直接发送输出，只在 heartbeat 分支重新调用 Authenticate。"
+      }
+    ],
+    "result_fingerprints": [
+      "terminal-sse-output-after-session-revocation"
+    ],
+    "unresolved": [
+      "当前环境没有工作流要求的 OS-enforced sandbox；本轮只读源码，未运行目标代码、测试、浏览器或网络请求。",
+      "尚未观测 store 删除完成后、同 token 的另一条活跃 SSE 连接是否实际收到新的合成 output，以及到 auth.expired/连接关闭的时间；同页 Web logout 在请求完成后会关闭本页 EventSource。",
+      "需要确认项目对 session logout 的有效性边界是否要求立即终止已建立的输出流，还是接受 heartbeat 检查间隔内的短暂延迟。"
+    ],
+    "related_commits": [
+      "0003887c9ddc1a96517e5d608a6c57f5aa3297b2",
+      "dd3d46e5a538799c97c91ec7c6e0d9b309e1c134"
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv2%2Ffederation%2Ffiles%2Fstream::internal%2Fcluster%2Ffile_stream.go%23authenticated%20framing%20and%20final%20marker::internal%2Fcluster::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "GET /api/v2/federation/files/stream",
+      "boundary": "internal/cluster/file_stream.go#authenticated framing and final marker",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "GET /api/v2/federation/files/stream",
+    "boundary": "internal/cluster/file_stream.go#authenticated framing and final marker",
+    "subsystem": "internal/cluster",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/client.go",
+      "internal/cluster/client_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Envelope and payload identity mismatch",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The assigned effect is framed byte-stream termination, declared size and bounded work; no path reaches an interpreter."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/client.go",
+      "internal/cluster/client_v2.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "File stream framing, upload size, authenticated EOF, and final-marker checks prevent partial or oversized publication.",
+        "artifact": null,
+        "result": "Uploads are bounded; declared lengths match received bytes; receiver requires authenticated completion and rejects malformed or incomplete streams.",
+        "reviewed_paths": [
+          "internal/cluster/file_stream.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/client.go",
+          "internal/cluster/client_v2.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv2%2Ffederation%2Ffiles%2Fstream::internal%2Fcluster%2Ffile_stream_transport.go%23role%20authorization::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "GET /api/v2/federation/files/stream",
+      "boundary": "internal/cluster/file_stream_transport.go#role authorization",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET /api/v2/federation/files/stream",
+    "boundary": "internal/cluster/file_stream_transport.go#role authorization",
+    "subsystem": "internal/cluster",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/client.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "cmd/kejilion-node/terminal_broker.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit follows typed protocol, authorization, file or state values and reaches no command, SQL or template interpreter sink."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/client.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "cmd/kejilion-node/terminal_broker.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Noise peer identity, application role, controller activity, and file/terminal scope remain bound through stream use and revocation.",
+        "artifact": null,
+        "result": "Fixed routes validate envelope and peer key, reject disallowed roles/scopes, recheck file authorization before each reusable request, and close registered peer sockets on controller revocation.",
+        "reviewed_paths": [
+          "internal/cluster/file_stream.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/client.go",
+          "internal/cluster/client_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "cmd/kejilion-node/terminal_broker.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "GET%20and%20POST%20%2Fapi%2Fv1%2Fterminal%2Fstream::internal%2Fpanel%2Fterminal_stream.go%23validTerminalStreamSubscription::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "GET and POST /api/v1/terminal/stream",
+      "boundary": "internal/panel/terminal_stream.go#validTerminalStreamSubscription",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET and POST /api/v1/terminal/stream",
+    "boundary": "internal/panel/terminal_stream.go#validTerminalStreamSubscription",
+    "subsystem": "internal/panel",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/panel/terminal_stream.go",
+      "internal/panel/server.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit checks identity and object ownership; no executable content or interpreter is reached."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/terminal_stream.go",
+      "internal/panel/server.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/terminal_stream.go",
+          "internal/panel/server.go",
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/terminal_v2.go"
+        ],
+        "method": "source",
+        "invariant": "订阅绑定当前流会话，并对终端对象执行所有者或控制器 scope 检查。",
+        "agent_id": "identity_sse_hunter",
+        "result": "订阅变更要求 session、Origin、CSRF，stream lookup 同时匹配 userID/token hash；本地终端须属当前 user。远端连接检查 active 与 terminal scope，撤销控制器会关闭 peer sockets（terminal_stream.go:250-274,311-323；cluster/terminal_stream.go:169-254；terminal_v2.go:131-149）。未发现 scope 收缩后保留活动 socket 的路径。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "0003887c9ddc1a96517e5d608a6c57f5aa3297b2"
+    ]
+  },
+  {
+    "coverage_id": "Host%20backup%20confirmation%20terminal%20output::cmd%2Fkejilion-node%2Fterminal_broker.go%23output%20relay%20and%20terminal%20buffer::cmd%2Fkejilion-node::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "Host backup confirmation terminal output",
+      "boundary": "cmd/kejilion-node/terminal_broker.go#output relay and terminal buffer",
+      "subsystem": "cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "Host backup confirmation terminal output",
+    "boundary": "cmd/kejilion-node/terminal_broker.go#output relay and terminal buffer",
+    "subsystem": "cmd/kejilion-node",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "cmd/kejilion-node/terminal_broker.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/terminal/buffer.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "web/src/components/settings/BackupCenter.vue"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Resource and file handling",
+        "reason": "The assigned effect is terminal output encoding and rendering; it does not traverse file-manager write sinks."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "hostbackup.cli-root-path-terminal-control-injection"
+    ],
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "blocked",
+        "agent_id": "cluster_boundary_hunter",
+        "reviewed_paths": [
+          "cmd/kejilion-node/terminal_broker.go",
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/terminal_v2.go",
+          "internal/terminal/buffer.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/engine.go",
+          "web/src/components/settings/BackupCenter.vue"
+        ],
+        "local_checks": [
+          {
+            "invariant": "Untrusted backup root-path text must not reach a terminal control-sequence sink.",
+            "artifact": null,
+            "result": "Assigned broker/buffer relay PTY bytes but do not consume hostbackup archive metadata; assigned Vue view renders root paths as text. These paths do not establish the carried CLI confirmation output sink.",
+            "reviewed_paths": [
+              "cmd/kejilion-node/terminal_broker.go",
+              "internal/cluster/terminal_stream.go",
+              "internal/cluster/terminal_v2.go",
+              "internal/terminal/buffer.go",
+              "internal/hostbackup/archive.go",
+              "internal/hostbackup/engine.go",
+              "web/src/components/settings/BackupCenter.vue"
+            ],
+            "method": "source",
+            "agent_id": "cluster_boundary_hunter"
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [
+          "CLI restore confirmation writer source path is outside assigned starting paths, so the carried terminal-control injection trace cannot be completed in this assignment."
+        ],
+        "reassignment_reason": "The critic requested reassignment because the CLI confirmation writer was not traced. Parent rejected that reassignment as outside run-7 scope: source trace from run-4 names cmd/kejilion-agent/backup_bundle.go and internal/hostbackup sources, none changed in the 27-path candidate diff; only cmd/kejilion-node/terminal_broker.go changed, and it does not mediate the CLI confirmation output."
+      }
+    ],
+    "wave": 2,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior hostbackup.cli-root-path-terminal-control-injection remains a run-4 needs-validation lead, but its source trace is in cmd/kejilion-agent/backup_bundle.go and internal/hostbackup code; those paths are outside the 27 changed files. The changed cmd/kejilion-node/terminal_broker.go is an unrelated terminal relay path. No re-audit is assigned in this scoped run."
+    ],
+    "parent_scope_decision": "Reassignment declined as out of scope after checking the fixed 7-commit diff. The blocked wave-1 evidence and critic request are archived in attempts."
+  },
+  {
+    "coverage_id": "Host%20backup%20restore%20destination%20path%20handling::internal%2Fagent%2Fserver.go%23host%20restore%20route%20and%20destination%20validation::internal%2Fagent::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Host backup restore destination path handling",
+      "boundary": "internal/agent/server.go#host restore route and destination validation",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Host backup restore destination path handling",
+    "boundary": "internal/agent/server.go#host restore route and destination validation",
+    "subsystem": "internal/agent",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/agent/server.go",
+      "internal/backup/files.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit follows the assigned data and control path; the excluded class has no reachable sink or effect in this trace."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "hostbackup.restore.mutable-parent-symlink-race"
+    ],
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "deploy/systemd/kejilion-agent.service",
+      "internal/agent/server.go",
+      "internal/backup/files.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/owner_unix.go",
+      "internal/hostbackup/owner_windows.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/hostbackup/restore.go"
+        ],
+        "result": "Agent 路由先验 bearer；restore 预检使用 noNestedMounts/noLinkParents/Lstat 并只把路径字符串写入 journal；apply 阶段再按路径名 MkdirAll、copyTree、Rename。noLinkParents 逐组件 Lstat，后续写入仍按路径解析，无 inode 绑定（agent/server.go:293-333；hostbackup/restore.go:216-237,312-340,617-683）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "主机恢复必须把预检过的目标目录 inode 绑定到后续写入和重命名。"
+      },
+      {
+        "reviewed_paths": [
+          "deploy/systemd/kejilion-agent.service",
+          "internal/agent/server.go",
+          "internal/backup/files.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/owner_unix.go",
+          "internal/hostbackup/owner_windows.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=hostbackup.restore.mutable-parent-symlink-race. 源码确认 restore 仅在路径名上检查目标及 staging 父级，之后仍以路径名创建 .kpanel-next-<id>、复制归档子项并设置元数据。若 Linux/Unix 部署中一个低权限本地进程能在恢复期间重命名所选目标的父目录条目，它可能在检查后将 staging 目录替换为指向目标树外位置的符号链接，使 root Agent 的后续路径操作越出目标树。该操作仍要求管理员显式恢复一个通过归档校验的导入备份，且导入根必须匹配当前 destination inventory；源码不能证明任何实际部署满足父目录权限前提或竞态可命中。",
+        "method": "source",
+        "agent_id": "verify_hostbackup_symlink",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 本次审核边界为 source-only，禁止运行目标代码、测试、构建、fixture 或脚本，因而没有证实符号链接替换是否能在目标系统上重定向 MkdirAll/OpenFile，也没有观察到任何越界写入。"
+      },
+      {
+        "reviewed_paths": [
+          "deploy/systemd/kejilion-agent.service",
+          "internal/agent/server.go",
+          "internal/backup/files.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/owner_unix.go",
+          "internal/hostbackup/owner_windows.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go"
+        ],
+        "result": "Phase 5 independent research reviewer verified the source trace, prerequisite, blockers, concrete boundary, and bounded local/deployment plans; no changes required.",
+        "method": "source",
+        "agent_id": "research_review_hostbackup",
+        "artifact": null,
+        "invariant": "Restore writes must remain bound to the validated destination; the race and deployment prerequisite remain unconfirmed."
+      }
+    ],
+    "result_fingerprints": [
+      "hostbackup.restore.mutable-parent-symlink-race"
+    ],
+    "unresolved": [
+      "本次审核边界为 source-only，禁止运行目标代码、测试、构建、fixture 或脚本，因而没有证实符号链接替换是否能在目标系统上重定向 MkdirAll/OpenFile，也没有观察到任何越界写入。",
+      "目标主机是否有能在恢复期间修改所选目标父目录的低权限本地进程尚未确认；未执行 symlink-swap 竞态验证。",
+      "源码与部署模板不能确定具体主机上所选目标父目录的 owner、mode、ACL、sticky bit、挂载语义，以及是否存在能在 restore 窗口内重命名其条目的低权限进程。"
+    ]
+  },
+  {
+    "coverage_id": "Light-node%20state%20recovery%20after%20controller%20or%20policy%20revocation::internal%2Fcluster%2Flight_store.go%23recovery%20from%20previous%20backup::internal%2Fcluster::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Light-node state recovery after controller or policy revocation",
+      "boundary": "internal/cluster/light_store.go#recovery from previous backup",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Light-node state recovery after controller or policy revocation",
+    "boundary": "internal/cluster/light_store.go#recovery from previous backup",
+    "subsystem": "internal/cluster",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/store_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Backup and replication boundary drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Resource and file handling",
+        "reason": "The assigned sink is persisted recovery state and controller policy, not an uploaded file path."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "kpanel.light-store.missing-target-backup-recovery"
+    ],
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store_v2.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Recovery must not restore revoked light-node authorization from stale previous-state files.",
+        "artifact": null,
+        "result": "If light-state target is absent, openLightStore initializes empty state and cleans unreferenced credentials; it does not restore the previous file. Authorization fails closed, though a local storage interruption may lose state.",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/light_batch_store.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=rejected; fingerprint=kpanel.light-store.missing-target-backup-recovery. The source supports the described missing-target path: startup persists an empty registry, then cleanup removes unreferenced host credentials. This can lose enrollment state and credentials after the narrow local interruption, but the path does not restore revoked authorization; the remaining effect is local availability and durability loss. Rejection reason: The missing-target state-loss mechanics are source-supported, so the original premise is not wholly contradicted. However, the security concern of restoring revoked authorization is absent: the path initializes an empty registry, and host lookup then fails closed. The remaining impact requires a local storage interruption in the narrow atomic-write window and is loss of local enrollment state and availability. The reviewed source shows no attacker-controlled request path that induces this interruption. Under the review instructions, this is a durability and availability hardening issue without meaningful security impact, so reject it as a security finding.",
+        "method": "source",
+        "agent_id": "verify_prior_light_store",
+        "artifact": null,
+        "invariant": "Prior claim kpanel.light-store.missing-target-backup-recovery was independently rechecked against current source and rejected."
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening_notes": [
+      "丢失 light-state target 时即使 previous 可用也初始化空态并清理未引用 credential，授权 fail-closed，但本地存储中断可能造成数据丢失。"
+    ],
+    "parent_prior_lead_resolution": "kpanel.light-store.missing-target-backup-recovery is source-disproved for authorization resurrection: missing target initializes empty state and cleanup fails closed; state loss after a storage interruption remains a hardening concern."
+  },
+  {
+    "coverage_id": "Local%20Panel%20terminal%20buffer%20operations::internal%2Fcluster%2Fterminal_v2.go%23TerminalInput%2FTerminalOutput%2FTerminalResize%2FTerminalClose::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Local Panel terminal buffer operations",
+      "boundary": "internal/cluster/terminal_v2.go#TerminalInput/TerminalOutput/TerminalResize/TerminalClose",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Local Panel terminal buffer operations",
+    "boundary": "internal/cluster/terminal_v2.go#TerminalInput/TerminalOutput/TerminalResize/TerminalClose",
+    "subsystem": "internal/cluster",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/terminal/buffer.go",
+      "internal/cluster/client.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit follows typed protocol, authorization, file or state values and reaches no command, SQL or template interpreter sink."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/terminal/buffer.go",
+      "internal/cluster/client.go",
+      "internal/cluster/stream_v3.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "A retained local terminal handle must not outlive host authorization or bypass cleanup after host revocation.",
+        "artifact": null,
+        "result": "Fresh operations require an active host with terminal scope. Existing handle lookup precedes a new credential check, but host deletion calls forgetHost to shut down and remove retained handles; no scope-update path was found in assigned service code.",
+        "reviewed_paths": [
+          "internal/cluster/terminal_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "internal/terminal/buffer.go",
+          "internal/cluster/client.go",
+          "internal/cluster/stream_v3.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "254c45dc44bb16501bd54cb9168152f07f2de34",
+      "eaae3fb5d94b149adb3496d5be7f5517991ef2b4"
+    ]
+  },
+  {
+    "coverage_id": "MCP%20backup%20restore%20approval%20routing::internal%2Fpanel%2Fserver.go%23route%20registration%20and%20authenticated%20backup%20handler::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "MCP backup restore approval routing",
+      "boundary": "internal/panel/server.go#route registration and authenticated backup handler",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "MCP backup restore approval routing",
+    "boundary": "internal/panel/server.go#route registration and authenticated backup handler",
+    "subsystem": "internal/panel",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/mcp_backups.go",
+      "internal/panel/mcp_management.go",
+      "internal/mcpaccess/operations.go",
+      "internal/backup/jobs.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Resource and file handling",
+        "reason": "The unit tracks approval and revision binding for a backup job; its source files are outside the file and terminal sinks."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "mcp.backup.restore-agent-revision-approval-drift"
+    ],
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/backup/jobs.go",
+      "internal/hostbackup/service.go",
+      "internal/mcpaccess/operations.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/mcp_backups.go",
+      "internal/panel/mcp_management.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/mcp_backups.go",
+          "internal/panel/mcp_management.go",
+          "internal/mcpaccess/operations.go",
+          "internal/panel/backup_handlers.go"
+        ],
+        "result": "MCP arguments digest 包含完整 AgentRevision；host-only preview 将 TargetRevision 固定为 host-only 但会更新 source.AgentRevision。restore 只比较 input.Revision 与 source.TargetRevision，随后 dispatch 使用当前 source.AgentRevision，未比较批准的 input.AgentRevision（mcp_backups.go:69-78；operations.go:94-97；backup_handlers.go:167-195,579-605,638-642）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "MCP 批准的 AgentRevision 必须与实际发往 Agent 的恢复 revision 一致。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/backup/jobs.go",
+          "internal/hostbackup/service.go",
+          "internal/mcpaccess/operations.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/mcp_backups.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=mcp.backup.restore-agent-revision-approval-drift. 源码支持这一 revision 绑定缺口：host_backup_restore 的 durable Arguments 包含 AgentRevision，且其 digest 覆盖完整 Arguments；执行时会从已批准的 Arguments 重新准备请求，但共享 backupRestore 只校验 input.Revision 与 Panel source.TargetRevision。对于不含 panel 模块的导入源，Panel preview 将 TargetRevision 设为 host-only，同时调用 Agent preview 并把返回值写入 source.AgentRevision。restore 经 ReserveFrom 读取当时的 source，随后把其 AgentRevision 发给 Agent。因此，若预览把 A 更新为 B 后、旧批准操作 dispatch 前先完成更新，实际请求可带 B，而 host-only Panel revision 仍匹配；Agent 也会按其当前导入记录的 B 校验。源码未证明具体 A→B 记录状态及顺序已实际发生。预览本身仍受 Panel 登录和 CSRF 控制，MCP preview 也需要审批；这里是旧 restore 批准与后续 Agent revision 的绑定问题，不是已证明的授权绕过。",
+        "method": "source",
+        "agent_id": "verify_mcp_restore_drift",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 本轮被限制为 source-only，未运行目标代码、测试、fixture 或 stub Agent；没有实际观察 host-only source 从 AgentRevision=A 经 preview 变为 B，也没有捕获旧 operation 的 dispatch payload。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/backup/jobs.go",
+          "internal/hostbackup/service.go",
+          "internal/mcpaccess/operations.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/mcp_backups.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "result": "Phase 5 independent research reviewer decision=replace; removed a non-decisive blocker already resolved by source evidence. The claim remains needs_validation; root cause and validation inputs are unchanged.",
+        "method": "source",
+        "agent_id": "research_review_mcp_restore",
+        "artifact": null,
+        "invariant": "Final needs_validation record remains unconfirmed until the specific A-to-B dispatch sequence is established in a bounded harness."
+      }
+    ],
+    "result_fingerprints": [
+      "mcp.backup.restore-agent-revision-approval-drift"
+    ],
+    "unresolved": [
+      "本轮被限制为 source-only，未运行目标代码、测试、fixture 或 stub Agent；没有实际观察 host-only source 从 AgentRevision=A 经 preview 变为 B，也没有捕获旧 operation 的 dispatch payload。",
+      "普通 Panel 审批在 Decide 后会立即尝试执行，MCP host_backup_preview 也是单独的审批操作；需要在离线 harness 中确认可重试 approved operation 与受控 preview 的具体先后关系。源码显示 worker slot 满时执行可在 Claim 前返回并保留 approved 状态，但本轮没有实测该完整路径。",
+      "需以 dummy host-only 备份和 stub Agent 验证 preview 更新后批准参数与实际 dispatch revision 的差异；未执行本地验证。",
+      "preview 需要 Panel 登录/CSRF 或另一个获批 MCP operation。当前候选只涉及这种管理操作之后旧 restore 批准是否仍绑定原 revision；未发现较低信任 MCP 客户端可单独改变 preview 状态的源码路径。"
+    ]
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Ffiles%2Fupload%20and%20file%20listing::internal%2Fagent%2Ffiles.go%23file%20request%20validation%20and%20filemanager%20publication::internal%2Fagent::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "POST /api/v1/files/upload and file listing",
+      "boundary": "internal/agent/files.go#file request validation and filemanager publication",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "POST /api/v1/files/upload and file listing",
+    "boundary": "internal/agent/files.go#file request validation and filemanager publication",
+    "subsystem": "internal/agent",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/panel/files.go",
+      "internal/panel/light_file.go",
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/agent/file_handler.go",
+      "internal/filemanager/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Composite-key and namespace collision",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The assigned path is constrained file input and atomic publication; no executable file interpretation is performed."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/panel/files.go",
+      "internal/agent/server.go",
+      "internal/agent/files.go",
+      "internal/filemanager/manager.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go"
+        ],
+        "result": "Panel 检查 Origin/session/CSRF、媒体类型与 512 MiB 上限；Agent 验 bearer、条目数和重复项；Manager 使用 uploadGate、字节上限、临时文件、Sync、覆盖版本比较与 no-replace/replace rename 发布（panel/files.go:632-682,709-750；agent/server.go:293-303；agent/files.go:139-175；filemanager/manager.go:485-619）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "文件列表和上传限制输入规模、认证调用方，并在验证完成后原子发布文件。"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "f2fcd7373bee69f8cf250cf03ed09860f25912be"
+    ]
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Fterminal%2Fstream%2Fsubscriptions::internal%2Fpanel%2Fterminal_stream.go%23subscription%20mutation%20and%20quota::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "POST /api/v1/terminal/stream/subscriptions",
+      "boundary": "internal/panel/terminal_stream.go#subscription mutation and quota",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "POST /api/v1/terminal/stream/subscriptions",
+    "boundary": "internal/panel/terminal_stream.go#subscription mutation and quota",
+    "subsystem": "internal/panel",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/panel/terminal_stream.go",
+      "internal/panel/server.go",
+      "internal/cluster/terminal_stream.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit is limited to subscription state transitions and count limits; no command or query interpreter is reached."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/terminal_stream.go",
+      "internal/panel/server.go",
+      "internal/cluster/terminal_stream.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/terminal_stream.go",
+          "internal/panel/server.go",
+          "internal/cluster/terminal_stream.go"
+        ],
+        "method": "source",
+        "invariant": "订阅变更受会话、CSRF、输入长度与每流订阅数限制约束。",
+        "agent_id": "identity_sse_hunter",
+        "result": "POST 要求 session、Origin、CSRF；Add/Remove 最多各 16 项，每流最多 16 项；添加前逐项验证（terminal_stream.go:250-308）。terminal 绑定当前用户，job 类型与 ID 受格式校验。配额满时部分已处理添加仍可能保留后返回 429，属于管理员调用的部分成功语义，无跨主体影响。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "0003887c9ddc1a96517e5d608a6c57f5aa3297b2"
+    ]
+  },
+  {
+    "coverage_id": "Panel%20browser%20request%20to%20light-node%20file%20relay::internal%2Fpanel%2Flight_file.go%23route%20allowlist%20and%20host%20selector::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Panel browser request to light-node file relay",
+      "boundary": "internal/panel/light_file.go#route allowlist and host selector",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Panel browser request to light-node file relay",
+    "boundary": "internal/panel/light_file.go#route allowlist and host selector",
+    "subsystem": "internal/panel",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/panel/light_file.go",
+      "internal/panel/server.go",
+      "internal/panel/cluster.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/service_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The assigned boundary is authenticated route and host selection; it has no command construction or interpreter sink."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/store.go",
+      "internal/cluster/types.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/agent.go",
+      "internal/panel/cluster.go",
+      "internal/panel/file_proxy.go",
+      "internal/panel/files.go",
+      "internal/panel/light_file.go",
+      "internal/panel/server.go",
+      "web/src/views/ClusterView.vue"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/light_file.go",
+          "internal/panel/server.go",
+          "internal/panel/cluster.go",
+          "internal/panel/file_proxy.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/protocol_v2.go"
+        ],
+        "result": "旧配对 controller scope 为 SummaryScope 且存储仍强制该值；signed summary 宣告 FileRelayV1Capability，目标 v1 relay 授权条件却恰为 SummaryScope；共享文件 allowlist 含 upload、transfer/import、actions 并分派到 Agent（panel/cluster.go:521-522；cluster/service.go:790-812,1042；store.go:569-571；file_relay_v1.go:71-93；protocol_v2.go:603-613）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "遗留 v1 summary-only grant 不应因传输 capability 宣告而获得文件写操作权限。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/protocol_v2.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/store.go",
+          "internal/cluster/types.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/agent.go",
+          "internal/panel/cluster.go",
+          "internal/panel/file_proxy.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go",
+          "web/src/views/ClusterView.vue"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.v1-summary-scope-file-relay-expansion. The v1 pairing flow creates and persists each controller with `cluster.summary.read`, and the v1 store rejects any other controller scope. In this candidate, `AuthorizeFileRelayV1` accepts that same summary-only scope after validating the controller ID, Ed25519 signature, target, timestamp and nonce, then enforces rate and replay limits. The target reconstructs the embedded request and dispatches it through the fixed file-manager allowlist, which includes `/v1/files/actions`, upload and transfer import. A write action reaches the Panel's authenticated local Agent file API and the file manager configured with root `/`, subject to its existing protected paths, read-only paths and path checks. A process holding an active legacy v1 controller private key can therefore use a summary-read identity for file mutations without a distinct files grant or target-side re-consent. The signature and downstream checks constrain identity, requests and paths, but do not grant file-specific authorization.",
+        "method": "source",
+        "agent_id": "verify_v1_scope",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: The audit boundary prohibits running target code or tests and this host lacks the required OS-enforced isolated sandbox; no signed request was executed against a harmless Agent recorder to observe actual dispatch and response."
+      },
+      {
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/protocol_v2.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/store.go",
+          "internal/cluster/types.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/agent.go",
+          "internal/panel/cluster.go",
+          "internal/panel/file_proxy.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go",
+          "web/src/views/ClusterView.vue"
+        ],
+        "result": "Phase 5 independent research reviewer decision=replace; fingerprint=cluster.v1-summary-scope-file-relay-expansion. Non-material validation-plan correction applied: The record has two distinct blockers, but its validation plan covers only the local authorization path. Add a safe owner-only deployment configuration check for relay reachability and effective Agent file-manager controls. For the v1 negative control, specify a deleted controller; the legacy record has no revocation status.",
+        "method": "source",
+        "agent_id": "research_review_v1_scope",
+        "artifact": null,
+        "invariant": "Final needs_validation record was independently reviewed; it remains unconfirmed unless a bounded validation establishes the stated result."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.v1-summary-scope-file-relay-expansion"
+    ],
+    "unresolved": [
+      "需在隔离旧版配对环境确认 summary-only 目标实际授权 write-capable route，以及升级时是否有目标管理员的额外授权。",
+      "Deployment-level endpoint reachability and the running Panel/Agent configuration were not exercised; source review alone cannot establish an affected installation's network exposure.",
+      "The audit boundary prohibits running target code or tests and this host lacks the required OS-enforced isolated sandbox; no signed request was executed against a harmless Agent recorder to observe actual dispatch and response."
+    ],
+    "related_commits": [
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "Panel%20file%20API%20to%20Agent%20file%20handler::internal%2Fagent%2Ffile_handler.go%23NewFileHandler%20and%20broker%20call%20chain::internal%2Fagent::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "Panel file API to Agent file handler",
+      "boundary": "internal/agent/file_handler.go#NewFileHandler and broker call chain",
+      "subsystem": "internal/agent",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "Panel file API to Agent file handler",
+    "boundary": "internal/agent/file_handler.go#NewFileHandler and broker call chain",
+    "subsystem": "internal/agent",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "internal/agent/file_handler.go",
+      "internal/agent/server.go",
+      "internal/agent/files.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_stream.go",
+      "cmd/kejilion-node/terminal_broker.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Composite-key and namespace collision",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit checks the composition of authenticated transport and file-handler dispatch; no executable input is accepted."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/agent/file_handler.go",
+      "internal/agent/server.go",
+      "cmd/kejilion-node/file_broker.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_relay_client.go",
+      "internal/cluster/service_v2.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/agent/file_handler.go",
+          "internal/agent/server.go",
+          "cmd/kejilion-node/file_broker.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_relay_client.go",
+          "internal/cluster/service_v2.go"
+        ],
+        "result": "一般 Agent listener 验 bearer；NewFileHandler 仅供 lightweight root broker，broker 只挂到 RunFileStream/runLightFileControl。V3/V2 relay 分别复核 controller 活跃状态和文件 scope，并使用 Noise 控制封装（agent/server.go:293-303；file_handler.go:10-24；file_broker.go:90-98；file_stream_transport.go:309-320；service_v2.go:807-822；file_relay_client.go:66-72）。未发现挂载到一般 Agent listener 的路径。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "无 bearer 的 standalone file handler 只能经受控 broker 暴露，Panel/Agent 一般路由保留认证边界。"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "Panel%20terminal%20stream%20open%20and%20reconnect::internal%2Fcluster%2Fterminal_stream.go%23active%20terminal%20scope%20and%20peer%20closure::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Panel terminal stream open and reconnect",
+      "boundary": "internal/cluster/terminal_stream.go#active terminal scope and peer closure",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Panel terminal stream open and reconnect",
+    "boundary": "internal/cluster/terminal_stream.go#active terminal scope and peer closure",
+    "subsystem": "internal/cluster",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "internal/terminal/buffer.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit follows typed protocol, authorization, file or state values and reaches no command, SQL or template interpreter sink."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "internal/terminal/buffer.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Terminal stream establishment, reconnect, and retained sessions stay bound to active terminal authorization.",
+        "artifact": null,
+        "result": "V2 establishment checks active status and terminal scope; revocation closes peer sockets and host deletion forgets local handles. Reconnect requires authenticated attach, and deleted hosts cannot reattach.",
+        "reviewed_paths": [
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/terminal_v2.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "cmd/kejilion-node/terminal_broker.go",
+          "internal/terminal/buffer.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "related_commits": [
+      "254c45dc44bb16501bd54cb9168152f07f2de34",
+      "eaae3fb5d94b149adb3496d5be7f5517991ef2b4",
+      "0003887c9ddc1a96517e5d608a6c57f5aa3297b2",
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "Panel%20v2%20federation%20history%20request::internal%2Fcluster%2Fhistory_transport.go%23cancel%20or%20invalidate%20in-flight%20response::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Panel v2 federation history request",
+      "boundary": "internal/cluster/history_transport.go#cancel or invalidate in-flight response",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Panel v2 federation history request",
+    "boundary": "internal/cluster/history_transport.go#cancel or invalidate in-flight response",
+    "subsystem": "internal/cluster",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/panel/server.go",
+      "internal/cluster/history_transport.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Resource and file handling",
+        "reason": "The trace concerns federated request identity and revocation during response streaming, not a local file sink."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.history.inflight-revocation"
+    ],
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_transfer_v2.go",
+      "internal/cluster/history_transport.go",
+      "internal/cluster/history.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store_v2.go",
+      "internal/contract/monitoring.go",
+      "internal/httpstream/idle.go",
+      "internal/monitoring/query.go",
+      "internal/monitoring/response.go",
+      "internal/panel/cluster.go",
+      "internal/panel/monitoring_federation.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Revoking a controller must terminate its already-authorized history response.",
+        "artifact": null,
+        "result": "History authorization is acquired once and released when the handler exits. V2 streams the response under request timeout; controller revocation does not register or cancel the in-flight response.",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "internal/panel/server.go",
+          "internal/cluster/history_transport.go",
+          "internal/panel/monitoring_federation.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/history_transport.go",
+          "internal/cluster/history.go",
+          "internal/cluster/service_v2.go",
+          "internal/contract/monitoring.go",
+          "internal/monitoring/query.go",
+          "internal/monitoring/response.go",
+          "internal/panel/cluster.go",
+          "internal/panel/monitoring_federation.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.history.inflight-revocation. Panel 在 `/api/v2/federation/monitoring/history` admission 时检查控制器仍为 active、具有历史查询权限，并验证 V2 请求身份。通过后，handler 将 Agent 返回的历史数据持续复制到已认证的远端流。撤销会持久化 revoked 状态并关闭 `fileStreamHub` 中的连接，但源码没有把撤销接入这个 HTTP handler 的 context 或响应 body，也没有在复制期间重查控制器状态。因此，慢响应与撤销并发时，该控制器可能在撤销后继续收到本次已授权查询的剩余数据。历史包含主机和容器指标、容器名称及镜像名称；单次响应受两分钟超时和 16 MiB 上限约束，每个控制器最多一个活动历史流。源码审阅确认缺少撤销联动，但没有观察到撤销后的实际数据帧，也没有找到已授权流是否必须立即失效的明确契约。",
+        "method": "source",
+        "agent_id": "verify_cluster_history",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 本轮只能进行源码审阅，所需的 OS 强制隔离环境不可用，因此无法运行有界 fixture 并观察撤销后的数据帧。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/history_transport.go",
+          "internal/cluster/history.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/contract/monitoring.go",
+          "internal/httpstream/idle.go",
+          "internal/monitoring/query.go",
+          "internal/monitoring/response.go",
+          "internal/panel/cluster.go",
+          "internal/panel/monitoring_federation.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 research reviewer decision=replace; corrected route and revocation line anchors, clarified source-only blocker, and retained needs_validation because post-revocation frames and intended policy remain unobserved.",
+        "method": "source",
+        "agent_id": "research_review_history",
+        "artifact": null,
+        "invariant": "A revocation must stop future use of the controller; whether already-admitted history streams must terminate immediately remains a policy/runtime question."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.history.inflight-revocation"
+    ],
+    "unresolved": [
+      "本轮只能进行源码审阅，所需的 OS 强制隔离环境不可用，因此无法运行有界 fixture 并观察撤销后的数据帧。",
+      "源码没有明确说明已 admission 的历史请求在控制器撤销后应立即失效，还是允许该次读取完成；需要确认产品语义。"
+    ]
+  },
+  {
+    "coverage_id": "V2%20paired-Panel%20file%20relay%20and%20V3%20reusable%20file%20socket::internal%2Fcluster%2Fpanel_file_relay.go%23body%20terminal%20result%20and%20session%20cleanup::internal%2Fcluster::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "V2 paired-Panel file relay and V3 reusable file socket",
+      "boundary": "internal/cluster/panel_file_relay.go#body terminal result and session cleanup",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "V2 paired-Panel file relay and V3 reusable file socket",
+    "boundary": "internal/cluster/panel_file_relay.go#body terminal result and session cleanup",
+    "subsystem": "internal/cluster",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/cluster/panel_file_relay.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/panel/light_file.go",
+      "internal/panel/files.go",
+      "internal/agent/files.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Message boundary and canonicalization disagreement",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Envelope and payload identity mismatch",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Retry storm and fail-open amplification",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "This unit checks relay result, failure propagation and cleanup semantics; no content is evaluated as code."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/panel/file_proxy.go",
+      "internal/panel/light_file.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/file_proxy.go",
+          "internal/panel/light_file.go",
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/file_stream.go",
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go"
+        ],
+        "result": "V2 relay 将 Agent body copy error 丢弃且不转发 trailer；handler finish(nil) 后发送 clean end。独立地，V2 sessions map 无基数 admission；客户端 Close 只取消本地 run，poll 不发 cancel，过期 GC 仅在后续 poll 触发；TTL 两小时、poll rate limit 不能约束活跃 session 总量。V3 有 export-result guard 和 active-stream 限制（file_proxy.go:375-423；panel_file_relay.go:104-157,363-375,518-533,704-718,899-913；file_stream.go:481-484）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "Agent stream failure 必须跨 relay 保持失败态；取消和过期应释放远端 session state。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/service_v2.go",
+          "internal/panel/file_proxy.go",
+          "internal/panel/light_file.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.panel-file-relay.agent-read-error-clean-end. 源码显示一条具体的错误传播缺口：浏览器请求进入目标 Panel 的 V2 polling file relay 后，`federatedFileTransferExport` 将 `/v1/files/transfer/export` 转发给 Agent。Agent 在输出响应后以 `X-KPanel-Transfer-Result` trailer 标记传输失败；目标 Panel 的 `streamFederatedAgent` 只复制允许的普通响应头，不检查读完 body 后的 `response.Trailer`，也丢弃 `io.CopyBuffer` 错误。于是目标 handler 正常返回，relay finalizer 调用 `finish(nil)` 并发送 `end`；源端据此正常关闭 pipe，浏览器侧只在自己的 body copy 出错时才中止。若实际 Agent 导出在发出部分数据后以 clean body EOF 加 `error` trailer 结束，浏览器响应可能表现为正常完成而内容不完整。此路径要求管理员已登录、目标是 active 且有 files scope 的配对 Panel，并且选择了 V2 relay；源码没有显示认证绕过。当前无法在规定的源码只读边界内观察实际 Agent 错误 trailer 是否经这些层后变成浏览器侧 clean EOF。",
+        "method": "source",
+        "agent_id": "verify_relay_read_error",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 当前环境没有要求的 OS 强制隔离沙箱，不能执行受控 in-memory Agent/relay fixture；因此没有观察到 Agent transfer trailer 或 body read error 经 V2 relay 后在浏览器边界的实际结果。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/panel/light_file.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.panel-file-relay.orphan-session-cardinality. A valid active V2 files controller can start a relay under a fresh session ID. If the source closes after the target poll has returned but before another poll is submitted, remoteFileRelayBody.Close cancels only the local polling loop and closes its pipe; it sends no target cancel command. The target removes sessions when a poll observes a collection error or collects a terminal end/error event, while expiry cleanup runs only at the start of a later poll. An abandoned session's map entry and session state can therefore remain after its two-hour context expires until another relay poll or service shutdown. The per-controller 1200-requests-per-minute limiter bounds arrival rate but is not an aggregate session cap. Source establishes the retention path, but not its realized resource impact or whether deployment controls impose a lower bound.",
+        "method": "source",
+        "agent_id": "verify_relay_orphan_sessions",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: This run is source-only because the required OS-enforced isolated sandbox is unavailable; the exact close-between-polls timing, registry retention, and per-session resource cost have not been observed."
+      },
+      {
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/service_v2.go",
+          "internal/panel/file_proxy.go",
+          "internal/panel/light_file.go"
+        ],
+        "result": "Phase 5 independent research reviewer decision=replace; fingerprint=cluster.panel-file-relay.agent-read-error-clean-end. Non-material validation-plan correction applied: 验证计划的 deployment 部分要求下载文件并注入受控失败；Phase 5 要求部署计划由所有者被动观察配置或运行事实，不向部署发送审计流量。已将其改为只检查既有 fallback 状态与下载完整性校验。",
+        "method": "source",
+        "agent_id": "research_review_relay_error",
+        "artifact": null,
+        "invariant": "Final needs_validation record was independently reviewed; it remains unconfirmed unless a bounded validation establishes the stated result."
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/panel_file_relay.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/panel/light_file.go"
+        ],
+        "result": "Phase 5 independent source review verified the candidate trace, source-derived boundary, and unresolved validation blocker; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_orphan_sessions",
+        "artifact": null,
+        "invariant": "panelFileRelay.sessions has no aggregate or per-controller admission bound. A new request inserts a session, but the session context's two-hour timeout does not remove that entry; the only ordinary expiry sweep runs from a later poll. The source-side body Close cancels local work without sending a target cancel command, leaving a timing window after a poll returns in which the target has no request that would trigger its in-flight-poll cleanup."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.panel-file-relay.agent-read-error-clean-end",
+      "cluster.panel-file-relay.orphan-session-cardinality"
+    ],
+    "unresolved": [
+      "当前环境没有要求的 OS 强制隔离沙箱，不能执行受控 in-memory Agent/relay fixture；因此没有观察到 Agent transfer trailer 或 body read error 经 V2 relay 后在浏览器边界的实际结果。",
+      "源码能证明错误状态的生成与转发缺口，但尚未动态确认一个部分输出的 Agent 导出在所支持的 HTTP transport 下表现为 clean body EOF 加 error trailer，也未确认调用方会把该浏览器响应接受为完整文件。",
+      "Cancellation while the target collect call is still in flight reaches an error-removal path, and a later poll can collect terminal events or sweep expired sessions. A bounded reproduction must verify the post-return timing window and whether a meaningful number of abandoned entries persist; source does not establish long-lived handler goroutines.",
+      "poll 间隔取消时的保留时间及资源影响尚需有界确认；V3 限制不证明 V2 session registry 有并发上限。",
+      "The path requires a valid active paired V2 controller credential with files scope, and the target applies a 1200-per-minute per-controller limit. The repository does not establish deployment gateway, process, or service-wide quotas or the resource threshold for shared impact.",
+      "This run is source-only because the required OS-enforced isolated sandbox is unavailable; the exact close-between-polls timing, registry retention, and per-session resource cost have not been observed.",
+      "V2 fallback 的 Agent body/trailer failure 是否被调用方接受为 clean EOF 尚需隔离验证。"
+    ],
+    "related_commits": [
+      "f2fcd7373bee69f8cf250cf03ed09860f25912be",
+      "2f9103b48e5e1a2c4d259a30a6b064e025d8bdeb"
+    ]
+  },
+  {
+    "coverage_id": "cmd%2Fkejilion-node%2Fmain.go%23collectAndReport%20light%20health%20capability::internal%2Fcluster%2Flight_service.go%23AcceptLightReport%20health%20projection%20and%20public%20snapshot::light-node-health::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "cmd/kejilion-node/main.go#collectAndReport light health capability",
+      "boundary": "internal/cluster/light_service.go#AcceptLightReport health projection and public snapshot",
+      "subsystem": "light-node-health",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "cmd/kejilion-node/main.go#collectAndReport light health capability",
+    "boundary": "internal/cluster/light_service.go#AcceptLightReport health projection and public snapshot",
+    "subsystem": "light-node-health",
+    "attack_class": "Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/health_other.go",
+      "internal/contract/light_health.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/types.go",
+      "web/src/components/cluster/LightNodeHealth.vue",
+      "web/src/lib/lightNodeHealth.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/health_other.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/main.go",
+      "internal/cluster/guard.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/types.go",
+      "internal/contract/light_health.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go",
+      "web/src/components/cluster/LightNodeHealth.vue",
+      "web/src/lib/lightNodeHealth.ts"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Replay protection must not let a small set of authenticated nodes exhaust the shared budget and deny unrelated operations.",
+        "artifact": null,
+        "result": "One shared replay guard holds at most 8192 unexpired entries for five minutes and returns ErrRateLimited at capacity. Authenticated light reports add entries before telemetry validation; per-node limits and MaxHosts permit enough enrolled nodes to fill the shared cap.",
+        "reviewed_paths": [
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/health.go",
+          "cmd/kejilion-node/health_linux.go",
+          "cmd/kejilion-node/health_other.go",
+          "internal/contract/light_health.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/types.go",
+          "web/src/components/cluster/LightNodeHealth.vue",
+          "web/src/lib/lightNodeHealth.ts",
+          "internal/cluster/service.go",
+          "internal/cluster/guard.go",
+          "internal/cluster/service_v2.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/guard.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/service.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.replay-guard.shared-capacity-starvation. 源码显示，light report 在节点身份与签名验证、每来源和每节点限流之后，将唯一 request ID 写入 Service 共用的 8192 项 replay guard；写入发生在 telemetry 校验之前。按源码限额，10 个已登记节点若各自对应不同的 remoteIP 来源，并在五个一分钟窗口各提交 180 个新 request ID，可提供 9000 个五分钟内未过期的条目。SignedSummary 也使用同一 guard，因此容量耗尽时新请求可能被拒绝。尚未在隔离环境中观察到跨路由拒绝及 TTL 到期后的恢复；节点凭据数量、来源地址映射和部署侧总限流也未确认。",
+        "method": "source",
+        "agent_id": "verify_cluster_replay_guard_r1",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 未在具备所需隔离条件的环境中复现 guard 达满、独立 SignedSummary 请求被拒绝以及五分钟 TTL 后恢复。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/guard.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/service.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 independent source review verified: trace, boundary, and blocker assessed; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_replay_guard",
+        "artifact": null,
+        "invariant": "多个认证路径共用一个固定容量、固定 TTL 的 replay map；light report 的每来源和每节点限额允许聚合请求量超过该容量，且达到容量后新的唯一请求会收到 ErrRateLimited。"
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.replay-guard.shared-capacity-starvation"
+    ],
+    "unresolved": [
+      "攻击前提要求多个已登记 light node 的有效签名密钥，以及足够多不同的 server-derived remoteIP 来源；实际 NAT、代理、入口总限流和 Service 实例拓扑尚未确认。",
+      "未在具备所需隔离条件的环境中复现 guard 达满、独立 SignedSummary 请求被拒绝以及五分钟 TTL 后恢复。"
+    ],
+    "planned_owner": "h-wave7-light",
+    "hardening_notes": [
+      "internal/contract/light_health.go:74 permits ObservedAt up to one minute in the future, while web/src/lib/lightNodeHealth.ts:3 treats freshness as 90 seconds relative to that node-provided time. A clock-skewed but authenticated node can therefore keep its display fresh for roughly 150 seconds; health is explicitly non-authoritative and unused for access control, but presenting center ReceivedAt alongside node ObservedAt or deriving freshness from ReceivedAt would make the UI semantics tighter."
+    ],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-010",
+        "fingerprint": "cluster.replay-guard.shared-capacity-starvation",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-009",
+        "fingerprint": "cluster.replay-guard.shared-capacity-starvation",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.replay-guard.shared-capacity-starvation"
+    ],
+    "parent_hardening_notes": [
+      "health ObservedAt 可比当前时刻最多超前 1 分钟，UI freshness 阈值 90 秒，可能显示约 150 秒；该 health 为非权威展示数据，不参与访问控制。"
+    ]
+  },
+  {
+    "coverage_id": "cmd%2Fkejilion-node%2Fmain.go%23runEnroll%20batch%20attempt-file%20path::cmd%2Fkejilion-node%2Fbatch_enrollment_attempt.go%23resumable%20private-key%20state::cmd%2Fkejilion-node%2Fbatch-enrollment::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "cmd/kejilion-node/main.go#runEnroll batch attempt-file path",
+      "boundary": "cmd/kejilion-node/batch_enrollment_attempt.go#resumable private-key state",
+      "subsystem": "cmd/kejilion-node/batch-enrollment",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "cmd/kejilion-node/main.go#runEnroll batch attempt-file path",
+    "boundary": "cmd/kejilion-node/batch_enrollment_attempt.go#resumable private-key state",
+    "subsystem": "cmd/kejilion-node/batch-enrollment",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Credential-store and local-secret boundary mismatch",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "cmd/kejilion-node/main.go",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store_v2.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "A successfully revoked enrollment policy must not be resurrected by atomic-store recovery.",
+        "artifact": null,
+        "result": "Batch policy deletion persists through atomicWriteFileV2. The shared writer ignores an error removing the previous file after installing new state; later invalid target recovery can restore the preceding state. This is the same writer root cause as the V2 controller rollback candidate.",
+        "reviewed_paths": [
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/batch_enrollment_attempt.go",
+          "internal/cluster/light_batch_service.go",
+          "internal/cluster/light_batch_store.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.v2-store.stale-backup-revocation-rollback. If a V2 controller revocation leaves a stale .previous file and the current state later fails decoding or validation before that backup is removed, openStoreV2 restores the pre-revocation snapshot. A holder of the old Noise private key could then pass the summary endpoint’s active-controller and peer-key checks and receive node telemetry. Source confirms this conditional path, but does not establish that the required storage-failure sequence occurs on supported deployment filesystems or that a remote peer can cause the current file to become invalid. The state directory is protected with mode 0700.",
+        "method": "source",
+        "agent_id": "verify_cluster_stale_store_r1",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: The host does not provide the required OS-enforced sandbox, so no target execution or fault injection was performed."
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 research reviewer decision=replace; Evidence at internal/panel/server.go:486 points to the helper declaration; the POST summary path is explicitly listed at line 496. The remaining source claims and bounded validation plans are supported. Applied only source-line/validation-plan corrections; verdict remains needs_validation.",
+        "method": "source",
+        "agent_id": "research_review_stale_store",
+        "artifact": null,
+        "invariant": "The candidate remains unconfirmed pending its decisive bounded browser or storage validation."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.v2-store.stale-backup-revocation-rollback"
+    ],
+    "unresolved": [
+      "The host does not provide the required OS-enforced sandbox, so no target execution or fault injection was performed.",
+      "The source shows the conditional rollback, but does not establish that a supported deployment filesystem can leave the backup after cleanup failure and later present an invalid current target before backup cleanup succeeds. No remote path to corrupt the target was established; the remaining trigger appears to require a storage fault or local privileged action."
+    ],
+    "planned_owner": "h-wave6-enroll",
+    "hardening_notes": [],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-005",
+        "fingerprint": "cluster.batch-enrollment.revoked-policy-atomic-backup-restore",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-004",
+        "fingerprint": "cluster.batch-enrollment.revoked-policy-atomic-backup-restore",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.batch-enrollment.revoked-policy-atomic-backup-restore"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fpasskey.go%23BeginLogin::internal%2Fauth%2Fservice.go%23reserveLogin::internal%2Fauth::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/auth/passkey.go#BeginLogin",
+      "boundary": "internal/auth/service.go#reserveLogin",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "internal/auth/passkey.go#BeginLogin",
+    "boundary": "internal/auth/service.go#reserveLogin",
+    "subsystem": "internal/auth",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/store.go",
+      "internal/panel/passkey.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go"
+        ],
+        "method": "source",
+        "invariant": "匿名登录尝试速率限制与持久化容量不能让其他合法登录整体失效。",
+        "agent_id": "identity_sse_hunter",
+        "result": "匿名 Passkey login/begin 调用 BeginLogin；每 IP 有挑战预算，但每个挑战仍写入共享 LoginAttempts（panel/passkey.go:357-365；auth/passkey.go:341-349）。Store 在保留窗口内达到 4096 条后拒绝新记录（store.go:719-747）；密码登录成功建 session 前也必须写记录（service.go:265-317,795-800），因此来源分散的尝试可能导致认证 fail-closed。",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=login-attempt-retention-cap-blocks-authentication. 源码显示，未登录的 Passkey login/begin 请求会按 remote IP 限流，并在生成 challenge 前向共享 LoginAttempts 写入一条记录。Store 保留窗口内达到 4096 条后拒绝所有新记录；密码登录也必须先写入同一记录集合，成功记录后才创建 session。因此满额时，Passkey begin 无法取得 challenge，密码登录无法建立 session。源码不能确认目标部署中匿名入口是否可达、攻击者能否在保留窗口内提供足够多的独立来源，或该情况是否会实际发生。",
+        "method": "source",
+        "agent_id": "verify_login_attempt_cap",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 当前宿主没有工作流要求的 OS 强制隔离环境；本次未运行目标代码、测试或构建，不能提供规定的动态确认。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "result": "Phase 5 independent source review verified: trace, boundary, and blocker assessed; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_login_retention",
+        "artifact": null,
+        "invariant": "匿名 Passkey 登录开始请求与密码登录共用一个有 4096 条保留窗口上限的 LoginAttempts 集合。该集合满额时 Store 返回 ErrLimitReached；密码登录在创建 session 前记录尝试，因此新密码登录也会失败。"
+      }
+    ],
+    "result_fingerprints": [
+      "login-attempt-retention-cap-blocks-authentication"
+    ],
+    "unresolved": [
+      "达到 4096 条需要在实际保留窗口内积累足够多的记录。默认 Passkey begin 预算是每 IP 10 次；攻击者是否能提供足够多的独立来源，源码无法确定。",
+      "当前宿主没有工作流要求的 OS 强制隔离环境；本次未运行目标代码、测试或构建，不能提供规定的动态确认。",
+      "目标部署的安全入口状态、外部路由及代理和上游限流配置未知；这些决定匿名 Passkey begin 和密码登录是否可达，以及来源 IP 是否能被正确区分。"
+    ],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fpasskey.go%23credential-commit::internal%2Fstore%2Fpasskeys.go%23UpdateUserPasskey::internal%2Fstore::ATTACK-CLASSES.md%23Stale%20authorization%20and%20derived%20copy%20use",
+    "canonical_refs": {
+      "surface": "internal/auth/passkey.go#credential-commit",
+      "boundary": "internal/store/passkeys.go#UpdateUserPasskey",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Stale authorization and derived copy use"
+    },
+    "surface": "internal/auth/passkey.go#credential-commit",
+    "boundary": "internal/store/passkeys.go#UpdateUserPasskey",
+    "subsystem": "internal/store",
+    "attack_class": "Stale authorization and derived copy use",
+    "starting_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Stale authorization and derived copy use",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/passkeys.go",
+          "internal/store/store.go"
+        ],
+        "method": "source",
+        "invariant": "WebAuthn 登录提交的 credential 与新 session 基于仍有效、未并发更新的用户和 credential 状态。",
+        "agent_id": "identity_sse_hunter",
+        "result": "FinishLogin 检查 ceremony 用户、CredentialVersion、WebAuthn/UV，并经 UpdateUserPasskey 原子提交 credential 与 session（auth/passkey.go:359-444）。Store 再检查版本、密码摘要、原 credential 快照和字段单调性；管理变更递增版本并撤销 sessions（store/passkeys.go:227-325）。未发现 run-6 stale-snapshot 假设仍成立。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fauth%2Fservice.go%23auth::internal%2Fstore%2Fstore.go%23auth::internal%2Fauth::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/auth/service.go#auth",
+      "boundary": "internal/store/store.go#auth",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "auth",
+    "boundary": "auth invariant",
+    "subsystem": "internal/auth",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Composite-key and namespace collision",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/server.go",
+          "internal/panel/passkey.go",
+          "internal/auth/passkey.go"
+        ],
+        "method": "source",
+        "invariant": "登录失败历史应按 IP/账户限流，且存储边界不应让一个来源耗尽后阻断所有身份认证。",
+        "agent_id": "identity_sse_hunter",
+        "result": "密码登录经过 reserveLogin 的 IP/账户失败计数及 pending 检查，但共享 LoginAttempts 达 4096 后拒绝新写入；成功和失败密码登录均先记账，成功 session 在记账成功后才创建（service.go:295-317,540-552,795-800；store.go:725-747）。run-2 的“淘汰未过期历史”假设被源码反证；当前是满额拒绝。",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=login-attempt-retention-cap-blocks-authentication. 源码显示，未登录的 Passkey login/begin 请求会按 remote IP 限流，并在生成 challenge 前向共享 LoginAttempts 写入一条记录。Store 保留窗口内达到 4096 条后拒绝所有新记录；密码登录也必须先写入同一记录集合，成功记录后才创建 session。因此满额时，Passkey begin 无法取得 challenge，密码登录无法建立 session。源码不能确认目标部署中匿名入口是否可达、攻击者能否在保留窗口内提供足够多的独立来源，或该情况是否会实际发生。",
+        "method": "source",
+        "agent_id": "verify_login_attempt_cap",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 当前宿主没有工作流要求的 OS 强制隔离环境；本次未运行目标代码、测试或构建，不能提供规定的动态确认。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=rejected; fingerprint=auth-login-global-history-evicts-active-lockouts. The prior claim was that unrelated failed logins could discard an account's active failure records and restore its login budget. The frozen source retains all records within the configured window and refuses an append that would exceed the 4096-record cap. Rejection reason: The claimed eviction mechanism is contradicted by the frozen source: active records are retained, and over-cap writes fail without mutating stored history. Thus unrelated failures cannot reset an account's active failure count through this path. A full-capacity login availability effect may warrant a separate fingerprint; it is not the claimed lockout-history eviction.",
+        "method": "source",
+        "agent_id": "verify_prior_auth_eviction",
+        "artifact": null,
+        "invariant": "Prior claim auth-login-global-history-evicts-active-lockouts was independently rechecked against current source and rejected."
+      },
+      {
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "result": "Phase 5 independent source review verified: trace, boundary, and blocker assessed; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_login_retention",
+        "artifact": null,
+        "invariant": "匿名 Passkey 登录开始请求与密码登录共用一个有 4096 条保留窗口上限的 LoginAttempts 集合。该集合满额时 Store 返回 ErrLimitReached；密码登录在创建 session 前记录尝试，因此新密码登录也会失败。"
+      }
+    ],
+    "result_fingerprints": [
+      "login-attempt-retention-cap-blocks-authentication"
+    ],
+    "unresolved": [
+      "达到 4096 条需要在实际保留窗口内积累足够多的记录。默认 Passkey begin 预算是每 IP 10 次；攻击者是否能提供足够多的独立来源，源码无法确定。",
+      "当前宿主没有工作流要求的 OS 强制隔离环境；本次未运行目标代码、测试或构建，不能提供规定的动态确认。",
+      "目标部署的安全入口状态、外部路由及代理和上游限流配置未知；这些决定匿名 Passkey begin 和密码登录是否可达，以及来源 IP 是否能被正确区分。"
+    ],
+    "assignment": "h-identity",
+    "prior_run": "run2",
+    "prior_fingerprints": [
+      "auth-login-global-history-evicts-active-lockouts"
+    ],
+    "parent_prior_lead_resolution": "auth-login-global-history-evicts-active-lockouts is source-disproved: unexpired records are not evicted; at cap the store rejects new writes. The separate cap-exhaustion candidate uses login-attempt-retention-cap-blocks-authentication."
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Ffile_peer_service_v2.go%23mutual%20file-transfer%20grant%20linking::internal%2Fcluster%2Ffile_peer_v2.go%23pending%2Factive%20grant%20and%20controller%20route%20persistence::internal%2Fcluster%2Ffile-peer-v2::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "internal/cluster/file_peer_service_v2.go#mutual file-transfer grant linking",
+      "boundary": "internal/cluster/file_peer_v2.go#pending/active grant and controller route persistence",
+      "subsystem": "internal/cluster/file-peer-v2",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "internal/cluster/file_peer_service_v2.go#mutual file-transfer grant linking",
+    "boundary": "internal/cluster/file_peer_v2.go#pending/active grant and controller route persistence",
+    "subsystem": "internal/cluster/file-peer-v2",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "internal/cluster/file_peer_service_v2.go",
+      "internal/cluster/file_peer_v2.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/panel/file_proxy.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/file_peer_service_v2.go",
+      "internal/cluster/file_peer_v2.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_transfer_v2.go",
+      "internal/cluster/protocol_v2.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/store.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/file_proxy.go",
+      "web/src/views/ClusterView.vue"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Deleting a controller ID must revoke every protocol principal and linked route represented by that ID.",
+        "artifact": null,
+        "result": "V2 pairing accepts envelope controller ID and V2 duplicate checks only its own collection. DeleteController removes a matching legacy record then returns before revoking same-ID V2 record/routes; later V2 authorization still resolves the active V2 record.",
+        "reviewed_paths": [
+          "internal/cluster/file_peer_service_v2.go",
+          "internal/cluster/file_peer_v2.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/panel/file_proxy.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_peer_v2.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/protocol_v2.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/cluster/store.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "web/src/views/ClusterView.vue"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.file-peer.cross-protocol-controller-delete-shadow. A holder of a valid, unexpired V2 pairing code can submit a valid ControllerID matching an existing legacy controller. The separate stores check IDs independently. The Panel presents both protocols through the same Controller shape, and its authenticated delete route passes only the bare ID. Service.DeleteController returns success after deleting a matching legacy record, before revoking the V2 controller or deleting its file-peer routes. The remaining V2 record retains its key and can still pass the active-only V2 authorization path. The UI also removes every displayed row with that ID after one successful response. Deletion still requires the normal Panel session, Origin, CSRF, and audit gates; this is not an unauthenticated delete bypass. File access through a retained route remains conditional on the route and downstream authorization checks.",
+        "method": "source",
+        "agent_id": "verify_cluster_file_peer",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: The required OS-enforced sandbox and evidence-promotion path are unavailable, so the same-ID two-store lifecycle and subsequent V2 request could not be observed; target code, tests, builds, fixtures, browser actions, and network calls were not run."
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/file_peer_v2.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/protocol_v2.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/cluster/store.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "web/src/views/ClusterView.vue"
+        ],
+        "result": "Phase 5 independent source review replace: trace, boundary, and blocker assessed; no target code or deployment was executed.",
+        "method": "source",
+        "agent_id": "research_review_file_peer",
+        "artifact": null,
+        "invariant": "Legacy and V2 stores permit the same ControllerID because each checks uniqueness only in its own collection, while the management endpoint and DeleteController treat the bare ID as globally unique and return after a legacy deletion."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.file-peer.cross-protocol-controller-delete-shadow"
+    ],
+    "unresolved": [
+      "The downstream file-read consequence additionally requires an unexpired matching route, an active file-scoped controller, no direct Host for the peer node, and valid remote linked-file authorization; source confirms these guards but not the resulting call.",
+      "The required OS-enforced sandbox and evidence-promotion path are unavailable, so the same-ID two-store lifecycle and subsequent V2 request could not be observed; target code, tests, builds, fixtures, browser actions, and network calls were not run."
+    ],
+    "planned_owner": "h-wave3-file-peer",
+    "hardening_notes": [],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-006",
+        "fingerprint": "cluster.file-peer.cross-protocol-controller-delete-shadow",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-005",
+        "fingerprint": "cluster.file-peer.cross-protocol-controller-delete-shadow",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.file-peer.cross-protocol-controller-delete-shadow"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fcluster%2Fservice.go%23cluster%20credential%20creation%2C%20pairing%2C%20revocation%20and%20startup%20orphan%20cleanup::internal%2Fcluster%2Fsecrets.go%20and%20internal%2Fcluster%2Fsecrets_v2.go%23private-key%20persistence%2C%20record%20references%2C%20deletion%20and%20recovery::internal%2Fcluster%2Fcredential-store::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/cluster/service.go#cluster credential creation, pairing, revocation and startup orphan cleanup",
+      "boundary": "internal/cluster/secrets.go and internal/cluster/secrets_v2.go#private-key persistence, record references, deletion and recovery",
+      "subsystem": "internal/cluster/credential-store",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "internal/cluster/service.go#cluster credential creation, pairing, revocation and startup orphan cleanup",
+    "boundary": "internal/cluster/secrets.go and internal/cluster/secrets_v2.go#private-key persistence, record references, deletion and recovery",
+    "subsystem": "internal/cluster/credential-store",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "internal/cluster/service.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/secrets.go",
+      "internal/cluster/secrets_v2.go",
+      "internal/cluster/store.go",
+      "internal/cluster/store_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Credential-store and local-secret boundary mismatch",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/cluster/light_batch_store.go",
+      "internal/cluster/secrets_v2.go",
+      "internal/cluster/secrets.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/store.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "A revoked V2 controller credential must not be restored from a stale pre-revocation state file.",
+        "artifact": null,
+        "result": "V2 revoke persists revoked state through atomicWriteFileV2. If removing previous state fails, the helper still reports success; if current target later becomes invalid, openStoreV2 restores previous file which may contain the active controller.",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/secrets.go",
+          "internal/cluster/secrets_v2.go",
+          "internal/cluster/store.go",
+          "internal/cluster/store_v2.go",
+          "internal/cluster/light_batch_store.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=cluster.v2-store.stale-backup-revocation-rollback. If a V2 controller revocation leaves a stale .previous file and the current state later fails decoding or validation before that backup is removed, openStoreV2 restores the pre-revocation snapshot. A holder of the old Noise private key could then pass the summary endpoint’s active-controller and peer-key checks and receive node telemetry. Source confirms this conditional path, but does not establish that the required storage-failure sequence occurs on supported deployment filesystems or that a remote peer can cause the current file to become invalid. The state directory is protected with mode 0700.",
+        "method": "source",
+        "agent_id": "verify_cluster_stale_store_r1",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: The host does not provide the required OS-enforced sandbox, so no target execution or fault injection was performed."
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store_v2.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 research reviewer decision=replace; Evidence at internal/panel/server.go:486 points to the helper declaration; the POST summary path is explicitly listed at line 496. The remaining source claims and bounded validation plans are supported. Applied only source-line/validation-plan corrections; verdict remains needs_validation.",
+        "method": "source",
+        "agent_id": "research_review_stale_store",
+        "artifact": null,
+        "invariant": "The candidate remains unconfirmed pending its decisive bounded browser or storage validation."
+      }
+    ],
+    "result_fingerprints": [
+      "cluster.v2-store.stale-backup-revocation-rollback"
+    ],
+    "unresolved": [
+      "The host does not provide the required OS-enforced sandbox, so no target execution or fault injection was performed.",
+      "The source shows the conditional rollback, but does not establish that a supported deployment filesystem can leave the backup after cleanup failure and later present an invalid current target before backup cleanup succeeds. No remote path to corrupt the target was established; the remaining trigger appears to require a storage fault or local privileged action."
+    ],
+    "planned_owner": "h-wave4-cluster",
+    "hardening_notes": [],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-012",
+        "fingerprint": "cluster.v2-store.stale-backup-revocation-rollback",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-011",
+        "fingerprint": "cluster.v2-store.stale-backup-revocation-rollback",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.v2-store.stale-backup-revocation-rollback"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fbackup_data.go%23AI%20and%20cluster%20credential%20backup%20export%2Fimport::internal%2Fai%2Fbackup.go%23ExportAccess%2FRestoreAccess%20and%20internal%2Fcluster%2Fbackup.go%23PruneBackupSecrets%2FValidateBackupReferences::panel-portable-backup-credential-lifecycle::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "internal/panel/backup_data.go#AI and cluster credential backup export/import",
+      "boundary": "internal/ai/backup.go#ExportAccess/RestoreAccess and internal/cluster/backup.go#PruneBackupSecrets/ValidateBackupReferences",
+      "subsystem": "panel-portable-backup-credential-lifecycle",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "internal/panel/backup_data.go#AI and cluster credential backup export/import",
+    "boundary": "internal/ai/backup.go#ExportAccess/RestoreAccess and internal/cluster/backup.go#PruneBackupSecrets/ValidateBackupReferences",
+    "subsystem": "panel-portable-backup-credential-lifecycle",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_restore.go",
+      "internal/ai/backup.go",
+      "internal/ai/secrets.go",
+      "internal/ai/store.go",
+      "internal/cluster/backup.go",
+      "internal/cluster/secrets.go",
+      "internal/cluster/secrets_v2.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Output and disclosure attack classes",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Credential-store and local-secret boundary mismatch",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md",
+        "reason": "Panel session/CSRF ingress is covered by the existing backup restore and Web/Auth units; this unit focuses on credential material and cross-protocol references after ingress."
+      },
+      {
+        "block": "CLIENT-SIDE.md",
+        "reason": "The backup credential transformation is server-side and does not depend on browser rendering or storage."
+      },
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md",
+        "reason": "No release artifact, update or promotion boundary is involved in portable Panel credential state."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "cluster_boundary_hunter",
+    "reviewed_paths": [
+      "internal/ai/backup.go",
+      "internal/ai/secrets.go",
+      "internal/ai/store.go",
+      "internal/cluster/backup.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/secrets_v2.go",
+      "internal/cluster/secrets.go",
+      "internal/cluster/service.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/store.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "invariant": "Portable backup restore must preserve destination-side revocations for every credential family.",
+        "artifact": null,
+        "result": "Restore merges existing revocations only for cluster-state-v2.json, then writes other incoming files including cluster-state.json. Legacy controller records remain in portable snapshots; restoring an older snapshot can restore a deleted controller record.",
+        "reviewed_paths": [
+          "internal/panel/backup_data.go",
+          "internal/panel/backup_restore.go",
+          "internal/ai/backup.go",
+          "internal/ai/secrets.go",
+          "internal/ai/store.go",
+          "internal/cluster/backup.go",
+          "internal/cluster/secrets.go",
+          "internal/cluster/secrets_v2.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/service.go"
+        ],
+        "method": "source",
+        "agent_id": "cluster_boundary_hunter"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/store.go",
+          "internal/panel/backup_data.go",
+          "internal/panel/backup_restore.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=panelbackup.restore.legacy-controller-revocation-resurrection. 若便携备份是在 legacy controller 仍有效时生成，之后管理员从同一 Panel 删除该 controller，再恢复这份旧备份，restore 会把备份中的 legacy controller 记录写回，而不会将目标端删除状态合并进去。仍持有原 Ed25519 私钥的 peer 随后可能通过 v1 summary 接口重新取得 `cluster.summary.read`。源码支持此路径；恢复、重启和签名请求的实际结果尚未观测。",
+        "method": "source",
+        "agent_id": "verify_panelbackup_restore",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: 当前环境没有获批准的 OS 强制隔离沙箱、空环境白名单和仅 scratch 写入边界；按审计约束未执行目标代码、测试或 fixture，因此尚未观测恢复并重新打开服务后，旧 controller 的签名请求是否实际成功。"
+      },
+      {
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/store.go",
+          "internal/panel/backup_data.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_restore.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 independent source review replacement narrowed the required Panel session/Origin/CSRF conditions and bounded local validation; same source-derived root cause retained, no target execution.",
+        "method": "source",
+        "agent_id": "research_review_panelbackup",
+        "artifact": null,
+        "invariant": "便携备份清理只对 cluster-state-v2.json 筛选 controller 状态；恢复时也只对该文件保留目标端 revocations。legacy DeleteController 物理删除记录且不创建 tombstone，因此旧 cluster-state.json 中的有效记录可以被恢复，后续认证会信任其中保存的公钥。"
+      }
+    ],
+    "result_fingerprints": [
+      "panelbackup.restore.legacy-controller-revocation-resurrection"
+    ],
+    "unresolved": [
+      "当前环境没有获批准的 OS 强制隔离沙箱、空环境白名单和仅 scratch 写入边界；按审计约束未执行目标代码、测试或 fixture，因此尚未观测恢复并重新打开服务后，旧 controller 的签名请求是否实际成功。"
+    ],
+    "planned_owner": "h-wave8-backup",
+    "hardening_notes": [
+      "Add explicit regression coverage for post-snapshot revocation across every portable credential family (legacy controller, v2 controller, and light node), not only the existing v2 tombstone merge path.",
+      "Consider representing legacy and light-node deletions as retained tombstones or rotating/re-authorizing restored inbound peer credentials, so restore semantics do not depend on a credential family's storage generation.",
+      "The backup crypto and AI secret paths are fail-closed: authenticated XChaCha20-Poly1305 containers protect plaintext export fields, and imported provider API keys are re-encrypted with the destination key rather than copying source ciphertext."
+    ],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-025",
+        "fingerprint": "panelbackup.restore.legacy-controller-revocation-resurrection",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-024",
+        "fingerprint": "panelbackup.restore.legacy-controller-revocation-resurrection",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "panelbackup.restore.legacy-controller-revocation-resurrection"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Ffiles.go%23handleFileTransfer::internal%2Ffilemanager%2Ftransfer.go%23ExportDirectory%20and%20ImportDirectory::internal%2Ffilemanager%2Fcross-host-transfer::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/files.go#handleFileTransfer",
+      "boundary": "internal/filemanager/transfer.go#ExportDirectory and ImportDirectory",
+      "subsystem": "internal/filemanager/cross-host-transfer",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "internal/panel/files.go#handleFileTransfer",
+    "boundary": "internal/filemanager/transfer.go#ExportDirectory and ImportDirectory",
+    "subsystem": "internal/filemanager/cross-host-transfer",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/panel/files.go",
+      "internal/agent/files.go",
+      "internal/filemanager/transfer.go",
+      "internal/cluster/file_transfer_v2.go",
+      "internal/cluster/light_file.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Retry storm and fail-open amplification",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "cmd/kejilion-node/light_file.go",
+      "internal/agent/files.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/file_transfer_v2.go",
+      "internal/cluster/light_file.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/transfer.go",
+      "internal/panel/agent.go",
+      "internal/panel/cluster.go",
+      "internal/panel/files.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/files.go",
+          "internal/panel/agent.go",
+          "internal/agent/files.go",
+          "internal/filemanager/transfer.go"
+        ],
+        "result": "Agent export 将 X-KPanel-Transfer-Result 声明为 trailer，TAR 写出后再复核源目录/条目版本；本地 wrapper 只返回 Body 与 metadata，未暴露 trailer；目标导入排空 TAR 后把正常 EOF 当完整输入并发布 staging directory（agent/files.go:782-815；panel/files.go:959-980,844-875；filemanager/transfer.go:121-133,190-211）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "跨主机目录导入只应在来源 export 最终版本校验成功后发布。"
+      },
+      {
+        "reviewed_paths": [
+          "cmd/kejilion-node/light_file.go",
+          "internal/agent/files.go",
+          "internal/cluster/file_stream.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/light_file.go",
+          "internal/filemanager/archive.go",
+          "internal/filemanager/manager.go",
+          "internal/filemanager/transfer.go",
+          "internal/panel/cluster.go",
+          "internal/panel/files.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=filetransfer.local-light-source-terminal-status-dropped. An authenticated Panel administrator can request a directory copy with a source resourceVersion. ExportDirectory writes the TAR and then rechecks the source root and archived entries; if an identity or resourceVersion check fails, it returns ErrConflict after bytes may already have been sent. The Agent reports that late result through X-KPanel-Transfer-Result. The local source adapter returns response.Body and metadata only, so the caller cannot inspect that trailer or convert a non-ok result into a reader error. If the body consequently ends with ordinary EOF, the target importer drains the TAR, publishes its staged directory, and the Panel can report completion from the target response. The legacy light-node poll fallback has the same gap: its response event snapshots headers before streaming and its end event carries no late trailer result. The upgraded light file-stream path explicitly withholds streamEnd for a non-ok export result, so light-node exposure is conditional on the legacy fallback being selected. The affected property is integrity of an administrator-selected copy when a process already authorized to write the source changes it during export; this does not establish an authentication bypass, path escape, or overwrite.",
+        "method": "source",
+        "agent_id": "verify_filetransfer_status",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: No required OS-enforced offline sandbox is available, so no bounded native transfer was run to observe the response trailer, body terminal error, target ImportDirectory result, staging cleanup, or actual destination publication."
+      },
+      {
+        "reviewed_paths": [
+          "cmd/kejilion-node/light_file.go",
+          "internal/agent/files.go",
+          "internal/cluster/file_stream.go",
+          "internal/cluster/file_transfer_v2.go",
+          "internal/cluster/light_file.go",
+          "internal/filemanager/archive.go",
+          "internal/filemanager/manager.go",
+          "internal/filemanager/transfer.go",
+          "internal/panel/cluster.go",
+          "internal/panel/files.go"
+        ],
+        "result": "Phase 5 independent research reviewer decision=verified; fingerprint=filetransfer.local-light-source-terminal-status-dropped. Source trace, blockers, concrete boundary, and bounded validation plan independently verified.",
+        "method": "source",
+        "agent_id": "research_review_file_transfer",
+        "artifact": null,
+        "invariant": "Final needs_validation record was independently reviewed; it remains unconfirmed unless a bounded validation establishes the stated result."
+      }
+    ],
+    "result_fingerprints": [
+      "filetransfer.local-light-source-terminal-status-dropped"
+    ],
+    "unresolved": [
+      "需在临时目录中触发 export 最终版本冲突并确认 trailer=error 时目标仍收到 clean EOF 并发布；未执行竞态验证。",
+      "A concurrent mutation must occur after source bytes are emitted and before the final root/member checks, and it must alter the inode or resourceVersion fields that the current checks observe; source alone does not demonstrate that schedule or its end-to-end effect.",
+      "No required OS-enforced offline sandbox is available, so no bounded native transfer was run to observe the response trailer, body terminal error, target ImportDirectory result, staging cleanup, or actual destination publication.",
+      "The light-node exposure depends on the runtime prefersStream choice. Source shows the upgraded path's non-ok guard and the legacy fallback's unconditional end, but the active mode for any deployed light node is unknown."
+    ],
+    "planned_owner": "h-wave5-transfer",
+    "hardening_notes": [
+      "internal/panel/files.go:728-741 resolves target-host availability before Origin/session/CSRF checks. Host IDs are high-entropy and no mutation occurs, so this was not retained as a vulnerability, but moving the lookup after authentication would remove an unnecessary pre-auth response oracle.",
+      "Directory transfer is bounded by 10,000 entries, 10 GiB, upload/download gates, a two-hour duration and 45-second idle timeouts. Light file-stream request bodies also have a 512 MiB transport cap, which can make otherwise valid larger directory transfers fail on that deployment mode; this is a compatibility/availability hardening discrepancy rather than an unbounded-resource finding."
+    ],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-015",
+        "fingerprint": "filetransfer.local-light-source-terminal-status-dropped",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-014",
+        "fingerprint": "filetransfer.local-light-source-terminal-status-dropped",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "filetransfer.local-light-source-terminal-status-dropped"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23POST::internal%2Fpanel%2Fserver.go%23requestHTTPSOrigin::internal%2Fpanel::ATTACK-CLASSES.md%23Host%20and%20forwarded-header%20trust",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#POST",
+      "boundary": "internal/panel/server.go#requestHTTPSOrigin",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Host and forwarded-header trust"
+    },
+    "surface": "internal/panel/passkey.go#POST",
+    "boundary": "internal/panel/server.go#requestHTTPSOrigin",
+    "subsystem": "internal/panel",
+    "attack_class": "Host and forwarded-header trust",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "internal/auth/passkey.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Host and forwarded-header trust",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/panel/config.go",
+      "internal/auth/passkey.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/panel/config.go",
+          "internal/auth/passkey.go"
+        ],
+        "method": "source",
+        "invariant": "Passkey RP origin 只能来自固定配置或受信 HTTPS 来源；改绑需当前管理因子。",
+        "agent_id": "identity_sse_hunter",
+        "result": "代理路径要求 immediate peer 在配置 CIDR 且 X-Forwarded-Proto 精确 https，否则要求直连 TLS；PasskeyOrigin 校验 HTTPS 与规范 host/RP ID。改绑需 Origin、session、CSRF、密码及启用的第二因子，并拒绝已有凭据的改绑（server.go:1464-1507；auth/passkey.go:30-66；panel/passkey.go:193-275）。部署代理覆盖行为源码不可见。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23audit::internal%2Fstore%2Faudit_log.go%23append::internal%2Fstore::ATTACK-CLASSES.md%23Analytics%2C%20logs%2C%20traces%2C%20and%20diagnostics%20as%20alternate%20readers",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#audit",
+      "boundary": "internal/store/audit_log.go#append",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Analytics, logs, traces, and diagnostics as alternate readers"
+    },
+    "surface": "internal/panel/passkey.go#audit",
+    "boundary": "internal/store/audit_log.go#append",
+    "subsystem": "internal/store",
+    "attack_class": "Analytics, logs, traces, and diagnostics as alternate readers",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Analytics, logs, traces, and diagnostics as alternate readers",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/store/audit_log.go",
+          "internal/store/store.go"
+        ],
+        "method": "source",
+        "invariant": "Passkey 审计事件不得把认证秘密暴露给旁路读者；审计 API 与本地持久化受访问控制。",
+        "agent_id": "identity_sse_hunter",
+        "result": "Passkey 管理审计记录 actor/action/target/结果及变更摘要，未见密码、TOTP、credential 或 ceremony；SQLite 0600、单连接，审计 API 需有效 session 且分页受限（panel/passkey.go:153-180,242-275,321-342；audit_log.go:51-68；server.go:1063-1094）。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23login::internal%2Fauth%2Fpasskey.go%23FinishLogin::internal%2Fauth::ATTACK-CLASSES.md%23WebAuthn%20and%20passkey%20verification",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#login",
+      "boundary": "internal/auth/passkey.go#FinishLogin",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#WebAuthn and passkey verification"
+    },
+    "surface": "internal/panel/passkey.go#login",
+    "boundary": "internal/auth/passkey.go#FinishLogin",
+    "subsystem": "internal/auth",
+    "attack_class": "WebAuthn and passkey verification",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/auth/totp.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#WebAuthn and passkey verification",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/store/passkeys.go"
+        ],
+        "method": "source",
+        "invariant": "Passkey 登录绑定单次 ceremony、浏览器 cookie、用户版本和固定 RP，并执行 WebAuthn 验证。",
+        "agent_id": "identity_sse_hunter",
+        "result": "login/begin 使用 HttpOnly、Secure、SameSite=Strict 短期 cookie，finish 消耗绑定 cookie 的 ceremony；服务固定 HTTPS RP、要求 UV 与超时；FinishLogin 校验版本、credential、WebAuthn/UV 并原子提交（panel/passkey.go:347-389；auth/passkey.go:160-189,359-444；store/passkeys.go:281-325）。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fpasskey.go%23register-delete::internal%2Fauth%2Fpasskey.go%23reauthenticate::internal%2Fauth::ATTACK-CLASSES.md%23Step-up%20binding%20and%20bypass",
+    "canonical_refs": {
+      "surface": "internal/panel/passkey.go#register-delete",
+      "boundary": "internal/auth/passkey.go#reauthenticate",
+      "subsystem": "internal/auth",
+      "attack_class": "ATTACK-CLASSES.md#Step-up binding and bypass"
+    },
+    "surface": "internal/panel/passkey.go#register-delete",
+    "boundary": "internal/auth/passkey.go#reauthenticate",
+    "subsystem": "internal/auth",
+    "attack_class": "Step-up binding and bypass",
+    "starting_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/store/passkeys.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Step-up binding and bypass",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/passkey.go",
+      "internal/auth/passkey.go",
+      "internal/store/passkeys.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/passkey.go",
+          "internal/auth/passkey.go",
+          "internal/store/passkeys.go"
+        ],
+        "method": "source",
+        "invariant": "Passkey 注册、删除及 origin 生命周期变更需绑定当前 session、CSRF、当前密码/第二因子及单次用户版本 ceremony。",
+        "agent_id": "identity_sse_hunter",
+        "result": "注册/删除 POST 要求 session 与 CSRF，重新验证当前密码和启用的 TOTP；ceremony 绑定 session token hash、用户和 CredentialVersion，Store 再校验快照并原子撤销旧 sessions。origin disable 也清除凭据和 sessions（panel/passkey.go:138-180；auth/passkey.go:192-329；store/passkeys.go:59-99,227-275）。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23isLightFileRelayRequest%20dispatch%20and%20handleLightFileRelay::internal%2Fpanel%2Flight_file.go%23browser-to-peer%20multi-transport%20file%20relay::internal%2Fpanel%2Fcross-host-file-relay::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#isLightFileRelayRequest dispatch and handleLightFileRelay",
+      "boundary": "internal/panel/light_file.go#browser-to-peer multi-transport file relay",
+      "subsystem": "internal/panel/cross-host-file-relay",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "internal/panel/server.go#isLightFileRelayRequest dispatch and handleLightFileRelay",
+    "boundary": "internal/panel/light_file.go#browser-to-peer multi-transport file relay",
+    "subsystem": "internal/panel/cross-host-file-relay",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/light_file.go",
+      "internal/panel/cluster.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/panel_file_relay.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/httpstream/idle.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Retry storm and fail-open amplification",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "internal/panel/server.go",
+      "internal/panel/light_file.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/file_relay_protocol.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/panel_file_relay.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/light_file.go",
+          "internal/cluster/light_file.go",
+          "internal/cluster/file_relay_protocol.go",
+          "internal/cluster/file_stream.go",
+          "internal/cluster/panel_file_relay.go"
+        ],
+        "result": "Relay 检查 allowlist、host、session，写请求另验 Origin/CSRF；每节点 pending/session 各 128，chunk/query/body 受限，session 受 context、节点活性与 idle TTL 清理，偏移只接受完全相同的已收块重放；V3 限制全局和每 peer active streams（server.go:309-310；light_file.go:20-69,491-550,757-795,880-924；file_relay_protocol.go:17-21,110-129；file_stream.go:580 附近）。V2 cardinality 单独记录。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "浏览器 relay 限制路径、请求规模、队列和并发，并校验偏移与重放。"
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "planned_owner": "h-wave6-relay",
+    "hardening_notes": [
+      "internal/cluster/signature.go:56-115 signs only the outer v1 POST path, controller/target IDs, timestamp and nonce; the embedded file method/path/query/headers/body rely on end-to-end HTTPS integrity. This matches the source comment and was not promoted separately, but deployments that terminate TLS before an untrusted hop should migrate file authority to v2 Noise or bind the complete embedded request digest into the v1 signature.",
+      "The browser relay forwards only selected request headers and content headers, sets `nosniff` plus a restrictive default CSP and private no-store, and target handlers reparse every route-specific method/query/body before Agent dispatch. No general reverse proxy, response-header injection or path-traversal route survived source review."
+    ],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-008",
+        "fingerprint": "cluster.panel-file-relay.agent-read-error-clean-end",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 3,
+        "agent_id": "phase3-011",
+        "fingerprint": "cluster.v1-summary-scope-file-relay-expansion",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-007",
+        "fingerprint": "cluster.panel-file-relay.agent-read-error-clean-end",
+        "decision": "verified"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-010",
+        "fingerprint": "cluster.v1-summary-scope-file-relay-expansion",
+        "decision": "verified"
+      },
+      {
+        "phase": 3,
+        "agent_id": "phase3-103",
+        "fingerprint": "cluster.panel-file-relay.orphan-session-cardinality",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-103",
+        "fingerprint": "cluster.panel-file-relay.orphan-session-cardinality",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "cluster.panel-file-relay.agent-read-error-clean-end",
+      "cluster.panel-file-relay.orphan-session-cardinality",
+      "cluster.v1-summary-scope-file-relay-expansion"
+    ],
+    "parent_hardening_notes": [
+      "LightFile relay 的 512 MiB 请求体上限可能使更大的有效目录传输失败，属于兼容性可用性差异。"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fpanel%2Fserver.go%23public%20endpoints::internal%2Fpanel%2Ffile_shares.go%23rate%20limits::internal%2Fpanel::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/panel/server.go#public endpoints",
+      "boundary": "internal/panel/file_shares.go#rate limits",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "unauthenticated public endpoints",
+    "boundary": "per-IP rate limiters on share/ticket/federation routes",
+    "subsystem": "internal/panel",
+    "attack_class": "Pre-auth resource exhaustion",
+    "starting_paths": [
+      "internal/panel/server.go",
+      "internal/panel/file_shares.go",
+      "internal/panel/cluster_share.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "file_transport_hunter",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/main.go",
+      "cmd/paneld/main.go",
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/filemanager/manager.go",
+      "internal/httpstream/idle.go",
+      "internal/panel/file_shares.go",
+      "internal/panel/files.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/files.go",
+          "internal/panel/file_shares.go",
+          "internal/filemanager/manager.go"
+        ],
+        "result": "public route 直接进入 ticket handler；lookup 取出未过期 ticket 但不消费，ticket 流无 per-ticket/per-IP 并发门。普通 Manager.Open 与 ticket 下载共用四槽 downloadGate；share 的 per-IP rate limit/active-stream limit 不覆盖 ticket route（panel/server.go:440-441；panel/files.go:323-342,508-550；filemanager/manager.go:124,305-340；file_shares.go:313-369,671-700）。",
+        "method": "source",
+        "agent_id": "file_transport_hunter",
+        "artifact": null,
+        "invariant": "公开 bearer 下载能力应限制重复并发 admission，避免 ticket 占满普通文件读取容量。"
+      },
+      {
+        "reviewed_paths": [
+          "cmd/kejilion-agent/main.go",
+          "cmd/paneld/main.go",
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/filemanager/manager.go",
+          "internal/httpstream/idle.go",
+          "internal/panel/file_shares.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=needs_validation; fingerprint=panel.download-ticket.reusable-unthrottled-shared-gate-starvation. Source confirms that an authenticated operator can create a five-minute, random bearer ticket for a canonical file path; a valid GET ticket redemption is publicly routed, does not require the operator session, and lookup leaves the live ticket reusable. Each ordinary-file redemption streams through the Agent fileContent path into the same Manager.Open used by authenticated file reads. That manager has one four-slot downloadGate per Agent manager instance, and a full gate returns ErrBusy (mapped to HTTP 429); each acquired slot remains attached to the opened file until the stream closes. The ticket handler has no per-ticket active-stream or per-IP admission, while the separate public-share handler has both IP rate limiting and a stream gate. The ticket is an intentional bearer capability, not a forgery: creation requires Origin, session, and CSRF checks. A malicious recipient of a ticket for a sufficiently large regular file could therefore try to occupy all four shared slots and deny ordinary reads. Source does not establish whether slow-client backpressure can keep four streams admitted long enough under the effective Go HTTP and deployment deadlines, or how quickly repeated requests can recycle slots.",
+        "method": "source",
+        "agent_id": "verify_download_ticket",
+        "artifact": null,
+        "invariant": "Source path is supported, but the candidate remains unresolved until its decisive blocker is checked: This host lacks the required OS-enforced offline sandbox, empty environment allowlist, read-only target/tool mounts, scratch-only target writes, and process/resource isolation. The source-only assignment prohibits running target code, tests, builds, fixtures, browser actions, or network calls, so the decisive stream behavior was not observed."
+      },
+      {
+        "reviewed_paths": [
+          "cmd/kejilion-agent/main.go",
+          "cmd/paneld/main.go",
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/filemanager/manager.go",
+          "internal/httpstream/idle.go",
+          "internal/panel/file_shares.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go"
+        ],
+        "result": "Phase 5 independent research reviewer verified the reusable ticket path, shared four-slot read gate, visible guards/deadlines, blockers, and bounded validation plan; no changes required.",
+        "method": "source",
+        "agent_id": "research_review_download_ticket",
+        "artifact": null,
+        "invariant": "Ticket redemption should not starve authenticated file reads; actual slow-client slot occupancy remains unconfirmed."
+      }
+    ],
+    "result_fingerprints": [
+      "panel.download-ticket.reusable-unthrottled-shared-gate-starvation"
+    ],
+    "unresolved": [
+      "需用 dummy Agent 确认重复 ticket 可占满读取槽并延迟普通认证读取，并核实有效五分钟 ticket 的现实暴露条件。",
+      "Source proves that repeated valid ticket redemptions reach the same four-slot Manager.Open gate and that a full gate rejects other file readers, but it does not prove that four slow client responses can retain the Agent file descriptors under the effective Panel/Agent HTTP and Unix-socket backpressure deadlines, or that one bearer can recycle all four slots.",
+      "The impact requires an operator to create a ticket for a sufficiently large regular file and give its bearer URL to a recipient who can reach the permitted Panel Host. Ticket creation itself is protected by Origin, session, and CSRF checks, and those controls do not prevent intentional sharing with an untrusted recipient.",
+      "This host lacks the required OS-enforced offline sandbox, empty environment allowlist, read-only target/tool mounts, scratch-only target writes, and process/resource isolation. The source-only assignment prohibits running target code, tests, builds, fixtures, browser actions, or network calls, so the decisive stream behavior was not observed."
+    ],
+    "prior_run_status": "out_of_scope",
+    "planned_owner": "h-panel-public",
+    "hardening_notes": [
+      "GET /api/v1/health intentionally discloses version, protocol version, initialization state, and time without Host enforcement (internal/panel/server.go:231-235,295-302). This is a minimal readiness surface rather than a demonstrated invariant failure; deployments that do not need remote health checks can restrict it at the reverse proxy.",
+      "Public file shares use a deliberately global two-stream gate (internal/panel/file_shares.go:38,364-369,750-773). It bounds anonymous work and fails quickly, but per-share fairness would reduce cross-share contention if many unrelated recipients are expected."
+    ],
+    "verification_decisions": [
+      {
+        "phase": 3,
+        "agent_id": "phase3-024",
+        "fingerprint": "panel.download-ticket.reusable-unthrottled-shared-gate-starvation",
+        "decision": "needs_validation"
+      },
+      {
+        "phase": 5,
+        "agent_id": "phase5-023",
+        "fingerprint": "panel.download-ticket.reusable-unthrottled-shared-gate-starvation",
+        "decision": "verified"
+      }
+    ],
+    "prior_run": "run4",
+    "prior_fingerprints": [
+      "panel.download-ticket.reusable-unthrottled-shared-gate-starvation"
+    ]
+  },
+  {
+    "coverage_id": "internal%2Fstore%2Faudit_log.go%23audit-storage::internal%2Fstore%2Fstore.go%23audit-storage::internal%2Fstore::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "internal/store/audit_log.go#audit-storage",
+      "boundary": "internal/store/store.go#audit-storage",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "audit-storage",
+    "boundary": "audit-storage invariant",
+    "subsystem": "internal/store",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Request framing and desynchronization",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Composite-key and namespace collision",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Search, cache, and index ACL drift",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Enumeration and aggregate oracles",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Soft-delete and tombstone bypass",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+        "reason": "Release execution is outside security source-diff scope."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/panel/server.go",
+      "internal/store/audit_log.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/store/audit_log.go",
+          "internal/store/store.go",
+          "internal/panel/server.go"
+        ],
+        "method": "source",
+        "invariant": "审计迁移与保留上限应避免因重复 ID 或序号缺口丢失有效记录。",
+        "agent_id": "identity_sse_hunter",
+        "result": "迁移使用 INSERT OR IGNORE，持久化成功后才清旧列表；保留按 seq 排序并 OFFSET 实际超额行，不用 max(seq)-maxEntries 估算，游标也按实际 ID/seq 查询（store.go:255-272；audit_log.go:171-252）。run-2 的 autoincrement-gap 假设被源码反证。",
+        "artifact": null
+      },
+      {
+        "reviewed_paths": [
+          "internal/store/audit_log.go",
+          "internal/store/store.go"
+        ],
+        "result": "Independent source-only Phase 3 verifier decision=rejected; fingerprint=audit-migration-autoincrement-gap-retention-loss. The candidate claims that sequence gaps left by replaying duplicate migration rows can cause the next audit append to delete more history than the retention limit requires. Rejection reason: The claimed sink behavior is contradicted by the frozen source: pruning retains the newest maxEntries existing rows by order and removes only older rows beyond that count. Even if replay advances SQLite's AUTOINCREMENT sequence, gaps do not cause premature retention loss through this query.",
+        "method": "source",
+        "agent_id": "verify_prior_audit_gap_r1",
+        "artifact": null,
+        "invariant": "Prior claim audit-migration-autoincrement-gap-retention-loss was independently rechecked against current source and rejected."
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "assignment": "h-identity",
+    "prior_run": "run2",
+    "prior_fingerprints": [
+      "audit-migration-autoincrement-gap-retention-loss"
+    ],
+    "parent_prior_lead_resolution": "audit-migration-autoincrement-gap-retention-loss is source-disproved: retention deletes actual excess rows by sequence ordering/offset rather than max(seq)-limit arithmetic."
+  },
+  {
+    "coverage_id": "internal%2Fstore%2Fbackup.go%23RestoreIdentity::internal%2Fstore%2Fpasskeys.go%23advanceCredentialVersion::internal%2Fstore::ATTACK-CLASSES.md%23Restore%20reintroduces%20invalid%20state",
+    "canonical_refs": {
+      "surface": "internal/store/backup.go#RestoreIdentity",
+      "boundary": "internal/store/passkeys.go#advanceCredentialVersion",
+      "subsystem": "internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Restore reintroduces invalid state"
+    },
+    "surface": "internal/store/backup.go#RestoreIdentity",
+    "boundary": "internal/store/passkeys.go#advanceCredentialVersion",
+    "subsystem": "internal/store",
+    "attack_class": "Restore reintroduces invalid state",
+    "starting_paths": [
+      "internal/store/backup.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go",
+      "internal/auth/backup.go",
+      "internal/backup/archive.go",
+      "internal/panel/backup_restore.go",
+      "cmd/paneld/main.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Restore reintroduces invalid state",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "identity_sse_hunter",
+    "reviewed_paths": [
+      "internal/store/backup.go",
+      "internal/store/passkeys.go",
+      "internal/panel/backup_restore.go"
+    ],
+    "local_checks": [
+      {
+        "reviewed_paths": [
+          "internal/store/backup.go",
+          "internal/store/passkeys.go",
+          "internal/panel/backup_restore.go"
+        ],
+        "method": "source",
+        "invariant": "身份恢复不得重新激活旧 Passkey、session 或恢复凭据快照。",
+        "agent_id": "identity_sse_hunter",
+        "result": "身份导出移除 Passkeys 与 TOTP recovery hashes；校验拒绝包含 sessions、audit、login attempts、origin 或 passkeys 的输入。RestoreIdentity 保留目的端更高版本后递增，清空 incoming 凭据/session/登录尝试，并在失败时回滚；Panel restore 调用该路径（store/backup.go:9-85；panel/backup_restore.go:237-245）。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "prior_run": "run6",
+    "prior_fingerprints": []
+  }
+]
