@@ -202,6 +202,140 @@ func TestTerminalStreamEndsAfterLogout(t *testing.T) {
 	}
 }
 
+func TestTerminalStreamStopsOutputAfterSessionRevocation(t *testing.T) {
+	for _, action := range []string{"logout", "password-change", "passkey-disable"} {
+		t.Run(action, func(t *testing.T) {
+			server, tokenPath := newTestServer(t)
+			stub := newStreamAgentStub()
+			server.agent = stub
+			sessionCookie, csrfCookie := bootstrapCookies(t, server, tokenPath)
+			headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrfCookie.Value}
+			opened := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions",
+				[]byte(`{"hostId":"local","rows":30,"columns":120}`), sessionCookie, csrfCookie, headers)
+			if opened.Code != http.StatusCreated {
+				t.Fatalf("open = %d %s", opened.Code, opened.Body.String())
+			}
+			var terminalSession terminalOpenResponse
+			if err := json.Unmarshal(opened.Body.Bytes(), &terminalSession); err != nil {
+				t.Fatal(err)
+			}
+			response, reader, streamID := openTerminalStream(t, server, sessionCookie)
+			// Keep the production heartbeat. The deadline makes failures bounded,
+			// including a handler that neither expires nor closes the response.
+			timeout := time.AfterFunc(4*time.Second, func() { response.Body.Close() })
+			defer timeout.Stop()
+			subscribed := authenticatedRequest(server, http.MethodPost, terminalStreamSubscriptionsPath,
+				[]byte(`{"streamId":"`+streamID+`","add":[{"kind":"terminal","id":"`+terminalSession.SessionID+`","offset":0}]}`),
+				sessionCookie, csrfCookie, headers)
+			if subscribed.Code != http.StatusOK {
+				t.Fatalf("subscribe = %d %s", subscribed.Code, subscribed.Body.String())
+			}
+			stub.push("before revocation")
+			if event, _ := reader.next(t); event != "output" {
+				t.Fatalf("event before revocation = %s", event)
+			}
+			session, err := server.auth.Authenticate(sessionCookie.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch action {
+			case "logout":
+				logout := authenticatedRequest(server, http.MethodPost, "/api/v1/auth/logout", nil, sessionCookie, csrfCookie, headers)
+				if logout.Code != http.StatusOK {
+					t.Fatalf("logout = %d %s", logout.Code, logout.Body.String())
+				}
+			case "password-change":
+				err = server.auth.ChangePassword(session.User.ID, "a-strong-password-1", "a-new-strong-password-4")
+			case "passkey-disable":
+				user, userErr := server.store.UserByID(session.User.ID)
+				if userErr != nil {
+					t.Fatal(userErr)
+				}
+				_, version := server.store.PasskeyOrigin()
+				err = server.store.DisablePasskeys(user, version, session.TokenHash, time.Now())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			revokedAt := time.Now()
+			if _, err := server.auth.Authenticate(sessionCookie.Value); err == nil {
+				t.Fatal("session was not revoked")
+			}
+			// Feed real subscription output throughout the recheck interval.
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				ticker := time.NewTicker(25 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						stub.push("after revocation")
+					}
+				}
+			}()
+			expired := false
+			for reader.scanner.Scan() {
+				line := reader.scanner.Text()
+				if line == "event: auth.expired" {
+					expired = true
+					if elapsed := time.Since(revokedAt); elapsed > 1500*time.Millisecond {
+						t.Errorf("auth.expired took %v; want about one second", elapsed)
+					}
+				}
+				if line == "event: output" && (expired || time.Since(revokedAt) > 1500*time.Millisecond) {
+					t.Fatal("output continued past the session recheck window")
+				}
+			}
+			if err := reader.scanner.Err(); err != nil || !expired {
+				t.Fatalf("stream ended without auth.expired and clean EOF: expired=%v err=%v", expired, err)
+			}
+			server.terminalStreams.mu.Lock()
+			remaining := len(server.terminalStreams.streams)
+			server.terminalStreams.mu.Unlock()
+			if remaining != 0 {
+				t.Fatalf("revoked stream still registered: %d", remaining)
+			}
+		})
+	}
+}
+
+func TestTerminalStreamStopsAtSessionExpiry(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	sessionCookie, _ := bootstrapCookies(t, server, tokenPath)
+	session, err := server.auth.Authenticate(sessionCookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := server.store.SessionByTokenHash(session.TokenHash, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.ExpiresAt = time.Now().Add(300 * time.Millisecond)
+	if err := server.store.PutSession(stored); err != nil {
+		t.Fatal(err)
+	}
+	response, reader, _ := openTerminalStream(t, server, sessionCookie)
+	timeout := time.AfterFunc(2*time.Second, func() { response.Body.Close() })
+	defer timeout.Stop()
+	if event, _ := reader.next(t); event != "auth.expired" {
+		t.Fatalf("event at session expiry = %s", event)
+	}
+	if delay := time.Since(stored.ExpiresAt); delay < 0 || delay > 500*time.Millisecond {
+		t.Fatalf("stream expiry delay = %v", delay)
+	}
+	for reader.scanner.Scan() {
+		if strings.HasPrefix(reader.scanner.Text(), "event: ") {
+			t.Fatalf("event after expiry: %s", reader.scanner.Text())
+		}
+	}
+	if err := reader.scanner.Err(); err != nil {
+		t.Fatalf("stream did not close cleanly: %v", err)
+	}
+}
+
 func TestTerminalStreamLimitsAndBindsToSession(t *testing.T) {
 	hub := newTerminalStreamHub()
 	defer hub.closeAll()
