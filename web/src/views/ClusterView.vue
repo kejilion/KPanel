@@ -2248,6 +2248,7 @@ onBeforeUnmount(() => {
 
 .cluster-toolbar-block {
   display: grid;
+  container: cluster-toolbar / inline-size;
   gap: 8px;
 }
 
@@ -2265,6 +2266,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
+  margin-left: auto;
   gap: 8px;
 }
 
@@ -3230,31 +3232,6 @@ onBeforeUnmount(() => {
     flex-basis: 100%;
   }
 
-  .cluster-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .cluster-toolbar__controls {
-    width: 100%;
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .cluster-sort,
-  .cluster-view-switch {
-    width: 100%;
-  }
-
-  .cluster-view-switch {
-    align-self: stretch;
-  }
-
-  .cluster-view-switch button {
-    flex: 1;
-    justify-content: center;
-  }
-
   .cluster-stats {
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3301,6 +3278,30 @@ onBeforeUnmount(() => {
   .cluster-card__metrics > .cluster-metric-link,
   .cluster-card__details {
     padding: 11px;
+  }
+}
+
+@container cluster-toolbar (max-width: 520px) {
+  .cluster-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cluster-toolbar__controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    margin-left: 0;
+  }
+
+  .cluster-sort,
+  .cluster-view-switch {
+    width: 100%;
+  }
+
+  .cluster-view-switch button {
+    flex: 1;
+    justify-content: center;
   }
 }
 
