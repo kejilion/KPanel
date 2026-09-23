@@ -7,6 +7,7 @@ import type {
 } from '@codemirror/state'
 import type { EditorView as EditorViewType } from '@codemirror/view'
 import { loadCodeLanguage, type CodeLanguage } from '@/lib/code-editor-language'
+import type { CodeEditorSession } from '@/lib/code-editor-session'
 
 const props = withDefaults(
   defineProps<{
@@ -16,11 +17,14 @@ const props = withDefaults(
     sizeBytes: number
     editable?: boolean
     lineWrap?: boolean
+    session?: CodeEditorSession
+    autoFocus?: boolean
   }>(),
   {
     mime: '',
     editable: true,
     lineWrap: false,
+    autoFocus: true,
   },
 )
 
@@ -33,6 +37,7 @@ interface CodeEditorStatus {
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   dirty: []
+  change: []
   save: [value: string]
   status: [value: CodeEditorStatus]
   ready: [value: CodeLanguage & { loadMs: number }]
@@ -67,6 +72,11 @@ function currentValue(): string {
 
 function markClean(): void {
   dirty = false
+}
+
+function getSession(): CodeEditorSession | undefined {
+  if (!editor) return props.session
+  return { state: editor.state, scrollTop: editor.scrollDOM.scrollTop, scrollLeft: editor.scrollDOM.scrollLeft }
 }
 
 function emitStatus(state: EditorStateType): void {
@@ -159,6 +169,7 @@ function closeSearch(): void {
 defineExpose({
   getValue: currentValue,
   markClean,
+  getSession,
   openSearch,
   focus: () => editor?.focus(),
 })
@@ -167,7 +178,7 @@ async function initialize(): Promise<void> {
   const startedAt = performance.now()
   try {
     const [
-      { Compartment, EditorState },
+      { Compartment, EditorState, StateEffect },
       {
         EditorView,
         drawSelection,
@@ -246,6 +257,7 @@ async function initialize(): Promise<void> {
       lineWrapCompartment.of(props.lineWrap ? lineWrappingExtension : []),
       EditorView.contentAttributes.of({ 'aria-label': '文件内容' }),
       EditorView.updateListener.of((update) => {
+        if (update.docChanged && !applyingExternalValue) emit('change')
         if (update.docChanged && !applyingExternalValue && !dirty) {
           dirty = true
           emit('dirty')
@@ -371,9 +383,15 @@ async function initialize(): Promise<void> {
 
     editor = new EditorView({
       parent: host.value,
-      state: EditorState.create({ doc: props.modelValue, extensions }),
+      state: props.session
+        ? props.session.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
+        : EditorState.create({ doc: props.modelValue, extensions }),
     })
-    editor.focus()
+    if (props.session) {
+      editor.scrollDOM.scrollTop = props.session.scrollTop
+      editor.scrollDOM.scrollLeft = props.session.scrollLeft
+    }
+    if (props.autoFocus) editor.focus()
     emitStatus(editor.state)
     emit('ready', { ...language, loadMs: performance.now() - startedAt })
   } catch (error) {
@@ -529,8 +547,7 @@ onBeforeUnmount(() => {
   --code-active-line: var(--file-preview-active-line, rgb(53 203 166 / 8%));
   --code-selection: color-mix(in srgb, var(--file-preview-accent, var(--brand)) 18%, var(--code-background));
   --code-border: var(--file-preview-border, var(--terminal-shell-border, #29383a));
-  /* The workbench stays dark in light themes too. Lift semantic hues toward
-     its own foreground instead of borrowing light-page text colors. */
+  /* Syntax colors follow the preview surface in both light and dark themes. */
   --code-comment: color-mix(in srgb, var(--code-line-number) 65%, var(--code-text));
   --code-keyword: color-mix(in srgb, var(--violet) 50%, var(--code-text));
   --code-string: color-mix(in srgb, var(--success) 50%, var(--code-text));
@@ -564,15 +581,15 @@ onBeforeUnmount(() => {
   width: min(430px, calc(100% - 28px));
   padding: 6px;
   border: 1px solid var(--code-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--code-text);
   background: var(--code-panel);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 38%);
+  box-shadow: var(--file-preview-shadow);
 }
 
 .code-search__row {
   display: grid;
-  grid-template-columns: 24px minmax(130px, 1fr) 26px 26px 26px;
+  grid-template-columns: 28px minmax(0, 1fr) 32px 32px 32px;
   align-items: center;
   gap: 3px;
 }
@@ -584,13 +601,13 @@ onBeforeUnmount(() => {
 .code-search__field {
   display: flex;
   min-width: 0;
-  height: 27px;
+  height: 34px;
   align-items: center;
   gap: 1px;
   padding-right: 2px;
   overflow: hidden;
   border: 1px solid var(--code-border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--code-background);
 }
 
@@ -608,7 +625,7 @@ onBeforeUnmount(() => {
   outline: 0;
   color: var(--code-text);
   background: transparent;
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 14px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
 .code-search__field input::placeholder {
@@ -618,26 +635,26 @@ onBeforeUnmount(() => {
 .code-search__message {
   flex: 0 0 auto;
   color: var(--danger, #ef7a7a);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .code-search__icon,
 .code-search__option {
   display: inline-grid;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--code-line-number);
   background: transparent;
   cursor: pointer;
 }
 
 .code-search__toggle {
-  width: 24px;
+  width: 28px;
 }
 
 .code-search__icon:hover:not(:disabled),
@@ -664,9 +681,16 @@ onBeforeUnmount(() => {
   }
 
   .code-search__row {
-    grid-template-columns: 22px minmax(110px, 1fr) 26px 26px 26px;
+    grid-template-columns: 28px minmax(0, 1fr) 36px 36px 36px;
   }
+
+  .code-search__field { height: auto; min-height: 40px; flex-wrap: wrap; }
+  .code-search__field input { flex-basis: 100%; height: 38px; font-size: 16px; }
+  .code-search__icon, .code-search__option { min-height: 40px; }
+  .code-search__message { white-space: normal; }
 }
+
+.code-search button:focus-visible { outline: 2px solid var(--code-caret); outline-offset: -2px; }
 
 .code-editor-state {
   position: absolute;

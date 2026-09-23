@@ -106,9 +106,8 @@ describe('FilesView real API multi-window host context', () => {
     await windowFor('b')
     requests.length = 0
     await a.vm.openPreview(entry)
-    a.vm.previewDirty = true
-    await a.vm.savePreview('edited on a')
     const files = a.vm.fileAPI as ReturnType<typeof fileAPIForHost>
+    await files.write(entry.path, 'edited on a', entry.resourceVersion)
     await files.entry(entry.path)
     await files.entries([entry.path])
     await files.trash()

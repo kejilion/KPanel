@@ -1,6 +1,22 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["请求失败，请重试。", "Request failed. Please try again."],
+  ["放弃 {0} 的未保存修改并关闭？", "Discard unsaved changes to {0} and close?"],
+  ["最多打开 12 个文件，请先关闭一个标签。", "You can open up to 12 files. Close a tab first."],
+  ["文件编辑器", "File editor"],
+  ["文件列表", "File list"],
+  ["收起文件列表", "Hide file list"],
+  ["刷新文件列表", "Refresh file list"],
+  ["搜索当前目录", "Search this folder"],
+  ["没有匹配的文件", "No matching files"],
+  ["此文件不支持文本编辑", "This file cannot be edited as text"],
+  ["目录较大，请搜索文件名缩小范围。", "Large folder. Search by file name to narrow the results."],
+  ["已打开的文件", "Open files"],
+  ["关闭 {0}", "Close {0}"],
+  ["关闭标签", "Close tab"],
+  ["修改仍保留在此标签，请检查后重试保存。", "Your changes are kept in this tab. Check the error and try saving again."],
+  ["未保存", "Unsaved"],
   ["查看历史趋势", "View historical trends"],
   // Lightweight node service health labels.
   ["自动检查","Automatic checks"],

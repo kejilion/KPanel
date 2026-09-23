@@ -18,7 +18,6 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardPaste,
-  Code2,
   Copy,
   CircleAlert,
   Download,
@@ -37,7 +36,6 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
-  Save,
   Scissors,
   Search,
   Server,
@@ -45,7 +43,6 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
-  WrapText,
   X,
 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
@@ -77,7 +74,6 @@ import {
   desktopWindowActiveKey,
   desktopWindowCloseGuardKey,
 } from '@/lib/desktopRouteKeys'
-import type { CodeLanguage } from '@/lib/code-editor-language'
 import { transferCrossPanelFileBatch } from '@/lib/crossPanelFileTransfer'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import {
@@ -129,7 +125,7 @@ import type {
   FileTrashEntry,
 } from '@/types/api'
 
-const CodeEditor = defineAsyncComponent(() => import('@/components/files/CodeEditor.vue'))
+const FileEditorWorkspace = defineAsyncComponent(() => import('@/components/files/FileEditorWorkspace.vue'))
 const route = useRoute()
 const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
@@ -183,19 +179,6 @@ function requestedFilePath(value: unknown): string | undefined {
 type PreviewMode = 'text' | 'image' | 'audio' | 'video' | 'pdf' | 'metadata'
 type ArchiveFormat = 'tar.gz' | 'zip' | 'tar'
 type FileViewMode = 'list' | 'grid'
-
-interface CodeEditorHandle {
-  getValue: () => string
-  markClean: () => void
-  openSearch: () => void
-  focus: () => void
-}
-
-interface CodeEditorStatus {
-  line: number
-  column: number
-  lines: number
-}
 
 type UploadTaskPhase = 'running' | 'success' | 'error'
 
@@ -409,6 +392,7 @@ function openClusterHostManager(): void {
 }
 
 function resetFileHostContext(hostId: string): boolean {
+  if (previewSaving.value) return false
   if (previewDirty.value && !window.confirm('文件尚未保存，确认切换主机吗？')) return false
   previewDirty.value = false
   directoryController?.abort()
@@ -575,10 +559,7 @@ const mediaErrorMessage = ref('')
 const mediaErrorDetail = ref('')
 const mediaRetryable = ref(false)
 const mediaReloadKey = ref(0)
-const editorInfo = ref<Pick<CodeLanguage, 'label' | 'highlighted' | 'reason'> & { loadMs: number }>()
-const codeEditorRef = ref<CodeEditorHandle>()
-const editorStatus = ref<CodeEditorStatus>()
-const editorLineWrap = ref(false)
+const editorWorkspace = ref<{ openFile: (entry: FileEntry) => Promise<void> }>()
 const trashOpen = ref(false)
 const trashLoading = ref(false)
 const trashBusy = ref(false)
@@ -1046,6 +1027,12 @@ function resetMediaState(entry?: FileEntry): void {
 }
 
 async function openPreview(entry: FileEntry): Promise<void> {
+  if (entry.editable && editorWorkspace.value) {
+    await editorWorkspace.value.openFile(entry)
+    return
+  }
+  if (previewSaving.value) return
+  if (previewDirty.value && !window.confirm(phrase('文件尚未保存，确认关闭吗？'))) return
   if (archiveFormat(entry)) {
     if (archiveTools.value?.checking) {
       toast.show(i18n.t('files.archive.checking'))
@@ -1063,9 +1050,6 @@ async function openPreview(entry: FileEntry): Promise<void> {
   previewDirty.value = false
   mediaReloadKey.value += 1
   resetMediaState(entry)
-  editorInfo.value = undefined
-  editorStatus.value = undefined
-  editorLineWrap.value = false
   if (!entry.editable) return
   previewLoading.value = true
   try {
@@ -1151,6 +1135,7 @@ function retryMedia(): void {
 }
 
 function closePreview(): void {
+  if (previewSaving.value) return
   if (previewDirty.value && !window.confirm('文件尚未保存，确认关闭吗？')) return
   previewRequestId += 1
   previewLoading.value = false
@@ -1164,47 +1149,6 @@ function closePreview(): void {
   mediaErrorMessage.value = ''
   mediaErrorDetail.value = ''
   mediaRetryable.value = false
-  editorInfo.value = undefined
-  editorStatus.value = undefined
-  editorLineWrap.value = false
-}
-
-async function savePreview(content?: string): Promise<void> {
-  const hostId = fileHostId.value
-  const requestId = previewRequestId
-  const entry = previewEntry.value
-  if (!entry || !entry.editable || !previewDirty.value) return
-  const nextContent = content ?? codeEditorRef.value?.getValue() ?? previewContent.value
-  previewContent.value = nextContent
-  previewSaving.value = true
-  try {
-    const result = await fileAPI.value.write(entry.path, nextContent, entry.resourceVersion)
-    if (unmounted || hostId !== fileHostId.value || requestId !== previewRequestId) return
-    previewEntry.value = result.entry
-    if ((codeEditorRef.value?.getValue() ?? nextContent) === nextContent) {
-      previewDirty.value = false
-      codeEditorRef.value?.markClean()
-    }
-    toast.success('已保存', entry.name)
-    if (!unmounted) await loadDirectory()
-  } catch (error) {
-    toast.danger('保存失败', errorMessage(error))
-  } finally {
-    previewSaving.value = false
-  }
-}
-
-function handleEditorReady(info: CodeLanguage & { loadMs: number }): void {
-  editorInfo.value = {
-    label: info.label,
-    highlighted: info.highlighted,
-    reason: info.reason,
-    loadMs: info.loadMs,
-  }
-}
-
-function handleEditorStatus(status: CodeEditorStatus): void {
-  editorStatus.value = status
 }
 
 function toggleEntry(path: string): void {
@@ -2703,7 +2647,7 @@ onMounted(() => {
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
     clusterHostOrderRevision.value += 1
   })
-  const guard = () => !previewDirty.value || window.confirm('文件尚未保存，确认关闭窗口吗？')
+  const guard = () => !previewSaving.value && (!previewDirty.value || window.confirm('文件尚未保存，确认关闭窗口吗？'))
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
     : desktopCloseGuardCoordinator.register('classic-files', guard)
@@ -3769,75 +3713,25 @@ onBeforeUnmount(() => {
 
     <ModalDialog
       :open="Boolean(previewEntry)"
-      :title="previewEntry?.name || phrase('文件查看器')"
-      :description="previewEntry ? `${previewEntry.path} · ${formatBytes(previewEntry.sizeBytes)}` : ''"
+      :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || phrase('文件查看器')"
+      :description="previewMode !== 'text' && previewEntry ? `${previewEntry.path} · ${formatBytes(previewEntry.sizeBytes)}` : ''"
       size="wide"
       allow-fullscreen
+      :close-disabled="previewSaving"
       @close="closePreview"
     >
       <div v-if="previewLoading" class="preview-loading"><RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}</div>
-      <div v-else-if="previewEntry && previewMode === 'text'" class="code-viewer">
-        <header>
-          <span><Code2 :size="15" />{{ previewEntry.mime || phrase('UTF-8 文本') }}</span>
-          <span class="code-viewer__header-right">
-            <span>{{ previewEntry.mode }} · {{ previewEntry.owner }}:{{ previewEntry.group }}</span>
-            <span class="code-editor-tools">
-              <button
-                class="code-editor-tool"
-                type="button"
-                :title="phrase('查找或替换（Ctrl+F）')"
-                :aria-label="phrase('查找或替换')"
-                @click="codeEditorRef?.openSearch()"
-              >
-                <Search :size="15" />
-              </button>
-              <button
-                class="code-editor-tool"
-                :class="{ 'is-active': editorLineWrap }"
-                type="button"
-                :title="phrase('切换自动换行')"
-                :aria-label="phrase('切换自动换行')"
-                :aria-pressed="editorLineWrap"
-                @click="editorLineWrap = !editorLineWrap"
-              >
-                <WrapText :size="15" />
-              </button>
-            </span>
-          </span>
-        </header>
-        <div class="code-editor">
-          <CodeEditor
-            ref="codeEditorRef"
-            v-model="previewContent"
-            :file-name="previewEntry.name"
-            :mime="previewEntry.mime"
-            :size-bytes="previewEntry.sizeBytes"
-            :editable="previewEntry.editable"
-            :line-wrap="editorLineWrap"
-            @dirty="previewDirty = true"
-            @save="savePreview"
-            @status="handleEditorStatus"
-            @ready="handleEditorReady"
-          />
-        </div>
-        <footer>
-          <span>
-            {{ editorStatus?.lines || 1 }} {{ phrase('行') }}
-            <template v-if="editorStatus"> · {{ phrase('行') }} {{ editorStatus.line }}，{{ phrase('列') }} {{ editorStatus.column }}</template>
-            · UTF-8
-            <template v-if="editorInfo">
-              · {{ editorInfo.label }}
-              {{ phrase(editorInfo.highlighted ? '语法着色' : editorInfo.reason === 'large-file' ? '大文件纯文本' : '纯文本') }}
-            </template>
-          </span>
-          <span v-if="previewDirty">{{ phrase('有未保存修改') }}</span>
-          <span class="code-editor-actions">
-            <button class="button button--primary button--small" type="button" :disabled="previewSaving || !previewDirty" @click="savePreview()">
-              <Save :size="15" />{{ phrase(previewSaving ? '保存中…' : '保存 Ctrl+S') }}
-            </button>
-          </span>
-        </footer>
-      </div>
+      <FileEditorWorkspace
+        v-else-if="previewEntry && previewMode === 'text'"
+        ref="editorWorkspace"
+        :entry="previewEntry"
+        :content="previewContent"
+        :host-id="fileHostId"
+        @dirty="previewDirty = $event"
+        @saving="previewSaving = $event"
+        @saved="loadDirectory()"
+        @close="closePreview"
+      />
       <div v-else-if="previewEntry" class="media-viewer" :class="`media-viewer--${previewMode}`">
         <div v-if="previewMode === 'video'" class="media-player">
           <video
@@ -5405,108 +5299,6 @@ onBeforeUnmount(() => {
   color: var(--muted);
 }
 
-.code-viewer {
-  overflow: hidden;
-  border: 1px solid var(--file-preview-border);
-  border-radius: var(--radius, 12px);
-  background: var(--file-preview-background);
-  box-shadow: var(--file-preview-shadow);
-}
-
-.code-viewer > header,
-.code-viewer > footer {
-  display: flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 7px 12px;
-  color: var(--file-preview-muted);
-  font-size: 12px;
-  background: var(--file-preview-panel);
-}
-
-.code-viewer > header > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--file-preview-text);
-}
-
-.code-viewer__header-right,
-.code-editor-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.code-editor-tools {
-  gap: 3px;
-}
-
-.code-editor-tool {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: var(--file-preview-muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.code-editor-tool:hover,
-.code-editor-tool.is-active {
-  color: var(--file-preview-text);
-  background: var(--file-preview-panel-raised);
-}
-
-.code-editor-tool.is-active {
-  color: var(--file-preview-accent);
-}
-
-.code-viewer > footer {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.code-editor-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-left: auto;
-}
-
-.code-editor-actions .button {
-  min-height: 30px;
-  padding: 5px 9px;
-}
-
-.code-editor {
-  position: relative;
-  height: min(60vh, 620px);
-  overflow: hidden;
-}
-
-.code-editor > * {
-  height: 100%;
-}
-
-:global(.modal-panel--fullscreen .code-viewer) {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-}
-
-:global(.modal-panel--fullscreen .code-editor) {
-  height: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
 .media-viewer {
   position: relative;
   display: flex;
@@ -5989,14 +5781,6 @@ onBeforeUnmount(() => {
 
   .file-context-menu hr {
     grid-column: 1 / -1;
-  }
-
-  .code-editor {
-    grid-template-columns: 44px 1fr;
-  }
-
-  .code-editor-actions {
-    margin-left: auto;
   }
 
   :global(.modal-panel--wide:has(.media-viewer)) {
