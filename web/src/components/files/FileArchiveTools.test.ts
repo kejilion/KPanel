@@ -49,6 +49,26 @@ describe('archive UI host and task ownership', () => {
   })
   afterEach(() => { wrapper?.unmount(); vi.useRealTimers() })
 
+  it('keeps mixed file icons and directory navigation intact while selecting archive members', async () => {
+    mocks.archiveContents.mockResolvedValueOnce({
+      path: source.path, resourceVersion: source.resourceVersion, directory: '', total: 3, truncated: false,
+      entries: [
+        { path: 'assets', name: 'assets', kind: 'directory', sizeBytes: 0 },
+        { path: 'app.js', name: 'app.js', kind: 'file', sizeBytes: 12 },
+        { path: 'README.md', name: 'README.md', kind: 'file', sizeBytes: 10 },
+      ],
+    })
+    const view = await open(); view.vm.browse(source); await flushPromises()
+    const rows = view.findAll('tbody tr')
+    expect(rows.map(row => row.get('svg').attributes('data-file-icon-kind'))).toEqual(['folder', 'code', 'document'])
+    await rows[1]!.get('input').setValue(true)
+    expect(rows[1]!.classes()).toContain('selected')
+    expect(rows[1]!.get('svg').attributes('aria-hidden')).toBe('true')
+    expect(rows[2]!.text()).toContain('README.md')
+    await rows[0]!.get('button').trigger('click'); await flushPromises()
+    expect(mocks.archiveContents.mock.calls.at(-1)![0]).toMatchObject({ directory: 'assets' })
+  })
+
   it('recovers from a temporary discovery error without remounting the window', async () => {
     mocks.archiveJobs.mockRejectedValueOnce(new Error('temporarily unavailable')).mockResolvedValue({ items: [job] })
     const view = await open()

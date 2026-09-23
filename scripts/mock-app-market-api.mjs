@@ -58,6 +58,13 @@ const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailabl
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
   ...mockEditorFiles,
+  ...[
+    ['settings.json', true], ['report.csv', true], ['data.sqlite', false],
+    ['slides.pptx', false], ['installer.deb', false], ['certificate.pem', true],
+    ['recording.mp4', false], ['artifact.bin', false],
+  ].map(([name, editable]) => ({ name, path: `/${name}`, kind: 'file', sizeBytes: 2048,
+    mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt: '2026-09-09T08:30:00Z',
+    resourceVersion: mockFileVersion, editable, previewable: editable })),
   ...['website.zip', 'logs.tar.gz'].map(name => ({ name, path: `/${name}`, kind: 'file', mime: 'application/octet-stream', sizeBytes: 1826048, mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt: '2026-09-09T08:30:00Z', resourceVersion: mockFileVersion, editable: false, previewable: false })),
   {
     name: 'kpanel-desktop.webp', path: '/kpanel-desktop.webp', kind: 'file', mime: 'image/webp',

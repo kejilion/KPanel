@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { FolderOpen } from '@lucide/vue'
-import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
+import { fileEntryIconKind, shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
+
+describe('fileEntryIconKind', () => {
+  it.each([
+    ['README.md', 'document'], ['notes.txt', 'document'], ['server.log', 'document'],
+    ['app.ts', 'code'], ['compose.yaml', 'code'], ['backup.tar.gz', 'archive'],
+    ['report.csv', 'spreadsheet'], ['data.sql', 'database'], ['server.pem', 'secret'],
+  ])('keeps %s consistent inside archives and editable listings', (name, kind) => {
+    for (const editable of [false, true]) {
+      expect(fileEntryIconKind({ name, kind: 'file', editable, previewable: editable })).toBe(kind)
+    }
+  })
+
+  it('retains capability fallbacks for extensionless files', () => {
+    expect(fileEntryIconKind({ name: 'Dockerfile', kind: 'file', editable: true, previewable: true })).toBe('code')
+    expect(fileEntryIconKind({ name: 'unknown', kind: 'file', editable: false, previewable: false })).toBe('generic')
+    expect(fileEntryIconKind({ name: 'README.md', kind: 'directory', editable: false, previewable: false })).toBe('folder')
+  })
+})
 
 describe('shortcutFileGradient', () => {
   it('uses an open folder glyph for directory shortcuts', () => {

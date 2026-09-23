@@ -13,9 +13,6 @@ import {
 import {
   ArrowUp,
   Check,
-  Code2,
-  FileCode,
-  Folder,
   MoreHorizontal,
   PanelLeft,
   RefreshCw,
@@ -25,6 +22,7 @@ import {
   X,
 } from '@lucide/vue'
 import CodeEditor from './CodeEditor.vue'
+import FileEntryIcon from './FileEntryIcon.vue'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { CodeEditorSession } from '@/lib/code-editor-session'
@@ -452,7 +450,7 @@ defineExpose({ openFile })
             :title="tab.entry.path"
             @click="selectTab(tab)"
           >
-            <Code2 :size="15" /><span data-i18n-ignore>{{ tab.entry.name }}</span
+            <FileEntryIcon :entry="tab.entry" :size="20" /><span data-i18n-ignore>{{ tab.entry.name }}</span
             ><span v-if="tab.dirty" class="editor-dirty" :aria-label="phrase('未保存')" />
           </button>
           <button
@@ -621,10 +619,7 @@ defineExpose({ openFile })
             "
             @click="openFile(entry)"
           >
-            <Folder v-if="entry.kind === 'directory'" :size="17" /><FileCode
-              v-else
-              :size="17"
-            /><span data-i18n-ignore>{{ entry.name }}</span
+            <FileEntryIcon :entry="entry" :size="24" /><span data-i18n-ignore>{{ entry.name }}</span
             ><span
               v-if="tabs.some((tab) => tab.entry.path === entry.path && tab.dirty)"
               class="editor-dirty"

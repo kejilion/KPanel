@@ -69,14 +69,14 @@ export function fileEntryIconKind(entry: FilePresentationInput): FileIconKind {
     || /^(?:id_(?:rsa|ed25519|ecdsa)|authorized_keys|known_hosts)$/.test(normalizedName)
   ) return 'secret'
   if (
-    entry.editable
-    || ['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'ps1', 'js', 'ts', 'vue', 'css', 'scss', 'html', 'go', 'py', 'php', 'java', 'c', 'h', 'cpp', 'rs'].includes(extension)
+    ['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'ps1', 'js', 'ts', 'vue', 'css', 'scss', 'html', 'go', 'py', 'php', 'java', 'c', 'h', 'cpp', 'rs'].includes(extension)
   ) return 'code'
   if (
-    entry.previewable
-    || mime === 'application/pdf'
+    mime === 'application/pdf'
     || ['txt', 'md', 'log', 'pdf', 'doc', 'docx', 'odt', 'rtf'].includes(extension)
   ) return 'document'
+  if (entry.editable) return 'code'
+  if (entry.previewable) return 'document'
   return 'generic'
 }
 

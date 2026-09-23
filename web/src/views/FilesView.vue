@@ -23,8 +23,6 @@ import {
   Download,
   ExternalLink,
   Eye,
-  File,
-  Folder,
   FolderOpen,
   HardDrive,
   LayoutGrid,
@@ -82,7 +80,8 @@ import {
   uploadExternalDrop,
   type ExternalDropManifest,
 } from '@/lib/desktopExternalDrop'
-import { fileEntryIcon as entryIcon, fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
+import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
+import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
@@ -3231,7 +3230,7 @@ onBeforeUnmount(() => {
           </span>
           <span class="file-name">
             <span class="file-icon" :class="`file-icon--${entryIconKind(entry)}`">
-              <component :is="entryIcon(entry)" :size="19" />
+              <FileEntryIcon :entry="entry" />
             </span>
             <span>
               <strong>{{ entry.name }}</strong>
@@ -3306,7 +3305,7 @@ onBeforeUnmount(() => {
             :aria-expanded="contextMenu?.entry?.path === entry.path"
             @click.stop="showContext($event, entry)"
           ><MoreHorizontal :size="18" /></button>
-          <div class="file-grid-card__visual">
+          <div class="file-grid-card__visual" :class="{ 'file-grid-card__visual--thumbnail': canShowThumbnail(entry) }">
             <img
               v-if="canShowThumbnail(entry)"
               :src="thumbnailURL(entry)"
@@ -3320,7 +3319,7 @@ onBeforeUnmount(() => {
               v-else
               class="file-grid-card__icon"
               :class="`file-grid-card__icon--${entryIconKind(entry)}`"
-            ><component :is="entryIcon(entry)" :size="48" /></span>
+            ><FileEntryIcon :entry="entry" :size="72" /></span>
           </div>
           <strong :title="entry.name">{{ entry.name }}</strong>
           <small>
@@ -3699,8 +3698,7 @@ onBeforeUnmount(() => {
           <label v-for="entry in trashEntries" :key="entry.id" class="trash-item">
             <input type="checkbox" :checked="selectedTrash.has(entry.id)" @change="toggleTrash(entry.id)" />
             <span class="file-icon" :class="{ 'file-icon--folder': entry.kind === 'directory' }">
-              <Folder v-if="entry.kind === 'directory'" :size="19" />
-              <File v-else :size="19" />
+              <FileEntryIcon :entry="entry" />
             </span>
             <span>
               <strong>{{ entry.name }}</strong>
@@ -3780,7 +3778,7 @@ onBeforeUnmount(() => {
         <audio v-else-if="previewMode === 'audio'" :src="previewURL" controls preload="metadata" />
         <iframe v-else-if="previewMode === 'pdf'" :src="previewURL" :title="previewEntry.name" loading="lazy" />
         <div v-else class="metadata-viewer">
-          <component :is="entryIcon(previewEntry)" :size="44" />
+          <FileEntryIcon :entry="previewEntry" :size="64" />
           <strong>{{ phrase('此格式暂不在浏览器内解析') }}</strong>
           <span>{{ previewEntry.mime || phrase('未知格式') }} · {{ formatBytes(previewEntry.sizeBytes) }}</span>
           <button class="button button--primary" type="button" @click="download(previewEntry)">
@@ -4788,8 +4786,11 @@ onBeforeUnmount(() => {
   aspect-ratio: 4 / 3;
   place-items: center;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 10px;
+}
+
+.file-grid-card__visual--thumbnail {
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background:
     linear-gradient(45deg, color-mix(in srgb, var(--surface-subtle) 75%, transparent) 25%, transparent 25%) 0 0 / 16px 16px,
     linear-gradient(-45deg, color-mix(in srgb, var(--surface-subtle) 75%, transparent) 25%, transparent 25%) 0 0 / 16px 16px,
@@ -4808,9 +4809,6 @@ onBeforeUnmount(() => {
   width: 76px;
   height: 76px;
   place-items: center;
-  border-radius: 20px;
-  color: var(--file-icon-color, var(--blue));
-  background: color-mix(in srgb, var(--file-icon-color, var(--blue)) 11%, var(--surface));
 }
 
 .file-grid-card > strong,
@@ -4941,57 +4939,6 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   place-items: center;
-  border-radius: 9px;
-  color: var(--file-icon-color, var(--blue));
-  background: color-mix(in srgb, var(--file-icon-color, var(--blue)) 11%, var(--surface));
-}
-
-.file-icon--folder,
-.file-grid-card__icon--folder,
-.file-icon--spreadsheet,
-.file-grid-card__icon--spreadsheet {
-  --file-icon-color: var(--brand);
-}
-
-.file-icon--image,
-.file-grid-card__icon--image,
-.file-icon--code,
-.file-grid-card__icon--code {
-  --file-icon-color: var(--blue);
-}
-
-.file-icon--media,
-.file-grid-card__icon--media {
-  --file-icon-color: #9567dc;
-}
-
-.file-icon--archive,
-.file-grid-card__icon--archive,
-.file-icon--package,
-.file-grid-card__icon--package {
-  --file-icon-color: var(--amber);
-}
-
-.file-icon--database,
-.file-grid-card__icon--database {
-  --file-icon-color: #168e9c;
-}
-
-.file-icon--presentation,
-.file-grid-card__icon--presentation {
-  --file-icon-color: #d96b54;
-}
-
-.file-icon--secret,
-.file-grid-card__icon--secret {
-  --file-icon-color: var(--danger);
-}
-
-.file-icon--document,
-.file-grid-card__icon--document,
-.file-icon--generic,
-.file-grid-card__icon--generic {
-  --file-icon-color: var(--muted);
 }
 
 .mono {

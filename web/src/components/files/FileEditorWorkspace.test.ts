@@ -90,6 +90,20 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('file editor workspace', () => {
+  it('preserves file categories across the directory, active tabs and unsaved state', async () => {
+    const readme = entry('README.md')
+    mocks.list.mockResolvedValue({ path: '/demo', entries: [a, readme, { ...entry('assets'), kind: 'directory' }], offset: 0, truncated: false })
+    const wrapper = await setup()
+    expect(wrapper.findAll('.editor-file svg').map(icon => icon.attributes('data-file-icon-kind'))).toEqual(['folder', 'code', 'document'])
+    await wrapper.vm.openFile(readme); await flushPromises()
+    await wrapper.get('textarea').setValue('edited readme')
+    const activeTab = wrapper.get('.editor-tab.is-active')
+    expect(activeTab.get('svg').attributes('data-file-icon-kind')).toBe('document')
+    expect(activeTab.find('.editor-dirty').exists()).toBe(true)
+    expect(wrapper.get('.editor-file.is-active svg').attributes('data-file-icon-kind')).toBe('document')
+    expect(wrapper.findAll('.editor-tab__select svg').every(icon => icon.attributes('aria-hidden') === 'true')).toBe(true)
+  })
+
   it('records confirmed paths while history restoration keeps tabs and drafts without echoing navigation', async () => {
     mocks.list.mockImplementation(async (path: string) => ({
       path: path.replace(/\/$/, ''),
