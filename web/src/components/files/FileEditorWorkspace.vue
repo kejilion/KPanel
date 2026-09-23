@@ -640,7 +640,7 @@ defineExpose({ openFile })
 }
 .editor-tool:hover:not(:disabled),
 .editor-tool.is-active {
-  color: var(--file-preview-accent-strong);
+  color: var(--file-preview-text);
   background: var(--file-preview-panel-raised);
 }
 .editor-workspace button:focus-visible,
@@ -752,7 +752,7 @@ defineExpose({ openFile })
   background: var(--file-preview-panel-raised);
 }
 .editor-file.is-active {
-  color: var(--file-preview-accent-strong);
+  color: var(--file-preview-text);
   box-shadow: inset 2px 0 var(--file-preview-accent);
 }
 .editor-main {
@@ -877,7 +877,7 @@ defineExpose({ openFile })
   padding: 8px;
   border: 0;
   border-radius: var(--radius-sm);
-  color: var(--file-preview-accent-strong);
+  color: var(--file-preview-text);
   background: var(--file-preview-panel);
   font-size: 14px;
   cursor: pointer;

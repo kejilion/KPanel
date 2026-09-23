@@ -665,7 +665,7 @@ onBeforeUnmount(() => {
 }
 
 .code-search__option.is-active {
-  color: var(--file-preview-accent-strong, var(--brand-strong, #5adaba));
+  color: var(--code-caret);
 }
 
 .code-search__icon:disabled {
