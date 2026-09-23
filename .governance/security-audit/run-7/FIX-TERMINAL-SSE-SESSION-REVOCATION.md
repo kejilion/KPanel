@@ -71,3 +71,11 @@ and upgrades, Safari/mobile, and the old-center callback compatibility decision 
 The other 14 run-7 leads are outside this task. Production 108 was not accessed.
 Rollback the fix and its documentation with a revert of the task commits; the preserved
 pre-task checkpoint is `9af65132`.
+
+## Public candidate mapping
+
+For the 1.22.0 preview, the same two-file code/test patch was replayed as
+`800a96e3` from the disclosure-safe source checkpoint `ce2fffa6`. The original
+candidate and full audit artifacts remain local; the public branch contains only
+the audit receipt and metadata. The L2 results above remain historical evidence
+for the original exact commit; final release validation must bind the new candidate.
