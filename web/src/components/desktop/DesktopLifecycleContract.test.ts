@@ -26,6 +26,8 @@ describe('desktop background lifecycle contract', () => {
     expect(terminal).toContain('desktopWindowActiveKey')
     expect(terminal).toContain('disposed || !desktopWindowActive.value')
     expect(terminal).toContain('pollController?.abort()')
-    expect(terminal).toContain('if (desktopWindowActive.value) void poll()')
+    // Both output paths pause: the push subscription closes and polling stops.
+    expect(terminal).toContain('streamSubscription?.close()')
+    expect(terminal).toContain('if (desktopWindowActive.value) startOutput()')
   })
 })

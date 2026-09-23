@@ -429,6 +429,7 @@ func (s *Service) deleteHostV2Locked(
 	// authorization therefore fails closed even if deleting the grant hits a
 	// storage error.
 	s.fileStreamHub.closePeer("host:" + record.ID)
+	s.streams.forgetHost(record.ID)
 	if err := s.deleteFilePeerGrant(record.ID); err != nil {
 		return DeleteHostResult{}, err
 	}
@@ -569,11 +570,23 @@ func (s *Service) pollV2Locked(ctx context.Context, id string) {
 		if readErr != nil {
 			err = readErr
 		} else {
-			summary, err = s.remoteV2.SummaryV2(
-				ctx, record.Origin, record.ControllerID,
-				record.RemoteNodeID, noiseKeyV2(credential),
-				credential.TargetPublic, startedAt,
-			)
+			if capable, ok := s.remoteV2.(remoteV2CapabilityAPI); ok {
+				var capabilities string
+				summary, capabilities, err = capable.SummaryV2WithCapabilities(
+					ctx, record.Origin, record.ControllerID,
+					record.RemoteNodeID, noiseKeyV2(credential),
+					credential.TargetPublic, startedAt,
+				)
+				if err == nil {
+					s.streams.setCapable(record.ID, hasFederationCapability(capabilities, PanelStreamCapability))
+				}
+			} else {
+				summary, err = s.remoteV2.SummaryV2(
+					ctx, record.Origin, record.ControllerID,
+					record.RemoteNodeID, noiseKeyV2(credential),
+					credential.TargetPublic, startedAt,
+				)
+			}
 			if err == nil {
 				err = validateFederationSummaryV2(
 					summary, record.RemoteNodeID, s.now().UTC(),

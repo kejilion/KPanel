@@ -285,6 +285,7 @@ func (s *Service) deleteLightHostLocked(id string, input DeleteHostInput) (Delet
 		s.lightTerminal.deleteNode(id)
 	}
 	s.fileStreamHub.forgetNode(id)
+	s.streams.forgetHost(id)
 	if s.lightFile != nil {
 		s.lightFile.deleteNode(id)
 		s.lightHistory.deleteNode(id)

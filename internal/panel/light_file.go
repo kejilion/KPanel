@@ -132,8 +132,7 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	copyFileHeaders(w.Header(), response.Header)
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Pragma", "no-cache")
+	setFileContentCacheControl(w, r, response.StatusCode)
 	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
 	writer.WriteHeader(response.StatusCode)
 	defer func() {

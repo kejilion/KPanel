@@ -40,6 +40,14 @@ func (streamResolver) LookupNetIP(context.Context, string, string) ([]net.IP, er
 	return []net.IP{net.ParseIP("8.8.8.8")}, nil
 }
 
+type fileStreamNodeOptions struct {
+	advertiseStream bool
+	rejectStream    bool
+	terminal        cluster.TerminalBackend
+	// latency delays each direction of the controller's outbound connections.
+	latency time.Duration
+}
+
 type fileStreamNode struct {
 	service *cluster.Service
 	server  *httptest.Server
@@ -48,11 +56,18 @@ type fileStreamNode struct {
 	origin  string
 	calls   atomic.Int32
 	legacy  atomic.Int32
+	// terminalLegacy counts v2 POST terminal requests.
+	terminalLegacy atomic.Int32
 }
 
 // A real TLS server and approved-IP RemoteClient exercise pairing and file relay.
 // Only the final dial is mapped into loopback; no public server is contacted.
 func newFileStreamNode(t *testing.T) *fileStreamNode {
+	t.Helper()
+	return newFileStreamNodeWith(t, fileStreamNodeOptions{})
+}
+
+func newFileStreamNodeWith(t *testing.T, options fileStreamNodeOptions) *fileStreamNode {
 	t.Helper()
 	n := &fileStreamNode{root: t.TempDir()}
 	var err error
@@ -64,11 +79,18 @@ func newFileStreamNode(t *testing.T) *fileStreamNode {
 	n.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == cluster.FileStreamV2Path {
 			n.calls.Add(1)
+			if options.rejectStream {
+				http.NotFound(w, r)
+				return
+			}
 			n.service.ServeFileStream(w, r, "198.51.100.20")
 			return
 		}
 		if strings.Contains(r.URL.Path, "/files/") && r.URL.Path != "/api/v2/federation/files/link" {
 			n.legacy.Add(1)
+		}
+		if strings.Contains(r.URL.Path, "/terminal/") {
+			n.terminalLegacy.Add(1)
 		}
 		var envelope cluster.FederationEnvelopeV2
 		if json.NewDecoder(r.Body).Decode(&envelope) != nil {
@@ -84,6 +106,9 @@ func newFileStreamNode(t *testing.T) *fileStreamNode {
 			http.Error(w, err.Error(), 403)
 			return
 		}
+		if options.advertiseStream && r.URL.Path == "/api/v2/federation/summary" {
+			w.Header().Set(cluster.FederationCapabilitiesHeader, cluster.PanelStreamCapability)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(response)
 	}))
@@ -97,12 +122,16 @@ func newFileStreamNode(t *testing.T) *fileStreamNode {
 		if err != nil {
 			return nil, err
 		}
-		return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		if err != nil || options.latency == 0 {
+			return conn, err
+		}
+		return newLatencyConn(conn, options.latency), nil
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	n.service, err = cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), PublicURL: n.origin, Telemetry: streamTelemetry{}, Remote: remote, PanelVersion: "1.14.1"})
+	n.service, err = cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), PublicURL: n.origin, Telemetry: streamTelemetry{}, Remote: remote, PanelVersion: "1.14.1", Terminal: options.terminal})
 	if err != nil {
 		t.Fatal(err)
 	}

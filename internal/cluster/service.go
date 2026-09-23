@@ -101,6 +101,7 @@ type Service struct {
 	lightFile            *lightFileRelay
 	panelFileRelay       *panelFileRelay
 	fileStreamHub        *fileStreamHub
+	streams              *panelStreams
 	nodeIdentityV2       nodeIdentityV2
 	panelVersion         string
 	publicURL            string
@@ -300,6 +301,7 @@ func NewService(config ServiceConfig) (*Service, error) {
 		panelFileRequests:     newFixedWindowLimiter(1200, time.Minute, 512),
 		fileStreams:           newFileStreamLimiter(8, 2),
 		fileStreamHub:         newFileStreamHub(),
+		streams:               newPanelStreams(),
 		terminalSources:       newFixedWindowLimiter(1200, time.Minute, 2048),
 		terminalRequests:      newFixedWindowLimiter(600, time.Minute, 512),
 		lightEnrolls:          newFixedWindowLimiter(10, time.Minute, 2048),
@@ -366,6 +368,7 @@ func (s *Service) Close() error {
 	if s.fileStreamHub != nil {
 		s.fileStreamHub.closeAll()
 	}
+	s.streams.closeAll()
 	s.mu.Lock()
 	cancel := s.cancel
 	started := s.started

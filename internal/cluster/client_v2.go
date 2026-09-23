@@ -331,16 +331,36 @@ func (c *RemoteClient) exchangeV2(
 	input any,
 	output any,
 ) error {
+	_, err := c.exchangeV2Headers(ctx, origin, path, controllerID, targetID, codeID, controllerKey, targetPublicKey, pairingKey, now, input, output)
+	return err
+}
+
+// exchangeV2Headers also returns the outer HTTP response headers. They are not
+// authenticated and may only carry optimization hints such as capabilities.
+func (c *RemoteClient) exchangeV2Headers(
+	ctx context.Context,
+	origin string,
+	path string,
+	controllerID string,
+	targetID string,
+	codeID string,
+	controllerKey noise.DHKey,
+	targetPublicKey []byte,
+	pairingKey []byte,
+	now time.Time,
+	input any,
+	output any,
+) (http.Header, error) {
 	if !v2PathAllowed(http.MethodPost, path) || output == nil {
-		return ErrAuthentication
+		return nil, ErrAuthentication
 	}
 	payload, err := json.Marshal(input)
 	if err != nil || len(payload) > MaxSummaryBytes {
-		return ErrAuthentication
+		return nil, ErrAuthentication
 	}
 	requestID, err := randomHex(16)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	envelope, handshake, err := sealV2Request(
 		http.MethodPost,
@@ -356,17 +376,17 @@ func (c *RemoteClient) exchangeV2(
 		payload,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil || len(body) > maxV2EnvelopeBytes {
-		return ErrAuthentication
+		return nil, ErrAuthentication
 	}
 	request, err := c.newV2Request(
 		ctx, http.MethodPost, origin, path, bytes.NewReader(body),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if path == v2SummaryPath {
 		request.Header.Set(
@@ -375,19 +395,42 @@ func (c *RemoteClient) exchangeV2(
 		)
 	}
 	var response v2Envelope
-	if err := c.doJSON(request, maxV2EnvelopeBytes, &response); err != nil {
-		return err
+	headers, err := c.doJSONWithHeaders(c.client, request, maxV2EnvelopeBytes, &response)
+	if err != nil {
+		return nil, err
 	}
 	plaintext, err := openV2Response(envelope, response, handshake)
 	if err != nil || len(plaintext) > MaxSummaryBytes {
-		return ErrAuthentication
+		return nil, ErrAuthentication
 	}
 	if err := decodeV2Payload(plaintext, output); err != nil {
-		return &RemoteError{Code: "invalid_response"}
+		return nil, &RemoteError{Code: "invalid_response"}
 	}
-	return nil
+	return headers, nil
 }
 
+// SummaryV2WithCapabilities returns the target's advertised capability list
+// alongside the authenticated summary.
+func (c *RemoteClient) SummaryV2WithCapabilities(
+	ctx context.Context,
+	origin string,
+	controllerID string,
+	targetID string,
+	controllerKey noise.DHKey,
+	targetPublicKey []byte,
+	now time.Time,
+) (FederationSummary, string, error) {
+	var response FederationSummary
+	headers, err := c.exchangeV2Headers(
+		ctx, origin, v2SummaryPath, controllerID, targetID, "",
+		controllerKey, targetPublicKey, nil, now,
+		struct{}{}, &response,
+	)
+	if err != nil {
+		return response, "", err
+	}
+	return response, headers.Get(FederationCapabilitiesHeader), nil
+}
 func (c *RemoteClient) newV2Request(
 	ctx context.Context,
 	method string,

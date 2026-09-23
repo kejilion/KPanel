@@ -88,6 +88,7 @@ type Server struct {
 	terminalSessions      map[string]panelTerminalSession
 	terminalOpening       int
 	terminalOpeningUser   map[string]int
+	terminalStreams       *terminalStreamHub
 	downloadTicketMu      sync.Mutex
 	downloadTickets       map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen    func(context.Context, string) (*http.Response, error)
@@ -192,6 +193,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		notifications:         notifications,
 		terminalSessions:      make(map[string]panelTerminalSession),
 		terminalOpeningUser:   make(map[string]int),
+		terminalStreams:       newTerminalStreamHub(),
 		trustedProxies:        trustedProxies,
 		lastAuthAudit:         make(map[string]time.Time),
 		desktopWorkspace:      desktopWorkspace,
@@ -371,6 +373,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
+	case r.URL.Path == terminalStreamPath || r.URL.Path == terminalStreamSubscriptionsPath:
+		s.handleTerminalStream(w, r)
 	case r.URL.Path == "/api/v1/terminal-commands":
 		s.handleTerminalCommands(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/jobs":

@@ -54,6 +54,7 @@ type RemoteClient struct {
 	client         *http.Client
 	streamClient   *http.Client
 	historyClient  *http.Client
+	wsClient       *http.Client
 }
 
 type RemoteError struct {
@@ -121,11 +122,29 @@ func NewRemoteClient(config RemoteClientConfig) (*RemoteClient, error) {
 			return errors.New("cluster redirect rejected")
 		},
 	}
+	// Long file relays must not occupy the two connections that interactive
+	// terminal requests and summaries share with the same host.
+	streamTransport := transport.Clone()
+	streamTransport.MaxConnsPerHost = 4
+	streamTransport.MaxIdleConnsPerHost = 4
 	remote.streamClient = &http.Client{
-		Transport: sharedTransport,
+		Transport: tlsfallback.New(streamTransport, curveCache),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return errors.New("cluster redirect rejected")
 		},
+	}
+	// WebSocket upgrades require HTTP/1.1 and are hijacked after 101, so the
+	// per-host connection cap does not apply; stream limits bound them instead.
+	wsTransport := transport.Clone()
+	wsTransport.ForceAttemptHTTP2 = false
+	wsTransport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	wsTransport.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	wsTransport.MaxConnsPerHost = 0
+	wsTransport.MaxIdleConnsPerHost = 0
+	wsTransport.ResponseHeaderTimeout = streamHandshakeTimeout
+	remote.wsClient = &http.Client{
+		Transport:     tlsfallback.New(wsTransport, curveCache),
+		CheckRedirect: remote.streamClient.CheckRedirect,
 	}
 	historyTransport := transport.Clone()
 	historyTransport.ResponseHeaderTimeout = 30 * time.Second

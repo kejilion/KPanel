@@ -132,16 +132,20 @@ describe('FilesView real API multi-window host context', () => {
     })
     const a = await windowFor('a')
     const b = await windowFor('b')
-    const uploading = a.vm.uploadFiles([new File(['one'], 'one.txt'), new File(['two'], 'two.txt')])
-    expect(uploads).toHaveLength(1)
+    const uploading = a.vm.uploadFiles([new File(['one'], 'one.txt'), new File(['two'], 'two.txt'), new File(['three'], 'three.txt'), new File(['four'], 'four.txt')])
+    // Two uploads run at once (the Agent upload gate); the rest wait for a slot.
+    expect(uploads).toHaveLength(2)
     b.vm.handleFileHostSelection(hosts[0])
     await flushPromises()
     uploads[0]!.complete()
     await flushPromises()
-    expect(uploads).toHaveLength(2)
+    expect(uploads).toHaveLength(3)
     uploads[1]!.complete()
+    await flushPromises()
+    expect(uploads).toHaveLength(4)
+    for (const upload of uploads.slice(2)) upload.complete()
     await uploading
-    expect(uploads.map((upload) => upload.url.searchParams.get('hostId'))).toEqual(['a', 'a'])
+    expect(uploads.map((upload) => upload.url.searchParams.get('hostId'))).toEqual(['a', 'a', 'a', 'a'])
   })
 
   it('does not paste another host clipboard or erase a newer clipboard after an awaited move', async () => {

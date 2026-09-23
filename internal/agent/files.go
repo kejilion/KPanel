@@ -474,15 +474,6 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 	}
 	transferContext, cancel := context.WithTimeout(r.Context(), transferTimeout)
 	defer cancel()
-	if readMode == "thumbnail" {
-		select {
-		case s.thumbnailGate <- struct{}{}:
-			defer func() { <-s.thumbnailGate }()
-		case <-transferContext.Done():
-			writeProblem(w, requestID, http.StatusRequestTimeout, "thumbnail_timeout", "缩略图生成超时", "")
-			return
-		}
-	}
 	var file io.ReadSeekCloser
 	var entry contract.FileEntry
 	var err error
@@ -505,20 +496,35 @@ func (s *Server) fileRead(w http.ResponseWriter, r *http.Request, requestID stri
 			writeProblem(w, requestID, http.StatusConflict, "file_conflict", "文件状态已变化", "")
 			return
 		}
-		content, contentType, thumbnailErr := makeFileThumbnail(file, entry.SizeBytes)
-		if thumbnailErr != nil {
-			status, code, title := http.StatusUnprocessableEntity, "file_thumbnail_unavailable", "无法生成文件缩略图"
-			if errors.Is(thumbnailErr, filemanager.ErrTooLarge) {
-				status, code, title = http.StatusRequestEntityTooLarge, "file_too_large", "图片超过缩略图处理上限"
-			}
-			writeProblem(w, requestID, status, code, title, "")
-			return
-		}
+		// Revalidation and cache hits never decode the image or wait for the
+		// generation gate; only a miss spends CPU on a resize.
 		etag := `"thumbnail-` + entry.ResourceVersion + `"`
 		if r.Header.Get("If-None-Match") == etag {
 			w.Header().Set("ETag", etag)
 			w.WriteHeader(http.StatusNotModified)
 			return
+		}
+		cacheKey := thumbnailCacheKey(entry.Path, entry.ResourceVersion)
+		content, contentType, cached := s.thumbnails.get(cacheKey)
+		if !cached {
+			select {
+			case s.thumbnailGate <- struct{}{}:
+			case <-transferContext.Done():
+				writeProblem(w, requestID, http.StatusRequestTimeout, "thumbnail_timeout", "缩略图生成超时", "")
+				return
+			}
+			var thumbnailErr error
+			content, contentType, thumbnailErr = makeFileThumbnail(file, entry.SizeBytes)
+			<-s.thumbnailGate
+			if thumbnailErr != nil {
+				status, code, title := http.StatusUnprocessableEntity, "file_thumbnail_unavailable", "无法生成文件缩略图"
+				if errors.Is(thumbnailErr, filemanager.ErrTooLarge) {
+					status, code, title = http.StatusRequestEntityTooLarge, "file_too_large", "图片超过缩略图处理上限"
+				}
+				writeProblem(w, requestID, status, code, title, "")
+				return
+			}
+			s.thumbnails.put(cacheKey, content, contentType)
 		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Content-Disposition", "inline")

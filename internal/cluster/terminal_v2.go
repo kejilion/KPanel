@@ -151,11 +151,17 @@ func (s *Service) terminalHostCredential(id string) (hostRecordV2, v2Credential,
 
 func (s *Service) TerminalOpen(ctx context.Context, hostID string, input TerminalOpenRequest) (TerminalOpenResponse, error) {
 	if _, err := s.light.Host(hostID); err == nil {
-		if s.lightTerminal == nil {
-			return TerminalOpenResponse{}, ErrTerminalUnavailable
-		}
 		if input.Rows == 0 || input.Columns == 0 || input.Rows > 500 || input.Columns > 1000 {
 			return TerminalOpenResponse{}, errors.New("invalid terminal dimensions")
+		}
+		if s.fileStreamHub.terminalAvailable(hostID) {
+			response, streamErr := s.openLightStreamTerminal(ctx, hostID, input.Rows, input.Columns)
+			if streamErr == nil || !isStreamDialError(streamErr) {
+				return response, streamErr
+			}
+		}
+		if s.lightTerminal == nil {
+			return TerminalOpenResponse{}, ErrTerminalUnavailable
 		}
 		return s.lightTerminal.open(ctx, hostID, input.Rows, input.Columns)
 	}
@@ -163,10 +169,20 @@ func (s *Service) TerminalOpen(ctx context.Context, hostID string, input Termina
 	if err != nil {
 		return TerminalOpenResponse{}, err
 	}
+	if s.streams.usable(hostID) {
+		response, streamErr := s.openPanelStreamTerminal(ctx, hostID, input.Rows, input.Columns)
+		if streamErr == nil || !isStreamDialError(streamErr) {
+			return response, streamErr
+		}
+		s.streams.markLegacy(hostID)
+	}
 	return remote.TerminalOpenV2(ctx, record.Origin, record.ControllerID, record.RemoteNodeID, noiseKeyV2(credential), credential.TargetPublic, s.now().UTC(), input)
 }
 
 func (s *Service) TerminalOutput(ctx context.Context, hostID string, input TerminalOutputRequest) (terminal.Output, error) {
+	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
+		return t.output(ctx, input)
+	}
 	if _, err := s.light.Host(hostID); err == nil {
 		if s.lightTerminal == nil {
 			return terminal.Output{}, ErrTerminalUnavailable
@@ -181,6 +197,9 @@ func (s *Service) TerminalOutput(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalInput(ctx context.Context, hostID string, input TerminalInputRequest) error {
+	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
+		return t.input(ctx, input)
+	}
 	if _, err := s.light.Host(hostID); err == nil {
 		if s.lightTerminal == nil {
 			return ErrTerminalUnavailable
@@ -195,6 +214,9 @@ func (s *Service) TerminalInput(ctx context.Context, hostID string, input Termin
 }
 
 func (s *Service) TerminalResize(ctx context.Context, hostID string, input TerminalResizeRequest) error {
+	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
+		return t.resize(ctx, input)
+	}
 	if _, err := s.light.Host(hostID); err == nil {
 		if s.lightTerminal == nil {
 			return ErrTerminalUnavailable
@@ -209,6 +231,13 @@ func (s *Service) TerminalResize(ctx context.Context, hostID string, input Termi
 }
 
 func (s *Service) TerminalClose(ctx context.Context, hostID string, input TerminalCloseRequest) error {
+	if t := s.streams.terminal(hostID, input.SessionID); t != nil {
+		if err := t.close(ctx, input); err != nil {
+			return err
+		}
+		s.streams.deleteTerminal(t)
+		return nil
+	}
 	if _, err := s.light.Host(hostID); err == nil {
 		if s.lightTerminal == nil {
 			return ErrTerminalUnavailable

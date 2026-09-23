@@ -4,7 +4,9 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { api } from '@/lib/api'
+import { api, terminalStream } from '@/lib/api'
+import type { TerminalStreamSubscription } from '@/lib/terminalStream'
+import type { AppTerminalChunk } from '@/types/api'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
@@ -44,6 +46,7 @@ let fitAddon: FitAddon | undefined
 let resizeObserver: ResizeObserver | undefined
 let pollController: AbortController | undefined
 let pollTimer: number | undefined
+let streamSubscription: TerminalStreamSubscription | null = null
 let inputTimer: number | undefined
 let inputQueue = new TerminalInputQueue()
 let inputSending = false
@@ -196,8 +199,47 @@ function handlePendingLineEnter(event: KeyboardEvent): void {
   submitPendingLine()
 }
 
+function applyJobChunk(chunk: AppTerminalChunk): void {
+  const data = chunk.dataBase64 ? decodeBase64(chunk.dataBase64) : undefined
+  if (data) writeTerminalOutput(data)
+  if (chunk.finished) flushTerminalOutput()
+  offset = chunk.nextOffset
+  terminalInputOpen.value = chunk.inputOpen
+  connectionState.value = chunk.finished ? 'finished' : 'connected'
+  if (terminalInputOpen.value && !inputQueue.empty) void flushInput()
+  if (chunk.finished) stopOutput()
+}
+
+// Task output prefers the tab's shared push stream; polling remains the
+// fallback and is also used after a stream-level failure for this task.
+function startOutput(): void {
+  if (disposed || streamSubscription || connectionState.value === 'finished') return
+  streamSubscription = terminalStream.subscribe(
+    { kind: 'job', job: props.kind ?? 'app', id: props.jobId, offset, inputOpen: terminalInputOpen.value },
+    {
+      job: applyJobChunk,
+      error: () => {
+        streamSubscription?.close()
+        streamSubscription = null
+        connectionState.value = 'error'
+        if (!disposed) pollTimer = window.setTimeout(() => void poll(), 500)
+      },
+      unavailable: () => {
+        streamSubscription = null
+        if (!disposed) void poll()
+      },
+    },
+  )
+  if (!streamSubscription) void poll()
+}
+
+function stopOutput(): void {
+  streamSubscription?.close()
+  streamSubscription = null
+}
+
 async function poll(): Promise<void> {
-  if (polling || disposed) return
+  if (polling || disposed || streamSubscription) return
   polling = true
   pollController?.abort()
   pollController = new AbortController()
@@ -229,13 +271,7 @@ async function poll(): Promise<void> {
             terminalInputOpen.value,
             pollController.signal,
           )
-    const data = chunk.dataBase64 ? decodeBase64(chunk.dataBase64) : undefined
-    if (data) writeTerminalOutput(data)
-    if (chunk.finished) flushTerminalOutput()
-    offset = chunk.nextOffset
-    terminalInputOpen.value = chunk.inputOpen
-    connectionState.value = chunk.finished ? 'finished' : 'connected'
-    if (terminalInputOpen.value && !inputQueue.empty) void flushInput()
+    applyJobChunk(chunk)
     if (!chunk.finished && !disposed) {
       pollTimer = window.setTimeout(() => void poll(), 0)
     }
@@ -249,6 +285,7 @@ async function poll(): Promise<void> {
 }
 
 function resetTerminal(): void {
+  stopOutput()
   pollController?.abort()
   polling = false
   offset = 0
@@ -260,7 +297,7 @@ function resetTerminal(): void {
   connectionState.value = 'connecting'
   if (terminalInputOpen.value) focusTerminalWhenInputOpens()
   if (pollTimer) window.clearTimeout(pollTimer)
-  pollTimer = window.setTimeout(() => void poll(), 0)
+  pollTimer = window.setTimeout(() => startOutput(), 0)
 }
 
 watch(() => props.jobId, resetTerminal)
@@ -304,11 +341,12 @@ onMounted(() => {
     resizeObserver.observe(host.value)
     if (terminalInputOpen.value) window.requestAnimationFrame(focusTerminal)
   }
-  void poll()
+  startOutput()
 })
 
 onBeforeUnmount(() => {
   disposed = true
+  stopOutput()
   pollController?.abort()
   if (pollTimer) window.clearTimeout(pollTimer)
   if (inputTimer) window.clearTimeout(inputTimer)
