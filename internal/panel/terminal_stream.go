@@ -34,12 +34,12 @@ const (
 	terminalStreamEventBuffer      = 32
 
 	terminalStreamWriteTimeout  = 20 * time.Second
+	terminalStreamAuthInterval  = time.Second
 	terminalStreamCoalesceDelay = 4 * time.Millisecond
 	terminalStreamCoalesceBytes = 32 << 10
 )
 
-// terminalStreamHeartbeat also bounds how quickly a revoked session stops
-// receiving output.
+// terminalStreamHeartbeat keeps idle connections alive and rechecks idle sessions.
 var terminalStreamHeartbeat = 15 * time.Second
 
 var jobTerminalAgentPrefixes = map[string]string{
@@ -170,6 +170,7 @@ func (s *Server) handleTerminalStream(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	lastAuth := time.Now()
 	if r.URL.Path == terminalStreamSubscriptionsPath {
 		s.updateTerminalStreamSubscriptions(w, r, token, session)
 		return
@@ -225,22 +226,37 @@ func (s *Server) handleTerminalStream(w http.ResponseWriter, r *http.Request) {
 	}
 	heartbeat := time.NewTicker(terminalStreamHeartbeat)
 	defer heartbeat.Stop()
+	expires := time.NewTimer(time.Until(session.ExpiresAt))
+	defer expires.Stop()
+	checkSession := func() bool {
+		now := time.Now()
+		if now.Before(session.ExpiresAt) {
+			if now.Sub(lastAuth) < terminalStreamAuthInterval {
+				return true
+			}
+			if _, err := s.auth.Authenticate(token); err == nil {
+				lastAuth = now
+				return true
+			}
+		}
+		_ = write("auth.expired", map[string]string{"message": "Session expired"})
+		return false
+	}
 	for {
 		select {
 		case <-stream.ctx.Done():
 			return
+		case <-expires.C:
+			_ = write("auth.expired", map[string]string{"message": "Session expired"})
+			return
 		case event := <-stream.events:
-			if !write("output", event) {
+			// Recheck busy streams independently of the keepalive. Never write
+			// the dequeued event after a failed check, including buffered output.
+			if !checkSession() || !write("output", event) {
 				return
 			}
 		case <-heartbeat.C:
-			// Logout, password change or expiry revoke the session; the stream
-			// must stop delivering output as soon as the next heartbeat.
-			if _, err := s.auth.Authenticate(token); err != nil || time.Now().After(session.ExpiresAt) {
-				_ = write("auth.expired", map[string]string{"message": "Session expired"})
-				return
-			}
-			if !write("", nil) {
+			if !checkSession() || !write("", nil) {
 				return
 			}
 		}
