@@ -305,7 +305,6 @@ function toggleFileHostPicker(): void {
   }
   void nextTick(() => {
     positionFileHostPicker()
-    fileHostSearchInput.value?.focus({ preventScroll: true })
   })
 }
 
@@ -322,7 +321,7 @@ function positionFileHostPicker(): void {
   const height = Math.min(menu.offsetHeight, openAbove ? above : below, 480)
   const y = openAbove ? anchor.top - 6 - height : anchor.bottom + 6
   const placement = placeContextMenu(menu, { x: anchor.left, y }, button)
-  fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${y}px` }
+  fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${placement.y}px` }
 }
 
 function fileHostPickerKeydown(event: KeyboardEvent): void {
@@ -2590,12 +2589,12 @@ function handleWindowClick(event: MouseEvent): void {
 
 function closeContextMenuOnViewportChange(): void {
   contextMenu.value = undefined
-  closeFileHostPicker()
+  positionFileHostPicker()
 }
 
 function closeContextMenuOnScroll(event: Event): void {
   if (fileHostPickerMenu.value?.contains(event.target as Node)) return
-  closeFileHostPicker()
+  positionFileHostPicker()
   if (contextMenuElement.value?.contains(event.target as Node)) return
   contextMenu.value = undefined
 }
