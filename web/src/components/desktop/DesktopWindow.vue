@@ -131,8 +131,13 @@ function browserHistoryPoint(fullPath = router.currentRoute.value.fullPath): Des
 let lastBrowserHistoryPoint = browserHistoryPoint(props.windowState.path)
 
 function handoffDesktopRoute(fullPath: string): boolean {
-  // Keep Overview's utilities in its window despite their desktop launchers.
-  if (['/system', '/monitoring', '/processes'].includes(desktopRoutePath(fullPath))) return false
+  const targetPath = desktopRoutePath(fullPath)
+  // Overview utility cards navigate in place; other apps keep their own windows.
+  if (targetPath === '/system') return false
+  if (
+    router.currentRoute.value.path === '/overview'
+    && ['/monitoring', '/processes'].includes(targetPath)
+  ) return false
   const app = findDesktopApp(fullPath)
   if (!app) return false
   const from = browserHistoryPoint()

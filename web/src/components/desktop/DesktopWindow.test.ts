@@ -185,12 +185,15 @@ describe('DesktopWindow lazy view loading', () => {
       { windowId: id, fullPath: '/monitoring' },
     )
 
+    nativeHistory.emit({ windowId: id, fullPath: '/overview' })
+    await vi.waitFor(() => expect(windowState.path).toBe('/overview'))
+
     await wrapper.get('[data-testid="open-processes"]').trigger('click')
     await flushPromises()
     expect(windowState.path).toBe('/processes')
     expect(windowState.titleKey).toBe('route.processes')
     expect(nativeHistory.history.navigate).toHaveBeenLastCalledWith(
-      { windowId: id, fullPath: '/monitoring' },
+      { windowId: id, fullPath: '/overview' },
       { windowId: id, fullPath: '/processes' },
     )
 
@@ -221,6 +224,48 @@ describe('DesktopWindow lazy view loading', () => {
     nativeHistory.emit({ windowId: id, fullPath: '/overview' })
     await vi.waitFor(() => expect(windowState.path).toBe('/overview'))
     expect(desktop.focusedId.value).toBe(id)
+    wrapper.unmount()
+  })
+
+  it('opens monitoring and processes in their own windows from other desktop apps', async () => {
+    routeMocks.resolveWindowComponent.mockResolvedValue({
+      name: 'NavigableDesktopPageFixture',
+      setup() {
+        const router = useRouter()
+        return {
+          openMonitoring: () => router.push('/monitoring'),
+          openProcesses: () => router.push('/processes'),
+        }
+      },
+      template: `
+        <main>
+          <button data-testid="open-monitoring" @click="openMonitoring">Monitoring</button>
+          <button data-testid="open-processes" @click="openProcesses">Processes</button>
+        </main>
+      `,
+    })
+    const desktop = useDesktopMode()
+    const nativeHistory = createBrowserHistoryFixture()
+    const id = desktop.openWindow('/files', 'route.files', false)
+    const windowState = desktop.windows.value.find((item) => item.id === id)!
+    const wrapper = mount(DesktopWindow, {
+      props: { windowState, icon: () => null },
+      global: { provide: { [desktopBrowserHistoryKey as symbol]: nativeHistory.history } },
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="open-monitoring"]').trigger('click')
+    await flushPromises()
+    const monitoringWindow = desktop.windows.value.find((item) => item.path === '/monitoring')
+    expect(windowState.path).toBe('/files')
+    expect(monitoringWindow).toBeDefined()
+
+    await wrapper.get('[data-testid="open-processes"]').trigger('click')
+    await flushPromises()
+    const processesWindow = desktop.windows.value.find((item) => item.path === '/processes')
+    expect(windowState.path).toBe('/files')
+    expect(processesWindow).toBeDefined()
+    expect(desktop.windows.value).toHaveLength(3)
     wrapper.unmount()
   })
 
