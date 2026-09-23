@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
@@ -137,6 +137,11 @@ const filesPage = ref<HTMLElement>()
 const localClusterNodeId = ref('')
 const fileHostPickerButton = ref<HTMLButtonElement>()
 const fileHostPickerOpen = ref(false)
+const fileHostPickerMenu = ref<HTMLElement>()
+const fileHostSearchInput = ref<HTMLInputElement>()
+const fileHostSearch = ref('')
+const fileHostPickerId = `file-host-switcher-${useId()}`
+const fileHostPickerPosition = ref({ left: '0px', top: '0px' })
 const fileHostInventory = ref<ClusterHostList>()
 const fileHostInventoryLoading = ref(false)
 const fileHostInventoryError = ref(false)
@@ -221,6 +226,12 @@ const fileHosts = computed(() => {
   return sortClusterHosts(fileHostInventory.value?.items || [], readClusterHostOrder())
 })
 
+const filteredFileHosts = computed(() => {
+  const search = fileHostSearch.value.trim().toLocaleLowerCase()
+  return fileHosts.value.filter((host) => !search ||
+    `${host.name} ${host.origin || ''} ${host.lastSnapshot?.telemetry.hostname || ''} ${host.isLocal ? phrase('本机') : ''}`.toLocaleLowerCase().includes(search))
+})
+
 const hostOperatingSystemIdentity = (host: ClusterHost) =>
   detectOperatingSystemIdentity(host.lastSnapshot?.telemetry)
 
@@ -300,11 +311,55 @@ async function loadFileHosts(): Promise<void> {
 }
 
 function toggleFileHostPicker(): void {
-  fileHostPickerOpen.value = !fileHostPickerOpen.value
-  if (fileHostPickerOpen.value && !fileHostInventory.value && !fileHostInventoryLoading.value) {
+  if (fileHostPickerOpen.value) {
+    closeFileHostPicker()
+    return
+  }
+  fileHostSearch.value = ''
+  fileHostPickerOpen.value = true
+  if (!fileHostInventory.value && !fileHostInventoryLoading.value) {
     void loadFileHosts()
   }
+  void nextTick(() => fileHostSearchInput.value?.focus({ preventScroll: true }))
 }
+
+function positionFileHostPicker(): void {
+  const menu = fileHostPickerMenu.value
+  const button = fileHostPickerButton.value
+  if (!fileHostPickerOpen.value || !menu || !button) return
+  const anchor = button.getBoundingClientRect()
+  const placement = placeContextMenu(menu, { x: anchor.left, y: anchor.bottom + 6 }, button)
+  fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${placement.y}px` }
+}
+
+function fileHostPickerKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeFileHostPicker(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  if (event.target === fileHostSearchInput.value && ['Home', 'End'].includes(event.key)) return
+  const options = Array.from(fileHostPickerMenu.value?.querySelectorAll<HTMLButtonElement>('[data-file-host-id]') || [])
+  if (!options.length) return
+  const current = options.indexOf(document.activeElement as HTMLButtonElement)
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+    : event.key === 'ArrowDown' ? (current + 1) % options.length : current < 0 ? options.length - 1 : (current - 1 + options.length) % options.length
+  event.preventDefault()
+  options[index]?.focus({ preventScroll: true })
+  options[index]?.scrollIntoView?.({ block: 'nearest' })
+}
+
+function fileHostPickerContains(target: EventTarget | null): boolean {
+  return target instanceof Node && Boolean(fileHostPickerButton.value?.contains(target) || fileHostPickerMenu.value?.contains(target))
+}
+
+function fileHostPickerFocusout(event: FocusEvent): void {
+  if (event.relatedTarget instanceof Node && !fileHostPickerContains(event.relatedTarget)) closeFileHostPicker()
+}
+
+watch([fileHostPickerOpen, filteredFileHosts, fileHostInventoryLoading, fileHostInventoryError], positionFileHostPicker, { flush: 'post' })
 
 function openRemoteFileManager(host: ClusterHost): void {
   closeFileHostPicker()
@@ -2566,14 +2621,17 @@ function formatTime(value: string): string {
 function handleWindowClick(event: MouseEvent): void {
   const target = event.target as HTMLElement
   if (!target.closest('.file-context-menu')) contextMenu.value = undefined
-  if (!target.closest('.file-host-switcher')) closeFileHostPicker()
+  if (!fileHostPickerContains(target)) closeFileHostPicker()
 }
 
 function closeContextMenuOnViewportChange(): void {
   contextMenu.value = undefined
+  closeFileHostPicker()
 }
 
 function closeContextMenuOnScroll(event: Event): void {
+  if (fileHostPickerMenu.value?.contains(event.target as Node)) return
+  closeFileHostPicker()
   if (contextMenuElement.value?.contains(event.target as Node)) return
   contextMenu.value = undefined
 }
@@ -2793,82 +2851,100 @@ onBeforeUnmount(() => {
     >
       <header class="file-toolbar">
         <div class="file-toolbar__path">
-          <div class="file-host-switcher" data-file-host-switcher>
+          <div class="file-host-switcher" data-file-host-switcher @focusout="fileHostPickerFocusout">
             <button
               ref="fileHostPickerButton"
               class="file-host-switcher__trigger"
               type="button"
-              aria-haspopup="menu"
-              aria-controls="file-host-switcher-menu"
+              aria-haspopup="dialog"
+              :aria-controls="fileHostPickerId"
               :aria-expanded="fileHostPickerOpen"
               :title="phrase('切换主机')"
               @click.stop="toggleFileHostPicker"
+              @keydown.down.prevent="fileHostPickerOpen ? fileHostSearchInput?.focus() : toggleFileHostPicker()"
             >
               <Server :size="15" aria-hidden="true" />
               <span>{{ phrase('当前主机') }}</span>
               <strong>{{ activeFileHostLabel }}</strong>
               <ChevronDown :size="15" aria-hidden="true" />
             </button>
-            <div
-              v-if="fileHostPickerOpen"
-              id="file-host-switcher-menu"
-              class="file-host-switcher__menu"
-              role="menu"
-              :aria-label="phrase('切换主机')"
-              @click.stop
-            >
-              <strong class="file-host-switcher__heading">{{ phrase('切换主机') }}</strong>
-              <div v-if="fileHostInventoryLoading" class="file-host-switcher__message" role="status" aria-live="polite">
-                <RefreshCw :size="15" class="spinning" aria-hidden="true" />
-                <span>{{ phrase('正在读取主机列表…') }}</span>
-              </div>
-              <div v-else-if="fileHostInventoryError && !fileHosts.length" class="file-host-switcher__message file-host-switcher__message--error" role="alert">
-                <CircleAlert :size="15" aria-hidden="true" />
-                <span>{{ phrase('无法读取集群主机') }}</span>
-              </div>
-              <template v-else-if="fileHosts.length">
-                <button
-                  v-for="host in fileHosts"
-                  :key="host.id"
-                  class="file-host-switcher__item"
-                  :class="{
-                    'is-active': host.id === activeFileHostId,
-                    'is-manage': fileHostStatus(host).action === 'manage',
-                  }"
-                  type="button"
-                  role="menuitem"
-                  :aria-current="host.id === activeFileHostId ? 'true' : undefined"
-                  :title="fileHostStatus(host).action === 'open' ? phrase('打开远端文件管理') : undefined"
-                  :data-file-host-id="host.id"
-                  @click="handleFileHostSelection(host)"
-                >
-                  <OperatingSystemIcon
-                    class="file-host-switcher__os"
-                    :distro="hostOperatingSystemIdentity(host).key"
-                    :label="hostOperatingSystemIdentity(host).label"
-                  />
-                  <span>
-                    <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
-                    <small>{{ fileHostStatus(host).label }}</small>
-                  </span>
-                  <Check v-if="host.id === activeFileHostId" :size="16" aria-hidden="true" />
-                  <ExternalLink v-else-if="fileHostStatus(host).action === 'open'" :size="15" aria-hidden="true" />
-                  <ChevronRight v-else :size="15" aria-hidden="true" />
-                </button>
-              </template>
-              <div v-else class="file-host-switcher__message">
-                <span>{{ phrase('暂未发现集群主机') }}</span>
-              </div>
-              <button
-                v-if="fileHostInventoryError && fileHosts.length"
-                class="file-host-switcher__retry"
-                type="button"
-                @click="loadFileHosts"
+            <Teleport to="body">
+              <div
+                v-if="fileHostPickerOpen"
+                :id="fileHostPickerId"
+                ref="fileHostPickerMenu"
+                class="file-host-switcher__menu"
+                :style="fileHostPickerPosition"
+                role="dialog"
+                :aria-label="phrase('切换主机')"
+                @click.stop
+                @keydown="fileHostPickerKeydown"
+                @focusout="fileHostPickerFocusout"
+                @contextmenu.stop.prevent
               >
-                <CircleAlert :size="14" aria-hidden="true" />
-                {{ phrase('主机列表刷新失败，点击重试') }}
-              </button>
-            </div>
+                <header class="file-host-switcher__heading">
+                  <strong>{{ phrase('切换主机') }}</strong>
+                  <button class="icon-button" type="button" :title="phrase('刷新主机列表')" :aria-label="phrase('刷新主机列表')" :disabled="fileHostInventoryLoading" @click="loadFileHosts">
+                    <RefreshCw :size="15" :class="{ spinning: fileHostInventoryLoading }" aria-hidden="true" />
+                  </button>
+                </header>
+                <label class="file-host-switcher__search">
+                  <Search :size="15" aria-hidden="true" />
+                  <input ref="fileHostSearchInput" v-model="fileHostSearch" type="search" :placeholder="phrase('搜索主机')" :aria-label="phrase('搜索主机')" />
+                </label>
+                <div class="file-host-switcher__list" :aria-busy="fileHostInventoryLoading">
+                <div v-if="fileHostInventoryLoading" class="file-host-switcher__message" role="status" aria-live="polite">
+                  <RefreshCw :size="15" class="spinning" aria-hidden="true" />
+                  <span>{{ phrase('正在读取主机列表…') }}</span>
+                </div>
+                <div v-else-if="fileHostInventoryError && !fileHosts.length" class="file-host-switcher__message file-host-switcher__message--error" role="alert">
+                  <CircleAlert :size="15" aria-hidden="true" />
+                  <span>{{ phrase('无法读取集群主机') }}</span>
+                </div>
+                <template v-else-if="filteredFileHosts.length">
+                  <button
+                    v-for="host in filteredFileHosts"
+                    :key="host.id"
+                    class="file-host-switcher__item"
+                    :class="{
+                      'is-active': host.id === activeFileHostId,
+                      'is-manage': fileHostStatus(host).action === 'manage',
+                    }"
+                    type="button"
+                    :aria-pressed="host.id === activeFileHostId"
+                    :title="`${host.isLocal ? phrase('本机') : host.name} · ${fileHostStatus(host).label}`"
+                    :data-file-host-id="host.id"
+                    @click="handleFileHostSelection(host)"
+                  >
+                    <OperatingSystemIcon
+                      class="file-host-switcher__os"
+                      :distro="hostOperatingSystemIdentity(host).key"
+                      :label="hostOperatingSystemIdentity(host).label"
+                    />
+                    <span>
+                      <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
+                      <small>{{ fileHostStatus(host).label }}</small>
+                    </span>
+                    <Check v-if="host.id === activeFileHostId" :size="16" aria-hidden="true" />
+                    <ExternalLink v-else-if="fileHostStatus(host).action === 'open'" :size="15" aria-hidden="true" />
+                    <ChevronRight v-else :size="15" aria-hidden="true" />
+                  </button>
+                </template>
+                <div v-else class="file-host-switcher__message" role="status">
+                  <span>{{ fileHostSearch.trim() ? phrase('没有匹配的主机') : phrase('暂未发现集群主机') }}</span>
+                </div>
+                </div>
+                <button
+                  v-if="fileHostInventoryError"
+                  class="file-host-switcher__retry"
+                  type="button"
+                  @click="loadFileHosts"
+                >
+                  <CircleAlert :size="14" aria-hidden="true" />
+                  {{ phrase('主机列表刷新失败，点击重试') }}
+                </button>
+              </div>
+            </Teleport>
           </div>
           <nav class="breadcrumbs" aria-label="文件路径">
             <button
@@ -3947,11 +4023,12 @@ onBeforeUnmount(() => {
 }
 
 .file-host-switcher__menu {
-  position: absolute;
-  z-index: 8;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(300px, calc(100vw - 32px));
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 32px), var(--context-menu-max-width, 340px));
+  max-height: min(480px, var(--context-menu-max-height, calc(100dvh - 16px)));
   overflow: hidden;
   border: 1px solid var(--border-strong, var(--border));
   border-radius: var(--radius);
@@ -3960,12 +4037,48 @@ onBeforeUnmount(() => {
 }
 
 .file-host-switcher__heading {
-  display: block;
-  padding: 11px 12px 9px;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
+}
+
+.file-host-switcher__search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.file-host-switcher__search > svg { flex-shrink: 0; }
+.file-host-switcher__search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+}
+.file-host-switcher__search:focus-within { outline: 2px solid var(--brand); outline-offset: 1px; }
+.file-host-switcher__list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .file-host-switcher__item {
@@ -4042,6 +4155,7 @@ onBeforeUnmount(() => {
 
 .file-host-switcher__message,
 .file-host-switcher__retry {
+  flex: 0 0 auto;
   display: flex;
   min-height: 48px;
   align-items: center;
