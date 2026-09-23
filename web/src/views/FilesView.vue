@@ -321,7 +321,10 @@ function toggleFileHostPicker(): void {
   if (!fileHostInventory.value && !fileHostInventoryLoading.value) {
     void loadFileHosts()
   }
-  void nextTick(() => fileHostSearchInput.value?.focus({ preventScroll: true }))
+  void nextTick(() => {
+    positionFileHostPicker()
+    fileHostSearchInput.value?.focus({ preventScroll: true })
+  })
 }
 
 function positionFileHostPicker(): void {
@@ -334,9 +337,10 @@ function positionFileHostPicker(): void {
   const above = Math.max(0, anchor.top - bounds.top - 14)
   const openAbove = below < 240 && above > below
   menu.style.setProperty('--file-host-menu-height', `${openAbove ? above : below}px`)
-  const y = openAbove ? anchor.top - 6 - menu.offsetHeight : anchor.bottom + 6
+  const height = Math.min(menu.offsetHeight, openAbove ? above : below, 480)
+  const y = openAbove ? anchor.top - 6 - height : anchor.bottom + 6
   const placement = placeContextMenu(menu, { x: anchor.left, y }, button)
-  fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${placement.y}px` }
+  fileHostPickerPosition.value = { left: `${placement.x}px`, top: `${y}px` }
 }
 
 function fileHostPickerKeydown(event: KeyboardEvent): void {
