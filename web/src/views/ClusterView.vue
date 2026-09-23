@@ -2206,6 +2206,7 @@ onBeforeUnmount(() => {
   flex: 0 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
   gap: 8px;
   white-space: nowrap;
 }
