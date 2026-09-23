@@ -127,10 +127,15 @@ function capture(): void {
   const tab = tabs.value.find((item) => item.entry.path === editorPath.value)
   if (session && tab) tab.session = markRaw(session)
 }
+function revealActiveTab(): void {
+  tabList.value
+    ?.querySelector('.editor-tab.is-active')
+    ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}
 function focusTab(): void {
   void nextTick(() => {
     const button = tabList.value?.querySelector<HTMLButtonElement>('[aria-selected="true"]')
-    button?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    revealActiveTab()
     button?.focus({ preventScroll: true })
   })
 }
@@ -144,12 +149,7 @@ function selectTab(tab: EditorTab, keyboard = false): void {
   notice.value = ''
   if (compact.value) sidebarOpen.value = false
   if (keyboard || compact.value) focusTab()
-  else
-    void nextTick(() =>
-      tabList.value
-        ?.querySelector('[aria-selected="true"]')
-        ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }),
-    )
+  else void nextTick(revealActiveTab)
 }
 function tabsKeydown(event: KeyboardEvent): void {
   if (!(event.target as HTMLElement).matches('[role="tab"]')) return
@@ -386,6 +386,7 @@ onMounted(() => {
         compact.value = next
         sidebarOpen.value = !next
       }
+      void nextTick(revealActiveTab)
     })
     if (root.value) observer.observe(root.value)
   }
