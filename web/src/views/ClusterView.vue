@@ -2262,8 +2262,8 @@ onBeforeUnmount(() => {
 
 .cluster-toolbar__controls {
   display: flex;
+  flex: 0 0 auto;
   min-width: 0;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   margin-left: auto;
@@ -2272,7 +2272,9 @@ onBeforeUnmount(() => {
 
 .cluster-search {
   display: flex;
-  width: min(520px, 100%);
+  flex: 1 1 0;
+  min-width: 10.625rem;
+  max-width: 32.5rem;
   height: 42px;
   align-items: center;
   gap: 9px;
@@ -3281,10 +3283,17 @@ onBeforeUnmount(() => {
   }
 }
 
-@container cluster-toolbar (max-width: 520px) {
+@container cluster-toolbar (max-width: 42.5rem) {
   .cluster-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .cluster-search {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
   .cluster-toolbar__controls {
