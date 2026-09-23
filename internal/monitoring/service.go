@@ -772,7 +772,8 @@ func (s *Service) queryHistory(
 	}
 	hostPoints := make([]contract.MonitoringHostPoint, 0, maxHistoryPoints)
 	containerPoints := make(map[string]*contract.MonitoringContainerSeries)
-	var previousHost *contract.MonitoringHostPoint
+	var previousHost contract.MonitoringHostPoint
+	hasPreviousHost := false
 	previousContainers := make(map[string]contract.MonitoringContainerPoint)
 	operatorLatencySeries := make(map[string]*contract.MonitoringOperatorLatencySeries)
 	for index := range result.OperatorLatency {
@@ -785,7 +786,7 @@ func (s *Service) queryHistory(
 	}
 	consume := func(record diskRecord) {
 		host := record.Host.contractPoint(record.CollectedAt)
-		if previousHost != nil {
+		if hasPreviousHost {
 			seconds := host.CollectedAt.Sub(previousHost.CollectedAt).Seconds()
 			host.NetworkRxRate = maxFloat64(host.NetworkRxRate,
 				counterRate(previousHost.NetworkRxBytes, host.NetworkRxBytes, seconds))
@@ -798,8 +799,8 @@ func (s *Service) queryHistory(
 					counterRate(previousHost.DiskWriteBytes, host.DiskWriteBytes, seconds))
 			}
 		}
-		hostCopy := host
-		previousHost = &hostCopy
+		previousHost = host
+		hasPreviousHost = true
 		hostPoints = appendHostBucket(hostPoints, host, bucket)
 		for _, container := range record.Containers {
 			if _, exists := containerPoints[container.ID]; !exists && len(containerPoints) >= maxScannedSeries {
@@ -952,6 +953,8 @@ func (s *Service) Status() contract.MonitoringStorageStatus {
 	return s.status
 }
 
+// scanRecords borrows record slices to consume until the callback returns.
+// Callbacks retaining slice elements must copy them by value.
 func (s *Service) scanRecords(
 	ctx context.Context,
 	start time.Time,
@@ -985,6 +988,7 @@ func (s *Service) scanRecords(
 		shards = append(shards, namedShard{name: entry.Name(), date: date, size: info.Size()})
 	}
 	sort.Slice(shards, func(i, j int) bool { return shards[i].date.Before(shards[j].date) })
+	var decoder diskRecordDecoder
 	var scanned int64
 	skipped := 0
 	for _, shard := range shards {
@@ -1006,8 +1010,8 @@ func (s *Service) scanRecords(
 				_ = file.Close()
 				return scanned, skipped, err
 			}
-			var record diskRecord
-			if err := json.Unmarshal(scanner.Bytes(), &record); err != nil ||
+			record, err := decoder.decode(scanner.Bytes())
+			if err != nil ||
 				record.Version != recordVersion {
 				skipped++
 				continue

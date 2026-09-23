@@ -620,7 +620,11 @@ func TestHourlyRollupRestoresCurrentHourAfterRestart(t *testing.T) {
 	var persisted []diskRecord
 	if _, _, err := restarted.scanHourlyRecords(
 		context.Background(), current.Add(-time.Hour), current,
-		func(record diskRecord) { persisted = append(persisted, record) },
+		func(record diskRecord) {
+			record.Containers = append([]diskContainerPoint(nil), record.Containers...)
+			record.OperatorLatency = append([]diskOperatorLatencyPoint(nil), record.OperatorLatency...)
+			persisted = append(persisted, record)
+		},
 	); err != nil {
 		t.Fatal(err)
 	}

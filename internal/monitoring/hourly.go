@@ -490,6 +490,7 @@ func (s *Service) pruneHourly(now time.Time) (int64, bool, error) {
 	return total, total >= s.maxRollupStorageBytes, nil
 }
 
+// scanHourlyRecords has the same borrowed-slice callback contract as scanRecords.
 func (s *Service) scanHourlyRecords(
 	ctx context.Context,
 	start time.Time,
@@ -523,6 +524,7 @@ func (s *Service) scanHourlyRecords(
 		shards = append(shards, namedShard{name: entry.Name(), month: month, size: info.Size()})
 	}
 	sort.Slice(shards, func(i, j int) bool { return shards[i].month.Before(shards[j].month) })
+	var decoder diskRecordDecoder
 	var scanned int64
 	skipped := 0
 	for _, shard := range shards {
@@ -543,8 +545,8 @@ func (s *Service) scanHourlyRecords(
 				_ = file.Close()
 				return scanned, skipped, err
 			}
-			var record diskRecord
-			if err := json.Unmarshal(scanner.Bytes(), &record); err != nil ||
+			record, err := decoder.decode(scanner.Bytes())
+			if err != nil ||
 				record.Version != recordVersion {
 				skipped++
 				continue
