@@ -1382,6 +1382,7 @@ onBeforeUnmount(() => {
       :class="`is-${viewMode}`"
       :aria-busy="refreshing || hostOrderSaving"
       :aria-label="viewMode === 'list' ? '集群主机行列表' : '集群主机卡片列表'"
+      :tabindex="viewMode === 'list' ? 0 : undefined"
     >
       <article
         v-for="host in filteredHosts"
@@ -2375,6 +2376,13 @@ onBeforeUnmount(() => {
 .cluster-grid.is-list {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.cluster-grid.is-list:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .cluster-card {
@@ -2402,11 +2410,12 @@ onBeforeUnmount(() => {
 }
 
 .cluster-grid.is-list .cluster-card {
+  min-width: 1360px;
   grid-template-columns:
-    minmax(260px, 1.4fr)
-    minmax(270px, 1.1fr)
-    minmax(360px, 1.5fr)
-    minmax(210px, 0.8fr);
+    minmax(320px, 1.4fr)
+    minmax(300px, 1.1fr)
+    minmax(500px, 1.5fr)
+    minmax(240px, 0.8fr);
   grid-template-areas:
     "header metrics details footer"
     "warning warning warning warning";
@@ -3187,42 +3196,6 @@ onBeforeUnmount(() => {
   }
 }
 
-@container cluster-layout (max-width: 1140px) {
-  .cluster-grid.is-list .cluster-card {
-    grid-template-columns: minmax(280px, 1fr) minmax(240px, 0.8fr);
-    grid-template-areas:
-      "header footer"
-      "metrics metrics"
-      "details details"
-      "warning warning";
-  }
-
-  .cluster-grid.is-list .cluster-card__header,
-  .cluster-grid.is-list .cluster-card__metrics,
-  .cluster-grid.is-list .cluster-card__details,
-  .cluster-grid.is-list .cluster-card__empty {
-    border-right: 0;
-  }
-
-  .cluster-grid.is-list .cluster-card__header {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .cluster-grid.is-list .cluster-card__footer {
-    align-items: flex-end;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .cluster-grid.is-list .cluster-card__footer > div,
-  .cluster-grid.is-list .cluster-card__footer .button {
-    width: auto;
-  }
-
-  .cluster-grid.is-list .cluster-card__empty {
-    grid-area: 2 / 1 / 4 / -1;
-  }
-}
-
 @media (max-width: 680px) {
   .cluster-grid {
     grid-template-columns: 1fr;
@@ -3332,6 +3305,7 @@ onBeforeUnmount(() => {
 
 @container cluster-layout (max-width: 680px) {
   .cluster-grid.is-list .cluster-card {
+    min-width: 0;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "header"
