@@ -1500,6 +1500,13 @@ onBeforeUnmount(() => {
 .service-status-cell--partial { background: color-mix(in srgb, var(--amber) 82%, var(--surface)); }
 .service-status-cell--failure { background: color-mix(in srgb, var(--danger) 82%, var(--surface)); }
 .service-status-cell--missing { background: color-mix(in srgb, var(--border) 78%, var(--surface)); }
+@container service-status (min-width: 760px) {
+  .service-status-rows { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .service-status-row { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+}
+@container service-status (min-width: 1280px) {
+  .service-status-rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @container service-status (max-width: 560px) {
   .service-status-matrix > header { align-items: flex-start; flex-direction: column; }
   .service-status-legend { justify-content: flex-start; }
