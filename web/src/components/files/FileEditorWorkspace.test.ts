@@ -60,9 +60,9 @@ function entry(name: string): FileEntry {
 const a = entry('a.json'),
   b = entry('b.json')
 const wrappers: ReturnType<typeof mount>[] = []
-async function setup() {
+async function setup(navigationPath?: string) {
   const wrapper = mount(FileEditorWorkspace, {
-    props: { entry: a, content: 'original a', hostId: 'remote-a' },
+    props: { entry: a, content: 'original a', hostId: 'remote-a', navigationPath },
     global: { stubs: { CodeEditor: Editor } },
     attachTo: document.body,
   })
@@ -87,8 +87,91 @@ beforeEach(() => {
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 describe('file editor workspace', () => {
+  it('records confirmed paths while history restoration keeps tabs and drafts without echoing navigation', async () => {
+    mocks.list.mockImplementation(async (path: string) => ({
+      path: path.replace(/\/$/, ''),
+      entries: [a, b],
+    }))
+    const wrapper = await setup('/demo')
+    await wrapper.get('textarea').setValue('draft survives history')
+    await wrapper.vm.openFile({ ...a, kind: 'directory', path: '/demo/config/' })
+    expect(wrapper.emitted('navigate')).toEqual([['/demo/config']])
+    await wrapper.setProps({ navigationPath: '/demo/config' })
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    await wrapper.vm.openFile(b)
+    await flushPromises()
+    await wrapper.setProps({ navigationPath: '/demo' })
+    await flushPromises()
+    expect(wrapper.get('.editor-sidebar__path').text()).toBe('/demo')
+    await wrapper.setProps({ navigationPath: '/demo/config' })
+    await flushPromises()
+    await wrapper.vm.openFile(a)
+    await flushPromises()
+    expect(wrapper.get('textarea').element.value).toBe('draft survives history')
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(2)
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
+    expect(window.confirm).not.toHaveBeenCalled()
+  })
+  it('cancels a pending navigation when browser history returns to the displayed path', async () => {
+    const wrapper = await setup('/demo/config')
+    const pending = deferred<unknown>()
+    mocks.list.mockReturnValueOnce(pending.promise)
+    const slow = wrapper.vm.openFile({ ...a, kind: 'directory', path: '/slow' })
+    await wrapper.setProps({ navigationPath: '/demo' })
+    await flushPromises()
+    pending.resolve({ path: '/slow', entries: [] })
+    await slow
+    expect(wrapper.get('.editor-sidebar__path').text()).toBe('/demo')
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+  })
+  it('retries the failed destination and only records a successful navigation', async () => {
+    const wrapper = await setup('/demo')
+    mocks.list.mockRejectedValueOnce(new Error('directory offline'))
+    await wrapper.vm.openFile({ ...a, kind: 'directory', path: '/missing' })
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(wrapper.get('.editor-sidebar__path').text()).toBe('/demo')
+    mocks.list.mockResolvedValueOnce({ path: '/missing', entries: [] })
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(mocks.list.mock.calls.at(-1)?.[0]).toBe('/missing')
+    expect(wrapper.emitted('navigate')).toEqual([['/missing']])
+  })
+  it('keeps compact actions keyboard-accessible with Escape and wrap focus returning to the trigger', async () => {
+    let resize!: (entries: unknown[]) => void
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: typeof resize) {
+          resize = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    const wrapper = await setup()
+    resize([{ contentRect: { width: 390 } }])
+    await flushPromises()
+    expect(wrapper.find('.editor-toolbar [role="tablist"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="查找或替换"]').exists()).toBe(false)
+    const trigger = wrapper.get('button[aria-label="更多操作"]')
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="查找或替换"]').element)
+    await wrapper.get('[aria-label="查找或替换"]').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('.editor-more__panel').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+    await trigger.trigger('click')
+    await wrapper.get('[aria-label="切换自动换行"]').trigger('click')
+    expect(document.activeElement).toBe(trigger.element)
+    await trigger.trigger('click')
+    expect(wrapper.get('[aria-label="切换自动换行"]').attributes('aria-pressed')).toBe('true')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.editor-more__panel').exists()).toBe(false)
+  })
   it('reopens a saved file with its new version from the sidebar', async () => {
     const wrapper = await setup()
     await wrapper.get('textarea').setValue('saved draft')
@@ -97,7 +180,10 @@ describe('file editor workspace', () => {
     await wrapper.vm.openFile(b)
     await flushPromises()
     await wrapper.get('[aria-label="关闭 a.json"]').trigger('click')
-    await wrapper.findAll('.editor-file').find((button) => button.text() === 'a.json')!.trigger('click')
+    await wrapper
+      .findAll('.editor-file')
+      .find((button) => button.text() === 'a.json')!
+      .trigger('click')
     await flushPromises()
     await wrapper.get('textarea').setValue('next draft')
     await wrapper.get('.editor-save').trigger('click')

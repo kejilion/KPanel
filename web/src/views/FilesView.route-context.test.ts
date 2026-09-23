@@ -35,6 +35,44 @@ beforeEach(()=>{
 })
 afterEach(()=>{wrapper?.unmount();wrapper=undefined;vi.unstubAllGlobals();vi.useRealTimers()})
 
+it('editor directory navigation shares browser history and retains the open file and host', async () => {
+ const router = createWindowRouter('/files?path=/&hostId=a')
+ await router.isReady()
+ wrapper = shallowMount(FilesView, { global: {
+  renderStubDefaultSlot: true,
+  provide: { [windowRouterKey as symbol]: router, [windowRouteKey as symbol]: reactiveRouteFor(router) },
+ } })
+ await flushPromises()
+ const vm = wrapper.vm as unknown as Record<string, any>
+ // Keep the file URL in place without triggering an API-based reopen.
+ await router.replace('/files?path=/&hostId=a&file=/test.txt')
+ await flushPromises()
+ vm.previewEntry = entry
+ vm.previewContent = 'draft'
+ vm.previewDirty = true
+ await flushPromises()
+ const editor = wrapper.findComponent({ name: 'FileEditorWorkspace' })
+ expect(editor.exists()).toBe(true)
+ editor.vm.$emit('navigate', '/config')
+ await flushPromises()
+ expect(router.currentRoute.value.query).toEqual({ path: '/config', hostId: 'a', file: '/test.txt' })
+ expect(editor.attributes('navigation-path')).toBe('/config')
+ expect(vm.currentPath).toBe('/config')
+ router.back()
+ await flushPromises()
+ expect(editor.attributes('navigation-path')).toBe('/')
+ expect(vm.previewDirty).toBe(true)
+ expect(vm.previewEntry.path).toBe('/test.txt')
+ router.forward()
+ await flushPromises()
+ expect(editor.attributes('navigation-path')).toBe('/config')
+ editor.vm.$emit('navigate', '/config')
+ await flushPromises()
+ router.back()
+ await flushPromises()
+ expect(editor.attributes('navigation-path')).toBe('/')
+})
+
 it('native window back must not display A copy completion inside B',async()=>{
  const router=createWindowRouter('/files?path=/&hostId=b')
  await router.isReady()

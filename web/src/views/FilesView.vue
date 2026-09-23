@@ -942,6 +942,13 @@ async function navigateDirectory(path: string): Promise<void> {
   await router.push({ name: 'files', query: { path: resolvedPath, ...(fileHostId.value ? { hostId: fileHostId.value } : {}) } })
 }
 
+async function navigateEditorDirectory(path: string): Promise<void> {
+  // The workspace emits only Agent-confirmed, current results. Use the same
+  // window-scoped router as the file manager, retaining the open-file context.
+  if (path === (requestedFilePath(route.query.path) || '/')) return
+  await router.push({ name: 'files', query: { ...route.query, path } })
+}
+
 async function openRequestedFile(value: unknown): Promise<void> {
   const hostId = fileHostId.value
   const filePath = requestedFilePath(value)
@@ -3727,6 +3734,8 @@ onBeforeUnmount(() => {
         :entry="previewEntry"
         :content="previewContent"
         :host-id="fileHostId"
+        :navigation-path="requestedFilePath(route.query.path) || '/'"
+        @navigate="navigateEditorDirectory"
         @dirty="previewDirty = $event"
         @saving="previewSaving = $event"
         @saved="loadDirectory()"

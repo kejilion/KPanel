@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, useId, type Raw } from 'vue'
+import {
+  computed,
+  markRaw,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useId,
+  watch,
+  type Raw,
+} from 'vue'
 import {
   ArrowUp,
   Check,
   Code2,
   FileCode,
   Folder,
+  MoreHorizontal,
   PanelLeft,
   RefreshCw,
   Save,
@@ -19,12 +30,18 @@ import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
 import type { CodeEditorSession } from '@/lib/code-editor-session'
 import type { FileDirectory, FileEntry } from '@/types/api'
 
-const props = defineProps<{ entry: FileEntry; content: string; hostId: string }>()
+const props = defineProps<{
+  entry: FileEntry
+  content: string
+  hostId: string
+  navigationPath?: string
+}>()
 const emit = defineEmits<{
   dirty: [value: boolean]
   saving: [value: boolean]
   saved: [entry: FileEntry]
   close: []
+  navigate: [path: string]
 }>()
 const files = fileAPIForHost(props.hostId)
 const MAX_TABS = 12
@@ -66,12 +83,16 @@ const root = ref<HTMLElement>()
 const tabList = ref<HTMLElement>()
 const sidebarToggle = ref<HTMLButtonElement>()
 const sidebarSearch = ref<HTMLInputElement>()
+const moreRoot = ref<HTMLElement>()
+const moreToggle = ref<HTMLButtonElement>()
+const moreOpen = ref(false)
 const compact = ref(false)
 const sidebarOpen = ref(true)
 const directory = ref<FileDirectory>()
-const directoryPath = ref(parentPath(props.entry.path))
+const directoryPath = ref(props.navigationPath || parentPath(props.entry.path))
 const directoryLoading = ref(false)
 const directoryError = ref('')
+let failedDirectory: { path: string; append: boolean; record: boolean } | undefined
 const query = ref('')
 const notice = ref('')
 const id = `file-editor-${useId()}`
@@ -237,12 +258,17 @@ async function save(): Promise<void> {
     }
   }
 }
-async function loadDirectory(path = directoryPath.value, append = false): Promise<void> {
+async function loadDirectory(
+  path = directoryPath.value,
+  append = false,
+  record = false,
+): Promise<void> {
   const request = ++directoryRequest
   directoryController?.abort()
   directoryController = new AbortController()
   directoryLoading.value = true
   directoryError.value = ''
+  failedDirectory = undefined
   try {
     const result = await files.list(
       path,
@@ -258,17 +284,36 @@ async function loadDirectory(path = directoryPath.value, append = false): Promis
       ).slice(0, MAX_ENTRIES),
     }
     directoryPath.value = result.path
+    if (record) emit('navigate', result.path)
   } catch (error) {
-    if (!disposed && request === directoryRequest) directoryError.value = errorText(error)
+    if (!disposed && request === directoryRequest) {
+      directoryError.value = errorText(error)
+      failedDirectory = { path, append, record }
+    }
   } finally {
     if (!disposed && request === directoryRequest) directoryLoading.value = false
   }
 }
-async function browse(path: string): Promise<void> {
+async function browse(path: string, record = true): Promise<void> {
   clearTimeout(searchTimer)
   query.value = ''
-  await loadDirectory(path)
+  await loadDirectory(path, false, record)
 }
+function retryDirectory(): void {
+  if (failedDirectory) {
+    const { path, append, record } = failedDirectory
+    void loadDirectory(path, append, record)
+  }
+}
+watch(
+  () => props.navigationPath,
+  (path) => {
+    // Own successful pushes already have this directory. History traversal must
+    // still cancel an in-flight read, even when returning to the displayed path.
+    const target = path || parentPath(props.entry.path)
+    if (directoryLoading.value || target !== directoryPath.value) void browse(target, false)
+  },
+)
 function searchDirectory(): void {
   clearTimeout(searchTimer)
   directoryController?.abort()
@@ -285,8 +330,40 @@ const entries = computed(() =>
   ),
 )
 function toggleSidebar(): void {
+  moreOpen.value = false
   sidebarOpen.value = !sidebarOpen.value
   if (sidebarOpen.value && compact.value) void nextTick(() => sidebarSearch.value?.focus())
+}
+function dismissMore(): void {
+  moreOpen.value = false
+  moreToggle.value?.focus({ preventScroll: true })
+}
+function closeMoreOnEscape(event: KeyboardEvent): void {
+  if (!moreOpen.value) return
+  event.stopPropagation()
+  event.preventDefault()
+  dismissMore()
+}
+function toggleMore(): void {
+  moreOpen.value = !moreOpen.value
+  if (moreOpen.value)
+    void nextTick(() =>
+      moreRoot.value
+        ?.querySelector<HTMLButtonElement>('.editor-more__panel button:not(:disabled)')
+        ?.focus(),
+    )
+}
+function search(): void {
+  moreOpen.value = false
+  void nextTick(() => editor.value?.openSearch())
+}
+function toggleWrap(): void {
+  active.value.lineWrap = !active.value.lineWrap
+  if (compact.value) dismissMore()
+}
+function outsideMore(event: PointerEvent): void {
+  if (event.target instanceof Node && !moreRoot.value?.contains(event.target))
+    moreOpen.value = false
 }
 function dismissSidebar(): void {
   sidebarOpen.value = false
@@ -305,6 +382,7 @@ onMounted(() => {
       if (!entry) return
       const next = entry.contentRect.width < 700
       if (next !== compact.value) {
+        moreOpen.value = false
         compact.value = next
         sidebarOpen.value = !next
       }
@@ -312,6 +390,7 @@ onMounted(() => {
     if (root.value) observer.observe(root.value)
   }
   window.addEventListener('beforeunload', beforeUnload)
+  document.addEventListener('pointerdown', outsideMore)
 })
 onBeforeUnmount(() => {
   disposed = true
@@ -319,6 +398,7 @@ onBeforeUnmount(() => {
   clearTimeout(searchTimer)
   observer?.disconnect()
   window.removeEventListener('beforeunload', beforeUnload)
+  document.removeEventListener('pointerdown', outsideMore)
 })
 defineExpose({ openFile })
 </script>
@@ -346,38 +426,113 @@ defineExpose({ openFile })
       >
         <PanelLeft :size="18" />
       </button>
-      <span class="editor-toolbar__path" :title="active.entry.path" data-i18n-ignore>{{
-        active.entry.path
-      }}</span>
-      <button
-        class="editor-tool"
-        type="button"
-        :title="phrase('查找或替换（Ctrl+F）')"
-        :aria-label="phrase('查找或替换')"
-        :disabled="!editorReady"
-        @click="editor?.openSearch()"
+      <div
+        ref="tabList"
+        class="editor-tabs"
+        :inert="compact && sidebarOpen"
+        role="tablist"
+        :aria-label="phrase('已打开的文件')"
+        @keydown="tabsKeydown"
       >
-        <Search :size="17" />
-      </button>
-      <button
-        class="editor-tool"
-        :class="{ 'is-active': active.lineWrap }"
-        type="button"
-        :title="phrase('切换自动换行')"
-        :aria-label="phrase('切换自动换行')"
-        :aria-pressed="active.lineWrap"
-        @click="active.lineWrap = !active.lineWrap"
+        <div
+          v-for="(tab, index) in tabs"
+          :key="tab.entry.path"
+          class="editor-tab"
+          :class="{ 'is-active': tab === active }"
+        >
+          <button
+            :id="`${id}-tab-${index}`"
+            class="editor-tab__select"
+            type="button"
+            role="tab"
+            :aria-selected="tab === active"
+            :aria-controls="`${id}-content`"
+            :tabindex="tab === active ? 0 : -1"
+            :title="tab.entry.path"
+            @click="selectTab(tab)"
+          >
+            <Code2 :size="15" /><span data-i18n-ignore>{{ tab.entry.name }}</span
+            ><span v-if="tab.dirty" class="editor-dirty" :aria-label="phrase('未保存')" />
+          </button>
+          <button
+            class="editor-tab__close"
+            type="button"
+            :disabled="tab.saving"
+            :aria-label="phrase(`关闭 ${tab.entry.name}`)"
+            :title="phrase('关闭标签')"
+            @click="closeTab(tab)"
+          >
+            <RefreshCw v-if="tab.saving || tab.loading" :size="14" class="spinning" /><X
+              v-else
+              :size="15"
+            />
+          </button>
+        </div>
+      </div>
+      <div
+        ref="moreRoot"
+        class="editor-actions"
+        :inert="compact && sidebarOpen"
+        @keydown.esc="closeMoreOnEscape"
       >
-        <WrapText :size="18" />
-      </button>
+        <button
+          v-if="compact"
+          ref="moreToggle"
+          class="editor-tool"
+          type="button"
+          :title="phrase('更多操作')"
+          :aria-label="phrase('更多操作')"
+          :aria-expanded="moreOpen"
+          :aria-controls="`${id}-actions`"
+          @click="toggleMore"
+        >
+          <MoreHorizontal :size="19" />
+        </button>
+        <div
+          v-if="!compact || moreOpen"
+          :id="`${id}-actions`"
+          class="editor-actions__items"
+          :class="{ 'editor-more__panel': compact }"
+          role="group"
+          :aria-label="phrase('更多操作')"
+        >
+          <button
+            class="editor-tool"
+            type="button"
+            :title="phrase('查找或替换（Ctrl+F）')"
+            :aria-label="phrase('查找或替换')"
+            :disabled="!editorReady"
+            @click="search"
+          >
+            <Search :size="17" /><span v-if="compact">{{ phrase('查找或替换') }}</span>
+          </button>
+          <button
+            class="editor-tool"
+            :class="{ 'is-active': active.lineWrap }"
+            type="button"
+            :title="phrase('切换自动换行')"
+            :aria-label="phrase('切换自动换行')"
+            :aria-pressed="active.lineWrap"
+            @click="toggleWrap"
+          >
+            <WrapText :size="18" /><span v-if="compact">{{ phrase('切换自动换行') }}</span
+            ><Check v-if="compact && active.lineWrap" :size="15" />
+          </button>
+        </div>
+      </div>
       <button
         class="button button--primary editor-save"
         type="button"
         :disabled="!editorReady || !active.dirty || active.saving"
-        title="Ctrl / ⌘ + S"
+        :inert="compact && sidebarOpen"
+        :aria-label="phrase(active.saving ? '保存中…' : '保存')"
+        :title="`${phrase('保存')} (Ctrl / ⌘ + S)`"
         @click="save"
       >
-        <Save :size="16" />{{ phrase(active.saving ? '保存中…' : '保存') }}
+        <RefreshCw v-if="active.saving" :size="16" class="spinning" /><Save
+          v-else
+          :size="16"
+        /><span>{{ phrase(active.saving ? '保存中…' : '保存') }}</span>
       </button>
     </header>
     <div class="editor-workspace__body">
@@ -438,7 +593,7 @@ defineExpose({ openFile })
         /></label>
         <div v-if="directoryError" class="editor-message" role="alert">
           <span>{{ directoryError }}</span
-          ><button type="button" @click="loadDirectory()">{{ phrase('重试') }}</button>
+          ><button type="button" @click="retryDirectory">{{ phrase('重试') }}</button>
         </div>
         <div class="editor-file-list" :aria-busy="directoryLoading">
           <div v-if="directoryLoading && !directory" class="editor-empty" role="status">
@@ -496,48 +651,6 @@ defineExpose({ openFile })
         </div>
       </aside>
       <main class="editor-main" :inert="compact && sidebarOpen">
-        <div
-          ref="tabList"
-          class="editor-tabs"
-          role="tablist"
-          :aria-label="phrase('已打开的文件')"
-          @keydown="tabsKeydown"
-        >
-          <div
-            v-for="(tab, index) in tabs"
-            :key="tab.entry.path"
-            class="editor-tab"
-            :class="{ 'is-active': tab === active }"
-          >
-            <button
-              :id="`${id}-tab-${index}`"
-              class="editor-tab__select"
-              type="button"
-              role="tab"
-              :aria-selected="tab === active"
-              :aria-controls="`${id}-content`"
-              :tabindex="tab === active ? 0 : -1"
-              :title="tab.entry.path"
-              @click="selectTab(tab)"
-            >
-              <Code2 :size="15" /><span data-i18n-ignore>{{ tab.entry.name }}</span
-              ><span v-if="tab.dirty" class="editor-dirty" :aria-label="phrase('未保存')" />
-            </button>
-            <button
-              class="editor-tab__close"
-              type="button"
-              :disabled="tab.saving"
-              :aria-label="phrase(`关闭 ${tab.entry.name}`)"
-              :title="phrase('关闭标签')"
-              @click="closeTab(tab)"
-            >
-              <RefreshCw v-if="tab.saving || tab.loading" :size="14" class="spinning" /><X
-                v-else
-                :size="15"
-              />
-            </button>
-          </div>
-        </div>
         <div v-if="notice" class="editor-message" role="status">{{ notice }}</div>
         <div v-if="active.error" class="editor-message" role="alert">
           <span>{{ active.error }}</span
@@ -604,25 +717,58 @@ defineExpose({ openFile })
   background: var(--file-preview-background);
 }
 .editor-toolbar {
+  position: relative;
+  z-index: 4;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
-  min-height: 54px;
-  padding: 8px 12px;
+  gap: 6px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--file-preview-border);
   background: var(--file-preview-panel);
 }
-.editor-toolbar__path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font:
-    13px/1.5 ui-monospace,
-    Consolas,
-    monospace;
-  color: var(--file-preview-muted);
+.editor-actions,
+.editor-actions__items {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.editor-actions {
+  position: relative;
+}
+.editor-more__panel {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: max-content;
+  max-width: min(270px, 75vw);
+  padding: 6px;
+  border: 1px solid var(--file-preview-border);
+  border-radius: var(--radius);
+  color: var(--file-preview-text);
+  background: var(--file-preview-panel);
+  box-shadow: var(--file-preview-shadow);
+}
+.editor-more__panel .editor-tool {
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 10px;
+  color: var(--file-preview-text);
+  font-size: 14px;
+  text-align: left;
+}
+.editor-more__panel svg {
+  flex: 0 0 auto;
 }
 .editor-tool {
   display: inline-flex;
@@ -764,10 +910,11 @@ defineExpose({ openFile })
 }
 .editor-tabs {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  border-bottom: 1px solid var(--file-preview-border);
   background: var(--file-preview-panel);
   scrollbar-width: thin;
 }
@@ -789,6 +936,7 @@ defineExpose({ openFile })
   align-items: center;
   gap: 8px;
   min-width: 0;
+  align-self: stretch;
   min-height: 42px;
   padding: 8px 10px;
   border: 0;
@@ -913,20 +1061,22 @@ defineExpose({ openFile })
   box-shadow: var(--file-preview-shadow);
 }
 .is-compact .editor-toolbar {
-  gap: 4px;
-  padding: 6px;
-  flex-wrap: wrap;
-}
-.is-compact .editor-toolbar__path {
-  order: 5;
-  flex-basis: 100%;
-  padding: 0 6px 2px;
+  gap: 2px;
+  padding: 0 4px;
 }
 .is-compact .editor-save {
-  margin-left: auto;
+  width: 40px;
   min-height: 40px;
+  padding: 0;
+  justify-content: center;
 }
-.is-compact .editor-tool {
+.is-compact .editor-save > span {
+  display: none;
+}
+.is-compact .editor-tab {
+  max-width: 210px;
+}
+.is-compact .editor-tool:not(.editor-more__panel .editor-tool) {
   width: 40px;
   height: 40px;
 }
