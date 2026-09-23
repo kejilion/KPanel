@@ -1,0 +1,139 @@
+{
+  "repo": "KPanel",
+  "run_id": "run-7",
+  "target": "C:/GitHub/_codex-tasks/kpanel-terminal-file-v3",
+  "source_ref": "ce2fffa6f66c81beeb97b903e2701a76462016a5",
+  "source_tree": "d369bdbb6e7306bcfa1d2320da4899f693144dfd",
+  "source_dirty": false,
+  "mode": "scoped",
+  "scope_mode": "scoped",
+  "profile": "standard",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "scope_complete": true,
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "skill_dir": "/root/kpanel-audit/skill/skills/security-audit (mirror: C:/GitHub/_research/security-audit-skill-c1c8a8c1)",
+  "execution_policy": "sandboxed-source-and-local-only",
+  "actual_execution": "Source-only; no target code, tests, build, fixture, service, browser, or network request executed because the required OS-enforced sandbox and evidence-promotion controls are unavailable. Pinned structural validators ran under WSL.",
+  "budget": null,
+  "started_at": "2026-09-23T08:05:00+08:00",
+  "run_status": "complete",
+  "scope_paths": [
+    "cmd/kejilion-node/terminal_broker.go",
+    "internal/agent/file_handler.go",
+    "internal/agent/files.go",
+    "internal/agent/server.go",
+    "internal/agent/thumbnail_cache.go",
+    "internal/auth/passkey.go",
+    "internal/cluster/client.go",
+    "internal/cluster/client_v2.go",
+    "internal/cluster/file_stream.go",
+    "internal/cluster/file_stream_transport.go",
+    "internal/cluster/light_service.go",
+    "internal/cluster/panel_file_relay.go",
+    "internal/cluster/service.go",
+    "internal/cluster/service_v2.go",
+    "internal/cluster/stream_v3.go",
+    "internal/cluster/terminal_stream.go",
+    "internal/cluster/terminal_v2.go",
+    "internal/panel/cluster.go",
+    "internal/panel/files.go",
+    "internal/panel/light_file.go",
+    "internal/panel/passkey.go",
+    "internal/panel/server.go",
+    "internal/panel/terminal_stream.go",
+    "internal/store/backup.go",
+    "internal/store/passkeys.go",
+    "internal/store/store.go",
+    "internal/terminal/buffer.go"
+  ],
+  "scope_source": "node scripts/check-security-audit-coverage.mjs --format=json (files + commits fields at target ce2fffa6)",
+  "in_scope_commits": [
+    "254c45dc44bb fix(terminal): bound opening a stream terminal by the caller's context",
+    "eaae3fb5d94b fix(terminal): keep pushed terminals connected after transient failures",
+    "f2fcd7373bee perf(files): cache thumbnails and upload files concurrently",
+    "0003887c9ddc feat(terminal): push terminal output over one SSE stream per tab",
+    "2f9103b48e5e feat(cluster): stream terminals and reusable file sockets between panels",
+    "dd3d46e5a538 feat(auth): add passkey disable and rebind flow",
+    "632c988b951a feat(auth): configure passkey origin from trusted entry"
+  ],
+  "prior_run_paths": [
+    ".governance/security-audit/run-1",
+    ".governance/security-audit/run-2",
+    ".governance/security-audit/run-4",
+    ".governance/security-audit/run-6"
+  ],
+  "pre_wave_plan": {
+    "units": "seeded after scoped reconnaissance over the 27 in-scope files and their reachable context",
+    "hunters": "one isolated read-only agent per unit group",
+    "post_wave_critic_reserved": 1,
+    "distinct_final_clean_critic_reserved": 1,
+    "validation_reserve": "fresh verifier per surviving candidate; no user budget set",
+    "priority": "new federation stream roles and their per-request authorization, browser SSE session/CSRF boundary, reusable socket state, thumbnail cache keying and cache-control relaxation, resource limits, then the two Passkey commits new since run-6"
+  },
+  "completed_at": "2026-09-23T12:46:45.3730888+08:00",
+  "actual_cost": {
+    "agent_task_directories": 41,
+    "reconnaissance_agents": 4,
+    "estimated_agent_tasks_including_recon": 45,
+    "phase3_verifier_directories": 21,
+    "phase5_reviews_completed": 15,
+    "coverage_critics": 2,
+    "elapsed_seconds": 16905.0,
+    "token_usage": "Unavailable from the agent orchestration runtime; not estimated."
+  },
+  "findings_counts": {
+    "confirmed": 0,
+    "needs_validation": 15,
+    "rejected": 3
+  },
+  "coverage_counts": {
+    "covered": 19,
+    "candidate": 16,
+    "blocked": 0,
+    "deferred": 0,
+    "out_of_scope": 1,
+    "total": 36
+  },
+  "phase5_review": {
+    "required": 15,
+    "completed": 15,
+    "verified": 7,
+    "non_material_replacements": 8
+  },
+  "validator_results": {
+    "findings": "PASS: 18 findings valid",
+    "coverage_ledger": "PASS: 36 coverage units valid",
+    "environment": "WSL Ubuntu-24.04 / pinned security-audit-skill commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"
+  },
+  "public_disclosure": {
+    "mode": "public metadata and counts only",
+    "original_candidate": "33aa84c85d4989cecfa6e4a6c1a5785f3b00f4ee",
+    "original_directory": "C:/GitHub/_codex-evidence/kpanel-transport-v3-security-audit-run-7",
+    "files": [
+      {
+        "sha256": "dd14cf9a1039e16c0a7fa17345300be93b9e002dea1be5765d24bb3202586e4e",
+        "name": "run-metadata.json"
+      },
+      {
+        "sha256": "249e0592a8e3f4a90ad5912931d7ccdadd55027b9094d1cb888bc18c3e2cee52",
+        "name": "coverage-ledger.json"
+      },
+      {
+        "sha256": "ead437d1954c97fec39e79150efc3fc32a295d9f14ac0c4c1de677e9a201c181",
+        "name": "findings.json"
+      },
+      {
+        "sha256": "e45b91dfd09660b6f5435de3d9c2b32dc5731e4bf7e02b696ccc44d1226e56b7",
+        "name": "NEEDS-VALIDATION.md"
+      },
+      {
+        "sha256": "337cc208d85e02c3d00af0b8e1de472e2b76cb87d92536ed72eaab2e063b2346",
+        "name": "REPORT.md"
+      },
+      {
+        "sha256": "1ee1ff5ca95bea44bc329dc5f88353489a314550d9545b249bfe04617529f4b6",
+        "name": "architecture.md"
+      }
+    ]
+  }
+}
