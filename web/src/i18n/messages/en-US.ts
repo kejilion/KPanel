@@ -570,6 +570,7 @@ export const enUSMessages = {
   'desktop.sceneFollowsTime': 'Changes with the time of day',
   'desktop.sceneLoadFailedTitle': 'Dynamic scene failed to load',
   'desktop.sceneLoadFailedMessage': 'The static wallpaper is shown for now. Check the connection to the panel, then retry from “Change wallpaper and theme”.',
+  'desktop.scenePendingFailedMessage': 'The current backdrop is unchanged. Check the connection to the panel, then retry from “Change wallpaper and theme”.',
   'desktop.enterFullscreen': 'Enter fullscreen',
   'desktop.exitFullscreen': 'Exit fullscreen',
   'desktop.fullscreenUnavailableTitle': 'Unable to change fullscreen mode',

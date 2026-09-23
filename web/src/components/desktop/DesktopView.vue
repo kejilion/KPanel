@@ -441,12 +441,10 @@ const desktopWallpaperStyle = computed((): Record<string, string> =>
 // Dynamic scenes sit above the static wallpaper, which stays as their fallback.
 // A chosen scene first mounts as a hidden pending layer; it only replaces the
 // current backdrop after its chunk has downloaded and painted a frame.
-type DesktopSceneStatus = 'loading' | 'ready' | 'error'
+// Loading is derived from pendingSceneID; only settled outcomes are stored.
 const desktopSceneID = ref<DesktopSceneID | null>(readDesktopSceneID())
 const pendingSceneID = ref<DesktopSceneID | null>(null)
-const desktopSceneStatus = ref<Partial<Record<DesktopSceneID, DesktopSceneStatus>>>(
-  desktopSceneID.value ? { [desktopSceneID.value]: 'loading' } : {},
-)
+const desktopSceneStatus = ref<Partial<Record<DesktopSceneID, 'ready' | 'error'>>>({})
 const desktopSceneLayers = computed(() =>
   [...new Set([desktopSceneID.value, pendingSceneID.value])].filter((id): id is DesktopSceneID => Boolean(id)),
 )
@@ -3123,13 +3121,14 @@ function waitForWallpaperSwitchDelay(): Promise<void> {
 }
 
 async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<void> {
+  // Drop a still-downloading scene now so it cannot land after this choice.
+  pendingSceneID.value = null
   wallpaperDialogOpen.value = false
   await nextTick()
   await waitForWallpaperSwitchDelay()
   const wallpaper = DESKTOP_WALLPAPERS.find((candidate) => candidate.id === wallpaperID)
   if (!wallpaper) return
   desktopWallpaperID.value = wallpaperID
-  pendingSceneID.value = null
   applyDesktopSceneID(null)
   theme.setColors(wallpaper.themePreset.colors)
   try {
@@ -3149,12 +3148,12 @@ function applyDesktopSceneID(sceneID: DesktopSceneID | null): void {
 
 function selectDesktopScene(sceneID: DesktopSceneID): void {
   if (sceneID === desktopSceneID.value) {
+    // Re-confirming the current scene cancels any other scene still downloading.
+    pendingSceneID.value = null
     wallpaperDialogOpen.value = false
     return
   }
-  if (sceneID === pendingSceneID.value) return
   pendingSceneID.value = sceneID
-  desktopSceneStatus.value = { ...desktopSceneStatus.value, [sceneID]: 'loading' }
 }
 
 async function onDesktopSceneReady(sceneID: DesktopSceneID): Promise<void> {
@@ -3171,11 +3170,18 @@ async function onDesktopSceneReady(sceneID: DesktopSceneID): Promise<void> {
 
 function onDesktopSceneError(sceneID: DesktopSceneID): void {
   desktopSceneStatus.value = { ...desktopSceneStatus.value, [sceneID]: 'error' }
-  if (pendingSceneID.value === sceneID) pendingSceneID.value = null
+  if (pendingSceneID.value === sceneID) {
+    // The current backdrop never changed; the picker card offers the retry.
+    pendingSceneID.value = null
+    if (!wallpaperDialogOpen.value) {
+      toast.danger(i18n.t('desktop.sceneLoadFailedTitle'), i18n.t('desktop.scenePendingFailedMessage'))
+    }
+    return
+  }
   // A saved scene that cannot load falls back to the static wallpaper for this
   // session only; the choice is kept so the next visit retries.
-  if (desktopSceneID.value === sceneID) desktopSceneID.value = null
-  if (!wallpaperDialogOpen.value) {
+  if (desktopSceneID.value === sceneID) {
+    desktopSceneID.value = null
     toast.danger(i18n.t('desktop.sceneLoadFailedTitle'), i18n.t('desktop.sceneLoadFailedMessage'))
   }
 }

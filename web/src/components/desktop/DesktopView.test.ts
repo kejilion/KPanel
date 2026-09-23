@@ -544,6 +544,73 @@ describe('DesktopView', () => {
     theme.resetColors()
   })
 
+  it('drops a still-downloading scene when the user settles on another backdrop', async () => {
+    sceneHosts.length = 0
+    const theme = useTheme()
+    theme.resetColors()
+    window.localStorage.setItem('kpanel:desktop-scene:v1', 'seaside')
+    const wrapper = mount(DesktopView)
+    const openPicker = async () => {
+      await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+      await nextTick()
+      await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+      await nextTick()
+    }
+    const hostFor = (id: string) => sceneHosts.filter((host) => host.options.sceneId === id).at(-1)!
+
+    // Re-confirming the current scene cancels the pending one.
+    await openPicker()
+    document.body.querySelector<HTMLButtonElement>('[data-scene-option="aurora"]')!.click()
+    await nextTick()
+    document.body.querySelector<HTMLButtonElement>('[data-scene-option="seaside"]')!.click()
+    await nextTick()
+    expect(wrapper.find('.desktop-scene[data-desktop-scene="aurora"]').exists()).toBe(false)
+    vi.useFakeTimers()
+    hostFor('aurora').options.onReady()
+    await vi.advanceTimersByTimeAsync(600)
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBe('seaside')
+    expect(wrapper.find('.desktop-scene--active').attributes('data-desktop-scene')).toBe('seaside')
+
+    // A static wallpaper chosen mid-download wins over the scene finishing later.
+    vi.useRealTimers()
+    await openPicker()
+    vi.useFakeTimers()
+    document.body.querySelector<HTMLButtonElement>('[data-scene-option="rain"]')!.click()
+    await nextTick()
+    const rain = hostFor('rain')
+    document.body.querySelector<HTMLButtonElement>('[data-wallpaper-option="rift"]')!.click()
+    await nextTick()
+    rain.options.onReady()
+    await vi.advanceTimersByTimeAsync(1200)
+    await flushPromises()
+    expect(wrapper.find('.desktop-scene').exists()).toBe(false)
+    expect(wrapper.find('[data-wallpaper="rift"]').exists()).toBe(true)
+    expect(window.localStorage.getItem('kpanel:desktop-scene:v1')).toBeNull()
+    vi.useRealTimers()
+    wrapper.unmount()
+    theme.resetColors()
+  })
+
+  it('keeps the current backdrop and says so when a scene fails after the picker closed', async () => {
+    sceneHosts.length = 0
+    const wrapper = mount(DesktopView)
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+    document.body.querySelector<HTMLButtonElement>('[data-scene-option="daylight"]')!.click()
+    await nextTick()
+    document.body.querySelector<HTMLButtonElement>('.modal-panel__actions .icon-button:last-child')!.click()
+    await nextTick()
+    expect(document.body.querySelector('.desktop-wallpaper-picker')).toBeNull()
+    sceneHosts[0]!.options.onError('load')
+    await nextTick()
+    const toasts = useToast().items.value
+    expect(toasts.at(-1)).toMatchObject({ title: '动态场景加载失败', message: expect.stringContaining('当前背景保持不变') })
+    expect(wrapper.find('.desktop-scene').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('falls back to the static wallpaper for the session when a saved scene cannot load', async () => {
     sceneHosts.length = 0
     window.localStorage.setItem('kpanel:desktop-scene:v1', 'seaside')

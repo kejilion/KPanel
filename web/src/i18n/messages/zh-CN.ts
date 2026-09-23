@@ -571,6 +571,7 @@ export const zhCNMessages = {
   'desktop.sceneFollowsTime': '随时间变化',
   'desktop.sceneLoadFailedTitle': '动态场景加载失败',
   'desktop.sceneLoadFailedMessage': '已暂时显示静态壁纸。请检查与面板的网络连接，然后在“更换壁纸和主题”中重试。',
+  'desktop.scenePendingFailedMessage': '当前背景保持不变。请检查与面板的网络连接，然后在“更换壁纸和主题”中重试。',
   'desktop.enterFullscreen': '进入全屏',
   'desktop.exitFullscreen': '退出全屏',
   'desktop.fullscreenUnavailableTitle': '无法切换全屏',

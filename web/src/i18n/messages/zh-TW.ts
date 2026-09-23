@@ -557,6 +557,7 @@ export const zhTWMessages = {
   "desktop.sceneFollowsTime": "隨時間變化",
   "desktop.sceneLoadFailedTitle": "動態場景載入失敗",
   "desktop.sceneLoadFailedMessage": "已暫時顯示靜態桌布。請檢查與面板的網路連線，然後在「更換桌布和主題」中重試。",
+  "desktop.scenePendingFailedMessage": "目前背景保持不變。請檢查與面板的網路連線，然後在「更換桌布和主題」中重試。",
   "desktop.enterFullscreen": "進入全螢幕",
   "desktop.exitFullscreen": "退出全螢幕",
   "desktop.fullscreenUnavailableTitle": "無法切換全螢幕",

@@ -1,4 +1,4 @@
-import type { SceneContext2D, SceneModule } from '../types'
+import type { SceneModule } from '../types'
 import {
   celestialAt, createLayer, createStars, drawStars, fillRidge, hex, mix, paintSky, random, rgba, ridge,
   skyAt, type Layer, type SkyColors, type Star,
@@ -146,10 +146,8 @@ export const createScene: SceneModule['createScene'] = (context, environment) =>
     beach.addColorStop(1, rgba(mix(sandColor, hex('#000000'), 0.12)))
     sand.fillStyle = beach
     sand.beginPath()
-    sand.moveTo(0, shore + height * 0.012)
-    for (let x = 0; x <= width; x += width / 48) {
-      sand.lineTo(x, shore + height * (0.012 - 0.018 * (x / width)) + Math.sin(x / width * 5.1) * height * 0.006)
-    }
+    sand.moveTo(0, shoreline(0))
+    for (let x = 0; x <= width; x += width / 48) sand.lineTo(x, shoreline(x))
     sand.lineTo(width, height)
     sand.lineTo(0, height)
     sand.closePath()
@@ -193,24 +191,24 @@ export const createScene: SceneModule['createScene'] = (context, environment) =>
     })
   }
 
-  function drawGlitter(context2d: SceneContext2D, time: number): void {
+  function drawGlitter(time: number): void {
     if (glitter <= 0) return
     const horizon = height * HORIZON
     const shore = height * SHORE
-    context2d.globalCompositeOperation = 'lighter'
-    if (lightPath) context2d.drawImage(lightPath.surface, bodyX * width - lightPath.surface.width / 2, horizon)
-    context2d.fillStyle = rgba(glitterColor)
+    context.globalCompositeOperation = 'lighter'
+    if (lightPath) context.drawImage(lightPath.surface, bodyX * width - lightPath.surface.width / 2, horizon)
+    context.fillStyle = rgba(glitterColor)
     for (let index = 0; index < 130; index++) {
       const depth = (index / 130) ** 1.5
       const y = horizon + 2 + depth * (shore - horizon - 4)
       const spread = width * (0.008 + depth * 0.075)
       const x = bodyX * width + Math.sin(time * (0.9 + (index % 7) * 0.13) + index * 12.9898) * spread
       const shimmer = Math.abs(Math.sin(time * 1.9 + index * 3.17))
-      context2d.globalAlpha = glitter * shimmer * (0.85 - depth * 0.5)
-      context2d.fillRect(x, y, unit * (3 + depth * 34) * (0.4 + shimmer * 0.6), Math.max(1, unit * (1 + depth * 1.5)))
+      context.globalAlpha = glitter * shimmer * (0.85 - depth * 0.5)
+      context.fillRect(x, y, unit * (3 + depth * 34) * (0.4 + shimmer * 0.6), Math.max(1, unit * (1 + depth * 1.5)))
     }
-    context2d.globalAlpha = 1
-    context2d.globalCompositeOperation = 'source-over'
+    context.globalAlpha = 1
+    context.globalCompositeOperation = 'source-over'
   }
 
   function drawWash(time: number, step: number): void {
@@ -268,7 +266,7 @@ export const createScene: SceneModule['createScene'] = (context, environment) =>
       context.drawImage(skyLayer!.surface, 0, 0)
       drawStars(context, stars, width, height * HORIZON * 0.9, frame.time, sky.stars, Math.max(1, width / 1600))
       drawSwells(frame.time, step)
-      drawGlitter(context, frame.time)
+      drawGlitter(frame.time)
       context.drawImage(sandLayer!.surface, 0, 0)
       drawWash(frame.time, step)
       drawBirds(frame.time)
