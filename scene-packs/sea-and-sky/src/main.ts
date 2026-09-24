@@ -5,7 +5,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { onHostCommand, postToHost } from './bridge'
-import { createDaylight, dayOfYear, localHour, moonAge } from './daylight'
+import { createClock } from './clock'
+import { createDaylight } from './daylight'
 import { Director, type Shot } from './director'
 import { createOcean } from './ocean'
 import { createRocks } from './rocks'
@@ -14,12 +15,14 @@ import { createSkyDome, skyUniforms } from './sky'
 import { obstacleHeight } from './world'
 
 /**
- * Sea and Sky: nothing but the open sea, a few sea stacks and the sky. The
- * sun and moon cross it on the local clock (the moon in its real phase), the
- * stars and the Milky Way turn through the night, and the camera always turns
- * towards whatever lights the scene: the sun and its glittering path, the moon
- * and its silver one, or on a moonless night the heart of the Milky Way.
- * ?hour=H and ?moon=days-since-new-moon override the clock for previews.
+ * Sea and Sky: nothing but the open sea, a few sea stacks and the sky. A whole
+ * day passes in ten minutes, starting from the local time (see clock.ts): the
+ * sun and moon cross the sky (the moon in its real phase), the stars and the
+ * Milky Way turn through the night, and the camera keeps turning towards
+ * whatever lights the scene: the sun and its glittering path, the moon and its
+ * silver one, or on a moonless night the heart of the Milky Way.
+ * ?hour=H and ?moon=days-since-new-moon set the starting time for previews,
+ * and ?timelapse=off holds to the real clock (or to them).
  */
 const params = new URLSearchParams(location.search)
 const hourParam = params.get('hour')
@@ -52,12 +55,10 @@ function start(): void {
     return
   }
   document.body.appendChild(renderer.domElement)
-  const clock = () => {
-    const now = new Date()
-    return [localHour(now, hourOverride), moonAge(now, moonOverride), dayOfYear(now)] as const
-  }
+  const timelapse = params.get('timelapse') !== 'off'
+  const clock = createClock({ timelapse, hour: hourOverride, moon: moonOverride })
   const daylight = createDaylight()
-  daylight.update(...clock())
+  daylight.update(clock.time.hour, clock.time.moonAge, clock.time.day)
   const lighting = createLighting(daylight)
   // One set of uniform objects for the sky, the rocks and the sea, so a single update moves them all.
   const uniforms = { ...skyUniforms(daylight), ...lighting.uniforms }
@@ -72,9 +73,12 @@ function start(): void {
   /**
    * Where the light is: the sun from dawn twilight to dusk twilight, then the moon while it is
    * up, and on a moonless night the Milky Way: its core if it is up, otherwise where the band
-   * rises from the horizon on the side nearer the core.
+   * rises from the horizon on the side nearer the core. The camera follows it continuously and
+   * smoothly, so as the day turns it pans after the sun or moon, and swings over gently when
+   * the light passes from one to the next.
    */
-  const aim = { heading: new THREE.Vector3(), elevation: 0, pitch: 0, fov: 50 }
+  const aim = { heading: new THREE.Vector3(), elevation: 0, pitch: 0, fov: 50, yaw: 0 }
+  const goal = { yaw: 0, elevation: 0 }
   const toLocal = new THREE.Matrix3()
   const galactic = new THREE.Vector3()
   const pole = new THREE.Vector3()
@@ -95,13 +99,26 @@ function start(): void {
         body = rising.setY(0.35).normalize()
       }
     }
-    aim.heading.set(body.x, 0, body.z).normalize()
-    aim.elevation = Math.asin(THREE.MathUtils.clamp(body.y, -1, 1))
+    goal.yaw = Math.atan2(body.x, body.z)
+    goal.elevation = Math.asin(THREE.MathUtils.clamp(body.y, -1, 1))
+  }
+  const followAim = (dt: number, snap = false) => {
+    takeAim()
+    // Eased, and no faster than 10 degrees a second, so the handover from sun to moon is a slow
+    // swing rather than a whip round the stacks.
+    const ease = snap ? 1 : 1 - Math.exp(-dt / 4)
+    const limit = snap ? Math.PI : degrees(10) * dt
+    const turn = Math.atan2(Math.sin(goal.yaw - aim.yaw), Math.cos(goal.yaw - aim.yaw))
+    aim.yaw += THREE.MathUtils.clamp(turn * ease, -limit, limit)
+    aim.elevation += THREE.MathUtils.clamp((goal.elevation - aim.elevation) * ease, -limit, limit)
+    aim.heading.set(Math.sin(aim.yaw), 0, Math.cos(aim.yaw))
     // A low sun or moon sits in the upper part of a normal frame; a high one needs a wider lens
     // tilted up, so it still shares the frame with the horizon.
     const elevation = THREE.MathUtils.radToDeg(aim.elevation)
     aim.fov = THREE.MathUtils.clamp(elevation + 12, 50, 78)
     aim.pitch = degrees(elevation < 36 ? THREE.MathUtils.clamp(elevation - 11, 1.5, 19) : elevation / 2 - 1)
+    light.fov = aim.fov
+    sky.fov = Math.max(aim.fov, 60)
   }
   const degrees = THREE.MathUtils.degToRad
   const turned = (angle: number) => aim.heading.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle)
@@ -114,10 +131,6 @@ function start(): void {
   // Low over the water, facing the sun or moon and the path it lays on the sea; the stacks to one side.
   const light: Shot = {
     id: 'light', position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50, orbit: 0, float: 0,
-    enter() {
-      takeAim()
-      light.fov = aim.fov
-    },
     track(elapsed, position, target) {
       position.copy(CENTRE).addScaledVector(right(), 100 + Math.sin(elapsed * 0.05) * 10).addScaledVector(aim.heading, -140)
       position.y = 6 + Math.sin(elapsed * 0.35) * 0.4
@@ -127,10 +140,6 @@ function start(): void {
   // Higher and further back, with a wider lens: the stacks small, the long path of light and the whole sky.
   const sky: Shot = {
     id: 'sky', position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 60, orbit: 0, float: 0,
-    enter() {
-      takeAim()
-      sky.fov = Math.max(aim.fov, 60)
-    },
     track(elapsed, position, target) {
       position.copy(CENTRE).addScaledVector(right(), -20 + Math.sin(elapsed * 0.04) * 12).addScaledVector(aim.heading, -270)
       position.y = 42 + Math.sin(elapsed * 0.2) * 1.2
@@ -142,7 +151,6 @@ function start(): void {
     // The stacks against the light, drifting slowly round them.
     {
       id: 'rocks', position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 46, orbit: 0, float: 0,
-      enter: takeAim,
       track(elapsed, position, target) {
         const direction = turned(degrees(24) + Math.sin(elapsed * 0.04) * 0.08)
         position.copy(CENTRE).addScaledVector(direction, -175)
@@ -193,6 +201,7 @@ function start(): void {
   resize()
   window.addEventListener('resize', resize)
 
+  followAim(0, true)
   const requestedShot = Number(params.get('shot'))
   const director = new Director(camera, shots, {
     entrance: params.get('entrance') !== 'off',
@@ -211,11 +220,15 @@ function start(): void {
     const dt = last ? Math.min(Math.max((now - last) / 1000, 0), 0.05) : 1 / 60
     last = now
     time += dt
-    daylight.update(...clock())
+    const moment = clock.advance(dt)
+    daylight.update(moment.hour, moment.moonAge, moment.day)
+    followAim(dt)
     uniforms.uNight.value = daylight.night
     uniforms.uKeyVisible.value = daylight.keyVisible
     uniforms.uMoonLight.value = daylight.moonIllumination * THREE.MathUtils.smoothstep(daylight.moonElevation, -2, 8)
     uniforms.uTime.value = time
+    // In the time-lapse the clouds race a little too; the sea keeps its own pace.
+    uniforms.uCloudTime.value = time * (timelapse ? 5 : 1)
     const cue = director.update(dt, time)
     ocean.follow(camera)
     renderer.toneMappingExposure = daylight.exposure * cue.fade

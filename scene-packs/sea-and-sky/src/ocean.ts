@@ -66,6 +66,7 @@ uniform float uTime;
 uniform float uKeyVisible;
 uniform float uMoonLight;
 uniform mat3 uCelestial;
+uniform float uCloudTime;
 varying vec3 vWorld;
 varying float vCrest;
 ${NOISE_GLSL}

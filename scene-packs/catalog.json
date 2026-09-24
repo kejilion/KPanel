@@ -205,9 +205,9 @@
         "en-US": "Sea and Sky"
       },
       "description": {
-        "zh-CN": "只有海与天：波光粼粼，云霞与日月星辰随本地时间流转",
-        "zh-TW": "只有海與天：波光粼粼，雲霞與日月星辰隨本地時間流轉",
-        "en-US": "Just sea and sky: glittering water, clouds, sun, moon and stars on your local time"
+        "zh-CN": "只有海与天：波光粼粼，云霞与日月星辰十分钟轮转一个昼夜",
+        "zh-TW": "只有海與天：波光粼粼，雲霞與日月星辰十分鐘輪轉一個晝夜",
+        "en-US": "Just sea and sky: glittering water, clouds, sun, moon and stars, a day in ten minutes"
       },
       "author": {
         "name": "KPanel",
@@ -271,8 +271,8 @@
         },
         {
           "path": "manifest.json",
-          "size": 1463,
-          "sha256": "9e4e513a6fbcf8baa4ac1affbb46eb367cd936a4349779d2f5e6a7de2cbdcab9"
+          "size": 1478,
+          "sha256": "dbe1bb284686791188dd2907a3ad19afec2ca5ff409ae9948084bd294b5cd5d2"
         },
         {
           "path": "poster.webp",
@@ -281,8 +281,8 @@
         },
         {
           "path": "scene.js",
-          "size": 585441,
-          "sha256": "a64c79b145ad51471c917918273d21e410092bd5d4c4778fbc81120dc6759e41"
+          "size": 586415,
+          "sha256": "b4f7067f7859c214d96b2346c9c31a42e86a16e7f1cce1c6a6dd30637be1a7e5"
         },
         {
           "path": "thumb.webp",
@@ -290,7 +290,7 @@
           "sha256": "fe487c79c1640eb00d48a0b835c7f8ee51f72bcb473972d9cbeaea263b958db8"
         }
       ],
-      "sizeBytes": 712788
+      "sizeBytes": 713777
     }
   ]
 }

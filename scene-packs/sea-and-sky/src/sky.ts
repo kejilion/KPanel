@@ -24,6 +24,7 @@ uniform float uNight;
 uniform float uTime;
 uniform float uMoonLight;
 uniform mat3 uCelestial;
+uniform float uCloudTime;
 `
 
 export const SKY_GLSL = /* glsl */ `
@@ -40,8 +41,8 @@ float skyHash(vec2 p) {
 // A cloud layer 1600 m up: cover, and how much sunlight reaches the cloud's underside.
 vec2 cloudLayer(vec3 d, bool cheap) {
   if (d.y < 0.015) return vec2(0.0);
-  vec2 p = d.xz / d.y * 1600.0 + vec2(uTime * 5.0, uTime * 2.0);
-  vec3 q = vec3(p * 0.00032, uTime * 0.003);
+  vec2 p = d.xz / d.y * 1600.0 + vec2(uCloudTime * 5.0, uCloudTime * 2.0);
+  vec3 q = vec3(p * 0.00032, uCloudTime * 0.003);
   float n = cheap ? fbm3(q) : fbm(q);
   float cover = smoothstep(0.04, 0.45, n + 0.07) * smoothstep(0.015, 0.14, d.y);
   // Thinner towards the sun = brighter; a cheap stand-in for light through the cloud.
@@ -132,6 +133,7 @@ export function skyUniforms(daylight: Daylight) {
     uKeyVisible: { value: 1 },
     uMoonLight: { value: 1 },
     uCelestial: { value: daylight.celestial },
+    uCloudTime: { value: 0 },
   }
 }
 

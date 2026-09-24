@@ -10,6 +10,10 @@ import * as THREE from 'three'
  */
 const LATITUDE = THREE.MathUtils.degToRad(32)
 const DECLINATION = THREE.MathUtils.degToRad(8)
+/** Local hours of sunrise and sunset at this latitude and declination. */
+const DAY_HALF = THREE.MathUtils.radToDeg(Math.acos(-Math.tan(LATITUDE) * Math.tan(DECLINATION))) / 15
+export const SUNRISE = 12 - DAY_HALF
+export const SUNSET = 12 + DAY_HALF
 const SYNODIC_DAYS = 29.530588853
 /** A new moon: 2000-01-06 18:14 UTC. */
 const NEW_MOON_EPOCH = Date.UTC(2000, 0, 6, 18, 14)
@@ -150,7 +154,7 @@ export function createDaylight(): Daylight & { update(hour: number, age: number,
         0, sp, -cp,
       )
       // The moon trails the sun across the sky by its age: 12 hours at full moon.
-      sunDirection((hour - (age / SYNODIC_DAYS) * 24 + 24) % 24, state.moonDir)
+      sunDirection((((hour - ((age % SYNODIC_DAYS) / SYNODIC_DAYS) * 24) % 24) + 24) % 24, state.moonDir)
       state.moonElevation = THREE.MathUtils.radToDeg(Math.asin(state.moonDir.y))
       state.moonIllumination = (1 - Math.cos((age / SYNODIC_DAYS) * Math.PI * 2)) / 2
       const elevation = THREE.MathUtils.radToDeg(Math.asin(state.sunDir.y))
