@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="open"
-      class="modal-backdrop"
+      class="modal-backdrop modal-scrim"
       :class="{ 'modal-backdrop--fullscreen': fullscreen }"
       role="presentation"
       @mousedown.self="close"

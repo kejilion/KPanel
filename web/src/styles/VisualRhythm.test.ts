@@ -285,8 +285,7 @@ describe('visual rhythm contract', () => {
       '.desktop__menubar',
       '.desktop__taskbar',
       '.desktop__file-drop',
-      '.modal-backdrop',
-      '.ai-settings-backdrop',
+      '.modal-scrim',
       '.theme-color-actions > div',
     ]
     const offenders: string[] = []
