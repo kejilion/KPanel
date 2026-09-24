@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { fileEntryIconKind, type FileIconKind } from '@/lib/fileEntryPresentation'
+import { fileEntryIconKind, fileIconPalette } from '@/lib/fileEntryPresentation'
 import type { FileEntry } from '@/types/api'
 
 const props = withDefaults(defineProps<{
@@ -9,21 +9,7 @@ const props = withDefaults(defineProps<{
 }>(), { size: 32 })
 
 const kind = computed(() => fileEntryIconKind({ editable: false, previewable: false, ...props.entry }))
-const colors: Record<FileIconKind, readonly [string, string]> = {
-  folder: ['#e6af42', '#f7d77c'],
-  image: ['#9683c6', '#d2c6ed'],
-  media: ['#bf7998', '#ecc0d3'],
-  archive: ['#ce9955', '#efd0a2'],
-  spreadsheet: ['#589c7c', '#b5d9c4'],
-  database: ['#579eaa', '#b8dce0'],
-  presentation: ['#ce8466', '#f1c8b5'],
-  package: ['#bb905e', '#e6c59c'],
-  secret: ['#658d91', '#c1dbdc'],
-  code: ['#648fbe', '#bfd6ed'],
-  document: ['#7d9cbb', '#d0e0ee'],
-  generic: ['#929fad', '#dde4eb'],
-}
-const palette = computed(() => colors[kind.value])
+const palette = computed(() => fileIconPalette[kind.value])
 </script>
 
 <template>
