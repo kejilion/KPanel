@@ -1,65 +1,5 @@
 import * as THREE from 'three'
-
-function canvasTexture(width: number, height: number, draw: (context: CanvasRenderingContext2D) => void, color = true): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  draw(canvas.getContext('2d')!)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-  texture.anisotropy = 8
-  if (color) texture.colorSpace = THREE.SRGBColorSpace
-  return texture
-}
-
-function hullTexture(random: () => number): THREE.CanvasTexture {
-  return canvasTexture(512, 512, (context) => {
-    context.fillStyle = '#c9ced6'
-    context.fillRect(0, 0, 512, 512)
-    for (let index = 0; index < 90; index++) {
-      const shade = 190 + Math.floor(random() * 40)
-      context.fillStyle = `rgb(${shade},${shade + 3},${shade + 8})`
-      context.fillRect(Math.floor(random() * 16) * 32, Math.floor(random() * 16) * 32, 32 * (1 + Math.floor(random() * 3)), 32)
-    }
-    context.strokeStyle = 'rgba(70,76,88,0.55)'
-    context.lineWidth = 2
-    for (let line = 0; line <= 512; line += 64) {
-      context.beginPath(); context.moveTo(line, 0); context.lineTo(line, 512); context.stroke()
-      context.beginPath(); context.moveTo(0, line); context.lineTo(512, line); context.stroke()
-    }
-  })
-}
-
-function windowTexture(random: () => number): THREE.CanvasTexture {
-  return canvasTexture(1024, 64, (context) => {
-    context.fillStyle = '#000'
-    context.fillRect(0, 0, 1024, 64)
-    // Two window rows on the outer face of the tube (v near 0 and 1 on a torus).
-    for (const row of [3, 54]) {
-      for (let x = 8; x < 1024; x += 24) {
-        if (random() < 0.25) continue
-        context.fillStyle = random() < 0.8 ? '#ffd9a0' : '#a8d8ff'
-        context.fillRect(x, row, 9, 7)
-      }
-    }
-  })
-}
-
-function solarTexture(): THREE.CanvasTexture {
-  return canvasTexture(256, 256, (context) => {
-    context.fillStyle = '#0c1a3d'
-    context.fillRect(0, 0, 256, 256)
-    for (let x = 0; x < 256; x += 32) {
-      for (let y = 0; y < 256; y += 32) {
-        const gradient = context.createLinearGradient(x, y, x + 32, y + 32)
-        gradient.addColorStop(0, '#1d3a7a')
-        gradient.addColorStop(1, '#102556')
-        context.fillStyle = gradient
-        context.fillRect(x + 2, y + 2, 28, 28)
-      }
-    }
-  })
-}
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 export interface Station {
   group: THREE.Group
@@ -68,107 +8,60 @@ export interface Station {
   update(time: number, dt: number): void
 }
 
-export function createStation(random: () => number, sunDirection: THREE.Vector3): Station {
+/**
+ * The station, modelled in Blender (see blender/station.py): modules wrapped in
+ * gold and silver insulation, a hub of painted panels, a habitat ring of
+ * segmented modules with rows of windows, a docking ring, ribbed radiators, a
+ * dish, and a lattice truss carrying four solar wings. The habitat and the
+ * docking ring turn, the wings track the sun, and the navigation beacons blink.
+ */
+export async function createStation(sunDirection: THREE.Vector3): Promise<Station> {
+  const gltf = await new GLTFLoader().loadAsync('assets/station.gltf')
   const group = new THREE.Group()
-  const hull = new THREE.MeshStandardMaterial({ color: 0xaab1bc, map: hullTexture(random), metalness: 0.45, roughness: 0.5 })
-  const dark = new THREE.MeshStandardMaterial({ color: 0x3a4049, metalness: 0.7, roughness: 0.5 })
-  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.9, roughness: 0.3 })
-  const windows = windowTexture(random)
-  windows.repeat.set(8, 1)
-  const ringWindows = new THREE.MeshStandardMaterial({
-    color: 0xb4bbc6,
-    map: hull.map,
-    metalness: 0.5,
-    roughness: 0.45,
-    emissive: new THREE.Color(0xffe1b0),
-    emissiveMap: windows,
-    emissiveIntensity: 0,
-  })
-  const solar = new THREE.MeshStandardMaterial({ color: 0xffffff, map: solarTexture(), metalness: 0.85, roughness: 0.22, emissive: new THREE.Color(0x0a1a44), emissiveIntensity: 0.4 })
-
-  // Spine and modules.
-  const spine = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 78, 32), hull)
-  group.add(spine)
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 14, 48), ringWindows)
-  group.add(hub)
-  for (const y of [-19, 19]) {
-    const module = new THREE.Mesh(new THREE.BoxGeometry(9, 8, 9), hull)
-    module.position.y = y
-    group.add(module)
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 5.4, 3, 32), ringWindows)
-    band.position.y = y + (y > 0 ? 6 : -6)
-    group.add(band)
+  const model = gltf.scene
+  group.add(model)
+  const node = (name: string) => {
+    const found = model.getObjectByName(name)
+    if (!found) throw new Error(`station.gltf: no ${name}`)
+    return found
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(4, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), hull)
-  nose.position.y = 39
-  group.add(nose)
-
-  // The rotating habitat ring with spokes.
-  const habitat = new THREE.Group()
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(30, 2.8, 32, 220), ringWindows)
-  ring.rotation.x = Math.PI / 2
-  habitat.add(ring)
-  for (let spoke = 0; spoke < 6; spoke++) {
-    const angle = (spoke / 6) * Math.PI * 2
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 23, 12), dark)
-    arm.rotation.z = Math.PI / 2
-    arm.position.set(Math.cos(angle) * 18.5, 0, Math.sin(angle) * 18.5)
-    arm.rotation.y = -angle
-    habitat.add(arm)
-  }
-  group.add(habitat)
-
-  // Docking ring near the nose.
-  const dock = new THREE.Mesh(new THREE.TorusGeometry(11, 1.1, 16, 120), hull)
-  dock.rotation.x = Math.PI / 2
-  dock.position.y = 28
-  group.add(dock)
-
-  // Solar arrays on a truss below the hub; the wings turn to track the sun.
-  const arrays = new THREE.Group()
-  const truss = new THREE.Mesh(new THREE.BoxGeometry(104, 1.2, 1.2), dark)
-  arrays.add(truss)
-  const wings = new THREE.Group()
-  for (const side of [-1, 1]) {
-    for (const offset of [0, 1]) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(22, 0.3, 12), solar)
-      panel.position.set(side * (17 + offset * 25), 0, 0)
-      wings.add(panel)
+  const habitat = node('habitat')
+  const dock = node('dock')
+  const arrays = node('arrays')
+  const wings = node('wings')
+  let windows: THREE.MeshStandardMaterial | undefined
+  model.traverse((object) => {
+    const mesh = object as THREE.Mesh
+    if (!mesh.isMesh) return
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const material of materials as THREE.MeshStandardMaterial[]) {
+      material.envMapIntensity = 1
+      for (const map of [material.map, material.normalMap, material.roughnessMap, material.metalnessMap, material.emissiveMap]) {
+        if (map) map.anisotropy = 8
+      }
+      if (material.name === 'window') windows = material
     }
-  }
-  arrays.add(wings)
-  arrays.position.y = -31
-  group.add(arrays)
-
-  // Radiators and a high-gain dish.
-  for (const side of [-1, 1]) {
-    const radiator = new THREE.Mesh(new THREE.BoxGeometry(0.3, 12, 7), new THREE.MeshStandardMaterial({ color: 0x8d949e, map: hull.map, metalness: 0.2, roughness: 0.65 }))
-    radiator.position.set(side * 8, 10, 0)
-    group.add(radiator)
-  }
-  const dish = new THREE.Mesh(new THREE.SphereGeometry(5.5, 32, 16, 0, Math.PI * 2, 0, Math.PI / 3), gold)
-  dish.material.side = THREE.DoubleSide
-  dish.position.set(0, 12, 8)
-  dish.rotation.x = Math.PI / 2
-  group.add(dish)
+  })
 
   // Navigation beacons: red and green on the ring, white strobes on the array tips.
   const beacons: { mesh: THREE.Mesh, material: THREE.MeshBasicMaterial, phase: number, rate: number, color: THREE.Color }[] = []
   const addBeacon = (parent: THREE.Object3D, position: THREE.Vector3, hex: number, rate: number, phase: number) => {
     const color = new THREE.Color(hex).multiplyScalar(6)
     const material = new THREE.MeshBasicMaterial({ color, toneMapped: false })
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8), material)
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 8), material)
     mesh.position.copy(position)
     parent.add(mesh)
     beacons.push({ mesh, material, phase, rate, color })
   }
   for (let index = 0; index < 8; index++) {
     const angle = (index / 8) * Math.PI * 2
-    addBeacon(habitat, new THREE.Vector3(Math.cos(angle) * 30, 3.2, Math.sin(angle) * 30), index % 2 ? 0xff2a2a : 0x33ff77, 1.1, index * 0.4)
+    addBeacon(habitat, new THREE.Vector3(Math.cos(angle) * 30, 2.9, Math.sin(angle) * 30), index % 2 ? 0xff2a2a : 0x33ff77, 1.1, index * 0.4)
   }
-  addBeacon(arrays, new THREE.Vector3(-52, 0.8, 0), 0xffffff, 0.8, 0)
-  addBeacon(arrays, new THREE.Vector3(52, 0.8, 0), 0xffffff, 0.8, 0.5)
-  addBeacon(group, new THREE.Vector3(0, 43.5, 0), 0xff3030, 0.6, 0.2)
+  addBeacon(arrays, new THREE.Vector3(-52.5, 0.8, 0), 0xffffff, 0.8, 0)
+  addBeacon(arrays, new THREE.Vector3(52.5, 0.8, 0), 0xffffff, 0.8, 0.5)
+  addBeacon(model, new THREE.Vector3(0, 43.6, 0), 0xff3030, 0.6, 0.2)
 
   let power = 0
   const localSun = new THREE.Vector3()
@@ -178,12 +71,11 @@ export function createStation(random: () => number, sunDirection: THREE.Vector3)
     group,
     setPower(value) {
       power = value
-      ringWindows.emissiveIntensity = value * 1.5
-      solar.emissiveIntensity = 0.1 + value * 0.3
+      if (windows) windows.emissiveIntensity = value * 1.2
     },
     update(time, dt) {
       habitat.rotation.y += dt * 0.07
-      dock.rotation.z += dt * 0.12
+      dock.rotation.y += dt * 0.12
       // Rotating about the truss (X) by atan2(z, y) turns the wing normal (+Y) towards the sun.
       arrays.getWorldQuaternion(inverse).invert()
       localSun.copy(sunDirection).applyQuaternion(inverse)

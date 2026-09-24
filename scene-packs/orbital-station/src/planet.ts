@@ -4,10 +4,12 @@ import { NOISE_GLSL } from './noise'
 export const PLANET_RADIUS = 100
 
 const SPHERE_VERTEX = /* glsl */ `
+varying vec2 vUv;
 varying vec3 vObject;
 varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 void main() {
+  vUv = uv;
   vObject = normalize(position);
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldPosition = world.xyz;
@@ -16,49 +18,65 @@ void main() {
 }
 `
 
+/**
+ * The surface, painted offline in detail (tools/planet.py): colour, relief (an object-space
+ * normal map) and masks for water and city lights. Clouds (their own sphere, turning a little
+ * faster) cast soft shadows on it.
+ */
 const SURFACE_FRAGMENT = /* glsl */ `
 uniform vec3 uSunDirection;
 uniform float uCityLights;
+uniform float uRotation;
+uniform float uCloudShift;
+uniform sampler2D uSurface;
+uniform sampler2D uRelief;
+uniform sampler2D uMasks;
+uniform sampler2D uClouds;
+varying vec2 vUv;
 varying vec3 vObject;
 varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
-${NOISE_GLSL}
 void main() {
-  vec3 p = vObject;
-  float continents = fbm(p * 1.45 + vec3(3.1, 0.0, 1.7));
-  float height = continents + fbm(p * 7.0) * 0.2;
-  float land = smoothstep(0.11, 0.14, height);
-  float latitude = abs(p.y);
-
-  vec3 ocean = mix(vec3(0.004, 0.022, 0.08), vec3(0.02, 0.2, 0.33), smoothstep(-0.05, 0.13, height));
-  float dryness = smoothstep(0.05, 0.6, fbm3(p * 3.0 + 7.0) + (0.45 - latitude) * 0.5);
-  vec3 ground = mix(vec3(0.07, 0.2, 0.06), vec3(0.6, 0.44, 0.24), dryness);
-  ground = mix(ground, vec3(0.36, 0.33, 0.31), smoothstep(0.34, 0.52, height));
-  vec3 albedo = mix(ocean, ground, land);
-  float ice = smoothstep(0.76, 0.86, latitude + fbm3(p * 4.0) * 0.1);
-  albedo = mix(albedo, vec3(0.9, 0.94, 1.0), ice);
-
-  vec3 N = normalize(vWorldNormal);
+  vec2 masks = texture2D(uMasks, vUv).rg;
+  float water = masks.r;
+  float cities = masks.g;
+  // Open water is dark, but not black: it takes a little of the sky's blue.
+  vec3 albedo = texture2D(uSurface, vUv).rgb;
+  albedo = mix(albedo, albedo * 1.6 + vec3(0.004, 0.014, 0.036), water);
+  // The relief is in the sphere's own axes: turn it with the planet (it only spins about y).
+  vec3 relief = texture2D(uRelief, vUv).rgb * 2.0 - 1.0;
+  float c = cos(uRotation);
+  float s = sin(uRotation);
+  vec3 bumped = normalize(vec3(c * relief.x + s * relief.z, relief.y, -s * relief.x + c * relief.z));
+  vec3 sphere = normalize(vWorldNormal);
+  vec3 N = normalize(mix(bumped, sphere, water));
   vec3 L = normalize(uSunDirection);
   vec3 V = normalize(cameraPosition - vWorldPosition);
   float ndl = dot(N, L);
-  float daylight = smoothstep(-0.1, 0.3, ndl);
-  vec3 color = albedo * (0.015 + 1.45 * max(ndl, 0.0));
+  float sphereNdl = dot(sphere, L);
+  float daylight = smoothstep(-0.1, 0.3, sphereNdl);
+  // Soft shadows of the clouds overhead.
+  float overhead = smoothstep(0.24, 0.74, texture2D(uClouds, vec2(vUv.x + uCloudShift, vUv.y)).r);
+  float shade = 1.0 - 0.5 * overhead;
+  vec3 color = albedo * (0.012 + 1.45 * max(ndl, 0.0) * smoothstep(-0.05, 0.1, sphereNdl) * shade);
   // Warm light along the terminator.
-  color += albedo * vec3(1.0, 0.38, 0.12) * smoothstep(0.28, 0.0, abs(ndl)) * 0.4;
+  color += albedo * vec3(1.0, 0.38, 0.12) * smoothstep(0.28, 0.0, abs(sphereNdl)) * 0.35 * shade;
 
+  // The sun's glint on open water: a sharp core and a broad sheen.
   vec3 H = normalize(L + V);
-  float glint = pow(max(dot(N, H), 0.0), 160.0) * (1.0 - land) * (1.0 - ice);
-  color += vec3(1.0, 0.88, 0.72) * glint * 1.1 * daylight;
+  float nh = max(dot(sphere, H), 0.0);
+  float glint = (pow(nh, 500.0) * 0.9 + pow(nh, 60.0) * 0.025) * water * shade;
+  color += vec3(1.0, 0.88, 0.72) * glint * daylight;
 
-  // City lights gather on temperate coasts of the night side.
-  float cities = smoothstep(0.5, 0.8, fbm3(p * 26.0)) * smoothstep(0.62, 0.3, dryness);
-  cities *= land * (1.0 - ice) * (1.0 - smoothstep(0.03, 0.34, height - 0.05));
-  float night = 1.0 - smoothstep(-0.22, 0.04, ndl);
-  color += vec3(1.0, 0.6, 0.26) * cities * night * uCityLights * 2.4;
+  // City lights on the night side, dimmed under cloud.
+  float night = 1.0 - smoothstep(-0.22, 0.04, sphereNdl);
+  color += vec3(1.0, 0.62, 0.28) * cities * night * uCityLights * 3.0 * (1.0 - 0.75 * overhead);
 
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  color = mix(color, vec3(0.25, 0.5, 1.0) * (0.04 + daylight * 0.8), rim * 0.45);
+  // The air over the day side scatters blue light back out, more so towards the limb.
+  float rim = pow(1.0 - max(dot(sphere, V), 0.0), 3.0);
+  float air = sqrt(max(sphereNdl, 0.0)) * (0.35 + 1.2 * rim);
+  color += vec3(0.045, 0.1, 0.24) * air * 0.35;
+  color = mix(color, vec3(0.25, 0.5, 1.0) * (0.04 + daylight * 0.8), rim * 0.4);
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -67,23 +85,21 @@ void main() {
 
 const CLOUD_FRAGMENT = /* glsl */ `
 uniform vec3 uSunDirection;
-uniform float uTime;
+uniform sampler2D uClouds;
+varying vec2 vUv;
 varying vec3 vObject;
 varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
-${NOISE_GLSL}
 void main() {
-  vec3 p = vObject;
-  float drift = uTime * 0.012;
-  // Stretched along latitude so weather reads as bands and swirls.
-  float cover = fbm(p * vec3(2.2, 4.6, 2.2) + vec3(drift, drift * 0.3, -drift * 0.6));
-  cover += fbm3(p * 8.0 - vec3(drift * 2.0)) * 0.3;
-  float alpha = smoothstep(0.16, 0.5, cover) * 0.88;
+  // Firmer edges than the painted cover: clouds, not a veil.
+  float cover = smoothstep(0.24, 0.74, texture2D(uClouds, vUv).r);
+  float alpha = cover * 0.95;
   vec3 N = normalize(vWorldNormal);
   float ndl = dot(N, normalize(uSunDirection));
   float lit = smoothstep(-0.12, 0.35, ndl);
-  vec3 color = mix(vec3(0.02, 0.025, 0.04), vec3(1.0), lit);
-  color += vec3(1.0, 0.42, 0.18) * smoothstep(0.22, 0.0, abs(ndl)) * 0.5;
+  // Thick cloud is brighter on top; thin veils let a little of the dark below show through.
+  vec3 color = mix(vec3(0.02, 0.025, 0.04), vec3(0.86) * (0.8 + 0.2 * cover), lit);
+  color += vec3(1.0, 0.42, 0.18) * smoothstep(0.16, 0.0, abs(ndl)) * 0.35;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -136,18 +152,41 @@ export interface Planet {
   setCityLights(value: number): void
 }
 
-export function createPlanet(sunDirection: THREE.Vector3): Planet {
+async function loadMap(path: string, colour: boolean): Promise<THREE.Texture> {
+  const texture = await new THREE.TextureLoader().loadAsync(path)
+  texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  texture.anisotropy = 8
+  texture.wrapS = THREE.RepeatWrapping
+  return texture
+}
+
+export async function createPlanet(sunDirection: THREE.Vector3): Promise<Planet> {
   const group = new THREE.Group()
   const sun = { value: sunDirection }
+  const [surfaceMap, reliefMap, masksMap, cloudsMap] = await Promise.all([
+    loadMap('assets/planet-surface.webp', true),
+    loadMap('assets/planet-relief.webp', false),
+    loadMap('assets/planet-masks.webp', false),
+    loadMap('assets/planet-clouds.webp', false),
+  ])
 
-  const surfaceUniforms = { uSunDirection: sun, uCityLights: { value: 1 } }
+  const surfaceUniforms = {
+    uSunDirection: sun,
+    uCityLights: { value: 1 },
+    uRotation: { value: 0 },
+    uCloudShift: { value: 0 },
+    uSurface: { value: surfaceMap },
+    uRelief: { value: reliefMap },
+    uMasks: { value: masksMap },
+    uClouds: { value: cloudsMap },
+  }
   const surface = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS, 192, 128),
     new THREE.ShaderMaterial({ vertexShader: SPHERE_VERTEX, fragmentShader: SURFACE_FRAGMENT, uniforms: surfaceUniforms }),
   )
   group.add(surface)
 
-  const cloudUniforms = { uSunDirection: sun, uTime: { value: 0 } }
+  const cloudUniforms = { uSunDirection: sun, uClouds: { value: cloudsMap } }
   const clouds = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS * 1.012, 160, 108),
     new THREE.ShaderMaterial({
@@ -159,6 +198,10 @@ export function createPlanet(sunDirection: THREE.Vector3): Planet {
     }),
   )
   group.add(clouds)
+  // Turned so the largest continent (about 217 degrees round the painted map) faces the sunlit
+  // side of the opening view, rather than open ocean.
+  surface.rotation.y = THREE.MathUtils.degToRad(45 - 217)
+  clouds.rotation.y = surface.rotation.y
 
   const atmosphere = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS * 1.075, 128, 96),
@@ -191,7 +234,9 @@ export function createPlanet(sunDirection: THREE.Vector3): Planet {
       clouds.rotation.y += dt * 0.0085
       moonPivot.rotation.y += dt * 0.004
       moon.rotation.y += dt * 0.02
-      cloudUniforms.uTime.value = time
+      surfaceUniforms.uRotation.value = surface.rotation.y
+      surfaceUniforms.uCloudShift.value = (surface.rotation.y - clouds.rotation.y) / (Math.PI * 2)
+      void time
     },
     setCityLights(value) {
       surfaceUniforms.uCityLights.value = value

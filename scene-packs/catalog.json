@@ -167,6 +167,146 @@
       "path": "orbital-station/dist",
       "files": [
         {
+          "path": "assets/planet-clouds.webp",
+          "size": 371794,
+          "sha256": "3e72caeb8a13ddea95c34235f2fdfb77f9ebbfac7fbc837c0b87e2ad7f1930a5"
+        },
+        {
+          "path": "assets/planet-masks.webp",
+          "size": 186296,
+          "sha256": "6dfdb06cd7ad864f141368cb630b07ce44a0f1fc39421e2ba8ee72c42bf32b68"
+        },
+        {
+          "path": "assets/planet-relief.webp",
+          "size": 724098,
+          "sha256": "edd3da7bd71e02bbe7312113f7479eceb07c0e054f50d3c10d009575d9a86194"
+        },
+        {
+          "path": "assets/planet-surface.webp",
+          "size": 263604,
+          "sha256": "6abfd47aa711c11cd3693b7565711af354ef28e58a07daa22fab22ddf986ea3e"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-colour.webp",
+          "size": 4658,
+          "sha256": "ea25304a07a983dd230fc199cbf82f556152fe6d5cbd7ac812ab5244d42dd0d2"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-normal.webp",
+          "size": 83630,
+          "sha256": "34239f41ad8c01f706d17d13fd9d44bf74c728dd4968714ff4af9d29de5919a5"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-orm.webp",
+          "size": 11650,
+          "sha256": "a7bd7d0f53f97c75840d9ed605b22648466e0d3e6c72abd3cbb8454bc9e9e1b4"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-colour.webp",
+          "size": 4318,
+          "sha256": "0b9b2732c05301654096d029cb38a06a4e408a7d1523ec4b06c43ab8cf7f6194"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-normal.webp",
+          "size": 82838,
+          "sha256": "ffe9b192ad537629d9412993366311131d13be021edbf0b57f23d0aca15eb40c"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-orm.webp",
+          "size": 11202,
+          "sha256": "c388dedb2f8665926f3e77498dbed15be37404343bacad59ede792a0938cd66d"
+        },
+        {
+          "path": "assets/station-textures/hull-colour.webp",
+          "size": 8096,
+          "sha256": "9df02ab7b03cf66689ad86a2ea8ae9a36e4815d7a0ddce2b739a624c24122eda"
+        },
+        {
+          "path": "assets/station-textures/hull-normal.webp",
+          "size": 38270,
+          "sha256": "9e6bb4ad475b1418154440e2e2d29b06b1ad6a0e044d8dc2c749a2acd7ad482c"
+        },
+        {
+          "path": "assets/station-textures/hull-orm.webp",
+          "size": 6666,
+          "sha256": "bc0a950ea2e7cd60ad510a77f735c9313220eddf8b9f26a6611a2cb95e49d451"
+        },
+        {
+          "path": "assets/station-textures/metal-colour.webp",
+          "size": 1524,
+          "sha256": "bf1e53296378566c955d3320f3e0136fa00067c99d0250a9b68cff043f9add7b"
+        },
+        {
+          "path": "assets/station-textures/metal-normal.webp",
+          "size": 1984,
+          "sha256": "265e6a99c78d255aa0b34ecec6780fb0244159d471cc4404f7ce13e16b0d09ad"
+        },
+        {
+          "path": "assets/station-textures/metal-orm.webp",
+          "size": 11470,
+          "sha256": "d09784e5e7eeb58fdd51d5eaa790863c406bd388b9c1809d0f1420d319581310"
+        },
+        {
+          "path": "assets/station-textures/radiator-colour.webp",
+          "size": 1076,
+          "sha256": "09a4210c798bdcb5e487236b0226463ddc18f95e190fba7e540ba8987fc3d89a"
+        },
+        {
+          "path": "assets/station-textures/radiator-normal.webp",
+          "size": 2528,
+          "sha256": "4affcbcb0ba31103c8c576f67b0b87d24940bc63578158c93bcc5a0a4c0eded5"
+        },
+        {
+          "path": "assets/station-textures/radiator-orm.webp",
+          "size": 1870,
+          "sha256": "5e067f4f94319f893beab08069f9a9fef29b701c64576e522ef6dcfad62a67a4"
+        },
+        {
+          "path": "assets/station-textures/solar-colour.webp",
+          "size": 53258,
+          "sha256": "0d208c4c8a8b2d1fafc9fe12de2d8315c2453887a48f314ea95ff69394e4c530"
+        },
+        {
+          "path": "assets/station-textures/solar-normal.webp",
+          "size": 41308,
+          "sha256": "7888585bfc40e966779f5ed0775d51f06e1e131b9368b8a8249d73f39571fb43"
+        },
+        {
+          "path": "assets/station-textures/solar-orm.webp",
+          "size": 9448,
+          "sha256": "fe35496a79655c1af1847b8133776f58c5d0ede038c29b7f777aef5ab6caa2b4"
+        },
+        {
+          "path": "assets/station-textures/window-colour.webp",
+          "size": 90,
+          "sha256": "2bd6c9cd60bf5e12c779e078bc931b9865d458421550ac1db60e8f9a02e69622"
+        },
+        {
+          "path": "assets/station-textures/window-emissive.webp",
+          "size": 548,
+          "sha256": "7fe5b93c8817aed8a97fd1bcb1744ad4634ff1ecbab160436f648d22f0529035"
+        },
+        {
+          "path": "assets/station-textures/window-normal.webp",
+          "size": 108,
+          "sha256": "d942f099b30c808597007d08fc6937a1470ff7e501951b0a91f7f202fd792662"
+        },
+        {
+          "path": "assets/station-textures/window-orm.webp",
+          "size": 118,
+          "sha256": "8b22996ad2f5c5a2026c9409044812115ce456e9fa0605da264b57dc65914e8e"
+        },
+        {
+          "path": "assets/station.bin",
+          "size": 1435536,
+          "sha256": "1942edf1690e1f52ff3561743f6f810b3b6313219f68a74aafa6e1de920ec712"
+        },
+        {
+          "path": "assets/station.gltf",
+          "size": 22652,
+          "sha256": "77d74a08d775eb4aa6682a7d0d665e01c4cffb41ae6f1971bbcb4fa0025f7bbd"
+        },
+        {
           "path": "index.html",
           "size": 424,
           "sha256": "4f1a2b5eaf772db381cd54e8904e6b1ff5c14686ba503dc9bf44499046ec9639"
@@ -178,21 +318,21 @@
         },
         {
           "path": "poster.webp",
-          "size": 49940,
-          "sha256": "77d4a68c9c7f6080c9153edeffb8a1242afa88627be317cd761c41d524662946"
+          "size": 60358,
+          "sha256": "a868d542724e5cd9f964014d5184d8217b8474612712cd53e666cf1f945dee29"
         },
         {
           "path": "scene.js",
-          "size": 589896,
-          "sha256": "4cc0ab7b2613ed6ac19d2c70bbb44004b6d2ccc15cfbf848946807db042e4f01"
+          "size": 656918,
+          "sha256": "a97eec62498f4fedba17089946cd1dd8675d11a2a4532e3b83558f5e293f35f8"
         },
         {
           "path": "thumb.webp",
-          "size": 6640,
-          "sha256": "e6488aea62d0696d8e86e919327e057b1d42fdc7978cd47ab9c3e26b129bd300"
+          "size": 8564,
+          "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 648367
+      "sizeBytes": 4108369
     },
     {
       "schema": 1,

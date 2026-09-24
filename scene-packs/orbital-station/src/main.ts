@@ -89,7 +89,7 @@ function spaceEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
   return texture
 }
 
-function start(): void {
+async function start(): Promise<void> {
   const renderer = createRenderer()
   if (!renderer) {
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
@@ -103,15 +103,29 @@ function start(): void {
   const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.5, 16000)
   scene.add(camera)
 
+  // The sun, casting hard shadows across the station (the only thing near enough to need them).
+  renderer.shadowMap.enabled = true
+  renderer.shadowMap.type = THREE.PCFShadowMap
   const sunLight = new THREE.DirectionalLight(0xfff0dc, 2.6)
-  sunLight.position.copy(SUN).multiplyScalar(1000)
-  scene.add(sunLight, new THREE.HemisphereLight(0x5f7fb0, 0x05070b, 0.22))
+  sunLight.position.copy(STATION).addScaledVector(SUN, 200)
+  sunLight.target.position.copy(STATION)
+  sunLight.castShadow = true
+  sunLight.shadow.mapSize.set(2048, 2048)
+  sunLight.shadow.camera.left = -62
+  sunLight.shadow.camera.right = 62
+  sunLight.shadow.camera.top = 62
+  sunLight.shadow.camera.bottom = -62
+  sunLight.shadow.camera.near = 100
+  sunLight.shadow.camera.far = 300
+  sunLight.shadow.bias = -0.0004
+  sunLight.shadow.normalBias = 0.04
+  scene.add(sunLight, sunLight.target, new THREE.HemisphereLight(0x5f7fb0, 0x05070b, 0.22))
 
   const sky = createSky(SUN, random)
   scene.add(sky.group)
-  const planet = createPlanet(SUN)
+  const planet = await createPlanet(SUN)
   scene.add(planet.group)
-  const station = createStation(random, SUN)
+  const station = await createStation(SUN)
   station.group.position.copy(STATION)
   station.group.rotation.set(0.32, 0.5, -0.28)
   scene.add(station.group)
@@ -121,7 +135,8 @@ function start(): void {
 
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
-  const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.5, 0.88)
+  // Only the sun, its glint, the atmosphere's blaze at sunrise and the lights bloom; sunlit cloud does not.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.5, 1.05)
   composer.addPass(bloom)
   composer.addPass(new OutputPass())
 
@@ -185,4 +200,4 @@ function start(): void {
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }
 
-start()
+start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))
