@@ -129,6 +129,10 @@ export function createLighting(daylight: Daylight) {
     uHeightRect: { value: HEIGHT_RECT },
     // Measured from the sculpted rocks once they load (see rocks.ts).
     uWaterlines: { value: null as THREE.Texture | null },
+    // The stacks' reflection (see reflection.ts).
+    uReflection: { value: null as THREE.Texture | null },
+    uReflectionMatrix: { value: new THREE.Matrix4() },
+    uMirrorPass: { value: 0 },
   }
   return {
     uniforms,

@@ -75,6 +75,8 @@ uniform vec3 uGlow;
 uniform float uTime;
 uniform float uKeyVisible;
 uniform sampler2D uWaterlines;
+uniform sampler2D uReflection;
+uniform mat4 uReflectionMatrix;
 uniform float uMoonLight;
 uniform mat3 uCelestial;
 uniform float uCloudTime;
@@ -87,51 +89,6 @@ ${CLOUD_GLSL}
 ${SKY_GLSL}
 ${SKYLINE_GLSL}
 ${ROCK_SHADOW_GLSL}
-/** How far rock i reaches at the waterline in direction angle (measured from the sculpted mesh). */
-float waterline(int i, float angle) {
-  return textureLod(uWaterlines, vec2(angle / 6.2831853 + 0.5, (float(i) + 0.5) / float(ROCK_COUNT)), 0.0).r;
-}
-/**
- * The stacks seen in the water: follows the reflected ray from p up to the first rock it meets,
- * using each rock's measured outline, and returns how much of it is rock (soft at the edges) and
- * the rock's colour there. The waves have already bent the ray, so the reflection breaks up.
- */
-float rockReflection(vec3 p, vec3 r, float softness, out vec3 rockColour) {
-  rockColour = vec3(0.0);
-  vec2 d2 = r.xz;
-  float along = dot(d2, d2);
-  if (along < 1e-6) return 0.0;
-  float cover = 0.0;
-  float nearest = 1e9;
-  for (int i = 0; i < ROCK_COUNT; i++) {
-    vec4 rock = ROCK_LIST[i];
-    vec2 q = p.xz - rock.xy;
-    float closest = max(-dot(q, d2) / along, 0.0);
-    float miss = length(q + d2 * closest);
-    float reach = rock.z * 1.35;
-    if (miss > reach || closest <= 0.0) continue;
-    float entry = max(closest - sqrt(max(reach * reach - miss * miss, 0.0) / along), 0.0);
-    for (int k = 0; k < 6; k++) {
-      float t = mix(entry, closest, float(k) / 5.0);
-      float y = p.y + r.y * t;
-      vec2 at = q + d2 * t;
-      float angle = atan(at.y, at.x);
-      float outline = rockRadiusAt(rock, y) * clamp(waterline(i, angle) / max(rockRadiusAt(rock, 0.3), 0.1), 0.6, 1.4);
-      float inside = smoothstep(outline + softness, outline - softness, length(at));
-      if (inside > 0.01 && t < nearest) {
-        nearest = t;
-        cover = max(cover, inside);
-        // The side of the rock facing back towards the water: its colour, dark and weedy near the
-        // waterline, lit by the sun or moon and the sky.
-        vec3 n = normalize(vec3(at.x, 0.0, at.y));
-        vec3 albedo = mix(vec3(0.07, 0.085, 0.05), vec3(0.42, 0.33, 0.24), smoothstep(0.0, 1.6, y));
-        rockColour = shade(albedo, n, 0.15, 1.0);
-        break;
-      }
-    }
-  }
-  return cover;
-}
 void main() {
   vec3 p = vWorld;
   float depth = max(-groundAt(p.xz), 0.0);
@@ -163,24 +120,24 @@ void main() {
   float shadow = min(keyShadow(p + vec3(0.0, 1.0, 0.0)), rockShadow(p + vec3(0.0, 0.5, 0.0)));
   float sunUp = max(uLightDir.y, 0.0);
 
-  // The water itself: clear turquoise over sand, deep blue offshore.
-  float clear = exp(-depth * 0.15);
-  vec3 body = mix(vec3(0.004, 0.028, 0.058), vec3(0.04, 0.3, 0.33), clear);
+  // The water itself: green over the rocky, weedy shoals round the stacks, deep blue offshore.
+  float clear = exp(-depth * 0.22);
+  vec3 body = mix(vec3(0.004, 0.028, 0.058), vec3(0.025, 0.17, 0.16), clear);
   vec3 lighting = uAmbientTop * 1.15 + uLight * sunUp * 0.4 * shadow;
   body *= lighting;
-  body = mix(body, vec3(0.8, 0.7, 0.52) * lighting * 0.8, exp(-depth * 0.8) * 0.55);
+  body = mix(body, vec3(0.3, 0.27, 0.2) * lighting * 0.8, exp(-depth * 0.8) * 0.35);
   // Light through the thin tops of the waves.
   float through = pow(max(dot(view, -uLightDir) * 0.5 + 0.5, 0.0), 3.0) * clamp(vCrest + 0.35, 0.0, 1.0);
   body += vec3(0.02, 0.22, 0.2) * uLight * through * 0.25 * shadow;
 
   vec3 mirrored = skyColor(reflected, true, true);
-  // The stacks' reflections follow the swell and only part of the chop, so they sway and break into
-  // soft streaks rather than scatter into hard-edged flecks.
-  vec3 calm = reflect(-view, normalize(swell + vec3(ripples.x, 0.0, ripples.y) * rough * 0.45));
-  calm.y = max(calm.y, 0.02);
-  vec3 rockColour;
-  float rockCover = rockReflection(p, normalize(calm), 0.8 + dist * 0.004, rockColour);
-  mirrored = mix(mirrored, rockColour, rockCover);
+  // The stacks, rendered from below the water (see reflection.ts), laid over the sky's reflection.
+  // The swell and part of the chop shift where the reflection is read, so it sways and breaks up.
+  vec3 calm = normalize(swell + vec3(ripples.x, 0.0, ripples.y) * rough * 0.45);
+  vec4 projected = uReflectionMatrix * vec4(p.x, 0.0, p.z, 1.0);
+  vec2 reflectionUv = projected.xy / projected.w + calm.xz * (0.001 + 1.0 / dist) * 5.0;
+  vec4 rocksMirrored = texture2D(uReflection, reflectionUv);
+  mirrored = mirrored * (1.0 - rocksMirrored.a) + rocksMirrored.rgb;
   vec3 color = mix(body, mirrored, fresnel);
   // At night the far city's lights trail faintly across the water, broken up by the waves.
   if (uNight > 0.01) {
@@ -213,8 +170,8 @@ void main() {
     float reach = mix(3.0, 11.0, surge * surge) * (0.75 + 0.25 * sin(angle * 5.0 + rock.x));
     float band = smoothstep(reach, reach * 0.45, d);
     foam = max(foam, band * smoothstep(0.12, 0.45, lace * 0.55 + foamNoise * 0.45 + (1.0 - d / reach) * 0.4));
-    // Always a line of white water right at the foot.
-    foam = max(foam, smoothstep(1.6, 0.2, d) * (0.7 + 0.3 * lace));
+    // White water at the foot, broken and pulsing with the sets rather than a clean line.
+    foam = max(foam, smoothstep(1.4, 0.1, d) * smoothstep(0.4, 0.7, lace * 0.55 + foamNoise * 0.35 + surge * 0.3));
   }
   foam = max(foam, smoothstep(0.55, 0.95, vCrest) * smoothstep(0.62, 0.9, foamNoise) * 0.45 * rough);
   // Foam scatters light every way, so even a low sun lights it well.

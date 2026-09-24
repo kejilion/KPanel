@@ -35,7 +35,7 @@ const TRANSITION_DEGREES_PER_SECOND = 30
 /** Each shot holds a minute and a half: the time-lapse itself keeps the picture moving. */
 const HOLD_SECONDS = 90
 /** A move rises just enough to stay this far above the sea and the stacks. */
-const CLEARANCE = 14
+const CLEARANCE = 20
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3
 const smoothstep = (t: number) => t * t * (3 - 2 * t)
@@ -129,8 +129,9 @@ export class Director {
     let lift = 0
     for (; lift < 300; lift += 4) {
       let clear = true
-      for (let step = 1; step < 32 && clear; step++) {
-        const t = step / 32
+      // Finely enough that even a small reef cannot slip between two samples.
+      for (let step = 1; step < 128 && clear; step++) {
+        const t = step / 128
         const needed = Math.min(CLEARANCE, THREE.MathUtils.lerp(fromClear, toClear, t) + CLEARANCE * Math.sin(Math.PI * t))
         this.point.lerpVectors(still.position, this.toPose.position, t)
         this.point.y += lift * Math.sin(Math.PI * t)

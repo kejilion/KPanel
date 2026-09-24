@@ -226,7 +226,8 @@ def stack_colours(rock, points, joints, within, hardness, top_rows):
     # The tide zone: weed and wet rock up to a ragged line a metre or so above the water, then a
     # splash zone of greyer, barnacled rock fading out above it; no hard edge anywhere.
     ragged = 0.9 * fbm(flat / 2.2, 3, seed + 47) + 0.35 * fbm(flat / 0.6, 2, seed + 49)
-    wet = 1.0 - smoothstep(-0.2, 1.3, flat[:, 2] + ragged)
+    # Low reefs are awash at every tide: wet and weedy almost to the top.
+    wet = 1.0 - smoothstep(-0.2, 1.3 if rock['height'] > 6 else 2.6, flat[:, 2] + ragged)
     weed = np.array([0.07, 0.085, 0.05])
     colour = colour * (1 - 0.7 * wet[:, None]) + weed * 0.7 * wet[:, None]
     splash = (1.0 - smoothstep(1.0, 4.0, flat[:, 2] + 1.5 * ragged)) * (1.0 - wet)

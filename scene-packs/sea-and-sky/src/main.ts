@@ -10,6 +10,7 @@ import { createClouds } from './clouds'
 import { createDaylight } from './daylight'
 import { Director } from './director'
 import { createOcean } from './ocean'
+import { createReflection } from './reflection'
 import { createRocks } from './rocks'
 import { createLighting } from './shading'
 import { createSkyDome, skyUniforms } from './sky'
@@ -68,6 +69,9 @@ async function start(): Promise<void> {
   const rocks = await createRocks(uniforms)
   scene.add(rocks.object)
   uniforms.uWaterlines.value = rocks.waterlines
+  const reflection = createReflection(renderer, scene, uniforms.uMirrorPass)
+  uniforms.uReflection.value = reflection.texture
+  uniforms.uReflectionMatrix.value = reflection.matrix
   const clouds = await createClouds(renderer, uniforms)
   uniforms.uShape.value = clouds.shape
   uniforms.uDetail.value = clouds.detail
@@ -118,6 +122,8 @@ async function start(): Promise<void> {
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.getDrawingBufferSize(drawingSize)
     clouds.resize(drawingSize.x, drawingSize.y, QUALITY[quality]!.clouds)
+    // The reflection is broken up by the waves anyway: half resolution is plenty.
+    reflection.resize(drawingSize.x / 2, drawingSize.y / 2)
     uniforms.uScreen.value.copy(drawingSize)
     composer.setPixelRatio(renderer.getPixelRatio())
     composer.setSize(window.innerWidth, window.innerHeight)
@@ -179,6 +185,7 @@ async function start(): Promise<void> {
       cloudView.copy(view)
       cloudPosition.copy(camera.position)
     }
+    reflection.render(camera)
     composer.render(dt)
     if (time > 6 && quality < QUALITY.length - 1) {
       slow = elapsed > 1 / 45 ? slow + 1 : Math.max(0, slow - 1)

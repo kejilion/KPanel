@@ -29,10 +29,13 @@ const FRAGMENT = /* glsl */ `
 uniform sampler2D uColour;
 uniform sampler2D uSurface;
 uniform float uTime;
+uniform float uMirrorPass;
 varying vec2 vUv;
 varying vec3 vWorld;
 ${LIGHTING_GLSL}
 void main() {
+  // Seen from below the water for the reflection: only what stands above it.
+  if (uMirrorPass > 0.5 && vWorld.y < 0.0) discard;
   vec4 surface = texture2D(uSurface, vUv);
   // Baked in Blender's object space (z up); the stacks are only moved, never turned, so after
   // swapping to three.js axes this is the world normal.
@@ -50,7 +53,11 @@ void main() {
   vec3 view = normalize(cameraPosition - vWorld);
   float gloss = pow(max(dot(n, normalize(view + uLightDir)), 0.0), 70.0);
   color += uLight * gloss * wet * shadow * 0.9;
-  gl_FragColor = vec4(atmosphere(color, vWorld), 1.0);
+  color = atmosphere(color, vWorld);
+  // In the reflection, the higher up the rock the further out on the water its image lies, and the
+  // more the waves break it up: so it fades with height, and clings to the foot of the rock.
+  float mirrorFade = uMirrorPass > 0.5 ? exp(-max(vWorld.y, 0.0) / 18.0) : 1.0;
+  gl_FragColor = vec4(color * mirrorFade, mirrorFade);
 }
 `
 
@@ -115,6 +122,8 @@ export async function createRocks(uniforms: LightingUniforms): Promise<{ object:
       fragmentShader: FRAGMENT,
     })
     mesh.frustumCulled = false
+    // Layer 1: drawn again, from below the water, for the sea's reflection.
+    mesh.layers.enable(1)
   }))
   return { object: gltf.scene, waterlines: measureWaterlines(meshes) }
 }

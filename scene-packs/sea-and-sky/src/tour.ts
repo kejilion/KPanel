@@ -25,6 +25,23 @@ export function createTour(daylight: Daylight): { shots: Shot[], follow(dt: numb
     sky.fov = softMax(second.fov, 62, 4)
   }
   const degrees = THREE.MathUtils.degToRad
+  /**
+   * Keeps a camera outside the whole group of rocks, at least GROUP_CLEARANCE from its middle. The
+   * push is a smooth function of distance (it fades to nothing well outside), so a shot drifting
+   * towards the group slides round it without a jolt, and one rock can never push the camera into
+   * another.
+   */
+  const GROUP_CLEARANCE = 150
+  const SOFTNESS = 10
+  const keepClear = (position: THREE.Vector3) => {
+    const dx = position.x - CENTRE.x
+    const dz = position.z - CENTRE.z
+    const distance = Math.max(Math.hypot(dx, dz), 1e-3)
+    const pushed = distance + SOFTNESS * Math.log1p(Math.exp((GROUP_CLEARANCE - distance) / SOFTNESS))
+    position.x = CENTRE.x + (dx / distance) * pushed
+    position.z = CENTRE.z + (dz / distance) * pushed
+    return position
+  }
   // Rounded max and min: a hard corner in a limit would be a sudden change of speed on screen.
   const softMax = (a: number, b: number, round: number) => (a + b + Math.sqrt((a - b) ** 2 + round * round)) / 2
   const softMin = (a: number, b: number, round: number) => (a + b - Math.sqrt((a - b) ** 2 + round * round)) / 2
@@ -51,6 +68,7 @@ export function createTour(daylight: Daylight): { shots: Shot[], follow(dt: numb
     track(elapsed, position, target) {
       position.copy(CENTRE).addScaledVector(sideways(lightAt.anchor), 100 + Math.sin(elapsed * 0.05) * 8).addScaledVector(lightAt.anchor, -140)
       position.y = 6 + Math.sin(elapsed * 0.3) * 0.3
+      keepClear(position)
       look(position, main.heading, main.pitch, target)
     },
   }
@@ -63,6 +81,7 @@ export function createTour(daylight: Daylight): { shots: Shot[], follow(dt: numb
       const direction = rocksAt.anchor.clone().applyAxisAngle(up, degrees(26) + Math.sin(elapsed * 0.035) * 0.06)
       position.copy(CENTRE).addScaledVector(direction, -180)
       position.y = 5 + Math.sin(elapsed * 0.27) * 0.25
+      keepClear(position)
       look(position, direction, softMin(softMax(main.elevation * 0.4, degrees(2), degrees(1.5)), degrees(9), degrees(1.5)), target)
     },
   }
@@ -75,6 +94,7 @@ export function createTour(daylight: Daylight): { shots: Shot[], follow(dt: numb
     track(elapsed, position, target) {
       position.copy(CENTRE).addScaledVector(sideways(skyAt.anchor), 100 + Math.sin(elapsed * 0.04) * 10).addScaledVector(skyAt.anchor, -230)
       position.y = 40 + Math.sin(elapsed * 0.2) * 1
+      keepClear(position)
       look(position, second.heading.clone().applyAxisAngle(up, degrees(-6)), softMax(second.pitch, degrees(5), degrees(2)), target)
     },
   }
@@ -95,6 +115,7 @@ export function createTour(daylight: Daylight): { shots: Shot[], follow(dt: numb
     track(elapsed, position, target) {
       position.copy(CENTRE).addScaledVector(cityAt.anchor, -160).addScaledVector(sideways(city), citySide + Math.sin(elapsed * 0.04) * 8)
       position.y = 6 + Math.sin(elapsed * 0.3) * 0.25
+      keepClear(position)
       look(position, city.clone().applyAxisAngle(up, degrees(6)), degrees(2.5), target)
     },
   }
