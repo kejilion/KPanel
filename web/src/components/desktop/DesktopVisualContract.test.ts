@@ -56,7 +56,7 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop__context-menu button\s*\{[^}]*font-size:\s*14px;/)
     expect(desktopViewSource).toContain("document.addEventListener('scroll', closeContextMenuOnScroll, true)")
     expect(desktopViewSource).toContain("window.visualViewport?.addEventListener?.('resize', closeContextMenuOnViewportChange)")
-    expect(desktopViewSource).toMatch(/function onViewportResize\(\): void \{\s*closeContextMenu\(false\)/)
+    expect(desktopViewSource).toMatch(/function onViewportResize\(\): void \{[^}]*closeContextMenu\(false\)/)
   })
 
   it('uses one pointer-aware menu state style without a permanent scrollbar gutter', () => {
@@ -101,6 +101,8 @@ describe('desktop visual and interaction contract', () => {
   })
 
   it('supports direct touch dragging and native window-content scrolling without changing mouse semantics', () => {
+    expect(cssRule(styles, '.desktop')).toContain('-webkit-touch-callout: none;')
+    expect(cssRule(styles, '.desktop-window__body')).toContain('-webkit-touch-callout: default;')
     expect(styles).toMatch(/\.desktop__icon\s*\{[^}]*touch-action:\s*none;/)
     expect(styles).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.desktop__icon\s*\{[^}]*touch-action:\s*pan-y;/)
     expect(styles).toMatch(/\.desktop-window__body\s*\{[^}]*touch-action:\s*pan-x pan-y;/)
@@ -153,10 +155,21 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?animation-duration:\s*\.01ms !important;/)
   })
 
-  it('keeps light-theme drop feedback readable over the dark wallpaper', () => {
-    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop\s*\{[^}]*color:\s*var\(--sidebar-text\);[^}]*background:\s*color-mix\(in srgb, var\(--sidebar\) 88%, transparent\);/)
-    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop--upload\s*\{[^}]*background:[\s\S]*?color-mix\(in srgb, var\(--sidebar\) 88%, transparent\);/)
-    expect(styles).toMatch(/:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop small,[\s\S]*?:root:not\(\[data-theme='dark'\]\) \.desktop__file-drop code\s*\{[^}]*color:\s*var\(--sidebar-muted\);/)
+  it('shares the original translucent dark drag appearance across desktop themes', () => {
+    const overlay = cssRule(styles, '.desktop__file-drop')
+    expect(overlay).toContain('var(--desktop-drop-accent) 10%, transparent')
+    expect(overlay).toContain('color: var(--desktop-drop-label);')
+    expect(overlay).toContain('backdrop-filter: blur(5px);')
+    expect(overlay).not.toContain('var(--sidebar)')
+    const content = cssRule(styles, '.desktop__file-drop-content')
+    expect(content).toContain('justify-items: center;')
+    expect(content).toContain('text-align: center;')
+    expect(content).toContain('overflow-wrap: anywhere;')
+    expect(content).not.toMatch(/(?:background|border|box-shadow):/)
+    expect(cssRule(styles, '.desktop__file-drop-glyph')).toContain('background: var(--desktop-drop-accent);')
+    expect(cssRule(styles, '.desktop__file-drop small')).toContain('color: var(--desktop-drop-muted);')
+    expect(cssRule(styles, '.desktop__file-drop code')).toContain('white-space: normal;')
+    expect(styles).not.toMatch(/:root[^{}]+\.desktop__file-drop[^{}]*\{/)
   })
 
   it('keeps the snap preview lightweight and below interactive desktop chrome', () => {

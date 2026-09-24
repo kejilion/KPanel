@@ -121,7 +121,6 @@ interface FileBindings {
   openPreview: (entry: TestFileEntry) => Promise<void>
   loadDirectory: (path?: string, append?: boolean) => Promise<string | undefined>
   navigateDirectory: (path: string) => Promise<void>
-  savePreview: (content?: string) => Promise<void>
   download: (entry: TestFileEntry) => Promise<void>
   downloadSelected: (entry?: TestFileEntry) => Promise<void>
   submitDialog: () => Promise<void>
@@ -253,14 +252,7 @@ interface FileBindings {
   handleMediaLoadStart: () => void
   handleMediaMetadata: () => void
   handleVideoFrameReady: (event: Event) => void
-  codeEditorRef: {
-    value?: {
-      getValue: () => string
-      markClean: () => void
-      openSearch: () => void
-      focus: () => void
-    }
-  }
+
 }
 
 interface TestFileEntry {
@@ -1235,7 +1227,8 @@ describe('FilesView large icon layout', () => {
   it('uses one theme-derived palette across text, media, and metadata previews', () => {
     const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
 
-    expect(source).toMatch(/\.code-viewer\s*\{[^}]*border:\s*1px solid var\(--file-preview-border\);[^}]*background:\s*var\(--file-preview-background\);/)
+    const workspace = readFileSync(new URL('../components/files/FileEditorWorkspace.vue', import.meta.url), 'utf8')
+    expect(workspace).toMatch(/\.editor-workspace\s*\{[^}]*border:\s*1px solid var\(--file-preview-border\);[^}]*background:\s*var\(--file-preview-background\);/)
     expect(source).toMatch(/\.media-viewer\s*\{[\s\S]*?var\(--file-preview-glow\)[\s\S]*?var\(--file-preview-panel\)[\s\S]*?var\(--file-preview-background\)/)
     expect(source).toContain('color: var(--file-preview-muted);')
     expect(source).toContain('color: var(--file-preview-text);')
@@ -1312,12 +1305,10 @@ describe('FilesView large icon layout', () => {
     expect(source).not.toMatch(/:global\(\.desktop-window\)\s+\.batch-bar/)
   })
 
-  it('lets the code editor consume the remaining fullscreen height', () => {
-    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
-
-    expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.code-viewer\)\s*\{[^}]*display:\s*flex;[^}]*height:\s*100%;[^}]*flex-direction:\s*column;/)
-    expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.code-editor\)\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto;/)
-    expect(source).not.toMatch(/:global\(\.modal-panel--fullscreen\)\s+\.code-/)
+  it('lets the editor workspace consume the remaining fullscreen height', () => {
+    const source = readFileSync(new URL('../components/files/FileEditorWorkspace.vue', import.meta.url), 'utf8')
+    expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.editor-workspace\)\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/)
+    expect(source).toMatch(/\.editor-canvas\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;/)
   })
 
   it('skips layout and paint work for offscreen directory entries', () => {
@@ -1698,33 +1689,6 @@ describe('FilesView directory loading', () => {
         'trash-second': 'sha256:second',
       },
     }, undefined, '')
-  })
-
-  it('saves the live editor value without copying the document on every keystroke', async () => {
-    const view = setupView()
-    const entry = testEntry('config.json')
-    const markClean = vi.fn()
-    view.previewEntry.value = entry
-    view.previewContent.value = 'stale content'
-    view.previewDirty.value = true
-    view.codeEditorRef.value = {
-      getValue: () => 'latest editor content',
-      markClean,
-      openSearch: vi.fn(),
-      focus: vi.fn(),
-    }
-    mocks.write.mockResolvedValueOnce({ entry: { ...entry, resourceVersion: 'sha256:saved' } })
-
-    await view.savePreview()
-
-    expect(mocks.write).toHaveBeenCalledWith(
-      entry.path,
-      'latest editor content',
-      entry.resourceVersion, ''
-    )
-    expect(view.previewContent.value).toBe('latest editor content')
-    expect(view.previewDirty.value).toBe(false)
-    expect(markClean).toHaveBeenCalledOnce()
   })
 
   it('selects an unchecked entry when opening its context menu', () => {

@@ -200,11 +200,18 @@ describe('monitoring host selection', () => {
 
   it('shows the shared icon, status and selection pattern, and searches locally without fetching history', async () => {
     const { wrapper } = await mountAt(`?hostId=${a}`)
-    await wrapper.get('.monitoring-host-trigger').trigger('click')
+    const trigger = wrapper.get('.monitoring-host-trigger')
+    const triggerButton = trigger.element as HTMLButtonElement
+    triggerButton.focus()
+    await trigger.trigger('click')
+    expect(document.activeElement).toBe(trigger.element)
     expect(wrapper.findAll('.monitoring-host-option')).toHaveLength(3)
     expect(wrapper.get(`[data-monitoring-host-id="${a}"]`).attributes('aria-pressed')).toBe('true')
     expect(wrapper.get(`[data-monitoring-host-id="${b}"]`).text()).toContain('离线')
     expect(wrapper.findAll('operating-system-icon-stub')).toHaveLength(3)
+    const searchInput = wrapper.get('input[type="search"]').element as HTMLInputElement
+    searchInput.focus()
+    expect(document.activeElement).toBe(searchInput)
     await wrapper.get('input[type="search"]').setValue('远程 B')
     expect(wrapper.findAll('.monitoring-host-option')).toHaveLength(1)
     expect(mocks.history).toHaveBeenCalledTimes(1)

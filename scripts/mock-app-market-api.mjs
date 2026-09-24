@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { mockMonitoringHistory } from './mock-monitoring-history.mjs'
 import { mockBackups } from './mock-backups.mjs'
+import { mockEditorFiles, handleMockEditor } from './mock-file-editor.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -56,6 +57,14 @@ const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailabl
 }))
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
+  ...mockEditorFiles,
+  ...[
+    ['settings.json', true], ['report.csv', true], ['data.sqlite', false],
+    ['slides.pptx', false], ['installer.deb', false], ['certificate.pem', true],
+    ['recording.mp4', false], ['artifact.bin', false],
+  ].map(([name, editable]) => ({ name, path: `/${name}`, kind: 'file', sizeBytes: 2048,
+    mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt: '2026-09-09T08:30:00Z',
+    resourceVersion: mockFileVersion, editable, previewable: editable })),
   ...['website.zip', 'logs.tar.gz'].map(name => ({ name, path: `/${name}`, kind: 'file', mime: 'application/octet-stream', sizeBytes: 1826048, mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt: '2026-09-09T08:30:00Z', resourceVersion: mockFileVersion, editable: false, previewable: false })),
   {
     name: 'kpanel-desktop.webp', path: '/kpanel-desktop.webp', kind: 'file', mime: 'image/webp',
@@ -1680,6 +1689,7 @@ createServer(async (request, response) => {
     send(response, entry ? 200 : 404, entry || { title: '文件不存在', status: 404, code: 'not_found' })
     return
   }
+  if (await handleMockEditor(request, response, url, { send, readJSON })) return
   if (request.method === 'GET' && url.pathname === '/api/v1/files/content') {
     if (url.searchParams.get('path') === '/kpanel-desktop.webp') {
       sendBinary(response, 200, mockSharedImage, 'image/webp', 'inline; filename="kpanel-desktop.webp"')

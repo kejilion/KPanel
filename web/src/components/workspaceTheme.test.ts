@@ -25,6 +25,7 @@ const filesSource = readFileSync(
   new URL('../views/FilesView.vue', import.meta.url),
   'utf8',
 )
+const fileWorkspaceSource = readFileSync(new URL('./files/FileEditorWorkspace.vue', import.meta.url), 'utf8')
 const dockerSource = readFileSync(
   new URL('../views/DockerView.vue', import.meta.url),
   'utf8',
@@ -108,7 +109,7 @@ describe('terminal and editor workspace theme', () => {
     ]) {
       expect(semanticThemeSource).toContain(`${token}:`)
     }
-    expect(filesSource).toContain('background: var(--file-preview-background);')
+    expect(fileWorkspaceSource).toContain('background: var(--file-preview-background);')
     expect(filesSource).toContain('color: var(--file-preview-text);')
     expect(filesSource).not.toContain('var(--terminal-shell-background')
     for (const source of [dockerSource, appsSource]) {
@@ -128,7 +129,7 @@ describe('terminal and editor workspace theme', () => {
       expect(source).toContain('var(--terminal-shell-radius, 12px)')
       expect(source).toContain('var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%))')
     }
-    expect(filesSource).toContain('border-radius: var(--radius, 12px);')
+    expect(fileWorkspaceSource).toContain('border-radius: var(--radius);')
     expect(filesSource).toContain('box-shadow: var(--file-preview-shadow);')
     expect(globalThemeSource).toContain('border-radius: var(--terminal-shell-radius)')
     expect(globalThemeSource).toContain('box-shadow: var(--terminal-shell-shadow)')

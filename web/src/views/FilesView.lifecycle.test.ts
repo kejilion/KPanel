@@ -130,6 +130,8 @@ describe('FilesView host switcher', () => {
       await flushPromises()
       const trigger = wrapper.get('.file-host-switcher__trigger')
       vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(rect(24, 80, 150, 38))
+      const triggerButton = trigger.element as HTMLButtonElement
+      triggerButton.focus()
       await trigger.trigger('click')
       await flushPromises()
       const menu = body.get('.file-host-switcher__menu')
@@ -137,6 +139,9 @@ describe('FilesView host switcher', () => {
       expect((menu.element as HTMLElement).style.top).toBe('124px')
       expect(wrapper.get('.file-browser').element.contains(menu.element)).toBe(false)
       const search = menu.get('input')
+      expect(document.activeElement).toBe(trigger.element)
+      const searchInput = search.element as HTMLInputElement
+      searchInput.focus()
       expect(document.activeElement).toBe(search.element)
       for (const query of [' 美国 ', 'EDGE.EXAMPLE.COM', 'DEBIAN-EDGE']) {
         await search.setValue(query)
@@ -178,8 +183,52 @@ describe('FilesView host switcher', () => {
       await wrapper.get('.file-host-switcher__trigger').trigger('click')
       window.dispatchEvent(new Event('resize'))
       await nextTick()
+      expect(body.find('.file-host-switcher__menu').exists()).toBe(true)
+      await body.trigger('click')
       expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
     } finally { wrapper.unmount() }
+  })
+
+  it('keeps the host list open when the phone keyboard resizes or scrolls the viewport', async () => {
+    mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [
+      fileHost('local', true), fileHost('edge', false, { fileManagementAvailable: true }),
+    ] })
+    const viewport = Object.assign(new EventTarget(), {
+      offsetLeft: 0, offsetTop: 0, width: 390, height: 700,
+    })
+    const originalViewport = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+    const wrapper = mount(FilesView, { attachTo: document.body })
+    const body = new DOMWrapper(document.body)
+    try {
+      await flushPromises()
+      const trigger = wrapper.get('.file-host-switcher__trigger')
+      vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(rect(24, 80, 150, 38))
+      const triggerButton = trigger.element as HTMLButtonElement
+      triggerButton.focus()
+      await trigger.trigger('click')
+      await flushPromises()
+      const search = body.get('.file-host-switcher__search input')
+      expect(document.activeElement).toBe(trigger.element)
+      const searchInput = search.element as HTMLInputElement
+      searchInput.focus()
+      expect(document.activeElement).toBe(search.element)
+
+      viewport.height = 115
+      viewport.dispatchEvent(new Event('resize'))
+      viewport.dispatchEvent(new Event('scroll'))
+      document.dispatchEvent(new Event('scroll'))
+      await nextTick()
+      expect(body.find('.file-host-switcher__menu').exists()).toBe(true)
+      expect((body.get('.file-host-switcher__menu').element as HTMLElement).style.top).toBe('74px')
+      await body.get('[data-file-host-id="edge"]').trigger('click')
+      expect(mocks.list).toHaveBeenLastCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
+      expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      if (originalViewport) Object.defineProperty(window, 'visualViewport', originalViewport)
+      else Reflect.deleteProperty(window, 'visualViewport')
+    }
   })
 
   it('offers retry on initial inventory failure and keeps unique picker IDs across windows', async () => {

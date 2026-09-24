@@ -69,14 +69,14 @@ export function fileEntryIconKind(entry: FilePresentationInput): FileIconKind {
     || /^(?:id_(?:rsa|ed25519|ecdsa)|authorized_keys|known_hosts)$/.test(normalizedName)
   ) return 'secret'
   if (
-    entry.editable
-    || ['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'ps1', 'js', 'ts', 'vue', 'css', 'scss', 'html', 'go', 'py', 'php', 'java', 'c', 'h', 'cpp', 'rs'].includes(extension)
+    ['json', 'yaml', 'yml', 'toml', 'xml', 'ini', 'conf', 'sh', 'bash', 'zsh', 'ps1', 'js', 'ts', 'vue', 'css', 'scss', 'html', 'go', 'py', 'php', 'java', 'c', 'h', 'cpp', 'rs'].includes(extension)
   ) return 'code'
   if (
-    entry.previewable
-    || mime === 'application/pdf'
+    mime === 'application/pdf'
     || ['txt', 'md', 'log', 'pdf', 'doc', 'docx', 'odt', 'rtf'].includes(extension)
   ) return 'document'
+  if (entry.editable) return 'code'
+  if (entry.previewable) return 'document'
   return 'generic'
 }
 
@@ -104,19 +104,20 @@ export function shortcutFileIcon(name: string, kind: Extract<FileKind, 'file' | 
   return fileEntryIcon({ name, kind, editable: false, previewable: false })
 }
 
-const shortcutFileGradients: Record<FileIconKind, readonly [string, string]> = {
-  folder: ['#facc15', '#ca8a04'],
-  image: ['#a78bfa', '#6d28d9'],
-  media: ['#c084fc', '#7e22ce'],
-  archive: ['#fb923c', '#c2410c'],
-  spreadsheet: ['#34d399', '#047857'],
-  database: ['#2dd4bf', '#0f766e'],
-  presentation: ['#fb7185', '#be123c'],
-  package: ['#f59e0b', '#b45309'],
-  secret: ['#f87171', '#b91c1c'],
-  code: ['#38bdf8', '#0369a1'],
-  document: ['#94a3b8', '#475569'],
-  generic: ['#94a3b8', '#475569'],
+// Shared body and highlight colors for file browser glyphs and desktop shortcut tiles.
+export const fileIconPalette: Record<FileIconKind, readonly [body: string, highlight: string]> = {
+  folder: ['#e6af42', '#f7d77c'],
+  image: ['#9683c6', '#d2c6ed'],
+  media: ['#bf7998', '#ecc0d3'],
+  archive: ['#ce9955', '#efd0a2'],
+  spreadsheet: ['#589c7c', '#b5d9c4'],
+  database: ['#579eaa', '#b8dce0'],
+  presentation: ['#ce8466', '#f1c8b5'],
+  package: ['#bb905e', '#e6c59c'],
+  secret: ['#658d91', '#c1dbdc'],
+  code: ['#648fbe', '#bfd6ed'],
+  document: ['#7d9cbb', '#d0e0ee'],
+  generic: ['#929fad', '#dde4eb'],
 }
 
 export function shortcutFileGradient(
@@ -124,6 +125,6 @@ export function shortcutFileGradient(
   kind: Extract<FileKind, 'file' | 'directory'>,
 ): string {
   const iconKind = fileEntryIconKind({ name, kind, editable: false, previewable: false })
-  const [start, end] = shortcutFileGradients[iconKind]
-  return `linear-gradient(145deg, ${start} 0%, ${end} 100%)`
+  const [body, highlight] = fileIconPalette[iconKind]
+  return `linear-gradient(145deg, ${highlight} 0%, ${body} 100%)`
 }
