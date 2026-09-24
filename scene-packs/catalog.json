@@ -71,6 +71,16 @@
       "path": "neon-city/dist",
       "files": [
         {
+          "path": "assets/rooftops.glb",
+          "size": 226208,
+          "sha256": "7154a65e8b41e484251558b585ef31034d9b58593727fe517b81e407863aac14"
+        },
+        {
+          "path": "assets/rooms.webp",
+          "size": 44400,
+          "sha256": "34cb3c156fe99d69c82d2e856357308d09546ed8b17e9045965f274098ead6c6"
+        },
+        {
           "path": "index.html",
           "size": 418,
           "sha256": "42bf867d6f4c718f469f8cec1e9cd7c115484f6ed1f73768c32a2d680688b490"
@@ -82,21 +92,21 @@
         },
         {
           "path": "poster.webp",
-          "size": 114606,
-          "sha256": "e69452db94fdbfeb537bbc79aede4e7c311fc6f599f9240d84320fed6587ae4b"
+          "size": 154126,
+          "sha256": "d8d7159905cddfdb88df8d279a5e94213b42e1ef3340340ce09afec3b88b1248"
         },
         {
           "path": "scene.js",
-          "size": 620071,
-          "sha256": "498b7a02c46abbb8a4e1de447cb5d401e9bd59d7269a7845a7cd9ef1b316d0bb"
+          "size": 704689,
+          "sha256": "be717d2400861192c0120b636cf80d0f0228c9c6d92f0f248b4e18f6409d6253"
         },
         {
           "path": "thumb.webp",
-          "size": 14084,
-          "sha256": "e2ba590bb2b7bf5c8b09a02571f56c53dfb2bbe786df6b598277d2f2db1150ed"
+          "size": 16988,
+          "sha256": "212f434683aff6f4cb0dd168cfdd5d099c4946925b14db7993bb992b55a35197"
         }
       ],
-      "sizeBytes": 750637
+      "sizeBytes": 1148287
     },
     {
       "schema": 1,

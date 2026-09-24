@@ -10,6 +10,7 @@ import { Director, type Shot } from './director'
 import { createGround, resizeGround } from './ground'
 import { AVENUE_X, createLayout, mulberry32 } from './layout'
 import { createRain } from './rain'
+import { createRooftops } from './rooftops'
 import { createSigns } from './signs'
 import { createSky } from './sky'
 import { createTraffic } from './traffic'
@@ -46,7 +47,7 @@ function createRenderer(): THREE.WebGLRenderer | undefined {
   }
 }
 
-function start(): void {
+async function start(): Promise<void> {
   const renderer = createRenderer()
   if (!renderer) {
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
@@ -61,7 +62,11 @@ function start(): void {
   scene.add(camera)
 
   const { buildings, landmarks } = createLayout()
-  scene.add(createBuildings(buildings, uniforms))
+  const rooms = await new THREE.TextureLoader().loadAsync('assets/rooms.webp')
+  rooms.colorSpace = THREE.SRGBColorSpace
+  rooms.anisotropy = 8
+  scene.add(createBuildings(buildings, uniforms, rooms))
+  scene.add(await createRooftops(buildings, uniforms))
   scene.add(createSigns(buildings, landmarks, uniforms, random))
   scene.add(createTraffic(uniforms, random))
   const sky = createSky(uniforms, landmarks, aviationLights(buildings), random)
@@ -145,4 +150,4 @@ function start(): void {
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }
 
-start()
+start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))
