@@ -28,7 +28,7 @@ export interface DirectorFrame {
 
 export const ENTRANCE_SECONDS = 6.5
 const FADE_SECONDS = 3.2
-/** Moves are short: the shots sit close together around the headland, a few hundred metres apart. */
+/** Moves are short: the shots sit close together, a hundred-odd metres apart. */
 const TRANSITION_MIN_SECONDS = 5
 const TRANSITION_MAX_SECONDS = 8
 const TRANSITION_METERS_PER_SECOND = 80
@@ -49,10 +49,17 @@ function viewDirection(pose: Pose): THREE.Vector3 {
   return pose.target.clone().sub(pose.position).normalize()
 }
 
-/** Turns the view from one direction to another (t in 0-1). */
+/**
+ * Turns the view from one direction to another (t in 0-1): heading the short way round and
+ * pitch separately, so even a wide turn swings along the horizon instead of through the zenith.
+ */
 function turn(from: THREE.Vector3, to: THREE.Vector3, t: number, out: THREE.Vector3): THREE.Vector3 {
-  const rotation = new THREE.Quaternion().setFromUnitVectors(from, to)
-  return out.copy(from).applyQuaternion(new THREE.Quaternion().slerp(rotation, t))
+  const yaw0 = Math.atan2(from.x, from.z)
+  let yaw = Math.atan2(to.x, to.z) - yaw0
+  yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
+  const heading = yaw0 + yaw * t
+  const pitch = THREE.MathUtils.lerp(Math.asin(THREE.MathUtils.clamp(from.y, -1, 1)), Math.asin(THREE.MathUtils.clamp(to.y, -1, 1)), t)
+  return out.set(Math.sin(heading) * Math.cos(pitch), Math.sin(pitch), Math.cos(heading) * Math.cos(pitch))
 }
 
 function bezier(a: THREE.Vector3, control: THREE.Vector3, b: THREE.Vector3, t: number, out: THREE.Vector3): THREE.Vector3 {

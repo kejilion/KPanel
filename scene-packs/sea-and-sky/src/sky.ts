@@ -6,8 +6,10 @@ import { NOISE_GLSL } from './noise'
  * The sky, as one GLSL function used twice: for the sky dome and for the
  * ocean's reflections, so the sea always mirrors the same sky. A gradient that
  * follows the sun, a soft sun disc and glow, a layer of drifting clouds lit by
- * the sun (glowing orange at sunset), stars at night, and the moon in its real
- * phase: lit on the side facing the sun, a pale disc when it is up by day.
+ * the sun (glowing orange at sunset), the moon in its real phase (lit on the
+ * side facing the sun, a pale disc when it is up by day), and at night the
+ * stars and the Milky Way, fixed to the celestial sphere so they turn through
+ * the night as the real ones do.
  */
 export const SKY_UNIFORMS_GLSL = /* glsl */ `
 uniform vec3 uSkyTop;
@@ -21,9 +23,14 @@ uniform vec3 uGlow;
 uniform float uNight;
 uniform float uTime;
 uniform float uMoonLight;
+uniform mat3 uCelestial;
 `
 
 export const SKY_GLSL = /* glsl */ `
+// The galactic north pole and centre, as equatorial unit vectors.
+const vec3 GALACTIC_POLE = vec3(-0.8677, -0.1981, 0.456);
+const vec3 GALACTIC_CENTRE = vec3(-0.0549, -0.8734, -0.4839);
+
 float skyHash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -50,10 +57,36 @@ vec3 skyColor(vec3 d, bool cheap) {
   color += uGlow * (pow(toSun, 5.0) * 0.45 + pow(toSun, 40.0) * 0.9);
   // A soft sun disc: bright, but not blinding.
   color += uLight * smoothstep(0.99962, 0.99988, toSun) * 1.6 * (1.0 - uNight);
-  // Stars and moon.
-  vec2 cell = floor(vec2(atan(d.z, d.x) * 320.0, d.y * 320.0));
-  float star = step(0.9968, skyHash(cell)) * (0.7 + 0.3 * sin(uTime * (0.5 + skyHash(cell + 3.1)) + skyHash(cell) * 20.0));
-  color += vec3(0.75, 0.82, 1.0) * star * uNight * smoothstep(0.03, 0.2, d.y) * 0.9;
+  // Night sky: stars and the Milky Way on the celestial sphere, washed out by a bright moon.
+  if (uNight > 0.01) {
+    vec3 c = uCelestial * d;
+    float latitude = dot(c, GALACTIC_POLE);
+    float centre = dot(c, GALACTIC_CENTRE) * 0.5 + 0.5;
+    // A long band, wider and brighter towards the core.
+    float band = exp(-latitude * latitude / (0.008 + 0.018 * centre * centre));
+    float milky = band * (0.45 + 0.8 * pow(centre, 6.0));
+    if (!cheap) {
+      // Grainy star clouds, and a dark rift of dust along the middle.
+      float clouds = fbm3(c * 11.0 + 2.0) * 0.5 + 0.5;
+      float grain = fbm3(c * 42.0) * 0.5 + 0.5;
+      milky *= 0.25 + 1.5 * clouds * grain;
+      float rift = exp(-pow(latitude - 0.012 * snoise(c * 8.0), 2.0) / 0.0009);
+      milky *= 1.0 - 0.72 * rift * smoothstep(0.35, 0.65, clouds + 0.15);
+    }
+    float dark = uNight * (1.0 - 0.8 * uMoonLight) * smoothstep(0.02, 0.3, d.y);
+    color += mix(vec3(0.5, 0.56, 0.75), vec3(0.78, 0.68, 0.56), pow(centre, 5.0)) * milky * dark * 0.28;
+    if (!cheap) {
+      // Pinpoint stars, a few bright ones and many faint ones (more of them in the Milky Way).
+      vec2 p = vec2(atan(c.y, c.x) * 520.0 * sqrt(max(1.0 - c.z * c.z, 0.0)), asin(clamp(c.z, -1.0, 1.0)) * 520.0);
+      vec2 id = floor(p);
+      float h = skyHash(id);
+      vec2 at = vec2(skyHash(id + 17.3), skyHash(id + 41.9)) * 0.6 + 0.2;
+      float core = smoothstep(0.42, 0.0, length(fract(p) - at));
+      float bright = step(0.9975, h) * 1.0 + step(0.985 - band * 0.02, h) * step(h, 0.9975) * 0.28;
+      float twinkle = 0.8 + 0.2 * sin(uTime * (0.4 + skyHash(id + 5.0)) + h * 40.0);
+      color += mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.86, 0.7), skyHash(id + 9.0)) * core * bright * twinkle * dark * (1.0 - 0.5 * uMoonLight) * 1.4;
+    }
+  }
   // The moon: a sphere lit from the sun's direction, so it shows its phase; by day only the lit part shows, faintly.
   float moon = dot(d, uMoonDir);
   color += vec3(0.85, 0.9, 1.0) * uNight * uMoonLight * pow(max(moon, 0.0), 110.0) * 0.14;
@@ -98,6 +131,7 @@ export function skyUniforms(daylight: Daylight) {
     uTime: { value: 0 },
     uKeyVisible: { value: 1 },
     uMoonLight: { value: 1 },
+    uCelestial: { value: daylight.celestial },
   }
 }
 

@@ -60,6 +60,8 @@ export interface Daylight {
   night: number
   /** Sun elevation in degrees. */
   elevation: number
+  /** Turns a direction in the local sky (east +x, up +y, south +z) into equatorial coordinates. */
+  celestial: THREE.Matrix3
   /** Moon elevation in degrees, and the lit fraction of its disc (0 new, 1 full). */
   moonElevation: number
   moonIllumination: number
@@ -111,10 +113,16 @@ function blend(target: THREE.Color, key: keyof Omit<Stop, 'elevation'>, elevatio
 
 const phantom = new THREE.Vector3()
 
-export function createDaylight(): Daylight & { update(hour: number, age: number): void } {
+/** Day of the year (1-366), for where the stars stand at a given hour. */
+export function dayOfYear(date: Date): number {
+  return Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 0)) / 86_400_000)
+}
+
+export function createDaylight(): Daylight & { update(hour: number, age: number, day: number): void } {
   const state = {
     lightDir: new THREE.Vector3(),
     keyVisible: 1,
+    celestial: new THREE.Matrix3(),
     sunDir: new THREE.Vector3(),
     moonDir: new THREE.Vector3(),
     light: new THREE.Color(),
@@ -128,8 +136,19 @@ export function createDaylight(): Daylight & { update(hour: number, age: number)
     moonElevation: 0,
     moonIllumination: 1,
     exposure: 1,
-    update(hour: number, age: number): void {
+    update(hour: number, age: number, day: number): void {
       sunDirection(hour, state.sunDir)
+      // Local sidereal time: the sun's right ascension (0h at the March equinox) plus its hour angle.
+      const sidereal = THREE.MathUtils.degToRad(((hour - 12 + (24 * (day - 80)) / 365.25) % 24) * 15)
+      const sl = Math.sin(sidereal)
+      const cl = Math.cos(sidereal)
+      const sp = Math.sin(LATITUDE)
+      const cp = Math.cos(LATITUDE)
+      state.celestial.set(
+        -sl, cl * cp, cl * sp,
+        cl, sl * cp, sl * sp,
+        0, sp, -cp,
+      )
       // The moon trails the sun across the sky by its age: 12 hours at full moon.
       sunDirection((hour - (age / SYNODIC_DAYS) * 24 + 24) % 24, state.moonDir)
       state.moonElevation = THREE.MathUtils.radToDeg(Math.asin(state.moonDir.y))
@@ -141,7 +160,8 @@ export function createDaylight(): Daylight & { update(hour: number, age: number)
       // Hand the key light from the sun to the moon deep in twilight, where both are faint.
       if (elevation > -5) {
         state.lightDir.copy(state.sunDir)
-        state.keyVisible = 1
+        // Its glitter on the sea fades out as the sun goes down.
+        state.keyVisible = THREE.MathUtils.smoothstep(elevation, -5, 0.5)
         if (state.lightDir.y < 0.02) {
           // Keep the grazing sun just above the horizon so clouds still catch it at sunrise and sunset.
           state.lightDir.y = 0.02
@@ -157,8 +177,8 @@ export function createDaylight(): Daylight & { update(hour: number, age: number)
         if (state.lightDir.y < 0.03) { state.lightDir.y = 0.03; state.lightDir.normalize() }
         state.light.multiplyScalar(0.3 + 0.7 * up * Math.sqrt(state.moonIllumination))
       }
-      const day = THREE.MathUtils.smoothstep(elevation, 2, 25)
-      state.exposure = THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.0, 1.25, state.night), 0.68, day)
+      const daytime = THREE.MathUtils.smoothstep(elevation, 2, 25)
+      state.exposure = THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.0, 1.25, state.night), 0.68, daytime)
     },
   }
   return state

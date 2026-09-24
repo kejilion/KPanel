@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "id": "sea-and-sky",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "海天日月",
+    "zh-TW": "海天日月",
+    "en-US": "Sea and Sky"
+  },
+  "description": {
+    "zh-CN": "只有海与天：波光粼粼，云霞与日月星辰随本地时间流转",
+    "zh-TW": "只有海與天：波光粼粼，雲霞與日月星辰隨本地時間流轉",
+    "en-US": "Just sea and sky: glittering water, clouds, sun, moon and stars on your local time"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "MIT",
+  "tags": [
+    "sea",
+    "sky",
+    "sunset",
+    "stars",
+    "day-night"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#2f7fb5",
+    "neutral": "#3c4d5c",
+    "signature": "#f2a25c"
+  },
+  "cameras": [
+    {
+      "id": "light",
+      "name": {
+        "zh-CN": "日月光带",
+        "zh-TW": "日月光帶",
+        "en-US": "Sun and moon"
+      }
+    },
+    {
+      "id": "rocks",
+      "name": {
+        "zh-CN": "礁石剪影",
+        "zh-TW": "礁石剪影",
+        "en-US": "Sea stacks"
+      }
+    },
+    {
+      "id": "sky",
+      "name": {
+        "zh-CN": "海天一色",
+        "zh-TW": "海天一色",
+        "en-US": "Sea and sky"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ]
+}

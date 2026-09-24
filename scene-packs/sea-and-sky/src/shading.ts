@@ -3,12 +3,13 @@ import type { Daylight } from './daylight'
 import { groundHeight, rockBase } from './world'
 
 /**
- * Lighting shared by everything solid: the key light (sun or moon) with soft
- * shadows traced over a height map of the coast (so the cliffs throw long
- * shadows at sunset), sky light from above, bounce from below, and haze with
- * distance. The same height map gives the ocean its depth for colour and foam.
+ * Lighting shared by the rocks and the sea: the key light (sun or moon) with
+ * soft shadows traced over a height map of the stacks (so they throw long
+ * shadows on the water at sunset), sky light from above, bounce from below, and
+ * haze with distance. The same height map gives the sea its depth for colour
+ * and foam; beyond it the sea is simply deep.
  */
-export const HEIGHT_RECT = new THREE.Vector4(-1700, -2600, 3100, 5200) // min x, min z, size x, size z
+export const HEIGHT_RECT = new THREE.Vector4(-320, -320, 640, 640) // min x, min z, size x, size z
 
 export const LIGHTING_GLSL = /* glsl */ `
 uniform vec3 uLightDir;
@@ -47,7 +48,7 @@ vec3 atmosphere(vec3 color, vec3 world) {
 `
 
 /** Ground and rock heights on a grid over HEIGHT_RECT, as a filterable half-float texture. */
-export function heightTexture(width = 384, height = 640): THREE.DataTexture {
+export function heightTexture(width = 320, height = 320): THREE.DataTexture {
   const data = new Uint16Array(width * height)
   for (let j = 0; j < height; j++) {
     const z = HEIGHT_RECT.y + ((j + 0.5) / height) * HEIGHT_RECT.w
@@ -76,7 +77,6 @@ export function createLighting(daylight: Daylight) {
     uTime: { value: 0 },
     uHeight: { value: heightTexture() },
     uHeightRect: { value: HEIGHT_RECT },
-    uPointScale: { value: 800 },
   }
   return {
     uniforms,

@@ -65,6 +65,7 @@ uniform vec3 uGlow;
 uniform float uTime;
 uniform float uKeyVisible;
 uniform float uMoonLight;
+uniform mat3 uCelestial;
 varying vec3 vWorld;
 varying float vCrest;
 ${NOISE_GLSL}
@@ -117,7 +118,9 @@ void main() {
   float foamNoise = snoise(vec3(p.xz * 0.11, uTime * 0.22)) * 0.5 + 0.5;
   float bands = sin(depth * 2.4 + uTime * 1.25 + snoise(vec3(p.xz * 0.04, uTime * 0.08)) * 2.2) * 0.5 + 0.5;
   float foam = smoothstep(3.2, 0.3, depth) * smoothstep(0.5, 0.85, bands * 0.6 + foamNoise * 0.55);
-  foam = max(foam, smoothstep(0.45, 0.0, depth) * (0.65 + 0.35 * foamNoise));
+  // The swash against the rocks: broken, shifting lace rather than a solid ring.
+  float lace = snoise(vec3(p.xz * 0.35, uTime * 0.5)) * 0.5 + 0.5;
+  foam = max(foam, smoothstep(0.6, 0.0, depth) * smoothstep(0.3, 0.7, lace * 0.7 + foamNoise * 0.5));
   foam = max(foam, smoothstep(0.55, 0.95, vCrest) * smoothstep(0.62, 0.9, foamNoise) * 0.45);
   vec3 foamColor = vec3(0.92, 0.95, 0.96) * (uLight * sunUp * 0.5 * shadow + uAmbientTop * 0.95);
   color = mix(color, foamColor, clamp(foam, 0.0, 1.0));
