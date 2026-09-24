@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import {
   ArrowLeft,
@@ -26,8 +26,21 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  Orbit,
+  SwitchCamera,
   X,
 } from '@lucide/vue'
+import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
+import {
+  formatPackSize,
+  isOfficialScenePack,
+  localizedText,
+  scenePackFromWallpaper,
+  scenePackThemeColors,
+  scenePackWallpaper,
+  type ScenePack,
+  type ScenePackSource,
+} from '@/lib/scenePacks'
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
@@ -123,7 +136,7 @@ import { useDesktopIcons } from '@/stores/desktopIcons'
 import { useDocumentFullscreen } from '@/composables/useDocumentFullscreen'
 import { useWindowGesture } from '@/composables/useWindowGesture'
 import { useTheme } from '@/stores/theme'
-import { THEME_COLOR_PRESETS } from '@/theme/colors'
+import { THEME_COLOR_PRESETS, type ThemeColorIntent } from '@/theme/colors'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
 import type { AgentStatus, DesktopGroup, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
@@ -248,10 +261,14 @@ const DESKTOP_WALLPAPERS = [
     themePreset: THEME_COLOR_PRESETS[4]!,
   },
 ] as const
-type DesktopWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
+type DesktopStaticWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
+// Installed 3D scene packs share the wallpaper key as `pack:<id>`.
+type DesktopWallpaperID = DesktopStaticWallpaperID | `pack:${string}`
+
+const DesktopScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
 
 function isDesktopWallpaperID(value: string | null): value is DesktopWallpaperID {
-  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value)
+  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value) || Boolean(scenePackFromWallpaper(value))
 }
 
 function readDesktopWallpaperID(): DesktopWallpaperID {
@@ -420,10 +437,45 @@ const iconAnnouncement = ref('')
 const iconManagerOpen = ref(false)
 const wallpaperDialogOpen = ref(false)
 const desktopWallpaperID = ref<DesktopWallpaperID>(readDesktopWallpaperID())
-const activeDesktopWallpaper = computed(() =>
-  DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
-    || DESKTOP_WALLPAPERS[0],
+const activeScenePack = computed(() => scenePackFromWallpaper(desktopWallpaperID.value))
+const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: string } => {
+  const pack = activeScenePack.value
+  if (pack) return { id: scenePackWallpaper(pack) as DesktopWallpaperID, src: api.desktop.scenePackPosterURL(pack) }
+  return DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
+    || DESKTOP_WALLPAPERS[0]
+})
+const coarseDesktopPointer = typeof window.matchMedia === 'function'
+  && window.matchMedia('(hover: none) and (pointer: coarse)').matches
+const desktopWallpaperCovered = computed(() => {
+  const visible = desktop.windows.value.filter((windowState) => !windowState.minimized)
+  if (!visible.length) return false
+  // Compact and touch layouts stretch every open window over the work area (desktop.css).
+  if (compactIconLayout.value || coarseDesktopPointer) return true
+  return visible.some((windowState) => windowState.maximized)
+    || (visible.some((windowState) => windowState.snap === 'left') && visible.some((windowState) => windowState.snap === 'right'))
+})
+const scenePackLayer = ref<{ nextCamera: () => void }>()
+const scenePackCameras = ref<string[]>([])
+const scenePacks = ref<ScenePack[]>([])
+const scenePacksLoading = ref(false)
+const scenePacksError = ref(false)
+const scenePackBusy = ref<{ id: string, action: 'install' | 'delete' }>()
+const scenePackFailure = ref<{ id: string, action: 'install' | 'delete' }>()
+const scenePackConfirmDelete = ref<string>()
+const scenePackSource = ref<ScenePackSource>('auto')
+const scenePackSources = ref<ScenePackSource[]>(['auto', 'github', 'mirror'])
+const scenePackFilter = ref<'all' | 'installed'>('all')
+const visibleScenePacks = computed(() =>
+  scenePackFilter.value === 'installed' ? scenePacks.value.filter((pack) => pack.installed) : scenePacks.value,
 )
+const SCENE_PACK_SOURCE_LABELS = {
+  auto: 'desktop.scenePacksSourceAuto',
+  github: 'desktop.scenePacksSourceGithub',
+  mirror: 'desktop.scenePacksSourceMirror',
+} as const
+const sceneMotion = useSceneMotionPreference()
+// A live scene paints black under its own entrance; reduced motion keeps the pack poster.
+const liveScenePack = computed(() => Boolean(activeScenePack.value) && !sceneMotion.reducedMotion.value)
 const desktopWallpaperStyle = computed((): Record<string, string> =>
   document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
     ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
@@ -3039,10 +3091,13 @@ async function onDesktopFileDrop(event: DragEvent): Promise<void> {
 
 function onContextMenuAction(
   action: 'refresh' | 'theme' | 'classic' | 'about' | 'processes' | 'add-shortcut'
-    | 'manage-icons' | 'wallpaper' | 'fullscreen',
+    | 'manage-icons' | 'wallpaper' | 'fullscreen' | 'scene-camera',
 ): void {
   closeContextMenu()
   switch (action) {
+    case 'scene-camera':
+      scenePackLayer.value?.nextCamera()
+      break
     case 'refresh':
       void refreshDesktop()
       break
@@ -3100,9 +3155,14 @@ async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<
   await nextTick()
   await waitForWallpaperSwitchDelay()
   const wallpaper = DESKTOP_WALLPAPERS.find((candidate) => candidate.id === wallpaperID)
-  if (!wallpaper) return
+  const packID = scenePackFromWallpaper(wallpaperID)
+  if (!wallpaper && !packID) return
+  scenePackCameras.value = []
   desktopWallpaperID.value = wallpaperID
-  theme.setColors(wallpaper.themePreset.colors)
+  if (wallpaper) theme.setColors(wallpaper.themePreset.colors)
+  const pack = scenePacks.value.find((candidate) => candidate.id === packID)
+  const packColors = pack && scenePackThemeColors(pack)
+  if (packColors) applyScenePackTheme(packColors)
   try {
     window.localStorage.setItem(DESKTOP_WALLPAPER_KEY, wallpaperID)
     window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))
@@ -3110,6 +3170,115 @@ async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<
     // The wallpaper still applies to this session when storage is unavailable.
   }
 }
+
+async function loadScenePacks(): Promise<void> {
+  scenePacksLoading.value = true
+  scenePacksError.value = false
+  try {
+    const list = await api.desktop.scenePacks()
+    scenePacks.value = list.packs
+    scenePackSource.value = list.source
+    if (list.sources?.length) scenePackSources.value = list.sources
+  } catch {
+    scenePacksError.value = true
+  } finally {
+    scenePacksLoading.value = false
+  }
+}
+
+async function installScenePack(pack: ScenePack): Promise<void> {
+  if (scenePackBusy.value) return
+  scenePackBusy.value = { id: pack.id, action: 'install' }
+  scenePackFailure.value = undefined
+  try {
+    const installed = await api.desktop.installScenePack(pack.id)
+    scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === installed.id ? installed : candidate))
+  } catch {
+    scenePackFailure.value = { id: pack.id, action: 'install' }
+  } finally {
+    scenePackBusy.value = undefined
+  }
+}
+
+async function deleteScenePack(pack: ScenePack): Promise<void> {
+  if (scenePackBusy.value) return
+  // The first click arms the delete; the second one confirms it.
+  if (scenePackConfirmDelete.value !== pack.id) {
+    scenePackConfirmDelete.value = pack.id
+    return
+  }
+  scenePackConfirmDelete.value = undefined
+  scenePackBusy.value = { id: pack.id, action: 'delete' }
+  scenePackFailure.value = undefined
+  try {
+    await api.desktop.deleteScenePack(pack.id)
+    scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === pack.id ? { ...candidate, installed: false } : candidate))
+    if (activeScenePack.value === pack.id) resetWallpaperToClassic()
+  } catch {
+    scenePackFailure.value = { id: pack.id, action: 'delete' }
+  } finally {
+    scenePackBusy.value = undefined
+  }
+}
+
+/** A scene comes with one color scheme, applied when it is chosen (like a static wallpaper's). */
+function applyScenePackTheme(colors: ThemeColorIntent): void {
+  const current = theme.colors.value
+  if (theme.isCustom.value && current.signatureLinked === colors.signatureLinked
+    && [current.brand, current.neutral, current.signature].join() === [colors.brand, colors.neutral, colors.signature].join()) return
+  theme.setColors(colors)
+}
+
+function resetWallpaperToClassic(): void {
+  scenePackCameras.value = []
+  desktopWallpaperID.value = 'classic'
+  try {
+    window.localStorage.setItem(DESKTOP_WALLPAPER_KEY, 'classic')
+  } catch {
+    // The reset still applies to this page.
+  }
+}
+
+async function onScenePackFailed(): Promise<void> {
+  scenePackCameras.value = []
+  // Only a pack that is really gone resets the choice; a transient failure keeps its poster.
+  const id = activeScenePack.value
+  if (!id) return
+  try {
+    const { packs } = await api.desktop.scenePacks()
+    if (!packs.some((pack) => pack.id === id && pack.installed)) resetWallpaperToClassic()
+  } catch {
+    // Keep the saved choice when the pack list cannot be checked.
+  }
+}
+
+async function onScenePackSourceChange(event: Event): Promise<void> {
+  const next = (event.target as HTMLSelectElement).value as ScenePackSource
+  const previous = scenePackSource.value
+  scenePackSource.value = next
+  try {
+    await api.desktop.setScenePackSource(next)
+  } catch {
+    scenePackSource.value = previous
+  }
+}
+
+function onSceneMotionAlwaysChange(event: Event): void {
+  sceneMotion.setMotionAlways((event.target as HTMLInputElement).checked)
+}
+
+watch(wallpaperDialogOpen, (open) => {
+  scenePackConfirmDelete.value = undefined
+  if (open) void loadScenePacks()
+})
+
+// Keep the root flag appearance-init.js set at boot in step with the chosen wallpaper, so every
+// wallpaper surface (boot layer, loading placeholder, desktop) agrees on the live-scene black.
+function syncLiveSceneFlag(live: boolean): void {
+  if (live) document.documentElement.dataset.desktopWallpaperScene = 'live'
+  else delete document.documentElement.dataset.desktopWallpaperScene
+}
+watch(liveScenePack, syncLiveSceneFlag, { immediate: true })
 
 function onNavMenuOpen(): void {
   const path = menuNavPath.value
@@ -3598,6 +3767,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   entriesSequence += 1
+  syncLiveSceneFlag(false)
   document.documentElement.classList.remove('desktop-mode-open')
   document.body.classList.remove('desktop-mode-open')
   window.removeEventListener('pointerdown', onGlobalPointerDown)
@@ -3669,7 +3839,7 @@ function onViewportResize(): void {
     @dragleave="onDesktopFileDragLeave"
     @drop="onDesktopFileDrop"
   >
-    <div class="desktop__wallpaper" aria-hidden="true">
+    <div class="desktop__wallpaper" :class="{ 'desktop__wallpaper--scene': liveScenePack }" aria-hidden="true">
       <Transition name="desktop-wallpaper-fade">
         <div
           :key="activeDesktopWallpaper.id"
@@ -3678,6 +3848,15 @@ function onViewportResize(): void {
           :style="desktopWallpaperStyle"
         />
       </Transition>
+      <DesktopScenePack
+        v-if="activeScenePack"
+        :key="activeScenePack"
+        ref="scenePackLayer"
+        :pack-id="activeScenePack"
+        :covered="desktopWallpaperCovered"
+        @cameras="scenePackCameras = $event"
+        @failed="onScenePackFailed"
+      />
       <div class="desktop__wallpaper-veil" aria-hidden="true" />
       <div class="desktop__aurora desktop__aurora--one" />
       <div class="desktop__aurora desktop__aurora--two" />
@@ -4184,6 +4363,16 @@ function onViewportResize(): void {
               ? i18n.t('desktop.exitFullscreen')
               : i18n.t('desktop.enterFullscreen') }}
           </button>
+          <button
+            v-if="activeScenePack && scenePackCameras.length > 1"
+            type="button"
+            role="menuitem"
+            data-context-action="scene-camera"
+            @click="onContextMenuAction('scene-camera')"
+          >
+            <SwitchCamera :size="15" aria-hidden="true" />
+            {{ i18n.t('desktop.scenePackNextCamera') }}
+          </button>
           <button type="button" role="menuitem" @click="onContextMenuAction('about')">
             <Info :size="15" aria-hidden="true" />
             {{ i18n.t('desktop.menuAbout') }}
@@ -4347,10 +4536,13 @@ function onViewportResize(): void {
       size="wide"
       @close="wallpaperDialogOpen = false"
     >
+      <h3 id="desktop-wallpaper-static-title" class="desktop-wallpaper-section__title">
+        {{ i18n.t('desktop.wallpaperStaticTitle') }}
+      </h3>
       <div
         class="desktop-wallpaper-picker"
         role="radiogroup"
-        :aria-label="i18n.t('desktop.wallpaperTitle')"
+        aria-labelledby="desktop-wallpaper-static-title"
       >
         <button
           v-for="wallpaper in DESKTOP_WALLPAPERS"
@@ -4380,6 +4572,129 @@ function onViewportResize(): void {
           />
         </button>
       </div>
+      <section class="desktop-scene-packs" aria-labelledby="desktop-scene-packs-title">
+        <div class="desktop-scene-packs__head">
+          <div class="desktop-scene-packs__intro">
+            <h3 id="desktop-scene-packs-title" class="desktop-wallpaper-section__title">
+              {{ i18n.t('desktop.scenePacksTitle') }}
+            </h3>
+            <p class="desktop-wallpaper-section__hint">{{ i18n.t('desktop.scenePacksHint') }}</p>
+          </div>
+          <div class="desktop-scene-packs__tools">
+            <label class="desktop-scene-packs__source">
+              <span>{{ i18n.t('desktop.scenePacksSource') }}</span>
+              <select :value="scenePackSource" data-scene-pack-source @change="onScenePackSourceChange">
+                <option v-for="source in scenePackSources" :key="source" :value="source">
+                  {{ i18n.t(SCENE_PACK_SOURCE_LABELS[source]) }}
+                </option>
+              </select>
+            </label>
+            <div class="desktop-scene-packs__filter" role="group" :aria-label="i18n.t('desktop.scenePacksTitle')">
+              <button
+                v-for="filter in (['all', 'installed'] as const)"
+                :key="filter"
+                type="button"
+                :aria-pressed="scenePackFilter === filter"
+                :data-scene-pack-filter="filter"
+                @click="scenePackFilter = filter"
+              >
+                {{ i18n.t(filter === 'all' ? 'desktop.scenePacksFilterAll' : 'desktop.scenePacksFilterInstalled') }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-if="sceneMotion.systemReducedMotion.value" class="desktop-wallpaper-motion" role="note">
+          <p>{{ i18n.t('desktop.wallpaperSceneReducedMotion') }}</p>
+          <label class="desktop-wallpaper-motion__toggle">
+            <input
+              type="checkbox"
+              data-scene-motion-always
+              :checked="sceneMotion.motionAlways.value"
+              @change="onSceneMotionAlwaysChange"
+            />
+            <span>{{ i18n.t('desktop.wallpaperSceneMotionAlways') }}</span>
+          </label>
+        </div>
+        <p v-if="scenePacksLoading && !scenePacks.length" class="desktop-scene-packs__status" role="status">
+          <LoaderCircle class="spin" :size="16" aria-hidden="true" />
+          {{ i18n.t('desktop.scenePacksLoading') }}
+        </p>
+        <div v-else-if="scenePacksError" class="desktop-scene-packs__status" role="alert">
+          <span>{{ i18n.t('desktop.scenePacksLoadFailed') }}</span>
+          <button type="button" class="button button--small" @click="loadScenePacks">{{ i18n.t('desktop.scenePacksRetry') }}</button>
+        </div>
+        <p v-else-if="!visibleScenePacks.length" class="desktop-scene-packs__status">
+          {{ i18n.t(scenePackFilter === 'installed' ? 'desktop.scenePacksEmptyInstalled' : 'desktop.scenePacksEmpty') }}
+        </p>
+        <div v-else class="desktop-scene-packs__grid">
+          <article
+            v-for="pack in visibleScenePacks"
+            :key="pack.id"
+            class="desktop-scene-pack-card"
+            :class="{ 'desktop-scene-pack-card--active': activeScenePack === pack.id }"
+            :data-scene-pack-card="pack.id"
+          >
+            <div class="desktop-scene-pack-card__preview">
+              <img :src="api.desktop.scenePackThumbURL(pack.id, pack.version)" alt="" loading="lazy" decoding="async" />
+              <span class="desktop-scene-pack-card__badges">
+                <span class="desktop-scene-pack-card__badge"><Orbit :size="13" aria-hidden="true" />3D</span>
+                <span class="desktop-scene-pack-card__badge">
+                  {{ i18n.t(isOfficialScenePack(pack) ? 'desktop.scenePackOfficial' : 'desktop.scenePackCommunity') }}
+                </span>
+              </span>
+              <Check v-if="activeScenePack === pack.id" class="desktop-wallpaper-picker__check" :size="17" aria-hidden="true" />
+            </div>
+            <div class="desktop-scene-pack-card__body">
+              <strong>{{ localizedText(pack.name, i18n.locale.value) }}</strong>
+              <p>{{ localizedText(pack.description, i18n.locale.value) }}</p>
+              <span class="desktop-scene-pack-card__meta">
+                {{ i18n.t('desktop.scenePackCameras', { count: pack.cameras.length }) }}
+                · {{ formatPackSize(pack.sizeBytes) }} · v{{ pack.version }}<template v-if="pack.author"> · {{ pack.author.name }}</template>
+              </span>
+            </div>
+            <div class="desktop-scene-pack-card__actions">
+              <button
+                v-if="!pack.installed"
+                type="button"
+                class="button button--small button--primary"
+                :disabled="Boolean(scenePackBusy)"
+                :data-scene-pack-action="'install'"
+                @click="installScenePack(pack)"
+              >
+                <LoaderCircle v-if="scenePackBusy?.id === pack.id" class="spin" :size="15" aria-hidden="true" />
+                <Download v-else :size="15" aria-hidden="true" />
+                {{ i18n.t(scenePackBusy?.id === pack.id ? 'desktop.scenePackDownloading' : 'desktop.scenePackDownload') }}
+              </button>
+              <template v-else>
+                <button
+                  type="button"
+                  class="button button--small button--primary"
+                  :disabled="activeScenePack === pack.id || Boolean(scenePackBusy)"
+                  :data-scene-pack-action="'apply'"
+                  @click="selectDesktopWallpaper(scenePackWallpaper(pack.id) as DesktopWallpaperID)"
+                >
+                  {{ i18n.t(activeScenePack === pack.id ? 'desktop.scenePackActive' : 'desktop.scenePackApply') }}
+                </button>
+                <button
+                  type="button"
+                  class="button button--small"
+                  :class="{ 'button--danger': scenePackConfirmDelete === pack.id }"
+                  :disabled="Boolean(scenePackBusy)"
+                  :data-scene-pack-action="'delete'"
+                  @click="deleteScenePack(pack)"
+                >
+                  <LoaderCircle v-if="scenePackBusy?.id === pack.id" class="spin" :size="15" aria-hidden="true" />
+                  <Trash2 v-else :size="15" aria-hidden="true" />
+                  {{ i18n.t(scenePackConfirmDelete === pack.id ? 'desktop.scenePackConfirmDelete' : 'desktop.scenePackDelete') }}
+                </button>
+              </template>
+            </div>
+            <p v-if="scenePackFailure?.id === pack.id" class="desktop-scene-pack-card__error" role="alert">
+              {{ i18n.t(scenePackFailure.action === 'install' ? 'desktop.scenePackInstallFailed' : 'desktop.scenePackDeleteFailed') }}
+            </p>
+          </article>
+        </div>
+      </section>
     </ModalDialog>
 
     <ModalDialog

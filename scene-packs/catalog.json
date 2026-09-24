@@ -1,0 +1,198 @@
+{
+  "schema": 1,
+  "packs": [
+    {
+      "schema": 1,
+      "id": "neon-city",
+      "version": "1.0.0",
+      "runtime": "kpanel-scene-pack@1",
+      "name": {
+        "zh-CN": "霓虹都市",
+        "zh-TW": "霓虹都市",
+        "en-US": "Neon City"
+      },
+      "description": {
+        "zh-CN": "从黄昏到雨夜，高架车流与霓虹招牌点亮整座不夜城",
+        "zh-TW": "從黃昏到雨夜，高架車流與霓虹招牌點亮整座不夜城",
+        "en-US": "From dusk to a rainy night, traffic and neon light up a city that never sleeps"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "MIT",
+      "tags": [
+        "city",
+        "night",
+        "neon",
+        "cyberpunk"
+      ],
+      "entry": "index.html",
+      "poster": "poster.webp",
+      "thumb": "thumb.webp",
+      "theme": {
+        "brand": "#c2357f",
+        "neutral": "#3e3346",
+        "signature": "#2ec4d6"
+      },
+      "cameras": [
+        {
+          "id": "skyline",
+          "name": {
+            "zh-CN": "黄昏天际线",
+            "zh-TW": "黃昏天際線",
+            "en-US": "Dusk skyline"
+          }
+        },
+        {
+          "id": "highway",
+          "name": {
+            "zh-CN": "蓝调高架",
+            "zh-TW": "藍調高架",
+            "en-US": "Blue-hour highway"
+          }
+        },
+        {
+          "id": "street",
+          "name": {
+            "zh-CN": "雨夜街巷",
+            "zh-TW": "雨夜街巷",
+            "en-US": "Rainy night street"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "three",
+          "version": "0.186.0",
+          "license": "MIT"
+        }
+      ],
+      "path": "neon-city/dist",
+      "files": [
+        {
+          "path": "index.html",
+          "size": 418,
+          "sha256": "42bf867d6f4c718f469f8cec1e9cd7c115484f6ed1f73768c32a2d680688b490"
+        },
+        {
+          "path": "manifest.json",
+          "size": 1458,
+          "sha256": "92399ad9f949cc7dccfde68d7286fe87699655be070cff8d5c6cdbcb2949e98d"
+        },
+        {
+          "path": "poster.webp",
+          "size": 114606,
+          "sha256": "e69452db94fdbfeb537bbc79aede4e7c311fc6f599f9240d84320fed6587ae4b"
+        },
+        {
+          "path": "scene.js",
+          "size": 620071,
+          "sha256": "498b7a02c46abbb8a4e1de447cb5d401e9bd59d7269a7845a7cd9ef1b316d0bb"
+        },
+        {
+          "path": "thumb.webp",
+          "size": 14084,
+          "sha256": "e2ba590bb2b7bf5c8b09a02571f56c53dfb2bbe786df6b598277d2f2db1150ed"
+        }
+      ],
+      "sizeBytes": 750637
+    },
+    {
+      "schema": 1,
+      "id": "orbital-station",
+      "version": "1.0.0",
+      "runtime": "kpanel-scene-pack@1",
+      "name": {
+        "zh-CN": "星港轨道",
+        "zh-TW": "星港軌道",
+        "en-US": "Orbital Station"
+      },
+      "description": {
+        "zh-CN": "从星云深处缓缓靠近行星，环形空间站在轨道上徐徐旋转",
+        "zh-TW": "從星雲深處緩緩靠近行星，環形太空站在軌道上徐徐旋轉",
+        "en-US": "Drift in toward a living planet and its slowly turning ringed station"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "MIT",
+      "tags": [
+        "space",
+        "planet",
+        "sci-fi"
+      ],
+      "entry": "index.html",
+      "poster": "poster.webp",
+      "thumb": "thumb.webp",
+      "theme": {
+        "brand": "#2f6fd0",
+        "neutral": "#33415a",
+        "signature": "#35b8d6"
+      },
+      "cameras": [
+        {
+          "id": "panorama",
+          "name": {
+            "zh-CN": "行星全景",
+            "zh-TW": "行星全景",
+            "en-US": "Planet panorama"
+          }
+        },
+        {
+          "id": "station",
+          "name": {
+            "zh-CN": "空间站近景",
+            "zh-TW": "太空站近景",
+            "en-US": "Station close-up"
+          }
+        },
+        {
+          "id": "sunrise",
+          "name": {
+            "zh-CN": "行星日出",
+            "zh-TW": "行星日出",
+            "en-US": "Sunrise over the limb"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "three",
+          "version": "0.186.0",
+          "license": "MIT"
+        }
+      ],
+      "path": "orbital-station/dist",
+      "files": [
+        {
+          "path": "index.html",
+          "size": 424,
+          "sha256": "4f1a2b5eaf772db381cd54e8904e6b1ff5c14686ba503dc9bf44499046ec9639"
+        },
+        {
+          "path": "manifest.json",
+          "size": 1467,
+          "sha256": "e94647f01e4d319c8887771b45b88bbd7da4eb15762512e45aabcc5c6b096600"
+        },
+        {
+          "path": "poster.webp",
+          "size": 49940,
+          "sha256": "77d4a68c9c7f6080c9153edeffb8a1242afa88627be317cd761c41d524662946"
+        },
+        {
+          "path": "scene.js",
+          "size": 589896,
+          "sha256": "4cc0ab7b2613ed6ac19d2c70bbb44004b6d2ccc15cfbf848946807db042e4f01"
+        },
+        {
+          "path": "thumb.webp",
+          "size": 6640,
+          "sha256": "e6488aea62d0696d8e86e919327e057b1d42fdc7978cd47ab9c3e26b129bd300"
+        }
+      ],
+      "sizeBytes": 648367
+    }
+  ]
+}
