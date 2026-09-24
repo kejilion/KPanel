@@ -3703,21 +3703,23 @@ function onViewportResize(): void {
       role="status"
       aria-live="polite"
     >
-      <span>
-        <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="19" aria-hidden="true" />
-        <Plus v-else :size="19" aria-hidden="true" />
-      </span>
-      <strong>{{ i18n.t(fileDropMode === 'upload'
-        ? 'desktop.externalDropTitle'
-        : fileDropMode === 'panel-copy'
-          ? 'desktop.panelCopyDropTitle'
-          : 'desktop.fileDropTitle') }}</strong>
-      <small>{{ i18n.t(fileDropMode === 'upload'
-        ? 'desktop.externalDropHint'
-        : fileDropMode === 'panel-copy'
-          ? 'desktop.panelCopyDropHint'
-          : 'desktop.fileDropHint') }}</small>
-      <code v-if="fileDropMode !== 'shortcut'">{{ desktopUploadDirectory }}</code>
+      <div class="desktop__file-drop-card">
+        <span class="desktop__file-drop-glyph">
+          <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="19" aria-hidden="true" />
+          <Plus v-else :size="19" aria-hidden="true" />
+        </span>
+        <strong>{{ i18n.t(fileDropMode === 'upload'
+          ? 'desktop.externalDropTitle'
+          : fileDropMode === 'panel-copy'
+            ? 'desktop.panelCopyDropTitle'
+            : 'desktop.fileDropTitle') }}</strong>
+        <small>{{ i18n.t(fileDropMode === 'upload'
+          ? 'desktop.externalDropHint'
+          : fileDropMode === 'panel-copy'
+            ? 'desktop.panelCopyDropHint'
+            : 'desktop.fileDropHint') }}</small>
+        <code v-if="fileDropMode !== 'shortcut'">{{ desktopUploadDirectory }}</code>
+      </div>
     </div>
 
     <span

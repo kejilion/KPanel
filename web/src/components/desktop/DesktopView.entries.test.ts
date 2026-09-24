@@ -650,6 +650,9 @@ describe('DesktopView dynamic entries', () => {
   it('creates a file shortcut at the desktop drop area without moving the source', async () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await flushPromises()
+    await wrapper.get('button[title="文件"]').trigger('dblclick')
+    const sourceWindow = useDesktopMode().windows.value.find((item) => item.path === '/files')
+    expect(sourceWindow).toBeTruthy()
     const values = new Map<string, string>()
     const types: string[] = []
     const dataTransfer = {
@@ -670,6 +673,9 @@ describe('DesktopView dynamic entries', () => {
     wrapper.element.dispatchEvent(internalFileDragEvent('dragover', dataTransfer))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.desktop__file-drop').exists()).toBe(true)
+    expect(wrapper.get('.desktop__file-drop').attributes('role')).toBe('status')
+    expect(wrapper.get('.desktop__file-drop-card').text()).toContain('松开以创建快捷方式，不会移动原文件')
+    expect(useDesktopMode().windows.value).toContain(sourceWindow)
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer))
     await flushPromises()
 
