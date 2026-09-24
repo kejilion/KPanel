@@ -153,15 +153,19 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?animation-duration:\s*\.01ms !important;/)
   })
 
-  it('uses the same readable drop card in both themes without darkening the whole desktop', () => {
+  it('centers unboxed drop feedback with theme text and enough wallpaper separation', () => {
     const overlay = cssRule(styles, '.desktop__file-drop')
-    expect(overlay).toContain('var(--surface) 24%, transparent')
+    expect(overlay).toContain('var(--surface) 70%, transparent')
     expect(overlay).toContain('color: var(--text);')
     expect(overlay).not.toContain('var(--sidebar)')
-    const card = cssRule(styles, '.desktop__file-drop-card')
-    expect(card).toContain('background: var(--surface-raised);')
-    expect(card).toContain('minmax(0, 1fr)')
-    expect(card).toContain('overflow-wrap: anywhere;')
+    const content = cssRule(styles, '.desktop__file-drop-content')
+    expect(content).toContain('justify-items: center;')
+    expect(content).toContain('text-align: center;')
+    expect(content).toContain('overflow-wrap: anywhere;')
+    for (const selector of ['.desktop__file-drop-content', '.desktop__file-drop-glyph', '.desktop__file-drop code']) {
+      expect(cssRule(styles, selector)).not.toMatch(/(?:background|border|box-shadow):/)
+    }
+    expect(cssRule(styles, '.desktop__file-drop small')).toContain('color: inherit;')
     expect(cssRule(styles, '.desktop__file-drop code')).toContain('white-space: normal;')
     expect(styles).not.toMatch(/:root[^{}]+\.desktop__file-drop[^{}]*\{/)
   })

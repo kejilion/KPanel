@@ -3703,10 +3703,10 @@ function onViewportResize(): void {
       role="status"
       aria-live="polite"
     >
-      <div class="desktop__file-drop-card">
+      <div class="desktop__file-drop-content">
         <span class="desktop__file-drop-glyph">
-          <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="19" aria-hidden="true" />
-          <Plus v-else :size="19" aria-hidden="true" />
+          <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="24" aria-hidden="true" />
+          <Plus v-else :size="24" aria-hidden="true" />
         </span>
         <strong>{{ i18n.t(fileDropMode === 'upload'
           ? 'desktop.externalDropTitle'

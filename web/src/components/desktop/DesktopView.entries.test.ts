@@ -674,7 +674,7 @@ describe('DesktopView dynamic entries', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.desktop__file-drop').exists()).toBe(true)
     expect(wrapper.get('.desktop__file-drop').attributes('role')).toBe('status')
-    expect(wrapper.get('.desktop__file-drop-card').text()).toContain('松开以创建快捷方式，不会移动原文件')
+    expect(wrapper.get('.desktop__file-drop-content').text()).toContain('松开以创建快捷方式，不会移动原文件')
     expect(useDesktopMode().windows.value).toContain(sourceWindow)
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer))
     await flushPromises()
