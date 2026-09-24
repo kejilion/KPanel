@@ -1,59 +1,59 @@
 {
   "schema": 1,
   "id": "celestial-palace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runtime": "kpanel-scene-pack@1",
   "name": {
-    "zh-CN": "云海天宫",
-    "zh-TW": "雲海天宮",
-    "en-US": "Palace Above the Clouds"
+    "zh-CN": "倒悬月宫",
+    "zh-TW": "倒懸月宮",
+    "en-US": "Inverted Moon Palace"
   },
   "description": {
-    "zh-CN": "月轮映照悬空宫阙，天灯越过云海，星河落成飞瀑",
-    "zh-TW": "月輪映照懸空宮闕，天燈越過雲海，星河落成飛瀑",
-    "en-US": "Moonlit palaces, drifting lanterns and silver waterfalls above a violet sea of clouds."
+    "zh-CN": "残缺月环环抱悬空宫阙，长桥浮于镜海，银瀑逆流而上",
+    "zh-TW": "殘缺月環環抱懸空宮闕，長橋浮於鏡海，銀瀑逆流而上",
+    "en-US": "A broken moon gate, floating palace and rising waterfalls above a mirrored sea."
   },
   "author": {
     "name": "Codex"
   },
   "license": "MIT",
   "tags": [
-    "fantasy",
+    "surreal",
     "palace",
-    "clouds",
+    "ocean",
     "moonlight"
   ],
   "entry": "index.html",
   "poster": "poster.webp",
   "thumb": "thumb.webp",
   "theme": {
-    "brand": "#8868bc",
-    "neutral": "#343249",
-    "signature": "#dfb876"
+    "brand": "#4b9eaf",
+    "neutral": "#263c49",
+    "signature": "#dcb77b"
   },
   "cameras": [
     {
       "id": "celestial-gate",
       "name": {
-        "zh-CN": "云阙望月",
-        "zh-TW": "雲闕望月",
-        "en-US": "Moon Gate"
+        "zh-CN": "残月之门",
+        "zh-TW": "殘月之門",
+        "en-US": "Broken Moon Gate"
       }
     },
     {
       "id": "lantern-bridge",
       "name": {
-        "zh-CN": "天灯长桥",
-        "zh-TW": "天燈長橋",
-        "en-US": "Lantern Bridge"
+        "zh-CN": "悬空长桥",
+        "zh-TW": "懸空長橋",
+        "en-US": "Floating Stairway"
       }
     },
     {
       "id": "silver-falls",
       "name": {
-        "zh-CN": "星河飞瀑",
-        "zh-TW": "星河飛瀑",
-        "en-US": "Silver Falls"
+        "zh-CN": "逆瀑倒影",
+        "zh-TW": "逆瀑倒影",
+        "en-US": "Rising Falls"
       }
     }
   ],
@@ -68,8 +68,8 @@
   "files": [
     {
       "path": "index.html",
-      "size": 395,
-      "sha256": "55d8235477220930eb53cdb89c8686113d26baa842d27564e6c93f0a6c06dc7f"
+      "size": 392,
+      "sha256": "5a7de4fefe6329f544bcdce795d15fd0100aca36295c829d089ec8e34e94e094"
     },
     {
       "path": "license.txt",
@@ -78,24 +78,24 @@
     },
     {
       "path": "manifest.json",
-      "size": 1203,
-      "sha256": "b1876d044b199a149f1e5ebef34287a7167ae8aea1da49c40357355d87570a20"
+      "size": 1214,
+      "sha256": "781e6bf6fbb20821cc01e0c3055f5aa90435c6b2a0d1b854319560a32e327731"
     },
     {
       "path": "poster.webp",
-      "size": 94166,
-      "sha256": "2c3a7b52bca4d26b4f84c981ec3ad8046a837a1ee074669d5f44dc2f93442466"
+      "size": 78108,
+      "sha256": "6dd125154a881ffa8c61180d0a1c7c1318ea48b209cf739679f1ccc3ab3e5986"
     },
     {
       "path": "scene.js",
-      "size": 601745,
-      "sha256": "4c9934e61261f9aa19ecf0250c792cf25d41e27c244a11cb936a16e93d0667a6"
+      "size": 628308,
+      "sha256": "4b4196bf6c6b216af1706493db1ae99b90acf6588135f225149ae510c8d10451"
     },
     {
       "path": "thumb.webp",
-      "size": 8032,
-      "sha256": "c07fc3fdaa7d56e3c69f6b45404d29c61b3c587b10c1e3f8023b92c43423b73d"
+      "size": 8128,
+      "sha256": "4c66d1e525f1a7d1c73ed03b2a8a3e8ca9d396ccd18db75442c3da35c7e886ea"
     }
   ],
-  "sizeBytes": 706678
+  "sizeBytes": 717287
 }

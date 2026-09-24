@@ -1,8 +1,12 @@
-# 云海天宫 / Palace Above the Clouds
+# 倒悬月宫 / Inverted Moon Palace
 
 An original procedural Three.js scene. All geometry, materials and animation are
 generated from the readable TypeScript source; no downloaded models, textures,
-fonts or network requests are used at runtime. Scene code and generated artwork
+fonts or network requests are used at runtime. The three preproduction images in
+`concepts/` were generated with the built-in imagegen tool (its model version is
+not exposed). Exact prompts are saved alongside them. They guide composition;
+they are not runtime backgrounds or screenshots and do not ship in `dist/`.
+Scene code and generated artwork
 are MIT licensed. The bundled Three.js dependency is MIT licensed and declared
 in `manifest.json`; the complete license notice ships as `dist/license.txt`.
 
@@ -35,9 +39,10 @@ files, including license notices. The `--check` command rebuilds in a temporary
 directory and checks every published byte and catalog hash.
 
 Serve `dist/` over HTTP. `index.html` plays the entrance and cycles cameras every
-29 seconds. `?entrance=off&shot=0`, `shot=1` and `shot=2` select an immediate shot
-for artwork capture. Normal camera changes blend over 5.5 seconds.
+28 seconds after settling. `?entrance=off&shot=0`, `shot=1` and `shot=2` select an
+immediate shot for artwork capture. Camera transitions take 7–13 seconds and
+travel in front of the island and moon gate.
 
-The three views share one violet/slate/gold theme. Rendering pauses on parent
+The three views share one teal/slate/gold theme. Rendering pauses on parent
 pause commands or document hiding and resumes without a time jump. Only parent
 window messages are accepted; camera indices are bounded to the three shots.

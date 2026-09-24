@@ -22,8 +22,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { architecture, astrolabe } from './architecture'
-import { atmosphere, waterfalls, lanterns, petals } from './atmosphere'
+import { createWorld } from './surreal-world'
+import { createAtmosphere } from './surreal-atmosphere'
 import { Director, cameraIds } from './director'
 import { smooth } from './math'
 
@@ -37,23 +37,26 @@ async function start(): Promise<void> {
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
   renderer.setSize(innerWidth, innerHeight)
-  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .94
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .92
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFShadowMap
   renderer.setClearColor('#000000')
   document.body.appendChild(renderer.domElement)
   const scene = new T.Scene()
-  scene.fog = new T.FogExp2('#45416b', .0048)
-  const camera = new T.PerspectiveCamera(42, innerWidth / Math.max(1, innerHeight), .3, 1800)
+  scene.fog = new T.FogExp2('#102d3b', .0023)
+  const camera = new T.PerspectiveCamera(42, innerWidth / Math.max(1, innerHeight), .3, 5000)
   const director = new Director(camera, entrance, Number(options.get('shot') || 0), index => send('camera', { index }))
-  scene.add(new T.HemisphereLight('#97aed5', '#352442', .85))
-  const moonlight = new T.DirectionalLight('#bad9ff', 2.2); moonlight.position.set(-45, 70, -30); scene.add(moonlight)
-  const sunset = new T.DirectionalLight('#ffd1a0', 1.25); sunset.position.set(35, 25, 60); scene.add(sunset)
-  const fill = new T.DirectionalLight('#a88bdf', .7); fill.position.set(-35, 8, 40); scene.add(fill)
-  architecture(scene)
-  const halo = astrolabe(scene)
-  const animated = [atmosphere(scene), waterfalls(scene), lanterns(scene), petals(scene)]
+  scene.add(new T.HemisphereLight('#a8d7df', '#12212a', .8))
+  const moonlight = new T.DirectionalLight('#d0e5ec', 3.1); moonlight.position.set(45, 95, -45)
+  moonlight.castShadow = true; moonlight.shadow.mapSize.set(2048, 2048)
+  Object.assign(moonlight.shadow.camera, { left: -65, right: 65, top: 90, bottom: -55, near: .5, far: 230 })
+  moonlight.shadow.bias = -.0003; moonlight.shadow.normalBias = .05; scene.add(moonlight)
+  const fill = new T.DirectionalLight('#e0e5d9', 2.5); fill.position.set(-35, 80, 115); scene.add(fill)
+  const warm = new T.PointLight('#ffd19a', 90, 40, 2); warm.position.set(0, 18, 9); scene.add(warm)
+  const world = createWorld(scene)
+  const atmosphere = createAtmosphere(scene, renderer)
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
-  composer.addPass(new UnrealBloomPass(new T.Vector2(innerWidth, innerHeight), .38, .65, .8))
+  composer.addPass(new UnrealBloomPass(new T.Vector2(innerWidth, innerHeight), .28, .5, .95))
   composer.addPass(new OutputPass())
   const finish = new ShaderPass({
     uniforms: { tDiffuse: { value: null }, fade: { value: 0 } },
@@ -65,8 +68,7 @@ void main(){vec3 c=texture2D(tDiffuse,uv0).rgb;vec2 q=uv0-.5;float vignette=1.-.
   let elapsed = 0, lastTime = 0, request = 0, ready = false, disposed = false, hostPaused = false
   const isPaused = () => hostPaused || document.hidden
   function draw(t: number): void {
-    director.update(t); halo.rotation.z = Math.sin(t * .027) * .07
-    animated.forEach(item => item.update(t))
+    director.update(t); world.update(t); atmosphere.update(t, camera)
     finish.uniforms.fade!.value = entrance ? smooth((t - .15) / 3.8) : 1
     composer.render()
   }
@@ -103,7 +105,7 @@ void main(){vec3 c=texture2D(tDiffuse,uv0).rgb;vec2 q=uv0-.5;float vignette=1.-.
     event.preventDefault(); disposed = true; sync(); send('error', { reason: 'webgl-context-lost' })
   })
   window.addEventListener('pagehide', () => {
-    disposed = true; sync(); composer.dispose(); renderer.dispose()
+    disposed = true; sync(); atmosphere.dispose(); composer.dispose(); renderer.dispose()
   }, { once: true })
   director.update(0)
   await renderer.compileAsync(scene, camera)

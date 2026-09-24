@@ -1,16 +1,12 @@
 import * as T from 'three'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { box, line, random } from './math'
+import { box, line } from './math'
 
-const marble = new T.MeshStandardMaterial({ color: '#a6acc0', roughness: 0.72, metalness: 0.16 })
-const edge = new T.MeshStandardMaterial({ color: '#d5c9cb', roughness: 0.44, metalness: 0.32 })
-const timber = new T.MeshStandardMaterial({ color: '#362a47', roughness: 0.55 })
-const roofMat = new T.MeshStandardMaterial({ color: '#24414e', roughness: 0.35, metalness: 0.55, side: T.DoubleSide })
+const marble = new T.MeshStandardMaterial({ color: '#b9c6bc', roughness: 0.72, metalness: 0.08 })
+const edge = new T.MeshStandardMaterial({ color: '#c8c7b2', roughness: 0.52, metalness: 0.12 })
+const timber = new T.MeshStandardMaterial({ color: '#20363a', roughness: 0.55 })
+const roofMat = new T.MeshStandardMaterial({ color: '#123840', roughness: 0.39, metalness: 0.38, side: T.DoubleSide })
 const gold = new T.MeshStandardMaterial({ color: '#c7a468', roughness: 0.32, metalness: 0.68, emissive: '#cc8536', emissiveIntensity: 0.15 })
 const light = new T.MeshBasicMaterial({ color: new T.Color('#ffad55').multiplyScalar(1.35) })
-const rootMat = new T.MeshStandardMaterial({ color: '#262338', roughness: 1, flatShading: true })
-const foliage = [ '#aa6b9c', '#d491ae', '#cc87b4', '#e4acbf' ].map(color => new T.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true }))
-const rand = random(2783)
 
 function pillar(parent: T.Object3D, x: number, y: number, z: number, h: number, r = 0.22): void {
   const column = new T.Mesh(new T.CylinderGeometry(r, r * 1.2, h, 8), timber)
@@ -85,7 +81,7 @@ function level(parent: T.Object3D, y: number, half: number, h: number): void {
   roof(parent, y + h, half * 1.3, half * 0.47)
 }
 
-function palace(parent: T.Object3D, x: number, y: number, z: number, scale: number): void {
+export function palace(parent: T.Object3D, x: number, y: number, z: number, scale: number): T.Group {
   const g = new T.Group(); g.position.set(x, y, z); g.scale.setScalar(scale); parent.add(g)
   for (let i = 0; i < 3; i++) box(g, [17 - i * 1.4, 0.45, 14 - i * 0.8], [0, i * 0.45, 0], marble)
   level(g, 1.5, 6.2, 4.9)
@@ -99,116 +95,5 @@ function palace(parent: T.Object3D, x: number, y: number, z: number, scale: numb
   }
   const pearl = new T.Mesh(new T.SphereGeometry(0.24, 12, 8), light); pearl.position.y = 24.8; g.add(pearl)
   for (let i = 0; i < 8; i++) box(g, [4.6, 0.22, 0.65], [0, 1.5 - i * 0.19, 7 + i * 0.52], edge)
-}
-
-function island(parent: T.Object3D, x: number, y: number, z: number, radius: number, depth: number): void {
-  const geometry = new T.CylinderGeometry(radius, radius * 0.09, depth, 17, 7)
-  const pos = geometry.attributes.position!
-  for (let i = 0; i < pos.count; i++) {
-    const yy = pos.getY(i), rough = 0.84 + rand() * 0.3
-    pos.setXYZ(i, pos.getX(i) * rough, yy + (Math.abs(yy) < depth * 0.49 ? (rand() - 0.5) * 3 : 0), pos.getZ(i) * rough)
-  }
-  geometry.computeVertexNormals()
-  const rock = new T.Mesh(geometry, rootMat); rock.position.set(x, y - depth / 2, z); parent.add(rock)
-  const rim = new T.Mesh(new T.CylinderGeometry(radius, radius * 0.95, 0.7, 48), marble); rim.position.set(x, y, z); parent.add(rim)
-  const floor = new T.Mesh(new T.CylinderGeometry(radius * 0.95, radius * 0.98, 0.3, 48), new T.MeshStandardMaterial({ color: '#78878e', roughness: 0.88 }))
-  floor.position.set(x, y + 0.48, z); parent.add(floor)
-  // Stepped shards extend below the platform, breaking up the island silhouette.
-  for (let i = 0; i < 9; i++) {
-    const shard = new T.Mesh(new T.ConeGeometry(radius * (0.12 + rand() * 0.17), depth * (0.4 + rand() * 0.6), 5), rootMat)
-    const a = i / 9 * Math.PI * 2
-    shard.rotation.z = Math.PI + (rand() - 0.5) * 0.3
-    shard.position.set(x + Math.cos(a) * radius * 0.7, y - depth * 0.5, z + Math.sin(a) * radius * 0.7); parent.add(shard)
-  }
-}
-
-function cherry(parent: T.Object3D, x: number, y: number, z: number, scale: number): void {
-  const g = new T.Group(); g.position.set(x, y, z); g.scale.setScalar(scale); parent.add(g)
-  line([new T.Vector3(), new T.Vector3(-0.2, 2, 0), new T.Vector3(0.7, 4.7, 0.2), new T.Vector3(0.4, 6.9, 0)], 0.24, timber, g)
-  for (let i = 0; i < 6; i++) {
-    const angle = i * 2.4, end = new T.Vector3(Math.cos(angle) * (2.2 + rand()), 4 + rand() * 3.3, Math.sin(angle) * 2.8)
-    line([new T.Vector3(0, 2.8, 0), end.clone().multiplyScalar(0.75), end], 0.12, timber, g)
-    for (let j = 0; j < 5; j++) {
-      const leaves = new T.Mesh(new T.IcosahedronGeometry(1.2 + rand() * 0.6, 1), foliage[(i + j) % foliage.length])
-      leaves.position.copy(end).add(new T.Vector3((rand() - 0.5) * 3, (rand() - 0.5) * 1.4, (rand() - 0.5) * 3))
-      leaves.scale.set(1, 0.62, 1); g.add(leaves)
-    }
-  }
-}
-
-function bridge(parent: T.Object3D, from: T.Vector3, to: T.Vector3, width: number): void {
-  const n = 42, side = new T.Vector3().subVectors(to, from).normalize().cross(new T.Vector3(0, 1, 0))
-  const paths: T.Vector3[][] = [[], []]
-  for (let i = 0; i <= n; i++) {
-    const p = from.clone().lerp(to, i / n); p.y += Math.sin(i / n * Math.PI) * 2.7
-    const step = box(parent, [width, 0.28, from.distanceTo(to) / n + 0.03], [p.x, p.y, p.z], marble)
-    step.rotation.y = Math.atan2(to.x - from.x, to.z - from.z)
-    for (let j = 0; j < 2; j++) {
-      const q = p.clone().addScaledVector(side, (j ? 1 : -1) * (width / 2 - 0.1))
-      paths[j]!.push(q.clone().add(new T.Vector3(0, 1.3, 0)))
-      if (i % 3 === 0) {
-        box(parent, [0.18, 1.4, 0.18], [q.x, q.y + 0.6, q.z], edge)
-        const jewel = new T.Mesh(new T.SphereGeometry(0.15, 8, 6), light); jewel.position.copy(q).y += 1.42; parent.add(jewel)
-      }
-    }
-  }
-  for (const points of paths) line(points, 0.07, gold, parent)
-}
-
-export function architecture(scene: T.Scene): void {
-  const root = new T.Group(); scene.add(root)
-  island(root, 0, 1, 0, 13.8, 26); palace(root, 0, 1.65, -1.4, 1)
-  island(root, -29, -1, -18, 8.2, 23); palace(root, -29, -0.3, -18, 0.59)
-  island(root, 29, 5, -25, 9.2, 30); palace(root, 29, 5.7, -25, 0.66)
-  island(root, 1, -1.8, 46, 6.5, 17)
-  bridge(root, new T.Vector3(0, 1.65, 12), new T.Vector3(1, -1.1, 45), 3.5)
-  bridge(root, new T.Vector3(-11, 1.5, -5), new T.Vector3(-23, -0.5, -16), 2.2)
-  bridge(root, new T.Vector3(10, 1.7, -7), new T.Vector3(23, 5.5, -20), 2.2)
-  // Processional gate on the near island.
-  const gate = new T.Group(); gate.position.set(1, -1.2, 44); root.add(gate)
-  pillar(gate, -2.5, 0, 0, 5, 0.28); pillar(gate, 2.5, 0, 0, 5, 0.28)
-  box(gate, [6.5, 0.48, 0.5], [0, 4.8, 0], timber); roof(gate, 5.1, 3.8, 1.35)
-  cherry(root, -10, 1.7, 2, 0.9); cherry(root, 9.3, 1.7, 4, 0.75)
-  cherry(root, -32, -0.4, -15, 0.68); cherry(root, 32, 5.6, -21, 0.68)
-  cherry(root, -3, -1, 47, 0.73)
-  // Islands recede into the mist without competing with the main palace.
-  for (const [x, y, z, r, s] of [[-63, -5, -56, 8, 0.38], [55, 1, -76, 10, 0.45], [-7, 0, -91, 12, 0.53]]) {
-    island(root, x!, y!, z!, r!, 26); palace(root, x!, y! + 0.6, z!, s!)
-  }
-  // Architecture never moves independently. Bake its transforms and combine by
-  // material, so thousands of decorative parts require only a few draw calls.
-  root.updateMatrixWorld(true)
-  const batches = new Map<T.Material, T.BufferGeometry[]>()
-  const original: T.Mesh[] = []
-  root.traverse(object => {
-    if (!(object instanceof T.Mesh) || Array.isArray(object.material)) return
-    const geometry = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry.clone()
-    geometry.applyMatrix4(object.matrixWorld)
-    const batch = batches.get(object.material) || []
-    batch.push(geometry); batches.set(object.material, batch); original.push(object)
-  })
-  for (const [material, geometries] of batches) {
-    const combined = mergeGeometries(geometries)
-    if (!combined) throw new Error('Unable to batch palace geometry')
-    root.add(new T.Mesh(combined, material))
-    geometries.forEach(geometry => geometry.dispose())
-  }
-  original.forEach(mesh => { mesh.removeFromParent(); mesh.geometry.dispose() })
-}
-
-export function astrolabe(scene: T.Scene): T.Group {
-  const g = new T.Group(); g.position.set(0, 20, -17); scene.add(g)
-  const glow = new T.MeshBasicMaterial({ color: new T.Color('#dfb870').multiplyScalar(1.5), transparent: true, opacity: 0.85 })
-  for (const r of [16.5, 17.1, 19]) g.add(new T.Mesh(new T.TorusGeometry(r, r === 17.1 ? 0.025 : 0.055, 6, 180), glow))
-  const segments: T.Vector3[] = []
-  for (let i = 0; i < 96; i++) {
-    const a = i / 96 * Math.PI * 2, r = i % 8 === 0 ? 18.25 : 18.7
-    segments.push(new T.Vector3(Math.cos(a) * r, Math.sin(a) * r, 0), new T.Vector3(Math.cos(a) * 19, Math.sin(a) * 19, 0))
-  }
-  g.add(new T.LineSegments(new T.BufferGeometry().setFromPoints(segments), new T.LineBasicMaterial({ color: '#edc992', transparent: true, opacity: 0.62 })))
-  for (let i = 0; i < 8; i++) {
-    const gem = new T.Mesh(new T.OctahedronGeometry(0.32), glow); const a = i * Math.PI / 4
-    gem.position.set(Math.cos(a) * 17.1, Math.sin(a) * 17.1, 0); g.add(gem)
-  }
   return g
 }
