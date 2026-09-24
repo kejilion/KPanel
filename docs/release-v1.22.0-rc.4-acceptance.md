@@ -136,7 +136,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：8
+- 已记录发布流程异常或无效证据拦截次数：9
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -215,6 +215,15 @@
     "recoveryEvidence": "public-image-pull.log 最终 exit 0、公共 index digest 一致；public-image-e2e.log 为 image_e2e=pass。",
     "permanentAction": "保留原始传输和摘要证据，不改 registry 来源或使用本地构建冒充公开产物；项目维护者在下轮发布前复核既有网络传输，退出条件为公开下载及 E2E 完成。",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "acceptance/verify-change/trailing-blank-line",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "验收文档候选 e5b81932 的 CI 被末尾多余空行拦截，主线未快进到该文档提交。",
+    "recoveryEvidence": "CI 35993136014 / job 107611715008；acceptance-ci-r1-failure.log；修正后重新验证文档候选。",
+    "permanentAction": "本次删除末尾空行，新增文件暂存后执行 git diff --cached --check，再执行 metrics 校验；不再用忽略 untracked 文件的空 diff 当作新增文档格式通过。",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
@@ -225,4 +234,3 @@
 - UI 未实测项目如上；本版没有对应已确认产品失败，自动回归及实际可执行旅程通过，因此作为 RC 公开观察。不得据此宣称完整真实触摸、跨浏览器或缩放认证。
 - 来源分支本地归档待所有权释放；已发布身份由精确 tip、main 和不可变 RC tag 证明。
 - 本地资源：本任务 preview-r2 的 web/mock API 进程已停止。删除本任务 `web/node_modules` / `web/dist` 的 PowerShell 命令被自动审批以 `blocked by policy` 拒绝，未执行文件删除，净释放字节按 0 记录；目录继续保留。L3 源码、Runner/缓存、原始日志/manifest/bundle 和全部他人 worktree 保留。当前 C 盘仍有约 88 GB 可用空间，未执行共享 Docker prune。
-
