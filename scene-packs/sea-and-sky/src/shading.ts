@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import type { Daylight } from './daylight'
-import { groundHeight, rockBase } from './world'
+import { groundHeight, ROCKS, rockBase } from './world'
 
 /**
  * Lighting shared by the rocks and the sea: the key light (sun or moon) with
@@ -44,6 +44,48 @@ vec3 atmosphere(vec3 color, vec3 world) {
   float dist = length(world - cameraPosition);
   float haze = (1.0 - exp(-dist * 0.00021)) * mix(1.0, 0.65, smoothstep(0.0, 300.0, world.y));
   return mix(color, uSkyHorizon * 0.9, clamp(haze, 0.0, 1.0) * 0.8);
+}
+`
+
+/**
+ * The sea stacks as the key light sees them, for the water: each stack as a column that narrows
+ * towards its rounded top, the same profile as the rock meshes, tested exactly along the ray to
+ * the sun or moon. The height map is too coarse for this (it rounds a stack into a low cone), and
+ * then a moon hidden behind a stack would still lay its glittering path at the stack's foot.
+ */
+export const ROCK_SHADOW_GLSL = /* glsl */ `
+const int ROCK_COUNT = ${ROCKS.length};
+const vec4 ROCK_LIST[${ROCKS.length}] = vec4[${ROCKS.length}](
+  ${ROCKS.map((rock) => `vec4(${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}, ${rock.radius.toFixed(1)}, ${rock.height.toFixed(1)})`).join(',\n  ')}
+);
+/** Radius of a stack (x, z, radius, height) at world height y; its mesh sits 12% of its height low. */
+float rockRadiusAt(vec4 rock, float y) {
+  float v = pow(clamp((y + 0.12 * rock.w) / rock.w, 0.0, 1.0), 1.43);
+  return rock.z * 0.92 * sqrt(max(1.0 - v * v, 0.0)) * (1.0 - 0.25 * v);
+}
+float rockShadow(vec3 p) {
+  vec2 toLight = uLightDir.xz;
+  float along = dot(toLight, toLight);
+  if (along < 1e-6) return 1.0;
+  float lit = 1.0;
+  for (int i = 0; i < ROCK_COUNT; i++) {
+    vec4 rock = ROCK_LIST[i];
+    vec2 q = p.xz - rock.xy;
+    // Where the ray passes closest to the stack's axis, and where it enters its footprint.
+    float closest = max(-dot(q, toLight) / along, 0.0);
+    float miss = length(q + toLight * closest);
+    if (miss > rock.z * 1.1) continue;
+    float entry = max(closest - sqrt(max(rock.z * rock.z * 1.21 - miss * miss, 0.0) / along), 0.0);
+    for (int k = 0; k < 3; k++) {
+      float t = mix(entry, closest, float(k) * 0.5);
+      float y = p.y + uLightDir.y * t;
+      float away = length(q + toLight * t);
+      float r = rockRadiusAt(rock, y);
+      float soft = 1.0 + 0.01 * t;
+      lit = min(lit, smoothstep(r - soft, r + soft, away));
+    }
+  }
+  return lit;
 }
 `
 

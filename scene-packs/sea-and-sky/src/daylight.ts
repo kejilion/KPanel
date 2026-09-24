@@ -182,7 +182,8 @@ export function createDaylight(): Daylight & { update(hour: number, age: number,
         state.light.multiplyScalar(0.3 + 0.7 * up * Math.sqrt(state.moonIllumination))
       }
       const daytime = THREE.MathUtils.smoothstep(elevation, 2, 25)
-      state.exposure = THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.0, 1.25, state.night), 0.68, daytime)
+      // Kept a little low by day, so the scene sits calmly behind the desktop in either theme.
+      state.exposure = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.9, 1.25, state.night), 0.54, daytime)
     },
   }
   return state

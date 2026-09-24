@@ -1,16 +1,24 @@
 import * as THREE from 'three'
 import { NOISE_GLSL } from './noise'
-import { LIGHTING_GLSL, type LightingUniforms } from './shading'
+import { LIGHTING_GLSL, type LightingUniforms, ROCK_SHADOW_GLSL } from './shading'
 import { SKY_GLSL, type SkyUniforms } from './sky'
+import { SKYLINE_GLSL } from './skyline'
 
 /**
- * The sea. A long swell rolls in towards the shore (Gerstner waves, calmer in
- * the shallows), fine ripples scroll over it, and together they break the sun
- * into a field of glints; at night the moon lays a silver path. It mirrors the
- * sky, turns clear turquoise over sand and deep blue offshore, foams on the
- * beaches and around the rocks, and falls into the cliffs' shadow at sunset.
+ * The sea. A long swell rolls through (Gerstner waves, calmer in the shallows),
+ * fine ripples scroll over it, and together they break the sun into a field of
+ * glints; at night the moon lays a silver path. It mirrors the sky, turns clear
+ * turquoise over the shoals and deep blue offshore, foams around the rocks, and
+ * falls into the stacks' shadow when the light is low.
+ *
+ * The surface is a disc of rings centred on the camera, a few tens of
+ * centimetres apart close by and widening towards the horizon, so the swell is
+ * finely sampled wherever it can be seen to move and never wobbles.
  */
-const GRID = 38
+const RINGS = 150
+const SEGMENTS = 512
+const INNER_RADIUS = 0.6
+const OUTER_RADIUS = 16000
 
 // Wave direction (towards the shore is +x), steepness and wavelength; the long ones also move the surface.
 const WAVES_GLSL = /* glsl */ `
@@ -45,7 +53,8 @@ ${WAVES_GLSL}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   float depth = -texture2D(uHeight, (world.xz - uHeightRect.xy) / uHeightRect.zw).r;
-  float scale = smoothstep(0.5, 9.0, depth);
+  // Far out the swell is too small to see move; flatten it there, where the rings are wide apart.
+  float scale = smoothstep(0.5, 9.0, depth) * (1.0 - smoothstep(1200.0, 2500.0, length(world.xz - cameraPosition.xz)));
   vec3 tangent = vec3(1.0, 0.0, 0.0);
   vec3 binormal = vec3(0.0, 0.0, 1.0);
   vec3 offset = gerstner(WAVES[0], world.xz, scale, tangent, binormal) + gerstner(WAVES[1], world.xz, scale, tangent, binormal);
@@ -73,6 +82,8 @@ ${NOISE_GLSL}
 ${LIGHTING_GLSL}
 ${WAVES_GLSL}
 ${SKY_GLSL}
+${SKYLINE_GLSL}
+${ROCK_SHADOW_GLSL}
 void main() {
   vec3 p = vWorld;
   float depth = max(-groundAt(p.xz), 0.0);
@@ -94,7 +105,7 @@ void main() {
   reflected.y = max(reflected.y, 0.02);
   reflected = normalize(reflected);
   float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(n, view), 0.0), 5.0);
-  float shadow = keyShadow(p + vec3(0.0, 1.0, 0.0));
+  float shadow = min(keyShadow(p + vec3(0.0, 1.0, 0.0)), rockShadow(p + vec3(0.0, 0.5, 0.0)));
   float sunUp = max(uLightDir.y, 0.0);
 
   // The water itself: clear turquoise over sand, deep blue offshore.
@@ -108,6 +119,11 @@ void main() {
   body += vec3(0.02, 0.22, 0.2) * uLight * through * 0.25 * shadow;
 
   vec3 color = mix(body, skyColor(reflected, true), fresnel);
+  // At night the far city's lights trail faintly across the water, broken up by the waves.
+  if (uNight > 0.01) {
+    float trail = cityLights(reflected) * smoothstep(0.05, 0.02, reflected.y);
+    color += vec3(1.0, 0.72, 0.42) * trail * uNight * fresnel * 0.4;
+  }
 
   // Glints: the sun (or the moon) broken up by the ripples.
   float toLight = max(dot(reflected, uLightDir), 0.0);
@@ -180,9 +196,38 @@ export interface Ocean {
   follow(camera: THREE.Camera): void
 }
 
+/** A flat disc of rings, spaced in proportion to their radius, around a centre vertex. */
+function ringGeometry(): THREE.BufferGeometry {
+  const growth = Math.pow(OUTER_RADIUS / INNER_RADIUS, 1 / (RINGS - 1))
+  const positions = new Float32Array((1 + RINGS * SEGMENTS) * 3)
+  for (let ring = 0; ring < RINGS; ring++) {
+    const radius = INNER_RADIUS * Math.pow(growth, ring)
+    for (let segment = 0; segment < SEGMENTS; segment++) {
+      const angle = (segment / SEGMENTS) * Math.PI * 2
+      const index = 1 + ring * SEGMENTS + segment
+      positions[index * 3] = Math.cos(angle) * radius
+      positions[index * 3 + 2] = Math.sin(angle) * radius
+    }
+  }
+  const indices: number[] = []
+  for (let segment = 0; segment < SEGMENTS; segment++) indices.push(0, 1 + ((segment + 1) % SEGMENTS), 1 + segment)
+  for (let ring = 0; ring < RINGS - 1; ring++) {
+    for (let segment = 0; segment < SEGMENTS; segment++) {
+      const a = 1 + ring * SEGMENTS + segment
+      const b = 1 + ring * SEGMENTS + ((segment + 1) % SEGMENTS)
+      const c = a + SEGMENTS
+      const d = b + SEGMENTS
+      indices.push(a, b, c, b, d, c)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  return geometry
+}
+
 export function createOcean(uniforms: LightingUniforms & SkyUniforms, random: () => number): Ocean {
-  const geometry = new THREE.PlaneGeometry(GRID * 380, GRID * 380, 380, 380)
-  geometry.rotateX(-Math.PI / 2)
+  const geometry = ringGeometry()
   const mesh = new THREE.Mesh(geometry, new THREE.ShaderMaterial({
     uniforms: { ...uniforms, uRipples: { value: rippleTexture(random) } },
     vertexShader: VERTEX,
@@ -192,8 +237,8 @@ export function createOcean(uniforms: LightingUniforms & SkyUniforms, random: ()
   return {
     mesh,
     follow(camera) {
-      // Move with the camera in whole grid cells, so the waves (in world space) never swim.
-      mesh.position.set(Math.round(camera.position.x / GRID) * GRID, 0, Math.round(camera.position.z / GRID) * GRID)
+      // The waves live in world space; the rings just follow the camera to sample them.
+      mesh.position.set(camera.position.x, 0, camera.position.z)
     },
   }
 }

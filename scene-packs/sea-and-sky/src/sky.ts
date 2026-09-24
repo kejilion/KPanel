@@ -69,13 +69,13 @@ vec3 skyColor(vec3 d, bool cheap) {
     if (!cheap) {
       // Grainy star clouds, and a dark rift of dust along the middle.
       float clouds = fbm3(c * 11.0 + 2.0) * 0.5 + 0.5;
-      float grain = fbm3(c * 42.0) * 0.5 + 0.5;
-      milky *= 0.25 + 1.5 * clouds * grain;
+      float grain = fbm3(c * 90.0) * 0.5 + 0.5;
+      milky *= 0.45 + 1.1 * clouds * mix(1.0, grain, 0.5);
       float rift = exp(-pow(latitude - 0.012 * snoise(c * 8.0), 2.0) / 0.0009);
       milky *= 1.0 - 0.72 * rift * smoothstep(0.35, 0.65, clouds + 0.15);
     }
     float dark = uNight * (1.0 - 0.8 * uMoonLight) * smoothstep(0.02, 0.3, d.y);
-    color += mix(vec3(0.5, 0.56, 0.75), vec3(0.78, 0.68, 0.56), pow(centre, 5.0)) * milky * dark * 0.28;
+    color += mix(vec3(0.5, 0.56, 0.75), vec3(0.68, 0.64, 0.6), pow(centre, 5.0)) * milky * dark * 0.2;
     if (!cheap) {
       // Pinpoint stars, a few bright ones and many faint ones (more of them in the Milky Way).
       vec2 p = vec2(atan(c.y, c.x) * 520.0 * sqrt(max(1.0 - c.z * c.z, 0.0)), asin(clamp(c.z, -1.0, 1.0)) * 520.0);

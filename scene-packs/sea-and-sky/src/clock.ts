@@ -3,8 +3,9 @@ import { dayOfYear, localHour, moonAge, SUNRISE, SUNSET } from './daylight'
 /**
  * The scene's clock. By default a whole day passes in ten minutes, starting
  * from the local time when the scene opens; it slows down about fourfold around
- * sunrise and sunset so the golden hour and the afterglow last, and runs faster
- * through midday and the dead of night. Each turn is a new day, so the moon
+ * sunrise and sunset so the golden hour and the afterglow last, runs faster
+ * through midday and the dead of night, and also slows while the moon rises or
+ * sets (so a day with a moonrise and a moonset in it runs a little longer). Each turn is a new day, so the moon
  * rises later from one turn to the next, as it does. ?timelapse=off keeps to
  * the real clock instead (with ?hour= and ?moon= freezing it, for previews).
  */
@@ -38,7 +39,8 @@ export function createClock(options: { timelapse: boolean, hour?: number, moon?:
   const time: SceneTime = { hour: startHour, moonAge: startAge, day: startDay }
   return {
     time,
-    advance(dt: number): SceneTime {
+    /** extraWeight: further slowing, e.g. while the moon is at the horizon (0 for none). */
+    advance(dt: number, extraWeight = 0): SceneTime {
       if (!options.timelapse) {
         const date = new Date()
         time.hour = localHour(date, options.hour)
@@ -46,7 +48,7 @@ export function createClock(options: { timelapse: boolean, hour?: number, moon?:
         time.day = dayOfYear(date)
         return time
       }
-      hours += dt / (SECONDS_PER_HOUR * weight(time.hour))
+      hours += dt / (SECONDS_PER_HOUR * (weight(time.hour) + extraWeight))
       time.hour = (startHour + hours) % 24
       time.moonAge = startAge + hours / 24
       time.day = startDay + hours / 24
