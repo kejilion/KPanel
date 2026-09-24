@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { LIGHTING_GLSL, type LightingUniforms } from './shading'
+import { ROCKS } from './world'
+
+/** Directions round each rock in which its waterline is measured, for the surf (see ocean.ts). */
+export const WATERLINE_BINS = 32
 
 /**
  * The sea stacks, sculpted in Blender (see blender/rocks.py): layered sandstone
@@ -24,6 +28,7 @@ void main() {
 const FRAGMENT = /* glsl */ `
 uniform sampler2D uColour;
 uniform sampler2D uSurface;
+uniform float uTime;
 varying vec2 vUv;
 varying vec3 vWorld;
 ${LIGHTING_GLSL}
@@ -34,13 +39,60 @@ void main() {
   vec3 baked = surface.xyz * 2.0 - 1.0;
   vec3 n = normalize(vec3(baked.x, baked.z, -baked.y));
   vec3 albedo = texture2D(uColour, vUv).rgb;
+  // Freshly wet where the waves wash up the foot, rising and falling with each set: darker, and
+  // glossy in the light.
+  float swash = 1.0 + 0.9 * (sin(uTime * 0.85 + dot(vWorld.xz, vec2(0.07, 0.05))) * 0.5 + 0.5);
+  float wet = 1.0 - smoothstep(0.2, swash, vWorld.y);
+  albedo *= mix(1.0, 0.5, wet);
   float shadow = keyShadow(vWorld + n * 1.0);
   vec3 color = shade(albedo, n, 0.15, shadow) * mix(0.35, 1.0, surface.a);
+  vec3 view = normalize(cameraPosition - vWorld);
+  float gloss = pow(max(dot(n, normalize(view + uLightDir)), 0.0), 70.0);
+  color += uLight * gloss * wet * shadow * 0.9;
   gl_FragColor = vec4(atmosphere(color, vWorld), 1.0);
 }
 `
 
-export async function createRocks(uniforms: LightingUniforms): Promise<THREE.Object3D> {
+/**
+ * How far the sculpted rock reaches at the waterline in each direction round it: one row per rock,
+ * WATERLINE_BINS columns from angle -pi to pi (atan2 of z and x from its centre), in metres. The
+ * surf breaks against this outline, which is far from round.
+ */
+function measureWaterlines(meshes: THREE.Mesh[]): THREE.DataTexture {
+  const radii = new Float32Array(WATERLINE_BINS * ROCKS.length)
+  const point = new THREE.Vector3()
+  for (const mesh of meshes) {
+    const index = Number(/rock-(d+)/.exec(mesh.name)?.[1] ?? /rock-(d+)/.exec(mesh.parent?.name ?? '')?.[1])
+    const rock = ROCKS[index]
+    if (!rock) continue
+    mesh.updateWorldMatrix(true, false)
+    const positions = mesh.geometry.getAttribute('position')
+    const row = radii.subarray(index * WATERLINE_BINS, (index + 1) * WATERLINE_BINS)
+    for (let vertex = 0; vertex < positions.count; vertex++) {
+      point.fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld)
+      if (Math.abs(point.y) > 0.8) continue
+      const dx = point.x - rock.x
+      const dz = point.z - rock.z
+      const bin = Math.min(WATERLINE_BINS - 1, Math.floor(((Math.atan2(dz, dx) + Math.PI) / (Math.PI * 2)) * WATERLINE_BINS))
+      row[bin] = Math.max(row[bin]!, Math.hypot(dx, dz))
+    }
+    // Any direction without a vertex takes its neighbours' reach.
+    for (let bin = 0; bin < WATERLINE_BINS; bin++) {
+      if (row[bin]) continue
+      row[bin] = Math.max(row[(bin + WATERLINE_BINS - 1) % WATERLINE_BINS]!, row[(bin + 1) % WATERLINE_BINS]!, rock.radius * 0.8)
+    }
+  }
+  const data = new Uint16Array(radii.length)
+  radii.forEach((radius, index) => { data[index] = THREE.DataUtils.toHalfFloat(radius) })
+  const texture = new THREE.DataTexture(data, WATERLINE_BINS, ROCKS.length, THREE.RedFormat, THREE.HalfFloatType)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.minFilter = THREE.LinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.needsUpdate = true
+  return texture
+}
+
+export async function createRocks(uniforms: LightingUniforms): Promise<{ object: THREE.Object3D, waterlines: THREE.DataTexture }> {
   const textures = new THREE.TextureLoader()
   const load = async (path: string, colour: boolean) => {
     const texture = await textures.loadAsync(path)
@@ -63,5 +115,5 @@ export async function createRocks(uniforms: LightingUniforms): Promise<THREE.Obj
     })
     mesh.frustumCulled = false
   }))
-  return gltf.scene
+  return { object: gltf.scene, waterlines: measureWaterlines(meshes) }
 }

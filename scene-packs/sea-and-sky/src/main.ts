@@ -65,7 +65,9 @@ async function start(): Promise<void> {
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000)
   scene.add(createSkyDome(uniforms))
   // The sculpted stacks load before the scene reports ready, so it fades up complete.
-  scene.add(await createRocks(uniforms))
+  const rocks = await createRocks(uniforms)
+  scene.add(rocks.object)
+  uniforms.uWaterlines.value = rocks.waterlines
   const clouds = await createClouds(renderer, uniforms)
   uniforms.uShape.value = clouds.shape
   uniforms.uDetail.value = clouds.detail

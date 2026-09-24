@@ -74,6 +74,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uGlow;
 uniform float uTime;
 uniform float uKeyVisible;
+uniform sampler2D uWaterlines;
 uniform float uMoonLight;
 uniform mat3 uCelestial;
 uniform float uCloudTime;
@@ -99,8 +100,14 @@ void main() {
   vec3 n = normalize(cross(binormal, tangent));
   vec2 r1 = texture2D(uRipples, p.xz / 23.0 + uTime * vec2(0.03, 0.011)).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(uRipples, p.xz / 7.3 + uTime * vec2(-0.017, 0.041)).xy * 2.0 - 1.0;
+  // A finer chop close to the camera, where the eye can resolve it.
+  vec2 r3 = texture2D(uRipples, p.xz / 2.3 + uTime * vec2(0.052, -0.034)).xy * 2.0 - 1.0;
   float detail = mix(1.0, 0.35, smoothstep(150.0, 3000.0, dist));
-  n = normalize(n + vec3(r1.x * 0.32 + r2.x * 0.2, 0.0, r1.y * 0.32 + r2.y * 0.2) * detail);
+  // Gusts roughen the water in drifting patches and leave smooth slicks between them.
+  float gusts = snoise(vec3(p.xz * 0.0033 + uTime * vec2(0.004, 0.0017), uTime * 0.012)) * 0.5 + 0.5;
+  float rough = mix(0.5, 1.25, smoothstep(0.2, 0.8, gusts));
+  vec2 ripples = (r1 * 0.32 + r2 * 0.2) * detail + r3 * 0.12 * smoothstep(110.0, 12.0, dist);
+  n = normalize(n + vec3(ripples.x, 0.0, ripples.y) * rough);
 
   vec3 view = normalize(cameraPosition - p);
   vec3 reflected = reflect(-view, n);
@@ -136,12 +143,28 @@ void main() {
   // Foam: breakers in the shallows, the swash at the waterline, whitecaps now and then.
   float foamNoise = snoise(vec3(p.xz * 0.11, uTime * 0.22)) * 0.5 + 0.5;
   float bands = sin(depth * 2.4 + uTime * 1.25 + snoise(vec3(p.xz * 0.04, uTime * 0.08)) * 2.2) * 0.5 + 0.5;
-  float foam = smoothstep(3.2, 0.3, depth) * smoothstep(0.5, 0.85, bands * 0.6 + foamNoise * 0.55);
-  // The swash against the rocks: broken, shifting lace rather than a solid ring.
   float lace = snoise(vec3(p.xz * 0.35, uTime * 0.5)) * 0.5 + 0.5;
-  foam = max(foam, smoothstep(0.6, 0.0, depth) * smoothstep(0.3, 0.7, lace * 0.7 + foamNoise * 0.5));
-  foam = max(foam, smoothstep(0.55, 0.95, vCrest) * smoothstep(0.62, 0.9, foamNoise) * 0.45);
-  vec3 foamColor = vec3(0.92, 0.95, 0.96) * (uLight * sunUp * 0.5 * shadow + uAmbientTop * 0.95);
+  // Over the shoals, broken patches rather than rings.
+  float foam = smoothstep(2.6, 0.3, depth) * smoothstep(0.5, 0.8, bands * 0.4 + foamNoise * 0.35 + lace * 0.35);
+  // Waves bursting on the stacks: each set surges out from the rock's foot in a white lace and
+  // drains back, at its own moment round each rock.
+  for (int i = 0; i < ROCK_COUNT; i++) {
+    vec4 rock = ROCK_LIST[i];
+    vec2 away = p.xz - rock.xy;
+    float angle = atan(away.y, away.x);
+    // How far the rock reaches in this direction, measured from the sculpted mesh.
+    float d = length(away) - texture2D(uWaterlines, vec2(angle / 6.2831853 + 0.5, (float(i) + 0.5) / float(ROCK_COUNT))).r;
+    if (d > 14.0) continue;
+    float surge = sin(uTime * 0.85 - d * 0.3 + rock.x * 0.13 + sin(angle * 3.0 + rock.w) * 1.2) * 0.5 + 0.5;
+    float reach = mix(3.0, 11.0, surge * surge) * (0.75 + 0.25 * sin(angle * 5.0 + rock.x));
+    float band = smoothstep(reach, reach * 0.45, d);
+    foam = max(foam, band * smoothstep(0.12, 0.45, lace * 0.55 + foamNoise * 0.45 + (1.0 - d / reach) * 0.4));
+    // Always a line of white water right at the foot.
+    foam = max(foam, smoothstep(1.6, 0.2, d) * (0.7 + 0.3 * lace));
+  }
+  foam = max(foam, smoothstep(0.55, 0.95, vCrest) * smoothstep(0.62, 0.9, foamNoise) * 0.45 * rough);
+  // Foam scatters light every way, so even a low sun lights it well.
+  vec3 foamColor = vec3(0.92, 0.95, 0.96) * (uLight * max(sunUp, 0.25) * 0.55 * mix(0.25, 1.0, shadow) + uAmbientTop * 1.1);
   color = mix(color, foamColor, clamp(foam, 0.0, 1.0));
 
   gl_FragColor = vec4(atmosphere(color, p), 1.0);

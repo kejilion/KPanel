@@ -205,13 +205,17 @@ def stack_colours(rock, points, joints, within, hardness, top_rows):
     patches = fbm(flat / 7.0, 3, seed + 43) * 0.5 + 0.5
     light = np.array([0.46, 0.35, 0.24])
     dark = np.array([0.22, 0.16, 0.115])
-    mix = np.clip(0.2 + 0.45 * hardness.ravel() + 0.25 * patches + 0.15 * grain, 0, 1)[:, None]
+    # The layers show in the colour, but faintly: most of the variation is in patches and grain.
+    mix = np.clip(0.2 + 0.22 * hardness.ravel() + 0.4 * patches + 0.18 * grain, 0, 1)[:, None]
     colour = dark * (1 - mix) + light * mix
     colour *= (1.0 - 0.45 * joints.ravel())[:, None]
     colour *= (1.0 - 0.3 * smoothstep(0.7, 1.0, within.ravel()))[:, None]
     # Dark streaks where rain runs down from the ledges, and grey-green lichen here and there.
     streaks = smoothstep(0.2, 0.8, fbm(flat * np.array([1 / 1.4, 1 / 1.4, 1 / 14.0]), 3, seed + 53) * 0.5 + 0.5)
     colour *= (1.0 - 0.28 * streaks)[:, None]
+    # Rusty stains washed down from iron-rich layers.
+    rust = smoothstep(0.55, 0.85, fbm(flat * np.array([1 / 3.0, 1 / 3.0, 1 / 22.0]), 3, seed + 57) * 0.5 + 0.5)
+    colour = colour * (1 - 0.35 * rust[:, None]) + np.array([0.4, 0.22, 0.11]) * 0.35 * rust[:, None]
     lichen = smoothstep(0.62, 0.8, fbm(flat / 2.2, 3, seed + 59) * 0.5 + 0.5) * (flat[:, 2] > 4.0)
     colour = colour * (1 - 0.4 * lichen[:, None]) + np.array([0.3, 0.32, 0.24]) * 0.4 * lichen[:, None]
     wet = 1.0 - smoothstep(0.3, 2.6, flat[:, 2] + 0.5 * fbm(flat / 1.5, 2, seed + 47))

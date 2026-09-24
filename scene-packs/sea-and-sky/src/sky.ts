@@ -127,7 +127,7 @@ export function skyUniforms(daylight: Daylight) {
     // Filled in once the cloud volumes have loaded (see clouds.ts).
     uShape: { value: null as THREE.Texture | null },
     uDetail: { value: null as THREE.Texture | null },
-    uCloudCover: { value: 0.45 },
+    uCloudCover: { value: 0.42 },
     uClouds: { value: null as THREE.Texture | null },
     uScreen: { value: new THREE.Vector2(1, 1) },
   }

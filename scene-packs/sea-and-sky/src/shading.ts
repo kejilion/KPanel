@@ -127,6 +127,8 @@ export function createLighting(daylight: Daylight) {
     uTime: { value: 0 },
     uHeight: { value: heightTexture() },
     uHeightRect: { value: HEIGHT_RECT },
+    // Measured from the sculpted rocks once they load (see rocks.ts).
+    uWaterlines: { value: null as THREE.Texture | null },
   }
   return {
     uniforms,
