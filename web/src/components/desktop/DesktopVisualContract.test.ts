@@ -153,19 +153,19 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?animation-duration:\s*\.01ms !important;/)
   })
 
-  it('centers unboxed drop feedback with theme text and enough wallpaper separation', () => {
+  it('shares the original translucent dark drag appearance across desktop themes', () => {
     const overlay = cssRule(styles, '.desktop__file-drop')
-    expect(overlay).toContain('var(--surface) 70%, transparent')
-    expect(overlay).toContain('color: var(--text);')
+    expect(overlay).toContain('var(--desktop-drop-accent) 10%, transparent')
+    expect(overlay).toContain('color: var(--desktop-drop-label);')
+    expect(overlay).toContain('backdrop-filter: blur(5px);')
     expect(overlay).not.toContain('var(--sidebar)')
     const content = cssRule(styles, '.desktop__file-drop-content')
     expect(content).toContain('justify-items: center;')
     expect(content).toContain('text-align: center;')
     expect(content).toContain('overflow-wrap: anywhere;')
-    for (const selector of ['.desktop__file-drop-content', '.desktop__file-drop-glyph', '.desktop__file-drop code']) {
-      expect(cssRule(styles, selector)).not.toMatch(/(?:background|border|box-shadow):/)
-    }
-    expect(cssRule(styles, '.desktop__file-drop small')).toContain('color: inherit;')
+    expect(content).not.toMatch(/(?:background|border|box-shadow):/)
+    expect(cssRule(styles, '.desktop__file-drop-glyph')).toContain('background: var(--desktop-drop-accent);')
+    expect(cssRule(styles, '.desktop__file-drop small')).toContain('color: var(--desktop-drop-muted);')
     expect(cssRule(styles, '.desktop__file-drop code')).toContain('white-space: normal;')
     expect(styles).not.toMatch(/:root[^{}]+\.desktop__file-drop[^{}]*\{/)
   })

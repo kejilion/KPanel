@@ -123,7 +123,7 @@ import { useDesktopIcons } from '@/stores/desktopIcons'
 import { useDocumentFullscreen } from '@/composables/useDocumentFullscreen'
 import { useWindowGesture } from '@/composables/useWindowGesture'
 import { useTheme } from '@/stores/theme'
-import { THEME_COLOR_PRESETS } from '@/theme/colors'
+import { deriveThemeTokens, THEME_COLOR_PRESETS } from '@/theme/colors'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
 import type { AgentStatus, DesktopGroup, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
@@ -143,6 +143,16 @@ const desktop = useDesktopMode()
 const desktopIcons = useDesktopIcons()
 const documentFullscreen = useDocumentFullscreen()
 const theme = useTheme()
+// The translucent drag hint keeps the dark palette even over a light desktop.
+const desktopFileDropStyle = computed(() => {
+  const tokens = deriveThemeTokens(theme.colors.value, 'dark')
+  return {
+    '--desktop-drop-label': tokens['--desktop-label'],
+    '--desktop-drop-muted': tokens['--text-soft'],
+    '--desktop-drop-accent': tokens['--brand'],
+    '--desktop-drop-on-accent': tokens['--on-brand'],
+  }
+})
 const toast = useToast()
 const i18n = useI18n()
 provide(desktopCloseGuardCoordinatorKey, desktopCloseGuardCoordinator)
@@ -3700,13 +3710,14 @@ function onViewportResize(): void {
       v-if="fileDropActive"
       class="desktop__file-drop"
       :class="{ 'desktop__file-drop--upload': fileDropMode !== 'shortcut' }"
+      :style="desktopFileDropStyle"
       role="status"
       aria-live="polite"
     >
       <div class="desktop__file-drop-content">
         <span class="desktop__file-drop-glyph">
-          <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="24" aria-hidden="true" />
-          <Plus v-else :size="24" aria-hidden="true" />
+          <HardDriveUpload v-if="fileDropMode !== 'shortcut'" :size="19" aria-hidden="true" />
+          <Plus v-else :size="19" aria-hidden="true" />
         </span>
         <strong>{{ i18n.t(fileDropMode === 'upload'
           ? 'desktop.externalDropTitle'

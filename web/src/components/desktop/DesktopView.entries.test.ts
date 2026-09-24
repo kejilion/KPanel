@@ -6,6 +6,7 @@ import DesktopView from '@/components/desktop/DesktopView.vue'
 import DesktopShortcutDialog from '@/components/desktop/DesktopShortcutDialog.vue'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { resetDesktopIconsForTest } from '@/stores/desktopIcons'
+import { resetThemeForTest, useTheme } from '@/stores/theme'
 import type { DesktopEntries } from '@/lib/desktopEntries'
 import {
   beginDesktopFileDrag,
@@ -116,6 +117,7 @@ describe('DesktopView dynamic entries', () => {
   beforeEach(() => {
     resetDesktopModeForTest()
     resetDesktopIconsForTest()
+    resetThemeForTest()
     clearDesktopFileDrag()
     window.localStorage.clear()
     window.scrollTo = vi.fn()
@@ -675,6 +677,14 @@ describe('DesktopView dynamic entries', () => {
     expect(wrapper.find('.desktop__file-drop').exists()).toBe(true)
     expect(wrapper.get('.desktop__file-drop').attributes('role')).toBe('status')
     expect(wrapper.get('.desktop__file-drop-content').text()).toContain('松开以创建快捷方式，不会移动原文件')
+    const dropStyle = wrapper.get('.desktop__file-drop').attributes('style')
+    expect(dropStyle).toContain('--desktop-drop-label:')
+    expect(dropStyle).toContain('--desktop-drop-accent:')
+    for (const mode of ['dark', 'light'] as const) {
+      useTheme().setTheme(mode)
+      await nextTick()
+      expect(wrapper.get('.desktop__file-drop').attributes('style')).toBe(dropStyle)
+    }
     expect(useDesktopMode().windows.value).toContain(sourceWindow)
     wrapper.element.dispatchEvent(internalFileDragEvent('drop', dataTransfer))
     await flushPromises()
