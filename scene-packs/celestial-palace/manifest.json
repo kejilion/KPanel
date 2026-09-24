@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "celestial-palace",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": { "zh-CN": "云海天宫", "zh-TW": "雲海天宮", "en-US": "Palace Above the Clouds" },
+  "description": { "zh-CN": "月轮映照悬空宫阙，天灯越过云海，星河落成飞瀑", "zh-TW": "月輪映照懸空宮闕，天燈越過雲海，星河落成飛瀑", "en-US": "Moonlit palaces, drifting lanterns and silver waterfalls above a violet sea of clouds." },
+  "author": { "name": "Codex" },
+  "license": "MIT",
+  "tags": ["fantasy", "palace", "clouds", "moonlight"],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": { "brand": "#8868bc", "neutral": "#343249", "signature": "#dfb876" },
+  "cameras": [
+    { "id": "celestial-gate", "name": { "zh-CN": "云阙望月", "zh-TW": "雲闕望月", "en-US": "Moon Gate" } },
+    { "id": "lantern-bridge", "name": { "zh-CN": "天灯长桥", "zh-TW": "天燈長橋", "en-US": "Lantern Bridge" } },
+    { "id": "silver-falls", "name": { "zh-CN": "星河飞瀑", "zh-TW": "星河飛瀑", "en-US": "Silver Falls" } }
+  ],
+  "dependencies": [{ "name": "three", "version": "0.186.0", "license": "MIT" }]
+}

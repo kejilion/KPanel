@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "id": "celestial-palace",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "云海天宫",
+    "zh-TW": "雲海天宮",
+    "en-US": "Palace Above the Clouds"
+  },
+  "description": {
+    "zh-CN": "月轮映照悬空宫阙，天灯越过云海，星河落成飞瀑",
+    "zh-TW": "月輪映照懸空宮闕，天燈越過雲海，星河落成飛瀑",
+    "en-US": "Moonlit palaces, drifting lanterns and silver waterfalls above a violet sea of clouds."
+  },
+  "author": {
+    "name": "Codex"
+  },
+  "license": "MIT",
+  "tags": [
+    "fantasy",
+    "palace",
+    "clouds",
+    "moonlight"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#8868bc",
+    "neutral": "#343249",
+    "signature": "#dfb876"
+  },
+  "cameras": [
+    {
+      "id": "celestial-gate",
+      "name": {
+        "zh-CN": "云阙望月",
+        "zh-TW": "雲闕望月",
+        "en-US": "Moon Gate"
+      }
+    },
+    {
+      "id": "lantern-bridge",
+      "name": {
+        "zh-CN": "天灯长桥",
+        "zh-TW": "天燈長橋",
+        "en-US": "Lantern Bridge"
+      }
+    },
+    {
+      "id": "silver-falls",
+      "name": {
+        "zh-CN": "星河飞瀑",
+        "zh-TW": "星河飛瀑",
+        "en-US": "Silver Falls"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ],
+  "path": "celestial-palace/dist",
+  "files": [
+    {
+      "path": "index.html",
+      "size": 395,
+      "sha256": "55d8235477220930eb53cdb89c8686113d26baa842d27564e6c93f0a6c06dc7f"
+    },
+    {
+      "path": "license.txt",
+      "size": 1137,
+      "sha256": "103bfd25b1a9d0008fb028cf4ac6e74dc27815fb9e00f35bf5d0f23f76b2c374"
+    },
+    {
+      "path": "manifest.json",
+      "size": 1203,
+      "sha256": "b1876d044b199a149f1e5ebef34287a7167ae8aea1da49c40357355d87570a20"
+    },
+    {
+      "path": "poster.webp",
+      "size": 94166,
+      "sha256": "2c3a7b52bca4d26b4f84c981ec3ad8046a837a1ee074669d5f44dc2f93442466"
+    },
+    {
+      "path": "scene.js",
+      "size": 601745,
+      "sha256": "4c9934e61261f9aa19ecf0250c792cf25d41e27c244a11cb936a16e93d0667a6"
+    },
+    {
+      "path": "thumb.webp",
+      "size": 8032,
+      "sha256": "c07fc3fdaa7d56e3c69f6b45404d29c61b3c587b10c1e3f8023b92c43423b73d"
+    }
+  ],
+  "sizeBytes": 706678
+}
