@@ -156,6 +156,11 @@ function syncLoop(): void {
 
 function onVisibilityChange(): void {
   documentHidden.value = document.visibilityState === 'hidden'
+  // The minute timer skips hidden pages; catch up as soon as the desktop is back.
+  if (!documentHidden.value && props.scene === 'chrono' && !timelapse.value) {
+    applyWeights(chronoWeights(new Date()))
+    loop?.refresh()
+  }
 }
 
 function onMotionPreference(event: MediaQueryListEvent): void {
@@ -254,7 +259,6 @@ onBeforeUnmount(() => {
   if (chronoTimer !== undefined) window.clearInterval(chronoTimer)
 })
 
-defineExpose({ status, ready })
 </script>
 
 <template>

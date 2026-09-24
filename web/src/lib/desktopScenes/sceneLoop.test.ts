@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ScenePainter, ScenePainterFactory, SceneFrame } from './painterKit'
-import { createSceneLoop, SCENE_GOVERNOR_WINDOW_MS, SCENE_MIN_DENSITY } from './sceneLoop'
+import { createSceneLoop, SCENE_GOVERNOR_WINDOW_MS, SCENE_MIN_DENSITY, SCENE_RETRY_MS } from './sceneLoop'
 
 interface Harness {
   frames: SceneFrame[]
   densities: number[]
   statuses: string[]
   pending: () => number
+  /** Timers the loop scheduled (suspension retries), in order. */
+  timers: { callback: () => void, delay: number }[]
   /** Advances the fake display by `count` refreshes of `interval` ms, spending `work` ms per paint. */
   run: (count: number, interval?: number, work?: number) => void
   loop: ReturnType<typeof createSceneLoop>
@@ -17,6 +19,7 @@ function harness(options: { reducedMotion?: boolean, density?: number } = {}): H
   const densities: number[] = []
   const statuses: string[] = []
   let queue: FrameRequestCallback[] = []
+  const timers: { callback: () => void, delay: number }[] = []
   let clock = 0
   let workPerPaint = 0.4
   let painting = false
@@ -41,6 +44,8 @@ function harness(options: { reducedMotion?: boolean, density?: number } = {}): H
     now: () => clock,
     requestFrame: (callback) => queue.push(callback),
     cancelFrame: () => { queue = [] },
+    schedule: (callback, delay) => timers.push({ callback, delay }),
+    unschedule: vi.fn(),
     devicePixelRatio: () => 2,
     onStatus: (status) => statuses.push(status),
     onDensity: (density) => densities.push(density),
@@ -50,6 +55,7 @@ function harness(options: { reducedMotion?: boolean, density?: number } = {}): H
     frames,
     densities,
     statuses,
+    timers,
     pending: () => queue.length,
     loop,
     run(count, interval = 1000 / 60, work = 0.4) {
@@ -91,6 +97,7 @@ describe('scene loop', () => {
     test.loop.setPaused(false)
     test.run(4)
     expect(Math.max(...test.frames.slice(painted).map((frame) => frame.dt))).toBeLessThanOrEqual(0.1)
+    expect(test.statuses).toEqual(['running', 'paused', 'running'])
   })
 
   it('paints one settled still for reduced motion without scheduling frames', () => {
@@ -119,6 +126,48 @@ describe('scene loop', () => {
     expect(test.pending()).toBe(0)
     test.loop.setPaused(false)
     expect(test.loop.status).toBe('suspended')
+  })
+
+  it('retries a suspended scene after a doubling back-off', () => {
+    const test = harness()
+    test.loop.setPaused(false)
+    const windowFrames = Math.ceil(SCENE_GOVERNOR_WINDOW_MS / (1000 / 60)) + 2
+    const suspend = () => {
+      for (let index = 0; index < 20 && test.loop.status === 'running'; index++) test.run(windowFrames, 1000 / 60, 9)
+    }
+    suspend()
+    expect(test.loop.status).toBe('suspended')
+    expect(test.timers.map((timer) => timer.delay)).toEqual([SCENE_RETRY_MS])
+    test.timers[0]!.callback()
+    expect(test.loop.status).toBe('running')
+    expect(test.pending()).toBe(1)
+    suspend()
+    expect(test.timers.map((timer) => timer.delay)).toEqual([SCENE_RETRY_MS, SCENE_RETRY_MS * 2])
+    test.loop.destroy()
+    test.timers[1]!.callback()
+    expect(test.loop.status).toBe('suspended')
+    expect(test.pending()).toBe(0)
+  })
+
+  it('keeps timing the scene when a painter cannot be built', () => {
+    const onFrame = vi.fn()
+    let queued: FrameRequestCallback | undefined
+    const loop = createSceneLoop({
+      canvas: { getContext: () => ({ setTransform: vi.fn(), clearRect: vi.fn() }) } as unknown as HTMLCanvasElement,
+      painter: () => { throw new Error('sprite surface unavailable') },
+      seed: 1,
+      entranceSeconds: 1,
+      density: 1,
+      reducedMotion: false,
+      onFrame,
+      requestFrame: (callback) => { queued = callback; return 1 },
+      cancelFrame: () => { queued = undefined },
+    })
+    loop.resize(800, 600)
+    loop.setPaused(false)
+    queued?.(16)
+    expect(onFrame).toHaveBeenCalledTimes(1)
+    expect(loop.status).toBe('running')
   })
 
   it('treats one slow window as noise and restores density after sustained headroom', () => {

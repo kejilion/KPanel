@@ -116,6 +116,14 @@ describe('DesktopScene', () => {
       ['day', true],
       ['night', false],
     ])
+
+    // Back from a hidden tab hours later: catch up at once instead of on the next minute tick.
+    vi.setSystemTime(new Date(2026, 8, 24, 22, 0, 0))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect((root.element as HTMLElement).style.getPropertyValue('--scene-night')).toBe('1.0000')
+    expect(root.classes()).toContain('desktop-scene--phase-night')
     wrapper.unmount()
   })
 })

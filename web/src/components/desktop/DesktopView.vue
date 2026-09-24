@@ -442,8 +442,13 @@ const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: strin
 })
 // A restored scene plays the quiet entrance; choosing one plays the full one.
 const desktopSceneEntrance = ref<'restore' | 'select'>('restore')
+const coarseDesktopPointer = typeof window.matchMedia === 'function'
+  && window.matchMedia('(hover: none) and (pointer: coarse)').matches
 const desktopSceneCovered = computed(() => {
   const visible = desktop.windows.value.filter((windowState) => !windowState.minimized)
+  if (!visible.length) return false
+  // Compact and touch layouts stretch every open window over the work area (desktop.css).
+  if (compactIconLayout.value || coarseDesktopPointer) return true
   return visible.some((windowState) => windowState.maximized)
     || (visible.some((windowState) => windowState.snap === 'left') && visible.some((windowState) => windowState.snap === 'right'))
 })

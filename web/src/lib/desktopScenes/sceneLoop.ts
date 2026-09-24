@@ -13,11 +13,15 @@ import {
  * - paints at most `fps` frames per second (30 by default) and never while paused;
  * - measures its own step+draw time and the frames the browser actually delivers;
  * - lowers particle density when either budget is missed and, if the lowest
- *   density still misses it, suspends so the desktop keeps priority.
+ *   density still misses it, suspends so the desktop keeps priority;
+ * - retries a suspended scene after a doubling back-off, so a transient burst of
+ *   main-thread work does not freeze the wallpaper until the page reloads.
  */
 export const SCENE_WORK_BUDGET_MS = 4
 export const SCENE_GOVERNOR_WINDOW_MS = 2000
 export const SCENE_MIN_DENSITY = 0.25
+export const SCENE_RETRY_MS = 30_000
+export const SCENE_RETRY_MAX_MS = 240_000
 
 export type SceneLoopStatus = 'running' | 'paused' | 'static' | 'suspended'
 
@@ -36,6 +40,8 @@ export interface SceneLoopOptions {
   now?: () => number
   requestFrame?: (callback: FrameRequestCallback) => number
   cancelFrame?: (handle: number) => void
+  schedule?: (callback: () => void, delay: number) => number
+  unschedule?: (handle: number) => void
   devicePixelRatio?: () => number
 }
 
@@ -67,6 +73,8 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
   const now = options.now ?? (() => performance.now())
   const requestFrame = options.requestFrame ?? ((callback: FrameRequestCallback) => window.requestAnimationFrame(callback))
   const cancelFrame = options.cancelFrame ?? ((handle: number) => window.cancelAnimationFrame(handle))
+  const schedule = options.schedule ?? ((callback: () => void, delay: number) => window.setTimeout(callback, delay))
+  const unschedule = options.unschedule ?? ((timer: number) => window.clearTimeout(timer))
   const pixelRatioSource = options.devicePixelRatio ?? (() => (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1))
   const maxDensity = Math.min(1, Math.max(SCENE_MIN_DENSITY, options.density))
 
@@ -79,8 +87,13 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
       context = null
     }
     if (context) {
-      painter = options.painter({ random: mulberry32(options.seed), createSurface })
-      painter.setDensity(maxDensity)
+      try {
+        painter = options.painter({ random: mulberry32(options.seed), createSurface })
+        painter.setDensity(maxDensity)
+      } catch {
+        // The poster and CSS light layers still carry the scene without particles.
+        painter = undefined
+      }
     }
   }
 
@@ -100,6 +113,8 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
   let windowWork = 0
   let missedWindows = 0
   let healthyWindows = 0
+  let retryTimer: number | undefined
+  let retryDelay = SCENE_RETRY_MS
 
   function setStatus(next: SceneLoopStatus): void {
     if (status === next) return
@@ -162,9 +177,7 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
         options.onDensity?.(density)
         return
       }
-      stopFrames()
-      paintStill()
-      setStatus('suspended')
+      suspend()
       return
     }
     missedWindows = 0
@@ -174,7 +187,24 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
       density = Math.min(maxDensity, density * 1.25)
       painter?.setDensity(density)
       options.onDensity?.(density)
+      if (density >= maxDensity) retryDelay = SCENE_RETRY_MS
     }
+  }
+
+  function suspend(): void {
+    stopFrames()
+    paintStill()
+    setStatus('suspended')
+    retryTimer = schedule(() => {
+      retryTimer = undefined
+      if (destroyed || status !== 'suspended') return
+      retryDelay = Math.min(retryDelay * 2, SCENE_RETRY_MAX_MS)
+      missedWindows = 0
+      healthyWindows = 0
+      // Leave suspension through the ordinary paused state so visibility and cover still apply.
+      setStatus('paused')
+      sync()
+    }, retryDelay)
   }
 
   function tick(timestamp: number): void {
@@ -244,6 +274,8 @@ export function createSceneLoop(options: SceneLoopOptions): SceneLoop {
     destroy() {
       destroyed = true
       stopFrames()
+      if (retryTimer !== undefined) unschedule(retryTimer)
+      retryTimer = undefined
     },
     get density() {
       return density

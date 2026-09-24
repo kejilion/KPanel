@@ -71,7 +71,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 export function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value
+  return Math.min(max, Math.max(min, value))
 }
 
 export function lerp(from: number, to: number, amount: number): number {

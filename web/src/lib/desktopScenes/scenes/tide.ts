@@ -11,7 +11,7 @@ import {
 } from '../painterKit'
 
 /** Poster anchors in normalized image coordinates (tide.webp). */
-export const TIDE_SUN = { u: 0.68, v: 0.387 } as const
+const TIDE_SUN = { u: 0.68, v: 0.387 } as const
 const HORIZON = 0.426
 const SAND_EDGE = 0.93
 const OPEN_SEA_EDGE = 0.7
