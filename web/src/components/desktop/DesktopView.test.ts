@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopView from '@/components/desktop/DesktopView.vue'
+import { DESKTOP_SCENES } from '@/lib/desktopScenes/catalog'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
@@ -450,6 +451,58 @@ describe('DesktopView', () => {
 
     const restored = mount(DesktopView)
     expect(restored.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('orbit')
+    restored.unmount()
+    theme.resetColors()
+  })
+
+  it('offers live scenes beside the static wallpapers and pauses them under a maximized window', async () => {
+    vi.stubGlobal('Image', class { decoding = ''; src = ''; decode() { return Promise.resolve() } })
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const theme = useTheme()
+    theme.resetColors()
+    const wrapper = mount(DesktopView)
+
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+    expect(document.body.textContent).toContain('静态壁纸')
+    expect(document.body.textContent).toContain('动态场景')
+    const scenes = document.body.querySelector<HTMLElement>('.desktop-wallpaper-picker--scenes')
+    expect(scenes?.getAttribute('role')).toBe('radiogroup')
+    expect(scenes?.getAttribute('aria-labelledby')).toBe('desktop-wallpaper-scene-title')
+    const options = [...scenes!.querySelectorAll<HTMLButtonElement>('[data-scene-option]')]
+    expect(options.map((option) => option.dataset.sceneOption)).toEqual(['chrono', 'tide', 'sakura', 'neon', 'aurora'])
+    expect(options.every((option) => option.getAttribute('aria-checked') === 'false')).toBe(true)
+    expect(options[4]!.textContent).toContain('极光雪境')
+
+    vi.useFakeTimers()
+    options[4]!.click()
+    await vi.advanceTimersByTimeAsync(500)
+    await flushPromises()
+    expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('aurora')
+    expect(theme.colors.value).toEqual(DESKTOP_SCENES.find((scene) => scene.id === 'aurora')!.colors)
+    expect(wrapper.find('[data-wallpaper="aurora"]').attributes('style')).toContain('/wallpapers/scenes/aurora.webp')
+    await vi.dynamicImportSettled()
+    await vi.advanceTimersByTimeAsync(700)
+    await flushPromises()
+    const scene = wrapper.find('.desktop-scene[data-scene="aurora"]')
+    expect(scene.exists()).toBe(true)
+    expect(scene.classes()).not.toContain('desktop-scene--paused')
+
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/files', 'nav.files', false)
+    desktop.toggleMaximize(id)
+    await nextTick()
+    expect(wrapper.find('.desktop-scene').classes()).toContain('desktop-scene--paused')
+    desktop.toggleMaximize(id)
+    await nextTick()
+    expect(wrapper.find('.desktop-scene').classes()).not.toContain('desktop-scene--paused')
+    wrapper.unmount()
+
+    const restored = mount(DesktopView)
+    expect(restored.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('aurora')
     restored.unmount()
     theme.resetColors()
   })

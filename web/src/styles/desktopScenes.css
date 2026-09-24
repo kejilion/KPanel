@@ -1,0 +1,401 @@
+/*
+ * Live desktop scenes. Loaded with the lazy DesktopScene chunk.
+ *
+ * Motion budget: every loop animates only transform, scale, translate, rotate
+ * or opacity so the compositor runs it without main-thread work; the particle
+ * canvas is frame-capped by sceneLoop.ts. Entrances end on the resting state
+ * (`backwards` fill), so pausing or skipping them never leaves a layer stuck.
+ */
+
+.desktop-scene {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .45s cubic-bezier(.22, 1, .36, 1);
+  contain: strict;
+}
+
+.desktop-scene--ready {
+  opacity: 1;
+}
+
+/* Leaving a scene fades it over the static poster crossfade underneath. */
+.desktop-scene-fade-leave-to {
+  opacity: 0;
+}
+
+.desktop-scene__stage {
+  position: absolute;
+  inset: 0;
+  transform-origin:
+    calc(var(--scene-x, 0px) + var(--scene-w, 100%) * var(--focus-x, .5))
+    calc(var(--scene-y, 0px) + var(--scene-h, 100%) * var(--focus-y, .5));
+}
+
+.desktop-scene__poster {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.desktop-scene__layer {
+  position: absolute;
+  top: calc(var(--scene-y, 0px) + var(--scene-h, 100vh) * (var(--y) - var(--h) / 2));
+  left: calc(var(--scene-x, 0px) + var(--scene-w, 100vw) * (var(--x) - var(--w) / 2));
+  width: calc(var(--scene-w, 100vw) * var(--w));
+  height: calc(var(--scene-h, 100vh) * var(--h));
+}
+
+.desktop-scene__art {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.desktop-scene__particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Entrance push-in, then a slow breath for as long as the scene is visible. */
+.desktop-scene--live .desktop-scene__stage {
+  animation:
+    desktop-scene-arrive 3.2s cubic-bezier(.16, 1, .3, 1) both,
+    desktop-scene-breathe 16s ease-in-out 3.2s infinite alternate;
+}
+
+.desktop-scene--paused,
+.desktop-scene--paused .desktop-scene__stage,
+.desktop-scene--paused .desktop-scene__layer,
+.desktop-scene--paused .desktop-scene__art {
+  animation-play-state: paused !important;
+}
+
+@keyframes desktop-scene-arrive {
+  from { scale: 1; }
+  to { scale: 1.045; }
+}
+
+@keyframes desktop-scene-breathe {
+  from { transform: none; }
+  to { transform: scale(1.02) translate3d(-.35%, -.22%, 0); }
+}
+
+@keyframes desktop-scene-bloom {
+  from { opacity: 0; scale: .55; }
+}
+
+@keyframes desktop-scene-pulse {
+  from { opacity: .7; scale: 1; }
+  to { opacity: 1; scale: 1.07; }
+}
+
+@keyframes desktop-scene-glow {
+  from { opacity: .62; }
+  to { opacity: 1; }
+}
+
+/* Chrono Canal ------------------------------------------------------------- */
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__poster[data-phase] {
+  transition: opacity 2.4s ease;
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__poster[data-phase='day'] { opacity: var(--scene-day, 0); }
+.desktop-scene[data-scene='chrono'] .desktop-scene__poster[data-phase='night'] { opacity: var(--scene-night, 0); }
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer {
+  transition: opacity 2.4s ease;
+}
+
+.desktop-scene--timelapse .desktop-scene__poster[data-phase],
+.desktop-scene--timelapse .desktop-scene__layer {
+  transition: none;
+}
+
+/* Only phases with weight stay composited; golden is the opaque base when present. */
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-day) .desktop-scene__poster[data-phase='day'],
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-golden) .desktop-scene__poster[data-phase='golden'],
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night) .desktop-scene__poster[data-phase='night'],
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-golden) .desktop-scene__layer--sun,
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night) .desktop-scene__layer--moon,
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night):not(.desktop-scene--phase-golden) .desktop-scene__layer--lantern {
+  display: none;
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--sun { opacity: var(--scene-golden, 0); }
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--moon { opacity: var(--scene-night, 0); }
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--lantern {
+  opacity: calc(var(--scene-night, 0) + var(--scene-golden, 0) * .55);
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--sun .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 206 140 / 52%), rgb(255 150 92 / 20%) 45%, transparent 76%);
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--moon .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(226 234 255 / 44%), rgb(168 188 255 / 12%) 48%, transparent 74%);
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--lantern .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 196 116 / 72%), rgb(255 118 62 / 24%) 46%, transparent 74%);
+}
+
+.desktop-scene--live[data-scene='chrono'] .desktop-scene__layer--sun .desktop-scene__art,
+.desktop-scene--live[data-scene='chrono'] .desktop-scene__layer--moon .desktop-scene__art {
+  animation: desktop-scene-pulse 8s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='chrono'] .desktop-scene__layer--lantern .desktop-scene__art {
+  animation: desktop-scene-candle 2.9s ease-in-out var(--delay, 0s) infinite alternate;
+}
+
+@keyframes desktop-scene-candle {
+  0% { opacity: .78; scale: .96; }
+  45% { opacity: 1; scale: 1.04; }
+  60% { opacity: .86; scale: 1; }
+  100% { opacity: .95; scale: 1.02; }
+}
+
+/* Tide Shore --------------------------------------------------------------- */
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--sun .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 246 218 / 74%), rgb(255 198 122 / 34%) 36%, rgb(255 150 92 / 10%) 68%, transparent);
+}
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--path {
+  transform-origin: 50% 0;
+}
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--path .desktop-scene__art {
+  background-image: radial-gradient(50% 50% at 50% 38%, rgb(255 228 164 / 40%), rgb(255 200 124 / 14%) 55%, transparent 76%);
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--sun {
+  animation: desktop-scene-bloom 2.6s cubic-bezier(.16, 1, .3, 1) .15s backwards;
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--sun .desktop-scene__art {
+  animation: desktop-scene-pulse 7s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--path {
+  animation: desktop-scene-unroll 2.4s cubic-bezier(.16, 1, .3, 1) .5s backwards;
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--path .desktop-scene__art {
+  animation: desktop-scene-shimmer 4.6s ease-in-out infinite alternate;
+}
+
+@keyframes desktop-scene-unroll {
+  from { opacity: 0; scale: 1 .2; }
+}
+
+@keyframes desktop-scene-shimmer {
+  from { opacity: .45; scale: .86 1; }
+  to { opacity: .92; scale: 1.12 1; }
+}
+
+/* Sakura Slope ------------------------------------------------------------- */
+
+.desktop-scene[data-scene='sakura'] .desktop-scene__layer--sun .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 252 236 / 78%), rgb(255 236 200 / 34%) 40%, transparent 76%);
+}
+
+.desktop-scene[data-scene='sakura'] .desktop-scene__layer--rays {
+  mask-image: radial-gradient(closest-side, #000 8%, transparent 74%);
+}
+
+.desktop-scene[data-scene='sakura'] .desktop-scene__layer--rays .desktop-scene__art {
+  background-image: repeating-conic-gradient(from 196deg, rgb(255 250 232 / 17%) 0deg 3.5deg, transparent 3.5deg 12deg);
+  opacity: .7;
+}
+
+.desktop-scene[data-scene='sakura'] .desktop-scene__layer--branch,
+.desktop-scene[data-scene='sakura'] .desktop-scene__layer--branch .desktop-scene__art {
+  transform-origin: 100% 0;
+}
+
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--sun,
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--rays {
+  animation: desktop-scene-bloom 2.8s cubic-bezier(.16, 1, .3, 1) .2s backwards;
+}
+
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--sun .desktop-scene__art {
+  animation: desktop-scene-pulse 8s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--rays .desktop-scene__art {
+  animation: desktop-scene-rays 19s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--branch {
+  animation: desktop-scene-branch-enter 2.6s cubic-bezier(.16, 1, .3, 1) backwards;
+}
+
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--branch .desktop-scene__art {
+  animation: desktop-scene-sway 6.5s ease-in-out infinite alternate;
+}
+
+@keyframes desktop-scene-rays {
+  from { opacity: .45; rotate: -3deg; }
+  to { opacity: .85; rotate: 4deg; }
+}
+
+@keyframes desktop-scene-branch-enter {
+  from { opacity: 0; rotate: 6deg; translate: 7% -9%; }
+}
+
+@keyframes desktop-scene-sway {
+  from { rotate: -1.2deg; }
+  to { rotate: 1.6deg; }
+}
+
+/* Neon Rain ---------------------------------------------------------------- */
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--tower .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(176 118 255 / 36%), rgb(126 84 255 / 12%) 52%, transparent 76%);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--magenta .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 92 222 / 52%), rgb(224 62 200 / 18%) 52%, transparent 76%);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--cyan .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(96 214 255 / 50%), rgb(64 160 255 / 16%) 52%, transparent 76%);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--amber .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 176 112 / 48%), rgb(255 110 92 / 16%) 52%, transparent 76%);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--azure .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(120 204 255 / 50%), rgb(80 150 255 / 16%) 52%, transparent 76%);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--street {
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 72%, transparent);
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--street .desktop-scene__art {
+  background-image: linear-gradient(90deg, transparent 4%, rgb(255 84 214 / 16%) 30%, rgb(84 204 255 / 14%) 55%, rgb(255 164 84 / 12%) 80%, transparent 96%);
+}
+
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street) {
+  animation: desktop-scene-ignite 1.5s linear calc(.35s + var(--delay, 0s)) backwards;
+}
+
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street) .desktop-scene__art {
+  animation: desktop-scene-hum 6.2s ease-in-out calc(var(--delay, 0s) * 3) infinite;
+}
+
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer--street {
+  animation: desktop-scene-bloom 2.4s ease-out .6s backwards;
+}
+
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer--street .desktop-scene__art {
+  animation: desktop-scene-drift 9s ease-in-out infinite alternate;
+}
+
+/* Tubes strike, stutter and settle; never a full-screen flash. */
+@keyframes desktop-scene-ignite {
+  0% { opacity: 0; }
+  12% { opacity: .85; }
+  17% { opacity: .1; }
+  28% { opacity: 1; }
+  33% { opacity: .35; }
+  48% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes desktop-scene-hum {
+  0%, 44%, 100% { opacity: .9; }
+  46% { opacity: .62; }
+  47% { opacity: .95; }
+  49% { opacity: .7; }
+  52% { opacity: 1; }
+  76% { opacity: .82; }
+}
+
+@keyframes desktop-scene-drift {
+  from { opacity: .6; translate: -1.6% 0; }
+  to { opacity: 1; translate: 1.6% 0; }
+}
+
+/* Aurora Snowfield --------------------------------------------------------- */
+
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--horizon .desktop-scene__art {
+  background-image: radial-gradient(50% 50% at 50% 62%, rgb(92 255 192 / 24%), rgb(64 200 172 / 9%) 56%, transparent 76%);
+}
+
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--veil,
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--veil-echo {
+  transform-origin: 50% 90%;
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 64%, transparent 88%);
+}
+
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--veil .desktop-scene__art {
+  opacity: .78;
+}
+
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--veil-echo .desktop-scene__art {
+  opacity: .4;
+  transform: scaleX(-1);
+}
+
+.desktop-scene[data-scene='aurora'] .desktop-scene__layer--cabin .desktop-scene__art {
+  background-image: radial-gradient(closest-side, rgb(255 194 104 / 46%), rgb(255 150 70 / 14%) 50%, transparent 76%);
+}
+
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--veil,
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--veil-echo {
+  animation: desktop-scene-aurora-rise 3.4s cubic-bezier(.16, 1, .3, 1) var(--delay, 0s) backwards;
+}
+
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--veil .desktop-scene__art {
+  animation: desktop-scene-aurora-flow 12s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--veil-echo .desktop-scene__art {
+  animation: desktop-scene-aurora-echo 17s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--horizon .desktop-scene__art {
+  animation: desktop-scene-glow 9s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='aurora'] .desktop-scene__layer--cabin .desktop-scene__art {
+  animation: desktop-scene-candle 3.4s ease-in-out infinite alternate;
+}
+
+@keyframes desktop-scene-aurora-rise {
+  from { opacity: 0; scale: 1 .25; }
+}
+
+@keyframes desktop-scene-aurora-flow {
+  from { opacity: .6; transform: translate3d(-2.5%, 0, 0) scale(1, .94) skewX(-2deg); }
+  to { opacity: .92; transform: translate3d(2.5%, -1.5%, 0) scale(1.03, 1.06) skewX(2.5deg); }
+}
+
+@keyframes desktop-scene-aurora-echo {
+  from { opacity: .26; transform: scaleX(-1) translate3d(3%, 0, 0) scale(1, .9); }
+  to { opacity: .5; transform: scaleX(-1) translate3d(-3%, -2%, 0) scale(1, 1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-scene,
+  .desktop-scene *,
+  .desktop-scene__poster[data-phase] {
+    transition: none !important;
+    animation: none !important;
+  }
+}

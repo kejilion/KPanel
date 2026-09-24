@@ -3,13 +3,13 @@ import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
 const script = readFileSync(new URL('../../public/appearance-init.js', import.meta.url), 'utf8')
-function run(values: Record<string, string>, pathname = '/overview', blocked = false, cached: Record<string, string> = {}) {
+function run(values: Record<string, string>, pathname = '/overview', blocked = false, cached: Record<string, string> = {}, fetch: () => Promise<unknown> = async () => ({ ok: false })) {
   const properties = new Map<string, string>()
   const classes = new Set<string>()
   let resolveImage!: () => void
   const imageReady = new Promise<void>(resolve => { resolveImage = resolve })
   const root = { dataset: {} as Record<string, string>, style: { colorScheme: '', setProperty: (key: string, value: string) => properties.set(key, value) }, classList: { add: (name: string) => classes.add(name), remove: (name: string) => classes.delete(name) } }
-  runInNewContext(script, { document: { documentElement: root }, location: { pathname }, matchMedia: () => ({ matches: true }), localStorage: { getItem: (key: string) => { if (blocked) throw new Error('blocked'); return values[key] ?? null } }, sessionStorage: { getItem: (key: string) => cached[key] ?? null }, Image: class { decode() { return imageReady } }, fetch: async () => ({ ok: false }), window: { addEventListener() {} } })
+  runInNewContext(script, { document: { documentElement: root }, location: { pathname }, matchMedia: () => ({ matches: true }), localStorage: { getItem: (key: string) => { if (blocked) throw new Error('blocked'); return values[key] ?? null } }, sessionStorage: { getItem: (key: string) => cached[key] ?? null }, Image: class { decode() { return imageReady } }, fetch, window: { addEventListener() {} } })
   return { root, properties, classes, resolveImage }
 }
 
@@ -41,6 +41,23 @@ describe('appearance before application startup', () => {
     result.resolveImage()
     for (let tick = 0; tick < 5; tick++) await Promise.resolve()
     expect(result.classes.has('desktop-wallpaper-loading')).toBe(false)
+  })
+  it.each(['tide', 'sakura', 'neon', 'aurora'])('paints the %s live scene poster before modules load', scene => {
+    const result = run({ 'kejilion-panel-desktop-mode': 'desktop', 'kpanel:desktop-wallpaper:v1': scene })
+    expect(result.root.dataset.desktopWallpaper).toBe(scene)
+    expect(result.properties.get('--desktop-wallpaper-image')).toBe(`url("/wallpapers/scenes/${scene}.webp")`)
+  })
+  it('leaves live scene posters to the HTTP cache instead of the per-tab bitmap', async () => {
+    let requests = 0
+    run({ 'kpanel:desktop-wallpaper:v1': 'aurora' }, '/', false, {}, async () => { requests++; return { ok: false } })
+    await Promise.resolve()
+    expect(requests).toBe(0)
+    run({ 'kpanel:desktop-wallpaper:v1': 'prism' }, '/', false, {}, async () => { requests++; return { ok: false } })
+    await Promise.resolve()
+    expect(requests).toBe(1)
+  })
+  it('does not treat scene-like values as wallpaper URLs', () => {
+    expect(run({ 'kpanel:desktop-wallpaper:v1': 'scenes/../../x' }).properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
   })
   it('reuses a bounded per-tab bitmap without interpolating cache URLs', () => {
     const key = 'kpanel:desktop-wallpaper-cache:v1:classic'

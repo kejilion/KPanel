@@ -2890,6 +2890,91 @@ body.desktop-mode-open::-webkit-scrollbar {
   box-shadow: 0 4px 12px rgb(0 0 0 / 22%);
 }
 
+.desktop-wallpaper-section__title {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.desktop-wallpaper-section__head {
+  display: grid;
+  gap: 4px;
+  margin: 22px 0 12px;
+}
+
+.desktop-wallpaper-section__head .desktop-wallpaper-section__title {
+  margin: 0;
+}
+
+.desktop-wallpaper-section__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Live scene cards hint at motion on hover: a slow push-in and one light sweep. */
+.desktop-wallpaper-picker__preview--scene {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.desktop-wallpaper-picker__thumb {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transition: transform 1.4s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-wallpaper-picker__preview--scene::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 30%) 50%, transparent 65%);
+  content: '';
+  transform: translateX(-110%);
+}
+
+.desktop-wallpaper-picker__option:hover .desktop-wallpaper-picker__thumb,
+.desktop-wallpaper-picker__option:focus-visible .desktop-wallpaper-picker__thumb {
+  transform: scale(1.08);
+}
+
+.desktop-wallpaper-picker__option:hover .desktop-wallpaper-picker__preview--scene::after,
+.desktop-wallpaper-picker__option:focus-visible .desktop-wallpaper-picker__preview--scene::after {
+  transform: translateX(110%);
+  transition: transform 1.1s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-wallpaper-picker__badge {
+  position: absolute;
+  top: 13px;
+  left: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  color: #fff;
+  background: rgb(10 14 22 / 66%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-wallpaper-picker__thumb,
+  .desktop-wallpaper-picker__preview--scene::after {
+    transition: none !important;
+  }
+}
+
 .desktop-menu-enter-active,
 .desktop-menu-leave-active {
   transition: opacity .14s ease, transform .14s ease;

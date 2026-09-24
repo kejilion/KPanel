@@ -275,3 +275,41 @@ describe('desktop visual and interaction contract', () => {
     expect(windowSource).toContain('element.focus({ preventScroll: true })')
   })
 })
+
+describe('live desktop scene motion contract', () => {
+  const sceneStyles = readFileSync(new URL('../../styles/desktopScenes.css', import.meta.url), 'utf8')
+  const sceneSource = readFileSync(new URL('./DesktopScene.vue', import.meta.url), 'utf8')
+
+  it('animates only compositor properties in every scene keyframe', () => {
+    const keyframes = [...sceneStyles.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)]
+    expect(keyframes.length).toBeGreaterThanOrEqual(10)
+    for (const [, name, body] of keyframes) {
+      const properties = [...body!.matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1])
+      expect(properties.length, name).toBeGreaterThan(0)
+      for (const property of properties) expect(['opacity', 'transform', 'scale', 'rotate', 'translate'], `${name}: ${property}`).toContain(property)
+    }
+  })
+
+  it('keeps glow and blur effects off the page compositor budget', () => {
+    expect(sceneStyles).not.toMatch(/\bfilter\s*:|backdrop-filter|mix-blend-mode|will-change/)
+    expect(sceneStyles).toMatch(/\.desktop-scene\s*\{[^}]*contain:\s*strict;[^}]*\}/)
+  })
+
+  it('stops scene motion for reduced motion, paused and covered desktops', () => {
+    expect(sceneStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.desktop-scene \*[\s\S]*?animation:\s*none !important;/)
+    expect(sceneStyles).toMatch(/\.desktop-scene--paused \.desktop-scene__art\s*\{\s*animation-play-state:\s*paused !important;/)
+    // Loops run only once the live class is present, i.e. never for reduced motion.
+    for (const selector of sceneStyles.match(/^[^@\n{}][^{]*\{\s*\n\s*animation:/gm) ?? []) {
+      expect(selector, selector).toContain('desktop-scene--live')
+    }
+    expect(sceneSource).toContain("'desktop-scene--live': ready.value && !reducedMotion.value")
+  })
+
+  it('keeps picker copy for live scenes at readable sizes', () => {
+    for (const selector of ['.desktop-wallpaper-section__title', '.desktop-wallpaper-section__hint', '.desktop-wallpaper-picker__badge']) {
+      const size = Number(cssRule(styles, selector).match(/font-size:\s*(\d+)px/)?.[1])
+      expect(size, selector).toBeGreaterThanOrEqual(12)
+    }
+    expect(desktopViewSource).toContain('aria-labelledby="desktop-wallpaper-scene-title"')
+  })
+})

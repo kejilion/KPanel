@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import {
   ArrowLeft,
@@ -26,8 +26,15 @@ import {
   Download,
   Maximize2,
   Minimize2,
+  Sparkles,
   X,
 } from '@lucide/vue'
+import {
+  DESKTOP_SCENES,
+  desktopScenePoster,
+  isDesktopSceneID,
+  type DesktopSceneID,
+} from '@/lib/desktopScenes/catalog'
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
@@ -248,10 +255,14 @@ const DESKTOP_WALLPAPERS = [
     themePreset: THEME_COLOR_PRESETS[4]!,
   },
 ] as const
-type DesktopWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
+type DesktopStaticWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
+// Live scenes share the wallpaper key, so one choice is active at a time.
+type DesktopWallpaperID = DesktopStaticWallpaperID | DesktopSceneID
+
+const DesktopScene = defineAsyncComponent(() => import('@/components/desktop/DesktopScene.vue'))
 
 function isDesktopWallpaperID(value: string | null): value is DesktopWallpaperID {
-  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value)
+  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value) || isDesktopSceneID(value)
 }
 
 function readDesktopWallpaperID(): DesktopWallpaperID {
@@ -420,10 +431,22 @@ const iconAnnouncement = ref('')
 const iconManagerOpen = ref(false)
 const wallpaperDialogOpen = ref(false)
 const desktopWallpaperID = ref<DesktopWallpaperID>(readDesktopWallpaperID())
-const activeDesktopWallpaper = computed(() =>
-  DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
-    || DESKTOP_WALLPAPERS[0],
+const activeDesktopScene = computed(() =>
+  isDesktopSceneID(desktopWallpaperID.value) ? desktopWallpaperID.value : undefined,
 )
+const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: string } => {
+  const scene = activeDesktopScene.value
+  if (scene) return { id: scene, src: desktopScenePoster(scene) }
+  return DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
+    || DESKTOP_WALLPAPERS[0]
+})
+// A restored scene plays the quiet entrance; choosing one plays the full one.
+const desktopSceneEntrance = ref<'restore' | 'select'>('restore')
+const desktopSceneCovered = computed(() => {
+  const visible = desktop.windows.value.filter((windowState) => !windowState.minimized)
+  return visible.some((windowState) => windowState.maximized)
+    || (visible.some((windowState) => windowState.snap === 'left') && visible.some((windowState) => windowState.snap === 'right'))
+})
 const desktopWallpaperStyle = computed((): Record<string, string> =>
   document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
     ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
@@ -3099,10 +3122,12 @@ async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID): Promise<
   wallpaperDialogOpen.value = false
   await nextTick()
   await waitForWallpaperSwitchDelay()
-  const wallpaper = DESKTOP_WALLPAPERS.find((candidate) => candidate.id === wallpaperID)
-  if (!wallpaper) return
+  const colors = DESKTOP_WALLPAPERS.find((candidate) => candidate.id === wallpaperID)?.themePreset.colors
+    ?? DESKTOP_SCENES.find((scene) => scene.id === wallpaperID)?.colors
+  if (!colors) return
+  desktopSceneEntrance.value = 'select'
   desktopWallpaperID.value = wallpaperID
-  theme.setColors(wallpaper.themePreset.colors)
+  theme.setColors(colors)
   try {
     window.localStorage.setItem(DESKTOP_WALLPAPER_KEY, wallpaperID)
     window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))
@@ -3676,6 +3701,15 @@ function onViewportResize(): void {
           class="desktop__wallpaper-image"
           :data-wallpaper="activeDesktopWallpaper.id"
           :style="desktopWallpaperStyle"
+        />
+      </Transition>
+      <Transition name="desktop-scene-fade">
+        <DesktopScene
+          v-if="activeDesktopScene"
+          :key="activeDesktopScene"
+          :scene="activeDesktopScene"
+          :covered="desktopSceneCovered"
+          :entrance="desktopSceneEntrance"
         />
       </Transition>
       <div class="desktop__wallpaper-veil" aria-hidden="true" />
@@ -4347,10 +4381,13 @@ function onViewportResize(): void {
       size="wide"
       @close="wallpaperDialogOpen = false"
     >
+      <h3 id="desktop-wallpaper-static-title" class="desktop-wallpaper-section__title">
+        {{ i18n.t('desktop.wallpaperStaticTitle') }}
+      </h3>
       <div
         class="desktop-wallpaper-picker"
         role="radiogroup"
-        :aria-label="i18n.t('desktop.wallpaperTitle')"
+        aria-labelledby="desktop-wallpaper-static-title"
       >
         <button
           v-for="wallpaper in DESKTOP_WALLPAPERS"
@@ -4374,6 +4411,50 @@ function onViewportResize(): void {
           </span>
           <Check
             v-if="wallpaper.id === desktopWallpaperID"
+            class="desktop-wallpaper-picker__check"
+            :size="17"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+      <div class="desktop-wallpaper-section__head">
+        <h3 id="desktop-wallpaper-scene-title" class="desktop-wallpaper-section__title">
+          {{ i18n.t('desktop.wallpaperSceneTitle') }}
+        </h3>
+        <p id="desktop-wallpaper-scene-hint" class="desktop-wallpaper-section__hint">
+          {{ i18n.t('desktop.wallpaperSceneHint') }}
+        </p>
+      </div>
+      <div
+        class="desktop-wallpaper-picker desktop-wallpaper-picker--scenes"
+        role="radiogroup"
+        aria-labelledby="desktop-wallpaper-scene-title"
+        aria-describedby="desktop-wallpaper-scene-hint"
+      >
+        <button
+          v-for="scene in DESKTOP_SCENES"
+          :key="scene.id"
+          class="desktop-wallpaper-picker__option"
+          :class="{ 'desktop-wallpaper-picker__option--selected': scene.id === desktopWallpaperID }"
+          type="button"
+          role="radio"
+          :aria-checked="scene.id === desktopWallpaperID"
+          :data-scene-option="scene.id"
+          @click="selectDesktopWallpaper(scene.id)"
+        >
+          <span class="desktop-wallpaper-picker__preview desktop-wallpaper-picker__preview--scene" aria-hidden="true">
+            <span class="desktop-wallpaper-picker__thumb" :style="{ backgroundImage: `url('${scene.thumb}')` }" />
+          </span>
+          <span class="desktop-wallpaper-picker__badge">
+            <Sparkles :size="13" aria-hidden="true" />
+            {{ i18n.t('desktop.wallpaperSceneBadge') }}
+          </span>
+          <span class="desktop-wallpaper-picker__copy">
+            <strong>{{ i18n.t(scene.nameKey) }}</strong>
+            <small>{{ i18n.t(scene.descriptionKey) }}</small>
+          </span>
+          <Check
+            v-if="scene.id === desktopWallpaperID"
             class="desktop-wallpaper-picker__check"
             :size="17"
             aria-hidden="true"

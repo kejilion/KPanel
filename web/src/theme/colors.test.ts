@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DESKTOP_SCENES } from '@/lib/desktopScenes/catalog'
 import {
   DEFAULT_THEME_COLORS,
   THEME_COLOR_KEYS,
@@ -184,6 +185,13 @@ describe('derived custom theme', () => {
       expectAccessible(dark)
       expect(light['--theme-accent']).not.toBe(light['--brand'])
       expect(dark['--theme-accent']).not.toBe(dark['--brand'])
+    }
+  })
+
+  it('keeps every live desktop scene palette accessible in light and dark modes', () => {
+    for (const scene of DESKTOP_SCENES) {
+      expectAccessible(deriveThemeTokens({ ...scene.colors }, 'light'))
+      expectAccessible(deriveThemeTokens({ ...scene.colors }, 'dark'))
     }
   })
 
