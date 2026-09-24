@@ -1,12 +1,14 @@
 import * as THREE from 'three'
 import type { Daylight } from './daylight'
+import { CLOUD_GLSL } from './clouds'
 import { NOISE_GLSL } from './noise'
 
 /**
  * The sky, as one GLSL function used twice: for the sky dome and for the
  * ocean's reflections, so the sea always mirrors the same sky. A gradient that
- * follows the sun, a soft sun disc and glow, a layer of drifting clouds lit by
- * the sun (glowing orange at sunset), the moon in its real phase (lit on the
+ * follows the sun, a soft sun disc and glow, the clouds (volumetric on the dome,
+ * see clouds.ts; a cheaper take on the same cloud field in the reflections),
+ * the moon in its real phase (lit on the
  * side facing the sun, a pale disc when it is up by day), and at night the
  * stars and the Milky Way, fixed to the celestial sphere so they turn through
  * the night as the real ones do.
@@ -38,20 +40,8 @@ float skyHash(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-// A cloud layer 1600 m up: cover, and how much sunlight reaches the cloud's underside.
-vec2 cloudLayer(vec3 d, bool cheap) {
-  if (d.y < 0.015) return vec2(0.0);
-  vec2 p = d.xz / d.y * 1600.0 + vec2(uCloudTime * 5.0, uCloudTime * 2.0);
-  vec3 q = vec3(p * 0.00032, uCloudTime * 0.003);
-  float n = cheap ? fbm3(q) : fbm(q);
-  float cover = smoothstep(0.04, 0.45, n + 0.07) * smoothstep(0.015, 0.14, d.y);
-  // Thinner towards the sun = brighter; a cheap stand-in for light through the cloud.
-  float towards = fbm3(q + vec3(uSunDir.xz * 0.12, 0.0));
-  float lit = clamp(0.62 + (n - towards) * 2.2, 0.18, 1.25);
-  return vec2(cover, lit);
-}
-
-vec3 skyColor(vec3 d, bool cheap) {
+/** flatClouds: draw the clouds here (for reflections); the dome lays the volumetric ones on top instead. */
+vec3 skyColor(vec3 d, bool cheap, bool flatClouds) {
   float h = max(d.y, 0.0);
   vec3 color = mix(uSkyHorizon, uSkyTop, pow(h, 0.42));
   float toSun = max(dot(d, uSunDir), 0.0);
@@ -106,7 +96,7 @@ vec3 skyColor(vec3 d, bool cheap) {
     }
   }
   // Clouds: lit by the key light, darker and bluer in their shade, a rim glow around the sun.
-  vec2 cloud = cloudLayer(d, cheap);
+  vec2 cloud = flatClouds ? cloudCover(d) : vec2(0.0);
   if (cloud.x > 0.0) {
     vec3 shade = mix(uSkyHorizon * 0.5, uSkyTop * 1.3 + uAmbientTop * 0.45, 0.5);
     vec3 lit = uLight * 0.48 * cloud.y + uAmbientTop * 0.45;
@@ -134,6 +124,12 @@ export function skyUniforms(daylight: Daylight) {
     uMoonLight: { value: 1 },
     uCelestial: { value: daylight.celestial },
     uCloudTime: { value: 0 },
+    // Filled in once the cloud volumes have loaded (see clouds.ts).
+    uShape: { value: null as THREE.Texture | null },
+    uDetail: { value: null as THREE.Texture | null },
+    uCloudCover: { value: 0.45 },
+    uClouds: { value: null as THREE.Texture | null },
+    uScreen: { value: new THREE.Vector2(1, 1) },
   }
 }
 
@@ -152,15 +148,20 @@ export function createSkyDome(uniforms: SkyUniforms): THREE.Mesh {
     `,
     fragmentShader: /* glsl */ `
       ${SKY_UNIFORMS_GLSL}
+      uniform sampler2D uClouds;
+      uniform vec2 uScreen;
       varying vec3 vDirection;
       ${NOISE_GLSL}
+      ${CLOUD_GLSL}
       ${SKY_GLSL}
       void main() {
         vec3 d = normalize(vDirection);
-        vec3 color = skyColor(vec3(d.x, max(d.y, 0.0), d.z), false);
+        vec3 color = skyColor(vec3(d.x, max(d.y, 0.0), d.z), false, false);
         // Below the horizon (only ever seen past the sea's edge): the horizon haze.
         if (d.y < 0.0) color = uSkyHorizon * 0.9;
-        gl_FragColor = vec4(color, 1.0);
+        // The volumetric clouds, marched for this very view at half resolution.
+        vec4 clouds = texture2D(uClouds, gl_FragCoord.xy / uScreen);
+        gl_FragColor = vec4(color * clouds.a + clouds.rgb, 1.0);
       }
     `,
     side: THREE.BackSide,

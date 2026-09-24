@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { NOISE_GLSL } from './noise'
 import { LIGHTING_GLSL, type LightingUniforms, ROCK_SHADOW_GLSL } from './shading'
+import { CLOUD_GLSL } from './clouds'
 import { SKY_GLSL, type SkyUniforms } from './sky'
 import { SKYLINE_GLSL } from './skyline'
 
@@ -81,6 +82,7 @@ varying float vCrest;
 ${NOISE_GLSL}
 ${LIGHTING_GLSL}
 ${WAVES_GLSL}
+${CLOUD_GLSL}
 ${SKY_GLSL}
 ${SKYLINE_GLSL}
 ${ROCK_SHADOW_GLSL}
@@ -118,7 +120,7 @@ void main() {
   float through = pow(max(dot(view, -uLightDir) * 0.5 + 0.5, 0.0), 3.0) * clamp(vCrest + 0.35, 0.0, 1.0);
   body += vec3(0.02, 0.22, 0.2) * uLight * through * 0.25 * shadow;
 
-  vec3 color = mix(body, skyColor(reflected, true), fresnel);
+  vec3 color = mix(body, skyColor(reflected, true, true), fresnel);
   // At night the far city's lights trail faintly across the water, broken up by the waves.
   if (uNight > 0.01) {
     float trail = cityLights(reflected) * smoothstep(0.05, 0.02, reflected.y);

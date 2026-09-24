@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { onHostCommand, postToHost } from './bridge'
 import { createClock } from './clock'
+import { createClouds } from './clouds'
 import { createDaylight } from './daylight'
 import { Director } from './director'
 import { createOcean } from './ocean'
@@ -45,7 +46,7 @@ function createRenderer(): THREE.WebGLRenderer | undefined {
   }
 }
 
-function start(): void {
+async function start(): Promise<void> {
   const renderer = createRenderer()
   if (!renderer) {
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
@@ -63,7 +64,12 @@ function start(): void {
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000)
   scene.add(createSkyDome(uniforms))
-  scene.add(createRocks(uniforms))
+  // The sculpted stacks load before the scene reports ready, so it fades up complete.
+  scene.add(await createRocks(uniforms))
+  const clouds = await createClouds(renderer, uniforms)
+  uniforms.uShape.value = clouds.shape
+  uniforms.uDetail.value = clouds.detail
+  uniforms.uClouds.value = clouds.texture
   scene.add(createSkyline(uniforms))
   const ocean = createOcean(uniforms, mulberry32(20260926))
   scene.add(ocean.mesh)
@@ -100,8 +106,17 @@ function start(): void {
     `,
   }))
 
+  // Quality steps for slower graphics cards: first coarser clouds, then fewer pixels overall.
+  // Clouds are soft, so half resolution is plenty; they are the costliest thing in the scene.
+  const QUALITY = [{ clouds: 0.5, pixels: 1.5 }, { clouds: 0.35, pixels: 1.5 }, { clouds: 0.35, pixels: 1 }]
+  let quality = 0
+  const drawingSize = new THREE.Vector2()
   const resize = () => {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[quality]!.pixels))
     renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.getDrawingBufferSize(drawingSize)
+    clouds.resize(drawingSize.x, drawingSize.y, QUALITY[quality]!.clouds)
+    uniforms.uScreen.value.copy(drawingSize)
     composer.setPixelRatio(renderer.getPixelRatio())
     composer.setSize(window.innerWidth, window.innerHeight)
     camera.aspect = window.innerWidth / window.innerHeight
@@ -119,6 +134,15 @@ function start(): void {
   })
   director.onShotChange = (index) => postToHost({ source: 'kpanel-scene-pack', type: 'camera', index })
 
+  // While the camera is all but still, the clouds are marched every other frame (they drift slowly,
+  // and a frame's lag is a fraction of a pixel); during a move, every frame.
+  let cloudFrame = 0
+  const view = new THREE.Vector3()
+  const cloudView = new THREE.Vector3()
+  const cloudPosition = new THREE.Vector3()
+  // Frames that take too long, counted up while slow and down while fine; enough in a row and the
+  // quality drops a step (never back up, so it cannot see-saw).
+  let slow = 0
   let paused = false
   let handle = 0
   let last = 0
@@ -126,7 +150,8 @@ function start(): void {
   const frame = (now: number) => {
     handle = requestAnimationFrame(frame)
     // rAF timestamps can precede the first directly rendered frame: never let time run backwards.
-    const dt = last ? Math.min(Math.max((now - last) / 1000, 0), 0.05) : 1 / 60
+    const elapsed = last ? Math.max((now - last) / 1000, 0) : 1 / 60
+    const dt = Math.min(elapsed, 0.05)
     last = now
     time += dt
     // Linger over a moonrise or moonset as over a sunrise or sunset.
@@ -143,7 +168,24 @@ function start(): void {
     const cue = director.update(dt, time)
     ocean.follow(camera)
     renderer.toneMappingExposure = daylight.exposure * cue.fade
+    // The clouds are marched for this exact view before the sky that shows them is drawn.
+    camera.updateMatrixWorld()
+    camera.getWorldDirection(view)
+    const still = view.angleTo(cloudView) < 0.004 && camera.position.distanceTo(cloudPosition) < 1
+    if (!still || ++cloudFrame % 2 === 0) {
+      clouds.render(camera)
+      cloudView.copy(view)
+      cloudPosition.copy(camera.position)
+    }
     composer.render(dt)
+    if (time > 6 && quality < QUALITY.length - 1) {
+      slow = elapsed > 1 / 45 ? slow + 1 : Math.max(0, slow - 1)
+      if (slow > 180) {
+        quality++
+        slow = 0
+        resize()
+      }
+    }
   }
 
   onHostCommand((command) => {
@@ -179,4 +221,4 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-start()
+start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))

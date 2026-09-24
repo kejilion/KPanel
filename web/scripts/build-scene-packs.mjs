@@ -8,7 +8,9 @@
 //                                                 unless dist/ and the catalog match byte for byte
 //
 // Packs built with the standard toolchain get src/main.(ts|js) bundled into a
-// single classic script dist/scene.js (Three.js from this workspace included).
+// single classic script dist/scene.js (Three.js from this workspace included);
+// an assets/ directory (models, textures, data the scene loads at run time) is
+// copied to dist/assets/ as it is.
 // Packs built with their author's own toolchain only commit dist/; they are
 // hashed into the catalog as they are. The catalog pins size and SHA-256 of
 // every published file so the panel can verify downloads. The check mode is what
@@ -69,6 +71,12 @@ async function buildPack(packRoot, id, outDir) {
   await mkdir(outDir, { recursive: true })
   for (const name of PUBLISHED_ASSETS) {
     if (await exists(join(packRoot, name))) await copyFile(join(packRoot, name), join(outDir, name))
+  }
+  if (await exists(join(packRoot, 'assets'))) {
+    for (const path of await listFiles(join(packRoot, 'assets'))) {
+      await mkdir(dirname(join(outDir, 'assets', path)), { recursive: true })
+      await copyFile(join(packRoot, 'assets', path), join(outDir, 'assets', path))
+    }
   }
   if (!checkOnly) console.log(`built ${id}`)
   return true

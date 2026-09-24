@@ -48,8 +48,8 @@ vec3 atmosphere(vec3 color, vec3 world) {
 `
 
 /**
- * The sea stacks as the key light sees them, for the water: each stack as a column that narrows
- * towards its rounded top, the same profile as the rock meshes, tested exactly along the ray to
+ * The sea stacks as the key light sees them, for the water: each stack as a column with the same
+ * outline as the sculpted rocks (see rockRadiusAt), tested exactly along the ray to
  * the sun or moon. The height map is too coarse for this (it rounds a stack into a low cone), and
  * then a moon hidden behind a stack would still lay its glittering path at the stack's foot.
  */
@@ -58,10 +58,18 @@ const int ROCK_COUNT = ${ROCKS.length};
 const vec4 ROCK_LIST[${ROCKS.length}] = vec4[${ROCKS.length}](
   ${ROCKS.map((rock) => `vec4(${rock.x.toFixed(1)}, ${rock.z.toFixed(1)}, ${rock.radius.toFixed(1)}, ${rock.height.toFixed(1)})`).join(',\n  ')}
 );
-/** Radius of a stack (x, z, radius, height) at world height y; its mesh sits 12% of its height low. */
+/**
+ * Radius of a rock (x, z, radius, height) at world height y, following blender/rocks.py: a stack
+ * stands on steep walls, a little wider at the foot, with a rounded edge; a low reef is a boulder.
+ */
 float rockRadiusAt(vec4 rock, float y) {
-  float v = pow(clamp((y + 0.12 * rock.w) / rock.w, 0.0, 1.0), 1.43);
-  return rock.z * 0.92 * sqrt(max(1.0 - v * v, 0.0)) * (1.0 - 0.25 * v);
+  float t = y / rock.w;
+  if (t > 1.0) return 0.0;
+  if (rock.w <= 6.0) return rock.z * sqrt(max(1.0 - pow(clamp(t / 0.9, 0.0, 1.0), 2.5), 0.0));
+  float wall = mix(1.08, 0.92, clamp((t + 0.2) / 1.04, 0.0, 1.0));
+  float rim = t > 0.84 ? sqrt(max(1.0 - pow((t - 0.84) / 0.14, 2.0), 0.0)) : 1.0;
+  // The bites and joints eat a little into the walls.
+  return rock.z * wall * 0.9 * rim;
 }
 float rockShadow(vec3 p) {
   vec2 toLight = uLightDir.xz;

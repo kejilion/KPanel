@@ -46,6 +46,8 @@ scene-packs/
 | `thumb.webp` | 是 | 选择器缩略图，16:9，400×225，≤ 40 KB |
 | `preview.webm` | 否 | 选择器悬停预览，≤ 8 秒、≤ 3 MB、无声 |
 | `src/` | 是 | 可读源码；压缩或第三方库请在 manifest `dependencies` 中声明来源与版本 |
+| `assets/` | 否 | 运行时加载的模型、贴图与数据（如 `.glb`、`.webp`、`.bin`），构建时原样复制到 `dist/assets/`；场景用相对路径 `fetch` 或加载器读取 |
+| 其他目录 | 否 | 生成素材的脚本等（如 Blender 脚本），随源码提交供审核与复现，不发布；生成步骤写进包目录的 `BUILD.md` |
 | `dist/` | 是 | 发布文件，面板只下载这里的内容 |
 
 **允许的扩展名**：`html js mjs css json webp png jpg jpeg avif ktx2 basis glb gltf bin hdr exr wasm woff2 webm mp4 txt md`。
@@ -133,7 +135,7 @@ scene-packs/
 
 ```bash
 # 1. 复制 _template/（或任意一个包）为 scene-packs/<你的 ID>/，修改 manifest.json 与 src/
-# 2. 构建：打包 src/main.ts 为 dist/scene.js，复制入口与图片，并更新 catalog.json
+# 2. 构建：打包 src/main.ts 为 dist/scene.js，复制入口、图片与 assets/，并更新 catalog.json
 npm --prefix web run scene-packs:build
 # 3. 校验：manifest、文件类型与体积、catalog 与 dist 是否一致
 node scripts/check-scene-packs.mjs
