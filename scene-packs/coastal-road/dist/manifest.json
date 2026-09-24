@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "id": "coastal-road",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "海滨公路",
+    "zh-TW": "海濱公路",
+    "en-US": "Coastal Road"
+  },
+  "description": {
+    "zh-CN": "悬崖公路绕过灯塔岬角，礁石浪花与波光粼粼的海面，日月昼夜随本地时间流转",
+    "zh-TW": "懸崖公路繞過燈塔岬角，礁石浪花與波光粼粼的海面，日月晝夜隨本地時間流轉",
+    "en-US": "A cliff road past a lighthouse and a glittering sea; sun and moon keep your local time"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "MIT",
+  "tags": [
+    "coast",
+    "sea",
+    "road",
+    "day-night"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#1a8fb0",
+    "neutral": "#3b5560",
+    "signature": "#f0a050"
+  },
+  "cameras": [
+    {
+      "id": "coast",
+      "name": {
+        "zh-CN": "岬角全景",
+        "zh-TW": "岬角全景",
+        "en-US": "The headland"
+      }
+    },
+    {
+      "id": "reef",
+      "name": {
+        "zh-CN": "礁石日月",
+        "zh-TW": "礁石日月",
+        "en-US": "Reefs, sun and moon"
+      }
+    },
+    {
+      "id": "road",
+      "name": {
+        "zh-CN": "公路随行",
+        "zh-TW": "公路隨行",
+        "en-US": "Along the road"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ]
+}

@@ -24,3 +24,5 @@ Makefile text eol=lf
 *.md text eol=lf
 internal/**/testdata/** text eol=lf
 deploy/tests/fake-bin/* text eol=lf
+# Built scene packs embed three.js shader source verbatim (trailing spaces included); `scene-packs:check` rebuilds and compares them.
+scene-packs/*/dist/*.js -whitespace
