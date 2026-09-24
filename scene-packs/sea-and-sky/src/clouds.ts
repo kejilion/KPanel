@@ -25,9 +25,10 @@ vec3 cloudWind() {
 }
 /** Which parts of the sky have clouds at all: a very large, slow slice of the same noise. */
 float cloudWeather(vec2 xz) {
-  return texture(uShape, vec3((xz + cloudWind().xz * 0.4) / 42000.0, 0.37).xzy).r;
+  return textureLod(uShape, vec3((xz + cloudWind().xz * 0.4) / 42000.0, 0.37).xzy, 0.0).r;
 }
-/** Cloud density at p (0 outside a cloud). detailed: eat wisps out of the edges. */
+/** Cloud density at p (0 outside a cloud). detailed: eat wisps out of the edges. The volumes have no
+ * mipmaps, and this runs inside loops, so it samples level 0 explicitly. */
 float cloudDensity(vec3 p, bool detailed) {
   float h = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
   if (h < 0.0 || h > 1.0) return 0.0;
@@ -35,10 +36,10 @@ float cloudDensity(vec3 p, bool detailed) {
   float coverage = uCloudCover * smoothstep(0.42, 0.72, cloudWeather(p.xz));
   // Flat-ish bases, rounded tops.
   float profile = smoothstep(0.0, 0.08, h) * smoothstep(1.0, 0.45, h);
-  float shape = texture(uShape, vec3(p.x + wind.x, p.y * 2.2, p.z + wind.z) / 9000.0).r;
+  float shape = textureLod(uShape, vec3(p.x + wind.x, p.y * 2.2, p.z + wind.z) / 9000.0, 0.0).r;
   float mass = cloudRemap(shape * profile, 1.0 - coverage, 1.0);
   if (mass <= 0.0 || !detailed) return mass;
-  float wisps = texture(uDetail, (p + wind * 1.4) / 1500.0).r;
+  float wisps = textureLod(uDetail, (p + wind * 1.4) / 1500.0, 0.0).r;
   return cloudRemap(mass, wisps * 0.35, 1.0);
 }
 /** The cloud field seen along direction d from the camera, cheaply: cover and brightness, for reflections. */

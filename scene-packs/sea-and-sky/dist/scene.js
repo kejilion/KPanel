@@ -4440,9 +4440,10 @@ vec3 cloudWind() {
 }
 /** Which parts of the sky have clouds at all: a very large, slow slice of the same noise. */
 float cloudWeather(vec2 xz) {
-  return texture(uShape, vec3((xz + cloudWind().xz * 0.4) / 42000.0, 0.37).xzy).r;
+  return textureLod(uShape, vec3((xz + cloudWind().xz * 0.4) / 42000.0, 0.37).xzy, 0.0).r;
 }
-/** Cloud density at p (0 outside a cloud). detailed: eat wisps out of the edges. */
+/** Cloud density at p (0 outside a cloud). detailed: eat wisps out of the edges. The volumes have no
+ * mipmaps, and this runs inside loops, so it samples level 0 explicitly. */
 float cloudDensity(vec3 p, bool detailed) {
   float h = (p.y - CLOUD_BOTTOM) / (CLOUD_TOP - CLOUD_BOTTOM);
   if (h < 0.0 || h > 1.0) return 0.0;
@@ -4450,10 +4451,10 @@ float cloudDensity(vec3 p, bool detailed) {
   float coverage = uCloudCover * smoothstep(0.42, 0.72, cloudWeather(p.xz));
   // Flat-ish bases, rounded tops.
   float profile = smoothstep(0.0, 0.08, h) * smoothstep(1.0, 0.45, h);
-  float shape = texture(uShape, vec3(p.x + wind.x, p.y * 2.2, p.z + wind.z) / 9000.0).r;
+  float shape = textureLod(uShape, vec3(p.x + wind.x, p.y * 2.2, p.z + wind.z) / 9000.0, 0.0).r;
   float mass = cloudRemap(shape * profile, 1.0 - coverage, 1.0);
   if (mass <= 0.0 || !detailed) return mass;
-  float wisps = texture(uDetail, (p + wind * 1.4) / 1500.0).r;
+  float wisps = textureLod(uDetail, (p + wind * 1.4) / 1500.0, 0.0).r;
   return cloudRemap(mass, wisps * 0.35, 1.0);
 }
 /** The cloud field seen along direction d from the camera, cheaply: cover and brightness, for reflections. */
@@ -4989,6 +4990,51 @@ ${lu}
 ${Vu}
 ${Gu}
 ${Lu}
+/** How far rock i reaches at the waterline in direction angle (measured from the sculpted mesh). */
+float waterline(int i, float angle) {
+  return textureLod(uWaterlines, vec2(angle / 6.2831853 + 0.5, (float(i) + 0.5) / float(ROCK_COUNT)), 0.0).r;
+}
+/**
+ * The stacks seen in the water: follows the reflected ray from p up to the first rock it meets,
+ * using each rock's measured outline, and returns how much of it is rock (soft at the edges) and
+ * the rock's colour there. The waves have already bent the ray, so the reflection breaks up.
+ */
+float rockReflection(vec3 p, vec3 r, float softness, out vec3 rockColour) {
+  rockColour = vec3(0.0);
+  vec2 d2 = r.xz;
+  float along = dot(d2, d2);
+  if (along < 1e-6) return 0.0;
+  float cover = 0.0;
+  float nearest = 1e9;
+  for (int i = 0; i < ROCK_COUNT; i++) {
+    vec4 rock = ROCK_LIST[i];
+    vec2 q = p.xz - rock.xy;
+    float closest = max(-dot(q, d2) / along, 0.0);
+    float miss = length(q + d2 * closest);
+    float reach = rock.z * 1.35;
+    if (miss > reach || closest <= 0.0) continue;
+    float entry = max(closest - sqrt(max(reach * reach - miss * miss, 0.0) / along), 0.0);
+    for (int k = 0; k < 6; k++) {
+      float t = mix(entry, closest, float(k) / 5.0);
+      float y = p.y + r.y * t;
+      vec2 at = q + d2 * t;
+      float angle = atan(at.y, at.x);
+      float outline = rockRadiusAt(rock, y) * clamp(waterline(i, angle) / max(rockRadiusAt(rock, 0.3), 0.1), 0.6, 1.4);
+      float inside = smoothstep(outline + softness, outline - softness, length(at));
+      if (inside > 0.01 && t < nearest) {
+        nearest = t;
+        cover = max(cover, inside);
+        // The side of the rock facing back towards the water: its colour, dark and weedy near the
+        // waterline, lit by the sun or moon and the sky.
+        vec3 n = normalize(vec3(at.x, 0.0, at.y));
+        vec3 albedo = mix(vec3(0.07, 0.085, 0.05), vec3(0.42, 0.33, 0.24), smoothstep(0.0, 1.6, y));
+        rockColour = shade(albedo, n, 0.15, 1.0);
+        break;
+      }
+    }
+  }
+  return cover;
+}
 void main() {
   vec3 p = vWorld;
   float depth = max(-groundAt(p.xz), 0.0);
@@ -5000,6 +5046,7 @@ void main() {
   vec3 binormal = vec3(0.0, 0.0, 1.0);
   for (int i = 0; i < 6; i++) gerstner(WAVES[i], p.xz, scale, tangent, binormal);
   vec3 n = normalize(cross(binormal, tangent));
+  vec3 swell = n;
   vec2 r1 = texture2D(uRipples, p.xz / 23.0 + uTime * vec2(0.03, 0.011)).xy * 2.0 - 1.0;
   vec2 r2 = texture2D(uRipples, p.xz / 7.3 + uTime * vec2(-0.017, 0.041)).xy * 2.0 - 1.0;
   // A finer chop close to the camera, where the eye can resolve it.
@@ -5029,7 +5076,15 @@ void main() {
   float through = pow(max(dot(view, -uLightDir) * 0.5 + 0.5, 0.0), 3.0) * clamp(vCrest + 0.35, 0.0, 1.0);
   body += vec3(0.02, 0.22, 0.2) * uLight * through * 0.25 * shadow;
 
-  vec3 color = mix(body, skyColor(reflected, true, true), fresnel);
+  vec3 mirrored = skyColor(reflected, true, true);
+  // The stacks' reflections follow the swell and only part of the chop, so they sway and break into
+  // soft streaks rather than scatter into hard-edged flecks.
+  vec3 calm = reflect(-view, normalize(swell + vec3(ripples.x, 0.0, ripples.y) * rough * 0.45));
+  calm.y = max(calm.y, 0.02);
+  vec3 rockColour;
+  float rockCover = rockReflection(p, normalize(calm), 0.8 + dist * 0.004, rockColour);
+  mirrored = mix(mirrored, rockColour, rockCover);
+  vec3 color = mix(body, mirrored, fresnel);
   // At night the far city's lights trail faintly across the water, broken up by the waves.
   if (uNight > 0.01) {
     float trail = cityLights(reflected) * smoothstep(0.05, 0.02, reflected.y);
@@ -5055,7 +5110,7 @@ void main() {
     vec2 away = p.xz - rock.xy;
     float angle = atan(away.y, away.x);
     // How far the rock reaches in this direction, measured from the sculpted mesh.
-    float d = length(away) - texture2D(uWaterlines, vec2(angle / 6.2831853 + 0.5, (float(i) + 0.5) / float(ROCK_COUNT))).r;
+    float d = length(away) - textureLod(uWaterlines, vec2(angle / 6.2831853 + 0.5, (float(i) + 0.5) / float(ROCK_COUNT)), 0.0).r;
     if (d > 14.0) continue;
     float surge = sin(uTime * 0.85 - d * 0.3 + rock.x * 0.13 + sin(angle * 3.0 + rock.w) * 1.2) * 0.5 + 0.5;
     float reach = mix(3.0, 11.0, surge * surge) * (0.75 + 0.25 * sin(angle * 5.0 + rock.x));
@@ -5096,9 +5151,10 @@ void main() {
   vec3 albedo = texture2D(uColour, vUv).rgb;
   // Freshly wet where the waves wash up the foot, rising and falling with each set: darker, and
   // glossy in the light.
-  float swash = 1.0 + 0.9 * (sin(uTime * 0.85 + dot(vWorld.xz, vec2(0.07, 0.05))) * 0.5 + 0.5);
-  float wet = 1.0 - smoothstep(0.2, swash, vWorld.y);
-  albedo *= mix(1.0, 0.5, wet);
+  float swash = 0.6 + 0.8 * (sin(uTime * 0.85 + dot(vWorld.xz, vec2(0.07, 0.05))) * 0.5 + 0.5);
+  swash += 0.35 * sin(vWorld.x * 0.9 + vWorld.z * 0.4) * sin(vWorld.z * 1.3 - vWorld.x * 0.3);
+  float wet = 1.0 - smoothstep(0.0, swash, vWorld.y);
+  albedo *= mix(1.0, 0.7, wet);
   float shadow = keyShadow(vWorld + n * 1.0);
   vec3 color = shade(albedo, n, 0.15, shadow) * mix(0.35, 1.0, surface.a);
   vec3 view = normalize(cameraPosition - vWorld);

@@ -85,14 +85,15 @@ def outline(rock, rows):
     """The stack's outline, top centre to under water: (radius factor, height, outline position s).
 
     A sea stack stands on steep walls, a little wider at the foot, with a rounded edge and a gently
-    domed top; a low reef is a boulder, rounded by the sea.
+    domed top; a low reef is a broad, low slab of rock the sea has worn flat-ish, awash at its edges.
     """
     height = rock['height']
     s = np.linspace(0.0, 1.0, rows)
     if height <= 6:
         phi = s * math.acos(-0.3)
         up = np.cos(phi)
-        return np.sin(phi) * (1.0 - 0.3 * np.maximum(up, 0.0)), np.where(up > 0, up ** 0.8, up) * height * 0.9, s
+        # A flattened top falling away in rough shoulders, rather than a dome.
+        return np.sin(phi) ** 0.7, np.where(up > 0, up ** 0.45, up) * height * 0.85, s
     # Each stack its own: some broad and flat-topped, some tapering to a narrower crown.
     rng = np.random.default_rng(int(rock['seed'] * 7))
     crown, taper = 0.5 + 0.3 * rng.random(), 0.1 + 0.3 * rng.random()
@@ -166,6 +167,10 @@ def stack_surface(rock, rows, columns, detail):
         crown = broken * height * fbm(flat / (radius * 0.7), 3, seed + 17) * (1.0 - wall)
     else:
         crown = zeros
+    if not stack:
+        # Reefs: broken into blocks and gullies, so the silhouette is ragged, not round.
+        inset += 0.22 * radius * (fbm(flat / (radius * 0.35), 3, seed + 19) * 0.5 + 0.5)
+        crown = crown + 0.35 * height * fbm(flat / (radius * 0.45), 3, seed + 21) * np.maximum(flat[:, 2], 0.0) / height
     # A notch cut by the waves at the waterline.
     inset += 0.07 * radius * np.exp(-((flat[:, 2] - 0.6) / 1.3) ** 2)
     if detail:
@@ -218,11 +223,18 @@ def stack_colours(rock, points, joints, within, hardness, top_rows):
     colour = colour * (1 - 0.35 * rust[:, None]) + np.array([0.4, 0.22, 0.11]) * 0.35 * rust[:, None]
     lichen = smoothstep(0.62, 0.8, fbm(flat / 2.2, 3, seed + 59) * 0.5 + 0.5) * (flat[:, 2] > 4.0)
     colour = colour * (1 - 0.4 * lichen[:, None]) + np.array([0.3, 0.32, 0.24]) * 0.4 * lichen[:, None]
-    wet = 1.0 - smoothstep(0.3, 2.6, flat[:, 2] + 0.5 * fbm(flat / 1.5, 2, seed + 47))
-    weed = np.array([0.06, 0.08, 0.045])
-    colour = colour * (1 - 0.85 * wet[:, None]) + weed * 0.85 * wet[:, None]
-    salt = smoothstep(0.72, 0.95, n[:, 2]) * (flat[:, 2] > 2.5)
-    colour = colour * (1 - 0.45 * salt[:, None]) + np.array([0.78, 0.76, 0.7]) * 0.45 * salt[:, None]
+    # The tide zone: weed and wet rock up to a ragged line a metre or so above the water, then a
+    # splash zone of greyer, barnacled rock fading out above it; no hard edge anywhere.
+    ragged = 0.9 * fbm(flat / 2.2, 3, seed + 47) + 0.35 * fbm(flat / 0.6, 2, seed + 49)
+    wet = 1.0 - smoothstep(-0.2, 1.3, flat[:, 2] + ragged)
+    weed = np.array([0.07, 0.085, 0.05])
+    colour = colour * (1 - 0.7 * wet[:, None]) + weed * 0.7 * wet[:, None]
+    splash = (1.0 - smoothstep(1.0, 4.0, flat[:, 2] + 1.5 * ragged)) * (1.0 - wet)
+    colour = colour * (1 - 0.3 * splash[:, None]) + np.array([0.3, 0.3, 0.28]) * 0.3 * splash[:, None]
+    # Salt and guano in patches on the ledge tops, not whole rings.
+    patchy = smoothstep(0.55, 0.8, fbm(flat / 1.6, 3, seed + 51) * 0.5 + 0.5)
+    salt = smoothstep(0.8, 0.97, n[:, 2]) * (flat[:, 2] > 2.5) * patchy
+    colour = colour * (1 - 0.3 * salt[:, None]) + np.array([0.72, 0.7, 0.64]) * 0.3 * salt[:, None]
     if rock['height'] > 6:
         # Wiry grass and thrift on the stack tops, where the gulls leave it alone.
         tuft = smoothstep(0.35, 0.65, fbm(flat / 1.8, 3, seed + 61) * 0.5 + 0.5) * top_rows.ravel() * smoothstep(0.6, 0.9, n[:, 2])

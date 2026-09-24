@@ -284,8 +284,8 @@
         },
         {
           "path": "assets/rock-0-colour.webp",
-          "size": 119648,
-          "sha256": "d885f6ed509546b26da43d0a1d1a4fe5f421e2d79f3289397c96be54ad8be0da"
+          "size": 86672,
+          "sha256": "5e2ce32eb05764ac930077ffb2d20de106a9d34d2e782ceeae6aea95b7a9859d"
         },
         {
           "path": "assets/rock-0-surface.webp",
@@ -294,8 +294,8 @@
         },
         {
           "path": "assets/rock-1-colour.webp",
-          "size": 67124,
-          "sha256": "c0356cb551c1b31fdd7221159f8ad078b7fe577ee52d8b746a1911dab081321f"
+          "size": 56648,
+          "sha256": "3d4ee60d691840b603ababb9f8c82acc77a0dd3fcae418e25bc0a54f2a9c63a3"
         },
         {
           "path": "assets/rock-1-surface.webp",
@@ -304,18 +304,18 @@
         },
         {
           "path": "assets/rock-2-colour.webp",
-          "size": 58294,
-          "sha256": "fe6eaca21fb75971c5b859cb1887ebac87691b053a37d9cce4770a6531d31b69"
+          "size": 50762,
+          "sha256": "2b67c14927787285a6495cade3645d4948a28285df0216691d630d52e1d6edd1"
         },
         {
           "path": "assets/rock-2-surface.webp",
           "size": 1388590,
-          "sha256": "4cdfe8c116e7e401348c21d03b6289618214d4cd1acd26d145b73dcc25c05ee4"
+          "sha256": "13cb1a0edc9c322ec03b9f2df9955c424699b99a8cc478b12cfd47b385d666d1"
         },
         {
           "path": "assets/rock-3-colour.webp",
-          "size": 19970,
-          "sha256": "610499286b18250741b260d4f6ef05001e66ccc7e45ffaf721d2c5f0c9c1b56f"
+          "size": 18888,
+          "sha256": "37366b35c3480d48e5c6dce3f4e193b207b98eec23e73efef9c0ed2b85c58e42"
         },
         {
           "path": "assets/rock-3-surface.webp",
@@ -324,8 +324,8 @@
         },
         {
           "path": "assets/rock-4-colour.webp",
-          "size": 18256,
-          "sha256": "f64581ce7083e5c3b39539c2d7c55253e9f0bb7d7713fe3268b9a93e8bc5425b"
+          "size": 16724,
+          "sha256": "6309e04540055b56f8d20cc5ef665dd60cabedf77c1e53fd3695fa32e60c7d3f"
         },
         {
           "path": "assets/rock-4-surface.webp",
@@ -334,48 +334,48 @@
         },
         {
           "path": "assets/rock-5-colour.webp",
-          "size": 4786,
-          "sha256": "7618a49495d2aa5dd35a36070326bb1e0cdd58bc672c84f23e8bca397885f632"
+          "size": 3952,
+          "sha256": "233c3647c37bf1be09198ffbc3a48da2bf354b07763769140197c5e1f8d5168b"
         },
         {
           "path": "assets/rock-5-surface.webp",
-          "size": 72372,
-          "sha256": "8bf058cf691b01b59ccc0e019f95caae9892d690b0f983c9ed7dd76d76fe8fe4"
+          "size": 93488,
+          "sha256": "c35fda1763c9cf45eea095e3e3b7be75d9e731f3edec66404646af17bbe5c2e7"
         },
         {
           "path": "assets/rock-6-colour.webp",
-          "size": 2704,
-          "sha256": "c6517074db3953fd44592e2d68165a57718ea0584b84cc2b389e8b3e8ed79c91"
+          "size": 2736,
+          "sha256": "3b6d8dfbd0d0f6e3de5db855fbc41fa2f1913064dce802879ca50af9f20d31d9"
         },
         {
           "path": "assets/rock-6-surface.webp",
-          "size": 74460,
-          "sha256": "be4579cda849c6882e2a9a7ba56b665a2bbb2f38a6875ad9ed32a1a78c799aea"
+          "size": 85752,
+          "sha256": "d2df3aa975df8013cf29ce6b4aff18a334d3e8adab91cc04cb68e73fcb0c9598"
         },
         {
           "path": "assets/rock-7-colour.webp",
-          "size": 3388,
-          "sha256": "5f5e0b9031a9b5c3229c3603b936054507d5588c275b050e697fbfbadfa50f8e"
+          "size": 3594,
+          "sha256": "0bd84fc31ca890d10c3c4fb6fe63d47b1bcce7542de7f4e7b43c779f2bd882fe"
         },
         {
           "path": "assets/rock-7-surface.webp",
-          "size": 74534,
-          "sha256": "d5ff3437a538a36bc38dd655d16be8e25f86ec9227cd39a855514e436578c110"
+          "size": 89470,
+          "sha256": "3d8107bca6056d38794f0b77ede3601769e213c21a8a31f799b3053b0ceb041b"
         },
         {
           "path": "assets/rock-8-colour.webp",
-          "size": 2310,
-          "sha256": "7ee0221eb252ef2ed604744946c5dcee3cd63f08d73a9fe6d1f7b51cb3cf7d88"
+          "size": 2578,
+          "sha256": "107f47ae6d2e83cfca8721e140dbbafb8a1ae65db66d248696ab9c60f79d313f"
         },
         {
           "path": "assets/rock-8-surface.webp",
-          "size": 72692,
-          "sha256": "fd4f72ee3687d51e627689958b9be966fa4303f74263f09564bbe8c4d61f32cd"
+          "size": 85438,
+          "sha256": "9b99b858bc52608b91b5047494099f6159ecb1851c2f8f8a637024a2e97d9edf"
         },
         {
           "path": "assets/rocks.glb",
-          "size": 3358892,
-          "sha256": "ca69f96af868a78b2bf2e8effa83f871dbbace26320f3455d156807b2ca3db5f"
+          "size": 3379876,
+          "sha256": "29d69afb1547752b09bbe98fe1e16831fb7deaf9822c765ea028ede5eb571a9c"
         },
         {
           "path": "index.html",
@@ -389,21 +389,21 @@
         },
         {
           "path": "poster.webp",
-          "size": 91700,
-          "sha256": "df4e63f5263aecc7737f8158403c7c60aea6fa421b6fbc16cb713b870533df19"
+          "size": 93420,
+          "sha256": "6e941a3b24223fd382675b020b82e733c6ebdfab7affe54c8202aae3213b5e5c"
         },
         {
           "path": "scene.js",
-          "size": 683721,
-          "sha256": "fae6f1b1551132f89454c3e9478beb824e3d966dcb6ab0c54da22bd1face7c36"
+          "size": 686473,
+          "sha256": "01469381bae6909da6aaca5c0392dbe33db00a916f306d093b88b33995f6ad7d"
         },
         {
           "path": "thumb.webp",
-          "size": 8540,
-          "sha256": "e3ccdec8fcfe0880310b66a687ab2f3f4f493363e2e4b75069ef78880acf0bf0"
+          "size": 8654,
+          "sha256": "1f1c97f4e46c94aa43203cdddee7fd2d1c198525cf15101458b309f055d97867"
         }
       ],
-      "sizeBytes": 10534231
+      "sizeBytes": 10565965
     }
   ]
 }

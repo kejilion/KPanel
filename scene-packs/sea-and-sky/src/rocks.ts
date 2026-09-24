@@ -41,9 +41,10 @@ void main() {
   vec3 albedo = texture2D(uColour, vUv).rgb;
   // Freshly wet where the waves wash up the foot, rising and falling with each set: darker, and
   // glossy in the light.
-  float swash = 1.0 + 0.9 * (sin(uTime * 0.85 + dot(vWorld.xz, vec2(0.07, 0.05))) * 0.5 + 0.5);
-  float wet = 1.0 - smoothstep(0.2, swash, vWorld.y);
-  albedo *= mix(1.0, 0.5, wet);
+  float swash = 0.6 + 0.8 * (sin(uTime * 0.85 + dot(vWorld.xz, vec2(0.07, 0.05))) * 0.5 + 0.5);
+  swash += 0.35 * sin(vWorld.x * 0.9 + vWorld.z * 0.4) * sin(vWorld.z * 1.3 - vWorld.x * 0.3);
+  float wet = 1.0 - smoothstep(0.0, swash, vWorld.y);
+  albedo *= mix(1.0, 0.7, wet);
   float shadow = keyShadow(vWorld + n * 1.0);
   vec3 color = shade(albedo, n, 0.15, shadow) * mix(0.35, 1.0, surface.a);
   vec3 view = normalize(cameraPosition - vWorld);
