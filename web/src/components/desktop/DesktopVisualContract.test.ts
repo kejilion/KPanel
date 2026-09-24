@@ -56,7 +56,7 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop__context-menu button\s*\{[^}]*font-size:\s*14px;/)
     expect(desktopViewSource).toContain("document.addEventListener('scroll', closeContextMenuOnScroll, true)")
     expect(desktopViewSource).toContain("window.visualViewport?.addEventListener?.('resize', closeContextMenuOnViewportChange)")
-    expect(desktopViewSource).toMatch(/function onViewportResize\(\): void \{\s*closeContextMenu\(false\)/)
+    expect(desktopViewSource).toMatch(/function onViewportResize\(\): void \{[^}]*closeContextMenu\(false\)/)
   })
 
   it('uses one pointer-aware menu state style without a permanent scrollbar gutter', () => {
@@ -101,6 +101,8 @@ describe('desktop visual and interaction contract', () => {
   })
 
   it('supports direct touch dragging and native window-content scrolling without changing mouse semantics', () => {
+    expect(cssRule(styles, '.desktop')).toContain('-webkit-touch-callout: none;')
+    expect(cssRule(styles, '.desktop-window__body')).toContain('-webkit-touch-callout: default;')
     expect(styles).toMatch(/\.desktop__icon\s*\{[^}]*touch-action:\s*none;/)
     expect(styles).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.desktop__icon\s*\{[^}]*touch-action:\s*pan-y;/)
     expect(styles).toMatch(/\.desktop-window__body\s*\{[^}]*touch-action:\s*pan-x pan-y;/)

@@ -175,6 +175,7 @@ describe('DesktopView', () => {
     const wrapper = mount(DesktopView)
     const icon = wrapper.find('.desktop__icon')
 
+    vi.advanceTimersByTime(1)
     icon.element.dispatchEvent(touchPointer('pointerdown', 60, 70))
     vi.advanceTimersByTime(520)
     await nextTick()
@@ -184,6 +185,98 @@ describe('DesktopView', () => {
     await icon.trigger('click')
     expect(desktop.windows.value).toHaveLength(0)
     wrapper.unmount()
+  })
+
+  it('opens the blank desktop menu on a hold and consumes the release click, not the next tap', async () => {
+    vi.useFakeTimers()
+    setupViewport(390, 844)
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    try {
+      vi.advanceTimersByTime(1)
+      wrapper.get('.desktop__icons').element.dispatchEvent(touchPointer('pointerdown', 180, 320))
+      window.dispatchEvent(touchPointer('pointermove', 183, 322))
+      vi.advanceTimersByTime(519)
+      await nextTick()
+      expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+      vi.advanceTimersByTime(1)
+      await nextTick()
+      const menu = wrapper.get('.desktop__context-menu')
+      expect(menu.find('[data-context-action="wallpaper"]').exists()).toBe(true)
+      const nativeMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 320 })
+      wrapper.element.dispatchEvent(nativeMenu)
+      await nextTick()
+      expect(nativeMenu.defaultPrevented).toBe(true)
+      expect(wrapper.get('.desktop__context-menu').element).toBe(menu.element)
+      window.dispatchEvent(touchPointer('pointerup', 180, 320))
+      const action = menu.get('button')
+      action.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+      await nextTick()
+      expect(wrapper.find('.desktop__context-menu').exists()).toBe(true)
+      vi.advanceTimersByTime(1)
+      action.element.dispatchEvent(touchPointer('pointerdown', 180, 340, 2))
+      action.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+      await nextTick()
+      expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['move', 'release', 'cancel', 'second-finger', 'scroll', 'blur'] as const)(
+    'cancels the blank desktop hold on %s without preventing normal touch scrolling', async (reason) => {
+      vi.useFakeTimers()
+      setupViewport(390, 844)
+      const wrapper = mount(DesktopView, { attachTo: document.body })
+      try {
+        vi.advanceTimersByTime(1)
+        const down = touchPointer('pointerdown', 180, 320)
+        wrapper.element.dispatchEvent(down)
+        expect(down.defaultPrevented).toBe(false)
+        if (reason === 'move') window.dispatchEvent(touchPointer('pointermove', 180, 345))
+        else if (reason === 'release') window.dispatchEvent(touchPointer('pointerup'))
+        else if (reason === 'cancel') window.dispatchEvent(touchPointer('pointercancel'))
+        else if (reason === 'second-finger') window.dispatchEvent(touchPointer('pointerdown', 220, 320, 2))
+        else if (reason === 'scroll') document.dispatchEvent(new Event('scroll'))
+        else window.dispatchEvent(new Event('blur'))
+        vi.advanceTimersByTime(600)
+        await nextTick()
+        expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+      } finally { wrapper.unmount() }
+    },
+  )
+
+  it('does not start the background hold from window contents or taskbar controls', async () => {
+    vi.useFakeTimers()
+    setupViewport(390, 844)
+    const wrapper = mount(DesktopView)
+    const windowContent = document.createElement('div')
+    windowContent.className = 'desktop-window'
+    const input = document.createElement('input')
+    windowContent.append(input)
+    wrapper.element.append(windowContent)
+    try {
+      vi.advanceTimersByTime(1)
+      for (const target of [input, wrapper.get('.desktop__taskbar').element]) {
+        target.dispatchEvent(touchPointer('pointerdown'))
+        vi.advanceTimersByTime(600)
+        await nextTick()
+        expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+      }
+    } finally { wrapper.unmount() }
+  })
+
+  it('handles a native touch menu before the hold timer without reopening it later', async () => {
+    vi.useFakeTimers()
+    setupViewport(390, 844)
+    const wrapper = mount(DesktopView)
+    try {
+      vi.advanceTimersByTime(1)
+      wrapper.element.dispatchEvent(touchPointer('pointerdown', 180, 320))
+      await wrapper.trigger('contextmenu', { clientX: 180, clientY: 320 })
+      expect(wrapper.find('.desktop__context-menu').exists()).toBe(true)
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      vi.advanceTimersByTime(600)
+      await nextTick()
+      expect(wrapper.find('.desktop__context-menu').exists()).toBe(false)
+    } finally { wrapper.unmount() }
   })
 
   it('renders a window when an app is opened', async () => {

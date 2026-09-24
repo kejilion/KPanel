@@ -60,6 +60,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   background: var(--desktop-wallpaper-base);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .desktop:focus {
@@ -2365,6 +2366,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   touch-action: pan-x pan-y;
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
   -webkit-overflow-scrolling: touch;
 }
 

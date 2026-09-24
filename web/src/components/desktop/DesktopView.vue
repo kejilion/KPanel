@@ -1295,6 +1295,12 @@ async function showContextMenu(
 }
 
 function onContextMenu(event: MouseEvent): void {
+  event.preventDefault()
+  if (desktopLongPress?.opened || Date.now() < desktopTouchClickUntil) return
+  if (desktopLongPress) {
+    openDesktopLongPressMenu()
+    return
+  }
   void showContextMenu(event)
 }
 
@@ -1337,11 +1343,13 @@ function closeContextMenu(restoreFocus = true): void {
 }
 
 function closeContextMenuOnScroll(event: Event): void {
+  cancelDesktopLongPress()
   if (contextMenuElement.value?.contains(event.target as Node)) return
   closeContextMenu(false)
 }
 
 function closeContextMenuOnViewportChange(): void {
+  cancelDesktopLongPress()
   closeContextMenu(false)
 }
 
@@ -2486,6 +2494,7 @@ function onSelectionFrameLostPointerCapture(event: PointerEvent): void {
 }
 
 function onGlobalPointerDown(event: PointerEvent): void {
+  if (desktopLongPress && event.pointerId !== desktopLongPress.pointerId) cancelDesktopLongPress()
   if (iconDrag && event.pointerId !== iconDrag.pointerId) cancelIconDrag()
   if (selectionFrame && event.pointerId !== selectionFrame.pointerId) cancelSelectionFrame()
   if (!contextMenu.value.open) return
@@ -2516,6 +2525,7 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
     return
   }
   if (event.key !== 'Escape') return
+  cancelDesktopLongPress()
   if (selectionFrame) cancelSelectionFrame()
   else if (iconDrag) cancelIconDrag()
   else if (widgetDrag) cancelWidgetDrag()
@@ -2530,11 +2540,68 @@ function onContextMenuKeyDown(event: KeyboardEvent): void {
   moveContextMenuFocus(menu, event)
 }
 
+// Blank desktop space needs its own gesture: iOS does not always emit contextmenu.
+let desktopLongPress: { pointerId: number; x: number; y: number; timer?: number; opened: boolean } | undefined
+let desktopTouchClickUntil = 0
+
+function cancelDesktopLongPress(): void {
+  if (desktopLongPress?.timer !== undefined) window.clearTimeout(desktopLongPress.timer)
+  desktopLongPress = undefined
+  window.removeEventListener('pointermove', onDesktopLongPressMove)
+  window.removeEventListener('pointerup', onDesktopLongPressEnd)
+  window.removeEventListener('pointercancel', onDesktopLongPressEnd)
+  window.removeEventListener('blur', cancelDesktopLongPress)
+}
+
+function openDesktopLongPressMenu(): void {
+  const press = desktopLongPress
+  if (!press || press.opened) return
+  if (press.timer !== undefined) window.clearTimeout(press.timer)
+  press.timer = undefined
+  press.opened = true
+  desktopTouchClickUntil = Date.now() + 800
+  void showContextMenu(new MouseEvent('contextmenu', { clientX: press.x, clientY: press.y, button: 2 }))
+}
+
+function onDesktopLongPressMove(event: PointerEvent): void {
+  const press = desktopLongPress
+  if (press && event.pointerId === press.pointerId && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) {
+    cancelDesktopLongPress()
+  }
+}
+
+function onDesktopLongPressEnd(event: PointerEvent): void {
+  if (!desktopLongPress || event.pointerId !== desktopLongPress.pointerId) return
+  if (desktopLongPress.opened) desktopTouchClickUntil = Date.now() + 800
+  cancelDesktopLongPress()
+}
+
+function onDesktopPointerDownCapture(): void {
+  // A fresh press is intentional; only consume the click synthesized after a hold.
+  desktopTouchClickUntil = 0
+}
+
+function onDesktopClickCapture(event: MouseEvent): void {
+  if (Date.now() >= desktopTouchClickUntil || event.detail === 0) return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 function onDesktopPointerDown(event: PointerEvent): void {
   const target = event.target instanceof Element ? event.target : undefined
-  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop__icon, .desktop__selection-actions')) return
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop__icon, .desktop__selection-actions, .desktop__context-menu, input, textarea, select, button, a, [contenteditable="true"]')) return
   const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   currentTarget?.focus({ preventScroll: true })
+  if ((event.pointerType === 'touch' || event.pointerType === 'pen') && event.button === 0 && event.isPrimary !== false) {
+    cancelDesktopLongPress()
+    desktopLongPress = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, opened: false }
+    desktopLongPress.timer = window.setTimeout(openDesktopLongPressMenu, 520)
+    window.addEventListener('pointermove', onDesktopLongPressMove, { passive: true })
+    window.addEventListener('pointerup', onDesktopLongPressEnd, { passive: true })
+    window.addEventListener('pointercancel', onDesktopLongPressEnd, { passive: true })
+    window.addEventListener('blur', cancelDesktopLongPress)
+    return
+  }
   if (
     compactIconLayout.value
     || (event.button !== undefined && event.button !== 0)
@@ -3607,6 +3674,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelDesktopLongPress()
   entriesSequence += 1
   document.documentElement.classList.remove('desktop-mode-open')
   document.body.classList.remove('desktop-mode-open')
@@ -3641,6 +3709,7 @@ onBeforeUnmount(() => {
 })
 
 function onViewportResize(): void {
+  cancelDesktopLongPress()
   closeContextMenu(false)
   if (initialLayoutReady.value) {
     viewportLayoutResizing.value = true
@@ -3673,7 +3742,9 @@ function onViewportResize(): void {
     :class="{ 'desktop--split-resizing': sideSplitResizeActive }"
     :style="desktopSplitStyle"
     tabindex="-1"
+    @pointerdown.capture="onDesktopPointerDownCapture"
     @pointerdown="onDesktopPointerDown"
+    @click.capture="onDesktopClickCapture"
     @contextmenu="onContextMenu"
     @dragover="onDesktopFileDragOver"
     @dragleave="onDesktopFileDragLeave"
