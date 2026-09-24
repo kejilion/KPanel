@@ -1958,6 +1958,7 @@ watch(windowActive, syncJobPollingForWindow)
   --market-accent: #6d5dfc;
   --market-accent-soft: color-mix(in srgb, var(--market-accent) 12%, transparent);
   --success: var(--brand);
+  container: app-market / inline-size;
 }
 
 .market-hero {
@@ -2134,6 +2135,25 @@ watch(windowActive, syncJobPollingForWindow)
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 15px;
+}
+
+@container app-market (max-width: 67.5rem) {
+  .app-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container app-market (max-width: 48.75rem) {
+  .app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container app-market (max-width: 32.5rem) {
+  .app-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 }
 
 .app-card {
@@ -2881,12 +2901,6 @@ watch(windowActive, syncJobPollingForWindow)
   background: var(--terminal-shell-background, #0b1214);
 }
 
-@media (max-width: 1080px) {
-  .app-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 980px) {
   .market-toolbar {
     grid-template-columns: 1fr;
@@ -2894,10 +2908,6 @@ watch(windowActive, syncJobPollingForWindow)
 
   .market-segment {
     overflow-x: auto;
-  }
-
-  .app-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .app-detail-grid {
@@ -2991,11 +3001,6 @@ watch(windowActive, syncJobPollingForWindow)
 
   .market-stats div:nth-child(4) {
     border-top: 1px solid var(--border);
-  }
-
-  .app-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
   }
 
   .app-card {

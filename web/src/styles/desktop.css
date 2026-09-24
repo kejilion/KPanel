@@ -3611,10 +3611,6 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 @container desktop-window (max-width: 980px) {
-  .desktop-window__body .app-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-
   .desktop-window__body .system-center-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
@@ -3640,7 +3636,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
-  .desktop-window__body :is(.app-grid, .market-stats, .docker-summary, .stats-grid) {
+  .desktop-window__body :is(.market-stats, .docker-summary, .stats-grid) {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
@@ -3892,12 +3888,6 @@ body.desktop-mode-open::-webkit-scrollbar {
   }
 }
 
-@container desktop-window (max-width: 680px) {
-  .desktop-window__body .app-grid {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
-}
-
 @container desktop-window (max-width: 580px) {
   .desktop-window__body > :is(.page, .page-content, .files-page, .diagnostics-page, .monitoring-page) {
     padding: 12px;
@@ -4032,7 +4022,7 @@ body.desktop-mode-open::-webkit-scrollbar {
     overflow-wrap: anywhere;
   }
 
-  .desktop-window__body :is(.app-grid, .docker-summary, .stats-grid) {
+  .desktop-window__body :is(.docker-summary, .stats-grid) {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 

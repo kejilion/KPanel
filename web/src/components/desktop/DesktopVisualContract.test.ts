@@ -9,6 +9,7 @@ const themeStoreSource = readFileSync(new URL('../../stores/theme.ts', import.me
 const windowSource = readFileSync(new URL('./DesktopWindow.vue', import.meta.url), 'utf8')
 const desktopViewSource = readFileSync(new URL('./DesktopView.vue', import.meta.url), 'utf8')
 const filesViewSource = readFileSync(new URL('../../views/FilesView.vue', import.meta.url), 'utf8')
+const appsViewSource = readFileSync(new URL('../../views/AppsView.vue', import.meta.url), 'utf8')
 const dockerViewSource = readFileSync(new URL('../../views/DockerView.vue', import.meta.url), 'utf8')
 const terminalMenuSource = readFileSync(new URL('../terminal/TerminalContextMenu.vue', import.meta.url), 'utf8')
 
@@ -269,9 +270,12 @@ describe('desktop visual and interaction contract', () => {
     expect(styles).toMatch(/\.desktop-window__body:has\(> \.app-script-page\)\s*\{[^}]*overflow:\s*hidden;[^}]*background:\s*var\(--terminal-shell-background\);[^}]*scrollbar-gutter:\s*auto;/)
   })
 
-  it('adapts the application market grid to the desktop window width', () => {
-    expect(styles).toMatch(/@container desktop-window \(max-width: 980px\)[\s\S]*?\.desktop-window__body \.app-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\) !important;/)
-    expect(styles).toMatch(/@container desktop-window \(max-width: 680px\)[\s\S]*?\.desktop-window__body \.app-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) !important;/)
+  it('lets the application market choose card columns from its own width', () => {
+    expect(styles).not.toContain('.app-grid')
+    expect(appsViewSource).toContain('container: app-market / inline-size;')
+    expect(appsViewSource).toMatch(/@container app-market \(max-width: 67\.5rem\)[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/)
+    expect(appsViewSource).toMatch(/@container app-market \(max-width: 48\.75rem\)[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
+    expect(appsViewSource).toMatch(/@container app-market \(max-width: 32\.5rem\)[\s\S]*?grid-template-columns: 1fr;/)
   })
 
   it('stacks file shortcuts above actions when a desktop window is narrow', () => {
