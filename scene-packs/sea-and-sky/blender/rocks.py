@@ -383,8 +383,11 @@ def main():
     bpy.ops.object.select_all(action='DESELECT')
     for obj in exported:
         obj.select_set(True)
-    # Defaults: +Y up, normals and UVs; no materials (the scene shades the stacks itself).
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'rocks.glb'), export_format='GLB', use_selection=True, export_materials='NONE')
+    # Draco-compressed, and without vertex normals: the shading comes from the baked normal map.
+    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, 'rocks.glb'), export_format='GLB', use_selection=True,
+                              export_materials='NONE', export_normals=False,
+                              export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=7,
+                              export_draco_position_quantization=14, export_draco_texcoord_quantization=14)
     print('rocks: exported', len(exported))
 
 

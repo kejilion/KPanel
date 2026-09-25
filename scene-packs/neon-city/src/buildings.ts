@@ -215,7 +215,8 @@ void main() {
 }
 `
 
-export function createBuildings(buildings: readonly Building[], uniforms: AtmosphereUniforms, rooms: THREE.Texture): THREE.InstancedMesh {
+/** The towers. The rooms map (uRooms) can be set once it has downloaded; the shader does not wait for it. */
+export function createBuildings(buildings: readonly Building[], uniforms: AtmosphereUniforms, rooms: THREE.Texture | null): THREE.InstancedMesh<THREE.BoxGeometry, THREE.ShaderMaterial> {
   const geometry = new THREE.BoxGeometry(1, 1, 1)
   geometry.translate(0, 0.5, 0)
   const style = new Float32Array(buildings.length * 4)

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { dracoLoader } from './loading'
 import { LIGHTING_GLSL, type LightingUniforms } from './shading'
 import { ROCKS } from './world'
 
@@ -100,7 +101,19 @@ function measureWaterlines(meshes: THREE.Mesh[]): THREE.DataTexture {
   return texture
 }
 
-export async function createRocks(uniforms: LightingUniforms): Promise<{ object: THREE.Object3D, waterlines: THREE.DataTexture }> {
+export function rockMaterial(uniforms: LightingUniforms, colour: THREE.Texture | null = null, surface: THREE.Texture | null = null): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...uniforms, uColour: { value: colour }, uSurface: { value: surface } },
+    vertexShader: VERTEX,
+    fragmentShader: FRAGMENT,
+  })
+}
+
+/**
+ * Loads the stacks: the meshes (Draco-compressed) and every map at once, rather than the maps only
+ * once the meshes are in. Each map is sent to the graphics card as soon as it arrives.
+ */
+export async function createRocks(uniforms: LightingUniforms, renderer: THREE.WebGLRenderer): Promise<{ object: THREE.Object3D, waterlines: THREE.DataTexture }> {
   const textures = new THREE.TextureLoader()
   const load = async (path: string, colour: boolean) => {
     const texture = await textures.loadAsync(path)
@@ -108,19 +121,17 @@ export async function createRocks(uniforms: LightingUniforms): Promise<{ object:
     texture.flipY = false
     texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
     texture.anisotropy = 8
+    renderer.initTexture(texture)
     return texture
   }
-  const gltf = await new GLTFLoader().loadAsync('assets/rocks.glb')
+  const maps = ROCKS.map((_, index) => Promise.all([load(`assets/rock-${index}-colour.webp`, true), load(`assets/rock-${index}-surface.webp`, false)]))
+  const gltf = await new GLTFLoader().setDRACOLoader(dracoLoader()).loadAsync('assets/rocks.glb')
   const meshes: THREE.Mesh[] = []
   gltf.scene.traverse((object) => { if ((object as THREE.Mesh).isMesh) meshes.push(object as THREE.Mesh) })
   await Promise.all(meshes.map(async (mesh) => {
-    const index = /rock-(\d+)/.exec(mesh.name)?.[1] ?? /rock-(\d+)/.exec(mesh.parent?.name ?? '')?.[1]
-    const [colour, surface] = await Promise.all([load(`assets/rock-${index}-colour.webp`, true), load(`assets/rock-${index}-surface.webp`, false)])
-    mesh.material = new THREE.ShaderMaterial({
-      uniforms: { ...uniforms, uColour: { value: colour }, uSurface: { value: surface } },
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
-    })
+    const index = Number(/rock-(\d+)/.exec(mesh.name)?.[1] ?? /rock-(\d+)/.exec(mesh.parent?.name ?? '')?.[1])
+    const [colour, surface] = await maps[index]!
+    mesh.material = rockMaterial(uniforms, colour, surface)
     mesh.frustumCulled = false
     // Layer 1: drawn again, from below the water, for the sea's reflection.
     mesh.layers.enable(1)

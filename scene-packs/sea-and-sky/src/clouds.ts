@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { track } from './loading'
 
 /**
  * Volumetric clouds: a layer of cumulus 1.4 to 3 km up, ray-marched through two
@@ -137,9 +138,11 @@ void main() {
 `
 
 async function loadVolume(path: string, size: number): Promise<THREE.Data3DTexture> {
-  const response = await fetch(path)
-  if (!response.ok) throw new Error(`${path}: ${response.status}`)
-  const texture = new THREE.Data3DTexture(new Uint8Array(await response.arrayBuffer()), size, size, size)
+  const bytes = await track(path, fetch(path).then((response) => {
+    if (!response.ok) throw new Error(`${path}: ${response.status}`)
+    return response.arrayBuffer()
+  }))
+  const texture = new THREE.Data3DTexture(new Uint8Array(bytes), size, size, size)
   texture.format = THREE.RedFormat
   texture.type = THREE.UnsignedByteType
   texture.minFilter = THREE.LinearFilter
@@ -155,21 +158,22 @@ async function loadVolume(path: string, size: number): Promise<THREE.Data3DTextu
 export interface Clouds {
   /** The clouds for the current view: colour, and in alpha how much of the sky shows through. */
   texture: THREE.Texture
-  shape: THREE.Data3DTexture
-  detail: THREE.Data3DTexture
+  /** The two noise volumes, once downloaded (the shader is compiled without waiting for them). */
+  loaded: Promise<{ shape: THREE.Data3DTexture, detail: THREE.Data3DTexture }>
+  /** Compiles the marching shader, without blocking the page where the browser allows. */
+  compile(): Promise<unknown>
   render(camera: THREE.PerspectiveCamera): void
   /** scale: the fraction of the screen's resolution the clouds are marched at. */
   resize(width: number, height: number, scale: number): void
 }
 
-export async function createClouds(renderer: THREE.WebGLRenderer, uniforms: Record<string, THREE.IUniform>): Promise<Clouds> {
-  const [shape, detail] = await Promise.all([loadVolume('assets/cloud-shape.bin', 96), loadVolume('assets/cloud-detail.bin', 32)])
+export function createClouds(renderer: THREE.WebGLRenderer, uniforms: Record<string, THREE.IUniform>): Clouds {
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false })
   const material = new THREE.ShaderMaterial({
     uniforms: {
       ...uniforms,
-      uShape: { value: shape },
-      uDetail: { value: detail },
+      uShape: { value: null },
+      uDetail: { value: null },
       uInverseProjection: { value: new THREE.Matrix4() },
       uCameraWorld: { value: new THREE.Matrix4() },
       uCameraPosition: { value: new THREE.Vector3() },
@@ -184,10 +188,15 @@ export async function createClouds(renderer: THREE.WebGLRenderer, uniforms: Reco
   const scene = new THREE.Scene()
   scene.add(quad)
   const still = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  const loaded = Promise.all([loadVolume('assets/cloud-shape.bin', 96), loadVolume('assets/cloud-detail.bin', 32)]).then(([shape, detail]) => {
+    material.uniforms.uShape!.value = shape
+    material.uniforms.uDetail!.value = detail
+    return { shape, detail }
+  })
   return {
     texture: target.texture,
-    shape,
-    detail,
+    loaded,
+    compile: () => renderer.compileAsync(scene, still),
     render(camera) {
       material.uniforms.uInverseProjection!.value.copy(camera.projectionMatrixInverse)
       material.uniforms.uCameraWorld!.value.copy(camera.matrixWorld)

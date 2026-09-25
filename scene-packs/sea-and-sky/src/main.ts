@@ -11,7 +11,8 @@ import { createDaylight } from './daylight'
 import { Director } from './director'
 import { createOcean } from './ocean'
 import { createReflection } from './reflection'
-import { createRocks } from './rocks'
+import { report } from './loading'
+import { createRocks, rockMaterial } from './rocks'
 import { createLighting } from './shading'
 import { createSkyDome, skyUniforms } from './sky'
 import { createSkyline } from './skyline'
@@ -64,21 +65,29 @@ async function start(): Promise<void> {
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000)
-  scene.add(createSkyDome(uniforms))
-  // The sculpted stacks load before the scene reports ready, so it fades up complete.
-  const rocks = await createRocks(uniforms)
-  scene.add(rocks.object)
-  uniforms.uWaterlines.value = rocks.waterlines
-  const reflection = createReflection(renderer, scene, uniforms.uMirrorPass)
-  uniforms.uReflection.value = reflection.texture
-  uniforms.uReflectionMatrix.value = reflection.matrix
-  const clouds = await createClouds(renderer, uniforms)
-  uniforms.uShape.value = clouds.shape
-  uniforms.uDetail.value = clouds.detail
+  report(0.02)
+  // The downloads start first; everything that does not wait for them is built and its shaders
+  // compiled while they arrive (without blocking the page, where the browser allows).
+  const rocksLoading = createRocks(uniforms, renderer)
+  const clouds = createClouds(renderer, uniforms)
   uniforms.uClouds.value = clouds.texture
+  scene.add(createSkyDome(uniforms))
   scene.add(createSkyline(uniforms))
   const ocean = createOcean(uniforms, mulberry32(20260926))
   scene.add(ocean.mesh)
+  const reflection = createReflection(renderer, scene, uniforms.uMirrorPass)
+  uniforms.uReflection.value = reflection.texture
+  uniforms.uReflectionMatrix.value = reflection.matrix
+  // A stand-in stack, so the stacks' shader is compiled too before their files are in.
+  const standIn = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), rockMaterial(uniforms))
+  scene.add(standIn)
+  const compiling = Promise.all([renderer.compileAsync(scene, camera), clouds.compile()]).then(() => scene.remove(standIn))
+  // The sculpted stacks and the clouds are in before the scene reports ready, so it fades up complete.
+  const [rocks, volumes] = await Promise.all([rocksLoading, clouds.loaded, compiling])
+  scene.add(rocks.object)
+  uniforms.uWaterlines.value = rocks.waterlines
+  uniforms.uShape.value = volumes.shape
+  uniforms.uDetail.value = volumes.detail
 
   const tour = createTour(daylight)
 
@@ -213,8 +222,9 @@ async function start(): Promise<void> {
     cancelAnimationFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
-  // Compile every shader and draw the first (black) frame before reporting ready.
-  renderer.compile(scene, camera)
+  // Anything not compiled yet, then the first (black) frame, before reporting ready.
+  report(0.92)
+  await renderer.compileAsync(scene, camera)
   frame(performance.now())
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: tour.shots.map((shot) => shot.id) })
 }

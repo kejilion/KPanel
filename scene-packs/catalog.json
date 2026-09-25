@@ -102,8 +102,8 @@
         },
         {
           "path": "scene.js",
-          "size": 704689,
-          "sha256": "be717d2400861192c0120b636cf80d0f0228c9c6d92f0f248b4e18f6409d6253"
+          "size": 705050,
+          "sha256": "dd503ffc255e90e1942f237ec7ccd013a8c77aeb6aa3d8041f52a743b5313d5b"
         },
         {
           "path": "thumb.webp",
@@ -111,7 +111,7 @@
           "sha256": "212f434683aff6f4cb0dd168cfdd5d099c4946925b14db7993bb992b55a35197"
         }
       ],
-      "sizeBytes": 1150940
+      "sizeBytes": 1151301
     },
     {
       "schema": 1,
@@ -343,8 +343,8 @@
         },
         {
           "path": "scene.js",
-          "size": 657454,
-          "sha256": "f6d5adc821c2f1ff2121c0ce65998e207d4e95397ed1a91eeee6add56e305646"
+          "size": 657748,
+          "sha256": "9c8fcb3df790ee4d1bca0d211281738e1c991de36da48b1a1686146f76fac6de"
         },
         {
           "path": "thumb.webp",
@@ -352,7 +352,7 @@
           "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 4086696
+      "sizeBytes": 4086990
     },
     {
       "schema": 1,
@@ -428,6 +428,11 @@
           "name": "three",
           "version": "0.186.0",
           "license": "MIT"
+        },
+        {
+          "name": "draco-decoder-gltf",
+          "version": "1.5.6",
+          "license": "Apache-2.0"
         }
       ],
       "path": "sea-and-sky/dist",
@@ -443,14 +448,24 @@
           "sha256": "5b89c59a92020c1e6a2d05ab683d3f28d32550cd84d43ffb026cb14ac8ae8a44"
         },
         {
+          "path": "assets/draco/draco_decoder.wasm",
+          "size": 192420,
+          "sha256": "a680d927bed9cb864ddbd63521868891af2bfbe755092761b4837487618df8ac"
+        },
+        {
+          "path": "assets/draco/draco_wasm_wrapper.js",
+          "size": 58456,
+          "sha256": "8bb2952d2ba7d67e1414f8df819410cb0434a666be53f671fff75f68843d76f6"
+        },
+        {
           "path": "assets/rock-0-colour.webp",
           "size": 86672,
           "sha256": "5e2ce32eb05764ac930077ffb2d20de106a9d34d2e782ceeae6aea95b7a9859d"
         },
         {
           "path": "assets/rock-0-surface.webp",
-          "size": 1491754,
-          "sha256": "0b2993da6e20d1eada7d990ea97321691d41ba75761d15dfc7b4c57c047c519c"
+          "size": 875614,
+          "sha256": "17cedeb85d1c0e5b81cdb2f332f10ba5944266341d97476cb94c5bb8d766b243"
         },
         {
           "path": "assets/rock-1-colour.webp",
@@ -459,8 +474,8 @@
         },
         {
           "path": "assets/rock-1-surface.webp",
-          "size": 1274230,
-          "sha256": "40a755fff6244485aafcf2170c9236cb51afaa7657235630ad1e9c8ff57a1e5f"
+          "size": 698898,
+          "sha256": "13647b413691428e4dd403b1406f15ca3ba3c50b0629118308b8bb3c9c7df712"
         },
         {
           "path": "assets/rock-2-colour.webp",
@@ -469,8 +484,8 @@
         },
         {
           "path": "assets/rock-2-surface.webp",
-          "size": 1388590,
-          "sha256": "13cb1a0edc9c322ec03b9f2df9955c424699b99a8cc478b12cfd47b385d666d1"
+          "size": 737034,
+          "sha256": "34c90102c55624e040db54d3077aa6142cf2f7ecd2a7fd9ca75e168d39f646da"
         },
         {
           "path": "assets/rock-3-colour.webp",
@@ -534,8 +549,8 @@
         },
         {
           "path": "assets/rocks.glb",
-          "size": 3379876,
-          "sha256": "29d69afb1547752b09bbe98fe1e16831fb7deaf9822c765ea028ede5eb571a9c"
+          "size": 365328,
+          "sha256": "7d70c4c6ca1ab529bc268e2d644cdab196b19909c5af12028eff9952c0617efd"
         },
         {
           "path": "index.html",
@@ -549,8 +564,8 @@
         },
         {
           "path": "manifest.json",
-          "size": 1610,
-          "sha256": "37651a75fbde20cc4622f2403cb507a6dccb1d5b76a417d98f534101d966459e"
+          "size": 1715,
+          "sha256": "05dae46a1f35f2e5d6424ea2f55069b70fe2ce65ee352127d6acbe461fc6b49d"
         },
         {
           "path": "poster.webp",
@@ -559,8 +574,8 @@
         },
         {
           "path": "scene.js",
-          "size": 686313,
-          "sha256": "a68c04ac9c4de82851f163aaf2852a904c9b9cc20720c2a4d1b2f1d0beda7ae8"
+          "size": 693952,
+          "sha256": "21b476aa686d1cc9c47870d03283232939f20c3575c6a9fa3784f322d6df0adc"
         },
         {
           "path": "thumb.webp",
@@ -568,7 +583,7 @@
           "sha256": "fe7f03eaa11606e0fa2c3d9524e3b1d810f92175117dca0dcc7f08ea7f0f516c"
         }
       ],
-      "sizeBytes": 10564422
+      "sizeBytes": 5965466
     }
   ]
 }

@@ -28,6 +28,11 @@ scene-packs/
 3. 应用后，桌面在一个 **只允许脚本的沙箱 iframe** 中打开 `index.html`，场景就是桌面背景，面板换成该场景的主题色；
 4. 用户删除后，本地文件被清除，桌面回到经典壁纸。
 
+已安装的文件由面板服务端提供，地址里带有已安装版本和文件清单摘要（`…/files/<version>-<digest>/`），同一地址的内容永不改变：
+响应带 `ETag`（文件的 SHA-256）和一年的 `immutable` 缓存，脚本、JSON、glTF、`.bin`、`.glb`、`.wasm` 等可压缩的文件按浏览器支持
+用 Brotli 或 gzip 传输。所以同一个场景第二次打开时一个文件都不用再下载；更新后地址随之改变，不会用到旧文件。
+场景用相对路径加载自己的文件即可，**不要**自己加版本查询参数或预先压缩文件。
+
 ## 2. 创作自由（明确允许）
 
 - 任意渲染技术：Three.js、Babylon.js、PlayCanvas、原生 WebGL/WebGL2、WebGPU、Canvas 2D、SVG、CSS 3D、WASM 引擎；
@@ -95,7 +100,8 @@ scene-packs/
 
 | 消息 | 何时发送 |
 | --- | --- |
-| `{ source: 'kpanel-scene-pack', type: 'ready', cameras: ['panorama', …] }` | 第一帧画出后立即发送（**必需**，15 秒内未收到时桌面改用海报） |
+| `{ source: 'kpanel-scene-pack', type: 'progress', value }` | 加载中（可选）：进度 0–1，只增不减，建议按整百分比发送。每条消息也告诉桌面场景仍在加载 |
+| `{ source: 'kpanel-scene-pack', type: 'ready', cameras: ['panorama', …] }` | 第一帧画出后立即发送（**必需**；从场景最后一条消息算起 20 秒内没有新消息时，桌面改用海报） |
 | `{ source: 'kpanel-scene-pack', type: 'camera', index }` | 机位切换开始时（可选） |
 | `{ source: 'kpanel-scene-pack', type: 'error', reason }` | WebGL 不可用或上下文丢失时（建议），桌面会改用海报 |
 
@@ -107,8 +113,20 @@ scene-packs/
 | `{ source: 'kpanel-desktop', type: 'resume' }` | 恢复渲染，时间不要跳变 |
 | `{ source: 'kpanel-desktop', type: 'camera', index? }` | 转到指定机位，未给 `index` 时切到下一个 |
 
-**从黑场开始**：动态场景运行时，面板从启动到场景就绪一直显示纯黑，不显示海报。因此场景的第一帧应当是黑的，
-进场从黑场淡入，这样启动 → 进场 → 待机是一个连贯的镜头。建议先编译着色器、画出第一帧再发送 `ready`。
+**从黑场开始**：动态场景运行时，面板从启动到场景就绪一直显示纯黑，不显示海报；加载超过约 1 秒时，黑场中央出现一条细进度线，
+由场景的 `progress` 消息驱动（不发送时停在起点）。因此场景的第一帧应当是黑的，进场从黑场淡入，这样启动 → 进场 → 待机是一个
+连贯的镜头。建议先编译着色器、画出第一帧再发送 `ready`。
+
+**加载**：桌面记得每个场景上次的文件地址，打开时立即开始加载，不等场景列表。黑场的时长就是场景自己的加载时间，建议：
+
+- 所有下载一开始就同时发出，不要等一个文件到了再请求下一个；
+- 等待下载的同时构建场景、编译着色器：Three.js 用 `renderer.compileAsync(scene, camera)`（浏览器支持时不阻塞页面），
+  还没到的贴图先用 `null` 占位，到了再设置；贴图到达时用 `renderer.initTexture(texture)` 立即上传显卡，而不是等第一帧；
+- 发送 `progress`：Three.js 的加载器都经过 `THREE.DefaultLoadingManager`，在它的 `onProgress` 里换算成进度即可；
+- 大模型用 Draco 压缩（`KHR_draco_mesh_compression`）：把解码器（如 `three/examples/jsm/libs/draco/gltf/` 的
+  `draco_wasm_wrapper.js` 与 `draco_decoder.wasm`）放进 `assets/`，用 `setDecoderPath` 指向它，并在 `dependencies` 中声明。
+  标准构建会去掉 Three.js 加载器自带的默认解码器地址（否则所有版本的解码器都会被内联进 `scene.js`）；
+- 贴图分辨率以场景中实际用到的最大 mip 为准：远处物体用不到的高分辨率只会拖慢首次下载。
 
 场景每次加载都应播放进场，然后进入待机；建议每 20–40 秒自动轮换机位。页面尺寸随桌面变化，要处理 `resize`。
 场景不接收鼠标和键盘事件（桌面图标在它上面），不要依赖交互。
@@ -163,7 +181,7 @@ node scripts/check-scene-packs.mjs
 
 ## 8. 质量建议（审核会参考，不强制）
 
-- 3 秒内发送 `ready`；1080p、中端集显上待机不低于 30 fps；
+- 3 秒内发送 `ready`（文件已缓存时 1 秒内）；首次下载尽量不超过 10 MB；1080p、中端集显上待机不低于 30 fps；
 - 设备像素比封顶 1.5–2，暂停时完全停止 `requestAnimationFrame`；
 - 构图避开左侧图标列（约 18% 宽）与右侧小部件区（约 22% 宽），主体放在中间；
 - 画面不要大面积高频闪烁（每秒闪烁不超过 3 次）；

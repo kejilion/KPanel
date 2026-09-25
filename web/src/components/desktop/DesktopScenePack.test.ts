@@ -146,10 +146,74 @@ describe('DesktopScenePack', () => {
     vi.useFakeTimers()
     listPacks([installed])
     const wrapper = await mountPack()
-    await vi.advanceTimersByTimeAsync(14_999)
+    await vi.advanceTimersByTimeAsync(19_999)
     expect(wrapper.emitted('failed')).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     expect(wrapper.emitted('failed')).toHaveLength(1)
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps waiting while the pack reports progress, and shows it only when loading is slow', async () => {
+    vi.useFakeTimers()
+    listPacks([installed])
+    const wrapper = await mountPack()
+    // Quick loads stay black: no progress line in the first moments.
+    fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'progress', value: 0.2 })
+    await nextTick()
+    expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1200)
+    const line = wrapper.get('.desktop-scene-pack__progress')
+    expect(line.attributes('style')).toContain('--scene-pack-progress: 0.200')
+    // Each progress message counts as a sign of life for the watchdog.
+    for (let step = 1; step <= 3; step++) {
+      await vi.advanceTimersByTimeAsync(15_000)
+      fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'progress', value: 0.2 + step * 0.2 })
+      await nextTick()
+    }
+    expect(wrapper.emitted('failed')).toBeUndefined()
+    expect(wrapper.get('.desktop-scene-pack__progress').attributes('style')).toContain('--scene-pack-progress: 0.800')
+    fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'ready', cameras: ['panorama'] })
+    await nextTick()
+    expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(wrapper.emitted('failed')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('starts from where the pack was last found, and follows the pack list', async () => {
+    listPacks([installed])
+    const first = await mountPack()
+    first.unmount()
+    // Next time the frame starts before the list answers.
+    let answer: (value: Awaited<ReturnType<typeof api.desktop.scenePacks>>) => void = () => {}
+    vi.spyOn(api.desktop, 'scenePacks').mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    const wrapper = mount(DesktopScenePack, { props: { packId: 'orbital-station', covered: false }, attachTo: document.body })
+    await nextTick()
+    expect(wrapper.get('iframe').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/files/index.html')
+    // After an update the list names a new base: the frame moves there.
+    answer({ source: 'auto', sources: ['auto'], packs: [{ ...installed, fileBase: '/api/v1/desktop/scene-packs/orbital-station/files/1.1.0-abc/' }] })
+    await flushPromises()
+    expect(wrapper.get('iframe').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/files/1.1.0-abc/index.html')
+    wrapper.unmount()
+    // After an uninstall the scene is turned off and forgotten.
+    listPacks([{ ...installed, installed: false, fileBase: null }])
+    const removed = await mountPack()
+    expect(removed.find('iframe').exists()).toBe(false)
+    expect(removed.emitted('failed')).toHaveLength(1)
+    removed.unmount()
+    vi.spyOn(api.desktop, 'scenePacks').mockReturnValue(new Promise(() => {}))
+    const later = mount(DesktopScenePack, { props: { packId: 'orbital-station', covered: false }, attachTo: document.body })
+    await nextTick()
+    expect(later.find('iframe').exists()).toBe(false)
+    later.unmount()
+  })
+
+  it('never starts from a remembered file base that is not a same-origin path', async () => {
+    window.localStorage.setItem('kpanel:scene-pack-file-base:v1', JSON.stringify({ 'orbital-station': 'https://evil.example/' }))
+    vi.spyOn(api.desktop, 'scenePacks').mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(DesktopScenePack, { props: { packId: 'orbital-station', covered: false }, attachTo: document.body })
+    await nextTick()
     expect(wrapper.find('iframe').exists()).toBe(false)
     wrapper.unmount()
   })

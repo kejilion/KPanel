@@ -62,6 +62,10 @@ describe('scene pack helpers', () => {
       .toEqual({ source: 'kpanel-scene-pack', type: 'camera', index: 2 })
     expect(parseScenePackEvent({ source: 'kpanel-scene-pack', type: 'error', reason: 'x'.repeat(200) }))
       .toEqual({ source: 'kpanel-scene-pack', type: 'error', reason: 'x'.repeat(80) })
+    expect(parseScenePackEvent({ source: 'kpanel-scene-pack', type: 'progress', value: 0.4 }))
+      .toEqual({ source: 'kpanel-scene-pack', type: 'progress', value: 0.4 })
+    expect(parseScenePackEvent({ source: 'kpanel-scene-pack', type: 'progress', value: 7 }))
+      .toEqual({ source: 'kpanel-scene-pack', type: 'progress', value: 1 })
     for (const data of [
       null,
       'ready',
@@ -73,6 +77,8 @@ describe('scene pack helpers', () => {
       { source: 'kpanel-scene-pack', type: 'camera', index: 12 },
       { source: 'kpanel-scene-pack', type: 'camera', index: -1 },
       { source: 'kpanel-scene-pack', type: 'error', reason: 42 },
+      { source: 'kpanel-scene-pack', type: 'progress', value: Number.NaN },
+      { source: 'kpanel-scene-pack', type: 'progress', value: '0.5' },
       { source: 'kpanel-scene-pack', type: 'navigate', url: '/logout' },
     ]) {
       expect(parseScenePackEvent(data)).toBeUndefined()

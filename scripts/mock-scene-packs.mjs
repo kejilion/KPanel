@@ -5,15 +5,20 @@
 // SHA-256; installed files are served with a sandbox CSP for the desktop iframe.
 // Here the "repository" is the local checkout, so previews work offline.
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gzipSync, constants as zlib } from 'node:zlib'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packsRoot = join(repositoryRoot, 'scene-packs')
-const installRoot = await mkdtemp(join(tmpdir(), 'kpanel-mock-scene-packs-'))
+// Kept across restarts of the preview server, as the panel keeps installed packs.
+const installRoot = join(tmpdir(), 'kpanel-mock-scene-packs')
+const installedIndex = join(installRoot, 'installed.json')
+await mkdir(installRoot, { recursive: true })
 const PACK_ID = /^[a-z0-9][a-z0-9-]{0,39}$/
+const TOKEN = /^[a-f0-9]{32}$/
 const SOURCES = ['auto', 'github', 'mirror']
 const GITHUB_RAW = 'https://raw.githubusercontent.com/kejilion/KPanel/main/scene-packs/'
 const MIRROR = 'https://gh.kejilion.pro/'
@@ -55,7 +60,32 @@ const PACK_CSP = [
 ].join('; ')
 
 let source = 'auto'
-const installed = new Map()
+/** id -> { version, token, from, files: [{ path, size, sha256 }] } */
+const installed = new Map(Object.entries(await readFile(installedIndex, 'utf8').then(JSON.parse).catch(() => ({})))
+  .filter(([id, copy]) => PACK_ID.test(id) && copy && TOKEN.test(copy.token ?? '') && Array.isArray(copy.files)))
+const saveInstalled = () => writeFile(installedIndex, JSON.stringify(Object.fromEntries(installed)))
+
+const COMPRESSIBLE = new Set(['html', 'js', 'mjs', 'css', 'json', 'gltf', 'bin', 'glb', 'wasm', 'txt', 'md'])
+const compressed = new Map()
+/** The body to send and its Content-Encoding, compressed once and kept, if that saves a tenth or more. */
+function encodeFor(request, key, body, extension) {
+  const accepts = String(request.headers['accept-encoding'] ?? '')
+  if (!COMPRESSIBLE.has(extension) || body.length < 1024) return [body, undefined]
+  const acceptsEncoding = (name) => accepts.split(',').some((item) => {
+    const [encoding, ...params] = item.trim().toLowerCase().split(';')
+    const quality = params.find((value) => value.trim().startsWith('q='))?.trim().slice(2)
+    return encoding === name && (quality === undefined || Number(quality) > 0)
+  })
+  const encoding = acceptsEncoding('gzip') ? 'gzip' : undefined
+  if (!encoding) return [body, undefined]
+  const cacheKey = `${key}|${encoding}`
+  if (!compressed.has(cacheKey)) {
+    const packed = gzipSync(body, { level: zlib.Z_BEST_SPEED })
+    compressed.set(cacheKey, packed.length < body.length * 0.9 ? packed : null)
+  }
+  const packed = compressed.get(cacheKey)
+  return packed ? [packed, encoding] : [body, undefined]
+}
 
 async function catalog() {
   try {
@@ -161,8 +191,20 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
       return true
     }
     const previous = installed.get(pack.id)
-    installed.set(pack.id, { version: pack.version, token, from: downloadBase(pack, useMirror) })
-    if (previous) await rm(join(installRoot, previous.token), { recursive: true, force: true })
+    installed.set(pack.id, { version: pack.version, token, from: downloadBase(pack, useMirror), files: pack.files })
+    try {
+      await saveInstalled()
+    } catch {
+      if (previous) installed.set(pack.id, previous)
+      else installed.delete(pack.id)
+      await rm(target, { recursive: true, force: true })
+      send(response, 503, { title: '本地预览安装状态无法保存', code: 'scene_pack_state_unavailable' })
+      return true
+    }
+    if (previous) {
+      await rm(join(installRoot, previous.token), { recursive: true, force: true })
+      forgetCompressed(pack.id, previous.token)
+    }
     send(response, 200, { ...describe(pack), downloadedFrom: installed.get(pack.id).from })
     return true
   }
@@ -174,36 +216,70 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
     }
     const previous = installed.get(pack.id)
     installed.delete(pack.id)
-    if (previous) await rm(join(installRoot, previous.token), { recursive: true, force: true })
+    try {
+      await saveInstalled()
+    } catch {
+      if (previous) installed.set(pack.id, previous)
+      send(response, 503, { title: '本地预览安装状态无法保存', code: 'scene_pack_state_unavailable' })
+      return true
+    }
+    if (previous) {
+      await rm(join(installRoot, previous.token), { recursive: true, force: true })
+      forgetCompressed(pack.id, previous.token)
+    }
     response.writeHead(204)
     response.end()
     return true
   }
   if (rest[1] === 'files' && request.method === 'GET' && installed.has(pack.id) && rest[2] === installed.get(pack.id).token) {
     const path = rest.slice(3).join('/')
-    const file = pack.files.find((candidate) => candidate.path === path)
+    const copy = installed.get(pack.id)
+    const file = copy.files?.find((candidate) => candidate.path === path)
     if (!file) {
-      response.writeHead(404)
+      response.writeHead(404, { 'Cache-Control': 'no-store' })
       response.end()
       return true
     }
-    const body = await readFile(join(installRoot, installed.get(pack.id).token, file.path))
+    const body = await readFile(join(installRoot, copy.token, file.path))
     const host = request.headers.host ?? ''
     if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::[0-9]{1,5})?$/.test(host)) {
       send(response, 400, { title: '预览只支持回环地址', code: 'scene_pack_host_invalid' })
       return true
     }
-    const base = `http://${host}/api/v1/desktop/scene-packs/${pack.id}/files/${rest[2]}/`
-    sendFile(response, body, file.path.split('.').pop().toLowerCase(), {
+    const base = `http://${host}/api/v1/desktop/scene-packs/${pack.id}/files/${copy.token}/`
+    const extension = file.path.split('.').pop().toLowerCase()
+    const etag = `W/"${file.sha256}"`
+    const headers = {
       'Content-Security-Policy': `${PACK_CSP.replaceAll("'self'", base)}; frame-ancestors 'self'; object-src 'none'`,
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'Referrer-Policy': 'no-referrer',
+      'Cache-Control': 'private, no-cache, must-revalidate',
+      ETag: etag,
+      Vary: 'Accept-Encoding',
       'X-Frame-Options': 'SAMEORIGIN',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(), autoplay=()',
-    })
+    }
+    if (etagMatches(request.headers['if-none-match'], etag)) {
+      response.writeHead(304, headers)
+      response.end()
+      return true
+    }
+    const [payload, encoding] = encodeFor(request, `${pack.id}/${copy.token}/${file.path}`, body, extension)
+    if (encoding) headers['Content-Encoding'] = encoding
+    sendFile(response, payload, extension, headers)
     return true
   }
   send(response, 404, { title: '场景文件不可用', code: 'scene_pack_file_missing' })
   return true
+}
+
+function etagMatches(header, etag) {
+  if (typeof header !== 'string') return false
+  return header.split(',').some((value) => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag.replace(/^W\//, ''))
+}
+
+function forgetCompressed(id, token) {
+  const prefix = `${id}/${token}/`
+  for (const key of compressed.keys()) if (key.startsWith(prefix)) compressed.delete(key)
 }

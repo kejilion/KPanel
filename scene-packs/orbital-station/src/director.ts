@@ -24,13 +24,14 @@ export interface DirectorFrame {
 }
 
 export const ENTRANCE_SECONDS = 6
-const FADE_SECONDS = 3.2
+/** The picture comes up at once and settles, rather than lingering near black for its first second. */
+const FADE_SECONDS = 2.2
+const fadeIn = (t: number) => 1 - (1 - t) ** 2
 const TRANSITION_SECONDS = 5
 const HOLD_SECONDS = 26
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
 const easeOut = (t: number) => 1 - (1 - t) ** 3
-const smoothstep = (t: number) => t * t * (3 - 2 * t)
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
 
 function copyPose(pose: Pose): Pose {
@@ -133,6 +134,6 @@ export class Director {
     this.pose.position.copy(this.entranceStart.position).lerp(final.position, settle)
     this.pose.target.copy(final.target)
     this.pose.fov = THREE.MathUtils.lerp(this.entranceStart.fov, final.fov, settle)
-    frame.fade = smoothstep(clamp01(t / FADE_SECONDS))
+    frame.fade = fadeIn(clamp01(t / FADE_SECONDS))
   }
 }

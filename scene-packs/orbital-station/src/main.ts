@@ -5,6 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { onHostCommand, postToHost } from './bridge'
 import { Director, type Shot } from './director'
+import { report } from './loading'
 import { createPlanet, PLANET_RADIUS } from './planet'
 import { createSky } from './sky'
 import { createStation, createTraffic } from './station'
@@ -96,6 +97,9 @@ async function start(): Promise<void> {
     return
   }
   document.body.appendChild(renderer.domElement)
+  report(0.02)
+  // The downloads start first: the station and the planet's maps, side by side.
+  const stationLoading = createStation(SUN, renderer)
 
   const scene = new THREE.Scene()
   scene.environment = spaceEnvironment(renderer)
@@ -123,9 +127,12 @@ async function start(): Promise<void> {
 
   const sky = createSky(SUN, random)
   scene.add(sky.group)
-  const planet = await createPlanet(SUN)
+  const planet = createPlanet(SUN, renderer)
   scene.add(planet.group)
-  const station = await createStation(SUN)
+  // The sky's and the planet's shaders compile while the files arrive (without blocking the page,
+  // where the browser allows); the station is in before the scene reports ready, so it fades up complete.
+  const compiling = renderer.compileAsync(scene, camera)
+  const [station] = await Promise.all([stationLoading, planet.loaded, compiling])
   station.group.position.copy(STATION)
   station.group.rotation.set(0.32, 0.5, -0.28)
   scene.add(station.group)
@@ -193,9 +200,10 @@ async function start(): Promise<void> {
     cancelAnimationFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
-  // Compile every shader and draw the first (black) frame before reporting ready, so the
+  // Compile the rest and draw the first (black) frame before reporting ready, so the
   // entrance starts on time instead of stalling on its first frames.
-  renderer.compile(scene, camera)
+  report(0.92)
+  await renderer.compileAsync(scene, camera)
   frame(performance.now())
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }

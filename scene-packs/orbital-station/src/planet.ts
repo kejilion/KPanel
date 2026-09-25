@@ -156,37 +156,44 @@ void main() {
 
 export interface Planet {
   group: THREE.Group
+  /** The painted maps, all downloaded and on the graphics card. */
+  loaded: Promise<unknown>
   update(time: number, dt: number): void
   setCityLights(value: number): void
 }
 
-async function loadMap(path: string, colour: boolean): Promise<THREE.Texture> {
-  const texture = await new THREE.TextureLoader().loadAsync(path)
-  texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
-  texture.anisotropy = 8
-  texture.wrapS = THREE.RepeatWrapping
-  return texture
-}
-
-export async function createPlanet(sunDirection: THREE.Vector3): Promise<Planet> {
+/**
+ * The planet is built at once, so its shaders compile while the maps download; each map is
+ * set, and sent to the graphics card, as soon as it arrives.
+ */
+export function createPlanet(sunDirection: THREE.Vector3, renderer: THREE.WebGLRenderer): Planet {
   const group = new THREE.Group()
   const sun = { value: sunDirection }
-  const [surfaceMap, reliefMap, masksMap, cloudsMap] = await Promise.all([
-    loadMap('assets/planet-surface.webp', true),
-    loadMap('assets/planet-relief.webp', false),
-    loadMap('assets/planet-masks.webp', false),
-    loadMap('assets/planet-clouds.webp', false),
-  ])
+  const map = (path: string, colour: boolean) => {
+    const slot: THREE.IUniform<THREE.Texture | null> = { value: null }
+    const loading = new THREE.TextureLoader().loadAsync(path).then((texture) => {
+      texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
+      texture.anisotropy = 8
+      texture.wrapS = THREE.RepeatWrapping
+      renderer.initTexture(texture)
+      slot.value = texture
+    })
+    return [slot, loading] as const
+  }
+  const [surfaceMap, surfaceLoading] = map('assets/planet-surface.webp', true)
+  const [reliefMap, reliefLoading] = map('assets/planet-relief.webp', false)
+  const [masksMap, masksLoading] = map('assets/planet-masks.webp', false)
+  const [cloudsMap, cloudsLoading] = map('assets/planet-clouds.webp', false)
 
   const surfaceUniforms = {
     uSunDirection: sun,
     uCityLights: { value: 1 },
     uRotation: { value: 0 },
     uCloudShift: { value: 0 },
-    uSurface: { value: surfaceMap },
-    uRelief: { value: reliefMap },
-    uMasks: { value: masksMap },
-    uClouds: { value: cloudsMap },
+    uSurface: surfaceMap,
+    uRelief: reliefMap,
+    uMasks: masksMap,
+    uClouds: cloudsMap,
   }
   const surface = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS, 192, 128),
@@ -194,7 +201,7 @@ export async function createPlanet(sunDirection: THREE.Vector3): Promise<Planet>
   )
   group.add(surface)
 
-  const cloudUniforms = { uSunDirection: sun, uClouds: { value: cloudsMap }, uMasks: { value: masksMap }, uCloudShift: surfaceUniforms.uCloudShift }
+  const cloudUniforms = { uSunDirection: sun, uClouds: cloudsMap, uMasks: masksMap, uCloudShift: surfaceUniforms.uCloudShift }
   const clouds = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS * 1.012, 160, 108),
     new THREE.ShaderMaterial({
@@ -237,6 +244,7 @@ export async function createPlanet(sunDirection: THREE.Vector3): Promise<Planet>
 
   return {
     group,
+    loaded: Promise.all([surfaceLoading, reliefLoading, masksLoading, cloudsLoading]),
     update(time, dt) {
       surface.rotation.y += dt * 0.006
       clouds.rotation.y += dt * 0.0085

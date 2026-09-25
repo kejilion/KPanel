@@ -57,6 +57,39 @@ export function isOfficialScenePack(pack: Pick<ScenePack, 'author'>): boolean {
   return pack.author?.name === 'KPanel'
 }
 
+/**
+ * The file base each pack was last found at, so a desktop that opens on a scene can start loading
+ * it at once instead of waiting for the pack list. The list still decides: it confirms the base,
+ * or replaces it (after an update), or turns the scene off (after an uninstall).
+ */
+const FILE_BASE_KEY = 'kpanel:scene-pack-file-base:v1'
+
+function readFileBases(): Record<string, unknown> {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(FILE_BASE_KEY) ?? '{}') as unknown
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+export function rememberedFileBase(id: string): string | undefined {
+  const stored = readFileBases()
+  const base = Object.prototype.hasOwnProperty.call(stored, id) ? stored[id] : undefined
+  return typeof base === 'string' && scenePackPageURL({ fileBase: base }) ? base : undefined
+}
+
+export function rememberFileBase(id: string, fileBase: string | null): void {
+  const stored = readFileBases()
+  if (fileBase && scenePackPageURL({ fileBase })) stored[id] = fileBase
+  else delete stored[id]
+  try {
+    window.localStorage.setItem(FILE_BASE_KEY, JSON.stringify(stored))
+  } catch {
+    // Without storage the desktop just waits for the pack list, as before.
+  }
+}
+
 /** Only an installed scene capability path may become a frame URL. */
 export function scenePackPageURL(pack: Pick<ScenePack, 'fileBase'>): string | undefined {
   const base = pack.fileBase
@@ -103,6 +136,8 @@ export type ScenePackCommand =
   | { source: 'kpanel-desktop', type: 'camera', index?: number }
 
 export type ScenePackEvent =
+  /** Optional, while loading: how far along the pack is (0-1). Each one also tells the desktop it is alive. */
+  | { source: 'kpanel-scene-pack', type: 'progress', value: number }
   | { source: 'kpanel-scene-pack', type: 'ready', cameras: string[] }
   | { source: 'kpanel-scene-pack', type: 'camera', index: number }
   | { source: 'kpanel-scene-pack', type: 'error', reason: string }
@@ -112,6 +147,9 @@ export function parseScenePackEvent(data: unknown): ScenePackEvent | undefined {
   if (!data || typeof data !== 'object') return undefined
   const event = data as Record<string, unknown>
   if (event.source !== 'kpanel-scene-pack') return undefined
+  if (event.type === 'progress' && typeof event.value === 'number' && Number.isFinite(event.value)) {
+    return { source: 'kpanel-scene-pack', type: 'progress', value: Math.min(1, Math.max(0, event.value)) }
+  }
   if (event.type === 'ready' && Array.isArray(event.cameras) && event.cameras.length <= 12 && event.cameras.every((camera) => typeof camera === 'string' && camera.length <= 40)) {
     return { source: 'kpanel-scene-pack', type: 'ready', cameras: event.cameras as string[] }
   }
