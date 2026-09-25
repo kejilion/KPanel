@@ -86,6 +86,8 @@ void main() {
 const CLOUD_FRAGMENT = /* glsl */ `
 uniform vec3 uSunDirection;
 uniform sampler2D uClouds;
+uniform sampler2D uMasks;
+uniform float uCloudShift;
 varying vec2 vUv;
 varying vec3 vObject;
 varying vec3 vWorldNormal;
@@ -97,8 +99,12 @@ void main() {
   vec3 N = normalize(vWorldNormal);
   float ndl = dot(N, normalize(uSunDirection));
   float lit = smoothstep(-0.12, 0.35, ndl);
-  // Thick cloud is brighter on top; thin veils let a little of the dark below show through.
-  vec3 color = mix(vec3(0.02, 0.025, 0.04), vec3(0.86) * (0.8 + 0.2 * cover), lit);
+  // Thick cloud is brighter on top. On the night side a cloud is all but black: only the faintest
+  // sky light, and the orange glow of the cities underneath, spread and softened by the cloud.
+  float night = 1.0 - smoothstep(-0.22, 0.04, ndl);
+  float below = textureLod(uMasks, vec2(vUv.x - uCloudShift, vUv.y), 5.0).g;
+  vec3 dark = vec3(0.0012, 0.0015, 0.0025) + vec3(1.0, 0.55, 0.22) * below * night * 0.9;
+  vec3 color = mix(dark, vec3(0.86) * (0.8 + 0.2 * cover), lit);
   color += vec3(1.0, 0.42, 0.18) * smoothstep(0.16, 0.0, abs(ndl)) * 0.35;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>
@@ -186,7 +192,7 @@ export async function createPlanet(sunDirection: THREE.Vector3): Promise<Planet>
   )
   group.add(surface)
 
-  const cloudUniforms = { uSunDirection: sun, uClouds: { value: cloudsMap } }
+  const cloudUniforms = { uSunDirection: sun, uClouds: { value: cloudsMap }, uMasks: { value: masksMap }, uCloudShift: surfaceUniforms.uCloudShift }
   const clouds = new THREE.Mesh(
     new THREE.SphereGeometry(PLANET_RADIUS * 1.012, 160, 108),
     new THREE.ShaderMaterial({

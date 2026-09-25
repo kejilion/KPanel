@@ -333,8 +333,8 @@
         },
         {
           "path": "scene.js",
-          "size": 656918,
-          "sha256": "a97eec62498f4fedba17089946cd1dd8675d11a2a4532e3b83558f5e293f35f8"
+          "size": 657316,
+          "sha256": "1cd6f228af3dd54b821de8e16aea2b715b313b5c6f256377edac75492e96312b"
         },
         {
           "path": "thumb.webp",
@@ -342,7 +342,7 @@
           "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 4108369
+      "sizeBytes": 4108767
     },
     {
       "schema": 1,
