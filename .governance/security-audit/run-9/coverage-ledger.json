@@ -1,0 +1,1230 @@
+[
+  {
+    "coverage_id": "Desktop%20scene%20pack%20opaque%20iframe%20asset%20request::internal%2Fpanel%2Fscene_packs.go%23capability%20CSP%20and%20response%20headers::internal%2Fpanel::CLIENT-SIDE.md%23Credentialed%20CORS%20trust",
+    "canonical_refs": {
+      "surface": "Desktop scene pack opaque iframe asset request",
+      "boundary": "internal/panel/scene_packs.go#capability CSP and response headers",
+      "subsystem": "internal/panel",
+      "attack_class": "CLIENT-SIDE.md#Credentialed CORS trust"
+    },
+    "surface": "Desktop scene pack opaque iframe asset request",
+    "boundary": "internal/panel/scene_packs.go#capability CSP and response headers",
+    "subsystem": "internal/panel",
+    "attack_class": "CLIENT-SIDE.md#Credentialed CORS trust",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "scene-packs/neon-city/src/bridge.ts",
+      "scene-packs/orbital-station/src/bridge.ts",
+      "scene-packs/sea-and-sky/src/bridge.ts",
+      "web/src/components/desktop/DesktopScenePack.vue",
+      "web/src/lib/scenePacks.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#Credentialed CORS trust",
+      "CLIENT-SIDE.md#`postMessage` origin and source trust",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "No service worker or browser storage path appears in the selected frame/bridge sources.",
+        "block": "CLIENT-SIDE.md#Service-worker and browser-storage attack classes"
+      },
+      {
+        "reason": "Tracked separately only if the frame navigation boundary yields a concrete route; the current unit follows message/CORS trust.",
+        "block": "CLIENT-SIDE.md#UI-redress and navigation attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_scene_r1",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go",
+      "web/src/components/desktop/DesktopScenePack.vue",
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/lib/scenePacks.ts",
+      "scene-packs/neon-city/src/bridge.ts",
+      "scene-packs/orbital-station/src/bridge.ts",
+      "scene-packs/sea-and-sky/src/bridge.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_scene_r1",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go",
+          "web/src/components/desktop/DesktopScenePack.vue",
+          "web/src/components/desktop/DesktopView.vue",
+          "web/src/lib/scenePacks.ts",
+          "scene-packs/neon-city/src/bridge.ts",
+          "scene-packs/orbital-station/src/bridge.ts",
+          "scene-packs/sea-and-sky/src/bridge.ts"
+        ],
+        "invariant": "Cross-origin asset responses and iframe messages cannot expose Panel credentials or state; parent actions accept messages only from the intended frame.",
+        "method": "source",
+        "result": "The file response sets Access-Control-Allow-Origin: * without a credential allowance and serves only Store.File-validated catalog bytes. DesktopScenePack checks event.source against the iframe and validates event shape; the three bridges accept commands only from window.parent, and those commands control rendering. DesktopView uses the ready camera list for a local menu. No protected response or action was found on this path.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The file capability serves only validated public pack bytes; source supports no protected Panel data exposure on this route."
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%2F%7Bid%7D%2Ffiles%2F%7Btoken%7D%2F%7Bpath%7D%20and%20scene%20images::internal%2Fpanel%2Fscene_packs.go%23scenePackStream%20bounded%20admission::internal%2Fpanel::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path} and scene images",
+      "boundary": "internal/panel/scene_packs.go#scenePackStream bounded admission",
+      "subsystem": "internal/panel",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance"
+    },
+    "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path} and scene images",
+    "boundary": "internal/panel/scene_packs.go#scenePackStream bounded admission",
+    "subsystem": "internal/panel",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+        "reason": "The new queue uses bounded channel tokens; the scoped question is admission cardinality and wait/cancellation, not a separately opened descriptor lifetime."
+      },
+      {
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+        "reason": "The source path waits in the request handler and selects request cancellation; no detached worker is introduced by this hunk."
+      },
+      {
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Retry storm and fail-open amplification",
+        "reason": "Scene asset delivery does not retry the file response path; network retry/fallback is a separate scene-source unit."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_queue",
+    "reviewed_paths": [
+      "cmd/paneld/main.go",
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_queue",
+        "reviewed_paths": [
+          "cmd/paneld/main.go",
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Anonymous scene-file requests must pass the bounded gate and valid installed-pack capability before reading; image requests authenticate before admission; cancellation and response completion release active slots.",
+        "method": "source",
+        "result": "ServeHTTP performs Host/security-entry checks and marks only syntactically valid scene-file capability paths public. File GETs reach scenePackStream before Store.File; image routes require a session before admission. scenePackStream rejects a full 400-entry waiting queue, caps active streams at four, releases queue tokens on all returns, and releases an active token on cancellation after admission. Handlers defer active-slot release through Store reads and writes. Store.File rejects invalid/mismatched tokens and unlisted paths before opening, then checks confined regular file, exact size, and digest. Image only exposes thumb/poster and is session-gated. Queue capacity is bounded as MaxFiles (200 files for one pack) + 2×MaxPacks (100 catalog thumbnails/posters); paneld WriteTimeout is 60 seconds. Invalid capability requests reach bounded validation/lookup; no meaningful shared service impact is source-established. No availability finding survives the evidence gate. Source-only; no target execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening": "MaxInstalled×MaxFiles allows a theoretical 2,000 installed-file fanout across clients, while admission is sized for one pack plus 2×MaxPacks catalog images; source does not establish security-relevant shared impact if concurrent scenes exceed that design. Confirm expected multi-scene parallel-loading requirement."
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%2F%7Bid%7D%2Ffiles%2F%7Btoken%7D%2F%7Bpath%7D::internal%2Fscenepacks%2Fstore.go%23Store.File%20capability%20validation::internal%2Fscenepacks::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+      "boundary": "internal/scenepacks/store.go#Store.File capability validation",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+    "boundary": "internal/scenepacks/store.go#Store.File capability validation",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "Capability endpoint is GET-only and its authority is a random file capability, not a state-changing browser session.",
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_file_cap",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go",
+      "internal/backup/files.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_file_cap",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go",
+          "internal/backup/files.go"
+        ],
+        "invariant": "The public GET capability must bind requested pack ID, token, and path to an installed pack and its exact manifest file; the security-entry bypass must not grant management or other Panel data access.",
+        "method": "source",
+        "result": "ServeHTTP runs the security-entry gate before API dispatch. Its public exception accepts only scenePackFilePath syntax; the parser requires a valid pack ID, 32-character lowercase hex token, and valid path. The handler permits only GET and then calls Store.File; all other scene-pack routes require session, and writes require Origin and CSRF. Authenticated listing exposes FileBase only for installed packs; installation creates a random 16-byte token and persists it with the pack. Store.File matches ID/token to installed state, requires the exact manifest entry, checks no-link parents, opens under the object root, verifies a regular file/exact size/bounded read/SHA-256. The new scenePackStream admission runs before Store.File but only performs bounded stream/queue admission; the same authorization binding still gates content reads. No separate access-control failure was identified; queue resource effects are owned by a different unit. Static source only; no code or test execution.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fterminal-stream%20session-bound%20output::internal%2Fpanel%2Fterminal_stream.go%23checkSession%20before%20output%20write::internal%2Fpanel::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+    "canonical_refs": {
+      "surface": "GET /api/v1/terminal-stream session-bound output",
+      "boundary": "internal/panel/terminal_stream.go#checkSession before output write",
+      "subsystem": "internal/panel",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    },
+    "surface": "GET /api/v1/terminal-stream session-bound output",
+    "boundary": "internal/panel/terminal_stream.go#checkSession before output write",
+    "subsystem": "internal/panel",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+    "starting_paths": [
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_stream_test.go",
+      "internal/panel/terminal_stream.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The GET stream is read-only; its main boundary is session revocation and output authorization.",
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter_sse",
+    "reviewed_paths": [
+      "docs/multi-host-terminal.md",
+      "docs/terminal-file-transport-v3.md",
+      "internal/auth/service.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_stream_test.go",
+      "internal/panel/terminal_stream.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_sse",
+        "reviewed_paths": [
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/auth/service.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/panel/terminal_stream_test.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "A session-bound terminal SSE stream must stop writing its queued output after the associated session is revoked, according to the product's defined logout timing contract.",
+        "method": "source",
+        "result": "At GET handling, the stream is registered with the user ID and token hash. Its event channel has capacity 32. Before each dequeued event is written, checkSession runs; however, it returns success without calling Authenticate while less than one second has elapsed since lastAuth. Logout synchronously deletes the token's session through auth.Service.Logout and Store.DeleteSession, but the logout path does not cancel the matching terminal stream. Thus source supports a possible output write after session deletion during the remainder of the recent-auth cache window, limited to an existing subscription. When a recheck fails, the dequeued event is suppressed and auth.expired is written. The existing test permits output until its 1.5-second bound and does not require zero output immediately after deletion. No target code or test was run. The overview's “immediately ends” wording conflicts with the detailed document's one-second active recheck and 15-second idle heartbeat behavior, so source does not settle whether this is a contract violation.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_sse_candidate",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/terminal_stream_test.go",
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md"
+        ],
+        "invariant": "A source-supported logout timing candidate remains bounded to the same session's existing SSE subscription; verdict depends on the authoritative logout timing contract and runtime ordering.",
+        "method": "source",
+        "result": "Independently confirmed route/handler authentication, stream binding to user and token hash, one-second lastAuth cache, and event check before Write; when within the interval checkSession can permit ResponseWriter.Write after DeleteSession. Logout removes the session (store.go:696-700) without cancelling the existing hub stream; cancellation is tied to the original SSE request context. The existing test permits output during the first 1.5 seconds and was not run. Overview says logout ends immediately, while detailed protocol describes periodic active checks and idle heartbeat cleanup. Source establishes possible application Write, not browser receipt or a contract violation. Keep fingerprint terminal-sse-output-after-session-revocation as needs_validation; require owner to define the timing contract and compliant isolation to observe deterministic ordering.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_sse_phase5",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/terminal_stream.go",
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "internal/panel/terminal_stream_test.go",
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md"
+        ],
+        "invariant": "The final needs_validation record accurately limits the root cause and impact to a possible same-session output Write within the one-second auth cache, and clearly identifies the unsettled product timing contract and runtime evidence blocker.",
+        "method": "source",
+        "result": "Phase 5 verified every record trace/evidence path and cited operation against current source; confirmed the claimed root cause only covers the <1s checkSession cache and a still-existing SSE stream, with no claim that a browser received output. It verified the docs' conflicting logout timing descriptions, that the existing test permits the window and was not run, and that the needs_validation blockers and local/deployment plans address decisive facts without production traffic. Final record fingerprint matches the carried finding.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "terminal-sse-output-after-session-revocation"
+    ],
+    "unresolved": [
+      "Product contract is unclear: define whether “immediately” means no new SSE write after DeleteSession commits, after the logout response, or termination at the next recheck; specify the permitted active-output delay, idle-stream termination delay, and treatment of bytes already written to the transport.",
+      "No deterministic runtime ordering or browser-receipt observation was made. Run-9 is source-only because required OS-enforced isolation and evidence promotion are unavailable."
+    ],
+    "related_prior_fingerprints": [
+      "terminal-sse-output-after-session-revocation"
+    ]
+  },
+  {
+    "coverage_id": "HTTPModelClient.Models%20provider%20API%20request::internal%2Fai%2Fclient.go%23HTTPModelClient.Models%20request%20construction::internal%2Fai::WEB-PROTOCOL-AND-AUTH.md%23API-key%20exposure%20and%20unsafe%20transport",
+    "canonical_refs": {
+      "surface": "HTTPModelClient.Models provider API request",
+      "boundary": "internal/ai/client.go#HTTPModelClient.Models request construction",
+      "subsystem": "internal/ai",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#API-key exposure and unsafe transport"
+    },
+    "surface": "HTTPModelClient.Models provider API request",
+    "boundary": "internal/ai/client.go#HTTPModelClient.Models request construction",
+    "subsystem": "internal/ai",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#API-key exposure and unsafe transport",
+    "starting_paths": [
+      "internal/ai/client_test.go",
+      "internal/ai/client.go",
+      "internal/remotedownload/client.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key exposure and unsafe transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The changed method lists provider models and does not dispatch a tool or action.",
+        "block": "AI-AND-LLM.md#Tool and action attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_stream_r1",
+    "reviewed_paths": [
+      "internal/ai/client.go",
+      "internal/ai/client_test.go",
+      "internal/ai/providers.go",
+      "internal/remotedownload/client.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/ai/client.go",
+          "internal/ai/client_test.go",
+          "internal/ai/providers.go",
+          "internal/remotedownload/client.go"
+        ],
+        "invariant": "The Models content-negotiation change must not weaken provider URL validation, API-key handling, redirect policy, response bounds, or parsing.",
+        "method": "source",
+        "result": "Models sets Accept: application/json for both Bearer and Gemini X-Goog-Api-Key branches; do sets text/event-stream by default and then applies the supplied header map. Requests use the provider-specific client, which validates resolved addresses and redirects and removes Authorization, X-Api-Key, and X-Goog-Api-Key on cross-origin redirects. Models reads through a 4 MiB limit. The remote-download client is a separate path and is not used by Models. The diff hunk changes content negotiation only; no finding has a root cause in that hunk. Related source tests were read but not run.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Monitoring%20JSONL%20borrowed-slice%20decoder%20reuse::internal%2Fmonitoring%2Frecord_decode.go%23diskRecordDecoder.decode%20borrowed-slice%20contract::internal%2Fmonitoring::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Poison-record%20and%20head-of-line%20blocking",
+    "canonical_refs": {
+      "surface": "Monitoring JSONL borrowed-slice decoder reuse",
+      "boundary": "internal/monitoring/record_decode.go#diskRecordDecoder.decode borrowed-slice contract",
+      "subsystem": "internal/monitoring",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking"
+    },
+    "surface": "Monitoring JSONL borrowed-slice decoder reuse",
+    "boundary": "internal/monitoring/record_decode.go#diskRecordDecoder.decode borrowed-slice contract",
+    "subsystem": "internal/monitoring",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+    "starting_paths": [
+      "internal/monitoring/hourly.go",
+      "internal/monitoring/record_decode_test.go",
+      "internal/monitoring/record_decode.go",
+      "internal/monitoring/service.go",
+      "internal/monitoring/source_tradeoff_test.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "There is no tenant key in this single-admin history decoder; record isolation is tested at the borrowed-buffer boundary.",
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_stream_r1",
+    "reviewed_paths": [
+      "internal/monitoring/record_decode.go",
+      "internal/monitoring/service.go",
+      "internal/monitoring/hourly.go",
+      "internal/monitoring/record_decode_test.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/monitoring/record_decode.go",
+          "internal/monitoring/service.go",
+          "internal/monitoring/hourly.go"
+        ],
+        "invariant": "A decoded row must not inherit prior-row values, expose scanner-owned data after the next decode, or retain unbounded arrays.",
+        "method": "source",
+        "result": "decode clears both full scratch arrays before Unmarshal and resets the record to those slices (record_decode.go:14-25). It retains decoded capacities only within maxScannedSeries/MaxChecks (28-33). Both regular and hourly scans use bounded Scanner lines, skip malformed records, and invoke consumers synchronously (service.go:956-1032; hourly.go:493-567). Consumers copy scalar points into result maps/slices rather than retaining the borrowed container or latency slices (service.go:805-877; hourly.go:93-134). No source-supported stale-row, retained-backing-array, or head-of-line issue found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/monitoring/record_decode.go",
+          "internal/monitoring/record_decode_test.go"
+        ],
+        "invariant": "JSON null, omitted fields, short arrays, and invalid rows must not expose values from a reused prior decode.",
+        "method": "source",
+        "result": "Before each decode, the entire bounded backing arrays are cleared; a new zero-valued diskRecord is populated with zero-length scratch slices (record_decode.go:19-25). Failed decodes are skipped by scan callers, and the next decode clears scratch again. The source test covers reuse/null/omitted-field cases; tests were not run in this source-only review.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Monitoring%20history%20scan%2C%20retention%2C%20and%20aggregate%20lifecycle::internal%2Fmonitoring%2Fservice.go%23scanRecords%20and%20queryHistory::internal%2Fmonitoring::DATA-ISOLATION-AND-LIFECYCLE.md%23Analytics%2C%20logs%2C%20traces%2C%20and%20diagnostics%20as%20alternate%20readers",
+    "canonical_refs": {
+      "surface": "Monitoring history scan, retention, and aggregate lifecycle",
+      "boundary": "internal/monitoring/service.go#scanRecords and queryHistory",
+      "subsystem": "internal/monitoring",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers"
+    },
+    "surface": "Monitoring history scan, retention, and aggregate lifecycle",
+    "boundary": "internal/monitoring/service.go#scanRecords and queryHistory",
+    "subsystem": "internal/monitoring",
+    "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+    "starting_paths": [
+      "internal/monitoring/hourly.go",
+      "internal/monitoring/record_decode.go",
+      "internal/monitoring/service.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The changed code reads/aggregates history and does not export or restore the data.",
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_stream_r1",
+    "reviewed_paths": [
+      "internal/panel/server.go",
+      "internal/panel/monitoring.go",
+      "internal/cluster/history.go",
+      "internal/cluster/history_transport.go",
+      "internal/panel/monitoring_federation.go",
+      "internal/monitoring/service.go",
+      "internal/monitoring/hourly.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/monitoring.go",
+          "internal/cluster/history.go",
+          "internal/cluster/history_transport.go",
+          "internal/panel/monitoring_federation.go"
+        ],
+        "invariant": "Monitoring history reads must require the appropriate principal and preserve host authorization across local and federated reads.",
+        "method": "source",
+        "result": "The history route dispatches to an admin-session and GET-guarded handler with bounded query inputs/timeouts (server.go:374-375; monitoring.go:16-86). Local selection rechecks host state/scope around the in-flight request, and the federated receiver checks the authenticated controller and query (cluster/history.go:49-145; cluster/history_transport.go:26-47; panel/monitoring_federation.go:23-60). The project’s stated single-admin model has no tenant database; no cross-principal path was found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/monitoring/service.go",
+          "internal/monitoring/hourly.go"
+        ],
+        "invariant": "Retention, query bounds, and derived aggregates must not leak state across callers or include out-of-range/expired samples.",
+        "method": "source",
+        "result": "Range/window and retention bounds are applied before scanning (service.go:693-733). queryHistory keeps prior host/container rate state and aggregate maps local to the query, caps series/points, and appends the current hourly record only when its timestamp is within the requested interval (service.go:753-903, 787-889). Hourly scanning/accumulation likewise uses local bounded state. No cross-query state or source-supported retention bypass found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Opaque%20scene%20iframe%20top%20navigation%20and%20referrer%20boundary::internal%2Fpanel%2Fscene_packs.go%23capability%20CSP%20and%20DesktopScenePack.vue%23sandbox::internal%2Fpanel::CLIENT-SIDE.md%23Client-side%20navigation%20confusion",
+    "canonical_refs": {
+      "surface": "Opaque scene iframe top navigation and referrer boundary",
+      "boundary": "internal/panel/scene_packs.go#capability CSP and DesktopScenePack.vue#sandbox",
+      "subsystem": "internal/panel",
+      "attack_class": "CLIENT-SIDE.md#Client-side navigation confusion"
+    },
+    "surface": "Opaque scene iframe top navigation and referrer boundary",
+    "boundary": "internal/panel/scene_packs.go#capability CSP and DesktopScenePack.vue#sandbox",
+    "subsystem": "internal/panel",
+    "attack_class": "CLIENT-SIDE.md#Client-side navigation confusion",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "web/src/components/desktop/DesktopScenePack.vue",
+      "web/src/lib/scenePacks.ts",
+      "scene-packs/orbital-station/src/bridge.ts",
+      "scene-packs/neon-city/src/bridge.ts",
+      "scene-packs/sea-and-sky/src/bridge.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#Client-side navigation confusion",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The separate capability/CORS/message unit covers postMessage and network trust.",
+        "block": "CLIENT-SIDE.md#Cross-origin messaging and network attack classes"
+      }
+    ],
+    "prior_status": "prior_blocked",
+    "attempts": [],
+    "wave": 1,
+    "status": "blocked",
+    "agent_id": "hunter_browser",
+    "reviewed_paths": [
+      "internal/panel/server.go",
+      "internal/panel/scene_packs.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go",
+      "scene-packs/_template/src/main.ts",
+      "web/src/components/desktop/DesktopScenePack.vue",
+      "web/src/lib/api.ts",
+      "web/src/lib/scenePacks.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_browser",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/scene_packs.go",
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go",
+          "web/src/lib/api.ts",
+          "web/src/lib/scenePacks.ts"
+        ],
+        "invariant": "Scene manifest access requires a session; capability URLs read only manifest-listed files from the installed pack and cannot become Panel session or API authority.",
+        "method": "source",
+        "result": "ServeHTTP validates Host and security headers; only syntactically valid scenePackFilePath routes bypass session. The GET-only file handler rejects RawPath and unexpected query parameters and calls Store.File. Store.File binds ID, token and path to an installed manifest entry, then checks regular-file type, length and digest. Tokens use crypto/rand 16 bytes. Store.List requires a session; fileBase is returned only for installed views, and the client accepts only a matching relative fileBase before adding index.html. Parent API calls use same-origin credentials. Queue changes do not alter CSP. No capability expansion to Panel data or session permission was found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_browser",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/scene_packs.go"
+        ],
+        "invariant": "Capability file responses retain no-referrer and enforce the scene-specific CSP while permitting only the expected Panel parent frame.",
+        "method": "source",
+        "result": "ServeHTTP sets generic CSP, Referrer-Policy: no-referrer and X-Frame-Options: DENY. Valid capability responses replace CSP with sandbox allow-scripts and default-src 'none', restrict asset/connection sources to the token pack path, and set frame-src, frame-ancestors, form-action, base-uri and object-src. The handler changes X-Frame-Options to SAMEORIGIN and sets scene CORS/CORP plus restricted Permissions-Policy; it does not override Referrer-Policy. These are source declarations; browser enforcement was not observed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_browser",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "web/src/components/desktop/DesktopScenePack.vue",
+          "web/src/lib/scenePacks.ts"
+        ],
+        "invariant": "Untrusted scene code cannot use iframe permissions or parent-provided URL to read Panel DOM, session or persistent state; navigation and referrer restrictions must work in the browser.",
+        "method": "source",
+        "result": "The iframe URL derives only from the installed pack fileBase; iframe attributes include sandbox='allow-scripts', referrerpolicy='no-referrer', allow='', with no allow-same-origin, allow-top-navigation or allow-popups. No client storage access was found. Session cookie is HttpOnly and SameSite Strict, Secure under HTTPS; the CSRF cookie is script-readable. Static source shows the restrictions but cannot establish browser opaque-origin behavior, cookie attachment/readability, storage access, self/top navigation or referrer suppression.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_browser",
+        "reviewed_paths": [
+          "scene-packs/_template/src/main.ts",
+          "web/src/components/desktop/DesktopScenePack.vue"
+        ],
+        "invariant": "The iframe-parent message boundary conveys limited render state; other windows or navigation must not trigger sensitive parent actions.",
+        "method": "source",
+        "result": "Parent commands pause/resume/camera to the current frame and carry no sensitive data. Parent receives only messages from the current frame.contentWindow and validates a marker and bounded event shape; outcomes update camera state or error UI. event.origin is not checked. Navigation-induced WindowProxy behavior remains unverified.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Runtime browser enforcement remains unverified: actual CSP/iframe sandbox/no-referrer, self/top navigation, Referer suppression, opaque-origin cookie/storage behavior, same-site session-cookie attachment, and WindowProxy behavior after navigation. No OS-enforced sandbox is available and browser/fixture execution is prohibited. Follow-up requires a compliant isolated OS sandbox with no external network, dummy session/token, a local Panel stub and second dummy origin; inspect response headers, navigation outcomes, Referer, cookie/storage access, and post-navigation message effects."
+    ]
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%20management%20and%20install::internal%2Fpanel%2Fscene_packs.go%23handleScenePacks%20authenticated%20mutation%20gate::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "POST /api/v1/desktop/scene-packs management and install",
+      "boundary": "internal/panel/scene_packs.go#handleScenePacks authenticated mutation gate",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "POST /api/v1/desktop/scene-packs management and install",
+    "boundary": "internal/panel/scene_packs.go#handleScenePacks authenticated mutation gate",
+    "subsystem": "internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/ai/client.go",
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_scene_r1",
+    "reviewed_paths": [
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_scene_r1",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Management writes require a current session, effective Origin and CSRF checks, and an audit intent before mutation.",
+        "method": "source",
+        "result": "Non-GET scene-pack requests pass checkOrigin, requireSession, and checkCSRF before route handling. Authenticate looks up an unexpired stored session; CSRF requires a matching header/cookie and session-bound hash. The write routes validate inputs and require a durable audit intent before SetSource, Install, or Delete. Direct Origin comparison uses configured PublicURL; trusted-proxy origin requires a configured peer and X-Forwarded-Proto=https, and this path uses Host rather than X-Forwarded-Host. No source-supported write bypass was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Panel%20and%20peer%20reusable%20stream%20identity%20and%20per-request%20authorization::internal%2Fcluster%2Fstream_v3.go%23openPanelFileStream%20and%20stream%20role%20authorization::internal%2Fcluster::PROTOCOLS-RPC-AND-MESSAGING.md%23Per-item%20and%20streaming%20authorization%20gaps",
+    "canonical_refs": {
+      "surface": "Panel and peer reusable stream identity and per-request authorization",
+      "boundary": "internal/cluster/stream_v3.go#openPanelFileStream and stream role authorization",
+      "subsystem": "internal/cluster",
+      "attack_class": "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps"
+    },
+    "surface": "Panel and peer reusable stream identity and per-request authorization",
+    "boundary": "internal/cluster/stream_v3.go#openPanelFileStream and stream role authorization",
+    "subsystem": "internal/cluster",
+    "attack_class": "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+    "starting_paths": [
+      "internal/cluster/service_v2.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/cluster.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Peer identity to application-principal confusion",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Per-item and streaming authorization gaps",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The changed socket has explicit peer identity and request scopes; it is not a broker/queue boundary.",
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Broker and queue isolation attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_stream_r1",
+    "reviewed_paths": [
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/service_v2.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_stream.go"
+        ],
+        "invariant": "A reusable authenticated socket must bind peer identity and role/scope, and reauthorize each application request before dispatch.",
+        "method": "source",
+        "result": "Panel outbound dialing requires an active host record and checks role scope (stream_v3.go:271-295). Inbound authorization checks controller state, expected Noise peer key, role, and scope (file_stream_transport.go:394-461). Reusable file sockets recheck controller active state and file scope before each request reaches the handler (file_stream_transport.go:309-320; file_stream.go:350-383). Terminal sessions are separately role-authorized and bound to owner federation:<controllerID>; no cross-controller identity reuse path found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/cluster/service_v2.go",
+          "internal/cluster/file_stream_transport.go"
+        ],
+        "invariant": "Revocation must make established peer streams unusable and reclaim their connections.",
+        "method": "source",
+        "result": "Host deletion first makes the host inactive, then closes its peer streams and forgets associated terminal/pool state (service_v2.go:420-436). Controller revocation records revoked state and closes controller-owned peer streams (service_v2.go:1019-1034). No source-supported reusable-socket authorization gap found; no dynamic revocation timing was tested.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Panel%20shutdown%20scene-pack%20download%20cancellation::internal%2Fpanel%2Fcluster.go%23Server.Close%20scenePacks.Close::internal%2Fscenepacks::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Detached%20work%20after%20cancellation",
+    "canonical_refs": {
+      "surface": "Panel shutdown scene-pack download cancellation",
+      "boundary": "internal/panel/cluster.go#Server.Close scenePacks.Close",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation"
+    },
+    "surface": "Panel shutdown scene-pack download cancellation",
+    "boundary": "internal/panel/cluster.go#Server.Close scenePacks.Close",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+    "starting_paths": [
+      "internal/panel/cluster.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter_identity_shutdown_r2",
+    "reviewed_paths": [
+      "internal/panel/cluster.go",
+      "internal/panel/scene_packs_test.go",
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/remotedownload/client.go",
+      "internal/scenepacks/store_test.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_identity_shutdown_r2",
+        "reviewed_paths": [
+          "internal/panel/cluster.go",
+          "internal/panel/scene_packs_test.go",
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/remotedownload/client.go",
+          "internal/scenepacks/store_test.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Panel shutdown closes scene-pack intake, cancels accepted store fetches, and waits for handlers; no detached request work is left unaccounted for.",
+        "method": "source",
+        "result": "[internal/panel/cluster.go; internal/panel/server.go internal/panel/cluster.go:60-84; internal/panel/server.go:235-244] Server.Close closes request intake under requestsMu, calls scenePacks.Close, and later waits on requests.Wait. ServeHTTP increments/decrements that WaitGroup while holding the same intake protocol. Therefore admitted scene-pack HTTP handlers are included in the server-level wait; this is more than a cancel-only Server.Close. [internal/scenepacks/store.go; internal/panel/scene_packs.go internal/scenepacks/store.go:55-60, 174-204, 320-409; internal/panel/scene_packs.go:81-101, 134-145] Store.Close itself only cancels the store context and does not join callers. Each network download links its request context to the store context with context.AfterFunc; Install's request is synchronous in the HTTP handler, has a three-minute operation context, and checks cancellation before state commit. The production fetch uses remotedownload.Client.Open with NewRequestWithContext, and each store fetch also has a 20-second timeout. The Store has no detached download goroutine; Server.Close's request wait drains the caller. [internal/scenepacks/store_test.go 196-243] TestConcurrentInstallCloseAndSourcePersistence uses a fetch fixture that blocks on ctx.Done, calls Store.Close during the fetch, expects the install to fail within one second, and checks persistent source state. It tests Store cancellation directly, not the full Panel Server.Close/HTTP-handler wait path. [internal/remotedownload/client.go 66-111, 152-166] The production scene-pack fetch client has bounded connection, TLS, response-header, and idle settings; Open constructs the HTTP request with NewRequestWithContext and executes it through http.Client.Do, so the store cancellation context reaches the network request.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Scene%20catalog%20and%20fixed%20upstream%20downloads::internal%2Fscenepacks%2Fstore.go%23Store.Fetch%20fixed-source%20and%20redirect%20decision::internal%2Fscenepacks::SUPPLY-CHAIN-AND-RELEASE.md%23Mutable%20and%20unbound%20build%20inputs",
+    "canonical_refs": {
+      "surface": "Scene catalog and fixed upstream downloads",
+      "boundary": "internal/scenepacks/store.go#Store.Fetch fixed-source and redirect decision",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs"
+    },
+    "surface": "Scene catalog and fixed upstream downloads",
+    "boundary": "internal/scenepacks/store.go#Store.Fetch fixed-source and redirect decision",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs",
+    "starting_paths": [
+      "internal/remotedownload/client.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go",
+      "scene-packs/catalog.json"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Mutable and unbound build inputs",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Dependency source and namespace confusion",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "This is a runtime optional-content fetch, not a privileged CI workflow.",
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#CI and automation attack classes"
+      },
+      {
+        "reason": "No build context consumes the runtime catalog.",
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Build-context inclusion"
+      }
+    ],
+    "prior_status": "prior_confirmed_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_supply",
+    "reviewed_paths": [
+      "internal/panel/server.go",
+      "internal/remotedownload/client.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_supply",
+        "reviewed_paths": [
+          "internal/scenepacks/store.go",
+          "internal/remotedownload/client.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Scene downloads must use fixed trusted roots, reject redirect hops before a follow-up request, constrain each dial to public addresses, and validate the response before accepting it.",
+        "method": "source",
+        "result": "Production Store.Open uses the default fetch closure and compiled-in official/mirror HTTPS roots. The scene client sets RejectRedirects and its CheckRedirect rejects redirect hops before a follow-up request; final URL equality is an additional defense. Resolved dial targets are rejected unless public and the resolved IP is dialed directly. Responses require HTTP 200 and reject partial/encoded bodies; streamed size is bounded. Auto source preference is mutex-protected and bounded to a five-minute mirror preference. Unpinned catalog responses are decoded before source success/fallback decisions and validated again before storage. No source-grounded cross-boundary candidate found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_redirect_revalidation",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/scenepacks/store.go",
+          "internal/remotedownload/client.go"
+        ],
+        "invariant": "The prior public cross-host redirect egress fingerprint must be rechecked against the production scene-pack client configuration and the actual pre-follow-up redirect policy.",
+        "method": "source",
+        "result": "Independently verified the production server calls scenepacks.Open(..., nil) (server.go:204), using the built-in fetch. Scene store config sets RejectRedirects:true (store.go:57); remotedownload.NewClient's CheckRedirect returns ErrRedirectRejected for every redirect before http.Client issues a follow-up request (client.go:112-115). Client.Open propagates the Do error; Store maps it to ErrSource. The final URL equality check remains defense in depth after Open. Public IP checks remain but are not origin binding; they do not matter for this path because the redirect is rejected before target dial. The prior fingerprint is refuted for current Scene Store production flow; no target code, tests, or network were run.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The run-8 redirect finding was independently rechecked and rejected for the current scene-pack production flow: RejectRedirects is enabled, so the follow-up request is not sent. Generic remotedownload default behavior at other call sites is outside this scene-pack finding. No private-network SSRF or credential disclosure is claimed."
+    ],
+    "related_prior_fingerprints": [
+      "scenepacks.redirect.public-egress-before-origin-check"
+    ],
+    "hardening": "The catalog is not independently digest-pinned; trust rests on compiled-in HTTPS roots and TLS. No lower-trust source path crossing a protected boundary was found.",
+    "resolved_prior_leads": [
+      {
+        "fingerprint": "scenepacks.redirect.public-egress-before-origin-check",
+        "reason": "The current production scene-pack Store configures RejectRedirects:true and CheckRedirect returns ErrRedirectRejected before a follow-up request, so the old cross-host public GET path no longer exists."
+      }
+    ]
+  },
+  {
+    "coverage_id": "Scene%20catalog%20path%20and%20file%20integrity%20validation::internal%2Fscenepacks%2Fcatalog.go%23ValidateCatalog%20and%20ValidPath::internal%2Fscenepacks::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Scene catalog path and file integrity validation",
+      "boundary": "internal/scenepacks/catalog.go#ValidateCatalog and ValidPath",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Scene catalog path and file integrity validation",
+    "boundary": "internal/scenepacks/catalog.go#ValidateCatalog and ValidPath",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "Quota enforcement is covered by the store lifecycle unit; this unit focuses on canonical paths and bounded catalog decoding.",
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_supply",
+    "reviewed_paths": [
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_supply",
+        "reviewed_paths": [
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Catalog-controlled paths and metadata must stay within bounded, catalog-listed files, and downloaded or served bytes must match declared size and digest.",
+        "method": "source",
+        "result": "Catalog decoding caps bytes and pack count; paths, file counts, per-file/total sizes, IDs, uniqueness, content types, and lowercase SHA-256 digests are validated. Downloads use validated paths under fixed roots with size limits and exact digest checks. Installation requests catalog-listed files with declared size/hash, while serving binds the token/path to the installed catalog and rechecks regular-file type, exact size, and digest. No source-visible path or integrity bypass was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Scene%20pack%20store%20install%2C%20replacement%2C%20quota%2C%20and%20recovery::internal%2Fscenepacks%2Fstore.go%23Store.Install%20state%20commit%20and%20old-token%20retirement::internal%2Fscenepacks::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unsafe%20recovery%20and%20capacity%20rollback",
+    "canonical_refs": {
+      "surface": "Scene pack store install, replacement, quota, and recovery",
+      "boundary": "internal/scenepacks/store.go#Store.Install state commit and old-token retirement",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback"
+    },
+    "surface": "Scene pack store install, replacement, quota, and recovery",
+    "boundary": "internal/scenepacks/store.go#Store.Install state commit and old-token retirement",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+    "starting_paths": [
+      "Dockerfile",
+      "internal/backup/files.go",
+      "internal/panel/cluster.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "Scene-pack objects are single-admin public artwork, not tenant records; object ownership and token lifecycle remain in the selected resource unit.",
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes"
+      }
+    ],
+    "prior_status": "prior_blocked",
+    "attempts": [],
+    "wave": 1,
+    "status": "blocked",
+    "agent_id": "hunter_recovery",
+    "reviewed_paths": [
+      "internal/scenepacks/store.go",
+      "internal/scenepacks/catalog.go",
+      "internal/backup/files.go",
+      "internal/panel/scene_packs.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_recovery",
+        "reviewed_paths": [
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Install, replacement, and recovery keep installed-count and byte quotas within bounds, including after restart.",
+        "method": "source",
+        "result": "catalog.go:16-24 defines MaxInstalled=10, MaxPackBytes=30 MiB, and MaxTotalBytes=150 MiB; validatePack bounds file count and pack size (206-234). validState checks installed count and total bytes (store.go:99-112). Install serializes mutations with opMu and checks quota against other installed packs before creating the new object directory (344-387). Open validates persisted state and prunes unreferenced token directories (54-96, 115-147). No source path was found that restores over-quota state. Replacement staging can temporarily retain both old and new object trees, bounded by one additional MaxPackBytes.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_recovery",
+        "reviewed_paths": [
+          "internal/scenepacks/store.go",
+          "internal/panel/scene_packs.go"
+        ],
+        "invariant": "Only the token in committed installed-pack state authorizes file reads; replacement retires the old token at the state transition.",
+        "method": "source",
+        "result": "Install creates a random token directory and writes pack files before setting that token in next state (store.go:388-429). It saves new state before removing the previous token directory (421-433). File holds the state mutex, requires item.Token == token, and checks manifest path, size, and digest (474-519), so the old token no longer authorizes reads after state update even if its directory remains. The management handler requires a session and checks Origin and CSRF for mutating requests (scene_packs.go:75-84).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_recovery",
+        "reviewed_paths": [
+          "internal/scenepacks/store.go",
+          "internal/backup/files.go"
+        ],
+        "invariant": "The object must be durable before state points to it, and restart recovery must detect an index that references missing object files.",
+        "method": "source",
+        "result": "CopyFile syncs each file (files.go:71-90), but Install creates token/nested directories without syncing their entries before state commit (store.go:393-416). AtomicFile syncs the temporary state file, renames it, then calls SyncDir on the state directory (files.go:105-135); SyncDir is a no-op on Windows (93-103). save reconciles rename errors by rereading state (store.go:149-165). Startup validates state structure/quota and prunes unreferenced directories, but does not verify files in referenced token directories (store.go:83-96, 115-147). Source alone cannot show that a supported filesystem will persist the new state while losing object-directory entries. This affects optional public artwork; no protected Panel-state or security-boundary damage is established.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Blocked pending bounded crash/fault-injection validation of object-directory durability and recovery on supported filesystems. If an OS-enforced sandbox becomes available, use an isolated temporary data root, dummy pack data, no external network, empty allowlisted environment, read-only source/toolchain, scratch-only writes, and explicit low resource/time limits. Inject failures around file writes and syncs, nested-directory creation, state rename and directory sync, and old-object removal; reopen the store and check state-to-file references, token retirement, stale-object pruning, and quota bounds. Stop at the first inconsistency. No such execution was performed."
+    ],
+    "parent_hardening": [
+      "The object-directory sync gap is a durability question limited to optional public scene content; no protected Panel-state damage is supported."
+    ]
+  },
+  {
+    "coverage_id": "V3%20terminal%20stream%20cancellation%2C%20reply%20ownership%2C%20and%20fallback::internal%2Fcluster%2Fterminal_stream.go%23serveTerminalStream%20request%20lifecycle::internal%2Fcluster::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Detached%20work%20after%20cancellation",
+    "canonical_refs": {
+      "surface": "V3 terminal stream cancellation, reply ownership, and fallback",
+      "boundary": "internal/cluster/terminal_stream.go#serveTerminalStream request lifecycle",
+      "subsystem": "internal/cluster",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation"
+    },
+    "surface": "V3 terminal stream cancellation, reply ownership, and fallback",
+    "boundary": "internal/cluster/terminal_stream.go#serveTerminalStream request lifecycle",
+    "subsystem": "internal/cluster",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+    "starting_paths": [
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_stream_release_test.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/cluster.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The changed code bounds request lifecycle/cancellation rather than untrusted parser complexity.",
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes"
+      },
+      {
+        "reason": "Acknowledgement ordering is reviewed only where it changes cancellation/reply ownership.",
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_stream_r1",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/main.go",
+      "internal/agent/terminals.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_stream_release_test.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/types.go",
+      "internal/panel/terminal.go",
+      "internal/terminal/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/terminal_v2.go"
+        ],
+        "invariant": "Replies must be owned by their request; cancellation must release waiters; fallback must not replay a request that may already have been sent.",
+        "method": "source",
+        "result": "Client requests receive unique sequence IDs and pending entries are removed on every return, including cancellation and timeout (terminal_stream.go:540-575); disconnect removes/closes all pending reply channels (445-462). Open fallback to V2 occurs only for a stream dial error before the first request can be sent (terminal_v2.go:172-179; stream_v3.go:346-359). No reply cross-ownership or post-send fallback replay found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_stream_r1",
+        "reviewed_paths": [
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/terminal_stream_release_test.go",
+          "internal/terminal/manager.go",
+          "internal/cluster/file_stream_transport.go"
+        ],
+        "invariant": "An accepted PTY open whose acknowledgement cannot be delivered must not leave an unowned session consuming capacity.",
+        "method": "source",
+        "result": "A successful backend.Open is followed by termReady write; if that write fails, serveTerminalStream returns without calling backend.Close (terminal_stream.go:181-206). The default manager adapter ignores the supplied context for Open, and Manager.Open registers the process after spawning (stream_v3.go:455-456; terminal/manager.go:279-345). The manager defaults to 4 sessions per owner and 16 total, and reaps idle sessions on a one-minute loop after the 30-minute default idle timeout (terminal/manager.go:18-24, 507-537). This supports a candidate for an open canceled/disconnected before ready; timing and product cleanup expectations were not dynamically validated.",
+        "artifact": null
+      },
+      {
+        "agent_id": "validator_pty_r2",
+        "reviewed_paths": [
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/terminal/manager.go",
+          "internal/cluster/types.go",
+          "internal/panel/terminal.go",
+          "internal/agent/terminals.go",
+          "cmd/kejilion-agent/main.go"
+        ],
+        "invariant": "A failed ready delivery must not create a security-relevant session outside the caller’s authorized owner quota or affect a different principal.",
+        "method": "source",
+        "result": "Confirmed the ready-write failure can leave a registered PTY/session until reaping, but the attacker already needs an active paired controller with cluster.terminal.open; owner is federation:<controllerID>, existing per-owner/global quotas apply, and no quota bypass, privilege gain, or cross-principal effect is established. Classified as bounded cleanup hardening, not a security finding. Dynamic fixture was intentionally not run after coordinator scope decision.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The source-confirmed orphan PTY lifecycle is bounded by existing owner/global quotas and normal manager reaping; no security finding was asserted."
+    ]
+  },
+  {
+    "coverage_id": "paneld%20non-root%20scene-pack%20filesystem%20boundary::Dockerfile%23final%20paneld%20UID%2FGID%2065532%20and%20internal%2Fscenepacks%2Fstore.go%23OpenRoot::internal%2Fscenepacks::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+    "canonical_refs": {
+      "surface": "paneld non-root scene-pack filesystem boundary",
+      "boundary": "Dockerfile#final paneld UID/GID 65532 and internal/scenepacks/store.go#OpenRoot",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure"
+    },
+    "surface": "paneld non-root scene-pack filesystem boundary",
+    "boundary": "Dockerfile#final paneld UID/GID 65532 and internal/scenepacks/store.go#OpenRoot",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+    "starting_paths": [
+      "cmd/paneld/main.go",
+      "Dockerfile",
+      "internal/backup/files.go",
+      "internal/panel/cluster.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "reason": "The local store boundary is enforced by process UID and filesystem APIs; no cloud workload identity is in this path.",
+        "block": "CLOUD-AND-DEPLOYMENT.md#Workload identity and IAM attack classes"
+      }
+    ],
+    "prior_status": "prior_covered_same_source",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_scene_r1",
+    "reviewed_paths": [
+      "Dockerfile",
+      "cmd/paneld/main.go",
+      "deploy/compose/compose.yml",
+      "internal/backup/files.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_scene_r1",
+        "reviewed_paths": [
+          "Dockerfile",
+          "cmd/paneld/main.go",
+          "deploy/compose/compose.yml",
+          "internal/backup/files.go",
+          "internal/panel/config.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Remote scene content cannot select a host path, escape the data root, execute with host authority, or delegate to the privileged Agent.",
+        "method": "source",
+        "result": "The final image runs as UID/GID 65532. Compose also specifies that user, read-only root filesystem, dropped capabilities, no-new-privileges, and a data-directory bind mount; scene-pack directories are created private under the configured data directory and files are created with mode 0600. The store serves artwork and does not execute it or delegate its downloads to the Agent. The host data-directory path and effective runtime attachment are operator-selected; no remote path selector or host-capability crossing was found in source.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]

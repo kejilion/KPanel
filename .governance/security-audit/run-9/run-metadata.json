@@ -1,0 +1,302 @@
+{
+  "run_id": "run-9",
+  "repo": "KPanel",
+  "target": "C:/GitHub/_codex-tasks/kpanel-rc5-scene-playback",
+  "source_ref": "4fb9c16f3b97eea1342d87a48e454e3d0ba37d8c",
+  "source_tree": "444f26132591951256e18b471e1473b430f2dbfb",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "standard",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "scope_paths": [
+    "internal/ai/client.go",
+    "internal/cluster/stream_v3.go",
+    "internal/cluster/terminal_stream.go",
+    "internal/monitoring/hourly.go",
+    "internal/monitoring/record_decode.go",
+    "internal/monitoring/service.go",
+    "internal/panel/cluster.go",
+    "internal/panel/scene_packs.go",
+    "internal/panel/server.go",
+    "internal/panel/terminal_stream.go",
+    "internal/remotedownload/client.go",
+    "internal/scenepacks/catalog.go",
+    "internal/scenepacks/store.go"
+  ],
+  "in_scope_commits": [
+    "4fb9c16f3b97eea1342d87a48e454e3d0ba37d8c",
+    "885faf8130b6c3b077c2206a90bac31a58f2b84b",
+    "56aca05eb9b13b825648a19e81e75a40152e8ab1",
+    "5c025a9d666007c74bb1c88f83bbf82dd6d7ec63",
+    "8a9f0ffc2b8a74008ed8fc44379d4f3e82751dba",
+    "b45bb21b42e53d2e5f5f47aca5ec21783a380ff9",
+    "6f0c9ec015807db57e8a0475754f7ad54a8049d6",
+    "e96ca5c4a0c2b1240bcd281aa513132719ec30d5",
+    "800a96e33d7127ceb056a737d9fdca4cfdd2adbd"
+  ],
+  "budget": null,
+  "execution_policy": "source-only-no-target-execution",
+  "skill_source": "cloudflare/security-audit-skill",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "skill_dir": "C:/GitHub/_research/security-audit-skill-c1c8a8c1",
+  "skill_pin_evidence": "C:/GitHub/_release-evidence/v1.22.0-rc.5-20260925/skill-pin-verification/verification-r2.json",
+  "selected_companion_files": [
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "PROTOCOLS-RPC-AND-MESSAGING.md",
+    "AI-AND-LLM.md"
+  ],
+  "prior_run_paths": [
+    ".governance/security-audit/run-1",
+    ".governance/security-audit/run-2",
+    ".governance/security-audit/run-3",
+    ".governance/security-audit/run-4",
+    ".governance/security-audit/run-5",
+    ".governance/security-audit/run-6",
+    ".governance/security-audit/run-7",
+    "C:/GitHub/_release-evidence/v1.22.0-rc.5-20260925/security-run-8",
+    "C:/GitHub/_codex-evidence/kpanel-transport-v3-security-audit-run-7"
+  ],
+  "shared_file_owners": {
+    "coverage-ledger.json": "parent",
+    "FINDINGS-DETAIL.md": "parent",
+    "architecture.md": "parent",
+    "NEEDS-VALIDATION.md": "parent",
+    "findings.json": "parent",
+    "run-metadata.json": "parent",
+    "REPORT.md": "parent"
+  },
+  "agent_configuration": {
+    "runtime_model_metadata": "not exposed by orchestration runtime",
+    "required_child_settings": {
+      "fork_turns": "none",
+      "reasoning_effort": "max",
+      "model": "gpt-6-luna"
+    },
+    "reasoning_effort": "max",
+    "configured_by": "parent explicitly configured audit coordinator as gpt-6-luna/max",
+    "model": "gpt-6-luna"
+  },
+  "started_at": "2026-09-25T08:24:19.9122315Z",
+  "sandbox_facts": {
+    "network_isolation": false,
+    "empty_allowlisted_environment": false,
+    "readonly_target_and_toolchain": false,
+    "scratch_only_writes": false,
+    "resource_limits": false,
+    "safe_evidence_promoter": false,
+    "target_execution_permitted": false,
+    "note": "WSL was started only to execute the pinned trusted coverage validator on run evidence; no target-controlled code was executed."
+  },
+  "reconnaissance": {
+    "agents": [
+      {
+        "id": "recon_product_stack",
+        "role": "product-stack",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "max",
+        "fork_turns": "none",
+        "status": "complete"
+      },
+      {
+        "id": "recon_identity_auth",
+        "role": "identity-authorization",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "max",
+        "fork_turns": "none",
+        "status": "complete"
+      },
+      {
+        "id": "recon_entry_surface",
+        "role": "entry-surfaces-and-sinks",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "max",
+        "fork_turns": "none",
+        "status": "complete"
+      },
+      {
+        "id": "recon_execution_capability",
+        "role": "execution-deployment-capability",
+        "model": "gpt-6-luna",
+        "reasoning_effort": "max",
+        "fork_turns": "none",
+        "status": "complete"
+      }
+    ],
+    "execution": "read-only source and environment inventory",
+    "target_execution": false
+  },
+  "validator_preflight": {
+    "host_node": "Windows v24.17.0 lacks O_NOFOLLOW; not used",
+    "wsl_distro": "Ubuntu-24.04",
+    "wsl_node": "v24.14.0",
+    "wsl_platform": "linux",
+    "wsl_O_NOFOLLOW": 131072,
+    "seed_coverage_ledger": "PASS: 16 coverage units valid",
+    "target_code_executed": false
+  },
+  "planned_child_calls": {
+    "reconnaissance": 4,
+    "hunter_assignments": 6,
+    "post_wave_critics": 1,
+    "final_clean_critics": 1,
+    "phase3_candidate_verifiers": 2,
+    "phase5_record_verifiers": 1,
+    "total": 15,
+    "invocation_token_usage": "not exposed by orchestration runtime"
+  },
+  "run_status": "complete",
+  "scope_complete": true,
+  "actual_execution": "Target-code behavior was reviewed source-only. No target code, tests, builds, server, browser, fixture, network request, or fault injection was run. WSL Ubuntu-24.04 was used only to run trusted pinned findings and coverage-ledger structural validators.",
+  "findings_counts": {
+    "confirmed": 0,
+    "needs_validation": 1,
+    "rejected": 1
+  },
+  "coverage_counts": {
+    "total": 16,
+    "covered": 13,
+    "candidate": 1,
+    "blocked": 2,
+    "deferred": 0,
+    "out_of_scope": 0
+  },
+  "phase_status": {
+    "baseline_freeze": "complete: source HEAD/tree stable and clean at start/end",
+    "reconnaissance": "complete",
+    "coverage_ledger": "complete: 16 units, final Linux/WSL validator PASS",
+    "hunter_waves": "complete: 6 configured luna/max hunter calls",
+    "coverage_critic": "complete: post-wave and distinct final-clean stop=true; no missing units or reassignments",
+    "post_wave_critic": "complete: resolved prior redirect lead; no missing units or reassignments",
+    "final_clean_critic": "complete: stop=true; no missing units or reassignments",
+    "candidate_validation": {
+      "redirect": "Phase 3 independent source-only verifier rejected prior fingerprint scenepacks.redirect.public-egress-before-origin-check because current scene Store rejects redirect before follow-up request",
+      "terminal_sse": "Phase 3 independent source-only verifier retained terminal-sse-output-after-session-revocation as needs_validation due timing-contract ambiguity and unavailable compliant runtime isolation"
+    },
+    "phase5_record_verification": "complete: fresh verifier verified terminal-sse-output-after-session-revocation; no replacement",
+    "structure_validation": "complete: Linux/WSL trusted validators PASS: 16 coverage units valid; 2 findings valid",
+    "report": "complete: scoped source-only report artifacts written"
+  },
+  "child_agent_invocations": 15,
+  "agent_roster": [
+    {
+      "id": "recon_product_stack",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "recon_identity_auth",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "recon_entry_surface",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "recon_execution_capability",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_file_cap",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_queue",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_supply",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_browser",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_recovery",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "hunter_sse",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "critic_post_wave",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "verify_redirect_revalidation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "verify_sse_candidate",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "verify_sse_phase5",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    },
+    {
+      "id": "critic_final_clean",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none",
+      "status": "complete"
+    }
+  ],
+  "source_baseline_end": "source-baseline-end.json",
+  "evidence_root": "C:/GitHub/_codex-evidence/kpanel-scene-queue-security-audit-run-9",
+  "final_validation": {
+    "coverage_ledger": "PASS: 16 coverage units valid",
+    "findings": "PASS: 2 findings valid",
+    "validator_environment": "WSL Ubuntu-24.04, trusted pinned Cloudflare skill validators only",
+    "target_code_executed": false
+  },
+  "completed_at": "2026-09-25T09:18:12.8279562Z"
+}
