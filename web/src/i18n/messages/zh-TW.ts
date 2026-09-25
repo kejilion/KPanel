@@ -557,6 +557,7 @@ export const zhTWMessages = {
   "desktop.scenePackCommunity": "社群",
   "desktop.scenePackCameras": "{count} 個機位",
   "desktop.scenePackDownload": "下載",
+  "desktop.scenePackUpdate": "更新",
   "desktop.scenePackDownloading": "下載中…",
   "desktop.scenePackApply": "套用",
   "desktop.scenePackActive": "使用中",

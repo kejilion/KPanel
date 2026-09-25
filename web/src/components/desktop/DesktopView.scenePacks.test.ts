@@ -199,6 +199,29 @@ describe('DesktopView scene packs', () => {
     wrapper.unmount()
   })
 
+  it('offers updates alongside the usable installed version and reloads the active frame after updating', async () => {
+    const { install } = stubPackAPI()
+    const old = { ...installed, version: '1.0.1' }
+    const updated = { ...old, installedVersion: '1.0.1', fileBase: `/api/v1/desktop/scene-packs/orbital-station/files/${'b'.repeat(32)}/` }
+    packs = [old]
+    install.mockImplementationOnce(async () => { packs = [updated]; return updated })
+    window.localStorage.setItem('kpanel:desktop-wallpaper:v1', 'pack:orbital-station')
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await settle()
+    const originalFrame = await sceneFrame(wrapper)
+    const section = await openWallpaperDialog(wrapper)
+    expect(action(section, 'orbital-station', 'apply')).not.toBeNull()
+    expect(action(section, 'orbital-station', 'delete')).not.toBeNull()
+    expect(action(section, 'orbital-station', 'install')!.textContent).toContain('更新')
+    action(section, 'orbital-station', 'install')!.click()
+    await settle()
+    const frame = await sceneFrame(wrapper)
+    expect(frame).not.toBe(originalFrame)
+    expect(frame.getAttribute('src')).toBe(`${updated.fileBase}index.html`)
+    expect(action(section, 'orbital-station', 'install')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('reports failed downloads on the card and keeps the pack available', async () => {
     const { install } = stubPackAPI()
     install.mockRejectedValueOnce(new Error('sha256 mismatch'))

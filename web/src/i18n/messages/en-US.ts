@@ -570,6 +570,7 @@ export const enUSMessages = {
   'desktop.scenePackCommunity': 'Community',
   'desktop.scenePackCameras': '{count} cameras',
   'desktop.scenePackDownload': 'Download',
+  'desktop.scenePackUpdate': 'Update',
   'desktop.scenePackDownloading': 'Downloading…',
   'desktop.scenePackApply': 'Apply',
   'desktop.scenePackActive': 'In use',

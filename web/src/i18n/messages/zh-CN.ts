@@ -571,6 +571,7 @@ export const zhCNMessages = {
   'desktop.scenePackCommunity': '社区',
   'desktop.scenePackCameras': '{count} 个机位',
   'desktop.scenePackDownload': '下载',
+  'desktop.scenePackUpdate': '更新',
   'desktop.scenePackDownloading': '下载中…',
   'desktop.scenePackApply': '应用',
   'desktop.scenePackActive': '使用中',

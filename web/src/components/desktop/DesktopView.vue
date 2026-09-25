@@ -4746,7 +4746,7 @@ function onViewportResize(): void {
             </div>
             <div class="desktop-scene-pack-card__actions">
               <button
-                v-if="!pack.installed"
+                v-if="!pack.installed || pack.installedVersion !== pack.version"
                 type="button"
                 class="button button--small button--primary"
                 :disabled="Boolean(scenePackBusy)"
@@ -4755,9 +4755,9 @@ function onViewportResize(): void {
               >
                 <LoaderCircle v-if="scenePackBusy?.id === pack.id" class="spin" :size="15" aria-hidden="true" />
                 <Download v-else :size="15" aria-hidden="true" />
-                {{ i18n.t(scenePackBusy?.id === pack.id ? 'desktop.scenePackDownloading' : 'desktop.scenePackDownload') }}
+                {{ i18n.t(scenePackBusy?.id === pack.id ? 'desktop.scenePackDownloading' : pack.installed ? 'desktop.scenePackUpdate' : 'desktop.scenePackDownload') }}
               </button>
-              <template v-else>
+              <template v-if="pack.installed">
                 <button
                   type="button"
                   class="button button--small button--primary"
