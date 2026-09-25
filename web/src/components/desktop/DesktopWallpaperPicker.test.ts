@@ -32,7 +32,7 @@ describe('shared wallpaper pack updates', () => {
 
   it.each([true, false])('restarts the shared wallpaper only after a successful update (success=%s)', async (success) => {
     let installed = pack('a')
-    vi.spyOn(api.desktop, 'scenePacks').mockImplementation(async () => ({ source: 'auto', packs: [installed] }))
+    vi.spyOn(api.desktop, 'scenePacks').mockImplementation(async () => ({ source: 'auto', sources: ['auto', 'github', 'mirror'], packs: [installed] }))
     vi.spyOn(api.desktop, 'installScenePack').mockImplementation(async () => {
       if (!success) throw new Error('download failed')
       installed = pack('b', '1.0.1')
