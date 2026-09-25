@@ -217,7 +217,7 @@ func (s *Server) serveScenePackBytes(w http.ResponseWriter, r *http.Request, bod
 		if err == nil {
 			_, writeErr := writer.Write(body)
 			closeErr := writer.Close()
-			if writeErr == nil && closeErr == nil && buffer.Len() < len(body) {
+			if writeErr == nil && closeErr == nil && float64(buffer.Len()) < float64(len(body))*0.9 {
 				payload = buffer.Bytes()
 				w.Header().Set("Content-Encoding", "gzip")
 			}
