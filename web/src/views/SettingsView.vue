@@ -1388,7 +1388,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
       <div class="appearance-group">
         <div class="appearance-group__header">
           <h3>经典模式壁纸</h3>
-          <p>沿用桌面模式当前的壁纸；3D 场景只显示其静态封面</p>
+          <p>沿用桌面模式当前的壁纸；3D 场景在页面背后继续播放，系统要求减少动态效果时显示封面</p>
         </div>
         <div class="theme-options" role="radiogroup" aria-label="经典模式壁纸">
           <button
