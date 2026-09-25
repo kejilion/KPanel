@@ -11,6 +11,7 @@ PROJECT_DIR=${1:-/src}
 RELEASE_VERSION=$(tr -d '\r\n' <"$PROJECT_DIR/VERSION")
 export KPANEL_RELEASE_VERSION=$RELEASE_VERSION
 export KPANEL_PROJECT_DIR=$PROJECT_DIR
+export KPANEL_REAL_SHA256=$(command -v sha256sum)
 TEST_DIR=$(mktemp -d /tmp/kpanel-app-conf-test.XXXXXX)
 FAKE_BIN="$TEST_DIR/bin"
 MOCK_STATE="$TEST_DIR/state"
@@ -43,6 +44,11 @@ case "$1 ${2:-}" in
 		exit 0
 		;;
 	"pull "*)
+		if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ]; then
+			printf '%s\n' 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' >"$state/target-id"
+			[ "$2" != docker.io/kjlion/kejilion-panel:latest ] || cp "$state/target-id" "$state/latest-id"
+			rm -f "$state/rollback-tagged" "$state/automatic-restored"
+		fi
 		printf '%s\n' "${2:-}" |
 			grep -Eq '^docker\.io/kjlion/kejilion-panel:(latest|[0-9]+\.[0-9]+\.[0-9]+)$|^docker\.io/kjlion/kejilion-panel@sha256:[0-9a-f]{64}$'
 		exit
@@ -144,6 +150,14 @@ AGENT
 	"image inspect")
 		case "$4" in
 			*"{{.Id}}"*)
+				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ "${5#*@}" != "$5" ]; then
+					cat "$state/target-id"
+					exit 0
+				fi
+				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ -f "$state/latest-id" ]; then
+					cat "$state/latest-id"
+					exit 0
+				fi
 				printf '%s\n' \
 					"${KPANEL_MOCK_TARGET_IMAGE_ID:-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
 				;;
@@ -171,6 +185,7 @@ AGENT
 		require_state
 		printf '%s|%s\n' "$3" "$4" >"$state/image-tag"
 		: >"$state/rollback-tagged"
+		[ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" != 1 ] || printf '%s\n' "$3" >"$state/latest-id"
 		exit 0
 		;;
 	"image ls")
@@ -199,7 +214,12 @@ AGENT
 		;;
 	"inspect --format")
 		case "$3" in
-			*"{{.Image}}"*) printf '%s\n' \
+			*"{{.Image}}"*)
+				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ -f "$state/running-id" ]; then
+					cat "$state/running-id"
+					exit 0
+				fi
+				printf '%s\n' \
 				'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
 			*PortBindings*) printf '%s\n' "${KPANEL_MOCK_CURRENT_PORT:-18080}" ;;
 			*NetworkSettings*) printf '%s\n' 1 ;;
@@ -225,8 +245,18 @@ AGENT
 		case "${4:-}" in
 			create) : >"$state/network" ;;
 			up)
+				rm -f "$state/panel-stopped"
+				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ -f "$state/latest-id" ]; then
+					if grep -F 'image: docker.io/kjlion/kejilion-panel@' /home/docker/kpanel/docker-compose.yml >/dev/null; then
+						cp "$state/target-id" "$state/running-id"
+					else
+						cp "$state/latest-id" "$state/running-id"
+					fi
+				fi
 				if grep -Eq '^    image: docker\.io/kjlion/kejilion-panel@sha256:[0-9a-f]{64}$' \
-					/home/docker/kpanel/docker-compose.yml; then
+					/home/docker/kpanel/docker-compose.yml ||
+					{ [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] &&
+					  [ "$(cat /home/docker/kpanel/update-state/transaction/phase 2>/dev/null)" = verifying ]; }; then
 					: >"$state/automatic-target-started"
 					if [ "${KPANEL_MOCK_MUTATE_DATA_ON_UP:-0}" = 1 ] &&
 						[ ! -f "$state/automatic-data-mutated" ]; then
@@ -252,7 +282,10 @@ AGENT
 					chmod 600 /home/docker/kpanel/data/panel/bootstrap.token
 				fi
 				;;
-			stop) : ;;
+			stop)
+				[ "${KPANEL_MOCK_PANEL_STOP_FAIL:-0}" != 1 ] || exit 1
+				: >"$state/panel-stopped"
+				;;
 			down) rm -f "$state/network" ;;
 			*) exit 2 ;;
 		esac
@@ -271,6 +304,12 @@ if [ "$1" = "--version" ]; then
 	exit 0
 fi
 case "$1" in
+	stop)
+		[ "${KPANEL_MOCK_AGENT_STOP_FAIL:-0}" != 1 ] || exit 1
+		: >"${KPANEL_MOCK_STATE}/agent-stopped"
+		exit 0
+		;;
+	start) rm -f "${KPANEL_MOCK_STATE}/agent-stopped"; exit 0 ;;
 	link)
 		ln -sf "$2" "/etc/systemd/system/$(basename "$2")"
 		exit 0
@@ -314,6 +353,12 @@ EOF
 
 cat >"$FAKE_BIN/sha256sum" <<'EOF'
 #!/bin/sh
+case "$*" in
+	*data.tar*|*data.sha256*)
+		[ "${KPANEL_MOCK_CHECKSUM_FAIL:-0}" != 1 ] || exit 1
+		exec "${KPANEL_REAL_SHA256:?}" "$@"
+		;;
+esac
 printf '%s  %s\n' \
 	"${KPANEL_MOCK_SCRIPT_SHA256_ACTUAL:-1111111111111111111111111111111111111111111111111111111111111111}" \
 	"$1"
@@ -839,6 +884,7 @@ run_release_contract_guards() {
 export PATH="$FAKE_BIN:$PATH"
 export KPANEL_MOCK_STATE="$MOCK_STATE"
 export KPANEL_MOCK_SYSTEMCTL_LOG="$TEST_DIR/systemctl.log"
+[ "${KPANEL_APP_CONF_TEST_LIBRARY:-0}" != 1 ] || return 0
 # A leftover empty directory must not block the complete install/uninstall cycle.
 mkdir -p /home/docker/kpanel
 run_lifecycle
@@ -858,3 +904,10 @@ run_unmanaged_guard
 run_partial_uninstall
 run_release_contract_guards
 printf '%s\n' "app_conf_lifecycle=pass"
+# Run the failure matrix under the same disposable-rootfs gate in CI and releases.
+if [ -L /home/docker ] && [ "$(readlink /home/docker)" = "$TEST_DIR/physical-docker-root" ]; then
+	rm /home/docker
+	mkdir /home/docker
+fi
+cleanup
+bash "$PROJECT_DIR/packaging/tests/app-conf-update-backups.sh" "$PROJECT_DIR"

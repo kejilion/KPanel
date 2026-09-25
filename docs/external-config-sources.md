@@ -99,6 +99,12 @@ Agent 将固定回执 `renewal_adapter_unavailable` 映射为 `site_certificate_
   `.env`、Panel 数据、应用、站点、域名和 `/home/web`。
 - 新版本健康检查失败时，必须将 `latest` 本地标签恢复到更新前的精确镜像 ID，并同步恢复旧
   Agent、脚本、Compose、systemd unit 与 Agent 环境配置后重新验收。
+- systemd 手动/自动更新和 OpenRC 手动更新共用更新事务：停止 Panel 与 Agent 后，完整归档
+  `data/panel`、`data/agent`（含节点密钥、SQLite/WAL），验证 SHA-256 后才切换版本；备份失败必须停止更新。
+  快照位于 `/home/docker/kpanel/update-state/backups/<事务 ID>/data.tar`，保留最近两份；这是本机更新回退
+  快照，不属于设置页的 `.kpb` 备份，不能在该页导入。它不包含网站、应用和 Docker 业务数据。
+- 更新失败或中断时先确认两个写者已停止，再恢复运行时及更新前数据；无法停止、快照损坏或回退文件
+  缺失时保留事务供排查，不覆盖数据或宣称恢复成功。OpenRC 自动调度支持范围保持不变。
 - Panel 或 Agent 切换造成的短暂 API 不可用属于可重试状态；前端不得因此清除后台任务 ID。
   只有任务明确结束或服务确认返回任务不存在时，才结束任务跟踪。
 - 发布门禁必须包含自定义端口保持、元数据/版本/脚本摘要拒绝、更新失败镜像回滚、任务重连和
