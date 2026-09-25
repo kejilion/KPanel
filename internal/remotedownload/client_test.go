@@ -296,6 +296,29 @@ func TestOpenValidatesRedirectAndStripsReferer(t *testing.T) {
 	}
 }
 
+func TestOpenRejectsConfiguredRedirectsBeforeSendingAnotherRequest(t *testing.T) {
+	for _, destination := range []string{"https://cdn.example.net/file", "https://downloads.example.com/other"} {
+		t.Run(destination, func(t *testing.T) {
+			client := NewClient(Config{RejectRedirects: true})
+			requests := 0
+			client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				requests++
+				return &http.Response{
+					StatusCode: http.StatusFound,
+					Header:     http.Header{"Location": []string{destination}},
+					Body:       io.NopCloser(strings.NewReader("")), Request: request,
+				}, nil
+			})
+			if _, err := client.Open(context.Background(), "https://downloads.example.com/file"); !errors.Is(err, ErrRedirectRejected) {
+				t.Fatalf("error = %v, want ErrRedirectRejected", err)
+			}
+			if requests != 1 {
+				t.Fatalf("requests = %d, redirect target was contacted", requests)
+			}
+		})
+	}
+}
+
 func TestOpenRejectsHTTPSDowngradeWithoutFollowingIt(t *testing.T) {
 	client := NewClient(Config{})
 	requests := 0

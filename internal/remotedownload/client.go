@@ -53,6 +53,7 @@ type Config struct {
 	TLSHandshakeTimeout   time.Duration
 	ResponseHeaderTimeout time.Duration
 	IdleTimeout           time.Duration
+	RejectRedirects       bool
 }
 
 type Client struct {
@@ -107,6 +108,11 @@ func NewClient(config Config) *Client {
 	client.httpClient = &http.Client{
 		Transport:     transport,
 		CheckRedirect: checkRedirect,
+	}
+	if config.RejectRedirects {
+		client.httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return ErrRedirectRejected
+		}
 	}
 	return client
 }

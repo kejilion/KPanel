@@ -54,7 +54,7 @@ type Store struct {
 // Open degrades only optional artwork when its state is damaged. It never makes
 // the administration UI unavailable or replaces a malformed state with empty data.
 func Open(root string, fetch Fetch) *Store {
-	client := remotedownload.NewClient(remotedownload.Config{ResponseHeaderTimeout: 8 * time.Second, IdleTimeout: 15 * time.Second})
+	client := remotedownload.NewClient(remotedownload.Config{ResponseHeaderTimeout: 8 * time.Second, IdleTimeout: 15 * time.Second, RejectRedirects: true})
 	s := &Store{root: root, state: state{Schema: 1, Source: "auto", Installed: map[string]installedPack{}}, network: make(chan struct{}, 3), writeState: backup.AtomicFile}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.fetch = func(ctx context.Context, address string, limit int64) ([]byte, error) {
