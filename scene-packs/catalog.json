@@ -178,8 +178,8 @@
       "files": [
         {
           "path": "assets/planet-clouds.webp",
-          "size": 371794,
-          "sha256": "3e72caeb8a13ddea95c34235f2fdfb77f9ebbfac7fbc837c0b87e2ad7f1930a5"
+          "size": 346932,
+          "sha256": "0e7e67805a6bc3e2590285edab63a5fd5895265682ed7a04d621349e52495504"
         },
         {
           "path": "assets/planet-masks.webp",
@@ -333,8 +333,8 @@
         },
         {
           "path": "scene.js",
-          "size": 657316,
-          "sha256": "1cd6f228af3dd54b821de8e16aea2b715b313b5c6f256377edac75492e96312b"
+          "size": 657454,
+          "sha256": "f6d5adc821c2f1ff2121c0ce65998e207d4e95397ed1a91eeee6add56e305646"
         },
         {
           "path": "thumb.webp",
@@ -342,7 +342,7 @@
           "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 4108767
+      "sizeBytes": 4084043
     },
     {
       "schema": 1,

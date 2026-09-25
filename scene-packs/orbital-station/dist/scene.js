@@ -4543,7 +4543,7 @@ void main() {
   float sphereNdl = dot(sphere, L);
   float daylight = smoothstep(-0.1, 0.3, sphereNdl);
   // Soft shadows of the clouds overhead.
-  float overhead = smoothstep(0.24, 0.74, texture2D(uClouds, vec2(vUv.x + uCloudShift, vUv.y)).r);
+  float overhead = texture2D(uClouds, vec2(vUv.x + uCloudShift, vUv.y)).r;
   float shade = 1.0 - 0.5 * overhead;
   vec3 color = albedo * (0.012 + 1.45 * max(ndl, 0.0) * smoothstep(-0.05, 0.1, sphereNdl) * shade);
   // Warm light along the terminator.
@@ -4578,9 +4578,9 @@ varying vec3 vObject;
 varying vec3 vWorldNormal;
 varying vec3 vWorldPosition;
 void main() {
-  // Firmer edges than the painted cover: clouds, not a veil.
-  float cover = smoothstep(0.24, 0.74, texture2D(uClouds, vUv).r);
-  float alpha = cover * 0.95;
+  // The painted cover as it is: thick cores, and edges and veils you can see the ground through.
+  float cover = texture2D(uClouds, vUv).r;
+  float alpha = cover * 0.92;
   vec3 N = normalize(vWorldNormal);
   float ndl = dot(N, normalize(uSunDirection));
   float lit = smoothstep(-0.12, 0.35, ndl);
@@ -4589,7 +4589,9 @@ void main() {
   float night = 1.0 - smoothstep(-0.22, 0.04, ndl);
   float below = textureLod(uMasks, vec2(vUv.x - uCloudShift, vUv.y), 5.0).g;
   vec3 dark = vec3(0.0012, 0.0015, 0.0025) + vec3(1.0, 0.55, 0.22) * below * night * 0.9;
-  vec3 color = mix(dark, vec3(0.86) * (0.8 + 0.2 * cover), lit);
+  // Thin cloud scatters a little blue from the air under it; thick cloud is bright white on top.
+  vec3 day = mix(vec3(0.62, 0.7, 0.82), vec3(0.9), smoothstep(0.1, 0.8, cover));
+  vec3 color = mix(dark, day, lit);
   color += vec3(1.0, 0.42, 0.18) * smoothstep(0.16, 0.0, abs(ndl)) * 0.35;
   gl_FragColor = vec4(color, alpha);
   #include <tonemapping_fragment>

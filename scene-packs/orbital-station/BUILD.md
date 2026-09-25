@@ -22,4 +22,5 @@ The files in `assets/` are generated, reproducibly, and committed:
 
   ```bash
   py tools/planet.py assets 4096
+  py tools/planet.py assets 4096 clouds   # only the clouds, in a couple of minutes
   ```
