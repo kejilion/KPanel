@@ -92,6 +92,49 @@ func TestAutoRouteReusesWorkingMirrorAndStillVerifiesFallback(t *testing.T) {
 	}
 }
 
+func TestCatalogFallbackRejectsInvalidResponsesBeforeChoosingRoute(t *testing.T) {
+	p, files := fixturePack("orbit", "1.0.0")
+	fixture := fixtureFetch(t, &p, files)
+	for name, invalid := range map[string][]byte{
+		"json":   []byte("<html>upstream unavailable</html>"),
+		"schema": []byte(`{"schema":2,"packs":[]}`),
+	} {
+		for _, badRoot := range []string{officialRoot, mirrorRoot} {
+			t.Run(name+"/"+badRoot, func(t *testing.T) {
+				var calls []string
+				s := Open(t.TempDir(), func(ctx context.Context, address string, limit int64) ([]byte, error) {
+					calls = append(calls, address)
+					if address == badRoot+"catalog.json" {
+						return invalid, nil
+					}
+					return fixture(ctx, address, limit)
+				})
+				defer s.Close()
+				if badRoot == mirrorRoot {
+					s.mirrorUntil = time.Now().Add(time.Minute)
+				}
+				list, err := s.List(context.Background())
+				if err != nil || list.Warning != "" || len(list.Packs) != 1 || len(calls) != 2 || calls[0] != badRoot+"catalog.json" {
+					t.Fatalf("invalid catalog prevented healthy route recovery: list=%+v calls=%v err=%v", list, calls, err)
+				}
+				// An explicit provider still cannot silently switch to the other one.
+				source := "github"
+				if badRoot == mirrorRoot {
+					source = "mirror"
+				}
+				if err := s.SetSource(source); err != nil {
+					t.Fatal(err)
+				}
+				calls = nil
+				list, err = s.List(context.Background())
+				if err != nil || list.Warning == "" || len(calls) != 1 || calls[0] != badRoot+"catalog.json" {
+					t.Fatalf("explicit invalid provider did not fail closed: list=%+v calls=%v err=%v", list, calls, err)
+				}
+			})
+		}
+	}
+}
+
 func TestInstallAtomicFailureRestartDeleteAndCapabilities(t *testing.T) {
 	p, files := fixturePack("orbit", "1.0.0")
 	root := t.TempDir()

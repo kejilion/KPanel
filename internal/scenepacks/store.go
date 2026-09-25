@@ -198,6 +198,11 @@ func (s *Store) download(ctx context.Context, source, relative string, limit int
 		requestCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		body, err := s.fetch(requestCtx, root+relative, limit)
 		cancel()
+		if err == nil && expected == "" && int64(len(body)) <= limit {
+			// The catalog has no pinned digest. Validate its contents before a
+			// response can select a route or suppress the other provider's retry.
+			_, err = DecodeCatalog(body)
+		}
 		if err == nil && int64(len(body)) <= limit && (expected == "" || (int64(len(body)) == limit && contentDigest(body) == expected)) {
 			if source == "auto" {
 				s.mu.Lock()
