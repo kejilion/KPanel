@@ -102,7 +102,7 @@ case "$1 ${2:-}" in
 		destination=$3
 		case "$2" in
 			*:/release/kpanel.conf)
-				cp "${KPANEL_PROJECT_DIR:?}/packaging/kejilion-app/kpanel.conf" \
+				cp "${KPANEL_MOCK_LIFECYCLE_SOURCE:-${KPANEL_PROJECT_DIR:?}/packaging/kejilion-app/kpanel.conf}" \
 					"$destination"
 				exit 0
 				;;

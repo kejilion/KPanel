@@ -77,6 +77,15 @@ EOF
   cp -p /home/docker/kpanel/.env "$TEST_DIR/original-env"
   cp -p /home/docker/kpanel/kejilion-agent.service "$TEST_DIR/original-service"
   [ "$init" != openrc ] || cp -p /home/docker/kpanel/kejilion-agent.openrc "$TEST_DIR/original-openrc"
+  # Older installed/target helpers cannot parse the new manual transaction.
+  # A fresh process must keep using the executing lifecycle until recovery ends.
+  printf 'local app_id="kpanel"\nkpanel_recover_automatic_update() { return 89; }\n' >"$TEST_DIR/legacy-lifecycle"
+  cp "$TEST_DIR/legacy-lifecycle" /home/docker/kpanel/bin/kpanel.conf
+  chmod 600 /home/docker/kpanel/bin/kpanel.conf
+  export KPANEL_MOCK_LIFECYCLE_SOURCE="$TEST_DIR/legacy-lifecycle"
+  recover_fresh() {
+    bash -c 'set -eu; docker_app_plus() { :; }; entry() { . /home/docker/kpanel/bin/kpanel.conf; kpanel_recover_automatic_update; }; entry'
+  }
 
   for failure in SPACE TAR CHECKSUM AGENT_STOP PANEL_STOP; do
     export "KPANEL_MOCK_${failure}_FAIL=1"
@@ -86,7 +95,7 @@ EOF
     unset "KPANEL_MOCK_${failure}_FAIL"
     # Stop failures remain attached until a safe retry can stop both writers.
     if [ -d /home/docker/kpanel/update-state/transaction ]; then
-      kpanel_recover_automatic_update >/dev/null
+      recover_fresh >/dev/null
     fi
     test ! -e /home/docker/kpanel/update-state/transaction
     test "$(cat "$MOCK_STATE/latest-id")" = "$old_image"
@@ -119,7 +128,7 @@ EOF
   archive="/home/docker/kpanel/update-state/backups/$transaction_id/data.tar"
   cp "$archive" "$TEST_DIR/good-data.tar"
   printf corrupt >>"$archive"
-  if KJ_KPANEL_FORCE_ROLLBACK=1 kpanel_recover_automatic_update; then
+  if KJ_KPANEL_FORCE_ROLLBACK=1 recover_fresh; then
     echo 'corrupt snapshot restored' >&2; return 1
   fi
   test -d /home/docker/kpanel/update-state/transaction
@@ -151,8 +160,9 @@ EOF
   fi
   test -d /home/docker/kpanel/update-state/transaction
   test "$(kpanel_transaction_value phase)" = restoring-data
-  KJ_KPANEL_FORCE_ROLLBACK=1 kpanel_recover_automatic_update
+  KJ_KPANEL_FORCE_ROLLBACK=1 recover_fresh
   test ! -e /home/docker/kpanel/update-state/transaction
+  cmp "$TEST_DIR/legacy-lifecycle" /home/docker/kpanel/bin/kpanel.conf
   grep -Fx original-panel-data /home/docker/kpanel/data/panel/rollback-marker
   grep -Fx original-agent-data /home/docker/kpanel/data/agent/rollback-marker
   test "$(cat "$MOCK_STATE/running-id")" = "$old_image"
@@ -192,6 +202,7 @@ EOF
     tar -tf "$archive" | grep -Fx data/agent/nested/store.db-wal
   done
   unset KPANEL_MOCK_REAL_IMAGE_IDS
+  unset KPANEL_MOCK_LIFECYCLE_SOURCE
   docker_app_uninstall >/dev/null
   rm -f "$MOCK_STATE"/*
 }
