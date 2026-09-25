@@ -59,7 +59,7 @@ onMounted(loadEvolution)
 </script>
 
 <template>
-  <div class="ai-settings-backdrop" @click.self="emit('close')">
+  <div class="ai-settings-backdrop modal-scrim" @click.self="emit('close')">
     <section class="ai-settings" role="dialog" aria-modal="true" aria-label="AI 设置">
       <header><div><span class="eyebrow">AI workspace</span><h2>AI 设置</h2><p>连接模型服务；系统会在后台学习稳定偏好和成功流程，可随时停用或回滚。</p></div><button class="icon-button" aria-label="关闭" @click="emit('close')"><X :size="19"/></button></header>
       <nav class="ai-settings__tabs">
