@@ -145,6 +145,18 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	target.mcp.workerSlots <- struct{}{}
 	target.mcp.workerSlots <- struct{}{}
 	busy := managedCall(center, token, "operation_execute", map[string]any{"operationId": id, "digest": digest})
+	// Keep the target busy until the controller has observed its refusal.
+	// Releasing slots after an asynchronous response would let dispatch win.
+	busyDeadline := time.Now().Add(3 * time.Second)
+	for busy["state"] == "executing" && time.Now().Before(busyDeadline) {
+		time.Sleep(10 * time.Millisecond)
+		item, err := center.mcp.operations.Get(id)
+		if err != nil {
+			t.Error(err)
+			break
+		}
+		busy = mcpOperationView(item)
+	}
 	<-target.mcp.workerSlots
 	<-target.mcp.workerSlots
 	if busy["state"] != "approved" || agent.calls.Load() != 0 {
