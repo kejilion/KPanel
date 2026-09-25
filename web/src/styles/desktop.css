@@ -2867,12 +2867,12 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 .desktop-wallpaper-picker__copy strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .desktop-wallpaper-picker__copy small {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -2890,7 +2890,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-wallpaper-section__title {
   margin: 0 0 10px;
   color: var(--text);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -2935,6 +2935,10 @@ body.desktop-mode-open::-webkit-scrollbar {
   margin-top: 22px;
 }
 
+.desktop-scene-packs .button {
+  font-size: 14px;
+}
+
 .desktop-scene-packs__head {
   display: flex;
   flex-wrap: wrap;
@@ -2965,7 +2969,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .desktop-scene-packs__source select {
@@ -2996,7 +3000,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   border-radius: calc(var(--radius-sm) - 2px);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .desktop-scene-packs__filter button[aria-pressed='true'] {
@@ -3017,7 +3021,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .desktop-scene-packs__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: 14px;
   margin-top: 14px;
 }
@@ -3100,13 +3104,13 @@ body.desktop-mode-open::-webkit-scrollbar {
 .desktop-scene-pack-card__body p {
   margin: 0;
   color: var(--text-soft, var(--text));
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
 .desktop-scene-pack-card__meta {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -3121,7 +3125,7 @@ body.desktop-mode-open::-webkit-scrollbar {
   margin: 0;
   padding: 0 4px 4px;
   color: var(--danger);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 

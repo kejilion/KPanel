@@ -25,7 +25,7 @@ import { build } from 'vite'
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packsRoot = resolve(webRoot, '..', 'scene-packs')
 const PACK_ID = /^[a-z0-9][a-z0-9-]{0,39}$/
-const PUBLISHED_ASSETS = ['index.html', 'manifest.json', 'poster.webp', 'thumb.webp', 'preview.webm']
+const PUBLISHED_ASSETS = ['index.html', 'manifest.json', 'license.txt', 'poster.webp', 'thumb.webp', 'preview.webm']
 const checkOnly = process.argv.includes('--check')
 const requested = new Set(process.argv.slice(2).filter((arg) => arg !== '--check'))
 

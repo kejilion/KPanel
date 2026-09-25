@@ -188,12 +188,19 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
       return true
     }
     const body = await readFile(join(installRoot, installed.get(pack.id).token, file.path))
-    const base = `${url.origin}/api/v1/desktop/scene-packs/${pack.id}/files/${rest[2]}/`
+    const host = request.headers.host ?? ''
+    if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::[0-9]{1,5})?$/.test(host)) {
+      send(response, 400, { title: '预览只支持回环地址', code: 'scene_pack_host_invalid' })
+      return true
+    }
+    const base = `http://${host}/api/v1/desktop/scene-packs/${pack.id}/files/${rest[2]}/`
     sendFile(response, body, file.path.split('.').pop().toLowerCase(), {
       'Content-Security-Policy': `${PACK_CSP.replaceAll("'self'", base)}; frame-ancestors 'self'; object-src 'none'`,
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'Referrer-Policy': 'no-referrer',
+      'X-Frame-Options': 'SAMEORIGIN',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(), autoplay=()',
     })
     return true
   }

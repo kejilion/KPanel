@@ -29,3 +29,5 @@ scene-packs/*/dist/*.js -whitespace
 # Scene pack assets are published byte for byte (the catalog pins their SHA-256): never convert them.
 scene-packs/*/assets/** binary
 scene-packs/*/dist/assets/** binary
+scene-packs/*/license.txt text eol=lf
+scene-packs/*/dist/license.txt text eol=lf
