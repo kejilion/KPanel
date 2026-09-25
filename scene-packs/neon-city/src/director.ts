@@ -26,7 +26,9 @@ export interface DirectorFrame {
 }
 
 export const ENTRANCE_SECONDS = 6.5
-const FADE_SECONDS = 3.2
+/** The picture comes up at once and settles, rather than lingering near black for its first second. */
+const FADE_SECONDS = 2.2
+const fadeIn = (t: number) => 1 - (1 - t) ** 2
 /** Moves take longer the further they fly and the more they turn, so the camera never rushes. */
 const TRANSITION_MIN_SECONDS = 10
 const TRANSITION_MAX_SECONDS = 24
@@ -128,7 +130,7 @@ export class Director {
       this.pose.position.copy(this.entranceStart.position).lerp(final.position, settle)
       this.pose.target.copy(final.target)
       this.pose.fov = THREE.MathUtils.lerp(this.entranceStart.fov, final.fov, settle)
-      frame.fade = smoothstep(clamp01(t / FADE_SECONDS))
+      frame.fade = fadeIn(clamp01(t / FADE_SECONDS))
     } else if (this.transition) {
       this.transition.time += dt
       const progress = clamp01(this.transition.time / this.transition.duration)

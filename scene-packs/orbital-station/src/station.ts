@@ -15,7 +15,7 @@ export interface Station {
  * dish, and a lattice truss carrying four solar wings. The habitat and the
  * docking ring turn, the wings track the sun, and the navigation beacons blink.
  */
-export async function createStation(sunDirection: THREE.Vector3): Promise<Station> {
+export async function createStation(sunDirection: THREE.Vector3, renderer: THREE.WebGLRenderer): Promise<Station> {
   const gltf = await new GLTFLoader().loadAsync('assets/station.gltf')
   const group = new THREE.Group()
   const model = gltf.scene
@@ -39,7 +39,10 @@ export async function createStation(sunDirection: THREE.Vector3): Promise<Statio
     for (const material of materials as THREE.MeshStandardMaterial[]) {
       material.envMapIntensity = 1
       for (const map of [material.map, material.normalMap, material.roughnessMap, material.metalnessMap, material.emissiveMap]) {
-        if (map) map.anisotropy = 8
+        if (!map) continue
+        map.anisotropy = 8
+        // On the graphics card now, rather than on the first frame.
+        renderer.initTexture(map)
       }
       if (material.name === 'window') windows = material
     }

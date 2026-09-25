@@ -9,6 +9,7 @@ export type HostCommand =
   | { source: 'kpanel-desktop', type: 'camera', index?: number }
 
 export type PackEvent =
+  | { source: 'kpanel-scene-pack', type: 'progress', value: number }
   | { source: 'kpanel-scene-pack', type: 'ready', cameras: readonly string[] }
   | { source: 'kpanel-scene-pack', type: 'camera', index: number }
   | { source: 'kpanel-scene-pack', type: 'error', reason: string }

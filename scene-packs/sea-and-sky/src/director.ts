@@ -26,7 +26,9 @@ export interface DirectorFrame {
 }
 
 export const ENTRANCE_SECONDS = 6.5
-const FADE_SECONDS = 3.2
+/** The picture comes up at once and settles, rather than lingering near black for its first second. */
+const FADE_SECONDS = 2.2
+const fadeIn = (t: number) => 1 - (1 - t) ** 2
 /** A move takes longer the further it goes and the more it turns, within these bounds. */
 const TRANSITION_MIN_SECONDS = 5
 const TRANSITION_MAX_SECONDS = 12
@@ -38,7 +40,6 @@ const HOLD_SECONDS = 90
 const CLEARANCE = 20
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3
-const smoothstep = (t: number) => t * t * (3 - 2 * t)
 const smootherstep = (t: number) => t * t * t * (t * (t * 6 - 15) + 10)
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t))
 
@@ -161,7 +162,7 @@ export class Director {
       this.shotPose(this.current, time, this.pose)
       this.pose.position.addScaledVector(this.entranceOffset, 1 - settle)
       this.pose.fov += 6 * (1 - settle)
-      frame.fade = smoothstep(clamp01(t / FADE_SECONDS))
+      frame.fade = fadeIn(clamp01(t / FADE_SECONDS))
     } else if (this.transition) {
       const move = this.transition
       move.time += dt

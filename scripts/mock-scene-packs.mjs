@@ -4,15 +4,28 @@
 // mirror); installing downloads every catalog file and verifies its size and
 // SHA-256; installed files are served with a sandbox CSP for the desktop iframe.
 // Here the "repository" is the local checkout, so previews work offline.
+//
+// Serving installed files (part of the same contract):
+// - They live under a file base that names the installed version and a digest of
+//   its file list (…/files/<version>-<digest>/), so their URLs never change content:
+//   they are sent with an ETag (their SHA-256) and cached for a year as immutable.
+//   A repeat visit loads a scene without a single request for its files; an update
+//   changes the file base, so nothing stale is ever used.
+// - Text and binary data that compress well (scripts, JSON, glTF and .bin buffers,
+//   WebAssembly) are sent with Brotli or gzip when the browser accepts it.
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { brotliCompressSync, constants as zlib, gzipSync } from 'node:zlib'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packsRoot = join(repositoryRoot, 'scene-packs')
-const installRoot = await mkdtemp(join(tmpdir(), 'kpanel-mock-scene-packs-'))
+// Kept across restarts of the preview server, as the panel keeps installed packs.
+const installRoot = join(tmpdir(), 'kpanel-mock-scene-packs')
+const installedIndex = join(installRoot, 'installed.json')
+await mkdir(installRoot, { recursive: true })
 const PACK_ID = /^[a-z0-9][a-z0-9-]{0,39}$/
 const SOURCES = ['auto', 'github', 'mirror']
 const GITHUB_RAW = 'https://raw.githubusercontent.com/kejilion/KPanel/main/scene-packs/'
@@ -55,7 +68,34 @@ const PACK_CSP = [
 ].join('; ')
 
 let source = 'auto'
-const installed = new Map()
+/** id -> { version, tag, from, files: [{ path, size, sha256 }] } */
+const installed = new Map(Object.entries(await readFile(installedIndex, 'utf8').then(JSON.parse).catch(() => ({}))))
+const saveInstalled = () => writeFile(installedIndex, JSON.stringify(Object.fromEntries(installed)))
+
+/** The installed copy's tag: its version and a digest of its file list, so it changes with any file. */
+function versionTag(pack) {
+  const digest = createHash('sha256').update(JSON.stringify(pack.files.map((file) => [file.path, file.sha256]))).digest('hex')
+  return `${pack.version}-${digest.slice(0, 12)}`
+}
+
+const COMPRESSIBLE = new Set(['html', 'js', 'mjs', 'css', 'json', 'gltf', 'bin', 'glb', 'wasm', 'txt', 'md'])
+const compressed = new Map()
+/** The body to send and its Content-Encoding, compressed once and kept, if that saves a tenth or more. */
+function encodeFor(request, key, body, extension) {
+  const accepts = String(request.headers['accept-encoding'] ?? '')
+  if (!COMPRESSIBLE.has(extension) || body.length < 1024) return [body, undefined]
+  const encoding = /\bbr\b/.test(accepts) ? 'br' : /\bgzip\b/.test(accepts) ? 'gzip' : undefined
+  if (!encoding) return [body, undefined]
+  const cacheKey = `${key}|${encoding}`
+  if (!compressed.has(cacheKey)) {
+    const packed = encoding === 'br'
+      ? brotliCompressSync(body, { params: { [zlib.BROTLI_PARAM_QUALITY]: 9, [zlib.BROTLI_PARAM_SIZE_HINT]: body.length } })
+      : gzipSync(body, { level: 9 })
+    compressed.set(cacheKey, packed.length < body.length * 0.9 ? packed : null)
+  }
+  const packed = compressed.get(cacheKey)
+  return packed ? [packed, encoding] : [body, undefined]
+}
 
 async function catalog() {
   try {
@@ -80,7 +120,7 @@ function describe(pack) {
     sizeBytes: pack.sizeBytes,
     installed: installed.has(pack.id),
     installedVersion: installed.get(pack.id)?.version ?? null,
-    fileBase: installed.has(pack.id) ? `/api/v1/desktop/scene-packs/${pack.id}/files/` : null,
+    fileBase: installed.has(pack.id) ? `/api/v1/desktop/scene-packs/${pack.id}/files/${installed.get(pack.id).tag}/` : null,
   }
 }
 
@@ -154,32 +194,46 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
       send(response, 502, { title: '场景下载校验失败，未安装任何文件', code: 'scene_pack_verification_failed', detail: String(error.message) })
       return true
     }
-    installed.set(pack.id, { version: pack.version, from: downloadBase(pack, useMirror) })
+    installed.set(pack.id, { version: pack.version, tag: versionTag(pack), from: downloadBase(pack, useMirror), files: pack.files })
+    await saveInstalled()
     send(response, 200, { ...describe(pack), downloadedFrom: installed.get(pack.id).from })
     return true
   }
   if (rest.length === 1 && request.method === 'DELETE') {
     installed.delete(pack.id)
+    await saveInstalled()
     await rm(join(installRoot, pack.id), { recursive: true, force: true })
     response.writeHead(204)
     response.end()
     return true
   }
   if (rest[1] === 'files' && request.method === 'GET' && installed.has(pack.id)) {
-    const path = rest.slice(2).join('/')
-    const file = pack.files.find((candidate) => candidate.path === path)
+    // Files of the installed version only: a file base from before an update or a reinstall is gone.
+    const copy = installed.get(pack.id)
+    const path = rest.slice(3).join('/')
+    const file = rest[2] === copy.tag ? copy.files.find((candidate) => candidate.path === path) : undefined
     if (!file) {
-      response.writeHead(404)
+      response.writeHead(404, { 'Cache-Control': 'no-store' })
       response.end()
       return true
     }
-    const body = await readFile(join(installRoot, pack.id, file.path))
-    sendFile(response, body, file.path.split('.').pop().toLowerCase(), {
+    const headers = {
       'Content-Security-Policy': PACK_CSP,
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'Referrer-Policy': 'no-referrer',
-    })
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      ETag: `"${file.sha256}"`,
+      Vary: 'Accept-Encoding',
+    }
+    if (request.headers['if-none-match'] === headers.ETag) {
+      response.writeHead(304, headers)
+      response.end()
+      return true
+    }
+    const extension = file.path.split('.').pop().toLowerCase()
+    const [body, encoding] = encodeFor(request, `${pack.id}/${copy.tag}/${file.path}`, await readFile(join(installRoot, pack.id, file.path)), extension)
+    sendFile(response, body, extension, encoding ? { ...headers, 'Content-Encoding': encoding } : headers)
     return true
   }
   send(response, 404, { title: '场景文件不可用', code: 'scene_pack_file_missing' })

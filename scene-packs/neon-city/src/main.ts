@@ -9,6 +9,7 @@ import { aviationLights, createBuildings } from './buildings'
 import { Director, type Shot } from './director'
 import { createGround, resizeGround } from './ground'
 import { AVENUE_X, createLayout, mulberry32 } from './layout'
+import { report } from './loading'
 import { createRain } from './rain'
 import { createRooftops } from './rooftops'
 import { createSigns } from './signs'
@@ -54,6 +55,7 @@ async function start(): Promise<void> {
     return
   }
   document.body.appendChild(renderer.domElement)
+  report(0.02)
 
   const atmosphere = createAtmosphere()
   const { uniforms } = atmosphere
@@ -62,11 +64,16 @@ async function start(): Promise<void> {
   scene.add(camera)
 
   const { buildings, landmarks } = createLayout()
-  const rooms = await new THREE.TextureLoader().loadAsync('assets/rooms.webp')
-  rooms.colorSpace = THREE.SRGBColorSpace
-  rooms.anisotropy = 8
-  scene.add(createBuildings(buildings, uniforms, rooms))
-  scene.add(await createRooftops(buildings, uniforms))
+  // The downloads start first; the rest of the city is built, and its shaders compiled, while they arrive.
+  const rooftopsLoading = createRooftops(buildings, uniforms)
+  const roomsLoading = new THREE.TextureLoader().loadAsync('assets/rooms.webp').then((rooms) => {
+    rooms.colorSpace = THREE.SRGBColorSpace
+    rooms.anisotropy = 8
+    renderer.initTexture(rooms)
+    return rooms
+  })
+  const towers = createBuildings(buildings, uniforms, null)
+  scene.add(towers)
   scene.add(createSigns(buildings, landmarks, uniforms, random))
   scene.add(createTraffic(uniforms, random))
   const sky = createSky(uniforms, landmarks, aviationLights(buildings), random)
@@ -76,6 +83,12 @@ async function start(): Promise<void> {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2())
   const ground = createGround(uniforms, size.x, size.y)
   scene.add(ground)
+  // Compiled without blocking the page, where the browser allows; the rooftops and the rooms are in
+  // before the scene reports ready, so it fades up complete.
+  const compiling = renderer.compileAsync(scene, camera)
+  const [rooftops, rooms] = await Promise.all([rooftopsLoading, roomsLoading, compiling])
+  scene.add(rooftops)
+  towers.material.uniforms.uRooms!.value = rooms
 
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
   const composer = new EffectComposer(renderer, target)
@@ -143,9 +156,10 @@ async function start(): Promise<void> {
     cancelAnimationFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
-  // Compile every shader and draw the first (black) frame before reporting ready, so the
+  // Compile the rest and draw the first (black) frame before reporting ready, so the
   // entrance starts on time instead of stalling on its first frames.
-  renderer.compile(scene, camera)
+  report(0.92)
+  await renderer.compileAsync(scene, camera)
   frame(performance.now())
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }

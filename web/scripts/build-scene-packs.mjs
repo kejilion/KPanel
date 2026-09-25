@@ -48,6 +48,24 @@ async function listFiles(root, directory = root) {
   return files.sort()
 }
 
+/**
+ * Some of three's loaders point at their helper files next to themselves by default
+ * (`new URL('../libs/draco/…', import.meta.url)`). Bundled, those turn into every
+ * variant of the helper inlined into scene.js (megabytes of decoders). A pack that
+ * uses such a loader ships the one variant it needs in its assets/ and sets the path
+ * itself, so the defaults are dropped.
+ */
+function threeDefaultFileURLs() {
+  return {
+    name: 'scene-pack-three-default-file-urls',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]three[\\/]examples[\\/]jsm[\\/]loaders[\\/]/.test(id) || !code.includes('import.meta.url')) return null
+      return { code: code.replace(/new URL\(\s*'[^']*',\s*import\.meta\.url\s*\)\.toString\(\)/g, "''"), map: null }
+    },
+  }
+}
+
 async function buildPack(packRoot, id, outDir) {
   const entry = ['src/main.ts', 'src/main.js'].map((name) => join(packRoot, name))
   const source = (await Promise.all(entry.map(exists))).findIndex(Boolean)
@@ -59,6 +77,7 @@ async function buildPack(packRoot, id, outDir) {
     logLevel: 'warn',
     publicDir: false,
     resolve: { alias: { three: join(webRoot, 'node_modules', 'three') } },
+    plugins: [threeDefaultFileURLs()],
     build: {
       outDir,
       emptyOutDir: true,
