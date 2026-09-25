@@ -34,17 +34,16 @@
   opacity: 1;
 }
 
-/* Only when a scene is slow to load: a thin line over the black, filling as it loads. */
+/* Only when a scene is slow to load: a faint hairline over the black, filling as it loads. */
 .desktop-scene-pack__progress {
   position: absolute;
   z-index: 1;
   top: 50%;
   left: 50%;
-  width: 160px;
-  height: 2px;
+  width: 112px;
+  height: 1px;
   overflow: hidden;
-  border-radius: 1px;
-  background: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 5%);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -52,7 +51,7 @@
 .desktop-scene-pack__progress::after {
   position: absolute;
   inset: 0;
-  background: rgb(255 255 255 / 55%);
+  background: rgb(255 255 255 / 24%);
   content: '';
   transform: scaleX(max(.04, var(--scene-pack-progress, 0)));
   transform-origin: left center;
@@ -61,7 +60,7 @@
 
 /* Eases in, and out as the scene fades up, rather than blinking. */
 .desktop-scene-pack-progress-enter-active {
-  transition: opacity .4s ease-out;
+  transition: opacity .8s ease-out;
 }
 
 .desktop-scene-pack-progress-leave-active {

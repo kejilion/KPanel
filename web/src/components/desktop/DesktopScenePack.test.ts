@@ -162,7 +162,9 @@ describe('DesktopScenePack', () => {
     fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'progress', value: 0.2 })
     await nextTick()
     expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
-    await vi.advanceTimersByTimeAsync(1200)
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
     const line = wrapper.get('.desktop-scene-pack__progress')
     expect(line.attributes('style')).toContain('--scene-pack-progress: 0.200')
     // Each progress message counts as a sign of life for the watchdog.

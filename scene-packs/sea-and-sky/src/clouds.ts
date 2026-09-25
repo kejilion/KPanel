@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { track } from './loading'
+import { packURL } from './runtime'
 
 /**
  * Volumetric clouds: a layer of cumulus 1.4 to 3 km up, ray-marched through two
@@ -138,7 +139,7 @@ void main() {
 `
 
 async function loadVolume(path: string, size: number): Promise<THREE.Data3DTexture> {
-  const bytes = await track(path, fetch(path).then((response) => {
+  const bytes = await track(path, fetch(packURL(path)).then((response) => {
     if (!response.ok) throw new Error(`${path}: ${response.status}`)
     return response.arrayBuffer()
   }))

@@ -42,3 +42,32 @@ export function dracoLoader(): DRACOLoader {
   }
   return draco
 }
+
+/**
+ * A picture as a texture, decoded off the main thread (and in a worker, which has no <img>).
+ * flipY: stored bottom row first, as three's textures are by default (a glTF's maps are not).
+ */
+export async function loadTexture(path: string, flipY = true): Promise<THREE.Texture> {
+  if (typeof createImageBitmap === 'undefined') {
+    const texture = await new THREE.TextureLoader().loadAsync(path)
+    texture.flipY = flipY
+    return texture
+  }
+  const bitmap = await new THREE.ImageBitmapLoader()
+    .setOptions({ imageOrientation: flipY ? 'flipY' : 'from-image', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+    .loadAsync(path)
+  const texture = new THREE.Texture(bitmap)
+  // Flipped (or not) while decoding: a bitmap cannot be flipped on upload.
+  texture.flipY = false
+  texture.needsUpdate = true
+  return texture
+}
+
+/** A canvas to draw a texture on, wherever the scene runs. */
+export function drawingCanvas(width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
+  if (typeof document === 'undefined') return new OffscreenCanvas(width, height)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  return canvas
+}

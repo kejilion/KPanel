@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { drawingCanvas } from './loading'
 import { NOISE_GLSL } from './noise'
 
 const NEBULA_VERTEX = /* glsl */ `
@@ -59,11 +60,10 @@ void main() {
 }
 `
 
-function glowTexture(stops: readonly (readonly [number, string])[]): THREE.CanvasTexture {
+function glowTexture(stops: readonly (readonly [number, string])[]): THREE.CanvasTexture<HTMLCanvasElement | OffscreenCanvas> {
   const size = 256
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = size
-  const context = canvas.getContext('2d')!
+  const canvas = drawingCanvas(size, size)
+  const context = canvas.getContext('2d') as CanvasRenderingContext2D
   const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
   for (const [offset, color] of stops) gradient.addColorStop(offset, color)
   context.fillStyle = gradient

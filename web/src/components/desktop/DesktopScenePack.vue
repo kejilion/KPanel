@@ -14,7 +14,7 @@ import '@/styles/desktopScenePack.css'
  *
  * Loading: the frame starts at once from the file base the pack was last found
  * at, while the pack list is fetched to confirm it (or to move to a new one after
- * an update). If the pack takes a while, a thin progress line shows over the
+ * an update). If the pack takes a while, a faint hairline shows its progress over the
  * black, fed by the pack's progress messages. The watchdog counts from the
  * pack's last sign of life, so a large scene on a slow link is not given up on
  * while it is still loading.
@@ -34,7 +34,7 @@ const emit = defineEmits<{
 /** Given up on after this long without a message from the pack. */
 const READY_TIMEOUT_MS = 20_000
 /** The progress line only shows when loading takes longer than this. */
-const PROGRESS_DELAY_MS = 1200
+const PROGRESS_DELAY_MS = 2000
 
 const frame = ref<HTMLIFrameElement>()
 const ready = ref(false)

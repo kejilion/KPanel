@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { dracoLoader } from './loading'
+import { dracoLoader, loadTexture } from './loading'
 import { LIGHTING_GLSL, type LightingUniforms } from './shading'
 import { ROCKS } from './world'
 
@@ -114,11 +114,9 @@ export function rockMaterial(uniforms: LightingUniforms, colour: THREE.Texture |
  * once the meshes are in. Each map is sent to the graphics card as soon as it arrives.
  */
 export async function createRocks(uniforms: LightingUniforms, renderer: THREE.WebGLRenderer): Promise<{ object: THREE.Object3D, waterlines: THREE.DataTexture }> {
-  const textures = new THREE.TextureLoader()
   const load = async (path: string, colour: boolean) => {
-    const texture = await textures.loadAsync(path)
     // The maps are stored top row first, as glTF expects.
-    texture.flipY = false
+    const texture = await loadTexture(path, false)
     texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
     texture.anisotropy = 8
     renderer.initTexture(texture)

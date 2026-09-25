@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { FOG_GLSL, HASH_GLSL, type AtmosphereUniforms } from './atmosphere'
 import { AVENUE_X, PITCH, ROAD_CENTERS, roadWidth, type Building } from './layout'
+import { drawingCanvas } from './loading'
 
 // Generic shop words only: no brands, no real businesses.
 const WORDS = ['拉面', '旅馆', '电玩', '夜市', '咖啡', '书店', '酒吧', '茶楼']
@@ -8,11 +9,9 @@ const CELLS = WORDS.length
 const FONT = '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif'
 
 /** One canvas holds every vertical sign: a dark board with white neon tubes, tinted per sign in the shader. */
-function signAtlas(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128 * CELLS
-  canvas.height = 512
-  const context = canvas.getContext('2d')!
+function signAtlas(): THREE.CanvasTexture<HTMLCanvasElement | OffscreenCanvas> {
+  const canvas = drawingCanvas(128 * CELLS, 512)
+  const context = canvas.getContext('2d') as CanvasRenderingContext2D
   context.textAlign = 'center'
   context.textBaseline = 'middle'
   WORDS.forEach((word, index) => {

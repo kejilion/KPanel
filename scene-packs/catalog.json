@@ -102,8 +102,8 @@
         },
         {
           "path": "scene.js",
-          "size": 715455,
-          "sha256": "30370928e3639a60a3acf9230f03342b26f6c68eddf65046d93f6ec56f6abe8f"
+          "size": 717935,
+          "sha256": "949413bb34ab3e90eebeff89c572440eccae3413df61dbfd30bd5980b8863bff"
         },
         {
           "path": "thumb.webp",
@@ -111,7 +111,7 @@
           "sha256": "c6b49c11e03e4dd52fbde68a291c818b846ad8a4a06a299e0969cbbeb90018b7"
         }
       ],
-      "sizeBytes": 1143420
+      "sizeBytes": 1145900
     },
     {
       "schema": 1,
@@ -343,8 +343,8 @@
         },
         {
           "path": "scene.js",
-          "size": 657748,
-          "sha256": "9c8fcb3df790ee4d1bca0d211281738e1c991de36da48b1a1686146f76fac6de"
+          "size": 660230,
+          "sha256": "1368e3e3fc808d668b70a7f74c2faeb6e05f56181ec5de41a48554ad53d870c2"
         },
         {
           "path": "thumb.webp",
@@ -352,7 +352,7 @@
           "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 4086990
+      "sizeBytes": 4089472
     },
     {
       "schema": 1,
@@ -574,8 +574,8 @@
         },
         {
           "path": "scene.js",
-          "size": 693952,
-          "sha256": "21b476aa686d1cc9c47870d03283232939f20c3575c6a9fa3784f322d6df0adc"
+          "size": 696308,
+          "sha256": "7ae044c78e62f7115324229faba30b065a4b892fc2fea22582da5e36acbe5e1d"
         },
         {
           "path": "thumb.webp",
@@ -583,7 +583,7 @@
           "sha256": "fe7f03eaa11606e0fa2c3d9524e3b1d810f92175117dca0dcc7f08ea7f0f516c"
         }
       ],
-      "sizeBytes": 5965466
+      "sizeBytes": 5967822
     }
   ]
 }

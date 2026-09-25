@@ -113,12 +113,18 @@ scene-packs/
 | `{ source: 'kpanel-desktop', type: 'resume' }` | 恢复渲染，时间不要跳变 |
 | `{ source: 'kpanel-desktop', type: 'camera', index? }` | 转到指定机位，未给 `index` 时切到下一个 |
 
-**从黑场开始**：动态场景运行时，面板从启动到场景就绪一直显示纯黑，不显示海报；加载超过约 1 秒时，黑场中央出现一条细进度线，
-由场景的 `progress` 消息驱动（不发送时停在起点）。因此场景的第一帧应当是黑的，进场从黑场淡入，这样启动 → 进场 → 待机是一个
-连贯的镜头。建议先编译着色器、画出第一帧再发送 `ready`。
+**从黑场开始**：动态场景运行时，面板从启动到场景就绪一直显示纯黑，不显示海报；加载超过约 2 秒时，黑场中央淡淡出现一条
+极细的进度线，由场景的 `progress` 消息驱动（不发送时停在起点）。因此场景的第一帧应当是黑的，进场从黑场淡入，这样启动 → 进场 →
+待机是一个连贯的镜头。建议先编译着色器、画出第一帧再发送 `ready`。
 
 **加载**：桌面记得每个场景上次的文件地址，打开时立即开始加载，不等场景列表。黑场的时长就是场景自己的加载时间，建议：
 
+- **在 Worker 里运行场景**（强烈建议）：场景的 iframe 与面板同站点，浏览器让它和整个桌面共用一个主线程，场景在页面上解码图片、
+  上传显卡、编译着色器、生成几何体和逐帧绘制时，桌面会跟着卡顿。官方场景的 `src/runtime.ts` 把场景放进 Worker，经
+  OffscreenCanvas 绘制，页面只交出画布、转发消息和尺寸变化；浏览器不支持时自动退回页面上运行（URL 加 `?worker=off` 可对比）。
+  要点：沙箱是不透明源，Worker 只能从自己创建的 `blob:` 启动（内容为 `importScripts(<scene.js 的地址>)`，脚本走缓存）；Worker 里
+  的相对地址要按页面地址解析（`THREE.DefaultLoadingManager.setURLModifier`，自己的 `fetch` 也一样）；Worker 里没有 `<img>` 和
+  DOM 画布，图片用 `THREE.ImageBitmapLoader`（在后台线程解码，翻转要在解码时用 `imageOrientation` 完成），画布纹理用 `OffscreenCanvas`；
 - 所有文件请求一开始就同时发出，不要等一个文件到了再请求下一个；浏览器命中缓存时用 `ETag` 验证，不重复传输文件内容；
 - 等待下载的同时构建场景、编译着色器：Three.js 用 `renderer.compileAsync(scene, camera)`（浏览器支持时不阻塞页面），
   还没到的贴图先用 `null` 占位，到了再设置；贴图到达时用 `renderer.initTexture(texture)` 立即上传显卡，而不是等第一帧；

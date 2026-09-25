@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { onHostCommand, postToHost } from './bridge'
 import { Director, type Shot } from './director'
 import { report } from './loading'
+import { run, type View } from './runtime'
 import { createPlanet, PLANET_RADIUS } from './planet'
 import { createSky } from './sky'
 import { createStation, createTraffic } from './station'
@@ -28,7 +29,6 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-const params = new URLSearchParams(location.search)
 const random = mulberry32(20260924)
 const SUN = new THREE.Vector3(-1, 0.25, -0.15).normalize()
 const STATION = new THREE.Vector3(72, 30, 158)
@@ -53,10 +53,10 @@ const SHOTS: Shot[] = [
   sunriseShot(205, 0.035),
 ]
 
-function createRenderer(): THREE.WebGLRenderer | undefined {
+function createRenderer(view: View): THREE.WebGLRenderer | undefined {
   try {
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+    const renderer = new THREE.WebGLRenderer({ canvas: view.canvas, antialias: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(view.pixelRatio, 1.5))
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = EXPOSURE
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -90,13 +90,13 @@ function spaceEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
   return texture
 }
 
-async function start(): Promise<void> {
-  const renderer = createRenderer()
+async function start(view: View): Promise<void> {
+  const renderer = createRenderer(view)
   if (!renderer) {
-    postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
+    view.unavailable()
     return
   }
-  document.body.appendChild(renderer.domElement)
+  const { params } = view
   report(0.02)
   // The downloads start first: the station and the planet's maps, side by side.
   const stationLoading = createStation(SUN, renderer)
@@ -104,7 +104,7 @@ async function start(): Promise<void> {
   const scene = new THREE.Scene()
   scene.environment = spaceEnvironment(renderer)
   scene.environmentIntensity = 0.45
-  const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.5, 16000)
+  const camera = new THREE.PerspectiveCamera(42, view.width / view.height, 0.5, 16000)
   scene.add(camera)
 
   // The sun, casting hard shadows across the station (the only thing near enough to need them).
@@ -143,20 +143,19 @@ async function start(): Promise<void> {
   const composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
   // Only the sun, its glint, the atmosphere's blaze at sunrise and the lights bloom; sunlit cloud does not.
-  const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.5, 1.05)
+  const bloom = new UnrealBloomPass(new THREE.Vector2(view.width, view.height), 0.7, 0.5, 1.05)
   composer.addPass(bloom)
   composer.addPass(new OutputPass())
 
   const resize = () => {
-    const width = window.innerWidth
-    const height = window.innerHeight
-    renderer.setSize(width, height)
+    const { width, height } = view
+    renderer.setSize(width, height, false)
     composer.setSize(width, height)
     camera.aspect = width / height
     camera.updateProjectionMatrix()
   }
   resize()
-  window.addEventListener('resize', resize)
+  view.onResize(resize)
 
   const requestedShot = Number(params.get('shot'))
   const director = new Director(camera, SHOTS, {
@@ -170,7 +169,7 @@ async function start(): Promise<void> {
   let last = 0
   let time = 0
   const frame = (now: number) => {
-    handle = requestAnimationFrame(frame)
+    handle = view.requestFrame(frame)
     // rAF timestamps can precede the first directly rendered frame: never let time run backwards.
     const dt = last ? Math.min(Math.max((now - last) / 1000, 0), 0.05) : 1 / 60
     last = now
@@ -187,17 +186,17 @@ async function start(): Promise<void> {
   onHostCommand((command) => {
     if (command.type === 'pause' && !paused) {
       paused = true
-      cancelAnimationFrame(handle)
+      view.cancelFrame(handle)
     } else if (command.type === 'resume' && paused) {
       paused = false
       last = 0
-      handle = requestAnimationFrame(frame)
+      handle = view.requestFrame(frame)
     } else if (command.type === 'camera') {
       director.cut(command.index)
     }
   })
   renderer.domElement.addEventListener('webglcontextlost', () => {
-    cancelAnimationFrame(handle)
+    view.cancelFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
   // Compile the rest and draw the first (black) frame before reporting ready, so the
@@ -208,4 +207,4 @@ async function start(): Promise<void> {
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }
 
-start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))
+run(start)
