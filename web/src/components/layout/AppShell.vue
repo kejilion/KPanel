@@ -50,7 +50,8 @@ import {
   routeNavigationState,
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
-import { DESKTOP_WALLPAPER_KEY, useClassicWallpaper } from '@/lib/classicWallpaper'
+import { useClassicWallpaper } from '@/lib/classicWallpaper'
+import { useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { scenePackFromWallpaper } from '@/lib/scenePacks'
 import {
   detectKPanelUpdate,
@@ -134,19 +135,12 @@ const DesktopView = defineAsyncComponent({
 const desktopActive = computed(() => desktop.mode.value === 'desktop')
 const classicWallpaper = useClassicWallpaper()
 const classicBackdrop = computed(() => !desktopActive.value && classicWallpaper.level.value !== 'off')
-// A 3D scene pack chosen in desktop mode keeps running behind the classic pages. The wallpaper
-// can only change inside desktop mode, so it is read again on the way back to classic.
+// A 3D scene pack chosen as the wallpaper (in desktop mode or Settings) keeps running behind the
+// classic pages. Desktop mode may have changed it, so the choice is re-read on the way back.
 const ClassicScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
-const desktopWallpaperID = ref<string | null>(null)
-const classicScenePack = computed(() => classicBackdrop.value ? scenePackFromWallpaper(desktopWallpaperID.value) : undefined)
-watch(desktopActive, (active) => {
-  if (active) return
-  try {
-    desktopWallpaperID.value = window.localStorage.getItem(DESKTOP_WALLPAPER_KEY)
-  } catch {
-    desktopWallpaperID.value = null
-  }
-}, { immediate: true })
+const wallpaperChoice = useDesktopWallpaper()
+const classicScenePack = computed(() => classicBackdrop.value ? scenePackFromWallpaper(wallpaperChoice.id.value) : undefined)
+watch(desktopActive, (active) => { if (!active) wallpaperChoice.refresh() }, { immediate: true })
 const DESKTOP_ENTRY_NOTICE_KEY = 'kpanel:desktop-entry-notice:v2'
 
 function readDesktopEntrySeen(): boolean {
