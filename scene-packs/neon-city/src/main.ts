@@ -9,7 +9,8 @@ import { aviationLights, createBuildings } from './buildings'
 import { Director, type Shot } from './director'
 import { createGround, resizeGround } from './ground'
 import { AVENUE_X, createLayout, mulberry32, summit } from './layout'
-import { report } from './loading'
+import { loadTexture, report } from './loading'
+import { run, type View } from './runtime'
 import { createRain } from './rain'
 import { createRooftops } from './rooftops'
 import { createSigns } from './signs'
@@ -23,7 +24,6 @@ import { createTraffic } from './traffic'
  * and the moves between shots carry the sky, lights and weather with them.
  */
 
-const params = new URLSearchParams(location.search)
 const random = mulberry32(20260924)
 
 const SHOTS: Shot[] = [
@@ -35,10 +35,10 @@ const SHOTS: Shot[] = [
   { id: 'street', position: new THREE.Vector3(AVENUE_X, 10, 150), target: new THREE.Vector3(AVENUE_X, 22, -200), fov: 54, orbit: 0.012, float: 0.4, tod: 2 },
 ]
 
-function createRenderer(): THREE.WebGLRenderer | undefined {
+function createRenderer(view: View): THREE.WebGLRenderer | undefined {
   try {
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+    const renderer = new THREE.WebGLRenderer({ canvas: view.canvas, antialias: false, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(view.pixelRatio, 1.5))
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -48,25 +48,25 @@ function createRenderer(): THREE.WebGLRenderer | undefined {
   }
 }
 
-async function start(): Promise<void> {
-  const renderer = createRenderer()
+async function start(view: View): Promise<void> {
+  const renderer = createRenderer(view)
   if (!renderer) {
-    postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
+    view.unavailable()
     return
   }
-  document.body.appendChild(renderer.domElement)
+  const { params } = view
   report(0.02)
 
   const atmosphere = createAtmosphere()
   const { uniforms } = atmosphere
   const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 14000)
+  const camera = new THREE.PerspectiveCamera(45, view.width / view.height, 1, 14000)
   scene.add(camera)
 
   const { buildings, landmarks } = createLayout()
   // The downloads start first; the rest of the city is built, and its shaders compiled, while they arrive.
   const rooftopsLoading = createRooftops(buildings, uniforms)
-  const roomsLoading = new THREE.TextureLoader().loadAsync('assets/rooms.webp').then((rooms) => {
+  const roomsLoading = loadTexture('assets/rooms.webp').then((rooms) => {
     rooms.colorSpace = THREE.SRGBColorSpace
     rooms.anisotropy = 8
     renderer.initTexture(rooms)
@@ -93,14 +93,13 @@ async function start(): Promise<void> {
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
   const composer = new EffectComposer(renderer, target)
   composer.addPass(new RenderPass(scene, camera))
-  const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.6, 0.55, 0.82)
+  const bloom = new UnrealBloomPass(new THREE.Vector2(view.width, view.height), 0.6, 0.55, 0.82)
   composer.addPass(bloom)
   composer.addPass(new OutputPass())
 
   const resize = () => {
-    const width = window.innerWidth
-    const height = window.innerHeight
-    renderer.setSize(width, height)
+    const { width, height } = view
+    renderer.setSize(width, height, false)
     composer.setPixelRatio(renderer.getPixelRatio())
     composer.setSize(width, height)
     camera.aspect = width / height
@@ -109,7 +108,7 @@ async function start(): Promise<void> {
     resizeGround(ground, size.x, size.y)
   }
   resize()
-  window.addEventListener('resize', resize)
+  view.onResize(resize)
 
   const requestedShot = Number(params.get('shot'))
   const director = new Director(camera, SHOTS, {
@@ -123,7 +122,7 @@ async function start(): Promise<void> {
   let last = 0
   let time = 0
   const frame = (now: number) => {
-    handle = requestAnimationFrame(frame)
+    handle = view.requestFrame(frame)
     // rAF timestamps can precede the first directly rendered frame: never let time run backwards.
     const dt = last ? Math.min(Math.max((now - last) / 1000, 0), 0.05) : 1 / 60
     last = now
@@ -143,17 +142,17 @@ async function start(): Promise<void> {
   onHostCommand((command) => {
     if (command.type === 'pause' && !paused) {
       paused = true
-      cancelAnimationFrame(handle)
+      view.cancelFrame(handle)
     } else if (command.type === 'resume' && paused) {
       paused = false
       last = 0
-      handle = requestAnimationFrame(frame)
+      handle = view.requestFrame(frame)
     } else if (command.type === 'camera') {
       director.cut(command.index)
     }
   })
   renderer.domElement.addEventListener('webglcontextlost', () => {
-    cancelAnimationFrame(handle)
+    view.cancelFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
   // Compile the rest and draw the first (black) frame before reporting ready, so the
@@ -164,4 +163,4 @@ async function start(): Promise<void> {
   postToHost({ source: 'kpanel-scene-pack', type: 'ready', cameras: SHOTS.map((shot) => shot.id) })
 }
 
-start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))
+run(start)

@@ -12,6 +12,7 @@ import { Director } from './director'
 import { createOcean } from './ocean'
 import { createReflection } from './reflection'
 import { report } from './loading'
+import { run, type View } from './runtime'
 import { createRocks, rockMaterial } from './rocks'
 import { createLighting } from './shading'
 import { createSkyDome, skyUniforms } from './sky'
@@ -29,17 +30,10 @@ import { obstacleHeight } from './world'
  * ?hour=H and ?moon=days-since-new-moon set the starting time for previews,
  * and ?timelapse=off holds to the real clock (or to them).
  */
-const params = new URLSearchParams(location.search)
-const hourParam = params.get('hour')
-const hourOverride = hourParam !== null && hourParam !== '' && Number.isFinite(Number(hourParam)) ? ((Number(hourParam) % 24) + 24) % 24 : undefined
-const moonParam = params.get('moon')
-const moonOverride = moonParam !== null && moonParam !== '' && Number.isFinite(Number(moonParam)) ? Number(moonParam) : undefined
-
-
-function createRenderer(): THREE.WebGLRenderer | undefined {
+function createRenderer(view: View): THREE.WebGLRenderer | undefined {
   try {
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+    const renderer = new THREE.WebGLRenderer({ canvas: view.canvas, antialias: false, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(view.pixelRatio, 1.5))
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.outputColorSpace = THREE.SRGBColorSpace
     return renderer
@@ -48,13 +42,17 @@ function createRenderer(): THREE.WebGLRenderer | undefined {
   }
 }
 
-async function start(): Promise<void> {
-  const renderer = createRenderer()
+async function start(view: View): Promise<void> {
+  const renderer = createRenderer(view)
   if (!renderer) {
-    postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_unavailable' })
+    view.unavailable()
     return
   }
-  document.body.appendChild(renderer.domElement)
+  const { params } = view
+  const hourParam = params.get('hour')
+  const hourOverride = hourParam !== null && hourParam !== '' && Number.isFinite(Number(hourParam)) ? ((Number(hourParam) % 24) + 24) % 24 : undefined
+  const moonParam = params.get('moon')
+  const moonOverride = moonParam !== null && moonParam !== '' && Number.isFinite(Number(moonParam)) ? Number(moonParam) : undefined
   const timelapse = params.get('timelapse') !== 'off'
   const clock = createClock({ timelapse, hour: hourOverride, moon: moonOverride })
   const daylight = createDaylight()
@@ -64,7 +62,7 @@ async function start(): Promise<void> {
   const uniforms = { ...skyUniforms(daylight), ...lighting.uniforms }
 
   const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 30000)
+  const camera = new THREE.PerspectiveCamera(50, view.width / view.height, 1, 30000)
   report(0.02)
   // The downloads start first; everything that does not wait for them is built and its shaders
   // compiled while they arrive (without blocking the page, where the browser allows).
@@ -95,7 +93,7 @@ async function start(): Promise<void> {
   const composer = new EffectComposer(renderer, target)
   composer.addPass(new RenderPass(scene, camera))
   // Glints on the water and the moon bloom; the bright sky by day does not.
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.22, 0.4, 1.8))
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(view.width, view.height), 0.22, 0.4, 1.8))
   composer.addPass(new OutputPass())
   // A light grade after tone mapping: lifts muted colours (sea, dusk sky) without pushing bright
   // ones, and a soft vignette.
@@ -127,20 +125,20 @@ async function start(): Promise<void> {
   let quality = 0
   const drawingSize = new THREE.Vector2()
   const resize = () => {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[quality]!.pixels))
-    renderer.setSize(window.innerWidth, window.innerHeight)
+    renderer.setPixelRatio(Math.min(view.pixelRatio, QUALITY[quality]!.pixels))
+    renderer.setSize(view.width, view.height, false)
     renderer.getDrawingBufferSize(drawingSize)
     clouds.resize(drawingSize.x, drawingSize.y, QUALITY[quality]!.clouds)
     // The reflection is broken up by the waves anyway: half resolution is plenty.
     reflection.resize(drawingSize.x / 2, drawingSize.y / 2)
     uniforms.uScreen.value.copy(drawingSize)
     composer.setPixelRatio(renderer.getPixelRatio())
-    composer.setSize(window.innerWidth, window.innerHeight)
-    camera.aspect = window.innerWidth / window.innerHeight
+    composer.setSize(view.width, view.height)
+    camera.aspect = view.width / view.height
     camera.updateProjectionMatrix()
   }
   resize()
-  window.addEventListener('resize', resize)
+  view.onResize(resize)
 
   tour.follow(0, true)
   const requestedShot = Number(params.get('shot'))
@@ -154,8 +152,8 @@ async function start(): Promise<void> {
   // While the camera is all but still, the clouds are marched every other frame (they drift slowly,
   // and a frame's lag is a fraction of a pixel); during a move, every frame.
   let cloudFrame = 0
-  const view = new THREE.Vector3()
-  const cloudView = new THREE.Vector3()
+  const facing = new THREE.Vector3()
+  const cloudFacing = new THREE.Vector3()
   const cloudPosition = new THREE.Vector3()
   // Frames that take too long, counted up while slow and down while fine; enough in a row and the
   // quality drops a step (never back up, so it cannot see-saw).
@@ -165,7 +163,7 @@ async function start(): Promise<void> {
   let last = 0
   let time = 0
   const frame = (now: number) => {
-    handle = requestAnimationFrame(frame)
+    handle = view.requestFrame(frame)
     // rAF timestamps can precede the first directly rendered frame: never let time run backwards.
     const elapsed = last ? Math.max((now - last) / 1000, 0) : 1 / 60
     const dt = Math.min(elapsed, 0.05)
@@ -187,11 +185,11 @@ async function start(): Promise<void> {
     renderer.toneMappingExposure = daylight.exposure * cue.fade
     // The clouds are marched for this exact view before the sky that shows them is drawn.
     camera.updateMatrixWorld()
-    camera.getWorldDirection(view)
-    const still = view.angleTo(cloudView) < 0.004 && camera.position.distanceTo(cloudPosition) < 1
+    camera.getWorldDirection(facing)
+    const still = facing.angleTo(cloudFacing) < 0.004 && camera.position.distanceTo(cloudPosition) < 1
     if (!still || ++cloudFrame % 2 === 0) {
       clouds.render(camera)
-      cloudView.copy(view)
+      cloudFacing.copy(facing)
       cloudPosition.copy(camera.position)
     }
     reflection.render(camera)
@@ -209,17 +207,17 @@ async function start(): Promise<void> {
   onHostCommand((command) => {
     if (command.type === 'pause' && !paused) {
       paused = true
-      cancelAnimationFrame(handle)
+      view.cancelFrame(handle)
     } else if (command.type === 'resume' && paused) {
       paused = false
       last = 0
-      handle = requestAnimationFrame(frame)
+      handle = view.requestFrame(frame)
     } else if (command.type === 'camera') {
       director.cut(command.index)
     }
   })
   renderer.domElement.addEventListener('webglcontextlost', () => {
-    cancelAnimationFrame(handle)
+    view.cancelFrame(handle)
     postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'webgl_context_lost' })
   })
   // Anything not compiled yet, then the first (black) frame, before reporting ready.
@@ -240,4 +238,4 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-start().catch(() => postToHost({ source: 'kpanel-scene-pack', type: 'error', reason: 'assets_unavailable' }))
+run(start)

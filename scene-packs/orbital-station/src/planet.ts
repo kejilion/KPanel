@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { loadTexture } from './loading'
 import { NOISE_GLSL } from './noise'
 
 export const PLANET_RADIUS = 100
@@ -171,7 +172,7 @@ export function createPlanet(sunDirection: THREE.Vector3, renderer: THREE.WebGLR
   const sun = { value: sunDirection }
   const map = (path: string, colour: boolean) => {
     const slot: THREE.IUniform<THREE.Texture | null> = { value: null }
-    const loading = new THREE.TextureLoader().loadAsync(path).then((texture) => {
+    const loading = loadTexture(path).then((texture) => {
       texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace
       texture.anisotropy = 8
       texture.wrapS = THREE.RepeatWrapping
