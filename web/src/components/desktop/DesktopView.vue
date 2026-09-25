@@ -47,7 +47,7 @@ import DesktopShortcutDialog, {
 } from '@/components/desktop/DesktopShortcutDialog.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import DesktopWallpaperPicker from '@/components/desktop/DesktopWallpaperPicker.vue'
-import { DESKTOP_WALLPAPERS, useDesktopWallpaper, type DesktopWallpaperID } from '@/lib/desktopWallpapers'
+import { customWallpaperFromID, DESKTOP_WALLPAPERS, useDesktopWallpaper, type DesktopWallpaperID } from '@/lib/desktopWallpapers'
 import LogoMark from '@/components/common/LogoMark.vue'
 import { DEFAULT_WINDOW_GRADIENT, desktopApps, desktopRoutePath, findDesktopApp } from '@/lib/desktopApps'
 import {
@@ -135,7 +135,7 @@ import { useTheme } from '@/stores/theme'
 import { deriveThemeTokens } from '@/theme/colors'
 import { useToast } from '@/stores/toast'
 import { useI18n } from '@/i18n'
-import type { AgentStatus, DesktopGroup, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
+import type { AgentStatus, CustomWallpaper, DesktopGroup, DesktopIconPosition, DesktopShortcut, FileEntry } from '@/types/api'
 
 /**
  * Desktop overlay with Windows-style selection/open behavior, desktop-side
@@ -394,6 +394,8 @@ const activeScenePack = computed(() => scenePackFromWallpaper(desktopWallpaperID
 const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: string } => {
   const pack = activeScenePack.value
   if (pack) return { id: scenePackWallpaper(pack) as DesktopWallpaperID, src: api.desktop.scenePackPosterURL(pack) }
+  const custom = customWallpaperFromID(desktopWallpaperID.value)
+  if (custom) return { id: desktopWallpaperID.value, src: api.desktop.wallpaperImageURL(custom) }
   return DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
     || DESKTOP_WALLPAPERS[0]
 })
@@ -3154,11 +3156,11 @@ function waitForWallpaperSwitchDelay(): Promise<void> {
   })
 }
 
-async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID, pack?: ScenePack): Promise<void> {
+async function selectDesktopWallpaper(wallpaperID: DesktopWallpaperID, source?: ScenePack | CustomWallpaper): Promise<void> {
   wallpaperDialogOpen.value = false
   await nextTick()
   await waitForWallpaperSwitchDelay()
-  wallpaperChoice.select(wallpaperID, pack)
+  wallpaperChoice.select(wallpaperID, source)
 }
 
 async function onScenePackFailed(): Promise<void> {

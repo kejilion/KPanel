@@ -31,6 +31,9 @@
     // An installed 3D scene pack: its poster is the still frame for reduced motion.
     const pack = typeof stored === 'string' ? /^pack:([a-z0-9][a-z0-9-]{0,39})$/.exec(stored) : null
     if (pack) return { id: stored, pack: true, url: `/api/v1/desktop/scene-packs/${pack[1]}/poster` }
+    // An uploaded picture, served by the panel to the signed-in browser.
+    const custom = typeof stored === 'string' ? /^custom:([0-9a-f]{32})$/.exec(stored) : null
+    if (custom) return { id: stored, custom: custom[1], url: `/api/v1/desktop/wallpapers/${custom[1]}/image` }
     const id = ['orbit', 'horizon', 'rift', 'prism'].includes(stored) ? stored : 'classic'
     return { id, url: `/wallpapers/kpanel-desktop${id === 'classic' ? '' : `-${id}`}.webp` }
   }
@@ -39,8 +42,9 @@
     const value = readSession(cacheKey(id))
     return value && value.length <= 131072 && /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/.test(value) ? value : null
   }
-  const cacheWallpaper = async ({ id, url }) => {
-    if (cachedImage(id)) return
+  const cacheWallpaper = async ({ id, url, custom }) => {
+    // Uploaded pictures are far larger than the session cache allows; the HTTP cache keeps them.
+    if (custom || cachedImage(id)) return
     try {
       const response = await fetch(url)
       if (!response.ok) return
@@ -55,6 +59,17 @@
   }
   const wallpaper = selectedWallpaper()
   root.dataset.desktopWallpaper = wallpaper.id
+  // An uploaded picture keeps its focal point in view and, when bright, asks for a thicker classic veil.
+  if (wallpaper.custom) {
+    try {
+      const display = JSON.parse(read('kpanel:desktop-wallpaper-custom:v1') || 'null')
+      const inRange = (value, max) => Number.isInteger(value) && value >= 0 && value <= max
+      if (display?.id === wallpaper.custom && inRange(display.focusX, 1000) && inRange(display.focusY, 1000) && inRange(display.luminance, 100)) {
+        root.style.setProperty('--desktop-wallpaper-position', `${display.focusX / 10}% ${display.focusY / 10}%`)
+        if (display.luminance >= 50) root.dataset.wallpaperBright = 'true'
+      }
+    } catch { /* Framing is optional; the picture stays centred. */ }
+  }
   // Classic mode shows the same picture; a scene pack runs live there too (AppShell), the poster is its fallback.
   const classicLevel = read('kpanel:classic-wallpaper:v1')
   if (classicLevel === 'ambient' || classicLevel === 'clear') root.dataset.classicWallpaper = classicLevel
@@ -82,8 +97,8 @@
         void cacheWallpaper(wallpaper)
       } else throw new Error('wallpaper_unavailable')
     }).catch(async (error) => {
-      // A removed or unreachable pack falls back to the classic wallpaper instead of an empty desktop.
-      if (!wallpaper.pack) throw error
+      // A removed or unreachable pack or picture falls back to the classic wallpaper instead of an empty desktop.
+      if (!wallpaper.pack && !wallpaper.custom) throw error
       root.style.setProperty('--desktop-wallpaper-image', `url("${classicURL}")`)
       image.src = classicURL
       await image.decode()

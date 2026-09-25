@@ -23,7 +23,7 @@
   position: absolute;
   /* Blur pulls in transparent edges; overscan so the frame stays filled. */
   inset: calc(var(--classic-wallpaper-blur) * -2.5);
-  background: var(--classic-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) center / cover no-repeat;
+  background: var(--classic-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) var(--desktop-wallpaper-position, center) / cover no-repeat;
   filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
 }
 
@@ -49,7 +49,7 @@
   inset: 0;
   background:
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 18%, transparent) 70%),
-    color-mix(in srgb, var(--bg) var(--classic-wallpaper-veil), transparent);
+    color-mix(in srgb, var(--bg) calc(var(--classic-wallpaper-veil) + var(--classic-wallpaper-veil-boost, 0%)), transparent);
 }
 
 body:has(.classic-backdrop) {
@@ -82,6 +82,18 @@ body:has(.classic-backdrop) {
   --classic-wallpaper-veil: 26%;
   --classic-wallpaper-sidebar: 58%;
   --classic-wallpaper-topbar: 58%;
+}
+
+/*
+ * An uploaded picture measured as bright (appearance-init.js / desktopWallpapers.ts) would wash
+ * out light text in dark theme at the thin clear veil, so the veil thickens for it.
+ */
+:root[data-classic-wallpaper][data-theme='dark'][data-wallpaper-bright] {
+  --classic-wallpaper-veil-boost: 16%;
+}
+
+:root[data-classic-wallpaper='clear'][data-theme='dark'][data-wallpaper-bright] {
+  --classic-wallpaper-veil-boost: 30%;
 }
 
 :root:has(.classic-backdrop) .sidebar {

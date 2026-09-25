@@ -100,4 +100,22 @@ describe('appearance before application startup', () => {
     expect(run({}, '/', false, cached).properties.has('--desktop-aurora-one')).toBe(false)
     expect(run({ 'kejilion-panel-colors': 'changed' }, '/', false, cached).properties.has('--desktop-wallpaper-veil-dark')).toBe(false)
   })
+  it('boots an uploaded picture with its saved framing and never trusts other ids', () => {
+    const id = '0123456789abcdef0123456789abcdef'
+    const display = JSON.stringify({ id, focusX: 700, focusY: 320, luminance: 72 })
+    const result = run({ 'kpanel:desktop-wallpaper:v1': `custom:${id}`, 'kpanel:desktop-wallpaper-custom:v1': display })
+    expect(result.properties.get('--desktop-wallpaper-image')).toBe(`url("/api/v1/desktop/wallpapers/${id}/image")`)
+    expect(result.properties.get('--classic-wallpaper-image')).toBe(`url("/api/v1/desktop/wallpapers/${id}/image")`)
+    expect(result.properties.get('--desktop-wallpaper-position')).toBe('70% 32%')
+    expect(result.root.dataset.wallpaperBright).toBe('true')
+
+    const mismatched = run({ 'kpanel:desktop-wallpaper:v1': `custom:${id}`, 'kpanel:desktop-wallpaper-custom:v1': JSON.stringify({ id: 'f'.repeat(32), focusX: 1, focusY: 1, luminance: 90 }) })
+    expect(mismatched.properties.has('--desktop-wallpaper-position')).toBe(false)
+    expect(mismatched.root.dataset.wallpaperBright).toBeUndefined()
+    const outOfRange = run({ 'kpanel:desktop-wallpaper:v1': `custom:${id}`, 'kpanel:desktop-wallpaper-custom:v1': JSON.stringify({ id, focusX: '50%;x', focusY: 2000, luminance: 10 }) })
+    expect(outOfRange.properties.has('--desktop-wallpaper-position')).toBe(false)
+    for (const stored of ['custom:../../etc', `custom:${id.toUpperCase()}`, `custom:${id}x`]) {
+      expect(run({ 'kpanel:desktop-wallpaper:v1': stored }).properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    }
+  })
 })

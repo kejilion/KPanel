@@ -29,7 +29,7 @@ html.desktop-wallpaper-loading .desktop__wallpaper { visibility: hidden; }
 .desktop__wallpaper-image {
   position: absolute;
   inset: 0;
-  background: var(--desktop-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) center / cover no-repeat;
+  background: var(--desktop-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) var(--desktop-wallpaper-position, center) / cover no-repeat;
 }
 
 /*

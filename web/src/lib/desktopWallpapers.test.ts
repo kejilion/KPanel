@@ -8,8 +8,27 @@ const theme = vi.hoisted(() => ({
   isCustom: { value: false },
 }))
 vi.mock('@/stores/theme', () => ({ useTheme: () => theme }))
+const wallpapersAPI = vi.hoisted(() => ({ wallpapers: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: { desktop: wallpapersAPI } }))
 
-import { DESKTOP_WALLPAPER_KEY, DESKTOP_WALLPAPERS, useDesktopWallpaper } from './desktopWallpapers'
+import type { CustomWallpaper } from '@/types/api'
+import {
+  CUSTOM_WALLPAPER_DISPLAY_KEY,
+  customWallpaperFromID,
+  customWallpaperID,
+  DESKTOP_WALLPAPER_KEY,
+  DESKTOP_WALLPAPERS,
+  isDesktopWallpaperID,
+  useDesktopWallpaper,
+  wallpaperFocusPosition,
+} from './desktopWallpapers'
+
+const uploaded: CustomWallpaper = {
+  id: '0123456789abcdef0123456789abcdef', name: '山谷日落', format: 'webp', width: 3840, height: 2160,
+  imageBytes: 2_000_000, thumbBytes: 40_000, focusX: 700, focusY: 320, luminance: 72,
+  theme: { brand: '#e8b86a', neutral: '#1c3a4a', signature: '#4f8fa8' },
+  createdAt: '2026-09-25T00:00:00Z', imageDigest: 'a'.repeat(64),
+}
 
 describe('shared desktop wallpaper', () => {
   beforeEach(() => {
@@ -56,5 +75,53 @@ describe('shared desktop wallpaper', () => {
     wallpaper.refresh()
     expect(wallpaper.id.value).toBe('classic')
     expect(wallpaper.select('nope' as 'classic')).toBe(false)
+  })
+
+  it('recognizes uploaded wallpaper ids and frames them at their focal point', () => {
+    expect(customWallpaperFromID(customWallpaperID(uploaded.id))).toBe(uploaded.id)
+    expect(isDesktopWallpaperID(`custom:${uploaded.id}`)).toBe(true)
+    for (const value of ['custom:', 'custom:xyz', `custom:${uploaded.id.toUpperCase()}`, `custom:${uploaded.id}/../x`]) {
+      expect(isDesktopWallpaperID(value)).toBe(false)
+    }
+    expect(wallpaperFocusPosition(uploaded)).toBe('70% 32%')
+  })
+
+  it('applies an uploaded wallpaper with its framing, brightness and colors', () => {
+    const wallpaper = useDesktopWallpaper()
+    expect(wallpaper.select(customWallpaperID(uploaded.id))).toBe(false)
+
+    expect(wallpaper.select(customWallpaperID(uploaded.id), uploaded)).toBe(true)
+    expect(window.localStorage.getItem(DESKTOP_WALLPAPER_KEY)).toBe(`custom:${uploaded.id}`)
+    expect(JSON.parse(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY)!)).toEqual({ id: uploaded.id, focusX: 700, focusY: 320, luminance: 72 })
+    expect(document.documentElement.style.getPropertyValue('--desktop-wallpaper-position')).toBe('70% 32%')
+    expect(document.documentElement.dataset.wallpaperBright).toBe('true')
+    expect(theme.setColors).toHaveBeenCalledWith({ ...uploaded.theme, signatureLinked: false })
+
+    theme.setColors.mockClear()
+    wallpaper.select(customWallpaperID(uploaded.id), { ...uploaded, theme: undefined, luminance: 20 })
+    expect(theme.setColors).not.toHaveBeenCalled()
+    expect(document.documentElement.dataset.wallpaperBright).toBeUndefined()
+
+    wallpaper.select('orbit')
+    expect(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY)).toBeNull()
+    expect(document.documentElement.style.getPropertyValue('--desktop-wallpaper-position')).toBe('')
+  })
+
+  it('falls back to the default when the chosen upload is deleted here or elsewhere', async () => {
+    const wallpaper = useDesktopWallpaper()
+    wallpapersAPI.wallpapers.mockResolvedValue({ wallpapers: [uploaded], usage: { count: 1, bytes: 2_040_000, maxCount: 12, maxBytes: 48 << 20 } })
+    await wallpaper.loadCustomWallpapers()
+    wallpaper.select(customWallpaperID(uploaded.id), uploaded)
+    wallpaper.customDeleted(uploaded.id)
+    expect(wallpaper.id.value).toBe('classic')
+    expect(wallpaper.customWallpapers.value).toEqual([])
+    expect(wallpaper.customUsage.value?.count).toBe(0)
+
+    wallpaper.customUploaded(uploaded)
+    wallpaper.select(customWallpaperID(uploaded.id), uploaded)
+    wallpapersAPI.wallpapers.mockResolvedValue({ wallpapers: [], usage: { count: 0, bytes: 0, maxCount: 12, maxBytes: 48 << 20 } })
+    await wallpaper.loadCustomWallpapers()
+    expect(wallpaper.id.value).toBe('classic')
+    expect(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY)).toBeNull()
   })
 })
