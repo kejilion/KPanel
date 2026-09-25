@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { FOG_GLSL, type AtmosphereUniforms } from './atmosphere'
-import { type Building, mulberry32 } from './layout'
+import { type Building, mulberry32, standingOn } from './layout'
 
 /**
  * What stands on the roofs: a parapet round every roof, and the clutter real
@@ -90,15 +90,16 @@ export async function createRooftops(buildings: readonly Building[], uniforms: A
   KINDS.forEach((kind) => placements.set(kind.name, []))
   const parapets: THREE.Matrix4[] = []
 
-  // A roof is the top of a building nothing else stands on (setback tiers and spires do).
-  const covered = new Set(buildings.filter((b) => b.y > 0).map((b) => `${b.x.toFixed(2)},${b.z.toFixed(2)},${b.y.toFixed(2)}`))
   const matrix = new THREE.Matrix4()
   const turn = new THREE.Quaternion()
   const up = new THREE.Vector3(0, 1, 0)
   for (const building of buildings) {
     const top = building.y + building.h
     if (building.w < 6 || !building.street && building.y === 0) continue // spires and the far ring
-    if (covered.has(`${building.x.toFixed(2)},${building.z.toFixed(2)},${top.toFixed(2)}`)) continue
+    // Whatever stands on the roof (a setback, crown or plant room) keeps its clutter off that part of it,
+    // and a roof it covers almost entirely gets none.
+    const above = standingOn(buildings, building)
+    if (above.some((other) => other.w * other.d > building.w * building.d * 0.7)) continue
     // Parapet: four low walls round the edge.
     const rim = 1.1
     const thick = 0.35
@@ -124,6 +125,7 @@ export async function createRooftops(buildings: readonly Building[], uniforms: A
       const x = building.x + (random() - 0.5) * (building.w - margin * 2)
       const z = building.z + (random() - 0.5) * (building.d - margin * 2)
       if (placed.some((other) => Math.hypot(other.x - x, other.z - z) < other.r + kind.radius + 0.8)) continue
+      if (above.some((other) => Math.abs(other.x - x) < other.w / 2 + kind.radius + 0.5 && Math.abs(other.z - z) < other.d / 2 + kind.radius + 0.5)) continue
       placed.push({ x, z, r: kind.radius })
       used.set(kind.name, (used.get(kind.name) ?? 0) + 1)
       turn.setFromAxisAngle(up, Math.floor(random() * 4) * (Math.PI / 2))

@@ -8,7 +8,7 @@ import { onHostCommand, postToHost } from './bridge'
 import { aviationLights, createBuildings } from './buildings'
 import { Director, type Shot } from './director'
 import { createGround, resizeGround } from './ground'
-import { AVENUE_X, createLayout, mulberry32 } from './layout'
+import { AVENUE_X, createLayout, mulberry32, summit } from './layout'
 import { report } from './loading'
 import { createRain } from './rain'
 import { createRooftops } from './rooftops'
@@ -76,7 +76,7 @@ async function start(): Promise<void> {
   scene.add(towers)
   scene.add(createSigns(buildings, landmarks, uniforms, random))
   scene.add(createTraffic(uniforms, random))
-  const sky = createSky(uniforms, landmarks, aviationLights(buildings), random)
+  const sky = createSky(uniforms, landmarks.map((tower) => summit(buildings, tower)), aviationLights(buildings), random)
   scene.add(sky.group)
   const rain = createRain(uniforms, random)
   scene.add(rain.object)
