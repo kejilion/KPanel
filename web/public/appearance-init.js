@@ -67,10 +67,34 @@
   // The desktop paints its own image when this does not name its wallpaper; a private one
   // held back here must not look already painted after an in-app sign-in.
   root.dataset.desktopWallpaper = publicPage && privateWallpaper ? 'classic' : wallpaper.id
+  // A private wallpaper appears on the sign-in page only as this browser's own reduced copy
+  // (web/src/lib/authWallpaperCopy.ts), never fetched from the server before sign-in.
+  const authCopy = id => {
+    try {
+      const copy = JSON.parse(read('kpanel:auth-wallpaper:v1') || 'null')
+      const inRange = value => Number.isInteger(value) && value >= 0 && value <= 1000
+      if (copy?.id === id && typeof copy.image === 'string' && copy.image.length <= 400000
+        && /^data:image\/(webp|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(copy.image)
+        && inRange(copy.focusX) && inRange(copy.focusY) && typeof copy.bright === 'boolean') return copy
+    } catch { /* An unreadable copy leaves the default wallpaper. */ }
+    return null
+  }
   const setAuthImage = ({ id, pack, custom, url }) => {
-    const publicWallpaper = !(pack || custom)
-    root.dataset.authWallpaper = publicWallpaper ? id : 'classic'
-    root.style.setProperty('--auth-wallpaper-image', `url("${publicWallpaper ? url : classicURL}")`)
+    const copy = pack || custom ? authCopy(id) : null
+    let image = url
+    let name = id
+    if (copy) {
+      image = copy.image
+      name = 'private'
+    } else if (pack || custom) {
+      image = classicURL
+      name = 'classic'
+    }
+    root.dataset.authWallpaper = name
+    root.style.setProperty('--auth-wallpaper-image', `url("${image}")`)
+    root.style.setProperty('--auth-wallpaper-position', copy ? `${copy.focusX / 10}% ${copy.focusY / 10}%` : 'center')
+    if (copy ? copy.bright : id === 'horizon') root.dataset.authWallpaperBright = 'true'
+    else delete root.dataset.authWallpaperBright
   }
   setAuthImage(wallpaper)
   // An uploaded picture keeps its focal point in view and, when bright, asks for a thicker classic veil.
