@@ -49,7 +49,17 @@ const FILE_PROBLEMS: Record<WallpaperFileProblem, MessageKey> = {
 
 const focusPosition = computed(() => `${focusX.value / 10}% ${focusY.value / 10}%`)
 const previewStyle = computed(() => ({ backgroundImage: `url("${previewURL.value}")`, backgroundPosition: focusPosition.value }))
-const stageRatio = computed(() => prepared.value ? `${prepared.value.width} / ${prepared.value.height}` : '16 / 9')
+// The stage keeps the picture's exact shape (so a click maps to the same point in the picture)
+// and fits inside the dialog's height budget by narrowing rather than letterboxing.
+const STAGE_MAX_HEIGHT = 420
+const stageStyle = computed(() => {
+  const picture = prepared.value
+  if (!picture) return {}
+  return {
+    aspectRatio: `${picture.width} / ${picture.height}`,
+    width: `min(100%, ${Math.round((STAGE_MAX_HEIGHT * picture.width) / picture.height)}px)`,
+  }
+})
 const canSave = computed(() => Boolean(prepared.value) && name.value.trim().length > 0 && !uploading.value)
 const swatches = computed(() => {
   const theme = prepared.value?.theme
@@ -178,7 +188,7 @@ async function save(): Promise<void> {
           <div class="custom-wallpaper-dialog__focus">
             <div
               class="custom-wallpaper-dialog__stage"
-              :style="{ aspectRatio: stageRatio }"
+              :style="stageStyle"
               role="group"
               tabindex="0"
               :aria-label="`${i18n.t('desktop.customWallpaperFocus')} ${Math.round(focusX / 10)}% · ${Math.round(focusY / 10)}%`"
