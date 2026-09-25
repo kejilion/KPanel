@@ -106,7 +106,7 @@ func openLightStore(path string) (*lightStore, error) {
 			return nil, fmt.Errorf("finalize light node store recovery: %w", err)
 		}
 	case errors.Is(err, os.ErrNotExist):
-		if err := store.persistLocked(); err != nil {
+		if err := store.recoverOrInitialize(); err != nil {
 			return nil, err
 		}
 	default:
@@ -116,6 +116,47 @@ func openLightStore(path string) (*lightStore, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+// A missing target can be the middle of an atomic replacement, not a first
+// install. Validate the backup before moving it or cleaning any credentials.
+func (s *lightStore) recoverOrInitialize() error {
+	content, err := readRegularFileV2(s.path+".previous", maxLightStateBytes, false)
+	switch {
+	case err == nil:
+		var recovered lightPersistedState
+		if err := decodeLightState(content, &recovered); err != nil {
+			return fmt.Errorf("validate light node store backup: %w", err)
+		}
+		if err := recoverAtomicTargetV2(s.path, s.ops); err != nil {
+			return fmt.Errorf("recover light node store: %w", err)
+		}
+		s.state = recovered
+		return nil
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("read light node store backup: %w", err)
+	}
+
+	// Without either snapshot, existing credentials are recovery evidence. Do
+	// not turn missing metadata into an empty store and then delete those keys.
+	for _, directory := range []string{s.secretDir, s.terminalDir} {
+		dir, err := os.Open(directory)
+		if err != nil {
+			return fmt.Errorf("check light node credentials before initialization: %w", err)
+		}
+		names, readErr := dir.Readdirnames(1)
+		closeErr := dir.Close()
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return fmt.Errorf("check light node credentials before initialization: %w", readErr)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if len(names) != 0 {
+			return errors.New("light node state and backup are missing but credentials remain; restore the state before starting")
+		}
+	}
+	return s.persistLocked()
 }
 
 func decodeLightState(content []byte, state *lightPersistedState) error {
