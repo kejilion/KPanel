@@ -1,5 +1,5 @@
 import { readonly, ref } from 'vue'
-import { scenePackFromWallpaper, scenePackThemeColors, type ScenePack } from '@/lib/scenePacks'
+import { rememberFileBase, scenePackFromWallpaper, scenePackThemeColors, type ScenePack } from '@/lib/scenePacks'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS, type ThemeColorIntent } from '@/theme/colors'
 
@@ -66,6 +66,7 @@ function readDesktopWallpaperID(): DesktopWallpaperID {
 }
 
 const current = ref<DesktopWallpaperID>(typeof window === 'undefined' ? 'classic' : readDesktopWallpaperID())
+const sceneRevision = ref(0)
 
 function persist(id: DesktopWallpaperID): void {
   try {
@@ -89,6 +90,12 @@ export function useDesktopWallpaper() {
 
   return {
     id: readonly(current),
+    sceneRevision: readonly(sceneRevision),
+    /** Restart either wallpaper host after installing a new version of the active pack. */
+    sceneInstalled(pack: ScenePack): void {
+      rememberFileBase(pack.id, pack.fileBase)
+      if (scenePackFromWallpaper(current.value) === pack.id) sceneRevision.value++
+    },
     /** Re-reads the saved choice (another tab, or state set before this view mounted). */
     refresh(): void {
       current.value = readDesktopWallpaperID()

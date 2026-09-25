@@ -313,7 +313,7 @@ watch(
     <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
       <ClassicScenePack
         v-if="classicScenePack"
-        :key="classicScenePack"
+        :key="`${classicScenePack}:${wallpaperChoice.sceneRevision.value}`"
         class="classic-backdrop__scene"
         :pack-id="classicScenePack"
         :covered="false"

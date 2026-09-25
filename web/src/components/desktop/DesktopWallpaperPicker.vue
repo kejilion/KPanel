@@ -26,8 +26,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: DesktopWallpaperID, pack?: ScenePack]
-  /** The active pack was installed again; its running scene should restart. */
-  reinstalled: [id: string]
 }>()
 
 const i18n = useI18n()
@@ -77,7 +75,7 @@ async function installScenePack(pack: ScenePack): Promise<void> {
   try {
     const installed = await api.desktop.installScenePack(pack.id, pack.resourceVersion)
     scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === installed.id ? installed : candidate))
-    if (activeScenePack.value === installed.id) emit('reinstalled', installed.id)
+    wallpaperChoice.sceneInstalled(installed)
   } catch {
     scenePackFailure.value = { id: pack.id, action: 'install' }
     await loadScenePacks()

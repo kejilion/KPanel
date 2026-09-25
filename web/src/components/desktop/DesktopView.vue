@@ -409,7 +409,7 @@ const desktopWallpaperCovered = computed(() => {
 })
 const scenePackLayer = ref<{ nextCamera: () => void }>()
 const scenePackCameras = ref<string[]>([])
-const scenePackRevision = ref(0)
+const scenePackRevision = wallpaperChoice.sceneRevision
 const sceneMotion = useSceneMotionPreference()
 // A live scene paints black under its own entrance; reduced motion keeps the pack poster.
 const liveScenePack = computed(() => Boolean(activeScenePack.value) && !sceneMotion.reducedMotion.value)
@@ -4451,7 +4451,6 @@ function onViewportResize(): void {
       <DesktopWallpaperPicker
         :visible="wallpaperDialogOpen"
         @select="selectDesktopWallpaper"
-        @reinstalled="scenePackRevision++"
       />
     </ModalDialog>
 

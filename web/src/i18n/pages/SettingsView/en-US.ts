@@ -1,6 +1,20 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ['壁纸', 'Wallpaper'],
+  ['桌面与经典模式共用的壁纸、3D 场景与透出程度', 'Shared wallpaper, 3D scenes, and transparency for desktop and classic modes'],
+  ['背景', 'Background'],
+  ['场景', 'Scenes'],
+  ['经典模式', 'Classic mode'],
+  ['透明', 'Transparency'],
+  ['纯色背景，信息最清晰', 'Solid background for the clearest view'],
+  ['氛围', 'Ambient'],
+  ['壁纸透出页边、侧栏与顶栏，卡片不透明', 'Show wallpaper through page margins, sidebar, and top bar; keep cards opaque'],
+  ['通透', 'Clear'],
+  ['卡片也半透明，接近桌面模式的观感', 'Translucent cards for a desktop-like appearance'],
+  ['桌面模式与经典模式共用一张壁纸，选择后同时套用它的配色', 'Desktop and classic modes share one wallpaper. Selecting it also applies its colors.'],
+  ['经典模式透出', 'Wallpaper in classic mode'],
+  ['让上面的壁纸透到经典模式页面背后；3D 场景会继续播放，系统要求减少动态效果时显示封面', 'Show the selected wallpaper behind classic pages. 3D scenes keep playing, or show a still image when reduced motion is enabled.'],
   ['Passkey 通行密钥', 'Passkeys'],
   ['设备验证与凭证管理', 'Device verification and credential management'],
   ['指纹', 'Fingerprint'],
