@@ -50,7 +50,8 @@ import {
   routeNavigationState,
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
-import { useClassicWallpaper } from '@/lib/classicWallpaper'
+import { DESKTOP_WALLPAPER_KEY, useClassicWallpaper } from '@/lib/classicWallpaper'
+import { scenePackFromWallpaper } from '@/lib/scenePacks'
 import {
   detectKPanelUpdate,
   kpanelUpdateHint,
@@ -133,6 +134,19 @@ const DesktopView = defineAsyncComponent({
 const desktopActive = computed(() => desktop.mode.value === 'desktop')
 const classicWallpaper = useClassicWallpaper()
 const classicBackdrop = computed(() => !desktopActive.value && classicWallpaper.level.value !== 'off')
+// A 3D scene pack chosen in desktop mode keeps running behind the classic pages. The wallpaper
+// can only change inside desktop mode, so it is read again on the way back to classic.
+const ClassicScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
+const desktopWallpaperID = ref<string | null>(null)
+const classicScenePack = computed(() => classicBackdrop.value ? scenePackFromWallpaper(desktopWallpaperID.value) : undefined)
+watch(desktopActive, (active) => {
+  if (active) return
+  try {
+    desktopWallpaperID.value = window.localStorage.getItem(DESKTOP_WALLPAPER_KEY)
+  } catch {
+    desktopWallpaperID.value = null
+  }
+}, { immediate: true })
 const DESKTOP_ENTRY_NOTICE_KEY = 'kpanel:desktop-entry-notice:v2'
 
 function readDesktopEntrySeen(): boolean {
@@ -303,7 +317,14 @@ watch(
 <template>
   <div class="app-shell">
     <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
-      <div class="classic-backdrop__image" />
+      <ClassicScenePack
+        v-if="classicScenePack"
+        :key="classicScenePack"
+        class="classic-backdrop__scene"
+        :pack-id="classicScenePack"
+        :covered="false"
+      />
+      <div v-else class="classic-backdrop__image" />
       <div class="classic-backdrop__veil" />
     </div>
     <Transition name="fade">

@@ -1,9 +1,11 @@
 import { readonly, ref } from 'vue'
 
 // Classic mode can show the desktop wallpaper behind its pages. The picture is the one chosen in
-// desktop mode (a 3D scene pack contributes its poster, never a live scene); only the strength is
+// desktop mode (a 3D scene pack keeps running, at reduced resolution); only the strength is
 // chosen here. appearance-init.js applies the stored value before the app starts.
 export const CLASSIC_WALLPAPER_KEY = 'kpanel:classic-wallpaper:v1'
+/** Written by desktop mode; classic mode only reads it. */
+export const DESKTOP_WALLPAPER_KEY = 'kpanel:desktop-wallpaper:v1'
 
 export type ClassicWallpaperLevel = 'off' | 'ambient' | 'clear'
 

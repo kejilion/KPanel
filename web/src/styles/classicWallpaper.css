@@ -27,6 +27,23 @@
   filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
 }
 
+/*
+ * A live 3D scene pack sits under the same blur and veil. Behind pages it is never seen sharp,
+ * so the pack renders at half resolution (a quarter of the pixels) and is scaled up to fill.
+ */
+.classic-backdrop__scene.desktop-scene-pack {
+  z-index: 0;
+  inset: calc(var(--classic-wallpaper-blur) * -2.5);
+  filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
+}
+
+.classic-backdrop__scene .desktop-scene-pack__frame {
+  width: 50%;
+  height: 50%;
+  transform: scale(2);
+  transform-origin: 0 0;
+}
+
 .classic-backdrop__veil {
   position: absolute;
   inset: 0;

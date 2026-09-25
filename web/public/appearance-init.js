@@ -55,7 +55,7 @@
   }
   const wallpaper = selectedWallpaper()
   root.dataset.desktopWallpaper = wallpaper.id
-  // Classic mode shows the same picture as a still (a scene pack's poster), never a live scene.
+  // Classic mode shows the same picture; a scene pack runs live there too (AppShell), the poster is its fallback.
   const classicLevel = read('kpanel:classic-wallpaper:v1')
   if (classicLevel === 'ambient' || classicLevel === 'clear') root.dataset.classicWallpaper = classicLevel
   const setClassicImage = ({ id, url }) => {
