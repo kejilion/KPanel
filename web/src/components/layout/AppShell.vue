@@ -50,6 +50,7 @@ import {
   routeNavigationState,
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
+import { useClassicWallpaper } from '@/lib/classicWallpaper'
 import {
   detectKPanelUpdate,
   kpanelUpdateHint,
@@ -130,6 +131,8 @@ const DesktopView = defineAsyncComponent({
   },
 })
 const desktopActive = computed(() => desktop.mode.value === 'desktop')
+const classicWallpaper = useClassicWallpaper()
+const classicBackdrop = computed(() => !desktopActive.value && classicWallpaper.level.value !== 'off')
 const DESKTOP_ENTRY_NOTICE_KEY = 'kpanel:desktop-entry-notice:v2'
 
 function readDesktopEntrySeen(): boolean {
@@ -299,6 +302,10 @@ watch(
 
 <template>
   <div class="app-shell">
+    <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
+      <div class="classic-backdrop__image" />
+      <div class="classic-backdrop__veil" />
+    </div>
     <Transition name="fade">
       <button v-if="menuOpen && !desktopActive" class="mobile-overlay" type="button" :aria-label="i18n.t('nav.close')" @click="closeMenu" />
     </Transition>

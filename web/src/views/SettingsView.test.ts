@@ -508,7 +508,9 @@ describe('SettingsView appearance', () => {
     expect(settingsSource).toContain(':tabindex="theme.preference.value === option.id ? 0 : -1"')
     expect(settingsSource).toContain(':aria-checked="theme.preference.value === option.id"')
     expect(settingsSource).toContain('@click="theme.setTheme(option.id)"')
-    expect(settingsSource.match(/@keydown="moveRadioFocus"/g)).toHaveLength(4)
+    expect(settingsSource).toContain('role="radiogroup" aria-label="经典模式壁纸"')
+    expect(settingsSource).toContain(':aria-checked="classicWallpaper.level.value === option.id"')
+    expect(settingsSource.match(/@keydown="moveRadioFocus"/g)).toHaveLength(5)
   })
 
   it('validates and normalizes Hex input before applying a complete color intent', () => {

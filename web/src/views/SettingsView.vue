@@ -12,8 +12,11 @@ import {
   Clock3,
   Copy,
   Download,
+  Image as ImageIcon,
+  ImageOff,
   ExternalLink,
   KeyRound,
+  Layers,
   Languages,
   LoaderCircle,
   Monitor,
@@ -57,6 +60,7 @@ import {
   type ThemeMode,
 } from '@/theme/colors'
 import { moveRadioFocus } from '@/theme/radioGroup'
+import { useClassicWallpaper, type ClassicWallpaperLevel } from '@/lib/classicWallpaper'
 import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
 import type { AutomaticUpdateStatus, KPanelReleaseInfo, TOTPEnrollment, TOTPStatus } from '@/types/api'
@@ -328,6 +332,13 @@ const themeModes: Array<{ id: ThemePreference; label: string; description: strin
   { id: 'light', label: '浅色', description: '始终使用明亮界面', icon: Sun },
   { id: 'dark', label: '深色', description: '始终使用低亮度界面', icon: Moon },
   { id: 'system', label: '跟随系统', description: '随设备设置自动切换', icon: Monitor },
+]
+
+const classicWallpaper = useClassicWallpaper()
+const classicWallpaperLevels: Array<{ id: ClassicWallpaperLevel; label: string; description: string; icon: typeof Sun }> = [
+  { id: 'off', label: '关闭', description: '纯色背景，信息最清晰', icon: ImageOff },
+  { id: 'ambient', label: '氛围', description: '壁纸透出页边、侧栏与顶栏，卡片不透明', icon: ImageIcon },
+  { id: 'clear', label: '通透', description: '卡片也半透明，接近桌面模式的观感', icon: Layers },
 ]
 
 const themeColorFields: Array<{ key: ThemeColorKey; label: string; pickerLabel: string; description: string }> = [
@@ -1371,6 +1382,30 @@ onBeforeUnmount(stopKPanelReleaseRequest)
             <strong>{{ option.label }}</strong>
             <small>{{ option.description }}</small>
             <Check v-if="theme.preference.value === option.id" class="theme-options__check" :size="17" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <div class="appearance-group">
+        <div class="appearance-group__header">
+          <h3>经典模式壁纸</h3>
+          <p>沿用桌面模式当前的壁纸；3D 场景只显示其静态封面</p>
+        </div>
+        <div class="theme-options" role="radiogroup" aria-label="经典模式壁纸">
+          <button
+            v-for="option in classicWallpaperLevels"
+            :key="option.id"
+            type="button"
+            role="radio"
+            :tabindex="classicWallpaper.level.value === option.id ? 0 : -1"
+            :aria-checked="classicWallpaper.level.value === option.id"
+            :class="{ 'is-active': classicWallpaper.level.value === option.id }"
+            @keydown="moveRadioFocus"
+            @click="classicWallpaper.setLevel(option.id)"
+          >
+            <span><component :is="option.icon" :size="19" /></span>
+            <strong>{{ option.label }}</strong>
+            <small>{{ option.description }}</small>
+            <Check v-if="classicWallpaper.level.value === option.id" class="theme-options__check" :size="17" aria-hidden="true" />
           </button>
         </div>
       </div>

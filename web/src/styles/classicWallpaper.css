@@ -1,0 +1,132 @@
+/*
+ * Classic mode over the desktop wallpaper.
+ *
+ * The picture is blurred once, as a single fixed layer, and a veil in the page colour sits on
+ * top of it. Everything that carries text keeps a solid-enough fill of its own, so no card needs
+ * a backdrop-filter: they read as frosted because what is behind them is already soft. Only the
+ * sticky topbar blurs live, because page content scrolls underneath it.
+ *
+ *   ambient — the wallpaper tints the page gutters, sidebar and topbar; cards stay opaque.
+ *   clear   — cards become translucent as well, for a lighter, desktop-like classic mode.
+ */
+
+.classic-backdrop {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--desktop-wallpaper-base);
+}
+
+.classic-backdrop__image {
+  position: absolute;
+  /* Blur pulls in transparent edges; overscan so the frame stays filled. */
+  inset: calc(var(--classic-wallpaper-blur) * -2.5);
+  background: var(--classic-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) center / cover no-repeat;
+  filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
+}
+
+.classic-backdrop__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 18%, transparent) 70%),
+    color-mix(in srgb, var(--bg) var(--classic-wallpaper-veil), transparent);
+}
+
+body:has(.classic-backdrop) {
+  background: transparent;
+}
+
+:root[data-classic-wallpaper] {
+  --classic-wallpaper-blur: 18px;
+  --classic-wallpaper-saturate: 1.15;
+  --classic-wallpaper-veil: 76%;
+  --classic-wallpaper-sidebar: 86%;
+  --classic-wallpaper-topbar: 80%;
+}
+
+:root[data-classic-wallpaper][data-theme='dark'] {
+  --classic-wallpaper-veil: 60%;
+  --classic-wallpaper-sidebar: 80%;
+  --classic-wallpaper-topbar: 72%;
+}
+
+:root[data-classic-wallpaper='clear'] {
+  --classic-wallpaper-blur: 6px;
+  --classic-wallpaper-saturate: 1.25;
+  --classic-wallpaper-veil: 62%;
+  --classic-wallpaper-sidebar: 70%;
+  --classic-wallpaper-topbar: 66%;
+}
+
+:root[data-classic-wallpaper='clear'][data-theme='dark'] {
+  --classic-wallpaper-veil: 26%;
+  --classic-wallpaper-sidebar: 58%;
+  --classic-wallpaper-topbar: 58%;
+}
+
+:root:has(.classic-backdrop) .sidebar {
+  background: color-mix(in srgb, var(--sidebar) var(--classic-wallpaper-sidebar), transparent);
+}
+
+:root:has(.classic-backdrop) .topbar {
+  background: color-mix(in srgb, var(--surface) var(--classic-wallpaper-topbar), transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+/*
+ * Clear: page surfaces let the soft wallpaper through. Raised surfaces (menus, popovers, inputs)
+ * stay nearly opaque. The gradients are declared on :root from these colours, so they are
+ * restated here to pick up the scoped values.
+ */
+:root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content {
+  --surface: color-mix(in srgb, var(--classic-surface-base) 68%, transparent);
+  --surface-subtle: color-mix(in srgb, var(--classic-surface-subtle-base) 56%, transparent);
+  --surface-raised: color-mix(in srgb, var(--classic-surface-raised-base) 92%, transparent);
+  --surface-gradient:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--classic-surface-raised-base) 76%, transparent),
+      color-mix(in srgb, var(--classic-surface-base) 64%, transparent));
+  --surface-gradient-muted: color-mix(in srgb, var(--classic-surface-subtle-base) 56%, transparent);
+  --border: color-mix(in srgb, var(--classic-border-base) 78%, transparent);
+}
+
+/* The base colours are captured before the scoped override shadows them. */
+:root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) {
+  --classic-surface-base: var(--surface);
+  --classic-surface-subtle-base: var(--surface-subtle);
+  --classic-surface-raised-base: var(--surface-raised);
+  --classic-border-base: var(--border);
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .classic-backdrop {
+    display: none;
+  }
+
+  body:has(.classic-backdrop) {
+    background: var(--page-ambient-background);
+  }
+
+  :root:has(.classic-backdrop) .sidebar {
+    background: var(--sidebar);
+  }
+
+  :root:has(.classic-backdrop) .topbar {
+    background: color-mix(in srgb, var(--surface) 97%, var(--bg));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  :root[data-classic-wallpaper='clear'] .app-shell:has(.classic-backdrop) .page-content {
+    --surface: var(--classic-surface-base);
+    --surface-subtle: var(--classic-surface-subtle-base);
+    --surface-raised: var(--classic-surface-raised-base);
+    --surface-gradient: linear-gradient(180deg, var(--classic-surface-raised-base), var(--classic-surface-base));
+    --surface-gradient-muted: var(--classic-surface-subtle-base);
+    --border: var(--classic-border-base);
+  }
+}
