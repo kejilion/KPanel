@@ -5,9 +5,11 @@ import { useRoute } from 'vue-router'
 import ToastHost from '@/components/feedback/ToastHost.vue'
 import { useI18n } from '@/i18n'
 import { installPhraseLocalization, usePhraseCatalog } from '@/i18n/phrase'
+import { useDesktopMode } from '@/stores/desktopMode'
 
 const route = useRoute()
 const i18n = useI18n()
+const desktop = useDesktopMode()
 let stopPhraseLocalization: WatchStopHandle | null = null
 
 usePhraseCatalog((locale) => locale === 'en-US'
@@ -22,7 +24,9 @@ onMounted(() => {
 onBeforeUnmount(() => stopPhraseLocalization?.())
 
 watchEffect(() => {
-  const title = route.meta.titleKey ? i18n.t(route.meta.titleKey) : ''
+  const title = desktop.mode.value === 'desktop' && !route.meta.public
+    ? i18n.t('desktop.aboutTitle')
+    : route.meta.titleKey ? i18n.t(route.meta.titleKey) : ''
   document.title = title ? `${title} · KPanel` : 'KPanel'
 })
 </script>
