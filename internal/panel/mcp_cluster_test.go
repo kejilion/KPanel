@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,10 +22,19 @@ type managedJobAgent struct {
 	calls          atomic.Int32
 	completed      atomic.Bool
 	foreignArchive bool
+	holdTrash      atomic.Bool
+	trashRelease   <-chan struct{}
 }
 
-func (a *managedJobAgent) Get(_ context.Context, path, _, _ string) (AgentResponse, error) {
+func (a *managedJobAgent) Get(ctx context.Context, path, _, _ string) (AgentResponse, error) {
 	if path == "/v1/files/trash" {
+		if a.holdTrash.Load() {
+			select {
+			case <-a.trashRelease:
+			case <-ctx.Done():
+				return AgentResponse{}, ctx.Err()
+			}
+		}
 		return AgentResponse{StatusCode: 200, Body: []byte(`{"entries":[{"id":"client","originalPath":"/home/web/client/a","resourceVersion":"v1"},{"id":"other","originalPath":"/home/web/other/b","resourceVersion":"v2"}],"total":2}`)}, nil
 	}
 	if path == "/v1/files/archive-jobs" {
@@ -57,7 +67,9 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := &managedJobAgent{}
+	deniedRelease := make(chan struct{})
+	releaseDenied := sync.OnceFunc(func() { close(deniedRelease) })
+	agent := &managedJobAgent{trashRelease: deniedRelease}
 	target.agent = agent
 	var dropReceipt atomic.Bool
 	wire := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +86,7 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 		_, _ = w.Write(recorded.Body.Bytes())
 	}))
 	defer wire.Close()
+	defer releaseDenied()
 	roots := x509.NewCertPool()
 	roots.AddCert(wire.Certificate())
 	remote, err := cluster.NewRemoteClient(cluster.RemoteClientConfig{RootCAs: roots, Resolver: historyTestResolver{}, Dialer: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -188,7 +201,23 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	}
 	foreignID, foreignDigest := foreign["operationId"].(string), foreign["digest"].(string)
 	_, _ = center.mcp.operations.Decide(foreignID, foreignDigest, "admin", true)
+	// Force the legal asynchronous response: the remote denial cannot finish
+	// until operation_execute has returned its in-progress operation.
+	agent.holdTrash.Store(true)
 	denied := managedCall(center, narrowToken, "operation_execute", map[string]any{"operationId": foreignID, "digest": foreignDigest})
+	releaseDenied()
+	if denied["state"] != "executing" {
+		t.Fatalf("expected delayed remote operation to execute asynchronously: %#v", denied)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for denied["state"] == "executing" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		item, err := center.mcp.operations.Get(foreignID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		denied = mcpOperationView(item)
+	}
 	if denied["state"] != "failed" || agent.calls.Load() != 1 {
 		t.Fatalf("remote trash ID escaped client roots: %#v", denied)
 	}
