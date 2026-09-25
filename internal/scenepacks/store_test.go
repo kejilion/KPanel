@@ -51,6 +51,47 @@ func listOne(t *testing.T, s *Store) View {
 	return list.Packs[0]
 }
 
+func TestAutoRouteReusesWorkingMirrorAndStillVerifiesFallback(t *testing.T) {
+	p, files := fixturePack("orbit", "1.0.0")
+	fixture := fixtureFetch(t, &p, files)
+	var directCalls int
+	directAvailable, corruptMirror := false, false
+	s := Open(t.TempDir(), func(ctx context.Context, address string, limit int64) ([]byte, error) {
+		if strings.HasPrefix(address, officialRoot) {
+			directCalls++
+			if !directAvailable {
+				return nil, context.DeadlineExceeded
+			}
+		} else if corruptMirror && strings.HasSuffix(address, "/scene.js") {
+			return []byte("unverified mirror bytes"), nil
+		}
+		return fixture(ctx, address, limit)
+	})
+	defer s.Close()
+	v := listOne(t, s)
+	installed, err := s.Install(context.Background(), p.ID, v.ResourceVersion)
+	if err != nil || !installed.Installed || directCalls != 1 {
+		t.Fatalf("auto repeated the unavailable direct route: installed=%v calls=%d err=%v", installed.Installed, directCalls, err)
+	}
+	// A previously working mirror must not bypass digest checks or prevent recovery
+	// through the other fixed provider when that provider becomes reachable.
+	directAvailable, corruptMirror = true, true
+	updated, err := s.Install(context.Background(), p.ID, installed.ResourceVersion)
+	if err != nil || !updated.Installed || directCalls != 2 {
+		t.Fatalf("verified fallback: installed=%v calls=%d err=%v", updated.Installed, directCalls, err)
+	}
+	if body, _, err := s.File(p.ID, s.state.Installed[p.ID].Token, "scene.js"); err != nil || string(body) != string(files["scene.js"]) {
+		t.Fatalf("mirror corruption was installed: body=%q err=%v", body, err)
+	}
+	if err := s.SetSource("github"); err != nil {
+		t.Fatal(err)
+	}
+	directAvailable = false
+	if _, err := s.Install(context.Background(), p.ID, updated.ResourceVersion); !errors.Is(err, ErrSource) {
+		t.Fatalf("explicit GitHub route silently fell back: %v", err)
+	}
+}
+
 func TestInstallAtomicFailureRestartDeleteAndCapabilities(t *testing.T) {
 	p, files := fixturePack("orbit", "1.0.0")
 	root := t.TempDir()

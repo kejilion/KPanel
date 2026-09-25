@@ -45,6 +45,7 @@ type Store struct {
 	catalog     Catalog
 	lastAttempt time.Time
 	lastSuccess time.Time
+	mirrorUntil time.Time
 	// All network work, including thumbnails, is bounded independently of requests.
 	network    chan struct{}
 	writeState func(string, []byte) error
@@ -182,6 +183,12 @@ func (s *Store) download(ctx context.Context, source, relative string, limit int
 		return nil, ErrBusy
 	}
 	roots := []string{officialRoot, mirrorRoot}
+	s.mu.Lock()
+	preferMirror := source == "auto" && time.Now().Before(s.mirrorUntil)
+	s.mu.Unlock()
+	if preferMirror {
+		roots = []string{mirrorRoot, officialRoot}
+	}
 	if source == "github" {
 		roots = roots[:1]
 	} else if source == "mirror" {
@@ -192,6 +199,17 @@ func (s *Store) download(ctx context.Context, source, relative string, limit int
 		body, err := s.fetch(requestCtx, root+relative, limit)
 		cancel()
 		if err == nil && int64(len(body)) <= limit && (expected == "" || (int64(len(body)) == limit && contentDigest(body) == expected)) {
+			if source == "auto" {
+				s.mu.Lock()
+				if root == officialRoot {
+					s.mirrorUntil = time.Time{}
+				} else if !preferMirror {
+					// Avoid paying a failed GitHub timeout for every file in a pack.
+					// A preferred-mirror success does not extend the next direct probe.
+					s.mirrorUntil = time.Now().Add(5 * time.Minute)
+				}
+				s.mu.Unlock()
+			}
 			return body, nil
 		}
 		if ctx.Err() != nil {
@@ -314,6 +332,7 @@ func (s *Store) SetSource(source string) error {
 	}
 	s.lastAttempt = time.Time{}
 	s.lastSuccess = time.Time{}
+	s.mirrorUntil = time.Time{}
 	return nil
 }
 
