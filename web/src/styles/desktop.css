@@ -2930,6 +2930,280 @@ body.desktop-mode-open::-webkit-scrollbar {
   cursor: pointer;
 }
 
+/* Uploaded wallpapers: an upload tile, then the pictures, newest first. */
+.desktop-custom-wallpapers {
+  margin-top: 22px;
+}
+
+.desktop-custom-wallpapers__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.desktop-custom-wallpapers__usage {
+  flex: none;
+  padding-top: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.desktop-custom-wallpapers__grid {
+  margin-top: 4px;
+}
+
+.desktop-custom-wallpapers__upload {
+  display: flex;
+  min-width: 0;
+  min-height: 132px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--text) 28%, var(--border));
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  transition: border-color .16s ease, background-color .16s ease, color .16s ease;
+}
+
+.desktop-custom-wallpapers__upload strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.desktop-custom-wallpapers__upload small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.desktop-custom-wallpapers__upload:hover:not(:disabled),
+.desktop-custom-wallpapers__upload:focus-visible,
+.desktop-custom-wallpapers__upload--over {
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  border-color: var(--brand);
+}
+
+.desktop-custom-wallpapers__upload:disabled {
+  cursor: not-allowed;
+  opacity: .7;
+}
+
+.desktop-custom-wallpapers__input {
+  display: none;
+}
+
+.desktop-custom-wallpapers__item {
+  cursor: default;
+}
+
+.desktop-custom-wallpapers__choose {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.desktop-custom-wallpapers__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px 3px;
+}
+
+.desktop-custom-wallpapers__footer strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-custom-wallpapers__footer .button {
+  flex: none;
+  font-size: 13px;
+}
+
+/* Upload dialog: the picture with its focal point, and how it frames on three screens. */
+.custom-wallpaper-dialog {
+  display: grid;
+  gap: 14px;
+}
+
+.custom-wallpaper-dialog__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.custom-wallpaper-dialog__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.custom-wallpaper-dialog__focus {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.custom-wallpaper-dialog__focus small,
+.custom-wallpaper-dialog__muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.custom-wallpaper-dialog__stage {
+  position: relative;
+  max-height: 420px;
+  overflow: hidden;
+  background: var(--surface-subtle);
+  border-radius: var(--radius);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.custom-wallpaper-dialog__stage:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.custom-wallpaper-dialog__stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.custom-wallpaper-dialog__marker {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(0 0 0 / 45%);
+  pointer-events: none;
+}
+
+.custom-wallpaper-dialog__side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.custom-wallpaper-dialog__side h3 {
+  margin: 0 0 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.custom-wallpaper-dialog__previews {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.custom-wallpaper-dialog__previews figure {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.custom-wallpaper-dialog__previews figure:nth-child(1) { flex: 1.6; }
+.custom-wallpaper-dialog__previews figure:nth-child(2) { flex: 1.15; }
+.custom-wallpaper-dialog__previews figure:nth-child(3) { flex: .5; }
+
+.custom-wallpaper-dialog__frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background-color: var(--surface-subtle);
+  background-size: cover;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
+}
+
+.custom-wallpaper-dialog__frame--desktop { aspect-ratio: 16 / 9; }
+.custom-wallpaper-dialog__frame--classic { aspect-ratio: 4 / 3; }
+.custom-wallpaper-dialog__frame--phone { aspect-ratio: 9 / 19; }
+
+/* A classic page over the picture: the veil and one card. */
+.custom-wallpaper-dialog__frame--classic::before {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  content: '';
+}
+
+.custom-wallpaper-dialog__frame--classic i {
+  position: absolute;
+  inset: 26% 12% 22%;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border-radius: 3px;
+}
+
+.custom-wallpaper-dialog__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.custom-wallpaper-dialog__swatches span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-wallpaper-dialog__swatches i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 18%);
+}
+
+.custom-wallpaper-dialog__apply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .desktop-custom-wallpapers__head {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .custom-wallpaper-dialog__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* 3D scene packs: a repository catalog with download, apply and delete. */
 .desktop-scene-packs {
   margin-top: 22px;

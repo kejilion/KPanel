@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
-import { Check, Download, LoaderCircle, Orbit, Trash2 } from '@lucide/vue'
+import { Check, Download, ImagePlus, LoaderCircle, Orbit, Trash2 } from '@lucide/vue'
+import CustomWallpaperDialog from '@/components/desktop/CustomWallpaperDialog.vue'
 import { api } from '@/lib/api'
 import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
-import { DESKTOP_WALLPAPERS, useDesktopWallpaper, type DesktopWallpaperID } from '@/lib/desktopWallpapers'
+import {
+  customWallpaperFromID,
+  customWallpaperID,
+  DESKTOP_WALLPAPERS,
+  useDesktopWallpaper,
+  wallpaperFocusPosition,
+  type DesktopWallpaperID,
+} from '@/lib/desktopWallpapers'
+import { WALLPAPER_ACCEPT } from '@/lib/wallpaperImage'
+import type { CustomWallpaper } from '@/types/api'
 import {
   formatPackSize,
   isOfficialScenePack,
@@ -25,7 +35,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  select: [id: DesktopWallpaperID, pack?: ScenePack]
+  select: [id: DesktopWallpaperID, source?: ScenePack | CustomWallpaper]
 }>()
 
 const i18n = useI18n()
@@ -51,6 +61,71 @@ const SCENE_PACK_SOURCE_LABELS = {
   mirror: 'desktop.scenePacksSourceMirror',
 } as const
 const sceneMotion = useSceneMotionPreference()
+const activeCustomWallpaper = computed(() => customWallpaperFromID(selectedID.value))
+const customWallpapers = computed(() => wallpaperChoice.customWallpapers.value)
+const customUsage = computed(() => wallpaperChoice.customUsage.value)
+const customFull = computed(() => Boolean(customUsage.value && customUsage.value.count >= customUsage.value.maxCount))
+const customLoadFailed = ref(false)
+const customBusy = ref<string>()
+const customFailure = ref<string>()
+const customConfirmDelete = ref<string>()
+const customUploadFile = ref<File>()
+const customDragOver = ref(false)
+const customFileInput = ref<HTMLInputElement>()
+
+async function loadCustomWallpapers(): Promise<void> {
+  customLoadFailed.value = false
+  try {
+    await wallpaperChoice.loadCustomWallpapers()
+  } catch {
+    customLoadFailed.value = true
+  }
+}
+
+function pickCustomWallpaper(): void {
+  if (customFull.value) return
+  customFileInput.value?.click()
+}
+
+function onCustomFileChosen(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) customUploadFile.value = file
+}
+
+function onCustomDrop(event: DragEvent): void {
+  customDragOver.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (file && !customFull.value) customUploadFile.value = file
+}
+
+function onCustomUploaded(wallpaper: CustomWallpaper): void {
+  customUploadFile.value = undefined
+  wallpaperChoice.customUploaded(wallpaper)
+  emit('select', customWallpaperID(wallpaper.id), wallpaper)
+}
+
+async function deleteCustomWallpaper(wallpaper: CustomWallpaper): Promise<void> {
+  if (customBusy.value) return
+  // The first click arms the delete; the second one confirms it.
+  if (customConfirmDelete.value !== wallpaper.id) {
+    customConfirmDelete.value = wallpaper.id
+    return
+  }
+  customConfirmDelete.value = undefined
+  customBusy.value = wallpaper.id
+  customFailure.value = undefined
+  try {
+    await api.desktop.deleteWallpaper(wallpaper.id)
+    wallpaperChoice.customDeleted(wallpaper.id)
+  } catch {
+    customFailure.value = wallpaper.id
+    await loadCustomWallpapers()
+  } finally {
+    customBusy.value = undefined
+  }
+}
 
 async function loadScenePacks(): Promise<void> {
   scenePacksLoading.value = true
@@ -126,7 +201,10 @@ function onSceneMotionAlwaysChange(event: Event): void {
 
 watch(() => props.visible, (visible) => {
   scenePackConfirmDelete.value = undefined
-  if (visible) void loadScenePacks()
+  customConfirmDelete.value = undefined
+  if (!visible) return
+  void loadScenePacks()
+  void loadCustomWallpapers()
 }, { immediate: true })
 </script>
 
@@ -168,6 +246,95 @@ watch(() => props.visible, (visible) => {
         />
       </button>
     </div>
+    <section class="desktop-custom-wallpapers" :aria-labelledby="`${uid}-custom`">
+      <div class="desktop-custom-wallpapers__head">
+        <div>
+          <h3 :id="`${uid}-custom`" class="desktop-wallpaper-section__title">
+            {{ i18n.t('desktop.customWallpapersTitle') }}
+          </h3>
+          <p class="desktop-wallpaper-section__hint">{{ i18n.t('desktop.customWallpapersHint') }}</p>
+        </div>
+        <small v-if="customUsage" class="desktop-custom-wallpapers__usage" data-custom-wallpaper-usage>
+          {{ i18n.t('desktop.customWallpapersUsage', {
+            count: customUsage.count,
+            max: customUsage.maxCount,
+            used: formatPackSize(customUsage.bytes),
+            limit: formatPackSize(customUsage.maxBytes),
+          }) }}
+        </small>
+      </div>
+      <div v-if="customLoadFailed" class="desktop-scene-packs__status" role="alert">
+        <span>{{ i18n.t('desktop.customWallpapersLoadFailed') }}</span>
+        <button type="button" class="button button--small" @click="loadCustomWallpapers">{{ i18n.t('desktop.scenePacksRetry') }}</button>
+      </div>
+      <div class="desktop-wallpaper-picker desktop-custom-wallpapers__grid">
+        <button
+          class="desktop-custom-wallpapers__upload"
+          :class="{ 'desktop-custom-wallpapers__upload--over': customDragOver }"
+          type="button"
+          :disabled="customFull"
+          data-custom-wallpaper-upload
+          @click="pickCustomWallpaper"
+          @dragover.prevent="customDragOver = !customFull"
+          @dragleave="customDragOver = false"
+          @drop.prevent="onCustomDrop"
+        >
+          <ImagePlus :size="22" aria-hidden="true" />
+          <strong>{{ i18n.t('desktop.customWallpaperUpload') }}</strong>
+          <small>{{ customFull ? i18n.t('desktop.customWallpaperFull') : `${i18n.t('desktop.customWallpaperDrop')} · ${i18n.t('desktop.customWallpaperFormats')}` }}</small>
+        </button>
+        <input
+          ref="customFileInput"
+          class="desktop-custom-wallpapers__input"
+          type="file"
+          :accept="WALLPAPER_ACCEPT"
+          tabindex="-1"
+          aria-hidden="true"
+          @change="onCustomFileChosen"
+        />
+        <article
+          v-for="wallpaper in customWallpapers"
+          :key="wallpaper.id"
+          class="desktop-wallpaper-picker__option desktop-custom-wallpapers__item"
+          :class="{ 'desktop-wallpaper-picker__option--selected': activeCustomWallpaper === wallpaper.id }"
+          :data-custom-wallpaper="wallpaper.id"
+        >
+          <button
+            class="desktop-custom-wallpapers__choose"
+            type="button"
+            :aria-pressed="activeCustomWallpaper === wallpaper.id"
+            :aria-label="wallpaper.name"
+            @click="emit('select', customWallpaperID(wallpaper.id), wallpaper)"
+          >
+            <span
+              class="desktop-wallpaper-picker__preview"
+              :style="{ backgroundImage: `url('${api.desktop.wallpaperThumbURL(wallpaper.id)}')`, backgroundPosition: wallpaperFocusPosition(wallpaper) }"
+              aria-hidden="true"
+            />
+          </button>
+          <span class="desktop-custom-wallpapers__footer">
+            <strong :title="wallpaper.name">{{ wallpaper.name }}</strong>
+            <button
+              type="button"
+              class="button button--small"
+              :class="{ 'button--danger': customConfirmDelete === wallpaper.id }"
+              :disabled="Boolean(customBusy)"
+              data-custom-wallpaper-delete
+              @click="deleteCustomWallpaper(wallpaper)"
+            >
+              <LoaderCircle v-if="customBusy === wallpaper.id" class="spin" :size="14" aria-hidden="true" />
+              <Trash2 v-else :size="14" aria-hidden="true" />
+              {{ i18n.t(customConfirmDelete === wallpaper.id ? 'desktop.customWallpaperConfirmDelete' : 'desktop.customWallpaperDelete') }}
+            </button>
+          </span>
+          <Check v-if="activeCustomWallpaper === wallpaper.id" class="desktop-wallpaper-picker__check" :size="17" aria-hidden="true" />
+          <p v-if="customFailure === wallpaper.id" class="desktop-scene-pack-card__error" role="alert">
+            {{ i18n.t('desktop.customWallpaperDeleteFailed') }}
+          </p>
+        </article>
+      </div>
+      <CustomWallpaperDialog :file="customUploadFile" @close="customUploadFile = undefined" @uploaded="onCustomUploaded" />
+    </section>
     <section class="desktop-scene-packs" :aria-labelledby="`${uid}-packs`">
       <div class="desktop-scene-packs__head">
         <div class="desktop-scene-packs__intro">

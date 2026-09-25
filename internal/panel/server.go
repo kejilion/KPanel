@@ -29,6 +29,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/contract"
+	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
 	"github.com/kejilion/kejilion-panel/internal/desktopworkspace"
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/notification"
@@ -52,62 +53,64 @@ var (
 )
 
 type Server struct {
-	requestsMu            sync.Mutex
-	requests              sync.WaitGroup
-	requestsClosed        bool
-	backups               *backup.Manager
-	backupRestart         chan struct{}
-	config                Config
-	auth                  *auth.Service
-	passkeys              *auth.PasskeyService
-	passkeyMu             sync.RWMutex
-	passkeyOriginLocked   bool
-	store                 *store.Store
-	agent                 agentAPI
-	hostOps               *HostOperationService
-	trustedProxies        []*net.IPNet
-	auditMu               sync.Mutex
-	lastAuthAudit         map[string]time.Time
-	lastGlobalAuthAudit   time.Time
-	cluster               *cluster.Service
-	notifications         *notification.Service
-	clusterShareMu        sync.Mutex
-	clusterShareCache     clusterShareCacheEntry
-	clusterShareRateMu    sync.Mutex
-	clusterShareRates     map[string]clusterShareRateEntry
-	fileShareRateMu       sync.Mutex
-	fileShareRates        map[string]fileShareRateEntry
-	fileShareValidationMu sync.Mutex
-	fileShareValidations  map[string]fileShareValidationEntry
-	fileShareGlobalCost   fileShareValidationEntry
-	fileShareStreamMu     sync.Mutex
-	fileShareStreams      map[string]map[uint64]context.CancelFunc
-	fileShareStreamNext   uint64
-	fileShareStreamGate   chan struct{}
-	fileShareMetadataGate chan struct{}
-	terminalMu            sync.Mutex
-	terminalSessions      map[string]panelTerminalSession
-	terminalOpening       int
-	terminalOpeningUser   map[string]int
-	terminalStreams       *terminalStreamHub
-	downloadTicketMu      sync.Mutex
-	downloadTickets       map[[32]byte]fileDownloadTicket
-	remoteDownloadOpen    func(context.Context, string) (*http.Response, error)
-	remoteDownloadGate    chan struct{}
-	remoteDownloadJobs    *remotedownload.JobStore
-	remoteDownloadMu      sync.Mutex
-	remoteDownloadCancels map[string]context.CancelCauseFunc
-	remoteDownloadPending int
-	remoteDownloadClosing bool
-	remoteDownloadWG      sync.WaitGroup
-	ai                    *ai.Service
-	aiError               string
-	desktopWorkspace      *desktopworkspace.Store
-	scenePacks            *scenepacks.Store
-	scenePackStreams      chan struct{}
-	scenePackStreamQueue  chan struct{}
-	terminalCommands      *terminalcommands.Store
-	mcp                   *mcpService
+	requestsMu              sync.Mutex
+	requests                sync.WaitGroup
+	requestsClosed          bool
+	backups                 *backup.Manager
+	backupRestart           chan struct{}
+	config                  Config
+	auth                    *auth.Service
+	passkeys                *auth.PasskeyService
+	passkeyMu               sync.RWMutex
+	passkeyOriginLocked     bool
+	store                   *store.Store
+	agent                   agentAPI
+	hostOps                 *HostOperationService
+	trustedProxies          []*net.IPNet
+	auditMu                 sync.Mutex
+	lastAuthAudit           map[string]time.Time
+	lastGlobalAuthAudit     time.Time
+	cluster                 *cluster.Service
+	notifications           *notification.Service
+	clusterShareMu          sync.Mutex
+	clusterShareCache       clusterShareCacheEntry
+	clusterShareRateMu      sync.Mutex
+	clusterShareRates       map[string]clusterShareRateEntry
+	fileShareRateMu         sync.Mutex
+	fileShareRates          map[string]fileShareRateEntry
+	fileShareValidationMu   sync.Mutex
+	fileShareValidations    map[string]fileShareValidationEntry
+	fileShareGlobalCost     fileShareValidationEntry
+	fileShareStreamMu       sync.Mutex
+	fileShareStreams        map[string]map[uint64]context.CancelFunc
+	fileShareStreamNext     uint64
+	fileShareStreamGate     chan struct{}
+	fileShareMetadataGate   chan struct{}
+	terminalMu              sync.Mutex
+	terminalSessions        map[string]panelTerminalSession
+	terminalOpening         int
+	terminalOpeningUser     map[string]int
+	terminalStreams         *terminalStreamHub
+	downloadTicketMu        sync.Mutex
+	downloadTickets         map[[32]byte]fileDownloadTicket
+	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
+	remoteDownloadGate      chan struct{}
+	remoteDownloadJobs      *remotedownload.JobStore
+	remoteDownloadMu        sync.Mutex
+	remoteDownloadCancels   map[string]context.CancelCauseFunc
+	remoteDownloadPending   int
+	remoteDownloadClosing   bool
+	remoteDownloadWG        sync.WaitGroup
+	ai                      *ai.Service
+	aiError                 string
+	desktopWorkspace        *desktopworkspace.Store
+	desktopWallpapers       *desktopwallpapers.Store
+	desktopWallpaperUploads chan struct{}
+	scenePacks              *scenepacks.Store
+	scenePackStreams        chan struct{}
+	scenePackStreamQueue    chan struct{}
+	terminalCommands        *terminalcommands.Store
+	mcp                     *mcpService
 }
 
 type agentAPI interface {
@@ -174,6 +177,10 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 	if err != nil {
 		return nil, fmt.Errorf("initialize desktop workspace: %w", err)
 	}
+	desktopWallpapers, err := desktopwallpapers.Open(filepath.Join(config.DataDir, "desktop-wallpapers"))
+	if err != nil {
+		return nil, fmt.Errorf("initialize desktop wallpapers: %w", err)
+	}
 	terminalCommands, err := terminalcommands.Open(filepath.Join(config.DataDir, "terminal-commands"))
 	if err != nil {
 		return nil, fmt.Errorf("initialize terminal commands: %w", err)
@@ -193,24 +200,26 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		passkeys:            passkeys,
 		passkeyOriginLocked: passkeyOriginLocked,
 		config:              config, auth: authService, store: storage, agent: agent,
-		cluster:               clusterService,
-		notifications:         notifications,
-		terminalSessions:      make(map[string]panelTerminalSession),
-		terminalOpeningUser:   make(map[string]int),
-		terminalStreams:       newTerminalStreamHub(),
-		trustedProxies:        trustedProxies,
-		lastAuthAudit:         make(map[string]time.Time),
-		desktopWorkspace:      desktopWorkspace,
-		scenePacks:            scenepacks.Open(filepath.Join(config.DataDir, "scene-packs"), nil),
-		scenePackStreams:      make(chan struct{}, 4),
-		scenePackStreamQueue:  make(chan struct{}, maxScenePackStreamQueue),
-		terminalCommands:      terminalCommands,
-		fileShareStreamGate:   make(chan struct{}, maxPublicFileShareStreams),
-		fileShareMetadataGate: make(chan struct{}, maxFileShareMetadataReads),
-		remoteDownloadOpen:    remotedownload.NewClient(remotedownload.Config{}).Open,
-		remoteDownloadGate:    make(chan struct{}, maxPanelRemoteDownloads),
-		remoteDownloadJobs:    remoteDownloadJobs,
-		remoteDownloadCancels: make(map[string]context.CancelCauseFunc),
+		cluster:                 clusterService,
+		notifications:           notifications,
+		terminalSessions:        make(map[string]panelTerminalSession),
+		terminalOpeningUser:     make(map[string]int),
+		terminalStreams:         newTerminalStreamHub(),
+		trustedProxies:          trustedProxies,
+		lastAuthAudit:           make(map[string]time.Time),
+		desktopWorkspace:        desktopWorkspace,
+		desktopWallpapers:       desktopWallpapers,
+		desktopWallpaperUploads: make(chan struct{}, 1),
+		scenePacks:              scenepacks.Open(filepath.Join(config.DataDir, "scene-packs"), nil),
+		scenePackStreams:        make(chan struct{}, 4),
+		scenePackStreamQueue:    make(chan struct{}, maxScenePackStreamQueue),
+		terminalCommands:        terminalCommands,
+		fileShareStreamGate:     make(chan struct{}, maxPublicFileShareStreams),
+		fileShareMetadataGate:   make(chan struct{}, maxFileShareMetadataReads),
+		remoteDownloadOpen:      remotedownload.NewClient(remotedownload.Config{}).Open,
+		remoteDownloadGate:      make(chan struct{}, maxPanelRemoteDownloads),
+		remoteDownloadJobs:      remoteDownloadJobs,
+		remoteDownloadCancels:   make(map[string]context.CancelCauseFunc),
 	}
 	server.hostOps = newHostOperationService(server)
 	server.mcp = newMCPService(config.DataDir)
@@ -390,6 +399,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleJobDetail(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
+	case r.URL.Path == desktopWallpapersPath || strings.HasPrefix(r.URL.Path, desktopWallpapersPath+"/"):
+		s.handleDesktopWallpapers(w, r)
 	case r.URL.Path == scenePacksPath || strings.HasPrefix(r.URL.Path, scenePacksPath+"/"):
 		s.handleScenePacks(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"):

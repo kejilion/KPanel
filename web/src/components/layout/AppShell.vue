@@ -51,7 +51,7 @@ import {
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
 import { useClassicWallpaper } from '@/lib/classicWallpaper'
-import { useDesktopWallpaper } from '@/lib/desktopWallpapers'
+import { customWallpaperFromID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { scenePackFromWallpaper } from '@/lib/scenePacks'
 import {
   detectKPanelUpdate,
@@ -286,6 +286,9 @@ async function refreshAgent(): Promise<void> {
 
 onMounted(() => {
   void refreshAgent()
+  // An uploaded picture chosen here may have been deleted from another browser: confirm it
+  // still exists (falling back to the default) and re-apply its framing.
+  if (customWallpaperFromID(wallpaperChoice.id.value)) void wallpaperChoice.loadCustomWallpapers().catch(() => undefined)
   agentTimer = window.setInterval(refreshAgent, 30_000)
   navigationWarmupTimer = window.setTimeout(() => {
     void warmNavigation()

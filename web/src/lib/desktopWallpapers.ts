@@ -1,5 +1,7 @@
 import { readonly, ref } from 'vue'
+import { api } from '@/lib/api'
 import { rememberFileBase, scenePackFromWallpaper, scenePackThemeColors, type ScenePack } from '@/lib/scenePacks'
+import type { CustomWallpaper, CustomWallpaperList } from '@/types/api'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS, type ThemeColorIntent } from '@/theme/colors'
 
@@ -49,11 +51,55 @@ export const DESKTOP_WALLPAPERS = [
 ] as const
 
 export type DesktopStaticWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
-// Installed 3D scene packs share the wallpaper key as `pack:<id>`.
-export type DesktopWallpaperID = DesktopStaticWallpaperID | `pack:${string}`
+// Installed 3D scene packs share the wallpaper key as `pack:<id>`, uploaded pictures as `custom:<id>`.
+export type DesktopWallpaperID = DesktopStaticWallpaperID | `pack:${string}` | `custom:${string}`
+
+const CUSTOM_WALLPAPER_PREFIX = 'custom:'
+const CUSTOM_WALLPAPER_ID = /^[0-9a-f]{32}$/
+/** How the chosen uploaded picture is framed; appearance-init.js applies it before the app starts. */
+export const CUSTOM_WALLPAPER_DISPLAY_KEY = 'kpanel:desktop-wallpaper-custom:v1'
+/** Above this mean brightness (0–100) the classic-mode veil is thickened. */
+export const BRIGHT_WALLPAPER_LUMINANCE = 50
+
+export function customWallpaperFromID(value: string | null | undefined): string | undefined {
+  if (!value?.startsWith(CUSTOM_WALLPAPER_PREFIX)) return undefined
+  const id = value.slice(CUSTOM_WALLPAPER_PREFIX.length)
+  return CUSTOM_WALLPAPER_ID.test(id) ? id : undefined
+}
+
+export function customWallpaperID(id: string): DesktopWallpaperID {
+  return `${CUSTOM_WALLPAPER_PREFIX}${id}`
+}
 
 export function isDesktopWallpaperID(value: string | null): value is DesktopWallpaperID {
-  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value) || Boolean(scenePackFromWallpaper(value))
+  return DESKTOP_WALLPAPERS.some((wallpaper) => wallpaper.id === value)
+    || Boolean(scenePackFromWallpaper(value))
+    || Boolean(customWallpaperFromID(value))
+}
+
+/** CSS background-position for a focal point stored as 0–1000 per axis. */
+export function wallpaperFocusPosition(wallpaper: Pick<CustomWallpaper, 'focusX' | 'focusY'>): string {
+  return `${wallpaper.focusX / 10}% ${wallpaper.focusY / 10}%`
+}
+
+function applyCustomDisplay(wallpaper?: Pick<CustomWallpaper, 'id' | 'focusX' | 'focusY' | 'luminance'>): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  try {
+    if (wallpaper) {
+      window.localStorage.setItem(CUSTOM_WALLPAPER_DISPLAY_KEY, JSON.stringify({
+        id: wallpaper.id, focusX: wallpaper.focusX, focusY: wallpaper.focusY, luminance: wallpaper.luminance,
+      }))
+    } else {
+      window.localStorage.removeItem(CUSTOM_WALLPAPER_DISPLAY_KEY)
+    }
+  } catch {
+    // The framing still applies to this page.
+  }
+  if (wallpaper) root.style.setProperty('--desktop-wallpaper-position', wallpaperFocusPosition(wallpaper))
+  else root.style.removeProperty('--desktop-wallpaper-position')
+  if (wallpaper && wallpaper.luminance >= BRIGHT_WALLPAPER_LUMINANCE) root.dataset.wallpaperBright = 'true'
+  else delete root.dataset.wallpaperBright
 }
 
 function readDesktopWallpaperID(): DesktopWallpaperID {
@@ -67,6 +113,8 @@ function readDesktopWallpaperID(): DesktopWallpaperID {
 
 const current = ref<DesktopWallpaperID>(typeof window === 'undefined' ? 'classic' : readDesktopWallpaperID())
 const sceneRevision = ref(0)
+const customWallpapers = ref<CustomWallpaper[]>([])
+const customUsage = ref<CustomWallpaperList['usage']>()
 
 function persist(id: DesktopWallpaperID): void {
   try {
@@ -75,6 +123,12 @@ function persist(id: DesktopWallpaperID): void {
   } catch {
     // The wallpaper still applies to this session when storage is unavailable.
   }
+}
+
+function resetToClassic(): void {
+  current.value = 'classic'
+  applyCustomDisplay()
+  persist('classic')
 }
 
 export function useDesktopWallpaper() {
@@ -100,21 +154,58 @@ export function useDesktopWallpaper() {
     refresh(): void {
       current.value = readDesktopWallpaperID()
     },
-    /** Applies a wallpaper and its colors; `pack` is the listed pack for a `pack:` id. */
-    select(id: DesktopWallpaperID, pack?: ScenePack): boolean {
+    /**
+     * Applies a wallpaper and its colors. `source` is the listed pack for a `pack:` id and
+     * the uploaded wallpaper for a `custom:` id; an upload without colors keeps the current ones.
+     */
+    select(id: DesktopWallpaperID, source?: ScenePack | CustomWallpaper): boolean {
       const wallpaper = DESKTOP_WALLPAPERS.find((candidate) => candidate.id === id)
-      if (!wallpaper && !scenePackFromWallpaper(id)) return false
+      const customID = customWallpaperFromID(id)
+      const custom = customID && source && 'luminance' in source && source.id === customID ? source : undefined
+      if (!wallpaper && !scenePackFromWallpaper(id) && !custom) return false
       current.value = id
+      applyCustomDisplay(custom)
       if (wallpaper) theme.setColors(wallpaper.themePreset.colors)
-      const packColors = pack && scenePackThemeColors(pack)
-      if (packColors) applyScenePackTheme(packColors)
+      const pack = source && !('luminance' in source) ? source : undefined
+      const colors = pack ? scenePackThemeColors(pack)
+        : custom?.theme ? { ...custom.theme, signatureLinked: custom.theme.signature === custom.theme.brand } : undefined
+      if (colors) applyScenePackTheme(colors)
       persist(id)
       return true
     },
-    /** Falls back to the default wallpaper without touching the colors (a removed pack). */
-    resetToClassic(): void {
-      current.value = 'classic'
-      persist('classic')
+    /** Falls back to the default wallpaper without touching the colors (a removed pack or picture). */
+    resetToClassic,
+    /** Uploaded wallpapers, newest first, shared by every picker. */
+    customWallpapers: readonly(customWallpapers),
+    customUsage: readonly(customUsage),
+    /**
+     * Refreshes the uploaded list. A chosen picture that is gone (deleted in another
+     * browser) falls back to the default wallpaper; one still present has its framing
+     * re-applied, in case it was chosen elsewhere.
+     */
+    async loadCustomWallpapers(signal?: AbortSignal): Promise<void> {
+      const list = await api.desktop.wallpapers(signal)
+      customWallpapers.value = list.wallpapers
+      customUsage.value = list.usage
+      const chosen = customWallpaperFromID(current.value)
+      if (!chosen) return
+      const wallpaper = list.wallpapers.find((candidate) => candidate.id === chosen)
+      if (wallpaper) applyCustomDisplay(wallpaper)
+      else resetToClassic()
+    },
+    /** Adds a just-uploaded wallpaper to the shared list. */
+    customUploaded(wallpaper: CustomWallpaper): void {
+      customWallpapers.value = [wallpaper, ...customWallpapers.value.filter((candidate) => candidate.id !== wallpaper.id)]
+      const usage = customUsage.value
+      if (usage) customUsage.value = { ...usage, count: usage.count + 1, bytes: usage.bytes + wallpaper.imageBytes + wallpaper.thumbBytes }
+    },
+    /** Removes a deleted wallpaper; if it was the chosen one, the default takes its place. */
+    customDeleted(id: string): void {
+      const removed = customWallpapers.value.find((candidate) => candidate.id === id)
+      customWallpapers.value = customWallpapers.value.filter((candidate) => candidate.id !== id)
+      const usage = customUsage.value
+      if (usage && removed) customUsage.value = { ...usage, count: usage.count - 1, bytes: usage.bytes - removed.imageBytes - removed.thumbBytes }
+      if (customWallpaperFromID(current.value) === id) resetToClassic()
     },
   }
 }

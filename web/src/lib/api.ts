@@ -41,6 +41,9 @@ import type {
   DockerEnvironment,
   DockerMaintenanceInput,
   DockerMaintenanceJob,
+  CustomWallpaper,
+  CustomWallpaperList,
+  CustomWallpaperUpload,
   DesktopShortcutIconResult,
   DesktopWorkspace,
   DesktopWorkspaceUpdate,
@@ -1273,6 +1276,48 @@ export const api = {
       }),
     removeShortcutIcon: (id: string): Promise<void> =>
       request<void>(`/desktop/shortcuts/${encodeURIComponent(id)}/icon`, { method: 'DELETE' }),
+    wallpapers: (signal?: AbortSignal): Promise<CustomWallpaperList> =>
+      request<CustomWallpaperList>('/desktop/wallpapers', { signal }),
+    /** Uploads a prepared wallpaper; progress is reported from 0 to 1. */
+    uploadWallpaper: (upload: CustomWallpaperUpload, onProgress?: (fraction: number) => void): Promise<CustomWallpaper> =>
+      new Promise<CustomWallpaper>((resolve, reject) => {
+        const form = new FormData()
+        const { image, thumb, ...metadata } = upload
+        form.append('metadata', JSON.stringify(metadata))
+        form.append('image', image, 'wallpaper')
+        form.append('thumb', thumb, 'thumbnail')
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', buildUrl('/desktop/wallpapers'))
+        xhr.withCredentials = true
+        xhr.responseType = 'json'
+        if (csrfToken) xhr.setRequestHeader('X-CSRF-Token', csrfToken)
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total)
+        }
+        xhr.onerror = () => reject(new ApiError('壁纸上传连接中断。', 0, 'network_error'))
+        xhr.onload = () => {
+          const payload = xhr.response
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(payload as CustomWallpaper)
+            return
+          }
+          const problem = payload && typeof payload === 'object' ? (payload as ProblemPayload) : undefined
+          reject(new ApiError(
+            problem?.detail || problem?.title || '壁纸上传失败。',
+            xhr.status,
+            problem?.code || 'desktop_wallpaper_upload_failed',
+            payload,
+            problem?.requestId,
+          ))
+        }
+        xhr.send(form)
+      }),
+    deleteWallpaper: (id: string): Promise<void> =>
+      request<void>(`/desktop/wallpapers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    wallpaperImageURL: (id: string): string =>
+      buildUrl(`/desktop/wallpapers/${encodeURIComponent(id)}/image`),
+    wallpaperThumbURL: (id: string): string =>
+      buildUrl(`/desktop/wallpapers/${encodeURIComponent(id)}/thumb`),
   },
   agent: {
     health: async (signal?: AbortSignal) => normalizeAgent(await request<RawAgentHealth>('/agent/health', { signal })),

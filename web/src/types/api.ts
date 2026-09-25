@@ -2158,6 +2158,46 @@ export interface DesktopWorkspaceUpdate {
   shortcuts: Array<Pick<DesktopShortcut, 'id' | 'name' | 'description' | 'targetType' | 'url' | 'path'>>
 }
 
+/** Colors suggested from an uploaded wallpaper, applied when it is chosen. */
+export interface CustomWallpaperTheme {
+  brand: string
+  neutral: string
+  signature: string
+}
+
+/** A wallpaper the administrator uploaded; its images never change after upload. */
+export interface CustomWallpaper {
+  id: string
+  name: string
+  format: 'webp' | 'jpeg'
+  width: number
+  height: number
+  imageBytes: number
+  thumbBytes: number
+  /** Focal point, 0–1000 on each axis: kept in view whatever the screen shape. */
+  focusX: number
+  focusY: number
+  /** Mean brightness 0–100, measured by the panel. */
+  luminance: number
+  theme?: CustomWallpaperTheme
+  createdAt: string
+  imageDigest: string
+}
+
+export interface CustomWallpaperList {
+  wallpapers: CustomWallpaper[]
+  usage: { count: number, bytes: number, maxCount: number, maxBytes: number }
+}
+
+export interface CustomWallpaperUpload {
+  name: string
+  focusX: number
+  focusY: number
+  theme?: CustomWallpaperTheme
+  image: Blob
+  thumb: Blob
+}
+
 export interface DesktopShortcutIconResult {
   iconVersion: string
   iconURL: string
