@@ -28,6 +28,7 @@ export interface ScenePackCamera {
 export type ScenePackSource = 'auto' | 'github' | 'mirror'
 
 export interface ScenePack {
+  resourceVersion: string
   id: string
   version: string
   name: LocalizedText
@@ -45,6 +46,7 @@ export interface ScenePack {
 }
 
 export interface ScenePackList {
+  warning?: string
   source: ScenePackSource
   sources: ScenePackSource[]
   packs: ScenePack[]
@@ -55,10 +57,10 @@ export function isOfficialScenePack(pack: Pick<ScenePack, 'author'>): boolean {
   return pack.author?.name === 'KPanel'
 }
 
-/** Only same-origin absolute paths are accepted as a pack's file base. */
+/** Only an installed scene capability path may become a frame URL. */
 export function scenePackPageURL(pack: Pick<ScenePack, 'fileBase'>): string | undefined {
   const base = pack.fileBase
-  if (!base || !base.startsWith('/') || base.startsWith('//') || !base.endsWith('/')) return undefined
+  if (!base || !/^\/api\/v1\/desktop\/scene-packs\/[a-z0-9][a-z0-9-]{0,39}\/files\/[a-f0-9]{32}\/$/.test(base)) return undefined
   return `${base}index.html`
 }
 

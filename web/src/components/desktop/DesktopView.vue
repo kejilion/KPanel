@@ -470,6 +470,7 @@ const scenePacks = ref<ScenePack[]>([])
 const scenePacksLoading = ref(false)
 const scenePacksError = ref(false)
 const scenePackBusy = ref<{ id: string, action: 'install' | 'delete' }>()
+const scenePackRevision = ref(0)
 const scenePackFailure = ref<{ id: string, action: 'install' | 'delete' }>()
 const scenePackConfirmDelete = ref<string>()
 const scenePackSource = ref<ScenePackSource>('auto')
@@ -3254,6 +3255,7 @@ async function loadScenePacks(): Promise<void> {
   try {
     const list = await api.desktop.scenePacks()
     scenePacks.value = list.packs
+    scenePacksError.value = Boolean(list.warning)
     scenePackSource.value = list.source
     if (list.sources?.length) scenePackSources.value = list.sources
   } catch {
@@ -3268,10 +3270,12 @@ async function installScenePack(pack: ScenePack): Promise<void> {
   scenePackBusy.value = { id: pack.id, action: 'install' }
   scenePackFailure.value = undefined
   try {
-    const installed = await api.desktop.installScenePack(pack.id)
+    const installed = await api.desktop.installScenePack(pack.id, pack.resourceVersion)
     scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === installed.id ? installed : candidate))
+    if (activeScenePack.value === installed.id) scenePackRevision.value++
   } catch {
     scenePackFailure.value = { id: pack.id, action: 'install' }
+    await loadScenePacks()
   } finally {
     scenePackBusy.value = undefined
   }
@@ -3288,11 +3292,13 @@ async function deleteScenePack(pack: ScenePack): Promise<void> {
   scenePackBusy.value = { id: pack.id, action: 'delete' }
   scenePackFailure.value = undefined
   try {
-    await api.desktop.deleteScenePack(pack.id)
-    scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === pack.id ? { ...candidate, installed: false } : candidate))
+    await api.desktop.deleteScenePack(pack.id, pack.resourceVersion)
+    scenePacks.value = scenePacks.value.map((candidate) => (candidate.id === pack.id ? { ...candidate, installed: false, installedVersion: null, fileBase: null } : candidate))
     if (activeScenePack.value === pack.id) resetWallpaperToClassic()
+    await loadScenePacks()
   } catch {
     scenePackFailure.value = { id: pack.id, action: 'delete' }
+    await loadScenePacks()
   } finally {
     scenePackBusy.value = undefined
   }
@@ -3335,8 +3341,10 @@ async function onScenePackSourceChange(event: Event): Promise<void> {
   scenePackSource.value = next
   try {
     await api.desktop.setScenePackSource(next)
+    await loadScenePacks()
   } catch {
     scenePackSource.value = previous
+    scenePacksError.value = true
   }
 }
 
@@ -3931,7 +3939,7 @@ function onViewportResize(): void {
       </Transition>
       <DesktopScenePack
         v-if="activeScenePack"
-        :key="activeScenePack"
+        :key="`${activeScenePack}:${scenePackRevision}`"
         ref="scenePackLayer"
         :pack-id="activeScenePack"
         :covered="desktopWallpaperCovered"
@@ -4707,10 +4715,10 @@ function onViewportResize(): void {
           <span>{{ i18n.t('desktop.scenePacksLoadFailed') }}</span>
           <button type="button" class="button button--small" @click="loadScenePacks">{{ i18n.t('desktop.scenePacksRetry') }}</button>
         </div>
-        <p v-else-if="!visibleScenePacks.length" class="desktop-scene-packs__status">
+        <p v-if="!scenePacksLoading && !scenePacksError && !visibleScenePacks.length" class="desktop-scene-packs__status">
           {{ i18n.t(scenePackFilter === 'installed' ? 'desktop.scenePacksEmptyInstalled' : 'desktop.scenePacksEmpty') }}
         </p>
-        <div v-else class="desktop-scene-packs__grid">
+        <div v-if="visibleScenePacks.length" class="desktop-scene-packs__grid">
           <article
             v-for="pack in visibleScenePacks"
             :key="pack.id"

@@ -33,6 +33,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/dockerx"
 	"github.com/kejilion/kejilion-panel/internal/notification"
 	"github.com/kejilion/kejilion-panel/internal/remotedownload"
+	"github.com/kejilion/kejilion-panel/internal/scenepacks"
 	"github.com/kejilion/kejilion-panel/internal/store"
 	"github.com/kejilion/kejilion-panel/internal/terminalcommands"
 	"github.com/kejilion/kejilion-panel/internal/version"
@@ -102,6 +103,8 @@ type Server struct {
 	ai                    *ai.Service
 	aiError               string
 	desktopWorkspace      *desktopworkspace.Store
+	scenePacks            *scenepacks.Store
+	scenePackStreams      chan struct{}
 	terminalCommands      *terminalcommands.Store
 	mcp                   *mcpService
 }
@@ -197,6 +200,8 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		trustedProxies:        trustedProxies,
 		lastAuthAudit:         make(map[string]time.Time),
 		desktopWorkspace:      desktopWorkspace,
+		scenePacks:            scenepacks.Open(filepath.Join(config.DataDir, "scene-packs"), nil),
+		scenePackStreams:      make(chan struct{}, 4),
 		terminalCommands:      terminalCommands,
 		fileShareStreamGate:   make(chan struct{}, maxPublicFileShareStreams),
 		fileShareMetadataGate: make(chan struct{}, maxFileShareMetadataReads),
@@ -383,6 +388,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleJobDetail(w, r)
 	case r.URL.Path == "/api/v1/desktop/workspace":
 		s.handleDesktopWorkspace(w, r)
+	case r.URL.Path == scenePacksPath || strings.HasPrefix(r.URL.Path, scenePacksPath+"/"):
+		s.handleScenePacks(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/desktop/shortcuts/"):
 		s.handleDesktopShortcutIcon(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/sites/") &&
@@ -864,6 +871,9 @@ func (s *Server) handleSecurityEntrance(w http.ResponseWriter, r *http.Request) 
 }
 
 func securityEntrancePublicPath(requestPath string) bool {
+	if _, _, _, ok := scenePackFilePath(requestPath); ok {
+		return true
+	}
 	return requestPath == "/api/v1/health" || isFileDownloadTicketPath(requestPath) || isStaticAssetPath(requestPath) || isClusterSharePagePath(requestPath) || isPublicClusterShareAPIPath(requestPath) || isFileSharePagePath(requestPath) || isPublicFileShareAPIPath(requestPath) || isPublicFileShareContentPath(requestPath) || strings.HasPrefix(requestPath, "/api/v1/federation/") || strings.HasPrefix(requestPath, "/api/v2/federation/") || strings.HasPrefix(requestPath, "/api/v3/federation/light/")
 }
 

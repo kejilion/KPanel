@@ -24,7 +24,8 @@ const installed: ScenePack = {
   sizeBytes: 650_000,
   installed: true,
   installedVersion: '1.0.0',
-  fileBase: '/api/v1/desktop/scene-packs/orbital-station/files/',
+  fileBase: `/api/v1/desktop/scene-packs/orbital-station/files/${'a'.repeat(32)}/`,
+  resourceVersion: `sha256:${'a'.repeat(64)}`,
 }
 
 function listPacks(packs: ScenePack[]) {
@@ -64,7 +65,7 @@ describe('DesktopScenePack', () => {
     const wrapper = await mountPack()
     expect(wrapper.find('img').exists()).toBe(false)
     const iframe = wrapper.get('iframe')
-    expect(iframe.attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/files/index.html')
+    expect(iframe.attributes('src')).toBe(`${installed.fileBase}index.html`)
     expect(iframe.attributes('sandbox')).toBe('allow-scripts')
     expect(iframe.attributes('referrerpolicy')).toBe('no-referrer')
     expect(iframe.attributes('allow')).toBe('')

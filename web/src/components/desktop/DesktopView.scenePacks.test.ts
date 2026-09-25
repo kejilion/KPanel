@@ -5,11 +5,12 @@ import { nextTick } from 'vue'
 import DesktopView from '@/components/desktop/DesktopView.vue'
 import { api } from '@/lib/api'
 import { resetSceneMotionPreferenceForTest } from '@/lib/desktopScenes/motionPreference'
-import type { ScenePack } from '@/lib/scenePacks'
+import type { ScenePack, ScenePackSource } from '@/lib/scenePacks'
 import { resetDesktopModeForTest } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 
 const available: ScenePack = {
+  resourceVersion: `sha256:${'a'.repeat(64)}`,
   id: 'orbital-station',
   version: '1.0.0',
   name: { 'zh-CN': '星港轨道', 'en-US': 'Orbital Station' },
@@ -28,13 +29,14 @@ const available: ScenePack = {
   installedVersion: null,
   fileBase: null,
 }
-const installed: ScenePack = { ...available, installed: true, installedVersion: '1.0.0', fileBase: '/api/v1/desktop/scene-packs/orbital-station/files/' }
+const installed: ScenePack = { ...available, installed: true, installedVersion: '1.0.0', fileBase: `/api/v1/desktop/scene-packs/orbital-station/files/${'a'.repeat(32)}/` }
 const community: ScenePack = { ...available, id: 'neon-city', name: { 'zh-CN': '霓虹都市' }, author: { name: 'someone' } }
 
 let packs: ScenePack[]
 
 function stubPackAPI() {
-  vi.spyOn(api.desktop, 'scenePacks').mockImplementation(async () => ({ source: 'auto', sources: ['auto', 'github', 'mirror'], packs }))
+  let route: ScenePackSource = 'auto'
+  vi.spyOn(api.desktop, 'scenePacks').mockImplementation(async () => ({ source: route, sources: ['auto', 'github', 'mirror'], packs }))
   const install = vi.spyOn(api.desktop, 'installScenePack').mockImplementation(async (id) => {
     packs = packs.map((pack) => (pack.id === id ? installed : pack))
     return installed
@@ -42,7 +44,10 @@ function stubPackAPI() {
   const remove = vi.spyOn(api.desktop, 'deleteScenePack').mockImplementation(async (id) => {
     packs = packs.map((pack) => (pack.id === id ? available : pack))
   })
-  const setSource = vi.spyOn(api.desktop, 'setScenePackSource').mockImplementation(async (source) => ({ source }))
+  const setSource = vi.spyOn(api.desktop, 'setScenePackSource').mockImplementation(async (source) => {
+    route = source
+    return { source }
+  })
   return { install, remove, setSource }
 }
 
@@ -124,7 +129,7 @@ describe('DesktopView scene packs', () => {
     expect(action(section, 'orbital-station', 'apply')).toBeNull()
     action(section, 'orbital-station', 'install')!.click()
     await settle()
-    expect(install).toHaveBeenCalledWith('orbital-station')
+    expect(install).toHaveBeenCalledWith('orbital-station', available.resourceVersion)
     expect(action(section, 'orbital-station', 'install')).toBeNull()
 
     vi.useFakeTimers()
@@ -169,7 +174,7 @@ describe('DesktopView scene packs', () => {
     expect(action(section, 'orbital-station', 'delete')!.textContent).toContain('确认删除')
     action(section, 'orbital-station', 'delete')!.click()
     await settle()
-    expect(remove).toHaveBeenCalledWith('orbital-station')
+    expect(remove).toHaveBeenCalledWith('orbital-station', installed.resourceVersion)
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('classic')
     expect(wrapper.find('[data-scene-pack]').exists()).toBe(false)
     expect(wrapper.get('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('classic')

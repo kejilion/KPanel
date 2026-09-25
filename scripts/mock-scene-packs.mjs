@@ -4,7 +4,7 @@
 // mirror); installing downloads every catalog file and verifies its size and
 // SHA-256; installed files are served with a sandbox CSP for the desktop iframe.
 // Here the "repository" is the local checkout, so previews work offline.
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -38,7 +38,7 @@ const CONTENT_TYPES = {
   mp4: 'video/mp4',
 }
 // The pack page runs sandboxed with an opaque origin; this header keeps the same
-// sandbox if the file is ever opened directly, and blocks any network egress.
+// sandbox if the file is ever opened directly. Sources are narrowed to this pack below.
 const PACK_CSP = [
   'sandbox allow-scripts',
   "default-src 'none'",
@@ -68,6 +68,7 @@ async function catalog() {
 
 function describe(pack) {
   return {
+    resourceVersion: `sha256:${createHash('sha256').update(JSON.stringify([pack, installed.get(pack.id) ?? null])).digest('hex')}`,
     id: pack.id,
     version: pack.version,
     name: pack.name,
@@ -80,7 +81,7 @@ function describe(pack) {
     sizeBytes: pack.sizeBytes,
     installed: installed.has(pack.id),
     installedVersion: installed.get(pack.id)?.version ?? null,
-    fileBase: installed.has(pack.id) ? `/api/v1/desktop/scene-packs/${pack.id}/files/` : null,
+    fileBase: installed.has(pack.id) ? `/api/v1/desktop/scene-packs/${pack.id}/files/${installed.get(pack.id).token}/` : null,
   }
 }
 
@@ -127,7 +128,7 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
   }
   if (rest.length === 2 && ['thumb', 'poster'].includes(rest[1]) && request.method === 'GET') {
     // Thumbnails come from the repository before install; the poster comes from the installed copy.
-    const directory = rest[1] === 'thumb' ? join(packsRoot, pack.path) : join(installRoot, pack.id)
+    const directory = rest[1] === 'thumb' ? join(packsRoot, pack.path) : join(installRoot, installed.get(pack.id)?.token ?? 'missing')
     try {
       sendFile(response, await readFile(join(directory, `${rest[1]}.webp`)), 'webp')
     } catch {
@@ -136,10 +137,15 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
     return true
   }
   if (rest.length === 2 && rest[1] === 'install' && request.method === 'POST') {
+    const input = await readJSON(request)
+    if (input?.expectedResourceVersion !== describe(pack).resourceVersion) {
+      send(response, 409, { title: '场景已变化，请刷新重试', code: 'scene_pack_changed' })
+      return true
+    }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 1400))
     const useMirror = source === 'mirror'
-    const target = join(installRoot, pack.id)
-    await rm(target, { recursive: true, force: true })
+    const token = randomBytes(16).toString('hex')
+    const target = join(installRoot, token)
     try {
       for (const file of pack.files) {
         if (file.path.includes('..') || file.path.startsWith('/')) throw new Error('unsafe path')
@@ -154,28 +160,37 @@ export async function mockScenePacks(request, response, url, send, readJSON) {
       send(response, 502, { title: '场景下载校验失败，未安装任何文件', code: 'scene_pack_verification_failed', detail: String(error.message) })
       return true
     }
-    installed.set(pack.id, { version: pack.version, from: downloadBase(pack, useMirror) })
+    const previous = installed.get(pack.id)
+    installed.set(pack.id, { version: pack.version, token, from: downloadBase(pack, useMirror) })
+    if (previous) await rm(join(installRoot, previous.token), { recursive: true, force: true })
     send(response, 200, { ...describe(pack), downloadedFrom: installed.get(pack.id).from })
     return true
   }
   if (rest.length === 1 && request.method === 'DELETE') {
+    const input = await readJSON(request)
+    if (input?.expectedResourceVersion !== describe(pack).resourceVersion) {
+      send(response, 409, { title: '场景已变化，请刷新重试', code: 'scene_pack_changed' })
+      return true
+    }
+    const previous = installed.get(pack.id)
     installed.delete(pack.id)
-    await rm(join(installRoot, pack.id), { recursive: true, force: true })
+    if (previous) await rm(join(installRoot, previous.token), { recursive: true, force: true })
     response.writeHead(204)
     response.end()
     return true
   }
-  if (rest[1] === 'files' && request.method === 'GET' && installed.has(pack.id)) {
-    const path = rest.slice(2).join('/')
+  if (rest[1] === 'files' && request.method === 'GET' && installed.has(pack.id) && rest[2] === installed.get(pack.id).token) {
+    const path = rest.slice(3).join('/')
     const file = pack.files.find((candidate) => candidate.path === path)
     if (!file) {
       response.writeHead(404)
       response.end()
       return true
     }
-    const body = await readFile(join(installRoot, pack.id, file.path))
+    const body = await readFile(join(installRoot, installed.get(pack.id).token, file.path))
+    const base = `${url.origin}/api/v1/desktop/scene-packs/${pack.id}/files/${rest[2]}/`
     sendFile(response, body, file.path.split('.').pop().toLowerCase(), {
-      'Content-Security-Policy': PACK_CSP,
+      'Content-Security-Policy': `${PACK_CSP.replaceAll("'self'", base)}; frame-ancestors 'self'; object-src 'none'`,
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Resource-Policy': 'cross-origin',
       'Referrer-Policy': 'no-referrer',

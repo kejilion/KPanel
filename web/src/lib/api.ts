@@ -1232,10 +1232,10 @@ export const api = {
       request<DesktopWorkspace>('/desktop/workspace', { method: 'PUT', body }),
     scenePacks: (signal?: AbortSignal): Promise<ScenePackList> =>
       request<ScenePackList>('/desktop/scene-packs', { signal }),
-    installScenePack: (id: string): Promise<ScenePack> =>
-      request<ScenePack>(`/desktop/scene-packs/${encodeURIComponent(id)}/install`, { method: 'POST' }),
-    deleteScenePack: (id: string): Promise<void> =>
-      request<void>(`/desktop/scene-packs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    installScenePack: (id: string, expectedResourceVersion: string): Promise<ScenePack> =>
+      request<ScenePack>(`/desktop/scene-packs/${encodeURIComponent(id)}/install`, { method: 'POST', body: { expectedResourceVersion } }),
+    deleteScenePack: (id: string, expectedResourceVersion: string): Promise<void> =>
+      request<void>(`/desktop/scene-packs/${encodeURIComponent(id)}`, { method: 'DELETE', body: { expectedResourceVersion } }),
     setScenePackSource: (source: ScenePackSource): Promise<{ source: ScenePackSource }> =>
       request<{ source: ScenePackSource }>('/desktop/scene-packs/source', { method: 'PUT', body: { source } }),
     scenePackThumbURL: (id: string, version?: string): string =>

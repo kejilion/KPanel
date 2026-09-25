@@ -119,12 +119,24 @@ scene-packs/
 
 - iframe 使用 `sandbox="allow-scripts"`：**不透明源**，读不到面板 Cookie、登录会话、localStorage、IndexedDB 和页面 DOM；
   不能打开弹窗、提交表单、跳转顶层页面、下载文件或申请摄像头、麦克风、定位、全屏等权限；
-- 场景文件的响应头带严格 CSP：`default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline';
-  img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:;
-  frame-src 'none'; form-action 'none'; base-uri 'none'`，并附加 `sandbox allow-scripts`。
-  **场景只能加载自己包内的文件，不能访问任何外部网络**（CDN、统计、字体服务都不行，依赖请打包进 `dist/`）；
+- 场景文件响应带 `sandbox allow-scripts; default-src 'none'`。脚本、样式、图片、媒体、字体、连接和 worker
+  的网络来源限定到当前包的完整资源 URL 前缀，不能用同源整站的 `'self'` 放行 Panel API；另允许 WASM、
+  内联样式及图片/媒体/worker 所需的 `data:`、`blob:`。子框架、表单、base 和 object 禁用。
+  场景依赖必须打包进 `dist/`，受 CSP 控制的资源请求不能访问包外路径或第三方服务；
+- 管理目录、缩略图、海报要求登录，安装/删除/线路修改继续校验 Origin、CSRF 并写审计。
+  沙箱没有登录凭据，资源地址使用每次安装生成的 128 位随机 capability，只开放该包清单中的已校验文件，
+  并仅对这些文件开放无凭据 CORS。更新/删除即撤销旧地址；地址不包含账户、会话或任何宿主机数据；
 - 场景没有声音：自动播放在沙箱中不可用，也不应尝试；
 - 面板只安装仓库目录中列出的包，逐文件校验 SHA-256，不执行下载内容以外的任何东西。
+
+服务端存储与恢复：`DataDir/scene-packs/state.json` 是 schema 1 的有界 JSON 索引（≤ 2 MiB），目录 `0700`、
+文件 `0600`；每个 Panel 最多安装 10 个包、总计 150 MiB，更新暂存额外最多一个 30 MiB 包。
+下载总时限 3 分钟、单请求 20 秒，最多 3 个上游请求、1 个安装/删除操作；文件响应最多并发 4 个。
+只从固定官方仓库和固定镜像取资源，拒绝跳转后的响应及非公网地址，所有文件校验完成后原子替换索引。
+失败保留旧版本，重启清理未提交的暂存对象；索引损坏时只禁用场景服务并保留现场，不影响面板启动。
+已安装包保留到用户删除；目录缓存 5 分钟、失败退避 30 秒，离线时仍提供已安装包并显示目录不可用。
+这些是可重新下载的可选资源，不进入账户/主机备份；恢复备份后重新下载所需场景。
+回退 RC4 时旧服务忽略这个独立目录，回到 RC5 后继续读取 schema 1；无需迁移账户或 Agent 状态。
 
 **禁止的内容**（审核会拒绝）：伪造系统弹窗、登录框、密码提示或 KPanel 界面；仿冒其他产品或品牌；广告与推广文字；
 成人、暴力、仇恨内容；挖矿或任何与画面无关的计算；刻意耗尽 CPU、GPU 或内存；尝试探测或突破沙箱。

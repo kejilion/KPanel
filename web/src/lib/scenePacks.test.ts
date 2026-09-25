@@ -18,9 +18,9 @@ describe('scene pack helpers', () => {
   })
 
   it('loads pack pages only from a same-origin file base', () => {
-    expect(scenePackPageURL({ fileBase: '/api/v1/desktop/scene-packs/orbital-station/files/' }))
-      .toBe('/api/v1/desktop/scene-packs/orbital-station/files/index.html')
-    for (const fileBase of [null, '', 'https://evil.example/', '//evil.example/', 'javascript:alert(1)//', '/api/v1/files']) {
+    const base = `/api/v1/desktop/scene-packs/orbital-station/files/${'a'.repeat(32)}/`
+    expect(scenePackPageURL({ fileBase: base })).toBe(`${base}index.html`)
+    for (const fileBase of [null, '', 'https://evil.example/', '//evil.example/', 'javascript:alert(1)//', '/api/v1/files', '/api/v1/files/', base.replace('/files/', '/files/%2e%2e/'), '/\\evil.example/']) {
       expect(scenePackPageURL({ fileBase })).toBeUndefined()
     }
   })
