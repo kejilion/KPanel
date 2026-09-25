@@ -1,4 +1,0 @@
-* text eol=lf
-*.webp binary
-*.png binary
-dist/** -text

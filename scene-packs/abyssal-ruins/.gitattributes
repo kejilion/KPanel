@@ -1,8 +1,0 @@
-* text eol=lf
-*.png binary
-*.webp binary
-*.blend binary
-*.glb binary
-dist/** -text
-# Vendored shader template literals retain Three.js whitespace verbatim.
-dist/scene.js -whitespace
