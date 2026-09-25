@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { Check, Download, ImagePlus, LoaderCircle, Orbit, Trash2 } from '@lucide/vue'
 import CustomWallpaperDialog from '@/components/desktop/CustomWallpaperDialog.vue'
 import { api } from '@/lib/api'
@@ -72,6 +72,15 @@ const customConfirmDelete = ref<string>()
 const customUploadFile = ref<File>()
 const customDragOver = ref(false)
 const customFileInput = ref<HTMLInputElement>()
+const customUploadButton = ref<HTMLButtonElement>()
+
+// A dropped picture opens the dialog without focusing anything; bring focus back to the tile.
+function closeCustomUpload(): void {
+  customUploadFile.value = undefined
+  void nextTick(() => {
+    if (!document.activeElement || document.activeElement === document.body) customUploadButton.value?.focus()
+  })
+}
 
 async function loadCustomWallpapers(): Promise<void> {
   customLoadFailed.value = false
@@ -101,7 +110,7 @@ function onCustomDrop(event: DragEvent): void {
 }
 
 function onCustomUploaded(wallpaper: CustomWallpaper): void {
-  customUploadFile.value = undefined
+  closeCustomUpload()
   wallpaperChoice.customUploaded(wallpaper)
   emit('select', customWallpaperID(wallpaper.id), wallpaper)
 }
@@ -258,7 +267,7 @@ watch(() => props.visible, (visible) => {
           {{ i18n.t('desktop.customWallpapersUsage', {
             count: customUsage.count,
             max: customUsage.maxCount,
-            used: formatPackSize(customUsage.bytes),
+            used: customUsage.bytes ? formatPackSize(customUsage.bytes) : '0 KB',
             limit: formatPackSize(customUsage.maxBytes),
           }) }}
         </small>
@@ -269,6 +278,7 @@ watch(() => props.visible, (visible) => {
       </div>
       <div class="desktop-wallpaper-picker desktop-custom-wallpapers__grid">
         <button
+          ref="customUploadButton"
           class="desktop-custom-wallpapers__upload"
           :class="{ 'desktop-custom-wallpapers__upload--over': customDragOver }"
           type="button"
@@ -333,7 +343,7 @@ watch(() => props.visible, (visible) => {
           </p>
         </article>
       </div>
-      <CustomWallpaperDialog :file="customUploadFile" @close="customUploadFile = undefined" @uploaded="onCustomUploaded" />
+      <CustomWallpaperDialog :file="customUploadFile" @close="closeCustomUpload" @uploaded="onCustomUploaded" />
     </section>
     <section class="desktop-scene-packs" :aria-labelledby="`${uid}-packs`">
       <div class="desktop-scene-packs__head">

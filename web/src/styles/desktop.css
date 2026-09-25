@@ -3071,7 +3071,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 
 .custom-wallpaper-dialog__stage {
   position: relative;
-  max-height: 420px;
+  justify-self: center;
   overflow: hidden;
   background: var(--surface-subtle);
   border-radius: var(--radius);
