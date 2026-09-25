@@ -167,9 +167,9 @@ export function useDesktopWallpaper() {
       applyCustomDisplay(custom)
       if (wallpaper) theme.setColors(wallpaper.themePreset.colors)
       const pack = source && !('luminance' in source) ? source : undefined
-      const colors = pack ? scenePackThemeColors(pack)
-        : custom?.theme ? { ...custom.theme, signatureLinked: custom.theme.signature === custom.theme.brand } : undefined
-      if (colors) applyScenePackTheme(colors)
+      const packColors = pack && scenePackThemeColors(pack)
+      if (packColors) applyScenePackTheme(packColors)
+      if (custom?.theme) applyScenePackTheme({ ...custom.theme, signatureLinked: custom.theme.signature === custom.theme.brand })
       persist(id)
       return true
     },

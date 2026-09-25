@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -276,31 +277,47 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
-// File returns a stored image ("image" or "thumb") and its content type.
-func (s *Store) File(id, kind string) ([]byte, string, error) {
+// OpenFile opens a stored image ("image" or "thumb") for streaming and reports its
+// size and content type. The caller closes the file.
+func (s *Store) OpenFile(id, kind string) (*os.File, int64, string, error) {
 	if !ValidID(id) || (kind != "image" && kind != "thumb") {
-		return nil, "", ErrNotFound
+		return nil, 0, "", ErrNotFound
 	}
 	s.mu.Lock()
 	known := slices.ContainsFunc(s.wallpapers, func(wallpaper Wallpaper) bool { return wallpaper.ID == id })
 	s.mu.Unlock()
 	if !known {
-		return nil, "", ErrNotFound
+		return nil, 0, "", ErrNotFound
 	}
 	imagePath, thumbPath := s.paths(id)
 	path, limit := imagePath, int64(MaxImageBytes)
 	if kind == "thumb" {
 		path, limit = thumbPath, MaxThumbBytes
 	}
-	data, err := readRegular(path, limit)
+	file, err := os.OpenFile(path, os.O_RDONLY|noFollow, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, "", ErrNotFound
+	}
 	if err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
-	format := sniff(data)
-	if format == "" {
-		return nil, "", ErrInvalid
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > limit {
+		_ = file.Close()
+		if err == nil {
+			err = ErrInvalid
+		}
+		return nil, 0, "", err
 	}
-	return data, "image/" + format, nil
+	header := make([]byte, 12)
+	_, readErr := io.ReadFull(file, header)
+	_, seekErr := file.Seek(0, io.SeekStart)
+	format := sniff(header)
+	if readErr != nil || seekErr != nil || format == "" {
+		_ = file.Close()
+		return nil, 0, "", ErrInvalid
+	}
+	return file, info.Size(), "image/" + format, nil
 }
 
 func (s *Store) usageLocked() Usage {
@@ -320,6 +337,11 @@ func (s *Store) indexPath() string { return filepath.Join(s.root, "index.json") 
 func (s *Store) readIndex() (persistedIndex, error) {
 	data, err := readRegular(s.indexPath(), 1<<20)
 	if errors.Is(err, ErrNotFound) {
+		return persistedIndex{Version: 1}, nil
+	}
+	// An empty or oversized index is corrupt, like one that does not parse: a
+	// wallpaper list must never keep the panel from starting.
+	if errors.Is(err, ErrInvalid) {
 		return persistedIndex{Version: 1}, nil
 	}
 	if err != nil {
@@ -450,12 +472,12 @@ func stripWebP(data []byte) ([]byte, error) {
 			return nil, ErrInvalid
 		}
 		fourCC := string(data[offset : offset+4])
-		size := int(binary.LittleEndian.Uint32(data[offset+4 : offset+8]))
-		end := offset + 8 + size
-		padded := end + size%2
-		if size < 0 || end > len(data) || padded > len(data) {
+		size := int64(binary.LittleEndian.Uint32(data[offset+4 : offset+8]))
+		if size+size%2 > int64(len(data)-offset-8) {
 			return nil, ErrInvalid
 		}
+		end := offset + 8 + int(size)
+		padded := end + int(size%2)
 		chunk := data[offset:padded]
 		switch fourCC {
 		case "VP8 ", "VP8L":

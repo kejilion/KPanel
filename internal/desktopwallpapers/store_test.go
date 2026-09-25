@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -123,14 +124,21 @@ func TestAddListFileAndDelete(t *testing.T) {
 	if len(list) != 1 || usage.Count != 1 || usage.Bytes != added.ImageBytes+added.ThumbBytes || usage.MaxCount != MaxWallpapers {
 		t.Fatalf("list = %#v usage = %#v", list, usage)
 	}
-	data, contentType, err := store.File(added.ID, "image")
-	if err != nil || contentType != "image/webp" || !bytes.Equal(data, webPFixture(t)) {
-		t.Fatalf("image = %d bytes %q %v", len(data), contentType, err)
+	file, size, contentType, err := store.OpenFile(added.ID, "image")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, contentType, err := store.File(added.ID, "thumb"); err != nil || contentType != "image/jpeg" {
+	data, _ := io.ReadAll(file)
+	_ = file.Close()
+	if contentType != "image/webp" || size != int64(len(data)) || !bytes.Equal(data, webPFixture(t)) {
+		t.Fatalf("image = %d bytes %q", len(data), contentType)
+	}
+	thumbFile, _, contentType, err := store.OpenFile(added.ID, "thumb")
+	if err != nil || contentType != "image/jpeg" {
 		t.Fatalf("thumb = %q %v", contentType, err)
 	}
-	if _, _, err := store.File(added.ID, "../index"); !errors.Is(err, ErrNotFound) {
+	_ = thumbFile.Close()
+	if _, _, _, err := store.OpenFile(added.ID, "../index"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown kind = %v", err)
 	}
 	if runtime.GOOS != "windows" {
@@ -142,7 +150,7 @@ func TestAddListFileAndDelete(t *testing.T) {
 	if err := store.Delete(added.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.File(added.ID, "image"); !errors.Is(err, ErrNotFound) {
+	if _, _, _, err := store.OpenFile(added.ID, "image"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted image = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(store.filesDir, added.ID+".image")); !errors.Is(err, os.ErrNotExist) {
@@ -284,14 +292,16 @@ func TestOpenRepairsIndexAndRemovesStrayFiles(t *testing.T) {
 		}
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "index.json"), []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err = Open(root)
-	if err != nil {
-		t.Fatalf("corrupt index blocks startup: %v", err)
-	}
-	if list, _ := reopened.List(); len(list) != 0 {
-		t.Fatalf("corrupt index list = %#v", list)
+	for name, content := range map[string][]byte{"unparsable": []byte("{not json"), "empty": {}} {
+		if err := os.WriteFile(filepath.Join(root, "index.json"), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err = Open(root)
+		if err != nil {
+			t.Fatalf("%s index blocks startup: %v", name, err)
+		}
+		if list, _ := reopened.List(); len(list) != 0 {
+			t.Fatalf("%s index list = %#v", name, list)
+		}
 	}
 }

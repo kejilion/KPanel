@@ -128,6 +128,8 @@ function uploadProblem(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === 'desktop_wallpaper_quota_exceeded') return i18n.t('desktop.customWallpaperFull')
     if (error.code === 'desktop_wallpaper_busy') return i18n.t('desktop.customWallpaperErrorBusy')
+    if (error.code === 'desktop_wallpaper_image_invalid') return i18n.t('desktop.customWallpaperErrorType')
+    if (error.code === 'desktop_wallpaper_too_large') return i18n.t('desktop.customWallpaperErrorSize')
     return i18n.t('desktop.customWallpaperErrorUpload', { message: error.message })
   }
   return i18n.t('desktop.customWallpaperErrorUpload', { message: String(error) })
