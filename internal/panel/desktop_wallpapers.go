@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/desktopwallpapers"
 )
@@ -16,6 +17,9 @@ const desktopWallpapersPath = "/api/v1/desktop/wallpapers"
 
 // The multipart envelope around the metadata and the two images.
 const maxDesktopWallpaperUploadBytes = desktopwallpapers.MaxImageBytes + desktopwallpapers.MaxThumbBytes + desktopwallpapers.MaxMetadataBytes + 16<<10
+
+// Enough for the largest upload at roughly 250 kbit/s.
+const desktopWallpaperUploadTimeout = 5 * time.Minute
 
 type desktopWallpaperResponse struct {
 	desktopwallpapers.Wallpaper
@@ -88,11 +92,12 @@ func (s *Server) handleDesktopWallpapers(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) serveDesktopWallpaperFile(w http.ResponseWriter, r *http.Request, id, kind string) {
-	data, contentType, err := s.desktopWallpapers.File(id, kind)
+	file, size, contentType, err := s.desktopWallpapers.OpenFile(id, kind)
 	if err != nil {
 		s.writeDesktopWallpaperError(w, r, err)
 		return
 	}
+	defer file.Close()
 	// A wallpaper's images never change after upload: a new picture is a new ID.
 	etag := `"` + id + "-" + kind + `"`
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
@@ -102,9 +107,9 @@ func (s *Server) serveDesktopWallpaperFile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	_, _ = io.Copy(w, file)
 }
 
 func (s *Server) uploadDesktopWallpaper(w http.ResponseWriter, r *http.Request, actorID string) {
@@ -125,6 +130,11 @@ func (s *Server) uploadDesktopWallpaper(w http.ResponseWriter, r *http.Request, 
 		s.writeProblem(w, r, http.StatusTooManyRequests, "desktop_wallpaper_busy", "Another wallpaper is being uploaded", "")
 		return
 	}
+	// A picture of a few megabytes can take longer than the server-wide read timeout
+	// on a slow uplink; this authenticated, size-bounded body gets its own deadline.
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Now().Add(desktopWallpaperUploadTimeout))
+	_ = controller.SetWriteDeadline(time.Now().Add(desktopWallpaperUploadTimeout + time.Minute))
 	r.Body = http.MaxBytesReader(w, r.Body, maxDesktopWallpaperUploadBytes)
 	meta, imageData, thumbData, err := readDesktopWallpaperParts(r)
 	if err != nil {

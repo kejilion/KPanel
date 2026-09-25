@@ -49,12 +49,7 @@ export function wallpaperNameFromFile(fileName: string): string {
 export async function prepareWallpaperImage(file: File): Promise<PreparedWallpaperImage> {
   if (!ACCEPTED_TYPES.has(file.type)) throw new WallpaperFileError('type')
   if (file.size > WALLPAPER_SOURCE_MAX_BYTES) throw new WallpaperFileError('size')
-  let bitmap: ImageBitmap
-  try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-  } catch {
-    throw new WallpaperFileError('decode')
-  }
+  const bitmap = await decodePicture(file)
   try {
     if (Math.min(bitmap.width, bitmap.height) < MIN_EDGE) throw new WallpaperFileError('small')
     const size = fitWallpaperSize(bitmap.width, bitmap.height)
@@ -66,6 +61,20 @@ export async function prepareWallpaperImage(file: File): Promise<PreparedWallpap
     return { image, thumb, ...size, theme: extractWallpaperTheme(pixels) }
   } finally {
     bitmap.close()
+  }
+}
+
+/** Decodes with the camera orientation applied; browsers predating 'from-image' reject that option. */
+async function decodePicture(file: File): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw new WallpaperFileError('decode')
+  }
+  try {
+    return await createImageBitmap(file)
+  } catch {
+    throw new WallpaperFileError('decode')
   }
 }
 
@@ -154,7 +163,9 @@ export function rgbToHsl(r: number, g: number, b: number): [number, number, numb
   if (max === min) return [0, 0, lightness]
   const delta = max - min
   const saturation = delta / (1 - Math.abs(2 * lightness - 1))
-  let hue = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4
+  let hue = (r - g) / delta + 4
+  if (max === r) hue = ((g - b) / delta) % 6
+  else if (max === g) hue = (b - r) / delta + 2
   hue *= 60
   if (hue < 0) hue += 360
   return [hue, Math.min(1, saturation), lightness]
@@ -164,7 +175,10 @@ export function hslToHex(hue: number, saturation: number, lightness: number): st
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
   const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
   const m = lightness - chroma / 2
-  const [r, g, b] = hue < 60 ? [chroma, x, 0] : hue < 120 ? [x, chroma, 0] : hue < 180 ? [0, chroma, x]
-    : hue < 240 ? [0, x, chroma] : hue < 300 ? [x, 0, chroma] : [chroma, 0, x]
+  // One 60° sector of the hue wheel per row: which channel carries chroma, x and 0.
+  const sectors: Array<[number, number, number]> = [
+    [chroma, x, 0], [x, chroma, 0], [0, chroma, x], [0, x, chroma], [x, 0, chroma], [chroma, 0, x],
+  ]
+  const [r, g, b] = sectors[Math.min(5, Math.max(0, Math.floor(hue / 60)))]!
   return `#${[r, g, b].map((channel) => Math.round((channel + m) * 255).toString(16).padStart(2, '0')).join('')}`
 }
