@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "sea-and-sky",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "runtime": "kpanel-scene-pack@1",
   "name": {
     "zh-CN": "海天日月",

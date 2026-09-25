@@ -1,8 +1,13 @@
 package panel
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -69,7 +74,7 @@ func (s *Server) handleScenePacks(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(), autoplay=()")
-		s.serveSceneBytes(w, body, contentType)
+		s.serveScenePackBytes(w, r, body, contentType, name)
 		return
 	}
 	if r.Method != http.MethodGet && !s.checkOrigin(w, r) {
@@ -188,6 +193,63 @@ func (s *Server) serveSceneBytes(w http.ResponseWriter, body []byte, contentType
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
+
+// Scene file URLs contain an unguessable, per-install capability. Allow the
+// browser to retain bytes, but require revalidation before every reuse so an
+// install replacement or uninstall immediately revokes the old capability.
+func (s *Server) serveScenePackBytes(w http.ResponseWriter, r *http.Request, body []byte, contentType, name string) {
+	digest := sha256.Sum256(body)
+	etag := `W/"` + hex.EncodeToString(digest[:]) + `"`
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, no-cache, must-revalidate")
+	w.Header().Set("ETag", etag)
+	addVary(w.Header(), "Accept-Encoding")
+	if matchesScenePackETag(r.Header.Values("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	payload := body
+	compressed := len(body) >= 1024 && r.Header.Get("Range") == "" && acceptsGzip(r.Header.Get("Accept-Encoding")) && compressibleScenePackFile(name)
+	if compressed {
+		var buffer bytes.Buffer
+		writer, err := gzip.NewWriterLevel(&buffer, gzip.BestSpeed)
+		if err == nil {
+			_, writeErr := writer.Write(body)
+			closeErr := writer.Close()
+			if writeErr == nil && closeErr == nil && buffer.Len() < len(body) {
+				payload = buffer.Bytes()
+				w.Header().Set("Content-Encoding", "gzip")
+			}
+		}
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
+func matchesScenePackETag(values []string, etag string) bool {
+	current := strings.TrimPrefix(etag, "W/")
+	for _, value := range values {
+		for _, candidate := range strings.Split(value, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == current {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func compressibleScenePackFile(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".html", ".js", ".mjs", ".css", ".json", ".gltf", ".bin", ".glb", ".wasm", ".txt", ".md":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) scenePackMethodError(w http.ResponseWriter, r *http.Request) {
 	s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", "")
 }

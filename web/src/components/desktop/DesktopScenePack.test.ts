@@ -190,11 +190,12 @@ describe('DesktopScenePack', () => {
     vi.spyOn(api.desktop, 'scenePacks').mockReturnValue(new Promise((resolve) => { answer = resolve }))
     const wrapper = mount(DesktopScenePack, { props: { packId: 'orbital-station', covered: false }, attachTo: document.body })
     await nextTick()
-    expect(wrapper.get('iframe').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/files/index.html')
-    // After an update the list names a new base: the frame moves there.
-    answer({ source: 'auto', sources: ['auto'], packs: [{ ...installed, fileBase: '/api/v1/desktop/scene-packs/orbital-station/files/1.1.0-abc/' }] })
+    expect(wrapper.get('iframe').attributes('src')).toBe(`${installed.fileBase}index.html`)
+    // After an update the list names a fresh install capability: the frame moves there.
+    const updatedBase = `/api/v1/desktop/scene-packs/orbital-station/files/${'b'.repeat(32)}/`
+    answer({ source: 'auto', sources: ['auto'], packs: [{ ...installed, fileBase: updatedBase }] })
     await flushPromises()
-    expect(wrapper.get('iframe').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/files/1.1.0-abc/index.html')
+    expect(wrapper.get('iframe').attributes('src')).toBe(`${updatedBase}index.html`)
     wrapper.unmount()
     // After an uninstall the scene is turned off and forgotten.
     listPacks([{ ...installed, installed: false, fileBase: null }])

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "orbital-station",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "runtime": "kpanel-scene-pack@1",
   "name": {
     "zh-CN": "星港轨道",

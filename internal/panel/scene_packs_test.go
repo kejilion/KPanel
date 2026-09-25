@@ -1,8 +1,11 @@
 package panel
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -123,6 +126,32 @@ func TestScenePackHTTPAuthenticationIsolationAndLifecycle(t *testing.T) {
 			t.Fatal("queued scene file request did not resume")
 		}
 	}
+	plain := performRequest(s, "GET", base+"scene.js", nil, map[string]string{"Origin": "null"})
+	if plain.Code != http.StatusOK || !strings.HasPrefix(plain.Header().Get("ETag"), `W/"`) || plain.Header().Get("Cache-Control") != "private, no-cache, must-revalidate" {
+		t.Fatalf("scene file cache headers: %d %v", plain.Code, plain.Header())
+	}
+	compressed := performRequest(s, "GET", base+"scene.js", nil, map[string]string{"Origin": "null", "Accept-Encoding": "gzip"})
+	if compressed.Code != http.StatusOK || compressed.Header().Get("Content-Encoding") != "gzip" || compressed.Header().Get("ETag") != plain.Header().Get("ETag") {
+		t.Fatalf("compressed scene file: %d %v", compressed.Code, compressed.Header())
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(compressed.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded, plain.Body.Bytes()) {
+		t.Fatal("compressed scene file did not decode to its original bytes")
+	}
+	conditional := performRequest(s, "GET", base+"scene.js", nil, map[string]string{"Origin": "null", "If-None-Match": plain.Header().Get("ETag")})
+	if conditional.Code != http.StatusNotModified || conditional.Body.Len() != 0 || conditional.Header().Get("ETag") != plain.Header().Get("ETag") {
+		t.Fatalf("conditional scene file: %d %v", conditional.Code, conditional.Header())
+	}
 	for len(s.scenePackStreams) > 0 {
 		<-s.scenePackStreams
 	}
@@ -164,6 +193,9 @@ func TestScenePackHTTPAuthenticationIsolationAndLifecycle(t *testing.T) {
 	}
 	if r := performRequest(s, "GET", base+"index.html", nil, nil); r.Code != 404 {
 		t.Fatal("deleted capability remained usable", r.Code)
+	}
+	if r := performRequest(s, "GET", base+"scene.js", nil, map[string]string{"If-None-Match": plain.Header().Get("ETag")}); r.Code != 404 {
+		t.Fatal("deleted capability returned a cached scene representation", r.Code)
 	}
 }
 

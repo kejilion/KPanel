@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "neon-city",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runtime": "kpanel-scene-pack@1",
   "name": {
     "zh-CN": "霓虹都市",

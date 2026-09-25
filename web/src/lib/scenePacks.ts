@@ -67,19 +67,22 @@ const FILE_BASE_KEY = 'kpanel:scene-pack-file-base:v1'
 function readFileBases(): Record<string, unknown> {
   try {
     const stored = JSON.parse(window.localStorage.getItem(FILE_BASE_KEY) ?? '{}') as unknown
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored as Record<string, unknown> : {}
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return Object.create(null) as Record<string, unknown>
+    return Object.assign(Object.create(null) as Record<string, unknown>, stored)
   } catch {
-    return {}
+    return Object.create(null) as Record<string, unknown>
   }
 }
 
 export function rememberedFileBase(id: string): string | undefined {
+  if (!isScenePackID(id)) return undefined
   const stored = readFileBases()
   const base = Object.prototype.hasOwnProperty.call(stored, id) ? stored[id] : undefined
   return typeof base === 'string' && scenePackPageURL({ fileBase: base }) ? base : undefined
 }
 
 export function rememberFileBase(id: string, fileBase: string | null): void {
+  if (!isScenePackID(id)) return
   const stored = readFileBases()
   if (fileBase && scenePackPageURL({ fileBase })) stored[id] = fileBase
   else delete stored[id]
