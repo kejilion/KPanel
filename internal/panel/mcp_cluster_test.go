@@ -213,12 +213,11 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 	}
 	foreignID, foreignDigest := foreign["operationId"].(string), foreign["digest"].(string)
 	_, _ = center.mcp.operations.Decide(foreignID, foreignDigest, "admin", true)
-	// Force the legal asynchronous response: the remote denial cannot finish
-	// until operation_execute has returned its in-progress operation.
+	// Keep the remote operation running until both asynchronous layers have
+	// returned. A controller receipt (submitted) is not the remote result.
 	agent.holdTrash.Store(true)
 	denied := managedCall(center, narrowToken, "operation_execute", map[string]any{"operationId": foreignID, "digest": foreignDigest})
-	releaseDenied()
-	if denied["state"] != "executing" {
+	if denied["state"] != "executing" && denied["state"] != "submitted" {
 		t.Fatalf("expected delayed remote operation to execute asynchronously: %#v", denied)
 	}
 	deadline = time.Now().Add(3 * time.Second)
@@ -229,6 +228,15 @@ func TestMCPClusterHTTPSApprovalLostReceiptRecoveryAndTargetRevocation(t *testin
 			t.Fatal(err)
 		}
 		denied = mcpOperationView(item)
+	}
+	if denied["state"] != "submitted" {
+		t.Fatalf("expected receipt for still-running remote operation: %#v", denied)
+	}
+	releaseDenied()
+	deadline = time.Now().Add(3 * time.Second)
+	for denied["state"] == "submitted" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		denied = managedCall(center, narrowToken, "operation_status", map[string]any{"operationId": foreignID})
 	}
 	if denied["state"] != "failed" || agent.calls.Load() != 1 {
 		t.Fatalf("remote trash ID escaped client roots: %#v", denied)
