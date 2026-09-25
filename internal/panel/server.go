@@ -105,6 +105,7 @@ type Server struct {
 	desktopWorkspace      *desktopworkspace.Store
 	scenePacks            *scenepacks.Store
 	scenePackStreams      chan struct{}
+	scenePackStreamQueue  chan struct{}
 	terminalCommands      *terminalcommands.Store
 	mcp                   *mcpService
 }
@@ -202,6 +203,7 @@ func NewServer(config Config, authService *auth.Service, storage *store.Store, a
 		desktopWorkspace:      desktopWorkspace,
 		scenePacks:            scenepacks.Open(filepath.Join(config.DataDir, "scene-packs"), nil),
 		scenePackStreams:      make(chan struct{}, 4),
+		scenePackStreamQueue:  make(chan struct{}, maxScenePackStreamQueue),
 		terminalCommands:      terminalCommands,
 		fileShareStreamGate:   make(chan struct{}, maxPublicFileShareStreams),
 		fileShareMetadataGate: make(chan struct{}, maxFileShareMetadataReads),

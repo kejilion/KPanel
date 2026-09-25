@@ -13,6 +13,10 @@ import (
 
 const scenePacksPath = "/api/v1/desktop/scene-packs"
 
+// A browser can request every file in one pack, plus every catalog image, in parallel.
+// Keep that burst bounded while limiting buffered file bodies to four concurrent streams.
+const maxScenePackStreamQueue = scenepacks.MaxFiles + 2*scenepacks.MaxPacks
+
 var sceneHostPattern = regexp.MustCompile(`^[a-zA-Z0-9.:[\]-]+$`)
 
 func scenePackFilePath(requestPath string) (id, token, name string, ok bool) {
@@ -156,11 +160,24 @@ func (s *Server) handleScenePacks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scenePackStream(w http.ResponseWriter, r *http.Request) bool {
+	if r.Context().Err() != nil {
+		return false
+	}
 	select {
-	case s.scenePackStreams <- struct{}{}:
-		return true
+	case s.scenePackStreamQueue <- struct{}{}:
+		defer func() { <-s.scenePackStreamQueue }()
 	default:
 		s.scenePackError(w, r, scenepacks.ErrBusy)
+		return false
+	}
+	select {
+	case s.scenePackStreams <- struct{}{}:
+		if r.Context().Err() != nil {
+			<-s.scenePackStreams
+			return false
+		}
+		return true
+	case <-r.Context().Done():
 		return false
 	}
 }

@@ -88,6 +88,44 @@ func TestScenePackHTTPAuthenticationIsolationAndLifecycle(t *testing.T) {
 		t.Fatalf("installed: %s %v", r.Body.String(), err)
 	}
 	base := *installed.FileBase
+	for i := 0; i < cap(s.scenePackStreams); i++ {
+		s.scenePackStreams <- struct{}{}
+	}
+	const queuedRequests = 8
+	queuedResponses := make(chan *httptest.ResponseRecorder, queuedRequests)
+	for i := 0; i < queuedRequests; i++ {
+		go func() {
+			queuedResponses <- performRequest(s, "GET", base+"scene.js", nil, map[string]string{"Origin": "null"})
+		}()
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(s.scenePackStreamQueue) < queuedRequests && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(s.scenePackStreamQueue) != queuedRequests {
+		t.Fatalf("only %d scene file requests were queued", len(s.scenePackStreamQueue))
+	}
+	select {
+	case response := <-queuedResponses:
+		t.Fatalf("scene file request failed instead of waiting: %d %s", response.Code, response.Body.String())
+	case <-time.After(20 * time.Millisecond):
+	}
+	for i := 0; i < cap(s.scenePackStreams); i++ {
+		<-s.scenePackStreams
+	}
+	for i := 0; i < queuedRequests; i++ {
+		select {
+		case response := <-queuedResponses:
+			if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/javascript; charset=utf-8" || response.Body.Len() == 0 {
+				t.Fatalf("queued scene file response: %d %s", response.Code, response.Body.String())
+			}
+		case <-time.After(time.Second):
+			t.Fatal("queued scene file request did not resume")
+		}
+	}
+	for len(s.scenePackStreams) > 0 {
+		<-s.scenePackStreams
+	}
 	_, rv := s.store.SecurityEntrance()
 	if err := s.store.ReplaceSecurityEntrance(rv, store.SecurityEntrance{Enabled: true, Path: "private-entry", UpdatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
@@ -148,6 +186,56 @@ func TestScenePackWritesFailClosedWhenAuditUnavailable(t *testing.T) {
 	list, err := s.scenePacks.List(context.Background())
 	if err != nil || list.Source != "auto" {
 		t.Fatalf("write escaped audit gate %+v %v", list, err)
+	}
+}
+
+func TestScenePackStreamQueueIsBoundedAndCancelable(t *testing.T) {
+	s, _ := newTestServer(t)
+	for i := 0; i < cap(s.scenePackStreams); i++ {
+		s.scenePackStreams <- struct{}{}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodGet, "/scene-file", nil).WithContext(ctx)
+	response := httptest.NewRecorder()
+	queued := make(chan bool, 1)
+	go func() { queued <- s.scenePackStream(response, request) }()
+	deadline := time.Now().Add(time.Second)
+	for len(s.scenePackStreamQueue) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(s.scenePackStreamQueue) != 1 {
+		cancel()
+		t.Fatal("request did not enter the bounded queue")
+	}
+	cancel()
+	select {
+	case acquired := <-queued:
+		if acquired {
+			t.Fatal("canceled request acquired a stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled request remained blocked")
+	}
+	if len(s.scenePackStreamQueue) != 0 {
+		t.Fatal("canceled request kept its queue slot")
+	}
+
+	for i := 0; i < cap(s.scenePackStreamQueue); i++ {
+		s.scenePackStreamQueue <- struct{}{}
+	}
+	response = httptest.NewRecorder()
+	if s.scenePackStream(response, httptest.NewRequest(http.MethodGet, "/scene-file", nil)) {
+		t.Fatal("request acquired a stream after the queue was full")
+	}
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "scene_pack_busy") {
+		t.Fatalf("full queue response: %d %s", response.Code, response.Body.String())
+	}
+	for len(s.scenePackStreamQueue) > 0 {
+		<-s.scenePackStreamQueue
+	}
+	for len(s.scenePackStreams) > 0 {
+		<-s.scenePackStreams
 	}
 }
 

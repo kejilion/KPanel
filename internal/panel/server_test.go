@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -924,6 +925,10 @@ func bootstrapCookies(t *testing.T, server *Server, tokenPath string) (*http.Coo
 
 func bootstrapCookiesForOrigin(t *testing.T, server *Server, tokenPath, origin string) (*http.Cookie, *http.Cookie) {
 	t.Helper()
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil || parsedOrigin.Host == "" {
+		t.Fatalf("invalid bootstrap origin %q", origin)
+	}
 	token, err := os.ReadFile(tokenPath)
 	if err != nil {
 		t.Fatal(err)
@@ -937,6 +942,7 @@ func bootstrapCookiesForOrigin(t *testing.T, server *Server, tokenPath, origin s
 	response := performRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
 		"Content-Type": "application/json",
 		"Origin":       origin,
+		"Host":         parsedOrigin.Host,
 	})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("bootstrap failed: %d %s", response.Code, response.Body.String())
