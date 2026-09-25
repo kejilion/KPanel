@@ -97,21 +97,21 @@
         },
         {
           "path": "poster.webp",
-          "size": 154126,
-          "sha256": "d8d7159905cddfdb88df8d279a5e94213b42e1ef3340340ce09afec3b88b1248"
+          "size": 135608,
+          "sha256": "3149d6e4429aa83937ae59c37245b783e7af8db2ba3bf5605d108647d85be5cd"
         },
         {
           "path": "scene.js",
-          "size": 705050,
-          "sha256": "dd503ffc255e90e1942f237ec7ccd013a8c77aeb6aa3d8041f52a743b5313d5b"
+          "size": 715455,
+          "sha256": "30370928e3639a60a3acf9230f03342b26f6c68eddf65046d93f6ec56f6abe8f"
         },
         {
           "path": "thumb.webp",
-          "size": 16988,
-          "sha256": "212f434683aff6f4cb0dd168cfdd5d099c4946925b14db7993bb992b55a35197"
+          "size": 17220,
+          "sha256": "c6b49c11e03e4dd52fbde68a291c818b846ad8a4a06a299e0969cbbeb90018b7"
         }
       ],
-      "sizeBytes": 1151301
+      "sizeBytes": 1143420
     },
     {
       "schema": 1,

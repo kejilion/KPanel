@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { FOG_GLSL, HASH_GLSL, type AtmosphereUniforms } from './atmosphere'
-import { DOWNTOWN, type Building } from './layout'
+import { DOWNTOWN } from './layout'
 import { NOISE_GLSL } from './noise'
 
 const DOME_VERTEX = /* glsl */ `
@@ -146,7 +146,7 @@ export interface Sky {
   update(time: number, camera: THREE.Camera): void
 }
 
-export function createSky(uniforms: AtmosphereUniforms, towers: readonly Building[], aviation: readonly THREE.Vector3[], random: () => number): Sky {
+export function createSky(uniforms: AtmosphereUniforms, searchlights: readonly THREE.Vector3[], aviation: readonly THREE.Vector3[], random: () => number): Sky {
   const group = new THREE.Group()
 
   const dome = new THREE.Mesh(new THREE.SphereGeometry(8000, 64, 32), new THREE.ShaderMaterial({
@@ -176,9 +176,9 @@ export function createSky(uniforms: AtmosphereUniforms, towers: readonly Buildin
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   })
-  const beams = towers.slice(0, 4).map((tower, index) => {
+  const beams = searchlights.slice(0, 4).map((at, index) => {
     const beam = new THREE.Mesh(beamGeometry, beamMaterial)
-    beam.position.set(tower.x, tower.y + tower.h + 1, tower.z)
+    beam.position.set(at.x, at.y + 1, at.z)
     beam.scale.set(70, 1500, 70)
     beam.userData = { phase: index * 1.9 + random(), speed: 0.05 + random() * 0.04 }
     beam.frustumCulled = false

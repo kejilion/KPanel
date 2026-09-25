@@ -205,7 +205,7 @@ export function createSigns(buildings: readonly Building[], landmarks: readonly 
     // Keep the whole 16:9 screen on the facade, clear of the ground floors and the crown.
     const height = width * 0.5625
     screens.push({
-      position: new THREE.Vector3(tower.x, Math.max(30 + height / 2, tower.h * (0.42 + random() * 0.22)), tower.z + tower.d / 2 + 0.5),
+      position: new THREE.Vector3(tower.x, tower.y + Math.max(24 + height / 2, Math.min(tower.h * (0.42 + random() * 0.22), tower.h - height / 2 - 12)), tower.z + tower.d / 2 + 0.5),
       angle: 0,
       width,
       data: [Math.floor(random() * 3), Math.floor(random() * 6), random(), 0],
