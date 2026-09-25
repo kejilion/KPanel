@@ -5,6 +5,7 @@ import { initializeI18n } from './i18n'
 import { initializeTheme } from './stores/theme'
 import { initializeDesktopMode } from './stores/desktopMode'
 import './styles/main.css'
+import './styles/classicWallpaper.css'
 
 initializeTheme()
 initializeDesktopMode()

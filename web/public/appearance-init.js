@@ -55,6 +55,12 @@
   }
   const wallpaper = selectedWallpaper()
   root.dataset.desktopWallpaper = wallpaper.id
+  // Classic mode shows the same picture as a still (a scene pack's poster), never a live scene.
+  const classicLevel = read('kpanel:classic-wallpaper:v1')
+  if (classicLevel === 'ambient' || classicLevel === 'clear') root.dataset.classicWallpaper = classicLevel
+  const setClassicImage = ({ id, url }) => {
+    root.style.setProperty('--classic-wallpaper-image', `url("${cachedImage(id) || url}")`)
+  }
   // A live scene boots to black (desktopWallpaper.css) so its own entrance is the first thing seen.
   const liveScene = wallpaper.pack
     && !(matchMedia('(prefers-reduced-motion: reduce)').matches && read('kpanel:desktop-scene-motion:v1') !== 'always')
@@ -86,7 +92,12 @@
     })
     void cacheWallpaper(wallpaper)
   }
-  window.addEventListener('kpanel:cache-desktop-wallpaper', () => { void cacheWallpaper(selectedWallpaper()) })
+  setClassicImage(wallpaper)
+  window.addEventListener('kpanel:cache-desktop-wallpaper', () => {
+    const selected = selectedWallpaper()
+    setClassicImage(selected)
+    void cacheWallpaper(selected)
+  })
   if (read('kejilion-panel-desktop-mode') === 'desktop' && !/^\/(login|setup|share)(\/|$)/.test(location.pathname)) {
     root.classList.add('desktop-boot')
   }
