@@ -35,6 +35,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import BackupCenter from '@/components/settings/BackupCenter.vue'
 import PasskeySettings from '@/components/settings/PasskeySettings.vue'
 import MCPAccess from '@/components/settings/MCPAccess.vue'
+import DesktopWallpaperPicker from '@/components/desktop/DesktopWallpaperPicker.vue'
 import KPanelUpdateDialog from '@/components/update/KPanelUpdateDialog.vue'
 import ProblemReportHelp from '@/components/problem-report/ProblemReportHelp.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
@@ -61,6 +62,7 @@ import {
 } from '@/theme/colors'
 import { moveRadioFocus } from '@/theme/radioGroup'
 import { useClassicWallpaper, type ClassicWallpaperLevel } from '@/lib/classicWallpaper'
+import { useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { useToast } from '@/stores/toast'
 import { useI18n, type SupportedLocale } from '@/i18n'
 import type { AutomaticUpdateStatus, KPanelReleaseInfo, TOTPEnrollment, TOTPStatus } from '@/types/api'
@@ -89,6 +91,7 @@ type SettingsSectionId =
   | 'passkeys'
   | 'language'
   | 'appearance'
+  | 'wallpaper'
   | 'backup'
   | 'mcp'
   | 'version-updates'
@@ -122,6 +125,7 @@ const settingsSections: SettingsSectionDefinition[] = [
   { id: 'passkeys', category: 'account', title: 'Passkey 通行密钥', description: '设备验证与凭证管理', keywords: ['Passkey', 'WebAuthn', '指纹', '安全密钥'] },
   { id: 'language', category: 'appearance', title: '语言', description: '选择界面显示语言', keywords: ['简体中文', '繁体中文', 'English'] },
   { id: 'appearance', category: 'appearance', title: '外观', description: '主题配色与明暗模式', keywords: ['主题', '浅色', '深色', '颜色'] },
+  { id: 'wallpaper', category: 'appearance', title: '壁纸', description: '桌面与经典模式共用的壁纸、3D 场景与透出程度', keywords: ['背景', '壁纸', '3D', '场景', '经典模式', '透明'] },
   { id: 'backup', category: 'data', title: '备份中心', description: '备份、恢复与数据保护', keywords: ['备份', '恢复', '导出'] },
   { id: 'mcp', category: 'data', title: 'MCP 接入', description: '外部工具与访问配置', keywords: ['MCP', 'API', 'Token', '令牌', '接入'] },
   { id: 'version-updates', category: 'system', title: '版本更新', description: '更新通道与自动安装', keywords: ['版本', '升级', '稳定版', '预览版', '自动更新'] },
@@ -335,6 +339,8 @@ const themeModes: Array<{ id: ThemePreference; label: string; description: strin
 ]
 
 const classicWallpaper = useClassicWallpaper()
+const desktopWallpaper = useDesktopWallpaper()
+desktopWallpaper.refresh()
 const classicWallpaperLevels: Array<{ id: ClassicWallpaperLevel; label: string; description: string; icon: typeof Sun }> = [
   { id: 'off', label: '关闭', description: '纯色背景，信息最清晰', icon: ImageOff },
   { id: 'ambient', label: '氛围', description: '壁纸透出页边、侧栏与顶栏，卡片不透明', icon: ImageIcon },
@@ -1385,12 +1391,25 @@ onBeforeUnmount(stopKPanelReleaseRequest)
           </button>
         </div>
       </div>
+    </section>
+
+    <section v-show="isSettingsSectionVisible('wallpaper')" class="settings-section panel-card">
+      <header class="settings-section__header">
+        <span><ImageIcon :size="19" /></span>
+        <div><h2>壁纸</h2><p>桌面模式与经典模式共用一张壁纸，选择后同时套用它的配色</p></div>
+      </header>
+      <div class="appearance-group">
+        <DesktopWallpaperPicker
+          :visible="isSettingsSectionVisible('wallpaper')"
+          @select="(id, pack) => desktopWallpaper.select(id, pack)"
+        />
+      </div>
       <div class="appearance-group">
         <div class="appearance-group__header">
-          <h3>经典模式壁纸</h3>
-          <p>沿用桌面模式当前的壁纸；3D 场景在页面背后继续播放，系统要求减少动态效果时显示封面</p>
+          <h3>经典模式透出</h3>
+          <p>让上面的壁纸透到经典模式页面背后；3D 场景会继续播放，系统要求减少动态效果时显示封面</p>
         </div>
-        <div class="theme-options" role="radiogroup" aria-label="经典模式壁纸">
+        <div class="theme-options" role="radiogroup" aria-label="经典模式透出">
           <button
             v-for="option in classicWallpaperLevels"
             :key="option.id"

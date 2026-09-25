@@ -132,7 +132,7 @@ interface SettingsBindings {
   settingsSearch: Ref<string>
   activeSettingsCategory: Ref<'all' | 'account' | 'appearance' | 'data' | 'system' | 'support'>
   visibleSettingsSectionCount: ComputedRef<number>
-  isSettingsSectionVisible: (id: 'help' | 'account-overview' | 'username' | 'password' | 'security-entrance' | 'totp' | 'language' | 'appearance' | 'backup' | 'mcp' | 'version-updates' | 'agent' | 'license') => boolean
+  isSettingsSectionVisible: (id: 'help' | 'account-overview' | 'username' | 'password' | 'security-entrance' | 'totp' | 'language' | 'appearance' | 'wallpaper' | 'backup' | 'mcp' | 'version-updates' | 'agent' | 'license') => boolean
   settingsCategoryCount: (category: 'all' | 'account' | 'appearance' | 'data' | 'system' | 'support') => number
   selectSettingsCategory: (category: 'all' | 'account' | 'appearance' | 'data' | 'system' | 'support') => void
   clearSettingsSearch: () => void
@@ -228,9 +228,9 @@ describe('SettingsView navigation', () => {
   it('starts with every settings section visible and exposes useful category counts', () => {
     const view = setupView()
 
-    expect(view.visibleSettingsSectionCount.value).toBe(14)
+    expect(view.visibleSettingsSectionCount.value).toBe(15)
     expect(view.settingsCategoryCount('account')).toBe(6)
-    expect(view.settingsCategoryCount('appearance')).toBe(2)
+    expect(view.settingsCategoryCount('appearance')).toBe(3)
     expect(view.settingsCategoryCount('data')).toBe(2)
     expect(view.settingsCategoryCount('system')).toBe(2)
     expect(view.settingsCategoryCount('support')).toBe(2)
@@ -241,9 +241,10 @@ describe('SettingsView navigation', () => {
 
     view.selectSettingsCategory('appearance')
 
-    expect(view.visibleSettingsSectionCount.value).toBe(2)
+    expect(view.visibleSettingsSectionCount.value).toBe(3)
     expect(view.isSettingsSectionVisible('language')).toBe(true)
     expect(view.isSettingsSectionVisible('appearance')).toBe(true)
+    expect(view.isSettingsSectionVisible('wallpaper')).toBe(true)
     expect(view.isSettingsSectionVisible('password')).toBe(false)
     expect(settingsSource).toContain('<BackupCenter v-show=')
     expect(settingsSource).toContain('<MCPAccess v-show=')
@@ -262,7 +263,7 @@ describe('SettingsView navigation', () => {
 
     expect(view.settingsSearch.value).toBe('')
     expect(view.activeSettingsCategory.value).toBe('all')
-    expect(view.visibleSettingsSectionCount.value).toBe(14)
+    expect(view.visibleSettingsSectionCount.value).toBe(15)
   })
 
   it('renders an accessible search, category tabs, and empty-result recovery action', () => {
@@ -508,8 +509,10 @@ describe('SettingsView appearance', () => {
     expect(settingsSource).toContain(':tabindex="theme.preference.value === option.id ? 0 : -1"')
     expect(settingsSource).toContain(':aria-checked="theme.preference.value === option.id"')
     expect(settingsSource).toContain('@click="theme.setTheme(option.id)"')
-    expect(settingsSource).toContain('role="radiogroup" aria-label="经典模式壁纸"')
+    expect(settingsSource).toContain('role="radiogroup" aria-label="经典模式透出"')
     expect(settingsSource).toContain(':aria-checked="classicWallpaper.level.value === option.id"')
+    expect(settingsSource).toContain('<DesktopWallpaperPicker')
+    expect(settingsSource).toContain('@select="(id, pack) => desktopWallpaper.select(id, pack)"')
     expect(settingsSource.match(/@keydown="moveRadioFocus"/g)).toHaveLength(5)
   })
 
