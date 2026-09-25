@@ -131,7 +131,39 @@ body:has(.classic-backdrop) {
   --classic-border-base: var(--border);
 }
 
+/*
+ * Sign-in and first-run pages: with show-through on, the brand panel carries the chosen
+ * wallpaper under a veil in the sidebar colour, so the headline stays as legible as on the
+ * plain gradient. Only public built-in wallpapers appear here (appearance-init.js sets
+ * --auth-wallpaper-image); the sign-in form keeps its solid surface.
+ */
+:root[data-classic-wallpaper] .auth-layout__brand {
+  background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--sidebar) var(--auth-wallpaper-veil-start), transparent),
+      color-mix(in srgb, var(--sidebar) var(--auth-wallpaper-veil-end), transparent) 78%),
+    var(--auth-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) center / cover no-repeat,
+    var(--sidebar);
+  --auth-wallpaper-veil-start: 60%;
+  --auth-wallpaper-veil-end: 82%;
+}
+
+:root[data-classic-wallpaper='clear'] .auth-layout__brand {
+  --auth-wallpaper-veil-start: 40%;
+  --auth-wallpaper-veil-end: 72%;
+}
+
+/* The one bright built-in picture (a hazy dawn sky) needs more veil for the muted copy. */
+:root[data-classic-wallpaper][data-auth-wallpaper='horizon'] .auth-layout__brand {
+  --auth-wallpaper-veil-start: 72%;
+  --auth-wallpaper-veil-end: 86%;
+}
+
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root[data-classic-wallpaper] .auth-layout__brand {
+    background: var(--auth-brand-background);
+  }
+
   .classic-backdrop {
     display: none;
   }

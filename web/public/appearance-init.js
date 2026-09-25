@@ -58,9 +58,23 @@
     } catch { /* Network failures never block the desktop. */ }
   }
   const wallpaper = selectedWallpaper()
-  root.dataset.desktopWallpaper = wallpaper.id
+  // Sign-in, first-run and share pages have no session: an uploaded picture or a scene poster
+  // cannot load there and must not be shown to whoever opens them. Only the public built-in
+  // wallpapers are used before sign-in (the sign-in brand panel); AppShell asks for the real
+  // images again once signed in.
+  const publicPage = /^\/(login|setup|share)(\/|$)/.test(location.pathname)
+  const privateWallpaper = Boolean(wallpaper.pack || wallpaper.custom)
+  // The desktop paints its own image when this does not name its wallpaper; a private one
+  // held back here must not look already painted after an in-app sign-in.
+  root.dataset.desktopWallpaper = publicPage && privateWallpaper ? 'classic' : wallpaper.id
+  const setAuthImage = ({ id, pack, custom, url }) => {
+    const publicWallpaper = !(pack || custom)
+    root.dataset.authWallpaper = publicWallpaper ? id : 'classic'
+    root.style.setProperty('--auth-wallpaper-image', `url("${publicWallpaper ? url : classicURL}")`)
+  }
+  setAuthImage(wallpaper)
   // An uploaded picture keeps its focal point in view and, when bright, asks for a thicker classic veil.
-  if (wallpaper.custom) {
+  if (wallpaper.custom && !publicPage) {
     try {
       const display = JSON.parse(read('kpanel:desktop-wallpaper-custom:v1') || 'null')
       const inRange = (value, max) => Number.isInteger(value) && value >= 0 && value <= max
@@ -77,11 +91,13 @@
     root.style.setProperty('--classic-wallpaper-image', `url("${cachedImage(id) || url}")`)
   }
   // A live scene boots to black (desktopWallpaper.css) so its own entrance is the first thing seen.
-  const liveScene = wallpaper.pack
+  const liveScene = wallpaper.pack && !publicPage
     && !(matchMedia('(prefers-reduced-motion: reduce)').matches && read('kpanel:desktop-scene-motion:v1') !== 'always')
   if (liveScene) {
     root.dataset.desktopWallpaperScene = 'live'
-  } else {
+  } else if (!(publicPage && privateWallpaper)) {
+    // Before sign-in a private wallpaper is not preloaded: the desktop and classic surfaces
+    // only exist after sign-in.
     const source = cachedImage(wallpaper.id) || wallpaper.url
     root.style.setProperty('--desktop-wallpaper-image', `url("${source}")`)
     root.classList.add('desktop-wallpaper-loading')
@@ -107,13 +123,14 @@
     })
     void cacheWallpaper(wallpaper)
   }
-  setClassicImage(wallpaper)
+  if (!(publicPage && privateWallpaper)) setClassicImage(wallpaper)
   window.addEventListener('kpanel:cache-desktop-wallpaper', () => {
     const selected = selectedWallpaper()
+    setAuthImage(selected)
     setClassicImage(selected)
     void cacheWallpaper(selected)
   })
-  if (read('kejilion-panel-desktop-mode') === 'desktop' && !/^\/(login|setup|share)(\/|$)/.test(location.pathname)) {
+  if (read('kejilion-panel-desktop-mode') === 'desktop' && !publicPage) {
     root.classList.add('desktop-boot')
   }
 })()

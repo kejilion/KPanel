@@ -118,4 +118,30 @@ describe('appearance before application startup', () => {
       expect(run({ 'kpanel:desktop-wallpaper:v1': stored }).properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
     }
   })
+  it.each(['/login', '/setup', '/share/token'])('never requests or shows a private wallpaper on %s', pathname => {
+    const id = '0123456789abcdef0123456789abcdef'
+    const display = JSON.stringify({ id, focusX: 700, focusY: 320, luminance: 72 })
+    const custom = run({ 'kpanel:desktop-wallpaper:v1': `custom:${id}`, 'kpanel:desktop-wallpaper-custom:v1': display, 'kpanel:classic-wallpaper:v1': 'clear' }, pathname)
+    expect(custom.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    expect(custom.properties.has('--desktop-wallpaper-image')).toBe(false)
+    expect(custom.properties.has('--classic-wallpaper-image')).toBe(false)
+    expect(custom.properties.has('--desktop-wallpaper-position')).toBe(false)
+    expect(custom.root.dataset.wallpaperBright).toBeUndefined()
+    expect(custom.root.dataset.classicWallpaper).toBe('clear')
+    expect(custom.root.dataset.desktopWallpaper).toBe('classic')
+    expect(custom.root.dataset.authWallpaper).toBe('classic')
+
+    const pack = run({ 'kpanel:desktop-wallpaper:v1': 'pack:orbital-station' }, pathname)
+    expect(pack.root.dataset.desktopWallpaperScene).toBeUndefined()
+    expect(pack.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    expect(pack.properties.has('--desktop-wallpaper-image')).toBe(false)
+  })
+  it('shows the chosen built-in wallpaper before sign-in and the real one after', () => {
+    const login = run({ 'kpanel:desktop-wallpaper:v1': 'rift' }, '/login')
+    expect(login.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop-rift.webp")')
+    expect(login.root.dataset.authWallpaper).toBe('rift')
+    const signedIn = run({ 'kpanel:desktop-wallpaper:v1': 'pack:orbital-station', 'kpanel:desktop-scene-motion:v1': 'always' }, '/overview')
+    expect(signedIn.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    expect(signedIn.root.dataset.desktopWallpaperScene).toBe('live')
+  })
 })
