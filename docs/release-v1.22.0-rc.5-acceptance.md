@@ -171,13 +171,13 @@ Mock 模拟数据，clean checkpoint；启动器状态 ready 不代表受影响�
 本版属于预览产物，不计为稳定正式发布或生产部署。没有产品生产变更失败，流程异常另行统计。首个纳入时间按净保留功能的首个提交计算；两个被撤回场景的更早提交不计入此口径。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：12
+- 已记录发布流程异常或无效证据拦截次数：13
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
 ### 流程异常明细
 
-按事件或同根因批次统计实际记录的 12 次异常。已对照最近五个稳定版 v1.21.0、v1.20.0、v1.19.0、v1.18.0、v1.17.0 的记录，未发现下列完全相同指纹；不把 RC4 的相似网络/浏览器局限计入稳定版复发次数。业务缺陷被正常测试发现和主动负向对照不计作发布流程异常。
+按事件或同根因批次统计实际记录的 13 次异常。已对照最近五个稳定版 v1.21.0、v1.20.0、v1.19.0、v1.18.0、v1.17.0 的记录，未发现下列完全相同指纹；不把 RC4 的相似网络/浏览器局限计入稳定版复发次数。业务缺陷被正常测试发现和主动负向对照不计作发布流程异常。
 
 <!-- kpanel-release-process-incidents:start -->
 [
@@ -269,6 +269,15 @@ Mock 模拟数据，clean checkpoint；启动器状态 ready 不代表受影响�
     "impact": "本地验收记录校验拒绝 PowerShell 原始七位小数时间戳；尚未提交或推送文档。",
     "recoveryEvidence": "将冻结时间按毫秒精度写为 2026-09-25T11:19:52.776+08:00 后重新校验；原始七位时间仍保存在 release-profile.json。",
     "permanentAction": "机器验收记录统一使用 ISO 毫秒精度时间戳，提交前运行既有 metrics 校验；不修改或放宽门禁。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "acceptance/check-collaboration-state/unsupported-role-value",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "验收文档本地提交 0130c9b6 后误用 role=task，参数校验拒绝，远端推送未执行。",
+    "recoveryEvidence": "改用入口支持的 role=writer 后检查通过，clean=true、ahead=1、behind=0；补记后再验证最终候选。",
+    "permanentAction": "角色参数按唯一入口的 management/writer/auto 使用，本次发布收尾属于 writer；不改变脚本校验。",
     "historicalReleases": []
   }
 ]
