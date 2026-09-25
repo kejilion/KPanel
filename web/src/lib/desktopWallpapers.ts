@@ -1,5 +1,6 @@
 import { readonly, ref } from 'vue'
 import { api } from '@/lib/api'
+import { forgetAuthWallpaperCopy, readAuthWallpaperCopy, rememberAuthWallpaperCopy } from '@/lib/authWallpaperCopy'
 import { rememberFileBase, scenePackFromWallpaper, scenePackThemeColors, type ScenePack } from '@/lib/scenePacks'
 import type { CustomWallpaper, CustomWallpaperList } from '@/types/api'
 import { useTheme } from '@/stores/theme'
@@ -128,7 +129,40 @@ function persist(id: DesktopWallpaperID): void {
 function resetToClassic(): void {
   current.value = 'classic'
   applyCustomDisplay()
+  forgetAuthWallpaperCopy()
   persist('classic')
+}
+
+function readCustomFocus(customID: string): { focusX: number, focusY: number } {
+  try {
+    const display = JSON.parse(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY) || 'null') as Partial<CustomWallpaper> | null
+    if (display?.id === customID && Number.isInteger(display.focusX) && Number.isInteger(display.focusY)) {
+      return { focusX: display.focusX!, focusY: display.focusY! }
+    }
+  } catch {
+    // Centred when the framing is unknown.
+  }
+  return { focusX: 500, focusY: 500 }
+}
+
+/**
+ * Keeps this browser's sign-in copy (authWallpaperCopy.ts) in step with a private choice:
+ * an uploaded picture, or a 3D scene's poster. A built-in wallpaper needs no copy.
+ */
+function syncAuthWallpaperCopy(id: DesktopWallpaperID): void {
+  const customID = customWallpaperFromID(id)
+  const packID = scenePackFromWallpaper(id)
+  if (!customID && !packID) {
+    forgetAuthWallpaperCopy()
+    return
+  }
+  const focus = customID ? readCustomFocus(customID) : { focusX: 500, focusY: 500 }
+  const copy = readAuthWallpaperCopy()
+  // An existing copy is kept unless its framing changed (it was centred before the picture's
+  // focal point was known in this browser).
+  if (copy?.id === id && copy.focusX === focus.focusX && copy.focusY === focus.focusY) return
+  const url = customID ? api.desktop.wallpaperImageURL(customID) : api.desktop.scenePackPosterURL(packID!)
+  void rememberAuthWallpaperCopy(id, url, focus, () => current.value === id)
 }
 
 export function useDesktopWallpaper() {
@@ -171,7 +205,12 @@ export function useDesktopWallpaper() {
       if (packColors) applyScenePackTheme(packColors)
       if (custom?.theme) applyScenePackTheme({ ...custom.theme, signatureLinked: custom.theme.signature === custom.theme.brand })
       persist(id)
+      syncAuthWallpaperCopy(id)
       return true
+    },
+    /** Makes sure a private choice made earlier (or in another tab) has its sign-in copy. */
+    ensureAuthWallpaperCopy(): void {
+      syncAuthWallpaperCopy(current.value)
     },
     /** Falls back to the default wallpaper without touching the colors (a removed pack or picture). */
     resetToClassic,
@@ -190,8 +229,12 @@ export function useDesktopWallpaper() {
       const chosen = customWallpaperFromID(current.value)
       if (!chosen) return
       const wallpaper = list.wallpapers.find((candidate) => candidate.id === chosen)
-      if (wallpaper) applyCustomDisplay(wallpaper)
-      else resetToClassic()
+      if (!wallpaper) {
+        resetToClassic()
+        return
+      }
+      applyCustomDisplay(wallpaper)
+      syncAuthWallpaperCopy(current.value)
     },
     /** Adds a just-uploaded wallpaper to the shared list. */
     customUploaded(wallpaper: CustomWallpaper): void {

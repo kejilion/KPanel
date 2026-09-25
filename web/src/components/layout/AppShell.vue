@@ -288,7 +288,9 @@ onMounted(() => {
   void refreshAgent()
   // An uploaded picture chosen here may have been deleted from another browser: confirm it
   // still exists (falling back to the default) and re-apply its framing.
+  // Confirming an upload also refreshes the sign-in copy once its focal point is known.
   if (customWallpaperFromID(wallpaperChoice.id.value)) void wallpaperChoice.loadCustomWallpapers().catch(() => undefined)
+  else wallpaperChoice.ensureAuthWallpaperCopy()
   // Signing in happens without a reload, and before it the boot script held back private
   // wallpapers (uploads, scene posters); have it point the classic backdrop at the real one now.
   window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))

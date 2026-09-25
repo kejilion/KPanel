@@ -144,4 +144,28 @@ describe('appearance before application startup', () => {
     expect(signedIn.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
     expect(signedIn.root.dataset.desktopWallpaperScene).toBe('live')
   })
+  it('shows this browser\'s own copy of a private wallpaper before sign-in, and only a valid one for the chosen wallpaper', () => {
+    const id = '0123456789abcdef0123456789abcdef'
+    const image = 'data:image/webp;base64,UklGRg=='
+    const copy = (overrides = {}) => JSON.stringify({ id: `custom:${id}`, image, focusX: 700, focusY: 320, bright: true, ...overrides })
+    const chosen = { 'kpanel:desktop-wallpaper:v1': `custom:${id}`, 'kpanel:classic-wallpaper:v1': 'clear' }
+
+    const login = run({ ...chosen, 'kpanel:auth-wallpaper:v1': copy() }, '/login')
+    expect(login.properties.get('--auth-wallpaper-image')).toBe(`url("${image}")`)
+    expect(login.properties.get('--auth-wallpaper-position')).toBe('70% 32%')
+    expect(login.root.dataset.authWallpaper).toBe('private')
+    expect(login.root.dataset.authWallpaperBright).toBe('true')
+    expect(login.properties.has('--desktop-wallpaper-image')).toBe(false)
+
+    for (const bad of [copy({ id: 'pack:orbital-station' }), copy({ image: 'https://example.com/x.webp' }), copy({ image: 'data:image/svg+xml;base64,PHN2Zz4=' }), copy({ focusX: '50%' }), copy({ image: `data:image/webp;base64,${'A'.repeat(400001)}` }), '{broken']) {
+      const fallback = run({ ...chosen, 'kpanel:auth-wallpaper:v1': bad }, '/login')
+      expect(fallback.properties.get('--auth-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+      expect(fallback.root.dataset.authWallpaper).toBe('classic')
+      expect(fallback.root.dataset.authWallpaperBright).toBeUndefined()
+    }
+
+    const horizon = run({ 'kpanel:desktop-wallpaper:v1': 'horizon' }, '/login')
+    expect(horizon.root.dataset.authWallpaperBright).toBe('true')
+    expect(horizon.properties.get('--auth-wallpaper-position')).toBe('center')
+  })
 })
