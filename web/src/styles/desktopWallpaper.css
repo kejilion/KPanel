@@ -32,6 +32,21 @@ html.desktop-wallpaper-loading .desktop__wallpaper { visibility: hidden; }
   background: var(--desktop-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) center / cover no-repeat;
 }
 
+/*
+ * A live 3D scene starts from black and brings its own light: its entrance fades up from here.
+ * The root flag is set before the app starts (appearance-init.js) and kept in sync by the
+ * desktop, so the boot layer, the loading placeholder and the desktop are all the same black.
+ */
+.desktop__wallpaper--scene .desktop__wallpaper-image,
+html[data-desktop-wallpaper-scene='live'] .desktop__wallpaper-image {
+  background: #000;
+}
+
+.desktop__wallpaper--scene .desktop__aurora,
+html[data-desktop-wallpaper-scene='live'] .desktop__aurora {
+  display: none;
+}
+
 .desktop__wallpaper-veil {
   position: absolute;
   z-index: 2;

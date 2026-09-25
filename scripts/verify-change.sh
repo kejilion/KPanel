@@ -153,6 +153,10 @@ for path in "${changed_files[@]}"; do
   case "$path" in
     *.md|docs/*|LICENSE|dependency-policy.json|environment-policy.json|.codex-workflows/*|.github/ISSUE_TEMPLATE/*)
       ;;
+    scene-packs/*)
+      # Desktop 3D scene packs are sandboxed content; they get their own checks below.
+      docs_only=false
+      ;;
     web/*)
       docs_only=false
       needs_web=true
@@ -210,6 +214,25 @@ for path in "${changed_files[@]}"; do
   esac
 done
 
+# A changed pack is rebuilt to prove its dist/ is the build of its reviewed src/; toolchain
+# changes rebuild every pack. Manifests, limits and the catalog are always checked for all packs.
+needs_scene_packs=false
+scene_packs_all=false
+scene_pack_ids=()
+for path in "${changed_files[@]}"; do
+  case "$path" in
+    scene-packs/*/*)
+      needs_scene_packs=true
+      scene_pack_id="${path#scene-packs/}"
+      scene_pack_ids+=("${scene_pack_id%%/*}")
+      ;;
+    scene-packs/*|scripts/check-scene-packs.mjs|scripts/tests/check-scene-packs.test.mjs|web/scripts/build-scene-packs.mjs)
+      needs_scene_packs=true
+      scene_packs_all=true
+      ;;
+  esac
+done
+
 if [[ ${#go_domains[@]} -gt 0 ]]; then
   mapfile -t go_domains < <(printf '%s\n' "${go_domains[@]}" | sort -u)
   if [[ ${#go_domains[@]} -gt 1 ]]; then
@@ -237,6 +260,18 @@ verify_web() {
     npm test
     npm run build
   )
+}
+
+verify_scene_packs() {
+  install_web_dependencies
+  node scripts/check-scene-packs.mjs
+  node --test scripts/tests/check-scene-packs.test.mjs
+  if [[ "$scene_packs_all" == true ]]; then
+    (cd web && npm run scene-packs:check)
+  else
+    mapfile -t scene_pack_ids < <(printf '%s\n' "${scene_pack_ids[@]}" | sort -u)
+    (cd web && npm run scene-packs:check -- "${scene_pack_ids[@]}")
+  fi
 }
 
 verify_targeted_go() {
@@ -273,19 +308,23 @@ if [[ "$requested_level" == "3" || "$requested_level" == "l3" || "$requested_lev
   needs_deploy=true
   needs_image=true
   needs_linux_build=true
+  needs_scene_packs=true
+  scene_packs_all=true
 elif [[ "$requested_level" == "2" || "$requested_level" == "l2" ]]; then
   needs_go=true
   needs_full_go=true
   needs_web=true
   needs_deploy=true
   needs_linux_build=true
+  needs_scene_packs=true
+  scene_packs_all=true
 else
   needs_linux_build=false
 fi
 
 required_commands=()
 [[ "$needs_go" == true ]] && required_commands+=(go)
-[[ "$needs_web" == true ]] && required_commands+=(npm)
+[[ "$needs_web" == true || "$needs_scene_packs" == true ]] && required_commands+=(npm)
 [[ "$needs_linux_build" == true ]] && required_commands+=(make)
 if [[ "$requested_level" == "3" || "$requested_level" == "l3" || "$requested_level" == "release" ]]; then
   required_commands+=(go gofmt npm make docker)
@@ -342,6 +381,7 @@ fi
 if [[ "$requested_level" == "3" || "$requested_level" == "l3" || "$requested_level" == "release" ]]; then
   install_web_dependencies
   make test
+  verify_scene_packs
   go test -race ./internal/panel ./internal/auth ./internal/dockerx
   go vet ./...
   make security-audit
@@ -371,6 +411,10 @@ fi
 
 if [[ "$needs_web" == true ]]; then
   verify_web
+fi
+
+if [[ "$needs_scene_packs" == true ]]; then
+  verify_scene_packs
 fi
 
 if [[ "$needs_deploy" == true ]]; then

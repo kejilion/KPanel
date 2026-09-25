@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "id": "neon-city",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "霓虹都市",
+    "zh-TW": "霓虹都市",
+    "en-US": "Neon City"
+  },
+  "description": {
+    "zh-CN": "从黄昏到雨夜，高架车流与霓虹招牌点亮整座不夜城",
+    "zh-TW": "從黃昏到雨夜，高架車流與霓虹招牌點亮整座不夜城",
+    "en-US": "From dusk to a rainy night, traffic and neon light up a city that never sleeps"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "MIT",
+  "tags": [
+    "city",
+    "night",
+    "neon",
+    "cyberpunk"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#c2357f",
+    "neutral": "#3e3346",
+    "signature": "#2ec4d6"
+  },
+  "cameras": [
+    {
+      "id": "skyline",
+      "name": {
+        "zh-CN": "黄昏天际线",
+        "zh-TW": "黃昏天際線",
+        "en-US": "Dusk skyline"
+      }
+    },
+    {
+      "id": "highway",
+      "name": {
+        "zh-CN": "蓝调高架",
+        "zh-TW": "藍調高架",
+        "en-US": "Blue-hour highway"
+      }
+    },
+    {
+      "id": "street",
+      "name": {
+        "zh-CN": "雨夜街巷",
+        "zh-TW": "雨夜街巷",
+        "en-US": "Rainy night street"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ]
+}

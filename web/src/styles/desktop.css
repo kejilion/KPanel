@@ -2887,6 +2887,250 @@ body.desktop-mode-open::-webkit-scrollbar {
   box-shadow: 0 4px 12px rgb(0 0 0 / 22%);
 }
 
+.desktop-wallpaper-section__title {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.desktop-wallpaper-section__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Shown only while the system asks for reduced motion: explains the still scenes. */
+.desktop-wallpaper-motion {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+  border-radius: var(--radius);
+}
+
+.desktop-wallpaper-motion p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-wallpaper-motion__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 3D scene packs: a repository catalog with download, apply and delete. */
+.desktop-scene-packs {
+  margin-top: 22px;
+}
+
+.desktop-scene-packs__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.desktop-scene-packs__intro {
+  display: grid;
+  flex: 1 1 280px;
+  gap: 4px;
+}
+
+.desktop-scene-packs__intro .desktop-wallpaper-section__title {
+  margin: 0;
+}
+
+.desktop-scene-packs__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-scene-packs__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.desktop-scene-packs__source select {
+  min-height: 32px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--control-border, var(--border));
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+}
+
+.desktop-scene-packs__filter {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.desktop-scene-packs__filter button {
+  min-height: 28px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.desktop-scene-packs__filter button[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  font-weight: 600;
+}
+
+.desktop-scene-packs__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.desktop-scene-packs__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.desktop-scene-pack-card {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.desktop-scene-pack-card:hover,
+.desktop-scene-pack-card:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+  box-shadow: 0 9px 24px rgb(0 0 0 / 14%);
+}
+
+.desktop-scene-pack-card--active {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.desktop-scene-pack-card__preview {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: #05070c;
+  border-radius: var(--radius);
+}
+
+.desktop-scene-pack-card__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.4s cubic-bezier(.22, 1, .36, 1);
+}
+
+.desktop-scene-pack-card:hover .desktop-scene-pack-card__preview img {
+  transform: scale(1.06);
+}
+
+.desktop-scene-pack-card__badges {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.desktop-scene-pack-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  color: #fff;
+  background: rgb(8 12 20 / 68%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.desktop-scene-pack-card__body {
+  display: grid;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.desktop-scene-pack-card__body strong {
+  font-size: 15px;
+}
+
+.desktop-scene-pack-card__body p {
+  margin: 0;
+  color: var(--text-soft, var(--text));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-scene-pack-card__meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.desktop-scene-pack-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px 4px;
+}
+
+.desktop-scene-pack-card__error {
+  margin: 0;
+  padding: 0 4px 4px;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-scene-pack-card__preview img {
+    transition: none;
+  }
+}
+
 .desktop-menu-enter-active,
 .desktop-menu-leave-active {
   transition: opacity .14s ease, transform .14s ease;

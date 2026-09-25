@@ -47,6 +47,53 @@ describe('appearance before application startup', () => {
     expect(run({}, '/', false, { [key]: 'data:image/webp;base64,UklGRg==' }).properties.get('--desktop-wallpaper-image')).toContain('data:image/webp;')
     expect(run({}, '/', false, { [key]: 'https://example.com/x.webp' }).properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
   })
+  function bootPack(stored: string, { reduced, always = false }: { reduced: boolean, always?: boolean }) {
+    const properties = new Map<string, string>()
+    const classes = new Set<string>()
+    const root = { dataset: {} as Record<string, string>, style: { colorScheme: '', setProperty: (key: string, value: string) => properties.set(key, value) }, classList: { add: (name: string) => classes.add(name), remove: (name: string) => classes.delete(name) } }
+    const sources: string[] = []
+    const values: Record<string, string> = { 'kpanel:desktop-wallpaper:v1': stored, ...(always ? { 'kpanel:desktop-scene-motion:v1': 'always' } : {}) }
+    runInNewContext(script, {
+      document: { documentElement: root },
+      location: { pathname: '/' },
+      matchMedia: (query: string) => ({ matches: query.includes('reduced-motion') && reduced }),
+      localStorage: { getItem: (key: string) => values[key] ?? null },
+      sessionStorage: { getItem: () => null },
+      Image: class {
+        set src(value: string) { sources.push(value) }
+        decode() { return sources.at(-1)?.includes('/scene-packs/') ? Promise.reject(new Error('404')) : Promise.resolve() }
+      },
+      fetch: async () => ({ ok: false }),
+      window: { addEventListener() {} },
+    })
+    return { root, properties, classes, sources }
+  }
+  it('boots a live scene pack to black so its entrance is the first thing seen', () => {
+    for (const result of [bootPack('pack:orbital-station', { reduced: false }), bootPack('pack:orbital-station', { reduced: true, always: true })]) {
+      expect(result.root.dataset.desktopWallpaper).toBe('pack:orbital-station')
+      expect(result.root.dataset.desktopWallpaperScene).toBe('live')
+      expect(result.properties.has('--desktop-wallpaper-image')).toBe(false)
+      expect(result.classes.has('desktop-wallpaper-loading')).toBe(false)
+      expect(result.sources).toEqual([])
+    }
+  })
+  it('paints the scene pack poster for reduced motion and never trusts other pack keys', () => {
+    const result = run({ 'kpanel:desktop-wallpaper:v1': 'pack:orbital-station' })
+    expect(result.root.dataset.desktopWallpaperScene).toBeUndefined()
+    expect(result.properties.get('--desktop-wallpaper-image')).toBe('url("/api/v1/desktop/scene-packs/orbital-station/poster")')
+    for (const stored of ['pack:../../logout', 'pack:Orbital', 'pack:']) {
+      const forged = bootPack(stored, { reduced: false })
+      expect(forged.root.dataset.desktopWallpaperScene).toBeUndefined()
+      expect(forged.properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    }
+  })
+  it('falls back to the classic wallpaper when a still pack poster is gone', async () => {
+    const result = bootPack('pack:orbital-station', { reduced: true })
+    for (let tick = 0; tick < 8; tick++) await Promise.resolve()
+    expect(result.sources).toEqual(['/api/v1/desktop/scene-packs/orbital-station/poster', '/wallpapers/kpanel-desktop.webp'])
+    expect(result.properties.get('--desktop-wallpaper-image')).toBe('url("/wallpapers/kpanel-desktop.webp")')
+    expect(result.root.dataset.desktopWallpaperFailed).toBeUndefined()
+  })
   it('restores matching veil tokens but rejects URL-bearing CSS', () => {
     const cached = { 'kpanel:desktop-backdrop:v1': JSON.stringify({ theme: 'dark', colors: null, tokens: { '--desktop-wallpaper-veil-dark': 'linear-gradient(145deg, rgb(0 0 0 / 26%), rgb(0 0 0 / 48%))', '--desktop-aurora-one': 'url(https://example.com/x)' } }) }
     expect(run({}, '/', false, cached).properties.get('--desktop-wallpaper-veil-dark')).toContain('26%')

@@ -1,0 +1,559 @@
+{
+  "schema": 1,
+  "packs": [
+    {
+      "schema": 1,
+      "id": "neon-city",
+      "version": "1.0.0",
+      "runtime": "kpanel-scene-pack@1",
+      "name": {
+        "zh-CN": "霓虹都市",
+        "zh-TW": "霓虹都市",
+        "en-US": "Neon City"
+      },
+      "description": {
+        "zh-CN": "从黄昏到雨夜，高架车流与霓虹招牌点亮整座不夜城",
+        "zh-TW": "從黃昏到雨夜，高架車流與霓虹招牌點亮整座不夜城",
+        "en-US": "From dusk to a rainy night, traffic and neon light up a city that never sleeps"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "MIT",
+      "tags": [
+        "city",
+        "night",
+        "neon",
+        "cyberpunk"
+      ],
+      "entry": "index.html",
+      "poster": "poster.webp",
+      "thumb": "thumb.webp",
+      "theme": {
+        "brand": "#c2357f",
+        "neutral": "#3e3346",
+        "signature": "#2ec4d6"
+      },
+      "cameras": [
+        {
+          "id": "skyline",
+          "name": {
+            "zh-CN": "黄昏天际线",
+            "zh-TW": "黃昏天際線",
+            "en-US": "Dusk skyline"
+          }
+        },
+        {
+          "id": "highway",
+          "name": {
+            "zh-CN": "蓝调高架",
+            "zh-TW": "藍調高架",
+            "en-US": "Blue-hour highway"
+          }
+        },
+        {
+          "id": "street",
+          "name": {
+            "zh-CN": "雨夜街巷",
+            "zh-TW": "雨夜街巷",
+            "en-US": "Rainy night street"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "three",
+          "version": "0.186.0",
+          "license": "MIT"
+        }
+      ],
+      "path": "neon-city/dist",
+      "files": [
+        {
+          "path": "assets/rooftops.glb",
+          "size": 226208,
+          "sha256": "7154a65e8b41e484251558b585ef31034d9b58593727fe517b81e407863aac14"
+        },
+        {
+          "path": "assets/rooms.webp",
+          "size": 44400,
+          "sha256": "34cb3c156fe99d69c82d2e856357308d09546ed8b17e9045965f274098ead6c6"
+        },
+        {
+          "path": "index.html",
+          "size": 418,
+          "sha256": "42bf867d6f4c718f469f8cec1e9cd7c115484f6ed1f73768c32a2d680688b490"
+        },
+        {
+          "path": "manifest.json",
+          "size": 1458,
+          "sha256": "92399ad9f949cc7dccfde68d7286fe87699655be070cff8d5c6cdbcb2949e98d"
+        },
+        {
+          "path": "poster.webp",
+          "size": 154126,
+          "sha256": "d8d7159905cddfdb88df8d279a5e94213b42e1ef3340340ce09afec3b88b1248"
+        },
+        {
+          "path": "scene.js",
+          "size": 704689,
+          "sha256": "be717d2400861192c0120b636cf80d0f0228c9c6d92f0f248b4e18f6409d6253"
+        },
+        {
+          "path": "thumb.webp",
+          "size": 16988,
+          "sha256": "212f434683aff6f4cb0dd168cfdd5d099c4946925b14db7993bb992b55a35197"
+        }
+      ],
+      "sizeBytes": 1148287
+    },
+    {
+      "schema": 1,
+      "id": "orbital-station",
+      "version": "1.0.0",
+      "runtime": "kpanel-scene-pack@1",
+      "name": {
+        "zh-CN": "星港轨道",
+        "zh-TW": "星港軌道",
+        "en-US": "Orbital Station"
+      },
+      "description": {
+        "zh-CN": "从星云深处缓缓靠近行星，环形空间站在轨道上徐徐旋转",
+        "zh-TW": "從星雲深處緩緩靠近行星，環形太空站在軌道上徐徐旋轉",
+        "en-US": "Drift in toward a living planet and its slowly turning ringed station"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "MIT",
+      "tags": [
+        "space",
+        "planet",
+        "sci-fi"
+      ],
+      "entry": "index.html",
+      "poster": "poster.webp",
+      "thumb": "thumb.webp",
+      "theme": {
+        "brand": "#2f6fd0",
+        "neutral": "#33415a",
+        "signature": "#35b8d6"
+      },
+      "cameras": [
+        {
+          "id": "panorama",
+          "name": {
+            "zh-CN": "行星全景",
+            "zh-TW": "行星全景",
+            "en-US": "Planet panorama"
+          }
+        },
+        {
+          "id": "station",
+          "name": {
+            "zh-CN": "空间站近景",
+            "zh-TW": "太空站近景",
+            "en-US": "Station close-up"
+          }
+        },
+        {
+          "id": "sunrise",
+          "name": {
+            "zh-CN": "行星日出",
+            "zh-TW": "行星日出",
+            "en-US": "Sunrise over the limb"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "three",
+          "version": "0.186.0",
+          "license": "MIT"
+        }
+      ],
+      "path": "orbital-station/dist",
+      "files": [
+        {
+          "path": "assets/planet-clouds.webp",
+          "size": 346932,
+          "sha256": "0e7e67805a6bc3e2590285edab63a5fd5895265682ed7a04d621349e52495504"
+        },
+        {
+          "path": "assets/planet-masks.webp",
+          "size": 186296,
+          "sha256": "6dfdb06cd7ad864f141368cb630b07ce44a0f1fc39421e2ba8ee72c42bf32b68"
+        },
+        {
+          "path": "assets/planet-relief.webp",
+          "size": 724098,
+          "sha256": "edd3da7bd71e02bbe7312113f7479eceb07c0e054f50d3c10d009575d9a86194"
+        },
+        {
+          "path": "assets/planet-surface.webp",
+          "size": 263604,
+          "sha256": "6abfd47aa711c11cd3693b7565711af354ef28e58a07daa22fab22ddf986ea3e"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-colour.webp",
+          "size": 4658,
+          "sha256": "ea25304a07a983dd230fc199cbf82f556152fe6d5cbd7ac812ab5244d42dd0d2"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-normal.webp",
+          "size": 83630,
+          "sha256": "34239f41ad8c01f706d17d13fd9d44bf74c728dd4968714ff4af9d29de5919a5"
+        },
+        {
+          "path": "assets/station-textures/foil-gold-orm.webp",
+          "size": 11650,
+          "sha256": "a7bd7d0f53f97c75840d9ed605b22648466e0d3e6c72abd3cbb8454bc9e9e1b4"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-colour.webp",
+          "size": 4318,
+          "sha256": "0b9b2732c05301654096d029cb38a06a4e408a7d1523ec4b06c43ab8cf7f6194"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-normal.webp",
+          "size": 82838,
+          "sha256": "ffe9b192ad537629d9412993366311131d13be021edbf0b57f23d0aca15eb40c"
+        },
+        {
+          "path": "assets/station-textures/foil-silver-orm.webp",
+          "size": 11202,
+          "sha256": "c388dedb2f8665926f3e77498dbed15be37404343bacad59ede792a0938cd66d"
+        },
+        {
+          "path": "assets/station-textures/hull-colour.webp",
+          "size": 8096,
+          "sha256": "9df02ab7b03cf66689ad86a2ea8ae9a36e4815d7a0ddce2b739a624c24122eda"
+        },
+        {
+          "path": "assets/station-textures/hull-normal.webp",
+          "size": 38270,
+          "sha256": "9e6bb4ad475b1418154440e2e2d29b06b1ad6a0e044d8dc2c749a2acd7ad482c"
+        },
+        {
+          "path": "assets/station-textures/hull-orm.webp",
+          "size": 6666,
+          "sha256": "bc0a950ea2e7cd60ad510a77f735c9313220eddf8b9f26a6611a2cb95e49d451"
+        },
+        {
+          "path": "assets/station-textures/metal-colour.webp",
+          "size": 1524,
+          "sha256": "bf1e53296378566c955d3320f3e0136fa00067c99d0250a9b68cff043f9add7b"
+        },
+        {
+          "path": "assets/station-textures/metal-normal.webp",
+          "size": 1984,
+          "sha256": "265e6a99c78d255aa0b34ecec6780fb0244159d471cc4404f7ce13e16b0d09ad"
+        },
+        {
+          "path": "assets/station-textures/metal-orm.webp",
+          "size": 11470,
+          "sha256": "d09784e5e7eeb58fdd51d5eaa790863c406bd388b9c1809d0f1420d319581310"
+        },
+        {
+          "path": "assets/station-textures/radiator-colour.webp",
+          "size": 1076,
+          "sha256": "09a4210c798bdcb5e487236b0226463ddc18f95e190fba7e540ba8987fc3d89a"
+        },
+        {
+          "path": "assets/station-textures/radiator-normal.webp",
+          "size": 2528,
+          "sha256": "4affcbcb0ba31103c8c576f67b0b87d24940bc63578158c93bcc5a0a4c0eded5"
+        },
+        {
+          "path": "assets/station-textures/radiator-orm.webp",
+          "size": 1870,
+          "sha256": "5e067f4f94319f893beab08069f9a9fef29b701c64576e522ef6dcfad62a67a4"
+        },
+        {
+          "path": "assets/station-textures/solar-colour.webp",
+          "size": 53258,
+          "sha256": "0d208c4c8a8b2d1fafc9fe12de2d8315c2453887a48f314ea95ff69394e4c530"
+        },
+        {
+          "path": "assets/station-textures/solar-normal.webp",
+          "size": 41308,
+          "sha256": "7888585bfc40e966779f5ed0775d51f06e1e131b9368b8a8249d73f39571fb43"
+        },
+        {
+          "path": "assets/station-textures/solar-orm.webp",
+          "size": 9448,
+          "sha256": "fe35496a79655c1af1847b8133776f58c5d0ede038c29b7f777aef5ab6caa2b4"
+        },
+        {
+          "path": "assets/station-textures/window-colour.webp",
+          "size": 90,
+          "sha256": "2bd6c9cd60bf5e12c779e078bc931b9865d458421550ac1db60e8f9a02e69622"
+        },
+        {
+          "path": "assets/station-textures/window-emissive.webp",
+          "size": 548,
+          "sha256": "7fe5b93c8817aed8a97fd1bcb1744ad4634ff1ecbab160436f648d22f0529035"
+        },
+        {
+          "path": "assets/station-textures/window-normal.webp",
+          "size": 108,
+          "sha256": "d942f099b30c808597007d08fc6937a1470ff7e501951b0a91f7f202fd792662"
+        },
+        {
+          "path": "assets/station-textures/window-orm.webp",
+          "size": 118,
+          "sha256": "8b22996ad2f5c5a2026c9409044812115ce456e9fa0605da264b57dc65914e8e"
+        },
+        {
+          "path": "assets/station.bin",
+          "size": 1435536,
+          "sha256": "1942edf1690e1f52ff3561743f6f810b3b6313219f68a74aafa6e1de920ec712"
+        },
+        {
+          "path": "assets/station.gltf",
+          "size": 22652,
+          "sha256": "77d74a08d775eb4aa6682a7d0d665e01c4cffb41ae6f1971bbcb4fa0025f7bbd"
+        },
+        {
+          "path": "index.html",
+          "size": 424,
+          "sha256": "4f1a2b5eaf772db381cd54e8904e6b1ff5c14686ba503dc9bf44499046ec9639"
+        },
+        {
+          "path": "manifest.json",
+          "size": 1467,
+          "sha256": "e94647f01e4d319c8887771b45b88bbd7da4eb15762512e45aabcc5c6b096600"
+        },
+        {
+          "path": "poster.webp",
+          "size": 60358,
+          "sha256": "a868d542724e5cd9f964014d5184d8217b8474612712cd53e666cf1f945dee29"
+        },
+        {
+          "path": "scene.js",
+          "size": 657454,
+          "sha256": "f6d5adc821c2f1ff2121c0ce65998e207d4e95397ed1a91eeee6add56e305646"
+        },
+        {
+          "path": "thumb.webp",
+          "size": 8564,
+          "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
+        }
+      ],
+      "sizeBytes": 4084043
+    },
+    {
+      "schema": 1,
+      "id": "sea-and-sky",
+      "version": "1.0.0",
+      "runtime": "kpanel-scene-pack@1",
+      "name": {
+        "zh-CN": "海天日月",
+        "zh-TW": "海天日月",
+        "en-US": "Sea and Sky"
+      },
+      "description": {
+        "zh-CN": "礁石、海天与远岸城市：日月星辰十分钟轮转一个昼夜",
+        "zh-TW": "礁石、海天與遠岸城市：日月星辰十分鐘輪轉一個晝夜",
+        "en-US": "Sea stacks, sea and sky, a far city: sun, moon and stars turn a day in ten minutes"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "MIT",
+      "tags": [
+        "sea",
+        "sky",
+        "city",
+        "stars",
+        "day-night"
+      ],
+      "entry": "index.html",
+      "poster": "poster.webp",
+      "thumb": "thumb.webp",
+      "theme": {
+        "brand": "#2f7fb5",
+        "neutral": "#3c4d5c",
+        "signature": "#f2a25c"
+      },
+      "cameras": [
+        {
+          "id": "light",
+          "name": {
+            "zh-CN": "日月光带",
+            "zh-TW": "日月光帶",
+            "en-US": "Sun and moon"
+          }
+        },
+        {
+          "id": "rocks",
+          "name": {
+            "zh-CN": "礁石剪影",
+            "zh-TW": "礁石剪影",
+            "en-US": "Sea stacks"
+          }
+        },
+        {
+          "id": "sky",
+          "name": {
+            "zh-CN": "海天一色",
+            "zh-TW": "海天一色",
+            "en-US": "Sea and sky"
+          }
+        },
+        {
+          "id": "city",
+          "name": {
+            "zh-CN": "远岸城市",
+            "zh-TW": "遠岸城市",
+            "en-US": "The far city"
+          }
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "three",
+          "version": "0.186.0",
+          "license": "MIT"
+        }
+      ],
+      "path": "sea-and-sky/dist",
+      "files": [
+        {
+          "path": "assets/cloud-detail.bin",
+          "size": 32768,
+          "sha256": "53839a4cb940bf42a34498111e6e8d2b17e61f7f9ccf21d3defa6f66dd39e923"
+        },
+        {
+          "path": "assets/cloud-shape.bin",
+          "size": 884736,
+          "sha256": "5b89c59a92020c1e6a2d05ab683d3f28d32550cd84d43ffb026cb14ac8ae8a44"
+        },
+        {
+          "path": "assets/rock-0-colour.webp",
+          "size": 86672,
+          "sha256": "5e2ce32eb05764ac930077ffb2d20de106a9d34d2e782ceeae6aea95b7a9859d"
+        },
+        {
+          "path": "assets/rock-0-surface.webp",
+          "size": 1491754,
+          "sha256": "0b2993da6e20d1eada7d990ea97321691d41ba75761d15dfc7b4c57c047c519c"
+        },
+        {
+          "path": "assets/rock-1-colour.webp",
+          "size": 56648,
+          "sha256": "3d4ee60d691840b603ababb9f8c82acc77a0dd3fcae418e25bc0a54f2a9c63a3"
+        },
+        {
+          "path": "assets/rock-1-surface.webp",
+          "size": 1274230,
+          "sha256": "40a755fff6244485aafcf2170c9236cb51afaa7657235630ad1e9c8ff57a1e5f"
+        },
+        {
+          "path": "assets/rock-2-colour.webp",
+          "size": 50762,
+          "sha256": "2b67c14927787285a6495cade3645d4948a28285df0216691d630d52e1d6edd1"
+        },
+        {
+          "path": "assets/rock-2-surface.webp",
+          "size": 1388590,
+          "sha256": "13cb1a0edc9c322ec03b9f2df9955c424699b99a8cc478b12cfd47b385d666d1"
+        },
+        {
+          "path": "assets/rock-3-colour.webp",
+          "size": 18888,
+          "sha256": "37366b35c3480d48e5c6dce3f4e193b207b98eec23e73efef9c0ed2b85c58e42"
+        },
+        {
+          "path": "assets/rock-3-surface.webp",
+          "size": 365880,
+          "sha256": "7c99ade960365287ec33f467cd496e728fea63d832ffb1d80bd087793482fe33"
+        },
+        {
+          "path": "assets/rock-4-colour.webp",
+          "size": 16724,
+          "sha256": "6309e04540055b56f8d20cc5ef665dd60cabedf77c1e53fd3695fa32e60c7d3f"
+        },
+        {
+          "path": "assets/rock-4-surface.webp",
+          "size": 360852,
+          "sha256": "5fcdc12db887b46c2a80d6a7019e3e54e136af5e14d724e74e4a6d3af697ed08"
+        },
+        {
+          "path": "assets/rock-5-colour.webp",
+          "size": 3840,
+          "sha256": "488af3de1feea8ae1ad70e6754ea4e6f5ebd5f7148f307bea9d957ff85d3af9a"
+        },
+        {
+          "path": "assets/rock-5-surface.webp",
+          "size": 93488,
+          "sha256": "c35fda1763c9cf45eea095e3e3b7be75d9e731f3edec66404646af17bbe5c2e7"
+        },
+        {
+          "path": "assets/rock-6-colour.webp",
+          "size": 2692,
+          "sha256": "dff6b45292b8d5f82a4b4cc2038816a8bb3889ce0f32402742ee8af47c65da4c"
+        },
+        {
+          "path": "assets/rock-6-surface.webp",
+          "size": 85752,
+          "sha256": "d2df3aa975df8013cf29ce6b4aff18a334d3e8adab91cc04cb68e73fcb0c9598"
+        },
+        {
+          "path": "assets/rock-7-colour.webp",
+          "size": 3436,
+          "sha256": "4536b73c29373543dbafd4cb95f7dbfe0f71b0f89301dca6a8e00a853fe74101"
+        },
+        {
+          "path": "assets/rock-7-surface.webp",
+          "size": 89470,
+          "sha256": "3d8107bca6056d38794f0b77ede3601769e213c21a8a31f799b3053b0ceb041b"
+        },
+        {
+          "path": "assets/rock-8-colour.webp",
+          "size": 2546,
+          "sha256": "36da2be3c0285189e4fdd0c7c5217e9b8b4311a7ec9e48a420c5bfd71e2c52ca"
+        },
+        {
+          "path": "assets/rock-8-surface.webp",
+          "size": 85418,
+          "sha256": "94b4ee6e3c61b4f6df9fe6a654a158d2c0e571e9b70b0db27e9c8082fc5bb648"
+        },
+        {
+          "path": "assets/rocks.glb",
+          "size": 3379876,
+          "sha256": "29d69afb1547752b09bbe98fe1e16831fb7deaf9822c765ea028ede5eb571a9c"
+        },
+        {
+          "path": "index.html",
+          "size": 420,
+          "sha256": "744ef7bfad22f91b21d20f2fce5a32719900a245945b3f5d2b6c2777f0013ee9"
+        },
+        {
+          "path": "manifest.json",
+          "size": 1610,
+          "sha256": "37651a75fbde20cc4622f2403cb507a6dccb1d5b76a417d98f534101d966459e"
+        },
+        {
+          "path": "poster.webp",
+          "size": 89896,
+          "sha256": "e4f7defa14001d99273ed06afa7d7bf8ff4081ab6327caa0f5bf22ee8fbf5d84"
+        },
+        {
+          "path": "scene.js",
+          "size": 686313,
+          "sha256": "a68c04ac9c4de82851f163aaf2852a904c9b9cc20720c2a4d1b2f1d0beda7ae8"
+        },
+        {
+          "path": "thumb.webp",
+          "size": 8508,
+          "sha256": "fe7f03eaa11606e0fa2c3d9524e3b1d810f92175117dca0dcc7f08ea7f0f516c"
+        }
+      ],
+      "sizeBytes": 10561769
+    }
+  ]
+}

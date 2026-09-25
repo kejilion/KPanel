@@ -1,6 +1,7 @@
 import type { DockerImageUpdateResult } from '@/lib/dockerImageUpdate'
 import { TerminalStreamClient } from '@/lib/terminalStream'
 import type { PasskeyList } from '@/types/api'
+import type { ScenePack, ScenePackList, ScenePackSource } from '@/lib/scenePacks'
 import type { PasskeyCreationOptions, PasskeyRequestOptions, PasskeyCredentialJSON } from '@/lib/passkeys'
 import type {
 	AccountManagementActionInput,
@@ -1229,6 +1230,19 @@ export const api = {
       request<DesktopWorkspace>('/desktop/workspace', { signal }),
     updateWorkspace: (body: DesktopWorkspaceUpdate): Promise<DesktopWorkspace> =>
       request<DesktopWorkspace>('/desktop/workspace', { method: 'PUT', body }),
+    scenePacks: (signal?: AbortSignal): Promise<ScenePackList> =>
+      request<ScenePackList>('/desktop/scene-packs', { signal }),
+    installScenePack: (id: string): Promise<ScenePack> =>
+      request<ScenePack>(`/desktop/scene-packs/${encodeURIComponent(id)}/install`, { method: 'POST' }),
+    deleteScenePack: (id: string): Promise<void> =>
+      request<void>(`/desktop/scene-packs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setScenePackSource: (source: ScenePackSource): Promise<{ source: ScenePackSource }> =>
+      request<{ source: ScenePackSource }>('/desktop/scene-packs/source', { method: 'PUT', body: { source } }),
+    scenePackThumbURL: (id: string, version?: string): string =>
+      buildUrl(`/desktop/scene-packs/${encodeURIComponent(id)}/thumb`, version ? { v: version } : undefined),
+    /** Poster of an installed pack: the still wallpaper shown before and instead of the live page. */
+    scenePackPosterURL: (id: string): string =>
+      buildUrl(`/desktop/scene-packs/${encodeURIComponent(id)}/poster`),
     shortcutIconURL: (id: string, version?: string): string =>
       buildUrl(`/desktop/shortcuts/${encodeURIComponent(id)}/icon`, version ? { v: version } : undefined),
     uploadShortcutIcon: (id: string, file: File): Promise<DesktopShortcutIconResult> =>

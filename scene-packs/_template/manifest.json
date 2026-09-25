@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "id": "my-scene",
+  "version": "0.1.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "我的场景",
+    "en-US": "My Scene"
+  },
+  "description": {
+    "zh-CN": "一句话描述你的场景",
+    "en-US": "One line about your scene"
+  },
+  "author": {
+    "name": "Your Name",
+    "url": "https://github.com/your-name"
+  },
+  "license": "MIT",
+  "tags": [
+    "abstract"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#1f9e8a",
+    "neutral": "#34464f",
+    "signature": "#7fd6b0"
+  },
+  "cameras": [
+    {
+      "id": "aurora",
+      "name": {
+        "zh-CN": "极光",
+        "en-US": "Aurora"
+      }
+    },
+    {
+      "id": "dusk",
+      "name": {
+        "zh-CN": "黄昏",
+        "en-US": "Dusk"
+      }
+    },
+    {
+      "id": "deep-night",
+      "name": {
+        "zh-CN": "深夜",
+        "en-US": "Deep night"
+      }
+    }
+  ],
+  "dependencies": []
+}

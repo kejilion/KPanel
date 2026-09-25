@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { mockMonitoringHistory } from './mock-monitoring-history.mjs'
 import { mockBackups } from './mock-backups.mjs'
 import { mockEditorFiles, handleMockEditor } from './mock-file-editor.mjs'
+import { mockScenePacks } from './mock-scene-packs.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1394,6 +1395,7 @@ function mockMonitoringCheckSnapshot() {
 createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1:8080')
   if (await mockBackups(request, response, url, send, readJSON)) return
+  if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {
     send(response, 200, mockMonitoringCheckSnapshot())
     return

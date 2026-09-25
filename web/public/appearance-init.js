@@ -25,8 +25,12 @@
       }
     }
   } catch { /* Invalid or unavailable cache leaves the shared theme defaults. */ }
+  const classicURL = '/wallpapers/kpanel-desktop.webp'
   const selectedWallpaper = () => {
     const stored = read('kpanel:desktop-wallpaper:v1')
+    // An installed 3D scene pack: its poster is the still frame for reduced motion.
+    const pack = typeof stored === 'string' ? /^pack:([a-z0-9][a-z0-9-]{0,39})$/.exec(stored) : null
+    if (pack) return { id: stored, pack: true, url: `/api/v1/desktop/scene-packs/${pack[1]}/poster` }
     const id = ['orbit', 'horizon', 'rift', 'prism'].includes(stored) ? stored : 'classic'
     return { id, url: `/wallpapers/kpanel-desktop${id === 'classic' ? '' : `-${id}`}.webp` }
   }
@@ -51,24 +55,37 @@
   }
   const wallpaper = selectedWallpaper()
   root.dataset.desktopWallpaper = wallpaper.id
-  const source = cachedImage(wallpaper.id) || wallpaper.url
-  root.style.setProperty('--desktop-wallpaper-image', `url("${source}")`)
-  root.classList.add('desktop-wallpaper-loading')
-  const image = new Image()
-  image.fetchPriority = 'high'
-  image.src = source
-  image.decode().catch(async () => {
-    if (source !== wallpaper.url) {
-      try { sessionStorage.removeItem(cacheKey(wallpaper.id)) } catch { /* Optional cache. */ }
-      root.style.setProperty('--desktop-wallpaper-image', `url("${wallpaper.url}")`)
-      image.src = wallpaper.url
+  // A live scene boots to black (desktopWallpaper.css) so its own entrance is the first thing seen.
+  const liveScene = wallpaper.pack
+    && !(matchMedia('(prefers-reduced-motion: reduce)').matches && read('kpanel:desktop-scene-motion:v1') !== 'always')
+  if (liveScene) {
+    root.dataset.desktopWallpaperScene = 'live'
+  } else {
+    const source = cachedImage(wallpaper.id) || wallpaper.url
+    root.style.setProperty('--desktop-wallpaper-image', `url("${source}")`)
+    root.classList.add('desktop-wallpaper-loading')
+    const image = new Image()
+    image.fetchPriority = 'high'
+    image.src = source
+    image.decode().catch(async () => {
+      if (source !== wallpaper.url) {
+        try { sessionStorage.removeItem(cacheKey(wallpaper.id)) } catch { /* Optional cache. */ }
+        root.style.setProperty('--desktop-wallpaper-image', `url("${wallpaper.url}")`)
+        image.src = wallpaper.url
+        await image.decode()
+        void cacheWallpaper(wallpaper)
+      } else throw new Error('wallpaper_unavailable')
+    }).catch(async (error) => {
+      // A removed or unreachable pack falls back to the classic wallpaper instead of an empty desktop.
+      if (!wallpaper.pack) throw error
+      root.style.setProperty('--desktop-wallpaper-image', `url("${classicURL}")`)
+      image.src = classicURL
       await image.decode()
-      void cacheWallpaper(wallpaper)
-    } else throw new Error('wallpaper_unavailable')
-  }).catch(() => { root.dataset.desktopWallpaperFailed = 'true' }).finally(() => {
-    root.classList.remove('desktop-wallpaper-loading')
-  })
-  void cacheWallpaper(wallpaper)
+    }).catch(() => { root.dataset.desktopWallpaperFailed = 'true' }).finally(() => {
+      root.classList.remove('desktop-wallpaper-loading')
+    })
+    void cacheWallpaper(wallpaper)
+  }
   window.addEventListener('kpanel:cache-desktop-wallpaper', () => { void cacheWallpaper(selectedWallpaper()) })
   if (read('kejilion-panel-desktop-mode') === 'desktop' && !/^\/(login|setup|share)(\/|$)/.test(location.pathname)) {
     root.classList.add('desktop-boot')

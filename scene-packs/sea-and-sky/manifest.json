@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "id": "sea-and-sky",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "海天日月",
+    "zh-TW": "海天日月",
+    "en-US": "Sea and Sky"
+  },
+  "description": {
+    "zh-CN": "礁石、海天与远岸城市：日月星辰十分钟轮转一个昼夜",
+    "zh-TW": "礁石、海天與遠岸城市：日月星辰十分鐘輪轉一個晝夜",
+    "en-US": "Sea stacks, sea and sky, a far city: sun, moon and stars turn a day in ten minutes"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "MIT",
+  "tags": [
+    "sea",
+    "sky",
+    "city",
+    "stars",
+    "day-night"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#2f7fb5",
+    "neutral": "#3c4d5c",
+    "signature": "#f2a25c"
+  },
+  "cameras": [
+    {
+      "id": "light",
+      "name": {
+        "zh-CN": "日月光带",
+        "zh-TW": "日月光帶",
+        "en-US": "Sun and moon"
+      }
+    },
+    {
+      "id": "rocks",
+      "name": {
+        "zh-CN": "礁石剪影",
+        "zh-TW": "礁石剪影",
+        "en-US": "Sea stacks"
+      }
+    },
+    {
+      "id": "sky",
+      "name": {
+        "zh-CN": "海天一色",
+        "zh-TW": "海天一色",
+        "en-US": "Sea and sky"
+      }
+    },
+    {
+      "id": "city",
+      "name": {
+        "zh-CN": "远岸城市",
+        "zh-TW": "遠岸城市",
+        "en-US": "The far city"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ]
+}

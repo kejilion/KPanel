@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "id": "orbital-station",
+  "version": "1.0.0",
+  "runtime": "kpanel-scene-pack@1",
+  "name": {
+    "zh-CN": "星港轨道",
+    "zh-TW": "星港軌道",
+    "en-US": "Orbital Station"
+  },
+  "description": {
+    "zh-CN": "从星云深处缓缓靠近行星，环形空间站在轨道上徐徐旋转",
+    "zh-TW": "從星雲深處緩緩靠近行星，環形太空站在軌道上徐徐旋轉",
+    "en-US": "Drift in toward a living planet and its slowly turning ringed station"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "MIT",
+  "tags": [
+    "space",
+    "planet",
+    "sci-fi"
+  ],
+  "entry": "index.html",
+  "poster": "poster.webp",
+  "thumb": "thumb.webp",
+  "theme": {
+    "brand": "#2f6fd0",
+    "neutral": "#33415a",
+    "signature": "#35b8d6"
+  },
+  "cameras": [
+    {
+      "id": "panorama",
+      "name": {
+        "zh-CN": "行星全景",
+        "zh-TW": "行星全景",
+        "en-US": "Planet panorama"
+      }
+    },
+    {
+      "id": "station",
+      "name": {
+        "zh-CN": "空间站近景",
+        "zh-TW": "太空站近景",
+        "en-US": "Station close-up"
+      }
+    },
+    {
+      "id": "sunrise",
+      "name": {
+        "zh-CN": "行星日出",
+        "zh-TW": "行星日出",
+        "en-US": "Sunrise over the limb"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.0",
+      "license": "MIT"
+    }
+  ]
+}
