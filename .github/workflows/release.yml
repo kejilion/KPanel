@@ -225,6 +225,7 @@ jobs:
           test "$(docker image inspect --format '{{.Config.User}}' kejilion-panel:release-check)" = "65532:65532"
           test "$(docker image inspect --format '{{join .Config.Healthcheck.Test " "}}' kejilion-panel:release-check)" = "CMD /paneld healthcheck"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' kejilion-panel:release-check)" = "$VERSION"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.kejilion.kpanel.update-freeze"}}' kejilion-panel:release-check)" = "1"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' kejilion-panel:release-check)" = "$REVISION"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' kejilion-panel:release-check)" = "https://github.com/kejilion/KPanel"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' kejilion-panel:release-check)" = "AGPL-3.0-only"

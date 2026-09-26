@@ -165,6 +165,9 @@ AGENT
 				printf '%s\n' \
 					"${KPANEL_MOCK_IMAGE_VERSION:-${KPANEL_RELEASE_VERSION:?}}"
 				;;
+			*io.kejilion.kpanel.update-freeze*)
+				printf '%s\n' "${KPANEL_MOCK_UPDATE_FREEZE_CAPABILITY-1}"
+				;;
 			*org.opencontainers.image.revision*)
 				printf '%s\n' \
 					"${KPANEL_MOCK_IMAGE_REVISION:-2222222222222222222222222222222222222222}"
@@ -515,6 +518,17 @@ EOF
 	test ! -e "$MOCK_STATE/network-preflight"
 	test ! -e "$MOCK_STATE/rollback-tagged"
 	test "$(/home/docker/kpanel/bin/kejilion-agent version)" = "$RELEASE_VERSION v1alpha1"
+	if KPANEL_MOCK_UPDATE_FREEZE_CAPABILITY=0 docker_app_update \
+		>"$TEST_DIR/freeze-capability-output.txt" 2>&1; then
+		echo "KPanel update accepted a target without write-freeze support" >&2
+		return 1
+	fi
+	grep -F '目标镜像未声明更新期写入冻结能力' \
+		"$TEST_DIR/freeze-capability-output.txt" >/dev/null
+	test "$(wc -l <"$KPANEL_MOCK_SYSTEMCTL_LOG")" = "$systemctl_lines_before"
+	test ! -e /home/docker/kpanel/update-state/transaction
+	test ! -e /home/docker/kpanel/run/update-freeze
+	rm -f "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/image-tag"
 
 	rm -rf /home/docker/kpanel/update-state
 	rm -f "$MOCK_STATE/image-rm"
