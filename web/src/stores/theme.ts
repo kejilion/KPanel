@@ -190,6 +190,7 @@ export function useTheme() {
     preference.value = value
     persistPreference(STORAGE_KEY, value)
     applyTheme(true)
+    window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { theme: value } }))
   }
 
   const setColors = (value: ThemeColorIntent) => {
@@ -198,12 +199,14 @@ export function useTheme() {
     customColors.value = true
     persistPreference(COLOR_STORAGE_KEY, serializeThemeColors(next))
     applyTheme(true)
+    window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { colors: next } }))
   }
 
   const resetColors = () => {
     resetColorsInMemory()
     removePreference(COLOR_STORAGE_KEY)
     applyTheme(true)
+    window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { colors: null } }))
   }
 
   return {

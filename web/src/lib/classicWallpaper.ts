@@ -39,6 +39,7 @@ export function useClassicWallpaper() {
     } catch {
       // The level still applies to this session when storage is unavailable.
     }
+    window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { classicLevel: value } }))
   }
 
   return { level: readonly(level), setLevel }

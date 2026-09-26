@@ -115,6 +115,22 @@ type ClusterHostOrder struct {
 	IDs []string `json:"ids"`
 }
 
+// Appearance is the administrator's shared wallpaper and theme preference.
+// A nil value means an older installation has not imported its browser setting yet.
+type Appearance struct {
+	Theme        string            `json:"theme"`
+	Colors       *AppearanceColors `json:"colors"`
+	Wallpaper    string            `json:"wallpaper"`
+	ClassicLevel string            `json:"classicLevel"`
+}
+
+type AppearanceColors struct {
+	Brand           string `json:"brand"`
+	Neutral         string `json:"neutral"`
+	Signature       string `json:"signature"`
+	SignatureLinked bool   `json:"signatureLinked"`
+}
+
 // FileShare is a bounded, revocable authorization for one exact filesystem
 // resource. Path remains an Agent-owned fact. ResourceVersion preserves normal
 // filemanager concurrency semantics while ShareVersion adds the Agent's strong
@@ -153,11 +169,12 @@ type diskState struct {
 	PasskeyOrigin    string            `json:"passkeyOrigin,omitempty"`
 	ClusterShare     ClusterShare      `json:"clusterShare,omitempty"`
 	ClusterHostOrder *ClusterHostOrder `json:"clusterHostOrder,omitempty"`
+	Appearance       *Appearance       `json:"appearance,omitempty"`
 	FileShares       []FileShare       `json:"fileShares,omitempty"`
 }
 
 // Store is a small, single-node persistence layer. It deliberately stores only
-// panel identity/session/audit and panel-local security settings; host resources
+// panel identity/session/audit and panel-local preferences and security settings; host resources
 // remain owned by the Agent.
 type Store struct {
 	mu            sync.RWMutex
@@ -1141,6 +1158,7 @@ func cloneDiskState(source diskState) diskState {
 		PasskeyOrigin:    source.PasskeyOrigin,
 		ClusterShare:     cloneClusterShare(source.ClusterShare),
 		ClusterHostOrder: cloneClusterHostOrder(source.ClusterHostOrder),
+		Appearance:       cloneAppearance(source.Appearance),
 		FileShares:       cloneFileShares(source.FileShares),
 	}
 }

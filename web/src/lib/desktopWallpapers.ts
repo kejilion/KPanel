@@ -131,6 +131,15 @@ function resetToClassic(): void {
   applyCustomDisplay()
   forgetAuthWallpaperCopy()
   persist('classic')
+  window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { wallpaper: 'classic' } }))
+}
+
+/** Applies the server's choice without changing its separately saved color intent. */
+export function applySyncedWallpaper(id: DesktopWallpaperID): void {
+  current.value = id
+  applyCustomDisplay()
+  persist(id)
+  syncAuthWallpaperCopy(id)
 }
 
 function readCustomFocus(customID: string): { focusX: number, focusY: number } {
@@ -206,6 +215,7 @@ export function useDesktopWallpaper() {
       if (custom?.theme) applyScenePackTheme({ ...custom.theme, signatureLinked: custom.theme.signature === custom.theme.brand })
       persist(id)
       syncAuthWallpaperCopy(id)
+      window.dispatchEvent(new CustomEvent('kpanel:appearance-changed', { detail: { wallpaper: id } }))
       return true
     },
     /** Makes sure a private choice made earlier (or in another tab) has its sign-in copy. */

@@ -12,6 +12,7 @@ import type {
 	SSHDefenseActionResult,
 	SSHDefenseSnapshot,
   ApiList,
+  AppearanceSettings,
   AgentStatus,
   AppInstallPortStatus,
   AppMarketInventory,
@@ -1229,6 +1230,10 @@ export const api = {
     logout: () => request<void>('/auth/logout', { method: 'POST' }),
   },
   desktop: {
+    appearance: (signal?: AbortSignal): Promise<AppearanceSettings> =>
+      request<AppearanceSettings>('/settings/appearance', { signal }),
+    updateAppearance: (body: Omit<AppearanceSettings, 'configured' | 'resourceVersion'> & { expectedResourceVersion: string }): Promise<AppearanceSettings> =>
+      request<AppearanceSettings>('/settings/appearance', { method: 'PUT', body }),
     workspace: (signal?: AbortSignal): Promise<DesktopWorkspace> =>
       request<DesktopWorkspace>('/desktop/workspace', { signal }),
     updateWorkspace: (body: DesktopWorkspaceUpdate): Promise<DesktopWorkspace> =>

@@ -24,6 +24,7 @@ func (s *Store) ExportIdentity() ([]byte, error) {
 		SchemaVersion:    1,
 		Users:            users,
 		ClusterHostOrder: cloneClusterHostOrder(s.data.ClusterHostOrder),
+		Appearance:       cloneAppearance(s.data.Appearance),
 	})
 }
 
@@ -39,6 +40,9 @@ func ValidateIdentityBackup(data []byte) error {
 		if err := ValidateClusterHostOrder(state.ClusterHostOrder.IDs); err != nil {
 			return errors.New("invalid panel identity backup")
 		}
+	}
+	if state.Appearance != nil && ValidateAppearance(*state.Appearance) != nil {
+		return errors.New("invalid panel appearance backup")
 	}
 	u := state.Users[0]
 	if u.ID == "" || len(u.ID) > 128 || u.Role != "admin" || u.Username == "" || len(u.Username) > 128 || len(u.PasswordHash) > 1024 || len(u.PasswordHash) < 32 || len(u.TOTPRecoveryCodeHashes) != 0 || len(u.Passkeys) != 0 {
@@ -78,6 +82,7 @@ func (s *Store) RestoreIdentity(data []byte) error {
 	s.data.FileShares = nil
 	s.data.ClusterShare = ClusterShare{}
 	s.data.ClusterHostOrder = cloneClusterHostOrder(incoming.ClusterHostOrder)
+	s.data.Appearance = cloneAppearance(incoming.Appearance)
 	if err := s.persistLocked(); err != nil {
 		s.data = previous
 		return err

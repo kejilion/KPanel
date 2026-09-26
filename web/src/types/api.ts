@@ -2159,6 +2159,15 @@ export interface DesktopWorkspaceUpdate {
 }
 
 /** Colors suggested from an uploaded wallpaper, applied when it is chosen. */
+export interface AppearanceSettings {
+  configured: boolean
+  resourceVersion: string
+  theme: 'system' | 'light' | 'dark'
+  colors: { brand: string; neutral: string; signature: string; signatureLinked: boolean } | null
+  wallpaper: string
+  classicLevel: 'off' | 'ambient' | 'clear'
+}
+
 export interface CustomWallpaperTheme {
   brand: string
   neutral: string
