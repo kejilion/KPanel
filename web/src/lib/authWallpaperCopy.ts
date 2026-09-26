@@ -92,7 +92,6 @@ export async function rememberAuthWallpaperCopy(
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d')
       if (!context) return false
-      context.imageSmoothingQuality = 'high'
       let image = ''
       // Detailed photos and scene posters can exceed the storage limit even at low quality.
       // Reduce dimensions as well so a private choice still has a sign-in copy.
@@ -100,6 +99,7 @@ export async function rememberAuthWallpaperCopy(
         const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
         canvas.width = Math.max(1, Math.round(bitmap.width * scale))
         canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+        context.imageSmoothingQuality = 'high'
         context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
         for (const quality of [0.78, 0.62, 0.48]) {
           let blob = await toBlob(canvas, 'image/webp', quality)
