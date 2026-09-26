@@ -865,11 +865,17 @@ function chartIsSelected(...metrics: MonitoringMetric[]): boolean {
   return selectedMetric.value !== undefined && metrics.includes(selectedMetric.value)
 }
 
+let pendingMetricFocus = false
 async function focusSelectedMetric(): Promise<void> {
+  if (!pendingMetricFocus) return
   const metric = selectedMetric.value
   if (!metric || !history.value?.host.length || !monitoringCategoryVisible('host')) return
   await nextTick()
-  document.getElementById(monitoringTargetId(metric))?.scrollIntoView({
+  if (!pendingMetricFocus || metric !== selectedMetric.value || !monitoringCategoryVisible('host')) return
+  const target = document.getElementById(monitoringTargetId(metric))
+  if (!target) return
+  pendingMetricFocus = false
+  target.scrollIntoView({
     behavior: 'smooth',
     block: 'center',
   })
@@ -877,9 +883,13 @@ async function focusSelectedMetric(): Promise<void> {
 
 // 指标深链只在链接变化时切回主机分类；之后换时间范围或刷新不再覆盖用户手动选择的分类。
 watch(selectedMetric, (metric) => {
+  pendingMetricFocus = Boolean(metric)
   if (metric && !monitoringCategoryVisible('host')) activeMonitoringCategory.value = 'host'
+  void focusSelectedMetric()
 }, { immediate: true })
-watch([selectedMetric, () => history.value?.host.length], () => void focusSelectedMetric(), { flush: 'post' })
+watch(() => Boolean(history.value?.host.length), (available) => {
+  if (available) void focusSelectedMetric()
+}, { flush: 'post' })
 watch(containerHasAverage, (available) => {
   if (!available && containerCPUMode.value === 'average') containerCPUMode.value = 'peak'
 })
