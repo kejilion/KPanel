@@ -3,6 +3,7 @@ import { shallowMount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MonitoringView from './MonitoringView.vue'
+import TrendChart from '@/components/monitoring/TrendChart.vue'
 import type { ClusterHost, MonitoringHistory } from '@/types/api'
 
 const mocks = vi.hoisted(() => ({ history: vi.fn(), hosts: vi.fn() }))
@@ -99,6 +100,29 @@ describe('monitoring host selection', () => {
     await flushPromises()
     expect(wrapper.get('[data-monitoring-category="host"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('#host-memory-history').exists()).toBe(true)
+  })
+
+  it('keeps the chart position after zooming a cluster metric deep link', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const value = history()
+    value.host.push(
+      { ...value.host[0]!, collectedAt: '2026-09-11T01:10:00Z' },
+      { ...value.host[0]!, collectedAt: '2026-09-11T01:20:00Z' },
+      { ...value.host[0]!, collectedAt: '2026-09-11T01:30:00Z' },
+    )
+    mocks.history.mockResolvedValue(value)
+    const { wrapper, router } = await mountAt(`?hostId=${a}&metric=cpu`)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+    wrapper.getComponent(TrendChart).vm.$emit('selectRange', {
+      start: '2026-09-11T01:05:00Z', end: '2026-09-11T01:25:00Z',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.start).toBe('2026-09-11T01:05:00.000Z')
+    expect(mocks.history).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a manually chosen category when a metric deep link reloads history', async () => {
