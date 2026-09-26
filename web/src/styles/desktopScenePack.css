@@ -1,6 +1,6 @@
 /* 3D scene pack wallpaper layer. Loaded with the lazy DesktopScenePack chunk. */
 
-/* A live scene starts from black: its own entrance fades up from this. */
+/* Black beneath the poster keeps its loading glow subdued in either theme. */
 .desktop-scene-pack {
   position: absolute;
   z-index: 1;
@@ -23,18 +23,35 @@
   object-fit: cover;
 }
 
-/* Hidden only until the pack has drawn its first (black) frame, so there is no blank flash. */
+[data-scene-pack-state='loading'] > .desktop-scene-pack__poster,
+[data-scene-pack-state='running'] > .desktop-scene-pack__poster {
+  opacity: .18;
+  animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
+}
+
+/* Keep the current dim frame underneath the entrance, without animating once hidden. */
+.desktop-scene-pack--ready > .desktop-scene-pack__poster,
+.desktop-scene-pack--paused > .desktop-scene-pack__poster {
+  animation-play-state: paused;
+}
+
+@keyframes desktop-scene-pack-breathe {
+  0%, 100% { opacity: .18; }
+  50% { opacity: .23; }
+}
+
+/* Ready may be the scene's first black frame. Retain the poster throughout its entrance. */
 .desktop-scene-pack__frame {
   background: #000;
   opacity: 0;
-  transition: opacity .25s linear;
 }
 
 .desktop-scene-pack--ready .desktop-scene-pack__frame {
   opacity: 1;
+  transition: opacity 2.2s ease-in-out;
 }
 
-/* Only when a scene is slow to load: a faint hairline over the black, filling as it loads. */
+/* Only when a scene is slow to load: a faint hairline over the poster, filling as it loads. */
 .desktop-scene-pack__progress {
   position: absolute;
   z-index: 1;
@@ -73,7 +90,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .desktop-scene-pack__frame,
+  .desktop-scene-pack > .desktop-scene-pack__poster {
+    animation: none;
+  }
+
+  .desktop-scene-pack--ready .desktop-scene-pack__frame,
   .desktop-scene-pack__progress::after,
   .desktop-scene-pack-progress-enter-active,
   .desktop-scene-pack-progress-leave-active {

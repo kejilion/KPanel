@@ -68,13 +68,13 @@ describe('appearance before application startup', () => {
     })
     return { root, properties, classes, sources }
   }
-  it('boots a live scene pack to black so its entrance is the first thing seen', () => {
+  it('preloads the live poster without hiding the scene while it decodes', () => {
     for (const result of [bootPack('pack:orbital-station', { reduced: false }), bootPack('pack:orbital-station', { reduced: true, always: true })]) {
       expect(result.root.dataset.desktopWallpaper).toBe('pack:orbital-station')
       expect(result.root.dataset.desktopWallpaperScene).toBe('live')
-      expect(result.properties.has('--desktop-wallpaper-image')).toBe(false)
+      expect(result.properties.get('--desktop-wallpaper-image')).toBe('url("/api/v1/desktop/scene-packs/orbital-station/poster")')
       expect(result.classes.has('desktop-wallpaper-loading')).toBe(false)
-      expect(result.sources).toEqual([])
+      expect(result.sources).toEqual(['/api/v1/desktop/scene-packs/orbital-station/poster'])
     }
   })
   it('paints the scene pack poster for reduced motion and never trusts other pack keys', () => {

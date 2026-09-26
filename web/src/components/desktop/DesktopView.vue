@@ -413,7 +413,7 @@ const scenePackLayer = ref<{ nextCamera: () => void }>()
 const scenePackCameras = ref<string[]>([])
 const scenePackRevision = wallpaperChoice.sceneRevision
 const sceneMotion = useSceneMotionPreference()
-// A live scene paints black under its own entrance; reduced motion keeps the pack poster.
+// A live scene starts over a dim poster; reduced motion keeps the full still image.
 const liveScenePack = computed(() => Boolean(activeScenePack.value) && !sceneMotion.reducedMotion.value)
 const desktopWallpaperStyle = computed((): Record<string, string> =>
   document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
@@ -3180,7 +3180,7 @@ async function onScenePackFailed(): Promise<void> {
 watch(desktopWallpaperID, () => { scenePackCameras.value = [] })
 
 // Keep the root flag appearance-init.js set at boot in step with the chosen wallpaper, so every
-// wallpaper surface (boot layer, loading placeholder, desktop) agrees on the live-scene black.
+// wallpaper surface (boot layer, loading placeholder, desktop) agrees on the dim scene poster.
 function syncLiveSceneFlag(live: boolean): void {
   if (live) document.documentElement.dataset.desktopWallpaperScene = 'live'
   else delete document.documentElement.dataset.desktopWallpaperScene

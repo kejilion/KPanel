@@ -28,7 +28,7 @@
   const classicURL = '/wallpapers/kpanel-desktop.webp'
   const selectedWallpaper = () => {
     const stored = read('kpanel:desktop-wallpaper:v1')
-    // An installed 3D scene pack: its poster is the still frame for reduced motion.
+    // An installed 3D scene pack: its poster covers loading and reduced motion.
     const pack = typeof stored === 'string' ? /^pack:([a-z0-9][a-z0-9-]{0,39})$/.exec(stored) : null
     if (pack) return { id: stored, pack: true, url: `/api/v1/desktop/scene-packs/${pack[1]}/poster` }
     // An uploaded picture, served by the panel to the signed-in browser.
@@ -114,17 +114,18 @@
   const setClassicImage = ({ id, url }) => {
     root.style.setProperty('--classic-wallpaper-image', `url("${cachedImage(id) || url}")`)
   }
-  // A live scene boots to black (desktopWallpaper.css) so its own entrance is the first thing seen.
+  // Preload the live scene's poster too; desktopWallpaper.css dims it until the frame is ready.
   const liveScene = wallpaper.pack && !publicPage
     && !(matchMedia('(prefers-reduced-motion: reduce)').matches && read('kpanel:desktop-scene-motion:v1') !== 'always')
   if (liveScene) {
     root.dataset.desktopWallpaperScene = 'live'
-  } else if (!(publicPage && privateWallpaper)) {
+  }
+  if (!(publicPage && privateWallpaper)) {
     // Before sign-in a private wallpaper is not preloaded: the desktop and classic surfaces
     // only exist after sign-in.
     const source = cachedImage(wallpaper.id) || wallpaper.url
     root.style.setProperty('--desktop-wallpaper-image', `url("${source}")`)
-    root.classList.add('desktop-wallpaper-loading')
+    if (!liveScene) root.classList.add('desktop-wallpaper-loading')
     const image = new Image()
     image.fetchPriority = 'high'
     image.src = source

@@ -9,13 +9,13 @@ import '@/styles/desktopScenePack.css'
  * Runs an installed 3D scene pack as the desktop wallpaper. The pack page lives
  * in an iframe sandboxed to scripts only (opaque origin: no panel cookies,
  * storage, DOM or top navigation) and is driven with pause/resume/camera
- * messages. A live scene starts from black so its entrance is the first thing
- * seen; the still poster is only for reduced motion or when the scene fails.
+ * messages. A dim, gently breathing poster stays behind the frame while it
+ * loads and fades in; reduced motion and failures keep the full still poster.
  *
  * Loading: the frame starts at once from the file base the pack was last found
  * at, while the pack list is fetched to confirm it (or to move to a new one after
  * an update). If the pack takes a while, a faint hairline shows its progress over the
- * black, fed by the pack's progress messages. The watchdog counts from the
+ * poster, fed by the pack's progress messages. The watchdog counts from the
  * pack's last sign of life, so a large scene on a slow link is not given up on
  * while it is still loading.
  */
@@ -60,7 +60,6 @@ const state = computed(() => {
   if (reducedMotion.value || (located.value && !pageURL.value)) return 'static'
   return ready.value ? 'running' : 'loading'
 })
-const showPoster = computed(() => state.value === 'static' || state.value === 'failed')
 let readyTimer: number | undefined
 
 function post(command: ScenePackCommand): void {
@@ -182,12 +181,12 @@ defineExpose({
 <template>
   <div
     class="desktop-scene-pack"
-    :class="{ 'desktop-scene-pack--ready': ready }"
+    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused }"
     :data-scene-pack="packId"
     :data-scene-pack-state="state"
     aria-hidden="true"
   >
-    <img v-if="showPoster" class="desktop-scene-pack__poster" :src="posterURL" alt="" decoding="async" />
+    <img class="desktop-scene-pack__poster" :src="posterURL" alt="" decoding="async" fetchpriority="high" />
     <Transition name="desktop-scene-pack-progress">
       <div
         v-if="running && !ready && slow"

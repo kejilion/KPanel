@@ -60,10 +60,10 @@ describe('DesktopScenePack', () => {
     resetSceneMotionPreferenceForTest()
   })
 
-  it('starts a live scene from black in a scripts-only sandbox', async () => {
+  it('keeps the poster behind a loading scene in a scripts-only sandbox', async () => {
     listPacks([installed])
     const wrapper = await mountPack()
-    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.get('img').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/poster')
     const iframe = wrapper.get('iframe')
     expect(iframe.attributes('src')).toBe(`${installed.fileBase}index.html`)
     expect(iframe.attributes('sandbox')).toBe('allow-scripts')
@@ -85,11 +85,14 @@ describe('DesktopScenePack', () => {
     expect(wrapper.emitted('cameras')).toEqual([[['panorama', 'station', 'sunrise']]])
     expect(wrapper.attributes('data-scene-pack-state')).toBe('running')
     expect(wrapper.classes()).toContain('desktop-scene-pack--ready')
+    expect(wrapper.get('img').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/poster')
     expect(post).toHaveBeenLastCalledWith({ source: 'kpanel-desktop', type: 'resume' }, '*')
 
     await wrapper.setProps({ covered: true })
+    expect(wrapper.classes()).toContain('desktop-scene-pack--paused')
     expect(post).toHaveBeenLastCalledWith({ source: 'kpanel-desktop', type: 'pause' }, '*')
     await wrapper.setProps({ covered: false })
+    expect(wrapper.classes()).not.toContain('desktop-scene-pack--paused')
     expect(post).toHaveBeenLastCalledWith({ source: 'kpanel-desktop', type: 'resume' }, '*')
 
     ;(wrapper.vm as unknown as { nextCamera: () => void }).nextCamera()
@@ -158,7 +161,7 @@ describe('DesktopScenePack', () => {
     vi.useFakeTimers()
     listPacks([installed])
     const wrapper = await mountPack()
-    // Quick loads stay black: no progress line in the first moments.
+    // Quick loads show only the poster: no progress line in the first moments.
     fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'progress', value: 0.2 })
     await nextTick()
     expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
@@ -193,11 +196,17 @@ describe('DesktopScenePack', () => {
     const wrapper = mount(DesktopScenePack, { props: { packId: 'orbital-station', covered: false }, attachTo: document.body })
     await nextTick()
     expect(wrapper.get('iframe').attributes('src')).toBe(`${installed.fileBase}index.html`)
+    expect(wrapper.find('img').exists()).toBe(true)
+    fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'ready', cameras: ['panorama'] })
+    await nextTick()
     // After an update the list names a fresh install capability: the frame moves there.
     const updatedBase = `/api/v1/desktop/scene-packs/orbital-station/files/${'b'.repeat(32)}/`
     answer({ source: 'auto', sources: ['auto'], packs: [{ ...installed, fileBase: updatedBase }] })
     await flushPromises()
     expect(wrapper.get('iframe').attributes('src')).toBe(`${updatedBase}index.html`)
+    expect(wrapper.attributes('data-scene-pack-state')).toBe('loading')
+    expect(wrapper.classes()).not.toContain('desktop-scene-pack--ready')
+    expect(wrapper.find('img').exists()).toBe(true)
     wrapper.unmount()
     // After an uninstall the scene is turned off and forgotten.
     listPacks([{ ...installed, installed: false, fileBase: null }])
