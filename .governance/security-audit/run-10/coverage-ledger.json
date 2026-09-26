@@ -1,0 +1,1702 @@
+[
+  {
+    "coverage_id": "App%20market%20container%20and%20host%20lifecycle%20configuration::packaging%2Fkejilion-app%2Fkpanel.conf%23compose%20configuration%20host%20service%20and%20root%20lifecycle::packaging%2Fkejilion-app::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+    "canonical_refs": {
+      "surface": "App market container and host lifecycle configuration",
+      "boundary": "packaging/kejilion-app/kpanel.conf#compose configuration host service and root lifecycle",
+      "subsystem": "packaging/kejilion-app",
+      "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure"
+    },
+    "surface": "App market container and host lifecycle configuration",
+    "boundary": "packaging/kejilion-app/kpanel.conf#compose configuration host service and root lifecycle",
+    "subsystem": "packaging/kejilion-app",
+    "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+    "starting_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh",
+      "Dockerfile"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "covered",
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "docs/architecture.md"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "release_package_hunter",
+            "reviewed_paths": [
+              "packaging/kejilion-app/kpanel.conf",
+              "docs/architecture.md"
+            ],
+            "invariant": "The panel-to-host agent boundary must constrain host authority to documented typed operations and protect panel state from the host agent.",
+            "method": "source",
+            "result": "Compose runs the panel as an unprivileged user with a read-only root, dropped capabilities and only the panel-data mount writable; the host service's panel-data path is read-only in the systemd unit, and architecture documentation describes a typed, audited file API. The broader root-service authority is intentional in the source model; no untrusted workload selector or arbitrary host-action path was found in this selected class. No finding is proposed.",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [],
+        "reassignment_reason": "当前 covered 记录提到 Compose 与 systemd 的只读路径，但未核对并行的 OpenRC 服务；packaging/kejilion-app/kpanel.conf:163-202 以 root 启动 Agent，并配置 Agent socket/token、Docker socket 和 system writes。需核对该运行路径的权限与 IPC 边界后再关闭。"
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh",
+      "Dockerfile",
+      "cmd/kejilion-agent/main.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "internal/panel/agent.go",
+      "internal/panel/server.go",
+      "internal/panel/system.go",
+      "internal/panel/files.go",
+      "internal/filemanager/manager.go",
+      "internal/systemmanage/manager.go",
+      "internal/contract/system_resources.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-lifecycle.sh",
+          "packaging/tests/app-conf-update-backups.sh",
+          "Dockerfile",
+          "cmd/kejilion-agent/main.go",
+          "internal/agent/server.go",
+          "internal/agent/socket.go",
+          "internal/panel/agent.go",
+          "internal/panel/server.go",
+          "internal/panel/system.go",
+          "internal/panel/files.go",
+          "internal/filemanager/manager.go",
+          "internal/systemmanage/manager.go",
+          "internal/contract/system_resources.go"
+        ],
+        "invariant": "The app package must not expose host-control capabilities to an untrusted workload or allow lower-trust requests to bypass the Panel-to-Agent authorization and typed-operation boundary across systemd and OpenRC lifecycle paths.",
+        "method": "source",
+        "result": "Source review established that Compose runs the Panel as 65532:65532 with the panel group, a read-only root, dropped capabilities and no-new-privileges; it mounts panel data read-write and the Agent socket directory and token read-only, with no Docker socket mount (kpanel.conf:53-84; Dockerfile:76-79). The generated systemd and OpenRC services both run the Agent as root in the panel group and configure the host Docker socket and system writes; OpenRC additionally sets no_new_privs and its start hook prepares the socket directory (kpanel.conf:118-157,163-200). The installer creates the token from 32 random bytes and installs it root:panel-group mode 0640 (kpanel.conf:394-427); the Agent validates token ownership/mode and exposes only a Unix listener (socket.go:15-68,71-115; cmd/kejilion-agent/main.go:123-124,211-224). Agent requests require the bearer token before route dispatch (server.go:293-303,513-523). Panel host-operation routes require a session; mutation handlers additionally check Origin and CSRF, and use typed request validation (panel/server.go:1120-1144; panel/system.go:18-49; panel/files.go:1127-1152). Host file operations use a rooted filesystem, deny configured protected paths and symlinks, and check mutation restrictions (filemanager/manager.go:101-125,1443-1514); system resource operations validate action enums/arguments and use a fixed resource/action dispatch (systemmanage/manager.go:813-870,939-987; contract/system_resources.go:105-139). OpenRC service linking/start/stop/uninstall checks the managed symlink (kpanel.conf:500-580,1984-2038); update rollback snapshots/restores the OpenRC service definition (kpanel.conf:939-1008,1898-1905). The lifecycle fixture is gated to a disposable container (app-conf-lifecycle.sh:5-8); the update fixture models OpenRC with fake init tools and runs systemd/OpenRC backup parity (app-conf-update-backups.sh:47-67,210-211), but neither was run. No source path showed a lower-trust selector or unauthenticated Panel request bypassing the configured typed Agent boundary. OpenRC omits systemd's explicit capability/namespace/syscall restrictions, but the source does not establish an OpenRC-specific unintended operation; no runtime or deployed exposure is inferred.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "Preserve the typed host-agent API boundary and verify equivalent restrictions for systemd and OpenRC whenever its host capability surface changes.",
+      "OpenRC runs the root Agent with Docker-socket access and system writes enabled but lacks systemd's explicit capability, namespace, and syscall restrictions. No OpenRC-specific unauthorized operation was established; consider confinement parity if the threat model requires containment after Agent compromise.",
+      "The lifecycle test models systemd lifecycle behavior; the update-backup fixture exercises OpenRC using fake init commands, but does not provide equivalent OpenRC install/start/uninstall coverage. Add isolated OpenRC lifecycle coverage."
+    ]
+  },
+  {
+    "coverage_id": "Application%20data%20snapshot%20archive%20and%20restore::packaging%2Fkejilion-app%2Fkpanel.conf%23snapshot%20validation%20extraction%20and%20directory%20exchange::packaging%2Fkejilion-app::DATA-ISOLATION-AND-LIFECYCLE.md%23Import%20and%20restore%20authority%20expansion",
+    "canonical_refs": {
+      "surface": "Application data snapshot archive and restore",
+      "boundary": "packaging/kejilion-app/kpanel.conf#snapshot validation extraction and directory exchange",
+      "subsystem": "packaging/kejilion-app",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion"
+    },
+    "surface": "Application data snapshot archive and restore",
+    "boundary": "packaging/kejilion-app/kpanel.conf#snapshot validation extraction and directory exchange",
+    "subsystem": "packaging/kejilion-app",
+    "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+    "starting_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh",
+      "internal/desktopwallpapers/store.go",
+      "internal/cluster/light_store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Import and restore authority expansion",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "release_package_hunter",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh",
+      "internal/cluster/service.go",
+      "internal/cluster/light_store.go",
+      "internal/desktopwallpapers/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/desktopwallpapers/store.go"
+        ],
+        "invariant": "Only the root-owned transaction snapshot may supply restore data, and restore must validate its identity and expected directory structure before exchange.",
+        "method": "source",
+        "result": "Both writers are stopped before the app-created data/panel and data/agent archive is made; the archive digest is checked before extraction into a private restore directory, whose top-level layout and directory types are validated before exchange. The backup is internal transaction state under root-only storage; no user-provided import/archive route to this restore function is established. Wallpaper storage separately constrains identifiers and writes within its private data directory.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Application%20data%20snapshot%20archive%20and%20restore::packaging%2Fkejilion-app%2Fkpanel.conf%23transaction%20rollback%20reintroduces%20protected%20state::packaging%2Fkejilion-app::DATA-ISOLATION-AND-LIFECYCLE.md%23Restore%20reintroduces%20invalid%20state",
+    "canonical_refs": {
+      "surface": "Application data snapshot archive and restore",
+      "boundary": "packaging/kejilion-app/kpanel.conf#transaction rollback reintroduces protected state",
+      "subsystem": "packaging/kejilion-app",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state"
+    },
+    "surface": "Application data snapshot archive and restore",
+    "boundary": "packaging/kejilion-app/kpanel.conf#transaction rollback reintroduces protected state",
+    "subsystem": "packaging/kejilion-app",
+    "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+    "starting_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh",
+      "internal/cluster/light_store.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "release_package_hunter",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh",
+      "internal/panel/cluster.go",
+      "internal/cluster/service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh"
+        ],
+        "invariant": "Rollback must not reintroduce a principal and credential that were revoked after the update snapshot.",
+        "method": "source",
+        "result": "Rollback stops the active writers, then exchanges the live panel and agent data directories for the pre-update snapshot. The target panel is live between image swap and completion of readiness checks; source contains no freeze for authenticated cluster-host mutations during this verification interval.",
+        "artifact": null
+      },
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "A deleted light-node record and its removed HMAC secret must remain revoked after the old panel is restored.",
+        "method": "source",
+        "result": "DeleteHost persists removal of a light host and deletes its secret file. On a subsequent light report, authenticateLightRequest loads the restored host and secret and verifies the node HMAC before UpdateReport accepts telemetry. The generic backup fixture does not cover this security-state transition. Local confirmation remains blocked by the unverified sandbox constraint.",
+        "artifact": null
+      },
+      {
+        "agent_id": "phase3_rollback_verifier_b",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "A failed update rollback must not restore a light-node principal and HMAC credential after an authorized deletion made during target verification.",
+        "method": "source",
+        "result": "Independent source verification confirmed the cited snapshot, target-start/readiness, authenticated deletion, whole-directory rollback, restored-record authentication and telemetry-update sequence. No source-visible write freeze, tombstone, merge of post-snapshot revocations, or rollback-time identity invalidation was found. Whether the restored prior panel accepts a fresh synthetic node report and changes telemetry remains unobserved because no approved OS-enforced sandbox is available.",
+        "artifact": null
+      },
+      {
+        "agent_id": "phase5_record_verifier",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "The final needs-validation record must cite source accurately, identify the decisive blocker, and give a bounded safe local validation plan with a stable fingerprint.",
+        "method": "source",
+        "result": "Phase 5 verified the needs-validation boundary and blocker. It corrected the app-conf-update-backups.sh fixture evidence citation from line 112 (generic panel marker) to line 114 (preseeded light-node credential assertion); the corrected record does not change root cause or verdict. No target execution occurred.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "kpanel:rollback-restores-revoked-light-node"
+    ],
+    "unresolved": [
+      "Phase 3 independently confirms the source sequence but cannot dynamically establish that rollback restores an executable light store which accepts a fresh dummy-node HMAC report and persists telemetry; no parent-approved OS-enforced sandbox is available."
+    ],
+    "parent_hardening": [
+      "Add a regression case that revokes a real-format dummy light-host record and secret during target verification, forces rollback, and asserts the node stays revoked and cannot update telemetry.",
+      "Consider freezing security-state mutations during release verification or merging irreversible revocations into restored state; the current whole-directory rollback can reverse post-snapshot mutations."
+    ]
+  },
+  {
+    "coverage_id": "Application%20manual%20and%20automatic%20update%20transaction::packaging%2Fkejilion-app%2Fkpanel.conf%23update%20phases%20snapshot%20image%20switch%20health%20rollback::packaging%2Fkejilion-app::SUPPLY-CHAIN-AND-RELEASE.md%23Update%20metadata%20and%20rollback%20confusion",
+    "canonical_refs": {
+      "surface": "Application manual and automatic update transaction",
+      "boundary": "packaging/kejilion-app/kpanel.conf#update phases snapshot image switch health rollback",
+      "subsystem": "packaging/kejilion-app",
+      "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion"
+    },
+    "surface": "Application manual and automatic update transaction",
+    "boundary": "packaging/kejilion-app/kpanel.conf#update phases snapshot image switch health rollback",
+    "subsystem": "packaging/kejilion-app",
+    "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion",
+    "starting_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLOUD-AND-DEPLOYMENT.md#Workload identity overreach",
+        "reason": "No cloud workload or provider identity selection is changed by this local host update transaction."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "release_package_hunter",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh",
+      "internal/panel/cluster.go",
+      "internal/cluster/service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh"
+        ],
+        "invariant": "Updates and failed-update rollback must preserve security-state changes made while the target release is being verified.",
+        "method": "source",
+        "result": "The transaction snapshots data/panel and data/agent, starts the target panel for readiness verification, and on failure restores the archived data directories. The transaction does not gate cluster mutations during target verification. The backup fixture verifies generic data rollback, including restoration of a dummy node-secret file, but does not exercise revocation semantics.",
+        "artifact": null
+      },
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "A light-node credential removed by an authorized cluster mutation must not become valid again after rollback.",
+        "method": "source",
+        "result": "The authenticated cluster-host delete handler calls DeleteHost; the light store persists removal of the host record and deletes its reporting secret. Light-report authentication reloads the current host and secret, checks the HMAC, and accepted reports update telemetry. These source paths support the rollback-revival candidate; bounded local validation was not run under the task's sandbox restriction.",
+        "artifact": null
+      },
+      {
+        "agent_id": "phase3_rollback_verifier_b",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "A failed update rollback must not restore a light-node principal and HMAC credential after an authorized deletion made during target verification.",
+        "method": "source",
+        "result": "Independent source verification confirmed the cited snapshot, target-start/readiness, authenticated deletion, whole-directory rollback, restored-record authentication and telemetry-update sequence. No source-visible write freeze, tombstone, merge of post-snapshot revocations, or rollback-time identity invalidation was found. Whether the restored prior panel accepts a fresh synthetic node report and changes telemetry remains unobserved because no approved OS-enforced sandbox is available.",
+        "artifact": null
+      },
+      {
+        "agent_id": "phase5_record_verifier",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/tests/app-conf-update-backups.sh",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "The final needs-validation record must cite source accurately, identify the decisive blocker, and give a bounded safe local validation plan with a stable fingerprint.",
+        "method": "source",
+        "result": "Phase 5 verified the needs-validation boundary and blocker. It corrected the app-conf-update-backups.sh fixture evidence citation from line 112 (generic panel marker) to line 114 (preseeded light-node credential assertion); the corrected record does not change root cause or verdict. No target execution occurred.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "kpanel:rollback-restores-revoked-light-node"
+    ],
+    "unresolved": [
+      "Phase 3 independently confirms the source sequence but cannot dynamically establish that rollback restores an executable light store which accepts a fresh dummy-node HMAC report and persists telemetry; no parent-approved OS-enforced sandbox is available."
+    ],
+    "parent_hardening": [
+      "Add a regression case that revokes a real-format dummy light-host record and secret during target verification, forces rollback, and asserts the node stays revoked and cannot update telemetry.",
+      "Consider freezing security-state mutations during release verification or merging irreversible revocations into restored state; the current whole-directory rollback can reverse post-snapshot mutations."
+    ]
+  },
+  {
+    "coverage_id": "Application%20release%20image%20to%20host%20helper%20promotion::packaging%2Fkejilion-app%2Fkpanel.conf%23release%20metadata%20extraction%20hash%20validation%20and%20active%20helper%20swap::packaging%2Fkejilion-app::SUPPLY-CHAIN-AND-RELEASE.md%23Build-to-promotion%20substitution",
+    "canonical_refs": {
+      "surface": "Application release image to host helper promotion",
+      "boundary": "packaging/kejilion-app/kpanel.conf#release metadata extraction hash validation and active helper swap",
+      "subsystem": "packaging/kejilion-app",
+      "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Build-to-promotion substitution"
+    },
+    "surface": "Application release image to host helper promotion",
+    "boundary": "packaging/kejilion-app/kpanel.conf#release metadata extraction hash validation and active helper swap",
+    "subsystem": "packaging/kejilion-app",
+    "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Build-to-promotion substitution",
+    "starting_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh",
+      "Dockerfile"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Build-to-promotion substitution",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "release_package_hunter",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "Dockerfile"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "Dockerfile"
+        ],
+        "invariant": "Only a validated release image may supply helper binaries and lifecycle code promoted onto the host.",
+        "method": "source",
+        "result": "kpanel_extract_release validates selected-image metadata formats and versions, then hashes extracted kejilion.sh against the same image's declared SHA-256; the Dockerfile pins the downloaded script bytes with ADD --checksum. No lower-trust image-selection path or independent publisher-substitution evidence is established in the assigned source, so no candidate survives the gate.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The release helper hash is checked against a label from the same image. The Dockerfile pins the fetched script checksum, but no independent signed provenance binding the image, metadata and promoted host helpers was found in this source scope; consider validating provenance before host promotion."
+    ]
+  },
+  {
+    "coverage_id": "Cluster%20light-store%20credentials%20and%20terminal%20keys::internal%2Fcluster%2Flight_store.go%23credential%20file%20validation%20permissions%20and%20persistence::internal%2Fcluster::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "Cluster light-store credentials and terminal keys",
+      "boundary": "internal/cluster/light_store.go#credential file validation permissions and persistence",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "Cluster light-store credentials and terminal keys",
+    "boundary": "internal/cluster/light_store.go#credential file validation permissions and persistence",
+    "subsystem": "internal/cluster",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/store_v2.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#JWT verification and claim binding",
+        "reason": "No JWT or federated identity token handling is part of the changed store persistence path."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_identity_auth",
+    "reviewed_paths": [
+      "internal/cluster/light_store.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/light_service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_identity_auth",
+        "reviewed_paths": [
+          "internal/cluster/light_store.go"
+        ],
+        "invariant": "凭证和 terminal-key 文件名不可用于路径穿越；秘密读取、创建和删除遵循存储目录及记录约束。",
+        "method": "source",
+        "result": "light store 的 secret/terminal 目录经 `protectDirectoryV2` 设为 `0700`。写入 credential 和 terminal key 使用 `0600`；生成的 credential 文件名由 host ID 构成。读取 reporting secret 前验证文件名格式，读取 terminal key 前验证 ID；两者都调用 `readRegularFileV2(..., true)`，限长 128 bytes，并拒绝非 regular、symlink 或不符合私有文件权限的内容。terminal key 已存在时只能重复绑定同一 key；删除先持久化移除 host，再尝试删 key，失败会通过返回值反映。孤儿清理只删除符合命名格式且未引用的 regular 文件。state 验证会检查 credential filename 格式和唯一性，但不强制 filename 中的 ID 等于记录 ID；该字段只来自本地 state，所审查的节点 API 入参没有写入此字段的路径。参见 `light_store.go:69-118,162-203,278-412,414-485,548-614`。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_identity_auth",
+        "reviewed_paths": [
+          "internal/cluster/store_v2.go"
+        ],
+        "invariant": "原子写入、恢复与读取 helper 不会把可控路径、symlink 或越界文件当作有效凭证。",
+        "method": "source",
+        "result": "`atomicWriteFileV2` 在目标目录创建临时文件，设定传入权限、写入并 sync；替换时先检查旧目标 regular 且非 symlink，再将其移到 `.previous`，安装新目标并 sync 目录，失败时尝试恢复旧目标。恢复 helper 检查路径类型并处理缺失目标；`readRegularFileV2` 使用 Lstat 检查 regular、大小与可选的精确 `0600` 权限，再打开、比较 SameFile 并限制读取量。参见 `store_v2.go:1028-1115,1117-1183,1185-1229`。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_identity_auth",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "安全敏感随机值不静默降级；持久化 reporting credential 用于预期的 HMAC 身份验证。",
+        "method": "source",
+        "result": "enrollment secret 与 reporting key 由 `rand.Read` 生成，错误会直接返回；enrollment state 保存 secret 的 SHA-256 hash，并以 constant-time 比较验证。节点请求从本地凭证文件读取 reporting key，以 method、path、node ID、timestamp、request ID 和 body hash 构造 HMAC，并 constant-time 比较签名；请求还检查 2 分钟时间窗及 replay store。参见 `light_service.go:47-57,68-107,114-168,171-210,248-276`。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "run-7 缺失目标恢复旧 claim 由当前 `.previous` 有效恢复与凭证目录非空时 fail-closed 关闭；无需复报为漏洞。",
+      "目标文件存在但损坏时即使 `.previous` 有效也会令 NewService 失败，来源显示这是本地恢复/可用性约束，未找到低信任写入路径。",
+      "EnrollHost 已提交但响应丢失时，持有有效 enrollment token 的主体没有幂等重发路径；未显示越权边界。"
+    ]
+  },
+  {
+    "coverage_id": "Cluster%20light-store%20startup%20state%20and%20.previous%20recovery::internal%2Fcluster%2Flight_store.go%23openLightStore%20recoverOrInitialize%20credentials%20fail-closed%20behavior::internal%2Fcluster::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Cluster light-store startup state and .previous recovery",
+      "boundary": "internal/cluster/light_store.go#openLightStore recoverOrInitialize credentials fail-closed behavior",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Cluster light-store startup state and .previous recovery",
+    "boundary": "internal/cluster/light_store.go#openLightStore recoverOrInitialize credentials fail-closed behavior",
+    "subsystem": "internal/cluster",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "internal/cluster/light_store.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Update metadata and rollback confusion",
+        "reason": "This unit reviews the light-store recovery state machine; host application image update state is covered separately."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_identity_auth",
+    "reviewed_paths": [
+      "internal/cluster/light_store.go",
+      "internal/cluster/store_v2.go",
+      "internal/cluster/service.go",
+      "internal/cluster/light_service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_identity_auth",
+        "reviewed_paths": [
+          "internal/cluster/light_store.go",
+          "internal/cluster/store_v2.go"
+        ],
+        "invariant": "启动恢复只接受受限、regular、非 symlink 且可解码的状态；缺失状态时不把仍有凭证证据的目录初始化为空。",
+        "method": "source",
+        "result": "`openLightStore` 对 target 缺失调用 `recoverOrInitialize`；该函数先以 4 MiB 上限读取并解码 `.previous`，再调用 `recoverAtomicTargetV2`。helper 检查 target/backup 为 regular 非 symlink，并仅在 target 缺失时 rename backup、sync 目录。若 target 与 backup 均缺，secret 或 terminal 目录任一有条目则返回错误，且不持久化空状态；只有两目录均空才初始化。target 存在但读取或解码失败时启动报错，不清理凭证。`decodeLightState` 限制 schema、记录数量、字段形状与重复项。`store_v2` 的同类 helper 在目标及备份均存在时保留备份，调用方验证 target 后再丢弃。参见 `light_store.go:95-159,162-203` 与 `store_v2.go:1117-1183,1196-1229`。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_identity_auth",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/cluster/light_service.go"
+        ],
+        "invariant": "启动确实经过被审查的 light-store 恢复入口；低信任节点的 enrollment 输出只能在相应状态持久化路径之后产生。",
+        "method": "source",
+        "result": "`NewService` 调用 `openLightStore`，其错误会中止构造。enrollment 校验 origin、token、过期时间、限额和 terminal key 后生成 reporting key，调用 `EnrollHost`；后者写 key 文件并将 enrollment 消费与 host 记录一起持久化，失败时恢复内存状态并尝试移除新文件。启动后的孤儿凭证清理仅移除未引用且符合命名规则的 regular 文件。参见 `service.go:231-234`、`light_service.go:114-168`、`light_store.go:278-354,576-614`。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "run-7 缺失目标恢复旧 claim 由当前 `.previous` 有效恢复与凭证目录非空时 fail-closed 关闭；无需复报为漏洞。",
+      "目标文件存在但损坏时即使 `.previous` 有效也会令 NewService 失败，来源显示这是本地恢复/可用性约束，未找到低信任写入路径。",
+      "EnrollHost 已提交但响应丢失时，持有有效 enrollment token 的主体没有幂等重发路径；未显示越权边界。"
+    ]
+  },
+  {
+    "coverage_id": "DELETE%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%2F%7Bid%7D%20and%20wallpaper%20lifecycle::internal%2Fdesktopwallpapers%2Fstore.go%23Store.Delete%20index%20commit%20and%20copied-data%20lifecycle::internal%2Fdesktopwallpapers::DATA-ISOLATION-AND-LIFECYCLE.md%23Stale%20authorization%20and%20derived%20copy%20use",
+    "canonical_refs": {
+      "surface": "DELETE /api/v1/desktop/wallpapers/{id} and wallpaper lifecycle",
+      "boundary": "internal/desktopwallpapers/store.go#Store.Delete index commit and copied-data lifecycle",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use"
+    },
+    "surface": "DELETE /api/v1/desktop/wallpapers/{id} and wallpaper lifecycle",
+    "boundary": "internal/desktopwallpapers/store.go#Store.Delete index commit and copied-data lifecycle",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+    "starting_paths": [
+      "CHANGELOG.md",
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "packaging/kejilion-app/kpanel.conf",
+      "web/public/appearance-init.js",
+      "web/src/lib/authWallpaperCopy.ts",
+      "web/src/lib/desktopWallpapers.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Browser-storage disclosure and stale authorization",
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#Service-worker and browser-storage attack classes",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "covered",
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go",
+          "internal/panel/backup_data.go",
+          "packaging/kejilion-app/kpanel.conf"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "recon_product_stack",
+            "reviewed_paths": [
+              "internal/desktopwallpapers/store.go",
+              "internal/panel/desktop_wallpapers.go",
+              "internal/panel/server.go",
+              "internal/panel/backup_data.go",
+              "packaging/kejilion-app/kpanel.conf"
+            ],
+            "invariant": "Wallpaper deletion removes the indexed authorization to open an image before cleaning up files; assess residual copies and lifecycle restores for a lower-trust access path.",
+            "method": "source",
+            "result": "`store.go:257-278` writes the reduced index before removing image/thumb files; `OpenFile` (`280-320`) requires the ID to remain indexed. Failed cleanup can leave unindexed files, but the API path cannot reopen them. Normal panel backups omit `desktop-wallpapers` (`backup_data.go:33-60`); automatic update snapshots cover `data/panel` and rollback can restore a pre-delete snapshot (`kpanel.conf:1159-1272,1374-1407`), an administrator/root lifecycle operation with no source-established lower-trust boundary.",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [],
+        "reassignment_reason": "当前检查覆盖服务端索引、文件和更新恢复，但未检查浏览器派生副本：web/src/lib/authWallpaperCopy.ts:81-121 将图片写入 localStorage，web/public/appearance-init.js:72-99 可在登录页读取并显示；web/src/lib/desktopWallpapers.ts:225-252 只在列表刷新发现删除或本浏览器执行删除时清理。需核对其他浏览器删除后的副本生命周期。"
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "CHANGELOG.md",
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "web/index.html",
+      "web/public/appearance-init.js",
+      "web/src/components/desktop/DesktopWallpaperPicker.vue",
+      "web/src/lib/api.ts",
+      "web/src/lib/authWallpaperCopy.ts",
+      "web/src/lib/desktopWallpapers.ts",
+      "web/src/stores/session.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "DELETE 只有有效会话可调用；删除提交索引后，后续 API 文件读取不得再接受该 ID。",
+        "method": "source",
+        "result": "server.go:402-403 将壁纸路径交给 handler；desktop_wallpapers.go:35-72,220-231 先校验路由、Origin、会话与 CSRF，再调用删除。store.go:257-277 先写入不含该 ID 的索引，再更新内存索引并尝试移除文件；store.go:282-320 的 OpenFile 先要求 ID 仍在索引中。因此，即使底层移除失败，文件也不能经此 API 路径重新读取。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "CHANGELOG.md",
+          "web/src/components/desktop/DesktopWallpaperPicker.vue",
+          "web/src/lib/api.ts",
+          "web/src/lib/desktopWallpapers.ts",
+          "web/src/lib/authWallpaperCopy.ts",
+          "web/public/appearance-init.js",
+          "web/index.html",
+          "web/src/stores/session.ts"
+        ],
+        "invariant": "删除对象时，派生到浏览器的副本应遵循其本地生命周期；核对写入、删除、刷新、注销及登录页读取路径。",
+        "method": "source",
+        "result": "DesktopWallpaperPicker.vue:118-135 在 API 删除成功后调用 customDeleted；desktopWallpapers.ts:129-134,245-252 仅在本浏览器选中了被删 ID 时回退并清除 auth 副本，225-238 的列表刷新也会在发现 ID 已不存在时清除副本。authWallpaperCopy.ts:81-121 将缩小后的图片写入 origin localStorage；appearance-init.js:65-99 在 /login 等页面按所存选中 ID 读取匹配副本并设置登录页背景，index.html:8 在应用加载前引入该脚本。stores/session.ts:84-92 注销只重置会话状态，没有清理该键。由此可见，其他浏览器的本地副本在其执行列表刷新前仍可显示；它是明确的浏览器本地登录页背景功能，源码未显示不同用户的壁纸归属或权限隔离，故未达到未授权主体影响的候选门槛。CHANGELOG.md:25-26 仅作为跨浏览器行为与本地副本范围的契约线索，结论来自上述源码路径。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "Automatic update rollback restores the pre-delete `data/panel` snapshot, so a wallpaper deleted after snapshot creation can return. This is a host-side administrator/root lifecycle action; no lower-trust boundary violation was identified.",
+      "The Windows build sets no `O_NOFOLLOW`; the package target is Linux and no lower-trust writer to the private store directory was identified.",
+      "壁纸删除在当前浏览器成功回退并清除本地 auth 副本；另一浏览器只有在执行 loadCustomWallpapers 后才会清除。删除后、列表刷新前，登录页脚本仍可能显示与所存 ID 匹配的本地副本。源码未建立其属于另一主体的受保护数据边界；记录为跨浏览器删除一致性/生命周期加固项，而非安全候选。"
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%2F%7Bid%7D%2Ffiles%2F%7Btoken%7D%2F%7Bpath%7D::internal%2Fpanel%2Fscene_packs.go%23serveScenePackBytes%20ETag%20and%20private%20cache%20revalidation::internal%2Fpanel::WEB-PROTOCOL-AND-AUTH.md%23Cache%20deception%20and%20private-response%20caching",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+      "boundary": "internal/panel/scene_packs.go#serveScenePackBytes ETag and private cache revalidation",
+      "subsystem": "internal/panel",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching"
+    },
+    "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+    "boundary": "internal/panel/scene_packs.go#serveScenePackBytes ETag and private cache revalidation",
+    "subsystem": "internal/panel",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go",
+      "internal/scenepacks/catalog.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go",
+      "internal/scenepacks/catalog.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/store.go",
+          "internal/scenepacks/catalog.go"
+        ],
+        "invariant": "Scene file revalidation must authorize the current capability before returning 304, and cache variation must distinguish encoded representations without making the response shared-cacheable.",
+        "method": "source",
+        "result": "The frame route reads through `Store.File` before ETag comparison (`scene_packs.go:47-57,200-207`). `File` checks installed ID/token and catalog membership before opening/reading the object (`scenepacks/store.go:474-519`); reinstall rotates the per-install token. The response is private, no-cache, must-revalidate, uses a weak digest ETag and adds `Vary: Accept-Encoding`. Conditional matching occurs only after the current token has been checked and the body loaded. List and poster/thumb paths use the ordinary session gate and poster/thumb responses are private, no-store (`scene_packs.go:80-111,189-192`).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": []
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%2F%7Bid%7D%2Ffiles%2F%7Btoken%7D%2F%7Bpath%7D::internal%2Fpanel%2Fscene_packs.go%23serveScenePackBytes%20gzip%20work%20and%20scene%20stream%20gate::internal%2Fpanel::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+      "boundary": "internal/panel/scene_packs.go#serveScenePackBytes gzip work and scene stream gate",
+      "subsystem": "internal/panel",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance"
+    },
+    "surface": "GET /api/v1/desktop/scene-packs/{id}/files/{token}/{path}",
+    "boundary": "internal/panel/scene_packs.go#serveScenePackBytes gzip work and scene stream gate",
+    "subsystem": "internal/panel",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [
+      {
+        "wave": 1,
+        "status": "candidate",
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/store.go",
+          "internal/scenepacks/catalog.go"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "recon_entry_surface",
+            "reviewed_paths": [
+              "internal/panel/scene_packs.go",
+              "internal/panel/server.go"
+            ],
+            "invariant": "A caller without a valid file capability should not occupy the shared scene stream wait queue before capability verification unless that pre-auth admission has an effective bound and does not deny valid users.",
+            "method": "source",
+            "result": "`scene_packs.go:47-56` parses the frame path and acquires `scenePackStream` capacity before calling `Store.File`. The frame branch precedes the session gate at :80-82; `server.go:886-888` treats syntactically valid scene file paths as public for the security-entrance check. `scenePackStream` at :167-188 accepts a queue entry before waiting for one of four stream slots; the queue is capped at MaxFiles+2*MaxPacks, which is 400 (`scene_packs.go:23`; `server.go:214-215`; `catalog.go:18-20`). If full, requests fail with ErrBusy, mapped to HTTP 409 at `scene_packs.go:255-260`. The same gate is shared with authenticated thumb/poster requests at :101-109.",
+            "artifact": null
+          },
+          {
+            "agent_id": "recon_entry_surface",
+            "reviewed_paths": [
+              "internal/scenepacks/store.go",
+              "internal/scenepacks/catalog.go",
+              "internal/panel/scene_packs.go"
+            ],
+            "invariant": "Invalid capabilities must be rejected before expensive object reads, hashing, and gzip work; assess whether earlier queue admission alone can deny other callers.",
+            "method": "source",
+            "result": "`Store.File` takes the store mutex before comparing the supplied token (`store.go:478-485`), but invalid tokens return before object-path checks and file reads at :488-519. Valid files are limited to 16 MiB (`catalog.go:16-26`); HTTP reads the file before ETag matching and optional gzip (`scene_packs.go:200-227`), with at most four active streams. Therefore source establishes bounded pre-auth admission and a possible shared queue-denial path, but not that an attacker can fill and hold the queue under the deployed scheduler or ingress controls.",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [
+          "kpanel.scene-pack.stream-queue-before-capability-check"
+        ],
+        "unresolved": [
+          "Hunter candidate record is malformed (uses verdict instead of proposed_verdict, trace kinds outside schema, and validation_plan array rather than object); do not carry it into findings.json. A fresh hunter must re-evaluate and return a schema-shaped candidate or reject it.",
+          "Decisive source-only hypothesis: syntactically valid wrong-token frame requests enter shared queue before capability check; no dynamic local fixture ran due missing OS sandbox.",
+          "No source-visible reverse-proxy/deployment concurrency or rate controls; review does not establish external reachability or whether ingress prevents queue saturation."
+        ],
+        "reassignment_reason": "The prior hunter output contained a malformed candidate record (schema field names, trace enums, and validation_plan shape). Archive its exact source evidence, then have a fresh hunter independently re-evaluate the unit and emit a schema-conformant candidate or reject the lead."
+      }
+    ],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go",
+      "internal/scenepacks/catalog.go",
+      "cmd/paneld/main.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/store.go",
+          "internal/scenepacks/catalog.go",
+          "cmd/paneld/main.go"
+        ],
+        "invariant": "Untrusted requests must not trigger unbounded work before scene-file capability validation; stream admission, file reads, compression, and cache reuse must have effective bounds.",
+        "method": "source",
+        "result": "A valid-shaped scene-file path is exempted from the security-entrance session gate (`server.go:853-890`) and dispatched to `handleScenePacks` (`server.go:281,295-298,404-405`). The handler enters `scenePackStream` before `Store.File` validates the token against installed state (`scene_packs.go:47-58`; `scenepacks/store.go:474-519`). Thus a syntactically valid but wrong token can consume admission briefly, but `File` rejects it before filesystem open/read and before response hashing or gzip. Admission is bounded by a 400-entry waiting queue (`scene_packs.go:21-23`, `scenepacks/catalog.go:17-23`) plus four active streams (`server.go:213-215`); canceled waits release their queue slot and a full queue rejects new work (`scene_packs.go:167-187`). Valid capability reads are bounded to at most 16 MiB per file, with pack and total limits (`catalog.go:208-234`); paneld configures 5-second header, 30-second read, and 60-second write timeouts (`cmd/paneld/main.go:116-124`). Compression is conditional on size, Range, Accept-Encoding, and an extension allowlist; it buffers one bounded body and only uses gzip if output is below 90% of input (`scene_packs.go:200-229,244-251`; `server.go:1752-1776`). ETag evaluation follows successful `File` validation and precedes compression; `private, no-cache, must-revalidate` and `Vary: Accept-Encoding` are set (`scene_packs.go:200-229`), so cached bytes require capability revalidation. Source establishes bounded pre-validation work; no disproportionate or persistent shared-resource effect was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "Scene file cache headers are private, no-cache, must-revalidate with a weak digest ETag and Vary: Accept-Encoding; the capability token is checked before 304 generation.",
+      "Capability validation occurs after bounded queue admission; invalid tokens are rejected before file I/O or gzip, and queue, stream, and server deadlines bound the source-visible work. No per-capability fairness control is visible."
+    ]
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20list%20metadata%20rendered%20by%20web%20client::internal%2Fdesktopwallpapers%2Fstore.go%23normalizeMetadata%20values%20flow%20to%20browser%20render%20sinks::internal%2Fdesktopwallpapers::CLIENT-SIDE.md%23DOM-based%20XSS",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/wallpapers list metadata rendered by web client",
+      "boundary": "internal/desktopwallpapers/store.go#normalizeMetadata values flow to browser render sinks",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "CLIENT-SIDE.md#DOM-based XSS"
+    },
+    "surface": "GET /api/v1/desktop/wallpapers list metadata rendered by web client",
+    "boundary": "internal/desktopwallpapers/store.go#normalizeMetadata values flow to browser render sinks",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "CLIENT-SIDE.md#DOM-based XSS",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go",
+      "web/src/lib/desktopWallpapers.ts",
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/components/desktop/DesktopWallpaperPicker.vue",
+      "web/public/appearance-init.js"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#DOM-based XSS",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "ATTACK-CLASSES.md#Injection",
+        "reason": "The scoped client consumer is tracked as a separate DOM rendering boundary; this unit uses the browser-specific sink rules."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go",
+      "web/src/lib/desktopWallpapers.ts",
+      "web/src/components/desktop/DesktopView.vue",
+      "web/src/components/desktop/DesktopWallpaperPicker.vue",
+      "web/public/appearance-init.js",
+      "web/src/lib/authWallpaperCopy.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go",
+          "web/src/lib/desktopWallpapers.ts",
+          "web/src/components/desktop/DesktopView.vue",
+          "web/src/components/desktop/DesktopWallpaperPicker.vue",
+          "web/public/appearance-init.js",
+          "web/src/lib/authWallpaperCopy.ts"
+        ],
+        "invariant": "Backend-controlled wallpaper metadata must not reach executable HTML, unsafe URL, or CSS sinks without validation or safe rendering.",
+        "method": "source",
+        "result": "Metadata normalization validates names and theme colors (`store.go:400-431`); the API returns stored metadata (`desktop_wallpapers.go:35-91`). The picker uses Vue text/attribute bindings and validated custom IDs (`DesktopWallpaperPicker.vue:305-326`); desktop image URLs use fixed API routes (`DesktopView.vue:388-401`, `desktopWallpapers.ts:148-166`). Early appearance code accepts only the pack/custom ID patterns before constructing URLs (`appearance-init.js:29-39`), and the local auth copy validates data-URL type and length (`authWallpaperCopy.ts:1-13,28-45`). No unsafe HTML sink or source-supported DOM XSS path was found in the reviewed flows.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%2F%7Bid%7D%2Fimage%7Cthumb::internal%2Fpanel%2Fdesktop_wallpapers.go%23serveDesktopWallpaperFile%20session%20cache%20and%20ETag%20policy::internal%2Fpanel::WEB-PROTOCOL-AND-AUTH.md%23Cache%20deception%20and%20private-response%20caching",
+    "canonical_refs": {
+      "surface": "GET /api/v1/desktop/wallpapers/{id}/image|thumb",
+      "boundary": "internal/panel/desktop_wallpapers.go#serveDesktopWallpaperFile session cache and ETag policy",
+      "subsystem": "internal/panel",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching"
+    },
+    "surface": "GET /api/v1/desktop/wallpapers/{id}/image|thumb",
+    "boundary": "internal/panel/desktop_wallpapers.go#serveDesktopWallpaperFile session cache and ETag policy",
+    "subsystem": "internal/panel",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+    "starting_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Cache deception and private-response caching",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "internal/desktopwallpapers/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go",
+          "internal/desktopwallpapers/store.go"
+        ],
+        "invariant": "A conditional image response must still pass session and resource checks, and its cache policy must not make a private response shared-cacheable.",
+        "method": "source",
+        "result": "The route requires a session before `serveDesktopWallpaperFile` (`desktop_wallpapers.go:73-82`). `OpenFile` checks indexed membership before ETag handling (:94-109; `store.go:308-320`). The response sets private, max-age=31536000, immutable and an ID/kind ETag; API dispatch initially sets no-store (`server.go:296`), which the image handler replaces. The store is instance-wide rather than per-user, and no shared-cacheable directive is set, so source does not establish cross-principal disclosure.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": []
+  },
+  {
+    "coverage_id": "GET%2C%20POST%2C%20DELETE%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20and%20%2F%7Bid%7D%2Fimage%7Cthumb::internal%2Fpanel%2Fdesktop_wallpapers.go%23handleDesktopWallpapers%20session%20and%20resource%20checks::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "GET, POST, DELETE /api/v1/desktop/wallpapers and /{id}/image|thumb",
+      "boundary": "internal/panel/desktop_wallpapers.go#handleDesktopWallpapers session and resource checks",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "GET, POST, DELETE /api/v1/desktop/wallpapers and /{id}/image|thumb",
+    "boundary": "internal/panel/desktop_wallpapers.go#handleDesktopWallpapers session and resource checks",
+    "subsystem": "internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+        "reason": "The changed path is an authenticated HTTP handler, not a privileged local helper or IPC endpoint."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "internal/desktopwallpapers/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Every wallpaper API path must select only the intended operation and apply the required session gate before accessing the store.",
+        "method": "source",
+        "result": "`server.go:400-407` dispatches the wallpaper prefix to one handler. `desktop_wallpapers.go:35-92` rejects RawPath/RawQuery, allows only list GET/POST, ID image/thumb GET, and ID DELETE, and requires a session before store operations; GET is not a mutation path.",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/desktop_wallpapers.go",
+          "internal/desktopwallpapers/store.go"
+        ],
+        "invariant": "A requested image or deletion target must resolve only to a valid indexed wallpaper ID and kind.",
+        "method": "source",
+        "result": "`desktop_wallpapers.go:43-45` accepts only ValidID IDs and image/thumb kinds; `store.go:308-320` checks ID, kind, indexed membership, and regular-file/size/signature constraints before opening a response file. Delete is reached only for an ID-shaped item path.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": []
+  },
+  {
+    "coverage_id": "Lifecycle%20test%20harness%20and%20backup%20regression%20fixtures::packaging%2Ftests%2Fapp-conf-lifecycle.sh%23disposable-rootfs%20gate%20and%20packaging%2Ftests%2Fapp-conf-update-backups.sh%23fixture%20mutations::packaging%2Ftests::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "Lifecycle test harness and backup regression fixtures",
+      "boundary": "packaging/tests/app-conf-lifecycle.sh#disposable-rootfs gate and packaging/tests/app-conf-update-backups.sh#fixture mutations",
+      "subsystem": "packaging/tests",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "Lifecycle test harness and backup regression fixtures",
+    "boundary": "packaging/tests/app-conf-lifecycle.sh#disposable-rootfs gate and packaging/tests/app-conf-update-backups.sh#fixture mutations",
+    "subsystem": "packaging/tests",
+    "attack_class": "ATTACK-CLASSES.md#Obvious things",
+    "starting_paths": [
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh",
+      "packaging/kejilion-app/kpanel.conf"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Untrusted code in a privileged workflow",
+        "reason": "These scripts are repository test fixtures, not a CI workflow execution boundary; inspect only the edited harness behavior and its rootfs guard."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "release_package_hunter",
+    "reviewed_paths": [
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-update-backups.sh",
+      "scripts/run-release-gate.sh",
+      "packaging/release-runner/Dockerfile"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "release_package_hunter",
+        "reviewed_paths": [
+          "packaging/tests/app-conf-lifecycle.sh",
+          "packaging/tests/app-conf-update-backups.sh",
+          "scripts/run-release-gate.sh",
+          "packaging/release-runner/Dockerfile"
+        ],
+        "invariant": "Rootfs-mutating lifecycle fixtures must execute only in a disposable environment and use synthetic credentials/data.",
+        "method": "source",
+        "result": "The lifecycle harness checks an opt-in variable and /.dockerenv, then mutates absolute host paths; that guard alone does not prove OS isolation. The checked-in release runner invokes it in a fresh container with only the repository mounted read-only. Fixture tokens and node secrets are synthetic. This is a hardening note, not a source-supported vulnerability under the assigned boundary; no tests were executed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The lifecycle test's environment-variable and /.dockerenv guard is not an OS isolation control; keep the absolute-path-mutating harness restricted to the disposable runner environment, whose current invocation mounts source read-only."
+    ]
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20image%20and%20thumb%20bytes::internal%2Fdesktopwallpapers%2Fstore.go%23stripJPEG%20stripWebP%20container%20walks::internal%2Fdesktopwallpapers::MEMORY-SAFETY-AND-BINARY.md%23Integer%20overflow%2C%20underflow%2C%20truncation%2C%20and%20signedness",
+    "canonical_refs": {
+      "surface": "POST /api/v1/desktop/wallpapers image and thumb bytes",
+      "boundary": "internal/desktopwallpapers/store.go#stripJPEG stripWebP container walks",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness"
+    },
+    "surface": "POST /api/v1/desktop/wallpapers image and thumb bytes",
+    "boundary": "internal/desktopwallpapers/store.go#stripJPEG stripWebP container walks",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+      "MEMORY-SAFETY-AND-BINARY.md#Integer overflow, underflow, truncation, and signedness",
+      "MEMORY-SAFETY-AND-BINARY.md#Universal moves",
+      "MEMORY-SAFETY-AND-BINARY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+        "reason": "This is parsing of attacker-supplied upload bytes, not a native app or local IPC ownership boundary."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go"
+        ],
+        "invariant": "Untrusted image container lengths and offsets must be bounded before conversion, arithmetic, slicing, or iteration.",
+        "method": "source",
+        "result": "Multipart image/thumb parts are limited (`desktop_wallpapers.go:172-217`); the store also bounds image sizes (`store.go:35-48,434-458`). WebP chunk lengths are checked against remaining input before conversion and offset advancement (`store.go:460-514`). JPEG reads check segment-header availability and segment end bounds before access (`store.go:516-547`); input is bounded to 8 MiB. No source-supported overflow, truncation, or out-of-bounds path was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20image%20decode::internal%2Fdesktopwallpapers%2Fstore.go%23decodeChecked%20dimensions%20and%20pixel%20cap::internal%2Fdesktopwallpapers::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Decompression%20and%20representation%20amplification",
+    "canonical_refs": {
+      "surface": "POST /api/v1/desktop/wallpapers image decode",
+      "boundary": "internal/desktopwallpapers/store.go#decodeChecked dimensions and pixel cap",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Decompression and representation amplification"
+    },
+    "surface": "POST /api/v1/desktop/wallpapers image decode",
+    "boundary": "internal/desktopwallpapers/store.go#decodeChecked dimensions and pixel cap",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Decompression and representation amplification",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Decompression and representation amplification",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go"
+        ],
+        "invariant": "Image decoding and derived pixel work must be bounded against compressed and decoded representation amplification.",
+        "method": "source",
+        "result": "Request and per-part byte limits bound compressed input; upload handling has one active-upload slot (`desktop_wallpapers.go:115-168,172-217`). `decodeChecked` checks configuration dimensions and the 10-million-pixel cap before full decode and verifies decoded bounds afterward (`store.go:35-48,549-573`). Thumbnail dimensions and luminance work are bounded (`store.go:575-591`). No unbounded decode-work path was found in source.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "POST%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20upload%20slot%20and%20body%20deadline::internal%2Fpanel%2Fdesktop_wallpapers.go%23desktopWallpaperUploads%20admission%20and%20deadlines::internal%2Fpanel::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+    "canonical_refs": {
+      "surface": "POST /api/v1/desktop/wallpapers upload slot and body deadline",
+      "boundary": "internal/panel/desktop_wallpapers.go#desktopWallpaperUploads admission and deadlines",
+      "subsystem": "internal/panel",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+    },
+    "surface": "POST /api/v1/desktop/wallpapers upload slot and body deadline",
+    "boundary": "internal/panel/desktop_wallpapers.go#desktopWallpaperUploads admission and deadlines",
+    "subsystem": "internal/panel",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+    "starting_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "cmd/paneld/main.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "cmd/paneld/main.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go",
+          "cmd/paneld/main.go"
+        ],
+        "invariant": "Untrusted upload bodies must be bounded and costly preparation must have finite admission and time limits after authentication.",
+        "method": "source",
+        "result": "Authentication and CSRF checks precede `uploadDesktopWallpaper` (`desktop_wallpapers.go:66-82,115`). `server.go:212` gives the upload gate capacity one; `desktop_wallpapers.go:121-139` checks declared size, uses a nonblocking gate, sets a five-minute read and six-minute write deadline, and wraps the body in MaxBytesReader. `readDesktopWallpaperParts` at :170-218 permits only metadata/image/thumb, applies each exported field-size limit, rejects duplicates/unknown fields, and decodes strict metadata. `paneld` defaults are 5s ReadHeaderTimeout, 30s ReadTimeout, 60s WriteTimeout and 1 MiB MaxHeaderBytes (`cmd/paneld/main.go:116-124`); the upload handler attempts its route-specific deadlines. The slot can hold one authenticated upload for up to five minutes, but no source path shows it blocking unrelated panel operations.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": []
+  },
+  {
+    "coverage_id": "POST%2C%20DELETE%20%2Fapi%2Fv1%2Fdesktop%2Fwallpapers%20mutations::internal%2Fpanel%2Fdesktop_wallpapers.go%23checkOrigin%20requireSession%20checkCSRF%20gate::internal%2Fpanel::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+    "canonical_refs": {
+      "surface": "POST, DELETE /api/v1/desktop/wallpapers mutations",
+      "boundary": "internal/panel/desktop_wallpapers.go#checkOrigin requireSession checkCSRF gate",
+      "subsystem": "internal/panel",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+    },
+    "surface": "POST, DELETE /api/v1/desktop/wallpapers mutations",
+    "boundary": "internal/panel/desktop_wallpapers.go#checkOrigin requireSession checkCSRF gate",
+    "subsystem": "internal/panel",
+    "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+    "starting_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLIENT-SIDE.md#Credentialed CORS trust",
+        "reason": "No cross-origin credentialed browser API is established by this mutation path; review its ambient session and request binding."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/desktop_wallpapers.go",
+      "internal/panel/server.go",
+      "internal/auth/service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/desktop_wallpapers.go",
+          "internal/panel/server.go",
+          "internal/auth/service.go"
+        ],
+        "invariant": "Cookie-authenticated wallpaper mutations must require origin validation, an authenticated session, and a CSRF token bound to that session.",
+        "method": "source",
+        "result": "`desktop_wallpapers.go:66-82` applies checkOrigin to non-GET methods, then requireSession, then checkCSRF. `server.go:1363-1370` requires header/cookie equality and `auth.ValidateCSRF`; `auth/service.go:588-593` compares the submitted token hash to the authenticated session CSRF hash. A missing Origin may pass only under the documented configuration branch, but it does not bypass the session-bound CSRF check.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": []
+  },
+  {
+    "coverage_id": "Panel%20startup%20wallpaper%20store%20open%20and%20repair::internal%2Fdesktopwallpapers%2Fstore.go%23Open%20index%20repair%20and%20stray%20file%20removal::internal%2Fdesktopwallpapers::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Poison-record%20and%20head-of-line%20blocking",
+    "canonical_refs": {
+      "surface": "Panel startup wallpaper store open and repair",
+      "boundary": "internal/desktopwallpapers/store.go#Open index repair and stray file removal",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking"
+    },
+    "surface": "Panel startup wallpaper store open and repair",
+    "boundary": "internal/desktopwallpapers/store.go#Open index repair and stray file removal",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Poison-record and head-of-line blocking",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Startup recovery must bound index parsing and validate records/files before accepting them or performing cleanup.",
+        "method": "source",
+        "result": "Panel startup opens the store at a fixed data subdirectory (`server.go:180-183`). `Open` reads the bounded index, validates and caps entries, repairs invalid rows, and sweeps stray files (`store.go:118-161,367-397,601-614`). File checks require regular files with expected sizes; atomic index replacement is used for repair (`store.go:323-365,630-675`). No attacker-controlled record path or source-supported poison-record shared denial-of-service path was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Panel-to-host%20Agent%20Unix-socket%20and%20privileged-operation%20boundary::packaging%2Fkejilion-app%2Fkpanel.conf%23generated%20Agent%20socket%2Ftoken%20mounts%20and%20service%20definitions::internal%2Fagent::DESKTOP-MOBILE-AND-LOCAL-IPC.md%23Privileged%20helper%20as%20confused%20deputy",
+    "canonical_refs": {
+      "surface": "Panel-to-host Agent Unix-socket and privileged-operation boundary",
+      "boundary": "packaging/kejilion-app/kpanel.conf#generated Agent socket/token mounts and service definitions",
+      "subsystem": "internal/agent",
+      "attack_class": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy"
+    },
+    "surface": "Panel-to-host Agent Unix-socket and privileged-operation boundary",
+    "boundary": "packaging/kejilion-app/kpanel.conf#generated Agent socket/token mounts and service definitions",
+    "subsystem": "internal/agent",
+    "attack_class": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+    "starting_paths": [
+      "internal/agent/file_handler.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "packaging/kejilion-app/kpanel.conf"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Container and orchestration attack classes",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "packaging/kejilion-app/kpanel.conf",
+      "internal/agent/file_handler.go",
+      "internal/agent/server.go",
+      "internal/agent/socket.go",
+      "cmd/kejilion-agent/main.go",
+      "internal/panel/agent.go",
+      "internal/panel/server.go",
+      "internal/panel/system.go",
+      "internal/panel/files.go",
+      "internal/agent/files.go",
+      "internal/filemanager/manager.go",
+      "internal/systemmanage/manager.go",
+      "internal/contract/system_resources.go",
+      "cmd/kejilion-node/file_broker.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_stream.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "packaging/kejilion-app/kpanel.conf",
+          "internal/agent/file_handler.go",
+          "internal/agent/server.go",
+          "internal/agent/socket.go",
+          "cmd/kejilion-agent/main.go",
+          "internal/panel/agent.go",
+          "internal/panel/server.go",
+          "internal/panel/system.go",
+          "internal/panel/files.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "internal/systemmanage/manager.go",
+          "internal/contract/system_resources.go",
+          "cmd/kejilion-node/file_broker.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/file_stream.go"
+        ],
+        "invariant": "Only the intended Panel workload or an authenticated paired relay may invoke privileged Agent operations; each accepted operation must be method/argument constrained and apply its resource policy before reaching host sinks.",
+        "method": "source",
+        "result": "The Panel client dials only the configured Unix socket and supplies the mounted bearer token (panel/agent.go:75-98,123-158,161-195). The socket parent is set root:panel-group mode 0750 and the socket root:panel-group mode 0660; startup refuses to replace a non-socket path (agent/socket.go:15-68,118-130). The root Agent checks the token before dispatching any route, uses constant-time hash comparison, and rejects unknown paths/methods (agent/server.go:293-303,319-510,513-523). Its startup uses ListenUnix, not a TCP listener (cmd/kejilion-agent/main.go:211-224). Panel write paths to Agent require a valid session and CSRF/Origin checks; the GET proxy requires a session and maps only explicit Agent paths (panel/system.go:18-49; panel/server.go:1120-1144,1188-1235; panel/files.go:1127-1152). Agent file requests are strictly decoded and delegated to typed file-manager methods; the manager anchors operations at os.OpenRoot, rejects symlink components, checks protected/read-only paths, and applies action-specific resource/version checks (agent/files.go:679-750,894-915; filemanager/manager.go:101-125,401-482,485-529,621-759,1443-1514). System writes are gated by the enabled/root/Linux check and a finite action switch; resource actions validate fields and map to fixed script/action arguments (systemmanage/manager.go:363-455,813-870,939-987; contract/system_resources.go:105-139). NewFileHandler itself has no bearer check, but its only non-test caller is the root node file broker, which exposes no local socket and uses an authenticated outbound Noise relay (agent/file_handler.go:10-16; cmd/kejilion-node/file_broker.go:28-30,90-98). The stream path validates the active peer and role; the Panel-file role requires files scope and rechecks active state/scope before each request (cluster/file_stream_transport.go:258-320,394-461; cluster/file_stream.go:350-383). The shared token grants the Panel workload the Agent's typed API surface, but source shows no lower-trust caller bypassing the Panel session/CSRF gates or the paired-relay authentication. No unauthorized privileged operation or disclosure is established.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "parent_hardening": [
+      "The Agent token is a shared capability for the Panel workload rather than a per-operation credential. If other lower-trust processes are introduced into that workload, consider reducing token/API scope or adding peer identity checks."
+    ]
+  },
+  {
+    "coverage_id": "Scene-pack%20frame-file%20capability%20route::internal%2Fpanel%2Fscene_packs.go%23scenePackFilePath%20and%20Store.File%20capability%2C%20path%2C%20and%20file%20authorization::internal%2Fscenepacks::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Scene-pack frame-file capability route",
+      "boundary": "internal/panel/scene_packs.go#scenePackFilePath and Store.File capability, path, and file authorization",
+      "subsystem": "internal/scenepacks",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Scene-pack frame-file capability route",
+    "boundary": "internal/panel/scene_packs.go#scenePackFilePath and Store.File capability, path, and file authorization",
+    "subsystem": "internal/scenepacks",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Blob and signed-reference overreach",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/scenepacks/catalog.go"
+        ],
+        "invariant": "未登录访问只对格式正确的 capability 文件路径开放；非文件管理和预览路径仍经过会话门。",
+        "method": "source",
+        "result": "server.go:879-890 的安全入口例外以 scenePackFilePath 的同一解析结果判定公开路径，server.go:404-405 将 scene-pack API 分派至 handler。scene_packs.go:27-35,39-48 拒绝 RawPath、受限查询及无效 ID/token/path，并只为 GET 进入文件分支；scene_packs.go:80-88 对其余路由执行 Origin、会话和非 GET 的 CSRF 检查。catalog.go:36-40,109-110,156-166 限定 ID、32 位十六进制 token、路径分段、字符、长度和文件类型。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/scenepacks/store.go",
+          "internal/scenepacks/catalog.go"
+        ],
+        "invariant": "capability 仅授权当前安装对象中清单列出的文件，并在替换或卸载后失效。",
+        "method": "source",
+        "result": "store.go:388-394 为安装生成 16 随机字节 token；268-282,300-317 将安装文件基址随清单视图返回，API 的清单读取位于已认证分支（scene_packs.go:83-96）。Store.File 在 store.go:471-519 校验 ID/token/path，要求当前安装项的 token 精确匹配，只接受清单列出的文件，并用 OpenRoot、常规文件/大小检查和 SHA-256 校验读取内容。替换时先保存新 token 状态再清理旧对象（store.go:421-433）；卸载先保存移除安装项的状态再清理对象（436-468），后续 File 请求因此无法以旧 token 通过当前状态检查。scene_packs.go:47-78 对该 bearer capability 路径应用独立的 frame/CSP/CORS 响应路径。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Scene-pack%20session-gated%20list%20and%20administration%20API::internal%2Fpanel%2Fscene_packs.go%23handleScenePacks%20list%2C%20source%2C%20install%2C%20and%20delete%20routes::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Scene-pack session-gated list and administration API",
+      "boundary": "internal/panel/scene_packs.go#handleScenePacks list, source, install, and delete routes",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Scene-pack session-gated list and administration API",
+    "boundary": "internal/panel/scene_packs.go#handleScenePacks list, source, install, and delete routes",
+    "subsystem": "internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_covered_changed_source",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "recon_entry_surface",
+    "reviewed_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/panel/server.go",
+      "internal/scenepacks/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "所有清单、缩略图/海报和管理操作都必须通过会话门；每个非 GET 写操作还须通过 Origin 与 CSRF 检查。",
+        "method": "source",
+        "result": "server.go:404-405 将 scene-pack API 分派至 handleScenePacks。该 handler 在 scene_packs.go:39-46 先处理路径和查询校验，只有 frame-file 路径进入 capability 分支；其余路径在 80-88 经过 Origin、requireSession、非 GET 的 checkCSRF，然后才分派。90-111 的清单、thumb、poster 均在会话门之后；113-163 仅识别 source PUT、有效 ID 的 install POST 和 delete，且均在会话门之后。server.go:1348-1361,1363-1408 验证会话 cookie，并要求 CSRF header 与 cookie 相等且通过会话校验；Origin 与配置或请求预期来源比较。",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entry_surface",
+        "reviewed_paths": [
+          "internal/panel/scene_packs.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "请求字段不能替代主体校验或改变任意受限目标；管理输入应被限定为支持的操作与目标。",
+        "method": "source",
+        "result": "scene_packs.go:113-129 只解码 source 与 expectedResourceVersion；source 必须通过 ValidSource，安装/删除必须提供符合格式的资源版本。131-163 将操作写入审计后仅调用 SetSource、Install 或 Delete。底层 store.go:320-324,436-468 再校验 source、ID、忙状态和预期版本。生产源码调用点检查显示这些方法由该 handler 调用。未发现同一管理操作存在较弱的并行 HTTP 路径或请求字段覆盖会话主体的路径。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Wallpaper%20collection%20count%20and%20byte%20quota::internal%2Fdesktopwallpapers%2Fstore.go%23Store.Add%20usageLocked%20quota%20check::internal%2Fdesktopwallpapers::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+    "canonical_refs": {
+      "surface": "Wallpaper collection count and byte quota",
+      "boundary": "internal/desktopwallpapers/store.go#Store.Add usageLocked quota check",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+    },
+    "surface": "Wallpaper collection count and byte quota",
+    "boundary": "internal/desktopwallpapers/store.go#Store.Add usageLocked quota check",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/panel/desktop_wallpapers.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/panel/desktop_wallpapers.go"
+        ],
+        "invariant": "Concurrent additions must account for indexed files under a common lock and enforce collection count and byte caps.",
+        "method": "source",
+        "result": "`Add` holds the store mutex while reading usage and checks both the 12-item and 48-MiB limits before writing (`store.go:214-255,280-320`). Startup validation retains at most 12 valid records; HTTP upload admission allows one active upload (`store.go:118-161`, `desktop_wallpapers.go:115-168`). Usage sums the bounded indexed records (`store.go:323-365`). No lower-trust quota bypass or unbounded accounting path was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Wallpaper%20data%20directory%20index%20and%20image%20files::internal%2Fdesktopwallpapers%2Fstore.go%23private%20directory%20atomic%20files%20ID%20path%20and%20O_NOFOLLOW::internal%2Fdesktopwallpapers::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Wallpaper data directory index and image files",
+      "boundary": "internal/desktopwallpapers/store.go#private directory atomic files ID path and O_NOFOLLOW",
+      "subsystem": "internal/desktopwallpapers",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Wallpaper data directory index and image files",
+    "boundary": "internal/desktopwallpapers/store.go#private directory atomic files ID path and O_NOFOLLOW",
+    "subsystem": "internal/desktopwallpapers",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/desktopwallpapers/nofollow_unix.go",
+      "internal/desktopwallpapers/nofollow_windows.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+        "reason": "The package is a server-side local store, not a desktop/mobile application or IPC implementation; ordinary resource/file handling applies."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product_stack",
+    "reviewed_paths": [
+      "internal/desktopwallpapers/store.go",
+      "internal/desktopwallpapers/nofollow_unix.go",
+      "internal/desktopwallpapers/nofollow_windows.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product_stack",
+        "reviewed_paths": [
+          "internal/desktopwallpapers/store.go",
+          "internal/desktopwallpapers/nofollow_unix.go",
+          "internal/desktopwallpapers/nofollow_windows.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Externally supplied identifiers must not control filesystem paths, and store reads/writes must constrain file type, permissions, and symlink following.",
+        "method": "source",
+        "result": "The store root is under configured `DataDir` (`server.go:180-183`); IDs are random 32-hex values and validated before fixed-name path construction (`store.go:65-71,280-320,323-365,593-599`). Directories are checked and set private; writes use private temporary files and atomic replacement (`store.go:616-675`). Unix opens use `O_NOFOLLOW`, followed by regular-file and size checks (`nofollow_unix.go:1-8`, `store.go:280-320`). Windows defines `noFollow=0` (`nofollow_windows.go:1-6`), but the packaged target is Linux (`kpanel.conf:1540-1555`); source does not show a lower-trust principal able to plant local symlinks.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]

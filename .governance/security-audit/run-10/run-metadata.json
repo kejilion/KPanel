@@ -1,0 +1,395 @@
+{
+  "run_id": "run-10",
+  "repo": "KPanel",
+  "target": "C:/GitHub/_codex-tasks/kpanel-v122-stable-audit",
+  "source_ref": "690f3dc24fe81377f4e17d27c68e4a174761b973",
+  "source_tree": "6d4f8ac8c3b87696411916f17bdb00c6a1132ea4",
+  "source_dirty": false,
+  "scope_mode": "scoped",
+  "profile": "standard",
+  "comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "scope_paths": [
+    "internal/cluster/light_store.go",
+    "internal/desktopwallpapers/nofollow_unix.go",
+    "internal/desktopwallpapers/nofollow_windows.go",
+    "internal/desktopwallpapers/store.go",
+    "internal/panel/desktop_wallpapers.go",
+    "internal/panel/scene_packs.go",
+    "internal/panel/server.go",
+    "packaging/kejilion-app/kpanel.conf",
+    "packaging/tests/app-conf-lifecycle.sh",
+    "packaging/tests/app-conf-update-backups.sh"
+  ],
+  "in_scope_commits": [
+    "a04dc765f0d7f4ccb25a3a96711f3b92d69137bb",
+    "75d939dba97f1116e71e90a6936be91000d6d89a",
+    "a5ccfa5a28672c9acdc8c3cc598b52f5e6286965",
+    "30e67f147896a9fdeef47899f08bacfe5101959f",
+    "611cc293e46032af5219b9c3932dda8794606318",
+    "eb08665e392924c90dbb5be8ef49c3bbf4cd0424",
+    "eb2ff2d12bc5d97e3025a36985197d30f3871623",
+    "bfa1c124abe3db8030034e6902d37d96eb6d9aa3",
+    "d750f9b97bd644ae939d7edcd70ed03f95469daa"
+  ],
+  "new_boundary_packages": [
+    "internal/desktopwallpapers"
+  ],
+  "coverage_check": "node scripts/check-security-audit-coverage.mjs --target HEAD --format=json at 690f3dc24fe81377f4e17d27c68e4a174761b973: decision=scoped-required, comparison_base=4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "skill_source": "cloudflare/security-audit-skill",
+  "skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "skill_dir": "C:/GitHub/_research/security-audit-skill-c1c8a8c1",
+  "governance_dir": "C:/GitHub/_codex-tasks/kpanel-v122-stable-audit",
+  "governance_ref": "690f3dc24fe81377f4e17d27c68e4a174761b973",
+  "skill_pin_evidence": "C:/GitHub/_release-evidence/v1.22.0-rc.5-20260925/skill-pin-verification/verification-r2.json",
+  "prior_run_paths": [
+    ".governance/security-audit/run-1",
+    ".governance/security-audit/run-2",
+    ".governance/security-audit/run-3",
+    ".governance/security-audit/run-4",
+    ".governance/security-audit/run-5",
+    ".governance/security-audit/run-6",
+    ".governance/security-audit/run-7",
+    ".governance/security-audit/run-9",
+    "C:/GitHub/_release-evidence/v1.22.0-rc.5-20260925/security-run-8",
+    "C:/GitHub/_codex-evidence/kpanel-transport-v3-security-audit-run-7",
+    "C:/GitHub/_codex-evidence/kpanel-custom-wallpapers-security-audit-run-10"
+  ],
+  "shared_file_owners": {
+    "run-metadata.json": "parent",
+    "architecture.md": "parent",
+    "coverage-ledger.json": "parent",
+    "findings.json": "parent",
+    "REPORT.md": "parent",
+    "FINDINGS-DETAIL.md": "parent",
+    "NEEDS-VALIDATION.md": "parent"
+  },
+  "sandbox_facts": {
+    "network_isolation": false,
+    "empty_allowlisted_environment": false,
+    "readonly_target_and_toolchain": false,
+    "scratch_only_writes": false,
+    "resource_limits": false,
+    "safe_evidence_promoter": false,
+    "target_execution_permitted": false,
+    "note": "Windows host exposes unrestricted filesystem execution and no OS-enforced target sandbox. No target-controlled code, tests, builds, servers, browsers, fixtures, or network requests will run. WSL Ubuntu-24.04 is available only for trusted pinned validators on final run evidence."
+  },
+  "started_at": "2026-09-26T06:14:02Z",
+  "run_status": "complete",
+  "scope_complete": true,
+  "agent_configuration": {
+    "required_child_settings": {
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "fork_turns": "none"
+    },
+    "prompt_delivery": "Tool prompt carries complete task; agents return structured text only and do not write files."
+  },
+  "selected_companion_files": [
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "MEMORY-SAFETY-AND-BINARY.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md"
+  ],
+  "agent_roster": [
+    {
+      "agent_id": "recon_product_stack",
+      "phase": "reconnaissance",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_identity_auth",
+      "phase": "reconnaissance",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_entry_surface",
+      "phase": "reconnaissance",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_execution_capability",
+      "phase": "reconnaissance",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_product_stack",
+      "phase": "hunter",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_identity_auth",
+      "phase": "hunter",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_entry_surface",
+      "phase": "hunter",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "release_package_hunter",
+      "phase": "hunter",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete",
+      "owner_task": "/root"
+    },
+    {
+      "agent_id": "recon_entry_surface",
+      "phase": "hunter-wave-2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_product_stack",
+      "phase": "hunter-wave-2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_identity_auth",
+      "phase": "coverage-critic-wave-1",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_product_stack",
+      "phase": "hunter-wave-2-scene-queue-rehunt",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "postwave_critic_run10",
+      "phase": "coverage-critic-wave-2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion"
+    },
+    {
+      "agent_id": "postwave_critic_run10b",
+      "phase": "coverage-critic-wave-2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "final_clean_critic_run10",
+      "phase": "final-clean-coverage-critic",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "phase3_rollback_verifier",
+      "phase": "candidate-validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion"
+    },
+    {
+      "agent_id": "phase3_rollback_verifier_b",
+      "phase": "candidate-validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "phase5_record_verifier",
+      "phase": "phase-5-record-validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "complete"
+    },
+    {
+      "agent_id": "recon_execution_capability",
+      "phase": "premature-candidate-validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion"
+    }
+  ],
+  "hunter_wave_plan": {
+    "wave": 2,
+    "units": 5,
+    "agents": [
+      "recon_entry_surface",
+      "recon_product_stack"
+    ],
+    "agents_spent_before_hunting": 11,
+    "mandatory_critic_calls_reserved": 2,
+    "validation_reserve": 1,
+    "budget": null,
+    "note": "Standard profile coverage critic reassignments and three accepted missing units; units are split into two agent assignments. No user-set invocation budget."
+  },
+  "hunter_progress": {
+    "completed_units": 24,
+    "total_units": 24,
+    "completed_hunters": [
+      "recon_identity_auth",
+      "recon_product_stack",
+      "recon_entry_surface",
+      "release_package_hunter"
+    ],
+    "pending_hunters": [],
+    "candidate_fingerprints": [
+      "kpanel:rollback-restores-revoked-light-node"
+    ],
+    "malformed_candidate_fingerprints": [
+      "kpanel.scene-pack.stream-queue-before-capability-check"
+    ],
+    "note": "All 24 current coverage units have hunter results. Wave-2 entry-surface closed three units; wave-2 product-stack closed app lifecycle and Agent IPC. Only live candidate fingerprint is kpanel:rollback-restores-revoked-light-node; two linked units carry it. The malformed scene queue candidate is historical only. Wave-2 post-wave critic returned no missing units or reassignments; the prior scene-stream queue lead is resolved on source evidence. Final-clean coverage critic accepted the 24-unit ledger with no missing units or reassignments. Independent Phase 3 confirmed the source path for the sole candidate; its dynamic effect remains needs_validation because the OS sandbox is unavailable. Phase 5 independently checked the final needs-validation record and applied a non-material evidence-line correction at packaging/tests/app-conf-update-backups.sh:114."
+  },
+  "process_incidents": [
+    {
+      "agent_id": "recon_execution_capability",
+      "phase": "candidate_validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion",
+      "adopted_result": false,
+      "note": "A premature Phase 3 invocation began before the post-wave/final-clean critic sequence. It was interrupted; no conclusion or evidence from it is adopted. A fresh verifier must run only after final-clean critic closure."
+    },
+    {
+      "agent_id": "postwave_critic_run10",
+      "phase": "coverage_critic_wave_2",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion",
+      "adopted_result": false,
+      "note": "This invocation provided progress but did not return the exact structured critic result after follow-up requests; it was interrupted. No partial conclusion was adopted."
+    },
+    {
+      "agent_id": "phase3_rollback_verifier",
+      "phase": "candidate_validation",
+      "model": "gpt-6-luna",
+      "reasoning_effort": "max",
+      "status": "interrupted_before_conclusion",
+      "adopted_result": false,
+      "note": "The source-only verifier did not return status or a structured conclusion after repeated requests to close on the cited trace/evidence; it was interrupted. No partial result is adopted; a fresh bounded verifier invocation is required."
+    }
+  ],
+  "updated_at": "2026-09-26T18:16:18.4550953+08:00",
+  "coverage_critic_history": [
+    {
+      "wave": 2,
+      "agent_id": "postwave_critic_run10b",
+      "status": "complete",
+      "result": {
+        "missing_units": [],
+        "reassign_ids": [],
+        "resolved_prior_leads": [
+          "kpanel.scene-pack.stream-queue-before-capability-check"
+        ],
+        "stop": true
+      },
+      "prior_lead_resolutions": [
+        {
+          "fingerprint": "kpanel.scene-pack.stream-queue-before-capability-check",
+          "linked_coverage_id": "GET%20%2Fapi%2Fv1%2Fdesktop%2Fscene-packs%2F%7Bid%7D%2Ffiles%2F%7Btoken%7D%2F%7Bpath%7D::internal%2Fpanel%2Fscene_packs.go%23serveScenePackBytes%20gzip%20work%20and%20scene%20stream%20gate::internal%2Fpanel::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
+          "reason": "Wave-2 source check confirms syntactically valid wrong-token paths may briefly enter admission before capability verification, but the waiting queue is capped at 400, active streams at four, canceled waits release slots, full admission rejects new work, and invalid tokens are rejected before file reads, hashing, or gzip. No source-supported disproportionate or persistent shared-resource effect remains."
+        }
+      ]
+    }
+  ],
+  "final_clean_critic": {
+    "agent_id": "final_clean_critic_run10",
+    "phase": "final-clean-coverage-critic",
+    "model": "gpt-6-luna",
+    "reasoning_effort": "max",
+    "status": "complete",
+    "result": {
+      "missing_units": [],
+      "reassign_ids": [],
+      "resolved_prior_leads": [
+        "kpanel.scene-pack.stream-queue-before-capability-check"
+      ],
+      "stop": true
+    }
+  },
+  "candidate_validation": {
+    "verifier_id": "phase3_rollback_verifier_b",
+    "fingerprint": "kpanel:rollback-restores-revoked-light-node",
+    "decision": "needs_validation",
+    "linked_coverage_ids": [
+      "Application%20manual%20and%20automatic%20update%20transaction::packaging%2Fkejilion-app%2Fkpanel.conf%23update%20phases%20snapshot%20image%20switch%20health%20rollback::packaging%2Fkejilion-app::SUPPLY-CHAIN-AND-RELEASE.md%23Update%20metadata%20and%20rollback%20confusion",
+      "Application%20data%20snapshot%20archive%20and%20restore::packaging%2Fkejilion-app%2Fkpanel.conf%23transaction%20rollback%20reintroduces%20protected%20state::packaging%2Fkejilion-app::DATA-ISOLATION-AND-LIFECYCLE.md%23Restore%20reintroduces%20invalid%20state"
+    ],
+    "evidence_path": "phase3-result.json",
+    "source_only": true,
+    "local_observation_performed": false,
+    "blocker": "No parent-approved OS-enforced sandbox for target, tests, fixtures, or Docker; restored credential acceptance and telemetry update remain unobserved."
+  },
+  "phase5_validation": {
+    "verifier_id": "phase5_record_verifier",
+    "fingerprint": "kpanel:rollback-restores-revoked-light-node",
+    "decision": "replace",
+    "replacement_applied": true,
+    "replacement_material": false,
+    "reason": "The test-fixture evidence cites line 112, which checks a generic marker; the credential-file assertion is at line 114. Corrected that citation and description.",
+    "record_path": "findings.json",
+    "result_path": "phase5-result.json"
+  },
+  "agent_cost_summary": {
+    "total_invocations": 19,
+    "completed": 16,
+    "interrupted_before_conclusion": 3,
+    "user_set_budget": null
+  },
+  "baseline_end_check": {
+    "source_ref": "690f3dc24fe81377f4e17d27c68e4a174761b973",
+    "source_tree": "6d4f8ac8c3b87696411916f17bdb00c6a1132ea4",
+    "source_dirty": false,
+    "command": "node scripts/security-audit-baseline.mjs C:/GitHub/_codex-tasks/kpanel-v122-stable-audit 690f3dc24fe81377f4e17d27c68e4a174761b973",
+    "result": "PASS: source identity and clean-tree status match run start"
+  },
+  "validator_results": {
+    "environment": "WSL Ubuntu-24.04",
+    "findings": {
+      "command": "validate-findings.cjs findings.json",
+      "status": "PASS",
+      "summary": "1 findings valid"
+    },
+    "coverage": {
+      "command": "validate-coverage-ledger.cjs coverage-ledger.json",
+      "status": "PASS",
+      "summary": "24 coverage units valid"
+    }
+  },
+  "report_files": [
+    "REPORT.md",
+    "FINDINGS-DETAIL.md",
+    "NEEDS-VALIDATION.md",
+    "findings.json",
+    "coverage-ledger.json",
+    "run-metadata.json",
+    "phase3-result.json",
+    "phase5-result.json",
+    "coverage-critic-wave-2.json",
+    "final-clean-critic.json"
+  ],
+  "finished_at": "2026-09-26T18:16:18.4550953+08:00"
+}

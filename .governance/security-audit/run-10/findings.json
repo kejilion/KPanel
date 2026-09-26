@@ -1,0 +1,115 @@
+[
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "kpanel:rollback-restores-revoked-light-node",
+    "title": "Failed update rollback can restore a revoked light node's report credential",
+    "description": "Source supports a sequence where a light node is deleted during target verification and failed-update rollback restores its pre-update host record and reporting secret. Whether the restored panel then accepts a fresh report from a dummy revoked node and updates telemetry remains unobserved.",
+    "claimed_root_cause": "Rollback restores the pre-update panel data directory as a whole, so it can overwrite an authorized light-node revocation made during target-release verification without reapplying that revocation.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1205,
+        "scope": "kpanel_prepare_automatic_transaction",
+        "description": "The update preparer stops the agent and panel writers before archiving their data."
+      },
+      {
+        "kind": "propagation",
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1934,
+        "scope": "kpanel_docker_app_update_common_unlocked",
+        "description": "Compose starts the target panel before target readiness is checked and the transaction is completed."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/panel/cluster.go",
+        "line": 270,
+        "scope": "handleClusterHostDelete",
+        "description": "A cluster mutation request can invoke light-host deletion during target verification."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/cluster/light_store.go",
+        "line": 559,
+        "scope": "lightStore.DeleteHost",
+        "description": "The store removes the host record from persisted state and then deletes its reporting credential file."
+      },
+      {
+        "kind": "propagation",
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1397,
+        "scope": "kpanel_recover_automatic_update",
+        "description": "A failed or interrupted verification path restores automatic-update data."
+      },
+      {
+        "kind": "propagation",
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1266,
+        "scope": "kpanel_restore_automatic_data",
+        "description": "The restore exchanges the live panel directory for the one extracted from the transaction snapshot."
+      },
+      {
+        "kind": "propagation",
+        "file": "internal/cluster/light_service.go",
+        "line": 258,
+        "scope": "authenticateLightRequest",
+        "description": "Light-report authentication loads the current host record and stored secret, then checks request freshness and the HMAC."
+      },
+      {
+        "kind": "sink",
+        "file": "internal/cluster/light_service.go",
+        "line": 207,
+        "scope": "AcceptLightReport",
+        "description": "An accepted light report updates the host telemetry snapshot."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1206,
+        "description": "The transaction archives data/panel and data/agent after stopping the writers and verifies the archive checksum."
+      },
+      {
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1934,
+        "description": "The target Compose panel starts before readiness and transaction completion checks at lines 1937–1938."
+      },
+      {
+        "file": "internal/panel/cluster.go",
+        "line": 283,
+        "description": "The cluster-host delete handler invokes the cluster service deletion operation after its mutation checks."
+      },
+      {
+        "file": "internal/cluster/light_store.go",
+        "line": 559,
+        "description": "Deleting a light host removes its persisted record; lines 565–568 remove its light and terminal credentials."
+      },
+      {
+        "file": "packaging/kejilion-app/kpanel.conf",
+        "line": 1266,
+        "description": "Restore moves the current panel data directory aside and moves the snapshot directory into its place; it does not merge post-snapshot changes."
+      },
+      {
+        "file": "internal/cluster/light_service.go",
+        "line": 270,
+        "description": "Authentication computes and compares the HMAC using the secret loaded for the current host record."
+      },
+      {
+        "file": "internal/cluster/light_service.go",
+        "line": 207,
+        "description": "A successfully authenticated report is persisted as the host's new telemetry snapshot."
+      },
+      {
+        "file": "packaging/tests/app-conf-update-backups.sh",
+        "line": 114,
+        "description": "The fixture asserts that a preseeded light-node credential file still contains node-secret after rollback; it does not exercise report authentication after host-record deletion."
+      }
+    ],
+    "blockers": [
+      "The task prohibits running the target, tests, fixtures, or Docker without a parent-approved OS-enforced sandbox. Source review cannot establish whether rollback restores an executable light store that accepts a fresh dummy-node report and updates telemetry."
+    ],
+    "validation_plan": {
+      "local": "In an approved offline OS-enforced sandbox, use a temporary data directory and a synthetic light-host record with a generated dummy HMAC key. Snapshot the data, start the target panel, delete the dummy host during readiness verification, force readiness failure, run rollback, then submit a fresh signed report to the restored prior panel. Observe whether authentication succeeds and telemetry changes."
+    }
+  }
+]
