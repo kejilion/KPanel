@@ -280,6 +280,15 @@ AGENT
 				elif [ -f "$state/automatic-target-started" ]; then
 					: >"$state/automatic-restored"
 				fi
+				if [ "$(cat /home/docker/kpanel/update-state/transaction/phase 2>/dev/null)" = rollback-ready ] &&
+					[ "${KPANEL_MOCK_CRASH_AFTER_ROLLBACK_UP:-0}" = 1 ] &&
+					[ ! -f "$state/rollback-crashed" ]; then
+					printf '%s\n' 'changed-after-old-runtime-start' \
+						>/home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
+					: >"$state/rollback-crashed"
+					kill -KILL "$PPID"
+					exit 137
+				fi
 				if [ "${KPANEL_MOCK_BOOTSTRAP_MISSING:-0}" != 1 ]; then
 					mkdir -p /home/docker/kpanel/data/panel
 					printf '%s\n' 'test-bootstrap-token' \

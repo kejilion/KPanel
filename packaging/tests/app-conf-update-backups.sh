@@ -121,6 +121,26 @@ EOF
   [ "$init" != openrc ] || cmp "$TEST_DIR/original-openrc" /home/docker/kpanel/kejilion-agent.openrc
   test "$(cat "$MOCK_STATE/running-id")" = "$old_image"
 
+  # The old image does not read update-freeze. If recovery is interrupted
+  # after that runtime starts, the next attempt must retain accepted writes.
+  rm -f "$MOCK_STATE/automatic-data-mutated" "$MOCK_STATE/automatic-target-started" \
+    "$MOCK_STATE/automatic-restored" "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/rollback-crashed"
+  if (KPANEL_MOCK_UPDATE_HEALTH_FAIL=1 KPANEL_MOCK_MUTATE_DATA_ON_UP=1 \
+    KPANEL_MOCK_CRASH_AFTER_ROLLBACK_UP=1 docker_app_update); then
+    echo 'interrupted rollback completed unexpectedly' >&2; return 1
+  fi
+  test "$(kpanel_transaction_value phase)" = rollback-ready
+  test -f /home/docker/kpanel/run/update-freeze
+  grep -Fx changed-after-old-runtime-start \
+    /home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
+  KJ_KPANEL_FORCE_ROLLBACK=1 recover_fresh
+  test ! -e /home/docker/kpanel/update-state/transaction
+  test ! -e /home/docker/kpanel/run/update-freeze
+  grep -Fx changed-after-old-runtime-start \
+    /home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
+  printf 'node-secret\n' >/home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
+  chmod 600 /home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
+
   rm -f "$MOCK_STATE/automatic-data-mutated" "$MOCK_STATE/automatic-crashed"
   if (KPANEL_MOCK_MUTATE_DATA_ON_UP=1 KPANEL_MOCK_CRASH_AFTER_TARGET_UP=1 docker_app_update); then
     echo 'interrupted manual update succeeded' >&2; return 1
