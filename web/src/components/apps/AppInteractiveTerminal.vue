@@ -390,6 +390,7 @@ onBeforeUnmount(() => {
       @touchmove="terminalTouchScroll.move"
       @touchend="terminalTouchScroll.end"
       @touchcancel="terminalTouchScroll.end"
+      @pointerdown="clipboardMenu?.handleSelectionPointerDown($event)"
       @contextmenu="clipboardMenu?.open($event)"
       @paste.capture="clipboardMenu?.handlePaste($event)"
     />

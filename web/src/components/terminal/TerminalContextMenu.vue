@@ -47,13 +47,36 @@ async function positionMenu(focusOrigin: ContextMenuFocusOrigin): Promise<void> 
 function open(event: MouseEvent): void {
   event.preventDefault()
   event.stopPropagation()
-  selection.value = props.getTerminal()?.getSelection() || ''
   feedback.value = undefined
-  contextMenuAnchor = event.currentTarget instanceof Element ? event.currentTarget : null
-  left.value = event.clientX
-  top.value = event.clientY
-  visible.value = true
-  void positionMenu(contextMenuFocusOrigin(event))
+  const anchor = event.currentTarget instanceof Element ? event.currentTarget : null
+  const x = event.clientX
+  const y = event.clientY
+  const focusOrigin = contextMenuFocusOrigin(event)
+  const showMenu = () => {
+    selection.value = props.getTerminal()?.getSelection() || ''
+    contextMenuAnchor = anchor
+    left.value = x
+    top.value = y
+    visible.value = true
+    void positionMenu(focusOrigin)
+  }
+  if (event.button === 2 && !event.shiftKey && !window.matchMedia?.('(pointer: coarse)').matches && props.canPaste) {
+    void pasteClipboard().then((pasted) => { if (!pasted) showMenu() })
+    return
+  }
+  showMenu()
+}
+
+function handleSelectionPointerDown(event: PointerEvent): void {
+  if (event.button !== 0 || event.pointerType !== 'mouse') return
+  document.addEventListener('mouseup', handleSelectionMouseUp, { once: true })
+}
+
+function handleSelectionMouseUp(): void {
+  queueMicrotask(() => {
+    const value = props.getTerminal()?.getSelection() || ''
+    if (value) void writeClipboard(value)
+  })
 }
 
 function fallbackCopy(value: string): boolean {
@@ -96,20 +119,21 @@ async function copySelection(): Promise<void> {
   feedback.value = 'copyFailed'
 }
 
-async function pasteClipboard(): Promise<void> {
-  if (!props.canPaste) return
+async function pasteClipboard(): Promise<boolean> {
+  if (!props.canPaste) return false
   if (navigator.clipboard?.readText) {
     try {
       const value = await navigator.clipboard.readText()
       if (value) props.getTerminal()?.paste(value)
       close(true)
-      return
+      return true
     } catch {
       // Keep the menu open with a keyboard fallback when clipboard read is denied.
     }
   }
   feedback.value = 'pasteBlocked'
   props.getTerminal()?.focus()
+  return false
 }
 
 function selectAll(): void {
@@ -193,6 +217,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('mouseup', handleSelectionMouseUp)
   document.removeEventListener('pointerdown', handleDocumentPointer, true)
   document.removeEventListener('keydown', handleEscape, true)
   window.removeEventListener('resize', handleViewportChange)
@@ -202,7 +227,7 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener?.('scroll', handleViewportChange)
 })
 
-defineExpose({ open, handlePaste, handleKeyEvent })
+defineExpose({ open, handlePaste, handleKeyEvent, handleSelectionPointerDown })
 </script>
 
 <template>
