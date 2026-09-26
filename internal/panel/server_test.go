@@ -38,6 +38,7 @@ func newTestServerWithPublicURL(t *testing.T, publicURL string) (*Server, string
 	config.BootstrapTokenPath = filepath.Join(dataDir, "bootstrap.token")
 	config.AgentSocket = filepath.Join(directory, "run", "agent.sock")
 	config.AgentTokenFile = filepath.Join(directory, "secrets", "agent.token")
+	config.UpdateFreezeFile = filepath.Join(directory, "run", "update-freeze")
 	config.WebRoot = webRoot
 	config.PublicURL = publicURL
 	config.SecureCookie = false
@@ -79,6 +80,40 @@ func newTestServerWithPublicURL(t *testing.T, publicURL string) (*Server, string
 	}
 	t.Cleanup(func() { _ = server.Close() })
 	return server, config.BootstrapTokenPath
+}
+
+func TestUpdateFreezeRejectsWritesUntilTransactionCompletes(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	if err := os.MkdirAll(filepath.Dir(server.config.UpdateFreezeFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server.config.UpdateFreezeFile, []byte("transaction-id\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deletion := performRequest(server, http.MethodDelete, "/api/v1/cluster/hosts/test", nil, nil)
+	if deletion.Code != http.StatusServiceUnavailable || !strings.Contains(deletion.Body.String(), "update_in_progress") {
+		t.Fatalf("deletion was not frozen: %d %s", deletion.Code, deletion.Body.String())
+	}
+	if deletion.Header().Get("Retry-After") != "5" {
+		t.Fatalf("missing retry guidance: %v", deletion.Header())
+	}
+	if got := performRequest(server, http.MethodGet, "/api/v1/health", nil, nil).Code; got != http.StatusOK {
+		t.Fatalf("readiness blocked: %d", got)
+	}
+	if err := os.Remove(server.config.UpdateFreezeFile); err != nil {
+		t.Fatal(err)
+	}
+	token, err := os.ReadFile(tokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"token": string(token), "username": "admin", "password": "a-strong-password-1"})
+	bootstrap := performRequest(server, http.MethodPost, "/api/v1/auth/bootstrap", body, map[string]string{
+		"Content-Type": "application/json", "Origin": "http://panel.test",
+	})
+	if bootstrap.Code != http.StatusCreated {
+		t.Fatalf("write did not resume: %d %s", bootstrap.Code, bootstrap.Body.String())
+	}
 }
 
 func TestAuthenticationHTTPFlow(t *testing.T) {

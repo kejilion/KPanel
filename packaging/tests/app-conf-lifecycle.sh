@@ -246,6 +246,11 @@ AGENT
 			create) : >"$state/network" ;;
 			up)
 				rm -f "$state/panel-stopped"
+				if [ "$(cat /home/docker/kpanel/update-state/transaction/phase 2>/dev/null)" = verifying ] &&
+					[ ! -f /home/docker/kpanel/run/update-freeze ]; then
+					echo 'target Panel started without update freeze' >&2
+					exit 94
+				fi
 				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ -f "$state/latest-id" ]; then
 					if grep -F 'image: docker.io/kjlion/kejilion-panel@' /home/docker/kpanel/docker-compose.yml >/dev/null; then
 						cp "$state/target-id" "$state/running-id"

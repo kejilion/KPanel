@@ -26,6 +26,7 @@ type Config struct {
 	TOTPKeyPath         string        `json:"totpKeyPath"`
 	AgentSocket         string        `json:"agentSocket"`
 	AgentTokenFile      string        `json:"agentTokenFile"`
+	UpdateFreezeFile    string        `json:"updateFreezeFile"`
 	WebRoot             string        `json:"webRoot"`
 	PublicURL           string        `json:"publicUrl"`
 	PasskeyOrigin       string        `json:"passkeyOrigin,omitempty"`
@@ -49,6 +50,7 @@ func DefaultConfig() Config {
 		DataDir:           "/var/lib/kejilion-panel",
 		AgentSocket:       "/run/kejilion-panel/agent.sock",
 		AgentTokenFile:    "/run/secrets/agent-token",
+		UpdateFreezeFile:  "/run/kejilion-panel/update-freeze",
 		WebRoot:           "/app/web",
 		SecureCookie:      true,
 		SessionTTL:        12 * time.Hour,
@@ -91,6 +93,7 @@ func LoadConfig(path string) (Config, error) {
 	applyStringEnv("KEJILION_PANEL_TOTP_KEY_FILE", &config.TOTPKeyPath)
 	applyStringEnv("KEJILION_PANEL_AGENT_SOCKET", &config.AgentSocket)
 	applyStringEnv("KEJILION_PANEL_AGENT_TOKEN_FILE", &config.AgentTokenFile)
+	applyStringEnv("KEJILION_PANEL_UPDATE_FREEZE_FILE", &config.UpdateFreezeFile)
 	applyStringEnv("KEJILION_PANEL_WEB_ROOT", &config.WebRoot)
 	applyStringEnv("KEJILION_PANEL_PUBLIC_URL", &config.PublicURL)
 	applyStringEnv("KEJILION_PANEL_PASSKEY_ORIGIN", &config.PasskeyOrigin)
@@ -176,6 +179,10 @@ func (c Config) Validate() error {
 		return errors.New("agentSocket must be absolute")
 	case strings.TrimSpace(c.AgentTokenFile) == "" || !filepath.IsAbs(c.AgentTokenFile):
 		return errors.New("agentTokenFile must be absolute")
+	case strings.TrimSpace(c.UpdateFreezeFile) == "" || !filepath.IsAbs(c.UpdateFreezeFile):
+		return errors.New("updateFreezeFile must be absolute")
+	case pathsOverlap(c.DataDir, c.UpdateFreezeFile):
+		return errors.New("updateFreezeFile must be outside dataDir")
 	case strings.TrimSpace(c.WebRoot) == "" || !filepath.IsAbs(c.WebRoot):
 		return errors.New("webRoot must be absolute")
 	case c.SessionTTL < 5*time.Minute || c.SessionTTL > 7*24*time.Hour:
@@ -194,6 +201,7 @@ func (c Config) Validate() error {
 		"storePath":          c.StorePath,
 		"bootstrapTokenPath": c.BootstrapTokenPath,
 		"agentTokenFile":     c.AgentTokenFile,
+		"updateFreezeFile":   c.UpdateFreezeFile,
 	}
 	if c.TOTPKeyPath != "" {
 		protectedPaths["totpKeyPath"] = c.TOTPKeyPath

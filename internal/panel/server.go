@@ -271,6 +271,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		!s.checkHost(w, r) {
 		return
 	}
+	// The host updater snapshots Panel data before starting the target image.
+	// Refuse writes until that snapshot is either committed or rolled back, so
+	// a post-snapshot credential revocation cannot be undone by rollback.
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions || r.Header.Get("Upgrade") != "") && s.updateFrozen() {
+		w.Header().Set("Retry-After", "5")
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "update_in_progress", "Panel update in progress", "")
+		return
+	}
 	if r.URL.Path == "/mcp" {
 		s.handleMCP(w, r)
 		return
@@ -298,6 +306,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveSPA(w, r)
+}
+
+func (s *Server) updateFrozen() bool {
+	_, err := os.Lstat(s.config.UpdateFreezeFile)
+	return err == nil || !errors.Is(err, os.ErrNotExist)
 }
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {

@@ -98,6 +98,7 @@ EOF
       recover_fresh >/dev/null
     fi
     test ! -e /home/docker/kpanel/update-state/transaction
+    test ! -e /home/docker/kpanel/run/update-freeze
     test "$(cat "$MOCK_STATE/latest-id")" = "$old_image"
     test "$(cat "$MOCK_STATE/running-id")" = "$old_image"
     cmp "$TEST_DIR/original-env" /home/docker/kpanel/.env
@@ -109,6 +110,7 @@ EOF
     echo 'unhealthy manual update succeeded' >&2; return 1
   fi
   test -f "$MOCK_STATE/automatic-data-mutated"
+  test ! -e /home/docker/kpanel/run/update-freeze
   grep -Fx original-panel-data /home/docker/kpanel/data/panel/rollback-marker
   grep -Fx original-agent-data /home/docker/kpanel/data/agent/rollback-marker
   grep -Fx node-secret /home/docker/kpanel/data/panel/cluster-light-secrets/host-one.lightkey
@@ -124,6 +126,7 @@ EOF
     echo 'interrupted manual update succeeded' >&2; return 1
   fi
   test -d /home/docker/kpanel/update-state/transaction
+  test -f /home/docker/kpanel/run/update-freeze
   transaction_id=$(kpanel_transaction_value id)
   archive="/home/docker/kpanel/update-state/backups/$transaction_id/data.tar"
   cp "$archive" "$TEST_DIR/good-data.tar"
@@ -162,6 +165,7 @@ EOF
   test "$(kpanel_transaction_value phase)" = restoring-data
   KJ_KPANEL_FORCE_ROLLBACK=1 recover_fresh
   test ! -e /home/docker/kpanel/update-state/transaction
+  test ! -e /home/docker/kpanel/run/update-freeze
   cmp "$TEST_DIR/legacy-lifecycle" /home/docker/kpanel/bin/kpanel.conf
   grep -Fx original-panel-data /home/docker/kpanel/data/panel/rollback-marker
   grep -Fx original-agent-data /home/docker/kpanel/data/agent/rollback-marker
@@ -195,6 +199,7 @@ EOF
   fi
   docker_app_update
   test ! -e /home/docker/kpanel/update-state/transaction
+  test ! -e /home/docker/kpanel/run/update-freeze
   test "$(find /home/docker/kpanel/update-state/backups -name data.tar | wc -l)" -eq 2
   for archive in /home/docker/kpanel/update-state/backups/*/data.tar; do
     sha256sum -c "${archive%/*}/data.sha256"
