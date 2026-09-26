@@ -97,6 +97,17 @@ func TestUpdateFreezeRejectsWritesUntilTransactionCompletes(t *testing.T) {
 	if deletion.Header().Get("Retry-After") != "5" {
 		t.Fatalf("missing retry guidance: %v", deletion.Header())
 	}
+	for _, values := range [][]string{{"websocket"}, {"", "websocket"}} {
+		request := httptest.NewRequest(http.MethodGet, "http://panel.test/api/v2/federation/files/stream", nil)
+		for _, value := range values {
+			request.Header.Add("Upgrade", value)
+		}
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "update_in_progress") {
+			t.Fatalf("upgrade request %q was not frozen: %d %s", values, response.Code, response.Body.String())
+		}
+	}
 	if got := performRequest(server, http.MethodGet, "/api/v1/health", nil, nil).Code; got != http.StatusOK {
 		t.Fatalf("readiness blocked: %d", got)
 	}

@@ -274,7 +274,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The host updater snapshots Panel data before starting the target image.
 	// Refuse writes until that snapshot is either committed or rolled back, so
 	// a post-snapshot credential revocation cannot be undone by rollback.
-	if (r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions || r.Header.Get("Upgrade") != "") && s.updateFrozen() {
+	if (r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions || len(r.Header.Values("Upgrade")) != 0) && s.updateFrozen() {
 		w.Header().Set("Retry-After", "5")
 		s.writeProblem(w, r, http.StatusServiceUnavailable, "update_in_progress", "Panel update in progress", "")
 		return
