@@ -60,10 +60,10 @@ describe('DesktopScenePack', () => {
     resetSceneMotionPreferenceForTest()
   })
 
-  it('starts a live scene from black in a scripts-only sandbox', async () => {
+  it('shows the poster while a live scene loads in a scripts-only sandbox', async () => {
     listPacks([installed])
     const wrapper = await mountPack()
-    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.get('.desktop-scene-pack__poster-image').attributes('src')).toBe('/api/v1/desktop/scene-packs/orbital-station/poster')
     const iframe = wrapper.get('iframe')
     expect(iframe.attributes('src')).toBe(`${installed.fileBase}index.html`)
     expect(iframe.attributes('sandbox')).toBe('allow-scripts')
@@ -85,6 +85,7 @@ describe('DesktopScenePack', () => {
     expect(wrapper.emitted('cameras')).toEqual([[['panorama', 'station', 'sunrise']]])
     expect(wrapper.attributes('data-scene-pack-state')).toBe('running')
     expect(wrapper.classes()).toContain('desktop-scene-pack--ready')
+    expect(wrapper.find('.desktop-scene-pack__poster-image').exists()).toBe(true)
     expect(post).toHaveBeenLastCalledWith({ source: 'kpanel-desktop', type: 'resume' }, '*')
 
     await wrapper.setProps({ covered: true })

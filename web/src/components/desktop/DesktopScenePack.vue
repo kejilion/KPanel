@@ -9,8 +9,8 @@ import '@/styles/desktopScenePack.css'
  * Runs an installed 3D scene pack as the desktop wallpaper. The pack page lives
  * in an iframe sandboxed to scripts only (opaque origin: no panel cookies,
  * storage, DOM or top navigation) and is driven with pause/resume/camera
- * messages. A live scene starts from black so its entrance is the first thing
- * seen; the still poster is only for reduced motion or when the scene fails.
+ * messages. Its darkened poster stays over the frame while loading, then fades
+ * away after the scene reports ready. Reduced motion and failures keep the still poster.
  *
  * Loading: the frame starts at once from the file base the pack was last found
  * at, while the pack list is fetched to confirm it (or to move to a new one after
@@ -60,7 +60,6 @@ const state = computed(() => {
   if (reducedMotion.value || (located.value && !pageURL.value)) return 'static'
   return ready.value ? 'running' : 'loading'
 })
-const showPoster = computed(() => state.value === 'static' || state.value === 'failed')
 let readyTimer: number | undefined
 
 function post(command: ScenePackCommand): void {
@@ -187,7 +186,9 @@ defineExpose({
     :data-scene-pack-state="state"
     aria-hidden="true"
   >
-    <img v-if="showPoster" class="desktop-scene-pack__poster" :src="posterURL" alt="" decoding="async" />
+    <div class="desktop-scene-pack__poster">
+      <img class="desktop-scene-pack__poster-image" :src="posterURL" alt="" decoding="async" fetchpriority="high" />
+    </div>
     <Transition name="desktop-scene-pack-progress">
       <div
         v-if="running && !ready && slow"
