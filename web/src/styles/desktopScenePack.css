@@ -1,6 +1,6 @@
 /* 3D scene pack wallpaper layer. Loaded with the lazy DesktopScenePack chunk. */
 
-/* The poster covers the sandbox until it has drawn a ready frame. */
+/* A live scene starts from black: its own entrance fades up from this. */
 .desktop-scene-pack {
   position: absolute;
   z-index: 1;
@@ -20,41 +20,24 @@
 }
 
 .desktop-scene-pack__poster {
-  z-index: 1;
-  background: #000;
-  transition: opacity 1.1s ease-in-out;
-}
-
-.desktop-scene-pack__poster-image {
-  display: block;
-  width: 100%;
-  height: 100%;
   object-fit: cover;
 }
 
+/* Hidden only until the pack has drawn its first (black) frame, so there is no blank flash. */
 .desktop-scene-pack__frame {
   background: #000;
-}
-
-/* A low-amplitude pulse shows that the dark still frame is actively loading. */
-.desktop-scene-pack[data-scene-pack-state='loading'] .desktop-scene-pack__poster-image {
-  opacity: .2;
-  animation: desktop-scene-pack-breathe 5s ease-in-out infinite alternate;
-}
-
-@keyframes desktop-scene-pack-breathe {
-  from { opacity: .16; }
-  to { opacity: .25; }
-}
-
-.desktop-scene-pack--ready .desktop-scene-pack__poster {
   opacity: 0;
+  transition: opacity .25s linear;
 }
 
-/* Only when a scene is slow to load: a faint hairline over the poster, filling as it loads. */
+.desktop-scene-pack--ready .desktop-scene-pack__frame {
+  opacity: 1;
+}
+
+/* Only when a scene is slow to load: a faint hairline over the black, filling as it loads. */
 .desktop-scene-pack__progress {
   position: absolute;
-  z-index: 2;
+  z-index: 1;
   top: 50%;
   left: 50%;
   width: 112px;
@@ -90,14 +73,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .desktop-scene-pack__poster,
+  .desktop-scene-pack__frame,
   .desktop-scene-pack__progress::after,
   .desktop-scene-pack-progress-enter-active,
   .desktop-scene-pack-progress-leave-active {
     transition: none;
-  }
-
-  .desktop-scene-pack__poster-image {
-    animation: none !important;
   }
 }
