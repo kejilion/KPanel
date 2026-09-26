@@ -21,6 +21,8 @@
 
 .desktop-scene-pack__poster {
   object-fit: cover;
+  /* Preserve the already painted bitmap while the poster request revalidates/decodes. */
+  background: var(--desktop-wallpaper-image, none) center / cover no-repeat;
 }
 
 [data-scene-pack-state='loading'] > .desktop-scene-pack__poster,
