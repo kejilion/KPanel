@@ -103,3 +103,14 @@ func TestStaticHashedAssetUsesPrecompressedVariantAndImmutableCache(t *testing.T
 		t.Fatalf("Content-Type = %q", got)
 	}
 }
+
+func TestAppearanceBootstrapRevalidatesOnEveryLoad(t *testing.T) {
+	server, _ := newTestServer(t)
+	if err := os.WriteFile(filepath.Join(server.config.WebRoot, "appearance-init.js"), []byte("/* boot */"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	response := performRequest(server, http.MethodGet, "/appearance-init.js?v=20260926", nil, nil)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("bootstrap status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+}

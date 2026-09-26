@@ -89,24 +89,29 @@ export async function rememberAuthWallpaperCopy(
     if (!response.ok) return false
     const bitmap = await createImageBitmap(await response.blob())
     try {
-      const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height))
       const canvas = document.createElement('canvas')
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
       const context = canvas.getContext('2d')
       if (!context) return false
       context.imageSmoothingQuality = 'high'
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
       let image = ''
-      for (const quality of [0.78, 0.62, 0.48]) {
-        let blob = await toBlob(canvas, 'image/webp', quality)
-        if (blob && blob.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality)
-        if (!blob) continue
-        const encoded = await toDataURL(blob)
-        if (encoded.length <= AUTH_WALLPAPER_COPY_MAX_LENGTH && DATA_URL.test(encoded)) {
-          image = encoded
-          break
+      // Detailed photos and scene posters can exceed the storage limit even at low quality.
+      // Reduce dimensions as well so a private choice still has a sign-in copy.
+      for (const edge of [MAX_EDGE, 960, 720, 480, 320]) {
+        const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        for (const quality of [0.78, 0.62, 0.48]) {
+          let blob = await toBlob(canvas, 'image/webp', quality)
+          if (blob && blob.type !== 'image/webp') blob = await toBlob(canvas, 'image/jpeg', quality)
+          if (!blob) continue
+          const encoded = await toDataURL(blob)
+          if (encoded.length <= AUTH_WALLPAPER_COPY_MAX_LENGTH && DATA_URL.test(encoded)) {
+            image = encoded
+            break
+          }
         }
+        if (image) break
       }
       if (!image || !stillChosen()) return false
       const copy: AuthWallpaperCopy = {
