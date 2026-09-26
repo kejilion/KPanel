@@ -27,6 +27,7 @@ vi.mock('@/lib/authWallpaperCopy', () => ({
 
 import type { CustomWallpaper } from '@/types/api'
 import {
+  applySyncedWallpaper,
   CUSTOM_WALLPAPER_DISPLAY_KEY,
   customWallpaperFromID,
   customWallpaperID,
@@ -122,6 +123,14 @@ describe('shared desktop wallpaper', () => {
     wallpaper.select('orbit')
     expect(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY)).toBeNull()
     expect(document.documentElement.style.getPropertyValue('--desktop-wallpaper-position')).toBe('')
+  })
+
+  it('keeps the cached focal point when the server confirms the same uploaded picture', () => {
+    const wallpaper = useDesktopWallpaper()
+    wallpaper.select(customWallpaperID(uploaded.id), uploaded)
+    applySyncedWallpaper(customWallpaperID(uploaded.id))
+    expect(JSON.parse(window.localStorage.getItem(CUSTOM_WALLPAPER_DISPLAY_KEY)!)).toEqual({ id: uploaded.id, focusX: 700, focusY: 320, luminance: 72 })
+    expect(document.documentElement.style.getPropertyValue('--desktop-wallpaper-position')).toBe('70% 32%')
   })
 
   it('falls back to the default when the chosen upload is deleted here or elsewhere', async () => {

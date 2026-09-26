@@ -2158,7 +2158,6 @@ export interface DesktopWorkspaceUpdate {
   shortcuts: Array<Pick<DesktopShortcut, 'id' | 'name' | 'description' | 'targetType' | 'url' | 'path'>>
 }
 
-/** Colors suggested from an uploaded wallpaper, applied when it is chosen. */
 export interface AppearanceSettings {
   configured: boolean
   resourceVersion: string
@@ -2168,6 +2167,7 @@ export interface AppearanceSettings {
   classicLevel: 'off' | 'ambient' | 'clear'
 }
 
+/** Colors suggested from an uploaded wallpaper, applied when it is chosen. */
 export interface CustomWallpaperTheme {
   brand: string
   neutral: string

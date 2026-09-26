@@ -71,6 +71,7 @@ async function save(): Promise<void> {
         if (!active || run !== generation) return
         server = updated
       } catch (error) {
+        if (!active || run !== generation) return
         if (error instanceof ApiError && error.status === 409 && ++conflicts <= 3) {
           try {
             const current = await api.desktop.appearance()

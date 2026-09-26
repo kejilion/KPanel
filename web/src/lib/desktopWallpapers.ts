@@ -136,8 +136,8 @@ function resetToClassic(): void {
 
 /** Applies the server's choice without changing its separately saved color intent. */
 export function applySyncedWallpaper(id: DesktopWallpaperID): void {
+  if (current.value !== id) applyCustomDisplay()
   current.value = id
-  applyCustomDisplay()
   persist(id)
   syncAuthWallpaperCopy(id)
 }

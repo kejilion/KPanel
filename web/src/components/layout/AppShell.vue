@@ -285,8 +285,11 @@ async function refreshAgent(): Promise<void> {
   }
 }
 
+let shellMounted = false
 onMounted(() => {
+  shellMounted = true
   void startAppearanceSync().then(() => {
+    if (!shellMounted) return
     if (customWallpaperFromID(wallpaperChoice.id.value)) void wallpaperChoice.loadCustomWallpapers().catch(() => undefined)
     else wallpaperChoice.ensureAuthWallpaperCopy()
     window.dispatchEvent(new Event('kpanel:cache-desktop-wallpaper'))
@@ -299,6 +302,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  shellMounted = false
   stopAppearanceSync()
   desktopBrowserHistory.dispose()
   if (agentTimer) window.clearInterval(agentTimer)
