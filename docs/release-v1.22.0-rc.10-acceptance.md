@@ -64,6 +64,7 @@
 - 候选 CI：[36212021954](https://github.com/kejilion/KPanel/actions/runs/36212021954) success；Dependency freshness 36212021968 success。
 - 主线 CI：[36212507268](https://github.com/kejilion/KPanel/actions/runs/36212507268) success；Dependency freshness 36212507207 success。两者精确 SHA 均为 081c983b。
 - Release workflow：[36213042084](https://github.com/kejilion/KPanel/actions/runs/36213042084) success；标签上的 Dependency freshness 36213042045 success，精确 SHA 同为 081c983b。Release 的源码验证、运行时契约、镜像构建及通道提升均通过。
+- 验收记录首轮 CI：[36213765154](https://github.com/kejilion/KPanel/actions/runs/36213765154) failed；在文档提交后，业务事实基线距 HEAD 达到 50 个提交，`check-business-context-freshness.mjs` 按预期拦截。已在本候选同步复核并刷新 `docs/product-quality-review-current.md` 的精确基线；修复候选和主线 CI 结果在完成后记录。
 
 ## 依赖与技术栈
 
@@ -120,7 +121,7 @@
 本版是预览，不计稳定发布或生产部署频率。故障发现时间取本会话用户首次报告（2026-09-26T01:29:53Z）；“恢复时间”指修复产物公开可用，不代表用户实例已升级或恢复。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：1
+- 已记录发布流程异常或无效证据拦截次数：2
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -133,6 +134,15 @@
     "impact": "登记隔离环境 SSH 超时；候选 L3 走登记灾备，公开镜像和真实浏览器 E2E 未取得合规终态。",
     "recoveryEvidence": "local-wsl-dr 的候选 L3 status=passed；浏览器和公开镜像 E2E 明确记为未验证，没有冒用本地模拟结果。",
     "permanentAction": "负责人为 1.22.0 稳定版发布任务；2026-10-03 前复核 arena-154 SSH 和 browser-validation，退出条件为在登记隔离环境对同一公开镜像完成真实浏览器 E2E。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "acceptance-ci/business-context/stale-threshold",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "首轮验收文档提交使业务事实复核距基线达到 50 个提交，候选 CI 在 change-aware verification 中失败，验收记录未能直接进入主线。",
+    "recoveryEvidence": "本地用与 CI 相同的 CI=true 和 VERIFY_BASE_REF 复现 stale 判定；对照 b7a77352..081c983b 的 49 个产品提交、公开 RC5–RC10 与稳定通道，刷新当前业务事实入口，再运行同 SHA 候选 CI。",
+    "permanentAction": "发布任务在生成验收记录前预检业务事实基线距离下一提交的数量；负责人为 1.22.0 稳定版发布任务，2026-10-03 复核，退出条件为后续验收分支不因预先可知的 50 提交阈值首轮 CI 失败。",
     "historicalReleases": []
   }
 ]

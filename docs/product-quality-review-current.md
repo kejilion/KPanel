@@ -1,7 +1,7 @@
 # KPanel 当前业务事实与规范适配基线
 
-- 复核日期：`2026-09-25`
-- 基线提交：`b7a773526b9c11f64d4dfbe125c68e91fa45cc71`
+- 复核日期：`2026-09-26`
+- 基线提交：`081c983bccb617cb70e5a39f77507eeefb521f30`
 - 基线版本：`v1.21.0`
 - 上一份完整复核：[`product-quality-review-2026-08-13.md`](product-quality-review-2026-08-13.md)
 - 自动刷新门槛：基线后达到 50 个提交，或同时达到 20 个提交和 8 个正式版本；产品性质、业务真源、权限边界或核心旅程发生实质变化时立即复核
@@ -407,3 +407,34 @@ Panel/Agent 权限隔离、低配资源预算或管理员可恢复操作原则�
 不扩大浏览器、性能或生产权限。发布前仍须依据新组合提交完成对应门禁。
 事实来源：[`release-v1.22.0-rc.4-acceptance.md`](release-v1.22.0-rc.4-acceptance.md)、
 [RC4 Release](https://github.com/kejilion/KPanel/releases/tag/v1.22.0-rc.4) 与候选源码差异。
+
+### v1.22.0-rc.5 至 rc.10 已发布预览复核
+
+本次对照上一基线 `b7a77352` 到 `081c983b` 的 49 个提交、136 个文件，以及 rc.5–rc.10 的
+CHANGELOG、公开 Release 和验收记录。`v1.21.0` 仍是最近稳定版；以下为已公开预览源码事实，
+不把它们推定为已部署到所有用户实例或已完成隔离真机验收。
+
+- rc.5–rc.7 收敛三个官方可下载 3D 场景、固定来源校验、下载重定向边界、资产并发流与压缩阈值；
+  场景仍在受限浏览器沙箱中运行，Panel 资源目录是可重下的可选内容，不成为宿主机业务真源。
+- rc.8 让桌面与经典模式共用壁纸和已安装场景，并在设置中提供关闭、氛围、通透三档；默认关闭。
+  经典模式的滚动与桌面窗口内滚动继续分离。
+- rc.9 新增需登录的自定义壁纸上传与读取；写操作要求 Origin、CSRF 和审计，图片经完整解码、
+  有界重编码并去元数据。私有图与 3D 场景海报只在选择它们的浏览器保存缩小副本供登录页使用，
+  登录页不公开请求私有图片，也不运行 3D 动画。壁纸目录不进入面板 `.kpb` 备份。
+- rc.9 还统一手动/自动更新的停写快照与失败恢复，并修复轻量节点替换中途崩溃后的状态恢复。
+  `kpanel.conf` 的安装/更新事务改动尚未同步到 `kejilion/apps`，因此不能把仓库内测试视为
+  应用市场当前默认路径已采用该事务。
+- rc.10 修复生产 CSP 拦截上传预览 `blob:` 图片、旧启动脚本缓存导致经典模式回退默认图，
+  以及高细节壁纸/场景海报超过登录页副本限额后失败；集群指标深链放大时间范围后不再重复滚动。
+  `script-src` 未放宽，登录页副本仍只属于当前浏览器。
+- 2026-09-26 公开状态：rc.10 是非 draft 的 GitHub prerelease，版本镜像与 Docker `preview` 均为
+  `sha256:0a00853548e05671ea404b9ae8e9e3bdb660ea8a1aa1a4451044cb2ac1742c8d`；GitHub Latest 和 Docker
+  `latest` 仍为 v1.21.0，后者 index 为 `sha256:e2c5d392dfcee8263ea82ebe0c8aed15276c046a3bd260b6219b634a844f3f61`。
+  rc.10 的候选 L3、候选/main/Release CI 和公开摘要已通过；`arena-154` 不可达，公开镜像的登记隔离环境
+  浏览器 E2E 未完成。`internal/desktopwallpapers` 的 CF scoped 安全审计仍为稳定版前准入。
+
+这些预览版未改变单管理员轻量控制面、Panel/Agent 权限隔离、宿主业务真源或稳定版默认入口。
+本次仅刷新事实入口与精确基线，不降低 L3、独立复核、安全审计和正式生产写入要求。
+来源：[rc.10 Release](https://github.com/kejilion/KPanel/releases/tag/v1.22.0-rc.10)、
+[`release-v1.22.0-rc.9-acceptance.md`](release-v1.22.0-rc.9-acceptance.md)、
+[`release-v1.22.0-rc.10-acceptance.md`](release-v1.22.0-rc.10-acceptance.md) 与候选源码差异。
