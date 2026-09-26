@@ -1727,7 +1727,7 @@ func (s *Server) serveStaticFile(
 	candidate string,
 	requestPath string,
 ) {
-	if filepath.Base(candidate) == "index.html" {
+	if filepath.Base(candidate) == "index.html" || requestPath == "appearance-init.js" {
 		w.Header().Set("Cache-Control", "no-cache")
 	} else if strings.HasPrefix(filepath.ToSlash(requestPath), "assets/") {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
