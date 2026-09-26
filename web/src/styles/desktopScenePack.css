@@ -31,6 +31,26 @@
   animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
 }
 
+/* Fade the cover in from black without competing with its breathing opacity. */
+[data-scene-pack-state='loading']::after,
+[data-scene-pack-state='running']::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  background: #000;
+  content: '';
+  animation: desktop-scene-pack-arrive .8s ease-out both;
+}
+
+.desktop-scene-pack--paused::after {
+  animation-play-state: paused;
+}
+
+@keyframes desktop-scene-pack-arrive {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 /* Keep the current dim frame underneath the entrance, without animating once hidden. */
 .desktop-scene-pack--ready > .desktop-scene-pack__poster,
 .desktop-scene-pack--paused > .desktop-scene-pack__poster {
@@ -92,6 +112,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .desktop-scene-pack::after {
+    display: none;
+  }
+
   .desktop-scene-pack > .desktop-scene-pack__poster {
     animation: none;
   }
