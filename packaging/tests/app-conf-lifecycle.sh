@@ -149,6 +149,13 @@ AGENT
 		;;
 	"image inspect")
 		case "$4" in
+			*RepoDigests*)
+				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ]; then
+					printf '%s\n' 'kjlion/kejilion-panel@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+				else
+					printf '%s\n' 'kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+				fi
+				;;
 			*"{{.Id}}"*)
 				if [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] && [ "${5#*@}" != "$5" ]; then
 					cat "$state/target-id"
@@ -166,6 +173,9 @@ AGENT
 					"${KPANEL_MOCK_IMAGE_VERSION:-${KPANEL_RELEASE_VERSION:?}}"
 				;;
 			*io.kejilion.kpanel.update-freeze*)
+				if [ "${KPANEL_MOCK_RETARGET_AFTER_GATE:-0}" = 1 ]; then
+					printf '%s\n' 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' >"$state/latest-id"
+				fi
 				printf '%s\n' "${KPANEL_MOCK_UPDATE_FREEZE_CAPABILITY-1}"
 				;;
 			*org.opencontainers.image.revision*)
@@ -261,10 +271,7 @@ AGENT
 						cp "$state/latest-id" "$state/running-id"
 					fi
 				fi
-				if grep -Eq '^    image: docker\.io/kjlion/kejilion-panel@sha256:[0-9a-f]{64}$' \
-					/home/docker/kpanel/docker-compose.yml ||
-					{ [ "${KPANEL_MOCK_REAL_IMAGE_IDS:-0}" = 1 ] &&
-					  [ "$(cat /home/docker/kpanel/update-state/transaction/phase 2>/dev/null)" = verifying ]; }; then
+				if [ "$(cat /home/docker/kpanel/update-state/transaction/phase 2>/dev/null)" = verifying ]; then
 					: >"$state/automatic-target-started"
 					if [ "${KPANEL_MOCK_MUTATE_DATA_ON_UP:-0}" = 1 ] &&
 						[ ! -f "$state/automatic-data-mutated" ]; then
@@ -529,6 +536,18 @@ EOF
 	test ! -e /home/docker/kpanel/update-state/transaction
 	test ! -e /home/docker/kpanel/run/update-freeze
 	rm -f "$MOCK_STATE/rollback-tagged" "$MOCK_STATE/image-tag"
+	KPANEL_MOCK_REAL_IMAGE_IDS=1 KPANEL_MOCK_RETARGET_AFTER_GATE=1 docker_app_update \
+		>"$TEST_DIR/retargeted-latest-output.txt"
+	grep -Fx '    image: docker.io/kjlion/kejilion-panel@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+		/home/docker/kpanel/docker-compose.yml >/dev/null
+	test "$(cat "$MOCK_STATE/running-id")" = \
+		'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+	test "$(cat "$MOCK_STATE/latest-id")" = \
+		'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+	rm -f "$MOCK_STATE/running-id" "$MOCK_STATE/latest-id" "$MOCK_STATE/target-id"
+	docker_app_update >"$TEST_DIR/after-retarget-update-output.txt"
+	grep -Fx '    image: docker.io/kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+		/home/docker/kpanel/docker-compose.yml >/dev/null
 
 	rm -rf /home/docker/kpanel/update-state
 	rm -f "$MOCK_STATE/image-rm"
@@ -610,7 +629,7 @@ EOF
 		echo "automatic KPanel update accepted the wrong running image" >&2
 		return 1
 	fi
-	grep -F 'image: docker.io/kjlion/kejilion-panel:latest' \
+	grep -F 'image: docker.io/kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
 		/home/docker/kpanel/docker-compose.yml >/dev/null
 	test ! -e /home/docker/kpanel/update-state/transaction
 	test ! -e "$MOCK_STATE/rollback-tagged"
@@ -675,7 +694,7 @@ EOF
 		/home/docker/kpanel/data/panel/rollback-marker >/dev/null
 	grep -Fx 'original-agent-data' \
 		/home/docker/kpanel/data/agent/rollback-marker >/dev/null
-	grep -F 'image: docker.io/kjlion/kejilion-panel:latest' \
+	grep -F 'image: docker.io/kjlion/kejilion-panel@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
 		/home/docker/kpanel/docker-compose.yml >/dev/null
 	test ! -e /home/docker/kpanel/update-state/transaction
 	test -n "$(find /home/docker/kpanel/update-state/backups -mindepth 1 -maxdepth 1 -type d -print -quit)"
