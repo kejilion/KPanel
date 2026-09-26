@@ -343,7 +343,11 @@ EOF
 
 cat >"$FAKE_BIN/flock" <<'EOF'
 #!/bin/sh
-exit 0
+case "${1:-}" in
+	-n) [ "${KPANEL_MOCK_FLOCK_BUSY:-0}" != 1 ] ;;
+	-u) exit 0 ;;
+	*) echo "unsupported flock option: $*" >&2; exit 2 ;;
+esac
 EOF
 
 cat >"$FAKE_BIN/journalctl" <<'EOF'
@@ -887,6 +891,7 @@ export KPANEL_MOCK_SYSTEMCTL_LOG="$TEST_DIR/systemctl.log"
 [ "${KPANEL_APP_CONF_TEST_LIBRARY:-0}" != 1 ] || return 0
 # A leftover empty directory must not block the complete install/uninstall cycle.
 mkdir -p /home/docker/kpanel
+bash "$PROJECT_DIR/packaging/tests/app-conf-lock-compat.sh" "$PROJECT_DIR"
 run_lifecycle
 run_symlinked_docker_root_lifecycle
 grep -Fx '1|daemon-reload' "$KPANEL_MOCK_SYSTEMCTL_LOG" >/dev/null
