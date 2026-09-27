@@ -36,6 +36,7 @@ import {
   type ScenePack,
 } from '@/lib/scenePacks'
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
+import DesktopScenePackTransition from '@/components/desktop/DesktopScenePackTransition.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
@@ -3167,9 +3168,11 @@ async function onScenePackFailed(): Promise<void> {
   scenePackCameras.value = []
   // Only a pack that is really gone resets the choice; a transient failure keeps its poster.
   const id = activeScenePack.value
+  const revision = scenePackRevision.value
   if (!id) return
   try {
     const { packs } = await api.desktop.scenePacks()
+    if (activeScenePack.value !== id || scenePackRevision.value !== revision) return
     if (!packs.some((pack) => pack.id === id && pack.installed)) wallpaperChoice.resetToClassic()
   } catch {
     // Keep the saved choice when the pack list cannot be checked.
@@ -3177,7 +3180,7 @@ async function onScenePackFailed(): Promise<void> {
 }
 
 // A different wallpaper (chosen here, in Settings or by removing its pack) drops the old cameras.
-watch(desktopWallpaperID, () => { scenePackCameras.value = [] })
+watch([desktopWallpaperID, scenePackRevision], () => { scenePackCameras.value = [] })
 
 // Keep the root flag appearance-init.js set at boot in step with the chosen wallpaper, so every
 // wallpaper surface (boot layer, loading placeholder, desktop) agrees on the dim scene poster.
@@ -3759,15 +3762,17 @@ function onViewportResize(): void {
           :style="desktopWallpaperStyle"
         />
       </Transition>
-      <DesktopScenePack
-        v-if="activeScenePack"
-        :key="`${activeScenePack}:${scenePackRevision}`"
-        ref="scenePackLayer"
-        :pack-id="activeScenePack"
-        :covered="desktopWallpaperCovered"
-        @cameras="scenePackCameras = $event"
-        @failed="onScenePackFailed"
-      />
+      <DesktopScenePackTransition>
+        <DesktopScenePack
+          v-if="activeScenePack"
+          :key="`${activeScenePack}:${scenePackRevision}`"
+          ref="scenePackLayer"
+          :pack-id="activeScenePack"
+          :covered="desktopWallpaperCovered"
+          @cameras="scenePackCameras = $event"
+          @failed="onScenePackFailed"
+        />
+      </DesktopScenePackTransition>
       <div class="desktop__wallpaper-veil" aria-hidden="true" />
       <div class="desktop__aurora desktop__aurora--one" />
       <div class="desktop__aurora desktop__aurora--two" />

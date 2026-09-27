@@ -163,6 +163,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // Preserve the last rendered frame while the parent fades it to black.
+  if (ready.value) post({ source: 'kpanel-desktop', type: 'pause' })
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('visibilitychange', onVisibilityChange)

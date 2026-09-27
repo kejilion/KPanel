@@ -53,6 +53,7 @@ import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPrefer
 import { useClassicWallpaper } from '@/lib/classicWallpaper'
 import { customWallpaperFromID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { scenePackFromWallpaper } from '@/lib/scenePacks'
+import DesktopScenePackTransition from '@/components/desktop/DesktopScenePackTransition.vue'
 import {
   detectKPanelUpdate,
   kpanelUpdateHint,
@@ -319,14 +320,16 @@ watch(
 <template>
   <div class="app-shell">
     <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
-      <ClassicScenePack
-        v-if="classicScenePack"
-        :key="`${classicScenePack}:${wallpaperChoice.sceneRevision.value}`"
-        class="classic-backdrop__scene"
-        :pack-id="classicScenePack"
-        :covered="false"
-      />
-      <div v-else class="classic-backdrop__image" />
+      <div v-if="!classicScenePack" class="classic-backdrop__image" />
+      <DesktopScenePackTransition>
+        <ClassicScenePack
+          v-if="classicScenePack"
+          :key="`${classicScenePack}:${wallpaperChoice.sceneRevision.value}`"
+          class="classic-backdrop__scene"
+          :pack-id="classicScenePack"
+          :covered="false"
+        />
+      </DesktopScenePackTransition>
       <div class="classic-backdrop__veil" />
     </div>
     <Transition name="fade">

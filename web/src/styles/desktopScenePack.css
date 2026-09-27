@@ -51,6 +51,21 @@
   to { opacity: 0; }
 }
 
+/* Keep the outgoing frame opaque until black, then mount the next scene's entrance. */
+.desktop-scene-pack-switch-leave-active::before {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  background: #000;
+  content: '';
+  animation: desktop-scene-pack-depart .6s ease-in-out both;
+}
+
+@keyframes desktop-scene-pack-depart {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Keep the current dim frame underneath the entrance, without animating once hidden. */
 .desktop-scene-pack--ready > .desktop-scene-pack__poster,
 .desktop-scene-pack--paused > .desktop-scene-pack__poster {
@@ -112,6 +127,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .desktop-scene-pack::before,
   .desktop-scene-pack::after {
     display: none;
   }

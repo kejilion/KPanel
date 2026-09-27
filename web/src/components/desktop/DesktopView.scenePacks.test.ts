@@ -4,6 +4,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopView from '@/components/desktop/DesktopView.vue'
 import { api } from '@/lib/api'
+import { useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { resetSceneMotionPreferenceForTest } from '@/lib/desktopScenes/motionPreference'
 import type { ScenePack, ScenePackSource } from '@/lib/scenePacks'
 import { resetDesktopModeForTest } from '@/stores/desktopMode'
@@ -140,7 +141,7 @@ describe('DesktopView scene packs', () => {
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('pack:orbital-station')
     const wallpaper = wrapper.get('.desktop__wallpaper-image')
     expect(wallpaper.attributes('data-wallpaper')).toBe('pack:orbital-station')
-    // A live scene starts from black (no poster, no aurora) and sets the panel to its one color scheme.
+    // A live scene starts over a dim poster without aurora and applies its color scheme.
     expect(wrapper.get('.desktop__wallpaper').classes()).toContain('desktop__wallpaper--scene')
     // Every wallpaper surface (boot layer, loading placeholder) reads the same root flag.
     expect(document.documentElement.dataset.desktopWallpaperScene).toBe('live')
@@ -196,6 +197,30 @@ describe('DesktopView scene packs', () => {
     expect(document.documentElement.dataset.desktopWallpaperScene).toBeUndefined()
     expect(wrapper.get('.desktop__wallpaper-image').attributes('style')).toContain('/api/v1/desktop/scene-packs/orbital-station/poster')
     await vi.waitFor(() => expect(wrapper.get('[data-scene-pack="orbital-station"]').attributes('data-scene-pack-state')).toBe('static'))
+    wrapper.unmount()
+  })
+
+  it('ignores a departed scene failure response after the selection changes', async () => {
+    stubPackAPI()
+    packs = [installed]
+    window.localStorage.setItem('kpanel:desktop-wallpaper:v1', 'pack:orbital-station')
+    const wrapper = mount(DesktopView, { attachTo: document.body })
+    await settle()
+    const oldFrame = await sceneFrame(wrapper)
+    let resolveList!: (value: Awaited<ReturnType<typeof api.desktop.scenePacks>>) => void
+    vi.mocked(api.desktop.scenePacks).mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve }))
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { source: 'kpanel-scene-pack', type: 'error', reason: 'unavailable' }, source: oldFrame.contentWindow,
+    }))
+    await nextTick()
+    const nextPack = { ...installed, id: 'neon-city' }
+    packs = [nextPack]
+    useDesktopWallpaper().select('pack:neon-city', nextPack)
+    await settle()
+    resolveList({ source: 'auto', sources: ['auto'], packs: [] })
+    await settle()
+    expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('pack:neon-city')
+    expect(wrapper.get('[data-scene-pack]').attributes('data-scene-pack')).toBe('neon-city')
     wrapper.unmount()
   })
 

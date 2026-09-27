@@ -101,6 +101,7 @@ describe('DesktopScenePack', () => {
     fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'camera', index: 1 })
     expect(wrapper.emitted('camera')).toEqual([[1]])
     wrapper.unmount()
+    expect(post).toHaveBeenLastCalledWith({ source: 'kpanel-desktop', type: 'pause' }, '*')
   })
 
   it('hides the scene before a keyboard reload so the torn-down frame never flashes', async () => {
