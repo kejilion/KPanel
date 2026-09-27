@@ -35,8 +35,8 @@ const emit = defineEmits<{
 
 /** Given up on after this long without a message from the pack. */
 const READY_TIMEOUT_MS = 20_000
-/** The progress line only shows when loading takes longer than this. */
-const PROGRESS_DELAY_MS = 2000
+/** Keep quick loads still; breathing and the progress line share this threshold. */
+const LOADING_FEEDBACK_DELAY_MS = 2000
 
 const frame = ref<HTMLIFrameElement>()
 const ready = ref(false)
@@ -136,7 +136,7 @@ watch([running, pageURL], ([value]) => {
   if (slowTimer !== undefined) window.clearTimeout(slowTimer)
   if (!value) return
   armReadyTimeout()
-  slowTimer = window.setTimeout(() => { slow.value = !ready.value }, PROGRESS_DELAY_MS)
+  slowTimer = window.setTimeout(() => { slow.value = !ready.value }, LOADING_FEEDBACK_DELAY_MS)
 }, { immediate: true })
 
 async function locatePack(): Promise<void> {
@@ -185,7 +185,7 @@ defineExpose({
 <template>
   <div
     class="desktop-scene-pack"
-    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused, 'desktop-scene-pack--arrive': enterFromBlack }"
+    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused, 'desktop-scene-pack--arrive': enterFromBlack, 'desktop-scene-pack--slow': slow && running }"
     :data-scene-pack="packId"
     :data-scene-pack-state="state"
     aria-hidden="true"

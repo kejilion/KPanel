@@ -28,6 +28,9 @@
 [data-scene-pack-state='loading'] > .desktop-scene-pack__poster,
 [data-scene-pack-state='running'] > .desktop-scene-pack__poster {
   opacity: .12;
+}
+
+.desktop-scene-pack--slow > .desktop-scene-pack__poster {
   animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
 }
 

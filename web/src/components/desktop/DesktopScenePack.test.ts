@@ -163,13 +163,15 @@ describe('DesktopScenePack', () => {
     vi.useFakeTimers()
     listPacks([installed])
     const wrapper = await mountPack()
-    // Quick loads show only the poster: no progress line in the first moments.
+    // Quick loads keep a still poster; breathing and progress share the slow threshold.
     fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'progress', value: 0.2 })
     await nextTick()
     expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(1999)
     expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('desktop-scene-pack--slow')
     await vi.advanceTimersByTimeAsync(1)
+    expect(wrapper.classes()).toContain('desktop-scene-pack--slow')
     const line = wrapper.get('.desktop-scene-pack__progress')
     expect(line.attributes('style')).toContain('--scene-pack-progress: 0.200')
     // Each progress message counts as a sign of life for the watchdog.
@@ -183,6 +185,8 @@ describe('DesktopScenePack', () => {
     fromPack(wrapper, { source: 'kpanel-scene-pack', type: 'ready', cameras: ['panorama'] })
     await nextTick()
     expect(wrapper.find('.desktop-scene-pack__progress').exists()).toBe(false)
+    expect(wrapper.classes()).toContain('desktop-scene-pack--ready')
+    expect(wrapper.classes()).toContain('desktop-scene-pack--slow')
     await vi.advanceTimersByTimeAsync(60_000)
     expect(wrapper.emitted('failed')).toBeUndefined()
     wrapper.unmount()
