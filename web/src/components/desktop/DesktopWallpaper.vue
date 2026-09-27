@@ -76,11 +76,14 @@ function finishImmediately(): void {
   phase.value = 'idle'
 }
 
-watch([descriptor, motion.systemReducedMotion], ([target]) => {
+watch([descriptor, motion.systemReducedMotion], ([target], [previousTarget]) => {
   if (motion.systemReducedMotion.value || document.visibilityState === 'hidden') {
     finishImmediately()
-  } else if (phase.value === 'idle' && shown.value.key === target.key) {
-    shown.value = target
+  } else if (target.key === previousTarget.key) {
+    // A late metadata refresh is not another selection and must not restart the black handoff.
+    if (phase.value !== 'leaving' && shown.value.key === target.key) {
+      shown.value = { ...shown.value, position: target.position }
+    }
   } else if (phase.value === 'leaving') {
     // The opaque handoff will read descriptor again, including rapid scene → still → scene.
   } else if (phase.value === 'waiting') {
@@ -97,8 +100,10 @@ watch([descriptor, motion.systemReducedMotion], ([target]) => {
 
 function onVeilEnd(event: TransitionEvent): void {
   if (event.target !== event.currentTarget || event.propertyName !== 'opacity') return
-  if (phase.value === 'leaving') void showLatest()
-  else if (phase.value === 'entering') { cancelTimer(); phase.value = 'idle' }
+  const opacity = Number(getComputedStyle(event.currentTarget as Element).opacity)
+  // An already queued end event can belong to the reveal that this selection interrupted.
+  if (phase.value === 'leaving' && opacity >= .999) void showLatest()
+  else if (phase.value === 'entering' && opacity <= .001) { cancelTimer(); phase.value = 'idle' }
 }
 
 function onImageLoad(event: Event): void {

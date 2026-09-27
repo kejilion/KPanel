@@ -82,7 +82,10 @@ async function settle(): Promise<void> {
 
 async function finishDeparture(wrapper: VueWrapper): Promise<void> {
   if (wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase') === 'leaving') {
-    await wrapper.get('.desktop-wallpaper-handoff').trigger('transitionend', { propertyName: 'opacity' })
+    const veil = wrapper.get('.desktop-wallpaper-handoff')
+    ;(veil.element as HTMLElement).style.opacity = '1'
+    await veil.trigger('transitionend', { propertyName: 'opacity' })
+    ;(veil.element as HTMLElement).style.removeProperty('opacity')
     await settle()
   }
 }

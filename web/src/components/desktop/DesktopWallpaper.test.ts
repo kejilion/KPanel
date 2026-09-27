@@ -4,6 +4,8 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick } from 'vue'
 import DesktopWallpaper from './DesktopWallpaper.vue'
 import { resetSceneMotionPreferenceForTest, useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
+import { useDesktopWallpaper } from '@/lib/desktopWallpapers'
+import type { CustomWallpaper } from '@/types/api'
 
 const Scene = defineComponent({
   props: ['packId', 'covered'], emits: ['cameras', 'failed'],
@@ -19,7 +21,10 @@ type Wrapper = ReturnType<typeof mountWallpaper>
 const phase = (wrapper: Wrapper) => wrapper.attributes('data-wallpaper-phase')
 const surface = (wrapper: Wrapper) => wrapper.get('.desktop-wallpaper-surface')
 async function black(wrapper: Wrapper): Promise<void> {
-  await wrapper.get('.desktop-wallpaper-handoff').trigger('transitionend', { propertyName: 'opacity' })
+  const veil = wrapper.get('.desktop-wallpaper-handoff')
+  ;(veil.element as HTMLElement).style.opacity = phase(wrapper) === 'leaving' ? '1' : '0'
+  await veil.trigger('transitionend', { propertyName: 'opacity' })
+  ;(veil.element as HTMLElement).style.removeProperty('opacity')
   await nextTick()
 }
 
@@ -132,6 +137,43 @@ describe('shared wallpaper handoff', () => {
     expect(surface(wrapper).classes()).not.toContain('desktop-wallpaper-surface--scene')
     await vi.advanceTimersByTimeAsync(3000)
     expect(phase(wrapper)).toBe('idle')
+    wrapper.unmount()
+  })
+
+  it('does not restart a waiting or entering custom picture when its metadata refreshes', async () => {
+    const custom: CustomWallpaper = {
+      id: '0123456789abcdef0123456789abcdef', name: 'test', format: 'webp', width: 1920, height: 1080,
+      imageBytes: 1000, thumbBytes: 100, focusX: 500, focusY: 500, luminance: 30,
+      createdAt: '2026-09-27T00:00:00Z', imageDigest: 'a'.repeat(64),
+    }
+    const choices = useDesktopWallpaper()
+    choices.customUploaded(custom)
+    const wrapper = mountWallpaper('pack:neon-city')
+    await wrapper.setProps({ wallpaperId: `custom:${custom.id}` }); await black(wrapper)
+    await vi.advanceTimersByTimeAsync(1500)
+    choices.customUploaded({ ...custom, focusX: 700 })
+    await nextTick()
+    expect(phase(wrapper)).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(phase(wrapper)).toBe('entering')
+    choices.customUploaded({ ...custom, focusX: 800 })
+    await nextTick()
+    expect(phase(wrapper)).toBe('entering')
+    expect(surface(wrapper).attributes('style')).toContain('80% 50%')
+    wrapper.unmount()
+  })
+
+  it('ignores a reveal end event that arrives after another departure has started', async () => {
+    const wrapper = mountWallpaper()
+    await wrapper.setProps({ wallpaperId: 'pack:neon-city' }); await black(wrapper)
+    await wrapper.get('img').trigger('load')
+    await wrapper.setProps({ wallpaperId: 'pack:sea-and-sky' })
+    ;(wrapper.get('.desktop-wallpaper-handoff').element as HTMLElement).style.opacity = '0'
+    await wrapper.get('.desktop-wallpaper-handoff').trigger('transitionend', { propertyName: 'opacity' })
+    expect(phase(wrapper)).toBe('leaving')
+    expect(surface(wrapper).attributes('data-wallpaper')).toBe('pack:neon-city')
+    await black(wrapper)
+    expect(surface(wrapper).attributes('data-wallpaper')).toBe('pack:sea-and-sky')
     wrapper.unmount()
   })
 })
