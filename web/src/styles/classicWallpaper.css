@@ -27,6 +27,15 @@
   filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
 }
 
+/* Keep a matching dark cover visible while the asynchronous scene component loads. */
+.classic-backdrop--scene {
+  background: #000;
+}
+
+.classic-backdrop--scene > .classic-backdrop__image {
+  opacity: .12;
+}
+
 /*
  * A live 3D scene pack sits under the same blur and veil. Behind pages it is never seen sharp,
  * so the pack renders at half resolution (a quarter of the pixels) and is scaled up to fill.

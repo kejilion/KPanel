@@ -72,6 +72,7 @@ describe('DesktopScenePack', () => {
     expect(iframe.attributes('tabindex')).toBe('-1')
     expect(wrapper.attributes('aria-hidden')).toBe('true')
     expect(wrapper.attributes('data-scene-pack-state')).toBe('loading')
+    expect(wrapper.classes()).not.toContain('desktop-scene-pack--arrive')
     wrapper.unmount()
   })
 

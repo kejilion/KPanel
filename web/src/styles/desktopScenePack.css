@@ -31,9 +31,9 @@
   animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
 }
 
-/* Fade the cover in from black without competing with its breathing opacity. */
-[data-scene-pack-state='loading']::after,
-[data-scene-pack-state='running']::after {
+/* Only deliberate switches replay black; initial loading continues the boot poster. */
+.desktop-scene-pack--arrive[data-scene-pack-state='loading']::after,
+.desktop-scene-pack--arrive[data-scene-pack-state='running']::after {
   position: absolute;
   z-index: 2;
   inset: 0;
@@ -42,7 +42,7 @@
   animation: desktop-scene-pack-arrive .8s ease-out both;
 }
 
-.desktop-scene-pack--paused::after {
+.desktop-scene-pack--arrive.desktop-scene-pack--paused::after {
   animation-play-state: paused;
 }
 
@@ -77,7 +77,7 @@
   50% { opacity: .16; }
 }
 
-/* Ready may be the scene's first black frame. Retain the poster throughout its entrance. */
+/* Hand off quickly to the scene's own exposure fade, retaining the poster beneath it. */
 .desktop-scene-pack__frame {
   background: #000;
   opacity: 0;
@@ -85,7 +85,7 @@
 
 .desktop-scene-pack--ready .desktop-scene-pack__frame {
   opacity: 1;
-  transition: opacity 2.2s ease-in-out;
+  transition: opacity .8s ease-out;
 }
 
 /* Only when a scene is slow to load: a faint hairline over the poster, filling as it loads. */

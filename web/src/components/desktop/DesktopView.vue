@@ -413,6 +413,7 @@ const desktopWallpaperCovered = computed(() => {
 const scenePackLayer = ref<{ nextCamera: () => void }>()
 const scenePackCameras = ref<string[]>([])
 const scenePackRevision = wallpaperChoice.sceneRevision
+const sceneEnterFromBlack = ref(false)
 const sceneMotion = useSceneMotionPreference()
 // A live scene starts over a dim poster; reduced motion keeps the full still image.
 const liveScenePack = computed(() => Boolean(activeScenePack.value) && !sceneMotion.reducedMotion.value)
@@ -3180,7 +3181,10 @@ async function onScenePackFailed(): Promise<void> {
 }
 
 // A different wallpaper (chosen here, in Settings or by removing its pack) drops the old cameras.
-watch([desktopWallpaperID, scenePackRevision], () => { scenePackCameras.value = [] })
+watch([desktopWallpaperID, scenePackRevision], () => {
+  scenePackCameras.value = []
+  sceneEnterFromBlack.value = true
+})
 
 // Keep the root flag appearance-init.js set at boot in step with the chosen wallpaper, so every
 // wallpaper surface (boot layer, loading placeholder, desktop) agrees on the dim scene poster.
@@ -3768,6 +3772,7 @@ function onViewportResize(): void {
           :key="`${activeScenePack}:${scenePackRevision}`"
           ref="scenePackLayer"
           :pack-id="activeScenePack"
+          :enter-from-black="sceneEnterFromBlack"
           :covered="desktopWallpaperCovered"
           @cameras="scenePackCameras = $event"
           @failed="onScenePackFailed"

@@ -54,6 +54,7 @@ import { useClassicWallpaper } from '@/lib/classicWallpaper'
 import { customWallpaperFromID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { scenePackFromWallpaper } from '@/lib/scenePacks'
 import DesktopScenePackTransition from '@/components/desktop/DesktopScenePackTransition.vue'
+import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
 import {
   detectKPanelUpdate,
   kpanelUpdateHint,
@@ -141,7 +142,14 @@ const classicBackdrop = computed(() => !desktopActive.value && classicWallpaper.
 const ClassicScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
 const wallpaperChoice = useDesktopWallpaper()
 const classicScenePack = computed(() => classicBackdrop.value ? scenePackFromWallpaper(wallpaperChoice.id.value) : undefined)
+const sceneMotion = useSceneMotionPreference()
+const classicLiveScene = computed(() => Boolean(classicScenePack.value) && !sceneMotion.reducedMotion.value)
+const classicSceneEnterFromBlack = ref(false)
 watch(desktopActive, (active) => { if (!active) wallpaperChoice.refresh() }, { immediate: true })
+// Returning to this host keeps its poster; only a selection/update while visible replays black.
+watch([wallpaperChoice.id, wallpaperChoice.sceneRevision, classicBackdrop], ([id, revision, visible], [previousID, previousRevision, wasVisible]) => {
+  classicSceneEnterFromBlack.value = visible && wasVisible && (id !== previousID || revision !== previousRevision)
+})
 const DESKTOP_ENTRY_NOTICE_KEY = 'kpanel:desktop-entry-notice:v2'
 
 function readDesktopEntrySeen(): boolean {
@@ -319,14 +327,15 @@ watch(
 
 <template>
   <div class="app-shell">
-    <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
-      <div v-if="!classicScenePack" class="classic-backdrop__image" />
+    <div v-if="classicBackdrop" class="classic-backdrop" :class="{ 'classic-backdrop--scene': classicLiveScene }" aria-hidden="true">
+      <div class="classic-backdrop__image" />
       <DesktopScenePackTransition>
         <ClassicScenePack
           v-if="classicScenePack"
           :key="`${classicScenePack}:${wallpaperChoice.sceneRevision.value}`"
           class="classic-backdrop__scene"
           :pack-id="classicScenePack"
+          :enter-from-black="classicSceneEnterFromBlack"
           :covered="false"
         />
       </DesktopScenePackTransition>

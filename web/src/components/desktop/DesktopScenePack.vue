@@ -21,6 +21,8 @@ import '@/styles/desktopScenePack.css'
  */
 const props = defineProps<{
   packId: string
+  /** A deliberate wallpaper change starts from black; first mount keeps the boot poster. */
+  enterFromBlack?: boolean
   /** A maximized window or a full side-by-side split hides the wallpaper. */
   covered: boolean
 }>()
@@ -183,7 +185,7 @@ defineExpose({
 <template>
   <div
     class="desktop-scene-pack"
-    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused }"
+    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused, 'desktop-scene-pack--arrive': enterFromBlack }"
     :data-scene-pack="packId"
     :data-scene-pack-state="state"
     aria-hidden="true"
