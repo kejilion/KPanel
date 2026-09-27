@@ -429,9 +429,7 @@ EOF
 	. "$PROJECT_DIR/packaging/kejilion-app/kpanel.conf"
 	docker_port="18080"
 	docker_app_install >"$TEST_DIR/install-output.txt"
-	grep -Fx '首次初始化 Token：' \
-		"$TEST_DIR/install-output.txt" >/dev/null
-	grep -Fx 'test-bootstrap-token' \
+	grep -Fx '首次初始化 Token： test-bootstrap-token' \
 		"$TEST_DIR/install-output.txt" >/dev/null
 	grep -Fx '请复制此 Token 完成管理员账户初始化；初始化成功后 Token 自动失效。' \
 		"$TEST_DIR/install-output.txt" >/dev/null
