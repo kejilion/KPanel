@@ -27,7 +27,7 @@
 
 [data-scene-pack-state='loading'] > .desktop-scene-pack__poster,
 [data-scene-pack-state='running'] > .desktop-scene-pack__poster {
-  opacity: .18;
+  opacity: .12;
   animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
 }
 
@@ -73,8 +73,8 @@
 }
 
 @keyframes desktop-scene-pack-breathe {
-  0%, 100% { opacity: .18; }
-  50% { opacity: .23; }
+  0%, 100% { opacity: .12; }
+  50% { opacity: .16; }
 }
 
 /* Ready may be the scene's first black frame. Retain the poster throughout its entrance. */

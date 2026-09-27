@@ -38,7 +38,7 @@ html.desktop-wallpaper-loading .desktop__wallpaper { visibility: hidden; }
  */
 .desktop__wallpaper--scene .desktop__wallpaper-image,
 html[data-desktop-wallpaper-scene='live'] .desktop__wallpaper-image {
-  filter: brightness(.18);
+  filter: brightness(.12);
 }
 
 .desktop__wallpaper--scene .desktop__aurora,
