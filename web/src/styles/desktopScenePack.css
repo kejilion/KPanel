@@ -80,7 +80,7 @@
   50% { opacity: .16; }
 }
 
-/* Hand off quickly to the scene's own exposure fade, retaining the poster beneath it. */
+/* Blend gently into the scene's own exposure fade, retaining the poster beneath it. */
 .desktop-scene-pack__frame {
   background: #000;
   opacity: 0;
@@ -88,7 +88,7 @@
 
 .desktop-scene-pack--ready .desktop-scene-pack__frame {
   opacity: 1;
-  transition: opacity .8s ease-out;
+  transition: opacity 1.6s ease-in-out;
 }
 
 /* Only when a scene is slow to load: a faint hairline over the poster, filling as it loads. */
