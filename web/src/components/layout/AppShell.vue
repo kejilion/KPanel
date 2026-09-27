@@ -52,10 +52,8 @@ import {
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
 import { useClassicWallpaper } from '@/lib/classicWallpaper'
 import { customWallpaperFromID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
-import { scenePackFromWallpaper } from '@/lib/scenePacks'
 import { startAppearanceSync, stopAppearanceSync } from '@/lib/appearanceSync'
-import DesktopScenePackTransition from '@/components/desktop/DesktopScenePackTransition.vue'
-import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
+import DesktopWallpaper from '@/components/desktop/DesktopWallpaper.vue'
 import {
   detectKPanelUpdate,
   kpanelUpdateHint,
@@ -140,17 +138,8 @@ const classicWallpaper = useClassicWallpaper()
 const classicBackdrop = computed(() => !desktopActive.value && classicWallpaper.level.value !== 'off')
 // A 3D scene pack chosen as the wallpaper (in desktop mode or Settings) keeps running behind the
 // classic pages. Desktop mode may have changed it, so the choice is re-read on the way back.
-const ClassicScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
 const wallpaperChoice = useDesktopWallpaper()
-const classicScenePack = computed(() => classicBackdrop.value ? scenePackFromWallpaper(wallpaperChoice.id.value) : undefined)
-const sceneMotion = useSceneMotionPreference()
-const classicLiveScene = computed(() => Boolean(classicScenePack.value) && !sceneMotion.reducedMotion.value)
-const classicSceneEnterFromBlack = ref(false)
 watch(desktopActive, (active) => { if (!active) wallpaperChoice.refresh() }, { immediate: true })
-// Returning to this host keeps its poster; only a selection/update while visible replays black.
-watch([wallpaperChoice.id, wallpaperChoice.sceneRevision, classicBackdrop], ([id, revision, visible], [previousID, previousRevision, wasVisible]) => {
-  classicSceneEnterFromBlack.value = visible && wasVisible && (id !== previousID || revision !== previousRevision)
-})
 const DESKTOP_ENTRY_NOTICE_KEY = 'kpanel:desktop-entry-notice:v2'
 
 function readDesktopEntrySeen(): boolean {
@@ -330,18 +319,8 @@ watch(
 
 <template>
   <div class="app-shell">
-    <div v-if="classicBackdrop" class="classic-backdrop" :class="{ 'classic-backdrop--scene': classicLiveScene }" aria-hidden="true">
-      <div class="classic-backdrop__image" />
-      <DesktopScenePackTransition>
-        <ClassicScenePack
-          v-if="classicScenePack"
-          :key="`${classicScenePack}:${wallpaperChoice.sceneRevision.value}`"
-          class="classic-backdrop__scene"
-          :pack-id="classicScenePack"
-          :enter-from-black="classicSceneEnterFromBlack"
-          :covered="false"
-        />
-      </DesktopScenePackTransition>
+    <div v-if="classicBackdrop" class="classic-backdrop" aria-hidden="true">
+      <DesktopWallpaper class="classic-backdrop__wallpaper" :wallpaper-id="wallpaperChoice.id.value" :revision="wallpaperChoice.sceneRevision.value" :covered="false" />
       <div class="classic-backdrop__veil" />
     </div>
     <Transition name="fade">

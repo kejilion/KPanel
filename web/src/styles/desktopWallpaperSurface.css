@@ -1,0 +1,41 @@
+.desktop-wallpaper-host,
+.desktop-wallpaper-surface,
+.desktop-wallpaper-surface__image,
+.desktop-wallpaper-handoff {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.desktop-wallpaper-host { overflow: hidden; }
+
+/* A surface owns its bitmap and brightness throughout departure, independent of the next choice. */
+.desktop-wallpaper-surface.desktop__wallpaper-image {
+  background: #000;
+  filter: none;
+}
+
+.desktop-wallpaper-surface__image {
+  background: var(--desktop-wallpaper-image, none) var(--desktop-wallpaper-position, center) / cover no-repeat;
+  object-fit: cover;
+  object-position: var(--desktop-wallpaper-position, center);
+}
+
+.desktop-wallpaper-surface--scene > .desktop-wallpaper-surface__image { opacity: .12; }
+.desktop-wallpaper-surface__image--failed { visibility: hidden; }
+
+.desktop-wallpaper-handoff {
+  z-index: 5;
+  background: #000;
+  opacity: 0;
+  transition: opacity .6s ease-in-out;
+}
+
+.desktop-wallpaper-handoff--black { opacity: 1; }
+.desktop-wallpaper-handoff--reveal { transition: opacity .8s ease-in-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-wallpaper-handoff { transition: none; }
+}

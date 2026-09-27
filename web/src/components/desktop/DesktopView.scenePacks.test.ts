@@ -80,6 +80,13 @@ async function settle(): Promise<void> {
   }
 }
 
+async function finishDeparture(wrapper: VueWrapper): Promise<void> {
+  if (wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase') === 'leaving') {
+    await wrapper.get('.desktop-wallpaper-handoff').trigger('transitionend', { propertyName: 'opacity' })
+    await settle()
+  }
+}
+
 describe('DesktopView scene packs', () => {
   beforeEach(() => {
     packs = [available, community]
@@ -139,6 +146,8 @@ describe('DesktopView scene packs', () => {
     vi.useRealTimers()
     await settle()
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('pack:orbital-station')
+    expect(wrapper.get('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('classic')
+    await finishDeparture(wrapper)
     const wallpaper = wrapper.get('.desktop__wallpaper-image')
     expect(wallpaper.attributes('data-wallpaper')).toBe('pack:orbital-station')
     // A live scene starts over a dim poster without aurora and applies its color scheme.
@@ -149,7 +158,7 @@ describe('DesktopView scene packs', () => {
     expect(theme.colors.value).toMatchObject({ brand: '#2f6fd0', neutral: '#33415a', signature: '#35b8d6' })
     const frame = await sceneFrame(wrapper)
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
-    expect(wrapper.get('[data-scene-pack]').classes()).toContain('desktop-scene-pack--arrive')
+    expect(wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('waiting')
 
     // The camera action appears once the running pack reports more than one shot.
     await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
@@ -178,6 +187,7 @@ describe('DesktopView scene packs', () => {
     await settle()
     expect(remove).toHaveBeenCalledWith('orbital-station', installed.resourceVersion)
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('classic')
+    await finishDeparture(wrapper)
     expect(wrapper.find('[data-scene-pack]').exists()).toBe(false)
     expect(wrapper.get('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('classic')
     expect(wrapper.get('.desktop__wallpaper').classes()).not.toContain('desktop__wallpaper--scene')
@@ -208,18 +218,20 @@ describe('DesktopView scene packs', () => {
     window.localStorage.setItem('kpanel:desktop-wallpaper:v1', 'pack:orbital-station')
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await sceneFrame(wrapper)
-    expect(wrapper.get('[data-scene-pack]').classes()).not.toContain('desktop-scene-pack--arrive')
+    expect(wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('idle')
 
     useDesktopWallpaper().select('pack:neon-city', nextPack)
     await settle()
+    expect(wrapper.get('[data-scene-pack]').attributes('data-scene-pack')).toBe('orbital-station')
+    await finishDeparture(wrapper)
     expect(wrapper.get('[data-scene-pack]').attributes('data-scene-pack')).toBe('neon-city')
-    expect(wrapper.get('[data-scene-pack]').classes()).toContain('desktop-scene-pack--arrive')
+    expect(wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('waiting')
     wrapper.unmount()
 
     const restored = mount(DesktopView, { attachTo: document.body })
     await settle()
     expect(restored.get('[data-scene-pack]').attributes('data-scene-pack')).toBe('neon-city')
-    expect(restored.get('[data-scene-pack]').classes()).not.toContain('desktop-scene-pack--arrive')
+    expect(restored.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('idle')
     restored.unmount()
   })
 
@@ -242,6 +254,7 @@ describe('DesktopView scene packs', () => {
     await settle()
     resolveList({ source: 'auto', sources: ['auto'], packs: [] })
     await settle()
+    await finishDeparture(wrapper)
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('pack:neon-city')
     expect(wrapper.get('[data-scene-pack]').attributes('data-scene-pack')).toBe('neon-city')
     wrapper.unmount()
@@ -257,16 +270,17 @@ describe('DesktopView scene packs', () => {
     const wrapper = mount(DesktopView, { attachTo: document.body })
     await settle()
     const originalFrame = await sceneFrame(wrapper)
-    expect(wrapper.get('[data-scene-pack]').classes()).not.toContain('desktop-scene-pack--arrive')
+    expect(wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('idle')
     const section = await openWallpaperDialog(wrapper)
     expect(action(section, 'orbital-station', 'apply')).not.toBeNull()
     expect(action(section, 'orbital-station', 'delete')).not.toBeNull()
     expect(action(section, 'orbital-station', 'install')!.textContent).toContain('更新')
     action(section, 'orbital-station', 'install')!.click()
     await settle()
+    await finishDeparture(wrapper)
     const frame = await sceneFrame(wrapper)
     expect(frame).not.toBe(originalFrame)
-    expect(wrapper.get('[data-scene-pack]').classes()).toContain('desktop-scene-pack--arrive')
+    expect(wrapper.get('.desktop-wallpaper-host').attributes('data-wallpaper-phase')).toBe('waiting')
     expect(frame.getAttribute('src')).toBe(`${updated.fileBase}index.html`)
     expect(action(section, 'orbital-station', 'install')).toBeNull()
     wrapper.unmount()
@@ -337,6 +351,7 @@ describe('DesktopView scene packs', () => {
     const removed = mount(DesktopView, { attachTo: document.body })
     await settle()
     expect(window.localStorage.getItem('kpanel:desktop-wallpaper:v1')).toBe('classic')
+    await finishDeparture(removed)
     expect(removed.find('[data-scene-pack]').exists()).toBe(false)
     removed.unmount()
   })

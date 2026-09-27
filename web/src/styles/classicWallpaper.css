@@ -19,34 +19,20 @@
   background: var(--desktop-wallpaper-base);
 }
 
-.classic-backdrop__image {
+.classic-backdrop__wallpaper.desktop-wallpaper-host {
   position: absolute;
   /* Blur pulls in transparent edges; overscan so the frame stays filled. */
   inset: calc(var(--classic-wallpaper-blur) * -2.5);
-  background: var(--classic-wallpaper-image, url('/wallpapers/kpanel-desktop.webp')) var(--desktop-wallpaper-position, center) / cover no-repeat;
+  width: auto;
+  height: auto;
   filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
-}
-
-/* Keep a matching dark cover visible while the asynchronous scene component loads. */
-.classic-backdrop--scene {
-  background: #000;
-}
-
-.classic-backdrop--scene > .classic-backdrop__image {
-  opacity: .12;
 }
 
 /*
  * A live 3D scene pack sits under the same blur and veil. Behind pages it is never seen sharp,
  * so the pack renders at half resolution (a quarter of the pixels) and is scaled up to fill.
  */
-.classic-backdrop__scene.desktop-scene-pack {
-  z-index: 0;
-  inset: calc(var(--classic-wallpaper-blur) * -2.5);
-  filter: blur(var(--classic-wallpaper-blur)) saturate(var(--classic-wallpaper-saturate));
-}
-
-.classic-backdrop__scene .desktop-scene-pack__frame {
+.classic-backdrop__wallpaper .desktop-scene-pack__frame {
   width: 50%;
   height: 50%;
   transform: scale(2);

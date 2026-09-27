@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import {
   ArrowLeft,
@@ -32,11 +32,10 @@ import {
 import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
 import {
   scenePackFromWallpaper,
-  scenePackWallpaper,
   type ScenePack,
 } from '@/lib/scenePacks'
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
-import DesktopScenePackTransition from '@/components/desktop/DesktopScenePackTransition.vue'
+import DesktopWallpaper from '@/components/desktop/DesktopWallpaper.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
 import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
@@ -48,7 +47,7 @@ import DesktopShortcutDialog, {
 } from '@/components/desktop/DesktopShortcutDialog.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import DesktopWallpaperPicker from '@/components/desktop/DesktopWallpaperPicker.vue'
-import { customWallpaperFromID, DESKTOP_WALLPAPERS, useDesktopWallpaper, type DesktopWallpaperID } from '@/lib/desktopWallpapers'
+import { useDesktopWallpaper, type DesktopWallpaperID } from '@/lib/desktopWallpapers'
 import LogoMark from '@/components/common/LogoMark.vue'
 import { DEFAULT_WINDOW_GRADIENT, desktopApps, desktopRoutePath, findDesktopApp } from '@/lib/desktopApps'
 import {
@@ -230,8 +229,6 @@ const DESKTOP_UPLOAD_LOCATION_KEY = 'kpanel:desktop-upload-location:v1'
 const DESKTOP_WALLPAPER_SWITCH_DELAY = 500
 const MAX_SITE_NAME_LENGTH = 48
 
-const DesktopScenePack = defineAsyncComponent(() => import('@/components/desktop/DesktopScenePack.vue'))
-
 function normalizedHostDirectory(value: string): string | undefined {
   const candidate = value.trim()
   if (
@@ -392,14 +389,6 @@ const wallpaperChoice = useDesktopWallpaper()
 wallpaperChoice.refresh()
 const desktopWallpaperID = computed(() => wallpaperChoice.id.value)
 const activeScenePack = computed(() => scenePackFromWallpaper(desktopWallpaperID.value))
-const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: string } => {
-  const pack = activeScenePack.value
-  if (pack) return { id: scenePackWallpaper(pack) as DesktopWallpaperID, src: api.desktop.scenePackPosterURL(pack) }
-  const custom = customWallpaperFromID(desktopWallpaperID.value)
-  if (custom) return { id: desktopWallpaperID.value, src: api.desktop.wallpaperImageURL(custom) }
-  return DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === desktopWallpaperID.value)
-    || DESKTOP_WALLPAPERS[0]
-})
 const coarseDesktopPointer = typeof window.matchMedia === 'function'
   && window.matchMedia('(hover: none) and (pointer: coarse)').matches
 const desktopWallpaperCovered = computed(() => {
@@ -413,14 +402,9 @@ const desktopWallpaperCovered = computed(() => {
 const scenePackLayer = ref<{ nextCamera: () => void }>()
 const scenePackCameras = ref<string[]>([])
 const scenePackRevision = wallpaperChoice.sceneRevision
-const sceneEnterFromBlack = ref(false)
 const sceneMotion = useSceneMotionPreference()
 // A live scene starts over a dim poster; reduced motion keeps the full still image.
 const liveScenePack = computed(() => Boolean(activeScenePack.value) && !sceneMotion.reducedMotion.value)
-const desktopWallpaperStyle = computed((): Record<string, string> =>
-  document.documentElement.dataset.desktopWallpaper === activeDesktopWallpaper.value.id
-    ? {} : { '--desktop-wallpaper-image': `url("${activeDesktopWallpaper.value.src}")` },
-)
 const shortcutDialogOpen = ref(false)
 const editingShortcut = ref<DesktopShortcut>()
 const deletingShortcut = ref<DesktopShortcut>()
@@ -3183,7 +3167,6 @@ async function onScenePackFailed(): Promise<void> {
 // A different wallpaper (chosen here, in Settings or by removing its pack) drops the old cameras.
 watch([desktopWallpaperID, scenePackRevision], () => {
   scenePackCameras.value = []
-  sceneEnterFromBlack.value = true
 })
 
 // Keep the root flag appearance-init.js set at boot in step with the chosen wallpaper, so every
@@ -3758,26 +3741,14 @@ function onViewportResize(): void {
     @drop="onDesktopFileDrop"
   >
     <div class="desktop__wallpaper" :class="{ 'desktop__wallpaper--scene': liveScenePack }" aria-hidden="true">
-      <Transition name="desktop-wallpaper-fade">
-        <div
-          :key="activeDesktopWallpaper.id"
-          class="desktop__wallpaper-image"
-          :data-wallpaper="activeDesktopWallpaper.id"
-          :style="desktopWallpaperStyle"
-        />
-      </Transition>
-      <DesktopScenePackTransition>
-        <DesktopScenePack
-          v-if="activeScenePack"
-          :key="`${activeScenePack}:${scenePackRevision}`"
-          ref="scenePackLayer"
-          :pack-id="activeScenePack"
-          :enter-from-black="sceneEnterFromBlack"
-          :covered="desktopWallpaperCovered"
-          @cameras="scenePackCameras = $event"
-          @failed="onScenePackFailed"
-        />
-      </DesktopScenePackTransition>
+      <DesktopWallpaper
+        ref="scenePackLayer"
+        :wallpaper-id="desktopWallpaperID"
+        :revision="scenePackRevision"
+        :covered="desktopWallpaperCovered"
+        @cameras="scenePackCameras = $event"
+        @failed="onScenePackFailed"
+      />
       <div class="desktop__wallpaper-veil" aria-hidden="true" />
       <div class="desktop__aurora desktop__aurora--one" />
       <div class="desktop__aurora desktop__aurora--two" />

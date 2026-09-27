@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '@/lib/api'
 import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
+import { desktopWallpaperImage } from '@/lib/desktopWallpapers'
 import { parseScenePackEvent, rememberedFileBase, rememberFileBase, scenePackPageURL, type ScenePack, type ScenePackCommand } from '@/lib/scenePacks'
 import '@/styles/desktopScenePack.css'
 
@@ -21,8 +22,6 @@ import '@/styles/desktopScenePack.css'
  */
 const props = defineProps<{
   packId: string
-  /** A deliberate wallpaper change starts from black; first mount keeps the boot poster. */
-  enterFromBlack?: boolean
   /** A maximized window or a full side-by-side split hides the wallpaper. */
   covered: boolean
 }>()
@@ -45,6 +44,7 @@ const located = ref(false)
 const documentHidden = ref(typeof document !== 'undefined' && document.visibilityState === 'hidden')
 const { reducedMotion } = useSceneMotionPreference()
 const posterURL = computed(() => api.desktop.scenePackPosterURL(props.packId))
+const posterStyle = computed(() => ({ '--scene-pack-poster-image': `url("${desktopWallpaperImage(`pack:${props.packId}`).src}")` }))
 // The page URL comes from the server's pack list (or where the list last put it), never from the wallpaper key.
 const pack = ref<ScenePack>()
 const rememberedBase = ref(rememberedFileBase(props.packId))
@@ -185,7 +185,8 @@ defineExpose({
 <template>
   <div
     class="desktop-scene-pack"
-    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused, 'desktop-scene-pack--arrive': enterFromBlack, 'desktop-scene-pack--slow': slow && running }"
+    :class="{ 'desktop-scene-pack--ready': ready, 'desktop-scene-pack--paused': paused, 'desktop-scene-pack--slow': slow && running }"
+    :style="posterStyle"
     :data-scene-pack="packId"
     :data-scene-pack-state="state"
     aria-hidden="true"

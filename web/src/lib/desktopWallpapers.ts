@@ -55,6 +55,22 @@ export type DesktopStaticWallpaperID = typeof DESKTOP_WALLPAPERS[number]['id']
 // Installed 3D scene packs share the wallpaper key as `pack:<id>`, uploaded pictures as `custom:<id>`.
 export type DesktopWallpaperID = DesktopStaticWallpaperID | `pack:${string}` | `custom:${string}`
 
+/** Resolve each surface's own image; never inherit a previous wallpaper's boot bitmap. */
+export function desktopWallpaperImage(id: DesktopWallpaperID): { src: string, url: string } {
+  const pack = scenePackFromWallpaper(id)
+  const custom = customWallpaperFromID(id)
+  const url = pack ? api.desktop.scenePackPosterURL(pack)
+    : custom ? api.desktop.wallpaperImageURL(custom)
+      : (DESKTOP_WALLPAPERS.find((wallpaper) => wallpaper.id === id) || DESKTOP_WALLPAPERS[0]).src
+  try {
+    const cached = window.sessionStorage.getItem(`kpanel:desktop-wallpaper-cache:v1:${id}`)
+    if (!custom && cached && cached.length <= 131072 && /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/.test(cached)) {
+      return { src: cached, url }
+    }
+  } catch { /* The image URL remains usable without optional session storage. */ }
+  return { src: url, url }
+}
+
 const CUSTOM_WALLPAPER_PREFIX = 'custom:'
 const CUSTOM_WALLPAPER_ID = /^[0-9a-f]{32}$/
 /** How the chosen uploaded picture is framed; appearance-init.js applies it before the app starts. */

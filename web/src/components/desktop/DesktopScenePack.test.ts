@@ -72,7 +72,7 @@ describe('DesktopScenePack', () => {
     expect(iframe.attributes('tabindex')).toBe('-1')
     expect(wrapper.attributes('aria-hidden')).toBe('true')
     expect(wrapper.attributes('data-scene-pack-state')).toBe('loading')
-    expect(wrapper.classes()).not.toContain('desktop-scene-pack--arrive')
+    expect(wrapper.attributes('style')).toContain('--scene-pack-poster-image: url("/api/v1/desktop/scene-packs/orbital-station/poster")')
     wrapper.unmount()
   })
 

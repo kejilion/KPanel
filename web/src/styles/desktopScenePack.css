@@ -22,7 +22,7 @@
 .desktop-scene-pack__poster {
   object-fit: cover;
   /* Preserve the already painted bitmap while the poster request revalidates/decodes. */
-  background: var(--desktop-wallpaper-image, none) center / cover no-repeat;
+  background: var(--scene-pack-poster-image, none) center / cover no-repeat;
 }
 
 [data-scene-pack-state='loading'] > .desktop-scene-pack__poster,
@@ -32,41 +32,6 @@
 
 .desktop-scene-pack--slow > .desktop-scene-pack__poster {
   animation: desktop-scene-pack-breathe 5s ease-in-out infinite;
-}
-
-/* Only deliberate switches replay black; initial loading continues the boot poster. */
-.desktop-scene-pack--arrive[data-scene-pack-state='loading']::after,
-.desktop-scene-pack--arrive[data-scene-pack-state='running']::after {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  background: #000;
-  content: '';
-  animation: desktop-scene-pack-arrive .8s ease-out both;
-}
-
-.desktop-scene-pack--arrive.desktop-scene-pack--paused::after {
-  animation-play-state: paused;
-}
-
-@keyframes desktop-scene-pack-arrive {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-/* Keep the outgoing frame opaque until black, then mount the next scene's entrance. */
-.desktop-scene-pack-switch-leave-active::before {
-  position: absolute;
-  z-index: 3;
-  inset: 0;
-  background: #000;
-  content: '';
-  animation: desktop-scene-pack-depart .6s ease-in-out both;
-}
-
-@keyframes desktop-scene-pack-depart {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* Keep the current dim frame underneath the entrance, without animating once hidden. */
