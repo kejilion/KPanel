@@ -1275,7 +1275,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
               @keydown="moveRadioFocus"
               @click="selectThemeColorPreset(preset.colors)"
             >
-              <span class="theme-color-preset__sample" :style="themeColorPresetStyle(preset.colors)" aria-hidden="true">
+              <span class="theme-color-preset__sample" :style="themeColorPresetStyle(preset.colors)" :data-preview-theme="colorPreviewMode" aria-hidden="true">
                 <i class="theme-color-preset__sidebar" />
                 <i class="theme-color-preset__canvas"><b /><b /><em /><u /></i>
               </span>
@@ -1326,7 +1326,7 @@ onBeforeUnmount(stopKPanelReleaseRequest)
             </label>
           </div>
 
-          <div class="theme-color-preview" :style="colorPreviewStyle">
+          <div class="theme-color-preview" :style="colorPreviewStyle" :data-preview-theme="colorPreviewMode">
             <header class="theme-color-preview__header">
               <div><strong>局部预览</strong><small>应用前不会改变整页</small></div>
               <div class="theme-color-preview__modes" role="radiogroup" aria-label="配色预览模式">

@@ -1721,6 +1721,44 @@ textarea:focus-visible,
     transform 220ms ease;
 }
 
+/* Keep light navigation on the content palette without changing the dark
+   workbench tokens shared by login, file previews and custom-theme shadows. */
+:root:not([data-theme='dark']) .sidebar,
+.theme-color-preset__sample[data-preview-theme='light'] .theme-color-preset__sidebar,
+.theme-color-preview[data-preview-theme='light'] .theme-color-preview__shell aside {
+  --sidebar: var(--surface-subtle);
+  --sidebar-text: var(--text);
+  --sidebar-muted: var(--text-soft);
+  --sidebar-border: var(--border);
+  --sidebar-hover: var(--interaction-hover-subtle);
+  --sidebar-active: var(--brand-soft);
+  --sidebar-accent: var(--brand);
+  --classic-wallpaper-sidebar: 94%;
+}
+
+:root:not([data-theme='dark']) .sidebar .status-badge.is-subtle {
+  color: var(--sidebar-muted);
+}
+
+:root:not([data-theme='dark']) .sidebar .status-badge.is-success {
+  color: var(--success);
+}
+
+:root:not([data-theme='dark']) .sidebar .status-badge.is-danger {
+  color: var(--danger);
+}
+
+:root:not([data-theme='dark']) .sidebar__version--update {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+:root:not([data-theme='dark']) .sidebar__version--update:hover,
+:root:not([data-theme='dark']) .sidebar__version--update:focus-visible {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, var(--amber-soft));
+}
+
 .sidebar__brand {
   position: relative;
   display: flex;
@@ -5834,7 +5872,7 @@ div.resource-name {
   width: 3px;
   height: 18px;
   content: '';
-  background: var(--theme-accent);
+  background: var(--sidebar-accent);
   border-radius: 0 3px 3px 0;
 }
 
