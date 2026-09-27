@@ -107,6 +107,7 @@ const DesktopLoadingView = defineComponent({
       'div',
       {
         class: 'desktop',
+        'data-desktop-loading': '',
         role: 'status',
         'aria-label': i18n.t('common.loading'),
       },

@@ -36,12 +36,14 @@ html.desktop-wallpaper-loading .desktop__wallpaper { visibility: hidden; }
  * Before the lazy scene component mounts, show the same dim poster as its loading layer.
  * The root flag is set before the app starts and kept in sync by the desktop.
  */
-html[data-desktop-wallpaper-scene='live'] #desktop-boot .desktop__wallpaper-image {
+html[data-desktop-wallpaper-scene='live'] #desktop-boot .desktop__wallpaper-image,
+html[data-desktop-wallpaper-scene='live'] [data-desktop-loading] .desktop__wallpaper-image {
   filter: brightness(.12);
 }
 
 .desktop__wallpaper:has(.desktop-wallpaper-surface--scene) .desktop__aurora,
-html[data-desktop-wallpaper-scene='live'] #desktop-boot .desktop__aurora {
+html[data-desktop-wallpaper-scene='live'] #desktop-boot .desktop__aurora,
+html[data-desktop-wallpaper-scene='live'] [data-desktop-loading] .desktop__aurora {
   display: none;
 }
 
