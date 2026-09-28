@@ -1733,7 +1733,6 @@ textarea:focus-visible,
   --sidebar-hover: var(--interaction-hover-subtle);
   --sidebar-active: var(--brand-soft);
   --sidebar-accent: var(--brand);
-  --classic-wallpaper-sidebar: 94%;
 }
 
 :root:not([data-theme='dark']) .sidebar .status-badge.is-subtle {
