@@ -10,13 +10,18 @@ import (
 	"os/signal"
 
 	"github.com/kejilion/kejilion-panel/internal/mcpbridge"
+	"github.com/kejilion/kejilion-panel/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
 	endpoint := flag.String("url", os.Getenv("KPANEL_MCP_URL"), "KPanel HTTPS /mcp endpoint")
 	flag.Parse()
-	if flag.NArg() != 0 {
+	if flag.NArg() == 1 && flag.Arg(0) == "version" {
+		fmt.Printf("%s %s\n", version.Version, version.ProtocolVersion)
+		return
+	}
+	if flag.NArg() != 0 || *endpoint == "" {
 		fmt.Fprintln(os.Stderr, "usage: kpanel-mcp --url https://panel.example/mcp (credential: KPANEL_MCP_TOKEN)")
 		os.Exit(2)
 	}

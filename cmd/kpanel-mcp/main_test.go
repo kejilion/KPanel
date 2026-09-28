@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -27,6 +28,16 @@ func TestCommandStdioDiscoveryCallRevocationAndExit(t *testing.T) {
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, output)
+	}
+	versionOutput, err := exec.CommandContext(ctx, binary, "version").CombinedOutput()
+	if err != nil || string(versionOutput) != version.Version+" "+version.ProtocolVersion+"\n" {
+		t.Fatalf("version: output=%q err=%v", versionOutput, err)
+	}
+	usage := exec.CommandContext(ctx, binary)
+	usage.Env = append(os.Environ(), "KPANEL_MCP_URL=")
+	usageOutput, usageErr := usage.CombinedOutput()
+	if exit, ok := usageErr.(*exec.ExitError); !ok || exit.ExitCode() != 2 || !strings.Contains(string(usageOutput), "usage: kpanel-mcp") {
+		t.Fatalf("no arguments: output=%q err=%v, want usage and exit 2", usageOutput, usageErr)
 	}
 	remote := mcp.NewServer(&mcp.Implementation{Name: "test-panel", Version: "1"}, nil)
 	remote.AddTool(&mcp.Tool{Name: "echo", InputSchema: map[string]any{"type": "object"}}, func(_ context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
