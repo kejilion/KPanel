@@ -6,7 +6,7 @@ author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, runner_id, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-22T00:00:00Z"
+updated: "2026-09-28T04:03:01Z"
 ---
 
 # Release KPanel
@@ -316,7 +316,7 @@ git push origin "v${{version}}"
 
 - `kejilion-agent-linux-amd64`
 - `kejilion-agent-linux-arm64`
-- `kejilion-panel-deploy-${{version}}.tar.gz`
+- `kejilion-panel-meta-${{version}}.tar.gz`
 - `SHA256SUMS`
 
 核对 `${{image}}:${{version}}` 与目标通道标签（`stable` 使用 `${{image}}:latest`，`preview` 使用

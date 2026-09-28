@@ -70,6 +70,9 @@ test('release metadata archive is named and described consistently', () => {
   assert.equal(workflow.split(archive).length - 1, 4, 'build, checksum, and both upload paths must use the same name');
   assert.doesNotMatch(workflow, /kejilion-panel-deploy-\$VERSION\.tar\.gz/);
   assert.match(workflow, /git archive --format=tar HEAD \\\s+deploy docs README\.md CHANGELOG\.md VERSION \\\s+LICENSE NOTICE LICENSES THIRD_PARTY_NOTICES\.md TRADEMARKS\.md/);
+  const releaseProcedure = readFileSync(join(repoRoot, '.codex-workflows', 'release-kpanel.workflow.yaml'), 'utf8');
+  assert.match(releaseProcedure, /kejilion-panel-meta-\$\{\{version\}\}\.tar\.gz/);
+  assert.doesNotMatch(releaseProcedure, /kejilion-panel-deploy-\$\{\{version\}\}\.tar\.gz/);
 
   for (const version of ['1.2.3', '1.3.0-rc.2']) {
     const result = render(version);
