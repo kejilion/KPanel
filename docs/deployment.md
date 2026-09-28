@@ -2,6 +2,10 @@
 
 ## 部署边界
 
+面板本体目前仅支持 Docker 部署；官方 Release 不提供独立运行的 `paneld` 二进制或 web dist。
+宿主机 Agent 与轻量节点仍以原生二进制分发。GitHub 自动生成的 tag 源码归档可供自行构建，
+但不属于受支持的原生面板部署路径。
+
 KPanel 使用两个独立进程：
 
 - `paneld` 以非 root Docker 容器运行，入口使用专用 `internal` 网络；联邦监控与 AI Provider
@@ -36,7 +40,7 @@ v0.1 安装器只支持全新安装。发现任何既有 Panel 文件、同名�
 - `kejilion-agent-linux-arm64`；
 - `kejilion-node-linux-amd64`；
 - `kejilion-node-linux-arm64`；
-- `kejilion-panel-deploy-<version>.tar.gz`；
+- `kejilion-panel-meta-<version>.tar.gz`（部署脚本、文档、许可等元数据；不含可构建源码或 web dist）；
 - 上述文件的 `SHA256SUMS`；
 - 镜像 manifest digest。生产部署只使用
   `docker.io/<owner>/kejilion-panel@sha256:<digest>`，不使用可漂移标签。

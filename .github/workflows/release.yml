@@ -178,7 +178,7 @@ jobs:
           git archive --format=tar HEAD \
             deploy docs README.md CHANGELOG.md VERSION \
             LICENSE NOTICE LICENSES THIRD_PARTY_NOTICES.md TRADEMARKS.md |
-            gzip -n > "release/kejilion-panel-deploy-$VERSION.tar.gz"
+            gzip -n > "release/kejilion-panel-meta-$VERSION.tar.gz"
           (
             cd release
             sha256sum \
@@ -187,7 +187,7 @@ jobs:
               kejilion-node-linux-amd64 \
               kejilion-node-linux-arm64 \
               kpanel-mcp-* \
-              "kejilion-panel-deploy-$VERSION.tar.gz" > SHA256SUMS
+              "kejilion-panel-meta-$VERSION.tar.gz" > SHA256SUMS
           )
 
       - name: Set up Docker Buildx
@@ -309,7 +309,7 @@ jobs:
               release/kejilion-agent-linux-arm64 \
               release/kejilion-node-linux-amd64 \
               release/kejilion-node-linux-arm64 \
-              "release/kejilion-panel-deploy-$VERSION.tar.gz" \
+              "release/kejilion-panel-meta-$VERSION.tar.gz" \
               release/SHA256SUMS \
               LICENSE \
               THIRD_PARTY_NOTICES.md
@@ -325,7 +325,7 @@ jobs:
               release/kejilion-agent-linux-arm64 \
               release/kejilion-node-linux-amd64 \
               release/kejilion-node-linux-arm64 \
-              "release/kejilion-panel-deploy-$VERSION.tar.gz" \
+              "release/kejilion-panel-meta-$VERSION.tar.gz" \
               release/SHA256SUMS \
               LICENSE \
               THIRD_PARTY_NOTICES.md

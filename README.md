@@ -128,6 +128,9 @@ bash <(curl -sL kejilion.sh) app kpanel
 | 发布架构 | AMD64 · ARM64 |
 | 运行基础 | systemd 或 OpenRC · rootful Docker Engine · Docker Compose v2 |
 
+面板本体目前仅支持 Docker 部署；Release 中的 `kejilion-panel-meta-<version>.tar.gz`
+只提供部署脚本、文档和许可等元数据，不是可构建源码包。Agent 与轻量节点可原生运行。
+
 Debian 12、Ubuntu 22.04/24.04、Rocky/AlmaLinux/CentOS Stream/RHEL/Oracle Linux/Fedora、
 Arch/Manjaro 与 openSUSE/SLES 路径已经实现，仍按支持矩阵逐步完成实机准入；
 Alpine Linux 3.24 `sys` mode 的 OpenRC 路径也已实现并通过自动化契约测试，但尚未完成

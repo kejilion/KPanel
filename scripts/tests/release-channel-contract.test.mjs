@@ -63,3 +63,19 @@ test('release workflow publishes isolated stable and preview channels', () => {
   assert.match(workflow, /--tag "\$GITHUB_REF_NAME" --release-sha "\$GITHUB_SHA" --apply/);
   assert.doesNotMatch(workflow, /gh api --method DELETE/);
 });
+
+test('release metadata archive is named and described consistently', () => {
+  const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8');
+  const archive = 'kejilion-panel-meta-$VERSION.tar.gz';
+  assert.equal(workflow.split(archive).length - 1, 4, 'build, checksum, and both upload paths must use the same name');
+  assert.doesNotMatch(workflow, /kejilion-panel-deploy-\$VERSION\.tar\.gz/);
+  assert.match(workflow, /git archive --format=tar HEAD \\\s+deploy docs README\.md CHANGELOG\.md VERSION \\\s+LICENSE NOTICE LICENSES THIRD_PARTY_NOTICES\.md TRADEMARKS\.md/);
+
+  for (const version of ['1.2.3', '1.3.0-rc.2']) {
+    const result = render(version);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.notes, /面板本体仅支持 Docker 部署/);
+    assert.match(result.notes, new RegExp(`kejilion-panel-meta-${version.replaceAll('.', '\\.')}\\.tar\\.gz`));
+    assert.match(result.notes, /不是可构建源码包/);
+  }
+});

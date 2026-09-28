@@ -111,7 +111,9 @@ mkdir -p "$(dirname "$output")"
   echo "### 发布产物与完整性"
   echo
   echo "- ${image_label}镜像：\`$image@$digest\`"
-  echo "- Agent、轻量节点和部署归档须使用附件 \`SHA256SUMS\` 校验后再安装。"
+  echo "- 面板本体仅支持 Docker 部署；Release 不提供 paneld 原生二进制或 web dist。"
+  echo "- \`kejilion-panel-meta-$version.tar.gz\` 仅含部署脚本、文档和许可等元数据，不是可构建源码包。"
+  echo "- Agent、轻量节点和元数据归档须使用附件 \`SHA256SUMS\` 校验后再使用。"
   echo "- Release 流水线已经执行测试、漏洞扫描、双架构构建、镜像运行契约及摘要一致性检查。"
   echo
   echo "完整版本记录：[CHANGELOG.md](https://github.com/kejilion/KPanel/blob/v$version/CHANGELOG.md)"
