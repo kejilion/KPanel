@@ -42,6 +42,7 @@ import ClusterNotificationsDialog from '@/components/cluster/ClusterNotification
 import ClusterTemporarySortMenu from '@/components/cluster/ClusterTemporarySortMenu.vue'
 import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
 import ClusterHostDetails from '@/components/cluster/ClusterHostDetails.vue'
+import ClusterRemainingValue from '@/components/cluster/ClusterRemainingValue.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -1339,11 +1340,12 @@ onBeforeUnmount(() => {
     />
 
     <section class="cluster-hero" aria-label="集群概况与操作">
-      <div class="cluster-stats">
+      <div class="cluster-stats" :class="{ 'has-value': inventory?.items.length }">
         <div><strong>{{ inventory?.total || 0 }}</strong><span>全部节点</span></div>
         <div><strong>{{ onlineCount }}</strong><span>在线</span></div>
         <div><strong>{{ attentionCount }}</strong><span>需关注</span></div>
         <div><strong>{{ inventory?.maxHosts || 100 }}</strong><span>远程上限</span></div>
+        <ClusterRemainingValue v-if="inventory?.items.length" :hosts="inventory.items" :details="inventory.hostDetails || {}" @manage="openManage" />
       </div>
       <div class="cluster-hero__actions">
         <button
@@ -2365,6 +2367,8 @@ onBeforeUnmount(() => {
   border-left: 1px solid var(--border);
 }
 
+.cluster-stats.has-value { grid-template-columns: repeat(4, minmax(80px, 112px)) minmax(140px, 180px); }
+
 .cluster-stats div:first-child {
   border-left: 0;
 }
@@ -3360,6 +3364,9 @@ onBeforeUnmount(() => {
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cluster-stats.has-value { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cluster-stats .cluster-value { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }
 
   .cluster-stats div:nth-child(3) {
     border-top: 1px solid var(--border);
