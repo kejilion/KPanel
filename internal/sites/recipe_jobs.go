@@ -28,12 +28,11 @@ import (
 )
 
 const (
-	maxRecipeJobBytes        = 128 << 10
-	maxRecipeTerminalInput   = 16 << 10
-	maxRecipeTerminalChunk   = 64 << 10
-	maxRecipeTerminalLogSize = 8 << 20
-	recipeJobLaunchGrace     = 5 * time.Second
-	recipeJobUnitPrefix      = "kpanel-site-"
+	maxRecipeJobBytes      = 128 << 10
+	maxRecipeTerminalInput = 16 << 10
+	maxRecipeTerminalChunk = 64 << 10
+	recipeJobLaunchGrace   = 5 * time.Second
+	recipeJobUnitPrefix    = "kpanel-site-"
 )
 
 var (
@@ -938,6 +937,8 @@ type SiteTerminalChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	InputOpen  bool   `json:"inputOpen"`
 	Finished   bool   `json:"finished"`
+	// Truncated reports that older output rotated out of the bounded log.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func (m *Manager) InstallationTerminal(id string, offset int64) (SiteTerminalChunk, error) {
@@ -949,39 +950,25 @@ func (m *Manager) InstallationTerminal(id string, offset int64) (SiteTerminalChu
 		return SiteTerminalChunk{}, ErrConflict
 	}
 	path := m.recipeJobs.logPath(id)
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return SiteTerminalChunk{
-			InputOpen: job.InputOpen,
-			Finished:  job.Status == "succeeded" || job.Status == "failed",
-		}, nil
-	}
+	read, err := hostpty.ReadOutputLog(path, offset, maxRecipeTerminalChunk)
 	if err != nil {
 		return SiteTerminalChunk{}, err
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return SiteTerminalChunk{}, err
-	}
-	if offset > info.Size() {
-		offset = 0
-	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return SiteTerminalChunk{}, err
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxRecipeTerminalChunk))
-	if err != nil {
-		return SiteTerminalChunk{}, err
-	}
-	nextOffset := offset + int64(len(data))
-	return SiteTerminalChunk{
-		DataBase64: base64.StdEncoding.EncodeToString(data),
-		NextOffset: nextOffset,
+	chunk := SiteTerminalChunk{
+		DataBase64: base64.StdEncoding.EncodeToString(read.Data),
+		NextOffset: read.NextOffset,
 		InputOpen:  job.InputOpen,
-		Finished: (job.Status == "succeeded" || job.Status == "failed") &&
-			nextOffset >= info.Size(),
-	}, nil
+		Truncated:  read.Truncated,
+	}
+	if job.Status == "succeeded" || job.Status == "failed" {
+		// The log is complete once the job ends; finish only after draining it.
+		end, err := hostpty.OutputLogEnd(path)
+		if err != nil {
+			return SiteTerminalChunk{}, err
+		}
+		chunk.Finished = read.NextOffset >= end
+	}
+	return chunk, nil
 }
 
 func (m *Manager) WriteInstallationInput(id, value string) error {
@@ -1178,11 +1165,7 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 		return
 	}
 	defer input.Close()
-	logFile, err := os.OpenFile(
-		m.recipeJobs.logPath(id),
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
+	logFile, err := hostpty.CreateOutputLog(m.recipeJobs.logPath(id), hostpty.DefaultOutputLogBytes)
 	if err != nil {
 		m.failRecipeJob(job, "terminal_unavailable", err)
 		return
@@ -1211,7 +1194,6 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 	if readErr != nil && !hostpty.IsEnd(readErr) {
 		_ = terminal.Kill()
 	}
-	_ = logFile.Sync()
 	_ = logFile.Close()
 	waitErr := terminal.Wait()
 	_ = input.Close()
@@ -1255,27 +1237,17 @@ func (m *Manager) runRecipeJob(ctx context.Context, id string, invocation script
 
 func (m *Manager) copyRecipeTerminalOutput(
 	job *RecipeJob,
-	logFile *os.File,
+	logFile io.Writer,
 	terminal hostpty.Process,
 ) error {
 	buffer := make([]byte, 4096)
 	pending := ""
-	written := int64(0)
 	outputLines := 0
 	for {
 		count, err := terminal.Read(buffer)
 		if count > 0 {
-			chunk := buffer[:count]
-			if written < maxRecipeTerminalLogSize {
-				remaining := int64(maxRecipeTerminalLogSize) - written
-				if int64(len(chunk)) > remaining {
-					chunk = chunk[:remaining]
-				}
-				size, writeErr := logFile.Write(chunk)
-				written += int64(size)
-				if writeErr != nil {
-					return writeErr
-				}
+			if _, writeErr := logFile.Write(buffer[:count]); writeErr != nil {
+				return writeErr
 			}
 			pending += stripSiteTerminalControls(string(buffer[:count]))
 			lines := strings.FieldsFunc(pending, func(value rune) bool {
@@ -1637,7 +1609,7 @@ func (registry *recipeJobRegistry) pruneLocked() {
 		}
 		delete(registry.jobs, job.ID)
 		_ = os.Remove(registry.path(job.ID))
-		_ = os.Remove(registry.logPath(job.ID))
+		_ = hostpty.RemoveOutputLog(registry.logPath(job.ID))
 		_ = hostpty.RemoveInput(registry.inputPath(job.ID))
 		cleanupCustomCertificateFiles(registry.stateDir, job.ID)
 	}

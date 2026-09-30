@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/hostpty"
 )
 
 const (
@@ -122,7 +124,7 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 		close(inputDone)
 	}()
 
-	logFile, err := newTerminalLogWriter(registry, id)
+	logFile, err := hostpty.CreateOutputLog(registry.logPath(id), hostpty.DefaultOutputLogBytes)
 	if err != nil {
 		_ = terminal.Kill()
 		return registry.fail(record, "log_unavailable", err)
@@ -326,23 +328,24 @@ func (s *Service) AppJobTerminal(id string, offset int64) (TerminalChunk, error)
 	if err != nil || !record.Interactive {
 		return TerminalChunk{}, ErrNotFound
 	}
-	data, nextOffset, truncated, err := s.jobs.readTerminalLog(id, offset)
+	path := s.jobs.logPath(id)
+	read, err := hostpty.ReadOutputLog(path, offset, maxTerminalChunkBytes)
 	if err != nil {
 		return TerminalChunk{}, err
 	}
 	chunk := TerminalChunk{
-		DataBase64: base64.StdEncoding.EncodeToString(data),
-		NextOffset: nextOffset,
+		DataBase64: base64.StdEncoding.EncodeToString(read.Data),
+		NextOffset: read.NextOffset,
 		InputOpen:  record.InputOpen,
-		Truncated:  truncated,
+		Truncated:  read.Truncated,
 	}
 	if record.Status == "succeeded" || record.Status == "failed" || record.Status == "cancelled" {
 		// The log is complete once the job ends; finish only after draining it.
-		end, err := s.jobs.terminalLogEnd(id)
+		end, err := hostpty.OutputLogEnd(path)
 		if err != nil {
 			return TerminalChunk{}, err
 		}
-		chunk.Finished = nextOffset >= end
+		chunk.Finished = read.NextOffset >= end
 	}
 	return chunk, nil
 }

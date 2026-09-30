@@ -107,7 +107,8 @@ func (s *Server) webEnvironmentJob(w http.ResponseWriter, r *http.Request, reque
 				return s.webEnvironment.Terminal(parts[0], query.Offset)
 			},
 			func(chunk webenv.TerminalChunk) bool {
-				return chunk.DataBase64 != "" || chunk.Finished ||
+				// A moved offset (rotated or restarted log) is news even without data.
+				return chunk.DataBase64 != "" || chunk.Finished || chunk.NextOffset != query.Offset ||
 					(query.HasInputState && chunk.InputOpen != query.InputOpen)
 			},
 		)

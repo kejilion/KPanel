@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/hostpty"
 	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
@@ -1165,7 +1166,7 @@ func (registry *appJobRegistry) logTailBytes(id string) ([]byte, error) {
 	file, err := os.Open(registry.logPath(id))
 	if errors.Is(err, os.ErrNotExist) {
 		// Segment 0 of a long interactive log may already be rotated away.
-		return registry.terminalLogTail(id, maxAppJobLog)
+		return hostpty.OutputLogTail(registry.logPath(id), maxAppJobLog)
 	}
 	if err != nil {
 		return nil, err
@@ -1178,9 +1179,9 @@ func (registry *appJobRegistry) logTailBytes(id string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("application job log is not a regular file")
 	}
-	if info.Size() >= terminalLogSegmentBytes {
+	if info.Size() >= hostpty.OutputSegmentBytes {
 		// Only interactive logs grow this far; they continue in segments.
-		return registry.terminalLogTail(id, maxAppJobLog)
+		return hostpty.OutputLogTail(registry.logPath(id), maxAppJobLog)
 	}
 	if info.Size() > maxAppJobLog {
 		if _, err := file.Seek(info.Size()-maxAppJobLog, io.SeekStart); err != nil {
@@ -1215,8 +1216,7 @@ func (registry *appJobRegistry) pruneLocked() {
 	for _, record := range terminal[:removeCount] {
 		delete(registry.jobs, record.ID)
 		_ = os.Remove(registry.statePath(record.ID))
-		_ = os.Remove(registry.logPath(record.ID))
-		registry.removeTerminalSegments(record.ID)
+		_ = hostpty.RemoveOutputLog(registry.logPath(record.ID))
 		_ = removeTerminalInput(registry.inputPath(record.ID))
 		_ = os.Remove(registry.cancelPath(record.ID))
 		_ = removeTerminalResize(registry.resizePath(record.ID))

@@ -3,11 +3,14 @@ package appmarket
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/hostpty"
 )
 
 func newTerminalLogTestService(t *testing.T, id, status string) (*Service, *appJobRegistry) {
@@ -34,36 +37,24 @@ func newTerminalLogTestService(t *testing.T, id, status string) (*Service, *appJ
 	return &Service{jobs: registry}, registry
 }
 
-// patternedOutput makes every byte depend on its absolute offset, so a chunk
-// read from the wrong segment or position is detected.
-func patternedOutput(start, length int64) []byte {
-	data := make([]byte, length)
-	for index := range data {
-		data[index] = byte((start + int64(index)) % 251)
-	}
-	return data
-}
-
-func writeTerminalLog(t *testing.T, registry *appJobRegistry, id string, total int64) {
+func writeRollingTaskLog(t *testing.T, path string, total int64) []byte {
 	t.Helper()
-	writer, err := newTerminalLogWriter(registry, id)
+	log, err := hostpty.CreateOutputLog(path, hostpty.DefaultOutputLogBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Uneven writes cross segment boundaries mid-write.
-	for written := int64(0); written < total; {
-		size := min(int64(300_001), total-written)
-		if count, err := writer.Write(patternedOutput(written, size)); err != nil || int64(count) != size {
-			t.Fatalf("write = %d, %v", count, err)
-		}
-		written += size
-	}
-	if err := writer.Close(); err != nil {
+	line := []byte("0123456789 abcdefghij ABCDEFGHIJ\n")
+	all := bytes.Repeat(line, int(total)/len(line)+1)[:total]
+	if _, err := log.Write(all); err != nil {
 		t.Fatal(err)
 	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return all
 }
 
-func readTerminalChunk(t *testing.T, service *Service, id string, offset int64) (TerminalChunk, []byte) {
+func readAppTerminalChunk(t *testing.T, service *Service, id string, offset int64) (TerminalChunk, []byte) {
 	t.Helper()
 	chunk, err := service.AppJobTerminal(id, offset)
 	if err != nil {
@@ -76,122 +67,58 @@ func readTerminalChunk(t *testing.T, service *Service, id string, offset int64) 
 	return chunk, data
 }
 
-func TestTerminalLogKeepsStreamingPastTheOldCapWithBoundedDisk(t *testing.T) {
+func TestAppJobTerminalStreamsARotatedLogAndReportsSkippedOutput(t *testing.T) {
 	const id = "0123456789abcdef0123456789abcdef"
-	service, registry := newTerminalLogTestService(t, id, "running")
-	total := int64(terminalLogSegmentBytes*terminalLogSegments*2 + 12345)
-	writeTerminalLog(t, registry, id, total)
+	service, registry := newTerminalLogTestService(t, id, "succeeded")
+	total := int64(hostpty.DefaultOutputLogBytes*2 + 12345)
+	all := writeRollingTaskLog(t, registry.logPath(id), total)
 
-	segments, err := registry.terminalSegments(id)
-	if err != nil {
-		t.Fatal(err)
+	chunk, data := readAppTerminalChunk(t, service, id, 0)
+	oldest := total/hostpty.OutputSegmentBytes*hostpty.OutputSegmentBytes - hostpty.DefaultOutputLogBytes + hostpty.OutputSegmentBytes
+	if !chunk.Truncated || chunk.Finished || chunk.NextOffset != oldest+int64(len(data)) || !bytes.Equal(data, all[oldest:chunk.NextOffset]) {
+		t.Fatalf("catch-up chunk = next %d truncated %v finished %v, want data from %d", chunk.NextOffset, chunk.Truncated, chunk.Finished, oldest)
 	}
-	if len(segments) != terminalLogSegments || segments[0] != total/terminalLogSegmentBytes-terminalLogSegments+1 {
-		t.Fatalf("retained segments = %v", segments)
-	}
-	onDisk := int64(0)
-	for _, index := range segments {
-		info, err := os.Stat(registry.terminalSegmentPath(id, index))
-		if err != nil {
-			t.Fatal(err)
-		}
-		onDisk += info.Size()
-	}
-	if onDisk > terminalLogSegmentBytes*terminalLogSegments {
-		t.Fatalf("retained %d bytes, above the %d byte budget", onDisk, terminalLogSegmentBytes*terminalLogSegments)
-	}
-
-	// A reader that fell behind skips to the oldest retained byte and says so.
-	chunk, data := readTerminalChunk(t, service, id, 0)
-	oldest := segments[0] * terminalLogSegmentBytes
-	if !chunk.Truncated || chunk.NextOffset != oldest+int64(len(data)) || !bytes.Equal(data, patternedOutput(oldest, int64(len(data)))) {
-		t.Fatalf("catch-up chunk = next %d truncated %v, want data from %d", chunk.NextOffset, chunk.Truncated, oldest)
-	}
-
-	// A reader that keeps up crosses segment boundaries with exact bytes.
-	offset := oldest
-	for offset < total {
-		chunk, data = readTerminalChunk(t, service, id, offset)
-		if chunk.Truncated || chunk.Finished || !bytes.Equal(data, patternedOutput(offset, int64(len(data)))) {
-			t.Fatalf("chunk at %d: truncated %v finished %v, %d bytes", offset, chunk.Truncated, chunk.Finished, len(data))
-		}
-		if len(data) == 0 {
-			t.Fatalf("no progress at offset %d of %d", offset, total)
+	offset := chunk.NextOffset
+	for !chunk.Finished {
+		chunk, data = readAppTerminalChunk(t, service, id, offset)
+		if chunk.Truncated || !bytes.Equal(data, all[offset:chunk.NextOffset]) || (len(data) == 0 && !chunk.Finished) {
+			t.Fatalf("chunk at %d: next %d truncated %v finished %v", offset, chunk.NextOffset, chunk.Truncated, chunk.Finished)
 		}
 		offset = chunk.NextOffset
 	}
-	chunk, data = readTerminalChunk(t, service, id, total)
-	if len(data) != 0 || chunk.NextOffset != total || chunk.Truncated {
-		t.Fatalf("end of log chunk = %#v", chunk)
+	if offset != total {
+		t.Fatalf("finished at %d, want %d", offset, total)
 	}
 
 	tail := registry.logTail(id, 1)
-	if len(tail) != 1 || !strings.HasSuffix(string(patternedOutput(0, total)), tail[0]) {
-		t.Fatalf("log tail does not come from the latest segment")
+	if len(tail) != 1 || !strings.HasSuffix(strings.TrimRight(string(all), "\n"), tail[0]) {
+		t.Fatalf("log tail %q does not come from the latest segment", tail)
 	}
 }
 
-func TestTerminalLogTreatsAFullSegmentEndAsTheEndOfTheLog(t *testing.T) {
-	const id = "abcdef0123456789abcdef0123456789"
-	service, registry := newTerminalLogTestService(t, id, "running")
-	writeTerminalLog(t, registry, id, terminalLogSegmentBytes)
-	chunk, data := readTerminalChunk(t, service, id, terminalLogSegmentBytes)
-	if len(data) != 0 || chunk.NextOffset != terminalLogSegmentBytes || chunk.Truncated {
-		t.Fatalf("boundary chunk = %#v, want an empty read at the end", chunk)
-	}
-}
-
-func TestTerminalLogReadsALegacySingleFileLogPastOneSegment(t *testing.T) {
-	const id = "00112233445566778899aabbccddeeff"
-	service, registry := newTerminalLogTestService(t, id, "succeeded")
-	// The previous Agent wrote one file of up to 8 MiB for every job.
-	total := int64(terminalLogSegmentBytes*2 + 777)
-	legacy := append(patternedOutput(0, total-1), '\n')
-	if err := os.WriteFile(registry.logPath(id), legacy, 0o600); err != nil {
+func TestPrunedAppJobsRemoveEveryLogSegment(t *testing.T) {
+	const id = "fedcba9876543210fedcba9876543210"
+	_, registry := newTerminalLogTestService(t, id, "succeeded")
+	writeRollingTaskLog(t, registry.logPath(id), hostpty.OutputSegmentBytes*3)
+	record, err := registry.read(id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	offset := int64(terminalLogSegmentBytes - 1000)
-	for {
-		chunk, data := readTerminalChunk(t, service, id, offset)
-		if chunk.Truncated || chunk.NextOffset < offset || !bytes.Equal(data, legacy[offset:chunk.NextOffset]) {
-			t.Fatalf("legacy chunk at %d: next %d truncated %v", offset, chunk.NextOffset, chunk.Truncated)
-		}
-		offset = chunk.NextOffset
-		if chunk.Finished {
-			break
-		}
-		if len(data) == 0 {
-			t.Fatalf("legacy log stalled at %d of %d", offset, total)
-		}
+	record.CreatedAt = time.Unix(1, 0).UTC()
+	registry.jobs[id] = record
+	// One more finished job than the retention limit makes the oldest one expire.
+	for index := range 100 {
+		other := record
+		other.ID = fmt.Sprintf("%032d", index)
+		other.CreatedAt = time.Unix(int64(100+index), 0).UTC()
+		registry.jobs[other.ID] = other
 	}
-	if offset != total {
-		t.Fatalf("legacy log finished at %d, want %d", offset, total)
+	registry.pruneLocked()
+	matches, err := filepath.Glob(registry.logPath(id) + "*")
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("log files left after pruning: %v %v", matches, err)
 	}
-	tail, err := registry.logTailBytes(id)
-	if err != nil || !bytes.Equal(tail, legacy[total-maxAppJobLog:]) {
-		t.Fatalf("legacy log tail = %d bytes, %v", len(tail), err)
-	}
-}
-
-func TestFinishedTerminalLogFinishesOnlyAfterTheLastSegment(t *testing.T) {
-	const id = "fedcba9876543210fedcba9876543210"
-	service, registry := newTerminalLogTestService(t, id, "succeeded")
-	total := int64(terminalLogSegmentBytes + 100)
-	writeTerminalLog(t, registry, id, total)
-	chunk, _ := readTerminalChunk(t, service, id, terminalLogSegmentBytes-10)
-	if chunk.Finished {
-		t.Fatalf("finished before the last segment: %#v", chunk)
-	}
-	chunk, _ = readTerminalChunk(t, service, id, terminalLogSegmentBytes)
-	if !chunk.Finished || chunk.NextOffset != total {
-		t.Fatalf("last chunk = %#v, want finished at %d", chunk, total)
-	}
-
-	registry.removeTerminalSegments(id)
-	if _, err := os.Stat(registry.terminalSegmentPath(id, 1)); !os.IsNotExist(err) {
-		t.Fatalf("rotated segment survived cleanup: %v", err)
-	}
-	if _, err := os.Stat(registry.logPath(id)); err != nil {
-		t.Fatalf("cleanup of rotated segments removed the primary log: %v", err)
+	if _, err := os.Stat(registry.stateDir); err != nil {
+		t.Fatal(err)
 	}
 }

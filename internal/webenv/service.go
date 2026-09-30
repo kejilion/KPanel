@@ -41,7 +41,10 @@ const (
 	maxTerminalChunk = 64 << 10
 	maxProgressBytes = 256 << 10
 	maxTerminalInput = 16 << 10
-	maxLogBytes      = 32 << 20
+	// Environment builds compile from source, so they retain more history.
+	maxLogBytes = 32 << 20
+	// maxRetainedJobs bounds finished job records and their logs.
+	maxRetainedJobs = 50
 )
 
 type Component struct {
@@ -151,6 +154,8 @@ type TerminalChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	InputOpen  bool   `json:"inputOpen"`
 	Finished   bool   `json:"finished"`
+	// Truncated reports that older output rotated out of the bounded log.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 type Service struct {
@@ -363,6 +368,7 @@ func (s *Service) Start(ctx context.Context, input ActionRequest) (Job, error) {
 	if err := s.writeJob(job); err != nil {
 		return Job{}, err
 	}
+	s.pruneJobsLocked()
 	if err := s.writeArguments(id, args); err != nil {
 		_ = os.Remove(s.jobPath(id))
 		return Job{}, err
@@ -563,7 +569,7 @@ func (s *Service) refreshLocked(job Job) Job {
 }
 
 func (s *Service) refreshProgressLocked(job Job) Job {
-	data, err := readTail(s.logPath(job.ID), maxProgressBytes)
+	data, err := hostpty.OutputLogTail(s.logPath(job.ID), maxProgressBytes)
 	if err != nil {
 		return job
 	}
@@ -585,26 +591,6 @@ func (s *Service) refreshProgressLocked(job Job) Job {
 	}
 	_ = s.writeJob(job)
 	return job
-}
-
-func readTail(path string, limit int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	offset := info.Size() - limit
-	if offset < 0 {
-		offset = 0
-	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
-	}
-	return io.ReadAll(io.LimitReader(file, limit))
 }
 
 func (s *Service) environmentUnitActive(id string) (bool, error) {
@@ -655,31 +641,22 @@ func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
 	if offset < 0 {
 		return TerminalChunk{}, ErrInvalid
 	}
-	file, err := os.Open(s.logPath(id))
-	if errors.Is(err, os.ErrNotExist) {
-		return TerminalChunk{
-			NextOffset: offset,
-			InputOpen:  s.inputAvailable(id) && !jobFinished(job.Status),
-			Finished:   jobFinished(job.Status),
-		}, nil
-	}
+	path := s.logPath(id)
+	read, err := hostpty.ReadOutputLog(path, offset, maxTerminalChunk)
 	if err != nil {
 		return TerminalChunk{}, err
 	}
-	defer file.Close()
-	info, _ := file.Stat()
-	if offset > info.Size() {
-		offset = 0
+	chunk := TerminalChunk{DataBase64: base64.StdEncoding.EncodeToString(read.Data), NextOffset: read.NextOffset,
+		InputOpen: s.inputAvailable(id) && !jobFinished(job.Status), Truncated: read.Truncated}
+	if jobFinished(job.Status) {
+		// The log is complete once the job ends; finish only after draining it.
+		end, err := hostpty.OutputLogEnd(path)
+		if err != nil {
+			return TerminalChunk{}, err
+		}
+		chunk.Finished = read.NextOffset >= end
 	}
-	_, _ = file.Seek(offset, io.SeekStart)
-	data, err := io.ReadAll(io.LimitReader(file, maxTerminalChunk))
-	if err != nil {
-		return TerminalChunk{}, err
-	}
-	next := offset + int64(len(data))
-	return TerminalChunk{DataBase64: base64.StdEncoding.EncodeToString(data), NextOffset: next,
-		InputOpen: s.inputAvailable(id) && !jobFinished(job.Status),
-		Finished:  jobFinished(job.Status) && next >= info.Size()}, nil
+	return chunk, nil
 }
 
 func (s *Service) WriteInput(id, value string) error {
@@ -816,6 +793,29 @@ func (s *Service) jobsLocked() []Job {
 	return result
 }
 
+// pruneJobsLocked keeps every active job and the newest finished ones, so
+// job records and their logs cannot accumulate without bound.
+func (s *Service) pruneJobsLocked() {
+	finished := []Job{}
+	for _, job := range s.jobsLocked() {
+		if jobFinished(job.Status) {
+			finished = append(finished, job)
+		}
+	}
+	if len(finished) <= maxRetainedJobs {
+		return
+	}
+	sort.Slice(finished, func(i, j int) bool { return finished[i].CreatedAt.After(finished[j].CreatedAt) })
+	for _, job := range finished[maxRetainedJobs:] {
+		_ = hostpty.RemoveOutputLog(s.logPath(job.ID))
+		_ = hostpty.RemoveInput(s.inputPath(job.ID))
+		_ = os.Remove(s.receiptPath(job.ID))
+		_ = os.Remove(s.secretPath(job.ID))
+		_ = os.Remove(s.argumentsPath(job.ID))
+		_ = os.Remove(s.jobPath(job.ID))
+	}
+}
+
 func (s *Service) writeJob(job Job) error {
 	data, err := json.Marshal(job)
 	if err != nil || len(data) > maxJobBytes {
@@ -891,7 +891,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 	if err != nil || !storedArgumentsAllowed(job.Action, args) {
 		return errors.New("environment job arguments are invalid")
 	}
-	logFile, err := os.OpenFile(service.logPath(id), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	logFile, err := hostpty.CreateOutputLog(service.logPath(id), maxLogBytes)
 	if err != nil {
 		return err
 	}
@@ -924,8 +924,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 		_, _ = io.Copy(terminal, input)
 		close(inputDone)
 	}()
-	writer := &environmentLogWriter{target: logFile, remaining: maxLogBytes}
-	_, readErr := io.Copy(writer, terminal)
+	_, readErr := io.Copy(logFile, terminal)
 	if readErr != nil && !hostpty.IsEnd(readErr) {
 		_ = terminal.Kill()
 	}
@@ -973,27 +972,6 @@ func storedArgumentsAllowed(action string, args []string) bool {
 	default:
 		return false
 	}
-}
-
-type environmentLogWriter struct {
-	target    io.Writer
-	remaining int
-}
-
-func (writer *environmentLogWriter) Write(data []byte) (int, error) {
-	original := len(data)
-	if writer.remaining <= 0 {
-		return original, nil
-	}
-	chunk := data
-	if len(chunk) > writer.remaining {
-		chunk = chunk[:writer.remaining]
-	}
-	if _, err := writer.target.Write(chunk); err != nil {
-		return 0, err
-	}
-	writer.remaining -= len(chunk)
-	return original, nil
 }
 
 func trustedScript() (string, error) {
