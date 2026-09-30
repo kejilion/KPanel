@@ -24,7 +24,7 @@ vi.mock('@/lib/desktopWallpapers', () => ({ useDesktopWallpaper: () => ({ id: mo
 vi.mock('@/stores/toast', () => ({ useToast: () => ({ danger: mocks.danger }) }))
 vi.mock('@/i18n', () => ({ t: (key: string) => key }))
 
-import { startAppearanceSync, stopAppearanceSync } from './appearanceSync'
+import { appearanceReady, startAppearanceSync, stopAppearanceSync } from './appearanceSync'
 
 const remote = {
   configured: true, resourceVersion: 'sha256:remote', theme: 'dark' as const, colors: null,
@@ -44,6 +44,43 @@ describe('shared appearance preference', () => {
     mocks.classicLevel.value = 'off'
   })
   afterEach(() => stopAppearanceSync())
+
+  it('holds the first wallpaper until a fresh browser receives the server choice', async () => {
+    let resolve!: (value: typeof remote) => void
+    mocks.appearance.mockReturnValue(new Promise((done) => { resolve = done }))
+    const sync = startAppearanceSync()
+    expect(appearanceReady.value).toBe(false)
+    expect(mocks.applyWallpaper).not.toHaveBeenCalled()
+    resolve(remote)
+    await sync
+    expect(mocks.applyWallpaper).toHaveBeenCalledWith('orbit')
+    expect(appearanceReady.value).toBe(true)
+  })
+
+  it('releases the local fallback on failure without leaving the wallpaper hidden', async () => {
+    mocks.appearance.mockRejectedValue(new Error('offline'))
+    await startAppearanceSync()
+    expect(appearanceReady.value).toBe(true)
+    expect(mocks.applyWallpaper).not.toHaveBeenCalled()
+    expect(mocks.danger).toHaveBeenCalledWith('desktop.appearanceLoadFailed', 'desktop.appearanceLoadFallback')
+  })
+
+  it('does not reveal a new session when an old appearance request finishes after logout', async () => {
+    let resolveOld!: (value: typeof remote) => void
+    let resolveNew!: (value: typeof remote) => void
+    mocks.appearance.mockReturnValueOnce(new Promise((done) => { resolveOld = done }))
+      .mockReturnValueOnce(new Promise((done) => { resolveNew = done }))
+    const old = startAppearanceSync()
+    stopAppearanceSync()
+    const current = startAppearanceSync()
+    resolveOld(remote)
+    await old
+    expect(appearanceReady.value).toBe(false)
+    expect(mocks.applyWallpaper).not.toHaveBeenCalled()
+    resolveNew(remote)
+    await current
+    expect(appearanceReady.value).toBe(true)
+  })
 
   it('applies the saved server choice in a fresh browser and writes later changes', async () => {
     mocks.appearance.mockResolvedValue({ ...remote })

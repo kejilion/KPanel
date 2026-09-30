@@ -6,6 +6,7 @@ import DesktopView from '@/components/desktop/DesktopView.vue'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
+vi.mock('@/lib/appearanceSync', () => ({ appearanceReady: true }))
 
 function setupViewport(width: number, height: number): void {
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })

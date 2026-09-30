@@ -1,4 +1,5 @@
 import { ApiError, api } from '@/lib/api'
+import { readonly, ref } from 'vue'
 import { useClassicWallpaper } from '@/lib/classicWallpaper'
 import { applySyncedWallpaper, isDesktopWallpaperID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { useTheme } from '@/stores/theme'
@@ -18,6 +19,9 @@ let active = false
 let applying = false
 let saving = false
 let generation = 0
+const ready = ref(false)
+/** Wallpaper surfaces wait for the authenticated choice, including a failed-load fallback. */
+export const appearanceReady = readonly(ready)
 
 function localValue(): AppearanceValue {
   return {
@@ -97,6 +101,7 @@ async function save(): Promise<void> {
 export async function startAppearanceSync(): Promise<void> {
   if (active) return
   active = true
+  ready.value = false
   const run = ++generation
   window.addEventListener('kpanel:appearance-changed', changed)
   const initial = localValue()
@@ -119,11 +124,14 @@ export async function startAppearanceSync(): Promise<void> {
     void save()
   } catch {
     if (active && run === generation) toast.danger(t('desktop.appearanceLoadFailed'), t('desktop.appearanceLoadFallback'))
+  } finally {
+    if (active && run === generation) ready.value = true
   }
 }
 
 export function stopAppearanceSync(): void {
   active = false
+  ready.value = false
   generation++
   window.removeEventListener('kpanel:appearance-changed', changed)
   server = undefined

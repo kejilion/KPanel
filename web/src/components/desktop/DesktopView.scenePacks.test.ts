@@ -10,6 +10,9 @@ import type { ScenePack, ScenePackSource } from '@/lib/scenePacks'
 import { resetDesktopModeForTest } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 
+// These fixtures exercise an authenticated desktop after its appearance has loaded.
+vi.mock('@/lib/appearanceSync', () => ({ appearanceReady: true }))
+
 const available: ScenePack = {
   resourceVersion: `sha256:${'a'.repeat(64)}`,
   id: 'orbital-station',

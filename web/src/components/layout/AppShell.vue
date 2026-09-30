@@ -51,9 +51,9 @@ import {
 } from '@/lib/navigation'
 import { readSidebarCollapsed, writeSidebarCollapsed } from '@/lib/sidebarPreference'
 import { useClassicWallpaper } from '@/lib/classicWallpaper'
-import { customWallpaperFromID, useDesktopWallpaper } from '@/lib/desktopWallpapers'
+import { customWallpaperFromID, desktopWallpaperImage, useDesktopWallpaper } from '@/lib/desktopWallpapers'
 import { scenePackFromWallpaper } from '@/lib/scenePacks'
-import { startAppearanceSync, stopAppearanceSync } from '@/lib/appearanceSync'
+import { appearanceReady, startAppearanceSync, stopAppearanceSync } from '@/lib/appearanceSync'
 import DesktopWallpaper from '@/components/desktop/DesktopWallpaper.vue'
 import {
   detectKPanelUpdate,
@@ -112,12 +112,14 @@ const DesktopLoadingView = defineComponent({
         role: 'status',
         'aria-label': i18n.t('common.loading'),
       },
-      [h('div', { class: 'desktop__wallpaper', 'aria-hidden': 'true' }, [
-        h('div', { class: 'desktop__wallpaper-image' }),
+      appearanceReady.value ? [h('div', { class: 'desktop__wallpaper', 'aria-hidden': 'true' }, [
+        h('div', { class: 'desktop__wallpaper-image', style: {
+          backgroundImage: `url("${desktopWallpaperImage(wallpaperChoice.id.value).src}")`,
+        } }),
         h('div', { class: 'desktop__wallpaper-veil' }),
         h('div', { class: 'desktop__aurora desktop__aurora--one' }),
         h('div', { class: 'desktop__aurora desktop__aurora--two' }),
-      ])],
+      ])] : [],
     )
   },
 })
