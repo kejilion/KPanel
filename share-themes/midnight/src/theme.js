@@ -135,7 +135,7 @@ function render() {
 
   $('filters').replaceChildren(...[['all', labels.all], ['online', labels.online], ['degraded', labels.attention], ['offline', labels.offline]]
     .map(([key, text], index) => keyButton(`${index + 1} ${text}`, filter === key, () => { filter = key; render() }, `f-${key}`)))
-  $('filters').setAttribute('aria-label', labels.view)
+  $('filters').setAttribute('aria-label', labels.filter)
   $('views').replaceChildren(keyButton(labels.list, view === 'list', () => { view = 'list'; store('midnight-view', view); render() }, 'v-list'),
     keyButton(labels.card, view === 'card', () => { view = 'card'; store('midnight-view', view); render() }, 'v-card'))
   $('views').setAttribute('aria-label', labels.view)

@@ -8,7 +8,7 @@
 // 2. Receive snapshots (sent once, then on every refresh, language or light/dark change):
 //      { source: 'kpanel-share', type: 'snapshot', schema: 2,
 //        locale: 'zh-CN' | 'zh-TW' | 'en-US', mode: 'light' | 'dark',
-//        labels: { fleet, total, online, attention, offline, cpu, memory, disk, uptime, ... },   // localized vocabulary
+//        labels: { fleet, total, online, attention, offline, cpu, memory, disk, uptime, filter, view, ... },   // localized vocabulary
 //        data: {
 //          title, description, generatedAt,
 //          counts: { total, online, attention, offline },

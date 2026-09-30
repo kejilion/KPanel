@@ -50,11 +50,11 @@
         },
         {
           "path": "theme.js",
-          "size": 11778,
-          "sha256": "cf01c6785c087efc7f15e47bb97bcbff17a7782da387d82d6c64e19e5a231175"
+          "size": 11780,
+          "sha256": "9971f83ab3b57bebf59d0670423bdb98ac094b947f4cd8130b0980c14e46b729"
         }
       ],
-      "sizeBytes": 23398
+      "sizeBytes": 23400
     },
     {
       "schema": 1,
@@ -105,11 +105,11 @@
         },
         {
           "path": "theme.js",
-          "size": 9716,
-          "sha256": "06d5cf708014e05852f3b786cdcc49eaf619d1f971164c9f652622e25b8c9735"
+          "size": 9718,
+          "sha256": "42e5c4d1a118e65a5de412298a9592a5877a38e841a05894a97fbc1ce46872db"
         }
       ],
-      "sizeBytes": 23553
+      "sizeBytes": 23555
     },
     {
       "schema": 1,
@@ -165,11 +165,11 @@
         },
         {
           "path": "theme.js",
-          "size": 12977,
-          "sha256": "0a415e1174398836ffe44d9dc9773bc310d59fafb32e9dad2e3f1bcb2b1674f5"
+          "size": 12979,
+          "sha256": "513599534fc304afc08cbc85a95564d7194aeab93ce05294cfacee5c5d03b362"
         }
       ],
-      "sizeBytes": 53403
+      "sizeBytes": 53405
     }
   ]
 }

@@ -125,7 +125,7 @@ function render() {
 
   const segments = [['all', labels.all, data.counts.total], ['online', labels.online, counts.online], ['degraded', labels.attention, counts.degraded], ['offline', labels.offline, counts.offline]]
   $('filters').replaceChildren(...segments.map(([key, text, count]) => toggle(text, filter === key, () => { filter = key; render() }, count)))
-  $('filters').setAttribute('aria-label', labels.view)
+  $('filters').setAttribute('aria-label', labels.filter)
   $('views').replaceChildren(toggle(labels.card, view === 'card', () => setView('card')), toggle(labels.list, view === 'list', () => setView('list')))
   $('views').setAttribute('aria-label', labels.view)
 

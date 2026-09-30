@@ -172,7 +172,7 @@ function render() {
   const chips = [['all', labels.all], ['online', labels.online], ['degraded', labels.attention], ['offline', labels.offline]]
   $('filters').replaceChildren(...chips.map(([key, text]) => button(text, filter === key, () => { filter = key; render() })),
     ...(region ? [button(`${region.replaceAll(',', ' · ')} ✕`, true, () => { region = ''; render() })] : []))
-  $('filters').setAttribute('aria-label', labels.view)
+  $('filters').setAttribute('aria-label', labels.filter)
   $('views').replaceChildren(button(labels.card, view === 'card', () => { view = 'card'; store('orbit-view', view); render() }), button(labels.list, view === 'list', () => { view = 'list'; store('orbit-view', view); render() }))
   $('views').setAttribute('aria-label', labels.view)
 
