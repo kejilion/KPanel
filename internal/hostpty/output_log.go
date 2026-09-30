@@ -271,9 +271,13 @@ func readSegment(path string, offset, limit int64) ([]byte, bool, error) {
 	if position > info.Size() {
 		return nil, false, nil
 	}
-	if _, err := handle.Seek(position, io.SeekStart); err != nil {
-		return nil, false, err
+	// Read exactly what is there in one call: every task terminal poll and
+	// job list tail goes through here, and a growing buffer would allocate
+	// and copy the data several times over.
+	data := make([]byte, min(limit, info.Size()-position))
+	count, err := handle.ReadAt(data, position)
+	if errors.Is(err, io.EOF) {
+		err = nil
 	}
-	data, err := io.ReadAll(io.LimitReader(handle, limit))
-	return data, true, err
+	return data[:count], true, err
 }
