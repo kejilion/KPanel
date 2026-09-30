@@ -10,7 +10,13 @@ type profile struct {
 }
 
 var scenes = profile{"kpanel-scene-pack@1", officialRoot, mirrorRoot, FilePrefix, false}
-var themes = profile{"kpanel-share-theme@1", "https://raw.githubusercontent.com/kejilion/KPanel/main/share-themes/", "https://gh.kejilion.pro/https://raw.githubusercontent.com/kejilion/KPanel/main/share-themes/", "/api/v1/cluster/share-themes/", true}
+var themes = profile{"kpanel-share-theme@2", "https://raw.githubusercontent.com/kejilion/KPanel/main/share-themes/", "https://gh.kejilion.pro/https://raw.githubusercontent.com/kejilion/KPanel/main/share-themes/", "/api/v1/cluster/share-themes/", true}
+
+// Share themes speak protocol 2; protocol 1 packages stay installable because
+// the host keeps answering them with the legacy schema-1 snapshot.
+func (p profile) acceptsRuntime(runtime string) bool {
+	return runtime == p.runtime || (p.themes && runtime == "kpanel-share-theme@1")
+}
 
 func OpenShareThemes(root string, fetch Fetch) *Store { return openProfile(root, fetch, themes) }
 

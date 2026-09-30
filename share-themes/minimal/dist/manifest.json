@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "id": "minimal",
-  "version": "1.0.2",
-  "runtime": "kpanel-share-theme@1",
+  "version": "2.0.0",
+  "runtime": "kpanel-share-theme@2",
   "name": {
     "zh-CN": "简约看板",
-    "en-US": "Minimal fleet",
-    "zh-TW": "简约看板"
+    "zh-TW": "簡約看板",
+    "en-US": "Minimal paper"
   },
   "description": {
-    "zh-CN": "清晰的卡片与轻盈留白",
-    "en-US": "Clean cards and generous spacing"
+    "zh-CN": "衬线大字、细线仪表与留白的杂志版式",
+    "en-US": "An editorial page: serif type, hairline gauges, whitespace"
   },
   "author": {
     "name": "KPanel",
@@ -18,12 +18,13 @@
   },
   "license": "AGPL-3.0-only",
   "tags": [
-    "fleet"
+    "editorial",
+    "light"
   ],
   "theme": {
-    "brand": "#3476aa",
-    "neutral": "#17202c",
-    "signature": "#8ce1bd"
+    "brand": "#1d4ed8",
+    "neutral": "#fbfaf7",
+    "signature": "#14743f"
   },
   "entry": "index.html"
 }

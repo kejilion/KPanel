@@ -56,4 +56,13 @@ describe('isolated public theme', () => {
     expect(wrapper.find('.native').exists()).toBe(true)
     expect(snapshot.theme?.id).toBe('minimal')
   })
+  it('answers a protocol 2 package with the schema 2 snapshot and labels, and legacy packages with schema 1', async () => {
+    const wrapper = render(), frame = wrapper.get('iframe').element as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, origin: 'null', data: { source: 'kpanel-share-theme', type: 'ready', protocol: 2 } }))
+    await wrapper.vm.$nextTick()
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ schema: 2, labels: expect.objectContaining({ online: expect.any(String) }),
+      data: expect.objectContaining({ counts: expect.objectContaining({ total: 0 }) }) }), '*')
+    expect(JSON.stringify(post.mock.calls[0]![0])).not.toContain('secret')
+  })
 })

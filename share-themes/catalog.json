@@ -4,16 +4,16 @@
     {
       "schema": 1,
       "id": "midnight",
-      "version": "1.0.2",
-      "runtime": "kpanel-share-theme@1",
+      "version": "2.0.0",
+      "runtime": "kpanel-share-theme@2",
       "name": {
         "zh-CN": "午夜终端",
-        "en-US": "Midnight fleet",
-        "zh-TW": "午夜终端"
+        "zh-TW": "午夜終端",
+        "en-US": "Midnight console"
       },
       "description": {
-        "zh-CN": "紧凑的技术风格机器清单",
-        "en-US": "A compact technical server list"
+        "zh-CN": "字符条形图与可排序表格的终端控制台",
+        "en-US": "A terminal console with sortable rows and bar glyphs"
       },
       "author": {
         "name": "KPanel",
@@ -21,52 +21,53 @@
       },
       "license": "AGPL-3.0-only",
       "tags": [
-        "fleet"
+        "terminal",
+        "table"
       ],
       "theme": {
-        "brand": "#3476aa",
-        "neutral": "#17202c",
-        "signature": "#8ce1bd"
+        "brand": "#6df0b0",
+        "neutral": "#0b1210",
+        "signature": "#ffd166"
       },
       "entry": "index.html",
       "path": "midnight/dist",
       "files": [
         {
           "path": "index.html",
-          "size": 297,
-          "sha256": "c5c54d2e27a347e89dbb3c0ab0277a5cae57e6dd6041485813bafe85d6df326d"
+          "size": 894,
+          "sha256": "0b5802d6a0581462cc7abd21bc2acb65b985f320db496400556f284a5b14795b"
         },
         {
           "path": "manifest.json",
-          "size": 591,
-          "sha256": "3034a2150c97c151e62881d96a0c41a9498782a9a6cf209f1d0be9e089930aea"
+          "size": 648,
+          "sha256": "13b1e10b2fd1c65959bdcce7e5604a874d05363304d8a084f808ce324e6f1375"
         },
         {
           "path": "theme.css",
-          "size": 4281,
-          "sha256": "43694509994422d0321451c8bd916300b30fe461dd90558043987a1e557047cd"
+          "size": 5845,
+          "sha256": "e44fba6e383ab0ad7caddc6814e5f1c2a7cd3858d05dec848e96f581f48b65a8"
         },
         {
           "path": "theme.js",
-          "size": 7427,
-          "sha256": "489724a64c03b1936a5a5e604324dba3835a40cf001515dbeedfb2c91f52898f"
+          "size": 7126,
+          "sha256": "588d13569b3122f5c3825aeb5ff2f7427a04657c001257aeeaa39554459ad2bc"
         }
       ],
-      "sizeBytes": 12596
+      "sizeBytes": 14513
     },
     {
       "schema": 1,
       "id": "minimal",
-      "version": "1.0.2",
-      "runtime": "kpanel-share-theme@1",
+      "version": "2.0.0",
+      "runtime": "kpanel-share-theme@2",
       "name": {
         "zh-CN": "简约看板",
-        "en-US": "Minimal fleet",
-        "zh-TW": "简约看板"
+        "zh-TW": "簡約看板",
+        "en-US": "Minimal paper"
       },
       "description": {
-        "zh-CN": "清晰的卡片与轻盈留白",
-        "en-US": "Clean cards and generous spacing"
+        "zh-CN": "衬线大字、细线仪表与留白的杂志版式",
+        "en-US": "An editorial page: serif type, hairline gauges, whitespace"
       },
       "author": {
         "name": "KPanel",
@@ -74,38 +75,93 @@
       },
       "license": "AGPL-3.0-only",
       "tags": [
-        "fleet"
+        "editorial",
+        "light"
       ],
       "theme": {
-        "brand": "#3476aa",
-        "neutral": "#17202c",
-        "signature": "#8ce1bd"
+        "brand": "#1d4ed8",
+        "neutral": "#fbfaf7",
+        "signature": "#14743f"
       },
       "entry": "index.html",
       "path": "minimal/dist",
       "files": [
         {
           "path": "index.html",
-          "size": 297,
-          "sha256": "c5c54d2e27a347e89dbb3c0ab0277a5cae57e6dd6041485813bafe85d6df326d"
+          "size": 843,
+          "sha256": "8d441017a105a41d9206f37349e10d4dd305fd292745db262f5e04a703011130"
         },
         {
           "path": "manifest.json",
-          "size": 587,
-          "sha256": "580c44b5ffe5bc5dbd8a3d265ae89bfbf365976fc0d0a6ca284e21117f7c17b5"
+          "size": 651,
+          "sha256": "fb7e9ab9cbfe5a306cf98b5abc5c8312d6c6d5e03c708bb1d23f5104be6addaf"
         },
         {
           "path": "theme.css",
-          "size": 3521,
-          "sha256": "25b003eba19d709b66ec94a984e0ec85ebe48182acecf658d864e3054fe46c03"
+          "size": 5311,
+          "sha256": "6b1162f611328669c4894a1e44854ca0dc31648d1d6bd2c69da92d6b86f3f16b"
         },
         {
           "path": "theme.js",
-          "size": 7427,
-          "sha256": "489724a64c03b1936a5a5e604324dba3835a40cf001515dbeedfb2c91f52898f"
+          "size": 5117,
+          "sha256": "4e25b56c1a3a74936b9ba7746d6b4b696ad19c2edb5742680148cd655685a9b2"
         }
       ],
-      "sizeBytes": 11832
+      "sizeBytes": 11922
+    },
+    {
+      "schema": 1,
+      "id": "signal",
+      "version": "1.0.0",
+      "runtime": "kpanel-share-theme@2",
+      "name": {
+        "zh-CN": "信号墙",
+        "zh-TW": "信號牆",
+        "en-US": "Signal wall"
+      },
+      "description": {
+        "zh-CN": "大屏友好的状态墙，环形仪表一眼可读",
+        "en-US": "A glanceable status wall with ring gauges"
+      },
+      "author": {
+        "name": "KPanel",
+        "url": "https://github.com/kejilion/KPanel"
+      },
+      "license": "AGPL-3.0-only",
+      "tags": [
+        "wallboard",
+        "dashboard"
+      ],
+      "theme": {
+        "brand": "#7aa2ff",
+        "neutral": "#0c1018",
+        "signature": "#35d07f"
+      },
+      "entry": "index.html",
+      "path": "signal/dist",
+      "files": [
+        {
+          "path": "index.html",
+          "size": 749,
+          "sha256": "4b756b8e43ab47bc29626616b12c03e2bcf95b90f7cd43e0c81eff910434e8e5"
+        },
+        {
+          "path": "manifest.json",
+          "size": 629,
+          "sha256": "46a37474a3ce085251118312ef3982e240326cbd83c3fefab15095648f18de91"
+        },
+        {
+          "path": "theme.css",
+          "size": 5081,
+          "sha256": "6412efc99e4267979493d28274fc09b0ab7d7c3e94fbce893fe5cfc277d1193a"
+        },
+        {
+          "path": "theme.js",
+          "size": 4881,
+          "sha256": "aaf16a9037be9f87e61ac908ad4e6b6cc21c144a923543973f305072b1cdff75"
+        }
+      ],
+      "sizeBytes": 11340
     }
   ]
 }

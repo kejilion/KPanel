@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { useTheme } from '@/stores/theme'
-import { shareThemeModel, shareThemeURL } from '@/lib/shareThemes'
+import { shareThemeLabels } from '@/lib/shareThemeLabels'
+import { shareThemeModel, shareThemeModelV2, shareThemeProtocol, shareThemeURL } from '@/lib/shareThemes'
 import type { PublicClusterShareSnapshot } from '@/types/api'
 
 const props = defineProps<{ snapshot?: PublicClusterShareSnapshot; errorMessage?: string }>()
@@ -10,6 +11,7 @@ const { t, locale } = useI18n()
 const { resolved } = useTheme()
 const frame = ref<HTMLIFrameElement>()
 const ready = ref(false)
+let protocol: 1 | 2 = 1
 const fallback = ref(false)
 const failed = ref(false)
 const height = ref(720)
@@ -20,8 +22,11 @@ function clearTimer() { if (timer) clearTimeout(timer); timer = undefined }
 function stop(error = false) { clearTimer(); fallback.value = true; ready.value = false; failed.value = error }
 function send() {
   if (!ready.value || !props.snapshot) return
-  frame.value?.contentWindow?.postMessage({ source: 'kpanel-share', type: 'snapshot', schema: 1,
-    locale: locale.value, mode: resolved.value, data: shareThemeModel(props.snapshot, locale.value, new Date(), t) }, '*')
+  const now = new Date(), target = frame.value?.contentWindow
+  if (protocol === 2) target?.postMessage({ source: 'kpanel-share', type: 'snapshot', schema: 2, locale: locale.value, mode: resolved.value,
+    labels: shareThemeLabels(locale.value), data: shareThemeModelV2(props.snapshot, locale.value, now, t) }, '*')
+  else target?.postMessage({ source: 'kpanel-share', type: 'snapshot', schema: 1,
+    locale: locale.value, mode: resolved.value, data: shareThemeModel(props.snapshot, locale.value, now, t) }, '*')
 }
 function message(event: MessageEvent) {
   if (!frame.value || event.source !== frame.value.contentWindow || event.origin !== 'null') return
@@ -31,10 +36,11 @@ function message(event: MessageEvent) {
     return
   }
   if (event.data?.type !== 'ready' || ready.value) return
+  protocol = shareThemeProtocol(event.data.protocol)
   clearTimer(); ready.value = true; send()
 }
 watch(url, () => {
-  clearTimer(); ready.value = false; fallback.value = false; failed.value = false; height.value = 720
+  clearTimer(); ready.value = false; protocol = 1; fallback.value = false; failed.value = false; height.value = 720
   if (url.value) timer = setTimeout(() => stop(true), 12_000)
 }, { immediate: true })
 watch([() => props.snapshot, locale, resolved], send)

@@ -1,85 +1,79 @@
-// Readable reference renderer. All user content is inserted as text, never HTML.
-let state
-let query = ''
-const app = document.getElementById('app')
-const zh = { fleet: '公开集群', total: '全部机器', online: '在线', attention: '需关注', remaining: '剩余价值（估算）', coverage: '台已计入', excluded: '台资料不足', search: '搜索名称、地区或系统', empty: '没有匹配的机器', memory: '内存', disk: '磁盘', uptime: '运行时间', monthly: '月流量', cumulative: '累计流量', expiry: '到期', price: '价格', offline: '离线', pending: '等待数据', degraded: '需关注', updated: '数据生成于', valueHint: '按已公开价格及到期日估算，分币种展示。', noValue: '资料不足，暂无法估算' }
-const tw = { ...zh, fleet: '公開集群', total: '全部機器', online: '在線', attention: '需關注', remaining: '剩餘價值（估算）', coverage: '台已計入', excluded: '台資料不足', search: '搜尋名稱、地區或系統', empty: '沒有符合的機器', memory: '記憶體', disk: '磁碟', uptime: '運行時間', monthly: '月流量', cumulative: '累計流量', expiry: '到期', price: '價格', offline: '離線', pending: '等待資料', degraded: '需關注', updated: '資料產生於', valueHint: '按已公開價格及到期日估算，分幣種展示。', noValue: '資料不足，暫時無法估算' }
-Object.assign(zh, { partial: '周期数据不完整', estimated: '估算数据', waiting: '等待周期数据' })
-Object.assign(tw, { partial: '週期資料不完整', estimated: '估算資料', waiting: '等待週期資料' })
-const en = { fleet: 'PUBLIC FLEET', total: 'Servers', online: 'Online', attention: 'Attention', remaining: 'Remaining value (estimate)', coverage: 'included', excluded: 'incomplete', search: 'Search name, location or OS', empty: 'No matching servers', memory: 'Memory', disk: 'Disk', uptime: 'Uptime', monthly: 'Monthly traffic', cumulative: 'Total traffic', expiry: 'Expires', price: 'Price', offline: 'Offline', pending: 'Awaiting data', degraded: 'Attention', updated: 'Updated', valueHint: 'Estimated from public price and expiry, grouped by currency.', noValue: 'Not enough details to estimate' }
-Object.assign(en, { partial: 'Incomplete period', estimated: 'Estimated data', waiting: 'Awaiting period data' })
-function el(tag, text, className) {
+// Minimal — an editorial page: big numerals, ruled entries, hairline gauges.
+// Protocol 2, no dependencies; snapshot strings are only ever inserted as text.
+const $ = id => document.getElementById(id)
+const h = (tag, cls, ...kids) => {
   const node = document.createElement(tag)
-  if (text !== undefined) node.textContent = String(text)
-  if (className) node.className = className
+  if (cls) node.className = cls
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) node.append(kid.nodeType ? kid : document.createTextNode(String(kid)))
   return node
 }
-function metric(label, value, className = '') {
-  const node = el('div', undefined, `metric ${className}`)
-  node.append(el('small', label), el('strong', value)); return node
-}
-function renderHosts(container, words) {
-  container.replaceChildren()
-  const hosts = state.data.hosts.filter(host => `${host.name} ${host.location} ${host.os}`.toLowerCase().includes(query.toLowerCase()))
-  if (!hosts.length) container.append(el('p', words.empty, 'empty'))
-  for (const host of hosts) {
-    const card = el('article', undefined, 'host')
-    const top = el('header')
-    const identity = el('div')
-    identity.append(el('h2', host.name), el('p', [host.location, host.os].filter(Boolean).join(' · ')))
-    top.append(identity, el('span', words[host.state] || words.pending, `status ${host.state}`))
-    const resources = el('div', undefined, 'resources')
-    resources.append(metric('CPU', host.cpu), metric(words.memory, host.memory), metric(words.disk, host.disk))
-    const traffic = el('div', undefined, `traffic ${host.traffic.monthly ? 'monthly' : ''} ${host.traffic.tone}`)
-    traffic.append(el('strong', `${host.traffic.monthly ? words.monthly : words.cumulative}${host.traffic.percent ? ` · ${host.traffic.percent}` : ''}`), el('span', `↓ ${host.traffic.received}   ↑ ${host.traffic.sent}`))
-    const note = el('p', undefined, 'traffic-note')
-    if (host.traffic.hint) note.textContent = host.traffic.hint
-    else if (host.traffic.monthly) note.textContent = !host.traffic.available ? words.waiting : [host.traffic.partial && words.partial, host.traffic.estimated && words.estimated].filter(Boolean).join(' · ')
-    const details = el('dl')
-    for (const [label, value] of [[words.uptime, host.uptime], [words.expiry, host.expiresOn], [words.price, host.price], [words.remaining, host.remaining]]) {
-      if (value) details.append(el('dt', label), el('dd', value))
-    }
-    card.append(top, resources, traffic, details); if (note.textContent) card.append(note); container.append(card)
-  }
-}
-function render() {
-  const words = state.locale === 'en-US' ? en : state.locale === 'zh-TW' ? tw : zh
-  const focused = document.activeElement?.id === 'search'
-  const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null
-  const expanded = Boolean(document.querySelector('details')?.open)
-  document.documentElement.lang = state.locale
-  document.documentElement.dataset.mode = state.mode === 'light' ? 'light' : 'dark'
-  document.title = state.data.title
-  const hero = el('header', undefined, 'hero')
-  hero.append(el('span', words.fleet, 'eyebrow'), el('h1', state.data.title), el('p', state.data.description))
-  const stats = el('section', undefined, 'stats')
-  stats.append(metric(words.total, state.data.total), metric(words.online, state.data.online, 'online'), metric(words.attention, state.data.attention))
-  if (state.data.value.groups.length) {
-    const value = el('details', undefined, 'value'); value.open = expanded
-    const summary = el('summary')
-    summary.append(el('small', words.remaining), el('strong', state.data.value.groups[0].text))
-    if (state.data.value.groups.length > 1) summary.append(el('small', `+${state.data.value.groups.length - 1}`))
-    value.append(summary, el('p', words.valueHint))
-    for (const group of state.data.value.groups) value.append(el('p', `${group.currency} · ${group.text}`))
-    value.append(el('p', `${state.data.value.included} / ${state.data.total} ${words.coverage} · ${state.data.value.excluded} ${words.excluded}`))
-    stats.append(value)
-  }
-  const label = el('label', words.search, 'search')
-  const input = el('input'); input.type = 'search'; input.id = 'search'; input.value = query; input.placeholder = words.search
-  label.append(input)
-  const hosts = el('section', undefined, 'hosts')
-  input.addEventListener('input', () => { query = input.value; renderHosts(hosts, words) })
-  renderHosts(hosts, words)
-  const date = new Date(state.data.generatedAt)
-  const footer = el('footer', `${words.updated} ${Number.isFinite(date.getTime()) ? date.toLocaleString(state.locale) : '—'} · KPanel`)
-  app.replaceChildren(hero, stats, label, hosts, footer)
-  if (focused) { input.focus(); input.setSelectionRange(...selection) }
-}
-addEventListener('message', event => {
-  if (event.source !== parent || event.data?.source !== 'kpanel-share' || event.data?.type !== 'snapshot' || event.data?.schema !== 1 || !Array.isArray(event.data?.data?.hosts)) return
-  state = event.data; render()
-})
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready' }, '*')
+let snap = null, query = '', tab = 'all'
 
-// Optional, bounded content height keeps the public page on a single scrollbar.
-new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(app.getBoundingClientRect().height))) }, '*')).observe(app)
+function hairline(label, reading) {
+  const ratio = reading.ratio
+  const meter = h('span', 'hairline'); meter.setAttribute('role', 'img')
+  meter.setAttribute('aria-label', `${label} ${reading.text}`)
+  const fill = h('span', ratio === null ? 'fill na' : ratio >= 0.9 ? 'fill hot' : ratio >= 0.75 ? 'fill warm' : 'fill')
+  fill.style.width = `${Math.round((ratio ?? 0) * 100)}%`
+  meter.append(fill)
+  return h('div', 'gauge', h('span', 'gauge-name', label), meter, h('span', 'gauge-value', reading.text))
+}
+
+function entry(host, labels, index) {
+  const li = h('li', `entry ${host.state}`)
+  const title = h('div', 'entry-head')
+  title.append(h('span', 'no', String(index + 1).padStart(2, '0')),
+    h('div', 'who', h('h2', null, host.name), h('p', null, [host.location.text, host.os].filter(Boolean).join(' — '))),
+    h('span', `mark ${host.state}`, host.stateLabel))
+  const gauges = h('div', 'gauges', hairline(labels.cpu, host.cpu), hairline(labels.memory, host.memory), hairline(labels.disk, host.disk))
+  const notes = h('dl', 'notes')
+  const add = (term, value) => { if (value && value !== '—') notes.append(h('div', null, h('dt', null, term), h('dd', null, value))) }
+  add(labels.uptime, host.uptime)
+  add(labels.download, host.network.down.text)
+  add(labels.upload, host.network.up.text)
+  add(host.traffic.monthly ? labels.monthly : labels.cumulative, `${host.traffic.percent ? `${host.traffic.percent} · ` : ''}↓ ${host.traffic.received}  ↑ ${host.traffic.sent}`)
+  add(labels.expiry, host.expiresOn); add(labels.price, host.price); add(labels.remaining, host.remaining)
+  li.append(title, gauges, notes)
+  if (host.traffic.hint) li.append(h('p', 'aside', host.traffic.hint))
+  return li
+}
+
+function render() {
+  const { data, labels, locale, mode } = snap
+  document.documentElement.lang = locale
+  document.documentElement.dataset.mode = mode === 'light' ? 'light' : 'dark'
+  document.title = data.title
+  $('kicker').textContent = labels.fleet
+  $('title').textContent = data.title
+  $('desc').textContent = data.description; $('desc').hidden = !data.description
+  $('searchLabel').textContent = labels.search; $('q').placeholder = labels.search
+
+  const figures = [[data.counts.total, labels.total, ''], [data.counts.online, labels.online, 'good'], [data.counts.attention, labels.attention, data.counts.attention ? 'alert' : '']]
+  const fig = $('figures')
+  fig.replaceChildren(...figures.map(([value, label, tone]) => h('div', `figure ${tone}`, h('strong', null, value), h('span', null, label))))
+  if (data.value.groups.length) {
+    fig.append(h('div', 'figure worth', h('strong', null, data.value.groups[0].text), h('span', null, `${labels.remaining}${data.value.groups.length > 1 ? ` +${data.value.groups.length - 1}` : ''}`),
+      h('small', null, `${data.value.groups.map(group => `${group.currency} ${group.text}`).join(' · ')} — ${data.value.included} / ${data.counts.total} ${labels.covered}`, data.value.excluded ? ` · ${data.value.excluded} ${labels.excluded}` : '')))
+  }
+
+  $('tabs').replaceChildren(...[['all', labels.all], ['online', labels.online], ['degraded', labels.attention], ['offline', labels.offline]].map(([key, text]) => {
+    const button = h('button', 'tab', text); button.type = 'button'; button.setAttribute('aria-pressed', String(tab === key))
+    button.addEventListener('click', () => { tab = key; render() })
+    return button
+  }))
+
+  const needle = query.trim().toLowerCase()
+  const hosts = data.hosts.filter(host => (tab === 'all' || host.state === tab) && `${host.name} ${host.location.text} ${host.os}`.toLowerCase().includes(needle))
+  $('entries').replaceChildren(...(hosts.length ? hosts.map((host, index) => entry(host, labels, index)) : [h('li', 'none', labels.empty)]))
+  const date = new Date(data.generatedAt)
+  $('foot').textContent = `${labels.updated} ${Number.isFinite(date.getTime()) ? date.toLocaleString(locale) : '—'} · KPanel`
+}
+
+addEventListener('message', event => {
+  const msg = event.data
+  if (event.source !== parent || msg?.source !== 'kpanel-share' || msg.type !== 'snapshot' || msg.schema !== 2 || !Array.isArray(msg.data?.hosts)) return
+  snap = msg; render()
+})
+$('q').addEventListener('input', event => { query = event.target.value; if (snap) render() })
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)

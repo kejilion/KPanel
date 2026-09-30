@@ -1,3 +1,19 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="./theme.css"><title>KPanel</title></head>
-<body><main id="app" aria-live="polite"></main><script src="./theme.js"></script></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="./theme.css"><title>KPanel</title></head>
+<body>
+<article class="sheet">
+  <header class="masthead">
+    <p id="kicker" class="kicker"></p>
+    <h1 id="title"></h1>
+    <p id="desc" class="lede"></p>
+  </header>
+  <section id="figures" class="figures" aria-live="polite"></section>
+  <nav class="controls">
+    <div id="tabs" class="tabs" role="group"></div>
+    <label class="search"><span id="searchLabel" class="sr"></span><input id="q" type="search" autocomplete="off"></label>
+  </nav>
+  <ol id="entries" class="entries"></ol>
+  <footer id="foot" class="colophon"></footer>
+</article>
+<script src="./theme.js"></script>
+</body></html>

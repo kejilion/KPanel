@@ -144,3 +144,24 @@ func TestThemeInstallDigestFailurePreservesSelection(t *testing.T) {
 		t.Fatal("failed update removed installed copy")
 	}
 }
+
+func TestShareThemeRuntimeCompatibility(t *testing.T) {
+	pack, _ := themeFixture(t)
+	for _, runtime := range []string{"kpanel-share-theme@1", "kpanel-share-theme@2"} {
+		pack.Runtime = runtime
+		if err := validatePackProfile(pack, themes); err != nil {
+			t.Fatalf("%s must stay installable: %v", runtime, err)
+		}
+	}
+	for _, runtime := range []string{"", "kpanel-share-theme@3", "kpanel-scene-pack@1"} {
+		pack.Runtime = runtime
+		if err := validatePackProfile(pack, themes); err == nil {
+			t.Fatalf("%q must be rejected", runtime)
+		}
+	}
+	// Scene packs never gain the share-theme protocols.
+	pack.Runtime = "kpanel-share-theme@2"
+	if scenes.acceptsRuntime(pack.Runtime) {
+		t.Fatal("scene profile accepted a share-theme runtime")
+	}
+}

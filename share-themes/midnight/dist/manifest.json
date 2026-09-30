@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "id": "midnight",
-  "version": "1.0.2",
-  "runtime": "kpanel-share-theme@1",
+  "version": "2.0.0",
+  "runtime": "kpanel-share-theme@2",
   "name": {
     "zh-CN": "午夜终端",
-    "en-US": "Midnight fleet",
-    "zh-TW": "午夜终端"
+    "zh-TW": "午夜終端",
+    "en-US": "Midnight console"
   },
   "description": {
-    "zh-CN": "紧凑的技术风格机器清单",
-    "en-US": "A compact technical server list"
+    "zh-CN": "字符条形图与可排序表格的终端控制台",
+    "en-US": "A terminal console with sortable rows and bar glyphs"
   },
   "author": {
     "name": "KPanel",
@@ -18,12 +18,13 @@
   },
   "license": "AGPL-3.0-only",
   "tags": [
-    "fleet"
+    "terminal",
+    "table"
   ],
   "theme": {
-    "brand": "#3476aa",
-    "neutral": "#17202c",
-    "signature": "#8ce1bd"
+    "brand": "#6df0b0",
+    "neutral": "#0b1210",
+    "signature": "#ffd166"
   },
   "entry": "index.html"
 }
