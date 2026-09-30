@@ -91,4 +91,3 @@ KPanel 首版不把现有集群 API整体改成游客可读，也不默认公开
 版式与交互不依赖 KPanel 前端框架。协议 2 在保持隐私白名单不变的前提下额外提供原始数值（`ratio`、
 字节、速率，未知为 `null`）、本地化词表与状态名；未声明 `protocol: 2` 的旧主题继续收到 schema 1 快照。
 协议、字段与作者约束以 [`share-themes/README.md`](../share-themes/README.md) 为准。
-
