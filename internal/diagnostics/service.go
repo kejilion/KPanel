@@ -29,7 +29,7 @@ import (
 const (
 	jobUnitPrefix    = "kejilion-panel-diagnostic-"
 	maxStateBytes    = 256 << 10
-	maxLogBytes      = 8 << 20
+	maxTailBytes     = 1 << 20 // log tail read for the last maxPublicLines lines
 	maxCatalogBytes  = 256 << 10
 	maxPublicLines   = 400
 	maxJobRuntime    = 100 * time.Minute
@@ -345,6 +345,8 @@ type TerminalChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	InputOpen  bool   `json:"inputOpen"`
 	Finished   bool   `json:"finished"`
+	// Truncated reports that older output rotated out of the bounded log.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
@@ -357,39 +359,26 @@ func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
 	if err != nil || !item.Interactive {
 		return TerminalChunk{}, ErrNotFound
 	}
-	file, err := os.Open(s.logPath(id))
-	if errors.Is(err, os.ErrNotExist) {
-		return TerminalChunk{
-			InputOpen: item.InputOpen,
-			Finished:  item.Status == "succeeded" || item.Status == "failed",
-		}, nil
-	}
+	path := s.logPath(id)
+	read, err := hostpty.ReadOutputLog(path, offset, maxTerminalChunk)
 	if err != nil {
 		return TerminalChunk{}, err
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return TerminalChunk{}, err
-	}
-	if offset > info.Size() {
-		offset = 0
-	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return TerminalChunk{}, err
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxTerminalChunk))
-	if err != nil {
-		return TerminalChunk{}, err
-	}
-	nextOffset := offset + int64(len(data))
-	return TerminalChunk{
-		DataBase64: base64.StdEncoding.EncodeToString(data),
-		NextOffset: nextOffset,
+	chunk := TerminalChunk{
+		DataBase64: base64.StdEncoding.EncodeToString(read.Data),
+		NextOffset: read.NextOffset,
 		InputOpen:  item.InputOpen,
-		Finished: (item.Status == "succeeded" || item.Status == "failed") &&
-			nextOffset >= info.Size(),
-	}, nil
+		Truncated:  read.Truncated,
+	}
+	if item.Status == "succeeded" || item.Status == "failed" {
+		// The log is complete once the job ends; finish only after draining it.
+		end, err := hostpty.OutputLogEnd(path)
+		if err != nil {
+			return TerminalChunk{}, err
+		}
+		chunk.Finished = read.NextOffset >= end
+	}
+	return chunk, nil
 }
 
 func (s *Service) WriteInput(id, value string) error {
@@ -449,11 +438,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 	}
 	defer os.RemoveAll(workspace)
 
-	logFile, err := os.OpenFile(
-		service.logPath(id),
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
+	logFile, err := hostpty.CreateOutputLog(service.logPath(id), hostpty.DefaultOutputLogBytes)
 	if err != nil {
 		return service.fail(item, "log_unavailable", err)
 	}
@@ -464,8 +449,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 	}
 	defer input.Close()
 	defer hostpty.RemoveInput(service.inputPath(id))
-	writer := &limitedWriter{target: logFile, remaining: maxLogBytes}
-	writeTerminalHeader(writer, item.CheckName, item.SourceURL)
+	writeTerminalHeader(logFile, item.CheckName, item.SourceURL)
 
 	started := service.now().UTC()
 	item.Status = "running"
@@ -505,7 +489,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 		_, _ = io.Copy(terminal, input)
 		close(inputDone)
 	}()
-	_, readErr := io.Copy(writer, terminal)
+	_, readErr := io.Copy(logFile, terminal)
 	if readErr != nil && !hostpty.IsEnd(readErr) {
 		_ = terminal.Kill()
 	}
@@ -520,7 +504,7 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 		runErr = readErr
 	}
 	_ = logFile.Sync()
-	if data, readLogErr := os.ReadFile(service.logPath(id)); readLogErr == nil {
+	if data, readLogErr := hostpty.OutputLogTail(service.logPath(id), hostpty.DefaultOutputLogBytes); readLogErr == nil {
 		item.Summary = diagnosticSummaryFromOutput(item.CheckID, item.CheckName, data)
 	}
 
@@ -548,34 +532,6 @@ func RunJob(ctx context.Context, stateDir, id string) error {
 
 func writeTerminalHeader(writer io.Writer, checkName, sourceURL string) {
 	_, _ = fmt.Fprintf(writer, "KPanel 体检：%s\r\n来源：%s\r\n\r\n", checkName, sourceURL)
-}
-
-type limitedWriter struct {
-	target    io.Writer
-	remaining int
-	truncated bool
-}
-
-func (writer *limitedWriter) Write(data []byte) (int, error) {
-	original := len(data)
-	exceedsLimit := len(data) > writer.remaining
-	if writer.remaining > 0 {
-		chunk := data
-		if len(chunk) > writer.remaining {
-			chunk = chunk[:writer.remaining]
-		}
-		if _, err := writer.target.Write(chunk); err != nil {
-			return 0, err
-		}
-		writer.remaining -= len(chunk)
-	}
-	if exceedsLimit && !writer.truncated {
-		writer.truncated = true
-		if _, err := io.WriteString(writer.target, "\n[KPanel] 输出超过 8 MiB，后续内容已截断。\n"); err != nil {
-			return 0, err
-		}
-	}
-	return original, nil
 }
 
 func parseCatalog(output []byte) (Catalog, error) {
@@ -824,7 +780,7 @@ func (s *Service) publicLocked(item record) Job {
 	job := item.Job
 	job.Logs = s.logTail(item.ID)
 	if job.Summary == nil && (job.Status == "succeeded" || job.Status == "failed") {
-		if data, err := os.ReadFile(s.logPath(item.ID)); err == nil {
+		if data, err := hostpty.OutputLogTail(s.logPath(item.ID), hostpty.DefaultOutputLogBytes); err == nil {
 			job.Summary = diagnosticSummaryFromOutput(job.CheckID, job.CheckName, data)
 		}
 	}
@@ -832,12 +788,10 @@ func (s *Service) publicLocked(item record) Job {
 }
 
 func (s *Service) logTail(id string) []string {
-	data, err := os.ReadFile(s.logPath(id))
+	// Job listings show the last lines only; never read a whole log per job.
+	data, err := hostpty.OutputLogTail(s.logPath(id), maxTailBytes)
 	if err != nil {
 		return []string{}
-	}
-	if len(data) > maxLogBytes {
-		data = data[len(data)-maxLogBytes:]
 	}
 	clean := stripControls(string(data))
 	lines := strings.Split(strings.TrimRight(clean, "\r\n"), "\n")
@@ -900,7 +854,7 @@ func (s *Service) pruneLocked() {
 	for _, item := range terminal[:removeCount] {
 		delete(s.jobs, item.ID)
 		_ = os.Remove(s.statePath(item.ID))
-		_ = os.Remove(s.logPath(item.ID))
+		_ = hostpty.RemoveOutputLog(s.logPath(item.ID))
 	}
 }
 

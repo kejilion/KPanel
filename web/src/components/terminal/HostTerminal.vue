@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
@@ -20,13 +20,16 @@ import {
 } from '@/lib/terminalInput'
 import { createTerminalTouchScroll } from '@/lib/terminalTouchScroll'
 import { readTerminalTheme } from '@/lib/terminalTheme'
+import { TerminalWriteFlow } from '@/lib/terminalWriteFlow'
 import { useI18n } from '@/i18n'
-import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
+import { useTerminalActivity } from '@/composables/useTerminalActivity'
 import { useTheme } from '@/stores/theme'
 
 const { t } = useI18n()
 const { colors: themeColors, resolved: resolvedTheme } = useTheme()
-const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
+// Output streams while the window is on screen, focused or not, and pauses
+// without closing the server session while it is minimized or the tab hidden.
+const { streaming } = useTerminalActivity()
 
 const props = defineProps<{
   sessionId: string
@@ -65,6 +68,9 @@ let resizeFailures = 0
 let reconnectAttempts = 0
 let closeRequest: Promise<void> | undefined
 let closeConfirmed = false
+// Bumped whenever output stops so a late poll result cannot be applied twice.
+let outputGeneration = 0
+const writeFlow = new TerminalWriteFlow(() => startOutput())
 
 function closeSession(): Promise<void> {
   if (closeConfirmed) return Promise.resolve()
@@ -102,10 +108,15 @@ function isFollowingOutput(): boolean {
 }
 
 function writeTerminalOutput(data: string | Uint8Array): void {
+  if (!terminal || data.length === 0) return
   const follow = isFollowingOutput()
-  terminal?.write(data, () => {
+  const parsed = writeFlow.track(data.length)
+  terminal.write(data, () => {
+    parsed()
     if (follow) terminal?.scrollToBottom()
   })
+  // The offset is kept, so output resumes exactly where it paused.
+  if (writeFlow.blocked) stopOutput()
 }
 
 function focusTerminal(): void {
@@ -197,10 +208,14 @@ function terminalFinished(): boolean {
   return state.value === 'finished'
 }
 
+function canReceiveOutput(): boolean {
+  return mounted && !disposed && streaming.value && !writeFlow.blocked && !terminalFinished()
+}
+
 // Output prefers the tab's shared push stream and falls back to long-polling
 // when the stream is unavailable; both paths feed applyChunk.
 function startOutput(): void {
-  if (disposed || !desktopWindowActive.value || state.value === 'finished' || streamSubscription) return
+  if (!canReceiveOutput() || streamSubscription || pollController) return
   streamSubscription = terminalStream.subscribe({ kind: 'terminal', id: props.sessionId, offset }, {
     output: applyChunk,
     error: (code) => {
@@ -213,31 +228,42 @@ function startOutput(): void {
     },
     unavailable: () => {
       streamSubscription = null
-      if (!disposed && desktopWindowActive.value) void poll()
+      void poll()
     },
   })
   if (!streamSubscription) void poll()
 }
 
 function stopOutput(): void {
+  outputGeneration++
   streamSubscription?.close()
   streamSubscription = null
   pollController?.abort()
+  pollController = undefined
   if (pollTimer) window.clearTimeout(pollTimer)
   pollTimer = undefined
 }
 
+function schedulePoll(delay: number): void {
+  if (pollTimer) window.clearTimeout(pollTimer)
+  pollTimer = window.setTimeout(() => {
+    pollTimer = undefined
+    void poll()
+  }, delay)
+}
+
 async function poll(): Promise<void> {
-  pollTimer = undefined
-  if (disposed || !desktopWindowActive.value || state.value === 'finished' || streamSubscription) return
-  pollController?.abort()
-  pollController = new AbortController()
+  if (!canReceiveOutput() || streamSubscription || pollController) return
+  const generation = outputGeneration
+  const controller = new AbortController()
+  pollController = controller
   try {
-    const chunk = await api.terminals.output(props.sessionId, offset, pollController.signal)
+    const chunk = await api.terminals.output(props.sessionId, offset, controller.signal)
+    if (generation !== outputGeneration) return
     applyChunk(chunk)
-    if (desktopWindowActive.value && !terminalFinished()) pollTimer = window.setTimeout(() => void poll(), 0)
+    if (generation === outputGeneration && !terminalFinished()) schedulePoll(0)
   } catch (reason) {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return
+    if (generation !== outputGeneration || (reason instanceof DOMException && reason.name === 'AbortError')) return
     if (reason instanceof ApiError && reason.code === 'terminal_not_found') {
       state.value = 'finished'
       return
@@ -245,13 +271,14 @@ async function poll(): Promise<void> {
     if (reason instanceof ApiError && reason.status === 429) {
       // Rate limiting is back-pressure, not a lost connection: keep the
       // terminal marked connected and retry shortly.
-      if (desktopWindowActive.value) pollTimer = window.setTimeout(() => void poll(), 300)
+      schedulePoll(300)
       return
     }
     state.value = 'reconnecting'
     reconnectAttempts++
-    const retryDelay = Math.min(5000, 500 * 2 ** Math.min(reconnectAttempts - 1, 3))
-    if (desktopWindowActive.value) pollTimer = window.setTimeout(() => void poll(), retryDelay)
+    schedulePoll(Math.min(5000, 500 * 2 ** Math.min(reconnectAttempts - 1, 3)))
+  } finally {
+    if (pollController === controller) pollController = undefined
   }
 }
 
@@ -293,12 +320,9 @@ async function syncResize(): Promise<void> {
 
 defineExpose({ focusTerminal, executeCommand, scheduleResize, closeSession })
 
-watch(desktopWindowActive, (active) => {
-  if (active) {
-    if (mounted && state.value !== 'finished') startOutput()
-    return
-  }
-  stopOutput()
+watch(streaming, (active) => {
+  if (active) startOutput()
+  else stopOutput()
 })
 
 watch([themeColors, resolvedTheme], () => {
@@ -333,7 +357,7 @@ onMounted(() => {
     scheduleResize()
     window.requestAnimationFrame(focusTerminal)
   }
-  if (desktopWindowActive.value) startOutput()
+  startOutput()
 })
 
 onBeforeUnmount(() => {

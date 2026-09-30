@@ -222,18 +222,6 @@ func TestCompatibilityRequiresAcceptedExplicitProtocol(t *testing.T) {
 	}
 }
 
-func TestLimitedWriterCapsOutput(t *testing.T) {
-	var target bytes.Buffer
-	writer := &limitedWriter{target: &target, remaining: 4}
-	if count, err := writer.Write([]byte("abcdef")); err != nil || count != 6 {
-		t.Fatalf("Write() = %d, %v", count, err)
-	}
-	if !strings.HasPrefix(target.String(), "abcd") ||
-		!strings.Contains(target.String(), "后续内容已截断") {
-		t.Fatalf("limited output = %q", target.String())
-	}
-}
-
 func TestTerminalPreservesANSIOutputAndOffsets(t *testing.T) {
 	stateDir := t.TempDir()
 	id := strings.Repeat("a", 32)

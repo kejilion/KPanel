@@ -13,6 +13,7 @@ import {
   desktopWindowActiveKey,
   desktopCloseGuardCoordinatorKey,
   desktopWindowCloseGuardKey,
+  desktopWindowVisibleKey,
   windowRouteKey,
   windowRouterKey,
 } from '@/lib/desktopRouteKeys'
@@ -81,8 +82,10 @@ provide(windowRouterKey, router)
 provide(windowRouteKey, reactiveRouteFor(router))
 
 const isFocused = computed(() => desktop.focusedId.value === props.windowState.id)
-const isActive = computed(() => isFocused.value && !props.windowState.minimized && !closing.value)
+const isVisible = computed(() => !props.windowState.minimized && !closing.value)
+const isActive = computed(() => isFocused.value && isVisible.value)
 provide(desktopWindowActiveKey, isActive)
+provide(desktopWindowVisibleKey, isVisible)
 const closeGuards = new Set<() => boolean | Promise<boolean>>()
 const windowElement = ref<HTMLElement>()
 const focusReturnTarget = document.activeElement instanceof HTMLElement ? document.activeElement : undefined

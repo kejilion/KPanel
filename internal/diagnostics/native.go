@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kejilion/kejilion-panel/internal/hostpty"
 )
 
 const (
@@ -217,12 +219,11 @@ func (s *Service) runNativeJob(ctx context.Context, item record) error {
 	}
 	defer os.RemoveAll(workspace)
 
-	logFile, err := os.OpenFile(s.logPath(item.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	writer, err := hostpty.CreateOutputLog(s.logPath(item.ID), hostpty.DefaultOutputLogBytes)
 	if err != nil {
 		return s.fail(item, "log_unavailable", err)
 	}
-	defer logFile.Close()
-	writer := &limitedWriter{target: logFile, remaining: maxLogBytes}
+	defer writer.Close()
 	_, _ = fmt.Fprintf(writer, "KPanel 原生体检：%s\n检测引擎：KPanel Native Diagnostics v1\n\n", item.CheckName)
 
 	started := s.now().UTC()
@@ -269,7 +270,7 @@ func (s *Service) runNativeJob(ctx context.Context, item record) error {
 			}
 			_, _ = io.WriteString(writer, "\n")
 		}
-		_ = logFile.Sync()
+		_ = writer.Sync()
 		item.Progress = 10 + (index+1)*85/len(probeIDs)
 		if probeErr == nil {
 			item.Message = fmt.Sprintf("%s 已完成，继续下一项", nativeCheckName(probeID))
@@ -305,7 +306,7 @@ func (s *Service) runNativeJob(ctx context.Context, item record) error {
 	if len(failed) > 0 {
 		_, _ = fmt.Fprintf(writer, "未完成项目：%s\n", strings.Join(failed, "；"))
 	}
-	_ = logFile.Sync()
+	_ = writer.Sync()
 	if err := s.persistNativeJob(item); err != nil {
 		return err
 	}

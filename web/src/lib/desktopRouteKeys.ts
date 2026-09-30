@@ -20,6 +20,13 @@ export const windowRouterViewKey = routerViewLocationKey as InjectionKey<unknown
 /** Whether a desktop window is both focused and visible. */
 export const desktopWindowActiveKey = Symbol('desktop-window-active') as InjectionKey<Readonly<Ref<boolean>>>
 
+/**
+ * Whether a desktop window is on screen (not minimized or closing), focused or
+ * not. Live views such as terminals keep streaming in unfocused windows that
+ * the user can still see, and pause only when this turns false.
+ */
+export const desktopWindowVisibleKey = Symbol('desktop-window-visible') as InjectionKey<Readonly<Ref<boolean>>>
+
 /** Native document-history bridge shared by all independent desktop windows. */
 export const desktopBrowserHistoryKey = Symbol(
   'desktop-browser-history',

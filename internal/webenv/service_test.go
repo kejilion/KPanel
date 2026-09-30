@@ -3,6 +3,7 @@ package webenv
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,5 +231,49 @@ func TestCappedOutputBoundsStatusCommandOutput(t *testing.T) {
 	}
 	if string(captured.data) != "abcdefgh" || !captured.overflow {
 		t.Fatalf("captured %q overflow=%v", captured.data, captured.overflow)
+	}
+}
+
+func TestFinishedEnvironmentJobsAreRetainedWithinABound(t *testing.T) {
+	service, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC()
+	finishedIDs := []string{}
+	for index := range maxRetainedJobs + 3 {
+		id := fmt.Sprintf("%032x", index+1)
+		job := Job{ID: id, Action: "install", Status: "succeeded", CreatedAt: base.Add(time.Duration(index) * time.Minute)}
+		if err := service.writeJob(job); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(service.logPath(id), []byte("done\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(service.logPath(id)+".1", []byte("rotated\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		finishedIDs = append(finishedIDs, id)
+	}
+	// An old job that is still running must never be removed.
+	running := Job{ID: strings.Repeat("e", 32), Action: "install", Status: "running", CreatedAt: base.Add(-time.Hour)}
+	if err := service.writeJob(running); err != nil {
+		t.Fatal(err)
+	}
+
+	service.mu.Lock()
+	service.pruneJobsLocked()
+	service.mu.Unlock()
+
+	for index, id := range finishedIDs {
+		_, jobErr := os.Stat(service.jobPath(id))
+		logs, _ := filepath.Glob(service.logPath(id) + "*")
+		expired := index < 3
+		if expired != errors.Is(jobErr, os.ErrNotExist) || expired != (len(logs) == 0) {
+			t.Fatalf("job %d expired=%v: record err %v, logs %v", index, expired, jobErr, logs)
+		}
+	}
+	if _, err := os.Stat(service.jobPath(running.ID)); err != nil {
+		t.Fatalf("running job was pruned: %v", err)
 	}
 }

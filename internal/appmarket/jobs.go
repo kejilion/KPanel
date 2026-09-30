@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kejilion/kejilion-panel/internal/hostpty"
 	"github.com/kejilion/kejilion-panel/internal/jobcontrol"
 )
 
@@ -1147,26 +1148,11 @@ func (registry *appJobRegistry) public(record appJobRecord) AppJob {
 }
 
 func (registry *appJobRegistry) logTail(id string, maxLines int) []string {
-	file, err := os.Open(registry.logPath(id))
+	data, err := registry.logTailBytes(id)
 	if err != nil {
 		return []string{}
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		return []string{}
-	}
-	if info.Size() > maxAppJobLog {
-		if _, err := file.Seek(info.Size()-maxAppJobLog, io.SeekStart); err != nil {
-			return []string{}
-		}
-	}
-	data := make([]byte, min(info.Size(), int64(maxAppJobLog)))
-	count, err := io.ReadFull(file, data)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return []string{}
-	}
-	lines := strings.Split(strings.TrimRight(string(data[:count]), "\r\n"), "\n")
+	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		return []string{}
 	}
@@ -1174,6 +1160,40 @@ func (registry *appJobRegistry) logTail(id string, maxLines int) []string {
 		lines = lines[len(lines)-maxLines:]
 	}
 	return lines
+}
+
+func (registry *appJobRegistry) logTailBytes(id string) ([]byte, error) {
+	file, err := os.Open(registry.logPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		// Segment 0 of a long interactive log may already be rotated away.
+		return hostpty.OutputLogTail(registry.logPath(id), maxAppJobLog)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("application job log is not a regular file")
+	}
+	if info.Size() >= hostpty.OutputSegmentBytes {
+		// Only interactive logs grow this far; they continue in segments.
+		return hostpty.OutputLogTail(registry.logPath(id), maxAppJobLog)
+	}
+	if info.Size() > maxAppJobLog {
+		if _, err := file.Seek(info.Size()-maxAppJobLog, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
+	data := make([]byte, min(info.Size(), int64(maxAppJobLog)))
+	count, err := io.ReadFull(file, data)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, err
+	}
+	return data[:count], nil
 }
 
 func (registry *appJobRegistry) pruneLocked() {
@@ -1196,7 +1216,7 @@ func (registry *appJobRegistry) pruneLocked() {
 	for _, record := range terminal[:removeCount] {
 		delete(registry.jobs, record.ID)
 		_ = os.Remove(registry.statePath(record.ID))
-		_ = os.Remove(registry.logPath(record.ID))
+		_ = hostpty.RemoveOutputLog(registry.logPath(record.ID))
 		_ = removeTerminalInput(registry.inputPath(record.ID))
 		_ = os.Remove(registry.cancelPath(record.ID))
 		_ = removeTerminalResize(registry.resizePath(record.ID))

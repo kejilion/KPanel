@@ -99,9 +99,10 @@ describe('DiagnosticsView polling', () => {
     expect([...view.testedCheckIDs.value]).toEqual(['completed', 'failed'])
   })
 
-  it('pauses the interactive terminal stream while its desktop window is inactive', () => {
+  it('keeps the interactive terminal mounted in unfocused windows; it pauses itself when hidden', () => {
     const source = readFileSync(new URL('./DiagnosticsView.vue', import.meta.url), 'utf8')
-    expect(source).toContain('v-if="activeJob?.interactive && windowActive"')
+    expect(source).toContain('v-if="activeJob?.interactive"')
+    expect(source).not.toContain('activeJob?.interactive && windowActive')
   })
 
   it('does not cancel or duplicate a slow in-flight refresh', async () => {

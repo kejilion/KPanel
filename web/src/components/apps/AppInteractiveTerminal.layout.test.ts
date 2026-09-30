@@ -71,7 +71,9 @@ describe('interactive task terminal layout', () => {
 
   it('focuses the shell when input opens and leaves the composer user-activated', () => {
     expect(terminalSource).toContain('if (open) focusTerminalWhenInputOpens()')
-    expect(terminalSource).toContain('if (terminalInputOpen.value) window.requestAnimationFrame(focusTerminal)')
+    // Terminals of unfocused windows stay mounted and must not steal focus.
+    expect(terminalSource).toContain('if (terminalInputOpen.value && activity.focused.value) window.requestAnimationFrame(focusTerminal)')
+    expect(terminalSource).toContain('if (terminalInputOpen.value && !disposed && activity.focused.value) focusTerminal()')
     expect(terminalSource).toContain('@click="terminalInputOpen && focusTerminal()"')
     expect(terminalSource).not.toContain('composerInput')
   })

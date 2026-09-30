@@ -27,13 +27,13 @@ class FakeEventSource {
   }
 }
 
-function newClient(subscribe = vi.fn().mockResolvedValue({ accepted: true })) {
+function newClient(subscribe = vi.fn().mockResolvedValue({ accepted: true }), idleCloseMs = 0) {
   FakeEventSource.instances = []
   const client = new TerminalStreamClient({
     url: () => '/api/v1/terminal-stream',
     subscribe,
     createSource: (url) => new FakeEventSource(url) as unknown as EventSource,
-  })
+  }, idleCloseMs)
   return { client, subscribe }
 }
 
@@ -67,7 +67,29 @@ describe('TerminalStreamClient', () => {
     await flush()
     expect(subscribe).toHaveBeenLastCalledWith({ streamId: 'stream-2', add: [{ kind: 'terminal', id: 's1', offset: 7 }], remove: [] })
     subscription!.close()
+    // The idle stream lingers briefly before it closes.
+    expect(source.closed).toBe(false)
+    await flush()
     expect(source.closed).toBe(true)
+  })
+
+  it('reuses the idle stream when a paused terminal resumes within the linger', async () => {
+    const { client, subscribe } = newClient(undefined, 1000)
+    const first = client.subscribe({ kind: 'job', job: 'app', id: 'a', offset: 0, inputOpen: true }, {})
+    const source = FakeEventSource.instances[0]!
+    source.emit('ready', { streamId: 'stream' })
+    await flush()
+    first!.close()
+    await flush()
+    expect(subscribe).toHaveBeenLastCalledWith({ streamId: 'stream', add: [], remove: ['job:app:a'] })
+    const resumed = client.subscribe({ kind: 'job', job: 'app', id: 'a', offset: 42, inputOpen: true }, {})
+    await flush()
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(source.closed).toBe(false)
+    expect(subscribe).toHaveBeenLastCalledWith({
+      streamId: 'stream', add: [{ kind: 'job', job: 'app', id: 'a', offset: 42, inputOpen: true }], remove: [],
+    })
+    resumed!.close()
   })
 
   it('batches task subscriptions and removals', async () => {

@@ -12,6 +12,4 @@ export default [
   ['正在校验安装状态、管理能力和资源版本。', 'Checking installation state, management capability, and resource version.'],
   ['脚本终端无法启动', 'The script terminal could not start'],
   ['重新尝试', 'Try again'],
-  ['终端已在后台保持', 'The terminal is being kept in the background'],
-  ['重新聚焦此窗口后继续显示脚本交互。', 'Focus this window again to continue the script interaction.'],
 ] as const satisfies PhraseCatalog

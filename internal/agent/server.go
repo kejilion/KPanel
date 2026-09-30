@@ -1053,7 +1053,8 @@ func (s *Server) siteInstallation(w http.ResponseWriter, r *http.Request, reques
 				return s.sitesManager.InstallationTerminal(id, query.Offset)
 			},
 			func(chunk sites.SiteTerminalChunk) bool {
-				return chunk.DataBase64 != "" || chunk.Finished ||
+				// A moved offset (rotated or restarted log) is news even without data.
+				return chunk.DataBase64 != "" || chunk.Finished || chunk.NextOffset != query.Offset ||
 					(query.HasInputState && chunk.InputOpen != query.InputOpen)
 			},
 		)
@@ -1377,7 +1378,8 @@ func (s *Server) appJobOperation(w http.ResponseWriter, r *http.Request, request
 				return s.appMarket.AppJobTerminal(id, query.Offset)
 			},
 			func(chunk appmarket.TerminalChunk) bool {
-				return chunk.DataBase64 != "" || chunk.Finished ||
+				// A moved offset (rotated or restarted log) is news even without data.
+				return chunk.DataBase64 != "" || chunk.Finished || chunk.NextOffset != query.Offset ||
 					(query.HasInputState && chunk.InputOpen != query.InputOpen)
 			},
 		)
@@ -1713,7 +1715,8 @@ func (s *Server) diagnosticJob(w http.ResponseWriter, r *http.Request) {
 				return s.diagnostics.Terminal(id, query.Offset)
 			},
 			func(chunk diagnostics.TerminalChunk) bool {
-				return chunk.DataBase64 != "" || chunk.Finished ||
+				// A moved offset (rotated or restarted log) is news even without data.
+				return chunk.DataBase64 != "" || chunk.Finished || chunk.NextOffset != query.Offset ||
 					(query.HasInputState && chunk.InputOpen != query.InputOpen)
 			},
 		)
