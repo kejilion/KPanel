@@ -78,7 +78,7 @@ describe('share theme protocol', () => {
     expect(host.location).toMatchObject({ latitude: null, longitude: null })
     snapshot.items[0]!.location.countryCode = 'jp'
     expect(shareThemeModelV2(snapshot, 'zh-CN').hosts[0]!.location).toMatchObject({ countryCode: 'JP', latitude: null })
-    expect(shareThemeModelV2(snapshot, 'zh-CN', new Date(), undefined, regionCenters).hosts[0]!.location).toMatchObject({ countryCode: 'JP', latitude: regionCenters.JP![0], longitude: regionCenters.JP![1] })
+    expect(shareThemeModelV2(snapshot, 'zh-CN', new Date(), undefined, { centers: regionCenters }).hosts[0]!.location).toMatchObject({ countryCode: 'JP', latitude: regionCenters.JP![0], longitude: regionCenters.JP![1] })
     expect(model.value.groups[0]).toMatchObject({ currency: 'USD', amount: expect.any(Number) })
     expect(JSON.stringify(model)).not.toContain('secret-')
     // Unknown metrics stay unknown instead of turning into zero.
@@ -90,5 +90,19 @@ describe('share theme protocol', () => {
   it('falls back to protocol 1 unless a package explicitly declares protocol 2', () => {
     expect(shareThemeProtocol(2)).toBe(2)
     for (const value of [undefined, 1, '2', 3, null]) expect(shareThemeProtocol(value)).toBe(1)
+  })
+  it('hands themes flag images and distribution marks they can restyle, and nothing when unloaded', async () => {
+    const snapshot = themeSnapshot()
+    snapshot.items[0]!.location.countryCode = 'jp'; snapshot.items[0]!.os = 'Debian GNU/Linux 12'
+    const bare = shareThemeModelV2(snapshot, 'en-US').hosts[0]!
+    expect(bare.system).toEqual({ key: 'debian', label: 'Debian', accent: '', path: '', image: '' })
+    expect(bare.location.flag).toBe('')
+    const { loadShareThemeAssets } = await import('./shareThemeAssets')
+    const host = shareThemeModelV2(snapshot, 'en-US', new Date(), undefined, await loadShareThemeAssets(snapshot)).hosts[0]!
+    expect(host.system).toMatchObject({ key: 'debian', accent: '#A81D33', image: '' })
+    expect(host.system.path).toMatch(/^M[\d.\s,a-zA-Z-]+$/)
+    expect(host.location.flag).toMatch(/^data:image\/svg\+xml;charset=utf-8,%3Csvg/)
+    expect(decodeURIComponent(host.location.flag)).not.toMatch(/<script|on\w+=/i)
+    expect(host.location.latitude).toEqual(expect.any(Number))
   })
 })

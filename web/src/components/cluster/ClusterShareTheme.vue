@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { useTheme } from '@/stores/theme'
 import { shareThemeLabels } from '@/lib/shareThemeLabels'
-import { shareThemeModel, shareThemeModelV2, shareThemeProtocol, shareThemeURL, type RegionCenters } from '@/lib/shareThemes'
+import { shareThemeModel, shareThemeModelV2, shareThemeProtocol, shareThemeURL } from '@/lib/shareThemes'
+import type { ShareThemeAssets } from '@/lib/shareThemeAssets'
 import type { PublicClusterShareSnapshot } from '@/types/api'
 
 const props = defineProps<{ snapshot?: PublicClusterShareSnapshot; errorMessage?: string }>()
@@ -12,7 +13,8 @@ const { resolved } = useTheme()
 const frame = ref<HTMLIFrameElement>()
 const ready = ref(false)
 let protocol: 1 | 2 = 1
-let centers: RegionCenters = {}
+let assets: Partial<ShareThemeAssets> = {}
+let assetKey: string | null = null
 const fallback = ref(false)
 const failed = ref(false)
 const height = ref(720)
@@ -25,9 +27,20 @@ function send() {
   if (!ready.value || !props.snapshot) return
   const now = new Date(), target = frame.value?.contentWindow
   if (protocol === 2) target?.postMessage({ source: 'kpanel-share', type: 'snapshot', schema: 2, locale: locale.value, mode: resolved.value,
-    labels: shareThemeLabels(locale.value), data: shareThemeModelV2(props.snapshot, locale.value, now, t, centers) }, '*')
+    labels: shareThemeLabels(locale.value), data: shareThemeModelV2(props.snapshot, locale.value, now, t, assets) }, '*')
   else target?.postMessage({ source: 'kpanel-share', type: 'snapshot', schema: 1,
     locale: locale.value, mode: resolved.value, data: shareThemeModel(props.snapshot, locale.value, now, t) }, '*')
+}
+// Flags, system marks and map anchors are fetched only for protocol 2 themes, and again only
+// when the set of countries or systems changes; each resolution resends the snapshot.
+function loadAssets() {
+  const snapshot = props.snapshot
+  if (!ready.value || protocol !== 2 || !snapshot) return
+  const key = snapshot.items.map(host => `${host.location.countryCode || ''}:${host.os || ''}`).sort().join('|')
+  if (key === assetKey) return
+  assetKey = key
+  void import('@/lib/shareThemeAssets').then(module => module.loadShareThemeAssets(snapshot)).then(next => { if (assetKey === key) { assets = next; send() } })
+    .catch(() => { /* Themes treat missing flags, marks and coordinates as unknown. */ })
 }
 function message(event: MessageEvent) {
   if (!frame.value || event.source !== frame.value.contentWindow || event.origin !== 'null') return
@@ -39,14 +52,13 @@ function message(event: MessageEvent) {
   if (event.data?.type !== 'ready' || ready.value) return
   protocol = shareThemeProtocol(event.data.protocol)
   clearTimer(); ready.value = true; send()
-  // Map anchors ship in the globe chunk; fetch them only for protocol 2 themes, then resend.
-  if (protocol === 2 && !Object.keys(centers).length) void import('@/components/cluster/globeData').then(module => { centers = module.regionCenters; send() }).catch(() => { /* Themes treat null coordinates as unknown. */ })
+  loadAssets()
 }
 watch(url, () => {
-  clearTimer(); ready.value = false; protocol = 1; fallback.value = false; failed.value = false; height.value = 720
+  clearTimer(); ready.value = false; protocol = 1; assetKey = null; fallback.value = false; failed.value = false; height.value = 720
   if (url.value) timer = setTimeout(() => stop(true), 12_000)
 }, { immediate: true })
-watch([() => props.snapshot, locale, resolved], send)
+watch([() => props.snapshot, locale, resolved], () => { send(); loadAssets() })
 onMounted(() => window.addEventListener('message', message))
 onBeforeUnmount(() => { clearTimer(); window.removeEventListener('message', message) })
 </script>

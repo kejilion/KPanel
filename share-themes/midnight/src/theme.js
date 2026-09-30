@@ -10,6 +10,22 @@ const h = (tag, cls, ...kids) => {
 const remember = (key, fallback) => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
 const store = (key, value) => { try { localStorage.setItem(key, value) } catch { /* sandboxed: keep in memory */ } }
 
+const NS = 'http://www.w3.org/2000/svg'
+// Distribution glyph from the host's bare path data, tinted toward the terminal ink.
+function glyph(host) {
+  const node = h('span', 'os'); node.style.setProperty('--os', host.system.accent || 'var(--dim)'); node.title = host.system.label || host.os
+  node.setAttribute('aria-hidden', 'true')
+  if (host.system.path) { const icon = document.createElementNS(NS, 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); const path = document.createElementNS(NS, 'path'); path.setAttribute('d', host.system.path); icon.append(path); node.append(icon) }
+  else if (host.system.image) { const img = h('img'); img.src = host.system.image; img.alt = ''; node.append(img) }
+  else node.append('>')
+  return node
+}
+function where(host, labels) {
+  const flag = host.location.flag ? h('img', 'flag') : null
+  if (flag) { flag.src = host.location.flag; flag.alt = ''; flag.decoding = 'async'; flag.setAttribute('aria-hidden', 'true') }
+  return h('span', 'sub', flag || (host.location.countryCode ? `[${host.location.countryCode}] ` : ''), h('span', null, [host.location.text, host.os].filter(Boolean).join(' · ') || labels.unknownPlace))
+}
+
 const GLYPH = { online: '●', degraded: '▲', offline: '✕', pending: '○' }
 const ORDER = ['online', 'degraded', 'offline', 'pending']
 let snap = null, query = '', filter = 'all', sortKey = '', sortDir = 1, view = remember('midnight-view', 'list')
@@ -67,7 +83,7 @@ function table(hosts, labels) {
     toggle.addEventListener('click', () => { expanded ? open.delete(host.id) : open.add(host.id); render(); document.querySelector(`[data-host="${CSS.escape(host.id)}"] .expand`)?.focus() })
     const tr = h('tr', `host s-${host.state}${expanded ? ' is-open' : ''}`,
       h('td', 'st', h('span', null, GLYPH[host.state] || '○'), h('span', 'sr', host.stateLabel)),
-      h('td', 'name', h('strong', null, host.name), h('span', 'sub', host.location.countryCode ? `[${host.location.countryCode}] ` : '', [host.location.text, host.os].filter(Boolean).join(' · '))),
+      h('td', 'name', h('strong', null, glyph(host), h('span', null, host.name)), where(host, labels)),
       heat(host.cpu, labels.cpu), heat(host.memory, labels.memory), heat(host.disk, labels.disk),
       heat({ text: t.monthly && t.percent ? t.percent : `↓${t.received}`, ratio: t.monthly && t.percent ? t.ratio : null }, t.monthly ? labels.monthly : labels.traffic),
       h('td', 'net', h('span', null, '↓ ', host.network.down.text), h('span', null, '↑ ', host.network.up.text)),
@@ -84,8 +100,8 @@ function pane(host, labels) {
   const line = (label, reading) => h('div', `line ${level(reading.ratio)}`, h('span', 'k', label.padEnd(4, ' ')), h('span', 'bar', `[${ascii(reading.ratio)}]`), h('b', null, reading.text, level(reading.ratio) === 'hot' ? '!' : ''))
   const t = host.traffic
   return h('section', `pane s-${host.state}`,
-    h('header', null, h('span', 'st', GLYPH[host.state] || '○', ' ', host.stateLabel), h('h2', null, host.name)),
-    h('p', 'sub', host.location.countryCode ? `[${host.location.countryCode}] ` : '', [host.location.text, host.os].filter(Boolean).join(' · ')),
+    h('header', null, h('span', 'st', GLYPH[host.state] || '○', ' ', host.stateLabel), h('h2', null, glyph(host), h('span', null, host.name))),
+    h('p', 'pane-where', where(host, labels)),
     line(labels.cpu, host.cpu), line(labels.memory, host.memory), line(labels.disk, host.disk),
     t.monthly && t.percent ? line(labels.traffic, { text: t.percent, ratio: t.ratio }) : null,
     h('p', 'io', `↓ ${host.network.down.text}  ↑ ${host.network.up.text}  ⏱ ${known(host.uptime) ? host.uptime : '—'}`),

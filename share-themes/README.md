@@ -45,6 +45,8 @@
 
 每台主机：`id`（公开专用的不透明标识）、`name`、`state`（`online` `degraded` `offline` `pending`）、`stateLabel`、`os`、`architecture`、`cores`、`collected`、`location{text,country,countryCode,city,region,isp,latitude,longitude}`、`cpu{text,ratio}`、`memory{text,ratio,usedBytes,totalBytes,usedText,totalText}`、`disk{…同 memory}`、`load{one,five,fifteen}|null`、`uptime`（文本）、`uptimeSeconds`、`network{down,up}{bytesPerSecond,text}`、`traffic`、`price`、`expiresOn`、`remaining`。
 
+- `system` 是发行版标识：`key`（如 `debian`、`ubuntu`，无法识别时为 `linux`）、`label`、品牌色 `accent`，以及图形 `path`（24×24 viewBox 的 SVG 路径数据）或 `image`（仅有位图时的 `data:` URL）。推荐用 `createElementNS` 自建 `<svg>` 并只设置 `path` 的 `d` 属性，这样可以自由改色、描边、发光或做成徽章；**不要**把它拼进 HTML 字符串。
+- `location.flag` 是圆形国旗的 `data:` URL（来源 circle-flags，MIT），直接作为 `<img src>` 使用，可随意裁切、加边框或作为角标；未知为空字符串。国旗和系统图标在主题就绪后异步补发，首个快照里可能为空，主题需能在收到下一次快照时更新。
 - `latitude` / `longitude` 是**国家/地区中心点**（与内置地球相同的区域锚点），用于画地图；未知为 `null`。它不是机器的真实位置，主题不得据此暗示精确坐标。
 - `ratio` 是 0–1 的小数，**未知为 `null`**；文本未知为 `—`。未知永远不要画成 0。`collected` 为 `false` 表示还没有采集到数据。
 - `price` / `expiresOn` / `remaining` 为空字符串表示未配置，应隐藏整行；已配置的零值必须显示。
@@ -71,8 +73,8 @@
 
 | ID | 名称 | 适合 | 视图 | 设计要点 |
 | --- | --- | --- | --- | --- |
-| `minimal` | 简约看板 | 给别人看的状态页 | 卡片 / 列表 | 在线率环图与分状态计数、8px 粗条仪表、流量区块、信息标签 |
-| `orbit` | 星图 | 多地区部署、展示型分享 | 卡片 / 列表 + 世界地图 | 点阵世界地图按国家聚合机器，可点击筛选；拥挤时自动合并与避让标签；三色环形仪表 |
-| `midnight` | 午夜终端 | 机器多、要快速扫一遍 | 热力表 / 分屏 | htop 风格热力单元格、按列排序、行内展开详情、`/` 与 `1–4` 键盘操作 |
+| `minimal` | 简约看板 | 给别人看的状态页 | 卡片 / 列表 | 品牌色系统徽章 + 国旗角标、在线率环图、8px 粗条仪表、流量区块、信息标签 |
+| `orbit` | 星图 | 多地区部署、展示型分享 | 卡片 / 列表 + 世界地图 | 地图上以国旗作标记、状态作光环与计数，可点击筛选；发光系统图标；拥挤时自动合并与避让标签；三色环形仪表 |
+| `midnight` | 午夜终端 | 机器多、要快速扫一遍 | 热力表 / 分屏 | 单色系统字形与小国旗、htop 风格热力单元格、按列排序、行内展开详情、`/` 与 `1–4` 键盘操作 |
 
 `orbit/src/land.js` 是 Natural Earth v5.1.2 陆地点阵（公有领域），与内置地球同源。

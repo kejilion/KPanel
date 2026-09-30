@@ -65,7 +65,17 @@ h1 { margin: 0; font-size: clamp(28px, 4.4vw, 40px); line-height: 1.2; letter-sp
 .hosts.is-card { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; }
 .card { position: relative; display: flex; flex-direction: column; gap: 16px; padding: 20px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
 .card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: 20px 0 0 20px; background: var(--state); }
-.card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.card header { display: flex; align-items: flex-start; gap: 14px; }
+.card header .who { flex: 1; }
+/* App-icon style system badge in the distribution's colour, flag tucked into the corner. */
+.badge { position: relative; flex: none; display: grid; place-items: center; border-radius: 14px; color: #fff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--os) 82%, #fff), var(--os)); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18), 0 6px 14px -8px var(--os); }
+.badge svg { width: 56%; height: 56%; fill: currentColor; }
+.badge > img:not(.flag) { width: 70%; height: 70%; object-fit: contain; border-radius: 6px; }
+.badge b { font-size: 18px; }
+.badge-lg { width: 48px; height: 48px; } .badge-sm { width: 36px; height: 36px; border-radius: 10px; }
+.badge .flag { position: absolute; right: -5px; bottom: -5px; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.badge-sm .flag { width: 16px; height: 16px; right: -4px; bottom: -4px; }
 .who { min-width: 0; }
 .who h2 { margin: 0; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
 .who p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 2px 0 0; font-size: 13px; color: var(--soft); overflow-wrap: anywhere; }
@@ -97,6 +107,7 @@ h1 { margin: 0; font-size: clamp(28px, 4.4vw, 40px); line-height: 1.2; letter-sp
 .hosts.is-list { display: grid; gap: 8px; }
 .row { display: grid; grid-template-columns: 6.5em minmax(10em, 1.6fr) repeat(4, minmax(8em, 1fr)) minmax(7em, auto); align-items: center; gap: 12px 20px; padding: 12px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
 .row .pill { justify-self: start; }
+.row-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .row .who h2 { font-size: 15px; }
 .row .meter { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
 .row .meter .meter-name { grid-column: 1 / -1; font-size: 12px; }
@@ -111,7 +122,7 @@ h1 { margin: 0; font-size: clamp(28px, 4.4vw, 40px); line-height: 1.2; letter-sp
   .health { grid-template-columns: auto 1fr; padding: 18px; }
   .legend { grid-column: 2; gap: 8px 20px; } .legend b { font-size: 24px; }
   .views { margin-left: 0; } .search { max-width: none; flex-basis: 100%; order: -1; }
-  .row { grid-template-columns: minmax(0, 1fr) auto; } .row .who { grid-row: 1; grid-column: 1; } .row .pill { grid-row: 1; grid-column: 2; }
+  .row { grid-template-columns: minmax(0, 1fr) auto; } .row .row-id { grid-row: 1; grid-column: 1; } .row .pill { grid-row: 1; grid-column: 2; }
   .row > .meter { grid-column: 1 / -1; grid-template-columns: 3.6em minmax(0, 1fr) 5.4em; } .row .meter .meter-name { grid-column: auto; } .row .meter .meter-value { grid-row: auto; grid-column: auto; }
   .row > .meter:nth-of-type(4) { display: grid; }
 }

@@ -5,6 +5,8 @@ import type { useI18n } from '@/i18n'
 import { formatClusterMoney, estimateRemainingValue, summarizeRemainingValue } from './clusterRemainingValue'
 import { formatPercent, formatDuration, formatBytes } from './format'
 import { shareThemeLabels } from './shareThemeLabels'
+import type { ShareThemeAssets } from './shareThemeAssets'
+import { detectOperatingSystemIdentity } from './operatingSystem'
 
 export interface ShareTheme { id: string; name: LocalizedText; fileBase: string }
 export interface ShareThemeList extends ScenePackList { selected?: string; resourceVersion: string }
@@ -63,10 +65,9 @@ const finite = (value: number | undefined, known: boolean) => known && Number.is
  * however it likes. Themes get vocabulary through `labels` and a stable list of
  * `states`, and never need to parse formatted strings.
  */
-export type RegionCenters = Readonly<Record<string, readonly [number, number]>>
-
-/** Country anchors are lazy-loaded by the caller so the public page never pays for them without a protocol 2 theme. */
-export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: string, now = new Date(), t?: ReturnType<typeof useI18n>['t'], regionCenters: RegionCenters = {}) {
+/** Assets (map anchors, flags, system marks) are lazy-loaded by the caller so the public page never pays for them without a protocol 2 theme. */
+export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: string, now = new Date(), t?: ReturnType<typeof useI18n>['t'], assets: Partial<ShareThemeAssets> = {}) {
+  const regionCenters = assets.centers || {}
   const v1 = shareThemeModel(snapshot, locale, now, t)
   const summary = summarizeRemainingValue(snapshot.items, Object.fromEntries(snapshot.items.map(host => [host.id, host])), now)
   const labels = shareThemeLabels(locale)
@@ -80,10 +81,14 @@ export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: 
       return {
         ...host,
         stateLabel: labels[raw.state] || labels.pending,
+        // Distribution mark: bare 24×24 path data or an image data: URL, plus the brand colour. '' when unavailable.
+        system: (() => { const id = detectOperatingSystemIdentity({ os: raw.os }), mark = assets.systems?.[id.key]
+          return { key: id.key, label: id.label, accent: mark?.accent || '', path: mark?.path || '', image: mark?.image || '' } })(),
         architecture: raw.architecture || '',
         location: { text: host.location, country: raw.location.country || '', countryCode, city: raw.location.city || '', region: raw.location.region || '', isp: raw.location.isp || '',
           // Country-level anchor shared with the built-in globe; never a measured host position.
-          latitude: regionCenters[countryCode]?.[0] ?? null, longitude: regionCenters[countryCode]?.[1] ?? null },
+          latitude: regionCenters[countryCode]?.[0] ?? null, longitude: regionCenters[countryCode]?.[1] ?? null,
+          flag: assets.flags?.[countryCode] || '' },
         cores: known ? raw.cpu.cores : null,
         collected: known,
         cpu: { text: host.cpu, ratio: ratio(raw.cpu.usagePercent, known) },

@@ -17,7 +17,10 @@
 //          hosts: [{
 //            id, name, state: 'online' | 'degraded' | 'offline' | 'pending', stateLabel,
 //            os, architecture, cores, collected,                                                   // collected=false => metrics unknown
-//            location: { text, country, countryCode, city, region, isp, latitude, longitude },   // lat/lon: country centre or null
+//            location: { text, country, countryCode, city, region, isp, latitude, longitude, flag },  // lat/lon: country centre or null
+//                                                                                    // flag: circular flag as a data: URL for <img src>, or ''
+//            system: { key, label, accent, path, image },  // distribution mark: `path` is 24×24 SVG path data for your own <svg>,
+//                                                          // `image` a data: URL when only a bitmap exists, `accent` the brand colour; '' when unknown
 //            cpu:    { text, ratio },                                                              // ratio is 0..1, null when unknown
 //            memory: { text, ratio, usedBytes, totalBytes, usedText, totalText },
 //            disk:   { text, ratio, usedBytes, totalBytes, usedText, totalText },

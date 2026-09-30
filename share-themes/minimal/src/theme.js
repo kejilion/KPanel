@@ -11,6 +11,19 @@ const svg = (tag, attrs) => { const node = document.createElementNS('http://www.
 const remember = (key, fallback) => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
 const store = (key, value) => { try { localStorage.setItem(key, value) } catch { /* sandboxed: keep in memory */ } }
 
+// System mark: the host sends bare path data, so the badge is ours to draw and colour.
+function systemBadge(host, size) {
+  const badge = h('span', `badge badge-${size}`)
+  badge.style.setProperty('--os', host.system.accent || 'var(--idle)')
+  badge.title = host.system.label || host.os
+  if (host.system.path) { const icon = svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }); icon.append(svg('path', { d: host.system.path })); badge.append(icon) }
+  else if (host.system.image) { const img = h('img'); img.src = host.system.image; img.alt = ''; badge.append(img) }
+  else badge.append(h('b', null, (host.system.label || host.os || '?').slice(0, 1).toUpperCase()))
+  if (host.location.flag) { const flag = h('img', 'flag'); flag.src = host.location.flag; flag.alt = ''; flag.decoding = 'async'; badge.append(flag) }
+  badge.setAttribute('aria-hidden', 'true')
+  return badge
+}
+
 const STATES = ['online', 'degraded', 'offline', 'pending']
 let snap = null, query = '', filter = 'all', view = remember('clear-view', 'card')
 const level = ratio => ratio === null || ratio === undefined ? 'na' : ratio >= 0.9 ? 'hot' : ratio >= 0.75 ? 'warm' : 'ok'
@@ -53,12 +66,12 @@ function identity(host, labels) {
   const place = [host.location.text, host.os].filter(Boolean).join(' · ')
   return h('div', 'who',
     h('h2', null, host.name),
-    h('p', null, host.location.countryCode ? h('span', 'cc', host.location.countryCode) : null, place || labels.unknownPlace))
+    h('p', null, host.location.countryCode && !host.location.flag ? h('span', 'cc', host.location.countryCode) : null, place || labels.unknownPlace))
 }
 
 function card(host, labels) {
   return h('article', `card s-${host.state}`,
-    h('header', null, identity(host, labels), h('span', `pill s-${host.state}`, host.stateLabel)),
+    h('header', null, systemBadge(host, 'lg'), identity(host, labels), h('span', `pill s-${host.state}`, host.stateLabel)),
     h('div', 'meters', meter(labels.cpu, host.cpu, host.cores ? `${host.cores} ${labels.cores}` : ''), meter(labels.memory, host.memory, host.memory.totalText !== '—' ? `${host.memory.usedText} / ${host.memory.totalText}` : ''),
       meter(labels.disk, host.disk, host.disk.totalText !== '—' ? `${host.disk.usedText} / ${host.disk.totalText}` : '')),
     trafficMeter(host, labels), chips(host, labels))
@@ -67,7 +80,7 @@ function card(host, labels) {
 function row(host, labels) {
   const t = host.traffic
   return h('article', `row s-${host.state}`,
-    h('span', `pill s-${host.state}`, host.stateLabel), identity(host, labels),
+    h('span', `pill s-${host.state}`, host.stateLabel), h('div', 'row-id', systemBadge(host, 'sm'), identity(host, labels)),
     meter(labels.cpu, host.cpu), meter(labels.memory, host.memory), meter(labels.disk, host.disk),
     meter(t.monthly ? labels.monthly : labels.traffic, { text: t.percent || `↓ ${t.received}`, ratio: t.percent ? t.ratio : null }),
     h('div', 'row-meta', h('span', null, known(host.uptime) ? host.uptime : ''), host.collected ? h('span', null, `↓ ${host.network.down.text}`) : null))

@@ -55,8 +55,14 @@ h1::before { content: "# "; color: var(--accent); }
 .host > td:first-child { border-radius: 6px 0 0 6px; } .host > td:last-child { border-radius: 0 6px 6px 0; }
 .host:hover > td { background: var(--bar); }
 .host .st { width: 2em; text-align: center; color: var(--state); font-weight: 700; }
-.host .name strong { display: block; overflow-wrap: anywhere; }
-.sub { display: block; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.host .name strong, .pane h2 { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; }
+.host .name strong > span, .pane h2 > span { min-width: 0; }
+.os { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; color: color-mix(in srgb, var(--os) 60%, var(--ink)); }
+.os svg { width: 16px; height: 16px; fill: currentColor; } .os img { width: 16px; height: 16px; object-fit: contain; }
+.sub { display: flex; align-items: flex-start; gap: 6px; } .sub > span { min-width: 0; }
+.sub .flag { flex: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.pane-where { margin: 2px 0 10px; }
+.sub { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
 .heat { width: 9%; min-width: 6.5em; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right;
   /* A faint tint for the whole cell plus a solid load bar along the bottom edge; text stays on a low-alpha ground. */
   background:
@@ -81,7 +87,6 @@ h1::before { content: "# "; color: var(--accent); }
 .pane header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .pane .st { color: var(--state); font-weight: 700; font-size: 13px; }
 .pane h2 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
-.pane .sub { margin: 2px 0 10px; }
 .line { display: grid; grid-template-columns: 4.2em minmax(0, auto) 1fr; align-items: center; gap: 8px; white-space: nowrap; }
 .line .k { color: var(--dim); } .line .bar { overflow: hidden; color: var(--ok); } .line b { text-align: right; font-variant-numeric: tabular-nums; }
 .line.warm .bar, .line.warm b { color: var(--warm); } .line.hot .bar, .line.hot b { color: var(--hot); } .line.na .bar { color: var(--dim); }

@@ -64,7 +64,7 @@ describe('isolated public theme', () => {
     expect(post).toHaveBeenCalledWith(expect.objectContaining({ schema: 2, labels: expect.objectContaining({ online: expect.any(String) }),
       data: expect.objectContaining({ counts: expect.objectContaining({ total: 0 }) }) }), '*')
     expect(JSON.stringify(post.mock.calls[0]![0])).not.toContain('secret')
-    // Region anchors arrive in a follow-up snapshot once the lazy globe chunk resolves.
+    // Flags, system marks and region anchors arrive in a follow-up snapshot once the lazy asset chunk resolves.
     await vi.waitFor(() => expect(post.mock.calls.length).toBeGreaterThan(1))
   })
 })

@@ -12,6 +12,21 @@ const s = (tag, attrs, ...kids) => { const node = document.createElementNS(NS, t
 const remember = (key, fallback) => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
 const store = (key, value) => { try { localStorage.setItem(key, value) } catch { /* sandboxed: keep in memory */ } }
 
+function flagImage(location, cls = 'flag') {
+  if (!location.flag) return null
+  const img = h('img', cls); img.src = location.flag; img.alt = ''; img.decoding = 'async'; img.setAttribute('aria-hidden', 'true')
+  return img
+}
+// The host sends bare path data; the glyph is drawn here in the distribution colour, lifted for dark glass.
+function systemGlyph(host) {
+  const node = h('span', 'os'); node.style.setProperty('--os', host.system.accent || 'var(--soft)'); node.title = host.system.label || host.os
+  node.setAttribute('aria-hidden', 'true')
+  if (host.system.path) node.append(s('svg', { viewBox: '0 0 24 24' }, s('path', { d: host.system.path })))
+  else if (host.system.image) { const img = h('img'); img.src = host.system.image; img.alt = ''; node.append(img) }
+  else node.append(h('b', null, (host.system.label || host.os || '?').slice(0, 1).toUpperCase()))
+  return node
+}
+
 const RANK = { offline: 3, degraded: 2, pending: 1, online: 0 }
 const GLYPH = { online: '●', degraded: '▲', offline: '✕', pending: '○' }
 let snap = null, query = '', filter = 'all', region = '', view = remember('orbit-view', 'card')
@@ -66,7 +81,8 @@ function drawMarkers(data, labels) {
     const hosts = group.entries.flatMap(entry => entry.hosts)
     const active = region === key
     const button = h('button', `marker s-${group.worst} tag-${group.side}${active ? ' is-active' : ''}${region && !active ? ' is-dim' : ''}`,
-      h('span', 'dot', hosts.length), h('span', 'tag', codes.join(' · ')))
+      h('span', 'coin', group.entries.slice(0, 2).map(entry => entry.hosts[0].location.flag ? flagImage(entry.hosts[0].location) : h('span', 'noflag', entry.code)),
+        h('span', 'count', hosts.length)), h('span', 'tag', codes.join(' · ')))
     button.type = 'button'
     button.style.left = `${group.x}px`; button.style.top = `${group.y}px`
     button.dataset.key = key
@@ -97,7 +113,7 @@ function trafficLine(host, labels) {
 }
 
 function status(host) { return h('span', `status s-${host.state}`, h('i', null, GLYPH[host.state] || '○'), host.stateLabel) }
-function place(host, labels) { return h('p', 'place', host.location.countryCode ? h('span', 'cc', host.location.countryCode) : null, [host.location.text, host.os].filter(Boolean).join(' · ') || labels.unknownPlace) }
+function place(host, labels) { return h('p', 'place', flagImage(host.location) || (host.location.countryCode ? h('span', 'cc', host.location.countryCode) : null), h('span', null, [host.location.text, host.os].filter(Boolean).join(' · ') || labels.unknownPlace)) }
 
 function card(host, labels) {
   const facts = h('dl', 'facts')
@@ -106,7 +122,7 @@ function card(host, labels) {
   if (host.collected) add(labels.network, `↓ ${host.network.down.text}  ↑ ${host.network.up.text}`)
   add(labels.expiry, host.expiresOn); add(labels.price, host.price); add(labels.remaining, host.remaining)
   return h('article', `card s-${host.state}`,
-    h('header', null, h('div', 'who', h('h2', null, host.name), place(host, labels)), status(host)),
+    h('header', null, systemGlyph(host), h('div', 'who', h('h2', null, host.name), place(host, labels)), status(host)),
     h('div', 'rings', ring(labels.cpu, host.cpu, 'cpu'), ring(labels.memory, host.memory, 'mem'), ring(labels.disk, host.disk, 'disk')),
     trafficLine(host, labels), facts)
 }
@@ -119,7 +135,7 @@ function mini(label, reading, metric) {
 function row(host, labels) {
   const t = host.traffic
   return h('article', `row s-${host.state}`,
-    status(host), h('div', 'who', h('h2', null, host.name), place(host, labels)),
+    status(host), h('div', 'row-id', systemGlyph(host), h('div', 'who', h('h2', null, host.name), place(host, labels))),
     mini(labels.cpu, host.cpu, 'cpu'), mini(labels.memory, host.memory, 'mem'), mini(labels.disk, host.disk, 'disk'),
     mini(t.monthly ? labels.monthly : labels.traffic, { text: t.percent || `↓ ${t.received}`, ratio: t.percent ? t.ratio : null }, 'net'),
     h('span', 'row-up', known(host.uptime) ? host.uptime : '—'))
