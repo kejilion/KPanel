@@ -104,8 +104,29 @@ func (e *Engine) excluded(virtual string) bool {
 		return true
 	}
 	actual := filepath.ToSlash(filepath.Clean(e.host(virtual)))
-	state := filepath.ToSlash(filepath.Clean(e.StateDir))
-	return within(state, actual) || within(actual, state)
+	for _, protected := range e.protectedPaths() {
+		if within(protected, actual) || within(actual, protected) {
+			return true
+		}
+	}
+	return false
+}
+
+// protectedPaths adds the resolved Agent state and KPanel roots. NAS hosts link
+// /home/docker to a storage volume, and restore targets must be free of links,
+// so the resolved path is the only other way to reach them.
+func (e *Engine) protectedPaths() []string {
+	paths := []string{filepath.ToSlash(filepath.Clean(e.StateDir))}
+	candidates := []string{e.StateDir}
+	for _, root := range kpanelRoots {
+		candidates = append(candidates, e.host(root))
+	}
+	for _, candidate := range candidates {
+		if resolved, err := filepath.EvalSymlinks(candidate); err == nil && filepath.IsAbs(resolved) {
+			paths = append(paths, filepath.ToSlash(resolved))
+		}
+	}
+	return paths
 }
 func (e *Engine) host(path string) string {
 	return filepath.Join(e.Root, filepath.FromSlash(strings.TrimPrefix(path, "/")))
@@ -156,8 +177,12 @@ func (e *Engine) docker(ctx context.Context, method, path string, input, output 
 func within(parent, path string) bool {
 	return path == parent || strings.HasPrefix(path, strings.TrimSuffix(parent, "/")+"/")
 }
+
+// kpanelRoots hold Panel and Agent state that host backups never archive or replace.
+var kpanelRoots = []string{"/etc/kejilion-panel", "/var/lib/kejilion-panel", "/home/docker/kpanel"}
+
 func excluded(path string) bool {
-	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/var/run", "/etc/kejilion-panel", "/var/lib/kejilion-panel", "/home/docker/kpanel"} {
+	for _, root := range append([]string{"/proc", "/sys", "/dev", "/run", "/var/run"}, kpanelRoots...) {
 		if within(root, path) || within(path, root) {
 			return true
 		}
