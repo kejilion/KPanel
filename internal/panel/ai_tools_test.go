@@ -235,7 +235,8 @@ func TestAIFileBoundarySeparatesOperationsFromSecretsAndCore(t *testing.T) {
 	for _, path := range []string{"/etc/shadow", "/root/.ssh/id_ed25519", "/home/app/.env", "/proc/1/environ", "/etc/ssl/private/site.key", "/home/docker/kpanel/.env",
 		"/home/web/certs/privkey.pem.bak", "/srv/app/server.key.orig", "/root/id_rsa~", "/root/.git-credentials",
 		"/root/.netrc", "/var/lib/postgresql/.pgpass", "/home/app/.npmrc", "/root/.my.cnf", "/root/.bash_history",
-		"/home/web/.htpasswd"} {
+		"/home/web/.htpasswd",
+		"/root/privkey.pem.bak.old.orig.save", "/root/site.key~.bak"} {
 		if aiFileReadable(path) {
 			t.Fatalf("sensitive content was readable by AI: %s", path)
 		}

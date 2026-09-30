@@ -707,19 +707,20 @@ func aiFileReadable(raw string) bool {
 		hasPathPrefix(clean, "/home/docker/kpanel") || strings.Contains(clean, "/.ssh/") || strings.HasSuffix(clean, "/.ssh") {
 		return false
 	}
-	base := strings.TrimRight(strings.ToLower(pathpkg.Base(clean)), "~")
-	// Backup copies such as privkey.pem.bak or id_rsa.old hold the same secret.
-	for range 3 {
+	// Backup copies such as privkey.pem.bak or id_rsa.old~ hold the same secret.
+	// Every stripped suffix shortens the name, so the loop always terminates.
+	base := strings.ToLower(pathpkg.Base(clean))
+	for {
+		base = strings.TrimRight(base, "~")
 		if aiSecretFileName(base) {
 			return false
 		}
 		extension := pathpkg.Ext(base)
 		if _, ok := aiBackupExtensions[extension]; !ok || extension == base {
-			break
+			return true
 		}
 		base = strings.TrimSuffix(base, extension)
 	}
-	return true
 }
 
 var aiBackupExtensions = map[string]struct{}{
