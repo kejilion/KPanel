@@ -135,6 +135,7 @@ const lightBatchCommandCopied = ref(false)
 const lightBatchEnrollmentsError = ref('')
 const revokingLightBatchEnrollmentID = ref('')
 const controllers = ref<ClusterController[]>([])
+const controllerFileRelayBusy = ref('')
 const shareSettings = ref<ClusterShareSettings>()
 const selected = ref<ClusterHost>()
 const editResourceVersion = ref('')
@@ -1035,6 +1036,30 @@ async function dropHost(targetID: string): Promise<void> {
 function finishHostDrag(): void {
   draggedHostId.value = ''
   dragOverHostId.value = ''
+}
+
+function controllerFileRelayEnabled(controller: ClusterController): boolean {
+  return controller.scope.split(/\s+/).includes('cluster.files.read')
+}
+
+// A legacy v1 pairing only reads summaries. This host's administrator grants
+// file management to such a controller explicitly and can withdraw it.
+async function toggleControllerFileRelay(controller: ClusterController): Promise<void> {
+  const enabled = !controllerFileRelayEnabled(controller)
+  if (
+    enabled
+    && !window.confirm(t('cluster.confirm.enableControllerFileRelay', { name: controller.name || controller.fingerprint }))
+  ) return
+  controllerFileRelayBusy.value = controller.id
+  try {
+    const updated = await api.cluster.setControllerFileRelay(controller.id, enabled)
+    controllers.value = controllers.value.map((item) => (item.id === updated.id ? updated : item))
+    toast.success(enabled ? '已允许该控制端管理本机文件' : '已停用该控制端的文件管理')
+  } catch (reason) {
+    toast.danger('文件管理授权更新失败', friendlyError(reason, '请刷新后重试。'))
+  } finally {
+    controllerFileRelayBusy.value = ''
+  }
 }
 
 async function revokeController(controller: ClusterController): Promise<void> {
@@ -2141,14 +2166,25 @@ onBeforeUnmount(() => {
                   {{ phrase(`授权于 ${formatDateTime(controller.createdAt)} · 最近访问 ${relativeTime(controller.lastSeenAt)}`) }}
                 </small>
               </span>
-              <button
-                class="icon-button icon-button--small icon-button--danger"
-                type="button"
-                :aria-label="phrase(`撤销 ${controller.name || '控制端'} 授权`)"
-                @click="revokeController(controller)"
-              >
-                <Trash2 :size="14" />
-              </button>
+              <div class="cluster-access__controller-actions">
+                <button
+                  v-if="controller.fileRelayConfigurable"
+                  class="button button--secondary button--small"
+                  type="button"
+                  :disabled="controllerFileRelayBusy === controller.id"
+                  @click="toggleControllerFileRelay(controller)"
+                >
+                  {{ phrase(controllerFileRelayEnabled(controller) ? '停用文件管理' : '允许文件管理') }}
+                </button>
+                <button
+                  class="icon-button icon-button--small icon-button--danger"
+                  type="button"
+                  :aria-label="phrase(`撤销 ${controller.name || '控制端'} 授权`)"
+                  @click="revokeController(controller)"
+                >
+                  <Trash2 :size="14" />
+                </button>
+              </div>
             </article>
           </template>
         </section>
@@ -3201,6 +3237,13 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 11px 0;
   border-top: 1px solid var(--border);
+}
+
+.cluster-access__controller-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .cluster-access__controllers code {

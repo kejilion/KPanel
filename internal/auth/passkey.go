@@ -364,14 +364,19 @@ func (p *PasskeyService) FinishLogin(ip, binding, id string, response []byte, se
 	s := p.auth
 	now := s.now()
 	ipKey, accountKey := loginKeys(ip, c.username)
-	if !s.reserveLogin(ipKey, accountKey, now.Add(-s.config.LoginWindow)) {
+	// A passkey assertion cannot be guessed, so passkey logins neither check nor
+	// feed the account-wide password lockout. Otherwise anyone who knows the
+	// username could keep the administrator's passkey locked out as well. The
+	// per-source budget still applies.
+	since := now.Add(-s.config.LoginWindow)
+	if !s.reserveAuthenticationAttempt(ipKey, since, s.config.MaxLoginFailures) {
 		return Credentials{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
 	}
-	defer s.releaseLogin(ipKey, accountKey)
+	defer s.releaseAuthenticationAttempt(ipKey)
 	s.credentialMu.Lock()
 	defer s.credentialMu.Unlock()
 	failure := func(err error) (Credentials, error) {
-		if e := s.recordLoginAttempt(ipKey, accountKey, now, false); e != nil {
+		if e := s.store.RecordLoginAttempt(store.LoginAttempt{Key: ipKey, OccurredAt: now}, since); e != nil {
 			return Credentials{}, e
 		}
 		return Credentials{}, err
@@ -406,9 +411,20 @@ func (p *PasskeyService) FinishLogin(ip, binding, id string, response []byte, se
 		if strings.TrimSpace(second) == "" {
 			return failure(ErrTOTPRequired)
 		}
+		// Only a holder of a valid passkey reaches this point, so this
+		// account-wide budget caps second-factor guessing without letting
+		// password guessers lock the passkey path.
+		secondKey := "passkey-second-factor:" + user.ID
+		if !s.reserveAuthenticationAttempt(secondKey, since, s.config.MaxLoginFailures*accountFailureLimitMultiplier) {
+			return Credentials{}, &RateLimitError{RetryAfter: s.config.LoginWindow}
+		}
+		defer s.releaseAuthenticationAttempt(secondKey)
 		if err := s.verifyAndConsumeSecondFactor(user, second, now); err != nil {
 			if errors.Is(err, ErrSecondFactorUnavailable) {
 				return failure(err)
+			}
+			if e := s.store.RecordLoginAttempt(store.LoginAttempt{Key: secondKey, OccurredAt: now}, since); e != nil {
+				return Credentials{}, e
 			}
 			return failure(ErrInvalidSecondFactor)
 		}

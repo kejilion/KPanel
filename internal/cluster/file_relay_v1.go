@@ -3,11 +3,63 @@ package cluster
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 )
+
+const (
+	// FileRelayV1SignedCapability is advertised only to a v1 controller that
+	// this target has explicitly granted file management. It replaces the
+	// earlier unconditional file-relay-v1 hint, which older targets still send.
+	FileRelayV1SignedCapability = "file-relay-v1-signed"
+	FileRelayV1SignatureHeader  = "X-KPanel-File-Signature"
+)
+
+// fileRelayV1Canonical binds the inner file operation to the outer v1 request
+// signature. The outer canonical form predates the relay and covers only the
+// fixed relay path, so without this binding a party able to modify a request
+// in transit could turn an authorized read into a write.
+func fileRelayV1Canonical(controllerID, targetID, timestamp, nonce string, input LightFileRequest) string {
+	return strings.Join([]string{
+		"KPanel federation file relay v1",
+		http.MethodPost, FileRelayV1Path, controllerID, targetID, timestamp, nonce,
+		strings.ToUpper(input.Method), input.Path, input.RawQuery,
+	}, "\n")
+}
+
+func signFileRelayV1(request *http.Request, privateKey ed25519.PrivateKey, input LightFileRequest) error {
+	if request == nil || len(privateKey) != ed25519.PrivateKeySize {
+		return errors.New("federation file relay signing input is invalid")
+	}
+	canonical := fileRelayV1Canonical(
+		request.Header.Get(headerControllerID), request.Header.Get(headerTargetID),
+		request.Header.Get(headerTimestamp), request.Header.Get(headerNonce), input,
+	)
+	request.Header.Set(FileRelayV1SignatureHeader, base64.RawStdEncoding.EncodeToString(ed25519.Sign(privateKey, []byte(canonical))))
+	return nil
+}
+
+func verifyFileRelayV1Binding(request *http.Request, publicKey ed25519.PublicKey, input LightFileRequest) error {
+	values := request.Header.Values(FileRelayV1SignatureHeader)
+	if len(values) != 1 || len(values[0]) > 128 || len(publicKey) != ed25519.PublicKeySize {
+		return ErrAuthentication
+	}
+	signature, err := base64.RawStdEncoding.DecodeString(strings.TrimSpace(values[0]))
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return ErrAuthentication
+	}
+	canonical := fileRelayV1Canonical(
+		strings.TrimSpace(request.Header.Get(headerControllerID)), strings.TrimSpace(request.Header.Get(headerTargetID)),
+		strings.TrimSpace(request.Header.Get(headerTimestamp)), strings.TrimSpace(request.Header.Get(headerNonce)), input,
+	)
+	if !ed25519.Verify(publicKey, []byte(canonical), signature) {
+		return ErrAuthentication
+	}
+	return nil
+}
 
 // FileRelayV1RequestFromHTTP decodes the fixed v1 federation envelope into
 // the same constrained file request used by the lightweight and v2 relays.
@@ -48,7 +100,9 @@ func FileRelayV1RequestFromHTTP(request *http.Request) (LightFileRequest, error)
 }
 
 // AuthorizeFileRelayV1 authenticates an existing v1 controller before the
-// target Panel invokes its local, allowlisted Agent file surface.
+// target Panel invokes its local, allowlisted Agent file surface. A v1 pairing
+// authorizes read-only summaries; file management additionally requires the
+// target administrator's explicit grant and a signature over the inner request.
 func (s *Service) AuthorizeFileRelayV1(
 	source string,
 	request *http.Request,
@@ -83,6 +137,12 @@ func (s *Service) AuthorizeFileRelayV1(
 	if verifiedID != controllerID {
 		return LightFileRequest{}, ErrAuthentication
 	}
+	if !s.fileRelayV1Grants.Granted(controllerID, record.Fingerprint) {
+		return LightFileRequest{}, ErrAuthentication
+	}
+	if err := verifyFileRelayV1Binding(request, publicKey, input); err != nil {
+		return LightFileRequest{}, err
+	}
 	if !s.fileRequests.Allow(controllerID, now) {
 		return LightFileRequest{}, ErrRateLimited
 	}
@@ -100,10 +160,19 @@ type remoteV1PanelFileAPI interface {
 	) (*http.Response, error)
 }
 
+type remoteV1SignedPanelFileAPI interface {
+	OpenSignedFileRelayV1(
+		context.Context, string, string, string, ed25519.PrivateKey, time.Time,
+		LightFileRequest,
+	) (*http.Response, error)
+}
+
 // OpenRemotePanelFileV1 opens a same-page file-manager request against a
-// legacy paired Panel after its summary advertises the v1 relay capability.
+// legacy paired Panel after its summary advertises a v1 relay capability.
 // This preserves old pair records and credentials; no second pairing is
-// needed when both Panels have been upgraded.
+// needed. Current targets advertise the signed capability only after their
+// administrator grants file management; older targets still advertise the
+// unsigned hint and keep their earlier behavior.
 func (s *Service) OpenRemotePanelFileV1(
 	ctx context.Context,
 	hostID string,
@@ -118,6 +187,7 @@ func (s *Service) OpenRemotePanelFileV1(
 	}
 	s.mu.RLock()
 	available := s.runtime[hostID].fileManagementAvailable
+	signed := s.runtime[hostID].fileRelayV1Signed
 	s.mu.RUnlock()
 	if !available {
 		return nil, ErrFileRelayUnavailable
@@ -125,6 +195,16 @@ func (s *Service) OpenRemotePanelFileV1(
 	privateKey, err := s.secrets.Read(record.CredentialFile)
 	if err != nil {
 		return nil, ErrFileRelayUnavailable
+	}
+	if signed {
+		remote, ok := s.remote.(remoteV1SignedPanelFileAPI)
+		if !ok {
+			return nil, ErrProtocolMismatch
+		}
+		return remote.OpenSignedFileRelayV1(
+			ctx, record.Origin, record.ControllerID, record.RemoteNodeID,
+			privateKey, s.now().UTC(), input,
+		)
 	}
 	remote, ok := s.remote.(remoteV1PanelFileAPI)
 	if !ok {
@@ -147,6 +227,33 @@ func (c *RemoteClient) OpenFileRelayV1(
 	privateKey ed25519.PrivateKey,
 	now time.Time,
 	input LightFileRequest,
+) (*http.Response, error) {
+	return c.openFileRelayV1(ctx, origin, controllerID, targetID, privateKey, now, input, false)
+}
+
+// OpenSignedFileRelayV1 is OpenFileRelayV1 with the inner file operation bound
+// to the request signature, as required by targets that grant v1 file access.
+func (c *RemoteClient) OpenSignedFileRelayV1(
+	ctx context.Context,
+	origin string,
+	controllerID string,
+	targetID string,
+	privateKey ed25519.PrivateKey,
+	now time.Time,
+	input LightFileRequest,
+) (*http.Response, error) {
+	return c.openFileRelayV1(ctx, origin, controllerID, targetID, privateKey, now, input, true)
+}
+
+func (c *RemoteClient) openFileRelayV1(
+	ctx context.Context,
+	origin string,
+	controllerID string,
+	targetID string,
+	privateKey ed25519.PrivateKey,
+	now time.Time,
+	input LightFileRequest,
+	signed bool,
 ) (*http.Response, error) {
 	if c == nil || c.streamClient == nil || !validFileRelayRequest(input) {
 		return nil, ErrAuthentication
@@ -176,6 +283,11 @@ func (c *RemoteClient) OpenFileRelayV1(
 	}
 	if err := SignRequest(request, controllerID, targetID, privateKey, now, nonce); err != nil {
 		return nil, err
+	}
+	if signed {
+		if err := signFileRelayV1(request, privateKey, input); err != nil {
+			return nil, err
+		}
 	}
 	response, err := c.streamClient.Do(request)
 	if err != nil {

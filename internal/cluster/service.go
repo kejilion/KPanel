@@ -82,6 +82,7 @@ type runtimeState struct {
 	inFlight                bool
 	nextFilePeerSyncAt      time.Time
 	fileManagementAvailable bool
+	fileRelayV1Signed       bool
 
 	securityEntrancePath string
 }
@@ -92,6 +93,7 @@ type Service struct {
 	secrets              *secretStore
 	storeV2              *storeV2
 	filePeersV2          *filePeerStoreV2
+	fileRelayV1Grants    *fileRelayV1GrantStore
 	secretsV2            *secretStoreV2
 	remote               remoteAPI
 	remoteV2             remoteV2API
@@ -228,6 +230,10 @@ func NewService(config ServiceConfig) (*Service, error) {
 	if err := filePeersV2.Reconcile(storeV2.Controllers(), storeV2.Hosts(), config.Now().UTC()); err != nil {
 		return nil, err
 	}
+	fileRelayV1Grants, err := openFileRelayV1GrantStore(filepath.Join(config.DataDir, fileRelayV1GrantFileName))
+	if err != nil {
+		return nil, err
+	}
 	light, err := openLightStore(filepath.Join(config.DataDir, lightStateFileName))
 	if err != nil {
 		return nil, err
@@ -277,7 +283,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		managed: openManagedControl(config.DataDir),
 		store:   store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
-		remote: config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
+		fileRelayV1Grants: fileRelayV1Grants,
+		remote:            config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,
 		light: light, lightBatches: lightBatches,
 		lightTerminal: newLightTerminalRelay(config.Now), lightFile: newLightFileRelay(config.Now),
 		panelFileRelay:       newPanelFileRelay(),
@@ -739,10 +746,7 @@ func (s *Service) Controllers() []Controller {
 	recordsV2 := s.storeV2.Controllers()
 	result := make([]Controller, 0, len(records)+len(recordsV2))
 	for _, item := range records {
-		result = append(result, Controller{
-			ID: item.ID, Name: item.Name, Fingerprint: item.Fingerprint,
-			Scope: item.Scope, CreatedAt: item.CreatedAt, LastSeenAt: cloneTime(item.LastSeenAt),
-		})
+		result = append(result, s.controllerV1View(item))
 	}
 	for _, item := range recordsV2 {
 		if item.State != controllerStateV2Active {
@@ -757,9 +761,53 @@ func (s *Service) Controllers() []Controller {
 	return result
 }
 
+// controllerV1View reports the effective authorization of a legacy v1
+// controller: read-only summaries, plus file management only when this target
+// granted it to the controller's current key.
+func (s *Service) controllerV1View(item controllerRecord) Controller {
+	scope := item.Scope
+	if item.Scope == SummaryScope && s.fileRelayV1Grants.Granted(item.ID, item.Fingerprint) {
+		scope = SummaryFilesScope
+	}
+	return Controller{
+		ID: item.ID, Name: item.Name, Fingerprint: item.Fingerprint,
+		Scope: scope, CreatedAt: item.CreatedAt, LastSeenAt: cloneTime(item.LastSeenAt),
+		FileRelayConfigurable: item.Scope == SummaryScope,
+	}
+}
+
+// SetControllerFileRelay grants or withdraws the file-manager relay of one
+// legacy v1 controller. The grant is bound to that controller's current key.
+func (s *Service) SetControllerFileRelay(id string, enabled bool) (Controller, error) {
+	s.mutationMu.Lock()
+	defer s.mutationMu.Unlock()
+	if !validID(id) {
+		return Controller{}, ErrNotFound
+	}
+	record, err := s.store.Controller(id)
+	if err != nil || record.Scope != SummaryScope {
+		return Controller{}, ErrNotFound
+	}
+	if err := s.fileRelayV1Grants.Set(id, record.Fingerprint, enabled, s.now()); err != nil {
+		return Controller{}, err
+	}
+	if current, err := s.store.Controller(id); err != nil || current.Fingerprint != record.Fingerprint {
+		// The pairing was revoked or replaced meanwhile; never leave a grant for it.
+		_ = s.fileRelayV1Grants.Delete(id)
+		return Controller{}, ErrNotFound
+	}
+	return s.controllerV1View(record), nil
+}
+
 func (s *Service) DeleteController(id string) error {
 	if !validID(id) {
 		return ErrNotFound
+	}
+	if _, err := s.store.Controller(id); err == nil {
+		// Withdraw file access first so a failed deletion still fails closed.
+		if err := s.fileRelayV1Grants.Delete(id); err != nil {
+			return err
+		}
 	}
 	if err := s.store.DeleteController(id); err == nil {
 		return nil
@@ -809,6 +857,12 @@ func (s *Service) AcceptPair(source string, input PairRequest) (PairResponse, er
 		ID: input.ControllerID, Name: name, PublicKey: encodePublicKey(publicKey),
 		Fingerprint: fingerprint(publicKey), Scope: SummaryScope, CreatedAt: now,
 	}
+	if _, err := s.store.Controller(input.ControllerID); errors.Is(err, ErrNotFound) {
+		// A new v1 pairing is summary-only; never inherit a stale file grant.
+		if err := s.fileRelayV1Grants.Delete(input.ControllerID); err != nil {
+			return PairResponse{}, err
+		}
+	}
 	if err := s.store.ConsumePairingCode(input.PairingCode, controller, now); err != nil {
 		return PairResponse{}, err
 	}
@@ -818,21 +872,28 @@ func (s *Service) AcceptPair(source string, input PairRequest) (PairResponse, er
 	}, nil
 }
 
-func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (FederationSummary, error) {
+// SignedSummary returns the read-only v1 summary and the relay capabilities
+// this controller may use. File management is advertised only when granted.
+func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (FederationSummary, string, error) {
 	now := s.now().UTC()
 	controllerID, nonce, err := s.authenticate(request, http.MethodGet, summaryPath, now)
 	if err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
 	}
 	if !s.requestLimiter.Allow(controllerID, now) {
-		return FederationSummary{}, ErrRateLimited
+		return FederationSummary{}, "", ErrRateLimited
 	}
 	if err := s.replays.Accept(controllerID, nonce, now); err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
 	}
 	telemetry, err := s.localTelemetry(ctx)
 	if err != nil {
-		return FederationSummary{}, err
+		return FederationSummary{}, "", err
+	}
+	capabilities := ""
+	if record, err := s.store.Controller(controllerID); err == nil &&
+		s.fileRelayV1Grants.Granted(controllerID, record.Fingerprint) {
+		capabilities = FileRelayV1SignedCapability
 	}
 	telemetry = telemetryForFederation(
 		telemetry,
@@ -846,7 +907,7 @@ func (s *Service) SignedSummary(ctx context.Context, request *http.Request) (Fed
 			request.Header.Get(FederationCapabilitiesHeader),
 		),
 		Telemetry: telemetry,
-	}, nil
+	}, capabilities, nil
 }
 
 func telemetryForFederation(value contract.HostTelemetry, capabilities string) contract.HostTelemetry {
@@ -878,6 +939,9 @@ func (s *Service) SignedRevoke(request *http.Request) error {
 		return err
 	}
 	if err := s.replays.Accept(controllerID, nonce, now); err != nil {
+		return err
+	}
+	if err := s.fileRelayV1Grants.Delete(controllerID); err != nil {
 		return err
 	}
 	return s.store.DeleteController(controllerID)
@@ -1042,7 +1106,12 @@ func (s *Service) poll(ctx context.Context, id string) {
 	current.lastErrorCode = ""
 	current.lastError = ""
 	current.panelVersion = summary.PanelVersion
-	current.fileManagementAvailable = hasFederationCapability(capabilities, FileRelayV1Capability)
+	// A current target advertises the signed relay only after its administrator
+	// grants this controller file access. An older target still advertises the
+	// unsigned hint for every v1 controller and keeps its earlier behavior.
+	current.fileRelayV1Signed = hasFederationCapability(capabilities, FileRelayV1SignedCapability)
+	current.fileManagementAvailable = current.fileRelayV1Signed ||
+		hasFederationCapability(capabilities, FileRelayV1Capability)
 	current.securityEntrancePath = summary.SecurityEntrancePath
 	current.nextPollAt = finishedAt.Add(s.jitter(s.pollInterval))
 	s.runtime[id] = current

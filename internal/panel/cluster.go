@@ -163,6 +163,9 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		items := s.cluster.Controllers()
 		s.writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
 	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/controllers/") &&
+		strings.HasSuffix(r.URL.Path, "/file-relay") && r.Method == http.MethodPut:
+		s.handleClusterControllerFileRelay(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/cluster/controllers/") &&
 		r.Method == http.MethodDelete:
 		s.handleClusterControllerDelete(w, r)
 	case r.URL.Path == clusterNotificationsPath || strings.HasPrefix(r.URL.Path, clusterNotificationsPath+"/"):
@@ -531,6 +534,40 @@ func (s *Server) handleClusterControllerDelete(w http.ResponseWriter, r *http.Re
 	s.writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
+// handleClusterControllerFileRelay lets this target's administrator grant or
+// withdraw file management for one legacy v1 controller. A v1 pairing alone
+// authorizes read-only summaries.
+func (s *Server) handleClusterControllerFileRelay(w http.ResponseWriter, r *http.Request) {
+	session, ok := s.requireClusterMutation(w, r)
+	if !ok {
+		return
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/cluster/controllers/"), "/file-relay")
+	if id == "" || strings.Contains(id, "/") {
+		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
+		return
+	}
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := s.decodeJSON(w, r, &input); err != nil {
+		return
+	}
+	change := map[string]any{"enabled": input.Enabled}
+	if err := s.audit(r, session.User.ID, "cluster.controller.file-relay", "cluster-controller", id, "intent", change); err != nil {
+		s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
+		return
+	}
+	controller, err := s.cluster.SetControllerFileRelay(id, input.Enabled)
+	if err != nil {
+		_ = s.audit(r, session.User.ID, "cluster.controller.file-relay", "cluster-controller", id, "failure", change)
+		s.writeClusterError(w, r, err)
+		return
+	}
+	_ = s.audit(r, session.User.ID, "cluster.controller.file-relay", "cluster-controller", id, "success", change)
+	s.writeJSON(w, http.StatusOK, controller)
+}
+
 func (s *Server) handleFederationPair(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawPath != "" || r.URL.RawQuery != "" {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_federation_request", "Invalid federation request", "")
@@ -559,12 +596,14 @@ func (s *Server) handleFederationPair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFederationSummary(w http.ResponseWriter, r *http.Request) {
-	response, err := s.cluster.SignedSummary(r.Context(), r)
+	response, capabilities, err := s.cluster.SignedSummary(r.Context(), r)
 	if err != nil {
 		s.writeClusterError(w, r, err)
 		return
 	}
-	w.Header().Set(cluster.FederationCapabilitiesHeader, cluster.FileRelayV1Capability)
+	if capabilities != "" {
+		w.Header().Set(cluster.FederationCapabilitiesHeader, capabilities)
+	}
 	s.writeJSON(w, http.StatusOK, response)
 }
 

@@ -787,3 +787,61 @@ func TestValidatePasswordRequiresLettersAndDigits(t *testing.T) {
 		}
 	}
 }
+
+func TestCredentialChangesShareTheReauthenticationBudget(t *testing.T) {
+	directory := t.TempDir()
+	storage, err := store.Open(filepath.Join(directory, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storage.Close() })
+	service, err := NewService(storage, testHasher(t), Config{
+		BootstrapTokenPath: filepath.Join(directory, "bootstrap.token"),
+		SessionTTL:         time.Hour,
+		LoginWindow:        time.Minute,
+		MaxLoginFailures:   3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.EnsureBootstrapToken(); err != nil {
+		t.Fatal(err)
+	}
+	token, err := os.ReadFile(filepath.Join(directory, "bootstrap.token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := service.Bootstrap(string(token), "admin", "a-strong-password-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID := credentials.User.ID
+
+	// Guesses through either change endpoint count against one budget.
+	if err := service.ChangePassword(userID, "wrong-guess-1", "an-even-stronger-password-2"); !errors.Is(err, ErrInvalidCurrentPassword) {
+		t.Fatalf("first guess error = %v", err)
+	}
+	if err := service.ChangeUsername(userID, "wrong-guess-2", "operator"); !errors.Is(err, ErrInvalidCurrentPassword) {
+		t.Fatalf("second guess error = %v", err)
+	}
+	if err := service.ChangePassword(userID, "wrong-guess-3", "an-even-stronger-password-2"); !errors.Is(err, ErrInvalidCurrentPassword) {
+		t.Fatalf("third guess error = %v", err)
+	}
+	// Once exhausted, even the correct password cannot be confirmed through
+	// the side-effect-free "unchanged" answers.
+	var rateLimited *RateLimitError
+	if err := service.ChangePassword(userID, "a-strong-password-1", "a-strong-password-1"); !errors.As(err, &rateLimited) {
+		t.Fatalf("password oracle after budget error = %v, want RateLimitError", err)
+	}
+	if err := service.ChangeUsername(userID, "a-strong-password-1", "admin"); !errors.As(err, &rateLimited) {
+		t.Fatalf("username oracle after budget error = %v, want RateLimitError", err)
+	}
+	if _, err := service.StartTOTPEnrollment(userID, "a-strong-password-1"); !errors.As(err, &rateLimited) {
+		t.Fatalf("TOTP enrollment after budget error = %v, want RateLimitError", err)
+	}
+
+	service.now = func() time.Time { return time.Now().UTC().Add(2 * time.Minute) }
+	if err := service.ChangePassword(userID, "a-strong-password-1", "an-even-stronger-password-2"); err != nil {
+		t.Fatalf("password change after the window error = %v", err)
+	}
+}

@@ -125,7 +125,8 @@ func (r *serviceRouteRemote) Summary(
 		return FederationSummary{}, err
 	}
 	request.Header.Set(FederationCapabilitiesHeader, SecurityEntrancePathCapability)
-	return target.SignedSummary(ctx, request)
+	summary, _, err := target.SignedSummary(ctx, request)
+	return summary, err
 }
 
 func (r *serviceRouteRemote) Revoke(
@@ -255,7 +256,7 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	target.replays.mu.Lock()
 	replayEntriesBeforeLimit := len(target.replays.entries)
 	target.replays.mu.Unlock()
-	if _, err := target.SignedSummary(context.Background(), request); !errors.Is(err, ErrRateLimited) {
+	if _, _, err := target.SignedSummary(context.Background(), request); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("rate-limited SignedSummary() error = %v, want ErrRateLimited", err)
 	}
 	target.replays.mu.Lock()
@@ -271,17 +272,20 @@ func TestServiceTwoNodePairSummaryReplayAndRevoke(t *testing.T) {
 	chunked := request.Clone(context.Background())
 	chunked.ContentLength = -1
 	chunked.TransferEncoding = []string{"chunked"}
-	if _, err := target.SignedSummary(context.Background(), chunked); !errors.Is(err, ErrAuthentication) {
+	if _, _, err := target.SignedSummary(context.Background(), chunked); !errors.Is(err, ErrAuthentication) {
 		t.Fatalf("chunked SignedSummary() error = %v, want ErrAuthentication", err)
 	}
-	legacySummary, err := target.SignedSummary(context.Background(), request)
+	legacySummary, legacyCapabilities, err := target.SignedSummary(context.Background(), request)
 	if err != nil {
 		t.Fatalf("SignedSummary() error = %v", err)
 	}
 	if legacySummary.SecurityEntrancePath != "" {
 		t.Fatalf("legacy controller received an incompatible optional field: %#v", legacySummary)
 	}
-	if _, err := target.SignedSummary(context.Background(), request); !errors.Is(err, ErrReplay) {
+	if legacyCapabilities != "" {
+		t.Fatalf("summary-only v1 controller was offered relay capabilities %q", legacyCapabilities)
+	}
+	if _, _, err := target.SignedSummary(context.Background(), request); !errors.Is(err, ErrReplay) {
 		t.Fatalf("replayed SignedSummary() error = %v, want ErrReplay", err)
 	}
 
@@ -558,6 +562,47 @@ func TestLegacyPanelFileCapabilityComesFromTheSummaryHandshake(t *testing.T) {
 	}
 	if !host.FileManagementAvailable || host.Kind != HostKindPanel || host.FederationProtocol != FederationProtocol {
 		t.Fatalf("legacy Panel capability = %#v", host)
+	}
+	service.mu.RLock()
+	signed := service.runtime[host.ID].fileRelayV1Signed
+	service.mu.RUnlock()
+	if signed {
+		t.Fatal("an older target's unsigned relay hint selected the signed relay")
+	}
+}
+
+func TestGrantedPanelFileCapabilitySelectsTheSignedRelay(t *testing.T) {
+	requirePOSIXClusterCredentials(t)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	clock := &serviceTestClock{now: now}
+	for _, test := range []struct {
+		capabilities string
+		available    bool
+	}{
+		{capabilities: FileRelayV1SignedCapability, available: true},
+		{capabilities: "", available: false},
+	} {
+		remote := &serviceCapabilitiesRemote{
+			serviceScriptedRemote: &serviceScriptedRemote{
+				nodeID: "abcdefabcdefabcdefabcdefabcdefab", hostname: "remote", now: clock.Now,
+			},
+			capabilities: test.capabilities,
+		}
+		service := newServiceForFederationTest(t, remote, clock.Now, "controller")
+		host, err := service.AddHost(context.Background(), AddHostInput{
+			Origin: "https://remote.example",
+			PairingCode: "0123456789abcdef." +
+				"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		})
+		if err != nil {
+			t.Fatalf("AddHost() error = %v", err)
+		}
+		service.mu.RLock()
+		signed := service.runtime[host.ID].fileRelayV1Signed
+		service.mu.RUnlock()
+		if host.FileManagementAvailable != test.available || signed != test.available {
+			t.Fatalf("capabilities %q: available=%v signed=%v", test.capabilities, host.FileManagementAvailable, signed)
+		}
 	}
 }
 

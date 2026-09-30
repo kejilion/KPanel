@@ -1386,7 +1386,14 @@ func (m *Manager) chmodOne(virtual, rawMode string) (contract.FileEntry, error) 
 	if err := m.mutationError(normalized); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if err := m.rootFS.Chmod(rootName(normalized), os.FileMode(value)); err != nil {
+	info, err := m.rootFS.Lstat(rootName(normalized))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return contract.FileEntry{}, ErrSymlink
+	}
+	if err := m.chmodNoFollow(normalized, os.FileMode(value), info); err != nil {
 		return contract.FileEntry{}, err
 	}
 	return m.Stat(normalized)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -132,6 +133,7 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	copyFileHeaders(w.Header(), response.Header)
+	restrictRelayedFileHeaders(w.Header())
 	setFileContentCacheControl(w, r, response.StatusCode)
 	writer := httpstream.NewIdleResponseWriter(transferContext, w, panelFileTransferIdleTimeout)
 	writer.WriteHeader(response.StatusCode)
@@ -152,6 +154,42 @@ func (s *Server) handleLightFileRelay(w http.ResponseWriter, r *http.Request) {
 		panic(http.ErrAbortHandler)
 	}
 	copyCompleted = true
+}
+
+// restrictRelayedFileHeaders applies this Panel's own file-content policy to
+// bytes served by another host. A lightweight node or paired Panel is less
+// trusted than the Panel origin that relays it, so its Content-Security-Policy
+// is never forwarded and document or script types are served as plain text.
+// A legitimate Agent already sends this same policy.
+func restrictRelayedFileHeaders(header http.Header) {
+	mediaType := ""
+	if contentType := header.Get("Content-Type"); contentType != "" {
+		parsed, _, err := mime.ParseMediaType(contentType)
+		switch {
+		case err != nil:
+			header.Set("Content-Type", "application/octet-stream")
+		case relayedActiveContentType(parsed):
+			header.Set("Content-Type", "text/plain; charset=utf-8")
+		default:
+			mediaType = parsed
+		}
+	}
+	policy := "default-src 'none'; sandbox"
+	if strings.HasPrefix(mediaType, "audio/") || strings.HasPrefix(mediaType, "video/") {
+		policy = "default-src 'none'"
+	}
+	header.Set("Content-Security-Policy", policy)
+}
+
+func relayedActiveContentType(mediaType string) bool {
+	switch mediaType {
+	case "text/html", "application/xhtml+xml", "image/svg+xml", "text/xml", "application/xml",
+		"text/xsl", "application/xslt+xml", "text/javascript", "application/javascript",
+		"application/x-javascript", "text/ecmascript", "application/ecmascript":
+		return true
+	default:
+		return strings.HasSuffix(mediaType, "+xml")
+	}
 }
 
 type lightFileUploadBody struct {

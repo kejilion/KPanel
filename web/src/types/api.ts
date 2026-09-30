@@ -493,6 +493,8 @@ export interface ClusterController {
   scope: string
   createdAt: string
   lastSeenAt?: string
+  /** Legacy v1 controller whose file management this host grants separately. */
+  fileRelayConfigurable?: boolean
 }
 
 export interface CapabilityState {
