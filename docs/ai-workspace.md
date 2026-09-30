@@ -65,6 +65,7 @@ Vue 三栏工作台 ── REST/SSE ── paneld AgentRuntime
 - 401 不重试；429/502/503/504 仅在尚未输出内容时重试两次。流式输出开始后不重放。
 - 每个会话可选择 `manual`（手动审批）或 `auto`（安全自动审批），默认 `manual`。Run 启动时固定模式快照，执行中切换只影响下一轮。
 - `manual` 下所有非只读工具逐次确认；`auto` 只放行固定 Schema 分类的常规应用、网站、容器、文件覆盖/回收站、Nginx 安全重载和缓存清理。
+- `auto` 下的文件覆盖只自动执行 `/home/web`（证书目录除外）和 `/home/docker`（Compose 定义与 `.env*` 除外）内的站点与应用文件；其余仍可写入的路径，例如 cron、Shell 启动文件、服务钩子、Compose 定义或证书，会以 root 执行或改变服务信任，因此进入 `pending_approval`，由管理员确认后执行。
 - 删除/卸载、标准级系统清理、系统核心设置、Docker 维护与备份迁移、容器 exec、交互式任务输入以及无法识别或无法解析的动作始终进入 `pending_approval`；分类失败时默认要求确认。
 - 工具名与 Agent 路径是固定映射。Provider 侧使用不含组合关键字的扁平对象 Schema，让模型根据动作、真实状态和用户意图自主选择一般参数；Panel 只保留鉴权、审批、固定动作路由、严格结构化输入和审计边界，不重复限制每个动作的业务参数。Agent 根据 Docker 的真实状态校验底层技术前置条件、`resourceVersion` 和命令安全，并把失败作为可纠正结果返回模型。不存在任意路径或任意宿主机命令入口。
 - 删除或修改现有容器、镜像、网络、卷前，必须先调用对应只读工具并使用同一资源最新的 id/name 与 `resourceVersion`。备份恢复/迁移先读 `host_docker_backups`，daemon 镜像源/IPv6 变更先读 `host_docker_environment`；`image_prune` 只处理悬空镜像，不能替代精确 `image_remove`。

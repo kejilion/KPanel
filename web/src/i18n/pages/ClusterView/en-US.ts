@@ -387,4 +387,9 @@ export default [
   ["节点程序", "Node program"],
   ["按当前面板顺序排列公开页", "Order the public page like the panel"],
   ["仅在本次保存时复制；之后调整面板顺序不会改变公开页。", "Copied only on this save; later panel reordering does not change the public page."],
+  ["允许文件管理", "Allow file management"],
+  ["停用文件管理", "Disable file management"],
+  ["已允许该控制端管理本机文件", "This controller can now manage files on this host."],
+  ["已停用该控制端的文件管理", "File management disabled for this controller."],
+  ["文件管理授权更新失败", "Failed to update file management access"],
 ] as const satisfies PhraseCatalog

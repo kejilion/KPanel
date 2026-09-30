@@ -92,6 +92,11 @@ Agent、网站或 Docker 管理能力；默认低权限遥测进程只通过出�
 
 新 v2 配对固定授权当前中心使用多主机终端和远程文件管理；新轻量节点在相应 broker 通过认证并在线后
 显示终端或文件管理能力。既有 v1 与旧 v2 配对不会因升级自动获得新增权限。
+v1 配对只授权只读摘要；被控端管理员可在“已授权控制端”中对单个 v1 控制端显式“允许文件管理”
+（含写入与删除），随时停用。授权绑定该控制端当前密钥，保存在独立的 `cluster-v1-file-relay.json`，
+撤销或以新密钥重新配对后失效，也不随面板备份迁移；旧版本回滚时忽略该文件。被控端只向已授权的
+控制端声明 `file-relay-v1-signed`，且要求控制端对内层方法、路径和查询额外签名；未升级的控制端
+不会再对新版被控端显示文件管理，旧版被控端继续按原协议工作。
 终端使用独立 Panel Session 和 Noise v2 请求，不共享目标面板登录态；详细契约见
 [`multi-host-terminal.md`](multi-host-terminal.md)。跨面板文件复制契约见
 [`cross-kpanel-file-transfer.md`](cross-kpanel-file-transfer.md)。集群公开分享契约见
@@ -363,7 +368,7 @@ v2 只接受固定 POST 路径和文件流的精确 GET Upgrade 路径；light-v
 未声明能力的目标继续使用 v1.14.1 的固定 POST 文件链路：文件管理通过
 `/api/v2/federation/files/relay` 轮询，每次请求执行独立的 Noise 认证交换；跨节点导出继续通过
 `/api/v2/federation/files/open` 和只读的 linked grant 传输，`panel` 与 `linked` 旧角色仍被拒绝。
-既有 DNS/IP 拨号检查、TLS 验证、禁止重定向、权限范围和请求限流保持不变。v1 Panel 继续使用原有
+既有 DNS/IP 拨号检查、TLS 验证、禁止重定向、权限范围和请求限流保持不变。经被控端授权的 v1 Panel 继续使用原有
 HTTPS 流式接口。设计与实测对比见 [终端与文件传输 v3](terminal-file-transport-v3.md)。
 
 轻量节点保留 v1.15.0 的 `GET /api/v2/federation/files/stream` 实现，WebSocket 子协议为

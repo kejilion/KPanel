@@ -457,6 +457,14 @@ func (s *Service) DisableTOTP(userID, currentPassword, secondFactor string) erro
 }
 
 func (s *Service) verifyCurrentPassword(userID, currentPassword string) (store.User, error) {
+	return s.verifyCurrentPasswordWithSlot(userID, currentPassword, false)
+}
+
+// verifyCurrentPasswordWithSlot applies the per-user re-authentication budget
+// to every current-password check, including password and username changes,
+// so an authenticated session cannot use them as an unthrottled password
+// oracle. slotHeld reports that the caller already holds a hash slot.
+func (s *Service) verifyCurrentPasswordWithSlot(userID, currentPassword string, slotHeld bool) (store.User, error) {
 	now := s.now()
 	reauthKey := "reauth:" + userID
 	if !s.reserveAuthenticationAttempt(reauthKey, now.Add(-s.config.LoginWindow), s.config.MaxLoginFailures) {
@@ -472,11 +480,13 @@ func (s *Service) verifyCurrentPassword(userID, currentPassword string) (store.U
 		}
 		return store.User{}, ErrInvalidCurrentPassword
 	}
-	select {
-	case s.hashSlots <- struct{}{}:
-		defer func() { <-s.hashSlots }()
-	default:
-		return store.User{}, &RateLimitError{RetryAfter: time.Second}
+	if !slotHeld {
+		select {
+		case s.hashSlots <- struct{}{}:
+			defer func() { <-s.hashSlots }()
+		default:
+			return store.User{}, &RateLimitError{RetryAfter: time.Second}
+		}
 	}
 	user, err := s.store.UserByID(userID)
 	if err != nil {
@@ -604,9 +614,6 @@ func (s *Service) Logout(sessionToken string) error {
 // replacement. The store performs the hash update and session revocation as one
 // persisted state transition.
 func (s *Service) ChangePassword(userID, currentPassword, newPassword string) error {
-	if len(currentPassword) < 1 || len(currentPassword) > 256 {
-		return ErrInvalidCurrentPassword
-	}
 	if err := validatePassword(newPassword); err != nil {
 		return err
 	}
@@ -621,16 +628,9 @@ func (s *Service) ChangePassword(userID, currentPassword, newPassword string) er
 	s.credentialMu.Lock()
 	defer s.credentialMu.Unlock()
 
-	user, err := s.store.UserByID(userID)
+	user, err := s.verifyCurrentPasswordWithSlot(userID, currentPassword, true)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return ErrInvalidCurrentPassword
-		}
-		return fmt.Errorf("read user for password change: %w", err)
-	}
-	valid, err := s.hasher.Verify(currentPassword, user.PasswordHash)
-	if err != nil || !valid {
-		return ErrInvalidCurrentPassword
+		return err
 	}
 	if secureEqual(currentPassword, newPassword) {
 		return ErrPasswordUnchanged
@@ -711,9 +711,6 @@ func (s *Service) RecoverPassword(userID, newPassword string, disableTOTP bool) 
 // The store updates the identity and revokes all sessions atomically so no
 // session continues to expose stale account data.
 func (s *Service) ChangeUsername(userID, currentPassword, newUsername string) error {
-	if len(currentPassword) < 1 || len(currentPassword) > 256 {
-		return ErrInvalidCurrentPassword
-	}
 	if err := validateUsername(newUsername); err != nil {
 		return err
 	}
@@ -728,16 +725,9 @@ func (s *Service) ChangeUsername(userID, currentPassword, newUsername string) er
 	s.credentialMu.Lock()
 	defer s.credentialMu.Unlock()
 
-	user, err := s.store.UserByID(userID)
+	user, err := s.verifyCurrentPasswordWithSlot(userID, currentPassword, true)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return ErrInvalidCurrentPassword
-		}
-		return fmt.Errorf("read user for username change: %w", err)
-	}
-	valid, err := s.hasher.Verify(currentPassword, user.PasswordHash)
-	if err != nil || !valid {
-		return ErrInvalidCurrentPassword
+		return err
 	}
 	if user.Username == newUsername {
 		return ErrUsernameUnchanged

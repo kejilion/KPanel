@@ -1792,6 +1792,11 @@ export const api = {
       request<{ deleted: boolean }>(`/cluster/controllers/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+    setControllerFileRelay: (id: string, enabled: boolean): Promise<ClusterController> =>
+      request<ClusterController>(`/cluster/controllers/${encodeURIComponent(id)}/file-relay`, {
+        method: 'PUT',
+        body: { enabled },
+      }),
   },
   terminals: {
     commands: (signal?: AbortSignal): Promise<TerminalQuickCommands> =>

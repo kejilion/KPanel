@@ -77,7 +77,13 @@ func (t *panelAITools) RequiresApproval(name string, arguments json.RawMessage) 
 	case "host_diagnostic_start":
 		return false
 	case "host_file_write":
-		return false
+		var input struct {
+			Path string `json:"path"`
+		}
+		if json.Unmarshal(arguments, &input) != nil {
+			return true
+		}
+		return !aiFileWriteAutoApproved(input.Path)
 	case "host_file_trash", "host_nginx_reload":
 		return false
 	case "host_system_action":
@@ -764,6 +770,32 @@ func aiFileMutable(raw string) bool {
 		return false
 	}
 	return true
+}
+
+// aiFileWriteAutoApproved limits unattended writes in the automatic approval
+// mode to site and application files. Other writable files, such as cron,
+// shell profiles, service hooks, Compose definitions or certificates, can run
+// code as root or change what a service trusts, so the administrator confirms
+// them even though they remain writable. Symbolic links are rejected by the
+// Agent file manager, so this lexical check matches the file actually written.
+func aiFileWriteAutoApproved(raw string) bool {
+	clean, ok := normalizedAIFilePath(raw)
+	if !ok || !aiFileMutable(clean) {
+		return false
+	}
+	base := strings.ToLower(pathpkg.Base(clean))
+	switch {
+	case hasPathPrefix(clean, "/home/web/certs"):
+		return false
+	case hasPathPrefix(clean, "/home/web") && clean != "/home/web":
+		return true
+	case hasPathPrefix(clean, "/home/docker") && clean != "/home/docker":
+		composeFile := (strings.HasPrefix(base, "docker-compose") || strings.HasPrefix(base, "compose")) &&
+			(strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml"))
+		return !composeFile && !strings.HasPrefix(base, ".env")
+	default:
+		return false
+	}
 }
 
 func normalizedAIFilePath(raw string) (string, bool) {

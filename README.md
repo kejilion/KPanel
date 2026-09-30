@@ -149,7 +149,7 @@ KPanel 的轻量 AI 助手直接理解面板已经掌握的主机与容器状态
 准备一台 Linux 服务器，使用 `root` 用户执行：
 
 ```bash
-bash <(curl -sL kejilion.sh) app kpanel
+bash <(curl -fsSL https://kejilion.sh) app kpanel
 ```
 
 安装脚本会检查运行环境、准备所需组件并部署 KPanel。完成后，根据终端提示打开面板并初始化管理员账户。

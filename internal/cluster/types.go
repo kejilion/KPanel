@@ -14,11 +14,14 @@ const (
 	SummaryScope              = "cluster.summary.read"
 	SummaryTerminalScope      = "cluster.summary.read cluster.terminal.open"
 	SummaryTerminalFilesScope = "cluster.summary.read cluster.terminal.open cluster.files.read"
-	LocalHostID               = "local"
-	MaxHosts                  = 100
-	MaxSummaryBytes           = 64 << 10
-	MaxPairBytes              = 16 << 10
-	MaxFederationV2Bytes      = 96 << 10
+	// SummaryFilesScope describes a legacy v1 controller whose file relay was
+	// granted separately by the target; v1 never carries terminal access.
+	SummaryFilesScope    = "cluster.summary.read cluster.files.read"
+	LocalHostID          = "local"
+	MaxHosts             = 100
+	MaxSummaryBytes      = 64 << 10
+	MaxPairBytes         = 16 << 10
+	MaxFederationV2Bytes = 96 << 10
 )
 
 type HostKind string
@@ -229,6 +232,9 @@ type Controller struct {
 	Scope       string     `json:"scope"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	LastSeenAt  *time.Time `json:"lastSeenAt,omitempty"`
+	// FileRelayConfigurable marks a legacy v1 controller whose file-manager
+	// relay this target grants separately from the summary pairing.
+	FileRelayConfigurable bool `json:"fileRelayConfigurable,omitempty"`
 }
 
 type PairRequest struct {

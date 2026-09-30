@@ -43,7 +43,10 @@ func TestIsLightFileRelayRequestUsesTheSharedRouteAllowlist(t *testing.T) {
 	}
 }
 
-type lightFileLegacyTestRemote struct{ body func() io.ReadCloser }
+type lightFileLegacyTestRemote struct {
+	body   func() io.ReadCloser
+	header http.Header
+}
 
 func (*lightFileLegacyTestRemote) Pair(context.Context, string, cluster.PairRequest) (cluster.PairResponse, error) {
 	return cluster.PairResponse{NodeID: strings.Repeat("b", 32), Hostname: "relay-test", PanelVersion: "1.5.0", FederationProtocol: cluster.FederationProtocol}, nil
@@ -59,7 +62,110 @@ func (*lightFileLegacyTestRemote) Revoke(context.Context, string, string, string
 	return nil
 }
 func (remote *lightFileLegacyTestRemote) OpenFileRelayV1(context.Context, string, string, string, ed25519.PrivateKey, time.Time, cluster.LightFileRequest) (*http.Response, error) {
-	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/octet-stream"}}, Body: remote.body()}, nil
+	header := http.Header{"Content-Type": {"application/octet-stream"}}
+	if remote.header != nil {
+		header = remote.header.Clone()
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: header, Body: remote.body()}, nil
+}
+
+func TestLightFileRelayAppliesPanelContentPolicyToRemoteResponses(t *testing.T) {
+	tests := []struct {
+		name        string
+		header      http.Header
+		contentType string
+		policy      string
+	}{
+		{
+			name: "active document with permissive policy",
+			header: http.Header{
+				"Content-Type":            {"text/html; charset=utf-8"},
+				"Content-Disposition":     {"inline"},
+				"Content-Security-Policy": {"frame-ancestors 'self'; script-src 'unsafe-inline'"},
+			},
+			contentType: "text/plain; charset=utf-8",
+			policy:      "default-src 'none'; sandbox",
+		},
+		{
+			name: "svg image",
+			header: http.Header{
+				"Content-Type":            {"image/svg+xml"},
+				"Content-Security-Policy": {"default-src *"},
+			},
+			contentType: "text/plain; charset=utf-8",
+			policy:      "default-src 'none'; sandbox",
+		},
+		{
+			name:        "script",
+			header:      http.Header{"Content-Type": {"text/javascript"}},
+			contentType: "text/plain; charset=utf-8",
+			policy:      "default-src 'none'; sandbox",
+		},
+		{
+			name:        "unparseable type",
+			header:      http.Header{"Content-Type": {"text/html;;="}},
+			contentType: "application/octet-stream",
+			policy:      "default-src 'none'; sandbox",
+		},
+		{
+			name: "pdf keeps its type",
+			header: http.Header{
+				"Content-Type":            {"application/pdf"},
+				"Content-Security-Policy": {"frame-ancestors *"},
+			},
+			contentType: "application/pdf",
+			policy:      "default-src 'none'; sandbox",
+		},
+		{
+			name: "media keeps the Agent media policy",
+			header: http.Header{
+				"Content-Type":            {"video/mp4"},
+				"Content-Security-Policy": {"default-src 'none'"},
+			},
+			contentType: "video/mp4",
+			policy:      "default-src 'none'",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, tokenPath := newTestServer(t)
+			session, csrf := bootstrapCookies(t, server, tokenPath)
+			remote := &lightFileLegacyTestRemote{
+				header: test.header,
+				body:   func() io.ReadCloser { return io.NopCloser(strings.NewReader("<script>parent.x=1</script>")) },
+			}
+			service, err := cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Remote: remote, Telemetry: clusterTelemetrySource{agent: &stubAgent{}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = server.cluster.Close()
+			server.cluster = service
+			host, err := service.AddHost(context.Background(), cluster.AddHostInput{Origin: "https://relay.example", PairingCode: "0123456789abcdef." + strings.Repeat("a", 64)})
+			if err != nil || !host.FileManagementAvailable {
+				t.Fatalf("relay fixture: %#v, %v", host, err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "http://panel.test/api/v1/files/content?hostId="+host.ID+"&path=%2Freport.pdf&disposition=inline", nil)
+			request.AddCookie(session)
+			request.AddCookie(csrf)
+			recorder := httptest.NewRecorder()
+			server.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("relay status = %d %s", recorder.Code, recorder.Body.String())
+			}
+			if got := recorder.Header().Get("Content-Type"); got != test.contentType {
+				t.Errorf("Content-Type = %q, want %q", got, test.contentType)
+			}
+			if got := recorder.Header().Values("Content-Security-Policy"); len(got) != 1 || got[0] != test.policy {
+				t.Errorf("Content-Security-Policy = %q, want %q", got, test.policy)
+			}
+			if got := recorder.Header().Get("X-Frame-Options"); got != "DENY" {
+				t.Errorf("X-Frame-Options = %q, want DENY", got)
+			}
+			if got := recorder.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+			}
+		})
+	}
 }
 
 type lightFileFailingReader struct{}

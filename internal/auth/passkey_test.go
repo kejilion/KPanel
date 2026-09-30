@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -92,13 +93,18 @@ func (a *testAuthenticator) assertion(t *testing.T, options PasskeyOptions, orig
 }
 func setupPasskeys(t *testing.T) (*PasskeyService, Credentials, Session) {
 	t.Helper()
+	return setupPasskeysWithLimit(t, 20)
+}
+
+func setupPasskeysWithLimit(t *testing.T, maxLoginFailures int) (*PasskeyService, Credentials, Session) {
+	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	s, err := NewService(st, testHasher(t), Config{BootstrapTokenPath: filepath.Join(dir, "bootstrap"), MaxLoginFailures: 20})
+	s, err := NewService(st, testHasher(t), Config{BootstrapTokenPath: filepath.Join(dir, "bootstrap"), MaxLoginFailures: maxLoginFailures})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,5 +376,32 @@ func TestPendingTOTPEnrollmentExpiresOnCredentialChanges(t *testing.T) {
 				t.Fatalf("TOTP changed after stale enrollment: %+v %v", status, err)
 			}
 		})
+	}
+}
+
+func TestPasswordLockoutDoesNotBlockPasskeyLogin(t *testing.T) {
+	p, _, session := setupPasskeysWithLimit(t, 2)
+	a := registerTestPasskey(t, p, session, 5)
+	// Distributed password guesses exhaust the account-wide password budget.
+	for index := range 2 * accountFailureLimitMultiplier {
+		ip := fmt.Sprintf("198.51.100.%d", index+1)
+		if _, err := p.auth.Login(ip, "admin", "wrong-password-1", ""); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("guess %d error = %v", index, err)
+		}
+	}
+	var rateLimited *RateLimitError
+	if _, err := p.auth.Login("203.0.113.9", "admin", passkeyPassword, ""); !errors.As(err, &rateLimited) {
+		t.Fatalf("password login after lockout error = %v, want RateLimitError", err)
+	}
+	options, err := p.BeginLogin("203.0.113.9", "admin", "browser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := p.FinishLogin("203.0.113.9", "browser", options.CeremonyID, a.assertion(t, options, passkeyTestOrigin, 5, 1), "")
+	if err != nil {
+		t.Fatalf("passkey login during password lockout error = %v", err)
+	}
+	if _, err := p.auth.Authenticate(credentials.Token); err != nil {
+		t.Fatal(err)
 	}
 }

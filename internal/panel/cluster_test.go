@@ -2,13 +2,18 @@ package panel
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
+	"github.com/kejilion/kejilion-panel/internal/contract"
 )
 
 func TestClusterHostsRequireSessionAndIncludeLocalHost(t *testing.T) {
@@ -737,5 +742,104 @@ func TestFederationV2RejectsOversizedEnvelope(t *testing.T) {
 			http.StatusRequestEntityTooLarge,
 			response.Body.String(),
 		)
+	}
+}
+
+type fixedClusterTelemetry struct{}
+
+func (fixedClusterTelemetry) Telemetry(context.Context) (contract.HostTelemetry, error) {
+	return contract.HostTelemetry{Hostname: "target", CollectedAt: time.Now().UTC()}, nil
+}
+
+func TestClusterControllerFileRelayGrantIsTargetControlled(t *testing.T) {
+	server, tokenPath := newTestServer(t)
+	session, csrf := bootstrapCookies(t, server, tokenPath)
+	service, err := cluster.NewService(cluster.ServiceConfig{DataDir: t.TempDir(), Telemetry: fixedClusterTelemetry{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = server.cluster.Close()
+	server.cluster = service
+	code, err := server.cluster.CreatePairingCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerPublic, controllerPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerID := strings.Repeat("d", 32)
+	if _, err := server.cluster.AcceptPair("198.51.100.20", cluster.PairRequest{
+		PairingCode: code.Code, ControllerID: controllerID, ControllerName: "controller",
+		PublicKey:          base64.RawStdEncoding.EncodeToString(controllerPublic),
+		FederationProtocol: cluster.FederationProtocol,
+	}); err != nil {
+		t.Fatalf("AcceptPair() error = %v", err)
+	}
+	summaryCapabilities := func(nonce string) string {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "http://panel.test/api/v1/federation/summary", nil)
+		if err := cluster.SignRequest(request, controllerID, server.cluster.NodeID(), controllerPrivate, time.Now(), nonce); err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("federation summary = %d %s", response.Code, response.Body.String())
+		}
+		return response.Header().Get(cluster.FederationCapabilitiesHeader)
+	}
+	if got := summaryCapabilities(strings.Repeat("1", 32)); got != "" {
+		t.Fatalf("summary-only controller capabilities = %q, want none", got)
+	}
+
+	body := []byte(`{"enabled":true}`)
+	path := "/api/v1/cluster/controllers/" + controllerID + "/file-relay"
+	withoutCSRF := authenticatedRequest(server, http.MethodPut, path, body, session, csrf, map[string]string{
+		"Content-Type": "application/json", "Origin": "http://panel.test",
+	})
+	if withoutCSRF.Code != http.StatusForbidden {
+		t.Fatalf("grant without CSRF = %d %s", withoutCSRF.Code, withoutCSRF.Body.String())
+	}
+	headers := map[string]string{
+		"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value,
+	}
+	missing := authenticatedRequest(server, http.MethodPut, "/api/v1/cluster/controllers/"+strings.Repeat("e", 32)+"/file-relay", body, session, csrf, headers)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("grant for unknown controller = %d %s", missing.Code, missing.Body.String())
+	}
+	granted := authenticatedRequest(server, http.MethodPut, path, body, session, csrf, headers)
+	if granted.Code != http.StatusOK {
+		t.Fatalf("grant = %d %s", granted.Code, granted.Body.String())
+	}
+	var view cluster.Controller
+	if err := json.Unmarshal(granted.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.ID != controllerID || view.Scope != cluster.SummaryFilesScope || !view.FileRelayConfigurable {
+		t.Fatalf("granted controller view = %#v", view)
+	}
+	if got := summaryCapabilities(strings.Repeat("2", 32)); got != cluster.FileRelayV1SignedCapability {
+		t.Fatalf("granted controller capabilities = %q, want %q", got, cluster.FileRelayV1SignedCapability)
+	}
+	events, _, err := server.store.ListAudit(50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	audited := false
+	for _, event := range events {
+		if event.Action == "cluster.controller.file-relay" && event.Result == "success" && event.TargetID == controllerID {
+			audited = true
+		}
+	}
+	if !audited {
+		t.Fatal("file relay grant was not audited")
+	}
+	withdrawn := authenticatedRequest(server, http.MethodPut, path, []byte(`{"enabled":false}`), session, csrf, headers)
+	if withdrawn.Code != http.StatusOK {
+		t.Fatalf("withdraw = %d %s", withdrawn.Code, withdrawn.Body.String())
+	}
+	if got := summaryCapabilities(strings.Repeat("3", 32)); got != "" {
+		t.Fatalf("withdrawn controller capabilities = %q, want none", got)
 	}
 }

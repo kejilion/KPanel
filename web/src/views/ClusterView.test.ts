@@ -13,6 +13,7 @@ import type {
   ClusterHostTemporarySortKey,
 } from '@/lib/clusterHostTemporarySort'
 import type {
+  ClusterController,
   ClusterHost,
   ClusterHostList,
   ClusterLightEnrollment,
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   createLightEnrollment: vi.fn(),
   controllers: vi.fn(),
   revokeController: vi.fn(),
+  setControllerFileRelay: vi.fn(),
   shareSettings: vi.fn(),
   updateHostOrder: vi.fn(),
   updateShare: vi.fn(),
@@ -72,6 +74,7 @@ vi.mock('@/lib/api', () => ({
       createLightEnrollment: mocks.createLightEnrollment,
       controllers: mocks.controllers,
       revokeController: mocks.revokeController,
+      setControllerFileRelay: mocks.setControllerFileRelay,
       shareSettings: mocks.shareSettings,
       updateHostOrder: mocks.updateHostOrder,
       updateShare: mocks.updateShare,
@@ -149,6 +152,9 @@ interface ClusterBindings {
   formatHostLatency: (host: ClusterHost) => string
   lightNodeCapabilitySummary: (host: ClusterHost) => string
   controllerCapabilitySummary: (scope: string) => string
+  controllers: Ref<ClusterController[]>
+  controllerFileRelayEnabled: (controller: ClusterController) => boolean
+  toggleControllerFileRelay: (controller: ClusterController) => Promise<void>
 }
 
 function setupView(): ClusterBindings {
@@ -348,6 +354,41 @@ describe('ClusterView capability disclosures', () => {
     )).toBe('权限：摘要读取 · 远程终端 · 文件管理（含写入与删除）')
   })
 
+  it('lets this host grant and withdraw legacy controller file management', async () => {
+    const view = setupView()
+    const legacy: ClusterController = {
+      id: 'c'.repeat(32),
+      name: 'old center',
+      fingerprint: 'SHA256:legacy',
+      scope: 'cluster.summary.read',
+      createdAt: '2026-07-29T09:00:00Z',
+      fileRelayConfigurable: true,
+    }
+    view.controllers.value = [legacy]
+    expect(view.controllerFileRelayEnabled(legacy)).toBe(false)
+    expect(view.controllerCapabilitySummary(legacy.scope)).toBe('权限：摘要读取')
+
+    mocks.confirm.mockReturnValueOnce(false)
+    await view.toggleControllerFileRelay(legacy)
+    expect(mocks.setControllerFileRelay).not.toHaveBeenCalled()
+
+    const granted = { ...legacy, scope: 'cluster.summary.read cluster.files.read' }
+    mocks.setControllerFileRelay.mockResolvedValueOnce(granted)
+    await view.toggleControllerFileRelay(legacy)
+    expect(mocks.setControllerFileRelay).toHaveBeenLastCalledWith(legacy.id, true)
+    expect(view.controllers.value).toEqual([granted])
+    expect(view.controllerFileRelayEnabled(granted)).toBe(true)
+    expect(view.controllerCapabilitySummary(granted.scope)).toBe('权限：摘要读取 · 文件管理（含写入与删除）')
+    expect(mocks.toastSuccess).toHaveBeenLastCalledWith('已允许该控制端管理本机文件')
+
+    const confirmations = mocks.confirm.mock.calls.length
+    mocks.setControllerFileRelay.mockResolvedValueOnce(legacy)
+    await view.toggleControllerFileRelay(granted)
+    expect(mocks.confirm.mock.calls.length).toBe(confirmations)
+    expect(mocks.setControllerFileRelay).toHaveBeenLastCalledWith(legacy.id, false)
+    expect(view.controllers.value).toEqual([legacy])
+  })
+
   it('states the full grant in the access and enrollment copy for every locale', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
     const fullGrant = '权限包含摘要读取、远程终端和文件管理（含写入与删除）。'
@@ -420,7 +461,7 @@ describe('ClusterView compact summary layout', () => {
 
   it('routes native confirmations through core i18n', () => {
     const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
-    expect(source.match(/window\.confirm\(t\('cluster\.confirm\./g)).toHaveLength(5)
+    expect(source.match(/window\.confirm\(t\('cluster\.confirm\./g)).toHaveLength(6)
     expect(source).not.toContain('重置公开链接？旧链接会立即失效。')
   })
 })
