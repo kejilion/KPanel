@@ -707,15 +707,42 @@ func aiFileReadable(raw string) bool {
 		hasPathPrefix(clean, "/home/docker/kpanel") || strings.Contains(clean, "/.ssh/") || strings.HasSuffix(clean, "/.ssh") {
 		return false
 	}
+	// Backup copies such as privkey.pem.bak or id_rsa.old~ hold the same secret.
+	// Every stripped suffix shortens the name, so the loop always terminates.
 	base := strings.ToLower(pathpkg.Base(clean))
-	if base == "shadow" || base == "gshadow" || base == "credentials" || base == "credentials.json" ||
-		base == "auth.json" || base == "agent.token" || base == "token" || base == "secrets" ||
-		base == "id_rsa" || base == "id_ed25519" || base == "id_ecdsa" || base == "id_dsa" ||
-		strings.HasPrefix(base, ".env") || strings.HasSuffix(base, ".key") || strings.HasSuffix(base, ".pem") ||
-		strings.HasSuffix(base, ".p12") || strings.HasSuffix(base, ".pfx") || base == "environ" {
-		return false
+	for {
+		base = strings.TrimRight(base, "~")
+		if aiSecretFileName(base) {
+			return false
+		}
+		extension := pathpkg.Ext(base)
+		if _, ok := aiBackupExtensions[extension]; !ok || extension == base {
+			return true
+		}
+		base = strings.TrimSuffix(base, extension)
 	}
-	return true
+}
+
+var aiBackupExtensions = map[string]struct{}{
+	".bak": {}, ".backup": {}, ".old": {}, ".orig": {}, ".save": {}, ".sample": {},
+	".example": {}, ".dist": {}, ".default": {}, ".swp": {},
+}
+
+var aiSecretFileNames = map[string]struct{}{
+	"shadow": {}, "gshadow": {}, "credentials": {}, "credentials.json": {}, "auth.json": {},
+	"agent.token": {}, "token": {}, "secrets": {}, "environ": {},
+	"id_rsa": {}, "id_ed25519": {}, "id_ecdsa": {}, "id_dsa": {},
+	".git-credentials": {}, ".netrc": {}, "_netrc": {}, ".pgpass": {}, ".npmrc": {}, ".pypirc": {},
+	".vault-token": {}, ".htpasswd": {}, "htpasswd": {}, ".my.cnf": {}, ".mylogin.cnf": {},
+}
+
+func aiSecretFileName(base string) bool {
+	if _, ok := aiSecretFileNames[base]; ok {
+		return true
+	}
+	return strings.HasPrefix(base, ".env") || strings.HasSuffix(base, ".key") ||
+		strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".p12") ||
+		strings.HasSuffix(base, ".pfx") || strings.HasSuffix(base, "_history")
 }
 
 func aiFileMutable(raw string) bool {

@@ -1654,30 +1654,105 @@ func contentShareVersion(
 	return "sha256:" + hex.EncodeToString(versionDigest.Sum(nil)), nil
 }
 
+// textFileExtensions is the host-independent set of extensions opened in the
+// text editor. The MIME fallback below depends on the host's mime.types, so
+// common server, config and source files are listed here explicitly.
+var textFileExtensions = setOf(
+	// Plain text, documents and subtitles.
+	".txt", ".text", ".log", ".md", ".markdown", ".mdx", ".rst", ".adoc", ".asciidoc",
+	".org", ".tex", ".csv", ".tsv", ".srt", ".vtt", ".diff", ".patch",
+	// Structured data and configuration.
+	".json", ".jsonc", ".json5", ".jsonl", ".ndjson", ".geojson", ".yaml", ".yml",
+	".toml", ".ini", ".cfg", ".cnf", ".conf", ".config", ".properties", ".env",
+	".xml", ".xsd", ".xsl", ".xslt", ".svg", ".lock", ".sum", ".mod", ".hcl", ".tf",
+	".tfvars", ".nix", ".desktop", ".service", ".timer", ".socket", ".mount",
+	".target", ".path", ".slice", ".network", ".netdev", ".link", ".rules",
+	".list", ".repo", ".sources", ".pid",
+	// PEM keys and certificates.
+	".pem", ".crt", ".csr", ".key", ".pub", ".asc",
+	// Web and templates.
+	".html", ".htm", ".xhtml", ".css", ".scss", ".sass", ".less", ".styl", ".vue",
+	".svelte", ".astro", ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".tsx", ".jsx",
+	".graphql", ".gql", ".hbs", ".handlebars", ".ejs", ".pug", ".njk", ".twig",
+	".liquid", ".mustache", ".jinja", ".j2", ".tmpl", ".tpl", ".template",
+	// Scripts.
+	".sh", ".bash", ".zsh", ".fish", ".ksh", ".ps1", ".psm1", ".psd1", ".bat",
+	".cmd", ".awk", ".vim",
+	// Source code.
+	".go", ".py", ".pyi", ".rb", ".php", ".pl", ".pm", ".lua", ".java", ".kt",
+	".kts", ".scala", ".groovy", ".gradle", ".swift", ".m", ".c", ".h", ".cc",
+	".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".ino", ".cs", ".fs", ".vb", ".rs",
+	".dart", ".r", ".jl", ".ex", ".exs", ".erl", ".hrl", ".hs", ".elm", ".clj",
+	".cljs", ".edn", ".ml", ".mli", ".zig", ".nim", ".sol", ".proto", ".thrift",
+	".cmake", ".mk", ".make", ".dockerfile", ".containerfile", ".sql",
+)
+
+// textWrapperExtensions mark backups and templates of another file, such as
+// nginx.conf.bak or config.yml.example; the inner name decides the type.
+var textWrapperExtensions = setOf(
+	".bak", ".backup", ".old", ".orig", ".save", ".sample", ".example", ".dist",
+	".default", ".in",
+)
+
+// textNamePrefixes cover well-known files whose suffix is a free-form variant,
+// such as Dockerfile.prod or .env.local.
+var textNamePrefixes = []string{
+	".env.", "dockerfile.", "containerfile.", "makefile.", "jenkinsfile.", "vagrantfile.",
+}
+
+var textMIMETypes = setOf(
+	"application/json", "application/xml", "application/yaml", "application/toml",
+	"application/javascript", "application/x-sh", "application/x-shellscript",
+)
+
+func setOf(values ...string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
+}
+
+// textFileCandidate reports whether a file name should open in the text
+// editor. Extensionless files and dotfiles such as .bashrc qualify too; the
+// text read path still rejects content that is not UTF-8 or contains NUL, so
+// directory listing never has to read file content.
+func textFileCandidate(name string) bool {
+	lower := strings.ToLower(name)
+	for range 3 {
+		extension := filepath.Ext(lower)
+		base := strings.TrimSuffix(lower, extension)
+		if extension == "" || base == "" {
+			return true
+		}
+		if _, ok := textFileExtensions[extension]; ok {
+			return true
+		}
+		for _, prefix := range textNamePrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+		if _, ok := textWrapperExtensions[extension]; !ok {
+			return false
+		}
+		lower = base
+	}
+	return false
+}
+
 func viewerSupport(name, mimeType string, size int64, kind string) (bool, bool) {
 	if kind != "file" {
 		return false, false
 	}
-	extension := strings.ToLower(filepath.Ext(name))
-	textExtensions := map[string]bool{
-		"": true, ".txt": true, ".log": true, ".md": true, ".json": true,
-		".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".conf": true,
-		".sh": true, ".bash": true, ".zsh": true, ".go": true, ".js": true,
-		".mjs": true, ".cjs": true, ".ts": true, ".tsx": true, ".jsx": true,
-		".vue": true, ".html": true, ".htm": true, ".css": true, ".scss": true,
-		".xml": true, ".svg": true, ".env": true, ".sql": true, ".py": true, ".rb": true,
-		".php": true, ".java": true, ".c": true, ".h": true, ".cpp": true,
-	}
-	if textExtensions[extension] || strings.HasPrefix(mimeType, "text/") {
+	_, textMIME := textMIMETypes[mimeType]
+	if textFileCandidate(name) || textMIME || strings.HasPrefix(mimeType, "text/") {
 		return size <= MaxTextBytes, size <= MaxTextBytes
 	}
 	previewable := strings.HasPrefix(mimeType, "image/") ||
 		strings.HasPrefix(mimeType, "audio/") ||
 		strings.HasPrefix(mimeType, "video/") ||
 		mimeType == "application/pdf"
-	if extension == ".svg" || extension == ".html" || extension == ".htm" {
-		previewable = size <= MaxTextBytes
-	}
 	return false, previewable
 }
 

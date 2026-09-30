@@ -1049,6 +1049,36 @@ defineExpose({ openFile })
   border: 0;
   background: color-mix(in srgb, var(--file-preview-background) 60%, transparent);
 }
+/* 宽屏：侧边栏占满左侧整列，标签栏与工具栏被挤到其右侧；窄屏仍为顶部工具栏 + 覆盖式侧栏。 */
+.editor-workspace:not(.is-compact) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.editor-workspace:not(.is-compact) .editor-workspace__body {
+  display: contents;
+}
+.editor-workspace:not(.is-compact) .editor-toolbar {
+  grid-column: 2;
+  grid-row: 1;
+}
+.editor-workspace:not(.is-compact) .editor-sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+.editor-workspace:not(.is-compact) .editor-main {
+  grid-column: 2;
+  grid-row: 2;
+}
+.editor-workspace:not(.is-compact) .editor-sidebar__header {
+  min-height: 52px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--file-preview-border);
+}
+.editor-workspace:not(.is-compact) .editor-sidebar__path {
+  padding-top: 8px;
+}
 .is-compact .editor-sidebar {
   position: absolute;
   z-index: 3;
