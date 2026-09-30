@@ -39,7 +39,11 @@ type Preview struct {
 }
 
 func NewService(engine *Engine) (*Service, error) {
-	jobs, err := backup.OpenManager(filepath.Join(engine.StateDir, "backup-center"))
+	stateDir, err := backup.CanonicalRoot(engine.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := backup.OpenManager(filepath.Join(stateDir, "backup-center"))
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +71,7 @@ func NewService(engine *Engine) (*Service, error) {
 			case <-s.stop:
 				return
 			case now := <-timer.C:
-				_ = SweepCLI(filepath.Join(engine.StateDir, "backup-cli"), now)
+				_ = SweepCLI(filepath.Join(stateDir, "backup-cli"), now)
 			}
 		}
 	}()

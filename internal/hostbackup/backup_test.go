@@ -359,3 +359,26 @@ func TestBackupHostInterruptedJournalRecovery(t *testing.T) {
 		t.Fatal("interrupted transaction changed original data", err)
 	}
 }
+
+func TestBackupServiceStartsBelowLinkedStateAncestor(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(base, "vol1", "1000", "docker")
+	if err := os.MkdirAll(filepath.Join(volume, "kpanel", "data", "agent"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(base, "docker")
+	if err := os.Symlink(volume, linked); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	s, err := NewService(NewWithSocket(filepath.Join(linked, "kpanel", "data", "agent"), filepath.Join(base, "missing.sock")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if want := filepath.Join(volume, "kpanel", "data", "agent", "backup-center"); s.Jobs.Root != want {
+		t.Fatalf("backup center = %q, want %q", s.Jobs.Root, want)
+	}
+}

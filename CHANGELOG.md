@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复 `/home/docker` 为符号链接（如飞牛 fnOS 链接到 `/vol1/1000/docker`）的主机上全新安装失败：Agent 启动时备份中心把状态目录的上级链接误判为篡改，报 `initialize backup jobs: backup is invalid, damaged, incompatible, or the password is incorrect` 并持续重启。现在状态目录在启动时解析为真实路径，备份任务目录内部的链接仍被拒绝；文件管理器同时保护 KPanel 目录解析后的真实路径。
+
 ## [1.24.0-rc.1] - 2026-10-01
 
 本预览版汇集稳定版 1.23.0 后已完成的集群分享主题重做，以及应用脚本终端并排实时显示与任务日志滚动保留。

@@ -64,7 +64,11 @@ func waitBackupCLI(call backupCommand, id string) (backup.Record, error) {
 	}
 }
 func cliBackupWorkspace() (string, error) {
-	root := filepath.Join(env("KEJILION_AGENT_STATE_DIR", "/var/lib/kejilion-panel"), "backup-cli")
+	stateDir, err := backup.CanonicalRoot(env("KEJILION_AGENT_STATE_DIR", "/var/lib/kejilion-panel"))
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join(stateDir, "backup-cli")
 	if err := backup.PrivateDir(root); err != nil {
 		return "", err
 	}

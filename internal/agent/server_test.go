@@ -553,6 +553,32 @@ func TestDefaultFileManagerUsesWritableAgentStateDirectoryForTrash(t *testing.T)
 	}
 }
 
+func TestDefaultFileManagerProtectsResolvedStateDirectory(t *testing.T) {
+	if os.PathSeparator != '/' {
+		t.Skip("file manager virtual paths are POSIX paths")
+	}
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(base, "vol1", "1000", "docker")
+	if err := os.MkdirAll(filepath.Join(volume, "kpanel", "data", "agent"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(base, "docker")
+	if err := os.Symlink(volume, linked); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	config := DefaultFileManagerConfig(filepath.Join(linked, "kpanel", "data", "agent"))
+	resolved := filepath.Join(volume, "kpanel", "data", "agent")
+	for _, protected := range config.ProtectedVirtual {
+		if protected == resolved {
+			return
+		}
+	}
+	t.Fatalf("resolved Agent state directory is not protected: %#v", config.ProtectedVirtual)
+}
+
 func testFileManager(t *testing.T) *filemanager.Manager {
 	t.Helper()
 	manager, err := filemanager.New(filemanager.Config{Root: t.TempDir()})
