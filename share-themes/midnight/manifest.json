@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "id": "midnight",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "runtime": "kpanel-share-theme@2",
   "name": {
     "zh-CN": "午夜终端",
@@ -9,8 +9,8 @@
     "en-US": "Midnight console"
   },
   "description": {
-    "zh-CN": "字符条形图与可排序表格的终端控制台",
-    "en-US": "A terminal console with sortable rows and bar glyphs"
+    "zh-CN": "htop 风格热力表与 tmux 分屏，高密度一屏看完",
+    "en-US": "An htop-style heat table and tmux panes, dense and scannable"
   },
   "author": {
     "name": "KPanel",
@@ -19,11 +19,12 @@
   "license": "AGPL-3.0-only",
   "tags": [
     "terminal",
+    "dense",
     "table"
   ],
   "theme": {
-    "brand": "#6df0b0",
-    "neutral": "#0b1210",
+    "brand": "#7ee787",
+    "neutral": "#0a0f0d",
     "signature": "#ffd166"
   },
   "entry": "index.html"

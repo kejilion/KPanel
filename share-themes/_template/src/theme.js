@@ -17,7 +17,7 @@
 //          hosts: [{
 //            id, name, state: 'online' | 'degraded' | 'offline' | 'pending', stateLabel,
 //            os, architecture, cores, collected,                                                   // collected=false => metrics unknown
-//            location: { text, country, countryCode, city, region, isp },
+//            location: { text, country, countryCode, city, region, isp, latitude, longitude },   // lat/lon: country centre or null
 //            cpu:    { text, ratio },                                                              // ratio is 0..1, null when unknown
 //            memory: { text, ratio, usedBytes, totalBytes, usedText, totalText },
 //            disk:   { text, ratio, usedBytes, totalBytes, usedText, totalText },

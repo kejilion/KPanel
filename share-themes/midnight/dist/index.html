@@ -1,17 +1,28 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><link rel="stylesheet" href="./theme.css"><title>KPanel</title></head>
 <body>
-<div class="screen">
-  <p class="prompt" aria-hidden="true"><span class="ps1">kpanel@fleet:~$</span> status --public<i class="cursor"></i></p>
-  <h1 id="title"></h1>
-  <p id="desc" class="desc"></p>
-  <dl id="summary" class="summary"></dl>
-  <div class="tools">
-    <label class="find"><span id="findLabel" class="sr"></span><span class="ps1" aria-hidden="true">/</span><input id="q" type="search" autocomplete="off" spellcheck="false"></label>
-    <div id="filters" class="filters" role="group"></div>
+<div class="term">
+  <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>kpanel — fleet</span></div>
+  <div class="screen">
+    <p class="prompt" aria-hidden="true"><span class="ps1">kpanel@fleet</span>:<span class="path">~</span>$ watch -n 15 status<i class="cursor"></i></p>
+    <h1 id="title"></h1>
+    <p id="desc" class="desc"></p>
+
+    <section class="top" aria-live="polite">
+      <div id="blocks" class="blocks" role="img"></div>
+      <p id="tally" class="tally"></p>
+      <p id="worth" class="worth"></p>
+    </section>
+
+    <div class="tools">
+      <label class="find"><span id="findLabel" class="sr"></span><span class="ps1" aria-hidden="true">/</span><input id="q" type="search" autocomplete="off" spellcheck="false"></label>
+      <div id="filters" class="keys" role="group"></div>
+      <div id="views" class="keys views" role="group"></div>
+    </div>
+
+    <div id="list"></div>
+    <p id="foot" class="foot"></p>
   </div>
-  <div id="list" aria-live="polite"></div>
-  <footer id="foot"></footer>
 </div>
 <script src="./theme.js"></script>
 </body></html>

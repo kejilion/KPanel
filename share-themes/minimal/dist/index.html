@@ -1,19 +1,30 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="./theme.css"><title>KPanel</title></head>
 <body>
-<article class="sheet">
-  <header class="masthead">
-    <p id="kicker" class="kicker"></p>
+<div class="page">
+  <header class="head">
+    <p class="kicker"><span id="kicker"></span><span id="stamp" class="stamp"></span></p>
     <h1 id="title"></h1>
-    <p id="desc" class="lede"></p>
+    <p id="desc" class="desc"></p>
   </header>
-  <section id="figures" class="figures" aria-live="polite"></section>
-  <nav class="controls">
-    <div id="tabs" class="tabs" role="group"></div>
-    <label class="search"><span id="searchLabel" class="sr"></span><input id="q" type="search" autocomplete="off"></label>
-  </nav>
-  <ol id="entries" class="entries"></ol>
-  <footer id="foot" class="colophon"></footer>
-</article>
+
+  <section class="overview" aria-live="polite">
+    <div class="health">
+      <svg id="ring" class="ring" viewBox="0 0 120 120" aria-hidden="true"></svg>
+      <div class="health-text"><strong id="ratio"></strong><span id="healthLabel"></span></div>
+      <ul id="legend" class="legend"></ul>
+    </div>
+    <div id="worth" class="worth" hidden></div>
+  </section>
+
+  <div class="toolbar">
+    <div id="filters" class="segmented" role="group"></div>
+    <label class="search"><span id="searchLabel" class="sr"></span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" autocomplete="off"></label>
+    <div id="views" class="segmented views" role="group"></div>
+  </div>
+
+  <main id="hosts" class="hosts"></main>
+  <footer id="foot" class="foot"></footer>
+</div>
 <script src="./theme.js"></script>
 </body></html>

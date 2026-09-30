@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { shareThemeModel, shareThemeModelV2, shareThemeProtocol, shareThemeURL } from './shareThemes'
 import type { PublicClusterShareSnapshot } from '@/types/api'
 import { useI18n } from '@/i18n'
+import { regionCenters } from '@/components/cluster/globeData'
 
 export function themeSnapshot(): PublicClusterShareSnapshot {
   return { title: 'Public fleet', generatedAt: '2026-01-01T12:00:00Z', total: 1, online: 1, attention: 0,
@@ -74,6 +75,10 @@ describe('share theme protocol', () => {
     expect(host).toMatchObject({ stateLabel: '在线', cores: 2, collected: true, cpu: { text: '20%', ratio: 0.2 }, memory: { ratio: 0.3, usedBytes: 30, totalBytes: 100 } })
     expect(host.traffic).toMatchObject({ monthly: true, percent: '68%', ratio: expect.closeTo(0.68, 2), quotaGiB: 100 })
     expect(host.location.text).toBe('Test')
+    expect(host.location).toMatchObject({ latitude: null, longitude: null })
+    snapshot.items[0]!.location.countryCode = 'jp'
+    expect(shareThemeModelV2(snapshot, 'zh-CN').hosts[0]!.location).toMatchObject({ countryCode: 'JP', latitude: null })
+    expect(shareThemeModelV2(snapshot, 'zh-CN', new Date(), undefined, regionCenters).hosts[0]!.location).toMatchObject({ countryCode: 'JP', latitude: regionCenters.JP![0], longitude: regionCenters.JP![1] })
     expect(model.value.groups[0]).toMatchObject({ currency: 'USD', amount: expect.any(Number) })
     expect(JSON.stringify(model)).not.toContain('secret-')
     // Unknown metrics stay unknown instead of turning into zero.

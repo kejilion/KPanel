@@ -63,7 +63,10 @@ const finite = (value: number | undefined, known: boolean) => known && Number.is
  * however it likes. Themes get vocabulary through `labels` and a stable list of
  * `states`, and never need to parse formatted strings.
  */
-export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: string, now = new Date(), t?: ReturnType<typeof useI18n>['t']) {
+export type RegionCenters = Readonly<Record<string, readonly [number, number]>>
+
+/** Country anchors are lazy-loaded by the caller so the public page never pays for them without a protocol 2 theme. */
+export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: string, now = new Date(), t?: ReturnType<typeof useI18n>['t'], regionCenters: RegionCenters = {}) {
   const v1 = shareThemeModel(snapshot, locale, now, t)
   const summary = summarizeRemainingValue(snapshot.items, Object.fromEntries(snapshot.items.map(host => [host.id, host])), now)
   const labels = shareThemeLabels(locale)
@@ -73,12 +76,14 @@ export function shareThemeModelV2(snapshot: PublicClusterShareSnapshot, locale: 
     states: { online: labels.online, degraded: labels.degraded, offline: labels.offline, pending: labels.pending },
     value: { ...v1.value, groups: v1.value.groups.map((group, index) => ({ ...group, amount: summary.groups[index]?.remaining ?? null })) },
     hosts: v1.hosts.map((host, index) => {
-      const raw = snapshot.items[index]!, known = Boolean(raw.collectedAt)
+      const raw = snapshot.items[index]!, known = Boolean(raw.collectedAt), countryCode = (raw.location.countryCode || '').trim().toUpperCase()
       return {
         ...host,
         stateLabel: labels[raw.state] || labels.pending,
         architecture: raw.architecture || '',
-        location: { text: host.location, country: raw.location.country || '', countryCode: (raw.location.countryCode || '').toUpperCase(), city: raw.location.city || '', region: raw.location.region || '', isp: raw.location.isp || '' },
+        location: { text: host.location, country: raw.location.country || '', countryCode, city: raw.location.city || '', region: raw.location.region || '', isp: raw.location.isp || '',
+          // Country-level anchor shared with the built-in globe; never a measured host position.
+          latitude: regionCenters[countryCode]?.[0] ?? null, longitude: regionCenters[countryCode]?.[1] ?? null },
         cores: known ? raw.cpu.cores : null,
         collected: known,
         cpu: { text: host.cpu, ratio: ratio(raw.cpu.usagePercent, known) },

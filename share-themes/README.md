@@ -43,8 +43,9 @@
 | `value` | 剩余价值估算：`groups[]`（`currency` `text` `amount`）、`included` `excluded`；`groups` 为空时**隐藏整块**及占位 |
 | `hosts[]` | 主机列表，顺序即管理员设定的公开页顺序（勾选「按当前面板顺序」时） |
 
-每台主机：`id`（公开专用的不透明标识）、`name`、`state`（`online` `degraded` `offline` `pending`）、`stateLabel`、`os`、`architecture`、`cores`、`collected`、`location{text,country,countryCode,city,region,isp}`、`cpu{text,ratio}`、`memory{text,ratio,usedBytes,totalBytes,usedText,totalText}`、`disk{…同 memory}`、`load{one,five,fifteen}|null`、`uptime`（文本）、`uptimeSeconds`、`network{down,up}{bytesPerSecond,text}`、`traffic`、`price`、`expiresOn`、`remaining`。
+每台主机：`id`（公开专用的不透明标识）、`name`、`state`（`online` `degraded` `offline` `pending`）、`stateLabel`、`os`、`architecture`、`cores`、`collected`、`location{text,country,countryCode,city,region,isp,latitude,longitude}`、`cpu{text,ratio}`、`memory{text,ratio,usedBytes,totalBytes,usedText,totalText}`、`disk{…同 memory}`、`load{one,five,fifteen}|null`、`uptime`（文本）、`uptimeSeconds`、`network{down,up}{bytesPerSecond,text}`、`traffic`、`price`、`expiresOn`、`remaining`。
 
+- `latitude` / `longitude` 是**国家/地区中心点**（与内置地球相同的区域锚点），用于画地图；未知为 `null`。它不是机器的真实位置，主题不得据此暗示精确坐标。
 - `ratio` 是 0–1 的小数，**未知为 `null`**；文本未知为 `—`。未知永远不要画成 0。`collected` 为 `false` 表示还没有采集到数据。
 - `price` / `expiresOn` / `remaining` 为空字符串表示未配置，应隐藏整行；已配置的零值必须显示。
 - `traffic` 含 `monthly`（是否启用月度配额）、`percent`（文本）、`ratio`（已用比例，最大 1）、`tone`（`normal` `warning` `danger`）、`received` `sent`、`quotaGiB`、`available` `partial` `estimated` 和 `hint`。`hint` 是核心提供的本地化说明（等待数据、不完整、估算、计费方向、接近/超额），**必须展示或提供可访问详情**，不得隐藏影响解读的状态。不得把上行和下行分别除以配额再当成两个总百分比。重置日期只在主机设置中显示，协议不提供，主题不得展示。
@@ -66,8 +67,12 @@
 
 ## 官方主题
 
-| ID | 风格 | 亮点 |
-| --- | --- | --- |
-| `midnight` | 终端控制台 | 等宽字体、字符条形图、可按列排序的表格，窄屏折叠为带标签的块 |
-| `minimal` | 杂志版式 | 衬线大字、无卡片、细线仪表、留白与状态标签 |
-| `signal` | 信号墙 | 每台机器一个状态块、环形仪表、顶部状态方格条，点击展开详情 |
+三套主题彼此不共享任何代码，分别代表三种不同的阅读方式。都支持浅/深色、搜索、状态筛选和两种视图（访客的视图选择只保存在本次浏览中）。
+
+| ID | 名称 | 适合 | 视图 | 设计要点 |
+| --- | --- | --- | --- | --- |
+| `minimal` | 简约看板 | 给别人看的状态页 | 卡片 / 列表 | 在线率环图与分状态计数、8px 粗条仪表、流量区块、信息标签 |
+| `orbit` | 星图 | 多地区部署、展示型分享 | 卡片 / 列表 + 世界地图 | 点阵世界地图按国家聚合机器，可点击筛选；拥挤时自动合并与避让标签；三色环形仪表 |
+| `midnight` | 午夜终端 | 机器多、要快速扫一遍 | 热力表 / 分屏 | htop 风格热力单元格、按列排序、行内展开详情、`/` 与 `1–4` 键盘操作 |
+
+`orbit/src/land.js` 是 Natural Earth v5.1.2 陆地点阵（公有领域），与内置地球同源。

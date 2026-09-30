@@ -4,7 +4,7 @@
     {
       "schema": 1,
       "id": "midnight",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "runtime": "kpanel-share-theme@2",
       "name": {
         "zh-CN": "午夜终端",
@@ -12,8 +12,8 @@
         "en-US": "Midnight console"
       },
       "description": {
-        "zh-CN": "字符条形图与可排序表格的终端控制台",
-        "en-US": "A terminal console with sortable rows and bar glyphs"
+        "zh-CN": "htop 风格热力表与 tmux 分屏，高密度一屏看完",
+        "en-US": "An htop-style heat table and tmux panes, dense and scannable"
       },
       "author": {
         "name": "KPanel",
@@ -22,11 +22,12 @@
       "license": "AGPL-3.0-only",
       "tags": [
         "terminal",
+        "dense",
         "table"
       ],
       "theme": {
-        "brand": "#6df0b0",
-        "neutral": "#0b1210",
+        "brand": "#7ee787",
+        "neutral": "#0a0f0d",
         "signature": "#ffd166"
       },
       "entry": "index.html",
@@ -34,40 +35,40 @@
       "files": [
         {
           "path": "index.html",
-          "size": 894,
-          "sha256": "0b5802d6a0581462cc7abd21bc2acb65b985f320db496400556f284a5b14795b"
+          "size": 1267,
+          "sha256": "b8291cc5d184013d0366c5a8b560085bc215b739e9170898d064b442ec45c784"
         },
         {
           "path": "manifest.json",
-          "size": 648,
-          "sha256": "13b1e10b2fd1c65959bdcce7e5604a874d05363304d8a084f808ce324e6f1375"
+          "size": 677,
+          "sha256": "9830e40ad13030f8fd348108fb2a6be0b762da99e83402f93497f63838acfc50"
         },
         {
           "path": "theme.css",
-          "size": 5845,
-          "sha256": "e44fba6e383ab0ad7caddc6814e5f1c2a7cd3858d05dec848e96f581f48b65a8"
+          "size": 9098,
+          "sha256": "b20e40d3dbbe351f8307a1472777b9dd0ad0081cf36154ad4dd738b6d3dc0174"
         },
         {
           "path": "theme.js",
-          "size": 7126,
-          "sha256": "588d13569b3122f5c3825aeb5ff2f7427a04657c001257aeeaa39554459ad2bc"
+          "size": 10776,
+          "sha256": "7e452028e8ebbe47ddc9211c2160cb146dc9d7daed1dd822965992147126634b"
         }
       ],
-      "sizeBytes": 14513
+      "sizeBytes": 21818
     },
     {
       "schema": 1,
       "id": "minimal",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "runtime": "kpanel-share-theme@2",
       "name": {
         "zh-CN": "简约看板",
         "zh-TW": "簡約看板",
-        "en-US": "Minimal paper"
+        "en-US": "Clear board"
       },
       "description": {
-        "zh-CN": "衬线大字、细线仪表与留白的杂志版式",
-        "en-US": "An editorial page: serif type, hairline gauges, whitespace"
+        "zh-CN": "明亮清爽的状态页：在线率环图、粗条仪表、卡片与列表",
+        "en-US": "A bright status page: health ring, bold meters, cards and list"
       },
       "author": {
         "name": "KPanel",
@@ -75,53 +76,54 @@
       },
       "license": "AGPL-3.0-only",
       "tags": [
-        "editorial",
-        "light"
+        "status-page",
+        "light",
+        "cards"
       ],
       "theme": {
-        "brand": "#1d4ed8",
-        "neutral": "#fbfaf7",
-        "signature": "#14743f"
+        "brand": "#2563eb",
+        "neutral": "#f5f7fb",
+        "signature": "#047857"
       },
       "entry": "index.html",
       "path": "minimal/dist",
       "files": [
         {
           "path": "index.html",
-          "size": 843,
-          "sha256": "8d441017a105a41d9206f37349e10d4dd305fd292745db262f5e04a703011130"
+          "size": 1354,
+          "sha256": "675b5701e21b560458a6b1722d99a2a003549ba9c01457325e8c761c824f6ceb"
         },
         {
           "path": "manifest.json",
-          "size": 651,
-          "sha256": "fb7e9ab9cbfe5a306cf98b5abc5c8312d6c6d5e03c708bb1d23f5104be6addaf"
+          "size": 692,
+          "sha256": "5fba451bc9036025940bcd724f467d20228ef556579ae5709462260528a6639b"
         },
         {
           "path": "theme.css",
-          "size": 5311,
-          "sha256": "6b1162f611328669c4894a1e44854ca0dc31648d1d6bd2c69da92d6b86f3f16b"
+          "size": 10829,
+          "sha256": "35374ca18793ffe3411437fb2c2124b5f136973a01264059ed27c76ecd46d620"
         },
         {
           "path": "theme.js",
-          "size": 5117,
-          "sha256": "4e25b56c1a3a74936b9ba7746d6b4b696ad19c2edb5742680148cd655685a9b2"
+          "size": 8734,
+          "sha256": "66b8afa548f5dfc0793f2691b55bc8bf9c34a31916200bf8bbce36d075776cab"
         }
       ],
-      "sizeBytes": 11922
+      "sizeBytes": 21609
     },
     {
       "schema": 1,
-      "id": "signal",
+      "id": "orbit",
       "version": "1.0.0",
       "runtime": "kpanel-share-theme@2",
       "name": {
-        "zh-CN": "信号墙",
-        "zh-TW": "信號牆",
-        "en-US": "Signal wall"
+        "zh-CN": "星图",
+        "zh-TW": "星圖",
+        "en-US": "Orbit map"
       },
       "description": {
-        "zh-CN": "大屏友好的状态墙，环形仪表一眼可读",
-        "en-US": "A glanceable status wall with ring gauges"
+        "zh-CN": "深色世界地图：机器在哪、状态如何，一眼看全",
+        "en-US": "A dark world map: where every server is and how it is doing"
       },
       "author": {
         "name": "KPanel",
@@ -129,39 +131,45 @@
       },
       "license": "AGPL-3.0-only",
       "tags": [
-        "wallboard",
-        "dashboard"
+        "map",
+        "dark",
+        "cards"
       ],
       "theme": {
-        "brand": "#7aa2ff",
-        "neutral": "#0c1018",
-        "signature": "#35d07f"
+        "brand": "#5eead4",
+        "neutral": "#070b16",
+        "signature": "#a78bfa"
       },
       "entry": "index.html",
-      "path": "signal/dist",
+      "path": "orbit/dist",
       "files": [
         {
           "path": "index.html",
-          "size": 749,
-          "sha256": "4b756b8e43ab47bc29626616b12c03e2bcf95b90f7cd43e0c81eff910434e8e5"
+          "size": 1201,
+          "sha256": "214c052388963d33e50bdc46ca5a1697facc3954214b0c6f795a144562d71072"
+        },
+        {
+          "path": "land.js",
+          "size": 24985,
+          "sha256": "a2b47f33fb7207638b07a243b92599566b1e42cf3df8dd45125e2a2bf8ea44e1"
         },
         {
           "path": "manifest.json",
-          "size": 629,
-          "sha256": "46a37474a3ce085251118312ef3982e240326cbd83c3fefab15095648f18de91"
+          "size": 652,
+          "sha256": "ce5d5b239125f5d5f02bab9edc82786cb57877181c3533c907c573e88ee8b232"
         },
         {
           "path": "theme.css",
-          "size": 5081,
-          "sha256": "6412efc99e4267979493d28274fc09b0ab7d7c3e94fbce893fe5cfc277d1193a"
+          "size": 12091,
+          "sha256": "1770fe4722d6cfbf412bdfd8a257d4c0e70f300e599542b98b04c53536e6ecbc"
         },
         {
           "path": "theme.js",
-          "size": 4881,
-          "sha256": "aaf16a9037be9f87e61ac908ad4e6b6cc21c144a923543973f305072b1cdff75"
+          "size": 11813,
+          "sha256": "2cc2be5455794a9a2159560588eea8b6867c5fa3a854ca1216dfc44dc9fcf6f9"
         }
       ],
-      "sizeBytes": 11340
+      "sizeBytes": 50742
     }
   ]
 }

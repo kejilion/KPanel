@@ -1,73 +1,135 @@
-// Minimal — an editorial page: big numerals, ruled entries, hairline gauges.
-// Protocol 2, no dependencies; snapshot strings are only ever inserted as text.
+// 简约看板 / Clear board — a bright status page. Protocol 2, no dependencies.
+// Every snapshot string is inserted as a text node, never as HTML.
 const $ = id => document.getElementById(id)
 const h = (tag, cls, ...kids) => {
   const node = document.createElement(tag)
   if (cls) node.className = cls
-  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) node.append(kid.nodeType ? kid : document.createTextNode(String(kid)))
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false && kid !== '') node.append(kid.nodeType ? kid : document.createTextNode(String(kid)))
   return node
 }
-let snap = null, query = '', tab = 'all'
+const svg = (tag, attrs) => { const node = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v); return node }
+const remember = (key, fallback) => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
+const store = (key, value) => { try { localStorage.setItem(key, value) } catch { /* sandboxed: keep in memory */ } }
 
-function hairline(label, reading) {
-  const ratio = reading.ratio
-  const meter = h('span', 'hairline'); meter.setAttribute('role', 'img')
-  meter.setAttribute('aria-label', `${label} ${reading.text}`)
-  const fill = h('span', ratio === null ? 'fill na' : ratio >= 0.9 ? 'fill hot' : ratio >= 0.75 ? 'fill warm' : 'fill')
-  fill.style.width = `${Math.round((ratio ?? 0) * 100)}%`
-  meter.append(fill)
-  return h('div', 'gauge', h('span', 'gauge-name', label), meter, h('span', 'gauge-value', reading.text))
+const STATES = ['online', 'degraded', 'offline', 'pending']
+let snap = null, query = '', filter = 'all', view = remember('clear-view', 'card')
+const level = ratio => ratio === null || ratio === undefined ? 'na' : ratio >= 0.9 ? 'hot' : ratio >= 0.75 ? 'warm' : 'ok'
+const known = value => value && value !== '—'
+
+function meter(label, reading, extra) {
+  const bar = h('span', 'bar'); const fill = h('span', 'fill')
+  fill.style.inlineSize = `${Math.round((reading.ratio ?? 0) * 100)}%`
+  bar.append(fill)
+  const node = h('div', `meter ${level(reading.ratio)}`, h('span', 'meter-name', label), bar, h('span', 'meter-value', reading.text, level(reading.ratio) === 'hot' ? ' !' : ''))
+  if (extra) node.append(h('span', 'meter-extra', extra))
+  return node
 }
 
-function entry(host, labels, index) {
-  const li = h('li', `entry ${host.state}`)
-  const title = h('div', 'entry-head')
-  title.append(h('span', 'no', String(index + 1).padStart(2, '0')),
-    h('div', 'who', h('h2', null, host.name), h('p', null, [host.location.text, host.os].filter(Boolean).join(' — '))),
-    h('span', `mark ${host.state}`, host.stateLabel))
-  const gauges = h('div', 'gauges', hairline(labels.cpu, host.cpu), hairline(labels.memory, host.memory), hairline(labels.disk, host.disk))
-  const notes = h('dl', 'notes')
-  const add = (term, value) => { if (value && value !== '—') notes.append(h('div', null, h('dt', null, term), h('dd', null, value))) }
+function trafficMeter(host, labels) {
+  const t = host.traffic
+  const title = t.monthly ? labels.monthly : labels.cumulative
+  const reading = { text: t.percent || '', ratio: t.monthly && t.percent ? t.ratio : null }
+  const node = h('div', `traffic ${t.tone || 'normal'}`)
+  const top = h('div', 'traffic-top', h('span', null, title), h('span', 'traffic-io', `↓ ${t.received}  ↑ ${t.sent}`))
+  node.append(top)
+  if (reading.text) {
+    const bar = h('span', 'bar'); const fill = h('span', 'fill'); fill.style.inlineSize = `${Math.round(reading.ratio * 100)}%`; bar.append(fill)
+    node.append(h('div', 'traffic-bar', bar, h('b', null, reading.text)))
+  }
+  if (t.hint) node.append(h('p', 'hint', t.hint))
+  return node
+}
+
+function chips(host, labels) {
+  const list = h('ul', 'chips')
+  const add = (label, value) => { if (known(value)) list.append(h('li', null, h('span', null, label), ' ', h('b', null, value))) }
   add(labels.uptime, host.uptime)
-  add(labels.download, host.network.down.text)
-  add(labels.upload, host.network.up.text)
-  add(host.traffic.monthly ? labels.monthly : labels.cumulative, `${host.traffic.percent ? `${host.traffic.percent} · ` : ''}↓ ${host.traffic.received}  ↑ ${host.traffic.sent}`)
+  if (host.collected) add(labels.network, `↓ ${host.network.down.text} ↑ ${host.network.up.text}`)
   add(labels.expiry, host.expiresOn); add(labels.price, host.price); add(labels.remaining, host.remaining)
-  li.append(title, gauges, notes)
-  if (host.traffic.hint) li.append(h('p', 'aside', host.traffic.hint))
-  return li
+  return list
+}
+
+function identity(host, labels) {
+  const place = [host.location.text, host.os].filter(Boolean).join(' · ')
+  return h('div', 'who',
+    h('h2', null, host.name),
+    h('p', null, host.location.countryCode ? h('span', 'cc', host.location.countryCode) : null, place || labels.unknownPlace))
+}
+
+function card(host, labels) {
+  return h('article', `card s-${host.state}`,
+    h('header', null, identity(host, labels), h('span', `pill s-${host.state}`, host.stateLabel)),
+    h('div', 'meters', meter(labels.cpu, host.cpu, host.cores ? `${host.cores} ${labels.cores}` : ''), meter(labels.memory, host.memory, host.memory.totalText !== '—' ? `${host.memory.usedText} / ${host.memory.totalText}` : ''),
+      meter(labels.disk, host.disk, host.disk.totalText !== '—' ? `${host.disk.usedText} / ${host.disk.totalText}` : '')),
+    trafficMeter(host, labels), chips(host, labels))
+}
+
+function row(host, labels) {
+  const t = host.traffic
+  return h('article', `row s-${host.state}`,
+    h('span', `pill s-${host.state}`, host.stateLabel), identity(host, labels),
+    meter(labels.cpu, host.cpu), meter(labels.memory, host.memory), meter(labels.disk, host.disk),
+    meter(t.monthly ? labels.monthly : labels.traffic, { text: t.percent || `↓ ${t.received}`, ratio: t.percent ? t.ratio : null }),
+    h('div', 'row-meta', h('span', null, known(host.uptime) ? host.uptime : ''), host.collected ? h('span', null, `↓ ${host.network.down.text}`) : null))
+}
+
+function ring(counts) {
+  const node = $('ring'); node.replaceChildren(svg('circle', { cx: 60, cy: 60, r: 50, class: 'track' }))
+  const total = Math.max(1, counts.online + counts.degraded + counts.offline + counts.pending), length = 2 * Math.PI * 50
+  let offset = 0
+  for (const state of STATES) {
+    const part = counts[state] / total * length
+    if (part > 0) node.append(svg('circle', { cx: 60, cy: 60, r: 50, class: `seg s-${state}`, 'stroke-dasharray': `${Math.max(0, part - 2)} ${length}`, 'stroke-dashoffset': -offset, transform: 'rotate(-90 60 60)' }))
+    offset += part
+  }
 }
 
 function render() {
   const { data, labels, locale, mode } = snap
-  document.documentElement.lang = locale
-  document.documentElement.dataset.mode = mode === 'light' ? 'light' : 'dark'
+  const root = document.documentElement
+  root.lang = locale; root.dataset.mode = mode === 'dark' ? 'dark' : 'light'
   document.title = data.title
   $('kicker').textContent = labels.fleet
+  const date = new Date(data.generatedAt)
+  const stamp = Number.isFinite(date.getTime()) ? date.toLocaleString(locale) : '—'
+  $('stamp').textContent = `${labels.updated} ${stamp}`
   $('title').textContent = data.title
   $('desc').textContent = data.description; $('desc').hidden = !data.description
   $('searchLabel').textContent = labels.search; $('q').placeholder = labels.search
 
-  const figures = [[data.counts.total, labels.total, ''], [data.counts.online, labels.online, 'good'], [data.counts.attention, labels.attention, data.counts.attention ? 'alert' : '']]
-  const fig = $('figures')
-  fig.replaceChildren(...figures.map(([value, label, tone]) => h('div', `figure ${tone}`, h('strong', null, value), h('span', null, label))))
+  const counts = Object.fromEntries(STATES.map(state => [state, data.hosts.filter(host => host.state === state).length]))
+  ring(counts)
+  $('ratio').textContent = `${data.counts.online}/${data.counts.total}`
+  $('healthLabel').textContent = labels.online
+  $('legend').replaceChildren(...STATES.filter(state => counts[state]).map(state => h('li', `s-${state}`, h('i'), data.states[state], h('b', null, counts[state]))))
+
+  const worth = $('worth')
+  worth.hidden = !data.value.groups.length
   if (data.value.groups.length) {
-    fig.append(h('div', 'figure worth', h('strong', null, data.value.groups[0].text), h('span', null, `${labels.remaining}${data.value.groups.length > 1 ? ` +${data.value.groups.length - 1}` : ''}`),
-      h('small', null, `${data.value.groups.map(group => `${group.currency} ${group.text}`).join(' · ')} — ${data.value.included} / ${data.counts.total} ${labels.covered}`, data.value.excluded ? ` · ${data.value.excluded} ${labels.excluded}` : '')))
+    worth.replaceChildren(h('span', 'worth-label', labels.remaining), ...data.value.groups.map(group => h('strong', null, group.text)),
+      h('p', null, `${data.value.included}/${data.counts.total} ${labels.covered}${data.value.excluded ? ` · ${data.value.excluded} ${labels.excluded}` : ''}`), h('p', null, labels.valueHint))
   }
 
-  $('tabs').replaceChildren(...[['all', labels.all], ['online', labels.online], ['degraded', labels.attention], ['offline', labels.offline]].map(([key, text]) => {
-    const button = h('button', 'tab', text); button.type = 'button'; button.setAttribute('aria-pressed', String(tab === key))
-    button.addEventListener('click', () => { tab = key; render() })
-    return button
-  }))
+  const segments = [['all', labels.all, data.counts.total], ['online', labels.online, counts.online], ['degraded', labels.attention, counts.degraded], ['offline', labels.offline, counts.offline]]
+  $('filters').replaceChildren(...segments.map(([key, text, count]) => toggle(text, filter === key, () => { filter = key; render() }, count)))
+  $('filters').setAttribute('aria-label', labels.view)
+  $('views').replaceChildren(toggle(labels.card, view === 'card', () => setView('card')), toggle(labels.list, view === 'list', () => setView('list')))
+  $('views').setAttribute('aria-label', labels.view)
 
   const needle = query.trim().toLowerCase()
-  const hosts = data.hosts.filter(host => (tab === 'all' || host.state === tab) && `${host.name} ${host.location.text} ${host.os}`.toLowerCase().includes(needle))
-  $('entries').replaceChildren(...(hosts.length ? hosts.map((host, index) => entry(host, labels, index)) : [h('li', 'none', labels.empty)]))
-  const date = new Date(data.generatedAt)
-  $('foot').textContent = `${labels.updated} ${Number.isFinite(date.getTime()) ? date.toLocaleString(locale) : '—'} · KPanel`
+  const hosts = data.hosts.filter(host => (filter === 'all' || host.state === filter) && `${host.name} ${host.location.text} ${host.os}`.toLowerCase().includes(needle))
+  const list = $('hosts'); list.className = `hosts is-${view}`
+  list.replaceChildren(...(hosts.length ? hosts.map(host => view === 'card' ? card(host, labels) : row(host, labels)) : [h('p', 'empty', labels.empty)]))
+  $('foot').textContent = `KPanel · ${labels.updated} ${stamp}`
 }
+
+function toggle(text, pressed, onClick, count) {
+  const button = h('button', null, text, count !== undefined ? h('span', 'count', count) : null)
+  button.type = 'button'; button.setAttribute('aria-pressed', String(pressed))
+  button.addEventListener('click', event => { const index = [...event.currentTarget.parentNode.children].indexOf(event.currentTarget), group = event.currentTarget.parentNode.id; onClick(); document.getElementById(group)?.children[index]?.focus() })
+  return button
+}
+function setView(next) { view = next; store('clear-view', next); render() }
 
 addEventListener('message', event => {
   const msg = event.data
