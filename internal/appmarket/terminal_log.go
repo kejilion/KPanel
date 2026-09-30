@@ -149,15 +149,30 @@ func (registry *appJobRegistry) readTerminalLog(id string, offset int64) ([]byte
 	return data, restart + int64(len(data)), offset < restart, err
 }
 
+// terminalLogLocation maps an absolute offset to the file holding it and the
+// position inside that file. Jobs started by an Agent without segments wrote
+// one `<id>.log` of up to 8 MiB; a segment 0 larger than a segment can only be
+// such a log, and it is read as the single file it is.
+func (registry *appJobRegistry) terminalLogLocation(id string, offset int64) (string, int64, bool) {
+	if offset >= terminalLogSegmentBytes {
+		if info, err := os.Stat(registry.logPath(id)); err == nil && info.Size() > terminalLogSegmentBytes {
+			return registry.logPath(id), offset, true
+		}
+	}
+	index := offset / terminalLogSegmentBytes
+	return registry.terminalSegmentPath(id, index), offset % terminalLogSegmentBytes, false
+}
+
 // readTerminalSegment reads from the segment holding offset. found is false
 // when that segment was rotated away or offset lies beyond the written log.
 func (registry *appJobRegistry) readTerminalSegment(id string, offset int64) ([]byte, bool, error) {
-	index, position := offset/terminalLogSegmentBytes, offset%terminalLogSegmentBytes
-	file, err := os.Open(registry.terminalSegmentPath(id, index))
+	path, position, legacy := registry.terminalLogLocation(id, offset)
+	index := offset / terminalLogSegmentBytes
+	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		// The end of a full segment whose successor has not been written yet
 		// is the end of the log, not a missing segment.
-		if position == 0 && index > 0 {
+		if !legacy && position == 0 && index > 0 {
 			if info, statErr := os.Stat(registry.terminalSegmentPath(id, index-1)); statErr == nil &&
 				info.Size() == terminalLogSegmentBytes {
 				return nil, true, nil

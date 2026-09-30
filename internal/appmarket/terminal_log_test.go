@@ -141,6 +141,38 @@ func TestTerminalLogTreatsAFullSegmentEndAsTheEndOfTheLog(t *testing.T) {
 	}
 }
 
+func TestTerminalLogReadsALegacySingleFileLogPastOneSegment(t *testing.T) {
+	const id = "00112233445566778899aabbccddeeff"
+	service, registry := newTerminalLogTestService(t, id, "succeeded")
+	// The previous Agent wrote one file of up to 8 MiB for every job.
+	total := int64(terminalLogSegmentBytes*2 + 777)
+	legacy := append(patternedOutput(0, total-1), '\n')
+	if err := os.WriteFile(registry.logPath(id), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	offset := int64(terminalLogSegmentBytes - 1000)
+	for {
+		chunk, data := readTerminalChunk(t, service, id, offset)
+		if chunk.Truncated || chunk.NextOffset < offset || !bytes.Equal(data, legacy[offset:chunk.NextOffset]) {
+			t.Fatalf("legacy chunk at %d: next %d truncated %v", offset, chunk.NextOffset, chunk.Truncated)
+		}
+		offset = chunk.NextOffset
+		if chunk.Finished {
+			break
+		}
+		if len(data) == 0 {
+			t.Fatalf("legacy log stalled at %d of %d", offset, total)
+		}
+	}
+	if offset != total {
+		t.Fatalf("legacy log finished at %d, want %d", offset, total)
+	}
+	tail, err := registry.logTailBytes(id)
+	if err != nil || !bytes.Equal(tail, legacy[total-maxAppJobLog:]) {
+		t.Fatalf("legacy log tail = %d bytes, %v", len(tail), err)
+	}
+}
+
 func TestFinishedTerminalLogFinishesOnlyAfterTheLastSegment(t *testing.T) {
 	const id = "fedcba9876543210fedcba9876543210"
 	service, registry := newTerminalLogTestService(t, id, "succeeded")
