@@ -42,6 +42,9 @@ interface Entry {
 const MAX_FAILURES_BEFORE_READY = 3
 const READY_TIMEOUT_MS = 5000
 const SUBSCRIBE_DEBOUNCE_MS = 10
+// Terminals briefly unsubscribe when minimized or while xterm drains a burst;
+// keep the idle connection so resuming does not reopen the stream each time.
+const IDLE_CLOSE_MS = 5000
 
 export function terminalStreamKey(target: TerminalStreamTarget): string {
   return target.kind === 'job' ? `job:${target.job}:${target.id}` : `terminal:${target.id}`
@@ -54,11 +57,15 @@ export class TerminalStreamClient {
   private disabled = false
   private readyTimer?: ReturnType<typeof setTimeout>
   private flushTimer?: ReturnType<typeof setTimeout>
+  private idleTimer?: ReturnType<typeof setTimeout>
   private readonly entries = new Map<string, Entry>()
   private pendingAdd = new Set<string>()
   private pendingRemove = new Set<string>()
 
-  constructor(private readonly transport: TerminalStreamTransport) {}
+  constructor(
+    private readonly transport: TerminalStreamTransport,
+    private readonly idleCloseMs = IDLE_CLOSE_MS,
+  ) {}
 
   get available(): boolean {
     return !this.disabled
@@ -66,6 +73,7 @@ export class TerminalStreamClient {
 
   subscribe(target: TerminalStreamTarget, handlers: TerminalStreamHandlers): TerminalStreamSubscription | null {
     if (this.disabled || !this.canStream()) return null
+    this.clearIdleTimer()
     this.ensureSource()
     if (this.disabled) return null
     const key = terminalStreamKey(target)
@@ -84,9 +92,22 @@ export class TerminalStreamClient {
         this.pendingAdd.delete(key)
         if (this.streamId) this.pendingRemove.add(key)
         this.scheduleFlush()
-        if (!this.entries.size) this.closeSource()
+        if (!this.entries.size) this.scheduleIdleClose()
       },
     }
+  }
+
+  private scheduleIdleClose(): void {
+    this.clearIdleTimer()
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined
+      if (!this.entries.size) this.closeSource()
+    }, this.idleCloseMs)
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idleTimer = undefined
   }
 
   private canStream(): boolean {
@@ -218,6 +239,7 @@ export class TerminalStreamClient {
 
   private closeSource(): void {
     this.clearReadyTimer()
+    this.clearIdleTimer()
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = undefined
     this.source?.close()

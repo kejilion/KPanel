@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
@@ -9,13 +9,17 @@ import type { TerminalStreamSubscription } from '@/lib/terminalStream'
 import type { AppTerminalChunk } from '@/types/api'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
+import { useTerminalActivity } from '@/composables/useTerminalActivity'
 import { useTerminalFullscreen } from '@/composables/useTerminalFullscreen'
 import { useI18n } from '@/i18n'
 import { openTerminalURL } from '@/lib/terminalLinks'
 import { containWheelScroll } from '@/lib/scroll'
+import { joinTerminalSizeGroup } from '@/lib/terminalSizeOwnership'
+import type { TerminalSizeMembership } from '@/lib/terminalSizeOwnership'
 import { createTerminalTouchScroll } from '@/lib/terminalTouchScroll'
 import { TerminalOutputNormalizer } from '@/lib/terminalOutput'
 import { readTerminalTheme } from '@/lib/terminalTheme'
+import { TerminalWriteFlow } from '@/lib/terminalWriteFlow'
 import { useTheme } from '@/stores/theme'
 import {
   drainTerminalInputQueue,
@@ -35,6 +39,7 @@ const props = defineProps<{
 
 const { locale, t } = useI18n()
 const { colors: themeColors, resolved: resolvedTheme } = useTheme()
+const activity = useTerminalActivity()
 
 const host = ref<HTMLElement>()
 const clipboardMenu = ref<InstanceType<typeof TerminalContextMenu>>()
@@ -52,7 +57,8 @@ let inputQueue = new TerminalInputQueue()
 let inputSending = false
 let offset = 0
 let disposed = false
-let polling = false
+// Bumped whenever output stops so a late poll result cannot be applied twice.
+let outputGeneration = 0
 let resizeTimer: number | undefined
 let resizeSending = false
 let resizeGeneration = 0
@@ -60,8 +66,23 @@ let resizeFailures = 0
 let syncedRows = 0
 let syncedColumns = 0
 const outputNormalizer = new TerminalOutputNormalizer()
+const writeFlow = new TerminalWriteFlow(() => startOutput())
+// Only task PTYs have a size; other job kinds always fit their own view.
+const sizeMembership = shallowRef<TerminalSizeMembership>()
+const ownsSize = computed(() => sizeMembership.value?.isOwner() ?? true)
+const ownerSize = computed(() => sizeMembership.value?.ownerSize())
 
 const { fullscreen, toggleFullscreen } = useTerminalFullscreen(fitTerminal)
+
+function joinSizeGroup(): void {
+  sizeMembership.value?.leave()
+  sizeMembership.value = props.kind && props.kind !== 'app'
+    ? undefined
+    : joinTerminalSizeGroup(`app:${props.jobId}`)
+  if (activity.focused.value) sizeMembership.value?.claim()
+}
+
+joinSizeGroup()
 
 const taskKindLabel = computed(() => {
   locale.value
@@ -104,11 +125,15 @@ function isFollowingOutput(): boolean {
 }
 
 function writeNormalizedTerminalOutput(data: Uint8Array): void {
-  if (data.length === 0) return
+  if (data.length === 0 || !terminal) return
   const follow = isFollowingOutput()
-  terminal?.write(data, () => {
+  const parsed = writeFlow.track(data.length)
+  terminal.write(data, () => {
+    parsed()
     if (follow) terminal?.scrollToBottom()
   })
+  // The offset is kept, so output resumes exactly where it paused.
+  if (writeFlow.blocked) stopOutput()
 }
 
 function writeTerminalOutput(data: string | Uint8Array): void {
@@ -123,20 +148,40 @@ function focusTerminal(): void {
   terminal?.focus()
 }
 
+// Terminals in unfocused windows stay mounted; never take focus from the
+// window the user is working in.
 function focusTerminalWhenInputOpens(): void {
   void nextTick(() => {
-    if (terminalInputOpen.value && !disposed) focusTerminal()
+    if (terminalInputOpen.value && !disposed && activity.focused.value) focusTerminal()
   })
 }
 
 function fitTerminal(): void {
+  if (!ownsSize.value) {
+    followOwnerSize()
+    return
+  }
   fitAddon?.fit()
   resizeFailures = 0
   scheduleResize()
 }
 
+// A view that does not drive the PTY renders at the owner's size so the
+// program's layout stays intact; it fits locally until a size is known.
+function followOwnerSize(): void {
+  if (disposed) return
+  const size = ownerSize.value
+  if (!size) {
+    fitAddon?.fit()
+    return
+  }
+  if (terminal && (terminal.rows !== size.rows || terminal.cols !== size.columns)) {
+    terminal.resize(size.columns, size.rows)
+  }
+}
+
 function scheduleResize(delay = 100): void {
-  if (disposed || (props.kind && props.kind !== 'app')) return
+  if (disposed || !ownsSize.value || (props.kind && props.kind !== 'app')) return
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
     resizeTimer = undefined
@@ -146,7 +191,7 @@ function scheduleResize(delay = 100): void {
 
 async function syncResize(): Promise<void> {
   if (props.kind && props.kind !== 'app') return
-  if (disposed || resizeSending || !terminalInputOpen.value || connectionState.value === 'finished') return
+  if (disposed || !ownsSize.value || resizeSending || !terminalInputOpen.value || connectionState.value === 'finished') return
   if (!host.value?.clientWidth || !host.value.clientHeight) return
   fitAddon?.fit()
   const rows = terminal?.rows ?? 0
@@ -161,6 +206,7 @@ async function syncResize(): Promise<void> {
     syncedRows = rows
     syncedColumns = columns
     resizeFailures = 0
+    sizeMembership.value?.publish({ rows, columns })
     if (terminal?.rows !== rows || terminal?.cols !== columns) scheduleResize()
   } catch {
     if (disposed || generation !== resizeGeneration) return
@@ -254,6 +300,7 @@ function handlePendingLineEnter(event: KeyboardEvent): void {
 function applyJobChunk(chunk: AppTerminalChunk): void {
   const reconnected = connectionState.value !== 'connected'
   const data = chunk.dataBase64 ? decodeBase64(chunk.dataBase64) : undefined
+  if (chunk.truncated) writeTerminalOutput(`\r\n\x1b[33m[KPanel] ${t('terminal.outputTruncated')}\x1b[0m\r\n`)
   if (data) writeTerminalOutput(data)
   if (chunk.finished) flushTerminalOutput()
   offset = chunk.nextOffset
@@ -264,10 +311,17 @@ function applyJobChunk(chunk: AppTerminalChunk): void {
   if (chunk.finished) stopOutput()
 }
 
+// Output flows while the terminal is on screen and xterm keeps up; it pauses
+// when the window is minimized, the tab is hidden or xterm is backlogged, and
+// resumes from the same offset.
+function canReceiveOutput(): boolean {
+  return !disposed && activity.streaming.value && !writeFlow.blocked && connectionState.value !== 'finished'
+}
+
 // Task output prefers the tab's shared push stream; polling remains the
 // fallback and is also used after a stream-level failure for this task.
 function startOutput(): void {
-  if (disposed || streamSubscription || connectionState.value === 'finished') return
+  if (!canReceiveOutput() || streamSubscription || pollController) return
   streamSubscription = terminalStream.subscribe(
     { kind: 'job', job: props.kind ?? 'app', id: props.jobId, offset, inputOpen: terminalInputOpen.value },
     {
@@ -277,12 +331,12 @@ function startOutput(): void {
         streamSubscription?.close()
         streamSubscription = null
         connectionState.value = 'error'
-        if (!disposed) pollTimer = window.setTimeout(() => void poll(), 500)
+        schedulePoll(500)
       },
       unavailable: () => {
         streamSubscription = null
         connectionState.value = 'error'
-        if (!disposed) void poll()
+        void poll()
       },
     },
   )
@@ -290,61 +344,55 @@ function startOutput(): void {
 }
 
 function stopOutput(): void {
+  outputGeneration++
   streamSubscription?.close()
   streamSubscription = null
+  pollController?.abort()
+  pollController = undefined
+  if (pollTimer) window.clearTimeout(pollTimer)
+  pollTimer = undefined
+}
+
+function schedulePoll(delay: number): void {
+  if (pollTimer) window.clearTimeout(pollTimer)
+  pollTimer = window.setTimeout(() => {
+    pollTimer = undefined
+    void poll()
+  }, delay)
+}
+
+function readJobChunk(signal: AbortSignal): Promise<AppTerminalChunk> {
+  const inputOpen = terminalInputOpen.value
+  if (props.kind === 'site') return api.sites.terminal(props.jobId, offset, inputOpen, signal)
+  if (props.kind === 'diagnostic') return api.diagnostics.terminal(props.jobId, offset, inputOpen, signal)
+  if (props.kind === 'environment') return api.webEnvironment.terminal(props.jobId, offset, inputOpen, signal)
+  return api.apps.terminal(props.jobId, offset, inputOpen, signal)
 }
 
 async function poll(): Promise<void> {
-  if (polling || disposed || streamSubscription) return
-  polling = true
-  pollController?.abort()
-  pollController = new AbortController()
+  if (!canReceiveOutput() || streamSubscription || pollController) return
+  const generation = outputGeneration
+  const controller = new AbortController()
+  pollController = controller
   try {
-    const chunk = props.kind === 'site'
-      ? await api.sites.terminal(
-          props.jobId,
-          offset,
-          terminalInputOpen.value,
-          pollController.signal,
-        )
-      : props.kind === 'diagnostic'
-        ? await api.diagnostics.terminal(
-            props.jobId,
-            offset,
-            terminalInputOpen.value,
-            pollController.signal,
-          )
-        : props.kind === 'environment'
-          ? await api.webEnvironment.terminal(
-              props.jobId,
-              offset,
-              terminalInputOpen.value,
-              pollController.signal,
-            )
-        : await api.apps.terminal(
-            props.jobId,
-            offset,
-            terminalInputOpen.value,
-            pollController.signal,
-          )
+    const chunk = await readJobChunk(controller.signal)
+    if (generation !== outputGeneration) return
     applyJobChunk(chunk)
-    if (!chunk.finished && !disposed) {
-      pollTimer = window.setTimeout(() => void poll(), 0)
-    }
+    if (!chunk.finished && generation === outputGeneration) schedulePoll(0)
   } catch (reason) {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return
+    if (generation !== outputGeneration || (reason instanceof DOMException && reason.name === 'AbortError')) return
     connectionState.value = 'error'
-    if (!disposed) pollTimer = window.setTimeout(() => void poll(), 500)
+    schedulePoll(500)
   } finally {
-    polling = false
+    if (pollController === controller) pollController = undefined
   }
 }
 
 function resetTerminal(): void {
-  resetResize()
   stopOutput()
-  pollController?.abort()
-  polling = false
+  writeFlow.reset()
+  joinSizeGroup()
+  resetResize()
   offset = 0
   inputQueue = new TerminalInputQueue()
   outputNormalizer.reset()
@@ -353,11 +401,35 @@ function resetTerminal(): void {
   terminalInputOpen.value = Boolean(props.inputOpen)
   connectionState.value = 'connecting'
   if (terminalInputOpen.value) focusTerminalWhenInputOpens()
-  if (pollTimer) window.clearTimeout(pollTimer)
-  pollTimer = window.setTimeout(() => startOutput(), 0)
+  pollTimer = window.setTimeout(() => {
+    pollTimer = undefined
+    startOutput()
+  }, 0)
 }
 
 watch(() => props.jobId, resetTerminal)
+watch(activity.streaming, (streaming) => {
+  if (streaming) startOutput()
+  else stopOutput()
+})
+watch(activity.focused, (focused) => {
+  if (!focused) return
+  sizeMembership.value?.claim()
+  if (terminalInputOpen.value) focusTerminalWhenInputOpens()
+})
+watch(ownsSize, (owner) => {
+  if (disposed) return
+  if (!owner) {
+    followOwnerSize()
+    return
+  }
+  // The previous owner resized the PTY; send this view's size again.
+  fitAddon?.fit()
+  resetResize()
+})
+watch(ownerSize, () => {
+  if (!ownsSize.value) followOwnerSize()
+})
 watch(
   () => props.inputOpen,
   (open) => {
@@ -394,11 +466,10 @@ onMounted(() => {
   terminal.onData(queueInput)
   if (host.value) {
     terminal.open(host.value)
-    fitAddon.fit()
+    fitTerminal()
     resizeObserver = new ResizeObserver(fitTerminal)
     resizeObserver.observe(host.value)
-    scheduleResize()
-    if (terminalInputOpen.value) window.requestAnimationFrame(focusTerminal)
+    if (terminalInputOpen.value && activity.focused.value) window.requestAnimationFrame(focusTerminal)
   }
   startOutput()
 })
@@ -406,12 +477,11 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposed = true
   stopOutput()
-  pollController?.abort()
-  if (pollTimer) window.clearTimeout(pollTimer)
   if (inputTimer) window.clearTimeout(inputTimer)
   resizeGeneration++
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeObserver?.disconnect()
+  sizeMembership.value?.leave()
   terminal?.dispose()
 })
 </script>

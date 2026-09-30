@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { LoaderCircle, RefreshCw, SquareTerminal, TriangleAlert } from '@lucide/vue'
+import { LoaderCircle, RefreshCw, TriangleAlert } from '@lucide/vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
-import { desktopWindowActiveKey, desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
@@ -16,7 +16,6 @@ usePhraseCatalog((locale) => locale === 'en-US'
 
 const route = useRoute()
 const i18n = useI18n()
-const windowActive = inject(desktopWindowActiveKey, computed(() => true))
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const loading = ref(true)
 const error = ref('')
@@ -231,20 +230,15 @@ onBeforeUnmount(() => {
       <small>{{ i18n.t('appScript.closingDescription') }}</small>
     </div>
 
-    <template v-else-if="job">
-      <AppInteractiveTerminal
-        v-if="windowActive"
-        class="app-script-page__terminal"
-        :job-id="job.id"
-        :input-open="job.inputOpen"
-        kind="app"
-      />
-      <div v-else class="app-script-page__state">
-        <SquareTerminal :size="24" />
-        <strong>终端已在后台保持</strong>
-        <small>重新聚焦此窗口后继续显示脚本交互。</small>
-      </div>
-    </template>
+    <!-- The terminal stays mounted in unfocused windows so side-by-side
+         scripts keep updating; it pauses itself while minimized. -->
+    <AppInteractiveTerminal
+      v-else-if="job"
+      class="app-script-page__terminal"
+      :job-id="job.id"
+      :input-open="job.inputOpen"
+      kind="app"
+    />
   </section>
 </template>
 

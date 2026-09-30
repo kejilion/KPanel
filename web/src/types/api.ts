@@ -1375,6 +1375,8 @@ export interface AppTerminalChunk {
   nextOffset: number
   inputOpen: boolean
   finished: boolean
+  /** Output before this chunk was rotated out of the bounded task log. */
+  truncated?: boolean
 }
 
 export interface DockerImageUpdateResult {

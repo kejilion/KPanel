@@ -18,7 +18,6 @@ import (
 const (
 	maxTerminalInputBytes = 16 << 10
 	maxTerminalChunkBytes = 64 << 10
-	maxTerminalLogBytes   = 8 << 20
 )
 
 type TerminalChunk struct {
@@ -26,6 +25,9 @@ type TerminalChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	InputOpen  bool   `json:"inputOpen"`
 	Finished   bool   `json:"finished"`
+	// Truncated reports that output before this chunk was rotated out of the
+	// bounded log, so the reader skipped ahead to the oldest retained byte.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
@@ -120,11 +122,7 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 		close(inputDone)
 	}()
 
-	logFile, err := os.OpenFile(
-		registry.logPath(id),
-		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
-		0o600,
-	)
+	logFile, err := newTerminalLogWriter(registry, id)
 	if err != nil {
 		_ = terminal.Kill()
 		return registry.fail(record, "log_unavailable", err)
@@ -133,7 +131,6 @@ func RunInteractiveAppJob(ctx context.Context, stateDir, id string) error {
 	if readErr != nil && !isTerminalEnd(readErr) {
 		_ = terminal.Kill()
 	}
-	_ = logFile.Sync()
 	_ = logFile.Close()
 	waitErr := terminal.Wait()
 	_ = input.Close()
@@ -208,26 +205,16 @@ func interactiveAppJobEnvironment(record appJobRecord) []string {
 func copyTerminalOutput(
 	registry *appJobRegistry,
 	record *appJobRecord,
-	logFile *os.File,
+	logFile io.Writer,
 	terminal terminalProcess,
 ) error {
 	buffer := make([]byte, 4096)
 	pending := ""
-	written := int64(0)
 	for {
 		count, err := terminal.Read(buffer)
 		if count > 0 {
-			chunk := buffer[:count]
-			if written < maxTerminalLogBytes {
-				remaining := int64(maxTerminalLogBytes) - written
-				if int64(len(chunk)) > remaining {
-					chunk = chunk[:remaining]
-				}
-				size, writeErr := logFile.Write(chunk)
-				written += int64(size)
-				if writeErr != nil {
-					return writeErr
-				}
+			if _, writeErr := logFile.Write(buffer[:count]); writeErr != nil {
+				return writeErr
 			}
 			pending += stripTerminalControls(string(buffer[:count]))
 			lines := strings.FieldsFunc(pending, func(value rune) bool {
@@ -339,43 +326,25 @@ func (s *Service) AppJobTerminal(id string, offset int64) (TerminalChunk, error)
 	if err != nil || !record.Interactive {
 		return TerminalChunk{}, ErrNotFound
 	}
-	path := s.jobs.logPath(id)
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return TerminalChunk{
-			NextOffset: 0,
-			InputOpen:  record.InputOpen,
-			Finished: record.Status == "succeeded" || record.Status == "failed" ||
-				record.Status == "cancelled",
-		}, nil
-	}
+	data, nextOffset, truncated, err := s.jobs.readTerminalLog(id, offset)
 	if err != nil {
 		return TerminalChunk{}, err
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return TerminalChunk{}, err
-	}
-	if offset > info.Size() {
-		offset = 0
-	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return TerminalChunk{}, err
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxTerminalChunkBytes))
-	if err != nil {
-		return TerminalChunk{}, err
-	}
-	nextOffset := offset + int64(len(data))
-	return TerminalChunk{
+	chunk := TerminalChunk{
 		DataBase64: base64.StdEncoding.EncodeToString(data),
 		NextOffset: nextOffset,
 		InputOpen:  record.InputOpen,
-		Finished: (record.Status == "succeeded" || record.Status == "failed" ||
-			record.Status == "cancelled") &&
-			nextOffset >= info.Size(),
-	}, nil
+		Truncated:  truncated,
+	}
+	if record.Status == "succeeded" || record.Status == "failed" || record.Status == "cancelled" {
+		// The log is complete once the job ends; finish only after draining it.
+		end, err := s.jobs.terminalLogEnd(id)
+		if err != nil {
+			return TerminalChunk{}, err
+		}
+		chunk.Finished = nextOffset >= end
+	}
+	return chunk, nil
 }
 
 func (registry *appJobRegistry) inputPath(id string) string {

@@ -178,9 +178,10 @@ describe('AppsView catalog filtering performance', () => {
     expect(source).toMatch(/\.market-hero::before\s*\{[^}]*border:\s*30px solid color-mix\(in srgb, var\(--market-accent\) 7%, transparent\);/)
   })
 
-  it('pauses the interactive terminal stream while its desktop window is inactive', () => {
+  it('keeps the interactive terminal mounted in unfocused windows; it pauses itself when hidden', () => {
     const source = readFileSync(new URL('./AppsView.vue', import.meta.url), 'utf8')
-    expect(source).toContain('v-if="activeJob.interactive && windowActive"')
+    expect(source).toContain('v-if="activeJob.interactive"')
+    expect(source).not.toContain('activeJob.interactive && windowActive')
   })
 
   it('uses the active locale for the app name in the detail modal', () => {

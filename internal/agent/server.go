@@ -1377,7 +1377,8 @@ func (s *Server) appJobOperation(w http.ResponseWriter, r *http.Request, request
 				return s.appMarket.AppJobTerminal(id, query.Offset)
 			},
 			func(chunk appmarket.TerminalChunk) bool {
-				return chunk.DataBase64 != "" || chunk.Finished ||
+				// A moved offset (rotated or restarted log) is news even without data.
+				return chunk.DataBase64 != "" || chunk.Finished || chunk.NextOffset != query.Offset ||
 					(query.HasInputState && chunk.InputOpen != query.InputOpen)
 			},
 		)

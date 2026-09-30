@@ -30,6 +30,27 @@ describe('TerminalOutputNormalizer', () => {
       .toBe('before\x1b[49mafter')
   })
 
+  it('matches the reference mapping for randomly split chunks', () => {
+    const pieces = ['\x1b[48;2;0;0;0m', '\x1b[48;2;1;0;0m', '\x1b', '\x1b[48;', 'x', '\x1b[0m', '0m', '中']
+    let seed = 7
+    const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647
+    for (let round = 0; round < 50; round += 1) {
+      let text = ''
+      for (let index = 0; index < 40; index += 1) text += pieces[Math.floor(random() * pieces.length)]
+      const bytes = new TextEncoder().encode(text)
+      const normalizer = new TerminalOutputNormalizer()
+      const chunks: Uint8Array[] = []
+      for (let start = 0; start < bytes.length;) {
+        const end = Math.min(bytes.length, start + 1 + Math.floor(random() * 9))
+        chunks.push(normalizer.transform(bytes.slice(start, end)))
+        start = end
+      }
+      chunks.push(normalizer.flush())
+      const output = chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode()
+      expect(output).toBe(text.replaceAll('\x1b[48;2;0;0;0m', '\x1b[49m'))
+    }
+  })
+
   it('flushes an incomplete escape sequence without dropping bytes', () => {
     const normalizer = new TerminalOutputNormalizer()
     const first = normalizer.transform('before\x1b[48;2;')

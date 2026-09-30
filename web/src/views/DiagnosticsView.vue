@@ -1208,7 +1208,7 @@ onBeforeUnmount(() => {
               <StatusBadge v-if="activeJob" :status="activeJob.status" />
             </div>
             <AppInteractiveTerminal
-              v-if="activeJob?.interactive && windowActive"
+              v-if="activeJob?.interactive"
               class="diagnostic-interactive-terminal"
               :job-id="activeJob.id"
               :input-open="activeJob.inputOpen"

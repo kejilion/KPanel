@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,6 +71,7 @@ type jobTerminalChunk struct {
 	NextOffset int64  `json:"nextOffset"`
 	InputOpen  bool   `json:"inputOpen"`
 	Finished   bool   `json:"finished"`
+	Truncated  bool   `json:"truncated,omitempty"`
 }
 
 type terminalStreamEvent struct {
@@ -439,21 +441,65 @@ func (s *Server) pumpHostTerminal(ctx context.Context, stream *terminalStream, k
 	}
 }
 
+// fetchJobTerminal reads one task terminal chunk from the Agent; found is
+// false once the task no longer exists.
+func (s *Server) fetchJobTerminal(ctx context.Context, prefix, id string, offset int64, inputOpen bool, wait string) (jobTerminalChunk, bool, error) {
+	query := url.Values{"offset": {strconv.FormatInt(offset, 10)}, "wait": {wait}, "inputOpen": {strconv.FormatBool(inputOpen)}}
+	response, err := s.hostOps.Get(ctx, prefix+id+"/terminal", query.Encode(), newRequestID())
+	if err != nil {
+		return jobTerminalChunk{}, true, err
+	}
+	if response.StatusCode == http.StatusNotFound {
+		return jobTerminalChunk{}, false, nil
+	}
+	var chunk jobTerminalChunk
+	if response.StatusCode < 200 || response.StatusCode >= 300 || json.Unmarshal(response.Body, &chunk) != nil {
+		return jobTerminalChunk{}, true, fmt.Errorf("job terminal returned %d", response.StatusCode)
+	}
+	return chunk, true, nil
+}
+
+// coalesceJobTerminal folds output that follows a small chunk within a few
+// milliseconds into the same event, as the host terminal pump does. A
+// redrawing TUI otherwise sends many tiny events per frame, each one costing
+// an SSE write and an xterm write in every browser showing it.
+func (s *Server) coalesceJobTerminal(ctx context.Context, prefix, id string, chunk jobTerminalChunk) jobTerminalChunk {
+	data, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+	if err != nil || len(data) >= terminalStreamCoalesceBytes {
+		return chunk
+	}
+	timer := time.NewTimer(terminalStreamCoalesceDelay)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		return chunk
+	case <-timer.C:
+	}
+	more, found, err := s.fetchJobTerminal(ctx, prefix, id, chunk.NextOffset, chunk.InputOpen, "0")
+	if err != nil || !found || more.Truncated {
+		return chunk
+	}
+	moreData, err := base64.StdEncoding.DecodeString(more.DataBase64)
+	if err != nil || more.NextOffset != chunk.NextOffset+int64(len(moreData)) {
+		return chunk
+	}
+	if len(moreData) > 0 {
+		chunk.DataBase64 = base64.StdEncoding.EncodeToString(append(data, moreData...))
+	}
+	chunk.NextOffset, chunk.InputOpen, chunk.Finished = more.NextOffset, more.InputOpen, more.Finished
+	return chunk
+}
+
 func (s *Server) pumpJobTerminal(ctx context.Context, stream *terminalStream, key string, item terminalStreamSubscription) {
 	prefix := jobTerminalAgentPrefixes[item.Job]
 	offset, inputOpen := item.Offset, item.InputOpen
 	first := true
 	failures := 0
 	for ctx.Err() == nil {
-		query := url.Values{"offset": {strconv.FormatInt(offset, 10)}, "wait": {"1000"}, "inputOpen": {strconv.FormatBool(inputOpen)}}
-		response, err := s.hostOps.Get(ctx, prefix+item.ID+"/terminal", query.Encode(), newRequestID())
-		var chunk jobTerminalChunk
-		if err == nil && response.StatusCode == http.StatusNotFound {
+		chunk, found, err := s.fetchJobTerminal(ctx, prefix, item.ID, offset, inputOpen, "1000")
+		if err == nil && !found {
 			stream.emit(terminalStreamEvent{Key: key, Error: "terminal_not_found"})
 			return
-		}
-		if err == nil && (response.StatusCode < 200 || response.StatusCode >= 300 || json.Unmarshal(response.Body, &chunk) != nil) {
-			err = fmt.Errorf("job terminal returned %d", response.StatusCode)
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -469,6 +515,9 @@ func (s *Server) pumpJobTerminal(ctx context.Context, stream *terminalStream, ke
 			continue
 		}
 		failures = 0
+		if chunk.DataBase64 != "" && !chunk.Finished {
+			chunk = s.coalesceJobTerminal(ctx, prefix, item.ID, chunk)
+		}
 		if first || chunk.DataBase64 != "" || chunk.InputOpen != inputOpen || chunk.Finished || chunk.NextOffset != offset {
 			value := chunk
 			if !stream.emit(terminalStreamEvent{Key: key, Job: &value}) {

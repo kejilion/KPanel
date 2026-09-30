@@ -1806,7 +1806,7 @@ watch(windowActive, syncJobPollingForWindow)
           <strong>{{ activeJob.progress || 0 }}%</strong>
         </div>
         <AppInteractiveTerminal
-          v-if="activeJob.interactive && windowActive"
+          v-if="activeJob.interactive"
           :key="activeJob.id"
           :job-id="activeJob.id"
           :input-open="activeJob.inputOpen"
