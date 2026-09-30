@@ -1,6 +1,7 @@
 # L3 隔离源准备
 
 - 状态：已实现，待候选 CI 与实现独立复核；设计独立复核 `PASS WITH FOLLOW-UP` 不代表实现验收。
+- 复核延期至：2026-10-07（v1.23.0 发布负责人于 2026-09-30 接管记录核对；当前主线已有该入口并有后续 L3 使用证据，但原实现的同 SHA CI 与独立复核证据尚未归集，保持待复核，不追认为通过。期限内在原提案补齐精确实现提交、固定矩阵及独立复核结论。）
 - 基线与回滚点：`2e2a310532a488a9d55eb05e079483cf64b1ef50`。
 - 触发证据：`release-v1.2.0-acceptance.md`、`release-v1.3.0-acceptance.md`、
   `release-v1.3.1-acceptance.md` 均记录 `l3/run-release-l3/local-tag-mismatch` 首轮拦截和 r2 恢复。
