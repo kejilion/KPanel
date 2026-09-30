@@ -32,7 +32,7 @@ for (const entry of (await readdir(root, { withFileTypes: true })).sort((a, b) =
   if (!idPattern.test(entry.name) || packs.length >= 100) throw Error('Invalid theme ID or catalog size')
   const dir = join(root, entry.name)
   const manifest = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8'))
-  if (manifest.id !== entry.name || manifest.schema !== 1 || manifest.runtime !== 'kpanel-share-theme@1' || manifest.entry !== 'index.html') throw Error(`Invalid theme manifest: ${entry.name}`)
+  if (manifest.id !== entry.name || manifest.schema !== 1 || !['kpanel-share-theme@1', 'kpanel-share-theme@2'].includes(manifest.runtime) || manifest.entry !== 'index.html') throw Error(`Invalid theme manifest: ${entry.name}`)
   const names = await files(join(dir, 'src'))
   if (!names.includes('index.html') || names.includes('manifest.json') || names.length > 39) throw Error(`Invalid file list: ${entry.name}`)
   const bodies = new Map(await Promise.all(names.map(async name => [name, await readFile(join(dir, 'src', name))])))

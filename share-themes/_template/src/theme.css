@@ -1,42 +1,6 @@
-:root { font: 14px/1.6 system-ui,sans-serif; color-scheme: dark; --bg:#101720; --surface:#18222e; --text:#e8eff7; --muted:#afbed0; --line:#344354; --accent:#87c5ff; --success:#8ce1bd; --warning:#f7ce80; --danger:#ffaaaa; background:var(--bg); color:var(--text); }
-:root[data-mode=light] { color-scheme:light; --bg:#f3f6fa; --surface:#ffffff; --text:#182536; --muted:#52637a; --line:#c7d2e0; --accent:#195aa0; --success:#156342; --warning:#865208; --danger:#ab2020; }
-* { box-sizing:border-box; }
-body { margin:0; }
-main { max-width:1200px; margin:auto; padding:clamp(18px,3vw,36px); }
-h1,h2,p { margin:0; overflow-wrap:anywhere; }
-h1 { font-size:clamp(24px,4vw,36px); line-height:1.3; margin:8px 0; }
-h2 { font-size:18px; line-height:1.5; }
-.hero p,.host header p { color:var(--muted); }
-.eyebrow { color:var(--accent); font-size:13px; letter-spacing:0.06em; }
-.stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:24px 0; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
-.stats:has(> .value) { grid-template-columns:repeat(4,minmax(0,1fr)); }
-.stats>.metric,.value { padding:18px; min-width:0; }
-.metric small,summary small { display:block; color:var(--muted); font-size:13px; }
-.metric strong,summary strong { display:block; font-size:24px; overflow-wrap:anywhere; }
-summary { cursor:pointer; }
-.value p { margin-top:8px; font-size:13px; color:var(--muted); }
-.online { color:var(--success); }
-.search { display:block; color:var(--muted); font-size:13px; margin-bottom:18px; }
-input { display:block; margin-top:6px; padding:10px 14px; width:100%; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:10px; color:var(--text); background:var(--surface); }
-:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
-.hosts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-.host { padding:20px; background:var(--surface); border:1px solid var(--line); border-radius:16px; min-width:0; }
-.host header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-.host header p { font-size:13px; }
-.status { font-size:13px; border:1px solid currentColor; border-radius:20px; padding:2px 9px; }
-.status.degraded,.warning { color:var(--warning); }
-.status.offline,.danger { color:var(--danger); }
-.status.pending { color:var(--muted); }
-.resources { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:22px 0; }
-.resources strong { font-size:20px; }
-.traffic { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:12px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-.monthly.normal strong { color:var(--accent); }
-dl { display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; font-size:13px; margin:14px 0 0; }
-dt { color:var(--muted); }
-dd { margin:0; text-align:right; overflow-wrap:anywhere; }
-footer { padding:24px 0 4px; font-size:13px; color:var(--muted); }
-.empty { grid-column:1/-1; text-align:center; padding:32px; }
-@media(max-width:640px) { .stats, .stats:has(> .value) { grid-template-columns:repeat(2,minmax(0,1fr)); }.stats:not(:has(> .value))>.metric:last-child { grid-column:1/-1; }.hosts { grid-template-columns:1fr; }.host { padding:16px; } }
-
-.traffic-note { grid-column:1/-1; margin-top:10px; font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
-@media(max-width:400px) { .stats, .stats:has(> .value) { grid-template-columns:1fr 1fr; } .value { grid-column:1/-1; } }
+/* Everything here is yours: any layout, font stack, canvas, SVG, animation. Nothing is inherited from KPanel. */
+:root { color-scheme: light dark; font: 16px/1.6 system-ui, sans-serif; }
+:root[data-mode=dark] { background: #111; color: #eee; }
+:root[data-mode=light] { background: #fff; color: #111; }
+body { margin: 0; padding: 24px; }
+:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

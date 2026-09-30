@@ -1,85 +1,66 @@
-// Readable reference renderer. All user content is inserted as text, never HTML.
-let state
-let query = ''
+// KPanel share theme, protocol 2 (runtime "kpanel-share-theme@2").
+//
+// The host page owns nothing but the frame: you decide the markup, styling, layout, fonts, canvas/SVG and motion.
+// The frame is sandboxed ("allow-scripts", opaque origin): no cookies, storage, network, popups or parent DOM.
+//
+// 1. Tell the host you speak protocol 2:
+//      parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+// 2. Receive snapshots (sent once, then on every refresh, language or light/dark change):
+//      { source: 'kpanel-share', type: 'snapshot', schema: 2,
+//        locale: 'zh-CN' | 'zh-TW' | 'en-US', mode: 'light' | 'dark',
+//        labels: { fleet, total, online, attention, offline, cpu, memory, disk, uptime, filter, view, ... },   // localized vocabulary
+//        data: {
+//          title, description, generatedAt,
+//          counts: { total, online, attention, offline },
+//          states: { online, degraded, offline, pending },                                         // localized state names
+//          value: { included, excluded, groups: [{ currency, text, amount }] },                    // empty groups => hide it
+//          hosts: [{
+//            id, name, state: 'online' | 'degraded' | 'offline' | 'pending', stateLabel,
+//            os, architecture, cores, collected,                                                   // collected=false => metrics unknown
+//            location: { text, country, countryCode, city, region, isp, latitude, longitude, flag },  // lat/lon: country centre or null
+//                                                                                    // flag: circular flag as a data: URL for <img src>, or ''
+//            system: { key, label, accent, path, image },  // distribution mark: `path` is 24×24 SVG path data for your own <svg>,
+//                                                          // `image` a data: URL when only a bitmap exists, `accent` the brand colour; '' when unknown
+//            cpu:    { text, ratio },                                                              // ratio is 0..1, null when unknown
+//            memory: { text, ratio, usedBytes, totalBytes, usedText, totalText },
+//            disk:   { text, ratio, usedBytes, totalBytes, usedText, totalText },
+//            load: { one, five, fifteen } | null,
+//            uptime: 'text', uptimeSeconds,
+//            network: { down: { bytesPerSecond, text }, up: { bytesPerSecond, text } },
+//            traffic: { monthly, percent, ratio, tone: 'normal' | 'warning' | 'danger', received, sent, quotaGiB,
+//                       hint, available, partial, estimated },                                     // show `hint`: it explains accuracy
+//            price, expiresOn, remaining                                                           // '' => not configured, hide
+//          }]
+//        } }
+//    Verify `event.source === parent` and source/type/schema before trusting a message.
+// 3. Optionally report your natural height (integer px, 320..32768) to avoid a nested scrollbar:
+//      parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height }, '*')
+//
+// Rules: insert user data with textContent / text nodes, never innerHTML; unknown numbers are "—" or null, never 0;
+// colour must not be the only carrier of status; keep text >= 12px (body >= 14px); ship every asset inside the package.
 const app = document.getElementById('app')
-const zh = { fleet: '公开集群', total: '全部机器', online: '在线', attention: '需关注', remaining: '剩余价值（估算）', coverage: '台已计入', excluded: '台资料不足', search: '搜索名称、地区或系统', empty: '没有匹配的机器', memory: '内存', disk: '磁盘', uptime: '运行时间', monthly: '月流量', cumulative: '累计流量', expiry: '到期', price: '价格', offline: '离线', pending: '等待数据', degraded: '需关注', updated: '数据生成于', valueHint: '按已公开价格及到期日估算，分币种展示。', noValue: '资料不足，暂无法估算' }
-const tw = { ...zh, fleet: '公開集群', total: '全部機器', online: '在線', attention: '需關注', remaining: '剩餘價值（估算）', coverage: '台已計入', excluded: '台資料不足', search: '搜尋名稱、地區或系統', empty: '沒有符合的機器', memory: '記憶體', disk: '磁碟', uptime: '運行時間', monthly: '月流量', cumulative: '累計流量', expiry: '到期', price: '價格', offline: '離線', pending: '等待資料', degraded: '需關注', updated: '資料產生於', valueHint: '按已公開價格及到期日估算，分幣種展示。', noValue: '資料不足，暫時無法估算' }
-Object.assign(zh, { partial: '周期数据不完整', estimated: '估算数据', waiting: '等待周期数据' })
-Object.assign(tw, { partial: '週期資料不完整', estimated: '估算資料', waiting: '等待週期資料' })
-const en = { fleet: 'PUBLIC FLEET', total: 'Servers', online: 'Online', attention: 'Attention', remaining: 'Remaining value (estimate)', coverage: 'included', excluded: 'incomplete', search: 'Search name, location or OS', empty: 'No matching servers', memory: 'Memory', disk: 'Disk', uptime: 'Uptime', monthly: 'Monthly traffic', cumulative: 'Total traffic', expiry: 'Expires', price: 'Price', offline: 'Offline', pending: 'Awaiting data', degraded: 'Attention', updated: 'Updated', valueHint: 'Estimated from public price and expiry, grouped by currency.', noValue: 'Not enough details to estimate' }
-Object.assign(en, { partial: 'Incomplete period', estimated: 'Estimated data', waiting: 'Awaiting period data' })
-function el(tag, text, className) {
-  const node = document.createElement(tag)
-  if (text !== undefined) node.textContent = String(text)
-  if (className) node.className = className
-  return node
-}
-function metric(label, value, className = '') {
-  const node = el('div', undefined, `metric ${className}`)
-  node.append(el('small', label), el('strong', value)); return node
-}
-function renderHosts(container, words) {
-  container.replaceChildren()
-  const hosts = state.data.hosts.filter(host => `${host.name} ${host.location} ${host.os}`.toLowerCase().includes(query.toLowerCase()))
-  if (!hosts.length) container.append(el('p', words.empty, 'empty'))
-  for (const host of hosts) {
-    const card = el('article', undefined, 'host')
-    const top = el('header')
-    const identity = el('div')
-    identity.append(el('h2', host.name), el('p', [host.location, host.os].filter(Boolean).join(' · ')))
-    top.append(identity, el('span', words[host.state] || words.pending, `status ${host.state}`))
-    const resources = el('div', undefined, 'resources')
-    resources.append(metric('CPU', host.cpu), metric(words.memory, host.memory), metric(words.disk, host.disk))
-    const traffic = el('div', undefined, `traffic ${host.traffic.monthly ? 'monthly' : ''} ${host.traffic.tone}`)
-    traffic.append(el('strong', `${host.traffic.monthly ? words.monthly : words.cumulative}${host.traffic.percent ? ` · ${host.traffic.percent}` : ''}`), el('span', `↓ ${host.traffic.received}   ↑ ${host.traffic.sent}`))
-    const note = el('p', undefined, 'traffic-note')
-    if (host.traffic.hint) note.textContent = host.traffic.hint
-    else if (host.traffic.monthly) note.textContent = !host.traffic.available ? words.waiting : [host.traffic.partial && words.partial, host.traffic.estimated && words.estimated].filter(Boolean).join(' · ')
-    const details = el('dl')
-    for (const [label, value] of [[words.uptime, host.uptime], [words.expiry, host.expiresOn], [words.price, host.price], [words.remaining, host.remaining]]) {
-      if (value) details.append(el('dt', label), el('dd', value))
-    }
-    card.append(top, resources, traffic, details); if (note.textContent) card.append(note); container.append(card)
-  }
-}
-function render() {
-  const words = state.locale === 'en-US' ? en : state.locale === 'zh-TW' ? tw : zh
-  const focused = document.activeElement?.id === 'search'
-  const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null
-  const expanded = Boolean(document.querySelector('details')?.open)
-  document.documentElement.lang = state.locale
-  document.documentElement.dataset.mode = state.mode === 'light' ? 'light' : 'dark'
-  document.title = state.data.title
-  const hero = el('header', undefined, 'hero')
-  hero.append(el('span', words.fleet, 'eyebrow'), el('h1', state.data.title), el('p', state.data.description))
-  const stats = el('section', undefined, 'stats')
-  stats.append(metric(words.total, state.data.total), metric(words.online, state.data.online, 'online'), metric(words.attention, state.data.attention))
-  if (state.data.value.groups.length) {
-    const value = el('details', undefined, 'value'); value.open = expanded
-    const summary = el('summary')
-    summary.append(el('small', words.remaining), el('strong', state.data.value.groups[0].text))
-    if (state.data.value.groups.length > 1) summary.append(el('small', `+${state.data.value.groups.length - 1}`))
-    value.append(summary, el('p', words.valueHint))
-    for (const group of state.data.value.groups) value.append(el('p', `${group.currency} · ${group.text}`))
-    value.append(el('p', `${state.data.value.included} / ${state.data.total} ${words.coverage} · ${state.data.value.excluded} ${words.excluded}`))
-    stats.append(value)
-  }
-  const label = el('label', words.search, 'search')
-  const input = el('input'); input.type = 'search'; input.id = 'search'; input.value = query; input.placeholder = words.search
-  label.append(input)
-  const hosts = el('section', undefined, 'hosts')
-  input.addEventListener('input', () => { query = input.value; renderHosts(hosts, words) })
-  renderHosts(hosts, words)
-  const date = new Date(state.data.generatedAt)
-  const footer = el('footer', `${words.updated} ${Number.isFinite(date.getTime()) ? date.toLocaleString(state.locale) : '—'} · KPanel`)
-  app.replaceChildren(hero, stats, label, hosts, footer)
-  if (focused) { input.focus(); input.setSelectionRange(...selection) }
-}
-addEventListener('message', event => {
-  if (event.source !== parent || event.data?.source !== 'kpanel-share' || event.data?.type !== 'snapshot' || event.data?.schema !== 1 || !Array.isArray(event.data?.data?.hosts)) return
-  state = event.data; render()
-})
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready' }, '*')
 
-// Optional, bounded content height keeps the public page on a single scrollbar.
-new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(app.getBoundingClientRect().height))) }, '*')).observe(app)
+function render({ data, labels, locale, mode }) {
+  document.documentElement.lang = locale
+  document.documentElement.dataset.mode = mode
+  document.title = data.title
+  const title = document.createElement('h1')
+  title.textContent = data.title
+  const summary = document.createElement('p')
+  summary.textContent = `${labels.online} ${data.counts.online} / ${data.counts.total}`
+  const list = document.createElement('ul')
+  for (const host of data.hosts) {
+    const item = document.createElement('li')
+    item.textContent = `${host.name} — ${host.stateLabel} — CPU ${host.cpu.text}`
+    list.append(item)
+  }
+  app.replaceChildren(title, summary, list)
+}
+
+addEventListener('message', event => {
+  const msg = event.data
+  if (event.source !== parent || msg?.source !== 'kpanel-share' || msg.type !== 'snapshot' || msg.schema !== 2 || !Array.isArray(msg.data?.hosts)) return
+  render(msg)
+})
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)

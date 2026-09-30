@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "id": "minimal",
-  "version": "1.0.2",
-  "runtime": "kpanel-share-theme@1",
+  "version": "2.1.0",
+  "runtime": "kpanel-share-theme@2",
   "name": {
     "zh-CN": "简约看板",
-    "en-US": "Minimal fleet",
-    "zh-TW": "简约看板"
+    "zh-TW": "簡約看板",
+    "en-US": "Clear board"
   },
   "description": {
-    "zh-CN": "清晰的卡片与轻盈留白",
-    "en-US": "Clean cards and generous spacing"
+    "zh-CN": "明亮清爽的状态页：在线率环图、粗条仪表、卡片与列表",
+    "en-US": "A bright status page: health ring, bold meters, cards and list"
   },
   "author": {
     "name": "KPanel",
@@ -18,12 +18,14 @@
   },
   "license": "AGPL-3.0-only",
   "tags": [
-    "fleet"
+    "status-page",
+    "light",
+    "cards"
   ],
   "theme": {
-    "brand": "#3476aa",
-    "neutral": "#17202c",
-    "signature": "#8ce1bd"
+    "brand": "#2563eb",
+    "neutral": "#f5f7fb",
+    "signature": "#047857"
   },
   "entry": "index.html"
 }

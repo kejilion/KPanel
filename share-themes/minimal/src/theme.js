@@ -1,85 +1,154 @@
-// Readable reference renderer. All user content is inserted as text, never HTML.
-let state
-let query = ''
-const app = document.getElementById('app')
-const zh = { fleet: '公开集群', total: '全部机器', online: '在线', attention: '需关注', remaining: '剩余价值（估算）', coverage: '台已计入', excluded: '台资料不足', search: '搜索名称、地区或系统', empty: '没有匹配的机器', memory: '内存', disk: '磁盘', uptime: '运行时间', monthly: '月流量', cumulative: '累计流量', expiry: '到期', price: '价格', offline: '离线', pending: '等待数据', degraded: '需关注', updated: '数据生成于', valueHint: '按已公开价格及到期日估算，分币种展示。', noValue: '资料不足，暂无法估算' }
-const tw = { ...zh, fleet: '公開集群', total: '全部機器', online: '在線', attention: '需關注', remaining: '剩餘價值（估算）', coverage: '台已計入', excluded: '台資料不足', search: '搜尋名稱、地區或系統', empty: '沒有符合的機器', memory: '記憶體', disk: '磁碟', uptime: '運行時間', monthly: '月流量', cumulative: '累計流量', expiry: '到期', price: '價格', offline: '離線', pending: '等待資料', degraded: '需關注', updated: '資料產生於', valueHint: '按已公開價格及到期日估算，分幣種展示。', noValue: '資料不足，暫時無法估算' }
-Object.assign(zh, { partial: '周期数据不完整', estimated: '估算数据', waiting: '等待周期数据' })
-Object.assign(tw, { partial: '週期資料不完整', estimated: '估算資料', waiting: '等待週期資料' })
-const en = { fleet: 'PUBLIC FLEET', total: 'Servers', online: 'Online', attention: 'Attention', remaining: 'Remaining value (estimate)', coverage: 'included', excluded: 'incomplete', search: 'Search name, location or OS', empty: 'No matching servers', memory: 'Memory', disk: 'Disk', uptime: 'Uptime', monthly: 'Monthly traffic', cumulative: 'Total traffic', expiry: 'Expires', price: 'Price', offline: 'Offline', pending: 'Awaiting data', degraded: 'Attention', updated: 'Updated', valueHint: 'Estimated from public price and expiry, grouped by currency.', noValue: 'Not enough details to estimate' }
-Object.assign(en, { partial: 'Incomplete period', estimated: 'Estimated data', waiting: 'Awaiting period data' })
-function el(tag, text, className) {
+// 简约看板 / Clear board — a bright status page. Protocol 2, no dependencies.
+// Every snapshot string is inserted as a text node, never as HTML.
+const $ = id => document.getElementById(id)
+const h = (tag, cls, ...kids) => {
   const node = document.createElement(tag)
-  if (text !== undefined) node.textContent = String(text)
-  if (className) node.className = className
+  if (cls) node.className = cls
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false && kid !== '') node.append(kid.nodeType ? kid : document.createTextNode(String(kid)))
   return node
 }
-function metric(label, value, className = '') {
-  const node = el('div', undefined, `metric ${className}`)
-  node.append(el('small', label), el('strong', value)); return node
-}
-function renderHosts(container, words) {
-  container.replaceChildren()
-  const hosts = state.data.hosts.filter(host => `${host.name} ${host.location} ${host.os}`.toLowerCase().includes(query.toLowerCase()))
-  if (!hosts.length) container.append(el('p', words.empty, 'empty'))
-  for (const host of hosts) {
-    const card = el('article', undefined, 'host')
-    const top = el('header')
-    const identity = el('div')
-    identity.append(el('h2', host.name), el('p', [host.location, host.os].filter(Boolean).join(' · ')))
-    top.append(identity, el('span', words[host.state] || words.pending, `status ${host.state}`))
-    const resources = el('div', undefined, 'resources')
-    resources.append(metric('CPU', host.cpu), metric(words.memory, host.memory), metric(words.disk, host.disk))
-    const traffic = el('div', undefined, `traffic ${host.traffic.monthly ? 'monthly' : ''} ${host.traffic.tone}`)
-    traffic.append(el('strong', `${host.traffic.monthly ? words.monthly : words.cumulative}${host.traffic.percent ? ` · ${host.traffic.percent}` : ''}`), el('span', `↓ ${host.traffic.received}   ↑ ${host.traffic.sent}`))
-    const note = el('p', undefined, 'traffic-note')
-    if (host.traffic.hint) note.textContent = host.traffic.hint
-    else if (host.traffic.monthly) note.textContent = !host.traffic.available ? words.waiting : [host.traffic.partial && words.partial, host.traffic.estimated && words.estimated].filter(Boolean).join(' · ')
-    const details = el('dl')
-    for (const [label, value] of [[words.uptime, host.uptime], [words.expiry, host.expiresOn], [words.price, host.price], [words.remaining, host.remaining]]) {
-      if (value) details.append(el('dt', label), el('dd', value))
-    }
-    card.append(top, resources, traffic, details); if (note.textContent) card.append(note); container.append(card)
-  }
-}
-function render() {
-  const words = state.locale === 'en-US' ? en : state.locale === 'zh-TW' ? tw : zh
-  const focused = document.activeElement?.id === 'search'
-  const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null
-  const expanded = Boolean(document.querySelector('details')?.open)
-  document.documentElement.lang = state.locale
-  document.documentElement.dataset.mode = state.mode === 'light' ? 'light' : 'dark'
-  document.title = state.data.title
-  const hero = el('header', undefined, 'hero')
-  hero.append(el('span', words.fleet, 'eyebrow'), el('h1', state.data.title), el('p', state.data.description))
-  const stats = el('section', undefined, 'stats')
-  stats.append(metric(words.total, state.data.total), metric(words.online, state.data.online, 'online'), metric(words.attention, state.data.attention))
-  if (state.data.value.groups.length) {
-    const value = el('details', undefined, 'value'); value.open = expanded
-    const summary = el('summary')
-    summary.append(el('small', words.remaining), el('strong', state.data.value.groups[0].text))
-    if (state.data.value.groups.length > 1) summary.append(el('small', `+${state.data.value.groups.length - 1}`))
-    value.append(summary, el('p', words.valueHint))
-    for (const group of state.data.value.groups) value.append(el('p', `${group.currency} · ${group.text}`))
-    value.append(el('p', `${state.data.value.included} / ${state.data.total} ${words.coverage} · ${state.data.value.excluded} ${words.excluded}`))
-    stats.append(value)
-  }
-  const label = el('label', words.search, 'search')
-  const input = el('input'); input.type = 'search'; input.id = 'search'; input.value = query; input.placeholder = words.search
-  label.append(input)
-  const hosts = el('section', undefined, 'hosts')
-  input.addEventListener('input', () => { query = input.value; renderHosts(hosts, words) })
-  renderHosts(hosts, words)
-  const date = new Date(state.data.generatedAt)
-  const footer = el('footer', `${words.updated} ${Number.isFinite(date.getTime()) ? date.toLocaleString(state.locale) : '—'} · KPanel`)
-  app.replaceChildren(hero, stats, label, hosts, footer)
-  if (focused) { input.focus(); input.setSelectionRange(...selection) }
-}
-addEventListener('message', event => {
-  if (event.source !== parent || event.data?.source !== 'kpanel-share' || event.data?.type !== 'snapshot' || event.data?.schema !== 1 || !Array.isArray(event.data?.data?.hosts)) return
-  state = event.data; render()
-})
-parent.postMessage({ source: 'kpanel-share-theme', type: 'ready' }, '*')
+const svg = (tag, attrs) => { const node = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v); return node }
+const remember = (key, fallback) => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
+const store = (key, value) => { try { localStorage.setItem(key, value) } catch { /* sandboxed: keep in memory */ } }
 
-// Optional, bounded content height keeps the public page on a single scrollbar.
-new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(app.getBoundingClientRect().height))) }, '*')).observe(app)
+// System mark: the host sends bare path data, so the badge is ours to draw and colour.
+function systemBadge(host, size) {
+  const badge = h('span', `badge badge-${size}`)
+  badge.style.setProperty('--os', host.system.accent || 'var(--idle)')
+  badge.title = host.system.label || host.os
+  if (host.system.path) { const icon = svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }); icon.append(svg('path', { d: host.system.path })); badge.append(icon) }
+  else if (host.system.image) { const img = h('img'); img.src = host.system.image; img.alt = ''; badge.append(img) }
+  else badge.append(h('b', null, (host.system.label || host.os || '?').slice(0, 1).toUpperCase()))
+  if (host.location.flag) { const flag = h('img', 'flag'); flag.src = host.location.flag; flag.alt = ''; flag.decoding = 'async'; badge.append(flag) }
+  badge.setAttribute('aria-hidden', 'true')
+  return badge
+}
+
+const STATES = ['online', 'degraded', 'offline', 'pending']
+let snap = null, query = '', filter = 'all', view = remember('clear-view', 'card')
+const level = ratio => ratio === null || ratio === undefined ? 'na' : ratio >= 0.9 ? 'hot' : ratio >= 0.75 ? 'warm' : 'ok'
+const known = value => value && value !== '—'
+
+function meter(label, reading, extra) {
+  const bar = h('span', 'bar'); const fill = h('span', 'fill')
+  fill.style.inlineSize = `${Math.round((reading.ratio ?? 0) * 100)}%`
+  bar.append(fill)
+  const node = h('div', `meter ${level(reading.ratio)}`, h('span', 'meter-name', label), bar, h('span', 'meter-value', reading.text, level(reading.ratio) === 'hot' ? ' !' : ''))
+  if (extra) node.append(h('span', 'meter-extra', extra))
+  return node
+}
+
+function trafficMeter(host, labels) {
+  const t = host.traffic
+  const title = t.monthly ? labels.monthly : labels.cumulative
+  const reading = { text: t.percent || '', ratio: t.monthly && t.percent ? t.ratio : null }
+  const node = h('div', `traffic ${t.tone || 'normal'}`)
+  const top = h('div', 'traffic-top', h('span', null, title), h('span', 'traffic-io', `↓ ${t.received}  ↑ ${t.sent}`))
+  node.append(top)
+  if (reading.text) {
+    const bar = h('span', 'bar'); const fill = h('span', 'fill'); fill.style.inlineSize = `${Math.round(reading.ratio * 100)}%`; bar.append(fill)
+    node.append(h('div', 'traffic-bar', bar, h('b', null, reading.text)))
+  }
+  if (t.hint) node.append(h('p', 'hint', t.hint))
+  return node
+}
+
+function chips(host, labels) {
+  const list = h('ul', 'chips')
+  const add = (label, value) => { if (known(value)) list.append(h('li', null, h('span', null, label), ' ', h('b', null, value))) }
+  add(labels.uptime, host.uptime)
+  if (host.collected) add(labels.network, `↓ ${host.network.down.text} ↑ ${host.network.up.text}`)
+  add(labels.expiry, host.expiresOn); add(labels.price, host.price); add(labels.remaining, host.remaining)
+  return list
+}
+
+function identity(host, labels) {
+  const place = [host.location.text, host.os].filter(Boolean).join(' · ')
+  return h('div', 'who',
+    h('h2', null, host.name),
+    h('p', null, host.location.countryCode && !host.location.flag ? h('span', 'cc', host.location.countryCode) : null, place || labels.unknownPlace))
+}
+
+function card(host, labels) {
+  return h('article', `card s-${host.state}`,
+    h('header', null, systemBadge(host, 'lg'), identity(host, labels), h('span', `pill s-${host.state}`, host.stateLabel)),
+    h('div', 'meters', meter(labels.cpu, host.cpu, host.cores ? `${host.cores} ${labels.cores}` : ''), meter(labels.memory, host.memory, host.memory.totalText !== '—' ? `${host.memory.usedText} / ${host.memory.totalText}` : ''),
+      meter(labels.disk, host.disk, host.disk.totalText !== '—' ? `${host.disk.usedText} / ${host.disk.totalText}` : '')),
+    trafficMeter(host, labels), chips(host, labels))
+}
+
+function row(host, labels) {
+  const t = host.traffic
+  return h('article', `row s-${host.state}`,
+    h('span', `pill s-${host.state}`, host.stateLabel), h('div', 'row-id', systemBadge(host, 'sm'), identity(host, labels)),
+    meter(labels.cpu, host.cpu), meter(labels.memory, host.memory), meter(labels.disk, host.disk),
+    meter(t.monthly ? labels.monthly : labels.traffic, { text: t.percent || `↓ ${t.received}`, ratio: t.percent ? t.ratio : null }),
+    h('div', 'row-meta', h('span', null, known(host.uptime) ? host.uptime : ''), host.collected ? h('span', null, `↓ ${host.network.down.text}`) : null))
+}
+
+function ring(counts) {
+  const node = $('ring'); node.replaceChildren(svg('circle', { cx: 60, cy: 60, r: 50, class: 'track' }))
+  const total = Math.max(1, counts.online + counts.degraded + counts.offline + counts.pending), length = 2 * Math.PI * 50
+  let offset = 0
+  for (const state of STATES) {
+    const part = counts[state] / total * length
+    if (part > 0) node.append(svg('circle', { cx: 60, cy: 60, r: 50, class: `seg s-${state}`, 'stroke-dasharray': `${Math.max(0, part - 2)} ${length}`, 'stroke-dashoffset': -offset, transform: 'rotate(-90 60 60)' }))
+    offset += part
+  }
+}
+
+function render() {
+  const { data, labels, locale, mode } = snap
+  const root = document.documentElement
+  root.lang = locale; root.dataset.mode = mode === 'dark' ? 'dark' : 'light'
+  document.title = data.title
+  $('kicker').textContent = labels.fleet
+  const date = new Date(data.generatedAt)
+  const stamp = Number.isFinite(date.getTime()) ? date.toLocaleString(locale) : '—'
+  $('stamp').textContent = `${labels.updated} ${stamp}`
+  $('title').textContent = data.title
+  $('desc').textContent = data.description; $('desc').hidden = !data.description
+  $('searchLabel').textContent = labels.search; $('q').placeholder = labels.search
+
+  const counts = Object.fromEntries(STATES.map(state => [state, data.hosts.filter(host => host.state === state).length]))
+  ring(counts)
+  $('ratio').textContent = `${data.counts.online}/${data.counts.total}`
+  $('healthLabel').textContent = labels.online
+  $('legend').replaceChildren(...STATES.filter(state => counts[state]).map(state => h('li', `s-${state}`, h('i'), data.states[state], h('b', null, counts[state]))))
+
+  const worth = $('worth')
+  worth.hidden = !data.value.groups.length
+  if (data.value.groups.length) {
+    worth.replaceChildren(h('span', 'worth-label', labels.remaining), ...data.value.groups.map(group => h('strong', null, group.text)),
+      h('p', null, `${data.value.included}/${data.counts.total} ${labels.covered}${data.value.excluded ? ` · ${data.value.excluded} ${labels.excluded}` : ''}`), h('p', null, labels.valueHint))
+  }
+
+  const segments = [['all', labels.all, data.counts.total], ['online', labels.online, counts.online], ['degraded', labels.attention, counts.degraded], ['offline', labels.offline, counts.offline]]
+  $('filters').replaceChildren(...segments.map(([key, text, count]) => toggle(text, filter === key, () => { filter = key; render() }, count)))
+  $('filters').setAttribute('aria-label', labels.filter)
+  $('views').replaceChildren(toggle(labels.card, view === 'card', () => setView('card')), toggle(labels.list, view === 'list', () => setView('list')))
+  $('views').setAttribute('aria-label', labels.view)
+
+  const needle = query.trim().toLowerCase()
+  const hosts = data.hosts.filter(host => (filter === 'all' || host.state === filter) && `${host.name} ${host.location.text} ${host.os}`.toLowerCase().includes(needle))
+  const list = $('hosts'); list.className = `hosts is-${view}`
+  list.replaceChildren(...(hosts.length ? hosts.map(host => view === 'card' ? card(host, labels) : row(host, labels)) : [h('p', 'empty', labels.empty)]))
+  $('foot').textContent = `KPanel · ${labels.updated} ${stamp}`
+}
+
+function toggle(text, pressed, onClick, count) {
+  const button = h('button', null, text, count !== undefined ? h('span', 'count', count) : null)
+  button.type = 'button'; button.setAttribute('aria-pressed', String(pressed))
+  button.addEventListener('click', event => { const index = [...event.currentTarget.parentNode.children].indexOf(event.currentTarget), group = event.currentTarget.parentNode.id; onClick(); document.getElementById(group)?.children[index]?.focus() })
+  return button
+}
+function setView(next) { view = next; store('clear-view', next); render() }
+
+addEventListener('message', event => {
+  const msg = event.data
+  if (event.source !== parent || msg?.source !== 'kpanel-share' || msg.type !== 'snapshot' || msg.schema !== 2 || !Array.isArray(msg.data?.hosts)) return
+  snap = msg; render()
+})
+$('q').addEventListener('input', event => { query = event.target.value; if (snap) render() })
+parent.postMessage({ source: 'kpanel-share-theme', type: 'ready', protocol: 2 }, '*')
+new ResizeObserver(() => parent.postMessage({ source: 'kpanel-share-theme', type: 'resize', height: Math.min(32768, Math.max(320, Math.ceil(document.documentElement.getBoundingClientRect().height))) }, '*')).observe(document.body)

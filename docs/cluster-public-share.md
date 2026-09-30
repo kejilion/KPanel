@@ -83,3 +83,11 @@ KPanel 首版不把现有集群 API整体改成游客可读，也不默认公开
 - 页面：本地匿名公开页完成桌面与 390×844 移动视口复核；移动端无横向溢出，浏览器控制台无 warning/error。
 - L2 汇总脚本在 Windows 全量 Go 测试处未通过；失败集中在仓库既有的 Docker 临时路径、Windows 权限/数据目录和 Linux systemd 专用用例，分享功能相关测试均通过。尚未在两台真实 KPanel 或 Linux 运行态进行端到端联调。
 - 本次没有提交、推送、发布或部署。
+
+## 分享主题（`kpanel-share-theme@2`）
+
+管理员可在分享设置中下载并应用社区/官方主题，改变匿名页的整体版式与风格。主题包是完整的独立网页，运行在
+`sandbox="allow-scripts"` 的不透明来源 iframe 中，只通过 postMessage 接收字段白名单后的快照；样式、
+版式与交互不依赖 KPanel 前端框架。协议 2 在保持隐私白名单不变的前提下额外提供原始数值（`ratio`、
+字节、速率，未知为 `null`）、本地化词表与状态名；未声明 `protocol: 2` 的旧主题继续收到 schema 1 快照。
+协议、字段与作者约束以 [`share-themes/README.md`](../share-themes/README.md) 为准。

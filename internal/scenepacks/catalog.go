@@ -189,7 +189,7 @@ func validText(text Text, chinese, english int) bool {
 func validatePack(p Pack) error { return validatePackProfile(p, scenes) }
 
 func validatePackProfile(p Pack, kind profile) error {
-	if p.Schema != 1 || !ValidID(p.ID) || !versionPattern.MatchString(p.Version) || p.Runtime != kind.runtime || p.Path != p.ID+"/dist" ||
+	if p.Schema != 1 || !ValidID(p.ID) || !versionPattern.MatchString(p.Version) || !kind.acceptsRuntime(p.Runtime) || p.Path != p.ID+"/dist" ||
 		!validText(p.Name, 20, 40) || !validText(p.Description, 40, 90) || p.Author.Name == "" || len(p.Author.Name) > 160 || len(p.Author.URL) > 500 || len(p.License) > 160 || p.License == "" ||
 		!colorPattern.MatchString(p.Theme.Brand) || !colorPattern.MatchString(p.Theme.Neutral) || !colorPattern.MatchString(p.Theme.Signature) ||
 		p.Entry != "index.html" || len(p.Tags) > 6 || len(p.Files) < 2 || len(p.Files) > MaxFiles {

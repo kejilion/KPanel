@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "id": "midnight",
-  "version": "1.0.2",
-  "runtime": "kpanel-share-theme@1",
+  "version": "2.1.0",
+  "runtime": "kpanel-share-theme@2",
   "name": {
     "zh-CN": "午夜终端",
-    "en-US": "Midnight fleet",
-    "zh-TW": "午夜终端"
+    "zh-TW": "午夜終端",
+    "en-US": "Midnight console"
   },
   "description": {
-    "zh-CN": "紧凑的技术风格机器清单",
-    "en-US": "A compact technical server list"
+    "zh-CN": "htop 风格热力表与 tmux 分屏，高密度一屏看完",
+    "en-US": "An htop-style heat table and tmux panes, dense and scannable"
   },
   "author": {
     "name": "KPanel",
@@ -18,12 +18,14 @@
   },
   "license": "AGPL-3.0-only",
   "tags": [
-    "fleet"
+    "terminal",
+    "dense",
+    "table"
   ],
   "theme": {
-    "brand": "#3476aa",
-    "neutral": "#17202c",
-    "signature": "#8ce1bd"
+    "brand": "#7ee787",
+    "neutral": "#0a0f0d",
+    "signature": "#ffd166"
   },
   "entry": "index.html"
 }

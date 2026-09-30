@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "orbit",
+  "version": "1.0.0",
+  "runtime": "kpanel-share-theme@2",
+  "name": {
+    "zh-CN": "星图",
+    "zh-TW": "星圖",
+    "en-US": "Orbit map"
+  },
+  "description": {
+    "zh-CN": "深色世界地图：机器在哪、状态如何，一眼看全",
+    "en-US": "A dark world map: where every server is and how it is doing"
+  },
+  "author": {
+    "name": "KPanel",
+    "url": "https://github.com/kejilion/KPanel"
+  },
+  "license": "AGPL-3.0-only",
+  "tags": [
+    "map",
+    "dark",
+    "cards"
+  ],
+  "theme": {
+    "brand": "#5eead4",
+    "neutral": "#070b16",
+    "signature": "#a78bfa"
+  },
+  "entry": "index.html"
+}

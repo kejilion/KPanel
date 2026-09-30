@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><link rel="stylesheet" href="./theme.css"><title>KPanel</title></head>
+<body>
+<div class="page">
+  <header class="head">
+    <div><h1 id="title"></h1><p id="desc" class="desc"></p></div>
+    <p class="live"><i aria-hidden="true"></i><span id="stamp"></span></p>
+  </header>
+
+  <section class="atlas">
+    <div class="map" id="map">
+      <svg id="land" class="land" viewBox="0 8 360 142" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="markers" class="markers" role="group"></div>
+    </div>
+    <dl id="stats" class="stats" aria-live="polite"></dl>
+  </section>
+
+  <div class="toolbar">
+    <label class="search"><span id="searchLabel" class="sr"></span><input id="q" type="search" autocomplete="off"></label>
+    <div id="filters" class="chips" role="group"></div>
+    <div id="views" class="switch" role="group"></div>
+  </div>
+
+  <main id="hosts" class="hosts"></main>
+  <footer id="foot" class="foot"></footer>
+</div>
+<script src="./land.js"></script>
+<script src="./theme.js"></script>
+</body></html>
