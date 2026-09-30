@@ -182,6 +182,49 @@ func TestActiveSVGContentUsesTheTextEditor(t *testing.T) {
 	}
 }
 
+func TestViewerSupportUsesHostIndependentTextNames(t *testing.T) {
+	tests := []struct {
+		name, mime string
+		editable   bool
+	}{
+		{name: "Makefile", editable: true},
+		{name: ".gitignore", editable: true},
+		{name: ".bashrc", editable: true},
+		{name: ".env.local", editable: true},
+		{name: "Dockerfile.prod", editable: true},
+		{name: "nginx.service", editable: true},
+		{name: "my.CNF", editable: true},
+		{name: "fullchain.pem", editable: true},
+		{name: "main.rs", editable: true},
+		{name: "widget.hpp", editable: true},
+		{name: "fix.patch", editable: true},
+		{name: "nginx.conf.bak", editable: true},
+		{name: ".bashrc.orig", editable: true},
+		{name: "config.yml.example", editable: true},
+		{name: "unknown.custom", mime: "text/x-custom", editable: true},
+		{name: "data.custom", mime: "application/json", editable: true},
+		{name: "photo.png", mime: "image/png"},
+		{name: "backup.tar.gz", mime: "application/gzip"},
+		{name: "photo.png.bak", mime: "application/octet-stream"},
+		{name: "report.docx", mime: "application/octet-stream"},
+	}
+	for _, test := range tests {
+		editable, _ := viewerSupport(test.name, test.mime, 10, "file")
+		if editable != test.editable {
+			t.Errorf("viewerSupport(%q, %q) editable=%v, want %v", test.name, test.mime, editable, test.editable)
+		}
+	}
+	if editable, previewable := viewerSupport("main.rs", "", MaxTextBytes+1, "file"); editable || previewable {
+		t.Fatalf("oversized text editable=%v previewable=%v", editable, previewable)
+	}
+	if editable, previewable := viewerSupport("clip.mp4", "video/mp4", 10, "file"); editable || !previewable {
+		t.Fatalf("video editable=%v previewable=%v", editable, previewable)
+	}
+	if editable, _ := viewerSupport(".git", "", 10, "directory"); editable {
+		t.Fatal("directory must not be editable")
+	}
+}
+
 func TestUploadCopyMoveChmodAndTrash(t *testing.T) {
 	manager, root := newTestManager(t)
 	mustMkdirAll(t, filepath.Join(root, "source"))

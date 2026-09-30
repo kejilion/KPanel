@@ -17,6 +17,19 @@ describe('code editor language loading', () => {
       id: 'shell',
       label: 'Shell',
     })
+    expect(detectCodeLanguage('Containerfile')).toMatchObject({ id: 'dockerfile' })
+    expect(detectCodeLanguage('.env.production')).toMatchObject({ id: 'properties' })
+    expect(detectCodeLanguage('.bashrc')).toMatchObject({ id: 'shell' })
+    expect(detectCodeLanguage('CMakeLists.txt')).toMatchObject({ id: 'cmake' })
+  })
+
+  it('keeps the inner language for backup and template copies', () => {
+    expect(detectCodeLanguage('nginx.conf.bak')).toMatchObject({ id: 'nginx' })
+    expect(detectCodeLanguage('nginx.conf.default')).toMatchObject({ id: 'nginx' })
+    expect(detectCodeLanguage('nginx.yml')).toMatchObject({ id: 'yaml' })
+    expect(detectCodeLanguage('config.yml.example')).toMatchObject({ id: 'yaml' })
+    expect(detectCodeLanguage('Cargo.toml.orig')).toMatchObject({ id: 'toml' })
+    expect(detectCodeLanguage('dump.bak')).toBeUndefined()
   })
 
   it('uses plain text without loading a parser for unsupported files', async () => {
@@ -53,6 +66,24 @@ describe('code editor language loading', () => {
     ['nginx.conf', 'nginx'],
     ['Dockerfile', 'dockerfile'],
     ['service.ini', 'properties'],
+    ['main.c', 'c'],
+    ['widget.hpp', 'cpp'],
+    ['App.java', 'java'],
+    ['Program.cs', 'csharp'],
+    ['Main.kt', 'kotlin'],
+    ['lib.rs', 'rust'],
+    ['Cargo.toml', 'toml'],
+    ['app.rb', 'ruby'],
+    ['init.lua', 'lua'],
+    ['View.swift', 'swift'],
+    ['theme.scss', 'scss'],
+    ['theme.less', 'less'],
+    ['fix.patch', 'diff'],
+    ['deploy.ps1', 'powershell'],
+    ['api.proto', 'protobuf'],
+    ['build.gradle', 'groovy'],
+    ['nginx.service', 'properties'],
+    ['template.j2', 'jinja2'],
   ])('loads syntax support for %s', async (fileName, languageId) => {
     const result = await loadCodeLanguage(fileName, '', 1024)
     expect(result).toMatchObject({ id: languageId, highlighted: true })
