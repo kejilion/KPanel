@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>scene grid</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 50vh; height: 100%; gap: 2px; }
+  .tile { position: relative; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .label { position: absolute; left: 6px; top: 4px; color: #fff; font: 11px monospace; text-shadow: 0 0 3px #000; }
+  #log { position: fixed; left: 8px; top: 8px; color: #f88; font: 12px monospace; white-space: pre-wrap; max-width: 90vw; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<pre id="log"></pre>
+<script type="module">
+import { createShaderRenderer } from '/src/lib/desktopScenes/renderer.ts'
+import { sceneModules } from '/src/lib/desktopScenes/loaders.ts'
+
+const params = new URLSearchParams(location.search)
+const scenes = (params.get('scenes') || params.get('scene') || 'seaside').split(',')
+const hours = (params.get('hours') || '12').split(',').map(Number)
+const times = (params.get('times') || '10').split(',').map(Number)
+const detail = params.has('detail') ? Number(params.get('detail')) : 1
+const pointer = [Number(params.get('px') || 0), Number(params.get('py') || 0)]
+const grid = document.getElementById('grid')
+const log = document.getElementById('log')
+const tiles = []
+for (const scene of scenes) for (const hour of hours) for (const time of times) tiles.push({ scene, hour, time })
+window.gridState = { done: 0, errors: [] }
+for (const tile of tiles) {
+  const el = document.createElement('div')
+  el.className = 'tile'
+  const canvas = document.createElement('canvas')
+  const label = document.createElement('div')
+  label.className = 'label'
+  label.textContent = `${tile.scene} h=${tile.hour} t=${tile.time}`
+  el.append(canvas, label)
+  grid.append(el)
+  tile.canvas = canvas
+}
+await new Promise((r) => requestAnimationFrame(r))
+for (const tile of tiles) {
+  try {
+    const module = await sceneModules.load(tile.scene)
+    tile.canvas.width = tile.canvas.clientWidth
+    tile.canvas.height = tile.canvas.clientHeight
+    const renderer = await createShaderRenderer(tile.canvas, module.scene)
+    renderer.resize(tile.canvas.width, tile.canvas.height)
+    renderer.render({ time: tile.time, hour: tile.hour, pointer, detail })
+  } catch (error) {
+    log.textContent += `${tile.scene}: ${error && error.message || error}\n`
+    window.gridState.errors.push(String(error && error.message || error))
+  }
+  window.gridState.done++
+}
+</script>
+</body>
+</html>

@@ -1,163 +1,139 @@
-import type { SceneModule } from '../types'
-import {
-  celestialAt, createLayer, createStars, drawStars, fillRidge, hex, mix, paintSky, random, rgba, ridge,
-  skyAt, type Layer, type RGB, type SkyColors, type Star,
-} from './shared'
+import type { ShaderScene } from '../types'
 
-// A mountain valley whose sky, sun, moon and haze follow the viewer's local clock.
+// A mountain valley seen from a high meadow: five ridges recede into aerial
+// haze, snow catches the light on the far peaks, pines crown the near hills and
+// mist drifts through the valleys while the sky follows the local clock.
 
-interface Cloud {
-  x: number
-  y: number
-  scale: number
-  speed: number
-  puffs: Array<{ x: number, y: number, r: number }>
+export const scene: ShaderScene = {
+  fragment: /* glsl */ `
+const float FOCAL = 1.4;
+const int LAYERS = 5;
+// Far to near: distance, base height, relief, frequency, pine density.
+const float DIST[5] = float[5](3400.0, 1900.0, 1050.0, 520.0, 210.0);
+const float BASE[5] = float[5](-40.0, -120.0, -110.0, -70.0, -40.0);
+const float RELIEF[5] = float[5](640.0, 380.0, 190.0, 95.0, 38.0);
+const float FREQ[5] = float[5](0.00075, 0.0013, 0.0024, 0.0048, 0.011);
+const float PINES[5] = float[5](0.0, 0.0, 0.0, 0.0, 0.32);
+const vec3 SNOW = pow(vec3(0.93, 0.95, 1.0), vec3(2.2));
+const vec3 ROCK = pow(vec3(0.42, 0.44, 0.5), vec3(2.2));
+const vec3 FOREST = pow(vec3(0.12, 0.22, 0.15), vec3(2.2));
+const vec3 MEADOW = pow(vec3(0.3, 0.42, 0.16), vec3(2.2));
+const vec3 SPRUCE = pow(vec3(0.06, 0.13, 0.1), vec3(2.2));
+
+// Conifer crowns along a ridge: overlapping narrow triangles.
+float pines(float x, float density, float height) {
+  if (density <= 0.0) return 0.0;
+  float u = x * density;
+  float cell = floor(u);
+  float tallest = 0.0;
+  for (int k = -1; k <= 1; k++) {
+    float c = cell + float(k);
+    float h = hash11(c * 3.71);
+    if (h < 0.3) continue;
+    float center = c + 0.5 + (hash11(c * 1.37) - 0.5) * 0.7;
+    float along = abs(u - center) / 0.55;
+    // Slightly concave flanks read as spruce rather than sawtooth.
+    float tree = height * (0.5 + 0.5 * h) * pow(max(0.0, 1.0 - along), 1.35);
+    tallest = max(tallest, tree);
+  }
+  return tallest;
 }
 
-const RIDGES: ReadonlyArray<{ day: RGB, night: RGB, haze: number, baseline: number, amplitude: number, roughness: number, seed: number }> = [
-  { day: hex('#8ea9cb'), night: hex('#1e2849'), haze: 0.34, baseline: 0.64, amplitude: 0.17, roughness: 0.56, seed: 11 },
-  { day: hex('#56769c'), night: hex('#151d3a'), haze: 0.16, baseline: 0.76, amplitude: 0.16, roughness: 0.52, seed: 23 },
-  { day: hex('#2a4463'), night: hex('#0b1127'), haze: 0.05, baseline: 0.9, amplitude: 0.15, roughness: 0.5, seed: 37 },
-]
+float ridgeShape(int i, float x) {
+  float f = x * FREQ[i] + float(i) * 13.7;
+  int count = octaves(i == 0 ? 7.0 : 6.0);
+  return i < 2 ? ridged1(f, count) : fbm1(f, count);
+}
 
-export const createScene: SceneModule['createScene'] = (context, environment) => {
-  const next = random(20260923)
-  const stars: Star[] = createStars(next, 170)
-  const ridges = RIDGES.map((layer) => ridge(random(layer.seed), 129, layer.roughness))
-  const clouds: Cloud[] = Array.from({ length: 7 }, (_, index) => ({
-    x: next(),
-    y: 0.08 + next() * 0.3,
-    scale: 0.55 + next() * 0.6,
-    speed: 0.0035 + next() * 0.004 + index * 0.0004,
-    puffs: Array.from({ length: 16 + Math.floor(next() * 9) }, () => {
-      const x = 0.5 + (next() + next() - 1) * 0.42
-      const crown = 1 - Math.abs(x - 0.5) * 1.7
-      return { x, y: 0.62 - crown * 0.3 * next(), r: (0.3 + crown * 0.55) * (0.7 + next() * 0.3) }
-    }),
-  }))
+// The bare ground, which also drives the lighting so trees never streak it.
+float terrainHeight(int i, float x) { return BASE[i] + RELIEF[i] * ridgeShape(i, x); }
 
-  let width = 1
-  let height = 1
-  let skyLayer: Layer | undefined
-  let landLayer: Layer | undefined
-  let cloudLayers: Layer[] = []
-  let cachedMinute = -1
-  let sky: SkyColors = skyAt(12)
+float ridgeHeight(int i, float x) {
+  float shape = ridgeShape(i, x);
+  float h = BASE[i] + RELIEF[i] * shape;
+  // Distant forest reads as a rough canopy rather than single trees.
+  if (i == 3) h += (noise1(x * 0.35) * 0.6 + noise1(x * 1.1) * 0.4) * 7.0;
+  // Forest thins out towards the crests.
+  return h + pines(x, PINES[i], 15.0) * smoothstep(0.75, 0.35, shape);
+}
 
-  function paintCelestial(target: Layer, horizon: number): void {
-    const body = celestialAt(cachedMinute / 60)
-    if (body.altitude < -0.08) return
-    // Measured from the far ridge line so a low sun still rises between the peaks.
-    const x = body.x * width
-    const y = horizon - body.altitude * height * 0.5
-    const radius = Math.min(width, height) * (body.kind === 'sun' ? 0.034 : 0.026)
-    const glowRadius = Math.min(width, height) * (body.kind === 'sun' ? 0.42 : 0.24)
-    const glow = target.context.createRadialGradient(x, y, 0, x, y, glowRadius)
-    const strength = body.kind === 'sun' ? 0.5 + (1 - body.altitude) * 0.25 : 0.22
-    glow.addColorStop(0, rgba(sky.sun, strength))
-    glow.addColorStop(0.25, rgba(sky.sun, strength * 0.35))
-    glow.addColorStop(1, rgba(sky.sun, 0))
-    target.context.fillStyle = glow
-    target.context.fillRect(0, 0, width, horizon + height * 0.1)
-    target.context.fillStyle = rgba(body.kind === 'sun' ? mix(sky.sun, [255, 255, 255], 0.55) : hex('#eef2ff'))
-    target.context.beginPath()
-    target.context.arc(x, y, radius, 0, Math.PI * 2)
-    target.context.fill()
-    if (body.kind === 'moon') {
-      target.context.fillStyle = rgba(mix(sky.top, sky.middle, 0.35), 0.88)
-      target.context.beginPath()
-      target.context.arc(x + radius * 0.42, y - radius * 0.18, radius * 0.92, 0, Math.PI * 2)
-      target.context.fill()
+vec3 sky(vec3 ro, vec3 rd, float px) {
+  vec3 col = skyGradient(rd);
+  col += stars(rd, px) * uStars;
+  col += sunAndMoon(rd, px);
+  vec4 deck = cloudDeck(ro, rd, 2200.0, 0.0011, 0.4, 0.012);
+  return mix(col, deck.rgb, deck.a);
+}
+
+vec3 render(vec2 fragCoord) {
+  vec3 ro = vec3(uPointer.x * 6.0, -uPointer.y * 2.0, 0.0);
+  vec3 rd = cameraRay(fragCoord, FOCAL, 0.02, 0.01);
+  float px = pixelAngle(FOCAL);
+  vec3 sunFlat = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.04), 0.0) + vec3(0.0001));
+  vec3 moonFlat = normalize(vec3(uMoonDir.x, max(uMoonDir.y, 0.04), 0.0) + vec3(0.0001));
+  vec3 ambient = mix(uZenith, uHorizon, 0.4) * 0.8 + vec3(0.004, 0.006, 0.012);
+
+  // Nothing rises above ~11 degrees, so the upper sky skips the ridge tests.
+  if (rd.y / rd.z < 0.2) {
+    for (int j = 0; j < LAYERS; j++) {
+      int i = LAYERS - 1 - j;
+      float lambda = DIST[i] / rd.z;
+      float x = ro.x + rd.x * lambda;
+      float y = ro.y + rd.y * lambda;
+      float top = ridgeHeight(i, x);
+      if (y > top) continue;
+
+      float near = float(i) / float(LAYERS - 1);
+      float dx = 6.0 + 30.0 * (1.0 - near);
+      float ground = terrainHeight(i, x);
+      float slope = (terrainHeight(i, x + dx) - ground) / dx;
+      // Depth below the bare ground, so trees never cast streaks down the slope.
+      float depth = max(ground - y, 0.0);
+      // The rock face has its own relief so light varies down the slope too.
+      float scale = 0.012 + 0.03 * near;
+      vec2 face = vec2(x, y) * scale;
+      float f0 = fbm(face, 4);
+      vec2 g = vec2(fbm(face + vec2(0.35, 0.0), 4) - f0, fbm(face + vec2(0.0, 0.35), 4) - f0) * 3.0;
+      vec3 normal = normalize(vec3(-slope * 0.7 - g.x, 0.75 + g.y, -0.65));
+      // Terrain is lit from above and beside the viewer, so faces are readable at any hour.
+      vec3 sunLight = normalize(vec3(uSunDir.x * 1.6, max(uSunDir.y, 0.02) + 0.3, -0.25));
+      vec3 moonLight = normalize(vec3(uMoonDir.x * 1.6, max(uMoonDir.y, 0.02) + 0.3, -0.25));
+
+      // Albedo: snowy rock far away, forest and meadow up close.
+      vec3 albedo = mix(ROCK, FOREST, smoothstep(0.5, 2.0, float(i)));
+      if (i == 4) {
+        // Spruces on the crest, meadow on the slope below them.
+        albedo = y > ground - 1.0 ? SPRUCE : mix(FOREST, MEADOW, smoothstep(4.0, 30.0, depth) * 0.8);
+      }
+      float snowLine = i == 0 ? 170.0 : 300.0;
+      float snow = i < 2 ? smoothstep(snowLine - 50.0, snowLine + 50.0, y + (f0 - 0.5) * 220.0) : 0.0;
+      snow *= smoothstep(0.35, 0.75, normal.y);
+      albedo = mix(albedo, SNOW, snow);
+
+      float sun = max(dot(normal, sunLight), 0.0);
+      float moon = max(dot(normal, moonLight), 0.0);
+      // Upper slopes see more sky; hollows stay darker.
+      float occlusion = mix(0.5, 1.0, exp(-depth / (40.0 + 200.0 * (1.0 - near)))) * mix(0.7, 1.0, normal.y);
+      vec3 col = albedo * (ambient * occlusion + uSunColor * sun * 1.15 + uMoonColor * moon * 0.9);
+
+      // Backlit crests glow when the sun or moon sits behind the ridge.
+      float rim = exp(-(top - y) / (3.0 + 10.0 * (1.0 - near)));
+      col += (uSunColor * pow(max(dot(rd, uSunDir), 0.0), 5.0) + uMoonColor * pow(max(dot(rd, uMoonDir), 0.0), 6.0) * 0.6) * rim * 0.7;
+
+      // Aerial perspective towards the horizon, warmer on the sun's side.
+      vec3 hazeColor = mix(uHorizon, uGlow, pow(max(dot(rd, uSunDir), 0.0), 3.0) * 0.6) * 0.95;
+      col = mix(col, hazeColor, 1.0 - exp(-lambda * 0.0003));
+
+      // Valley fog: thick below the fog top, thinning with height, broken into drifting banks.
+      float fogTop = BASE[i] + RELIEF[i] * 0.12;
+      float heightFog = exp(-max(y - fogTop, 0.0) / (10.0 + 40.0 * (1.0 - near)));
+      float banks = fbm(vec2(x * 0.004 + uTime * 0.008, y * 0.025 + float(i) * 3.0), 4);
+      float mist = clamp(heightFog * smoothstep(0.35, 0.75, banks) * (1.0 - 0.6 * near), 0.0, 0.7);
+      vec3 mistColor = hazeColor * mix(0.85, 1.1, uLight) + uSunColor * 0.08;
+      return mix(col, mistColor, mist);
     }
   }
-
-  function repaint(minute: number): void {
-    cachedMinute = minute
-    sky = skyAt(minute / 60)
-    const horizon = height * 0.8
-    skyLayer ??= createLayer(environment, width, height)
-    paintSky(skyLayer.context, sky, width, horizon)
-    skyLayer.context.fillStyle = rgba(sky.horizon)
-    skyLayer.context.fillRect(0, horizon, width, height - horizon)
-    paintCelestial(skyLayer, height * 0.64)
-
-    landLayer ??= createLayer(environment, width, height)
-    landLayer.context.clearRect(0, 0, width, height)
-    RIDGES.forEach((layer, index) => {
-      const color = mix(mix(layer.night, layer.day, sky.light), sky.horizon, layer.haze)
-      landLayer!.context.fillStyle = rgba(color)
-      fillRidge(landLayer!.context, ridges[index]!, width, height * layer.baseline, height * layer.amplitude, height)
-      // Valley mist settles at each ridge's foot and fades out on both sides.
-      const hazeTop = height * layer.baseline
-      const haze = landLayer!.context.createLinearGradient(0, hazeTop - height * 0.04, 0, hazeTop + height * 0.1)
-      haze.addColorStop(0, rgba(sky.horizon, 0))
-      haze.addColorStop(0.45, rgba(sky.horizon, 0.3 - index * 0.09))
-      haze.addColorStop(1, rgba(sky.horizon, 0))
-      landLayer!.context.fillStyle = haze
-      landLayer!.context.fillRect(0, hazeTop - height * 0.04, width, height * 0.14)
-    })
-
-    // Cumulus sprites: soft puffs piled into a crown, a flattened base and a
-    // shaded underside, re-tinted once a minute as the light changes.
-    const cloudColor = mix(mix(hex('#2a3358'), [255, 255, 255], sky.light), sky.sun, 0.22)
-    const cloudShade = mix(cloudColor, sky.middle, 0.45)
-    cloudLayers = clouds.map((cloud) => {
-      const cloudWidth = width * 0.28 * cloud.scale
-      const cloudHeight = cloudWidth * 0.42
-      const layer = createLayer(environment, cloudWidth, cloudHeight)
-      const sprite = layer.context
-      for (const puff of cloud.puffs) {
-        const x = cloudWidth * puff.x
-        const y = cloudHeight * puff.y
-        const radius = cloudHeight * 0.36 * puff.r
-        const gradient = sprite.createRadialGradient(x, y, 0, x, y, radius)
-        gradient.addColorStop(0, rgba(cloudColor, 0.62))
-        gradient.addColorStop(0.55, rgba(cloudColor, 0.36))
-        gradient.addColorStop(1, rgba(cloudColor, 0))
-        sprite.fillStyle = gradient
-        sprite.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-      }
-      sprite.globalCompositeOperation = 'source-atop'
-      const underside = sprite.createLinearGradient(0, cloudHeight * 0.3, 0, cloudHeight * 0.8)
-      underside.addColorStop(0, rgba(cloudShade, 0))
-      underside.addColorStop(1, rgba(cloudShade, 0.7))
-      sprite.fillStyle = underside
-      sprite.fillRect(0, 0, cloudWidth, cloudHeight)
-      sprite.globalCompositeOperation = 'destination-out'
-      const base = sprite.createLinearGradient(0, cloudHeight * 0.68, 0, cloudHeight * 0.84)
-      base.addColorStop(0, 'rgb(0 0 0 / 0%)')
-      base.addColorStop(1, 'rgb(0 0 0 / 100%)')
-      sprite.fillStyle = base
-      sprite.fillRect(0, cloudHeight * 0.68, cloudWidth, cloudHeight * 0.32)
-      sprite.globalCompositeOperation = 'source-over'
-      return layer
-    })
-  }
-
-  return {
-    resize(nextWidth, nextHeight) {
-      width = nextWidth
-      height = nextHeight
-      skyLayer = undefined
-      landLayer = undefined
-      cachedMinute = -1
-    },
-    render(frame) {
-      const minute = Math.floor(frame.hour * 60)
-      if (minute !== cachedMinute || !skyLayer || !landLayer) repaint(minute)
-      context.drawImage(skyLayer!.surface, 0, 0)
-      drawStars(context, stars, width, height * 0.7, frame.time, sky.stars, Math.max(1, width / 1600))
-      const cloudAlpha = 0.28 + sky.light * 0.67
-      context.globalAlpha = cloudAlpha
-      clouds.forEach((cloud, index) => {
-        const layer = cloudLayers[index]
-        if (!layer) return
-        const span = width + layer.surface.width
-        const x = ((cloud.x * span + frame.time * cloud.speed * width) % span) - layer.surface.width
-        context.drawImage(layer.surface, x, cloud.y * height)
-      })
-      context.globalAlpha = 1
-      context.drawImage(landLayer!.surface, 0, 0)
-    },
-  }
+  return sky(ro, rd, px);
+}
+`,
 }

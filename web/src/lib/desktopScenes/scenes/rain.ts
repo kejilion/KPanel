@@ -1,246 +1,177 @@
-import type { SceneModule, SceneSurface } from '../types'
-import { createLayer, glowSprite, hex, random, rgba, type Layer, type RGB } from './shared'
+import type { ShaderScene } from '../types'
 
-// A rainy neon city seen through out-of-focus glass: skyline, bokeh, rain and puddle ripples.
+// A rainy window at night: drops slide down the glass in stick-slip bursts,
+// wiping trails through the condensation, and each drop refracts a sharper,
+// inverted view of the out-of-focus neon city behind it.
 
-const STREET = 0.86
-const NEON: readonly RGB[] = [hex('#ff5fa2'), hex('#4fd8ff'), hex('#ffb347'), hex('#9b7bff')]
-const PANE_LIGHTS: readonly RGB[] = [hex('#ffd58a'), hex('#ffc46b'), hex('#8fdcff'), hex('#ff8ccf')]
+export const scene: ShaderScene = {
+  fragment: /* glsl */ `
+const vec3 NEON[5] = vec3[5](
+  vec3(1.0, 0.1, 0.42),
+  vec3(0.05, 0.62, 1.0),
+  vec3(1.0, 0.45, 0.08),
+  vec3(0.46, 0.22, 1.0),
+  vec3(1.0, 0.74, 0.46)
+);
+const vec3 SKY_TOP = pow(vec3(0.03, 0.025, 0.08), vec3(2.2));
+const vec3 SKY_GLOW = pow(vec3(0.3, 0.1, 0.32), vec3(2.2));
+const vec3 STREET = pow(vec3(0.05, 0.035, 0.08), vec3(2.2));
+const float STREET_Y = -0.2;
 
-interface Pane {
-  x: number
-  y: number
-  w: number
-  h: number
-  color: RGB
-  lit: boolean
+vec3 neon(float h) { return NEON[int(h * 4.999)]; }
+
+float softStep(float edge, float blur, float x) { return 1.0 - smoothstep(edge - blur, edge + blur, x); }
+
+// One row of towers. Windows resolve only where the view is in focus; out of
+// focus they average into a soft glow. rgb colour, a coverage.
+vec4 towers(vec2 uv, float blur, float width, float base, float range, float seed, float shade) {
+  float cell = floor(uv.x / width);
+  float lx = (fract(uv.x / width) - 0.5) * width;
+  vec3 h = hash32(vec2(cell, seed));
+  float top = base + h.x * range;
+  float halfWidth = width * (0.34 + 0.14 * h.y);
+  float cover = softStep(top, blur, uv.y) * softStep(halfWidth, blur, abs(lx));
+  if (cover <= 0.001) return vec4(0.0);
+  vec3 col = SKY_TOP * shade;
+  vec3 warm = vec3(1.0, 0.68, 0.38);
+  float focus = 1.0 - smoothstep(0.003, 0.012, blur);
+  vec3 windows = warm * 0.035;
+  if (focus > 0.0) {
+    vec2 pane = vec2((lx + halfWidth) / 0.011, (uv.y - base) / 0.016);
+    vec3 w = hash32(floor(pane) + cell * 17.0 + seed);
+    float lit = step(0.64, w.x);
+    vec2 inPane = abs(fract(pane) - 0.5);
+    float glass = softStep(0.28, 0.08, inPane.x) * softStep(0.3, 0.08, inPane.y);
+    vec3 paneColor = mix(warm, vec3(0.55, 0.75, 1.0), step(0.8, w.y)) * (0.2 + 0.4 * w.z);
+    windows = mix(windows, paneColor * glass * lit * 0.3, focus);
+  }
+  col += windows * smoothstep(top, top - 0.02, uv.y);
+  // A vertical neon sign on some towers.
+  if (h.z > 0.68) {
+    float sx = (h.y - 0.5) * halfWidth * 1.2;
+    float y0 = top - range * 0.3 - 0.05;
+    float y1 = top - 0.025;
+    float dy = max(max(y0 - uv.y, uv.y - y1), 0.0);
+    float d = length(vec2(lx - sx, dy));
+    float flicker = 0.8 + 0.2 * step(0.2, fract(uTime * (0.3 + h.x) + h.y));
+    col += neon(fract(h.z * 7.3)) * exp(-d / (blur * 1.2 + 0.003)) * 0.35 * flicker;
+  }
+  return vec4(col, cover);
 }
 
-interface Drop {
-  x: number
-  y: number
-  speed: number
-  length: number
-  near: boolean
+// Point lights seen out of focus: discs whose size grows with the blur while
+// their edge stays crisp, as a lens renders them.
+vec3 bokeh(vec2 uv, float size, float radius, float blur, float seed, float yMin, float yMax) {
+  vec2 cell = floor(uv / size);
+  vec2 f = fract(uv / size) - 0.5;
+  vec3 h = hash32(cell + seed);
+  float cy = (cell.y + 0.5) * size;
+  if (h.z < 0.62 || cy < yMin || cy > yMax) return vec3(0.0);
+  vec2 center = (h.xy - 0.5) * 0.3;
+  float defocus = smoothstep(0.004, 0.03, blur);
+  float r = mix(0.004, radius * (0.4 + 0.6 * h.x), defocus) / size;
+  float edge = r * 0.1 + 0.01;
+  float d = length(f - center);
+  float disc = softStep(r, edge, d);
+  float rim = smoothstep(r * 0.6, r, d) * disc;
+  // Energy spreads over the disc, so big bokeh are dimmer than sharp points.
+  float energy = mix(2.5, 0.28, defocus);
+  float flicker = 0.85 + 0.15 * sin(uTime * (0.4 + h.y * 1.6) + h.x * 20.0);
+  return neon(h.y) * (disc + rim * 0.6) * energy * flicker * (0.35 + 0.65 * (h.z - 0.62) / 0.38);
 }
 
-interface Bokeh {
-  x: number
-  y: number
-  radius: number
-  sprite: number
-  phase: number
-  drift: number
+// Head- and tail-light streams along the street.
+vec3 traffic(vec2 uv, float blur) {
+  float lane = exp(-abs(uv.y - STREET_Y + 0.012) / (0.006 + blur));
+  float farLane = exp(-abs(uv.y - STREET_Y - 0.004) / (0.004 + blur));
+  float heads = pow(noise1(uv.x * 26.0 - uTime * 1.6), 6.0) * 3.0;
+  float tails = pow(noise1(uv.x * 22.0 + uTime * 1.2 + 40.0), 6.0) * 3.0;
+  return vec3(1.0, 0.82, 0.6) * heads * lane * 0.35 + vec3(1.0, 0.08, 0.05) * tails * farLane * 0.45;
 }
 
-interface Ripple {
-  x: number
-  y: number
-  start: number
+vec3 city(vec2 uv, float blur) {
+  vec3 col = mix(SKY_GLOW, SKY_TOP, smoothstep(-0.15, 0.5, uv.y));
+  vec4 far = towers(uv + vec2(0.37, 0.0), blur, 0.085, 0.0, 0.2, 3.0, 1.6);
+  col = mix(col, far.rgb + SKY_GLOW * 0.3, far.a);
+  vec4 near = towers(uv, blur, 0.16, -0.08, 0.42, 9.0, 0.8);
+  col = mix(col, near.rgb, near.a);
+  if (uv.y < STREET_Y) {
+    // Wet street: the lights above smear into long reflections.
+    vec2 mirrored = vec2(uv.x, STREET_Y + (STREET_Y - uv.y) * 0.45);
+    col = mix(STREET, col, 0.15);
+    col += bokeh(mirrored, 0.12, 0.04, blur, 1.0, -0.5, 0.2) * 0.35;
+  }
+  col += bokeh(uv, 0.12, 0.04, blur, 1.0, -0.5, 0.2);
+  col += bokeh(uv + vec2(0.05, 0.02), 0.08, 0.026, blur, 2.0, -0.45, 0.35) * 0.8;
+  col += bokeh(uv + vec2(0.3, 0.1), 0.2, 0.065, blur, 3.0, -0.35, 0.05) * 0.6;
+  col += traffic(uv, blur);
+  return col;
 }
 
-export const createScene: SceneModule['createScene'] = (context, environment) => {
-  const next = random(3303)
-  const bokeh: Bokeh[] = Array.from({ length: 26 }, () => ({
-    x: next(),
-    y: 0.1 + next() * 0.8,
-    radius: 0.025 + next() ** 2 * 0.07,
-    sprite: Math.floor(next() * NEON.length),
-    phase: next() * 10,
-    drift: 0.2 + next() * 0.6,
-  }))
+// Stick-slip motion: pauses, then a quick slide; always monotonic.
+float slip(float u) { return u - sin(u * TAU * 3.0) / (TAU * 3.0) * 0.92; }
 
-  let width = 1
-  let height = 1
-  let unit = 1
-  let cityLayer: Layer | undefined
-  let panes: Pane[] = []
-  let drops: Drop[] = []
-  let ripples: Ripple[] = []
-  let bokehSprites: SceneSurface[] = []
-  let flickerAt = 0
-  let rippleAt = 0
+// Sliding drops with trails. xy: refraction offset, z: how clear the glass is.
+vec4 slidingDrops(vec2 uv, float scale, float seed) {
+  vec2 grid = vec2(1.0, 2.6);
+  vec2 p = uv * scale;
+  float column = floor(p.x / grid.x);
+  float speed = 0.05 + 0.05 * hash11(column * 3.1 + seed);
+  p.y += uTime * speed * grid.y * 0.4 + hash11(column + seed) * 7.0;
+  vec2 id = floor(p / grid);
+  vec2 q = fract(p / grid) * grid;
+  vec3 h = hash32(id + seed * 13.0);
+  if (h.z < 0.25) return vec4(0.0);
+  float life = fract(uTime * (0.05 + 0.06 * h.y) + h.z);
+  float y = grid.y * (0.9 - 0.8 * slip(life));
+  float wobble = sin(q.y * 4.0 + h.x * TAU) * 0.08;
+  float x = 0.5 + (h.x - 0.5) * 0.5 + wobble;
+  float r = 0.13 + 0.07 * h.y;
+  vec2 d = (q - vec2(x, y)) * vec2(1.0, 0.85);
+  float drop = smoothstep(r, r * 0.55, length(d));
+  float above = step(y, q.y);
+  float trail = smoothstep(r * 0.55, r * 0.2, abs(q.x - x)) * above * exp(-(q.y - y) * 0.9);
+  // Beads left behind in the trail.
+  float bead = length(vec2(q.x - x, (fract(q.y * 6.0) - 0.5) / 6.0));
+  float beads = smoothstep(r * 0.32, r * 0.12, bead) * trail * step(0.4, hash11(floor(q.y * 6.0) + id.x));
+  vec2 offset = -d / r * drop + vec2(q.x - x, 0.0) * beads * 4.0;
+  return vec4(offset, max(trail, drop), max(drop, beads));
+}
 
-  function buildingRow(target: Layer, seed: number, baseline: number, minHeight: number, maxHeight: number, color: string, windowAlpha: number, record: boolean): void {
-    const rows = random(seed)
-    let x = -rows() * width * 0.03
-    while (x < width) {
-      const buildingWidth = width * (0.035 + rows() * 0.055)
-      const buildingHeight = height * (minHeight + rows() * (maxHeight - minHeight))
-      const top = baseline - buildingHeight
-      target.context.fillStyle = color
-      target.context.fillRect(x, top, buildingWidth + 1, buildingHeight)
-      if (rows() < 0.25) target.context.fillRect(x + buildingWidth * 0.45, top - height * 0.03, Math.max(1, unit * 2), height * 0.03)
-      const cell = Math.max(4, unit * 9)
-      for (let row = top + cell; row < baseline - cell; row += cell * 1.6) {
-        for (let column = x + cell * 0.6; column < x + buildingWidth - cell; column += cell * 1.3) {
-          if (rows() > 0.32) continue
-          const light = PANE_LIGHTS[Math.floor(rows() * PANE_LIGHTS.length)]!
-          const lit = rows() > 0.35
-          const pane = { x: column, y: row, w: cell * 0.7, h: cell * 0.8, color: light, lit }
-          target.context.fillStyle = lit ? rgba(light, windowAlpha) : color
-          target.context.fillRect(pane.x, pane.y, pane.w, pane.h)
-          if (record) panes.push(pane)
-        }
-      }
-      x += buildingWidth + width * rows() * 0.012
-    }
-  }
+// Condensation beads that swell and evaporate in place.
+vec4 staticDrops(vec2 uv, float scale, float seed) {
+  vec2 p = uv * scale;
+  vec2 id = floor(p);
+  vec2 q = fract(p) - 0.5;
+  vec3 h = hash32(id + seed);
+  vec2 center = (h.xy - 0.5) * 0.5;
+  float grow = sin(uTime * (0.05 + 0.1 * h.z) + h.x * TAU) * 0.5 + 0.5;
+  float r = 0.3 * h.z * smoothstep(0.1, 0.6, grow);
+  vec2 d = q - center;
+  float drop = smoothstep(r, r * 0.4, length(d)) * step(0.3, h.z);
+  return vec4(-d / max(r, 0.01) * drop, 0.0, drop);
+}
 
-  function build(): void {
-    cityLayer = createLayer(environment, width, height)
-    panes = []
-    const city = cityLayer.context
-    const street = height * STREET
-    const sky = city.createLinearGradient(0, 0, 0, street)
-    sky.addColorStop(0, '#05050f')
-    sky.addColorStop(0.55, '#150d2e')
-    sky.addColorStop(1, '#3d1a47')
-    city.fillStyle = sky
-    city.fillRect(0, 0, width, street)
-    const haze = [
-      { x: 0.22, color: NEON[0]!, radius: 0.5 },
-      { x: 0.7, color: NEON[1]!, radius: 0.45 },
-      { x: 0.48, color: NEON[3]!, radius: 0.35 },
-    ]
-    city.globalCompositeOperation = 'lighter'
-    for (const glow of haze) {
-      city.globalAlpha = 0.28
-      const size = width * glow.radius
-      city.drawImage(glowSprite(environment, size / 2, glow.color, 0.05), glow.x * width - size / 2, street - size * 0.62, size, size * 0.9)
-    }
-    city.globalAlpha = 1
-    city.globalCompositeOperation = 'source-over'
-    buildingRow(cityLayer, 71, street - height * 0.08, 0.16, 0.42, '#1b1533', 0.25, false)
-    buildingRow(cityLayer, 29, street, 0.14, 0.5, '#0b0916', 0.72, true)
-
-    const ground = city.createLinearGradient(0, street, 0, height)
-    ground.addColorStop(0, '#1a1024')
-    ground.addColorStop(1, '#07060c')
-    city.fillStyle = ground
-    city.fillRect(0, street, width, height - street)
-    city.globalCompositeOperation = 'lighter'
-    // Wet asphalt: soft elongated glows below the neon haze instead of hard-edged bands.
-    for (const glow of haze) {
-      const reflection = glowSprite(environment, 48, glow.color, 0.05)
-      const reflectionWidth = width * glow.radius * 0.45
-      city.globalAlpha = 0.45
-      city.drawImage(reflection, glow.x * width - reflectionWidth / 2, street - (height - street) * 0.4, reflectionWidth, (height - street) * 2.2)
-    }
-    city.globalAlpha = 1
-    const streaks = random(8)
-    for (let index = 0; index < 40; index++) {
-      const pane = panes[Math.floor(streaks() * panes.length)]
-      if (!pane) break
-      city.fillStyle = rgba(pane.color, 0.07)
-      city.fillRect(pane.x, street + 2, pane.w, (height - street) * (0.3 + streaks() * 0.6))
-    }
-    city.globalCompositeOperation = 'source-over'
-
-    bokehSprites = NEON.map((color) => {
-      const size = 128
-      const { surface, context: sprite } = createLayer(environment, size, size)
-      const gradient = sprite.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-      gradient.addColorStop(0, rgba(color, 0.3))
-      gradient.addColorStop(0.72, rgba(color, 0.38))
-      gradient.addColorStop(0.9, rgba(color, 0.55))
-      gradient.addColorStop(1, rgba(color, 0))
-      sprite.fillStyle = gradient
-      sprite.fillRect(0, 0, size, size)
-      return surface
-    })
-
-    const count = Math.round(Math.min(320, Math.max(120, (width * height) / 9000)))
-    const rain = random(55)
-    drops = Array.from({ length: count }, () => ({
-      x: rain() * width * 1.2,
-      y: rain() * height,
-      speed: height * (0.9 + rain() * 0.7),
-      length: height * (0.018 + rain() * 0.03),
-      near: rain() < 0.3,
-    }))
-    ripples = []
-  }
-
-  function flicker(time: number): void {
-    if (time < flickerAt || panes.length === 0) return
-    flickerAt = time + 0.35 + next() * 0.8
-    const pane = panes[Math.floor(next() * panes.length)]!
-    pane.lit = !pane.lit
-    cityLayer!.context.fillStyle = pane.lit ? rgba(pane.color, 0.85) : '#0b0916'
-    cityLayer!.context.fillRect(pane.x, pane.y, pane.w, pane.h)
-  }
-
-  function drawRain(delta: number): void {
-    const wind = 0.16
-    for (const near of [false, true]) {
-      context.strokeStyle = near ? 'rgb(214 226 255 / 42%)' : 'rgb(190 205 245 / 20%)'
-      context.lineWidth = Math.max(1, unit * (near ? 1.6 : 0.9))
-      context.beginPath()
-      for (const drop of drops) {
-        if (drop.near !== near) continue
-        const speed = drop.speed * (near ? 1.35 : 1)
-        drop.y += speed * delta
-        drop.x -= speed * wind * delta
-        if (drop.y - drop.length > height || drop.x < -width * 0.05) {
-          drop.y = -drop.length - next() * height * 0.2
-          drop.x = next() * width * 1.2
-        }
-        const length = drop.length * (near ? 1.6 : 1)
-        context.moveTo(drop.x, drop.y)
-        context.lineTo(drop.x + length * wind, drop.y - length)
-      }
-      context.stroke()
-    }
-  }
-
-  function drawRipples(time: number): void {
-    if (time >= rippleAt) {
-      rippleAt = time + 0.08 + next() * 0.18
-      ripples.push({ x: next() * width, y: height * (STREET + 0.015 + next() * (0.97 - STREET)), start: time })
-      if (ripples.length > 18) ripples.shift()
-    }
-    context.lineWidth = Math.max(1, unit)
-    for (const ripple of ripples) {
-      const progress = (time - ripple.start) / 1.1
-      if (progress >= 1) continue
-      const depth = (ripple.y / height - STREET) / (1 - STREET)
-      const radius = unit * (4 + progress * 26) * (0.6 + depth)
-      context.strokeStyle = `rgb(200 215 255 / ${Math.round((1 - progress) * 32)}%)`
-      context.beginPath()
-      context.ellipse(ripple.x, ripple.y, radius, radius * 0.28, 0, 0, Math.PI * 2)
-      context.stroke()
-    }
-  }
-
-  function drawBokeh(time: number): void {
-    context.globalCompositeOperation = 'lighter'
-    const base = Math.min(width, height)
-    for (const light of bokeh) {
-      const radius = base * light.radius
-      const x = light.x * width + Math.sin(time * 0.05 * light.drift + light.phase) * width * 0.03
-      const y = light.y * height + Math.cos(time * 0.04 * light.drift + light.phase) * height * 0.02
-      context.globalAlpha = 0.35 + 0.3 * Math.sin(time * 0.3 * light.drift + light.phase)
-      context.drawImage(bokehSprites[light.sprite]!, x - radius, y - radius, radius * 2, radius * 2)
-    }
-    context.globalAlpha = 1
-    context.globalCompositeOperation = 'source-over'
-  }
-
-  return {
-    resize(nextWidth, nextHeight) {
-      width = nextWidth
-      height = nextHeight
-      unit = Math.min(width, height) / 900
-      cityLayer = undefined
-    },
-    render(frame) {
-      if (!cityLayer) build()
-      flicker(frame.time)
-      context.drawImage(cityLayer!.surface, 0, 0)
-      drawRipples(frame.time)
-      drawRain(frame.delta)
-      drawBokeh(frame.time)
-    },
-  }
+vec3 render(vec2 fragCoord) {
+  vec2 uv = (fragCoord - 0.5 * uResolution) / uResolution.y;
+  vec4 big = slidingDrops(uv, 3.2, 1.0);
+  vec4 small = slidingDrops(uv * 1.9 + vec2(3.7, 1.3), 3.2, 4.0);
+  vec4 beads = staticDrops(uv, 26.0, 2.0) * smoothstep(0.0, 0.7, uDetail + 0.3);
+  vec2 offset = big.xy * 0.045 + small.xy * 0.026 + beads.xy * 0.012;
+  float clear = max(big.z, small.z * 0.8);
+  float lens = max(big.w, small.w);
+  // Condensation blurs the view; drops and their trails bring it partly into focus.
+  float blur = mix(0.03, 0.017, max(clear, lens));
+  vec2 parallax = uPointer * vec2(0.012, -0.008);
+  vec3 col = city(uv + offset + parallax, blur);
+  // Condensation scatters a little light over the fogged glass.
+  col = mix(col, col * 0.85 + SKY_GLOW * 0.12, (1.0 - max(clear, lens)) * 0.4);
+  // Drop edges bend light away and darken; the upper rim catches a highlight.
+  col *= 1.0 - lens * (1.0 - lens) * 1.2;
+  vec2 facing = -(big.xy + small.xy);
+  col += vec3(0.85, 0.8, 1.0) * pow(max(dot(facing, normalize(vec2(-0.4, 0.9))), 0.0), 5.0) * lens * 0.05;
+  float vignette = smoothstep(1.25, 0.3, length(uv * vec2(0.8, 1.0)));
+  return col * mix(0.55, 1.0, vignette);
+}
+`,
 }

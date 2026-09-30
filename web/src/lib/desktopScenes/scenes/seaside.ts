@@ -1,275 +1,120 @@
-import type { SceneModule } from '../types'
-import {
-  celestialAt, createLayer, createStars, drawStars, fillRidge, hex, mix, paintSky, random, rgba, ridge,
-  skyAt, type Layer, type SkyColors, type Star,
-} from './shared'
+import type { ShaderScene } from '../types'
 
-// A quiet beach: layered swells, a glittering sun or moon path and a breathing shoreline.
+// Open sea from a low headland: a perspective swell whose band-limited normals
+// reflect the sky by Fresnel, a sun or moon glitter path that emerges from the
+// wave slopes, drifting clouds and a far coast on the horizon.
 
-const HORIZON = 0.52
-const SHORE = 0.82
+export const scene: ShaderScene = {
+  fragment: /* glsl */ `
+const float FOCAL = 1.55;
+const float CAMERA_HEIGHT = 2.4;
+const vec3 DEEP_DAY = pow(vec3(0.03, 0.2, 0.3), vec3(2.2));
+const vec3 DEEP_NIGHT = pow(vec3(0.02, 0.04, 0.09), vec3(2.2));
+const vec3 SHALLOW = pow(vec3(0.1, 0.62, 0.62), vec3(2.2));
 
-const SEA_FAR_DAY = hex('#86b9d9')
-const SEA_NEAR_DAY = hex('#177f98')
-const SEA_FAR_NIGHT = hex('#1c2b50')
-const SEA_NEAR_NIGHT = hex('#08142c')
-const SAND_DAY = hex('#ead3a6')
-const SAND_NIGHT = hex('#2b2a3d')
-
-interface Swell {
-  depth: number
-  amplitude: number
-  frequency: number
-  speed: number
-  phase: number
+// Sum of travelling waves: x is the height, yz its slope in world x and z, and
+// w the slope variance of waves too small to resolve, which widens the glints.
+vec4 swell(vec2 p, float footprint) {
+  vec4 sum = vec4(0.0);
+  float k = 0.12;
+  int count = int(mix(14.0, 24.0, uDetail));
+  for (int i = 0; i < 24; i++) {
+    if (i >= count) break;
+    float fi = float(i);
+    // The long swell arrives from one bearing; shorter wind waves spread wider.
+    float spread = mix(0.5, 2.8, smoothstep(0.0, 9.0, fi));
+    float angle = (hash11(fi * 7.31 + 1.0) - 0.5) * spread + 0.2;
+    vec2 d = vec2(sin(angle), -cos(angle));
+    // Waves shorter than a pixel fade out instead of aliasing into noise.
+    float fade = 1.0 - smoothstep(0.25, 1.0, k * footprint);
+    float phase = dot(d, p) * k - sqrt(9.8 * k) * uTime * 0.55 + fi * 1.93;
+    // A little noise in the phase breaks the long crests into irregular chop.
+    if (i < 10) phase += noise(p * k * 0.3 + fi * 3.1) * 1.6;
+    // exp(sin) waves: peaked crests over wide, flat troughs.
+    float crest = exp(sin(phase) - 1.0);
+    // Gentle long swell, steeper short chop.
+    float steep = mix(0.022, 0.055, smoothstep(2.0, 12.0, fi));
+    float amplitude = steep / k;
+    sum.xyz += vec3(crest, d * crest * cos(phase) * k) * amplitude * fade;
+    sum.w += (1.0 - fade) * steep * steep * 0.5;
+    k *= 1.3;
+  }
+  return sum;
 }
 
-interface Bird {
-  x: number
-  y: number
-  speed: number
-  size: number
-  flap: number
+// Elevation of the far coast above the horizon at this view direction.
+float coast(vec3 rd) {
+  float az = rd.x / max(rd.z, 0.05);
+  float left = smoothstep(-1.2, -0.72, az) * (1.0 - smoothstep(-0.34, -0.12, az));
+  float right = smoothstep(0.42, 0.5, az) * (1.0 - smoothstep(0.6, 0.72, az));
+  float headland = (0.012 + 0.034 * ridged1(az * 5.0 + 3.1, 5)) * left;
+  float islet = (0.004 + 0.009 * fbm1(az * 18.0, 3)) * right;
+  return max(headland, islet);
 }
 
-export const createScene: SceneModule['createScene'] = (context, environment) => {
-  const next = random(8812)
-  const stars: Star[] = createStars(next, 120)
-  const island = ridge(random(91), 65, 0.62)
-  const swells: Swell[] = Array.from({ length: 5 }, (_, index) => ({
-    depth: 0.06 + (index / 4) ** 1.35 * 0.94,
-    amplitude: 0.0035 + index * 0.0028,
-    frequency: 7 - index * 1.1,
-    speed: 0.18 + index * 0.09,
-    phase: next() * 10,
-  }))
-  const birds: Bird[] = Array.from({ length: 4 }, () => ({
-    x: next(),
-    y: 0.16 + next() * 0.2,
-    speed: 0.006 + next() * 0.006,
-    size: 0.7 + next() * 0.5,
-    flap: next() * 10,
-  }))
+vec3 coastColor(vec3 rd, float top) {
+  vec3 base = mix(uZenith * 0.35, uHorizon * 0.55, 0.55) * (0.55 + 0.45 * uLight);
+  // Aerial haze lifts the far coast towards the horizon colour.
+  vec3 col = mix(base, uHorizon, 0.38 + 0.2 * smoothstep(0.0, top, rd.y));
+  float rim = smoothstep(top - 0.0025, top, rd.y) * pow(max(dot(rd, uSunDir), 0.0), 6.0);
+  return col + uSunColor * rim * 0.5;
+}
 
-  let width = 1
-  let height = 1
-  let unit = 1
-  let skyLayer: Layer | undefined
-  let sandLayer: Layer | undefined
-  let lightPath: Layer | undefined
-  let cachedMinute = -1
-  let sky: SkyColors = skyAt(12)
-  let bodyX = 0.5
-  let glitter = 0
-  let glitterColor = hex('#ffffff')
-  let seaFar = SEA_FAR_DAY
-  let seaNear = SEA_NEAR_DAY
+vec3 sky(vec3 ro, vec3 rd, float px, bool direct) {
+  vec3 col = skyGradient(rd);
+  // Stars and cloud detail are lost in the rippled reflection anyway.
+  if (direct) col += stars(rd, px) * uStars;
+  col += sunAndMoon(rd, px);
+  if (direct) {
+    vec4 deck = cloudDeck(ro, rd, 1100.0, 0.0018, 0.44, 0.016);
+    col = mix(col, deck.rgb, deck.a);
+  }
+  return col;
+}
 
-  function wave(x: number, swell: Swell, time: number): number {
-    const u = x / width
-    return Math.sin(u * swell.frequency * 6.283 + time * swell.speed + swell.phase) * 0.62
-      + Math.sin(u * swell.frequency * 13.7 - time * swell.speed * 1.7 + swell.phase * 2) * 0.38
+vec3 render(vec2 fragCoord) {
+  vec3 ro = vec3(uPointer.x * 0.8, CAMERA_HEIGHT - uPointer.y * 0.3, 0.0);
+  vec3 rd = cameraRay(fragCoord, FOCAL, -0.03, 0.012);
+  float px = pixelAngle(FOCAL);
+  if (rd.y >= 0.0) {
+    float top = coast(rd);
+    if (rd.y < top) return coastColor(rd, top);
+    return sky(ro, rd, px, true);
   }
 
-  function repaint(minute: number): void {
-    cachedMinute = minute
-    sky = skyAt(minute / 60)
-    const horizon = height * HORIZON
-    const shore = height * SHORE
-    skyLayer ??= createLayer(environment, width, height)
-    const sea = skyLayer.context
-    paintSky(sea, sky, width, horizon)
+  float t = min(-ro.y / rd.y, 40000.0);
+  vec3 p = ro + rd * t;
+  float footprint = t * px / max(-rd.y, 0.01);
+  vec4 w = swell(p.xz, footprint);
+  vec3 n = normalize(vec3(-w.y, 1.0, -w.z));
+  float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(n, -rd), 0.0), 5.0);
+  vec3 r = reflect(rd, n);
+  r.y = abs(r.y) + 0.001;
+  vec3 reflection = sky(ro, r, px, false);
+  // Only the far water is calm enough to mirror the coast.
+  float reflectedCoast = coast(r) * smoothstep(300.0, 1500.0, t);
+  if (r.y < reflectedCoast) reflection = coastColor(r, reflectedCoast) * 0.8;
 
-    const body = celestialAt(minute / 60)
-    bodyX = body.x
-    glitter = body.altitude > -0.05 ? (body.kind === 'sun' ? 0.55 + (1 - body.altitude) * 0.45 : 0.4) : 0
-    glitterColor = body.kind === 'sun' ? mix(sky.sun, [255, 255, 255], 0.35) : hex('#dfe6ff')
-    if (body.altitude > -0.08) {
-      const x = body.x * width
-      const y = horizon - body.altitude * height * 0.42
-      const glowRadius = Math.min(width, height) * (body.kind === 'sun' ? 0.4 : 0.22)
-      const glow = sea.createRadialGradient(x, y, 0, x, y, glowRadius)
-      glow.addColorStop(0, rgba(sky.sun, body.kind === 'sun' ? 0.7 : 0.25))
-      glow.addColorStop(0.3, rgba(sky.sun, body.kind === 'sun' ? 0.22 : 0.08))
-      glow.addColorStop(1, rgba(sky.sun, 0))
-      sea.fillStyle = glow
-      sea.fillRect(0, 0, width, horizon)
-      sea.fillStyle = rgba(body.kind === 'sun' ? mix(sky.sun, [255, 255, 255], 0.6) : hex('#f0f3ff'))
-      sea.beginPath()
-      sea.arc(x, y, Math.min(width, height) * (body.kind === 'sun' ? 0.032 : 0.024), 0, Math.PI * 2)
-      sea.fill()
-    }
+  // Glints: sharp where the waves are resolved, a broad path where they are not.
+  float roughness = 0.0012 + w.w * 2.0;
+  float shininess = 1.0 / roughness;
+  float norm = (shininess + 2.0) / TAU * 0.035;
+  vec3 glitter = uSunColor * pow(max(dot(r, uSunDir), 0.0), shininess) * norm
+    + uMoonColor * pow(max(dot(r, uMoonDir), 0.0), shininess) * norm * 1.6;
 
-    sea.fillStyle = rgba(mix(mix(hex('#101a36'), hex('#5d7593'), sky.light), sky.horizon, 0.35))
-    sea.save()
-    sea.beginPath()
-    sea.rect(0, 0, width, horizon)
-    sea.clip()
-    fillRidge(sea, island, width * 0.34, horizon + 1, height * 0.035, horizon + 1)
-    sea.restore()
+  float light = 0.2 + 0.8 * uLight;
+  vec3 body = mix(DEEP_NIGHT, DEEP_DAY, uLight) * light;
+  // Light passing through the crests turns them turquoise.
+  float crest = max(w.x, 0.0);
+  body += SHALLOW * crest * 0.12 * light * (0.4 + 0.6 * pow(max(dot(rd, uSunDir) * 0.5 + 0.5, 0.0), 2.0));
+  vec3 col = mix(body, reflection, fresnel) + glitter;
 
-    seaFar = mix(mix(SEA_FAR_NIGHT, SEA_FAR_DAY, sky.light), sky.middle, 0.35 - sky.light * 0.15)
-    seaNear = mix(mix(SEA_NEAR_NIGHT, SEA_NEAR_DAY, sky.light), sky.top, 0.18)
+  // Scattered whitecaps on the tallest crests.
+  float foam = smoothstep(0.55, 0.95, w.x) * smoothstep(0.45, 0.75, fbm(p.xz * 0.35 + uTime * 0.05, 3));
+  col += foam * (uSunColor * 0.5 + uHorizon * 0.35 + uMoonColor * 0.4) * (1.0 - smoothstep(60.0, 400.0, t));
 
-    // The light path widens towards the viewer; built per minute, blended per frame.
-    lightPath = undefined
-    if (glitter > 0) {
-      const pathHeight = Math.max(1, Math.round(shore - horizon))
-      const pathWidth = Math.max(2, Math.round(width * 0.24))
-      lightPath = createLayer(environment, pathWidth, pathHeight)
-      for (let row = 0; row < pathHeight; row += 3) {
-        const depth = row / pathHeight
-        const half = pathWidth * (0.06 + depth * 0.44)
-        const strip = lightPath.context.createLinearGradient(pathWidth / 2 - half, 0, pathWidth / 2 + half, 0)
-        const alpha = glitter * 0.34 * (1 - depth * 0.55)
-        strip.addColorStop(0, rgba(glitterColor, 0))
-        strip.addColorStop(0.5, rgba(glitterColor, alpha))
-        strip.addColorStop(1, rgba(glitterColor, 0))
-        lightPath.context.fillStyle = strip
-        lightPath.context.fillRect(pathWidth / 2 - half, row, half * 2, 3)
-      }
-    }
-
-    const water = sea.createLinearGradient(0, horizon, 0, shore)
-    water.addColorStop(0, rgba(seaFar))
-    water.addColorStop(1, rgba(seaNear))
-    sea.fillStyle = water
-    sea.fillRect(0, horizon, width, height - horizon)
-
-    sandLayer ??= createLayer(environment, width, height)
-    const sand = sandLayer.context
-    sand.clearRect(0, 0, width, height)
-    const sandColor = mix(mix(SAND_NIGHT, SAND_DAY, sky.light), sky.sun, 0.12)
-    const beach = sand.createLinearGradient(0, shore, 0, height)
-    beach.addColorStop(0, rgba(mix(sandColor, seaNear, 0.35)))
-    beach.addColorStop(0.3, rgba(sandColor))
-    beach.addColorStop(1, rgba(mix(sandColor, hex('#000000'), 0.12)))
-    sand.fillStyle = beach
-    sand.beginPath()
-    sand.moveTo(0, shoreline(0))
-    for (let x = 0; x <= width; x += width / 48) sand.lineTo(x, shoreline(x))
-    sand.lineTo(width, height)
-    sand.lineTo(0, height)
-    sand.closePath()
-    sand.fill()
-  }
-
-  function shoreline(x: number): number {
-    return height * SHORE + height * (0.012 - 0.018 * (x / width)) + Math.sin(x / width * 5.1) * height * 0.006
-  }
-
-  function drawSwells(time: number, step: number): void {
-    const horizon = height * HORIZON
-    const shore = height * SHORE
-    const reflection = mix(sky.middle, sky.horizon, 0.45)
-    swells.forEach((swell, index) => {
-      const base = horizon + (shore - horizon) * swell.depth
-      const amplitude = height * swell.amplitude
-      // Far swells mirror the sky, strongest at dawn and dusk when the horizon glows.
-      const tone = mix(seaFar, seaNear, swell.depth)
-      context.fillStyle = rgba(mix(tone, reflection, (1 - swell.depth) * (0.6 - sky.light * 0.4)))
-      // Each band only reaches under the next one, which keeps overdraw near one screen.
-      const following = swells[index + 1]
-      const bottom = following
-        ? horizon + (shore - horizon) * following.depth + height * following.amplitude * 1.5
-        : shore + height * 0.04
-      context.beginPath()
-      context.moveTo(0, bottom)
-      for (let x = 0; x <= width + step; x += step) context.lineTo(x, base + wave(x, swell, time) * amplitude)
-      context.lineTo(width + step, bottom)
-      context.closePath()
-      context.fill()
-      context.strokeStyle = rgba([255, 255, 255], 0.05 + index * 0.025 + sky.light * 0.05)
-      context.lineWidth = Math.max(1, unit * (0.8 + index * 0.35))
-      context.beginPath()
-      for (let x = 0; x <= width + step; x += step) {
-        const y = base + wave(x, swell, time) * amplitude
-        if (x === 0) context.moveTo(x, y)
-        else context.lineTo(x, y)
-      }
-      context.stroke()
-    })
-  }
-
-  function drawGlitter(time: number): void {
-    if (glitter <= 0) return
-    const horizon = height * HORIZON
-    const shore = height * SHORE
-    context.globalCompositeOperation = 'lighter'
-    if (lightPath) context.drawImage(lightPath.surface, bodyX * width - lightPath.surface.width / 2, horizon)
-    context.fillStyle = rgba(glitterColor)
-    for (let index = 0; index < 130; index++) {
-      const depth = (index / 130) ** 1.5
-      const y = horizon + 2 + depth * (shore - horizon - 4)
-      const spread = width * (0.008 + depth * 0.075)
-      const x = bodyX * width + Math.sin(time * (0.9 + (index % 7) * 0.13) + index * 12.9898) * spread
-      const shimmer = Math.abs(Math.sin(time * 1.9 + index * 3.17))
-      context.globalAlpha = glitter * shimmer * (0.85 - depth * 0.5)
-      context.fillRect(x, y, unit * (3 + depth * 34) * (0.4 + shimmer * 0.6), Math.max(1, unit * (1 + depth * 1.5)))
-    }
-    context.globalAlpha = 1
-    context.globalCompositeOperation = 'source-over'
-  }
-
-  function drawWash(time: number, step: number): void {
-    const reach = (Math.sin(time * 0.42) * 0.5 + 0.5) * height * 0.03
-    context.beginPath()
-    context.moveTo(0, height * SHORE - height * 0.02)
-    const edge: number[] = []
-    for (let x = 0; x <= width + step; x += step) {
-      const y = shoreline(x) + reach + Math.sin(x / width * 23 + time * 0.8) * unit * 2.4
-      edge.push(y)
-      context.lineTo(x, y)
-    }
-    context.lineTo(width, height * SHORE - height * 0.02)
-    context.closePath()
-    context.fillStyle = rgba(mix(seaNear, [255, 255, 255], 0.28), 0.55)
-    context.fill()
-    context.strokeStyle = rgba([255, 255, 255], 0.35 + sky.light * 0.35)
-    context.lineWidth = Math.max(1, unit * 2.2)
-    context.beginPath()
-    edge.forEach((y, index) => (index === 0 ? context.moveTo(0, y) : context.lineTo(index * step, y)))
-    context.stroke()
-  }
-
-  function drawBirds(time: number): void {
-    if (sky.light < 0.3) return
-    context.strokeStyle = rgba(mix(sky.top, hex('#0b1020'), 0.6), 0.75)
-    context.lineWidth = Math.max(1, unit * 1.6)
-    context.beginPath()
-    for (const bird of birds) {
-      const span = width * 1.2
-      const x = ((bird.x * span + time * bird.speed * width) % span) - width * 0.1
-      const y = bird.y * height + Math.sin(time * 0.4 + bird.flap) * height * 0.01
-      const size = unit * 11 * bird.size
-      const lift = Math.sin(time * 5 + bird.flap) * 0.5
-      context.moveTo(x - size, y - size * (0.25 + lift * 0.5))
-      context.quadraticCurveTo(x - size * 0.45, y - size * (0.45 + lift), x, y)
-      context.quadraticCurveTo(x + size * 0.45, y - size * (0.45 + lift), x + size, y - size * (0.25 + lift * 0.5))
-    }
-    context.stroke()
-  }
-
-  return {
-    resize(nextWidth, nextHeight) {
-      width = nextWidth
-      height = nextHeight
-      unit = Math.min(width, height) / 900
-      skyLayer = undefined
-      sandLayer = undefined
-      cachedMinute = -1
-    },
-    render(frame) {
-      const minute = Math.floor(frame.hour * 60)
-      if (minute !== cachedMinute || !skyLayer || !sandLayer) repaint(minute)
-      const step = Math.max(8, width / 150)
-      context.drawImage(skyLayer!.surface, 0, 0)
-      drawStars(context, stars, width, height * HORIZON * 0.9, frame.time, sky.stars, Math.max(1, width / 1600))
-      drawSwells(frame.time, step)
-      drawGlitter(frame.time)
-      context.drawImage(sandLayer!.surface, 0, 0)
-      drawWash(frame.time, step)
-      drawBirds(frame.time)
-    },
-  }
+  float haze = 1.0 - exp(-t * 0.00018);
+  return mix(col, uHorizon * mix(0.85, 1.0, uLight), haze);
+}
+`,
 }

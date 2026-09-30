@@ -32,7 +32,6 @@ scope.onmessage = (event) => {
       loop = createSceneLoop({
         sceneId: message.sceneId,
         surface: message.canvas,
-        createSurface: (width, height) => new OffscreenCanvas(width, height),
         schedule,
         now: () => performance.now(),
         onStatus: (status) => scope.postMessage(status),
@@ -49,6 +48,9 @@ scope.onmessage = (event) => {
       break
     case 'reducedMotion':
       loop?.setReducedMotion(message.value)
+      break
+    case 'pointer':
+      loop?.setPointer(message.x, message.y)
       break
     case 'dispose':
       loop?.dispose()

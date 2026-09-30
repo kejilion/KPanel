@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>scene lab</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; }
+  #log { position: fixed; left: 8px; top: 8px; color: #f88; font: 12px monospace; white-space: pre-wrap; max-width: 90vw; }
+  #hud { position: fixed; right: 8px; bottom: 8px; color: #fff; font: 12px monospace; background: rgb(0 0 0 / 40%); padding: 4px 8px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<pre id="log"></pre>
+<div id="hud"></div>
+<script type="module">
+import { createShaderRenderer } from '/src/lib/desktopScenes/renderer.ts'
+import { sceneModules } from '/src/lib/desktopScenes/loaders.ts'
+
+const params = new URLSearchParams(location.search)
+const id = params.get('scene') || 'seaside'
+const fixedHour = params.has('hour') ? Number(params.get('hour')) : undefined
+const detail = params.has('detail') ? Number(params.get('detail')) : 1
+const scale = params.has('scale') ? Number(params.get('scale')) : 1
+const startTime = params.has('t') ? Number(params.get('t')) : 0
+const freeze = params.has('freeze')
+const canvas = document.getElementById('c')
+const log = document.getElementById('log')
+const hud = document.getElementById('hud')
+const pointer = [0, 0]
+if (params.has('px')) pointer[0] = Number(params.get('px'))
+if (params.has('py')) pointer[1] = Number(params.get('py'))
+
+window.labState = { ready: false }
+try {
+  const module = await sceneModules.load(id)
+  canvas.width = Math.round(innerWidth * scale)
+  canvas.height = Math.round(innerHeight * scale)
+  const renderer = await createShaderRenderer(canvas, module.scene)
+  renderer.resize(canvas.width, canvas.height)
+  const gl = canvas.getContext('webgl2')
+  const started = performance.now()
+  const frame = (time) => ({ time, hour: fixedHour ?? (new Date().getHours() + new Date().getMinutes() / 60), pointer, detail })
+  window.labBench = (w = 1920, h = 1080, frames = 60, d = detail) => {
+    canvas.width = w; canvas.height = h; renderer.resize(w, h)
+    const px = new Uint8Array(4)
+    renderer.render({ ...frame(1), detail: d }); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    const t0 = performance.now()
+    for (let i = 0; i < frames; i++) renderer.render({ ...frame(1 + i / 30), detail: d })
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    const ms = (performance.now() - t0) / frames
+    canvas.width = Math.round(innerWidth * scale); canvas.height = Math.round(innerHeight * scale); renderer.resize(canvas.width, canvas.height)
+    return ms
+  }
+  window.labRender = (hour, t = startTime) => { renderer.render({ ...frame(t), hour }) }
+  const loop = (now) => {
+    const t = freeze ? startTime : startTime + (now - started) / 1000
+    renderer.render(frame(t))
+    hud.textContent = `${id} t=${t.toFixed(1)} hour=${(fixedHour ?? 0).toFixed(2)}`
+    if (!freeze) requestAnimationFrame(loop)
+  }
+  requestAnimationFrame(loop)
+  window.labState.ready = true
+} catch (error) {
+  log.textContent = String(error && error.message || error)
+  window.labState.error = String(error && error.message || error)
+}
+</script>
+</body>
+</html>

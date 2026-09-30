@@ -1,6 +1,5 @@
 import type { DesktopSceneID } from './loaders'
 import { createSceneLoop, type SceneLoop, type SceneLoopStatus } from './sceneLoop'
-import type { SceneSurface } from './types'
 
 export type SceneHostMessage =
   | {
@@ -16,9 +15,11 @@ export type SceneHostMessage =
   | { type: 'resize', width: number, height: number, pixelRatio: number }
   | { type: 'paused', value: boolean }
   | { type: 'reducedMotion', value: boolean }
+  | { type: 'pointer', x: number, y: number }
   | { type: 'dispose' }
 
-export type SceneHostError = 'load' | 'render' | 'worker'
+/** `unsupported` means no hardware-accelerated WebGL2; retrying cannot help. */
+export type SceneHostError = 'load' | 'render' | 'unsupported' | 'worker'
 
 export interface SceneHostOptions {
   sceneId: DesktopSceneID
@@ -39,6 +40,8 @@ export interface SceneHost {
   resize: (width: number, height: number, pixelRatio: number) => void
   setPaused: (paused: boolean) => void
   setReducedMotion: (reducedMotion: boolean) => void
+  /** Pointer position in [-1, 1] across the viewport; scenes ease towards it for parallax. */
+  setPointer: (x: number, y: number) => void
   dispose: () => void
 }
 
@@ -89,6 +92,7 @@ function createWorkerHost(canvas: HTMLCanvasElement, options: SceneHostOptions):
     resize: (width, height, pixelRatio) => post({ type: 'resize', width, height, pixelRatio }),
     setPaused: (value) => post({ type: 'paused', value }),
     setReducedMotion: (value) => post({ type: 'reducedMotion', value }),
+    setPointer: (x, y) => post({ type: 'pointer', x, y }),
     dispose() {
       post({ type: 'dispose' })
       disposed = true
@@ -97,19 +101,10 @@ function createWorkerHost(canvas: HTMLCanvasElement, options: SceneHostOptions):
   }
 }
 
-function createInlineSurface(width: number, height: number): SceneSurface {
-  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(width, height)
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  return canvas
-}
-
 function createInlineHost(canvas: HTMLCanvasElement, options: SceneHostOptions): SceneHost {
   const loop: SceneLoop = createSceneLoop({
     sceneId: options.sceneId,
     surface: canvas,
-    createSurface: createInlineSurface,
     schedule(callback) {
       const handle = window.requestAnimationFrame(callback)
       return () => window.cancelAnimationFrame(handle)
@@ -125,6 +120,7 @@ function createInlineHost(canvas: HTMLCanvasElement, options: SceneHostOptions):
     resize: loop.resize,
     setPaused: loop.setPaused,
     setReducedMotion: loop.setReducedMotion,
+    setPointer: loop.setPointer,
     dispose: loop.dispose,
   }
 }
@@ -136,7 +132,7 @@ export function createSceneHost(canvas: HTMLCanvasElement, options: SceneHostOpt
     } catch {
       // Worker construction failures surface as a spent canvas; let the caller remount inline.
       queueMicrotask(() => options.onError('worker'))
-      return { mode: 'worker', resize() {}, setPaused() {}, setReducedMotion() {}, dispose() {} }
+      return { mode: 'worker', resize() {}, setPaused() {}, setReducedMotion() {}, setPointer() {}, dispose() {} }
     }
   }
   return createInlineHost(canvas, options)

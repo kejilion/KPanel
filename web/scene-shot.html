@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>scene shot</title></head>
+<body>
+<pre id="log"></pre>
+<script type="module">
+// Scratch capture page: renders scenes offscreen and posts PNGs to a local collector.
+const getExtension = WebGL2RenderingContext.prototype.getExtension
+WebGL2RenderingContext.prototype.getExtension = function (name) {
+  return name === 'KHR_parallel_shader_compile' ? null : getExtension.call(this, name)
+}
+const { createShaderRenderer } = await import('/src/lib/desktopScenes/renderer.ts')
+const { sceneModules } = await import('/src/lib/desktopScenes/loaders.ts')
+const params = new URLSearchParams(location.search)
+const scenes = (params.get('scenes') || 'seaside').split(',')
+const hours = (params.get('hours') || '12').split(',').map(Number)
+const times = (params.get('times') || '10').split(',').map(Number)
+const width = Number(params.get('w') || 1280)
+const height = Number(params.get('h') || 720)
+const detail = Number(params.get('detail') || 1)
+const pointer = [Number(params.get('px') || 0), Number(params.get('py') || 0)]
+const crop = params.get('crop')?.split(',').map(Number)
+const tag = params.get('tag') || ''
+const log = document.getElementById('log')
+window.shotState = { done: false, errors: [] }
+async function post(name, blob) {
+  await fetch(`http://127.0.0.1:4199/?name=${encodeURIComponent(name)}`, { method: 'POST', body: blob })
+}
+for (const scene of scenes) {
+  for (const hour of hours) {
+    for (const time of times) {
+      const name = `${scene}-h${hour}-t${time}${tag}`
+      try {
+        const module = await sceneModules.load(scene)
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const renderer = await createShaderRenderer(canvas, module.scene)
+        renderer.resize(width, height)
+        const started = performance.now()
+        renderer.render({ time, hour, pointer, detail })
+        let out = canvas
+        if (crop) {
+          const [x, y, w, h, s = 2] = crop
+          out = document.createElement('canvas')
+          out.width = w * s
+          out.height = h * s
+          const ctx = out.getContext('2d')
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(canvas, x, y, w, h, 0, 0, w * s, h * s)
+        }
+        const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/png'))
+        await post(name, blob)
+        renderer.dispose()
+        log.textContent += `${name} ${(performance.now() - started).toFixed(1)}ms\n`
+      } catch (error) {
+        const message = `${name}: ${error && error.message || error}`
+        window.shotState.errors.push(message)
+        log.textContent += message + '\n'
+        await post(name + '-error.txt', new Blob([message]))
+      }
+    }
+  }
+}
+window.shotState.done = true
+await post('done.txt', new Blob([log.textContent]))
+</script>
+</body>
+</html>

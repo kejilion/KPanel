@@ -2,7 +2,7 @@ import { createLazyModuleLoader } from '@/lib/lazyModuleLoader'
 import type { SceneModule } from './types'
 
 // Each scene is its own chunk, fetched from the panel origin the first time it is shown.
-export const DESKTOP_SCENE_IDS = ['daylight', 'seaside', 'aurora', 'rain', 'fireflies'] as const
+export const DESKTOP_SCENE_IDS = ['daylight', 'seaside', 'aurora', 'rain', 'fireflies', 'nebula'] as const
 export type DesktopSceneID = typeof DESKTOP_SCENE_IDS[number]
 
 export function isDesktopSceneID(value: unknown): value is DesktopSceneID {
@@ -15,4 +15,5 @@ export const sceneModules = createLazyModuleLoader<DesktopSceneID, SceneModule>(
   aurora: () => import('./scenes/aurora'),
   rain: () => import('./scenes/rain'),
   fireflies: () => import('./scenes/fireflies'),
+  nebula: () => import('./scenes/nebula'),
 })
