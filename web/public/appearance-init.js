@@ -25,12 +25,17 @@
       }
     }
   } catch { /* Invalid or unavailable cache leaves the shared theme defaults. */ }
-  // Mirrors dominantChronoPhase() in web/src/lib/desktopScenes/chrono.ts.
+  // Mirrors chronoEntrancePhase() in web/src/lib/desktopScenes/chrono.ts: with motion allowed the
+  // page-load time-lapse starts one phase earlier, so the poster painted here is that phase.
   const chronoPhase = () => {
     const now = new Date()
     const minute = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60
-    if (minute < 315 || minute > 1125) return 'night'
-    return minute <= 405 || minute >= 1035 ? 'golden' : 'day'
+    let phase = 'day'
+    if (minute < 315 || minute > 1125) phase = 'night'
+    else if (minute <= 405 || minute >= 1035) phase = 'golden'
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches && read('kpanel:desktop-scene-motion:v1') !== 'always') return phase
+    if (phase !== 'golden') return 'golden'
+    return minute < 720 ? 'night' : 'day'
   }
   const selectedWallpaper = () => {
     const stored = read('kpanel:desktop-wallpaper:v1')

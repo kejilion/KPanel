@@ -541,6 +541,8 @@ export const zhTWMessages = {
   "desktop.wallpaperSceneTitle": "動態場景",
   "desktop.wallpaperSceneHint": "進場動畫後保持緩慢呼吸；視窗最大化或鋪滿、頁面隱藏、系統開啟「減少動態效果」時自動暫停或靜止。",
   "desktop.wallpaperSceneBadge": "動態",
+  "desktop.wallpaperSceneReducedMotion": "偵測到系統開啟了「減少動態效果」，動態場景目前以靜態畫面顯示。",
+  "desktop.wallpaperSceneMotionAlways": "在此瀏覽器中仍然播放動態效果",
   "desktop.sceneChrono": "晨昏水鄉",
   "desktop.sceneChronoDescription": "江南水鄉隨本地時間流轉",
   "desktop.sceneTide": "潮汐海岸",

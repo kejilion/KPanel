@@ -35,6 +35,7 @@ import {
   isDesktopSceneID,
   type DesktopSceneID,
 } from '@/lib/desktopScenes/catalog'
+import { useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
 import DesktopWindow from '@/components/desktop/DesktopWindow.vue'
 import DesktopEntryIcon from '@/components/desktop/DesktopEntryIcon.vue'
 import DesktopWidgetHost from '@/components/desktop/DesktopWidgetHost.vue'
@@ -442,6 +443,11 @@ const activeDesktopWallpaper = computed((): { id: DesktopWallpaperID, src: strin
 })
 // A restored scene plays the quiet entrance; choosing one plays the full one.
 const desktopSceneEntrance = ref<'restore' | 'select'>('restore')
+const sceneMotion = useSceneMotionPreference()
+
+function onSceneMotionAlwaysChange(event: Event): void {
+  sceneMotion.setMotionAlways((event.target as HTMLInputElement).checked)
+}
 const coarseDesktopPointer = typeof window.matchMedia === 'function'
   && window.matchMedia('(hover: none) and (pointer: coarse)').matches
 const desktopSceneCovered = computed(() => {
@@ -4429,6 +4435,18 @@ function onViewportResize(): void {
         <p id="desktop-wallpaper-scene-hint" class="desktop-wallpaper-section__hint">
           {{ i18n.t('desktop.wallpaperSceneHint') }}
         </p>
+        <div v-if="sceneMotion.systemReducedMotion.value" class="desktop-wallpaper-motion" role="note">
+          <p>{{ i18n.t('desktop.wallpaperSceneReducedMotion') }}</p>
+          <label class="desktop-wallpaper-motion__toggle">
+            <input
+              type="checkbox"
+              data-scene-motion-always
+              :checked="sceneMotion.motionAlways.value"
+              @change="onSceneMotionAlwaysChange"
+            />
+            <span>{{ i18n.t('desktop.wallpaperSceneMotionAlways') }}</span>
+          </label>
+        </div>
       </div>
       <div
         class="desktop-wallpaper-picker desktop-wallpaper-picker--scenes"

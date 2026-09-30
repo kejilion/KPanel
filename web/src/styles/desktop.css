@@ -2915,6 +2915,34 @@ body.desktop-mode-open::-webkit-scrollbar {
   line-height: 1.5;
 }
 
+/* Shown only while the system asks for reduced motion: explains the still scenes. */
+.desktop-wallpaper-motion {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+  border-radius: var(--radius);
+}
+
+.desktop-wallpaper-motion p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-wallpaper-motion__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* Live scene cards hint at motion on hover: a slow push-in and one light sweep. */
 .desktop-wallpaper-picker__preview--scene {
   position: relative;

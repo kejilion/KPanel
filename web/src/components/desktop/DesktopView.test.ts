@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopView from '@/components/desktop/DesktopView.vue'
 import { DESKTOP_SCENES } from '@/lib/desktopScenes/catalog'
+import { resetSceneMotionPreferenceForTest } from '@/lib/desktopScenes/motionPreference'
 import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import { useTheme } from '@/stores/theme'
 import { THEME_COLOR_PRESETS } from '@/theme/colors'
@@ -505,6 +506,27 @@ describe('DesktopView', () => {
     expect(restored.find('.desktop__wallpaper-image').attributes('data-wallpaper')).toBe('aurora')
     restored.unmount()
     theme.resetColors()
+  })
+
+  it('explains still scenes under reduced motion and lets this browser opt back in', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query.includes('reduced-motion'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    resetSceneMotionPreferenceForTest()
+    const wrapper = mount(DesktopView)
+    await wrapper.trigger('contextmenu', { clientX: 200, clientY: 150 })
+    await nextTick()
+    await wrapper.find('[data-context-action="wallpaper"]').trigger('click')
+    await nextTick()
+    const toggle = document.body.querySelector<HTMLInputElement>('[data-scene-motion-always]')
+    expect(document.body.querySelector('.desktop-wallpaper-motion')?.getAttribute('role')).toBe('note')
+    expect(document.body.textContent).toContain('检测到系统开启了“减少动态效果”')
+    expect(toggle?.checked).toBe(false)
+    toggle!.checked = true
+    toggle!.dispatchEvent(new Event('change'))
+    await nextTick()
+    expect(window.localStorage.getItem('kpanel:desktop-scene-motion:v1')).toBe('always')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+    resetSceneMotionPreferenceForTest()
   })
 
   it('treats a full side-by-side split and the compact layout as covering the scene', async () => {

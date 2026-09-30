@@ -25,6 +25,14 @@ interface Firefly {
   pulse: number
 }
 
+interface Mote {
+  x: number
+  y: number
+  depth: number
+  drift: number
+  phase: number
+}
+
 interface Ripple {
   u: number
   v: number
@@ -35,7 +43,8 @@ interface Ripple {
 
 /**
  * Chrono Canal: the painter follows the phase weights supplied by the scene —
- * stars and fireflies at night, warm fireflies at dusk, light on the canal by day.
+ * stars and fireflies at night, warm fireflies at dusk, light on the canal and
+ * drifting willow catkins by day.
  */
 const createChronoPainter: ScenePainterFactory = (environment) => {
   const { random } = environment
@@ -46,10 +55,16 @@ const createChronoPainter: ScenePainterFactory = (environment) => {
     [1, 'rgba(255,190,90,0)'],
   ])
   const glintDay = glintSprite(environment, 32, 'rgba(255,255,255,0.8)')
+  const catkinSprite = glowSprite(environment, 24, [
+    [0, 'rgba(255,255,250,0.95)'],
+    [0.4, 'rgba(255,252,235,0.5)'],
+    [1, 'rgba(255,250,230,0)'],
+  ])
   const stars = scatterStars(random, 46, SKY, 4, 10)
   const meteor = createShootingStar(random, { left: 0.2, right: 0.7, top: 0.04, bottom: 0.16 }, 6, [22, 44])
   const fireflies: Firefly[] = []
   const ripples: Ripple[] = []
+  const motes: Mote[] = []
   let viewport: SceneViewport = { width: 0, height: 0, image: { x: 0, y: 0, width: 0, height: 0 } }
   let density = 1
   let weights = { day: 1, golden: 0, night: 0 }
@@ -84,6 +99,18 @@ const createChronoPainter: ScenePainterFactory = (environment) => {
       ripples.push(ripple)
     }
     ripples.length = Math.min(ripples.length, rippleTarget)
+    // Catkins live in viewport pixels, so wait for a real size before placing them.
+    const moteTarget = viewport.width > 0 ? Math.round(36 * density) : 0
+    while (motes.length < moteTarget) {
+      motes.push({
+        x: random() * viewport.width,
+        y: viewport.height * (0.12 + random() * 0.72),
+        depth: 0.4 + random() * 0.8,
+        drift: 10 + random() * 22,
+        phase: random() * Math.PI * 2,
+      })
+    }
+    motes.length = Math.min(motes.length, moteTarget)
   }
 
   return {
@@ -121,6 +148,22 @@ const createChronoPainter: ScenePainterFactory = (environment) => {
           context.globalAlpha = wave * wave * waterLight * arrival * 0.8
           const point = imagePoint(viewport, ripple.u, ripple.v)
           drawSprite(context, glintDay, point.x, point.y, 12 * ripple.scale * glowScale, frame.pixelRatio)
+        }
+      }
+
+      const catkinLight = weights.day * 0.9 + weights.golden * 0.5
+      if (catkinSprite && catkinLight > 0.02) {
+        context.globalCompositeOperation = 'source-over'
+        for (const mote of motes) {
+          mote.x += mote.drift * mote.depth * frame.dt
+          mote.y += (3 + Math.sin(frame.time * 0.7 + mote.phase) * 9) * mote.depth * frame.dt
+          if (mote.x > viewport.width + 20) {
+            mote.x = -20
+            mote.y = viewport.height * (0.12 + random() * 0.72)
+          }
+          if (mote.y > viewport.height + 10) mote.y = -10
+          context.globalAlpha = (0.35 + 0.45 * mote.depth) * catkinLight * arrival
+          drawSprite(context, catkinSprite, mote.x, mote.y, (3 + mote.depth * 5) * glowScale, frame.pixelRatio)
         }
       }
 

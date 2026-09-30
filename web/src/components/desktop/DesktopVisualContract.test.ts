@@ -296,8 +296,12 @@ describe('live desktop scene motion contract', () => {
   })
 
   it('stops scene motion for reduced motion, paused and covered desktops', () => {
-    expect(sceneStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.desktop-scene \*[\s\S]*?animation:\s*none !important;/)
-    expect(sceneStyles).toMatch(/\.desktop-scene--paused \.desktop-scene__art\s*\{\s*animation-play-state:\s*paused !important;/)
+    // The system preference freezes every scene the person has not explicitly opted back in.
+    expect(sceneStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.desktop-scene:not\(\.desktop-scene--motion-forced\) \*[\s\S]*?animation:\s*none !important;/)
+    const pausedRule = sceneStyles.match(/((?:\.desktop-scene--paused[^,{]*,\s*)+)[^{]*\{\s*animation-play-state:\s*paused !important;/)?.[0] ?? ''
+    for (const part of ['__stage', '__layer', '__art', '__breath', '__sweep']) {
+      expect(pausedRule).toContain(`.desktop-scene--paused .desktop-scene${part}`)
+    }
     // Loops run only once the live class is present, i.e. never for reduced motion.
     for (const selector of sceneStyles.match(/^[^@\n{}][^{]*\{\s*\n\s*animation:/gm) ?? []) {
       expect(selector, selector).toContain('desktop-scene--live')

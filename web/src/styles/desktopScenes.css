@@ -8,6 +8,10 @@
  */
 
 .desktop-scene {
+  --scene-sweep: rgb(255 252 240 / 42%);
+  --scene-sweep-soft: rgb(255 248 230 / 14%);
+  --scene-breath: rgb(255 240 215 / 15%);
+
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -17,6 +21,20 @@
   transition: opacity .45s cubic-bezier(.22, 1, .36, 1);
   contain: strict;
 }
+
+.desktop-scene[data-scene='tide'] { --scene-breath: rgb(255 208 140 / 18%); }
+.desktop-scene[data-scene='neon'] {
+  --scene-sweep: rgb(226 190 255 / 38%);
+  --scene-sweep-soft: rgb(214 170 255 / 12%);
+  --scene-breath: rgb(190 120 255 / 13%);
+}
+
+.desktop-scene[data-scene='aurora'] {
+  --scene-sweep: rgb(190 255 232 / 36%);
+  --scene-sweep-soft: rgb(170 255 225 / 12%);
+  --scene-breath: rgb(110 255 205 / 11%);
+}
+.desktop-scene--phase-night[data-scene='chrono'] { --scene-breath: rgb(255 186 120 / 12%); }
 
 .desktop-scene--ready {
   opacity: 1;
@@ -66,28 +84,78 @@
   height: 100%;
 }
 
-/* Entrance push-in, then a slow breath for as long as the scene is visible. */
+/* A soft light that brightens as the camera breathes in. */
+.desktop-scene__breath {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 75% 65% at calc(var(--focus-x, .5) * 100%) calc(var(--focus-y, .5) * 100%), var(--scene-breath), transparent 72%);
+  opacity: 0;
+}
+
+/* One diagonal band of light crosses the screen during the entrance. */
+.desktop-scene__sweep {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 46%;
+  background: linear-gradient(90deg, transparent, var(--scene-sweep-soft) 32%, var(--scene-sweep) 50%, var(--scene-sweep-soft) 68%, transparent);
+  opacity: 0;
+  transform: translateX(-120%) skewX(-14deg);
+}
+
+/*
+ * Entrance: a 7% push-in with the light sweep. Then the camera and the light
+ * breathe together, 5.5 s in and 5.5 s out, for as long as the scene is visible.
+ */
 .desktop-scene--live .desktop-scene__stage {
   animation:
     desktop-scene-arrive 3.2s cubic-bezier(.16, 1, .3, 1) both,
-    desktop-scene-breathe 16s ease-in-out 3.2s infinite alternate;
+    desktop-scene-breathe 5.5s ease-in-out 3.2s infinite alternate;
+}
+
+.desktop-scene--live .desktop-scene__breath {
+  animation: desktop-scene-light-breathe 5.5s ease-in-out 3.2s infinite alternate;
+}
+
+.desktop-scene--live .desktop-scene__sweep {
+  animation: desktop-scene-sweep 2.4s cubic-bezier(.33, .05, .45, .95) .15s both;
 }
 
 .desktop-scene--paused,
 .desktop-scene--paused .desktop-scene__stage,
 .desktop-scene--paused .desktop-scene__layer,
-.desktop-scene--paused .desktop-scene__art {
+.desktop-scene--paused .desktop-scene__art,
+.desktop-scene--paused .desktop-scene__breath,
+.desktop-scene--paused .desktop-scene__sweep {
   animation-play-state: paused !important;
 }
 
 @keyframes desktop-scene-arrive {
   from { scale: 1; }
-  to { scale: 1.045; }
+  to { scale: 1.07; }
 }
 
 @keyframes desktop-scene-breathe {
   from { transform: none; }
-  to { transform: scale(1.02) translate3d(-.35%, -.22%, 0); }
+  to { transform: scale(1.04) translate3d(-.6%, -.4%, 0); }
+}
+
+@keyframes desktop-scene-light-breathe {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes desktop-scene-sweep {
+  from { opacity: 0; transform: translateX(-120%) skewX(-14deg); }
+  12%, 85% { opacity: 1; }
+  to { opacity: 0; transform: translateX(240%) skewX(-14deg); }
+}
+
+/* A sun that swells past its size and settles: the entrance of the bright scenes. */
+@keyframes desktop-scene-flare {
+  from { opacity: 0; scale: .4; }
+  55% { opacity: 1; scale: 1.3; }
 }
 
 @keyframes desktop-scene-bloom {
@@ -127,12 +195,14 @@
 .desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-golden) .desktop-scene__poster[data-phase='golden'],
 .desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night) .desktop-scene__poster[data-phase='night'],
 .desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-golden) .desktop-scene__layer--sun,
+.desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-day) .desktop-scene__layer--clouds,
 .desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night) .desktop-scene__layer--moon,
 .desktop-scene[data-scene='chrono']:not(.desktop-scene--phase-night):not(.desktop-scene--phase-golden) .desktop-scene__layer--lantern {
   display: none;
 }
 
 .desktop-scene[data-scene='chrono'] .desktop-scene__layer--sun { opacity: var(--scene-golden, 0); }
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--clouds { opacity: var(--scene-day, 0); }
 .desktop-scene[data-scene='chrono'] .desktop-scene__layer--moon { opacity: var(--scene-night, 0); }
 .desktop-scene[data-scene='chrono'] .desktop-scene__layer--lantern {
   opacity: calc(var(--scene-night, 0) + var(--scene-golden, 0) * .55);
@@ -148,6 +218,21 @@
 
 .desktop-scene[data-scene='chrono'] .desktop-scene__layer--lantern .desktop-scene__art {
   background-image: radial-gradient(closest-side, rgb(255 196 116 / 72%), rgb(255 118 62 / 24%) 46%, transparent 74%);
+}
+
+.desktop-scene[data-scene='chrono'] .desktop-scene__layer--clouds .desktop-scene__art {
+  background-image:
+    radial-gradient(40% 32% at 30% 45%, rgb(16 30 40 / 22%), transparent 70%),
+    radial-gradient(34% 28% at 74% 62%, rgb(16 30 40 / 18%), transparent 70%);
+}
+
+.desktop-scene--live[data-scene='chrono'] .desktop-scene__layer--clouds .desktop-scene__art {
+  animation: desktop-scene-cloud-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes desktop-scene-cloud-drift {
+  from { opacity: .65; translate: -16% 0; }
+  to { opacity: 1; translate: 16% 2%; }
 }
 
 .desktop-scene--live[data-scene='chrono'] .desktop-scene__layer--sun .desktop-scene__art,
@@ -177,11 +262,40 @@
 }
 
 .desktop-scene[data-scene='tide'] .desktop-scene__layer--path .desktop-scene__art {
-  background-image: radial-gradient(50% 50% at 50% 38%, rgb(255 228 164 / 40%), rgb(255 200 124 / 14%) 55%, transparent 76%);
+  background-image: radial-gradient(50% 50% at 50% 38%, rgb(255 228 164 / 52%), rgb(255 200 124 / 18%) 55%, transparent 76%);
+}
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--crest { rotate: 5deg; }
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--swash { rotate: 9deg; }
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--crest .desktop-scene__art {
+  background-image: radial-gradient(50% 50% at 50% 50%, rgb(255 252 244 / 55%), rgb(255 240 220 / 18%) 50%, transparent 72%);
+}
+
+.desktop-scene[data-scene='tide'] .desktop-scene__layer--swash .desktop-scene__art {
+  background-image: radial-gradient(50% 50% at 50% 50%, rgb(255 250 240 / 42%), rgb(255 236 210 / 14%) 55%, transparent 74%);
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--crest .desktop-scene__art {
+  animation: desktop-scene-crest 6.5s ease-in-out infinite alternate;
+}
+
+.desktop-scene--live[data-scene='tide'] .desktop-scene__layer--swash .desktop-scene__art {
+  animation: desktop-scene-swash 7.5s ease-in-out 1s infinite alternate;
+}
+
+@keyframes desktop-scene-crest {
+  from { opacity: .3; translate: -5% 0; }
+  to { opacity: .85; translate: 5% -6%; }
+}
+
+@keyframes desktop-scene-swash {
+  from { opacity: .2; translate: 0 -35%; }
+  to { opacity: .65; translate: 0 35%; }
 }
 
 .desktop-scene--live[data-scene='tide'] .desktop-scene__layer--sun {
-  animation: desktop-scene-bloom 2.6s cubic-bezier(.16, 1, .3, 1) .15s backwards;
+  animation: desktop-scene-flare 2.8s ease-in-out .1s backwards;
 }
 
 .desktop-scene--live[data-scene='tide'] .desktop-scene__layer--sun .desktop-scene__art {
@@ -225,7 +339,10 @@
   transform-origin: 100% 0;
 }
 
-.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--sun,
+.desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--sun {
+  animation: desktop-scene-flare 2.8s ease-in-out .1s backwards;
+}
+
 .desktop-scene--live[data-scene='sakura'] .desktop-scene__layer--rays {
   animation: desktop-scene-bloom 2.8s cubic-bezier(.16, 1, .3, 1) .2s backwards;
 }
@@ -290,12 +407,35 @@
   background-image: linear-gradient(90deg, transparent 4%, rgb(255 84 214 / 16%) 30%, rgb(84 204 255 / 14%) 55%, rgb(255 164 84 / 12%) 80%, transparent 96%);
 }
 
-.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street) {
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--blackout {
+  display: none;
+}
+
+.desktop-scene[data-scene='neon'] .desktop-scene__layer--blackout .desktop-scene__art {
+  background-color: rgb(3 2 12 / 80%);
+}
+
+/* Choosing the scene starts from a darkened city; the lights come on over it. */
+.desktop-scene--live.desktop-scene--select.desktop-scene--entering[data-scene='neon'] .desktop-scene__layer--blackout {
+  display: block;
+  animation: desktop-scene-blackout 2.6s linear both;
+}
+
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street, .desktop-scene__layer--blackout) {
   animation: desktop-scene-ignite 1.5s linear calc(.35s + var(--delay, 0s)) backwards;
 }
 
-.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street) .desktop-scene__art {
+.desktop-scene--live[data-scene='neon'] .desktop-scene__layer:not(.desktop-scene__layer--street, .desktop-scene__layer--blackout) .desktop-scene__art {
   animation: desktop-scene-hum 6.2s ease-in-out calc(var(--delay, 0s) * 3) infinite;
+}
+
+/* One stutter while the power returns; never a repeated full-screen flash. */
+@keyframes desktop-scene-blackout {
+  0%, 38% { opacity: 1; }
+  48% { opacity: .55; }
+  54% { opacity: .85; }
+  72% { opacity: .3; }
+  100% { opacity: 0; }
 }
 
 .desktop-scene--live[data-scene='neon'] .desktop-scene__layer--street {
@@ -392,9 +532,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .desktop-scene,
-  .desktop-scene *,
-  .desktop-scene__poster[data-phase] {
+  .desktop-scene:not(.desktop-scene--motion-forced),
+  .desktop-scene:not(.desktop-scene--motion-forced) * {
     transition: none !important;
     animation: none !important;
   }

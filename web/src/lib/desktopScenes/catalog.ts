@@ -64,6 +64,7 @@ export const DESKTOP_SCENES: readonly DesktopSceneDefinition[] = Object.freeze([
     focus: { x: 0.52, y: 0.62 },
     entranceSeconds: 4.2,
     layers: [
+      { id: 'clouds', x: 0.5, y: 0.66, w: 1.3, h: 0.72 },
       { id: 'sun', x: 0.9, y: 0.2, w: 0.55, h: 0.8 },
       { id: 'moon', x: 0.757, y: 0.101, w: 0.16, h: 0.28 },
       ...CHRONO_LANTERNS.map(([x, y], index) => ({ id: 'lantern', x, y, w: 0.055, h: 0.1, delay: index * 0.37 })),
@@ -81,6 +82,8 @@ export const DESKTOP_SCENES: readonly DesktopSceneDefinition[] = Object.freeze([
     layers: [
       { id: 'sun', x: 0.68, y: 0.387, w: 0.36, h: 0.64 },
       { id: 'path', x: 0.678, y: 0.66, w: 0.13, h: 0.52 },
+      { id: 'crest', x: 0.78, y: 0.63, w: 0.46, h: 0.12 },
+      { id: 'swash', x: 0.6, y: 0.79, w: 0.9, h: 0.08 },
     ],
     loadPainter: () => import('./scenes/tide').then((module) => module.default),
   },
@@ -108,6 +111,7 @@ export const DESKTOP_SCENES: readonly DesktopSceneDefinition[] = Object.freeze([
     focus: { x: 0.66, y: 0.55 },
     entranceSeconds: 2.8,
     layers: [
+      { id: 'blackout', x: 0.5, y: 0.5, w: 1.02, h: 1.02 },
       { id: 'tower', x: 0.667, y: 0.24, w: 0.13, h: 0.5 },
       { id: 'magenta', x: 0.472, y: 0.31, w: 0.075, h: 0.24, delay: 0.25 },
       { id: 'cyan', x: 0.305, y: 0.294, w: 0.065, h: 0.13, delay: 0.55 },

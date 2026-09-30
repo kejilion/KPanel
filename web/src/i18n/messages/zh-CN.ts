@@ -555,6 +555,8 @@ export const zhCNMessages = {
   'desktop.wallpaperSceneTitle': '动态场景',
   'desktop.wallpaperSceneHint': '进场动画后保持缓慢呼吸；窗口最大化或铺满、页面隐藏、系统开启“减少动态效果”时自动暂停或静止。',
   'desktop.wallpaperSceneBadge': '动态',
+  'desktop.wallpaperSceneReducedMotion': '检测到系统开启了“减少动态效果”，动态场景目前以静态画面显示。',
+  'desktop.wallpaperSceneMotionAlways': '在此浏览器中仍然播放动态效果',
   'desktop.sceneChrono': '晨昏水乡',
   'desktop.sceneChronoDescription': '江南水乡随本地时间流转',
   'desktop.sceneTide': '潮汐海岸',

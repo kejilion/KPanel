@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import DesktopScene from '@/components/desktop/DesktopScene.vue'
+import { resetSceneMotionPreferenceForTest, useSceneMotionPreference } from '@/lib/desktopScenes/motionPreference'
 
 let decodeFails = false
 let reducedMotion = false
@@ -12,6 +13,11 @@ class FakeImage {
   decode(): Promise<void> {
     return decodeFails ? Promise.reject(new Error('decode')) : Promise.resolve()
   }
+}
+
+function systemReducesMotion(): void {
+  reducedMotion = true
+  resetSceneMotionPreferenceForTest()
 }
 
 async function settle(): Promise<void> {
@@ -35,6 +41,8 @@ describe('DesktopScene', () => {
       removeEventListener: vi.fn(),
     })))
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: vi.fn(() => null) })
+    window.localStorage.clear()
+    resetSceneMotionPreferenceForTest()
   })
 
   afterEach(() => {
@@ -53,7 +61,13 @@ describe('DesktopScene', () => {
     expect(wrapper.findAll('.desktop-scene__layer').map((layer) => layer.classes().at(-1))).toEqual([
       'desktop-scene__layer--sun',
       'desktop-scene__layer--path',
+      'desktop-scene__layer--crest',
+      'desktop-scene__layer--swash',
     ])
+    // The light breath is permanent; the sweep only exists while the entrance plays.
+    expect(wrapper.find('.desktop-scene__breath').exists()).toBe(true)
+    expect(root.classes()).toContain('desktop-scene--entering')
+    expect(wrapper.find('.desktop-scene__sweep').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -70,7 +84,7 @@ describe('DesktopScene', () => {
   })
 
   it('renders a still scene for reduced motion', async () => {
-    reducedMotion = true
+    systemReducesMotion()
     vi.useFakeTimers()
     const wrapper = mount(DesktopScene, { props: { scene: 'sakura', covered: false, entrance: 'select' } })
     await vi.advanceTimersByTimeAsync(700)
@@ -79,6 +93,24 @@ describe('DesktopScene', () => {
     expect(root.classes()).toContain('desktop-scene--static')
     expect(root.classes()).not.toContain('desktop-scene--live')
     expect(root.attributes('data-scene-status')).toBe('static')
+    wrapper.unmount()
+  })
+
+  it('plays a still scene as soon as this browser opts back in to motion', async () => {
+    systemReducesMotion()
+    const wrapper = mount(DesktopScene, { props: { scene: 'sakura', covered: false, entrance: 'restore' } })
+    await settle()
+    const root = wrapper.get('.desktop-scene')
+    expect(root.attributes('data-scene-status')).toBe('static')
+    useSceneMotionPreference().setMotionAlways(true)
+    await flushPromises()
+    expect(root.classes()).toEqual(expect.arrayContaining(['desktop-scene--live', 'desktop-scene--motion-forced', 'desktop-scene--entering']))
+    expect(root.attributes('data-scene-status')).toBe('running')
+    expect(window.localStorage.getItem('kpanel:desktop-scene-motion:v1')).toBe('always')
+    useSceneMotionPreference().setMotionAlways(false)
+    await flushPromises()
+    expect(root.attributes('data-scene-status')).toBe('static')
+    expect(window.localStorage.getItem('kpanel:desktop-scene-motion:v1')).toBeNull()
     wrapper.unmount()
   })
 
@@ -101,7 +133,44 @@ describe('DesktopScene', () => {
     wrapper.unmount()
   })
 
+  it('removes entrance-only effects once the entrance has played', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(DesktopScene, { props: { scene: 'neon', covered: false, entrance: 'select' } })
+    await vi.advanceTimersByTimeAsync(700)
+    await settle()
+    const root = wrapper.get('.desktop-scene')
+    expect(root.classes()).toEqual(expect.arrayContaining(['desktop-scene--entering', 'desktop-scene--select']))
+    expect(wrapper.find('.desktop-scene__layer--blackout').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(root.classes()).not.toContain('desktop-scene--entering')
+    expect(wrapper.find('.desktop-scene__sweep').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('travels from the previous time of day to now when the page loads', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 24, 12, 0, 0))
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => frames.push(callback)))
+    const wrapper = mount(DesktopScene, { props: { scene: 'chrono', covered: false, entrance: 'restore' } })
+    await settle()
+    const root = wrapper.get('.desktop-scene')
+    const style = (root.element as HTMLElement).style
+    // Noon starts from the dawn gold the boot script painted, with the day painting preloaded.
+    expect(style.getPropertyValue('--scene-golden')).toBe('1.0000')
+    expect(root.classes()).toEqual(expect.arrayContaining(['desktop-scene--timelapse', 'desktop-scene--phase-golden']))
+    expect(wrapper.findAll('.desktop-scene__poster[style]').map((poster) => poster.attributes('data-phase'))).toEqual(['golden', 'day'])
+    for (let tick = 1; tick <= 100; tick++) frames.shift()?.(tick * 34)
+    await flushPromises()
+    expect(style.getPropertyValue('--scene-day')).toBe('1.0000')
+    expect(root.classes()).not.toContain('desktop-scene--timelapse')
+    expect(root.classes()).not.toContain('desktop-scene--phase-golden')
+    wrapper.unmount()
+  })
+
   it('keeps only the current time of day in the chrono render tree', async () => {
+    // Reduced motion skips the time-lapse, so the stage opens on the current phase.
+    systemReducesMotion()
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 24, 12, 0, 0))
     const wrapper = mount(DesktopScene, { props: { scene: 'chrono', covered: false, entrance: 'restore' } })

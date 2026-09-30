@@ -554,6 +554,8 @@ export const enUSMessages = {
   'desktop.wallpaperSceneTitle': 'Live scenes',
   'desktop.wallpaperSceneHint': 'Each scene plays an entrance, then breathes slowly. It pauses or stays still while a window fills the desktop, the page is hidden, or reduced motion is on.',
   'desktop.wallpaperSceneBadge': 'Live',
+  'desktop.wallpaperSceneReducedMotion': 'Your system asks for reduced motion, so live scenes show a still image.',
+  'desktop.wallpaperSceneMotionAlways': 'Play live scenes in this browser anyway',
   'desktop.sceneChrono': 'Chrono Canal',
   'desktop.sceneChronoDescription': 'A water town that follows your local time of day',
   'desktop.sceneTide': 'Tide Shore',

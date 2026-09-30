@@ -52,8 +52,31 @@ export function chronoWeights(date: Date): ChronoWeights {
   return chronoWeightsAt(minuteOfDay(date))
 }
 
-/** The phase painted before modules load; public/appearance-init.js mirrors it. */
-export function dominantChronoPhase(date: Date): ChronoPhase {
-  const weights = chronoWeights(date)
+function dominantPhaseAt(minute: number): ChronoPhase {
+  const weights = chronoWeightsAt(minute)
   return CHRONO_PHASES.reduce((best, phase) => (weights[phase] > weights[best] ? phase : best), 'golden')
+}
+
+/** The phase that is on screen now, and the only one painted for reduced motion. */
+export function dominantChronoPhase(date: Date): ChronoPhase {
+  return dominantPhaseAt(minuteOfDay(date))
+}
+
+/**
+ * Minute where the page-load time-lapse starts: the middle of the previous
+ * phase, so arriving at "now" is visible at any hour (dawn gold before day,
+ * night before dawn, day before dusk, dusk gold before night). It can be
+ * negative, meaning the evening before.
+ */
+export function chronoEntranceStart(date: Date): number {
+  const minute = minuteOfDay(date)
+  const phase = dominantPhaseAt(minute)
+  if (phase === 'day') return 6 * 60
+  if (phase === 'golden') return minute < 12 * 60 ? 4 * 60 + 30 : 16 * 60 + 30
+  return minute >= 12 * 60 ? 18 * 60 : 18 * 60 - MINUTES_PER_DAY
+}
+
+/** The phase painted before modules load when motion is allowed; public/appearance-init.js mirrors it. */
+export function chronoEntrancePhase(date: Date): ChronoPhase {
+  return dominantPhaseAt(chronoEntranceStart(date))
 }

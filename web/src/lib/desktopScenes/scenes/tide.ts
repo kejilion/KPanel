@@ -15,8 +15,8 @@ const TIDE_SUN = { u: 0.68, v: 0.387 } as const
 const HORIZON = 0.426
 const SAND_EDGE = 0.93
 const OPEN_SEA_EDGE = 0.7
-const GLINTS_PER_MEGAPIXEL = 80
-const MAX_GLINTS = 220
+const GLINTS_PER_MEGAPIXEL = 150
+const MAX_GLINTS = 380
 
 interface Glint {
   u: number
@@ -37,18 +37,21 @@ interface Gull {
   bob: number
 }
 
-/** Tide Shore: sun glitter blooms outward from the reflection path; gulls cross now and then. */
+/**
+ * Tide Shore: sun glitter blooms outward from the reflection path; on entrance the
+ * path reaches from the horizon down to the beach. Gulls cross now and then.
+ */
 const createTidePainter: ScenePainterFactory = (environment) => {
   const { random } = environment
-  const sprite = glintSprite(environment, 48, 'rgba(255,226,170,0.9)')
+  const sprite = glintSprite(environment, 48, 'rgba(255,236,190,1)')
   const glints: Glint[] = []
   const gulls: Gull[] = []
   let viewport: SceneViewport = { width: 0, height: 0, image: { x: 0, y: 0, width: 0, height: 0 } }
   let density = 1
   let nextFlock = 1.1
 
-  function respawn(glint: Glint, spread: number): void {
-    const depth = random() ** 1.5
+  function respawn(glint: Glint, spread: number, reach = 1): void {
+    const depth = random() ** 1.5 * reach
     glint.v = HORIZON + 0.004 + (SAND_EDGE - HORIZON) * depth
     glint.column = random() < 0.74 || glint.v > OPEN_SEA_EDGE
     if (glint.column) {
@@ -102,21 +105,23 @@ const createTidePainter: ScenePainterFactory = (environment) => {
     },
     frame(context, frame) {
       const { image } = viewport
-      const spread = lerp(0.18, 1, easeOutCubic(frame.entrance))
-      const glitterSize = clamp(image.width / 115, 9, 24)
+      const arrival = easeOutCubic(frame.entrance)
+      const spread = lerp(0.18, 1, arrival)
+      const reach = lerp(0.1, 1, arrival)
+      const glitterSize = clamp(image.width / 100, 10, 28)
       if (sprite) {
         context.globalCompositeOperation = 'lighter'
         for (const glint of glints) {
           glint.age += frame.dt
           if (glint.age >= glint.life) {
-            respawn(glint, spread)
+            respawn(glint, spread, reach)
             glint.age = 0
           }
           const wave = Math.sin((glint.age / glint.life) * Math.PI)
           const x = image.x + glint.u * image.width
           const y = image.y + glint.v * image.height
           if (x < -20 || x > viewport.width + 20 || y > viewport.height + 20) continue
-          context.globalAlpha = wave * wave * (glint.column ? 0.95 : 0.5) * spread
+          context.globalAlpha = wave * wave * (glint.column ? 1 : 0.7) * spread
           drawSprite(context, sprite, x, y, glitterSize * glint.scale, frame.pixelRatio)
         }
         context.globalCompositeOperation = 'source-over'
