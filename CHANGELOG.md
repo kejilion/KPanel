@@ -2,9 +2,18 @@
 
 ## [Unreleased]
 
+## [1.24.0-rc.3] - 2026-10-01
+
+本预览版修复 fnOS 等主机使用符号链接作为 Docker/Agent 状态目录时的启动和备份问题。
+
 ### Fixed
 
 - 修复 `/home/docker` 为符号链接（如飞牛 fnOS 链接到 `/vol1/1000/docker`，群晖同理）的主机上全新安装失败：Agent 启动时备份中心把状态目录的上级链接误判为篡改，报 `initialize backup jobs: backup is invalid, damaged, incompatible, or the password is incorrect` 并持续重启。现在 Agent 入口把状态目录解析为真实路径，各子系统沿用；状态目录内部的链接仍被拒绝。同时修复这类主机上文件管理器的压缩/解压任务与回收站不可用（归档任务状态不可用会让备份恢复一直提示“请关闭终端并等待主机任务完成”），并让文件管理器保护与主机备份排除同时覆盖 KPanel 目录解析后的真实路径。
+
+### Upgrade Notes
+
+- Agent 在启动入口解析配置的状态根目录，备份、文件任务、回收站及自更新沿用真实路径；真实根目录内部的符号链接仍按原安全规则拒绝，无数据库迁移。
+- 本版只更新 GitHub prerelease 和 Docker `preview`，稳定默认入口继续 1.23.0。`scriptLinkageState=not-required`，无需发布脚本（不适用）；安装契约和应用市场默认入口保持现有版本。
 
 ## [1.24.0-rc.2] - 2026-10-01
 
