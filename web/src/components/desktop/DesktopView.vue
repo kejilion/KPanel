@@ -14,6 +14,7 @@ import {
   AppWindow,
   ExternalLink,
   ListTree,
+  LogOut,
   MonitorCog,
   Plus,
   Trash2,
@@ -42,6 +43,7 @@ import DesktopGroupCard from '@/components/desktop/DesktopGroupCard.vue'
 import DesktopGroupPreviewIcon from '@/components/desktop/DesktopGroupPreviewIcon.vue'
 import { cloneDesktopGroups, normalizeDesktopGroupColumns, DESKTOP_GROUP_COLUMNS, desktopGroupItem, desktopGroupMembers, desktopGroupCells, desktopGroupCellAtPoint, desktopGroupSlots, desktopGroupRect, groupKey, MAX_DESKTOP_GROUPS, MAX_GROUP_CELLS, GROUP_DWELL_MS, moveGroupMembers, placeGroupMembers } from '@/lib/desktopGroups'
 import DesktopIconManagerDialog from '@/components/desktop/DesktopIconManagerDialog.vue'
+import DesktopStartMenu from '@/components/desktop/DesktopStartMenu.vue'
 import DesktopShortcutDialog, {
   type DesktopShortcutDraft,
 } from '@/components/desktop/DesktopShortcutDialog.vue'
@@ -97,6 +99,7 @@ import {
 } from '@/lib/desktopExternalDrop'
 import { shortcutFileGradient, shortcutFileIcon } from '@/lib/fileEntryPresentation'
 import { kpanelUpdateSettingsPath } from '@/lib/kpanelUpdate'
+import type { DesktopStartMenuItem } from '@/lib/desktopStartMenu'
 import {
   DEFAULT_SIDE_SPLIT_RATIO,
   geometryForWindowSnap,
@@ -133,6 +136,7 @@ import {
 } from '@/lib/desktopRouteKeys'
 import { useDesktopMode, type DesktopWindowState } from '@/stores/desktopMode'
 import { useDesktopIcons } from '@/stores/desktopIcons'
+import { useSession } from '@/stores/session'
 import { useDocumentFullscreen } from '@/composables/useDocumentFullscreen'
 import { useWindowGesture } from '@/composables/useWindowGesture'
 import { useTheme } from '@/stores/theme'
@@ -150,6 +154,12 @@ const props = defineProps<{
   agent?: AgentStatus
   kpanelUpdateAvailable?: boolean
   kpanelUpdateDescription?: string
+  signingOut?: boolean
+}>()
+
+const emit = defineEmits<{
+  /** The shell owns session teardown; the desktop only clears its close guards first. */
+  'sign-out': []
 }>()
 
 const desktop = useDesktopMode()
@@ -1668,7 +1678,7 @@ function desktopShortcutDragEndPosition(event: DragEvent): DesktopIconPosition |
   const target = document.elementFromPoint(event.clientX, event.clientY)
   const desktop = desktopElement.value
   if (!target || !desktop?.contains(target)) return undefined
-  if (target.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar')) return undefined
+  if (target.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar, .desktop-start-menu')) return undefined
   return desktopShortcutDropPosition(event)
 }
 
@@ -2464,6 +2474,11 @@ function onSelectionFrameLostPointerCapture(event: PointerEvent): void {
 }
 
 function onGlobalPointerDown(event: PointerEvent): void {
+  if (startMenuOpen.value) {
+    const target = event.target instanceof Node ? event.target : undefined
+    const menu = desktopElement.value?.querySelector('#desktop-start-menu')
+    if (!target || (!menu?.contains(target) && !startButtonElement.value?.contains(target))) closeStartMenu(false)
+  }
   if (desktopLongPress && event.pointerId !== desktopLongPress.pointerId) cancelDesktopLongPress()
   if (iconDrag && event.pointerId !== iconDrag.pointerId) cancelIconDrag()
   if (selectionFrame && event.pointerId !== selectionFrame.pointerId) cancelSelectionFrame()
@@ -2505,6 +2520,13 @@ function toggleDesktopWindows(): boolean {
 }
 
 function onGlobalKeyDown(event: KeyboardEvent): void {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+    if (event.defaultPrevented || event.isComposing || document.body.classList.contains('has-modal')) return
+    if (!startMenuOpen.value && keepsNativeShortcut(event.target)) return
+    event.preventDefault()
+    toggleStartMenu()
+    return
+  }
   const showDesktop = event.key.toLowerCase() === 'd'
   if (event.key === 'Tab' || showDesktop) {
     if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey
@@ -2554,6 +2576,10 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
     return
   }
   if (event.key !== 'Escape') return
+  if (startMenuOpen.value) {
+    closeStartMenu()
+    return
+  }
   cancelDesktopLongPress()
   if (selectionFrame) cancelSelectionFrame()
   else if (iconDrag) cancelIconDrag()
@@ -2618,7 +2644,7 @@ function onDesktopClickCapture(event: MouseEvent): void {
 
 function onDesktopPointerDown(event: PointerEvent): void {
   const target = event.target instanceof Element ? event.target : undefined
-  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop__icon, .desktop__selection-actions, .desktop__context-menu, input, textarea, select, button, a, [contenteditable="true"]')) return
+  if (target?.closest('.desktop-window, .desktop-widget-slot, .desktop-group, .desktop__widgets, .desktop__taskbar, .desktop-start-menu, .desktop__icon, .desktop__selection-actions, .desktop__context-menu, input, textarea, select, button, a, [contenteditable="true"]')) return
   const currentTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined
   currentTarget?.focus({ preventScroll: true })
   if ((event.pointerType === 'touch' || event.pointerType === 'pen') && event.button === 0 && event.isPrimary !== false) {
@@ -2663,7 +2689,7 @@ function onDesktopPointerDown(event: PointerEvent): void {
 function desktopFileDropAllowed(event: DragEvent): boolean {
   if (!hasDesktopFileDrag(event) && !hasCrossPanelFileDrag(event) && !hasExternalFileDrop(event)) return false
   const target = event.target as HTMLElement | null
-  return !target?.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar')
+  return !target?.closest('.desktop-window, .desktop-widget-slot, .desktop__widgets, .desktop__taskbar, .desktop-start-menu')
 }
 
 function isRemoteFileManagerDrag(event: DragEvent, protectedData = false): boolean {
@@ -3196,6 +3222,149 @@ function onContextMenuAfterLeave(): void {
 
 function toggleDesktopTheme(): void {
   theme.setTheme(theme.resolved.value === 'dark' ? 'light' : 'dark')
+}
+
+// Start menu ----------------------------------------------------------------
+// The K button opens a search-first launcher over the same entry sources as the
+// desktop, including apps and sites hidden from it, plus existing desktop commands.
+
+type StartMenuAction = 'wallpaper' | 'manage-icons' | 'add-shortcut' | 'theme' | 'fullscreen'
+  | 'refresh' | 'update' | 'classic' | 'sign-out'
+
+const START_MENU_ENTRY_ORDER: Record<DesktopEntry['kind'], number> = { app: 0, site: 1, shortcut: 2 }
+const session = useSession()
+const startMenuOpen = ref(false)
+const startButtonElement = ref<HTMLButtonElement>()
+const startMenuShortcut = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl+K'
+let startMenuThemePending = false
+
+const startMenuUserName = computed(() =>
+  session.state.user?.displayName || session.state.user?.username || i18n.t('common.admin'))
+const startMenuEntriesState = computed<'loading' | 'ready' | 'unavailable'>(() =>
+  entries.value ? 'ready' : entriesLoading.value ? 'loading' : 'unavailable')
+const startMenuEntries = computed(() => [...(entries.value?.visible || []), ...shortcutEntries.value]
+  .sort((left, right) => START_MENU_ENTRY_ORDER[left.kind] - START_MENU_ENTRY_ORDER[right.kind]
+    || left.name.localeCompare(right.name, i18n.locale.value)))
+
+function startMenuEntryDetail(entry: DesktopEntry): string {
+  if (entry.kind === 'app') return i18n.t('desktop.detailApp')
+  if (entry.kind === 'site') return i18n.t('desktop.detailSite')
+  if (entry.launch === 'file') return i18n.t('desktop.detailFileShortcut')
+  if (entry.launch === 'directory') return i18n.t('desktop.detailDirectoryShortcut')
+  return i18n.t('desktop.detailShortcut')
+}
+
+const startMenuActions = computed<DesktopStartMenuItem[]>(() => {
+  const dark = theme.resolved.value === 'dark'
+  const fullscreen = documentFullscreen.active.value
+  const version = props.agent?.version
+  const actions: Array<{ id: StartMenuAction; label: string; icon: Component; keywords: string[]; detail?: string }> = [
+    { id: 'wallpaper', label: i18n.t('desktop.changeWallpaper'), icon: ImageIcon, keywords: ['wallpaper', 'background', 'appearance'] },
+    ...(workspace.value.available ? [
+      { id: 'manage-icons' as const, label: i18n.t('desktop.iconManagerTitle'), icon: MonitorCog, keywords: ['icons', 'widgets', 'layout'] },
+      { id: 'add-shortcut' as const, label: i18n.t('desktop.shortcutAdd'), icon: Plus, keywords: ['shortcut', 'link', 'url'] },
+    ] : []),
+    { id: 'theme', label: dark ? i18n.t('desktop.menuLight') : i18n.t('desktop.menuDark'), icon: dark ? Sun : Moon, keywords: ['theme', 'dark', 'light'] },
+    {
+      id: 'fullscreen',
+      label: fullscreen ? i18n.t('desktop.exitFullscreen') : i18n.t('desktop.enterFullscreen'),
+      icon: fullscreen ? Minimize2 : Maximize2,
+      keywords: ['fullscreen'],
+    },
+    { id: 'refresh', label: i18n.t('desktop.menuRefresh'), icon: RefreshCw, keywords: ['refresh', 'reload'] },
+    {
+      id: 'update',
+      label: i18n.t('desktop.startMenuUpdate'),
+      icon: CircleArrowUp,
+      keywords: ['update', 'upgrade', 'version'],
+      detail: props.kpanelUpdateAvailable
+        ? i18n.t('nav.updateAvailable')
+        : version ? i18n.t('desktop.startMenuCurrentVersion', { version }) : undefined,
+    },
+    { id: 'classic', label: i18n.t('desktop.switchClassic'), icon: ArrowLeft, keywords: ['classic'] },
+    { id: 'sign-out', label: i18n.t('nav.signOut'), icon: LogOut, keywords: ['logout', 'sign out'] },
+  ]
+  return actions.map(({ id, ...action }) => ({ key: `action:${id}`, section: 'actions', ...action }))
+})
+
+const startMenuItems = computed<DesktopStartMenuItem[]>(() => [
+  ...desktopApps.map((app) => ({
+    key: `nav:${app.path}`,
+    section: 'system' as const,
+    label: i18n.t(app.labelKey),
+    keywords: [app.path.slice(1)],
+    iconURL: app.desktopIconURL,
+    icon: app.icon,
+    gradient: gradientFor(app.path),
+  })),
+  ...startMenuEntries.value.map((entry) => ({
+    key: entry.key,
+    section: 'entries' as const,
+    label: entry.name,
+    detail: startMenuEntryDetail(entry),
+    keywords: [entry.url, entry.path, entry.description, entry.site?.primaryDomain, entry.kind === 'app' ? entry.id : undefined]
+      .filter((value): value is string => Boolean(value)),
+    iconURL: entry.iconURL,
+    icon: entry.icon,
+    gradient: entryGradient(entry),
+    hidden: hiddenEntryKeys.value.has(entry.key),
+  })),
+  ...startMenuActions.value,
+])
+
+function openStartMenu(): void {
+  if (contextMenu.value.open) closeContextMenu(false)
+  startMenuOpen.value = true
+}
+
+function closeStartMenu(restoreFocus = true): void {
+  if (!startMenuOpen.value) return
+  startMenuOpen.value = false
+  if (restoreFocus) void nextTick(() => startButtonElement.value?.focus({ preventScroll: true }))
+}
+
+function toggleStartMenu(): void {
+  if (startMenuOpen.value) closeStartMenu()
+  else openStartMenu()
+}
+
+function onStartMenuSelect(item: DesktopStartMenuItem): void {
+  closeStartMenu(false)
+  if (item.section === 'system') {
+    openApp(item.key.slice('nav:'.length))
+    return
+  }
+  if (item.section === 'entries') {
+    const entry = startMenuEntries.value.find((candidate) => candidate.key === item.key)
+    if (entry) openEntry(entry)
+    return
+  }
+  const action = item.key.slice('action:'.length) as StartMenuAction
+  if (action === 'theme') startMenuThemePending = true
+  else if (action === 'update') openKPanelUpdate()
+  else if (action === 'sign-out') void signOutFromDesktop()
+  else onContextMenuAction(action)
+}
+
+function onStartMenuAfterLeave(): void {
+  // Like the context menu, switch themes only after the menu has faded out.
+  if (!startMenuThemePending) return
+  startMenuThemePending = false
+  toggleDesktopTheme()
+}
+
+async function signOutFromDesktop(): Promise<void> {
+  closeStartMenu(false)
+  if (props.signingOut) return
+  if (await desktopCloseGuardCoordinator.checkAll()) emit('sign-out')
+}
+
+/** Text fields, terminals and editors keep Ctrl/Command+K for themselves. */
+function keepsNativeShortcut(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || Boolean(target.closest(
+    'input, textarea, select, [contenteditable="true"], [role="combobox"], .xterm, .cm-editor, .monaco-editor',
+  ))
 }
 
 function waitForWallpaperSwitchDelay(): Promise<void> {
@@ -4388,6 +4557,23 @@ function onViewportResize(): void {
       <button type="button" :aria-label="i18n.t('common.closeNotification')" @click="groupError = ''; groupUndo = undefined"><X :size="16" /></button>
     </div>
 
+    <DesktopStartMenu
+      :open="startMenuOpen"
+      :items="startMenuItems"
+      :entries-state="startMenuEntriesState"
+      :user-name="startMenuUserName"
+      :signing-out="signingOut"
+      :dark="theme.resolved.value === 'dark'"
+      :opener="startButtonElement"
+      @close="closeStartMenu"
+      @select="onStartMenuSelect"
+      @retry="loadEntries(true)"
+      @theme="toggleDesktopTheme"
+      @classic="closeStartMenu(false); enterClassicSafely()"
+      @sign-out="signOutFromDesktop"
+      @after-leave="onStartMenuAfterLeave"
+    />
+
     <footer
       class="desktop__taskbar"
       role="toolbar"
@@ -4395,7 +4581,20 @@ function onViewportResize(): void {
       @contextmenu.prevent.stop="onTaskbarContext"
     >
       <div class="desktop__taskbar-brand" :aria-label="siteBranding.name.value">
-        <LogoMark compact site />
+        <button
+          ref="startButtonElement"
+          class="desktop__start-button"
+          type="button"
+          aria-haspopup="dialog"
+          :aria-expanded="startMenuOpen"
+          aria-controls="desktop-start-menu"
+          :aria-label="i18n.t('desktop.startMenuButton')"
+          :title="i18n.t('desktop.startMenuButtonTitle', { shortcut: startMenuShortcut })"
+          aria-keyshortcuts="Control+K Meta+K"
+          @click="toggleStartMenu"
+        >
+          <LogoMark compact site />
+        </button>
         <span class="desktop__site-name">{{ siteBranding.name.value }}</span>
         <div v-if="props.agent" class="desktop__taskbar-agent">
           <span class="desktop__taskbar-agent-status" :class="`desktop__taskbar-agent-status--${agentStatus.state}`">

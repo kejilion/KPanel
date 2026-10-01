@@ -481,6 +481,8 @@ watch(
       :agent="panel.state.agent"
       :kpanel-update-available="kpanelUpdateAvailable"
       :kpanel-update-description="kpanelUpdateDescription"
+      :signing-out="signingOut"
+      @sign-out="signOut"
     />
   </div>
 </template>
