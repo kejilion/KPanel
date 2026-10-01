@@ -84,17 +84,18 @@ if (props.role === 'secondary') {
     ready.value = true
   })
 
-  provide(desktopWindowCloseGuardKey, {
-    register(guard) {
-      closeGuards.add(guard)
-      const unregisterGlobal = desktopCloseGuardCoordinator.register('classic-files-secondary', guard)
-      return () => {
-        closeGuards.delete(guard)
-        unregisterGlobal()
-      }
-    },
-  })
 }
+
+provide(desktopWindowCloseGuardKey, {
+  register(guard) {
+    closeGuards.add(guard)
+    const unregisterGlobal = desktopCloseGuardCoordinator.register(`classic-files-${props.role}`, guard)
+    return () => {
+      closeGuards.delete(guard)
+      unregisterGlobal()
+    }
+  },
+})
 
 /** Whether closing the pane now would interrupt uploads or transfers. */
 function isBusy(): boolean {

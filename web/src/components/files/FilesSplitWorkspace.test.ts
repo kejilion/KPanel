@@ -6,6 +6,7 @@ import FilesSplitWorkspace from './FilesSplitWorkspace.vue'
 
 const harness = vi.hoisted(() => ({
   blockClose: false,
+  blockPrimaryClose: false,
   busy: { primary: false, secondary: false } as Record<string, boolean>,
   toast: vi.fn(),
 }))
@@ -25,7 +26,9 @@ vi.mock('@/views/FilesView.vue', async () => {
         const router = useRouter()
         const active = inject(desktopWindowActiveKey)
         const split = inject(filesSplitControlKey, undefined)
-        const unregister = inject(desktopWindowCloseGuardKey, undefined)?.register(() => !harness.blockClose)
+        const unregister = inject(desktopWindowCloseGuardKey, undefined)?.register(() => (
+          !harness.blockClose && !(split?.role === 'primary' && harness.blockPrimaryClose)
+        ))
         const unregisterBusy = split?.registerBusyCheck(() => Boolean(harness.busy[split.role]))
         onBeforeUnmount(() => {
           unregister?.()
@@ -94,6 +97,7 @@ describe('FilesSplitWorkspace', () => {
   beforeEach(() => {
     window.localStorage.clear()
     harness.blockClose = false
+    harness.blockPrimaryClose = false
     harness.busy = { primary: false, secondary: false }
     harness.toast.mockReset()
     resize = undefined
@@ -208,6 +212,39 @@ describe('FilesSplitWorkspace', () => {
     expect(pane(wrapper, 'primary').attributes('data-host')).toBe('h2')
     expect(pane(wrapper, 'primary').find('.open-split').exists()).toBe(true)
     expect(document.activeElement).toBe(pane(wrapper, 'primary').element)
+  })
+
+  it('keeps both panes when the primary unsaved-work guard rejects closing', async () => {
+    window.localStorage.setItem('kpanel:files:split:v1', JSON.stringify({
+      open: true, secondaryPath: '/files?path=/opt&hostId=h2',
+    }))
+    const mounted = await mountWorkspace()
+    wrapper = mounted.wrapper
+    await setWidth(1400)
+    harness.blockPrimaryClose = true
+
+    await pane(wrapper, 'primary').get('.close-pane').trigger('click')
+    await flushPromises()
+
+    expect(pane(wrapper, 'secondary').exists()).toBe(true)
+    expect(mounted.router.currentRoute.value.fullPath).toBe('/files?path=/srv&hostId=h1')
+    expect(JSON.parse(window.localStorage.getItem('kpanel:files:split:v1') || '{}').open).toBe(true)
+  })
+
+  it('keeps both panes when navigation to the remaining pane is cancelled', async () => {
+    window.localStorage.setItem('kpanel:files:split:v1', JSON.stringify({
+      open: true, secondaryPath: '/files?path=/opt&hostId=h2',
+    }))
+    const mounted = await mountWorkspace()
+    wrapper = mounted.wrapper
+    await setWidth(1400)
+    mounted.router.beforeEach(() => false)
+
+    await pane(wrapper, 'primary').get('.close-pane').trigger('click')
+    await flushPromises()
+
+    expect(pane(wrapper, 'secondary').exists()).toBe(true)
+    expect(mounted.router.currentRoute.value.fullPath).toBe('/files?path=/srv&hostId=h1')
   })
 
   it('refuses to close a pane while it would interrupt uploads or transfers', async () => {

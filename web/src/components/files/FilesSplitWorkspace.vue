@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import FilesPaneScope from '@/components/files/FilesPaneScope.vue'
 import FilesView from '@/views/FilesView.vue'
 import {
@@ -91,12 +91,17 @@ async function closePane(role: FilesSplitRole): Promise<void> {
   }
   closing = true
   try {
+    if (role === 'primary' && !(await primaryScope.value?.confirmClose())) return
     if (!(await secondary.confirmClose())) return
     if (role === 'primary') {
       // Push a location object so the URL reads like the pane's own navigation.
       const target = new URL(secondaryPath.value || '/files', 'http://kpanel.invalid')
       try {
-        await router.push({ name: 'files', query: Object.fromEntries(target.searchParams) })
+        const failure = await router.push({ name: 'files', query: Object.fromEntries(target.searchParams) })
+        if (failure && !isNavigationFailure(failure, NavigationFailureType.duplicated)) return
+        // FilesView may reject the host switch and restore the previous route.
+        await nextTick()
+        if (primaryLocation() !== normalizeFilesSplitPath(target.pathname + target.search)) return
       } catch {
         return
       }
