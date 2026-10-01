@@ -34,8 +34,8 @@
 </p>
 
 <p align="center">
-  <a href=".github/assets/readme/kpanel-desktop-hero-ai.webp">
-    <img src=".github/assets/readme/kpanel-desktop-hero-ai.webp" alt="基于最新截图经 AI 合成的 KPanel 工作台主视觉，以大桌面搭配经典模式应用市场；实际界面见下方截图" width="100%">
+  <a href=".github/assets/readme/kpanel-dual-mode-tech-hero.webp">
+    <img src=".github/assets/readme/kpanel-dual-mode-tech-hero.webp" alt="KPanel 双模式宣传主视觉（AI 合成），展示桌面工作区与经典模式；实际界面见下方截图" width="100%">
   </a>
 </p>
 
