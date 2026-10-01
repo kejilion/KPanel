@@ -23,6 +23,7 @@ const props = defineProps<{
   split: boolean
   splitAvailable: boolean
   density?: FilesPaneDensity
+  toolbarStacked?: boolean
   label?: string
   /** Initial `/files` location of the secondary pane. */
   initialPath?: string
@@ -101,7 +102,10 @@ defineExpose({ confirmClose })
     :class="[
       `files-pane--${role}`,
       split ? `files-pane--split files-pane--${density || 'regular'}` : undefined,
-      { 'files-pane--active': split && active },
+      {
+        'files-pane--active': split && active,
+        'files-pane--toolbar-stacked': split && toolbarStacked,
+      },
     ]"
     :role="split ? 'region' : undefined"
     :aria-label="split ? label : undefined"

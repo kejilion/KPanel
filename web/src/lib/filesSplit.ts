@@ -27,6 +27,8 @@ export const FILES_SPLIT_MIN_WIDTH = 1200
 /** Below this workspace width an open split stacks its panes vertically. */
 export const FILES_SPLIT_STACK_WIDTH = 880
 export const FILES_SPLIT_GAP = 16
+/** Below this pane width search and view controls move under the path. */
+export const FILES_PANE_TOOLBAR_STACK_WIDTH = 760
 
 export type FilesPaneDensity = 'regular' | 'compact' | 'narrow'
 

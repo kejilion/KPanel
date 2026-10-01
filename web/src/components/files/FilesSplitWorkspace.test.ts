@@ -106,6 +106,10 @@ describe('FilesSplitWorkspace', () => {
     expect(wrapper.get('.files-workspace').classes()).toContain('files-workspace--split')
     // 1400px splits into two ~692px panes: the compact list without owner/permission columns.
     expect(wrapper.findAll('.files-pane--compact')).toHaveLength(2)
+    // ~692px cannot hold host, path and search on one toolbar row.
+    expect(wrapper.findAll('.files-pane--toolbar-stacked')).toHaveLength(2)
+    await setWidth(1800)
+    expect(wrapper.findAll('.files-pane--toolbar-stacked')).toHaveLength(0)
     expect(wrapper.findAll('[role="region"]').map((region) => region.attributes('aria-label')))
       .toEqual(['主文件栏', '第二文件栏'])
 

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import FilesPaneScope from '@/components/files/FilesPaneScope.vue'
 import FilesView from '@/views/FilesView.vue'
 import {
+  FILES_PANE_TOOLBAR_STACK_WIDTH,
   FILES_SPLIT_GAP,
   FILES_SPLIT_MIN_WIDTH,
   FILES_SPLIT_STACK_WIDTH,
@@ -36,8 +37,12 @@ const available = computed(() => width.value >= FILES_SPLIT_MIN_WIDTH)
 const stacked = computed(() => (
   secondaryMounted.value && width.value > 0 && width.value < FILES_SPLIT_STACK_WIDTH
 ))
-const paneDensity = computed(() => filesPaneDensity(
-  stacked.value ? width.value : (width.value - FILES_SPLIT_GAP) / 2,
+const paneWidth = computed(() => (
+  stacked.value ? width.value : (width.value - FILES_SPLIT_GAP) / 2
+))
+const paneDensity = computed(() => filesPaneDensity(paneWidth.value))
+const paneToolbarStacked = computed(() => (
+  paneWidth.value > 0 && paneWidth.value < FILES_PANE_TOOLBAR_STACK_WIDTH
 ))
 
 watch([requested, available], ([wanted, wide]) => {
@@ -123,6 +128,7 @@ onBeforeUnmount(() => {
       :split="secondaryMounted"
       :split-available="available"
       :density="paneDensity"
+      :toolbar-stacked="paneToolbarStacked"
       @activate="activePane = 'primary'"
       @toggle-split="toggleSplit"
     >
@@ -137,6 +143,7 @@ onBeforeUnmount(() => {
       :split="true"
       :split-available="available"
       :density="paneDensity"
+      :toolbar-stacked="paneToolbarStacked"
       :initial-path="secondaryPath"
       @activate="activePane = 'secondary'"
       @navigate="rememberSecondaryPath"
@@ -235,19 +242,19 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-/* Host, path, search and view controls cannot share one row in a narrow pane. */
-.files-workspace--split .files-pane--narrow .file-toolbar {
+/* Host, path, search and view controls cannot share one row below ~760px. */
+.files-workspace--split .files-pane--toolbar-stacked .file-toolbar {
   align-items: stretch;
   flex-direction: column;
   gap: 9px;
   padding: 10px;
 }
 
-.files-workspace--split .files-pane--narrow .file-toolbar__controls {
+.files-workspace--split .files-pane--toolbar-stacked .file-toolbar__controls {
   width: 100%;
 }
 
-.files-workspace--split .files-pane--narrow .file-toolbar__controls .file-search {
+.files-workspace--split .files-pane--toolbar-stacked .file-toolbar__controls .file-search {
   width: auto;
   min-width: 0;
   flex: 1 1 auto;
