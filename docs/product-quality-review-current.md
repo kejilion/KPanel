@@ -1,7 +1,7 @@
 # KPanel 当前业务事实与规范适配基线
 
 - 复核日期：`2026-10-01`
-- 基线提交：`7a30834c54cd6ae73a2ca943dc7b1db28cc512e3`
+- 基线提交：`086fcbcc8d41cb8634cb556464f06e376bd94e60`
 - 基线版本：`v1.23.0`
 - 上一份完整复核：[`product-quality-review-2026-08-13.md`](product-quality-review-2026-08-13.md)
 - 自动刷新门槛：基线后达到 50 个提交，或同时达到 20 个提交和 8 个正式版本；产品性质、业务真源、权限边界或核心旅程发生实质变化时立即复核
@@ -528,7 +528,7 @@ CHANGELOG、公开 Release 和验收记录。`v1.21.0` 仍是最近稳定版；�
 - rc.1 的应用脚本与诊断终端跟随窗口可见性保持实时输出，共享 PTY 由最近聚焦视图决定尺寸；
   浏览器输出有背压，任务日志滚动分段并保留旧单文件读取兼容。环境任务仅保留最近 50 条已结束
   记录，运行中的任务不清理。真实多设备、多窗口长时间输出和登记主机浏览器仍未实测。
-- `v1.24.0-rc.2` 已公开为 prerelease，Docker `preview` index 为
+- `v1.24.0-rc.2` 已公开为 prerelease，该次发布时 Docker `preview` index 为
   `sha256:613b63476f6e5942cd2e367500c0140861d42e3336c78ce6f32b6e1bda1e2644`。
   它包含 `32013251` 的文件编辑器布局、宿主无关文本识别、扩展语法高亮与 AI 凭据读取
   排除，以及 `f3899ad7` 的跨节点文件内容策略、v1 文件授权、AI 自动审批、账户复核与 chmod
@@ -557,6 +557,9 @@ CHANGELOG、公开 Release 和验收记录。`v1.21.0` 仍是最近稳定版；�
 这针对 fnOS 等 `/home/docker` 为符号链接时的 Agent 启动、归档任务、回收站与备份 gate 问题；
 没有修改数据库、文件授权协议、Panel/Agent 权限分工、内置脚本或安装契约。
 
-这是纯后端候选，未改变界面；真实 fnOS/NAS 安装、重启和备份恢复尚未实测，不能由本地模拟 UI
-或单元测试推断通过。rc.3 的 L3、CI 与公开产物须以新冻结 SHA 的验收记录为准；rc.2 的公开
-产物证据不代替本轮验证。CF scoped 仍待稳定版前补审；`scriptLinkageState=not-required`。
+`v1.24.0-rc.3` 已于 UTC 2026-10-01T01:55:18Z 公开为 prerelease，版本及 Docker `preview`
+index 均为 `sha256:4491b866b5453cb32b9e12104901761067e92cd52e76809220a265d598a6c2a2`。
+精确冻结产品 `086fcbcc` 的新 L3、候选/main CI、Release 和公开 amd64 镜像 E2E 通过，详见
+[`rc.3 验收记录`](release-v1.24.0-rc.3-acceptance.md)；GitHub Latest 与 Docker `latest` 仍为 v1.23.0。
+本次是纯后端修复，未改变界面；真实 fnOS/NAS 安装、重启和备份恢复尚未实测，不能由本地模拟 UI
+或单元测试推断通过。CF scoped 仍待稳定版前补审，52 个提交尚未覆盖；`scriptLinkageState=not-required`。
