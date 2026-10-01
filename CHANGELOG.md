@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.24.0-rc.5] - 2026-10-01
+
+本预览版加入桌面开始菜单，并更新依赖和构建基座。
+
+### Added
+
+- 桌面任务栏 K 按钮打开开始菜单，可搜索系统应用、已安装应用、站点和快捷方式；被隐藏的桌面条目仍可搜索和打开。支持 Ctrl/Cmd+K、方向键、Enter、Escape 和焦点恢复，输入法确认不会误启动应用。菜单复用现有换壁纸、主题、语言、经典模式、更新和退出登录入口。
+
+### Changed
+
+- 更新 Vue、Vite、Vitest、CodeMirror、图标和 Three.js 依赖，重新构建三个内置 3D 场景；场景内容保持原有设计。
+- 构建基座升级 Node 24.21.0，更新 Go 模块、固定版本的构建 Actions、Trivy 和 OCR；Go 继续使用 1.26.7。DOMPurify 升级至 3.4.16。
+- 内置 `kejilion.sh` 固定到已公开的 `8bebc2d80614e96b844c2c5f88acb0a81d4abd10`，随镜像校验脚本摘要。
+
+### Upgrade Notes
+
+- 本版只更新 GitHub prerelease 和 Docker `preview`，稳定默认入口继续 1.23.0。`scriptLinkageState=coupled`：兼容脚本已先行公开，KPanel 使用固定提交和 SHA-256；没有 API、数据库或宿主机协议迁移，应用市场默认入口保持稳定通道。
+- TypeScript 7 与当前 Vue 类型检查工具不兼容，继续使用 6.0.3；Node 类型声明继续匹配 Node 24 LTS。两项例外由基座维护负责人于 2026-10-15 复核。
+
 ## [1.24.0-rc.4] - 2026-10-01
 
 本预览版加入经典文件双栏和集群主机快捷菜单，并改善文件编辑器对齐。
