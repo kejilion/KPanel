@@ -94,9 +94,9 @@ async function closePane(role: FilesSplitRole): Promise<void> {
     if (!(await secondary.confirmClose())) return
     if (role === 'primary') {
       // Push a location object so the URL reads like the pane's own navigation.
-      const location = new URL(secondaryPath.value || '/files', 'http://kpanel.invalid')
+      const target = new URL(secondaryPath.value || '/files', 'http://kpanel.invalid')
       try {
-        await router.push({ name: 'files', query: Object.fromEntries(location.searchParams) })
+        await router.push({ name: 'files', query: Object.fromEntries(target.searchParams) })
       } catch {
         return
       }
