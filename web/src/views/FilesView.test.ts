@@ -791,9 +791,11 @@ describe('FilesView remote download', () => {
     const actionsStart = source.indexOf('<div class="file-command-bar__actions">')
     const actions = source.slice(actionsStart, source.indexOf('class="file-browser"', actionsStart))
     expect(source).toContain('const filesSplit = inject(filesSplitControlKey, undefined)')
-    expect(actions).toMatch(/v-if="filesSplit\?\.role === 'primary' && \(filesSplit\.available\.value \|\| filesSplit\.open\.value\)"/)
-    expect(actions).toContain(':aria-pressed="filesSplit.open.value"')
-    expect(actions).toMatch(/v-else-if="filesSplit\?\.role === 'secondary'"[\s\S]*?关闭此栏/)
+    // Both panes close themselves; only a single wide pane offers to split.
+    expect(actions).toMatch(/v-if="filesSplit\?\.open\.value"[\s\S]*?filesSplit\.closePane\(\)[\s\S]*?关闭此栏/)
+    expect(actions).toMatch(/v-else-if="filesSplit\?\.role === 'primary' && filesSplit\.available\.value"[\s\S]*?filesSplit\.openSplit\(\)/)
+    expect(source).toContain('unregisterSplitBusyCheck = filesSplit?.registerBusyCheck(fileOperationsRunning)')
+    expect(source).toMatch(/if \(fileOperationsRunning\(\)\) \{\s*toast\.show\('当前主机有文件操作进行中'/)
   })
 
   it('uses one bounded readable activity stack for uploads and file transfers', () => {

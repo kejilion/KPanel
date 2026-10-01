@@ -4,7 +4,13 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FilesSplitWorkspace from './FilesSplitWorkspace.vue'
 
-const harness = vi.hoisted(() => ({ blockClose: false }))
+const harness = vi.hoisted(() => ({
+  blockClose: false,
+  busy: { primary: false, secondary: false } as Record<string, boolean>,
+  toast: vi.fn(),
+}))
+
+vi.mock('@/stores/toast', () => ({ useToast: () => ({ show: harness.toast }) }))
 
 // A light FilesView that reports what each pane resolves through injection.
 vi.mock('@/views/FilesView.vue', async () => {
@@ -20,7 +26,11 @@ vi.mock('@/views/FilesView.vue', async () => {
         const active = inject(desktopWindowActiveKey)
         const split = inject(filesSplitControlKey, undefined)
         const unregister = inject(desktopWindowCloseGuardKey, undefined)?.register(() => !harness.blockClose)
-        onBeforeUnmount(() => unregister?.())
+        const unregisterBusy = split?.registerBusyCheck(() => Boolean(harness.busy[split.role]))
+        onBeforeUnmount(() => {
+          unregister?.()
+          unregisterBusy?.()
+        })
         return () => h('section', {
           class: 'stub-files',
           'data-role': split?.role,
@@ -28,9 +38,11 @@ vi.mock('@/views/FilesView.vue', async () => {
           'data-host': String(route.query.hostId ?? ''),
           'data-active': String(active?.value),
         }, [
-          split && (split.role === 'secondary' || split.available.value || split.open.value)
-            ? h('button', { class: 'split-toggle', 'aria-pressed': String(split.open.value), onClick: () => split.toggle() })
-            : null,
+          split?.open.value
+            ? h('button', { class: 'close-pane', onClick: () => split.closePane() })
+            : split?.role === 'primary' && split.available.value
+              ? h('button', { class: 'open-split', onClick: () => split.openSplit() })
+              : null,
           h('button', { class: 'go-var', onClick: () => router.push({ name: 'files', query: { path: '/var' } }) }),
           h('button', { class: 'go-cluster', onClick: () => router.push({ name: 'cluster' }) }),
         ])
@@ -81,6 +93,8 @@ describe('FilesSplitWorkspace', () => {
   beforeEach(() => {
     window.localStorage.clear()
     harness.blockClose = false
+    harness.busy = { primary: false, secondary: false }
+    harness.toast.mockReset()
     resize = undefined
     vi.stubGlobal('ResizeObserver', TestResizeObserver)
   })
@@ -94,10 +108,10 @@ describe('FilesSplitWorkspace', () => {
   it('offers a second, independent pane only on a wide workspace', async () => {
     const mounted = await mountWorkspace()
     wrapper = mounted.wrapper
-    expect(pane(wrapper, 'primary').find('.split-toggle').exists()).toBe(false)
+    expect(pane(wrapper, 'primary').find('.open-split').exists()).toBe(false)
 
     await setWidth(1400)
-    await pane(wrapper, 'primary').get('.split-toggle').trigger('click')
+    await pane(wrapper, 'primary').get('.open-split').trigger('click')
     await flushPromises()
 
     const secondary = pane(wrapper, 'secondary')
@@ -153,7 +167,8 @@ describe('FilesSplitWorkspace', () => {
     await setWidth(700)
     expect(pane(wrapper, 'secondary').exists()).toBe(true)
     expect(wrapper.get('.files-workspace').classes()).toContain('files-workspace--stacked')
-    expect(pane(wrapper, 'primary').find('.split-toggle').attributes('aria-pressed')).toBe('true')
+    expect(pane(wrapper, 'primary').find('.close-pane').exists()).toBe(true)
+    expect(pane(wrapper, 'secondary').find('.close-pane').exists()).toBe(true)
   })
 
   it('runs the pane close guard before removing the second pane', async () => {
@@ -162,16 +177,56 @@ describe('FilesSplitWorkspace', () => {
     await setWidth(1400)
 
     harness.blockClose = true
-    await pane(wrapper, 'secondary').get('.split-toggle').trigger('click')
+    await pane(wrapper, 'secondary').get('.close-pane').trigger('click')
     await flushPromises()
     expect(pane(wrapper, 'secondary').exists()).toBe(true)
 
     harness.blockClose = false
-    await pane(wrapper, 'secondary').get('.split-toggle').trigger('click')
+    await pane(wrapper, 'secondary').get('.close-pane').trigger('click')
     await flushPromises()
     expect(pane(wrapper, 'secondary').exists()).toBe(false)
     expect(pane(wrapper, 'primary').attributes('data-active')).toBe('true')
     expect(JSON.parse(window.localStorage.getItem('kpanel:files:split:v1') || '{}').open).toBe(false)
+  })
+
+  it('closes the main pane by moving it to the second pane location', async () => {
+    window.localStorage.setItem('kpanel:files:split:v1', JSON.stringify({
+      open: true,
+      secondaryPath: '/files?path=/opt&hostId=h2',
+    }))
+    const mounted = await mountWorkspace()
+    wrapper = mounted.wrapper
+    await setWidth(1400)
+
+    await pane(wrapper, 'primary').get('.close-pane').trigger('click')
+    await flushPromises()
+
+    expect(pane(wrapper, 'secondary').exists()).toBe(false)
+    expect(mounted.router.currentRoute.value.fullPath).toBe('/files?path=/opt&hostId=h2')
+    expect(pane(wrapper, 'primary').attributes('data-path')).toBe('/opt')
+    expect(pane(wrapper, 'primary').attributes('data-host')).toBe('h2')
+    expect(pane(wrapper, 'primary').find('.open-split').exists()).toBe(true)
+  })
+
+  it('refuses to close a pane while it would interrupt uploads or transfers', async () => {
+    window.localStorage.setItem('kpanel:files:split:v1', JSON.stringify({ open: true }))
+    const mounted = await mountWorkspace()
+    wrapper = mounted.wrapper
+    await setWidth(1400)
+
+    harness.busy.secondary = true
+    await pane(wrapper, 'secondary').get('.close-pane').trigger('click')
+    await pane(wrapper, 'primary').get('.close-pane').trigger('click')
+    await flushPromises()
+    expect(pane(wrapper, 'secondary').exists()).toBe(true)
+    expect(harness.toast).toHaveBeenCalledTimes(2)
+
+    harness.busy = { primary: true, secondary: false }
+    await pane(wrapper, 'secondary').get('.close-pane').trigger('click')
+    await flushPromises()
+    // The main pane keeps running; only the second FilesView is removed.
+    expect(pane(wrapper, 'secondary').exists()).toBe(false)
+    expect(mounted.router.currentRoute.value.fullPath).toBe('/files?path=/srv&hostId=h1')
   })
 
   it('hands navigation outside the file manager to the page', async () => {

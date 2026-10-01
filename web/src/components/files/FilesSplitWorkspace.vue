@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import FilesPaneScope from '@/components/files/FilesPaneScope.vue'
 import FilesView from '@/views/FilesView.vue'
 import {
@@ -14,6 +14,7 @@ import {
   writeFilesSplitPreference,
   type FilesSplitRole,
 } from '@/lib/filesSplit'
+import { useToast } from '@/stores/toast'
 
 /**
  * Classic-mode file manager route. A single pane is the unchanged FilesView;
@@ -22,6 +23,8 @@ import {
  */
 
 const route = useRoute()
+const router = useRouter()
+const toast = useToast()
 const root = ref<HTMLElement>()
 const width = ref(0)
 const preference = readFilesSplitPreference()
@@ -29,6 +32,7 @@ const requested = ref(preference.open)
 const secondaryPath = ref(preference.secondaryPath)
 const secondaryMounted = ref(false)
 const activePane = ref<FilesSplitRole>('primary')
+const primaryScope = ref<InstanceType<typeof FilesPaneScope>>()
 const secondaryScope = ref<InstanceType<typeof FilesPaneScope>>()
 let closing = false
 let observer: ResizeObserver | undefined
@@ -72,11 +76,31 @@ function rememberSecondaryPath(fullPath: string): void {
   persist()
 }
 
-async function closeSecondary(): Promise<void> {
-  if (closing) return
+/**
+ * Close one pane and keep the other, like closing one of two windows. The
+ * main pane owns the page URL, so closing it moves it to the second pane's
+ * directory and host; either way the second FilesView is the one removed.
+ */
+async function closePane(role: FilesSplitRole): Promise<void> {
+  const secondary = secondaryScope.value
+  if (closing || !secondary) return
+  const affected = role === 'primary' ? [primaryScope.value, secondary] : [secondary]
+  if (affected.some((scope) => scope?.isBusy())) {
+    toast.show('有文件操作进行中', { message: '等上传、复制或移动完成后再关闭此栏。' })
+    return
+  }
   closing = true
   try {
-    if (secondaryScope.value && !(await secondaryScope.value.confirmClose())) return
+    if (!(await secondary.confirmClose())) return
+    if (role === 'primary') {
+      // Push a location object so the URL reads like the pane's own navigation.
+      const location = new URL(secondaryPath.value || '/files', 'http://kpanel.invalid')
+      try {
+        await router.push({ name: 'files', query: Object.fromEntries(location.searchParams) })
+      } catch {
+        return
+      }
+    }
     requested.value = false
     persist()
   } finally {
@@ -84,12 +108,8 @@ async function closeSecondary(): Promise<void> {
   }
 }
 
-function toggleSplit(): void {
-  if (secondaryMounted.value) {
-    void closeSecondary()
-    return
-  }
-  if (!available.value) return
+function openSplit(): void {
+  if (secondaryMounted.value || !available.value) return
   // A new second pane starts beside the current directory and host.
   secondaryPath.value ??= primaryLocation()
   requested.value = true
@@ -122,6 +142,7 @@ onBeforeUnmount(() => {
     }"
   >
     <FilesPaneScope
+      ref="primaryScope"
       role="primary"
       label="主文件栏"
       :active="!secondaryMounted || activePane === 'primary'"
@@ -130,7 +151,8 @@ onBeforeUnmount(() => {
       :density="paneDensity"
       :toolbar-stacked="paneToolbarStacked"
       @activate="activePane = 'primary'"
-      @toggle-split="toggleSplit"
+      @open-split="openSplit"
+      @close-pane="closePane('primary')"
     >
       <FilesView />
     </FilesPaneScope>
@@ -147,7 +169,7 @@ onBeforeUnmount(() => {
       :initial-path="secondaryPath"
       @activate="activePane = 'secondary'"
       @navigate="rememberSecondaryPath"
-      @toggle-split="closeSecondary"
+      @close-pane="closePane('secondary')"
     >
       <FilesView />
     </FilesPaneScope>

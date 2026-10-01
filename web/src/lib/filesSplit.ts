@@ -17,7 +17,11 @@ export interface FilesSplitControl {
   available: Readonly<Ref<boolean>>
   /** The second pane is mounted. */
   open: Readonly<Ref<boolean>>
-  toggle: () => void
+  openSplit: () => void
+  /** Close this pane and keep the other one, like closing one of two windows. */
+  closePane: () => void
+  /** Report work that closing a pane would interrupt (uploads, transfers). */
+  registerBusyCheck: (check: () => boolean) => () => void
 }
 
 export const filesSplitControlKey = Symbol('files-split-control') as InjectionKey<FilesSplitControl>

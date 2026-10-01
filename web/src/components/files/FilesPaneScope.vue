@@ -32,19 +32,29 @@ const props = defineProps<{
 const emit = defineEmits<{
   activate: []
   navigate: [fullPath: string]
-  toggleSplit: []
+  openSplit: []
+  closePane: []
 }>()
+
+const closeGuards = new Set<() => boolean | Promise<boolean>>()
+const busyChecks = new Set<() => boolean>()
 
 provide(desktopWindowActiveKey, computed(() => props.active))
 provide(filesSplitControlKey, {
   role: props.role,
   available: computed(() => props.splitAvailable),
   open: computed(() => props.split),
-  toggle: () => emit('toggleSplit'),
+  openSplit: () => emit('openSplit'),
+  closePane: () => emit('closePane'),
+  registerBusyCheck(check) {
+    busyChecks.add(check)
+    return () => {
+      busyChecks.delete(check)
+    }
+  },
 })
 
 const ready = ref(props.role === 'primary')
-const closeGuards = new Set<() => boolean | Promise<boolean>>()
 
 if (props.role === 'secondary') {
   const applicationRouter = useRouter()
@@ -85,6 +95,11 @@ if (props.role === 'secondary') {
   })
 }
 
+/** Whether closing the pane now would interrupt uploads or transfers. */
+function isBusy(): boolean {
+  return [...busyChecks].some((check) => check())
+}
+
 /** Run the pane's unsaved-work checks before the workspace removes it. */
 async function confirmClose(): Promise<boolean> {
   for (const guard of [...closeGuards]) {
@@ -93,7 +108,7 @@ async function confirmClose(): Promise<boolean> {
   return true
 }
 
-defineExpose({ confirmClose })
+defineExpose({ confirmClose, isBusy })
 </script>
 
 <template>

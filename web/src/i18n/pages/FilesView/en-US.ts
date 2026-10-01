@@ -289,6 +289,6 @@ export default [
   ["文件", "File"],
   ["双栏", "Split view"],
   ["关闭此栏", "Close this pane"],
-  ["关闭第二文件栏", "Close the second file pane"],
   ["并排打开第二文件栏，可在两个目录或主机之间拖动文件", "Open a second file pane side by side to drag files between two folders or hosts"],
+  ["关闭此栏，保留另一栏", "Close this pane and keep the other one"],
 ] as const satisfies PhraseCatalog
