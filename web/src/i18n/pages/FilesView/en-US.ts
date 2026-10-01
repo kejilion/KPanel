@@ -287,4 +287,8 @@ export default [
   ["松开以复制", "Release to copy"],
   ["按住 Ctrl/Option 可复制", "Hold Ctrl/Option to copy"],
   ["文件", "File"],
+  ["双栏", "Split view"],
+  ["关闭此栏", "Close this pane"],
+  ["关闭第二文件栏", "Close the second file pane"],
+  ["并排打开第二文件栏，可在两个目录或主机之间拖动文件", "Open a second file pane side by side to drag files between two folders or hosts"],
 ] as const satisfies PhraseCatalog

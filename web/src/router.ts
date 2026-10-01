@@ -115,7 +115,11 @@ export const router = createRouter({
         {
           path: 'files',
           name: 'files',
-          component: () => loadNavigationRoute('/files'),
+          // Classic mode wraps FilesView in the split workspace; desktop
+          // windows keep loading FilesView directly. Loading FilesView first
+          // keeps its prefetch and retry; the wrapper chunk is tiny.
+          component: () => loadNavigationRoute('/files')
+            .then(() => import('@/components/files/FilesSplitWorkspace.vue')),
           meta: { titleKey: 'route.files' },
         },
         {

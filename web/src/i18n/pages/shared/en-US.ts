@@ -1489,4 +1489,6 @@ export default [
   ["软件包独立终端启动失败，请检查 Agent 与终端服务状态。", "Could not start the dedicated package terminal. Check the Agent and terminal service."],
   ["已安装", "Installed"],
   ["未安装", "Not installed"],
+  ["主文件栏", "Main file pane"],
+  ["第二文件栏", "Second file pane"],
 ] as const satisfies PhraseCatalog

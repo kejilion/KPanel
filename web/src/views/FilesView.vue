@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardPaste,
+  Columns2,
   Copy,
   CircleAlert,
   Download,
@@ -83,6 +84,7 @@ import {
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
+import { filesSplitControlKey } from '@/lib/filesSplit'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
   addFileEntriesToDesktop,
@@ -129,6 +131,8 @@ const route = useRoute()
 const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
+// Present only inside the classic split workspace.
+const filesSplit = inject(filesSplitControlKey, undefined)
 const filesPage = ref<HTMLElement>()
 const localClusterNodeId = ref('')
 const fileHostPickerButton = ref<HTMLButtonElement>()
@@ -2797,6 +2801,25 @@ onBeforeUnmount(() => {
           multiple
           @change="($event.target as HTMLInputElement).files && uploadFiles(($event.target as HTMLInputElement).files!)"
         />
+        <button
+          v-if="filesSplit?.role === 'primary' && (filesSplit.available.value || filesSplit.open.value)"
+          class="button button--secondary button--small file-command-bar__split"
+          type="button"
+          :aria-pressed="filesSplit.open.value"
+          :title="filesSplit.open.value ? '关闭第二文件栏' : '并排打开第二文件栏，可在两个目录或主机之间拖动文件'"
+          @click="filesSplit.toggle()"
+        >
+          <Columns2 :size="15" /> 双栏
+        </button>
+        <button
+          v-else-if="filesSplit?.role === 'secondary'"
+          class="button button--secondary button--small file-command-bar__split"
+          type="button"
+          title="关闭此栏"
+          @click="filesSplit.toggle()"
+        >
+          <X :size="15" /> 关闭此栏
+        </button>
       </div>
     </div>
 

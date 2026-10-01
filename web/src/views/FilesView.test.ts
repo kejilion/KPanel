@@ -786,6 +786,16 @@ describe('FilesView remote download', () => {
     expect(source).toContain("files.remoteDownload.note")
   })
 
+  it('offers the split toggle only when a classic split workspace provides one', () => {
+    const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
+    const actionsStart = source.indexOf('<div class="file-command-bar__actions">')
+    const actions = source.slice(actionsStart, source.indexOf('class="file-browser"', actionsStart))
+    expect(source).toContain('const filesSplit = inject(filesSplitControlKey, undefined)')
+    expect(actions).toMatch(/v-if="filesSplit\?\.role === 'primary' && \(filesSplit\.available\.value \|\| filesSplit\.open\.value\)"/)
+    expect(actions).toContain(':aria-pressed="filesSplit.open.value"')
+    expect(actions).toMatch(/v-else-if="filesSplit\?\.role === 'secondary'"[\s\S]*?关闭此栏/)
+  })
+
   it('uses one bounded readable activity stack for uploads and file transfers', () => {
     const source = readFileSync(new URL('./FilesView.vue', import.meta.url), 'utf8')
     const narrowStyles = source.slice(
