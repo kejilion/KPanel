@@ -34,8 +34,8 @@
 </p>
 
 <p align="center">
-  <a href=".github/assets/readme/kpanel-dual-mode-hero.webp">
-    <img src=".github/assets/readme/kpanel-dual-mode-hero.webp" alt="KPanel 双模式工作台：桌面模式中的文件管理、AI 助手与 OpenCode，以及经典模式的服务器概览" width="100%">
+  <a href=".github/assets/readme/kpanel-desktop-hero-ai.webp">
+    <img src=".github/assets/readme/kpanel-desktop-hero-ai.webp" alt="基于最新截图经 AI 合成的 KPanel 桌面模式主视觉，展示应用入口、文件集合与服务器组件；实际界面见下方截图" width="100%">
   </a>
 </p>
 
@@ -81,6 +81,10 @@ KPanel 面向单管理员 Linux 服务器场景：从一台主机开始，在需
   <tr>
     <td>监控、终端、集群和 AI 助手可以并行展开，适合排障与跨模块操作。</td>
     <td>清晰侧栏、连续配置和快速巡检，保留传统服务器面板的效率。</td>
+  </tr>
+  <tr>
+    <td><a href=".github/assets/readme/kpanel-desktop-workspace.webp"><img src=".github/assets/readme/kpanel-desktop-workspace.webp" alt="KPanel 桌面模式中的文件管理器、OpenCode 终端与 AI 助手"></a></td>
+    <td><a href=".github/assets/screenshots/overview.webp"><img src=".github/assets/screenshots/overview.webp" alt="KPanel 经典模式服务器概览"></a></td>
   </tr>
 </table>
 
