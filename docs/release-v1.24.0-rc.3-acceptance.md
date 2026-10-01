@@ -86,7 +86,7 @@
 本轮没有产品测试失败、生产退化、回滚、紧急热修复或同版本重复发布。预览不计入正式部署频率；以下均为生产写前的流程或补充证据命令异常。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：7
+- 已记录发布流程异常或无效证据拦截次数：8
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -147,12 +147,12 @@
     "historicalReleases": []
   },
   {
-    "fingerprint": "local-closeout/collaboration-state/redundant-management-option",
+    "fingerprint": "local-closeout/command-preflight/invalid-invocation",
     "position": "before-production-write",
-    "count": 1,
-    "impact": "管理角色调用多传 require-clean，参数校验拒绝；没有执行主线同步或文件修改。",
-    "recoveryEvidence": "按脚本用法仅传 --role management 后通过，原件 v1.24.0-rc.3-management-check.log；将异常补入验收记录，补充提交继续独立 CI。",
-    "permanentAction": "使用管理角色的隐含干净检查，require-clean 仅用于 writer；收尾只使用已确认的脚本参数。",
+    "count": 2,
+    "impact": "管理角色调用多传 require-clean 被拒绝；随后归档预检的 PowerShell 字符串漏引号导致解析失败。两次均发生在目标操作执行前。",
+    "recoveryEvidence": "仅传 --role management 后通过，原件 v1.24.0-rc.3-management-check.log；解析错误保留于本次任务输出，修正记录继续独立 CI；归档最终 ref/SHA 读回见 closeout.json。",
+    "permanentAction": "管理角色使用隐含干净检查；先以读取结果核对 CI 与 ref，再调用带精确 lease 的 Git 原生命令，不重复组合临时 PowerShell 写操作包装。",
     "historicalReleases": []
   }
 ]
