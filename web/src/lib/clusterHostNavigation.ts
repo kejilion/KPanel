@@ -5,6 +5,16 @@ export function clusterHostMonitoringRoute(host: Pick<ClusterHost, 'id' | 'isLoc
   return { path: '/monitoring', query: host.isLocal ? { metric } : { hostId: host.id, metric } }
 }
 
+/** Terminal resolves every host, including the local one, by id. */
+export function clusterHostTerminalRoute(host: Pick<ClusterHost, 'id'>) {
+  return { path: '/terminal', query: { hostId: host.id } }
+}
+
+/** Files treat an omitted `hostId` as the local host. */
+export function clusterHostFilesRoute(host: Pick<ClusterHost, 'id' | 'isLocal'>) {
+  return { path: '/files', query: host.isLocal ? {} : { hostId: host.id } }
+}
+
 export const clusterSecurityEntrancePathPattern = /^[a-z0-9](?:[a-z0-9-]{4,46}[a-z0-9])$/
 
 function displayOrigin(host: ClusterHost): string {

@@ -1489,4 +1489,10 @@ export default [
   ["软件包独立终端启动失败，请检查 Agent 与终端服务状态。", "Could not start the dedicated package terminal. Check the Agent and terminal service."],
   ["已安装", "Installed"],
   ["未安装", "Not installed"],
+  ["历史监控", "History"],
+  ["文件", "Files"],
+  ["刷新", "Refresh"],
+  ["复制地址", "Copy address"],
+  ["主机操作", "Host actions"],
+  ["移除主机", "Remove host"],
 ] as const satisfies PhraseCatalog

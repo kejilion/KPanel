@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { useRoute } from 'vue-router'
 import { ListChecks, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
 import BatchTerminalPanel from '@/components/terminal/BatchTerminalPanel.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
@@ -60,6 +61,7 @@ const mobileConnectionsOpen = ref(false)
 const quickCommandsOpen = ref(false)
 const clusterHostOrderRevision = ref(0)
 const terminalRefs = new Map<string, HostTerminalHandle>()
+const route = useRoute()
 let controller: AbortController | undefined
 let initialHostLoad = true
 let unsubscribeClusterHostOrder: (() => void) | undefined
@@ -110,14 +112,21 @@ async function loadHosts(): Promise<void> {
     applyClusterHostOrderPreference(inventory.value.hostOrder)
     if (initialHostLoad) {
       initialHostLoad = false
-      const localHost = inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
-      if (localHost) await openHost(localHost)
+      const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)
+      if (startHost) await openHost(startHost)
     }
   } catch {
     errorMessage.value = t('terminal.connectionsLoadFailed')
   } finally {
     loading.value = false
   }
+}
+
+function requestedTerminalHost(): ClusterHost | undefined {
+  const hostId = route.query.hostId
+  // The shared route can already point at another page while this view unmounts.
+  if (route.path !== '/terminal' || typeof hostId !== 'string' || !hostId) return undefined
+  return inventory.value?.items.find((host) => host.id === hostId && host.terminalAvailable)
 }
 
 async function openHost(host: ClusterHost): Promise<void> {
@@ -318,6 +327,13 @@ function sessionStateLabel(state: OpenTerminal['state']): string {
   if (state === 'reconnecting') return t('terminal.reconnecting')
   return t('terminal.connecting')
 }
+
+// A reused desktop window keeps this view mounted while the cluster page asks for another host.
+watch(() => route.query.hostId, () => {
+  if (initialHostLoad) return
+  const host = requestedTerminalHost()
+  if (host) void openHost(host)
+})
 
 onMounted(() => {
   unsubscribeClusterHostOrder = subscribeClusterHostOrder(() => {
