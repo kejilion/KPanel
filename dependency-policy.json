@@ -354,16 +354,16 @@
       "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105"
     },
     {
-      "component": "@types/node",
-      "currentVersion": "24.19.0",
-      "candidateVersion": "26.6.3",
-      "reason": "KPanel tracks the supported Node 24 LTS runtime. Node 26 declarations can expose APIs absent from the pinned runtime; the latest verified Node 24 declarations are adopted instead.",
-      "securityAndProductImpact": "Development-time types only; keeping runtime and declarations on the same major avoids unsupported API assumptions.",
-      "mitigation": "Pin @types/node 24.19.0, upgrade the runtime to Node 24.21.0 LTS, and retain the Node 26 signal in freshness reports.",
+      "component": "Node.js LTS",
+      "currentVersion": "26.10.0",
+      "candidateVersion": "26 LTS (not released)",
+      "reason": "User-authorized isolated Node 26 preparation experiment. Node 26.10.0 is Current, not the approved latest-lts production channel; Node 24.21.0 remains the released baseline. This branch must not be integrated or published as approved LTS yet.",
+      "securityAndProductImpact": "Build/CI tooling only, with matching @types/node 26.6.3 and bundled npm 11.19.1. The final Go runtime image does not acquire a Node runtime. No production or arena Runner replacement is authorized.",
+      "mitigation": "Keep this candidate isolated, pin official image digests, preserve latest-lts detection, and validate the whole Node 26 toolchain before any separately approved adoption.",
       "owner": "KPanel base maintenance",
       "reviewDate": "2026-10-15",
-      "exitCondition": "The approved LTS runtime moves to Node 26 and the matching type declarations pass the full toolchain compatibility gates.",
-      "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105"
+      "exitCondition": "Node 26 is officially supported LTS (currently scheduled 2026-10-28), the exact LTS patch/digest is re-qualified, and full candidate CI/L3 and release-runner validation pass before authorized integration.",
+      "rollbackPoint": "2b8dd4e9b77eeec68456855e34a73f55b25316d9"
     }
   ],
   "automationBoundary": {
