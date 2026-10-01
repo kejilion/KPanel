@@ -392,4 +392,6 @@ export default [
   ["已允许该控制端管理本机文件", "This controller can now manage files on this host."],
   ["已停用该控制端的文件管理", "File management disabled for this controller."],
   ["文件管理授权更新失败", "Failed to update file management access"],
+  ["地址已复制", "Address copied"],
+  ["请手动选择地址复制。", "Select the address and copy it manually."],
 ] as const satisfies PhraseCatalog

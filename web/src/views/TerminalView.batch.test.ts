@@ -6,6 +6,11 @@ import TerminalView from './TerminalView.vue'
 
 const mocks = vi.hoisted(() => ({ hosts: vi.fn(), open: vi.fn(), terminalMounts: vi.fn(), batchApplies: vi.fn() }))
 
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRoute: () => ({ query: {} }),
+}))
+
 vi.mock('@/lib/api', () => ({
   api: { cluster: { hosts: mocks.hosts }, terminals: { open: mocks.open } },
   ApiError: class extends Error {},

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ClusterShareThemes from '@/components/cluster/ClusterShareThemes.vue'
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
@@ -20,6 +20,7 @@ import {
   Bell,
   Check,
   Copy,
+  EllipsisVertical,
   Gauge,
   Globe2,
   GripVertical,
@@ -41,6 +42,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import ClusterNotificationsDialog from '@/components/cluster/ClusterNotificationsDialog.vue'
 import ClusterTemporarySortMenu from '@/components/cluster/ClusterTemporarySortMenu.vue'
+import ClusterHostContextMenu, { type ClusterHostMenuAction } from '@/components/cluster/ClusterHostContextMenu.vue'
 import LightNodeHealth from '@/components/cluster/LightNodeHealth.vue'
 import ClusterHostDetails from '@/components/cluster/ClusterHostDetails.vue'
 import ClusterRemainingValue from '@/components/cluster/ClusterRemainingValue.vue'
@@ -63,7 +65,13 @@ import {
   type ClusterHostTemporarySortDirection,
   type ClusterHostTemporarySortKey,
 } from '@/lib/clusterHostTemporarySort'
-import { clusterHostMonitoringRoute, clusterHostPanelURL } from '@/lib/clusterHostNavigation'
+import {
+  clusterHostFilesRoute,
+  clusterHostMonitoringRoute,
+  clusterHostPanelURL,
+  clusterHostTerminalRoute,
+} from '@/lib/clusterHostNavigation'
+import { contextMenuFocusOrigin, type ContextMenuFocusOrigin } from '@/lib/contextMenu'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { clusterTrafficCounters, formatNetworkTrafficCounter } from '@/lib/networkTraffic'
@@ -91,6 +99,7 @@ import type {
 
 const ClusterGlobe = defineAsyncComponent(() => import('@/components/cluster/ClusterGlobe.vue'))
 const toast = useToast()
+const router = useRouter()
 const { t } = useI18n()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
 const inventory = ref<ClusterHostList>()
@@ -1223,8 +1232,8 @@ async function saveHost(): Promise<void> {
   }
 }
 
-async function removeHost(): Promise<void> {
-  const host = selected.value
+async function removeHost(target?: ClusterHost): Promise<void> {
+  const host = target ?? selected.value
   if (!host || host.isLocal || deleting.value || enablingMutualFiles.value) return
   if (!window.confirm(t('cluster.confirm.removeHost', { name: host.name }))) return
   deleting.value = true
@@ -1235,7 +1244,7 @@ async function removeHost(): Promise<void> {
       inventory.value.total = inventory.value.items.length
     }
     deleting.value = false
-    closeManage()
+    if (selected.value?.id === host.id) closeManage()
     if (result.credentialRemoved === false) {
       toast.danger('主机已移除，但凭据清理失败', '请检查 KPanel 数据目录权限；服务重启时会再次清理孤立凭据。')
     } else {
@@ -1248,7 +1257,9 @@ async function removeHost(): Promise<void> {
     toast.danger('移除失败', friendlyError(reason, '请刷新后重试。'))
     await load(true)
     const fresh = inventory.value?.items.find((item) => item.id === host.id)
-    if (fresh) {
+    if (selected.value?.id !== host.id) {
+      // Removed from the row menu: the manage dialog is not showing this host.
+    } else if (fresh) {
       selected.value = fresh
       editResourceVersion.value = fresh.resourceVersion
       editName.value = fresh.name
@@ -1283,6 +1294,73 @@ function upsertHost(host: ClusterHost): void {
   if (index >= 0) inventory.value.items[index] = { ...host, trafficPeriod: host.trafficPeriod ?? inventory.value.items[index]?.trafficPeriod }
   else inventory.value.items.unshift(host)
   inventory.value.total = inventory.value.items.length
+}
+
+const hostMenu = ref<InstanceType<typeof ClusterHostContextMenu>>()
+
+function openHostMenu(request: {
+  host: ClusterHost
+  x: number
+  y: number
+  anchor: Element | null
+  opener?: HTMLElement | null
+  origin: ContextMenuFocusOrigin
+}): void {
+  void hostMenu.value?.open({ ...request, address: displayHostAddress(request.host) })
+}
+
+function onHostContextMenu(event: MouseEvent, host: ClusterHost): void {
+  // Shift+right-click and the panel address link keep the browser's own menu.
+  if (event.shiftKey) return
+  if (event.target instanceof Element && event.target.closest('a.cluster-card__origin')) return
+  event.preventDefault()
+  const anchor = event.currentTarget instanceof Element ? event.currentTarget : null
+  const rect = anchor?.getBoundingClientRect()
+  const origin = contextMenuFocusOrigin(event)
+  // Some keyboard-initiated contextmenu events carry no pointer position.
+  const unpositioned = event.clientX === 0 && event.clientY === 0 && Boolean(rect)
+  openHostMenu({
+    host,
+    x: unpositioned ? rect!.left + 24 : event.clientX,
+    y: unpositioned ? rect!.top + 24 : event.clientY,
+    anchor,
+    // Escape returns to the control that had focus when the key opened the menu.
+    opener: origin === 'keyboard' && event.target instanceof HTMLElement ? event.target : null,
+    origin,
+  })
+}
+
+function onHostMenuButton(event: MouseEvent, host: ClusterHost): void {
+  const button = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  if (hostMenu.value?.isOpen && hostMenu.value.hostId === host.id) {
+    hostMenu.value.close(true)
+    return
+  }
+  const rect = button?.getBoundingClientRect()
+  openHostMenu({
+    host,
+    x: rect ? rect.right : event.clientX,
+    y: rect ? rect.bottom + 4 : event.clientY,
+    anchor: button,
+    opener: button,
+    origin: contextMenuFocusOrigin(event),
+  })
+}
+
+async function onHostMenuSelect(action: ClusterHostMenuAction, menuHost: ClusterHost): Promise<void> {
+  // The inventory refreshes while the menu is open; act on the current record.
+  const host = inventory.value?.items.find((item) => item.id === menuHost.id)
+  if (!host) return
+  if (action === 'open-panel') openPanel(host)
+  else if (action === 'history') void router.push(clusterHostMonitoringRoute(host, 'cpu'))
+  else if (action === 'terminal') void router.push(clusterHostTerminalRoute(host))
+  else if (action === 'files') void router.push(clusterHostFilesRoute(host))
+  else if (action === 'refresh') await refreshHost(host)
+  else if (action === 'manage') openManage(host)
+  else if (action === 'copy-address') {
+    const address = displayHostAddress(host)
+    if (address) await copyToClipboard(address, '地址已复制', '请手动选择地址复制。')
+  } else if (action === 'remove') await removeHost(host)
 }
 
 function openPanel(host: ClusterHost): void {
@@ -1520,6 +1598,7 @@ onBeforeUnmount(() => {
         @dragenter.prevent="dragOverHostId = host.id"
         @dragover.prevent
         @drop.prevent="dropHost(host.id)"
+        @contextmenu="onHostContextMenu($event, host)"
       >
         <header class="cluster-card__header">
           <button
@@ -1584,16 +1663,28 @@ onBeforeUnmount(() => {
             </span>
             <ClusterHostDetails :details="inventory?.hostDetails?.[host.id]" />
           </div>
-          <button
-            class="icon-button icon-button--small"
-            type="button"
-            :disabled="host.polling"
-            :aria-label="`刷新 ${host.name}`"
-            @click="refreshHost(host)"
-          >
-            <LoaderCircle v-if="host.polling" class="spin" :size="15" />
-            <RefreshCw v-else :size="15" />
-          </button>
+          <span class="cluster-card__actions">
+            <button
+              class="icon-button icon-button--small"
+              type="button"
+              :disabled="host.polling"
+              :aria-label="`刷新 ${host.name}`"
+              @click="refreshHost(host)"
+            >
+              <LoaderCircle v-if="host.polling" class="spin" :size="15" />
+              <RefreshCw v-else :size="15" />
+            </button>
+            <button
+              class="icon-button icon-button--small"
+              type="button"
+              aria-haspopup="menu"
+              :title="phrase('更多操作')"
+              :aria-label="`${phrase('更多操作')} · ${host.name}`"
+              @click="onHostMenuButton($event, host)"
+            >
+              <EllipsisVertical :size="15" />
+            </button>
+          </span>
         </header>
 
         <div v-if="host.lastSnapshot" class="cluster-card__metrics">
@@ -2315,7 +2406,7 @@ onBeforeUnmount(() => {
           class="button button--danger"
           type="button"
           :disabled="saving || deleting || enablingMutualFiles"
-          @click="removeHost"
+          @click="removeHost()"
         >
           <LoaderCircle v-if="deleting" class="spin" :size="16" />
           <Trash2 v-else :size="16" /> {{ phrase('移除主机') }}
@@ -2334,6 +2425,7 @@ onBeforeUnmount(() => {
     </ModalDialog>
 
     <ClusterNotificationsDialog :open="notificationsOpen" @close="notificationsOpen = false" />
+    <ClusterHostContextMenu ref="hostMenu" @select="onHostMenuSelect" />
   </div>
 </template>
 
@@ -2697,6 +2789,12 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 16px;
   border-bottom: 1px solid var(--border);
+}
+
+.cluster-card__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .cluster-card__drag {
@@ -3464,7 +3562,7 @@ onBeforeUnmount(() => {
   }
 
   .cluster-card__header {
-    grid-template-columns: 24px auto minmax(0, 1fr) 40px;
+    grid-template-columns: 24px auto minmax(0, 1fr) auto;
     gap: 8px;
     padding: 12px;
   }

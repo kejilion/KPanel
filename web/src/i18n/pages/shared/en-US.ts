@@ -1493,4 +1493,10 @@ export default [
   ["第二文件栏", "Second file pane"],
   ["有文件操作进行中", "File operations are in progress"],
   ["等上传、复制或移动完成后再关闭此栏。", "Close this pane after the upload, copy or move finishes."],
+  ["历史监控", "History"],
+  ["文件", "Files"],
+  ["刷新", "Refresh"],
+  ["复制地址", "Copy address"],
+  ["主机操作", "Host actions"],
+  ["移除主机", "Remove host"],
 ] as const satisfies PhraseCatalog

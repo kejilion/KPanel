@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { createSSRApp, ssrContextKey, type ComputedRef, type Ref } from 'vue'
+import { routerKey } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClusterView from './ClusterView.vue'
 import { ApiError } from '@/lib/api'
@@ -127,7 +128,10 @@ interface ClusterBindings {
   addHost: () => Promise<void>
   openManage: (host: ClusterHost) => void
   saveHost: () => Promise<void>
-  removeHost: () => Promise<void>
+  removeHost: (target?: ClusterHost) => Promise<void>
+  hostMenu: Ref<{ open: (request: Record<string, unknown>) => Promise<void> } | undefined>
+  onHostContextMenu: (event: MouseEvent, host: ClusterHost) => void
+  onHostMenuSelect: (action: string, host: ClusterHost) => Promise<void>
   mutualFilesHostEligible: (host: ClusterHost) => boolean
   enableMutualFiles: () => Promise<void>
   openPanel: (host: ClusterHost) => void
@@ -157,12 +161,13 @@ interface ClusterBindings {
   toggleControllerFileRelay: (controller: ClusterController) => Promise<void>
 }
 
-function setupView(): ClusterBindings {
+function setupView(router?: { push: (to: unknown) => unknown }): ClusterBindings {
   const component = ClusterView as unknown as {
     setup: (props: Record<string, never>, context: { expose: () => void }) => ClusterBindings
   }
   const app = createSSRApp({ render: () => null })
   app.provide(ssrContextKey, { modules: new Set<string>() })
+  if (router) app.provide(routerKey as symbol, router)
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
     return app.runWithContext(() => component.setup({}, { expose: () => undefined }))
@@ -1272,6 +1277,141 @@ describe('ClusterView inventory and navigation', () => {
   })
 })
 
+
+describe('ClusterView row context menu', () => {
+  class FakeElement {
+    constructor(private readonly originLink = false, private readonly box = { left: 100, top: 200 }) {}
+    closest(selector: string): FakeElement | null {
+      return this.originLink && selector === 'a.cluster-card__origin' ? this : null
+    }
+    getBoundingClientRect() { return this.box }
+  }
+
+  function contextEvent(overrides: Record<string, unknown> = {}) {
+    const row = new FakeElement()
+    return {
+      shiftKey: false, button: 2, detail: 0, clientX: 320, clientY: 180,
+      target: row, currentTarget: row, preventDefault: vi.fn(), ...overrides,
+    } as unknown as MouseEvent & { preventDefault: ReturnType<typeof vi.fn> }
+  }
+
+  function viewWithMenu(router?: { push: (to: unknown) => unknown }) {
+    vi.stubGlobal('Element', FakeElement)
+    const view = setupView(router)
+    const open = vi.fn().mockResolvedValue(undefined)
+    view.hostMenu.value = { open }
+    view.inventory.value = inventory()
+    return { view, open, remote: view.inventory.value.items[1]! }
+  }
+
+  it('opens the menu at the pointer with the displayed address and suppresses the browser menu', () => {
+    const { view, open, remote } = viewWithMenu()
+    const event = contextEvent()
+    view.onHostContextMenu(event, remote)
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({
+      host: remote, x: 320, y: 180, origin: 'pointer', address: 'https://hk.example.com',
+    }))
+  })
+
+  it('keeps the browser menu for Shift+right-click and the panel address link', () => {
+    const { view, open, remote } = viewWithMenu()
+    const shift = contextEvent({ shiftKey: true })
+    view.onHostContextMenu(shift, remote)
+    const link = new FakeElement(true)
+    const onLink = contextEvent({ target: link })
+    view.onHostContextMenu(onLink, remote)
+
+    expect(shift.preventDefault).not.toHaveBeenCalled()
+    expect(onLink.preventDefault).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('places a keyboard-invoked menu on the row and returns focus to the control that opened it', () => {
+    vi.stubGlobal('HTMLElement', FakeElement)
+    const { view, open, remote } = viewWithMenu()
+    const event = contextEvent({ button: 0, clientX: 0, clientY: 0 })
+    view.onHostContextMenu(event, remote)
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ x: 124, y: 224, origin: 'keyboard', opener: event.target }))
+  })
+
+  it('keeps a pointer-opened menu detached from focus restoration', () => {
+    vi.stubGlobal('HTMLElement', FakeElement)
+    const { view, open, remote } = viewWithMenu()
+    view.onHostContextMenu(contextEvent(), remote)
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ opener: null, origin: 'pointer' }))
+  })
+
+  it('sends history, terminal and files to the exact host, and keeps local files implicit', async () => {
+    const push = vi.fn()
+    const { view, remote } = viewWithMenu({ push })
+    const local = view.inventory.value!.items[0]!
+
+    await view.onHostMenuSelect('history', remote)
+    await view.onHostMenuSelect('terminal', remote)
+    await view.onHostMenuSelect('files', remote)
+    await view.onHostMenuSelect('files', local)
+
+    expect(push.mock.calls.map(([to]) => to)).toEqual([
+      { path: '/monitoring', query: { hostId: 'remote', metric: 'cpu' } },
+      { path: '/terminal', query: { hostId: 'remote' } },
+      { path: '/files', query: { hostId: 'remote' } },
+      { path: '/files', query: {} },
+    ])
+  })
+
+  it('acts on the current inventory record and ignores a host that has since been removed', async () => {
+    const push = vi.fn()
+    const { view, remote } = viewWithMenu({ push })
+    view.inventory.value!.items = view.inventory.value!.items.filter((item) => item.id !== 'remote')
+
+    await view.onHostMenuSelect('terminal', remote)
+
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('copies the displayed address', async () => {
+    const { view, remote } = viewWithMenu()
+    await view.onHostMenuSelect('copy-address', remote)
+
+    expect(mocks.clipboardWriteText).toHaveBeenCalledWith('https://hk.example.com')
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('地址已复制')
+  })
+
+  it('removes a host from the row menu after confirmation without opening the manage dialog', async () => {
+    const { view, remote } = viewWithMenu()
+    mocks.remove.mockResolvedValueOnce({ credentialRemoved: true, remoteRevoked: true })
+
+    await view.onHostMenuSelect('remove', remote)
+
+    expect(mocks.confirm).toHaveBeenCalled()
+    expect(mocks.remove).toHaveBeenCalledWith('remote', 'remote-version')
+    expect(view.inventory.value?.items.map((item) => item.id)).toEqual(['local'])
+    expect(view.manageOpen.value).toBe(false)
+    expect(view.selected.value).toBeUndefined()
+  })
+
+  it('does not remove anything when the confirmation is declined, and never removes the local node', async () => {
+    const { view, remote } = viewWithMenu()
+    mocks.confirm.mockReturnValueOnce(false)
+    await view.onHostMenuSelect('remove', remote)
+    await view.onHostMenuSelect('remove', view.inventory.value!.items[0]!)
+
+    expect(mocks.remove).not.toHaveBeenCalled()
+    expect(view.inventory.value?.items).toHaveLength(2)
+  })
+
+  it('mounts the menu and a keyboard-reachable trigger on every row', () => {
+    const source = readFileSync(new URL('./ClusterView.vue', import.meta.url), 'utf8')
+    expect(source).toContain('@contextmenu="onHostContextMenu($event, host)"')
+    expect(source).toContain('@click="onHostMenuButton($event, host)"')
+    expect(source).toContain('aria-haspopup="menu"')
+    expect(source).toContain('<ClusterHostContextMenu ref="hostMenu" @select="onHostMenuSelect" />')
+  })
+})
 
 describe('ClusterView optional server details', () => {
   it('saves and clears a monthly quota without resetting traffic or changing alert thresholds', async () => {

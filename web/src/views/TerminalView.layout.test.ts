@@ -17,8 +17,8 @@ describe('multi-host terminal workspace layout', () => {
   it('opens the available local host after the first successful inventory load', () => {
     expect(terminalSource).toContain('let initialHostLoad = true')
     expect(terminalSource).toContain('if (initialHostLoad) {')
-    expect(terminalSource).toContain('const localHost = inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)')
-    expect(terminalSource).toContain('if (localHost) await openHost(localHost)')
+    expect(terminalSource).toContain('const startHost = requestedTerminalHost() || inventory.value.items.find((host) => host.isLocal && host.terminalAvailable)')
+    expect(terminalSource).toContain('if (startHost) await openHost(startHost)')
   })
 
   it('keeps a large connection inventory in its own scroll region', () => {
