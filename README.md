@@ -34,8 +34,8 @@
 </p>
 
 <p align="center">
-  <a href="https://kpanel.kejilion.sh/">
-    <img src=".github/assets/readme/kpanel-desktop-home-dark.webp" alt="KPanel 深色桌面模式，展示应用入口、文件集合与服务器监控" width="100%">
+  <a href=".github/assets/readme/kpanel-dual-mode-hero.webp">
+    <img src=".github/assets/readme/kpanel-dual-mode-hero.webp" alt="KPanel 双模式工作台：桌面模式中的文件管理、AI 助手与 OpenCode，以及经典模式的服务器概览" width="100%">
   </a>
 </p>
 
