@@ -82,10 +82,6 @@ KPanel 面向单管理员 Linux 服务器场景：从一台主机开始，在需
     <td>监控、终端、集群和 AI 助手可以并行展开，适合排障与跨模块操作。</td>
     <td>清晰侧栏、连续配置和快速巡检，保留传统服务器面板的效率。</td>
   </tr>
-  <tr>
-    <td><a href=".github/assets/readme/kpanel-desktop-workspace.webp"><img src=".github/assets/readme/kpanel-desktop-workspace.webp" alt="KPanel 桌面模式中的文件管理器、OpenCode 终端与 AI 助手"></a></td>
-    <td><a href=".github/assets/screenshots/overview.webp"><img src=".github/assets/screenshots/overview.webp" alt="KPanel 经典模式服务器概览"></a></td>
-  </tr>
 </table>
 
 ## AI 是工作窗口，不是第二套控制面
