@@ -86,7 +86,7 @@
 本轮没有产品测试失败、生产退化、回滚、紧急热修复或同版本重复发布。预览不计入正式部署频率；以下均为生产写前的流程或补充证据命令异常。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：6
+- 已记录发布流程异常或无效证据拦截次数：7
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -144,6 +144,15 @@
     "impact": "验收草稿把 rc.2 写入只允许 stable tag 的 historicalReleases 数组，机器校验拒绝；未提交无效记录。",
     "recoveryEvidence": "保留正式版 v1.22.0/v1.23.0 数组，预览序列重复另由报告识别；修正后相同入口验证通过。",
     "permanentAction": "按模板的封闭指标 schema 填写历史数组，RC 不写入 stable 数组；提交验收文档前执行机器校验。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "local-closeout/collaboration-state/redundant-management-option",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "管理角色调用多传 require-clean，参数校验拒绝；没有执行主线同步或文件修改。",
+    "recoveryEvidence": "按脚本用法仅传 --role management 后通过，原件 v1.24.0-rc.3-management-check.log；将异常补入验收记录，补充提交继续独立 CI。",
+    "permanentAction": "使用管理角色的隐含干净检查，require-clean 仅用于 writer；收尾只使用已确认的脚本参数。",
     "historicalReleases": []
   }
 ]
