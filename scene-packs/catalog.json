@@ -4,7 +4,7 @@
     {
       "schema": 1,
       "id": "neon-city",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "runtime": "kpanel-scene-pack@1",
       "name": {
         "zh-CN": "霓虹都市",
@@ -64,7 +64,7 @@
       "dependencies": [
         {
           "name": "three",
-          "version": "0.186.0",
+          "version": "0.186.1",
           "license": "MIT"
         }
       ],
@@ -93,7 +93,7 @@
         {
           "path": "manifest.json",
           "size": 1458,
-          "sha256": "43ace49e86f48d9b4b3bddb673dddfaf26e3f7b709eaba36b93064c1857a5519"
+          "sha256": "6f61b01db228e0b7033095b4e868e74a53ba00ae1f777b435e40035b80454736"
         },
         {
           "path": "poster.webp",
@@ -102,8 +102,8 @@
         },
         {
           "path": "scene.js",
-          "size": 717935,
-          "sha256": "949413bb34ab3e90eebeff89c572440eccae3413df61dbfd30bd5980b8863bff"
+          "size": 717750,
+          "sha256": "e9471dbf8052fe349419934fa319c17c348fef3163b6e58c7d5c432199442832"
         },
         {
           "path": "thumb.webp",
@@ -111,12 +111,12 @@
           "sha256": "c6b49c11e03e4dd52fbde68a291c818b846ad8a4a06a299e0969cbbeb90018b7"
         }
       ],
-      "sizeBytes": 1145900
+      "sizeBytes": 1145715
     },
     {
       "schema": 1,
       "id": "orbital-station",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "runtime": "kpanel-scene-pack@1",
       "name": {
         "zh-CN": "星港轨道",
@@ -175,7 +175,7 @@
       "dependencies": [
         {
           "name": "three",
-          "version": "0.186.0",
+          "version": "0.186.1",
           "license": "MIT"
         }
       ],
@@ -334,7 +334,7 @@
         {
           "path": "manifest.json",
           "size": 1467,
-          "sha256": "f39bc1bf003614b0436c87190804fdfe8ffb13063b9d6aec159c2cde66bbf182"
+          "sha256": "a8af8732fa8395436a0b5a7348c0ed5b6b2dfbb089904186c4b4b7d5ae26fbc7"
         },
         {
           "path": "poster.webp",
@@ -343,8 +343,8 @@
         },
         {
           "path": "scene.js",
-          "size": 660230,
-          "sha256": "1368e3e3fc808d668b70a7f74c2faeb6e05f56181ec5de41a48554ad53d870c2"
+          "size": 660042,
+          "sha256": "f7bc398f9bca9fc7de75fef9063a14a3caf4c58b87be049c07d84e29944f9569"
         },
         {
           "path": "thumb.webp",
@@ -352,12 +352,12 @@
           "sha256": "c805c9a29f28220c76d36770b29bd60ab26597ec10cde9e434c7e27536fe30d1"
         }
       ],
-      "sizeBytes": 4089472
+      "sizeBytes": 4089284
     },
     {
       "schema": 1,
       "id": "sea-and-sky",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "runtime": "kpanel-scene-pack@1",
       "name": {
         "zh-CN": "海天日月",
@@ -426,7 +426,7 @@
       "dependencies": [
         {
           "name": "three",
-          "version": "0.186.0",
+          "version": "0.186.1",
           "license": "MIT"
         },
         {
@@ -565,7 +565,7 @@
         {
           "path": "manifest.json",
           "size": 1715,
-          "sha256": "d5d2dc9016af32d71dc42a802458457ab0ab1e90d63620a6653a5c797aed521d"
+          "sha256": "452ee5dceb5dcde8c6ed9cf0fc2bef8e0e68768ee1867e2d7a10a544b0930147"
         },
         {
           "path": "poster.webp",
@@ -574,8 +574,8 @@
         },
         {
           "path": "scene.js",
-          "size": 696308,
-          "sha256": "7ae044c78e62f7115324229faba30b065a4b892fc2fea22582da5e36acbe5e1d"
+          "size": 696124,
+          "sha256": "09885dc0f2123842359ccd49e2b78bdc0e011b2572218ecdba23580021d57b49"
         },
         {
           "path": "thumb.webp",
@@ -583,7 +583,7 @@
           "sha256": "fe7f03eaa11606e0fa2c3d9524e3b1d810f92175117dca0dcc7f08ea7f0f516c"
         }
       ],
-      "sizeBytes": 5967822
+      "sizeBytes": 5967638
     }
   ]
 }
