@@ -1250,6 +1250,7 @@ async function showContextMenu(
   selectionKeys: readonly string[] = [],
 ): Promise<void> {
   event.preventDefault()
+  closeStartMenu(false)
   contextMenuOpener = event.currentTarget instanceof HTMLElement
     ? event.currentTarget
     : document.activeElement instanceof HTMLElement
@@ -2577,7 +2578,8 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   }
   if (event.key !== 'Escape') return
   if (startMenuOpen.value) {
-    closeStartMenu()
+    // A handled Escape (for example one that closed the menu's language list) keeps the menu open.
+    if (!event.defaultPrevented) closeStartMenu()
     return
   }
   cancelDesktopLongPress()

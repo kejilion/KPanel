@@ -211,6 +211,25 @@ describe('DesktopView start menu', () => {
     expect(wrapper.find('#desktop-start-menu').exists()).toBe(false)
   })
 
+  it('keeps the menu open when Escape only closes its language list', async () => {
+    await mountDesktop()
+    await openMenu()
+    const trigger = wrapper.get('#desktop-start-menu .language-selector__trigger')
+    await trigger.trigger('click')
+    await keydown(trigger.element, { key: 'Escape' })
+    expect(wrapper.find('#desktop-start-menu .language-selector__menu').exists()).toBe(false)
+    expect(wrapper.find('#desktop-start-menu').exists()).toBe(true)
+  })
+
+  it('closes the start menu when the taskbar context menu opens from the K button', async () => {
+    await mountDesktop()
+    await openMenu()
+    await startButton().trigger('contextmenu', { clientX: 20, clientY: 780 })
+    await flushPromises()
+    expect(wrapper.find('#desktop-start-menu').exists()).toBe(false)
+    expect(wrapper.find('.desktop__context-menu [data-context-action="processes"]').exists()).toBe(true)
+  })
+
   it('returns focus to the K button on Escape', async () => {
     await mountDesktop()
     await openMenu()

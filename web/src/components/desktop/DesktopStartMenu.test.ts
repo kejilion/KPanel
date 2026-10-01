@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import DesktopStartMenu from './DesktopStartMenu.vue'
@@ -112,6 +112,56 @@ describe('DesktopStartMenu', () => {
     expect(wrapper.emitted('close')).toBeUndefined()
     await press('Escape')
     expect(wrapper.emitted('close')).toEqual([[true]])
+  })
+
+  it('ignores the Enter that commits an IME composition', async () => {
+    await mountMenu()
+    await press('Enter', { isComposing: true })
+    await press('Enter', { keyCode: 229 })
+    expect(wrapper.emitted('select')).toBeUndefined()
+    await press('Enter')
+    expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ key: 'nav:/overview' })
+  })
+
+  it('scrolls the highlight into view for keyboard moves only, and resets the list on a new query', async () => {
+    await mountMenu()
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      await wrapper.get('[data-start-menu-key="site:blog"]').trigger('pointermove')
+      await nextTick()
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      await press('ArrowUp')
+      await nextTick()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(wrapper.get('[data-start-menu-key="app:nginx"]').element)
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    }
+    const body = wrapper.get('.desktop-start-menu__body').element
+    body.scrollTop = 120
+    await search().setValue('docker')
+    expect(body.scrollTop).toBe(0)
+  })
+
+  it('lets Escape close an open language list without closing the menu', async () => {
+    await mountMenu()
+    await wrapper.get('.language-selector__trigger').trigger('click')
+    expect(wrapper.find('.language-selector__menu').exists()).toBe(true)
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    let reachedDocument = false
+    const listener = () => { reachedDocument = true }
+    document.addEventListener('keydown', listener)
+    try {
+      wrapper.get('.language-selector__trigger').element.dispatchEvent(event)
+      await nextTick()
+    } finally {
+      document.removeEventListener('keydown', listener)
+    }
+    expect(reachedDocument).toBe(true)
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.find('.language-selector__menu').exists()).toBe(false)
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 
   it('closes without restoring focus when focus moves outside, but not to its opener', async () => {

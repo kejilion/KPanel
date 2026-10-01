@@ -44,6 +44,7 @@ const i18n = useI18n()
 const root = ref<HTMLElement>()
 const input = ref<HTMLInputElement>()
 const gridElement = ref<HTMLElement>()
+const body = ref<HTMLElement>()
 const query = ref('')
 const active = ref(0)
 const failedIcons = ref(new Set<string>())
@@ -121,8 +122,15 @@ function isNavigationKey(key: string): key is NavigationKey {
   return (NAVIGATION_KEYS as readonly string[]).includes(key)
 }
 
+/** Keyboard moves keep the highlight visible; pointer hover never scrolls the list under the pointer. */
+async function revealActive(): Promise<void> {
+  await nextTick()
+  root.value?.querySelector<HTMLElement>(`#${optionId(active.value)}`)?.scrollIntoView?.({ block: 'nearest' })
+}
+
 function onSearchKeyDown(event: KeyboardEvent): void {
-  if (event.isComposing) return
+  // Safari reports the Enter that commits an IME composition as keyCode 229.
+  if (event.isComposing || event.keyCode === 229) return
   if (isNavigationKey(event.key)) {
     // While typing, horizontal keys edit the query instead of moving the highlight.
     if (searching.value && event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
@@ -131,6 +139,7 @@ function onSearchKeyDown(event: KeyboardEvent): void {
       count: gridCount.value,
       columns: gridColumns(),
     })
+    void revealActive()
     return
   }
   if (event.key !== 'Enter') return
@@ -142,10 +151,11 @@ function onSearchKeyDown(event: KeyboardEvent): void {
 
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return
-  // An open language list closes first through its own document listener.
+  event.preventDefault()
+  // An open language list closes first through its own document listener; the
+  // handled flag keeps the desktop's window listener from closing the menu too.
   if (event.target instanceof Element && event.target.closest('.language-selector')
     && root.value?.querySelector('.language-selector__menu')) return
-  event.preventDefault()
   event.stopPropagation()
   if (query.value && event.target === input.value) {
     query.value = ''
@@ -173,6 +183,7 @@ watch(() => props.open, async (open) => {
 
 watch(query, () => {
   active.value = 0
+  if (body.value) body.value.scrollTop = 0
 })
 
 watch(() => results.value.length, (length) => {
@@ -180,10 +191,6 @@ watch(() => results.value.length, (length) => {
   else if (active.value < 0 && length) active.value = 0
 })
 
-watch(active, async (index) => {
-  await nextTick()
-  root.value?.querySelector<HTMLElement>(`#${optionId(index)}`)?.scrollIntoView?.({ block: 'nearest' })
-})
 </script>
 
 <template>
@@ -222,7 +229,7 @@ watch(active, async (index) => {
       </label>
 
       <!-- Pointer presses keep focus in the search box so the highlight and typing stay in sync. -->
-      <div class="desktop-start-menu__body" @mousedown.prevent>
+      <div ref="body" class="desktop-start-menu__body" @mousedown.prevent>
         <div :id="LIST_ID" class="desktop-start-menu__results" role="listbox" :aria-label="i18n.t('desktop.startMenuLabel')">
           <div
             v-for="group in groups"
