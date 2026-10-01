@@ -41,7 +41,7 @@
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/xterm": "6.0.0",
     "circle-flags": "2.8.3",
-    "dompurify": "3.4.14",
+    "dompurify": "3.4.16",
     "markdown-it": "15.0.2",
     "qrcode": "1.5.4",
     "simple-icons": "16.27.1",
