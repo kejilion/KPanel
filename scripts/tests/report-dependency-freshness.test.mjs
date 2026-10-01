@@ -12,6 +12,7 @@ import {
   githubActionVersionCandidate,
   immutableDigestCandidate,
   isStableVersion,
+  latestStableGoVersion,
   maintenanceStatus,
   managedScriptRevisionCandidate,
   npmCandidatesFromOutdated,
@@ -39,6 +40,28 @@ test('npm invocation avoids Windows command-shell wrappers and supports override
   assert.deepEqual(npmInvocation('win32', { NPM: 'custom-npm' }, 'node'), { command: 'custom-npm', prefixArguments: [] });
   assert.equal(goExecutable({}), 'go');
   assert.equal(goExecutable({ GO: 'custom-go' }), 'custom-go');
+});
+
+test('Go release discovery handles official prefixes and selects the newest stable release', () => {
+  const latest = latestStableGoVersion([
+    { version: 'go1.26.8', stable: true },
+    { version: 'go1.28rc1', stable: false },
+    { version: 'go1.27.1', stable: true },
+    { version: 'go1.99.0', stable: false },
+  ]);
+  assert.equal(latest, '1.27.1');
+  assert.equal(compareVersions('1.26.7', latest), -1);
+  assert.equal(compareVersions('1.27.1', latest), 0);
+  assert.equal(classifyUpdate('1.26.7', latest, 'toolchain'), 'minor');
+  assert.equal(latestStableGoVersion([{ version: 'go1.26.8', stable: true }]), '1.26.8');
+  assert.equal(classifyUpdate('1.26.7', '1.26.8', 'toolchain'), 'compatible-patch');
+});
+
+test('Go release discovery fails closed instead of reporting no update for invalid metadata', () => {
+  for (const releases of [[], [null], [{ version: 'go1.28rc1', stable: true }],
+    [{ version: '1.27.1', stable: true }], [{ version: 'go1.27.1' }]]) {
+    assert.throws(() => latestStableGoVersion(releases), /no recognizable stable Go release/);
+  }
 });
 
 test('GitHub token is never sent to non-GitHub upstreams', () => {

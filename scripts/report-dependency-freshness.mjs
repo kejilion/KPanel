@@ -571,13 +571,22 @@ function currentToolchains(repo) {
   return { goVersion, nodeVersion, dockerfile };
 }
 
+export function latestStableGoVersion(releases) {
+  const versions = releases
+    .filter((release) => release?.stable === true && /^go\d+\.\d+\.\d+$/.test(release.version))
+    .map((release) => release.version.slice(2))
+    .sort((left, right) => compareVersions(right, left));
+  if (versions.length === 0) throw new Error('go.dev returned no recognizable stable Go release');
+  return versions[0];
+}
+
 async function collectToolchains(repo) {
   const current = currentToolchains(repo);
   const [goReleases, nodeReleases] = await Promise.all([
     fetchJson('https://go.dev/dl/?mode=json'),
     fetchJson('https://nodejs.org/dist/index.json'),
   ]);
-  const latestGo = goReleases.map((release) => release.version).find(isStableVersion);
+  const latestGo = latestStableGoVersion(goReleases);
   const latestNode = nodeReleases.find((release) => release.lts && isStableVersion(release.version))?.version;
   return [
     candidate('Go toolchain', current.goVersion, latestGo, 'toolchain', 'go.dev stable releases'),
