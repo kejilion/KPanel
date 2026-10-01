@@ -241,8 +241,8 @@
       "components": {
         "trivy": {
           "repository": "aquasecurity/trivy",
-          "currentVersion": "0.72.0",
-          "pinnedDigest": "sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada"
+          "currentVersion": "0.74.0",
+          "pinnedDigest": "sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
         },
         "govulncheck": {
           "repository": "golang/vuln"
@@ -340,7 +340,32 @@
     "exitCondition",
     "rollbackPoint"
   ],
-  "exceptions": [],
+  "exceptions": [
+    {
+      "component": "typescript",
+      "currentVersion": "6.0.3",
+      "candidateVersion": "7.0.2",
+      "reason": "vue-tsc 3.3.11 requires typescript/lib/tsc; an isolated Vue typecheck with TypeScript 7.0.2 fails with ERR_PACKAGE_PATH_NOT_EXPORTED. Preserve the current compiler API until Vue tooling supports the new compiler.",
+      "securityAndProductImpact": "No confirmed TypeScript security advisory in this update report; adopting 7.0.2 now breaks the required Vue typecheck and build.",
+      "mitigation": "Keep TypeScript 6.0.3 pinned, run the existing typecheck/build gates, and retain the TypeScript 7 signal in every freshness report.",
+      "owner": "KPanel base maintenance",
+      "reviewDate": "2026-10-15",
+      "exitCondition": "A supported Vue typecheck path for TypeScript 7 passes KPanel typecheck, tests, scene-pack checks and production build without disabling checks.",
+      "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105"
+    },
+    {
+      "component": "@types/node",
+      "currentVersion": "24.19.0",
+      "candidateVersion": "26.6.3",
+      "reason": "KPanel tracks the supported Node 24 LTS runtime. Node 26 declarations can expose APIs absent from the pinned runtime; the latest verified Node 24 declarations are adopted instead.",
+      "securityAndProductImpact": "Development-time types only; keeping runtime and declarations on the same major avoids unsupported API assumptions.",
+      "mitigation": "Pin @types/node 24.19.0, upgrade the runtime to Node 24.21.0 LTS, and retain the Node 26 signal in freshness reports.",
+      "owner": "KPanel base maintenance",
+      "reviewDate": "2026-10-15",
+      "exitCondition": "The approved LTS runtime moves to Node 26 and the matching type declarations pass the full toolchain compatibility gates.",
+      "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105"
+    }
+  ],
   "automationBoundary": {
     "automaticDetection": true,
     "automaticReport": true,

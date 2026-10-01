@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mode="${1:-source}"
-trivy_image="${TRIVY_IMAGE:-aquasec/trivy@sha256:c6e969c5662a546ad5de4a73c2a6b7a7c627f86d916903e175aa623af5b97ada}"
+trivy_image="${TRIVY_IMAGE:-aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969}"
 cache_dir="${TRIVY_CACHE_DIR:-${TMPDIR:-/tmp}/kpanel-trivy-cache}"
 
 command -v docker >/dev/null 2>&1 || {
