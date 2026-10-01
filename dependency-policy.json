@@ -345,12 +345,12 @@
       "component": "typescript",
       "currentVersion": "6.0.3",
       "candidateVersion": "7.0.2",
-      "reason": "vue-tsc 3.3.11 requires typescript/lib/tsc; an isolated Vue typecheck with TypeScript 7.0.2 fails with ERR_PACKAGE_PATH_NOT_EXPORTED. Preserve the current compiler API until Vue tooling supports the new compiler.",
-      "securityAndProductImpact": "No confirmed TypeScript security advisory in this update report; adopting 7.0.2 now breaks the required Vue typecheck and build.",
-      "mitigation": "Keep TypeScript 6.0.3 pinned, run the existing typecheck/build gates, and retain the TypeScript 7 signal in every freshness report.",
+      "reason": "Dual-compiler experiment: native TypeScript 7.0.2 checks scene-pack TypeScript via @typescript/native; Vue SFC checking still needs the TypeScript 6.0.3 JS API, resolved through the official @typescript/typescript6 6.0.2 shim by vue-tsc 3.3.11. This is not a full native Vue typechecker migration.",
+      "securityAndProductImpact": "Build-time compilers only; retain strict Vue typechecking and locked compiler integrity. Native scene checks do not replace Vue SFC checks.",
+      "mitigation": "Pin the native compiler and API shim, lock @typescript/old to 6.0.3, call the native entry explicitly to avoid tsc bin collisions, and preserve dependency freshness reporting for both compiler paths.",
       "owner": "KPanel base maintenance",
       "reviewDate": "2026-10-15",
-      "exitCondition": "A supported Vue typecheck path for TypeScript 7 passes KPanel typecheck, tests, scene-pack checks and production build without disabling checks.",
+      "exitCondition": "A supported native Vue SFC checker replaces the TypeScript 6 JS API and passes positive/negative typechecks, tests, scene-pack checks and production build without disabling checks.",
       "rollbackPoint": "9c5be9c293f98ad9bce260a4562e28743951b105"
     },
     {
