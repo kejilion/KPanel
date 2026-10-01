@@ -166,7 +166,7 @@ describe('DesktopView start menu', () => {
   })
 
   it('toggles with Ctrl/Command+K outside text fields, terminals and dialogs', async () => {
-    const [id] = [desktop.openWindow('/settings', 'route.settings', true)]
+    const id = desktop.openWindow('/settings', 'route.settings', true)
     await mountDesktop()
     const shell = wrapper.element as HTMLElement
     shell.focus()

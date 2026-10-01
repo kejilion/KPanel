@@ -126,6 +126,7 @@ describe('DesktopStartMenu', () => {
   it('scrolls the highlight into view for keyboard moves only, and resets the list on a new query', async () => {
     await mountMenu()
     const scrollIntoView = vi.fn()
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
     Element.prototype.scrollIntoView = scrollIntoView
     try {
       await wrapper.get('[data-start-menu-key="site:blog"]').trigger('pointermove')
@@ -136,7 +137,9 @@ describe('DesktopStartMenu', () => {
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
       expect(scrollIntoView.mock.contexts[0]).toBe(wrapper.get('[data-start-menu-key="app:nginx"]').element)
     } finally {
-      delete (Element.prototype as Partial<Element>).scrollIntoView
+      // jsdom has no scrollIntoView; put back whatever the environment provided.
+      if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original)
+      else delete (Element.prototype as Partial<Element>).scrollIntoView
     }
     const body = wrapper.get('.desktop-start-menu__body').element
     body.scrollTop = 120

@@ -54,12 +54,12 @@ export function searchDesktopStartMenu(
 ): DesktopStartMenuItem[] {
   const normalized = normalizeStartMenuQuery(query)
   const tokens = normalized.split(' ')
+  const rank = (item: DesktopStartMenuItem): number | undefined => {
+    if (normalized) return matchRank(item, normalized, tokens)
+    return item.section === 'actions' ? undefined : 0
+  }
   return items
-    .map((item, index) => ({
-      item,
-      index,
-      rank: normalized ? matchRank(item, normalized, tokens) : item.section === 'actions' ? undefined : 0,
-    }))
+    .map((item, index) => ({ item, index, rank: rank(item) }))
     .filter((match): match is { item: DesktopStartMenuItem; index: number; rank: number } => match.rank !== undefined)
     .sort((left, right) =>
       DESKTOP_START_MENU_SECTIONS.indexOf(left.item.section) - DESKTOP_START_MENU_SECTIONS.indexOf(right.item.section)
