@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardPaste,
+  Columns2,
   Copy,
   CircleAlert,
   Download,
@@ -83,6 +84,7 @@ import {
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
+import { filesSplitControlKey } from '@/lib/filesSplit'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
   addFileEntriesToDesktop,
@@ -129,6 +131,8 @@ const route = useRoute()
 const router = useRouter()
 const desktopWindowActive = inject(desktopWindowActiveKey, computed(() => true))
 const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
+// Present only inside the classic split workspace.
+const filesSplit = inject(filesSplitControlKey, undefined)
 const filesPage = ref<HTMLElement>()
 const localClusterNodeId = ref('')
 const fileHostPickerButton = ref<HTMLButtonElement>()
@@ -155,6 +159,7 @@ function openArchiveResult(hostId: string, path: string): void {
 }
 const clusterHostOrderRevision = ref(0)
 let unregisterWindowCloseGuard: (() => void) | undefined
+let unregisterSplitBusyCheck: (() => void) | undefined
 let unsubscribeClusterHostOrder: (() => void) | undefined
 
 type DialogAction = 'mkdir' | 'rename' | 'chmod' | 'compress' | 'extract' | 'trash'
@@ -419,6 +424,21 @@ function resetFileHostContext(hostId: string): boolean {
   return true
 }
 
+/** Work that switching host or closing a split pane would interrupt. */
+function fileOperationsRunning(): boolean {
+  return Boolean(
+    fileTransferState.value?.phase === 'running'
+    || pasteBusy.value
+    || dialogBusy.value
+    || trashBusy.value
+    || externalUploadController
+    || previewSaving.value
+    || desktopAdding.value
+    || remoteDownloadSubmitting.value
+    || uploadTasks.value.some((task) => task.phase === 'running'),
+  )
+}
+
 function handleFileHostSelection(host: ClusterHost): void {
   const status = fileHostStatus(host)
   if (status.action === 'select') {
@@ -426,17 +446,7 @@ function handleFileHostSelection(host: ClusterHost): void {
       closeFileHostPicker(true)
       return
     }
-    if (
-      fileTransferState.value?.phase === 'running'
-      || pasteBusy.value
-      || dialogBusy.value
-      || trashBusy.value
-      || externalUploadController
-      || previewSaving.value
-      || desktopAdding.value
-      || remoteDownloadSubmitting.value
-      || uploadTasks.value.some((task) => task.phase === 'running')
-    ) {
+    if (fileOperationsRunning()) {
       toast.show('当前主机有文件操作进行中', { message: '操作完成后再切换主机，避免文件落到错误的位置。' })
       return
     }
@@ -2656,6 +2666,7 @@ onMounted(() => {
   unregisterWindowCloseGuard = desktopWindowCloseGuards
     ? desktopWindowCloseGuards.register(guard)
     : desktopCloseGuardCoordinator.register('classic-files', guard)
+  unregisterSplitBusyCheck = filesSplit?.registerBusyCheck(fileOperationsRunning)
   window.addEventListener('click', handleWindowClick)
   window.addEventListener('keydown', handleFileShortcut)
   window.addEventListener('resize', closeContextMenuOnViewportChange)
@@ -2714,6 +2725,7 @@ watch(search, () => {
 
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
+  unregisterSplitBusyCheck?.()
   unsubscribeClusterHostOrder?.()
   unsubscribeFileDirectoryChanges?.()
   clearDesktopFileDrag(fileWindowChangeOrigin)
@@ -2797,6 +2809,24 @@ onBeforeUnmount(() => {
           multiple
           @change="($event.target as HTMLInputElement).files && uploadFiles(($event.target as HTMLInputElement).files!)"
         />
+        <button
+          v-if="filesSplit?.open.value"
+          class="button button--secondary button--small file-command-bar__split"
+          type="button"
+          title="关闭此栏，保留另一栏"
+          @click="filesSplit.closePane()"
+        >
+          <X :size="15" /> 关闭此栏
+        </button>
+        <button
+          v-else-if="filesSplit?.role === 'primary' && filesSplit.available.value"
+          class="button button--secondary button--small file-command-bar__split"
+          type="button"
+          title="并排打开第二文件栏，可在两个目录或主机之间拖动文件"
+          @click="filesSplit.openSplit()"
+        >
+          <Columns2 :size="15" /> 双栏
+        </button>
       </div>
     </div>
 
