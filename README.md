@@ -35,7 +35,7 @@
 
 <p align="center">
   <a href=".github/assets/readme/kpanel-desktop-hero-ai.webp">
-    <img src=".github/assets/readme/kpanel-desktop-hero-ai.webp" alt="基于最新截图经 AI 合成的 KPanel 桌面模式主视觉，展示应用入口、文件集合与服务器组件；实际界面见下方截图" width="100%">
+    <img src=".github/assets/readme/kpanel-desktop-hero-ai.webp" alt="基于最新截图经 AI 合成的 KPanel 工作台主视觉，以大桌面搭配经典模式应用市场；实际界面见下方截图" width="100%">
   </a>
 </p>
 
