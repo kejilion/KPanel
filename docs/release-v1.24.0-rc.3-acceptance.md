@@ -53,6 +53,7 @@
 - 原件 `C:/GitHub/_validation/v1.24.0-rc.3-086fcbcc-l3-r1`；终态 `wsl-evidence/status.txt`。12 项回收原件 SHA-256 复核通过，补充复核 `C:/GitHub/_release-evidence/v1.24.0-rc.3-l3-checksums.json`。
 - 精确产品 SHA 的候选 [CI 36800666630](https://github.com/kejilion/KPanel/actions/runs/36800666630) 与 [Dependency freshness 36800666666](https://github.com/kejilion/KPanel/actions/runs/36800666666)、主线 [CI 36801567823](https://github.com/kejilion/KPanel/actions/runs/36801567823) 与 [Dependency freshness 36801567812](https://github.com/kejilion/KPanel/actions/runs/36801567812) 均成功。
 - 标签 [Dependency freshness 36802415768](https://github.com/kejilion/KPanel/actions/runs/36802415768) 成功。
+- 纯验收补充 `8c431a97` 的 [CI 36805869079](https://github.com/kejilion/KPanel/actions/runs/36805869079) 在 UTC 02:32:10 因 Hosted Runner 拉取 Alpine 包索引的 TLS 错误失败，OpenRC 用例未开始；此前源码校验、race、漏洞扫描、Bash 生命周期及备份一致性均通过。原始日志 `C:/GitHub/_release-evidence/v1.24.0-rc.3-failed-ci-job-110189949331.log` 保留；最终新记录候选和主线的 CI 在 closeout.json 单独记录，失败 run 不改写为成功。
 
 ## 标签与公开产物
 
@@ -86,7 +87,7 @@
 本轮没有产品测试失败、生产退化、回滚、紧急热修复或同版本重复发布。预览不计入正式部署频率；以下均为生产写前的流程或补充证据命令异常。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：8
+- 已记录发布流程异常或无效证据拦截次数：9
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -153,6 +154,15 @@
     "impact": "管理角色调用多传 require-clean 被拒绝；随后归档预检的 PowerShell 字符串漏引号导致解析失败。两次均发生在目标操作执行前。",
     "recoveryEvidence": "仅传 --role management 后通过，原件 v1.24.0-rc.3-management-check.log；解析错误保留于本次任务输出，修正记录继续独立 CI；归档最终 ref/SHA 读回见 closeout.json。",
     "permanentAction": "管理角色使用隐含干净检查；先以读取结果核对 CI 与 ref，再调用带精确 lease 的 Git 原生命令，不重复组合临时 PowerShell 写操作包装。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "candidate-ci/openrc/alpine-index-tls",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Hosted CI 拉取 Alpine v3.24 APKINDEX.tar.gz 出现 TLS 错误，apk 无索引导致 bash 安装失败，OpenRC 用例未执行；不是已执行的产品断言失败。",
+    "recoveryEvidence": "CI 36805869079 的原始日志和 jobs/annotations 保留；补充事实记录形成新文档候选，在镜像摘要与测试入口不变的条件下重新验证，最终 CI 见 closeout.json。",
+    "permanentAction": "保留固定镜像与原有门禁，当前发布任务按明确网络证据重试；若再次遇到相同错误，停止并复核 Runner/CDN 网络，不现场更换镜像或省略 OpenRC 测试。",
     "historicalReleases": []
   }
 ]
