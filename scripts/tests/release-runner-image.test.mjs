@@ -48,3 +48,10 @@ test('release runner never imports mutable host binaries or floating base tags',
   assert.doesNotMatch(dockerfile, /^COPY\s+(?!--from=node-runtime)/m);
   assert.doesNotMatch(dockerfile, /curl|wget|latest/);
 });
+
+test('release runner accepts the optional build proxy only as a BuildKit secret', () => {
+  assert.match(dockerfile, /^# syntax=docker\/dockerfile:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /--mount=type=secret,id=https_proxy,required=false/);
+  assert.match(dockerfile, /cat \/run\/secrets\/https_proxy/);
+  assert.doesNotMatch(dockerfile, /^(?:ARG|ENV)\s+.*(?:https?_proxy|HTTPS?_PROXY)/m);
+});

@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
 FROM node:26.10.0-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS node-runtime
 
 FROM golang:1.26.7-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468
@@ -8,7 +10,11 @@ LABEL org.opencontainers.image.title="KPanel release gate runner" \
       org.opencontainers.image.base.golang="golang:1.26.7-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468" \
       org.opencontainers.image.base.node="node:26.10.0-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80"
 
-RUN apk add --no-cache \
+RUN --mount=type=secret,id=https_proxy,required=false \
+    sh -eu -c 'if [ -f /run/secrets/https_proxy ]; then \
+      export HTTPS_PROXY="$(cat /run/secrets/https_proxy)"; \
+      export https_proxy="$HTTPS_PROXY"; \
+    fi; apk add --no-cache \
       bash=5.3.9-r1 \
       build-base=0.5-r4 \
       ca-certificates=20260909-r0 \
@@ -16,7 +22,7 @@ RUN apk add --no-cache \
       docker-cli=29.8.2-r0 \
       docker-cli-buildx=0.34.1-r1 \
       git=2.54.0-r0 \
-      make=4.4.1-r4
+      make=4.4.1-r4'
 
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/include/node /usr/local/include/node
