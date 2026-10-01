@@ -283,6 +283,17 @@ func DefaultFileManagerConfig(stateDirectory string) filemanager.Config {
 		trashDirectory = path.Join(stateDirectory, "file-trash")
 		protectedDirectories = append(protectedDirectories, stateDirectory)
 	}
+	// Protection is textual while browsing refuses symlinked components, so a
+	// host that links /home/docker to a storage volume would otherwise expose
+	// the KPanel secrets and state through their resolved paths.
+	resolvedDirectories := make([]string, 0, len(protectedDirectories))
+	for _, directory := range protectedDirectories {
+		resolved, err := filepath.EvalSymlinks(directory)
+		if err == nil && path.IsAbs(resolved) && resolved != "/" && resolved != directory {
+			resolvedDirectories = append(resolvedDirectories, resolved)
+		}
+	}
+	protectedDirectories = append(protectedDirectories, resolvedDirectories...)
 	return filemanager.Config{
 		Root: "/", TrashVirtual: trashDirectory,
 		ProtectedVirtual: protectedDirectories,

@@ -40,6 +40,28 @@ func PrivateDir(path string) error {
 	return os.Chmod(path, 0700)
 }
 
+// CanonicalRoot resolves symlinks in an operator-configured absolute state
+// directory once, so NoLinkParents only polices the tree KPanel creates below
+// it. NAS layouts such as fnOS link /home/docker to a storage volume; treating
+// that trusted ancestor as an attack made the Agent refuse to start on a fresh
+// install. Components that do not exist yet are kept below the resolved prefix.
+func CanonicalRoot(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", ErrInvalid
+	}
+	var missing []string
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			return filepath.Join(append([]string{resolved}, missing...)...), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) || current == filepath.Dir(current) {
+			return "", err
+		}
+		missing = append([]string{filepath.Base(current)}, missing...)
+	}
+}
+
 func NoLinkParents(path string) error {
 	for current := path; ; current = filepath.Dir(current) {
 		info, err := os.Lstat(current)

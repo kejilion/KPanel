@@ -359,3 +359,51 @@ func TestBackupHostInterruptedJournalRecovery(t *testing.T) {
 		t.Fatal("interrupted transaction changed original data", err)
 	}
 }
+
+func TestBackupServiceStartsBelowLinkedStateAncestor(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(base, "vol1", "1000", "docker")
+	if err := os.MkdirAll(filepath.Join(volume, "kpanel", "data", "agent"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(base, "docker")
+	if err := os.Symlink(volume, linked); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	s, err := NewService(NewWithSocket(filepath.Join(linked, "kpanel", "data", "agent"), filepath.Join(base, "missing.sock")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if want := filepath.Join(volume, "kpanel", "data", "agent", "backup-center"); s.Jobs.Root != want {
+		t.Fatalf("backup center = %q, want %q", s.Jobs.Root, want)
+	}
+}
+
+func TestBackupExcludesResolvedKPanelRoots(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(root, "vol1", "1000", "docker")
+	for _, dir := range []string{filepath.Join(volume, "kpanel", "secrets"), filepath.Join(volume, "app"), filepath.Join(root, "home")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(volume, filepath.Join(root, "home", "docker")); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	e := &Engine{Root: root, StateDir: filepath.Join(root, "home", "docker", "kpanel", "data", "agent")}
+	for _, path := range []string{"/vol1/1000/docker/kpanel/secrets", "/vol1/1000/docker/kpanel", "/vol1/1000"} {
+		if !e.excluded(path) {
+			t.Fatalf("resolved KPanel root %s is not excluded", path)
+		}
+	}
+	if e.excluded("/vol1/1000/docker/app") {
+		t.Fatal("application data next to KPanel was excluded")
+	}
+}

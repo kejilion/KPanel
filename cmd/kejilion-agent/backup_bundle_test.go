@@ -107,3 +107,23 @@ func TestBackupCLIFileInteroperability(t *testing.T) {
 		t.Fatal("temporary decrypted data retained", err)
 	}
 }
+
+func TestBackupCLIWorkspaceBelowLinkedStateAncestor(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.Join(base, "vol1")
+	if err := os.MkdirAll(filepath.Join(volume, "agent"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(base, "docker")
+	if err := os.Symlink(volume, linked); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	t.Setenv("KEJILION_AGENT_STATE_DIR", filepath.Join(linked, "agent"))
+	dir, err := cliBackupWorkspace()
+	if err != nil || filepath.Dir(dir) != filepath.Join(volume, "agent", "backup-cli") {
+		t.Fatal(dir, err)
+	}
+}
