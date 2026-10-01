@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.24.0-rc.6] - 2026-10-02
+
+本预览版升级 Go 构建工具链，并修复 Go 新版本检测。
+
+### Changed
+
+- Go 工具链升级至 1.27.1，同步固定 Docker、CI 和发布 Runner；Node 继续使用 24.21.0 LTS，TypeScript 继续使用 6.0.3。
+- 适配 Go 1.27 JSON 解码器的旧实现对照测试，保留业务 JSON 深度限制、输入不变、超限拒绝和内存分配检查。
+- 发布 Runner 可通过可选 BuildKit secret 在构建时访问代理，代理配置不会写入镜像；工具链一致性回归接入治理门禁。
+
+### Fixed
+
+- 依赖报告识别官方 `goX.Y.Z` 版本号，按数值选择最新稳定版本；无有效稳定版本的响应明确记为检测失败。
+
+### Upgrade Notes
+
+- 本版只更新 GitHub prerelease 和 Docker `preview`，稳定默认入口继续 1.23.0。`scriptLinkageState=not-required`，无需发布脚本（不适用）；内置脚本提交和 SHA-256 保持 rc.5 的已验证基线，没有 API、数据库或宿主机协议迁移。
+- Node 26 Current 和 TypeScript 7 双编译器试验保留为独立候选，未纳入本版。原有 Node 类型声明与 TypeScript 例外继续于 2026-10-15 复核。
+
 ## [1.24.0-rc.5] - 2026-10-01
 
 本预览版加入桌面开始菜单，并更新依赖和构建基座。
