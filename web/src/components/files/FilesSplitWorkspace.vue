@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import FilesPaneScope from '@/components/files/FilesPaneScope.vue'
 import FilesView from '@/views/FilesView.vue'
@@ -103,6 +103,9 @@ async function closePane(role: FilesSplitRole): Promise<void> {
     }
     requested.value = false
     persist()
+    // The clicked close button is gone; keep keyboard focus in the remaining pane.
+    await nextTick()
+    primaryScope.value?.focus()
   } finally {
     closing = false
   }

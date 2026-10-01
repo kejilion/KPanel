@@ -32,7 +32,8 @@ vi.mock('@/views/FilesView.vue', async () => {
           unregisterBusy?.()
         })
         return () => h('section', {
-          class: 'stub-files',
+          class: 'stub-files files-page',
+          tabindex: -1,
           'data-role': split?.role,
           'data-path': String(route.query.path ?? ''),
           'data-host': String(route.query.hostId ?? ''),
@@ -206,6 +207,7 @@ describe('FilesSplitWorkspace', () => {
     expect(pane(wrapper, 'primary').attributes('data-path')).toBe('/opt')
     expect(pane(wrapper, 'primary').attributes('data-host')).toBe('h2')
     expect(pane(wrapper, 'primary').find('.open-split').exists()).toBe(true)
+    expect(document.activeElement).toBe(pane(wrapper, 'primary').element)
   })
 
   it('refuses to close a pane while it would interrupt uploads or transfers', async () => {

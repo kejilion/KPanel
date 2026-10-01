@@ -55,6 +55,7 @@ provide(filesSplitControlKey, {
 })
 
 const ready = ref(props.role === 'primary')
+const root = ref<HTMLElement>()
 
 if (props.role === 'secondary') {
   const applicationRouter = useRouter()
@@ -108,11 +109,17 @@ async function confirmClose(): Promise<boolean> {
   return true
 }
 
-defineExpose({ confirmClose, isBusy })
+/** Return keyboard focus to this pane after the other one closes. */
+function focus(): void {
+  root.value?.querySelector<HTMLElement>('.files-page')?.focus({ preventScroll: true })
+}
+
+defineExpose({ confirmClose, isBusy, focus })
 </script>
 
 <template>
   <div
+    ref="root"
     class="files-pane"
     :class="[
       `files-pane--${role}`,
