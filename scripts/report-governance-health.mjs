@@ -124,11 +124,11 @@ export function assess(proposals, today) {
     if (['missing', 'unclassified'].includes(proposal.category)) unclassified.push(proposal);
     const start = proposal.date ?? proposal.fileDate;
     if (!SLA_CATEGORIES.includes(proposal.category) || !start) continue;
-    const pending = days(start, today);
+    const age = days(start, today);
     const deferral = proposal.deferredUntil;
     const deferralValid = deferral && deferral >= today && days(today, deferral) <= MAX_DEFERRAL_DAYS;
     if (deferral) deferred.push({ ...proposal, deferralValid });
-    if (pending > REVIEW_SLA_DAYS && !deferralValid) overdue.push({ ...proposal, days: pending });
+    if (age > REVIEW_SLA_DAYS && !deferralValid) overdue.push({ ...proposal, days: age });
   }
   const reviewed = proposals.filter((proposal) => proposal.reviewer);
   return {

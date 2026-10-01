@@ -350,6 +350,12 @@ test('the newest Independent-Review trailer gets a non-blocking conformance remi
     result = check();
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /independent_review=recorded cross_provider=true\n/);
+
+    review('reviewer=claude author=claude result=PASS fallback=clean-session\n'
+      + 'Independent-Review: reviewer=codex author=claude result=PASS');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=nonconforming reason=unrecognized-fallback advisory:/);
   } finally {
     state.cleanup();
   }

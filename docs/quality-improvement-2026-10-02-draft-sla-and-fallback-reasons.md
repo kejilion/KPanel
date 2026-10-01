@@ -53,7 +53,7 @@
 | 主指标 2：采纳后新写的同提供商 trailer 中取值外或缺少 fallback 的条数 | 不适用（取值尚不存在；`v1.22.0` 以来 30 条全部为自由文本） | 0 | `report-governance-health --since=<采纳提交>` 的 `fallback_unrecognized` 与 `same_provider_without_fallback` | 同上 |
 | 防回归指标 1：草案超期的处置方式 | 先建立基线 | 以"复核延期"处置的超期草案不超过一半；超过则复审本规则是否只制造文书 | 提案状态行与"复核延期至"行 | 同上 |
 | 防回归指标 2：候选检查退出码 | `--require-candidate` 不因 trailer 失败 | 保持：`independent_review=` 只提醒，不改变退出码 | `scripts/tests/collaboration-state.test.mjs` | 每次门禁 |
-| 防回归指标 3：治理回归集 | 待填 | 全部通过，无删减测试 | `scripts/verify-governance.sh` | 每次门禁 |
+| 防回归指标 3：治理回归集 | 基线 `642cd059` 227/227、提案 19 份（候选 230/230、提案 20 份，新增 3 项测试） | 全部通过，无删减测试 | `scripts/verify-governance.sh` | 每次门禁 |
 
 数据不足时写"先建立基线"，不得把缺失值当作零缺陷或成功。
 
@@ -95,8 +95,8 @@
 - 预计修改文件或唯一入口：
   - `report-governance-health.mjs`：时限判定覆盖 `draft` 与 `pending-review`；导出 `FALLBACK_REASONS`；
     trailer 统计新增 `fallback_unrecognized`；超期行显示类别。
-  - `check-collaboration-state.mjs`：`--require-candidate` 时检查候选范围内最新一条 `Independent-Review:` trailer，
-    输出 `independent_review=recorded|nonconforming`，只提醒，无 trailer 时不输出。
+  - `check-collaboration-state.mjs`：`--require-candidate` 时检查候选范围内最新一个带 `Independent-Review:` 的提交上的
+    全部 trailer，输出 `independent_review=recorded|nonconforming`，只提醒，无 trailer 时不输出。
   - `check-governance-consistency.mjs`：固定 5.2.7 新措辞；从脚本导入取值，要求协作文档列出全部取值。
 - 新增或调整的自动门禁：无新增阻断门禁。`--strict` 的超期集合扩大到草案，退出码语义不变。
 - 迁移、兼容和失败恢复：历史提案与 trailer 不改写。旧的自由文本 fallback 在 `--since` 跨越采纳点时计入
@@ -106,8 +106,14 @@
 
 ## 验证与证据层级
 
-- 定向测试：待填。
-- `make verify-change` / `make verify-l2` / `make verify-release`：待填。
+- 定向测试：`node --test scripts/tests/report-governance-health.test.mjs scripts/tests/collaboration-state.test.mjs`
+  21/21（基线 18，新增草案计时、fallback 取值、候选提醒 3 项）；`--strict --since=v1.23.0` 当日退出 0，
+  `--today=2026-10-05` 将两份现存草案报告为 `overdue ... draft 16d/15d` 并退出 3；
+  `--since=v1.22.0` 输出 `total=34 cross_provider=1 invalid=4 same_provider_without_fallback=0 fallback_unrecognized=29`。
+- `make verify-change` / `make verify-l2` / `make verify-release`：Windows 经 `node scripts/run-repo-bash.mjs`
+  运行 `verify-governance.sh` 230/230、`verify-change.sh`（level=auto，治理路径，tools=none）通过；L2/Release 不适用。
+- OCR 行级评审（5.5，candidate 档）：自由臂先盲跑 2 条 LOW，约束臂 5/5 文件、新增 3 条 LOW、`constrained-only=0`；
+  空格、多 trailer 漏检和变量命名已在同一写任务修复，证据在仓库外 `_codex-evidence/kpanel-ocr-draft-sla-fallback-20261002`。
 - 隔离真机或浏览器证据：不适用（无产品运行时变化）。
 - 公开产物证据：不适用。
 - 生产部署安全核对（仅在明确授权后；不作为质量验证证据）：不适用。

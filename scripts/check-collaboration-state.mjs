@@ -135,20 +135,20 @@ function securityAuditState(root, baseRef) {
   }
 }
 
-// docs/multi-agent-collaboration.md advisory: the newest Independent-Review trailer on the candidate must name
-// providers and a result, and a same-provider review must give a fixed fallback reason. Only the newest trailer
-// counts, so a later commit can correct it; no trailer is not flagged, because review follows the candidate.
+// docs/multi-agent-collaboration.md advisory: every Independent-Review trailer on the newest commit that carries
+// one must name providers and a result, and a same-provider review must give a fixed fallback reason. Only that
+// commit counts, so a later commit can correct it; no trailer is not flagged, because review follows the candidate.
 function independentReviewState(root, baseRef) {
   const newest = git(root, ['log',
     '--format=%(trailers:key=Independent-Review,valueonly,unfold,separator=%x1e)%x1d', baseRef + '..HEAD'])
     .split('\x1d').map((record) => record.split('\x1e').map((value) => value.trim()).filter(Boolean))
     .find((values) => values.length > 0);
   if (!newest) return null;
-  const review = parseReviewTrailer(newest[newest.length - 1]);
-  if (!review.valid) return 'nonconforming reason=missing-provider-or-result';
-  if (review.unexplained) return 'nonconforming reason=same-provider-without-fallback';
-  if (review.unrecognizedFallback) return 'nonconforming reason=unrecognized-fallback';
-  return review.cross ? 'recorded cross_provider=true' : 'recorded cross_provider=false';
+  const reviews = newest.map(parseReviewTrailer);
+  if (reviews.some((review) => !review.valid)) return 'nonconforming reason=missing-provider-or-result';
+  if (reviews.some((review) => review.unexplained)) return 'nonconforming reason=same-provider-without-fallback';
+  if (reviews.some((review) => review.unrecognizedFallback)) return 'nonconforming reason=unrecognized-fallback';
+  return 'recorded cross_provider=' + String(reviews.some((review) => review.cross));
 }
 
 function normalizedPath(path) {
@@ -173,7 +173,7 @@ function check(options) {
   let ocrLineReview = null;
   let securityAudit = null;
   let independentReview = null;
-  const repo =realpathSync.native(resolve(options.repo));
+  const repo = realpathSync.native(resolve(options.repo));
   const root = realpathSync.native(git(repo, ['rev-parse', '--show-toplevel']));
   let branch = '(detached)';
   try {
