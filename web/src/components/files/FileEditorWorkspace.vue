@@ -702,6 +702,10 @@ defineExpose({ openFile })
 
 <style scoped>
 .editor-workspace {
+  --scrollbar-track: var(--file-preview-panel);
+  --scrollbar-thumb: var(--file-preview-scrollbar);
+  --scrollbar-thumb-hover: var(--file-preview-scrollbar-hover);
+  --scrollbar-thumb-active: var(--file-preview-accent);
   display: flex;
   flex-direction: column;
   height: min(72dvh, 780px);
@@ -861,7 +865,7 @@ defineExpose({ openFile })
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 6px 8px;
+  padding: 0 10px 8px;
 }
 .editor-file {
   display: flex;
@@ -912,7 +916,10 @@ defineExpose({ openFile })
   overflow-x: auto;
   overscroll-behavior-x: contain;
   background: var(--file-preview-panel);
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.editor-tabs::-webkit-scrollbar {
+  display: none;
 }
 .editor-tab {
   display: flex;
