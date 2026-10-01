@@ -1,7 +1,7 @@
 # KPanel 当前业务事实与规范适配基线
 
 - 复核日期：`2026-10-01`
-- 基线提交：`42ef6a80e90925c14e506118b44477bd20706c6a`
+- 基线提交：`0cbee81494991166f9b32b495494a4616463a73d`
 - 基线版本：`v1.23.0`
 - 上一份完整复核：[`product-quality-review-2026-08-13.md`](product-quality-review-2026-08-13.md)
 - 自动刷新门槛：基线后达到 50 个提交，或同时达到 20 个提交和 8 个正式版本；产品性质、业务真源、权限边界或核心旅程发生实质变化时立即复核
@@ -557,7 +557,7 @@ CHANGELOG、公开 Release 和验收记录。`v1.21.0` 仍是最近稳定版；�
 这针对 fnOS 等 `/home/docker` 为符号链接时的 Agent 启动、归档任务、回收站与备份 gate 问题；
 没有修改数据库、文件授权协议、Panel/Agent 权限分工、内置脚本或安装契约。
 
-`v1.24.0-rc.3` 已于 UTC 2026-10-01T01:55:18Z 公开为 prerelease，版本及 Docker `preview`
+`v1.24.0-rc.3` 已于 UTC 2026-10-01T01:55:18Z 公开为 prerelease，版本及该次发布时 Docker `preview`
 index 均为 `sha256:4491b866b5453cb32b9e12104901761067e92cd52e76809220a265d598a6c2a2`。
 精确冻结产品 `086fcbcc` 的新 L3、候选/main CI、Release 和公开 amd64 镜像 E2E 通过，详见
 [`rc.3 验收记录`](release-v1.24.0-rc.3-acceptance.md)；GitHub Latest 与 Docker `latest` 仍为 v1.23.0。
@@ -576,3 +576,10 @@ index 均为 `sha256:4491b866b5453cb32b9e12104901761067e92cd52e76809220a265d598a
 - 文件编辑器修正边距及滚动条表现；文件 API、资源版本、保存冲突与内容授权继续沿用原契约。
 - 此处记录源码候选事实和定向回归，不把界面模拟数据、公开产物或隔离自动测试写成真实跨主机操作、
   NAS 兼容、原生浏览器缩放、长期性能或生产验证；本轮发布状态由对应验收记录补充。
+
+`v1.24.0-rc.4` 已于 UTC 2026-10-01T05:03:30Z 公开为 prerelease，版本及 Docker `preview`
+index 均为 `sha256:80578043ae505d6b2f34d3a3cd1b168dab78d89824c68c648846458c5ad991f0`。
+冻结产品 `0cbee814` 的新 L3、候选/main CI、Release、14 组模拟 UI 及公开 amd64 镜像 E2E 通过，
+详见 [`rc.4 验收记录`](release-v1.24.0-rc.4-acceptance.md)；GitHub Latest 与 Docker `latest`
+仍为 v1.23.0，应用市场契约无需提交。`arena-154` 在本轮已恢复 SSH 并执行隔离候选 L3；
+前文 SSH 超时是相应历史发布时点的事实。本轮未执行生产用途，CF scoped 及上述实机边界仍待验证。
