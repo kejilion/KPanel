@@ -2768,6 +2768,426 @@ body.desktop-mode-open::-webkit-scrollbar {
   transform: translateY(18px) scale(.98);
 }
 
+/* Taskbar start button and start menu ----------------------------------- */
+
+.desktop__taskbar-brand .desktop__start-button {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color .16s ease, border-color .16s ease;
+}
+
+.desktop__start-button .brand__mark {
+  transition: transform .12s ease;
+}
+
+.desktop__start-button:hover {
+  background: color-mix(in srgb, var(--brand) 12%, rgb(255 255 255 / 8%));
+  border-color: color-mix(in srgb, var(--brand) 18%, rgb(255 255 255 / 8%));
+}
+
+.desktop__start-button:active .brand__mark {
+  transform: scale(.94);
+}
+
+.desktop__start-button[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.desktop__start-button:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Anchored above the K button; above windows (<= 900) and the taskbar (1200),
+   below context menus (2200) and global dialogs (5000). */
+.desktop-start-menu {
+  position: absolute;
+  z-index: 1300;
+  bottom: 72px;
+  left: 8px;
+  display: flex;
+  box-sizing: border-box;
+  width: min(600px, calc(100vw - 16px));
+  max-height: min(660px, calc(100vh - 88px));
+  max-height: min(660px, calc(100dvh - 88px));
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.desktop-start-menu__search {
+  display: flex;
+  min-height: 46px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 14px 4px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: text;
+}
+
+.desktop-start-menu__search:focus-within {
+  border-color: color-mix(in srgb, var(--brand) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.desktop-start-menu__search input {
+  min-width: 0;
+  height: 44px;
+  flex: 1 1 auto;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 16px;
+}
+
+.desktop-start-menu__search input::placeholder {
+  color: var(--muted);
+}
+
+/* The field frame above carries the focus ring; a second outline would sit inside it. */
+.desktop-start-menu__search input:focus-visible {
+  outline: none;
+}
+
+.desktop-start-menu__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Tile columns keep their width whether or not the list needs to scroll. */
+  scrollbar-gutter: stable;
+  padding: 2px 10px 14px;
+}
+
+.desktop-start-menu__group + .desktop-start-menu__group {
+  margin-top: 8px;
+}
+
+.desktop-start-menu__heading {
+  padding: 10px 6px 6px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.desktop-start-menu__options {
+  display: grid;
+  gap: 2px;
+}
+
+.desktop-start-menu__group--grid .desktop-start-menu__options {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+}
+
+.desktop-start-menu__option {
+  display: flex;
+  min-width: 0;
+  min-height: 46px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.desktop-start-menu__option--tile {
+  min-height: 86px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 9px 4px 8px;
+  text-align: center;
+}
+
+.desktop-start-menu__option--active {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 34%, transparent);
+}
+
+.desktop-start-menu__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.desktop-start-menu__option--tile .desktop-start-menu__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  font-size: 18px;
+}
+
+.desktop-start-menu__icon > * {
+  grid-area: 1 / 1;
+}
+
+.desktop-start-menu__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #f7f9f8;
+  transition: opacity .12s ease;
+}
+
+.desktop-start-menu__icon--native img {
+  background: transparent;
+}
+
+.desktop-start-menu__icon .desktop-start-menu__icon-image--loading {
+  opacity: 0;
+}
+
+.desktop-start-menu__icon--plain {
+  color: var(--text-soft);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+}
+
+.desktop-start-menu__text {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.desktop-start-menu__label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.desktop-start-menu__option--tile .desktop-start-menu__text {
+  width: 100%;
+  flex: 0 0 auto;
+}
+
+.desktop-start-menu__option--tile .desktop-start-menu__label {
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.desktop-start-menu__detail {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.desktop-start-menu__badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  color: var(--text-soft);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.desktop-start-menu__note {
+  margin: 10px 6px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.desktop-start-menu__note--action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.desktop-start-menu__retry {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--brand);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, var(--border));
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.desktop-start-menu__footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--border);
+}
+
+.desktop-start-menu__user {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 6px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.desktop-start-menu__user > svg {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+}
+
+.desktop-start-menu__user:disabled {
+  cursor: progress;
+}
+
+.desktop-start-menu__avatar {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.desktop-start-menu__user-text {
+  display: grid;
+  min-width: 0;
+}
+
+.desktop-start-menu__user-text strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.desktop-start-menu__user-text small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.desktop-start-menu__footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-start-menu__footer-button {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.desktop-start-menu .language-selector__trigger {
+  height: 40px;
+  color: var(--text-soft);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.desktop-start-menu__user:hover:not(:disabled),
+.desktop-start-menu__footer-button:hover,
+.desktop-start-menu .language-selector__trigger:hover,
+.desktop-start-menu__retry:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.desktop-start-menu__user:focus-visible,
+.desktop-start-menu__footer-button:focus-visible,
+.desktop-start-menu__retry:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The shared language list opens downward from a top bar; here it sits on the
+   menu's bottom edge, so it opens upward and stays inside the menu. */
+.desktop-start-menu .language-selector__menu {
+  position: absolute;
+  top: auto;
+  right: 0;
+  bottom: calc(100% + 8px);
+}
+
+.desktop-start-menu-enter-active,
+.desktop-start-menu-leave-active {
+  transition: opacity .14s ease, transform .16s cubic-bezier(.22, 1, .36, 1);
+  transform-origin: bottom left;
+}
+
+.desktop-start-menu-enter-from,
+.desktop-start-menu-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-start-menu-enter-active,
+  .desktop-start-menu-leave-active {
+    transition: none;
+  }
+}
+
 /* Context menu and entry detail ----------------------------------------- */
 
 .desktop__context-menu {
@@ -4850,6 +5270,22 @@ body.desktop-mode-open::-webkit-scrollbar {
     padding: 0;
   }
 
+  .desktop__taskbar-brand .desktop__start-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .desktop-start-menu {
+    bottom: calc(64px + max(8px, env(safe-area-inset-bottom)));
+    left: max(8px, env(safe-area-inset-left));
+    width: min(600px, calc(100vw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))));
+    max-height: calc(100dvh - 72px - max(8px, env(safe-area-inset-bottom)) - max(8px, env(safe-area-inset-top)));
+  }
+
+  .desktop-start-menu__option {
+    min-height: 48px;
+  }
+
   .desktop__context-menu button {
     min-height: 44px;
   }
@@ -4890,6 +5326,18 @@ body.desktop-mode-open::-webkit-scrollbar {
   .desktop__taskbar-brand .brand__mark {
     width: 34px;
     height: 34px;
+  }
+
+  .desktop__taskbar-brand .desktop__start-button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .desktop-start-menu {
+    bottom: 68px;
+    left: 6px;
+    width: calc(100vw - 12px);
+    max-height: calc(100dvh - 80px);
   }
 
   .desktop__taskbar-item {
@@ -4962,6 +5410,17 @@ body.desktop-mode-open::-webkit-scrollbar {
     gap: 6px;
     padding: 3px 5px;
     border-radius: var(--radius);
+  }
+
+  .desktop__taskbar-brand .desktop__start-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .desktop-start-menu {
+    bottom: 56px;
+    left: 6px;
+    max-height: calc(100dvh - 68px);
   }
 
   .desktop__taskbar-item,
