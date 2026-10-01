@@ -2,8 +2,9 @@
 
 // Governance execution health (PROJECT_RULES.md 5.2.7): proposal lifecycle, review SLA and reviewer
 // independence. `--validate` checks every proposal outside the frozen legacy list (legacy proposals are
-// classified from their original text, never rewritten); `--strict` exits 3 while overdue or
-// unclassified proposals remain. Independent-Review trailer debt is reported only: history is immutable.
+// classified from their original text, never rewritten); `--strict` exits 3 while overdue (draft or pending
+// review past the SLA) or unclassified proposals remain. Independent-Review trailer debt is reported only:
+// history is immutable.
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -32,7 +33,11 @@ const CANONICAL = new Map([
   ['草案', 'draft'], ['待复核', 'pending-review'], ['试行', 'trial'],
   ['已采纳', 'adopted'], ['已拒绝', 'rejected'], ['已回滚', 'rolled-back'],
 ]);
+// Draft has the same clock as pending review: an implemented proposal left as draft must not escape the SLA.
+const SLA_CATEGORIES = ['draft', 'pending-review'];
 export const PROVIDERS = ['claude', 'codex', 'gemini', 'qwen', 'deepseek', 'copilot'];
+// docs/multi-agent-collaboration.md: why a same-provider review fell back; specifics go in `detail=`.
+export const FALLBACK_REASONS = ['provider-unavailable', 'provider-failed'];
 const RESULTS = ['pass', 'pass with follow-up', 'fail'];
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -118,7 +123,7 @@ export function assess(proposals, today) {
   for (const proposal of proposals) {
     if (['missing', 'unclassified'].includes(proposal.category)) unclassified.push(proposal);
     const start = proposal.date ?? proposal.fileDate;
-    if (proposal.category !== 'pending-review' || !start) continue;
+    if (!SLA_CATEGORIES.includes(proposal.category) || !start) continue;
     const pending = days(start, today);
     const deferral = proposal.deferredUntil;
     const deferralValid = deferral && deferral >= today && days(today, deferral) <= MAX_DEFERRAL_DAYS;
@@ -146,10 +151,13 @@ export function parseReviewTrailer(value) {
   const reviewer = normalizeProvider(pairs.reviewer);
   const author = normalizeProvider(pairs.author);
   const valid = Boolean(reviewer && author && RESULTS.includes(pairs.result?.toLowerCase()));
+  const sameProvider = valid && reviewer === author;
+  const fallback = pairs.fallback?.toLowerCase();
   return {
     valid,
     cross: valid && reviewer !== author,
-    unexplained: valid && reviewer === author && !pairs.fallback,
+    unexplained: sameProvider && !fallback,
+    unrecognizedFallback: sameProvider && Boolean(fallback) && !FALLBACK_REASONS.includes(fallback),
   };
 }
 
@@ -160,6 +168,7 @@ export function assessReviewTrailers(values) {
     invalid: reviews.filter((review) => !review.valid).length,
     cross: reviews.filter((review) => review.cross).length,
     unexplained: reviews.filter((review) => review.unexplained).length,
+    unrecognizedFallback: reviews.filter((review) => review.unrecognizedFallback).length,
   };
 }
 
@@ -182,7 +191,7 @@ export function render(report, today) {
       + Object.entries(report.byCategory).map(([key, value]) => key + '=' + value).join(' '),
     'review_sla days=' + REVIEW_SLA_DAYS + ' pending=' + report.pending + ' overdue=' + report.overdue.length
       + ' deferred=' + report.deferred.length + ' deferred_valid=' + report.deferred.filter((p) => p.deferralValid).length,
-    ...report.overdue.map((p) => '  overdue ' + p.name + ' pending ' + p.days + 'd: ' + p.status),
+    ...report.overdue.map((p) => '  overdue ' + p.name + ' ' + p.category + ' ' + p.days + 'd: ' + p.status),
     'status unclassified=' + report.unclassified.length,
     ...report.unclassified.map((p) => '  unclassified ' + p.name + ': ' + (p.status ?? '<no status line>')),
     'reviewer_independence recorded=' + report.providerRecorded + ' cross_provider=' + report.crossProvider
@@ -211,6 +220,7 @@ export function main(argv, today = new Date().toISOString().slice(0, 10)) {
     const reviews = assessReviewTrailers(reviewTrailers(since));
     output += 'independent_review_trailers since=' + since + ' total=' + reviews.total + ' cross_provider='
       + reviews.cross + ' invalid=' + reviews.invalid + ' same_provider_without_fallback=' + reviews.unexplained
+      + ' fallback_unrecognized=' + reviews.unrecognizedFallback
       + (reviews.total ? '' : ' (未报告)') + '\n';
   }
   process.stdout.write(output);

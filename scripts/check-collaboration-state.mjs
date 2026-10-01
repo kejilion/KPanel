@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 import { addedBoundaryPackages, POLICY_PATH } from './check-security-audit-coverage.mjs';
+import { FALLBACK_REASONS, parseReviewTrailer } from './report-governance-health.mjs';
 
 function usage() {
   return [
@@ -134,6 +135,22 @@ function securityAuditState(root, baseRef) {
   }
 }
 
+// docs/multi-agent-collaboration.md advisory: the newest Independent-Review trailer on the candidate must name
+// providers and a result, and a same-provider review must give a fixed fallback reason. Only the newest trailer
+// counts, so a later commit can correct it; no trailer is not flagged, because review follows the candidate.
+function independentReviewState(root, baseRef) {
+  const newest = git(root, ['log',
+    '--format=%(trailers:key=Independent-Review,valueonly,unfold,separator=%x1e)%x1d', baseRef + '..HEAD'])
+    .split('\x1d').map((record) => record.split('\x1e').map((value) => value.trim()).filter(Boolean))
+    .find((values) => values.length > 0);
+  if (!newest) return null;
+  const review = parseReviewTrailer(newest[newest.length - 1]);
+  if (!review.valid) return 'nonconforming reason=missing-provider-or-result';
+  if (review.unexplained) return 'nonconforming reason=same-provider-without-fallback';
+  if (review.unrecognizedFallback) return 'nonconforming reason=unrecognized-fallback';
+  return review.cross ? 'recorded cross_provider=true' : 'recorded cross_provider=false';
+}
+
 function normalizedPath(path) {
   const normalized = realpathSync.native(resolve(path));
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -155,7 +172,8 @@ function check(options) {
   const failures = [];
   let ocrLineReview = null;
   let securityAudit = null;
-  const repo = realpathSync.native(resolve(options.repo));
+  let independentReview = null;
+  const repo =realpathSync.native(resolve(options.repo));
   const root = realpathSync.native(git(repo, ['rev-parse', '--show-toplevel']));
   let branch = '(detached)';
   try {
@@ -221,9 +239,10 @@ function check(options) {
         if (changedPaths.length === 0) {
           failures.push('writer candidate must contain a non-empty task diff; empty commits do not satisfy completion');
         }
-        // PROJECT_RULES.md 5.5 and 5.4: advisory only, never a failure.
+        // PROJECT_RULES.md 5.5, 5.4 and 5.2.4: advisory only, never a failure.
         ocrLineReview = ocrLineReviewState(root, options.baseRef);
         securityAudit = securityAuditState(root, options.baseRef);
+        independentReview = independentReviewState(root, options.baseRef);
       }
     }
   } else {
@@ -270,6 +289,14 @@ function check(options) {
         + ' "Security-Audit: scoped run-<N>", or record "Security-Audit: deferred reason=<why>"'
       : '';
     process.stdout.write('security_audit=' + securityAudit + hint + '\n');
+  }
+  if (independentReview) {
+    const hint = independentReview.startsWith('nonconforming')
+      ? ' advisory: write a corrected "Independent-Review: reviewer=<provider> author=<provider> result=<PASS|PASS WITH'
+        + ' FOLLOW-UP|FAIL>" trailer on the next commit; a same-provider review adds fallback='
+        + FALLBACK_REASONS.join('|') + ' and optional detail=<text> (docs/multi-agent-collaboration.md)'
+      : '';
+    process.stdout.write('independent_review=' + independentReview + hint + '\n');
   }
 }
 

@@ -55,6 +55,22 @@ test('pending reviews older than the SLA are overdue unless deferred within the 
   assert.equal(report.deferred.filter((p) => p.deferralValid).length, 1);
 });
 
+test('drafts share the SLA clock, so an implemented proposal cannot idle as draft', () => {
+  const status = (value, date, extra = []) => proposal(date, ['- 提案状态：' + value, '- 提案日期：' + date, ...extra]);
+  const report = assess([
+    status('草案（实现已进入 main）', '2026-09-19'),
+    status('草案', '2026-09-20'),
+    status('草案', '2026-09-10', ['- 复核延期至：2026-10-10（等待观察窗口基线）']),
+    status('待复核', '2026-09-10'),
+    status('试行', '2026-09-01'),
+    status('已拒绝', '2026-09-01'),
+  ], '2026-10-04');
+  assert.deepEqual(report.overdue.map((p) => [p.date, p.category, p.days]),
+    [['2026-09-19', 'draft', 15], ['2026-09-10', 'pending-review', 24]]);
+  assert.equal(report.deferred.filter((p) => p.deferralValid).length, 1);
+  assert.equal(report.pending, 1);
+});
+
 test('new proposals cannot backdate, and template placeholders do not pass trial', () => {
   const backdated = proposal('2026-09-01', ['- 提案状态：草案', '- 提案日期：2026-09-01'], 'quality-improvement-2026-09-01-new.md');
   assert.equal(backdated.legacy, false);
@@ -97,6 +113,17 @@ test('independent review trailers tolerate case, spacing and multi-word results'
     'reviewer=codex result=PASS',
     'reviewer=codex author=claude result=banana',
   ]);
-  assert.deepEqual(report, { total: 5, invalid: 2, cross: 1, unexplained: 1 });
+  assert.deepEqual(report, { total: 5, invalid: 2, cross: 1, unexplained: 1, unrecognizedFallback: 1 });
   assert.equal(parseReviewTrailer('reviewer=Codex author=claude result=FAIL').cross, true);
+});
+
+test('same-provider fallback reasons come from a fixed vocabulary with optional detail', () => {
+  const report = assessReviewTrailers([
+    'reviewer=claude author=claude result=PASS fallback=provider-unavailable',
+    'reviewer=claude author=claude result=PASS fallback=Provider-Failed detail=codex exec timed out after 600s',
+    'reviewer=codex author=codex result=PASS fallback=same-provider-clean-session',
+    'reviewer=codex author=codex result=PASS fallback=provider-unavailable (claude cli missing)',
+    'reviewer=codex author=claude result=PASS fallback=anything',
+  ]);
+  assert.deepEqual(report, { total: 5, invalid: 0, cross: 1, unexplained: 0, unrecognizedFallback: 2 });
 });

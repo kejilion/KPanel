@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { FALLBACK_REASONS } from './report-governance-health.mjs';
+
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const failures = [];
 
@@ -658,7 +660,10 @@ requireText('docs/release-acceptance-template.md', [
   '## 自更新通道验收',
   '预览版禁止生产部署',
 ]);
-requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天']);
+requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天',
+  '草案或待复核自提案日期起', '草案改为待复核不重新计时']);
+// The fallback vocabulary has one source (report-governance-health.mjs); the collaboration rule must list all of it.
+requireText('docs/multi-agent-collaboration.md', FALLBACK_REASONS.map((reason) => '`' + reason + '`'));
 requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict --since=']);
 requireText('docs/multi-agent-collaboration.md', ['Independent-Review: reviewer=<提供商> author=<提供商>', '默认由与实现者不同的模型']);
 requireText('PROJECT_RULES.md', ['复核者默认来自与实现者不同的模型提供商']);
