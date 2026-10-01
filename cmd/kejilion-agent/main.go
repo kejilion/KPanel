@@ -20,6 +20,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/agent"
 	"github.com/kejilion/kejilion-panel/internal/agentclient"
 	"github.com/kejilion/kejilion-panel/internal/appmarket"
+	"github.com/kejilion/kejilion-panel/internal/backup"
 	"github.com/kejilion/kejilion-panel/internal/cluster/sshlogin"
 	"github.com/kejilion/kejilion-panel/internal/contract"
 	"github.com/kejilion/kejilion-panel/internal/diagnostics"
@@ -123,6 +124,19 @@ func run(arguments []string) error {
 	token, err := agent.PrepareTokenFile(*tokenFile, *socketGroup)
 	if err != nil {
 		return err
+	}
+	// NAS layouts link /home/docker to a storage volume. Subsystems pin their
+	// state directories without following links, so hand them the resolved path.
+	if *stateDir, err = canonicalStateDir(*stateDir); err != nil {
+		return fmt.Errorf("resolve Agent state directory: %w", err)
+	}
+	if strings.TrimSpace(*selfUpdateStateDir) != "" {
+		// Automatic updates stay optional: an unresolvable directory only disables them.
+		if resolved, resolveErr := canonicalStateDir(*selfUpdateStateDir); resolveErr != nil {
+			slog.Warn("automatic update state directory cannot be resolved", "error", resolveErr)
+		} else {
+			*selfUpdateStateDir = resolved
+		}
 	}
 	dockerClient := dockerx.New(*dockerSocket, *webRoot, *stateDir)
 	dockerClient.ConfigureDaemonAccess(*dockerPIDFile, *allowDockerSocketActivation)
@@ -570,6 +584,15 @@ func validateAgentHealth(health contract.AgentHealth) error {
 		return errors.New("Agent is unexpectedly read-only")
 	}
 	return nil
+}
+
+// canonicalStateDir leaves relative paths to the callers that already reject
+// them; only operator-configured absolute directories are resolved.
+func canonicalStateDir(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	return backup.CanonicalRoot(dir)
 }
 
 func env(name, fallback string) string {

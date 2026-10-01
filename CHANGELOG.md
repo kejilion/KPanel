@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- 修复 `/home/docker` 为符号链接（如飞牛 fnOS 链接到 `/vol1/1000/docker`）的主机上全新安装失败：Agent 启动时备份中心把状态目录的上级链接误判为篡改，报 `initialize backup jobs: backup is invalid, damaged, incompatible, or the password is incorrect` 并持续重启。现在状态目录在启动时解析为真实路径，备份任务目录内部的链接仍被拒绝；文件管理器保护与主机备份排除同时覆盖 KPanel 目录解析后的真实路径。
+- 修复 `/home/docker` 为符号链接（如飞牛 fnOS 链接到 `/vol1/1000/docker`，群晖同理）的主机上全新安装失败：Agent 启动时备份中心把状态目录的上级链接误判为篡改，报 `initialize backup jobs: backup is invalid, damaged, incompatible, or the password is incorrect` 并持续重启。现在 Agent 入口把状态目录解析为真实路径，各子系统沿用；状态目录内部的链接仍被拒绝。同时修复这类主机上文件管理器的压缩/解压任务与回收站不可用（归档任务状态不可用会让备份恢复一直提示“请关闭终端并等待主机任务完成”），并让文件管理器保护与主机备份排除同时覆盖 KPanel 目录解析后的真实路径。
 
 ## [1.24.0-rc.1] - 2026-10-01
 
