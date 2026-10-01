@@ -151,8 +151,9 @@ func TestAttachmentMetadataJSONArrayPresence(t *testing.T) {
 
 func TestAttachmentMetadataJSONDepthBoundary(t *testing.T) {
 	// encodeAttachments writes flat string fields. Unknown legacy nesting is
-	// still parsed, but Unmarshal counts the outer array toward its depth limit;
-	// the previous per-item Decoder did not. Keep this explicit failure boundary.
+	// still parsed. Go 1.27 counts the outer array toward the depth limit in both
+	// Unmarshal and the previous per-item Decoder. Keep the production boundary
+	// unchanged: accept total depth 10000, reject deeper input without partial data.
 	for _, depth := range []int{9998, 9999, 10000} {
 		t.Run(fmt.Sprint(depth), func(t *testing.T) {
 			data := []byte(`[{"data":"Zg==","unknown":` + strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth) + `}]`)
@@ -162,12 +163,12 @@ func TestAttachmentMetadataJSONDepthBoundary(t *testing.T) {
 			if !bytes.Equal(data, original) {
 				t.Fatal("reading metadata changed the stored JSON")
 			}
-			if depth < 10000 {
+			if depth == 9998 {
 				if oldErr != nil || len(old) != 1 || old[0].Size != 1 {
 					t.Fatalf("previous decoder boundary changed: items=%#v err=%v", old, oldErr)
 				}
-			} else if oldErr == nil {
-				t.Fatal("previous decoder unexpectedly accepted excessive depth")
+			} else if oldErr == nil || !strings.Contains(oldErr.Error(), "exceeded max depth") || old != nil {
+				t.Fatalf("previous decoder must reject excessive depth without partial success: items=%#v err=%v", old, oldErr)
 			}
 			if depth == 9998 {
 				if err != nil || !reflect.DeepEqual(got, old) {
@@ -225,7 +226,7 @@ func FuzzAttachmentMetadataJSONEquivalence(f *testing.F) {
 		f.Add([]byte(data))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		// The separate depth test freezes the one legacy difference above this
+		// The separate depth test freezes the maximum nesting boundary above this
 		// input size; fuzz covers ordinary accepted JSON and corrupt records.
 		if len(data) > 16<<10 {
 			t.Skip()
