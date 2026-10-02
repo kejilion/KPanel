@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,9 +36,13 @@ const (
 )
 
 var (
-	acceptedPattern = regexp.MustCompile(`(?i)\bAccepted\s+([^\s]+)\s+for\s+([^\s]+)\s+from\s+([^\s]+)`)
-	loginToken      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+:/-]{0,127}$`)
-	loginAddress    = regexp.MustCompile(`^[A-Za-z0-9:][A-Za-z0-9.:%_-]{0,252}$`)
+	acceptedPattern          = regexp.MustCompile(`(?i)\bAccepted\s+([^\s]+)\s+for\s+([^\s]+)\s+from\s+([^\s]+)`)
+	dropbearPasswordPattern  = regexp.MustCompile(`^Password auth succeeded for '([^']+)' from (\S+)$`)
+	dropbearPublicKeyPattern = regexp.MustCompile(`^Pubkey auth succeeded for '([^']+)' with [A-Za-z0-9@._+-]+ key [A-Za-z0-9:/+=._-]+ from (\S+)$`)
+	dropbearSyslogPattern    = regexp.MustCompile(`^(?:[A-Z][a-z]{2}\s+[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} \S+ )?dropbear\[[0-9]+\]: (.+)$`)
+	logreadPattern           = regexp.MustCompile(`^[A-Z][a-z]{2} [A-Z][a-z]{2}\s+[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4} \[([0-9]{1,11})\.([0-9]{3})\] auth(?:priv)?\.[a-z]+ (sshd|dropbear)(?:\[[0-9]+\])?: (.+)$`)
+	loginToken               = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+:/-]{0,127}$`)
+	loginAddress             = regexp.MustCompile(`^[A-Za-z0-9:][A-Za-z0-9.:%_-]{0,252}$`)
 )
 
 var (
@@ -55,23 +60,46 @@ type Runner interface {
 type commandRunner struct{}
 
 func (commandRunner) Run(ctx context.Context, name string, arguments ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	command := exec.CommandContext(ctx, name, arguments...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if len(detail) > 300 {
-			detail = detail[:300]
-		}
-		if detail != "" {
-			return nil, fmt.Errorf("%s: %w", detail, err)
-		}
-		return nil, err
+	output := &boundedLogOutput{cancel: cancel}
+	command.Stdout = output
+	command.Stderr = io.Discard
+	command.WaitDelay = 100 * time.Millisecond
+	err := command.Run()
+	if output.overflow {
+		return nil, fmt.Errorf("%w: log output exceeds limit", ErrUnavailable)
 	}
-	return output, nil
+	return output.buffer.Bytes(), err
 }
 
 func (commandRunner) LookPath(name string) (string, error) {
+	if name == "logread" {
+		// Never execute a root log collector found in an inherited PATH.
+		for _, candidate := range []string{"/sbin/logread", "/usr/sbin/logread", "/bin/logread", "/usr/bin/logread"} {
+			if trustedLogExecutable(candidate) {
+				return candidate, nil
+			}
+		}
+		return "", exec.ErrNotFound
+	}
 	return exec.LookPath(name)
+}
+
+type boundedLogOutput struct {
+	buffer   bytes.Buffer
+	cancel   context.CancelFunc
+	overflow bool
+}
+
+func (output *boundedLogOutput) Write(value []byte) (int, error) {
+	if int64(output.buffer.Len())+int64(len(value)) > journalMaxBytes {
+		output.overflow = true
+		output.cancel()
+		return 0, errors.New("log output exceeds limit")
+	}
+	return output.buffer.Write(value)
 }
 
 // Config controls the source used by a telemetry process. EventPath selects
@@ -176,14 +204,61 @@ func (r *Reader) latestFromLogs(ctx context.Context, observedAt time.Time) (*con
 		return nil, ctxErr
 	}
 
+	entries, logreadErr := r.readLogread(ctx)
+	if logreadErr == nil {
+		if event := latest(entries, observedAt); event != nil {
+			return event, nil
+		}
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	entries, fileErr := r.readFixedAuthLog()
 	if fileErr == nil {
 		return latest(entries, observedAt), nil
 	}
-	if journalErr == nil {
+	if journalErr == nil || logreadErr == nil {
 		return nil, nil
 	}
-	return nil, errors.Join(journalErr, fileErr)
+	return nil, errors.Join(journalErr, fileErr, logreadErr)
+}
+
+func (r *Reader) readLogread(ctx context.Context) ([]logEntry, error) {
+	command, err := r.runner.LookPath("logread")
+	if err != nil {
+		return nil, fmt.Errorf("%w: trusted logread is unavailable", ErrUnavailable)
+	}
+	// ubox logread: one bounded snapshot of authentication facilities, with
+	// epoch timestamps. No follow, output file, socket or network arguments.
+	output, err := r.runner.Run(ctx, command, "-l", strconv.Itoa(journalLines), "-z", "4", "-z", "10", "-t")
+	if err != nil {
+		return nil, fmt.Errorf("%w: read logd: %w", ErrUnavailable, err)
+	}
+	if int64(len(output)) > journalMaxBytes {
+		return nil, fmt.Errorf("%w: logread output exceeds limit", ErrUnavailable)
+	}
+	entries := make([]logEntry, 0, journalLines)
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	if len(lines) > journalLines {
+		return nil, fmt.Errorf("%w: logread returned too many lines", ErrUnavailable)
+	}
+	for _, line := range lines {
+		match := logreadPattern.FindStringSubmatch(line)
+		if len(match) != 5 {
+			continue
+		}
+		seconds, secondsErr := strconv.ParseInt(match[1], 10, 64)
+		milliseconds, millisErr := strconv.ParseInt(match[2], 10, 64)
+		if secondsErr != nil || millisErr != nil {
+			continue
+		}
+		timestamp := time.Unix(seconds, milliseconds*int64(time.Millisecond)).UTC()
+		// The human ctime prefix follows the host timezone; it must not make
+		// the same logd event look new after a timezone change.
+		hash := sha256.Sum256([]byte("logd\x00" + strings.Join(match[1:], "\x00")))
+		entries = append(entries, logEntry{cursor: "sha256:" + hex.EncodeToString(hash[:]), identifier: match[3], message: match[4], timestamp: &timestamp})
+	}
+	return entries, nil
 }
 
 func (r *Reader) openRCRuntimeActive() bool {
@@ -358,11 +433,20 @@ func parseSSHLoginEntry(entry logEntry, observedAt time.Time) (contract.SSHLogin
 	if strings.ContainsAny(entry.message, "\r\n") {
 		return contract.SSHLoginEvent{}, false
 	}
-	identity := strings.ToLower(entry.identifier + " " + entry.unit)
-	if !strings.Contains(identity, "sshd") && !strings.Contains(strings.ToLower(entry.message), "sshd") {
-		return contract.SSHLoginEvent{}, false
+	var match []string
+	fixedLog := entry.identifier == "secure" || entry.identifier == "auth.log" || entry.identifier == "messages"
+	if entry.identifier == "dropbear" || (fixedLog && dropbearSyslogPattern.MatchString(entry.message)) {
+		match = dropbearLoginFields(entry)
+		if match == nil {
+			return contract.SSHLoginEvent{}, false
+		}
+	} else {
+		identity := strings.ToLower(entry.identifier + " " + entry.unit)
+		if !strings.Contains(identity, "sshd") && !strings.Contains(strings.ToLower(entry.message), "sshd") {
+			return contract.SSHLoginEvent{}, false
+		}
+		match = acceptedPattern.FindStringSubmatch(entry.message)
 	}
-	match := acceptedPattern.FindStringSubmatch(entry.message)
 	if len(match) != 4 || !loginToken.MatchString(match[1]) ||
 		!loginToken.MatchString(match[2]) || !loginAddress.MatchString(match[3]) {
 		return contract.SSHLoginEvent{}, false
@@ -383,6 +467,45 @@ func parseSSHLoginEntry(entry logEntry, observedAt time.Time) (contract.SSHLogin
 		Username: match[2], RemoteAddress: match[3],
 	}
 	return event, contract.ValidSSHLoginEvent(event)
+}
+
+func dropbearLoginFields(entry logEntry) []string {
+	message := entry.message
+	if entry.identifier != "dropbear" {
+		match := dropbearSyslogPattern.FindStringSubmatch(message)
+		if len(match) != 2 {
+			return nil
+		}
+		message = match[1]
+	}
+	method := "password"
+	match := dropbearPasswordPattern.FindStringSubmatch(message)
+	if len(match) != 3 {
+		method = "publickey"
+		match = dropbearPublicKeyPattern.FindStringSubmatch(message)
+	}
+	if len(match) != 3 {
+		return nil
+	}
+	// Dropbear writes a numeric address followed by its source port. IPv6
+	// versions may omit brackets, so split only the final colon.
+	endpoint := match[2]
+	separator := strings.LastIndexByte(endpoint, ':')
+	if separator < 1 {
+		return nil
+	}
+	port, err := strconv.ParseUint(endpoint[separator+1:], 10, 16)
+	address := endpoint[:separator]
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		address = address[1 : len(address)-1]
+	}
+	if err != nil || port == 0 {
+		return nil
+	}
+	if _, err := netip.ParseAddr(address); err != nil {
+		return nil
+	}
+	return []string{message, method, match[1], address}
 }
 
 func cloneEvent(event *contract.SSHLoginEvent) *contract.SSHLoginEvent {
