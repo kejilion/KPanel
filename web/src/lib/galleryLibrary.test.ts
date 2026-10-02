@@ -188,15 +188,35 @@ describe('gallery cover markers', () => {
     vi.useFakeTimers()
     try {
       const entries = [file('/home/gallery/a.jpg'), marker('/home/gallery')]
-      const pending = loadGalleryFolder({ list: async (path) => directory(path, entries), text: () => new Promise<string>(() => undefined) }, '/home/gallery')
+      let readSignal: AbortSignal | undefined
+      const pending = loadGalleryFolder({ list: async (path) => directory(path, entries), text: (_path, signal) => {
+        readSignal = signal
+        return new Promise<string>(() => undefined)
+      } }, '/home/gallery')
       await vi.advanceTimersByTimeAsync(GALLERY_COVER_READ_TIMEOUT_MS + 50)
       const result = await pending
       expect(result.exists).toBe(true)
       expect(result.items).toHaveLength(1)
       expect(result.coverPath).toBeUndefined()
+      expect(readSignal?.aborted).toBe(true)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('cancels the cover request when the owning folder load is cancelled', async () => {
+    const controller = new AbortController()
+    let readSignal: AbortSignal | undefined
+    const text = vi.fn((_path: string, signal?: AbortSignal) => {
+      readSignal = signal
+      return new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }))
+    })
+    const pending = loadGalleryFolder({ list: async (path) => directory(path, [marker(path)]), text }, '/home/gallery', undefined, controller.signal)
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(text).toHaveBeenCalled())
+    controller.abort()
+    expect(readSignal?.aborted).toBe(true)
+    await rejected
   })
 
   it('does not read markers when the caller gave no way to read text', async () => {

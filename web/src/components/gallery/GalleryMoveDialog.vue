@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ChevronRight, Folder, FolderInput, FolderPlus, Images, Loader2 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import { phraseCatalogVersion, translatePhrase } from '@/i18n/phrase'
@@ -91,11 +91,14 @@ async function submitCreate(): Promise<void> {
   if (!name || nameProblem.value || createBusy.value) return
   createBusy.value = true
   createError.value = ''
+  const current = sequence
+  const parent = path.value
   try {
-    await props.createFolder(path.value, name)
-    const parent = path.value
+    await props.createFolder(parent, name)
+    if (current !== sequence || !props.open) return
     await openFolder(`${parent === '/' ? '' : parent}/${name}`)
   } catch (error) {
+    if (current !== sequence || !props.open) return
     createError.value = error instanceof Error ? error.message : phrase('操作未完成，请稍后重试。')
   } finally {
     createBusy.value = false
@@ -106,6 +109,7 @@ watch(() => props.open, (open) => {
   if (open) void openFolder(props.start)
   else sequence += 1
 }, { immediate: true })
+onBeforeUnmount(() => { sequence += 1 })
 </script>
 
 <template>

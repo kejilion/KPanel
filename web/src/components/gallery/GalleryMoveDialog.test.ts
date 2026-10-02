@@ -33,6 +33,30 @@ afterEach(() => {
 })
 
 describe('GalleryMoveDialog', () => {
+  it('ignores a delayed creation after the dialog closes and reopens elsewhere', async () => {
+    let finish: () => void = () => undefined
+    const createFolder = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const listFolders = vi.fn().mockResolvedValue([])
+    const view = mountDialog({ createFolder, listFolders })
+    await flushPromises()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.gallery-move__footer button')].find((button) => button.textContent?.includes('新建相册'))!.click()
+    await flushPromises()
+    const input = document.querySelector<HTMLInputElement>('.gallery-move__create input')!
+    input.value = 'Nara'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLFormElement>('.gallery-move__create')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(createFolder).toHaveBeenCalledWith('/home/gallery', 'Nara')
+    await view.setProps({ open: false })
+    await view.setProps({ open: true, start: '/home/gallery/Osaka' })
+    await flushPromises()
+    finish()
+    await flushPromises()
+    expect(crumbs()).toEqual(['图库', 'Osaka'])
+    expect(listFolders).toHaveBeenLastCalledWith('/home/gallery/Osaka')
+  })
+
   it('starts at the given folder, shows the library by name, and climbs back with the trail', async () => {
     const listFolders = vi.fn(async (path: string): Promise<GalleryMoveFolder[]> => (
       path === '/home/gallery' ? [{ name: 'Kyoto', path: '/home/gallery/Kyoto' }] : [{ name: 'Temples', path: '/home/gallery/Kyoto/Temples' }]

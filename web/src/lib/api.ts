@@ -613,6 +613,7 @@ async function rawFileResponse(
     query?: Record<string, QueryValue>
     headers?: HeadersInit
     fileHostId?: string | null
+    signal?: AbortSignal
   } = {},
 ): Promise<Response> {
   const headers = new Headers(options.headers)
@@ -625,6 +626,7 @@ async function rawFileResponse(
       cache: 'no-store',
       headers,
       body: options.body,
+      signal: options.signal,
     })
   } catch (error) {
     throw new ApiError('无法连接到面板服务，请检查服务状态后重试。', 0, 'network_error', error)
@@ -2233,11 +2235,12 @@ export const api = {
       buildUrl('/files/content', fileRequestQuery('/files/content', {
         path, disposition: 'inline', mode: 'thumbnail', version,
       }, fileHostId)),
-    text: async (path: string, fileHostId?: string | null): Promise<string> =>
+    text: async (path: string, fileHostId?: string | null, signal?: AbortSignal): Promise<string> =>
       (
         await rawFileResponse('/files/content', {
           query: { path, disposition: 'inline', mode: 'text' },
           fileHostId,
+          signal,
         })
       ).text(),
     write: (

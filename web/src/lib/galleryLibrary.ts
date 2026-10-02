@@ -30,7 +30,7 @@ export const GALLERY_COVER_READ_TIMEOUT_MS = 3000
 export interface GalleryListAPI {
   list: (path: string, options: { offset?: number; limit?: number }, signal?: AbortSignal) => Promise<FileDirectory>
   /** Reads a small text file; only needed to honour cover markers. */
-  text?: (path: string) => Promise<string>
+  text?: (path: string, signal?: AbortSignal) => Promise<string>
 }
 
 export interface GalleryAlbum {
@@ -109,21 +109,31 @@ export function albumCover(items: readonly GalleryItem[]): GalleryItem | undefin
  * of plausible size. Any failure means "no hand-picked cover": a cover is a
  * nicety and must never make a page fail to load.
  */
-async function readCoverMarker(api: GalleryListAPI, folder: string, entries: readonly FileEntry[]): Promise<string | undefined> {
+async function readCoverMarker(api: GalleryListAPI, folder: string, entries: readonly FileEntry[], signal?: AbortSignal): Promise<string | undefined> {
   const marker = entries.find((entry) => entry.kind === 'file' && entry.name === GALLERY_COVER_MARKER)
   if (!marker || !api.text || marker.sizeBytes > GALLERY_COVER_MARKER_MAX_BYTES) return undefined
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const text = await Promise.race([
-      api.text(resolveGalleryCover(folder, GALLERY_COVER_MARKER)),
-      new Promise<string>((_, reject) => { timer = setTimeout(() => reject(new Error('cover read timed out')), GALLERY_COVER_READ_TIMEOUT_MS) }),
+      api.text(resolveGalleryCover(folder, GALLERY_COVER_MARKER), controller.signal),
+      new Promise<string>((_, reject) => { timer = setTimeout(() => {
+        cancel()
+        reject(new Error('cover read timed out'))
+      }, GALLERY_COVER_READ_TIMEOUT_MS) }),
     ])
     const relative = parseGalleryCover(text)
     return relative === undefined ? undefined : resolveGalleryCover(folder, relative)
   } catch {
+    if (signal?.aborted) throw signal.reason
     return undefined
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+    cancel()
   }
 }
 
@@ -186,7 +196,7 @@ export async function loadGalleryFolder(
   }))
   const ownItems = galleryItemsFromEntries(listing.entries, path)
   // Read before the first paint only when a marker exists, so ordinary folders pay nothing.
-  const pinnedPath = await readCoverMarker(api, path, listing.entries)
+  const pinnedPath = await readCoverMarker(api, path, listing.entries, signal)
   const albumItems = new Map<string, GalleryItem[]>()
   let failedAlbums = 0
   const snapshot = (scanning: boolean): GalleryFolderSnapshot => {
@@ -213,7 +223,7 @@ export async function loadGalleryFolder(
       const album = scanTargets[index]!
       try {
         const albumListing = await listFolder(api, album.path, GALLERY_ALBUM_PAGES, signal)
-        const summary = summarizeAlbum(album, albumListing, await readCoverMarker(api, album.path, albumListing.entries))
+        const summary = summarizeAlbum(album, albumListing, await readCoverMarker(api, album.path, albumListing.entries, signal))
         albums[index] = summary.album
         albumItems.set(album.path, summary.items)
       } catch (error) {

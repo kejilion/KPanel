@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api, normalizeList, resetApiSecurityState } from './api'
+import { fileAPIForHost } from './fileHostContext'
 import type { SystemOverview } from '@/types/api'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -15,6 +16,21 @@ afterEach(() => {
 })
 
 describe('API client', () => {
+  it('cancels a host-bound file text request through the real client adapter', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pending = fileAPIForHost('edge-1').text('/home/gallery/.kpanel-cover.json', controller.signal)
+    const rejected = expect(pending).rejects.toBeInstanceOf(ApiError)
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(new URL(url, 'http://localhost').searchParams.get('hostId')).toBe('edge-1')
+    expect(options.signal).toBe(controller.signal)
+    controller.abort()
+    await rejected
+  })
+
   it('carries the authenticated appearance snapshot without a settings request', async () => {
     const appearance = { configured: true, resourceVersion: 'sha256:current', theme: 'dark', colors: null, wallpaper: 'rift', classicLevel: 'clear' }
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ required: false }))
