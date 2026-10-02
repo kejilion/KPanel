@@ -36,6 +36,20 @@ type jobInputAgent struct {
 	down       bool
 	closed     bool
 	applied    int
+	writes     []jobSinkWrite
+}
+
+// jobSinkWrite records when bytes reached the task, for the benchmark.
+type jobSinkWrite struct {
+	at time.Time
+	n  int
+}
+
+// applyLocked is the task's FIFO; the caller holds a.mu.
+func (a *jobInputAgent) applyLocked(data []byte) {
+	a.sink.Write(data)
+	a.applied++
+	a.writes = append(a.writes, jobSinkWrite{at: time.Now(), n: len(data)})
 }
 
 func newJobInputAgent() *jobInputAgent {
@@ -80,6 +94,19 @@ func (a *jobInputAgent) Do(ctx context.Context, method, path, query, requestID s
 		}
 		return AgentResponse{StatusCode: 200, Body: []byte(`{"protocol":"terminal-input-v1"}`)}, nil
 	}
+	if strings.HasPrefix(path, "/v1/app-jobs/") && strings.HasSuffix(path, "/input") {
+		// The per-request route that task terminals used before.
+		var input struct {
+			Data string `json:"data"`
+		}
+		if err := json.Unmarshal(body, &input); err != nil {
+			return problem(http.StatusBadRequest, "invalid_request"), nil
+		}
+		a.mu.Lock()
+		a.applyLocked([]byte(input.Data))
+		a.mu.Unlock()
+		return AgentResponse{StatusCode: 200, Body: []byte(`{"ok":true}`)}, nil
+	}
 	if !strings.HasPrefix(path, "/v1/job-terminals/") || !strings.HasSuffix(path, "/input-sequenced") {
 		return a.terminalAgentStub.Do(ctx, method, path, query, requestID, body)
 	}
@@ -115,8 +142,7 @@ func (a *jobInputAgent) Do(ctx context.Context, method, path, query, requestID s
 		if a.writeErr != nil {
 			return a.writeErr
 		}
-		a.sink.Write(data)
-		a.applied++
+		a.applyLocked(data)
 		return nil
 	})
 	switch {
