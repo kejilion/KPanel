@@ -60,7 +60,9 @@ export class TerminalDuplexInput {
     if (this.mode === 'legacy') { void this.flushLegacy(); return }
     if (this.mode === 'post') { void this.flushBatch(); return }
     if (this.ready) { this.pump(); return }
-    if (!this.connecting && !this.retryTimer) void this.connect()
+    // Socket construction finishes before open/auth/owner claim. Keep newly
+    // typed bytes queued on that socket until ready or disconnect clears it.
+    if (!this.socket && !this.connecting && !this.retryTimer) void this.connect()
   }
   private async connect(): Promise<void> {
     this.connecting = true

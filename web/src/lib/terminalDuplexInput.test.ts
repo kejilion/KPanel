@@ -37,6 +37,27 @@ async function ready(f: ReturnType<typeof fixture>) {
 
 afterEach(() => vi.useRealTimers())
 describe('host terminal duplex input', () => {
+  it('reuses the prewarmed socket while opening and awaiting the owner claim', async () => {
+    const f = fixture()
+    f.input.flush()
+    await Promise.resolve(); await Promise.resolve()
+    const socket = f.sockets[0]!
+    const pieces = ['中文🙂', 'x'.repeat(2050), '\x03', '\r']
+    for (const piece of pieces.slice(0, 2)) { f.input.append(piece); f.input.flush() }
+    expect(f.sockets).toHaveLength(1)
+    expect(socket.sent).toEqual([])
+    socket.onopen?.call(socket as unknown as WebSocket, new Event('open'))
+    for (const piece of pieces.slice(2)) { f.input.append(piece); f.input.flush() }
+    expect(f.sockets).toHaveLength(1)
+    expect(socket.sent.map(message => message.type)).toEqual(['auth'])
+    socket.receive({ type: 'ready', window: 32 })
+    const frames = socket.sent.filter(message => message.type === 'input')
+    expect(frames.map(message => message.frame!.seq)).toEqual([1, 2])
+    const bytes = frames.flatMap(message => Array.from(atob(message.frame!.data), char => char.charCodeAt(0)))
+    expect(new TextDecoder().decode(new Uint8Array(bytes))).toBe(pieces.join(''))
+    expect(f.error).not.toHaveBeenCalled()
+    f.input.close()
+  })
   it('prewarms without a keystroke and tolerates repeated healthy idle reconnects',async()=>{
     vi.useFakeTimers();const f=fixture();await ready(f)
     for(let i=0;i<10;i++){
