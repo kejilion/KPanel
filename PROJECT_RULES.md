@@ -245,6 +245,10 @@ SSH 或单个 AI 会话持续存在。后台化不降低断言或门禁。普通
 7. 直接依赖和 Go/Node、基础镜像、Action、扫描器、构建 frontend、受管脚本等基座是升级行动项；
    传递依赖的跨范围 `latest` 是归属信号，默认通过拥有它的直接依赖、锁文件刷新或可达安全路径处置，
    不为消除候选数量逐项强升。安全漏洞始终服从 [`docs/development-quality-standard.md` 第 11 节](docs/development-quality-standard.md#11-漏洞响应) 更严格的 24/72 小时时限。
+8. 业务基座与开发/构建基座统一进入上述维护循环；采用任务按
+   [`docs/development-quality-standard.md` 第 4.7.4 节](docs/development-quality-standard.md#474-业务基座与采用证据)
+   明确真实使用位置、受影响旅程、收益类别和验收证据。开发提速不得冒充运行时收益；安全、可靠性、
+   兼容及持续维护可以独立构成采用理由，不要求每次升级都有性能提升，也不降低既有预算和验收等级。
 
 ## 4. 双端互通验收
 
