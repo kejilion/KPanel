@@ -172,9 +172,17 @@ type jobTerminalFixture struct {
 
 func newJobTerminalFixture(t *testing.T) *jobTerminalFixture {
 	t.Helper()
-	server, tokenPath := newTestServer(t)
 	agent := newJobInputAgent()
-	server.agent = agent
+	return newJobTerminalFixtureFor(t, agent, agent)
+}
+
+// newJobTerminalFixtureFor serves the Panel against any Agent. fake is only
+// set when the Agent is the in-memory one the unit tests inspect.
+func newJobTerminalFixtureFor(t *testing.T, backend agentAPI, fake *jobInputAgent) *jobTerminalFixture {
+	t.Helper()
+	server, tokenPath := newTestServer(t)
+	agent := fake
+	server.agent = backend
 	session, csrf := bootstrapCookies(t, server, tokenPath)
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.Host = "panel.test"; server.ServeHTTP(w, r) }))
 	t.Cleanup(httpServer.Close)
