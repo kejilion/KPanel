@@ -106,9 +106,16 @@ function resetView(): void {
   offset.value = { x: 0, y: 0 }
 }
 
+/** Keyboard focus inside the controls keeps them up; a button merely clicked with the mouse does not. */
 function chromeFocused(): boolean {
   const active = document.activeElement
-  return active instanceof HTMLElement && Boolean(active.closest('.gallery-viewer__bar, .gallery-viewer__strip, .gallery-viewer__nav'))
+  if (!(active instanceof HTMLElement) || !active.closest('.gallery-viewer__bar, .gallery-viewer__strip, .gallery-viewer__nav')) return false
+  try {
+    return active.matches(':focus-visible')
+  } catch {
+    // Browsers without :focus-visible fall back to treating focus as keyboard focus.
+    return true
+  }
 }
 
 /**
