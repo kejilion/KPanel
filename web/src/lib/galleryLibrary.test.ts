@@ -184,6 +184,15 @@ describe('gallery cover markers', () => {
     expect(result.coverPath).toBe('/home/gallery/shot.heic')
   })
 
+  it('ignores a marker naming a video and preserves the automatic photo cover', async () => {
+    const list = async (path: string) => directory(path, path === '/home/gallery'
+      ? [folder('/home/gallery/A')]
+      : [file('/home/gallery/A/clip.mp4'), file('/home/gallery/A/photo.jpg'), marker(path)])
+    const result = await loadGalleryFolder({ list, text: async () => '{"version":1,"cover":"clip.mp4"}' }, '/home/gallery')
+    expect(result.albums[0]?.coverPinned).toBe(false)
+    expect(result.albums[0]?.cover?.entry.name).toBe('photo.jpg')
+  })
+
   it('does not let a marker that never answers hold the page back', async () => {
     vi.useFakeTimers()
     try {

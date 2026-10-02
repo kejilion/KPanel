@@ -143,7 +143,7 @@ function summarizeAlbum(
   pinnedPath?: string,
 ): { album: GalleryAlbum; items: GalleryItem[] } {
   const items = galleryItemsFromEntries(listing.entries, album.path)
-  const pinned = pinnedPath ? items.find((item) => item.entry.path === pinnedPath && galleryBrowserCanShow(item)) : undefined
+  const pinned = pinnedPath ? items.find((item) => item.entry.path === pinnedPath && item.kind === 'image' && galleryBrowserCanShow(item)) : undefined
   return {
     items,
     album: {
