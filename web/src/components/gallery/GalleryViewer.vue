@@ -634,11 +634,14 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+/* One definite cell, so the media's percentage max-height resolves against the
+   stage; with an auto row a wide photo was sized by width alone and cropped. */
 .gallery-viewer__stage {
   position: relative;
   display: grid;
   flex: 1 1 auto;
   min-width: 0;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   overflow: hidden;
   touch-action: none;
@@ -673,14 +676,14 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+/* The small preview fills the same box the original will occupy. */
 .gallery-viewer__media--preview {
-  width: min(calc(100% - 48px), 1200px);
-  height: auto;
+  width: calc(100% - 48px);
+  height: calc(100% - 24px);
   filter: blur(6px);
 }
 
 .gallery-viewer__media--video {
-  width: auto;
   max-width: calc(100% - 120px);
   background: #000;
 }
