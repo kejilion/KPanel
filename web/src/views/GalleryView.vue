@@ -22,6 +22,7 @@ import {
   FolderPlus,
   Grid2x2,
   Grid3x3,
+  ImagePlus,
   Images,
   LayoutGrid,
   ListChecks,
@@ -39,7 +40,7 @@ import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import GalleryTile from '@/components/gallery/GalleryTile.vue'
-import GalleryViewer, { type GalleryViewerSources } from '@/components/gallery/GalleryViewer.vue'
+import GalleryViewer, { type GalleryCoverOption, type GalleryViewerSources } from '@/components/gallery/GalleryViewer.vue'
 import { getLocale, useI18n } from '@/i18n'
 import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts } from '@/lib/clusterHostOrder'
@@ -77,6 +78,7 @@ import {
   type GalleryFilter,
   type GalleryItem,
 } from '@/lib/gallery'
+import { GALLERY_COVER_MARKER, galleryRelativePath, resolveGalleryCover, serializeGalleryCover } from '@/lib/galleryCover'
 import { loadGalleryFolder, type GalleryAlbum, type GalleryFolderSnapshot } from '@/lib/galleryLibrary'
 import { galleryPosterKey, readGalleryPoster } from '@/lib/galleryPosters'
 import { useToast } from '@/stores/toast'
@@ -168,6 +170,8 @@ const selected = ref(new Set<string>())
 let selectionAnchor = ''
 
 const viewerPath = ref<string>()
+const coverPicking = ref(false)
+const coverBusy = ref(false)
 const dragging = ref(false)
 let dragDepth = 0
 
@@ -210,6 +214,7 @@ const viewerIndex = computed(() => {
   if (!viewerPath.value) return -1
   return visibleItems.value.findIndex((item) => item.entry.path === viewerPath.value)
 })
+const viewerCoverOptions = computed(() => coverOptionsFor(viewerIndex.value >= 0 ? visibleItems.value[viewerIndex.value] : undefined))
 const selectedEntries = computed(() => allItems.value.filter((item) => selected.value.has(item.entry.path)).map((item) => item.entry))
 const title = computed(() => {
   if (isLibraryRoot.value) return phrase('图库')
@@ -217,7 +222,7 @@ const title = computed(() => {
 })
 // The cover spans the page, so prefer the newest photo whose original is small
 // enough to load; a 320px Agent thumbnail is only the last resort.
-const heroItem = computed(() => {
+const autoHero = computed(() => {
   let sharp: GalleryItem | undefined
   let any: GalleryItem | undefined
   for (const item of allItems.value) {
@@ -229,6 +234,18 @@ const heroItem = computed(() => {
   }
   return sharp ?? any
 })
+/** A photo the page can draw as a cover: a still image the browser shows. */
+function canBeCover(item: GalleryItem): boolean {
+  return item.kind === 'image' && galleryBrowserCanShow(item) && galleryTileSource(item, true).type !== 'none'
+}
+// A hand-picked cover is used only while it still exists and can be drawn; otherwise the page looks as if none were set.
+const pinnedHero = computed(() => {
+  const path = snapshot.value?.coverPath
+  const item = path ? allItems.value.find((candidate) => candidate.entry.path === path) : undefined
+  return item && canBeCover(item) ? item : undefined
+})
+const heroItem = computed(() => pinnedHero.value ?? autoHero.value)
+const canPickCover = computed(() => allItems.value.some(canBeCover))
 const heroUrl = computed(() => heroItem.value ? tileUrls(heroItem.value, true).image : undefined)
 const summary = computed(() => {
   const parts = [`${imageCount.value} ${phrase('张照片')}`, `${videoCount.value} ${phrase('段视频')}`]
@@ -270,6 +287,104 @@ const albumSubmitLabel = computed(() => {
 })
 const locationProblem = computed(() => normalizeGalleryRoot(locationValue.value) ? '' : '请输入绝对路径，例如 /home/gallery；不能使用根目录 /')
 const emptyLibrary = computed(() => Boolean(snapshot.value?.exists && !allItems.value.length && !albums.value.length))
+
+function coverFolderLabel(folder: string): string {
+  return insideLibrary.value && folder === preferences.root ? phrase('图库') : galleryBaseName(folder)
+}
+
+/**
+ * Where a photo can be made the cover. Its own folder always can (that is the
+ * album card and that album's page); when you are looking at a folder above,
+ * the page itself can use a photo from one album down as well.
+ */
+function coverOptionsFor(item: GalleryItem | undefined): GalleryCoverOption[] {
+  if (!item || !canBeCover(item)) return []
+  const current = snapshot.value
+  const options: GalleryCoverOption[] = []
+  const ownAlbum = current?.albums.find((album) => album.path === item.folder)
+  const ownActive = item.folder === currentPath.value
+    ? current?.coverPath === item.entry.path
+    : Boolean(ownAlbum?.coverPinned && ownAlbum.cover?.entry.path === item.entry.path)
+  options.push({ id: 'own', label: phrase(`设为「${coverFolderLabel(item.folder)}」封面`), active: ownActive })
+  if (item.folder !== currentPath.value && galleryRelativePath(currentPath.value, item.entry.path)) {
+    options.push({ id: 'page', label: phrase(`设为「${coverFolderLabel(currentPath.value)}」封面`), active: current?.coverPath === item.entry.path })
+  }
+  return options
+}
+
+/** Remember the cover in the folder itself; undefined puts the folder back on its automatic cover. */
+async function writeCover(folder: string, relative: string | undefined): Promise<boolean> {
+  if (coverBusy.value) return false
+  coverBusy.value = true
+  // The host this change is for, fixed now: the page may move to another host while the upload runs.
+  const api = fileAPI.value
+  const targetHost = hostId.value
+  try {
+    const marker = new File([serializeGalleryCover(relative)], GALLERY_COVER_MARKER, { type: 'application/json' })
+    await api.upload(folder, marker, true)
+    notifyFileDirectoriesChanged([folder], undefined, [], targetHost)
+    if (unmounted || hostId.value !== targetHost) return true
+    const current = snapshot.value
+    if (current) {
+      const absolute = relative === undefined ? undefined : resolveGalleryCover(folder, relative)
+      if (folder === current.path) snapshot.value = { ...current, coverPath: absolute }
+      else {
+        snapshot.value = {
+          ...current,
+          albums: current.albums.map((album) => {
+            if (album.path !== folder) return album
+            const pinned = absolute ? current.items.find((item) => item.entry.path === absolute) : undefined
+            return { ...album, coverPinned: Boolean(pinned), cover: pinned ?? album.cover }
+          }),
+        }
+      }
+    }
+    toast.success(phrase(relative === undefined ? '已恢复自动封面' : '封面已更新'))
+    scheduleReload()
+    return true
+  } catch (error) {
+    toast.danger(phrase('封面未更改'), errorMessage(error))
+    return false
+  } finally {
+    coverBusy.value = false
+  }
+}
+
+async function chooseCover(item: GalleryItem, optionId: string): Promise<void> {
+  const option = coverOptionsFor(item).find((candidate) => candidate.id === optionId)
+  if (!option) return
+  const folder = optionId === 'own' ? item.folder : currentPath.value
+  const relative = optionId === 'own' ? item.entry.name : galleryRelativePath(folder, item.entry.path)
+  if (!relative) return
+  // Choosing the photo that already is the cover puts the folder back on its automatic cover.
+  await writeCover(folder, option.active ? undefined : relative)
+}
+
+function startCoverPicking(): void {
+  moreMenuOpen.value = false
+  stopSelecting()
+  coverPicking.value = true
+  void nextTick(() => {
+    const banner = page.value?.querySelector<HTMLElement>('.gallery-selection--pick')
+    if (typeof banner?.scrollIntoView === 'function') banner.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+
+async function pickCover(item: GalleryItem): Promise<void> {
+  if (!canBeCover(item)) {
+    toast.show(phrase('这张不能作为封面'), { message: phrase('请选一张浏览器能直接显示的照片，视频和 HEIC 等格式暂不支持。') })
+    return
+  }
+  const relative = galleryRelativePath(currentPath.value, item.entry.path)
+  if (!relative) return
+  coverPicking.value = false
+  await writeCover(currentPath.value, relative)
+}
+
+function restoreAutoCover(): void {
+  moreMenuOpen.value = false
+  void writeCover(currentPath.value, undefined)
+}
 
 function albumMeta(album: GalleryAlbum): string {
   if (album.failed) return phrase('暂时无法读取')
@@ -341,7 +456,7 @@ async function load(options: { quiet?: boolean } = {}): Promise<void> {
   }
   loadError.value = ''
   try {
-    await loadGalleryFolder({ list: api.list }, path, (next) => {
+    await loadGalleryFolder({ list: api.list, text: api.text }, path, (next) => {
       if (sequence !== loadSequence || unmounted) return
       // A refresh keeps the current page until the whole scan is in, so album
       // media do not blink out and back while each album is re-read.
@@ -432,6 +547,7 @@ watch([currentPath, hostId], ([, nextHost], [, previousHost]) => {
   albumMenu.value = undefined
   moreMenuOpen.value = false
   viewerPath.value = undefined
+  coverPicking.value = false
   clearSelection()
   renderLimit.value = RENDER_STEP
   albumsExpanded.value = false
@@ -460,6 +576,7 @@ function stopSelecting(): void {
 
 function toggleItem(item: GalleryItem, range: boolean): void {
   selecting.value = true
+  coverPicking.value = false
   const next = new Set(selected.value)
   if (range && selectionAnchor) {
     const paths = visibleItems.value.map((candidate) => candidate.entry.path)
@@ -482,6 +599,10 @@ function selectAllVisible(): void {
 }
 
 function openViewer(item: GalleryItem): void {
+  if (coverPicking.value) {
+    void pickCover(item)
+    return
+  }
   viewerPath.value = item.entry.path
 }
 
@@ -823,6 +944,9 @@ function onPageKeydown(event: KeyboardEvent): void {
     albumMenu.value = undefined
     moreMenuOpen.value = false
     event.preventDefault()
+  } else if (coverPicking.value) {
+    coverPicking.value = false
+    event.preventDefault()
   } else if (selecting.value) {
     stopSelecting()
     event.preventDefault()
@@ -964,6 +1088,12 @@ onBeforeUnmount(() => {
             <div v-if="moreMenuOpen" class="gallery-menu" role="menu">
               <button role="menuitem" type="button" @click="moreMenuOpen = false; revealInFiles(currentPath)">
                 <FolderOpen :size="16" /> 在文件管理中打开
+              </button>
+              <button v-if="canPickCover" role="menuitem" type="button" @click="startCoverPicking">
+                <ImagePlus :size="16" /> 更换封面
+              </button>
+              <button v-if="pinnedHero" role="menuitem" type="button" :disabled="coverBusy" @click="restoreAutoCover">
+                <Images :size="16" /> 恢复自动封面
               </button>
               <button role="menuitem" type="button" @click="moreMenuOpen = false; load()">
                 <RefreshCw :size="16" /> 刷新
@@ -1141,7 +1271,7 @@ onBeforeUnmount(() => {
             :class="selecting ? 'button--primary' : 'button--secondary'"
             type="button"
             :aria-pressed="selecting"
-            @click="selecting ? stopSelecting() : (selecting = true)"
+            @click="selecting ? stopSelecting() : (selecting = true, coverPicking = false)"
           >
             <ListChecks :size="16" /> {{ selecting ? '完成' : '选择' }}
           </button>
@@ -1163,6 +1293,13 @@ onBeforeUnmount(() => {
           >
             <Trash2 :size="16" /> 移入回收站
           </button>
+        </div>
+
+        <div v-if="coverPicking" class="gallery-selection gallery-selection--pick" role="status">
+          <ImagePlus :size="17" aria-hidden="true" />
+          <strong>点选一张照片作为「{{ title }}」的封面</strong>
+          <span class="gallery-toolbar__spacer" />
+          <button class="button button--secondary button--small" type="button" @click="coverPicking = false">取消</button>
         </div>
 
         <section v-if="emptyLibrary" class="gallery-empty gallery-empty--drop">
@@ -1275,9 +1412,11 @@ onBeforeUnmount(() => {
       :contained="windowed"
       :library-root="insideLibrary ? preferences.root : undefined"
       :filmstrip="preferences.filmstrip"
+      :cover-options="viewerCoverOptions"
       can-delete
       @close="viewerPath = undefined"
       @update:filmstrip="preferences.filmstrip = $event"
+      @cover="chooseCover($event.item, $event.option)"
       @navigate="navigateViewer"
       @download="downloadEntries([$event.entry])"
       @reveal="viewerPath = undefined; revealInFiles($event.folder)"
@@ -1447,6 +1586,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* A white page or a busy screenshot must not outshine the title laid over it. */
+  filter: brightness(.82);
   animation: gallery-hero-in .9s ease-out both;
 }
 
@@ -1454,8 +1595,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgb(6 9 14 / 8%) 0%, rgb(6 9 14 / 24%) 45%, rgb(6 9 14 / 78%) 100%),
-    linear-gradient(90deg, rgb(6 9 14 / 42%) 0%, transparent 62%);
+    linear-gradient(180deg, rgb(6 9 14 / 10%) 0%, rgb(6 9 14 / 34%) 42%, rgb(6 9 14 / 82%) 100%),
+    linear-gradient(90deg, rgb(6 9 14 / 88%) 0%, rgb(6 9 14 / 80%) 34%, rgb(6 9 14 / 40%) 64%, rgb(6 9 14 / 10%) 100%);
   content: '';
 }
 
@@ -1524,8 +1665,8 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.gallery-hero--photo .gallery-hero__title {
-  text-shadow: 0 1px 18px rgb(0 0 0 / 35%);
+.gallery-hero--photo .gallery-hero__content {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 55%), 0 2px 16px rgb(0 0 0 / 45%);
 }
 
 .gallery-hero__meta {

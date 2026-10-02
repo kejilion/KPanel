@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
   FolderOpen,
   GalleryHorizontalEnd,
   ImageOff,
+  ImageUp,
   Info,
   Maximize,
   Minimize,
@@ -32,6 +34,14 @@ function phrase(value: string): string {
   return translatePhrase(value)
 }
 
+/** One place the open photo can be made the cover of, already labelled for the reader. */
+export interface GalleryCoverOption {
+  id: string
+  label: string
+  /** The photo already is that cover; choosing it puts the folder back on its automatic cover. */
+  active: boolean
+}
+
 export interface GalleryViewerSources {
   /** Small image shown at once while the original loads, and in the filmstrip. */
   preview?: string
@@ -49,6 +59,8 @@ const props = defineProps<{
   canDelete?: boolean
   /** Whether the thumbnail strip is shown; the page remembers the choice. */
   filmstrip?: boolean
+  /** Covers the open photo can be made; empty hides the button (videos, formats a browser cannot draw). */
+  coverOptions?: GalleryCoverOption[]
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +70,7 @@ const emit = defineEmits<{
   reveal: [item: GalleryItem]
   delete: [item: GalleryItem]
   'update:filmstrip': [visible: boolean]
+  cover: [payload: { item: GalleryItem; option: string }]
 }>()
 
 const MIN_SCALE = 1
@@ -81,6 +94,7 @@ const offset = ref({ x: 0, y: 0 })
 const retryKey = ref(0)
 const modalId = Symbol('gallery-viewer')
 const chromeVisible = ref(true)
+const coverMenuOpen = ref(false)
 let chromeHeld = false
 let chromeTimer: number | undefined
 let opener: HTMLElement | null = null
@@ -127,8 +141,18 @@ function showChrome(): void {
   chromeVisible.value = true
   window.clearTimeout(chromeTimer)
   chromeTimer = window.setTimeout(() => {
-    if (!chromeHeld && !chromeFocused()) chromeVisible.value = false
+    if (!chromeHeld && !chromeFocused() && !coverMenuOpen.value) chromeVisible.value = false
   }, CHROME_IDLE_MS)
+}
+
+function chooseCoverOption(option: GalleryCoverOption): void {
+  coverMenuOpen.value = false
+  if (item.value) emit('cover', { item: item.value, option: option.id })
+}
+
+/** A press anywhere but the cover button and its menu closes the menu. */
+function onViewerPointerDown(event: PointerEvent): void {
+  if (coverMenuOpen.value && !(event.target as HTMLElement | null)?.closest('.gallery-viewer__cover')) coverMenuOpen.value = false
 }
 
 function holdChrome(held: boolean): void {
@@ -158,6 +182,7 @@ watch(() => props.filmstrip, (visible) => {
 })
 
 watch(() => item.value?.entry.path, () => {
+  coverMenuOpen.value = false
   resetMedia()
   preloadNeighbours()
   void nextTick(scrollStripToCurrent)
@@ -344,7 +369,8 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if (event.key === 'Escape') {
     event.preventDefault()
-    if (zoomed.value) resetView()
+    if (coverMenuOpen.value) coverMenuOpen.value = false
+    else if (zoomed.value) resetView()
     else if (!document.fullscreenElement) emit('close')
     return
   }
@@ -403,6 +429,7 @@ onBeforeUnmount(() => {
     :aria-label="phrase('照片与视频查看器')"
     tabindex="-1"
     @keydown="onKeydown"
+    @pointerdown="onViewerPointerDown"
     @pointermove="onViewerPointerMove"
     @focusin="onViewerFocusIn"
   >
@@ -431,6 +458,34 @@ onBeforeUnmount(() => {
           :aria-pressed="filmstrip"
           @click="emit('update:filmstrip', !filmstrip)"
         ><GalleryHorizontalEnd :size="18" /></button>
+        <div v-if="coverOptions?.length" class="gallery-viewer__cover">
+          <button
+            type="button"
+            :class="{ 'is-active': coverMenuOpen || coverOptions.some((option) => option.active) }"
+            :title="phrase('设为封面')"
+            :aria-label="phrase('设为封面')"
+            aria-haspopup="menu"
+            :aria-expanded="coverMenuOpen"
+            @click="coverMenuOpen = !coverMenuOpen"
+          ><ImageUp :size="18" /></button>
+          <div v-if="coverMenuOpen" class="gallery-viewer__cover-menu" role="menu" :aria-label="phrase('设为封面')">
+            <button
+              v-for="option in coverOptions"
+              :key="option.id"
+              type="button"
+              role="menuitemcheckbox"
+              :aria-checked="option.active"
+              @click="chooseCoverOption(option)"
+            >
+              <Check v-if="option.active" :size="16" aria-hidden="true" />
+              <span v-else class="gallery-viewer__cover-spacer" aria-hidden="true" />
+              <span class="gallery-viewer__cover-label">
+                <strong>{{ option.label }}</strong>
+                <small v-if="option.active">{{ phrase('当前封面，再点一次恢复自动') }}</small>
+              </span>
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           :class="{ 'is-active': infoOpen }"
@@ -729,6 +784,62 @@ onBeforeUnmount(() => {
 .gallery-viewer__close {
   margin-left: 4px;
   background: var(--viewer-control) !important;
+}
+
+.gallery-viewer__cover {
+  position: relative;
+}
+
+.gallery-viewer__cover-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  min-width: 200px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--viewer-line);
+  border-radius: var(--radius);
+  background: rgb(18 22 28 / 96%);
+  box-shadow: var(--shadow-md);
+}
+
+.gallery-viewer__actions .gallery-viewer__cover-menu button {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.gallery-viewer__cover-spacer {
+  width: 16px;
+  flex: 0 0 16px;
+}
+
+.gallery-viewer__cover-label {
+  display: grid;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.gallery-viewer__cover-label strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.gallery-viewer__cover-label small {
+  color: var(--viewer-muted);
+  font-size: 13px;
 }
 
 .gallery-viewer__divider {

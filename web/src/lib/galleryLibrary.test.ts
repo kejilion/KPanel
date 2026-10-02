@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api'
 import {
   GALLERY_ALBUM_SCAN_LIMIT,
+  GALLERY_COVER_READ_TIMEOUT_MS,
   GALLERY_FOLDER_PAGES,
   GALLERY_PAGE_SIZE,
   loadGalleryFolder,
@@ -115,5 +116,92 @@ describe('gallery folder loader', () => {
       throw new DOMException('aborted', 'AbortError')
     })
     await expect(loadGalleryFolder({ list }, '/home/gallery', undefined, controller.signal)).rejects.toThrow('aborted')
+  })
+})
+
+describe('gallery cover markers', () => {
+  const marker = (folderPath: string, size = 40) => file(`${folderPath}/.kpanel-cover.json`, { sizeBytes: size })
+
+  it('uses the photo a folder marker names for the page and for each album card', async () => {
+    const tree: Record<string, FileEntry[]> = {
+      '/home/gallery': [
+        file('/home/gallery/newest.jpg', { modifiedAt: '2026-09-30T00:00:00Z' }),
+        marker('/home/gallery'),
+        folder('/home/gallery/Kyoto'),
+        folder('/home/gallery/Plain'),
+      ],
+      '/home/gallery/Kyoto': [
+        file('/home/gallery/Kyoto/old.jpg', { modifiedAt: '2026-08-01T00:00:00Z' }),
+        file('/home/gallery/Kyoto/new.jpg', { modifiedAt: '2026-09-10T00:00:00Z' }),
+        marker('/home/gallery/Kyoto'),
+      ],
+      '/home/gallery/Plain': [file('/home/gallery/Plain/only.jpg')],
+    }
+    const text = vi.fn(async (path: string) => ({
+      '/home/gallery/.kpanel-cover.json': '{"version":1,"cover":"Kyoto/old.jpg"}',
+      '/home/gallery/Kyoto/.kpanel-cover.json': '{"version":1,"cover":"old.jpg"}',
+    })[path] ?? '')
+    const result = await loadGalleryFolder({ list: async (path) => directory(path, tree[path] ?? []), text }, '/home/gallery')
+
+    // The page cover may name a photo one album down; the album card names its own folder's photo.
+    expect(result.coverPath).toBe('/home/gallery/Kyoto/old.jpg')
+    const kyoto = result.albums.find((album) => album.name === 'Kyoto')!
+    expect(kyoto).toMatchObject({ coverPinned: true })
+    expect(kyoto.cover?.entry.name).toBe('old.jpg')
+    // Albums without a marker keep the automatic cover and cost no marker read.
+    expect(result.albums.find((album) => album.name === 'Plain')).toMatchObject({ coverPinned: false })
+    expect(text.mock.calls.map(([path]) => path).sort()).toEqual(['/home/gallery/.kpanel-cover.json', '/home/gallery/Kyoto/.kpanel-cover.json'])
+  })
+
+  it('falls back to the automatic cover when the marker is stale, damaged, oversized or unreadable', async () => {
+    const entries = [file('/home/gallery/a.jpg'), marker('/home/gallery')]
+    for (const reply of [
+      async () => '{"version":1,"cover":"gone.jpg"}',
+      async () => '{"version":1,"cover":"../../etc/passwd"}',
+      async () => 'not json at all',
+      async () => { throw new ApiError('denied', 403, 'forbidden') },
+    ]) {
+      const result = await loadGalleryFolder({ list: async (path) => directory(path, entries), text: reply }, '/home/gallery')
+      expect(result.exists).toBe(true)
+      expect(result.coverPath).toBeUndefined()
+      expect(result.items).toHaveLength(1)
+    }
+    const text = vi.fn(async () => '{"version":1,"cover":"a.jpg"}')
+    const oversized = [file('/home/gallery/a.jpg'), marker('/home/gallery', 100_000)]
+    expect((await loadGalleryFolder({ list: async (path) => directory(path, oversized), text }, '/home/gallery')).coverPath).toBeUndefined()
+    expect(text).not.toHaveBeenCalled()
+  })
+
+  it('never pins a hidden or unsupported file and never reads markers it cannot use', async () => {
+    const entries = [file('/home/gallery/shot.heic'), marker('/home/gallery'), folder('/home/gallery/A')]
+    const albumEntries = [file('/home/gallery/A/x.heic'), file('/home/gallery/A/y.jpg'), marker('/home/gallery/A')]
+    const text = vi.fn(async (path: string) => path.startsWith('/home/gallery/A') ? '{"version":1,"cover":"x.heic"}' : '{"version":1,"cover":"shot.heic"}')
+    const result = await loadGalleryFolder({ list: async (path) => directory(path, path === '/home/gallery' ? entries : albumEntries), text }, '/home/gallery')
+    // HEIC is media but a browser cannot draw it: the album falls back to a photo it can show.
+    expect(result.albums[0]).toMatchObject({ coverPinned: false })
+    expect(result.albums[0]!.cover?.entry.name).toBe('y.jpg')
+    // The page cover still resolves to a known item; the page itself refuses to draw it (see GalleryView).
+    expect(result.coverPath).toBe('/home/gallery/shot.heic')
+  })
+
+  it('does not let a marker that never answers hold the page back', async () => {
+    vi.useFakeTimers()
+    try {
+      const entries = [file('/home/gallery/a.jpg'), marker('/home/gallery')]
+      const pending = loadGalleryFolder({ list: async (path) => directory(path, entries), text: () => new Promise<string>(() => undefined) }, '/home/gallery')
+      await vi.advanceTimersByTimeAsync(GALLERY_COVER_READ_TIMEOUT_MS + 50)
+      const result = await pending
+      expect(result.exists).toBe(true)
+      expect(result.items).toHaveLength(1)
+      expect(result.coverPath).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not read markers when the caller gave no way to read text', async () => {
+    const entries = [file('/home/gallery/a.jpg'), marker('/home/gallery')]
+    const result = await loadGalleryFolder({ list: async (path) => directory(path, entries) }, '/home/gallery')
+    expect(result.coverPath).toBeUndefined()
   })
 })

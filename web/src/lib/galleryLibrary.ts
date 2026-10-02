@@ -1,5 +1,11 @@
 import { ApiError } from '@/lib/api'
 import {
+  GALLERY_COVER_MARKER,
+  GALLERY_COVER_MARKER_MAX_BYTES,
+  parseGalleryCover,
+  resolveGalleryCover,
+} from '@/lib/galleryCover'
+import {
   galleryAlbumEntries,
   galleryBrowserCanShow,
   galleryItemsFromEntries,
@@ -18,9 +24,13 @@ export const GALLERY_FOLDER_PAGES = 10
 export const GALLERY_ALBUM_PAGES = 4
 export const GALLERY_ALBUM_SCAN_LIMIT = 48
 const ALBUM_SCAN_CONCURRENCY = 4
+/** A cover is a nicety: a marker that takes longer than this to read is treated as absent so it cannot hold the page back. */
+export const GALLERY_COVER_READ_TIMEOUT_MS = 3000
 
 export interface GalleryListAPI {
   list: (path: string, options: { offset?: number; limit?: number }, signal?: AbortSignal) => Promise<FileDirectory>
+  /** Reads a small text file; only needed to honour cover markers. */
+  text?: (path: string) => Promise<string>
 }
 
 export interface GalleryAlbum {
@@ -31,6 +41,8 @@ export interface GalleryAlbum {
   videoCount: number
   folderCount: number
   cover?: GalleryItem
+  /** The cover was chosen by hand (a marker in the album names it) rather than picked automatically. */
+  coverPinned: boolean
   /** Newest media time in the album, for ordering; 0 when empty. */
   latest: number
   scanned: boolean
@@ -43,6 +55,8 @@ export interface GalleryFolderSnapshot {
   exists: boolean
   /** Media directly in the folder plus media in scanned direct subfolders. */
   items: GalleryItem[]
+  /** Path of the cover chosen by hand for this folder, when its marker names a photo that is still here. */
+  coverPath?: string
   albums: GalleryAlbum[]
   /** Some listing stopped at a page, scan or album bound. */
   truncated: boolean
@@ -90,8 +104,36 @@ function albumCover(items: readonly GalleryItem[]): GalleryItem | undefined {
   return image ?? video
 }
 
-function summarizeAlbum(album: GalleryAlbum, listing: FolderListing): { album: GalleryAlbum; items: GalleryItem[] } {
+/**
+ * The cover a folder's marker names, read only when the listing shows a marker
+ * of plausible size. Any failure means "no hand-picked cover": a cover is a
+ * nicety and must never make a page fail to load.
+ */
+async function readCoverMarker(api: GalleryListAPI, folder: string, entries: readonly FileEntry[]): Promise<string | undefined> {
+  const marker = entries.find((entry) => entry.kind === 'file' && entry.name === GALLERY_COVER_MARKER)
+  if (!marker || !api.text || marker.sizeBytes > GALLERY_COVER_MARKER_MAX_BYTES) return undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const text = await Promise.race([
+      api.text(resolveGalleryCover(folder, GALLERY_COVER_MARKER)),
+      new Promise<string>((_, reject) => { timer = setTimeout(() => reject(new Error('cover read timed out')), GALLERY_COVER_READ_TIMEOUT_MS) }),
+    ])
+    const relative = parseGalleryCover(text)
+    return relative === undefined ? undefined : resolveGalleryCover(folder, relative)
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function summarizeAlbum(
+  album: GalleryAlbum,
+  listing: FolderListing,
+  pinnedPath?: string,
+): { album: GalleryAlbum; items: GalleryItem[] } {
   const items = galleryItemsFromEntries(listing.entries, album.path)
+  const pinned = pinnedPath ? items.find((item) => item.entry.path === pinnedPath && galleryBrowserCanShow(item)) : undefined
   return {
     items,
     album: {
@@ -99,7 +141,8 @@ function summarizeAlbum(album: GalleryAlbum, listing: FolderListing): { album: G
       imageCount: items.filter((item) => item.kind === 'image').length,
       videoCount: items.filter((item) => item.kind === 'video').length,
       folderCount: galleryAlbumEntries(listing.entries).length,
-      cover: albumCover(items),
+      cover: pinned ?? albumCover(items),
+      coverPinned: Boolean(pinned),
       latest: items.reduce((latest, item) => Math.max(latest, item.time), 0),
       scanned: true,
       truncated: listing.truncated,
@@ -139,20 +182,26 @@ export async function loadGalleryFolder(
   const albums: GalleryAlbum[] = folders.map((entry) => ({
     entry, path: entry.path, name: entry.name,
     imageCount: 0, videoCount: 0, folderCount: 0, latest: 0,
-    scanned: false, truncated: false, failed: false,
+    coverPinned: false, scanned: false, truncated: false, failed: false,
   }))
   const ownItems = galleryItemsFromEntries(listing.entries, path)
+  // Read before the first paint only when a marker exists, so ordinary folders pay nothing.
+  const pinnedPath = await readCoverMarker(api, path, listing.entries)
   const albumItems = new Map<string, GalleryItem[]>()
   let failedAlbums = 0
-  const snapshot = (scanning: boolean): GalleryFolderSnapshot => ({
-    path,
-    exists: true,
-    items: [...ownItems, ...[...albumItems.values()].flat()],
-    albums: [...albums],
-    truncated: listing.truncated || folders.length > GALLERY_ALBUM_SCAN_LIMIT || albums.some((album) => album.truncated),
-    scanning,
-    failedAlbums,
-  })
+  const snapshot = (scanning: boolean): GalleryFolderSnapshot => {
+    const items = [...ownItems, ...[...albumItems.values()].flat()]
+    return {
+      path,
+      exists: true,
+      items,
+      coverPath: pinnedPath && items.some((item) => item.entry.path === pinnedPath) ? pinnedPath : undefined,
+      albums: [...albums],
+      truncated: listing.truncated || folders.length > GALLERY_ALBUM_SCAN_LIMIT || albums.some((album) => album.truncated),
+      scanning,
+      failedAlbums,
+    }
+  }
   const scanTargets = albums.slice(0, GALLERY_ALBUM_SCAN_LIMIT)
   onUpdate?.(snapshot(scanTargets.length > 0))
 
@@ -163,7 +212,8 @@ export async function loadGalleryFolder(
       const index = cursor++
       const album = scanTargets[index]!
       try {
-        const summary = summarizeAlbum(album, await listFolder(api, album.path, GALLERY_ALBUM_PAGES, signal))
+        const albumListing = await listFolder(api, album.path, GALLERY_ALBUM_PAGES, signal)
+        const summary = summarizeAlbum(album, albumListing, await readCoverMarker(api, album.path, albumListing.entries))
         albums[index] = summary.album
         albumItems.set(album.path, summary.items)
       } catch (error) {
