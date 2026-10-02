@@ -64,7 +64,7 @@
 Session/owner/关闭状态，20 秒服务端超时、23 秒客户端取消。健康空闲 WebSocket 复接不会累积为永久失败。
 
 目标流使用最多 32 项的独立有序输入 worker，控制帧读取不被 PTY 写入阻塞。关闭取消未派发输入并关闭 PTY，
-Agent 的 terminal close 可绕过正在等待输入的全局 mutation 锁；备份仍通过 Manager.Busy 拒绝活动终端。
+Agent 的 terminal resize / close 可绕过正在等待输入的全局 mutation 锁；备份仍通过 Manager.Busy 拒绝活动终端。
 PTY 输入闸门支持 context 取消，实际阻塞的 PTY write 不持状态锁，仍可由 close/生命周期回收解除。
 注销后每帧拒绝新输入，闲置连接约 1 秒内复核关闭；已经授权并在派发中的字节可能完成，不能承诺撤回。
 

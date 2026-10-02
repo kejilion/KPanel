@@ -315,10 +315,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	isBackup := r.URL.Path == "/v1/backups" || strings.HasPrefix(r.URL.Path, "/v1/backups/")
 	isTerminalClose := r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v1/terminals/") && strings.HasSuffix(r.URL.Path, "/close")
-	// Closing only releases an existing worker. It must remain reachable while
-	// terminal input is blocked, and cannot admit a new host mutation during a
-	// backup; the backup admission check still observes Manager.Busy until close.
-	if r.Method != "GET" && r.Method != "HEAD" && !isTerminalClose {
+	isTerminalResize := r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/v1/terminals/") && strings.HasSuffix(r.URL.Path, "/resize")
+	// Existing PTY controls must remain reachable while input is blocked. They
+	// cannot admit new workers during backup, whose admission check still sees
+	// Manager.Busy until the terminal closes. Resize must not hold up close.
+	if r.Method != "GET" && r.Method != "HEAD" && !isTerminalClose && !isTerminalResize {
 		s.backupMutationMu.Lock()
 		defer s.backupMutationMu.Unlock()
 		if s.backups != nil && !isBackup && !isTerminalClose && s.backups.Jobs.Busy() {

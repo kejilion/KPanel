@@ -230,6 +230,9 @@ func TestTerminalSequencedStreamPanelAndLightParity(t *testing.T) {
 			}
 			closeCtx, closeCancel := context.WithTimeout(ctx, time.Second)
 			defer closeCancel()
+			if err := f.service.TerminalResize(closeCtx, hostID, TerminalResizeRequest{SessionID: opened.SessionID, Rows: 30, Columns: 100}); err != nil {
+				t.Fatalf("blocked PTY made stream resize unreachable: %v", err)
+			}
 			if err := f.service.TerminalClose(closeCtx, hostID, TerminalCloseRequest{SessionID: opened.SessionID}); err != nil {
 				t.Fatalf("blocked PTY made stream close unreachable: %v", err)
 			}

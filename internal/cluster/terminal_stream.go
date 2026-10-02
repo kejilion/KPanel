@@ -290,8 +290,8 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 				} else {
 					err = backend.Input(inputCtx, owner, sessionID, job.raw)
 				}
-				replyTerminalStream(c, job.seq, err)
 				<-inputSlots
+				replyTerminalStream(c, job.seq, err)
 			}
 		}
 	}()

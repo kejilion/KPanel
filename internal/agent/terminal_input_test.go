@@ -54,6 +54,16 @@ func TestTerminalCloseAPIBypassesBlockedInputMutationLock(t *testing.T) {
 		inputDone <- request("input-sequenced", map[string]any{"owner": "owner", "frame": terminal.InputFrame{Stream: "00000000000000000000000000000001", Seq: 1, Data: []byte("block")}})
 	}()
 	<-p.entered
+	resizeDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { resizeDone <- request("resize", map[string]any{"owner": "owner", "rows": 30, "columns": 100}) }()
+	select {
+	case response := <-resizeDone:
+		if response.Code != 200 {
+			t.Fatalf("resize: %d %s", response.Code, response.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Agent mutation mutex blocked resize ahead of terminal close")
+	}
 	closeDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() { closeDone <- request("close", map[string]string{"owner": "owner"}) }()
 	select {
