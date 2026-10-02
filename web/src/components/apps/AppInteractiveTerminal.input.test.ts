@@ -251,4 +251,3 @@ describe('task terminal input channel', () => {
     wrapper.unmount()
   })
 })
-
