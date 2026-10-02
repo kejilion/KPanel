@@ -2,6 +2,7 @@ import { getLocale, type SupportedLocale } from '@/i18n'
 
 const numberFormatters = new Map<SupportedLocale, Intl.NumberFormat>()
 const dateFormatters = new Map<SupportedLocale, Intl.DateTimeFormat>()
+const timeFormatters = new Map<SupportedLocale, Intl.DateTimeFormat>()
 
 function numberFormatter(): Intl.NumberFormat {
   const locale = getLocale()
@@ -25,6 +26,21 @@ function dateFormatter(): Intl.DateTimeFormat {
       hour12: false,
     })
     dateFormatters.set(locale, formatter)
+  }
+  return formatter
+}
+
+function timeFormatter(): Intl.DateTimeFormat {
+  const locale = getLocale()
+  let formatter = timeFormatters.get(locale)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+    timeFormatters.set(locale, formatter)
   }
   return formatter
 }
@@ -82,6 +98,12 @@ export function formatDateTime(value?: string): string {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : dateFormatter().format(date)
+}
+
+export function formatTime(value?: string): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '—' : timeFormatter().format(date)
 }
 
 export function formatHostDateTime(value?: string, timezone?: string): string {

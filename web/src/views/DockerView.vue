@@ -11,6 +11,9 @@ function phrase(value: string): string {
   return translatePhrase(value)
 }
 import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
   Box,
   Boxes,
   BrushCleaning,
@@ -22,6 +25,7 @@ import {
   EllipsisVertical,
   FileText,
   HardDrive,
+  LayoutList,
   LoaderCircle,
   Network,
   Pause,
@@ -42,6 +46,7 @@ import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import StatusBadge from '@/components/feedback/StatusBadge.vue'
 import DockerDeploymentEditor from '@/components/docker/DockerDeploymentEditor.vue'
+import DockerUsageMeter from '@/components/docker/DockerUsageMeter.vue'
 import ImageUpdateBadge from '@/components/docker/ImageUpdateBadge.vue'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
@@ -55,7 +60,7 @@ import {
   showContextMenuKeyboardFocus,
   showContextMenuPointerFocus,
 } from '@/lib/contextMenu'
-import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowActiveKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import { analyzeDockerDeployment, composeEnvironmentVariables } from '@/lib/dockerDeployment'
 import { dockerComposeGroupAccent, groupDockerContainers, type DockerContainerGroup } from '@/lib/dockerComposeGroups'
 import {
@@ -66,7 +71,8 @@ import {
   sortDockerVolumes,
   type ResourceSort,
 } from '@/lib/dockerSorting'
-import { formatBytes, formatDateTime, relativeTime, shortId } from '@/lib/format'
+import { dockerLiveMetricsLimit, summarizeDockerLive, useDockerLiveMetrics } from '@/lib/dockerLiveMetrics'
+import { formatBytes, formatDateTime, formatPercent, formatRate, formatTime, relativeTime, shortId } from '@/lib/format'
 import { usePanelState } from '@/stores/panel'
 import { useToast } from '@/stores/toast'
 import type {
@@ -84,6 +90,7 @@ import type {
 } from '@/types/api'
 
 type DockerTab = 'environment' | 'containers' | 'images' | 'networks' | 'volumes'
+type ContainerViewMode = 'manage' | 'monitor'
 type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove'
 type DockerContextMenuItem =
   | { kind: 'container'; item: DockerContainer }
@@ -120,6 +127,7 @@ interface CreateComposeEnvironmentRow extends CreateEnvironmentRow {
 const panel = usePanelState()
 const toast = useToast()
 const windowActive = inject(desktopWindowActiveKey, computed(() => true))
+const windowVisible = inject(desktopWindowVisibleKey, computed(() => true))
 const data = ref<DockerInventory>()
 const loading = ref(true)
 const refreshing = ref(false)
@@ -136,6 +144,7 @@ const imageUpdates = useDockerImageUpdates(
 const imageUpdateEntries = imageUpdates.entries
 const resourceSort = ref<ResourceSort>('smart')
 const containerSort = ref<ContainerSort>('smart')
+const containerViewMode = ref<ContainerViewMode>('manage')
 const taskRunning = ref(false)
 const activeJob = ref<DockerMaintenanceJob>()
 const pendingMaintenance = ref<{
@@ -386,6 +395,66 @@ const visibleManagedComposeProjects = computed(() => {
 const containerGroups = computed(() =>
   groupDockerContainers(filteredContainers.value, containerSort.value, visibleManagedComposeProjects.value),
 )
+const monitoring = computed(() => containerViewMode.value === 'monitor')
+// Follow the on-screen order so the sampling cap trims the tail of the list, not an arbitrary row.
+const liveMetricTargets = computed(() =>
+  containerGroups.value
+    .flatMap((group) => group.containers)
+    .filter((item) => item.state === 'running' && permits(item, 'stats')),
+)
+// A monitoring window is often visible beside a focused one, so follow visibility, not focus.
+const liveMetricsActive = computed(() =>
+  windowVisible.value &&
+  documentVisible.value &&
+  activeTab.value === 'containers' &&
+  monitoring.value &&
+  Boolean(data.value?.available),
+)
+const liveMetrics = useDockerLiveMetrics(
+  liveMetricTargets,
+  liveMetricsActive,
+  (id, signal) => api.docker.stats(id, signal),
+)
+const liveEntries = liveMetrics.entries
+const liveStatusText = computed(() => {
+  if (liveMetrics.sampled.value) return `实时 · 更新于 ${formatTime(liveMetrics.lastCollectedAt.value)}`
+  if (liveMetrics.failing.value) return '暂时无法读取容器性能数据，正在重试'
+  return liveMetricTargets.value.length ? '正在采样…' : '没有运行中的容器可监控'
+})
+
+// Stats polling cannot see containers that crash, start or appear, so keep the
+// inventory fresh while the monitoring view is live. This deliberately skips the
+// partial updates load() applies: those briefly report zero images, networks and
+// volumes, which would make the tab counts flicker every cycle.
+const monitorInventoryRefreshDelay = 30_000
+let monitorInventoryTimer: number | undefined
+let monitorInventoryController: AbortController | undefined
+
+function stopMonitorInventoryRefresh(): void {
+  if (monitorInventoryTimer) window.clearInterval(monitorInventoryTimer)
+  monitorInventoryTimer = undefined
+  monitorInventoryController?.abort()
+  monitorInventoryController = undefined
+}
+
+async function refreshInventoryForMonitor(): Promise<void> {
+  if (loading.value || refreshing.value || monitorInventoryController) return
+  const requestController = new AbortController()
+  monitorInventoryController = requestController
+  try {
+    const next = await api.docker.inventory(requestController.signal)
+    if (monitorInventoryController === requestController && liveMetricsActive.value) data.value = next
+  } catch {
+    // Keep the last inventory; sampling failures are already reported in the status line.
+  } finally {
+    if (monitorInventoryController === requestController) monitorInventoryController = undefined
+  }
+}
+
+watch(liveMetricsActive, (active) => {
+  stopMonitorInventoryRefresh()
+  if (active) monitorInventoryTimer = window.setInterval(() => void refreshInventoryForMonitor(), monitorInventoryRefreshDelay)
+})
 
 function isContainerGroupCollapsed(key: string): boolean {
   return collapsedContainerGroups.value.has(key)
@@ -413,6 +482,20 @@ function containerGroupStyle(group: DockerContainerGroup): Record<string, string
 
 function visibleContainerGroupRows(group: DockerContainerGroup): DockerContainer[] {
   return isContainerGroupCollapsed(group.key) ? [] : group.containers
+}
+
+function liveSample(container: DockerContainer) {
+  return liveEntries.value[container.id]?.sample
+}
+
+function livePlaceholder(container: DockerContainer): string {
+  if (container.state !== 'running') return '—'
+  if (!permits(container, 'stats')) return '暂不可采样'
+  return liveEntries.value[container.id]?.failed ? '采样失败' : '采样中…'
+}
+
+function groupLive(group: DockerContainerGroup) {
+  return summarizeDockerLive(group.containers, liveEntries.value)
 }
 const composeAnalysis = computed(() => analyzeDockerDeployment(composeSource.value))
 const composeDiagnostics = computed(() => composeAnalysis.value.kind === 'invalid' ? composeAnalysis.value.diagnostics : [])
@@ -581,6 +664,8 @@ function closeContextMenuOnViewportChange(): void {
 async function load(silent = false): Promise<void> {
   controller?.abort()
   composeController?.abort()
+  monitorInventoryController?.abort()
+  monitorInventoryController = undefined
   controller = new AbortController()
   if (silent) refreshing.value = true
   else loading.value = true
@@ -1405,6 +1490,7 @@ onBeforeUnmount(() => {
   controller?.abort()
   logController?.abort()
   stopStatsPolling()
+  stopMonitorInventoryRefresh()
   stopJobPolling()
 })
 </script>
@@ -1584,7 +1670,11 @@ onBeforeUnmount(() => {
           <header class="resource-section__header">
             <div class="resource-section__heading">
               <span class="workspace-card__icon"><Container :size="20" /></span>
-              <div><strong>容器日常管理</strong><small>{{ visibleResourceCount }} 项 · 生命周期、日志、性能与终端</small></div>
+              <!-- Both texts share one grid cell so the header keeps the height of the taller one in either view. -->
+              <div class="docker-heading-text">
+                <div :class="{ 'is-inactive': monitoring }" :aria-hidden="monitoring"><strong>容器日常管理</strong><small>{{ visibleResourceCount }} 项 · 生命周期、日志、性能与终端</small></div>
+                <div :class="{ 'is-inactive': !monitoring }" :aria-hidden="!monitoring"><strong>容器资源监控</strong><small>{{ visibleResourceCount }} 项 · CPU、内存、磁盘 I/O 与网络实时占用</small></div>
+              </div>
             </div>
             <div class="resource-section__controls">
               <div class="docker-toolbar">
@@ -1600,20 +1690,32 @@ onBeforeUnmount(() => {
                   <option value="name-desc">名称 Z–A</option>
                 </select>
               </div>
-              <div class="card-actions">
-                <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
-                  <BrushCleaning :size="15" /> 清理停止容器
-                </button>
-                <button class="button button--primary button--small" type="button" :disabled="panel.isReadOnly.value" @click="resetCreateForm(); createOpen = true">
-                  <Plus :size="15" /> 新建容器
-                </button>
+              <!-- Both stay rendered in one grid cell so the slot is as wide as the wider one in either view. -->
+              <div class="docker-controls-slot">
+                <div class="card-actions" :class="{ 'is-inactive': monitoring }" :aria-hidden="monitoring">
+                  <button class="button button--secondary button--small" type="button" @click="askPrune('container_prune', '清理已停止容器')">
+                    <BrushCleaning :size="15" /> 清理停止容器
+                  </button>
+                  <button class="button button--primary button--small" type="button" :disabled="panel.isReadOnly.value" @click="resetCreateForm(); createOpen = true">
+                    <Plus :size="15" /> 新建容器
+                  </button>
+                </div>
+                <div class="docker-live-status" :class="{ 'is-inactive': !monitoring }" :aria-hidden="!monitoring">
+                  <i class="docker-live-status__dot" :class="{ 'is-sampling': liveMetrics.sampling.value }" aria-hidden="true" />
+                  <span>{{ phrase(liveStatusText) }}</span>
+                  <small v-if="liveMetrics.truncated.value">仅监控前 {{ dockerLiveMetricsLimit }} 个运行中容器</small>
+                </div>
+              </div>
+              <div class="docker-view-switch" role="group" :aria-label="phrase('容器视图')">
+                <button type="button" :class="{ 'is-active': !monitoring }" :aria-pressed="!monitoring" @click="containerViewMode = 'manage'"><LayoutList :size="15" /> 管理</button>
+                <button type="button" :class="{ 'is-active': monitoring }" :aria-pressed="monitoring" @click="containerViewMode = 'monitor'"><Activity :size="15" /> 监控</button>
               </div>
             </div>
           </header>
           <EmptyState v-if="!containerGroups.length" title="没有符合条件的容器" description="Docker Engine 未返回容器，或搜索条件没有匹配项。" />
           <div v-else class="table-scroll">
-            <table class="data-table docker-table">
-              <colgroup>
+            <table class="data-table docker-table" :class="{ 'docker-table--monitor': monitoring }">
+              <colgroup v-if="!monitoring">
                 <col class="docker-table__name" />
                 <col class="docker-table__status" />
                 <col class="docker-table__ports" />
@@ -1621,10 +1723,20 @@ onBeforeUnmount(() => {
                 <col class="docker-table__owner" />
                 <col class="docker-table__actions" />
               </colgroup>
-              <thead><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
+              <colgroup v-else>
+                <col class="docker-table__name" />
+                <col class="docker-table__status" />
+                <col class="docker-table__cpu" />
+                <col class="docker-table__memory" />
+                <col class="docker-table__io" />
+                <col class="docker-table__traffic" />
+                <col class="docker-table__pids" />
+              </colgroup>
+              <thead v-if="!monitoring"><tr><th>容器</th><th>状态</th><th>端口</th><th>网络</th><th>归属</th><th>操作</th></tr></thead>
+              <thead v-else><tr><th>容器</th><th>状态</th><th :title="phrase('与 docker stats 一致，100% 约等于占满 1 个 CPU 核心')">CPU</th><th>内存</th><th>磁盘 I/O</th><th>网络</th><th>进程</th></tr></thead>
               <tbody v-for="group in containerGroups" :key="group.key" class="docker-group" :style="containerGroupStyle(group)">
                 <tr class="docker-group__row">
-                  <td colspan="6">
+                  <td :colspan="monitoring ? 7 : 6">
                     <div class="docker-group__summary">
                       <button
                         class="docker-group__toggle"
@@ -1637,13 +1749,15 @@ onBeforeUnmount(() => {
                         <span class="docker-group__icon"><Boxes v-if="group.kind === 'compose'" :size="17" /><Container v-else :size="17" /></span>
                         <span class="docker-group__copy">
                           <strong>{{ group.name }}</strong>
-                          <small v-if="group.kind === 'compose' && group.containers.length">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
+                          <small v-if="monitoring && group.containers.length && groupLive(group).sampled">{{ group.running }}/{{ group.containers.length }} 运行中 · CPU 合计 {{ formatPercent(groupLive(group).cpuPercent) }} · 内存合计 {{ formatBytes(groupLive(group).memoryBytes) }}</small>
+                          <small v-else-if="monitoring && group.containers.length">{{ group.running }}/{{ group.containers.length }} 运行中</small>
+                          <small v-else-if="group.kind === 'compose' && group.containers.length">Compose 项目 · {{ group.running }}/{{ group.containers.length }} 运行中 · {{ group.services.length || group.containers.length }} 个服务</small>
                           <small v-else-if="group.kind === 'compose'">Compose 项目 · 当前无容器 · 可重新部署恢复</small>
                           <small v-else>{{ group.running }}/{{ group.containers.length }} 运行中 · 不属于 Compose 项目</small>
                         </span>
                       </button>
                       <button
-                        v-if="group.kind === 'compose'"
+                        v-if="group.kind === 'compose' && !monitoring"
                         class="button button--secondary button--small"
                         type="button"
                         :disabled="panel.isReadOnly.value || dockerJobActive"
@@ -1656,7 +1770,7 @@ onBeforeUnmount(() => {
                   <tr
                     v-for="container in visibleContainerGroupRows(group)"
                     :key="container.id"
-                    :class="`docker-row docker-row--${container.state}`"
+                    :class="[`docker-row docker-row--${container.state}`, { 'docker-row--stale': monitoring && liveEntries[container.id]?.failed }]"
                     @contextmenu="showContainerContext($event, container)"
                   >
                   <td>
@@ -1669,6 +1783,27 @@ onBeforeUnmount(() => {
                     </div>
                   </td>
                   <td><div class="table-stack"><StatusBadge :status="container.state" /><small>{{ container.statusText || '—' }}</small></div></td>
+                  <template v-if="monitoring">
+                    <template v-if="liveSample(container)">
+                      <td><DockerUsageMeter :percent="liveSample(container)!.cpuPercent" :value="formatPercent(liveSample(container)!.cpuPercent)" :label="phrase('CPU 占用')" :stale="liveEntries[container.id]?.failed" /></td>
+                      <td><DockerUsageMeter :percent="liveSample(container)!.memoryPercent" :value="formatPercent(liveSample(container)!.memoryPercent)" :label="phrase('内存占用')" :detail="liveSample(container)!.memoryLimitBytes ? `${formatBytes(liveSample(container)!.memoryBytes)} / ${formatBytes(liveSample(container)!.memoryLimitBytes)}` : formatBytes(liveSample(container)!.memoryBytes)" :stale="liveEntries[container.id]?.failed" /></td>
+                      <td>
+                        <div class="docker-live-pair" :title="`${phrase('累计读取')} ${formatBytes(liveSample(container)!.blockReadBytes)} · ${phrase('累计写入')} ${formatBytes(liveSample(container)!.blockWriteBytes)}`">
+                          <span><small>读</small>{{ formatRate(liveSample(container)!.blockReadRate) }}</span>
+                          <span><small>写</small>{{ formatRate(liveSample(container)!.blockWriteRate) }}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="docker-live-pair" :title="`${phrase('累计接收')} ${formatBytes(liveSample(container)!.networkRxBytes)} · ${phrase('累计发送')} ${formatBytes(liveSample(container)!.networkTxBytes)}`">
+                          <span><ArrowDown :size="13" :aria-label="phrase('接收')" />{{ formatRate(liveSample(container)!.networkRxRate) }}</span>
+                          <span><ArrowUp :size="13" :aria-label="phrase('发送')" />{{ formatRate(liveSample(container)!.networkTxRate) }}</span>
+                        </div>
+                      </td>
+                      <td><span class="docker-live-number">{{ liveSample(container)!.pids }}</span></td>
+                    </template>
+                    <td v-else colspan="5"><span class="docker-live-placeholder">{{ phrase(livePlaceholder(container)) }}</span></td>
+                  </template>
+                  <template v-else>
                   <td><span class="table-code" :title="formatPorts(container)">{{ formatPorts(container) }}</span></td>
                   <td><span class="table-code">{{ container.networks.join(', ') || '—' }}</span></td>
                   <td><div class="table-stack"><StatusBadge :status="container.access" subtle /><small>{{ container.project || '独立容器' }}</small></div></td>
@@ -1692,6 +1827,7 @@ onBeforeUnmount(() => {
                       <span v-if="!container.allowedActions?.length" class="action-unavailable-label">状态暂不可操作</span>
                     </div>
                   </td>
+                  </template>
                   </tr>
                 </TransitionGroup>
               </tbody>
@@ -2220,6 +2356,7 @@ onBeforeUnmount(() => {
 .card-actions, .row-actions { display: flex; align-items: center; gap: 8px; }
 .workspace-card > header > .card-actions,
 .resource-section__controls > .card-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.docker-controls-slot > .card-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
 .card-actions .button { flex: 0 0 auto; white-space: nowrap; }
 .row-actions--wrap { flex-wrap: wrap; }
 .backup-list { display: grid; gap: 8px; }
@@ -2258,6 +2395,36 @@ onBeforeUnmount(() => {
 .docker-row-actions__group { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
 .docker-row-actions__group .icon-button { width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; }
 .docker-row-actions__group .icon-button:hover { background: var(--interaction-hover-surface); }
+.docker-view-switch { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+.docker-view-switch button { display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--muted); background: transparent; font: inherit; font-size: .875rem; white-space: nowrap; cursor: pointer; transition: background-color .16s ease, border-color .16s ease, color .16s ease; }
+.docker-view-switch button:hover { color: var(--text); background: var(--interaction-hover-surface); }
+.docker-view-switch button.is-active { border-color: color-mix(in srgb, var(--brand) 34%, var(--border)); color: var(--brand); background: var(--surface); box-shadow: var(--shadow-sm); }
+.docker-view-switch button:focus-visible { outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent); outline-offset: 1px; }
+.docker-table--monitor { min-width: 1040px; }
+.docker-table--monitor .docker-table__cpu { width: 15%; }
+.docker-table--monitor .docker-table__memory { width: 20%; }
+.docker-table--monitor .docker-table__io { width: 12%; }
+.docker-table--monitor .docker-table__traffic { width: 12%; }
+.docker-table--monitor .docker-table__pids { width: 7%; }
+.docker-table--monitor > thead th:last-child,
+.docker-table--monitor .docker-row > td:last-child { width: auto; min-width: 0; max-width: none; padding-right: 14px; padding-left: 14px; }
+.docker-heading-text > div { display: grid; grid-area: 1 / 1; min-width: 0; gap: 2px; }
+.docker-heading-text > .is-inactive { visibility: hidden; }
+.docker-controls-slot { display: grid; min-width: 0; align-items: center; justify-items: end; }
+.docker-controls-slot > * { grid-area: 1 / 1; }
+.docker-controls-slot > .is-inactive { visibility: hidden; pointer-events: none; }
+.docker-live-status { display: inline-flex; min-width: 0; max-width: 20rem; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); font-size: .875rem; }
+.docker-live-status small { font-size: .8125rem; }
+.docker-live-status__dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--success); }
+.docker-live-status__dot.is-sampling { animation: docker-live-pulse 1.4s ease-in-out infinite; }
+@keyframes docker-live-pulse { 50% { opacity: .35; } }
+.docker-live-pair { display: grid; gap: 3px; font-size: .875rem; font-variant-numeric: tabular-nums; }
+.docker-live-pair span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.docker-live-pair small { min-width: 1.1em; color: var(--muted); font-size: .8125rem; }
+.docker-live-pair svg { flex: 0 0 auto; color: var(--muted); }
+.docker-live-number { font-size: .875rem; font-variant-numeric: tabular-nums; }
+.docker-live-placeholder { color: var(--muted); font-size: .875rem; }
+.docker-row--stale .docker-live-pair, .docker-row--stale .docker-live-number { opacity: .6; }
 .docker-row { transition: background-color .14s ease; }
 .docker-row:hover { background: color-mix(in srgb, var(--brand) 4%, var(--surface)); }
 .docker-row--running > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--docker-group-accent, var(--brand)) 75%, transparent); }
@@ -2405,8 +2572,12 @@ onBeforeUnmount(() => {
   .resource-section__heading { flex: 0 0 auto; }
   .resource-section__controls { justify-content: flex-start; }
   .resource-section__controls > .docker-toolbar,
+  .resource-section__controls > .docker-controls-slot,
   .resource-section__controls > .card-actions { width: 100%; }
   .resource-section__controls > .card-actions { margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .docker-controls-slot > .card-actions { margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .docker-controls-slot { justify-items: start; }
+  .resource-section__controls > .docker-view-switch { order: -1; align-self: flex-start; }
 }
 @media (max-width: 720px) {
   .docker-job { grid-template-columns: auto 1fr; }
@@ -2424,6 +2595,7 @@ onBeforeUnmount(() => {
   .resource-section__controls { align-items: stretch; flex-direction: column; flex-wrap: nowrap; }
   .workspace-card > header > .card-actions,
   .resource-section__controls > .card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .docker-controls-slot > .card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .workspace-card { gap: 13px; padding: 14px; border-radius: 14px; }
   .resource-section { padding: 0; }
   .workspace-card > header:not(.resource-section__header) { display: grid; align-items: stretch; grid-template-columns: 1fr; }
@@ -2431,6 +2603,7 @@ onBeforeUnmount(() => {
   .resource-section__header { min-height: 0; padding: 12px; }
   .resource-section__heading small { overflow: visible; white-space: normal; }
   .resource-section__controls > .card-actions > * { min-width: 0; }
+  .docker-controls-slot > .card-actions > * { min-width: 0; }
   .backup-list article { gap: 9px; padding: 11px; }
   .compact-input { width: 100%; }
   .network-membership { grid-template-columns: 1fr; }
@@ -2463,5 +2636,6 @@ onBeforeUnmount(() => {
   .docker-group__toggle > svg,
   .docker-group-row-enter-active,
   .docker-group-row-leave-active { transition: none; }
+  .docker-live-status__dot.is-sampling { animation: none; }
 }
 </style>
