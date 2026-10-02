@@ -26,6 +26,27 @@ const cluster = {
 } as unknown as ClusterHostList
 
 describe('DesktopServiceStatus', () => {
+  it.each([
+    [{ total: 1, healthy: 0, drifted: 0 }, '整体运行正常', 'healthy', '100%'],
+    [{ total: 1, healthy: 0, drifted: 1 }, '需要关注', 'attention', '0%'],
+    [undefined, '状态不完整', 'unknown', '0%'],
+  ])('uses site reconciliation for the desktop summary: %j', async (sites, title, state, progress) => {
+    const value = { ...overview, sites, containers: { total: 2, running: 2, stopped: 0 } }
+    vi.mocked(api.overview.get).mockImplementation(async (_signal, onUpdate) => {
+      onUpdate?.(value)
+      return value
+    })
+    vi.mocked(api.cluster.hosts).mockResolvedValue({ items: [], total: 0 } as unknown as ClusterHostList)
+    const wrapper = mount(DesktopServiceStatus)
+    await flushPromises()
+
+    expect(wrapper.find('.desktop-service-status__hero-copy strong').text()).toBe(title)
+    const siteMetric = wrapper.find('.desktop-service-status__metric')
+    expect(siteMetric.classes()).toContain(`desktop-service-status__metric--${state}`)
+    expect(siteMetric.find('.desktop-service-status__metric-track i').attributes('style')).toContain(`width: ${progress}`)
+    wrapper.unmount()
+  })
+
   it('summarizes service groups and exposes route shortcuts', async () => {
     vi.mocked(api.overview.get).mockImplementation(async (_signal, onUpdate) => {
       onUpdate?.(overview)
