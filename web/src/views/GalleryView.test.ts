@@ -50,6 +50,7 @@ async function mountGallery(path = '/gallery'): Promise<VueWrapper> {
     routes: [
       { path: '/gallery', name: 'gallery', component: GalleryView },
       { path: '/files', name: 'files', component: defineComponent({ render: () => null }) },
+      { path: '/cluster', name: 'cluster', component: defineComponent({ render: () => null }) },
     ],
   })
   await router.push(path)
@@ -93,41 +94,68 @@ const clusterHosts = [
   { id: 'local', name: 'panel', isLocal: true, kind: 'panel', state: 'online' },
   { id: 'edge-1', name: 'edge-melbourne', isLocal: false, kind: 'panel', state: 'online', fileManagementAvailable: true },
   { id: 'lite-1', name: 'lite-berlin', isLocal: false, kind: 'light_node', state: 'online', fileManagementAvailable: false },
+  {
+    id: 'paired-1', name: 'paired-oslo', isLocal: false, kind: 'panel', state: 'online', origin: 'https://oslo.example.com',
+    transportSecurity: 'https', mutualFileTransferAvailable: true,
+  },
 ]
 
 describe('GalleryView host switcher', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.querySelectorAll('.file-host-switcher__menu').forEach((menu) => menu.remove())
+  })
 
   async function mountWithHosts(path = '/gallery', items: unknown[] = clusterHosts) {
     vi.spyOn(api.cluster, 'hosts').mockResolvedValue({ items } as never)
     return mountGallery(path)
   }
 
-  it('lists every host, marks the current one and greys out hosts that cannot be browsed', async () => {
+  async function openPicker(view: VueWrapper): Promise<HTMLButtonElement[]> {
+    await view.get('.file-host-switcher__trigger').trigger('click')
+    await flushPromises()
+    return [...document.body.querySelectorAll<HTMLButtonElement>('[data-file-host-id]')]
+  }
+
+  it('reuses the file manager host picker and lists every host with its status', async () => {
     const view = await mountWithHosts()
-    await view.get('.gallery-host__button').trigger('click')
-    const rows = view.findAll('.gallery-menu--host button')
-    expect(rows.map((row) => row.text())).toEqual([
-      '本机当前面板', 'edge-melbourne文件管理已就绪', 'lite-berlin文件代理未就绪',
+    expect(view.get('.file-host-switcher__trigger').text()).toContain('本机')
+    const rows = await openPicker(view)
+    expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      '本机当前面板', 'edge-melbourne文件管理已就绪', 'lite-berlin文件代理未就绪', 'paired-oslo已配对 · 文件互传',
     ])
-    expect(rows[0]!.attributes('aria-checked')).toBe('true')
-    expect(rows[1]!.attributes('disabled')).toBeUndefined()
-    expect(rows[2]!.attributes('disabled')).toBeDefined()
+    expect(rows[0]!.getAttribute('aria-pressed')).toBe('true')
+    expect(rows[1]!.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('opens the chosen host library and returns to this panel without a host', async () => {
     const view = await mountWithHosts('/gallery?path=%2Fhome%2Fgallery%2FKyoto')
-    await view.get('.gallery-host__button').trigger('click')
-    await view.findAll('.gallery-menu--host button')[1]!.trigger('click')
+    ;(await openPicker(view))[1]!.click()
     await flushPromises()
     // The folder path stays behind: each host starts at its own library folder.
     expect(router.currentRoute.value.query).toEqual({ hostId: 'edge-1' })
-    expect(view.get('.gallery-host__button').text()).toContain('edge-melbourne')
+    expect(view.get('.file-host-switcher__trigger').text()).toContain('edge-melbourne')
+    expect(document.body.querySelector('.file-host-switcher__menu')).toBeNull()
 
-    await view.get('.gallery-host__button').trigger('click')
-    await view.findAll('.gallery-menu--host button')[0]!.trigger('click')
+    ;(await openPicker(view))[0]!.click()
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({})
+  })
+
+  it('sends a host whose file relay is not ready to the cluster page instead of a dead gallery', async () => {
+    const view = await mountWithHosts()
+    ;(await openPicker(view))[2]!.click()
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('cluster')
+  })
+
+  it('opens a paired panel without a file relay in a new tab on its own gallery page', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    const view = await mountWithHosts()
+    ;(await openPicker(view))[3]!.click()
+    await flushPromises()
+    expect(open).toHaveBeenCalledWith('https://oslo.example.com/gallery', '_blank', 'noopener,noreferrer')
+    expect(router.currentRoute.value.name).toBe('gallery')
   })
 
   it('keeps a queued upload on the host it was started for when you switch', async () => {
@@ -137,15 +165,14 @@ describe('GalleryView host switcher', () => {
     const input = view.get<HTMLInputElement>('input[type="file"]')
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'late.jpg', { type: 'image/jpeg' })], configurable: true })
     await input.trigger('change')
-    await view.get('.gallery-host__button').trigger('click')
-    await view.findAll('.gallery-menu--host button')[1]!.trigger('click')
+    ;(await openPicker(view))[1]!.click()
     await flushPromises()
     release(media('/home/gallery/late.jpg'))
     await flushPromises()
     expect(view.get('.gallery-uploads').text()).toContain('已上传 1 项')
   })
 
-  it('hides the switcher on a single-panel install', async () => {
+  it('hides the picker on a single-panel install', async () => {
     const view = await mountWithHosts('/gallery', [clusterHosts[0]])
     expect(view.find('.gallery-host').exists()).toBe(false)
   })
@@ -157,7 +184,7 @@ describe('GalleryView on a remote host', () => {
     harness.tree = {}
     const view = await mountGallery('/gallery?hostId=edge-1')
     expect(view.get('.gallery-hero__title').text()).toBe('图库')
-    expect(view.get('.gallery-host__button').text()).toBe('edge-melbourne')
+    expect(view.get('.file-host-switcher__trigger').text()).toContain('edge-melbourne')
     expect(view.text()).toContain('开始建立你的图库')
     // The location setting belongs to this browser, so it is only offered on the local host.
     const buttons = view.findAll('.gallery-empty button').map((button) => button.text())
