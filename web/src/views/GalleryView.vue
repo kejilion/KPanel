@@ -1400,6 +1400,7 @@ onBeforeUnmount(() => {
 
 .gallery-scroll {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 18px;
 }
@@ -1978,7 +1979,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 10px;
   content-visibility: auto;
-  contain-intrinsic-size: auto 640px;
+  contain-intrinsic-block-size: auto 640px;
 }
 
 .gallery-month__header {
