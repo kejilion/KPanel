@@ -234,6 +234,12 @@ const terminalTouchScroll = createTerminalTouchScroll({
   getScreen: () => host.value?.querySelector<HTMLElement>('.xterm-screen') ?? host.value,
 })
 
+const inputFailureMessages = {
+  capacity: 'terminal.inputCapacity',
+  fatal: 'terminal.taskInputFailed',
+  retry: 'terminal.inputFailed',
+} as const
+
 function legacyInput(kind: JobTerminalKind, jobId: string, data: string): Promise<unknown> {
   if (kind === 'site') return api.sites.terminalInput(jobId, data)
   if (kind === 'diagnostic') return api.diagnostics.terminalInput(jobId, data)
@@ -258,10 +264,7 @@ function ensureInput(): TerminalDuplexInput {
     batch: (frames, signal) => api.jobTerminals.inputBatch(kind, jobId, frames, signal),
     error: (failure) => {
       if (disposed || duplexInput !== input) return
-      const key = failure === 'capacity'
-        ? 'terminal.inputCapacity'
-        : failure === 'fatal' ? 'terminal.taskInputFailed' : 'terminal.inputFailed'
-      writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t(key)}\x1b[0m\r\n`)
+      writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t(inputFailureMessages[failure])}\x1b[0m\r\n`)
       if (failure === 'fatal') dropInput()
       if (failure === 'retry') {
         inputRetrying = true
