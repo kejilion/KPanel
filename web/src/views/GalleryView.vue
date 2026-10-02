@@ -1167,8 +1167,10 @@ onBeforeUnmount(() => {
       :sources="viewerSources"
       :contained="windowed"
       :library-root="insideLibrary ? preferences.root : undefined"
+      :filmstrip="preferences.filmstrip"
       can-delete
       @close="viewerPath = undefined"
+      @update:filmstrip="preferences.filmstrip = $event"
       @navigate="navigateViewer"
       @download="downloadEntries([$event.entry])"
       @reveal="viewerPath = undefined; revealInFiles($event.folder)"
@@ -1297,8 +1299,10 @@ onBeforeUnmount(() => {
 
 /* ---- Hero ---- */
 
+/* No overflow clipping here: the actions menu drops below the cover; the backdrop clips itself. */
 .gallery-hero {
   position: relative;
+  z-index: 2;
   display: flex;
   min-height: 176px;
   flex-wrap: wrap;
@@ -1306,7 +1310,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px 24px;
   padding: 22px 24px;
-  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface-raised);
@@ -1328,6 +1331,8 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: -1;
   inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
 }
 
 .gallery-hero__backdrop img {
