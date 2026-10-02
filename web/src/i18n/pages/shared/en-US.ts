@@ -1507,4 +1507,6 @@ export default [
   ["选择 {0}", "Select {0}"],
   ["取消选择 {0}", "Deselect {0}"],
   ["本机", "Local host"],
+  ["图库", "Gallery"],
+  ["操作未完成，请稍后重试。", "The operation did not finish. Try again later."],
 ] as const satisfies PhraseCatalog

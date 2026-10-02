@@ -101,6 +101,35 @@ describe('GalleryViewer controls', () => {
     expect(view.element.scrollLeft).toBe(0)
   })
 
+  it('keeps the controls while the cover menu is open and closes it before the viewer', async () => {
+    const view = mountViewer({ coverOptions: [{ id: 'own', label: '设为「图库」封面', active: false }] })
+    await view.get('button[aria-label="设为封面"]').trigger('click')
+    expect(view.find('.gallery-viewer__cover-menu').exists()).toBe(true)
+    vi.advanceTimersByTime(6000)
+    await view.vm.$nextTick()
+    expect(view.classes()).not.toContain('gallery-viewer--idle')
+
+    await view.trigger('keydown', { key: 'Escape' })
+    expect(view.find('.gallery-viewer__cover-menu').exists()).toBe(false)
+    expect(view.emitted('close')).toBeUndefined()
+    await view.get('button[aria-label="设为封面"]').trigger('click')
+    await view.get('.gallery-viewer__cover-menu button').trigger('click')
+    expect(view.emitted('cover')?.[0]).toEqual([{ item: expect.objectContaining({ kind: 'image' }), option: 'own' }])
+    expect(view.find('.gallery-viewer__cover-menu').exists()).toBe(false)
+  })
+
+  it('shows no cover button without options', () => {
+    expect(mountViewer().find('button[aria-label="设为封面"]').exists()).toBe(false)
+  })
+
+  it('asks the page to move the open photo, and only offers it when the page can', async () => {
+    expect(mountViewer().find('button[aria-label="移动到相册"]').exists()).toBe(false)
+    wrapper?.unmount()
+    const view = mountViewer({ canMove: true })
+    await view.get('button[aria-label="移动到相册"]').trigger('click')
+    expect(view.emitted('move')?.[0]).toEqual([expect.objectContaining({ entry: expect.objectContaining({ name: 'b.jpg' }) })])
+  })
+
   it('has no strip toggle for a single photo', () => {
     const view = mountViewer({ items: [item('only.jpg')], index: 0 })
     expect(view.find('button[aria-label="隐藏缩略图条"]').exists()).toBe(false)
