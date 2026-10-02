@@ -104,7 +104,7 @@ export const desktopApps: DesktopApp[] = [
     path: '/gallery',
     labelKey: 'route.gallery',
     icon: Images,
-    desktopIconURL: '/desktop-icons/gallery-kpanel-flat-v1.webp',
+    desktopIconURL: '/desktop-icons/gallery-kpanel-flat-v2.webp',
     allowMultiple: false,
     gradient: ['#f472b6', '#be185d'],
   },
