@@ -1,0 +1,185 @@
+// @vitest-environment jsdom
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/lib/api'
+import type { FileActionInput, FileDirectory, FileEntry } from '@/types/api'
+
+const harness = vi.hoisted(() => ({
+  tree: {} as Record<string, FileEntry[]>,
+  list: vi.fn(),
+  upload: vi.fn(),
+  action: vi.fn(),
+  entry: vi.fn(),
+  toast: { show: vi.fn(), success: vi.fn(), danger: vi.fn() },
+}))
+
+vi.mock('@/stores/toast', () => ({ useToast: () => harness.toast }))
+vi.mock('@/lib/fileHostContext', () => ({
+  fileAPIForHost: () => ({
+    list: harness.list,
+    upload: harness.upload,
+    action: harness.action,
+    entry: harness.entry,
+    contentUrl: (path: string) => `/content${path}`,
+    thumbnailUrl: (path: string) => `/thumb${path}`,
+  }),
+}))
+
+import GalleryView from './GalleryView.vue'
+
+function media(path: string, modifiedAt = '2026-09-10T08:00:00Z', sizeBytes = 2048): FileEntry {
+  return {
+    name: path.slice(path.lastIndexOf('/') + 1), path, kind: 'file', mime: 'application/octet-stream',
+    sizeBytes, mode: '-rw-r--r--', owner: 'root', group: 'root', modifiedAt,
+    resourceVersion: `sha256:${'c'.repeat(64)}`, editable: false, previewable: true,
+  }
+}
+
+function folder(path: string): FileEntry {
+  return { ...media(path), kind: 'directory', mime: undefined, sizeBytes: 4096 }
+}
+
+let wrapper: VueWrapper | undefined
+let router: Router
+
+async function mountGallery(path = '/gallery'): Promise<VueWrapper> {
+  router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/gallery', name: 'gallery', component: GalleryView },
+      { path: '/files', name: 'files', component: defineComponent({ render: () => null }) },
+    ],
+  })
+  await router.push(path)
+  await router.isReady()
+  wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router] }, attachTo: document.body })
+  await flushPromises()
+  return wrapper
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  harness.tree = {
+    '/home/gallery': [
+      media('/home/gallery/sunset.jpg', '2026-09-20T08:00:00Z'),
+      media('/home/gallery/beach.png', '2026-08-02T08:00:00Z'),
+      media('/home/gallery/notes.txt'),
+      folder('/home/gallery/Kyoto'),
+    ],
+    '/home/gallery/Kyoto': [
+      media('/home/gallery/Kyoto/temple.jpg', '2026-09-12T08:00:00Z'),
+      media('/home/gallery/Kyoto/walk.mp4', '2026-09-14T08:00:00Z'),
+    ],
+  }
+  harness.list.mockReset().mockImplementation(async (path: string): Promise<FileDirectory> => {
+    const entries = harness.tree[path]
+    if (!entries) throw new ApiError('not found', 404, 'not_found')
+    return { path, entries, offset: 0, truncated: false, readAt: '2026-09-20T08:00:00Z' }
+  })
+  harness.upload.mockReset().mockResolvedValue(media('/home/gallery/new.jpg'))
+  harness.action.mockReset().mockResolvedValue({ action: 'mkdir', succeeded: [{ path: '/home/gallery' }], failed: [] })
+  harness.entry.mockReset().mockResolvedValue(folder('/home/gallery'))
+  Object.values(harness.toast).forEach((mock) => mock.mockReset())
+})
+
+afterEach(() => {
+  wrapper?.unmount()
+  wrapper = undefined
+})
+
+describe('GalleryView', () => {
+  it('shows the library with albums, a month timeline and media counts', async () => {
+    const view = await mountGallery()
+    expect(view.get('.gallery-hero__title').text()).toBe('图库')
+    expect(view.get('.gallery-hero__meta').text()).toContain('3 张照片 · 1 段视频 · 1 个相册')
+    expect(view.findAll('.album-card__name').map((node) => node.text())).toEqual(['Kyoto'])
+    expect(view.get('.album-card__meta').text()).toBe('1 张照片 · 1 段视频')
+    expect(view.findAll('.gallery-month__header h3')).toHaveLength(2)
+    expect(view.findAll('.gallery-tile')).toHaveLength(4)
+    // Non-media files never reach the timeline.
+    expect(view.text()).not.toContain('notes.txt')
+    // Thumbnails come from the Agent for JPEG/PNG; videos stay lazy until visible.
+    expect(view.find('img[src="/thumb/home/gallery/sunset.jpg"]').exists()).toBe(true)
+  })
+
+  it('filters to videos and opens an album through the route', async () => {
+    const view = await mountGallery()
+    const videoFilter = view.findAll('.gallery-segmented button').find((button) => button.text().startsWith('视频'))!
+    await videoFilter.trigger('click')
+    expect(view.findAll('.gallery-tile')).toHaveLength(1)
+
+    await view.get('.album-card__open').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.path).toBe('/home/gallery/Kyoto')
+    expect(view.get('.gallery-hero__title').text()).toBe('Kyoto')
+    expect(view.findAll('.gallery-trail__link').map((node) => node.text())).toEqual(['图库'])
+  })
+
+  it('offers to create a missing library folder', async () => {
+    harness.tree = {}
+    harness.entry.mockRejectedValueOnce(new ApiError('not found', 404, 'not_found'))
+    const view = await mountGallery()
+    expect(view.text()).toContain('开始建立你的图库')
+    harness.tree['/home/gallery'] = []
+    await view.findAll('.gallery-empty button').find((button) => button.text().includes('创建图库文件夹'))!.trigger('click')
+    await flushPromises()
+    expect(harness.action).toHaveBeenCalledWith({ action: 'mkdir', target: '/home', name: 'gallery' })
+    expect(view.text()).toContain('图库还是空的')
+  })
+
+  it('uploads media only, never overwrites, and renames on conflict', async () => {
+    const view = await mountGallery()
+    harness.upload.mockRejectedValueOnce(new ApiError('exists', 409, 'file_exists'))
+    const input = view.get<HTMLInputElement>('input[type="file"]')
+    const photo = new File(['x'], 'sunset.jpg', { type: 'image/jpeg' })
+    const fresh = new File(['y'], 'fresh.jpg', { type: 'image/jpeg' })
+    const pdf = new File(['z'], 'report.pdf', { type: 'application/pdf' })
+    Object.defineProperty(input.element, 'files', { value: [photo, fresh, pdf], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+
+    const names = harness.upload.mock.calls.map((call) => (call[1] as File).name)
+    // The known duplicate is renamed before upload; a server-side conflict picks the next name.
+    expect(names).toEqual(['sunset (2).jpg', 'fresh.jpg', 'sunset (3).jpg'])
+    expect(harness.upload.mock.calls.every((call) => call[2] === false)).toBe(true)
+    expect(names).not.toContain('report.pdf')
+    expect(harness.toast.show).toHaveBeenCalledWith('已跳过非图片或视频文件', expect.anything())
+    expect(view.get('.gallery-uploads').text()).toContain('已上传 2 项')
+  })
+
+  it('opens the viewer, pages with the keyboard and closes with Escape', async () => {
+    const view = await mountGallery()
+    await view.findAll('.gallery-tile__open')[0]!.trigger('click')
+    const viewer = view.get('.gallery-viewer')
+    expect(viewer.get('.gallery-viewer__title strong').text()).toBe('sunset.jpg')
+    expect(viewer.get('img.gallery-viewer__media:not(.gallery-viewer__media--preview)').attributes('src')).toBe('/content/home/gallery/sunset.jpg')
+
+    await viewer.trigger('keydown', { key: 'ArrowRight' })
+    expect(view.get('.gallery-viewer__title strong').text()).toBe('walk.mp4')
+    expect(view.find('video.gallery-viewer__media').exists()).toBe(true)
+
+    await view.get('.gallery-viewer').trigger('keydown', { key: 'Escape' })
+    expect(view.find('.gallery-viewer').exists()).toBe(false)
+  })
+
+  it('moves selected media to the trash with resource versions', async () => {
+    const view = await mountGallery()
+    await view.findAll('.gallery-tile__check')[0]!.trigger('click')
+    expect(view.get('.gallery-selection').text()).toContain('已选择 1 项')
+    harness.action.mockResolvedValueOnce({ action: 'trash', succeeded: [{ path: '/home/gallery/sunset.jpg' }], failed: [] })
+    await view.findAll('.gallery-selection button').find((button) => button.text().includes('移入回收站'))!.trigger('click')
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('.modal-panel button')]
+      .find((button) => button.textContent?.includes('移入回收站'))!
+    confirm.click()
+    await flushPromises()
+    const input = harness.action.mock.calls.at(-1)![0] as FileActionInput
+    expect(input).toMatchObject({
+      action: 'trash',
+      sources: ['/home/gallery/sunset.jpg'],
+      expectedResourceVersions: { '/home/gallery/sunset.jpg': `sha256:${'c'.repeat(64)}` },
+    })
+    expect(view.findAll('.gallery-tile')).toHaveLength(3)
+  })
+})

@@ -7,6 +7,7 @@ import {
   Container,
   Folder,
   HeartPulse,
+  Images,
   LayoutDashboard,
   ListTree,
   Network,
@@ -98,6 +99,14 @@ export const desktopApps: DesktopApp[] = [
     desktopIconURL: '/desktop-icons/files-kpanel-flat-v1.webp',
     allowMultiple: false,
     gradient: ['#facc15', '#ca8a04'],
+  },
+  {
+    path: '/gallery',
+    labelKey: 'route.gallery',
+    icon: Images,
+    desktopIconURL: '/desktop-icons/gallery-kpanel-flat-v1.webp',
+    allowMultiple: false,
+    gradient: ['#f472b6', '#be185d'],
   },
   {
     path: '/terminal',

@@ -178,6 +178,7 @@ export const zhTWMessages = {
   "route.environment": "網站 · 環境管理",
   "route.apps": "應用市場",
   "route.files": "檔案",
+  "route.gallery": "圖庫",
   "route.terminal": "終端",
   "route.diagnostics": "體檢",
   "route.docker": "Docker",

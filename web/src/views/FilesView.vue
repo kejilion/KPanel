@@ -26,6 +26,7 @@ import {
   Eye,
   FolderOpen,
   HardDrive,
+  Images,
   LayoutGrid,
   List,
   ListRestart,
@@ -991,6 +992,13 @@ function setViewMode(mode: FileViewMode): void {
   } catch {
     // Browser privacy modes may reject preference storage; the current view still works.
   }
+}
+
+function openGallery(): void {
+  // The root folder would sweep every system directory; it opens the library instead.
+  const query: Record<string, string> = currentPath.value === '/' ? {} : { path: currentPath.value }
+  if (fileHostId.value) query.hostId = fileHostId.value
+  void router.push({ name: 'gallery', query })
 }
 
 function restoreViewMode(): void {
@@ -2771,6 +2779,14 @@ onBeforeUnmount(() => {
       <div class="file-command-bar__actions">
         <button class="button button--secondary button--small file-command-bar__refresh" type="button" :disabled="loading" title="刷新目录" aria-label="刷新目录" @click="loadDirectory()">
           <RefreshCw :size="16" :class="{ spinning: loading }" />
+        </button>
+        <button
+          class="button button--secondary button--small file-command-bar__gallery"
+          type="button"
+          title="以图库方式浏览当前文件夹中的照片和视频"
+          @click="openGallery"
+        >
+          <Images :size="15" /> 图库
         </button>
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
           <Trash2 :size="15" /> 回收站

@@ -178,6 +178,7 @@ export const enUSMessages = {
   'route.environment': 'Sites · Environment',
   'route.apps': 'App marketplace',
   'route.files': 'Files',
+  'route.gallery': 'Gallery',
   'route.terminal': 'Terminal',
   'route.diagnostics': 'Diagnostics',
   'route.docker': 'Docker',

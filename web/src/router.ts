@@ -123,6 +123,12 @@ export const router = createRouter({
           meta: { titleKey: 'route.files' },
         },
         {
+          path: 'gallery',
+          name: 'gallery',
+          component: () => loadNavigationRoute('/gallery'),
+          meta: { titleKey: 'route.gallery' },
+        },
+        {
           path: 'terminal',
           name: 'terminal',
           component: () => loadNavigationRoute('/terminal'),

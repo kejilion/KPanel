@@ -1499,4 +1499,8 @@ export default [
   ["复制地址", "Copy address"],
   ["主机操作", "Host actions"],
   ["移除主机", "Remove host"],
+  ["原图读取失败，请检查网络或文件是否仍然存在。", "Could not load the original. Check the network or whether the file still exists."],
+  ["浏览器只能播放音轨，无法解码视频画面。请下载原文件，或转换为 H.264 + AAC 的 MP4。", "The browser can only play the audio track and cannot decode the video. Download the original, or convert it to an H.264 + AAC MP4."],
+  ["浏览器不支持该视频编码或格式。请下载原文件，或转换为 H.264 + AAC 的 MP4。", "The browser does not support this video codec or format. Download the original, or convert it to an H.264 + AAC MP4."],
+  ["视频读取失败，请检查网络或文件是否仍然存在。", "Could not load the video. Check the network or whether the file still exists."],
 ] as const satisfies PhraseCatalog
