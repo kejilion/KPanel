@@ -102,7 +102,10 @@ function children(path) {
   return [...nodes.values()]
     .filter((node) => node.entry.path.startsWith(prefix) && parentOf(node.entry.path) === path)
     .map((node) => node.entry)
-    .sort((left, right) => (left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === 'directory' ? -1 : 1))
+    .sort((left, right) => {
+      if (left.kind === right.kind) return left.name.localeCompare(right.name)
+      return left.kind === 'directory' ? -1 : 1
+    })
 }
 
 async function readBody(request, limit = 1024 << 20) {

@@ -164,6 +164,34 @@ describe('GalleryView', () => {
     expect(view.find('.gallery-viewer').exists()).toBe(false)
   })
 
+  it('moves on to the next photo when the open one goes to the trash', async () => {
+    const view = await mountGallery()
+    await view.findAll('.gallery-tile__open')[0]!.trigger('click')
+    expect(view.get('.gallery-viewer__title strong').text()).toBe('sunset.jpg')
+    harness.action.mockResolvedValueOnce({ action: 'trash', succeeded: [{ path: '/home/gallery/sunset.jpg' }], failed: [] })
+    await view.get('.gallery-viewer__danger').trigger('click')
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('.modal-panel button')]
+      .find((button) => button.textContent?.includes('移入回收站'))!
+    confirm.click()
+    await flushPromises()
+    expect(view.get('.gallery-viewer__title strong').text()).toBe('walk.mp4')
+  })
+
+  it('drops an album and everything in it from the page once it is in the trash', async () => {
+    const view = await mountGallery()
+    expect(view.findAll('.gallery-tile')).toHaveLength(4)
+    await view.get('.album-card__menu-button').trigger('click')
+    await view.findAll('.gallery-menu--album button').find((button) => button.text().includes('删除相册'))!.trigger('click')
+    expect(document.querySelector('.modal-panel')?.textContent).toContain('Kyoto · 2 个媒体文件')
+    harness.action.mockResolvedValueOnce({ action: 'trash', succeeded: [{ path: '/home/gallery/Kyoto' }], failed: [] })
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('.modal-panel button')]
+      .find((button) => button.textContent?.includes('移入回收站'))!
+    confirm.click()
+    await flushPromises()
+    expect(view.find('.album-card').exists()).toBe(false)
+    expect(view.findAll('.gallery-tile')).toHaveLength(2)
+  })
+
   it('moves selected media to the trash with resource versions', async () => {
     const view = await mountGallery()
     await view.findAll('.gallery-tile__check')[0]!.trigger('click')

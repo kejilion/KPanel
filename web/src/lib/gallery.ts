@@ -49,8 +49,11 @@ export const GALLERY_DEFAULT_ROOT = '/home/gallery'
 export const GALLERY_PREFERENCES_KEY = 'kpanel:gallery:v1'
 /** Matches the Agent thumbnail source limit (internal/agent/files.go). */
 export const GALLERY_THUMBNAIL_SOURCE_MAX_BYTES = 12 * 1024 * 1024
-/** Originals at or below this size may stand in for a sharper large tile. */
-export const GALLERY_ORIGINAL_TILE_MAX_BYTES = 6 * 1024 * 1024
+/**
+ * Originals at or below this size stand in for the cover and featured tiles,
+ * which are far larger than the Agent's 320x210 thumbnail box.
+ */
+export const GALLERY_ORIGINAL_TILE_MAX_BYTES = 12 * 1024 * 1024
 /** Formats without a server thumbnail load the original only up to this size. */
 export const GALLERY_ORIGINAL_FALLBACK_MAX_BYTES = 16 * 1024 * 1024
 export const GALLERY_ALBUM_NAME_MAX_BYTES = 120

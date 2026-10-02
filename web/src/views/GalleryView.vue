@@ -73,6 +73,7 @@ import {
   type GalleryItem,
 } from '@/lib/gallery'
 import { loadGalleryFolder, type GalleryAlbum, type GalleryFolderSnapshot } from '@/lib/galleryLibrary'
+import { galleryPosterKey, readGalleryPoster } from '@/lib/galleryPosters'
 import { useToast } from '@/stores/toast'
 import type { FileEntry } from '@/types/api'
 
@@ -113,6 +114,7 @@ watch(preferences, (value) => writeGalleryPreferences(browserStorage(), { ...val
 
 const page = ref<HTMLElement>()
 const sentinel = ref<HTMLElement>()
+const scroller = ref<HTMLElement>()
 const uploadInput = ref<HTMLInputElement>()
 const windowed = ref(false)
 
@@ -162,12 +164,17 @@ const deleteDialog = ref<DeleteDialog>()
 const deleteBusy = ref(false)
 const locationDialogOpen = ref(false)
 const locationValue = ref('')
-const locationBusy = ref(false)
 
 const allItems = computed(() => snapshot.value?.items ?? [])
-const albums = computed(() => [...(snapshot.value?.albums ?? [])].sort((left, right) => (
-  right.latest - left.latest || left.name.localeCompare(right.name, undefined, { numeric: true })
-)))
+// Name order while albums are still being counted, newest first once they all are,
+// so cards do not jump each time one album finishes.
+const albums = computed(() => {
+  const list = [...(snapshot.value?.albums ?? [])]
+  if (snapshot.value?.scanning) return list
+  return list.sort((left, right) => (
+    right.latest - left.latest || left.name.localeCompare(right.name, undefined, { numeric: true })
+  ))
+})
 const visibleAlbums = computed(() => albumsExpanded.value ? albums.value : albums.value.slice(0, ALBUM_PREVIEW_COUNT))
 const imageCount = computed(() => allItems.value.filter((item) => item.kind === 'image').length)
 const videoCount = computed(() => allItems.value.filter((item) => item.kind === 'video').length)
@@ -188,14 +195,19 @@ const title = computed(() => {
   if (isLibraryRoot.value) return phrase('图库')
   return galleryBaseName(currentPath.value)
 })
+// The cover spans the page, so prefer the newest photo whose original is small
+// enough to load; a 320px Agent thumbnail is only the last resort.
 const heroItem = computed(() => {
-  let best: GalleryItem | undefined
+  let sharp: GalleryItem | undefined
+  let any: GalleryItem | undefined
   for (const item of allItems.value) {
     if (item.kind !== 'image' || !galleryBrowserCanShow(item)) continue
-    if (galleryTileSource(item).type === 'none') continue
-    if (!best || item.time > best.time) best = item
+    const source = galleryTileSource(item, true).type
+    if (source === 'none') continue
+    if (source === 'original' && (!sharp || item.time > sharp.time)) sharp = item
+    if (!any || item.time > any.time) any = item
   }
-  return best
+  return sharp ?? any
 })
 const heroUrl = computed(() => heroItem.value ? tileUrls(heroItem.value, true).image : undefined)
 const summary = computed(() => {
@@ -231,6 +243,10 @@ const albumNameProblem = computed(() => {
     .filter((album) => dialog.mode === 'create' || album.path !== dialog.album.path)
     .map((album) => album.name)
   return galleryAlbumNameProblem(albumName.value, siblings)
+})
+const albumSubmitLabel = computed(() => {
+  if (albumBusy.value) return '正在保存…'
+  return albumDialog.value?.mode === 'rename' ? '重命名' : '创建相册'
 })
 const locationProblem = computed(() => normalizeGalleryRoot(locationValue.value) ? '' : '请输入绝对路径，例如 /home/gallery；不能使用根目录 /')
 const emptyLibrary = computed(() => Boolean(snapshot.value?.exists && !allItems.value.length && !albums.value.length))
@@ -268,8 +284,11 @@ function tileUrls(item: GalleryItem, large = false): { image?: string; fallback?
 function viewerSources(item: GalleryItem): GalleryViewerSources {
   const api = fileAPI.value
   const tile = galleryTileSource(item)
+  let preview: string | undefined
+  if (tile.type === 'thumbnail') preview = api.thumbnailUrl(item.entry.path, item.entry.resourceVersion)
+  else if (item.kind === 'video') preview = readGalleryPoster(galleryPosterKey(item.entry))?.poster
   return {
-    preview: tile.type === 'thumbnail' ? api.thumbnailUrl(item.entry.path, item.entry.resourceVersion) : undefined,
+    preview,
     original: api.contentUrl(item.entry.path, 'inline'),
   }
 }
@@ -304,6 +323,9 @@ async function load(options: { quiet?: boolean } = {}): Promise<void> {
   try {
     await loadGalleryFolder({ list: api.list }, path, (next) => {
       if (sequence !== loadSequence || unmounted) return
+      // A refresh keeps the current page until the whole scan is in, so album
+      // media do not blink out and back while each album is re-read.
+      if (options.quiet && next.scanning) return
       snapshot.value = next
       loading.value = false
     }, controller.signal)
@@ -414,15 +436,17 @@ function takenNames(target: string): Set<string> {
   return names
 }
 
-async function ensureFolder(path: string): Promise<void> {
-  if (snapshot.value?.path === path && snapshot.value.exists) return
+/** Create `path` on the given host when it does not exist yet (first upload into a new library). */
+async function ensureFolder(path: string, folderHostId = hostId.value): Promise<void> {
+  if (folderHostId === hostId.value && snapshot.value?.path === path && snapshot.value.exists) return
+  const api = fileAPIForHost(folderHostId)
   try {
-    await fileAPI.value.entry(path)
+    await api.entry(path)
     return
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error
   }
-  const result = await fileAPI.value.action({ action: 'mkdir', target: galleryParentPath(path), name: galleryBaseName(path) })
+  const result = await api.action({ action: 'mkdir', target: galleryParentPath(path), name: galleryBaseName(path) })
   if (result.failed.length) throw new Error(result.failed[0]!.detail)
 }
 
@@ -466,7 +490,7 @@ async function runUpload(task: UploadTask): Promise<void> {
   let name = task.name
   const tried = new Set([name])
   try {
-    await ensureFolder(task.target)
+    await ensureFolder(task.target, task.hostId)
     for (let attempt = 0; ; attempt += 1) {
       try {
         await api.upload(task.target, new File([task.file], name, { type: task.file.type }), false, (progress) => {
@@ -492,8 +516,14 @@ async function runUpload(task: UploadTask): Promise<void> {
 }
 
 function finishUploadBatch(): void {
-  const targets = new Set(uploads.value.filter((task) => task.phase === 'done').map((task) => task.target))
-  if (targets.size) notifyFileDirectoriesChanged([...targets], undefined, [], hostId.value)
+  const targetsByHost = new Map<string, Set<string>>()
+  for (const task of uploads.value) {
+    if (task.phase !== 'done') continue
+    const targets = targetsByHost.get(task.hostId) ?? new Set<string>()
+    targets.add(task.target)
+    targetsByHost.set(task.hostId, targets)
+  }
+  for (const [taskHostId, targets] of targetsByHost) notifyFileDirectoriesChanged([...targets], undefined, [], taskHostId)
   scheduleReload()
   if (!failedUploads.value) {
     window.clearTimeout(uploadClearTimer)
@@ -635,11 +665,19 @@ async function confirmDelete(): Promise<void> {
     } else {
       toast.success(phrase('已移入回收站'), phrase('可在文件管理的回收站中恢复。'))
     }
+    const gone = (path: string) => [...removed].some((source) => path === source || path.startsWith(`${source}/`))
+    // Keep the viewer open on the neighbouring photo instead of closing it.
+    if (viewerPath.value && gone(viewerPath.value)) {
+      const index = viewerIndex.value
+      const after = visibleItems.value.slice(index + 1).find((item) => !gone(item.entry.path))
+      const before = visibleItems.value.slice(0, Math.max(index, 0)).reverse().find((item) => !gone(item.entry.path))
+      viewerPath.value = (after ?? before)?.entry.path
+    }
     if (snapshot.value) {
       snapshot.value = {
         ...snapshot.value,
-        items: snapshot.value.items.filter((item) => !removed.has(item.entry.path)),
-        albums: snapshot.value.albums.filter((album) => !removed.has(album.path)),
+        items: snapshot.value.items.filter((item) => !gone(item.entry.path)),
+        albums: snapshot.value.albums.filter((album) => !gone(album.path)),
       }
     }
     selected.value = new Set([...selected.value].filter((path) => !removed.has(path)))
@@ -661,17 +699,12 @@ function openLocationDialog(initial = preferences.root): void {
   locationDialogOpen.value = true
 }
 
-async function submitLocation(): Promise<void> {
+function submitLocation(): void {
   const root = normalizeGalleryRoot(locationValue.value)
-  if (!root || locationBusy.value) return
-  locationBusy.value = true
-  try {
-    preferences.root = root
-    locationDialogOpen.value = false
-    void router.push({ name: 'gallery', query: {} })
-  } finally {
-    locationBusy.value = false
-  }
+  if (!root) return
+  preferences.root = root
+  locationDialogOpen.value = false
+  void router.push({ name: 'gallery', query: {} })
 }
 
 async function createLibraryFolder(): Promise<void> {
@@ -720,11 +753,12 @@ let unsubscribeChanges: (() => void) | undefined
 onMounted(() => {
   windowed.value = Boolean(page.value?.closest('.desktop-window__body'))
   if (typeof IntersectionObserver !== 'undefined') {
+    // Inside a desktop window the gallery scrolls its own frame, which would clip a viewport root.
     sentinelObserver = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting) && renderLimit.value < visibleItems.value.length) {
         renderLimit.value += RENDER_STEP
       }
-    }, { rootMargin: '800px 0px' })
+    }, { root: windowed.value ? scroller.value : null, rootMargin: '800px 0px' })
     if (sentinel.value) sentinelObserver.observe(sentinel.value)
   }
   unsubscribeChanges = subscribeFileDirectoryChanges((directories, _origin, moves, changedHost) => {
@@ -768,7 +802,7 @@ onBeforeUnmount(() => {
     @drop="onDrop"
     @keydown="onPageKeydown"
   >
-    <div class="gallery-scroll">
+    <div ref="scroller" class="gallery-scroll">
       <section class="gallery-hero" :class="{ 'gallery-hero--photo': heroUrl }">
         <div v-if="heroUrl" class="gallery-hero__backdrop" aria-hidden="true">
           <img :src="heroUrl" alt="" decoding="async" />
@@ -1166,7 +1200,7 @@ onBeforeUnmount(() => {
         <div class="gallery-form__actions">
           <button class="button button--secondary" type="button" :disabled="albumBusy" @click="albumDialog = undefined">{{ phrase('取消') }}</button>
           <button class="button button--primary" type="submit" :disabled="albumBusy || Boolean(albumNameProblem)">
-            {{ phrase(albumBusy ? '正在保存…' : albumDialog?.mode === 'rename' ? '重命名' : '创建相册') }}
+            {{ phrase(albumSubmitLabel) }}
           </button>
         </div>
       </form>
@@ -1196,7 +1230,6 @@ onBeforeUnmount(() => {
       :title="phrase('图库位置')"
       :description="phrase('图库读取这个文件夹：其中的照片和视频直接显示，子文件夹作为相册。设置只保存在当前浏览器。')"
       size="small"
-      :close-disabled="locationBusy"
       @close="locationDialogOpen = false"
     >
       <form class="gallery-form" @submit.prevent="submitLocation">
@@ -1212,7 +1245,7 @@ onBeforeUnmount(() => {
             :disabled="locationValue === GALLERY_DEFAULT_ROOT"
             @click="locationValue = GALLERY_DEFAULT_ROOT"
           >{{ phrase('恢复默认') }}</button>
-          <button class="button button--primary" type="submit" :disabled="Boolean(locationProblem) || locationBusy">{{ phrase('保存') }}</button>
+          <button class="button button--primary" type="submit" :disabled="Boolean(locationProblem)">{{ phrase('保存') }}</button>
         </div>
       </form>
     </ModalDialog>

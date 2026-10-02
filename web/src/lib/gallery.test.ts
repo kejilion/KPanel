@@ -59,8 +59,12 @@ describe('gallery media classification', () => {
     expect(galleryTileSource(jpeg)).toEqual({ type: 'thumbnail' })
     // Large tiles prefer a sharp original while it stays small.
     expect(galleryTileSource(jpeg, true)).toEqual({ type: 'original' })
-    const heavy = { entry: entry('b.jpg', { sizeBytes: 9 * 1024 * 1024 }), kind: 'image' as const }
-    expect(galleryTileSource(heavy, true)).toEqual({ type: 'thumbnail' })
+    const heavy = { entry: entry('b.jpg', { sizeBytes: 11 * 1024 * 1024 }), kind: 'image' as const }
+    expect(galleryTileSource(heavy)).toEqual({ type: 'thumbnail' })
+    expect(galleryTileSource(heavy, true)).toEqual({ type: 'original' })
+    const over = { entry: entry('o.jpg', { sizeBytes: 13 * 1024 * 1024 }), kind: 'image' as const }
+    // Past the Agent thumbnail limit a large tile still loads the original up to the fallback cap.
+    expect(galleryTileSource(over)).toEqual({ type: 'original' })
     expect(galleryTileSource({ entry: entry('c.webp'), kind: 'image' })).toEqual({ type: 'original' })
     expect(galleryTileSource({ entry: entry('d.webp', { sizeBytes: 40 * 1024 * 1024 }), kind: 'image' })).toEqual({ type: 'none' })
     expect(galleryTileSource({ entry: entry('e.heic'), kind: 'image' })).toEqual({ type: 'none' })

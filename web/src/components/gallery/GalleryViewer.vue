@@ -317,7 +317,6 @@ onBeforeUnmount(() => {
   if (opener?.isConnected) opener.focus({ preventScroll: true })
 })
 
-defineExpose({ focus: () => root.value?.focus({ preventScroll: true }) })
 </script>
 
 <template>
@@ -489,15 +488,6 @@ defineExpose({ focus: () => root.value?.focus({ preventScroll: true }) })
         @click="emit('navigate', thumb.index)"
       >
         <img v-if="sources(thumb.item).preview" :src="sources(thumb.item).preview" alt="" loading="lazy" decoding="async" draggable="false" />
-        <video
-          v-else-if="thumb.item.kind === 'video' && galleryBrowserCanShow(thumb.item)"
-          :src="`${sources(thumb.item).original}#t=0.1`"
-          muted
-          playsinline
-          preload="metadata"
-          tabindex="-1"
-          aria-hidden="true"
-        />
         <span v-else>{{ galleryFileExtension(thumb.item.entry.name).toUpperCase() }}</span>
       </button>
     </nav>
@@ -856,8 +846,7 @@ defineExpose({ focus: () => root.value?.focus({ preventScroll: true }) })
   transition: opacity .15s ease, transform .15s ease;
 }
 
-.gallery-viewer__thumb img,
-.gallery-viewer__thumb video {
+.gallery-viewer__thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;

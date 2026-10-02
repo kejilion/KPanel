@@ -2,6 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, Film, ImageOff, Play } from '@lucide/vue'
 import { formatGalleryDuration, galleryFileExtension, type GalleryItem } from '@/lib/gallery'
+import {
+  captureGalleryVideoFrame,
+  galleryPosterKey,
+  readGalleryPoster,
+  storeGalleryPoster,
+} from '@/lib/galleryPosters'
 
 const props = defineProps<{
   item: GalleryItem
@@ -27,7 +33,9 @@ const source = ref(props.imageUrl)
 const failed = ref(false)
 const loaded = ref(false)
 const near = ref(false)
-const duration = ref('')
+const previewing = ref(false)
+const videoReady = ref(false)
+const posterKey = computed(() => galleryPosterKey(props.item.entry))
 let observer: IntersectionObserver | undefined
 let hoverTimer: number | undefined
 
@@ -35,13 +43,27 @@ watch(() => [props.imageUrl, props.videoUrl], () => {
   source.value = props.imageUrl
   failed.value = false
   loaded.value = false
-  duration.value = ''
 })
 
 const label = computed(() => props.item.entry.name)
+const openLabel = computed(() => {
+  if (!props.selecting) return `查看 ${label.value}`
+  return props.selected ? `取消选择 ${label.value}` : `选择 ${label.value}`
+})
+const toggleLabel = computed(() => props.selected ? `取消选择 ${label.value}` : `选择 ${label.value}`)
 const badge = computed(() => galleryFileExtension(props.item.entry.name).toUpperCase() || 'FILE')
-const showsVideo = computed(() => props.item.kind === 'video' && Boolean(props.videoUrl) && !failed.value)
+const cached = computed(() => readGalleryPoster(posterKey.value))
+const poster = computed(() => cached.value?.poster)
+const duration = computed(() => cached.value?.duration === undefined ? '' : formatGalleryDuration(cached.value.duration))
+const playable = computed(() => props.item.kind === 'video' && Boolean(props.videoUrl) && !failed.value)
+// A video element exists only to grab the poster frame once, or while previewing.
+const mountsVideo = computed(() => playable.value && ((near.value && !poster.value) || previewing.value))
 const showsImage = computed(() => props.item.kind === 'image' && Boolean(source.value) && !failed.value)
+const showsPlaceholder = computed(() => !showsImage.value && !poster.value && !mountsVideo.value)
+
+watch(mountsVideo, (mounted) => {
+  if (!mounted) videoReady.value = false
+})
 
 function onImageError(): void {
   if (props.fallbackUrl && source.value !== props.fallbackUrl) {
@@ -51,10 +73,12 @@ function onImageError(): void {
   failed.value = true
 }
 
-function onVideoMetadata(): void {
-  const element = video.value
-  if (!element) return
-  duration.value = formatGalleryDuration(element.duration)
+function capture(element: HTMLVideoElement): void {
+  const frame = captureGalleryVideoFrame(element)
+  storeGalleryPoster(posterKey.value, {
+    poster: frame ?? poster.value,
+    duration: Number.isFinite(element.duration) ? element.duration : cached.value?.duration,
+  })
 }
 
 function onVideoFrame(): void {
@@ -65,27 +89,24 @@ function onVideoFrame(): void {
     return
   }
   loaded.value = true
+  videoReady.value = true
+  if (poster.value || previewing.value) return
+  if (element.seeking) element.addEventListener('seeked', () => capture(element), { once: true })
+  else capture(element)
 }
 
 function startPreview(event: PointerEvent): void {
-  if (event.pointerType !== 'mouse' || props.selecting || !video.value) return
+  if (event.pointerType !== 'mouse' || props.selecting || !playable.value) return
   window.clearTimeout(hoverTimer)
   hoverTimer = window.setTimeout(() => {
-    void video.value?.play().catch(() => undefined)
+    previewing.value = true
   }, 380)
 }
 
 function stopPreview(): void {
   window.clearTimeout(hoverTimer)
   hoverTimer = undefined
-  const element = video.value
-  if (!element || element.paused) return
-  element.pause()
-  try {
-    element.currentTime = 0.1
-  } catch {
-    // Seeking an unbuffered stream can throw; the paused frame is good enough.
-  }
+  previewing.value = false
 }
 
 function onClick(event: MouseEvent): void {
@@ -97,13 +118,13 @@ function onClick(event: MouseEvent): void {
 }
 
 onMounted(() => {
-  if (props.item.kind !== 'video') return
+  if (props.item.kind !== 'video' || poster.value) return
   if (typeof IntersectionObserver === 'undefined') {
     near.value = true
     return
   }
-  // Video tiles mount their element only on screen so a long timeline does not
-  // open one metadata request per video at once.
+  // Video tiles fetch metadata only near the screen, so a long timeline does
+  // not open one request per video at once.
   observer = new IntersectionObserver((entries) => {
     if (!entries.some((entry) => entry.isIntersecting)) return
     near.value = true
@@ -127,7 +148,7 @@ onBeforeUnmount(() => {
       'gallery-tile--featured': featured,
       'gallery-tile--selected': selected,
       'gallery-tile--selecting': selecting,
-      'gallery-tile--loaded': loaded,
+      'gallery-tile--loaded': loaded || Boolean(poster),
       'gallery-tile--video': item.kind === 'video',
     }"
     @pointerenter="startPreview"
@@ -136,7 +157,7 @@ onBeforeUnmount(() => {
     <button
       class="gallery-tile__open"
       type="button"
-      :aria-label="selecting ? (selected ? `取消选择 ${label}` : `选择 ${label}`) : `查看 ${label}`"
+      :aria-label="openLabel"
       :aria-pressed="selecting ? selected : undefined"
       @click="onClick"
     >
@@ -151,23 +172,32 @@ onBeforeUnmount(() => {
         @load="loaded = true"
         @error="onImageError"
       />
-      <video
-        v-else-if="showsVideo && near"
-        ref="video"
+      <img
+        v-else-if="poster"
         class="gallery-tile__media"
-        :src="`${videoUrl}#t=0.1`"
+        :src="poster"
+        alt=""
+        decoding="async"
+        draggable="false"
+      />
+      <video
+        v-if="mountsVideo"
+        ref="video"
+        class="gallery-tile__media gallery-tile__media--video"
+        :class="{ 'is-ready': videoReady }"
+        :src="previewing ? videoUrl : `${videoUrl}#t=0.1`"
         muted
         loop
         playsinline
+        :autoplay="previewing"
         preload="metadata"
         disablepictureinpicture
         tabindex="-1"
         aria-hidden="true"
-        @loadedmetadata="onVideoMetadata"
         @loadeddata="onVideoFrame"
         @error="failed = true"
       />
-      <span v-if="!showsImage && !(showsVideo && near)" class="gallery-tile__placeholder" aria-hidden="true">
+      <span v-if="showsPlaceholder" class="gallery-tile__placeholder" aria-hidden="true">
         <Film v-if="item.kind === 'video'" :size="featured ? 34 : 24" />
         <ImageOff v-else :size="featured ? 34 : 24" />
         <span>{{ badge }}</span>
@@ -180,7 +210,7 @@ onBeforeUnmount(() => {
     <button
       class="gallery-tile__check"
       type="button"
-      :aria-label="selected ? `取消选择 ${label}` : `选择 ${label}`"
+      :aria-label="toggleLabel"
       :aria-pressed="selected"
       @click.stop="emit('toggle', item, $event.shiftKey)"
     >
@@ -236,6 +266,17 @@ onBeforeUnmount(() => {
 }
 
 .gallery-tile--loaded .gallery-tile__media {
+  opacity: 1;
+}
+
+/* Hover previews play over the captured poster and appear once a frame is ready. */
+.gallery-tile .gallery-tile__media--video {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.gallery-tile .gallery-tile__media--video.is-ready {
   opacity: 1;
 }
 
