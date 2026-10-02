@@ -89,7 +89,7 @@ const metrics = computed<ServiceMetric[]>(() => {
     makeMetric(
       'websites',
       i18n.t('desktop.serviceStatusWebsites'),
-      sites?.healthy,
+      sites ? sites.total - sites.drifted : undefined,
       sites?.total,
       sites !== undefined,
       sites?.total === 0
