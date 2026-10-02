@@ -216,10 +216,14 @@ describe('GalleryView on a remote host', () => {
 describe('GalleryView', () => {
   it('keeps the last snapshot and reports a failed refresh with a retry', async () => {
     const view = await mountGallery()
+    expect(view.get('.gallery-hero').classes()).not.toContain('gallery-hero--menu-open')
     harness.list.mockRejectedValueOnce(new ApiError('refresh unavailable', 503, 'unavailable'))
     await view.get('.gallery-hero__more > button').trigger('click')
+    expect(view.get('.gallery-hero').classes()).toContain('gallery-hero--menu-open')
     await view.findAll('.gallery-menu button').find((button) => button.text().includes('刷新'))!.trigger('click')
     await flushPromises()
+    expect(view.get('.gallery-hero').classes()).not.toContain('gallery-hero--menu-open')
+    expect(view.find('.gallery-hero__more .gallery-menu').exists()).toBe(false)
     expect(view.findAll('.gallery-tile')).toHaveLength(4)
     expect(view.get('.gallery-notice[role="alert"]').text()).toContain('refresh unavailable')
     await view.get('.gallery-notice[role="alert"] button').trigger('click')
