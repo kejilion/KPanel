@@ -156,7 +156,7 @@ func procdServiceHealth(root string, active map[string]*bool) []contract.LightNo
 			timer.ActiveState = healthChoice(running, "active", "inactive")
 			timer.SubState = healthChoice(running, "waiting", "dead")
 		}
-	} else if errors.Is(err, os.ErrNotExist) {
+	} else if _, statErr := os.Lstat(healthRootPath(root, "/etc/crontabs/root")); errors.Is(statErr, os.ErrNotExist) {
 		timer.ActiveState, timer.SubState, timer.UnitFileState = "inactive", "dead", "disabled"
 	}
 	units[0] = timer

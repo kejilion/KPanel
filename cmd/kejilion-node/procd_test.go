@@ -161,4 +161,11 @@ func TestProcdHealthRequiresActualRunningProcessAndCronMembership(t *testing.T) 
 	if got[0].ActiveState != "unknown" {
 		t.Fatal("untrusted crontab became an authoritative status")
 	}
+	if err := os.Remove(cron); err != nil {
+		t.Fatal(err)
+	}
+	got = procdServiceHealth(root, map[string]*bool{"cron": &running})
+	if got[0].ActiveState != "inactive" || got[0].UnitFileState != "disabled" {
+		t.Fatal("deleted crontab did not disable the schedule")
+	}
 }
