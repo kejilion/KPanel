@@ -2784,12 +2784,13 @@ onBeforeUnmount(() => {
           class="button button--secondary button--small file-command-bar__gallery"
           type="button"
           title="以图库方式浏览当前文件夹中的照片和视频"
+          aria-label="图库"
           @click="openGallery"
         >
-          <Images :size="15" /> 图库
+          <Images :size="15" /> <span class="file-command-bar__label">图库</span>
         </button>
         <button class="button button--secondary button--small" type="button" title="打开回收站" aria-label="打开回收站" @click="openTrash">
-          <Trash2 :size="15" /> 回收站
+          <Trash2 :size="15" /> <span class="file-command-bar__label">回收站</span>
         </button>
         <button
           class="button button--secondary button--small"
@@ -2799,10 +2800,10 @@ onBeforeUnmount(() => {
           aria-label="分享管理"
           @click="openShareManager"
         >
-          <Share2 :size="15" /> 分享管理
+          <Share2 :size="15" /> <span class="file-command-bar__label">分享管理</span>
         </button>
         <button class="button button--secondary button--small" type="button" title="新建目录" aria-label="新建目录" @click="openDialog('mkdir')">
-          <Plus :size="15" /> 新建目录
+          <Plus :size="15" /> <span class="file-command-bar__label">新建目录</span>
         </button>
         <button
           class="button button--secondary button--small"
@@ -2812,7 +2813,7 @@ onBeforeUnmount(() => {
           :disabled="remoteDownloadSubmitting || isRemoteFileHost"
           @click="openRemoteDownloadDialog"
         >
-          <Download :size="15" /> {{ i18n.t('files.remoteDownload.label') }}
+          <Download :size="15" /> <span class="file-command-bar__label">{{ i18n.t('files.remoteDownload.label') }}</span>
         </button>
         <button class="button button--primary button--small" type="button" @click="uploadInput?.click()">
           <Upload :size="15" /> 上传文件
@@ -2830,9 +2831,10 @@ onBeforeUnmount(() => {
           class="button button--secondary button--small file-command-bar__split"
           type="button"
           title="关闭此栏，保留另一栏"
+          aria-label="关闭此栏"
           @click="filesSplit.closePane()"
         >
-          <X :size="15" /> 关闭此栏
+          <X :size="15" /> <span class="file-command-bar__label">关闭此栏</span>
         </button>
         <button
           v-else-if="filesSplit?.role === 'primary' && filesSplit.available.value"
