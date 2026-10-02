@@ -160,14 +160,14 @@ describe('gallery preferences', () => {
   }
 
   it('falls back field by field and round-trips valid values', () => {
-    expect(readGalleryPreferences(memoryStorage())).toEqual({ root: GALLERY_DEFAULT_ROOT, sort: 'newest', density: 'comfortable' })
-    expect(readGalleryPreferences(memoryStorage('{"root":"/","sort":"oldest","density":"huge"}')))
-      .toEqual({ root: GALLERY_DEFAULT_ROOT, sort: 'oldest', density: 'comfortable' })
+    expect(readGalleryPreferences(memoryStorage())).toEqual({ root: GALLERY_DEFAULT_ROOT, sort: 'newest', density: 'comfortable', filmstrip: true })
+    expect(readGalleryPreferences(memoryStorage('{"root":"/","sort":"oldest","density":"huge","filmstrip":"no"}')))
+      .toEqual({ root: GALLERY_DEFAULT_ROOT, sort: 'oldest', density: 'comfortable', filmstrip: true })
     expect(readGalleryPreferences(memoryStorage('not json')).root).toBe(GALLERY_DEFAULT_ROOT)
 
     const storage = memoryStorage()
-    writeGalleryPreferences(storage, { root: '/srv/photos', sort: 'name', density: 'spacious' })
-    expect(readGalleryPreferences(storage)).toEqual({ root: '/srv/photos', sort: 'name', density: 'spacious' })
+    writeGalleryPreferences(storage, { root: '/srv/photos', sort: 'name', density: 'spacious', filmstrip: false })
+    expect(readGalleryPreferences(storage)).toEqual({ root: '/srv/photos', sort: 'name', density: 'spacious', filmstrip: false })
   })
 
   it('keeps working when storage throws', () => {

@@ -160,4 +160,6 @@ export default [
   ["修改时间", "Modified"],
   ["所有者", "Owner"],
   ["缩略图", "Thumbnails"],
+  ["隐藏缩略图条", "Hide thumbnail strip"],
+  ["显示缩略图条", "Show thumbnail strip"],
 ] as const satisfies PhraseCatalog

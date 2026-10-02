@@ -16,6 +16,8 @@ export interface GalleryPreferences {
   root: string
   sort: GallerySort
   density: GalleryDensity
+  /** Thumbnail strip under the viewer. */
+  filmstrip: boolean
 }
 
 export interface GalleryItem {
@@ -62,6 +64,7 @@ const defaultPreferences: GalleryPreferences = {
   root: GALLERY_DEFAULT_ROOT,
   sort: 'newest',
   density: 'comfortable',
+  filmstrip: true,
 }
 
 const imageExtensions = new Set([
@@ -291,6 +294,7 @@ export function readGalleryPreferences(storage: StorageLike | undefined): Galler
       root: (typeof value.root === 'string' && normalizeGalleryRoot(value.root)) || defaultPreferences.root,
       sort: isSort(value.sort) ? value.sort : defaultPreferences.sort,
       density: isDensity(value.density) ? value.density : defaultPreferences.density,
+      filmstrip: typeof value.filmstrip === 'boolean' ? value.filmstrip : defaultPreferences.filmstrip,
     }
   } catch {
     return { ...defaultPreferences }

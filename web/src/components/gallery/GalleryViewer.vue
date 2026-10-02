@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Download,
   FolderOpen,
+  GalleryHorizontalEnd,
   ImageOff,
   Info,
   Maximize,
@@ -46,6 +47,8 @@ const props = defineProps<{
   /** Folder shown as the gallery itself rather than by its name. */
   libraryRoot?: string
   canDelete?: boolean
+  /** Whether the thumbnail strip is shown; the page remembers the choice. */
+  filmstrip?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -54,11 +57,14 @@ const emit = defineEmits<{
   download: [item: GalleryItem]
   reveal: [item: GalleryItem]
   delete: [item: GalleryItem]
+  'update:filmstrip': [visible: boolean]
 }>()
 
 const MIN_SCALE = 1
 const MAX_SCALE = 6
 const STRIP_RADIUS = 40
+/** Controls fade after this long without pointer, focus or key activity. */
+const CHROME_IDLE_MS = 2800
 
 const root = ref<HTMLElement>()
 const stage = ref<HTMLElement>()
@@ -74,6 +80,9 @@ const scale = ref(1)
 const offset = ref({ x: 0, y: 0 })
 const retryKey = ref(0)
 const modalId = Symbol('gallery-viewer')
+const chromeVisible = ref(true)
+let chromeHeld = false
+let chromeTimer: number | undefined
 let opener: HTMLElement | null = null
 let pointer: { id: number; x: number; y: number; startX: number; startY: number; moved: boolean } | undefined
 
@@ -97,6 +106,37 @@ function resetView(): void {
   offset.value = { x: 0, y: 0 }
 }
 
+function chromeFocused(): boolean {
+  const active = document.activeElement
+  return active instanceof HTMLElement && Boolean(active.closest('.gallery-viewer__bar, .gallery-viewer__strip, .gallery-viewer__nav'))
+}
+
+/**
+ * The bar, arrows and filmstrip float over the photo and fade after a short
+ * idle spell so the whole picture shows; any pointer movement, key or tap on
+ * a touch screen brings them back. They stay while hovered or focused.
+ */
+function showChrome(): void {
+  chromeVisible.value = true
+  window.clearTimeout(chromeTimer)
+  chromeTimer = window.setTimeout(() => {
+    if (!chromeHeld && !chromeFocused()) chromeVisible.value = false
+  }, CHROME_IDLE_MS)
+}
+
+function holdChrome(held: boolean): void {
+  chromeHeld = held
+  if (!held) showChrome()
+}
+
+function onViewerPointerMove(event: PointerEvent): void {
+  if (event.pointerType !== 'touch') showChrome()
+}
+
+function onViewerFocusIn(event: FocusEvent): void {
+  if (event.target instanceof HTMLElement && event.target.closest('.gallery-viewer__bar, .gallery-viewer__strip, .gallery-viewer__nav')) showChrome()
+}
+
 function resetMedia(): void {
   loaded.value = false
   failed.value = false
@@ -105,6 +145,10 @@ function resetMedia(): void {
   durationSeconds.value = undefined
   resetView()
 }
+
+watch(() => props.filmstrip, (visible) => {
+  if (visible) void nextTick(scrollStripToCurrent)
+})
 
 watch(() => item.value?.entry.path, () => {
   resetMedia()
@@ -177,9 +221,15 @@ function onPointerUp(event: PointerEvent): void {
   const swipe = event.clientX - pointer.startX
   const vertical = Math.abs(event.clientY - pointer.startY)
   const wasZoomed = zoomed.value
+  const tapped = !pointer.moved
   pointer = undefined
   // A horizontal drag on an unzoomed photo turns the page like a phone gallery.
   if (!wasZoomed && Math.abs(swipe) > 64 && vertical < 80) go(swipe < 0 ? 1 : -1)
+  // Touch screens have no hover, so a tap toggles the controls instead.
+  else if (tapped && event.pointerType === 'touch') {
+    if (chromeVisible.value) chromeVisible.value = false
+    else showChrome()
+  }
 }
 
 function onImageLoad(event: Event): void {
@@ -260,6 +310,8 @@ function onKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return
   const target = event.target as HTMLElement | null
   const inVideo = target?.tagName === 'VIDEO'
+  // Paging with the arrows keeps an immersive slideshow; other keys reveal the controls.
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') showChrome()
   if (event.key === 'Tab') {
     const focusable = focusableElements()
     if (!focusable.length) return
@@ -307,10 +359,12 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', syncFullscreen)
   root.value?.focus({ preventScroll: true })
   preloadNeighbours()
+  showChrome()
   void nextTick(scrollStripToCurrent)
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(chromeTimer)
   if (!props.contained) deactivateModal(modalId)
   document.removeEventListener('fullscreenchange', syncFullscreen)
   if (document.fullscreenElement && document.fullscreenElement === root.value) void document.exitFullscreen().catch(() => undefined)
@@ -323,18 +377,24 @@ onBeforeUnmount(() => {
   <div
     ref="root"
     class="gallery-viewer"
-    :class="{ 'gallery-viewer--contained': contained, 'gallery-viewer--info': infoOpen }"
+    :class="{
+      'gallery-viewer--contained': contained,
+      'gallery-viewer--info': infoOpen,
+      'gallery-viewer--idle': !chromeVisible,
+    }"
     role="dialog"
     aria-modal="true"
     :aria-label="phrase('照片与视频查看器')"
     tabindex="-1"
     @keydown="onKeydown"
+    @pointermove="onViewerPointerMove"
+    @focusin="onViewerFocusIn"
   >
     <div v-if="itemSources?.preview" class="gallery-viewer__ambient" aria-hidden="true">
       <img :src="itemSources.preview" alt="" />
     </div>
 
-    <header class="gallery-viewer__bar">
+    <header class="gallery-viewer__bar" @pointerenter="holdChrome(true)" @pointerleave="holdChrome(false)">
       <div class="gallery-viewer__title">
         <strong :title="item?.entry.name">{{ item?.entry.name }}</strong>
         <span>{{ item ? formatDateTime(item.entry.modifiedAt) : '' }} · {{ position }}</span>
@@ -346,6 +406,15 @@ onBeforeUnmount(() => {
           <button type="button" :title="phrase('适应窗口')" :aria-label="phrase('适应窗口')" :disabled="!zoomed" @click="resetView"><RotateCcw :size="17" /></button>
           <span class="gallery-viewer__divider" aria-hidden="true" />
         </template>
+        <button
+          v-if="items.length > 1"
+          type="button"
+          :class="{ 'is-active': filmstrip }"
+          :title="phrase(filmstrip ? '隐藏缩略图条' : '显示缩略图条')"
+          :aria-label="phrase(filmstrip ? '隐藏缩略图条' : '显示缩略图条')"
+          :aria-pressed="filmstrip"
+          @click="emit('update:filmstrip', !filmstrip)"
+        ><GalleryHorizontalEnd :size="18" /></button>
         <button
           type="button"
           :class="{ 'is-active': infoOpen }"
@@ -448,6 +517,8 @@ onBeforeUnmount(() => {
           :title="phrase('上一张')"
           :aria-label="phrase('上一张')"
           @pointerdown.stop
+          @pointerenter="holdChrome(true)"
+          @pointerleave="holdChrome(false)"
           @click="go(-1)"
         ><ChevronLeft :size="28" /></button>
         <button
@@ -457,6 +528,8 @@ onBeforeUnmount(() => {
           :title="phrase('下一张')"
           :aria-label="phrase('下一张')"
           @pointerdown.stop
+          @pointerenter="holdChrome(true)"
+          @pointerleave="holdChrome(false)"
           @click="go(1)"
         ><ChevronRight :size="28" /></button>
       </div>
@@ -476,7 +549,14 @@ onBeforeUnmount(() => {
       </aside>
     </div>
 
-    <nav v-if="items.length > 1" ref="strip" class="gallery-viewer__strip" :aria-label="phrase('缩略图')">
+    <nav
+      v-if="items.length > 1 && filmstrip"
+      ref="strip"
+      class="gallery-viewer__strip"
+      :aria-label="phrase('缩略图')"
+      @pointerenter="holdChrome(true)"
+      @pointerleave="holdChrome(false)"
+    >
       <button
         v-for="thumb in stripItems"
         :key="thumb.item.entry.path"
@@ -507,7 +587,7 @@ onBeforeUnmount(() => {
   z-index: 90;
   inset: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   color: var(--viewer-text);
   background: var(--viewer-bg);
@@ -543,14 +623,30 @@ onBeforeUnmount(() => {
   content: '';
 }
 
+/* The bar and the filmstrip float over the photo so the stage keeps the whole area. */
 .gallery-viewer__bar {
+  position: absolute;
+  z-index: 3;
+  inset: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   min-width: 0;
-  padding: 12px 14px 10px 20px;
+  padding: 12px 14px 18px 20px;
   background: linear-gradient(rgb(6 8 11 / 72%), rgb(6 8 11 / 0%));
+  transition: opacity .25s ease;
+}
+
+.gallery-viewer--idle .gallery-viewer__bar,
+.gallery-viewer--idle .gallery-viewer__strip,
+.gallery-viewer--idle .gallery-viewer__nav {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gallery-viewer--idle .gallery-viewer__stage {
+  cursor: none;
 }
 
 .gallery-viewer__title {
@@ -631,6 +727,7 @@ onBeforeUnmount(() => {
 
 .gallery-viewer__body {
   display: flex;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -683,8 +780,10 @@ onBeforeUnmount(() => {
   filter: blur(6px);
 }
 
+/* Videos stay clear of both overlays so their native controls remain reachable. */
 .gallery-viewer__media--video {
   max-width: calc(100% - 120px);
+  max-height: calc(100% - 168px);
   background: #000;
 }
 
@@ -784,7 +883,7 @@ onBeforeUnmount(() => {
 .gallery-viewer__info {
   flex: 0 0 300px;
   overflow: auto;
-  padding: 8px 20px 20px;
+  padding: 76px 20px 20px;
   border-left: 1px solid var(--viewer-line);
   background: rgb(14 17 22 / 86%);
   animation: gallery-viewer-info-in .2s ease-out both;
@@ -822,13 +921,18 @@ onBeforeUnmount(() => {
 }
 
 .gallery-viewer__strip {
+  position: absolute;
+  z-index: 3;
+  inset: auto 0 0;
   display: flex;
   justify-content: safe center;
   gap: 6px;
   min-width: 0;
-  padding: 10px 16px 14px;
+  padding: 22px 16px 14px;
   overflow-x: auto;
+  background: linear-gradient(rgb(6 8 11 / 0%), rgb(6 8 11 / 72%));
   scrollbar-width: none;
+  transition: opacity .25s ease;
 }
 
 .gallery-viewer__thumb {
@@ -913,9 +1017,10 @@ onBeforeUnmount(() => {
 
   .gallery-viewer__info {
     position: absolute;
-    z-index: 2;
+    z-index: 4;
     inset: auto 0 0;
     max-height: 55%;
+    padding-top: 12px;
     border-top: 1px solid var(--viewer-line);
     border-left: 0;
   }
@@ -923,6 +1028,9 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .gallery-viewer,
+  .gallery-viewer__bar,
+  .gallery-viewer__strip,
+  .gallery-viewer__nav,
   .gallery-viewer__info,
   .gallery-viewer__media {
     animation: none;
