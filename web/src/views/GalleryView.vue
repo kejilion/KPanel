@@ -35,7 +35,7 @@ import {
   X,
 } from '@lucide/vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
-import FileHostSwitcher from '@/components/files/FileHostSwitcher.vue'
+import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
 import GalleryTile from '@/components/gallery/GalleryTile.vue'
@@ -45,6 +45,7 @@ import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts } from '@/lib/clusterHostOrder'
 import { clusterHostPanelPageURL } from '@/lib/clusterHostNavigation'
 import { fileHostStatus } from '@/lib/fileHostStatus'
+import type { HostSwitcherStatus } from '@/lib/hostSwitcher'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -139,7 +140,7 @@ const trail = computed(() => galleryPathTrail(insideLibrary.value ? preferences.
 const hosts = ref<ClusterHost[]>([])
 const hostsLoading = ref(false)
 const hostsError = ref(false)
-const hostSwitcher = ref<InstanceType<typeof FileHostSwitcher>>()
+const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
 const hostName = computed(() => hosts.value.find((host) => host.id === hostId.value)?.name ?? '')
 const orderedHosts = computed(() => sortClusterHosts(hosts.value, readClusterHostOrder()))
 const activeHostId = computed(() => hostId.value || hosts.value.find((host) => host.isLocal)?.id || '')
@@ -388,9 +389,9 @@ function onHostPickerOpen(): void {
   if (!hosts.value.length && !hostsLoading.value) void loadHosts()
 }
 
-function hostStatusOf(host: ClusterHost): { action: 'select' | 'manage' | 'open'; label: string } {
+function hostStatusOf(host: ClusterHost): HostSwitcherStatus {
   const status = fileHostStatus(host)
-  return { action: status.action, label: phrase(status.label) }
+  return { action: status.action, tone: status.tone, label: phrase(status.label) }
 }
 
 /** A paired Panel without a file relay: open its own gallery page in a new tab. */
@@ -915,7 +916,7 @@ onBeforeUnmount(() => {
             <span>{{ currentPath }}</span>
           </p>
           <div v-if="showHostSwitcher" class="gallery-host">
-            <FileHostSwitcher
+            <HostSwitcher
               ref="hostSwitcher"
               :hosts="orderedHosts"
               :active-id="activeHostId"

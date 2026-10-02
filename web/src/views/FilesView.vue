@@ -41,9 +41,9 @@ import {
   Upload,
   X,
 } from '@lucide/vue'
+import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
-import FileHostSwitcher from '@/components/files/FileHostSwitcher.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
 import FileArchiveTools from '@/components/files/FileArchiveTools.vue'
@@ -131,7 +131,7 @@ const desktopWindowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
 const filesSplit = inject(filesSplitControlKey, undefined)
 const filesPage = ref<HTMLElement>()
 const localClusterNodeId = ref('')
-const hostSwitcher = ref<InstanceType<typeof FileHostSwitcher>>()
+const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
 const fileHostInventory = ref<ClusterHostList>()
 const fileHostInventoryLoading = ref(false)
 const fileHostInventoryError = ref(false)
@@ -214,7 +214,7 @@ const activeFileHostLabel = computed(() => {
 
 function fileHostStatus(host: ClusterHost): FileHostStatus {
   const status = sharedFileHostStatus(host)
-  return { action: status.action, label: phrase(status.label) }
+  return { action: status.action, tone: status.tone, label: phrase(status.label) }
 }
 
 function closeFileHostPicker(restoreFocus = false): void {
@@ -2753,7 +2753,7 @@ onBeforeUnmount(() => {
     >
       <header class="file-toolbar">
         <div class="file-toolbar__path">
-          <FileHostSwitcher
+          <HostSwitcher
             ref="hostSwitcher"
             :hosts="fileHosts"
             :active-id="activeFileHostId"

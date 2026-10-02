@@ -5383,7 +5383,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 /* Terminal menus keep their component layer (7000), above task dialogs (5000). */
-.desktop-mode-open :is(.file-context-menu, .docker-context-menu, .file-host-switcher__menu) {
+.desktop-mode-open :is(.file-context-menu, .docker-context-menu, .host-switcher__menu) {
   z-index: 4500 !important;
 }
 

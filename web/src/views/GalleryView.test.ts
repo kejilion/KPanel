@@ -103,7 +103,7 @@ const clusterHosts = [
 describe('GalleryView host switcher', () => {
   afterEach(() => {
     vi.restoreAllMocks()
-    document.body.querySelectorAll('.file-host-switcher__menu').forEach((menu) => menu.remove())
+    document.body.querySelectorAll('.host-switcher__menu').forEach((menu) => menu.remove())
   })
 
   async function mountWithHosts(path = '/gallery', items: unknown[] = clusterHosts) {
@@ -112,14 +112,14 @@ describe('GalleryView host switcher', () => {
   }
 
   async function openPicker(view: VueWrapper): Promise<HTMLButtonElement[]> {
-    await view.get('.file-host-switcher__trigger').trigger('click')
+    await view.get('.host-switcher__trigger').trigger('click')
     await flushPromises()
-    return [...document.body.querySelectorAll<HTMLButtonElement>('[data-file-host-id]')]
+    return [...document.body.querySelectorAll<HTMLButtonElement>('[data-host-id]')]
   }
 
   it('reuses the file manager host picker and lists every host with its status', async () => {
     const view = await mountWithHosts()
-    expect(view.get('.file-host-switcher__trigger').text()).toContain('本机')
+    expect(view.get('.host-switcher__trigger').text()).toContain('本机')
     const rows = await openPicker(view)
     expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       '本机当前面板', 'edge-melbourne文件管理已就绪', 'lite-berlin文件代理未就绪', 'paired-oslo已配对 · 文件互传',
@@ -134,8 +134,8 @@ describe('GalleryView host switcher', () => {
     await flushPromises()
     // The folder path stays behind: each host starts at its own library folder.
     expect(router.currentRoute.value.query).toEqual({ hostId: 'edge-1' })
-    expect(view.get('.file-host-switcher__trigger').text()).toContain('edge-melbourne')
-    expect(document.body.querySelector('.file-host-switcher__menu')).toBeNull()
+    expect(view.get('.host-switcher__trigger').text()).toContain('edge-melbourne')
+    expect(document.body.querySelector('.host-switcher__menu')).toBeNull()
 
     ;(await openPicker(view))[0]!.click()
     await flushPromises()
@@ -184,7 +184,7 @@ describe('GalleryView on a remote host', () => {
     harness.tree = {}
     const view = await mountGallery('/gallery?hostId=edge-1')
     expect(view.get('.gallery-hero__title').text()).toBe('图库')
-    expect(view.get('.file-host-switcher__trigger').text()).toContain('edge-melbourne')
+    expect(view.get('.host-switcher__trigger').text()).toContain('edge-melbourne')
     expect(view.text()).toContain('开始建立你的图库')
     // The location setting belongs to this browser, so it is only offered on the local host.
     const buttons = view.findAll('.gallery-empty button').map((button) => button.text())

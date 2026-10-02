@@ -128,13 +128,13 @@ describe('FilesView host switcher', () => {
     const body = new DOMWrapper(document.body)
     try {
       await flushPromises()
-      const trigger = wrapper.get('.file-host-switcher__trigger')
+      const trigger = wrapper.get('.host-switcher__trigger')
       vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(rect(24, 80, 150, 38))
       const triggerButton = trigger.element as HTMLButtonElement
       triggerButton.focus()
       await trigger.trigger('click')
       await flushPromises()
-      const menu = body.get('.file-host-switcher__menu')
+      const menu = body.get('.host-switcher__menu')
       expect((menu.element as HTMLElement).style.left).toBe('24px')
       expect((menu.element as HTMLElement).style.top).toBe('124px')
       expect(wrapper.get('.file-browser').element.contains(menu.element)).toBe(false)
@@ -145,19 +145,19 @@ describe('FilesView host switcher', () => {
       expect(document.activeElement).toBe(search.element)
       for (const query of [' 美国 ', 'EDGE.EXAMPLE.COM', 'DEBIAN-EDGE']) {
         await search.setValue(query)
-        expect(menu.findAll('[data-file-host-id]').map((item) => item.attributes('data-file-host-id'))).toEqual(['edge'])
+        expect(menu.findAll('[data-host-id]').map((item) => item.attributes('data-host-id'))).toEqual(['edge'])
       }
       await search.setValue('本机')
-      expect(menu.get('[data-file-host-id="local"]').attributes('aria-pressed')).toBe('true')
+      expect(menu.get('[data-host-id="local"]').attributes('aria-pressed')).toBe('true')
       await search.setValue('no-such-host')
       expect(menu.text()).toContain('没有匹配的主机')
-      expect(menu.findAll('[data-file-host-id]')).toHaveLength(0)
+      expect(menu.findAll('[data-host-id]')).toHaveLength(0)
       expect(mocks.list).toHaveBeenCalledTimes(1)
       expect(mocks.push).not.toHaveBeenCalled()
       await search.trigger('keydown', { key: 'Escape' })
-      expect(document.activeElement).toBe(wrapper.get('.file-host-switcher__trigger').element)
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect((body.get('.file-host-switcher__search input').element as HTMLInputElement).value).toBe('')
+      expect(document.activeElement).toBe(wrapper.get('.host-switcher__trigger').element)
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect((body.get('.host-switcher__search input').element as HTMLInputElement).value).toBe('')
     } finally { wrapper.unmount() }
   })
 
@@ -169,23 +169,23 @@ describe('FilesView host switcher', () => {
     const body = new DOMWrapper(document.body)
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('keydown', { key: 'ArrowDown' })
-      const search = body.get('.file-host-switcher__search input')
+      await wrapper.get('.host-switcher__trigger').trigger('keydown', { key: 'ArrowDown' })
+      const search = body.get('.host-switcher__search input')
       await search.trigger('keydown', { key: 'ArrowDown' })
-      expect(document.activeElement).toBe(body.get('[data-file-host-id="local"]').element)
-      await body.get('[data-file-host-id="local"]').trigger('keydown', { key: 'End' })
-      expect(document.activeElement).toBe(body.get('[data-file-host-id="edge"]').element)
-      await body.get('.file-host-switcher__list').trigger('scroll')
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(true)
-      await body.get('[data-file-host-id="edge"]').trigger('click')
+      expect(document.activeElement).toBe(body.get('[data-host-id="local"]').element)
+      await body.get('[data-host-id="local"]').trigger('keydown', { key: 'End' })
+      expect(document.activeElement).toBe(body.get('[data-host-id="edge"]').element)
+      await body.get('.host-switcher__list').trigger('scroll')
+      expect(body.find('.host-switcher__menu').exists()).toBe(true)
+      await body.get('[data-host-id="edge"]').trigger('click')
       expect(mocks.list).toHaveBeenLastCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
+      expect(body.find('.host-switcher__menu').exists()).toBe(false)
+      await wrapper.get('.host-switcher__trigger').trigger('click')
       window.dispatchEvent(new Event('resize'))
       await nextTick()
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(true)
+      expect(body.find('.host-switcher__menu').exists()).toBe(true)
       await body.trigger('click')
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
+      expect(body.find('.host-switcher__menu').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
 
@@ -202,13 +202,13 @@ describe('FilesView host switcher', () => {
     const body = new DOMWrapper(document.body)
     try {
       await flushPromises()
-      const trigger = wrapper.get('.file-host-switcher__trigger')
+      const trigger = wrapper.get('.host-switcher__trigger')
       vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(rect(24, 80, 150, 38))
       const triggerButton = trigger.element as HTMLButtonElement
       triggerButton.focus()
       await trigger.trigger('click')
       await flushPromises()
-      const search = body.get('.file-host-switcher__search input')
+      const search = body.get('.host-switcher__search input')
       expect(document.activeElement).toBe(trigger.element)
       const searchInput = search.element as HTMLInputElement
       searchInput.focus()
@@ -219,11 +219,11 @@ describe('FilesView host switcher', () => {
       viewport.dispatchEvent(new Event('scroll'))
       document.dispatchEvent(new Event('scroll'))
       await nextTick()
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(true)
-      expect((body.get('.file-host-switcher__menu').element as HTMLElement).style.top).toBe('74px')
-      await body.get('[data-file-host-id="edge"]').trigger('click')
+      expect(body.find('.host-switcher__menu').exists()).toBe(true)
+      expect((body.get('.host-switcher__menu').element as HTMLElement).style.top).toBe('74px')
+      await body.get('[data-host-id="edge"]').trigger('click')
       expect(mocks.list).toHaveBeenLastCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
+      expect(body.find('.host-switcher__menu').exists()).toBe(false)
     } finally {
       wrapper.unmount()
       if (originalViewport) Object.defineProperty(window, 'visualViewport', originalViewport)
@@ -239,17 +239,17 @@ describe('FilesView host switcher', () => {
     const body = new DOMWrapper(document.body)
     try {
       await flushPromises()
-      expect(first.get('.file-host-switcher__trigger').attributes('aria-controls')).not.toBe(second.get('.file-host-switcher__trigger').attributes('aria-controls'))
-      await first.get('.file-host-switcher__trigger').trigger('click')
+      expect(first.get('.host-switcher__trigger').attributes('aria-controls')).not.toBe(second.get('.host-switcher__trigger').attributes('aria-controls'))
+      await first.get('.host-switcher__trigger').trigger('click')
       await flushPromises()
-      expect(body.get('.file-host-switcher__menu').text()).toContain('无法读取集群主机')
+      expect(body.get('.host-switcher__menu').text()).toContain('无法读取集群主机')
       mocks.hosts.mockResolvedValue({ nodeId: 'local-node', items: [fileHost('local', true)] })
-      await body.get('.file-host-switcher__retry').trigger('click')
+      await body.get('.host-switcher__retry').trigger('click')
       await flushPromises()
-      expect(body.get('[data-file-host-id="local"]').text()).toContain('本机')
-      expect(body.find('.file-host-switcher__retry').exists()).toBe(false)
+      expect(body.get('[data-host-id="local"]').text()).toContain('本机')
+      expect(body.find('.host-switcher__retry').exists()).toBe(false)
       await body.trigger('click')
-      expect(body.find('.file-host-switcher__menu').exists()).toBe(false)
+      expect(body.find('.host-switcher__menu').exists()).toBe(false)
     } finally { windows.unmount() }
   })
 
@@ -289,8 +289,8 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(new DOMWrapper(document.body).findAll('[data-file-host-id]').map((item) => item.attributes('data-file-host-id'))).toEqual([
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect(new DOMWrapper(document.body).findAll('[data-host-id]').map((item) => item.attributes('data-host-id'))).toEqual([
         'remote-2',
         'local',
         'remote-1',
@@ -340,10 +340,10 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      const hostItem = new DOMWrapper(document.body).get('[data-file-host-id="debian"]')
-      expect(hostItem.get('.file-host-switcher__os').attributes('style')).toContain('--os-accent: #A81D33')
-      expect(hostItem.find('.file-host-switcher__os svg').exists()).toBe(true)
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      const hostItem = new DOMWrapper(document.body).get('[data-host-id="debian"]')
+      expect(hostItem.get('.host-switcher__os').attributes('style')).toContain('--os-accent: #A81D33')
+      expect(hostItem.find('.host-switcher__os svg').exists()).toBe(true)
     } finally {
       wrapper.unmount()
     }
@@ -373,25 +373,25 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      const trigger = wrapper.get('.file-host-switcher__trigger')
+      const trigger = wrapper.get('.host-switcher__trigger')
       expect(trigger.text()).toContain('当前主机')
       expect(trigger.text()).toContain('本机')
       expect(wrapper.get('.breadcrumbs').text()).toContain('根目录')
 
       await trigger.trigger('click')
-      expect(new DOMWrapper(document.body).get('.file-host-switcher__menu').text()).toContain('edge-01')
-      expect(new DOMWrapper(document.body).get('[data-file-host-id="local"]').attributes('aria-pressed')).toBe('true')
+      expect(new DOMWrapper(document.body).get('.host-switcher__menu').text()).toContain('edge-01')
+      expect(new DOMWrapper(document.body).get('[data-host-id="local"]').attributes('aria-pressed')).toBe('true')
 
-      await new DOMWrapper(document.body).get('[data-file-host-id="edge"]').trigger('click')
+      await new DOMWrapper(document.body).get('[data-host-id="edge"]').trigger('click')
       expect(openSpy).toHaveBeenCalledWith('https://edge.example.com/files', '_blank', 'noopener,noreferrer')
-      expect(new DOMWrapper(document.body).find('.file-host-switcher__menu').exists()).toBe(false)
+      expect(new DOMWrapper(document.body).find('.host-switcher__menu').exists()).toBe(false)
 
       await trigger.trigger('click')
       const triggerElement = trigger.element as HTMLButtonElement
       triggerElement.focus()
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await nextTick()
-      expect(new DOMWrapper(document.body).find('.file-host-switcher__menu').exists()).toBe(false)
+      expect(new DOMWrapper(document.body).find('.host-switcher__menu').exists()).toBe(false)
       expect(document.activeElement).toBe(triggerElement)
     } finally {
       wrapper.unmount()
@@ -425,9 +425,9 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(new DOMWrapper(document.body).get('[data-file-host-id="edge"]').text()).toContain('文件管理已就绪')
-      await new DOMWrapper(document.body).get('[data-file-host-id="edge"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect(new DOMWrapper(document.body).get('[data-host-id="edge"]').text()).toContain('文件管理已就绪')
+      await new DOMWrapper(document.body).get('[data-host-id="edge"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'edge')
     } finally {
@@ -464,9 +464,9 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(new DOMWrapper(document.body).get('[data-file-host-id="legacy"]').text()).toContain('文件管理已就绪')
-      await new DOMWrapper(document.body).get('[data-file-host-id="legacy"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect(new DOMWrapper(document.body).get('[data-host-id="legacy"]').text()).toContain('文件管理已就绪')
+      await new DOMWrapper(document.body).get('[data-host-id="legacy"]').trigger('click')
       expect(openSpy).not.toHaveBeenCalled()
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'legacy')
     } finally {
@@ -503,8 +503,8 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      await new DOMWrapper(document.body).get('[data-file-host-id="secure"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      await new DOMWrapper(document.body).get('[data-host-id="secure"]').trigger('click')
       expect(openSpy).toHaveBeenCalledWith(
         'https://edge.example.com:8443/panel-secure1/files',
         '_blank',
@@ -546,8 +546,8 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      await new DOMWrapper(document.body).get('[data-file-host-id="http"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      await new DOMWrapper(document.body).get('[data-host-id="http"]').trigger('click')
       expect(confirmSpy).toHaveBeenCalledWith(expect.stringMatching(/HTTP|Session/))
       expect(openSpy).toHaveBeenCalledWith(
         'http://edge.example.com:8080/panel-secure1/files',
@@ -591,8 +591,8 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      await new DOMWrapper(document.body).get('[data-file-host-id="http"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      await new DOMWrapper(document.body).get('[data-host-id="http"]').trigger('click')
       expect(confirmSpy).toHaveBeenCalledOnce()
       expect(openSpy).not.toHaveBeenCalled()
     } finally {
@@ -630,9 +630,9 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(new DOMWrapper(document.body).get('[data-file-host-id="pending"]').text()).toContain('打开远端文件管理')
-      await new DOMWrapper(document.body).get('[data-file-host-id="pending"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect(new DOMWrapper(document.body).get('[data-host-id="pending"]').text()).toContain('打开远端文件管理')
+      await new DOMWrapper(document.body).get('[data-host-id="pending"]').trigger('click')
       expect(openSpy).toHaveBeenCalledWith('https://edge.example.com/files', '_blank', 'noopener,noreferrer')
       expect(mocks.push).not.toHaveBeenCalled()
     } finally {
@@ -673,9 +673,9 @@ describe('FilesView host switcher', () => {
 
     try {
       await flushPromises()
-      await wrapper.get('.file-host-switcher__trigger').trigger('click')
-      expect(new DOMWrapper(document.body).get('[data-file-host-id="light"]').text()).toContain('文件管理已就绪')
-      await new DOMWrapper(document.body).get('[data-file-host-id="light"]').trigger('click')
+      await wrapper.get('.host-switcher__trigger').trigger('click')
+      expect(new DOMWrapper(document.body).get('[data-host-id="light"]').text()).toContain('文件管理已就绪')
+      await new DOMWrapper(document.body).get('[data-host-id="light"]').trigger('click')
       expect(mocks.push).not.toHaveBeenCalledWith({ name: 'cluster' })
       expect(mocks.list).toHaveBeenCalledWith('/', { offset: 0, search: undefined }, expect.any(AbortSignal), 'light')
     } finally {
