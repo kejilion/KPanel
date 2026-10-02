@@ -614,6 +614,18 @@ requireText('.codex-workflows/maintain-kpanel-dependencies.workflow.yaml', [
   '7/14/30 天',
   '30/90/90 天',
   '完成处置是采用、以证据拒绝，或建立有期限例外',
+  '第 4.7.4 节', '收益类别', '业务旅程', '副作用', '安全/EOL 检测',
+]);
+for (const path of ['PROJECT_RULES.md', 'docs/project-management.md']) {
+  requireText(path, ['development-quality-standard.md#474-业务基座与采用证据']);
+}
+requireText('docs/development-quality-standard.md', [
+  '#### 4.7.4 业务基座与采用证据',
+  '| Go 编译器、runtime、标准库', '| Vue / Vue Router', '| xterm.js', '| CodeMirror',
+  '| SQLite / `modernc.org/sqlite`', '| MinIO S3 SDK', '| WebSocket / 网络库',
+  '| WebAuthn、`x/crypto`、DOMPurify', '| 受管 `kejilion.sh`', '| Node / TypeScript / Vite',
+  '**采用记录：**', '**性能与资源证据：**', '微基准不能外推端到端收益',
+  '不因“没有提速”拒绝必要的安全、可靠性、兼容或 EOL 维护',
 ]);
 requireText('.github/workflows/ci.yml', [
   'actions: read',

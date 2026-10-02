@@ -1,12 +1,12 @@
 ---
 name: maintain-kpanel-dependencies
 description: "发现 KPanel 全技术栈的稳定依赖候选，按风险形成最小升级任务并在现有授权边界内完成验收"
-version: "1.1"
+version: "1.2"
 author: "Codex"
 tags: [kpanel, dependencies, supply-chain, maintenance, multi-agent, security]
 params: [project_dir, baseline_ref, dependency_scope, observation_window]
 created: "2026-08-11T16:35:57Z"
-updated: "2026-08-24T10:10:00Z"
+updated: "2026-10-02T00:32:57Z"
 ---
 
 # Maintain Kpanel Dependencies
@@ -43,8 +43,11 @@ node scripts/report-dependency-freshness.mjs --format markdown
 ### 2. 对候选做采用分类
 
 按 `dependency-policy.json` 区分紧急安全、兼容补丁、次版本、主版本/工具链/基础组件和预发布版本。
-补充漏洞可达性、维护/EOL、行为变化、许可证、资源预算、KPanel 双端契约以及回滚难度。没有产品或维护
-收益的候选可以拒绝；拒绝与暂缓必须写明证据。先分开处理：
+补充漏洞可达性、维护/EOL、行为变化、许可证、资源预算、KPanel 双端契约以及回滚难度。按
+`docs/development-quality-standard.md` 第 4.7.4 节识别真实使用层、受影响业务旅程与收益类别，在现有任务
+契约记录对应命令、基线、环境和通过/回退条件；只选择受影响的组件验收项。安全、可靠性、兼容及持续
+维护可以独立构成采用理由，不要求每次都提速；开发效率不能冒充运行时收益。没有产品或维护收益的
+候选可以拒绝；拒绝与暂缓必须写明证据。先分开处理：
 
 - 直接依赖与 Go/Node、基础镜像、frontend、Action、扫描器、受管脚本是行动项；
 - 传递依赖跨父范围的 `latest` 是归属信号，通过拥有它的直接依赖、锁文件兼容刷新或可达安全路径处置，
@@ -77,7 +80,8 @@ node scripts/report-dependency-freshness.mjs --validate-only
 回滚边界内合批；Minor 只合并同一兼容域；Major/工具链/基座一次只处理一个兼容域，必要适配器可以同行。
 这些升级不得与无关业务功能混合，也不得使用浮动 `latest` 代替固定版本、SHA 或 digest。
 
-**Expected output:** 差异范围聚焦，锁文件可重建，旧版本和回滚点明确，未获得授权时不提交或推送。
+**Expected output:** 差异范围聚焦，锁文件可重建，旧版本和回滚点明确；修改授权包含聚焦本地候选提交，
+不自动授权推送、更新主线或发布。
 
 ### 5. 按风险执行验收
 
@@ -87,14 +91,19 @@ make verify-change
 ```
 
 兼容补丁按实际影响执行 L1/L2；次版本至少 L2；主版本、工具链、基础镜像、扫描器、受管脚本及发布链变化
-执行 L2 或 L3，并比较构建、测试、镜像、安全、启动、内存和受影响用户旅程。验证完成后再次运行新鲜度报告，
+执行 L2 或 L3，并比较构建、测试、镜像、安全、启动、内存和受影响用户旅程。依第 4.7.4 节验证业务收益
+与资源副作用：性能声明绑定同环境 A/B 原始样本和完整受影响链路；安全/维护类补充公告、调用、兼容
+或失败恢复证据，不等待无关性能研究。不具备的真实浏览器、主机或目标架构证据必须标未验证。
+验证完成后再次运行新鲜度报告，
 确认行动项和传递依赖归属信号的变化来自真实依赖图而非检测遗漏。
 
 **Expected output:** 精确提交/差异、检测源、命令结果、性能资源差异、兼容结论和未验证层级可复核。
 
 ### 6. 交付采用决策并观察
 
-使用 `docs/project-management.md` 标准交付包记录采用/暂缓/拒绝、回滚方式和权限状态。只有对应等级门禁通过且
+使用 `docs/project-management.md` 标准交付包记录采用/暂缓/拒绝、回滚方式和权限状态，并附实际使用层、
+业务旅程、收益类别、预期/实测差异、副作用及未验证边界。归档实验不停止组件的安全/EOL 检测，也不
+自动重新激活旧分支。只有对应等级门禁通过且
 用户明确授权时才推送任务分支或快进主线；发布与生产仍进入既有 L3 单写者流程。采用后在
 `${{observation_window}}` 内观察 CI/生产失败、资源回退和回滚，恶化时回退升级而不是降低门禁。
 
