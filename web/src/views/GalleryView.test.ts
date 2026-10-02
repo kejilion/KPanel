@@ -117,6 +117,22 @@ describe('GalleryView host switcher', () => {
     return [...document.body.querySelectorAll<HTMLButtonElement>('[data-host-id]')]
   }
 
+  it('removes the previous host snapshot while the next host loads or fails', async () => {
+    const view = await mountWithHosts()
+    expect(view.findAll('.gallery-tile')).toHaveLength(4)
+    let fail: (error: Error) => void = () => undefined
+    harness.list.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject }))
+    await router.push('/gallery?hostId=edge-1')
+    await flushPromises()
+    expect(view.findAll('.gallery-tile')).toHaveLength(0)
+    expect(view.findAll('.album-card')).toHaveLength(0)
+    expect(view.get('.gallery-hero__actions .button--primary').attributes('disabled')).toBeDefined()
+    fail(new ApiError('remote unavailable', 503, 'unavailable'))
+    await flushPromises()
+    expect(view.text()).toContain('图库读取失败')
+    expect(view.findAll('.gallery-tile')).toHaveLength(0)
+  })
+
   it('reuses the file manager host picker and lists every host with its status', async () => {
     const view = await mountWithHosts()
     expect(view.get('.host-switcher__trigger').text()).toContain('本机')
@@ -198,6 +214,35 @@ describe('GalleryView on a remote host', () => {
 })
 
 describe('GalleryView', () => {
+  it('keeps the last snapshot and reports a failed refresh with a retry', async () => {
+    const view = await mountGallery()
+    harness.list.mockRejectedValueOnce(new ApiError('refresh unavailable', 503, 'unavailable'))
+    await view.get('.gallery-hero__more > button').trigger('click')
+    await view.findAll('.gallery-menu button').find((button) => button.text().includes('刷新'))!.trigger('click')
+    await flushPromises()
+    expect(view.findAll('.gallery-tile')).toHaveLength(4)
+    expect(view.get('.gallery-notice[role="alert"]').text()).toContain('refresh unavailable')
+    await view.get('.gallery-notice[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(view.find('.gallery-notice[role="alert"]').exists()).toBe(false)
+  })
+
+  it('does not start queued uploads after the gallery is closed', async () => {
+    const view = await mountGallery()
+    harness.upload.mockImplementation((_target, _file, _overwrite, _progress, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
+    }))
+    const input = view.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: ['one', 'two', 'three'].map((name) => new File(['x'], `${name}.jpg`, { type: 'image/jpeg' })), configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+    expect(harness.upload).toHaveBeenCalledTimes(2)
+    view.unmount()
+    wrapper = undefined
+    await flushPromises()
+    expect(harness.upload).toHaveBeenCalledTimes(2)
+  })
+
   it('shows the library with albums, a month timeline and media counts', async () => {
     const view = await mountGallery()
     expect(view.get('.gallery-hero__title').text()).toBe('图库')

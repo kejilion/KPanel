@@ -11,6 +11,16 @@ import {
 afterEach(() => resetGalleryPostersForTest())
 
 describe('gallery poster cache', () => {
+  it('isolates the same path and version on two hosts', () => {
+    const entry = { path: '/home/gallery/a.mp4', resourceVersion: 'sha256:1' }
+    const local = galleryPosterKey(entry, '/api/v1/files/content?path=a.mp4')
+    const remote = galleryPosterKey(entry, '/api/v1/files/content?path=a.mp4&hostId=edge-1')
+    storeGalleryPoster(local, { poster: 'local-frame', duration: 7 })
+    expect(readGalleryPoster(remote)).toBeUndefined()
+    storeGalleryPoster(remote, { poster: 'remote-frame', duration: 9 })
+    expect(readGalleryPoster(local)).toEqual({ poster: 'local-frame', duration: 7 })
+  })
+
   it('keys by version so a replaced file captures a new frame', () => {
     const first = galleryPosterKey({ path: '/home/gallery/a.mp4', resourceVersion: 'sha256:1' })
     const second = galleryPosterKey({ path: '/home/gallery/a.mp4', resourceVersion: 'sha256:2' })
