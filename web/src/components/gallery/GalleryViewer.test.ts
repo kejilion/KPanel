@@ -87,6 +87,20 @@ describe('GalleryViewer controls', () => {
     expect(view.get('button[aria-label="显示缩略图条"]').attributes('aria-pressed')).toBe('false')
   })
 
+  it('centres the current thumbnail by scrolling the strip only, never its ancestors', async () => {
+    const intoView = vi.fn()
+    const scrollTo = vi.fn()
+    Element.prototype.scrollIntoView = intoView
+    Element.prototype.scrollTo = scrollTo as unknown as typeof Element.prototype.scrollTo
+    const view = mountViewer({ items: Array.from({ length: 30 }, (_, index) => item(`p${index}.jpg`)), index: 0 })
+    await view.setProps({ index: 25 })
+    await view.vm.$nextTick()
+    // scrollIntoView would also scroll the overflow-hidden viewer sideways.
+    expect(intoView).not.toHaveBeenCalled()
+    expect(scrollTo).toHaveBeenCalled()
+    expect(view.element.scrollLeft).toBe(0)
+  })
+
   it('has no strip toggle for a single photo', () => {
     const view = mountViewer({ items: [item('only.jpg')], index: 0 })
     expect(view.find('button[aria-label="隐藏缩略图条"]').exists()).toBe(false)

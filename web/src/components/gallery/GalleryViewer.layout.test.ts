@@ -21,6 +21,12 @@ describe('GalleryViewer layout contract', () => {
     expect(media).toMatch(/object-fit:\s*contain;/)
   })
 
+  it('clips instead of hiding the viewer so nothing can scroll it sideways', () => {
+    // overflow: hidden still accepts programmatic scrolling (scrollIntoView, focus),
+    // which once dragged the photo, bar and strip to the left.
+    expect(rule('.gallery-viewer')).toMatch(/overflow:\s*clip;/)
+  })
+
   it('lets the loading preview occupy the same box as the original', () => {
     const preview = rule('.gallery-viewer__media--preview')
     expect(preview).toMatch(/width:\s*calc\(100% - 48px\);/)

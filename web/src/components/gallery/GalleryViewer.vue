@@ -290,9 +290,18 @@ function preloadNeighbours(): void {
   }
 }
 
+/**
+ * Centre the current thumbnail by scrolling the strip alone. scrollIntoView
+ * also scrolls every ancestor, and an overflow-hidden ancestor still accepts
+ * that, which dragged the whole viewer sideways.
+ */
 function scrollStripToCurrent(): void {
-  const current = strip.value?.querySelector<HTMLElement>('[aria-current="true"]')
-  if (typeof current?.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+  const list = strip.value
+  const current = list?.querySelector<HTMLElement>('[aria-current="true"]')
+  if (!list || !current) return
+  const left = current.offsetLeft - (list.clientWidth - current.offsetWidth) / 2
+  if (typeof list.scrollTo === 'function') list.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
+  else list.scrollLeft = Math.max(0, left)
 }
 
 async function toggleFullscreen(): Promise<void> {
@@ -596,6 +605,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
+  /* clip, unlike hidden, cannot be scrolled by scrollIntoView or focus. */
+  overflow: clip;
   color: var(--viewer-text);
   background: var(--viewer-bg);
   isolation: isolate;
