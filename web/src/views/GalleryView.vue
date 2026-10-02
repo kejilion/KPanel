@@ -306,7 +306,7 @@ function viewerSources(item: GalleryItem): GalleryViewerSources {
   const tile = galleryTileSource(item)
   let preview: string | undefined
   if (tile.type === 'thumbnail') preview = api.thumbnailUrl(item.entry.path, item.entry.resourceVersion)
-  else if (item.kind === 'video') preview = readGalleryPoster(galleryPosterKey(item.entry))?.poster
+  else if (item.kind === 'video') preview = readGalleryPoster(galleryPosterKey(item.entry, api.contentUrl(item.entry.path, 'inline')))?.poster
   return {
     preview,
     original: api.contentUrl(item.entry.path, 'inline'),
@@ -361,6 +361,7 @@ async function load(options: { quiet?: boolean } = {}): Promise<void> {
 }
 
 function scheduleReload(): void {
+  if (unmounted) return
   window.clearTimeout(reloadTimer)
   reloadTimer = window.setTimeout(() => {
     reloadTimer = undefined
@@ -424,7 +425,12 @@ function onHostSelected(host: ClusterHost): void {
   void router.push({ name: 'gallery', query: host.isLocal ? {} : { hostId: host.id } })
 }
 
-watch([currentPath, hostId], () => {
+watch([currentPath, hostId], ([, nextHost], [, previousHost]) => {
+  if (nextHost !== previousHost) snapshot.value = undefined
+  albumDialog.value = undefined
+  deleteDialog.value = undefined
+  albumMenu.value = undefined
+  moreMenuOpen.value = false
   viewerPath.value = undefined
   clearSelection()
   renderLimit.value = RENDER_STEP
@@ -547,6 +553,7 @@ function updateTask(id: number, patch: Partial<UploadTask>): void {
 }
 
 function pumpUploads(): void {
+  if (unmounted) return
   while (uploadWorkers < UPLOAD_CONCURRENCY) {
     const task = uploads.value.find((candidate) => candidate.phase === 'queued')
     if (!task) break
@@ -592,6 +599,7 @@ async function runUpload(task: UploadTask): Promise<void> {
 }
 
 function finishUploadBatch(): void {
+  if (unmounted) return
   const targetsByHost = new Map<string, Set<string>>()
   for (const task of uploads.value) {
     if (task.phase !== 'done') continue
@@ -997,6 +1005,11 @@ onBeforeUnmount(() => {
       <div v-if="snapshot?.failedAlbums" class="gallery-notice gallery-notice--warning" role="status">
         <CircleAlert :size="17" aria-hidden="true" />
         <span>{{ snapshot.failedAlbums }} 个相册暂时无法读取，已跳过。</span>
+        <button type="button" class="gallery-notice__action" @click="load()">重试</button>
+      </div>
+      <div v-if="loadError && snapshot" class="gallery-notice gallery-notice--warning" role="alert">
+        <CircleAlert :size="17" aria-hidden="true" />
+        <span>{{ phrase('图库读取失败') }}：{{ loadError }}</span>
         <button type="button" class="gallery-notice__action" @click="load()">重试</button>
       </div>
 

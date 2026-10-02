@@ -17,8 +17,9 @@ const MAX_POSTERS = 240
 const POSTER_EDGE = 640
 const posters = reactive(new Map<string, GalleryPoster>())
 
-export function galleryPosterKey(entry: Pick<FileEntry, 'path' | 'resourceVersion'>): string {
-  return `${entry.resourceVersion}\u0000${entry.path}`
+export function galleryPosterKey(entry: Pick<FileEntry, 'path' | 'resourceVersion'>, sourceURL = ''): string {
+  // The content URL carries the file relay host; path/version can match on two hosts.
+  return `${sourceURL}\u0000${entry.resourceVersion}\u0000${entry.path}`
 }
 
 export function readGalleryPoster(key: string): GalleryPoster | undefined {

@@ -35,7 +35,7 @@ const loaded = ref(false)
 const near = ref(false)
 const previewing = ref(false)
 const videoReady = ref(false)
-const posterKey = computed(() => galleryPosterKey(props.item.entry))
+const posterKey = computed(() => galleryPosterKey(props.item.entry, props.videoUrl))
 let observer: IntersectionObserver | undefined
 let hoverTimer: number | undefined
 
