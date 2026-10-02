@@ -381,17 +381,32 @@ func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
 	return chunk, nil
 }
 
+// InputOpen reports whether the job still takes terminal input. WriteInput
+// applies the same rule before every write.
+func (s *Service) InputOpen(id string) error {
+	if !jobIDPattern.MatchString(id) {
+		return ErrNotFound
+	}
+	s.mu.Lock()
+	item, err := s.readLocked(id)
+	s.mu.Unlock()
+	if err != nil {
+		return ErrNotFound
+	}
+	if !item.Interactive || !item.InputOpen ||
+		(item.Status != "queued" && item.Status != "running") {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Service) WriteInput(id, value string) error {
 	data := []byte(value)
 	if !jobIDPattern.MatchString(id) || len(data) == 0 || len(data) > maxTerminalInput ||
 		strings.IndexByte(value, 0) >= 0 {
 		return ErrInvalidInput
 	}
-	s.mu.Lock()
-	item, err := s.readLocked(id)
-	s.mu.Unlock()
-	if err != nil || !item.Interactive || !item.InputOpen ||
-		(item.Status != "queued" && item.Status != "running") {
+	if s.InputOpen(id) != nil {
 		return ErrConflict
 	}
 	if err := hostpty.WriteInput(s.inputPath(id), data); err != nil {

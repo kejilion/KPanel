@@ -94,9 +94,10 @@ func (r *jobInputRegistry) claimed(kind, id string) bool {
 
 // Server.jobInputBackends, when set, replaces these adapters; only tests do.
 //
-// jobInput adapts one task service. probe is side-effect free and only says
-// whether the task still accepts input; write is the service's own validated
-// WriteInput. The error values name the service's classes for those failures.
+// jobInput adapts one task service. probe is the service's side-effect-free
+// rule for "still takes input", the one its own write applies; write is its
+// validated WriteInput. Both report failures in the service's own error
+// classes, which the three error values name.
 type jobInput struct {
 	probe    func(id string) error
 	write    func(id string, data string) error
@@ -109,25 +110,13 @@ func (s *Server) jobInputFor(kind string) (jobInput, bool) {
 	if backend, ok := s.jobInputBackends[kind]; ok {
 		return backend, true
 	}
-	accepting := func(status string, inputOpen bool) error {
-		if !inputOpen || (status != "queued" && status != "running") {
-			return terminal.ErrClosed
-		}
-		return nil
-	}
 	switch kind {
 	case "app":
 		if s.appMarket == nil {
 			return jobInput{}, false
 		}
 		return jobInput{
-			probe: func(id string) error {
-				job, err := s.appMarket.AppJob(id)
-				if err != nil {
-					return terminal.ErrNotFound
-				}
-				return accepting(job.Status, job.Interactive && job.InputOpen)
-			},
+			probe:    s.appMarket.AppJobInputOpen,
 			write:    s.appMarket.WriteAppJobInput,
 			invalid:  appmarket.ErrForbidden,
 			missing:  appmarket.ErrNotFound,
@@ -138,13 +127,7 @@ func (s *Server) jobInputFor(kind string) (jobInput, bool) {
 			return jobInput{}, false
 		}
 		return jobInput{
-			probe: func(id string) error {
-				job, err := s.sitesManager.RecipeJob(id)
-				if err != nil {
-					return terminal.ErrNotFound
-				}
-				return accepting(job.Status, job.Interactive && job.InputOpen)
-			},
+			probe:    s.sitesManager.InstallationInputOpen,
 			write:    s.sitesManager.WriteInstallationInput,
 			invalid:  sites.ErrInvalidInput,
 			conflict: sites.ErrConflict,
@@ -154,13 +137,7 @@ func (s *Server) jobInputFor(kind string) (jobInput, bool) {
 			return jobInput{}, false
 		}
 		return jobInput{
-			probe: func(id string) error {
-				job, err := s.diagnostics.Job(id)
-				if err != nil {
-					return terminal.ErrNotFound
-				}
-				return accepting(job.Status, job.Interactive && job.InputOpen)
-			},
+			probe:    s.diagnostics.InputOpen,
 			write:    s.diagnostics.WriteInput,
 			invalid:  diagnostics.ErrInvalidInput,
 			missing:  diagnostics.ErrNotFound,
@@ -171,13 +148,7 @@ func (s *Server) jobInputFor(kind string) (jobInput, bool) {
 			return jobInput{}, false
 		}
 		return jobInput{
-			probe: func(id string) error {
-				job, err := s.webEnvironment.Job(id)
-				if err != nil {
-					return terminal.ErrNotFound
-				}
-				return accepting(job.Status, true)
-			},
+			probe:    s.webEnvironment.InputOpen,
 			write:    s.webEnvironment.WriteInput,
 			invalid:  webenv.ErrInvalid,
 			missing:  webenv.ErrNotFound,
@@ -260,7 +231,7 @@ func (s *Server) jobTerminalSequencedInput(w http.ResponseWriter, r *http.Reques
 	)
 	if frame.Seq == 0 {
 		// Prove the task is open before any state exists for this id.
-		if err = backend.probe(id); err == nil {
+		if err = backend.classify(backend.probe(id)); err == nil {
 			sequencer, err = s.jobInputs.claim(key, now)
 		}
 	} else if found, exists := s.jobInputs.lookup(key, now); exists {

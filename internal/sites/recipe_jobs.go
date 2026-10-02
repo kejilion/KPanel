@@ -971,13 +971,11 @@ func (m *Manager) InstallationTerminal(id string, offset int64) (SiteTerminalChu
 	return chunk, nil
 }
 
-func (m *Manager) WriteInstallationInput(id, value string) error {
+// InstallationInputOpen reports whether the installation still takes terminal
+// input. WriteInstallationInput applies the same rule before every write.
+func (m *Manager) InstallationInputOpen(id string) error {
 	if m.recipeJobs == nil || !recipeJobIDPattern.MatchString(id) {
 		return ErrConflict
-	}
-	data := []byte(value)
-	if len(data) == 0 || len(data) > maxRecipeTerminalInput || bytes.IndexByte(data, 0) >= 0 {
-		return fmt.Errorf("%w: interactive website input is invalid", ErrInvalidInput)
 	}
 	job, err := m.recipeJobs.read(id)
 	if err != nil {
@@ -986,6 +984,20 @@ func (m *Manager) WriteInstallationInput(id, value string) error {
 	if !job.Interactive || !job.InputOpen ||
 		(job.Status != "queued" && job.Status != "running") {
 		return fmt.Errorf("%w: interactive website input is not open", ErrConflict)
+	}
+	return nil
+}
+
+func (m *Manager) WriteInstallationInput(id, value string) error {
+	if m.recipeJobs == nil || !recipeJobIDPattern.MatchString(id) {
+		return ErrConflict
+	}
+	data := []byte(value)
+	if len(data) == 0 || len(data) > maxRecipeTerminalInput || bytes.IndexByte(data, 0) >= 0 {
+		return fmt.Errorf("%w: interactive website input is invalid", ErrInvalidInput)
+	}
+	if err := m.InstallationInputOpen(id); err != nil {
+		return err
 	}
 	if err := hostpty.WriteInput(m.recipeJobs.inputPath(id), data); err != nil {
 		return fmt.Errorf("%w: interactive website input is unavailable: %w", ErrConflict, err)
