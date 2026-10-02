@@ -177,6 +177,7 @@ export const zhCNMessages = {
   'route.environment': '网站 · 环境管理',
   'route.apps': '应用市场',
   'route.files': '文件',
+  'route.gallery': '图库',
   'route.terminal': '终端',
   'route.diagnostics': '体检',
   'route.docker': 'Docker',

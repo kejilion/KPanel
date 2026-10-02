@@ -1305,7 +1305,7 @@ describe('FilesView large icon layout', () => {
     expect(batchToolbar).not.toContain('openFileShare')
     expect(source).toContain('<FileShareDialog v-if="shareEntry" :entry="shareEntry" @close="closeFileShare" />')
     expect(source).toContain('<FileShareManagerDialog v-if="shareManagerOpen" @close="closeShareManager" />')
-    expect(source).toContain('<Share2 :size="15" /> 分享管理')
+    expect(source).toContain('<Share2 :size="15" /> <span class="file-command-bar__label">分享管理</span>')
     expect(contextMenu.indexOf('addEntriesToDesktop(contextMenu.entry)')).toBeGreaterThan(
       contextMenu.indexOf("openDialog('chmod', contextMenu.entry)"),
     )

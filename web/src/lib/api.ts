@@ -2109,12 +2109,12 @@ export const api = {
       }),
     list: (
       path = '/',
-      options?: { offset?: number; search?: string },
+      options?: { offset?: number; search?: string; limit?: number },
       signal?: AbortSignal,
       fileHostId?: string | null,
     ): Promise<FileDirectory> =>
       request<FileDirectory>('/files', {
-        query: { path, limit: 100, offset: options?.offset, search: options?.search },
+        query: { path, limit: options?.limit ?? 100, offset: options?.offset, search: options?.search },
         signal,
         fileHostId,
       }),

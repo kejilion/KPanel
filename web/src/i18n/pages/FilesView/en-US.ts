@@ -291,4 +291,6 @@ export default [
   ["关闭此栏", "Close this pane"],
   ["并排打开第二文件栏，可在两个目录或主机之间拖动文件", "Open a second file pane side by side to drag files between two folders or hosts"],
   ["关闭此栏，保留另一栏", "Close this pane and keep the other one"],
+  ["以图库方式浏览当前文件夹中的照片和视频", "Browse the photos and videos in this folder as a gallery"],
+  ["图库", "Gallery"],
 ] as const satisfies PhraseCatalog

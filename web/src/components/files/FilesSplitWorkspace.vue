@@ -249,6 +249,32 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
+/*
+ * Two panes cannot fit nine labelled buttons: they wrapped into three rows.
+ * Beside each other the secondary actions shrink to icon squares that keep
+ * their tooltip and accessible name; only the primary upload keeps its text.
+ */
+.files-workspace--split .files-pane--split .file-command-bar__actions {
+  flex-wrap: nowrap;
+}
+
+.files-workspace--split .files-pane--split .file-command-bar__actions .button:not(.button--primary) {
+  width: 40px;
+  min-width: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+.files-workspace--split .files-pane--split .file-command-bar__actions .button:not(.button--primary) .file-command-bar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Each pane owns its batch bar instead of two bars stacking at page bottom. */
 .files-workspace--split .files-pane--split .batch-bar {
   position: sticky;

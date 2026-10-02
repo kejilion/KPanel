@@ -42,6 +42,7 @@ describe('desktop app catalogue', () => {
         '/apps',
         '/docker',
         '/files',
+        '/gallery',
         '/terminal',
         '/diagnostics',
         '/cluster',
@@ -49,7 +50,7 @@ describe('desktop app catalogue', () => {
         '/settings',
       ]),
     )
-    expect(desktopApps).toHaveLength(14)
+    expect(desktopApps).toHaveLength(15)
   })
 
   it('gives every app a distinct gradient', () => {

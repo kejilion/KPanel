@@ -5,6 +5,7 @@ import { mockEditorFiles, handleMockEditor } from './mock-file-editor.mjs'
 import { mockShareThemes, activeShareTheme } from './mock-share-themes.mjs'
 import { mockScenePacks } from './mock-scene-packs.mjs'
 import { mockDesktopWallpapers } from './mock-desktop-wallpapers.mjs'
+import { mockGallery, mockGalleryRootEntries } from './mock-gallery.mjs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,6 +45,15 @@ let mockAutomaticUpdate = {
   candidateImageDigest: '',
   resourceVersion: mockRevision(501),
 }
+let mockAppearanceRevision = 700
+let mockAppearance = {
+  configured: false,
+  resourceVersion: mockRevision(mockAppearanceRevision),
+  theme: 'system',
+  colors: null,
+  wallpaper: 'classic',
+  classicLevel: 'off',
+}
 let domainSiteDeleted = false
 let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
@@ -81,6 +91,7 @@ const mockFiles = [
     modifiedAt: '2026-08-21T12:10:00Z', resourceVersion: `sha256:${'b'.repeat(64)}`,
     editable: true, previewable: true,
   },
+  ...mockGalleryRootEntries,
   {
     name: 'backups', path: '/backups', kind: 'directory', sizeBytes: 4096,
     mode: 'drwxr-xr-x', owner: 'root', group: 'root', modifiedAt: '2026-08-19T03:20:00Z',
@@ -1495,6 +1506,20 @@ createServer(async (request, response) => {
   if (await mockShareThemes(request, response, url, send, readJSON)) return
   if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (await mockDesktopWallpapers(request, response, url, send)) return
+  if (await mockGallery(request, response, url, send, readJSON)) return
+  // Appearance sync reads this on every page; without it previews show a load failure toast.
+  if (url.pathname === '/api/v1/settings/appearance' && request.method === 'GET') {
+    send(response, 200, mockAppearance)
+    return
+  }
+  if (url.pathname === '/api/v1/settings/appearance' && request.method === 'PUT') {
+    const input = await readJSON(request)
+    const { expectedResourceVersion: _expected, ...changes } = input
+    mockAppearanceRevision += 1
+    mockAppearance = { ...mockAppearance, ...changes, configured: true, resourceVersion: mockRevision(mockAppearanceRevision) }
+    send(response, 200, mockAppearance)
+    return
+  }
   if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {
     send(response, 200, mockMonitoringCheckSnapshot())
     return

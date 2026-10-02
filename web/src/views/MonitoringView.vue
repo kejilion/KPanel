@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { phraseCatalogVersion, translatePhrase, usePhraseCatalog } from '@/i18n/phrase'
 
 usePhraseCatalog((locale) => locale === 'en-US'
   ? import('@/i18n/pages/MonitoringView/en-US').then((module) => module.default)
   : import('@/i18n/pages/MonitoringView/zh-TW').then((module) => module.default))
-import { ArrowLeft, Box, Check, ChevronDown, ChevronRight, CircleAlert, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search, Server, Settings2 } from '@lucide/vue'
+import { ArrowLeft, Box, Cpu, Database, HardDrive, MemoryStick, Network, RadioTower, RefreshCw, RotateCcw, Search, Settings2 } from '@lucide/vue'
+import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
-import OperatingSystemIcon from '@/components/overview/OperatingSystemIcon.vue'
 import EmptyState from '@/components/feedback/EmptyState.vue'
 import ErrorState from '@/components/feedback/ErrorState.vue'
 import LoadingState from '@/components/feedback/LoadingState.vue'
@@ -16,7 +16,7 @@ import TrendChart, { type TrendSeries } from '@/components/monitoring/TrendChart
 import MonitoringChecksDialog from '@/components/monitoring/MonitoringChecksDialog.vue'
 import { ApiError, api } from '@/lib/api'
 import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts, subscribeClusterHostOrder } from '@/lib/clusterHostOrder'
-import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
+import type { HostSwitcherStatus, HostSwitcherTone } from '@/lib/hostSwitcher'
 import type { ClusterHost } from '@/types/api'
 import { formatBytes, formatDateTime, formatPercent, formatRate } from '@/lib/format'
 import {
@@ -91,19 +91,15 @@ const orderedHosts = computed(() => {
   return sortClusterHosts(hosts.value, readClusterHostOrder())
 })
 const selectedHost = computed(() => hosts.value.find((host) => isRemoteHost.value ? host.id === selectedHostId.value : host.isLocal))
-const hostPickerOpen = ref(false)
-const hostSearch = ref('')
-const hostPickerRoot = ref<HTMLElement>()
-const hostPickerButton = ref<HTMLButtonElement>()
-const hostSearchInput = ref<HTMLInputElement>()
-const hostPickerId = `monitoring-hosts-${useId()}`
+const hostSwitcher = ref<InstanceType<typeof HostSwitcher>>()
 const activeHostLabel = computed(() => isRemoteHost.value
   ? selectedHost.value?.name || phrase('所选主机（未在列表中）') : phrase('本机'))
-const filteredHosts = computed(() => {
-  const search = hostSearch.value.trim().toLocaleLowerCase()
-  return orderedHosts.value.filter((host) => !search ||
-    `${host.name} ${host.origin || ''} ${host.lastSnapshot?.telemetry.hostname || ''} ${host.isLocal ? phrase('本机') : ''}`.toLocaleLowerCase().includes(search))
-})
+// Before the inventory arrives (or on a single panel) the picker still offers this panel.
+const localPlaceholder = { id: 'local', isLocal: true, name: '', kind: 'panel', state: 'online' } as unknown as ClusterHost
+const pickerHosts = computed(() => orderedHosts.value.length ? orderedHosts.value : [localPlaceholder])
+const pickerActiveId = computed(() => isRemoteHost.value
+  ? selectedHostId.value
+  : orderedHosts.value.find((host) => host.isLocal)?.id || 'local')
 const availableRanges = ranges
 let hostsController: AbortController | undefined
 let unsubscribeOrder: (() => void) | undefined
@@ -618,57 +614,23 @@ async function loadHosts(): Promise<void> {
 }
 
 function closeHostPicker(restoreFocus = false): void {
-  hostPickerOpen.value = false
-  if (restoreFocus) void nextTick(() => hostPickerButton.value?.focus())
+  hostSwitcher.value?.close?.(restoreFocus)
 }
 
-async function openHostPicker(focusSelection = false): Promise<void> {
-  hostSearch.value = ''
-  hostPickerOpen.value = true
-  await nextTick()
-  if (focusSelection) {
-    const option = hostPickerRoot.value?.querySelector<HTMLButtonElement>('.monitoring-host-option.is-active')
-      || hostPickerRoot.value?.querySelector<HTMLButtonElement>('.monitoring-host-option')
-    if (option) { option.focus(); return }
+function hostStatusTone(host: ClusterHost): HostSwitcherTone {
+  if (host.isLocal || host.state === 'online') return 'online'
+  if (host.state === 'degraded' || host.state === 'pairing' || host.state === 'revoking') return 'warning'
+  if (['offline', 'auth_failed', 'tls_error', 'incompatible', 'stale'].includes(host.state)) return 'offline'
+  return 'neutral'
+}
+
+function hostStatusOf(host: ClusterHost): HostSwitcherStatus {
+  const label = hostStatusLabel(host)
+  return {
+    action: 'select',
+    tone: hostStatusTone(host),
+    label: host.kind === 'light_node' ? `${label} · ${phrase('轻量节点')}` : label,
   }
-}
-
-function hostPickerKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && hostPickerOpen.value) {
-    event.preventDefault()
-    event.stopPropagation()
-    closeHostPicker(true)
-    return
-  }
-  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-  if (!hostPickerOpen.value) {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      void openHostPicker(true)
-    }
-    return
-  }
-  if (event.target === hostSearchInput.value && ['Home', 'End'].includes(event.key)) return
-  const options = Array.from(hostPickerRoot.value?.querySelectorAll<HTMLButtonElement>('.monitoring-host-option') || [])
-  if (!options.length) return
-  event.preventDefault()
-  const index = options.indexOf(document.activeElement as HTMLButtonElement)
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
-    : index < 0 ? (event.key === 'ArrowUp' ? options.length - 1 : 0)
-    : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length
-  options[next]?.focus()
-}
-
-function closeHostPickerOutside(event: PointerEvent): void {
-  if (hostPickerOpen.value && event.target instanceof Node && !hostPickerRoot.value?.contains(event.target)) closeHostPicker()
-}
-
-function hostPickerFocusout(event: FocusEvent): void {
-  if (event.relatedTarget instanceof Node && !hostPickerRoot.value?.contains(event.relatedTarget)) closeHostPicker()
-}
-
-function hostIsSelected(host: ClusterHost): boolean {
-  return host.isLocal ? !isRemoteHost.value : host.id === selectedHostId.value
 }
 
 function hostStatusLabel(host: ClusterHost): string {
@@ -907,13 +869,11 @@ watch(
 onMounted(() => {
   void loadHosts()
   unsubscribeOrder = subscribeClusterHostOrder(() => { orderRevision.value++ })
-  document.addEventListener('pointerdown', closeHostPickerOutside)
 })
 onBeforeUnmount(() => {
   controller?.abort()
   hostsController?.abort()
   unsubscribeOrder?.()
-  document.removeEventListener('pointerdown', closeHostPickerOutside)
 })
 </script>
 
@@ -922,56 +882,17 @@ onBeforeUnmount(() => {
     <PageHeader title="历史监控" description="选择主机，查看资源变化与历史趋势。" />
 
     <div class="monitoring-host-bar">
-      <div ref="hostPickerRoot" class="monitoring-host-picker" @keydown="hostPickerKeydown" @focusout="hostPickerFocusout">
-        <button
-          ref="hostPickerButton" class="monitoring-host-trigger" type="button"
-          aria-haspopup="dialog" :aria-controls="hostPickerId" :aria-expanded="hostPickerOpen"
-          :aria-label="phrase(`切换主机：${activeHostLabel}`)" :title="selectedHost?.name || activeHostLabel"
-          @click="hostPickerOpen ? closeHostPicker() : openHostPicker()"
-        >
-          <Server :size="15" aria-hidden="true" />
-          <span>{{ phrase('当前主机') }}</span><strong>{{ activeHostLabel }}</strong>
-          <ChevronDown :size="15" aria-hidden="true" />
-        </button>
-        <div v-if="hostPickerOpen" :id="hostPickerId" class="monitoring-host-menu" role="dialog" :aria-label="phrase('切换主机')">
-          <header class="monitoring-host-heading">
-            <strong>{{ phrase('切换主机') }}</strong>
-            <button class="icon-button" type="button" :title="phrase('刷新主机列表')" :aria-label="phrase('刷新主机列表')" :disabled="hostsLoading" @click="loadHosts">
-              <RefreshCw :size="15" :class="{ 'is-spinning': hostsLoading }" />
-            </button>
-          </header>
-          <label class="monitoring-host-search">
-            <Search :size="15" aria-hidden="true" />
-            <input ref="hostSearchInput" v-model="hostSearch" type="search" :placeholder="phrase('搜索主机')" :aria-label="phrase('搜索主机')" />
-          </label>
-          <div class="monitoring-host-list" :aria-busy="hostsLoading">
-            <div v-if="hostsLoading && !hosts.length" class="monitoring-host-message" role="status"><RefreshCw :size="16" class="is-spinning" />{{ phrase('正在读取主机列表…') }}</div>
-            <template v-else>
-              <button v-if="!hosts.length && !hostSearch" type="button" class="monitoring-host-option" :class="{ 'is-active': !isRemoteHost }" :aria-pressed="!isRemoteHost" data-monitoring-host-id="local" @click="changeHost('local')">
-                <Server :size="24" aria-hidden="true" /><span><strong>{{ phrase('本机') }}</strong><small>{{ phrase('当前面板') }}</small></span><Check v-if="!isRemoteHost" :size="16" aria-hidden="true" />
-              </button>
-              <button
-                v-for="host in filteredHosts" :key="host.id" type="button" class="monitoring-host-option"
-                :class="{ 'is-active': hostIsSelected(host) }" :aria-pressed="hostIsSelected(host)"
-                :data-monitoring-host-id="host.isLocal ? 'local' : host.id"
-                :title="`${host.name} · ${hostStatusLabel(host)}`" @click="changeHost(host.isLocal ? 'local' : host.id)"
-              >
-                <OperatingSystemIcon class="monitoring-host-os" :distro="detectOperatingSystemIdentity(host.lastSnapshot?.telemetry).key" :label="detectOperatingSystemIdentity(host.lastSnapshot?.telemetry).label" :show-tooltip="false" />
-                <span>
-                  <strong>{{ host.isLocal ? phrase('本机') : host.name }}</strong>
-                  <small :class="{ 'is-offline': !host.isLocal && !['online', 'degraded'].includes(host.state) }">
-                    <i :class="{ 'is-online': host.state === 'online', 'is-degraded': host.state === 'degraded' }" aria-hidden="true" />
-                    {{ hostStatusLabel(host) }}<template v-if="host.kind === 'light_node'"> · {{ phrase('轻量节点') }}</template>
-                  </small>
-                </span>
-                <Check v-if="hostIsSelected(host)" :size="16" aria-hidden="true" /><ChevronRight v-else :size="15" aria-hidden="true" />
-              </button>
-              <div v-if="!filteredHosts.length && hostSearch" class="monitoring-host-message" role="status">{{ phrase('没有匹配的主机') }}</div>
-            </template>
-          </div>
-          <button v-if="hostsError" type="button" class="monitoring-host-retry" @click="loadHosts"><CircleAlert :size="16" />{{ phrase('主机列表刷新失败，点击重试') }}</button>
-        </div>
-      </div>
+      <HostSwitcher
+        ref="hostSwitcher"
+        :hosts="pickerHosts"
+        :active-id="pickerActiveId"
+        :label="activeHostLabel"
+        :loading="hostsLoading"
+        :error="Boolean(hostsError)"
+        :status-of="hostStatusOf"
+        @refresh="loadHosts"
+        @select="changeHost($event.isLocal ? 'local' : $event.id)"
+      />
       <span v-if="isRemoteHost" class="monitoring-host-meta">
         {{ selectedHost?.kind === 'light_node' ? '轻量节点 · 含容器与服务检测' : '集群主机 · 含容器与服务检测' }}
         <span v-if="selectedHost && !['online', 'degraded'].includes(selectedHost.state)" class="monitoring-host-offline">· 当前未在线，连接恢复后可查询历史</span>
@@ -1345,35 +1266,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .monitoring-host-bar { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.monitoring-host-picker { min-width: 0; max-width: 100%; }
-.monitoring-host-trigger { display: inline-flex; max-width: 100%; min-height: 38px; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--surface); cursor: pointer; font: inherit; text-align: left; }
-.monitoring-host-trigger:hover, .monitoring-host-trigger[aria-expanded='true'] { border-color: color-mix(in srgb, var(--brand) 55%, var(--border)); color: var(--brand); }
-.monitoring-host-trigger > svg { flex: 0 0 auto; }
-.monitoring-host-trigger > span { color: var(--muted); font-size: 13px; white-space: nowrap; }
-.monitoring-host-trigger > strong { min-width: 0; max-width: 220px; overflow: hidden; color: var(--text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.monitoring-host-menu { position: absolute; z-index: 8; top: calc(100% + 6px); left: 0; width: min(340px, 100%); max-height: min(480px, 65vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border-strong, var(--border)); border-radius: var(--radius); background: var(--surface-raised, var(--surface)); box-shadow: var(--shadow-md); }
-.monitoring-host-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-.monitoring-host-search { display: flex; align-items: center; gap: 8px; margin: 10px 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--muted); background: var(--surface); }
-.monitoring-host-search > svg { flex-shrink: 0; }
-.monitoring-host-search input { width: 100%; min-width: 0; padding: 0; border: 0; outline: none; color: var(--text); background: transparent; font: inherit; font-size: 14px; }
-.monitoring-host-search:focus-within { outline: 2px solid var(--brand); outline-offset: 1px; }
-.monitoring-host-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.monitoring-host-option { display: grid; width: 100%; min-height: 58px; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: 9px; padding: 9px 12px; border: 0; color: var(--text); background: transparent; cursor: pointer; font: inherit; text-align: left; }
-.monitoring-host-option:hover { background: var(--interaction-hover); }
-.monitoring-host-option.is-active { color: var(--brand-strong, var(--brand)); background: color-mix(in srgb, var(--brand) 9%, var(--surface-raised, var(--surface))); }
-.monitoring-host-option :deep(.monitoring-host-os) { width: 28px; height: 28px; border-radius: var(--radius-sm); box-shadow: none; }
-.monitoring-host-option :deep(.monitoring-host-os svg) { width: 17px; height: 17px; }
-.monitoring-host-option > span { display: grid; min-width: 0; gap: 3px; }
-.monitoring-host-option strong { overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.45; }
-.monitoring-host-option small { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; color: var(--muted); font-size: 13px; line-height: 1.45; }
-.monitoring-host-option small i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted); }
-.monitoring-host-option small i.is-online { background: var(--brand); }
-.monitoring-host-option small i.is-degraded { background: var(--amber); }
-.monitoring-host-option small.is-offline { color: var(--text-soft); }
-.monitoring-host-option > svg:last-child { justify-self: end; }
-.monitoring-host-message { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.monitoring-host-retry { display: flex; flex-shrink: 0; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; border-top: 1px solid var(--border); color: var(--danger); background: transparent; cursor: pointer; font: inherit; font-size: 14px; text-align: left; }
-.monitoring-host-trigger:focus-visible, .monitoring-host-option:focus-visible, .monitoring-host-retry:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .monitoring-host-meta, .monitoring-source-note { font-size: 13px; line-height: 1.65; color: var(--text-secondary); }
 .monitoring-host-offline { color: var(--amber); }
 .monitoring-categories { display: flex; flex-wrap: wrap; gap: 8px; }

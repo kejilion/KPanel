@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { shallowMount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { DOMWrapper, shallowMount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MonitoringView from './MonitoringView.vue'
@@ -23,7 +23,7 @@ async function mountAt(query = '') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/monitoring', component: MonitoringView }] })
   await router.push(`/monitoring${query}`)
   await router.isReady()
-  wrapper = shallowMount(MonitoringView, { attachTo: document.body, global: { plugins: [router] } })
+  wrapper = shallowMount(MonitoringView, { attachTo: document.body, global: { plugins: [router], stubs: { HostSwitcher: false, teleport: false } } })
   await flushPromises()
   return { wrapper, router }
 }
@@ -37,9 +37,12 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; localStorage.clear(); vi.unstubAllGlobals(); delete (Element.prototype as Partial<Element>).scrollIntoView })
 
+/** The shared host picker teleports its list to <body>. */
+const body = () => new DOMWrapper(document.body)
+
 async function selectHost(view: VueWrapper, id: string) {
-  await view.get('.monitoring-host-trigger').trigger('click')
-  await view.get(`[data-monitoring-host-id="${id}"]`).trigger('click')
+  await view.get('.host-switcher__trigger').trigger('click')
+  await body().get(`[data-host-id="${id}"]`).trigger('click')
   await flushPromises()
 }
 
@@ -155,9 +158,9 @@ describe('monitoring host selection', () => {
     })
     const { wrapper } = await mountAt(`?hostId=${a}`)
 
-    await wrapper.get('.monitoring-host-trigger').trigger('click')
+    await wrapper.get('.host-switcher__trigger').trigger('click')
 
-    expect(wrapper.findAll('[data-monitoring-host-id]').map((item) => item.attributes('data-monitoring-host-id'))).toEqual([
+    expect(body().findAll('[data-host-id]').map((item) => item.attributes('data-host-id'))).toEqual([
       b,
       'local',
       a,
@@ -198,7 +201,7 @@ describe('monitoring host selection', () => {
     expect(wrapper.findAll('.range-button')).toHaveLength(8)
     expect(wrapper.text()).toContain('读写 I/O')
     router.back(); await flushPromises()
-    expect(wrapper.get('.monitoring-host-trigger').text()).toContain('本机')
+    expect(wrapper.get('.host-switcher__trigger').text()).toContain('本机')
     expect(wrapper.findAll('.range-button')).toHaveLength(8)
     expect(wrapper.find('.container-section').exists()).toBe(true)
     expect(mocks.history.mock.calls.at(-1)?.[3]).toBeUndefined()
@@ -210,7 +213,7 @@ describe('monitoring host selection', () => {
     expect(wrapper.find('error-state-stub').exists()).toBe(true)
     expect(mocks.history).toHaveBeenCalledTimes(1)
     expect(mocks.history.mock.calls[0]?.[3]).toBe('f'.repeat(32))
-    expect(wrapper.get('.monitoring-host-trigger').text()).toContain('所选主机（未在列表中）')
+    expect(wrapper.get('.host-switcher__trigger').text()).toContain('所选主机（未在列表中）')
   })
 
   it('keeps history usable if the inventory fails and renders an honest empty state', async () => {
@@ -224,44 +227,47 @@ describe('monitoring host selection', () => {
 
   it('shows the shared icon, status and selection pattern, and searches locally without fetching history', async () => {
     const { wrapper } = await mountAt(`?hostId=${a}`)
-    const trigger = wrapper.get('.monitoring-host-trigger')
+    const trigger = wrapper.get('.host-switcher__trigger')
     const triggerButton = trigger.element as HTMLButtonElement
     triggerButton.focus()
     await trigger.trigger('click')
     expect(document.activeElement).toBe(trigger.element)
-    expect(wrapper.findAll('.monitoring-host-option')).toHaveLength(3)
-    expect(wrapper.get(`[data-monitoring-host-id="${a}"]`).attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get(`[data-monitoring-host-id="${b}"]`).text()).toContain('离线')
-    expect(wrapper.findAll('operating-system-icon-stub')).toHaveLength(3)
-    const searchInput = wrapper.get('input[type="search"]').element as HTMLInputElement
+    expect(body().findAll('.host-switcher__item')).toHaveLength(3)
+    expect(body().get(`[data-host-id="${a}"]`).attributes('aria-pressed')).toBe('true')
+    expect(body().get(`[data-host-id="${b}"]`).text()).toContain('离线')
+    expect(body().findAll('operating-system-icon-stub')).toHaveLength(3)
+    const searchInput = body().get('input[type="search"]').element as HTMLInputElement
     searchInput.focus()
     expect(document.activeElement).toBe(searchInput)
-    await wrapper.get('input[type="search"]').setValue('远程 B')
-    expect(wrapper.findAll('.monitoring-host-option')).toHaveLength(1)
+    await body().get('input[type="search"]').setValue('远程 B')
+    expect(body().findAll('.host-switcher__item')).toHaveLength(1)
     expect(mocks.history).toHaveBeenCalledTimes(1)
-    await wrapper.get('input[type="search"]').setValue('missing-host')
-    expect(wrapper.text()).toContain('没有匹配的主机')
-    await wrapper.get('input[type="search"]').setValue('远程 B')
-    await wrapper.get(`[data-monitoring-host-id="${b}"]`).trigger('click')
+    await body().get('input[type="search"]').setValue('missing-host')
+    expect(body().get('.host-switcher__menu').text()).toContain('没有匹配的主机')
+    await body().get('input[type="search"]').setValue('远程 B')
+    await body().get(`[data-host-id="${b}"]`).trigger('click')
     await flushPromises()
     expect(mocks.history.mock.calls.at(-1)?.[3]).toBe(b)
-    expect(wrapper.find('.monitoring-host-menu').exists()).toBe(false)
+    expect(body().find('.host-switcher__menu').exists()).toBe(false)
   })
 
   it('supports keyboard navigation, escape focus restoration and outside dismissal', async () => {
     const { wrapper } = await mountAt(`?hostId=${a}`)
-    await wrapper.get('.monitoring-host-trigger').trigger('keydown', { key: 'ArrowDown' })
+    // Same as the file manager: the arrow opens the list with the caret in the search field.
+    await wrapper.get('.host-switcher__trigger').trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
-    expect(document.activeElement).toBe(wrapper.get(`[data-monitoring-host-id="${a}"]`).element)
-    await wrapper.get(`[data-monitoring-host-id="${a}"]`).trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(wrapper.get(`[data-monitoring-host-id="${b}"]`).element)
-    await wrapper.get(`[data-monitoring-host-id="${b}"]`).trigger('keydown', { key: 'Escape' })
+    expect(document.activeElement).toBe(body().get('input[type="search"]').element)
+    await body().get('input[type="search"]').trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(body().get('[data-host-id="local"]').element)
+    await body().get('[data-host-id="local"]').trigger('keydown', { key: 'End' })
+    expect(document.activeElement).toBe(body().get(`[data-host-id="${b}"]`).element)
+    await body().get(`[data-host-id="${b}"]`).trigger('keydown', { key: 'Escape' })
     await flushPromises()
-    expect(wrapper.find('.monitoring-host-menu').exists()).toBe(false)
-    expect(document.activeElement).toBe(wrapper.get('.monitoring-host-trigger').element)
-    await wrapper.get('.monitoring-host-trigger').trigger('click')
+    expect(body().find('.host-switcher__menu').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('.host-switcher__trigger').element)
+    await wrapper.get('.host-switcher__trigger').trigger('click')
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
-    expect(wrapper.find('.monitoring-host-menu').exists()).toBe(false)
+    expect(body().find('.host-switcher__menu').exists()).toBe(false)
   })
 })

@@ -2387,6 +2387,12 @@ body.desktop-mode-open::-webkit-scrollbar {
   scrollbar-gutter: auto;
 }
 
+/* The gallery scrolls inside its own frame so the viewer can cover the window. */
+.desktop-window__body:has(> .gallery-page) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
 .desktop-window__loading,
 .desktop-window__load-error {
   display: grid;
@@ -5377,7 +5383,7 @@ body.desktop-mode-open::-webkit-scrollbar {
 }
 
 /* Terminal menus keep their component layer (7000), above task dialogs (5000). */
-.desktop-mode-open :is(.file-context-menu, .docker-context-menu, .file-host-switcher__menu) {
+.desktop-mode-open :is(.file-context-menu, .docker-context-menu, .host-switcher__menu) {
   z-index: 4500 !important;
 }
 

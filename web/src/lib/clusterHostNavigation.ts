@@ -36,3 +36,23 @@ export function clusterHostPanelURL(host: ClusterHost): string {
   }
   return `${origin}/${host.securityEntrancePath}`
 }
+
+/**
+ * A page of a paired Panel that is not reachable through the file relay, as an
+ * absolute http(s) URL; undefined when the host has no trusted entry. Callers
+ * open it in a new tab after their own transport-security confirmation.
+ */
+export function clusterHostPanelPageURL(host: ClusterHost, page: string): string | undefined {
+  try {
+    const base = clusterHostPanelURL(host)
+    if (!base) return undefined
+    const url = new URL(base)
+    if (!['http:', 'https:'].includes(url.protocol)) return undefined
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/${page.replace(/^\/+/, '')}`
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return undefined
+  }
+}
