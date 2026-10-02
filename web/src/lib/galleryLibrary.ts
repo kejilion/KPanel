@@ -93,7 +93,7 @@ async function listFolder(
   return { entries, truncated }
 }
 
-function albumCover(items: readonly GalleryItem[]): GalleryItem | undefined {
+export function albumCover(items: readonly GalleryItem[]): GalleryItem | undefined {
   let image: GalleryItem | undefined
   let video: GalleryItem | undefined
   for (const item of items) {

@@ -10,6 +10,7 @@ import {
   ImageOff,
   ImageUp,
   Info,
+  FolderInput,
   Maximize,
   Minimize,
   RotateCcw,
@@ -57,6 +58,8 @@ const props = defineProps<{
   /** Folder shown as the gallery itself rather than by its name. */
   libraryRoot?: string
   canDelete?: boolean
+  /** Shows the "move to album" button; the page owns the folder chooser. */
+  canMove?: boolean
   /** Whether the thumbnail strip is shown; the page remembers the choice. */
   filmstrip?: boolean
   /** Covers the open photo can be made; empty hides the button (videos, formats a browser cannot draw). */
@@ -69,6 +72,7 @@ const emit = defineEmits<{
   download: [item: GalleryItem]
   reveal: [item: GalleryItem]
   delete: [item: GalleryItem]
+  move: [item: GalleryItem]
   'update:filmstrip': [visible: boolean]
   cover: [payload: { item: GalleryItem; option: string }]
 }>()
@@ -496,6 +500,13 @@ onBeforeUnmount(() => {
         ><Info :size="18" /></button>
         <button type="button" :title="phrase('下载原文件')" :aria-label="phrase('下载原文件')" @click="item && emit('download', item)"><Download :size="18" /></button>
         <button type="button" :title="phrase('在文件管理中显示')" :aria-label="phrase('在文件管理中显示')" @click="item && emit('reveal', item)"><FolderOpen :size="18" /></button>
+        <button
+          v-if="canMove"
+          type="button"
+          :title="phrase('移动到相册')"
+          :aria-label="phrase('移动到相册')"
+          @click="item && emit('move', item)"
+        ><FolderInput :size="18" /></button>
         <button
           v-if="canDelete"
           type="button"

@@ -271,6 +271,21 @@ export async function mockGallery(request, response, url, send, readJSON) {
         moveTree(source, input.target)
         result.succeeded.push({ path: source, destination: input.target })
       }
+    } else if (input.action === 'move') {
+      // Like the real action: the target is a directory, nothing is overwritten, each file reports on its own.
+      const folder = nodes.get(input.target)
+      for (const source of input.sources || []) {
+        const node = nodes.get(source)
+        const destination = `${input.target}/${source.slice(source.lastIndexOf('/') + 1)}`
+        if (!folder || folder.entry.kind !== 'directory') result.failed.push({ path: source, detail: '目标目录不存在' })
+        else if (!node || input.expectedResourceVersions?.[source] !== node.entry.resourceVersion) result.failed.push({ path: source, detail: '文件状态已变化，请刷新后重试' })
+        else if (destination === source || destination.startsWith(`${source}/`)) result.failed.push({ path: source, detail: '不能移动到自身内部' })
+        else if (nodes.has(destination)) result.failed.push({ path: source, detail: '目标已存在，请修改名称后重试' })
+        else {
+          moveTree(source, destination)
+          result.succeeded.push({ path: source, destination })
+        }
+      }
     } else if (input.action === 'trash') {
       for (const source of input.sources || []) {
         const node = nodes.get(source)

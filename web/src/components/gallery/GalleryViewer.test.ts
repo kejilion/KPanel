@@ -122,6 +122,14 @@ describe('GalleryViewer controls', () => {
     expect(mountViewer().find('button[aria-label="设为封面"]').exists()).toBe(false)
   })
 
+  it('asks the page to move the open photo, and only offers it when the page can', async () => {
+    expect(mountViewer().find('button[aria-label="移动到相册"]').exists()).toBe(false)
+    wrapper?.unmount()
+    const view = mountViewer({ canMove: true })
+    await view.get('button[aria-label="移动到相册"]').trigger('click')
+    expect(view.emitted('move')?.[0]).toEqual([expect.objectContaining({ entry: expect.objectContaining({ name: 'b.jpg' }) })])
+  })
+
   it('has no strip toggle for a single photo', () => {
     const view = mountViewer({ items: [item('only.jpg')], index: 0 })
     expect(view.find('button[aria-label="隐藏缩略图条"]').exists()).toBe(false)

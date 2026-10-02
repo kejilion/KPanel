@@ -20,11 +20,15 @@ const props = defineProps<{
   featured?: boolean
   selecting?: boolean
   selected?: boolean
+  /** Lets the tile be dragged onto an album; the page decides what the drag carries. */
+  draggable?: boolean
 }>()
 
 const emit = defineEmits<{
   open: [item: GalleryItem, element: HTMLElement]
   toggle: [item: GalleryItem, range: boolean]
+  dragstart: [item: GalleryItem, event: DragEvent]
+  dragend: [item: GalleryItem, event: DragEvent]
 }>()
 
 const root = ref<HTMLElement>()
@@ -117,6 +121,12 @@ function onClick(event: MouseEvent): void {
   emit('open', props.item, event.currentTarget as HTMLElement)
 }
 
+function onDragStart(event: DragEvent): void {
+  // A hover preview must not keep playing under the drag image.
+  stopPreview()
+  emit('dragstart', props.item, event)
+}
+
 onMounted(() => {
   if (props.item.kind !== 'video' || poster.value) return
   if (typeof IntersectionObserver === 'undefined') {
@@ -151,8 +161,11 @@ onBeforeUnmount(() => {
       'gallery-tile--loaded': loaded || Boolean(poster),
       'gallery-tile--video': item.kind === 'video',
     }"
+    :draggable="draggable ? 'true' : undefined"
     @pointerenter="startPreview"
     @pointerleave="stopPreview"
+    @dragstart="onDragStart"
+    @dragend="emit('dragend', item, $event)"
   >
     <button
       class="gallery-tile__open"
@@ -248,6 +261,10 @@ onBeforeUnmount(() => {
 
 .gallery-tile--selecting .gallery-tile__open {
   cursor: pointer;
+}
+
+.gallery-tile[draggable='true'] {
+  -webkit-user-drag: element;
 }
 
 .gallery-tile__open:focus-visible {
