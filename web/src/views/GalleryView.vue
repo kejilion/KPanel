@@ -40,7 +40,7 @@ import LoadingState from '@/components/feedback/LoadingState.vue'
 import GalleryTile from '@/components/gallery/GalleryTile.vue'
 import GalleryViewer, { type GalleryViewerSources } from '@/components/gallery/GalleryViewer.vue'
 import { getLocale } from '@/i18n'
-import { ApiError } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -124,9 +124,14 @@ const currentPath = computed(() => {
   const requested = typeof route.query.path === 'string' ? normalizeGalleryRoot(route.query.path) : undefined
   return requested || preferences.root
 })
-const isLibraryRoot = computed(() => currentPath.value === preferences.root && !hostId.value)
-const insideLibrary = computed(() => !hostId.value && isWithinGalleryRoot(preferences.root, currentPath.value))
+// The library folder is a path, so it names the same place on every host: opening the
+// gallery from a remote file pane starts at that host's own copy of it.
+const isLibraryRoot = computed(() => currentPath.value === preferences.root)
+const insideLibrary = computed(() => isWithinGalleryRoot(preferences.root, currentPath.value))
 const trail = computed(() => galleryPathTrail(insideLibrary.value ? preferences.root : '/', currentPath.value))
+
+// A remote host shows its name, not its opaque id; the id stands in until the list arrives.
+const hostName = ref('')
 
 const snapshot = shallowRef<GalleryFolderSnapshot>()
 const loading = ref(true)
@@ -347,6 +352,17 @@ function scheduleReload(): void {
     void load({ quiet: true })
   }, RELOAD_DEBOUNCE_MS)
 }
+
+watch(hostId, async (id) => {
+  hostName.value = ''
+  if (!id) return
+  try {
+    const inventory = await api.cluster.hosts()
+    if (hostId.value === id) hostName.value = inventory.items.find((host) => host.id === id)?.name ?? ''
+  } catch {
+    // The id label is enough when the host list cannot be read.
+  }
+}, { immediate: true })
 
 watch([currentPath, hostId], () => {
   viewerPath.value = undefined
@@ -833,7 +849,7 @@ onBeforeUnmount(() => {
           <p class="gallery-hero__path">
             <MapPin :size="14" aria-hidden="true" />
             <span>{{ currentPath }}</span>
-            <span v-if="hostId" class="gallery-hero__host">{{ hostId }}</span>
+            <span v-if="hostId" class="gallery-hero__host">{{ hostName || hostId }}</span>
           </p>
         </div>
         <div class="gallery-hero__actions">
@@ -920,10 +936,10 @@ onBeforeUnmount(() => {
           <button v-if="isLibraryRoot" class="button button--primary" type="button" @click="createLibraryFolder">
             <FolderPlus :size="16" /> 创建图库文件夹
           </button>
-          <button v-if="isLibraryRoot" class="button button--secondary" type="button" @click="openLocationDialog()">
+          <button v-if="isLibraryRoot && !hostId" class="button button--secondary" type="button" @click="openLocationDialog()">
             <MapPin :size="16" /> 更改图库位置
           </button>
-          <button v-else class="button button--secondary" type="button" @click="openFolder(preferences.root)">
+          <button v-else-if="!isLibraryRoot" class="button button--secondary" type="button" @click="openFolder(preferences.root)">
             <Images :size="16" /> 返回图库
           </button>
         </div>

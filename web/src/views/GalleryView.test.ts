@@ -3,7 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import type { FileActionInput, FileDirectory, FileEntry } from '@/types/api'
 
 const harness = vi.hoisted(() => ({
@@ -87,6 +87,25 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+})
+
+describe('GalleryView on a remote host', () => {
+  it('treats the library folder on that host like the local one and names the host', async () => {
+    vi.spyOn(api.cluster, 'hosts').mockResolvedValue({ items: [{ id: 'edge-1', name: 'edge-melbourne', isLocal: false }] } as never)
+    harness.tree = {}
+    const view = await mountGallery('/gallery?hostId=edge-1')
+    expect(view.get('.gallery-hero__title').text()).toBe('图库')
+    expect(view.get('.gallery-hero__host').text()).toBe('edge-melbourne')
+    expect(view.text()).toContain('开始建立你的图库')
+    // The location setting belongs to this browser, so it is only offered on the local host.
+    const buttons = view.findAll('.gallery-empty button').map((button) => button.text())
+    expect(buttons).toEqual(['创建图库文件夹'])
+    harness.tree['/home/gallery'] = []
+    harness.entry.mockRejectedValueOnce(new ApiError('not found', 404, 'not_found'))
+    await view.get('.gallery-empty button').trigger('click')
+    await flushPromises()
+    expect(harness.action).toHaveBeenCalledWith({ action: 'mkdir', target: '/home', name: 'gallery' })
+  })
 })
 
 describe('GalleryView', () => {
