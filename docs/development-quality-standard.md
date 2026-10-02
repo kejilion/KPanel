@@ -313,7 +313,7 @@ Vite 等构建工具可改变浏览器产物，Three.js 等即使列在开发依
 | Vue / Vue Router；Web 页面与路由 | 页面渲染、导航和交互稳定性 | 生产构建的首屏/路由加载、输入响应、刷新与长列表；经典/桌面模式、焦点、关闭/重开及内存回落，按实际变更选取 |
 | xterm.js 及 addons；`HostTerminal.vue`、`AppInteractiveTerminal.vue` | 终端输入输出和持续任务体验 | 输入到 PTY/回显延迟、大量输出与滚动、ANSI/Unicode/粘贴、resize、断线和多视图生命周期；不丢输入、不取消后台任务 |
 | CodeMirror 及语言扩展；`CodeEditor.vue` | 大文件编辑、查找、高亮和选区体验 | 支持大小内的打开/编辑/查找响应、内存、光标选区与换行；内容一致性、保存冲突、关闭恢复；不得仅用编辑器微基准代替文件保存旅程 |
-| SQLite / `modernc.org/sqlite`；`internal/store/audit_log.go` | 审计查询、写入可靠性与资源控制 | 审计写入/分页 P95、并发、WAL/磁盘增长、权限、损坏/磁盘不足及一致性备份恢复；当前其他有界状态仍用 JSON，不外推全站数据库收益 |
+| SQLite / `modernc.org/sqlite`；`internal/store/audit_log.go`、`internal/ai/store.go` | 审计及 AI 历史查询、持久化可靠性与资源控制 | 审计写入/分页、AI 会话/消息查询与运行记录 P95、并发、WAL/磁盘增长、权限、Schema 迁移、损坏/磁盘不足、一致性备份恢复及 AI 重启中断恢复；`internal/store/store.go` 等仍用 JSON 的状态单独核对，不外推全站数据库收益 |
 | MinIO S3 SDK；`internal/backupremote` | 远端备份效率、兼容与可恢复性 | 上传及下载还原闭环、内容摘要、目标提供商兼容、超时/取消/中断、吞吐与缓冲内存；上传成功不能替代还原成功 |
 | WebSocket / 网络库；`internal/cluster` 等实际调用方 | 终端/节点/文件流的弱网可靠性与资源控制 | 实际受影响协议的鉴权、帧/响应上限、背压、断流、重连、取消与连接回收；不得自动重放非幂等写操作 |
 | WebAuthn、`x/crypto`、DOMPurify；`internal/auth`、密钥调用方、`AiMarkdown.vue` | 登录、密钥及主动内容防护 | 既有凭据兼容、登录/恢复成功与拒绝用例、密码资源预算不降强度、密文兼容及净化正反例；修复声明要有公告/调用可达性和回归证据 |

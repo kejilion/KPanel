@@ -13,7 +13,7 @@
 - 基线 `dependency-policy.json` 已全量检测 Go/npm 等依赖，第 4.7 节要求产品、兼容与资源证据，但未区分开发提速与运行时收益。
 - `Dockerfile` 的 Node 仅用于 web-build，最终 scratch 镜像运行 Go 二进制并携带 Web 静态产物；构建提速不能据此推导 API 或网页提速。
 - `web/src/components/terminal/HostTerminal.vue`、`web/src/components/files/CodeEditor.vue` 和 `web/src/components/ai/AiMarkdown.vue` 分别使用 xterm.js、CodeMirror、DOMPurify；它们有不同的业务正确性与失败边界。
-- `internal/store/audit_log.go` 使用 SQLite，`internal/store/store.go` 仍保存有界 JSON 状态；不能把 SQLite 升级描述为所有业务数据库提速。
+- `internal/store/audit_log.go` 与 `internal/ai/store.go` 使用 SQLite，后者由 `internal/ai/service.go` 打开 `ai.db`，保存 AI 会话、消息和运行记录；`internal/store/store.go` 仍保存有界 JSON 状态。升级必须按实际调用方验证，不能只验审计库，也不能描述为所有业务数据库提速。
 - 复核命令：`git show <base>:Dockerfile`、`git show <base>:docs/development-quality-standard.md`，以及上述实现文件的同基线读取；样本为该精确源码基线，不是线上性能实验。
 - 未确认：各组件下一版本是否更快、现网瓶颈和长期维护成本；本轮不声称已有升级收益。
 - 不是一次环境故障：缺口可由固定源码与规范重复核对，不依赖一次构建耗时。
@@ -23,7 +23,7 @@
 - 通用“性能资源变化”不足以引导维护任务选择实际业务链路，可能把开发微基准收益误写成用户体验收益。
 - 替代解释：现有任务作者可以自行补齐，因此只补一处验收映射与执行引用，不新增检测器或评分系统。
 - 证伪条件：不同作者按新入口仍不能区分构建/运行时证据，或无关组件被机械要求全量验收。
-- 不改变脚本、真实资源或 Panel/Agent 权限契约。`scriptLinkageState=not-required`，无需发布脚本（不适用）；脚本基线 `779192048077c130442a64a126d7c0050776d868`，SHA-256 `33010d547355f9bde4067c189a0457f44dc00ec3a72eaa25e5b7101e1fcb9c04`，由未变化的 Dockerfile 固定。
+- 不改变脚本、真实资源或 Panel/Agent 权限契约。`scriptLinkageState=not-required`，无需发布脚本（不适用）；脚本基线 `8bebc2d80614e96b844c2c5f88acb0a81d4abd10`，SHA-256 `578b9e4328ba231ad08783c3f2007034f332621d48db07cffe3429da807940b4`，由未变化的 Dockerfile 固定。
 
 ## 产品原则与核心思想对齐
 
@@ -68,7 +68,10 @@
 
 ## 验证与证据层级
 
-- 定向测试及 `make verify-change`：待执行。
+- 定向测试：工作流 validate、治理一致性/健康、依赖策略离线校验通过；新增静态引用检查块 1 个正例及 22 个删除引用负例通过（内存变异，不改仓库文件）。检查只证明引用缺失会被拒绝，不证明业务收益。
+- `make verify-change` 等价入口：`node scripts/run-repo-bash.mjs scripts/verify-change.sh bd6fe05efba5bc0aac7f2999375b7fec37115e9f`；首轮提交 `5d0b81b8f6903df3f8a207de0a4a9e6882938766` 返回 1，233 项中 232 通过、1 失败，不能写成完整门禁通过。
+- 唯一失败：`scripts/tests/check-security-audit-coverage.test.mjs:161` 的 merge-resolution 用例预期 `scoped-required`，实际 `full-required`。精确基线运行 `node --test --test-name-pattern='a package introduced only by a merge resolution' scripts/tests/check-security-audit-coverage.test.mjs` 复现同一失败；该测试及实现相对候选均未改动。夹具基线固定 2026-09-01，末次 merge commit 使用实际日期，2026-10-02 已超过 30 天 full 窗口。保留失败并隔离为既有日期夹具问题，本轮不降低期限、不跳过测试、不改审计代码。
+- 日期归因对照：仅在诊断子进程设置 `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE=2026-09-03T00:00:00Z`，同一单用例通过；这不是标准门禁结果，不用于宣称候选通过。首轮 fail-fast 后的治理健康、依赖策略、发布记录覆盖、审计覆盖结构校验分别单独通过，也不拼接为完整入口通过。
 - 隔离真机、浏览器、公开产物、生产部署安全核对：不适用，本轮无运行时或部署变化；未来升级仍按受影响层级执行。
 - 未验证项：同 SHA 远端 Linux CI、实际采用任务与 14 天观察结果；未授权推送。
 
@@ -94,4 +97,4 @@
 - 观察窗口结果 / 实际业务收益：未报告；本轮没有组件升级。
 - 是否更新永久规范、测试、工作流或验收模板：拟修改原规范/工作流及已有静态一致性检查，不另建模板。
 - 规范验收结论 / 停止依据：待复核与门禁。
-- 后续事项：授权集成时补同 SHA Linux CI；采用后的观察按现有任务边界执行，不新建定时监工。
+- 后续事项：既有日期夹具问题另行修复后重新执行标准完整门禁；授权集成时补同 SHA Linux CI。在此之前保留本地候选，不宣布已验收待集成。采用后的观察按现有任务边界执行，不新建定时监工。
