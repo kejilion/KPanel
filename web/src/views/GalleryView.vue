@@ -892,7 +892,7 @@ onBeforeUnmount(() => {
     @keydown="onPageKeydown"
   >
     <div ref="scroller" class="gallery-scroll">
-      <section class="gallery-hero" :class="{ 'gallery-hero--photo': heroUrl }">
+      <section class="gallery-hero" :class="{ 'gallery-hero--photo': heroUrl, 'gallery-hero--menu-open': moreMenuOpen }">
         <div v-if="heroUrl" class="gallery-hero__backdrop" aria-hidden="true">
           <img :src="heroUrl" alt="" decoding="async" />
         </div>
@@ -1422,6 +1422,11 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-lg);
   background: var(--surface-raised);
   isolation: isolate;
+}
+
+/* Lift the cover's isolated stacking context only while its menu overlaps the sticky toolbar. */
+.gallery-hero--menu-open {
+  z-index: 20;
 }
 
 .gallery-hero--photo {
