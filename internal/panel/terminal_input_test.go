@@ -24,6 +24,36 @@ type socketInputProcess struct {
 	once  sync.Once
 }
 
+func TestTerminalInputACKAllowsNextFrameBeforePublishReturns(t *testing.T) {
+	for _, replyType := range []string{"ack", "error"} {
+		t.Run(replyType, func(t *testing.T) {
+			slots := make(chan struct{}, terminal.InputWindow)
+			for i := 0; i < terminal.InputWindow; i++ {
+				slots <- struct{}{}
+			}
+			accepted := false
+			keepOpen := publishTerminalInputReply(slots, terminalInputReply{Type: replyType, Seq: 1}, func(terminalInputReply) bool {
+				// Deterministically schedule the browser's replenishing frame
+				// while the ACK write has not returned to the reply loop yet.
+				select {
+				case slots <- struct{}{}:
+					accepted = true
+				default:
+				}
+				return true
+			})
+			if want := replyType == "ack"; accepted != want || keepOpen != want {
+				t.Fatalf("reply %s: admitted next=%v keep open=%v", replyType, accepted, keepOpen)
+			}
+			select {
+			case slots <- struct{}{}:
+				t.Fatal("reply released more than one frame of capacity")
+			default:
+			}
+		})
+	}
+}
+
 func (p *socketInputProcess) Read([]byte) (int, error) { <-p.done; return 0, io.EOF }
 func (p *socketInputProcess) Write(data []byte) (int, error) {
 	p.mu.Lock()

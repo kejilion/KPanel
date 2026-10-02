@@ -49,6 +49,15 @@ func decodeTerminalSocketJSON(data []byte, value any) error {
 	return nil
 }
 
+// The browser may send its next frame as soon as it receives an ACK, before
+// Write returns here. Make that capacity available before publishing the ACK.
+func publishTerminalInputReply(slots chan struct{}, reply terminalInputReply, write func(terminalInputReply) bool) bool {
+	if reply.Type == "ack" {
+		<-slots
+	}
+	return write(reply) && reply.Type != "error"
+}
+
 func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Request, token string, session auth.Session, id string) {
 	if r.Method != http.MethodGet || r.URL.RawQuery != "" || r.Header.Get("Origin") == "" {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_terminal_request", "Invalid terminal input stream", "")
@@ -269,10 +278,9 @@ func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Reques
 				write(terminalInputReply{Type: "error", Code: "session_expired"})
 				return
 			}
-			if !write(reply) || reply.Type == "error" {
+			if !publishTerminalInputReply(slots, reply, write) {
 				return
 			}
-			<-slots
 		}
 	}
 }
