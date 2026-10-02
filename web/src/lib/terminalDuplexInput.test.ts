@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TerminalDuplexInput, terminalInputQueueLimit } from './terminalDuplexInput'
+import { TerminalDuplexInput, terminalInputQueueLimit, type TerminalDuplexOptions } from './terminalDuplexInput'
 
 class Socket {
   readyState = 1 as const
@@ -14,13 +14,13 @@ class Socket {
   receive(data: unknown) { this.onmessage?.call(this as unknown as WebSocket, { data: JSON.stringify(data) } as MessageEvent) }
 }
 
-function fixture(protocol = 'terminal-input-v1') {
+function fixture(protocol = 'terminal-input-v1', batch?: TerminalDuplexOptions['batch']) {
   const sockets: Socket[] = []
   const error = vi.fn()
   const legacy = vi.fn().mockResolvedValue({ accepted: true })
   const input = new TerminalDuplexInput({
     negotiate: async () => ({ protocol }), credentials: () => ({ url: 'ws://panel.test/input', csrf: 'secret' }),
-    legacy, error, stream: '00000000000000000000000000000001',
+    legacy, batch, error, stream: '00000000000000000000000000000001',
     socket: () => { const socket = new Socket(); sockets.push(socket); return socket },
   })
   return { input, sockets, legacy, error }
@@ -37,6 +37,34 @@ async function ready(f: ReturnType<typeof fixture>) {
 
 afterEach(() => vi.useRealTimers())
 describe('host terminal duplex input', () => {
+  it('prewarms without a keystroke and tolerates repeated healthy idle reconnects',async()=>{
+    vi.useFakeTimers();const f=fixture();await ready(f)
+    for(let i=0;i<10;i++){
+      await vi.advanceTimersByTimeAsync(30000)
+      const socket=f.sockets.at(-1)!;socket.onclose?.call(socket as unknown as WebSocket,{} as CloseEvent)
+      await vi.advanceTimersByTimeAsync(250)
+      f.sockets.at(-1)!.receive({type:'ready',window:32})
+    }
+    expect(f.error).not.toHaveBeenCalledWith('fatal');expect(f.sockets).toHaveLength(11)
+    expect(f.sockets[0]!.sent[0]?.type).toBe('auth');f.input.close()
+  })
+  it('falls back behind an HTTP-only proxy using the same sequence batch and deduplicable replay',async()=>{
+    vi.useFakeTimers()
+    const bodies: Array<Array<{stream:string;seq:number;data:string}>>=[]
+    let lost=false
+    const batch: NonNullable<TerminalDuplexOptions['batch']>=async frames=>{
+      bodies.push(structuredClone(frames))
+      if(frames[0]!.seq>0&&!lost){lost=true;throw new Error('owner ACK response lost')}
+      return {acked:frames.at(-1)!.seq}
+    }
+    const f=fixture('terminal-input-v1',batch);f.input.append('x'.repeat(34*2048));f.input.flush()
+    await Promise.resolve();await Promise.resolve()
+    f.sockets[0]!.onerror?.call(f.sockets[0] as unknown as WebSocket,new Event('error'))
+    await vi.advanceTimersByTimeAsync(250);await vi.advanceTimersByTimeAsync(500)
+    expect(bodies[0]![0]!.seq).toBe(0)
+    expect(bodies[1]).toHaveLength(32);expect(bodies[2]).toEqual(bodies[1]);expect(bodies[3]).toHaveLength(2)
+    expect(f.input.byteLength).toBe(0);expect(f.legacy).not.toHaveBeenCalled();f.input.close()
+  })
   it('pipelines the full window without waiting for ACK, then advances only in order', async () => {
     const f = fixture()
     f.input.append('x'.repeat(33 * 2048))

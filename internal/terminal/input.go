@@ -50,11 +50,10 @@ func (m *Manager) InputSequencedContext(ctx context.Context, owner, id string, f
 	if err != nil {
 		return err
 	}
-	item.inputMu.Lock()
-	defer item.inputMu.Unlock()
-	if err := ctx.Err(); err != nil {
+	if err := item.lockInput(ctx); err != nil {
 		return err
 	}
+	defer func() { <-item.inputGate }()
 	item.mu.Lock()
 	defer item.mu.Unlock()
 	if item.closed || item.exitedAt != nil || item.closeFailed {
@@ -85,7 +84,7 @@ func (m *Manager) InputSequencedContext(ctx context.Context, owner, id string, f
 	}
 	state.stream = frame.Stream
 	// Capture/output and Close must remain able to run while a PTY write is
-	// blocked by the child. inputMu alone preserves input order and dedup state.
+	// blocked by the child. inputGate alone preserves input order and dedup state.
 	item.mu.Unlock()
 	n, err := item.process.Write(frame.Data)
 	item.mu.Lock()

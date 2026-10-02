@@ -7,8 +7,10 @@ import { terminalStream } from '@/lib/api'
 import { desktopWindowActiveKey, desktopWindowVisibleKey } from '@/lib/desktopRouteKeys'
 import type { TerminalStreamHandlers, TerminalStreamTarget } from '@/lib/terminalStream'
 
-const mocks = vi.hoisted(() => ({ output: vi.fn(), signals: [] as AbortSignal[], deferWrites: false, pending: [] as Array<() => void> }))
+const mocks = vi.hoisted(() => ({ inputTransport: vi.fn(), output: vi.fn(), signals: [] as AbortSignal[], deferWrites: false, pending: [] as Array<() => void> }))
 vi.mock('@/lib/api', async (original) => ({ ...await original<typeof import('@/lib/api')>(), api: { terminals: {
+  inputTransport: mocks.inputTransport,
+  inputSocket: () => ({ url: 'ws://localhost/input-stream', csrf: 'csrf' }),
   close: () => Promise.resolve({ closed: true }), output: mocks.output, resize: () => Promise.resolve({ accepted: true }),
 } } }))
 vi.mock('@xterm/xterm', () => ({ Terminal: class {
@@ -28,6 +30,7 @@ describe('HostTerminal in a background desktop window', () => {
     mocks.signals.length = 0
     mocks.pending.length = 0
     mocks.deferWrites = false
+    mocks.inputTransport.mockReset().mockResolvedValue({ protocol: '' })
     let served = false
     mocks.output.mockReset().mockImplementation((_id: string, _offset: number, signal: AbortSignal) => {
       mocks.signals.push(signal)
@@ -41,6 +44,17 @@ describe('HostTerminal in a background desktop window', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('prepares the input socket before the first key is entered', async () => {
+    mocks.inputTransport.mockResolvedValue({ protocol: 'terminal-input-v1' })
+    const opened = vi.fn()
+    vi.stubGlobal('WebSocket', class { constructor(url: string) { opened(url) } close() {} })
+    const wrapper = mount(HostTerminal, { props: { sessionId: 'prewarm-id', hostName: 'Local', initialOffset: 0 } })
+    await flushPromises()
+    expect(mocks.inputTransport).toHaveBeenCalledWith('prewarm-id')
+    expect(opened).toHaveBeenCalledWith('ws://localhost/input-stream')
+    wrapper.unmount()
   })
 
   it('streams while visible but unfocused and pauses only while minimized', async () => {

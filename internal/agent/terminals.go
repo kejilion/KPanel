@@ -115,7 +115,7 @@ func (s *Server) terminalOperation(w http.ResponseWriter, r *http.Request, reque
 			s.writeTerminalError(w, requestID, errors.New("invalid terminal input"))
 			return
 		}
-		if err := s.terminals.Input(input.Owner, id, data); err != nil {
+		if err := s.terminals.InputContext(r.Context(), input.Owner, id, data); err != nil {
 			s.writeTerminalError(w, requestID, err)
 			return
 		}

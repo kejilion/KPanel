@@ -185,6 +185,10 @@ func (s *Server) handleTerminalSession(w http.ResponseWriter, r *http.Request) {
 		s.handleTerminalInputSocket(w, r, token, session, parts[0])
 		return
 	}
+	if parts[1] == "input-batch" {
+		s.handleTerminalInputBatch(w, r, token, session, parts[0])
+		return
+	}
 	s.handleTerminalOperation(w, r, session.User.ID, parts[0], parts[1])
 }
 

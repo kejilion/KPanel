@@ -316,6 +316,7 @@ onMounted(() => {
       negotiate: () => api.terminals.inputTransport(props.sessionId),
       credentials: () => api.terminals.inputSocket(props.sessionId),
       legacy: (data) => api.terminals.input(props.sessionId, data),
+      batch: (frames, signal) => api.terminals.inputBatch(props.sessionId, frames, signal),
       error: (kind) => {
         if (disposed) return
         const key = kind === 'capacity' ? 'terminal.inputCapacity' : kind === 'fatal' ? 'terminal.inputUncertain' : 'terminal.inputFailed'
@@ -350,6 +351,7 @@ onMounted(() => {
     window.requestAnimationFrame(focusTerminal)
   }
   startOutput()
+  duplexInput.flush()
 })
 
 onBeforeUnmount(() => {

@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api'
 
 const mocks = vi.hoisted(() => ({ close: vi.fn() }))
 vi.mock('@/lib/api', async (original) => ({ ...await original<typeof import('@/lib/api')>(), api: { terminals: {
+  inputTransport: () => Promise.resolve({ protocol: '' }),
   close: mocks.close, output: () => new Promise(() => {}), resize: () => Promise.resolve({ accepted: true }),
 } } }))
 vi.mock('@xterm/xterm', () => ({ Terminal: class {

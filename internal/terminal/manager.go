@@ -67,7 +67,7 @@ type Manager struct {
 }
 
 type session struct {
-	inputMu     sync.Mutex
+	inputGate   chan struct{}
 	inputState  reliableInputState
 	closeMu     sync.Mutex
 	mu          sync.Mutex
@@ -333,7 +333,7 @@ func (m *Manager) Open(owner string, rows, columns uint16) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	now := m.config.Now().UTC()
-	item := &session{id: id, owner: owner, process: process, notify: make(chan struct{}), createdAt: now, updatedAt: now}
+	item := &session{id: id, owner: owner, process: process, notify: make(chan struct{}), inputGate: make(chan struct{}, 1), createdAt: now, updatedAt: now}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -417,6 +417,10 @@ func (m *Manager) Output(ctx context.Context, owner, id string, offset int64, wa
 }
 
 func (m *Manager) Input(owner, id string, data []byte) error {
+	return m.InputContext(context.Background(), owner, id, data)
+}
+
+func (m *Manager) InputContext(ctx context.Context, owner, id string, data []byte) error {
 	if len(data) == 0 || len(data) > MaxInputBytes {
 		return errors.New("invalid terminal input size")
 	}
@@ -424,8 +428,10 @@ func (m *Manager) Input(owner, id string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	item.inputMu.Lock()
-	defer item.inputMu.Unlock()
+	if err := item.lockInput(ctx); err != nil {
+		return err
+	}
+	defer func() { <-item.inputGate }()
 	item.mu.Lock()
 	if item.closed || item.exitedAt != nil || item.closeFailed {
 		item.mu.Unlock()
@@ -446,6 +452,19 @@ func (m *Manager) Input(owner, id string, data []byte) error {
 		item.mu.Unlock()
 	}
 	return err
+}
+
+func (item *session) lockInput(ctx context.Context) error {
+	select {
+	case item.inputGate <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-item.inputGate
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (m *Manager) Resize(owner, id string, rows, columns uint16) error {

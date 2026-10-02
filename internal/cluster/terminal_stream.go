@@ -264,6 +264,45 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 		pumpTerminalStream(c, backend, owner, sessionID, offset)
 	}()
 	defer func() { c.close(); <-pumpDone }()
+	// Input can block on PTY back-pressure. Keep the authenticated control
+	// reader available for close/ping/resize and serialize only the PTY writes.
+	type inputJob struct {
+		seq   uint64
+		frame *terminal.InputFrame
+		raw   []byte
+	}
+	inputCtx, stopInput := context.WithCancel(c.ctx)
+	defer stopInput()
+	jobs := make(chan inputJob, terminal.InputWindow)
+	inputSlots := make(chan struct{}, terminal.InputWindow)
+	go func() {
+		for {
+			select {
+			case <-inputCtx.Done():
+				return
+			case job := <-jobs:
+				if inputCtx.Err() != nil {
+					return
+				}
+				var err error
+				if job.frame != nil {
+					err = backend.(SequencedTerminalBackend).InputSequenced(inputCtx, owner, sessionID, *job.frame)
+				} else {
+					err = backend.Input(inputCtx, owner, sessionID, job.raw)
+				}
+				replyTerminalStream(c, job.seq, err)
+				<-inputSlots
+			}
+		}
+	}()
+	enqueue := func(job inputJob) {
+		select {
+		case inputSlots <- struct{}{}:
+			jobs <- job
+		default:
+			replyTerminalStream(c, job.seq, terminal.ErrLimit)
+		}
+	}
 	for {
 		kind, data, err := c.read()
 		if err != nil {
@@ -276,7 +315,7 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 			if !ok || inputProtocol != terminal.InputProtocol || decodeV2Payload(body, &frame) != nil || !frame.Valid() {
 				return sessionID
 			}
-			replyTerminalStream(c, seq, backend.(SequencedTerminalBackend).InputSequenced(c.ctx, owner, sessionID, frame))
+			enqueue(inputJob{seq: seq, frame: &frame})
 		case streamPing:
 			if len(data) != 0 || c.write(streamPong, nil) != nil {
 				return sessionID
@@ -287,7 +326,7 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 			if !ok || len(input) == 0 || len(input) > terminal.MaxInputBytes {
 				return sessionID
 			}
-			replyTerminalStream(c, seq, backend.Input(c.ctx, owner, sessionID, input))
+			enqueue(inputJob{seq: seq, raw: input})
 		case termResize:
 			seq, body, ok := splitSequenced(data)
 			var input terminalStreamOpen
@@ -303,6 +342,9 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 			closeErr := backend.Close(c.ctx, owner, sessionID)
 			if errors.Is(closeErr, terminal.ErrNotFound) || errors.Is(closeErr, terminal.ErrClosed) {
 				closeErr = nil
+			}
+			if closeErr == nil {
+				stopInput()
 			}
 			replyTerminalStream(c, seq, closeErr)
 		default:

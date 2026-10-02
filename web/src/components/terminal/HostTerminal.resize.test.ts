@@ -5,6 +5,7 @@ import HostTerminal from './HostTerminal.vue'
 
 const mocks = vi.hoisted(() => ({ output: vi.fn(), resize: vi.fn(), writes: [] as string[] }))
 vi.mock('@/lib/api', async (original) => ({ ...await original<typeof import('@/lib/api')>(), api: { terminals: {
+  inputTransport: () => Promise.resolve({ protocol: '' }),
   close: () => Promise.resolve({ closed: true }), output: mocks.output, resize: mocks.resize,
 } } }))
 vi.mock('@xterm/xterm', () => ({ Terminal: class {

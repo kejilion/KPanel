@@ -10,6 +10,7 @@ export type TerminalDuplexOptions = {
   negotiate: () => Promise<{ protocol: string }>
   credentials: () => { url: string; csrf: string }
   legacy: (data: string) => Promise<unknown>
+  batch?: (frames: Array<{ stream: string; seq: number; data: string }>, signal: AbortSignal) => Promise<{ acked: number }>
   error: (kind: 'retry' | 'fatal' | 'capacity') => void
   recovered?: () => void
   socket?: (url: string) => Socket
@@ -29,12 +30,16 @@ export class TerminalDuplexInput {
   private pending: Frame[] = []
   private sequence = 0
   private stream: string
-  private mode: 'unknown' | 'legacy' | 'duplex' = 'unknown'
+  private mode: 'unknown' | 'legacy' | 'duplex' | 'post' = 'unknown'
   private socket?: Socket
   private ready = false
   private stopped = false
   private connecting = false
   private legacySending = false
+  private postSending = false
+  private postClaimed = false
+  private postController?: AbortController
+  private everReady = false
   private retries = 0
   private failureSince = 0
   private retryTimer?: ReturnType<typeof setTimeout>
@@ -53,6 +58,7 @@ export class TerminalDuplexInput {
   flush(): void {
     if (this.stopped) return
     if (this.mode === 'legacy') { void this.flushLegacy(); return }
+    if (this.mode === 'post') { void this.flushBatch(); return }
     if (this.ready) { this.pump(); return }
     if (!this.connecting && !this.retryTimer) void this.connect()
   }
@@ -77,6 +83,10 @@ export class TerminalDuplexInput {
           const message = JSON.parse(String(event.data)) as { type: string; seq?: number; retryable?: boolean; window?: number }
           if (message.type === 'ready' && !this.ready && message.window === terminalInputWindow) {
             this.ready = true
+            this.everReady = true
+            // An idle, successfully reattached writer is healthy. Unconfirmed
+            // bytes still retain their retry budget until an owner ACK arrives.
+            if (!this.pending.length) { this.retries = 0; this.failureSince = 0 }
             for (const frame of this.pending) frame.sent = false
             this.options.recovered?.()
             this.pump()
@@ -104,10 +114,7 @@ export class TerminalDuplexInput {
   private pump(): void {
     const socket = this.socket
     if (!socket || !this.ready || this.stopped) return
-    while (this.pending.length < terminalInputWindow && !this.queue.empty) {
-      const chunk = this.queue.take(2048)
-      this.pending.push({ stream: this.stream, seq: ++this.sequence, data: base64(chunk), bytes: encoder.encode(chunk).byteLength, sent: false })
-    }
+    this.fillWindow()
     try {
       for (const frame of this.pending) {
         if (frame.sent) continue
@@ -133,12 +140,53 @@ export class TerminalDuplexInput {
     this.socket = undefined
     this.ready = false
     socket?.close()
+    if (this.mode === 'duplex' && this.options.batch && (this.pending.length > 0 || !this.everReady)) this.mode = 'post'
     if (this.deadline) clearTimeout(this.deadline)
     this.deadline = undefined
     this.failureSince ||= Date.now()
     if (++this.retries > 8 || Date.now() - this.failureSince >= 120000) { this.fail(); return }
     this.options.error('retry')
     this.retryTimer = setTimeout(() => { this.retryTimer = undefined; this.flush() }, Math.min(4000, 250 * 2 ** (this.retries - 1)))
+  }
+  private fillWindow(): void {
+    while (this.pending.length < terminalInputWindow && !this.queue.empty) {
+      const chunk = this.queue.take(2048)
+      this.pending.push({ stream: this.stream, seq: ++this.sequence, data: base64(chunk), bytes: encoder.encode(chunk).byteLength, sent: false })
+    }
+  }
+  private async flushBatch(): Promise<void> {
+    if (this.postSending || this.stopped || this.retryTimer || !this.options.batch) return
+    this.postSending = true
+    try {
+      if (!this.postClaimed) {
+        const reply = await this.sendBatch([{ stream: this.stream, seq: 0, data: '' }])
+        if (this.stopped) return
+        if (reply.acked !== 0) { this.fail(); return }
+        this.postClaimed = true
+      }
+      this.fillWindow()
+      while (this.pending.length && !this.stopped) {
+        const last = this.pending.at(-1)!.seq
+        const reply = await this.sendBatch(this.pending.map(({ stream, seq, data }) => ({ stream, seq, data })))
+        if (this.stopped) return
+        if (reply.acked !== last) { this.fail(); return }
+        this.pending = []
+        this.retries = 0; this.failureSince = 0
+        this.fillWindow()
+      }
+      this.options.recovered?.()
+    } catch (error) {
+      const status = (error as { status?: number })?.status
+      if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) this.fail()
+      else this.disconnect()
+    } finally { this.postSending = false }
+  }
+  private async sendBatch(frames: Array<{ stream: string; seq: number; data: string }>): Promise<{ acked: number }> {
+    const controller = new AbortController()
+    this.postController = controller
+    const timer = setTimeout(() => controller.abort(), 23000)
+    try { return await this.options.batch!(frames, controller.signal) }
+    finally { clearTimeout(timer); if (this.postController === controller) this.postController = undefined }
   }
   private async flushLegacy(): Promise<void> {
     if (this.legacySending || this.stopped) return
@@ -157,6 +205,7 @@ export class TerminalDuplexInput {
   close(): void {
     this.stopped = true
     this.ready = false
+    this.postController?.abort()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     if (this.deadline) clearTimeout(this.deadline)
     this.socket?.close()

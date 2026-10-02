@@ -87,6 +87,7 @@ GET  /api/v1/terminal-sessions/{id}/output?offset={n}&wait={0..1000}
 POST /api/v1/terminal-sessions/{id}/input
 POST /api/v1/terminal-sessions/{id}/input-transport
 GET  /api/v1/terminal-sessions/{id}/input-stream
+POST /api/v1/terminal-sessions/{id}/input-batch
 POST /api/v1/terminal-sessions/{id}/resize
 POST /api/v1/terminal-sessions/{id}/close
 ```

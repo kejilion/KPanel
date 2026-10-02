@@ -38,6 +38,20 @@ func TestSequencedInputBlockedWriteDoesNotBlockOutputOrClose(t *testing.T) {
 		done <- m.InputSequenced("owner", s.ID, InputFrame{Stream: "00000000000000000000000000000001", Seq: 1, Data: []byte("blocked")})
 	}()
 	<-p.entered
+	queuedCtx, queuedCancel := context.WithCancel(context.Background())
+	queuedDone := make(chan error, 1)
+	go func() {
+		queuedDone <- m.InputSequencedContext(queuedCtx, "owner", s.ID, InputFrame{Stream: "00000000000000000000000000000001", Seq: 2, Data: []byte("queued")})
+	}()
+	queuedCancel()
+	select {
+	case err := <-queuedDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued input cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled input remained stuck behind PTY write")
+	}
 	closed := make(chan error, 1)
 	go func() {
 		_, err := m.Output(context.Background(), "owner", s.ID, 0, 0)

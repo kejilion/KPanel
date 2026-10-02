@@ -234,6 +234,40 @@ func TestTerminalInputSocketClaimsBeforeDataAndReplaysLostACK(t *testing.T) {
 	if process.String() != string(frame.Data) {
 		t.Fatal("rejected oversized frame reached PTY")
 	}
+	ws.CloseNow()
+	batch := func(frames []terminal.InputFrame) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"frames": frames})
+		deadline := time.Now().Add(time.Second)
+		for {
+			response := authenticatedRequest(server, http.MethodPost, "/api/v1/terminal-sessions/"+session.SessionID+"/input-batch", body, sessionCookie, csrfCookie, headers)
+			if response.Code != 429 || time.Now().After(deadline) {
+				return response
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if response := batch([]terminal.InputFrame{{Stream: stream}}); response.Code != 200 {
+		t.Fatalf("HTTP claim: %d %s", response.Code, response.Body.String())
+	}
+	frames := make([]terminal.InputFrame, terminal.InputWindow)
+	want := string(frame.Data)
+	for i := range frames {
+		frames[i] = terminal.InputFrame{Stream: stream, Seq: uint64(i + 2), Data: []byte{byte(i), 0x03, 0x0d}}
+		want += string(frames[i].Data)
+	}
+	for repeat := 0; repeat < 2; repeat++ {
+		if response := batch(frames); response.Code != 200 {
+			t.Fatalf("HTTP batch/replay: %d %s", response.Code, response.Body.String())
+		}
+	}
+	if process.String() != want {
+		t.Fatal("HTTP ACK loss replay duplicated/reordered input")
+	}
+	if response := batch(append(frames, terminal.InputFrame{Stream: stream, Seq: 34, Data: []byte("too-many")})); response.Code != 400 {
+		t.Fatalf("HTTP batch exceeded 32 frames: %d", response.Code)
+	}
+	ws = connect()
+	defer ws.CloseNow()
 	logout := authenticatedRequest(server, http.MethodPost, "/api/v1/auth/logout", nil, sessionCookie, csrfCookie, headers)
 	if logout.Code != 200 && logout.Code != 204 {
 		t.Fatalf("logout: %d", logout.Code)

@@ -7,12 +7,33 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
+
+type stallingStreamProcess struct {
+	*echoProcess
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *stallingStreamProcess) Write(data []byte) (int, error) {
+	if string(data) == "block" {
+		close(p.entered)
+		<-p.release
+		return 0, terminal.ErrClosed
+	}
+	return p.echoProcess.Write(data)
+}
+func (p *stallingStreamProcess) Kill() error {
+	p.once.Do(func() { close(p.release) })
+	return p.echoProcess.Kill()
+}
 
 type blockedSequencedBackend struct {
 	managerTerminalBackend
@@ -86,7 +107,9 @@ func TestTerminalSequencedStreamPanelAndLightParity(t *testing.T) {
 	for _, kind := range []string{"panel", "light"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newStreamFixture(t, http.NotFoundHandler())
-			manager := newEchoManager(t)
+			process := &stallingStreamProcess{echoProcess: newEchoProcess(), entered: make(chan struct{}), release: make(chan struct{})}
+			manager := terminal.New(terminal.Config{Starter: func(uint16, uint16) (terminal.Process, error) { return process, nil }})
+			t.Cleanup(manager.CloseAll)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			var stream *streamTerminal
@@ -193,6 +216,25 @@ func TestTerminalSequencedStreamPanelAndLightParity(t *testing.T) {
 			output, err := manager.Output(ctx, owner, opened.SessionID, 0, 0)
 			if err != nil || string(output.Data) != want.String() {
 				t.Fatalf("reconnect repeated/reordered input: %q %v", output.Data, err)
+			}
+			last.Seq++
+			last.Data = []byte("block")
+			blockedWait, err := f.service.BeginTerminalInput(ctx, hostID, opened.SessionID, last)
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-process.entered:
+			case <-time.After(time.Second):
+				t.Fatal("PTY write did not block")
+			}
+			closeCtx, closeCancel := context.WithTimeout(ctx, time.Second)
+			defer closeCancel()
+			if err := f.service.TerminalClose(closeCtx, hostID, TerminalCloseRequest{SessionID: opened.SessionID}); err != nil {
+				t.Fatalf("blocked PTY made stream close unreachable: %v", err)
+			}
+			if err := blockedWait(); err == nil {
+				t.Fatal("blocked partial input was acknowledged")
 			}
 		})
 	}
