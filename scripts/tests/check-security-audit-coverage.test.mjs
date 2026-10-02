@@ -169,7 +169,7 @@ test('a package introduced only by a merge resolution is still a new boundary pa
   mkdirSync(join(repo, 'internal/evil'), { recursive: true });
   writeFileSync(join(repo, 'internal/evil/e.go'), 'package evil\n');
   git('add', '-A');
-  git('commit', '-qm', 'merge side');
+  commit(2, {}, 'merge side');
   const report = assess(repo);
   assert.deepEqual(report.newPackages, ['internal/evil']);
   assert.equal(report.decision, 'scoped-required');
