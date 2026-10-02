@@ -100,6 +100,7 @@ type Server struct {
 	terminalOpening         int
 	terminalOpeningUser     map[string]int
 	terminalStreams         *terminalStreamHub
+	jobInputs               jobInputGate
 	downloadTicketMu        sync.Mutex
 	downloadTickets         map[[32]byte]fileDownloadTicket
 	remoteDownloadOpen      func(context.Context, string) (*http.Response, error)
@@ -450,6 +451,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
+	case strings.HasPrefix(r.URL.Path, jobTerminalInputPrefix):
+		s.handleJobTerminalInput(w, r)
 	case r.URL.Path == terminalStreamPath || r.URL.Path == terminalStreamSubscriptionsPath:
 		s.handleTerminalStream(w, r)
 	case r.URL.Path == "/api/v1/terminal-commands":
