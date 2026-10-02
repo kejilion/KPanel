@@ -65,9 +65,49 @@ let mockArchiveCounter = 0
 const mockDockerUpdateContainers = ['current', 'available', 'fixed', 'unavailable'].map((status, index) => ({
   id: String(index + 1).repeat(64), name: `mock-${status}`, image: status === 'fixed' ? `redis@sha256:${'f'.repeat(64)}` : `redis:${index + 5}`,
   state: 'running', status: 'Mock · running', access: 'managed', consistency: 'synced',
-  ports: [], networks: ['bridge'], mounts: [], labels: {}, allowedActions: [],
+  ports: [], networks: ['bridge'], mounts: [], labels: {}, allowedActions: ['logs', 'stats'],
   resourceVersion: `sha256:${String(index + 5).repeat(64)}`, mockUpdateStatus: status,
+  mockProfile: { cpu: 0.3 + index * 0.4, memory: 0.02 + index * 0.01, pids: 3 + index },
 }))
+// Explicitly simulated containers for the Docker management/monitoring view.
+// Ids use only the digits 1-4 so the update-check route below also accepts them.
+const mockRunningActions = ['logs', 'stats', 'exec', 'access', 'restart', 'pause', 'stop', 'remove']
+const mockDockerMonitorContainers = [
+  ['kejilion-panel', 'kpanel', 'kejilion-panel', 'ghcr.io/kjlion/kejilion-panel@sha256:b4e1', 'running', 'Up 3 days', 0.9, 0.12, 21],
+  ['mysql', 'web', 'mysql', 'mysql:8.4', 'running', 'Up 6 days', 4.2, 0.46, 38],
+  ['nginx', 'web', 'nginx', 'nginx:alpine', 'running', 'Up 6 days', 1.6, 0.04, 5],
+  ['php', 'web', 'php', 'kjlion/php:fpm-alpine', 'running', 'Up 6 days', 12.4, 0.21, 9],
+  ['php74', 'web', 'php74', 'kjlion/php:7.4-fpm-alpine', 'running', 'Up 6 days', 38.7, 0.33, 9],
+  ['redis', 'web', 'redis', 'redis:7-alpine', 'running', 'Up 6 days', 0.4, 0.02, 4],
+  ['legacy-worker', '', '', 'registry.example.com/legacy/worker:2.1', 'exited', 'Exited (0) 2 days ago', 0, 0, 0],
+].map(([name, project, service, image, state, status, cpu, memory, pids], index) => ({
+  id: `${'1234'.repeat(15)}${'1234'[index % 4]}${'1234'[Math.floor(index / 4)]}21`,
+  name, image, state, status, access: 'managed', consistency: 'synced',
+  composeProject: project || undefined, composeService: service || undefined,
+  ports: [], networks: [project ? `${project}_default` : 'bridge'], mounts: [], labels: {},
+  allowedActions: state === 'running' ? mockRunningActions : ['start', 'remove'],
+  resourceVersion: `sha256:${String(index + 1).repeat(64)}`, mockUpdateStatus: 'current',
+  mockProfile: { cpu, memory, pids },
+}))
+const mockDockerContainers = [...mockDockerUpdateContainers, ...mockDockerMonitorContainers]
+const mockDockerStatsStartedAt = Date.now()
+function mockDockerStats(item) {
+  const profile = item.mockProfile
+  if (!profile || item.state !== 'running') return undefined
+  const now = Date.now()
+  const seconds = (now - mockDockerStatsStartedAt) / 1000
+  const wave = (period, phase) => 0.5 + 0.5 * Math.sin(seconds / period + phase)
+  const limit = 2 * 1024 ** 3
+  const memoryBytes = Math.round(profile.memory * 1024 ** 3 * (0.92 + 0.08 * wave(17, item.name.length)))
+  const cpuPercent = Math.max(0, +(profile.cpu * (0.55 + 0.9 * wave(5, item.name.length * 2))).toFixed(2))
+  return {
+    containerId: item.id, cpuPercent, memoryBytes, memoryLimitBytes: limit,
+    memoryPercent: +(memoryBytes / limit * 100).toFixed(2),
+    networkRxBytes: Math.round(seconds * (3_000 + profile.cpu * 900)), networkTxBytes: Math.round(seconds * (1_400 + profile.cpu * 500)),
+    blockReadBytes: Math.round(seconds * profile.memory * 40_000), blockWriteBytes: Math.round(seconds * (2_000 + profile.cpu * 7_000)),
+    pids: profile.pids, collectedAt: new Date(now).toISOString(),
+  }
+}
 let mockRemoteDownloadJobCounter = 0
 const mockFiles = [
   ...mockEditorFiles,
@@ -2663,17 +2703,27 @@ createServer(async (request, response) => {
     send(response, 200, {
       available: true,
       serverVersion: '28.3.2',
-      containers: mockDockerUpdateContainers.length,
-      running: 4,
+      containers: mockDockerContainers.length,
+      running: mockDockerContainers.filter(item => item.state === 'running').length,
       paused: 0,
-      stopped: 1,
+      stopped: mockDockerContainers.filter(item => item.state !== 'running').length,
       images: 0,
       collectedAt: new Date().toISOString(),
     })
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/docker/containers') {
-    send(response, 200, { items: mockDockerUpdateContainers })
+    send(response, 200, { items: mockDockerContainers })
+    return
+  }
+  const mockStatsMatch = request.method === 'GET' && url.pathname.match(/^\/api\/v1\/docker\/containers\/([1-4]{64})\/stats$/)
+  if (mockStatsMatch) {
+    const item = mockDockerContainers.find(candidate => candidate.id === mockStatsMatch[1])
+    const stats = item && mockDockerStats(item)
+    // Docker holds a non-streaming stats call for about a second while it takes two readings.
+    await new Promise(resolve => setTimeout(resolve, 400 + Math.round(Math.random() * 400)))
+    if (!stats) { send(response, 404, { code: 'mock_not_found' }); return }
+    send(response, 200, stats)
     return
   }
   if (request.method === 'GET' && /^\/api\/v1\/docker\/(images|networks|volumes|backups|jobs|compose-projects)$/.test(url.pathname)) {
@@ -2681,13 +2731,13 @@ createServer(async (request, response) => {
     return
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/docker/environment') {
-    send(response, 200, { available: true, serverVersion: '28.3.2', containers: mockDockerUpdateContainers.length,
+    send(response, 200, { available: true, serverVersion: '28.3.2', containers: mockDockerContainers.length,
       images: 0, mirrorPreset: 'official', registryMirrors: [], ipv6Enabled: false,
       daemonConfig: 'valid', observedAt: new Date().toISOString() })
     return
   }
   if (request.method === 'POST' && /^\/api\/v1\/docker\/containers\/[1-4]{64}\/check_update$/.test(url.pathname)) {
-    const item = mockDockerUpdateContainers.find(item => item.id === url.pathname.split('/')[5])
+    const item = mockDockerContainers.find(item => item.id === url.pathname.split('/')[5])
     if (!item) { send(response, 404, { code: 'mock_not_found' }); return }
     await new Promise(resolve => setTimeout(resolve, 600))
     if (item.mockUpdateStatus === 'unavailable') {
