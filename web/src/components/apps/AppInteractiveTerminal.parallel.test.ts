@@ -20,7 +20,9 @@ const mocks = vi.hoisted(() => ({
   handlers: [] as TerminalStreamHandlers[], targets: [] as TerminalStreamTarget[],
   observers: [] as Array<() => void>, terminals: [] as FakeTerminal[], deferWrites: false,
 }))
-vi.mock('@/lib/api', () => ({ api: { apps: { terminalResize: mocks.resize, terminal: mocks.output } },
+vi.mock('@/lib/api', () => ({ api: { apps: { terminalResize: mocks.resize, terminal: mocks.output },
+    // An Agent without the acknowledged input protocol: input stays on the per-request route.
+    jobTerminals: { inputTransport: () => Promise.resolve({ protocol: '' }) } },
   terminalStream: { subscribe: mocks.subscribe } }))
 vi.mock('@xterm/xterm', () => ({ Terminal: class {
   options = {}; parser = { registerOscHandler() {} }; rows = 24; cols = 80
