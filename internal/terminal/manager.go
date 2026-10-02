@@ -67,6 +67,8 @@ type Manager struct {
 }
 
 type session struct {
+	inputMu     sync.Mutex
+	inputState  reliableInputState
 	closeMu     sync.Mutex
 	mu          sync.Mutex
 	id          string
@@ -422,14 +424,26 @@ func (m *Manager) Input(owner, id string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	item.inputMu.Lock()
+	defer item.inputMu.Unlock()
 	item.mu.Lock()
-	defer item.mu.Unlock()
-	if item.closed || item.exitedAt != nil {
+	if item.closed || item.exitedAt != nil || item.closeFailed {
+		item.mu.Unlock()
 		return ErrClosed
 	}
-	_, err = item.process.Write(data)
+	if item.inputState.stream != "" {
+		item.mu.Unlock()
+		return ErrInputSequence
+	}
+	item.mu.Unlock()
+	n, err := item.process.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
 	if err == nil {
+		item.mu.Lock()
 		item.updatedAt = m.config.Now().UTC()
+		item.mu.Unlock()
 	}
 	return err
 }

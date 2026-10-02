@@ -359,6 +359,13 @@ func startTerminalStream(ctx context.Context, conn *fileStreamConn, first byte, 
 		return nil, terminalStreamReady{}, err
 	}
 	switch kind {
+	case termInputProbe:
+		var ready terminalStreamReady
+		if first != termInputProbe || decodeV2Payload(data, &ready) != nil || (ready.InputProtocol != "" && ready.InputProtocol != terminal.InputProtocol) {
+			conn.close()
+			return nil, terminalStreamReady{}, ErrAuthentication
+		}
+		return conn, ready, nil
 	case termReady:
 		var ready terminalStreamReady
 		if decodeV2Payload(data, &ready) != nil || ready.SessionID == "" || len(ready.SessionID) > 128 || ready.Offset < 0 {
@@ -462,6 +469,14 @@ func (b managerTerminalBackend) Output(ctx context.Context, owner, id string, of
 
 func (b managerTerminalBackend) Input(_ context.Context, owner, id string, data []byte) error {
 	return b.manager.Input(owner, id, data)
+}
+
+func (b managerTerminalBackend) SupportsSequencedInput(context.Context) bool { return true }
+func (b managerTerminalBackend) InputSequenced(ctx context.Context, owner, id string, frame terminal.InputFrame) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return b.manager.InputSequencedContext(ctx, owner, id, frame)
 }
 
 func (b managerTerminalBackend) Resize(_ context.Context, owner, id string, rows, columns uint16) error {

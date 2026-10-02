@@ -85,6 +85,8 @@
 POST /api/v1/terminal-sessions
 GET  /api/v1/terminal-sessions/{id}/output?offset={n}&wait={0..1000}
 POST /api/v1/terminal-sessions/{id}/input
+POST /api/v1/terminal-sessions/{id}/input-transport
+GET  /api/v1/terminal-sessions/{id}/input-stream
 POST /api/v1/terminal-sessions/{id}/resize
 POST /api/v1/terminal-sessions/{id}/close
 ```
@@ -136,6 +138,7 @@ parent-death signal 覆盖 Agent 无法执行优雅清理的退出。应用层�
 | 全局活动会话 | 16 |
 | 单一 Panel 用户 / 联邦控制端 | 4 |
 | 单次输入 | 16 KiB |
+| 主机可靠输入 | `terminal-input-v1`：每帧 2 KiB、窗口 32 帧、浏览器总队列 1 MiB；PTY owner 序号去重，部分写入停止重放 |
 | 批量执行并发 | 最多 4，且扣除同一用户尚未结束的交互终端会话 |
 | 批量前端等待上限 | 4 小时；超时后请求关闭对应终端；瞬态输出轮询失败按指数退避最多重试 5 次 |
 | 批量完成判定 | 命令包装为 `{ 命令⏎}; printf '\n__KPANEL_DONE_<每次随机 128 位>_%s__\n' "$?"` 并在同一行输入，由 shell 在命令结束后立即打印真实退出码，读到标记即关闭会话并判定成功/失败，显示输出时去掉包装与标记行；标记未出现（如命令语法错误）时回退原规则：等待稳定 shell 提示符（3 秒无新输出）再补发 `exit`，最多重试 3 次，重试耗尽由前端关闭会话 |

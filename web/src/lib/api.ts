@@ -1799,6 +1799,13 @@ export const api = {
       }),
   },
   terminals: {
+	inputTransport: (sessionId: string): Promise<{ protocol: string }> =>
+	  request<{ protocol: string }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-transport`, { method: 'POST', body: {} }),
+	inputSocket: (sessionId: string): { url: string; csrf: string } => {
+	  const url = new URL(buildUrl(`/terminal-sessions/${encodeURIComponent(sessionId)}/input-stream`), window.location.href)
+	  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+	  return { url: url.toString(), csrf: csrfToken }
+	},
     commands: (signal?: AbortSignal): Promise<TerminalQuickCommands> =>
       request<TerminalQuickCommands>('/terminal-commands', { signal }),
     updateCommands: (body: TerminalQuickCommandsUpdate): Promise<TerminalQuickCommands> =>

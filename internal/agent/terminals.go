@@ -68,6 +68,33 @@ func (s *Server) terminalOperation(w http.ResponseWriter, r *http.Request, reque
 		return
 	}
 	switch action {
+	case "input-protocol":
+		if r.Method != http.MethodPost || id != "capabilities" {
+			writeProblem(w, requestID, http.StatusNotFound, "not_found", "Terminal route not found", "")
+			return
+		}
+		var input struct{}
+		if err := decodeJSON(w, r, &input); err != nil {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"protocol": terminal.InputProtocol})
+	case "input-sequenced":
+		if r.Method != http.MethodPost {
+			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		var input struct {
+			Owner string              `json:"owner"`
+			Frame terminal.InputFrame `json:"frame"`
+		}
+		if err := decodeJSON(w, r, &input); err != nil {
+			return
+		}
+		if err := s.terminals.InputSequencedContext(r.Context(), input.Owner, id, input.Frame); err != nil {
+			s.writeTerminalError(w, requestID, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"accepted": true})
 	case "output":
 		if r.Method != http.MethodGet {
 			writeProblem(w, requestID, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
@@ -164,6 +191,10 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request, requestI
 
 func (s *Server) writeTerminalError(w http.ResponseWriter, requestID string, err error) {
 	switch {
+	case errors.Is(err, terminal.ErrInputSequence):
+		writeProblem(w, requestID, http.StatusConflict, "terminal_input_sequence", "Terminal input sequence is invalid", "")
+	case errors.Is(err, terminal.ErrInputUncertain):
+		writeProblem(w, requestID, http.StatusConflict, "terminal_input_uncertain", "Terminal input is uncertain; open a new terminal", "")
 	case errors.Is(err, terminal.ErrNotFound):
 		writeProblem(w, requestID, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 	case errors.Is(err, terminal.ErrLimit):
