@@ -670,7 +670,7 @@ func (s *Service) WriteInput(id, value string) error {
 		return ErrConflict
 	}
 	if err := hostpty.WriteInput(s.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: environment terminal input is unavailable", ErrConflict)
+		return fmt.Errorf("%w: environment terminal input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }

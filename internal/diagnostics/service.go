@@ -395,7 +395,7 @@ func (s *Service) WriteInput(id, value string) error {
 		return ErrConflict
 	}
 	if err := hostpty.WriteInput(s.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: diagnostic terminal input is unavailable: %v", ErrConflict, err)
+		return fmt.Errorf("%w: diagnostic terminal input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }

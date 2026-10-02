@@ -22,7 +22,7 @@ func openPlatformInput(string) (*os.File, error) {
 }
 
 func writePlatformInput(string, []byte) error {
-	return errors.New("interactive host terminals require Linux")
+	return notWritten(errors.New("interactive host terminals require Linux"))
 }
 
 func removePlatformInput(string) error {

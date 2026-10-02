@@ -136,44 +136,53 @@ func openPlatformInput(path string) (*os.File, error) {
 func writePlatformInput(path string, data []byte) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return err
+		return notWritten(err)
 	}
 	defer file.Close()
+	// Only a failure before the FIFO accepted its first byte is replay-safe.
+	accepted := 0
+	fail := func(err error) error {
+		if accepted == 0 {
+			return notWritten(err)
+		}
+		return partialWrite(err)
+	}
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for len(data) > 0 {
 		written, writeErr := unix.Write(int(file.Fd()), data)
 		if written > 0 {
+			accepted += written
 			data = data[written:]
 		}
 		switch {
 		case writeErr == nil:
 			if written == 0 {
-				return io.ErrShortWrite
+				return fail(io.ErrShortWrite)
 			}
 		case errors.Is(writeErr, unix.EINTR):
 			continue
 		case errors.Is(writeErr, unix.EAGAIN):
 			remaining := time.Until(deadline)
 			if remaining <= 0 {
-				return errors.New("terminal input FIFO remained busy")
+				return fail(errors.New("terminal input FIFO remained busy"))
 			}
 			wait := min(remaining, 50*time.Millisecond)
 			fd := file.Fd()
 			if fd > uintptr(1<<31-1) {
-				return errors.New("terminal input FIFO descriptor is out of range")
+				return fail(errors.New("terminal input FIFO descriptor is out of range"))
 			}
 			ready, pollErr := unix.Poll(
 				[]unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}},
 				int(wait.Milliseconds()),
 			)
 			if pollErr != nil && !errors.Is(pollErr, unix.EINTR) {
-				return pollErr
+				return fail(pollErr)
 			}
 			if ready == 0 {
 				continue
 			}
 		default:
-			return writeErr
+			return fail(writeErr)
 		}
 	}
 	return nil

@@ -988,7 +988,7 @@ func (m *Manager) WriteInstallationInput(id, value string) error {
 		return fmt.Errorf("%w: interactive website input is not open", ErrConflict)
 	}
 	if err := hostpty.WriteInput(m.recipeJobs.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: interactive website input is unavailable: %v", ErrConflict, err)
+		return fmt.Errorf("%w: interactive website input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }

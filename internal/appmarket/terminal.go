@@ -315,7 +315,7 @@ func (s *Service) WriteAppJobInput(id, value string) error {
 		return fmt.Errorf("%w: interactive input is not open", ErrConflict)
 	}
 	if err := writeTerminalInput(s.jobs.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: interactive input is unavailable: %v", ErrConflict, err)
+		return fmt.Errorf("%w: interactive input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }
