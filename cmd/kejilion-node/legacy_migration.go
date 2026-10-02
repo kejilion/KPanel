@@ -38,6 +38,12 @@ var lightNodeOpenRCUpdatePeriodic []byte
 //go:embed update_runtime/ssh-login.openrc
 var lightNodeSSHLoginOpenRCService []byte
 
+//go:embed update_runtime/update.procd
+var lightNodeProcdUpdateCron []byte
+
+//go:embed update_runtime/ssh-login.procd
+var lightNodeSSHLoginProcdService []byte
+
 const (
 	lightUpdateStagingPrefix  = "kejilion-node-update."
 	lightReleaseStagingPrefix = "kejilion-node-release."
@@ -180,8 +186,10 @@ func installLightNodeUpdateIntegration() error {
 			migrationTemplate{"/etc/systemd/system/kejilion-node-update.service", lightNodeUpdateService, 0o644},
 			migrationTemplate{"/etc/systemd/system/kejilion-node-update.timer", lightNodeUpdateTimer, 0o644},
 		)
-	} else {
+	} else if initSystem == "openrc" {
 		templates = append(templates, migrationTemplate{lightNodeOpenRCPeriodic, lightNodeOpenRCUpdatePeriodic, 0o755})
+	} else {
+		templates = append(templates, migrationTemplate{lightNodeProcdCronWrapper, lightNodeProcdUpdateCron, 0o755})
 	}
 	for _, template := range templates {
 		if err := writeMigrationFile(template.path, template.content, template.mode); err != nil {
@@ -200,6 +208,12 @@ func installLightNodeUpdateIntegration() error {
 			return err
 		}
 		return runMigrationCommand(systemctl, "restart", "--no-block", "kejilion-node-update.timer")
+	}
+	if initSystem == "procd" {
+		// Cron membership belongs to the installer. Updating a verified binary
+		// refreshes its wrapper, but does not overwrite a user's crontab or
+		// silently re-enable a schedule the administrator disabled.
+		return nil
 	}
 	rcUpdate, err := migrationOpenRCToolPath("rc-update")
 	if err != nil {
@@ -340,6 +354,15 @@ func installLightNodeSSHLoginIntegration() error {
 		}
 		return nil
 	}
+	if initSystem == "procd" {
+		if err := writeMigrationFile(lightSSHLoginOpenRCUnit, lightNodeSSHLoginProcdService, 0o755); err != nil {
+			return err
+		}
+		if err := runMigrationCommand(lightSSHLoginOpenRCUnit, "enable"); err != nil {
+			return err
+		}
+		return runMigrationCommand(lightSSHLoginOpenRCUnit, "start")
+	}
 	if err := writeMigrationFile(lightSSHLoginOpenRCUnit, lightNodeSSHLoginOpenRCService, 0o755); err != nil {
 		return err
 	}
@@ -370,6 +393,12 @@ func runMigrationCommand(path string, arguments ...string) error {
 }
 
 func migrationInitSystem() (string, error) {
+	if liveProcdRuntime("/") {
+		if _, err := migrationTrustedExecutable("ubus", "/bin/ubus", "/sbin/ubus", "/usr/bin/ubus", "/usr/sbin/ubus"); err != nil {
+			return "", err
+		}
+		return "procd", nil
+	}
 	if info, err := os.Stat("/run/systemd/system"); err == nil && info.IsDir() {
 		if _, err := migrationSystemctlPath(); err == nil {
 			return "systemd", nil
@@ -384,7 +413,7 @@ func migrationInitSystem() (string, error) {
 		}
 		return "openrc", nil
 	}
-	return "", errors.New("a running systemd or OpenRC service manager is unavailable")
+	return "", errors.New("a running systemd, OpenRC or procd service manager is unavailable")
 }
 
 func migrationSystemctlPath() (string, error) {

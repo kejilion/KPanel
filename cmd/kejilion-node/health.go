@@ -38,6 +38,16 @@ func collectLightHealth(ctx context.Context) *contract.LightNodeHealth {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
+	if liveProcdRuntime("/") {
+		if content, err := readTrustedRuntimeFile(nodeProcdHealthPath, 4096); err == nil {
+			if snapshot := decodeProcdHealthSnapshot(content, now); snapshot != nil {
+				health.Services = snapshot.Services
+				return health
+			}
+		}
+		health.Services = contract.LightNodeServicesHealth{Timer: units[0], Telemetry: units[1], Terminal: units[2], File: units[3], SSHLogin: units[4]}
+		return health
+	}
 	// A live OpenRC marker is authoritative even when a stray systemctl
 	// compatibility command is present on the host.
 	if liveOpenRCRuntime("/") {

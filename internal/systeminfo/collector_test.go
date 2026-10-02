@@ -113,6 +113,60 @@ func TestReadDisksReturnsStableEmptyCollection(t *testing.T) {
 	}
 }
 
+func TestDiskSummariesWritableOverlayRootUsesUpperCapacityOnce(t *testing.T) {
+	for _, upperMount := range []string{"/overlay", "/mnt/extroot"} {
+		t.Run(upperMount, func(t *testing.T) {
+			mounts := "/dev/root /rom squashfs ro 0 0\n" +
+				"/dev/sda2 " + upperMount + " ext4 rw 0 0\n" +
+				"overlayfs:/overlay / overlay rw,lowerdir=/,upperdir=" + upperMount + "/upper,workdir=" + upperMount + "/work 0 0\n" +
+				"tmpfs /tmp tmpfs rw 0 0\n" +
+				"overlay /mnt/container overlay rw,upperdir=/tmp/container 0 0\n" +
+				"/dev/sdb1 /mnt/data ext4 rw 0 0\n"
+			calls := make(map[string]int)
+			disks := diskSummaries(mounts, func(path string) (uint64, uint64, float64, bool) {
+				calls[path]++
+				if path == "/" {
+					return 1000, 250, 25, true
+				}
+				return 2000, 1000, 50, true
+			})
+			if len(disks) != 2 || disks[0].MountPoint != "/" || disks[0].FileSystem != "overlay" ||
+				disks[0].TotalBytes != 1000 || disks[0].UsedBytes != 250 || disks[1].MountPoint != "/mnt/data" {
+				t.Fatalf("disk summaries = %#v", disks)
+			}
+			if len(calls) != 2 || calls["/"] != 1 || calls["/mnt/data"] != 1 {
+				t.Fatalf("unexpected capacity probes: %#v", calls)
+			}
+		})
+	}
+}
+
+func TestDiskSummariesKeepsVirtualAndReadOnlyRootsExcluded(t *testing.T) {
+	for _, root := range []string{
+		"overlay / overlay ro,lowerdir=/rom 0 0",
+		"overlay / overlay ro,upperdir=/overlay/upper 0 0",
+		"overlay / overlay rw,upperdir=relative 0 0",
+		"overlay / overlay rw,upperdir=/ 0 0",
+		"/dev/root / squashfs ro 0 0",
+		"tmpfs / tmpfs rw 0 0",
+	} {
+		calls := 0
+		disks := diskSummaries(root+"\n/dev/sda1 /mnt/data ext4 rw 0 0\n", func(path string) (uint64, uint64, float64, bool) {
+			calls++
+			return 100, 10, 10, true
+		})
+		if len(disks) != 1 || disks[0].MountPoint != "/mnt/data" || calls != 1 {
+			t.Fatalf("%q yielded %#v (%d probes)", root, disks, calls)
+		}
+	}
+	disks := diskSummaries("/dev/sda1 / ext4 rw 0 0\n", func(string) (uint64, uint64, float64, bool) {
+		return 100, 10, 10, true
+	})
+	if len(disks) != 1 || disks[0].MountPoint != "/" {
+		t.Fatalf("ordinary root changed: %#v", disks)
+	}
+}
+
 func TestCollectRuntimeSkipsNetworkIdentityAndManagementProbes(t *testing.T) {
 	root := filepath.Join("testdata", "root")
 	lookupCalls := 0

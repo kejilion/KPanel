@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -496,7 +497,40 @@ func (c *Collector) connectionCount(name string) int {
 }
 
 func (c *Collector) readDisks() []contract.DiskSummary {
-	data := c.readOptional("self/mounts")
+	return diskSummaries(c.readOptional("self/mounts"), diskUsage)
+}
+
+func diskSummaries(data string, usage func(string) (uint64, uint64, float64, bool)) []contract.DiskSummary {
+	// A writable overlay root reports the upper filesystem's capacity via
+	// statfs("/"). Do not also count the mount backing its upper directory.
+	upper := ""
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && fields[1] == "/" && fields[2] == "overlay" && strings.Contains(","+fields[3]+",", ",rw,") {
+			for _, option := range strings.Split(fields[3], ",") {
+				if value, ok := strings.CutPrefix(option, "upperdir="); ok {
+					value = unescapeMount(value)
+					if path.IsAbs(value) && path.Clean(value) == value && value != "/" {
+						upper = value
+					}
+				}
+			}
+		}
+	}
+	backing := ""
+	if upper != "" {
+		for _, line := range strings.Split(data, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 3 {
+				continue
+			}
+			mount := unescapeMount(fields[1])
+			if mount != "/" && path.IsAbs(mount) && len(mount) > len(backing) &&
+				(upper == mount || strings.HasPrefix(upper, mount+"/")) {
+				backing = mount
+			}
+		}
+	}
 	seen := make(map[string]bool)
 	result := make([]contract.DiskSummary, 0)
 	for _, line := range strings.Split(data, "\n") {
@@ -505,11 +539,12 @@ func (c *Collector) readDisks() []contract.DiskSummary {
 			continue
 		}
 		mountPoint := unescapeMount(fields[1])
-		if seen[mountPoint] || !meaningfulMount(mountPoint, fields[2]) {
+		overlayRoot := mountPoint == "/" && fields[2] == "overlay" && upper != ""
+		if seen[mountPoint] || mountPoint == backing || (!overlayRoot && !meaningfulMount(mountPoint, fields[2])) {
 			continue
 		}
 		seen[mountPoint] = true
-		total, used, usagePercent, ok := diskUsage(mountPoint)
+		total, used, usagePercent, ok := usage(mountPoint)
 		if !ok || total == 0 {
 			continue
 		}

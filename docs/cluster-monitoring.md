@@ -213,9 +213,22 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   或密钥不一致时拒绝续接；
 - 通过可信 `k fd` 反向代理访问时，中心直接使用当前浏览器正在访问的 HTTPS 根地址，不要求
   用户修改安装时保存的 IP + 端口地址，也不额外填写或回传凭据；
-- 目标机只要求 Linux、root、正在运行的 systemd 或 OpenRC、`curl`、`sha256sum`、`install`、
-  `mktemp`、`flock` 和系统账户创建工具；Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
+- 目标机要求 Linux、root、正在运行的 systemd、OpenRC 或原生 procd、`bash`、`curl`、`sha256sum`、`install`、
+  `mktemp`、`flock`、`stat`、`readlink`、`awk`、`grep`、`sed`、`cmp`、`od`、`tr` 和系统账户创建工具；
+  Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
   Node.js 或编译环境，支持 `amd64`、`arm64`；
+- procd 按 PID 1、可信 `/etc/rc.common`、`/lib/functions/procd.sh`、`ubus`、`jsonfilter` 与原生
+  `/etc/init.d/cron` 能力识别，适用于满足这些条件的 OpenWrt 及其衍生系统，不依赖 iStoreOS 等品牌名称。
+  缺少工具时明确报告，不替换系统服务管理器；32 位 ARM/MIPS 没有本项目发布产物。
+  精简 OpenWrt 固件可能需要从同版本、同架构软件源补齐 `bash`、`curl`、HTTPS CA 证书、
+  `coreutils-install`、`coreutils-stat`、`coreutils-od`、`flock` 和 `shadow-useradd`；实际缺项以预检及 HTTPS 下载错误为准。
+  安装器检查依赖，不自动安装这些系统包；仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件。
+  四个 `/etc/init.d/kejilion-node*` 服务由 procd 监督并自动重启，保持遥测低权限和 broker 权限分离，
+  stdout/stderr 交给系统日志；支持时启用 `no_new_privs`，不宣称与 systemd 沙箱等价。
+  procd 节点将有界监控历史和文件管理状态保存到 `0700 root:root /etc/kejilion-node/state`，
+  避免 OpenWrt 常见的易失 `/var`；其余平台保留 `/var/lib/kejilion-node`。
+  overlay 根磁盘使用可写上层容量并排除重复 backing mount；SSH 登录支持有界 `logread` 和 Dropbear
+  完整成功事件，多因素尚未全部通过的日志不计成功。平台适配不能替代具体固件、架构与设备的实机验收；
 - `kejilion.sh` 只负责固定安装协议，下载 Release 中对应架构的静态 `kejilion-node` 和
   `SHA256SUMS`，校验摘要及二进制 `version` 后再原子安装；
 - 服务使用无登录、无 home 的 `kejilion-node` 系统用户运行，配置目录 `0750`，遥测凭据文件
@@ -246,7 +259,9 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   上报通过可选 `X-KPanel-Light-Report-Latency-Milliseconds` 传递上一轮 RTT；中心只接受
   `1–15,000 ms` 的有界值，旧节点或无有效样本显示为未知，不把 `0 ms` 当作真实延迟；
 - 自动更新在 systemd 使用 timer（启动约 15–30 分钟后检查，随后每次结束后 1 小时再检查），
-  在 Alpine/OpenRC 使用 `/etc/periodic/hourly` 与 `crond`；两者都加入 0–15 分钟随机延迟，
+  在 Alpine/OpenRC 使用 `/etc/periodic/hourly` 与 `crond`，procd 在 `/etc/crontabs/root` 中维护唯一
+  KPanel 行，每小时第 17 分钟调用固定 `update-cron.sh`；保留其他任务，卸载不停止共享 cron。
+  三种后端都加入 0–15 分钟随机延迟，
   中心端不推送更新。先下载有界 `SHA256SUMS`，仅在摘要变化时下载
   同一 Release 的二进制，HTTPS 下载带有界重试；内核 `flock` 在进程退出后自动释放。
   更新检查同时核对 `/proc/MainPID/exe`，恢复磁盘已替换但进程仍旧的中断；遥测重启失败回滚，
@@ -477,7 +492,7 @@ SSRF 与 TLS 校验。对
   凭据原子性、错误请求限速和密钥不进入审计；轻量终端 v2 Noise 身份/密文/重放、重投递、
   会话 ID 对账、固定 root PTY、命令/输出上限、旧中心 404/405/426 兼容和 broker 故障不影响遥测；
 - `kejilion-node` 严格配置、拒绝重定向、固定动作、静态跨架构构建；安装器无 Docker 依赖、
-  Release 摘要验证、systemd/OpenRC 服务权限、自动更新回滚与失败安装清理；
+  Release 摘要验证、systemd/OpenRC/procd 服务权限、自动更新回滚与失败安装清理；
 - 标准 Compose 和应用市场部署都能出站验证 HTTPS，Panel 仍无 Docker Socket 和宿主权限。
 
 发布前执行 L2 验证；正式版本与镜像发布仍按 L3 流程执行。
@@ -517,6 +532,10 @@ SSH 登录采集 service（systemd 为 `kejilion-node-ssh-login.service`，OpenR
 后端查询 timer、telemetry、terminal、file、SSH login 五项：systemd 使用固定的 `systemctl show`，
 OpenRC 以活动中的 `/run/openrc` 为优先信号，只读取固定 service 的 `rc-service status`、init 脚本、
 default runlevel 链接和 hourly periodic 文件；查询失败为未知，`not-found` 才为未安装。
+procd 由现有 root 文件 broker 每 20 秒在同一 2 秒预算内读取固定服务的 `ubus` 状态、开机链接和
+cron 成员关系，写入 `0640 root:kejilion-node /run/kejilion-node-monitoring/procd-health.json`。
+遥测仅通过既有安全文件读取规则消费 4 KiB 内、60 秒以内的快照；缺失、过期、无权限或非法内容均为未知，
+不为查询状态放宽 `ubus` ACL，也不增加常驻进程。状态依据 `running` 与有效 PID，不以脚本存在代替运行。
 单元运行不代表终端/文件权限或 relay 连接已经可用，原权限判断保持独立。
 
 中心健康仅存在内存快照，不改变旧中心严格解码的持久状态；中心重启后等待重新上报。页面按观测时间 90 秒
