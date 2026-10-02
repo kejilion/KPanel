@@ -31,6 +31,33 @@ func publishNodeCheckStatus(summary contract.ServiceCheckSummary) error {
 
 // Only the root broker writes; the telemetry account has group read access.
 func writeNodeCheckStatus(path string, summary contract.ServiceCheckSummary, gid int) error {
+	data, err := json.Marshal(summary)
+	if err != nil || len(data) > contract.MaxServiceCheckSummaryBytes {
+		return errors.New("check status exceeds size limit")
+	}
+	return writeNodeRuntimeSnapshot(path, data, gid)
+}
+
+func publishProcdHealthSnapshot(snapshot contract.LightNodeHealth) error {
+	if !contract.ValidLightNodeHealth(snapshot, time.Now()) {
+		return errors.New("invalid procd health")
+	}
+	account, err := user.LookupGroup("kejilion-node")
+	if err != nil {
+		return err
+	}
+	gid, err := strconv.Atoi(account.Gid)
+	if err != nil || gid <= 0 {
+		return errors.New("unsafe telemetry group")
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil || len(data) > 4096 {
+		return errors.New("procd health exceeds size limit")
+	}
+	return writeNodeRuntimeSnapshot(nodeProcdHealthPath, data, gid)
+}
+
+func writeNodeRuntimeSnapshot(path string, data []byte, gid int) error {
 	dir := filepath.Dir(path)
 	if err := os.Mkdir(dir, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
@@ -47,10 +74,6 @@ func writeNodeCheckStatus(path string, summary contract.ServiceCheckSummary, gid
 	}
 	if err := os.Chmod(dir, 0o750); err != nil {
 		return err
-	}
-	data, err := json.Marshal(summary)
-	if err != nil || len(data) > contract.MaxServiceCheckSummaryBytes {
-		return errors.New("check status exceeds size limit")
 	}
 	file, err := os.CreateTemp(dir, ".check-status-*")
 	if err != nil {

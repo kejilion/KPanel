@@ -18,13 +18,17 @@ for (const [marker, name] of [
   ['KPANEL_NODE_UPDATE_TIMER', 'update.timer'],
   ['KPANEL_NODE_OPENRC_UPDATE', 'update.openrc'],
   ['KPANEL_NODE_OPENRC_SSH_LOGIN_SERVICE', 'ssh-login.openrc'],
+  ['KPANEL_NODE_PROCD_UPDATE', 'update.procd'],
+  ['KPANEL_NODE_PROCD_SSH_LOGIN_SERVICE', 'ssh-login.procd'],
 ]) {
   let content = source.split(`<<'${marker}'\n`)[1]?.split(`\n${marker}\n`)[0];
   if (!content) throw new Error(`missing authoritative template: ${marker}`);
   if (name === 'update.sh') {
     const lifecycle = source.split("<<'KPANEL_NODE_LIFECYCLE'\n")[1]?.split('\nKPANEL_NODE_LIFECYCLE\n')[0];
     if (!lifecycle) throw new Error('missing authoritative lifecycle lock template');
-    content = `#!/bin/bash\n${lifecycle}\n${content}`;
+    const procd = source.split("<<'KPANEL_NODE_PROCD_HELPERS'\n")[1]?.split('\nKPANEL_NODE_PROCD_HELPERS\n')[0];
+    if (!procd) throw new Error('missing authoritative procd helper template');
+    content = `#!/bin/bash\n${lifecycle}\n${procd}\n${content}`;
   }
   const path = fileURLToPath(new URL(`../cmd/kejilion-node/update_runtime/${name}`, import.meta.url));
   metadata.templates[name] = checksum(`${content}\n`);

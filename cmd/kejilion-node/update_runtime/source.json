@@ -1,12 +1,14 @@
 {
   "repository": "https://github.com/kejilion/sh",
-  "revision": "4d61f7ef123fe5ecd7419cdaa1c93483bbfda403",
-  "scriptSHA256": "a0e6cf5193aa9bfbdc572ad91803d4b53d34549ac95259b3288d436766a229dc",
+  "revision": "c981fb6c8b481981ac7a006e102e111e435f6d30",
+  "scriptSHA256": "0eb9a82860e6cf6cf76d4f946782a02fd90bef8e7be5a3fa724b93920d8e35cb",
   "templates": {
-    "update.sh": "45535e1c39a6185485459eefdcb619a78ccd67a840654d8a5bb6c0f84eaf3f37",
+    "update.sh": "17b42b4f8d86615ed996aa1001ef1c8d111488dd2e5f7a799a2a15cbe28e53f5",
     "update.service": "cb9474f3eb92d9e6fbcf2d180c99dcc70a551bcdade7c34ff9c9e9cbde9b3a3a",
     "update.timer": "c759dcd84597b425357943b1454f6ef98248c30f4028a57082a4b9c5859e63a4",
     "update.openrc": "206a8e00a17fdf5dd74bba01b11d63ec4034e12ae41930f28ae3fce752d62bcb",
-    "ssh-login.openrc": "d6b8ad00b80662ee0864e217d1e4f019102733a7adef672affb8482503574bb1"
+    "ssh-login.openrc": "d6b8ad00b80662ee0864e217d1e4f019102733a7adef672affb8482503574bb1",
+    "update.procd": "206a8e00a17fdf5dd74bba01b11d63ec4034e12ae41930f28ae3fce752d62bcb",
+    "ssh-login.procd": "09f516f09ecd966e05af1aa5c0f8e97ef05fa3ebf899e2a0ccfa64bcf2721c50"
   }
 }

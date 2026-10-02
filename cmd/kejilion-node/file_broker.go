@@ -48,7 +48,13 @@ func runFileBroker(arguments []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	historyHandler, stopHistory := startNodeMonitoring(ctx, "/var/lib/kejilion-node")
+	stopProcdHealth := startNodeProcdHealth(ctx)
+	defer stopProcdHealth()
+	stateDir, err := nodeStateDirectory("/")
+	if err != nil {
+		return err
+	}
+	historyHandler, stopHistory := startNodeMonitoring(ctx, stateDir)
 	defer stopHistory()
 	var identity terminalIdentity
 	for {
@@ -69,7 +75,7 @@ func runFileBroker(arguments []string) error {
 			return nil
 		}
 	}
-	manager, err := filemanager.New(agent.DefaultFileManagerConfig("/var/lib/kejilion-node"))
+	manager, err := filemanager.New(agent.DefaultFileManagerConfig(stateDir))
 	if err != nil {
 		return err
 	}

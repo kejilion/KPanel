@@ -8,3 +8,4 @@ import (
 )
 
 func publishNodeCheckStatus(contract.ServiceCheckSummary) error { return os.ErrPermission }
+func publishProcdHealthSnapshot(contract.LightNodeHealth) error { return os.ErrPermission }
