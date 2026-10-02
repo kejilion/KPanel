@@ -45,6 +45,15 @@ let mockAutomaticUpdate = {
   candidateImageDigest: '',
   resourceVersion: mockRevision(501),
 }
+let mockAppearanceRevision = 700
+let mockAppearance = {
+  configured: false,
+  resourceVersion: mockRevision(mockAppearanceRevision),
+  theme: 'system',
+  colors: null,
+  wallpaper: 'classic',
+  classicLevel: 'off',
+}
 let domainSiteDeleted = false
 let siteCertificateReplaced = false
 const mockSharedImage = await readFile(join(root, 'web', 'public', 'wallpapers', 'kpanel-desktop.webp'))
@@ -1498,6 +1507,19 @@ createServer(async (request, response) => {
   if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (await mockDesktopWallpapers(request, response, url, send)) return
   if (await mockGallery(request, response, url, send, readJSON)) return
+  // Appearance sync reads this on every page; without it previews show a load failure toast.
+  if (url.pathname === '/api/v1/settings/appearance' && request.method === 'GET') {
+    send(response, 200, mockAppearance)
+    return
+  }
+  if (url.pathname === '/api/v1/settings/appearance' && request.method === 'PUT') {
+    const input = await readJSON(request)
+    const { expectedResourceVersion: _expected, ...changes } = input
+    mockAppearanceRevision += 1
+    mockAppearance = { ...mockAppearance, ...changes, configured: true, resourceVersion: mockRevision(mockAppearanceRevision) }
+    send(response, 200, mockAppearance)
+    return
+  }
   if (url.pathname === '/api/v1/monitoring/checks' && request.method === 'GET') {
     send(response, 200, mockMonitoringCheckSnapshot())
     return
