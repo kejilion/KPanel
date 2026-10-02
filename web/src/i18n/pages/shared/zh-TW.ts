@@ -1506,4 +1506,5 @@ export default [
   ["查看 {0}", "檢視 {0}"],
   ["选择 {0}", "選擇 {0}"],
   ["取消选择 {0}", "取消選擇 {0}"],
+  ["本机", "本機"],
 ] as const satisfies PhraseCatalog

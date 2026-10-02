@@ -28,6 +28,7 @@ beforeEach(() => {
     let body: unknown = {}
     if (url.pathname.endsWith('/cluster/hosts')) body = { nodeId: 'c'.repeat(32), items: hosts }
     if (url.pathname.endsWith('/files')) body = { path: url.searchParams.get('path'), entries: [] }
+    if (url.pathname.endsWith('/remote-downloads')) body = { items: [] }
     return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
   }))
 })

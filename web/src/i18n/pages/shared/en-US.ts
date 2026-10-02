@@ -1506,4 +1506,5 @@ export default [
   ["查看 {0}", "View {0}"],
   ["选择 {0}", "Select {0}"],
   ["取消选择 {0}", "Deselect {0}"],
+  ["本机", "Local host"],
 ] as const satisfies PhraseCatalog
