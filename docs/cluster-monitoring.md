@@ -214,11 +214,15 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
 - 通过可信 `k fd` 反向代理访问时，中心直接使用当前浏览器正在访问的 HTTPS 根地址，不要求
   用户修改安装时保存的 IP + 端口地址，也不额外填写或回传凭据；
 - 目标机要求 Linux、root、正在运行的 systemd、OpenRC 或原生 procd、`bash`、`curl`、`sha256sum`、`install`、
-  `mktemp`、`flock` 和系统账户创建工具；Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
+  `mktemp`、`flock`、`stat`、`readlink`、`awk`、`grep`、`sed`、`cmp`、`od`、`tr` 和系统账户创建工具；
+  Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
   Node.js 或编译环境，支持 `amd64`、`arm64`；
 - procd 按 PID 1、可信 `/etc/rc.common`、`/lib/functions/procd.sh`、`ubus`、`jsonfilter` 与原生
   `/etc/init.d/cron` 能力识别，适用于满足这些条件的 OpenWrt 及其衍生系统，不依赖 iStoreOS 等品牌名称。
   缺少工具时明确报告，不替换系统服务管理器；32 位 ARM/MIPS 没有本项目发布产物。
+  精简 OpenWrt 固件可能需要从同版本、同架构软件源补齐 `bash`、`curl`、HTTPS CA 证书、
+  `coreutils-install`、`coreutils-stat`、`coreutils-od`、`flock` 和 `shadow-useradd`；实际缺项以预检及 HTTPS 下载错误为准。
+  安装器检查依赖，不自动安装这些系统包；仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件。
   四个 `/etc/init.d/kejilion-node*` 服务由 procd 监督并自动重启，保持遥测低权限和 broker 权限分离，
   stdout/stderr 交给系统日志；支持时启用 `no_new_privs`，不宣称与 systemd 沙箱等价。
   procd 节点将有界监控历史和文件管理状态保存到 `0700 root:root /etc/kejilion-node/state`，
@@ -488,7 +492,7 @@ SSRF 与 TLS 校验。对
   凭据原子性、错误请求限速和密钥不进入审计；轻量终端 v2 Noise 身份/密文/重放、重投递、
   会话 ID 对账、固定 root PTY、命令/输出上限、旧中心 404/405/426 兼容和 broker 故障不影响遥测；
 - `kejilion-node` 严格配置、拒绝重定向、固定动作、静态跨架构构建；安装器无 Docker 依赖、
-  Release 摘要验证、systemd/OpenRC 服务权限、自动更新回滚与失败安装清理；
+  Release 摘要验证、systemd/OpenRC/procd 服务权限、自动更新回滚与失败安装清理；
 - 标准 Compose 和应用市场部署都能出站验证 HTTPS，Panel 仍无 Docker Socket 和宿主权限。
 
 发布前执行 L2 验证；正式版本与镜像发布仍按 L3 流程执行。
