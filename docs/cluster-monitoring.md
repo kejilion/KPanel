@@ -217,12 +217,17 @@ bash <(curl -fsSL https://kejilion.sh) kpanel node join '<kpl1-token>'
   `mktemp`、`flock`、`stat`、`readlink`、`awk`、`grep`、`sed`、`cmp`、`od`、`tr` 和系统账户创建工具；
   Alpine 可使用 BusyBox `adduser`，不要求 Docker、Go、
   Node.js 或编译环境，支持 `amd64`、`arm64`；
+- 手动执行 `node join` 时，先校验参数、root、平台与服务管理环境，再汇总缺失命令，通过本机原生
+  包管理器批量补齐并复检。支持 OpenWrt 家族的 `opkg` 或 `apk`、Alpine 的 `apk`、Debian 家族的
+  `apt-get` 和 RPM 家族的 `dnf`/`yum`；OpenWrt 与 Alpine 即使同用 `apk`，仍分别使用各自的包名。
+  工具齐全时不调用包管理器；无法识别的软件源家族或安装失败时明确报告缺项，保留手动补齐路径。
+  不替换软件源、不升级整个系统、不安装或更换服务管理器；`node update`、无人值守更新、状态查询和
+  卸载不触发这项自动补包。在线接入命令启动前仍需准备 `bash`、`curl` 和可用的 HTTPS CA 证书；
 - procd 按 PID 1、可信 `/etc/rc.common`、`/lib/functions/procd.sh`、`ubus`、`jsonfilter` 与原生
   `/etc/init.d/cron` 能力识别，适用于满足这些条件的 OpenWrt 及其衍生系统，不依赖 iStoreOS 等品牌名称。
-  缺少工具时明确报告，不替换系统服务管理器；32 位 ARM/MIPS 没有本项目发布产物。
-  精简 OpenWrt 固件可能需要从同版本、同架构软件源补齐 `bash`、`curl`、HTTPS CA 证书、
-  `coreutils-install`、`coreutils-stat`、`coreutils-od`、`flock` 和 `shadow-useradd`；实际缺项以预检及 HTTPS 下载错误为准。
-  安装器检查依赖，不自动安装这些系统包；仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件。
+  32 位 ARM/MIPS 没有本项目发布产物。精简 OpenWrt 固件常见缺项包括 `coreutils-install`、
+  `coreutils-stat`、`coreutils-od`、`flock` 和账户创建工具 `shadow-useradd`；只补实际缺少的能力。
+  仅有 BusyBox `ash` 或 `/etc/init.d` 目录不足以满足安装条件，补包成功后仍须通过完整的运行环境检查。
   四个 `/etc/init.d/kejilion-node*` 服务由 procd 监督并自动重启，保持遥测低权限和 broker 权限分离，
   stdout/stderr 交给系统日志；支持时启用 `no_new_privs`，不宣称与 systemd 沙箱等价。
   procd 节点将有界监控历史和文件管理状态保存到 `0700 root:root /etc/kejilion-node/state`，
