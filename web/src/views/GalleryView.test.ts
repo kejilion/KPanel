@@ -89,13 +89,75 @@ afterEach(() => {
   wrapper = undefined
 })
 
+const clusterHosts = [
+  { id: 'local', name: 'panel', isLocal: true, kind: 'panel', state: 'online' },
+  { id: 'edge-1', name: 'edge-melbourne', isLocal: false, kind: 'panel', state: 'online', fileManagementAvailable: true },
+  { id: 'lite-1', name: 'lite-berlin', isLocal: false, kind: 'light_node', state: 'online', fileManagementAvailable: false },
+]
+
+describe('GalleryView host switcher', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  async function mountWithHosts(path = '/gallery', items: unknown[] = clusterHosts) {
+    vi.spyOn(api.cluster, 'hosts').mockResolvedValue({ items } as never)
+    return mountGallery(path)
+  }
+
+  it('lists every host, marks the current one and greys out hosts that cannot be browsed', async () => {
+    const view = await mountWithHosts()
+    await view.get('.gallery-host__button').trigger('click')
+    const rows = view.findAll('.gallery-menu--host button')
+    expect(rows.map((row) => row.text())).toEqual([
+      '本机当前面板', 'edge-melbourne文件管理已就绪', 'lite-berlin文件代理未就绪',
+    ])
+    expect(rows[0]!.attributes('aria-checked')).toBe('true')
+    expect(rows[1]!.attributes('disabled')).toBeUndefined()
+    expect(rows[2]!.attributes('disabled')).toBeDefined()
+  })
+
+  it('opens the chosen host library and returns to this panel without a host', async () => {
+    const view = await mountWithHosts('/gallery?path=%2Fhome%2Fgallery%2FKyoto')
+    await view.get('.gallery-host__button').trigger('click')
+    await view.findAll('.gallery-menu--host button')[1]!.trigger('click')
+    await flushPromises()
+    // The folder path stays behind: each host starts at its own library folder.
+    expect(router.currentRoute.value.query).toEqual({ hostId: 'edge-1' })
+    expect(view.get('.gallery-host__button').text()).toContain('edge-melbourne')
+
+    await view.get('.gallery-host__button').trigger('click')
+    await view.findAll('.gallery-menu--host button')[0]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+  })
+
+  it('keeps a queued upload on the host it was started for when you switch', async () => {
+    const view = await mountWithHosts()
+    let release: (value: FileEntry) => void = () => undefined
+    harness.upload.mockImplementationOnce(() => new Promise<FileEntry>((resolve) => { release = resolve }))
+    const input = view.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'late.jpg', { type: 'image/jpeg' })], configurable: true })
+    await input.trigger('change')
+    await view.get('.gallery-host__button').trigger('click')
+    await view.findAll('.gallery-menu--host button')[1]!.trigger('click')
+    await flushPromises()
+    release(media('/home/gallery/late.jpg'))
+    await flushPromises()
+    expect(view.get('.gallery-uploads').text()).toContain('已上传 1 项')
+  })
+
+  it('hides the switcher on a single-panel install', async () => {
+    const view = await mountWithHosts('/gallery', [clusterHosts[0]])
+    expect(view.find('.gallery-host').exists()).toBe(false)
+  })
+})
+
 describe('GalleryView on a remote host', () => {
   it('treats the library folder on that host like the local one and names the host', async () => {
     vi.spyOn(api.cluster, 'hosts').mockResolvedValue({ items: [{ id: 'edge-1', name: 'edge-melbourne', isLocal: false }] } as never)
     harness.tree = {}
     const view = await mountGallery('/gallery?hostId=edge-1')
     expect(view.get('.gallery-hero__title').text()).toBe('图库')
-    expect(view.get('.gallery-hero__host').text()).toBe('edge-melbourne')
+    expect(view.get('.gallery-host__button').text()).toBe('edge-melbourne')
     expect(view.text()).toContain('开始建立你的图库')
     // The location setting belongs to this browser, so it is only offered on the local host.
     const buttons = view.findAll('.gallery-empty button').map((button) => button.text())

@@ -85,6 +85,7 @@ import {
 import FileEntryIcon from '@/components/files/FileEntryIcon.vue'
 import { fileEntryIconKind as entryIconKind } from '@/lib/fileEntryPresentation'
 import { fileAPIForHost } from '@/lib/fileHostContext'
+import { fileHostStatus as sharedFileHostStatus } from '@/lib/fileHostStatus'
 import { filesSplitControlKey } from '@/lib/filesSplit'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import {
@@ -240,28 +241,8 @@ const activeFileHostLabel = computed(() => {
 })
 
 function fileHostStatus(host: ClusterHost): FileHostStatus {
-  if (host.isLocal) return { action: 'select', label: phrase('当前面板') }
-  if (host.kind === 'light_node') {
-    return host.fileManagementAvailable === true
-      ? { action: 'select', label: phrase('文件管理已就绪') }
-      : { action: 'manage', label: phrase('文件代理未就绪') }
-  }
-  if (['offline', 'auth_failed', 'tls_error', 'incompatible'].includes(host.state)) {
-    return { action: 'manage', label: phrase('主机连接异常') }
-  }
-  if (['pairing', 'revoking'].includes(host.state)) {
-    return { action: 'manage', label: phrase('主机状态处理中') }
-  }
-  if (host.kind === 'panel' && host.fileManagementAvailable === true) {
-    return { action: 'select', label: phrase('文件管理已就绪') }
-  }
-  if (host.mutualFileTransferAvailable) {
-    return { action: 'open', label: phrase('已配对 · 文件互传') }
-  }
-  if (host.fileTransferAvailable === true) {
-    return { action: 'open', label: phrase('已配对 · 仅支持接收') }
-  }
-  return { action: 'open', label: phrase('打开远端文件管理') }
+  const status = sharedFileHostStatus(host)
+  return { action: status.action, label: phrase(status.label) }
 }
 
 function closeFileHostPicker(restoreFocus = false): void {

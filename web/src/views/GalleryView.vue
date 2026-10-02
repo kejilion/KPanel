@@ -14,6 +14,8 @@ function phrase(value: string): string {
 import {
   ArrowUpDown,
   CheckCircle2,
+  Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   Download,
@@ -30,6 +32,7 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  Server,
   Trash2,
   Upload,
   X,
@@ -41,6 +44,8 @@ import GalleryTile from '@/components/gallery/GalleryTile.vue'
 import GalleryViewer, { type GalleryViewerSources } from '@/components/gallery/GalleryViewer.vue'
 import { getLocale } from '@/i18n'
 import { ApiError, api } from '@/lib/api'
+import { applyClusterHostOrderPreference, readClusterHostOrder, sortClusterHosts } from '@/lib/clusterHostOrder'
+import { fileHostStatus } from '@/lib/fileHostStatus'
 import { desktopWindowActiveKey } from '@/lib/desktopRouteKeys'
 import { downloadFileEntries } from '@/lib/fileDownloads'
 import { fileAPIForHost } from '@/lib/fileHostContext'
@@ -75,7 +80,7 @@ import {
 import { loadGalleryFolder, type GalleryAlbum, type GalleryFolderSnapshot } from '@/lib/galleryLibrary'
 import { galleryPosterKey, readGalleryPoster } from '@/lib/galleryPosters'
 import { useToast } from '@/stores/toast'
-import type { FileEntry } from '@/types/api'
+import type { ClusterHost, FileEntry } from '@/types/api'
 
 type UploadPhase = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
@@ -130,8 +135,17 @@ const isLibraryRoot = computed(() => currentPath.value === preferences.root)
 const insideLibrary = computed(() => isWithinGalleryRoot(preferences.root, currentPath.value))
 const trail = computed(() => galleryPathTrail(insideLibrary.value ? preferences.root : '/', currentPath.value))
 
-// A remote host shows its name, not its opaque id; the id stands in until the list arrives.
-const hostName = ref('')
+// Hosts the gallery can switch to; also gives a remote host its name instead of its opaque id.
+const hosts = ref<ClusterHost[]>([])
+const hostsLoading = ref(false)
+const hostMenuOpen = ref(false)
+const hostName = computed(() => hosts.value.find((host) => host.id === hostId.value)?.name ?? '')
+const hostChoices = computed(() => sortClusterHosts(hosts.value, readClusterHostOrder()).map((host) => {
+  const status = fileHostStatus(host)
+  return { host, label: status.label, selectable: status.action === 'select', current: (host.isLocal && !hostId.value) || host.id === hostId.value }
+}))
+// A single-panel install has nothing to switch to, so the switcher stays out of the way.
+const showHostSwitcher = computed(() => hosts.value.length > 1 || Boolean(hostId.value))
 
 const snapshot = shallowRef<GalleryFolderSnapshot>()
 const loading = ref(true)
@@ -353,16 +367,33 @@ function scheduleReload(): void {
   }, RELOAD_DEBOUNCE_MS)
 }
 
-watch(hostId, async (id) => {
-  hostName.value = ''
-  if (!id) return
+async function loadHosts(): Promise<void> {
+  hostsLoading.value = true
   try {
     const inventory = await api.cluster.hosts()
-    if (hostId.value === id) hostName.value = inventory.items.find((host) => host.id === id)?.name ?? ''
+    if (unmounted) return
+    applyClusterHostOrderPreference(inventory.hostOrder)
+    hosts.value = inventory.items
   } catch {
-    // The id label is enough when the host list cannot be read.
+    // The id label is enough, and the switcher hides itself, when the host list cannot be read.
+  } finally {
+    hostsLoading.value = false
   }
-}, { immediate: true })
+}
+
+function toggleHostMenu(): void {
+  albumMenu.value = undefined
+  moreMenuOpen.value = false
+  hostMenuOpen.value = !hostMenuOpen.value
+  if (hostMenuOpen.value) void loadHosts()
+}
+
+/** A host's gallery starts at its own library folder: the folder path is the same on every host. */
+function switchHost(host: ClusterHost): void {
+  hostMenuOpen.value = false
+  if ((host.isLocal && !hostId.value) || host.id === hostId.value) return
+  void router.push({ name: 'gallery', query: host.isLocal ? {} : { hostId: host.id } })
+}
 
 watch([currentPath, hostId], () => {
   viewerPath.value = undefined
@@ -736,6 +767,7 @@ async function createLibraryFolder(): Promise<void> {
 function onAlbumMenu(event: MouseEvent, album: GalleryAlbum): void {
   event.stopPropagation()
   moreMenuOpen.value = false
+  hostMenuOpen.value = false
   albumMenu.value = albumMenu.value === album.path ? undefined : album.path
 }
 
@@ -744,13 +776,15 @@ function closeMenus(event: MouseEvent): void {
   if (target?.closest('.gallery-menu, [data-gallery-menu-trigger]')) return
   albumMenu.value = undefined
   moreMenuOpen.value = false
+  hostMenuOpen.value = false
 }
 
 function onPageKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || viewerPath.value) return
-  if (albumMenu.value || moreMenuOpen.value) {
+  if (albumMenu.value || moreMenuOpen.value || hostMenuOpen.value) {
     albumMenu.value = undefined
     moreMenuOpen.value = false
+    hostMenuOpen.value = false
     event.preventDefault()
   } else if (selecting.value) {
     stopSelecting()
@@ -767,6 +801,7 @@ watch(sentinel, (element, previous) => {
 let unsubscribeChanges: (() => void) | undefined
 
 onMounted(() => {
+  void loadHosts()
   windowed.value = Boolean(page.value?.closest('.desktop-window__body'))
   if (typeof IntersectionObserver !== 'undefined') {
     // Inside a desktop window the gallery scrolls its own frame, which would clip a viewport root.
@@ -849,8 +884,41 @@ onBeforeUnmount(() => {
           <p class="gallery-hero__path">
             <MapPin :size="14" aria-hidden="true" />
             <span>{{ currentPath }}</span>
-            <span v-if="hostId" class="gallery-hero__host">{{ hostName || hostId }}</span>
           </p>
+          <div v-if="showHostSwitcher" class="gallery-host">
+            <button
+              class="gallery-host__button"
+              type="button"
+              data-gallery-menu-trigger
+              aria-haspopup="menu"
+              :aria-expanded="hostMenuOpen"
+              :title="phrase('切换主机的图库')"
+              @click="toggleHostMenu"
+            >
+              <Server :size="14" aria-hidden="true" />
+              <span>{{ hostId ? hostName || hostId : phrase('本机') }}</span>
+              <ChevronDown :size="14" aria-hidden="true" />
+            </button>
+            <div v-if="hostMenuOpen" class="gallery-menu gallery-menu--host" role="menu" :aria-label="phrase('切换主机的图库')">
+              <p v-if="hostsLoading && !hosts.length" class="gallery-menu__note" role="status">{{ phrase('正在读取主机…') }}</p>
+              <button
+                v-for="choice in hostChoices"
+                :key="choice.host.id"
+                role="menuitemradio"
+                type="button"
+                :aria-checked="choice.current"
+                :disabled="!choice.selectable"
+                @click="switchHost(choice.host)"
+              >
+                <Check v-if="choice.current" :size="16" aria-hidden="true" />
+                <span v-else class="gallery-menu__spacer" aria-hidden="true" />
+                <span class="gallery-menu__label">
+                  <strong>{{ choice.host.isLocal ? phrase('本机') : choice.host.name }}</strong>
+                  <small>{{ phrase(choice.label) }}</small>
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="gallery-hero__actions">
           <button
@@ -873,7 +941,7 @@ onBeforeUnmount(() => {
               :aria-expanded="moreMenuOpen"
               title="更多操作"
               aria-label="更多操作"
-              @click="moreMenuOpen = !moreMenuOpen; albumMenu = undefined"
+              @click="moreMenuOpen = !moreMenuOpen; albumMenu = undefined; hostMenuOpen = false"
             ><MoreHorizontal :size="17" /></button>
             <div v-if="moreMenuOpen" class="gallery-menu" role="menu">
               <button role="menuitem" type="button" @click="moreMenuOpen = false; revealInFiles(currentPath)">
@@ -1471,10 +1539,80 @@ onBeforeUnmount(() => {
   color: rgb(255 255 255 / 74%);
 }
 
-.gallery-hero__host {
-  padding: 0 8px;
+/* Switching hosts: the chip sits under the path and opens the same menu surface as the other actions. */
+.gallery-host {
+  position: relative;
+  width: fit-content;
+  margin-top: 6px;
+}
+
+.gallery-host__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gallery-host__button:hover,
+.gallery-host__button[aria-expanded='true'] {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.gallery-host__button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.gallery-menu.gallery-menu--host {
+  top: calc(100% + 6px);
+  right: auto;
+  left: 0;
+  min-width: 260px;
+  max-height: min(60vh, 360px);
+  overflow: auto;
+  color: var(--text);
+}
+
+.gallery-menu.gallery-menu--host button {
+  min-height: 52px;
+  align-items: center;
+}
+
+.gallery-menu.gallery-menu--host button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.gallery-menu__label {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.gallery-menu__label small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.gallery-menu__spacer {
+  width: 16px;
+  flex: 0 0 16px;
+}
+
+.gallery-menu__note {
+  margin: 0;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .gallery-hero__actions {
