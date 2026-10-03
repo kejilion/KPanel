@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,7 +32,7 @@ func desktopCredentialHostWithHandler(t *testing.T, s *Server, handler func(cont
 	return desktopCredentialHostWithProvider(t, s, handler, nil)
 }
 
-func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(context.Context, io.ReadWriteCloser, string) error, prepare func(context.Context) (desktopcredentials.Credentials, func() error, error)) string {
+func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(context.Context, io.ReadWriteCloser, string) error, prepare func(context.Context) (desktopcredentials.Credentials, func() error, error), reportUpdates ...*func([]string) error) string {
 	t.Helper()
 	enrollment, err := s.cluster.CreateLightEnrollmentForOrigin("https://panel.test")
 	if err != nil {
@@ -58,6 +60,21 @@ func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(con
 	auth.Signature = cluster.LightRequestSignature(reporting, "POST", "/api/v3/federation/light/report", node.NodeID, auth.Timestamp, auth.RequestID, body)
 	if _, err := s.cluster.AcceptLightReport(auth, body, report); err != nil {
 		t.Fatal(err)
+	}
+	var reportSequence atomic.Uint32
+	for _, target := range reportUpdates {
+		*target = func(caps []string) error {
+			update := report
+			update.Capabilities = caps
+			update.Telemetry.CollectedAt = time.Now().UTC()
+			data, _ := json.Marshal(update)
+			identity := auth
+			identity.Timestamp = strconv.FormatInt(time.Now().Unix(), 10)
+			identity.RequestID = fmt.Sprintf("%032x", reportSequence.Add(1))
+			identity.Signature = cluster.LightRequestSignature(reporting, "POST", "/api/v3/federation/light/report", node.NodeID, identity.Timestamp, identity.RequestID, data)
+			_, err := s.cluster.AcceptLightReport(identity, data, update)
+			return err
+		}
 	}
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.cluster.ServeFileStream(w, r, "127.0.0.1") }))
 	t.Cleanup(ts.Close)

@@ -123,3 +123,49 @@ func TestDesktopManagedHTTPLeaseAdmissionAndRevocation(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopManagedCredentialsWithheldWhenCapabilityRemovedDuringPreparation(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	cookie, csrf := bootstrapCookies(t, s, tokenPath)
+	var update func([]string) error
+	started, resume, cleaned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	host := desktopCredentialHostWithProvider(t, s, func(context.Context, io.ReadWriteCloser, string) error {
+		t.Error("revoked lease started desktop")
+		return nil
+	},
+		func(context.Context) (desktopcredentials.Credentials, func() error, error) {
+			close(started)
+			<-resume
+			return desktopcredentials.Credentials{Username: "kp_rdp_test", Domain: "TESTBOX", Password: "revoked-test-secret"}, func() error { close(cleaned); return nil }, nil
+		}, &update)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	body, _ := json.Marshal(map[string]any{"hostId": host, "useManagedCredentials": true})
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value}
+	go func() {
+		done <- authenticatedRequest(s, http.MethodPost, desktopSessionsPath, body, cookie, csrf, headers)
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		close(resume)
+		t.Fatal("preparation not reached")
+	}
+	if err := update([]string{"monitoring", "desktop"}); err != nil {
+		close(resume)
+		t.Fatal(err)
+	}
+	close(resume)
+	select {
+	case response := <-done:
+		if response.Code != 502 || strings.Contains(response.Body.String(), "revoked-test-secret") {
+			t.Fatal("revoked managed credentials delivered", response.Code)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("revoked preparation did not finish")
+	}
+	select {
+	case <-cleaned:
+	case <-time.After(3 * time.Second):
+		t.Fatal("revoked preparation not cleaned")
+	}
+}

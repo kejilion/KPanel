@@ -213,7 +213,7 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 			currentHost, hostErr := s.cluster.Host(r.Context(), host.ID)
 			s.desktopSessionMu.Lock()
 			accepted := prepareErr == nil && authErr == nil && hostErr == nil && currentHost.DesktopAvailable &&
-				leaseCtx.Err() == nil && s.desktopSessions[id] == item
+				s.cluster.ManagedDesktopAvailable(host.ID) && leaseCtx.Err() == nil && s.desktopSessions[id] == item
 			if accepted {
 				item.prepared, item.preparing = prepared, false
 			} else {
@@ -287,6 +287,10 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	var stream io.ReadWriteCloser
 	var err error
 	if item.prepared != nil {
+		if !s.cluster.ManagedDesktopAvailable(item.hostID) {
+			s.writeProblem(w, r, 409, "desktop_managed_unavailable", "Managed Windows account is unavailable", "")
+			return
+		}
 		stream = item.prepared
 		err = item.prepared.Claim()
 	} else {
@@ -318,7 +322,8 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 			case <-ticker.C:
 				_, err := s.auth.Authenticate(token)
 				host, hostErr := s.cluster.Host(ctx, item.hostID)
-				if err != nil || hostErr != nil || !host.DesktopAvailable || !time.Now().Before(session.ExpiresAt) {
+				if err != nil || hostErr != nil || !host.DesktopAvailable ||
+					item.accountMode == "managed-administrator" && !s.cluster.ManagedDesktopAvailable(item.hostID) || !time.Now().Before(session.ExpiresAt) {
 					cancel()
 					return
 				}
