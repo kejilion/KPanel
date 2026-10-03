@@ -108,6 +108,9 @@ describe('several terminals on one host', () => {
     await flushPromises()
     expect(wrapper.find('.terminal-alert').text()).toBe('所有主机合计的终端数已达上限，请先关闭不用的终端。')
     expect(tabNames(wrapper)).toEqual(['本地主机'])
+    await wrapper.find('.terminal-tab__close').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.terminal-alert').exists()).toBe(false)
     wrapper.unmount()
   })
 

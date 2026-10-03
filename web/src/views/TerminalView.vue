@@ -55,6 +55,7 @@ const activeSessionId = ref('')
 const loading = ref(true)
 const openingHostId = ref('')
 const errorMessage = ref('')
+const limitReached = ref(false)
 const search = ref('')
 const terminalMode = ref<'interactive' | 'batch'>('interactive')
 const selectedBatchHostIDs = ref<Set<string>>(new Set())
@@ -171,15 +172,15 @@ async function openSession(host: ClusterHost): Promise<void> {
   mobileConnectionsOpen.value = false
   openingHostId.value = host.id
   errorMessage.value = ''
+  limitReached.value = false
   try {
     const opened = await api.terminals.open(host.id, 30, 120)
     const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
     activeSessionId.value = item.id
   } catch (reason) {
-    errorMessage.value = reason instanceof ApiError && reason.code === 'terminal_limit'
-      ? t('terminal.sessionLimitReached')
-      : t('terminal.connectionFailed')
+    if (reason instanceof ApiError && reason.code === 'terminal_limit') limitReached.value = true
+    else errorMessage.value = t('terminal.connectionFailed')
   } finally {
     openingHostId.value = ''
   }
@@ -206,6 +207,8 @@ function removeSession(id: string): void {
   if (index < 0) return
   sessions.value.splice(index, 1)
   terminalRefs.delete(id)
+  // A closed terminal frees a slot, so the limit notice no longer holds.
+  limitReached.value = false
   if (activeSessionId.value === id) {
     activeSessionId.value = sessions.value[Math.max(0, index - 1)]?.id || ''
     if (activeSessionId.value) {
@@ -399,6 +402,7 @@ onBeforeUnmount(() => {
     <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
+    <div v-if="limitReached" class="terminal-alert" role="alert">{{ t('terminal.sessionLimitReached') }}</div>
     <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
       <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
       <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
