@@ -22,6 +22,11 @@ import (
 // Uses real enrollment/HMAC/Noise on loopback, with no Windows/RDP service.
 func desktopCredentialHost(t *testing.T, s *Server) string {
 	t.Helper()
+	return desktopCredentialHostWithHandler(t, s, func(context.Context, io.ReadWriteCloser, string) error { return nil })
+}
+
+func desktopCredentialHostWithHandler(t *testing.T, s *Server, handler func(context.Context, io.ReadWriteCloser, string) error) string {
+	t.Helper()
 	enrollment, err := s.cluster.CreateLightEnrollmentForOrigin("https://panel.test")
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +62,7 @@ func desktopCredentialHost(t *testing.T, s *Server) string {
 	done, ready := make(chan error, 1), make(chan struct{})
 	go func() {
 		done <- relay.RunDesktopStream(ctx, ts.URL, node.NodeID, node.TargetNodeID, key, peer,
-			func(context.Context, io.ReadWriteCloser, string) error { return nil }, func() { close(ready) })
+			handler, func() { close(ready) })
 	}()
 	t.Cleanup(func() {
 		cancel()

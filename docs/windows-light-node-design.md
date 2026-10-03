@@ -460,6 +460,8 @@ POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 会话分配 1 分钟内仅可 claim 一次；32 字节随机 nonce 在 RDCleanPath 内再次校验。GET 流同样强制 Origin，
 不允许 query 参数。IronRDP 不发送 WebSocket subprotocol，因此使用上述精确登录绑定而非自创子协议。
 中心禁用策略独立持久化，立即关闭该主机的桌面 control/data，不影响命令行和文件；策略损坏时桌面失败关闭。
+桌面输入、输出每帧转发前复核本次登录；注销后拒绝后续复核的帧，已经发送的在途数据无法撤回。
+空闲连接每秒复核登录与主机可用性，过期登录由会话 deadline 关闭。
 
 ### 13.4 安全
 

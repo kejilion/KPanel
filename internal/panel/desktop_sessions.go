@@ -228,6 +228,9 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		for {
 			n, err := stream.Read(buffer)
 			if n > 0 {
+				if _, err := s.auth.Authenticate(token); err != nil {
+					return
+				}
 				writeCtx, stop := context.WithTimeout(ctx, 15*time.Second)
 				writeErr := ws.Write(writeCtx, websocket.MessageBinary, buffer[:n])
 				stop()

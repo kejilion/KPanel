@@ -1,12 +1,80 @@
 package panel
 
 import (
+	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
+
+func TestDesktopStreamRejectsOutputAfterLogout(t *testing.T) {
+	s, tokenPath := newTestServer(t)
+	cookie, csrf := bootstrapCookies(t, s, tokenPath)
+	afterLogout := make(chan struct{})
+	host := desktopCredentialHostWithHandler(t, s, func(ctx context.Context, stream io.ReadWriteCloser, _ string) error {
+		if _, err := stream.Write([]byte("authorized-frame")); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-afterLogout:
+		}
+		_, err := stream.Write([]byte("revoked-frame"))
+		if err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	body, _ := json.Marshal(map[string]string{"hostId": host})
+	headers := map[string]string{"Content-Type": "application/json", "Origin": "http://panel.test", "X-CSRF-Token": csrf.Value}
+	opened := authenticatedRequest(s, http.MethodPost, desktopSessionsPath, body, cookie, csrf, headers)
+	if opened.Code != http.StatusCreated {
+		t.Fatalf("open: %d %s", opened.Code, opened.Body.String())
+	}
+	var session struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(opened.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "panel.test"
+		s.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	header := http.Header{"Origin": []string{"http://panel.test"}, "Cookie": []string{cookie.String() + "; " + csrf.String()}}
+	ws, _, err := websocket.Dial(ctx, server.URL+desktopSessionsPath+"/"+session.SessionID+"/stream", &websocket.DialOptions{HTTPHeader: header})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.CloseNow()
+	kind, data, err := ws.Read(ctx)
+	if err != nil || kind != websocket.MessageBinary || string(data) != "authorized-frame" {
+		t.Fatalf("authorized output: %q %v", data, err)
+	}
+	// No output was in flight at logout: the node emits the next frame only
+	// after deletion of the exact browser login has completed successfully.
+	if err := s.auth.Logout(cookie.Value); err != nil {
+		t.Fatal(err)
+	}
+	close(afterLogout)
+	if _, data, err := ws.Read(ctx); err == nil {
+		t.Fatalf("desktop output delivered after logout: %q", data)
+	} else if ctx.Err() != nil {
+		t.Fatal("revoked desktop did not close before test deadline", err)
+	}
+}
 
 func TestDesktopSessionOriginCSRFAndExactLoginBinding(t *testing.T) {
 	s, tokenPath := newTestServer(t)
