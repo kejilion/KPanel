@@ -439,6 +439,8 @@ KejilionNodeTerminal 内的 RDCleanPath 桥（Go）
   管理员可以通过终端自行开启。远程桌面防火墙规则建议保持关闭，只走回环。
 - **能力开关。** 增加 `desktop` 能力：安装时必须显式开启（`-Capabilities ...,desktop`），中心也能按主机关闭；
   已接入的节点不会自动获得。
+  单台和批量接入界面提供显式 RDP 复选框，生成 `-EnableDesktop`。它在按域计算默认能力后仅追加 `desktop`，
+  不会使加入域的机器额外获得终端或文件权限。SYSTEM bootstrap 的受保护 stdin 请求承载该布尔值。
 
 ### 13.3 浏览器 API
 

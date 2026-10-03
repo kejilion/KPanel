@@ -52,3 +52,23 @@ func TestWindowsEnrollmentCannotConsumePolicyBeforeSigningConfiguration(t *testi
 		t.Fatalf("%#v, %v", enrollment, err)
 	}
 }
+
+func TestWindowsDesktopEnrollmentRequiresExplicitOptIn(t *testing.T) {
+	s := newLightServiceForTest(t, &serviceTestClock{now: time.Now().UTC()})
+	s.windowsNodePublisher = "CN=Test"
+	defaultCommand, err := s.lightEnrollmentCommand("windows", "kpl1.test", "")
+	if err != nil || strings.Contains(defaultCommand, "-EnableDesktop") {
+		t.Fatal("default enabled desktop", err)
+	}
+	single, err := s.CreateLightEnrollmentWithDesktop(s.publicURL, "", "windows", true)
+	if err != nil || !strings.Contains(single.Command, "-EnableDesktop") {
+		t.Fatal("single did not opt in", err)
+	}
+	batch, err := s.CreateLightBatchEnrollment(CreateLightBatchEnrollmentInput{Platform: "windows", EnableDesktop: true})
+	if err != nil || !strings.Contains(batch.Command, "-EnableDesktop") {
+		t.Fatal("batch did not opt in", err)
+	}
+	if _, err := s.lightEnrollmentCommandWithDesktop("linux", "", "", true); !errors.Is(err, ErrProtocolMismatch) {
+		t.Fatal("Linux accepted desktop", err)
+	}
+}

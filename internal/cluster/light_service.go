@@ -70,9 +70,13 @@ func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName st
 }
 
 func (s *Service) CreateLightEnrollmentForPlatform(origin, requestedName, platform string) (LightEnrollment, error) {
+	return s.CreateLightEnrollmentWithDesktop(origin, requestedName, platform, false)
+}
+
+func (s *Service) CreateLightEnrollmentWithDesktop(origin, requestedName, platform string, desktop bool) (LightEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	if _, err := s.lightEnrollmentCommand(platform, "", ""); err != nil {
+	if _, err := s.lightEnrollmentCommandWithDesktop(platform, "", "", desktop); err != nil {
 		return LightEnrollment{}, err
 	}
 	origin, err := validateLightOrigin(origin)
@@ -107,7 +111,7 @@ func (s *Service) CreateLightEnrollmentForPlatform(origin, requestedName, platfo
 		return LightEnrollment{}, err
 	}
 	token := lightTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
-	command, err := s.lightEnrollmentCommand(platform, token, name)
+	command, err := s.lightEnrollmentCommandWithDesktop(platform, token, name, desktop)
 	if err != nil {
 		return LightEnrollment{}, err
 	}

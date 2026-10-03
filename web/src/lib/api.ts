@@ -1763,14 +1763,15 @@ export const api = {
       }),
     createPairingCode: (): Promise<ClusterPairingCode> =>
       request<ClusterPairingCode>('/cluster/pairing-codes/v2', { method: 'POST' }),
-    createLightEnrollment: (name?: string, platform: 'linux' | 'windows' = 'linux'): Promise<ClusterLightEnrollment> =>
+    createLightEnrollment: (name?: string, platform: 'linux' | 'windows' = 'linux', enableDesktop?: boolean): Promise<ClusterLightEnrollment> =>
       request<ClusterLightEnrollment>('/cluster/light-enrollments', {
         method: 'POST',
-        body: { name: name?.trim() || undefined, platform },
+        body: { name: name?.trim() || undefined, platform, enableDesktop },
       }),
     lightBatchEnrollments: (signal?: AbortSignal): Promise<ClusterLightBatchEnrollmentList> =>
       request<ClusterLightBatchEnrollmentList>('/cluster/light-batch-enrollments', { signal }),
     createLightBatchEnrollment: (body: {
+	  enableDesktop?: boolean
 	  platform?: 'linux' | 'windows'
       namePrefix?: string
       maxUses: number

@@ -89,6 +89,20 @@ func enrollmentCapabilities(value string) ([]string, error) {
 func platformTerminalEnabled(config nodeConfig) bool {
 	return slices.Contains(config.Capabilities, "terminal")
 }
+
+func installationCapabilities(request windowsInstallRequest) ([]string, error) {
+	caps, err := enrollmentCapabilities(request.Capabilities)
+	if err != nil {
+		return nil, err
+	}
+	if request.EnableDesktop && !slices.Contains(caps, "desktop") {
+		if windowsDesktopBroker == nil {
+			return nil, errors.New("remote desktop is unavailable in this build")
+		}
+		caps = append(caps, "desktop")
+	}
+	return caps, nil
+}
 func requirePlatformBrokerCapabilities(ctx context.Context, config nodeConfig) error {
 	if platformTerminalEnabled(config) {
 		return requireWindowsCapability(ctx, config, "terminal")

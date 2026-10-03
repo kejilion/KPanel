@@ -1,6 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["允许通过 KPanel 连接远程桌面（RDP）","允許透過 KPanel 連線遠端桌面（RDP）"],
+  ["仅授权桌面连接；Windows 的远程桌面与防火墙设置需自行配置。","僅授權桌面連線；Windows 的遠端桌面與防火牆設定需自行設定。"],
   ["选择目标系统，生成一条可在多台主机上重复使用的接入命令。","選擇目標系統，產生一條可在多台主機上重複使用的接入命令。"],
   ["Windows 安装包签名尚未配置，暂时无法生成接入命令。","Windows 安裝套件簽章尚未設定，暫時無法產生接入命令。"],
   ["Windows 主机","Windows 主機"],

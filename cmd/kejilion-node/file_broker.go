@@ -47,9 +47,6 @@ func runFileBroker(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	if err := requireWindowsCapability(context.Background(), config, "files"); err != nil {
-		return err
-	}
 	ctx, stop := nodeSignalContext()
 	defer stop()
 	stopWindowsHealth := startPlatformHealthPublisher(ctx)
@@ -64,6 +61,14 @@ func runFileBroker(arguments []string) error {
 	defer stopHistory()
 	var identity terminalIdentity
 	for {
+		// Local sampling must survive an offline center during boot. Remote
+		// identity provisioning and each subsequent connection still fail closed.
+		if err := requireWindowsCapability(ctx, config, "files"); err != nil {
+			if !waitContext(ctx, time.Minute) {
+				return nil
+			}
+			continue
+		}
 		updated, relayIdentity, capabilityErr := ensureFileCapability(ctx, *configPath, config, secret, *fileConfigPath)
 		if capabilityErr == nil {
 			config, identity = updated, relayIdentity

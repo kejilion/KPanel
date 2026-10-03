@@ -812,7 +812,7 @@ describe('ClusterView inventory and navigation', () => {
     await view.copyLightEnrollment()
 
     expect(view.lightEnrollment.value).toEqual(enrollment)
-    expect(mocks.createLightEnrollment).toHaveBeenCalledWith('英国AMR', 'linux')
+    expect(mocks.createLightEnrollment).toHaveBeenCalledWith('英国AMR', 'linux', undefined)
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith(enrollment.command)
     expect(mocks.toastSuccess).toHaveBeenCalledWith('轻量节点接入命令已复制')
   })

@@ -26,10 +26,11 @@ import (
 )
 
 type windowsInstallRequest struct {
-	Token        string                  `json:"token"`
-	Name         string                  `json:"name,omitempty"`
-	Capabilities string                  `json:"capabilities,omitempty"`
-	Trust        windowsnode.TrustPolicy `json:"trust"`
+	EnableDesktop bool                    `json:"enableDesktop,omitempty"`
+	Token         string                  `json:"token"`
+	Name          string                  `json:"name,omitempty"`
+	Capabilities  string                  `json:"capabilities,omitempty"`
+	Trust         windowsnode.TrustPolicy `json:"trust"`
 }
 
 func runPlatformCommand(arguments []string) (bool, error) {
@@ -212,7 +213,7 @@ func bootstrapWindowsNode() (resultErr error) {
 	if err := windowsnode.WriteAtomic(filepath.Join(windowsnode.DataDir(), "trust.json"), policy, windowsnode.SystemOnly); err != nil {
 		return err
 	}
-	capabilities, err := enrollmentCapabilities(request.Capabilities)
+	capabilities, err := installationCapabilities(request)
 	if err != nil {
 		return err
 	}

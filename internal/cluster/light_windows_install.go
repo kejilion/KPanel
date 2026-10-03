@@ -16,6 +16,13 @@ func powershellSingleQuote(value string) string {
 }
 
 func (s *Service) lightEnrollmentCommand(platform, token, name string) (string, error) {
+	return s.lightEnrollmentCommandWithDesktop(platform, token, name, false)
+}
+
+func (s *Service) lightEnrollmentCommandWithDesktop(platform, token, name string, desktop bool) (string, error) {
+	if desktop && platform != "windows" {
+		return "", ErrProtocolMismatch
+	}
 	if platform == "" || platform == "linux" {
 		command := "bash <(curl -fsSL https://kejilion.sh) kpanel node join '" + token + "'"
 		if name != "" {
@@ -55,6 +62,9 @@ func (s *Service) lightEnrollmentCommand(platform, token, name string) (string, 
 	command := "& $script -Token " + powershellSingleQuote(token) + " -Publisher " + powershellSingleQuote(publisher) + " -Version " + powershellSingleQuote("v"+strings.TrimPrefix(s.panelVersion, "v"))
 	if name != "" {
 		command += " -Name " + powershellSingleQuote(name)
+	}
+	if desktop {
+		command += " -EnableDesktop"
 	}
 	if profile != "" {
 		command += " -ProfileOID " + powershellSingleQuote(profile)

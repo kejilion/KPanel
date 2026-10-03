@@ -5,6 +5,7 @@ param(
     [string]$Token = $env:KPANEL_NODE_TOKEN,
     [string]$Name = '',
     [string]$Capabilities = '',
+    [switch]$EnableDesktop,
     [Parameter(Mandatory = $true)][ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?$')][string]$Version,
     [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Publisher,
     [string]$ProfileOID = ''
@@ -25,7 +26,7 @@ function Assert-Signature([string]$Path) {
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
     if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -cne $Publisher) { throw "Authenticode trust or publisher mismatch: $Path" }
     if ($ProfileOID) {
-        $eku = @($signature.SignerCertificate.EnhancedKeyUsageList | ForEach-Object { $_.ObjectId.Value })
+        $eku = @($signature.SignerCertificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' } | ForEach-Object { $_.EnhancedKeyUsages } | ForEach-Object { $_.Value })
         if ($eku -cnotcontains $ProfileOID) { throw 'The Artifact Signing certificate profile does not match.' }
     }
 }
@@ -134,7 +135,7 @@ try {
     $fileSecurity.SetSecurityDescriptorSddlForm('O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;BU)')
     Set-Acl -LiteralPath $binary -AclObject $fileSecurity
     Set-Acl -LiteralPath $bootstrap -AclObject $fileSecurity
-    $request = @{token=$Token;name=$Name;capabilities=$Capabilities;trust=@{publisher=$Publisher;profileOID=$ProfileOID}} | ConvertTo-Json -Compress
+    $request = @{token=$Token;name=$Name;capabilities=$Capabilities;enableDesktop=[bool]$EnableDesktop;trust=@{publisher=$Publisher;profileOID=$ProfileOID}} | ConvertTo-Json -Compress
     $startInfo = [Diagnostics.ProcessStartInfo]::new($binary,'install --stdin')
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true

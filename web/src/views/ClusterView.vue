@@ -136,6 +136,10 @@ const pairingCode = ref<ClusterPairingCode>()
 const lightEnrollment = ref<ClusterLightEnrollment>()
 const lightEnrollmentPlatform = ref<'linux' | 'windows'>('linux')
 const lightBatchPlatform = ref<'linux' | 'windows'>('linux')
+const lightEnableDesktop = ref(false)
+const lightBatchEnableDesktop = ref(false)
+watch(lightEnableDesktop, () => { if (lightEnrollmentPlatform.value === 'windows') { lightEnrollment.value = undefined; resetLightEnrollmentTracking() } })
+watch(lightBatchEnableDesktop, () => { lightBatchEnrollment.value = undefined; lightBatchCommandCopied.value = false })
 const lightEnrollmentConnected = ref(false)
 const lightEnrollmentState = ref<'waiting' | 'registered' | 'connected' | 'expired'>('waiting')
 type AddMode = 'single' | 'batch'
@@ -606,6 +610,7 @@ async function createLightBatchEnrollment(): Promise<void> {
   try {
     const enrollment = await api.cluster.createLightBatchEnrollment({
 	  platform: lightBatchPlatform.value,
+      enableDesktop: lightBatchPlatform.value === 'windows' && lightBatchEnableDesktop.value ? true : undefined,
       namePrefix: lightBatchForm.namePrefix.trim() || undefined,
       maxUses: Number(lightBatchForm.maxUses),
       expiresInSeconds: Number(lightBatchForm.expiresInSeconds),
@@ -618,7 +623,9 @@ async function createLightBatchEnrollment(): Promise<void> {
   } catch (reason) {
     toast.danger(
       '批量接入命令生成失败',
-      friendlyError(reason, '请检查接入数量、有效期和当前 KPanel 的 HTTPS 地址。'),
+      reason instanceof ApiError && reason.code === 'cluster_windows_installer_unavailable'
+        ? phrase('Windows 安装包签名尚未配置，暂时无法生成接入命令。')
+        : friendlyError(reason, '请检查接入数量、有效期和当前 KPanel 的 HTTPS 地址。'),
     )
   } finally {
     generatingLightBatchEnrollment.value = false
@@ -663,6 +670,7 @@ async function createLightEnrollment(platform: 'linux' | 'windows' = lightEnroll
     lightEnrollment.value = await api.cluster.createLightEnrollment(
       addForm.name.trim() || undefined,
 	  platform,
+      platform === 'windows' && lightEnableDesktop.value ? true : undefined,
     )
     startLightEnrollmentWatch()
   } catch (reason) {
@@ -2021,6 +2029,7 @@ onBeforeUnmount(() => {
               <Plus v-else :size="14" /> {{ phrase('生成接入命令') }}
             </button>
           </div>
+          <label v-if="platform === 'windows'" class="cluster-windows-desktop-option"><input v-model="lightEnableDesktop" type="checkbox" :disabled="generatingLightEnrollment" />{{ phrase('允许通过 KPanel 连接远程桌面（RDP）') }}<small>{{ phrase('仅授权桌面连接；Windows 的远程桌面与防火墙设置需自行配置。') }}</small></label>
           <div v-if="lightEnrollment && lightEnrollmentPlatform === platform" class="cluster-light-enrollment__command">
             <pre>{{ lightEnrollment.command }}</pre>
             <button class="button button--secondary button--small" type="button" @click="copyLightEnrollment">
@@ -2066,6 +2075,7 @@ onBeforeUnmount(() => {
               <option value="windows">Windows</option>
             </select>
           </label>
+          <label v-if="lightBatchPlatform === 'windows'" class="cluster-windows-desktop-option"><input v-model="lightBatchEnableDesktop" name="cluster-light-batch-desktop" type="checkbox" :disabled="generatingLightBatchEnrollment" />{{ phrase('允许通过 KPanel 连接远程桌面（RDP）') }}<small>{{ phrase('仅授权桌面连接；Windows 的远程桌面与防火墙设置需自行配置。') }}</small></label>
           <label class="field">
             {{ phrase('名称前缀（可选）') }}
             <input
@@ -3045,6 +3055,9 @@ onBeforeUnmount(() => {
   border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--border));
   border-radius: var(--radius-md);
 }
+.cluster-windows-desktop-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.cluster-windows-desktop-option input { width: auto; }
+.cluster-windows-desktop-option small { flex-basis: 100%; color: var(--muted); line-height: 1.5; }
 
 .cluster-light-enrollment > div:first-child {
   display: flex;

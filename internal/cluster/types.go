@@ -142,6 +142,7 @@ type LightEnrollment struct {
 }
 
 type CreateLightBatchEnrollmentInput struct {
+	EnableDesktop    bool   `json:"enableDesktop,omitempty"`
 	Platform         string `json:"platform,omitempty"`
 	NamePrefix       string `json:"namePrefix,omitempty"`
 	MaxUses          int    `json:"maxUses,omitempty"`

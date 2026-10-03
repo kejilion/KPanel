@@ -34,7 +34,7 @@ func (s *Service) CreateLightBatchEnrollmentForOrigin(
 ) (LightBatchEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
-	if _, err := s.lightEnrollmentCommand(input.Platform, "", ""); err != nil {
+	if _, err := s.lightEnrollmentCommandWithDesktop(input.Platform, "", "", input.EnableDesktop); err != nil {
 		return LightBatchEnrollment{}, err
 	}
 	validatedOrigin, err := validateLightOrigin(origin)
@@ -91,7 +91,7 @@ func (s *Service) CreateLightBatchEnrollmentForOrigin(
 	token := lightBatchTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
 	result := publicLightBatchEnrollment(record)
 	result.Platform = input.Platform
-	result.Command, err = s.lightEnrollmentCommand(input.Platform, token, "")
+	result.Command, err = s.lightEnrollmentCommandWithDesktop(input.Platform, token, "", input.EnableDesktop)
 	if err != nil {
 		return LightBatchEnrollment{}, err
 	}

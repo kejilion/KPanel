@@ -46,6 +46,7 @@ jobs:
           go vet ./internal/windowsnode ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/tests/windows-node-release.test.ps1
+          ./scripts/tests/windows-installer-signature.test.ps1
           node --test scripts/tests/merge-windows-release.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile both Windows node architectures
