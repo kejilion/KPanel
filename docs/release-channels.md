@@ -82,3 +82,42 @@ KPanel 只接受以下两种规范版本，所有数字段禁止前导零且不�
 Latest/prerelease 状态、版本镜像和通道标签 digest、候选分支处置、自更新通道用例及生产适用性。
 可执行发布步骤以 `.codex-workflows/release-kpanel.workflow.yaml` 为准，验收结构以
 `docs/release-acceptance-template.md` 为准。
+
+### 5.1 Windows 轻量节点签名产物
+
+Windows Release 显式启用仓库变量 `KPANEL_WINDOWS_NODE_RELEASE_ENABLED=true`。未启用时沿用 Linux
+发布；启用后 Windows 签名任务失败会阻止整次发布，不得发布缺少 Windows 附件的半成品。当前开发环境
+未提供正式签名身份；构建成功不等于具备公开安装或真实 Windows 服务生命周期的验收证据。
+
+签名任务运行在独立 `windows-2025` Runner 和 `windows-node-signing` Environment，只有读取仓库的
+权限，不持有 Release 写权限。管理员应为该 Environment 配置发布 Tag 限制和人工保护，并按
+[Azure 官方签名集成](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations)
+预先完成身份验证、Public Trust 证书配置及最小范围 Certificate Profile Signer 授权。
+
+| 配置位置 | 名称 | 含义 |
+| --- | --- | --- |
+| Repository variable | `KPANEL_WINDOWS_NODE_RELEASE_ENABLED` | 仅精确 `true` 启用 |
+| Environment variables | `KPANEL_WINDOWS_NODE_PUBLISHER` | 证书完整 Subject，区分大小写，与中心端信任配置一致 |
+| Environment variable | `KPANEL_WINDOWS_NODE_PROFILE_OID` | 可选的稳定 profile EKU OID；使用 Artifact Signing 时建议固定 |
+| Environment variables | `KPANEL_SIGNING_ENDPOINT`、`KPANEL_SIGNING_ACCOUNT`、`KPANEL_SIGNING_PROFILE` | 区域 HTTPS endpoint、账号、证书 profile 名称 |
+| Environment secrets | `KPANEL_AZURE_TENANT_ID`、`KPANEL_AZURE_CLIENT_ID`、`KPANEL_AZURE_CLIENT_SECRET` | 仅用于配置检查和签名步骤的应用身份；不得写入源码、产物或日志 |
+
+工作流固定使用官方 `azure/artifact-signing-action` `v2.0.0` 提交
+`c7ab2a863ab5f9a846ddb8265964877ef296ee82`。该上游版本固定 ArtifactSigning 模块 `0.1.8`、
+Windows SDK BuildTools `10.0.26100.4188`、ArtifactSigning.Client `1.0.128`，内部还声明 SignCLI
+`0.9.1-beta.26227.3`；本项目只签 EXE/PowerShell，不增加 MSIX 路径。升级时需同时核对这些传递依赖。
+签名依赖缓存关闭，Azure CLI 及其他替代身份路径关闭；私钥保留在 Azure 服务端。
+Actions 的完整 SHA/版本由现有 `dependency-policy.json` 的 `github-actions` 分组自动枚举，不另建清单。
+
+固定发布附件为 `kejilion-node-windows-amd64.exe`、`kejilion-node-windows-arm64.exe`、
+`install-windows.ps1`。源码安装器是 `deploy/windows/install.ps1`：构建时先确定最终 UTF-8 BOM/CRLF
+字节，再统一 Authenticode SHA-256 签名并附 RFC3161 时间戳。验证器要求 Windows 信任链有效、
+发布者完全匹配、代码签名 EKU 和已配置的 profile OID 一致；不固定短期叶证书指纹，允许同身份轮换。
+所有文件通过后才生成 `SHA256SUMS.windows`，Linux 任务只下载同一次 workflow 的签名产物，复核文件
+清单和摘要，然后合并到公共 `SHA256SUMS`；签名后不得再次改编码或修改 EXE。
+
+本地可运行 `scripts/tests/windows-node-release.test.ps1`、
+`node --test scripts/tests/merge-windows-release.test.mjs`；前者真实拒绝未签脚本，并用模拟 OS 验签结果
+覆盖身份/轮换/时间戳/篡改边界，后者覆盖跨 Runner 文件完整性。CI 另执行 Windows 原生测试和双架构
+构建，不上传未签产物。正式发布仍须验证真实 Azure 签名、下载后验签与 SHA-256、amd64/arm64 实机安装、
+升级和中断恢复，不能以模拟测试或交叉编译替代。RC 附件只供主动选择的隔离验收，无人值守节点仍跟随稳定版。
