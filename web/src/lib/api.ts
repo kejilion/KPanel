@@ -1859,6 +1859,15 @@ export const api = {
       request<{ closed: boolean }>(`/terminal-sessions/${encodeURIComponent(sessionId)}/close`, {
         method: 'POST', body: {},
       }),
+    // For a page that is going away: nothing can read the answer, and a
+    // keepalive request is the only kind the browser lets finish afterwards.
+    closeOnUnload: (sessionId: string): void => {
+      const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' }
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken
+      void fetch(buildUrl(`/terminal-sessions/${encodeURIComponent(sessionId)}/close`), {
+        method: 'POST', credentials: 'same-origin', keepalive: true, headers, body: '{}',
+      }).catch(() => undefined)
+    },
   },
   system: {
     resources: async (signal?: AbortSignal): Promise<SystemResourceSnapshot> =>

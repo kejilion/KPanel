@@ -57,3 +57,49 @@ describe('HostTerminal close lifecycle', () => {
     expect(mocks.close).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('HostTerminal reload', () => {
+  const closeOnUnload = vi.fn()
+  beforeEach(() => {
+    closeOnUnload.mockReset()
+    mocks.close.mockReset().mockResolvedValue({ closed: true })
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  function pageHide(persisted = false): void {
+    const event = new Event('pagehide') as PageTransitionEvent
+    Object.defineProperty(event, 'persisted', { value: persisted })
+    window.dispatchEvent(event)
+  }
+
+  it('closes its own session when the page is reloaded, without unmounting', async () => {
+    const api = await import('@/lib/api')
+    ;(api.api.terminals as unknown as { closeOnUnload: typeof closeOnUnload }).closeOnUnload = closeOnUnload
+    const wrapper = mount(HostTerminal, { props })
+    pageHide()
+    expect(closeOnUnload.mock.calls).toEqual([['retained-id']])
+    wrapper.unmount()
+  })
+
+  it('does not close a session that was already closed, nor one in the back/forward cache', async () => {
+    const api = await import('@/lib/api')
+    ;(api.api.terminals as unknown as { closeOnUnload: typeof closeOnUnload }).closeOnUnload = closeOnUnload
+    mocks.close.mockResolvedValue({ closed: true })
+    const wrapper = mount(HostTerminal, { props })
+    pageHide(true)
+    await (wrapper.vm as unknown as { closeSession(): Promise<void> }).closeSession()
+    pageHide()
+    expect(closeOnUnload).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('stops listening once unmounted', async () => {
+    const api = await import('@/lib/api')
+    ;(api.api.terminals as unknown as { closeOnUnload: typeof closeOnUnload }).closeOnUnload = closeOnUnload
+    const wrapper = mount(HostTerminal, { props })
+    wrapper.unmount()
+    pageHide()
+    expect(closeOnUnload).not.toHaveBeenCalled()
+  })
+})

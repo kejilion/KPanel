@@ -6,6 +6,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import { api, ApiError, terminalStream } from '@/lib/api'
+import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import { TerminalDuplexInput } from '@/lib/terminalDuplexInput'
 import type { TerminalStreamSubscription } from '@/lib/terminalStream'
 import type { TerminalOutput } from '@/types/api'
@@ -310,8 +311,11 @@ watch([themeColors, resolvedTheme], () => {
   })
 })
 
+let stopPageHideClose: (() => void) | undefined
+
 onMounted(() => {
   mounted = true
+  stopPageHideClose = closeTerminalsOnPageHide(() => (closeConfirmed ? [] : [props.sessionId]))
   duplexInput = new TerminalDuplexInput({
       negotiate: () => api.terminals.inputTransport(props.sessionId),
       credentials: () => api.terminals.inputSocket(props.sessionId),
@@ -355,6 +359,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopPageHideClose?.()
   disposed = true
   mounted = false
   stopOutput()

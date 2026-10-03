@@ -9,6 +9,7 @@ import { detectOperatingSystemIdentity } from '@/lib/operatingSystem'
 import { batchExitCode, createBatchMarker, stripBatchWrapper, wrapBatchCommand } from '@/lib/batchCompletion'
 import { drainTerminalInputQueue, TerminalInputQueue } from '@/lib/terminalInput'
 import { createTerminalOutputReader, type TerminalOutputReader } from '@/lib/terminalOutputReader'
+import { closeTerminalsOnPageHide } from '@/lib/terminalPageHide'
 import type { ClusterHost } from '@/types/api'
 
 function phrase(value: string): string {
@@ -399,7 +400,10 @@ function stopExecution(): void {
 
 defineExpose({ applyQuickCommand })
 
+const stopPageHideClose = closeTerminalsOnPageHide(() => [...activeSessions.values()])
+
 onBeforeUnmount(() => {
+  stopPageHideClose()
   outputPreElements.clear()
   runController?.abort()
   runIdentity += 1
