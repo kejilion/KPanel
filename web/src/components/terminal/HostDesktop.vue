@@ -133,6 +133,7 @@ defineExpose({ closeSession, scheduleResize, focusTerminal: () => canvasHost.val
 .host-desktop { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; background: var(--surface); color: var(--text); }
 .host-desktop__login { width: min(100% - 40px, 380px); margin: auto; padding: 32px 0; }
 .host-desktop__login h2 { font-size: 20px; margin: 0; }
+.host-desktop__login .field,.host-desktop__login input { font-size: 14px; }
 .host-desktop__login p,.host-desktop__login small { color: var(--muted); line-height: 1.6; }
 .host-desktop__canvas { flex: 1; min-height: 320px; overflow: hidden; }
 .host-desktop__canvas.is-hidden { display: none; }
