@@ -416,7 +416,7 @@ Server 2016 没有 ConPTY：节点不声明终端能力，前端显示“仅监�
 | 自研屏幕采集、编码和键鼠注入 | 否 | 需要在用户会话里运行辅助进程，还要处理 UAC 安全桌面；工作量和风险最高 |
 | Guacamole（guacd） | 否 | 中心端多一个 C 守护进程或容器 |
 | 公网开放 3389 | 否 | 暴露的 RDP 是最常见的入侵入口之一 |
-| **浏览器 IronRDP + 节点 RDCleanPath 桥 + 现有 Noise 流** | **采用** | 复用系统 RDP；节点只转发字节；3389 不对外 |
+| **浏览器 IronRDP + 节点 RDCleanPath 桥 + 现有 Noise 流** | **采用** | 复用系统 RDP；桥固定访问回环，不新增防火墙放行规则 |
 | 本地 mstsc + 本地端口转发工具 | 备选 | 性能最好，但管理员电脑要装额外工具 |
 
 [IronRDP](https://github.com/Devolutions/IronRDP) 是 Devolutions 维护的 Rust RDP 实现（MIT/Apache-2.0），
@@ -428,30 +428,34 @@ Server 2016 没有 ConPTY：节点不声明终端能力，前端显示“仅监�
 ```text
 浏览器（IronRDP WASM，打开桌面时才加载）
   ⇄ WebSocket  GET /api/v1/desktop-sessions/{id}/stream
-     （Session + Origin 校验，复用终端输入流的 WebSocket 模式，子协议固定）
+     （Session + Origin 校验，复用终端输入流的 WebSocket 模式，不使用子协议）
 中心 paneld：会话分配、权限、审计、字节转发（不解析 RDP）
-  ⇄ Noise 流，新角色 light-desktop-data（节点按 light-terminal-control 的指令回拨）
+  ⇄ Noise 流，新角色 light-desktop-data（节点按 light-desktop-control 的指令回拨）
 KejilionNodeTerminal 内的 RDCleanPath 桥（Go）
   ⇄ TCP 127.0.0.1:<RDP 端口>（Windows 自带 TermService）
 ```
 
 - **目标固定。** 只连本机回环地址加注册表 `Terminal Server\WinStations\RDP-Tcp\PortNumber` 中的端口；
   不接受浏览器或中心指定主机和端口，所以不会变成通用端口转发或内网跳板。
-- **不改系统配置。** 节点不开启 RDP、不改防火墙。RDP 未开启（`fDenyTSConnections=1`）时显示“远程桌面未开启”，
-  管理员可以通过终端自行开启。远程桌面防火墙规则建议保持关闭，只走回环。
+- **显式启用管理员桌面。** 单台和批量安装的 `-EnableDesktop` 在非域、受支持的 GUI Windows 上创建随机命名的
+  专用本地管理员，启用 TermService/RDP 并强制 NLA/TLS；保留 UAC，不覆盖冲突的组策略，不新增防火墙规则。
+  Windows listener 的网络可达性取决于已有防火墙配置；开启 RDP 也可能允许其他已有授权账户从网络登录，
+  不能把“桥只连回环”解释为“Windows 的 RDP 只监听回环”。家庭版、域控制器、Server Core 不启用托管管理员模式。
+  首次变更前在 SYSTEM-only `desktop-listener.json` 保存三个原值；失败或卸载仅恢复仍等于本产品写入值的项目，
+  保留后续管理员改值。重复安装失败保留旧账户和旧 journal。TermService 的运行状态不主动停止还原，以免干扰既有会话。
 - **能力开关。** 增加 `desktop` 能力：安装时必须显式开启（`-Capabilities ...,desktop`），中心也能按主机关闭；
   已接入的节点不会自动获得。
-  单台和批量接入界面提供显式 RDP 复选框，生成 `-EnableDesktop`。它在按域计算默认能力后仅追加 `desktop`，
-  不会使加入域的机器额外获得终端或文件权限。SYSTEM bootstrap 的受保护 stdin 请求承载该布尔值。
+  `-EnableDesktop` 追加 `desktop`，非域机器再追加 `desktop-managed`；加入域的机器沿用已有 Windows 账户和 RDP 设置，
+  不自动增加终端或文件权限。SYSTEM bootstrap 的受保护 stdin 请求承载该布尔值；托管账户另需中心 `desktop-managed-v1`。
 
 ### 13.3 浏览器 API
 
 ```text
-POST /api/v1/desktop-sessions                 { hostId, useSavedCredentials? } → { sessionId, nonce, expiresAt, credentials? }
+POST /api/v1/desktop-sessions                 { hostId, useSavedCredentials?, useManagedCredentials? } → { sessionId, nonce, expiresAt, credentials? }
 GET  /api/v1/desktop-sessions/{id}/stream     WebSocket（二进制）
 POST /api/v1/desktop-sessions/{id}/close
 POST /api/v1/desktop-sessions/policy          { hostId, allowed }
-POST /api/v1/desktop-sessions/credentials/status { hostId } → { saved, username?, domain? }
+POST /api/v1/desktop-sessions/credentials/status { hostId } → { saved, managed?, username?, domain? }
 POST /api/v1/desktop-sessions/credentials/save   { hostId, username, domain, password } → 同上
 POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 ```
@@ -468,7 +472,19 @@ POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 1. 访问要过三道认证：KPanel 登录、Noise 节点身份、Windows 网络级身份验证（NLA）。
 2. **中心能看到解密后的 RDP 流。** TLS 在节点终结，与终端现状一致（中心本来就能看到终端明文）。
    如果要求中心也看不到，需要把桥放进浏览器 WASM（D5）。
-3. **一键登录。** 首次明确选择“保存并连接”，之后新建该主机 RDP 页签会自动使用已保存账户；仍可选“仅连接本次”。
+3. **托管管理员一键登录。** 默认 PowerShell 服务使用 LocalSystem；托管 RDP 使用本机 Administrators 组的专用账户，
+   按 Linux root 的整机管理用途提供能力，保留 UAC 和 Windows 自身的受保护资源边界，不能把 RDP 身份称为 SYSTEM。
+   安装显式选择后，每次打开 RDP 自动连接，无需用户输入 Windows 密码。节点用官方 NetUser/NetLocalGroup API 建立
+   随机 `kp_rdp_*` 账户，以受保护的随机 marker 和 SID 核验所有权，平时禁用并过期；不采用已有同名账户。
+   连接前独占生成 256 位随机密码、设置约一分钟账户有效期并启用。中心先保留配额，在同一经过 Noise 认证的数据流接收
+   nonce 绑定的凭据，浏览器在 45 秒内认领该流才运行 RDP。凭据仅由 `no-store` 响应交给当前 KPanel 登录，不写入中心 vault。
+   关闭、连接失败、未认领超时、注销或禁用策略时，节点尝试禁用、过期、轮换密码并注销匹配 token SID 的 Windows 会话；
+   清理失败停止再次发放凭据，服务重启后先恢复再接纳。受保护记录只存名称、marker、SID，不存密码明文；Windows SAM
+   保留系统自己的密码验证数据。Go/JS/WASM 不能保证所有内存副本物理擦除。
+   关闭托管桌面会注销，未保存工作会丢失；管理员已经做出的系统变更不会因断开而回滚。账户 profile 文件保留。
+   SID/marker 前检与按名称执行的 SAM API 并非原子操作，另一位本地管理员并发改名的竞态、正在 NLA 登录但 token 未就绪的
+   WTS 注销行为，以及崩溃后的恢复必须进行隔离 Windows 实机验证。
+   **已有账户兼容。** 加入域、旧节点或主动更换账户时可选择“保存并连接”或“仅连接本次”；已有保存记录优先使用。
    加密记录按 KPanel 用户、主机 ID、节点 Noise 公钥摘要与用户安全凭据版本绑定；节点身份或账户安全版本改变后需重新录入。
    中心使用 XChaCha20-Poly1305、随机 nonce 和完整绑定信息作为 AAD，密钥与密文位于私有 `desktop-credentials/`，
    不进入普通状态、审计或 Panel 导出备份。用户可更换账户或清除并断开；删除主机清理所有用户的该主机记录。
@@ -492,7 +508,7 @@ POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 | 连接上限 | 计入每身份 16 条流的既有上限 |
 | 时长 | 30 分钟无数据关闭；最长 8 小时 |
 | 保存账户 | 全中心最多 1024 条加密记录、4 MiB 状态；每用户每主机一条，覆盖旧版本 |
-| 断线 | Windows 会话保留为“已断开”，重连回到原桌面；broker 或中心重启后同样适用 |
+| 断线 | 托管管理员注销并轮换密码，重连新建登录；手动或保存的已有账户由 Windows 会话策略决定 |
 | 带宽 | IronRDP 文档列出 RemoteFX 与 RDP 6.0 位图压缩，未列出 H.264；适合运维和办公画面，不适合视频（需实测） |
 | 会话冲突 | 桌面版 Windows 只允许一个交互会话：连入前提示会锁定或挤下本机用户 |
 
@@ -500,7 +516,7 @@ POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 
 - Windows 主机沿用终端左侧列表；点击主机先选择“命令行（PowerShell） / 远程桌面（RDP）”，
   随后在右侧打开带类型的会话页签；Linux 保留点击直接命令行。RDP 不可用时显示具体原因。
-- 两类会话分别管理连接与关闭；批量命令只进入命令行。RDP 断开保留 Windows 登录会话，关闭 Shell 终止 PTY。
+- 两类会话分别管理连接与关闭；批量命令只进入命令行。托管 RDP 断开注销专用桌面，关闭 Shell 终止 PTY。
 - IronRDP 组件仅选择 RDP 后懒加载，不进入首屏。
 - 只在桌面端浏览器提供完整体验；手机上显示“建议使用桌面浏览器”，但不禁用。
 - 使用官方 npm 精确版本 `@devolutions/iron-remote-desktop-rdp@0.7.0` 与 GUI `@devolutions/iron-remote-desktop@0.11.0`，

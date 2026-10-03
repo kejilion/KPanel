@@ -21,6 +21,9 @@ if ([Environment]::OSVersion.Version.Major -lt 10 -or -not [Environment]::Is64Bi
 if ($Token -notmatch '^kp[lb]1\.[A-Za-z0-9_-]+$' -or $Token.Length -gt 2048) { throw 'A valid enrollment token is required.' }
 if ($Name.Length -gt 80 -or $Name -match '[\x00-\x1f\x7f]') { throw 'The node name is invalid.' }
 if ($Publisher.Length -gt 1024 -or $Publisher -match '[\r\n\x00]') { throw 'The trusted publisher configuration is invalid.' }
+if ($EnableDesktop) {
+    Write-Host 'Administrator desktop selected: supported non-domain Windows will enable RDP/NLA and create a managed local administrator. UAC remains enabled. Existing firewall rules may also allow other authorized accounts to connect over the network. Closing the managed desktop logs it off; save your work first.'
+}
 
 function Assert-Signature([string]$Path) {
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
@@ -151,7 +154,11 @@ try {
         $installExit = $process.ExitCode
     } finally { $process.Dispose() }
     if ($installExit -ne 0) { throw 'Node bootstrap failed. Preserve the protected batch attempt state before retrying enrollment.' }
-    Write-Host 'Windows node installed. RDP and firewall settings were not changed.'
+    if ($EnableDesktop) {
+        Write-Host 'RDP was opted in. On supported non-domain Windows, KPanel configures RDP/NLA and manages a dedicated local administrator. Existing firewall rules may also allow other authorized accounts to connect over the network; no firewall rule was added. Domain machines keep existing RDP/account settings.'
+    } else {
+        Write-Host 'Windows node installed. RDP and firewall settings were not changed.'
+    }
     Write-Host 'Review PSReadLine history for enrollment tokens; revoke unused batch tokens in the center.'
 } finally {
     $Token = $null; $request = $null

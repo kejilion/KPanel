@@ -65,6 +65,12 @@ func runPlatformCommand(arguments []string) (bool, error) {
 				if err := windowsnode.RemoveServices(); err != nil {
 					return err
 				}
+				if err := windowsnode.RemoveDesktopAccount(); err != nil {
+					return err
+				}
+				if err := windowsnode.RestoreManagedDesktopListener(); err != nil {
+					return err
+				}
 				return windowsnode.RemoveInstallation()
 			})
 		}
@@ -221,7 +227,24 @@ func bootstrapWindowsNode() (resultErr error) {
 		return err
 	}
 	request.Token = ""
-	return windowsnode.InstallServices(capabilities)
+	if !slices.Contains(capabilities, "desktop-managed") {
+		return windowsnode.InstallServices(capabilities)
+	}
+	rollbackDesktop, err := windowsnode.BeginDesktopInstallation()
+	if err != nil {
+		return err
+	}
+	if err := windowsnode.InstallDesktopAccount(); err != nil {
+		return errors.Join(err, rollbackDesktop())
+	}
+	_, err = windowsnode.EnableManagedDesktopListener()
+	if err != nil {
+		return errors.Join(err, rollbackDesktop())
+	}
+	if err := windowsnode.InstallServices(capabilities); err != nil {
+		return errors.Join(err, rollbackDesktop())
+	}
+	return nil
 }
 
 func ensureWindowsEnrollment(request windowsInstallRequest, capabilities []string) error {

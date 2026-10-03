@@ -17,7 +17,7 @@ type LightCapabilitiesResponse struct {
 }
 
 func LightCenterCapabilities() []string {
-	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, WindowsNodeCapability, DesktopCapability}
+	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, WindowsNodeCapability, DesktopCapability, ManagedDesktopCapability}
 }
 
 // ProbeLightCapabilities is read-only. It must never provision a privileged
@@ -58,7 +58,7 @@ func validateLightPlatform(input LightReportRequest) error {
 	}
 	for _, list := range []struct{ values, allowed []string }{
 		{input.UnavailableMetrics, []string{"load", "swap", "diskIO", "networkConnections"}},
-		{input.Capabilities, []string{"monitoring", "terminal", "files", "login", "desktop"}},
+		{input.Capabilities, []string{"monitoring", "terminal", "files", "login", "desktop", "desktop-managed"}},
 	} {
 		if len(list.values) > len(list.allowed) {
 			return ErrProtocolMismatch

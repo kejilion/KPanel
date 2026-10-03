@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/desktopcredentials"
 )
 
@@ -22,6 +24,9 @@ type panelDesktopSession struct {
 	expires                   time.Time
 	claimed                   bool
 	cancel                    context.CancelFunc
+	prepared                  *cluster.PreparedDesktopStream
+	preparing                 bool
+	accountMode               string
 }
 
 func (s *Server) closeDesktopSessions() {
@@ -77,10 +82,15 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == desktopSessionsPath && r.Method == http.MethodPost {
 		var input struct {
-			HostID              string `json:"hostId"`
-			UseSavedCredentials bool   `json:"useSavedCredentials"`
+			HostID                string `json:"hostId"`
+			UseSavedCredentials   bool   `json:"useSavedCredentials"`
+			UseManagedCredentials bool   `json:"useManagedCredentials"`
 		}
 		if s.decodeJSON(w, r, &input) != nil {
+			return
+		}
+		if input.UseSavedCredentials && input.UseManagedCredentials {
+			s.writeProblem(w, r, 400, "invalid_desktop_request", "Choose one desktop account source", "")
 			return
 		}
 		host, err := s.cluster.Host(r.Context(), input.HostID)
@@ -88,7 +98,14 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 			s.writeProblem(w, r, http.StatusConflict, "desktop_unavailable", "Remote desktop is unavailable", "")
 			return
 		}
-		if s.audit(r, session.User.ID, "desktop.open", "cluster_host", host.ID, "intent", nil) != nil {
+		accountMode := "manual"
+		if input.UseSavedCredentials {
+			accountMode = "saved"
+		}
+		if input.UseManagedCredentials {
+			accountMode = "managed-administrator"
+		}
+		if s.audit(r, session.User.ID, "desktop.open", "cluster_host", host.ID, "intent", map[string]any{"accountMode": accountMode}) != nil {
 			s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 			return
 		}
@@ -116,7 +133,9 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		now := time.Now()
-		item := &panelDesktopSession{id: id, hostID: host.ID, userID: session.User.ID, nonce: hex.EncodeToString(nonce), token: sha256.Sum256([]byte(token)), expires: now.Add(time.Minute)}
+		item := &panelDesktopSession{id: id, hostID: host.ID, userID: session.User.ID, nonce: hex.EncodeToString(nonce), token: sha256.Sum256([]byte(token)), expires: now.Add(time.Minute), accountMode: accountMode}
+		leaseCtx, leaseCancel := context.WithDeadline(context.Background(), session.ExpiresAt)
+		item.cancel, item.preparing = leaseCancel, input.UseManagedCredentials
 		s.desktopSessionMu.Lock()
 		if s.desktopSessions == nil {
 			s.desktopSessions = make(map[string]*panelDesktopSession)
@@ -124,6 +143,9 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		userCount, hostCount := 0, 0
 		for key, current := range s.desktopSessions {
 			if !current.claimed && now.After(current.expires) {
+				if current.cancel != nil {
+					current.cancel()
+				}
 				delete(s.desktopSessions, key)
 				continue
 			}
@@ -136,15 +158,84 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(s.desktopSessions) >= 4 || userCount >= 2 || hostCount >= 1 {
 			s.desktopSessionMu.Unlock()
+			leaseCancel()
 			s.writeProblem(w, r, 429, "desktop_limit", "Desktop session limit reached", "")
 			return
 		}
 		s.desktopSessions[id] = item
 		s.desktopSessionMu.Unlock()
+		// Expire unclaimed allocations without requiring another browser request.
+		expiry := time.AfterFunc(time.Until(item.expires), func() {
+			s.desktopSessionMu.Lock()
+			defer s.desktopSessionMu.Unlock()
+			if s.desktopSessions[id] == item && !item.claimed {
+				item.cancel()
+				delete(s.desktopSessions, id)
+			}
+		})
+		context.AfterFunc(leaseCtx, func() {
+			expiry.Stop()
+			s.desktopSessionMu.Lock()
+			defer s.desktopSessionMu.Unlock()
+			if s.desktopSessions[id] == item && !item.claimed {
+				delete(s.desktopSessions, id)
+			}
+		})
+		if input.UseManagedCredentials {
+			// Watch authorization during preparation and the unclaimed lease too.
+			// The WebSocket handler takes over the same checks after claim.
+			go func() {
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-leaseCtx.Done():
+						return
+					case <-ticker.C:
+						s.desktopSessionMu.Lock()
+						claimed := item.claimed
+						s.desktopSessionMu.Unlock()
+						if claimed {
+							return
+						}
+						_, authErr := s.auth.Authenticate(token)
+						if authErr != nil || !s.cluster.ManagedDesktopAvailable(host.ID) {
+							leaseCancel()
+							return
+						}
+					}
+				}
+			}()
+			stopRequest := context.AfterFunc(r.Context(), leaseCancel)
+			prepared, issued, prepareErr := s.cluster.PrepareManagedDesktop(leaseCtx, host.ID, item.nonce)
+			stopRequest()
+			_, authErr := s.auth.Authenticate(token)
+			currentHost, hostErr := s.cluster.Host(r.Context(), host.ID)
+			s.desktopSessionMu.Lock()
+			accepted := prepareErr == nil && authErr == nil && hostErr == nil && currentHost.DesktopAvailable &&
+				leaseCtx.Err() == nil && s.desktopSessions[id] == item
+			if accepted {
+				item.prepared, item.preparing = prepared, false
+			} else {
+				delete(s.desktopSessions, id)
+			}
+			s.desktopSessionMu.Unlock()
+			if !accepted {
+				leaseCancel()
+				if prepared != nil {
+					_ = prepared.Close()
+				}
+				issued.Password = ""
+				s.writeProblem(w, r, 502, "desktop_managed_unavailable", "Managed Windows account is unavailable", "")
+				return
+			}
+			credentials = &issued
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		response := map[string]any{"sessionId": id, "hostId": host.ID, "nonce": item.nonce, "expiresAt": item.expires}
 		if credentials != nil {
 			response["credentials"] = credentials
+			defer func() { credentials.Password = "" }()
 		}
 		s.writeJSON(w, http.StatusCreated, response)
 		return
@@ -173,20 +264,34 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusOK, map[string]bool{"closed": true})
 		return
 	}
-	if parts[1] != "stream" || r.Method != http.MethodGet || item.claimed || !time.Now().Before(item.expires) {
+	if parts[1] != "stream" || r.Method != http.MethodGet || item.claimed || item.preparing || !time.Now().Before(item.expires) {
 		s.desktopSessionMu.Unlock()
 		s.writeProblem(w, r, 409, "desktop_session_consumed", "Desktop session is expired or in use", "")
 		return
 	}
-	item.claimed, item.cancel = true, cancel
+	leaseCancel := item.cancel
+	item.claimed, item.cancel = true, func() {
+		cancel()
+		if leaseCancel != nil {
+			leaseCancel()
+		}
+	}
 	s.desktopSessionMu.Unlock()
 	defer func() {
+		item.cancel()
 		s.desktopSessionMu.Lock()
 		delete(s.desktopSessions, item.id)
 		s.desktopSessionMu.Unlock()
-		_ = s.audit(r, item.userID, "desktop.close", "cluster_host", item.hostID, "success", nil)
+		_ = s.audit(r, item.userID, "desktop.close", "cluster_host", item.hostID, "success", map[string]any{"accountMode": item.accountMode})
 	}()
-	stream, err := s.cluster.OpenDesktopStream(ctx, item.hostID, item.nonce)
+	var stream io.ReadWriteCloser
+	var err error
+	if item.prepared != nil {
+		stream = item.prepared
+		err = item.prepared.Claim()
+	} else {
+		stream, err = s.cluster.OpenDesktopStream(ctx, item.hostID, item.nonce)
+	}
 	if err != nil {
 		s.writeProblem(w, r, 502, "desktop_open_failed", "Desktop connection failed", "")
 		return
@@ -202,7 +307,7 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	defer ws.CloseNow()
 	ws.SetReadLimit(256 << 10)
 	context.AfterFunc(ctx, func() { _ = ws.CloseNow(); _ = stream.Close() })
-	_ = s.audit(r, item.userID, "desktop.open", "cluster_host", item.hostID, "success", nil)
+	_ = s.audit(r, item.userID, "desktop.open", "cluster_host", item.hostID, "success", map[string]any{"accountMode": item.accountMode})
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()

@@ -70,7 +70,7 @@ func enrollmentCapabilities(value string) ([]string, error) {
 	result := []string{"monitoring"}
 	for _, c := range strings.Split(value, ",") {
 		c = strings.TrimSpace(c)
-		if !slices.Contains([]string{"monitoring", "terminal", "files", "login", "desktop"}, c) {
+		if !slices.Contains([]string{"monitoring", "terminal", "files", "login", "desktop", "desktop-managed"}, c) {
 			return nil, errors.New("unknown Windows node capability")
 		}
 		if !slices.Contains(result, c) {
@@ -82,6 +82,9 @@ func enrollmentCapabilities(value string) ([]string, error) {
 	}
 	if slices.Contains(result, "desktop") && windowsDesktopBroker == nil {
 		return nil, errors.New("remote desktop is unavailable in this build")
+	}
+	if slices.Contains(result, "desktop-managed") && !slices.Contains(result, "desktop") {
+		return nil, errors.New("managed desktop requires desktop capability")
 	}
 	return result, nil
 }
@@ -95,11 +98,23 @@ func installationCapabilities(request windowsInstallRequest) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !request.EnableDesktop && slices.Contains(caps, "desktop-managed") {
+		return nil, errors.New("managed desktop requires explicit installation opt-in")
+	}
 	if request.EnableDesktop && !slices.Contains(caps, "desktop") {
 		if windowsDesktopBroker == nil {
 			return nil, errors.New("remote desktop is unavailable in this build")
 		}
 		caps = append(caps, "desktop")
+	}
+	if request.EnableDesktop {
+		joined, err := windowsnode.DomainJoined()
+		if err != nil {
+			return nil, err
+		}
+		if !joined && !slices.Contains(caps, "desktop-managed") {
+			caps = append(caps, "desktop-managed")
+		}
 	}
 	return caps, nil
 }
@@ -147,6 +162,9 @@ func requireWindowsCapability(parent context.Context, config nodeConfig, capabil
 	}
 	if capability == "desktop" && !slices.Contains(response.Capabilities, "desktop-v1") {
 		return errors.New("center does not support remote desktop")
+	}
+	if capability == "desktop" && slices.Contains(config.Capabilities, "desktop-managed") && !slices.Contains(response.Capabilities, "desktop-managed-v1") {
+		return errors.New("center does not support managed desktop accounts")
 	}
 	return nil
 }

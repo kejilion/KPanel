@@ -89,6 +89,51 @@ afterEach(async () => {
 })
 
 describe('RDP saved sign-in lifecycle', () => {
+  it('automatically connects the node-managed administrator without a password form or saved login', async () => {
+    mocks.status.mockResolvedValue({ saved: false, managed: true })
+    const credential = { username: 'kp_rdp_test', domain: 'TESTBOX', password: 'synthetic-admin-secret' }
+    mocks.open.mockResolvedValue({ sessionId: 'managed-1', nonce: 'nonce', credentials: credential })
+    const wrapper = await create()
+    expect(mocks.open).toHaveBeenCalledWith(props.hostId, false, true)
+    expect(mocks.save).not.toHaveBeenCalled()
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('专用管理员')
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+    expect(views[0]!.values).toMatchObject({ username: 'kp_rdp_test', domain: 'TESTBOX', password: 'synthetic-admin-secret' })
+    expect(credential.password).toBe('')
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+    await button(wrapper, '断开并更换账户').trigger('click'); await flushPromises()
+    expect(mocks.close).toHaveBeenCalledWith('managed-1')
+    expect(views[0]!.shutdown).toHaveBeenCalled()
+    expect(wrapper.find('input[type="password"]').exists()).toBe(true)
+    expect(wrapper.find('input[type="password"]').element).toHaveProperty('value', '')
+  })
+
+  it('retries a failed managed administrator connection without requiring Windows credentials', async () => {
+    mocks.status.mockResolvedValue({ saved: false, managed: true })
+    mocks.open.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce({ sessionId: 'managed-2', nonce: 'nonce', credentials: { username: 'kp_rdp_test', domain: 'TESTBOX', password: 'synthetic-retry' } })
+    const wrapper = await create()
+    expect(wrapper.text()).toContain('管理员桌面连接失败')
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    await button(wrapper, '管理员一键连接').trigger('click'); await flushPromises()
+    expect(mocks.open).toHaveBeenLastCalledWith(props.hostId, false, true)
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+  })
+
+  it('revokes a managed lease that arrives after its tab closed', async () => {
+    mocks.status.mockResolvedValue({ saved: false, managed: true })
+    const pending = deferred<{ sessionId: string; nonce: string; credentials: { username: string; password: string } }>()
+    mocks.open.mockReturnValueOnce(pending.promise)
+    const wrapper = await create()
+    wrapper.unmount()
+    const credentials = { username: 'kp_rdp_test', password: 'synthetic-late' }
+    pending.resolve({ sessionId: 'managed-late', nonce: 'nonce', credentials }); await flushPromises()
+    expect(mocks.close).toHaveBeenCalledWith('managed-late')
+    expect(credentials.password).toBe('')
+    expect(views).toHaveLength(0)
+  })
+
   it.each(['resolve', 'reject'])('does not let a late %s of timeout close overwrite the retried session', async (outcome) => {
     vi.useFakeTimers()
     pendingConnect = deferred<{ run: () => Promise<void> }>()

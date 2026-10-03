@@ -1,8 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
-  ["允许通过 KPanel 连接远程桌面（RDP）","Allow remote desktop (RDP) connections through KPanel"],
-  ["仅授权桌面连接；Windows 的远程桌面与防火墙设置需自行配置。","Only grants desktop access. Configure Windows Remote Desktop and firewall settings yourself."],
+  ["启用管理员远程桌面（RDP），接入后自动登录","Enable administrator remote desktop (RDP) with automatic sign-in"],
+  ["将启用 Windows RDP，并创建专用本地管理员；保留 UAC、NLA，不修改已有账户。已有防火墙规则可能允许其他授权账户从网络登录。域机器需使用已有账户。","Enables Windows RDP and creates a dedicated local administrator. UAC, NLA and existing accounts are preserved. Existing firewall rules may also allow other authorized accounts to connect over the network. Domain machines require an existing account."],
   ["选择目标系统，生成一条可在多台主机上重复使用的接入命令。","Choose the target system to generate an enrollment command for multiple hosts."],
   ["Windows 安装包签名尚未配置，暂时无法生成接入命令。","Windows package signing is not configured. Enrollment commands are currently unavailable."],
   ["Windows 主机","Windows host"],

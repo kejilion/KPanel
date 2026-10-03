@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/desktopbridge"
+	"github.com/kejilion/kejilion-panel/internal/desktopcredentials"
+	"github.com/kejilion/kejilion-panel/internal/windowsnode"
 )
 
 func init() {
@@ -20,6 +23,15 @@ func runWindowsDesktopBroker(ctx context.Context, config nodeConfig) {
 	// installation capability and authenticated center capability both agree.
 	if requireBrokerIdentity() != nil {
 		return
+	}
+	var prepare func(context.Context) (desktopcredentials.Credentials, func() error, error)
+	if slices.Contains(config.Capabilities, "desktop-managed") {
+		manager, err := windowsnode.OpenDesktopAccountManager()
+		if err != nil {
+			slog.Error("managed desktop account recovery failed; desktop access remains disabled")
+			return
+		}
+		prepare = manager.Prepare
 	}
 	_, identity, err := readTerminalConfig(defaultTerminalConfigPath)
 	if err != nil {
@@ -47,8 +59,8 @@ func runWindowsDesktopBroker(ctx context.Context, config nodeConfig) {
 			continue
 		}
 		connected := false
-		err = relay.RunDesktopStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer,
-			desktopbridge.Serve, func() { connected = true })
+		err = relay.RunManagedDesktopStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer,
+			desktopbridge.Serve, prepare, func() { connected = true })
 		if ctx.Err() != nil {
 			return
 		}

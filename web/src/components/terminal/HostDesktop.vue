@@ -19,6 +19,7 @@ const checking = ref(true)
 const managing = ref(false)
 const manualLogin = ref(true)
 const saved = ref(false)
+const managed = ref(false)
 const statusFailed = ref(false)
 const connecting = ref(false)
 const saving = ref(false)
@@ -87,11 +88,13 @@ async function checkCredentials(): Promise<void> {
     const result = await api.desktops.credentialStatus(props.hostId, statusController.signal)
     if (attempt !== sequence || unmounted) return
     saved.value = result.saved
+    managed.value = Boolean(result.managed) && !result.saved
     username.value = result.username || ''
     domain.value = result.domain || ''
-    manualLogin.value = !result.saved
+    manualLogin.value = !result.saved && !managed.value
     checking.value = false
     if (result.saved) void connect(true)
+    else if (managed.value) void connect(false, false, true)
   } catch {
     if (attempt !== sequence || unmounted) return
     statusFailed.value = true
@@ -101,11 +104,11 @@ async function checkCredentials(): Promise<void> {
   }
 }
 
-async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
+async function connect(useSaved: boolean, saveFirst = false, useManaged = false): Promise<void> {
   if (unmounted || connecting.value || managing.value || checking.value) return
-  if (!useSaved && (!username.value.trim() || !password.value)) return
+  if (!useSaved && !useManaged && (!username.value.trim() || !password.value)) return
   const utf8 = new TextEncoder()
-  if (!useSaved && (utf8.encode(username.value.trim()).length > 256 || utf8.encode(domain.value.trim()).length > 256 || utf8.encode(password.value).length > 1024)) {
+  if (!useSaved && !useManaged && (utf8.encode(username.value.trim()).length > 256 || utf8.encode(domain.value.trim()).length > 256 || utf8.encode(password.value).length > 1024)) {
     error.value = phrase('登录字段过长，请缩短用户名、域或密码。')
     return
   }
@@ -148,14 +151,14 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
     }, 30_000)
     const rdp = await loadRemoteDesktop()
     if (attempt !== sequence || unmounted) return
-    const opened = await api.desktops.open(props.hostId, useSaved)
+    const opened = useManaged ? await api.desktops.open(props.hostId, false, true) : await api.desktops.open(props.hostId, useSaved)
     if (attempt !== sequence || unmounted) {
       if (opened.credentials) opened.credentials.password = ''
       await api.desktops.close(opened.sessionId)
       return
     }
     sessionId = opened.sessionId
-    if (useSaved) {
+    if (useSaved || useManaged) {
       if (!opened.credentials?.username || !opened.credentials.password) throw new Error('saved credentials missing')
       credentials = { ...opened.credentials, domain: opened.credentials.domain || '' }
       opened.credentials.password = ''
@@ -199,7 +202,9 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
     await live.run()
   } catch (reason) {
     if (attempt === sequence) {
-      if (reason instanceof ApiError && reason.code === 'desktop_credentials_missing') {
+      if (useManaged) {
+        error.value = phrase('管理员桌面连接失败，请重试或检查节点的 RDP 服务、证书和账户状态。')
+      } else if (reason instanceof ApiError && reason.code === 'desktop_credentials_missing') {
         saved.value = false
         manualLogin.value = true
         error.value = phrase('已保存的登录信息不存在，请重新输入。')
@@ -242,6 +247,7 @@ async function manageCredentials(clear: boolean): Promise<void> {
       }
     }
     manualLogin.value = true
+    managed.value = false
   } catch {
     if (!unmounted) error.value = phrase('关闭未确认，请重试关闭会话。')
   } finally {
@@ -277,11 +283,13 @@ defineExpose({ closeSession, scheduleResize, focusTerminal: () => canvasHost.val
     </form>
     <div v-if="!checking && !connected && !connecting && !manualLogin" class="host-desktop__login form-stack">
       <Monitor :size="32" /><h2>{{ hostName }} · RDP</h2>
-      <p>{{ phrase('已保存登录账户') }}: {{ domain ? `${domain}\\${username}` : username }}</p>
-      <button class="button button--primary" :disabled="managing" @click="connect(true)">{{ phrase('使用已保存账户连接') }}</button>
+      <p v-if="managed">{{ phrase('管理员桌面由探针自动登录，无需输入 Windows 账号密码。关闭连接会注销专用桌面，请先保存工作。') }}</p>
+      <p v-else>{{ phrase('已保存登录账户') }}: {{ domain ? `${domain}\\${username}` : username }}</p>
+      <button class="button button--primary" :disabled="managing" @click="managed ? connect(false, false, true) : connect(true)">{{ managed ? phrase('管理员一键连接') : phrase('使用已保存账户连接') }}</button>
     </div>
     <div v-if="connecting" class="host-desktop__status" role="status"><LoaderCircle class="spin" :size="20" />{{ saving ? phrase('正在保存登录信息…') : phrase('正在连接远程桌面…') }}</div>
-    <div v-if="!checking && (saved || connected || connecting)" class="host-desktop__toolbar">
+    <div v-if="!checking && (managed || saved || connected || connecting)" class="host-desktop__toolbar">
+      <small v-if="managed">{{ phrase('专用管理员 · 保留 UAC · 关闭连接会注销桌面') }}</small>
       <button v-if="connected" class="button button--secondary button--small" :disabled="managing" @click="ui?.ctrlAltDel()">Ctrl + Alt + Del</button>
       <button v-if="!manualLogin || connected || connecting" class="button button--secondary button--small" :disabled="managing || saving" @click="manageCredentials(false)">{{ connected || connecting ? phrase('断开并更换账户') : phrase('更换账户') }}</button>
       <button v-if="saved" class="button button--secondary button--small" :disabled="managing || saving" @click="manageCredentials(true)">{{ connected || connecting ? phrase('清除登录信息并断开') : phrase('清除登录信息') }}</button>

@@ -4,19 +4,82 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/flynn/noise"
+	"github.com/kejilion/kejilion-panel/internal/desktopcredentials"
 )
 
 const (
 	DesktopCapability             = "desktop-v1"
+	ManagedDesktopCapability      = "desktop-managed-v1"
 	streamRoleLightDesktopControl = "light-desktop-control"
 	streamRoleLightDesktopData    = "light-desktop-data"
 	streamDesktopStart            = byte(70)
+	streamDesktopManagedStart     = byte(71)
+	streamDesktopCredentials      = byte(72)
+	streamDesktopClaim            = byte(73)
 )
+
+// PreparedDesktopStream keeps a credential lease on the same authenticated
+// connection that will carry RDP. Claim is single-use and must precede any I/O.
+type PreparedDesktopStream struct {
+	*desktopByteStream
+	conn            *fileStreamConn
+	mu              sync.Mutex
+	claimed, closed bool
+}
+
+func (p *PreparedDesktopStream) Claim() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.claimed || p.closed {
+		return ErrAuthentication
+	}
+	p.claimed = true
+	if err := p.conn.write(streamDesktopClaim, nil); err != nil {
+		return err
+	}
+	p.desktopByteStream = newDesktopByteStream(p.conn)
+	return nil
+}
+
+func (p *PreparedDesktopStream) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	p.conn.close()
+	return nil
+}
+
+func (p *PreparedDesktopStream) Read(data []byte) (int, error) {
+	p.mu.Lock()
+	stream, closed := p.desktopByteStream, p.closed
+	p.mu.Unlock()
+	if stream == nil || closed {
+		return 0, io.ErrClosedPipe
+	}
+	return stream.Read(data)
+}
+
+func (p *PreparedDesktopStream) Write(data []byte) (int, error) {
+	p.mu.Lock()
+	stream, closed := p.desktopByteStream, p.closed
+	p.mu.Unlock()
+	if stream == nil || closed {
+		return 0, io.ErrClosedPipe
+	}
+	return stream.Write(data)
+}
+
+func (s *Service) ManagedDesktopAvailable(node string) bool {
+	record, err := s.light.Host(node)
+	return err == nil && lightHostIsWindows(record) && s.desktopAllowed(node) &&
+		lightPlatformAllows(record, "desktop-managed", s.now().UTC()) && s.fileStreamHub.desktopAvailable(node)
+}
 
 // DesktopCredentialIdentity binds saved Windows logins to the enrolled Noise
 // identity, not a mutable name/address or a client-supplied fingerprint.
@@ -39,6 +102,38 @@ func validDesktopNonce(nonce string) bool {
 }
 
 func (s *Service) OpenDesktopStream(ctx context.Context, node, nonce string) (io.ReadWriteCloser, error) {
+	conn, err := s.openDesktopConnection(ctx, node, nonce, false)
+	if err != nil {
+		return nil, err
+	}
+	return newDesktopByteStream(conn), nil
+}
+
+func (s *Service) PrepareManagedDesktop(ctx context.Context, node, nonce string) (*PreparedDesktopStream, desktopcredentials.Credentials, error) {
+	if !s.ManagedDesktopAvailable(node) {
+		return nil, desktopcredentials.Credentials{}, ErrTerminalUnavailable
+	}
+	conn, err := s.openDesktopConnection(ctx, node, nonce, true)
+	if err != nil {
+		return nil, desktopcredentials.Credentials{}, err
+	}
+	wait, cancel := context.WithTimeout(ctx, streamHandshakeTimeout)
+	defer cancel()
+	kind, data, err := conn.readContext(wait)
+	defer clear(data)
+	var response struct {
+		Nonce       string                         `json:"nonce"`
+		Credentials desktopcredentials.Credentials `json:"credentials"`
+	}
+	if err != nil || kind != streamDesktopCredentials || len(data) > 4096 || json.Unmarshal(data, &response) != nil ||
+		response.Nonce != nonce || response.Credentials.Validate() != nil {
+		conn.close()
+		return nil, desktopcredentials.Credentials{}, ErrAuthentication
+	}
+	return &PreparedDesktopStream{conn: conn}, response.Credentials, nil
+}
+
+func (s *Service) openDesktopConnection(ctx context.Context, node, nonce string, managed bool) (*fileStreamConn, error) {
 	record, err := s.light.Host(node)
 	if err != nil || !s.desktopAllowed(node) || !lightHostIsWindows(record) || !lightPlatformAllows(record, "desktop", s.now().UTC()) || !validDesktopNonce(nonce) {
 		return nil, ErrTerminalUnavailable
@@ -79,14 +174,17 @@ func (s *Service) OpenDesktopStream(ctx context.Context, node, nonce string) (io
 		if conn == nil {
 			return nil, ErrRateLimited
 		}
-		if err := conn.write(streamDesktopStart, []byte(nonce)); err != nil {
+		kind := streamDesktopStart
+		if managed {
+			kind = streamDesktopManagedStart
+		}
+		if err := conn.write(kind, []byte(nonce)); err != nil {
 			conn.close()
 			return nil, err
 		}
-		stream := newDesktopByteStream(conn)
 		stopParent := context.AfterFunc(ctx, conn.close)
 		context.AfterFunc(conn.ctx, func() { stopParent() })
-		return stream, nil
+		return conn, nil
 	case <-control.conn.ctx.Done():
 		return nil, ErrTerminalUnavailable
 	case <-wait.Done():
@@ -105,6 +203,12 @@ func (h *fileStreamHub) desktopAvailable(node string) bool {
 // A stopped control connection also closes its desktop sessions and credentials.
 func (c *TerminalRelayClient) RunDesktopStream(ctx context.Context, origin, node, target string, key noise.DHKey, peer []byte,
 	handler func(context.Context, io.ReadWriteCloser, string) error, connected func()) error {
+	return c.RunManagedDesktopStream(ctx, origin, node, target, key, peer, handler, nil, connected)
+}
+
+func (c *TerminalRelayClient) RunManagedDesktopStream(ctx context.Context, origin, node, target string, key noise.DHKey, peer []byte,
+	handler func(context.Context, io.ReadWriteCloser, string) error,
+	prepare func(context.Context) (desktopcredentials.Credentials, func() error, error), connected func()) error {
 	if c == nil || c.client == nil || handler == nil {
 		return ErrAuthentication
 	}
@@ -163,12 +267,48 @@ func (c *TerminalRelayClient) RunDesktopStream(ctx context.Context, origin, node
 				}
 				defer conn.close()
 				kind, data, err := conn.readControl()
-				if err != nil || kind != streamDesktopStart || !validDesktopNonce(string(data)) {
+				if err != nil || (kind != streamDesktopStart && kind != streamDesktopManagedStart) || !validDesktopNonce(string(data)) {
 					return
+				}
+				nonce := string(data)
+				if kind == streamDesktopManagedStart {
+					if prepare == nil {
+						return
+					}
+					credentials, cleanup, err := prepare(conn.ctx)
+					if cleanup != nil {
+						defer func() {
+							if cleanup() != nil {
+								control.close()
+							}
+						}()
+					}
+					if err != nil || cleanup == nil || credentials.Validate() != nil {
+						return
+					}
+					response, err := json.Marshal(struct {
+						Nonce       string                         `json:"nonce"`
+						Credentials desktopcredentials.Credentials `json:"credentials"`
+					}{nonce, credentials})
+					credentials.Password = ""
+					if err != nil {
+						return
+					}
+					err = conn.write(streamDesktopCredentials, response)
+					clear(response)
+					if err != nil {
+						return
+					}
+					claimCtx, stop := context.WithTimeout(conn.ctx, 45*time.Second)
+					kind, data, err = conn.readContext(claimCtx)
+					stop()
+					if err != nil || kind != streamDesktopClaim || len(data) != 0 {
+						return
+					}
 				}
 				stream := newDesktopByteStream(conn)
 				defer stream.Close()
-				_ = handler(conn.ctx, stream, string(data))
+				_ = handler(conn.ctx, stream, nonce)
 			}()
 		default:
 			return ErrAuthentication

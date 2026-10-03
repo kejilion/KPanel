@@ -6,6 +6,9 @@ import (
 )
 
 func TestWindowsDesktopOptInDoesNotExpandOtherCapabilities(t *testing.T) {
+	if _, err := installationCapabilities(windowsInstallRequest{Capabilities: "monitoring,desktop,desktop-managed"}); err == nil {
+		t.Fatal("managed administrator admitted without explicit installation opt-in")
+	}
 	for _, enabled := range []bool{false, true} {
 		caps, err := installationCapabilities(windowsInstallRequest{Capabilities: "monitoring", EnableDesktop: enabled})
 		if err != nil {

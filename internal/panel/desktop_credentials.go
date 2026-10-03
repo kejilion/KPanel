@@ -54,7 +54,12 @@ func (s *Server) handleDesktopCredentials(w http.ResponseWriter, r *http.Request
 		s.writeProblem(w, r, 400, "invalid_desktop_request", "Invalid desktop host", "")
 		return
 	}
+	managed := s.cluster.ManagedDesktopAvailable(input.HostID)
 	if s.desktopCredentials == nil {
+		if operation == "status" && managed {
+			s.writeJSON(w, 200, map[string]bool{"saved": false, "managed": true})
+			return
+		}
 		s.writeProblem(w, r, 503, "desktop_credentials_unavailable", "Saved desktop credentials unavailable", "")
 		return
 	}
@@ -75,7 +80,7 @@ func (s *Server) handleDesktopCredentials(w http.ResponseWriter, r *http.Request
 	binding, err := s.desktopCredentialBinding(userID, input.HostID)
 	if err != nil {
 		if operation == "status" {
-			s.writeJSON(w, 200, map[string]bool{"saved": false})
+			s.writeJSON(w, 200, map[string]bool{"saved": false, "managed": managed})
 			return
 		}
 		s.writeProblem(w, r, 409, "desktop_unavailable", "Remote desktop is unavailable", "")
@@ -105,7 +110,7 @@ func (s *Server) handleDesktopCredentials(w http.ResponseWriter, r *http.Request
 	} else {
 		credentials, err = s.desktopCredentials.Get(binding)
 		if errors.Is(err, desktopcredentials.ErrMissing) {
-			s.writeJSON(w, 200, map[string]bool{"saved": false})
+			s.writeJSON(w, 200, map[string]bool{"saved": false, "managed": managed})
 			return
 		}
 		if err != nil {
@@ -113,5 +118,5 @@ func (s *Server) handleDesktopCredentials(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	s.writeJSON(w, 200, map[string]any{"saved": true, "username": credentials.Username, "domain": credentials.Domain})
+	s.writeJSON(w, 200, map[string]any{"saved": true, "managed": managed, "username": credentials.Username, "domain": credentials.Domain})
 }

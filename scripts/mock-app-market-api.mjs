@@ -2415,7 +2415,7 @@ createServer(async (request, response) => {
     if (!host) { send(response, 404, { code: 'desktop_not_found' }); return }
     const metadata = mockDesktopCredentials.get(host.id)
     if (url.pathname === '/api/v1/desktop-sessions/credentials/status') {
-      send(response, 200, metadata || { saved: false })
+      send(response, 200, metadata || { saved: false, managed: Boolean(host.desktopManaged) })
       return
     }
     if (url.pathname === '/api/v1/desktop-sessions/credentials/save') {
@@ -2443,12 +2443,14 @@ createServer(async (request, response) => {
     if (url.pathname === '/api/v1/desktop-sessions') {
       if (!host.desktopAvailable) { send(response, 409, { code: 'desktop_unavailable' }); return }
       if (input.useSavedCredentials && !metadata) { send(response, 409, { code: 'desktop_credentials_missing' }); return }
+      if (input.useManagedCredentials && !host.desktopManaged) { send(response, 502, { code: 'desktop_managed_unavailable' }); return }
       if (mockDesktopSessions.size >= 4) { send(response, 429, { code: 'desktop_limit' }); return }
       const sessionId = `visual-desktop-${++mockDesktopSessionCounter}`
       mockDesktopSessions.add(sessionId)
       send(response, 201, {
         sessionId, nonce: 'mock-preview-only',
         ...(input.useSavedCredentials ? { credentials: { username: metadata.username, domain: metadata.domain, password: 'mock-preview-not-a-real-password' } } : {}),
+        ...(input.useManagedCredentials ? { credentials: { username: 'kp_rdp_preview', domain: '.', password: 'mock-preview-not-a-real-password' } } : {}),
       })
       return
     }

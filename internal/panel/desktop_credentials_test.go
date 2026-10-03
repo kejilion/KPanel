@@ -27,6 +27,11 @@ func desktopCredentialHost(t *testing.T, s *Server) string {
 
 func desktopCredentialHostWithHandler(t *testing.T, s *Server, handler func(context.Context, io.ReadWriteCloser, string) error) string {
 	t.Helper()
+	return desktopCredentialHostWithProvider(t, s, handler, nil)
+}
+
+func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(context.Context, io.ReadWriteCloser, string) error, prepare func(context.Context) (desktopcredentials.Credentials, func() error, error)) string {
+	t.Helper()
 	enrollment, err := s.cluster.CreateLightEnrollmentForOrigin("https://panel.test")
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +49,9 @@ func desktopCredentialHostWithHandler(t *testing.T, s *Server, handler func(cont
 	}
 	now := time.Now().UTC()
 	report := cluster.LightReportRequest{Platform: "windows", Capabilities: []string{"monitoring", "desktop"}, UnavailableMetrics: []string{"load"}, Telemetry: contract.HostTelemetry{CollectedAt: now, OSID: "windows", AgentVersion: "1.24.0"}}
+	if prepare != nil {
+		report.Capabilities = append(report.Capabilities, "desktop-managed")
+	}
 	body, _ := json.Marshal(report)
 	reporting, _ := base64.RawURLEncoding.DecodeString(node.ReportingKey)
 	auth := cluster.LightReportAuth{Source: "198.51.100.10", NodeID: node.NodeID, Timestamp: strconv.FormatInt(now.Unix(), 10), RequestID: strings.Repeat("d", 32)}
@@ -61,8 +69,8 @@ func desktopCredentialHostWithHandler(t *testing.T, s *Server, handler func(cont
 	ctx, cancel := context.WithCancel(context.Background())
 	done, ready := make(chan error, 1), make(chan struct{})
 	go func() {
-		done <- relay.RunDesktopStream(ctx, ts.URL, node.NodeID, node.TargetNodeID, key, peer,
-			handler, func() { close(ready) })
+		done <- relay.RunManagedDesktopStream(ctx, ts.URL, node.NodeID, node.TargetNodeID, key, peer,
+			handler, prepare, func() { close(ready) })
 	}()
 	t.Cleanup(func() {
 		cancel()
