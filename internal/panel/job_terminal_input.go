@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
@@ -19,10 +18,6 @@ const (
 	maxJobInputStreams        = 64
 	maxJobInputStreamsPerTask = 3
 )
-
-// jobInputKeepalive is how often a stream pings its page; one that does not
-// answer within the same time is dropped. Tests shorten it.
-var jobInputKeepalive = 20 * time.Second
 
 // jobInputGate bounds concurrent task-terminal input streams and batches.
 type jobInputGate struct {
@@ -145,6 +140,6 @@ func (s *Server) jobTerminalInputTarget(kind, id string) terminalInputTarget {
 		},
 		immediate: func() bool { return true },
 		claimed:   func(*terminalInputConnection) {},
-		keepalive: jobInputKeepalive,
+		keepalive: terminalInputKeepalive,
 	}
 }

@@ -157,7 +157,9 @@ export class TerminalDuplexInput {
     this.deadline = undefined
     this.failureSince ||= Date.now()
     if (++this.retries > 8 || Date.now() - this.failureSince >= 120000) { this.fail(); return }
-    this.options.error('retry')
+    // A dropped idle connection is not failed input: reconnect quietly and only
+    // tell the user when typed input is waiting for the connection.
+    if (this.byteLength > 0) this.options.error('retry')
     this.retryTimer = setTimeout(() => { this.retryTimer = undefined; this.flush() }, Math.min(4000, 250 * 2 ** (this.retries - 1)))
   }
   private acceptEpoch(epoch: string | undefined): boolean {

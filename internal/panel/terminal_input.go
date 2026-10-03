@@ -17,6 +17,13 @@ import (
 
 const terminalInputSocketProtocol = "kpanel-terminal-input-v1"
 
+// terminalInputKeepalive is how often an input socket pings its page; a page
+// that does not answer within the same time is dropped. An input socket is idle
+// whenever nobody types, and reverse proxies close idle upgraded connections
+// (nginx after 60 s without upstream data by default, Cloudflare after about
+// 100 s), so the ping is also what keeps it open behind one. Tests shorten it.
+var terminalInputKeepalive = 20 * time.Second
+
 type terminalInputConnection struct{ cancel context.CancelFunc }
 type terminalInputMessage struct {
 	Type   string               `json:"type"`
@@ -80,8 +87,9 @@ type terminalInputTarget struct {
 	immediate func() bool
 	// claimed records a successful claim.
 	claimed func(conn *terminalInputConnection)
-	// keepalive, when positive, pings the browser so that a vanished page
-	// frees its socket instead of waiting for TCP to notice.
+	// keepalive, when positive, pings the browser so that a proxy does not
+	// close an idle socket and a vanished page frees its slot instead of
+	// waiting for TCP to notice.
 	keepalive time.Duration
 }
 
@@ -355,6 +363,7 @@ func (s *Server) hostTerminalInputTarget(session auth.Session, id string) termin
 			return s.cluster.BeginTerminalInput(ctx, item.HostID, item.BackendSessionID, frame)
 		},
 		immediate: local,
+		keepalive: terminalInputKeepalive,
 		claimed: func(conn *terminalInputConnection) {
 			s.terminalMu.Lock()
 			if current, exists := s.terminalSessions[id]; exists && current.InputConnection == conn {

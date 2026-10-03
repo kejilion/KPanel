@@ -158,3 +158,46 @@ describe('terminal input per-request fallback', () => {
     f.input.close()
   })
 })
+
+describe('terminal input idle reconnect', () => {
+  it('reconnects a dropped idle socket without reporting failed input', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const first = await connect(f, 0)
+    f.input.append('a')
+    f.input.flush()
+    first.receive({ type: 'ack', seq: 1 })
+    // A proxy closes the idle connection; nothing was waiting to be sent.
+    first.onclose?.call(first as unknown as WebSocket, new Event('close') as CloseEvent)
+    await vi.advanceTimersByTimeAsync(300)
+    const second = await connect(f, 1)
+    expect(f.error).not.toHaveBeenCalled()
+    f.input.append('b')
+    f.input.flush()
+    expect(second.frames().map((frame) => frame.seq)).toEqual([2])
+    f.input.close()
+  })
+
+  it('still reports the reconnect when typed input is waiting for it', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const first = await connect(f, 0)
+    f.input.append('a')
+    f.input.flush()
+    first.onclose?.call(first as unknown as WebSocket, new Event('close') as CloseEvent)
+    expect(f.error).toHaveBeenCalledWith('retry')
+    f.input.close()
+  })
+
+  it('reports nothing for idle drops even when they repeat', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    for (let i = 0; i < 6; i++) {
+      const socket = await connect(f, i)
+      socket.onclose?.call(socket as unknown as WebSocket, new Event('close') as CloseEvent)
+      await vi.advanceTimersByTimeAsync(300)
+    }
+    expect(f.error).not.toHaveBeenCalled()
+    f.input.close()
+  })
+})

@@ -69,6 +69,13 @@ Agent 的 terminal resize / close 可绕过正在等待输入的全局 mutation 
 PTY 输入闸门支持 context 取消，实际阻塞的 PTY write 不持状态锁，仍可由 close/生命周期回收解除。
 注销后每帧拒绝新输入，闲置连接约 1 秒内复核关闭；已经授权并在派发中的字节可能完成，不能承诺撤回。
 
+没人输入时输入 socket 没有任何流量，而反向代理会按空闲连接切断它：nginx 在上游 60 秒没有数据时关闭（默认值，
+KPanel 生成的站点反代模板没有调大 `proxy_read_timeout`），Cloudflare 约 100 秒。因此 Panel 对主机与任务终端的
+输入 socket 每 20 秒发一次 WebSocket ping，浏览器自动应答，代理把它算作流量；不应答的页面约 20–40 秒内被回收，
+不再长期占住"每会话 1 条"的名额。连接仍可能因网络或 Panel 重启断开：空闲时浏览器静默重连，只有已输入的字节在等
+连接时才提示"正在重连"。Panel 自身的 `ReadTimeout`/`WriteTimeout` 不影响输入 socket：`net/http` 在交出劫持的
+连接时清除了这两个截止时间，有用例固定这一点。
+
 ### 任务终端输入（同一契约，Agent 持有序号状态）
 
 应用、建站、体检和环境任务终端只在本机运行，链路是浏览器 → Panel → 本机 Agent → 任务输入 FIFO。浏览器端点为
@@ -90,7 +97,7 @@ PTY 输入闸门支持 context 取消，实际阻塞的 PTY write 不持状态�
 - 新 stream 的 claim 接管旧写入者而不是被拒绝，刷新后的页面可以继续输入；旧 stream 之后的帧得到
   `terminal_input_sequence`，不会与新 stream 交错。冻结的 stream 同样只能由新 stream 接管。
 - Panel 不采用"每会话 1 条连接"：刷新页面时旧 socket 可能仍在排空。改为每任务最多 3 条、全局最多 64 条，批量请求
-  共用该额度；每 20 秒 ping 一次，不应答的页面约 20–40 秒内被回收，不会长期占住名额。
+  共用该额度；与主机终端相同的 20 秒 ping 回收不应答的页面，不会长期占住名额。
 - 每次 claim 返回该 Agent 状态的 `epoch`（随机 128 位），随 `ready` 与批量认领回复下发。浏览器遇到不同 epoch 说明
   Agent 状态因重启而丢失：存在未确认帧时不重放并报告"无法确认"，没有未确认帧时以新 stream 重新开始。Agent 对未经
   claim 的任务的数据帧一律拒绝，状态不会因数据帧凭空重建。
