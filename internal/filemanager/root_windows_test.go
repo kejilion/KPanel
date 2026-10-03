@@ -155,6 +155,67 @@ func TestWindowsOpenFileCollisionNeverClobbers(t *testing.T) {
 	}
 }
 
+func TestWindowsCaseOnlyRenamePreservesIdentityAndRequestedSpelling(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "directory"}[directory], func(t *testing.T) {
+			m, c, _ := windowsVolumeManager(t)
+			oldPath := filepath.Join(c, "report.txt")
+			if directory {
+				mustMkdirAll(t, oldPath)
+				mustWrite(t, filepath.Join(oldPath, "child.txt"), "keep")
+			} else {
+				mustWrite(t, oldPath, "keep")
+			}
+			before, err := os.Stat(oldPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, err := m.Stat("/C/report.txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := m.Action(context.Background(), contract.FileActionRequest{Action: "rename", Sources: []string{"/c/REPORT.txt"}, Target: "/c/Report.txt", ExpectedResourceVersion: entry.ResourceVersion})
+			if err != nil || len(result.Failed) != 0 || len(result.Succeeded) != 1 || result.Succeeded[0].Destination != "/C/Report.txt" {
+				t.Fatalf("case rename: %+v %v", result, err)
+			}
+			after, err := os.Stat(filepath.Join(c, "Report.txt"))
+			if err != nil || !os.SameFile(before, after) {
+				t.Fatalf("case rename replaced the source: %v", err)
+			}
+			entries, err := os.ReadDir(c)
+			if err != nil || len(entries) != 1 || entries[0].Name() != "Report.txt" {
+				t.Fatalf("filesystem spelling was not changed: %+v %v", entries, err)
+			}
+			payload := filepath.Join(c, "Report.txt")
+			if directory {
+				payload = filepath.Join(payload, "child.txt")
+			}
+			if data, err := os.ReadFile(payload); err != nil || string(data) != "keep" {
+				t.Fatalf("rename changed contents: %q %v", data, err)
+			}
+			mustWrite(t, filepath.Join(c, "collision.txt"), "unrelated")
+			if _, err := m.Action(context.Background(), contract.FileActionRequest{Action: "rename", Sources: []string{"/C/Report.txt"}, Target: "/C/Collision.txt"}); !errors.Is(err, ErrAlreadyExists) {
+				t.Fatalf("different object was not rejected: %v", err)
+			}
+			if data, err := os.ReadFile(filepath.Join(c, "collision.txt")); err != nil || string(data) != "unrelated" {
+				t.Fatal("collision target changed")
+			}
+		})
+	}
+}
+
+func TestWindowsCaseOnlyRenameDoesNotBypassHardLinkRejection(t *testing.T) {
+	m, c, _ := windowsVolumeManager(t)
+	source := filepath.Join(c, "report.txt")
+	mustWrite(t, source, "private")
+	if err := os.Link(source, filepath.Join(c, "alias.txt")); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if _, err := m.Action(context.Background(), contract.FileActionRequest{Action: "rename", Sources: []string{"/C/report.txt"}, Target: "/C/Report.txt"}); err == nil {
+		t.Fatal("case-only rename accepted a hard-linked source")
+	}
+}
+
 func TestWindowsHardLinksCannotAliasProtectedFiles(t *testing.T) {
 	m, c, _ := windowsVolumeManager(t)
 	mustMkdirAll(t, filepath.Join(c, "Secrets"))

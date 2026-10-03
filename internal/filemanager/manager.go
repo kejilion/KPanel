@@ -912,8 +912,13 @@ func (m *Manager) rename(
 	if err := m.mutationError(targetNormalized); err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err := m.rootFS.Lstat(rootName(targetNormalized)); err == nil {
-		return contract.FileEntry{}, ErrAlreadyExists
+	if targetInfo, err := m.rootFS.Lstat(rootName(targetNormalized)); err == nil {
+		// Windows resolves case-only spellings to the existing source. Keep the
+		// requested basename and allow only that exact object; the no-replace
+		// rename below still rejects a different object appearing concurrently.
+		if normalizedSource == targetNormalized || platformPathKey(normalizedSource) != platformPathKey(targetNormalized) || !os.SameFile(sourceInfo, targetInfo) {
+			return contract.FileEntry{}, ErrAlreadyExists
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return contract.FileEntry{}, err
 	}
