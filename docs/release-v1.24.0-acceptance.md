@@ -98,7 +98,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：83
+- 已记录发布流程异常或无效证据拦截次数：86
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -583,6 +583,33 @@
     "recoveryEvidence": "root-acceptance-timestamp-format-error-original.json and acceptance-first-generated-r2 preserve the exact failed return, writer, generated documents and r2 log. The writer converts the authoritative freeze timestamp to milliseconds only for the six-row metrics block; freeze.json retains the original microseconds. Current incidents are regenerated without dropping either failure, followed by the unchanged complete docs gate in a fresh r3 log.",
     "permanentAction": "Release owner must qualify the whole canonical acceptance contract, including precision, against report-release-metrics before a future production write. Review date 2026-10-10; closure requires canonical field/date/process blocks passing unchanged guards. This local writer repair does not establish permanent repository tooling adoption.",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "resource-cleanup/powershell-file-entry/execution-policy",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "The owned resource helper stopped when its nested powershell -File invocation returned 1. The original nested stdout/stderr were not retained. No git worktree removal was reached; both candidate and CF worktrees remained registered. A later readonly file probe reproduces the Restricted policy denial; this supports the diagnosis but does not replace the lost original nested stderr.",
+    "recoveryEvidence": "root-local-cleanup-file-entry-error-original.json preserves the exact outer failure. powershell-entry-results-readonly.json preserves the subsequent separate readonly diagnostic, with zero deletions. Native PowerShell filesystem commands use the already approved precise owned path, fresh path/process/recovery checks and original execution policy. Final receipts and a separately qualified acceptance addendum record actual outcomes.",
+    "permanentAction": "Release owner must qualify Windows invocation/module availability before cleanup, capture nested stdout/stderr before checking exit status, and preserve resources on failed eligibility. Review date 2026-10-10; closure requires the actual native entry and all ownership/path/process/Git recovery checks passing. This repair is not permanent repository tooling adoption.",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "resource-cleanup/powershell-policy-probe/module-autoload",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "The initial readonly diagnostic raised CalledProcessError while querying Get-ExecutionPolicy from Python. Its nested stderr was not retained. A later deliberately observed readonly probe preserves CouldNotAutoloadMatchingModule for Microsoft.PowerShell.Security; direct shell lookup succeeds. No deletion or product operation was performed by this diagnostic.",
+    "recoveryEvidence": "root-policy-probe-module-error-original.json preserves the exact outer failure. powershell-entry-results-readonly.json preserves the subsequent separate readonly diagnostic, with zero deletions. Native PowerShell filesystem commands use the already approved precise owned path, fresh path/process/recovery checks and original execution policy. Final receipts and a separately qualified acceptance addendum record actual outcomes.",
+    "permanentAction": "Release owner must qualify Windows invocation/module availability before cleanup, capture nested stdout/stderr before checking exit status, and preserve resources on failed eligibility. Review date 2026-10-10; closure requires the actual native entry and all ownership/path/process/Git recovery checks passing. This repair is not permanent repository tooling adoption.",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "resource-cleanup/native-powershell-entry/automatic-policy-denial",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Automatic approval review rejected the native PowerShell recursive node_modules removal before execution with blocked by policy. No more specific reason was supplied. The candidate directory, worktree and its local branch are preserved; no alternate removal mechanism is attempted. Stable publication, verified remote archives and main are unaffected.",
+    "recoveryEvidence": "native-owned-dependency-delete-policy-rejection-original.json preserves the exact rejected call/output. Final cleanup records the preserved candidate and remote recovery SHA, handles only other independently eligible clean tracked resources, and updates the required acceptance process block with this late event.",
+    "permanentAction": "Release owner preserves a policy-blocked resource and reports the exact approval reason. Review date 2026-10-10; closure requires an approved cleanup route or continued documented retention. Do not change execution policy, force-remove the worktree, or hide this action inside another tool.",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
@@ -593,3 +620,10 @@
 - 18个非自有容器只在 `before fresh stable L3 through final owned resource cleanup; not retroactive proof for earlier script/old-version fixture prechecks` 比较，不追溯早期脚本/旧版本预检，也不解释为生产核对。
 - 自有文档/候选/审计工作树在全部恢复和Git/进程检查后收尾；实际净空间/跳过项及保留恢复点见最终回执，活跃作者/未知改动保留。
 - 所有审计待确认事项按run16报告和safe跟进计划；图库14px规范差距、长期网络/arm64/router/Windows等未验证边界继续保留，不扩大本轮产品范围。
+
+## 本地收尾实际结果
+
+- 候选远端与恢复标签仍为产品提交 `ce27dc5171a97ed6e3d9475cddfdfac89762aad3`；本地 `release/v1.24.0-candidate` 和工作树 `C:/GitHub/_codex-tasks/kpanel-v124-rc1-assembly` 保留，含 `web/node_modules`。自动审批审查在执行前拒绝其递归删除，理由仅为 `blocked by policy`；未通过其他入口再次删除。
+- 自有只读 CF 工作树已通过所有权释放、clean、无忽略文件、路径/进程及标签恢复点复核后使用 `git worktree remove` 回收；逻辑字节 `45494769`，该窗口实际净空闲变化 `51429376` 字节。其他作者的工作树登记保持一致。
+- 初始嵌套 PowerShell 清理与只读诊断未保存内部 stderr；原始外层失败和后续独立只读探针分别保留，未将后续诊断冒充首次原始 stderr。全部收尾异常均发生在生产写前，实际流程累计 `86`；本次产品发布、公开镜像和生产写 0 的结论不变。
+- 首次验收提交 `6ddcfda15b7cbc37756e5062c6b4b7fd6447defc` 已通过候选及主线 CI 并归档；本补充只修正本文件的晚发生流程指标与实际资源结果。最终主线/归档 SHA 和清理回执见 `final-alignment.json`、`final-local-resource-cleanup.json` 和 `cleanup-acceptance-worktree-cleanup.json`。
