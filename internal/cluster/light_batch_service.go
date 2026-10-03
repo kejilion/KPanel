@@ -34,6 +34,9 @@ func (s *Service) CreateLightBatchEnrollmentForOrigin(
 ) (LightBatchEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
+	if _, err := s.lightEnrollmentCommand(input.Platform, "", ""); err != nil {
+		return LightBatchEnrollment{}, err
+	}
 	validatedOrigin, err := validateLightOrigin(origin)
 	if err != nil {
 		return LightBatchEnrollment{}, ErrLightHTTPSOrigin
@@ -87,7 +90,11 @@ func (s *Service) CreateLightBatchEnrollmentForOrigin(
 	}
 	token := lightBatchTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
 	result := publicLightBatchEnrollment(record)
-	result.Command = "bash <(curl -fsSL https://kejilion.sh) kpanel node join '" + token + "'"
+	result.Platform = input.Platform
+	result.Command, err = s.lightEnrollmentCommand(input.Platform, token, "")
+	if err != nil {
+		return LightBatchEnrollment{}, err
+	}
 	return result, nil
 }
 

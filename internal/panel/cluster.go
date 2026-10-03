@@ -372,7 +372,8 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Platform string `json:"platform,omitempty"`
 	}
 	if r.ContentLength > 0 {
 		if err := s.decodeJSON(w, r, &input); err != nil {
@@ -392,7 +393,7 @@ func (s *Server) handleLightEnrollmentCreate(w http.ResponseWriter, r *http.Requ
 		s.writeClusterError(w, r, cluster.ErrLightHTTPSOrigin)
 		return
 	}
-	enrollment, err := s.cluster.CreateLightEnrollmentForOriginAndName(origin, input.Name)
+	enrollment, err := s.cluster.CreateLightEnrollmentForPlatform(origin, input.Name, input.Platform)
 	if err != nil {
 		_ = s.audit(r, session.User.ID, "cluster.light-enrollment.create", "cluster-node", s.cluster.NodeID(), "failure", nil)
 		s.writeClusterError(w, r, err)
@@ -1078,6 +1079,8 @@ func (s *Server) writeClusterError(w http.ResponseWriter, r *http.Request, err e
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_https_required", "Light node HTTPS origin is required"
 	case errors.Is(err, cluster.ErrLightBatchInvalid):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_light_batch_invalid", "Light node batch enrollment settings are invalid"
+	case errors.Is(err, cluster.ErrWindowsInstallerUnavailable):
+		status, code, title = http.StatusServiceUnavailable, "cluster_windows_installer_unavailable", "Windows node signing identity is not configured"
 	case errors.Is(err, cluster.ErrPrivateOrigin):
 		status, code, title = http.StatusUnprocessableEntity, "cluster_origin_blocked", "Cluster origin is blocked"
 	case errors.Is(err, cluster.ErrPairingCode):

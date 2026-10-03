@@ -39,22 +39,23 @@ const (
 )
 
 var (
-	ErrNotFound               = errors.New("cluster record not found")
-	ErrConflict               = errors.New("cluster record changed")
-	ErrDuplicate              = errors.New("cluster host already exists")
-	ErrHostLimit              = errors.New("cluster host limit reached")
-	ErrInvalidOrigin          = errors.New("invalid cluster origin")
-	ErrLightHTTPSOrigin       = errors.New("light node requires an HTTPS origin")
-	ErrLightBatchInvalid      = errors.New("light node batch enrollment settings are invalid")
-	ErrPrivateOrigin          = errors.New("cluster origin is outside the configured private network allowlist")
-	ErrPairingCode            = errors.New("pairing code is invalid or expired")
-	ErrAuthentication         = errors.New("federation authentication failed")
-	ErrReplay                 = errors.New("federation request replayed")
-	ErrRateLimited            = errors.New("federation request rate limited")
-	ErrProtocolMismatch       = errors.New("federation protocol is incompatible")
-	ErrMutualFilesUnsupported = errors.New("mutual file transfer is unsupported")
-	ErrIdentityMismatch       = errors.New("federation target identity changed")
-	ErrLocalHost              = errors.New("local cluster host cannot be modified")
+	ErrNotFound                    = errors.New("cluster record not found")
+	ErrConflict                    = errors.New("cluster record changed")
+	ErrDuplicate                   = errors.New("cluster host already exists")
+	ErrHostLimit                   = errors.New("cluster host limit reached")
+	ErrInvalidOrigin               = errors.New("invalid cluster origin")
+	ErrLightHTTPSOrigin            = errors.New("light node requires an HTTPS origin")
+	ErrLightBatchInvalid           = errors.New("light node batch enrollment settings are invalid")
+	ErrWindowsInstallerUnavailable = errors.New("Windows node signing identity is not configured")
+	ErrPrivateOrigin               = errors.New("cluster origin is outside the configured private network allowlist")
+	ErrPairingCode                 = errors.New("pairing code is invalid or expired")
+	ErrAuthentication              = errors.New("federation authentication failed")
+	ErrReplay                      = errors.New("federation request replayed")
+	ErrRateLimited                 = errors.New("federation request rate limited")
+	ErrProtocolMismatch            = errors.New("federation protocol is incompatible")
+	ErrMutualFilesUnsupported      = errors.New("mutual file transfer is unsupported")
+	ErrIdentityMismatch            = errors.New("federation target identity changed")
+	ErrLocalHost                   = errors.New("local cluster host cannot be modified")
 )
 
 type HostState string
@@ -133,18 +134,21 @@ func ScopeAllowsFiles(scope string) bool {
 }
 
 type LightEnrollment struct {
+	Platform  string    `json:"platform,omitempty"`
 	ID        string    `json:"id"`
 	Command   string    `json:"command"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type CreateLightBatchEnrollmentInput struct {
+	Platform         string `json:"platform,omitempty"`
 	NamePrefix       string `json:"namePrefix,omitempty"`
 	MaxUses          int    `json:"maxUses,omitempty"`
 	ExpiresInSeconds int    `json:"expiresInSeconds,omitempty"`
 }
 
 type LightBatchEnrollment struct {
+	Platform       string    `json:"platform,omitempty"`
 	ID             string    `json:"id"`
 	Command        string    `json:"command,omitempty"`
 	NamePrefix     string    `json:"namePrefix,omitempty"`
