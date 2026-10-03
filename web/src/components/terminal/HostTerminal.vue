@@ -19,6 +19,7 @@ import {
   terminalLineSubmission,
 } from '@/lib/terminalInput'
 import { createTerminalTouchScroll } from '@/lib/terminalTouchScroll'
+import { terminalCursorOptions } from '@/lib/terminalCursor'
 import { readTerminalTheme } from '@/lib/terminalTheme'
 import { TerminalWriteFlow } from '@/lib/terminalWriteFlow'
 import { useI18n } from '@/i18n'
@@ -331,8 +332,7 @@ onMounted(() => {
       recovered: () => { if (!disposed && state.value !== 'finished') state.value = 'connected' },
   })
   terminal = new Terminal({
-    cursorBlink: true,
-    cursorStyle: 'bar',
+    ...terminalCursorOptions,
     convertEol: false,
     fontFamily: '"Cascadia Code", "SFMono-Regular", Consolas, monospace',
     fontSize: 13,
