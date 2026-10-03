@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["建议使用桌面浏览器。连接可能锁定本机用户的桌面，具体取决于 Windows 的会话策略。","A desktop browser is recommended. Connecting may lock the local user's desktop, depending on the Windows session policy."],
   ["远程桌面连接失败，请检查 Windows 账户、NLA、RDP 服务和证书。","Remote desktop connection failed. Check the Windows account, NLA, RDP service and certificate."],
   ["关闭未确认，请重试关闭会话。","Close was not confirmed. Retry closing the session."],
   ["使用目标 Windows 的登录账户连接，凭据仅用于当前会话。","Sign in with the target Windows account. Credentials are used only for this session."],

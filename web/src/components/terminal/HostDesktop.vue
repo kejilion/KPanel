@@ -115,6 +115,7 @@ defineExpose({ closeSession, scheduleResize, focusTerminal: () => canvasHost.val
       <Monitor :size="32" />
       <h2>{{ hostName }} · RDP</h2>
       <p>{{ phrase('使用目标 Windows 的登录账户连接，凭据仅用于当前会话。') }}</p>
+      <p>{{ phrase('建议使用桌面浏览器。连接可能锁定本机用户的桌面，具体取决于 Windows 的会话策略。') }}</p>
       <label class="field">{{ phrase('用户名') }}<input v-model="username" autocomplete="off" maxlength="256" required /></label>
       <label class="field">{{ phrase('域（可选）') }}<input v-model="domain" autocomplete="off" maxlength="256" /></label>
       <label class="field">{{ phrase('密码') }}<input v-model="password" type="password" autocomplete="new-password" maxlength="1024" required /></label>
