@@ -9,7 +9,7 @@ import { useI18n } from '@/i18n'
 
 const props = defineProps<{ hostId: string; hostName: string; active: boolean }>()
 const emit = defineEmits<{ 'state-change': [state: 'connecting' | 'connected' | 'finished'] }>()
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const phrase = (value: string): string => { locale.value; return translatePhrase(value) }
 const canvasHost = ref<HTMLElement>()
 const username = ref('')
@@ -118,7 +118,7 @@ defineExpose({ closeSession, scheduleResize, focusTerminal: () => canvasHost.val
       <p>{{ phrase('建议使用桌面浏览器。连接可能锁定本机用户的桌面，具体取决于 Windows 的会话策略。') }}</p>
       <label class="field">{{ phrase('用户名') }}<input v-model="username" autocomplete="off" maxlength="256" required /></label>
       <label class="field">{{ phrase('域（可选）') }}<input v-model="domain" autocomplete="off" maxlength="256" /></label>
-      <label class="field">{{ phrase('密码') }}<input v-model="password" type="password" autocomplete="new-password" maxlength="1024" required /></label>
+      <label class="field">{{ t('auth.password') }}<input v-model="password" type="password" autocomplete="new-password" maxlength="1024" required /></label>
       <button class="button button--primary" type="submit">{{ phrase('连接远程桌面') }}</button>
       <small>{{ phrase('剪贴板、文件传输和打印重定向默认关闭。') }}</small>
     </form>
