@@ -110,7 +110,7 @@ function inScope(path) {
 function children(path) {
   const prefix = path === '/' ? '/' : `${path}/`
   return [...nodes.values()]
-    .filter((node) => node.entry.path.startsWith(prefix) && parentOf(node.entry.path) === path)
+    .filter((node) => node.entry.path !== path && node.entry.path.startsWith(prefix) && parentOf(node.entry.path) === path)
     .map((node) => node.entry)
     .sort((left, right) => {
       if (left.kind === right.kind) return left.name.localeCompare(right.name)
