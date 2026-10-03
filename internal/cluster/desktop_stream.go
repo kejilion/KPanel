@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"sync"
@@ -16,6 +17,21 @@ const (
 	streamRoleLightDesktopData    = "light-desktop-data"
 	streamDesktopStart            = byte(70)
 )
+
+// DesktopCredentialIdentity binds saved Windows logins to the enrolled Noise
+// identity, not a mutable name/address or a client-supplied fingerprint.
+func (s *Service) DesktopCredentialIdentity(node string) (string, error) {
+	record, err := s.light.Host(node)
+	if err != nil {
+		return "", err
+	}
+	key, err := s.light.ReadTerminalPublicKey(record)
+	if err != nil || len(key) != 32 {
+		return "", ErrIdentityMismatch
+	}
+	digest := sha256.Sum256(key)
+	return hex.EncodeToString(digest[:]), nil
+}
 
 func validDesktopNonce(nonce string) bool {
 	value, err := hex.DecodeString(nonce)

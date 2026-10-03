@@ -447,10 +447,13 @@ KejilionNodeTerminal 内的 RDCleanPath 桥（Go）
 ### 13.3 浏览器 API
 
 ```text
-POST /api/v1/desktop-sessions                 { hostId }          → { sessionId, nonce, expiresAt }
+POST /api/v1/desktop-sessions                 { hostId, useSavedCredentials? } → { sessionId, nonce, expiresAt, credentials? }
 GET  /api/v1/desktop-sessions/{id}/stream     WebSocket（二进制）
 POST /api/v1/desktop-sessions/{id}/close
 POST /api/v1/desktop-sessions/policy          { hostId, allowed }
+POST /api/v1/desktop-sessions/credentials/status { hostId } → { saved, username?, domain? }
+POST /api/v1/desktop-sessions/credentials/save   { hostId, username, domain, password } → 同上
+POST /api/v1/desktop-sessions/credentials/clear  { hostId } → { saved: false }
 ```
 
 写操作校验 Session、Origin、CSRF；随机会话 ID 绑定管理员与本次登录 token 的摘要，同一用户另一登录也不可接管。
@@ -463,10 +466,16 @@ POST /api/v1/desktop-sessions/policy          { hostId, allowed }
 1. 访问要过三道认证：KPanel 登录、Noise 节点身份、Windows 网络级身份验证（NLA）。
 2. **中心能看到解密后的 RDP 流。** TLS 在节点终结，与终端现状一致（中心本来就能看到终端明文）。
    如果要求中心也看不到，需要把桥放进浏览器 WASM（D5）。
-3. Windows 凭据每次在浏览器输入，KPanel 不保存。加入域的机器上，RDP 登录会在目标机留下凭据，
-   文档建议使用本地运维账户。
+3. **一键登录。** 首次明确选择“保存并连接”，之后新建该主机 RDP 页签会自动使用已保存账户；仍可选“仅连接本次”。
+   加密记录按 KPanel 用户、主机 ID、节点 Noise 公钥摘要与用户安全凭据版本绑定；节点身份或账户安全版本改变后需重新录入。
+   中心使用 XChaCha20-Poly1305、随机 nonce 和完整绑定信息作为 AAD，密钥与密文位于私有 `desktop-credentials/`，
+   不进入普通状态、审计或 Panel 导出备份。用户可更换账户或清除并断开；删除主机清理所有用户的该主机记录。
+   状态与保存接口不回传密码；只有显式 `useSavedCredentials` 的会话分配在验证会话、Origin、CSRF、实时节点能力和配额后，
+   才通过 `Cache-Control: no-store` 响应向当前浏览器交付一次连接所需凭据。密码不进 URL、localStorage、sessionStorage 或 DOM 回填。
+   保存失败不继续连接，自动登录失败不循环重试；密钥缺失或密文损坏使保存登录失败关闭，仍可手动仅连接本次。
+   加密存储不能防御中心进程被攻破；加入域机器的 RDP 登录也会在目标机留下凭据，建议使用专用本地运维账户。
 4. 默认关闭驱动器、打印机、USB、智能卡和剪贴板重定向；本候选不提供重定向开关。
-5. 审计只记录打开、关闭、主机、管理员和时长，不录屏、不记录输入。
+5. 审计记录打开、关闭、凭据保存/清除、主机及管理员，不记录 Windows 用户名、密码、屏幕或输入内容。
 6. RDCleanPath 请求按 DER 严格解码，大小有界，未知字段即断开。
 7. 必须使用 NLA/CredSSP、TLS 1.2 及以上，拒绝 SSL-only 或无 TLS 降级。本机 listener 证书固定到系统证书存储：
    显式 `SSLCertificateSHA1Hash` 使用 LocalMachine MY；默认使用 WinStations 指定（缺省 Remote Desktop）存储。
@@ -480,6 +489,7 @@ POST /api/v1/desktop-sessions/policy          { hostId, allowed }
 | 缓冲 | 每方向 ≤ 256 KiB；满时停止读取对端（背压），不无限堆积 |
 | 连接上限 | 计入每身份 16 条流的既有上限 |
 | 时长 | 30 分钟无数据关闭；最长 8 小时 |
+| 保存账户 | 全中心最多 1024 条加密记录、4 MiB 状态；每用户每主机一条，覆盖旧版本 |
 | 断线 | Windows 会话保留为“已断开”，重连回到原桌面；broker 或中心重启后同样适用 |
 | 带宽 | IronRDP 文档列出 RemoteFX 与 RDP 6.0 位图压缩，未列出 H.264；适合运维和办公画面，不适合视频（需实测） |
 | 会话冲突 | 桌面版 Windows 只允许一个交互会话：连入前提示会锁定或挤下本机用户 |

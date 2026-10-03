@@ -334,6 +334,11 @@ func (s *Server) handleClusterHostDelete(w http.ResponseWriter, r *http.Request,
 		s.writeClusterError(w, r, err)
 		return
 	}
+	if s.desktopCredentials != nil {
+		if err := s.desktopCredentials.DeleteHost(id); err != nil {
+			result.CredentialRemoved = false
+		}
+	}
 	change["remoteRevoked"] = result.RemoteRevoked
 	change["credentialRemoved"] = result.CredentialRemoved
 	_ = s.audit(r, session.User.ID, "cluster.host.delete", "cluster-host", id, "success", change)

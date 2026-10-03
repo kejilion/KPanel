@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/kejilion/kejilion-panel/internal/desktopcredentials"
 )
 
 const desktopSessionsPath = "/api/v1/desktop-sessions"
@@ -45,6 +47,10 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && !s.checkCSRF(w, r, session) {
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, desktopSessionsPath+"/credentials/") {
+		s.handleDesktopCredentials(w, r, session.User.ID)
+		return
+	}
 	if r.URL.Path == desktopSessionsPath+"/policy" && r.Method == http.MethodPost {
 		var input struct {
 			HostID  string `json:"hostId"`
@@ -71,7 +77,8 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == desktopSessionsPath && r.Method == http.MethodPost {
 		var input struct {
-			HostID string `json:"hostId"`
+			HostID              string `json:"hostId"`
+			UseSavedCredentials bool   `json:"useSavedCredentials"`
 		}
 		if s.decodeJSON(w, r, &input) != nil {
 			return
@@ -84,6 +91,19 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		if s.audit(r, session.User.ID, "desktop.open", "cluster_host", host.ID, "intent", nil) != nil {
 			s.writeProblem(w, r, http.StatusServiceUnavailable, "audit_unavailable", "Audit storage unavailable", "")
 			return
+		}
+		var credentials *desktopcredentials.Credentials
+		if input.UseSavedCredentials {
+			saved, err := s.savedDesktopCredentials(session.User.ID, host.ID)
+			if errors.Is(err, desktopcredentials.ErrMissing) {
+				s.writeProblem(w, r, 409, "desktop_credentials_missing", "Saved Windows account must be configured again", "")
+				return
+			}
+			if err != nil {
+				s.writeProblem(w, r, 503, "desktop_credentials_unavailable", "Saved desktop credentials unavailable", "")
+				return
+			}
+			credentials = &saved
 		}
 		id, err := randomTerminalSessionID()
 		if err != nil {
@@ -122,7 +142,11 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		s.desktopSessions[id] = item
 		s.desktopSessionMu.Unlock()
 		w.Header().Set("Cache-Control", "no-store")
-		s.writeJSON(w, http.StatusCreated, map[string]any{"sessionId": id, "hostId": host.ID, "nonce": item.nonce, "expiresAt": item.expires})
+		response := map[string]any{"sessionId": id, "hostId": host.ID, "nonce": item.nonce, "expiresAt": item.expires}
+		if credentials != nil {
+			response["credentials"] = credentials
+		}
+		s.writeJSON(w, http.StatusCreated, response)
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, desktopSessionsPath+"/")
