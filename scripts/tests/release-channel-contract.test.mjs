@@ -8,7 +8,7 @@ const repoRoot = resolve(import.meta.dirname, '..', '..');
 const bash = process.env.KPANEL_TEST_BASH ||
   (process.platform === 'win32' ? 'C:\\Program Files\\Git\\bin\\bash.exe' : 'bash');
 
-function render(version) {
+function render(version, windowsEnabled = false) {
   const temporary = mkdtempSync(join(repoRoot, '.release-channel-test-'));
   const relativeDirectory = basename(temporary);
   const changelog = join(temporary, 'CHANGELOG.md');
@@ -23,7 +23,7 @@ function render(version) {
   ], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env: { ...process.env, CHANGELOG_FILE: `${relativeDirectory}/CHANGELOG.md` },
+    env: { ...process.env, CHANGELOG_FILE: `${relativeDirectory}/CHANGELOG.md`, KPANEL_WINDOWS_NODE_RELEASE: String(windowsEnabled) },
   });
   const notes = result.status === 0 ? readFileSync(output, 'utf8') : '';
   rmSync(temporary, { recursive: true, force: true });
@@ -48,6 +48,16 @@ test('release notes reject unsupported prerelease names', () => {
   const invalid = render('1.3.0-beta.1');
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /X\.Y\.Z or X\.Y\.Z-rc\.N/);
+});
+
+test('only releases with verified Windows assets advertise the signed installer', () => {
+  assert.doesNotMatch(render('1.2.3').notes, /install-windows\.ps1/);
+  for (const version of ['1.2.3', '1.3.0-rc.2']) {
+    const result = render(version, true);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.notes, /install-windows\.ps1/);
+    assert.match(result.notes, /SHA-256 与 Authenticode/);
+  }
 });
 
 test('release workflow publishes isolated stable and preview channels', () => {
