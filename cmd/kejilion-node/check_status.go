@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const nodeCheckStatusPath = "/run/kejilion-node-monitoring/check-status.json"
-
 func readNodeCheckStatus() *contract.ServiceCheckSummary {
 	content, err := readTrustedRuntimeFile(nodeCheckStatusPath, contract.MaxServiceCheckSummaryBytes)
 	if err != nil {

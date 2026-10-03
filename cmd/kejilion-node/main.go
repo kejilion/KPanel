@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -15,12 +16,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
@@ -37,22 +36,24 @@ const (
 	lightBatchEnrollPath  = cluster.LightBatchEnrollPath
 	lightReportPath       = "/api/v3/federation/light/report"
 	lightProtocol         = "light-v1"
-	defaultConfigPath     = "/etc/kejilion-node/node.json"
 	maxResponseBytes      = int64(64 << 10)
 	maxTokenAge           = time.Hour
 	maxBatchTokenAge      = 7 * 24 * time.Hour
 )
 
 type nodeConfig struct {
-	SchemaVersion  int    `json:"schemaVersion"`
-	Origin         string `json:"origin"`
-	NodeID         string `json:"nodeId"`
-	TargetNodeID   string `json:"targetNodeId,omitempty"`
-	ReportingKey   string `json:"reportingKey"`
-	ReportInterval int    `json:"reportIntervalSeconds"`
-	SSHLogin       bool   `json:"sshLogin,omitempty"`
-	Health         bool   `json:"-"`
-	ServiceChecks  bool   `json:"-"`
+	SchemaVersion       int      `json:"schemaVersion"`
+	Origin              string   `json:"origin"`
+	NodeID              string   `json:"nodeId"`
+	TargetNodeID        string   `json:"targetNodeId,omitempty"`
+	ReportingKey        string   `json:"reportingKey"`
+	ReportInterval      int      `json:"reportIntervalSeconds"`
+	SSHLogin            bool     `json:"sshLogin,omitempty"`
+	Health              bool     `json:"-"`
+	ServiceChecks       bool     `json:"-"`
+	WindowsNode         bool     `json:"windowsNode,omitempty"`
+	Capabilities        []string `json:"capabilities,omitempty"`
+	EnrollmentTokenHash string   `json:"enrollmentTokenHash,omitempty"`
 }
 
 type tokenWire struct {
@@ -64,6 +65,7 @@ type tokenWire struct {
 }
 
 type enrollRequest struct {
+	Platform          string `json:"platform,omitempty"`
 	Token             string `json:"token"`
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`
@@ -86,8 +88,12 @@ type enrollResponse struct {
 }
 
 type reportRequest struct {
-	Telemetry contract.HostTelemetry    `json:"telemetry"`
-	Health    *contract.LightNodeHealth `json:"health,omitempty"`
+	DesktopUnavailableReason string                    `json:"desktopUnavailableReason,omitempty"`
+	Platform                 string                    `json:"platform,omitempty"`
+	UnavailableMetrics       []string                  `json:"unavailableMetrics,omitempty"`
+	Capabilities             []string                  `json:"capabilities,omitempty"`
+	Telemetry                contract.HostTelemetry    `json:"telemetry"`
+	Health                   *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type reportResponse struct {
@@ -105,6 +111,9 @@ func main() {
 }
 
 func run(arguments []string) error {
+	if handled, err := runPlatformCommand(arguments); handled {
+		return err
+	}
 	if len(arguments) == 1 && arguments[0] == "health" {
 		return json.NewEncoder(os.Stdout).Encode(collectLightHealth(context.Background()))
 	}
@@ -135,9 +144,13 @@ func run(arguments []string) error {
 }
 
 func runEnroll(arguments []string) error {
+	if err := requireEnrollmentIdentity(); err != nil {
+		return err
+	}
 	flags := flag.NewFlagSet("kejilion-node enroll", flag.ContinueOnError)
 	token := flags.String("token", "", "one-time enrollment token")
 	name := flags.String("name", "", "optional display name")
+	capabilities := flags.String("capabilities", "", "Windows capabilities")
 	configPath := flags.String("config", defaultConfigPath, "configuration path")
 	terminalConfigPath := flags.String("terminal-config", defaultTerminalConfigPath, "root-only terminal configuration path")
 	attemptPath := flags.String("attempt-file", "", "root-only resumable batch enrollment state")
@@ -146,6 +159,10 @@ func runEnroll(arguments []string) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected enrollment argument")
+	}
+	selectedCapabilities, err := enrollmentCapabilities(*capabilities)
+	if err != nil {
+		return err
 	}
 	target, err := enrollmentTargetFromToken(*token)
 	if err != nil {
@@ -180,12 +197,15 @@ func runEnroll(arguments []string) error {
 		Token: strings.TrimSpace(*token), Name: strings.TrimSpace(*name), NodeVersion: version.Version,
 		TerminalPublicKey: base64.RawURLEncoding.EncodeToString(terminalKey.Public),
 	}
+	if runtime.GOOS == "windows" {
+		request.Platform = "windows"
+	}
 	if target.Batch {
 		request.AttemptID = batchAttempt.AttemptID
 	}
 	var response enrollResponse
 	status, responseHeaders, err := postJSONWithStatusAndHeaders(context.Background(), target.Origin+target.Path, request, nil, &response)
-	if err != nil && !target.Batch && status == http.StatusBadRequest {
+	if err != nil && runtime.GOOS != "windows" && !target.Batch && status == http.StatusBadRequest {
 		// A pre-v2 center rejects the optional key field because its decoder is
 		// strict. Retry the same one-time token without terminal capability so
 		// the node remains telemetry-compatible and never guesses a protocol.
@@ -219,12 +239,20 @@ func runEnroll(arguments []string) error {
 			terminalEnabled = true
 		}
 	}
+	if err := requireEnrollmentCenter(responseHeaders); err != nil {
+		return err
+	}
 	config := nodeConfig{
+		Capabilities: selectedCapabilities, WindowsNode: hasResponseCapability(responseHeaders, "windows-node-v1"),
 		SchemaVersion: 1, Origin: target.Origin, NodeID: response.NodeID,
 		ReportingKey: response.ReportingKey, ReportInterval: response.ReportInterval,
 		SSHLogin:      hasResponseCapability(responseHeaders, cluster.SSHLoginCapability),
 		Health:        hasResponseCapability(responseHeaders, cluster.LightHealthCapability),
 		ServiceChecks: hasResponseCapability(responseHeaders, cluster.ServiceChecksCapability),
+	}
+	if runtime.GOOS == "windows" {
+		digest := sha256.Sum256([]byte(strings.TrimSpace(*token)))
+		config.EnrollmentTokenHash = hex.EncodeToString(digest[:])
 	}
 	if terminalEnabled {
 		config.TargetNodeID = response.TargetNodeID
@@ -267,7 +295,7 @@ func runNode(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := nodeSignalContext()
 	defer stop()
 	collector := systeminfo.NewCollector()
 	collector.PublicNetworkCacheTTL = 30 * time.Minute
@@ -313,10 +341,13 @@ func collectAndReport(
 	sshReader *sshlogin.Reader,
 	previousReportLatency *int64,
 ) (nodeConfig, int64, error) {
+	if err := requireWindowsCapability(parent, config, "monitoring"); err != nil {
+		return config, 0, err
+	}
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	summary, collectErr := collector.Collect(ctx)
-	if collectErr != nil && summary.Hostname == "" {
+	if collectErr != nil && (runtime.GOOS == "windows" || summary.Hostname == "") {
 		return config, 0, fmt.Errorf("collect host telemetry: %w", collectErr)
 	}
 	disk := contract.DiskCapacitySummary{}
@@ -333,7 +364,7 @@ func collectAndReport(
 	if config.SSHLogin {
 		var sshErr error
 		if sshReader != nil {
-			sshLogin, sshErr = sshReader.LatestSSHLogin(ctx)
+			sshLogin, sshErr = latestPlatformLogin(ctx, sshReader)
 		} else {
 			sshErr = errors.New("SSH login reader is unavailable")
 		}
@@ -348,6 +379,8 @@ func collectAndReport(
 		Load: summary.Load, CPU: summary.CPU, Memory: summary.Memory, Disk: disk,
 		Network: summary.Network, PublicNetwork: summary.PublicNetwork, SSHLogin: sshLogin, CollectedAt: summary.CollectedAt,
 	}}
+	applyPlatformReport(&payload, config)
+	payload.UnavailableMetrics = append([]string(nil), summary.UnavailableMetrics...)
 	if config.Health {
 		payload.Health = collectLightHealth(ctx)
 	}
@@ -398,6 +431,7 @@ func enableSSHLoginCapability(config nodeConfig, headers http.Header) nodeConfig
 	config.SSHLogin = hasResponseCapability(headers, cluster.SSHLoginCapability)
 	config.Health = hasResponseCapability(headers, cluster.LightHealthCapability)
 	config.ServiceChecks = hasResponseCapability(headers, cluster.ServiceChecksCapability)
+	config.WindowsNode = hasResponseCapability(headers, "windows-node-v1")
 	return config
 }
 
@@ -504,6 +538,9 @@ func readConfig(path string) (nodeConfig, []byte, error) {
 		return nodeConfig{}, nil, err
 	}
 	defer file.Close()
+	if err := validatePlatformConfig(file, false); err != nil {
+		return nodeConfig{}, nil, err
+	}
 	after, err := file.Stat()
 	if err != nil || !os.SameFile(before, after) || after.Size() > 8192 {
 		return nodeConfig{}, nil, errors.New("configuration file is invalid")
@@ -533,6 +570,9 @@ func readConfig(path string) (nodeConfig, []byte, error) {
 }
 
 func writeConfigAtomic(path string, config nodeConfig) error {
+	if handled, err := writePlatformConfig(path, config, false); handled {
+		return err
+	}
 	if !filepath.IsAbs(path) {
 		return errors.New("configuration path must be absolute")
 	}

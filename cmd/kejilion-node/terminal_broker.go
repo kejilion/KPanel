@@ -6,17 +6,15 @@ import (
 	"flag"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/cluster"
 	"github.com/kejilion/kejilion-panel/internal/terminal"
 )
 
-const defaultTerminalBrokerConfigPath = defaultConfigPath
+var defaultTerminalBrokerConfigPath = defaultConfigPath
 
 // runTerminalBroker is deliberately a separate root service. The low
 // privilege telemetry process never receives a root IPC capability; this
@@ -33,11 +31,17 @@ func runTerminalBroker(arguments []string) error {
 		!filepath.IsAbs(*terminalConfigPath) || filepath.Clean(*terminalConfigPath) == string(filepath.Separator) {
 		return errors.New("terminal broker configuration path is invalid")
 	}
+	if err := requireBrokerIdentity(); err != nil {
+		return err
+	}
 	if runtime.GOOS == "linux" && os.Geteuid() != 0 {
 		return errors.New("terminal broker requires root")
 	}
 	config, _, err := readConfig(*configPath)
 	if err != nil {
+		return err
+	}
+	if err := requirePlatformBrokerCapabilities(context.Background(), config); err != nil {
 		return err
 	}
 	if config.TargetNodeID == "" {
@@ -53,8 +57,14 @@ func runTerminalBroker(arguments []string) error {
 	}
 	manager := terminal.New(terminal.Config{ParentUnit: ""})
 	defer manager.CloseAll()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := nodeSignalContext()
 	defer stop()
+	stopDesktop := startPlatformDesktop(ctx, config)
+	defer stopDesktop()
+	if !platformTerminalEnabled(config) {
+		<-ctx.Done()
+		return nil
+	}
 	streamDone := make(chan struct{})
 	go func() {
 		defer close(streamDone)
@@ -73,6 +83,12 @@ func runTerminalBroker(arguments []string) error {
 func runLightTerminalStream(ctx context.Context, config nodeConfig, identity terminalIdentity, relay *cluster.TerminalRelayClient, manager *terminal.Manager) {
 	backoff := time.Minute
 	for ctx.Err() == nil {
+		if err := requireWindowsCapability(ctx, config, "terminal"); err != nil {
+			if !waitContext(ctx, time.Minute) {
+				return
+			}
+			continue
+		}
 		connected := false
 		err := relay.RunTerminalStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer,
 			manager, lightTerminalOwner(config.NodeID), func() { connected = true })

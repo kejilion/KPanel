@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -137,7 +138,7 @@ func TestNodeConfigRoundTripIsStrictAndRejectsNonRegularTargets(t *testing.T) {
 		t.Fatalf("writeConfigAtomic() error = %v", err)
 	}
 	loaded, secret, err := readConfig(path)
-	if err != nil || loaded != config || len(secret) != 32 {
+	if err != nil || !reflect.DeepEqual(loaded, config) || len(secret) != 32 {
 		t.Fatalf("readConfig() = %#v, %d, %v", loaded, len(secret), err)
 	}
 	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
@@ -212,7 +213,7 @@ func TestTerminalConfigRoundTripIsStrictAndRootOnly(t *testing.T) {
 		t.Fatalf("writeTerminalConfigAtomic() error = %v", err)
 	}
 	loaded, identity, err := readTerminalConfig(path)
-	if err != nil || loaded != config || !bytes.Equal(identity.Key.Private, bytes.Repeat([]byte{1}, 32)) ||
+	if err != nil || !reflect.DeepEqual(loaded, config) || !bytes.Equal(identity.Key.Private, bytes.Repeat([]byte{1}, 32)) ||
 		!bytes.Equal(identity.Key.Public, bytes.Repeat([]byte{2}, 32)) || !bytes.Equal(identity.Peer, bytes.Repeat([]byte{3}, 32)) {
 		t.Fatalf("readTerminalConfig() = %#v, %#v, %v", loaded, identity, err)
 	}
