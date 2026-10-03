@@ -98,6 +98,7 @@ func (s *Server) Close() error {
 	s.closeRemoteDownloadJobs()
 	s.terminalStreams.closeAll()
 	s.closeTerminalSessions()
+	s.closeDesktopSessions()
 	s.closeFileShareStreams()
 	// Cluster-owned relay connections can outlive HTTP shutdown. Close their
 	// transport before waiting for handlers, or restore restarts can deadlock.

@@ -17,7 +17,7 @@ type LightCapabilitiesResponse struct {
 }
 
 func LightCenterCapabilities() []string {
-	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, WindowsNodeCapability}
+	return []string{SSHLoginCapability, LightHealthCapability, ServiceChecksCapability, WindowsNodeCapability, DesktopCapability}
 }
 
 // ProbeLightCapabilities is read-only. It must never provision a privileged
@@ -70,7 +70,7 @@ func validateLightPlatform(input LightReportRequest) error {
 }
 
 func lightHostIsWindows(record lightHostRecord) bool {
-	return record.LastSnapshot != nil && (record.LastSnapshot.Platform == "windows" ||
+	return record.Platform == "windows" || record.LastSnapshot != nil && (record.LastSnapshot.Platform == "windows" ||
 		strings.EqualFold(record.LastSnapshot.Telemetry.OSID, "windows"))
 }
 
@@ -81,7 +81,7 @@ func lightPlatformAllows(record lightHostRecord, capability string, now time.Tim
 		return true
 	}
 	snapshot := record.LastSnapshot
-	return snapshot.Platform == "windows" && now.Sub(snapshot.ReceivedAt) <= 90*time.Second &&
+	return snapshot != nil && snapshot.Platform == "windows" && now.Sub(snapshot.ReceivedAt) <= 90*time.Second &&
 		slices.Contains(snapshot.NodeCapabilities, capability)
 }
 
@@ -97,7 +97,7 @@ func applyLightPlatform(host *Host, record lightHostRecord, now time.Time) {
 	}
 	host.Platform, host.TerminalShell, host.PathStyle = "windows", "powershell", "windows-volumes"
 	host.UnavailableMetrics = []string{"load", "swap", "diskIO", "networkConnections"}
-	if record.LastSnapshot.Platform == "windows" {
+	if record.LastSnapshot != nil && record.LastSnapshot.Platform == "windows" {
 		host.UnavailableMetrics = append([]string(nil), record.LastSnapshot.UnavailableMetrics...)
 	}
 	host.TerminalAvailable = host.TerminalAvailable && lightPlatformAllows(record, "terminal", now)

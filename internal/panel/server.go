@@ -97,6 +97,8 @@ type Server struct {
 	fileShareMetadataGate   chan struct{}
 	terminalMu              sync.Mutex
 	terminalSessions        map[string]panelTerminalSession
+	desktopSessionMu        sync.Mutex
+	desktopSessions         map[string]*panelDesktopSession
 	terminalOpening         int
 	terminalOpeningUser     map[string]int
 	terminalStreams         *terminalStreamHub
@@ -453,6 +455,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/terminal-sessions" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/terminal-sessions/"):
 		s.handleTerminalSession(w, r)
+	case r.URL.Path == desktopSessionsPath || strings.HasPrefix(r.URL.Path, desktopSessionsPath+"/"):
+		s.handleDesktopSession(w, r)
 	case strings.HasPrefix(r.URL.Path, jobTerminalInputPrefix):
 		s.handleJobTerminalInput(w, r)
 	case r.URL.Path == terminalStreamPath || r.URL.Path == terminalStreamSubscriptionsPath:
