@@ -202,6 +202,10 @@ func openFileRoot(root string, bindings map[string]string) (*fileRoot, error) {
 }
 
 func ntOpen(parent windows.Handle, name string, access, disposition, options uint32) (windows.Handle, error) {
+	return ntOpenWithSecurity(parent, name, access, disposition, options, nil)
+}
+
+func ntOpenWithSecurity(parent windows.Handle, name string, access, disposition, options uint32, sd *windows.SECURITY_DESCRIPTOR) (windows.Handle, error) {
 	if name == "." {
 		name = ""
 	}
@@ -209,7 +213,7 @@ func ntOpen(parent windows.Handle, name string, access, disposition, options uin
 	if err != nil {
 		return 0, err
 	}
-	oa := windows.OBJECT_ATTRIBUTES{RootDirectory: parent, ObjectName: name16, Attributes: windows.OBJ_CASE_INSENSITIVE}
+	oa := windows.OBJECT_ATTRIBUTES{RootDirectory: parent, ObjectName: name16, Attributes: windows.OBJ_CASE_INSENSITIVE, SecurityDescriptor: sd}
 	oa.Length = uint32(unsafe.Sizeof(oa))
 	var h windows.Handle
 	err = windows.NtCreateFile(&h, access|windows.SYNCHRONIZE|windows.FILE_READ_ATTRIBUTES, &oa, &windows.IO_STATUS_BLOCK{}, nil, windows.FILE_ATTRIBUTE_NORMAL, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, disposition, options|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_REPARSE_POINT, 0, 0)
@@ -304,6 +308,10 @@ func closeParent(h windows.Handle, v *windowsVolume) {
 	}
 }
 func (r *fileRoot) open(name string, access, disposition, options uint32) (*os.File, error) {
+	return r.openWithSecurity(name, access, disposition, options, nil)
+}
+
+func (r *fileRoot) openWithSecurity(name string, access, disposition, options uint32, sd *windows.SECURITY_DESCRIPTOR) (*os.File, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
@@ -314,7 +322,7 @@ func (r *fileRoot) open(name string, access, disposition, options uint32) (*os.F
 		return nil, err
 	}
 	defer closeParent(parent, v)
-	h, err := ntOpen(parent, leaf, access, disposition, options)
+	h, err := ntOpenWithSecurity(parent, leaf, access, disposition, options, sd)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: name, Err: err}
 	}
