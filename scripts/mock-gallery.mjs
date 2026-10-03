@@ -90,6 +90,16 @@ async function seed() {
 
 await seed()
 
+// Explicit mock-only Windows volumes; reuse bundled media without touching a host.
+if (process.env.KPANEL_MOCK_WINDOWS_GALLERY === '1') {
+  for (const path of ['/', '/D', '/E', '/E/Pictures']) addDirectory(path)
+  for (const [path, node] of [...nodes]) {
+    if (path !== ROOT && !path.startsWith(`${ROOT}/`)) continue
+    const target = '/D/Pictures' + path.slice(ROOT.length)
+    nodes.set(target, { ...node, entry: { ...node.entry, path: target, name: target.slice(target.lastIndexOf('/') + 1) } })
+  }
+}
+
 /** Directory entries the generic mock should show at `/`. */
 export const mockGalleryRootEntries = [nodes.get('/home').entry]
 
@@ -178,15 +188,18 @@ function validName(name) {
   return typeof name === 'string' && name.trim() && !name.includes('/') && name !== '.' && name !== '..'
 }
 
-export async function mockGallery(request, response, url, send, readJSON) {
+export async function mockGallery(request, response, url, send, readJSON, windowsHost = false) {
   const path = url.searchParams.get('path')
-  if (request.method === 'GET' && url.pathname === '/api/v1/files' && inScope(path)) {
+  const acceptsPath = windowsHost && process.env.KPANEL_MOCK_WINDOWS_GALLERY === '1'
+    ? (value) => typeof value === 'string' && (value === '/' || /^\/[DE](?:\/|$)/u.test(value))
+    : inScope
+  if (request.method === 'GET' && url.pathname === '/api/v1/files' && acceptsPath(path)) {
     if (!nodes.has(path)) {
       send(response, 404, { title: '文件不存在', status: 404, code: 'not_found' })
       return true
     }
     const search = (url.searchParams.get('search') || '').toLowerCase()
-    const all = children(path).filter((entry) => !search || entry.name.toLowerCase().includes(search))
+    const all = children(path).filter((entry) => acceptsPath(entry.path) && (!search || entry.name.toLowerCase().includes(search)))
     const offset = Number(url.searchParams.get('offset') || 0)
     const limit = Number(url.searchParams.get('limit') || 100)
     const entries = all.slice(offset, offset + limit)
@@ -197,12 +210,12 @@ export async function mockGallery(request, response, url, send, readJSON) {
     })
     return true
   }
-  if (request.method === 'GET' && url.pathname === '/api/v1/files/entry' && inScope(path)) {
+  if (request.method === 'GET' && url.pathname === '/api/v1/files/entry' && acceptsPath(path)) {
     const node = nodes.get(path)
     send(response, node ? 200 : 404, node ? node.entry : { title: '文件不存在', status: 404, code: 'not_found' })
     return true
   }
-  if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/files/content' && inScope(path)) {
+  if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/v1/files/content' && acceptsPath(path)) {
     const node = nodes.get(path)
     if (!node || node.entry.kind !== 'file') {
       send(response, 404, { title: '文件不存在', status: 404, code: 'not_found' })
@@ -211,7 +224,7 @@ export async function mockGallery(request, response, url, send, readJSON) {
     await serveContent(request, response, url, node, send)
     return true
   }
-  if (request.method === 'POST' && url.pathname === '/api/v1/files/upload' && inScope(path)) {
+  if (request.method === 'POST' && url.pathname === '/api/v1/files/upload' && acceptsPath(path)) {
     const name = url.searchParams.get('name')
     const target = `${path}/${name}`
     if (!nodes.has(path) || nodes.get(path).entry.kind !== 'directory' || !validName(name)) {
@@ -236,12 +249,12 @@ export async function mockGallery(request, response, url, send, readJSON) {
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/files/download-tickets') {
     const input = await readJSON(request)
-    if (!inScope(input.path)) {
+    if (!acceptsPath(input.path)) {
       send(response, 404, { title: '模拟预览只支持图库目录内的下载', status: 404, code: 'mock_unsupported' })
       return true
     }
     send(response, 200, {
-      downloadUrl: `/api/v1/files/content?path=${encodeURIComponent(input.path)}&disposition=attachment`,
+      downloadUrl: `/api/v1/files/content?path=${encodeURIComponent(input.path)}&disposition=attachment${windowsHost ? `&hostId=${encodeURIComponent(url.searchParams.get('hostId') || '')}` : ''}`,
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     })
     return true
@@ -249,7 +262,7 @@ export async function mockGallery(request, response, url, send, readJSON) {
   if (request.method === 'POST' && url.pathname === '/api/v1/files/actions') {
     // The generic mock has no file actions, so this handler owns the endpoint and refuses other paths.
     const input = await readJSON(request)
-    const touchesGallery = inScope(input.target) || (input.sources || []).some(inScope)
+    const touchesGallery = acceptsPath(input.target) || (input.sources || []).some(acceptsPath)
     if (!touchesGallery) {
       send(response, 422, { title: '模拟预览只支持图库目录内的文件操作', status: 422, code: 'mock_unsupported' })
       return true

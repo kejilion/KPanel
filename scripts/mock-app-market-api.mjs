@@ -1550,7 +1550,8 @@ createServer(async (request, response) => {
   if (await mockShareThemes(request, response, url, send, readJSON)) return
   if (await mockScenePacks(request, response, url, send, readJSON)) return
   if (await mockDesktopWallpapers(request, response, url, send)) return
-  if (await mockGallery(request, response, url, send, readJSON)) return
+  const windowsFileHost = visualClusterHosts.some((host) => host.id === url.searchParams.get('hostId') && host.pathStyle === 'windows-volumes')
+  if (await mockGallery(request, response, url, send, readJSON, windowsFileHost)) return
   // Appearance sync reads this on every page; without it previews show a load failure toast.
   if (url.pathname === '/api/v1/settings/appearance' && request.method === 'GET') {
     send(response, 200, mockAppearance)
@@ -1590,7 +1591,13 @@ createServer(async (request, response) => {
     } else if (remote && id === 'f'.repeat(32)) {
       send(response, 426, { title: '当前节点版本尚不支持远程历史，请升级节点后重试。', code: 'monitoring_upgrade_required' })
     } else {
-      send(response, 200, mockMonitoringHistory(url, remote))
+      const history = mockMonitoringHistory(url, remote)
+      const windowsHost = visualClusterHosts.find((host) => host.id === id && host.platform === 'windows')
+      if (remote && windowsHost) {
+        history.unavailableMetrics = windowsHost.unavailableMetrics || ['load', 'swap', 'diskIO', 'networkConnections']
+        history.containers = []
+      }
+      send(response, 200, history)
     }
     return
   }

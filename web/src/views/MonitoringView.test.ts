@@ -47,6 +47,28 @@ async function selectHost(view: VueWrapper, id: string) {
 }
 
 describe('monitoring host selection', () => {
+  it('queries the Windows host and disables unavailable metrics without leaking them into Linux', async () => {
+    const windows = history(35)
+    windows.unavailableMetrics = ['load', 'swap', 'diskIO', 'networkConnections']
+    mocks.hosts.mockResolvedValue({ items: [
+      { id: 'local', isLocal: true, name: '本机', state: 'online' },
+      { id: a, isLocal: false, name: 'Windows', kind: 'light_node', state: 'online', platform: 'windows', unavailableMetrics: windows.unavailableMetrics },
+    ] })
+    const { wrapper: view } = await mountAt()
+    mocks.history.mockResolvedValue(windows)
+    await selectHost(view, a)
+    expect(mocks.history.mock.calls.at(-1)?.[3]).toBe(a)
+    expect(view.text()).toContain('此系统不提供负载均值')
+    const metricButton = (label: string) => view.findAll('button').find((button) => button.text() === label)!
+    expect(metricButton('读写 I/O').attributes('disabled')).toBeDefined()
+    expect(metricButton('连接数').attributes('disabled')).toBeDefined()
+    mocks.history.mockResolvedValue(history())
+    await selectHost(view, 'local')
+    expect(view.text()).not.toContain('此系统不提供负载均值')
+    expect(metricButton('读写 I/O').attributes('disabled')).toBeUndefined()
+    expect(metricButton('连接数').attributes('disabled')).toBeUndefined()
+  })
+
   it('renders Ping, TCP, and HTTP as three views on the shared timeline', async () => {
     const value = history()
     value.operatorLatency = [

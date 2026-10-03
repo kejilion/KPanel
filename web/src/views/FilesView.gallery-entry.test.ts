@@ -13,9 +13,10 @@ vi.mock('vue-router', async (importOriginal) => ({
 }))
 vi.mock('@/stores/toast', () => ({ useToast: () => ({ show: vi.fn(), success: vi.fn(), danger: vi.fn() }) }))
 
-const hosts = ['local', 'a', 'b'].map((id) => ({
+const hosts = ['local', 'a', 'b', 'win'].map((id) => ({
   id, name: id, isLocal: id === 'local', kind: 'panel', state: 'online',
   fileManagementAvailable: true, remoteNodeId: id.repeat(32),
+  ...(id === 'win' ? { kind: 'light_node', platform: 'windows', pathStyle: 'windows-volumes' } : {}),
 }))
 const wrappers: ReturnType<typeof shallowMount>[] = []
 
@@ -50,6 +51,16 @@ async function pane(hostId: string, path: string) {
 }
 
 describe('file pane gallery entry', () => {
+  it('opens Windows volume selection at / and preserves an explicit Windows photo folder', async () => {
+    const windows = await pane('win', '/')
+    router.push.mockReset()
+    windows.openGallery()
+    expect(router.push).toHaveBeenLastCalledWith({ name: 'gallery', query: { hostId: 'win' } })
+    await windows.loadDirectory('/D/Pictures')
+    windows.openGallery()
+    expect(router.push).toHaveBeenLastCalledWith({ name: 'gallery', query: { hostId: 'win', path: '/D/Pictures' } })
+  })
+
   it('opens the gallery for the pane\'s own host and folder, independently per pane', async () => {
     const left = await pane('a', '/srv/photos')
     const right = await pane('b', '/home/me/trips')
