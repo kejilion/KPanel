@@ -165,6 +165,7 @@ type LightBatchEnrollmentList struct {
 }
 
 type LightEnrollRequest struct {
+	Platform          string `json:"platform,omitempty"`
 	Token             string `json:"token"`
 	Name              string `json:"name,omitempty"`
 	NodeVersion       string `json:"nodeVersion"`

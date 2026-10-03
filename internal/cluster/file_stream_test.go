@@ -238,7 +238,7 @@ func TestFileStreamLightCallbacksBindIdentityGenerationAndSingleUse(t *testing.T
 	}
 	h.mu.Lock()
 	requestID := strings.Repeat("c", 32)
-	pending := &fileStreamPending{nodeID: a.id, control: h.controls[a.id], ready: make(chan *fileStreamConn, 1), expires: time.Now().Add(4 * time.Second)}
+	pending := &fileStreamPending{role: "light-data", nodeID: a.id, control: h.controls[a.id], ready: make(chan *fileStreamConn, 1), expires: time.Now().Add(4 * time.Second)}
 	h.pending[requestID] = pending
 	h.mu.Unlock()
 	for _, attempt := range []struct {

@@ -128,6 +128,9 @@ func (s *Service) EnrollLightNodeBatch(
 	if !s.lightBatchSources.Allow(cleanRateSubject(source), now) {
 		return LightEnrollResponse{}, "", ErrRateLimited
 	}
+	if input.Platform != "" && input.Platform != "linux" && input.Platform != "windows" {
+		return LightEnrollResponse{}, "", ErrProtocolMismatch
+	}
 	wire, secret, err := parseLightTokenForPrefix(input.Token, lightBatchTokenPrefix, maximumLightBatchDuration, now)
 	validatedOrigin, originErr := validateLightOrigin(origin)
 	if err != nil || originErr != nil || wire.Origin != validatedOrigin || !validID(input.AttemptID) {
@@ -180,7 +183,8 @@ func (s *Service) EnrollLightNodeBatch(
 			return LightEnrollResponse{}, "", err
 		}
 		record = lightHostRecord{
-			ID: attempt.NodeID, Name: attempt.Name, NodeVersion: attempt.NodeVersion,
+			Platform: input.Platform,
+			ID:       attempt.NodeID, Name: attempt.Name, NodeVersion: attempt.NodeVersion,
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if err := s.light.AddHostWithTerminal(record, reportingKey, terminalPublicKey); err != nil {

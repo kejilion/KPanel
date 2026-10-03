@@ -133,6 +133,9 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	if !s.lightEnrolls.Allow(cleanRateSubject(source), now) {
 		return LightEnrollResponse{}, ErrRateLimited
 	}
+	if input.Platform != "" && input.Platform != "linux" && input.Platform != "windows" {
+		return LightEnrollResponse{}, ErrProtocolMismatch
+	}
 	wire, secret, err := parseLightToken(input.Token, now)
 	validatedOrigin, originErr := validateLightOrigin(origin)
 	if err != nil || originErr != nil || wire.Origin != validatedOrigin {
@@ -159,7 +162,8 @@ func (s *Service) EnrollLightNodeAtOrigin(
 	}
 	hash := sha256.Sum256(secret)
 	if err := s.light.EnrollHost(wire.ID, hex.EncodeToString(hash[:]), lightHostRecord{
-		ID: nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
+		Platform: input.Platform,
+		ID:       nodeID, Name: name, NodeVersion: cleanDisplayText(input.NodeVersion, 64),
 		CreatedAt: now, UpdatedAt: now,
 	}, reportingKey, terminalPublicKey, now); err != nil {
 		return LightEnrollResponse{}, err
@@ -195,6 +199,9 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	}
 	if err := validateLightPlatform(input); err != nil {
 		return LightReportResponse{}, err
+	}
+	if lightHostIsWindows(record) && input.Platform != "windows" {
+		return LightReportResponse{}, ErrProtocolMismatch
 	}
 	latencyMilliseconds := parseLightReportLatency(auth.ReportLatencyMilliseconds)
 	if latencyMilliseconds == 0 && record.LastSnapshot != nil {
@@ -317,7 +324,16 @@ func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
 		key, err := s.light.ReadTerminalPublicKey(record)
 		fileAvailable = err == nil && len(key) == 32
 	}
-	return publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
+	host := publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
+	if lightHostIsWindows(record) && lightPlatformAllows(record, "desktop", now) {
+		host.DesktopAvailable = s.fileStreamHub.desktopAvailable(record.ID)
+		if host.DesktopAvailable {
+			host.DesktopUnavailableReason = ""
+		} else {
+			host.DesktopUnavailableReason = "desktop_broker_unavailable"
+		}
+	}
+	return host
 }
 
 func publicLightHost(record lightHostRecord, now time.Time, terminalAvailable bool) Host {
