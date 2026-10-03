@@ -137,3 +137,64 @@ func TestDesktopPolicyPersistsAndCorruptionFailsClosed(t *testing.T) {
 		t.Fatal("corrupt policy allowed access")
 	}
 }
+
+func TestDesktopRevocationRejectsPendingDataAndControlReconnect(t *testing.T) {
+	f, node, key, peer := desktopFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	control, err := dialFileStream(ctx, f.server.Client(), f.server.URL, node.NodeID, node.TargetNodeID, key, peer, time.Now(), fileStreamHello{Role: streamRoleLightDesktopControl})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer control.close()
+	kind, generation, err := control.readControl()
+	if err != nil || kind != streamOpen || !validID(string(generation)) {
+		t.Fatal("control generation", kind, err)
+	}
+	waitDesktop(t, f, node.NodeID)
+	opened := make(chan error, 1)
+	go func() {
+		stream, err := f.service.OpenDesktopStream(ctx, node.NodeID, strings.Repeat("c", 64))
+		if stream != nil {
+			stream.Close()
+		}
+		opened <- err
+	}()
+	// Receiving the request proves it was registered while policy still allowed
+	// desktop access. Delay its data socket until after revocation completes.
+	kind, request, err := control.readControl()
+	if err != nil || kind != streamOpen || !validID(string(request)) {
+		t.Fatal("pending desktop request", kind, err)
+	}
+	if err := f.service.SetDesktopAllowed(node.NodeID, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, hello := range []fileStreamHello{
+		{Role: streamRoleLightDesktopData, RequestID: string(request), Generation: string(generation)},
+		{Role: streamRoleLightDesktopControl},
+	} {
+		conn, err := dialFileStream(ctx, f.server.Client(), f.server.URL, node.NodeID, node.TargetNodeID, key, peer, time.Now(), hello)
+		if conn != nil {
+			conn.close()
+		}
+		if err == nil {
+			t.Errorf("revoked desktop policy accepted %s Noise handshake", hello.Role)
+		}
+	}
+	select {
+	case err := <-opened:
+		if err == nil {
+			t.Fatal("revoked pending request returned a stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("revoked pending request did not stop")
+	}
+	if err := f.service.SetDesktopAllowed(node.NodeID, true); err != nil {
+		t.Fatal(err)
+	}
+	reconnected, err := dialFileStream(ctx, f.server.Client(), f.server.URL, node.NodeID, node.TargetNodeID, key, peer, time.Now(), fileStreamHello{Role: streamRoleLightDesktopControl})
+	if err != nil {
+		t.Fatal("re-enabling desktop must permit authenticated reconnect", err)
+	}
+	reconnected.close()
+}

@@ -478,7 +478,9 @@ func (s *Service) authorizeFileStream(envelope v2Envelope) (fileStreamHello, *no
 		}
 	case streamRoleLightDesktopControl, streamRoleLightDesktopData:
 		node, err := s.light.Host(envelope.ControllerID)
-		if panel || err != nil || !lightHostIsWindows(node) || !lightPlatformAllows(node, "desktop", now) {
+		// Authorization and socket registration share the hub lock with the
+		// revocation sweep, so delayed data/control handshakes cannot escape it.
+		if panel || err != nil || !s.desktopAllowed(envelope.ControllerID) || !lightHostIsWindows(node) || !lightPlatformAllows(node, "desktop", now) {
 			return fail()
 		}
 	default:
