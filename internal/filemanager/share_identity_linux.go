@@ -11,7 +11,7 @@ import (
 // shareFileIdentity binds a share to the Linux filesystem object as well as
 // its content. The inode fields invalidate same-content replacements; ctime is
 // supplementary metadata and is not treated as a monotonic change counter.
-func shareFileIdentity(info os.FileInfo) (string, bool) {
+func shareFileIdentity(info os.FileInfo, _ shareVersionFile) (string, bool) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return "", false

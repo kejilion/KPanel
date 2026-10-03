@@ -376,7 +376,11 @@ func TestBatchCopyMoveAndChmodProcessEverySource(t *testing.T) {
 		Action: "chmod", Sources: chmodSources, Mode: "640",
 		ExpectedResourceVersions: expectedVersions,
 	})
-	if err != nil || len(result.Succeeded) != len(chmodSources) || len(result.Failed) != 0 {
+	if runtime.GOOS == "windows" {
+		if err != nil || len(result.Succeeded) != 0 || len(result.Failed) != len(chmodSources) {
+			t.Fatalf("Windows must explicitly reject POSIX chmod: %#v err=%v", result, err)
+		}
+	} else if err != nil || len(result.Succeeded) != len(chmodSources) || len(result.Failed) != 0 {
 		t.Fatalf("batch chmod result: %#v err=%v", result, err)
 	}
 
