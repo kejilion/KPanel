@@ -19,16 +19,18 @@ import (
 )
 
 const (
-	termOpen   = byte(30)
-	termAttach = byte(31)
-	termReady  = byte(32)
-	termOutput = byte(33)
-	termState  = byte(34)
-	termInput  = byte(35)
-	termResize = byte(36)
-	termClose  = byte(37)
-	termReply  = byte(38)
-	termReject = byte(39)
+	termOpen           = byte(30)
+	termAttach         = byte(31)
+	termReady          = byte(32)
+	termOutput         = byte(33)
+	termState          = byte(34)
+	termInput          = byte(35)
+	termResize         = byte(36)
+	termClose          = byte(37)
+	termReply          = byte(38)
+	termReject         = byte(39)
+	termInputProbe     = byte(40)
+	termInputSequenced = byte(41)
 
 	terminalStreamCoalesce      = 3 * time.Millisecond
 	terminalStreamCoalesceBytes = 32 << 10
@@ -41,24 +43,38 @@ const (
 
 var errTerminalStreamDisconnected = errors.New("terminal stream disconnected")
 
+// Optional so legacy backends and peers retain their unchanged contract.
+type SequencedTerminalBackend interface {
+	SupportsSequencedInput(context.Context) bool
+	InputSequenced(context.Context, string, string, terminal.InputFrame) error
+}
+
+func validTerminalInputProtocol(ctx context.Context, backend TerminalBackend, protocol string) bool {
+	b, ok := backend.(SequencedTerminalBackend)
+	return ok && protocol == terminal.InputProtocol && b.SupportsSequencedInput(ctx)
+}
+
 // terminalStreamFallbackAfter bounds how long a Panel terminal retries the
 // stream before continuing the same session over v2 requests.
 var terminalStreamFallbackAfter = 6 * time.Second
 
 type terminalStreamOpen struct {
-	Rows    uint16 `json:"rows"`
-	Columns uint16 `json:"columns"`
+	Rows          uint16 `json:"rows"`
+	Columns       uint16 `json:"columns"`
+	InputProtocol string `json:"inputProtocol,omitempty"`
 }
 
 type terminalStreamAttach struct {
-	SessionID string `json:"sessionId"`
-	Offset    int64  `json:"offset"`
+	SessionID     string `json:"sessionId"`
+	Offset        int64  `json:"offset"`
+	InputProtocol string `json:"inputProtocol,omitempty"`
 }
 
 type terminalStreamReady struct {
-	SessionID string    `json:"sessionId"`
-	Offset    int64     `json:"offset"`
-	CreatedAt time.Time `json:"createdAt"`
+	SessionID     string    `json:"sessionId"`
+	Offset        int64     `json:"offset"`
+	CreatedAt     time.Time `json:"createdAt"`
+	InputProtocol string    `json:"inputProtocol,omitempty"`
 }
 
 type terminalStreamState struct {
@@ -81,6 +97,10 @@ func terminalStreamCode(err error) string {
 		return "terminal_closed"
 	case errors.Is(err, terminal.ErrLimit):
 		return "terminal_limit"
+	case errors.Is(err, terminal.ErrInputSequence):
+		return "terminal_input_sequence"
+	case errors.Is(err, terminal.ErrInputUncertain):
+		return "terminal_input_uncertain"
 	default:
 		return "terminal_failed"
 	}
@@ -96,6 +116,10 @@ func terminalStreamError(code string) error {
 		return terminal.ErrClosed
 	case "terminal_limit":
 		return terminal.ErrLimit
+	case "terminal_input_sequence":
+		return terminal.ErrInputSequence
+	case "terminal_input_uncertain":
+		return terminal.ErrInputUncertain
 	default:
 		return ErrTerminalUnavailable
 	}
@@ -174,13 +198,36 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 	if err != nil || backend == nil {
 		return ""
 	}
+	// Probe precedes any PTY creation. Old targets close this fresh socket;
+	// retrying an ordinary open is safe because no open was sent on it.
+	if kind == termInputProbe {
+		if string(payload) != "{}" {
+			return ""
+		}
+		protocol := ""
+		if reliable, ok := backend.(SequencedTerminalBackend); ok && reliable.SupportsSequencedInput(c.ctx) {
+			protocol = terminal.InputProtocol
+		}
+		if c.writeJSON(termInputProbe, terminalStreamReady{InputProtocol: protocol}) != nil {
+			return ""
+		}
+		kind, payload, err = c.readControl()
+		if err != nil {
+			return ""
+		}
+	}
 	var sessionID string
+	var inputProtocol string
 	var offset int64
 	var createdAt time.Time
 	switch kind {
 	case termOpen:
 		var input terminalStreamOpen
 		if decodeV2Payload(payload, &input) != nil || input.Rows == 0 || input.Columns == 0 || input.Rows > 500 || input.Columns > 1000 {
+			return ""
+		}
+		inputProtocol = input.InputProtocol
+		if inputProtocol != "" && !validTerminalInputProtocol(c.ctx, backend, inputProtocol) {
 			return ""
 		}
 		snapshot, openErr := backend.Open(c.ctx, owner, input.Rows, input.Columns)
@@ -194,6 +241,10 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 		if decodeV2Payload(payload, &input) != nil || input.SessionID == "" || len(input.SessionID) > 128 || input.Offset < 0 {
 			return ""
 		}
+		inputProtocol = input.InputProtocol
+		if inputProtocol != "" && !validTerminalInputProtocol(c.ctx, backend, inputProtocol) {
+			return ""
+		}
 		if _, probeErr := backend.Output(c.ctx, owner, input.SessionID, input.Offset, 0); probeErr != nil {
 			_ = c.writeJSON(termReject, terminalStreamResult{Code: terminalStreamCode(probeErr)})
 			return ""
@@ -202,7 +253,7 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 	default:
 		return ""
 	}
-	if c.writeJSON(termReady, terminalStreamReady{SessionID: sessionID, Offset: offset, CreatedAt: createdAt}) != nil {
+	if c.writeJSON(termReady, terminalStreamReady{SessionID: sessionID, Offset: offset, CreatedAt: createdAt, InputProtocol: inputProtocol}) != nil {
 		return ""
 	}
 	attachments.attach(sessionID)
@@ -213,12 +264,58 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 		pumpTerminalStream(c, backend, owner, sessionID, offset)
 	}()
 	defer func() { c.close(); <-pumpDone }()
+	// Input can block on PTY back-pressure. Keep the authenticated control
+	// reader available for close/ping/resize and serialize only the PTY writes.
+	type inputJob struct {
+		seq   uint64
+		frame *terminal.InputFrame
+		raw   []byte
+	}
+	inputCtx, stopInput := context.WithCancel(c.ctx)
+	defer stopInput()
+	jobs := make(chan inputJob, terminal.InputWindow)
+	inputSlots := make(chan struct{}, terminal.InputWindow)
+	go func() {
+		for {
+			select {
+			case <-inputCtx.Done():
+				return
+			case job := <-jobs:
+				if inputCtx.Err() != nil {
+					return
+				}
+				var err error
+				if job.frame != nil {
+					err = backend.(SequencedTerminalBackend).InputSequenced(inputCtx, owner, sessionID, *job.frame)
+				} else {
+					err = backend.Input(inputCtx, owner, sessionID, job.raw)
+				}
+				<-inputSlots
+				replyTerminalStream(c, job.seq, err)
+			}
+		}
+	}()
+	enqueue := func(job inputJob) {
+		select {
+		case inputSlots <- struct{}{}:
+			jobs <- job
+		default:
+			replyTerminalStream(c, job.seq, terminal.ErrLimit)
+		}
+	}
 	for {
 		kind, data, err := c.read()
 		if err != nil {
 			return sessionID
 		}
 		switch kind {
+		case termInputSequenced:
+			seq, body, ok := splitSequenced(data)
+			var frame terminal.InputFrame
+			if !ok || inputProtocol != terminal.InputProtocol || decodeV2Payload(body, &frame) != nil || !frame.Valid() {
+				return sessionID
+			}
+			enqueue(inputJob{seq: seq, frame: &frame})
 		case streamPing:
 			if len(data) != 0 || c.write(streamPong, nil) != nil {
 				return sessionID
@@ -229,7 +326,7 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 			if !ok || len(input) == 0 || len(input) > terminal.MaxInputBytes {
 				return sessionID
 			}
-			replyTerminalStream(c, seq, backend.Input(c.ctx, owner, sessionID, input))
+			enqueue(inputJob{seq: seq, raw: input})
 		case termResize:
 			seq, body, ok := splitSequenced(data)
 			var input terminalStreamOpen
@@ -245,6 +342,9 @@ func serveTerminalStream(c *fileStreamConn, backend TerminalBackend, owner strin
 			closeErr := backend.Close(c.ctx, owner, sessionID)
 			if errors.Is(closeErr, terminal.ErrNotFound) || errors.Is(closeErr, terminal.ErrClosed) {
 				closeErr = nil
+			}
+			if closeErr == nil {
+				stopInput()
 			}
 			replyTerminalStream(c, seq, closeErr)
 		default:
@@ -342,6 +442,8 @@ type streamTerminalFallback interface {
 }
 
 type streamTerminal struct {
+	sendMu    sync.Mutex
+	reliable  bool
 	hostID    string
 	sessionID string
 	buffer    *terminal.Buffer
@@ -362,13 +464,21 @@ type streamTerminal struct {
 // openStreamTerminal opens the session within the caller's ctx; the stream
 // then lives under parent until closed.
 func openStreamTerminal(ctx, parent context.Context, hostID string, dial streamTerminalDialer, fallback streamTerminalFallback, rows, columns uint16) (*streamTerminal, TerminalOpenResponse, error) {
-	conn, ready, err := dial(ctx, termOpen, terminalStreamOpen{Rows: rows, Columns: columns})
+	probe, capability, probeErr := dial(ctx, termInputProbe, struct{}{})
+	var conn *fileStreamConn
+	var ready terminalStreamReady
+	var err error
+	if probeErr == nil {
+		conn, ready, err = startTerminalStream(ctx, probe, termOpen, terminalStreamOpen{Rows: rows, Columns: columns, InputProtocol: capability.InputProtocol})
+	} else {
+		conn, ready, err = dial(ctx, termOpen, terminalStreamOpen{Rows: rows, Columns: columns})
+	}
 	if err != nil {
 		return nil, TerminalOpenResponse{}, err
 	}
 	ctx, cancel := context.WithCancel(parent)
 	t := &streamTerminal{hostID: hostID, sessionID: ready.SessionID, buffer: terminal.NewBuffer(terminal.DefaultBufferBytes, ready.Offset),
-		dial: dial, fallback: fallback, ctx: ctx, cancel: cancel, pending: make(map[uint64]chan string), lastUsed: time.Now()}
+		dial: dial, fallback: fallback, ctx: ctx, cancel: cancel, pending: make(map[uint64]chan string), lastUsed: time.Now(), reliable: ready.InputProtocol == terminal.InputProtocol}
 	t.attach(conn)
 	return t, TerminalOpenResponse{SessionID: ready.SessionID, Offset: ready.Offset, CreatedAt: ready.CreatedAt}, nil
 }
@@ -464,13 +574,21 @@ func (t *streamTerminal) disconnected(conn *fileStreamConn) {
 
 func (t *streamTerminal) reconnect() {
 	window := terminalStreamReconnect
-	if t.fallback != nil {
+	if t.fallback != nil && !t.reliable {
 		window = terminalStreamFallbackAfter
 	}
 	deadline := time.Now().Add(window)
 	delay := 250 * time.Millisecond
 	for t.ctx.Err() == nil && time.Now().Before(deadline) {
-		conn, _, err := t.dial(t.ctx, termAttach, terminalStreamAttach{SessionID: t.sessionID, Offset: t.buffer.Next()})
+		protocol := ""
+		if t.reliable {
+			protocol = terminal.InputProtocol
+		}
+		conn, ready, err := t.dial(t.ctx, termAttach, terminalStreamAttach{SessionID: t.sessionID, Offset: t.buffer.Next(), InputProtocol: protocol})
+		if err == nil && ready.InputProtocol != protocol {
+			conn.close()
+			err = ErrTerminalUnavailable
+		}
 		if err == nil {
 			t.mu.Lock()
 			if t.closing || t.ctx.Err() != nil {
@@ -496,7 +614,7 @@ func (t *streamTerminal) reconnect() {
 		}
 		delay = min(delay*2, 4*time.Second)
 	}
-	if t.fallback != nil && t.ctx.Err() == nil {
+	if t.fallback != nil && !t.reliable && t.ctx.Err() == nil {
 		t.mu.Lock()
 		t.degraded = true
 		t.mu.Unlock()
@@ -538,12 +656,31 @@ func (t *streamTerminal) output(ctx context.Context, input TerminalOutputRequest
 }
 
 func (t *streamTerminal) request(ctx context.Context, kind byte, payload []byte) error {
+	wait, err := t.beginRequest(ctx, kind, payload)
+	if err != nil {
+		return err
+	}
+	return wait()
+}
+
+// Admission and socket writes are synchronous and ordered; waiting for the
+// owner's ACK is separate so the next frame can cross the network immediately.
+func (t *streamTerminal) beginRequest(ctx context.Context, kind byte, payload []byte) (func() error, error) {
+	t.sendMu.Lock()
+	defer t.sendMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	t.touch()
 	t.mu.Lock()
 	conn := t.conn
-	if conn == nil {
+	limit := terminal.InputWindow + 4
+	if kind == termInputSequenced {
+		limit = terminal.InputWindow
+	}
+	if conn == nil || t.closing || len(t.pending) >= limit {
 		t.mu.Unlock()
-		return ErrTerminalUnavailable
+		return nil, ErrTerminalUnavailable
 	}
 	seq := t.seq.Add(1)
 	reply := make(chan string, 1)
@@ -551,27 +688,39 @@ func (t *streamTerminal) request(ctx context.Context, kind byte, payload []byte)
 	t.mu.Unlock()
 	// Cancellation can win while the peer keeps the connection alive without
 	// replying. Release the waiter on every exit, not just timeout/disconnect.
-	defer func() {
+	cleanup := func() {
 		t.mu.Lock()
 		delete(t.pending, seq)
 		t.mu.Unlock()
-	}()
-	if err := conn.write(kind, sequenced(seq, payload)); err != nil {
-		return ErrTerminalUnavailable
 	}
-	timer := time.NewTimer(terminalStreamReplyTimeout)
-	defer timer.Stop()
-	select {
-	case code, ok := <-reply:
-		if !ok {
+	stopCleanup := context.AfterFunc(ctx, cleanup)
+	if err := ctx.Err(); err != nil {
+		stopCleanup()
+		cleanup()
+		return nil, err
+	}
+	if err := conn.write(kind, sequenced(seq, payload)); err != nil {
+		stopCleanup()
+		cleanup()
+		return nil, ErrTerminalUnavailable
+	}
+	return func() error {
+		defer stopCleanup()
+		defer cleanup()
+		timer := time.NewTimer(terminalStreamReplyTimeout)
+		defer timer.Stop()
+		select {
+		case code, ok := <-reply:
+			if !ok {
+				return ErrTerminalUnavailable
+			}
+			return terminalStreamError(code)
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
 			return ErrTerminalUnavailable
 		}
-		return terminalStreamError(code)
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return ErrTerminalUnavailable
-	}
+	}, nil
 }
 
 func (t *streamTerminal) input(ctx context.Context, input TerminalInputRequest) error {

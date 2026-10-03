@@ -38,6 +38,9 @@ type panelTerminalSession struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CloseRequested   bool
+	ReliableInput    bool
+	InputClaimed     bool
+	InputConnection  *terminalInputConnection
 }
 
 type terminalOpenRequest struct {
@@ -76,6 +79,20 @@ func (s clusterTerminalSource) Input(ctx context.Context, owner, id string, data
 	return decodeTerminalAgentResponse(response, err, nil)
 }
 
+func (s clusterTerminalSource) SupportsSequencedInput(ctx context.Context) bool {
+	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals/capabilities/input-protocol", "", newRequestID(), []byte("{}"))
+	var result struct {
+		Protocol string `json:"protocol"`
+	}
+	return decodeTerminalAgentResponse(response, err, &result) == nil && result.Protocol == terminal.InputProtocol
+}
+
+func (s clusterTerminalSource) InputSequenced(ctx context.Context, owner, id string, frame terminal.InputFrame) error {
+	body, _ := json.Marshal(map[string]any{"owner": owner, "frame": frame})
+	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals/"+url.PathEscape(id)+"/input-sequenced", "", newRequestID(), body)
+	return decodeTerminalAgentResponse(response, err, nil)
+}
+
 func (s clusterTerminalSource) Resize(ctx context.Context, owner, id string, rows, columns uint16) error {
 	body, _ := json.Marshal(map[string]any{"owner": owner, "rows": rows, "columns": columns})
 	response, err := s.agent.Do(ctx, http.MethodPost, "/v1/terminals/"+url.PathEscape(id)+"/resize", "", newRequestID(), body)
@@ -108,6 +125,10 @@ func decodeTerminalAgentResponse(response AgentResponse, err error, target any) 
 		var problem contract.Problem
 		if json.Unmarshal(response.Body, &problem) == nil {
 			switch problem.Code {
+			case "terminal_input_sequence":
+				return terminal.ErrInputSequence
+			case "terminal_input_uncertain":
+				return terminal.ErrInputUncertain
 			case "terminal_not_found":
 				return terminal.ErrNotFound
 			case "terminal_closed":
@@ -138,7 +159,7 @@ func (s *Server) handleTerminalSession(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_terminal_request", "Invalid terminal request", "")
 		return
 	}
-	_, session, ok := s.requireSession(w, r)
+	token, session, ok := s.requireSession(w, r)
 	if !ok {
 		return
 	}
@@ -158,6 +179,14 @@ func (s *Server) handleTerminalSession(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(rest, "/")
 	if rest == r.URL.Path || len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		s.writeProblem(w, r, http.StatusNotFound, "route_not_found", "Route not found", "")
+		return
+	}
+	if parts[1] == "input-stream" {
+		s.handleTerminalInputSocket(w, r, token, session, parts[0])
+		return
+	}
+	if parts[1] == "input-batch" {
+		s.handleTerminalInputBatch(w, r, token, session, parts[0])
 		return
 	}
 	s.handleTerminalOperation(w, r, session.User.ID, parts[0], parts[1])
@@ -213,6 +242,11 @@ func (s *Server) openTerminalSession(w http.ResponseWriter, r *http.Request, use
 	}
 	now := time.Now().UTC()
 	item := panelTerminalSession{ID: publicID, BackendSessionID: opened.SessionID, HostID: host.ID, UserID: userID, Owner: owner, CreatedAt: now, UpdatedAt: now}
+	if host.IsLocal {
+		item.ReliableInput = (clusterTerminalSource{agent: s.agent}).SupportsSequencedInput(r.Context())
+	} else {
+		item.ReliableInput = s.cluster.TerminalSupportsSequencedInput(host.ID, opened.SessionID)
+	}
 	s.terminalMu.Lock()
 	s.terminalSessions[publicID] = item
 	s.terminalMu.Unlock()
@@ -274,8 +308,21 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		s.writeProblem(w, r, http.StatusNotFound, "terminal_not_found", "Terminal session not found", "")
 		return
 	}
+	if item.CloseRequested && item.InputConnection != nil {
+		item.InputConnection.cancel()
+	}
 
 	switch action {
+	case "input-transport":
+		if r.Method != http.MethodPost {
+			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
+			return
+		}
+		protocol := ""
+		if item.ReliableInput {
+			protocol = terminal.InputProtocol
+		}
+		s.writeJSON(w, http.StatusOK, map[string]string{"protocol": protocol})
 	case "output":
 		if r.Method != http.MethodGet {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
@@ -301,6 +348,10 @@ func (s *Server) handleTerminalOperation(w http.ResponseWriter, r *http.Request,
 		}
 		s.writeJSON(w, http.StatusOK, output)
 	case "input":
+		if item.InputClaimed {
+			s.writeProblem(w, r, http.StatusConflict, "terminal_input_sequence", "Terminal input stream owns this session", "")
+			return
+		}
 		if r.Method != http.MethodPost {
 			s.writeProblem(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "Request method not allowed", "")
 			return
@@ -412,6 +463,9 @@ func (s *Server) closeTerminalBackend(ctx context.Context, item panelTerminalSes
 
 func (s *Server) deleteTerminalSession(id string) {
 	s.terminalMu.Lock()
+	if item, ok := s.terminalSessions[id]; ok && item.InputConnection != nil {
+		item.InputConnection.cancel()
+	}
 	delete(s.terminalSessions, id)
 	s.terminalMu.Unlock()
 }
@@ -421,6 +475,9 @@ func (s *Server) deleteFinishedTerminalSession(id string) {
 	defer s.terminalMu.Unlock()
 	// A stale output/input response must not erase an unconfirmed close retry.
 	if item, ok := s.terminalSessions[id]; ok && !item.CloseRequested {
+		if item.InputConnection != nil {
+			item.InputConnection.cancel()
+		}
 		delete(s.terminalSessions, id)
 	}
 }
@@ -434,6 +491,9 @@ func (s *Server) pruneTerminalSessions(before time.Time) []panelTerminalSession 
 			continue
 		}
 		stale = append(stale, item)
+		if item.InputConnection != nil {
+			item.InputConnection.cancel()
+		}
 		delete(s.terminalSessions, id)
 	}
 	return stale
@@ -443,6 +503,9 @@ func (s *Server) closeTerminalSessions() {
 	s.terminalMu.Lock()
 	items := make([]panelTerminalSession, 0, len(s.terminalSessions))
 	for _, item := range s.terminalSessions {
+		if item.InputConnection != nil {
+			item.InputConnection.cancel()
+		}
 		items = append(items, item)
 	}
 	s.terminalSessions = make(map[string]panelTerminalSession)

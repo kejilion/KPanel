@@ -6,13 +6,12 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import { api, ApiError, terminalStream } from '@/lib/api'
+import { TerminalDuplexInput } from '@/lib/terminalDuplexInput'
 import type { TerminalStreamSubscription } from '@/lib/terminalStream'
 import type { TerminalOutput } from '@/types/api'
 import { openTerminalURL } from '@/lib/terminalLinks'
 import { containWheelScroll } from '@/lib/scroll'
 import {
-  drainTerminalInputQueue,
-  TerminalInputQueue,
   terminalEnterShouldSubmit,
   terminalInputFlushInterval,
   terminalInputShouldFlushImmediately,
@@ -44,6 +43,8 @@ const emit = defineEmits<{
 const host = ref<HTMLElement>()
 const clipboardMenu = ref<InstanceType<typeof TerminalContextMenu>>()
 const pendingLine = ref('')
+const inputBlocked = ref(false)
+let duplexInput: TerminalDuplexInput | undefined
 const state = ref<'connecting' | 'connected' | 'reconnecting' | 'finished'>('connecting')
 let terminal: Terminal | undefined
 let fitAddon: FitAddon | undefined
@@ -53,8 +54,6 @@ let pollTimer: number | undefined
 let streamSubscription: TerminalStreamSubscription | null = null
 let inputTimer: number | undefined
 let resizeTimer: number | undefined
-const inputQueue = new TerminalInputQueue()
-let inputSending = false
 // A freshly opened terminal starts at offset 0. Keep the client resilient to
 // older Panel responses that did not include the initial offset field.
 let offset = Number.isFinite(props.initialOffset) && props.initialOffset >= 0 ? props.initialOffset : 0
@@ -73,6 +72,8 @@ let outputGeneration = 0
 const writeFlow = new TerminalWriteFlow(() => startOutput())
 
 function closeSession(): Promise<void> {
+	duplexInput?.close()
+	inputBlocked.value = true
   if (closeConfirmed) return Promise.resolve()
   if (closeRequest) return closeRequest
   closeRequest = api.terminals.close(props.sessionId).then((result) => {
@@ -93,13 +94,6 @@ watch(state, (value) => emit('stateChange', value), { immediate: true })
 function decodeBase64(value: string): Uint8Array {
   const decoded = window.atob(value)
   return Uint8Array.from(decoded, (character) => character.charCodeAt(0))
-}
-
-function encodeBase64(value: string): string {
-  const bytes = new TextEncoder().encode(value)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return window.btoa(binary).replace(/=+$/, '')
 }
 
 function isFollowingOutput(): boolean {
@@ -132,48 +126,33 @@ const terminalTouchScroll = createTerminalTouchScroll({
   getScreen: () => host.value?.querySelector<HTMLElement>('.xterm-screen') ?? host.value,
 })
 
-async function flushInput(): Promise<void> {
-  if (inputSending || disposed || state.value === 'finished') return
+function flushInput(): void {
+  if (disposed || state.value === 'finished') return
   if (inputTimer) window.clearTimeout(inputTimer)
   inputTimer = undefined
-  inputSending = true
-  try {
-    await drainTerminalInputQueue(
-      inputQueue,
-      () => !disposed,
-      (chunk) => api.terminals.input(props.sessionId, encodeBase64(chunk)).then(() => undefined),
-    )
-    // Pushed output only arrives on change; an accepted input proves the
-    // session is reachable again after a transient failure.
-    if (state.value === 'reconnecting' && streamSubscription) state.value = 'connected'
-  } catch {
-    writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t('terminal.inputFailed')}\x1b[0m\r\n`)
-    state.value = 'reconnecting'
-  } finally {
-    inputSending = false
-  }
+  duplexInput?.flush()
 }
 
-function queueInput(data: string): void {
-  if (disposed || state.value === 'finished') return
-  inputQueue.append(data)
-  if (terminalInputShouldFlushImmediately(data) || inputQueue.byteLength >= 2048) {
+function queueInput(data: string): boolean {
+  if (disposed || inputBlocked.value || state.value === 'finished') return false
+  if (!duplexInput?.append(data)) return false
+  if (terminalInputShouldFlushImmediately(data) || duplexInput.byteLength >= 2048) {
     void flushInput()
   } else if (!inputTimer) {
     inputTimer = window.setTimeout(() => void flushInput(), terminalInputFlushInterval)
   }
+  return true
 }
 
 function submitPendingLine(): void {
   if (!pendingLine.value || state.value === 'finished') return
   const value = terminalLineSubmission(pendingLine.value)
-  pendingLine.value = ''
-  queueInput(value)
+  if (queueInput(value)) pendingLine.value = ''
 }
 
 function executeCommand(command: string): boolean {
   if (!command.trim() || disposed || state.value === 'finished') return false
-  queueInput(terminalLineSubmission(command.replace(/\r\n?/g, '\n')))
+  if (!queueInput(terminalLineSubmission(command.replace(/\r\n?/g, '\n')))) return false
   focusTerminal()
   return true
 }
@@ -197,9 +176,9 @@ function applyChunk(chunk: TerminalOutput): void {
     resizeFailures = 0
     scheduleResize()
   }
-  if (state.value === 'connected' && !inputQueue.empty) void flushInput()
+  if (state.value === 'connected' && duplexInput?.byteLength) flushInput()
   if (chunk.exitError) writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${chunk.exitError}\x1b[0m\r\n`)
-  if (state.value === 'finished') stopOutput()
+  if (state.value === 'finished') { stopOutput(); duplexInput?.close() }
 }
 
 // applyChunk may finish the session; read the state through a call so the
@@ -333,6 +312,20 @@ watch([themeColors, resolvedTheme], () => {
 
 onMounted(() => {
   mounted = true
+  duplexInput = new TerminalDuplexInput({
+      negotiate: () => api.terminals.inputTransport(props.sessionId),
+      credentials: () => api.terminals.inputSocket(props.sessionId),
+      legacy: (data) => api.terminals.input(props.sessionId, data),
+      batch: (frames, signal) => api.terminals.inputBatch(props.sessionId, frames, signal),
+      error: (kind) => {
+        if (disposed) return
+        const key = kind === 'capacity' ? 'terminal.inputCapacity' : kind === 'fatal' ? 'terminal.inputUncertain' : 'terminal.inputFailed'
+        writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t(key)}\x1b[0m\r\n`)
+        if (kind === 'fatal') inputBlocked.value = true
+        if (kind === 'retry') state.value = 'reconnecting'
+      },
+      recovered: () => { if (!disposed && state.value !== 'finished') state.value = 'connected' },
+  })
   terminal = new Terminal({
     cursorBlink: true,
     cursorStyle: 'bar',
@@ -358,12 +351,14 @@ onMounted(() => {
     window.requestAnimationFrame(focusTerminal)
   }
   startOutput()
+  duplexInput.flush()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   mounted = false
   stopOutput()
+  duplexInput?.close()
   if (inputTimer) window.clearTimeout(inputTimer)
   if (resizeTimer) window.clearTimeout(resizeTimer)
   observer?.disconnect()
@@ -397,15 +392,15 @@ onBeforeUnmount(() => {
         spellcheck="false"
         maxlength="8192"
         :placeholder="t('terminal.inputPlaceholder')"
-        :disabled="state === 'finished'"
+        :disabled="state === 'finished' || inputBlocked"
         @keydown.enter="handlePendingLineEnter"
       />
-      <button type="submit" :disabled="state === 'finished'">{{ t('terminal.send') }}</button>
+      <button type="submit" :disabled="state === 'finished' || inputBlocked">{{ t('terminal.send') }}</button>
     </form>
     <TerminalContextMenu
       ref="clipboardMenu"
       :get-terminal="() => terminal"
-      :can-paste="state !== 'finished'"
+      :can-paste="state !== 'finished' && !inputBlocked"
     />
   </section>
 </template>
@@ -417,7 +412,7 @@ onBeforeUnmount(() => {
 .host-terminal__screen :deep(.xterm-viewport) { overflow-y:scroll !important; overscroll-behavior:contain; background:var(--terminal-shell-background,#0b1214); }
 .host-terminal__screen :deep(.xterm-scrollable-element) { overscroll-behavior:contain; }
 .host-terminal__composer { position:relative; z-index:2; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:9px 10px; border-top:1px solid var(--terminal-shell-border,#29383a); background:var(--terminal-shell-panel,#111a1d); }
-.host-terminal__composer input { min-width:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:9px 11px; color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-background,#0b1214); font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+.host-terminal__composer input { min-width:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:9px 11px; color:var(--terminal-shell-text,#d8dddc); background:var(--terminal-shell-background,#0b1214); font:14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 .host-terminal__composer button { border:0; border-radius:8px; padding:0 16px; color:var(--on-brand,#05251c); background:var(--brand-action,#35cba6); font-weight: 700; }
 .host-terminal :deep(.xterm-viewport) { scrollbar-color:var(--terminal-shell-scrollbar,#35474a) var(--terminal-shell-background,#0b1214); }
 </style>

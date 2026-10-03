@@ -267,6 +267,9 @@ func TestPanelTerminalStreamEchoResizeReattachAndClose(t *testing.T) {
 
 type recordingTerminalFallback struct{ outputs atomic.Int32 }
 
+// Deliberately exposes only the legacy terminal backend contract.
+type legacyTerminalBackend struct{ TerminalBackend }
+
 func (r *recordingTerminalFallback) Output(context.Context, TerminalOutputRequest) (terminal.Output, error) {
 	r.outputs.Add(1)
 	return terminal.Output{Data: []byte("v2"), Offset: 0, NextOffset: 2}, nil
@@ -280,7 +283,7 @@ func TestPanelTerminalStreamFallsBackToV2WhenStreamStaysDown(t *testing.T) {
 	terminalStreamFallbackAfter = 300 * time.Millisecond
 	defer func() { terminalStreamFallbackAfter = previous }()
 	f := newStreamFixture(t, http.NotFoundHandler())
-	f.service.terminal = managerTerminalBackend{manager: newEchoManager(t)}
+	f.service.terminal = legacyTerminalBackend{TerminalBackend: managerTerminalBackend{manager: newEchoManager(t)}}
 	var dials atomic.Int32
 	real := f.panelTerminalDialer(t, &dials)
 	dial := func(ctx context.Context, first byte, payload any) (*fileStreamConn, terminalStreamReady, error) {
