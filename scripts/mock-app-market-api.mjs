@@ -2424,7 +2424,7 @@ createServer(async (request, response) => {
     send(response, 201, { sessionId, hostId: host.id, offset: 0, createdAt })
     return
   }
-  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input|resize|close)$/)
+  const terminalSessionMatch = url.pathname.match(/^\/api\/v1\/terminal-sessions\/([^/]+)\/(output|input-transport|input|resize|close)$/)
   if (terminalSessionMatch) {
     const [, sessionId, action] = terminalSessionMatch
     const session = mockTerminalSessions.get(sessionId)
@@ -2471,6 +2471,12 @@ createServer(async (request, response) => {
         session.exitedAt = new Date().toISOString()
       }
       send(response, 200, { accepted: true })
+      return
+    }
+    if (request.method === 'POST' && action === 'input-transport') {
+      // Answer like an Agent without terminal-input-v1: the page falls back to /input.
+      await readJSON(request)
+      send(response, 200, { protocol: '' })
       return
     }
     if (request.method === 'POST' && action === 'resize') {

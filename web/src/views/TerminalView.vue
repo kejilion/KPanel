@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { useRoute } from 'vue-router'
-import { ListChecks, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
+import { ListChecks, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, SquareTerminal, X } from '@lucide/vue'
 import BatchTerminalPanel from '@/components/terminal/BatchTerminalPanel.vue'
 import HostTerminal from '@/components/terminal/HostTerminal.vue'
 import TerminalQuickCommands from '@/components/terminal/TerminalQuickCommands.vue'
@@ -33,6 +33,9 @@ interface OpenTerminal {
   id: string
   hostId: string
   hostName: string
+  // Several terminals may be open on one host. Each keeps the number it got
+  // when it opened, so closing one never renames the others.
+  ordinal: number
   offset: number
   state: 'connecting' | 'connected' | 'reconnecting' | 'finished'
   closing?: boolean
@@ -52,6 +55,7 @@ const activeSessionId = ref('')
 const loading = ref(true)
 const openingHostId = ref('')
 const errorMessage = ref('')
+const limitReached = ref(false)
 const search = ref('')
 const terminalMode = ref<'interactive' | 'batch'>('interactive')
 const selectedBatchHostIDs = ref<Set<string>>(new Set())
@@ -107,6 +111,10 @@ async function loadHosts(): Promise<void> {
   errorMessage.value = ''
   try {
     inventory.value = await api.cluster.hosts(controller.signal)
+    // A renamed host renames its open tabs too, so every terminal on one host
+    // carries one name; only the number each got when it opened stays fixed.
+    const names = new Map(inventory.value.items.map((host) => [host.id, host.name]))
+    for (const item of sessions.value) item.hostName = names.get(item.hostId) ?? item.hostName
     const terminalHostIDs = new Set(inventory.value.items.filter((host) => host.terminalAvailable).map((host) => host.id))
     selectedBatchHostIDs.value = new Set([...selectedBatchHostIDs.value].filter((id) => terminalHostIDs.has(id)))
     applyClusterHostOrderPreference(inventory.value.hostOrder)
@@ -129,26 +137,45 @@ function requestedTerminalHost(): ClusterHost | undefined {
   return inventory.value?.items.find((host) => host.id === hostId && host.terminalAvailable)
 }
 
+function sessionLabel(item: OpenTerminal): string {
+  return item.ordinal > 1 ? `${item.hostName} ${item.ordinal}` : item.hostName
+}
+
+function nextOrdinal(hostId: string): number {
+  const taken = new Set(sessions.value.filter((item) => item.hostId === hostId).map((item) => item.ordinal))
+  let ordinal = 1
+  while (taken.has(ordinal)) ordinal += 1
+  return ordinal
+}
+
+// Choosing a host goes to its terminal: the active one if it is on that host,
+// otherwise the one opened last. Only a host without a terminal gets a new one.
 async function openHost(host: ClusterHost): Promise<void> {
-  const existing = sessions.value.find((item) => item.hostId === host.id)
+  const onHost = sessions.value.filter((item) => item.hostId === host.id)
+  const existing = onHost.find((item) => item.id === activeSessionId.value) ?? onHost.at(-1)
   if (existing) {
     selectSession(existing.id)
     mobileConnectionsOpen.value = false
     return
   }
+  await openSession(host)
+}
+
+
+async function openSession(host: ClusterHost): Promise<void> {
   if (!host.terminalAvailable || openingHostId.value) return
   mobileConnectionsOpen.value = false
   openingHostId.value = host.id
   errorMessage.value = ''
+  limitReached.value = false
   try {
     const opened = await api.terminals.open(host.id, 30, 120)
-    const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, offset: opened.offset, state: 'connecting' }
+    const item: OpenTerminal = { id: opened.sessionId, hostId: host.id, hostName: host.name, ordinal: nextOrdinal(host.id), offset: opened.offset, state: 'connecting' }
     sessions.value.push(item)
     activeSessionId.value = item.id
   } catch (reason) {
-    errorMessage.value = reason instanceof ApiError && reason.code === 'terminal_limit'
-      ? t('terminal.sessionLimitReached')
-      : t('terminal.connectionFailed')
+    if (reason instanceof ApiError && reason.code === 'terminal_limit') limitReached.value = true
+    else errorMessage.value = t('terminal.connectionFailed')
   } finally {
     openingHostId.value = ''
   }
@@ -175,6 +202,8 @@ function removeSession(id: string): void {
   if (index < 0) return
   sessions.value.splice(index, 1)
   terminalRefs.delete(id)
+  // A closed terminal frees a slot, so the limit notice no longer holds.
+  limitReached.value = false
   if (activeSessionId.value === id) {
     activeSessionId.value = sessions.value[Math.max(0, index - 1)]?.id || ''
     if (activeSessionId.value) {
@@ -302,7 +331,9 @@ function hostStateLabel(host: ClusterHost): string {
       ? t('terminal.hostState.monitoringOnly')
       : t('terminal.hostState.repairPairing')
   }
-  if (sessions.value.some((item) => item.hostId === host.id)) return t('terminal.hostState.open')
+  const open = sessions.value.filter((item) => item.hostId === host.id).length
+  if (open > 1) return t('terminal.hostState.openCount', { count: open })
+  if (open) return t('terminal.hostState.open')
   return t('terminal.hostState.available')
 }
 
@@ -366,8 +397,9 @@ onBeforeUnmount(() => {
     <PageHeader title="多主机终端" description="通过集群加密通道连接本机、已授权 KPanel 节点和轻量节点，无需开放额外 SSH 或公网端口。" />
 
     <div v-if="errorMessage" class="terminal-alert" role="alert">{{ errorMessage }}</div>
+    <div v-if="limitReached" class="terminal-alert" role="alert">{{ t('terminal.sessionLimitReached') }}</div>
     <div v-for="item in sessions.filter((session) => session.closeFailed)" :key="item.id" class="terminal-alert" role="alert">
-      <strong>{{ item.hostName }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
+      <strong>{{ sessionLabel(item) }}</strong>：<span>关闭未确认，会话已保留。请检查目标主机连接后重试。</span>
       <button type="button" :disabled="item.closing" @click="closeSession(item.id)">重试关闭</button>
     </div>
 
@@ -445,47 +477,59 @@ onBeforeUnmount(() => {
         <div id="terminal-connection-selector" v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-connections__list">
           <div v-if="!loading && !hosts.length" class="terminal-connections__empty">暂无可显示主机</div>
           <template v-if="terminalMode === 'interactive'">
-            <button
-              v-for="host in hosts"
-              :key="host.id"
-              class="terminal-host"
-              :class="{
-                'is-active': activeSession?.hostId === host.id,
-                'is-opening': openingHostId === host.id,
-                'is-unavailable': !host.terminalAvailable,
-              }"
-              type="button"
-              :disabled="openingHostId === host.id"
-              :aria-disabled="!host.terminalAvailable"
-              :title="hostDescription(host)"
-              :aria-label="hostDescription(host)"
-              @click="openHost(host)"
-            >
-              <OperatingSystemIcon
-                class="terminal-host__os"
-                :distro="hostOperatingSystemIdentity(host).key"
-                :label="hostOperatingSystemIdentity(host).label"
-                :show-tooltip="false"
-              />
-              <span class="terminal-host__content">
-                <strong>{{ host.name }}</strong>
-                <span class="terminal-host__meta">
-                  <small>{{ hostKindLabel(host) }}</small>
-                  <span class="terminal-host__separator" aria-hidden="true">·</span>
-                  <span
-                    class="terminal-host__state"
-                    :class="{
-                      'is-ready': host.terminalAvailable,
-                      'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
-                    }"
-                  >
-                    <i aria-hidden="true" />
-                    {{ hostStateLabel(host) }}
+            <div v-for="host in hosts" :key="host.id" class="terminal-host-row">
+              <button
+                class="terminal-host"
+                :class="{
+                  'is-active': activeSession?.hostId === host.id,
+                  'is-opening': openingHostId === host.id,
+                  'is-unavailable': !host.terminalAvailable,
+                  'has-new': host.terminalAvailable,
+                }"
+                type="button"
+                :disabled="openingHostId === host.id"
+                :aria-disabled="!host.terminalAvailable"
+                :title="hostDescription(host)"
+                :aria-label="hostDescription(host)"
+                @click="openHost(host)"
+              >
+                <OperatingSystemIcon
+                  class="terminal-host__os"
+                  :distro="hostOperatingSystemIdentity(host).key"
+                  :label="hostOperatingSystemIdentity(host).label"
+                  :show-tooltip="false"
+                />
+                <span class="terminal-host__content">
+                  <strong>{{ host.name }}</strong>
+                  <span class="terminal-host__meta">
+                    <small>{{ hostKindLabel(host) }}</small>
+                    <span class="terminal-host__separator" aria-hidden="true">·</span>
+                    <span
+                      class="terminal-host__state"
+                      :class="{
+                        'is-ready': host.terminalAvailable,
+                        'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
+                      }"
+                    >
+                      <i aria-hidden="true" />
+                      {{ hostStateLabel(host) }}
+                    </span>
                   </span>
                 </span>
-              </span>
-              <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
-            </button>
+                <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
+              </button>
+              <button
+                v-if="host.terminalAvailable && openingHostId !== host.id"
+                type="button"
+                class="terminal-host__new"
+                :disabled="Boolean(openingHostId)"
+                :title="t('terminal.newSessionOnHost', { host: host.name })"
+                :aria-label="t('terminal.newSessionOnHost', { host: host.name })"
+                @click="openSession(host)"
+              >
+                <Plus :size="16" />
+              </button>
+            </div>
           </template>
           <template v-else>
             <label v-for="host in hosts" :key="host.id" class="terminal-host terminal-host--batch" :class="{ 'is-active': selectedBatchHostIDs.has(host.id), 'is-disabled': !host.terminalAvailable }">
@@ -542,7 +586,7 @@ onBeforeUnmount(() => {
           @click="mobileConnectionsOpen = true"
         >
           <Menu :size="18" />
-          <span>{{ activeSession?.hostName || t('terminal.selectHost') }}</span>
+          <span>{{ activeSession ? sessionLabel(activeSession) : t('terminal.selectHost') }}</span>
           <small>{{ sessions.length ? t('terminal.sessionCount', { count: sessions.length }) : t('terminal.hostCount', { count: hosts.length }) }}</small>
         </button>
         <div v-if="sessions.length" class="terminal-tabs-bar">
@@ -558,10 +602,10 @@ onBeforeUnmount(() => {
             <Menu :size="18" />
           </button>
           <nav v-if="sessions.length" class="terminal-tabs" aria-label="已打开终端">
-            <div v-for="item in sessions" :key="item.id" class="terminal-tab" :class="{ 'is-active': item.id === activeSessionId }" :title="`${item.hostName} · ${sessionStateLabel(item.state)}`">
+            <div v-for="item in sessions" :key="item.id" class="terminal-tab" :class="{ 'is-active': item.id === activeSessionId }" :title="`${sessionLabel(item)} · ${sessionStateLabel(item.state)}`">
               <button type="button" class="terminal-tab__select" @click="selectSession(item.id)">
               <span class="terminal-tab__status" :class="`is-${item.state}`" aria-hidden="true" />
-              <SquareTerminal :size="14" /><span class="terminal-tab__name">{{ item.hostName }}</span>
+              <SquareTerminal :size="14" /><span class="terminal-tab__name">{{ sessionLabel(item) }}</span>
               <span class="sr-only">{{ sessionStateLabel(item.state) }}</span>
               </button>
               <button type="button" class="terminal-tab__close" :disabled="item.closing" aria-label="关闭终端" @click="closeSession(item.id)" @keydown.enter.prevent="closeSession(item.id)" @keydown.space.prevent="closeSession(item.id)">
@@ -579,7 +623,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <div v-if="!sessions.length" class="terminal-empty"><span><SquareTerminal :size="32" /></span><h2>{{ t('terminal.emptyTitle') }}</h2><p>{{ t('terminal.emptyDescription') }}</p></div>
-        <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="item.hostName" :initial-offset="item.offset" @state-change="updateSessionState(item, $event)" />
+        <HostTerminal v-for="item in sessions" v-show="item.id === activeSessionId" :key="item.id" :ref="(instance) => setTerminalRef(item.id, instance)" :session-id="item.id" :host-name="sessionLabel(item)" :initial-offset="item.offset" @state-change="updateSessionState(item, $event)" />
         <TerminalQuickCommands
           :open="quickCommandsOpen && terminalMode === 'interactive'"
           :disabled="!activeSession || activeSession.state === 'finished'"
@@ -677,6 +721,11 @@ onBeforeUnmount(() => {
 .terminal-host { position:relative; display:grid; width:calc(100% - 12px); min-height:50px; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; margin:1px 6px; border:1px solid transparent; border-radius:10px; padding:7px 9px; text-align:left; color:var(--terminal-shell-text,#d8dddc); background:transparent; cursor:pointer; transition:border-color .16s ease,background-color .16s ease; }
 .terminal-host:hover,.terminal-host:focus-visible,.terminal-host.is-active { border-color:color-mix(in srgb,var(--brand) 48%,var(--terminal-shell-border,#29383a)); background:color-mix(in srgb,var(--brand) 9%,var(--terminal-shell-panel,#111a1d)); outline:none; }
 .terminal-host.is-active { box-shadow:inset 3px 0 0 var(--brand); }
+.terminal-host-row { position:relative; }
+.terminal-host.has-new { padding-right:46px; }
+.terminal-host__new { position:absolute; top:50%; right:16px; display:grid; width:30px; height:30px; place-items:center; padding:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--radius-sm); color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); cursor:pointer; transform:translateY(-50%); }
+.terminal-host__new:hover:not(:disabled),.terminal-host__new:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
+.terminal-host__new:disabled { cursor:progress; opacity:.6; }
 .terminal-host.is-opening { cursor:wait; opacity:.64; }
 .terminal-host.is-unavailable { cursor:not-allowed; }
 .terminal-host.is-disabled { cursor:not-allowed; opacity:.58; }
@@ -706,6 +755,7 @@ onBeforeUnmount(() => {
 .terminal-tabs-bar__connections { display:none; width:34px; height:34px; flex:0 0 auto; place-items:center; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; color:var(--terminal-shell-muted,#8a9695); background:transparent; cursor:pointer; }
 .terminal-tabs-bar__connections:hover,.terminal-tabs-bar__connections:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
 .terminal-tabs { display:flex; min-width:0; flex:1; gap:5px; overflow-x:auto; scrollbar-width:thin; }
+/* Follows the last tab, and stays on the visible edge once the tabs scroll. */
 .terminal-stage :deep(.host-terminal) { grid-row:2; grid-column:1; border:0; border-radius:0; box-shadow:none; }
 .terminal-stage :deep(.terminal-quick-commands) { grid-row:2; grid-column:2; }
 .terminal-tab { display:flex; flex:0 0 auto; align-items:center; gap:7px; max-width:220px; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:7px 9px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); }
