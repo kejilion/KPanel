@@ -65,14 +65,16 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toContain(':title="hostDescription(host)"')
     expect(terminalSource).not.toContain('terminal.currentPanel')
     expect(terminalSource).not.toContain('terminal.hostState.encrypted')
-    // Host rows only say which host and in what state; they carry no "+".
-    // Opening another terminal is the tab bar's explicit, named action.
+    // The host button only says which host and in what state; an unnamed "+"
+    // inside it once hinted at "open" without saying what. Opening another
+    // terminal is a separate button beside it, named for the host.
     const hostRows = terminalSource.match(/<template v-if="terminalMode === 'interactive'">[\s\S]*?<\/template>/)?.[0] ?? ''
-    expect(hostRows).toContain('class="terminal-host"')
-    expect(hostRows).not.toContain('<Plus')
-    expect(terminalSource).toMatch(/class="terminal-tabs__new"[\s\S]*?:aria-label="t\('terminal\.newSessionOnHost'/)
-    // On a narrow screen the tabs scroll; the button must stay reachable.
-    expect(terminalSource).toMatch(/\.terminal-tabs__new\s*\{[^}]*position:sticky;[^}]*right:0;[^}]*background:var\(--terminal-shell-panel/)
+    const hostButton = hostRows.match(/<button\s+class="terminal-host"[\s\S]*?<\/button>/)?.[0] ?? ''
+    expect(hostButton).toContain('@click="openHost(host)"')
+    expect(hostButton).not.toContain('<Plus')
+    expect(hostRows).toMatch(/class="terminal-host__new"[\s\S]*?:aria-label="t\('terminal\.newSessionOnHost', \{ host: host\.name \}\)"[\s\S]*?<Plus/)
+    expect(terminalSource).not.toContain('terminal-tabs__new')
+    expect(terminalSource).toMatch(/\.terminal-host__new\s*\{[^}]*position:absolute;[^}]*right:16px;/)
     expect(terminalSource).not.toContain('{{ host.origin ||')
     expect(terminalSource).not.toContain('关闭窗口将断开')
   })

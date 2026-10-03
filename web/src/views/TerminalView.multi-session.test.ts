@@ -31,7 +31,8 @@ const hosts = [
 const tabNames = (wrapper: VueWrapper) => wrapper.findAll('.terminal-tab__name').map((tab) => tab.text())
 const activeTab = (wrapper: VueWrapper) => wrapper.find('.terminal-tab.is-active .terminal-tab__name').text()
 const hostRow = (wrapper: VueWrapper, name: string) => wrapper.findAll('.terminal-host').find((row) => row.text().includes(name))!
-const newTerminalButton = (wrapper: VueWrapper) => wrapper.find('.terminal-tabs__new')
+const newTerminalButton = (wrapper: VueWrapper, name: string) =>
+  wrapper.findAll('.terminal-host-row').find((row) => row.text().includes(name))!.find('.terminal-host__new')
 
 async function mountWithLocalTerminal() {
   const wrapper = mount(TerminalView, { attachTo: document.body })
@@ -49,9 +50,9 @@ describe('several terminals on one host', () => {
     mocks.open.mockReset().mockImplementation(async (hostId: string) => ({ sessionId: `${hostId}-${++mocks.next}`, offset: 0 }))
   })
 
-  it('opens another terminal on the active host from the tab bar and numbers it', async () => {
+  it('opens another terminal from the row of a host and numbers it', async () => {
     const wrapper = await mountWithLocalTerminal()
-    const button = newTerminalButton(wrapper)
+    const button = newTerminalButton(wrapper, '本地主机')
     expect(button.attributes('aria-label')).toBe('在 本地主机 上新建终端')
     await button.trigger('click')
     await flushPromises()
@@ -59,12 +60,29 @@ describe('several terminals on one host', () => {
     expect(tabNames(wrapper)).toEqual(['本地主机', '本地主机 2'])
     expect(activeTab(wrapper)).toBe('本地主机 2')
     expect(hostRow(wrapper, '本地主机').text()).toContain('已打开 2 个')
+    expect(wrapper.find('.terminal-tabs .terminal-host__new').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('goes to the open terminal when the host is chosen in the list instead of opening another', async () => {
+  it('shows the button on every host that can open a terminal, before any is open', async () => {
+    mocks.hosts.mockResolvedValue({ items: [...hosts, { id: 'light', name: '轻量节点', isLocal: false, kind: 'light_node', origin: '', terminalAvailable: false }] })
     const wrapper = await mountWithLocalTerminal()
-    await newTerminalButton(wrapper).trigger('click')
+    expect(newTerminalButton(wrapper, '东京节点').attributes('aria-label')).toBe('在 东京节点 上新建终端')
+    expect(newTerminalButton(wrapper, '轻量节点').exists()).toBe(false)
+    await newTerminalButton(wrapper, '东京节点').trigger('click')
+    await flushPromises()
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
+    await flushPromises()
+    await newTerminalButton(wrapper, '东京节点').trigger('click')
+    await flushPromises()
+    expect(mocks.open.mock.calls.map(([hostId]) => hostId)).toEqual(['local', 'tokyo', 'local', 'tokyo'])
+    expect(tabNames(wrapper)).toEqual(['本地主机', '东京节点', '本地主机 2', '东京节点 2'])
+    wrapper.unmount()
+  })
+
+  it('goes to the open terminal when the host row is chosen instead of opening another', async () => {
+    const wrapper = await mountWithLocalTerminal()
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
     await flushPromises()
     await wrapper.findAll('.terminal-tab__select')[0]!.trigger('click')
     expect(activeTab(wrapper)).toBe('本地主机')
@@ -77,34 +95,30 @@ describe('several terminals on one host', () => {
 
   it('keeps every number when another terminal on the host closes, and reuses the free one', async () => {
     const wrapper = await mountWithLocalTerminal()
-    await newTerminalButton(wrapper).trigger('click')
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
     await flushPromises()
     await wrapper.findAll('.terminal-tab__close')[0]!.trigger('click')
     await flushPromises()
     expect(tabNames(wrapper)).toEqual(['本地主机 2'])
-    await newTerminalButton(wrapper).trigger('click')
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
     await flushPromises()
     expect(tabNames(wrapper)).toEqual(['本地主机 2', '本地主机'])
     wrapper.unmount()
   })
 
-  it('opens the new terminal on the host of the active tab', async () => {
+  it('keeps the button when the last terminal on the host closes', async () => {
     const wrapper = await mountWithLocalTerminal()
-    await hostRow(wrapper, '东京节点').trigger('click')
+    await wrapper.find('.terminal-tab__close').trigger('click')
     await flushPromises()
-    expect(activeTab(wrapper)).toBe('东京节点')
-    expect(newTerminalButton(wrapper).attributes('aria-label')).toBe('在 东京节点 上新建终端')
-    await newTerminalButton(wrapper).trigger('click')
-    await flushPromises()
-    expect(mocks.open.mock.calls.map(([hostId]) => hostId)).toEqual(['local', 'tokyo', 'tokyo'])
-    expect(tabNames(wrapper)).toEqual(['本地主机', '东京节点', '东京节点 2'])
+    expect(tabNames(wrapper)).toEqual([])
+    expect(newTerminalButton(wrapper, '本地主机').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('says that the limit counts terminals on all hosts together', async () => {
+  it('says that the limit counts terminals on all hosts together, until a terminal closes', async () => {
     const wrapper = await mountWithLocalTerminal()
     mocks.open.mockRejectedValueOnce(Object.assign(new ApiError('limit'), { code: 'terminal_limit' }))
-    await newTerminalButton(wrapper).trigger('click')
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
     await flushPromises()
     expect(wrapper.find('.terminal-alert').text()).toBe('所有主机合计的终端数已达上限，请先关闭不用的终端。')
     expect(tabNames(wrapper)).toEqual(['本地主机'])
@@ -116,13 +130,13 @@ describe('several terminals on one host', () => {
 
   it('renames the open tabs of a host renamed in the inventory, keeping their numbers', async () => {
     const wrapper = await mountWithLocalTerminal()
-    await newTerminalButton(wrapper).trigger('click')
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
     await flushPromises()
     mocks.hosts.mockResolvedValue({ items: [{ ...hosts[0], name: '主控服务器' }, hosts[1]] })
     await wrapper.find('.terminal-connections__refresh').trigger('click')
     await flushPromises()
     expect(tabNames(wrapper)).toEqual(['主控服务器', '主控服务器 2'])
-    await newTerminalButton(wrapper).trigger('click')
+    await newTerminalButton(wrapper, '主控服务器').trigger('click')
     await flushPromises()
     expect(tabNames(wrapper)).toEqual(['主控服务器', '主控服务器 2', '主控服务器 3'])
     wrapper.unmount()
@@ -130,16 +144,19 @@ describe('several terminals on one host', () => {
 
   it('cannot start a second open while one is in flight', async () => {
     const wrapper = await mountWithLocalTerminal()
+    await hostRow(wrapper, '东京节点').trigger('click')
+    await flushPromises()
     let release: (value: { sessionId: string; offset: number }) => void = () => {}
     mocks.open.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
-    await newTerminalButton(wrapper).trigger('click')
-    expect(newTerminalButton(wrapper).attributes('disabled')).toBeDefined()
-    await newTerminalButton(wrapper).trigger('click')
-    expect(mocks.open).toHaveBeenCalledTimes(2)
+    await newTerminalButton(wrapper, '本地主机').trigger('click')
+    expect(newTerminalButton(wrapper, '本地主机').exists()).toBe(false)
+    expect(newTerminalButton(wrapper, '东京节点').attributes('disabled')).toBeDefined()
+    await newTerminalButton(wrapper, '东京节点').trigger('click')
+    expect(mocks.open).toHaveBeenCalledTimes(3)
     release({ sessionId: 'local-late', offset: 0 })
     await flushPromises()
-    expect(tabNames(wrapper)).toEqual(['本地主机', '本地主机 2'])
-    expect(newTerminalButton(wrapper).attributes('disabled')).toBeUndefined()
+    expect(tabNames(wrapper)).toEqual(['本地主机', '东京节点', '本地主机 2'])
+    expect(newTerminalButton(wrapper, '东京节点').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 })

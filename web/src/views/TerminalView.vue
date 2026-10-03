@@ -161,11 +161,6 @@ async function openHost(host: ClusterHost): Promise<void> {
   await openSession(host)
 }
 
-const activeHost = computed(() => inventory.value?.items.find((host) => host.id === activeSession.value?.hostId))
-
-function openAnotherOnActiveHost(): void {
-  if (activeHost.value) void openSession(activeHost.value)
-}
 
 async function openSession(host: ClusterHost): Promise<void> {
   if (!host.terminalAvailable || openingHostId.value) return
@@ -482,47 +477,59 @@ onBeforeUnmount(() => {
         <div id="terminal-connection-selector" v-show="!connectionsCollapsed || mobileConnectionsOpen" class="terminal-connections__list">
           <div v-if="!loading && !hosts.length" class="terminal-connections__empty">暂无可显示主机</div>
           <template v-if="terminalMode === 'interactive'">
-            <button
-              v-for="host in hosts"
-              :key="host.id"
-              class="terminal-host"
-              :class="{
-                'is-active': activeSession?.hostId === host.id,
-                'is-opening': openingHostId === host.id,
-                'is-unavailable': !host.terminalAvailable,
-              }"
-              type="button"
-              :disabled="openingHostId === host.id"
-              :aria-disabled="!host.terminalAvailable"
-              :title="hostDescription(host)"
-              :aria-label="hostDescription(host)"
-              @click="openHost(host)"
-            >
-              <OperatingSystemIcon
-                class="terminal-host__os"
-                :distro="hostOperatingSystemIdentity(host).key"
-                :label="hostOperatingSystemIdentity(host).label"
-                :show-tooltip="false"
-              />
-              <span class="terminal-host__content">
-                <strong>{{ host.name }}</strong>
-                <span class="terminal-host__meta">
-                  <small>{{ hostKindLabel(host) }}</small>
-                  <span class="terminal-host__separator" aria-hidden="true">·</span>
-                  <span
-                    class="terminal-host__state"
-                    :class="{
-                      'is-ready': host.terminalAvailable,
-                      'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
-                    }"
-                  >
-                    <i aria-hidden="true" />
-                    {{ hostStateLabel(host) }}
+            <div v-for="host in hosts" :key="host.id" class="terminal-host-row">
+              <button
+                class="terminal-host"
+                :class="{
+                  'is-active': activeSession?.hostId === host.id,
+                  'is-opening': openingHostId === host.id,
+                  'is-unavailable': !host.terminalAvailable,
+                  'has-new': host.terminalAvailable,
+                }"
+                type="button"
+                :disabled="openingHostId === host.id"
+                :aria-disabled="!host.terminalAvailable"
+                :title="hostDescription(host)"
+                :aria-label="hostDescription(host)"
+                @click="openHost(host)"
+              >
+                <OperatingSystemIcon
+                  class="terminal-host__os"
+                  :distro="hostOperatingSystemIdentity(host).key"
+                  :label="hostOperatingSystemIdentity(host).label"
+                  :show-tooltip="false"
+                />
+                <span class="terminal-host__content">
+                  <strong>{{ host.name }}</strong>
+                  <span class="terminal-host__meta">
+                    <small>{{ hostKindLabel(host) }}</small>
+                    <span class="terminal-host__separator" aria-hidden="true">·</span>
+                    <span
+                      class="terminal-host__state"
+                      :class="{
+                        'is-ready': host.terminalAvailable,
+                        'is-attention': !host.terminalAvailable && host.kind !== 'light_node',
+                      }"
+                    >
+                      <i aria-hidden="true" />
+                      {{ hostStateLabel(host) }}
+                    </span>
                   </span>
                 </span>
-              </span>
-              <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
-            </button>
+                <LoaderCircle v-if="openingHostId === host.id" class="spin" :size="17" />
+              </button>
+              <button
+                v-if="host.terminalAvailable && openingHostId !== host.id"
+                type="button"
+                class="terminal-host__new"
+                :disabled="Boolean(openingHostId)"
+                :title="t('terminal.newSessionOnHost', { host: host.name })"
+                :aria-label="t('terminal.newSessionOnHost', { host: host.name })"
+                @click="openSession(host)"
+              >
+                <Plus :size="16" />
+              </button>
+            </div>
           </template>
           <template v-else>
             <label v-for="host in hosts" :key="host.id" class="terminal-host terminal-host--batch" :class="{ 'is-active': selectedBatchHostIDs.has(host.id), 'is-disabled': !host.terminalAvailable }">
@@ -606,18 +613,6 @@ onBeforeUnmount(() => {
               <X v-else :size="14" />
               </button>
             </div>
-            <button
-              v-if="activeSession && activeHost?.terminalAvailable"
-              type="button"
-              class="terminal-tabs__new"
-              :disabled="Boolean(openingHostId)"
-              :title="t('terminal.newSessionOnHost', { host: activeSession.hostName })"
-              :aria-label="t('terminal.newSessionOnHost', { host: activeSession.hostName })"
-              @click="openAnotherOnActiveHost"
-            >
-              <LoaderCircle v-if="openingHostId === activeSession.hostId" class="spin" :size="16" />
-              <Plus v-else :size="16" />
-            </button>
           </nav>
           <TerminalToolbar
             :fullscreen="workspaceFullscreen"
@@ -726,6 +721,11 @@ onBeforeUnmount(() => {
 .terminal-host { position:relative; display:grid; width:calc(100% - 12px); min-height:50px; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; margin:1px 6px; border:1px solid transparent; border-radius:10px; padding:7px 9px; text-align:left; color:var(--terminal-shell-text,#d8dddc); background:transparent; cursor:pointer; transition:border-color .16s ease,background-color .16s ease; }
 .terminal-host:hover,.terminal-host:focus-visible,.terminal-host.is-active { border-color:color-mix(in srgb,var(--brand) 48%,var(--terminal-shell-border,#29383a)); background:color-mix(in srgb,var(--brand) 9%,var(--terminal-shell-panel,#111a1d)); outline:none; }
 .terminal-host.is-active { box-shadow:inset 3px 0 0 var(--brand); }
+.terminal-host-row { position:relative; }
+.terminal-host.has-new { padding-right:46px; }
+.terminal-host__new { position:absolute; top:50%; right:16px; display:grid; width:30px; height:30px; place-items:center; padding:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--radius-sm); color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); cursor:pointer; transform:translateY(-50%); }
+.terminal-host__new:hover:not(:disabled),.terminal-host__new:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
+.terminal-host__new:disabled { cursor:progress; opacity:.6; }
 .terminal-host.is-opening { cursor:wait; opacity:.64; }
 .terminal-host.is-unavailable { cursor:not-allowed; }
 .terminal-host.is-disabled { cursor:not-allowed; opacity:.58; }
@@ -756,9 +756,6 @@ onBeforeUnmount(() => {
 .terminal-tabs-bar__connections:hover,.terminal-tabs-bar__connections:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
 .terminal-tabs { display:flex; min-width:0; flex:1; gap:5px; overflow-x:auto; scrollbar-width:thin; }
 /* Follows the last tab, and stays on the visible edge once the tabs scroll. */
-.terminal-tabs__new { position:sticky; right:0; z-index:1; display:grid; width:34px; height:34px; flex:0 0 auto; place-items:center; padding:0; border:1px solid var(--terminal-shell-border,#29383a); border-radius:var(--radius-sm); color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); cursor:pointer; }
-.terminal-tabs__new:hover:not(:disabled),.terminal-tabs__new:focus-visible { border-color:var(--brand); color:var(--terminal-shell-text,#d8dddc); outline:none; }
-.terminal-tabs__new:disabled { cursor:progress; opacity:.6; }
 .terminal-stage :deep(.host-terminal) { grid-row:2; grid-column:1; border:0; border-radius:0; box-shadow:none; }
 .terminal-stage :deep(.terminal-quick-commands) { grid-row:2; grid-column:2; }
 .terminal-tab { display:flex; flex:0 0 auto; align-items:center; gap:7px; max-width:220px; border:1px solid var(--terminal-shell-border,#29383a); border-radius:8px; padding:7px 9px; color:var(--terminal-shell-muted,#8a9695); background:var(--terminal-shell-panel,#111a1d); }
