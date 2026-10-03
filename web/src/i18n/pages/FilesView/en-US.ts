@@ -1,6 +1,9 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["请进入磁盘目录后操作；Windows 权限由系统 ACL 管理。","Open a drive directory first. Windows permissions are managed by system ACLs."],
+  ["请先选择目标磁盘目录。","Choose a target drive directory first."],
+  ["磁盘列表","Drives"],
   ["文件编辑器", "File editor"],
   ["正在连接远程服务器", "Connecting to the remote server"],
   ["正在下载 {0}", "Downloading {0}"],

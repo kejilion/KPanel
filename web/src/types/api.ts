@@ -214,6 +214,12 @@ export interface ClusterHostSnapshot {
 }
 
 export interface ClusterHost {
+	platform?: 'linux' | 'windows'
+	terminalShell?: 'posix' | 'powershell'
+	pathStyle?: 'posix' | 'windows-volumes'
+	unavailableMetrics?: string[]
+	desktopAvailable?: boolean
+	desktopUnavailableReason?: string
 	trafficPeriod?: ClusterTrafficPeriod
 	lightHealth?: LightNodeHealth
   id: string
@@ -392,7 +398,7 @@ export interface PublicClusterShareHost extends Pick<ClusterHostDetails, 'expire
 	os?: string
 	architecture?: string
 	uptimeSeconds?: number
-	load: { one: number; five: number; fifteen: number }
+	load: { one: number; five: number; fifteen: number } | null
 	cpu: { cores: number; usagePercent: number }
 	memory: { totalBytes: number; usedBytes: number; usagePercent: number }
 	disk: { totalBytes: number; usedBytes: number; usagePercent: number }
@@ -465,12 +471,14 @@ export interface TerminalQuickCommandsUpdate {
 }
 
 export interface ClusterLightEnrollment {
+	platform?: 'linux' | 'windows'
   id: string
   command: string
   expiresAt: string
 }
 
 export interface ClusterLightBatchEnrollment {
+	platform?: 'linux' | 'windows'
   id: string
   command?: string
   namePrefix?: string
@@ -1864,6 +1872,7 @@ export interface MonitoringStorageStatus {
 }
 
 export interface MonitoringHistory {
+  unavailableMetrics?: string[]
   range: MonitoringRange
   startedAt: string
   endedAt: string

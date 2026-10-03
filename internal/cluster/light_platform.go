@@ -43,6 +43,9 @@ func (s *Service) ProbeLightCapabilities(auth LightReportAuth, body []byte) (Lig
 }
 
 func validateLightPlatform(input LightReportRequest) error {
+	if !slices.Contains([]string{"", "desktop_platform_unsupported", "desktop_rdp_disabled", "desktop_rdp_service_stopped", "desktop_rdp_configuration_unavailable", "desktop_rdp_certificate_unavailable", "desktop_not_enabled", "desktop_broker_unavailable"}, input.DesktopUnavailableReason) || input.Platform != "windows" && input.DesktopUnavailableReason != "" {
+		return ErrProtocolMismatch
+	}
 	if input.Platform != "" && input.Platform != "linux" && input.Platform != "windows" {
 		return ErrProtocolMismatch
 	}
@@ -86,8 +89,17 @@ func lightPlatformAllows(record lightHostRecord, capability string, now time.Tim
 }
 
 func (s *Service) lightControlAllowed(hostID, capability string) bool {
+	if capability == "desktop" && !s.desktopAllowed(hostID) {
+		return false
+	}
 	record, err := s.light.Host(hostID)
-	return err != nil || lightPlatformAllows(record, capability, s.now().UTC())
+	if err == nil {
+		return lightPlatformAllows(record, capability, s.now().UTC())
+	}
+	// Non-light terminals belong to the v2 store. A deleted/missing lightweight
+	// record is not permission to continue using an existing stream.
+	_, err = s.storeV2.Host(hostID)
+	return err == nil
 }
 
 func applyLightPlatform(host *Host, record lightHostRecord, now time.Time) {
@@ -104,7 +116,10 @@ func applyLightPlatform(host *Host, record lightHostRecord, now time.Time) {
 	host.FileManagementAvailable = host.FileManagementAvailable && lightPlatformAllows(record, "files", now)
 	host.Scope = SummaryScope
 	if host.FileManagementAvailable {
-		host.Scope = SummaryTerminalFilesScope
+		host.Scope = SummaryFilesScope
+		if host.TerminalAvailable {
+			host.Scope = SummaryTerminalFilesScope
+		}
 	} else if host.TerminalAvailable {
 		host.Scope = SummaryTerminalScope
 	}

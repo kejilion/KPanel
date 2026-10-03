@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["此系统不提供负载均值","此系統不提供負載平均值"],
   ["服务异常通知", "服務異常通知"],
   ["切换主机", "切換主機"],
   ["本机", "本機"],

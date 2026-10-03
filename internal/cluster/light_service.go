@@ -211,12 +211,13 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		latencyMilliseconds = max(0, record.LastSnapshot.LatencyMilliseconds)
 	}
 	snapshot := HostSnapshot{
-		Platform:            input.Platform,
-		UnavailableMetrics:  append([]string(nil), input.UnavailableMetrics...),
-		NodeCapabilities:    append([]string(nil), input.Capabilities...),
-		Telemetry:           cloneTelemetry(input.Telemetry),
-		ReceivedAt:          now,
-		LatencyMilliseconds: latencyMilliseconds,
+		Platform:                 input.Platform,
+		UnavailableMetrics:       append([]string(nil), input.UnavailableMetrics...),
+		NodeCapabilities:         append([]string(nil), input.Capabilities...),
+		DesktopUnavailableReason: input.DesktopUnavailableReason,
+		Telemetry:                cloneTelemetry(input.Telemetry),
+		ReceivedAt:               now,
+		LatencyMilliseconds:      latencyMilliseconds,
 	}
 	// Invalid/missing optional health is unknown; it must neither reject core
 	// telemetry nor renew the freshness of a previously healthy observation.
@@ -325,12 +326,19 @@ func (s *Service) publicLightHost(record lightHostRecord, now time.Time) Host {
 		fileAvailable = err == nil && len(key) == 32
 	}
 	host := publicLightHostWithCapabilities(record, now, terminalAvailable, fileAvailable)
+	if lightHostIsWindows(record) && !s.desktopAllowed(record.ID) {
+		host.DesktopUnavailableReason = "desktop_disabled_by_center"
+		return host
+	}
 	if lightHostIsWindows(record) && lightPlatformAllows(record, "desktop", now) {
-		host.DesktopAvailable = s.fileStreamHub.desktopAvailable(record.ID)
+		host.DesktopAvailable = s.fileStreamHub.desktopAvailable(record.ID) && record.LastSnapshot.DesktopUnavailableReason == ""
 		if host.DesktopAvailable {
 			host.DesktopUnavailableReason = ""
 		} else {
 			host.DesktopUnavailableReason = "desktop_broker_unavailable"
+			if record.LastSnapshot.DesktopUnavailableReason != "" {
+				host.DesktopUnavailableReason = record.LastSnapshot.DesktopUnavailableReason
+			}
 		}
 	}
 	return host

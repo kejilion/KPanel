@@ -74,9 +74,10 @@ const (
 )
 
 type HostSnapshot struct {
-	Platform           string   `json:"-"`
-	UnavailableMetrics []string `json:"-"`
-	NodeCapabilities   []string `json:"-"`
+	Platform                 string   `json:"-"`
+	UnavailableMetrics       []string `json:"-"`
+	NodeCapabilities         []string `json:"-"`
+	DesktopUnavailableReason string   `json:"-"`
 	// Health is ephemeral: old centers must still read persisted snapshots on rollback.
 	LightHealth            *contract.LightNodeHealth `json:"-"`
 	Telemetry              contract.HostTelemetry    `json:"telemetry"`
@@ -193,11 +194,12 @@ type LightFileCapabilityResponse struct {
 }
 
 type LightReportRequest struct {
-	Platform           string                    `json:"platform,omitempty"`
-	UnavailableMetrics []string                  `json:"unavailableMetrics,omitempty"`
-	Capabilities       []string                  `json:"capabilities,omitempty"`
-	Telemetry          contract.HostTelemetry    `json:"telemetry"`
-	Health             *contract.LightNodeHealth `json:"health,omitempty"`
+	DesktopUnavailableReason string                    `json:"desktopUnavailableReason,omitempty"`
+	Platform                 string                    `json:"platform,omitempty"`
+	UnavailableMetrics       []string                  `json:"unavailableMetrics,omitempty"`
+	Capabilities             []string                  `json:"capabilities,omitempty"`
+	Telemetry                contract.HostTelemetry    `json:"telemetry"`
+	Health                   *contract.LightNodeHealth `json:"health,omitempty"`
 }
 
 type LightReportResponse struct {

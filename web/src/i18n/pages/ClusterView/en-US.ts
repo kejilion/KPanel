@@ -1,6 +1,12 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["选择目标系统，生成一条可在多台主机上重复使用的接入命令。","Choose the target system to generate an enrollment command for multiple hosts."],
+  ["Windows 安装包签名尚未配置，暂时无法生成接入命令。","Windows package signing is not configured. Enrollment commands are currently unavailable."],
+  ["Windows 主机","Windows host"],
+  ["在管理员 PowerShell 执行一行命令，自动安装并接入。加入域的主机默认仅监控；远程桌面需单独启用。","Run one command in administrator PowerShell to install and enroll. Domain-joined hosts default to monitoring only; enable remote desktop separately."],
+  ["复制命令并在目标机的管理员 PowerShell 执行，首次上报后自动确认连接。","Copy and run the command in administrator PowerShell on the target. Connection is confirmed after its first report."],
+  ["命令只在本次生成后展示；复制后可在每台目标机的管理员 PowerShell 执行。","The command is shown only once. Copy it and run it in administrator PowerShell on each target."],
   ["查看通知记录", "View notification history"],
   ["更新与服务","Updates and services"],
   ["在线仅表示遥测连接正常，服务状态与可用权限分别判断。","Online indicates a telemetry connection. Service state and granted access are evaluated separately."],
@@ -325,7 +331,6 @@ export default [
   ['添加方式', 'Add method'],
   ['单台添加', 'Add one'],
   ['批量接入', 'Batch enrollment'],
-  ['生成一条可重复执行的轻量节点命令，在多台 Linux 主机上分别运行。', 'Generate one reusable lightweight-node command and run it separately on multiple Linux hosts.'],
   ['名称前缀（可选）', 'Name prefix (optional)'],
   ['例如：香港', 'For example: Hong Kong'],
   ['节点会显示为“前缀 · 主机名”，便于按机房或用途识别。', 'Nodes are shown as “prefix · hostname” for easy identification by location or purpose.'],

@@ -61,7 +61,7 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toContain("t('terminal.hostCount'")
     expect(terminalSource).toContain("t('terminal.closeSessionsConfirm'")
     expect(terminalSource).toContain(':placeholder="t(\'terminal.searchPlaceholder\')"')
-    expect(terminalSource).toContain(':aria-disabled="!host.terminalAvailable"')
+    expect(terminalSource).toContain(':aria-disabled="!isWindows(host) && !hostConnectable(host)"')
     expect(terminalSource).toContain(':title="hostDescription(host)"')
     expect(terminalSource).not.toContain('terminal.currentPanel')
     expect(terminalSource).not.toContain('terminal.hostState.encrypted')

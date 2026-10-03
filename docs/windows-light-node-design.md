@@ -159,7 +159,8 @@ Windows 主机 ─────────────────────�
 | `…\terminal.json` | 终端/文件 Noise 私钥 | 只有 SYSTEM 读写，Administrators 只能接管不能直接读 |
 | `…\batch-enrollment-attempt.json` | 批量接入续接状态 | 只有 SYSTEM |
 | `…\state\monitoring\` | 历史采样 | 只有 SYSTEM |
-| `…\run\` | 健康快照、计划任务快照、登录事件 | SYSTEM 写；对应虚拟账户读 |
+| `…\run\` | 健康快照、计划任务快照 | SYSTEM 写；对应虚拟账户读 |
+| `…\run\login\` | 登录事件快照 | SYSTEM 与专用 Login service SID 写；遥测账户读。祖先校验仅对真实 KnownFolder 下此目录授予该例外 |
 | `…\update-status.json` | 更新结果 | SYSTEM 写；`NT SERVICE\KejilionNode` 读 |
 
 规则：
@@ -178,13 +179,14 @@ Windows 主机 ─────────────────────�
 ### 5.1 接入命令
 
 中心在“集群 → 添加主机”增加“Windows 主机”选项，生成以管理员身份在 PowerShell 中执行的一行命令。
-令牌格式、有效期、单次/批量语义、100 台上限与 Linux 完全相同，中心接入 API 不变。
+令牌格式、有效期、单次/批量语义、100 台上限与 Linux 相同；生成 API 新增可选 `platform`，缺省仍为 Linux。
+界面在原 Linux 接入卡下显示 Windows 卡，批量接入可选目标系统。
 
-```powershell
-& ([scriptblock]::Create((Invoke-RestMethod '<安装器 URL>'))) -Token '<kpl1 或 kpb1 令牌>'
-```
-
-`<安装器 URL>` 取决于 D2。安装器本身必须 Authenticode 签名；`Invoke-RestMethod` 只走 HTTPS，不跟随到非白名单主机。
+一行命令先下载固定 KPanel Release 版本的 `install-windows.ps1` 到受保护的 Program Files 临时目录，
+校验 Authenticode、发布者 Subject 和可选 profile EKU OID 后才调用脚本；不得直接执行下载文本。
+令牌、名称和信任策略以 UTF-8 Base64 表达式编码，避免 PowerShell Unicode 引号被解释为语法。
+中心通过 `KEJILION_PANEL_WINDOWS_NODE_PUBLISHER` 配置信任发布者，缺失时生成接口失败关闭，
+可选 `KEJILION_PANEL_WINDOWS_NODE_PROFILE_OID` 进一步绑定签名 profile。
 
 ### 5.2 安装器步骤
 
@@ -192,14 +194,15 @@ Windows 主机 ─────────────────────�
 2. 检测版本（`RtlGetVersion` 等价信息）、架构（`IsWow64Process2`）、版本类型；不在支持矩阵内时明确失败。
 3. 下载 `SHA256SUMS`（≤ 64 KiB）和 `kejilion-node-windows-<arch>.exe` 到受保护的临时目录；
    与 Linux 相同，`latest` 只解析一次并固定到 `releases/download/v<semver>/`。
-4. 校验 SHA-256，再用 `WinVerifyTrustEx` 校验 Authenticode，并比对固定的发布者证书指纹。任一失败即中止。
+4. 校验 SHA-256，再用 Windows 信任 API 校验 Authenticode、发布者 Subject 与可选 profile EKU OID。任一失败即中止。
+   不固定会每日轮换的叶证书指纹；发布必须带可信时间戳，轮换发布主体/profile 属显式策略变更。
 5. 按 4.2 创建目录与 ACL，安装二进制。
-6. 执行 `kejilion-node.exe enroll`；成功后执行 `kejilion-node.exe service install`，由二进制通过
+6. 通过受保护、SYSTEM-only 的 bootstrap handoff 完成接入、收据与服务安装，由二进制通过
    `svc/mgr` 注册服务：ImagePath 带引号；自动启动；服务 SID 类型；所需特权；失败恢复动作
    （5 秒、30 秒、60 秒后重启，1 天重置计数，非零退出也视为失败）。
 7. 注册更新计划任务（第 8 节），启动服务，输出与 Linux `status` 等价的状态摘要。
-8. 任一步失败：停止并删除已创建的服务和任务，删除本次创建的目录；已经被中心消费的单次令牌不重复消费，
-   提示重新生成（与 Linux “失败安装清理”一致）。
+8. 接入收据与批量 attempt 持久化在 SYSTEM-only 状态中；失败可用原身份续装，不重复消费已确认接入。
+   若响应丢失且无法确定单次令牌是否消费，明确报错，由管理员在中心核对记录后重建授权。
 
 ### 5.3 令牌处理
 
@@ -219,16 +222,18 @@ Windows 主机 ─────────────────────�
 | `k kpanel node update` | `kejilion-node.exe update` |
 | `k kpanel node uninstall` | `kejilion-node.exe uninstall` |
 
-安装、续装、更新、卸载共用生命周期锁：命名互斥体 `Global\KejilionNodeLifecycle`，加上
-`%ProgramData%\KejilionNode\lifecycle.lock` 记录持有者 PID 与启动时间。并发调用明确返回“稍后重试”。
+安装、续装、更新、卸载共用命名互斥体 `Global\KejilionNodeLifecycle`。
+锁由专用固定 OS 线程获得和释放，调用者 Go goroutine 迁移或重复关闭不会遗留锁。并发调用明确返回“稍后重试”。
 卸载顺序：停止服务 → 删除服务与计划任务 → 从 Event Log Readers 移除虚拟账户 → 删除目录。
 中心删除记录不远程卸载节点（与 Linux 相同）。
 
 ### 5.5 中心能力门禁
 
-Windows 节点只在中心通过 `X-KPanel-Light-Response-Capabilities` 声明 `windows-node-v1` 后，
-才在报告中携带 `platform`，并启动终端与文件 broker 的会话处理。否则只运行遥测。
-原因：旧中心的前端会把 POSIX 批量包装和 chmod 发给 Windows。
+Windows 接入请求带 `platform=windows`；旧中心严格解析请求，因此在消费令牌前拒绝，不能降级为 Linux 接入。
+接入后通过带 HMAC、时间窗和重放保护的 `POST /api/v3/federation/light/capabilities` 探测中心能力。
+每次管理 broker 重连都重新校验 `windows-node-v1`，桌面另需 `desktop-v1`，不使用历史响应头作为授权缓存。
+报告外层携带 `platform`、`capabilities`、`unavailableMetrics` 与有限枚举的 `desktopUnavailableReason`；
+`HostTelemetry` 持久化契约不变。中心缓存能力只存内存，90 秒失鲜或重启后未重新上报时拒绝远程管理。
 
 ## 6. 遥测采集
 
@@ -236,7 +241,7 @@ Windows 节点只在中心通过 `X-KPanel-Light-Response-Capabilities` 声明 `
 
 | 字段 | 来源 | 说明 |
 | --- | --- | --- |
-| CPU 使用率 | `GetSystemTimes` 两次采样差值，间隔沿用 150 ms | 与 `/proc/stat` 口径一致（空闲/内核/用户） |
+| CPU 使用率 | `GetSystemTimes` 两次采样差值，遍历 processor group 后汇总 | 支持超过 64 个逻辑 CPU；采样差值给出空闲/内核/用户比例 |
 | CPU 型号/频率 | 注册表 `HARDWARE\DESCRIPTION\System\CentralProcessor\0` | 只在首次读取和每 30 分钟刷新 |
 | 核心数 | `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)` | 覆盖超过 64 核的多处理器组 |
 | 内存 | `GlobalMemoryStatusEx` | 总量、可用量 |
@@ -294,12 +299,12 @@ Windows 节点只在中心通过 `X-KPanel-Light-Response-Capabilities` 声明 `
 | 通道 | 只跟踪稳定版，与 Linux 相同；中心不推送更新，不支持远程切换版本 |
 | 检查 | 先下载 `SHA256SUMS`；本平台摘要未变化则结束 |
 | 校验 | SHA-256 + Authenticode 固定发布者；再在暂存目录执行新二进制的 `version`，确认协议与运行时代数不降级 |
-| 替换 | 把运行中的 `kejilion-node.exe` 改名为 `.old`（NTFS 允许改名运行中的映像），把新文件移入原位置 |
+| 替换 | 稳定 bootstrap 入口与受保护更新事务记录配合；在停止服务前完成下载、签名和摘要校验，替换故障恢复旧二进制 |
 | 重启 | 先重启遥测服务，60 秒内健康则依次重启 3 个 broker |
 | 回滚 | 遥测 60 秒内未就绪：恢复 `.old`，重启全部服务，记录 `rolled_back`。broker 失败只记 `degraded` + `optional_service`，不阻断遥测升级（与 Linux 相同） |
 | 状态 | `update-status.json` 沿用现有字段与枚举；不保存 stderr、URL 或凭据 |
 | 清理 | 下一次成功检查时删除 `.old` |
-| 中断 | 生命周期锁记录 PID 与启动时间；下次运行发现中断就恢复一致状态并报告 `interrupted` |
+| 中断 | 下次运行按受保护事务阶段核对文件存在性与摘要，恢复一致状态并报告 `interrupted`；禁止启动状态不明的文件 |
 
 更新逻辑全部写在 Go 二进制里，不维护 PowerShell 版更新脚本。
 
@@ -310,14 +315,15 @@ Windows 节点只在中心通过 `X-KPanel-Light-Response-Capabilities` 声明 `
 - 用 `CreatePseudoConsole` 创建 ConPTY，通过 `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` 和
   `CreateProcess` 启动 shell；新增 `internal/hostpty/process_windows.go`，不引入第三方 ConPTY 库。
 - ConPTY 标志为 0，不使用 `PSEUDOCONSOLE_INHERIT_CURSOR`，避免启动时等待终端回应光标位置查询。
-- 每个会话一个 Job Object，设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`。关闭会话、broker 退出或中心 epoch
+- 每个会话一个 Job Object，设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`；shell 先 suspended 创建、加入 Job 后再恢复，
+  消除其提前产生子进程的窗口。独立有界读取器排空 ConPTY 输出，避免关闭时被满管道阻塞。关闭会话、broker 退出或中心 epoch
   变化时关闭 Job，整棵进程树被终止，效果对应 Linux 的 transient unit 与 parent-death signal。
 - 固定 shell：`<GetSystemDirectory()>\WindowsPowerShell\v1.0\powershell.exe -NoLogo -NoExit -Command
   "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $OutputEncoding=[Console]::OutputEncoding"`。
   启动前校验文件属主为 TrustedInstaller、SYSTEM 或 Administrators（实现 `terminalExecutableOwnerTrusted`
   的 Windows 版）。不按 PATH 查找，不接受浏览器提交的 shell、参数、环境变量或工作目录。
 - 工作目录：SYSTEM 用户配置目录（`%SystemRoot%\System32\config\systemprofile`），对应 Linux 的 `/root`。
-- 加载系统 PowerShell 配置文件，对应 Linux 的 `bash -l`；这些文件位于只有管理员可写的目录。
+- PowerShell 使用 `-NoProfile`，避免未审计的配置文件影响服务身份 shell 的启动。
 
 ### 9.2 传输与限额
 
@@ -331,11 +337,9 @@ Server 2016 没有 ConPTY：节点不声明终端能力，前端显示“仅监�
 
 中心 Host DTO 新增 `terminalShell`（`posix` | `powershell`），前端按它选择包装器。PowerShell 包装：
 
-```powershell
-$global:LASTEXITCODE = 0; & {
-<命令>
-}; $__kp = if ($?) { $LASTEXITCODE } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }; Write-Host ("`n<marker>{0}__" -f $__kp)
-```
+用户命令包在独立 PowerShell 子进程内，经 UTF-16LE `-EncodedCommand` 传入；固定使用当前受信任
+`$PSHOME` 下的 PowerShell 可执行文件。子进程处理异常与退出码，父 shell 用 `"<marker>{0}__" -f $LASTEXITCODE`
+输出完成标记。用户命令含 `exit`、here-string 或行尾注释也不会提前终止父 shell 的完成标记。
 
 - 标记仍是每次随机 128 位；回显行只含字面 `{0}`，命令输出无法伪造随机值（与 POSIX 版 `%s` 相同性质）。
 - 退出码解析放宽为有符号 32 位整数（Windows 进程可能返回 `-1073741819` 这类值）。
@@ -376,7 +380,8 @@ $global:LASTEXITCODE = 0; & {
   只读属性留作后续，不在本期范围。
 - **占用与杀毒**：删除、替换、改名遇到 `ERROR_SHARING_VIOLATION`/`ERROR_LOCK_VIOLATION` 时有界重试
   （≤ 2 秒），仍失败则返回明确的“文件被占用”。
-- **回收站**：每个卷一个隐藏的 `\.kpanel-trash`，只有 SYSTEM 可访问，避免跨卷移动变成复制。
+- **回收站**：使用受保护的状态目录 `file-trash`。跨卷复制/恢复必须保留原文件和目录 DACL，
+  覆盖保存的临时文件在创建时即带受保护 ACL，不留“先继承宽权限、随后收紧”的句柄窗口。
 - **编辑器**：读取和保存保持原始字节，不转换 CRLF；UTF-16 文件按二进制处理，不提供在线编辑。
 - **压缩包**：zip 正常支持；tar 中的符号链接和设备文件在 Windows 上拒绝解出。
 
@@ -438,12 +443,16 @@ KejilionNodeTerminal 内的 RDCleanPath 桥（Go）
 ### 13.3 浏览器 API
 
 ```text
-POST /api/v1/desktop-sessions                 { hostId }          → { id }
+POST /api/v1/desktop-sessions                 { hostId }          → { sessionId, nonce, expiresAt }
 GET  /api/v1/desktop-sessions/{id}/stream     WebSocket（二进制）
 POST /api/v1/desktop-sessions/{id}/close
+POST /api/v1/desktop-sessions/policy          { hostId, allowed }
 ```
 
-写操作校验 Session、Origin、CSRF；会话 ID 是 256 位随机值，绑定当前管理员；跨用户查询返回 404。
+写操作校验 Session、Origin、CSRF；随机会话 ID 绑定管理员与本次登录 token 的摘要，同一用户另一登录也不可接管。
+会话分配 1 分钟内仅可 claim 一次；32 字节随机 nonce 在 RDCleanPath 内再次校验。GET 流同样强制 Origin，
+不允许 query 参数。IronRDP 不发送 WebSocket subprotocol，因此使用上述精确登录绑定而非自创子协议。
+中心禁用策略独立持久化，立即关闭该主机的桌面 control/data，不影响命令行和文件；策略损坏时桌面失败关闭。
 
 ### 13.4 安全
 
@@ -452,10 +461,12 @@ POST /api/v1/desktop-sessions/{id}/close
    如果要求中心也看不到，需要把桥放进浏览器 WASM（D5）。
 3. Windows 凭据每次在浏览器输入，KPanel 不保存。加入域的机器上，RDP 登录会在目标机留下凭据，
    文档建议使用本地运维账户。
-4. 默认关闭驱动器、打印机、USB 和智能卡重定向；剪贴板单独设开关（D6）。
+4. 默认关闭驱动器、打印机、USB、智能卡和剪贴板重定向；本候选不提供重定向开关。
 5. 审计只记录打开、关闭、主机、管理员和时长，不录屏、不记录输入。
 6. RDCleanPath 请求按 DER 严格解码，大小有界，未知字段即断开。
-7. NLA 未开启的机器给出提示，但不阻止连接。
+7. 必须使用 NLA/CredSSP、TLS 1.2 及以上，拒绝 SSL-only 或无 TLS 降级。本机 listener 证书固定到系统证书存储：
+   显式 `SSLCertificateSHA1Hash` 使用 LocalMachine MY；默认使用 WinStations 指定（缺省 Remote Desktop）存储。
+   只比较真实 TLS 叶证书 DER，不信任连接对端自行提供的证书列表。
 
 ### 13.5 资源与稳定性
 
@@ -476,7 +487,9 @@ POST /api/v1/desktop-sessions/{id}/close
 - 两类会话分别管理连接与关闭；批量命令只进入命令行。RDP 断开保留 Windows 登录会话，关闭 Shell 终止 PTY。
 - IronRDP 组件仅选择 RDP 后懒加载，不进入首屏。
 - 只在桌面端浏览器提供完整体验；手机上显示“建议使用桌面浏览器”，但不禁用。
-- IronRDP WASM 从源码固定版本构建，进入 `dependency-policy.json` 管理，体积预算在 spike 后确定。
+- 使用官方 npm 精确版本 `@devolutions/iron-remote-desktop-rdp@0.7.0` 与 GUI `@devolutions/iron-remote-desktop@0.11.0`，
+  按既有 dependency policy 的 npm 真源管理；RDP npm provenance 对应源码 `e45f68c7e52297ca50d33b44c0ace36c9940fbe6`。
+  Vite 从包内提取 WASM 为同源静态资源（约 4.51 MB，gzip 1.62 MB），无需 CDN；CSP 仅增加 `wasm-unsafe-eval`。
 
 ### 13.7 立项前 spike
 
@@ -516,7 +529,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 | 组合 | 行为 |
 | --- | --- |
 | 新中心 × Linux 轻量节点 | 不变 |
-| 旧中心 × Windows 节点 | 中心不声明 `windows-node-v1`：只有遥测；终端与文件不启用 |
+| 旧中心 × Windows 节点 | 接入时拒绝 Windows 外层字段，不消费令牌；已接入后回滚中心，Windows 停止管理连接并重试，不伪装 Linux |
 | 新中心 × 未开启 `desktop` 的 Windows 节点 | 没有“桌面”页签 |
 | 中心回滚到不认识 Windows 的版本 | 节点离线重试，与 Linux 节点遇到旧中心相同；中心状态文件不需要迁移 |
 | 节点回滚 | 更新失败时自动用 `.old` 回滚；退回更早的稳定版需要先卸载，再用该版本安装器重新安装（更新器不降级） |
@@ -657,7 +670,7 @@ spike 结论不达标就终止 P4，P1–P3 不受影响。
 **NetBird 浏览器客户端**（[架构文档](https://docs.netbird.io/manage/peers/browser-client/architecture)，2026-10-03 检索）：
 IronRDP WASM 加自研 Go RDCleanPath 桥，作为第 13 节方案的先例。
 
-## 23. 待决事项
+## 23. 决策与发布前置事项
 
 | 编号 | 问题 | 影响 | 建议 |
 | --- | --- | --- | --- |

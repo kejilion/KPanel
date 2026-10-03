@@ -259,7 +259,7 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
     // The completion marker reports the real exit status as soon as the
     // command ends; the steady-prompt path below stays as the fallback when
     // the marker never prints (for example a syntax error in the command).
-    await sendTerminalText(sessionID, wrapBatchCommand(submittedCommand, marker), signal)
+    await sendTerminalText(sessionID, wrapBatchCommand(submittedCommand, marker, result.host.terminalShell), signal)
 
     let offset = opened.offset
     let pollFailures = 0
@@ -297,7 +297,7 @@ async function executeHost(hostID: string, submittedCommand: string, identity: n
       result.truncated = result.truncated || chunk.truncated
       const finished = Boolean(chunk.exitedAt || chunk.closed)
       appendOutput(result, hostID, chunk.data, finished)
-      const exitCode = batchExitCode(result.rawOutput, marker)
+      const exitCode = batchExitCode(result.rawOutput, marker, result.host.terminalShell)
       if (exitCode !== null) {
         result.output = stripBatchWrapper(result.output, submittedCommand, marker)
         result.state = exitCode === 0 ? 'succeeded' : 'failed'

@@ -1,6 +1,13 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["远程桌面连接失败，请检查 Windows 账户、NLA、RDP 服务和证书。","Remote desktop connection failed. Check the Windows account, NLA, RDP service and certificate."],
+  ["关闭未确认，请重试关闭会话。","Close was not confirmed. Retry closing the session."],
+  ["使用目标 Windows 的登录账户连接，凭据仅用于当前会话。","Sign in with the target Windows account. Credentials are used only for this session."],
+  ["域（可选）","Domain (optional)"],
+  ["连接远程桌面","Connect to remote desktop"],
+  ["剪贴板、文件传输和打印重定向默认关闭。","Clipboard, file transfer and printer redirection are disabled by default."],
+  ["正在连接远程桌面…","Connecting to remote desktop…"],
   ["自动备份","Automatic backup"],
   ["远程存储","Remote storage"],
   ["启用定时备份","Enable scheduled backups"],

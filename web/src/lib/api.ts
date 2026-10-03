@@ -1763,14 +1763,15 @@ export const api = {
       }),
     createPairingCode: (): Promise<ClusterPairingCode> =>
       request<ClusterPairingCode>('/cluster/pairing-codes/v2', { method: 'POST' }),
-    createLightEnrollment: (name?: string): Promise<ClusterLightEnrollment> =>
+    createLightEnrollment: (name?: string, platform: 'linux' | 'windows' = 'linux'): Promise<ClusterLightEnrollment> =>
       request<ClusterLightEnrollment>('/cluster/light-enrollments', {
         method: 'POST',
-        body: name?.trim() ? { name: name.trim() } : undefined,
+        body: { name: name?.trim() || undefined, platform },
       }),
     lightBatchEnrollments: (signal?: AbortSignal): Promise<ClusterLightBatchEnrollmentList> =>
       request<ClusterLightBatchEnrollmentList>('/cluster/light-batch-enrollments', { signal }),
     createLightBatchEnrollment: (body: {
+	  platform?: 'linux' | 'windows'
       namePrefix?: string
       maxUses: number
       expiresInSeconds: number
@@ -1815,6 +1816,16 @@ export const api = {
       const url = new URL(buildUrl(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-stream`), window.location.href)
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
       return { url: url.toString(), csrf: csrfToken }
+    },
+  },
+  desktops: {
+    policy: (hostId: string, allowed: boolean): Promise<{ allowed: boolean }> => request('/desktop-sessions/policy', { method: 'POST', body: { hostId, allowed } }),
+    open: (hostId: string): Promise<{ sessionId: string; nonce: string }> => request('/desktop-sessions', { method: 'POST', body: { hostId } }),
+    close: (sessionId: string): Promise<{ closed: boolean }> => request(`/desktop-sessions/${encodeURIComponent(sessionId)}/close`, { method: 'POST' }),
+    socket: (sessionId: string): string => {
+      const url = new URL(buildUrl(`/desktop-sessions/${encodeURIComponent(sessionId)}/stream`), window.location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      return url.toString()
     },
   },
   terminals: {

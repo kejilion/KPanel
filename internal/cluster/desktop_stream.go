@@ -24,7 +24,7 @@ func validDesktopNonce(nonce string) bool {
 
 func (s *Service) OpenDesktopStream(ctx context.Context, node, nonce string) (io.ReadWriteCloser, error) {
 	record, err := s.light.Host(node)
-	if err != nil || !lightHostIsWindows(record) || !lightPlatformAllows(record, "desktop", s.now().UTC()) || !validDesktopNonce(nonce) {
+	if err != nil || !s.desktopAllowed(node) || !lightHostIsWindows(record) || !lightPlatformAllows(record, "desktop", s.now().UTC()) || !validDesktopNonce(nonce) {
 		return nil, ErrTerminalUnavailable
 	}
 	h := s.fileStreamHub
@@ -34,7 +34,7 @@ func (s *Service) OpenDesktopStream(ctx context.Context, node, nonce string) (io
 	}
 	h.mu.Lock()
 	control := h.desktopControls[node]
-	if control == nil || control.conn.ctx.Err() != nil {
+	if control == nil || control.conn.ctx.Err() != nil || !s.desktopAllowed(node) {
 		h.mu.Unlock()
 		return nil, ErrTerminalUnavailable
 	}
@@ -68,7 +68,8 @@ func (s *Service) OpenDesktopStream(ctx context.Context, node, nonce string) (io
 			return nil, err
 		}
 		stream := newDesktopByteStream(conn)
-		context.AfterFunc(ctx, conn.close)
+		stopParent := context.AfterFunc(ctx, conn.close)
+		context.AfterFunc(conn.ctx, func() { stopParent() })
 		return stream, nil
 	case <-control.conn.ctx.Done():
 		return nil, ErrTerminalUnavailable
@@ -98,7 +99,8 @@ func (c *TerminalRelayClient) RunDesktopStream(ctx context.Context, origin, node
 	if err != nil {
 		return err
 	}
-	defer control.close()
+	var workers sync.WaitGroup
+	defer func() { control.close(); workers.Wait() }()
 	kind, data, err := control.read()
 	if err != nil || kind != streamOpen || !validID(string(data)) {
 		return ErrAuthentication
@@ -107,7 +109,7 @@ func (c *TerminalRelayClient) RunDesktopStream(ctx context.Context, origin, node
 	if connected != nil {
 		connected()
 	}
-	gate := make(chan struct{}, 2)
+	gate := make(chan struct{}, 1)
 	for {
 		kind, data, err := control.readControl()
 		if err != nil {
@@ -134,7 +136,9 @@ func (c *TerminalRelayClient) RunDesktopStream(ctx context.Context, origin, node
 				}
 				continue
 			}
+			workers.Add(1)
 			go func() {
+				defer workers.Done()
 				defer func() { <-gate }()
 				conn, err := dialFileStream(control.ctx, c.client, origin, node, target, key, peer, time.Now(),
 					fileStreamHello{Role: streamRoleLightDesktopData, RequestID: requestID, Generation: generation})
@@ -165,6 +169,8 @@ type desktopByteStream struct {
 
 func newDesktopByteStream(conn *fileStreamConn) *desktopByteStream {
 	stream := &desktopByteStream{conn: conn, idle: time.AfterFunc(30*time.Minute, conn.close)}
+	lifetime := time.AfterFunc(8*time.Hour, conn.close)
+	context.AfterFunc(conn.ctx, func() { lifetime.Stop() })
 	context.AfterFunc(conn.ctx, func() { stream.idle.Stop() })
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)

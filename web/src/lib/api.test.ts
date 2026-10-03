@@ -1930,6 +1930,7 @@ describe('API client', () => {
     expect((clusterCalls[7]?.[1] as RequestInit).body).toBeUndefined()
     expect(JSON.parse(String((clusterCalls[8]?.[1] as RequestInit).body))).toEqual({
       name: '香港轻量节点',
+      platform: 'linux',
     })
 
     const mutationCalls = clusterCalls.filter(

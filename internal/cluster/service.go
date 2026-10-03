@@ -90,6 +90,7 @@ type runtimeState struct {
 }
 
 type Service struct {
+	desktopPolicy         *desktopPolicy
 	windowsNodePublisher  string
 	windowsNodeProfileOID string
 	managed               *managedControl
@@ -284,8 +285,9 @@ func NewService(config ServiceConfig) (*Service, error) {
 	remoteV2, _ := config.Remote.(remoteV2API)
 	now := config.Now().UTC()
 	service := &Service{
-		managed: openManagedControl(config.DataDir),
-		store:   store, secrets: secrets,
+		desktopPolicy: openDesktopPolicy(config.DataDir),
+		managed:       openManagedControl(config.DataDir),
+		store:         store, secrets: secrets,
 		storeV2: storeV2, filePeersV2: filePeersV2, secretsV2: secretsV2,
 		fileRelayV1Grants: fileRelayV1Grants,
 		remote:            config.Remote, remoteV2: remoteV2, telemetry: config.Telemetry, terminal: config.Terminal,

@@ -45,6 +45,30 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && !s.checkCSRF(w, r, session) {
 		return
 	}
+	if r.URL.Path == desktopSessionsPath+"/policy" && r.Method == http.MethodPost {
+		var input struct {
+			HostID  string `json:"hostId"`
+			Allowed *bool  `json:"allowed"`
+		}
+		if s.decodeJSON(w, r, &input) != nil {
+			return
+		}
+		if input.Allowed == nil {
+			s.writeProblem(w, r, 400, "invalid_desktop_request", "Missing desktop policy", "")
+			return
+		}
+		if s.audit(r, session.User.ID, "desktop.policy", "cluster_host", input.HostID, "intent", map[string]any{"allowed": *input.Allowed}) != nil {
+			s.writeProblem(w, r, 503, "audit_unavailable", "Audit storage unavailable", "")
+			return
+		}
+		if err := s.cluster.SetDesktopAllowed(input.HostID, *input.Allowed); err != nil {
+			s.writeProblem(w, r, 409, "desktop_policy_failed", "Desktop policy update failed", "")
+			return
+		}
+		_ = s.audit(r, session.User.ID, "desktop.policy", "cluster_host", input.HostID, "success", map[string]any{"allowed": *input.Allowed})
+		s.writeJSON(w, 200, map[string]bool{"allowed": *input.Allowed})
+		return
+	}
 	if r.URL.Path == desktopSessionsPath && r.Method == http.MethodPost {
 		var input struct {
 			HostID string `json:"hostId"`
@@ -90,7 +114,7 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 				hostCount++
 			}
 		}
-		if len(s.desktopSessions) >= 16 || userCount >= 4 || hostCount >= 2 {
+		if len(s.desktopSessions) >= 4 || userCount >= 2 || hostCount >= 1 {
 			s.desktopSessionMu.Unlock()
 			s.writeProblem(w, r, 429, "desktop_limit", "Desktop session limit reached", "")
 			return
@@ -107,7 +131,7 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, 404, "route_not_found", "Route not found", "")
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithDeadline(r.Context(), session.ExpiresAt)
 	defer cancel()
 	s.desktopSessionMu.Lock()
 	item := s.desktopSessions[parts[0]]
@@ -156,7 +180,7 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	context.AfterFunc(ctx, func() { _ = ws.CloseNow(); _ = stream.Close() })
 	_ = s.audit(r, item.userID, "desktop.open", "cluster_host", item.hostID, "success", nil)
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -195,6 +219,9 @@ func (s *Server) handleDesktopSession(w http.ResponseWriter, r *http.Request) {
 	for {
 		kind, data, err := ws.Read(ctx)
 		if err != nil || kind != websocket.MessageBinary || len(data) == 0 {
+			break
+		}
+		if _, err := s.auth.Authenticate(token); err != nil {
 			break
 		}
 		if _, err = stream.Write(data); err != nil {

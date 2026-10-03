@@ -16,19 +16,20 @@ import (
 )
 
 type fileStreamHub struct {
-	mu               sync.Mutex
-	ctx              context.Context
-	stop             context.CancelFunc
-	connections      map[*fileStreamConn]string
-	controls         map[string]*fileStreamControl
-	streamNodes      map[string]bool
-	pending          map[string]*fileStreamPending
-	requests         map[*fileStreamLease]string
-	preauth          chan struct{}
-	sockets          *fileStreamLimiter
-	limits           *fileStreamLimits
-	terminalControls map[string]*fileStreamControl
-	desktopControls  map[string]*fileStreamControl
+	mu                 sync.Mutex
+	ctx                context.Context
+	stop               context.CancelFunc
+	connections        map[*fileStreamConn]string
+	controls           map[string]*fileStreamControl
+	streamNodes        map[string]bool
+	pending            map[string]*fileStreamPending
+	requests           map[*fileStreamLease]string
+	preauth            chan struct{}
+	sockets            *fileStreamLimiter
+	limits             *fileStreamLimits
+	terminalControls   map[string]*fileStreamControl
+	desktopControls    map[string]*fileStreamControl
+	desktopConnections map[*fileStreamConn]string
 }
 
 type fileStreamLease struct {
@@ -280,8 +281,20 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 	c := newFileStreamConn(h.ctx, ws, tx, rx)
 	defer func() { result.Completed = c.completed.Load(); result.StatusCode = int(c.responseStatus.Load()) }()
 	h.connections[c] = owner
+	if hello.Role == streamRoleLightDesktopControl || hello.Role == streamRoleLightDesktopData {
+		if h.desktopConnections == nil {
+			h.desktopConnections = make(map[*fileStreamConn]string)
+		}
+		h.desktopConnections[c] = envelope.ControllerID
+	}
 	h.mu.Unlock()
-	defer func() { c.close(); h.mu.Lock(); delete(h.connections, c); h.mu.Unlock() }()
+	defer func() {
+		c.close()
+		h.mu.Lock()
+		delete(h.connections, c)
+		delete(h.desktopConnections, c)
+		h.mu.Unlock()
+	}()
 	if err := ws.Write(ctx, websocket.MessageBinary, message); err != nil {
 		return
 	}
@@ -310,6 +323,10 @@ func (s *Service) ServeFileStream(w http.ResponseWriter, r *http.Request, source
 			return
 		}
 		delete(h.pending, hello.RequestID)
+		if hello.Role == streamRoleLightDesktopData {
+			stopWithControl := context.AfterFunc(pending.control.conn.ctx, c.close)
+			defer stopWithControl()
+		}
 		pending.ready <- c
 		h.mu.Unlock()
 		<-c.ctx.Done()
