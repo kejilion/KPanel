@@ -1,0 +1,2967 @@
+[
+  {
+    "coverage_id": "AI%20and%20MCP%20delegated%20actions::model%20and%20tool%20arguments%20to%20file%2C%20backup%2C%20and%20host-operation%20dispatch::internal%2Fai%2Binternal%2Fpanel%2Bcmd%2Fkpanel-mcp::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "AI and MCP delegated actions",
+      "boundary": "model and tool arguments to file, backup, and host-operation dispatch",
+      "subsystem": "internal/ai+internal/panel+cmd/kpanel-mcp",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "AI and MCP delegated actions",
+    "boundary": "model and tool arguments to file, backup, and host-operation dispatch",
+    "subsystem": "internal/ai+internal/panel+cmd/kpanel-mcp",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kpanel-mcp/main.go",
+      "internal/ai/client.go",
+      "internal/filemanager/chmod_linux.go",
+      "internal/filemanager/chmod_other.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_tools.go",
+      "internal/webenv/service.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#MCP and sub-agent trust",
+      "AI-AND-LLM.md#Output and disclosure",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "cmd/kpanel-mcp/main.go",
+      "internal/ai/client.go",
+      "internal/ai/runtime.go",
+      "internal/filemanager/chmod_linux.go",
+      "internal/filemanager/chmod_other.go",
+      "internal/filemanager/manager.go",
+      "internal/mcpaccess/store.go",
+      "internal/mcpbridge/bridge.go",
+      "internal/panel/ai_handlers.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/files.go",
+      "internal/panel/host_operations.go",
+      "internal/panel/mcp.go",
+      "internal/panel/mcp_catalog.go",
+      "internal/panel/mcp_management.go",
+      "internal/panel/server.go",
+      "internal/webenv/service.go",
+      "internal/agent/server.go",
+      "internal/agent/files.go",
+      "deploy/systemd/kejilion-agent.service"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "cmd/kpanel-mcp/main.go",
+          "internal/ai/client.go",
+          "internal/ai/runtime.go",
+          "internal/filemanager/chmod_linux.go",
+          "internal/filemanager/chmod_other.go",
+          "internal/filemanager/manager.go",
+          "internal/mcpaccess/store.go",
+          "internal/mcpbridge/bridge.go",
+          "internal/panel/ai_handlers.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/files.go",
+          "internal/panel/host_operations.go",
+          "internal/panel/mcp.go",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go",
+          "internal/panel/server.go",
+          "internal/webenv/service.go"
+        ],
+        "invariant": "模型和 MCP 委派参数只能进入固定 schema、明确授权的操作和受审计 dispatch；文件授权必须在真正文件系统操作时仍指向原受保护路径。",
+        "method": "source",
+        "result": "已检查 AI 固定工具定义/strict decode、tool-call 名和 run/user 校验、非只读操作审批及 hostOps 到 Agent；MCP token/host identity、operation schema 签名、operation/domain/file-root grant、digest 审批、claim 与派发前复核，以及 kpanel-mcp 仅向 HTTPS/loopback bridge 的边界。FileManager 规范化、protected/read-only 检查和拒绝当前 symlink 生效，但 WriteText 后续临时文件创建与 Rename 仍按路径重新解析；与 unit6 同一条件性父目录替换候选关联。WebEnv backup ID 使用固定格式并验证固定参数。",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p3_filemanager_trace_contract_retry_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh Phase 3 selected one actual path ending at rootFS.Rename in Manager.WriteText. The separate createTemp OpenFile side effect is retained in evidence rather than mechanically relabeled as propagation or added as a second trace sink. Filesystem behavior and deployment permissions remain unverified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p5_filemanager_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 verified the single-sink record after rereading its source paths. It confirmed createTemp creates the temporary file by path and Rename publishes by path; both are described in the record/evidence, while Rename is the selected terminal sink.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "filemanager.protected-parent-symlink-toctou"
+    ],
+    "unresolved": [
+      "未在禁用产品执行且无合格 sandbox 的阶段复现；相关父目录是否允许低信任本地身份替换取决于部署 ACL。"
+    ],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "32013251c36c5738b04070897897662878328642",
+      "4f0c3368574efb89f85dfa4e265b236bb469c16f",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "9f8553db35a8cfe0733044e21e85b436bb5794d6",
+      "ae71b9b3a8351a9f86b3b18b8a6b89323642b4f6",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "ec4e5c0616cab38c3137bcec480a32934902e657",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "AI%20model%20tool%20arguments%20to%20privileged%20host%20operations::provider-returned%20tool%20fields%20through%20Panel%20argument%20handling%20to%20Agent%20Docker%2C%20site%2C%20and%20interactive-job%20sinks::internal%2Fai%2Binternal%2Fpanel%2Binternal%2Fagent%2Binternal%2Fappmarket::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "AI model tool arguments to privileged host operations",
+      "boundary": "provider-returned tool fields through Panel argument handling to Agent Docker, site, and interactive-job sinks",
+      "subsystem": "internal/ai+internal/panel+internal/agent+internal/appmarket",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "AI model tool arguments to privileged host operations",
+    "boundary": "provider-returned tool fields through Panel argument handling to Agent Docker, site, and interactive-job sinks",
+    "subsystem": "internal/ai+internal/panel+internal/agent+internal/appmarket",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "internal/ai/client.go",
+      "internal/agent/job_input.go",
+      "internal/agent/server.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "covered",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/agent/job_input.go",
+      "internal/agent/server.go",
+      "internal/ai/client.go",
+      "internal/ai/runtime.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal.go",
+      "internal/dockerx/container_tools.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/apps.go",
+      "internal/panel/server.go",
+      "internal/sites/recipe_jobs.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/agent/job_input.go",
+          "internal/agent/server.go",
+          "internal/ai/client.go",
+          "internal/ai/runtime.go",
+          "internal/appmarket/jobs.go",
+          "internal/appmarket/terminal.go",
+          "internal/dockerx/container_tools.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/apps.go",
+          "internal/panel/server.go",
+          "internal/sites/recipe_jobs.go"
+        ],
+        "invariant": "Provider 返回的 tool 字段在进入 Docker、site/app 与交互任务 sink 前必须重新匹配已定义 schema、资源身份、allowlist 与固定 argv；不得把模型字符串拼入宿主 shell。",
+        "method": "source",
+        "result": "tool call 名从注册定义中查找，参数 strict decode 并拒绝未知键；应用动作/选择器和站点 recipe 映射到固定 action/recipe 与参数化 argv。交互 job ID、状态、输入长度和 NUL 都重新校验。Docker AI schema 将 command 解为 []string，而 Agent 的 ContainerExecInput.command 是 string，类型不匹配会在 Agent decodeJSON 阶段拒绝；因此未见模型 tool args 到 ContainerExec shell 的路径。交叉检查 Injection、Access control 和 Chained boundary 后未发现独立可成立候选。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "32013251c36c5738b04070897897662878328642",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "ec4e5c0616cab38c3137bcec480a32934902e657",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": "panelAITools.Definitions exposes model arguments for host_docker_exec.command, host_docker_task command/compose configuration, host_site_change.payload, and host_job_input.data; prepareWrite forwards them to Agent Docker, site, and active-job input routes. The existing Injection units cover app-market script selection and site recipe jobs, not these distinct AI tool argument paths. The AI access-control and AI-to-Agent chain units assign other classes, so this model-input-to-sink Injection path remains unmapped."
+  },
+  {
+    "coverage_id": "AI%20provider%20response%20and%20tool-call%20resource%20accumulation::configured%20provider%20response%20streams%20and%20tool-call%20parsing%20into%20Panel%20tool%20execution%20and%20returned%20Agent%20data::internal%2Fai%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "AI provider response and tool-call resource accumulation",
+      "boundary": "configured provider response streams and tool-call parsing into Panel tool execution and returned Agent data",
+      "subsystem": "internal/ai+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "AI provider response and tool-call resource accumulation",
+    "boundary": "configured provider response streams and tool-call parsing into Panel tool execution and returned Agent data",
+    "subsystem": "internal/ai+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/ai/client.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "candidate",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/ai/client.go",
+      "internal/ai/runtime.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go",
+      "internal/panel/ai_handlers.go",
+      "internal/ai/service.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/ai/client.go",
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Provider response、SSE event data 与每次 tool-call 参数在交给 Panel 执行前应有累计字节/调用数上限，而不是仅限制单行或在 stream 结束后检查。",
+        "method": "source",
+        "result": "HTTPModelClient.do 对 2xx 返回未设 response-body 总字节上限；scanSSE 将单行限制为 2 MiB，但在空行 flush 前对每条 data 行执行 data +=，一个事件可无限累计。随后 OpenAI Chat 的 Arguments append (client.go:900)、Responses (362)、Anthropic (1180) 和 Gemini tool-call slice (1499-1501) 在 provider stream 结束前累计。已有缓解包括 HTTP client 180s timeout、2 MiB 单行 ceiling、runtime 中 1 MiB assistant 文本 ceiling、以及 stream 返回后才检查最多 20 个 calls 和每个参数 64 KiB (runtime.go:337-344)；这些不限制缓冲期间累计 SSE event/response/tool args。",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p3_ai_stream_20261004",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/ai_handlers.go",
+          "internal/ai/service.go",
+          "internal/ai/runtime.go",
+          "internal/ai/client.go"
+        ],
+        "invariant": "Provider response, SSE event data, and tool-call arguments need aggregate byte limits before unbounded data is retained or dispatched.",
+        "method": "source",
+        "result": "Fresh Phase 3 independently confirmed the configured OpenAI-compatible Chat response path, SSE event accumulation, and cross-event tool-argument accumulation before post-stream limits. The raw trace is entrypoint, propagation-only interior, and one terminal sink. Provider/proxy caps, deployed runtime scope, and meaningful service impact remain unverified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p5_ai_stream_20261004",
+        "reviewed_paths": [
+          "internal/panel/server.go",
+          "internal/panel/ai_handlers.go",
+          "internal/ai/service.go",
+          "internal/ai/runtime.go",
+          "internal/ai/client.go"
+        ],
+        "invariant": "Provider response, SSE event data, and tool-call arguments need aggregate byte limits before unbounded data is retained or dispatched.",
+        "method": "source",
+        "result": "Fresh Phase 5 rechecked the source paths and retained needs_validation. Its replacement removes the run-scope test prohibition and source-visible session-auth condition as unresolved deployment blockers, while retaining the provider/proxy total-byte ceiling and deployed runtime scope. The replacement preserves root cause, trace, evidence, and the bounded local fixture input and is recorded as nonmaterial.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "ai.provider.stream-aggregate-unbounded"
+    ],
+    "unresolved": [
+      "The configured provider maximum stream size, outbound proxy/client total-byte policy, deployed AI runtime scope, and resulting memory impact are not established from source; no bounded fixture or deployment read was performed."
+    ],
+    "scope_commit_refs": [
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "32013251c36c5738b04070897897662878328642",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "ec4e5c0616cab38c3137bcec480a32934902e657",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": "HTTPModelClient streams successful response bodies through scanSSE; scanSSE caps individual scanner tokens but concatenates data lines and aggregates tool-call parts without a total response-byte, event, or call-count bound before returning. The client timeout limits duration, while the runtime's tool-call and argument-size checks occur after this parsing and aggregation. Existing Resource coverage targets file-manager and terminal streams; the AI provider/model-parameter path appears in other units under Access control and chained-boundary classes but has no explicit Resource unit."
+  },
+  {
+    "coverage_id": "AI-to-Agent%20privileged%20action%20trust%20boundary::AI%20and%20MCP%20tool%20schemas%20and%20approval%20through%20Panel%20dispatch%20to%20Agent%20host-operation%20handlers::internal%2Fai%2Binternal%2Fpanel%2Binternal%2Fagent%2Bcmd%2Fkpanel-mcp::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "AI-to-Agent privileged action trust boundary",
+      "boundary": "AI and MCP tool schemas and approval through Panel dispatch to Agent host-operation handlers",
+      "subsystem": "internal/ai+internal/panel+internal/agent+cmd/kpanel-mcp",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "AI-to-Agent privileged action trust boundary",
+    "boundary": "AI and MCP tool schemas and approval through Panel dispatch to Agent host-operation handlers",
+    "subsystem": "internal/ai+internal/panel+internal/agent+cmd/kpanel-mcp",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "cmd/kpanel-mcp/main.go",
+      "internal/agent/job_input.go",
+      "internal/agent/server.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#MCP and sub-agent trust",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "candidate",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "cmd/kpanel-mcp/main.go",
+      "internal/agent/job_input.go",
+      "internal/agent/server.go",
+      "internal/mcpaccess/store.go",
+      "internal/mcpbridge/bridge.go",
+      "internal/panel/ai_handlers.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/host_operations.go",
+      "internal/panel/mcp.go",
+      "internal/panel/mcp_catalog.go",
+      "internal/panel/mcp_management.go",
+      "internal/panel/server.go",
+      "internal/ai/runtime.go",
+      "internal/agent/files.go",
+      "internal/filemanager/manager.go",
+      "deploy/systemd/kejilion-agent.service"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "cmd/kpanel-mcp/main.go",
+          "internal/agent/job_input.go",
+          "internal/agent/server.go",
+          "internal/mcpaccess/store.go",
+          "internal/mcpbridge/bridge.go",
+          "internal/panel/ai_handlers.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/host_operations.go",
+          "internal/panel/mcp.go",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "AI 与 MCP 到 Agent 的高权限操作须经过身份/主机绑定、严格参数解析、权限与审批重检，并由 Agent 在本地重新验证请求。",
+        "method": "source",
+        "result": "AI runtime 对 run owner、tool-call 状态、非只读审批与固定 tool 名复核；Panel 参数经 strict decoder 和 HostOperationService；Agent 每请求检查 Bearer，JSON 解码有 body cap、拒绝未知字段和多 JSON。MCP 侧校验活动 token、host identity、operation policy/schema signature、file roots；mutation 默认需 Panel 决策，digest claim 后派发前重查授权。kpanel-mcp bridge 仅连接 HTTPS/loopback。共享 FileManager sink 在已授权派发后仍存在 unit6 所述父目录竞态，链接同一 fingerprint。",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p3_filemanager_trace_contract_retry_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh Phase 3 selected one actual path ending at rootFS.Rename in Manager.WriteText. The separate createTemp OpenFile side effect is retained in evidence rather than mechanically relabeled as propagation or added as a second trace sink. Filesystem behavior and deployment permissions remain unverified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p5_filemanager_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 verified the single-sink record after rereading its source paths. It confirmed createTemp creates the temporary file by path and Rename publishes by path; both are described in the record/evidence, while Rename is the selected terminal sink.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "filemanager.protected-parent-symlink-toctou"
+    ],
+    "unresolved": [
+      "父目录替换要求攻击者具备相关目录写/rename 权限并与获批操作并发；权限事实和复现均未验证。"
+    ],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "32013251c36c5738b04070897897662878328642",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "9f8553db35a8cfe0733044e21e85b436bb5794d6",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "coverage_critic_source_basis": "The AI unit starts at tool dispatch and assigns Access control while excluding Chained vulnerabilities; the local Agent unit does not start at the AI/MCP boundary. Source maps model tool arguments such as host app actions and job input into Panel dispatch and Agent handlers, so the guarantee carried across that privileged cross-component path has no dedicated coverage."
+  },
+  {
+    "coverage_id": "Agent%20file-manager%20path%2C%20operation%2C%20and%20trash%20lifecycle::Panel%20and%20AI%20file%20requests%20through%20the%20local%20Agent%20to%20rooted%20filesystem%20operations::internal%2Ffilemanager%20and%20its%20Panel%2FAgent%20entrypoints::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Agent file-manager path, operation, and trash lifecycle",
+      "boundary": "Panel and AI file requests through the local Agent to rooted filesystem operations",
+      "subsystem": "internal/filemanager and its Panel/Agent entrypoints",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Agent file-manager path, operation, and trash lifecycle",
+    "boundary": "Panel and AI file requests through the local Agent to rooted filesystem operations",
+    "subsystem": "internal/filemanager and its Panel/Agent entrypoints",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/agent/server.go",
+      "internal/filemanager/chmod_linux.go",
+      "internal/filemanager/chmod_other.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 3,
+    "status": "covered",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/archive_jobs.go",
+      "internal/filemanager/chmod_linux.go",
+      "internal/filemanager/chmod_other.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/files.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/filemanager/archive.go",
+          "internal/filemanager/archive_jobs.go",
+          "internal/filemanager/chmod_linux.go",
+          "internal/filemanager/chmod_other.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "本地 Agent 文件资源必须限制路径根、文件类型、操作集合、内容大小、版本冲突、归档类型/展开预算和 trash 生命周期；Panel 与 AI 入口应沿用相同能力约束。",
+        "method": "source",
+        "result": "检查 os.OpenRoot('/') rooted filesystem、normalize/pathInside、每段 Lstat 和当前 symlink 拒绝，WriteText 的 UTF-8/NUL/大小、regular-file、resourceVersion、SameFile 与 temp+rename，Upload/Action/trash/archive 的计数和字节预算，以及共享 protected/read-only 配置。Panel file endpoints 有 Session/Origin/CSRF、body cap 和严格 JSON；Agent file endpoints 有 Bearer、body cap、严格 JSON。Linux chmod 使用 descriptor/O_NOFOLLOW/inode walk。WriteText 路径检查与后续父目录授权竞态单独归入 unit6，unit5 常规文件能力和资源生命周期未发现第二个候选。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "32013251c36c5738b04070897897662878328642",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "ae71b9b3a8351a9f86b3b18b8a6b89323642b4f6",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [
+      "filemanager.archive-job-metadata-version-substitution"
+    ],
+    "coverage_critic_source_basis": "The AI unit maps manager.go to model-tool authorization and excludes Resource and file handling. But Manager exposes rooted filesystem operations, trash, and archive jobs; Agent server initializes and serves that manager, while Panel server dispatches direct /api/v1/files routes as well as AI-mediated calls. The cluster relay unit covers cross-node relay paths, not this local Panel-to-Agent filesystem boundary. These paths need a distinct review of path containment, mutation, trash/restore, and archive resource limits. This critic did not complete the other planned file categories."
+  },
+  {
+    "coverage_id": "Agent%20file-manager%20protected-path%20authorization::Panel%20and%20AI%20file%20requests%20through%20symlink-sensitive%20path%20checks%20to%20protected%20host%20paths::internal%2Ffilemanager%2Binternal%2Fagent%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Agent file-manager protected-path authorization",
+      "boundary": "Panel and AI file requests through symlink-sensitive path checks to protected host paths",
+      "subsystem": "internal/filemanager+internal/agent+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Agent file-manager protected-path authorization",
+    "boundary": "Panel and AI file requests through symlink-sensitive path checks to protected host paths",
+    "subsystem": "internal/filemanager+internal/agent+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/agent/server.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "candidate",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/agent/files.go",
+      "internal/agent/server.go",
+      "internal/filemanager/manager.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/files.go",
+      "internal/panel/server.go",
+      "internal/ai/runtime.go",
+      "deploy/systemd/kejilion-agent.service",
+      "internal/panel/mcp_catalog.go",
+      "internal/panel/mcp_management.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/agent/files.go",
+          "internal/agent/server.go",
+          "internal/filemanager/manager.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/files.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "受保护路径判断、symlink 检查、rooted filesystem 与写操作必须共同保持同一父目录身份；仅在解析时检查路径不足以保护之后按字符串路径执行的创建/重命名。",
+        "method": "source",
+        "result": "Agent 默认 protected list 覆盖 KPanel state、secrets、node state 并把真实 symlink target 加入列表；resolveExisting 先 normalize、pathInside、内部组件及逐段 Lstat/拒 symlink，mutationError 同时拒受保护目录及其祖先。WriteText 还要求普通文件、expected resourceVersion、已打开源文件 SameFile。但随后用 parentVirtual 通过 rootFS.OpenFile 创建临时文件，并用相同 virtual path 做 Rename，没有在创建/rename 时再次检查 protected predicate 或固定已验证父目录 descriptor。Panel session/Origin/CSRF、AI tool schema/审批和 MCP path grant 能限制初始请求，却不消除获批后文件系统层面的竞态；与 unit5 常规 file/resource safeguards 区分。",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p3_filemanager_trace_contract_retry_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh Phase 3 selected one actual path ending at rootFS.Rename in Manager.WriteText. The separate createTemp OpenFile side effect is retained in evidence rather than mechanically relabeled as propagation or added as a second trace sink. Filesystem behavior and deployment permissions remain unverified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "rework_p5_filemanager_20261004",
+        "reviewed_paths": [
+          "internal/ai/runtime.go",
+          "internal/panel/ai_tools.go",
+          "internal/agent/server.go",
+          "internal/agent/files.go",
+          "internal/filemanager/manager.go",
+          "deploy/systemd/kejilion-agent.service",
+          "internal/panel/mcp_catalog.go",
+          "internal/panel/mcp_management.go"
+        ],
+        "invariant": "The protected-path decision and the final filesystem operation must remain bound to the same checked parent directory and authorization.",
+        "method": "source",
+        "result": "Fresh independent Phase 5 verified the single-sink record after rereading its source paths. It confirmed createTemp creates the temporary file by path and Rename publishes by path; both are described in the record/evidence, while Rename is the selected terminal sink.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "filemanager.protected-parent-symlink-toctou"
+    ],
+    "unresolved": [
+      "没有产品执行且无合格 OS sandbox，未验证 os.Root 在目标 Go/OS 上的父 symlink 路径行为；攻击者对相关祖先目录的 rename 权限与并发时机属于未观测部署事实。"
+    ],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "32013251c36c5738b04070897897662878328642",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "ae71b9b3a8351a9f86b3b18b8a6b89323642b4f6",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "coverage_critic_source_basis": "DefaultFileManagerConfig roots the manager at / and defines protected paths. resolveExisting checks path components with Lstat and returns a path; Open and mutation operations later use path-based rootFS calls, while protection compares normalized path strings. The existing file-manager unit covers Resource and file handling but excludes Access control, leaving this protected-path authorization boundary unmapped."
+  },
+  {
+    "coverage_id": "App-market%20and%20site%20recipe%20job%20execution::authenticated%20job%20configuration%20to%20app%20scripts%2C%20stored%20task%20identity%2C%20and%20remote%20host%20effects::internal%2Fappmarket%2Binternal%2Fsites%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "App-market and site recipe job execution",
+      "boundary": "authenticated job configuration to app scripts, stored task identity, and remote host effects",
+      "subsystem": "internal/appmarket+internal/sites+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "App-market and site recipe job execution",
+    "boundary": "authenticated job configuration to app scripts, stored task identity, and remote host effects",
+    "subsystem": "internal/appmarket+internal/sites+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "internal/appmarket/jobs.go",
+      "internal/panel/apps.go",
+      "internal/sites/recipe_jobs.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Application-state and device-lifecycle",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/appmarket/jobs.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/apps.go",
+      "internal/sites/recipe_jobs.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/appmarket/jobs.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/apps.go",
+          "internal/sites/recipe_jobs.go"
+        ],
+        "invariant": "认证 Panel/AI 操作只能转成有界的注册动作、验证后的 task identity 和固定的 script argv；remote host effects 必须保留 host/资源 capability 约束。",
+        "method": "source",
+        "result": "Panel app routes 经过 Session/Origin/CSRF 与 typed input；appmarket 校验已注册 app capability、selector/action/expected container/access mode，脚本须为 KPanel-compatible regular file 且 Linux 下 root-owned、不可被 group/world 写。root worker 校验 job ID、action、selector 等，再以 /bin/bash script app <selector> 调用并以环境变量传 action。Site recipe 从已知模板/recipe/domain/upstream 建立 job，worker 再执行 invocationForRecipeJob 与证书参数检查；script 路径固定且输入通过 argv/环境而非字符串拼接。job 状态有尺寸限制和 0600 原子文件；现存 job 目录只校验目录/非 symlink、不校验 owner/mode，但没有源证据证明部署中存在可写低信任主体，故记为 hardening 而非 candidate。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "App-market%20privileged%20script%20execution::Panel%20and%20AI%20app-action%20parameters%20through%20stored%20app-job%20selectors%20to%20Bash%20and%20PTY%20execution::internal%2Fpanel%2Binternal%2Fagent%2Binternal%2Fappmarket::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "App-market privileged script execution",
+      "boundary": "Panel and AI app-action parameters through stored app-job selectors to Bash and PTY execution",
+      "subsystem": "internal/panel+internal/agent+internal/appmarket",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "App-market privileged script execution",
+    "boundary": "Panel and AI app-action parameters through stored app-job selectors to Bash and PTY execution",
+    "subsystem": "internal/panel+internal/agent+internal/appmarket",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "internal/agent/server.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/apps.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Tool and action",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "covered",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "internal/agent/server.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/apps.go",
+      "internal/panel/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/appmarket/jobs.go",
+          "internal/appmarket/terminal.go",
+          "internal/panel/ai_tools.go",
+          "internal/panel/apps.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Panel 与 AI app-action 参数不可直接成为 privileged shell 文本；App job 的 selector、action、identity、交互输入和执行脚本须独立验证并保持有界。",
+        "method": "source",
+        "result": "检查 AI schema 的 enum/字段闭合与 prepareWrite strict decoding、Panel authenticated app routes、Agent /v1/apps handler、appmarket capability/selector/action 校验和 root job worker；脚本经 trusted-file finder 兼容性校验后作为固定 argv，record.Selector 受 pattern 限制且 Action 放入受控 env。PTY 数据经长度/NUL/状态检查后写 FIFO。Docker AI command 类型在 Agent 边界不匹配并被严格解码拒绝。跨检查 shell injection、task identity/access control 与 job resource bounds，未发现任意 shell 片段或模型参数直达 PTY command 的来源。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "32013251c36c5738b04070897897662878328642",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "fb98023f844bd4fc40b6767a2dc3fcdf295e93b0"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "coverage_critic_source_basis": "The current Injection unit starts only at internal/sites/recipe_jobs.go. Panel app routes and the Agent dispatch reach appmarket jobs and terminal code, which launch /bin/bash with a selected script and record.Selector and pass record.Action through the environment. The terminal unit includes these appmarket paths but explicitly excludes Injection, leaving this distinct interpreter-input flow unmapped."
+  },
+  {
+    "coverage_id": "Cluster%20federation%20identity%20and%20signed%20requests::panel%2C%20light-node%2C%20and%20peer%20identity%20to%20v1%2Fv2%20authorization%20and%20signature%20verification::internal%2Fcluster%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "Cluster federation identity and signed requests",
+      "boundary": "panel, light-node, and peer identity to v1/v2 authorization and signature verification",
+      "subsystem": "internal/cluster+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "Cluster federation identity and signed requests",
+    "boundary": "panel, light-node, and peer identity to v1/v2 authorization and signature verification",
+    "subsystem": "internal/cluster+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      "cmd/kejilion-node/main.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/client.go",
+      "internal/cluster/service.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/sshlogin/executable_linux.go",
+      "internal/cluster/sshlogin/executable_other.go",
+      "internal/cluster/sshlogin/reader.go",
+      "internal/cluster/store.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Workload identity and IAM"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "cmd/kejilion-node/main.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/client.go",
+      "internal/cluster/service.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/sshlogin/executable_linux.go",
+      "internal/cluster/sshlogin/executable_other.go",
+      "internal/cluster/sshlogin/reader.go",
+      "internal/cluster/store.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/service_v2.go",
+      "internal/cluster/protocol_v2.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "cmd/kejilion-node/main.go",
+          "internal/cluster/client_v2.go",
+          "internal/cluster/client.go",
+          "internal/cluster/service.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/sshlogin/executable_linux.go",
+          "internal/cluster/sshlogin/executable_other.go",
+          "internal/cluster/sshlogin/reader.go",
+          "internal/cluster/store.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/service_v2.go",
+          "internal/cluster/protocol_v2.go"
+        ],
+        "invariant": "A lower-trust panel, light node or peer cannot impersonate a controller/node, change signed request meaning, bypass replay/time/path checks or exceed granted protocol scope.",
+        "method": "source",
+        "result": "Federation identity/cryptography: signature.go:57-108 canonicalizes method/path/controller/target/time/nonce, requires 16-byte nonce, +/-60s skew and Ed25519; requireSignedGET:154-161 rejects query/body. service.go:781-800,802-835,838-910,935-983 binds relay grants/pair/revoke to peer fingerprints, signed replay/rate state and scope. service_v2.go:707-830 exact-path dispatch, envelope, Noise key equality, rate/replay and file scopes; 830-865 terminal relay; 867-970 pair proof/commit; 972-1100 summary/revoke/open/time/path. protocol_v2.go:244+,357+,388+,469+,494+,518+,577-620 binds envelopes/prologue and exact POST allowlists. light_service.go:50-58 signs method/path/node/time/body hash; 68-169 binds enrollment; 171-276 validates source, nonce, rate, replay, time and constant-time HMAC. client.go:72-194 requires HTTPS/no redirects/address restrictions; 324-527 bounds parsing and DNS/public IP. client_v2.go:21-58 normalizes origin; 340-452 builds exchange. node main.go:360-429 signs raw requests and re-signs retries; 494-590 validates and atomically persists protected config. sshlogin reader/executable use trusted executable and bounded allowlisted parsers (reader.go:129,158,190-619; executable_linux.go:11-39; other.go refuses). Panel routes cluster.go:571-714 and server.go:286-349. No source-level signature, peer identity or scope bypass survived. scope_commit_refs: 120f868ae10c1277302ac93b102fe8564202a42d, 2d939270559ccec665507c8472c8569980e5a2cd, 43792db3dc4909b6a743144bc94db6dcfb7b1236, 45ca6c6141b152b2fbf344fdc2de46b187809f38, 6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80, 6fe43ea8451af16cbb17132e2f1014db65346bcf, 7439190e8fda4933b2cee0eed13f03846c2fd96a, 7625206c00df182f2cda590e4bbc7e511560973b, 7dc2394c91e73fc34581082e5bcdc6ba2744aef7, 9853759b0327e6cbb5205e822976583bb792e9d8, b37219f5942642c09a70a259c12472185c0f9eab, b4271ad0448b7d722cbc46636bd7b6ea9a28355a, b845606b5ed0e7fdbb18afb943679cec871e4f14, d11f9c6bca180369dc877d736033441a1ca448d1, ddaacc3283f2bc00566b0edcb886a95ec3f754cc, dfad70a8da1d4f5e243c3106a39b5c9bc00cb261, efc2b568012656032ec9ff639ee72e512b0c7171, f3899ad7f39d31fa9d71794544055225c01bc326, f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "45ca6c6141b152b2fbf344fdc2de46b187809f38",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "d11f9c6bca180369dc877d736033441a1ca448d1",
+      "ddaacc3283f2bc00566b0edcb886a95ec3f754cc",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "efc2b568012656032ec9ff639ee72e512b0c7171",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Cluster%20file%20relay%2C%20light-file%20access%2C%20and%20terminal%20streams::controller%20grants%20and%20session%20state%20to%20cross-node%20file%20and%20terminal%20streams::internal%2Fcluster%2Binternal%2Fpanel%2Binternal%2Fagent%2Bcmd%2Fkejilion-node::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Cluster file relay, light-file access, and terminal streams",
+      "boundary": "controller grants and session state to cross-node file and terminal streams",
+      "subsystem": "internal/cluster+internal/panel+internal/agent+cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Cluster file relay, light-file access, and terminal streams",
+    "boundary": "controller grants and session state to cross-node file and terminal streams",
+    "subsystem": "internal/cluster+internal/panel+internal/agent+cmd/kejilion-node",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/legacy_migration.go",
+      "internal/agent/server.go",
+      "internal/cluster/file_relay_v1_grants.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_input.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/light_file.go",
+      "internal/panel/terminal_stream.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/legacy_migration.go",
+      "internal/agent/server.go",
+      "internal/cluster/file_relay_v1_grants.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_input.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/light_file.go",
+      "internal/panel/terminal_stream.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/protocol_v2.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "cmd/kejilion-node/file_broker.go",
+          "cmd/kejilion-node/legacy_migration.go",
+          "internal/agent/server.go",
+          "internal/cluster/file_relay_v1_grants.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/terminal_input.go",
+          "internal/cluster/terminal_stream.go",
+          "internal/panel/light_file.go",
+          "internal/panel/terminal_stream.go",
+          "internal/cluster/light_file.go",
+          "internal/cluster/protocol_v2.go"
+        ],
+        "invariant": "A controller can relay files or terminal streams only for the exact authorized host, capability, session and operation over authenticated bounded cross-node transport.",
+        "method": "source",
+        "result": "Relay/session access: file_relay_v1.go:21-61 signs canonical fields; 102-154 requires summary scope, matching controller fingerprint, signature/nonce/replay/rate and inner signature; 155+ binds target/grant. file_relay_v1_grants.go validates bounded sidecar records and exact fingerprint (115-169), atomic 0600 persistence (176-187). file_broker.go:28-118 root-only authenticated outbound Noise; 120-208 checks capability/reporting-key HMAC. agent/server.go:306-335 and 423-427 bearer-guards exact terminal operations. panel/light_file.go:33-157 requires session, Origin/CSRF on writes, active non-local host and FileManagementAvailable; 159-245 applies deadlines, restricted headers, bounded/cancelable bodies. cluster/light_file.go:143-187 manages sessions/queues; 375-428 correlates ACK/request IDs; 491-594 bounds method/path/body; 620-997 cancellation/backpressure. stream_v3.go:271-341 checks active host/scope and bounds pooled idempotent file requests; 427-441 opens terminal stream. panel/terminal_stream.go binds user and token hash. legacy_migration.go:113-132 gates migration on root/Linux/trusted staged binary. No grant/session authorization gap survived source review. scope_commit_refs: 016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63, 253955cd11784f775069a8b9a72ed8a17e00e31d, 272a266ca9cf97aae6cf7e3b70d94a55de3e3c67, 2d939270559ccec665507c8472c8569980e5a2cd, 9853759b0327e6cbb5205e822976583bb792e9d8, add02cfc6fefbc90e475ca8fb826f12d935b446d, b34acc223b4a972fd1dab9a27eaac299d056cc0f, dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e, e6868e85cadff5c879edbbfc26cec018ce2f74cf, f3899ad7f39d31fa9d71794544055225c01bc326, f8a1cb873e34c976cd7787932a607886071b8abb",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "b34acc223b4a972fd1dab9a27eaac299d056cc0f",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f8a1cb873e34c976cd7787932a607886071b8abb"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Cluster%20public-share%20token%20revocation%20and%20cache%20lifecycle::Authenticated%20share%20configuration%20and%20token%20rotation%20to%20bearer-authorized%20public%20snapshots::Panel%20cluster-share%20handlers%2C%20store%20state%2C%20and%20response%20cache::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Cluster public-share token revocation and cache lifecycle",
+      "boundary": "Authenticated share configuration and token rotation to bearer-authorized public snapshots",
+      "subsystem": "Panel cluster-share handlers, store state, and response cache",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Cluster public-share token revocation and cache lifecycle",
+    "boundary": "Authenticated share configuration and token rotation to bearer-authorized public snapshots",
+    "subsystem": "Panel cluster-share handlers, store state, and response cache",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/panel/cluster_share.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 2,
+    "status": "candidate",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "internal/cluster/service.go",
+      "internal/cluster/store.go",
+      "internal/panel/cluster.go",
+      "internal/panel/cluster_host_details.go",
+      "internal/panel/cluster_share.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "internal/panel/cluster_share.go",
+          "internal/panel/server.go",
+          "internal/store/store.go",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store.go"
+        ],
+        "invariant": "A valid share bearer may retrieve only the enabled public projection; token/config changes and host deletion must not leave stale authorization or stale data beyond the intended freshness bound.",
+        "method": "source",
+        "result": "Share lifecycle: cluster_share.go:129-250 authenticates configuration mutations, checks mutation/CSRF and resource-version CAS, generates 32-byte token, invalidates cache on settings/token changes; public route 252-272 rate-limits, checks enabled and constant-time bearer match. Snapshot cache 332-402 reuses DTO with same share ResourceVersion while 10s TTL is live. store.go:835-850 CAS/persist/rollback; 853-865 ResourceVersion covers share settings/token/order/time, not host inventory. Operator host DELETE cluster.go:315-338 reaches service delete; service.go:655-701 removes host record/runtime/credential but does not invalidate share cache. A warmed snapshot can remain available to a still-valid bearer until TTL expiry; source does not state whether this freshness is acceptable. Candidate ClusterShare.deleted-host-cache-stale also links the data-disclosure unit. scope_commit_refs: 120f868ae10c1277302ac93b102fe8564202a42d, 2d939270559ccec665507c8472c8569980e5a2cd, 43792db3dc4909b6a743144bc94db6dcfb7b1236, 6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80, 6fe43ea8451af16cbb17132e2f1014db65346bcf, 7439190e8fda4933b2cee0eed13f03846c2fd96a, 7625206c00df182f2cda590e4bbc7e511560973b, 7dc2394c91e73fc34581082e5bcdc6ba2744aef7, 9853759b0327e6cbb5205e822976583bb792e9d8, b37219f5942642c09a70a259c12472185c0f9eab, b4271ad0448b7d722cbc46636bd7b6ea9a28355a, b845606b5ed0e7fdbb18afb943679cec871e4f14, b8590e88805c729d7f848a160b8088150b43c2e1, ddaacc3283f2bc00566b0edcb886a95ec3f754cc, dfad70a8da1d4f5e243c3106a39b5c9bc00cb261, f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_cluster_share_cache_wave16",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/panel/cluster.go",
+          "internal/panel/cluster_host_details.go",
+          "internal/panel/cluster_share.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "A valid share bearer may retrieve only the enabled public projection; token/config changes and host deletion must not leave stale authorization or stale data beyond the intended freshness bound.",
+        "method": "source",
+        "result": "Independent Phase 3 source validation retains needs_validation: After a successful cluster-host deletion, a snapshot warmed before deletion can remain eligible for reuse until its 10-second TTL expires. The public GET rechecks that the current share is enabled and that the bearer token matches, then the snapshot builder returns the cached DTO when the share-settings ResourceVersion is unchanged and the TTL is live. That ResourceVersion covers share settings, token, host order, and update time rather than host inventory. Source establishes this stale-snapshot path, but does not specify whether deletion must be reflected immediately or whether the TTL is an accepted freshness bound. Blockers: Source establishes a 10-second cache TTL but does not define whether a successful host deletion must be reflected before that TTL expires; the required freshness contract is unknown.; Run-16 prohibits target, test, and fixture execution, so an independent warm-cache, delete, and bearer-GET observation could not be performed; source evidence alone cannot confirm the candidate under this run boundary.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "ClusterShare.deleted-host-cache-stale"
+    ],
+    "unresolved": [
+      "Source does not define whether host deletion must immediately remove the host from a cached projection; a 10-second TTL is explicit, but the required freshness SLA is not.",
+      "Phase 3 verify_cluster_share_cache_wave16 needs_validation: Source establishes a 10-second cache TTL but does not define whether a successful host deletion must be reflected before that TTL expires; the required freshness contract is unknown.",
+      "Phase 3 verify_cluster_share_cache_wave16 needs_validation: Run-16 prohibits target, test, and fixture execution, so an independent warm-cache, delete, and bearer-GET observation could not be performed; source evidence alone cannot confirm the candidate under this run boundary."
+    ],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "b8590e88805c729d7f848a160b8088150b43c2e1",
+      "ddaacc3283f2bc00566b0edcb886a95ec3f754cc",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "ebdd3ba4b2c3035b47c7dfb9b50c78d8e6b618dd",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": "The existing cluster sharing unit includes cluster_share.go but excludes DATA deletion, revocation, and lifecycle. In source, the authenticated update and token-reset handlers replace the share state and invalidate the cache; the public handler checks the bearer token and enabled flag, and the cache is keyed by resource version with a 10-second TTL. Token rotation, disablement, and in-flight/cache behavior therefore need an explicit revocation review."
+  },
+  {
+    "coverage_id": "Cluster%20sharing%2C%20snapshots%2C%20traffic%2C%20and%20host%20detail%20views::private%20host%2Faccount%20data%20to%20operator%20views%2C%20backups%2C%20and%20public%20share%20capabilities::internal%2Fcluster%2Binternal%2Fpanel%2Binternal%2Fcontract%2Binternal%2Fstore::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "Cluster sharing, snapshots, traffic, and host detail views",
+      "boundary": "private host/account data to operator views, backups, and public share capabilities",
+      "subsystem": "internal/cluster+internal/panel+internal/contract+internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "Cluster sharing, snapshots, traffic, and host detail views",
+    "boundary": "private host/account data to operator views, backups, and public share capabilities",
+    "subsystem": "internal/cluster+internal/panel+internal/contract+internal/store",
+    "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "starting_paths": [
+      "internal/cluster/service_check_snapshot.go",
+      "internal/cluster/types.go",
+      "internal/contract/service_checks.go",
+      "internal/contract/traffic_period.go",
+      "internal/contract/types.go",
+      "internal/panel/cluster_host_details.go",
+      "internal/panel/cluster_host_order.go",
+      "internal/panel/cluster_notifications.go",
+      "internal/panel/cluster_share.go",
+      "internal/panel/cluster_traffic.go",
+      "internal/store/cluster_host_details.go",
+      "internal/store/cluster_traffic.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "internal/cluster/service.go",
+      "internal/cluster/service_check_snapshot.go",
+      "internal/cluster/store.go",
+      "internal/cluster/types.go",
+      "internal/contract/service_checks.go",
+      "internal/contract/traffic_period.go",
+      "internal/contract/types.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/cluster.go",
+      "internal/panel/cluster_host_details.go",
+      "internal/panel/cluster_host_order.go",
+      "internal/panel/cluster_notifications.go",
+      "internal/panel/cluster_share.go",
+      "internal/panel/cluster_traffic.go",
+      "internal/store/backup.go",
+      "internal/store/cluster_host_details.go",
+      "internal/store/cluster_traffic.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "internal/cluster/service_check_snapshot.go",
+          "internal/cluster/types.go",
+          "internal/contract/service_checks.go",
+          "internal/contract/traffic_period.go",
+          "internal/contract/types.go",
+          "internal/panel/cluster_host_details.go",
+          "internal/panel/cluster_host_order.go",
+          "internal/panel/cluster_notifications.go",
+          "internal/panel/cluster_share.go",
+          "internal/panel/cluster_traffic.go",
+          "internal/store/cluster_host_details.go",
+          "internal/store/cluster_traffic.go",
+          "internal/store/backup.go",
+          "internal/panel/backup_data.go",
+          "internal/panel/cluster.go",
+          "internal/cluster/service.go",
+          "internal/cluster/store.go"
+        ],
+        "invariant": "Private host/account data reaches only authorized operator views, sanitized backups and an explicit public projection; host deletion should remove data from later public views within the product freshness contract.",
+        "method": "source",
+        "result": "Private/public data boundary: cluster_host_details.go:25-72 session/mutation checks, active-host/version validation, then share-cache invalidation; cluster_host_order.go:29-85 separates private/share orders and validates mutation; cluster_notifications.go:16-205 session-gates snapshots/history, bounds/filter-deduplicates history, limits provider output and audits mutations. cluster_traffic.go and store/cluster_traffic.go bound intervals/freshness/cycles/retention; store/cluster_host_details.go:18-115 validates cloned versioned data, prunes inactive IDs and reconciles traffic. service_check_snapshot.go:8-13 excludes checks; cluster/types.go:75-123 hides LightHealth and scopes host records. contract/types.go:268-291 narrow telemetry schema; service_checks.go:20-78 bounds records; traffic_period.go:8-18 bounded period. cluster_share.go:53-116 allowlists public projection, omitting raw IP, SSH login, checks, credentials/config. store/backup.go:15-101 excludes auth secrets, clears sessions/share token and advances credential version. panel/backup_data.go:33-111 allowlists paths, rejects symlinks and caps file/total size; 182-240 sanitizes cluster/notification state; 241+ double-reads, prunes secrets and validates/re-sanitizes import. Host DELETE cluster.go:315-338 and service.go:655-701 removes host state without invalidating linked cache. Candidate is bounded by explicit 10s TTL; required freshness is unknown. scope_commit_refs: 120f868ae10c1277302ac93b102fe8564202a42d, 43792db3dc4909b6a743144bc94db6dcfb7b1236, 45ca6c6141b152b2fbf344fdc2de46b187809f38, 6bde08339ebab6af78faba6c2a7ade731227693d, 6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80, 6fe43ea8451af16cbb17132e2f1014db65346bcf, 722062e1637b210660204e7e13a503f1c609a814, 7dc2394c91e73fc34581082e5bcdc6ba2744aef7, 9853759b0327e6cbb5205e822976583bb792e9d8, b8590e88805c729d7f848a160b8088150b43c2e1, cbe18f52d6ee3a29a44d2ad2ebe3043324313588, cefd7b13f4cca6ca30c77c9a1d256286d2066022, daffe125a90762e53896c528859c61e6b7dff69f, ddaacc3283f2bc00566b0edcb886a95ec3f754cc, f3899ad7f39d31fa9d71794544055225c01bc326",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_cluster_share_cache_wave16",
+        "reviewed_paths": [
+          "internal/cluster/service.go",
+          "internal/panel/cluster.go",
+          "internal/panel/cluster_host_details.go",
+          "internal/panel/cluster_share.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Private host/account data reaches only authorized operator views, sanitized backups and an explicit public projection; host deletion should remove data from later public views within the product freshness contract.",
+        "method": "source",
+        "result": "Independent Phase 3 source validation retains needs_validation: After a successful cluster-host deletion, a snapshot warmed before deletion can remain eligible for reuse until its 10-second TTL expires. The public GET rechecks that the current share is enabled and that the bearer token matches, then the snapshot builder returns the cached DTO when the share-settings ResourceVersion is unchanged and the TTL is live. That ResourceVersion covers share settings, token, host order, and update time rather than host inventory. Source establishes this stale-snapshot path, but does not specify whether deletion must be reflected immediately or whether the TTL is an accepted freshness bound. Blockers: Source establishes a 10-second cache TTL but does not define whether a successful host deletion must be reflected before that TTL expires; the required freshness contract is unknown.; Run-16 prohibits target, test, and fixture execution, so an independent warm-cache, delete, and bearer-GET observation could not be performed; source evidence alone cannot confirm the candidate under this run boundary.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "ClusterShare.deleted-host-cache-stale"
+    ],
+    "unresolved": [
+      "Whether a 10-second stale public snapshot after host deletion violates the intended disclosure/freshness contract is not stated in source.",
+      "Phase 3 verify_cluster_share_cache_wave16 needs_validation: Source establishes a 10-second cache TTL but does not define whether a successful host deletion must be reflected before that TTL expires; the required freshness contract is unknown.",
+      "Phase 3 verify_cluster_share_cache_wave16 needs_validation: Run-16 prohibits target, test, and fixture execution, so an independent warm-cache, delete, and bearer-GET observation could not be performed; source evidence alone cannot confirm the candidate under this run boundary."
+    ],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "45ca6c6141b152b2fbf344fdc2de46b187809f38",
+      "6bde08339ebab6af78faba6c2a7ade731227693d",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "722062e1637b210660204e7e13a503f1c609a814",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b8590e88805c729d7f848a160b8088150b43c2e1",
+      "cbe18f52d6ee3a29a44d2ad2ebe3043324313588",
+      "cefd7b13f4cca6ca30c77c9a1d256286d2066022",
+      "daffe125a90762e53896c528859c61e6b7dff69f",
+      "ddaacc3283f2bc00566b0edcb886a95ec3f754cc",
+      "f3899ad7f39d31fa9d71794544055225c01bc326"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "KPanel%20package%20installation%2C%20update%2C%20rollback%2C%20and%20image%20lifecycle::release%20artifact%20and%20procd%20update%20state%20to%20installed%20executable%2Fconfiguration%20and%20rollback%20writes::packaging%2Bcmd%2Fkejilion-node%2BDockerfile::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "KPanel package installation, update, rollback, and image lifecycle",
+      "boundary": "release artifact and procd update state to installed executable/configuration and rollback writes",
+      "subsystem": "packaging+cmd/kejilion-node+Dockerfile",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "KPanel package installation, update, rollback, and image lifecycle",
+    "boundary": "release artifact and procd update state to installed executable/configuration and rollback writes",
+    "subsystem": "packaging+cmd/kejilion-node+Dockerfile",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "cmd/kejilion-node/update_runtime/source.json",
+      "cmd/kejilion-node/update_runtime/ssh-login.procd",
+      "cmd/kejilion-node/update_runtime/update.procd",
+      "cmd/kejilion-node/update_runtime/update.sh",
+      "Dockerfile",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/release-runner/Dockerfile",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-lock-compat.sh",
+      "packaging/tests/app-conf-update-backups.sh"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Dependency and build-input",
+      "SUPPLY-CHAIN-AND-RELEASE.md#CI and automation",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Release and update",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Container and orchestration",
+      "CLOUD-AND-DEPLOYMENT.md#Configuration and secret lifecycle"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 4,
+    "status": "covered",
+    "agent_id": "hunter_release_lifecycle_wave4",
+    "reviewed_paths": [
+      "cmd/kejilion-node/update_runtime/source.json",
+      "cmd/kejilion-node/update_runtime/ssh-login.procd",
+      "cmd/kejilion-node/update_runtime/update.procd",
+      "cmd/kejilion-node/update_runtime/update.sh",
+      "cmd/kejilion-node/legacy_migration.go",
+      "cmd/kejilion-node/procd.go",
+      "Dockerfile",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/release-runner/Dockerfile",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-lock-compat.sh",
+      "packaging/tests/app-conf-update-backups.sh"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_release_lifecycle_wave4",
+        "reviewed_paths": [
+          "cmd/kejilion-node/update_runtime/source.json",
+          "cmd/kejilion-node/update_runtime/ssh-login.procd",
+          "cmd/kejilion-node/update_runtime/update.procd",
+          "cmd/kejilion-node/update_runtime/update.sh",
+          "cmd/kejilion-node/legacy_migration.go",
+          "cmd/kejilion-node/procd.go",
+          "Dockerfile",
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/release-runner/Dockerfile",
+          "packaging/tests/app-conf-lifecycle.sh",
+          "packaging/tests/app-conf-lock-compat.sh",
+          "packaging/tests/app-conf-update-backups.sh"
+        ],
+        "invariant": "Release and update identity, privileged runtime installation, and rollback state remain bound to the selected artifact and do not expose a lower-trust writer during recovery.",
+        "method": "source",
+        "result": "Source review found the lightweight-node updater resolves the manifest redirect to a versioned GitHub release, validates the SHA256SUMS entry and downloaded binary hash, checks the light-v1 protocol, and restores the saved .previous binary if service restart fails. The embedded procd runtime migration accepts only a checksum-verified staged binary and writes templates under root-owned directories that reject group/world-writable paths; the procd scripts use fixed executable paths and restrictive umasks. Dockerfile inputs use digest-pinned base images and an ADD checksum for the pinned external script. The Panel updater pins the pulled target by repository digest and image ID, requires the update-freeze label, stops Agent and Panel before snapshotting, journals recovery state, and avoids replaying the snapshot after the old runtime is restarted. No source-visible lower-trust artifact substitution or rollback authorization failure was established; test harness files were inspected but not executed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "7cce108ea7ba53dceba7225a1eb2f989a73dc92a",
+      "7da41fbb61f50b78ea175bb2bb989974e8013cce",
+      "81f5d05b2204443fc52ab8da0b3d46de9c846713",
+      "871a6258b0cf1868727791e1d1d5264750d5c5b7",
+      "8786caab0e40f7b33b936526b438459a1e2df3d1",
+      "a606a13c3109029c338ac3f03e32cc21cdfb0739",
+      "b34acc223b4a972fd1dab9a27eaac299d056cc0f",
+      "b8347e7c0a40e5e7400b1e41bc305f164da17e82",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "cea6261f9ae1de064216a1c423d3cd3f2d87d3fa",
+      "db4c410988a8813b8b4f0b7201e4631d3ee1c099",
+      "ecc3c84b258c0357abb6a33529ad73321983e38d",
+      "f41ed00d991a1c9587b8c0fde8ade2eeab5a1fc7",
+      "f8d4a42e51180fa409e2f3a5889b115c4dea13e7"
+    ],
+    "parent_hardening": [
+      "The source binds updater bytes to a versioned GitHub release manifest/hash and pins the Panel image to a repository digest, but the assigned files do not establish hosted release authorization, registry trust policy, signing, or runner provenance; no claim about those external controls is made.",
+      "The lifecycle harness source covers digest retargeting, freeze capability rejection, stop/snapshot failures, and interrupted rollback cases; this source-only assignment did not execute those tests."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Light-node%2C%20Agent%2C%20local%20IPC%2C%20and%20host-operation%20inputs::Panel%2FAgent%20requests%20to%20local%20privileged%20operations%2C%20runtime%20configuration%2C%20and%20OS%20observations::cmd%2Fkejilion-node%2Bcmd%2Fkejilion-agent%2Binternal%2Fagent%2Binternal%2Fdiagnostics%2Binternal%2Fsysteminfo::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Light-node, Agent, local IPC, and host-operation inputs",
+      "boundary": "Panel/Agent requests to local privileged operations, runtime configuration, and OS observations",
+      "subsystem": "cmd/kejilion-node+cmd/kejilion-agent+internal/agent+internal/diagnostics+internal/systeminfo",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Light-node, Agent, local IPC, and host-operation inputs",
+    "boundary": "Panel/Agent requests to local privileged operations, runtime configuration, and OS observations",
+    "subsystem": "cmd/kejilion-node+cmd/kejilion-agent+internal/agent+internal/diagnostics+internal/systeminfo",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-agent/main.go",
+      "cmd/kejilion-node/check_status_linux.go",
+      "cmd/kejilion-node/check_status_other.go",
+      "cmd/kejilion-node/check_status.go",
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/health_other.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/monitoring.go",
+      "cmd/kejilion-node/procd.go",
+      "internal/agent/monitoring_check_status.go",
+      "internal/agent/webenv.go",
+      "internal/diagnostics/native.go",
+      "internal/diagnostics/service.go",
+      "internal/panel/appearance.go",
+      "internal/panel/apps.go",
+      "internal/panel/config.go",
+      "internal/store/appearance.go",
+      "internal/store/store.go",
+      "internal/systeminfo/collector.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Application-state and device-lifecycle",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Workload identity and IAM",
+      "CLOUD-AND-DEPLOYMENT.md#Configuration and secret lifecycle"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_ai_agent_wave3",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/main.go",
+      "cmd/kejilion-node/check_status.go",
+      "cmd/kejilion-node/check_status_linux.go",
+      "cmd/kejilion-node/check_status_other.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/health_other.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/monitoring.go",
+      "cmd/kejilion-node/procd.go",
+      "internal/agent/monitoring_check_status.go",
+      "internal/agent/webenv.go",
+      "internal/diagnostics/native.go",
+      "internal/diagnostics/service.go",
+      "internal/panel/appearance.go",
+      "internal/panel/apps.go",
+      "internal/panel/config.go",
+      "internal/store/appearance.go",
+      "internal/store/store.go",
+      "internal/systeminfo/collector.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_ai_agent_wave3",
+        "reviewed_paths": [
+          "cmd/kejilion-agent/main.go",
+          "cmd/kejilion-node/check_status.go",
+          "cmd/kejilion-node/check_status_linux.go",
+          "cmd/kejilion-node/check_status_other.go",
+          "cmd/kejilion-node/health.go",
+          "cmd/kejilion-node/health_linux.go",
+          "cmd/kejilion-node/health_other.go",
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/monitoring.go",
+          "cmd/kejilion-node/procd.go",
+          "internal/agent/monitoring_check_status.go",
+          "internal/agent/webenv.go",
+          "internal/diagnostics/native.go",
+          "internal/diagnostics/service.go",
+          "internal/panel/appearance.go",
+          "internal/panel/apps.go",
+          "internal/panel/config.go",
+          "internal/store/appearance.go",
+          "internal/store/store.go",
+          "internal/systeminfo/collector.go"
+        ],
+        "invariant": "Panel、Agent、light-node 与本机 IPC 输入须在各自信任边界重新认证、限长、拒绝歧义，并且高权限任务只能调用固定 capability；OS observation 与 runtime config 不得转化为未授权写操作。",
+        "method": "source",
+        "result": "Agent HTTP 在每条受保护 route 前校验 Bearer hash/constant-time compare，JSON body bounded 且拒 unknown fields/multiple values；Unix socket 与 token 文件有 owner/group/mode、regular/nonsymlink 和 inode checks。Light-node enroll/config 限定来源、身份、strict JSON 和原子私有写，file broker 通过既有 rooted FileManager。diagnostics 只接受 catalog check ID 和受信任脚本，用户输入受 16 KiB/NUL 约束；systeminfo/health/monitoring 只读本机属性且输出有界。检查 appearance/store lifecycle、web environment 代理及 Agent CLI job dispatch 后，未发现跨 IPC 绕过或未授权 host operation sink。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "8dbcacad9df3aea9eb9d243ef0a36e4132d27431",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "9a0abb1036592a0f575aa3e9bb76164966a19b9e",
+      "b34acc223b4a972fd1dab9a27eaac299d056cc0f",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "d11f9c6bca180369dc877d736033441a1ca448d1",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "ddaacc3283f2bc00566b0edcb886a95ec3f754cc",
+      "ebdd3ba4b2c3035b47c7dfb9b50c78d8e6b618dd"
+    ],
+    "parent_hardening": [
+      "Existing App-market and site recipe job directories are checked for directory type and symlink status, while workers use root privileges. App worker records are bounded and schema-checked; recipe records are additionally required to be bounded regular files. Script files and argv are constrained. Source does not establish a lower-trust writer to configured state directories, so owner/mode verification remains a deployment hardening question rather than a candidate."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Literal%20exposure%20review%20of%20in-scope%20authentication%20and%20deployment%20configuration::source%20configuration%2C%20diagnostics%2C%20and%20bootstrap%20output%20to%20exposed%20secrets%20or%20privileged%20controls::internal%2Fauth%2Binternal%2Fpanel%2Bpackaging%2Bcmd::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "Literal exposure review of in-scope authentication and deployment configuration",
+      "boundary": "source configuration, diagnostics, and bootstrap output to exposed secrets or privileged controls",
+      "subsystem": "internal/auth+internal/panel+packaging+cmd",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "Literal exposure review of in-scope authentication and deployment configuration",
+    "boundary": "source configuration, diagnostics, and bootstrap output to exposed secrets or privileged controls",
+    "subsystem": "internal/auth+internal/panel+packaging+cmd",
+    "attack_class": "ATTACK-CLASSES.md#Obvious things",
+    "starting_paths": [
+      "cmd/kejilion-node/procd.go",
+      "cmd/kpanel-mcp/main.go",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/panel/backup_remote.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/release-runner/Dockerfile"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Release and update",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Configuration and secret lifecycle"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 4,
+    "status": "candidate",
+    "agent_id": "hunter_exposure_wave4",
+    "reviewed_paths": [
+      ".gitignore",
+      "cmd/kejilion-node/procd.go",
+      "cmd/kpanel-mcp/main.go",
+      "cmd/paneld/main.go",
+      "deploy/compose/.env.example",
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/mcpbridge/bridge.go",
+      "internal/panel/backup_remote.go",
+      "internal/panel/config.go",
+      "internal/panel/server.go",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/release-runner/Dockerfile",
+      "web/.env.example"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_exposure_wave4",
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go"
+        ],
+        "invariant": "初始化、登录和 passkey 凭据不得依赖硬编码或可复用的默认凭据",
+        "method": "source",
+        "result": "未发现生产硬编码凭据。唯一密码字面量 kejilion-panel-invalid-password 只生成 dummyHash；未知用户或无效输入仍在验证后被拒绝。Bootstrap token 由 randomToken(32) 生成，以 0600 文件独占创建且成功建号后删除；EnsureBootstrapToken 明确不返回或记录 token。PasskeyOrigin 只接受固定 HTTPS origin，没有 development 例外。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_exposure_wave4",
+        "reviewed_paths": [
+          "cmd/paneld/main.go",
+          "internal/panel/config.go",
+          "internal/panel/server.go"
+        ],
+        "invariant": "Panel 监听、会话 cookie、安全诊断路由及生产错误响应不得泄露会话或内部诊断",
+        "method": "source",
+        "result": "DefaultConfig 启用 SecureCookie；会话 cookie 设置 HttpOnly 和 SameSite=Strict，CSRF cookie 单独允许脚本读取。Secure 标志取决于 TLS 或受信代理的 HTTPS 信号。公开 health 只返回状态、版本、协议版本、初始化状态和时间；错误响应使用固定公开消息，未发现 CORS wildcard 或请求控制的 HTTP 重定向。与安装器显式写入 HTTP/关闭 SecureCookie 相关的直接访问路径已作为 needs_validation 候选记录。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_exposure_wave4",
+        "reviewed_paths": [
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "远程备份设置读取和失败响应不得返回已保存的访问凭据",
+        "method": "source",
+        "result": "Panel 设置读取返回 Store.Snapshot；Snapshot 对每个 Storage 调用 Public 并清空 Secret，对 Schedule 调用 Public 并清空 Password，仅保留 HasSecret/HasPassword 状态。常见远程连接错误被映射为固定 Problem 消息；未发现凭据被回显。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_exposure_wave4",
+        "reviewed_paths": [
+          "cmd/kejilion-node/procd.go",
+          "cmd/kpanel-mcp/main.go",
+          "internal/mcpbridge/bridge.go",
+          "packaging/kejilion-app/kpanel.conf",
+          "packaging/release-runner/Dockerfile"
+        ],
+        "invariant": "本地桥接、节点诊断和安装/发布脚本不得将秘密硬编码、写入宽权限环境或输出到诊断日志",
+        "method": "source",
+        "result": "MCP token 只从 KPANEL_MCP_TOKEN 环境读取；桥接器将错误折叠为通用消息并丢弃协议日志，endpoint 限定 HTTPS 或 loopback。procd 监测使用固定服务名和固定参数，并丢弃命令 stderr。Agent token 由 /dev/urandom 生成、存入 root:panel-group 的 0640 文件，agent.env 和安装器 .env 为 0600；安装成功会把一次性 bootstrap token 打印到 root 安装命令的 stdout，并提示后续配置 HTTPS。release-runner 的可选代理通过 BuildKit secret mount 仅用于单个 RUN，未作为镜像环境持久化。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_exposure_wave4",
+        "reviewed_paths": [
+          ".gitignore",
+          "deploy/compose/.env.example",
+          "web/.env.example"
+        ],
+        "invariant": "仓库忽略运行时秘密文件，已跟踪示例不包含可用于生产的默认凭据",
+        "method": "source",
+        "result": "跟踪文件名检查仅发现 deploy/compose/.env.example 和 web/.env.example；未发现提交的 .env、credentials.json、PEM 或私钥文件。.gitignore 覆盖 .env/.env.*、*.pem、*.key、*.crt、secrets/、运行时数据和日志，仅保留 .env.example。两个示例没有生产可用的密码或 token。",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_installer_http_bootstrap_wave16",
+        "reviewed_paths": [
+          "cmd/paneld/main.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/server.go",
+          "packaging/kejilion-app/kpanel.conf"
+        ],
+        "invariant": "初始化、登录和 passkey 凭据不得依赖硬编码或可复用的默认凭据",
+        "method": "source",
+        "result": "Independent Phase 3 source validation retains needs_validation: 固定 source 中，安装器默认将 docker_port 设为 8080，生成未指定宿主机 bind 地址的端口映射，并写入 http://<detected-host>:<port> 与 KPANEL_SECURE_COOKIE=false；检测不到 IPv4/IPv6 时主机地址回退为 127.0.0.1。paneld 通过普通 TCP listener 和 http.Server.Serve 提供服务。POST /api/v1/auth/bootstrap 将 JSON token 交给 Bootstrap；匹配有效 token 且尚未初始化时，该路径创建首个管理员并消费 token。若未受信网络能在初始化前经明文 HTTP 到达该 listener，链路观察者可能取得用户提交的一次性 token 并抢先创建管理员。对于未经过可信 HTTPS 代理的直接 HTTP 请求，SecureCookie=false 且 r.TLS 为空会使认证 cookie 不带 Secure，后续 HTTP 会话也可能被观察。实际端口绑定、ACL、访问路径和代理状态无法从仓库源码确认。 Blockers: 源码没有目标主机生成后的 Compose/.env、Docker 实际端口绑定、主机防火墙 ACL、TLS 反代配置或首次 bootstrap 前的网络路径，无法确定未受信网络是否可到达明文端口。Run-16 禁止运行目标、请求探测或 token 测试，因此本次不能独立观察 token 捕获或首个管理员竞争结果。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "kpanel.installer.direct-http-bootstrap-session-exposure"
+    ],
+    "unresolved": [
+      "安装器生成的 8080 端口在宿主机上的实际 bind、firewall ACL，以及首次初始化前是否已由可信 TLS 代理接管均无法从源码确定；这些部署状态决定未受信网络攻击者能否到达明文路径。",
+      "Phase 3 verify_installer_http_bootstrap_wave16 needs_validation: 源码没有目标主机生成后的 Compose/.env、Docker 实际端口绑定、主机防火墙 ACL、TLS 反代配置或首次 bootstrap 前的网络路径，无法确定未受信网络是否可到达明文端口。Run-16 禁止运行目标、请求探测或 token 测试，因此本次不能独立观察 token 捕获或首个管理员竞争结果。"
+    ],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7cce108ea7ba53dceba7225a1eb2f989a73dc92a",
+      "7da41fbb61f50b78ea175bb2bb989974e8013cce",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "81f5d05b2204443fc52ab8da0b3d46de9c846713",
+      "871a6258b0cf1868727791e1d1d5264750d5c5b7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "9a0abb1036592a0f575aa3e9bb76164966a19b9e",
+      "9f8553db35a8cfe0733044e21e85b436bb5794d6",
+      "b34acc223b4a972fd1dab9a27eaac299d056cc0f",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b8347e7c0a40e5e7400b1e41bc305f164da17e82",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "cea6261f9ae1de064216a1c423d3cd3f2d87d3fa",
+      "db4c410988a8813b8b4f0b7201e4631d3ee1c099",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "ecc3c84b258c0357abb6a33529ad73321983e38d",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "f8d4a42e51180fa409e2f3a5889b115c4dea13e7"
+    ],
+    "parent_hardening": [
+      "安装器会将 0600 bootstrap token 文件的内容打印到其 root 安装命令 stdout；目前源码显示这是供操作者完成初始化的设计输出，没有发现低信任读者。应由实际调用环境保证此输出通道只对受信安装操作者可见。",
+      "未认证 health endpoint 仅返回 status、version、protocolVersion、initialized 与 checkedAt；没有发现 stack trace、内部文件路径或 SQL 错误通过 Problem 响应直接返回。",
+      "已跟踪示例只含占位部署参数；.gitignore 显式忽略本地 dotenv、secret、证书、密钥、运行时数据和日志文件。"
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Local%20backup%20archive%20and%20host%20restore::authorized%20backup%2Frestore%20request%20to%20archive%20selection%20and%20privileged%20host%20filesystem%20writes::internal%2Fhostbackup%2Binternal%2Fbackup%2Binternal%2Fpanel%2Bcmd%2Fkejilion-agent::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Local backup archive and host restore",
+      "boundary": "authorized backup/restore request to archive selection and privileged host filesystem writes",
+      "subsystem": "internal/hostbackup+internal/backup+internal/panel+cmd/kejilion-agent",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Local backup archive and host restore",
+    "boundary": "authorized backup/restore request to archive selection and privileged host filesystem writes",
+    "subsystem": "internal/hostbackup+internal/backup+internal/panel+cmd/kejilion-agent",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "cmd/kejilion-agent/backup_bundle.go",
+      "internal/backup/failure.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/store/backup.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+      "MEMORY-SAFETY-AND-BINARY.md#Bounds, integer, and representation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_confirmed_changed_source",
+    "attempts": [],
+    "wave": 2,
+    "status": "candidate",
+    "agent_id": "hunter_hostbackup_restore_w2",
+    "reviewed_paths": [
+      "cmd/kejilion-agent/backup_bundle.go",
+      "cmd/kejilion-agent/backup_cli.go",
+      "internal/agent/server.go",
+      "internal/backup/archive.go",
+      "internal/backup/failure.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/cli_cleanup.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/mounts_linux.go",
+      "internal/hostbackup/native.go",
+      "internal/hostbackup/protection.go",
+      "internal/hostbackup/recovery.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_restore.go",
+      "internal/panel/mcp_backups.go",
+      "internal/panel/server.go",
+      "internal/store/backup.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_hostbackup_restore_w2",
+        "reviewed_paths": [
+          "cmd/kejilion-agent/backup_bundle.go",
+          "cmd/kejilion-agent/backup_cli.go",
+          "internal/agent/server.go",
+          "internal/backup/archive.go",
+          "internal/backup/failure.go",
+          "internal/backup/files.go",
+          "internal/backup/jobs.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/cli_cleanup.go",
+          "internal/hostbackup/engine.go",
+          "internal/hostbackup/mounts_linux.go",
+          "internal/hostbackup/native.go",
+          "internal/hostbackup/protection.go",
+          "internal/hostbackup/recovery.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go",
+          "internal/panel/backup_data.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_restore.go",
+          "internal/panel/mcp_backups.go",
+          "internal/panel/server.go",
+          "internal/store/backup.go"
+        ],
+        "invariant": "宿主机 Agent 对归档数据的恢复写入必须始终绑定到经当前 inventory 授权的目标目录，即使目标或暂存路径的父目录在符号链接检查后发生变化。",
+        "method": "source",
+        "result": "源码将导入归档成员限制为规范路径和普通文件/目录，并要求 payload 根与当前 inventory 根路径完全匹配；恢复也用 Lstat 路径遍历拒绝当时存在的符号链接。但 `Restore` 先检查 `.kpanel-next-<id>` 不存在，之后只对其父目录调用 `NoLinkParents`，再以路径名调用 `MkdirAll`、`copyTree`、`OpenFile` 和 `Rename`，没有把检查过的父目录身份绑定到后续操作。若低信任本机进程能在恢复期间修改该父目录或暂存项，路径可能被替换为指向根目录外的符号链接，导致 Agent 在该位置创建归档文件。实际部署中是否存在这种可写父目录、竞态能否稳定触发，因本次 source-only 限制且没有获准 OS 沙箱而未验证。相同路径式检查/操作模式也出现在恢复回滚与恢复清理路径。未运行目标代码、测试、fixture 或 build。",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_hostbackup_parent_race_wave16",
+        "reviewed_paths": [
+          "internal/agent/server.go",
+          "internal/backup/files.go",
+          "internal/hostbackup/archive.go",
+          "internal/hostbackup/restore.go",
+          "internal/hostbackup/service.go"
+        ],
+        "invariant": "宿主机 Agent 对归档数据的恢复写入必须始终绑定到经当前 inventory 授权的目标目录，即使目标或暂存路径的父目录在符号链接检查后发生变化。",
+        "method": "source",
+        "result": "Independent Phase 3 source validation retains needs_validation: Run-16 固定源码显示：恢复入口经过 Agent Bearer 认证，restore 仅接受状态为 ready 且 revision 匹配的导入记录；Engine.Restore 还要求每个根路径精确匹配目的端 inventory。随后目标和 sibling staging 路径以字符串保存，路径组件经 Lstat 检查后，复制流程仍按路径名执行 MkdirAll、OpenFile 及元数据设置。若恢复根的父目录可由低权限本地进程修改，该进程可能在检查与后续路径操作之间替换 staging 条目并改变路径解析位置。源码能支持该路径竞态的静态前提，但不能证明任一实际部署满足父目录权限条件或竞态可命中。 Blockers: 源码不能确定实际 restore 根路径的父目录是否允许低权限本地进程创建、删除或重命名同级条目；所有者、权限位、ACL、挂载和并发本地用户均属部署事实。; Run-16 禁止运行目标代码、测试、fixture 或探针，因此未独立演示路径替换能否在受支持文件系统上命中后续 MkdirAll/OpenFile，以及写入是否越出所选根目录。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "hostbackup.restore.mutable-parent-symlink-race"
+    ],
+    "unresolved": [
+      "源码未说明具体宿主机上 inventory 目标的父目录所有者、mode 或 ACL，也无法判断低信任本机用户能否在恢复期间创建、删除或重命名暂存项。",
+      "本次未提供获准的 OS 强制沙箱，按 source-only 约束未运行目标代码或确定性竞态检查。",
+      "Phase 3 verify_hostbackup_parent_race_wave16 needs_validation: 源码不能确定实际 restore 根路径的父目录是否允许低权限本地进程创建、删除或重命名同级条目；所有者、权限位、ACL、挂载和并发本地用户均属部署事实。",
+      "Phase 3 verify_hostbackup_parent_race_wave16 needs_validation: Run-16 禁止运行目标代码、测试、fixture 或探针，因此未独立演示路径替换能否在受支持文件系统上命中后续 MkdirAll/OpenFile，以及写入是否越出所选根目录。"
+    ],
+    "scope_commit_refs": [
+      "566a186e0c3b5c67d0502d31569f8b1ee1ef55b1",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "73e935b7abfffdc775476a6cdd1c6f6f017c57fb",
+      "8ee07e4adb0e6071df50fa56d33125297235797e",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "add02cfc6fefbc90e475ca8fb826f12d935b446d",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "efc2b568012656032ec9ff639ee72e512b0c7171",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "归档成员路径规范化、symlink/special-file 类型拒绝，以及 restore root 与 destination inventory 的精确匹配，构成了有效的静态路径约束；候选仅涉及这些约束之后的可变父路径与路径式文件操作。"
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Monitoring%20checks%2C%20durable%20notifications%2C%20and%20delivery%20lifecycle::scheduled%20host%2Fservice%20observations%20to%20stored%20records%2C%20alert%20decisions%2C%20and%20notification%20delivery::internal%2Fmonitoring%2Binternal%2Fnotification%2Binternal%2Fpanel%2Binternal%2Fcontract::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Monitoring checks, durable notifications, and delivery lifecycle",
+      "boundary": "scheduled host/service observations to stored records, alert decisions, and notification delivery",
+      "subsystem": "internal/monitoring+internal/notification+internal/panel+internal/contract",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Monitoring checks, durable notifications, and delivery lifecycle",
+    "boundary": "scheduled host/service observations to stored records, alert decisions, and notification delivery",
+    "subsystem": "internal/monitoring+internal/notification+internal/panel+internal/contract",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "internal/monitoring/check_status.go",
+      "internal/monitoring/operator_latency.go",
+      "internal/monitoring/service.go",
+      "internal/notification/history_delivery.go",
+      "internal/notification/history.go",
+      "internal/notification/host_expiry.go",
+      "internal/notification/host_traffic_limits.go",
+      "internal/notification/service_checks.go",
+      "internal/notification/service.go",
+      "internal/notification/store.go",
+      "internal/notification/traffic_cycle.go",
+      "internal/notification/types.go",
+      "internal/panel/service_check_notifications.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 4,
+    "status": "candidate",
+    "agent_id": "hunter_monitoring_wave4",
+    "reviewed_paths": [
+      "internal/contract/service_checks.go",
+      "internal/monitoring/check_status.go",
+      "internal/monitoring/operator_latency.go",
+      "internal/monitoring/service.go",
+      "internal/notification/history.go",
+      "internal/notification/history_delivery.go",
+      "internal/notification/host_expiry.go",
+      "internal/notification/host_traffic_limits.go",
+      "internal/notification/service.go",
+      "internal/notification/service_checks.go",
+      "internal/notification/store.go",
+      "internal/notification/traffic_cycle.go",
+      "internal/notification/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/cluster_notifications.go",
+      "internal/panel/service_check_notifications.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_monitoring_wave4",
+        "reviewed_paths": [
+          "internal/contract/service_checks.go",
+          "internal/monitoring/check_status.go",
+          "internal/monitoring/operator_latency.go",
+          "internal/monitoring/service.go"
+        ],
+        "invariant": "Probe results update only the currently configured check revision and generation; incoming summaries and retained monitoring history have effective bounds.",
+        "method": "source",
+        "result": "Sample captures a check generation, and recordCheckStatus rejects results from a replaced generation or deleted/revised target before updating memory status. The Panel accepts only bounded, schema-valid service-check summaries; the contract limits them to 16 checks and 16 KiB and rejects timestamps more than five minutes after the enclosing sample time. Operator probes use 1.5-second contexts and at most three workers. Raw monitoring records are capped at 256 KiB each, with per-day and total storage limits and bounded history queries. No source-grounded monitoring state-machine or resource-bound failure was identified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_monitoring_wave4",
+        "reviewed_paths": [
+          "internal/notification/service_checks.go",
+          "internal/notification/service.go",
+          "internal/notification/store.go",
+          "internal/notification/types.go",
+          "internal/panel/cluster.go"
+        ],
+        "invariant": "Durable service-check incidents are derived from fresh matching observations, obey the global notification rule, and cannot be sent using a destination that has been replaced before delivery.",
+        "method": "source",
+        "result": "The worker is started with the Panel background services. Incident transitions require the current check revision and fresh status; stale/unknown observations pause target delivery, and disabled global/service-check rules clear pending incidents. The outbox count and serialized state are bounded. However, deliver rechecks ResourceVersion once, then performs host/freshness checks and message assembly before calling sendChannel with the credential and destination captured earlier. Configure uses Service.opMu and updates credential/config state without sharing a lock or atomic fence with CheckAlerts.deliver. A config update can therefore race after the last comparison and before sendChannel; the code supports a candidate that a pending service-check message could go to the prior destination. The timing and actual external receipt were not executed or observed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_monitoring_wave4",
+        "reviewed_paths": [
+          "internal/notification/history.go",
+          "internal/notification/history_delivery.go",
+          "internal/notification/host_expiry.go",
+          "internal/notification/host_traffic_limits.go",
+          "internal/notification/traffic_cycle.go",
+          "internal/notification/service.go"
+        ],
+        "invariant": "Stored notification events are bounded and pending deliveries are cancelled when current settings, host lifecycle, expiry date, traffic threshold/cycle, or channel credential no longer authorizes retry.",
+        "method": "source",
+        "result": "History is capped at 2,000 events, 4 MiB, and 30 days. Evaluation commits event/cursor state before delivery; the delivery path persists attempt state and cancels retries for disabled rules, removed hosts, changed expiry/traffic policy or cycle, changed credentials, and events older than 24 hours. Expiry reminders use center-local calendar dates and are rechecked before each send. These controls did not reveal a second source-grounded lifecycle failure in this unit.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_monitoring_wave4",
+        "reviewed_paths": [
+          "internal/panel/service_check_notifications.go",
+          "internal/notification/service_checks.go"
+        ],
+        "invariant": "The historical service-check notification API did not bypass session and cluster-write protections, and its removal did not leave an unsafe legacy route as the active implementation.",
+        "method": "source",
+        "result": "At commit 9853759b0327e6cbb5205e822976583bb792e9d8, GET required a Panel session and PUT used requireClusterMutation. Commit efc2b568012656032ec9ff639ee72e512b0c7171 removed that route while refactoring to one global service-alert checkbox; the pinned tree's durable replacement is notification.CheckAlerts. No unauthorized historical API path was identified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_notification_channel_race_wave16",
+        "reviewed_paths": [
+          "internal/notification/service.go",
+          "internal/notification/service_checks.go",
+          "internal/panel/cluster_notifications.go"
+        ],
+        "invariant": "A channel update after the final version comparison must not let a queued service-check alert use credentials or a destination that were replaced before send.",
+        "method": "source",
+        "result": "Independent source review confirms that deliver snapshots settings and credentials, compares ResourceVersion once per event, then performs additional checks and message assembly before sending the captured values. Configure uses opMu, which delivery does not share; sendChannel does not recheck version or credentials. The source permits a stale-destination race, but external timing and old-receiver availability are unresolved.",
+        "artifact": null
+      },
+      {
+        "agent_id": "p5_verify_notification_channel_race_wave16",
+        "reviewed_paths": [
+          "internal/notification/service.go",
+          "internal/notification/service_checks.go",
+          "internal/panel/cluster_notifications.go"
+        ],
+        "invariant": "A successful channel rotation must prevent an in-flight service-check notification from being sent to a destination whose authorization has been revoked.",
+        "method": "source",
+        "result": "Phase 5 re-read the final record source paths and confirmed that deliver may send captured channel parameters after its ResourceVersion check without sharing Configure.opMu or rechecking at sendChannel. The non-material replacement removes a run-boundary limitation as a candidate blocker and changes the deployment plan to owner-only read-only inspection of current recipient/provider authorization; no old receiver status or actual delivery is source-visible. Verdict and trace are unchanged.",
+        "artifact": null
+      },
+      {
+        "agent_id": "p5_review_notification_replacement_materiality_20261004",
+        "reviewed_paths": [
+          "internal/notification/service.go",
+          "internal/notification/service_checks.go",
+          "internal/panel/cluster_notifications.go"
+        ],
+        "invariant": "A successful channel rotation must prevent an in-flight service-check notification from being sent to a destination whose authorization has been revoked.",
+        "method": "source",
+        "result": "A fresh independent Phase 5 reviewer verified the applied nonmaterial notification replacement against the current source and pinned record rules. The root cause and trace remain unchanged; the blocker and owner-only deployment plan describe the remaining authorization fact without audit traffic.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "notification.service-check-delivery-stale-channel-race"
+    ],
+    "unresolved": [
+      "本轮 source-only 检查未运行可控并发交错；仓库也不能证明本地轮换后的旧 provider 凭证/接收端仍有效并会收到消息。",
+      "Run-16 限于源码且禁止运行目标和测试，无法用同步屏障独立展示 Configure 成功返回后、最后一次 ResourceVersion 比较与 sendChannel 执行之间的具体交错。",
+      "源码不能确认旧 provider 凭证、webhook 或旧 Telegram ChatID 在轮换后是否仍可接收，也不能证明外部接收或实际披露；这取决于 provider 与接收端运行时状态。"
+    ],
+    "scope_commit_refs": [
+      "0a0f181834a6a7c77778d4a67076c63482aaab9c",
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "1bfc732b72f98ba215e71bc9bf54ebdf2965a28c",
+      "2f51ebff58c54e7e47e98722573af89d69f66f4b",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "45ca6c6141b152b2fbf344fdc2de46b187809f38",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "87c248587dc09eb30b6cc2a70e3ed68b65e6fbda",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "cbe18f52d6ee3a29a44d2ad2ebe3043324313588",
+      "cefd7b13f4cca6ca30c77c9a1d256286d2066022",
+      "daffe125a90762e53896c528859c61e6b7dff69f",
+      "efc2b568012656032ec9ff639ee72e512b0c7171"
+    ],
+    "parent_hardening": [
+      "未发现监控历史或服务检查 outbox 无界增长的源码路径：监控记录、保留窗口、查询槽、检查数量、摘要字节数和 incident 数均有上限；服务检查投递每轮最多八个合并发送组。"
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Panel%20login%2C%20session%2C%20passkey%2C%20and%20account%20transition::unauthenticated%20HTTP%20requests%20to%20authenticated%20account%2Fsession%20state::internal%2Fauth%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Panel login, session, passkey, and account transition",
+      "boundary": "unauthenticated HTTP requests to authenticated account/session state",
+      "subsystem": "internal/auth+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Panel login, session, passkey, and account transition",
+    "boundary": "unauthenticated HTTP requests to authenticated account/session state",
+    "subsystem": "internal/auth+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/login_appearance.go",
+      "internal/panel/notification_timezone.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/store/store.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition",
+      "WEB-PROTOCOL-AND-AUTH.md#Federated-identity",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 4,
+    "status": "covered",
+    "agent_id": "hunter_panel_auth_wave4",
+    "reviewed_paths": [
+      "internal/auth/passkey.go",
+      "internal/auth/service.go",
+      "internal/panel/config.go",
+      "internal/panel/login_appearance.go",
+      "internal/panel/notification_timezone.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "internal/panel/totp.go",
+      "internal/store/passkeys.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_panel_auth_wave4",
+        "reviewed_paths": [
+          "internal/auth/passkey.go",
+          "internal/auth/service.go",
+          "internal/panel/config.go",
+          "internal/panel/login_appearance.go",
+          "internal/panel/notification_timezone.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "internal/panel/totp.go",
+          "internal/store/passkeys.go",
+          "internal/store/store.go"
+        ],
+        "invariant": "Only an authenticated Panel principal may read or mutate that principal's account, session, MFA, and passkey state; login, step-up, origin, ceremony, and revocation checks remain bound to the applicable principal and credential state.",
+        "method": "source",
+        "result": "Source review found no unauthorized account/session transition. ServeHTTP and serveAPI route the auth operations to dedicated handlers (internal/panel/server.go:286-385, 394-431). Session-backed reads and writes authenticate the session cookie; state-changing cookie-authenticated routes require Origin validation and the session-bound CSRF token (internal/panel/server.go:1031-1158, 1421-1468, 1649-1702; internal/panel/totp.go:15-145; internal/panel/passkey.go:58-187, 193-345). Password and username changes reverify the current password and atomically revoke the user's sessions; TOTP changes require the applicable current password and second factor, and credential transitions advance the credential version and revoke sessions (internal/auth/service.go:459-509, 616-747; internal/store/store.go:370-467, 483-670). Passkey management reauthenticates with password and configured TOTP, binds registration ceremonies to the initiating session and credential version, and atomically verifies the current session at credential writes; anonymous login uses a short-lived one-use ceremony bound to an HttpOnly Strict cookie, validates the configured RP/origin and user verification, and creates a fresh session only after verification (internal/auth/passkey.go:32-129, 157-190, 194-331, 332-461; internal/panel/passkey.go:38-187, 193-395; internal/store/passkeys.go:24-96, 227-305). Bootstrap is one-time and creates the initial admin only while uninitialized; password login verifies password and, when configured, TOTP before issuing a new random session and CSRF secret (internal/auth/service.go:207-318, 748-783; internal/store/store.go:327-369). Public passkey status exposes coarse global availability/origin/configurability fields but no credential IDs or per-account credentials; account-specific credential listing requires a session. Public login appearance exposes branding and only the current bounded wallpaper preview (internal/panel/passkey.go:58-105; internal/panel/login_appearance.go:33-131). No target code, tests, builds, fixtures, services, or external probes were executed, as required by the source-only assignment.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "ddaacc3283f2bc00566b0edcb886a95ec3f754cc",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "ebdd3ba4b2c3035b47c7dfb9b50c78d8e6b618dd",
+      "f3899ad7f39d31fa9d71794544055225c01bc326",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "Unauthenticated GET /api/v1/auth/passkeys/status returns coarse global availability, origin, configurability, and managed-origin fields but no credential IDs or per-account credentials; the credential list remains behind requireSession."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Panel%20update%20freeze%20and%20credential-state%20rollback%20contract::Updater%20snapshot%20and%20recovery%20lifecycle%20through%20the%20Panel%20HTTP%20write%20gate%20and%20account%20credential%20mutations::internal%2Fpanel%2Bpackaging::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "Panel update freeze and credential-state rollback contract",
+      "boundary": "Updater snapshot and recovery lifecycle through the Panel HTTP write gate and account credential mutations",
+      "subsystem": "internal/panel+packaging",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "Panel update freeze and credential-state rollback contract",
+    "boundary": "Updater snapshot and recovery lifecycle through the Panel HTTP write gate and account credential mutations",
+    "subsystem": "internal/panel+packaging",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "internal/panel/config.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "packaging/kejilion-app/kpanel.conf"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Release and update",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 4,
+    "status": "covered",
+    "agent_id": "hunter_release_lifecycle_wave4",
+    "reviewed_paths": [
+      "internal/panel/config.go",
+      "internal/panel/passkey.go",
+      "internal/panel/server.go",
+      "packaging/kejilion-app/kpanel.conf"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_release_lifecycle_wave4",
+        "reviewed_paths": [
+          "internal/panel/config.go",
+          "internal/panel/passkey.go",
+          "internal/panel/server.go",
+          "packaging/kejilion-app/kpanel.conf"
+        ],
+        "invariant": "No credential or other HTTP write can race the updater snapshot or be lost by rollback after the restored runtime starts.",
+        "method": "source",
+        "result": "Config defaults the freeze marker to /run/kejilion-panel/update-freeze and rejects overlap with Panel data and web roots; the generated Compose file mounts the host run directory read-only at that exact path. ServeHTTP checks the marker with Lstat before route dispatch and fails closed on any error other than not-exist, rejecting all non-GET/HEAD/OPTIONS requests and upgraded requests while frozen. The bootstrap, login/logout, password/username, TOTP, passkey registration/deletion, and passkey-origin state transitions use POST or PUT handlers, so they cross this gate. The updater stops Agent and Panel before taking the snapshot and creates the marker before target startup. On recovery it restores data while writers are stopped, records rollback-ready before restarting the old runtime, and subsequent recovery does not replay the snapshot, preserving any post-restart credential changes. No source-level bypass or lost-credential rollback path was identified.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "120f868ae10c1277302ac93b102fe8564202a42d",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "43792db3dc4909b6a743144bc94db6dcfb7b1236",
+      "6d3eeb12bc25b4a0435500551f6a8aa22c9d1c80",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "7da41fbb61f50b78ea175bb2bb989974e8013cce",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "81f5d05b2204443fc52ab8da0b3d46de9c846713",
+      "871a6258b0cf1868727791e1d1d5264750d5c5b7",
+      "9853759b0327e6cbb5205e822976583bb792e9d8",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "b4271ad0448b7d722cbc46636bd7b6ea9a28355a",
+      "b8347e7c0a40e5e7400b1e41bc305f164da17e82",
+      "b845606b5ed0e7fdbb18afb943679cec871e4f14",
+      "cea6261f9ae1de064216a1c423d3cd3f2d87d3fa",
+      "db4c410988a8813b8b4f0b7201e4631d3ee1c099",
+      "dfad70a8da1d4f5e243c3106a39b5c9bc00cb261",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19",
+      "f8d4a42e51180fa409e2f3a5889b115c4dea13e7"
+    ],
+    "parent_hardening": [
+      "The source binds updater bytes to a versioned GitHub release manifest/hash and pins the Panel image to a repository digest, but the assigned files do not establish hosted release authorization, registry trust policy, signing, or runner provenance; no claim about those external controls is made.",
+      "The lifecycle harness source covers digest retargeting, freeze capability rejection, stop/snapshot failures, and interrupted rollback cases; this source-only assignment did not execute those tests."
+    ],
+    "coverage_critic_source_basis": "The update unit covers packaging and updater scripts but not the Panel consumer of the freeze marker; the authentication unit covers account/passkey paths without the updater transaction. Source shows the updater stops Panel and Agent writers before snapshotting, publishes the marker before starting the target runtime, and relies on recovery not undoing later credential changes; Panel config supplies the marker path and server.go gates mutating requests against it. That cross-component contract is not mapped to a unit."
+  },
+  {
+    "coverage_id": "Remote%20backup%20transport%2C%20credential%2C%20and%20encrypted-object%20lifecycle::administrator%20backup%20configuration%20to%20remote%20WebDAV%2FS3-like%20object%20operations%20and%20restore::internal%2Fbackupremote%2Binternal%2Fbackup%2Binternal%2Fpanel::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "Remote backup transport, credential, and encrypted-object lifecycle",
+      "boundary": "administrator backup configuration to remote WebDAV/S3-like object operations and restore",
+      "subsystem": "internal/backupremote+internal/backup+internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "Remote backup transport, credential, and encrypted-object lifecycle",
+    "boundary": "administrator backup configuration to remote WebDAV/S3-like object operations and restore",
+    "subsystem": "internal/backupremote+internal/backup+internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Ingress, network, and control-plane",
+      "CLOUD-AND-DEPLOYMENT.md#Configuration and secret lifecycle",
+      "CLOUD-AND-DEPLOYMENT.md#Managed storage, events, and edge",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter_backup_remote_w1",
+    "reviewed_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_backup_remote_w1",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "Stored provider credentials remain confidential in transit as well as at rest, and are not exposed through public settings responses.",
+        "method": "source",
+        "result": "The settings store encrypts persisted secrets with XChaCha20-Poly1305 and a fresh random nonce, and Snapshot removes Secret and Schedule.Password. However, Storage.Validate accepts http endpoints; WebDAV requests retain that scheme and unconditionally add Basic authentication before sending. This is a source-grounded candidate for credential disclosure when an HTTP endpoint traverses a path observable by a lower-trust principal. Whether such an endpoint and path are used is not visible in the repository.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_backupremote_http_basic_auth_wave16",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_handlers.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "Stored provider credentials remain confidential in transit as well as at rest, and are not exposed through public settings responses.",
+        "method": "source",
+        "result": "Independent Phase 3 source validation retains needs_validation: The authenticated backup settings path can save a WebDAV endpoint using http. Later remote operations retrieve that stored Storage, derive DAV request URLs from the configured endpoint, set Basic authentication, and submit them through a client whose transport only requires the request scheme to match the endpoint. A network-path observer could therefore obtain the reusable WebDAV credential when an HTTP endpoint is in use. Source does not establish that a deployment uses such an endpoint or that a lower-trust principal can observe its path; provider-side credential scope is also unknown. Blockers: Run-16 explicitly forbids executing target code, tests, fixtures, or probes, so no independent bounded observation of the outgoing HTTP request and Authorization header was made; the assignment does not permit a confirmed record without that demonstration.; Repository source does not reveal the effective deployed endpoint schemes or whether a lower-trust principal can observe any configured HTTP network path; provider-side credential scope and restrictions are also not established.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "backupremote.credentials.allow-http"
+    ],
+    "unresolved": [
+      "Whether a deployed WebDAV storage uses an http endpoint over a path observable by a lower-trust network principal.",
+      "Phase 3 verify_backupremote_http_basic_auth_wave16 needs_validation: Run-16 explicitly forbids executing target code, tests, fixtures, or probes, so no independent bounded observation of the outgoing HTTP request and Authorization header was made; the assignment does not permit a confirmed record without that demonstration.",
+      "Phase 3 verify_backupremote_http_basic_auth_wave16 needs_validation: Repository source does not reveal the effective deployed endpoint schemes or whether a lower-trust principal can observe any configured HTTP network path; provider-side credential scope and restrictions are also not established."
+    ],
+    "scope_commit_refs": [
+      "566a186e0c3b5c67d0502d31569f8b1ee1ef55b1",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "The settings store seals its serialized credentials and schedule password with XChaCha20-Poly1305 using a random nonce; its public snapshot clears both secret fields, and decryption errors fail closed."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Remote-backup%20schedule%2C%20retry%2C%20and%20worker%20lifecycle::Saved%20remote%20schedules%20and%20manual%20retries%20through%20backup-job%20execution%2C%20cancellation%2C%20and%20failure%20state::backupremote%20store%20and%20Panel%20backup%20job%20coordinator::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Remote-backup schedule, retry, and worker lifecycle",
+      "boundary": "Saved remote schedules and manual retries through backup-job execution, cancellation, and failure state",
+      "subsystem": "backupremote store and Panel backup job coordinator",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Remote-backup schedule, retry, and worker lifecycle",
+    "boundary": "Saved remote schedules and manual retries through backup-job execution, cancellation, and failure state",
+    "subsystem": "backupremote store and Panel backup job coordinator",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "internal/backup/jobs.go",
+      "internal/backupremote/store.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go",
+      "internal/store/backup.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLOUD-AND-DEPLOYMENT.md#Ingress, network, and control-plane",
+        "reason": "The existing wildcard unit source-checks endpoint syntax, DNS resolution and prohibited addresses, scheme/authority, and redirect rejection. This unit isolates schedule, retry, cancellation, and job-state behavior."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 4,
+    "status": "covered",
+    "agent_id": "hunter_backupremote_wave4",
+    "reviewed_paths": [
+      "internal/backup/jobs.go",
+      "internal/backupremote/store.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go",
+      "internal/store/backup.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_backupremote_wave4",
+        "reviewed_paths": [
+          "internal/backupremote/store.go"
+        ],
+        "invariant": "Schedule mutations are validated and revision-checked; a due schedule slot is claimed once and its next recurrence is persisted before job launch.",
+        "method": "source",
+        "result": "PutSchedule rejects stale revisions and invalid schedules or missing storage references. Claim serializes through the store mutex, defers a busy schedule during the five-minute grace window, and durably advances NextRun before returning run=true; a slot later than the grace window is recorded as schedule_missed. SetRunError attempts to persist a failure code. This establishes an intentional at-most-once schedule state transition without an in-process duplicate claim path.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_backupremote_wave4",
+        "reviewed_paths": [
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "Scheduled and manual remote-backup flows use a validated plan, reserve a single backup job, and persist upload and failure state around asynchronous work.",
+        "method": "source",
+        "result": "The manual schedule-run route snapshots the stored plan and validates it before starting an export. Scheduled polling claims before launch and calls SetRunError on launch failure; automatic workers call it after generation, upload, and retention processing. Manual upload retry resolves the selected storage, calls ReserveUpload, replaces the receipt, and starts the job; upload state transitions to completed or failed and errors propagate to the job manager.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_backupremote_wave4",
+        "reviewed_paths": [
+          "internal/backup/jobs.go"
+        ],
+        "invariant": "A backup retry pins an eligible local export while active; worker state, cancellation, interruption, and terminal persistence govern the lifecycle.",
+        "method": "source",
+        "result": "ReserveUpload accepts only completed or failed export records with a positive size and an available regular package, then reserves the manager's sole active slot. Run requires the queued active record, persists running state, and executes with a two-hour context; Close cancels the active worker and waits. Restart recovery marks queued or running records interrupted, while active reservations prevent sweep or delete from removing a package during retry. Persistence failure leaves the manager fail-closed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_backupremote_wave4",
+        "reviewed_paths": [
+          "internal/panel/backup_handlers.go",
+          "internal/store/backup.go"
+        ],
+        "invariant": "A local package is marked retry-ready only after encryption and fsync complete; restoring Panel identity pauses the remote schedule before identity state changes.",
+        "method": "source",
+        "result": "generateBackup removes an incomplete encrypted file on write, sync, stat, or close failure and sets LocalReady only after those steps succeed. The Panel identity restore path calls backupRemote.Pause before the restart transition; RestoreIdentity validates input, revokes current sessions and shares, advances credential version, and persists or rolls back the identity state. No schedule reactivation occurs implicitly in this identity restore path.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "566a186e0c3b5c67d0502d31569f8b1ee1ef55b1",
+      "6fe43ea8451af16cbb17132e2f1014db65346bcf",
+      "8ee07e4adb0e6071df50fa56d33125297235797e",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [
+      "The schedule is intentionally at-most-once: Claim persists the next slot before job reservation, late or busy windows beyond the five-minute grace period are marked schedule_missed, and a launch or worker failure is passed to SetRunError without retrying until the next recurrence. SetRunError errors are ignored by the caller, so a store write failure can leave the last-error state stale. Confirm that this backup recovery policy meets release expectations."
+    ],
+    "prior_leads": [
+      "mcp.backup.restore-agent-revision-approval-drift"
+    ],
+    "coverage_critic_source_basis": "The remote credential candidate checks storage and Basic-auth transport; the covered wildcard unit checks endpoint and object bounds. Neither check closes the separate schedule/retry workflow: backup_remote.go has manual upload retry, scheduled execution, a periodic worker, and cancellation/wait logic, coordinated with the shared backup job manager. The corresponding business-state and resource lifecycle remains unreviewed."
+  },
+  {
+    "coverage_id": "Scene-pack%20catalog%2C%20download%20capability%2C%20and%20installation::public%20catalog%20input%20and%20authenticated%20selection%20to%20downloaded%20archive%20and%20installed%20appearance%20state::internal%2Fscenepacks%2Binternal%2Fpanel%2Binternal%2Fstore::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Scene-pack catalog, download capability, and installation",
+      "boundary": "public catalog input and authenticated selection to downloaded archive and installed appearance state",
+      "subsystem": "internal/scenepacks+internal/panel+internal/store",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Scene-pack catalog, download capability, and installation",
+    "boundary": "public catalog input and authenticated selection to downloaded archive and installed appearance state",
+    "subsystem": "internal/scenepacks+internal/panel+internal/store",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/panel/scene_packs.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/profile.go",
+      "internal/scenepacks/store.go",
+      "internal/store/appearance.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_rejected_claim_changed",
+    "attempts": [
+      {
+        "wave": 4,
+        "status": "covered",
+        "agent_id": "hunter_scenepacks_wave4",
+        "reviewed_paths": [
+          "internal/backup/files.go",
+          "internal/panel/appearance.go",
+          "internal/panel/login_appearance.go",
+          "internal/panel/scene_packs.go",
+          "internal/panel/server.go",
+          "internal/remotedownload/client.go",
+          "internal/scenepacks/catalog.go",
+          "internal/scenepacks/profile.go",
+          "internal/scenepacks/store.go",
+          "internal/store/appearance.go"
+        ],
+        "local_checks": [
+          {
+            "agent_id": "hunter_scenepacks_wave4",
+            "reviewed_paths": [
+              "internal/panel/server.go",
+              "internal/remotedownload/client.go",
+              "internal/scenepacks/catalog.go",
+              "internal/scenepacks/profile.go",
+              "internal/scenepacks/store.go"
+            ],
+            "invariant": "远端 catalog 输入不能选择任意取回地址、重定向目标或文件路径。",
+            "method": "source",
+            "result": "catalog.go:158-168、191-247 将文件路径、包 ID、文件大小、摘要及 catalog 结构限制在固定格式和上限；profile.go:12-13 定义固定 GitHub 与 mirror 根，ValidSource 只接受 auto/github/mirror。server.go:246-247 在生产构造时传入 nil fetcher，因此 store.go:60-79 使用内置 remotedownload 客户端；store.go:211-232 只拼接固定根与已验证相对路径，并以 catalog 摘要校验包文件。内置客户端启用 RejectRedirects，client.go:108-116 在跟随前拒绝重定向；store.go:70-75 还要求最终请求 URL 与原地址完全相同。未发现 SSRF、重定向前出站或路径穿越候选；历史 scenepacks.redirect.public-egress-before-origin-check 线索在当前源码路径已解决。",
+            "artifact": null
+          },
+          {
+            "agent_id": "hunter_scenepacks_wave4",
+            "reviewed_paths": [
+              "internal/panel/scene_packs.go",
+              "internal/panel/server.go",
+              "internal/scenepacks/store.go"
+            ],
+            "invariant": "修改 scene-pack 安装状态需管理员会话、Origin/CSRF 校验；匿名文件读取仅凭当前安装生成的对象级 capability，且不能访问清单外文件。",
+            "method": "source",
+            "result": "server.go:343-345、468-469 将 API 请求分派到 scene-pack handler。scene_packs.go:94-102 对写请求执行 Origin、requireSession 和 CSRF 校验；写入 JSON 限制为 1024 字节并验证 source/资源版本后才安装、删除或改源（132-145、163-184）。文件路径分支允许 GET，但要求 ValidID、ValidToken、ValidPath（scene_packs.go:31-39、60-73）；store.go:406-414 为每次安装生成 16 字节随机 token，已认证的 List/View 对已安装项构造包含 token 的 FileBase（store.go:282-296、314-335）。File 在返回数据前比较当前状态中的 token 并只接受清单列出的路径（store.go:495-540）。scene_packs.go:83-90 对 capability 内容施加 sandbox CSP，路径源只覆盖该安装目录。未发现认证绕过、跨对象读取或不受限文件访问候选。",
+            "artifact": null
+          },
+          {
+            "agent_id": "hunter_scenepacks_wave4",
+            "reviewed_paths": [
+              "internal/backup/files.go",
+              "internal/panel/appearance.go",
+              "internal/panel/login_appearance.go",
+              "internal/scenepacks/profile.go",
+              "internal/scenepacks/store.go",
+              "internal/store/appearance.go"
+            ],
+            "invariant": "安装对象路径受限于私有目录和清单路径，替换/删除能撤销旧 capability，appearance 与登录预览只能引用受限的包 ID/当前已安装缩略图。",
+            "method": "source",
+            "result": "store.go:411-434 将包写入随机 token 对象目录；backup/files.go:26-40、93-112 创建私有目录和排他文件，File 使用 os.OpenRoot 限定读取根并核对常规文件、大小及 SHA-256（store.go:518-540）。状态读入和写出经 validStateProfile 与原子持久化校验（store.go:87-100、105-127、163-179）；安装提交新 token 后删除旧对象，删除先提交不含旧 token 的状态再清理对象（store.go:439-450、454-490），使并发/后续 File 调用无法再通过旧 token。Select 要求已安装包和当前 state version（profile.go:32-55）。appearance.go:32-50 要求管理员会话及写请求 CSRF，appearance.go 与 store/appearance.go:16-37 将 pack 引用限制为固定 ID 语法并按 resource version 保存。login_appearance.go:74-109 只服务当前 appearance 版本指向的包缩略图，使用 InstalledPreview 且限定最大字节数；没有任意 ID 或原始场景代码的匿名读取路径。",
+            "artifact": null
+          },
+          {
+            "agent_id": "hunter_scenepacks_wave4",
+            "reviewed_paths": [
+              "internal/panel/login_appearance.go",
+              "internal/panel/scene_packs.go",
+              "internal/panel/server.go",
+              "internal/scenepacks/catalog.go",
+              "internal/scenepacks/store.go"
+            ],
+            "invariant": "目录解析、磁盘占用、下载等待和文件响应并发量有明确上限，不能由小输入放大为无界共享资源消耗。",
+            "method": "source",
+            "result": "catalog.go:17-24、191-247 限制包数、文件数、单文件/整包大小；store.go:87-100、105-127 限制状态文件与已安装总量。store.go:51-54、189-239 将网络并发限制为 3，并对每次取回设置 20 秒超时；安装整体限时 3 分钟（421-438），catalog 刷新通过 opMu 串行并受 30 秒失败退避/5 分钟成功缓存约束（245-279）。server.go:23、248-249 将文件/图片流并发设为 4、等待队列设为固定容量；scene_packs.go:192-212 使用请求取消并拒绝满队列请求，File 响应体及登录预览均受单文件大小约束。未发现无界解析、下载或流积累候选。",
+            "artifact": null
+          }
+        ],
+        "result_fingerprints": [],
+        "unresolved": [],
+        "reassignment_reason": "Distinct final-clean coverage critic found that the Wave 4 checks did not inspect whether objects/<token> and ancestor directories are durable before the state.json index commit. Preserve the covered Wave 4 review as an archived attempt and assign a fresh source-only review of the durability ordering."
+      }
+    ],
+    "wave": 5,
+    "status": "covered",
+    "agent_id": "hunter_scenepacks_durability_wave5",
+    "reviewed_paths": [
+      "internal/backup/files.go",
+      "internal/scenepacks/store.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_scenepacks_durability_wave5",
+        "reviewed_paths": [
+          "internal/backup/files.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "提交 scene-pack state.json 中的新 token 前，对象文件及其目录项应具备相应持久化顺序；替换时应保留旧对象到新状态提交后，删除时应先提交撤销状态再清理对象。",
+        "method": "source",
+        "result": "fresh source review: openProfile 默认将 writeState 绑定为 backup.AtomicFile（internal/scenepacks/store.go:60-63）。Install 在随机 token 目录及文件父目录创建后写文件，再调用 save 提交 state.json（store.go:406-445）。PrivateDir 用 MkdirAll/chmod 创建目录但不 fsync 父目录（internal/backup/files.go:26-41）；CopyFile 对文件内容调用 f.Sync 并 close，但不 fsync 文件所在目录或新建目录链（files.go:93-112）。AtomicFile 对临时 state 文件 chmod、write、fsync、close、rename，然后只 SyncDir(state.json 的父目录)（files.go:127-156）；它没有同步 root/objects/token/子目录。于是源码证明 state 文件提交前没有对象目录项持久化屏障；推断在突然断电时可能恢复已提交 state.json、但缺少部分或全部新对象路径，File 随后无法打开对象（store.go:518-540），表现为已安装素材不可用。此具体断电结果取决于文件系统、挂载和存储设备语义，未执行 crash 验证。替换先保存新 token，后 RemoveAll 旧 token（store.go:441-450），逻辑顺序正确但无对象目录同步。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_scenepacks_durability_wave5",
+        "reviewed_paths": [
+          "internal/backup/files.go",
+          "internal/scenepacks/store.go"
+        ],
+        "invariant": "Delete 成功后，旧 capability 不应因未完成的持久化而在重启后重新通过当前 state 校验；清理对象应遵循已提交的状态变化。",
+        "method": "source",
+        "result": "backup.AtomicFile 在 rename 后 SyncDir 出错会返回错误（internal/backup/files.go:153-156）；但 Store.save 对任意 writeState 错误会重读 state.json，如果字节恰等于待写数据，就继续把 next 赋给内存 state 并返回成功（internal/scenepacks/store.go:163-178）。Delete 的顺序为保存去掉 token 的 state，再 pruneObjects（store.go:481-489）；pruneObjects 只移除磁盘上未被 state 引用的目录，没有同步 objects/目录项（store.go:129-160）。因此在状态目录同步失败后，源码仍允许 Delete 继续清理；若该存储层在随后掉电时保留旧 state 目录项且未持久化对象删除，旧 state 与对象均可能恢复。File 会接受当前 state 中匹配的 id/token，并只读取清单列出的文件（store.go:492-540）。这是条件性、平台相关的撤销/生命周期不确定性，不是已验证的 crash finding；代码注释明确 capability 只暴露 artwork，不暴露 Panel API 或 state（store.go:492-494），因此未形成私密数据披露或权限提升的安全候选。记录为 durability hardening；需在目标存储/文件系统上验证任何具体掉电结果。",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter_scenepacks_durability_wave5",
+        "reviewed_paths": [
+          "internal/store/store.go"
+        ],
+        "invariant": "区分 Scene Store 实际状态写入器与通用 panel store 的原子持久化，不能把另一状态库的实现误当作对象目录同步保证。",
+        "method": "source",
+        "result": "internal/store.Store.persistLocked 对临时 store 文件执行 fsync 后 rename，并 best-effort 调用 syncDirectory；目录同步错误被忽略（internal/store/store.go:1103-1158），Windows 上 syncDirectory 直接返回 nil，其他平台才 Open 目录并 Sync（store.go:1236-1248）。此通用 diskState 写入器不管理 scene-pack state.json 或 objects；Scene Store 明确使用 backup.AtomicFile（internal/scenepacks/store.go:62），故通用 store 代码不弥补前述对象目录项持久化缺口。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "29951269e0367b0bf0cc4411ede45030a58d0d10",
+      "7439190e8fda4933b2cee0eed13f03846c2fd96a",
+      "7dc2394c91e73fc34581082e5bcdc6ba2744aef7",
+      "b37219f5942642c09a70a259c12472185c0f9eab",
+      "ebdd3ba4b2c3035b47c7dfb9b50c78d8e6b618dd"
+    ],
+    "parent_hardening": [
+      "重查公开 catalog 到后端 fetch 的重定向边界：生产 Panel 未注入自定义 fetcher，内置 client 在任何 redirect target 请求前拒绝重定向，并且 Store 再检查最终 URL 与原 URL 相等；当前树没有 redirect-triggered SSRF 路径。",
+      "Scene Store 的 durability/availability hardening：在提交 state.json 前，对新建 token 目录、逐级父目录和文件所在目录按需进行目录 fsync，并确认需要同步的目录层级；当前只 fsync 文件内容及 state.json 父目录（internal/backup/files.go:26-41,93-112,127-156；internal/scenepacks/store.go:411-445）。断电后可能出现 state 引用缺失对象。另在 AtomicFile 的目录同步失败路径中，save 目前按可读字节接受新状态并允许 Delete 清理对象（store.go:163-178,481-489）；旧 state/object 能否在具体掉电后同时恢复取决于部署文件系统与设备。源码未给出这些部署事实，且 capability 内容限于公开 catalog artwork（store.go:492-494），故当前不支持安全候选。"
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": "The final-clean critic identified an uncovered prior run-8 durability boundary. Wave 5 independently reviewed object-directory fsync ordering and save/delete behavior; see the critic source-basis note and hunter_scenepacks_durability_wave5 scratch result."
+  },
+  {
+    "coverage_id": "Task%20terminal%20input%20and%20application%20script%20PTY::Panel%20and%20appmarket%20terminal%20actions%20to%20Agent%20PTY%20input%2C%20sequencing%2C%20ACK%2C%20resize%2C%20and%20log::internal%2Fpanel%2Binternal%2Fterminal%2Binternal%2Fagent%2Binternal%2Fappmarket%2Binternal%2Fhostpty::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Task terminal input and application script PTY",
+      "boundary": "Panel and appmarket terminal actions to Agent PTY input, sequencing, ACK, resize, and log",
+      "subsystem": "internal/panel+internal/terminal+internal/agent+internal/appmarket+internal/hostpty",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Task terminal input and application script PTY",
+    "boundary": "Panel and appmarket terminal actions to Agent PTY input, sequencing, ACK, resize, and log",
+    "subsystem": "internal/panel+internal/terminal+internal/agent+internal/appmarket+internal/hostpty",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "internal/agent/job_input.go",
+      "internal/agent/terminals.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal_log.go",
+      "internal/appmarket/terminal_resize.go",
+      "internal/appmarket/terminal.go",
+      "internal/hostpty/output_log.go",
+      "internal/hostpty/process_linux.go",
+      "internal/hostpty/process_other.go",
+      "internal/hostpty/process.go",
+      "internal/panel/job_terminal_input.go",
+      "internal/panel/terminal_input_batch.go",
+      "internal/panel/terminal_input.go",
+      "internal/panel/terminal.go",
+      "internal/terminal/input.go",
+      "internal/terminal/manager.go",
+      "internal/terminal/sequencer.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "internal/agent/job_input.go",
+      "internal/agent/terminals.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal_log.go",
+      "internal/appmarket/terminal_resize.go",
+      "internal/appmarket/terminal.go",
+      "internal/hostpty/output_log.go",
+      "internal/hostpty/process_linux.go",
+      "internal/hostpty/process_other.go",
+      "internal/hostpty/process.go",
+      "internal/panel/job_terminal_input.go",
+      "internal/panel/terminal_input_batch.go",
+      "internal/panel/terminal_input.go",
+      "internal/panel/terminal.go",
+      "internal/terminal/input.go",
+      "internal/terminal/manager.go",
+      "internal/terminal/sequencer.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "internal/agent/job_input.go",
+          "internal/agent/terminals.go",
+          "internal/appmarket/jobs.go",
+          "internal/appmarket/terminal_log.go",
+          "internal/appmarket/terminal_resize.go",
+          "internal/appmarket/terminal.go",
+          "internal/hostpty/output_log.go",
+          "internal/hostpty/process_linux.go",
+          "internal/hostpty/process_other.go",
+          "internal/hostpty/process.go",
+          "internal/panel/job_terminal_input.go",
+          "internal/panel/terminal_input_batch.go",
+          "internal/panel/terminal_input.go",
+          "internal/panel/terminal.go",
+          "internal/terminal/input.go",
+          "internal/terminal/manager.go",
+          "internal/terminal/sequencer.go"
+        ],
+        "invariant": "Terminal input, sequencing, ACK, resize, cancellation and logs remain bound to an authenticated owner/job and bounded against replay, uncertainty, wrong ordering and resource growth.",
+        "method": "source",
+        "result": "PTY/input logic: panel/terminal.go:59-155 binds fixed Agent routes and strict decoder; 157-255 session/Origin/CSRF, capability/dimensions, global/user quota; 290+ binds owner and close/retry. terminal_input.go:96-376 requires same-origin+CSRF auth, live session/target, one dispatcher, bounded outstanding window, ACK only after apply, host/user/session binding; terminal_input_batch.go:21-119 caps body/32 contiguous frames and reauthenticates each. terminal/input.go:10-99 validates stream/sequence/frame and freezes uncertain partial writes; sequencer.go:17-121 enforces next-sequence/replay hash and fences prior FIFO writer. agent/job_input.go:19-267 bounds registry and checks task liveness/epoch, distinguishing not-written from partial; agent/terminals.go:32-206 restricts operations/dimensions. terminal/manager.go:281-347 owner quotas/trusted executable/dimensions; 574-581 owner lookup. appmarket/terminal.go:35-169 validates job/app/selector and fixed script/args; 299-363 bounds log/status; jobs.go:532-647 resource controls and closes input on cancel. terminal_resize.go:18-115 private socket/deadlines/dimension checks/ACK. hostpty/process_linux.go:22-200 bounded FIFO writes/partial distinction; process_other.go refuses terminals; process.go partial contract; output_log.go:22-250 caps/rotates/chmods output. appmarket/terminal_log.go is absent at pinned HEAD; historical version at dd6f9b6^ was a bounded rolling log replaced by hostpty/output_log.go. No source-only replay/order/resize/log failure survived. scope_commit_refs: 016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63, 272a266ca9cf97aae6cf7e3b70d94a55de3e3c67, 2d939270559ccec665507c8472c8569980e5a2cd, 41bcc89bd38e5e0283d2278efa479dd5e08113a2, 42e26748b7b0b165b03ab13596ca6e5bf5317630, 4f5b88ff8cd04d767c1847ff88123effe31275dd, 71a1d8ddd27b9d40cf8020d7912437a739546c54, 7625206c00df182f2cda590e4bbc7e511560973b, 78318efdb3ca5af97b6d7b574543c3741490fd87, dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e, e6868e85cadff5c879edbbfc26cec018ce2f74cf, f317303aa0225b7bbb96b1f76d297c1525c61f9e, f8a1cb873e34c976cd7787932a607886071b8abb",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "016386de6c9b53e2d4fdb2d3bd3fd83bbd844b63",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "2d939270559ccec665507c8472c8569980e5a2cd",
+      "41bcc89bd38e5e0283d2278efa479dd5e08113a2",
+      "42e26748b7b0b165b03ab13596ca6e5bf5317630",
+      "4f5b88ff8cd04d767c1847ff88123effe31275dd",
+      "71a1d8ddd27b9d40cf8020d7912437a739546c54",
+      "7625206c00df182f2cda590e4bbc7e511560973b",
+      "78318efdb3ca5af97b6d7b574543c3741490fd87",
+      "dd6f9b649f7b8dc47bbaa3cfa4f7680d4bb3100e",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f317303aa0225b7bbb96b1f76d297c1525c61f9e",
+      "f8a1cb873e34c976cd7787932a607886071b8abb"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  },
+  {
+    "coverage_id": "Terminal%20SSE%20and%20cluster-stream%20lifecycle::Panel%20SSE%20subscriptions%20and%20cluster%20terminal%20reconnect%2C%20ACK%2C%20and%20backpressure%20state%20to%20bounded%20PTY%20sessions::internal%2Fpanel%2Binternal%2Fcluster%2Binternal%2Fterminal::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "Terminal SSE and cluster-stream lifecycle",
+      "boundary": "Panel SSE subscriptions and cluster terminal reconnect, ACK, and backpressure state to bounded PTY sessions",
+      "subsystem": "internal/panel+internal/cluster+internal/terminal",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Terminal SSE and cluster-stream lifecycle",
+    "boundary": "Panel SSE subscriptions and cluster terminal reconnect, ACK, and backpressure state to bounded PTY sessions",
+    "subsystem": "internal/panel+internal/cluster+internal/terminal",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "internal/agent/terminals.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_input.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/terminal_stream.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Broker and queue isolation",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 3,
+    "status": "covered",
+    "agent_id": "hunter_cluster_terminal_wave3",
+    "reviewed_paths": [
+      "internal/agent/terminals.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_input.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/panel/terminal_stream.go",
+      "internal/terminal/manager.go",
+      "internal/agent/server.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_cluster_terminal_wave3",
+        "reviewed_paths": [
+          "internal/agent/terminals.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/terminal_input.go",
+          "internal/cluster/terminal_stream.go",
+          "internal/panel/terminal_stream.go",
+          "internal/terminal/manager.go",
+          "internal/agent/server.go"
+        ],
+        "invariant": "SSE subscriptions and cross-node terminal streams remain bound to an authenticated user/host/session; reconnect, ACK and backpressure preserve bounded sequenced PTY state.",
+        "method": "source",
+        "result": "SSE/stream lifecycle: panel/terminal_stream.go:28-94 bounds global/user SSE, sessions/subscriptions and binds stream to user plus SHA-256 auth-token hash. handler at 96+ authenticates session, reauths busy stream within 1s and expires at auth expiry; writes use bounded buffers/20s deadline, subscription mutation requires CSRF/Origin and user/host ownership, pumps use bounded retries/offset recovery through 533. cluster/stream_v3.go:271-296 requires active paired host and explicit scope; pool idle/age limits at 30+; 427-455 avoids ambiguous duplicate PTY creation on first-write failure. cluster/terminal_stream.go authenticates Noise peer, probes before PTY open, validates session/dimensions/offset, attaches owner-specific session, bounds input queue and ACKs only applied input; reattach/fallback bounded and outstanding sequences tracked. terminal_input.go:10-28 rejects unsequenced fallback. agent/server.go:306-316,423-428,534-545 bearer-guards exact routes; agent/terminals.go routes to owner-checked manager. terminal/manager.go bounds 16 global/4 owner, output ring and reaping/lifetime. No source-only lifecycle, ACK or backpressure bypass survived. scope_commit_refs: 253955cd11784f775069a8b9a72ed8a17e00e31d, 272a266ca9cf97aae6cf7e3b70d94a55de3e3c67, e6868e85cadff5c879edbbfc26cec018ce2f74cf, f8a1cb873e34c976cd7787932a607886071b8abb",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "253955cd11784f775069a8b9a72ed8a17e00e31d",
+      "272a266ca9cf97aae6cf7e3b70d94a55de3e3c67",
+      "e6868e85cadff5c879edbbfc26cec018ce2f74cf",
+      "f8a1cb873e34c976cd7787932a607886071b8abb"
+    ],
+    "parent_hardening": [
+      "Federation paths use canonical signed fields, replay/rate gates and peer-fingerprint-bound scopes; light-node reports validate bounded schemas and constant-time HMACs.",
+      "Public share output is a narrow DTO and excludes raw IPs, service-check details, credentials, SSH-login data and application/system configuration."
+    ],
+    "coverage_critic_source_basis": "The cluster relay unit includes the stream files but excludes Business logic and does not select availability companions. The task-terminal unit covers PTY input and ACK paths but omits the SSE and cluster stream handlers and excludes quota, scheduling, and failure-recovery review. The SSE source defines global/per-user stream, subscription, and event-buffer limits; the cluster stream maintains pending requests and reconnect/backpressure state. These lifecycle and resource boundaries need explicit coverage."
+  },
+  {
+    "coverage_id": "Wildcard%20review%20of%20the%20new%20remote-backup%20package::unexpected%20interactions%20across%20endpoint%20validation%2C%20object%20naming%2C%20encryption%2C%20and%20recovery::internal%2Fbackupremote::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "Wildcard review of the new remote-backup package",
+      "boundary": "unexpected interactions across endpoint validation, object naming, encryption, and recovery",
+      "subsystem": "internal/backupremote",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "Wildcard review of the new remote-backup package",
+    "boundary": "unexpected interactions across endpoint validation, object naming, encryption, and recovery",
+    "subsystem": "internal/backupremote",
+    "attack_class": "ATTACK-CLASSES.md#Wildcard",
+    "starting_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Ingress, network, and control-plane",
+      "CLOUD-AND-DEPLOYMENT.md#Managed storage, events, and edge",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_backup_remote_w1",
+    "reviewed_paths": [
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/panel/backup_remote.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter_backup_remote_w1",
+        "reviewed_paths": [
+          "internal/backupremote/client.go",
+          "internal/backupremote/config.go",
+          "internal/backupremote/store.go",
+          "internal/backupremote/webdav.go",
+          "internal/panel/backup_remote.go"
+        ],
+        "invariant": "Endpoint authority, remote object names, response size, and import inputs remain bounded to the configured backup destination and validated package objects.",
+        "method": "source",
+        "result": "Source review found endpoint syntax validation, DNS checks on each new connection, rejection of prohibited resolved addresses, authority and scheme checks in the transport, disabled redirects, bounded response bodies, single-component .kpb object-name validation, bounded DAV listing parsing, and download size checks with exact byte-count enforcement. No additional wildcard failure within this unit survived source review.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "scope_commit_refs": [
+      "566a186e0c3b5c67d0502d31569f8b1ee1ef55b1",
+      "f71edee5cb5f8fd14c80e76f08cb59f243bb8b19"
+    ],
+    "parent_hardening": [],
+    "prior_leads": [],
+    "coverage_critic_source_basis": ""
+  }
+]
