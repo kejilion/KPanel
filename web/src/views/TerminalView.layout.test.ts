@@ -65,7 +65,14 @@ describe('multi-host terminal workspace layout', () => {
     expect(terminalSource).toContain(':title="hostDescription(host)"')
     expect(terminalSource).not.toContain('terminal.currentPanel')
     expect(terminalSource).not.toContain('terminal.hostState.encrypted')
-    expect(terminalSource).not.toContain('<Plus')
+    // Host rows only say which host and in what state; they carry no "+".
+    // Opening another terminal is the tab bar's explicit, named action.
+    const hostRows = terminalSource.match(/<template v-if="terminalMode === 'interactive'">[\s\S]*?<\/template>/)?.[0] ?? ''
+    expect(hostRows).toContain('class="terminal-host"')
+    expect(hostRows).not.toContain('<Plus')
+    expect(terminalSource).toMatch(/class="terminal-tabs__new"[\s\S]*?:aria-label="t\('terminal\.newSessionOnHost'/)
+    // On a narrow screen the tabs scroll; the button must stay reachable.
+    expect(terminalSource).toMatch(/\.terminal-tabs__new\s*\{[^}]*position:sticky;[^}]*right:0;[^}]*background:var\(--terminal-shell-panel/)
     expect(terminalSource).not.toContain('{{ host.origin ||')
     expect(terminalSource).not.toContain('关闭窗口将断开')
   })
