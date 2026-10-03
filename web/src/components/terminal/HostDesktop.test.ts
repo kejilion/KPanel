@@ -30,7 +30,7 @@ function interaction() {
   }
   return {
     values, ended, builder, configBuilder: () => builder,
-    connect: vi.fn().mockResolvedValue({ run: () => ended.promise }),
+    connect: vi.fn().mockImplementation(() => pendingConnect?.promise ?? Promise.resolve({ run: () => ended.promise })),
     shutdown: vi.fn(() => ended.resolve()), setEnableClipboard: vi.fn(), setEnableAutoClipboard: vi.fn(),
     setKeyboardUnicodeMode: vi.fn(), setVisibility: vi.fn(), resize: vi.fn(), ctrlAltDel: vi.fn(),
   }
@@ -38,6 +38,7 @@ function interaction() {
 type Interaction = ReturnType<typeof interaction>
 let views: Interaction[] = []
 let emitReady = true
+let pendingConnect: ReturnType<typeof deferred<{ run: () => Promise<void> }>> | undefined
 const wrappers: VueWrapper[] = []
 customElements.define('iron-remote-desktop', class extends HTMLElement {
   connectedCallback() {
@@ -70,6 +71,7 @@ beforeEach(() => {
   resetLocaleForTest()
   localStorage.clear(); sessionStorage.clear()
   views = []; emitReady = true
+  pendingConnect = undefined
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   mocks.status.mockResolvedValue({ saved: false })
   mocks.save.mockResolvedValue({ saved: true, username: 'alice', domain: 'EXAMPLE' })
@@ -87,6 +89,43 @@ afterEach(async () => {
 })
 
 describe('RDP saved sign-in lifecycle', () => {
+  it('times out a stalled module load without opening a late session and permits retry', async () => {
+    vi.useFakeTimers()
+    const pending = deferred<Awaited<ReturnType<typeof import('@/lib/remoteDesktop').loadRemoteDesktop>>>()
+    mocks.load.mockReturnValueOnce(pending.promise)
+    const wrapper = await create()
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(30_001); await flushPromises()
+    expect(wrapper.text()).toContain('远程桌面连接超时')
+    expect(mocks.open).not.toHaveBeenCalled()
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+    pending.resolve({} as Awaited<ReturnType<typeof import('@/lib/remoteDesktop').loadRemoteDesktop>>); await flushPromises()
+    expect(mocks.open).toHaveBeenCalledTimes(1)
+    expect(views[0]!.shutdown).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(views[0]!.shutdown).not.toHaveBeenCalled()
+  })
+
+  it('closes a timed-out negotiation and late completion never replaces the next connection', async () => {
+    vi.useFakeTimers()
+    pendingConnect = deferred<{ run: () => Promise<void> }>()
+    const oldConnect = pendingConnect
+    const wrapper = await create()
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(30_001); await flushPromises()
+    expect(wrapper.text()).toContain('远程桌面连接超时')
+    expect(mocks.close).toHaveBeenCalledExactlyOnceWith('desktop-1')
+    expect(views[0]!.shutdown).toHaveBeenCalled()
+    pendingConnect = undefined
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    oldConnect.resolve({ run: () => Promise.resolve() }); await flushPromises()
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+    expect(mocks.open).toHaveBeenCalledTimes(2)
+    expect(mocks.close).not.toHaveBeenCalledWith('desktop-2')
+    expect(views[1]!.shutdown).not.toHaveBeenCalled()
+  })
+
   it('validates UTF-8 field limits before saving or opening a session', async () => {
     const wrapper = await create()
     await fill(wrapper, 'alice', '密'.repeat(342))

@@ -32,6 +32,12 @@ let element: HTMLElement | undefined
 let observer: ResizeObserver | undefined
 let cancelReady: (() => void) | undefined
 let statusController: AbortController | undefined
+let connectionTimer: number | undefined
+
+function clearConnectionTimer(): void {
+  if (connectionTimer !== undefined) window.clearTimeout(connectionTimer)
+  connectionTimer = undefined
+}
 
 function scheduleResize(): void {
   const host = canvasHost.value
@@ -60,6 +66,7 @@ async function releaseSession(): Promise<void> {
 
 async function closeSession(): Promise<void> {
   sequence++
+  clearConnectionTimer()
   statusController?.abort()
   password.value = ''
   connecting.value = false
@@ -129,6 +136,14 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
         saving.value = false
       }
     }
+    // Bound loading, session allocation and negotiation, not the live desktop.
+    // Invalidating this attempt also makes any late result close itself.
+    connectionTimer = window.setTimeout(() => {
+      if (attempt !== sequence || unmounted) return
+      credentials.password = ''
+      error.value = phrase('远程桌面连接超时，请重试或更换账户。')
+      void closeSession().catch(() => { if (!unmounted) error.value = phrase('关闭未确认，请重试关闭会话。') })
+    }, 30_000)
     const rdp = await loadRemoteDesktop()
     if (attempt !== sequence || unmounted) return
     const opened = await api.desktops.open(props.hostId, useSaved)
@@ -172,6 +187,7 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
     credentials.password = ''
     const live = await interaction.connect(config)
     if (attempt !== sequence || unmounted) { interaction.shutdown(); return }
+    clearConnectionTimer()
     connected.value = true
     connecting.value = false
     interaction.setVisibility(props.active)

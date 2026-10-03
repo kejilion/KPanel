@@ -21,6 +21,7 @@ export default [
   ["清除登录信息","Clear sign-in details"],
   ["建议使用桌面浏览器。连接可能锁定本机用户的桌面，具体取决于 Windows 的会话策略。","A desktop browser is recommended. Connecting may lock the local user's desktop, depending on the Windows session policy."],
   ["远程桌面连接失败，请检查 Windows 账户、NLA、RDP 服务和证书。","Remote desktop connection failed. Check the Windows account, NLA, RDP service and certificate."],
+  ["远程桌面连接超时，请重试或更换账户。","Remote desktop connection timed out. Retry or change the account."],
   ["关闭未确认，请重试关闭会话。","Close was not confirmed. Retry closing the session."],
   ["域（可选）","Domain (optional)"],
   ["连接远程桌面","Connect to remote desktop"],
