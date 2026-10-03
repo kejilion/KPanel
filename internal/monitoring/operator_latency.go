@@ -133,6 +133,9 @@ func (prober *dnsLatencyProbe) Probe(ctx context.Context, address string) (time.
 }
 
 func (prober *icmpLatencyProbe) Probe(ctx context.Context, address string) (time.Duration, error) {
+	if latency, err, handled := platformICMPProbe(ctx, address); handled {
+		return latency, err
+	}
 	if prober == nil {
 		return 0, errors.New("ICMP latency probe is unavailable")
 	}

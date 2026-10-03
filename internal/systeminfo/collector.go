@@ -84,6 +84,9 @@ func (c *Collector) prepareDefaults() {
 
 func (c *Collector) collectRuntime(ctx context.Context) (contract.SystemSummary, error) {
 	c.prepareDefaults()
+	if result, err, handled := c.collectPlatformRuntime(ctx); handled {
+		return result, err
+	}
 	result := contract.SystemSummary{
 		Architecture: runtime.GOARCH,
 		CollectedAt:  c.Now().UTC(),
@@ -126,6 +129,9 @@ func (c *Collector) CollectRuntime(ctx context.Context) (contract.SystemSummary,
 func (c *Collector) CollectManagement() contract.SystemManagementSummary {
 	c.prepareDefaults()
 	var result contract.SystemManagementSummary
+	if runtime.GOOS == "windows" && c.ProcRoot == "/proc" {
+		return result
+	}
 	c.readManagement(&result)
 	return result
 }
@@ -139,7 +145,9 @@ func (c *Collector) Collect(ctx context.Context) (contract.SystemSummary, error)
 	if c.PublicNetworkLookupEnabled {
 		result.PublicNetwork = c.readPublicNetwork(ctx)
 	}
-	c.readManagement(&result.Management)
+	if result.Platform != "windows" {
+		c.readManagement(&result.Management)
+	}
 	return result, errors.Join(errs...)
 }
 
