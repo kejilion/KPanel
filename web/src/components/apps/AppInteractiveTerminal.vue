@@ -19,6 +19,7 @@ import type { TerminalSizeMembership } from '@/lib/terminalSizeOwnership'
 import { createTerminalTouchScroll } from '@/lib/terminalTouchScroll'
 import { TerminalOutputNormalizer } from '@/lib/terminalOutput'
 import { TerminalDuplexInput } from '@/lib/terminalDuplexInput'
+import { terminalCursorOptions } from '@/lib/terminalCursor'
 import { readTerminalTheme } from '@/lib/terminalTheme'
 import { TerminalWriteFlow } from '@/lib/terminalWriteFlow'
 import { useTheme } from '@/stores/theme'
@@ -486,8 +487,7 @@ watch([themeColors, resolvedTheme], () => {
 
 onMounted(() => {
   terminal = new Terminal({
-    cursorBlink: true,
-    cursorStyle: 'bar',
+    ...terminalCursorOptions,
     convertEol: false,
     fontFamily: '"Cascadia Code", "SFMono-Regular", Consolas, monospace',
     fontSize: 13,
