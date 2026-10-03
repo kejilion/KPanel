@@ -4,7 +4,7 @@
 
 ## Frozen source and scope
 
-Target: C:\GitHub\_codex-tasks\kejilion-panel-codex-windows-cf-source  
+Target: C:\GitHub\_codex-tasks\kejilion-panel-codex-windows-cf-source
 HEAD 431345f6097d08ac96aedec18f5605ce8a191aeb, tree 1211c022438ef4dc6ef51da121d0237edf3ad75f, direct parent c18bb50c552ba98c4a75e4a1fa968b9226dd2f1a; Windows Git recorded a clean worktree. Workflow comparison base is 4c0694aa8e02e46145a775707b8d5a0355f7ce10.
 
 Coverage checker output contains 186 changed paths, 79 commits, and 3 new packages. This Windows/shared-boundary run inspected 81 selected paths and explicitly left 105 changed paths out of scope. Its coverage ledger has 16 units: 13 Windows/shared-boundary units (6 covered, 7 candidate) and 3 explicit out-of-scope units (Prior run-1 host backup, Prior run-10 generic rollback, unrelated changes). scope_complete=false; the run does not claim the broader change set or repository is fully audited.
