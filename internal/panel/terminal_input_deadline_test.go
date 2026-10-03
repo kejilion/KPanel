@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 // once the upstream has sent nothing for idle.
 type idleCutProxy struct {
 	addr string
-	cuts sync.WaitGroup
 }
 
 func newIdleCutProxy(t *testing.T, target string, idle time.Duration) *idleCutProxy {
@@ -107,8 +105,8 @@ func dialThrough(t *testing.T, ctx context.Context, proxy *idleCutProxy, path st
 	return ws
 }
 
-// readReply reads the next reply. The browser answers pings while it reads;
-// a background reader stands in for that and hands replies over.
+// readReplies reads replies in the background, as the browser does: it answers
+// pings only while it reads, so a test must keep reading to stay alive.
 func readReplies(ctx context.Context, ws *websocket.Conn) <-chan terminalInputReply {
 	replies := make(chan terminalInputReply, 16)
 	go func() {
