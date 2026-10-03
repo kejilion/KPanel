@@ -117,6 +117,11 @@ func TestTerminalSequencedStreamPanelAndLightParity(t *testing.T) {
 			hostID := "host-1"
 			owner := "federation:" + f.controller
 			if kind == "panel" {
+				record := testHostRecordV2(1, time.Now().UTC())
+				if err := f.service.storeV2.AddHost(record); err != nil {
+					t.Fatal(err)
+				}
+				hostID = record.ID
 				f.service.terminal = managerTerminalBackend{manager: manager}
 				var dials atomic.Int32
 				var err error
@@ -262,5 +267,34 @@ func TestReliableTerminalNeverDowngradesUnconfirmedInput(t *testing.T) {
 	// session degraded. Legacy fallback remains independently covered.
 	if stream.isDegraded() {
 		t.Fatal("reliable session was downgraded")
+	}
+}
+
+func TestRemovedPanelHostCannotReuseTerminalStream(t *testing.T) {
+	f := newStreamFixture(t, http.NotFoundHandler())
+	f.service.terminal = managerTerminalBackend{manager: newEchoManager(t)}
+	record := testHostRecordV2(1, time.Now().UTC())
+	if err := f.service.storeV2.AddHost(record); err != nil {
+		t.Fatal(err)
+	}
+	var dials atomic.Int32
+	stream, opened, err := openStreamTerminal(context.Background(), context.Background(), record.ID, f.panelTerminalDialer(t, &dials), nil, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.shutdown()
+	f.service.streams.putTerminal(stream)
+	if _, err := f.service.storeV2.DeleteHost(record.ID, record.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	frame := terminal.InputFrame{Stream: "00000000000000000000000000000001"}
+	if _, err := f.service.BeginTerminalInput(context.Background(), record.ID, opened.SessionID, frame); !errors.Is(err, ErrTerminalUnavailable) {
+		t.Fatalf("removed host accepted sequenced input: %v", err)
+	}
+	if err := f.service.TerminalInput(context.Background(), record.ID, TerminalInputRequest{SessionID: opened.SessionID, Data: "aW5wdXQ="}); !errors.Is(err, ErrTerminalUnavailable) {
+		t.Fatalf("removed host accepted raw input: %v", err)
+	}
+	if err := f.service.TerminalResize(context.Background(), record.ID, TerminalResizeRequest{SessionID: opened.SessionID, Rows: 30, Columns: 100}); !errors.Is(err, ErrTerminalUnavailable) {
+		t.Fatalf("removed host accepted resize: %v", err)
 	}
 }

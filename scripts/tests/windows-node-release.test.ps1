@@ -57,6 +57,16 @@ try {
     Assert-Failure { Assert-NodeSignature $unsigned 'CN=Test Publisher' '' } 'verification failed'
     Remove-Item -LiteralPath $unsigned
 
+    # Exercise the real X509Certificate2 shape before installing any mock.
+    $trustedExecutable = Join-Path $PSHOME 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $trustedExecutable)) { $trustedExecutable = Join-Path $PSHOME 'powershell.exe' }
+    $trustedSignature = Get-AuthenticodeSignature -LiteralPath $trustedExecutable
+    if ($trustedSignature.Status -ne 'Valid') { throw 'A trusted PowerShell executable is required for this regression.' }
+    Assert-NodeSignature $trustedExecutable $trustedSignature.SignerCertificate.Subject ''
+    Assert-NodeSignature $trustedExecutable $trustedSignature.SignerCertificate.Subject '1.3.6.1.5.5.7.3.3'
+    Assert-Failure { Assert-NodeSignature $trustedExecutable $trustedSignature.SignerCertificate.Subject '1.3.6.1.4.1.99999.12345' } 'EKU mismatch'
+    Assert-Failure { Assert-NodeSignature $trustedExecutable 'CN=Other Publisher' '' } 'publisher verification'
+
     # Mock only the OS signature result, preserving the production validator and
     # manifest path. There is no unsigned/test switch in the production script.
     $script:signature = [pscustomobject]@{
@@ -64,7 +74,10 @@ try {
         SignerCertificate = [pscustomobject]@{
             Subject = 'CN=Test Publisher'
             Thumbprint = 'short-lived-leaf-one'
-            EnhancedKeyUsageList = @([pscustomobject]@{ObjectId = [pscustomobject]@{Value = '1.3.6.1.5.5.7.3.3'}}, [pscustomobject]@{ObjectId = [pscustomobject]@{Value = '1.2.3.4.5'}})
+            Extensions = @([pscustomobject]@{
+                Oid = [Security.Cryptography.Oid]::new('2.5.29.37')
+                EnhancedKeyUsages = @([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'), [Security.Cryptography.Oid]::new('1.2.3.4.5'))
+            })
         }
         TimeStamperCertificate = [pscustomobject]@{Subject = 'CN=Timestamp'}
     }

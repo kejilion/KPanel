@@ -34,7 +34,7 @@ function Assert-NodeSignature([string]$Path, [string]$Subject, [string]$OID) {
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
     if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -cne $Subject) { throw "Authenticode chain or publisher verification failed: $Path" }
     if ($null -eq $signature.TimeStamperCertificate) { throw "A trusted RFC3161 timestamp is required: $Path" }
-    $eku = @($signature.SignerCertificate.EnhancedKeyUsageList | ForEach-Object { $_.ObjectId.Value })
+    $eku = @($signature.SignerCertificate.Extensions | Where-Object { $_.Oid.Value -eq '2.5.29.37' } | ForEach-Object { $_.EnhancedKeyUsages } | ForEach-Object { $_.Value })
     if ($eku -cnotcontains '1.3.6.1.5.5.7.3.3' -or ($OID -and $eku -cnotcontains $OID)) { throw "Code signing or profile EKU mismatch: $Path" }
 }
 
