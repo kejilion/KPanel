@@ -5,8 +5,39 @@ package windowsnode
 import (
 	"golang.org/x/sys/windows"
 	"os"
+	"path/filepath"
 	"testing"
+	"unsafe"
 )
+
+func TestSystemOnlyHandoffIsSealedAtCreation(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() || IsSystem() {
+		t.Skip("requires an elevated non-SYSTEM test process")
+	}
+	path := filepath.Join(t.TempDir(), "handoff.json")
+	sd, err := descriptor(SystemOnly, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	name, _ := windows.UTF16PtrFromString(path)
+	h, err := windows.CreateFile(name, windows.GENERIC_WRITE, 0, &sa, windows.CREATE_NEW, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := os.NewFile(uintptr(h), path)
+	if _, err := file.Write([]byte("test enrollment handoff")); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if file, err := os.Open(path); err == nil {
+		file.Close()
+		t.Fatal("administrator could directly reopen SYSTEM-only handoff")
+	}
+}
 
 func TestServiceSIDMatchesSCMIdentity(t *testing.T) {
 	if got := ServiceSID("TrustedInstaller"); got != "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464" {
