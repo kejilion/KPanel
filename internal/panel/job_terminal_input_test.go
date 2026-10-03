@@ -552,9 +552,9 @@ func TestJobTerminalInputBatchFallbackClaimsOrdersAndReplays(t *testing.T) {
 func TestJobTerminalInputSocketReleasesAVanishedPage(t *testing.T) {
 	// A page that stops answering pings (dead network, suspended machine) must
 	// not hold its slot until TCP eventually notices.
-	previous := jobInputKeepalive
-	jobInputKeepalive = 100 * time.Millisecond
-	defer func() { jobInputKeepalive = previous }()
+	previous := terminalInputKeepalive
+	terminalInputKeepalive = 100 * time.Millisecond
+	defer func() { terminalInputKeepalive = previous }()
 	f := newJobTerminalFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
