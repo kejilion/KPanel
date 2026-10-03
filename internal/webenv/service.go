@@ -526,6 +526,10 @@ func (s *Service) Job(id string) (Job, error) {
 }
 
 func (s *Service) refreshLocked(job Job) Job {
+	return s.refreshWithUnitCheckLocked(job, s.environmentUnitActive)
+}
+
+func (s *Service) refreshWithUnitCheckLocked(job Job, unitActive func(string) (bool, error)) Job {
 	if job.Status != "queued" && job.Status != "running" {
 		return job
 	}
@@ -533,8 +537,14 @@ func (s *Service) refreshLocked(job Job) Job {
 	data, err := os.ReadFile(s.receiptPath(job.ID))
 	if err != nil {
 		if job.StartedAt != nil && s.now().Sub(*job.StartedAt) > 3*time.Second {
-			active, statusErr := s.environmentUnitActive(job.ID)
+			active, statusErr := unitActive(job.ID)
 			if statusErr == nil && !active {
+				// The worker may have written its receipt between the first read
+				// and the unit inspection. Recheck after observing it exit.
+				data, err = os.ReadFile(s.receiptPath(job.ID))
+				if err == nil {
+					return s.completeFromReceiptLocked(job, data)
+				}
 				job.Status, job.Stage, job.Progress = "needs_attention", "receipt_missing", 100
 				job.Message = "后台任务已经退出，但未写入可信完成凭据；请查看终端输出并人工复核环境状态"
 				finished := s.now().UTC()
@@ -545,6 +555,10 @@ func (s *Service) refreshLocked(job Job) Job {
 		}
 		return job
 	}
+	return s.completeFromReceiptLocked(job, data)
+}
+
+func (s *Service) completeFromReceiptLocked(job Job, data []byte) Job {
 	var receipt struct {
 		Status  string `json:"status"`
 		Message string `json:"message"`
