@@ -44,20 +44,22 @@ type remoteSummaryCapabilitiesAPI interface {
 }
 
 type ServiceConfig struct {
-	DataDir         string
-	PanelVersion    string
-	PublicURL       string
-	PrivateCIDRs    []string
-	Telemetry       TelemetrySource
-	Terminal        TerminalBackend
-	Remote          remoteAPI
-	Now             func() time.Time
-	Hostname        string
-	PollInterval    time.Duration
-	SchedulerTick   time.Duration
-	CheckpointEvery time.Duration
-	MaxConcurrency  int
-	Jitter          func(time.Duration) time.Duration
+	WindowsNodePublisher  string
+	WindowsNodeProfileOID string
+	DataDir               string
+	PanelVersion          string
+	PublicURL             string
+	PrivateCIDRs          []string
+	Telemetry             TelemetrySource
+	Terminal              TerminalBackend
+	Remote                remoteAPI
+	Now                   func() time.Time
+	Hostname              string
+	PollInterval          time.Duration
+	SchedulerTick         time.Duration
+	CheckpointEvery       time.Duration
+	MaxConcurrency        int
+	Jitter                func(time.Duration) time.Duration
 
 	SecurityEntrancePath func() string
 }
@@ -88,38 +90,40 @@ type runtimeState struct {
 }
 
 type Service struct {
-	managed              *managedControl
-	store                *Store
-	secrets              *secretStore
-	storeV2              *storeV2
-	filePeersV2          *filePeerStoreV2
-	fileRelayV1Grants    *fileRelayV1GrantStore
-	secretsV2            *secretStoreV2
-	remote               remoteAPI
-	remoteV2             remoteV2API
-	telemetry            TelemetrySource
-	terminal             TerminalBackend
-	lightTerminal        *lightTerminalRelay
-	lightFile            *lightFileRelay
-	panelFileRelay       *panelFileRelay
-	fileStreamHub        *fileStreamHub
-	streams              *panelStreams
-	nodeIdentityV2       nodeIdentityV2
-	panelVersion         string
-	publicURL            string
-	light                *lightStore
-	lightBatches         *lightBatchStore
-	lightHistory         *lightFileRelay
-	historyQueries       chan struct{}
-	historyStreams       *fileStreamLimiter
-	historyRelayRequests *fixedWindowLimiter
-	hostname             string
-	now                  func() time.Time
-	pollInterval         time.Duration
-	schedulerTick        time.Duration
-	checkpointEvery      time.Duration
-	jitter               func(time.Duration) time.Duration
-	sem                  chan struct{}
+	windowsNodePublisher  string
+	windowsNodeProfileOID string
+	managed               *managedControl
+	store                 *Store
+	secrets               *secretStore
+	storeV2               *storeV2
+	filePeersV2           *filePeerStoreV2
+	fileRelayV1Grants     *fileRelayV1GrantStore
+	secretsV2             *secretStoreV2
+	remote                remoteAPI
+	remoteV2              remoteV2API
+	telemetry             TelemetrySource
+	terminal              TerminalBackend
+	lightTerminal         *lightTerminalRelay
+	lightFile             *lightFileRelay
+	panelFileRelay        *panelFileRelay
+	fileStreamHub         *fileStreamHub
+	streams               *panelStreams
+	nodeIdentityV2        nodeIdentityV2
+	panelVersion          string
+	publicURL             string
+	light                 *lightStore
+	lightBatches          *lightBatchStore
+	lightHistory          *lightFileRelay
+	historyQueries        chan struct{}
+	historyStreams        *fileStreamLimiter
+	historyRelayRequests  *fixedWindowLimiter
+	hostname              string
+	now                   func() time.Time
+	pollInterval          time.Duration
+	schedulerTick         time.Duration
+	checkpointEvery       time.Duration
+	jitter                func(time.Duration) time.Duration
+	sem                   chan struct{}
 
 	securityEntrancePath func() string
 
@@ -314,6 +318,8 @@ func NewService(config ServiceConfig) (*Service, error) {
 		lightEnrolls:          newFixedWindowLimiter(10, time.Minute, 2048),
 		lightBatchSources:     newFixedWindowLimiter(240, time.Minute, 2048),
 		lightBatchPolicies:    newFixedWindowLimiter(240, time.Minute, maxLightBatchPolicyRateSubjects),
+		windowsNodePublisher:  config.WindowsNodePublisher,
+		windowsNodeProfileOID: config.WindowsNodeProfileOID,
 		lightSources:          newFixedWindowLimiter(240, time.Minute, 2048),
 		lightReports:          newFixedWindowLimiter(180, time.Minute, MaxHosts),
 		lightTerminalRequests: newFixedWindowLimiter(300, time.Minute, MaxHosts),

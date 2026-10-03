@@ -66,8 +66,15 @@ func (s *Service) CreateLightEnrollmentForOrigin(origin string) (LightEnrollment
 }
 
 func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName string) (LightEnrollment, error) {
+	return s.CreateLightEnrollmentForPlatform(origin, requestedName, "linux")
+}
+
+func (s *Service) CreateLightEnrollmentForPlatform(origin, requestedName, platform string) (LightEnrollment, error) {
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
+	if _, err := s.lightEnrollmentCommand(platform, "", ""); err != nil {
+		return LightEnrollment{}, err
+	}
 	origin, err := validateLightOrigin(origin)
 	if err != nil {
 		return LightEnrollment{}, ErrLightHTTPSOrigin
@@ -100,11 +107,11 @@ func (s *Service) CreateLightEnrollmentForOriginAndName(origin, requestedName st
 		return LightEnrollment{}, err
 	}
 	token := lightTokenPrefix + base64.RawURLEncoding.EncodeToString(wire)
-	command := "bash <(curl -fsSL https://kejilion.sh) kpanel node join '" + token + "'"
-	if name != "" {
-		command += " --name " + shellSingleQuote(name)
+	command, err := s.lightEnrollmentCommand(platform, token, name)
+	if err != nil {
+		return LightEnrollment{}, err
 	}
-	return LightEnrollment{ID: id, Command: command, ExpiresAt: expiresAt}, nil
+	return LightEnrollment{ID: id, Command: command, ExpiresAt: expiresAt, Platform: platform}, nil
 }
 
 func shellSingleQuote(value string) string {

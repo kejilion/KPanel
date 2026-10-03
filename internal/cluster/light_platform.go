@@ -85,6 +85,11 @@ func lightPlatformAllows(record lightHostRecord, capability string, now time.Tim
 		slices.Contains(snapshot.NodeCapabilities, capability)
 }
 
+func (s *Service) lightControlAllowed(hostID, capability string) bool {
+	record, err := s.light.Host(hostID)
+	return err != nil || lightPlatformAllows(record, capability, s.now().UTC())
+}
+
 func applyLightPlatform(host *Host, record lightHostRecord, now time.Time) {
 	if !lightHostIsWindows(record) {
 		host.Platform, host.TerminalShell, host.PathStyle = "linux", "posix", "posix"
