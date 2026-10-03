@@ -1,6 +1,6 @@
 # KPanel Windows 轻量节点与远程桌面设计
 
-- 状态：设计提案，尚未实现；本地候选分支 `docs/windows-light-node-design`，基线 `52cc6436`
+- 状态：进入本地候选开发；原提案 `b4e84aac`，实现基线 `52cc6436`，候选分支 `feature/windows-light-node`；未发布
 - 范围：`kejilion-node` 的 Windows 平台适配（遥测、健康、安装/更新/卸载、终端与批量执行、文件管理、
   登录事件、服务探测），以及可选的 Windows 远程桌面（第 13 节，P4）
 - 非目标：Windows 版 Panel/Agent；结构化 Windows 系统管理（服务、更新、防火墙配置）；自研屏幕采集；
@@ -13,6 +13,22 @@
 
 本文区分三类内容：**已验证事实**（第 2 节，附命令、版本或代码位置）、**设计决定**（第 3–19 节）和
 **待决事项/未验证风险**（第 23–24 节）。设计决定在实现前可以修订，但修订必须回到本文同步。
+
+### 本次实施契约
+
+- 目标：原生 Windows 轻量节点接入、生命周期、遥测、PowerShell、文件与可选 RDP；Linux 现有行为回归。
+- 用户确认的交互：Windows 与 Linux 同列在终端左侧主机列表，点击 Windows 主机后先选择
+  “命令行（PowerShell）”或“远程桌面（RDP）”，随后在右侧打开所选会话。
+- 集群添加弹窗在 Linux 接入入口下增加 Windows 入口；单台和批量均生成一行管理员 PowerShell 命令，
+  自动下载、校验、安装与接入。执行安装脚本前先完成签名及发布者校验。
+- 首批验证 amd64；安装器作为 KPanel Release 资产。`scriptLinkageState=not-required`（无需发布脚本），
+  脚本基线仍固定 `c981fb6c8b481981ac7a006e102e111e435f6d30` / SHA-256
+  `0eb9a82860e6cf6cf76d4f946782a02fd90bef8e7be5a3fa724b93920d8e35cb`。
+- 允许修改节点、相关后端、Web、Windows 安装构建与本设计；不修改版本号、历史发布记录、Linux 脚本。
+  仅形成独立本地候选，不推送、不合并 main、不打标签、不发布或部署。
+- 生命周期与宿主权限按 L3 风险设计；开发执行变更门禁、平台测试、独立复核。正式 L3、签名发行物、
+  Windows Server 干净实例安装/重启验收分别记录，缺少证据不解释为通过。
+- 可见交互在精确候选提交后提供 UI Mock acceptance 预览；该证据不能证明真实 RDP 或系统服务生命周期。
 
 ## 1. 目标与原则
 
@@ -455,7 +471,10 @@ POST /api/v1/desktop-sessions/{id}/close
 
 ### 13.6 前端
 
-- 终端页同一主机增加“桌面”页签；IronRDP 组件按需懒加载，不进入首屏。
+- Windows 主机沿用终端左侧列表；点击主机先选择“命令行（PowerShell） / 远程桌面（RDP）”，
+  随后在右侧打开带类型的会话页签；Linux 保留点击直接命令行。RDP 不可用时显示具体原因。
+- 两类会话分别管理连接与关闭；批量命令只进入命令行。RDP 断开保留 Windows 登录会话，关闭 Shell 终止 PTY。
+- IronRDP 组件仅选择 RDP 后懒加载，不进入首屏。
 - 只在桌面端浏览器提供完整体验；手机上显示“建议使用桌面浏览器”，但不禁用。
 - IronRDP WASM 从源码固定版本构建，进入 `dependency-policy.json` 管理，体积预算在 spike 后确定。
 
