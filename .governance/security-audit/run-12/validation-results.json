@@ -1,0 +1,53 @@
+{
+  "run_id": "run-12",
+  "validator_skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "environment": {
+    "wsl_distribution": "Ubuntu",
+    "node_version": "v24.18.1",
+    "O_NOFOLLOW_constant": 131072,
+    "O_NOFOLLOW_probe": "PASS"
+  },
+  "frozen_source_end_check": {
+    "method": "Windows Git read-only identity check",
+    "head": "2725d51386f930d54f71ddd8fcae5445f110730a",
+    "tree": "65aa80f306c73e57d72e6dba3703224534e2626f",
+    "direct_parent": "6cac7e9e7211b25c70020658df64bf74ca547d33",
+    "working_tree": "clean"
+  },
+  "validators": [
+    {
+      "name": "validate-coverage-ledger.cjs",
+      "path": "C:\\GitHub\\_codex-tmp\\security-audit-skill-20260919\\skills\\security-audit\\validate-coverage-ledger.cjs",
+      "command": "wsl.exe -d Ubuntu -- node /mnt/c/GitHub/_codex-tmp/security-audit-skill-20260919/skills/security-audit/validate-coverage-ledger.cjs /mnt/c/GitHub/_codex-tmp/windows-cf-audit-20261003/run-12/coverage-ledger.json",
+      "exit_code": 0,
+      "output": "PASS: 2 coverage units valid"
+    },
+    {
+      "name": "validate-findings.cjs",
+      "path": "C:\\GitHub\\_codex-tmp\\security-audit-skill-20260919\\skills\\security-audit\\validate-findings.cjs",
+      "command": "wsl.exe -d Ubuntu -- node /mnt/c/GitHub/_codex-tmp/security-audit-skill-20260919/skills/security-audit/validate-findings.cjs /mnt/c/GitHub/_codex-tmp/windows-cf-audit-20261003/run-12/findings.json",
+      "exit_code": 0,
+      "output": "PASS: 0 findings valid"
+    }
+  ],
+  "phase5_review": {
+    "agent_id": "recon_entries",
+    "record": "agents/recon_entries/scratch/run12-phase5-record-check.json",
+    "decision": "replace",
+    "reviewed_before_finalization": true,
+    "verified_source_identity_scope_accounting_and_ledger_paths": true,
+    "post_final_administrative_wording_reread": false,
+    "reason": "The reviewed snapshot still had a Draft report, pending validator statement, and in_progress metadata. Those requested finalization changes were applied after the independent source/ledger review."
+  },
+  "scope": {
+    "scope_complete": false,
+    "incremental_base": "9ea1404407dbd89d3d2eeb02934257b870278fb3",
+    "workflow_comparison_base": "4c0694aa8e02e46145a775707b8d5a0355f7ce10",
+    "checker_paths": 188,
+    "selected_changed_paths": 16,
+    "overlap": 6,
+    "outside_checker_set": 10,
+    "omitted_checker_paths": 182,
+    "reviewed_path_union_including_context": 19
+  }
+}

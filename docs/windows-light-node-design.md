@@ -1,6 +1,6 @@
 # KPanel Windows 轻量节点与远程桌面设计
 
-- 状态：进入本地候选开发；原提案 `b4e84aac`，实现基线 `52cc6436`，候选分支 `feature/windows-light-node`；未发布
+- 状态：已形成本地实现候选；原提案 `b4e84aac`，实现基线 `52cc6436`，候选分支 `feature/windows-light-node`；实机与发布验收待执行，未发布
 - 范围：`kejilion-node` 的 Windows 平台适配（遥测、健康、安装/更新/卸载、终端与批量执行、文件管理、
   登录事件、服务探测），以及可选的 Windows 远程桌面（第 13 节，P4）
 - 非目标：Windows 版 Panel/Agent；结构化 Windows 系统管理（服务、更新、防火墙配置）；自研屏幕采集；

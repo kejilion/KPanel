@@ -57,3 +57,21 @@ MCP 产品源码已随 `v1.21.0-rc.1` 交付为公开 RC：tag 指向
 `arena-154` L3、候选/主线/Release 门禁和公开镜像 E2E；新增结构化写操作继续受服务端授权、
 审批、资源版本、容量和并发预算约束。来源 tip `0dceeaf30454d5f57e9f51aca8aa8c94d7544304`
 已保存到 `archive/feature/mcp-complete-20260919`。稳定版仍未交付，生产未部署，run-3 状态不变。
+
+## Windows 轻量节点本地候选（2026-10-03，run-11 / run-12）
+
+候选分支 `feature/windows-light-node`，开发基线 `52cc643601021499fdcd37af63b4151217dc93c7`。
+run-11 的审计源码固定为 `431345f6097d08ac96aedec18f5605ce8a191aeb`，总体审计因平台代理数量限制
+缺少最终独立覆盖复核与存续记录核验，状态保持 `incomplete`。run-12 单独审查保存 RDP 凭据的
+16 个改动路径，源码固定为 `2725d51386f930d54f71ddd8fcae5445f110730a`；两个 run 均不声明
+`comparison_base` 以来全部改动已覆盖。原始审计结论不因后续修复、开发测试或本地提交而改写。
+
+| fingerprint | 后续源码修复 | 独立复核与普通开发回归 | 交付状态 |
+| --- | --- | --- | --- |
+| `windows.desktop.policy.reconnect-after-revoke` | `f82eaf81d2a96c113117b53158ce8c1a42ce8ade`：桌面控制/数据 Noise 握手在同一授权及注册锁内检查主机策略 | 非作者源码复核确认检查位置；`TestDesktopRevocationRejectsPendingDataAndControlReconnect` 在修复前对两种角色失败，修后 Windows 定向测试及 WSL 竞态测试均连续三轮通过 | `source-fixed / pending-stable`；尚无 RC、稳定版或部署 |
+| `panel.rdp.websocket.logout-output-window` | `651a75ef3b874a83aee0c81e46177842653f0465`：每次向浏览器写桌面输出前复核登录，文档明确已经发送的在途数据不能撤回 | 非作者逐行复核 3 个 Go 文件并人工阅读文档；`TestDesktopStreamRejectsOutputAfterLogout` 通过真实 loopback Noise/WebSocket 复现原实现注销后输出，修后 Windows Desktop 与 WSL 竞态测试均连续三轮通过，Panel 全包测试及 vet 通过 | `source-fixed / pending-stable`；尚无 RC、稳定版或部署 |
+
+上述测试由开发任务执行，与 CF 源码审计的执行证据分开；CF 审计未运行目标代码。
+回归覆盖的是明确的后续握手/输出复核边界，不声称注销 HTTP 返回与所有网络写入之间存在全局原子屏障。
+Windows SCM 安装与权限、重启、真实 RDP 登录互通、签名发行配置及其余条件性线索仍需相应环境验证。
+run-11 未完成的独立复核和更广的历史覆盖必须在稳定版发布前按既有规范处理。

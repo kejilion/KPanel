@@ -1,0 +1,13 @@
+# Needs validation — run 11
+
+Every listed item is a source-grounded candidate, not a confirmed vulnerability. No live environment, service, system, browser, target test, or build was executed because no qualifying OS-enforced sandbox was available.
+
+- panel.rdp.websocket.logout-output-window: resolve owner expectation for output authorized by the last successful session check; in an isolated fixture observe whether a new frame is delivered after logout returns HTTP 200 and whether a different browser user can observe it. Do not require a global atomic logout/write barrier unless product contract defines one.
+- windows.desktop.policy.reconnect-after-revoke: in a disposable concurrent fixture verify post-disable control/data handshakes are rejected before registration and in a Windows integration environment verify reconnect remains denied. The frozen result is role re-registration, not proven RDP bytes; f82 source repair was separately checked, runtime Windows behavior is not.
+- windows-release-signing-trigger-config: owner must verify the live enabled flag, tag rights/rulesets and bypass actors, windows-node-signing allowed refs/reviewers/bypass, secret scope, and publisher/profile binding. No low-trust tag access is inferred.
+- windows-scm-service-config-acl: on a designated isolated Windows VM inspect effective service owner, ServiceStartName, ImagePath, DACL and representative non-admin access rights. SCM defaults are not assumed.
+- windows.psreadline.one-time-enrollment-token-history-exposure: on disposable Windows profiles inspect actual PSReadLine history and configured transcript/log copies with an ordinary local account; use a dummy token and only test redemption in an isolated panel if the token is readable. Source does not prove a leak.
+- windows-light-report-replay-memory-reset: determine whether any lower-trust principal can access a complete valid signed report transcript under the real TLS/logging/diagnostics configuration; only then use a disposable panel/Windows VM to observe replay after Service reconstruction. The in-memory guard predates this increment; do not infer passive TLS capture.
+- terminal-sse-output-after-session-revocation: owner must decide whether the one-second auth cache permits an event authorized by the last check to finish after logout; isolated delivery evidence must distinguish a write begun before logout from an event newly written afterward. Do not claim browser receipt from source alone.
+
+Source-only static validation and author-provided CI are distinct evidence classes. The audit did not execute the latter.

@@ -1,0 +1,1468 @@
+[
+  {
+    "coverage_id": "Browser%20RDP%20credentials%20and%20one-use%20desktop%20session::Authenticated%20browser%20-%3E%20one-use%20user%2Fhost-bound%20desktop%20stream::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Browser RDP credentials and one-use desktop session",
+      "boundary": "Authenticated browser -> one-use user/host-bound desktop stream",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Browser RDP credentials and one-use desktop session",
+    "boundary": "Authenticated browser -> one-use user/host-bound desktop stream",
+    "subsystem": "internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "internal/cluster/desktop_policy.go",
+      "internal/panel/cluster.go",
+      "internal/panel/desktop_sessions.go",
+      "internal/panel/server.go",
+      "web/src/components/terminal/HostDesktop.vue",
+      "web/src/lib/remoteDesktop.ts",
+      "web/src/views/TerminalView.vue",
+      "web/src/views/TerminalView.windows.test.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Service-worker and browser-storage attack classes",
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "Persistent one-click Windows credential storage is explicitly post-freeze and must be excluded; current per-session browser credentials do not establish that future design."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "recon_product",
+    "reviewed_paths": [
+      "internal/cluster/desktop_policy.go",
+      "internal/panel/cluster.go",
+      "internal/panel/desktop_sessions.go",
+      "internal/panel/server.go",
+      "web/src/components/terminal/HostDesktop.vue",
+      "web/src/lib/remoteDesktop.ts",
+      "web/src/views/TerminalView.vue",
+      "web/src/views/TerminalView.windows.test.ts",
+      "internal/auth/service.go",
+      "internal/store/store.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product",
+        "reviewed_paths": [
+          "internal/cluster/desktop_policy.go",
+          "internal/panel/cluster.go",
+          "internal/panel/desktop_sessions.go",
+          "internal/panel/server.go",
+          "web/src/components/terminal/HostDesktop.vue",
+          "web/src/lib/remoteDesktop.ts",
+          "web/src/views/TerminalView.vue",
+          "web/src/views/TerminalView.windows.test.ts"
+        ],
+        "invariant": "登录态注销后，既有 RDP desktop websocket 的数据输出应及时停止；输出方向需要与入口鉴权和输入方向同样受会话撤销约束。",
+        "method": "source",
+        "result": "Source-only candidate (not confirmed): 会话创建要求 requireSession、非空 Origin 和 checkOrigin；非 GET 还要求 CSRF（internal/panel/desktop_sessions.go:36-47；internal/panel/server.go:1427-1487）。创建时生成 32-byte crypto/rand nonce，并把 userID、hostID、session token SHA-256、1 分钟 redeem expiry 绑定到 session；单次 claim 检查 user/token/expiry 并置 claimed（desktop_sessions.go:72-125,134-165）。但注销 handler 调 auth.Logout 后即清 cookie/返回成功，没有此处到 desktopSessions 的同步取消（server.go:1055-1072）；活动流由独立 1 秒 ticker 检查 auth 后 cancel（desktop_sessions.go:182-197）。输出 goroutine 对每个 stream.Read 后直接 ws.Write，写前不重新 Authenticate（desktop_sessions.go:199-218）；输入方向每个 binary message 则 Authenticate 后才 stream.Write（desktop_sessions.go:219-233）。所以源码允许注销发生在成功轮询之后、下一轮之前，而输出复制仍可运行；成功响应之后实际送达一帧及 Auth 撤销线性化尚未验证。其它强控制：HostDesktop 只将凭据传入 IronRDP config 后清空 password，并在关闭时 shutdown UI/关闭服务端 session（HostDesktop.vue:33-53,55-109）；server websocket 禁用压缩并设 256 KiB read limit（desktop_sessions.go:171-180）。remoteDesktop.ts:1-10 仅惰性加载 WASM backend；TerminalView.windows.test.ts:8-12,27-57 mock HostDesktop，只验证选择、分离 session 与 policy UI，不覆盖真实 credential/session 生命周期。panel/cluster.go:370-408 是受 mutation guard 保护的节点 enrollment capability 设置，不是另一条浏览器 RDP session 路径。未运行测试、浏览器或目标代码。",
+        "artifact": null
+      },
+      {
+        "agent_id": "windows_cf_audit",
+        "result": "Logout synchronously deletes the hashed session record under the store mutex and persists before returning success (internal/auth/service.go:605-610; internal/store/store.go:715-736). Authenticate derives the same hash, queries the session store, and returns ErrInvalidSession when it is absent (auth/service.go:577-595). This resolves the candidate's uncertainty about token invalidation; the remaining runtime blocker is whether an already-authorized output copier writes a frame after the logout response and before its 1-second watcher cancels.",
+        "artifact": null,
+        "method": "source",
+        "invariant": "Successful logout must make subsequent session authentication fail before existing desktop output is considered authorized.",
+        "reviewed_paths": [
+          "internal/auth/service.go",
+          "internal/store/store.go"
+        ]
+      }
+    ],
+    "result_fingerprints": [
+      "panel.rdp.websocket.logout-output-window"
+    ],
+    "unresolved": [
+      "At frozen 431, source permits an already-authorized output copy to reach ws.Write before the next one-second session poll; source does not establish a binary frame delivered after the logout HTTP 200 response or cross-user browser impact. The product contract is not an atomic logout-versus-write barrier; retain needs_validation pending bounded isolated delivery evidence and owner acceptance."
+    ]
+  },
+  {
+    "coverage_id": "Desktop%20Noise%20role%2C%20host%20policy%2C%20and%20revocation::Panel%20desktop%20session%20-%3E%20dedicated%20Noise%20desktop%20role%20-%3E%20node%20bridge::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Desktop Noise role, host policy, and revocation",
+      "boundary": "Panel desktop session -> dedicated Noise desktop role -> node bridge",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Desktop Noise role, host policy, and revocation",
+    "boundary": "Panel desktop session -> dedicated Noise desktop role -> node bridge",
+    "subsystem": "internal/cluster",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/desktop_broker_windows.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/client.go",
+      "internal/cluster/desktop_policy.go",
+      "internal/cluster/desktop_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/types.go",
+      "internal/desktopbridge/bridge.go",
+      "internal/panel/cluster.go",
+      "internal/panel/desktop_sessions.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Broker and queue isolation attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes",
+        "reason": "The peer Noise key and Windows bridge host state are not supplied by source; blockers must state exact missing observations."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "recon_product",
+    "reviewed_paths": [
+      "cmd/kejilion-node/desktop_broker_windows.go",
+      "docs/windows-light-node-design.md",
+      "internal/cluster/desktop_policy.go",
+      "internal/cluster/desktop_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/file_stream.go",
+      "internal/cluster/light_service.go",
+      "internal/panel/desktop_sessions.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product",
+        "reviewed_paths": [
+          "internal/cluster/desktop_policy.go",
+          "internal/cluster/file_stream_transport.go",
+          "cmd/kejilion-node/desktop_broker_windows.go",
+          "internal/cluster/desktop_stream.go",
+          "internal/cluster/file_stream.go",
+          "internal/panel/desktop_sessions.go",
+          "internal/cluster/light_service.go",
+          "docs/windows-light-node-design.md"
+        ],
+        "invariant": "When desktop policy is disabled or unavailable, new Windows desktop control/data Noise roles must be denied and existing registered roles closed.",
+        "method": "source",
+        "result": "Independent free-arm review at C:\\GitHub\\_codex-tmp\\windows-cf-audit-20261003\\agents\\recon_product\\scratch\\unit11-free-arm.md confirms that desktop-role admission omits desktopAllowed while authorization and registration share h.mu; this permits a fresh idle control-role registration after the revoke sweep. The review does not establish a surviving usable RDP stream or post-revoke bytes; those remain unverified.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunt_telemetry_terminal",
+        "reviewed_paths": [
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/desktop_policy.go",
+          "internal/cluster/desktop_stream.go",
+          "docs/windows-light-node-design.md"
+        ],
+        "invariant": "After a host desktop policy is disabled or unavailable, new desktop control/data Noise roles must be rejected; existing registered desktop streams must be closed.",
+        "method": "source",
+        "result": "Remediation source check: f82eaf81 adds desktopAllowed in the same h.mu authorization+registration critical section; no dynamic validation is claimed. Supporting source-review record retained at C:/GitHub/_codex-tmp/windows-cf-audit-20261003/agents/hunt_telemetry_terminal/scratch/verify-u2-desktop-policy-candidate.json.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "windows.desktop.policy.reconnect-after-revoke"
+    ],
+    "unresolved": [
+      "Frozen 431 source supports post-sweep registration of a fresh control/data role using the enrolled Windows node Noise identity while per-host desktop policy is disabled, but it does not establish a usable browser RDP session or post-revoke RDP bytes. No audit-run dynamic interleaving or native Windows lifecycle check was performed; parent author logs/tests are not CF execution evidence."
+    ]
+  },
+  {
+    "coverage_id": "Prior%20run-1%20host%20backup%20restore%20lead::Imported%20host%20backup%20payload%20root%20-%3E%20host%20filesystem%20restore::internal%2Fhostbackup::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Prior run-1 host backup restore lead",
+      "boundary": "Imported host backup payload root -> host filesystem restore",
+      "subsystem": "internal/hostbackup",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Prior run-1 host backup restore lead",
+    "boundary": "Imported host backup payload root -> host filesystem restore",
+    "subsystem": "internal/hostbackup",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "internal/hostbackup/archive.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/restore.go",
+      "internal/hostbackup/service.go",
+      "internal/panel/backup_handlers.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "ATTACK-CLASSES.md#Resource and file handling"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior finding is explicitly outside the frozen Windows audit scope; no new audit coverage is asserted."
+    ]
+  },
+  {
+    "coverage_id": "Prior%20run-10%20generic%20panel%20rollback%20lead::Automatic%20panel%20update%20rollback%20-%3E%20restored%20light-node%20report%20credential::packaging::DATA-ISOLATION-AND-LIFECYCLE.md%23Deletion%2C%20revocation%2C%20and%20lifecycle%20attack%20classes",
+    "canonical_refs": {
+      "surface": "Prior run-10 generic panel rollback lead",
+      "boundary": "Automatic panel update rollback -> restored light-node report credential",
+      "subsystem": "packaging",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes"
+    },
+    "surface": "Prior run-10 generic panel rollback lead",
+    "boundary": "Automatic panel update rollback -> restored light-node report credential",
+    "subsystem": "packaging",
+    "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+    "starting_paths": [
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/panel/cluster.go",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/tests/app-conf-update-backups.sh"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "prior_out_of_scope",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Prior finding is explicitly outside the frozen Windows audit scope; no new audit coverage is asserted."
+    ]
+  },
+  {
+    "coverage_id": "RDP%20DER%2FX.224%20parser%20bounds%20and%20protocol%20interpretation::Untrusted%20Noise%20payload%20-%3E%20bounded%20RDP%20negotiation%20parser::internal%2Fdesktopbridge::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "RDP DER/X.224 parser bounds and protocol interpretation",
+      "boundary": "Untrusted Noise payload -> bounded RDP negotiation parser",
+      "subsystem": "internal/desktopbridge",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "RDP DER/X.224 parser bounds and protocol interpretation",
+    "boundary": "Untrusted Noise payload -> bounded RDP negotiation parser",
+    "subsystem": "internal/desktopbridge",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "internal/cluster/desktop_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/desktopbridge/bridge.go",
+      "internal/desktopbridge/protocol.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product",
+    "reviewed_paths": [
+      "internal/cluster/desktop_stream.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/desktopbridge/bridge.go",
+      "internal/desktopbridge/protocol.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product",
+        "reviewed_paths": [
+          "internal/cluster/desktop_stream.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/desktopbridge/bridge.go",
+          "internal/desktopbridge/protocol.go"
+        ],
+        "invariant": "低信任的 Noise stream desktop payload 在到达本机 RDP listener 前应受长度、结构、nonce 和协议协商约束；不能经 DER destination 改变目标或协商为绕过 NLA 的协议。",
+        "method": "source",
+        "result": "Source-only covered；未确认动态行为。readDER 只读单个 definite/minimal DER PDU，在分配前限制总长至 64 KiB（internal/desktopbridge/protocol.go:14-18,26-65）；decodeRequest 拒绝外层尾随数据、只接受顺序固定的四个显式字段、精确版本/localhost、32-byte nonce，并比较收到 nonce（protocol.go:68-122）。X.224 要求 TPKT/X.224 长度一致、长度 11..260、正确请求码及精确 negotiation/correlation 形状，只容许白名单 flags 和协议位并强制提供 HYBRID 或 HYBRID_EX（protocol.go:125-160）；响应固定 19 bytes，所选协议必须是客户端提供的 HYBRID/HYBRID_EX（protocol.go:162-184）。调用链在 desktop stream 收到经过 Noise 握手的 desktop data role 与 nonce 后才调用 handler（internal/cluster/desktop_stream.go:90-103,112-156）；bridge 在 parser 成功后才 resolve endpoint（internal/desktopbridge/bridge.go:120-134）。WebSocket入口对 preauth 限制为64、压缩关闭、envelope设 read limit，并在共同锁内鉴权后登记（internal/cluster/file_stream_transport.go:225-290）；Noise peer key 要与已登记 controller 或 node key 相同，Windows desktop role 还受 host/platform capability gate，data role 要求 request/generation ID 并经过 limiter/replay 检查（file_stream_transport.go:418-497）。静态审查未发现 parser 可用的越界分配、字段歧义或 NLA downgrade 源码路径。具体未完成的外部验证阻断：未在真实 Windows RDP listener/对应客户端版本上做不兼容边界协商，也未对 malformed DER/X.224 输入执行隔离 fuzz/握手回归；本任务禁止目标执行。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "RDP%20loopback%20destination%2C%20NLA%2C%20and%20TLS%20certificate%20pin::Desktop%20Noise%20stream%20-%3E%20local%20Windows%20RDP%20listener::internal%2Fdesktopbridge::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "RDP loopback destination, NLA, and TLS certificate pin",
+      "boundary": "Desktop Noise stream -> local Windows RDP listener",
+      "subsystem": "internal/desktopbridge",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "RDP loopback destination, NLA, and TLS certificate pin",
+    "boundary": "Desktop Noise stream -> local Windows RDP listener",
+    "subsystem": "internal/desktopbridge",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "cmd/kejilion-node/desktop_broker_windows.go",
+      "internal/cluster/desktop_stream.go",
+      "internal/desktopbridge/bridge.go",
+      "internal/desktopbridge/local_other.go",
+      "internal/desktopbridge/local_windows.go",
+      "internal/desktopbridge/protocol.go",
+      "internal/windowsnode/login_windows.go",
+      "internal/windowsnode/service_windows.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+        "reason": "Actual RDP service configuration, certificate DER, proxy reachability, and loopback listener ownership require owner-observed checks."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_product",
+    "reviewed_paths": [
+      "cmd/kejilion-node/desktop_broker_windows.go",
+      "internal/cluster/desktop_stream.go",
+      "internal/desktopbridge/bridge.go",
+      "internal/desktopbridge/local_other.go",
+      "internal/desktopbridge/local_windows.go",
+      "internal/desktopbridge/protocol.go",
+      "internal/windowsnode/login_windows.go",
+      "internal/windowsnode/service_windows.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_product",
+        "reviewed_paths": [
+          "cmd/kejilion-node/desktop_broker_windows.go",
+          "internal/cluster/desktop_stream.go",
+          "internal/desktopbridge/bridge.go",
+          "internal/desktopbridge/local_other.go",
+          "internal/desktopbridge/local_windows.go",
+          "internal/desktopbridge/protocol.go",
+          "internal/windowsnode/login_windows.go",
+          "internal/windowsnode/service_windows.go"
+        ],
+        "invariant": "Desktop Noise stream 的 X.224 请求不能选择任意网络目标；桥接只连接当前 Windows 本机 RDP listener，并在传递会话前要求强制 NLA 协商与绑定到本机 RDP 证书的 TLS。",
+        "method": "source",
+        "result": "Source-only covered；未确认部署/运行状态。broker 入口在 terminal service 先检查 broker identity、读取 terminal identity，并在本地 Probe 与中心 desktop capability 均成功后才以 node identity 建立 RunDesktopStream/desktopbridge.Serve（cmd/kejilion-node/desktop_broker_windows.go:17-51）；desktop stream 要求 Windows host、desktop policy/platform capability、已登记 control 并用 generation/request/nonce 配对 data stream（internal/cluster/desktop_stream.go:25-43,90-156）。协议解析要求 destination 字段严格为 localhost（internal/desktopbridge/protocol.go:83-113），但实际 dial 完全不使用请求 destination，而通过 tcp4 连接固定 127.0.0.1 与系统探测得到的 RDP 端口（internal/desktopbridge/bridge.go:129-139）。RDP 端口来自 HKLM RDP-Tcp PortNumber；本地探测还检查 fDenyTSConnections、TermService 查询状态与 PID，使用只读 SCM/service 权限（internal/desktopbridge/local_windows.go:20-60）。证书 thumbprint/store 来自 TermService registry，pin 从 LocalMachine 只读证书 store 取得；store 名、枚举证书数/总字节数与单证书长度均有上限（local_windows.go:62-97,100-156）。X.224 请求必须提供 HYBRID/HYBRID_EX，响应选择必须是客户端所提供的这两种之一（protocol.go:14-18,130-160,162-184）；TLS 最低 1.2，以 VerifyConnection 对叶证书做有效期/EKU与完整 DER pin 匹配，限制证书链大小（bridge.go:160-185,201-224）。非 Windows 编译路径明确返回 unsupported（local_other.go:1-5）。同一 binary 的服务划分把 telemetry/login 定义为非 privileged，terminal broker 定义 privileged；安装服务要求 SYSTEM，非特权服务以 NT SERVICE\\<name> restricted identity 和最小 required privilege（internal/windowsnode/service_windows.go:29-34,152-195）。RDP login collector 查询 Security 4624/LogonType 10，仅构造 method/user/IP/time/digest 元数据；解析输入有 XML/Data 数量、时窗和 IP 限制（internal/windowsnode/login_windows.go:28-82,84-149）。未发现请求目标、NLA downgrade 或证书 pin 绕过的源码路径。具体未完成的外部验证阻断：未在 Windows 主机核验实际 service logon identity/ACL、TermService 实际监听者与 registry port、证书 store/pin/private-key 状态或部署能力；也未执行现场 TLS/NLA 握手。",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Unrelated%20changes%20in%20the%20scoped%20diff::Changed%20file%20outside%20Windows%20light-node%20security%20boundaries::out-of-scope::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "Unrelated changes in the scoped diff",
+      "boundary": "Changed file outside Windows light-node security boundaries",
+      "subsystem": "out-of-scope",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "Unrelated changes in the scoped diff",
+    "boundary": "Changed file outside Windows light-node security boundaries",
+    "subsystem": "out-of-scope",
+    "attack_class": "ATTACK-CLASSES.md#Wildcard",
+    "starting_paths": [
+      "cmd/kejilion-agent/backup_bundle.go",
+      "cmd/kejilion-agent/main.go",
+      "cmd/kejilion-node/check_status_linux.go",
+      "cmd/kejilion-node/check_status_other.go",
+      "cmd/kejilion-node/health_linux.go",
+      "cmd/kejilion-node/health_other.go",
+      "cmd/kejilion-node/legacy_migration.go",
+      "cmd/kejilion-node/platform_other.go",
+      "cmd/kejilion-node/procd.go",
+      "cmd/kejilion-node/root_ownership_other.go",
+      "cmd/kejilion-node/update_runtime/source.json",
+      "cmd/kejilion-node/update_runtime/ssh-login.procd",
+      "cmd/kejilion-node/update_runtime/update.procd",
+      "cmd/kejilion-node/update_runtime/update.sh",
+      "cmd/kpanel-mcp/main.go",
+      "Dockerfile",
+      "internal/agent/file_policy_other.go",
+      "internal/agent/job_input.go",
+      "internal/agent/server.go",
+      "internal/agent/webenv.go",
+      "internal/ai/client.go",
+      "internal/appmarket/jobs.go",
+      "internal/appmarket/terminal_log.go",
+      "internal/appmarket/terminal_resize.go",
+      "internal/appmarket/terminal.go",
+      "internal/auth/passkey.go",
+      "internal/backup/failure.go",
+      "internal/backup/files.go",
+      "internal/backup/jobs.go",
+      "internal/backupremote/client.go",
+      "internal/backupremote/config.go",
+      "internal/backupremote/store.go",
+      "internal/backupremote/webdav.go",
+      "internal/cluster/service.go",
+      "internal/cluster/sshlogin/executable_linux.go",
+      "internal/cluster/sshlogin/executable_other.go",
+      "internal/cluster/sshlogin/reader.go",
+      "internal/cluster/store.go",
+      "internal/cluster/terminal_input.go",
+      "internal/contract/traffic_period.go",
+      "internal/diagnostics/native.go",
+      "internal/diagnostics/service.go",
+      "internal/filemanager/chmod_linux.go",
+      "internal/filemanager/chmod_other.go",
+      "internal/filemanager/create_access_other.go",
+      "internal/filemanager/rename_noreplace_linux.go",
+      "internal/filemanager/rename_noreplace_other.go",
+      "internal/filemanager/share_identity_linux.go",
+      "internal/filemanager/share_identity_other.go",
+      "internal/filemanager/sync_unix.go",
+      "internal/filemanager/xattr_other.go",
+      "internal/hostbackup/engine.go",
+      "internal/hostbackup/service.go",
+      "internal/hostpty/process_linux.go",
+      "internal/hostpty/process_other.go",
+      "internal/monitoring/check_status.go",
+      "internal/monitoring/icmp_other.go",
+      "internal/monitoring/icmp_windows.go",
+      "internal/monitoring/operator_latency.go",
+      "internal/monitoring/service.go",
+      "internal/notification/history_delivery.go",
+      "internal/notification/history.go",
+      "internal/notification/host_expiry.go",
+      "internal/notification/host_traffic_limits.go",
+      "internal/notification/service_checks.go",
+      "internal/notification/service.go",
+      "internal/notification/store.go",
+      "internal/notification/traffic_cycle.go",
+      "internal/notification/types.go",
+      "internal/panel/ai_tools.go",
+      "internal/panel/appearance.go",
+      "internal/panel/apps.go",
+      "internal/panel/backup_data.go",
+      "internal/panel/backup_handlers.go",
+      "internal/panel/backup_remote.go",
+      "internal/panel/backup_restore.go",
+      "internal/panel/cluster_host_details.go",
+      "internal/panel/cluster_host_order.go",
+      "internal/panel/cluster_notifications.go",
+      "internal/panel/cluster_share.go",
+      "internal/panel/cluster_traffic.go",
+      "internal/panel/config.go",
+      "internal/panel/job_terminal_input.go",
+      "internal/panel/login_appearance.go",
+      "internal/panel/notification_timezone.go",
+      "internal/panel/passkey.go",
+      "internal/panel/scene_packs.go",
+      "internal/panel/service_check_notifications.go",
+      "internal/panel/terminal_input_batch.go",
+      "internal/scenepacks/catalog.go",
+      "internal/scenepacks/profile.go",
+      "internal/scenepacks/store.go",
+      "internal/sites/recipe_jobs.go",
+      "internal/store/appearance.go",
+      "internal/store/backup.go",
+      "internal/store/cluster_host_details.go",
+      "internal/store/cluster_traffic.go",
+      "internal/systeminfo/runtime_other.go",
+      "internal/terminal/starter_other.go",
+      "internal/webenv/service.go",
+      "packaging/kejilion-app/kpanel.conf",
+      "packaging/release-runner/Dockerfile",
+      "packaging/tests/app-conf-lifecycle.sh",
+      "packaging/tests/app-conf-lock-compat.sh",
+      "packaging/tests/app-conf-update-backups.sh"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "ATTACK-CLASSES.md#Wildcard"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Per parent-approved scoped purpose, these paths are outside scope; this run makes no coverage claim."
+    ]
+  },
+  {
+    "coverage_id": "Windows%20PowerShell%20ConPTY%20execution%20containment::Authorized%20terminal%20input%20-%3E%20LocalSystem%20ConPTY%20child%20process::internal%2Fhostpty::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows PowerShell ConPTY execution containment",
+      "boundary": "Authorized terminal input -> LocalSystem ConPTY child process",
+      "subsystem": "internal/hostpty",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows PowerShell ConPTY execution containment",
+    "boundary": "Authorized terminal input -> LocalSystem ConPTY child process",
+    "subsystem": "internal/hostpty",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/light_terminal.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "cmd/kejilion-node/terminal_config.go",
+      "internal/agent/terminals.go",
+      "internal/hostpty/output_log.go",
+      "internal/hostpty/process_windows.go",
+      "internal/hostpty/process.go",
+      "internal/terminal/executable_owner_other.go",
+      "internal/terminal/input.go",
+      "internal/terminal/manager.go",
+      "internal/terminal/sequencer.go",
+      "internal/terminal/starter_windows.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes",
+        "reason": "No child process, PowerShell, ConPTY, or Job Object can be instantiated for this audit."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "recon_entries",
+    "reviewed_paths": [
+      "cmd/kejilion-node/light_terminal.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "cmd/kejilion-node/terminal_config.go",
+      "internal/agent/terminals.go",
+      "internal/hostpty/output_log.go",
+      "internal/hostpty/process_windows.go",
+      "internal/hostpty/process.go",
+      "internal/terminal/executable_owner_other.go",
+      "internal/terminal/input.go",
+      "internal/terminal/manager.go",
+      "internal/terminal/sequencer.go",
+      "internal/terminal/starter_windows.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entries",
+        "reviewed_paths": [
+          "cmd/kejilion-node/light_terminal.go",
+          "cmd/kejilion-node/terminal_broker.go",
+          "cmd/kejilion-node/terminal_config.go",
+          "internal/agent/terminals.go",
+          "internal/hostpty/output_log.go",
+          "internal/hostpty/process_windows.go",
+          "internal/hostpty/process.go",
+          "internal/terminal/executable_owner_other.go",
+          "internal/terminal/input.go",
+          "internal/terminal/manager.go",
+          "internal/terminal/sequencer.go",
+          "internal/terminal/starter_windows.go"
+        ],
+        "invariant": "The Windows ConPTY child is started only by the LocalSystem-guarded terminal broker, uses the fixed inbox PowerShell path and environment, and remains in a kill-on-close Job Object.",
+        "method": "source",
+        "result": "Frozen source identity verified by Windows Git: HEAD 431345f6097d08ac96aedec18f5605ce8a191aeb, tree 1211c022438ef4dc6ef51da121d0237edf3ad75f, working tree clean. Trace: cmd/kejilion-node/terminal_broker.go:23-74 rejects non-absolute config paths, calls requireBrokerIdentity at :34 (cmd/kejilion-node/platform_windows.go:44-48 -> internal/windowsnode/paths_windows.go:32), reads paired terminal identity at :50 and cmd/kejilion-node/terminal_config.go:31-69, creates a Manager at :58, then runs poll and stream relays at cmd/kejilion-node/light_terminal.go:45-90 / cmd/kejilion-node/terminal_broker.go:83-96. Call sites pass the locally loaded Noise key and pinned peer; relay implementation is outside these assigned paths. cmd/kejilion-node/terminal_config.go:37-65 requires a regular file, validates secret=true, caps it at 8 KiB, rejects unknown/trailing JSON, validates 32-byte keys and requires a peer in normal broker mode; cmd/kejilion-node/platform_windows.go:165-170 maps secret to SystemOnly. cmd/kejilion-node/light_terminal.go:231-331 accepts strict open/input/resize/close payloads only; :257-272 maps central session IDs to local random manager IDs, decodes input and calls Manager.Input under owner light:<NodeID>. internal/terminal/manager.go:284-322 and :426-454 validate owner/session, dimensions, quotas, 16 KiB input size and active state; :577-585 binds each operation to stored owner. Limits are :19-26, :306-307 and :562-566. internal/terminal/starter_windows.go:16-30 resolves inbox PowerShell from GetSystemDirectory and checks each ancestor; :32-91 rejects reparse points, untrusted owners and untrusted write ACEs; :101-116 uses static NoProfile arguments and an explicit minimal environment. internal/hostpty/process_windows.go:37-58 creates ConPTY after dimension/path checks; :70-81 sets JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; :104-135 uses explicit environment and starts suspended with bInheritHandles=false; :138-145 assigns the child to the job before ResumeThread. internal/terminal/manager.go:374-390 keeps output in a bounded in-memory buffer. internal/hostpty/output_log.go:49-51 is a separate path-based log helper and is not called by the Windows Manager path. internal/terminal/input.go:32-45 and internal/terminal/sequencer.go:57-116 implement sequenced admission for other sinks; the Windows relay invokes Manager.Input directly, retaining owner/session and size checks. internal/agent/terminals.go:32-184 is a parallel generic HTTP handler that accepts owner in body/query; route authentication is not defined there, and no call from the listed Windows broker path uses that Server handler. internal/terminal/executable_owner_other.go:7 returns false for non-Linux; internal/terminal/manager.go:140-144 dispatches to platformStarter first, so Windows does not fall back to PATH shell lookup. No source-visible lower-trust entry into the Windows SYSTEM Manager was found in these assigned paths. No target code/tests/builds or host operations were run; effective SCM token, live shell ACLs and relay runtime were not observed.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Windows%20enrollment%20token%20and%20SYSTEM%20handoff::Panel%20one-time%20enrollment%20capability%20-%3E%20elevated%20node%20-%3E%20SYSTEM%20config::cmd%2Fkejilion-node::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows enrollment token and SYSTEM handoff",
+      "boundary": "Panel one-time enrollment capability -> elevated node -> SYSTEM config",
+      "subsystem": "cmd/kejilion-node",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows enrollment token and SYSTEM handoff",
+    "boundary": "Panel one-time enrollment capability -> elevated node -> SYSTEM config",
+    "subsystem": "cmd/kejilion-node",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/service_windows.go",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "web/src/views/ClusterView.vue"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "External origin policy, operator identity settings, and actual installer signing configuration are not source-observable; report exact blockers only when decisive."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "windows_cf_audit",
+    "reviewed_paths": [
+      "cmd/kejilion-node/batch_enrollment_attempt.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/platform_windows.go",
+      "cmd/kejilion-node/service_windows.go",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "web/src/views/ClusterView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "windows_cf_audit",
+        "reviewed_paths": [
+          "cmd/kejilion-node/batch_enrollment_attempt.go",
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/platform_windows.go",
+          "cmd/kejilion-node/service_windows.go",
+          "internal/cluster/light_batch_service.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_windows_install.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "internal/panel/server.go",
+          "internal/windowsnode/paths_windows.go",
+          "internal/windowsnode/security_windows.go",
+          "web/src/views/ClusterView.vue"
+        ],
+        "invariant": "A node enrollment capability is issued to an authenticated panel operator, expires and is consumed under its defined single/batch policy, and reaches Windows SYSTEM through a bounded protected handoff without becoming a service command-line argument.",
+        "method": "source",
+        "result": "Source trace: the panel create endpoints call requireClusterMutation (Origin, authenticated session, CSRF) before issuing a command; audit metadata records expiry/protocol but not the command/token (internal/panel/cluster.go:370-408,1029-1037; internal/panel/server.go:1442-1487). Single enrollment uses a random 32-byte secret, stores only SHA-256 plus a 5-minute expiry, binds origin, and returns the token inside the command (internal/cluster/light_service.go:76-118); enrollment verifies origin/token/expiry and atomically consumes the matching hash while saving host data (light_service.go:129-172; light_store.go:255-276,279-354). Batch enrollment intentionally permits maxUses 1..MaxHosts with 5-minute..7-day expiry and persisted attempt identity (light_batch_service.go:27-98,120-204; cmd/kejilion-node/main.go:175-205; batch_enrollment_attempt.go:24-75,78-127). Windows installation accepts only install --stdin, checks elevation, bounds input to 8 KiB, checks the protected executable path and signature, writes a SystemOnly handoff, and starts bootstrap; bootstrap requires SYSTEM, reads/removes the handoff immediately, clears its buffer, verifies binaries, then calls enrollment in-process and clears request.Token (cmd/kejilion-node/service_windows.go:83-167,169-225,227-250). ProgramData/Program Files roots and SystemOnly explicit descriptor/atomic writes are source-defined (internal/windowsnode/paths_windows.go:20-31; security_windows.go:46-79,310-382); node config persists EnrollmentTokenHash instead of the raw enrollment token (main.go:253-260; platform_windows.go:165-184). UI displays expiry and copyable one-time command (ClusterView.vue:2014-2057). Source supports this designed flow; effective installed ACLs and PowerShell history/logging were not observed, and no native installation was exercised.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Windows%20file%20broker%20relay%20authorization%20and%20host%20binding::Panel%20session%20-%3E%20Noise%20file%20relay%20role%20-%3E%20SYSTEM%20file%20broker::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows file broker relay authorization and host binding",
+      "boundary": "Panel session -> Noise file relay role -> SYSTEM file broker",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows file broker relay authorization and host binding",
+    "boundary": "Panel session -> Noise file relay role -> SYSTEM file broker",
+    "subsystem": "internal/cluster",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/light_file.go",
+      "internal/agent/file_policy_windows.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/client.go",
+      "internal/cluster/file_relay_v1_grants.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/light_file.go",
+      "internal/panel/server.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Broker and queue isolation attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Framing, schema, and interpretation attack classes",
+        "reason": "Do not infer host ownership or lower-trust panel roles; verify the source authorization model and exact Noise principal."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_file_r1",
+    "reviewed_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/light_file.go",
+      "internal/agent/file_policy_windows.go",
+      "internal/cluster/client_v2.go",
+      "internal/cluster/client.go",
+      "internal/cluster/file_relay_v1_grants.go",
+      "internal/cluster/file_relay_v1.go",
+      "internal/cluster/file_stream_transport.go",
+      "internal/cluster/light_file.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/light_file.go",
+      "internal/panel/server.go",
+      "docs/cross-kpanel-file-transfer.md",
+      "docs/file-manager-design.md"
+    ],
+    "local_checks": [
+      {
+        "artifact": null,
+        "result": "Source review found controller/session and host binding across the panel grant, Noise role, stream, and broker. The suspected in-flight logout revocation gap is not a finding under the existing contract: docs/cross-kpanel-file-transfer.md:48 permits an already-authorized stream to finish via existing cancellation/timeout, and docs/file-manager-design.md:74 defines 45s body-idle and 2h hard limits; no immediate logout cancellation guarantee exists.",
+        "invariant": "Only the authenticated panel session and host-bound grant may reach the enrolled node's Noise file relay and SYSTEM broker.",
+        "agent_id": "hunter_file_r1",
+        "reviewed_paths": [
+          "cmd/kejilion-node/file_broker.go",
+          "cmd/kejilion-node/light_file.go",
+          "internal/agent/file_policy_windows.go",
+          "internal/cluster/client_v2.go",
+          "internal/cluster/client.go",
+          "internal/cluster/file_relay_v1_grants.go",
+          "internal/cluster/file_relay_v1.go",
+          "internal/cluster/file_stream_transport.go",
+          "internal/cluster/light_file.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "internal/panel/light_file.go",
+          "internal/panel/server.go"
+        ],
+        "method": "source"
+      },
+      {
+        "method": "source",
+        "invariant": "Existing file-relay lifecycle contract determines whether ending an authenticated request must synchronously terminate an already-authorized stream.",
+        "reviewed_paths": [
+          "docs/cross-kpanel-file-transfer.md",
+          "docs/file-manager-design.md"
+        ],
+        "artifact": null,
+        "agent_id": "windows_cf_audit",
+        "result": "The documented contract explicitly permits already-authorized in-flight streams to finish by existing cancellation/timeout; 45s body-idle and 2h hard cap are specified. It promises immediate rejection of later transfers, not immediate logout cancellation of an active stream. This refutes the proposed logout gap for this boundary."
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Windows%20fixed-volume%20path%20and%20NTFS%20ACL%20operations::Remote%20file%20path%20-%3E%20local%20volume%20handle%20and%20ACL%20mutation::internal%2Ffilemanager::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "Windows fixed-volume path and NTFS ACL operations",
+      "boundary": "Remote file path -> local volume handle and ACL mutation",
+      "subsystem": "internal/filemanager",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Windows fixed-volume path and NTFS ACL operations",
+    "boundary": "Remote file path -> local volume handle and ACL mutation",
+    "subsystem": "internal/filemanager",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/light_file.go",
+      "internal/agent/file_policy_windows.go",
+      "internal/filemanager/chmod_windows.go",
+      "internal/filemanager/create_access_windows.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/owner_windows.go",
+      "internal/filemanager/rename_noreplace_windows.go",
+      "internal/filemanager/rename_windows.go",
+      "internal/filemanager/root_other.go",
+      "internal/filemanager/root_windows.go",
+      "internal/filemanager/share_identity_windows.go",
+      "internal/filemanager/sync_windows.go",
+      "internal/filemanager/xattr_windows.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Webview and native-bridge attack classes",
+        "reason": "Windows filesystem and ACL effects cannot be run in this environment; inspect syscall flags and handle lifetimes statically."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter_file_r1",
+    "reviewed_paths": [
+      "cmd/kejilion-node/file_broker.go",
+      "cmd/kejilion-node/light_file.go",
+      "internal/agent/file_policy_windows.go",
+      "internal/filemanager/archive.go",
+      "internal/filemanager/archive_jobs.go",
+      "internal/filemanager/chmod_windows.go",
+      "internal/filemanager/create_access_windows.go",
+      "internal/filemanager/manager.go",
+      "internal/filemanager/owner_windows.go",
+      "internal/filemanager/rename_noreplace_windows.go",
+      "internal/filemanager/rename_windows.go",
+      "internal/filemanager/root_windows.go",
+      "internal/filemanager/share_identity_windows.go",
+      "internal/filemanager/sync_windows.go",
+      "internal/filemanager/xattr_windows.go",
+      "internal/filemanager/root_other.go"
+    ],
+    "local_checks": [
+      {
+        "artifact": null,
+        "result": "Source review found fixed-volume and handle-relative path validation, rejection of traversal/UNC/reparse/multilink paths, same-volume atomic rename, preserved DACLs, null-DACL rejection, unsupported POSIX chmod on Windows, and archive path checks. No Windows filesystem operations or tests were executed; effective installed NTFS ACLs remain a deployment fact outside this source review.",
+        "invariant": "Remote file paths and mutations stay within fixed local volumes with no traversal/reparse escape, unsafe archive extraction, or unintended ACL/owner mutation.",
+        "agent_id": "hunter_file_r1",
+        "reviewed_paths": [
+          "cmd/kejilion-node/file_broker.go",
+          "cmd/kejilion-node/light_file.go",
+          "internal/agent/file_policy_windows.go",
+          "internal/filemanager/archive.go",
+          "internal/filemanager/archive_jobs.go",
+          "internal/filemanager/chmod_windows.go",
+          "internal/filemanager/create_access_windows.go",
+          "internal/filemanager/manager.go",
+          "internal/filemanager/owner_windows.go",
+          "internal/filemanager/rename_noreplace_windows.go",
+          "internal/filemanager/rename_windows.go",
+          "internal/filemanager/root_windows.go",
+          "internal/filemanager/share_identity_windows.go",
+          "internal/filemanager/sync_windows.go",
+          "internal/filemanager/xattr_windows.go"
+        ],
+        "method": "source"
+      },
+      {
+        "method": "source",
+        "invariant": "Platform-specific filesystem root implementation selected for Windows must be explicit and must not accidentally use a POSIX-only fallback.",
+        "reviewed_paths": [
+          "internal/filemanager/root_other.go"
+        ],
+        "artifact": null,
+        "agent_id": "windows_cf_audit",
+        "result": "root_other.go is build-tagged !windows and provides the non-Windows os.Root implementation; Windows builds select root_windows.go reviewed by the source hunter."
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "Windows%20node%20update%20authenticity%20and%20recovery::Release%20artifact%20-%3E%20installed%20privileged%20node%20services::internal%2Fwindowsnode::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "Windows node update authenticity and recovery",
+      "boundary": "Release artifact -> installed privileged node services",
+      "subsystem": "internal/windowsnode",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "Windows node update authenticity and recovery",
+    "boundary": "Release artifact -> installed privileged node services",
+    "subsystem": "internal/windowsnode",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      ".github/workflows/release.yml",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/signature.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "internal/windowsnode/service_windows.go",
+      "internal/windowsnode/signature_windows.go",
+      "internal/windowsnode/update_windows.go",
+      "scripts/windows-node-release.ps1"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Release and update attack classes",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Dependency and build-input attack classes",
+        "reason": "Signing provider, release publication, and rollback behavior on real Windows are not exercised."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "windows_cf_audit",
+    "reviewed_paths": [
+      ".github/workflows/release.yml",
+      "cmd/kejilion-node/service_windows.go",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/signature.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "internal/windowsnode/service_windows.go",
+      "internal/windowsnode/signature_windows.go",
+      "internal/windowsnode/update_windows.go",
+      "scripts/windows-node-release.ps1"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "windows_cf_audit",
+        "reviewed_paths": [
+          ".github/workflows/release.yml",
+          "cmd/kejilion-node/service_windows.go",
+          "internal/cluster/light_windows_install.go",
+          "internal/cluster/signature.go",
+          "internal/windowsnode/paths_windows.go",
+          "internal/windowsnode/security_windows.go",
+          "internal/windowsnode/service_windows.go",
+          "internal/windowsnode/signature_windows.go",
+          "internal/windowsnode/update_windows.go",
+          "scripts/windows-node-release.ps1"
+        ],
+        "invariant": "Only artifacts signed by the configured expected Windows publisher/profile should enter or replace the privileged node, and interrupted updates should recover to a verified healthy binary.",
+        "method": "source",
+        "result": "Source trace: the workflow triggers on v*.*.* tags, gates its Windows signing job on KPANEL_WINDOWS_NODE_RELEASE_ENABLED == true, uses windows-node-signing and pinned actions, and verifies signed assets before upload (.github/workflows/release.yml:3-20,35-84). The release script validates canonical tag/VERSION, configured publisher, timestamp, Code Signing EKU, and optional profile OID (scripts/windows-node-release.ps1:14-38,71-86). Node trust verifies WinVerifyTrust chain/revocation/timestamp, selected signer Subject, and optional profile OID (internal/windowsnode/signature_windows.go:20-105). Update download restricts HTTPS hosts/redirects, resolves a stable tag, fetches the manifest and binary at that tag, checks SHA256, and stages the next binary (update_windows.go:258-345). Apply/Recover verify live/next/old signatures, persist a SystemOnly journal, perform durable swaps, health-check, and recover the signed prior binary on failure (update_windows.go:126-251; security_windows.go:310-360). The separate bootstrap/update task runs with SYSTEM and uses the protected bootstrap executable (cmd/kejilion-node/service_windows.go:343-430; internal/windowsnode/service_windows.go:395-404). No source defect was confirmed. Actual lane enablement, tag rules/actors/bypass, environment reviewers/allowed refs/bypass, secret scope, and expected Publisher/Profile binding are external and unknown; source does not establish low-trust tag access. No tag, release, GitHub environment, or signing service was queried or changed. Supporting source-review record retained at C:/GitHub/_codex-tmp/windows-cf-audit-20261003/agents/verify_release_gate/scratch/decision.json.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verify_release_gate",
+        "reviewed_paths": [
+          ".github/workflows/release.yml",
+          "scripts/windows-node-release.ps1"
+        ],
+        "invariant": "A release tag can use signing credentials only under the intended tag and environment controls.",
+        "method": "source",
+        "result": "Independent verification from agents/verify_release_gate/scratch/decision.json: the tag workflow, gated signing job and configured publisher/profile checks are source-confirmed; actual enabled variable, tag/ruleset actor rights, environment reviewers/allowed refs/bypass, secrets scope and expected signing identity remain unknown. Verdict needs_validation; this does not assert low-trust tag access. Supporting source-review record retained at C:/GitHub/_codex-tmp/windows-cf-audit-20261003/agents/verify_release_gate/scratch/decision.json.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "windows-release-signing-trigger-config"
+    ],
+    "unresolved": [
+      "Owner must read-only verify KPANEL_WINDOWS_NODE_RELEASE_ENABLED; matching tag create/update/delete/bypass rights and rules; windows-node-signing allowed refs, reviewers, self-approval/bypass and secret scope; and expected Publisher/Profile OID binding. Do not infer low-trust tag access from source."
+    ]
+  },
+  {
+    "coverage_id": "Windows%20service%20identities%20and%20protected%20state::SCM%20service%20identity%20-%3E%20privileged%20process%20and%20persistent%20files::internal%2Fwindowsnode::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows service identities and protected state",
+      "boundary": "SCM service identity -> privileged process and persistent files",
+      "subsystem": "internal/windowsnode",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows service identities and protected state",
+    "boundary": "SCM service identity -> privileged process and persistent files",
+    "subsystem": "internal/windowsnode",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/health_windows.go",
+      "cmd/kejilion-node/platform_windows.go",
+      "cmd/kejilion-node/service_windows.go",
+      "cmd/kejilion-node/task_health_windows.go",
+      "internal/windowsnode/login_windows.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "internal/windowsnode/service_windows.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local IPC and exported-component attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged-helper and local-file attack classes",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLOUD-AND-DEPLOYMENT.md#Workload identity and IAM attack classes",
+        "reason": "Local SCM configuration and effective Windows ACLs require owner-observed validation; source static review must not infer host state."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "recon_entries",
+    "reviewed_paths": [
+      "cmd/kejilion-node/health_windows.go",
+      "cmd/kejilion-node/platform_windows.go",
+      "cmd/kejilion-node/service_windows.go",
+      "cmd/kejilion-node/task_health_windows.go",
+      "internal/windowsnode/login_windows.go",
+      "internal/windowsnode/paths_windows.go",
+      "internal/windowsnode/security_windows.go",
+      "internal/windowsnode/service_windows.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "recon_entries",
+        "reviewed_paths": [
+          "cmd/kejilion-node/health_windows.go",
+          "cmd/kejilion-node/platform_windows.go",
+          "cmd/kejilion-node/service_windows.go",
+          "cmd/kejilion-node/task_health_windows.go",
+          "internal/windowsnode/login_windows.go",
+          "internal/windowsnode/paths_windows.go",
+          "internal/windowsnode/security_windows.go",
+          "internal/windowsnode/service_windows.go"
+        ],
+        "invariant": "Privileged services and persistent state remain bound to SYSTEM or dedicated service SIDs, with protected executable/configuration paths and no lower-trust ability to alter an SCM execution target.",
+        "method": "source",
+        "result": "Frozen source identity verified by Windows Git: HEAD 431345f6097d08ac96aedec18f5605ce8a191aeb, tree 1211c022438ef4dc6ef51da121d0237edf3ad75f, working tree clean. Install trace: cmd/kejilion-node/service_windows.go:83-156 requires an elevated installer, creates a bootstrap service and writes its request with SystemOnly; :169-224 requires bootstrap to be SYSTEM, reads/removes the protected handoff, initializes protected directories, verifies signatures, secures both Program Files executables and calls InstallServices. internal/windowsnode/paths_windows.go:20-34 fixes ProgramData/Program Files paths and derives IsSystem from the process token. internal/windowsnode/service_windows.go:29-34 defines Terminal/File as Privileged; :152-154 requires SYSTEM; :176-183 creates automatic services with the fixed Program Files executable, sets NT SERVICE\\<name> only for non-privileged services, and leaves ServiceStartName at SCM default for Terminal/File; :187-194 restricts non-privileged services to SeChangeNotifyPrivilege and Telemetry uses SERVICE_SID_TYPE_RESTRICTED at :178-181; :197-202 sets recovery actions; :216-220 starts created services. cmd/kejilion-node/platform_windows.go:44-48 rejects a non-SYSTEM terminal broker; cmd/kejilion-node/service_windows.go:251-258 accepts the login broker only as SYSTEM or its deterministic service SID. internal/windowsnode/security_windows.go:32-78 derives service SIDs and creates protected SDDL policies; :82-150 rejects unsafe owners/ACE forms and writes; :153-178 opens non-reparse objects and validates DACL; :204-228 secures executable ACLs; :232-270 holds parent handles and applies the fixed login-directory policy; :276-360 creates protected directories and atomic protected writes; :362-379 bounds protected reads. internal/windowsnode/service_windows.go:134-150 initializes fixed directories; :395-404 registers a fixed update task with SYSTEM principal and protected bootstrap executable. cmd/kejilion-node/task_health_windows.go:41-92 reads a bounded task file, validates ProgramRead ACL and checks command/arguments; cmd/kejilion-node/health_windows.go:30-56 queries service status/config but reports only status/start type, not effective StartName, ImagePath or service-object DACL. internal/windowsnode/login_windows.go:28-82 reads bounded Windows event batches; :84-157 validates event time, type, address and fields; cmd/kejilion-node/service_windows.go:251-290 gates the login broker and writes/reads LoginSnapshot under its dedicated policy. No service-object DACL set or readback appears in the assigned implementation; binary/state DACL helpers do not establish SCM permissions. Conditional candidate: if the installed KejilionNodeTerminal service DACL gives an unprivileged account SERVICE_CHANGE_CONFIG or WRITE_DAC (and a way to start/restart the service), it could repoint an automatic LocalSystem service to attacker-controlled code. The source fixes the initial image path but cannot prove the effective host DACL excludes that account. This depends on Windows SCM defaults or later host policy/runtime state not observable in this source-only pass; no services were installed or queried.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "windows-scm-service-config-acl"
+    ],
+    "unresolved": [
+      "The effective DACL and rights of the installed LocalSystem service object, including local/domain policy changes, were not observable from source or permitted runtime inspection."
+    ]
+  },
+  {
+    "coverage_id": "Windows%20signed%20installer%20and%20enrollment%20command::Admin%20PowerShell%20-%3E%20signed%20node%20executable%20-%3E%20protected%20Program%20Files::windowsnode::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "Windows signed installer and enrollment command",
+      "boundary": "Admin PowerShell -> signed node executable -> protected Program Files",
+      "subsystem": "windowsnode",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "Windows signed installer and enrollment command",
+    "boundary": "Admin PowerShell -> signed node executable -> protected Program Files",
+    "subsystem": "windowsnode",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      ".github/workflows/release.yml",
+      "cmd/kejilion-node/main.go",
+      "deploy/windows/install.ps1",
+      "internal/cluster/light_platform.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "scripts/windows-node-release.ps1",
+      "web/src/views/ClusterView.vue"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Release and update attack classes",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "SUPPLY-CHAIN-AND-RELEASE.md#Dependency and build-input attack classes",
+        "reason": "No installer action, release service, signature operation, or build may be run; inspect only source-visible guarantees."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "windows_cf_audit",
+    "reviewed_paths": [
+      ".github/workflows/release.yml",
+      "cmd/kejilion-node/main.go",
+      "deploy/windows/install.ps1",
+      "internal/cluster/light_batch_service.go",
+      "internal/cluster/light_platform.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/light_windows_install.go",
+      "internal/cluster/signature.go",
+      "internal/cluster/types.go",
+      "internal/panel/cluster.go",
+      "internal/panel/server.go",
+      "scripts/windows-node-release.ps1",
+      "web/src/lib/api.ts",
+      "web/src/types/api.ts",
+      "web/src/views/ClusterView.vue"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "windows_cf_audit",
+        "reviewed_paths": [
+          ".github/workflows/release.yml",
+          "cmd/kejilion-node/main.go",
+          "deploy/windows/install.ps1",
+          "internal/cluster/light_platform.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_windows_install.go",
+          "internal/cluster/signature.go",
+          "internal/cluster/types.go",
+          "internal/panel/cluster.go",
+          "scripts/windows-node-release.ps1",
+          "web/src/views/ClusterView.vue"
+        ],
+        "invariant": "A one-time enrollment capability should not become available to an unauthorized principal through the one-line administrator PowerShell command, shell history, or logging before its intended expiry and use limit.",
+        "method": "source",
+        "result": "Source trace: the command creation endpoint requires Origin, session and CSRF; audit events include expiry/protocol metadata but not the returned command (internal/panel/cluster.go:370-408,1029-1037). The Windows command passes Token as a reversible Base64-decoding PowerShell expression (internal/cluster/light_windows_install.go:12-16,62); Base64 is not secrecy. The installer explicitly tells operators to review PSReadLine history and revoke unused batch tokens (deploy/windows/install.ps1:155). A single token expires in five minutes; batch tokens have bounded expiry and max-use count (internal/cluster/light_service.go:95-118; light_batch_service.go:17-22,48-78). The source proves a credential-bearing command is presented to an interactive elevated shell and that history/logging is a recognized exposure class; it does not prove the history is persisted, accessible to a lower-trust principal, collected centrally, or exploitable before token consumption/expiry. No leakage is asserted.",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entries",
+        "reviewed_paths": [
+          "internal/cluster/light_windows_install.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_batch_service.go",
+          "internal/cluster/light_store.go",
+          "internal/panel/cluster.go",
+          "deploy/windows/install.ps1",
+          "web/src/lib/api.ts",
+          "web/src/types/api.ts",
+          "web/src/views/ClusterView.vue",
+          "internal/panel/server.go"
+        ],
+        "invariant": "A lower-trust local principal must not be able to recover and redeem a still-valid one-time Windows node enrollment token from the administrator's PowerShell history or another local copy.",
+        "method": "source",
+        "result": "The source supports a conditional exposure path but does not prove the required lower-trust read. The panel endpoint returns the generated command to a session-authenticated, Origin- and CSRF-checked caller, and the UI renders/copies it. The Windows command embeds the token in a PowerShell expression that reversibly Base64-decodes it; this is encoding, not encryption. install.ps1 explicitly warns the operator to review PSReadLine history for enrollment tokens. However, repository source does not establish the target machine's PSReadLine history location, history mode, file ownership/DACL, or that a non-admin principal can read any historical copy. I therefore cannot confirm a cross-principal exposure from source alone and do not infer machine ACLs or logging behavior. Candidate remains needs_validation because lower-trust local read/access and the deployment redemption route were not established; no leakage is asserted. Supporting source-review record retained at C:/GitHub/_codex-tmp/windows-cf-audit-20261003/agents/recon_entries/scratch/verify-u14-token-history.json.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "windows.psreadline.one-time-enrollment-token-history-exposure"
+    ],
+    "unresolved": [
+      "The effective PSReadLine history behavior/profile ACL, script-block or endpoint logging collection/retention, execution mode, and whether a lower-trust principal can recover the reversible token are not source-observable. Do not infer leakage from the warning."
+    ]
+  },
+  {
+    "coverage_id": "Windows%20telemetry%20identity%20and%20replay%20protection::Node%20service%20report%20-%3E%20center%20host%20telemetry%20state::internal%2Fcluster::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows telemetry identity and replay protection",
+      "boundary": "Node service report -> center host telemetry state",
+      "subsystem": "internal/cluster",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows telemetry identity and replay protection",
+    "boundary": "Node service report -> center host telemetry state",
+    "subsystem": "internal/cluster",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/check_status.go",
+      "cmd/kejilion-node/health_windows.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/monitoring.go",
+      "internal/agent/monitoring_check_status.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service_check_snapshot.go",
+      "internal/contract/monitoring.go",
+      "internal/contract/service_checks.go",
+      "internal/contract/types.go",
+      "internal/panel/cluster.go",
+      "internal/systeminfo/collector.go",
+      "internal/systeminfo/runtime_windows.go",
+      "internal/windowsnode/login_windows.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#RPC identity and authorization attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+        "reason": "Live clock skew, local service secrets, and installed node identity state are not available in this source-only review."
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunt_telemetry_terminal",
+    "reviewed_paths": [
+      "cmd/kejilion-node/check_status.go",
+      "cmd/kejilion-node/health_windows.go",
+      "cmd/kejilion-node/health.go",
+      "cmd/kejilion-node/main.go",
+      "cmd/kejilion-node/monitoring.go",
+      "cmd/kejilion-node/platform_windows.go",
+      "internal/agent/monitoring_check_status.go",
+      "internal/cluster/guard.go",
+      "internal/cluster/light_platform.go",
+      "internal/cluster/light_service.go",
+      "internal/cluster/light_store.go",
+      "internal/cluster/service_check_snapshot.go",
+      "internal/cluster/service.go",
+      "internal/contract/monitoring.go",
+      "internal/contract/service_checks.go",
+      "internal/contract/types.go",
+      "internal/panel/cluster.go",
+      "internal/systeminfo/collector.go",
+      "internal/systeminfo/runtime_windows.go",
+      "internal/windowsnode/login_windows.go",
+      "internal/windowsnode/security_windows.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunt_telemetry_terminal",
+        "reviewed_paths": [
+          "cmd/kejilion-node/check_status.go",
+          "cmd/kejilion-node/health_windows.go",
+          "cmd/kejilion-node/health.go",
+          "cmd/kejilion-node/monitoring.go",
+          "internal/agent/monitoring_check_status.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/service_check_snapshot.go",
+          "internal/contract/monitoring.go",
+          "internal/contract/service_checks.go",
+          "internal/contract/types.go",
+          "internal/panel/cluster.go",
+          "internal/systeminfo/collector.go",
+          "internal/systeminfo/runtime_windows.go",
+          "internal/windowsnode/login_windows.go",
+          "internal/cluster/service.go",
+          "internal/cluster/guard.go"
+        ],
+        "invariant": "A signed Windows node report must be bound to its enrolled node identity and reject reuse of an authenticated request before it refreshes center telemetry state.",
+        "method": "source",
+        "result": "Server-side identity checks are present: report HMAC covers POST, endpoint path, node ID, timestamp, request ID, and SHA-256 of the raw body; the center loads the enrolled node secret, checks a two-minute timestamp window, and compares signatures in constant time (internal/cluster/light_service.go:47-61,276-303). The report endpoint supplies those values from headers and passes the exact bounded body (internal/panel/cluster.go:935-963). A possible replay gap remains across Service reconstruction: the report calls s.replays.Accept(nodeID, requestID), while each Service initializes a new replayGuard and replayGuard stores only an in-memory map (internal/cluster/light_service.go:186-229; internal/cluster/service.go:308; internal/cluster/guard.go:8-44). After acceptance, UpdateReport stamps ReceivedAt, LastAttemptAt, and LastSuccessAt with now and replaces LastSnapshot (internal/cluster/light_store.go:489-521). Incremental diff recheck against comparison_base 4c0694aa8e02e46145a775707b8d5a0355f7ce10 (run-metadata.json and coverage-check.json): AcceptLightReport HMAC authentication, the replay call, the in-memory guard construction, and UpdateReport freshness writes are unchanged generic code. The increment adds Windows platform enrollment/recording and Windows report-platform validation, so the existing replay/reset behavior newly applies to the newly supported Windows report surface; the candidate is limited to that scope expansion and does not claim a newly introduced replay primitive. The report route itself pre-existed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "recon_entries",
+        "reviewed_paths": [
+          "internal/panel/cluster.go",
+          "internal/cluster/light_service.go",
+          "internal/cluster/service.go",
+          "internal/cluster/guard.go",
+          "internal/cluster/light_store.go",
+          "internal/cluster/light_platform.go",
+          "cmd/kejilion-node/main.go",
+          "cmd/kejilion-node/platform_windows.go",
+          "internal/windowsnode/security_windows.go"
+        ],
+        "invariant": "A previously accepted signed light-node report should not be accepted again as a fresh report by a lower-trust principal after Service reconstruction while its authenticated timestamp remains valid; replayed Windows metadata must not receive a fresh capability timestamp without a current authenticated node report.",
+        "method": "source",
+        "result": "Source proves a process-local replay guard reset on NewService reconstruction and a concrete accepted replay window: the same complete request can pass again while its HMAC timestamp remains within plus or minus two minutes, if the caller already has that valid request. Acceptance stamps ReceivedAt with current server time, then UpdateReport replaces LastSnapshot, sets LastSuccessAt, clears failure state, and marks the store dirty. For Windows records, the new platform/capability metadata uses ReceivedAt for a 90-second capability freshness decision. The generic replay guard and light report replay check existed in the comparison base; they are not new primitives in this run. The changed Windows applicability adds platform/capability metadata to the already guarded report flow. Source does not establish that a principal lower-trust than the authorized node reporter can obtain the complete valid request or key. No arbitrary terminal/file control or data disclosure follows from the report HMAC alone because those controls use separate Noise identities. Keep this as needs_validation pending the exact deployed transcript-access fact; do not infer passive TLS capture. Independent comparison-base source checks show the same in-memory replay guard, report HMAC, replay call and ReceivedAt update existed at comparison_base; Windows telemetry/capability is the new applicability. This is not evidence that a lower-trust actor can obtain a valid complete signed request.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "windows-light-report-replay-memory-reset"
+    ],
+    "unresolved": [
+      "The source proves process-local replay state and a two-minute signed-timestamp acceptance window, but this source-only pass did not establish whether an attacker can obtain a complete authenticated report in the deployed network path or whether deployed restart behavior preserves the same Service instance.",
+      "The ledger starting paths do not include the Windows report sender/key-storage implementation, so client-side request-ID generation, retry behavior, and local reporting-key protection remain unreviewed.",
+      "No runtime evidence was collected; impact is bounded to replay of a captured valid request inside its signed timestamp window, potentially refreshing the existing host snapshot/freshness. This does not establish identity forgery without a valid signature or credential."
+    ]
+  },
+  {
+    "coverage_id": "Windows%20terminal%20authorization%20and%20output%20revocation::Panel%20logout%2Fsession%20deletion%20-%3E%20active%20host%20terminal%20SSE%20output::internal%2Fpanel::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "Windows terminal authorization and output revocation",
+      "boundary": "Panel logout/session deletion -> active host terminal SSE output",
+      "subsystem": "internal/panel",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Windows terminal authorization and output revocation",
+    "boundary": "Panel logout/session deletion -> active host terminal SSE output",
+    "subsystem": "internal/panel",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "cmd/kejilion-node/light_terminal.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "docs/multi-host-terminal.md",
+      "docs/terminal-file-transport-v3.md",
+      "internal/agent/terminals.go",
+      "internal/auth/service.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/types.go",
+      "internal/hostpty/output_log.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_input.go",
+      "internal/panel/terminal_stream.go",
+      "internal/panel/terminal.go",
+      "internal/store/store.go",
+      "internal/terminal/manager.go"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Replay, ordering, and transaction attack classes",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Universal moves",
+      "PROTOCOLS-RPC-AND-MESSAGING.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+        "reason": "Carry prior fingerprint terminal-sse-output-after-session-revocation; recheck its current source trace, but do not decide browser receipt or the required logout timing without bounded isolation and owner contract."
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunt_telemetry_terminal",
+    "reviewed_paths": [
+      "cmd/kejilion-node/light_terminal.go",
+      "cmd/kejilion-node/terminal_broker.go",
+      "docs/multi-host-terminal.md",
+      "docs/terminal-file-transport-v3.md",
+      "internal/agent/terminals.go",
+      "internal/auth/service.go",
+      "internal/cluster/stream_v3.go",
+      "internal/cluster/terminal_stream.go",
+      "internal/cluster/terminal_v2.go",
+      "internal/cluster/types.go",
+      "internal/hostpty/output_log.go",
+      "internal/panel/server.go",
+      "internal/panel/terminal_input.go",
+      "internal/panel/terminal_stream.go",
+      "internal/panel/terminal.go",
+      "internal/store/store.go",
+      "internal/terminal/manager.go"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunt_telemetry_terminal",
+        "reviewed_paths": [
+          "cmd/kejilion-node/light_terminal.go",
+          "cmd/kejilion-node/terminal_broker.go",
+          "docs/multi-host-terminal.md",
+          "docs/terminal-file-transport-v3.md",
+          "internal/agent/terminals.go",
+          "internal/auth/service.go",
+          "internal/cluster/stream_v3.go",
+          "internal/cluster/terminal_stream.go",
+          "internal/cluster/terminal_v2.go",
+          "internal/cluster/types.go",
+          "internal/hostpty/output_log.go",
+          "internal/panel/server.go",
+          "internal/panel/terminal_input.go",
+          "internal/panel/terminal_stream.go",
+          "internal/panel/terminal.go",
+          "internal/store/store.go",
+          "internal/terminal/manager.go"
+        ],
+        "invariant": "Only the authenticated browser session that owns a terminal may receive its output; logout/session deletion must stop future SSE output according to the documented revocation timing.",
+        "method": "source",
+        "result": "Source trace: panel routes GET /api/v1/terminal-stream and the subscriptions endpoint to handleTerminalStream; opening requires requireSession, and the stream is bound to both user ID and hash of the session token. Subscription changes require POST plus Origin/CSRF and lookup requires the same user and token hash; terminal subscriptions also require the Panel terminal session owner to match the user (internal/panel/server.go:462-463; internal/panel/terminal_stream.go:170-191,265-345). Logout requires Origin/CSRF then auth.Logout -> Store.DeleteSession; Authenticate resolves the token against SessionByTokenHash, so a later stream recheck sees deletion (internal/panel/server.go:1055-1072; internal/auth/service.go:577-610; internal/store/store.go:704-733). Password/credential transitions also revoke stored user sessions in the Store. Output pumps obtain backend output for the Panel session owner and enqueue it; the SSE writer checks the session on each event/heartbeat, caches successful authentication for no more than one second, writes auth.expired on failure, and short-circuits before writing the dequeued event (internal/panel/terminal_stream.go:233-264,365-426; internal/panel/terminal.go:195-250,290-355,436-440). Session expiry has its own timer; idle revocation is checked by the 15-second heartbeat. A boundary remains: once the SSE handler has passed checkSession and entered write(), logout does not cancel that write; ResponseWriter.Write/Flush is bounded by a 20-second deadline (internal/panel/terminal_stream.go:201-227). The docs contract read at terminal-file-transport-v3.md:210-212,238 sets one-second output rechecks, idle heartbeat cleanup, expiry close, a 20-second write timeout, and says transport-written bytes cannot be recalled. It does not settle whether an in-progress blocked event completing after logout success is acceptable or what a browser/proxy receives. The docs line 70 is the terminal input/PTY dispatch contract; I did not apply it to output SSE or to file relay. File relay is a distinct transport and no SSE revocation conclusion is made about it.",
+        "artifact": null
+      },
+      {
+        "agent_id": "windows_cf_audit",
+        "reviewed_paths": [
+          "internal/panel/terminal_stream.go",
+          "internal/panel/server.go",
+          "internal/auth/service.go",
+          "internal/store/store.go",
+          "docs/terminal-file-transport-v3.md"
+        ],
+        "invariant": "After panel logout invalidates the browser session, the terminal SSE channel should stop delivering queued terminal output according to its documented recheck contract.",
+        "method": "source",
+        "result": "Logout synchronously deletes the hashed session record; subsequent Authenticate fails when SessionByTokenHash cannot find it (internal/panel/server.go:1055-1072; internal/auth/service.go:577-610; internal/store/store.go:704-736). The SSE stream is bound to the user ID and token hash (internal/panel/terminal_stream.go:170-195). However, checkSession returns true without a new Authenticate while now-lastAuth is less than the one-second auth interval, and the output event path immediately calls write after that cached result (terminal_stream.go:233-264). Thus a dequeued output event can pass on a recently successful cached check after the session has been deleted; a write already entered before logout also has a 20-second deadline and is not canceled by the logout handler (terminal_stream.go:201-224; server.go:1055-1072). Docs promise recheck no more than once per second, sending auth.expired and ending after detecting revocation, not writing queued output after a failed check, and say transport-written bytes cannot be recalled (docs/terminal-file-transport-v3.md:210-212,238). This source read does not establish what a TLS/proxy/browser client actually receives after the logout response, and the docs do not clearly define whether output authorized by the most recent successful check may complete during the stale-check/write-deadline window. I retain the source-grounded timing candidate as needs_validation pending owner decision and isolated delivery evidence; I do not claim atomic logout-versus-write exclusion. This conclusion is specific to terminal SSE and does not import terminal input or file-relay cancellation contracts. Supporting source-review record retained at C:/GitHub/_codex-tmp/windows-cf-audit-20261003/agents/windows_cf_audit/scratch/verify-u16-terminal-sse.json.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "terminal-sse-output-after-session-revocation"
+    ],
+    "unresolved": [
+      "Owner must clarify whether the documented one-second authentication cache permits already-queued SSE output to be written after logout succeeds but before a fresh authentication check; no strict atomic ordering guarantee appears in the docs.",
+      "The source does not prove whether ResponseWriter/TLS/proxy buffering allows an event blocked on Write to reach the browser after the logout response, or the concrete client-visible timing.",
+      "The source-only pass confirms the timing window but not transport/client delivery or owner acceptance; no target execution was permitted."
+    ]
+  }
+]

@@ -1,0 +1,51 @@
+{
+  "run_id": "run-11",
+  "validator_skill_commit": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+  "environment": {
+    "wsl_distribution": "Ubuntu",
+    "node_version": "v24.18.1",
+    "O_NOFOLLOW_constant": 131072,
+    "O_NOFOLLOW_probe": "PASS"
+  },
+  "frozen_source_end_check": {
+    "method": "Windows Git read-only identity check",
+    "head": "431345f6097d08ac96aedec18f5605ce8a191aeb",
+    "tree": "1211c022438ef4dc6ef51da121d0237edf3ad75f",
+    "direct_parent": "c18bb50c552ba98c4a75e4a1fa968b9226dd2f1a",
+    "working_tree": "clean"
+  },
+  "validators": [
+    {
+      "name": "validate-coverage-ledger.cjs",
+      "path": "C:\\GitHub\\_codex-tmp\\security-audit-skill-20260919\\skills\\security-audit\\validate-coverage-ledger.cjs",
+      "command": "wsl.exe -d Ubuntu -- node /mnt/c/GitHub/_codex-tmp/security-audit-skill-20260919/skills/security-audit/validate-coverage-ledger.cjs /mnt/c/GitHub/_codex-tmp/windows-cf-audit-20261003/coverage-ledger.json",
+      "exit_code": 0,
+      "output": "PASS: 16 coverage units valid"
+    },
+    {
+      "name": "validate-findings.cjs",
+      "path": "C:\\GitHub\\_codex-tmp\\security-audit-skill-20260919\\skills\\security-audit\\validate-findings.cjs",
+      "command": "wsl.exe -d Ubuntu -- node /mnt/c/GitHub/_codex-tmp/security-audit-skill-20260919/skills/security-audit/validate-findings.cjs /mnt/c/GitHub/_codex-tmp/windows-cf-audit-20261003/findings.json",
+      "exit_code": 0,
+      "output": "PASS: 7 findings valid"
+    }
+  ],
+  "superseded_validator_attempts": [
+    {
+      "name": "validate-coverage-ledger.cjs",
+      "result": "An earlier run found source-only checks with non-null artifact fields and one oversized free-arm result. The ledger was corrected: source-record paths remain in the result text, source-only artifact fields are null, and the oversized free-arm trace was summarized while its full agent scratch remained intact.",
+      "final_result": "PASS: 16 coverage units valid"
+    }
+  ],
+  "scope": {
+    "scope_complete": false,
+    "checker_changed_paths": 186,
+    "selected_paths": 81,
+    "out_of_scope_paths": 105,
+    "coverage_units": 16,
+    "windows_shared_units": 13,
+    "covered_units": 6,
+    "candidate_units": 7,
+    "explicit_out_of_scope_units": 3
+  }
+}

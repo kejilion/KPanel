@@ -1,0 +1,518 @@
+[
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "panel.rdp.websocket.logout-output-window",
+    "title": "RDP 输出流可能在登出轮询前继续写入",
+    "description": "在冻结的 431 源码中，登出会删除认证 session；已 claim 的 RDP WebSocket 使用独立请求 context，并由每秒一次的认证 watcher 发现失效后取消。输出 goroutine 在读取 stream 数据后调用 ws.Write，但不在每个输出块前重新 Authenticate。因此源码允许登出删除 session 后、下一轮 watcher 前把已授权输出提交给 WebSocket 写操作；源码未证明该帧在 HTTP 200 后到达浏览器，也未证明另一个用户可观察。",
+    "claimed_root_cause": "RDP 输出授权依赖每秒 watcher 与 session context 取消，而 logout handler 不同步取消现有 desktop session，输出路径在每个 chunk 写入前不复核 token。",
+    "trace": [
+      {
+        "scope": "logout POST handler",
+        "kind": "entrypoint",
+        "file": "internal/panel/server.go",
+        "description": "经过 Origin/session/CSRF 检查后调用 auth.Logout，再清除 cookie 并返回。",
+        "line": 1055
+      },
+      {
+        "scope": "claimed desktop stream context",
+        "kind": "propagation",
+        "file": "internal/panel/desktop_sessions.go",
+        "description": "已 claim 的流持续使用请求/session deadline context；logout 不调用该 session 的 cancel。",
+        "line": 182
+      },
+      {
+        "scope": "RDP WebSocket output",
+        "kind": "sink",
+        "file": "internal/panel/desktop_sessions.go",
+        "description": "输出 goroutine 从 cluster stream 读取数据后调用 ws.Write，写前不按块复核认证。",
+        "line": 199
+      }
+    ],
+    "evidence": [
+      {
+        "description": "Logout 删除认证 session 后才清理 cookie/返回成功；不通过 desktopSessions 取消既有流。",
+        "file": "internal/panel/server.go",
+        "line": 1061
+      },
+      {
+        "description": "独立 watcher 以一秒 ticker 检查 Authenticate 失败后才 cancel。",
+        "file": "internal/panel/desktop_sessions.go",
+        "line": 191
+      },
+      {
+        "description": "输出 copy path 执行 ws.Write，不在该 chunk 写入前重新 Authenticate。",
+        "file": "internal/panel/desktop_sessions.go",
+        "line": 200
+      },
+      {
+        "description": "认证轮询由独立 ticker 运行，未与输出写入路径形成原子锁。",
+        "file": "internal/panel/desktop_sessions.go",
+        "line": 214
+      }
+    ],
+    "blockers": [
+      "源只证明数据可以在下次一秒复核前提交给 ws.Write；未证明 logout HTTP 200 之后实际帧到达浏览器，也未证明后续低信任用户能看到此前用户数据。",
+      "文档未承诺 logout HTTP 200 与一个已授权在途 <=60KiB 输出块的全局原子互斥；需产品 owner 明确允许的时序并用隔离运行证据确认可观察效果。"
+    ],
+    "validation_plan": {
+      "local": "在有OS隔离的 disposable Panel/Windows-node fixture 中用dummy frame，在认证检查通过后同时执行登出，观察HTTP 200之后是否有新的binary frame到达浏览器；区分写入开始前/后登出，不使用真实凭据。",
+      "deployment": "仅在隔离环境观察具体TLS/proxy/browser delivery及owner契约；不得推断生产用户可见数据泄漏。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "terminal-sse-output-after-session-revocation",
+    "title": "已撤销session的终端SSE在短暂认证缓存窗口内可能写入排队输出",
+    "description": "Logout同步删除session，后续Authenticate会失败。但terminal SSE在成功认证后的1秒缓存期内checkSession返回true，输出事件会在该缓存判断后进入write；已开始的HTTP写也有20秒deadline且logout不取消它。文档规定最多每秒复核、检测撤销后发送auth.expired并结束，却未明确最近一次成功检查授权的排队输出能否在logout后完成，源码未证明浏览器/proxy实际收到新字节。",
+    "claimed_root_cause": "The SSE output path relies on a one-second cached authentication check and bounded write deadline; logout removes the session but does not atomically cancel already-checked or in-progress writes.",
+    "trace": [
+      {
+        "scope": "Panel logout",
+        "kind": "entrypoint",
+        "file": "internal/panel/server.go",
+        "description": "logout验证Origin/session/CSRF后删除认证session。",
+        "line": 1055
+      },
+      {
+        "scope": "SSE output event check",
+        "kind": "propagation",
+        "file": "internal/panel/terminal_stream.go",
+        "description": "输出事件通过session check后调用write；检查可能命中1秒auth cache。",
+        "line": 233
+      },
+      {
+        "scope": "ResponseWriter output",
+        "kind": "sink",
+        "file": "internal/panel/terminal_stream.go",
+        "description": "输出event写入设置20秒deadline，logout handler不直接取消此写。",
+        "line": 201
+      }
+    ],
+    "evidence": [
+      {
+        "description": "checkSession允许最近1秒成功Authenticate缓存命中。",
+        "file": "internal/panel/terminal_stream.go",
+        "line": 233
+      },
+      {
+        "description": "输出路径在session check成功后写队列event。",
+        "file": "internal/panel/terminal_stream.go",
+        "line": 258
+      },
+      {
+        "description": "SSE write有20秒deadline。",
+        "file": "internal/panel/terminal_stream.go",
+        "line": 201
+      },
+      {
+        "description": "文档规定至多每秒认证复核与检测撤销后结束，不承诺HTTP logout与进行中写的原子互斥。",
+        "file": "docs/terminal-file-transport-v3.md",
+        "line": 210
+      }
+    ],
+    "blockers": [
+      "owner须明确最近一次成功鉴权所授权的排队event是否可在Logout返回成功后写出；文档没有strict atomic ordering contract。",
+      "源码不证明ResponseWriter/TLS/proxy buffering是否让阻塞中的event在logout response之后到达浏览器，也未证明跨用户可见结果。"
+    ],
+    "validation_plan": {
+      "local": "在隔离确定性handler fixture中完成一次认证，随后logout删除session，在一秒缓存期内排入dummy输出并观察client是否收到；单独区分logout前已开始与logout后新开始的写。",
+      "deployment": "若隔离交付结果显示字节到达，需owner确认SSE契约并在指定隔离部署验证proxy/browser buffering；不沿用file relay或terminal-input承诺。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "windows-light-report-replay-memory-reset",
+    "title": "Service重建后完整有效Windows telemetry报告可再次刷新状态",
+    "description": "中心以进程内replayGuard拒绝同一请求ID五分钟重放，但NewService重建会创建空guard；已接受请求的签名时间戳仍在±2分钟内时，完全相同的有效HMAC报文可再次通过并刷新LastSnapshot、LastSuccessAt与ReceivedAt。该通用replay机制在comparison_base已存在，本次Windows增量只扩展报告平台/capability字段的适用范围。影响依赖低信任主体能取得完整有效签名请求，源码未证明该路径；报告HMAC本身也不授权Noise file/terminal操作。",
+    "claimed_root_cause": "Replay protection is process-local rather than persisted across Service reconstruction; Windows metadata/capability uses the accepted report ReceivedAt, but no lower-trust transcript access is established.",
+    "trace": [
+      {
+        "scope": "signed node report creation",
+        "kind": "entrypoint",
+        "file": "cmd/kejilion-node/main.go",
+        "description": "节点生成时间戳/request ID并对报告body创建HMAC headers。",
+        "line": 442
+      },
+      {
+        "scope": "center report authentication and replay guard",
+        "kind": "propagation",
+        "file": "internal/cluster/light_service.go",
+        "description": "中心验证报告HMAC与时间窗后调用内存replay guard。",
+        "line": 276
+      },
+      {
+        "scope": "telemetry freshness update",
+        "kind": "sink",
+        "file": "internal/cluster/light_store.go",
+        "description": "被接受报告替换snapshot并刷新LastSuccessAt/ReceivedAt。",
+        "line": 489
+      }
+    ],
+    "evidence": [
+      {
+        "description": "NewService创建新的进程内replayGuard。",
+        "file": "internal/cluster/service.go",
+        "line": 308
+      },
+      {
+        "description": "replay request IDs保存在in-memory map。",
+        "file": "internal/cluster/guard.go",
+        "line": 8
+      },
+      {
+        "description": "报告路径验证并调用replay guard；签名timestamp有效窗口为±2分钟。",
+        "file": "internal/cluster/light_service.go",
+        "line": 276
+      },
+      {
+        "description": "Windows capability freshness依赖报告ReceivedAt不超过90秒。",
+        "file": "internal/cluster/light_platform.go",
+        "line": 75
+      },
+      {
+        "description": "comparison_base已存在Service replay guard构造，故非本增量新引入primitive。",
+        "file": "internal/cluster/service.go",
+        "line": 294
+      }
+    ],
+    "blockers": [
+      "来源未证明TLS terminator/reverse-proxy logs/diagnostics/Windows capture向低于Node telemetry service的主体暴露完整有效headers+body。不得推断被动TLS捕获。",
+      "没有target动态重建Service后重放观察；部署Service重启行为与本机/网络日志路径均未验证。"
+    ],
+    "validation_plan": {
+      "local": "在隔离Panel+Windows VM中提交一次dummy signed report，重建同一数据目录的Service后两分钟内重放原始headers/body，观察LastSnapshot/LastSuccessAt/Windows capability freshness；仅dummy凭据。",
+      "deployment": "由owner只读核对真实TLS termination、请求日志/诊断配置、Windows ACL与Service身份，判断低信任主体可否获得完整合规请求；未发现该可得性时保留机制为lifecycle hardening或拒绝候选。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "windows-release-signing-trigger-config",
+    "title": "发布 tag 可进入 Windows 签名交接，实际限制取决于外部配置",
+    "description": "工作流接受推送匹配 v*.*.* 的 tag。若 KPANEL_WINDOWS_NODE_RELEASE_ENABLED 为 true，Windows job 会 checkout 触发事件的 ref，以 Azure 凭据运行该 checkout 中的脚本，并调用 Azure Artifact Signing。脚本要求 tag 与 checkout 的 VERSION 一致，并在传递 artifact 前按配置的 publisher Subject 和可选 profile OID 验证签名。release job 随后将签名 artifact 合入发布包并发布 GitHub Release。源码证明存在具体的签名和发布交接，但无法证明低信任主体能否创建或改写匹配 tag、lane 是否启用，或 windows-node-signing 的保护和 secret 作用域。",
+    "claimed_root_cause": "由 tag 触发的签名工作流会在获得 Azure 签名凭据的 job 中消费事件 ref 所指的仓库源码。提交内的 VERSION 检查和可配置证书校验无法独立授权 tag 的创建者或改写者；外部 tag 与 environment 控制是否限制低信任主体尚未确认。",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": ".github/workflows/release.yml",
+        "line": 5,
+        "scope": "release workflow 的 push.tags trigger",
+        "description": "推送符合 workflow filter 的 tag 可以启动此 release workflow。"
+      },
+      {
+        "kind": "propagation",
+        "file": ".github/workflows/release.yml",
+        "line": 17,
+        "scope": "windows-node job 启用条件",
+        "description": "仅当外部配置变量 KPANEL_WINDOWS_NODE_RELEASE_ENABLED 等于 true 时才运行签名 lane。"
+      },
+      {
+        "kind": "propagation",
+        "file": ".github/workflows/release.yml",
+        "line": 31,
+        "scope": "checkout 事件仓库内容",
+        "description": "workflow 未显式设置 checkout ref；固定版本的 checkout action 默认使用触发事件的 ref 或 SHA。"
+      },
+      {
+        "kind": "propagation",
+        "file": ".github/workflows/release.yml",
+        "line": 38,
+        "scope": "Windows signing configuration step",
+        "description": "脚本进程从该 job 的 secrets 上下文接收 Azure tenant、client 和 client-secret 值。"
+      },
+      {
+        "kind": "sink",
+        "file": ".github/workflows/release.yml",
+        "line": 56,
+        "scope": "Azure Artifact Signing action",
+        "description": "job 使用配置的 Azure 凭据、endpoint、account 和 certificate profile 调用签名服务。"
+      }
+    ],
+    "evidence": [
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 5,
+        "description": "事件触发条件是推送匹配 v*.*.* 的 tag。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 17,
+        "description": "Windows 签名 job 仅在 KPANEL_WINDOWS_NODE_RELEASE_ENABLED 为 true 时运行；源码不能确认线上当前值。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 20,
+        "description": "job 引用 windows-node-signing environment，但实际保护和允许的 ref 在文件外配置。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 31,
+        "description": "checkout 步骤未设置 ref；其 SHA 固定版本的 actions/checkout 默认使用触发事件的 ref 或 SHA，并设置 persist-credentials: false。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 38,
+        "description": "Check 步骤将 Azure tenant、client 和 client secret 映射到进程环境。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 41,
+        "description": "job 执行的脚本来自 checkout 的仓库源码。"
+      },
+      {
+        "file": "scripts/windows-node-release.ps1",
+        "line": 16,
+        "description": "若 tag 后缀与 checkout 源中的 VERSION 不同，脚本会拒绝。"
+      },
+      {
+        "file": "scripts/windows-node-release.ps1",
+        "line": 92,
+        "description": "脚本在选择 Check、Build 或 Verify 模式前调用 Assert-NodeReleaseVersion。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 57,
+        "description": "SHA 固定的 Azure Artifact Signing action 接收 Azure 凭据和配置的签名 profile。"
+      },
+      {
+        "file": "scripts/windows-node-release.ps1",
+        "line": 35,
+        "description": "签名验证要求 Authenticode 状态为 Valid，且签名 Subject 与配置的 Publisher 完全一致。"
+      },
+      {
+        "file": "scripts/windows-node-release.ps1",
+        "line": 36,
+        "description": "签名验证要求存在时间戳证书。"
+      },
+      {
+        "file": "scripts/windows-node-release.ps1",
+        "line": 38,
+        "description": "签名验证要求 Code Signing EKU；配置了 profile OID 时也要求该 OID。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 76,
+        "description": "签名后、Windows artifact 上传前运行 Verify 模式。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 79,
+        "description": "验证成功后才将签名目录上传为 windows-node-signed Actions artifact。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 90,
+        "description": "下游 release job 在 Windows job 成功或跳过时运行；已启用 Windows lane 失败会阻断该 job。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 278,
+        "description": "release job 下载签名 Windows artifact 用于打包。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 411,
+        "description": "如果尚无对应 release，工作流会创建包含组装产物的 draft。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 504,
+        "description": "组装和发布检查之后，工作流进入 Publish GitHub release 步骤。"
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "line": 520,
+        "description": "stable 分支明确将 draft 设为 false；prerelease 分支也在第 528 行这样做。"
+      }
+    ],
+    "blockers": [
+      "KPANEL_WINDOWS_NODE_RELEASE_ENABLED 的线上值未知，因此源码无法证明签名 lane 当前是否运行。",
+      "refs/tags/v*.*.* 的 repository ruleset 或 tag protection，以及创建、更新、删除和 bypass 权限未知；源码无法证明低信任主体不能用其控制的源码触发 lane。",
+      "windows-node-signing environment 的保护规则、允许的 branch/tag ref、required reviewers、自我审批策略、bypass 权限及 Azure secrets 作用域未知。",
+      "此源码快照看不到 KPANEL_WINDOWS_NODE_PUBLISHER、KPANEL_WINDOWS_NODE_PROFILE_OID、Azure tenant/client 和 Artifact Signing profile 的线上值，预期受信证书绑定尚未验证。"
+    ],
+    "validation_plan": {
+      "deployment": "请仓库 owner 只读检查当前 repository/org/environment variables 与 secrets 作用域（隐藏所有 secret 值）、匹配 refs/tags/v*.*.* 的 tag rulesets（含创建/更新/删除限制及 bypass actor），以及 windows-node-signing environment 的允许 refs、required reviewers、自我审批与 bypass 设置。明确某个具名低信任角色能否创建或改写匹配 tag，并在任何可信 reviewer 介入前抵达该 job；再核对 Azure signing profile 与预期 Publisher Subject/OID 的对应关系。不要创建或移动 tag、触发 workflow 或调用签名服务。除非这些配置能判明低信任路径是否存在，否则保留 needs_validation。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "windows-scm-service-config-acl",
+    "title": "Windows LocalSystem服务对象的有效SCM ACL未被源码确定",
+    "description": "冻结源以SYSTEM创建并配置KejilionNodeTerminal privileged service，提供固定Program Files可执行路径，但服务配置没有显式服务对象DACL。文件系统路径ACL有单独保护，不等于SCM服务对象权限。源码未证明有效服务DACL允许低信任主体改变ImagePath或启动/重启服务，因此暂不确认LocalSystem提权。",
+    "claimed_root_cause": "服务安装代码未显式设置SCM service-object DACL，且health check只查看StartType，不读取有效ServiceStartName、ImagePath或DACL；最终权限取决于Windows SCM及部署策略。",
+    "trace": [
+      {
+        "scope": "privileged service installation",
+        "kind": "entrypoint",
+        "file": "internal/windowsnode/service_windows.go",
+        "description": "SYSTEM-only安装逻辑创建Windows service。",
+        "line": 152
+      },
+      {
+        "scope": "SCM service config",
+        "kind": "propagation",
+        "file": "internal/windowsnode/service_windows.go",
+        "description": "mgr.Config用于CreateService，未传入service-object security descriptor。",
+        "line": 176
+      },
+      {
+        "scope": "privileged service identity",
+        "kind": "sink",
+        "file": "internal/windowsnode/service_windows.go",
+        "description": "TerminalService配置为privileged/LocalSystem服务。",
+        "line": 29
+      }
+    ],
+    "evidence": [
+      {
+        "description": "TerminalService标记为privileged。",
+        "file": "internal/windowsnode/service_windows.go",
+        "line": 29
+      },
+      {
+        "description": "创建服务的SCM config没有显式DACL设置。",
+        "file": "internal/windowsnode/service_windows.go",
+        "line": 176
+      },
+      {
+        "description": "这些ACL helper设置对象类型为SE_FILE_OBJECT，是文件/目录权限，不能证明SCM service对象权限。",
+        "file": "internal/windowsnode/security_windows.go",
+        "line": 204
+      },
+      {
+        "description": "健康检查只打开查询权限，不读取服务身份或有效安全描述符。",
+        "file": "cmd/kejilion-node/health_windows.go",
+        "line": 30
+      }
+    ],
+    "blockers": [
+      "冻结源码不能确定安装后KejilionNodeTerminal有效DACL、owner、ServiceStartName、local/domain policy覆盖或代表性非管理员的access-check结果。",
+      "影响需要低信任主体具备更改service配置/执行路径及启动服务的权限；这些前置事实均未观测。"
+    ],
+    "validation_plan": {
+      "local": "在专用隔离Windows VM正常安装冻结构建后，使用只读SCM安全查询记录ServiceStartName、ImagePath、owner和DACL，并计算代表性非管理员对SERVICE_CHANGE_CONFIG、WRITE_DAC、SERVICE_START的访问；不要修改ACL或服务配置。",
+      "deployment": "由目标环境owner核对受支持安装profile与实际local/domain policy；仅在隔离VM确认低信任可改路径且服务以LocalSystem运行时再验证影响。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "windows.desktop.policy.reconnect-after-revoke",
+    "title": "Desktop policy禁用后仍可能重新登记Windows desktop role",
+    "description": "冻结431中，desktop role握手的授权+登记在fileStreamHub.mu下运行，但授权谓词验证Windows平台与report capability，未重新检查per-host desktopAllowed。策略禁用更新后会关闭当时已登记的desktop连接；在该清理后，新握手仍可登记control/data role，违背文档立即关闭/fail-closed语义。独立源码验证未证明此结果能形成浏览器RDP字节会话或绕过OpenDesktopStream策略检查。",
+    "claimed_root_cause": "Inbound desktop role authorization omits the current per-host desktopAllowed check in the same mutex-protected authorization-and-registration path used by the revoke sweep.",
+    "trace": [
+      {
+        "scope": "incoming authenticated stream handshake",
+        "kind": "entrypoint",
+        "file": "internal/cluster/file_stream_transport.go",
+        "description": "handler取得hub mutex，授权成功后登记desktop role connection。",
+        "line": 261
+      },
+      {
+        "scope": "desktop-role authorization",
+        "kind": "propagation",
+        "file": "internal/cluster/file_stream_transport.go",
+        "description": "desktop role分支检查Windows host与reported capability，冻结源未检查desktopAllowed。",
+        "line": 479
+      },
+      {
+        "scope": "desktop role registration",
+        "kind": "sink",
+        "file": "internal/cluster/file_stream_transport.go",
+        "description": "通过授权的control role进入desktopControls/desktopConnections。",
+        "line": 303
+      }
+    ],
+    "evidence": [
+      {
+        "description": "hub mutex跨authorizeFileStream和connection登记持有。",
+        "file": "internal/cluster/file_stream_transport.go",
+        "line": 261
+      },
+      {
+        "description": "desktop授权缺少per-host policy predicate。",
+        "file": "internal/cluster/file_stream_transport.go",
+        "line": 479
+      },
+      {
+        "description": "disable更新后在hub mutex下清扫当前登记连接。",
+        "file": "internal/cluster/desktop_policy.go",
+        "line": 88
+      },
+      {
+        "description": "文档要求禁用时立即关闭该host desktop control/data并对损坏policy fail-closed。",
+        "file": "docs/windows-light-node-design.md",
+        "line": 454
+      }
+    ],
+    "blockers": [
+      "源码结果限定为policy已禁用后有效已注册Node identity仍可创建并登记新的desktop role socket；未证明可建立可用的browser RDP session或传输RDP bytes。",
+      "没有审计沙箱下的确定性并发回归或原生Windows生命周期观测；需要确认stream-slot/控制通道的实际影响。"
+    ],
+    "validation_plan": {
+      "local": "在隔离fixture中安排两种锁序：先授权登记再disable并验证sweep关闭；先disable再新control/data握手并验证注册前拒绝。使用dummy host/node。",
+      "deployment": "在指定Windows集成环境验证禁用后重连保持拒绝，以及策略文件不可用时fail-closed；不以源修复存在推断运行结果。"
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "windows.psreadline.one-time-enrollment-token-history-exposure",
+    "title": "一次性Windows enrollment token以可逆表达式进入PowerShell命令历史",
+    "description": "服务器生成单次、短时token并把可逆Base64 PowerShell表达式作为安装命令的一部分，Windows installer明确警告PSReadLine history可能含enrollment token。若较低信任本地用户可读取管理员实际history或其他日志副本，可在token未消费且有效期间尝试redeem；仓库源码不能证明history ACL或低信任用户读取路径，未推断token已泄露。",
+    "claimed_root_cause": "The enrollment secret is reversibly Base64-encoded into a user-pasted PowerShell command, while cleanup cannot erase the invoking shell history; whether another principal can read that history is environment-dependent.",
+    "trace": [
+      {
+        "scope": "authenticated install-command generation",
+        "kind": "entrypoint",
+        "file": "internal/panel/cluster.go",
+        "description": "面板为Windows节点生成安装/enrollment命令。",
+        "line": 370
+      },
+      {
+        "scope": "PowerShell token expression",
+        "kind": "propagation",
+        "file": "internal/cluster/light_windows_install.go",
+        "description": "token经Base64表达式传给安装器，编码不提供保密。",
+        "line": 62
+      },
+      {
+        "scope": "operator shell history",
+        "kind": "sink",
+        "file": "deploy/windows/install.ps1",
+        "description": "安装脚本提示检查PSReadLine历史中的enrollment token。",
+        "line": 155
+      }
+    ],
+    "evidence": [
+      {
+        "description": "服务器生成随机单次enrollment secret及五分钟记录，并编码入命令token。",
+        "file": "internal/cluster/light_service.go",
+        "line": 76
+      },
+      {
+        "description": "Windows命令含FromBase64String/GetString可逆token表达式。",
+        "file": "internal/cluster/light_windows_install.go",
+        "line": 62
+      },
+      {
+        "description": "安装器明确警告review PSReadLine history。",
+        "file": "deploy/windows/install.ps1",
+        "line": 155
+      },
+      {
+        "description": "成功enrollment消费server-side一次性记录；有效窗口受五分钟记录限制。",
+        "file": "internal/cluster/light_store.go",
+        "line": 289
+      }
+    ],
+    "blockers": [
+      "PSReadLine版本/history mode/path/owner/DACL/inheritance与普通用户read权限是源码外机器事实。",
+      "Transcript、PowerShell event logging、endpoint monitoring、backup等副本的留存/读取权限未知。",
+      "低信任主体是否可读取命令并在五分钟内访问绑定panel origin redeem token未证明。"
+    ],
+    "validation_plan": {
+      "local": "在隔离Windows VM以dummy token运行命令，随后用独立标准用户只读检查实际PSReadLine文件及父目录ACL，并检查已配置的副本，不使用生产token或真实服务。",
+      "deployment": "若dummy token可读，仅在隔离环境验证是否可于五分钟有效期内redeem；若低信任用户无法读取所有副本，记录owner-observed事实并对该配置拒绝此暴露候选。"
+    }
+  }
+]
