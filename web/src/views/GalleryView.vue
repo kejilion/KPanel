@@ -2226,9 +2226,7 @@ onBeforeUnmount(() => {
 
 .gallery-toolbar,
 .gallery-selection {
-  position: sticky;
   z-index: 12;
-  top: var(--topbar-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2240,7 +2238,12 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-sm);
 }
 
-.gallery-page--windowed .gallery-toolbar,
+/* The filter bar stays where it is and scrolls away; only the selection bar follows, because its actions are needed while scrolling. */
+.gallery-selection {
+  position: sticky;
+  top: var(--topbar-height);
+}
+
 .gallery-page--windowed .gallery-selection {
   top: 0;
 }

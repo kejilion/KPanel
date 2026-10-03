@@ -19,4 +19,11 @@ describe('GalleryView layout contract', () => {
     expect(rule('.gallery-hero__backdrop')).toMatch(/overflow:\s*hidden;/)
     expect(rule('.gallery-hero__backdrop')).toMatch(/border-radius:\s*inherit;/)
   })
+
+  it('leaves the filter bar in place on scroll while the selection bar stays reachable', () => {
+    // The filter bar used to float over the photos; it now scrolls away with the page.
+    expect(rule('.gallery-toolbar,\n.gallery-selection')).not.toMatch(/position:\s*sticky/)
+    // Batch actions are needed while scrolling a long selection, so that bar keeps following.
+    expect(source).toMatch(/\n\.gallery-selection \{\n\s+position: sticky;/)
+  })
 })
