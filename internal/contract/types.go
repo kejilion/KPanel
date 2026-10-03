@@ -48,6 +48,8 @@ type Capability struct {
 }
 
 type SystemSummary struct {
+	Platform           string   `json:"platform,omitempty"`
+	UnavailableMetrics []string `json:"unavailableMetrics,omitempty"`
 	Hostname      string                  `json:"hostname"`
 	OS            string                  `json:"os"`
 	OSID          string                  `json:"osId,omitempty"`
