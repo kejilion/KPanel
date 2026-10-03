@@ -91,6 +91,9 @@ func readBatchEnrollmentAttempt(path string) (batchEnrollmentAttempt, []byte, []
 		return batchEnrollmentAttempt{}, nil, nil, err
 	}
 	defer file.Close()
+	if err := validatePlatformConfig(file, true); err != nil {
+		return batchEnrollmentAttempt{}, nil, nil, err
+	}
 	after, err := file.Stat()
 	if err != nil || !os.SameFile(before, after) || after.Size() > maxBatchEnrollmentAttemptBytes {
 		return batchEnrollmentAttempt{}, nil, nil, errors.New("batch enrollment state is invalid")
@@ -125,6 +128,9 @@ func readBatchEnrollmentAttempt(path string) (batchEnrollmentAttempt, []byte, []
 }
 
 func writeBatchEnrollmentAttemptAtomic(path string, attempt batchEnrollmentAttempt) error {
+	if handled, err := writePlatformConfig(path, attempt, true); handled {
+		return err
+	}
 	if !filepath.IsAbs(path) {
 		return errors.New("batch enrollment state path must be absolute")
 	}
