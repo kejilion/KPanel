@@ -613,6 +613,10 @@ const visualClusterHosts = [
 
 let mockTerminalSessionCounter = 0
 const mockTerminalSessions = new Map()
+// Preview-only metadata. Submitted passwords are discarded and never persisted or logged.
+const mockDesktopCredentials = new Map()
+const mockDesktopSessions = new Set()
+let mockDesktopSessionCounter = 0
 
 let mockLightBatchEnrollmentCounter = 1
 let mockLightBatchEnrollments = [
@@ -2397,6 +2401,58 @@ createServer(async (request, response) => {
       removed: ['nginx_config'],
       databaseDropped: false,
     })
+    return
+  }
+  if (request.method === 'POST' && url.pathname.startsWith('/api/v1/desktop-sessions')) {
+    const input = await readJSON(request)
+    const close = url.pathname.match(/^\/api\/v1\/desktop-sessions\/([^/]+)\/close$/)
+    if (close) {
+      mockDesktopSessions.delete(close[1])
+      send(response, 200, { closed: true })
+      return
+    }
+    const host = visualClusterHosts.find((item) => item.id === input.hostId && item.platform === 'windows')
+    if (!host) { send(response, 404, { code: 'desktop_not_found' }); return }
+    const metadata = mockDesktopCredentials.get(host.id)
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/status') {
+      send(response, 200, metadata || { saved: false })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/save') {
+      if (typeof input.username !== 'string' || !input.username.trim() || input.username.length > 256 || typeof input.domain !== 'string' || input.domain.length > 256 || typeof input.password !== 'string' || !input.password || input.password.length > 1024) {
+        send(response, 422, { code: 'validation_failed' })
+        return
+      }
+      const saved = { saved: true, username: input.username.trim(), domain: input.domain.trim() }
+      input.password = ''
+      mockDesktopCredentials.set(host.id, saved)
+      send(response, 200, saved)
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/credentials/clear') {
+      mockDesktopCredentials.delete(host.id)
+      send(response, 200, { saved: false })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions/policy') {
+      host.desktopAvailable = Boolean(input.allowed)
+      host.desktopUnavailableReason = input.allowed ? '' : 'desktop_disabled_by_center'
+      send(response, 200, { allowed: Boolean(input.allowed) })
+      return
+    }
+    if (url.pathname === '/api/v1/desktop-sessions') {
+      if (!host.desktopAvailable) { send(response, 409, { code: 'desktop_unavailable' }); return }
+      if (input.useSavedCredentials && !metadata) { send(response, 409, { code: 'desktop_credentials_missing' }); return }
+      if (mockDesktopSessions.size >= 4) { send(response, 429, { code: 'desktop_limit' }); return }
+      const sessionId = `visual-desktop-${++mockDesktopSessionCounter}`
+      mockDesktopSessions.add(sessionId)
+      send(response, 201, {
+        sessionId, nonce: 'mock-preview-only',
+        ...(input.useSavedCredentials ? { credentials: { username: metadata.username, domain: metadata.domain, password: 'mock-preview-not-a-real-password' } } : {}),
+      })
+      return
+    }
+    send(response, 404, { code: 'desktop_not_found' })
     return
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/terminal-sessions') {
