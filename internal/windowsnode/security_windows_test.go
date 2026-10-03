@@ -6,9 +6,76 @@ import (
 	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unsafe"
 )
+
+func TestLoginSnapshotParentUsesNarrowDirectoryPolicy(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("requires an elevated process to set the directory owner")
+	}
+	root := t.TempDir()
+	loginDirectory := filepath.Join(root, "login")
+	descriptors := map[string]*windows.SECURITY_DESCRIPTOR{}
+	for _, item := range []struct {
+		name, sddl string
+	}{
+		{"login", ""},
+		{"sibling", ""},
+		{"untrusted", "O:BAD:P(A;;FA;;;SY)(A;;FA;;;" + ServiceSID(LoginService) + ")(A;;FW;;;BU)"},
+	} {
+		path := filepath.Join(root, item.name)
+		sd, err := descriptor(LoginSnapshot, true)
+		if item.sddl != "" {
+			sd, err = windows.SecurityDescriptorFromString(item.sddl)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		name, _ := windows.UTF16PtrFromString(path)
+		// Retain READ_CONTROL before sealing the fixture: an administrator is
+		// deliberately not a reader of the production LoginSnapshot descriptor.
+		h, err := windows.CreateFile(name, windows.READ_CONTROL|windows.WRITE_DAC|windows.WRITE_OWNER, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer windows.CloseHandle(h)
+		owner, _, _ := sd.Owner()
+		acl, _, _ := sd.DACL()
+		if err := windows.SetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, owner, nil, acl, nil); err != nil {
+			t.Fatal(err)
+		}
+		actual, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil {
+			t.Fatal(err)
+		}
+		descriptors[strings.ToLower(path)] = actual
+	}
+	for _, test := range []struct {
+		name, path, allowedDirectory string
+		valid                        bool
+	}{
+		{"exact login parent", loginDirectory, loginDirectory, true},
+		{"case insensitive login parent", strings.ToUpper(loginDirectory), loginDirectory, true},
+		{"sibling cannot inherit login writer trust", filepath.Join(root, "sibling"), loginDirectory, false},
+		{"ancestor cannot inherit login writer trust", loginDirectory, filepath.Join(loginDirectory, "child"), false},
+		{"descendant cannot inherit login writer trust", loginDirectory, root, false},
+		{"production KnownFolder does not trust fixture", loginDirectory, RuntimePath("login"), false},
+		{"untrusted additional writer rejected", filepath.Join(root, "untrusted"), filepath.Join(root, "untrusted"), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			access, ancestor := parentPolicy(test.path, test.allowedDirectory)
+			err := validateDescriptor(descriptors[strings.ToLower(test.path)], access, ancestor)
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%v err=%v", test.valid, err)
+			}
+		})
+	}
+}
 
 func TestSystemOnlyHandoffIsSealedAtCreation(t *testing.T) {
 	if !windows.GetCurrentProcessToken().IsElevated() || IsSystem() {
