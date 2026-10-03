@@ -241,8 +241,9 @@ func lockParents(path string) ([]windows.Handle, error) {
 		}
 	}
 	handles := []windows.Handle{}
+	loginDirectory := filepath.Join(DataDir(), "run", "login")
 	for i := len(parents) - 1; i >= 0; i-- {
-		h, err := openChecked(parents[i], StateDirectory, true, 0)
+		h, err := openParentChecked(parents[i], loginDirectory)
 		if err != nil {
 			closeHandles(handles)
 			return nil, fmt.Errorf("unsafe parent %s: %w", parents[i], err)
@@ -251,6 +252,21 @@ func lockParents(path string) ([]windows.Handle, error) {
 	}
 	return handles, nil
 }
+
+func openParentChecked(path, loginDirectory string) (windows.Handle, error) {
+	access, ancestor := parentPolicy(path, loginDirectory)
+	return openChecked(path, access, ancestor, 0)
+}
+
+func parentPolicy(path, loginDirectory string) (Access, bool) {
+	// Only this fixed KnownFolder child belongs to the login broker. Apply the
+	// complete snapshot policy here, not the more permissive ancestor policy.
+	if strings.EqualFold(filepath.Clean(path), filepath.Clean(loginDirectory)) {
+		return LoginSnapshot, false
+	}
+	return StateDirectory, true
+}
+
 func closeHandles(handles []windows.Handle) {
 	for _, h := range handles {
 		windows.CloseHandle(h)

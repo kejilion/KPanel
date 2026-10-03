@@ -52,7 +52,7 @@ func runPlatformCommand(arguments []string) (bool, error) {
 			return true, windowsnode.RunService(windowsnode.BootstrapService, func(ctx context.Context) error { windowsServiceContext = ctx; return bootstrapWindowsNode() })
 		}
 		if len(arguments) == 2 && arguments[1] == "remove" {
-			return true, windowsnode.RunService(windowsnode.BootstrapService, func(context.Context) error {
+			return true, windowsnode.RunService(windowsnode.BootstrapService, func(context.Context) (resultErr error) {
 				if !windowsnode.IsSystem() {
 					return errors.New("uninstall bootstrap requires SYSTEM")
 				}
@@ -60,7 +60,7 @@ func runPlatformCommand(arguments []string) (bool, error) {
 				if err != nil {
 					return err
 				}
-				defer release()
+				defer func() { resultErr = errors.Join(resultErr, release()) }()
 				if err := windowsnode.RemoveServices(); err != nil {
 					return err
 				}
@@ -79,7 +79,7 @@ func runPlatformCommand(arguments []string) (bool, error) {
 	}
 	return false, nil
 }
-func installWindowsNode(arguments []string) error {
+func installWindowsNode(arguments []string) (resultErr error) {
 	if len(arguments) != 1 || arguments[0] != "--stdin" {
 		return errors.New("expected install --stdin; enrollment credentials are never service arguments")
 	}
@@ -123,7 +123,7 @@ func installWindowsNode(arguments []string) error {
 	}
 	defer func() {
 		if release != nil {
-			release()
+			resultErr = errors.Join(resultErr, release())
 		}
 	}()
 	manager, err := mgr.Connect()
@@ -141,7 +141,9 @@ func installWindowsNode(arguments []string) error {
 	if err := windowsnode.WriteAtomic(requestPath, data, windowsnode.SystemOnly); err != nil {
 		return err
 	}
-	release()
+	if err := release(); err != nil {
+		return err
+	}
 	release = nil
 	if err := service.Start(); err != nil {
 		return err
@@ -163,7 +165,7 @@ func installWindowsNode(arguments []string) error {
 	}
 	return errors.New("Windows enrollment bootstrap timed out; check service status before retrying")
 }
-func bootstrapWindowsNode() error {
+func bootstrapWindowsNode() (resultErr error) {
 	if !windowsnode.IsSystem() {
 		return errors.New("bootstrap requires SYSTEM")
 	}
@@ -171,7 +173,7 @@ func bootstrapWindowsNode() error {
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer func() { resultErr = errors.Join(resultErr, release()) }()
 	path := filepath.Join(windowsnode.DataDir(), "enrollment-request.json")
 	data, err := windowsnode.ReadFile(path, 8192, windowsnode.SystemOnly)
 	if err != nil {
@@ -337,7 +339,7 @@ func windowsServicesHealthy(ctx context.Context) error {
 		}
 	}
 }
-func runWindowsUpdate() error {
+func runWindowsUpdate() (resultErr error) {
 	if !windowsnode.IsSystem() {
 		if !windows.GetCurrentProcessToken().IsElevated() {
 			return errors.New("update requires Administrator")
@@ -355,7 +357,7 @@ func runWindowsUpdate() error {
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer func() { resultErr = errors.Join(resultErr, release()) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	policy, err := readWindowsTrust()

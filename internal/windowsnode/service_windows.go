@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -72,30 +74,61 @@ func RunService(name string, run func(context.Context) error) error {
 	return svc.Run(name, serviceHandler{run})
 }
 
-func AcquireLifecycle() (func(), error) {
+func AcquireLifecycle() (func() error, error) {
+	release, err := acquireLifecycleMutex(`Global\KejilionNodeLifecycle`)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(DataDir(), "lifecycle.lock")
+	content := []byte(fmt.Sprintf("{\"pid\":%d,\"startedAt\":%q}\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)))
+	if err := WriteAtomic(path, content, StateDirectory); err != nil {
+		return nil, errors.Join(err, release())
+	}
+	return sync.OnceValue(func() error {
+		err := os.Remove(path)
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+		return errors.Join(err, release())
+	}), nil
+}
+
+func acquireLifecycleMutex(mutexName string) (func() error, error) {
 	sd, err := windows.SecurityDescriptorFromString("D:P(A;;GA;;;SY)(A;;GA;;;BA)")
 	if err != nil {
 		return nil, err
 	}
 	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
-	name, _ := windows.UTF16PtrFromString(`Global\KejilionNodeLifecycle`)
-	h, err := windows.CreateMutex(&sa, false, name)
-	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+	name, err := windows.UTF16PtrFromString(mutexName)
+	if err != nil {
 		return nil, err
 	}
-	result, err := windows.WaitForSingleObject(h, 0)
-	if err != nil || (result != windows.WAIT_OBJECT_0 && result != windows.WAIT_ABANDONED) {
-		windows.CloseHandle(h)
-		return nil, errors.New("node lifecycle operation in progress; retry later")
-	}
-	path := filepath.Join(DataDir(), "lifecycle.lock")
-	content := []byte(fmt.Sprintf("{\"pid\":%d,\"startedAt\":%q}\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)))
-	if err := WriteAtomic(path, content, StateDirectory); err != nil {
-		windows.ReleaseMutex(h)
-		windows.CloseHandle(h)
+	ready, done := make(chan error, 1), make(chan error, 1)
+	stop := make(chan struct{})
+	go func() {
+		// A Windows mutex belongs to an OS thread. Keep its full lifetime on a
+		// dedicated thread so callers may safely migrate or release elsewhere.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		h, err := windows.CreateMutex(&sa, false, name)
+		if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			ready <- err
+			return
+		}
+		result, err := windows.WaitForSingleObject(h, 0)
+		if err != nil || (result != windows.WAIT_OBJECT_0 && result != windows.WAIT_ABANDONED) {
+			ready <- errors.Join(errors.New("node lifecycle operation in progress; retry later"), err, windows.CloseHandle(h))
+			return
+		}
+		ready <- nil
+		<-stop
+		err = windows.ReleaseMutex(h)
+		done <- errors.Join(err, windows.CloseHandle(h))
+	}()
+	if err := <-ready; err != nil {
 		return nil, err
 	}
-	return func() { _ = os.Remove(path); windows.ReleaseMutex(h); windows.CloseHandle(h) }, nil
+	return sync.OnceValue(func() error { close(stop); return <-done }), nil
 }
 
 func InitializeDirectories() error {
