@@ -81,6 +81,12 @@ func TestDesktopManagedCredentialsStayOnSingleClaimedNoiseLease(t *testing.T) {
 
 	// A new lease that never reaches a browser must also revoke its credential.
 	unclaimed, _, err := f.service.PrepareManagedDesktop(ctx, node.NodeID, nonce)
+	// The callback signal precedes worker teardown and gate release. Admission
+	// may correctly reject that brief overlap; do not depend on goroutine order.
+	for err == ErrRateLimited && ctx.Err() == nil {
+		time.Sleep(time.Millisecond)
+		unclaimed, _, err = f.service.PrepareManagedDesktop(ctx, node.NodeID, nonce)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
