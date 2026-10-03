@@ -81,6 +81,7 @@ import type {
   KPanelReleaseInfo,
   AppInstallJob,
   AppTerminalChunk,
+  JobTerminalKind,
   LoginRequest,
   MonitoringHistory,
   MonitoringHistoryQuery,
@@ -1799,6 +1800,22 @@ export const api = {
         method: 'PUT',
         body: { enabled },
       }),
+  },
+  jobTerminals: {
+    inputTransport: (kind: JobTerminalKind, id: string): Promise<{ protocol: string }> =>
+      request<{ protocol: string }>(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-transport`, { method: 'POST', body: {} }),
+    inputBatch: (
+      kind: JobTerminalKind,
+      id: string,
+      frames: Array<{ stream: string; seq: number; data: string }>,
+      signal?: AbortSignal,
+    ): Promise<{ acked: number; epoch?: string }> =>
+      request<{ acked: number; epoch?: string }>(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-batch`, { method: 'POST', body: { frames }, signal }),
+    inputSocket: (kind: JobTerminalKind, id: string): { url: string; csrf: string } => {
+      const url = new URL(buildUrl(`/job-terminals/${kind}/${encodeURIComponent(id)}/input-stream`), window.location.href)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      return { url: url.toString(), csrf: csrfToken }
+    },
   },
   terminals: {
 	inputBatch: (sessionId: string, frames: Array<{ stream: string; seq: number; data: string }>, signal?: AbortSignal): Promise<{ acked: number }> =>

@@ -659,18 +659,33 @@ func (s *Service) Terminal(id string, offset int64) (TerminalChunk, error) {
 	return chunk, nil
 }
 
+// InputOpen reports whether the task still takes terminal input. WriteInput
+// applies the same rule before every write.
+func (s *Service) InputOpen(id string) error {
+	if !jobIDPattern.MatchString(id) {
+		return ErrNotFound
+	}
+	job, err := s.Job(id)
+	if err != nil {
+		return ErrNotFound
+	}
+	if jobFinished(job.Status) || (job.Status != "queued" && job.Status != "running") {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Service) WriteInput(id, value string) error {
 	data := []byte(value)
 	if !jobIDPattern.MatchString(id) || len(data) == 0 || len(data) > maxTerminalInput ||
 		strings.IndexByte(value, 0) >= 0 {
 		return ErrInvalid
 	}
-	job, err := s.Job(id)
-	if err != nil || jobFinished(job.Status) || (job.Status != "queued" && job.Status != "running") {
+	if s.InputOpen(id) != nil {
 		return ErrConflict
 	}
 	if err := hostpty.WriteInput(s.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: environment terminal input is unavailable", ErrConflict)
+		return fmt.Errorf("%w: environment terminal input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }

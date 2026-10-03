@@ -111,6 +111,8 @@ type Server struct {
 	siteIcons         siteIconProvider
 	monitoring        monitoringHistoryProvider
 	terminals         *terminal.Manager
+	jobInputs         jobInputRegistry
+	jobInputBackends  map[string]jobInput
 	thumbnailGate     chan struct{}
 	thumbnails        *thumbnailCache
 	storageUsageGate  chan struct{}
@@ -422,6 +424,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.requireMethod(w, r, requestID, http.MethodPost, s.terminalOpen)
 	case strings.HasPrefix(r.URL.Path, "/v1/terminals/"):
 		s.terminalOperation(w, r, requestID)
+	case strings.HasPrefix(r.URL.Path, "/v1/job-terminals/"):
+		s.jobTerminalInput(w, r, requestID)
 	case r.URL.Path == "/v1/sites":
 		s.siteCollection(w, r, requestID)
 	case r.URL.Path == "/v1/site-installations":
@@ -1096,6 +1100,9 @@ func (s *Server) siteInstallation(w http.ResponseWriter, r *http.Request, reques
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
 			return
 		}
+		if s.rejectClaimedJobInput(w, requestID, "site", id) {
+			return
+		}
 		if err := s.sitesManager.WriteInstallationInput(id, input.Data); err != nil {
 			status, code, title := http.StatusConflict, "site_terminal_closed", "建站终端输入已关闭"
 			if errors.Is(err, sites.ErrInvalidInput) {
@@ -1421,6 +1428,9 @@ func (s *Server) appJobOperation(w http.ResponseWriter, r *http.Request, request
 		}
 		if err := decodeJSON(w, r, &input); err != nil {
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+			return
+		}
+		if s.rejectClaimedJobInput(w, requestID, "app", id) {
 			return
 		}
 		if err := s.appMarket.WriteAppJobInput(id, input.Data); err != nil {
@@ -1756,6 +1766,9 @@ func (s *Server) diagnosticJob(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := decodeJSON(w, r, &input); err != nil {
 			writeProblem(w, requestIDFrom(w), http.StatusBadRequest, "invalid_request", "请求格式无效", "")
+			return
+		}
+		if s.rejectClaimedJobInput(w, requestIDFrom(w), "diagnostic", id) {
 			return
 		}
 		if err := s.diagnostics.WriteInput(id, input.Data); err != nil {

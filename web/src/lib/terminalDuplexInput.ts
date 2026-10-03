@@ -10,7 +10,9 @@ export type TerminalDuplexOptions = {
   negotiate: () => Promise<{ protocol: string }>
   credentials: () => { url: string; csrf: string }
   legacy: (data: string) => Promise<unknown>
-  batch?: (frames: Array<{ stream: string; seq: number; data: string }>, signal: AbortSignal) => Promise<{ acked: number }>
+  /** Hand the per-request fallback the typed text instead of its base64 form. */
+  legacyText?: boolean
+  batch?: (frames: Array<{ stream: string; seq: number; data: string }>, signal: AbortSignal) => Promise<{ acked: number; epoch?: string }>
   error: (kind: 'retry' | 'fatal' | 'capacity') => void
   recovered?: () => void
   socket?: (url: string) => Socket
@@ -23,13 +25,20 @@ function base64(value: string): string {
   return btoa(binary)
 }
 
-// Host-terminal input only. Task terminals retain their existing fixed-action
-// input adapter. A frame is removed exclusively after an ordered owner ACK.
+function newStream(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('')
+}
+
+// Input of host terminals and of task terminals (application, website,
+// diagnostic and environment). A frame is removed exclusively after an ordered
+// owner ACK. The owner may announce an epoch; a different one means the state
+// holding this stream was lost, which is not the same as a lost connection.
 export class TerminalDuplexInput {
   private queue = new TerminalInputQueue()
   private pending: Frame[] = []
   private sequence = 0
   private stream: string
+  private epoch?: string
   private mode: 'unknown' | 'legacy' | 'duplex' | 'post' = 'unknown'
   private socket?: Socket
   private ready = false
@@ -45,7 +54,7 @@ export class TerminalDuplexInput {
   private retryTimer?: ReturnType<typeof setTimeout>
   private deadline?: ReturnType<typeof setTimeout>
   constructor(private options: TerminalDuplexOptions) {
-    this.stream = options.stream ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('')
+    this.stream = options.stream ?? newStream()
   }
   get byteLength(): number { return this.queue.byteLength + this.pending.reduce((n, frame) => n + frame.bytes, 0) }
   get outstanding(): number { return this.pending.length }
@@ -82,8 +91,9 @@ export class TerminalDuplexInput {
       socket.onmessage = (event) => {
         if (this.socket !== socket || this.stopped) return
         try {
-          const message = JSON.parse(String(event.data)) as { type: string; seq?: number; retryable?: boolean; window?: number }
+          const message = JSON.parse(String(event.data)) as { type: string; seq?: number; retryable?: boolean; window?: number; epoch?: string }
           if (message.type === 'ready' && !this.ready && message.window === terminalInputWindow) {
+            if (!this.acceptEpoch(message.epoch)) { this.ownerLost(); return }
             this.ready = true
             this.everReady = true
             // An idle, successfully reattached writer is healthy. Unconfirmed
@@ -150,6 +160,23 @@ export class TerminalDuplexInput {
     this.options.error('retry')
     this.retryTimer = setTimeout(() => { this.retryTimer = undefined; this.flush() }, Math.min(4000, 250 * 2 ** (this.retries - 1)))
   }
+  private acceptEpoch(epoch: string | undefined): boolean {
+    if (epoch === undefined) return true
+    if (this.epoch !== undefined && this.epoch !== epoch) return false
+    this.epoch = epoch
+    return true
+  }
+  // The owner restarted and no longer knows this stream. Frames it may already
+  // have applied must never be replayed; with none outstanding the writer just
+  // starts over as a new stream.
+  private ownerLost(): void {
+    if (this.pending.length) { this.fail(); return }
+    this.stream = newStream()
+    this.sequence = 0
+    this.epoch = undefined
+    this.postClaimed = false
+    this.disconnect()
+  }
   private fillWindow(): void {
     while (this.pending.length < terminalInputWindow && !this.queue.empty) {
       const chunk = this.queue.take(2048)
@@ -164,6 +191,7 @@ export class TerminalDuplexInput {
         const reply = await this.sendBatch([{ stream: this.stream, seq: 0, data: '' }])
         if (this.stopped) return
         if (reply.acked !== 0) { this.fail(); return }
+        if (!this.acceptEpoch(reply.epoch)) { this.ownerLost(); return }
         this.postClaimed = true
       }
       this.fillWindow()
@@ -183,7 +211,7 @@ export class TerminalDuplexInput {
       else this.disconnect()
     } finally { this.postSending = false }
   }
-  private async sendBatch(frames: Array<{ stream: string; seq: number; data: string }>): Promise<{ acked: number }> {
+  private async sendBatch(frames: Array<{ stream: string; seq: number; data: string }>): Promise<{ acked: number; epoch?: string }> {
     const controller = new AbortController()
     this.postController = controller
     const timer = setTimeout(() => controller.abort(), 23000)
@@ -198,7 +226,7 @@ export class TerminalDuplexInput {
         const chunk = this.queue.take()
         // A lost POST response is ambiguous. Never restore and automatically
         // replay these bytes on an old target that cannot deduplicate them.
-        await this.options.legacy(base64(chunk))
+        await this.options.legacy(this.options.legacyText ? chunk : base64(chunk))
       }
     } catch { this.fail() }
     finally { this.legacySending = false }

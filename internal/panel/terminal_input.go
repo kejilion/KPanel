@@ -30,6 +30,7 @@ type terminalInputReply struct {
 	Code      string `json:"code,omitempty"`
 	Retryable bool   `json:"retryable,omitempty"`
 	Window    int    `json:"window,omitempty"`
+	Epoch     string `json:"epoch,omitempty"`
 }
 type terminalInputWaiter struct {
 	seq  uint64
@@ -58,7 +59,37 @@ func publishTerminalInputReply(slots chan struct{}, reply terminalInputReply, wr
 	return write(reply) && reply.Type != "error"
 }
 
+// terminalInputTarget is where an authenticated browser input stream is
+// delivered: the PTY session of a host terminal, or a task terminal. The socket
+// and batch handlers own authentication, framing, windowing and ordering; the
+// target owns admission, liveness and the hop to whoever applies the frames.
+type terminalInputTarget struct {
+	// admit runs before the upgrade and registers conn. A batch whose first
+	// frame is not a claim passes requireClaimed. A non-zero status is the
+	// problem to answer with.
+	admit func(conn *terminalInputConnection, requireClaimed bool) (release func(), status int, code, title string)
+	// alive revalidates the target for conn and records activity.
+	alive func(conn *terminalInputConnection) bool
+	// claim binds the writer (seq=0) and returns the epoch of the state that
+	// holds it, when that state can be lost independently of the browser.
+	claim func(ctx context.Context, frame terminal.InputFrame) (epoch string, err error)
+	// send starts delivering one data frame; wait reports whether it was applied.
+	send func(ctx context.Context, frame terminal.InputFrame) (wait func() error, err error)
+	// immediate reports that send has already applied the frame when it returns,
+	// so a batch can stop at the first failure instead of queueing the rest.
+	immediate func() bool
+	// claimed records a successful claim.
+	claimed func(conn *terminalInputConnection)
+	// keepalive, when positive, pings the browser so that a vanished page
+	// frees its socket instead of waiting for TCP to notice.
+	keepalive time.Duration
+}
+
 func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Request, token string, session auth.Session, id string) {
+	s.serveTerminalInputSocket(w, r, token, session, s.hostTerminalInputTarget(session, id))
+}
+
+func (s *Server) serveTerminalInputSocket(w http.ResponseWriter, r *http.Request, token string, session auth.Session, target terminalInputTarget) {
 	if r.Method != http.MethodGet || r.URL.RawQuery != "" || r.Header.Get("Origin") == "" {
 		s.writeProblem(w, r, http.StatusBadRequest, "invalid_terminal_request", "Invalid terminal input stream", "")
 		return
@@ -69,31 +100,12 @@ func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	connection := &terminalInputConnection{cancel: cancel}
-	s.terminalMu.Lock()
-	item, ok := s.terminalSessions[id]
-	if !ok || item.UserID != session.User.ID || item.CloseRequested || !item.ReliableInput {
-		s.terminalMu.Unlock()
-		s.writeProblem(w, r, http.StatusNotFound, "terminal_not_found", "Terminal input stream unavailable", "")
+	release, status, code, title := target.admit(connection, false)
+	if status != 0 {
+		s.writeProblem(w, r, status, code, title, "")
 		return
 	}
-	// At most one socket (including unauthenticated handshakes) per existing
-	// terminal: the existing 16 global / 4 user PTY quotas also bound sockets.
-	if item.InputConnection != nil {
-		s.terminalMu.Unlock()
-		s.writeProblem(w, r, http.StatusTooManyRequests, "terminal_stream_limit", "Terminal input stream already connected", "")
-		return
-	}
-	item.InputConnection = connection
-	s.terminalSessions[id] = item
-	s.terminalMu.Unlock()
-	defer func() {
-		s.terminalMu.Lock()
-		if current, exists := s.terminalSessions[id]; exists && current.InputConnection == connection {
-			current.InputConnection = nil
-			s.terminalSessions[id] = current
-		}
-		s.terminalMu.Unlock()
-	}()
+	defer release()
 	// checkOrigin above is authoritative, including the configured trusted
 	// proxy/PublicURL rules. No credentials are passed in URL or subprotocol.
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{terminalInputSocketProtocol}, InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
@@ -136,43 +148,41 @@ func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Reques
 		if _, err := s.auth.Authenticate(token); err != nil || !time.Now().Before(session.ExpiresAt) {
 			return false
 		}
-		s.terminalMu.Lock()
-		defer s.terminalMu.Unlock()
-		current, exists := s.terminalSessions[id]
-		if !exists || current.UserID != session.User.ID || current.CloseRequested || current.InputConnection != connection {
-			return false
-		}
-		current.UpdatedAt = time.Now().UTC()
-		s.terminalSessions[id] = current
-		return true
+		return target.alive(connection)
 	}
 	if !valid() {
 		return
 	}
 	claimCtx, claimCancel := context.WithTimeout(ctx, 10*time.Second)
-	claim := terminal.InputFrame{Stream: hello.Stream}
-	if item.HostID == cluster.LocalHostID {
-		err = (clusterTerminalSource{agent: s.agent}).InputSequenced(claimCtx, item.Owner, item.BackendSessionID, claim)
-	} else {
-		var wait func() error
-		wait, err = s.cluster.BeginTerminalInput(claimCtx, item.HostID, item.BackendSessionID, claim)
-		if err == nil {
-			err = wait()
-		}
-	}
+	epoch, err := target.claim(claimCtx, terminal.InputFrame{Stream: hello.Stream})
 	claimCancel()
 	if err != nil {
 		write(terminalInputReply{Type: "error", Code: "terminal_input_claim", Retryable: !errors.Is(err, terminal.ErrInputSequence) && !errors.Is(err, terminal.ErrInputUncertain) && !errors.Is(err, terminal.ErrNotFound) && !errors.Is(err, terminal.ErrClosed)})
 		return
 	}
-	s.terminalMu.Lock()
-	if current, exists := s.terminalSessions[id]; exists && current.InputConnection == connection {
-		current.InputClaimed = true
-		s.terminalSessions[id] = current
-	}
-	s.terminalMu.Unlock()
-	if !valid() || !write(terminalInputReply{Type: "ready", Window: terminal.InputWindow}) {
+	target.claimed(connection)
+	if !valid() || !write(terminalInputReply{Type: "ready", Window: terminal.InputWindow, Epoch: epoch}) {
 		return
+	}
+	if target.keepalive > 0 {
+		go func() {
+			ticker := time.NewTicker(target.keepalive)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					pingCtx, stop := context.WithTimeout(ctx, target.keepalive)
+					err := ws.Ping(pingCtx)
+					stop()
+					if err != nil {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
 	}
 	pending := make(chan terminalInputWaiter, terminal.InputWindow)
 	slots := make(chan struct{}, terminal.InputWindow)
@@ -208,16 +218,10 @@ func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			frame := *message.Frame
-			var wait func() error
-			if item.HostID == cluster.LocalHostID {
-				inputErr := (clusterTerminalSource{agent: s.agent}).InputSequenced(ctx, item.Owner, item.BackendSessionID, frame)
-				wait = func() error { return inputErr }
-			} else {
-				wait, err = s.cluster.BeginTerminalInput(ctx, item.HostID, item.BackendSessionID, frame)
-				if err != nil {
-					fail("terminal_input_unavailable", true)
-					return
-				}
+			wait, err := target.send(ctx, frame)
+			if err != nil {
+				fail("terminal_input_unavailable", true)
+				return
 			}
 			select {
 			case pending <- terminalInputWaiter{seq: frame.Seq, wait: wait}:
@@ -282,5 +286,82 @@ func (s *Server) handleTerminalInputSocket(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		}
+	}
+}
+
+// hostTerminalInputTarget delivers frames to the PTY owner of a host terminal
+// session, local or on a cluster host.
+func (s *Server) hostTerminalInputTarget(session auth.Session, id string) terminalInputTarget {
+	var item panelTerminalSession
+	local := func() bool { return item.HostID == cluster.LocalHostID }
+	return terminalInputTarget{
+		admit: func(conn *terminalInputConnection, requireClaimed bool) (func(), int, string, string) {
+			s.terminalMu.Lock()
+			current, ok := s.terminalSessions[id]
+			if !ok || current.UserID != session.User.ID || current.CloseRequested || !current.ReliableInput {
+				s.terminalMu.Unlock()
+				return nil, http.StatusNotFound, "terminal_not_found", "Terminal input stream unavailable"
+			}
+			// At most one socket (including unauthenticated handshakes) per
+			// existing terminal: the existing 16 global / 4 user PTY quotas
+			// also bound sockets.
+			if current.InputConnection != nil {
+				s.terminalMu.Unlock()
+				return nil, http.StatusTooManyRequests, "terminal_stream_limit", "Terminal input stream already connected"
+			}
+			if requireClaimed && !current.InputClaimed {
+				s.terminalMu.Unlock()
+				return nil, http.StatusConflict, "terminal_input_sequence", "Terminal input writer must be claimed"
+			}
+			current.InputConnection = conn
+			s.terminalSessions[id] = current
+			s.terminalMu.Unlock()
+			item = current
+			return func() {
+				s.terminalMu.Lock()
+				if now, exists := s.terminalSessions[id]; exists && now.InputConnection == conn {
+					now.InputConnection = nil
+					s.terminalSessions[id] = now
+				}
+				s.terminalMu.Unlock()
+			}, 0, "", ""
+		},
+		alive: func(conn *terminalInputConnection) bool {
+			s.terminalMu.Lock()
+			defer s.terminalMu.Unlock()
+			current, exists := s.terminalSessions[id]
+			if !exists || current.UserID != session.User.ID || current.CloseRequested || current.InputConnection != conn {
+				return false
+			}
+			current.UpdatedAt = time.Now().UTC()
+			s.terminalSessions[id] = current
+			return true
+		},
+		claim: func(ctx context.Context, frame terminal.InputFrame) (string, error) {
+			if local() {
+				return "", (clusterTerminalSource{agent: s.agent}).InputSequenced(ctx, item.Owner, item.BackendSessionID, frame)
+			}
+			wait, err := s.cluster.BeginTerminalInput(ctx, item.HostID, item.BackendSessionID, frame)
+			if err == nil {
+				err = wait()
+			}
+			return "", err
+		},
+		send: func(ctx context.Context, frame terminal.InputFrame) (func() error, error) {
+			if local() {
+				inputErr := (clusterTerminalSource{agent: s.agent}).InputSequenced(ctx, item.Owner, item.BackendSessionID, frame)
+				return func() error { return inputErr }, nil
+			}
+			return s.cluster.BeginTerminalInput(ctx, item.HostID, item.BackendSessionID, frame)
+		},
+		immediate: local,
+		claimed: func(conn *terminalInputConnection) {
+			s.terminalMu.Lock()
+			if current, exists := s.terminalSessions[id]; exists && current.InputConnection == conn {
+				current.InputClaimed = true
+				s.terminalSessions[id] = current
+			}
+			s.terminalMu.Unlock()
+		},
 	}
 }

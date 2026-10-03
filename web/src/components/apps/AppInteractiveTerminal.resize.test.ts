@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   observer: undefined as undefined | (() => void),
   terminal: undefined as undefined | { rows: number; cols: number }, writes: [] as string[],
 }))
-vi.mock('@/lib/api', () => ({ api: { apps: { terminalResize: mocks.resize, terminal: mocks.output } },
+vi.mock('@/lib/api', () => ({ api: { apps: { terminalResize: mocks.resize, terminal: mocks.output },
+    // An Agent without the acknowledged input protocol: input stays on the per-request route.
+    jobTerminals: { inputTransport: () => Promise.resolve({ protocol: '' }) } },
   terminalStream: { subscribe: mocks.subscribe } }))
 vi.mock('@xterm/xterm', () => ({ Terminal: class {
   options = {}; parser = { registerOscHandler() {} }; rows = 24; cols = 80

@@ -296,14 +296,11 @@ func stripTerminalControls(value string) string {
 	return result.String()
 }
 
-func (s *Service) WriteAppJobInput(id, value string) error {
+// AppJobInputOpen reports, without touching the job, whether it still takes
+// terminal input. WriteAppJobInput applies the same rule before every write.
+func (s *Service) AppJobInputOpen(id string) error {
 	if s.jobs == nil || !appJobIDPattern.MatchString(id) {
 		return ErrNotFound
-	}
-	data := []byte(value)
-	if len(data) == 0 || len(data) > maxTerminalInputBytes ||
-		bytes.IndexByte(data, 0) >= 0 {
-		return fmt.Errorf("%w: interactive input is invalid", ErrForbidden)
 	}
 	record, err := s.jobs.read(id)
 	if err != nil {
@@ -314,8 +311,23 @@ func (s *Service) WriteAppJobInput(id, value string) error {
 		s.jobs.cancelRequested(id) {
 		return fmt.Errorf("%w: interactive input is not open", ErrConflict)
 	}
+	return nil
+}
+
+func (s *Service) WriteAppJobInput(id, value string) error {
+	if s.jobs == nil || !appJobIDPattern.MatchString(id) {
+		return ErrNotFound
+	}
+	data := []byte(value)
+	if len(data) == 0 || len(data) > maxTerminalInputBytes ||
+		bytes.IndexByte(data, 0) >= 0 {
+		return fmt.Errorf("%w: interactive input is invalid", ErrForbidden)
+	}
+	if err := s.AppJobInputOpen(id); err != nil {
+		return err
+	}
 	if err := writeTerminalInput(s.jobs.inputPath(id), data); err != nil {
-		return fmt.Errorf("%w: interactive input is unavailable: %v", ErrConflict, err)
+		return fmt.Errorf("%w: interactive input is unavailable: %w", ErrConflict, err)
 	}
 	return nil
 }

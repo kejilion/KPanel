@@ -6,7 +6,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { api, terminalStream } from '@/lib/api'
 import type { TerminalStreamSubscription } from '@/lib/terminalStream'
-import type { AppTerminalChunk } from '@/types/api'
+import type { AppTerminalChunk, JobTerminalKind } from '@/types/api'
 import TerminalContextMenu from '@/components/terminal/TerminalContextMenu.vue'
 import TerminalToolbar from '@/components/terminal/TerminalToolbar.vue'
 import { useTerminalActivity } from '@/composables/useTerminalActivity'
@@ -18,12 +18,11 @@ import { joinTerminalSizeGroup } from '@/lib/terminalSizeOwnership'
 import type { TerminalSizeMembership } from '@/lib/terminalSizeOwnership'
 import { createTerminalTouchScroll } from '@/lib/terminalTouchScroll'
 import { TerminalOutputNormalizer } from '@/lib/terminalOutput'
+import { TerminalDuplexInput } from '@/lib/terminalDuplexInput'
 import { readTerminalTheme } from '@/lib/terminalTheme'
 import { TerminalWriteFlow } from '@/lib/terminalWriteFlow'
 import { useTheme } from '@/stores/theme'
 import {
-  drainTerminalInputQueue,
-  TerminalInputQueue,
   terminalEnterShouldSubmit,
   terminalInputFlushInterval,
   terminalInputShouldFlushImmediately,
@@ -53,8 +52,9 @@ let pollController: AbortController | undefined
 let pollTimer: number | undefined
 let streamSubscription: TerminalStreamSubscription | null = null
 let inputTimer: number | undefined
-let inputQueue = new TerminalInputQueue()
-let inputSending = false
+// One acknowledged stream per open task input; see ensureInput.
+let duplexInput: TerminalDuplexInput | undefined
+let inputRetrying = false
 let offset = 0
 let disposed = false
 // Bumped whenever output stops so a late poll result cannot be applied twice.
@@ -234,53 +234,86 @@ const terminalTouchScroll = createTerminalTouchScroll({
   getScreen: () => host.value?.querySelector<HTMLElement>('.xterm-screen') ?? host.value,
 })
 
-async function flushInput(): Promise<void> {
-  if (inputSending || !terminalInputOpen.value || disposed) return
+const inputFailureMessages = {
+  capacity: 'terminal.inputCapacity',
+  fatal: 'terminal.taskInputFailed',
+  retry: 'terminal.inputFailed',
+} as const
+
+function legacyInput(kind: JobTerminalKind, jobId: string, data: string): Promise<unknown> {
+  if (kind === 'site') return api.sites.terminalInput(jobId, data)
+  if (kind === 'diagnostic') return api.diagnostics.terminalInput(jobId, data)
+  if (kind === 'environment') return api.webEnvironment.terminalInput(jobId, data)
+  return api.apps.terminalInput(jobId, data)
+}
+
+// Input of the task that is open now goes through one acknowledged stream. It
+// belongs to that task and to that open period: it is dropped with them, so a
+// late result or ACK can never reach the next task or a later input. After a
+// failure the next keystroke starts a new stream, which takes over from the
+// failed one.
+function ensureInput(): TerminalDuplexInput {
+  if (duplexInput) return duplexInput
+  const kind: JobTerminalKind = props.kind ?? 'app'
+  const jobId = props.jobId
+  const input: TerminalDuplexInput = new TerminalDuplexInput({
+    negotiate: () => api.jobTerminals.inputTransport(kind, jobId),
+    credentials: () => api.jobTerminals.inputSocket(kind, jobId),
+    legacy: (data) => legacyInput(kind, jobId, data),
+    legacyText: true,
+    batch: (frames, signal) => api.jobTerminals.inputBatch(kind, jobId, frames, signal),
+    error: (failure) => {
+      if (disposed || duplexInput !== input) return
+      writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t(inputFailureMessages[failure])}\x1b[0m\r\n`)
+      if (failure === 'fatal') dropInput()
+      if (failure === 'retry') {
+        inputRetrying = true
+        connectionState.value = 'error'
+      }
+    },
+    recovered: () => {
+      if (disposed || duplexInput !== input || !inputRetrying) return
+      inputRetrying = false
+      if (connectionState.value === 'error') connectionState.value = 'connected'
+    },
+  })
+  duplexInput = input
+  return input
+}
+
+// Connect ahead of the first key so it does not pay for negotiation and handshake.
+function warmInput(): void {
+  if (!disposed && terminalInputOpen.value) ensureInput().flush()
+}
+
+function dropInput(): void {
   if (inputTimer) window.clearTimeout(inputTimer)
   inputTimer = undefined
-  inputSending = true
-  const queue = inputQueue
-  try {
-    await drainTerminalInputQueue(
-      queue,
-      () => queue === inputQueue && terminalInputOpen.value && !disposed,
-      async (data) => {
-        if (props.kind === 'site') {
-          await api.sites.terminalInput(props.jobId, data)
-        } else if (props.kind === 'diagnostic') {
-          await api.diagnostics.terminalInput(props.jobId, data)
-        } else if (props.kind === 'environment') {
-          await api.webEnvironment.terminalInput(props.jobId, data)
-        } else {
-          await api.apps.terminalInput(props.jobId, data)
-        }
-      },
-    )
-  } catch {
-    if (queue === inputQueue) {
-      connectionState.value = 'error'
-      writeTerminalOutput(`\r\n\x1b[31m[KPanel] ${t('terminal.taskInputFailed')}\x1b[0m\r\n`)
-    }
-  } finally {
-    inputSending = false
-    if (queue !== inputQueue && !inputQueue.empty && terminalInputOpen.value && !disposed) {
-      void flushInput()
-    }
-  }
+  duplexInput?.close()
+  duplexInput = undefined
+  inputRetrying = false
+}
+
+function flushInput(): void {
+  if (disposed || !terminalInputOpen.value) return
+  if (inputTimer) window.clearTimeout(inputTimer)
+  inputTimer = undefined
+  duplexInput?.flush()
 }
 
 function queueInput(data: string): void {
   if (!terminalInputOpen.value || disposed) return
-  inputQueue.append(data)
-  if (
-    terminalInputShouldFlushImmediately(data) ||
-    inputQueue.byteLength >= 2048
-  ) {
-    void flushInput()
+  // NUL is never valid task input; the per-request route refused it as well.
+  const text = data.includes('\0') ? data.replaceAll('\0', '') : data
+  if (!text) return
+  const input = ensureInput()
+  if (!input.append(text)) return
+  if (terminalInputShouldFlushImmediately(text) || input.byteLength >= 2048) {
+    flushInput()
     return
   }
   if (!inputTimer) {
-    inputTimer = window.setTimeout(() => void flushInput(), terminalInputFlushInterval)
+    inputTimer = window.setTimeout(() => flushInput(), terminalInputFlushInterval)
   }
 }
 
@@ -307,7 +340,7 @@ function applyJobChunk(chunk: AppTerminalChunk): void {
   terminalInputOpen.value = chunk.inputOpen
   connectionState.value = chunk.finished ? 'finished' : 'connected'
   if (reconnected && !chunk.finished) resetResize()
-  if (terminalInputOpen.value && !inputQueue.empty) void flushInput()
+  if (terminalInputOpen.value && duplexInput?.byteLength) flushInput()
   if (chunk.finished) stopOutput()
 }
 
@@ -394,13 +427,16 @@ function resetTerminal(): void {
   joinSizeGroup()
   resetResize()
   offset = 0
-  inputQueue = new TerminalInputQueue()
+  dropInput()
   outputNormalizer.reset()
   terminal?.reset()
   pendingLine.value = ''
   terminalInputOpen.value = Boolean(props.inputOpen)
   connectionState.value = 'connecting'
-  if (terminalInputOpen.value) focusTerminalWhenInputOpens()
+  if (terminalInputOpen.value) {
+    focusTerminalWhenInputOpens()
+    warmInput()
+  }
   pollTimer = window.setTimeout(() => {
     pollTimer = undefined
     startOutput()
@@ -439,6 +475,8 @@ watch(
 watch(terminalInputOpen, (open) => {
   if (open) focusTerminalWhenInputOpens()
   if (open) resetResize()
+  if (open) warmInput()
+  else dropInput()
 })
 watch([themeColors, resolvedTheme], () => {
   void nextTick(() => {
@@ -472,12 +510,13 @@ onMounted(() => {
     if (terminalInputOpen.value && activity.focused.value) window.requestAnimationFrame(focusTerminal)
   }
   startOutput()
+  warmInput()
 })
 
 onBeforeUnmount(() => {
   disposed = true
   stopOutput()
-  if (inputTimer) window.clearTimeout(inputTimer)
+  dropInput()
   resizeGeneration++
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeObserver?.disconnect()

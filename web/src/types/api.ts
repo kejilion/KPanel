@@ -1372,6 +1372,8 @@ export interface AppInstallJob {
   finishedAt?: string
 }
 
+export type JobTerminalKind = 'app' | 'site' | 'diagnostic' | 'environment'
+
 export interface AppTerminalChunk {
   dataBase64: string
   nextOffset: number

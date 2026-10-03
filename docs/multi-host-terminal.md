@@ -21,6 +21,8 @@
 - 主机终端始终在底部显示预输入框；应用、建站、体检和环境任务在脚本等待输入时显示同一套
   预输入框。浏览器本地完成编辑，按 Enter 后整行发送；xterm.js 原生键盘输入仍可用于方向键、
   密码和 TUI，并以 12 ms 短批次合并（低于一帧，快速输入不丢字符），降低高延迟网络中的逐键请求开销；
+  主机终端与这四类任务终端的输入都经有序、逐帧确认的流水通道发送，不等上一帧的响应，连续输入和粘贴在
+  高延迟网络下明显更快（实测见 [终端与文件传输 v3](terminal-file-transport-v3.md) 第 3 节）；
 - 每个终端保留 5000 行浏览器回滚缓冲并显示主题化滚动条；用户位于底部时新输出自动跟随，
   向上查看历史时不强制跳回，标题栏按钮可随时回到最新输出；
 - 多主机连接列表使用独立滚动区域，不参与右侧终端的高度计算；主机数量增加时不得挤压终端
@@ -92,6 +94,18 @@ POST /api/v1/terminal-sessions/{id}/resize
 POST /api/v1/terminal-sessions/{id}/close
 ```
 
+应用、建站、体检、环境任务终端的输入接口（`kind` 取 `app`、`site`、`diagnostic`、`environment`，只在本机）：
+
+```text
+POST /api/v1/job-terminals/{kind}/{id}/input-transport
+GET  /api/v1/job-terminals/{kind}/{id}/input-stream
+POST /api/v1/job-terminals/{kind}/{id}/input-batch
+```
+
+认证、CSRF、帧与窗口与上面的主机终端相同；任务的有序状态由 Agent 持有，差异见
+[终端与文件传输 v3](terminal-file-transport-v3.md)。原有各任务的 `…/input` 路由保留给尚未升级的 Agent，
+并在流认领后拒绝裸写入。
+
 Panel 间接口：
 
 ```text
@@ -125,6 +139,8 @@ GET  /v1/terminals/{id}/output
 POST /v1/terminals/{id}/input
 POST /v1/terminals/{id}/resize
 POST /v1/terminals/{id}/close
+POST /v1/job-terminals/capabilities/input-protocol
+POST /v1/job-terminals/{kind}/{id}/input-sequenced
 ```
 
 接口不接受浏览器提交的 Shell 路径、启动参数、用户、环境变量或工作目录。Agent 只启动

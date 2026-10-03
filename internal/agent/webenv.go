@@ -135,6 +135,9 @@ func (s *Server) webEnvironmentJob(w http.ResponseWriter, r *http.Request, reque
 			writeProblem(w, requestID, http.StatusBadRequest, "invalid_request", "请求格式无效", "")
 			return
 		}
+		if s.rejectClaimedJobInput(w, requestID, "environment", parts[0]) {
+			return
+		}
 		if err := s.webEnvironment.WriteInput(parts[0], input.Data); err != nil {
 			status, code, title := http.StatusConflict, "environment_terminal_closed", "环境终端当前不可输入"
 			if errors.Is(err, webenv.ErrInvalid) {
