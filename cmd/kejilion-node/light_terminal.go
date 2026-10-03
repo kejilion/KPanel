@@ -69,6 +69,13 @@ func runLightTerminalControl(
 			continue
 		}
 
+		if err := requireWindowsCapability(ctx, config, "terminal"); err != nil {
+			control.resetSessions()
+			if !waitContext(ctx, time.Minute) {
+				return
+			}
+			continue
+		}
 		events, _ := control.collectEvents(ctx)
 		request := cluster.TerminalRelayPollRequest{SessionIDs: control.sessionIDs(), Events: events}
 		response, err := relay.PollV2(

@@ -10,10 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 
 	"github.com/kejilion/kejilion-panel/internal/agent"
@@ -21,7 +19,7 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/filemanager"
 )
 
-const defaultFileBrokerConfigPath = defaultConfigPath
+var defaultFileBrokerConfigPath = defaultConfigPath
 
 var errFileCapabilityConnection = errors.New("file capability connection unavailable")
 
@@ -39,6 +37,9 @@ func runFileBroker(arguments []string) error {
 		!filepath.IsAbs(*fileConfigPath) || filepath.Clean(*fileConfigPath) == string(filepath.Separator) {
 		return errors.New("file broker configuration path is invalid")
 	}
+	if err := requireBrokerIdentity(); err != nil {
+		return err
+	}
 	if runtime.GOOS == "linux" && os.Geteuid() != 0 {
 		return errors.New("file broker requires root")
 	}
@@ -46,8 +47,13 @@ func runFileBroker(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	if err := requireWindowsCapability(context.Background(), config, "files"); err != nil {
+		return err
+	}
+	ctx, stop := nodeSignalContext()
 	defer stop()
+	stopWindowsHealth := startPlatformHealthPublisher(ctx)
+	defer stopWindowsHealth()
 	stopProcdHealth := startNodeProcdHealth(ctx)
 	defer stopProcdHealth()
 	stateDir, err := nodeStateDirectory("/")
@@ -96,6 +102,12 @@ func runFileBroker(arguments []string) error {
 	fileHandler := agent.NewFileHandler(manager)
 	backoff := time.Second
 	for ctx.Err() == nil {
+		if err := requireWindowsCapability(ctx, config, "files"); err != nil {
+			if !waitContext(ctx, time.Minute) {
+				break
+			}
+			continue
+		}
 		streamErr := relay.RunFileStream(ctx, config.Origin, config.NodeID, config.TargetNodeID, identity.Key, identity.Peer, fileHandler)
 		if errors.Is(streamErr, cluster.ErrFileStreamUnsupported) {
 			// Compatibility is selected before any file action. Keep this mode for

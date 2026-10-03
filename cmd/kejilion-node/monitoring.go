@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"runtime"
 
 	"github.com/kejilion/kejilion-panel/internal/agent"
 	"github.com/kejilion/kejilion-panel/internal/contract"
@@ -17,10 +18,14 @@ import (
 // Collection has a separate collector and lifetime from network relay retries.
 func startNodeMonitoring(parent context.Context, stateDir string) (http.Handler, func()) {
 	ctx, cancel := context.WithCancel(parent)
+	var docker monitoring.DockerSource
+	if runtime.GOOS != "windows" {
+		docker = dockerx.New("/var/run/docker.sock", "/home/web", stateDir)
+	}
 	history, err := monitoring.New(monitoring.Config{
 		StateDir:        filepath.Join(stateDir, "monitoring"),
 		System:          systeminfo.NewCollector(),
-		Docker:          dockerx.New("/var/run/docker.sock", "/home/web", stateDir),
+		Docker:          docker,
 		OperatorLatency: monitoring.NewOperatorLatencyProber(),
 		OnCheckStatus: func(summary contract.ServiceCheckSummary) {
 			if err := publishNodeCheckStatus(summary); err != nil {

@@ -16,7 +16,6 @@ import (
 	"github.com/kejilion/kejilion-panel/internal/version"
 )
 
-const updateHealthPath = "/etc/kejilion-node/update-status.json"
 const maxUpdateHealthBytes = 1024
 
 var healthUnits = []string{"kejilion-node-update.timer", "kejilion-node.service", "kejilion-node-terminal.service", "kejilion-node-file.service", "kejilion-node-ssh-login.service"}
@@ -30,6 +29,9 @@ func unknownServiceHealth() contract.LightNodeServiceHealth {
 // One fixed command, one shared deadline, bounded stdout and discarded stderr.
 // Failure never prevents the core report and never turns into not-installed.
 func collectLightHealth(ctx context.Context) *contract.LightNodeHealth {
+	if health := platformHealth(ctx); health != nil {
+		return health
+	}
 	now := time.Now().UTC()
 	health := &contract.LightNodeHealth{ObservedAt: now, RuntimeVersion: version.Version, Update: readUpdateHealth(updateHealthPath, now)}
 	units := make([]contract.LightNodeServiceHealth, len(healthUnits))
