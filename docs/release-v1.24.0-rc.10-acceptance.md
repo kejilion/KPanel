@@ -136,7 +136,7 @@
 <!-- kpanel-release-metrics:end -->
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：12
+- 已记录发布流程异常或无效证据拦截次数：14
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -253,9 +253,31 @@
     "recoveryEvidence": "acceptance-schema-r1 preserves both docs, helper source and failed checks; acceptance-checks-r2.log contains the corrected canonical-field validation.",
     "permanentAction": "Release owner: format structured metrics timestamps with millisecond precision and use bare canonical not-applicable/yes-no values; explanatory prose belongs outside the six-field block. Review before next production L3, no later than 2026-10-10.",
     "historicalReleases": []
+  },
+  {
+    "fingerprint": "closing/collaboration-state/redundant-management-clean",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Final receipt helper supplied --require-clean with the management role; the authoritative checker rejects this redundant flag. Public image, branch and CI assertions already passed; no product or production write followed this read failure.",
+    "recoveryEvidence": "final-receipt-r1 preserves the failed helper, command log and release state; management-final-check-r2.log records the corrected management check with implicit clean enforcement.",
+    "permanentAction": "Release owner: management checks use --role management without --require-clean; that flag is for writer checkpoints. Consult the actual CLI parser before adding flags. Review before next production L3, no later than 2026-10-10.",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "closing/git-output/crlf-warning-in-stdout",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "Closing helper merged Git stderr with stdout; a CRLF normalization warning was mistaken for a changed filename and stopped the one-file scope assertion before commit.",
+    "recoveryEvidence": "closing-git-output-r1 preserves helper, proposed acceptance and separate actual stdout/stderr; resumed helper parses only stdout and rechecks the one-file scope.",
+    "permanentAction": "Release owner: keep Git diagnostics separate from machine-parsed ref and path output. Check argv output schemas before scope assertions. Review before next production L3, no later than 2026-10-10.",
+    "historicalReleases": []
   }
 ]
 <!-- kpanel-release-process-incidents:end -->
+
+## 最终收尾补记
+
+发布后的最终管理检查因冗余 `--require-clean` 参数被 CLI 拦截；补记范围检查又因 Git stderr 换行警告混入路径列表停止。两个问题均属于收尾工具，未修改产品或产物，原始命令、日志及拟写文档已保留。正确管理角色隐式要求 clean；Git 文件/引用列表只解析 stdout。流程异常总计补为 14。补记使用 `docs/release-v1.24.0-rc.10-final-receipt` 自有纯文档分支，只修改本验收记录；独立候选/主线 CI 通过后归档到 `archive/docs/release-v1.24.0-rc.10-final-receipt`，随后再次对齐主线、候选和 Mock 预览。首轮验收归档仍保留 `644c4c79b27705f52268b16af0f10d83b4cbc0ee`，产品 tag 仍为 `6b3cfa88a47b8da473a443fa0e60190a4bffdae6`。最终 SHA、CI 与回收回执以 `closing-archive.json`、`final-alignment-r2.json` 和 `final-verification.json` 为准。
 
 ## 遗留风险与后续准入
 
