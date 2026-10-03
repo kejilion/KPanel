@@ -147,6 +147,41 @@ func TestRefreshConsumesProgressAndAtomicReceipt(t *testing.T) {
 	}
 }
 
+func TestRefreshRechecksReceiptAfterWorkerExit(t *testing.T) {
+	for _, hasReceipt := range []bool{true, false} {
+		t.Run(fmt.Sprintf("receipt=%v", hasReceipt), func(t *testing.T) {
+			service, err := New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			started := time.Now().UTC().Add(-time.Minute)
+			job := Job{ID: "0123456789abcdef0123456789abcdef", Action: "update.component", Status: "running", CreatedAt: started, StartedAt: &started}
+			got := service.refreshWithUnitCheckLocked(job, func(id string) (bool, error) {
+				if id != job.ID {
+					t.Fatalf("inspected job %q, want %q", id, job.ID)
+				}
+				if hasReceipt {
+					if err := os.WriteFile(service.receiptPath(id), []byte(`{"status":"succeeded","message":"done"}`), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return false, nil
+			})
+			wantStatus, wantStage := "needs_attention", "receipt_missing"
+			if hasReceipt {
+				wantStatus, wantStage = "succeeded", "complete"
+			}
+			if got.Status != wantStatus || got.Stage != wantStage || got.FinishedAt == nil {
+				t.Fatalf("completed job = %#v, want %s/%s", got, wantStatus, wantStage)
+			}
+			saved, err := service.readJob(job.ID)
+			if err != nil || saved.Status != wantStatus {
+				t.Fatalf("persisted job = %#v, error = %v", saved, err)
+			}
+		})
+	}
+}
+
 func TestTerminalPreservesANSIBytesAndOffset(t *testing.T) {
 	service, err := New(t.TempDir())
 	if err != nil {
