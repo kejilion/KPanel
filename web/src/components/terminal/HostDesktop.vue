@@ -65,14 +65,14 @@ async function releaseSession(): Promise<void> {
 }
 
 async function closeSession(): Promise<void> {
-  sequence++
+  const closing = ++sequence
   clearConnectionTimer()
   statusController?.abort()
   password.value = ''
   connecting.value = false
   disposeView()
   await releaseSession()
-  if (!unmounted) emit('state-change', 'finished')
+  if (!unmounted && closing === sequence) emit('state-change', 'finished')
 }
 
 async function checkCredentials(): Promise<void> {
@@ -142,7 +142,9 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
       if (attempt !== sequence || unmounted) return
       credentials.password = ''
       error.value = phrase('远程桌面连接超时，请重试或更换账户。')
-      void closeSession().catch(() => { if (!unmounted) error.value = phrase('关闭未确认，请重试关闭会话。') })
+      const closing = closeSession()
+      const closingSequence = sequence
+      void closing.catch(() => { if (!unmounted && closingSequence === sequence) error.value = phrase('关闭未确认，请重试关闭会话。') })
     }, 30_000)
     const rdp = await loadRemoteDesktop()
     if (attempt !== sequence || unmounted) return
@@ -211,7 +213,9 @@ async function connect(useSaved: boolean, saveFirst = false): Promise<void> {
     credentials.password = ''
     if (attempt === sequence) {
       connecting.value = false
-      await closeSession().catch(() => { error.value = phrase('关闭未确认，请重试关闭会话。') })
+      const closing = closeSession()
+      const closingSequence = sequence
+      await closing.catch(() => { if (!unmounted && closingSequence === sequence) error.value = phrase('关闭未确认，请重试关闭会话。') })
     }
   }
 }

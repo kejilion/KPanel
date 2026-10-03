@@ -89,6 +89,26 @@ afterEach(async () => {
 })
 
 describe('RDP saved sign-in lifecycle', () => {
+  it.each(['resolve', 'reject'])('does not let a late %s of timeout close overwrite the retried session', async (outcome) => {
+    vi.useFakeTimers()
+    pendingConnect = deferred<{ run: () => Promise<void> }>()
+    const pendingClose = deferred<{ closed: boolean }>()
+    mocks.close.mockReturnValueOnce(pendingClose.promise)
+    const wrapper = await create()
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(30_001); await flushPromises()
+    pendingConnect = undefined
+    await fill(wrapper); await button(wrapper, '仅连接本次').trigger('click'); await flushPromises()
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+    if (outcome === 'resolve') pendingClose.resolve({ closed: true })
+    else pendingClose.reject(new Error('late close failure'))
+    await flushPromises()
+    expect(wrapper.emitted('state-change')?.at(-1)).toEqual(['connected'])
+    expect(wrapper.text()).not.toContain('关闭未确认')
+    expect(views[1]!.shutdown).not.toHaveBeenCalled()
+    expect(mocks.close).not.toHaveBeenCalledWith('desktop-2')
+  })
+
   it('times out a stalled module load without opening a late session and permits retry', async () => {
     vi.useFakeTimers()
     const pending = deferred<Awaited<ReturnType<typeof import('@/lib/remoteDesktop').loadRemoteDesktop>>>()
