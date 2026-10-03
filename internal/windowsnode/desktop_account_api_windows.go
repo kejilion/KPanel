@@ -30,6 +30,10 @@ type desktopUserInfo23 struct {
 	SID                     *windows.SID
 }
 
+// Preserve the syscall pointer contract across this wrapper: converted Go
+// pointers must escape and remain live even if loading a DLL grows the stack.
+//
+//go:uintptrescapes
 func desktopNetCall(api string, args ...uintptr) error {
 	result, _, _ := windows.NewLazySystemDLL("netapi32.dll").NewProc(api).Call(args...)
 	if result == 0 {
