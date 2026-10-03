@@ -59,7 +59,7 @@ var (
 
 type Manager struct {
 	root           string
-	rootFS         *os.Root
+	rootFS         *fileRoot
 	protected      []string
 	readOnly       []string
 	trashRoot      string
@@ -76,7 +76,10 @@ type Manager struct {
 }
 
 type Config struct {
-	Root             string
+	Root string
+	// VolumeRoots maps drive letters to mounted local roots on Windows. Empty
+	// with Root="/" discovers fixed disks; tests may bind isolated directories.
+	VolumeRoots      map[string]string
 	ProtectedVirtual []string
 	ReadOnlyVirtual  []string
 	TrashVirtual     string
@@ -99,7 +102,7 @@ type trashMetadata struct {
 }
 
 func New(config Config) (*Manager, error) {
-	if strings.TrimSpace(config.Root) == "" || !filepath.IsAbs(config.Root) {
+	if strings.TrimSpace(config.Root) == "" || (!filepath.IsAbs(config.Root) && !platformVirtualRoot(config.Root)) {
 		return nil, errors.New("file manager root must be absolute")
 	}
 	if config.Now == nil {
@@ -112,7 +115,7 @@ func New(config Config) (*Manager, error) {
 		config.MaxCopyBytes = maxCopyBytes
 	}
 	rootPath := filepath.Clean(config.Root)
-	rootFS, err := os.OpenRoot(rootPath)
+	rootFS, err := openFileRoot(config.Root, config.VolumeRoots)
 	if err != nil {
 		return nil, fmt.Errorf("open file manager root: %w", err)
 	}
@@ -189,6 +192,9 @@ func (m *Manager) ListPage(
 	virtual string,
 	options ListOptions,
 ) (contract.FileDirectory, error) {
+	if directory, err, handled := m.listPlatformRoot(ctx, virtual, options); handled {
+		return directory, err
+	}
 	if options.Limit <= 0 || options.Limit > MaxDirectoryEntries {
 		options.Limit = MaxDirectoryEntries
 	}
@@ -1455,6 +1461,13 @@ func (m *Manager) resolveExisting(virtual string) (string, string, error) {
 	if m.isProtected(normalized) {
 		return "", "", ErrProtected
 	}
+	normalized, err = m.platformCanonical(normalized)
+	if err != nil {
+		return "", "", err
+	}
+	if m.isProtected(normalized) {
+		return "", "", ErrProtected
+	}
 	relative := strings.TrimPrefix(normalized, "/")
 	absolute := m.root
 	if relative != "" {
@@ -1490,7 +1503,7 @@ func (m *Manager) resolveExisting(virtual string) (string, string, error) {
 
 func (m *Manager) isProtected(virtual string) bool {
 	for _, protected := range m.protected {
-		if virtual == protected || isWithin(virtual, protected) {
+		if platformPathKey(virtual) == platformPathKey(protected) || isWithin(virtual, protected) {
 			return true
 		}
 	}
@@ -1514,7 +1527,7 @@ func (m *Manager) mutationError(virtual string) error {
 		return ErrProtected
 	}
 	for _, readOnly := range m.readOnly {
-		if virtual == readOnly || isWithin(virtual, readOnly) || isWithin(readOnly, virtual) {
+		if platformPathKey(virtual) == platformPathKey(readOnly) || isWithin(virtual, readOnly) || isWithin(readOnly, virtual) {
 			return ErrReadOnly
 		}
 	}
@@ -1533,6 +1546,9 @@ func normalizeVirtual(value string) (string, error) {
 		if component == "." || component == ".." {
 			return "", ErrInvalidPath
 		}
+		if component != "" && !platformNameValid(component) {
+			return "", ErrInvalidPath
+		}
 	}
 	normalized := path.Clean(value)
 	if !strings.HasPrefix(normalized, "/") {
@@ -1544,13 +1560,14 @@ func normalizeVirtual(value string) (string, error) {
 func validateName(value string) error {
 	if value == "" || value == "." || value == ".." || len(value) > 255 ||
 		strings.ContainsAny(value, `/\`) || strings.ContainsRune(value, 0) ||
-		isInternalComponent(value) {
+		isInternalComponent(value) || !platformNameValid(value) {
 		return ErrInvalidPath
 	}
 	return nil
 }
 
 func isInternalComponent(value string) bool {
+	value = platformPathKey(value)
 	return strings.HasPrefix(value, ".kpanel-edit-") ||
 		strings.HasPrefix(value, ".kpanel-upload-") ||
 		strings.HasPrefix(value, ".kpanel-copy-") ||
@@ -1574,6 +1591,7 @@ func rootName(virtual string) string {
 }
 
 func isWithin(candidate, parent string) bool {
+	candidate, parent = platformPathKey(candidate), platformPathKey(parent)
 	return strings.HasPrefix(candidate, strings.TrimSuffix(parent, "/")+"/")
 }
 
@@ -1617,7 +1635,7 @@ func contentShareVersion(
 	if initialResourceVersion != expectedResourceVersion {
 		return "", ErrConflict
 	}
-	initialIdentity, ok := shareFileIdentity(initial)
+	initialIdentity, ok := shareFileIdentity(initial, file)
 	if !ok {
 		return "", ErrConflict
 	}
@@ -1641,7 +1659,7 @@ func contentShareVersion(
 	if err != nil {
 		return "", err
 	}
-	currentIdentity, ok := shareFileIdentity(current)
+	currentIdentity, ok := shareFileIdentity(current, file)
 	if !ok || !os.SameFile(initial, current) ||
 		resourceVersion(virtual, current) != initialResourceVersion ||
 		currentIdentity != initialIdentity {

@@ -3,13 +3,12 @@
 package filemanager
 
 import (
-	"os"
 	"path"
 
 	"golang.org/x/sys/unix"
 )
 
-func renameNoReplaceRoot(root *os.Root, oldVirtual, newVirtual string) error {
+func renameNoReplaceRoot(root *fileRoot, oldVirtual, newVirtual string) error {
 	oldParent, err := root.Open(rootName(path.Dir(oldVirtual)))
 	if err != nil {
 		return err

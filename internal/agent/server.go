@@ -266,6 +266,9 @@ func NewServer(config Config) (*Server, error) {
 // node's root file broker. Keeping one policy here prevents the broker from
 // silently gaining a different protected or read-only filesystem surface.
 func DefaultFileManagerConfig(stateDirectory string) filemanager.Config {
+	if config, handled := platformFileManagerConfig(stateDirectory); handled {
+		return config
+	}
 	trashDirectory := "/var/lib/kejilion-panel/file-trash"
 	protectedDirectories := []string{
 		"/var/lib/kejilion-panel",

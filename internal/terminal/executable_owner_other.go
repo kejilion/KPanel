@@ -5,5 +5,5 @@ package terminal
 import "os"
 
 func terminalExecutableOwnerTrusted(os.FileInfo) bool {
-	return true
+	return false
 }

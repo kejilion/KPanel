@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package filemanager
 
@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func renameNoReplaceRoot(root *os.Root, oldVirtual, newVirtual string) error {
+func renameNoReplaceRoot(root *fileRoot, oldVirtual, newVirtual string) error {
 	if _, err := root.Lstat(rootName(newVirtual)); err == nil {
 		return os.ErrExist
 	} else if !errors.Is(err, os.ErrNotExist) {
