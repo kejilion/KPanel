@@ -186,6 +186,9 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 	if err := validateTelemetry(input.Telemetry, now); err != nil {
 		return LightReportResponse{}, err
 	}
+	if err := validateLightPlatform(input); err != nil {
+		return LightReportResponse{}, err
+	}
 	latencyMilliseconds := parseLightReportLatency(auth.ReportLatencyMilliseconds)
 	if latencyMilliseconds == 0 && record.LastSnapshot != nil {
 		// The latency header is optional so an upgraded node can report to an
@@ -194,6 +197,9 @@ func (s *Service) AcceptLightReport(auth LightReportAuth, rawBody []byte, input 
 		latencyMilliseconds = max(0, record.LastSnapshot.LatencyMilliseconds)
 	}
 	snapshot := HostSnapshot{
+		Platform:            input.Platform,
+		UnavailableMetrics:  append([]string(nil), input.UnavailableMetrics...),
+		NodeCapabilities:    append([]string(nil), input.Capabilities...),
 		Telemetry:           cloneTelemetry(input.Telemetry),
 		ReceivedAt:          now,
 		LatencyMilliseconds: latencyMilliseconds,
@@ -335,7 +341,7 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 			state = HostOffline
 		}
 	}
-	return Host{
+	host := Host{
 		LightHealth: health,
 		ID:          record.ID, Name: record.Name, Kind: HostKindLightNode,
 		TransportSecurity: TransportSecurityTLS, RemoteNodeID: record.ID,
@@ -347,6 +353,8 @@ func publicLightHostWithCapabilities(record lightHostRecord, now time.Time, term
 		LastError: record.LastError, ResourceVersion: record.ResourceVersion,
 		CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
+	applyLightPlatform(&host, record, now)
+	return host
 }
 
 func parseLightToken(token string, now time.Time) (lightTokenWire, []byte, error) {

@@ -23,6 +23,7 @@ const (
 	lightBatchEnrollEndpoint    = cluster.LightBatchEnrollPath
 	lightReportEndpoint         = "/api/v3/federation/light/report"
 	lightFileCapabilityEndpoint = cluster.LightFileCapabilityPath
+	lightCapabilitiesEndpoint   = cluster.LightCapabilitiesPath
 )
 
 type clusterTelemetrySource struct {
@@ -855,7 +856,7 @@ func mustReadLimited(input io.Reader, limit int64) []byte {
 func isLightNodeRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost &&
 		(r.URL.Path == lightEnrollEndpoint || r.URL.Path == lightBatchEnrollEndpoint ||
-			r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint)
+			r.URL.Path == lightReportEndpoint || r.URL.Path == lightFileCapabilityEndpoint || r.URL.Path == lightCapabilitiesEndpoint)
 }
 
 func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Request) {
@@ -864,6 +865,23 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	switch r.URL.Path {
+	case lightCapabilitiesEndpoint:
+		body, err := readLimitedJSONBody(w, r, 32)
+		if err != nil {
+			return
+		}
+		response, err := s.cluster.ProbeLightCapabilities(cluster.LightReportAuth{
+			Source: s.remoteIP(r), NodeID: strings.TrimSpace(r.Header.Get("X-KPanel-Light-Node-ID")),
+			Timestamp: strings.TrimSpace(r.Header.Get("X-KPanel-Timestamp")),
+			RequestID: strings.TrimSpace(r.Header.Get("X-KPanel-Request-ID")),
+			Signature: strings.TrimSpace(r.Header.Get("X-KPanel-Signature")),
+		}, body)
+		if err != nil {
+			s.writeClusterError(w, r, err)
+			return
+		}
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(response.Capabilities, ","))
+		s.writeJSON(w, http.StatusOK, response)
 	case lightEnrollEndpoint:
 		var input cluster.LightEnrollRequest
 		if err := decodeLimitedJSON(w, r, cluster.MaxPairBytes, &input); err != nil {
@@ -883,7 +901,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 		}
 		// Rolling-upgrade hint: old lightweight nodes ignore this response
 		// header, while new nodes opt into the optional SSH event field.
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		_ = s.audit(r, "", "cluster.light-node.enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"protocol": cluster.LightNodeProtocol,
 		})
@@ -905,7 +923,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		_ = s.audit(r, "", "cluster.light-node.batch-enroll", "cluster-host", response.NodeID, "success", map[string]any{
 			"batchEnrollmentId": policyID,
 			"protocol":          cluster.LightNodeProtocol,
@@ -941,7 +959,7 @@ func (s *Server) handleLightNodeFederation(w http.ResponseWriter, r *http.Reques
 			s.writeClusterError(w, r, err)
 			return
 		}
-		w.Header().Set(cluster.LightResponseCapabilitiesHeader, cluster.SSHLoginCapability+","+cluster.LightHealthCapability+","+cluster.ServiceChecksCapability)
+		w.Header().Set(cluster.LightResponseCapabilitiesHeader, strings.Join(cluster.LightCenterCapabilities(), ","))
 		s.writeJSON(w, http.StatusOK, response)
 	case lightFileCapabilityEndpoint:
 		rawBody, err := readLimitedJSONBody(w, r, cluster.MaxPairBytes)
