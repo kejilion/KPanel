@@ -37,7 +37,7 @@ interface OpenTerminal {
   hostId: string
   hostName: string
   offset: number
-  state: 'connecting' | 'connected' | 'reconnecting' | 'finished'
+  state: 'pending' | 'connecting' | 'connected' | 'reconnecting' | 'finished'
   closing?: boolean
   closeFailed?: boolean
 }
@@ -176,7 +176,7 @@ async function connectHost(host: ClusterHost, kind: OpenTerminal['kind']): Promi
   errorMessage.value = ''
   try {
     if (kind === 'desktop') {
-      const item: OpenTerminal = { kind, id: `desktop-${crypto.randomUUID()}`, hostId: host.id, hostName: host.name, offset: 0, state: 'connecting' }
+      const item: OpenTerminal = { kind, id: `desktop-${crypto.randomUUID()}`, hostId: host.id, hostName: host.name, offset: 0, state: 'pending' }
       sessions.value.push(item)
       activeSessionId.value = item.id
       quickCommandsOpen.value = false
@@ -363,6 +363,7 @@ function hostDescription(host: ClusterHost): string {
 
 function sessionStateLabel(state: OpenTerminal['state']): string {
   locale.value
+  if (state === 'pending') return phrase('等待登录')
   if (state === 'connected') return t('terminal.connected')
   if (state === 'finished') return t('terminal.finished')
   if (state === 'reconnecting') return t('terminal.reconnecting')

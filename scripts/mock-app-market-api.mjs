@@ -2573,6 +2573,17 @@ createServer(async (request, response) => {
     send(response, 200, mockTerminalCommandSnapshot())
     return
   }
+  if (request.method === 'POST' && url.pathname === '/api/v1/cluster/light-enrollments') {
+    const input = await readJSON(request)
+    send(response, 201, {
+      id: '8'.repeat(32), platform: input.platform === 'windows' ? 'windows' : 'linux',
+      command: input.platform === 'windows'
+        ? "Write-Output 'KPanel mock preview only: generate an installation command from your real panel.'"
+        : "printf '%s\\n' 'KPanel mock preview only: generate an installation command from your real panel.'",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    })
+    return
+  }
   if (request.method === 'GET' && url.pathname === '/api/v1/cluster/light-batch-enrollments') {
     send(response, 200, { items: mockLightBatchEnrollments, total: mockLightBatchEnrollments.length })
     return
@@ -2591,7 +2602,10 @@ createServer(async (request, response) => {
     const now = new Date()
     const enrollment = {
       id,
-      command: `bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.preview-${mockLightBatchEnrollmentCounter}'`,
+      platform: input.platform === 'windows' ? 'windows' : 'linux',
+      command: input.platform === 'windows'
+        ? "Write-Output 'KPanel mock preview only: generate an installation command from your real panel.'"
+        : `bash <(curl -fsSL https://kejilion.sh) kpanel node join 'kpb1.preview-${mockLightBatchEnrollmentCounter}'`,
       ...(String(input.namePrefix || '').trim() ? { namePrefix: String(input.namePrefix).trim() } : {}),
       maxUses,
       usedCount: 0,

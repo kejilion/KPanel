@@ -1,6 +1,7 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["等待登录","Awaiting sign-in"],
   ["远程桌面服务未就绪，请检查节点连接、RDP 设置和证书。","Remote desktop is not ready. Check the node connection, RDP settings and certificate."],
   ["此节点尚未启用远程桌面能力。","Remote desktop is not enabled on this node."],
   ["此节点尚未启用命令行能力，或终端服务未就绪。","Command line access is not enabled or the terminal service is not ready."],

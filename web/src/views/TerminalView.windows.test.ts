@@ -37,6 +37,7 @@ describe('Windows host connection choice',()=>{
     expect(wrapper.findAll('.terminal-tab')).toHaveLength(2)
     expect(wrapper.findAll('.terminal-tab').map(item=>item.text()).join(' ')).toContain('RDP')
     const desktopTab=wrapper.findAll('.terminal-tab').find(item=>item.text().includes('RDP'))!
+    expect(desktopTab.text()).toContain('等待登录')
     await desktopTab.get('.terminal-tab__close').trigger('click');await flushPromises()
     expect(mocks.desktopClose).toHaveBeenCalledTimes(1)
     expect(mocks.shellClose).not.toHaveBeenCalled()
