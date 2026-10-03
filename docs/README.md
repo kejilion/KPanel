@@ -61,6 +61,7 @@
 | [集群监控](cluster-monitoring.md) | 多节点指标采集 |
 | [集群通知](cluster-notifications.md) | 告警与通知通道 |
 | [集群公开分享](cluster-public-share.md) | 对外分享入口 |
+| [Windows 轻量节点与远程桌面](windows-light-node-design.md) | Windows 接入、能力对齐与可选远程桌面（设计提案） |
 | [历史监控设计](history-monitoring-design.md) | 指标留存与查询 |
 | [体检与第三方测试](diagnostics.md) | 诊断协议 |
 | [两步验证](two-factor-authentication.md) | 2FA 安全契约 |
