@@ -50,7 +50,7 @@ func windowsStartupCommand(shell string) string {
 	// can scan unrelated global modules when the host has no analysis cache.
 	for _, name := range windowsInboxModules {
 		manifest := strings.ReplaceAll(windowsInboxManifest(shell, name), "'", "''")
-		script.WriteString("Import-Module '" + manifest + "'; ")
+		script.WriteString("Import-Module -ErrorAction Stop '" + manifest + "'; ")
 	}
 	script.WriteString(`[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new()`)
 	return script.String()

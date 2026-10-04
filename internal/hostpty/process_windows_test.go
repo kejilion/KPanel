@@ -58,7 +58,7 @@ func conPTYCommand(t *testing.T, script string) *exec.Cmd {
 	var setup strings.Builder
 	for _, name := range []string{"Microsoft.PowerShell.Utility", "Microsoft.PowerShell.Management"} {
 		manifest := strings.ReplaceAll(filepath.Join(moduleRoot, name, name+".psd1"), "'", "''")
-		setup.WriteString("Import-Module '" + manifest + "'; ")
+		setup.WriteString("Import-Module -ErrorAction Stop '" + manifest + "'; ")
 	}
 	setup.WriteString("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); ")
 	units := utf16.Encode([]rune(setup.String() + script))
