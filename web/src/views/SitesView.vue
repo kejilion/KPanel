@@ -1231,8 +1231,7 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="webTerminalOpen"
       :title="phrase('网站终端管理')"
-      :description="phrase('正在运行 kejilion.sh 的 k web 原生菜单；请按终端提示输入。')"
-      size="wide"
+      variant="workspace"
       allow-fullscreen
       @close="closeWebTerminal"
     >

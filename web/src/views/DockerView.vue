@@ -2229,12 +2229,13 @@ onBeforeUnmount(() => {
       </template>
     </ModalDialog>
 
-    <ModalDialog :open="logsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 日志`)" :description="phrase('显示最近 300 行，输出经过敏感字段脱敏和大小限制。')" size="large" @close="closeLogs">
-      <LoadingState v-if="logsLoading" :rows="3" />
-      <ErrorState v-else-if="logError" :message="phrase(logError)" :retry-label="phrase('重新读取')" @retry="selectedContainer && showLogs(selectedContainer)" />
-      <p v-else-if="!logLines.length" class="log-viewer log-viewer-empty">{{ phrase('当前没有日志输出。') }}</p>
-      <pre v-else class="log-viewer" data-i18n-ignore>{{ logLines.join('\n') }}</pre>
-      <template #footer><span class="modal-footer-note">{{ phrase(`${logLines.length} 行`) }}</span><button class="button button--secondary" type="button" @click="closeLogs">{{ phrase('关闭') }}</button></template>
+    <ModalDialog :open="logsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 日志`)" :description="logLines.length ? phrase(`${logLines.length} 行`) : ''" variant="workspace" allow-fullscreen @close="closeLogs">
+      <div v-if="logsLoading || logError" class="log-window-state">
+        <LoadingState v-if="logsLoading" :rows="3" />
+        <ErrorState v-else :message="phrase(logError)" :retry-label="phrase('重新读取')" @retry="selectedContainer && showLogs(selectedContainer)" />
+      </div>
+      <p v-else-if="!logLines.length" class="log-viewer log-viewer--window log-viewer-empty">{{ phrase('当前没有日志输出。') }}</p>
+      <pre v-else class="log-viewer log-viewer--window" data-i18n-ignore>{{ logLines.join('\n') }}</pre>
     </ModalDialog>
 
     <ModalDialog :open="statsOpen" :title="phrase(`${selectedContainer?.name || phrase('容器')} 性能占用`)" :description="phrase('Docker 单次采样，每 3 秒刷新；关闭弹窗即停止采样。')" size="large" @close="closeStats">
@@ -2554,6 +2555,9 @@ onBeforeUnmount(() => {
 .repeat-row--compose-environment { grid-template-columns: minmax(150px, .7fr) minmax(180px, 1.3fr) auto auto; }
 .inline-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .log-viewer { margin: 0; min-height: 280px; max-height: 58vh; overflow: auto; border: 1px solid var(--terminal-shell-border, #29383a); border-radius: var(--terminal-shell-radius, 12px); background: var(--terminal-shell-background, #0b1214); color: var(--terminal-shell-text, #d8dddc); box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%)); padding: 15px; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Container logs run edge to edge in the workspace window. */
+.log-viewer--window { flex: 1 1 auto; min-height: 0; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+.log-window-state { padding: 16px; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .stats-grid article { border: 1px solid var(--border); border-radius: 13px; padding: 14px; display: grid; gap: 5px; }
 .stats-grid small, .stats-grid span { color: var(--muted); }

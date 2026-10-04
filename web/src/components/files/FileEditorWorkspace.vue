@@ -107,6 +107,19 @@ function phrase(text: string): string {
 function parentPath(path: string): string {
   return path.slice(0, path.lastIndexOf('/')) || '/'
 }
+// The sidebar header names the directory in one line; deep paths keep their
+// trailing segments, and the full path stays in the tooltip.
+const DIRECTORY_LABEL_LENGTH = 26
+const directoryLabel = computed(() => {
+  const path = directoryPath.value
+  if (path.length <= DIRECTORY_LABEL_LENGTH) return path
+  const segments = path.split('/').filter(Boolean)
+  let label = segments.pop() || path
+  while (segments.length && label.length + segments[segments.length - 1]!.length + 1 <= DIRECTORY_LABEL_LENGTH - 2) {
+    label = `${segments.pop()}/${label}`
+  }
+  return `…/${label}`
+})
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : phrase('请求失败，请重试。')
 }
@@ -533,6 +546,9 @@ defineExpose({ openFile })
           :size="16"
         /><span>{{ phrase(active.saving ? '保存中…' : '保存') }}</span>
       </button>
+      <div v-if="$slots['window-controls']" class="editor-window-controls">
+        <slot name="window-controls" />
+      </div>
     </header>
     <div class="editor-workspace__body">
       <button
@@ -550,7 +566,9 @@ defineExpose({ openFile })
         @keydown.esc.stop.prevent="dismissSidebar"
       >
         <header class="editor-sidebar__header">
-          <strong>{{ phrase('文件') }}</strong
+          <strong class="editor-sidebar__path" :title="directoryPath" data-i18n-ignore>{{
+            directoryLabel
+          }}</strong
           ><button
             class="editor-tool"
             type="button"
@@ -579,9 +597,6 @@ defineExpose({ openFile })
             <X :size="17" />
           </button>
         </header>
-        <div class="editor-sidebar__path" :title="directoryPath" data-i18n-ignore>
-          {{ directoryPath }}
-        </div>
         <label class="editor-filter"
           ><Search :size="15" /><input
             ref="sidebarSearch"
@@ -724,10 +739,32 @@ defineExpose({ openFile })
   align-items: center;
   gap: 6px;
   min-width: 0;
-  min-height: 52px;
+  min-height: 44px;
   padding: 0 8px;
   border-bottom: 1px solid var(--file-preview-border);
   background: var(--file-preview-panel);
+}
+/* Window buttons of the surrounding workspace dialog end the toolbar, so the
+   editor needs no separate title bar. */
+.editor-window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  margin-right: -8px;
+  padding-left: 4px;
+}
+.editor-window-controls :deep(.modal-panel__window-action) {
+  min-height: 0;
+  height: 100%;
+  color: var(--file-preview-muted);
+}
+.editor-window-controls :deep(.modal-panel__window-action:hover:not(:disabled)) {
+  color: var(--file-preview-text);
+  background: var(--file-preview-panel-raised);
+}
+.editor-window-controls :deep(.modal-panel__window-action--close:hover:not(:disabled)) {
+  color: var(--on-danger);
+  background: var(--danger-action);
 }
 .editor-actions,
 .editor-actions__items {
@@ -823,21 +860,18 @@ defineExpose({ openFile })
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px 8px 0 14px;
-}
-.editor-sidebar__header strong {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 6px 8px 8px 14px;
 }
 .editor-sidebar__path {
-  padding: 4px 14px 8px;
-  color: var(--file-preview-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  max-height: 80px;
-  overflow: auto;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--file-preview-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .editor-filter {
   display: flex;
@@ -940,7 +974,7 @@ defineExpose({ openFile })
   gap: 8px;
   min-width: 0;
   align-self: stretch;
-  min-height: 42px;
+  min-height: 41px;
   padding: 8px 10px;
   border: 0;
   color: var(--file-preview-muted);
@@ -1078,13 +1112,11 @@ defineExpose({ openFile })
   grid-row: 2;
 }
 .editor-workspace:not(.is-compact) .editor-sidebar__header {
-  min-height: 52px;
+  min-height: 44px;
+  margin-bottom: 10px;
   padding-top: 0;
   padding-bottom: 0;
   border-bottom: 1px solid var(--file-preview-border);
-}
-.editor-workspace:not(.is-compact) .editor-sidebar__path {
-  padding-top: 8px;
 }
 .is-compact .editor-sidebar {
   position: absolute;
@@ -1096,6 +1128,11 @@ defineExpose({ openFile })
 .is-compact .editor-toolbar {
   gap: 2px;
   padding: 0 4px;
+}
+/* Cancel the narrower compact padding too, or the close button is clipped. */
+.is-compact .editor-window-controls {
+  margin-right: -4px;
+  padding-left: 0;
 }
 .is-compact .editor-save {
   width: 40px;
@@ -1134,12 +1171,16 @@ defineExpose({ openFile })
   height: 100%;
   min-height: 0;
 }
+:global(.modal-panel--workspace .editor-workspace) {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
 @media (max-width: 620px) {
   .editor-workspace {
     height: 72dvh;
-  }
-  :global(.modal-panel--wide:has(.editor-workspace) .modal-panel__body) {
-    padding: 8px;
   }
 }
 </style>

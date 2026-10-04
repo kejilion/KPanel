@@ -136,7 +136,6 @@ export default [
   ["无法读取容器性能数据。", "Unable to read container performance data."],
   ["无公开端口", "No Open Port"],
   ["显示", "Show"],
-  ["显示最近 300 行，输出经过敏感字段脱敏和大小限制。", "Shows the latest 300 lines with sensitive fields redacted and output size limited."],
   ["项", "Item"],
   ["项 · 生命周期、日志、性能与终端", "items · lifecycle, logs, performance, and terminal"],
   ["项 · 拉取、更新与清理", "items · pull, update, and prune"],

@@ -35,6 +35,11 @@ const props = defineProps<{
   inputOpen?: boolean
   kind?: 'app' | 'site' | 'diagnostic' | 'environment'
   compact?: boolean
+  /**
+   * Inside a workspace dialog the window already names the task and owns
+   * full screen, so the terminal drops its own header and fills the body.
+   */
+  headless?: boolean
 }>()
 
 const { locale, t } = useI18n()
@@ -531,9 +536,10 @@ onBeforeUnmount(() => {
     :class="{
       'is-compact': props.compact,
       'is-fullscreen': fullscreen,
+      'is-headless': props.headless,
     }"
   >
-    <header>
+    <header v-if="!props.headless">
       <div>
         <strong>
           kejilion.sh
@@ -564,6 +570,14 @@ onBeforeUnmount(() => {
       @contextmenu="clipboardMenu?.open($event)"
       @paste.capture="clipboardMenu?.handlePaste($event)"
     />
+    <span
+      v-if="props.headless && connectionState !== 'connected'"
+      class="interactive-terminal__connection"
+      :class="`is-${connectionState}`"
+      role="status"
+    >
+      {{ connectionStatusLabel }}
+    </span>
     <div v-if="terminalInputOpen" class="interactive-terminal__input-area">
       <form
         class="interactive-terminal__composer"
@@ -625,6 +639,41 @@ onBeforeUnmount(() => {
   min-height: 0;
   border: 0;
   border-radius: 0;
+}
+
+.interactive-terminal.is-headless {
+  position: relative;
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.interactive-terminal.is-headless .interactive-terminal__screen {
+  height: auto;
+  min-height: 0;
+}
+
+/* Headless terminals only surface the connection while it needs attention. */
+.interactive-terminal__connection {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 20px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #b5c8c2;
+  background: var(--terminal-panel-raised);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.interactive-terminal__connection.is-error {
+  color: #ffaaa8;
+  background: color-mix(in srgb, var(--danger, #ef7a7a) 18%, var(--terminal-panel));
 }
 
 .interactive-terminal header {

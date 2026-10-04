@@ -125,12 +125,19 @@ describe('terminal and editor workspace theme', () => {
   })
 
   it('uses one border radius and edge treatment across dark workspaces', () => {
-    for (const source of [terminalSource, dockerSource, appsSource]) {
+    for (const source of [terminalSource, dockerSource]) {
       expect(source).toContain('var(--terminal-shell-radius, 12px)')
       expect(source).toContain('var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%))')
     }
     expect(fileWorkspaceSource).toContain('border-radius: var(--radius);')
-    expect(filesSource).toContain('box-shadow: var(--file-preview-shadow);')
+    // Inside workspace windows the dark surface is the window body itself:
+    // no second rounded card, border or inner shadow.
+    expect(fileWorkspaceSource).toMatch(/:global\(\.modal-panel--workspace \.editor-workspace\)\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*0;/)
+    expect(terminalSource).toMatch(/\.interactive-terminal\.is-headless\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/)
+    expect(hostTerminalSource).toContain(':global(.modal-panel--workspace .host-terminal) { border:0; border-radius:0; box-shadow:none; }')
+    expect(dockerSource).toMatch(/\.log-viewer--window\s*\{[^}]*border:\s*0;[^}]*border-radius:\s*0;/)
+    expect(appsSource).toMatch(/\.job-log\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;/)
+    expect(filesSource).not.toMatch(/\.media-viewer\s*\{[^}]*border-radius/)
     expect(globalThemeSource).toContain('border-radius: var(--terminal-shell-radius)')
     expect(globalThemeSource).toContain('box-shadow: var(--terminal-shell-shadow)')
   })

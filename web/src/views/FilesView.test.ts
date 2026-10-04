@@ -1231,9 +1231,13 @@ describe('FilesView large icon layout', () => {
     expect(source).toContain('<source :src="previewURL" :type="previewEntry.mime || undefined" />')
     expect(source).toContain('视频流响应超时，请检查网络或服务器。')
     expect(source).toContain('浏览器只能播放音轨，无法解码视频画面。')
-    expect(source).toMatch(/\.media-player\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/)
+    // The player fills the workspace stage, so the box never jumps when the
+    // stream reports its real dimensions.
+    expect(source).toMatch(/\.media-player\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;/)
     expect(source).toMatch(/\.media-player video\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;/)
-    expect(source).toContain('支持边缓冲边播放')
+    // Static per-type captions were removed; video keeps its live overlays.
+    expect(source).not.toContain('media-viewer__footer')
+    expect(source).toContain('media-player__loading')
   })
 
   it('uses one theme-derived palette across text, media, and metadata previews', () => {
@@ -1321,6 +1325,12 @@ describe('FilesView large icon layout', () => {
     const source = readFileSync(new URL('../components/files/FileEditorWorkspace.vue', import.meta.url), 'utf8')
     expect(source).toMatch(/:global\(\.modal-panel--fullscreen \.editor-workspace\)\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/)
     expect(source).toMatch(/\.editor-canvas\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;/)
+    // The window buttons cancel exactly the toolbar padding of each layout,
+    // so the close button meets the window corner instead of being clipped.
+    expect(source).toMatch(/\.editor-toolbar\s*\{[^}]*padding:\s*0 8px;/)
+    expect(source).toMatch(/\.editor-window-controls\s*\{[^}]*margin-right:\s*-8px;/)
+    expect(source).toMatch(/\.is-compact \.editor-toolbar\s*\{[^}]*padding:\s*0 4px;/)
+    expect(source).toMatch(/\.is-compact \.editor-window-controls\s*\{[^}]*margin-right:\s*-4px;/)
   })
 
   it('skips layout and paint work for offscreen directory entries', () => {

@@ -635,11 +635,11 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="terminalOpen"
       :title="phrase('LDNMP 后台任务')"
-      :description="phrase('关闭窗口不会停止任务；可在环境页持续查看状态。')"
-      size="large"
+      variant="workspace"
+      allow-fullscreen
       @close="terminalOpen = false"
     >
-      <AppInteractiveTerminal v-if="terminalJob" :job-id="terminalJob.id" kind="environment" />
+      <AppInteractiveTerminal v-if="terminalJob" :job-id="terminalJob.id" kind="environment" headless />
     </ModalDialog>
   </div>
 </template>

@@ -150,7 +150,6 @@ export default [
   ["正在提交网站设置。", "Saving site settings."],
   ["正在执行", "Running"],
   ["正在启动 k web…", "Starting k web…"],
-  ["正在运行 kejilion.sh 的 k web 原生菜单；请按终端提示输入。", "Running kejilion.sh's native k web menu. Follow the terminal prompts."],
   ["证书", "Certificate"],
   ["HTTPS 证书（可选）", "HTTPS certificate (optional)"],
   ["自动申请或复用", "Request or reuse automatically"],

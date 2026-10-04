@@ -1784,43 +1784,45 @@ watch(windowActive, syncJobPollingForWindow)
     <ModalDialog
       :open="jobDetailsOpen && Boolean(activeJob)"
       :title="i18n.t('apps.jobProgressTitle', { name: activeJob?.appName || '', action: jobActionLabel(activeJob?.action) })"
-      :description="phrase('任务由宿主机后台执行，离开本页面不会中断。')"
-      size="large"
+      variant="workspace"
+      allow-fullscreen
       @close="closeJobDetails"
     >
+      <template v-if="activeJob" #status>
+        <StatusBadge :status="activeJob.status" />
+      </template>
       <template v-if="activeJob">
-        <div class="job-detail-summary">
-          <span class="app-job-banner__icon">
-            <LoaderCircle v-if="isActiveJob(activeJob)" class="spin" :size="21" />
-            <CheckCircle2 v-else-if="activeJob.status === 'succeeded'" :size="21" />
-            <Activity v-else :size="21" />
-          </span>
-          <div>
-            <strong>{{ phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) })) }}</strong>
-            <small>{{ i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id }) }}</small>
-          </div>
-          <StatusBadge :status="activeJob.status" />
-        </div>
-        <div v-if="!activeJob.interactive" class="job-detail-progress">
+        <div
+          v-if="!activeJob.interactive"
+          class="job-detail-progress"
+          role="progressbar"
+          :aria-valuenow="activeJob.progress || 0"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
           <i><b :style="{ width: `${activeJob.progress || 0}%` }" /></i>
-          <strong>{{ activeJob.progress || 0 }}%</strong>
         </div>
         <AppInteractiveTerminal
           v-if="activeJob.interactive"
           :key="activeJob.id"
           :job-id="activeJob.id"
           :input-open="activeJob.inputOpen"
+          headless
         />
         <section v-else class="job-log">
-          <header>
-            <strong>{{ phrase('实时日志') }}</strong>
-            <small>{{ i18n.t('apps.recentLogs', { count: activeJob.logs.length }) }}</small>
-          </header>
           <pre v-if="activeJob.logs.length" data-i18n-ignore>{{ activeJob.logs.join('\n') }}</pre>
           <p v-else>{{ phrase('任务已进入队列，正在等待首批输出…') }}</p>
         </section>
       </template>
       <template #footer>
+        <p
+          v-if="activeJob"
+          class="job-detail-status"
+          :title="i18n.t('apps.jobStage', { stage: activeJob.stage, id: activeJob.id })"
+        >
+          <span>{{ phrase(activeJob.message || i18n.t('apps.jobRunning', { action: jobActionLabel(activeJob.action) })) }}</span>
+          <strong v-if="!activeJob.interactive">{{ activeJob.progress || 0 }}%</strong>
+        </p>
         <button
           v-if="activeJobCancellable"
           class="button button--danger"
@@ -2831,67 +2833,56 @@ watch(windowActive, syncJobPollingForWindow)
   font-size: 13px;
 }
 
-.job-detail-summary {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 13px;
-  align-items: center;
-}
-
-.job-detail-summary > div {
-  display: grid;
-  gap: 4px;
-}
-
-.job-detail-summary small {
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-
+/* The task window: a hairline progress bar on top of a full-height log. */
 .job-detail-progress {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
-  margin-top: 18px;
+  flex: 0 0 auto;
+  background: var(--terminal-shell-background, #0b1214);
 }
 
 .job-detail-progress i {
-  height: 9px;
+  height: 3px;
+  border-radius: 0;
+  background: var(--terminal-shell-panel, #111a1d);
 }
 
-.job-detail-progress strong {
-  min-width: 44px;
+.job-detail-status {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 0 4px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.job-detail-status span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-detail-status strong {
+  flex: 0 0 auto;
   color: var(--market-accent);
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .job-log {
-  overflow: hidden;
-  margin-top: 18px;
-  border: 1px solid var(--terminal-shell-border, #29383a);
-  border-radius: var(--terminal-shell-radius, 12px);
-  box-shadow: var(--terminal-shell-shadow, inset 0 1px 0 rgb(255 255 255 / 3%));
-}
-
-.job-log header {
   display: flex;
-  justify-content: space-between;
-  padding: 11px 13px;
-  border-bottom: 1px solid var(--terminal-shell-border, #29383a);
-  color: var(--terminal-shell-text, #d8dddc);
-  background: var(--terminal-shell-panel, #111a1d);
-}
-
-.job-log header small {
-  color: var(--terminal-shell-muted, #8a9695);
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--terminal-shell-background, #0b1214);
 }
 
 .job-log pre,
 .job-log p {
+  flex: 1 1 auto;
   overflow: auto;
-  max-height: 340px;
+  min-height: 0;
   margin: 0;
   padding: 14px;
   color: var(--terminal-shell-text, #d8dddc);
@@ -3051,8 +3042,7 @@ watch(windowActive, syncJobPollingForWindow)
   }
 
   .app-job-banner,
-  .install-more-card,
-  .job-detail-summary {
+  .install-more-card {
     grid-template-columns: 1fr;
   }
 
