@@ -180,17 +180,17 @@ onBeforeUnmount(() => { sequence += 1 })
           :aria-invalid="Boolean(newName && nameProblem)"
           @keydown.esc.stop.prevent="creating = false"
         />
-        <button class="button button--secondary button--small" type="submit" :disabled="createBusy || !newName.trim() || Boolean(nameProblem)">
+        <button class="button button--secondary" type="submit" :disabled="createBusy || !newName.trim() || Boolean(nameProblem)">
           {{ phrase(createBusy ? '正在保存…' : '创建') }}
         </button>
-        <button class="button button--secondary button--small" type="button" :disabled="createBusy" @click="creating = false">{{ phrase('取消') }}</button>
+        <button class="button button--secondary" type="button" :disabled="createBusy" @click="creating = false">{{ phrase('取消') }}</button>
         <p v-if="nameProblem || createError" class="gallery-move__error" role="alert">{{ nameProblem ? phrase(nameProblem) : createError }}</p>
       </form>
 
       <p v-if="unchanged" class="gallery-move__hint">{{ phrase('文件已经在这个相册里') }}</p>
 
       <div class="gallery-move__footer">
-        <button v-if="!creating" type="button" class="button button--secondary button--small" :disabled="loading || busy" @click="startCreating">
+        <button v-if="!creating" type="button" class="button button--secondary" :disabled="loading || busy" @click="startCreating">
           <FolderPlus :size="16" /> {{ phrase('新建相册') }}
         </button>
         <span class="gallery-move__spacer" />
