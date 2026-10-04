@@ -93,8 +93,8 @@ func startPlatform(command *exec.Cmd, rows, columns uint16) (Process, error) {
 	si := windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(si))
 	// Do not copy the parent's redirected standard handles into the child.
-	// Unavailable handles let console clients bind to their ConPTY console;
-	// null handles can instead leave PowerShell waiting on redirected input.
+	// Explicit unavailable handles prevent duplication of redirected parent
+	// handles while ConPTY supplies the child's console connection.
 	si.Flags = windows.STARTF_USESTDHANDLES
 	si.StdInput = windows.InvalidHandle
 	si.StdOutput = windows.InvalidHandle

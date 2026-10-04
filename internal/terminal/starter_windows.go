@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"github.com/kejilion/kejilion-panel/internal/hostpty"
@@ -26,7 +27,33 @@ func windowsShell() (string, string, error) {
 			return "", "", err
 		}
 	}
+	for _, name := range windowsInboxModules {
+		manifest := windowsInboxManifest(shell, name)
+		for _, path := range []string{filepath.Dir(filepath.Dir(manifest)), filepath.Dir(manifest), manifest} {
+			if err := trustedWindowsShellPath(path); err != nil {
+				return "", "", err
+			}
+		}
+	}
 	return shell, system, nil
+}
+
+var windowsInboxModules = [...]string{"Microsoft.PowerShell.Utility", "Microsoft.PowerShell.Management"}
+
+func windowsInboxManifest(shell, name string) string {
+	return filepath.Join(filepath.Dir(shell), "Modules", name, name+".psd1")
+}
+
+func windowsStartupCommand(shell string) string {
+	var script strings.Builder
+	// Resolve core cmdlets from validated inbox manifests. Automatic discovery
+	// can scan unrelated global modules when the host has no analysis cache.
+	for _, name := range windowsInboxModules {
+		manifest := strings.ReplaceAll(windowsInboxManifest(shell, name), "'", "''")
+		script.WriteString("Import-Module '" + manifest + "'; ")
+	}
+	script.WriteString(`[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new()`)
+	return script.String()
 }
 
 func trustedWindowsShellPath(path string) error {
@@ -103,7 +130,7 @@ func platformStarter(rows, columns uint16) (Process, error, bool) {
 	if err != nil {
 		return nil, err, true
 	}
-	command := exec.Command(shell, "-NoLogo", "-NoProfile", "-NoExit", "-Command", `[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding`)
+	command := exec.Command(shell, "-NoLogo", "-NoProfile", "-NoExit", "-Command", windowsStartupCommand(shell))
 	command.Dir = filepath.Dir(system)
 	command.Env = []string{
 		"SystemRoot=" + filepath.Dir(system), "WINDIR=" + filepath.Dir(system), "ComSpec=" + filepath.Join(system, "cmd.exe"),

@@ -3,10 +3,13 @@
 package terminal
 
 import (
+	"bytes"
 	"golang.org/x/sys/windows"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestWindowsShellUsesTrustedInboxPath(t *testing.T) {
@@ -41,5 +44,30 @@ func TestWindowsShellUsesTrustedInboxPath(t *testing.T) {
 	}
 	if err := trustedWindowsShellPath(file); err == nil {
 		t.Fatal("accepted user-owned executable")
+	}
+}
+
+func TestWindowsPlatformStarterInteractive(t *testing.T) {
+	process, err, handled := platformStarter(24, 100)
+	if err != nil || !handled {
+		t.Fatalf("native starter: handled=%v err=%v", handled, err)
+	}
+	t.Cleanup(func() { _ = process.Close() })
+	done := make(chan struct{})
+	var output bytes.Buffer
+	var readErr, waitErr error
+	go func() { _, readErr = io.Copy(&output, process); waitErr = process.Wait(); close(done) }()
+	// Assert executed output absent from the command text; echoed input cannot
+	// satisfy either the arithmetic result or its Chinese prefix.
+	if _, err := io.WriteString(process, `$value = 6 * 7; Write-Output ('原生终端结果=' + $value); exit 0`+"\r"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("production Windows starter did not execute and exit")
+	}
+	if readErr != nil || waitErr != nil || !bytes.Contains(output.Bytes(), []byte("原生终端结果=42")) {
+		t.Fatalf("production starter: read=%v wait=%v output=%q", readErr, waitErr, output.Bytes())
 	}
 }
