@@ -97,6 +97,9 @@ function validateReviewedCommits(run, git) {
   if (!run.hasReviewedCommits) return [];
   const failures = [];
   if (run.mode !== 'scoped') failures.push(run.name + ': reviewed_commits is only supported for scoped runs');
+  // Older checkers ignore the list and treat scope_complete=true as the whole interval.
+  // Keep slices conservative under rollback by rejecting that ambiguous combination.
+  if (run.meta.scope_complete !== false) failures.push(run.name + ': reviewed_commits requires scope_complete=false');
   const commits = run.reviewedCommits;
   if (!Array.isArray(commits) || commits.length === 0) {
     failures.push(run.name + ': reviewed_commits must be a non-empty array');

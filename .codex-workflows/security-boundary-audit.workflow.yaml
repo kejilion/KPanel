@@ -81,7 +81,8 @@ node "${{governance_dir}}/scripts/check-security-audit-coverage.mjs" --target "$
 必须展开每个提交的全部边界文件与直接调用链，不能只从 `files` 选几个路径就宣布该提交已审。
 在 metadata 同时记录每个 SHA 对应的账本单元、范围理由、优先不变量、未审清单和复核证据。
 完整分批声明由独立 critic 核对；批次完成后 `run_status=complete`，仅累计列表覆盖，
-新分批统一 `scope_complete=false`，使旧入口也只把它当 partial，不扩大区间。下一次检查仍列剩余提交。
+新分批统一 `scope_complete=false`，--validate 拒绝列表与 true 的歧义组合，使旧入口也只把它当 partial，
+不扩大区间。下一次检查仍列剩余提交。
 若未使用 `reviewed_commits`，仅在覆盖全部待审面时写 `scope_complete=true`；旧 partial 不计覆盖。
 run-4 起 `run-metadata.json` 必须含 `scope_mode`（`full`/`scoped`；skill 自带的 `project_mode` 视为同义）、`run_status`（完成写 `complete`，否则写中止原因）、
 精确 40 位 `source_ref`、`source_dirty: false`，scoped 另含 `comparison_base` 与 `scope_complete`（审完全部列出改动才写

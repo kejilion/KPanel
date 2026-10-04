@@ -133,8 +133,8 @@ test('completed commit slices cover only declared commits and compose without co
   const first = commit(1, { 'internal/alpha/a.go': 'new' });
   const second = commit(2, { 'internal/beta/b.go': 'new' });
   const third = commit(3, { 'internal/alpha/a.go': 'updated' });
-  // Even scope_complete=true cannot widen an explicit slice to the surrounding interval.
-  const firstSlice = { ...scoped(base, third), reviewed_commits: [first, third] };
+  // A completed slice leaves the unrelated middle commit pending.
+  const firstSlice = { ...scoped(base, third, 'complete', false), reviewed_commits: [first, third] };
   run('run-5', firstSlice);
   assert.deepEqual(validateRun(normalizeRun('run-5', firstSlice), repo), []);
   let report = assess(repo);
@@ -188,6 +188,32 @@ test('explicit reviewed_commits rejects malformed or missing lists without falli
       process.stderr.write = stderr;
     }
   }
+});
+
+test('commit slices reject scope_complete=true to remain conservative under an older checker', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const first = commit(1, { 'internal/alpha/a.go': 'new' });
+  const source = commit(2, { 'internal/beta/b.go': 'new' });
+  const ambiguous = { ...scoped(base, source), reviewed_commits: [first] };
+  assert.match(validateRun(normalizeRun('run-5', ambiguous), repo).join('\n'), /requires scope_complete=false/);
+  run('run-5', ambiguous);
+  assert.throws(() => assess(repo), /requires scope_complete=false/);
+  const stdout = process.stdout.write;
+  const stderr = process.stderr.write;
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try {
+    assert.equal(main(['--validate'], repo), 1);
+    assert.equal(main(['--require'], repo), 1);
+  } finally {
+    process.stdout.write = stdout;
+    process.stderr.write = stderr;
+  }
+  // Existing full-interval scoped metadata remains valid without the new field.
+  run('run-5', scoped(base, source));
+  assert.deepEqual(validateRun(normalizeRun('run-5', scoped(base, source)), repo), []);
+  assert.equal(assess(repo).commits.length, 0);
 });
 
 test('reviewed_commits must exist in the declared source interval', (t) => {
