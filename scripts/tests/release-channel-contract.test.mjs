@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
@@ -72,6 +73,37 @@ test('release workflow publishes isolated stable and preview channels', () => {
   assert.match(workflow, /node scripts\/archive-release-candidate\.mjs/);
   assert.match(workflow, /--tag "\$GITHUB_REF_NAME" --release-sha "\$GITHUB_SHA" --apply/);
   assert.doesNotMatch(workflow, /gh api --method DELETE/);
+});
+
+test('release requires successful Windows signing and checksum merge before public writes', () => {
+  const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'release.yml'), 'utf8').replaceAll('\r\n', '\n');
+  const windows = workflow.match(/^  windows-node:\n([\s\S]+?)^  release:/m)?.[1];
+  assert.ok(windows, 'mandatory Windows job is present');
+  assert.doesNotMatch(windows, /^    if:/m, 'Windows signing cannot be disabled by an optional flag');
+  const release = workflow.slice(workflow.indexOf('  release:\n'));
+  assert.match(release, /^    needs: windows-node$/m);
+  const guard = release.match(/^    if: \$\{\{ (.+) \}\}$/m)?.[1];
+  assert.ok(guard, 'downstream release has an explicit Windows result guard');
+  const expression = guard.replaceAll('needs.windows-node.result', 'windowsResult');
+  for (const windowsResult of ['success', 'failure', 'cancelled', 'skipped']) {
+    for (const wasCancelled of [false, true]) {
+      assert.equal(runInNewContext(expression, { windowsResult, cancelled: () => wasCancelled }),
+        windowsResult === 'success' && !wasCancelled, `${windowsResult}, cancelled=${wasCancelled}`);
+    }
+  }
+  let previous = -1;
+  for (const marker of ['-Mode Check', 'name: Build Windows node and installer',
+    'name: Sign Windows node and installer', '-Mode Verify', 'name: Transfer verified Windows release assets']) {
+    const position = windows.indexOf(marker);
+    assert.ok(position > previous, `${marker} must follow verified prerequisites`);
+    previous = position;
+  }
+  const merge = release.indexOf('node scripts/merge-windows-release.mjs');
+  assert.ok(merge >= 0, 'three verified assets are merged into release checksums');
+  for (const marker of ['name: Prepare draft GitHub release', 'name: Build and push multi-architecture image',
+    'name: Promote image to its release channel', 'name: Publish GitHub release']) {
+    assert.ok(release.indexOf(marker) > merge, `${marker} must follow Windows checksum merge`);
+  }
 });
 
 test('release metadata archive is named and described consistently', () => {

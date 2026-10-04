@@ -85,9 +85,10 @@ Latest/prerelease 状态、版本镜像和通道标签 digest、候选分支处�
 
 ### 5.1 Windows 轻量节点签名产物
 
-Windows Release 显式启用仓库变量 `KPANEL_WINDOWS_NODE_RELEASE_ENABLED=true`。未启用时沿用 Linux
-发布；启用后 Windows 签名任务失败会阻止整次发布，不得发布缺少 Windows 附件的半成品。当前开发环境
-未提供正式签名身份；构建成功不等于具备公开安装或真实 Windows 服务生命周期的验收证据。
+纳入 Windows 完整功能后的每次 Release 必须执行 Windows 配置检查、构建、签名和验证，不再通过
+可选仓库开关跳过。只有 Windows 任务成功，后续发布任务才可运行；配置缺失、签名失败、取消或跳过
+均不得公开缺少三项已签名 Windows 附件的版本、镜像或通道。实际签名配置以该任务的检查和签名结果
+确认；构建成功不等于具备公开安装或真实 Windows 服务生命周期的验收证据。
 
 签名任务运行在独立 `windows-2025` Runner 和 `windows-node-signing` Environment，只有读取仓库的
 权限，不持有 Release 写权限。管理员应为该 Environment 配置发布 Tag 限制和人工保护，并按
@@ -96,11 +97,14 @@ Windows Release 显式启用仓库变量 `KPANEL_WINDOWS_NODE_RELEASE_ENABLED=tr
 
 | 配置位置 | 名称 | 含义 |
 | --- | --- | --- |
-| Repository variable | `KPANEL_WINDOWS_NODE_RELEASE_ENABLED` | 仅精确 `true` 启用 |
 | Environment variables | `KPANEL_WINDOWS_NODE_PUBLISHER` | 证书完整 Subject，区分大小写，与中心端信任配置一致 |
 | Environment variable | `KPANEL_WINDOWS_NODE_PROFILE_OID` | 可选的稳定 profile EKU OID；使用 Artifact Signing 时建议固定 |
 | Environment variables | `KPANEL_SIGNING_ENDPOINT`、`KPANEL_SIGNING_ACCOUNT`、`KPANEL_SIGNING_PROFILE` | 区域 HTTPS endpoint、账号、证书 profile 名称 |
 | Environment secrets | `KPANEL_AZURE_TENANT_ID`、`KPANEL_AZURE_CLIENT_ID`、`KPANEL_AZURE_CLIENT_SECRET` | 仅用于配置检查和签名步骤的应用身份；不得写入源码、产物或日志 |
+
+Panel 端需配置 `KEJILION_PANEL_WINDOWS_NODE_PUBLISHER` 为同一实际签名 Subject，可选配置
+`KEJILION_PANEL_WINDOWS_NODE_PROFILE_OID` 为同一 profile OID。发布者为空时安装入口 fail-closed；
+功能源码纳入发行不代表已经默认配置信任身份或完成真实安装、RDP 验收。
 
 工作流固定使用官方 `azure/artifact-signing-action` `v2.0.0` 提交
 `c7ab2a863ab5f9a846ddb8265964877ef296ee82`。该上游版本固定 ArtifactSigning 模块 `0.1.8`、

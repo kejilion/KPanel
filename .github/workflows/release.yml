@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   windows-node:
-    if: vars.KPANEL_WINDOWS_NODE_RELEASE_ENABLED == 'true'
     runs-on: windows-2025
     timeout-minutes: 20
     environment: windows-node-signing
@@ -85,9 +84,9 @@ jobs:
 
   release:
     needs: windows-node
-    # An unconfigured Windows lane does not alter the existing Linux release.
-    # Once enabled, its failure must prevent publishing an incomplete release.
-    if: ${{ !cancelled() && (needs.windows-node.result == 'success' || needs.windows-node.result == 'skipped') }}
+    # Every release includes signed Windows assets; missing configuration fails closed.
+    # No failed, cancelled, or skipped Windows lane may publish a partial release.
+    if: ${{ !cancelled() && needs.windows-node.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
