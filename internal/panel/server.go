@@ -838,6 +838,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setAuthCookies(w, r, credentials)
 	_ = s.audit(r, credentials.User.ID, "auth.login", "session", "", "success", nil)
+	s.notifyPanelLogin(r, credentials.User, false)
 	s.writeJSON(w, http.StatusOK, authResponse{
 		Appearance: s.appearanceSnapshot(),
 		User:       credentials.User, CSRFToken: credentials.CSRFToken, ExpiresAt: credentials.ExpiresAt,

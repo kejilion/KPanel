@@ -80,6 +80,8 @@ type Service struct {
 	alerts  map[string]alertState
 	traffic map[string]trafficSample
 
+	panelLogins chan PanelLogin
+
 	started bool
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
@@ -146,7 +148,8 @@ func NewService(config Config) (*Service, error) {
 		store: store, history: history, hosts: config.Hosts, hostExpiries: config.HostExpiries, hostTrafficLimits: config.HostTrafficLimits, telegram: config.Telegram, robots: config.Robots, timezone: config.Timezone, now: config.Now,
 		evaluation: config.EvaluationInterval, sustain: config.SustainSamples,
 		repeat: config.RepeatInterval, alerts: make(map[string]alertState),
-		traffic: make(map[string]trafficSample),
+		traffic:     make(map[string]trafficSample),
+		panelLogins: make(chan PanelLogin, panelLoginQueueSize),
 	}
 	for key, value := range historyState.Alerts {
 		service.alerts[key] = value
@@ -187,6 +190,8 @@ func (s *Service) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			_ = s.evaluate(ctx)
+		case login := <-s.panelLogins:
+			_ = s.recordPanelLogins(ctx, s.drainPanelLogins(login))
 		}
 	}
 }

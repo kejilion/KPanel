@@ -2,6 +2,7 @@ import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
   ['服务器到期', '伺服器到期'],
+  ['面板登录', '面板登入'],
   ['到期日期', '到期日期'],
   ['剩余天数', '剩餘天數'],
   ['通知记录', '通知記錄'],

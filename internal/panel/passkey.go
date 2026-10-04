@@ -386,6 +386,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request, suff
 		return
 	}
 	s.setAuthCookies(w, r, credentials)
+	s.notifyPanelLogin(r, credentials.User, true)
 	s.writeJSON(w, http.StatusOK, authResponse{Appearance: s.appearanceSnapshot(), User: credentials.User, CSRFToken: credentials.CSRFToken, ExpiresAt: credentials.ExpiresAt})
 }
 

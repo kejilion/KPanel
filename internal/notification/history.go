@@ -139,7 +139,7 @@ func validateHistory(state historyState) error {
 
 func validEventRule(value string) bool {
 	switch value {
-	case "cpu", "memory", "disk", "traffic", cumulativeTrafficReceivedRuleKey, cumulativeTrafficSentRuleKey, "availability", "ssh", serverExpiryRuleKey:
+	case "cpu", "memory", "disk", "traffic", cumulativeTrafficReceivedRuleKey, cumulativeTrafficSentRuleKey, "availability", "ssh", serverExpiryRuleKey, panelLoginRuleKey:
 		return true
 	}
 	return false
