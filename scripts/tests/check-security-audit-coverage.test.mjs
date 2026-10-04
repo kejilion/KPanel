@@ -12,6 +12,7 @@ import {
   main,
   normalizeRun,
   parseArguments,
+  render,
   validatePolicy,
   validateRun,
 } from '../check-security-audit-coverage.mjs';
@@ -113,6 +114,7 @@ test('a completed scoped run covers exactly its range; interrupted and partial r
   const second = commit(2, { 'internal/agent/server.go': 'v2' });
   run('run-6', scoped(first, second));
   run('run-7', scoped(base, second, 'complete', false));
+  assert.deepEqual(validateRun(normalizeRun('run-7', scoped(base, second, 'complete', false)), repo), []);
   report = assess(repo);
   // run-6 starts after `first`, so the new package it did not audit stays pending; run-7 declared a partial scope.
   assert.deepEqual(report.covered, { 'run-6': 1 });
@@ -123,6 +125,128 @@ test('a completed scoped run covers exactly its range; interrupted and partial r
   report = assess(repo);
   assert.equal(report.commits.length, 0);
   assert.equal(report.decision, 'ok');
+});
+
+test('completed commit slices cover only declared commits and compose without consuming pending changes', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const first = commit(1, { 'internal/alpha/a.go': 'new' });
+  const second = commit(2, { 'internal/beta/b.go': 'new' });
+  const third = commit(3, { 'internal/alpha/a.go': 'updated' });
+  // Even scope_complete=true cannot widen an explicit slice to the surrounding interval.
+  const firstSlice = { ...scoped(base, third), reviewed_commits: [first, third] };
+  run('run-5', firstSlice);
+  assert.deepEqual(validateRun(normalizeRun('run-5', firstSlice), repo), []);
+  let report = assess(repo);
+  assert.deepEqual(report.covered, { 'run-5': 2 });
+  assert.deepEqual(report.commits.map((entry) => entry.sha), [second]);
+  assert.deepEqual(report.files, ['internal/beta/b.go']);
+  assert.deepEqual(report.newPackages, ['internal/beta']);
+  assert.equal(report.decision, 'scoped-required');
+  assert.match(render(report, POLICY), /scoped_slice run=run-5 reviewed_commits=2/);
+  const lastSlice = { ...scoped(base, third, 'complete', false), reviewed_commits: [second] };
+  run('run-6', lastSlice);
+  assert.deepEqual(validateRun(normalizeRun('run-6', lastSlice), repo), []);
+  report = assess(repo);
+  assert.deepEqual(report.covered, { 'run-5': 2, 'run-6': 1 });
+  assert.equal(report.commits.length, 0);
+  assert.equal(report.decision, 'ok');
+  assert.deepEqual(report.partial, []);
+  let output = '';
+  const write = process.stdout.write;
+  process.stdout.write = (chunk) => { output += chunk; return true; };
+  try {
+    assert.equal(main(['--format=json'], repo), 0);
+  } finally {
+    process.stdout.write = write;
+  }
+  const slices = JSON.parse(output).scoped;
+  assert.equal(slices[0].coverage_kind, 'reviewed-commits');
+  assert.deepEqual(slices[0].reviewed_commits, [first, third]);
+});
+
+test('explicit reviewed_commits rejects malformed or missing lists without falling back to interval coverage', (t) => {
+  const { repo, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const source = commit(1, { 'internal/alpha/a.go': 'new' });
+  for (const reviewed of [undefined, null, [], source, ['short'], [source, source], [42]]) {
+    const meta = { ...scoped(base, source), reviewed_commits: reviewed };
+    assert.ok(validateRun(normalizeRun('run-5', meta), repo).length > 0);
+  }
+  for (const reviewed of [null, [], source, ['short'], [source, source], [42]]) {
+    run('run-5', { ...scoped(base, source), reviewed_commits: reviewed });
+    assert.throws(() => assess(repo), /reviewed_commits/);
+    const stdout = process.stdout.write;
+    const stderr = process.stderr.write;
+    process.stdout.write = () => true;
+    process.stderr.write = () => true;
+    try {
+      assert.equal(main(['--validate'], repo), 1);
+      assert.equal(main(['--require'], repo), 1);
+    } finally {
+      process.stdout.write = stdout;
+      process.stderr.write = stderr;
+    }
+  }
+});
+
+test('reviewed_commits must exist in the declared source interval', (t) => {
+  const { repo, git, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const source = commit(1, { 'internal/alpha/a.go': 'new' });
+  const later = commit(2, { 'internal/agent/server.go': 'later' });
+  git('checkout', '-qb', 'side', base);
+  const side = commit(2, { 'internal/side/s.go': 'side' });
+  git('checkout', '-q', '-');
+  const cases = [
+    { ...scoped(base, source), reviewed_commits: ['f'.repeat(40)] },
+    { ...scoped(base, source), reviewed_commits: [base] },
+    { ...scoped(base, source), reviewed_commits: [later] },
+    { ...scoped(base, source), reviewed_commits: [side] },
+    { ...scoped('f'.repeat(40), source), reviewed_commits: [source] },
+    { ...scoped(base, 'f'.repeat(40)), reviewed_commits: [source] },
+  ];
+  for (const meta of cases) {
+    assert.match(validateRun(normalizeRun('run-5', meta), repo).join('\n'), /does not exist|outside comparison_base\.\.source_ref/);
+    run('run-5', meta);
+    const stdout = process.stdout.write;
+    const stderr = process.stderr.write;
+    process.stdout.write = () => true;
+    process.stderr.write = () => true;
+    try {
+      assert.equal(main(['--validate'], repo), 1);
+      assert.equal(main(['--require'], repo), 1);
+    } finally {
+      process.stdout.write = stdout;
+      process.stderr.write = stderr;
+    }
+  }
+});
+
+test('slice coverage is bound to complete status and declared source identity', (t) => {
+  const { repo, git, commit, run, base } = fixture(t);
+  run('run-4', full(base));
+  const source = commit(1, { 'internal/alpha/a.go': 'new' });
+  const slice = { ...scoped(base, source, 'complete', false), reviewed_commits: [source] };
+  run('run-5', slice);
+  assert.equal(assess(repo).commits.length, 0);
+  for (const status of ['incomplete', 'incomplete-platform-interruption']) {
+    run('run-5', { ...slice, run_status: status });
+    const report = assess(repo);
+    assert.deepEqual(report.covered, {});
+    assert.deepEqual(report.commits.map((entry) => entry.sha), [source]);
+    assert.deepEqual(report.interrupted.map((entry) => entry.name), ['run-5']);
+  }
+  run('run-5', { ...slice, source_ref: base });
+  assert.throws(() => assess(repo), /outside comparison_base\.\.source_ref/);
+  git('checkout', '-qb', 'side', base);
+  const side = commit(2, { 'internal/side/s.go': 'side' });
+  git('checkout', '-q', '-');
+  run('run-5', { ...slice, source_ref: side, reviewed_commits: [side] });
+  const report = assess(repo);
+  assert.deepEqual(report.covered, {});
+  assert.deepEqual(report.commits.map((entry) => entry.sha), [source]);
+  assert.deepEqual(report.outside.map((entry) => entry.name), ['run-5']);
 });
 
 test('scoped runs on a feature branch beside the full run on a release branch both count after merging', (t) => {

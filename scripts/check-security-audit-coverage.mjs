@@ -2,7 +2,7 @@
 
 // Trust-boundary audit trigger (PROJECT_RULES.md 5.4). For one target commit it answers: which
 // trust-boundary changes are not yet covered by a completed audit run, and is a scoped or full run due?
-// Coverage is the union of completed runs (see classifyRuns); an interrupted or partial run never counts.
+// Coverage is the union of completed runs (see classifyRuns); an interrupted or undeclared partial run never counts.
 // Boundary scope is default-deny: every package under the policy's
 // package roots is boundary unless named non-boundary with a reason, so a new package cannot silently
 // fall outside the trigger. Ages are measured from commit dates, never the wall clock, so a result is
@@ -84,15 +84,45 @@ export function normalizeRun(name, meta) {
     base: SHA.exec(String(meta.comparison_base ?? ''))?.[0] ?? null,
     // Legacy scoped runs recorded their range in free text; run-4+ must declare it explicitly.
     scopeComplete: meta.scope_complete ?? number <= LEGACY_RUN_LIMIT,
+    hasReviewedCommits: Object.hasOwn(meta, 'reviewed_commits'),
+    reviewedCommits: meta.reviewed_commits,
     dirty: meta.source_dirty === true || /dirty/i.test(String(meta.source_ref ?? '')),
     meta,
   };
 }
 
-export function validateRun(run) {
+// A slice declares the exact commits it reviewed, never the surrounding interval. Validate history as
+// well as shape so neither --validate nor a direct coverage assessment can accept a wider claim.
+function validateReviewedCommits(run, git) {
+  if (!run.hasReviewedCommits) return [];
+  const failures = [];
+  if (run.mode !== 'scoped') failures.push(run.name + ': reviewed_commits is only supported for scoped runs');
+  const commits = run.reviewedCommits;
+  if (!Array.isArray(commits) || commits.length === 0) {
+    failures.push(run.name + ': reviewed_commits must be a non-empty array');
+    return failures;
+  }
+  if (commits.some((commit) => typeof commit !== 'string' || !EXACT_SHA.test(commit))) {
+    failures.push(run.name + ': reviewed_commits must contain exact 40-hex commits');
+  }
+  if (new Set(commits).size !== commits.length) failures.push(run.name + ': reviewed_commits must not contain duplicates');
+  if (failures.length) return failures;
+  if (!run.base || !hasCommit(git, run.base)) failures.push(run.name + ': reviewed_commits comparison_base commit does not exist');
+  if (!run.source || !hasCommit(git, run.source)) failures.push(run.name + ': reviewed_commits source_ref commit does not exist');
+  if (failures.length) return failures;
+  const interval = new Set(git('rev-list', run.base + '..' + run.source).split('\n').filter(Boolean));
+  for (const commit of commits) {
+    if (!hasCommit(git, commit)) failures.push(run.name + ': reviewed_commits commit does not exist: ' + commit);
+    else if (!interval.has(commit)) failures.push(run.name + ': reviewed_commits commit is outside comparison_base..source_ref: ' + commit);
+  }
+  return failures;
+}
+
+export function validateRun(run, repo = repoRoot) {
   const failures = [];
   if (!Number.isInteger(run.number)) return [run.name + ': directory must be named run-<N>'];
   if (!run.source) failures.push(run.name + ': source_ref has no commit');
+  failures.push(...validateReviewedCommits(run, gitRunner(repo)));
   if (run.number <= LEGACY_RUN_LIMIT) return failures;
   const meta = run.meta;
   // The skill writes `project_mode` itself (run-4 began before 5.4 named `scope_mode`), so it is accepted as a synonym.
@@ -123,9 +153,9 @@ export function loadRuns(repo = repoRoot) {
 
 // Coverage is the union of completed runs in the target history, not a chain: full runs usually audit a
 // release candidate while scoped runs audit feature branches beside it, so neither need descend from the
-// other. A completed full run covers every commit it contains; a completed scoped run that declares
-// scope_complete covers exactly comparison_base..source_ref. Interrupted, partial and out-of-history runs
-// are reported and never count.
+// other. A completed full run covers every commit it contains; a completed scoped run with reviewed_commits
+// covers only that list. Without a list, scope_complete preserves the historical comparison_base..source_ref
+// contract. Interrupted, undeclared partial and out-of-history runs are reported and never count.
 export function classifyRuns(git, runs, target) {
   const fulls = [];
   const scoped = [];
@@ -136,6 +166,11 @@ export function classifyRuns(git, runs, target) {
     if (!run.complete) interrupted.push(run);
     else if (!run.source || !isAncestor(git, run.source, target)) outside.push(run);
     else if (run.mode === 'full') fulls.push(run);
+    else if (run.hasReviewedCommits) {
+      const failures = validateReviewedCommits(run, git);
+      if (failures.length) throw new Error(failures.join('\n'));
+      scoped.push(run);
+    }
     // A base whose object is gone (deleted branch, shallow clone) cannot bound a range: not coverage.
     else if (run.scopeComplete === true && run.base && hasCommit(git, run.base)) scoped.push(run);
     else partial.push(run);
@@ -209,7 +244,8 @@ export function assessCoverage({ repo = repoRoot, target = 'HEAD', policy, runs 
   });
   const ranges = classes.scoped.map((run) => ({
     run,
-    commits: new Set(git('rev-list', run.base + '..' + run.source).split('\n').filter(Boolean)),
+    commits: new Set(run.hasReviewedCommits ? run.reviewedCommits
+      : git('rev-list', run.base + '..' + run.source).split('\n').filter(Boolean)),
   }));
   // A package is new in a commit when no parent has it; a root commit makes every package new (conservative).
   const addedBy = (sha) => {
@@ -270,6 +306,9 @@ export function render(report, policy) {
       + (report.lastFull.dirty ? ' source_dirty=true (not fully reproducible)' : ''));
     const covered = Object.entries(report.covered).map(([name, count]) => name + '=' + count).join(' ');
     lines.push('covered_by_scoped ' + (covered || 'none') + ' (boundary commits outside the full run, audited by these scoped runs)');
+    for (const run of report.scoped.filter((run) => run.hasReviewedCommits)) {
+      lines.push('scoped_slice run=' + run.name + ' reviewed_commits=' + run.reviewedCommits.length + ' (only listed commits are coverage)');
+    }
     lines.push('unaudited commits=' + report.commits.length + ' files=' + report.files.length
       + ' oldest_age_days=' + report.oldestAgeDays + ' max=' + policy.scopedMaxAgeDays);
     lines.push(...report.commits.map((commit) => '  ' + short(commit.sha) + ' ' + commit.ageDays + 'd ' + commit.subject));
@@ -280,7 +319,7 @@ export function render(report, policy) {
     }
   }
   for (const run of report.interrupted) lines.push('interrupted ' + run.name + ' status=' + run.status + ' (not coverage)');
-  for (const run of report.partial) lines.push('partial ' + run.name + ' (scope_complete is not true or comparison_base is missing; not coverage)');
+  for (const run of report.partial) lines.push('partial ' + run.name + ' (no completed commit slice or complete interval; not coverage)');
   for (const run of report.outside) lines.push('outside_history ' + run.name + ' (source is not in target history; not coverage)');
   return lines.join('\n');
 }
@@ -321,7 +360,7 @@ export function main(argv, repo = repoRoot) {
     process.stderr.write('check-security-audit-coverage: ' + error.message + '\n');
     return 1;
   }
-  const failures = [...validatePolicy(policy, repo), ...runs.flatMap(validateRun)];
+  const failures = [...validatePolicy(policy, repo), ...runs.flatMap((run) => validateRun(run, repo))];
   if (failures.length) {
     process.stderr.write('Security audit coverage validation failed:\n- ' + failures.join('\n- ') + '\n');
     return 1;
@@ -338,7 +377,8 @@ export function main(argv, repo = repoRoot) {
     return 1;
   }
   if (options.format === 'json') {
-    const strip = (run) => run && { name: run.name, mode: run.mode, status: run.status, source: run.source, dirty: run.dirty };
+    const strip = (run) => run && { name: run.name, mode: run.mode, status: run.status, source: run.source, dirty: run.dirty,
+      ...(run.hasReviewedCommits ? { coverage_kind: 'reviewed-commits', reviewed_commits: run.reviewedCommits } : {}) };
     process.stdout.write(JSON.stringify({
       ...report,
       lastFull: strip(report.lastFull),
