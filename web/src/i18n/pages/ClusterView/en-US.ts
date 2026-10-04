@@ -1,6 +1,8 @@
 import type { PhraseCatalog } from '@/i18n/phrase'
 
 export default [
+  ["目标系统", "Target system"],
+  ["重新生成", "Regenerate"],
   ["启用管理员远程桌面（RDP），接入后自动登录","Enable administrator remote desktop (RDP) with automatic sign-in"],
   ["支持的非域 Windows 将启用 RDP 并创建专用本地管理员，保留 UAC、NLA。已有防火墙规则可能允许其他授权账户从网络登录。域机器沿用已有 RDP 设置和账户。","Supported non-domain Windows enables RDP and creates a dedicated local administrator, preserving UAC and NLA. Existing firewall rules may also allow other authorized accounts to connect over the network. Domain machines retain their existing RDP settings and accounts."],
   ["选择目标系统，生成一条可在多台主机上重复使用的接入命令。","Choose the target system to generate an enrollment command for multiple hosts."],
