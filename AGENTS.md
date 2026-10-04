@@ -77,6 +77,8 @@ git worktree list
 - 候选检查输出 `security_audit=missing|stale`（候选新增信任边界包）时，按 `PROJECT_RULES.md` 5.4 趁范围仍是单个功能
   执行 `security-boundary-audit`（profile=scoped），在提交写 `Security-Audit: scoped run-<N>`，或写
   `Security-Audit: deferred reason=<理由>` 交由稳定版预检补审；安全审计 run 元数据按该工作流字段入库。
+  已有包内改变关键安全不变量时同样按 5.4 判断，不用机器无提醒推断无需审计；分批范围、成本和未决风险
+  按同节追踪。CF 专用审计及子代理的固定执行配置引用 5.4，不在本入口维护另一份配置。
 - 本地或远程长时间浏览器验收使用 `background-browser-validation` 工作流后台运行；先通过
   `environment-policy.json` 目标检查，再以持久化终态和证据交付，不占用前台会话等待。
 - L3 只使用 `scripts/run-release-l3.mjs`；默认走 `arena-154`。明确选择 `local-wsl-dr` 灾备时只执行候选

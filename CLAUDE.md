@@ -45,6 +45,8 @@
 - 候选检查输出 `security_audit=missing|stale`（候选新增信任边界包）时，按 `PROJECT_RULES.md` 5.4 趁范围仍是单个功能
   执行 `security-boundary-audit`（profile=scoped），在提交写 `Security-Audit: scoped run-<N>`，或写
   `Security-Audit: deferred reason=<理由>` 交由稳定版预检补审；安全审计 run 元数据按该工作流字段入库。
+  已有包内改变关键安全不变量时同样按 5.4 判断，不用机器无提醒推断无需审计；分批范围、成本和未决风险
+  按同节追踪。CF 专用审计及子代理的固定执行配置引用 5.4；不可提供该配置时报告能力缺失，不静默替换。
 - `.codex-workflows/` 是 Codex 执行适配层。Claude 可参考步骤，但共享规则仍以根规范和项目管理文档为准。
 - 发现 `HEAD`、分支、文件或所有权非预期变化时立即停止并按冲突恢复流程保留现场，不执行破坏性清理。
 

@@ -14,6 +14,8 @@
 - 是否到期由 `scripts/check-security-audit-coverage.mjs` 从各 run 的 `run-metadata.json` 计算；边界范围见
   `boundary-policy.json`。run-4 起元数据必须含 `scope_mode`（skill 的 `project_mode` 视为同义）、`run_status`、精确 `source_ref`、
   `source_dirty: false`，scoped 另含 `comparison_base` 与 `scope_complete`。
+  分批 scoped 可附 `reviewed_commits` 精确 SHA 列表；complete 后只累计列表覆盖，剩余提交仍 pending。
+  没有该字段的历史完整区间与 partial 语义保持，不能按路径或 run 序号冒充已审提交。
 - 首个增量基线（run-1，2026-09-18，基线 6340e078，45 单元 / 1 confirmed /
   12 加固项）迁入本目录后方可执行 run-2；迁移时保持文件原名不改。
 
@@ -22,3 +24,7 @@
 新 run 先在仓库外的独立目录完成，父任务验证并审查披露边界后选择性入库。源码基线与产物提交分开记录；
 旧 run 的历史内容保持不变。scoped 必须从当前源码补充新单元，不能仅从 run-1 清单选行。
 修复、复核、RC、稳定版与部署状态分别在 [remediation-status.md](remediation-status.md) 追踪。
+
+运行选择、固定执行配置、预算、待验证线索闭环和收益/成本口径统一引用 `PROJECT_RULES.md` 5.4。
+统计需要核对已登记的仓库外尝试，以源码身份、开始时间和原始摘要去重；中断也有成本，未知不填零。
+覆盖检查 `ok` 不代表未决风险已关闭。历史 verdict 与后续验证/修复状态分别保存。

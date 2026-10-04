@@ -128,6 +128,8 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
   智能体经 `.codex-workflows/security-boundary-audit.workflow.yaml` 同一入口执行；账本与 findings
   入库 `.governance/security-audit/`，是跨框架共享的增量状态，格式由 skill 验证器统一校验。
   审计产出的 confirmed 记录是高可信线索而非人工复核结论，后续修复与验证仍按正常流程执行。
+  该审计的模型/推理配置、风险选择、精确分批、预算、线索闭环和收益/成本口径统一引用 5.4；
+  完成源码覆盖不能替代未决风险关闭。正常开发与独立治理复核的能力路由不受 CF 专用配置限定。
 - OCR 行级评审辅助（`PROJECT_RULES.md` 5.5）同样框架中立：任何智能体经
   `.codex-workflows/ocr-line-review.workflow.yaml` 与 `scripts/ocr-delegate.mjs` 同一入口执行，OCR 只做
   圈选和规则解析，评审由执行智能体完成；按 `PROJECT_RULES.md` 5.5 先保存自由臂结果，
