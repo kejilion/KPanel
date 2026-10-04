@@ -12,6 +12,10 @@ const metrics: Record<string, string[]> = {
   'traffic-total-received': ['累计接收', '累計接收', 'Cumulative received'],
   'traffic-total-sent': ['累计传送', '累計傳送', 'Cumulative sent'],
 }
+const logins: Record<string, string[]> = {
+  ssh: ['SSH 登录：', 'SSH 登入：', 'SSH login: '],
+  'panel-login': ['面板登录：', '面板登入：', 'Panel login: '],
+}
 const timestamp = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) \(UTC([+-]\d{2}:\d{2})\)$/
 
 function afterPrefix(line: string, prefixes: string[]): string | undefined {
@@ -54,8 +58,9 @@ export function summarizeNotification(event: NotificationEvent): NotificationSum
     const state = afterPrefix(body[0]!, prefixes)
     if (state) return { fields: [{ label: '状态', value: state }], text: '' }
   }
-  if (event.rule === 'ssh' && event.kind === 'info' && body.length === 4) {
-    const login = afterPrefix(body[0]!, ['SSH 登录：', 'SSH 登入：', 'SSH login: '])?.match(timestamp)
+  const loginPrefixes = Object.hasOwn(logins, event.rule) ? logins[event.rule] : undefined
+  if (loginPrefixes && event.kind === 'info' && body.length === 4) {
+    const login = afterPrefix(body[0]!, loginPrefixes)?.match(timestamp)
     const user = afterPrefix(body[1]!, ['用户：', '使用者：', 'User: '])
     const source = afterPrefix(body[2]!, ['来源：', '來源：', 'Source: '])
     const method = afterPrefix(body[3]!, ['方式：', 'Method: '])

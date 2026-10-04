@@ -42,7 +42,7 @@ let appliedFilters: Record<string, string> = {}
 const rules: Record<string, string> = {
   cpu: 'CPU 使用率', memory: '内存使用率', disk: '磁盘使用率', traffic: '网络吞吐',
   'traffic-total-received': '累计接收', 'traffic-total-sent': '累计传送', availability: '主机连接', ssh: 'SSH 登录',
-  'server-expiry': '服务器到期',
+  'server-expiry': '服务器到期', 'panel-login': '面板登录',
 }
 const kinds: Record<NotificationEvent['kind'], string> = { alert: '告警', recovery: '恢复', info: '信息' }
 const deliveries: Record<NotificationEvent['delivery'], string> = { local_only: '仅本地', pending: '待发送', sent: '已发送', failed: '发送失败', cancelled: '已停止发送' }

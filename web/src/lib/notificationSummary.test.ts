@@ -55,6 +55,22 @@ describe('notification summaries', () => {
     ], text: '', occurredAt: '2026-09-28T19:59:00+08:00' })
   })
   it.each([
+    ['zh-CN', '面板登录：2026-09-28 19:59:30 (UTC+08:00)\n用户：admin\n来源：203.0.113.9\n方式：密码 + 两步验证', '密码 + 两步验证'],
+    ['zh-TW', '面板登入：2026-09-28 19:59:30 (UTC+08:00)\n使用者：admin\n來源：203.0.113.9\n方式：通行金鑰', '通行金鑰'],
+    ['en-US', 'Panel login: 2026-09-28 19:59:30 (UTC+08:00)\nUser: admin\nSource: 203.0.113.9\nMethod: Passkey + two-factor', 'Passkey + two-factor'],
+  ])('summarizes %s panel login notices like SSH logins', (locale, body, method) => {
+    const login = event('panel-login', 'info', body, locale)
+    login.message = login.message.replace('✅', '🔐')
+    expect(summarizeNotification(login)).toEqual({ fields: [
+      { label: '用户', value: 'admin' }, { label: '来源', value: '203.0.113.9' }, { label: '方式', value: method },
+    ], text: '', occurredAt: '2026-09-28T19:59:30+08:00' })
+  })
+  it('does not read an SSH body as a panel login', () => {
+    const mixed = event('panel-login', 'info', 'SSH 登录：2026-09-28 19:59:00 (UTC+08:00)\n用户：deploy\n来源：2001:db8::24\n方式：publickey')
+    mixed.message = mixed.message.replace('✅', '🔐')
+    expect(summarizeNotification(mixed).fields).toEqual([])
+  })
+  it.each([
     'CPU 使用率达到 95.0%',
     'CPU 使用率达到 95.0%\n阈值：90.0%\n额外原因：采样不足',
     '<img src=x onerror=alert(1)>',

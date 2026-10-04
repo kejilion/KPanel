@@ -99,6 +99,9 @@ type Rules struct {
 	// Nil identifies settings written before the global expiry rule existed.
 	HostExpiryEnabled    *bool `json:"hostExpiryEnabled,omitempty"`
 	ServiceChecksEnabled bool  `json:"serviceChecksEnabled,omitempty"`
+	// Off by default and omitted while off, so state written by a release that
+	// never enabled it stays readable by binaries predating the rule.
+	PanelLoginEnabled bool `json:"panelLoginEnabled,omitempty"`
 
 	// Deprecated aggregate fields are accepted while reading v1 state and old
 	// clients. normalizeRules migrates them to both directional rules and

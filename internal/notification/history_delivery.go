@@ -28,6 +28,8 @@ func ruleEnabled(r Rules, rule string) bool {
 		return r.SSHLoginEnabled
 	case serverExpiryRuleKey:
 		return r.HostExpiryEnabled != nil && *r.HostExpiryEnabled
+	case panelLoginRuleKey:
+		return r.PanelLoginEnabled
 	}
 	return false
 }

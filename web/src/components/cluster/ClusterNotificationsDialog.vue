@@ -53,6 +53,7 @@ const form = reactive({
   hostOfflineEnabled: true,
   serviceChecksEnabled: false,
   hostExpiryEnabled: false,
+  panelLoginEnabled: false,
   channelCredential: '',
 })
 
@@ -141,6 +142,7 @@ function applySnapshot(value: ClusterNotificationSnapshot): void {
   form.hostOfflineEnabled = value.rules.hostOfflineEnabled
   form.serviceChecksEnabled = value.rules.serviceChecksEnabled ?? false
   form.hostExpiryEnabled = value.rules.hostExpiryEnabled ?? false
+  form.panelLoginEnabled = value.rules.panelLoginEnabled ?? false
   form.channelCredential = ''
   if (modalControl) {
     void nextTick(() => {
@@ -178,6 +180,7 @@ function rulesFromForm(): ClusterNotificationRules {
     hostOfflineEnabled: form.hostOfflineEnabled,
     serviceChecksEnabled: form.serviceChecksEnabled,
     hostExpiryEnabled: form.hostExpiryEnabled,
+    panelLoginEnabled: form.panelLoginEnabled,
   }
 }
 
@@ -523,6 +526,10 @@ onBeforeUnmount(() => {
             <label class="cluster-notifications__event-rule">
               <span><strong>{{ phrase('SSH 登录') }}</strong><small>{{ phrase('仅传递用户、来源、方式和时间，不传递原始日志。') }}</small></span>
               <input v-model="form.sshLoginEnabled" type="checkbox" :aria-label="phrase('启用 SSH 登录通知')" />
+            </label>
+            <label class="cluster-notifications__event-rule">
+              <span><strong>{{ phrase('面板登录') }}</strong><small>{{ phrase('有人登录本 KPanel 时提醒，包含用户、来源、登录方式和时间，不传递密码或验证码。') }}</small></span>
+              <input v-model="form.panelLoginEnabled" type="checkbox" :aria-label="phrase('启用面板登录通知')" />
             </label>
           </div>
         </section>
