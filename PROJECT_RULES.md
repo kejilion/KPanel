@@ -459,7 +459,7 @@ testdata 不计。新包无需登记即进入范围，列为非边界的包被�
 列出的全部改动的 scoped 继续覆盖 `comparison_base..source_ref` 区间。分批 scoped 使用非空、无重复的
 `reviewed_commits`（精确 40 位提交 SHA），只累计列表覆盖；每个 SHA 必须存在并位于该基线区间，
 独立复核须核对该提交全部边界文件及直接调用链，而不是只审其中的路径。新分批记录统一写
-`scope_complete: false`，避免旧入口把列表误读成完整区间；该批自身审查/独立验证完成且
+`scope_complete: false`（列表与 true 的歧义组合由 --validate 拒绝），避免旧入口把列表误读成完整区间；该批自身审查/独立验证完成且
 `run_status=complete` 后才累计列表。
 其余提交仍 pending。缺列表的旧 partial 不计覆盖，列表畸形或身份不成立时失败关闭；不要求与 full 同一分支。
 full 间隔从源码提交时间最新的已完成 full 起算。被平台中止、未完成验证或只审部分改动的 run 如实入库元数据，
