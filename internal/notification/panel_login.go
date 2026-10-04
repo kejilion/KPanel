@@ -134,9 +134,9 @@ func (s *Service) drainPanelLogins(first PanelLogin) []PanelLogin {
 func panelLoginMethodLabel(method, locale string) string {
 	labels := map[string][3]string{
 		PanelLoginPassword:     {"密码", "密碼", "Password"},
-		PanelLoginPasswordTOTP: {"密码 + 两步验证", "密碼 + 兩步驟驗證", "Password + two-factor"},
+		PanelLoginPasswordTOTP: {"密码 + 两步验证", "密碼 + 兩步驗證", "Password + two-factor"},
 		PanelLoginPasskey:      {"通行密钥", "通行金鑰", "Passkey"},
-		PanelLoginPasskeyTOTP:  {"通行密钥 + 两步验证", "通行金鑰 + 兩步驟驗證", "Passkey + two-factor"},
+		PanelLoginPasskeyTOTP:  {"通行密钥 + 两步验证", "通行金鑰 + 兩步驗證", "Passkey + two-factor"},
 	}
 	label := labels[method]
 	switch locale {
