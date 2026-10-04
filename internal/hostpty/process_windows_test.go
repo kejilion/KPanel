@@ -60,7 +60,7 @@ func conPTYCommand(t *testing.T, script string) *exec.Cmd {
 	command := exec.Command(filepath.Join(system, `WindowsPowerShell\v1.0\powershell.exe`), "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded))
 	command.Dir = t.TempDir()
 	command.Env = []string{"SystemRoot=" + filepath.Dir(system), "WINDIR=" + filepath.Dir(system), "PATH=" + system, "TEMP=" + command.Dir, "TMP=" + command.Dir,
-		"PSModulePath=" + filepath.Join(filepath.Dir(command.Path), "Modules")}
+		"PSModulePath=" + filepath.Join(filepath.Dir(command.Path), "Modules"), "PSModuleAnalysisCachePath=NUL"}
 	return command
 }
 
