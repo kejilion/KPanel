@@ -1144,8 +1144,11 @@ func TestMaximumThirtyDayResponseFitsPanelAgentLimit(t *testing.T) {
 		series := &history.OperatorLatency[seriesIndex]
 		series.Points = make([]contract.MonitoringOperatorLatencyPoint, pointCount)
 		for pointIndex := range series.Points {
-			value := 999.9
+			// Bucket medians are averages or weighted estimates and can carry
+			// more digits than a measurement; budget for the longest.
+			value, median, minimum := 999.9, 999.9999995, 999.9999995
 			series.Points[pointIndex] = contract.MonitoringOperatorLatencyPoint{
+				MedianMilliseconds: &median, MinimumMilliseconds: &minimum,
 				CollectedAt:         now.Add(-time.Duration(pointIndex) * 2 * time.Hour),
 				LatencyMilliseconds: &value,
 				SuccessCount:        24,
@@ -1223,8 +1226,11 @@ func maximumHistoryFixture(
 		series := &history.OperatorLatency[seriesIndex]
 		series.Points = make([]contract.MonitoringOperatorLatencyPoint, pointCount)
 		for pointIndex := range series.Points {
-			value := 999.9
+			// Bucket medians are averages or weighted estimates and can carry
+			// more digits than a measurement; budget for the longest.
+			value, median, minimum := 999.9, 999.9999995, 999.9999995
 			series.Points[pointIndex] = contract.MonitoringOperatorLatencyPoint{
+				MedianMilliseconds: &median, MinimumMilliseconds: &minimum,
 				CollectedAt:         now.Add(-time.Duration(pointIndex) * bucket),
 				LatencyMilliseconds: &value,
 				SuccessCount:        120,
