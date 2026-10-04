@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -96,14 +97,27 @@ func TestWindowsConPTYUnicodeResizeAndNaturalExit(t *testing.T) {
 // failures while keeping the same pinned executable and minimal environment.
 func TestWindowsInboxShellExplicitEnvironment(t *testing.T) {
 	fixture := conPTYCommand(t, `Write-Output 'DIRECT_READY'; exit 0`)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, fixture.Path, fixture.Args[1:]...)
-	command.Env, command.Dir = fixture.Env, fixture.Dir
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	output, err := command.CombinedOutput()
-	if err != nil || !bytes.Contains(output, []byte("DIRECT_READY")) {
-		t.Fatalf("direct inbox shell failed: err=%v output=%q", err, output)
+	systemFolders := append([]string(nil), fixture.Env...)
+	for _, name := range []string{"ComSpec", "SystemDrive", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+		if value := os.Getenv(name); value != "" {
+			systemFolders = append(systemFolders, name+"="+value)
+		}
+	}
+	for _, control := range []struct {
+		name string
+		env  []string
+	}{{"minimal", fixture.Env}, {"system-folders", systemFolders}, {"runner-environment", nil}} {
+		t.Run(control.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, fixture.Path, fixture.Args[1:]...)
+			command.Env, command.Dir = control.env, fixture.Dir
+			command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			output, err := command.CombinedOutput()
+			if err != nil || !bytes.Contains(output, []byte("DIRECT_READY")) {
+				t.Fatalf("direct inbox shell failed: err=%v output=%q", err, output)
+			}
+		})
 	}
 }
 

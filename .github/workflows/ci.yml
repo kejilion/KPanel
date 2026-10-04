@@ -45,7 +45,7 @@ jobs:
           $env:KPANEL_TEST_SIGNED_PUBLISHER = $fixtureSignature.SignerCertificate.Subject
           go test ./internal/windowsnode ./internal/desktopbridge
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go test ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager -run '^TestWindows'
+          go test -v ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager -run '^TestWindows'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./internal/windowsnode ./internal/desktopbridge ./cmd/kejilion-node ./internal/hostpty ./internal/terminal ./internal/systeminfo ./internal/filemanager
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
