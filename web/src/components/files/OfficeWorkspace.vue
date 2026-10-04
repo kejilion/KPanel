@@ -147,7 +147,8 @@ function shortcut(event: KeyboardEvent) { if ((event.ctrlKey || event.metaKey) &
 .office-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 360px; height: 70dvh; color: var(--file-preview-text); background: var(--file-preview-background); border: 1px solid var(--file-preview-border); border-radius: var(--radius); overflow: hidden; font-size: 14px; }
 .office-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px; border-bottom: 1px solid var(--file-preview-border); background: var(--file-preview-panel); }
 .office-label { display: flex; gap: 8px; align-items: center; font-weight: 600; }
-.office-status { flex: 1; font-size: 13px; color: var(--file-preview-muted); }
+.office-status { flex: 1; min-width: 130px; white-space: nowrap; font-size: 14px; color: var(--file-preview-muted); }
+.office-workspace .button { font-size: 14px; }
 .office-hint { margin: 6px 12px; color: var(--file-preview-muted); font-size: 13px; line-height: 1.5; }
 .office-error { margin: 8px 12px; color: var(--danger); line-height: 1.5; }
 .office-error button { margin-left: 10px; }
@@ -182,7 +183,7 @@ function shortcut(event: KeyboardEvent) { if ((event.ctrlKey || event.metaKey) &
 .office-grid td, .office-grid th { border-right: 1px solid var(--file-preview-border); border-bottom: 1px solid var(--file-preview-border); }
 .office-grid th { position: sticky; top: 0; background: var(--file-preview-panel); height: 34px; min-width: 48px; font-weight: 500; }
 .office-grid td button { display: block; width: 140px; height: 36px; padding: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.office-slide { position: relative; width: 100%; overflow: hidden; background: var(--file-preview-panel); border: 1px solid var(--file-preview-border); }
+.office-slide { position: relative; width: 100%; min-width: 720px; overflow: hidden; background: var(--file-preview-panel); border: 1px solid var(--file-preview-border); }
 .office-slide button, .office-slide img { position: absolute; padding: 8px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; object-fit: contain; }
 :global(.modal-panel--fullscreen .office-workspace) { height: 100%; }
 @media (max-width: 800px) { .office-body { grid-template-columns: 1fr; grid-template-rows: minmax(180px, 1fr) auto; } .office-inspector { max-height: 200px; border-left: 0; border-top: 1px solid var(--file-preview-border); padding: 12px; } .office-inspector p { margin: 8px 0; } .office-inspector textarea { height: 72px; } .office-paper { padding: 16px; } .office-canvas { padding: 12px; } .office-canvas--xlsx { padding: 0; } }
