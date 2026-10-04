@@ -90,6 +90,41 @@ func TestWindowsConPTYUnicodeResizeAndNaturalExit(t *testing.T) {
 	}
 }
 
+func TestWindowsConPTYInteractiveInput(t *testing.T) {
+	command := conPTYCommand(t, "")
+	command.Args = []string{command.Path, "-NoLogo", "-NoProfile", "-NoExit", "-Command",
+		`[Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; [Console]::WriteLine('PTY_READY')`}
+	p, err := Start(command, 24, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	var transcript conPTYTranscript
+	done := make(chan struct{})
+	var readErr, waitErr error
+	go func() { _, readErr = io.Copy(&transcript, p); waitErr = p.Wait(); close(done) }()
+	deadline := time.Now().Add(15 * time.Second)
+	for !strings.Contains(transcript.snapshot(), "PTY_READY") {
+		if time.Now().After(deadline) {
+			t.Fatalf("interactive shell did not become ready; output=%q", transcript.snapshot())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The expected answer is absent from the input, so an echoed command cannot
+	// make the assertion pass without PowerShell actually executing it.
+	if _, err := io.WriteString(p, `$reply = 6 * 7; [Console]::WriteLine('PTY_REPLY=' + $reply); exit 0`+"\r"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("interactive command did not exit; output=%q", transcript.snapshot())
+	}
+	if readErr != nil || waitErr != nil || !strings.Contains(transcript.snapshot(), "PTY_REPLY=42") {
+		t.Fatalf("interactive execution failed: read=%v wait=%v output=%q", readErr, waitErr, transcript.snapshot())
+	}
+}
+
 func TestWindowsConPTYCloseKillsDescendants(t *testing.T) {
 	system, err := windows.GetSystemDirectory()
 	if err != nil {

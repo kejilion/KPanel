@@ -92,9 +92,13 @@ func startPlatform(command *exec.Cmd, rows, columns uint16) (Process, error) {
 	}
 	si := windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(si))
-	// Explicit null std handles prevent a redirected service/test parent's
-	// stdout from leaking into the child instead of its pseudoconsole.
+	// Do not copy the parent's redirected standard handles into the child.
+	// Unavailable handles let console clients bind to their ConPTY console;
+	// null handles can instead leave PowerShell waiting on redirected input.
 	si.Flags = windows.STARTF_USESTDHANDLES
+	si.StdInput = windows.InvalidHandle
+	si.StdOutput = windows.InvalidHandle
+	si.StdErr = windows.InvalidHandle
 	application, err := windows.UTF16PtrFromString(command.Path)
 	if err != nil {
 		return nil, err
