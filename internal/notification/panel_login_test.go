@@ -238,6 +238,9 @@ func TestPanelLoginMessagesAreLocalizedAndSanitized(t *testing.T) {
 		"zh-TW": {"🔐 [KPanel 叢集通知]", "主機：Mainpanel", "面板登入：", "使用者：admin", "來源：-", "方式：通行金鑰", "傳送時間："},
 		"zh-CN": {"🔐 [KPanel 集群通知]", "主机：Mainpanel", "面板登录：", "用户：admin", "来源：-", "方式：通行密钥", "发送时间："},
 	}
+	if got := panelLoginMethodLabel(PanelLoginPasswordTOTP, "zh-TW"); got != "密碼 + 兩步驗證" {
+		t.Fatalf("zh-TW two-factor label = %q, want the catalog term 兩步驗證", got)
+	}
 	for locale, want := range cases {
 		message := panelLoginMessage(host, login, now, locale)
 		for _, fragment := range want {
