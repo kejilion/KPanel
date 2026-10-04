@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { h, nextTick } from 'vue'
 import ModalDialog from './ModalDialog.vue'
+import ModalWindowControls from './ModalWindowControls.vue'
 
 const wrappers: VueWrapper[] = []
 
@@ -12,6 +13,9 @@ interface DialogMountOptions {
     title: string
     description?: string
     closeDisabled?: boolean
+    variant?: 'default' | 'workspace'
+    headerless?: boolean
+    allowFullscreen?: boolean
   }
   slots?: Record<string, () => ReturnType<typeof h>>
 }
@@ -235,5 +239,83 @@ describe('ModalDialog focus management', () => {
     await settleFocus()
 
     expect(document.activeElement).toBe(opener)
+  })
+})
+
+describe('ModalDialog workspace variant', () => {
+  it('uses a slim title bar with inline metadata and flat window buttons', () => {
+    mountDialog({
+      props: { open: true, title: 'nginx.conf', description: '1.2 KiB', variant: 'workspace', allowFullscreen: true },
+      slots: { status: () => h('span', { class: 'status-badge' }, 'Running') },
+    })
+
+    const dialog = panelAt()
+    expect(dialog.classList).toContain('modal-panel--workspace')
+    expect(dialog.className).not.toMatch(/modal-panel--medium/)
+    const titlebar = dialog.querySelector<HTMLElement>('.modal-panel__titlebar')!
+    expect(titlebar.querySelector('h2')?.textContent).toBe('nginx.conf')
+    expect(titlebar.querySelector('h2')?.getAttribute('title')).toBe('nginx.conf')
+    expect(titlebar.querySelector('.modal-panel__title p')?.textContent).toBe('1.2 KiB')
+    expect(titlebar.querySelector('.status-badge')?.textContent).toBe('Running')
+    expect(titlebar.querySelectorAll('.modal-panel__window-action')).toHaveLength(2)
+  })
+
+  it('toggles full screen from the title bar like a desktop window', async () => {
+    mountDialog({ props: { open: true, title: 'Terminal', variant: 'workspace', allowFullscreen: true } })
+    const titlebar = panelAt().querySelector<HTMLElement>('.modal-panel__titlebar')!
+
+    titlebar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await nextTick()
+    expect(panelAt().classList).toContain('modal-panel--fullscreen')
+    expect(document.querySelector('.modal-backdrop')?.classList).toContain('modal-backdrop--fullscreen')
+
+    titlebar.querySelector<HTMLButtonElement>('.modal-panel__window-action')!.dispatchEvent(
+      new MouseEvent('dblclick', { bubbles: true }),
+    )
+    await nextTick()
+    expect(panelAt().classList).toContain('modal-panel--fullscreen')
+  })
+
+  it('ignores the title bar gesture when full screen is not offered', async () => {
+    mountDialog({ props: { open: true, title: 'Logs', variant: 'workspace' } })
+    const titlebar = panelAt().querySelector<HTMLElement>('.modal-panel__titlebar')!
+
+    titlebar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await nextTick()
+    expect(panelAt().classList).not.toContain('modal-panel--fullscreen')
+    expect(titlebar.querySelectorAll('.modal-panel__window-action')).toHaveLength(1)
+  })
+
+  it('hands its window buttons to content that owns the toolbar', async () => {
+    const wrapper = mountDialog({
+      props: { open: true, title: 'File editor', variant: 'workspace', headerless: true, allowFullscreen: true },
+      slots: { default: () => h('header', { class: 'content-toolbar' }, [h(ModalWindowControls)]) },
+    })
+
+    const dialog = panelAt()
+    expect(dialog.querySelector('.modal-panel__titlebar')).toBeNull()
+    const title = document.getElementById(dialog.getAttribute('aria-labelledby') || '')
+    expect(title?.textContent).toBe('File editor')
+    expect(title?.classList).toContain('sr-only')
+
+    const [fullscreen, close] = dialog.querySelectorAll<HTMLButtonElement>('.content-toolbar .modal-panel__window-action')
+    fullscreen!.click()
+    await nextTick()
+    expect(dialog.classList).toContain('modal-panel--fullscreen')
+
+    close!.click()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('keeps the provided close button disabled while closing is blocked', async () => {
+    const wrapper = mountDialog({
+      props: { open: true, title: 'File editor', variant: 'workspace', headerless: true, closeDisabled: true },
+      slots: { default: () => h(ModalWindowControls) },
+    })
+
+    const close = panelAt().querySelector<HTMLButtonElement>('.modal-panel__window-action--close')!
+    expect(close.disabled).toBe(true)
+    close.click()
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 })

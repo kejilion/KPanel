@@ -43,6 +43,7 @@ import {
 } from '@lucide/vue'
 import HostSwitcher from '@/components/common/HostSwitcher.vue'
 import ModalDialog from '@/components/common/ModalDialog.vue'
+import ModalWindowControls from '@/components/common/ModalWindowControls.vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileShareDialog from '@/components/files/FileShareDialog.vue'
 import FileShareManagerDialog from '@/components/files/FileShareManagerDialog.vue'
@@ -663,15 +664,6 @@ const previewMode = computed<PreviewMode>(() => {
   if (entry.mime?.startsWith('video/')) return 'video'
   if (entry.mime === 'application/pdf') return 'pdf'
   return 'metadata'
-})
-const mediaStatusLabel = computed(() => {
-  if (mediaError.value) return mediaErrorMessage.value || '无法读取媒体文件'
-  if (mediaLoading.value && previewMode.value === 'video') return '正在缓冲视频…'
-  if (previewMode.value === 'video') return '按需加载 · 支持边缓冲边播放'
-  if (previewMode.value === 'audio') return '音频流'
-  if (previewMode.value === 'image') return '图片预览'
-  if (previewMode.value === 'pdf') return 'PDF 文档'
-  return ''
 })
 const previewURL = computed(() =>
   previewEntry.value ? fileAPI.value.contentUrl(previewEntry.value.path, 'inline') : '',
@@ -3604,13 +3596,31 @@ onBeforeUnmount(() => {
     <ModalDialog
       :open="Boolean(previewEntry)"
       :title="previewMode === 'text' ? phrase('文件编辑器') : previewEntry?.name || phrase('文件查看器')"
-      :description="previewMode !== 'text' && previewEntry ? `${previewEntry.path} · ${formatBytes(previewEntry.sizeBytes)}` : ''"
-      size="wide"
+      :description="previewMode !== 'text' && previewEntry ? formatBytes(previewEntry.sizeBytes) : ''"
+      variant="workspace"
+      :headerless="previewMode === 'text'"
       allow-fullscreen
       :close-disabled="previewSaving"
       @close="closePreview"
     >
-      <div v-if="previewLoading" class="preview-loading"><RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}</div>
+      <template v-if="previewEntry && previewMode !== 'text'" #icon>
+        <FileEntryIcon :entry="previewEntry" :size="20" />
+      </template>
+      <template v-if="previewEntry && previewMode !== 'text' && previewMode !== 'metadata'" #actions>
+        <button
+          class="button button--secondary button--small media-download"
+          type="button"
+          :title="phrase('下载原文件')"
+          :aria-label="phrase('下载原文件')"
+          @click="download(previewEntry)"
+        >
+          <Download :size="15" /><span>{{ phrase('下载原文件') }}</span>
+        </button>
+      </template>
+      <div v-if="previewLoading" class="preview-loading">
+        <ModalWindowControls v-if="previewMode === 'text'" class="preview-loading__controls" />
+        <RefreshCw :size="22" class="spinning" />{{ phrase('正在打开文件…') }}
+      </div>
       <FileEditorWorkspace
         v-else-if="previewEntry && previewMode === 'text'"
         ref="editorWorkspace"
@@ -3623,7 +3633,9 @@ onBeforeUnmount(() => {
         @saving="previewSaving = $event"
         @saved="loadDirectory()"
         @close="closePreview"
-      />
+      >
+        <template #window-controls><ModalWindowControls /></template>
+      </FileEditorWorkspace>
       <OfficeWorkspace
         v-else-if="previewEntry && previewMode === 'office'"
         :key="`${fileHostId}:${previewEntry.path}`"
@@ -3679,14 +3691,6 @@ onBeforeUnmount(() => {
             <Download :size="16" />{{ phrase('下载文件') }}
           </button>
         </div>
-        <footer v-if="previewMode !== 'metadata'" class="media-viewer__footer">
-          <span class="media-viewer__status" :class="{ 'is-loading': mediaLoading, 'is-error': mediaError }">
-            <i aria-hidden="true" />{{ phrase(mediaStatusLabel) }}
-          </span>
-          <button class="button button--secondary button--small" type="button" @click="download(previewEntry)">
-            <Download :size="15" />{{ phrase('下载原文件') }}
-          </button>
-        </footer>
       </div>
     </ModalDialog>
   </section>
@@ -4930,51 +4934,59 @@ onBeforeUnmount(() => {
   padding-top: 20px;
 }
 
+/* Previews fill the workspace window: one dark stage, no inner card. */
 .preview-loading {
+  position: relative;
   display: flex;
-  min-height: 420px;
+  flex: 1 1 auto;
+  min-height: 0;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--muted);
+  color: var(--file-preview-muted);
+  background: var(--file-preview-background);
+}
+
+.preview-loading__controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 44px;
+}
+
+.preview-loading__controls :deep(.modal-panel__window-action) {
+  color: var(--file-preview-muted);
 }
 
 .media-viewer {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 14px;
+  padding: 16px;
   overflow: hidden;
-  border: 1px solid var(--file-preview-border);
-  border-radius: 16px;
   background:
     radial-gradient(circle at 50% -12%, var(--file-preview-glow), transparent 42%),
     linear-gradient(180deg, var(--file-preview-panel) 0%, var(--file-preview-background) 100%);
-  box-shadow: var(--file-preview-shadow);
 }
 
 .media-viewer--video,
-.media-viewer--image,
-.media-viewer--metadata {
-  min-height: min(58vh, 600px);
+.media-viewer--pdf {
+  padding: 0;
 }
 
 .media-player {
   position: relative;
   display: grid;
-  width: min(100%, 1120px);
+  width: 100%;
+  height: 100%;
   min-width: 0;
-  aspect-ratio: 16 / 9;
   place-items: center;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--file-preview-text) 10%, transparent);
-  border-radius: 14px;
   background: #000;
-  box-shadow: 0 18px 46px rgb(0 0 0 / 30%);
 }
 
 .media-player video {
@@ -5028,11 +5040,10 @@ onBeforeUnmount(() => {
 .media-viewer img {
   display: block;
   width: auto;
+  min-height: 0;
   max-width: 100%;
-  max-height: min(68vh, 640px);
-  border-radius: 10px;
+  max-height: 100%;
   object-fit: contain;
-  box-shadow: 0 18px 46px rgb(0 0 0 / 24%);
 }
 
 .media-viewer audio {
@@ -5040,76 +5051,15 @@ onBeforeUnmount(() => {
 }
 
 .media-viewer iframe {
+  flex: 1 1 auto;
   width: 100%;
-  min-height: min(68vh, 680px);
+  min-height: 0;
   border: 0;
-  border-radius: 10px;
   background: var(--file-preview-panel);
 }
 
 .media-viewer--pdf {
   align-items: stretch;
-  padding: 0;
-}
-
-.media-viewer--pdf iframe {
-  min-height: min(68vh, 680px);
-  border-radius: 14px;
-}
-
-.media-viewer__footer {
-  display: flex;
-  width: min(100%, 1120px);
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--file-preview-muted);
-  font-size: 13px;
-}
-
-.media-viewer__status {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-}
-
-.media-viewer__status i {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--file-preview-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--file-preview-accent) 13%, transparent);
-}
-
-.media-viewer__status.is-loading i {
-  background: var(--amber);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 13%, transparent);
-}
-
-.media-viewer__status.is-error i {
-  background: var(--danger);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 13%, transparent);
-}
-
-:global(.modal-panel--wide:not(.modal-panel--fullscreen):has(.media-viewer)) {
-  width: min(1080px, calc(100vw - 32px));
-}
-
-:global(.modal-panel--wide:has(.media-viewer) .modal-panel__body) {
-  padding: 10px;
-  background: var(--surface-subtle);
-}
-
-:global(.modal-panel--fullscreen .media-viewer) {
-  height: 100%;
-  min-height: 0;
-}
-
-:global(.modal-panel--fullscreen .media-player) {
-  max-height: calc(100% - 42px);
 }
 
 .metadata-viewer {
@@ -5425,51 +5375,19 @@ onBeforeUnmount(() => {
     grid-column: 1 / -1;
   }
 
-  :global(.modal-panel--wide:has(.media-viewer)) {
-    width: calc(100vw - 20px);
-    max-height: calc(100dvh - 20px);
-  }
-
-  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__header) {
-    padding: 12px;
-  }
-
-  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__header p) {
-    max-width: calc(100vw - 128px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  :global(.modal-panel--wide:has(.media-viewer) .modal-panel__body) {
-    padding: 8px;
-  }
-
   .media-viewer {
-    gap: 9px;
     padding: 8px;
-    border-radius: 12px;
   }
 
-  .media-viewer--video,
-  .media-viewer--image,
-  .media-viewer--metadata {
-    min-height: 0;
+  /* The title bar keeps the download action as an icon on phones. */
+  .media-download {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
   }
 
-  .media-player,
-  .media-player video {
-    border-radius: 10px;
-  }
-
-  .media-viewer__footer {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .media-viewer iframe,
-  .media-viewer--pdf iframe {
-    min-height: 60dvh;
+  .media-download span {
+    display: none;
   }
 
   .code-viewer__header-right > span:first-child {

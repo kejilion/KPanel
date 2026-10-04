@@ -67,9 +67,11 @@ describe('semantic action consumers', () => {
     ]) {
       expect(sources.themes).toContain(`${token}:`)
     }
-    for (const consumer of ['var(--file-preview-background)', 'var(--file-preview-panel)', 'var(--file-preview-text)', 'var(--file-preview-muted)', 'var(--file-preview-accent)']) {
+    for (const consumer of ['var(--file-preview-background)', 'var(--file-preview-panel)', 'var(--file-preview-text)', 'var(--file-preview-muted)']) {
       expect(sources.files).toContain(consumer)
     }
+    const editor = readFileSync(new URL('../components/files/FileEditorWorkspace.vue', import.meta.url), 'utf8')
+    expect(editor).toContain('var(--file-preview-accent)')
     expect(sources.files).not.toContain('rgb(53 203 166 / 15%)')
     expect(sources.files).not.toContain('linear-gradient(180deg, #111c1d')
   })

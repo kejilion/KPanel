@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, provide, ref, useId, watch } from 'vue'
 import { Maximize2, Minimize2, X } from '@lucide/vue'
 import { useI18n } from '@/i18n'
 import { activateModal, deactivateModal, isTopModal } from './modalStack'
+import { modalWindowKey } from './modalWindow'
+import ModalWindowControls from './ModalWindowControls.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -10,12 +12,22 @@ const props = withDefaults(
     title: string
     description?: string
     size?: 'compact' | 'small' | 'medium' | 'large' | 'wide'
+    /**
+     * `workspace` is for editors, viewers and task terminals: it takes most of
+     * the viewport, uses the desktop window title bar and lets content run to
+     * the panel edges. Forms and confirmations keep the default dialog.
+     */
+    variant?: 'default' | 'workspace'
+    /** Workspace only: content renders <ModalWindowControls> in its own toolbar. */
+    headerless?: boolean
     allowFullscreen?: boolean
     closeDisabled?: boolean
   }>(),
   {
     description: '',
     size: 'medium',
+    variant: 'default',
+    headerless: false,
     allowFullscreen: false,
     closeDisabled: false,
   },
@@ -31,6 +43,14 @@ const ariaBaseID = `modal-dialog-${useId()}`
 const titleID = `${ariaBaseID}-title`
 const descriptionID = `${ariaBaseID}-description`
 const i18n = useI18n()
+const workspace = computed(() => props.variant === 'workspace')
+const panelClass = computed(() => [
+  workspace.value ? 'modal-panel--workspace' : `modal-panel--${props.size}`,
+  {
+    'modal-panel--fullscreen': fullscreen.value,
+    'modal-panel--headerless': workspace.value && props.headerless,
+  },
+])
 let active = false
 let activationSequence = 0
 let opener: HTMLElement | null = null
@@ -127,6 +147,24 @@ function close(): void {
   emit('close')
 }
 
+function toggleFullscreen(): void {
+  if (props.allowFullscreen) fullscreen.value = !fullscreen.value
+}
+
+// Same gesture as maximizing a desktop window from its title bar.
+function onTitlebarDoubleClick(event: MouseEvent): void {
+  if (event.target instanceof Element && event.target.closest('button, a, input, select, textarea')) return
+  toggleFullscreen()
+}
+
+provide(modalWindowKey, {
+  fullscreen,
+  allowFullscreen: computed(() => props.allowFullscreen),
+  closeDisabled: computed(() => props.closeDisabled),
+  toggleFullscreen,
+  close,
+})
+
 function onKeyDown(event: KeyboardEvent): void {
   if (!isTopModal(modalID)) return
   if (event.key === 'Escape') {
@@ -182,14 +220,34 @@ onBeforeUnmount(() => {
       <section
         ref="panel"
         class="modal-panel"
-        :class="[`modal-panel--${size}`, { 'modal-panel--fullscreen': fullscreen }]"
+        :class="panelClass"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleID"
         :aria-describedby="description ? descriptionID : undefined"
         tabindex="-1"
       >
-        <header class="modal-panel__header">
+        <template v-if="workspace && headerless">
+          <h2 :id="titleID" class="sr-only">{{ title }}</h2>
+          <p v-if="description" :id="descriptionID" class="sr-only">{{ description }}</p>
+        </template>
+        <header
+          v-else-if="workspace"
+          class="modal-panel__header modal-panel__titlebar"
+          @dblclick="onTitlebarDoubleClick"
+        >
+          <div class="modal-panel__title">
+            <span v-if="$slots.icon" class="modal-panel__glyph" aria-hidden="true"><slot name="icon" /></span>
+            <h2 :id="titleID" :title="title">{{ title }}</h2>
+            <p v-if="description" :id="descriptionID" :title="description">{{ description }}</p>
+            <slot name="status" />
+          </div>
+          <div class="modal-panel__titlebar-end">
+            <slot name="actions" />
+            <ModalWindowControls />
+          </div>
+        </header>
+        <header v-else class="modal-panel__header">
           <div>
             <h2 :id="titleID">{{ title }}</h2>
             <p v-if="description" :id="descriptionID">{{ description }}</p>
@@ -200,7 +258,7 @@ onBeforeUnmount(() => {
               class="icon-button"
               type="button"
               :aria-label="i18n.t(fullscreen ? 'common.exitFullscreen' : 'common.enterFullscreen')"
-              @click="fullscreen = !fullscreen"
+              @click="toggleFullscreen"
             >
               <Minimize2 v-if="fullscreen" :size="18" />
               <Maximize2 v-else :size="18" />

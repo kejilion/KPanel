@@ -109,6 +109,21 @@ describe('interactive task terminal layout', () => {
       /\.interactive-terminal\.is-fullscreen\s*\{[^}]*position: fixed;[^}]*inset: 0;[^}]*height: 100dvh;/,
     )
     expect(diagnosticsSource).toContain('v-if="!activeJob?.interactive"')
-    expect(environmentSource).not.toContain('allow-fullscreen')
+    // In a workspace window the dialog owns full screen; the terminal does not
+    // offer a second, competing full-screen toggle.
+    expect(environmentSource).toMatch(/variant="workspace"\s+allow-fullscreen/)
+    expect(environmentSource).toContain('kind="environment" headless')
+    expect(terminalSource).toContain('<header v-if="!props.headless">')
+  })
+
+  it('fills workspace windows and only surfaces the connection when it needs attention', () => {
+    expect(terminalSource).toMatch(
+      /\.interactive-terminal\.is-headless\s*\{[^}]*flex:\s*1 1 auto;[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto;[^}]*min-height:\s*0;/,
+    )
+    expect(terminalSource).toMatch(
+      /\.interactive-terminal\.is-headless \.interactive-terminal__screen\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*0;/,
+    )
+    expect(terminalSource).toContain(`v-if="props.headless && connectionState !== 'connected'"`)
+    expect(terminalSource).toMatch(/\.interactive-terminal__connection\s*\{[^}]*position:\s*absolute;[^}]*font-size:\s*12px;/)
   })
 })

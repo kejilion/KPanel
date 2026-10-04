@@ -31,7 +31,6 @@ export default [
   ["个数据库；最近备份", "databases;recent backups"],
   ["个站点、", "A site."],
   ["更新", "Update"],
-  ["关闭窗口不会停止任务；可在环境页持续查看状态。", "Closes the window does not stop the task; you can view the status continuously on the environment page."],
   ["关闭终端或刷新页面都不会中断执行。", "Closes a terminal or refreshs a page do not interrupt execution."],
   ["管理 SSH 与网站 Jail、封禁状态和日志。", "Manage SSH with website Jail, blocked status and log."],
   ["还原", "Revert"],

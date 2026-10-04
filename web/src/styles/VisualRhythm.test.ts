@@ -316,6 +316,24 @@ describe('visual rhythm contract', () => {
     expect(desktop).not.toContain('#c42b1c')
   })
 
+  it('gives workspace dialogs the desktop window chrome and flush content', () => {
+    // One 42px title bar with flat window buttons, borrowed from desktop windows.
+    expect(main).toMatch(/\.modal-panel--workspace \.modal-panel__titlebar\s*\{[^}]*min-height:\s*42px;[^}]*padding:\s*0 0 0 14px;/)
+    expect(main).toMatch(/\.modal-panel__window-action\s*\{[^}]*width:\s*46px;[^}]*border:\s*0;[^}]*border-radius:\s*0;/)
+    expect(main).toMatch(
+      /\.modal-panel__window-action--close:hover:not\(:disabled\)\s*\{[^}]*color:\s*var\(--on-danger\);[^}]*background:\s*var\(--danger-action\);/,
+    )
+    // Content runs to the panel edges and fills the window height.
+    expect(main).toMatch(/\.modal-panel--workspace \.modal-panel__body\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*padding:\s*0;/)
+    expect(main).toMatch(/\.modal-panel--workspace\s*\{[^}]*height:\s*min\(900px, calc\(100dvh - 48px\)\);/)
+    // Full screen is the whole viewport, like a maximized desktop window.
+    expect(main).toMatch(/\.modal-backdrop--fullscreen\s*\{[^}]*padding:\s*0;/)
+    expect(main).toMatch(/\.modal-panel--fullscreen\s*\{[^}]*width:\s*100vw;[^}]*height:\s*100dvh;[^}]*border-radius:\s*0;/)
+    // The workspace size rule comes later in the file, so full screen needs a
+    // compound selector to win; otherwise the window stays at 1360x900.
+    expect(main).toMatch(/\.modal-panel--workspace\.modal-panel--fullscreen\s*\{[^}]*width:\s*100vw;[^}]*height:\s*100dvh;/)
+  })
+
   it('gives landscape short viewports their own vertical budget', () => {
     const mainBlock = landscapeBlock(main)
     // Dialogs measure against the live viewport instead of a fixed 90vh cap,
@@ -324,9 +342,12 @@ describe('visual rhythm contract', () => {
     expect(mainBlock).toMatch(/max-height:\s*calc\(\s*100dvh - 24px - env\(safe-area-inset-top\) - env\(safe-area-inset-bottom\)\s*\)/)
     expect(mainBlock).toMatch(/\.modal-backdrop--fullscreen\s*\{[^}]*padding:\s*0;/)
     expect(mainBlock).toMatch(/\.modal-panel--fullscreen\s*\{[^}]*height:\s*100dvh;/)
-    // The media viewer has a wider non-fullscreen override in its scoped CSS.
-    // Keep it from winning over the shared full-screen viewport contract.
-    expect(filesView).toMatch(/:global\(\.modal-panel--wide:not\(\.modal-panel--fullscreen\):has\(\.media-viewer\)\)/)
+    // Workspace windows (editors, viewers, task terminals) keep the full
+    // landscape width instead of the 680px form-dialog cap.
+    expect(mainBlock).toMatch(/\.modal-panel--workspace\s*\{[^}]*width:\s*100%;[^}]*100dvh - 24px/)
+    // The media viewer sizes itself through the workspace contract only, so no
+    // scoped dialog override can win over the shared full-screen viewport.
+    expect(filesView).not.toContain('.modal-panel--wide')
 
     const desktopBlock = landscapeBlock(desktop)
     // Windows and icons are re-cut against the taskbar reserve only. There is
