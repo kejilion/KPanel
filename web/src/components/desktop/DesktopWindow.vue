@@ -11,6 +11,7 @@ import {
 import {
   desktopBrowserHistoryKey,
   desktopWindowActiveKey,
+  desktopWindowLaunchKey,
   desktopCloseGuardCoordinatorKey,
   desktopWindowCloseGuardKey,
   desktopWindowVisibleKey,
@@ -86,6 +87,7 @@ const isVisible = computed(() => !props.windowState.minimized && !closing.value)
 const isActive = computed(() => isFocused.value && isVisible.value)
 provide(desktopWindowActiveKey, isActive)
 provide(desktopWindowVisibleKey, isVisible)
+provide(desktopWindowLaunchKey, () => desktop.consumeWindowLaunch(props.windowState.id))
 const closeGuards = new Set<() => boolean | Promise<boolean>>()
 const windowElement = ref<HTMLElement>()
 const focusReturnTarget = document.activeElement instanceof HTMLElement ? document.activeElement : undefined

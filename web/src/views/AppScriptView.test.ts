@@ -3,7 +3,8 @@ import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetLocaleForTest, setLocale } from '@/i18n'
-import { desktopWindowCloseGuardKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowLaunchKey, type DesktopWindowCloseGuardRegistry } from '@/lib/desktopRouteKeys'
+import { resetDesktopModeForTest, useDesktopMode } from '@/stores/desktopMode'
 import AppScriptView from './AppScriptView.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -59,7 +60,7 @@ const job = {
   createdAt: '',
 }
 
-async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry) {
+async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry, consumeLaunch = () => true) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/app-script/:appId', component: AppScriptView }],
@@ -69,7 +70,10 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry) {
   const wrapper = shallowMount(AppScriptView, {
     global: {
       plugins: [router],
-      provide: closeGuards ? { [desktopWindowCloseGuardKey as symbol]: closeGuards } : undefined,
+      provide: {
+        [desktopWindowLaunchKey as symbol]: consumeLaunch,
+        ...(closeGuards ? { [desktopWindowCloseGuardKey as symbol]: closeGuards } : {}),
+      },
       stubs: { AppInteractiveTerminal: true },
     },
   })
@@ -80,6 +84,7 @@ async function mountView(closeGuards?: DesktopWindowCloseGuardRegistry) {
 describe('dedicated desktop app script terminal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDesktopModeForTest()
     window.localStorage.clear()
     mocks.inventory.mockResolvedValue({ items: [app] })
     mocks.jobs.mockResolvedValue({ items: [] })
@@ -113,6 +118,67 @@ describe('dedicated desktop app script terminal', () => {
     expect(mocks.action).not.toHaveBeenCalled()
     expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe('job-1')
     wrapper.unmount()
+  })
+
+  it('restores a running task without creating a new task', async () => {
+    mocks.jobs.mockResolvedValue({ items: [job] })
+    const wrapper = await mountView(undefined, () => false)
+
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe(job.id)
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBe(job.id)
+    wrapper.unmount()
+  })
+
+  it('keeps a cancelled task stopped when its saved window is restored', async () => {
+    mocks.jobs.mockResolvedValue({ items: [{ ...job, status: 'cancelled', inputOpen: false }] })
+    const wrapper = await mountView(undefined, () => false)
+
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).exists()).toBe(false)
+    expect(wrapper.text()).toContain('当前没有运行中的脚本任务')
+    expect(window.localStorage.getItem('kpanel:active-app-job')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('starts a restored empty window only after an explicit start click', async () => {
+    const wrapper = await mountView(undefined, () => false)
+    expect(mocks.action).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-app-script-start]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.action).toHaveBeenCalledTimes(1)
+    expect(wrapper.findComponent({ name: 'AppInteractiveTerminal' }).props('jobId')).toBe(job.id)
+    wrapper.unmount()
+  })
+
+  it('does not launch when retrying an unavailable task list in a restored window', async () => {
+    mocks.jobs.mockRejectedValueOnce(new Error('Agent offline'))
+    const wrapper = await mountView(undefined, () => false)
+    expect(wrapper.text()).toContain('Agent offline')
+
+    await wrapper.find('.app-script-page__state.is-error button').trigger('click')
+    await flushPromises()
+
+    expect(mocks.action).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('当前没有运行中的脚本任务')
+    wrapper.unmount()
+  })
+
+  it('does not reuse a consumed launch intent after the task ends and the page remounts', async () => {
+    const desktop = useDesktopMode()
+    const windowID = desktop.openWindow('/app-script/openclaw', 'desktop.scriptWindowTitle', false)
+    const consumeLaunch = () => desktop.consumeWindowLaunch(windowID)
+    const first = await mountView(undefined, consumeLaunch)
+    expect(mocks.action).toHaveBeenCalledTimes(1)
+    first.unmount()
+    mocks.jobs.mockResolvedValue({ items: [{ ...job, status: 'cancelled', inputOpen: false }] })
+
+    const restored = await mountView(undefined, consumeLaunch)
+    expect(mocks.action).toHaveBeenCalledTimes(1)
+    expect(restored.text()).toContain('当前没有运行中的脚本任务')
+    restored.unmount()
   })
 
   it('starts this app while another application has an active shell', async () => {

@@ -27,6 +27,9 @@ export const desktopWindowActiveKey = Symbol('desktop-window-active') as Injecti
  */
 export const desktopWindowVisibleKey = Symbol('desktop-window-visible') as InjectionKey<Readonly<Ref<boolean>>>
 
+/** Consume the one-time launch intent of a newly opened window, never a restored window. */
+export const desktopWindowLaunchKey = Symbol('desktop-window-launch') as InjectionKey<() => boolean>
+
 /** Native document-history bridge shared by all independent desktop windows. */
 export const desktopBrowserHistoryKey = Symbol(
   'desktop-browser-history',

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { LoaderCircle, RefreshCw, TriangleAlert } from '@lucide/vue'
+import { LoaderCircle, Play, RefreshCw, TriangleAlert } from '@lucide/vue'
 import AppInteractiveTerminal from '@/components/apps/AppInteractiveTerminal.vue'
 import { useI18n } from '@/i18n'
 import { localizeError } from '@/i18n/errors'
 import { ApiError, api } from '@/lib/api'
-import { desktopWindowCloseGuardKey } from '@/lib/desktopRouteKeys'
+import { desktopWindowCloseGuardKey, desktopWindowLaunchKey } from '@/lib/desktopRouteKeys'
 import { usePhraseCatalog } from '@/i18n/phrase'
 import type { AppInstallJob, AppMarketItem } from '@/types/api'
 
@@ -17,6 +17,7 @@ usePhraseCatalog((locale) => locale === 'en-US'
 const route = useRoute()
 const i18n = useI18n()
 const windowCloseGuards = inject(desktopWindowCloseGuardKey, undefined)
+const consumeWindowLaunch = inject(desktopWindowLaunchKey, () => false)
 const loading = ref(true)
 const error = ref('')
 const closeError = ref('')
@@ -98,7 +99,7 @@ async function launchManage(target: AppMarketItem): Promise<AppInstallJob> {
   }
 }
 
-async function load(): Promise<void> {
+async function load(allowLaunch = false): Promise<void> {
   controller?.abort()
   const requestController = new AbortController()
   controller = requestController
@@ -121,8 +122,8 @@ async function load(): Promise<void> {
     }
     const existing = await existingInteractiveJob(target.id, requestController.signal)
     if (controller !== requestController) return
-    job.value = existing || await launchManage(target)
-    rememberJob(job.value.id)
+    job.value = existing || (allowLaunch ? await launchManage(target) : undefined)
+    if (job.value) rememberJob(job.value.id)
   } catch (reason) {
     if (reason instanceof DOMException && reason.name === 'AbortError') return
     error.value = localizeError(reason, 'appScript.openFailed')
@@ -131,8 +132,8 @@ async function load(): Promise<void> {
   }
 }
 
-function startLoad(): void {
-  const request = load()
+function startLoad(allowLaunch = false): void {
+  const request = load(allowLaunch)
   loadRequest = request
   void request.finally(() => {
     if (loadRequest === request) loadRequest = undefined
@@ -193,7 +194,7 @@ function guardWindowClose(): Promise<boolean> {
 
 onMounted(() => {
   unregisterWindowCloseGuard = windowCloseGuards?.register(guardWindowClose)
-  startLoad()
+  startLoad(consumeWindowLaunch())
 })
 onBeforeUnmount(() => {
   unregisterWindowCloseGuard?.()
@@ -211,7 +212,7 @@ onBeforeUnmount(() => {
 
     <div v-if="loading" class="app-script-page__state" role="status">
       <LoaderCircle class="spin" :size="24" />
-      <strong>正在启动脚本终端…</strong>
+      <strong>{{ i18n.t('appScript.openingTitle') }}</strong>
       <small>正在校验安装状态、管理能力和资源版本。</small>
     </div>
 
@@ -219,7 +220,7 @@ onBeforeUnmount(() => {
       <TriangleAlert :size="26" />
       <strong>脚本终端无法启动</strong>
       <small>{{ error }}</small>
-      <button class="button button--small" type="button" @click="startLoad">
+      <button class="button button--small" type="button" @click="startLoad()">
         <RefreshCw :size="14" /><span>重新尝试</span>
       </button>
     </div>
@@ -239,6 +240,13 @@ onBeforeUnmount(() => {
       :input-open="job.inputOpen"
       kind="app"
     />
+    <div v-else class="app-script-page__state">
+      <strong>{{ i18n.t('appScript.idleTitle') }}</strong>
+      <small>{{ i18n.t('appScript.idleDescription') }}</small>
+      <button class="button button--primary" type="button" data-app-script-start @click="startLoad(true)">
+        <Play :size="16" />{{ i18n.t('appScript.start') }}
+      </button>
+    </div>
   </section>
 </template>
 
