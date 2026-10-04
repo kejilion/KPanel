@@ -312,6 +312,55 @@ test('a candidate that adds a trust-boundary package gets a non-blocking audit r
   }
 });
 
+test('the newest Independent-Review trailer gets a non-blocking conformance reminder', () => {
+  const state = fixture();
+  const check = () => run(state.writer, '--role', 'writer', '--base-ref', state.baseline, '--require-candidate');
+  const review = (trailer) => git(state.writer, 'commit', '--allow-empty', '-m',
+    'docs: record review\n\nIndependent-Review: ' + trailer);
+  try {
+    writeFileSync(join(state.writer, 'notes.md'), 'candidate\n');
+    git(state.writer, 'add', 'notes.md');
+    git(state.writer, 'commit', '-m', 'docs: candidate without review yet');
+    let result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /independent_review=/);
+
+    review('reviewer=claude author=claude result=PASS fallback=codex-cli-unavailable');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout,
+      /independent_review=nonconforming reason=unrecognized-fallback advisory: .*fallback=provider-unavailable\|provider-failed/);
+
+    review('reviewer=claude author=claude result=PASS');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=nonconforming reason=same-provider-without-fallback advisory:/);
+
+    review('reviewer=codex result=PASS');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=nonconforming reason=missing-provider-or-result advisory:/);
+
+    review('reviewer=claude author=claude result=PASS fallback=provider-unavailable detail=codex cli not installed');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=recorded cross_provider=false\n/);
+
+    review('reviewer=codex author=claude result=PASS WITH FOLLOW-UP');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=recorded cross_provider=true\n/);
+
+    review('reviewer=claude author=claude result=PASS fallback=clean-session\n'
+      + 'Independent-Review: reviewer=codex author=claude result=PASS');
+    result = check();
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /independent_review=nonconforming reason=unrecognized-fallback advisory:/);
+  } finally {
+    state.cleanup();
+  }
+});
+
 test('renamed code files still count toward the OCR line review threshold', () => {
   const state = fixture();
   try {

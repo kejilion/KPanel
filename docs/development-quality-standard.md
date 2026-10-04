@@ -497,16 +497,17 @@ Panel/Agent/`kejilion.sh` 契约、二进制和前端体积、启动/CPU/内存�
 | 界面与用户旅程 | 受影响桌面/窄视口、浅/深色、键盘与焦点、缩放、多语言、加载/空/失败态和控制台错误 |
 | 发布通道/自更新 | 稳定/RC 解析与排序、Release 身份、digest 固定、策略迁移、通道切换、无自动降级、手动/自动授权分离和事务恢复 |
 
-发布前至少执行：
+发布前通过统一 L3 入口执行完整检查，不逐项再外加同一身份下已成功的重复命令：
 
 ```bash
-go test ./...
-go test -race ./internal/panel ./internal/auth ./internal/dockerx
-npm --prefix web test
-npm --prefix web run build
-make security-audit
 make verify-release
 ```
+
+其中 `node scripts/run-source-checks.mjs` 固定包含 `npm ci`、Web typecheck/test/build、`go test ./...`、
+`go test -race ./internal/panel ./internal/auth ./internal/dockerx`、`go vet ./...` 和部署核验；
+仅独立分组并行，全部必须通过。L3 继续场景包、安全扫描、Linux 二进制和 Docker 自包含构建。
+执行、日志、资源和失败语义统一见 `docs/project-management.md` 第 10 节；Windows 缺 Make 时转固定
+Linux runner，不能用单独 source-check 成功替代完整 L3。
 
 另外必须：
 

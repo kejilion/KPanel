@@ -1,7 +1,7 @@
 # KPanel 多智能体项目管理规范
 
 - 状态：长期强制规范
-- 版本：2026-09-19
+- 版本：2026-10-04
 - 适用范围：KPanel 主仓、关联的 `kejilion/sh` 与 `kejilion/apps` 变更、Codex/Claude 等多智能体协作和版本发布
 - 权威关系：工程与产品规则以 `PROJECT_RULES.md` 为准；本文件负责工作分解、并发隔离、集成和发布治理
 
@@ -198,6 +198,44 @@ worktree / branch / base / rollback：
    变更集编号、双方精确提交和兼容脚本发布计划；`script-only` 必须确认没有 KPanel 代码、镜像、
    配置或版本变化。状态缺失、证据不足或矛盾时不得进入已就绪。
 
+### 6.2.1 任务输入与交付资格
+
+复杂写任务、发布接管和预计长时间运行的验证，复用标准契约的 JSON 表达，使用只读
+`scripts/task-preflight.mjs`；普通小修改不额外创建契约文件。JSON 和原始日志保存在仓库外，
+不是新增全局任务台账。不得将 JSON 中的权限声明当作授权，也不得执行其中的 `argv`。
+
+```json
+{
+  "schemaVersion": 1,
+  "scope": "本次明确目标",
+  "nonGoals": "禁止的产品或外部操作",
+  "baseCommit": "填写批准基线的完整40位SHA",
+  "allowedPaths": ["scripts/", "docs/project-management.md"],
+  "forbiddenPaths": ["internal/"],
+  "riskLevel": "L2",
+  "scriptLinkageState": "not-required",
+  "authorization": "实际用户指令或授权证据",
+  "permissions": {"localCommit": true, "push": false, "main": false, "release": false, "production": false},
+  "requiredTools": ["git", "node", "bash"],
+  "requiredFiles": ["scripts/verify-governance.sh"],
+  "validations": [{"id": "governance", "environment": "实际环境ID", "tools": "实际工具版本", "parameters": "精确基线/等级/参数", "argv": ["node", "scripts/run-repo-bash.mjs", "scripts/verify-governance.sh"]}]
+}
+```
+
+替换占位内容后运行 `node scripts/task-preflight.mjs ready --contract <仓库外JSON> --repo <task-worktree>`。
+ready 核对专用 writer、clean、精确基线祖先、输入文件、工具和必填字段，成组报告缺项；
+它不替代业务 Definition of Ready。允许路径只支持仓库相对文件名或以 `/` 结尾的目录前缀，禁止通配符和 `..`。
+
+交接前在同一契约填入 `candidateCommit`（当前完整 HEAD）及 `evidence`。每个验证恰有一条凭据：
+复用对应 validation 的 `id/environment/tools/parameters/argv`，另填 `candidateCommit`、`status=passed`、
+`exitCode=0`、`finishedAt`、`expiresAt`、原始 `log` 路径和 `sha256`。时间为带时区的实际时间；
+时效按任务/环境确定，不能以永久时效掩盖环境变化。日志相对路径以 JSON 所在目录为基准。
+
+运行 `node scripts/task-preflight.mjs handoff --contract <仓库外JSON> --repo <task-worktree>`。
+handoff 额外核对 clean 非空候选、diff 允许/禁止范围、精确身份、有效时限、成功退出和原始日志摘要。
+失败退出码为非零；通过仅表示输入/交付资格，输出 `qualificationOnly=true`、`permissionsGranted=false`，
+不证明业务正确、独立复核、CI 或发布已完成。收件者仍按第 7/8/10 节检验原始事实；不接受作者自述替代证据。
+
 ### 6.3 跨仓库联动决策
 
 `scriptLinkageState` 是交付和发布的必填机器字段，不允许使用“暂不发布脚本”“之后再看”或空白状态：
@@ -364,6 +402,21 @@ git push origin HEAD:refs/heads/<task-branch>
    门禁、候选 Linux CI、主线快进和主线 CI 依次完成，不创建版本号、Tag、Release、镜像或生产变更。
 
 ## 10. 发布通道和冻结规则
+
+发布源码检查的固定唯一入口为 `node scripts/run-source-checks.mjs`（也可 `make source-check`），由 L3
+和 Release 调用。Web（ci→typecheck→test→build）、Go（全量 test→核心 race→全量 vet）和部署检查
+独立分组，默认并发 2，可降为 1；不接受外部命令替换。每组限时 45 分钟、原始输出上限 32 MiB，
+失败/超时/取消即停止队列并终止本作业进程树。终态保存候选、工具、参数、分组耗时与日志，
+结束时重验候选/源码状态；损坏、缺项和身份变化不能返回成功。证据目录必须在仓库外且不得覆盖原收据。
+Release 的已生成 `release/DRAFT_NOTES.md` 是唯一未跟踪文件例外；产品源码仍必须 clean。
+L3 后续只编译 Linux 二进制，复用本轮已完成的 Web 构建；Docker 自包含构建、安全、场景包、镜像、
+候选/主线 CI 和公开产物核验继续执行。源码并行入口通过不代表 L3 或发布完成。
+
+缩短发布等待的优先顺序：在单功能候选阶段处置边界审计提醒；发布接管一次核对完整交付包；
+在未改变版本身份前完成同范围集成与缺陷修复，避免把每个中间提交都变成公开 RC。
+每个实际发布的 RC/稳定版仍执行完整画像，不能跨 SHA、环境、工具或参数复用门禁。
+记录源码分组耗时、L3、候选/主线 CI、Release 和返工原因，观察连续两个稳定列车；
+机制测试耗时不能冒充端到端发布提速，也不在最终 Tag CI 与实际发布之间插入自动批准器。
 
 发布采用单写者模型：同一时刻只有一个发布任务、一个候选 worktree 和一个候选分支。
 

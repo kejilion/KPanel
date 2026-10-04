@@ -82,7 +82,6 @@ docker run --rm \
     test -z "$(git status --short --untracked-files=all)"
     git show-ref --verify --quiet "refs/tags/$KPANEL_EXPECTED_BASE_TAG"
     git merge-base --is-ancestor "$KPANEL_EXPECTED_BASE_TAG" HEAD
-    npm ci --prefix web
     make verify-release
     docker run --rm \
       -e KPANEL_APP_CONF_TEST_ROOTFS=1 \

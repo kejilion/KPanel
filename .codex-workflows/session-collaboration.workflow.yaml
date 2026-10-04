@@ -1,12 +1,12 @@
 ---
 name: session-collaboration
 description: "Route KPanel work through isolated worktrees and SSH-backed remote branches."
-version: "4.10"
+version: "4.11"
 author: "Codex"
 tags: [kpanel, collaboration, multi-agent, worktree, review]
 params: [role, scope, agent_provider, base_ref, verification_level]
 created: "2026-07-27T08:45:12Z"
-updated: "2026-09-21T00:00:00+08:00"
+updated: "2026-10-04T00:00:00+08:00"
 ---
 
 # KPanel Session Collaboration
@@ -17,6 +17,10 @@ Safely route KPanel work across Codex, Claude, or another agent, enforce the sha
 isolate every writer in its own worktree, and keep cross-tool state in SSH remote branches, focused commits, and evidence.
 
 ## Prerequisites
+
+- For complex writer work or long validation, qualify the external task contract with `scripts/task-preflight.mjs ready`
+  and use `handoff` after committing. Follow `docs/project-management.md` 6.2.1; the result grants no permissions and
+  does not certify business acceptance. Small tasks keep the existing short path.
 
 - Read `AGENTS.md`, `PROJECT_RULES.md`, `docs/project-management.md`, and `docs/multi-agent-collaboration.md`.
 - The user request defines a concrete goal. A KPanel modification request authorizes a focused local candidate commit,

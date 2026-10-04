@@ -112,18 +112,7 @@ jobs:
       - name: Verify source
         shell: bash
         run: |
-          set -euo pipefail
-          (
-            cd web
-            npm ci
-            npm run typecheck
-            npm test
-            npm run build
-          )
-          go test ./...
-          go test -race ./internal/panel ./internal/auth ./internal/dockerx
-          go vet ./...
-          bash scripts/verify-deploy.sh
+          node scripts/run-source-checks.mjs
 
       - name: Scan Go call paths for known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...

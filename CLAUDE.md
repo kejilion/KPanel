@@ -38,6 +38,7 @@
 - 定向测试用于反馈，不能替代对应等级门禁；门禁不能替代受影响业务互通、实机、浏览器、性能或回滚证据。
 - 本地或远程长时间浏览器验收复用仓库的后台浏览器入口和环境策略；不得把 `prod-108` 用作测试目标，
   也不得依赖前台会话持续打开来维持作业。
+- 复杂写任务/长验证按 `docs/project-management.md` 6.2.1 使用只读 `scripts/task-preflight.mjs`，不以声明授予权限。
 - 证据只对精确提交、环境、工具和参数有效；未变化时复用，变化时从受影响层重跑。
 - L2/L3 代码候选或代码改动 ≥30 行的 L1 候选，在预览与最终核验前自动执行 `PROJECT_RULES.md` 5.5 的 OCR 行级评审（共享入口
   `.codex-workflows/ocr-line-review.workflow.yaml`，不另建 Claude 平行命令），并写 `OCR-Review:` trailer。

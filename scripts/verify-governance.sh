@@ -8,6 +8,8 @@ node scripts/check-governance-consistency.mjs
 node scripts/check-business-context-freshness.mjs
 node scripts/check-environment-policy.mjs --validate-only
 node --test \
+  scripts/tests/source-checks.test.mjs \
+  scripts/tests/task-preflight.test.mjs \
   scripts/tests/check-environment-policy.test.mjs \
   scripts/tests/governance-candidate-ci.test.mjs \
   scripts/tests/collaboration-state.test.mjs \

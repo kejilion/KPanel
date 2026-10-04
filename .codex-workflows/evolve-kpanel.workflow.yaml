@@ -1,12 +1,12 @@
 ---
 name: evolve-kpanel
 description: "用可验证证据驱动 KPanel 规范、门禁和开发流程的受控自我改进，写任务形成本地候选但不自动推送、发布或放宽质量要求"
-version: "1.7"
+version: "1.8"
 author: "Codex"
 tags: [quality, governance, continuous-improvement, multi-agent, metrics]
 params: [project_dir, baseline_ref, observation_window, release_count, proposal_slug, candidate_branch]
 created: "2026-08-11T00:00:00+08:00"
-updated: "2026-09-15T00:00:00+08:00"
+updated: "2026-10-04T00:00:00+08:00"
 ---
 
 # KPanel Controlled Evolution
@@ -18,6 +18,10 @@ updated: "2026-09-15T00:00:00+08:00"
 不能自行启动修改、SSH 推送、更新主线、发布或操作生产。
 
 ## Prerequisites
+
+- 复杂治理写任务按 `docs/project-management.md` 6.2.1 使用 `scripts/task-preflight.mjs` 成组预检输入与交付。
+- 草案和待复核共用提案日期的 14 天时限；实现进入 main 时更新生命周期，不能用草案逃避复核。
+  具体规则以 `PROJECT_RULES.md` 5.2.7 为准；已推送历史证据和 trailer 不改写。
 
 - 已完整阅读 `PROJECT_RULES.md`、`docs/project-management.md` 和 `docs/development-quality-standard.md`。
 - `${{project_dir}}` 是独立 KPanel worktree，`${{baseline_ref}}` 是精确且已批准的基线提交或标签。

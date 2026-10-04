@@ -71,6 +71,11 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
 
 ## 上下文与证据效率
 
+复杂任务的路径、工具和字段资格统一按 `docs/project-management.md` 6.2.1 使用
+`scripts/task-preflight.mjs ready|handoff`；先将必需输入缺项成组处置，再进入长验证。
+复用已交付候选和精确原始证据；发布接管不召回旧 writer、不增加监工。源码发布检查按该文档第 10 节
+统一并行入口执行，失败、取消或候选变化必须重新形成有效结果。
+
 - 新任务先通过 `AGENTS.md`/`CLAUDE.md` 和当前产品复核定位业务域，再按 L0-L3 加载相关规范章节；
   只有 L3 或规范架构变更才机械需要完整规范包，普通小改不把长文全量转发给每个会话。
 - 协调中心只把目标、任务契约、相关设计/代码、精确基线和已知风险交给执行者，不转发无关长对话。
@@ -132,10 +137,14 @@ Windows 没有 Make 时使用 `node scripts/run-repo-bash.mjs <script>` 调用�
   提供商执行，以减少同源模型的共享盲区；另一提供商不可用（未安装、无非交互入口、配额耗尽等）时，
   才使用与主要实现分离的干净会话。每次独立复核都要留下
   `Independent-Review: reviewer=<提供商> author=<提供商> result=<PASS|PASS WITH FOLLOW-UP|FAIL>` trailer，
-  同一提供商时追加 `fallback=<不可用原因>`；提供商取 `claude`、`codex`、`gemini`、`qwen`、`deepseek`、
-  `copilot` 之一。只读复核自身不产生提交时，由候选负责人在包含复核结论或其修复的下一个提交上补写；
+  提供商取 `claude`、`codex`、`gemini`、`qwen`、`deepseek`、`copilot` 之一。同一提供商时追加
+  `fallback=<取值>`，取值固定为 `provider-unavailable`（其他提供商没有可用入口：未安装、无非交互入口、
+  无凭据或配额耗尽）或 `provider-failed`（已调用其他提供商，但被拒绝、超时或中途中止），具体情况另写
+  `detail=<说明>`，不改变取值；缺少 `fallback` 或取值不在其中的同提供商复核视为未说明原因，健康报告分别计为
+  `same_provider_without_fallback` 和 `fallback_unrecognized`，候选检查以 `independent_review=nonconforming`
+  提醒。只读复核自身不产生提交时，由候选负责人在包含复核结论或其修复的下一个提交上补写；
   L3 发布接管后由发布任务在其集成或验收提交上写，不因此另设复核任务。治理提案同时填写模板的
-  "复核提供商 / 实现提供商"。已推送的 trailer 不改写，格式错误只在健康报告中计数。
+  "复核提供商 / 实现提供商"。已推送的 trailer 不改写，格式错误只计数和提醒，不阻断。
 - 评审价值来自不同假设、失败边界和证据，不来自模型名称；换提供商只降低共享盲区，不替代证据。
   最终仍以精确差异、测试、实机和 CI 判断。
 

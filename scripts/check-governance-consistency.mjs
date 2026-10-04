@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { FALLBACK_REASONS } from './report-governance-health.mjs';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const failures = [];
@@ -31,6 +32,11 @@ const requiredFiles = [
   'scripts/check-collaboration-state.mjs',
   'scripts/tests/collaboration-state.test.mjs',
   'scripts/run-repo-bash.mjs',
+  'scripts/run-source-checks.mjs',
+  'scripts/verify-source-lane.sh',
+  'scripts/task-preflight.mjs',
+  'scripts/tests/source-checks.test.mjs',
+  'scripts/tests/task-preflight.test.mjs',
   'scripts/tests/run-repo-bash.test.mjs',
   'scripts/background-browser-test.mjs',
   'scripts/tests/background-browser-test.test.mjs',
@@ -658,7 +664,13 @@ requireText('docs/release-acceptance-template.md', [
   '## 自更新通道验收',
   '预览版禁止生产部署',
 ]);
-requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天']);
+requireText('PROJECT_RULES.md', ['7. 提案状态必须可机器归类并有时限', 'scripts/report-governance-health.mjs', '单次延期不超过 14 天',
+  '草案或待复核自提案日期起', '草案改为待复核不重新计时']);
+requireText('docs/multi-agent-collaboration.md', FALLBACK_REASONS.map((reason) => '`' + reason + '`'));
+requireText('docs/project-management.md', ['scripts/task-preflight.mjs', 'permissionsGranted', 'candidateCommit', 'sha256']);
+for (const path of ['scripts/verify-change.sh', '.github/workflows/release.yml']) requireText(path, ['node scripts/run-source-checks.mjs']);
+requireText('scripts/verify-governance.sh', ['scripts/tests/source-checks.test.mjs', 'scripts/tests/task-preflight.test.mjs']);
+for (const path of ['AGENTS.md', 'CLAUDE.md', '.codex-workflows/session-collaboration.workflow.yaml']) requireText(path, ['scripts/task-preflight.mjs']);
 requireText('.codex-workflows/quality-audit-kpanel.workflow.yaml', ['node scripts/report-governance-health.mjs --strict --since=']);
 requireText('docs/multi-agent-collaboration.md', ['Independent-Review: reviewer=<提供商> author=<提供商>', '默认由与实现者不同的模型']);
 requireText('PROJECT_RULES.md', ['复核者默认来自与实现者不同的模型提供商']);

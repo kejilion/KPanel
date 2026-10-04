@@ -79,7 +79,7 @@ git() {
     *) return 0 ;;
   esac
 }
-node() { return 0; }
+node() { printf 'node %s\n' "$*" >>"$VERIFY_STUB_LOG"; }
 npm() { printf 'npm %s\n' "$*" >>"$VERIFY_STUB_LOG"; }
 make() { printf 'make %s\n' "$*" >>"$VERIFY_STUB_LOG"; }
 go() { printf 'go %s\n' "$*" >>"$VERIFY_STUB_LOG"; }
@@ -110,8 +110,9 @@ export -f git node npm make go gofmt docker
     assert.match(result.stdout, /verification_preflight=pass/);
     assert.doesNotMatch(result.stdout, /No changes require verification\./);
     const commands = readFileSync(log, 'utf8');
-    assert.match(commands, /make test/);
-    assert.match(commands, /go test -race \.\/internal\/panel/);
+    assert.match(commands, /node scripts\/run-source-checks\.mjs/);
+    assert.match(commands, /make build-linux-binaries/);
+    assert.doesNotMatch(commands, /make test\n|make build-linux\n/);
     assert.match(commands, /docker build /);
   } finally {
     makeRemovable(root);

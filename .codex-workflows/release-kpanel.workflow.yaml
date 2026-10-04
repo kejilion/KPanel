@@ -1,12 +1,12 @@
 ---
 name: release-kpanel
 description: "按稳定版或预览版发布画像完成 KPanel 多维质量验收、CI、Release、公开镜像、通道提升及适用的生产核对"
-version: "3.4"
+version: "3.5"
 author: "Codex"
 tags: [release, deploy, docker, github, appmarket, verification]
 params: [project_dir, version, release_channel, release_train, previous_version, image, runner_image, runner_id, apps_repo, validation_environment, production_environment]
 created: "2026-07-27T13:00:00Z"
-updated: "2026-09-28T04:03:01Z"
+updated: "2026-10-04T00:00:00+08:00"
 ---
 
 # Release KPanel
@@ -157,6 +157,12 @@ bash scripts/check-version-consistency.sh
 ```
 
 ### 3. 执行 L3 发布前核验
+
+内部 L3 与 Release 复用 `node scripts/run-source-checks.mjs` 的固定检查分组，并发和失败语义按
+`docs/project-management.md` 第 10 节。完整 L3 仍只从下列外层入口启动，不在外面重复 npm ci、
+全量 test/race/vet 或前端 build；保留场景包、安全、镜像及所有后续发布门禁。
+接管前核对精确交付包，审计提醒在单功能候选阶段处理；实际每个 RC/稳定版均按完整画像验收。
+记录分组与总耗时，两稳定列车后再判定真实发布收益。
 
 进入本步骤即冻结候选。此后新增功能默认进入下一版本；若候选文件、分支或 `HEAD` 发生任何变化，
 本轮 L3 结果作废，必须先按 `docs/project-management.md` 的冲突恢复流程重建候选，再重新核验。

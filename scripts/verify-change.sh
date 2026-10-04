@@ -98,6 +98,8 @@ for path in "${changed_files[@]}"; do
     scripts/check-collaboration-state.mjs|scripts/archive-release-candidate.mjs|scripts/tests/archive-release-candidate.test.mjs|\
     scripts/check-release-acceptance-coverage.mjs|\
     scripts/run-repo-bash.mjs|\
+    scripts/run-source-checks.mjs|scripts/verify-source-lane.sh|scripts/task-preflight.mjs|\
+    scripts/tests/source-checks.test.mjs|scripts/tests/task-preflight.test.mjs|\
     scripts/run-release-gate.sh|scripts/run-release-l3.mjs|scripts/run-release-l3-remote.sh|\
     scripts/run-production-evidence.mjs|scripts/run-production-evidence-remote.sh|\
     scripts/background-browser-test.mjs|scripts/local-feature-preview.mjs|scripts/mock-app-market-api.mjs|\
@@ -379,14 +381,11 @@ if [[ ${#go_format_files[@]} -gt 0 ]]; then
 fi
 
 if [[ "$requested_level" == "3" || "$requested_level" == "l3" || "$requested_level" == "release" ]]; then
-  install_web_dependencies
-  make test
+  node scripts/run-source-checks.mjs
   verify_scene_packs
-  go test -race ./internal/panel ./internal/auth ./internal/dockerx
-  go vet ./...
   make security-audit
   bash scripts/security-scan.sh source
-  make build-linux
+  make build-linux-binaries
   build_verification_image
   bash scripts/check-managed-script-contract.sh kejilion-panel:verify
   bash scripts/security-scan.sh image kejilion-panel:verify

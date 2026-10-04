@@ -38,6 +38,7 @@ git worktree list
    `.codex-workflows/README.md` 并列出相关工作流；普通 L0/L1 不为发现流程加载全部工作流。
 6. 按 `docs/project-management.md` 填写标准任务契约。写任务达到 Definition of Ready 后，才能在
    最新批准基线创建专用 branch/worktree；管理工作树只用于同步、盘点和只读比较。
+   复杂写任务和长验证按该文档 6.2.1 使用 `scripts/task-preflight.mjs` 成组资格化输入与交付；小任务不加机械步骤。
 7. 涉及界面布局、交互、字体、主题、图标、动效或视觉资产时，加载
    `docs/ui-visual-language.md`；它是共享产品视觉入口，不在本文件复制视觉规则。
 
