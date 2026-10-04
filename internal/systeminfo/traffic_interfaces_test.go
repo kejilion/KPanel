@@ -149,6 +149,9 @@ func TestClassifyTrafficInterfacesExplainsEachInterface(t *testing.T) {
 			reasons := map[string]string{}
 			for index, status := range statuses {
 				reasons[status.Name] = status.Reason
+				if status.Virtual != (status.Name == "docker0") {
+					t.Fatalf("%s virtual = %v", status.Name, status.Virtual)
+				}
 				if index > 0 && statuses[index-1].Name >= status.Name {
 					t.Fatalf("statuses are not sorted: %#v", statuses)
 				}
@@ -250,7 +253,11 @@ func TestTrafficContinuityIgnoresAnotherBootsState(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectTraffic(t, fixture.collector(true), 1000, 2000)
-	for _, content := range []string{`{"schemaVersion":1,"bootId":"boot-a","scope":"x","extra":1}`, `{"schemaVersion":2}`, `not json`} {
+	for _, content := range []string{
+		`{"schemaVersion":1,"bootId":"boot-a","scope":"x","extra":1}`, `{"schemaVersion":2}`, `not json`,
+		`{"schemaVersion":1,"bootId":"boot-a","scope":"x","offsetReceived":-9223372036854775808}`,
+		`{"schemaVersion":1,"bootId":"boot-a","scope":"x","offsetSent":4611686018427387905}`,
+	} {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}

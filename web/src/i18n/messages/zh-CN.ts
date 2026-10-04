@@ -151,6 +151,7 @@ export const zhCNMessages = {
   'cluster.trafficInterfaces.countInterface': "将 {name} 计入流量",
   'cluster.trafficInterfaces.excluded': "自动规则已排除：{names}",
   'cluster.trafficInterfaces.empty': "未读取到可统计的网卡。",
+  'cluster.trafficInterfaces.others': "其他 {count} 个虚拟网卡（未计入）",
   'cluster.trafficInterfaces.fallback': "所选网卡当前都不存在，暂按自动规则统计。",
   'cluster.trafficInterfaces.selectionError': "已保存的网卡选择无法读取，暂按自动规则统计；重新保存即可覆盖。",
   'cluster.trafficInterfaces.chooseOne': "请至少勾选一块网卡，或改用自动。",

@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useI18n } from '@/i18n'
 import { ApiError, api } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
-import type { ClusterHost, TrafficInterfaceReason, TrafficInterfacesSnapshot } from '@/types/api'
+import type { ClusterHost, TrafficInterfaceReason, TrafficInterfaceStatus, TrafficInterfacesSnapshot } from '@/types/api'
 
 // Each host keeps its own selection: this panel edits only its local host.
 // Other KPanel hosts are set in their own panel, lightweight nodes on the node.
@@ -25,6 +25,22 @@ const dirty = computed(() => {
   if (!snapshot.value) return false
   if (mode.value === 'auto') return savedInclude.value.length > 0
   return !sameNames(chosen.value, savedInclude.value)
+})
+// Docker adds a veth per container: uncounted, unchosen virtual interfaces sit
+// in a collapsed group so the uplinks stay visible. Grouping follows the saved
+// state, so a row does not jump between groups while it is being ticked.
+const sections = computed(() => {
+  const primary: TrafficInterfaceStatus[] = []
+  const others: TrafficInterfaceStatus[] = []
+  for (const entry of rows.value) {
+    const quiet = entry.virtual && !entry.counted && entry.reason !== 'missing' && !savedInclude.value.includes(entry.name)
+    if (quiet) others.push(entry)
+    else primary.push(entry)
+  }
+  return [
+    { key: 'primary', collapsed: false, rows: primary },
+    ...(others.length ? [{ key: 'others', collapsed: true, rows: others }] : []),
+  ]
 })
 const fellBack = computed(() => savedInclude.value.length > 0 && rows.value.every(
   (entry) => !savedInclude.value.includes(entry.name) || entry.reason === 'missing',
@@ -133,25 +149,33 @@ defineExpose({ dirty, validate, save })
         <p v-if="mode === 'auto' && savedExclude.length" class="cluster-traffic-interfaces__note">
           {{ t('cluster.trafficInterfaces.excluded', { names: savedExclude.join(', ') }) }}
         </p>
-        <ul v-if="rows.length" class="cluster-traffic-interfaces__list">
-          <li v-for="entry in rows" :key="entry.name">
-            <label>
-              <input
-                type="checkbox"
-                :checked="mode === 'manual' ? chosen.includes(entry.name) : entry.counted"
-                :disabled="disabled || mode === 'auto'"
-                :aria-label="t('cluster.trafficInterfaces.countInterface', { name: entry.name })"
-                @change="toggle(entry.name, ($event.target as HTMLInputElement).checked)"
-              />
-              <code>{{ entry.name }}</code>
-            </label>
-            <span class="cluster-traffic-interfaces__reason">{{ reasonLabel(entry.reason) }}</span>
-            <span v-if="entry.reason !== 'missing'" class="cluster-traffic-interfaces__bytes">
-              ↓ {{ formatBytes(entry.receivedBytes) }} · ↑ {{ formatBytes(entry.sentBytes) }}
-            </span>
-          </li>
-        </ul>
-        <p v-else class="cluster-traffic-interfaces__note">{{ t('cluster.trafficInterfaces.empty') }}</p>
+        <component
+          :is="section.collapsed ? 'details' : 'div'"
+          v-for="section in rows.length ? sections : []"
+          :key="section.key"
+          class="cluster-traffic-interfaces__group"
+        >
+          <summary v-if="section.collapsed">{{ t('cluster.trafficInterfaces.others', { count: section.rows.length }) }}</summary>
+          <ul class="cluster-traffic-interfaces__list">
+            <li v-for="entry in section.rows" :key="entry.name">
+              <label>
+                <input
+                  type="checkbox"
+                  :checked="mode === 'manual' ? chosen.includes(entry.name) : entry.counted"
+                  :disabled="disabled || mode === 'auto'"
+                  :aria-label="t('cluster.trafficInterfaces.countInterface', { name: entry.name })"
+                  @change="toggle(entry.name, ($event.target as HTMLInputElement).checked)"
+                />
+                <code>{{ entry.name }}</code>
+              </label>
+              <span class="cluster-traffic-interfaces__reason">{{ reasonLabel(entry.reason) }}</span>
+              <span v-if="entry.reason !== 'missing'" class="cluster-traffic-interfaces__bytes">
+                ↓ {{ formatBytes(entry.receivedBytes) }} · ↑ {{ formatBytes(entry.sentBytes) }}
+              </span>
+            </li>
+          </ul>
+        </component>
+        <p v-if="!rows.length" class="cluster-traffic-interfaces__note">{{ t('cluster.trafficInterfaces.empty') }}</p>
       </template>
       <small>{{ t('cluster.trafficInterfaces.hint') }}</small>
     </template>
@@ -172,6 +196,8 @@ defineExpose({ dirty, validate, save })
 .cluster-traffic-interfaces__modes label,
 .cluster-traffic-interfaces__list label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .cluster-traffic-interfaces__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cluster-traffic-interfaces__group summary { cursor: pointer; padding: 4px 0 8px; font-size: .875rem; color: var(--text-soft); }
+.cluster-traffic-interfaces__group summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .cluster-traffic-interfaces__list li {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
   padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: .875rem;

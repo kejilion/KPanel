@@ -1550,10 +1550,13 @@ function mockMonitoringCheckSnapshot() {
 let mockTrafficRevision = 1
 let mockTrafficSelection = { include: [], exclude: [] }
 const mockTrafficCounters = [
-  { name: 'docker0', receivedBytes: 7_340_032, sentBytes: 52_428_800, defaultRoute: false },
-  { name: 'eth0', receivedBytes: 1_288_490_188_800, sentBytes: 322_122_547_200, defaultRoute: true },
-  { name: 'lo', receivedBytes: 1_048_576, sentBytes: 1_048_576, defaultRoute: false },
-  { name: 'warp', receivedBytes: 85_899_345_920, sentBytes: 12_884_901_888, defaultRoute: false },
+  { name: 'docker0', receivedBytes: 7_340_032, sentBytes: 52_428_800, defaultRoute: false, virtual: true },
+  { name: 'eth0', receivedBytes: 1_288_490_188_800, sentBytes: 322_122_547_200, defaultRoute: true, virtual: false },
+  { name: 'lo', receivedBytes: 1_048_576, sentBytes: 1_048_576, defaultRoute: false, virtual: false },
+  { name: 'warp', receivedBytes: 85_899_345_920, sentBytes: 12_884_901_888, defaultRoute: false, virtual: false },
+  ...['3f2a1c9', '8b04d6e', 'c71e5a2', 'e9d3b40'].map((id, index) => ({
+    name: `veth${id}`, receivedBytes: (index + 1) * 524_288_000, sentBytes: (index + 2) * 104_857_600, defaultRoute: false, virtual: true,
+  })),
 ]
 
 function mockTrafficInterfacesSnapshot() {

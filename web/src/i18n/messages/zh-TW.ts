@@ -152,6 +152,7 @@ export const zhTWMessages = {
   'cluster.trafficInterfaces.countInterface': "將 {name} 計入流量",
   'cluster.trafficInterfaces.excluded': "自動規則已排除：{names}",
   'cluster.trafficInterfaces.empty': "未讀取到可統計的網絡卡。",
+  'cluster.trafficInterfaces.others': "其他 {count} 個虛擬網絡卡（未計入）",
   'cluster.trafficInterfaces.fallback': "所選網絡卡目前都不存在，暫按自動規則統計。",
   'cluster.trafficInterfaces.selectionError': "已儲存的網絡卡選擇無法讀取，暫按自動規則統計；重新儲存即可覆蓋。",
   'cluster.trafficInterfaces.chooseOne': "請至少勾選一張網絡卡，或改用自動。",
