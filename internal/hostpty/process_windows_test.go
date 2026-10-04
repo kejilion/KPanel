@@ -52,15 +52,23 @@ func conPTYCommand(t *testing.T, script string) *exec.Cmd {
 	if err != nil {
 		t.Fatal(err)
 	}
-	units := utf16.Encode([]rune("[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; " + script))
+	// Load the fixed inbox cmdlets directly rather than discovering unrelated
+	// runner modules via the machine's optional analysis cache.
+	moduleRoot := filepath.Join(system, `WindowsPowerShell\v1.0\Modules`)
+	var setup strings.Builder
+	for _, name := range []string{"Microsoft.PowerShell.Utility", "Microsoft.PowerShell.Management"} {
+		manifest := strings.ReplaceAll(filepath.Join(moduleRoot, name, name+".psd1"), "'", "''")
+		setup.WriteString("Import-Module '" + manifest + "'; ")
+	}
+	setup.WriteString("[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); ")
+	units := utf16.Encode([]rune(setup.String() + script))
 	encoded := make([]byte, len(units)*2)
 	for i, u := range units {
 		binary.LittleEndian.PutUint16(encoded[i*2:], u)
 	}
 	command := exec.Command(filepath.Join(system, `WindowsPowerShell\v1.0\powershell.exe`), "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded))
 	command.Dir = t.TempDir()
-	command.Env = []string{"SystemRoot=" + filepath.Dir(system), "WINDIR=" + filepath.Dir(system), "PATH=" + system, "TEMP=" + command.Dir, "TMP=" + command.Dir,
-		"PSModulePath=" + filepath.Join(filepath.Dir(command.Path), "Modules"), "PSModuleAnalysisCachePath=NUL"}
+	command.Env = []string{"SystemRoot=" + filepath.Dir(system), "WINDIR=" + filepath.Dir(system), "PATH=" + system, "TEMP=" + command.Dir, "TMP=" + command.Dir}
 	return command
 }
 
@@ -152,7 +160,7 @@ func TestWindowsConPTYCommandInterpreter(t *testing.T) {
 func TestWindowsConPTYInteractiveInput(t *testing.T) {
 	command := conPTYCommand(t, "")
 	command.Args = []string{command.Path, "-NoLogo", "-NoProfile", "-NoExit", "-Command",
-		`[Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; [Console]::WriteLine('PTY_READY')`}
+		`[Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); [Console]::WriteLine('PTY_READY')`}
 	p, err := Start(command, 24, 100)
 	if err != nil {
 		t.Fatal(err)
