@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -22,26 +23,31 @@ const maxOfficeExpanded = 64 << 20
 const maxOfficeXML = 4 << 20
 const maxOfficeItems = 10_000
 const maxOfficeEdits = 256
+const maxOfficeDisplayBytes = 2 << 20
+const maxOfficeViewBytes = 16 << 20
 
 var ErrOfficeUnsupported = errors.New("office document structure is unsupported")
 var ErrOfficeInvalidEdit = errors.New("office edit is invalid or targets unsupported content")
 
 type officePackage struct {
-	ctx         context.Context
-	zip         *zip.Reader
-	files       map[string]*zip.File
-	xml         map[string]*officeXML
-	targets     map[string]officeTarget
-	items       int
-	parsedNodes int
-	mediaBytes  int
-	signed      bool
+	ctx          context.Context
+	zip          *zip.Reader
+	files        map[string]*zip.File
+	xml          map[string]*officeXML
+	targets      map[string]officeTarget
+	items        int
+	parsedNodes  int
+	mediaBytes   int
+	displayBytes int
+	imageCache   map[string]*officeImage
+	signed       bool
 }
 
 type officeTarget struct {
 	part  string
 	nodes []*officeNode
 	cell  *officeNode
+	text  string
 }
 
 func officeKind(name string) string {
@@ -67,13 +73,19 @@ func openOffice(ctx context.Context, data []byte) (*officePackage, error) {
 	if len(z.File) > 2048 {
 		return nil, ErrTooLarge
 	}
-	p := &officePackage{ctx: ctx, zip: z, files: map[string]*zip.File{}, xml: map[string]*officeXML{}, targets: map[string]officeTarget{}}
+	p := &officePackage{ctx: ctx, zip: z, files: map[string]*zip.File{}, xml: map[string]*officeXML{}, targets: map[string]officeTarget{}, imageCache: map[string]*officeImage{}}
 	var expanded uint64
 	for _, f := range z.File {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		name := f.Name
+		if len(name) > 512 {
+			return nil, ErrTooLarge
+		}
+		if !utf8.ValidString(name) || !validOfficeText(name) {
+			return nil, ErrOfficeUnsupported
+		}
 		if name == "" || strings.ContainsAny(name, "\\\x00:") || name == ".." || strings.HasPrefix(name, "../") || strings.HasPrefix(name, "/") || path.Clean(name) != strings.TrimSuffix(name, "/") || f.Mode()&os.ModeSymlink != 0 || f.Flags&1 != 0 || (f.Method != zip.Store && f.Method != zip.Deflate) {
 			return nil, ErrOfficeUnsupported
 		}
@@ -165,7 +177,34 @@ func (p *officePackage) document(kind string) (contract.OfficeDocument, error) {
 			}
 		}
 	}
-	return doc, err
+	if err != nil {
+		return doc, err
+	}
+	if _, err := officeViewSize(doc); err != nil {
+		return doc, err
+	}
+	return doc, nil
+}
+
+func officeViewSize(doc contract.OfficeDocument) (int, error) {
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return 0, ErrOfficeUnsupported
+	}
+	// Reserve room for the entry metadata attached after parsing.
+	if len(data) > maxOfficeViewBytes-(64<<10) {
+		return 0, ErrTooLarge
+	}
+	return len(data), nil
+}
+func (p *officePackage) displayText(values ...string) error {
+	for _, value := range values {
+		p.displayBytes += len(value)
+	}
+	if p.displayBytes > maxOfficeDisplayBytes {
+		return ErrTooLarge
+	}
+	return p.ctx.Err()
 }
 
 func makeOfficeReadOnly(item *contract.OfficeItem) {
@@ -259,9 +298,12 @@ func (m *Manager) WriteOffice(ctx context.Context, virtual string, input contrac
 	if err != nil {
 		return contract.FileEntry{}, err
 	}
-	if _, err = p.document(officeKind(current.Name)); err != nil {
+	doc, err := p.document(officeKind(current.Name))
+	if err != nil {
 		return contract.FileEntry{}, err
 	}
+	viewBytes, _ := officeViewSize(doc)
+	displayBytes := p.displayBytes
 	patches := map[string][]officePatch{}
 	seen := map[string]bool{}
 	for _, edit := range input.OfficeEdits {
@@ -270,6 +312,13 @@ func (m *Manager) WriteOffice(ctx context.Context, virtual string, input contrac
 			return contract.FileEntry{}, ErrOfficeInvalidEdit
 		}
 		seen[edit.ID] = true
+		displayBytes += len(edit.Text) - len(target.text)
+		before, _ := json.Marshal(target.text)
+		after, _ := json.Marshal(edit.Text)
+		viewBytes += len(after) - len(before)
+		if displayBytes > maxOfficeDisplayBytes || viewBytes > maxOfficeViewBytes-(64<<10) {
+			return contract.FileEntry{}, ErrTooLarge
+		}
 		changes, err := p.edit(target, edit.Text)
 		if err != nil {
 			return contract.FileEntry{}, err
@@ -331,6 +380,22 @@ func (m *Manager) WriteOffice(ctx context.Context, virtual string, input contrac
 		}
 	}
 	if err := w.Close(); err != nil {
+		return contract.FileEntry{}, err
+	}
+	// The edited file must still fit the same preview budgets before replacing
+	// the original, including offset/JSON expansion caused by escaped text.
+	if _, err := temp.Seek(0, io.SeekStart); err != nil {
+		return contract.FileEntry{}, err
+	}
+	written, err := io.ReadAll(io.LimitReader(temp, MaxOfficeBytes+1))
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	checked, err := openOffice(ctx, written)
+	if err != nil {
+		return contract.FileEntry{}, err
+	}
+	if _, err = checked.document(officeKind(current.Name)); err != nil {
 		return contract.FileEntry{}, err
 	}
 	if err := temp.Sync(); err != nil {

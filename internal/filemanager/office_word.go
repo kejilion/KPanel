@@ -40,7 +40,11 @@ func (p *officePackage) word() ([]contract.OfficeSection, error) {
 			}
 			section.Items = append(section.Items, item)
 			for _, blip := range n.all(nsDraw, "blip") {
-				if img := p.imageItem(rels[officeEmbed(blip)]); img != nil {
+				img, err := p.imageItem(rels[officeEmbed(blip)])
+				if err != nil {
+					return nil, err
+				}
+				if img != nil {
 					section.Items = append(section.Items, *img)
 				}
 			}
@@ -78,6 +82,9 @@ func (p *officePackage) word() ([]contract.OfficeSection, error) {
 							}
 							item.Text += officeText(para.all(nsWord, "t"))
 						}
+						if err := p.displayText(item.Text); err != nil {
+							return nil, err
+						}
 					}
 					cells = append(cells, item)
 				}
@@ -96,6 +103,9 @@ func (p *officePackage) textItem(part string, n *officeNode, ns string) (contrac
 	}
 	nodes := n.all(ns, "t")
 	item := contract.OfficeItem{ID: id, Kind: "text", Text: officeText(nodes)}
+	if err := p.displayText(item.Text); err != nil {
+		return item, err
+	}
 	// Field results, drawings, breaks and tracked revisions must not be flattened.
 	editable := len(nodes) > 0
 	var safe func(*officeNode)
@@ -114,7 +124,7 @@ func (p *officePackage) textItem(part string, n *officeNode, ns string) (contrac
 	safe(n)
 	item.Editable = editable
 	if editable {
-		p.targets[id] = officeTarget{part: part, nodes: nodes}
+		p.targets[id] = officeTarget{part: part, nodes: nodes, text: item.Text}
 	}
 	if ns == nsWord {
 		if props := n.child(ns, "pPr"); props != nil {
@@ -168,23 +178,44 @@ func officeEmbed(n *officeNode) string {
 	}
 	return ""
 }
-func (p *officePackage) imageItem(name string) *contract.OfficeItem {
+
+type officeImage struct {
+	url  string
+	size int
+}
+
+func (p *officePackage) imageItem(name string) (*contract.OfficeItem, error) {
 	if name == "" {
-		return nil
+		return nil, nil
 	}
-	data, err := p.read(name, 2<<20)
-	if err != nil {
-		return nil
+	f := p.files[name]
+	if f == nil {
+		return nil, nil
 	}
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 16_000_000 || p.mediaBytes+len(data) > 8<<20 {
-		return nil
+	if f.UncompressedSize64 > 2<<20 || uint64(p.mediaBytes)+f.UncompressedSize64 > 8<<20 {
+		return nil, ErrTooLarge
 	}
-	if format != "png" && format != "jpeg" && format != "gif" {
-		return nil
+	cached, known := p.imageCache[name]
+	if !known {
+		data, err := p.read(name, 2<<20)
+		if err != nil {
+			return nil, err
+		}
+		config, format, err := image.DecodeConfig(bytes.NewReader(data))
+		if err == nil && config.Width > 0 && config.Height > 0 && int64(config.Width)*int64(config.Height) <= 16_000_000 && (format == "png" || format == "jpeg" || format == "gif") {
+			cached = &officeImage{url: "data:image/" + format + ";base64," + base64.StdEncoding.EncodeToString(data), size: len(data)}
+		}
+		p.imageCache[name] = cached
 	}
-	p.mediaBytes += len(data)
-	return &contract.OfficeItem{Kind: "image", Image: "data:image/" + format + ";base64," + base64.StdEncoding.EncodeToString(data)}
+	if cached == nil {
+		return nil, nil
+	}
+	p.items++
+	if p.items > maxOfficeItems {
+		return nil, ErrTooLarge
+	}
+	p.mediaBytes += cached.size
+	return &contract.OfficeItem{Kind: "image", Image: cached.url}, nil
 }
 
 func officeString(n *officeNode, ns string) string {

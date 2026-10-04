@@ -68,7 +68,11 @@ func (p *officePackage) slides() ([]contract.OfficeSection, error) {
 			}
 			if shape.is(nsSlide, "pic") {
 				for _, blip := range shape.all(nsDraw, "blip") {
-					if img := p.imageItem(images[officeEmbed(blip)]); img != nil {
+					img, err := p.imageItem(images[officeEmbed(blip)])
+					if err != nil {
+						return nil, err
+					}
+					if img != nil {
 						img.X, img.Y, img.Width, img.Height = xpos, ypos, w, h
 						section.Items = append(section.Items, *img)
 					}

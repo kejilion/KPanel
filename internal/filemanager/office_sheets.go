@@ -24,7 +24,16 @@ func (p *officePackage) recalculatePatch() officePatch {
 	if i := strings.IndexByte(name, ':'); i >= 0 {
 		prefix = name[:i+1]
 	}
-	return officePatch{x.root.closeStart, x.root.closeStart, "<" + prefix + `calcPr fullCalcOnLoad="1" forceFullCalc="1"/>`}
+	position := x.root.closeStart
+	// CT_Workbook places calcPr before these optional trailing elements.
+	afterCalc := map[string]bool{"oleSize": true, "customWorkbookViews": true, "pivotCaches": true, "smartTagPr": true, "smartTagTypes": true, "webPublishing": true, "fileRecoveryPr": true, "webPublishObjects": true, "extLst": true}
+	for _, child := range x.root.children {
+		if child.name.Space == nsSheet && afterCalc[child.name.Local] {
+			position = child.start
+			break
+		}
+	}
+	return officePatch{position, position, "<" + prefix + `calcPr fullCalcOnLoad="1" forceFullCalc="1"/>`}
 }
 
 func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
@@ -75,8 +84,25 @@ func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
 			return nil, ErrOfficeUnsupported
 		}
 		section := contract.OfficeSection{Name: sheet.attr("name"), Items: []contract.OfficeItem{}}
+		if err := p.displayText(section.Name); err != nil {
+			return nil, err
+		}
 		seen := map[string]bool{}
 		protected := s.root.child(nsSheet, "sheetProtection") != nil
+		var formulaRanges []officeRange
+		for _, formula := range s.root.all(nsSheet, "f") {
+			if formula.attr("t") != "array" && formula.attr("t") != "dataTable" {
+				continue
+			}
+			rangeValue, ok := officeFormulaRange(formula.attr("ref"))
+			if !ok {
+				return nil, ErrOfficeUnsupported
+			}
+			formulaRanges = append(formulaRanges, rangeValue)
+			if len(formulaRanges) > 1024 {
+				return nil, ErrTooLarge
+			}
+		}
 		for _, cell := range s.root.all(nsSheet, "c") {
 			ref := cell.attr("r")
 			row, col, ok := officeCellPosition(ref)
@@ -90,6 +116,12 @@ func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
 			}
 			item := contract.OfficeItem{ID: id, Kind: "cell", Row: row, Column: col}
 			plain := cell.attr("cm") == "" && cell.attr("vm") == ""
+			for _, formulaRange := range formulaRanges {
+				if formulaRange.contains(row, col) {
+					plain = false
+					break
+				}
+			}
 			v := cell.child(nsSheet, "v")
 			if v != nil {
 				item.Text = v.text
@@ -116,6 +148,9 @@ func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
 			if f := cell.child(nsSheet, "f"); f != nil {
 				item.Formula = "=" + f.text
 			}
+			if err := p.displayText(item.Text, item.Formula); err != nil {
+				return nil, err
+			}
 			item.Editable = plain && !protected && item.Formula == "" && (cell.attr("t") == "" || cell.attr("t") == "n" || cell.attr("t") == "s" || cell.attr("t") == "inlineStr")
 			for _, child := range cell.children {
 				if !child.is(nsSheet, "v") && !child.is(nsSheet, "is") {
@@ -123,7 +158,7 @@ func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
 				}
 			}
 			if item.Editable {
-				p.targets[id] = officeTarget{part: part, cell: cell}
+				p.targets[id] = officeTarget{part: part, cell: cell, text: item.Text}
 			}
 			section.Rows = max(section.Rows, row)
 			section.Columns = max(section.Columns, col)
@@ -137,6 +172,31 @@ func (p *officePackage) sheets() ([]contract.OfficeSection, error) {
 	return sections, nil
 }
 
+type officeRange struct{ firstRow, lastRow, firstColumn, lastColumn int }
+
+func (r officeRange) contains(row, column int) bool {
+	return row >= r.firstRow && row <= r.lastRow && column >= r.firstColumn && column <= r.lastColumn
+}
+func officeFormulaRange(ref string) (officeRange, bool) {
+	values := strings.Split(ref, ":")
+	if len(values) > 2 {
+		return officeRange{}, false
+	}
+	row, col, ok := officeCellPosition(values[0])
+	if !ok {
+		return officeRange{}, false
+	}
+	r := officeRange{row, row, col, col}
+	if len(values) == 2 {
+		lastRow, lastColumn, ok := officeCellPosition(values[1])
+		if !ok || lastRow < row || lastColumn < col {
+			return officeRange{}, false
+		}
+		r.lastRow, r.lastColumn = lastRow, lastColumn
+	}
+	return r, true
+}
+
 func officeCellPosition(ref string) (int, int, bool) {
 	column, i := 0, 0
 	for i < len(ref) && ref[i] >= 'A' && ref[i] <= 'Z' {
@@ -145,6 +205,14 @@ func officeCellPosition(ref string) (int, int, bool) {
 			return 0, 0, false
 		}
 		i++
+	}
+	if i == len(ref) || ref[i] < '1' || ref[i] > '9' {
+		return 0, 0, false
+	}
+	for _, digit := range ref[i:] {
+		if digit < '0' || digit > '9' {
+			return 0, 0, false
+		}
 	}
 	row, err := strconv.Atoi(ref[i:])
 	return row, column, err == nil && column > 0 && row > 0 && row <= 1_048_576
