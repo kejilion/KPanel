@@ -366,6 +366,32 @@ describe('desktop mode', () => {
     expect(windows[0]?.titleKey).toBe('desktop.scriptWindowTitle')
   })
 
+  it('consumes a new window launch intent once and never persists it', () => {
+    const desktop = useDesktopMode()
+    const id = desktop.openWindow('/app-script/openclaw', 'desktop.scriptWindowTitle', false)
+    const saved = JSON.parse(window.localStorage.getItem('kejilion-panel-desktop-windows')!)[0]
+    expect(saved).not.toHaveProperty('launchPending')
+    expect(desktop.consumeWindowLaunch(id)).toBe(true)
+    expect(desktop.consumeWindowLaunch(id)).toBe(false)
+    expect(desktop.consumeWindowLaunch(999)).toBe(false)
+
+    resetDesktopModeForTest()
+    initializeDesktopMode(window.localStorage, { width: 1280, height: 800 })
+    expect(desktop.consumeWindowLaunch(id)).toBe(false)
+  })
+
+  it('restores legacy script windows without accepting a stored launch intent', () => {
+    const storage = makeStorage()
+    storage.store.set('kejilion-panel-desktop-windows', JSON.stringify([
+      { id: 9, path: '/app-script/openclaw', geometry: {}, minimized: true, launchPending: true },
+    ]))
+    initializeDesktopMode(storage, { width: 1280, height: 800 })
+    const desktop = useDesktopMode()
+
+    expect(desktop.windows.value[0]?.minimized).toBe(true)
+    expect(desktop.consumeWindowLaunch(9)).toBe(false)
+  })
+
   it('ignores malformed persisted windows', () => {
     const storage = makeStorage()
     storage.store.set('kejilion-panel-desktop-windows', '{not json')

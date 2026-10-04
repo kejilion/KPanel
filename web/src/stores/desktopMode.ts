@@ -36,6 +36,8 @@ export interface DesktopWindowState {
   z: number
   /** Focused window id (0 = none). */
   focusedId: number
+  /** One-time user launch intent; never restored from browser storage. */
+  launchPending?: boolean
 }
 
 interface DesktopState {
@@ -428,6 +430,7 @@ export function useDesktopMode() {
       snap: null,
       z: nextZ,
       focusedId: id,
+      launchPending: true,
     })
     state.focusedId = id
     persistWindows(defaultStorage())
@@ -456,6 +459,13 @@ export function useDesktopMode() {
       state.focusedId = top?.id ?? 0
     }
     persistWindows(defaultStorage())
+  }
+
+  function consumeWindowLaunch(id: number): boolean {
+    const target = state.windows.find((windowState) => windowState.id === id)
+    if (!target?.launchPending) return false
+    target.launchPending = false
+    return true
   }
 
   function minimizeWindow(id: number): void {
@@ -583,6 +593,7 @@ export function useDesktopMode() {
     toggleMode,
     openWindow,
     closeWindow,
+    consumeWindowLaunch,
     minimizeWindow,
     restoreWindow,
     toggleMinimized,
