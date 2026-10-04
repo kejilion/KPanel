@@ -170,11 +170,11 @@ test('explicit reviewed_commits rejects malformed or missing lists without falli
   run('run-4', full(base));
   const source = commit(1, { 'internal/alpha/a.go': 'new' });
   for (const reviewed of [undefined, null, [], source, ['short'], [source, source], [42]]) {
-    const meta = { ...scoped(base, source), reviewed_commits: reviewed };
+    const meta = { ...scoped(base, source, 'complete', false), reviewed_commits: reviewed };
     assert.ok(validateRun(normalizeRun('run-5', meta), repo).length > 0);
   }
   for (const reviewed of [null, [], source, ['short'], [source, source], [42]]) {
-    run('run-5', { ...scoped(base, source), reviewed_commits: reviewed });
+    run('run-5', { ...scoped(base, source, 'complete', false), reviewed_commits: reviewed });
     assert.throws(() => assess(repo), /reviewed_commits/);
     const stdout = process.stdout.write;
     const stderr = process.stderr.write;
@@ -225,12 +225,12 @@ test('reviewed_commits must exist in the declared source interval', (t) => {
   const side = commit(2, { 'internal/side/s.go': 'side' });
   git('checkout', '-q', '-');
   const cases = [
-    { ...scoped(base, source), reviewed_commits: ['f'.repeat(40)] },
-    { ...scoped(base, source), reviewed_commits: [base] },
-    { ...scoped(base, source), reviewed_commits: [later] },
-    { ...scoped(base, source), reviewed_commits: [side] },
-    { ...scoped('f'.repeat(40), source), reviewed_commits: [source] },
-    { ...scoped(base, 'f'.repeat(40)), reviewed_commits: [source] },
+    { ...scoped(base, source, 'complete', false), reviewed_commits: ['f'.repeat(40)] },
+    { ...scoped(base, source, 'complete', false), reviewed_commits: [base] },
+    { ...scoped(base, source, 'complete', false), reviewed_commits: [later] },
+    { ...scoped(base, source, 'complete', false), reviewed_commits: [side] },
+    { ...scoped('f'.repeat(40), source, 'complete', false), reviewed_commits: [source] },
+    { ...scoped(base, 'f'.repeat(40), 'complete', false), reviewed_commits: [source] },
   ];
   for (const meta of cases) {
     assert.match(validateRun(normalizeRun('run-5', meta), repo).join('\n'), /does not exist|outside comparison_base\.\.source_ref/);
