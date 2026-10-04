@@ -4,6 +4,7 @@ package hostpty
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf16"
@@ -87,6 +89,48 @@ func TestWindowsConPTYUnicodeResizeAndNaturalExit(t *testing.T) {
 	}
 	if !bytes.Contains(output, []byte("中文终端-OK")) {
 		t.Fatalf("UTF-8 output lost: %q", output)
+	}
+}
+
+// These controls distinguish inbox-shell initialization from ConPTY transport
+// failures while keeping the same pinned executable and minimal environment.
+func TestWindowsInboxShellExplicitEnvironment(t *testing.T) {
+	fixture := conPTYCommand(t, `Write-Output 'DIRECT_READY'; exit 0`)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, fixture.Path, fixture.Args[1:]...)
+	command.Env, command.Dir = fixture.Env, fixture.Dir
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := command.CombinedOutput()
+	if err != nil || !bytes.Contains(output, []byte("DIRECT_READY")) {
+		t.Fatalf("direct inbox shell failed: err=%v output=%q", err, output)
+	}
+}
+
+func TestWindowsConPTYCommandInterpreter(t *testing.T) {
+	command := conPTYCommand(t, "")
+	system, err := windows.GetSystemDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.Path = filepath.Join(system, "cmd.exe")
+	command.Args = []string{command.Path, "/d", "/c", "echo CMD_READY"}
+	p, err := Start(command, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	var transcript conPTYTranscript
+	done := make(chan struct{})
+	var readErr, waitErr error
+	go func() { _, readErr = io.Copy(&transcript, p); waitErr = p.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("command interpreter did not exit; output=%q", transcript.snapshot())
+	}
+	if readErr != nil || waitErr != nil || !strings.Contains(transcript.snapshot(), "CMD_READY") {
+		t.Fatalf("command interpreter failed: read=%v wait=%v output=%q", readErr, waitErr, transcript.snapshot())
 	}
 }
 
