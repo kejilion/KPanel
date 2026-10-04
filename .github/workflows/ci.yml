@@ -88,7 +88,7 @@ jobs:
       - name: Run change-aware verification
         env:
           GOVERNANCE_CI_TOKEN: ${{ github.token }}
-          VERIFY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          VERIFY_BASE_REF: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || 'origin/main' }}
         run: make verify-change
 
       - name: Detect races in privileged core packages

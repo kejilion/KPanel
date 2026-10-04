@@ -12,12 +12,33 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 )
+
+type conPTYTranscript struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (transcript *conPTYTranscript) Write(data []byte) (int, error) {
+	transcript.mu.Lock()
+	defer transcript.mu.Unlock()
+	if remaining := (64 << 10) - transcript.buffer.Len(); remaining > 0 {
+		_, _ = transcript.buffer.Write(data[:min(len(data), remaining)])
+	}
+	return len(data), nil
+}
+
+func (transcript *conPTYTranscript) snapshot() string {
+	transcript.mu.Lock()
+	defer transcript.mu.Unlock()
+	return transcript.buffer.String()
+}
 
 func conPTYCommand(t *testing.T, script string) *exec.Cmd {
 	t.Helper()
@@ -52,14 +73,15 @@ func TestWindowsConPTYUnicodeResizeAndNaturalExit(t *testing.T) {
 		t.Fatal("accepted zero dimensions")
 	}
 	done := make(chan struct{})
-	var output []byte
+	var transcript conPTYTranscript
 	var readErr, waitErr error
-	go func() { output, readErr = io.ReadAll(p); waitErr = p.Wait(); close(done) }()
+	go func() { _, readErr = io.Copy(&transcript, p); waitErr = p.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(15 * time.Second):
-		t.Fatal("ConPTY exit did not produce EOF")
+		t.Fatalf("ConPTY exit did not produce EOF; output=%q", transcript.snapshot())
 	}
+	output := []byte(transcript.snapshot())
 	if readErr != nil || waitErr != nil {
 		t.Fatalf("read=%v wait=%v output=%q", readErr, waitErr, output)
 	}
@@ -81,12 +103,14 @@ func TestWindowsConPTYCloseKillsDescendants(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Close() })
 	pidReady := make(chan uint32, 1)
+	var transcript conPTYTranscript
 	go func() {
 		var output []byte
 		buffer := make([]byte, 4096)
 		pattern := regexp.MustCompile(`CHILD_PID=(\d+);`)
 		for {
 			n, e := p.Read(buffer)
+			_, _ = transcript.Write(buffer[:n])
 			output = append(output, buffer[:n]...)
 			if match := pattern.FindSubmatch(output); match != nil {
 				pid, _ := strconv.ParseUint(string(match[1]), 10, 32)
@@ -102,7 +126,7 @@ func TestWindowsConPTYCloseKillsDescendants(t *testing.T) {
 	select {
 	case pid = <-pidReady:
 	case <-time.After(15 * time.Second):
-		t.Fatal("child PID not reported")
+		t.Fatalf("child PID not reported; output=%q", transcript.snapshot())
 	}
 	child, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
