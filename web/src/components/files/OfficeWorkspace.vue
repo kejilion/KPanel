@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { ChevronLeft, ChevronRight, FileText, RefreshCw, Save } from '@lucide/vue'
 import { useI18n } from '@/i18n'
 import { ApiError } from '@/lib/api'
@@ -47,7 +47,9 @@ async function load() {
   finally { if (own === generation) loading.value = false }
 }
 watch(() => [props.hostId, props.entry.path], load, { immediate: true })
-onBeforeUnmount(() => { generation++; controller?.abort() })
+function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || saving.value) { event.preventDefault(); event.returnValue = '' } }
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onBeforeUnmount(() => { generation++; controller?.abort(); window.removeEventListener('beforeunload', beforeUnload) })
 function value(item: OfficeItem) { return item.id && Object.hasOwn(drafts.value, item.id) ? drafts.value[item.id]! : item.text }
 function change(event: Event) {
   const item = selected.value
@@ -157,8 +159,7 @@ function shortcut(event: KeyboardEvent) { if ((event.ctrlKey || event.metaKey) &
 .office-canvas { min-width: 0; overflow: auto; padding: 24px; }
 .office-paper { max-width: 740px; min-height: 100%; padding: 32px; margin: auto; border: 1px solid var(--file-preview-border); background: var(--file-preview-panel); }
 .office-paper img { display: block; max-width: 100%; max-height: 360px; margin: 10px auto; object-fit: contain; }
-.office-workspace button { font: inherit; color: inherit; background: transparent; cursor: pointer; border: 0; }
-.office-workspace .button--primary { color: var(--file-preview-background); background: var(--file-preview-accent); }
+.office-workspace button:not(.button) { font: inherit; color: inherit; background: transparent; cursor: pointer; border: 0; }
 .office-workspace button:disabled { cursor: default; opacity: .5; }
 .office-paragraph { width: 100%; display: block; text-align: left; padding: 8px; line-height: 1.7; overflow-wrap: anywhere; white-space: pre-wrap; }
 .office-workspace .is-selected { outline: 2px solid var(--file-preview-accent); outline-offset: -2px; background: var(--file-preview-panel-raised); }
@@ -173,7 +174,7 @@ function shortcut(event: KeyboardEvent) { if ((event.ctrlKey || event.metaKey) &
 .office-inspector textarea { height: 160px; resize: vertical; }
 .office-inspector code { display: block; overflow-wrap: anywhere; }
 .office-canvas--xlsx { padding: 0; display: flex; flex-direction: column; }
-.office-paging { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px; font-size: 13px; }
+.office-paging { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 8px; font-size: 14px; }
 .office-paging button { min-height: 36px; padding: 6px; }
 .office-paging input { width: 90px; padding: 6px; margin-left: 6px; }
 .office-grid-scroll { overflow: auto; flex: 1; min-height: 0; }

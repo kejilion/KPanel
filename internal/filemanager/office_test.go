@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -229,5 +231,157 @@ func TestOfficeAttributeValuesAndNumericTypesRemainValid(t *testing.T) {
 				t.Fatal("numeric/literal type", xml)
 			}
 		})
+	}
+}
+
+func officeSheetParts(sheet, workbookTail string) map[string]string {
+	return map[string]string{
+		"xl/workbook.xml":            `<workbook xmlns="` + nsSheet + `" xmlns:r="` + nsRel + `"><sheets><sheet name="Data" r:id="r1"/></sheets>` + workbookTail + `</workbook>`,
+		"xl/_rels/workbook.xml.rels": `<Relationships xmlns="` + nsPackageRel + `"><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>`,
+		"xl/worksheets/sheet1.xml":   `<worksheet xmlns="` + nsSheet + `"><sheetData>` + sheet + `</sheetData></worksheet>`,
+	}
+}
+
+func TestOfficeSharedStringExpansionAndSaveBudget(t *testing.T) {
+	var cells strings.Builder
+	for row := 1; row <= 1000; row++ {
+		fmt.Fprintf(&cells, `<row r="%d"><c r="A%d" t="s"><v>0</v></c></row>`, row, row)
+	}
+	parts := officeSheetParts(cells.String(), "")
+	parts["xl/sharedStrings.xml"] = `<sst xmlns="` + nsSheet + `"><si><t>` + strings.Repeat("x", 32768) + `</t></si></sst>`
+	p, err := openOffice(context.Background(), officeFixture(t, parts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.document("xlsx"); !errors.Is(err, ErrTooLarge) {
+		t.Fatal("shared text expansion was accepted", err)
+	}
+	if p.items > 100 {
+		t.Fatal("budget was checked only after full expansion", p.items)
+	}
+
+	// A valid preview must not accept edits that make it impossible to reopen.
+	paragraph := `<w:p><w:r><w:t>` + strings.Repeat("x", 32000) + `</w:t></w:r></w:p>`
+	original := officeFixture(t, map[string]string{"word/document.xml": `<w:document xmlns:w="` + nsWord + `"><w:body>` + strings.Repeat(paragraph, 65) + `</w:body></w:document>`})
+	m, root := newTestManager(t)
+	file := filepath.Join(root, "budget.docx")
+	if err := os.WriteFile(file, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := m.ReadOffice(context.Background(), "/budget.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.WriteOffice(context.Background(), doc.Entry.Path, contract.FileWriteRequest{ExpectedResourceVersion: doc.Entry.ResourceVersion, ExpectedContentVersion: doc.ContentVersion, OfficeEdits: []contract.OfficeEdit{{ID: doc.Sections[0].Items[0].ID, Text: strings.Repeat("y", 64000)}}})
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatal("oversize save was accepted", err)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil || !bytes.Equal(after, original) {
+		t.Fatal("rejected save changed original", err)
+	}
+}
+
+func TestOfficeFormulaRangesRemainReadOnly(t *testing.T) {
+	for _, kind := range []string{"array", "dataTable"} {
+		t.Run(kind, func(t *testing.T) {
+			original := officeFixture(t, officeSheetParts(`<row r="1"><c r="A1"><f t="`+kind+`" ref="A1:B1">1</f><v>1</v></c><c r="B1"><v>2</v></c><c r="C1"><v>3</v></c></row>`, ""))
+			m, root := newTestManager(t)
+			file := filepath.Join(root, "range.xlsx")
+			if err := os.WriteFile(file, original, 0600); err != nil {
+				t.Fatal(err)
+			}
+			doc, err := m.ReadOffice(context.Background(), "/range.xlsx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			items := doc.Sections[0].Items
+			if items[0].Editable || items[1].Editable || !items[2].Editable {
+				t.Fatal("incorrect formula range editability", items)
+			}
+			_, err = m.WriteOffice(context.Background(), doc.Entry.Path, contract.FileWriteRequest{ExpectedResourceVersion: doc.Entry.ResourceVersion, ExpectedContentVersion: doc.ContentVersion, OfficeEdits: []contract.OfficeEdit{{ID: items[1].ID, Text: "99"}}})
+			if !errors.Is(err, ErrOfficeInvalidEdit) {
+				t.Fatal("formula range result was writable", err)
+			}
+			after, err := os.ReadFile(file)
+			if err != nil || !bytes.Equal(original, after) {
+				t.Fatal("formula result changed", err)
+			}
+		})
+	}
+	for _, ref := range []string{"A+1", "A01", "A0", "A1:B0", "B1:A1", "A1:B1:C1"} {
+		if _, ok := officeFormulaRange(ref); ok {
+			t.Fatal("invalid range accepted", ref)
+		}
+	}
+}
+
+func TestOfficeCalculationPropertiesRespectWorkbookOrder(t *testing.T) {
+	for _, tail := range []string{`<extLst><ext uri="preserved"/></extLst>`, `<oleSize ref="A1"/><extLst/>`, `<calcPr calcId="123"/><extLst/>`} {
+		p, err := openOffice(context.Background(), officeFixture(t, officeSheetParts(`<row r="1"><c r="A1"><v>1</v></c></row>`, tail)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = p.document("xlsx"); err != nil {
+			t.Fatal(err)
+		}
+		x := p.xml["xl/workbook.xml"]
+		updated, err := applyOfficePatches(x.data, []officePatch{p.recalculatePatch()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := parseOfficeXML(context.Background(), updated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calc := parsed.root.child(nsSheet, "calcPr")
+		if calc == nil || calc.attr("fullCalcOnLoad") != "1" || calc.attr("forceFullCalc") != "1" {
+			t.Fatal("calculation flags missing", string(updated))
+		}
+		for _, child := range parsed.root.children {
+			if (child.is(nsSheet, "extLst") || child.is(nsSheet, "oleSize")) && child.start < calc.start {
+				t.Fatal("calcPr follows trailing element", string(updated))
+			}
+		}
+		if strings.Contains(tail, `calcId="123"`) && calc.attr("calcId") != "123" {
+			t.Fatal("existing properties lost", string(updated))
+		}
+	}
+}
+
+func TestOfficeRepeatedImagesCountTowardBudgetsAndReuseDecode(t *testing.T) {
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lS8AAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := map[string]string{
+		"word/document.xml":            `<w:document xmlns:w="` + nsWord + `" xmlns:a="` + nsDraw + `" xmlns:r="` + nsRel + `"><w:body><w:p>` + strings.Repeat(`<a:blip r:embed="image1"/>`, 10001) + `</w:p></w:body></w:document>`,
+		"word/_rels/document.xml.rels": `<Relationships xmlns="` + nsPackageRel + `"><Relationship Id="image1" Target="media/image.png"/></Relationships>`,
+		"word/media/image.png":         string(png),
+	}
+	p, err := openOffice(context.Background(), officeFixture(t, parts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.document("docx"); !errors.Is(err, ErrTooLarge) {
+		t.Fatal("image item budget bypassed", p.items, err)
+	}
+	if len(p.imageCache) != 1 {
+		t.Fatal("repeated image did not share cache", len(p.imageCache))
+	}
+
+	p, err = openOffice(context.Background(), officeFixture(t, map[string]string{"word/media/image.png": string(png)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := p.imageItem("word/media/image.png")
+	if err != nil || first == nil {
+		t.Fatal("image decode failed", err)
+	}
+	// A second call must use the cache, even if the zip member can no longer open.
+	p.files["word/media/image.png"] = &zip.File{FileHeader: zip.FileHeader{UncompressedSize64: uint64(len(png))}}
+	second, err := p.imageItem("word/media/image.png")
+	if err != nil || second == nil || second.Image != first.Image || p.mediaBytes != 2*len(png) {
+		t.Fatal("image cache/count", err)
 	}
 }

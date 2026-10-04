@@ -278,7 +278,11 @@ func (p *officePackage) itemID(part string, n *officeNode) (string, error) {
 	if p.items > maxOfficeItems {
 		return "", ErrTooLarge
 	}
-	return fmt.Sprintf("%s:%d", part, n.start), nil
+	id := fmt.Sprintf("%s:%d", part, n.start)
+	if err := p.displayText(id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 func (p *officePackage) edit(target officeTarget, text string) ([]officePatch, error) {
 	x := p.xml[target.part]
