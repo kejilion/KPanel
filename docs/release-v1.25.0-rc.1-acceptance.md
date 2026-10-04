@@ -117,7 +117,7 @@
 首个时间是重放业务候选保留的原 author date；本轮实际重放时间2026-10-04T10:20:51+08:00。前述 L3/预检失败属于发布流程拦截，均未逃逸到公开失败版本或生产；不能计为产品变更失败，不能把 preview 标签计入生产吞吐。
 
 <!-- kpanel-release-process-metrics:start -->
-- 已记录发布流程异常或无效证据拦截次数：19
+- 已记录发布流程异常或无效证据拦截次数：20
 - 其中生产写操作开始后异常次数：0
 <!-- kpanel-release-process-metrics:end -->
 
@@ -224,6 +224,15 @@
     "impact": "收尾只读git rev-parse HEAD^{tree}未引用，PowerShell改写参数导致Git exit1；与正在运行的docs门禁无关，未推送错误SHA或修改产品。",
     "recoveryEvidence": "tool chunks c7e4f0(error), ece975(quoted ref PASS); original docs2159 tree cfef903fb207c12f8c5b0e4b560db80876b5eb89",
     "permanentAction": "发布责任人：2026-10-11前统一通过Git subprocess argv读取带caret/braces的ref，PowerShell调用必须完整引用；退出条件为真实tree读取成功、异常原件保留及最终docs新SHA重新资格化。",
+    "historicalReleases": []
+  },
+  {
+    "fingerprint": "preflight/ci-collector/powershell-json-date-coercion",
+    "position": "before-production-write",
+    "count": 1,
+    "impact": "收尾取证将JSON ISO时间经PowerShell自动日期转换，再传CLI成为本地格式，Python拒绝not-before；候选push已成功，未形成错误CI PASS或main写入。",
+    "recoveryEvidence": "tool chunk ddebc1 ValueError; 9130fd Python直接JSON读取ISO字符串并取得exact039d CI37175347363",
+    "permanentAction": "发布责任人：2026-10-11前所有CI取证参数由Python JSON直接读取并验证ISO字符串，用subprocess argv调用唯一collector；禁止PowerShell自动日期转换。退出条件为真实候选CI绑定原ISO时间/精确SHA，旧异常原件保留。",
     "historicalReleases": []
   }
 ]
