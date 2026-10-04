@@ -4532,6 +4532,7 @@ onBeforeUnmount(() => {
   border: 0;
   color: var(--muted);
   font: inherit;
+  font-size: 14px;
   text-align: left;
   background: transparent;
   cursor: pointer;

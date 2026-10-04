@@ -1284,13 +1284,13 @@ onBeforeUnmount(() => {
         <div class="gallery-hero__actions">
           <button
             v-if="snapshot?.exists && !isWindowsVolumeList"
-            class="button button--secondary button--small"
+            class="button button--secondary"
             type="button"
             @click="openAlbumDialog({ mode: 'create', parent: currentPath })"
           >
             <FolderPlus :size="16" /> 新建相册
           </button>
-          <button class="button button--primary button--small" type="button" :disabled="!snapshot || isWindowsVolumeList" @click="uploadInput?.click()">
+          <button class="button button--primary" type="button" :disabled="!snapshot || isWindowsVolumeList" @click="uploadInput?.click()">
             <Upload :size="16" /> 上传照片和视频
           </button>
           <div class="gallery-hero__more">

@@ -85,6 +85,8 @@ func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(con
 	peer, _ := base64.RawURLEncoding.DecodeString(node.TerminalPeerPublicKey)
 	ctx, cancel := context.WithCancel(context.Background())
 	done, ready := make(chan error, 1), make(chan struct{})
+	readyTimeout := time.NewTimer(3 * time.Second)
+	defer readyTimeout.Stop()
 	go func() {
 		done <- relay.RunManagedDesktopStream(ctx, ts.URL, node.NodeID, node.TargetNodeID, key, peer,
 			handler, prepare, func() { close(ready) })
@@ -101,10 +103,26 @@ func desktopCredentialHostWithProvider(t *testing.T, s *Server, handler func(con
 	case <-ready:
 	case err := <-done:
 		t.Fatal("desktop control failed", err)
-	case <-time.After(3 * time.Second):
+	case <-readyTimeout.C:
 		t.Fatal("desktop control not ready")
 	}
-	return node.NodeID
+	// The client can receive streamOpen before the server registers its control.
+	// Wait for the same server-side admission condition used by the HTTP handlers.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		host, err := s.cluster.Host(ctx, node.NodeID)
+		if err == nil && host.DesktopAvailable && (prepare == nil || s.cluster.ManagedDesktopAvailable(node.NodeID)) {
+			return node.NodeID
+		}
+		select {
+		case err := <-done:
+			t.Fatal("desktop control stopped before registration", err)
+		case <-readyTimeout.C:
+			t.Fatal("desktop control did not register")
+		case <-ticker.C:
+		}
+	}
 }
 
 func TestDesktopSavedCredentialsHTTPContractAndBoundaries(t *testing.T) {

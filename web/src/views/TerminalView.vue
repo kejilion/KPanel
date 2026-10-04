@@ -442,7 +442,7 @@ onBeforeUnmount(() => {
         <small v-if="!choosingHost.terminalAvailable">{{ phrase('此节点尚未启用命令行能力，或终端服务未就绪。') }}</small>
         <button class="button button--secondary" :disabled="!choosingHost.desktopAvailable" @click="connectHost(choosingHost, 'desktop')"><Monitor :size="20" />{{ phrase('远程桌面（RDP）') }}</button>
         <small v-if="!choosingHost.desktopAvailable">{{ desktopReason(choosingHost) }}</small>
-        <button class="button button--secondary button--small" :disabled="desktopPolicyBusy" @click="toggleDesktopPolicy(choosingHost)">{{ phrase(choosingHost.desktopUnavailableReason === 'desktop_disabled_by_center' ? '允许此主机远程桌面' : '禁用此主机远程桌面') }}</button>
+        <button class="button button--secondary" :disabled="desktopPolicyBusy" @click="toggleDesktopPolicy(choosingHost)">{{ phrase(choosingHost.desktopUnavailableReason === 'desktop_disabled_by_center' ? '允许此主机远程桌面' : '禁用此主机远程桌面') }}</button>
         <small v-if="desktopPolicyError" role="alert">{{ desktopPolicyError }}</small>
       </div>
     </ModalDialog>

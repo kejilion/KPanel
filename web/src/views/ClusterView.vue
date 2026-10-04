@@ -2020,7 +2020,8 @@ onBeforeUnmount(() => {
             </span>
             <button
               v-if="!lightEnrollment || lightEnrollmentPlatform !== platform"
-              class="button button--secondary button--small"
+              class="button button--secondary"
+              :class="{ 'button--small': platform === 'linux' }"
               type="button"
               :disabled="generatingLightEnrollment"
               @click="createLightEnrollment(platform)"
@@ -2032,11 +2033,12 @@ onBeforeUnmount(() => {
           <label v-if="platform === 'windows'" class="cluster-windows-desktop-option"><input v-model="lightEnableDesktop" type="checkbox" :disabled="generatingLightEnrollment" />{{ phrase('启用管理员远程桌面（RDP），接入后自动登录') }}<small>{{ phrase('支持的非域 Windows 将启用 RDP 并创建专用本地管理员，保留 UAC、NLA。已有防火墙规则可能允许其他授权账户从网络登录。域机器沿用已有 RDP 设置和账户。') }}</small></label>
           <div v-if="lightEnrollment && lightEnrollmentPlatform === platform" class="cluster-light-enrollment__command">
             <pre>{{ lightEnrollment.command }}</pre>
-            <button class="button button--secondary button--small" type="button" @click="copyLightEnrollment">
+            <button class="button button--secondary" :class="{ 'button--small': platform === 'linux' }" type="button" @click="copyLightEnrollment">
               <Copy :size="14" /> {{ phrase('复制命令') }}
             </button>
             <button
-              class="button button--ghost button--small"
+              class="button button--ghost"
+              :class="{ 'button--small': platform === 'linux' }"
               type="button"
               :disabled="generatingLightEnrollment"
               @click="createLightEnrollment(platform)"
