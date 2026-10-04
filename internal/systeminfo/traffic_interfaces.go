@@ -137,10 +137,12 @@ func SaveTrafficSelection(path string, selection contract.TrafficInterfaceSelect
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(path, append(content, '\n'), mode, gid)
+	return atomicWriteFile(path, append(content, '\n'), mode, gid, true)
 }
 
-func atomicWriteFile(path string, content []byte, mode os.FileMode, gid int) error {
+// atomicWriteFile replaces path by rename. durable also syncs the file and its
+// directory so the change survives a power loss.
+func atomicWriteFile(path string, content []byte, mode os.FileMode, gid int, durable bool) error {
 	directory := filepath.Dir(path)
 	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -162,15 +164,20 @@ func atomicWriteFile(path string, content []byte, mode os.FileMode, gid int) err
 			return err
 		}
 	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
+	if durable {
+		if err := temporary.Sync(); err != nil {
+			temporary.Close()
+			return err
+		}
 	}
 	if err := temporary.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(name, path); err != nil {
 		return err
+	}
+	if !durable {
+		return nil
 	}
 	return syncDirectory(directory)
 }
@@ -237,7 +244,10 @@ func classifyNetworkInterfaces(
 	}
 	var counted []string
 	for _, counter := range counters {
-		status := contract.TrafficInterfaceStatus{Name: counter.name, ReceivedBytes: counter.received, SentBytes: counter.sent}
+		status := contract.TrafficInterfaceStatus{
+			Name: counter.name, ReceivedBytes: counter.received, SentBytes: counter.sent,
+			Virtual: virtualNetworkInterface(counter.name),
+		}
 		switch {
 		case counter.name == "lo":
 			status.Reason = contract.TrafficInterfaceLoopback
@@ -251,7 +261,7 @@ func classifyNetworkInterfaces(
 			status.Counted, status.Reason = true, contract.TrafficInterfaceDefaultRoute
 		case len(defaultRoutes) > 0:
 			status.Reason = contract.TrafficInterfaceNotDefaultRoute
-		case virtualNetworkInterface(counter.name):
+		case status.Virtual:
 			status.Reason = contract.TrafficInterfaceVirtual
 		default:
 			status.Counted, status.Reason = true, contract.TrafficInterfaceAutomatic
@@ -265,7 +275,9 @@ func classifyNetworkInterfaces(
 	}
 	for _, name := range selection.Include {
 		if !present[name] {
-			statuses = append(statuses, contract.TrafficInterfaceStatus{Name: name, Reason: contract.TrafficInterfaceMissing})
+			statuses = append(statuses, contract.TrafficInterfaceStatus{
+				Name: name, Reason: contract.TrafficInterfaceMissing, Virtual: virtualNetworkInterface(name),
+			})
 		}
 	}
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
@@ -342,7 +354,9 @@ func (c *Collector) continueCountersLocked(received, sent uint64, scope string) 
 	}
 	if changed || now.Sub(c.continuityPersisted) >= networkContinuityPersistEvery {
 		// Persistence is best effort: a failed write retries at the next sample.
-		if content, err := json.Marshal(state); err == nil && atomicWriteFile(c.TrafficStatePath, content, 0o600, -1) == nil {
+		// No fsync, so collections never wait on the disk under networkMu: the
+		// state matters only within one boot, and a power loss is a reboot.
+		if content, err := json.Marshal(state); err == nil && atomicWriteFile(c.TrafficStatePath, content, 0o600, -1, false) == nil {
 			c.continuityPersisted = now
 		}
 	}
@@ -362,16 +376,23 @@ func loadNetworkContinuity(path string) (networkContinuity, bool) {
 	decoder.DisallowUnknownFields()
 	var state networkContinuity
 	if decoder.Decode(&state) != nil || decoder.More() || state.SchemaVersion != networkContinuitySchemaVersion ||
-		state.BootID == "" || state.Scope == "" {
+		state.BootID == "" || state.Scope == "" || !validContinuityOffset(state.OffsetReceived) ||
+		!validContinuityOffset(state.OffsetSent) {
 		return networkContinuity{}, false
 	}
 	return state, true
 }
 
-// Counters stay far below 2^63 bytes; the clamp only guards corrupt input.
+// Counters stay far below 2^62 bytes; the limit only guards corrupt input so
+// offsets never overflow when applied.
+const continuityLimit = uint64(1) << 62
+
 func clampedDifference(last, current uint64) int64 {
-	const limit = uint64(1) << 62
-	return int64(min(last, limit)) - int64(min(current, limit))
+	return int64(min(last, continuityLimit)) - int64(min(current, continuityLimit))
+}
+
+func validContinuityOffset(offset int64) bool {
+	return offset >= -int64(continuityLimit) && offset <= int64(continuityLimit)
 }
 
 func applyOffset(value uint64, offset int64) uint64 {

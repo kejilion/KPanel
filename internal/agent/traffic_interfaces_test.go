@@ -66,6 +66,10 @@ func TestTrafficInterfacesReadAndReplace(t *testing.T) {
 		snapshot.Interfaces[0].Reason != contract.TrafficInterfaceDefaultRoute {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
+	// The dialog groups container and tunnel interfaces by this field.
+	if !strings.Contains(read.Body.String(), `"virtual":false`) {
+		t.Fatalf("snapshot omits the virtual flag: %s", read.Body.String())
+	}
 
 	update := trafficInterfacesRequest(t, server, http.MethodPut,
 		`{"include":["eth0","eth1"],"exclude":[],"expectedResourceVersion":"`+snapshot.ResourceVersion+`"}`)

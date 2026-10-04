@@ -114,6 +114,28 @@ describe('cluster counted interfaces', () => {
     expect(wrapper.text()).toContain(t('cluster.trafficInterfaces.reason.missing'))
   })
 
+  it('collapses uncounted virtual interfaces so the uplinks stay visible', async () => {
+    const quiet = { receivedBytes: 1, sentBytes: 1, counted: false, reason: 'not-default-route' as const, virtual: true }
+    mocks.read.mockResolvedValue(snapshot({ interfaces: [
+      { name: 'docker0', ...quiet },
+      { name: 'eth0', receivedBytes: 1, sentBytes: 1, counted: true, reason: 'default-route', virtual: false },
+      { name: 'veth1a2b', ...quiet },
+      { name: 'warp', receivedBytes: 1, sentBytes: 1, counted: false, reason: 'not-default-route', virtual: false },
+      { name: 'wg0', ...quiet },
+    ] }))
+    const wrapper = await render()
+    const others = wrapper.find('details')
+    expect(others.find('summary').text()).toBe(t('cluster.trafficInterfaces.others', { count: 3 }))
+    expect(others.findAll('code').map((code) => code.text())).toEqual(['docker0', 'veth1a2b', 'wg0'])
+    expect(wrapper.findAll('code').map((code) => code.text()).slice(0, 2)).toEqual(['eth0', 'warp'])
+
+    // A tunnel chosen inside the group stays put until the choice is saved.
+    await wrapper.find('input[type="radio"][value="manual"]').setValue(true)
+    await others.findAll('input[type="checkbox"]')[2]!.setValue(true)
+    expect(wrapper.find('details').findAll('code')).toHaveLength(3)
+    expect(exposed(wrapper).dirty).toBe(true)
+  })
+
   it('names an Agent without the endpoint instead of a generic failure', async () => {
     mocks.read.mockRejectedValue(new ApiError('not found', 404, 'not_found'))
     const wrapper = await render()

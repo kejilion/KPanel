@@ -37,6 +37,9 @@ type TrafficInterfaceStatus struct {
 	SentBytes     uint64 `json:"sentBytes"`
 	Counted       bool   `json:"counted"`
 	Reason        string `json:"reason"`
+	// Virtual marks container, bridge and tunnel names so a Docker host's
+	// many veth interfaces can be shown apart from its uplinks.
+	Virtual bool `json:"virtual"`
 }
 
 type TrafficInterfacesSnapshot struct {
@@ -58,7 +61,8 @@ type UpdateTrafficInterfacesInput struct {
 
 // ValidNetworkInterfaceName follows the Linux interface name rules (at most
 // 15 bytes, no slash, whitespace, colon or control character, not "." or
-// "..") and rejects the loopback device, which never carries host traffic.
+// "..") restricted to printable ASCII, and rejects the loopback device, which
+// never carries host traffic.
 func ValidNetworkInterfaceName(name string) bool {
 	if name == "" || len(name) > 15 || name == "." || name == ".." || name == "lo" {
 		return false

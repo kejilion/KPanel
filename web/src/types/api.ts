@@ -875,6 +875,8 @@ export interface TrafficInterfaceStatus {
   sentBytes: number
   counted: boolean
   reason: TrafficInterfaceReason
+  /** Container, bridge or tunnel name; absent from Agents before the field existed. */
+  virtual?: boolean
 }
 
 /** Interfaces counted toward this host's traffic; see docs/cluster-monitoring.md. */
